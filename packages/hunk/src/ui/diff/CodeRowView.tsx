@@ -63,6 +63,7 @@ function renderAddNoteButton(
     <box
       key={key}
       style={{ width: CODE_ROW_ADD_NOTE_BADGE_WIDTH, height: 1 }}
+      onMouseDown={markNestedRowMouseAction}
       onMouseUp={(event) => {
         markNestedRowMouseAction(event);
         onStartUserNoteAtHunk?.(hunkIndex, target);

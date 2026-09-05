@@ -37,6 +37,7 @@ export interface RunGitTextOptions {
 interface RunGitCommandResult {
   stderr: string;
   stdout: string;
+  stdoutBytes: Buffer;
   exitCode: number;
 }
 
@@ -492,7 +493,8 @@ function runGitCommand({
     throw translateGitSpawnFailure(input, error, gitExecutable);
   }
 
-  const stdout = Buffer.from(proc.stdout ?? []).toString("utf8");
+  const stdoutBytes = Buffer.from(proc.stdout ?? []);
+  const stdout = stdoutBytes.toString("utf8");
   const stderr = Buffer.from(proc.stderr ?? []).toString("utf8");
 
   if (!acceptedExitCodes.includes(proc.exitCode)) {
@@ -505,6 +507,7 @@ function runGitCommand({
   return {
     stderr,
     stdout,
+    stdoutBytes,
     exitCode: proc.exitCode,
   };
 }
@@ -523,7 +526,7 @@ async function runGitCommandAsync({
   preventOptionalLocks = false,
   signal,
   acceptedExitCodes = [0],
-}: RunGitCommandOptions): Promise<RunGitCommandResult> {
+}: RunGitCommandOptions): Promise<Omit<RunGitCommandResult, "stdoutBytes">> {
   let result: Awaited<ReturnType<typeof runAbortableCommand>>;
   try {
     result = await runAbortableCommand([gitExecutable, ...args], {
@@ -549,18 +552,23 @@ export async function runGitTextAsync(options: RunGitTextOptions): Promise<strin
   return (await runGitCommandAsync(options)).stdout;
 }
 
+/** Read canonical source bytes without decoding through UTF-8. */
+export function runGitBytes(options: RunGitTextOptions) {
+  return runGitCommand(options).stdoutBytes;
+}
+
 /** Run an interactive mutation without blocking terminal input or progress painting. */
 export async function runGitMutation({
   input,
   args,
   cwd = process.cwd(),
   gitExecutable = "git",
-  stdinText,
-}: RunGitTextOptions & { stdinText?: string }): Promise<string> {
+  stdin,
+}: RunGitTextOptions & { stdin?: string | Uint8Array }): Promise<string> {
   try {
     const process = Bun.spawn([gitExecutable, ...args], {
       cwd,
-      stdin: stdinText === undefined ? "ignore" : new TextEncoder().encode(stdinText),
+      stdin: typeof stdin === "string" ? new TextEncoder().encode(stdin) : (stdin ?? "ignore"),
       stdout: "pipe",
       stderr: "pipe",
     });

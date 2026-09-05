@@ -109,6 +109,8 @@ interface BuiltinCommandHandler {
 /** The callbacks the built-in command set drives; App supplies its own handlers. */
 export interface BuildAppCommandsOptions {
   canToggleFileStaged?: boolean;
+  canToggleHunkStaged?: boolean;
+  toggleHunkStaged?: () => void;
   canSwitchStagedView?: boolean;
   toggleFileStaged?: () => void;
   toggleStagedView?: () => void;
@@ -179,6 +181,10 @@ function builtinCommandHandlers(
   options: BuildAppCommandsOptions,
 ): Record<AppCommandId, BuiltinCommandHandler> {
   return {
+    "hunk.review.toggleHunkStaged": {
+      isEnabled: () => Boolean(options.canToggleHunkStaged),
+      run: () => options.toggleHunkStaged?.(),
+    },
     "hunk.review.toggleFileStaged": {
       isEnabled: () => Boolean(options.canToggleFileStaged),
       run: () => options.toggleFileStaged?.(),

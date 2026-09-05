@@ -99,6 +99,14 @@ export interface AppCommandCatalogEntry {
  */
 const BUILTIN_COMMANDS = [
   {
+    id: "hunk.review.toggleHunkStaged",
+    title: "Stage / unstage selected hunk",
+    category: "review",
+    defaultKeys: ["space"],
+    locus: "host-only",
+    publicToExtensions: false,
+  },
+  {
     id: "hunk.review.toggleFileStaged",
     title: "Stage / unstage selected file",
     category: "review",

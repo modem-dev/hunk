@@ -53,6 +53,13 @@ export function loadGitWorkingTreeFiles(
   const records = runGitText({ input, args, cwd, gitExecutable, preventOptionalLocks: true }).split(
     "\0",
   );
+  const head = runGitText({
+    input,
+    args: ["rev-parse", "--revs-only", "HEAD"],
+    cwd: root,
+    gitExecutable,
+    preventOptionalLocks: true,
+  }).trim();
   const index = new Map<string, string>();
   for (const record of runGitText({
     input,
@@ -90,6 +97,7 @@ export function loadGitWorkingTreeFiles(
           ? "Use the submodule or directory's own Git workflow."
           : undefined,
       version: JSON.stringify([
+        head,
         status,
         index.get(path),
         previousPath && index.get(previousPath),

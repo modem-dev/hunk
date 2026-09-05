@@ -1,4 +1,4 @@
-import { recordMousePress } from "../../lib/mousePressSequence";
+import { mousePressSequence, recordMousePress } from "../../lib/mousePressSequence";
 import {
   MouseButton,
   type MouseEvent as TuiMouseEvent,
@@ -364,6 +364,9 @@ export function DiffPane({
   onCurrentLinePaintChange,
   onViewportCenteredHunkChange,
   onViewportLineCursorChange,
+  onHunkFocus,
+  canToggleHunkStaged,
+  onToggleHunkStaged,
 }: {
   codeHorizontalOffset?: number;
   diffContentWidth: number;
@@ -437,6 +440,9 @@ export function DiffPane({
   onCurrentLinePaintChange?: (update: ExtensionCurrentLinePaintUpdate) => void;
   onViewportCenteredHunkChange?: (fileId: string, hunkIndex: number) => void;
   onViewportLineCursorChange?: (cursor: LineCursor) => void;
+  onHunkFocus?: () => void;
+  canToggleHunkStaged?: (fileId: string, hunkIndex: number) => boolean;
+  onToggleHunkStaged?: (fileId: string, hunkIndex: number) => boolean;
 }) {
   const renderTopChrome = showTopChrome ?? !pagerMode;
   const renderer = useRenderer();
@@ -803,8 +809,10 @@ export function DiffPane({
   const [copySelectionDrag, setCopySelectionDrag] = useState<CopySelectionDrag | null>(null);
   // Mirror the drag state in a ref so updateCopySelection can suppress native selection
   // on the very first drag event, before React has re-rendered with the new state.
+  const hunkClickCandidateRef = useRef<{ fileId: string; hunkIndex: number } | null>(null);
   const copySelectionDragRef = useRef<CopySelectionDrag | null>(null);
   const lastClickTimeRef = useRef(0);
+  const lastClickPressRef = useRef(0);
   const clickCountRef = useRef(0);
   const lastClickPointRef = useRef<CopySelectionPoint | null>(null);
   const scrollbarRef = useRef<VerticalScrollbarHandle>(null);
@@ -1514,6 +1522,7 @@ export function DiffPane({
   /** Start selecting diff text when the user drags inside the review stream. */
   const beginCopySelection = useCallback(
     (event: TuiMouseEvent) => {
+      hunkClickCandidateRef.current = null;
       recordMousePress(renderer, event);
       if (event.button !== MouseButton.LEFT) {
         return;
@@ -1536,18 +1545,39 @@ export function DiffPane({
         previousClickPoint !== null &&
         copySelectionPointsShareRow(previousClickPoint, point) &&
         Math.abs(previousClickPoint.column - point.column) <= 2;
+      const press = mousePressSequence(renderer);
+      const consecutivePress = press === lastClickPressRef.current + 1;
+      lastClickPressRef.current = press;
       lastClickTimeRef.current = now;
       lastClickPointRef.current = point;
 
       let clickCount = 1;
-      if (timeSinceLastClick < 350 && timeSinceLastClick >= 0 && repeatedClickTarget) {
+      if (
+        consecutivePress &&
+        timeSinceLastClick < 350 &&
+        timeSinceLastClick >= 0 &&
+        repeatedClickTarget
+      ) {
         clickCountRef.current += 1;
         clickCount = Math.min(clickCountRef.current, 3);
       } else {
         clickCountRef.current = 1;
       }
 
-      if (clickCount >= 2 && point.kind === "review-row") {
+      if (clickCount === 2 && onToggleHunkStaged && !isNestedRowMouseAction(event)) {
+        const cursor = findLineCursorForClick({
+          cursors: lineCursors,
+          fileSectionLayouts,
+          point,
+          sectionGeometry,
+          side: resolveCopySelectionSide(point.column, layout, diffContentWidth),
+        });
+        // Unavailable mutations must leave repeated-click word/line copying intact.
+        if (cursor && canToggleHunkStaged?.(cursor.fileId, cursor.hunkIndex))
+          hunkClickCandidateRef.current = cursor;
+      }
+
+      if (!hunkClickCandidateRef.current && clickCount >= 2 && point.kind === "review-row") {
         const expanded = expandSelectionPoint(point, clickCount as 2 | 3, copySelectionContext);
         if (expanded) {
           const drag: CopySelectionDrag = {
@@ -1572,7 +1602,19 @@ export function DiffPane({
       event.preventDefault();
       event.stopPropagation();
     },
-    [copySelectionContext, renderer, resolveCopySelectionPoint, suppressNativeSelection],
+    [
+      copySelectionContext,
+      renderer,
+      resolveCopySelectionPoint,
+      suppressNativeSelection,
+      onToggleHunkStaged,
+      canToggleHunkStaged,
+      lineCursors,
+      fileSectionLayouts,
+      sectionGeometry,
+      layout,
+      diffContentWidth,
+    ],
   );
 
   /** Extend the active diff text selection while the pointer moves. */
@@ -1630,6 +1672,8 @@ export function DiffPane({
   /** Finish a mouse gesture by selecting its clicked line or copying its deliberate drag. */
   const endCopySelection = useCallback(
     (event?: TuiMouseEvent) => {
+      const hunkCandidate = hunkClickCandidateRef.current;
+      hunkClickCandidateRef.current = null;
       const pending = copySelectionDragRef.current;
       if (!pending) {
         return;
@@ -1651,6 +1695,20 @@ export function DiffPane({
       event?.preventDefault();
       event?.stopPropagation();
 
+      // A second press may become a copy drag. Only its unmoved release consents to staging.
+      if (
+        event &&
+        endPoint &&
+        !current.moved &&
+        hunkCandidate &&
+        !isNestedRowMouseAction(event) &&
+        onToggleHunkStaged?.(hunkCandidate.fileId, hunkCandidate.hunkIndex)
+      ) {
+        onHunkFocus?.();
+        clickCountRef.current = 0;
+        return;
+      }
+
       if (copySelectionDragIsClick(current)) {
         if (event && isNestedRowMouseAction(event)) {
           return;
@@ -1664,6 +1722,7 @@ export function DiffPane({
           side: resolveCopySelectionSide(current.anchor.column, layout, diffContentWidth),
         });
         if (clickedCursor && onViewportLineCursorChange) {
+          onHunkFocus?.();
           onViewportLineCursorChange(clickedCursor);
           return;
         }
@@ -1690,6 +1749,8 @@ export function DiffPane({
       layout,
       lineCursors,
       onViewportLineCursorChange,
+      onToggleHunkStaged,
+      onHunkFocus,
       resolveCopySelectionPoint,
       sectionGeometry,
     ],

@@ -9,6 +9,7 @@ export function WorkingTreeBar({
   theme,
   width,
   canToggle,
+  hunkFocused = false,
   switchView,
   toggleSelected,
 }: {
@@ -16,11 +17,15 @@ export function WorkingTreeBar({
   theme: AppTheme;
   width: number;
   canToggle: boolean;
+  hunkFocused?: boolean;
   switchView: (staged: boolean) => void;
   toggleSelected: () => void;
 }) {
   const selected = pane.files.find((file) => file.path === pane.selectedPath);
-  const action = pane.busy ? "Working…" : selected?.unstaged ? "Stage file" : "Unstage file";
+  const stage = hunkFocused ? !pane.staged : selected?.unstaged;
+  const action = pane.busy
+    ? "Working…"
+    : `${stage ? "Stage" : "Unstage"} ${hunkFocused ? "hunk" : "file"}`;
   const tabs = [false, true].map((staged) => ({
     staged,
     label: ` ${width < 40 ? (staged ? "S" : "U") : staged ? "Staged" : "Unstaged"} (${pane.files.filter((file) => (staged ? file.staged : file.unstaged)).length}) `,

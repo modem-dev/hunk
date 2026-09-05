@@ -106,8 +106,8 @@ const HELP_SECTIONS: readonly HelpSectionSpec[] = [
     title: "Review",
     entries: [
       {
-        commandIds: ["hunk.review.toggleFileStaged"],
-        description: "stage / unstage selected file",
+        commandIds: ["hunk.review.toggleFileStaged", "hunk.review.toggleHunkStaged"],
+        description: "stage / unstage focused file or hunk",
       },
       {
         commandIds: ["hunk.review.toggleStagedView"],

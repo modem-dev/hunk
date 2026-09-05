@@ -351,8 +351,10 @@ export function App({
     getSelectedFileId,
     getSelection: getExtensionSelection,
   } = extensionRuntime;
+  const [hunkActionFocused, setHunkActionFocused] = useState(false);
   const jumpToFile = useCallback(
     (fileId: string, options?: { alignFileHeaderTop?: boolean }) => {
+      setHunkActionFocused(false);
       review.selectFile(fileId, { alignFileHeaderTop: options?.alignFileHeaderTop });
     },
     [review.selectFile],
@@ -1006,10 +1008,14 @@ export function App({
   const workingTree = useWorkingTreeActions({
     bootstrap,
     selectedFile,
+    selectedHunkIndex,
     filter: review.filter,
     createLease: createReviewCapabilityLease,
     selectReviewFile: jumpToFile,
-    focusFiles,
+    focusFiles: () => {
+      focusFiles();
+      setHunkActionFocused(false);
+    },
     setStagedView,
     runMutation: runVcsMutation,
     refreshAfterMutation: onVcsMutationCompleted,
@@ -1029,10 +1035,12 @@ export function App({
       },
       onSelectHunk: (fileId: string, hunkIndex: number) => {
         focusFiles();
+        setHunkActionFocused(true);
         review.selectHunk(fileId, hunkIndex);
       },
       onRevealLine: (fileId: string, side: "old" | "new", line: number) => {
         focusFiles();
+        setHunkActionFocused(true);
         return review.revealLine(fileId, side, line);
       },
     }),
@@ -1090,7 +1098,9 @@ export function App({
   const appCommands = observeAppCommandDispatch(
     [
       ...buildAppCommands({
-        canToggleFileStaged: workingTree.canToggleSelected,
+        canToggleFileStaged: !hunkActionFocused && workingTree.canToggleSelected,
+        canToggleHunkStaged: hunkActionFocused && workingTree.canToggleSelectedHunk,
+        toggleHunkStaged: workingTree.toggleSelectedHunk,
         canSwitchStagedView: Boolean(workingTree.pane),
         toggleFileStaged: workingTree.toggleSelected,
         toggleStagedView: () => workingTree.switchView(!workingTree.staged),
@@ -1109,6 +1119,7 @@ export function App({
           if (activeReplyableNoteId) startUserNoteReply(activeReplyableNoteId);
         },
         moveSelection: (scope, delta) => {
+          setHunkActionFocused(scope === "hunk" || scope === "annotated-hunk");
           if (scope === "file" && workingTree.pane) workingTree.moveFile(delta);
           else review.moveSelection(scope, delta);
         },
@@ -1298,18 +1309,9 @@ export function App({
             showTransientNotice("Copied text to clipboard");
             return true;
           }}
-          onSelectFile={(fileId) => {
-            focusFiles();
-            jumpToFile(fileId, { alignFileHeaderTop: true });
-          }}
-          onSelectHunk={(fileId, hunkIndex) => {
-            focusFiles();
-            review.selectHunk(fileId, hunkIndex);
-          }}
-          onRevealLine={(fileId, side, line) => {
-            focusFiles();
-            return review.revealLine(fileId, side, line);
-          }}
+          onSelectFile={extensionNavigationBindings.onSelectFile}
+          onSelectHunk={extensionNavigationBindings.onSelectHunk}
+          onRevealLine={extensionNavigationBindings.onRevealLine}
           onRenderFailure={
             pane.key === HUNK_FILES_PANE_KEY ? undefined : () => reportPaneRenderFailure(pane)
           }
@@ -1386,9 +1388,14 @@ export function App({
           pane={workingTree.pane}
           theme={activeTheme}
           width={terminal.width}
-          canToggle={workingTree.canToggleSelected}
+          hunkFocused={hunkActionFocused}
+          canToggle={
+            hunkActionFocused ? workingTree.canToggleSelectedHunk : workingTree.canToggleSelected
+          }
           switchView={workingTree.switchView}
-          toggleSelected={workingTree.toggleSelected}
+          toggleSelected={
+            hunkActionFocused ? workingTree.toggleSelectedHunk : workingTree.toggleSelected
+          }
         />
       )}
 
@@ -1494,6 +1501,9 @@ export function App({
             currentLinePaintRequested={currentLinePaintRequested}
             onCurrentLinePaintChange={onCurrentLinePaintChange}
             onViewportLineCursorChange={review.anchorLineCursor}
+            onHunkFocus={() => setHunkActionFocused(true)}
+            canToggleHunkStaged={workingTree.canToggleHunk}
+            onToggleHunkStaged={workingTree.pane ? workingTree.toggleHunk : undefined}
           />
         </box>
       </box>

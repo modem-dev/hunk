@@ -1,3 +1,4 @@
+import { mutateGitHunkStaging } from "./hunkStaging";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
@@ -412,6 +413,10 @@ export function createGitVcsAdapter({
           mutateGitFileStaging(input, file, { cwd, gitExecutable }, true),
         unstageFile: (input, file, { cwd }) =>
           mutateGitFileStaging(input, file, { cwd, gitExecutable }, false),
+        stageHunk: (input, file, hunk, { cwd }) =>
+          mutateGitHunkStaging(input, file, hunk, { cwd, gitExecutable }, true),
+        unstageHunk: (input, file, hunk, { cwd }) =>
+          mutateGitHunkStaging(input, file, hunk, { cwd, gitExecutable }, false),
         watchPlan(input, { cwd }) {
           return buildGitWatchPlan(input, cwd, gitExecutable);
         },

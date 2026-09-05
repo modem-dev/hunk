@@ -9,7 +9,8 @@ import type { DiffFile } from "../../core/changeset/model";
 import { reviewFileMatchesFilter } from "../../core/review/selectors";
 import { getConfiguredVcsAdapter } from "../../core/vcs";
 import { HunkUserError } from "../../core/run/errors";
-import type { ExtensionWorkingTreePane } from "../../extension-api/types";
+import { summarizeHunk } from "../../core/changeset/hunkSummary";
+import type { ExtensionWorkingTreeFile, ExtensionWorkingTreePane } from "../../extension-api/types";
 import type { ExtensionCapabilityLease } from "../lib/extensionCapabilityLease";
 import type { WorkspaceWriteRunner } from "./useExtensionWorkspaceControls";
 
@@ -28,6 +29,7 @@ export function hasWorkingTreeInventory(bootstrap: AppBootstrap) {
 export function useWorkingTreeActions({
   bootstrap,
   selectedFile,
+  selectedHunkIndex,
   filter,
   createLease,
   selectReviewFile,
@@ -39,6 +41,7 @@ export function useWorkingTreeActions({
 }: {
   bootstrap: AppBootstrap;
   selectedFile: DiffFile | undefined;
+  selectedHunkIndex: number;
   filter: string;
   createLease: () => ExtensionCapabilityLease;
   selectReviewFile: (fileId: string, options: { alignFileHeaderTop: true }) => void;
@@ -144,47 +147,44 @@ export function useWorkingTreeActions({
     [files, operation],
   );
 
-  const toggleStaged = useCallback(
-    (path: string) => {
-      // A file double-click may arrive while its first click is switching tabs. The path is
-      // explicit and attested, so let that gesture finish; keyboard repeats remain blocked.
-      if (
-        !lease.isLive() ||
-        mutatingRef.current ||
-        !canToggle(path) ||
-        bootstrap.input.kind !== "vcs"
-      )
-        return;
-      const file = files.find((candidate) => candidate.path === path)!;
-      const mutate = file.unstaged ? operation?.stageFile : operation?.unstageFile;
-      if (!mutate) return;
-      const input = bootstrap.input;
+  /** Keep file and hunk writes on the same busy, error, refresh, and graceful-exit path. */
+  const startMutation = useCallback(
+    (
+      file: ExtensionWorkingTreeFile,
+      action: {
+        mutate: () => Promise<void>;
+        progress: string;
+        complete: string;
+        followStaged?: boolean;
+      },
+    ) => {
       busyRef.current = true;
       mutatingRef.current = true;
       setBusy(true);
-      showNotice(`${file.unstaged ? "Staging" : "Unstaging"} ${file.path}…`);
+      showNotice(action.progress);
       void runMutation(async () => {
         let succeeded = false;
         try {
-          await mutate(input, file, { cwd: bootstrap.changeset.sourceLabel });
+          await action.mutate();
           succeeded = true;
-          pendingPathRef.current = { path: file.path, changeset: bootstrap.changeset };
+          if (action.followStaged !== undefined)
+            pendingPathRef.current = { path: file.path, changeset: bootstrap.changeset };
         } finally {
-          // A failed Git command may still have changed state. Always reconcile before unlocking.
+          // A failed provider command can partially change state, so reconcile before unlocking.
           await refreshAfterMutation(
-            succeeded
-              ? { root: bootstrap.changeset.sourceLabel, staged: file.unstaged }
+            succeeded && action.followStaged !== undefined
+              ? { root: bootstrap.changeset.sourceLabel, staged: action.followStaged }
               : undefined,
           );
         }
       })
-        .then((started) => {
+        .then((started) =>
           showNotice(
             started
-              ? `${file.unstaged ? "Staged" : "Unstaged"} ${file.path}.`
+              ? action.complete
               : "Another workspace operation is active or Hunk is shutting down.",
-          );
-        })
+          ),
+        )
         .catch((error) => {
           const detail =
             error instanceof HunkUserError
@@ -200,7 +200,70 @@ export function useWorkingTreeActions({
           setBusy(busyRef.current);
         });
     },
-    [lease, canToggle, bootstrap, files, operation, runMutation, refreshAfterMutation, showNotice],
+    [bootstrap.changeset, runMutation, refreshAfterMutation, showNotice],
+  );
+
+  const toggleStaged = useCallback(
+    (path: string) => {
+      // A double-click may finish while its first click switches tabs; its explicit path is attested.
+      if (
+        !lease.isLive() ||
+        mutatingRef.current ||
+        !canToggle(path) ||
+        bootstrap.input.kind !== "vcs"
+      )
+        return;
+      const file = files.find((candidate) => candidate.path === path)!;
+      const mutate = file.unstaged ? operation?.stageFile : operation?.unstageFile;
+      if (!mutate) return;
+      const input = bootstrap.input;
+      startMutation(file, {
+        mutate: () => mutate(input, file, { cwd: bootstrap.changeset.sourceLabel }),
+        progress: `${file.unstaged ? "Staging" : "Unstaging"} ${file.path}…`,
+        complete: `${file.unstaged ? "Staged" : "Unstaged"} ${file.path}.`,
+        followStaged: file.unstaged,
+      });
+    },
+    [lease, canToggle, bootstrap, files, operation, startMutation],
+  );
+
+  const canToggleHunk = useCallback(
+    (fileId: string | undefined, hunkIndex: number) => {
+      if (!lease.isLive() || busyRef.current) return false;
+      const reviewed = bootstrap.changeset.files.find((file) => file.id === fileId);
+      const status = files.find((file) => file.path === reviewed?.path);
+      return Boolean(
+        reviewed?.metadata.hunks[hunkIndex] &&
+        !reviewed.isBinary &&
+        !reviewed.isTooLarge &&
+        status &&
+        !status.unavailableReason &&
+        !status.conflicted &&
+        (staged
+          ? status.staged && operation?.unstageHunk
+          : status.unstaged && operation?.stageHunk),
+      );
+    },
+    [bootstrap.changeset.files, files, staged, operation, lease],
+  );
+
+  const toggleHunk = useCallback(
+    (fileId: string, hunkIndex: number) => {
+      if (!canToggleHunk(fileId, hunkIndex) || bootstrap.input.kind !== "vcs") return false;
+      const reviewed = bootstrap.changeset.files.find((file) => file.id === fileId)!;
+      const file = files.find((file) => file.path === reviewed.path)!;
+      const mutate = staged ? operation?.unstageHunk : operation?.stageHunk;
+      if (!mutate) return false;
+      const input = bootstrap.input;
+      const hunk = summarizeHunk(reviewed.metadata.hunks[hunkIndex]!, hunkIndex);
+      startMutation(file, {
+        mutate: () => mutate(input, file, hunk, { cwd: bootstrap.changeset.sourceLabel }),
+        progress: `${staged ? "Unstaging" : "Staging"} hunk ${hunkIndex + 1} in ${file.path}…`,
+        complete: `${staged ? "Unstaged" : "Staged"} hunk ${hunkIndex + 1} in ${file.path}.`,
+      });
+      return true;
+    },
+    [canToggleHunk, bootstrap, files, operation, staged, startMutation],
   );
 
   const pane = useMemo<ExtensionWorkingTreePane | undefined>(
@@ -224,6 +287,12 @@ export function useWorkingTreeActions({
     staged,
     selectedPath,
     canToggleSelected: enabled && canToggle(selectedPath),
+    canToggleSelectedHunk: enabled && canToggleHunk(selectedFile?.id, selectedHunkIndex),
+    canToggleHunk,
+    toggleHunk,
+    toggleSelectedHunk: () => {
+      if (selectedFile) toggleHunk(selectedFile.id, selectedHunkIndex);
+    },
     toggleSelected: () => {
       if (!busyRef.current && selectedPath) toggleStaged(selectedPath);
     },

@@ -51,6 +51,7 @@ test("working-tree mutation conversion preserves optionality, inputs and user-fa
   const input = { kind: "vcs" as const, staged: false, options: {} };
   expect((await operation.load(input, { cwd: "repo" })).workingTreeFiles).toEqual([file]);
   expect(operation.unstageFile).toBeUndefined();
+  expect(operation.stageHunk).toBeUndefined();
   await expect(operation.stageFile!(input, file, { cwd: "repo" })).rejects.toMatchObject({
     name: "HunkUserError",
     message: "Index locked",

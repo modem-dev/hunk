@@ -64,6 +64,12 @@ In plain working-tree reviews, **Space** stages the selected file's remaining un
 or unstages it when fully staged. File-row double-click and the clickable action beside the
 stream tabs do the same. The sidebar shows independent `S` (staged) and `U` (unstaged) indicators,
 including partially staged files. A successful file action follows the file to the other tab.
+Clicking a code line or navigating with `[` / `]` selects **hunk** action scope: Space then stages
+that unstaged hunk, or unstages that staged hunk, without changing other hunks or disk contents.
+Double-clicking a code line applies its hunk on release, provided the pointer did not move. Hunk actions keep the current stream tab;
+use Tab to review the other side. Clicking a sidebar file or file header, or using `,` / `.` returns to file scope.
+The action beside the tabs names the current scope. Drag-to-copy remains available; hunks without an available staging action and non-working-tree
+reviews retain word/line selection on repeated clicks. Binary, text-converted, and metadata-only changes use file actions.
 **Tab** switches the complete Unstaged/Staged review stream; selecting a sidebar file that only
 has changes on the other side switches automatically. Use `/` to focus the filter.
 Actions wait for Git and its refreshed diff before accepting another mutation. Outside this
@@ -105,6 +111,7 @@ remain remappable, and an explicit user binding takes precedence over contextual
 | `hunk.review.stepUp`                           | Scroll up one row                              | `up`, `k`                    |
 | `hunk.review.toggleFileStaged`                 | Stage / unstage selected file                  | `space`                      |
 | `hunk.review.toggleHunkGap`                    | Expand or collapse the selected context        | `z`                          |
+| `hunk.review.toggleHunkStaged`                 | Stage / unstage selected hunk                  | `space`                      |
 | `hunk.review.toggleStagedView`                 | Switch unstaged / staged stream                | `tab`                        |
 | `hunk.view.applyFilePresentationToAllMatching` | Apply current file presentation to all matches | _(none)_                     |
 | `hunk.view.cursorLineNumber`                   | Mark the current line number                   | _(none)_                     |

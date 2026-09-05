@@ -65,6 +65,7 @@ describe("app command catalog", () => {
         (command) => command.id,
       ),
     ).toEqual([
+      "hunk.review.toggleHunkStaged",
       "hunk.review.toggleFileStaged",
       "hunk.review.toggleStagedView",
       "hunk.app.quit",

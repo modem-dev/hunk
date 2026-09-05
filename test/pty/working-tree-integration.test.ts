@@ -42,6 +42,138 @@ function doubleClickSidebarFile(session: Session, path: string) {
 }
 
 describe("PTY working-tree staging", () => {
+  test("double-clicking a hunk without a mutation capability still copies a word", async () => {
+    const root = createFixture();
+    const index = runTestGit(root, "ls-files", "--stage");
+    const configHome = harness.createIsolatedConfigHome();
+    const extension = join(configHome, "inventory.ts");
+    const result = {
+      repoRoot: root,
+      sourceLabel: root,
+      title: "Read-only inventory",
+      patchText: runTestGit(root, "diff", "--", "alpha.txt"),
+      workingTreeFiles: [
+        {
+          path: "alpha.txt",
+          staged: false,
+          unstaged: true,
+          untracked: false,
+          conflicted: false,
+          version: "test-source",
+        },
+      ],
+    };
+    writeFileSync(
+      extension,
+      `export default (hunk) => hunk.registerVcsAdapter({
+      id: "inventory", name: "Inventory", detectionPriority: 1000,
+      detect: () => ({ id: "inventory", repoRoot: ${JSON.stringify(root)} }),
+      operations: { "working-tree-diff": { load: async () => (${JSON.stringify(result)}) } }
+    });`,
+    );
+    const session = await harness.launchHunk({
+      cwd: root,
+      args: ["diff", "--extension", extension, "--mode", "stack"],
+      env: { XDG_CONFIG_HOME: configHome },
+      cols: 150,
+      rows: 30,
+    });
+    try {
+      await session.waitForText("changed alpha", { timeout: 15_000 });
+      const lines = session
+        .getTerminalData()
+        .lines.map((line) => line.spans.map((span) => span.text).join(""));
+      const row = lines.findIndex((line) => line.includes("changed alpha"));
+      const col = lines[row]!.indexOf("changed alpha") + 10;
+      const click = `\x1b[<0;${col};${row + 1}M\x1b[<0;${col};${row + 1}m`;
+      session.writeRaw(click + click);
+      await session.waitForText("Copied selection to clipboard", { timeout: 5_000 });
+      expect(runTestGit(root, "ls-files", "--stage")).toBe(index);
+    } finally {
+      session.close();
+    }
+  });
+
+  test("double-clicking a changed line stages only its hunk", async () => {
+    const root = createFixture();
+    const original = Array.from({ length: 40 }, (_, index) => `line ${index + 1}\n`).join("");
+    writeFileSync(join(root, "alpha.txt"), original);
+    runTestGit(root, "add", "alpha.txt");
+    runTestGit(root, "commit", "--only", "-m", "Long alpha", "--", "alpha.txt");
+    writeFileSync(
+      join(root, "alpha.txt"),
+      original.replace("line 2\n", "first change\n").replace("line 35\n", "second change\n"),
+    );
+    const session = await harness.launchHunk({
+      cwd: root,
+      args: ["diff", "--sidebar", "--no-extensions", "--mode", "stack"],
+      cols: 220,
+      rows: 35,
+    });
+    try {
+      await session.waitForText("second change", { timeout: 15_000 });
+      const lines = session
+        .getTerminalData()
+        .lines.map((line) => line.spans.map((span) => span.text).join(""));
+      const row = lines.findIndex((line) => line.includes("second change"));
+      const column = lines[row]!.indexOf("second change") + 1;
+      const click = `\x1b[<0;${column};${row + 1}M\x1b[<0;${column};${row + 1}m`;
+      // A second press must not mutate before release, and dragging must remain copy-only.
+      const down = `\x1b[<0;${column};${row + 1}M`;
+      session.writeRaw(click + down);
+      await session.waitIdle();
+      expect(runTestGit(root, "show", ":alpha.txt")).toBe(original);
+      session.writeRaw(`\x1b[<32;${column + 5};${row + 1}M\x1b[<0;${column + 5};${row + 1}m`);
+      await session.waitIdle();
+      expect(runTestGit(root, "show", ":alpha.txt")).toBe(original);
+      // Break the prior click sequence before the ordinary double-click.
+      session.writeRaw("\x1b[<0;4;2M\x1b[<0;4;2m" + click + click);
+      await session.waitForText("Staged hunk 2 in alpha.txt.", { timeout: 10_000 });
+      expect(runTestGit(root, "show", ":alpha.txt")).toBe(
+        original.replace("line 35\n", "second change\n"),
+      );
+      expect(runTestGit(root, "show", ":beta.txt")).toBe("staged beta\n");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("a file header returns Space from hunk scope to whole-file scope", async () => {
+    const root = createFixture();
+    const original = Array.from({ length: 40 }, (_, index) => `line ${index + 1}\n`).join("");
+    writeFileSync(join(root, "alpha.txt"), original);
+    runTestGit(root, "add", "alpha.txt");
+    runTestGit(root, "commit", "--only", "-m", "Long alpha", "--", "alpha.txt");
+    const changed = original
+      .replace("line 2\n", "first change\n")
+      .replace("line 35\n", "second change\n");
+    writeFileSync(join(root, "alpha.txt"), changed);
+    const session = await harness.launchHunk({
+      cwd: root,
+      args: ["diff", "--sidebar", "--no-extensions", "--mode", "stack"],
+      cols: 220,
+      rows: 35,
+    });
+    try {
+      await session.waitForText("second change", { timeout: 15_000 });
+      await session.press("]");
+      await session.waitForText("Stage hunk");
+      const lines = session
+        .getTerminalData()
+        .lines.map((line) => line.spans.map((span) => span.text).join(""));
+      const row = lines.findIndex((line) => line.indexOf("alpha.txt", 35) >= 35);
+      expect(row).toBeGreaterThan(1);
+      const column = lines[row]!.indexOf("alpha.txt", 35) + 1;
+      session.writeRaw(`\x1b[<0;${column};${row + 1}M\x1b[<0;${column};${row + 1}m`);
+      await session.waitForText("Stage file");
+      await session.press("space");
+      await session.waitForText("Staged alpha.txt.");
+      expect(runTestGit(root, "show", ":alpha.txt")).toBe(changed);
+    } finally {
+      session.close();
+    }
+  });
+
   test("rapid clicks on alternating files remain selection-only", async () => {
     const root = createFixture();
     runTestGit(root, "restore", "--staged", "beta.txt");

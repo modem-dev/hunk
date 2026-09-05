@@ -768,6 +768,36 @@ describe("UI components", () => {
     }
   });
 
+  test("DiffPane preserves double-click word copy when a hunk action is unavailable", async () => {
+    const file = createTestDiffFile("copy-word", "copy.ts", "old answer\n", "new answer\n");
+    const copyText = mock((_text: string) => undefined);
+    const toggleHunk = mock(() => false);
+    const setup = await testRender(
+      <DiffPane
+        {...createDiffPaneProps([file], resolveTheme("github-dark-default", null), {
+          onCopySelectionText: copyText,
+          canToggleHunkStaged: () => false,
+          onToggleHunkStaged: toggleHunk,
+        })}
+      />,
+      { width: 80, height: 8 },
+    );
+    try {
+      await settleDiffPane(setup);
+      const rows = setup.captureCharFrame().split("\n");
+      const y = rows.findIndex((row) => row.includes("new answer"));
+      const x = rows[y]!.indexOf("new answer") + 5;
+      await act(async () => {
+        await setup.mockMouse.click(x, y);
+        await setup.mockMouse.click(x, y);
+      });
+      expect(copyText).toHaveBeenCalledWith("answer");
+      expect(toggleHunk).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
   test("DiffPane selects the exact split line side on click without consuming add-note clicks", async () => {
     const file = createTestDiffFile(
       "click-line",

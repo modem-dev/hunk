@@ -53,6 +53,11 @@ and throw `HunkExtensionUserError` for failures. The host tracks started writes 
 and refreshes status and diff before allowing another action. These are terminal-host actions,
 not implicit remote capabilities.
 
+API v18 adds `stageHunk(input, file, hunk, ctx)` and `unstageHunk(input, file, hunk, ctx)`.
+The target uses `ExtensionDiffHunk`'s numbered summary. Recover and validate the canonical provider
+patch and comparison base before applying original bytes, not text-converted output; leave other hunks and worktree bytes untouched. These actions address
+the active stream side, even when the file has both staged and unstaged changes.
+
 ## Detection order
 
 Detection prefers the **nearest** checkout: a Git repository nested inside a jj workspace is reviewed as Git, whatever the priorities say. The same rule covers your adapter — a Mercurial checkout inside a Git repository is reviewed as Mercurial. `detectionPriority` only decides which backend wins when several recognize the _same_ directory — the colocated case, where one working copy carries two sets of markers.

@@ -167,7 +167,7 @@ describe("PTY scrolling", () => {
       args: ["diff", "--mode", "split"],
       cwd: fixture.dir,
       cols: 220,
-      rows: 10,
+      rows: 11,
     });
 
     try {

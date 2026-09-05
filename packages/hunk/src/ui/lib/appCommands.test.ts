@@ -108,6 +108,20 @@ describe("built-in command chords", () => {
     );
     expect(actions).toHaveLength(2);
   });
+  test("focused hunk staging owns Space without invoking file staging", () => {
+    const actions: string[] = [];
+    const { commands } = createTestCommands(undefined, {
+      canToggleFileStaged: false,
+      canToggleHunkStaged: true,
+      toggleHunkStaged: () => actions.push("hunk"),
+      toggleFileStaged: () => actions.push("file"),
+    });
+    expect(dispatchAppCommand(commands, keyEvent({ name: "space" }))?.id).toBe(
+      "hunk.review.toggleHunkStaged",
+    );
+    expect(actions).toEqual(["hunk"]);
+  });
+
   test("every alias of the scroll shortcuts still dispatches", () => {
     const { commands, ran } = createTestCommands();
     const press = (fields: Partial<ParsedKey>) =>
@@ -289,7 +303,11 @@ describe("builtinCommandKeyDefaults", () => {
     expect(defaults.map((entry) => entry.id)).toEqual(commands.map((command) => command.id));
     expect(
       commands.filter((command) => !command.publicToExtensions).map((command) => command.id),
-    ).toEqual(["hunk.review.toggleFileStaged", "hunk.review.toggleStagedView"]);
+    ).toEqual([
+      "hunk.review.toggleHunkStaged",
+      "hunk.review.toggleFileStaged",
+      "hunk.review.toggleStagedView",
+    ]);
     expect(defaults.find((entry) => entry.id === "hunk.review.pageDown")?.defaultKeys).toEqual([
       "pagedown",
       "space",

@@ -1098,10 +1098,20 @@ export type ExtensionVcsFileMutation = (
   context: ExtensionVcsLoadContext,
 ) => Promise<void>;
 
+/** Mutate one attested, numbered patch hunk while preserving the other hunks and worktree. */
+export type ExtensionVcsHunkMutation = (
+  input: ExtensionVcsDiffInput,
+  file: ExtensionWorkingTreeFile,
+  hunk: ExtensionDiffHunk,
+  context: ExtensionVcsLoadContext,
+) => Promise<void>;
+
 /** Load a working-tree review and optionally offer explicit index mutations. */
 export interface ExtensionVcsWorkingTreeOperation extends ExtensionVcsOperation<ExtensionVcsDiffInput> {
   stageFile?: ExtensionVcsFileMutation;
   unstageFile?: ExtensionVcsFileMutation;
+  stageHunk?: ExtensionVcsHunkMutation;
+  unstageHunk?: ExtensionVcsHunkMutation;
 }
 
 /** Navigate and stage the host's current working-tree inventory from a mounted pane. */

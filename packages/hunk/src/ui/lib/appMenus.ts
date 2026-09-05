@@ -143,6 +143,7 @@ export function buildAppMenus({
       { commandId: "hunk.review.focusFilter", label: "Focus filter" },
       { commandId: "hunk.review.editSelectedFile", label: "Open file in editor" },
       { commandId: "hunk.review.toggleFileStaged" },
+      { commandId: "hunk.review.toggleHunkStaged" },
       { commandId: "hunk.review.toggleStagedView" },
       { commandId: "hunk.app.refresh", label: "Reload" },
       SEPARATOR,

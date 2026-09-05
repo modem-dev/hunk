@@ -497,7 +497,10 @@ export function toInternalVcsAdapter(
     : undefined;
   const internalWorkingTree = internalOperations["working-tree-diff"] as
     | (VcsOperation<VcsReviewInput> &
-        Pick<ExtensionVcsWorkingTreeOperation, "stageFile" | "unstageFile">)
+        Pick<
+          ExtensionVcsWorkingTreeOperation,
+          "stageFile" | "unstageFile" | "stageHunk" | "unstageHunk"
+        >)
     | undefined;
   if (workingTree && internalWorkingTree) {
     for (const name of ["stageFile", "unstageFile"] as const) {
@@ -506,6 +509,20 @@ export function toInternalVcsAdapter(
       internalWorkingTree[name] = async (input, file, context) => {
         try {
           await mutate(input, file, context);
+        } catch (error) {
+          throw toUserFacingError(error);
+        }
+      };
+    }
+  }
+
+  if (workingTree && internalWorkingTree) {
+    for (const name of ["stageHunk", "unstageHunk"] as const) {
+      const mutate = workingTree[name];
+      if (typeof mutate !== "function") continue;
+      internalWorkingTree[name] = async (input, file, hunk, context) => {
+        try {
+          await mutate(input, file, hunk, context);
         } catch (error) {
           throw toUserFacingError(error);
         }

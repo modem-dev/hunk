@@ -101,6 +101,34 @@ afterEach(async () => {
 });
 
 describe("working-tree stream actions", () => {
+  test("hunk navigation makes Space mutate only the active hunk on either stream side", async () => {
+    const original = Array.from({ length: 40 }, (_, index) => `line ${index + 1}\n`).join("");
+    const root = await createReview({
+      prepare: (root) => {
+        writeFileSync(join(root, "alpha.txt"), original);
+        runTestGit(root, "add", "alpha.txt");
+        runTestGit(root, "commit", "--only", "-m", "Long alpha", "--", "alpha.txt");
+        writeFileSync(
+          join(root, "alpha.txt"),
+          original.replace("line 2\n", "first change\n").replace("line 35\n", "second change\n"),
+        );
+      },
+    });
+    await press("]");
+    await press(" ");
+    await waitForReview(() => setup!.captureCharFrame().includes("Staged hunk 2 in alpha.txt."));
+    expect(runTestGit(root, "show", ":alpha.txt")).toBe(
+      original.replace("line 35\n", "second change\n"),
+    );
+    await press("\t");
+    await waitForReview(() => setup!.captureCharFrame().includes("second change"));
+    await press("[");
+    await press(" ");
+    await waitForReview(() => setup!.captureCharFrame().includes("Unstaged hunk 1 in alpha.txt."));
+    expect(runTestGit(root, "show", ":alpha.txt")).toBe(original);
+    expect(runTestGit(root, "show", ":beta.txt")).toBe("staged beta\n");
+  });
+
   test("a recreated rename source selects its own unstaged file before Space", async () => {
     const root = await createReview({
       staged: true,

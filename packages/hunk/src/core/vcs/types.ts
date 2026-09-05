@@ -45,7 +45,10 @@ export interface VcsOperation<Input extends VcsReviewInput> {
 
 export interface VcsOperations {
   "working-tree-diff"?: VcsOperation<VcsDiffCommandInput> &
-    Pick<ExtensionVcsWorkingTreeOperation, "stageFile" | "unstageFile">;
+    Pick<
+      ExtensionVcsWorkingTreeOperation,
+      "stageFile" | "unstageFile" | "stageHunk" | "unstageHunk"
+    >;
   "revision-show"?: VcsOperation<VcsShowCommandInput>;
   "stash-show"?: VcsOperation<VcsStashShowCommandInput>;
 }

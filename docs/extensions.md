@@ -538,6 +538,13 @@ unstaging must leave worktree contents unchanged. Throw `HunkExtensionUserError`
 failure. Hunk tracks started mutations through shutdown, blocks repeated actions until refresh,
 and reloads authoritative state even after a failed mutation.
 
+API v18 also adds optional `stageHunk(input, file, hunk, ctx)` and
+`unstageHunk(input, file, hunk, ctx)`. `hunk` is the existing `ExtensionDiffHunk` summary.
+Validate its numbered identity against the canonical provider patch after checking the file
+attestation, including its comparison base. Apply original patch bytes, never decoded or
+text-converted source. Preserve all other hunks and worktree content; reject unsupported textual changes.
+Hunk actions use the currently reviewed side rather than the file's combined staged status.
+
 Mounted panes receive optional `props.workingTree` with this inventory, `selectedPath`, `staged`,
 `busy`, `selectFile(path)`, and `toggleStaged(path)`. These controls expire on review reload.
 Selecting an inactive-side file switches stream tabs without reducing the review to one file.
