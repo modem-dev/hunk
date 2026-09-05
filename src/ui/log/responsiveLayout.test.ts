@@ -39,12 +39,12 @@ describe("responsive log layout", () => {
     expect(resolveLogResponsiveLayout(80, 24)).toMatchObject({
       density: "medium",
       rowHeight: 2,
-      visibleRows: 11,
+      visibleRows: 10,
     });
     expect(resolveLogResponsiveLayout(42, 18)).toMatchObject({
       density: "narrow",
       rowHeight: 2,
-      visibleRows: 8,
+      visibleRows: 7,
     });
   });
 

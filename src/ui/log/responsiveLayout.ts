@@ -37,7 +37,8 @@ export interface LogResponsiveRow {
 /** Derive one information-density policy from the actual terminal dimensions. */
 export function resolveLogResponsiveLayout(width: number, height: number): LogResponsiveLayout {
   const safeWidth = Math.max(1, width);
-  const bodyHeight = Math.max(1, height - 2);
+  // Reserve one row each for the menu, its breathing room, and the status bar.
+  const bodyHeight = Math.max(1, height - 3);
   const density: LogResponsiveDensity =
     safeWidth >= 96 ? "wide" : safeWidth >= 60 ? "medium" : "narrow";
   const rowHeight = density === "wide" ? 3 : 2;
