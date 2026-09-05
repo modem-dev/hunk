@@ -13,6 +13,8 @@ export interface HistoryRuntime {
   source: VcsHistorySource;
   providerId: string;
   providerName: string;
+  /** Invocation cwd used to resolve explicit extension paths for embedded reviews. */
+  startupCwd?: string;
   repoRoot: string;
   notices: readonly string[];
   customThemes: readonly NamedCustomThemeConfig[];

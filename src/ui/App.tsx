@@ -52,6 +52,7 @@ import {
   resolveCodeViewportWidth,
 } from "./diff/codeColumns";
 import { useAppKeyboardShortcuts } from "./hooks/useAppKeyboardShortcuts";
+import { useIntermediateRenderAfterMount } from "./hooks/useIntermediateRenderAfterMount";
 import { useCurrentReviewRefreshController } from "./hooks/useCurrentReviewRefreshController";
 import { useExtensionCommandRunner } from "./hooks/useExtensionCommandRunner";
 import { useExtensionDialogController } from "./hooks/useExtensionDialogController";
@@ -135,11 +136,13 @@ export function App({
   hostClient,
   noticeText,
   onQuit = () => process.exit(0),
+  onFirstFrameReady,
   onRegisterWorkspaceRefreshRequest,
   onReloadSession,
   onWorkspaceWriteCompleted,
   reviewProducer,
   runWorkspaceWrite,
+  returnToHistory = process.env.HUNK_RETURN_TO_HISTORY === "1",
   watchRuntime,
   workspaceFileWriter,
 }: {
@@ -147,6 +150,8 @@ export function App({
   hostClient?: HunkSessionBrokerClient;
   noticeText?: string | null;
   onQuit?: () => void;
+  /** Report once OpenTUI has committed the review's first requested frame. */
+  onFirstFrameReady?: () => void;
   /** Register the mounted review descriptor AppHost should reconcile after a completed write. */
   onRegisterWorkspaceRefreshRequest: (request: WorkspaceRefreshRequest) => () => void;
   onReloadSession: (
@@ -159,6 +164,8 @@ export function App({
   reviewProducer?: ReviewProducer;
   /** Start and track one irreversible write, or refuse it once graceful shutdown begins. */
   runWorkspaceWrite: WorkspaceWriteRunner;
+  /** Present quit as returning to the owning history surface. */
+  returnToHistory?: boolean;
   watchRuntime?: WatchedInputRuntime;
   workspaceFileWriter?: WorkspaceFileWriter;
 }) {
@@ -355,8 +362,7 @@ export function App({
     configPath: bootstrap.viewPreferencesConfigPath,
     pagerMode,
     promptSaveViewPreferences:
-      bootstrap.input.options.promptSaveViewPreferences !== false &&
-      process.env.HUNK_RETURN_TO_HISTORY !== "1",
+      bootstrap.input.options.promptSaveViewPreferences !== false && !returnToHistory,
     transientViewPreferences: extensionSessionOptions.transientViewPreferences,
     onQuit,
     showNotice: showSessionNotice,
@@ -725,11 +731,27 @@ export function App({
       ),
     [diffContentWidth, maxLineNumberDigits, resolvedLayout, showLineNumbers],
   );
+  // Redraw subsequent geometry changes without clearing a review mounted into an existing root.
+  useIntermediateRenderAfterMount(
+    renderer,
+    [renderSidebar, resolvedLayout, terminal.height, terminal.width, wrapLines],
+    Boolean(onFirstFrameReady),
+  );
+  const firstFrameReportedRef = useRef(false);
   useEffect(() => {
-    // Force an intermediate redraw when app geometry or row-wrapping changes so pane relayout
-    // feels immediate after toggling split/stack or line wrapping.
-    renderer.intermediateRender();
-  }, [renderer, renderSidebar, resolvedLayout, terminal.height, terminal.width, wrapLines]);
+    if (!onFirstFrameReady || firstFrameReportedRef.current) return;
+    let active = true;
+    renderer.requestRender();
+    void renderer.idle().then(() => {
+      if (active && !firstFrameReportedRef.current) {
+        firstFrameReportedRef.current = true;
+        onFirstFrameReady();
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [onFirstFrameReady, renderer]);
 
   /** Scroll the main review pane by line steps, viewport fractions, or whole-content jumps. */
   const scrollDiff = (
@@ -1062,7 +1084,7 @@ export function App({
         triggerEditSelectedFile,
         triggerRefreshCurrentInput,
       }).map((command) =>
-        process.env.HUNK_RETURN_TO_HISTORY === "1" && command.id === "hunk.app.quit"
+        returnToHistory && command.id === "hunk.app.quit"
           ? { ...command, title: "Back to history" }
           : command,
       ),
@@ -1336,6 +1358,7 @@ export function App({
             pagerMode={pagerMode}
             screenTop={diffPaneScreenTop}
             showTopChrome={showMenuBar}
+            skipInitialIntermediateRender={Boolean(onFirstFrameReady)}
             headerLabelWidth={diffHeaderLabelWidth}
             headerStatsWidth={diffHeaderStatsWidth}
             layout={resolvedLayout}

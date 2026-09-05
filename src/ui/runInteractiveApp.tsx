@@ -1,6 +1,7 @@
 import { createNativeSessionBrokerLifecycleClock } from "@hunk/session-broker";
 import { createCliRenderer } from "@opentui/core";
 import { createRoot } from "@opentui/react";
+import { resolve } from "node:path";
 import {
   installJobControlInterruptSupport,
   installJobControlSuspendSupport,
@@ -16,6 +17,7 @@ import {
 } from "../core/process/terminal";
 import type { AppBootstrap } from "../core/bootstrap";
 import { resolveStartupUpdateNotice } from "../core/process/updateNotice";
+import { prepareStartupPlan } from "../app/startup";
 import { ReviewProducer } from "../app/review/producer";
 import {
   createInitialSessionSnapshot,
@@ -23,6 +25,9 @@ import {
 } from "../app/session/registration";
 import { SessionBrokerClient } from "../session/broker/brokerClient";
 import { reportHunkSessionBrokerLifecycleDefect } from "../session/broker/lifecycleDefect";
+import type { ExtensionVcsHistoryReviewAction } from "../extension-api/types";
+import type { HistoryRuntime } from "./history/types";
+import { historyReviewArgs } from "./log/reviewLaunch";
 import { AppHost } from "./AppHost";
 import { disposeHighlightWorker } from "./diff/worker";
 import { retireExtensionLoadResult } from "../extensions/events";
@@ -31,6 +36,96 @@ import type { ExtensionLoadResult } from "../extensions/types";
 export interface InteractiveAppInput {
   bootstrap: AppBootstrap<ExtensionLoadResult>;
   controllingTerminal: ControllingTerminal | null;
+}
+
+export interface ReviewSessionRuntime {
+  hostClient: SessionBrokerClient;
+  reviewProducer: ReviewProducer;
+  stop(): void;
+}
+
+export interface EmbeddedHistoryReview {
+  bootstrap: AppBootstrap<ExtensionLoadResult>;
+}
+
+/** Create broker and producer resources for one independently mountable review surface. */
+export function createReviewSessionRuntime(
+  bootstrap: AppBootstrap<ExtensionLoadResult>,
+  cwd = process.cwd(),
+): ReviewSessionRuntime {
+  const reviewProducer = new ReviewProducer({
+    files: bootstrap.changeset.files,
+    sourceLabel: bootstrap.changeset.sourceLabel,
+  });
+  const publication = reviewProducer.getPublication();
+  const lifecycleClock = createNativeSessionBrokerLifecycleClock();
+  const hostClient = new SessionBrokerClient(
+    createSessionRegistration(bootstrap, publication, cwd),
+    createInitialSessionSnapshot(bootstrap, publication),
+    { lifecycleClock, onDefect: reportHunkSessionBrokerLifecycleDefect },
+  );
+  hostClient.start();
+  let stopped = false;
+  return {
+    hostClient,
+    reviewProducer,
+    stop() {
+      if (stopped) return;
+      stopped = true;
+      hostClient.stop();
+    },
+  };
+}
+
+/** Bootstrap one provider-planned history review without creating or claiming a renderer. */
+export async function prepareEmbeddedHistoryReview(
+  runtime: HistoryRuntime,
+  action: ExtensionVcsHistoryReviewAction,
+  {
+    themeId,
+    themeMode,
+    signal,
+    env = process.env,
+    prepareStartupPlanImpl = prepareStartupPlan,
+  }: {
+    themeId?: string;
+    themeMode?: "dark" | "light";
+    signal?: AbortSignal;
+    env?: NodeJS.ProcessEnv;
+    prepareStartupPlanImpl?: typeof prepareStartupPlan;
+  } = {},
+): Promise<EmbeddedHistoryReview> {
+  signal?.throwIfAborted();
+  const startupCwd = runtime.startupCwd ?? runtime.repoRoot;
+  const extensionArgs = runtime.input.extensionPaths.flatMap((path) => [
+    "--extension",
+    resolve(startupCwd, path),
+  ]);
+  const args = [
+    ...historyReviewArgs(action),
+    "--vcs",
+    runtime.providerId,
+    ...(themeId ? ["--theme", themeId] : []),
+    ...(runtime.input.extensionsEnabled ? extensionArgs : ["--no-extensions"]),
+  ];
+  const plan = await prepareStartupPlanImpl(["hunk", "hunk", ...args], {
+    cwd: runtime.repoRoot,
+    env,
+    signal,
+    stdinIsTTY: true,
+    stdoutIsTTY: true,
+    terminalThemeMode: themeMode,
+  });
+  if (signal?.aborted && plan.kind === "app") {
+    plan.controllingTerminal?.close();
+    await retireExtensionLoadResult(plan.bootstrap.extensions);
+    signal.throwIfAborted();
+  }
+  if (plan.kind !== "app") {
+    throw new Error("The selected commit did not produce an interactive review.");
+  }
+  plan.controllingTerminal?.close();
+  return { bootstrap: plan.bootstrap as AppBootstrap<ExtensionLoadResult> };
 }
 
 // Leave fatal process faults to their default OS disposition.
@@ -44,21 +139,8 @@ export async function runInteractiveApp({
   bootstrap,
   controllingTerminal,
 }: InteractiveAppInput): Promise<void> {
-  // One producer owns this review's generations for the life of the process: the
-  // registration and the first snapshot are projections of its first publication, and every
-  // reload publishes the next one through the same object.
-  const reviewProducer = new ReviewProducer({
-    files: bootstrap.changeset.files,
-    sourceLabel: bootstrap.changeset.sourceLabel,
-  });
-  const publication = reviewProducer.getPublication();
-  const lifecycleClock = createNativeSessionBrokerLifecycleClock();
-  const hostClient = new SessionBrokerClient(
-    createSessionRegistration(bootstrap, publication),
-    createInitialSessionSnapshot(bootstrap, publication),
-    { lifecycleClock, onDefect: reportHunkSessionBrokerLifecycleDefect },
-  );
-  hostClient.start();
+  const reviewSession = createReviewSessionRuntime(bootstrap, bootstrap.reloadContext.cwd);
+  const { hostClient, reviewProducer } = reviewSession;
 
   // Keep OpenTUI's platform-safe threading default (enabled on macOS, disabled on Linux).
   const rendererStdin = controllingTerminal?.stdin ?? process.stdin;
@@ -78,7 +160,7 @@ export async function runInteractiveApp({
       onDestroy: () => controllingTerminal?.close(),
     });
   } catch (error) {
-    hostClient.stop();
+    reviewSession.stop();
     controllingTerminal?.close();
     await retireExtensionLoadResult(bootstrap.extensions);
     throw error;
@@ -89,7 +171,7 @@ export async function runInteractiveApp({
   try {
     root = createRoot(appRenderer);
   } catch (error) {
-    hostClient.stop();
+    reviewSession.stop();
     appRenderer.destroy();
     controllingTerminal?.close();
     await retireExtensionLoadResult(bootstrap.extensions);
@@ -119,7 +201,7 @@ export async function runInteractiveApp({
     jobControlInterruptSupport.dispose();
     jobControlSuspendSupport.dispose();
     terminalDisconnectSupport.dispose();
-    hostClient.stop();
+    reviewSession.stop();
     // Release the syntax worker here rather than from the executable entrypoint: this function
     // returns once the app is mounted, so an entrypoint-side dispose would fire before the first
     // eligible diff ever asked for the worker.

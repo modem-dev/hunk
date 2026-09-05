@@ -105,23 +105,23 @@ describe("interactive hunk log", () => {
       const firstRow = history.split("\n")[firstRowIndex] ?? "";
       const commitColumn = firstRow.search(/[0-9a-f]{8}\s+⧉\s*$/);
       expect(commitColumn).toBeGreaterThan(0);
+      const transitionOutputStart = session.getRawOutput().length;
       session.writeRaw(
         `\x1b[<0;${commitColumn + 1};${firstRowIndex + 1}M\x1b[<0;${commitColumn + 1};${firstRowIndex + 1}m`,
       );
-      const preparing = await session.waitForText(/Opening commit[\s\S]*Preparing review…/, {
-        timeout: 5_000,
-      });
-      expect(preparing).not.toContain("historyValue = 'second'");
       const review = await session.waitForText(/historyValue = 'second'/, {
         timeout: 15_000,
       });
       expect(review).toContain("history.ts");
+      expect(session.getRawOutput().slice(transitionOutputStart)).not.toContain("\x1b[?1049l");
 
+      const returnOutputStart = session.getRawOutput().length;
       await session.press("q");
       const returned = await session.waitForText(/Second history commit/, {
         timeout: 15_000,
       });
       expect(returned).toContain("Enter open");
+      expect(session.getRawOutput().slice(returnOutputStart)).not.toContain("\x1b[?1049l");
 
       // The adjacent icon copies without opening the review.
       session.writeRaw(

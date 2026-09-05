@@ -30,6 +30,8 @@ export interface SessionBootstrapOptions {
   loadAppBootstrapImpl?: typeof loadAppBootstrap;
   /** Base product adapters composed before user extensions are applied. */
   baseVcsCatalog?: VcsCatalog;
+  /** Cancel initial provider-backed loading for an abandoned embedded surface. */
+  signal?: AbortSignal;
 }
 
 export interface SessionBootstrapResult {
@@ -57,7 +59,9 @@ export async function loadConfiguredSessionBootstrap({
   loadAtCwd = false,
   loadAppBootstrapImpl = loadAppBootstrap,
   baseVcsCatalog = getBundledVcsCatalog(),
+  signal,
 }: SessionBootstrapOptions): Promise<SessionBootstrapResult> {
+  signal?.throwIfAborted();
   const previousFileLanguages = fileLanguageRegistrationSnapshot();
 
   try {
@@ -84,8 +88,11 @@ export async function loadConfiguredSessionBootstrap({
       ...(loadAtCwd ? { cwd } : {}),
       customThemes: sessionThemes.themes,
       vcsCatalog: applied.vcsCatalog,
+      signal,
     })) as AppBootstrap;
+    signal?.throwIfAborted();
     bootstrap.changeset = await applyExtensionChangesetTransforms(extensions, bootstrap.changeset);
+    signal?.throwIfAborted();
     bootstrap.initialThemeMode = initialThemeMode ?? bootstrap.initialThemeMode;
     bootstrap.extensions = extensions;
     bootstrap.viewPreferencesConfigPath = configured.viewPreferencesConfigPath;
