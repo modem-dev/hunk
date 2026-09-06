@@ -6,10 +6,26 @@ const REPO_ROOT = resolve(import.meta.dir, "..");
 const SRC_ROOT = join(REPO_ROOT, "packages", "hunk", "src");
 const CORE_ROOT = join(SRC_ROOT, "core");
 const EXTENSIONS_ROOT = join(SRC_ROOT, "extensions");
-const BUNDLED_PROVIDER_ROOT = join(EXTENSIONS_ROOT, "default", "vcs");
+const BUNDLED_VCS_COMPOSITION_ROOT = join(EXTENSIONS_ROOT, "default", "vcs");
 const GIT_PACKAGE_ROOT = join(REPO_ROOT, "packages", "hunk-git", "src");
 const JJ_PACKAGE_ROOT = join(REPO_ROOT, "packages", "hunk-jj", "src");
+const SAPLING_PACKAGE_ROOT = join(REPO_ROOT, "packages", "hunk-sapling", "src");
 const VCS_PACKAGE_ROOT = join(REPO_ROOT, "packages", "hunk-vcs", "src");
+const PROVIDER_IMPORTS = new Set([
+  "hunkdiff/extension",
+  "@hunk/vcs/async-process",
+  "@hunk/vcs/diff-target",
+  "@hunk/vcs/large-file",
+  "@hunk/vcs/path",
+  "@hunk/vcs/source",
+]);
+const PROVIDER_ROOTS = [GIT_PACKAGE_ROOT, JJ_PACKAGE_ROOT, SAPLING_PACKAGE_ROOT] as const;
+const PROVIDER_HOST_IMPORTS = new Map([
+  [
+    repoPath(join(BUNDLED_VCS_COMPOSITION_ROOT, "index.ts")),
+    ["@hunk/git", "@hunk/jj", "@hunk/sapling"],
+  ],
+]);
 const REVIEW_MODEL_ROOT = join(CORE_ROOT, "review");
 // The published extension contract, which the review model may name for the annotation shapes
 // that are simultaneously internal model types and part of `hunkdiff/extension`. It cannot widen
@@ -158,38 +174,27 @@ function unexpectedExternalImports(
   });
 }
 
-/** Find bundled provider imports outside local modules, Node, and approved public leaves. */
+/** Find provider imports outside local modules, platform runtimes, and approved public leaves. */
 function unexpectedProviderImports() {
-  const allowedImports = new Set([
-    "hunkdiff/extension",
-    "@hunk/vcs/async-process",
-    "@hunk/vcs/diff-target",
-    "@hunk/vcs/large-file",
-    "@hunk/vcs/path",
-    "@hunk/vcs/source",
-  ]);
-  return [BUNDLED_PROVIDER_ROOT, GIT_PACKAGE_ROOT, JJ_PACKAGE_ROOT].flatMap((providerRoot) =>
-    sourceFiles(providerRoot).flatMap((path) =>
-      importSpecifiers(path)
-        // The lightweight scanner can match prose ending in `from "…"`; module specifiers
-        // never contain whitespace.
-        .filter((specifier) => !/\s/.test(specifier))
-        .filter((specifier) => {
-          if (
-            specifier.startsWith(".") ||
-            specifier.startsWith("node:") ||
-            specifier.startsWith("bun:") ||
-            allowedImports.has(specifier)
-          ) {
-            return false;
-          }
-          return !(
-            path === join(BUNDLED_PROVIDER_ROOT, "index.ts") &&
-            (specifier === "@hunk/git" || specifier === "@hunk/jj")
-          );
-        })
-        .map((specifier) => `${repoPath(path)} -> ${specifier}`),
-    ),
+  return [...PROVIDER_ROOTS, BUNDLED_VCS_COMPOSITION_ROOT].flatMap((providerRoot) =>
+    sourceFiles(providerRoot).flatMap((path) => {
+      const exceptions = PROVIDER_HOST_IMPORTS.get(repoPath(path)) ?? [];
+      return (
+        importSpecifiers(path)
+          // The lightweight scanner can match prose ending in `from "…"`; module specifiers
+          // never contain whitespace.
+          .filter((specifier) => !/\s/.test(specifier))
+          .filter(
+            (specifier) =>
+              !specifier.startsWith(".") &&
+              !specifier.startsWith("node:") &&
+              !specifier.startsWith("bun:") &&
+              !PROVIDER_IMPORTS.has(specifier) &&
+              !exceptions.includes(specifier),
+          )
+          .map((specifier) => `${repoPath(path)} -> ${specifier}`)
+      );
+    }),
   );
 }
 
@@ -314,9 +319,10 @@ describe("source architecture boundaries", () => {
   });
 
   test("keeps bundled providers on the public contract and explicit VCS helper leaves", () => {
-    expect(forbiddenImports(BUNDLED_PROVIDER_ROOT, CORE_ROOT)).toEqual([]);
-    expect(escapingImports(GIT_PACKAGE_ROOT, [GIT_PACKAGE_ROOT])).toEqual([]);
-    expect(escapingImports(JJ_PACKAGE_ROOT, [JJ_PACKAGE_ROOT])).toEqual([]);
+    expect(forbiddenImports(BUNDLED_VCS_COMPOSITION_ROOT, CORE_ROOT)).toEqual([]);
+    for (const providerRoot of PROVIDER_ROOTS) {
+      expect(escapingImports(providerRoot, [providerRoot])).toEqual([]);
+    }
     expect(unexpectedProviderImports()).toEqual([]);
   });
 

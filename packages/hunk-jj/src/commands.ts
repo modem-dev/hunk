@@ -36,7 +36,7 @@ function parseJjCommitIds(output: string) {
 }
 
 /** Reject a Jujutsu revision that could be interpreted as a command option. */
-export function requireJjRevisionArg(input: JjBackedInput, value: string) {
+function requireJjRevisionArg(input: JjBackedInput, value: string) {
   if (value.length === 0) {
     throw new HunkExtensionUserError(
       `\`${formatJjCommandLabel(input)}\` refused an empty revision.`,
@@ -100,7 +100,7 @@ export function buildJjShowArgs(input: ExtensionVcsShowInput, pinnedRevision?: s
   return args;
 }
 
-export function formatJjCommandLabel(input: JjBackedInput) {
+function formatJjCommandLabel(input: JjBackedInput) {
   if (input.kind === "vcs") {
     if (input.staged) {
       return "hunk diff --staged";

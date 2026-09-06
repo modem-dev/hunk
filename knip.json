@@ -44,8 +44,11 @@
     },
     "packages/hunk-jj": {
       "entry": ["src/**/*.test.ts"],
-      "project": ["src/**/*.ts"],
-      "ignoreExportsUsedInFile": true
+      "project": ["src/**/*.ts"]
+    },
+    "packages/hunk-sapling": {
+      "entry": ["src/**/*.test.ts"],
+      "project": ["src/**/*.ts"]
     },
     "packages/hunk-vcs": {
       "entry": ["src/**/*.test.ts"],

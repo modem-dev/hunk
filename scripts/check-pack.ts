@@ -435,9 +435,22 @@ const forbiddenPaths = ["AGENTS.md", "bun.lock"];
 for (const file of pack.files) {
   if (
     forbiddenPrefixes.some((prefix) => file.path.startsWith(prefix)) ||
-    forbiddenPaths.includes(file.path)
+    forbiddenPaths.includes(file.path) ||
+    file.path.startsWith("packages/")
   ) {
     throw new Error(`Unexpected file in npm package: ${file.path}`);
+  }
+}
+
+// The private provider workspaces compile into Hunk's runtime bundle. None may survive as a
+// runtime import that an npm install would have to resolve separately.
+const bundledRuntime = readFileSync(path.join(appRoot, "dist", "npm", "main.js"), "utf8");
+for (const packageName of ["@hunk/git", "@hunk/jj", "@hunk/sapling", "@hunk/vcs"]) {
+  const escapedName = packageName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  if (
+    new RegExp(`(?:from\\s*|import\\s*\\(\\s*)["']${escapedName}(?:/|["'])`).test(bundledRuntime)
+  ) {
+    throw new Error(`The Hunk runtime bundle must not import private package ${packageName}.`);
   }
 }
 

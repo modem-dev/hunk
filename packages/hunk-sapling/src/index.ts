@@ -21,8 +21,9 @@ import {
 /**
  * Hunk's Sapling backend, as a bundled extension.
  *
- * Like the Jujutsu one, this file sees only the published contract plus helpers
- * owned by this extension directory.
+ * Like the Jujutsu one, this file sees only the published `hunkdiff/extension`
+ * contract, explicit `@hunk/vcs` infrastructure leaves, and modules owned by
+ * this package.
  */
 
 /** Return the last path segment for review titles. */

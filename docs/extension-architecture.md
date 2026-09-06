@@ -15,11 +15,11 @@ object and registry collection (`packages/hunk/src/extensions/runExtension.ts`):
   `loadAppBootstrap` (`packages/hunk/src/extensions/startup.ts`, `packages/hunk/src/extensions/host.ts`).
   Discovery groups and trust gating: `packages/hunk/src/extensions/discovery.ts`,
   `packages/hunk/src/extensions/trust.ts`.
-- **Bundled extensions** live in `packages/hunk/src/extensions/default/` and are compiled
-  into the binary. `default/vcs/{git,jujutsu,sapling}` is statically imported
-  by the app composition root (`app/vcsCatalog.ts`) and loaded synchronously
-  before config resolution, so backends exist without making core import the
-  extension host. `default/ui/index.ts` is deliberately not part of that list:
+- **Bundled extensions** are compiled into the binary. The private
+  `packages/hunk-{git,jj,sapling}` provider workspaces are statically imported by
+  `packages/hunk/src/extensions/default/vcs/index.ts`; the app composition root
+  (`app/vcsCatalog.ts`) loads them synchronously before config resolution, so backends exist
+  without making core import the extension host. `default/ui/index.ts` is deliberately not part of that list:
   it synchronously loads the bundled files and delegated review-info panes through
   `runExtensionFactory` only where the app resolves UI panes.
 
@@ -337,8 +337,10 @@ watch. Detection is uniform across tiers: nearest checkout wins, priority breaks
 equal-distance ties, and an explicit `vcs` id owned by the catalog wins.
 
 Provider implementations — command construction, spawning, error translation,
-and exact-source reading — live entirely under
-`packages/hunk/src/extensions/default/vcs/<provider>/`. `packages/hunk/src/extensions/vcsPatchResult.ts` is
+and exact-source reading — live entirely in the private `packages/hunk-{git,jj,sapling}`
+workspaces and import the public `hunkdiff/extension` contract plus only explicit
+provider-neutral `@hunk/vcs/*` implementation subpaths.
+`packages/hunk/src/extensions/vcsPatchResult.ts` is
 the one conversion boundary where a published `ExtensionVcsPatchResult`
 becomes Hunk's internal diff model, including structural `too-large` source
 results. `packages/hunk/src/core/process/projectRoot.ts` treats `.hunk` as a provider-independent

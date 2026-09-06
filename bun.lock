@@ -8,6 +8,7 @@
         "@changesets/changelog-github": "^0.7.0",
         "@hunk/git": "workspace:*",
         "@hunk/jj": "workspace:*",
+        "@hunk/sapling": "workspace:*",
         "@hunk/session-broker": "workspace:*",
         "@hunk/session-broker-bun": "workspace:*",
         "@hunk/session-broker-core": "workspace:*",
@@ -88,6 +89,14 @@
         "hunkdiff": "workspace:*",
       },
     },
+    "packages/hunk-sapling": {
+      "name": "@hunk/sapling",
+      "version": "0.0.0",
+      "dependencies": {
+        "@hunk/vcs": "workspace:*",
+        "hunkdiff": "workspace:*",
+      },
+    },
     "packages/hunk-vcs": {
       "name": "@hunk/vcs",
       "version": "0.0.0",
@@ -150,6 +159,8 @@
     "@hunk/git": ["@hunk/git@workspace:packages/hunk-git"],
 
     "@hunk/jj": ["@hunk/jj@workspace:packages/hunk-jj"],
+
+    "@hunk/sapling": ["@hunk/sapling@workspace:packages/hunk-sapling"],
 
     "@hunk/session-broker": ["@hunk/session-broker@workspace:packages/session-broker"],
 

@@ -26,11 +26,15 @@ describe("@hunk/vcs package boundary", () => {
     const manifest = JSON.parse(readFileSync(join(PACKAGE_ROOT, "package.json"), "utf8")) as {
       name: string;
       private: boolean;
+      files: string[];
       exports: Record<string, unknown>;
+      dependencies?: Record<string, string>;
     };
 
     expect(manifest.name).toBe("@hunk/vcs");
     expect(manifest.private).toBe(true);
+    expect(manifest.files).toEqual(["src"]);
+    expect(manifest.dependencies ?? {}).toEqual({});
     expect(Object.keys(manifest.exports).sort()).toEqual(EXPECTED_EXPORTS);
     expect(manifest.exports["."]).toBeUndefined();
   });

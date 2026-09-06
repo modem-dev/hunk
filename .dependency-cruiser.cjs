@@ -94,6 +94,17 @@ module.exports = {
       },
     },
     {
+      name: "hunk-sapling-stays-on-vcs-contract",
+      comment:
+        "@hunk/sapling owns the Sapling provider and may reach only its local modules, the public extension contract, and explicit dependency-bottom @hunk/vcs leaves.",
+      severity: "error",
+      from: { path: "^packages/hunk-sapling/src/" },
+      to: {
+        path: "^packages/",
+        pathNot: "^packages/(hunk-sapling|hunk-vcs)/src/|^packages/hunk/src/extension-api/",
+      },
+    },
+    {
       name: "lib-is-a-leaf",
       comment:
         "packages/hunk/src/lib holds leaf compatibility exports; it may reach the extension contract and dependency-bottom @hunk/vcs helpers only.",
@@ -203,7 +214,7 @@ module.exports = {
       severity: "error",
       from: {
         path: "^packages/(?!hunk/)",
-        pathNot: "^packages/hunk-(git|jj)/",
+        pathNot: "^packages/hunk-(git|jj|sapling)/",
       },
       to: { path: "^packages/hunk/src/" },
     },

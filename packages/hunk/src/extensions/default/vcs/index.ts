@@ -1,6 +1,6 @@
 import gitExtension from "@hunk/git";
 import jjExtension from "@hunk/jj";
-import slExtension from "./sapling";
+import slExtension from "@hunk/sapling";
 import { runExtensionFactory } from "../../runExtension";
 import {
   createEmptyExtensionRegistry,

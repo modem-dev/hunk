@@ -53,9 +53,10 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
   repaid seam finding deletes copies, adds a file or banned-symbol tombstone and adversarial
   fixture, registers consumers, and updates `docs/browser-review-seam-audit.md`.
 
-- Bundled VCS implementations live under `packages/hunk/src/extensions/default/vcs/<provider>/` and consume the
-  public extension contract; `packages/hunk/src/app` composes their registrations into the provider-neutral
-  core VCS catalog. Do not add provider commands, spawning, or source readers under `packages/hunk/src/core`.
+- Bundled VCS implementations live in the private `packages/hunk-{git,jj,sapling}` workspaces and consume
+  the public `hunkdiff/extension` contract plus explicit `@hunk/vcs/*` implementation leaves;
+  `packages/hunk/src/app` composes their registrations into the
+  provider-neutral core VCS catalog. Do not add provider commands, spawning, or source readers under `packages/hunk/src/core`.
 - `hunk daemon serve` is the one loopback daemon for all live sessions; sessions auto-start and
   register with it rather than opening per-TUI ports. Reuse `classifyReviewPublication` and
   `ReviewChunkAssembler` for publication ordering and bounded, digest-verified resources. Browser

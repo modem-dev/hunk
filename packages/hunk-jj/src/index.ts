@@ -26,8 +26,9 @@ import {
  *
  * This file is written the way a third-party VCS extension would be: it sees
  * only the published `hunkdiff/extension` contract plus implementation helpers
- * owned by this extension directory. If something here cannot be said in those
- * types, the contract is missing something.
+ * owned by this package and explicit `@hunk/vcs` infrastructure leaves. If
+ * something here cannot be said in those types, the contract is missing
+ * something.
  */
 
 /** Return the last path segment for review titles. */

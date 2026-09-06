@@ -75,4 +75,6 @@ This is an incremental migration, not a bulk rename:
 
 Current composition lives in `app/`: `app/vcsCatalog.ts` assembles bundled registrations into a
 provider-neutral catalog, and `app/sessionBootstrap.ts` extends that catalog with user adapters.
-Provider commands, source readers, and tests live under `extensions/default/vcs/<provider>/`.
+Provider commands, source readers, and tests live in the private
+`packages/hunk-{git,jj,sapling}` workspaces; `extensions/default/vcs/index.ts` preserves their
+bundled activation order.

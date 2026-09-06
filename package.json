@@ -79,6 +79,7 @@
     "@changesets/changelog-github": "^0.7.0",
     "@hunk/git": "workspace:*",
     "@hunk/jj": "workspace:*",
+    "@hunk/sapling": "workspace:*",
     "@hunk/session-broker": "workspace:*",
     "@hunk/session-broker-bun": "workspace:*",
     "@hunk/session-broker-core": "workspace:*",

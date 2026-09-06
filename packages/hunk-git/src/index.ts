@@ -44,11 +44,11 @@ import {
  * file sources, skipped-too-large placeholders, untracked files, watch plans,
  * rich failures — so it is deliberately written the way a third-party backend
  * would be: it sees only the published `hunkdiff/extension` contract plus
- * implementation helpers owned by this extension directory and explicit
- * `@hunk/vcs` infrastructure leaves. Nothing here reaches into core, the diff
- * engine, or the adapter registry. If something Git needs cannot be said in
- * these types, the published contract is missing it, and that is the point of
- * shipping it this way.
+ * implementation helpers owned by this package and explicit `@hunk/vcs`
+ * infrastructure leaves. Nothing here reaches into core, the diff engine, or
+ * the adapter registry. If something Git needs cannot be said in these types,
+ * the published contract is missing it, and that is the point of shipping it
+ * this way.
  */
 
 /** Return the last path segment for review titles. */

@@ -3,10 +3,9 @@ import { join } from "node:path";
 import { createSkippedBinaryMetadata, isProbablyBinaryFile } from "../changeset/binary";
 import { buildDiffFile, createSkippedLargeMetadata } from "../changeset/diffFile";
 import { createFileSourceFetcher } from "../changeset/fileSource";
-import { inspectLargeUntrackedFile } from "../../lib/largeFile";
+import { inspectLargeUntrackedFile, type LargeFileCheck } from "@hunk/vcs/large-file";
 import { escapeUntrackedPatchPath } from "../../lib/patchPath";
 import { parseSingleFilePatch } from "../patch/singleFile";
-import type { LargeFileCheck } from "../../lib/largeFile";
 
 /**
  * Host-side synthesis of untracked files into reviewable diffs.

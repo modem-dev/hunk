@@ -20,7 +20,7 @@ export interface RunSlTextOptions {
 }
 
 /** Reject a Sapling revision that could be interpreted as a command option. */
-export function requireSlRevisionArg(input: SlBackedInput, value: string) {
+function requireSlRevisionArg(input: SlBackedInput, value: string) {
   if (value.length === 0) {
     throw new HunkExtensionUserError(
       `\`${formatSlCommandLabel(input)}\` refused an empty revision.`,
@@ -87,7 +87,7 @@ function buildSlStatusArgs(input: ExtensionVcsDiffInput) {
 }
 
 /** Format a user-facing label for the Sapling command being run. */
-export function formatSlCommandLabel(input: SlBackedInput) {
+function formatSlCommandLabel(input: SlBackedInput) {
   if (input.kind === "vcs") {
     if (input.staged) {
       return "hunk diff --staged";
