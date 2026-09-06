@@ -83,6 +83,17 @@ module.exports = {
       },
     },
     {
+      name: "hunk-jj-stays-on-vcs-contract",
+      comment:
+        "@hunk/jj owns the Jujutsu provider and may reach only its local modules, the public extension contract, and explicit dependency-bottom @hunk/vcs leaves.",
+      severity: "error",
+      from: { path: "^packages/hunk-jj/src/" },
+      to: {
+        path: "^packages/",
+        pathNot: "^packages/(hunk-jj|hunk-vcs)/src/|^packages/hunk/src/extension-api/",
+      },
+    },
+    {
       name: "lib-is-a-leaf",
       comment:
         "packages/hunk/src/lib holds leaf compatibility exports; it may reach the extension contract and dependency-bottom @hunk/vcs helpers only.",
@@ -192,7 +203,7 @@ module.exports = {
       severity: "error",
       from: {
         path: "^packages/(?!hunk/)",
-        pathNot: "^packages/hunk-git/",
+        pathNot: "^packages/hunk-(git|jj)/",
       },
       to: { path: "^packages/hunk/src/" },
     },

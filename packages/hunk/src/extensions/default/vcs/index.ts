@@ -1,5 +1,5 @@
 import gitExtension from "@hunk/git";
-import jjExtension from "./jujutsu";
+import jjExtension from "@hunk/jj";
 import slExtension from "./sapling";
 import { runExtensionFactory } from "../../runExtension";
 import {
