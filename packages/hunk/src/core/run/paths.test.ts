@@ -96,6 +96,59 @@ describe("paths", () => {
     }
   });
 
+  test("prefers a staged skill beside the binary over a generic one further up", () => {
+    const tempRoot = createTempRoot("hunk-skill-proximity-");
+
+    try {
+      // A source install stages its skills under `hunkdiff/` beside the executable, so a
+      // reviewer with their own `skills/` directory anywhere above the bin directory must
+      // not shadow it. Exhausting the generic shape to the filesystem root first did.
+      const installDir = join(tempRoot, ".local", "bin");
+      const installedSkill = join(installDir, "hunkdiff", "skills", "hunk-review", "SKILL.md");
+      const unrelatedSkill = join(tempRoot, "skills", "hunk-review", "SKILL.md");
+      const fakeBinary = join(installDir, "hunk");
+
+      mkdirSync(dirname(installedSkill), { recursive: true });
+      mkdirSync(dirname(unrelatedSkill), { recursive: true });
+      writeFileSync(installedSkill, "# installed\n");
+      writeFileSync(unrelatedSkill, "# unrelated\n");
+      writeFileSync(fakeBinary, "binary\n");
+
+      expect(resolveBundledSkillPath("hunk-review", [fakeBinary])).toBe(installedSkill);
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("prefers the packaged layout over a generic skills directory beside it", () => {
+    const tempRoot = createTempRoot("hunk-skill-specificity-");
+
+    try {
+      // Both shapes at one ancestor: the one naming Hunk explicitly is the bundled skill,
+      // and the bare `skills/` sibling belongs to whatever else lives in that directory.
+      const packagedSkill = join(
+        tempRoot,
+        "node_modules",
+        "hunkdiff",
+        "skills",
+        "hunk-review",
+        "SKILL.md",
+      );
+      const siblingSkill = join(tempRoot, "skills", "hunk-review", "SKILL.md");
+      const fakeBinary = join(tempRoot, "hunk");
+
+      mkdirSync(dirname(packagedSkill), { recursive: true });
+      mkdirSync(dirname(siblingSkill), { recursive: true });
+      writeFileSync(packagedSkill, "# packaged\n");
+      writeFileSync(siblingSkill, "# sibling\n");
+      writeFileSync(fakeBinary, "binary\n");
+
+      expect(resolveBundledSkillPath("hunk-review", [fakeBinary])).toBe(packagedSkill);
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   test("canonicalizes two spellings of one directory to the same path", () => {
     // Canonicalize with the same resolver the code under test uses: plain
     // realpathSync leaves Windows 8.3 short names (RUNNER~1) in place, which
