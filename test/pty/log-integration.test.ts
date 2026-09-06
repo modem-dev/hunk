@@ -238,6 +238,12 @@ describe("interactive hunk log", () => {
       expect(wide).toContain("Commits on Sep 5, 2026");
       expect(wide).not.toContain("Responsive description");
       expect(rightmostColumnOf(wide, displayId)).toBeGreaterThan(95);
+
+      session.writeRaw("t");
+      await session.waitForText(/Theme selector/, { timeout: 5_000 });
+      await session.press("escape");
+      await session.waitForText(/Commits on Sep 6, 2026/, { timeout: 5_000 });
+
       session.resize({ cols: 70, rows: 20 });
       await harness.waitForSnapshot(
         session,

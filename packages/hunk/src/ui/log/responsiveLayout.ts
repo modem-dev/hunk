@@ -25,6 +25,8 @@ export interface LogResponsiveRow {
   rightWidth: number;
   columnGap: number;
   title: string;
+  author: string;
+  relativeTime: string;
   metadata: string;
   displayId: string;
   copyIcon: string;
@@ -94,12 +96,26 @@ export function projectResponsiveLogRow({
     : 0;
   const columnGap = contentWidth > graphWidth + rightWidth ? desiredGap : 0;
   const leftWidth = Math.max(1, contentWidth - graphWidth - rightWidth - columnGap);
-  const metadataParts = [
-    presentation.author
-      ? sanitizeTerminalLine(resolveHistoryAuthorLabel(row.commit)).replaceAll("\t", " ")
-      : "",
-    presentation.date ? formatHistoryRelativeTime(row.commit.authoredAt, now) : "",
-  ].filter(Boolean);
+  const author = presentation.author
+    ? sanitizeTerminalLine(resolveHistoryAuthorLabel(row.commit)).replaceAll("\t", " ")
+    : "";
+  const relativeTime = presentation.date
+    ? formatHistoryRelativeTime(row.commit.authoredAt, now)
+    : "";
+  const metadata = fitText([author, relativeTime].filter(Boolean).join(" · "), leftWidth);
+  const separatorIndex = metadata.indexOf(" · ");
+  const fittedAuthor = author
+    ? separatorIndex >= 0
+      ? metadata.slice(0, separatorIndex)
+      : metadata
+    : "";
+  const fittedRelativeTime = relativeTime
+    ? separatorIndex >= 0
+      ? metadata.slice(separatorIndex + 3)
+      : author
+        ? ""
+        : metadata
+    : "";
   return {
     graph,
     continuation,
@@ -108,7 +124,9 @@ export function projectResponsiveLogRow({
     rightWidth,
     columnGap,
     title: fitText(sanitizeTerminalLine(row.commit.subject).replaceAll("\t", " "), leftWidth),
-    metadata: fitText(metadataParts.join(" · "), leftWidth),
+    author: fittedAuthor,
+    relativeTime: fittedRelativeTime,
+    metadata,
     displayId,
     copyIcon,
     secondary: fitText(secondary, rightWidth),

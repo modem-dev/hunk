@@ -77,6 +77,8 @@ describe("responsive log layout", () => {
       now,
     });
     expect(wide.title).toBe("Responsive history title");
+    expect(wide.author).toBe("adalovelace");
+    expect(wide.relativeTime).toBe("1 day ago");
     expect(wide.metadata).toBe("adalovelace · 1 day ago");
     expect(wide.secondary).toContain("HEAD -> main");
     expect(measureTextWidth(wide.displayId)).toBe(8);

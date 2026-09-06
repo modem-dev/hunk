@@ -52,13 +52,14 @@ describe("log command authority", () => {
     expect(matchLogCommand(key("down", ""))).toBe("next");
     expect(matchLogCommand(key("x", "j"))).toBe("next");
     expect(matchLogCommand(key("c", "\x03", true))).toBe("quit");
+    expect(matchLogCommand(key("t"))).toBe("theme");
     expect(logCommandHint("next")).toBe("↓ / j");
+    expect(logCommandHint("theme")).toBe("t");
     expect(logCommand("open-first-parent").label).toBe("Compare with first parent");
     expect(logCommand("open-parent").label).toBe("Compare with parent…");
-    expect(buildLogHelpSections().flatMap((section) => section.rows)).toContainEqual({
-      keys: "↓ / j",
-      description: "next commit",
-    });
+    const helpRows = buildLogHelpSections().flatMap((section) => section.rows);
+    expect(helpRows).toContainEqual({ keys: "↓ / j", description: "next commit" });
+    expect(helpRows).toContainEqual({ keys: "t", description: "theme…" });
   });
 
   test("derives parent and search enabled state from current snapshot", () => {

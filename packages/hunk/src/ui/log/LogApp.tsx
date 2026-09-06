@@ -23,10 +23,23 @@ import {
   type LogCommandId,
 } from "./commands";
 import { ParentSelectorDialog } from "./ParentSelectorDialog";
-import { monochromeLogTheme } from "./colorPolicy";
+import { monochromeLogTheme, resolveInteractiveLogPalette } from "./colorPolicy";
 import { formatHistoryDay } from "./formatting";
 import { planLogViewportGeometry } from "./geometry";
 import { projectResponsiveLogRow, resolveLogResponsiveLayout } from "./responsiveLayout";
+
+/** Render graph cells with stable semantic colors from the active Hunk theme. */
+function HistoryGraphLine({ text, colors }: { text: string; colors: readonly string[] }) {
+  return (
+    <text>
+      {Array.from({ length: Math.ceil(text.length / 2) }, (_, lane) => (
+        <span key={lane} fg={colors[lane % colors.length]!}>
+          {text.slice(lane * 2, lane * 2 + 2)}
+        </span>
+      ))}
+    </text>
+  );
+}
 
 export type LogAppOutcome =
   | { kind: "quit"; exitCode?: number }
@@ -78,6 +91,8 @@ export function LogApp({
   const chromeTheme = useColor
     ? themeController.baseTheme
     : monochromeLogTheme(themeController.baseTheme, terminalThemeMode);
+  const logPalette = resolveInteractiveLogPalette(theme);
+  const graphColors = snapshot.presentation.graph ? logPalette.graphLanes : [logPalette.timeline];
   const selectedRow = snapshot.rows[snapshot.selected];
   const responsiveLayout = resolveLogResponsiveLayout(terminal.width, terminal.height);
   const viewportBodyHeight = responsiveLayout.bodyHeight;
@@ -494,11 +509,17 @@ export function LogApp({
                 }}
               >
                 {showDayHeader ? (
-                  <text fg={theme.muted}>
-                    {fitText(
-                      `${snapshot.presentation.unicode ? "─○" : "-o"} ${formatHistoryDay(row.commit.authoredAt)}`,
-                      terminal.width - 2,
-                    )}
+                  <text>
+                    <span fg={logPalette.timeline}>
+                      {snapshot.presentation.unicode ? "─○" : "-o"}
+                    </span>
+                    <span fg={logPalette.separator}> </span>
+                    <span fg={logPalette.dayHeading}>
+                      {fitText(
+                        formatHistoryDay(row.commit.authoredAt),
+                        Math.max(1, terminal.width - 5),
+                      )}
+                    </span>
                   </text>
                 ) : null}
                 <box
@@ -527,9 +548,9 @@ export function LogApp({
                         flexDirection: "column",
                       }}
                     >
-                      <text fg={theme.muted}>{projected.graph}</text>
-                      <text fg={theme.muted}>{projected.continuation}</text>
-                      <text fg={theme.muted}>{projected.continuation}</text>
+                      <HistoryGraphLine text={projected.graph} colors={graphColors} />
+                      <HistoryGraphLine text={projected.continuation} colors={graphColors} />
+                      <HistoryGraphLine text={projected.continuation} colors={graphColors} />
                     </box>
                   ) : null}
                   <box
@@ -540,7 +561,17 @@ export function LogApp({
                     }}
                   >
                     <text fg={theme.text}>{projected.title}</text>
-                    <text fg={theme.muted}>{projected.metadata}</text>
+                    <text>
+                      {projected.author ? (
+                        <span fg={logPalette.author}>{projected.author}</span>
+                      ) : null}
+                      {projected.author && projected.relativeTime ? (
+                        <span fg={logPalette.separator}> · </span>
+                      ) : null}
+                      {projected.relativeTime ? (
+                        <span fg={logPalette.relativeTime}>{projected.relativeTime}</span>
+                      ) : null}
+                    </text>
                     <text> </text>
                   </box>
                   {projected.columnGap ? <box style={{ width: projected.columnGap }} /> : null}
@@ -563,11 +594,11 @@ export function LogApp({
                     }}
                   >
                     <box style={{ flexDirection: "row", gap: 1 }}>
-                      <text fg={theme.accent}>{projected.displayId}</text>
-                      <text fg={theme.muted}>{projected.copyIcon}</text>
+                      <text fg={logPalette.commitId}>{projected.displayId}</text>
+                      <text fg={logPalette.copyAction}>{projected.copyIcon}</text>
                     </box>
                     {projected.secondary ? (
-                      <text fg={theme.muted}>{projected.secondary}</text>
+                      <text fg={logPalette.decoration}>{projected.secondary}</text>
                     ) : null}
                   </box>
                 </box>

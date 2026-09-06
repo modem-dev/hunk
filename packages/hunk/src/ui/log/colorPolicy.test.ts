@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { resolveTheme } from "../themes";
-import { interactiveLogUsesColor, monochromeLogTheme } from "./colorPolicy";
+import {
+  interactiveLogUsesColor,
+  monochromeLogTheme,
+  resolveInteractiveLogPalette,
+} from "./colorPolicy";
 
 describe("interactive log color policy", () => {
   test("honors explicit color precedence and terminal conventions", () => {
@@ -11,12 +15,36 @@ describe("interactive log color policy", () => {
     expect(interactiveLogUsesColor("auto", { TERM: "xterm-256color" })).toBe(true);
   });
 
+  test("maps history roles onto the active semantic theme", () => {
+    const selected = resolveTheme("github-dark-default", null);
+    expect(resolveInteractiveLogPalette(selected)).toEqual({
+      timeline: selected.noteBorder,
+      dayHeading: selected.noteTitleText,
+      author: selected.fileModified,
+      separator: selected.lineNumberFg,
+      relativeTime: selected.muted,
+      decoration: selected.fileRenamed,
+      commitId: selected.accent,
+      copyAction: selected.lineNumberFg,
+      graphLanes: [
+        selected.accent,
+        selected.addedSignColor,
+        selected.removedSignColor,
+        selected.fileRenamed,
+        selected.noteBorder,
+      ],
+    });
+  });
+
   test("does not expose selected theme colors when color is disabled", () => {
     const selected = resolveTheme("github-dark-default", null);
     const neutral = monochromeLogTheme(selected, "dark");
+    const palette = resolveInteractiveLogPalette(neutral);
     expect(neutral.id).toBe("terminal-monochrome");
-    expect(neutral.accent).toBe("#ffffff");
     expect(neutral.background).toBe("#000000");
-    expect(neutral.accent).not.toBe(selected.accent);
+    expect(neutral.selectedHunk).toBe("#404040");
+    expect(new Set(Object.values(palette).flat())).toEqual(new Set(["#ffffff"]));
+    expect(new Set(Object.values(neutral.syntaxColors))).toEqual(new Set(["#ffffff"]));
+    expect(neutral.syntaxScopeOverrides).toBeUndefined();
   });
 });

@@ -49,7 +49,7 @@ On a terminal, `hunk log` opens its read-only history browser automatically. Its
 separate from the configurable review command table. `F10` opens File, View, Navigate, Commit, and Help menus;
 View includes Hunk's shared theme selector and an optional **Graph view** that replaces the default
 day-grouped timeline with commit-topology lanes. It uses `Up`/`Down` or `j`/`k` to move, `PageUp`/`PageDown`,
-`g`/`G` or `Home`/`End` to jump, `/` to search, `n`/`N` for matches, `r` to refresh, `y` to copy
+`g`/`G` or `Home`/`End` to jump, `/` to search, `n`/`N` for matches, `t` to choose a theme, `r` to refresh, `y` to copy
 the full commit id, `Enter` to open the commit in normal Hunk review, and `q` to quit. With a mouse, click a commit
 id to open it immediately, click the adjacent copy icon to copy its full immutable id, click elsewhere
 on a row to select it, or double-click a row to open it.
