@@ -9,7 +9,7 @@ const tempDirs: string[] = [];
 setDefaultTimeout(45_000);
 
 /** Run one Git fixture command with deterministic author identity. */
-function git(cwd: string, args: string[]) {
+function git(cwd: string, args: string[], env: NodeJS.ProcessEnv = {}) {
   const proc = Bun.spawnSync(["git", ...args], {
     cwd,
     stdin: "ignore",
@@ -21,6 +21,7 @@ function git(cwd: string, args: string[]) {
       GIT_AUTHOR_EMAIL: "history@example.com",
       GIT_COMMITTER_NAME: "History Tester",
       GIT_COMMITTER_EMAIL: "history@example.com",
+      ...env,
     },
   });
   if (proc.exitCode !== 0) throw new Error(proc.stderr?.toString() ?? "Git fixture failed.");
@@ -33,9 +34,17 @@ function createHistoryRepo() {
   git(cwd, ["init", "-q"]);
   writeFileSync(join(cwd, "history.ts"), "export const historyValue = 'first';\n");
   git(cwd, ["add", "history.ts"]);
-  git(cwd, ["commit", "-qm", "First history commit"]);
+  const firstDate = new Date(2026, 8, 5, 12).toISOString();
+  git(cwd, ["commit", "-qm", "First history commit"], {
+    GIT_AUTHOR_DATE: firstDate,
+    GIT_COMMITTER_DATE: firstDate,
+  });
   writeFileSync(join(cwd, "history.ts"), "export const historyValue = 'second';\n");
-  git(cwd, ["commit", "-qam", "Second history commit", "-m", "Responsive description"]);
+  const secondDate = new Date(2026, 8, 6, 12).toISOString();
+  git(cwd, ["commit", "-qam", "Second history commit", "-m", "Responsive description"], {
+    GIT_AUTHOR_DATE: secondDate,
+    GIT_COMMITTER_DATE: secondDate,
+  });
   return cwd;
 }
 
@@ -209,7 +218,7 @@ describe("interactive hunk log", () => {
     }
   });
 
-  test("adapts GitHub-style row density and right-aligned ids on resize", async () => {
+  test("adapts GitHub-style grouped rows and right-aligned ids on resize", async () => {
     const cwd = createHistoryRepo();
     const displayId = Bun.spawnSync(["git", "rev-parse", "--short=8", "HEAD"], {
       cwd,
@@ -224,26 +233,34 @@ describe("interactive hunk log", () => {
       rows: 20,
     });
     try {
-      const wide = await session.waitForText(/Responsive description/, { timeout: 15_000 });
+      const wide = await session.waitForText(/Commits on Sep 6, 2026/, { timeout: 15_000 });
+      expect(wide).toContain("history ·");
+      expect(wide).toContain("Commits on Sep 5, 2026");
+      expect(wide).not.toContain("Responsive description");
       expect(rightmostColumnOf(wide, displayId)).toBeGreaterThan(95);
       session.resize({ cols: 70, rows: 20 });
       await harness.waitForSnapshot(
         session,
         (text) =>
-          text.includes("Second history commit") && !text.includes("Responsive description"),
+          text.includes("Second history commit") &&
+          text.includes("history ·") &&
+          text.includes(displayId),
         5_000,
       );
       const medium = await session.text({ immediate: true });
-      expect(medium).toContain("History Tester");
+      expect(medium).toContain("history ·");
       expect(rightmostColumnOf(medium, displayId)).toBeGreaterThan(55);
       session.resize({ cols: 42, rows: 18 });
       await harness.waitForSnapshot(
         session,
-        (text) => text.includes("Second history commit") && !text.includes("2026-"),
+        (text) =>
+          text.includes("Second history commit") &&
+          !text.includes("2026-") &&
+          text.includes(displayId),
         5_000,
       );
       const narrow = await session.text({ immediate: true });
-      expect(narrow).toContain("History Tester");
+      expect(narrow).toContain("history ·");
       expect(rightmostColumnOf(narrow, displayId)).toBeGreaterThan(30);
       await session.press("q");
     } finally {
@@ -268,7 +285,7 @@ describe("interactive hunk log", () => {
     }
   });
 
-  test("uses an ASCII graph in a dumb terminal", async () => {
+  test("uses an ASCII timeline by default and preserves the optional graph view", async () => {
     const cwd = createHistoryRepo();
     const session = await harness.launchHunk({
       args: ["log", "--ascii", "--no-extensions"],
@@ -279,8 +296,19 @@ describe("interactive hunk log", () => {
     });
     try {
       const history = await session.waitForText(/Second history commit/, { timeout: 15_000 });
-      expect(history).toContain("*");
-      expect(history).not.toContain("●");
+      expect(history).toContain("-o Commits on Sep 6, 2026");
+      expect(history).toContain("|");
+
+      await session.press("f10");
+      await session.press("right");
+      await session.press("down");
+      await session.press("enter");
+      const graph = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("*") && !text.includes("Commits on Sep 6, 2026"),
+        5_000,
+      );
+      expect(graph).not.toContain("●");
       await session.press("q");
     } finally {
       session.close();

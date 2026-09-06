@@ -2,6 +2,7 @@ import { createHistoryLaneCheckpoint, planHistoryPage } from "../../core/history
 import type { HistoryGraphRow, HistoryLaneCheckpoint } from "../../core/history/types";
 import { sanitizeTerminalLine } from "../../lib/terminalText";
 import type { HistoryRuntime } from "../history/types";
+import { planLogViewportGeometry } from "./geometry";
 
 export interface LogPresentation {
   graph: boolean;
@@ -35,7 +36,7 @@ export class LogController {
   private refreshPromise: Promise<void> | null = null;
   private navigationTarget: number | null = null;
   private closed = false;
-  private viewportHeight = 1;
+  private viewportBodyHeight = 1;
   private noticeTimer: ReturnType<typeof setTimeout> | null = null;
   private snapshot: LogSnapshot;
 
@@ -52,7 +53,7 @@ export class LogController {
       notice: runtime.notices[0] ?? "",
       themeId: runtime.input.theme,
       presentation: {
-        graph: true,
+        graph: false,
         unicode: !runtime.input.ascii && process.env.TERM !== "dumb",
         author: true,
         date: true,
@@ -114,24 +115,27 @@ export class LogController {
     }
   }
 
-  /** Keep the selected row visible in a viewport of fixed-height compact rows. */
-  clampViewport(height: number) {
-    const safeHeight = Math.max(1, height);
-    this.viewportHeight = safeHeight;
+  /** Keep the selected commit visible across grouped and graph viewport projections. */
+  clampViewport(bodyHeight: number) {
+    const safeHeight = Math.max(1, bodyHeight);
+    this.viewportBodyHeight = safeHeight;
     const selected = Math.max(
       0,
       Math.min(Math.max(0, this.snapshot.rows.length - 1), this.snapshot.selected),
     );
-    let top = this.snapshot.top;
-    if (selected < top) top = selected;
-    if (selected >= top + safeHeight) top = selected - safeHeight + 1;
-    top = Math.max(0, Math.min(top, Math.max(0, this.snapshot.rows.length - safeHeight)));
-    if (selected !== this.snapshot.selected || top !== this.snapshot.top)
-      this.publish({ selected, top });
+    const geometry = planLogViewportGeometry({
+      rows: this.snapshot.rows,
+      selected,
+      requestedTop: this.snapshot.top,
+      bodyHeight: safeHeight,
+      groupByDay: !this.snapshot.presentation.graph,
+    });
+    if (selected !== this.snapshot.selected || geometry.top !== this.snapshot.top)
+      this.publish({ selected, top: geometry.top });
   }
 
   /** Select a target, loading bounded continuation pages until it exists or EOF is known. */
-  async select(index: number, viewportHeight: number) {
+  async select(index: number, viewportBodyHeight: number) {
     this.clearNotice();
     const target = Math.max(0, index);
     this.navigationTarget = target;
@@ -140,27 +144,44 @@ export class LogController {
     }
     if (this.closed) return;
     this.publish({ selected: Math.max(0, Math.min(this.snapshot.rows.length - 1, target)) });
-    this.clampViewport(viewportHeight);
+    this.clampViewport(viewportBodyHeight);
     if (this.navigationTarget === target) this.navigationTarget = null;
-    if (target + viewportHeight >= this.snapshot.rows.length && !this.snapshot.historyDone)
+    const visibleCount = planLogViewportGeometry({
+      rows: this.snapshot.rows,
+      selected: this.snapshot.selected,
+      requestedTop: this.snapshot.top,
+      bodyHeight: viewportBodyHeight,
+      groupByDay: !this.snapshot.presentation.graph,
+    }).entries.length;
+    if (target + visibleCount >= this.snapshot.rows.length && !this.snapshot.historyDone)
       void this.loadMore();
   }
 
-  move(delta: number, viewportHeight: number) {
-    return this.select((this.navigationTarget ?? this.snapshot.selected) + delta, viewportHeight);
+  move(delta: number, viewportBodyHeight: number) {
+    return this.select(
+      (this.navigationTarget ?? this.snapshot.selected) + delta,
+      viewportBodyHeight,
+    );
   }
 
-  page(delta: number, viewportHeight: number) {
-    return this.move(delta * Math.max(1, viewportHeight), viewportHeight);
+  page(delta: number, viewportBodyHeight: number) {
+    const visibleCount = planLogViewportGeometry({
+      rows: this.snapshot.rows,
+      selected: this.snapshot.selected,
+      requestedTop: this.snapshot.top,
+      bodyHeight: viewportBodyHeight,
+      groupByDay: !this.snapshot.presentation.graph,
+    }).entries.length;
+    return this.move(delta * Math.max(1, visibleCount), viewportBodyHeight);
   }
 
-  first(viewportHeight: number) {
-    return this.select(0, viewportHeight);
+  first(viewportBodyHeight: number) {
+    return this.select(0, viewportBodyHeight);
   }
 
-  async last(viewportHeight: number) {
+  async last(viewportBodyHeight: number) {
     while (!this.snapshot.historyDone && !this.closed) await this.loadMore();
-    await this.select(this.snapshot.rows.length - 1, viewportHeight);
+    await this.select(this.snapshot.rows.length - 1, viewportBodyHeight);
   }
 
   /** Enter or update the focused search editor without filtering topology. */
@@ -185,12 +206,12 @@ export class LogController {
     this.publish({ searchEditing: false });
   }
 
-  async finishSearch(direction: 1 | -1 = 1, viewportHeight = this.viewportHeight) {
+  async finishSearch(direction: 1 | -1 = 1, viewportHeight = this.viewportBodyHeight) {
     this.publish({ searchEditing: false });
     await this.findMatch(direction, viewportHeight);
   }
 
-  async findMatch(direction: 1 | -1, viewportHeight = this.viewportHeight) {
+  async findMatch(direction: 1 | -1, viewportHeight = this.viewportBodyHeight) {
     const needle = this.snapshot.search.toLocaleLowerCase();
     if (!needle) return;
     while (!this.snapshot.historyDone && !this.closed) await this.loadMore();
@@ -245,6 +266,7 @@ export class LogController {
     this.publish({
       presentation: { ...this.snapshot.presentation, [key]: !this.snapshot.presentation[key] },
     });
+    if (key === "graph") this.clampViewport(this.viewportBodyHeight);
   }
 
   /** Refresh the provider cursor while reconciling selection by immutable revision id. */
@@ -302,11 +324,15 @@ export class LogController {
       }
       const index = this.snapshot.rows.findIndex((row) => row.commit.revisionId === selectedId);
       if (index >= 0) {
-        const maxTop = Math.max(0, this.snapshot.rows.length - this.viewportHeight);
-        this.publish({
+        const requestedTop = Math.max(0, index - viewportOffset);
+        const geometry = planLogViewportGeometry({
+          rows: this.snapshot.rows,
           selected: index,
-          top: Math.min(maxTop, Math.max(0, index - viewportOffset)),
+          requestedTop,
+          bodyHeight: this.viewportBodyHeight,
+          groupByDay: !this.snapshot.presentation.graph,
         });
+        this.publish({ selected: index, top: geometry.top });
       }
     }
     this.setNotice("History refreshed.");

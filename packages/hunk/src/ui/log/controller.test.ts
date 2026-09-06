@@ -62,6 +62,7 @@ describe("LogController", () => {
   test("loads bounded pages and retains navigation/search state", async () => {
     const { runtime } = createRuntime();
     const controller = new LogController(runtime);
+    expect(controller.getSnapshot().presentation.graph).toBe(false);
     await controller.loadMore();
     expect(controller.getSnapshot().rows.map((row) => row.commit.subject)).toEqual([
       "first",
@@ -99,7 +100,9 @@ describe("LogController", () => {
     const { runtime } = createRuntime(["one", "two", "three", "four", "five"]);
     const controller = new LogController(runtime);
     await controller.loadMore();
-    await controller.page(1, 4);
+    await controller.page(1, 16);
+    expect(controller.getSnapshot().selected).toBe(2);
+    await controller.page(1, 16);
     expect(controller.getSnapshot().selected).toBe(4);
     expect(controller.getSnapshot().historyDone).toBe(true);
     await controller.close();
@@ -118,10 +121,10 @@ describe("LogController", () => {
     const { runtime } = createRuntime(["one", "two", "three", "four"]);
     const controller = new LogController(runtime);
     await controller.loadMore();
-    await controller.select(2, 2);
+    await controller.select(2, 8);
     expect(controller.getSnapshot().top).toBe(1);
     controller.setSearch("four");
-    await controller.findMatch(1, 2);
+    await controller.findMatch(1, 8);
     expect(controller.getSnapshot()).toMatchObject({ selected: 3, top: 2 });
     await controller.refresh();
     expect(

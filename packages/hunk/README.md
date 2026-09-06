@@ -97,9 +97,10 @@ records automatically, and `--static` forces static output that pages only when 
 owns traversal, filtering, refs, and how a history item opens for review; the bundled Git and
 Jujutsu adapters both implement that public capability. Static output keeps full commit, author,
 date, message, branch/bookmark, remote, and tag details; `--oneline` provides compact records, and
-`--theme` uses the same palette as Hunk review. Interactive rows adapt their information density to
-the available width and keep commit ids right-aligned and clickable. After opening a commit, quit
-its normal Hunk review to return to the same selection.
+`--theme` uses the same palette as Hunk review. Interactive history groups commits by local-calendar
+day with account-like author handles and relative times, while keeping commit ids right-aligned and
+clickable. Enable **Graph view** from the View menu to replace day groups with commit-topology lanes.
+After opening a commit, quit its normal Hunk review to return to the same selection.
 
 ### Working with Jujutsu and Sapling
 
