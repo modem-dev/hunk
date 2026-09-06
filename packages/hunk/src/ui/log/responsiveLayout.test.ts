@@ -83,7 +83,7 @@ describe("responsive log layout", () => {
     expect(wide.secondary).toContain("HEAD -> main");
     expect(measureTextWidth(wide.displayId)).toBe(8);
     expect(wide.copyIcon).toBe("⧉");
-    expect(wide.graphWidth + wide.leftWidth + wide.rightWidth + 2).toBeLessThanOrEqual(118);
+    expect(wide.graphWidth + wide.leftWidth + wide.rightWidth + 2).toBeLessThanOrEqual(116);
 
     const longDecoration = projectResponsiveLogRow({
       row: {
@@ -103,7 +103,7 @@ describe("responsive log layout", () => {
         longDecoration.leftWidth +
         longDecoration.rightWidth +
         longDecoration.columnGap,
-    ).toBeLessThanOrEqual(118);
+    ).toBeLessThanOrEqual(116);
   });
 
   test("uses a quiet timeline rail instead of topology in grouped view", () => {
@@ -117,6 +117,22 @@ describe("responsive log layout", () => {
     expect(grouped.graph).toBe("│");
     expect(grouped.continuation).toBe("│");
     expect(grouped.graphWidth).toBe(3);
+  });
+
+  test("keeps the grouped rail and every column inside narrow terminal bounds", () => {
+    const narrow = projectResponsiveLogRow({
+      row,
+      presentation: { ...presentation, graph: false },
+      layout: resolveLogResponsiveLayout(20, 18),
+      width: 20,
+      now,
+    });
+    expect(narrow.graph).toBe("│");
+    expect(narrow.graphWidth).toBe(3);
+    expect(
+      narrow.graphWidth + narrow.leftWidth + narrow.rightWidth + narrow.columnGap,
+    ).toBeLessThanOrEqual(16);
+    expect(measureTextWidth(narrow.displayId)).toBeLessThan(narrow.rightWidth);
   });
 
   test("bounds many graph lanes while reserving title and commit actions", () => {
@@ -140,7 +156,7 @@ describe("responsive log layout", () => {
     expect(projected.leftWidth).toBeGreaterThanOrEqual(12);
     expect(
       projected.graphWidth + projected.leftWidth + projected.rightWidth + projected.columnGap,
-    ).toBeLessThanOrEqual(40);
+    ).toBeLessThanOrEqual(38);
     expect(projected.metadata).toContain("adalovelace");
     expect(projected.metadata).toStartWith("adalovelace");
   });

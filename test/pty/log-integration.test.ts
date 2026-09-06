@@ -268,8 +268,13 @@ describe("interactive hunk log", () => {
         5_000,
       );
       const narrow = await session.text({ immediate: true });
+      const narrowCommitLine = narrow
+        .split("\n")
+        .find((line) => line.includes("Second history commit"));
       expect(narrow).toContain("history ·");
-      expect(rightmostColumnOf(narrow, displayId)).toBeGreaterThan(30);
+      expect(narrowCommitLine).toContain(displayId);
+      expect(narrowCommitLine?.trimStart()).toStartWith("│");
+      expect(rightmostColumnOf(narrow, displayId)).toBeGreaterThan(27);
       await session.press("q");
     } finally {
       session.close();

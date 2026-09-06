@@ -589,7 +589,12 @@ export function LogApp({
                       event.stopPropagation();
                       clearTransientNotice();
                       const copyIconStart =
-                        terminal.width - 1 - measureTextWidth(projected.copyIcon);
+                        1 +
+                        projected.graphWidth +
+                        projected.leftWidth +
+                        projected.columnGap +
+                        projected.rightWidth -
+                        measureTextWidth(projected.copyIcon);
                       void controller.select(index, viewportBodyHeight).then(() => {
                         if (event.x >= copyIconStart) copySelected(row);
                         else void openSelected();

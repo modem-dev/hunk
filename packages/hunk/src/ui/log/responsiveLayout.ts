@@ -58,7 +58,8 @@ export function projectResponsiveLogRow({
   width: number;
   now?: number;
 }): LogResponsiveRow {
-  const contentWidth = Math.max(1, width - 2);
+  // Keep two cells clear of the terminal edge: ambiguous-width copy glyphs must never wrap a row.
+  const contentWidth = Math.max(1, width - 4);
   const rawGraph = presentation.graph
     ? renderHistoryGraph(row, !presentation.unicode)
     : presentation.unicode
@@ -81,9 +82,15 @@ export function projectResponsiveLogRow({
   const idActionWidth = measureTextWidth(displayId) + 1 + measureTextWidth(copyIcon);
   const secondary = fitText(rawSecondary, Math.max(idActionWidth, Math.floor(contentWidth * 0.35)));
   const rightWidth = Math.max(idActionWidth, measureTextWidth(secondary));
-  const minimumLeftWidth = Math.min(12, Math.max(1, contentWidth - rightWidth));
-  const desiredGap = contentWidth > rightWidth + minimumLeftWidth ? 2 : 0;
-  const maximumGraphWidth = Math.max(0, contentWidth - rightWidth - minimumLeftWidth - desiredGap);
+  const minimumGraphWidth = presentation.graph
+    ? 0
+    : Math.min(3, Math.max(0, contentWidth - rightWidth - 1));
+  const minimumLeftWidth = Math.min(12, Math.max(1, contentWidth - rightWidth - minimumGraphWidth));
+  const desiredGap = contentWidth > rightWidth + minimumLeftWidth + minimumGraphWidth ? 2 : 0;
+  const maximumGraphWidth = Math.max(
+    minimumGraphWidth,
+    contentWidth - rightWidth - minimumLeftWidth - desiredGap,
+  );
   const graphContentWidth = Math.max(0, maximumGraphWidth - 2);
   const graph = graphContentWidth > 0 ? fitText(rawGraph, graphContentWidth, "…") : "";
   const continuation =
