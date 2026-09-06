@@ -8,7 +8,7 @@ Use it when adding a new module or deciding where an existing responsibility bel
 
 ```text
 packages/hunk/src/app/             executable composition: CLI parsing, startup plans, and shared session bootstrap
-packages/hunk/src/app/session/     mounted-review registration, bridge, and reload authorization
+packages/hunk/src/app/session/     mounted-review runtime, registration, bridge, and reload authorization
 packages/hunk/src/core/            review model, patch handling, VCS contracts, configuration, and
                      runtime primitives
 packages/hunk/src/core/changeset/  the changeset model and the pipeline that acquires one: loaders,
@@ -27,6 +27,7 @@ packages/hunk/src/session/client/  shared session-daemon HTTP and compatibility 
 packages/hunk/src/session/agent/   agent-facing session CLI, command manifest, errors, and formatting
 packages/hunk/src/session/broker/  local daemon transport, launcher, Hunk broker state, wire parsing, projections
 packages/hunk/src/ui/              interactive review application, rendering, interaction, and chrome
+packages/hunk/src/ui/session/      one OpenTUI renderer/root lifetime and the closed history/review surface router
 packages/hunk/src/extension-api/   public `hunkdiff/extension` declaration and runtime boundary
 packages/hunk/src/opentui/         public `hunkdiff/opentui` component boundary
 packages/hunk/src/lib/             small product-wide utilities with no feature ownership
@@ -58,8 +59,12 @@ and bundled-provider -> core boundaries, including the public extension-barrel r
 Initial launch and live-session reload use `app/sessionBootstrap.ts`. That service is the one
 place that applies extension registrations, resolves extension-aware VCS selection, loads the
 normalized changeset, applies changeset transforms, and attaches session theme/config state.
-Callers retain their distinct lifecycle work (terminal setup, extension rediscovery, notices,
-and mounted-app state), but must not recreate this ordering.
+Callers retain their distinct lifecycle work (extension rediscovery, notices, and mounted-app
+state), but must not recreate this ordering. Interactive entry adapters supply their terminal,
+signal, mouse, and exit-status policies to `ui/session/runHunkSession`; that runner owns one
+renderer/root lifetime and waits for `HunkSessionHost` to finish graceful surface cleanup before
+restoring the terminal. `HunkSessionHost` routes only the current history and review surfaces;
+review reload and extension-event commit ordering remain with `AppHost`.
 
 ## Migration policy
 

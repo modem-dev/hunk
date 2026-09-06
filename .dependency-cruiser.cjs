@@ -8,13 +8,14 @@
  * `bun run deps:check` fails on any violation not in the baseline.
  */
 
-// UI files allowed to couple to packages/hunk/src/app and packages/hunk/src/session: the composition shell, the two
-// named session adapter hooks, and the session-navigation resolution helper those hooks
-// share. Everything else in packages/hunk/src/ui stays presentation-only.
+// UI files allowed to couple to packages/hunk/src/app and packages/hunk/src/session: App/AppHost,
+// HunkSessionHost, runInteractiveApp, the named session adapter hooks, and their shared navigation
+// helper. Everything else in packages/hunk/src/ui stays presentation-only.
 const UI_SESSION_ADAPTERS = [
   "^packages/hunk/src/ui/App\\.tsx$",
   "^packages/hunk/src/ui/AppHost\\.tsx$",
   "^packages/hunk/src/ui/runInteractiveApp\\.tsx$",
+  "^packages/hunk/src/ui/session/HunkSessionHost\\.tsx$",
   "^packages/hunk/src/ui/hooks/useHunkSessionBridge\\.ts$",
   "^packages/hunk/src/ui/hooks/useTerminalReview\\.ts$",
   "^packages/hunk/src/ui/lib/reviewState\\.ts$",

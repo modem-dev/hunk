@@ -1,3 +1,2 @@
-/** Preserve the original import seam while interactive history moves into the log feature folder. */
-export { historyReviewArgs } from "../log/reviewLaunch";
+/** Preserve the original runner import seam while interactive history lives in the log feature. */
 export { runInteractiveLog as runInteractiveHistory } from "../log/runInteractiveLog";

@@ -347,8 +347,10 @@ second root/config pass when a global, config-path, or CLI adapter recognizes a
 repository unavailable to the bundled catalog.
 
 `hunk log` follows the same boundary. Core/app and `src/ui/history/` own the built-in command,
-validated graph planning, presentation, themes, paging, terminal lifecycle, and child-process
-orchestration. The selected adapter's public `history` capability owns traversal, filtering,
+validated graph planning, presentation, themes, paging, and child-process orchestration. The shared
+`src/ui/session/` runner owns the process-level renderer/root lifetime, while its closed host routes
+retained history and fresh review surfaces without giving either surface terminal ownership. The
+selected adapter's public `history` capability owns traversal, filtering,
 immutable revision and parent identities, structured decorations, and the declarative review action
 for a selected item. The host treats those ids as opaque and never constructs provider revision
 syntax or decides root/merge comparison semantics. History pages remain child-before-parent across

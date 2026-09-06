@@ -31,7 +31,7 @@ packages/hunk/src/session            daemon/broker transport + protocol; consume
 packages/hunk/src/app                startup composition: CLI parsing plus the wiring of core,
                        extensions, and the session broker; no rendering
 packages/hunk/src/ui                 terminal surface; only the composition shell (App, AppHost,
-                       runInteractiveApp), the named session adapter hooks
+                       runInteractiveApp, session/HunkSessionHost), the named session adapter hooks
                        (useTerminalReview, useHunkSessionBridge), and their shared
                        navigation helper (ui/lib/reviewState) may import app/session
 packages/hunk/src/opentui            published facade re-exporting ui/core pieces for `hunkdiff/opentui`

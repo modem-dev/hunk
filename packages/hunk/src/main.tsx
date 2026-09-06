@@ -128,19 +128,10 @@ async function main() {
   }
 
   // OpenTUI stays behind the interactive plan so headless commands never materialize its embedded
-  // native library. The highlighting client starts the compiled worker only when an opted-in,
-  // eligible diff needs it, so normal sessions do not pay its startup cost. The interactive app
-  // owns that worker's disposal: this call returns once the app is mounted, not once it exits.
+  // native library. The shared interactive runner owns the highlighting worker and terminal until
+  // the mounted surface acknowledges graceful shutdown.
   const { runInteractiveApp } = await import("./ui/runInteractiveApp");
-  try {
-    await runInteractiveApp(startupPlan);
-  } catch (error) {
-    startupPlan.controllingTerminal?.close();
-    await (
-      await import("./extensions/events")
-    ).retireExtensionLoadResult(startupPlan.bootstrap.extensions);
-    throw error;
-  }
+  await runInteractiveApp(startupPlan);
 }
 
 await main().catch((error) => {

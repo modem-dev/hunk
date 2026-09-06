@@ -2,7 +2,7 @@ import type { KeyEvent, MouseEvent as TuiMouseEvent } from "@opentui/core";
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
 import { basename } from "node:path";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import type { ExtensionVcsHistoryReviewAction } from "../../extension-api/types";
+import type { ExtensionVcsHistoryCommit } from "../../extension-api/types";
 import { sanitizeTerminalLine } from "../../lib/terminalText";
 import { HelpDialog } from "../components/chrome/HelpDialog";
 import { MenuBar } from "../components/chrome/MenuBar";
@@ -30,7 +30,8 @@ export type LogAppOutcome =
   | { kind: "quit"; exitCode?: number }
   | {
       kind: "open-review";
-      action: ExtensionVcsHistoryReviewAction;
+      commit: ExtensionVcsHistoryCommit;
+      parentRevisionId?: string;
       themeId: string;
       themeMode: "dark" | "light";
     };
@@ -55,9 +56,10 @@ export function LogApp({
   const [transientNotice, setTransientNotice] = useState("");
   const [openingCommit, setOpeningCommit] = useState<{ id: string; subject: string } | null>(null);
   const lastClick = useRef({ index: -1, at: 0 });
-  // Lock synchronously before awaiting provider planning so coalesced Enter+q input cannot
-  // quit the log or leak the trailing command into the child review.
+  // Lock synchronously before requesting review preparation so coalesced input cannot
+  // open two child reviews. Quit remains available while the host settles pending work.
   const reviewPending = useRef(false);
+  const reviewQuitEnabled = useRef(false);
   const themeController = useThemeSelectorController({
     customThemes: runtime.customThemes,
     initialTheme: snapshot.themeId,
@@ -89,30 +91,29 @@ export function LogApp({
   };
   const openSelected = async (parentRevisionId?: string) => {
     if (reviewPending.current) return;
-    const planned = controller.planSelectedReview(parentRevisionId);
-    if (!planned) return;
-    reviewPending.current = true;
     const currentRow = controller.getSelectedRow();
-    setOpeningCommit(
-      currentRow
-        ? {
-            id: sanitizeTerminalLine(currentRow.commit.displayId),
-            subject: sanitizeTerminalLine(currentRow.commit.subject),
-          }
-        : null,
-    );
+    if (!currentRow) return;
+    reviewPending.current = true;
+    reviewQuitEnabled.current = false;
+    setOpeningCommit({
+      id: sanitizeTerminalLine(currentRow.commit.displayId),
+      subject: sanitizeTerminalLine(currentRow.commit.subject),
+    });
     try {
-      const action = await planned;
-      // Commit the loading surface before in-process provider startup performs synchronous probes.
+      // Commit the loading surface and consume input coalesced with the opening key/click before
+      // provider planning starts. Deliberate quit input remains available after this boundary.
       await new Promise<void>((resolve) => setImmediate(resolve));
+      reviewQuitEnabled.current = true;
       await onOutcome({
         kind: "open-review",
-        action,
+        commit: currentRow.commit,
+        ...(parentRevisionId === undefined ? {} : { parentRevisionId }),
         themeId: themeController.themeId,
         themeMode: terminalThemeMode,
       });
     } catch (error) {
       reviewPending.current = false;
+      reviewQuitEnabled.current = false;
       setOpeningCommit(null);
       controller.setNotice(error instanceof Error ? error.message : String(error));
     }
@@ -273,12 +274,40 @@ export function LogApp({
       key.preventDefault();
       key.stopPropagation();
     };
+    const name = key.name;
+    const sequence = key.sequence ?? "";
     if (reviewPending.current) {
+      if (!reviewQuitEnabled.current) {
+        consume();
+        return;
+      }
+      if (menu.getActiveMenuId()) {
+        if (name === "escape") menu.closeMenu();
+        else if (name === "left") menu.switchMenu(-1);
+        else if (name === "right" || name === "tab") menu.switchMenu(1);
+        else if (name === "up") menu.moveMenuItem(-1);
+        else if (name === "down") menu.moveMenuItem(1);
+        else if (name === "return" || name === "enter") menu.activateCurrentMenuItem();
+        else {
+          const command = matchLogCommand(key);
+          if (command === "quit") {
+            menu.closeMenu();
+            executeCommand(command, key.ctrl && key.name === "c" ? 130 : undefined);
+          }
+        }
+        consume();
+        return;
+      }
+      if (name === "f10") menu.openMenu("file");
+      else {
+        const command = matchLogCommand(key);
+        if (command === "quit") {
+          executeCommand(command, key.ctrl && key.name === "c" ? 130 : undefined);
+        }
+      }
       consume();
       return;
     }
-    const name = key.name;
-    const sequence = key.sequence ?? "";
     if (parentSelectorIndex !== null) {
       const parents = controller.getSelectedRow()?.commit.parentRevisionIds ?? [];
       if (name === "escape") setParentSelectorIndex(null);

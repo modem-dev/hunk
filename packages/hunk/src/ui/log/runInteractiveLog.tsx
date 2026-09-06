@@ -1,23 +1,10 @@
-import { createCliRenderer } from "@opentui/core";
-import { createRoot } from "@opentui/react";
-import {
-  installJobControlInterruptSupport,
-  installJobControlSuspendSupport,
-  type JobControlInterruptSupport,
-  type JobControlSuspendSupport,
-} from "../../core/process/jobControl";
-import { shutdownSession } from "../../core/process/shutdown";
 import { HunkUserError } from "../../core/run/errors";
-import {
-  installTerminalDisconnectSupport,
-  type TerminalDisconnectSupport,
-} from "../../core/process/terminal";
-import { disposeHighlightWorker } from "../diff/worker";
 import type { HistoryRuntime } from "../history/types";
+import { HunkSessionHost, type HistorySurfaceRoute } from "../session/HunkSessionHost";
+import { runHunkSession } from "../session/runHunkSession";
 import { LogController } from "./controller";
-import { LogSessionHost } from "./LogSessionHost";
 
-const LOG_SHUTDOWN_SIGNALS: NodeJS.Signals[] =
+export const LOG_SHUTDOWN_SIGNALS: NodeJS.Signals[] =
   process.platform === "win32"
     ? ["SIGINT", "SIGTERM", "SIGBREAK"]
     : ["SIGINT", "SIGTERM", "SIGHUP"];
@@ -43,70 +30,30 @@ export async function runInteractiveLog(
   }
 
   const controller = new LogController(runtime);
-  const quitController = new AbortController();
-  let renderer: Awaited<ReturnType<typeof createCliRenderer>> | undefined;
-  let root: ReturnType<typeof createRoot> | undefined;
-  let interrupt: JobControlInterruptSupport = { dispose: () => undefined };
-  let suspend: JobControlSuspendSupport = { dispose: () => undefined };
-  let disconnect: TerminalDisconnectSupport = { dispose: () => undefined };
-  let settled = false;
-  let finish!: (exitCode?: number) => void;
-  const outcome = new Promise<number | undefined>((resolve) => {
-    finish = (exitCode) => {
-      if (settled) return;
-      settled = true;
-      resolve(exitCode);
-    };
-  });
-  const requestQuit = () => quitController.abort();
-  const requestInterrupt = () => {
-    process.exitCode = 130;
-    quitController.abort();
-  };
-  const signalHandlers = new Map<NodeJS.Signals, () => void>(
-    LOG_SHUTDOWN_SIGNALS.map((signal) => [
-      signal,
-      () => {
-        process.exitCode = logSignalExitCode(signal);
-        quitController.abort();
-      },
-    ]),
-  );
+  const initialRoute: HistorySurfaceRoute = { kind: "history", controller, runtime };
 
+  let runnerOwnsCleanup = false;
   try {
     await controller.loadMore();
-    renderer = await createCliRenderer({
+    runnerOwnsCleanup = true;
+    const exitCode = await runHunkSession({
       stdin,
       stdout,
       useMouse: true,
-      screenMode: "alternate-screen",
-      exitOnCtrlC: false,
-      exitSignals: [],
-      openConsoleOnError: true,
+      signals: LOG_SHUTDOWN_SIGNALS,
+      signalExitCode: logSignalExitCode,
+      interruptExitCode: 130,
+      beforeTeardown: () => controller.close(),
+      render: ({ externalQuitSignal, finish }) => (
+        <HunkSessionHost
+          initialRoute={initialRoute}
+          externalQuitSignal={externalQuitSignal}
+          onQuit={finish}
+        />
+      ),
     });
-    root = createRoot(renderer);
-    interrupt = installJobControlInterruptSupport(renderer, requestInterrupt);
-    suspend = installJobControlSuspendSupport(renderer);
-    disconnect = installTerminalDisconnectSupport(stdin, requestQuit);
-    for (const [signal, handler] of signalHandlers) process.once(signal, handler);
-    root.render(
-      <LogSessionHost
-        controller={controller}
-        runtime={runtime}
-        externalQuitSignal={quitController.signal}
-        onQuit={finish}
-      />,
-    );
-    const exitCode = await outcome;
     if (exitCode !== undefined) process.exitCode = exitCode;
   } finally {
-    for (const [signal, handler] of signalHandlers) process.off(signal, handler);
-    interrupt.dispose();
-    suspend.dispose();
-    disconnect.dispose();
-    disposeHighlightWorker();
-    if (root && renderer) shutdownSession({ root, renderer, exit: () => undefined });
-    else renderer?.destroy();
-    await controller.close();
+    if (!runnerOwnsCleanup) await controller.close();
   }
 }

@@ -1,38 +1,36 @@
 import { describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
-import type { HistoryRuntime } from "../history/types";
-import { prepareEmbeddedHistoryReview } from "../runInteractiveApp";
+import type { ExtensionLoadResult } from "../extensions/types";
+import { prepareEmbeddedHistoryReview } from "./historyReview";
 
 /** Provide only the provider-neutral fields embedded review startup consumes. */
-function createTestRuntime() {
-  const extensionSession = { registry: {} };
+function createTestRequest() {
+  const extensionSession = { registry: {} } as unknown as ExtensionLoadResult;
   return {
-    repoRoot: resolve("repository"),
+    action: { kind: "revision-show", revisionId: "--opaque:id" } as const,
     startupCwd: resolve("invocation"),
     providerId: "opaque-vcs",
-    input: { extensionPaths: ["extensions/provider.ts"], extensionsEnabled: true },
+    extensionPaths: ["extensions/provider.ts"],
+    extensionsEnabled: true,
     extensionSession,
-  } as unknown as HistoryRuntime;
+  };
 }
 
 describe("embedded history review bootstrap", () => {
   test("preserves opaque actions, invocation-relative extensions, cwd, theme, and signal", async () => {
     const abort = new AbortController();
     let captured: { argv: string[]; deps: Record<string, unknown> } | undefined;
-    const runtime = createTestRuntime();
+    const request = createTestRequest();
     const result = await prepareEmbeddedHistoryReview(
-      runtime,
-      { kind: "revision-show", revisionId: "--opaque:id" },
+      { ...request, themeId: "github-dark", themeMode: "dark" },
       {
-        themeId: "github-dark",
-        themeMode: "dark",
         signal: abort.signal,
         env: {},
         prepareStartupPlanImpl: (async (argv: string[], deps: Record<string, unknown>) => {
           captured = { argv, deps };
           return {
             kind: "app",
-            bootstrap: { extensions: runtime.extensionSession },
+            bootstrap: { extensions: request.extensionSession },
             cliInput: {},
             controllingTerminal: null,
           };
@@ -47,7 +45,7 @@ describe("embedded history review bootstrap", () => {
       terminalThemeMode: "dark",
       signal: abort.signal,
     });
-    expect(captured?.deps.borrowedExtensionLoad).toBe(runtime.extensionSession);
+    expect(captured?.deps.borrowedExtensionLoad).toBe(request.extensionSession);
     expect(result.borrowsExtensions).toBe(true);
     expect(captured?.argv.join(" ")).not.toContain("--opaque:id");
   });
@@ -58,8 +56,7 @@ describe("embedded history review bootstrap", () => {
     let called = false;
     await expect(
       prepareEmbeddedHistoryReview(
-        createTestRuntime(),
-        { kind: "revision-show", revisionId: "opaque" },
+        { ...createTestRequest(), action: { kind: "revision-show", revisionId: "opaque" } },
         {
           signal: abort.signal,
           prepareStartupPlanImpl: (async () => {

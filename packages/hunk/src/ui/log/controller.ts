@@ -1,6 +1,5 @@
 import { createHistoryLaneCheckpoint, planHistoryPage } from "../../core/history/lanePlanner";
 import type { HistoryGraphRow, HistoryLaneCheckpoint } from "../../core/history/types";
-import type { ExtensionVcsHistoryReviewAction } from "../../extension-api/types";
 import { sanitizeTerminalLine } from "../../lib/terminalText";
 import type { HistoryRuntime } from "../history/types";
 
@@ -313,19 +312,9 @@ export class LogController {
     this.setNotice("History refreshed.");
   }
 
-  /** Ask the selected provider to describe the review without interpreting revision syntax. */
+  /** Return the currently selected immutable provider history row. */
   getSelectedRow() {
     return this.snapshot.rows[this.snapshot.selected];
-  }
-
-  planSelectedReview(parentRevisionId?: string): Promise<ExtensionVcsHistoryReviewAction> | null {
-    const commit = this.getSelectedRow()?.commit;
-    return commit
-      ? this.runtime.planReview(
-          commit,
-          parentRevisionId === undefined ? undefined : { parentRevisionId },
-        )
-      : null;
   }
 
   async close() {
