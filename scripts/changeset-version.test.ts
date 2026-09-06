@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { versionPackages } from "./changeset-version";
@@ -73,5 +81,36 @@ describe("canonical changelog versioning", () => {
       "## 1.1.0",
     );
     expect(existsSync(path.join(paths.packageRoot, "CHANGELOG.md"))).toBe(false);
+  });
+
+  test("keeps the generated changelog when it cannot be returned to the root", () => {
+    if (process.platform === "win32" || process.getuid?.() === 0) {
+      // Both make the read-only repository root writable anyway, so the write-back would
+      // succeed and the test could not observe the failure it exists to cover.
+      return;
+    }
+
+    const paths = createTestWorkspace();
+    const staged = path.join(paths.packageRoot, "CHANGELOG.md");
+    const canonical = path.join(paths.repoRoot, "CHANGELOG.md");
+
+    try {
+      // Deny the write-back specifically, after Changesets has already consumed the
+      // `.changeset/*.md` entries, so the staged file is the only copy of the new notes.
+      // The target file itself must be read-only: `copyFileSync` overwrites through the
+      // existing inode, which a read-only parent directory does not prevent.
+      expect(() =>
+        versionPackages(paths, () => {
+          writeFileSync(staged, "# Changelog\n\n## 1.1.0\n\n- Generated once.\n");
+          chmodSync(canonical, 0o400);
+          return 0;
+        }),
+      ).toThrow("The generated history is preserved at");
+    } finally {
+      chmodSync(canonical, 0o600);
+    }
+
+    // The release notes survive the failure and are still the generated ones.
+    expect(readFileSync(staged, "utf8")).toContain("## 1.1.0");
   });
 });

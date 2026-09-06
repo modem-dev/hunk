@@ -6,6 +6,11 @@
  * Changesets writes a changelog beside each publishable manifest. Hunk intentionally keeps its
  * release history at the repository root, so the root file is staged beside `packages/hunk` only
  * for the duration of the Changesets command and copied back after a successful version update.
+ *
+ * The staged copy is removed once it is reproducible again, never before. After Changesets runs it
+ * holds the only copy of the new release notes — the `.changeset/*.md` entries behind them are
+ * already consumed — so a failed write-back leaves it in place and says where to find it rather
+ * than cleaning up the one artifact the release cannot regenerate.
  */
 
 import { copyFileSync, existsSync, rmSync } from "node:fs";
@@ -42,6 +47,7 @@ export function versionPackages(
   }
 
   copyFileSync(canonicalChangelog, packageChangelog);
+  let generatedChangelog = false;
   try {
     const exitCode = runChangesets(paths.repoRoot);
     if (exitCode !== 0) {
@@ -50,9 +56,23 @@ export function versionPackages(
     if (!existsSync(packageChangelog)) {
       throw new Error("Changesets did not produce the hunkdiff package changelog.");
     }
+    // Past this point the staged file is the only copy of the new release notes: Changesets
+    // has already consumed the `.changeset/*.md` entries that produced them.
+    generatedChangelog = true;
     copyFileSync(packageChangelog, canonicalChangelog);
-  } finally {
     rmSync(packageChangelog, { force: true });
+  } catch (error) {
+    // Clean up the staging copy only while it is still reproducible. If the write-back
+    // failed, deleting it would destroy the generated history for good and leave the root
+    // holding pre-version content, so it stays behind for the operator to recover from.
+    if (!generatedChangelog) {
+      rmSync(packageChangelog, { force: true });
+      throw error;
+    }
+    throw new Error(
+      `Failed to return the generated changelog to ${canonicalChangelog}. The generated history is preserved at ${packageChangelog}; move it to the repository root before retrying.`,
+      { cause: error },
+    );
   }
 }
 
