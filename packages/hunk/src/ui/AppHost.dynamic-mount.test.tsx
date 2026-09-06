@@ -1,8 +1,8 @@
 import { expect, mock, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act, useState } from "react";
-import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
-import { createTestDiffFile } from "../../test/helpers/diff-helpers";
+import { createTestVcsAppBootstrap } from "../../../../test/helpers/app-bootstrap";
+import { createTestDiffFile } from "../../../../test/helpers/diff-helpers";
 import { AppHost } from "./AppHost";
 
 mock.restore();

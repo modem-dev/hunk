@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 const tempDirs: string[] = [];
-const mainPath = resolve(import.meta.dir, "../../src/main.tsx");
+const mainPath = resolve(import.meta.dir, "../../packages/hunk/src/main.tsx");
 const jjTest = Bun.which("jj") ? test : test.skip;
 
 /** Run a command and fail the fixture immediately when it cannot complete. */
