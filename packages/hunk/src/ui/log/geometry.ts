@@ -2,7 +2,7 @@ import type { HistoryGraphRow } from "../../core/history/types";
 import { historyDayKey } from "./formatting";
 
 export const LOG_ENTRY_HEIGHT = 3;
-export const LOG_DAY_HEADER_HEIGHT = 1;
+export const LOG_DAY_HEADER_HEIGHT = 2;
 
 export interface LogViewportEntry {
   index: number;
@@ -16,7 +16,7 @@ export interface LogViewportGeometry {
   usedHeight: number;
 }
 
-/** Measure one commit entry, including a repeated day header at each viewport boundary. */
+/** Measure one commit entry, including a repeated day heading and spacer at viewport boundaries. */
 function entryHeight(
   rows: readonly HistoryGraphRow[],
   index: number,

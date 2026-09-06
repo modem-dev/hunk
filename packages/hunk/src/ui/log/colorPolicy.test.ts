@@ -17,10 +17,11 @@ describe("interactive log color policy", () => {
 
   test("maps history roles onto the active semantic theme", () => {
     const selected = resolveTheme("github-dark-default", null);
-    expect(resolveInteractiveLogPalette(selected)).toEqual({
+    const palette = resolveInteractiveLogPalette(selected);
+    expect(palette).toEqual({
       timeline: selected.noteBorder,
-      dayHeading: selected.noteTitleText,
-      author: selected.fileModified,
+      dayHeading: selected.fileRenamed,
+      author: selected.addedSignColor,
       separator: selected.lineNumberFg,
       relativeTime: selected.muted,
       decoration: selected.fileRenamed,
@@ -34,6 +35,7 @@ describe("interactive log color policy", () => {
         selected.noteBorder,
       ],
     });
+    expect(new Set(Object.values(palette).flat()).size).toBeGreaterThanOrEqual(5);
   });
 
   test("does not expose selected theme colors when color is disabled", () => {

@@ -30,7 +30,7 @@ describe("log viewport geometry", () => {
       rows,
       selected: 0,
       requestedTop: 0,
-      bodyHeight: 11,
+      bodyHeight: 13,
       groupByDay: true,
     });
     expect(geometry.entries.map((entry) => [entry.index, entry.showDayHeader])).toEqual([
@@ -38,7 +38,7 @@ describe("log viewport geometry", () => {
       [1, false],
       [2, true],
     ]);
-    expect(geometry.usedHeight).toBe(11);
+    expect(geometry.usedHeight).toBe(13);
   });
 
   test("repeats the current day heading while backfilling near EOF", () => {
@@ -74,11 +74,11 @@ describe("log viewport geometry", () => {
       rows,
       selected: 2,
       requestedTop: 0,
-      bodyHeight: 8,
+      bodyHeight: 10,
       groupByDay: true,
     });
     expect(geometry.top).toBe(1);
     expect(geometry.entries.at(-1)?.index).toBe(2);
-    expect(geometry.usedHeight).toBeLessThanOrEqual(8);
+    expect(geometry.usedHeight).toBeLessThanOrEqual(10);
   });
 });

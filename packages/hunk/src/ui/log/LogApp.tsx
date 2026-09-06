@@ -25,7 +25,7 @@ import {
 import { ParentSelectorDialog } from "./ParentSelectorDialog";
 import { monochromeLogTheme, resolveInteractiveLogPalette } from "./colorPolicy";
 import { formatHistoryDay } from "./formatting";
-import { planLogViewportGeometry } from "./geometry";
+import { LOG_DAY_HEADER_HEIGHT, planLogViewportGeometry } from "./geometry";
 import { projectResponsiveLogRow, resolveLogResponsiveLayout } from "./responsiveLayout";
 
 /** Render graph cells with stable semantic colors from the active Hunk theme. */
@@ -504,7 +504,7 @@ export function LogApp({
                 key={row.commit.revisionId}
                 style={{
                   width: "100%",
-                  height: responsiveLayout.rowHeight + (showDayHeader ? 1 : 0),
+                  height: responsiveLayout.rowHeight + (showDayHeader ? LOG_DAY_HEADER_HEIGHT : 0),
                   flexDirection: "column",
                 }}
               >
@@ -521,6 +521,9 @@ export function LogApp({
                       )}
                     </span>
                   </text>
+                ) : null}
+                {showDayHeader ? (
+                  <text fg={logPalette.timeline}>{snapshot.presentation.unicode ? "│" : "|"}</text>
                 ) : null}
                 <box
                   style={{

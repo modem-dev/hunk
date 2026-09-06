@@ -19,8 +19,8 @@ export interface InteractiveLogPalette {
 export function resolveInteractiveLogPalette(theme: AppTheme): InteractiveLogPalette {
   return {
     timeline: theme.noteBorder,
-    dayHeading: theme.noteTitleText,
-    author: theme.fileModified,
+    dayHeading: theme.fileRenamed,
+    author: theme.addedSignColor,
     separator: theme.lineNumberFg,
     relativeTime: theme.muted,
     decoration: theme.fileRenamed,
