@@ -606,10 +606,13 @@ describe("UI components", () => {
               },
             ],
             selectedPath: "added.txt",
+            selectedEntryId: "added.txt",
             staged: false,
             busy: false,
             selectFile: () => {},
+            selectEntry: () => {},
             toggleStaged: () => {},
+            toggleEntry: () => {},
           }}
         />,
         { width, height: 8 },
@@ -655,7 +658,9 @@ describe("UI components", () => {
       createTestDiffFile("beta", "beta.ts", "b\n", "bb\n"),
     ]);
     const selectFile = mock(() => {});
+    const selectEntry = mock(() => {});
     const toggleStaged = mock(() => {});
+    const toggleEntry = mock(() => {});
     const setup = await testRender(
       <FlexFileSidebar
         files={files}
@@ -675,10 +680,13 @@ describe("UI components", () => {
             version: "test",
           })),
           selectedPath: "alpha.ts",
+          selectedEntryId: "alpha.ts",
           staged: false,
           busy: false,
           selectFile,
+          selectEntry,
           toggleStaged,
+          toggleEntry,
         }}
       />,
       { width: 40, height: 8 },
@@ -692,10 +700,10 @@ describe("UI components", () => {
       for (const row of [alpha, beta, alpha]) {
         await act(async () => setup.mockMouse.click(5, row));
       }
-      expect(selectFile.mock.calls).toHaveLength(3);
-      expect(toggleStaged).not.toHaveBeenCalled();
+      expect(selectEntry.mock.calls).toHaveLength(3);
+      expect(toggleEntry).not.toHaveBeenCalled();
       await act(async () => setup.mockMouse.click(5, alpha));
-      expect(toggleStaged).toHaveBeenCalledWith("alpha.ts");
+      expect(toggleEntry).toHaveBeenCalledWith("alpha.ts");
     } finally {
       time.mockRestore();
       await act(async () => setup.renderer.destroy());

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, setDefaultTimeout, spyOn, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
-import { readFileSync, rmSync, writeFileSync, renameSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { createTestWorkingTreeRepo, runTestGit } from "../../../../test/helpers/working-tree";
 import { loadAppBootstrap } from "../core/changeset/loaders";
@@ -33,12 +33,14 @@ async function createReview({
   onQuit,
   prepare,
   staged = false,
+  width = 150,
 }: {
   beforeStage?: () => Promise<void>;
   resolveEditorLine?: () => Promise<number>;
   onQuit?: () => void;
   prepare?: (root: string) => void;
   staged?: boolean;
+  width?: number;
 } = {}) {
   const root = createTestWorkingTreeRepo();
   roots.push(root);
@@ -81,7 +83,7 @@ async function createReview({
     extensions: { enabled: false, paths: [], repoPaths: [], extensionConfigs: {} },
   });
   setup = await testRender(<AppHost bootstrap={bootstrap} onQuit={onQuit} />, {
-    width: 150,
+    width,
     height: 30,
   });
   await waitForReview(() => setup!.captureCharFrame().includes("Unstaged ("));
@@ -317,5 +319,70 @@ describe("working-tree stream actions", () => {
     await press(" ");
     await waitForReview(() => setup!.captureCharFrame().includes("Unstaged beta.txt."));
     expect(runTestGit(root, "diff", "--cached")).toBe("");
+  });
+
+  test("Space on a compact folder stages only the files listed under that header", async () => {
+    const root = await createReview({
+      prepare: (nextRoot) => {
+        mkdirSync(join(nextRoot, "src", "nested"), { recursive: true });
+        writeFileSync(join(nextRoot, "src", "one.ts"), "one\n");
+        writeFileSync(join(nextRoot, "src", "nested", "two.ts"), "two\n");
+      },
+    });
+    await waitForReview(() => setup!.captureCharFrame().includes("one.ts"));
+    const folderY = setup!
+      .captureCharFrame()
+      .split("\n")
+      .findIndex((line) => {
+        const parts = line.split("│");
+        const sidebar = parts.length >= 3 ? (parts[1] ?? "") : (parts[0] ?? "");
+        return sidebar.includes("src/") && !sidebar.includes("nested") && !sidebar.includes(".ts");
+      });
+    expect(folderY).toBeGreaterThan(0);
+    await act(async () => {
+      await setup!.mockMouse.click(6, folderY);
+    });
+    await press(" ");
+    await waitForReview(() => setup!.captureCharFrame().includes("Staged src/one.ts."));
+    expect(runTestGit(root, "status", "--porcelain", "--", "src/one.ts").trim()).toBe(
+      "A  src/one.ts",
+    );
+    expect(runTestGit(root, "status", "--porcelain", "--", "src/nested/two.ts").trim()).toBe(
+      "?? src/nested/two.ts",
+    );
+    expect(runTestGit(root, "status", "--porcelain", "--", "alpha.txt").trim()).toMatch(/^\s*M/);
+  });
+
+  test("Space on a tree folder stages nested files shown under that row", async () => {
+    const root = await createReview({
+      width: 220,
+      prepare: (nextRoot) => {
+        mkdirSync(join(nextRoot, "src", "nested"), { recursive: true });
+        writeFileSync(join(nextRoot, "src", "one.ts"), "one\n");
+        writeFileSync(join(nextRoot, "src", "nested", "two.ts"), "two\n");
+      },
+    });
+    await waitForReview(() => setup!.captureCharFrame().includes("one.ts"));
+    const folderY = setup!
+      .captureCharFrame()
+      .split("\n")
+      .findIndex((line) => {
+        const parts = line.split("│");
+        const sidebar = parts.length >= 3 ? (parts[1] ?? "") : (parts[0] ?? "");
+        return sidebar.includes("src/") && !sidebar.includes("nested") && !sidebar.includes(".ts");
+      });
+    expect(folderY).toBeGreaterThan(0);
+    await act(async () => {
+      await setup!.mockMouse.click(6, folderY);
+    });
+    await press(" ");
+    await waitForReview(() => setup!.captureCharFrame().includes("Staged 2 files in src/."));
+    expect(runTestGit(root, "status", "--porcelain", "--", "src/one.ts").trim()).toBe(
+      "A  src/one.ts",
+    );
+    expect(runTestGit(root, "status", "--porcelain", "--", "src/nested/two.ts").trim()).toBe(
+      "A  src/nested/two.ts",
+    );
+    expect(runTestGit(root, "status", "--porcelain", "--", "alpha.txt").trim()).toMatch(/^\s*M/);
   });
 });

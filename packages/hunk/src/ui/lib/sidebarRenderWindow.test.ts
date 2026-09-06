@@ -6,7 +6,12 @@ import { buildSidebarRenderWindow, type SidebarRenderWindowItem } from "./sideba
 function createEntries(ids: string[]): SidebarEntry[] {
   return ids.map((id) =>
     id.startsWith("group:")
-      ? { kind: "group", id, label: `${id.slice("group:".length)}/` }
+      ? {
+          kind: "group",
+          id,
+          label: `${id.slice("group:".length)}/`,
+          path: id.slice("group:".length),
+        }
       : {
           kind: "file",
           id,

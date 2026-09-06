@@ -10,6 +10,8 @@ export function WorkingTreeBar({
   width,
   canToggle,
   hunkFocused = false,
+  selectedIsFolder = false,
+  selectedWillStage = false,
   switchView,
   toggleSelected,
 }: {
@@ -18,14 +20,20 @@ export function WorkingTreeBar({
   width: number;
   canToggle: boolean;
   hunkFocused?: boolean;
+  selectedIsFolder?: boolean;
+  selectedWillStage?: boolean;
   switchView: (staged: boolean) => void;
   toggleSelected: () => void;
 }) {
   const selected = pane.files.find((file) => file.path === pane.selectedPath);
-  const stage = hunkFocused ? !pane.staged : selected?.unstaged;
+  const stage = hunkFocused
+    ? !pane.staged
+    : selectedIsFolder
+      ? selectedWillStage
+      : selected?.unstaged;
   const action = pane.busy
     ? "Working…"
-    : `${stage ? "Stage" : "Unstage"} ${hunkFocused ? "hunk" : "file"}`;
+    : `${stage ? "Stage" : "Unstage"} ${hunkFocused ? "hunk" : selectedIsFolder ? "folder" : "file"}`;
   const tabs = [false, true].map((staged) => ({
     staged,
     label: ` ${width < 40 ? (staged ? "S" : "U") : staged ? "Staged" : "Unstaged"} (${pane.files.filter((file) => (staged ? file.staged : file.unstaged)).length}) `,

@@ -34,23 +34,25 @@ export function WorkingTreeDialog({
   const width = frame.width;
   const bodyWidth = Math.max(1, width - 4);
   const stash = prompt.kind === "stash";
-  const unstaged = prompt.file.staged && prompt.file.unstaged;
+  const folder = prompt.folder;
+  const unstaged = prompt.files.some((file) => file.staged && file.unstaged);
   const compact = bodyWidth < 60;
   const availableRows = Math.max(0, frame.height - confirmDialogHeight(0));
   const fieldRows = availableRows > 0 ? 1 : 0;
   const explanationRows = availableRows > fieldRows ? 1 : 0;
   const pathRows = Math.max(0, availableRows - fieldRows - explanationRows);
+  const pathText = folder
+    ? `${prompt.label} (${prompt.files.length} ${prompt.files.length === 1 ? "file" : "files"})`
+    : JSON.stringify(prompt.files[0]?.path ?? prompt.label);
   // Quote control characters and preserve every filename space instead of treating paths as prose.
-  const pathLines = wrapTextByWidth(JSON.stringify(prompt.file.path), bodyWidth).map(
-    (chunk) => chunk.text,
-  );
+  const pathLines = wrapTextByWidth(pathText, bodyWidth).map((chunk) => chunk.text);
   const visiblePath =
     pathLines.length <= pathRows
       ? pathLines
       : [...pathLines.slice(0, Math.max(0, pathRows - 1)), ...(pathRows ? ["…"] : [])];
   return (
     <ConfirmDialog
-      title={stash ? "Stash selected file" : "Discard changes"}
+      title={stash ? (folder ? "Stash selected folder" : "Stash selected file") : "Discard changes"}
       width={width}
       height={confirmDialogHeight(visiblePath.length + explanationRows + fieldRows)}
       terminalHeight={terminalHeight}
@@ -91,7 +93,11 @@ export function WorkingTreeDialog({
         <box height={1}>
           <text fg={theme.muted}>
             {fitText(
-              stash ? "Only this file. Message (optional):" : "Cannot undo discarded changes.",
+              stash
+                ? folder
+                  ? "Only these files. Message (optional):"
+                  : "Only this file. Message (optional):"
+                : "Cannot undo discarded changes.",
               bodyWidth,
             )}
           </text>
@@ -111,8 +117,12 @@ export function WorkingTreeDialog({
             <text fg={theme.muted}>
               {fitText(
                 unstaged
-                  ? "Unstaged only keeps this file's staged changes."
-                  : "Unstaged-only discard is unavailable for this file.",
+                  ? folder
+                    ? "Unstaged only keeps each file's staged changes."
+                    : "Unstaged only keeps this file's staged changes."
+                  : folder
+                    ? "Unstaged-only discard is unavailable for these files."
+                    : "Unstaged-only discard is unavailable for this file.",
                 bodyWidth,
               )}
             </text>

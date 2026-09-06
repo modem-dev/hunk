@@ -558,16 +558,22 @@ excluding unrelated changes from every stash tree and from live cleanup. Revalid
 before writes, retain a published stash if cleanup fails, and report partial completion explicitly.
 These optional operations remain absent for read-only providers and revision comparisons.
 
+API v22 adds optional `stashFiles(input, files, message, ctx)` for one stash covering several
+attested paths. The host confirms a selected folder before calling it. Preserve each file's partial
+staging and exclude unrelated changes, the same way `stashFile` does for one path.
+
 API v20 adds optional `resolveWorkingTreeLine(input, file, line, ctx): Promise<number>`.
 This read-only operation validates a new-side source line and maps staged addresses into the actual
 worktree before an external editor is launched. Validate the reviewed file's source attestation, account for later
 unstaged edits, and refuse unmappable source transforms rather than guessing. Hunk drops a result
 when its review lease has expired. This capability does not launch an editor or grant remote writes.
 
-Mounted panes receive optional `props.workingTree` with this inventory, `selectedPath`, `staged`,
-`busy`, `selectFile(path)`, and `toggleStaged(path)`. These controls expire on review reload.
+Mounted panes receive optional `props.workingTree` with this inventory, `selectedPath`,
+`selectedEntryId`, `staged`, `busy`, `selectFile(path)`, `selectEntry(id)`, `toggleStaged(path)`,
+and `toggleEntry(id)`. These controls expire on review reload.
 Selecting an inactive-side file switches stream tabs without reducing the review to one file.
-File toggling stages remaining unstaged changes first, otherwise unstages the file. Existing
+File toggling stages remaining unstaged changes first, otherwise unstages the file. Folder rows use
+`selectEntry` / `toggleEntry` and apply to the files shown under that row. Existing
 `props.files` and review navigation still describe only the active diff stream. These host-only
 actions are not exposed through browser/session commands or `ctx.commands`.
 

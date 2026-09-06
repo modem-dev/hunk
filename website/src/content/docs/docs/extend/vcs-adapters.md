@@ -64,6 +64,9 @@ preserve its staged content for unstaged-only discard, and exclude unrelated cha
 live cleanup and every stash tree. Retain a published stash and report partial completion if
 cleanup fails. Messages may be empty. Omit unsupported operations.
 
+API v22 adds optional `stashFiles(input, files, message, ctx)` so a selected folder can become one
+stash. Apply the same attestation, partial-staging, and unrelated-change rules as `stashFile`.
+
 API v20 adds optional `resolveWorkingTreeLine(input, file, line, ctx): Promise<number>` for
 read-only validation of a new-side source address and mapping staged addresses through later worktree changes. Revalidate the source
 attestation and refuse unmappable transforms. The host owns editor launch and drops results after

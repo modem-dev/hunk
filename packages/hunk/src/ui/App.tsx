@@ -1047,11 +1047,18 @@ export function App({
     setHunkActionFocused(false);
   }, []);
 
+  const filesPaneFocused =
+    filesPaneVisible && focusArea === "files" && filePanelFocused && !hunkActionFocused;
+  const filesPaneWidth =
+    paneLayout.panes.find((planned) => planned.pane.key === HUNK_FILES_PANE_KEY)?.bounds.width ?? 0;
   const workingTree = useWorkingTreeActions({
     bootstrap,
     selectedFile,
     selectedHunkIndex,
     filter: review.filter,
+    reviewFiles: filteredFiles,
+    filesPaneFocused,
+    filesPaneWidth,
     createLease: createReviewCapabilityLease,
     selectReviewFile: jumpToFile,
     focusFiles,
@@ -1136,8 +1143,6 @@ export function App({
   const activeReplyableNoteId = selectActiveReplyableReviewNoteId(review.store.getSnapshot());
   // Files-pane keyboard ownership: vertical movement, stash, and discard. Diff
   // headers can select a file for staging without giving the sidebar that ownership.
-  const filesPaneFocused =
-    filesPaneVisible && focusArea === "files" && filePanelFocused && !hunkActionFocused;
   const reviewPaneFocused = filesPaneVisible && focusArea === "files" && !filesPaneFocused;
 
   /** Step the review selection and record which pane now owns keyboard movement. */
@@ -1189,6 +1194,12 @@ export function App({
         scrollDiff,
         stepDiffLine: (delta) => {
           if (filesPaneFocused) {
+            if (workingTree.pane) {
+              setFilePanelFocused(true);
+              setHunkActionFocused(false);
+              workingTree.moveEntry(delta);
+              return;
+            }
             moveReviewSelection("file", delta);
             return;
           }
@@ -1457,6 +1468,8 @@ export function App({
           theme={activeTheme}
           width={terminal.width}
           hunkFocused={hunkStagingActive}
+          selectedIsFolder={workingTree.selectedIsFolder}
+          selectedWillStage={workingTree.selectedWillStage}
           canToggle={hunkStagingActive || workingTree.canToggleSelected}
           switchView={workingTree.switchView}
           toggleSelected={

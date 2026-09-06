@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { createTestWorkingTreeRepo, runTestGit } from "../../../test/helpers/working-tree";
 import { createGitVcsAdapter } from "./index";
 import { loadGitWorkingTreeFiles } from "./workingTree";
-import { discardGitFile, stashGitFile } from "./fileActions";
+import { discardGitFile, stashGitFile, stashGitFiles } from "./fileActions";
 
 const roots: string[] = [];
 const input = { kind: "vcs" as const, staged: false, options: {} };
@@ -61,6 +61,19 @@ describe("selected-file discard and stash", () => {
     expect(runTestGit(root, "show", ":alpha.txt")).toBe("staged alpha\n");
     expect(readFileSync(join(root, "alpha.txt"), "utf8")).toBe("unstaged alpha\n");
     expect(readFileSync(join(root, "beta.txt"), "utf8")).toBe("other\n");
+  });
+
+  test("stashes several attested paths as one stash without unrelated files", async () => {
+    const root = fixture();
+    writeFileSync(join(root, "gamma.txt"), "new gamma\n");
+    await stashGitFiles(input, [status(root), status(root, "gamma.txt")], "pair", { cwd: root });
+    expect(runTestGit(root, "diff", "--name-only", "stash^1", "stash").trim()).toBe("alpha.txt");
+    expect(runTestGit(root, "show", "stash:alpha.txt")).toBe("unstaged alpha\n");
+    expect(runTestGit(root, "show", "stash^2:alpha.txt")).toBe("staged alpha\n");
+    expect(runTestGit(root, "ls-tree", "--name-only", "stash^3").trim()).toBe("gamma.txt");
+    expect(existsSync(join(root, "gamma.txt"))).toBe(false);
+    expect(runTestGit(root, "diff", "HEAD", "--", "alpha.txt")).toBe("");
+    expectUnrelated(root);
   });
 
   test("stashes an exact untracked path without including another untracked file", async () => {

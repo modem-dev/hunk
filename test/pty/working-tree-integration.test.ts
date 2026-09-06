@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createTestWorkingTreeRepo, runTestGit } from "../helpers/working-tree";
 import { createPtyHarness } from "./harness";
@@ -113,6 +113,47 @@ describe("PTY working-tree staging", () => {
       await session.press("space");
       await harness.waitForSnapshot(session, (text) => /\?\?\s+aaa-new\.txt/.test(text), 10_000);
       expect(readFileSync(join(root, "aaa-new.txt"), "utf8")).toBe("new file content\n");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("Space on a selected folder stages the nested files shown under it", async () => {
+    const root = createTestWorkingTreeRepo();
+    roots.push(root);
+    mkdirSync(join(root, "src", "nested"), { recursive: true });
+    writeFileSync(join(root, "src", "one.ts"), "one\n");
+    writeFileSync(join(root, "src", "nested", "two.ts"), "two\n");
+    const session = await harness.launchHunk({
+      cwd: root,
+      args: ["diff", "--sidebar", "--no-extensions", "--mode", "stack"],
+      cols: 220,
+      rows: 30,
+    });
+    try {
+      await session.waitForText("one.ts", { timeout: 15_000 });
+      const lines = session
+        .getTerminalData()
+        .lines.map((line) => line.spans.map((span) => span.text).join(""));
+      const row = lines.findIndex((line, index) => {
+        if (index <= 2) return false;
+        const parts = line.split("│");
+        const sidebar = parts.length >= 3 ? (parts[1] ?? "") : (parts[0] ?? "");
+        return sidebar.includes("src/") && !sidebar.includes("nested") && !sidebar.includes(".ts");
+      });
+      expect(row).toBeGreaterThan(2);
+      const col = Math.max(2, lines[row]!.indexOf("src/") + 1);
+      const click = `\x1b[<0;${col};${row + 1}M\x1b[<0;${col};${row + 1}m`;
+      session.writeRaw(click);
+      await session.waitForText("Stage folder");
+      await session.press("space");
+      await harness.waitForSnapshot(
+        session,
+        (text) => /A\s+one\.ts/.test(text) && /A\s+two\.ts/.test(text),
+        10_000,
+      );
+      expect(runTestGit(root, "show", ":src/one.ts")).toBe("one\n");
+      expect(runTestGit(root, "show", ":src/nested/two.ts")).toBe("two\n");
     } finally {
       session.close();
     }

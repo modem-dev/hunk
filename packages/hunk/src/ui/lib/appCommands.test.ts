@@ -175,7 +175,7 @@ describe("built-in command chords", () => {
     expect(helpKeys("half page down / up")).toBe("Ctrl+D / u");
     expect(helpKeys("sidebar / theme selector")).toBe("t");
     expect(helpKeys("toggle files/filter focus")).toBeUndefined();
-    expect(helpKeys("stage / unstage focused file or hunk")).toBe("Space");
+    expect(helpKeys("stage / unstage focused file, folder, or hunk")).toBe("Space");
     expect(helpKeys("switch unstaged / staged stream")).toBe("Tab");
     expect(fileHint("hunk.app.toggleFocusArea")).toMatchObject({ hint: undefined });
     expect(fileHint("hunk.review.toggleStagedView")).toMatchObject({ hint: "Tab" });

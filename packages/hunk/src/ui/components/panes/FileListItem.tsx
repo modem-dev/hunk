@@ -50,24 +50,36 @@ function getFileStateIcon(
 export function FileGroupHeader({
   entry,
   paddingLeft = 1,
+  selected = false,
   textWidth,
   theme,
+  onSelect,
 }: {
   entry: FileGroupEntry;
   paddingLeft?: number;
+  selected?: boolean;
   textWidth: number;
   theme: ExtensionSidebarTheme;
+  onSelect?: (entryId: string) => void;
 }) {
+  const rowBackground = selected ? theme.accentMuted : theme.panel;
   return (
     <box
+      id={fileRowId(entry.id)}
       style={{
         width: "100%",
         height: 1,
         paddingLeft,
-        backgroundColor: theme.panel,
+        backgroundColor: rowBackground,
+      }}
+      onMouseUp={(event) => {
+        if (event.button !== MouseButton.LEFT || !onSelect) return;
+        onSelect(entry.id);
       }}
     >
-      <text fg={theme.muted}>{fitText(entry.label, Math.max(1, textWidth))}</text>
+      <text fg={selected ? theme.text : theme.muted}>
+        {fitText(entry.label, Math.max(1, textWidth))}
+      </text>
     </box>
   );
 }
@@ -83,18 +95,23 @@ export function FileDirectoryRow({
   entry,
   onToggleDirectory,
   paddingLeft = 1,
+  selected = false,
   statsWidth = 0,
   textWidth,
   theme,
+  onSelect,
 }: {
   collapsed: boolean;
   entry: FileDirectoryEntry;
   onToggleDirectory: (path: string) => void;
   paddingLeft?: number;
+  selected?: boolean;
   statsWidth?: number;
   textWidth: number;
   theme: ExtensionSidebarTheme;
+  onSelect?: (entryId: string) => void;
 }) {
+  const rowBackground = selected ? theme.accentMuted : theme.panel;
   const statsSectionWidth = statsWidth > 0 ? statsWidth + 1 : 0;
   const countText = collapsed
     ? `${entry.descendantFileCount} ${entry.descendantFileCount === 1 ? "file" : "files"}`
@@ -110,30 +127,32 @@ export function FileDirectoryRow({
 
   return (
     <box
+      id={fileRowId(entry.id)}
       style={{
         width: "100%",
         height: 1,
         flexDirection: "row",
-        backgroundColor: theme.panel,
+        backgroundColor: rowBackground,
       }}
       onMouseUp={(event: TuiMouseEvent) => {
         if (event.button === MouseButton.LEFT) {
+          onSelect?.(entry.id);
           onToggleDirectory(entry.path);
         }
       }}
     >
-      <box style={{ width: 1, height: 1, backgroundColor: theme.panel }} />
+      <box style={{ width: 1, height: 1, backgroundColor: rowBackground }} />
       <box
         style={{
           flexGrow: 1,
           height: 1,
           paddingLeft: paddingLeft + indentWidth,
           flexDirection: "row",
-          backgroundColor: theme.panel,
+          backgroundColor: rowBackground,
         }}
       >
         <text fg={theme.muted}>{collapsed ? "› " : "⌄ "}</text>
-        <text fg={theme.muted}>{padText(fitText(entry.label, labelWidth), labelWidth)}</text>
+        <text fg={selected ? theme.text : theme.muted}>{padText(fitText(entry.label, labelWidth), labelWidth)}</text>
         {countText && (
           <box
             style={{

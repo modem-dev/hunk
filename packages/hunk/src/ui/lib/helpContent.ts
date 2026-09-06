@@ -102,11 +102,11 @@ const HELP_SECTIONS: readonly HelpSectionSpec[] = [
       },
       {
         commandIds: ["hunk.review.discardSelectedFile"],
-        description: "discard selected file changes (confirmed)",
+        description: "discard selected file or folder changes (confirmed)",
       },
       {
         commandIds: ["hunk.review.stashSelectedFile"],
-        description: "stash selected file with a message",
+        description: "stash selected file or folder with a message",
       },
       {
         commandIds: ["hunk.review.editSelectedFile"],
@@ -119,7 +119,7 @@ const HELP_SECTIONS: readonly HelpSectionSpec[] = [
     entries: [
       {
         commandIds: ["hunk.review.toggleFileStaged", "hunk.review.toggleHunkStaged"],
-        description: "stage / unstage focused file or hunk",
+        description: "stage / unstage focused file, folder, or hunk",
       },
       {
         commandIds: ["hunk.review.toggleStagedView"],

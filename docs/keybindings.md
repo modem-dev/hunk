@@ -61,10 +61,14 @@ Quitting the opened review returns to the retained history selection and viewpor
 an ordered provider-owned parent; they do not navigate the history selection to that parent.
 
 In plain working-tree reviews, **Space** stages the selected file's remaining unstaged changes,
-or unstages it when fully staged. File-row double-click and the clickable action beside the
-stream tabs do the same. The sidebar shows Git-style status columns: green index changes and red worktree changes,
+or unstages it when fully staged. Folder rows in the files pane are selectable too: Space, double-click,
+and the clickable action beside the stream tabs apply to the files shown under that folder — nested files
+in the wide tree projection, or only the files listed under that header in the compact grouped projection.
+If any of those files still have unstaged changes, Space stages them; otherwise it unstages the fully staged ones.
+File-row double-click and the clickable action beside the stream tabs do the same for a selected file.
+The sidebar shows Git-style status columns: green index changes and red worktree changes,
 including partially staged files. Untracked files show red `??`; staged additions show green `A`
-and a green filename. The selected file has a full-row highlight. A successful file action follows the file to the other tab.
+and a green filename. The selected file or folder has a full-row highlight. A successful file action follows the file to the other tab.
 Clicking a code line or navigating with `[` / `]` selects **hunk** action scope: Space then stages
 that unstaged hunk, or unstages that staged hunk, without changing other hunks or disk contents.
 Double-clicking a code line applies its hunk on release, provided the pointer did not move. Hunk actions keep the current stream tab;
@@ -77,11 +81,11 @@ that index line through further unstaged insertions, replacements, and deletions
 working-tree location. Missing files, stale source state, and text-converted lines produce
 a notice instead of a guessed location. Supported line-jump syntax covers vi/vim/nvim,
 code/code-insiders/cursor, and hx; unknown editor syntax is refused instead of opening at file start.
-**d** opens discard choices for the selected file: Enter or **x** discards all its changes,
+**d** opens discard choices for the selected file or folder: Enter or **x** discards all its changes,
 **u** discards only unstaged changes when both sides have changes, and Escape cancels.
-**s** opens a selected-file stash message input; Enter stashes and Escape cancels. The stash
-contains only that file's changes, including its staged/unstaged split, not unrelated staged files.
-These actions require a selected actionable file in the visible, focused file panel. They reject stale targets and
+**s** opens a selected-file or selected-folder stash message input; Enter stashes and Escape cancels. The stash
+contains only those files' changes, including each staged/unstaged split, not unrelated staged files.
+These actions require a selected actionable file or folder in the visible, focused file panel. They reject stale targets and
 renames whose former path has been recreated. Stashing requires an initial commit. While reviewing a hunk,
 with the file panel hidden, or outside an actionable working-tree review, **d** retains half-page scrolling and **s** toggles the files pane;
 **Ctrl+d** and the View menu remain available in working-tree reviews.
@@ -101,7 +105,7 @@ remain remappable, and an explicit user binding takes precedence over contextual
 | `hunk.review.alignCurrentLineBottom`           | Align current line to viewport bottom          | _(none)_                     |
 | `hunk.review.alignCurrentLineCenter`           | Center current line in viewport                | _(none)_                     |
 | `hunk.review.alignCurrentLineTop`              | Align current line to viewport top             | _(none)_                     |
-| `hunk.review.discardSelectedFile`              | Discard selected file changes                  | `d`                          |
+| `hunk.review.discardSelectedFile`              | Discard selected file or folder changes        | `d`                          |
 | `hunk.review.editActiveNote`                   | Edit the active review note                    | `E`                          |
 | `hunk.review.editSelectedFile`                 | Open the selected file in your editor          | `e`                          |
 | `hunk.review.focusFilter`                      | Focus the file filter                          | `/`                          |
@@ -123,10 +127,10 @@ remain remappable, and an explicit user binding takes precedence over contextual
 | `hunk.review.scrollCodeLeft`                   | Scroll code left (shifted scrolls fast)        | `left`, `shift+left`         |
 | `hunk.review.scrollCodeRight`                  | Scroll code right (shifted scrolls fast)       | `right`, `shift+right`       |
 | `hunk.review.startNote`                        | Add a review note                              | `c`                          |
-| `hunk.review.stashSelectedFile`                | Stash selected file                            | `s`                          |
+| `hunk.review.stashSelectedFile`                | Stash selected file or folder                  | `s`                          |
 | `hunk.review.stepDown`                         | Move down in the focused pane                  | `down`, `j`                  |
 | `hunk.review.stepUp`                           | Move up in the focused pane                    | `up`, `k`                    |
-| `hunk.review.toggleFileStaged`                 | Stage / unstage selected file                  | `space`                      |
+| `hunk.review.toggleFileStaged`                 | Stage / unstage selected file or folder        | `space`                      |
 | `hunk.review.toggleHunkGap`                    | Expand or collapse the selected context        | `z`                          |
 | `hunk.review.toggleHunkStaged`                 | Stage / unstage selected hunk                  | `space`                      |
 | `hunk.review.toggleStagedView`                 | Switch unstaged / staged stream                | `tab`                        |

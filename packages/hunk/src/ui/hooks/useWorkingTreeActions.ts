@@ -17,11 +17,27 @@ import type {
 } from "../../extension-api/types";
 import type { ExtensionCapabilityLease } from "../lib/extensionCapabilityLease";
 import type { WorkspaceWriteRunner } from "./useExtensionWorkspaceControls";
+import {
+  cursorFromSidebarIndex,
+  filesVisuallyUnderSidebarEntry,
+  sidebarEntryIdAtIndex,
+  sidebarIndexFromCursor,
+  stepSidebarIndex,
+  type FilePaneCursor,
+} from "../lib/filePaneSelection";
+import {
+  buildFilePaneEntries,
+  fileSidebarContentWidth,
+  workingTreeSidebarSources,
+  type SidebarFileSource,
+} from "../lib/files";
 
-/** Capture the exact file and generation the user is being asked to change. */
+/** Capture the exact files and generation the user is being asked to change. */
 export interface WorkingTreePrompt {
   kind: "discard" | "stash";
-  file: ExtensionWorkingTreeFile;
+  files: readonly ExtensionWorkingTreeFile[];
+  label: string;
+  folder: boolean;
   lease: ExtensionCapabilityLease;
 }
 
@@ -42,6 +58,9 @@ export function useWorkingTreeActions({
   selectedFile,
   selectedHunkIndex,
   filter,
+  reviewFiles,
+  filesPaneFocused,
+  filesPaneWidth,
   createLease,
   selectReviewFile,
   focusFiles,
@@ -54,6 +73,9 @@ export function useWorkingTreeActions({
   selectedFile: DiffFile | undefined;
   selectedHunkIndex: number;
   filter: string;
+  reviewFiles: readonly SidebarFileSource[];
+  filesPaneFocused: boolean;
+  filesPaneWidth: number;
   createLease: () => ExtensionCapabilityLease;
   selectReviewFile: (fileId: string, options: { alignFileHeaderTop: true }) => void;
   focusFiles: () => void;
@@ -78,16 +100,39 @@ export function useWorkingTreeActions({
   const busyRef = useRef(false);
   const switchingRef = useRef(false);
   const mutatingRef = useRef(false);
-  const pendingPathRef = useRef<{ path: string; changeset: AppBootstrap["changeset"] } | null>(
-    null,
+  const pendingCursorRef = useRef<{
+    cursor: FilePaneCursor;
+    changeset: AppBootstrap["changeset"];
+  } | null>(null);
+  const [chosenCursor, setChosenCursor] = useState<FilePaneCursor | null>(null);
+  const sources = useMemo(
+    () => (enabled ? workingTreeSidebarSources(reviewFiles, files) : []),
+    [enabled, reviewFiles, files],
   );
-  const [chosenPath, setChosenPath] = useState<string | null>(null);
-  const selectedPath =
-    [pendingPathRef.current?.path, selectedFile?.path, chosenPath].find((path) =>
-      files.some((file) => file.path === path),
-    ) ??
-    files[0]?.path ??
-    null;
+  const entries = useMemo(
+    () => buildFilePaneEntries(sources, fileSidebarContentWidth(filesPaneWidth)),
+    [sources, filesPaneWidth],
+  );
+  const reviewFileCursor: FilePaneCursor | null = selectedFile
+    ? { kind: "file", id: selectedFile.path }
+    : null;
+  const pendingCursor = pendingCursorRef.current?.cursor ?? null;
+  const folderCursor = filesPaneFocused && chosenCursor?.kind === "folder" ? chosenCursor : null;
+  const activeCursor = pendingCursor ?? folderCursor ?? reviewFileCursor ?? chosenCursor;
+  const selectedIndex = sidebarIndexFromCursor(entries, activeCursor);
+  const selectedEntryId = sidebarEntryIdAtIndex(entries, selectedIndex);
+  const selectedVisualFiles = filesVisuallyUnderSidebarEntry(entries, selectedIndex);
+  const selectedStatusFiles = selectedVisualFiles
+    .map((entry) => files.find((file) => file.path === entry.id))
+    .filter((file): file is ExtensionWorkingTreeFile => Boolean(file));
+  const selectedPath = selectedStatusFiles[0]?.path ?? null;
+  const selectedIsFolder = Boolean(
+    entries[selectedIndex] && entries[selectedIndex]!.kind !== "file",
+  );
+  const selectedLabel =
+    entries[selectedIndex] && entries[selectedIndex]!.kind !== "file"
+      ? entries[selectedIndex]!.label
+      : (selectedPath ?? "");
   const lease = useMemo(() => createLease(), [bootstrap, createLease]);
   const [promptState, setPromptState] = useState<WorkingTreePrompt | null>(null);
   const promptRef = useRef<WorkingTreePrompt | null>(null);
@@ -110,14 +155,20 @@ export function useWorkingTreeActions({
   }, []);
 
   useEffect(() => {
-    const pending = pendingPathRef.current;
+    const pending = pendingCursorRef.current;
     if (!pending || pending.changeset === bootstrap.changeset) return;
     // Consume a follow request once its authoritative inventory arrives, including clean files.
-    pendingPathRef.current = null;
-    const file = bootstrap.changeset.files.find((candidate) => candidate.path === pending.path);
-    setChosenPath(file?.path ?? null);
+    pendingCursorRef.current = null;
+    setChosenCursor(pending.cursor);
+    const index = sidebarIndexFromCursor(entries, pending.cursor);
+    const followPath =
+      filesVisuallyUnderSidebarEntry(entries, index)[0]?.id ??
+      (pending.cursor.kind === "file" ? pending.cursor.id : null);
+    const file = followPath
+      ? bootstrap.changeset.files.find((candidate) => candidate.path === followPath)
+      : undefined;
     if (file) selectReviewFile(file.id, { alignFileHeaderTop: true });
-  }, [bootstrap, selectReviewFile]);
+  }, [bootstrap, entries, selectReviewFile]);
 
   /** Switch the full stream without letting fast repeated keys enqueue stale switches. */
   const switchView = useCallback(
@@ -129,7 +180,7 @@ export function useWorkingTreeActions({
       try {
         await setStagedView(next);
       } catch (error) {
-        pendingPathRef.current = null;
+        pendingCursorRef.current = null;
         showNotice(
           `Could not switch review: ${error instanceof Error ? error.message : String(error)}`,
         );
@@ -142,14 +193,14 @@ export function useWorkingTreeActions({
     [enabled, lease, staged, setStagedView, showNotice],
   );
 
-  const selectFile = useCallback(
-    (path: string) => {
+  const revealStatusPath = useCallback(
+    (path: string, cursor: FilePaneCursor) => {
       if (!lease.isLive() || busyRef.current) return;
       const status = files.find((file) => file.path === path);
       if (!status) return;
       focusFiles();
-      pendingPathRef.current = null;
-      setChosenPath(path);
+      pendingCursorRef.current = null;
+      setChosenCursor(cursor);
       // A recreated rename source is a separate status row, never an alias for the destination.
       const file = (staged ? status.staged : status.unstaged)
         ? bootstrap.changeset.files.find((candidate) => candidate.path === path)
@@ -158,36 +209,66 @@ export function useWorkingTreeActions({
         selectReviewFile(file.id, { alignFileHeaderTop: true });
         return;
       }
-      pendingPathRef.current = { path, changeset: bootstrap.changeset };
+      pendingCursorRef.current = { cursor, changeset: bootstrap.changeset };
       void switchView(!staged);
     },
     [lease, files, focusFiles, bootstrap.changeset, selectReviewFile, switchView, staged],
   );
 
-  const canToggle = useCallback(
-    (path: string | null) => {
-      const file = files.find((candidate) => candidate.path === path);
-      return Boolean(
+  const selectFile = useCallback(
+    (path: string) => {
+      revealStatusPath(path, { kind: "file", id: path });
+    },
+    [revealStatusPath],
+  );
+
+  const selectEntry = useCallback(
+    (id: string) => {
+      const index = entries.findIndex((entry) => entry.id === id);
+      if (index < 0) return;
+      const cursor = cursorFromSidebarIndex(entries, index);
+      if (!cursor) return;
+      const nested = filesVisuallyUnderSidebarEntry(entries, index);
+      const firstPath = nested[0]?.id;
+      if (firstPath) revealStatusPath(firstPath, cursor);
+      else {
+        focusFiles();
+        setChosenCursor(cursor);
+      }
+    },
+    [entries, focusFiles, revealStatusPath],
+  );
+
+  const canToggleFile = useCallback(
+    (file: ExtensionWorkingTreeFile | undefined) =>
+      Boolean(
         file &&
         !file.unavailableReason &&
         !file.conflicted &&
         (file.unstaged ? operation?.stageFile : file.staged && operation?.unstageFile),
-      );
+      ),
+    [operation],
+  );
+
+  const stagingTargets = useCallback(
+    (targets: readonly ExtensionWorkingTreeFile[]) => {
+      const actionable = targets.filter(canToggleFile);
+      const toStage = actionable.filter((file) => file.unstaged);
+      if (toStage.length > 0) return { stage: true, files: toStage };
+      return { stage: false, files: actionable.filter((file) => file.staged) };
     },
-    [files, operation],
+    [canToggleFile],
   );
 
   /** Keep file and hunk writes on the same busy, error, refresh, and graceful-exit path. */
   const startMutation = useCallback(
-    (
-      file: ExtensionWorkingTreeFile,
-      action: {
-        mutate: () => Promise<void>;
-        progress: string;
-        complete: string;
-        followStaged?: boolean;
-      },
-    ) => {
+    (action: {
+      mutate: () => Promise<void>;
+      progress: string;
+      complete: string;
+      followStaged?: boolean;
+      followCursor?: FilePaneCursor | null;
+    }) => {
       busyRef.current = true;
       mutatingRef.current = true;
       setBusy(true);
@@ -197,8 +278,11 @@ export function useWorkingTreeActions({
         try {
           await action.mutate();
           succeeded = true;
-          if (action.followStaged !== undefined)
-            pendingPathRef.current = { path: file.path, changeset: bootstrap.changeset };
+          if (action.followStaged !== undefined && action.followCursor)
+            pendingCursorRef.current = {
+              cursor: action.followCursor,
+              changeset: bootstrap.changeset,
+            };
         } finally {
           // A failed provider command can partially change state, so reconcile before unlocking.
           await refreshAfterMutation(
@@ -233,28 +317,61 @@ export function useWorkingTreeActions({
     [bootstrap.changeset, runMutation, refreshAfterMutation, showNotice],
   );
 
+  const describeTargets = (targets: readonly ExtensionWorkingTreeFile[], label: string) =>
+    targets.length === 1 ? targets[0]!.path : `${targets.length} files in ${label}`;
+
+  const toggleStatusFiles = useCallback(
+    (
+      targets: readonly ExtensionWorkingTreeFile[],
+      cursor: FilePaneCursor | null,
+      label: string,
+    ) => {
+      if (!lease.isLive() || mutatingRef.current || bootstrap.input.kind !== "vcs") return;
+      const { stage, files: next } = stagingTargets(targets);
+      if (next.length === 0) return;
+      const mutate = stage ? operation?.stageFile : operation?.unstageFile;
+      if (!mutate) return;
+      const input = bootstrap.input;
+      const context = { cwd: bootstrap.changeset.sourceLabel };
+      const subject = describeTargets(next, label);
+      startMutation({
+        mutate: async () => {
+          for (const file of next) await mutate(input, file, context);
+        },
+        progress: `${stage ? "Staging" : "Unstaging"} ${subject}…`,
+        complete: `${stage ? "Staged" : "Unstaged"} ${subject}.`,
+        followStaged: stage,
+        followCursor: cursor,
+      });
+    },
+    [lease, bootstrap, operation, stagingTargets, startMutation],
+  );
+
   const toggleStaged = useCallback(
     (path: string) => {
       // A double-click may finish while its first click switches tabs; its explicit path is attested.
-      if (
-        !lease.isLive() ||
-        mutatingRef.current ||
-        !canToggle(path) ||
-        bootstrap.input.kind !== "vcs"
-      )
-        return;
-      const file = files.find((candidate) => candidate.path === path)!;
-      const mutate = file.unstaged ? operation?.stageFile : operation?.unstageFile;
-      if (!mutate) return;
-      const input = bootstrap.input;
-      startMutation(file, {
-        mutate: () => mutate(input, file, { cwd: bootstrap.changeset.sourceLabel }),
-        progress: `${file.unstaged ? "Staging" : "Unstaging"} ${file.path}…`,
-        complete: `${file.unstaged ? "Staged" : "Unstaged"} ${file.path}.`,
-        followStaged: file.unstaged,
-      });
+      const file = files.find((candidate) => candidate.path === path);
+      if (!file || !canToggleFile(file)) return;
+      toggleStatusFiles([file], { kind: "file", id: path }, file.path);
     },
-    [lease, canToggle, bootstrap, files, operation, startMutation],
+    [files, canToggleFile, toggleStatusFiles],
+  );
+
+  const toggleEntry = useCallback(
+    (id: string) => {
+      const index = entries.findIndex((entry) => entry.id === id);
+      if (index < 0) return;
+      const cursor = cursorFromSidebarIndex(entries, index);
+      const nested = filesVisuallyUnderSidebarEntry(entries, index)
+        .map((entry) => files.find((file) => file.path === entry.id))
+        .filter((file): file is ExtensionWorkingTreeFile => Boolean(file));
+      const label =
+        entries[index] && entries[index]!.kind !== "file"
+          ? entries[index]!.label
+          : (nested[0]?.path ?? id);
+      toggleStatusFiles(nested, cursor, label);
+    },
+    [entries, files, toggleStatusFiles],
   );
 
   const canToggleHunk = useCallback(
@@ -286,7 +403,7 @@ export function useWorkingTreeActions({
       if (!mutate) return false;
       const input = bootstrap.input;
       const hunk = summarizeHunk(reviewed.metadata.hunks[hunkIndex]!, hunkIndex);
-      startMutation(file, {
+      startMutation({
         mutate: () => mutate(input, file, hunk, { cwd: bootstrap.changeset.sourceLabel }),
         progress: `${staged ? "Unstaging" : "Staging"} hunk ${hunkIndex + 1} in ${file.path}…`,
         complete: `${staged ? "Unstaged" : "Staged"} hunk ${hunkIndex + 1} in ${file.path}.`,
@@ -296,11 +413,19 @@ export function useWorkingTreeActions({
     [canToggleHunk, bootstrap, files, operation, staged, startMutation],
   );
 
-  const selectedStatus = files.find((file) => file.path === selectedPath);
-  const actionableFile =
-    enabled && selectedStatus && !selectedStatus.conflicted && !selectedStatus.unavailableReason;
-  const canDiscardSelected = Boolean(actionableFile && operation?.discardFile);
-  const canStashSelected = Boolean(actionableFile && operation?.stashFile);
+  const actionableFiles = selectedStatusFiles.filter(
+    (file) => !file.conflicted && !file.unavailableReason,
+  );
+  const canDiscardSelected = Boolean(
+    enabled && actionableFiles.length > 0 && operation?.discardFile,
+  );
+  const canStashSelected = Boolean(
+    enabled &&
+    actionableFiles.length > 0 &&
+    (actionableFiles.length === 1
+      ? operation?.stashFile || operation?.stashFiles
+      : operation?.stashFiles),
+  );
 
   /** Open a generation-bound prompt; rapid repeated keys cannot replace its captured target. */
   const openPrompt = (kind: WorkingTreePrompt["kind"]) => {
@@ -308,11 +433,17 @@ export function useWorkingTreeActions({
       !lease.isLive() ||
       busyRef.current ||
       getPrompt() ||
-      !selectedStatus ||
+      actionableFiles.length === 0 ||
       !(kind === "discard" ? canDiscardSelected : canStashSelected)
     )
       return;
-    const pending = { kind, file: selectedStatus, lease };
+    const pending = {
+      kind,
+      files: actionableFiles,
+      label: selectedLabel || actionableFiles[0]!.path,
+      folder: selectedIsFolder,
+      lease,
+    };
     setMessage("");
     promptRef.current = pending;
     setPromptState(pending);
@@ -322,25 +453,45 @@ export function useWorkingTreeActions({
   const acceptPrompt = (scope: ExtensionVcsDiscardScope = "all") => {
     const pending = getPrompt();
     if (!pending || busyRef.current || bootstrap.input.kind !== "vcs") return;
-    const { file, kind } = pending;
-    if (kind === "discard" && scope === "unstaged" && !(file.staged && file.unstaged)) return;
+    const { files: targets, kind, label } = pending;
+    if (
+      kind === "discard" &&
+      scope === "unstaged" &&
+      !targets.some((file) => file.staged && file.unstaged)
+    )
+      return;
     const input = bootstrap.input;
     const context = { cwd: bootstrap.changeset.sourceLabel };
     const discard = operation?.discardFile;
-    const stash = operation?.stashFile;
-    if (kind === "discard" ? !discard : !stash) return;
+    const stashOne = operation?.stashFile;
+    const stashMany = operation?.stashFiles;
+    if (kind === "discard" ? !discard : !(stashMany || stashOne)) return;
     const stashMessage = messageRef.current;
+    const subject = describeTargets(targets, label);
     cancelPrompt();
-    startMutation(file, {
-      mutate: () =>
-        kind === "discard"
-          ? discard!(input, file, scope, context)
-          : stash!(input, file, stashMessage, context),
-      progress: `${kind === "discard" ? "Discarding" : "Stashing"} ${file.path}…`,
+    startMutation({
+      mutate: async () => {
+        if (kind === "discard") {
+          for (const file of targets) {
+            if (scope === "unstaged") {
+              if (file.staged && file.unstaged) await discard!(input, file, "unstaged", context);
+              else if (file.unstaged && !file.staged && !file.untracked)
+                await discard!(input, file, "all", context);
+              continue;
+            }
+            await discard!(input, file, scope, context);
+          }
+          return;
+        }
+        if (stashOne && targets.length === 1) {
+          await stashOne(input, targets[0]!, stashMessage, context);
+          return;
+        }
+        await stashMany!(input, targets, stashMessage, context);
+      },
+      progress: `${kind === "discard" ? "Discarding" : "Stashing"} ${subject}…`,
       complete:
-        kind === "discard"
-          ? `Discarded ${scope} changes in ${file.path}.`
-          : `Stashed ${file.path}.`,
+        kind === "discard" ? `Discarded ${scope} changes in ${subject}.` : `Stashed ${subject}.`,
     });
   };
 
@@ -350,14 +501,37 @@ export function useWorkingTreeActions({
         ? Object.freeze({
             files,
             selectedPath,
+            selectedEntryId,
             staged,
             busy,
             selectFile,
+            selectEntry,
             toggleStaged,
+            toggleEntry,
           })
         : undefined,
-    [enabled, files, selectedPath, staged, busy, selectFile, toggleStaged],
+    [
+      enabled,
+      files,
+      selectedPath,
+      selectedEntryId,
+      staged,
+      busy,
+      selectFile,
+      selectEntry,
+      toggleStaged,
+      toggleEntry,
+    ],
   );
+
+  const selectedToggle = stagingTargets(
+    filesPaneFocused
+      ? selectedStatusFiles
+      : selectedPath
+        ? files.filter((file) => file.path === selectedPath)
+        : [],
+  );
+  const canToggleSelectedTargets = selectedToggle.files.length > 0;
 
   return {
     prompt: promptState?.lease.isLive() ? promptState : null,
@@ -374,7 +548,9 @@ export function useWorkingTreeActions({
     busy,
     staged,
     selectedPath,
-    canToggleSelected: enabled && canToggle(selectedPath),
+    selectedIsFolder: Boolean(filesPaneFocused && selectedIsFolder),
+    selectedWillStage: selectedToggle.stage,
+    canToggleSelected: enabled && canToggleSelectedTargets,
     canToggleSelectedHunk: enabled && canToggleHunk(selectedFile?.id, selectedHunkIndex),
     canToggleHunk,
     toggleHunk,
@@ -382,7 +558,12 @@ export function useWorkingTreeActions({
       if (selectedFile) toggleHunk(selectedFile.id, selectedHunkIndex);
     },
     toggleSelected: () => {
-      if (!busyRef.current && selectedPath) toggleStaged(selectedPath);
+      if (busyRef.current) return;
+      if (filesPaneFocused && selectedEntryId) {
+        toggleEntry(selectedEntryId);
+        return;
+      }
+      if (selectedPath) toggleStaged(selectedPath);
     },
     switchView: (next: boolean) => {
       void switchView(next);
@@ -391,6 +572,11 @@ export function useWorkingTreeActions({
       const index = files.findIndex((file) => file.path === selectedPath);
       const file = files[Math.max(0, Math.min(files.length - 1, index + delta))];
       if (file && file.path !== selectedPath) selectFile(file.path);
+    },
+    moveEntry: (delta: number) => {
+      const nextIndex = stepSidebarIndex(entries, selectedIndex, delta);
+      const next = entries[nextIndex];
+      if (next && next.id !== selectedEntryId) selectEntry(next.id);
     },
   };
 }

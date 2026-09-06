@@ -100,7 +100,7 @@ export interface AppCommandCatalogEntry {
 const BUILTIN_COMMANDS = [
   {
     id: "hunk.review.discardSelectedFile",
-    title: "Discard selected file changes",
+    title: "Discard selected file or folder changes",
     category: "review",
     defaultKeys: ["d"],
     locus: "host-only",
@@ -109,7 +109,7 @@ const BUILTIN_COMMANDS = [
   },
   {
     id: "hunk.review.stashSelectedFile",
-    title: "Stash selected file",
+    title: "Stash selected file or folder",
     category: "review",
     defaultKeys: ["s"],
     locus: "host-only",
@@ -126,7 +126,7 @@ const BUILTIN_COMMANDS = [
   },
   {
     id: "hunk.review.toggleFileStaged",
-    title: "Stage / unstage selected file",
+    title: "Stage / unstage selected file or folder",
     category: "review",
     defaultKeys: ["space"],
     locus: "host-only",

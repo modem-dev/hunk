@@ -4,17 +4,21 @@ import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ExtensionPaneProps } from "../../../../extension-api/types";
 import {
+  buildFilePaneEntries,
   buildFlatSidebarEntries,
   buildTreeSidebarEntries,
   collapseTreeSidebarEntries,
   expandCollapsedDirectoryPaths,
+  fileSidebarContentWidth,
   resolveFileSidebarMode,
   sidebarDirectoryPaths,
   sidebarEntryStatsWidth,
   toggleCollapsedDirectoryPath,
+  workingTreeSidebarSources,
   type SidebarEntry,
   type SidebarFileSource,
 } from "../../../../ui/lib/files";
+import { filesVisuallyUnderSidebarEntry } from "../../../../ui/lib/filePaneSelection";
 import { fileRowId } from "../../../../ui/lib/ids";
 import { buildSidebarRenderWindow } from "../../../../ui/lib/sidebarRenderWindow";
 import {
@@ -29,9 +33,10 @@ export type BuiltInSidebarProps = Omit<
 > &
   Partial<Pick<ExtensionPaneProps, "placement" | "height" | "currentLine" | "review">>;
 
-type FileSidebarVariantProps = Pick<BuiltInSidebarProps, "actions" | "selectedFileId" | "theme"> & {
+type FileSidebarVariantProps = Pick<BuiltInSidebarProps, "selectedFileId" | "theme"> & {
   files: readonly SidebarFileSource[];
   estimatedViewportRows: number;
+  onSelectEntry: (entryId: string) => void;
   scrollTop: number;
   textWidth: number;
   viewportHeight: number;
@@ -49,12 +54,12 @@ interface VirtualizedFileSidebarRowsProps extends Omit<FileSidebarVariantProps, 
 
 /** Render one windowed sidebar projection with shared file selection and stats lanes. */
 export function VirtualizedFileSidebarRows({
-  actions,
   collapsedDirectoryPaths,
   entries,
   estimatedViewportRows,
   onToggleDirectory,
   paddingLeft = 1,
+  onSelectEntry,
   scrollTop,
   selectedFileId,
   textWidth,
@@ -95,8 +100,10 @@ export function VirtualizedFileSidebarRows({
               key={entry.id}
               entry={entry}
               paddingLeft={paddingLeft}
+              selected={entry.id === selectedFileId}
               textWidth={textWidth}
               theme={theme}
+              onSelect={onSelectEntry}
             />
           );
         }
@@ -108,9 +115,11 @@ export function VirtualizedFileSidebarRows({
               entry={entry}
               onToggleDirectory={onToggleDirectory ?? ignoreDirectoryToggle}
               paddingLeft={paddingLeft}
+              selected={entry.id === selectedFileId}
               statsWidth={statsWidth}
               textWidth={textWidth}
               theme={theme}
+              onSelect={onSelectEntry}
             />
           );
         }
@@ -124,7 +133,7 @@ export function VirtualizedFileSidebarRows({
             statsWidth={statsWidth}
             textWidth={textWidth}
             theme={theme}
-            onSelectFile={actions.selectFile}
+            onSelectFile={onSelectEntry}
           />
         );
       })}
@@ -180,47 +189,56 @@ export function FlexFileSidebar({
 }: BuiltInSidebarProps): ReactNode {
   const renderer = useRenderer();
   const statusFiles = workingTree?.files;
-  const files = useMemo<readonly SidebarFileSource[]>(() => {
-    if (!statusFiles) return reviewFiles;
-    const reviewedByPath = new Map(reviewFiles.map((file) => [file.path, file]));
-    return statusFiles.map((status) => {
-      const reviewed = reviewedByPath.get(status.path);
-      return {
-        ...reviewed,
-        id: status.path,
-        path: status.path,
-        previousPath: status.previousPath,
-        stats: reviewed?.stats ?? { additions: 0, deletions: 0 },
-        isUntracked: status.untracked,
-        stageStatus: status.untracked
-          ? "??"
-          : status.conflicted
-            ? "!!"
-            : (status.statusCode ?? `${status.staged ? "S" : " "}${status.unstaged ? "U" : " "}`),
-      };
-    });
-  }, [reviewFiles, statusFiles]);
-  const lastClickRef = useRef<{ path: string; time: number; press: number } | null>(null);
-  /** Only consecutive clicks on the same file may mutate the index. */
-  const selectFile = (path: string) => {
+  const files = useMemo<readonly SidebarFileSource[]>(
+    () => (statusFiles ? workingTreeSidebarSources(reviewFiles, statusFiles) : reviewFiles),
+    [reviewFiles, statusFiles],
+  );
+  const lastClickRef = useRef<{ id: string; time: number; press: number } | null>(null);
+  const [localEntryId, setLocalEntryId] = useState<string | null>(null);
+  const paneEntries = useMemo(
+    () => buildFilePaneEntries(files, fileSidebarContentWidth(width)),
+    [files, width],
+  );
+  /** Only consecutive clicks on the same row may mutate the index. */
+  const selectEntry = (entryId: string) => {
     const now = Date.now();
     const previous = lastClickRef.current;
     const press = mousePressSequence(renderer);
     if (
       workingTree &&
-      previous?.path === path &&
+      paneEntries.find((entry) => entry.id === entryId)?.kind === "file" &&
+      previous?.id === entryId &&
       press === previous.press + 1 &&
       now - previous.time < 350
     ) {
       lastClickRef.current = null;
-      workingTree.toggleStaged(path);
+      workingTree.toggleEntry(entryId);
       return;
     }
-    lastClickRef.current = { path, time: now, press };
-    if (workingTree) workingTree.selectFile(path);
-    else actions.selectFile(path);
+    lastClickRef.current = { id: entryId, time: now, press };
+    if (workingTree) {
+      workingTree.selectEntry(entryId);
+      return;
+    }
+    setLocalEntryId(entryId);
+    const file = files.find((candidate) => candidate.id === entryId);
+    if (file) {
+      actions.selectFile(file.id);
+      return;
+    }
+    const index = paneEntries.findIndex((entry) => entry.id === entryId);
+    const nested = filesVisuallyUnderSidebarEntry(paneEntries, index)[0];
+    if (nested) actions.selectFile(nested.id);
   };
-  const selectedFileId = workingTree?.selectedPath ?? reviewSelectedFileId;
+  const selectedFileId = workingTree?.selectedEntryId ?? localEntryId ?? reviewSelectedFileId;
+
+  useEffect(() => {
+    if (workingTree || !localEntryId || localEntryId === reviewSelectedFileId) return;
+    const index = paneEntries.findIndex((entry) => entry.id === localEntryId);
+    const nested = filesVisuallyUnderSidebarEntry(paneEntries, index);
+    if (nested.some((entry) => entry.id === reviewSelectedFileId)) return;
+    setLocalEntryId(null);
+  }, [localEntryId, paneEntries, reviewSelectedFileId, workingTree]);
   const scrollRef = useRef<ScrollBoxRenderable | null>(null);
   const previousSelectedFileIdRef = useRef(selectedFileId);
   const skipSelectedFileRevealRef = useRef(false);
@@ -230,12 +248,12 @@ export function FlexFileSidebar({
   const [scrollViewport, setScrollViewport] = useState({ top: 0, height: 0 });
   const terminal = useTerminalDimensions();
   // Mirrors the host layout: one column of row highlight plus row padding.
-  const textWidth = Math.max(8, width - 2);
+  const textWidth = fileSidebarContentWidth(width);
   const mode = resolveFileSidebarMode(textWidth);
   const variantProps: FileSidebarVariantProps = {
-    actions: { ...actions, selectFile },
     estimatedViewportRows: terminal.height,
     files,
+    onSelectEntry: selectEntry,
     scrollTop: scrollViewport.top,
     selectedFileId,
     textWidth,

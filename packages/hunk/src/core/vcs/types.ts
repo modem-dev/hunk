@@ -53,6 +53,7 @@ export interface VcsOperations {
       | "unstageHunk"
       | "discardFile"
       | "stashFile"
+      | "stashFiles"
       | "resolveWorkingTreeLine"
     >;
   "revision-show"?: VcsOperation<VcsShowCommandInput>;

@@ -505,6 +505,7 @@ export function toInternalVcsAdapter(
           | "unstageHunk"
           | "discardFile"
           | "stashFile"
+          | "stashFiles"
           | "resolveWorkingTreeLine"
         >)
     | undefined;
@@ -552,6 +553,16 @@ export function toInternalVcsAdapter(
       internalWorkingTree.stashFile = async (input, file, message, context) => {
         try {
           await stash(input, file, message, context);
+        } catch (error) {
+          throw toUserFacingError(error);
+        }
+      };
+    }
+    if (typeof workingTree.stashFiles === "function") {
+      const stash = workingTree.stashFiles;
+      internalWorkingTree.stashFiles = async (input, files, message, context) => {
+        try {
+          await stash(input, files, message, context);
         } catch (error) {
           throw toUserFacingError(error);
         }

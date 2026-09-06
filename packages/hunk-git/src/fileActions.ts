@@ -92,8 +92,24 @@ export async function stashGitFile(
   message: string,
   context: GitFileActionContext,
 ) {
-  const { root, file } = verifyGitWorkingTreeFile(input, expected, context);
-  requireUnoccupiedRenameSource(root, file);
+  await stashGitFiles(input, [expected], message, context);
+}
+
+/** Build one stash from the attested files, retaining it if live cleanup fails. */
+export async function stashGitFiles(
+  input: ExtensionVcsDiffInput,
+  expectedFiles: readonly ExtensionWorkingTreeFile[],
+  message: string,
+  context: GitFileActionContext,
+) {
+  if (expectedFiles.length === 0) return;
+  const verified = expectedFiles.map((expected) => {
+    const { root, file } = verifyGitWorkingTreeFile(input, expected, context);
+    requireUnoccupiedRenameSource(root, file);
+    return { root, file };
+  });
+  const root = verified[0]!.root;
+  const files = verified.map(({ file }) => file);
   const base = { input, cwd: root, gitExecutable: context.gitExecutable };
   const head = runGitText({ ...base, args: ["rev-parse", "--revs-only", "HEAD"] }).trim();
   if (!head) throw new HunkExtensionUserError("Create the first commit before stashing a file.");
@@ -105,14 +121,27 @@ export async function stashGitFile(
     throw new HunkExtensionUserError(
       "Git's index is locked. Finish the other Git operation and try again.",
     );
-  const paths = [file.path, ...(file.previousPath ? [file.previousPath] : [])];
+  const paths = [
+    ...new Set(
+      files.flatMap((file) => [file.path, ...(file.previousPath ? [file.previousPath] : [])]),
+    ),
+  ];
+  const trackedPaths = [
+    ...new Set(
+      files
+        .filter((file) => !file.untracked)
+        .flatMap((file) => [file.path, ...(file.previousPath ? [file.previousPath] : [])]),
+    ),
+  ];
+  const untrackedPaths = files.filter((file) => file.untracked).map((file) => file.path);
   const entries = runGitBytes({
     ...base,
     args: ["--literal-pathspecs", "ls-files", "--stage", "-z", "--", ...paths],
   });
   const temporary = mkdtempSync(join(tmpdir(), "hunk-file-stash-"));
   const env = { GIT_INDEX_FILE: join(temporary, "index") };
-  const label = message || `Hunk: ${file.path}`;
+  const subject = files.length === 1 ? files[0]!.path : `${files.length} files`;
+  const label = message || `Hunk: ${subject}`;
   try {
     await runGitMutation({ ...base, env, args: ["read-tree", head] });
     const removals = Buffer.from(
@@ -133,9 +162,13 @@ export async function stashGitFile(
       })
     ).trim();
     let untrackedCommit: string | undefined;
-    if (file.untracked) {
+    if (untrackedPaths.length > 0) {
       await runGitMutation({ ...base, env, args: ["read-tree", "--empty"] });
-      await runGitMutation({ ...base, env, args: ["--literal-pathspecs", "add", "--", file.path] });
+      await runGitMutation({
+        ...base,
+        env,
+        args: ["--literal-pathspecs", "add", "--", ...untrackedPaths],
+      });
       const untrackedTree = (await runGitMutation({ ...base, env, args: ["write-tree"] })).trim();
       untrackedCommit = (
         await runGitMutation({
@@ -145,9 +178,10 @@ export async function stashGitFile(
         })
       ).trim();
       await runGitMutation({ ...base, env, args: ["read-tree", indexTree] });
-    } else {
+    }
+    if (trackedPaths.length > 0) {
       // Preserve tracked type/mode, including emulated symlinks and ignored executable changes.
-      const presentPaths = paths.filter((path) => {
+      const presentPaths = trackedPaths.filter((path) => {
         try {
           lstatSync(join(root, path));
           return true;
@@ -156,7 +190,7 @@ export async function stashGitFile(
           throw error;
         }
       });
-      const absentPaths = paths.filter((path) => !presentPaths.includes(path));
+      const absentPaths = trackedPaths.filter((path) => !presentPaths.includes(path));
       if (absentPaths.length)
         await runGitMutation({
           ...base,
@@ -187,13 +221,15 @@ export async function stashGitFile(
         stdin: `${label}\n`,
       })
     ).trim();
-    verifyGitWorkingTreeFile(input, expected, context);
+    for (const expected of expectedFiles) verifyGitWorkingTreeFile(input, expected, context);
     await runGitMutation({ ...base, args: ["stash", "store", "-m", label, stash] });
     try {
       // Object creation and publication do not consent to overwriting later external edits.
-      verifyGitWorkingTreeFile(input, expected, context);
-      if (file.untracked) unlinkSync(join(root, file.path));
-      else
+      for (const expected of expectedFiles) verifyGitWorkingTreeFile(input, expected, context);
+      if (untrackedPaths.length > 0) {
+        for (const path of untrackedPaths) unlinkSync(join(root, path));
+      }
+      if (trackedPaths.length > 0)
         await runGitMutation({
           ...base,
           args: [
@@ -203,12 +239,12 @@ export async function stashGitFile(
             "--staged",
             "--worktree",
             "--",
-            ...paths,
+            ...trackedPaths,
           ],
         });
     } catch (error) {
       throw new HunkExtensionUserError(
-        `Stash ${stash.slice(0, 12)} was created, but ${file.path} could not be cleaned: ${error instanceof Error ? error.message : String(error)}. The stash is retained; inspect Git status before retrying.`,
+        `Stash ${stash.slice(0, 12)} was created, but ${subject} could not be cleaned: ${error instanceof Error ? error.message : String(error)}. The stash is retained; inspect Git status before retrying.`,
       );
     }
   } finally {

@@ -312,7 +312,7 @@ describe("files helpers", () => {
       stateLabel: null,
     });
     expect(buildFlatSidebarEntries([file])).toEqual([
-      { kind: "group", id: "group:src:0", label: "src/" },
+      { kind: "group", id: "group:src:0", label: "src/", path: "src" },
       expect.objectContaining({ kind: "file", name: "tab\\tname.ts" }),
     ]);
   });

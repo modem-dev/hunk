@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 23;
+export const HUNK_EXTENSION_API_VERSION = 24;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -1138,18 +1138,31 @@ export interface ExtensionVcsWorkingTreeOperation extends ExtensionVcsOperation<
     message: string,
     context: ExtensionVcsLoadContext,
   ) => Promise<void>;
+  /** Stash several attested files as one stash, preserving each file's partial staging. */
+  stashFiles?: (
+    input: ExtensionVcsDiffInput,
+    files: readonly ExtensionWorkingTreeFile[],
+    message: string,
+    context: ExtensionVcsLoadContext,
+  ) => Promise<void>;
 }
 
 /** Navigate and stage the host's current working-tree inventory from a mounted pane. */
 export interface ExtensionWorkingTreePane {
   readonly files: readonly ExtensionWorkingTreeFile[];
   readonly selectedPath: string | null;
+  /** Highlighted files-pane row id: a file path, or a folder row id. */
+  readonly selectedEntryId: string | null;
   readonly staged: boolean;
   readonly busy: boolean;
   /** Select a path, switching diff sides if needed, without reducing the review to one file. */
   selectFile(path: string): void;
+  /** Select a visible files-pane row, including folder headers. */
+  selectEntry(id: string): void;
   /** Stage remaining unstaged changes, or unstage a fully staged file; inert after reload. */
   toggleStaged(path: string): void;
+  /** Stage or unstage the files visually under a files-pane row. */
+  toggleEntry(id: string): void;
 }
 
 /**

@@ -1,5 +1,5 @@
 import { resolveGitWorkingTreeLine } from "./editorLine";
-import { discardGitFile, stashGitFile } from "./fileActions";
+import { discardGitFile, stashGitFile, stashGitFiles } from "./fileActions";
 import { mutateGitHunkStaging } from "./hunkStaging";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
@@ -417,6 +417,8 @@ export function createGitVcsAdapter({
           discardGitFile(input, file, scope, { cwd, gitExecutable }),
         stashFile: (input, file, message, { cwd }) =>
           stashGitFile(input, file, message, { cwd, gitExecutable }),
+        stashFiles: (input, files, message, { cwd }) =>
+          stashGitFiles(input, files, message, { cwd, gitExecutable }),
         stageFile: (input, file, { cwd }) =>
           mutateGitFileStaging(input, file, { cwd, gitExecutable }, true),
         unstageFile: (input, file, { cwd }) =>

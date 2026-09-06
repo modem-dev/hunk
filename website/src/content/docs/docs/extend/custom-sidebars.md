@@ -8,7 +8,8 @@ description: Render React panes around Hunk's review stream.
 Mounted panes may receive optional `props.workingTree`: the complete status inventory for both staged and
 unstaged files, `selectedPath`, `staged`, and `busy`. Use `selectFile(path)` to navigate a path and
 switch tabs when necessary, or `toggleStaged(path)` to stage remaining changes or unstage a fully
-staged file. Retained controls expire on review reload. Ordinary `props.files` and navigation
+staged file. API v22 adds `selectedEntryId`, `selectEntry(id)`, and `toggleEntry(id)` so a pane can
+highlight and mutate folder rows as well as files. Retained controls expire on review reload. Ordinary `props.files` and navigation
 continue to describe the active diff stream; the status inventory does not fabricate diff files.
 
 ```tsx
