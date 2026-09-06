@@ -124,8 +124,8 @@ remain remappable, and an explicit user binding takes precedence over contextual
 | `hunk.review.scrollCodeRight`                  | Scroll code right (shifted scrolls fast)       | `right`, `shift+right`       |
 | `hunk.review.startNote`                        | Add a review note                              | `c`                          |
 | `hunk.review.stashSelectedFile`                | Stash selected file                            | `s`                          |
-| `hunk.review.stepDown`                         | Scroll down one row                            | `down`, `j`                  |
-| `hunk.review.stepUp`                           | Scroll up one row                              | `up`, `k`                    |
+| `hunk.review.stepDown`                         | Move down in the focused pane                  | `down`, `j`                  |
+| `hunk.review.stepUp`                           | Move up in the focused pane                    | `up`, `k`                    |
 | `hunk.review.toggleFileStaged`                 | Stage / unstage selected file                  | `space`                      |
 | `hunk.review.toggleHunkGap`                    | Expand or collapse the selected context        | `z`                          |
 | `hunk.review.toggleHunkStaged`                 | Stage / unstage selected hunk                  | `space`                      |

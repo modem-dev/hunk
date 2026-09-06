@@ -172,6 +172,45 @@ describe("ExtensionPaneHost actions", () => {
 });
 
 describe("ExtensionPaneHost activation", () => {
+  test("left click focuses the files pane before activating it", async () => {
+    const files = createTestFiles();
+    const theme = resolveTheme("github-dark-default", null);
+    let focuses = 0;
+    const registered = registeredView(() => <text content="files" />);
+
+    await withPane(
+      <ExtensionPaneHost
+        registered={registered}
+        files={files}
+        fileViews={toReadOnlyFileViews(files)}
+        selectedFileId={null}
+        selectedHunkIndex={null}
+        showTopChrome={true}
+        focused={false}
+        theme={theme}
+        width={30}
+        height={20}
+        placement="left"
+        currentLine={null}
+        keybindings={TEST_KEYBINDINGS}
+        notify={() => {}}
+        onFocus={() => {
+          focuses += 1;
+        }}
+        onSelectFile={() => {}}
+        onSelectHunk={() => {}}
+        onRevealLine={() => "line"}
+      />,
+      async (setup) => {
+        await act(async () => setup.mockMouse.click(2, 1, MouseButtons.LEFT));
+        expect(focuses).toBe(1);
+
+        await act(async () => setup.mockMouse.click(2, 1, MouseButtons.RIGHT));
+        expect(focuses).toBe(1);
+      },
+    );
+  });
+
   test("activates once through nested content without consuming its primary press", async () => {
     const files = createTestFiles();
     const theme = resolveTheme("github-dark-default", null);

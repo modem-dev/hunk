@@ -155,6 +155,19 @@ describe("working-tree stream actions", () => {
 
   test("an external edit after discard consent is shown refuses the stale target", async () => {
     const root = await createReview();
+    const fileY = setup!
+      .captureCharFrame()
+      .split("\n")
+      .findIndex((line) => {
+        const parts = line.split("│");
+        const sidebar = parts.length >= 3 ? (parts[1] ?? "") : (parts[0] ?? "");
+        return sidebar.includes("alpha.txt");
+      });
+    expect(fileY).toBeGreaterThan(0);
+    // Discard is scoped to the focused files pane.
+    await act(async () => {
+      await setup!.mockMouse.click(6, fileY);
+    });
     await press("d");
     await waitForReview(() => setup!.captureCharFrame().includes("Discard changes"));
     writeFileSync(join(root, "alpha.txt"), "changed after prompt\n");

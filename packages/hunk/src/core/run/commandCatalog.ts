@@ -270,7 +270,7 @@ const BUILTIN_COMMANDS = [
   },
   {
     id: "hunk.review.stepDown",
-    title: "Scroll down one row",
+    title: "Move down in the focused pane",
     category: "review",
     defaultKeys: ["down", "j"],
     locus: "client-local",
@@ -279,7 +279,7 @@ const BUILTIN_COMMANDS = [
   },
   {
     id: "hunk.review.stepUp",
-    title: "Scroll up one row",
+    title: "Move up in the focused pane",
     category: "review",
     defaultKeys: ["up", "k"],
     locus: "client-local",

@@ -261,12 +261,12 @@ describe("PTY chrome", () => {
         session,
         (text) =>
           (text.includes("Keyboard help") || text.includes("Controls help")) &&
-          text.includes("move line-by-line"),
+          text.includes("move in the focused pane"),
         5_000,
       );
 
       expect(help.includes("Keyboard help") || help.includes("Controls help")).toBe(true);
-      expect(help).toContain("move line-by-line");
+      expect(help).toContain("move in the focused pane");
     } finally {
       session.close();
     }

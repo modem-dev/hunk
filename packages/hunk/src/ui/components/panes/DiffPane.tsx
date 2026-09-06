@@ -86,6 +86,7 @@ import {
   type ViewportRowAnchor,
 } from "../../lib/viewportAnchor";
 import type { AppTheme } from "../../themes";
+import { paneFrameBorderColor, reviewPaneFrameSides } from "../../lib/paneFocus";
 import { DiffSection } from "./DiffSection";
 import type { FileViewRowFailure } from "../../fileViews/types";
 import type { ValidatedLineHighlight } from "../../highlights/validate";
@@ -324,6 +325,8 @@ export function DiffPane({
   screenTop = 0,
   showTopChrome,
   skipInitialIntermediateRender = false,
+  focused = false,
+  framed = false,
   showAgentNotes,
   showLineNumbers,
   showHunkHeaders,
@@ -399,6 +402,10 @@ export function DiffPane({
   showTopChrome?: boolean;
   /** Avoid clearing another surface when this pane mounts dynamically in the shared renderer. */
   skipInitialIntermediateRender?: boolean;
+  /** True when the review pane currently owns keyboard movement. */
+  focused?: boolean;
+  /** Draw a full pane frame when another pane is visible beside the review. */
+  framed?: boolean;
   showAgentNotes: boolean;
   showLineNumbers: boolean;
   showHunkHeaders: boolean;
@@ -2743,14 +2750,16 @@ export function DiffPane({
       style={{
         width,
         ...(height === undefined ? {} : { height }),
-        border: renderTopChrome ? ["top"] : [],
-        borderColor: theme.border,
+        border: framed ? reviewPaneFrameSides(renderTopChrome) : renderTopChrome ? ["top"] : [],
+        borderColor: paneFrameBorderColor(theme, focused),
         backgroundColor: theme.panel,
         paddingX: 0,
         flexDirection: "column",
-        ...(renderTopChrome
-          ? { paddingY: 1 }
-          : { paddingTop: 0, paddingBottom: pagerMode ? 0 : 1 }),
+        ...(framed
+          ? { paddingTop: renderTopChrome ? 1 : 0, paddingBottom: 0 }
+          : renderTopChrome
+            ? { paddingY: 1 }
+            : { paddingTop: 0, paddingBottom: pagerMode ? 0 : 1 }),
       }}
       onMouseDragEnd={endCopySelection}
       onMouseUp={endCopySelection}

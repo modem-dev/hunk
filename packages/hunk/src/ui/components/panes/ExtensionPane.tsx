@@ -15,6 +15,7 @@ import { HUNK_FILES_PANE_KEY } from "../../../extensions/extensionIds";
 import type { ExtensionNotifySink, RegisteredPane } from "../../../extensions/types";
 import { createGuardedReviewNavigation } from "../../lib/extensionNavigation";
 import { toExtensionPaintTheme } from "../../lib/extensionPaintTheme";
+import { filesPaneFrameSides, paneFrameBorderColor } from "../../lib/paneFocus";
 import type { AppTheme } from "../../themes";
 
 function describeError(error: unknown) {
@@ -92,6 +93,9 @@ export interface ExtensionPaneHostProps {
   keybindings: ExtensionPaneKeybindings;
   notify: ExtensionNotifySink;
   onCopyText?: (text: string) => boolean;
+  /** True when this pane currently owns keyboard movement. */
+  focused?: boolean;
+  onFocus?: () => void;
   onSelectFile: (fileId: string) => void;
   onSelectHunk: (fileId: string, hunkIndex: number) => void;
   onRevealLine: (fileId: string, side: "old" | "new", line: number) => "line" | "hunk" | "none";
@@ -116,6 +120,8 @@ function ExtensionPaneHostView({
   keybindings,
   notify,
   onCopyText,
+  focused = false,
+  onFocus,
   onSelectFile,
   onSelectHunk,
   onRevealLine,
@@ -167,7 +173,9 @@ function ExtensionPaneHostView({
   };
   const filesChrome = paneKey(registered) === HUNK_FILES_PANE_KEY;
   const onMouseDown = (event: TuiMouseEvent) => {
-    if (event.button === MouseButton.LEFT) activatePane(registered, notify);
+    if (event.button !== MouseButton.LEFT) return;
+    onFocus?.();
+    activatePane(registered, notify);
   };
   const box = (children: ReactNode) => (
     <box
@@ -181,9 +189,10 @@ function ExtensionPaneHostView({
         backgroundColor: theme.panel,
         ...(filesChrome
           ? {
-              border: showTopChrome ? (["top"] as const) : [],
-              borderColor: theme.border,
-              ...(showTopChrome ? { paddingTop: 1, paddingBottom: 1 } : { paddingBottom: 1 }),
+              border: filesPaneFrameSides(showTopChrome),
+              borderColor: paneFrameBorderColor(theme, focused),
+              paddingTop: showTopChrome ? 1 : 0,
+              paddingBottom: 0,
             }
           : {}),
       }}
@@ -231,6 +240,8 @@ export const ExtensionPaneHost = memo(
     previous.width === next.width &&
     previous.height === next.height &&
     previous.showTopChrome === next.showTopChrome &&
+    previous.focused === next.focused &&
+    previous.onFocus === next.onFocus &&
     previous.keybindings === next.keybindings &&
     (!next.registered.pane.currentLine || previous.currentLine === next.currentLine),
 );

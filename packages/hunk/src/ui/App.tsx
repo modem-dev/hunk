@@ -24,6 +24,7 @@ import { DEFAULT_FILE_GAP, DEFAULT_HUNK_GAP } from "../core/run/reviewGap";
 import { DEFAULT_TAB_WIDTH } from "../core/run/tabWidth";
 import { isVcsReviewInput } from "../core/vcs";
 import type { AppBootstrap } from "../core/bootstrap";
+import type { ReviewSelectionScope } from "../core/review/navigation";
 import {
   selectActiveEditableReviewNoteId,
   selectActiveReplyableReviewNoteId,
@@ -354,7 +355,7 @@ export function App({
     getSelection: getExtensionSelection,
   } = extensionRuntime;
   const [hunkActionFocused, setHunkActionFocused] = useState(false);
-  const [filePanelFocused, setFilePanelFocused] = useState(true);
+  const [filePanelFocused, setFilePanelFocused] = useState(false);
   const jumpToFile = useCallback(
     (fileId: string, options?: { alignFileHeaderTop?: boolean }) => {
       setHunkActionFocused(false);
@@ -1043,6 +1044,7 @@ export function App({
   const focusFiles = useCallback(() => {
     setFocusArea("files");
     setFilePanelFocused(true);
+    setHunkActionFocused(false);
   }, []);
 
   const workingTree = useWorkingTreeActions({
@@ -1052,10 +1054,7 @@ export function App({
     filter: review.filter,
     createLease: createReviewCapabilityLease,
     selectReviewFile: jumpToFile,
-    focusFiles: () => {
-      focusFiles();
-      setHunkActionFocused(false);
-    },
+    focusFiles,
     setStagedView,
     runMutation: runVcsMutation,
     refreshAfterMutation: onVcsMutationCompleted,
@@ -1089,8 +1088,12 @@ export function App({
 
   /** Toggle keyboard focus between the file list and the file filter. */
   const toggleFocusArea = useCallback(() => {
-    setFocusArea((current) => (current === "files" ? "filter" : "files"));
-  }, []);
+    if (focusArea === "files") {
+      setFocusArea("filter");
+      return;
+    }
+    focusFiles();
+  }, [focusArea, focusFiles]);
 
   /** Move keyboard ownership into the draft note editor. */
   const focusDraftNoteEditor = useCallback(() => setFocusArea("note"), []);
@@ -1131,9 +1134,19 @@ export function App({
 
   const activeEditableNoteId = selectActiveEditableReviewNoteId(review.store.getSnapshot());
   const activeReplyableNoteId = selectActiveReplyableReviewNoteId(review.store.getSnapshot());
-  // Diff headers select file staging scope without giving the sidebar keyboard ownership.
-  const fileQuickActionsFocused =
+  // Files-pane keyboard ownership: vertical movement, stash, and discard. Diff
+  // headers can select a file for staging without giving the sidebar that ownership.
+  const filesPaneFocused =
     filesPaneVisible && focusArea === "files" && filePanelFocused && !hunkActionFocused;
+  const reviewPaneFocused = filesPaneVisible && focusArea === "files" && !filesPaneFocused;
+
+  /** Step the review selection and record which pane now owns keyboard movement. */
+  const moveReviewSelection = (scope: ReviewSelectionScope, delta: number) => {
+    setFilePanelFocused(scope === "file");
+    setHunkActionFocused(scope === "hunk" || scope === "annotated-hunk");
+    if (scope === "file" && workingTree.pane) workingTree.moveFile(delta);
+    else review.moveSelection(scope, delta);
+  };
   // Hunk navigation can focus a binary or hunk-less file; Space then keeps the file action.
   const hunkStagingActive = hunkActionFocused && workingTree.canToggleSelectedHunk;
 
@@ -1143,8 +1156,8 @@ export function App({
   const appCommands = observeAppCommandDispatch(
     [
       ...buildAppCommands({
-        canDiscardSelectedFile: fileQuickActionsFocused && workingTree.canDiscardSelected,
-        canStashSelectedFile: fileQuickActionsFocused && workingTree.canStashSelected,
+        canDiscardSelectedFile: filesPaneFocused && workingTree.canDiscardSelected,
+        canStashSelectedFile: filesPaneFocused && workingTree.canStashSelected,
         discardSelectedFile: workingTree.discardSelected,
         stashSelectedFile: workingTree.stashSelected,
         canToggleFileStaged: !hunkStagingActive && workingTree.canToggleSelected,
@@ -1167,19 +1180,20 @@ export function App({
         replyToActiveNote: () => {
           if (activeReplyableNoteId) startUserNoteReply(activeReplyableNoteId);
         },
-        moveSelection: (scope, delta) => {
-          setFilePanelFocused(scope === "file");
-          setHunkActionFocused(scope === "hunk" || scope === "annotated-hunk");
-          if (scope === "file" && workingTree.pane) workingTree.moveFile(delta);
-          else review.moveSelection(scope, delta);
-        },
+        moveSelection: moveReviewSelection,
         openAgentSkill,
         openThemeSelector,
         requestQuit,
         resolvedKeys: resolvedCommandKeys,
         scrollCodeHorizontally,
         scrollDiff,
-        stepDiffLine,
+        stepDiffLine: (delta) => {
+          if (filesPaneFocused) {
+            moveReviewSelection("file", delta);
+            return;
+          }
+          stepDiffLine(delta);
+        },
         selectCursorLine: setCursorLine,
         selectLayoutMode,
         startUserNote: () => startUserNote(),
@@ -1346,6 +1360,7 @@ export function App({
           height={bounds.height}
           currentLine={pane.registered.pane.currentLine ? currentLinePaint : null}
           showTopChrome={showMenuBar}
+          focused={pane.key === HUNK_FILES_PANE_KEY && filesPaneFocused}
           keybindings={paneKeybindings}
           notify={(message, type) => extensions?.context.notify(message, type)}
           onCopyText={(text) => {
@@ -1360,6 +1375,7 @@ export function App({
             showTransientNotice("Copied text to clipboard");
             return true;
           }}
+          onFocus={pane.key === HUNK_FILES_PANE_KEY ? focusFiles : undefined}
           onSelectFile={extensionNavigationBindings.onSelectFile}
           onSelectHunk={extensionNavigationBindings.onSelectHunk}
           onRevealLine={extensionNavigationBindings.onRevealLine}
@@ -1399,6 +1415,7 @@ export function App({
           width={planned.divider.width}
           height={planned.divider.height}
           isResizing={resizingPaneKey === planned.pane.key}
+          emphasized={planned.pane.key === HUNK_FILES_PANE_KEY}
           theme={activeTheme}
           onMouseDown={(event) => beginCapturedPaneResize(planned, event)}
           onMouseDrag={updatePaneResize}
@@ -1495,6 +1512,8 @@ export function App({
             screenTop={diffPaneScreenTop}
             showTopChrome={showMenuBar}
             skipInitialIntermediateRender={Boolean(onFirstFrameReady)}
+            focused={reviewPaneFocused}
+            framed={filesPaneVisible}
             headerLabelWidth={diffHeaderLabelWidth}
             headerStatsWidth={diffHeaderStatsWidth}
             layout={resolvedLayout}

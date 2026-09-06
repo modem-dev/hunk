@@ -41,6 +41,12 @@ function doubleClickSidebarFile(session: Session, path: string) {
   session.writeRaw(click + click);
 }
 
+/** Give the files pane keyboard ownership so discard and stash are in scope. */
+async function focusFilesPane(session: Session) {
+  await harness.ensureKeyboardIsLive(session);
+  await session.press(",");
+}
+
 describe("PTY working-tree staging", () => {
   test("file quick actions yield to built-ins outside the visible file panel's scope", async () => {
     const root = createFixture();
@@ -124,6 +130,7 @@ describe("PTY working-tree staging", () => {
     });
     try {
       await session.waitForText("later alpha", { timeout: 15_000 });
+      await focusFilesPane(session);
       await session.press("d");
       await session.waitForText("Discard changes");
       await session.press("escape");
@@ -167,6 +174,7 @@ describe("PTY working-tree staging", () => {
     });
     try {
       await session.waitForText("later alpha", { timeout: 15_000 });
+      await focusFilesPane(session);
       await session.press("d");
       await session.waitForText("Discard changes");
       session.resize({ cols: 40, rows: 18 });
@@ -195,6 +203,7 @@ describe("PTY working-tree staging", () => {
       });
       try {
         await session.waitForText("new spaced file", { timeout: 15_000 });
+        await focusFilesPane(session);
         await session.press("d");
         await session.waitForText("Discard changes");
         session.resize({ cols: 40, rows: 14 });
@@ -221,6 +230,7 @@ describe("PTY working-tree staging", () => {
     });
     try {
       await session.waitForText("changed alpha", { timeout: 15_000 });
+      await focusFilesPane(session);
       await session.press("s");
       await session.waitForText("Stash selected file");
       await session.press("escape");
@@ -345,6 +355,7 @@ describe("PTY working-tree staging", () => {
     });
     try {
       await session.waitForText("changed alpha", { timeout: 15_000 });
+      await focusFilesPane(session);
       await session.press("d");
       await session.waitForText("Discard changes");
       await session.press("escape");

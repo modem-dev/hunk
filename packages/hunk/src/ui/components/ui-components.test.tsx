@@ -4039,7 +4039,7 @@ describe("UI components", () => {
       "Controls help",
       "[Esc]",
       "Navigation",
-      "Up / Down                move line-by-line",
+      "Up / Down                move in the focused pane",
       "PageDown / Space / f     page down",
       "PageUp / b / Shift+Space page up",
       "d / u                    half page down / up",
