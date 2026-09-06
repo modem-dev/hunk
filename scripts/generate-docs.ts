@@ -50,18 +50,22 @@ function renderOptionTable(options: readonly (CliReferenceOption | AgentCommandO
     return "This command has no command-specific options.";
   }
 
-  const rows = options.map((option) => {
-    const referenceOption = option as CliReferenceOption;
-    const details = [
-      option.description,
-      referenceOption.defaultValue ? `Default: ${referenceOption.defaultValue}.` : undefined,
-      referenceOption.hidden ? (referenceOption.hiddenNote ?? "Hidden from `--help`.") : undefined,
-      "required" in option && option.required ? "Required." : undefined,
-    ]
-      .filter(Boolean)
-      .join(" ");
-    return `| \`${tableCell(option.flag)}\` | ${tableCell(proseSafe(details))} |`;
-  });
+  const rows = options
+    .filter((option) => (option as CliReferenceOption).publicDocs !== false)
+    .map((option) => {
+      const referenceOption = option as CliReferenceOption;
+      const details = [
+        option.description,
+        referenceOption.defaultValue ? `Default: ${referenceOption.defaultValue}.` : undefined,
+        referenceOption.hidden
+          ? (referenceOption.hiddenNote ?? "Hidden from `--help`.")
+          : undefined,
+        "required" in option && option.required ? "Required." : undefined,
+      ]
+        .filter(Boolean)
+        .join(" ");
+      return `| \`${tableCell(option.flag)}\` | ${tableCell(proseSafe(details))} |`;
+    });
 
   return ["| Option | Description |", "| --- | --- |", ...rows].join("\n");
 }
@@ -118,8 +122,9 @@ function renderUsage(lines: readonly string[]) {
 
 /** Render the deterministic exhaustive CLI reference. */
 export function renderCliReference() {
-  const commandSections = (Object.values(CLI_REFERENCE_COMMANDS) as CliReferenceCommand[]).map(
-    (command) => {
+  const commandSections = (Object.values(CLI_REFERENCE_COMMANDS) as CliReferenceCommand[])
+    .filter((command) => command.publicDocs !== false)
+    .map((command) => {
       const pieces = [
         `## \`hunk ${command.path}\``,
         "",
@@ -164,8 +169,7 @@ export function renderCliReference() {
         );
       }
       return pieces.join("\n");
-    },
-  );
+    });
 
   const sessionSections = SESSION_AGENT_COMMAND_LIST.map((command) => {
     const pieces = [

@@ -36,6 +36,8 @@ describe("generated website references", () => {
     expect(reference).toContain("hunk diff --staged");
     expect(reference).toContain("--no-transparent-bg");
     expect(reference).toContain("hunk markup render");
+    expect(reference).not.toContain("## `hunk log`");
+    expect(reference).not.toContain("`--vcs <id>`");
     expect(reference).toMatch(
       new RegExp(
         `\\| \\x60${SESSION_BROKER_HOST_ENV}\\x60\\s+\\| Bind host; defaults to loopback \\x60${DEFAULT_SESSION_BROKER_HOST}\\x60\\.`,

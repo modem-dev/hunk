@@ -74,6 +74,8 @@ export interface CliReferenceOption {
   /** Default applied directly by Commander (as opposed to a config-resolved default). */
   readonly commanderDefault?: string;
   readonly hidden?: boolean;
+  /** Include this option in released website documentation; defaults to true. */
+  readonly publicDocs?: boolean;
   /** Additional generated-documentation context for a hidden option. */
   readonly hiddenNote?: string;
 }
@@ -84,6 +86,8 @@ export interface CliReferenceCommand {
   readonly summary: string;
   readonly synopsis: readonly string[];
   readonly aliases?: readonly string[];
+  /** Include this command in released website documentation; defaults to true. */
+  readonly publicDocs?: boolean;
   /** Additional prose rendered after this command's generated usage block. */
   readonly details?: readonly string[];
   readonly options?: readonly CliReferenceOption[];
@@ -104,6 +108,7 @@ export const COMMON_REVIEW_OPTIONS = [
     flag: "--vcs <id>",
     description: "select a VCS provider",
     hidden: true,
+    publicDocs: false,
   },
   AUXILIARY_AGENT_OPTIONS.agentContext,
   { flag: "--pager", description: "use pager-style chrome" },
@@ -200,6 +205,8 @@ export const CLI_REFERENCE_COMMANDS = {
   },
   log: {
     path: "log",
+    // Release preparation enables this when an installable build contains history browsing.
+    publicDocs: false,
     summary: "print an attractive repository history",
     synopsis: ["hunk log [revision-expression] [-- <pathspec...>]"],
     details: [
