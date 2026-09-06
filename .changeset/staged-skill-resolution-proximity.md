@@ -2,4 +2,4 @@
 "hunkdiff": patch
 ---
 
-Resolve bundled skills from the closest matching layout instead of the first shape found while walking to the filesystem root. A source install stages its skills under `hunkdiff/` beside the executable, so an unrelated `skills/` directory anywhere above the bin directory no longer shadows the installed skill.
+Stop an unrelated `skills/` directory above the install location from shadowing the bundled skill a source install staged beside the Hunk executable.
