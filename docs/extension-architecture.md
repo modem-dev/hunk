@@ -55,7 +55,10 @@ and restores the previous generation if any pre-commit step fails. Staged extern
 retains the provisional candidate/config snapshot: a final pass that
 only appends repo candidates extends the same registry, while a changed prefix
 receives bounded `shutdown` before being rebuilt. Live registry replacement uses
-the same shutdown/startup lifecycle. A factory that throws is rolled back to its
+the same shutdown/startup lifecycle. `src/extensions/session.ts` owns active, provisional, and
+retiring registries by identity; it synchronously closes authority at adoption/shutdown and drains
+all known bounded retirements. Surfaces borrow that session and cannot retire it independently.
+A factory that throws is rolled back to its
 pre-run registration counts (`runExtension.ts`); failures cost a warning, not the
 session.
 
@@ -270,7 +273,8 @@ same guarded live navigation commands use. They can also request a current-input
 the current-review controller registers the latest reloadable descriptor, then AppHost resolves
 that descriptor at queue execution and coalesces extension requests while serializing them with
 manual, watch, workspace, and daemon reloads. `App` installs these controls through the
-per-extension event-context provider, while `AppHost` publishes mounted
+per-extension event-context provider, while `AppHost` keeps the content/broker/React commit gate
+and asks the owning `ExtensionSession` to adopt only after those facts agree. `AppHost` publishes mounted
 lifecycle order (`startup`, then `changeset_loaded`; reloads add
 `session_reload`) only after the matching child commit. Headless or pre-mount delivery resolves
 dialogs to their cancel values and refuses navigation with a warning.

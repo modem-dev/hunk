@@ -10,7 +10,7 @@ import { createTestDiffFile } from "../../../../test/helpers/diff-helpers";
 import { createWatchTestRuntime } from "../../../../test/helpers/watchTest";
 import { loadAppBootstrap } from "../core/changeset/loaders";
 import { loadStartupExtensions } from "../extensions/startup";
-import { AppHost } from "./AppHost";
+import { TestAppHost as AppHost } from "../../../../test/helpers/app-host";
 
 const tempDirs: string[] = [];
 setDefaultTimeout(20_000);

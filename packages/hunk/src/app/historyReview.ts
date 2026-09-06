@@ -65,7 +65,7 @@ export async function prepareEmbeddedHistoryReview(
   });
   if (signal?.aborted && plan.kind === "app") {
     plan.controllingTerminal?.close();
-    if (plan.bootstrap.extensions !== request.extensionSession) {
+    if (plan.bootstrap.extensions?.registry !== request.extensionSession?.registry) {
       await retireExtensionLoadResult(plan.bootstrap.extensions);
     }
     signal.throwIfAborted();
@@ -76,6 +76,6 @@ export async function prepareEmbeddedHistoryReview(
   plan.controllingTerminal?.close();
   return {
     bootstrap: plan.bootstrap as AppBootstrap<ExtensionLoadResult>,
-    borrowsExtensions: plan.bootstrap.extensions === request.extensionSession,
+    borrowsExtensions: plan.bootstrap.extensions?.registry === request.extensionSession?.registry,
   };
 }

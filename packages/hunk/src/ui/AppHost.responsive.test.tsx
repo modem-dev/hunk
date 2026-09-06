@@ -6,7 +6,7 @@ import type { LayoutMode } from "../core/run/commandInputs";
 import { createTestVcsAppBootstrap } from "../../../../test/helpers/app-bootstrap";
 import { createTestDiffFile } from "../../../../test/helpers/diff-helpers";
 
-const { AppHost } = await import("./AppHost");
+const { TestAppHost: AppHost } = await import("../../../../test/helpers/app-host");
 
 function createBootstrap(initialMode: LayoutMode = "auto", pager = false): AppBootstrap {
   return createTestVcsAppBootstrap({

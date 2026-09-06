@@ -3,7 +3,7 @@ import { testRender } from "@opentui/react/test-utils";
 import { act, useState } from "react";
 import { createTestVcsAppBootstrap } from "../../../../test/helpers/app-bootstrap";
 import { createTestDiffFile } from "../../../../test/helpers/diff-helpers";
-import { AppHost } from "./AppHost";
+import { TestAppHost as AppHost } from "../../../../test/helpers/app-host";
 
 mock.restore();
 

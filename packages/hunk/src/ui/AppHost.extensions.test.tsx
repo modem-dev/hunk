@@ -27,7 +27,7 @@ import {
 } from "../extensions/apply";
 import { loadStartupExtensions } from "../extensions/startup";
 import { emitExtensionCustomEvent } from "../extensions/events";
-import { AppHost } from "./AppHost";
+import { TestAppHost as AppHost } from "../../../../test/helpers/app-host";
 
 /** Specialize the core loader result with extension state assigned by these tests. */
 function loadAppBootstrap(...args: Parameters<typeof loadCoreAppBootstrap>): Promise<AppBootstrap> {

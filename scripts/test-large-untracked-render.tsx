@@ -3,7 +3,10 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { act } from "react";
+import { getBundledVcsCatalog } from "../packages/hunk/src/app/vcsCatalog";
 import { loadAppBootstrap } from "../packages/hunk/src/core/changeset/loaders";
+import { createExtensionSession } from "../packages/hunk/src/extensions/session";
+import { createEmptyExtensionLoadResult } from "../packages/hunk/src/extensions/types";
 import { AppHost } from "../packages/hunk/src/ui/AppHost";
 
 function runGit(cwd: string, ...args: string[]) {
@@ -56,9 +59,21 @@ try {
 
   const bootstrap = await loadAppBootstrap(
     { kind: "vcs", staged: false, options: { mode: "stack" } },
-    { cwd: repo },
+    { cwd: repo, vcsCatalog: getBundledVcsCatalog() },
   );
-  const setup = await testRender(<AppHost bootstrap={bootstrap} />, { width: 120, height: 30 });
+  const extensionSession = createExtensionSession(
+    bootstrap.extensions ?? createEmptyExtensionLoadResult(repo),
+    repo,
+  );
+  const setup = await testRender(
+    <AppHost
+      bootstrap={bootstrap}
+      extensionSession={extensionSession}
+      extensionOwnership="owned"
+      onRequestSessionShutdown={() => extensionSession.shutdown()}
+    />,
+    { width: 120, height: 30 },
+  );
 
   try {
     await act(async () => {
@@ -85,6 +100,7 @@ try {
       ),
     );
   } finally {
+    await extensionSession.shutdown();
     await act(async () => {
       setup.renderer.destroy();
     });

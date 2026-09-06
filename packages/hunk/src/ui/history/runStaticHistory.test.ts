@@ -1,14 +1,20 @@
 import { describe, expect, test } from "bun:test";
 import { EventEmitter } from "node:events";
 import type { HistoryCommit } from "../../core/history/types";
+import { createTestExtensionSession } from "../../../../../test/helpers/extension-session";
 import type { HistoryRuntime } from "./types";
 import { runStaticHistory } from "./runStaticHistory";
 
 /** Create a page-backed runtime and expose whether cleanup ran. */
-function runtime(commits: HistoryCommit[], maxCount?: number) {
+function runtime(commits: HistoryCommit[], maxCount?: number, closeFailure?: Error) {
   let offset = 0;
   let closed = 0;
   let reads = 0;
+  const cleanup: string[] = [];
+  const extensionSession = createTestExtensionSession();
+  extensionSession.shutdown = async () => {
+    cleanup.push("extensions");
+  };
   const value: HistoryRuntime = {
     input: {
       kind: "history",
@@ -20,6 +26,7 @@ function runtime(commits: HistoryCommit[], maxCount?: number) {
       extensionPaths: [],
       ...(maxCount !== undefined ? { maxCount } : {}),
     },
+    extensionSession,
     providerId: "test",
     providerName: "Test",
     repoRoot: "/repo",
@@ -42,9 +49,11 @@ function runtime(commits: HistoryCommit[], maxCount?: number) {
     },
     async close() {
       closed += 1;
+      cleanup.push("cursor");
+      if (closeFailure) throw closeFailure;
     },
   };
-  return { value, closed: () => closed, reads: () => reads };
+  return { value, closed: () => closed, reads: () => reads, cleanup };
 }
 
 const commits: HistoryCommit[] = ["a", "b"].map((id, index) => ({
@@ -79,6 +88,36 @@ describe("static history runner", () => {
     expect(output).toContain("Commit b");
     expect(paged).toBe("");
     expect(history.closed()).toBe(1);
+    expect(history.cleanup).toEqual(["cursor", "extensions"]);
+  });
+
+  test("closes the cursor before extensions when pager startup fails", async () => {
+    const history = runtime(commits);
+    await expect(
+      runStaticHistory(history.value, {
+        stdout: { isTTY: true, columns: 80, rows: 2, write: () => true },
+        stderr: { write: () => true },
+        env: { TERM: "xterm" },
+        pageText: async () => {
+          throw new Error("pager failed");
+        },
+      }),
+    ).rejects.toThrow("pager failed");
+    expect(history.cleanup).toEqual(["cursor", "extensions"]);
+  });
+
+  test("still shuts down extensions when cursor close rejects", async () => {
+    const failure = new Error("cursor close failed");
+    const history = runtime(commits, undefined, failure);
+    await expect(
+      runStaticHistory(history.value, {
+        stdout: { isTTY: false, columns: 80, rows: 24, write: () => true },
+        stderr: { write: () => true },
+        env: {},
+        pageText: async () => {},
+      }),
+    ).rejects.toBe(failure);
+    expect(history.cleanup).toEqual(["cursor", "extensions"]);
   });
 
   test("treats a downstream EPIPE as normal and still closes the source", async () => {

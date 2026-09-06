@@ -16,7 +16,7 @@ import type {
 
 const { getBundledVcsCatalog } = await import("../app/vcsCatalog");
 const { loadAppBootstrap } = await import("../core/changeset/loaders");
-const { AppHost } = await import("./AppHost");
+const { TestAppHost: AppHost } = await import("../../../../test/helpers/app-host");
 
 /** Stand in for the session daemon so a test can send the commands agents send. */
 function createTestHostClient() {

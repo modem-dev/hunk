@@ -1,11 +1,11 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import { resolve } from "node:path";
-import type { ExtensionLoadResult } from "../extensions/types";
+import { createEmptyExtensionLoadResult } from "../extensions/types";
 import { prepareEmbeddedHistoryReview } from "./historyReview";
 
 /** Provide only the provider-neutral fields embedded review startup consumes. */
 function createTestRequest() {
-  const extensionSession = { registry: {} } as unknown as ExtensionLoadResult;
+  const extensionSession = createEmptyExtensionLoadResult(resolve("invocation"));
   return {
     action: { kind: "revision-show", revisionId: "--opaque:id" } as const,
     startupCwd: resolve("invocation"),
@@ -30,7 +30,7 @@ describe("embedded history review bootstrap", () => {
           captured = { argv, deps };
           return {
             kind: "app",
-            bootstrap: { extensions: request.extensionSession },
+            bootstrap: { extensions: { ...request.extensionSession } },
             cliInput: {},
             controllingTerminal: null,
           };
@@ -48,6 +48,30 @@ describe("embedded history review bootstrap", () => {
     expect(captured?.deps.borrowedExtensionLoad).toBe(request.extensionSession);
     expect(result.borrowsExtensions).toBe(true);
     expect(captured?.argv.join(" ")).not.toContain("--opaque:id");
+  });
+
+  test("does not retire an aliased borrowed registry when cancellation wins after startup", async () => {
+    const abort = new AbortController();
+    const request = createTestRequest();
+    const close = mock(() => undefined);
+
+    await expect(
+      prepareEmbeddedHistoryReview(request, {
+        signal: abort.signal,
+        prepareStartupPlanImpl: (async () => {
+          abort.abort();
+          return {
+            kind: "app",
+            bootstrap: { extensions: { ...request.extensionSession } },
+            cliInput: {},
+            controllingTerminal: { close },
+          };
+        }) as never,
+      }),
+    ).rejects.toThrow();
+
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(request.extensionSession.registry.retirementPromise).toBeUndefined();
   });
 
   test("refuses an already-cancelled bootstrap before startup", async () => {

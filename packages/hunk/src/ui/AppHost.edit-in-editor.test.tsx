@@ -8,7 +8,7 @@ import type { AppBootstrap } from "../core/bootstrap";
 import { createTestVcsAppBootstrap } from "../../../../test/helpers/app-bootstrap";
 import { createTestDiffFile, lines } from "../../../../test/helpers/diff-helpers";
 
-const { AppHost } = await import("./AppHost");
+const { TestAppHost: AppHost } = await import("../../../../test/helpers/app-host");
 
 const WIDE = { width: 200, height: 24 };
 

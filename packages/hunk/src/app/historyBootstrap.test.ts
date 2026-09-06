@@ -73,6 +73,10 @@ describe("history bootstrap cursor ownership", () => {
       await bootstrap.close();
       await bootstrap.close();
       expect(closeCounts).toEqual([1, 1]);
+      expect(bootstrap.extensionSession.current.registry.eventBusPhase).toBe("ready");
+      await bootstrap.extensionSession.shutdown();
+      await bootstrap.extensionSession.shutdown();
+      expect(bootstrap.extensionSession.current.registry.eventBusPhase).toBe("closed");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
       rmSync(configHome, { recursive: true, force: true });

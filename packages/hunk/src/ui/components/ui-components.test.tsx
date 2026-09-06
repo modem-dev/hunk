@@ -24,7 +24,7 @@ import { resolveCommandKeys } from "../lib/keymap";
 import type { CurrentLineAlignment, LineRevealPlacement } from "../lib/hunkScroll";
 import type { LineCursor } from "../lib/lineCursors";
 
-const { AppHost } = await import("../AppHost");
+const { TestAppHost: AppHost } = await import("../../../../../test/helpers/app-host");
 const { toReadOnlyFileViews } = await import("../../extensions/events");
 const { FlexFileSidebar } = await import("../../extensions/default/ui/sidebar");
 const { HelpDialog } = await import("./chrome/HelpDialog");

@@ -11,7 +11,7 @@ import { loadAppBootstrap as loadCoreAppBootstrap } from "../core/changeset/load
 import type { AppBootstrap } from "../app/types";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";
 import { loadStartupExtensions } from "../extensions/startup";
-import { AppHost } from "./AppHost";
+import { TestAppHost as AppHost } from "../../../../test/helpers/app-host";
 
 /** Specialize the core loader result with extension state assigned by these tests. */
 function loadAppBootstrap(...args: Parameters<typeof loadCoreAppBootstrap>): Promise<AppBootstrap> {

@@ -2,7 +2,8 @@ import { shouldUseMouseForApp, type ControllingTerminal } from "../core/process/
 import type { AppBootstrap } from "../core/bootstrap";
 import { resolveStartupUpdateNotice } from "../core/process/updateNotice";
 import { createReviewSessionRuntime } from "../app/session/reviewRuntime";
-import { retireExtensionLoadResult } from "../extensions/events";
+import { createSessionReloadBounds } from "../app/session/reloadBounds";
+import { createExtensionSession } from "../extensions/session";
 import type { ExtensionLoadResult } from "../extensions/types";
 import { HunkSessionHost, type StandaloneReviewSurfaceRoute } from "./session/HunkSessionHost";
 import { runHunkSession } from "./session/runHunkSession";
@@ -15,7 +16,6 @@ export interface InteractiveAppInput {
 export interface InteractiveAppDeps {
   createReviewRuntime?: typeof createReviewSessionRuntime;
   runSession?: typeof runHunkSession;
-  retireExtensions?: typeof retireExtensionLoadResult;
 }
 
 // Leave fatal process faults to their default OS disposition.
@@ -31,7 +31,6 @@ export async function runInteractiveApp(
 ): Promise<void> {
   const createReviewRuntime = deps.createReviewRuntime ?? createReviewSessionRuntime;
   const runSession = deps.runSession ?? runHunkSession;
-  const retireExtensions = deps.retireExtensions ?? retireExtensionLoadResult;
   const rendererStdin = controllingTerminal?.stdin ?? process.stdin;
   let terminalClosed = false;
   const closeTerminal = () => {
@@ -39,6 +38,14 @@ export async function runInteractiveApp(
     terminalClosed = true;
     controllingTerminal?.close();
   };
+  if (!bootstrap.extensions) {
+    controllingTerminal?.close();
+    throw new Error("Interactive review startup did not provide extension authority.");
+  }
+  const extensionSession = createExtensionSession(
+    bootstrap.extensions,
+    createSessionReloadBounds(bootstrap, { cwd: bootstrap.reloadContext.cwd }).defaultCwd,
+  );
   let reviewRuntime: ReturnType<typeof createReviewSessionRuntime> | undefined;
   let runnerOwnsFailureCleanup = false;
   let runtimeCleanupAttempted = false;
@@ -50,6 +57,7 @@ export async function runInteractiveApp(
       instanceId: 1,
       bootstrap,
       runtime: reviewRuntime,
+      extensionSession,
     };
     runnerOwnsFailureCleanup = true;
     await runSession({
@@ -65,10 +73,11 @@ export async function runInteractiveApp(
           reviewRuntime?.stop();
           runtimeCleanupAttempted = true;
         } finally {
-          await retireExtensions(bootstrap.extensions);
+          await extensionSession.shutdown();
         }
       },
-      beforeTeardown: () => {
+      beforeTeardown: async () => {
+        await extensionSession.shutdown();
         if (runtimeCleanupAttempted) return;
         reviewRuntime?.stop();
         runtimeCleanupAttempted = true;
@@ -83,7 +92,7 @@ export async function runInteractiveApp(
       ),
     });
   } catch (error) {
-    if (!runnerOwnsFailureCleanup) await retireExtensions(bootstrap.extensions);
+    if (!runnerOwnsFailureCleanup) await extensionSession.shutdown();
     throw error;
   } finally {
     if (!runtimeCleanupAttempted) reviewRuntime?.stop();

@@ -6,7 +6,7 @@ import { act } from "react";
 import { buildSplitRows } from "../packages/hunk/src/ui/diff/diffRows";
 import { buildReviewRenderPlan } from "../packages/hunk/src/ui/diff/reviewRenderPlan";
 import { resolveTheme } from "../packages/hunk/src/ui/themes";
-import { AppHost } from "../packages/hunk/src/ui/AppHost";
+import { BenchmarkAppHost as AppHost } from "./lib/appHost";
 import { createLargeSplitStreamBootstrap } from "./large-stream-fixture";
 
 const viewport = { width: 240, height: 28 } as const;

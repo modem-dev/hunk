@@ -6,7 +6,7 @@ import { act } from "react";
 import { capturedTestColorToHex } from "../../../../test/helpers/test-color-helpers";
 import { createWatchTestRuntime } from "../../../../test/helpers/watchTest";
 import { loadAppBootstrap } from "../core/changeset/loaders";
-import { AppHost } from "./AppHost";
+import { TestAppHost as AppHost } from "../../../../test/helpers/app-host";
 import { resolveTheme } from "./themes";
 
 async function flush(setup: Awaited<ReturnType<typeof testRender>>) {

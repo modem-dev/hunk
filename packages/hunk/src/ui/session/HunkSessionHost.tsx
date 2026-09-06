@@ -10,7 +10,7 @@ import {
 } from "../../app/session/reviewRuntime";
 import type { StartupNotice } from "../../core/process/startupNotice";
 import type { AppBootstrap } from "../../core/bootstrap";
-import { retireExtensionLoadResult } from "../../extensions/events";
+import type { ExtensionSession } from "../../extensions/session";
 import type { ExtensionLoadResult } from "../../extensions/types";
 import { AppHost } from "../AppHost";
 import type { HistoryRuntime } from "../history/types";
@@ -29,6 +29,7 @@ export interface StandaloneReviewSurfaceRoute {
   instanceId: number;
   bootstrap: AppBootstrap<ExtensionLoadResult>;
   runtime: ReviewSessionRuntime;
+  extensionSession: ExtensionSession;
 }
 
 export type HunkSurfaceRoute = HistorySurfaceRoute | StandaloneReviewSurfaceRoute;
@@ -45,7 +46,6 @@ type ActiveSurfaceRoute = HistorySurfaceRoute | ActiveReviewSurfaceRoute;
 export interface HunkSessionHostDeps {
   prepareReview?: typeof prepareEmbeddedHistoryReview;
   createReviewRuntime?: typeof createReviewSessionRuntime;
-  retirePreparedExtensions?: typeof retireExtensionLoadResult;
 }
 
 /**
@@ -70,7 +70,6 @@ export function HunkSessionHost({
 }) {
   const prepareReview = deps.prepareReview ?? prepareEmbeddedHistoryReview;
   const createReviewRuntime = deps.createReviewRuntime ?? createReviewSessionRuntime;
-  const retirePreparedExtensions = deps.retirePreparedExtensions ?? retireExtensionLoadResult;
   const [route, setRoute] = useState<ActiveSurfaceRoute>(() =>
     initialRoute.kind === "history"
       ? initialRoute
@@ -177,11 +176,14 @@ export function HunkSessionHost({
         startupCwd,
         extensionsEnabled: historyRoute.runtime.input.extensionsEnabled,
         extensionPaths: historyRoute.runtime.input.extensionPaths,
-        extensionSession: historyRoute.runtime.extensionSession,
+        extensionSession: historyRoute.runtime.extensionSession.current,
         themeId: outcome.themeId,
         themeMode: outcome.themeMode,
       };
       plan = await prepareReview(request, { signal });
+      if (!plan.bootstrap.extensions) {
+        throw new Error("Embedded review startup did not provide extension authority.");
+      }
       signal.throwIfAborted();
       if (
         !mountedRef.current ||
@@ -189,9 +191,15 @@ export function HunkSessionHost({
         routeRef.current !== historyRoute
       ) {
         if (!plan.borrowsExtensions) {
-          await retirePreparedExtensions(plan.bootstrap.extensions);
+          historyRoute.runtime.extensionSession.trackPrepared(plan.bootstrap.extensions);
+          await historyRoute.runtime.extensionSession.retirePrepared(plan.bootstrap.extensions);
         }
         return;
+      }
+      if (!plan.borrowsExtensions) {
+        historyRoute.runtime.extensionSession.trackPrepared(plan.bootstrap.extensions);
+        await historyRoute.runtime.extensionSession.retirePrepared(plan.bootstrap.extensions);
+        throw new Error("An embedded review cannot replace the owning extension session.");
       }
       const reviewRuntime = createReviewRuntime(plan.bootstrap, startupCwd);
       const reviewRoute: ActiveReviewSurfaceRoute = {
@@ -199,7 +207,8 @@ export function HunkSessionHost({
         instanceId: nextInstanceRef.current++,
         bootstrap: plan.bootstrap,
         runtime: reviewRuntime,
-        extensionOwnership: plan.borrowsExtensions ? "borrowed" : "owned",
+        extensionSession: historyRoute.runtime.extensionSession,
+        extensionOwnership: "borrowed",
         quitBehavior: "return-to-history",
         mountMode: "dynamic",
         returnRoute: historyRoute,
@@ -207,8 +216,15 @@ export function HunkSessionHost({
       routeRef.current = reviewRoute;
       setRoute(reviewRoute);
     } catch (error) {
-      if (plan && !plan.borrowsExtensions && routeRef.current.kind !== "review") {
-        await retirePreparedExtensions(plan.bootstrap.extensions);
+      const preparedExtensions = plan?.bootstrap.extensions;
+      if (
+        plan &&
+        preparedExtensions &&
+        !plan.borrowsExtensions &&
+        routeRef.current.kind !== "review"
+      ) {
+        historyRoute.runtime.extensionSession.trackPrepared(preparedExtensions);
+        await historyRoute.runtime.extensionSession.retirePrepared(preparedExtensions);
       }
       if (!signal.aborted) throw error;
     } finally {
@@ -256,7 +272,13 @@ export function HunkSessionHost({
         onQuit={retireReview}
         {...(route.mountMode === "dynamic" ? { onFirstFrameReady: () => undefined } : {})}
         returnToHistory={route.quitBehavior === "return-to-history"}
+        extensionSession={route.extensionSession}
         extensionOwnership={route.extensionOwnership}
+        onRequestSessionShutdown={
+          route.extensionOwnership === "owned"
+            ? () => route.extensionSession.shutdown()
+            : async () => undefined
+        }
         reviewProducer={route.runtime.reviewProducer}
         startupNoticeResolver={startupNoticeResolver}
       />

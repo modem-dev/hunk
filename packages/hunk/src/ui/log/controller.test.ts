@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { createTestExtensionSession } from "../../../../../test/helpers/extension-session";
 import type { HistoryRuntime } from "../history/types";
 import { LogController } from "./controller";
 
@@ -36,6 +37,7 @@ function createRuntime(subjects = ["first", "second", "third"]) {
       extensionPaths: [],
     },
     source,
+    extensionSession: createTestExtensionSession(),
     providerId: "test",
     providerName: "Test",
     repoRoot: "/repo",

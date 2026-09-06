@@ -7,7 +7,7 @@ import { act } from "react";
 import { createTestVcsAppBootstrap } from "../../../../test/helpers/app-bootstrap";
 import { createTestDiffFile, createTestSourceFetcher } from "../../../../test/helpers/diff-helpers";
 import { loadStartupExtensions } from "../extensions/startup";
-import { AppHost } from "./AppHost";
+import { TestAppHost as AppHost } from "../../../../test/helpers/app-host";
 
 const JSX_FILE_VIEW_EXTENSION = join(
   import.meta.dir,

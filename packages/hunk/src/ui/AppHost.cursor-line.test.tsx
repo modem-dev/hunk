@@ -4,7 +4,7 @@ import { act } from "react";
 import type { CursorLine } from "../core/run/commandInputs";
 import { createTestVcsAppBootstrap } from "../../../../test/helpers/app-bootstrap";
 import { createTestDiffFile, lines } from "../../../../test/helpers/diff-helpers";
-import { AppHost } from "./AppHost";
+import { TestAppHost as AppHost } from "../../../../test/helpers/app-host";
 
 const BEFORE = lines(
   "const alpha = 1;",

@@ -122,7 +122,7 @@ async function renderSelectionApp(
     osc52 = true,
   }: { width?: number; height?: number; osc52?: boolean } = {},
 ) {
-  const { AppHost } = await import("./AppHost");
+  const { TestAppHost: AppHost } = await import("../../../../test/helpers/app-host");
   const setup = await testRender(<AppHost bootstrap={bootstrap} />, { width, height });
 
   const copied: string[] = [];

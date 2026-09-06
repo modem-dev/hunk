@@ -278,6 +278,11 @@ start watchers, processes, connections, and other long-lived resources from
 `startup`, and release them from `shutdown`. Extension-registry reloads create
 new instances and run that shutdown/startup pair around the replacement.
 
+One host-owned `ExtensionSession` holds active, provisional, and retiring registries for a
+command lifetime. It revokes replaced authority at the review commit gate, drains bounded shutdown
+handlers before terminal teardown, and prevents surfaces from independently replacing or retiring
+the shared registry.
+
 An interactive history workspace owns one extension instance for its complete
 lifetime. Opening a commit review inside that workspace borrows the same
 instance: the factory and `startup` do not run again, and returning to history

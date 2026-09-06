@@ -1,6 +1,19 @@
 import { expect, mock, test } from "bun:test";
 import { createTestVcsAppBootstrap } from "../../../../test/helpers/app-bootstrap";
+import { createEmptyExtensionLoadResult, type ExtensionLoadResult } from "../extensions/types";
 import { runInteractiveApp } from "./runInteractiveApp";
+
+/** Register one shutdown observer on a test bootstrap's explicit extension authority. */
+function onShutdown(
+  bootstrap: ReturnType<typeof createTestVcsAppBootstrap>,
+  handler: () => void | Promise<void>,
+) {
+  bootstrap.extensions ??= createEmptyExtensionLoadResult(bootstrap.reloadContext.cwd);
+  (bootstrap.extensions as ExtensionLoadResult).registry.eventHandlers.shutdown.push({
+    extensionId: "test",
+    handler,
+  });
+}
 
 test("retires extensions and closes the controlling terminal when review runtime creation fails", async () => {
   const bootstrap = createTestVcsAppBootstrap({
@@ -8,7 +21,8 @@ test("retires extensions and closes the controlling terminal when review runtime
     files: [],
   });
   const close = mock(() => undefined);
-  const retireExtensions = mock(async () => undefined);
+  const shutdown = mock(async () => undefined);
+  onShutdown(bootstrap, shutdown);
   const runSession = mock(async () => undefined);
   const failure = new Error("registration failed");
 
@@ -26,14 +40,12 @@ test("retires extensions and closes the controlling terminal when review runtime
           throw failure;
         }) as never,
         runSession: runSession as never,
-        retireExtensions: retireExtensions as never,
       },
     ),
   ).rejects.toBe(failure);
 
   expect(runSession).not.toHaveBeenCalled();
-  expect(retireExtensions).toHaveBeenCalledTimes(1);
-  expect(retireExtensions).toHaveBeenCalledWith(bootstrap.extensions);
+  expect(shutdown).toHaveBeenCalledTimes(1);
   expect(close).toHaveBeenCalledTimes(1);
 });
 
@@ -45,11 +57,12 @@ test("stops the broker and retires extensions before exceptional renderer teardo
   const events: string[] = [];
   const failure = new Error("render failed");
   const stop = mock(() => events.push("stop"));
-  const retireExtensions = mock(async () => {
+  const shutdown = mock(async () => {
     events.push("retire-start");
     await Promise.resolve();
     events.push("retire-finish");
   });
+  onShutdown(bootstrap, shutdown);
   const runSession = mock(
     async (options: Parameters<typeof import("./session/runHunkSession").runHunkSession>[0]) => {
       await options.onFailure?.(failure);
@@ -68,14 +81,13 @@ test("stops the broker and retires extensions before exceptional renderer teardo
           stop,
         })) as never,
         runSession: runSession as never,
-        retireExtensions: retireExtensions as never,
       },
     ),
   ).rejects.toBe(failure);
 
   expect(events).toEqual(["stop", "retire-start", "retire-finish", "destroy"]);
   expect(stop).toHaveBeenCalledTimes(1);
-  expect(retireExtensions).toHaveBeenCalledTimes(1);
+  expect(shutdown).toHaveBeenCalledTimes(1);
 });
 
 test("retries broker cleanup before teardown when the exceptional stop attempt fails", async () => {
@@ -91,7 +103,7 @@ test("retries broker cleanup before teardown when the exceptional stop attempt f
     events.push(`stop-${stopAttempts}`);
     if (stopAttempts === 1) throw new Error("socket close failed");
   });
-  const retireExtensions = mock(async () => {
+  onShutdown(bootstrap, async () => {
     events.push("retire");
   });
   const runSession = mock(
@@ -115,7 +127,6 @@ test("retries broker cleanup before teardown when the exceptional stop attempt f
           stop,
         })) as never,
         runSession: runSession as never,
-        retireExtensions: retireExtensions as never,
       },
     ),
   ).rejects.toBe(failure);

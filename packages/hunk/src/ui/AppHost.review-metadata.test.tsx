@@ -15,7 +15,7 @@ import type {
   HunkSessionServerMessage,
   HunkSessionSnapshot,
 } from "../session/types";
-import { AppHost } from "./AppHost";
+import { TestAppHost as AppHost } from "../../../../test/helpers/app-host";
 
 /** Stand in for the daemon so a mounted AppHost can receive unrelated reloads. */
 function createTestHostClient() {

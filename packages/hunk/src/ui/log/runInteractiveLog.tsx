@@ -23,7 +23,11 @@ export async function runInteractiveLog(
   }: { stdin?: NodeJS.ReadStream; stdout?: NodeJS.WriteStream } = {},
 ) {
   if (!stdin.isTTY || !stdout.isTTY || typeof stdin.setRawMode !== "function") {
-    await runtime.close();
+    try {
+      await runtime.close();
+    } finally {
+      await runtime.extensionSession.shutdown();
+    }
     throw new HunkUserError("The `hunk log` browser requires a terminal.", [
       "Use `hunk log --static` to force scrollback output.",
     ]);
@@ -43,7 +47,13 @@ export async function runInteractiveLog(
       signals: LOG_SHUTDOWN_SIGNALS,
       signalExitCode: logSignalExitCode,
       interruptExitCode: 130,
-      beforeTeardown: () => controller.close(),
+      beforeTeardown: async () => {
+        try {
+          await controller.close();
+        } finally {
+          await runtime.extensionSession.shutdown();
+        }
+      },
       render: ({ externalQuitSignal, finish }) => (
         <HunkSessionHost
           initialRoute={initialRoute}
@@ -54,6 +64,12 @@ export async function runInteractiveLog(
     });
     if (exitCode !== undefined) process.exitCode = exitCode;
   } finally {
-    if (!runnerOwnsCleanup) await controller.close();
+    if (!runnerOwnsCleanup) {
+      try {
+        await controller.close();
+      } finally {
+        await runtime.extensionSession.shutdown();
+      }
+    }
   }
 }

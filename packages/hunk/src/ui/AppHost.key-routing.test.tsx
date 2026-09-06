@@ -12,7 +12,7 @@ import { loadStartupExtensions } from "../extensions/startup";
 
 mock.restore();
 
-const { AppHost } = await import("./AppHost");
+const { TestAppHost: AppHost } = await import("../../../../test/helpers/app-host");
 
 /**
  * Key-ownership routing between the global handler chain and a focused

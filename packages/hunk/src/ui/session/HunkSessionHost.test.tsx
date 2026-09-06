@@ -3,6 +3,8 @@ import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
 import { createTestVcsAppBootstrap } from "../../../../../test/helpers/app-bootstrap";
 import { createTestDiffFile } from "../../../../../test/helpers/diff-helpers";
+import { createTestExtensionSession } from "../../../../../test/helpers/extension-session";
+import { createEmptyExtensionLoadResult } from "../../extensions/types";
 import type { HistoryRuntime } from "../history/types";
 import { LogController } from "../log/controller";
 import {
@@ -25,6 +27,7 @@ async function createHistoryRoute() {
       extensionsEnabled: false,
       extensionPaths: [],
     },
+    extensionSession: createTestExtensionSession(),
     source: {
       async read() {
         return {
@@ -84,13 +87,14 @@ test("routes repeated history reviews through fresh runtimes and returns instead
   const stops: Array<ReturnType<typeof mock>> = [];
   let instance = 0;
   const deps: HunkSessionHostDeps = {
-    prepareReview: (async () => ({
-      bootstrap: createTestVcsAppBootstrap({
+    prepareReview: (async () => {
+      const bootstrap = createTestVcsAppBootstrap({
         changesetId: `review-${++instance}`,
         files: [createTestDiffFile({ id: "review.ts", path: "review.ts" })],
-      }),
-      borrowsExtensions: true,
-    })) as never,
+      });
+      bootstrap.extensions = history.runtime.extensionSession.current;
+      return { bootstrap, borrowsExtensions: true };
+    }) as never,
     createReviewRuntime: (() => {
       const stop = mock(() => undefined);
       stops.push(stop);
@@ -137,20 +141,24 @@ test("quits the session from a standalone review route", async () => {
   const quit = mock(() => undefined);
   const stop = mock(() => undefined);
   const abort = new AbortController();
+  const extensionSession = createTestExtensionSession();
+  const bootstrap = createTestVcsAppBootstrap({
+    changesetId: "standalone-review",
+    files: [createTestDiffFile({ id: "standalone.ts", path: "standalone.ts" })],
+  });
+  bootstrap.extensions = extensionSession.current;
   const setup = await testRender(
     <HunkSessionHost
       initialRoute={{
         kind: "review",
         instanceId: 1,
-        bootstrap: createTestVcsAppBootstrap({
-          changesetId: "standalone-review",
-          files: [createTestDiffFile({ id: "standalone.ts", path: "standalone.ts" })],
-        }) as never,
+        bootstrap: bootstrap as never,
         runtime: {
           hostClient: undefined,
           reviewProducer: undefined,
           stop,
         } as never,
+        extensionSession,
       }}
       externalQuitSignal={abort.signal}
       onQuit={quit}
@@ -174,20 +182,24 @@ test("finishes review navigation even when broker shutdown throws", async () => 
     throw new Error("broker close failed");
   });
   const abort = new AbortController();
+  const extensionSession = createTestExtensionSession();
+  const bootstrap = createTestVcsAppBootstrap({
+    changesetId: "failing-broker-review",
+    files: [createTestDiffFile({ id: "failing.ts", path: "failing.ts" })],
+  });
+  bootstrap.extensions = extensionSession.current;
   const setup = await testRender(
     <HunkSessionHost
       initialRoute={{
         kind: "review",
         instanceId: 1,
-        bootstrap: createTestVcsAppBootstrap({
-          changesetId: "failing-broker-review",
-          files: [createTestDiffFile({ id: "failing.ts", path: "failing.ts" })],
-        }) as never,
+        bootstrap: bootstrap as never,
         runtime: {
           hostClient: undefined,
           reviewProducer: undefined,
           stop,
         } as never,
+        extensionSession,
       }}
       externalQuitSignal={abort.signal}
       onQuit={quit}
@@ -224,6 +236,48 @@ test("does not start provider planning after shutdown wins the pre-dispatch wind
     await settle(setup);
     expect(planReview).not.toHaveBeenCalled();
     expect(quit).toHaveBeenCalledTimes(1);
+  } finally {
+    setup.renderer.destroy();
+    await history.controller.close();
+  }
+});
+
+test("refuses a nested review that returns independent extension authority", async () => {
+  const history = await createHistoryRoute();
+  const foreign = createEmptyExtensionLoadResult("/repo");
+  const createReviewRuntime = mock(() => {
+    throw new Error("nested runtime mounted");
+  });
+  const setup = await testRender(
+    <HunkSessionHost
+      initialRoute={history}
+      externalQuitSignal={new AbortController().signal}
+      onQuit={() => undefined}
+      deps={{
+        prepareReview: (async () => ({
+          bootstrap: {
+            ...createTestVcsAppBootstrap({
+              changesetId: "foreign-review",
+              files: [createTestDiffFile({ id: "foreign.ts", path: "foreign.ts" })],
+            }),
+            extensions: foreign,
+          },
+          borrowsExtensions: false,
+        })) as never,
+        createReviewRuntime: createReviewRuntime as never,
+      }}
+    />,
+    { width: 100, height: 20 },
+  );
+  try {
+    await setup.renderOnce();
+    await act(async () => setup.mockInput.pressEnter());
+    await settle(setup);
+    expect(setup.captureCharFrame()).toContain("History row");
+    expect(setup.captureCharFrame()).toContain("cannot replace");
+    expect(createReviewRuntime).not.toHaveBeenCalled();
+    expect(foreign.registry.eventBusPhase).toBe("closed");
+    expect(history.runtime.extensionSession.closing).toBe(false);
   } finally {
     setup.renderer.destroy();
     await history.controller.close();
@@ -333,17 +387,16 @@ test("defers menu quit until cancelled preparation and retirement settle", async
   const preparation = new Promise((resolve) => {
     resolvePreparation = resolve;
   });
+  history.runtime.extensionSession.trackPrepared = mock(() => undefined);
+  history.runtime.extensionSession.retirePrepared = mock(async () => {
+    events.push("retire");
+  });
   const setup = await testRender(
     <HunkSessionHost
       initialRoute={history}
       externalQuitSignal={new AbortController().signal}
       onQuit={quit}
-      deps={{
-        prepareReview: (() => preparation) as never,
-        retirePreparedExtensions: (async () => {
-          events.push("retire");
-        }) as never,
-      }}
+      deps={{ prepareReview: (() => preparation) as never }}
     />,
     { width: 100, height: 20 },
   );
@@ -355,10 +408,13 @@ test("defers menu quit until cancelled preparation and retirement settle", async
     expect(quit).not.toHaveBeenCalled();
 
     resolvePreparation({
-      bootstrap: createTestVcsAppBootstrap({
-        changesetId: "cancelled-review",
-        files: [createTestDiffFile({ id: "cancelled.ts", path: "cancelled.ts" })],
-      }),
+      bootstrap: {
+        ...createTestVcsAppBootstrap({
+          changesetId: "cancelled-review",
+          files: [createTestDiffFile({ id: "cancelled.ts", path: "cancelled.ts" })],
+        }),
+        extensions: createEmptyExtensionLoadResult("/repo"),
+      },
       borrowsExtensions: false,
     });
     await settle(setup);
@@ -387,6 +443,8 @@ test("cancels stale preparation, retires its owned registry, and quits once", as
     resolvePreparation = resolve;
   });
   const abort = new AbortController();
+  history.runtime.extensionSession.trackPrepared = mock(() => undefined);
+  history.runtime.extensionSession.retirePrepared = retire as never;
   const setup = await testRender(
     <HunkSessionHost
       initialRoute={history}
@@ -397,7 +455,6 @@ test("cancels stale preparation, retires its owned registry, and quits once", as
         createReviewRuntime: mock(() => {
           throw new Error("stale review mounted");
         }) as never,
-        retirePreparedExtensions: retire as never,
       }}
     />,
     { width: 100, height: 20 },
@@ -409,10 +466,13 @@ test("cancels stale preparation, retires its owned registry, and quits once", as
     act(() => abort.abort());
     expect(quit).not.toHaveBeenCalled();
     resolvePreparation({
-      bootstrap: createTestVcsAppBootstrap({
-        changesetId: "stale-review",
-        files: [createTestDiffFile({ id: "stale.ts", path: "stale.ts" })],
-      }),
+      bootstrap: {
+        ...createTestVcsAppBootstrap({
+          changesetId: "stale-review",
+          files: [createTestDiffFile({ id: "stale.ts", path: "stale.ts" })],
+        }),
+        extensions: createEmptyExtensionLoadResult("/repo"),
+      },
       borrowsExtensions: false,
     });
     await act(async () => {

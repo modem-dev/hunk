@@ -26,7 +26,7 @@ import { App } from "./App";
 import { availableThemes, resolveTheme } from "./themes";
 
 const { loadAppBootstrap } = await import("../core/changeset/loaders");
-const { AppHost } = await import("./AppHost");
+const { TestAppHost: AppHost } = await import("../../../../test/helpers/app-host");
 
 const TEST_KEY_PAGE_UP = "\x1B[5~";
 const TEST_KEY_PAGE_DOWN = "\x1B[6~";

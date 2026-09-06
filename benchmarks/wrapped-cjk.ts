@@ -6,7 +6,7 @@ import { testRender } from "@opentui/react/test-utils";
 import React, { act } from "react";
 import type { AppBootstrap } from "../packages/hunk/src/core/bootstrap";
 import type { DiffFile } from "../packages/hunk/src/core/changeset/model";
-import { AppHost } from "../packages/hunk/src/ui/AppHost";
+import { BenchmarkAppHost as AppHost } from "./lib/appHost";
 import { prefetchHighlightedDiff } from "../packages/hunk/src/ui/diff/useHighlightedDiff";
 import { VIEWPORT_READ_COALESCE_MS } from "../packages/hunk/src/ui/lib/viewportTiming";
 import { resolveTheme } from "../packages/hunk/src/ui/themes";

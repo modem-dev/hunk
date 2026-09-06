@@ -5,7 +5,7 @@
 import { performance } from "node:perf_hooks";
 import { testRender } from "@opentui/react/test-utils";
 import React from "react";
-import { AppHost } from "../packages/hunk/src/ui/AppHost";
+import { BenchmarkAppHost as AppHost } from "./lib/appHost";
 import { createLargeSplitStreamBootstrap } from "./large-stream-fixture";
 import {
   destroyRenderer,

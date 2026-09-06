@@ -63,8 +63,11 @@ Callers retain their distinct lifecycle work (extension rediscovery, notices, an
 state), but must not recreate this ordering. Interactive entry adapters supply their terminal,
 signal, mouse, and exit-status policies to `ui/session/runHunkSession`; that runner owns one
 renderer/root lifetime and waits for `HunkSessionHost` to finish graceful surface cleanup before
-restoring the terminal. `HunkSessionHost` routes only the current history and review surfaces;
-review reload and extension-event commit ordering remain with `AppHost`.
+restoring the terminal. `HunkSessionHost` routes only the current history and review surfaces and
+passes one `extensions/session.ts` owner through them. That owner holds registry authority and
+retirement; review content loading, broker publication, React commit, and post-child-layout event
+ordering remain with `AppHost`. Static history uses the same owner without importing OpenTUI and
+closes its provider cursor before extension shutdown.
 
 ## Migration policy
 

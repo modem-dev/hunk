@@ -8,7 +8,7 @@ import { act } from "react";
 import { createTestVcsAppBootstrap } from "../../../../test/helpers/app-bootstrap";
 import { createTestDiffFile } from "../../../../test/helpers/diff-helpers";
 import { loadStartupExtensions } from "../extensions/startup";
-import { AppHost } from "./AppHost";
+import { TestAppHost as AppHost } from "../../../../test/helpers/app-host";
 
 const tempDirs: string[] = [];
 setDefaultTimeout(20_000);

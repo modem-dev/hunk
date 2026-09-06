@@ -17,8 +17,8 @@ import {
 } from "../core/vcs";
 import type { VcsCatalog, VcsHistorySource } from "../core/vcs/types";
 import { resolveExtensionVcsAdapters, resolveSessionVcsId } from "../extensions/apply";
-import { emitExtensionEvent, retireExtensionLoadResult } from "../extensions/events";
 import { mergeStartupNotices } from "../extensions/startup";
+import { createExtensionSession, type ExtensionSession } from "../extensions/session";
 import type { ExtensionLoadResult } from "../extensions/types";
 import { resolveConfiguredExtensions } from "./extensionBootstrap";
 
@@ -30,9 +30,8 @@ export interface HistoryBootstrap {
   providerName: string;
   startupCwd: string;
   repoRoot: string;
-  extensions: ExtensionLoadResult;
-  /** History-owned extension authority borrowed by embedded reviews. */
-  extensionSession: ExtensionLoadResult;
+  /** Command-owned extension authority borrowed by embedded reviews. */
+  extensionSession: ExtensionSession;
   notices: readonly string[];
   customThemes: readonly NamedCustomThemeConfig[];
   planReview(
@@ -75,6 +74,7 @@ export async function loadHistoryBootstrap({
     baseVcsCatalog,
     previousLoad,
   });
+  const extensionSession = createExtensionSession(resolved.extensions, cwd);
   const extensionAdapters = resolveExtensionVcsAdapters(
     resolved.extensions.registry,
     baseVcsCatalog,
@@ -92,7 +92,7 @@ export async function loadHistoryBootstrap({
   try {
     adapter = getVcsAdapter(providerId, catalog);
   } catch (error) {
-    await retireExtensionLoadResult(resolved.extensions);
+    await extensionSession.shutdown();
     throw error;
   }
   let selectedDetection;
@@ -119,9 +119,9 @@ export async function loadHistoryBootstrap({
   let source: VcsHistorySource;
   try {
     source = await openSource();
-    emitExtensionEvent(resolved.extensions, "startup", { cwd });
+    extensionSession.startCurrent(cwd);
   } catch (error) {
-    await retireExtensionLoadResult(resolved.extensions);
+    await extensionSession.shutdown();
     throw error;
   }
 
@@ -134,8 +134,7 @@ export async function loadHistoryBootstrap({
     providerName: sanitizeTerminalLine(adapter.name),
     startupCwd: cwd,
     repoRoot,
-    extensions: resolved.extensions,
-    extensionSession: resolved.extensions,
+    extensionSession,
     customThemes: sessionThemes.themes,
     notices: [
       ...(mergeStartupNotices(resolved.configured.startupNotices, resolved.extensions) ?? []).map(
@@ -169,11 +168,7 @@ export async function loadHistoryBootstrap({
     async close() {
       if (closed) return;
       closed = true;
-      try {
-        await source.close();
-      } finally {
-        await retireExtensionLoadResult(resolved.extensions);
-      }
+      await source.close();
     },
   };
 }

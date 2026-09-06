@@ -11,8 +11,9 @@ import { getBundledVcsCatalog } from "../app/vcsCatalog";
 import { loadAppBootstrap } from "../core/changeset/loaders";
 import type { AppBootstrap } from "../core/bootstrap";
 import { retireExtensionLoadResult } from "../extensions/events";
+import { createExtensionSession, type ExtensionSession } from "../extensions/session";
 import { createEmptyExtensionLoadResult } from "../extensions/types";
-import { AppHost } from "./AppHost";
+import { TestAppHost as AppHost } from "../../../../test/helpers/app-host";
 
 /**
  * User keybindings, end to end.
@@ -99,6 +100,7 @@ async function withAppHost(
   body: (setup: Awaited<ReturnType<typeof testRender>>, quits: () => number) => Promise<void>,
   externalQuitSignal?: AbortSignal,
   extensionOwnership: "owned" | "borrowed" = "owned",
+  extensionSession?: ExtensionSession,
 ) {
   let quitCount = 0;
   const setup = await testRender(
@@ -107,6 +109,7 @@ async function withAppHost(
       externalQuitSignal={externalQuitSignal}
       onQuit={() => (quitCount += 1)}
       extensionOwnership={extensionOwnership}
+      {...(extensionSession ? { extensionSession } : {})}
     />,
     { width: 120, height: 24 },
   );
@@ -349,6 +352,7 @@ describe("user keybindings", () => {
       },
     });
     bootstrap.extensions = extensions;
+    const extensionSession = createExtensionSession(extensions, repo);
 
     for (let generation = 0; generation < 2; generation += 1) {
       await withAppHost(
@@ -360,6 +364,7 @@ describe("user keybindings", () => {
         },
         undefined,
         "borrowed",
+        extensionSession,
       );
     }
 
