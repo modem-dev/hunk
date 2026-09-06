@@ -1,3 +1,4 @@
+import { MouseButton, type MouseEvent as TuiMouseEvent } from "@opentui/core";
 import { memo } from "react";
 import type { ExtensionSidebarTheme } from "../../../extension-api/types";
 import { fileRowId } from "../../lib/ids";
@@ -71,23 +72,36 @@ export function fileSidebarIndentWidth(depth: number, textWidth: number, reserve
   return Math.min(Math.max(0, depth) * 2, Math.max(0, textWidth - reservedWidth - 1));
 }
 
-/** Render one always-expanded directory row in the navigation sidebar. */
+/** Render one mouse-toggleable directory row in the navigation sidebar. */
 export function FileDirectoryRow({
+  collapsed,
   entry,
+  onToggleDirectory,
   paddingLeft = 1,
   statsWidth = 0,
   textWidth,
   theme,
 }: {
+  collapsed: boolean;
   entry: FileDirectoryEntry;
+  onToggleDirectory: (path: string) => void;
   paddingLeft?: number;
   statsWidth?: number;
   textWidth: number;
   theme: ExtensionSidebarTheme;
 }) {
   const statsSectionWidth = statsWidth > 0 ? statsWidth + 1 : 0;
-  const indentWidth = fileSidebarIndentWidth(entry.depth, textWidth, statsSectionWidth + 1);
-  const labelWidth = Math.max(1, textWidth - 1 - statsSectionWidth - indentWidth);
+  const countText = collapsed
+    ? `${entry.descendantFileCount} ${entry.descendantFileCount === 1 ? "file" : "files"}`
+    : null;
+  const trailingWidth = countText ? Math.max(statsSectionWidth, countText.length + 1) : 0;
+  const disclosureWidth = 2;
+  const indentWidth = fileSidebarIndentWidth(
+    entry.depth,
+    textWidth,
+    disclosureWidth + trailingWidth + 1,
+  );
+  const labelWidth = Math.max(1, textWidth - 1 - disclosureWidth - trailingWidth - indentWidth);
 
   return (
     <box
@@ -96,6 +110,11 @@ export function FileDirectoryRow({
         height: 1,
         flexDirection: "row",
         backgroundColor: theme.panel,
+      }}
+      onMouseUp={(event: TuiMouseEvent) => {
+        if (event.button === MouseButton.LEFT) {
+          onToggleDirectory(entry.path);
+        }
       }}
     >
       <box style={{ width: 1, height: 1, backgroundColor: theme.panel }} />
@@ -108,7 +127,21 @@ export function FileDirectoryRow({
           backgroundColor: theme.panel,
         }}
       >
-        <text fg={theme.muted}>{fitText(entry.label, labelWidth)}</text>
+        <text fg={theme.muted}>{collapsed ? "› " : "⌄ "}</text>
+        <text fg={theme.muted}>{padText(fitText(entry.label, labelWidth), labelWidth)}</text>
+        {countText && (
+          <box
+            style={{
+              width: trailingWidth,
+              height: 1,
+              flexDirection: "row",
+              justifyContent: "flex-end",
+              backgroundColor: theme.panel,
+            }}
+          >
+            <text fg={theme.muted}>{countText}</text>
+          </box>
+        )}
       </box>
     </box>
   );

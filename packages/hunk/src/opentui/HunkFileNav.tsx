@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   FileDirectoryRow,
   FileGroupHeader,
@@ -7,8 +7,12 @@ import {
 import {
   buildFlatSidebarEntries,
   buildTreeSidebarEntries,
+  collapseTreeSidebarEntries,
+  expandCollapsedDirectoryPaths,
   resolveFileSidebarMode,
+  sidebarDirectoryPaths,
   sidebarEntryStatsWidth,
+  toggleCollapsedDirectoryPath,
 } from "../ui/lib/files";
 import { resolveTheme } from "../ui/themes";
 import { toInternalDiffFiles } from "./model";
@@ -24,15 +28,44 @@ export function HunkFileNav({
 }: HunkFileNavProps) {
   const resolvedTheme = resolveTheme(theme, null);
   const internalFiles = useMemo(() => toInternalDiffFiles(files), [files]);
+  const previousSelectedFileIdRef = useRef(selectedFileId);
+  const [collapsedDirectoryPaths, setCollapsedDirectoryPaths] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const textWidth = Math.max(1, width - 1);
   const mode = resolveFileSidebarMode(textWidth);
-  const entries = useMemo(
-    () =>
-      mode === "tree"
-        ? buildTreeSidebarEntries(internalFiles)
-        : buildFlatSidebarEntries(internalFiles),
-    [internalFiles, mode],
-  );
+  const entries = useMemo(() => {
+    if (mode === "flat") {
+      return buildFlatSidebarEntries(internalFiles);
+    }
+    return collapseTreeSidebarEntries(
+      buildTreeSidebarEntries(internalFiles),
+      collapsedDirectoryPaths,
+    );
+  }, [collapsedDirectoryPaths, internalFiles, mode]);
+
+  /** Toggle one logical directory everywhere it appears in the ordered tree projection. */
+  const toggleDirectory = (path: string) => {
+    setCollapsedDirectoryPaths((current) => toggleCollapsedDirectoryPath(current, path));
+  };
+
+  useEffect(() => {
+    const previousSelectedFileId = previousSelectedFileIdRef.current;
+    previousSelectedFileIdRef.current = selectedFileId;
+    if (!selectedFileId || selectedFileId === previousSelectedFileId) {
+      return;
+    }
+
+    const selectedFile = internalFiles.find((file) => file.id === selectedFileId);
+    if (!selectedFile) {
+      return;
+    }
+
+    setCollapsedDirectoryPaths((current) =>
+      expandCollapsedDirectoryPaths(current, sidebarDirectoryPaths(selectedFile.path)),
+    );
+  }, [internalFiles, selectedFileId]);
+
   const fileEntries = entries.filter((entry) => entry.kind === "file");
   const statsWidth = Math.max(0, ...fileEntries.map((entry) => sidebarEntryStatsWidth(entry)));
 
@@ -54,7 +87,9 @@ export function HunkFileNav({
           return (
             <FileDirectoryRow
               key={entry.id}
+              collapsed={collapsedDirectoryPaths.has(entry.path)}
               entry={entry}
+              onToggleDirectory={toggleDirectory}
               paddingLeft={0}
               statsWidth={statsWidth}
               textWidth={textWidth}

@@ -1,5 +1,5 @@
 import { describe, expect, mock, spyOn, test } from "bun:test";
-import type { ScrollBoxRenderable } from "@opentui/core";
+import { MouseButton, type ScrollBoxRenderable } from "@opentui/core";
 import { MouseButtons } from "@opentui/core/testing";
 import { testRender } from "@opentui/react/test-utils";
 import { act, createRef, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
@@ -36,6 +36,7 @@ const { MenuBar } = await import("./chrome/MenuBar");
 const { MenuDropdown } = await import("./chrome/MenuDropdown");
 const { StatusBar } = await import("./chrome/StatusBar");
 const { DiffFileHeaderRow } = await import("./panes/DiffFileHeaderRow");
+const { FileDirectoryRow } = await import("./panes/FileListItem");
 const { DiffSectionBody } = await import("../diff/DiffSectionBody");
 const { measurePlannedRenderedRowHeight, measureRenderedRowHeight } =
   await import("../diff/codeRowLayout");
@@ -410,6 +411,63 @@ function renderedWordDiffBackgroundDistance(
 }
 
 describe("UI components", () => {
+  test("directory rows toggle only for the primary mouse button", () => {
+    const toggled: string[] = [];
+    const element = FileDirectoryRow({
+      collapsed: false,
+      entry: {
+        kind: "directory",
+        id: "directory:src",
+        path: "src",
+        label: "src/",
+        depth: 0,
+        descendantFileCount: 2,
+      },
+      onToggleDirectory: (path) => toggled.push(path),
+      textWidth: 32,
+      theme: resolveTheme("github-dark-default", null),
+    }) as unknown as { props: { onMouseUp: (event: { button: MouseButton }) => void } };
+
+    element.props.onMouseUp({ button: MouseButton.RIGHT });
+    expect(toggled).toEqual([]);
+
+    element.props.onMouseUp({ button: MouseButton.LEFT });
+    expect(toggled).toEqual(["src"]);
+  });
+
+  test("collapsed directory rows right-align singular and plural file counts", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const renderCollapsedCount = (descendantFileCount: number) =>
+      captureFrame(
+        <FileDirectoryRow
+          collapsed={true}
+          entry={{
+            kind: "directory",
+            id: `directory:components:${descendantFileCount}`,
+            path: "src/very-long-directory/components",
+            label: "very-long-directory-name/",
+            depth: 8,
+            descendantFileCount,
+          }}
+          onToggleDirectory={() => {}}
+          paddingLeft={0}
+          statsWidth={10}
+          textWidth={32}
+          theme={theme}
+        />,
+        36,
+        1,
+      );
+
+    const singular = (await renderCollapsedCount(1)).split("\n")[0]!;
+    const plural = (await renderCollapsedCount(12)).split("\n")[0]!;
+
+    expect(singular.slice(0, 32)).toEndWith("1 file");
+    expect(plural.slice(0, 32)).toEndWith("12 files");
+    expect(singular.slice(32).trim()).toBe("");
+    expect(plural.slice(32).trim()).toBe("");
+  });
+
   test("the bundled sidebar view renders grouped file rows from the public props", async () => {
     const theme = resolveTheme("github-dark-default", null);
     const files = [
@@ -527,11 +585,11 @@ describe("UI components", () => {
         ?.indexOf("src/ui/"),
     ).toBe(1);
     expect(treeFrame).not.toContain("src/ui/");
-    expect(treeFrame).toContain("src/");
-    expect(treeFrame).toContain("ui/");
+    expect(treeFrame).toContain("⌄ src/");
+    expect(treeFrame).toContain("⌄ ui/");
     const treeLines = treeFrame.split("\n");
-    expect(treeLines.find((line) => line.includes("src/"))?.indexOf("src/")).toBe(1);
-    expect(treeLines.find((line) => line.includes("ui/"))?.indexOf("ui/")).toBe(3);
+    expect(treeLines.find((line) => line.includes("src/"))?.indexOf("src/")).toBe(3);
+    expect(treeLines.find((line) => line.includes("ui/"))?.indexOf("ui/")).toBe(5);
     expect(treeFrame).toContain("alpha.ts");
     expect(treeFrame).toContain("beta.ts");
   });

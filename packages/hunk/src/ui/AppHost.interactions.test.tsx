@@ -158,6 +158,18 @@ function createBootstrap(initialMode: LayoutMode = "split", pager = false): AppB
   });
 }
 
+/** Build nested files that exercise the wide sidebar's directory projection. */
+function createTreeSidebarBootstrap(): AppBootstrap {
+  return createTestVcsAppBootstrap({
+    changesetId: "changeset:tree-sidebar-interactions",
+    files: [
+      createTestDiffFile("alpha", "src/ui/alpha.ts", "a\n", "aa\n"),
+      createTestDiffFile("beta", "src/core/beta.ts", "b\n", "bb\n"),
+      createTestDiffFile("root", "README.md", "r\n", "rr\n"),
+    ],
+  });
+}
+
 function createSingleFileBootstrap(): AppBootstrap {
   return createTestVcsAppBootstrap({
     changesetId: "changeset:app-single-file",
@@ -3644,6 +3656,51 @@ describe("App interactions", () => {
         selectedFilePath: "second.ts",
         selectedHunkIndex: 1,
       });
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("clicking a tree directory collapses and expands its file rows", async () => {
+    const setup = await testRender(<AppHost bootstrap={createTreeSidebarBootstrap()} />, {
+      width: 220,
+      height: 14,
+    });
+
+    try {
+      await flush(setup);
+
+      let frame = setup.captureCharFrame();
+      const directoryY = frame
+        .split("\n")
+        .findIndex((line) => line.split("│", 1)[0]?.includes("⌄ src/"));
+      expect(directoryY).toBeGreaterThan(0);
+      expect((frame.match(/alpha\.ts/g) ?? []).length).toBe(2);
+      expect((frame.match(/beta\.ts/g) ?? []).length).toBe(2);
+
+      await act(async () => {
+        await setup.mockMouse.click(5, directoryY);
+      });
+      await flush(setup);
+
+      frame = setup.captureCharFrame();
+      expect(frame.split("\n")[directoryY]).toContain("› src/");
+      expect(frame.split("\n")[directoryY]?.split("│", 1)[0]).toContain("2 files");
+      expect((frame.match(/alpha\.ts/g) ?? []).length).toBe(1);
+      expect((frame.match(/beta\.ts/g) ?? []).length).toBe(1);
+      expect((frame.match(/README\.md/g) ?? []).length).toBe(2);
+
+      await act(async () => {
+        await setup.mockMouse.click(5, directoryY);
+      });
+      await flush(setup);
+
+      frame = setup.captureCharFrame();
+      expect(frame.split("\n")[directoryY]).toContain("⌄ src/");
+      expect((frame.match(/alpha\.ts/g) ?? []).length).toBe(2);
+      expect((frame.match(/beta\.ts/g) ?? []).length).toBe(2);
     } finally {
       await act(async () => {
         setup.renderer.destroy();

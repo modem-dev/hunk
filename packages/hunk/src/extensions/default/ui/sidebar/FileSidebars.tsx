@@ -5,8 +5,12 @@ import type { ExtensionPaneProps } from "../../../../extension-api/types";
 import {
   buildFlatSidebarEntries,
   buildTreeSidebarEntries,
+  collapseTreeSidebarEntries,
+  expandCollapsedDirectoryPaths,
   resolveFileSidebarMode,
+  sidebarDirectoryPaths,
   sidebarEntryStatsWidth,
+  toggleCollapsedDirectoryPath,
   type SidebarEntry,
 } from "../../../../ui/lib/files";
 import { fileRowId } from "../../../../ui/lib/ids";
@@ -33,16 +37,23 @@ type FileSidebarVariantProps = Pick<
   viewportHeight: number;
 };
 
+/** Ignore directory toggles for projections that cannot contain directory rows. */
+function ignoreDirectoryToggle() {}
+
 interface VirtualizedFileSidebarRowsProps extends Omit<FileSidebarVariantProps, "files"> {
+  collapsedDirectoryPaths?: ReadonlySet<string>;
   entries: SidebarEntry[];
+  onToggleDirectory?: (path: string) => void;
   paddingLeft?: number;
 }
 
 /** Render one windowed sidebar projection with shared file selection and stats lanes. */
 export function VirtualizedFileSidebarRows({
   actions,
+  collapsedDirectoryPaths,
   entries,
   estimatedViewportRows,
+  onToggleDirectory,
   paddingLeft = 1,
   scrollTop,
   selectedFileId,
@@ -93,7 +104,9 @@ export function VirtualizedFileSidebarRows({
           return (
             <FileDirectoryRow
               key={entry.id}
+              collapsed={collapsedDirectoryPaths?.has(entry.path) ?? false}
               entry={entry}
+              onToggleDirectory={onToggleDirectory ?? ignoreDirectoryToggle}
               paddingLeft={paddingLeft}
               statsWidth={statsWidth}
               textWidth={textWidth}
@@ -125,10 +138,29 @@ export function FlatFileSidebar({ files, ...props }: FileSidebarVariantProps): R
   return <VirtualizedFileSidebarRows {...props} entries={entries} />;
 }
 
-/** Render the fully expanded ordered hierarchy for a wide file sidebar. */
-export function TreeFileSidebar({ files, ...props }: FileSidebarVariantProps): ReactNode {
-  const entries = useMemo(() => buildTreeSidebarEntries(files), [files]);
-  return <VirtualizedFileSidebarRows {...props} entries={entries} paddingLeft={0} />;
+/** Render the ordered hierarchy after applying the sidebar's collapsed directory paths. */
+export function TreeFileSidebar({
+  collapsedDirectoryPaths,
+  files,
+  onToggleDirectory,
+  ...props
+}: FileSidebarVariantProps & {
+  collapsedDirectoryPaths: ReadonlySet<string>;
+  onToggleDirectory: (path: string) => void;
+}): ReactNode {
+  const entries = useMemo(
+    () => collapseTreeSidebarEntries(buildTreeSidebarEntries(files), collapsedDirectoryPaths),
+    [collapsedDirectoryPaths, files],
+  );
+  return (
+    <VirtualizedFileSidebarRows
+      {...props}
+      collapsedDirectoryPaths={collapsedDirectoryPaths}
+      entries={entries}
+      onToggleDirectory={onToggleDirectory}
+      paddingLeft={0}
+    />
+  );
 }
 
 /**
@@ -146,6 +178,11 @@ export function FlexFileSidebar({
   actions,
 }: BuiltInSidebarProps): ReactNode {
   const scrollRef = useRef<ScrollBoxRenderable | null>(null);
+  const previousSelectedFileIdRef = useRef(selectedFileId);
+  const skipSelectedFileRevealRef = useRef(false);
+  const [collapsedDirectoryPaths, setCollapsedDirectoryPaths] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const [scrollViewport, setScrollViewport] = useState({ top: 0, height: 0 });
   const terminal = useTerminalDimensions();
   // Mirrors the host layout: one column of row highlight plus row padding.
@@ -161,6 +198,29 @@ export function FlexFileSidebar({
     theme,
     viewportHeight: scrollViewport.height,
   };
+
+  /** Toggle one logical directory everywhere it appears in the ordered tree projection. */
+  const toggleDirectory = (path: string) => {
+    skipSelectedFileRevealRef.current = true;
+    setCollapsedDirectoryPaths((current) => toggleCollapsedDirectoryPath(current, path));
+  };
+
+  useEffect(() => {
+    const previousSelectedFileId = previousSelectedFileIdRef.current;
+    previousSelectedFileIdRef.current = selectedFileId;
+    if (!selectedFileId || selectedFileId === previousSelectedFileId) {
+      return;
+    }
+
+    const selectedFile = files.find((file) => file.id === selectedFileId);
+    if (!selectedFile) {
+      return;
+    }
+
+    setCollapsedDirectoryPaths((current) =>
+      expandCollapsedDirectoryPaths(current, sidebarDirectoryPaths(selectedFile.path)),
+    );
+  }, [files, selectedFileId]);
 
   useEffect(() => {
     const scrollBox = scrollRef.current;
@@ -216,12 +276,16 @@ export function FlexFileSidebar({
   // Selection and projection changes can both move the target row, so follow
   // the stable file id after either event instead of only after navigation.
   useEffect(() => {
+    if (skipSelectedFileRevealRef.current) {
+      skipSelectedFileRevealRef.current = false;
+      return;
+    }
     if (!selectedFileId) {
       return;
     }
 
     scrollRef.current?.scrollChildIntoView(fileRowId(selectedFileId));
-  }, [files, mode, selectedFileId]);
+  }, [collapsedDirectoryPaths, files, mode, selectedFileId]);
 
   return (
     <scrollbox
@@ -239,7 +303,11 @@ export function FlexFileSidebar({
       horizontalScrollbarOptions={{ visible: false }}
     >
       {mode === "tree" ? (
-        <TreeFileSidebar {...variantProps} />
+        <TreeFileSidebar
+          {...variantProps}
+          collapsedDirectoryPaths={collapsedDirectoryPaths}
+          onToggleDirectory={toggleDirectory}
+        />
       ) : (
         <FlatFileSidebar {...variantProps} />
       )}
