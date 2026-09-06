@@ -139,21 +139,6 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
   conformance under `test/session-broker-node/`. Run the dedicated command documented in
   `test/README.md` when changing those areas.
 
-## writing and agent efficiency
-
-- Inspect with targeted `rg`, `find`, and bounded reads before opening large files. Summarize long
-  output; do not dump generated files, lockfiles, or logs when a focused excerpt answers the question.
-- Lead with the result, decision, or finding. Do not restate the request, repeat conclusions, narrate
-  routine tool use, or add headings and examples merely to make a short point look substantial.
-- Keep progress updates and final responses concise. Report changed paths, validation results, and
-  residual risks without generic reassurance.
-- Use concrete nouns, verbs, paths, symbols, and observed behavior. Avoid filler such as “delve,”
-  “leverage,” “robust,” “seamless,” or “it is worth noting,” and avoid promotional or unsupported
-  claims such as “elegant,” “future-proof,” or “ensures correctness.”
-- Distinguish current facts, decisions, limitations, and future plans. Date status claims that can
-  age. Brevity must not omit compatibility constraints, security boundaries, failure behavior,
-  validation evidence, or residual risk.
-
 ## code comments
 
 - Add short JSDoc-style comments to functions and helpers.
