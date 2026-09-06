@@ -211,6 +211,31 @@ function waitForStreamOutput(stream: NodeJS.ReadableStream, pattern: RegExp, tim
 
 describe("PTY lifecycle", () => {
   test.skipIf(process.platform === "win32")(
+    "restores a directly launched renderer when SIGTSTP is discarded",
+    async () => {
+      const fixture = harness.createTabbedFilePair();
+      const session = await harness.launchHunk({
+        args: ["diff", "--files", fixture.before, fixture.after, "--mode", "stack"],
+        cwd: fixture.dir,
+      });
+
+      try {
+        await session.waitForText(/before\.txt.*after\.txt/, { timeout: 15_000 });
+        await harness.ensureKeyboardIsLive(session);
+
+        // Tuistory directly launches Hunk as the leader of an orphaned process group. POSIX
+        // discards its SIGTSTP, so Hunk must restore the renderer without waiting for SIGCONT.
+        session.writeRaw("\x1a");
+        await harness.ensureKeyboardIsLive(session);
+
+        expect(await session.text({ immediate: true })).toMatch(/before\.txt.*after\.txt/);
+      } finally {
+        session.close();
+      }
+    },
+  );
+
+  test.skipIf(process.platform === "win32")(
     "resumes a suspended job after fg without losing app state",
     async () => {
       const fixture = harness.createTabbedFilePair();
@@ -232,7 +257,7 @@ describe("PTY lifecycle", () => {
         await session.waitForText(/HUNK_SHELL>/, { timeout: 5_000 });
         session.writeRaw(`${hunkCommand}\r`);
         await session.waitForText(/before\.txt.*after\.txt/, { timeout: 15_000 });
-        await Bun.sleep(1_000);
+        await harness.ensureKeyboardIsLive(session);
         await session.press("c");
         await session.waitForText(/Draft note/, { timeout: 5_000 });
         await session.type("Keep this note after resume.");
@@ -244,10 +269,9 @@ describe("PTY lifecycle", () => {
         await session.waitForText(/\[\d+\][^\n]*(?:Stopped|suspended)/, { timeout: 5_000 });
         await Bun.sleep(5_000);
         session.writeRaw("fg\r");
-        await Bun.sleep(1_000);
-        expect(await session.text({ immediate: true })).not.toContain("HUNK_SHELL>");
         await harness.ensureKeyboardIsLive(session);
         const resumed = await session.text({ immediate: true });
+        expect(resumed).not.toContain("HUNK_SHELL>");
         expect(resumed).toMatch(/before\.txt.*after\.txt/);
         expect(resumed).toContain("Keep this note after resume.");
 
@@ -260,7 +284,7 @@ describe("PTY lifecycle", () => {
         await session.waitForText(/HUNK_SHELL> echo SECOND_SUSPEND_OK/, { timeout: 5_000 });
 
         session.writeRaw("fg\r");
-        await Bun.sleep(1_000);
+        await harness.ensureKeyboardIsLive(session);
         const secondResume = await session.text({ immediate: true });
         expect(secondResume).not.toContain("SECOND_SUSPEND_OK");
         expect(secondResume).toContain("Keep this note after resume.");

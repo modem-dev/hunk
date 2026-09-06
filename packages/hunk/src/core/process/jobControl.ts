@@ -72,14 +72,13 @@ export function installJobControlInterruptSupport(
  * ask OpenTUI to restore the terminal, then send SIGTSTP to the foreground process group so the
  * shell can manage Hunk as a normal suspended job.
  *
- * The stop takes effect before `kill` returns, because POSIX delivers a signal sent to the caller's
- * own process group before the call completes. Suspend and resume are therefore one straight line:
- * the statement after `kill` runs only once the shell continues the job with `fg`. Staying on that
- * call stack is also what keeps the job alive, since OpenTUI's suspend drops its keep-alive timer
- * and stops reading stdin, so a runtime that reached an idle event loop here could exit before
- * being continued. A `kill` that returns without stopping — a runtime that refuses SIGTSTP, or an
- * orphaned process group that discards it — reaches the same restore instead of waiting for a
- * SIGCONT nobody will send.
+ * For a normal shell-managed job, the stop takes effect inside `kill`, so the statement after it
+ * runs only once the shell continues the job with `fg`. Suspend and resume are therefore one
+ * straight line. Staying on that call stack is also what keeps the job alive, since OpenTUI's
+ * suspend drops its keep-alive timer and stops reading stdin, so a runtime that reached an idle
+ * event loop here could exit before being continued. A `kill` that returns without stopping — a
+ * runtime that refuses SIGTSTP, or an orphaned process group that discards it — reaches the same
+ * restore instead of waiting for a SIGCONT nobody will send.
  */
 export function installJobControlSuspendSupport(
   renderer: JobControlRenderer,
