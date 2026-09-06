@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { checkExtensionConsumerTypes } from "./extension-consumer-check";
 import { buildDocExamples } from "./extension-doc-examples";
+import { checkPackedPublicConsumers } from "./packed-public-consumer-check";
 import { npmCommand } from "./script-helpers";
 
 const repoRoot = path.resolve(import.meta.dir, "..");
@@ -364,8 +365,9 @@ interface PackResult {
   files: PackedFile[];
 }
 
-const proc = Bun.spawnSync([npmCommand, "pack", "--dry-run", "--json"], {
-  cwd: process.cwd(),
+const appRoot = path.join(repoRoot, "packages", "hunk");
+const proc = Bun.spawnSync([npmCommand, "pack", "--dry-run", "--json", "--ignore-scripts"], {
+  cwd: appRoot,
   stdin: "ignore",
   stdout: "pipe",
   stderr: "pipe",
@@ -460,7 +462,7 @@ for (const file of pack.files) {
   ) {
     throw new Error(
       `Unexpected file in the published extension surface: ${file.path}. ` +
-        "The hunkdiff/extension entry must only reach src/extension-api.",
+        "The hunkdiff/extension entry must only reach packages/hunk/src/extension-api.",
     );
   }
 }
@@ -470,7 +472,7 @@ if (pack.name !== "hunkdiff") {
 }
 
 const extensionTypes = readFileSync(
-  path.join(repoRoot, "dist", "npm", "extension", "extension-api", "types.d.ts"),
+  path.join(appRoot, "dist", "npm", "extension", "extension-api", "types.d.ts"),
   "utf8",
 );
 if (/^\s*import\b/m.test(extensionTypes)) {
@@ -495,6 +497,23 @@ for (const removedType of [
 // bundler one. `nodenext` is the one that catches extensionless relative
 // specifiers in the emitted declarations, which the repo's own typecheck cannot
 // see because it resolves TypeScript sources, not the shipped .d.ts tree.
+const publishedManifest = readFileSync(path.join(appRoot, "package.json"), "utf8");
+if (publishedManifest.includes("workspace:") || publishedManifest.includes('"@hunk/')) {
+  throw new Error("The published hunkdiff manifest must not contain private workspace references.");
+}
+const publishedPackage = JSON.parse(publishedManifest) as { pi?: { skills?: string[] } };
+if (JSON.stringify(publishedPackage.pi?.skills) !== JSON.stringify(["./skills"])) {
+  throw new Error("The published hunkdiff manifest must expose its bundled Pi skills.");
+}
+for (const fileName of ["README.md", "LICENSE"]) {
+  if (
+    readFileSync(path.join(repoRoot, fileName), "utf8") !==
+    readFileSync(path.join(appRoot, fileName), "utf8")
+  ) {
+    throw new Error(`${fileName} in packages/hunk must match the repository canonical copy.`);
+  }
+}
+
 const docsMarkdown = readFileSync(path.join(repoRoot, "docs", "extensions.md"), "utf8");
 const docExamples = buildDocExamples(docsMarkdown);
 
@@ -513,4 +532,8 @@ console.log(
   `Verified hunkdiff/extension typechecks for consumers using ${modes
     .map((mode) => `moduleResolution: "${mode}"`)
     .join(" and ")}, ` + `across ${docExamples.length} docs/extensions.md examples.`,
+);
+const packedModes = checkPackedPublicConsumers(repoRoot);
+console.log(
+  `Verified packed hunkdiff/extension and hunkdiff/opentui under ${packedModes.join(" and ")}.`,
 );

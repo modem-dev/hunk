@@ -1,6 +1,6 @@
 import { parseDiffFromFile, parsePatchFiles } from "@pierre/diffs";
-import type { AppBootstrap } from "../src/core/bootstrap";
-import type { DiffFile } from "../src/core/changeset/model";
+import type { AppBootstrap } from "../packages/hunk/src/core/bootstrap";
+import type { DiffFile } from "../packages/hunk/src/core/changeset/model";
 
 export const DEFAULT_FILE_COUNT = 180;
 export const DEFAULT_LINES_PER_FILE = 120;

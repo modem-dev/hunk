@@ -9,13 +9,13 @@ exists so you know which module owns what.
 ## Tiers and loading
 
 Extensions come in two tiers running through the same per-extension API
-object and registry collection (`src/extensions/runExtension.ts`):
+object and registry collection (`packages/hunk/src/extensions/runExtension.ts`):
 
 - **User extensions** load at interactive-app startup, before
-  `loadAppBootstrap` (`src/extensions/startup.ts`, `src/extensions/host.ts`).
-  Discovery groups and trust gating: `src/extensions/discovery.ts`,
-  `src/extensions/trust.ts`.
-- **Bundled extensions** live in `src/extensions/default/` and are compiled
+  `loadAppBootstrap` (`packages/hunk/src/extensions/startup.ts`, `packages/hunk/src/extensions/host.ts`).
+  Discovery groups and trust gating: `packages/hunk/src/extensions/discovery.ts`,
+  `packages/hunk/src/extensions/trust.ts`.
+- **Bundled extensions** live in `packages/hunk/src/extensions/default/` and are compiled
   into the binary. `default/vcs/{git,jujutsu,sapling}` is statically imported
   by the app composition root (`app/vcsCatalog.ts`) and loaded synchronously
   before config resolution, so backends exist without making core import the
@@ -39,15 +39,15 @@ reserved ids (`hunk`, plus the base catalog's bundled backend ids), ids outside
 `/^[A-Za-z0-9][A-Za-z0-9_-]*$/` (a dot or colon would make the composed ids
 unsplittable), and the later of two sources claiming one id; each refusal is a
 load issue and costs only that extension. The rules themselves are stated in
-`src/extensions/extensionIds.ts`.
+`packages/hunk/src/extensions/extensionIds.ts`.
 
 ## One registry, one apply path
 
 Registrations (session behavior, themes, file languages, VCS adapters,
 changeset transforms, panes, interactive commands, top-level CLI commands,
 lifecycle/UI events, and inter-extension bus listeners) collect into one
-`ExtensionRegistry` (`src/extensions/types.ts`) and are resolved/applied
-through `src/extensions/apply.ts` on both startup and reload. File-language registrations stay as
+`ExtensionRegistry` (`packages/hunk/src/extensions/types.ts`) and are resolved/applied
+through `packages/hunk/src/extensions/apply.ts` on both startup and reload. File-language registrations stay as
 declarative extension, filename, or glob selectors until `fileLanguageLookup.ts` resolves them;
 Hunk then pins that answer into Pierre's metadata so rendering cannot re-derive a conflicting
 language. A live reload replaces the compiled selector generation while preparing its changeset
@@ -80,7 +80,7 @@ the handler releases I/O.
 ## Host-served runtime modules
 
 Extension files import `react`, `@opentui/*`, and `hunkdiff/extension` as
-host-served runtime modules (`src/extensions/hostRuntimeModules.ts`): a
+host-served runtime modules (`packages/hunk/src/extensions/hostRuntimeModules.ts`): a
 per-extension-directory Bun loader hook transpiles extension source and
 rewrites those specifiers to prefixed virtual modules backed by the host's
 own instances. That identity is what lets `registerPane` components
@@ -91,14 +91,14 @@ commands never pay OpenTUI's native-library extraction).
 
 ## Four-edge pane system
 
-`src/ui/lib/extensionPanes.ts` owns open state, availability, and one rectangle
+`packages/hunk/src/ui/lib/extensionPanes.ts` owns open state, availability, and one rectangle
 plan for panes, dividers, and review bounds. Left/right panes consume columns;
 top/bottom panes consume rows from the central review column, outside review
 stream coordinates. Pane registrations may opt into a body-axis `fraction`;
 the planner resolves it to an integer target before applying bounds and lets a
 session-local divider drag override that automatic size.
 
-`src/ui/components/panes/ExtensionPane.tsx` mounts panes with guarded actions,
+`packages/hunk/src/ui/components/panes/ExtensionPane.tsx` mounts panes with guarded actions,
 immutable delegated review metadata, and failure containment. The fixed three-row
 `hunk:review-info` top pane uses one border row above two metadata rows and is available only for
 delegated change requests, so ordinary reviews spend no geometry on it. `DiffPane` exposes optional current-line paint — the row
@@ -109,22 +109,22 @@ normalize into this same registry and layout path.
 ## File-view system
 
 File-view registrations are selected per file but remain inside the one
-host-owned review stream. `src/ui/fileViews/useFileViews.ts` bounds asynchronous
+host-owned review stream. `packages/hunk/src/ui/fileViews/useFileViews.ts` bounds asynchronous
 extension work and retains only immutable layouts accepted by
-`src/ui/fileViews/layout.ts`; width and registration identity are part of that
+`packages/hunk/src/ui/fileViews/layout.ts`; width and registration identity are part of that
 accepted geometry. A stateful view has no such identity to change, so
 `ctx.fileViews.refresh` bumps an invalidation epoch owned by
-`src/ui/fileViews/useFilePresentationController.ts` and modeled in
-`src/ui/fileViews/state.ts`. That epoch participates in the same retention key,
+`packages/hunk/src/ui/fileViews/useFilePresentationController.ts` and modeled in
+`packages/hunk/src/ui/fileViews/state.ts`. That epoch participates in the same retention key,
 re-preparing the files presenting that view while their current rows stay
 visible. One map counts both view-wide and per-file invalidation, and
 `fileViewLayoutEpoch` is the single place that composes them into the epoch a
-`(file, view)` preparation is retained under. `src/ui/fileViews/renderPlan.ts` is the shared insertion
+`(file, view)` preparation is retained under. `packages/hunk/src/ui/fileViews/renderPlan.ts` is the shared insertion
 plan for validated extension rows and host-owned inline notes. It resolves only
 unambiguous exact-source bindings and returns an explicit unresolved set, so
 `DiffPane` falls the complete file back to Pierre rather than guessing or
-silently dropping review data. `src/ui/fileViews/geometry.ts` measures that same
-plan, and `src/ui/components/panes/FileView.tsx` windows and paints it. Extension
+silently dropping review data. `packages/hunk/src/ui/fileViews/geometry.ts` measures that same
+plan, and `packages/hunk/src/ui/components/panes/FileView.tsx` windows and paints it. Extension
 components can paint only their fixed validated rectangles; note cards,
 scrolling, hunk bounds, and navigation remain host-owned.
 
@@ -132,46 +132,46 @@ scrolling, hunk bounds, and navigation remain host-owned.
 
 Line highlighters mark character ranges inside Hunk's own diff rendering, so
 the system is deliberately split between a pull-based preparation half and a
-paint-only application half. `src/ui/highlights/useLineHighlights.ts` bounds
+paint-only application half. `packages/hunk/src/ui/highlights/useLineHighlights.ts` bounds
 asynchronous extension work with the same timeout/concurrency discipline as
 file views and retains only marks accepted by
-`src/ui/highlights/validate.ts`; results cache under `(file, highlighter,
+`packages/hunk/src/ui/highlights/validate.ts`; results cache under `(file, highlighter,
 epoch)`, and each file's merged mark array keeps a stable identity while its
 inputs are unchanged so row memoization can hold. The epoch is owned by
-`src/ui/highlights/useLineHighlightsController.ts` behind
+`packages/hunk/src/ui/highlights/useLineHighlightsController.ts` behind
 `ctx.highlights.refresh`, using the shared scoped-epoch policy in
-`src/ui/lib/scopedEpochs.ts` — the same module `src/ui/fileViews/state.ts`
+`packages/hunk/src/ui/lib/scopedEpochs.ts` — the same module `packages/hunk/src/ui/fileViews/state.ts`
 delegates to — and the shared bounded `readDocument` capability lives in
-`src/ui/lib/extensionDocumentReader.ts`.
+`packages/hunk/src/ui/lib/extensionDocumentReader.ts`.
 
-Application is paint-time by construction. `src/ui/diff/lineHighlightPaint.ts`
+Application is paint-time by construction. `packages/hunk/src/ui/diff/lineHighlightPaint.ts`
 owns the one mapping from source coordinates (raw code-unit offsets) to
 terminal columns — sanitize-aware, tab-aware, snapped outward to grapheme
 clusters, with context and gap lines sharing one range list under both side
 keys — and the one span transform that repaints backgrounds without changing
-text. `src/ui/diff/rowStyle.ts` resolves tones against the actual line
+text. `packages/hunk/src/ui/diff/rowStyle.ts` resolves tones against the actual line
 background with the word-diff minimum-contrast guarantee.
-`src/ui/diff/CodeRowView.tsx` applies the transform through the cell painter,
+`packages/hunk/src/ui/diff/CodeRowView.tsx` applies the transform through the cell painter,
 which keeps highlights out of `buildDiffSectionRowPlan`, its caches, and every
 geometry measurement: a highlight change is a repaint, never a re-plan.
-`src/ui/diff/DiffRowView.tsx` remains only the memoized dispatch facade; raw-row
+`packages/hunk/src/ui/diff/DiffRowView.tsx` remains only the memoized dispatch facade; raw-row
 adaptation there supports the public OpenTUI and extension current-line surfaces, while
-`src/ui/diff/cursorHighlight.ts` owns stable-key cursor matching. The static pager never
+`packages/hunk/src/ui/diff/cursorHighlight.ts` owns stable-key cursor matching. The static pager never
 runs extension code, so highlights are interactive-only.
 
 Agent attention marks (`hunk session highlight add` / `clear`) join this same
 pipeline rather than growing a second one: `useTerminalReview.ts` validates
 each daemon-pushed mark with the same `validate.ts` contract and caps, holds
-them per file, and `src/ui/highlights/merge.ts` appends them after extension
+them per file, and `packages/hunk/src/ui/highlights/merge.ts` appends them after extension
 marks in the one map `DiffPane` paints from — so agent marks share paint,
 contrast, and geometry guarantees, and win where ranges overlap. Unlike
 extension marks, nothing re-derives agent marks after a reload, so
-`src/ui/highlights/reconcile.ts` carries them across a document replacement only
+`packages/hunk/src/ui/highlights/reconcile.ts` carries them across a document replacement only
 for files whose `contentIdentity` is unchanged — those still show the same
 characters — and drops the rest. Line-target `session navigate` reuses the same
 `revealLine` landing policy `ctx.navigation.revealLine` gets.
 
-`src/ui/fileViews/mode.ts` owns file-view mode activation, validity, and callback
+`packages/hunk/src/ui/fileViews/mode.ts` owns file-view mode activation, validity, and callback
 containment. The presentation controller stores the active mode and funnels all
 exit paths through one teardown, including re-entrant handoffs.
 
@@ -181,17 +181,17 @@ keyboard modes and app commands. `"handled"` and `"exit"` consume the key;
 
 Session-wide modes registered through `registerKeyboardMode` are resolved with
 the same extension ownership and first-registration rules as other surfaces.
-`src/ui/keyboardModes/useKeyboardModeController.ts` owns the one active session
+`packages/hunk/src/ui/keyboardModes/useKeyboardModeController.ts` owns the one active session
 mode, with eager ref state for input chunks, registry-generation authority,
 contained synchronous lifecycle callbacks, and one teardown used by Escape,
 status, menu, reload, and unmount. Mode controls are activation-scoped;
 `onEnter` and `onExit` cannot change ownership, while `onKey` may deliberately
 replace its activation without letting the outgoing callback defeat recovery or
 manipulate the replacement.
-`src/ui/lib/extensionKeyEvent.ts` freezes the method-free public key snapshot
+`packages/hunk/src/ui/lib/extensionKeyEvent.ts` freezes the method-free public key snapshot
 used by both session and file-view mode delivery, so OpenTUI events and their
 consumption methods never cross the extension boundary. Their shared
-`src/ui/lib/synchronousExtensionCallback.ts` path contains lifecycle failures,
+`packages/hunk/src/ui/lib/synchronousExtensionCallback.ts` path contains lifecycle failures,
 rejects thenables without leaving unhandled rejections, and normalizes key
 results; each mode module supplies only its context and attributed warnings. A
 focused file-view mode may overlap and temporarily outrank a session mode;
@@ -200,20 +200,20 @@ leaving it resumes the session mode rather than destroying unrelated state.
 ## Command system
 
 Every app-level keyboard shortcut is a named command in one dispatch table
-(`src/ui/lib/appCommands.ts`), each id under Hunk's reserved vendor namespace
+(`packages/hunk/src/ui/lib/appCommands.ts`), each id under Hunk's reserved vendor namespace
 (`hunk.app.quit`, `hunk.review.nextHunk`) — which is what keeps built-in ids
 and extension-owned ids in disjoint spaces however either grows; modal surfaces
 (dialogs, menus, focused inputs) own their keys first and are deliberately not
 commands. Extension
 `registerCommand` entries join the same table via
-`src/ui/lib/extensionCommands.ts` — built-ins win key conflicts, refused one
+`packages/hunk/src/ui/lib/extensionCommands.ts` — built-ins win key conflicts, refused one
 chord at a time and detected by probing matchers with a synthesized event
-(`src/lib/commandKeys.ts`). Command handlers receive pane controls and a selection snapshot from
-`src/ui/lib/extensionSelection.ts`, derived from the same frozen file views the
+(`packages/hunk/src/lib/commandKeys.ts`). Command handlers receive pane controls and a selection snapshot from
+`packages/hunk/src/ui/lib/extensionSelection.ts`, derived from the same frozen file views the
 panes render plus a copied source address for the active current-line cursor.
 App reads it through a ref so the dispatch table stays stable while line
 navigation moves. `ctx.review.snapshot()` takes the complementary whole-review
-path: `src/extensions/reviewSnapshot.ts` copies the active shared ReviewStore's
+path: `packages/hunk/src/extensions/reviewSnapshot.ts` copies the active shared ReviewStore's
 document identities and complete saved-note collections, preserving core-owned
 anchors and reconciliation verdicts. App pairs that state with the producer's
 current generation under the same review capability lease, so retained controls
@@ -221,7 +221,7 @@ return `null` after reload instead of reading replacement content. The extension
 projection is registered in `test/review-conformance/` as a real semantic
 consumer rather than rebuilding note placement in the command host.
 
-`src/ui/lib/extensionNavigation.ts` mints the guarded navigation behind both
+`packages/hunk/src/ui/lib/extensionNavigation.ts` mints the guarded navigation behind both
 `ctx.navigation` and a pane's `actions`, so a jump from either surface is
 validated, attributed, and reported the same way. It owns argument policy only
 — visible-file validation, hunk clamping, `revealLine`'s side and line-number
@@ -243,12 +243,12 @@ modal keys also remain outside the table and therefore outside the event.
 
 `ctx.dialogs` is the one place extension code can interrupt the user, so its
 ordering and settlement live outside React in
-`src/ui/lib/extensionDialogs.ts` — one FIFO queue per App instance, minting a
+`packages/hunk/src/ui/lib/extensionDialogs.ts` — one FIFO queue per App instance, minting a
 per-extension `dialogs` object, normalizing (and sanitizing) extension-authored
 text into a request the host draws, and answering by request id so a duplicated
 Enter cannot spill onto whatever was queued behind. App subscribes with
 `useSyncExternalStore`, renders the current request through
-`src/ui/components/chrome/ExtensionDialog.tsx` (confirm reuses `ConfirmDialog`;
+`packages/hunk/src/ui/components/chrome/ExtensionDialog.tsx` (confirm reuses `ConfirmDialog`;
 select and input are `ModalFrame` surfaces), and unmount calls `shutdown()` so
 every pending and queued dialog resolves its cancel value instead of leaving a
 handler awaiting forever. Key precedence in `useAppKeyboardShortcuts` places
@@ -260,7 +260,7 @@ frame carries an `ext <id>` attribution row — the toast marker — for every
 user-installed extension, because its title is extension-authored and a prompt
 must not be able to impersonate Hunk. The host derives the extension's trusted
 bundled origin from registry metadata and omits the redundant marker only for
-Hunk-owned bundled UI. `src/ui/lib/modalGeometry.ts` clamps the frame before
+Hunk-owned bundled UI. `packages/hunk/src/ui/lib/modalGeometry.ts` clamps the frame before
 extension text is wrapped or windowed, so measurement and rendering use the
 same terminal width; body/options yield rows to a pinned mouse-clickable action
 footer on short terminals.
@@ -274,7 +274,7 @@ per-extension event-context provider, while `AppHost` publishes mounted
 lifecycle order (`startup`, then `changeset_loaded`; reloads add
 `session_reload`) only after the matching child commit. Headless or pre-mount delivery resolves
 dialogs to their cancel values and refuses navigation with a warning.
-`src/ui/lib/extensionCapabilityLease.ts` binds retained pane, navigation,
+`packages/hunk/src/ui/lib/extensionCapabilityLease.ts` binds retained pane, navigation,
 dialog, review-reload, and workspace controls to one App, extension registry, and review
 generation. Soft
 reload or registry retirement therefore makes old host-mediated capabilities
@@ -284,7 +284,7 @@ inert before shutdown begins. Session behavior requests are registry data too:
 presentation view changes ephemeral without teaching `App` about an extension
 id.
 
-`src/ui/lib/extensionWorkspace.ts` owns the policy for `ctx.workspace`. Reads
+`packages/hunk/src/ui/lib/extensionWorkspace.ts` owns the policy for `ctx.workspace`. Reads
 resolve reviewed file ids through the existing source fetcher, which retains
 ownership of caching and size limits. Missing or unreadable sources become
 `null`.
@@ -295,27 +295,27 @@ through refs so soft reloads update the policy inputs. The host verifies the
 filesystem target before and after consent, writes it, then calls
 `refreshCurrentInput`. Consent uses the existing extension-dialog queue.
 
-Commands declare chords, not matchers: `src/ui/lib/keymap.ts` folds every
+Commands declare chords, not matchers: `packages/hunk/src/ui/lib/keymap.ts` folds every
 command's `defaultKeys` against the user's `[keybindings]` table (user config
 layer only) into one id-to-chords answer, from which matchers, key labels, and
 conflict probes are all derived — a user-bound chord is exclusive, so whatever
 held it by default gives it up. The chord grammar itself lives in
-`src/extension-api/keys.ts` because it is published as `hunkdiff/extension`
+`packages/hunk/src/extension-api/keys.ts` because it is published as `hunkdiff/extension`
 (`matchesKey`, `parseKeyChord`, `matchesKeyChord`) for extension components
-that need internal keys; `src/lib/commandKeys.ts` re-exports it inward and
+that need internal keys; `packages/hunk/src/lib/commandKeys.ts` re-exports it inward and
 keeps the host-only pieces.
 
 The table is also the only description of what each action is called and which
 key runs it, so the mouse surfaces read from it rather than restating it: the
-dropdown menus (`src/ui/lib/appMenus.ts`) declare items as command ids plus
+dropdown menus (`packages/hunk/src/ui/lib/appMenus.ts`) declare items as command ids plus
 menu-specific wording and checkbox state, and the controls help dialog
-(`src/ui/lib/helpContent.ts`) declares curated rows the same way — both render
+(`packages/hunk/src/ui/lib/helpContent.ts`) declares curated rows the same way — both render
 their key text from resolved `keyLabels` and run entries through
 `executeAppCommand`. A few commands ship with `defaultKeys: []` because they
 exist for a menu item; they never match a key but remain bindable by id.
 
 Command handlers receive guarded `ctx.commands` controls built by
-`src/ui/lib/extensionCommandControls.ts`. They resolve the live App command table on every call,
+`packages/hunk/src/ui/lib/extensionCommandControls.ts`. They resolve the live App command table on every call,
 then expose only built-ins carrying explicit public metadata. Counted movement reaches the same
 command callback once with a normalized delta; it is never implemented as repeated synchronous
 dispatch. Current-line alignment is also semantic: App raises an alignment request and `DiffPane`
@@ -325,23 +325,23 @@ Extension commands remain private to prevent recursion and cross-extension execu
 The **Extensions** menu is generated from the registered extension commands, one
 item per command grouped by extension, and is absent entirely when there are
 none — which is why the visible menu list is derived from the menus record
-(`buildMenuSpecs` in `src/ui/components/chrome/menu.ts`) rather than fixed.
+(`buildMenuSpecs` in `packages/hunk/src/ui/components/chrome/menu.ts`) rather than fixed.
 
 ## VCS adapters
 
-`src/core/vcs/index.ts` owns provider-neutral catalog ordering, lookup,
-detection, and operation dispatch. `src/app/vcsCatalog.ts` composes bundled
-registrations, while `src/app/sessionBootstrap.ts` extends that catalog with
+`packages/hunk/src/core/vcs/index.ts` owns provider-neutral catalog ordering, lookup,
+detection, and operation dispatch. `packages/hunk/src/app/vcsCatalog.ts` composes bundled
+registrations, while `packages/hunk/src/app/sessionBootstrap.ts` extends that catalog with
 accepted user adapters and threads the same value through loading, reload, and
 watch. Detection is uniform across tiers: nearest checkout wins, priority breaks
 equal-distance ties, and an explicit `vcs` id owned by the catalog wins.
 
 Provider implementations — command construction, spawning, error translation,
 and exact-source reading — live entirely under
-`src/extensions/default/vcs/<provider>/`. `src/extensions/vcsPatchResult.ts` is
+`packages/hunk/src/extensions/default/vcs/<provider>/`. `packages/hunk/src/extensions/vcsPatchResult.ts` is
 the one conversion boundary where a published `ExtensionVcsPatchResult`
 becomes Hunk's internal diff model, including structural `too-large` source
-results. `src/core/process/projectRoot.ts` treats `.hunk` as a provider-independent
+results. `packages/hunk/src/core/process/projectRoot.ts` treats `.hunk` as a provider-independent
 bootstrap marker and also consults the available catalog; startup performs a
 second root/config pass when a global, config-path, or CLI adapter recognizes a
 repository unavailable to the bundled catalog.
@@ -358,7 +358,7 @@ ordering before core or UI consumes it.
 ## Public contract rules
 
 The authoring surface is the `hunkdiff/extension` export — a façade over
-internal types, declared in `src/extension-api/types.ts`. That module must
+internal types, declared in `packages/hunk/src/extension-api/types.ts`. That module must
 stay import-free: declaration emission ships every module the entry reaches,
 so an import there publishes Hunk internals (`scripts/check-pack.ts` fails
 the pack when it does, and typechecks every `docs/extensions.md` example as

@@ -15,20 +15,20 @@ Phase 6 carries the `minor` changeset announcing the feature.
 
 ## Phase 0 — seam contract and guardrails (this doc)
 
-- Boundary gates for `src/core/review/` (the shared review model), `src/session/reviewProtocol.ts`
-  (the wire schema), and `src/web/` (the browser client). The gates tolerate absent trees, so
+- Boundary gates for `packages/hunk/src/core/review/` (the shared review model), `packages/hunk/src/session/reviewProtocol.ts`
+  (the wire schema), and `packages/hunk/src/web/` (the browser client). The gates tolerate absent trees, so
   they land ahead of the code they constrain.
 - A shrink-only debt map for the Node-only primitives the prototype's model files still carry;
   each entry must be repaid with a platform-neutral implementation before a browser bundle may
   import that file.
 - The existing architecture boundaries stay at full strength. The prototype relocated bundled
-  VCS providers into `src/core/vcs/` and weakened this suite to compensate; that relocation must
+  VCS providers into `packages/hunk/src/core/vcs/` and weakened this suite to compensate; that relocation must
   not ride along with any rebuild phase — extraction PRs land against the restored gates.
 
 ## Phase 1 — review model + terminal adoption (three PRs)
 
 1. **Review store**: `state / actions / reducer / store / intents / selectors` in
-   `src/core/review/`, with `useReviewController` / `App` / `AppHost` refactored onto it in the
+   `packages/hunk/src/core/review/`, with `useReviewController` / `App` / `AppHost` refactored onto it in the
    same PR. Behavior-neutral; existing PTY integration tests must pass untouched.
 2. **Review document projection + diff geometry**: `document / identity / sourceIdentity /
 anchors / contentManifest / notes / expansion / reconcile / jsonStream` plus the geometry
@@ -49,7 +49,7 @@ existing PTY suite passing untouched.
 
 ## Phase 2 — producer runtime
 
-`src/app/reviewSessionRuntime.ts`: generations, snapshot serving, resource materialization,
+`packages/hunk/src/app/reviewSessionRuntime.ts`: generations, snapshot serving, resource materialization,
 serving the existing `hunk session` surface only. Resource read failures map to distinct error
 codes (integrity failures are never collapsed into `unknown-resource`).
 
@@ -176,7 +176,7 @@ browser mirrors the terminal theme.
 
 ## Commands and keyboard shortcuts in the browser
 
-The terminal command system (`src/ui/lib/appCommands.ts`) fuses three separable things per
+The terminal command system (`packages/hunk/src/ui/lib/appCommands.ts`) fuses three separable things per
 command: identity (id, title, chords), binding (terminal `KeyEvent` matching), and effect
 (closures over live App state). Making commands work in the browser means splitting them, not
 transporting them:

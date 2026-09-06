@@ -13,7 +13,7 @@ The extension fetches the PR metadata and diff directly from GitHub's API, write
 Place `--extension` before the extension-owned command:
 
 ```bash
-bun run src/main.tsx --extension ./examples/extensions/github-pr gh 123
+bun run packages/hunk/src/main.tsx --extension ./examples/extensions/github-pr gh 123
 ```
 
 A bare number infers `owner/repo` from the current checkout's GitHub `origin`. Explicit forms work outside a checkout and do not invoke Git:

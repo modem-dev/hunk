@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { BUNDLED_SHIKI_THEME_IDS } from "../src/core/theme/catalog";
+import { BUNDLED_SHIKI_THEME_IDS } from "../packages/hunk/src/core/theme/catalog";
 import { COMPARISONS, COMPARISONS_REVIEWED_ON } from "../website/src/data/comparisons";
 
 /**

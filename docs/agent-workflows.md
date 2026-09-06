@@ -8,7 +8,7 @@ Use Hunk with agents in two ways:
 ## Recommended workflow: steer a live Hunk window
 
 1. Open Hunk in one terminal with a normal review command such as `hunk diff` or `hunk show`.
-2. Load the Hunk review skill: [`skills/hunk-review/SKILL.md`](../skills/hunk-review/SKILL.md).
+2. Load the Hunk review skill: [`packages/hunk/skills/hunk-review/SKILL.md`](../packages/hunk/skills/hunk-review/SKILL.md).
 3. Ask the agent to use the skill and review the current session.
 
 A good generic prompt is:

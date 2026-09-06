@@ -26,7 +26,7 @@ import {
 } from "@hunk/term-video/capture";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-const hunkEntrypoint = join(repoRoot, "src/main.tsx");
+const hunkEntrypoint = join(repoRoot, "packages/hunk/src/main.tsx");
 
 const outDir = resolve(process.argv[2] ?? join(repoRoot, ".video-work"));
 

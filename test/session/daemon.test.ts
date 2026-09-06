@@ -77,7 +77,7 @@ describe("session daemon lifecycle", () => {
     const port = await reserveLoopbackPort();
     // Invoke the Bun executable directly so this handle owns the daemon on Windows instead of a
     // `bun run` launcher that can exit before its child releases the listening socket.
-    const proc = Bun.spawn([process.execPath, "src/main.tsx", "daemon", "serve"], {
+    const proc = Bun.spawn([process.execPath, "packages/hunk/src/main.tsx", "daemon", "serve"], {
       cwd: repoRoot,
       stdin: "ignore",
       stdout: "pipe",

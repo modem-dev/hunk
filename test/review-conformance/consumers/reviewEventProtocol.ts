@@ -6,7 +6,7 @@
  * reference every other tier is compared against: a surface that framed events its own way
  * would disagree with this consumer on the fixtures the C4 finding contributed.
  */
-import { nodeReviewDigest } from "../../../src/core/reviewDigest";
+import { nodeReviewDigest } from "../../../packages/hunk/src/core/reviewDigest";
 import {
   parseReviewEventBegin,
   parseReviewEventChunk,
@@ -14,7 +14,7 @@ import {
   parseReviewEventFrame,
   planReviewEventFrames,
   ReviewEventAssembler,
-} from "../../../src/session/reviewEventProtocol";
+} from "../../../packages/hunk/src/session/reviewEventProtocol";
 import type { ReviewEventConsumer, ReviewEventFixture } from "../types";
 import { collapseChunkRun, resolveFixtureChunkBytes } from "../eventFraming";
 

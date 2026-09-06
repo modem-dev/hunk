@@ -46,10 +46,10 @@ function buildCompiledControls() {
       name: "highlight worker control",
       entries: [
         resolve(import.meta.dir, "fixtures", "compiled-highlight-worker-control.ts"),
-        resolve(import.meta.dir, "..", "..", "src", "highlightWorkerEntry.ts"),
+        resolve(import.meta.dir, "..", "..", "packages", "hunk", "src", "highlightWorkerEntry.ts"),
       ],
       executable: highlightWorkerControlExecutable,
-      root: resolve(import.meta.dir, "..", "..", "src"),
+      root: resolve(import.meta.dir, "..", "..", "packages", "hunk", "src"),
     },
   ];
 

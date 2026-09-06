@@ -40,19 +40,22 @@ describe("non-interactive stdin contracts", () => {
     writeFileSync(before, "export const value = 1;\n");
     writeFileSync(after, "export const value = 2;\n");
 
-    const proc = Bun.spawn(["bun", "run", "src/main.tsx", "--", "diff", "--files", before, after], {
-      cwd: process.cwd(),
-      stdin: "ignore",
-      stdout: "pipe",
-      stderr: "pipe",
-      env: {
-        ...process.env,
-        TERM: "xterm-256color",
-        HUNK_MCP_DISABLE: "1",
-        HUNK_DISABLE_UPDATE_NOTICE: "1",
-        XDG_CONFIG_HOME: dir,
+    const proc = Bun.spawn(
+      ["bun", "run", "packages/hunk/src/main.tsx", "--", "diff", "--files", before, after],
+      {
+        cwd: process.cwd(),
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+        env: {
+          ...process.env,
+          TERM: "xterm-256color",
+          HUNK_MCP_DISABLE: "1",
+          HUNK_DISABLE_UPDATE_NOTICE: "1",
+          XDG_CONFIG_HOME: dir,
+        },
       },
-    });
+    );
 
     try {
       const bytes = await readUntilRendered(proc.stdout, MINIMUM_RENDERED_BYTES, 15_000);

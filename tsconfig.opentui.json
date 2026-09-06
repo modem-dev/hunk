@@ -4,9 +4,10 @@
     "noEmit": false,
     "declaration": true,
     "emitDeclarationOnly": true,
-    "outDir": "./dist/npm-types",
-    "rootDir": "./src"
+    "stripInternal": true,
+    "outDir": "./packages/hunk/dist/npm-types",
+    "rootDir": "./packages"
   },
   "include": [],
-  "files": ["src/opentui/index.ts"]
+  "files": ["packages/hunk/src/opentui/index.ts"]
 }

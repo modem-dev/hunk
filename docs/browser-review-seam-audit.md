@@ -50,8 +50,8 @@ whether a client needs more than that is Phase 5's first question.
 ## A. Diff geometry
 
 - **A1. Collapsed-gap line ranges — 3 implementations, terminal off by one.** Terminal
-  `src/ui/diff/pierre.ts` (`leadingCollapsedRanges`/`trailingCollapsedRanges`, ~:456-480) vs
-  core `src/core/review/expansion.ts` (`reviewGapAddress`); web already consumes core's gap
+  `packages/hunk/src/ui/diff/pierre.ts` (`leadingCollapsedRanges`/`trailingCollapsedRanges`, ~:456-480) vs
+  core `packages/hunk/src/core/review/expansion.ts` (`reviewGapAddress`); web already consumes core's gap
   objects. For a pure-insertion hunk the terminal's leading range is off by one against core's,
   and the trailing math diverges for zero-count sides; a note created on a terminal-expanded
   line can be rejected on reload because `intents.ts` validates against `reviewGapAddress`.
@@ -63,7 +63,7 @@ whether a client needs more than that is Phase 5's first question.
   anchor side has zero rows, so `pure-deletion-hunk` pins lines 1–5 instead of preserving the
   former one-line undercount. A2's separate trailing-gap residual remains.
 - **A2. Trailing-context existence — 3 formulations.** `pierre.ts` `trailingCollapsedLines`,
-  producer `src/app/session/registration.ts` (~:131-139, boolean `hasTrailingContext`), core
+  producer `packages/hunk/src/app/session/registration.ts` (~:131-139, boolean `hasTrailingContext`), core
   `expansion.ts`. The browser can offer a "Trailing context" button whose expansion core then
   rejects (`gap-not-found`). Fix: one `reviewTrailingGap(file)` in core.
   _Repaid (Phase 1 PR 2)_: `reviewTrailingGap` in `core/review/expansion.ts`;
@@ -137,7 +137,7 @@ whether a client needs more than that is Phase 5's first question.
 - **A11. Language registration side effect missing in browser.** `core/changeset/fileLanguage.ts`
   registers `.mts`/`.cts`; the web bundle never imports it, so Pierre's own inference runs
   unregistered for files without an explicit `language`. Fix: side-effect import in
-  `src/web/main.tsx` (or fold registration into the shared model).
+  `packages/hunk/src/web/main.tsx` (or fold registration into the shared model).
 
 Renderer-specific, do not unify: terminal row construction and measured-cell windowing
 (`rowWindowing.ts`, `diffSectionGeometry.ts`) vs browser IntersectionObserver windowing and
@@ -251,7 +251,7 @@ duplication); hunk header text (browser delegates to Pierre separators); platfor
   decides whether the claim holds. The wire carries it as `expandedLineProof` on the two
   actions that can name a line (`notes/start-draft`'s target, and `notes/create-user`'s
   precondition on the draft it is saving), refusing evidence that accompanies no line, and
-  `src/app/session/reviewCommands.ts` checks it before planning. Where the resulting note hangs
+  `packages/hunk/src/app/session/reviewCommands.ts` checks it before planning. Where the resulting note hangs
   is deliberately _not_ decided there: it goes through `reviewLineAnchor`'s fallback owner
   exactly as a terminal note does, which `reviewCommands.test.ts` pins by asserting an empty
   intersection set and the declared owner. Fixtures `start-draft-on-an-expanded-line`,
@@ -320,7 +320,7 @@ path suffixes, expansion retention, git-status badges).
   `test/review-conformance/orderingFixtures.ts` and cover both the classification and the
   transitions a real producer emits. Broker and browser sites close in Phases 3 and 5.
   _Repaid (Phase 3, broker site)_: the daemon's `ReviewMirror`
-  (`src/session/broker/reviewMirror.ts`) holds one publication per session and orders every
+  (`packages/hunk/src/session/broker/reviewMirror.ts`) holds one publication per session and orders every
   arriving one with a single `classifyReviewPublication` call — `accepted` advances the
   revision, `gap` replaces the generation and retires everything derived from the old one,
   `stale` is ignored. It has no comparison of its own, so the prototype's "accept equal
@@ -328,7 +328,7 @@ path suffixes, expansion retention, git-status badges).
   new position is a replay, exactly as the contract says. The one non-ordering rule it does
   apply is stated as such — a later generation is adoptable only together with the catalog
   describing it, because a mirror holding a position whose resources it cannot name would
-  advertise reads nobody can serve. `src/app/session/reviewCommands.ts` makes the same one
+  advertise reads nobody can serve. `packages/hunk/src/app/session/reviewCommands.ts` makes the same one
   call for an action's `expectedStateRevision`, so "has the review moved past what this
   caller decided from" is the same question as "is this publication ahead". The mirror is
   registered against the Phase 2 fixtures as the `broker review mirror` ordering consumer,
@@ -342,7 +342,7 @@ path suffixes, expansion retention, git-status badges).
   reservations, and concurrency tuning stay at the edges.
   _Repaid (Phase 2, producer site)_: `core/review/resources.ts` owns resource addressing, the
   chunk bound both ends validate against, and the failure vocabulary;
-  `src/app/review/resourceStore.ts` produces and serves the bytes. Single flight is
+  `packages/hunk/src/app/review/resourceStore.ts` produces and serves the bytes. Single flight is
   structural rather than a cache bolted on — a read reaches the underlying reader only
   through the in-flight map — and bulk loads run under an explicit concurrency limit instead
   of an unbounded `Promise.all`, which is the pair of defects the original review found.
@@ -354,7 +354,7 @@ path suffixes, expansion retention, git-status badges).
   each chunk to start where the last ended, treats a chunk that neither advances nor ends as
   a failure, accepts a zero-length resource as one empty end-of-stream chunk, and verifies
   the assembled bytes against the digest with a `ReviewDigestFn` the caller injects. The
-  broker's load loop (`src/session/broker/state.ts`) does nothing but ask for the next window
+  broker's load loop (`packages/hunk/src/session/broker/state.ts`) does nothing but ask for the next window
   and decode it; there is one loop, where the prototype had two near-verbatim copies inside
   this file that already disagreed about progress and end-of-stream. Bounding is
   `reviewResourceCache.ts`: an LRU with a daemon-wide byte budget plus a reservation taken
@@ -362,7 +362,7 @@ path suffixes, expansion retention, git-status badges).
   resource reserves one chunk and is resized to what the writer declares rather than
   reserving its kind's ceiling, which is what let a handful of ordinary patches serialize the
   parallel loads. Single flight is one map keyed by session, generation, and resource id;
-  concurrent callers await the same assembly. `src/session/broker/reviewResources.integration.test.ts`
+  concurrent callers await the same assembly. `packages/hunk/src/session/broker/reviewResources.integration.test.ts`
   drives the whole path with only the socket replaced. The browser's `apiClient` range loop
   closes in Phase 5.
 - **C3. Epoch/supersede/trailing-retry — 2 parallel machines.** Runtime reload queue
@@ -373,9 +373,9 @@ path suffixes, expansion retention, git-status badges).
   begin/end envelopes, and the event-id grammar are built in `browserReviewServer.ts` and
   re-declared/regex-parsed in `mirror.ts`/`apiClient.ts`; client bounds (12 MiB / 1024 chunks)
   are unlinked from server bounds and only coincidentally compatible. Fix:
-  `src/session/reviewEventProtocol.ts` owning names, envelopes, id grammar, and bounds derived
+  `packages/hunk/src/session/reviewEventProtocol.ts` owning names, envelopes, id grammar, and bounds derived
   from `MAX_BROWSER_REVIEW_SNAPSHOT_BYTES`.
-  _Repaid (Phase 4, server side)_: `src/session/reviewEventProtocol.ts` owns the event
+  _Repaid (Phase 4, server side)_: `packages/hunk/src/session/reviewEventProtocol.ts` owns the event
   vocabulary, the frame names and their phases, the begin/chunk/end envelopes and their
   parsers, the event-id grammar, and every bound — `MAX_REVIEW_EVENT_PAYLOAD_BYTES` is the
   protocol's envelope bound, `REVIEW_EVENT_CHUNK_BYTES` is the shared resource chunk size,
@@ -413,7 +413,7 @@ path suffixes, expansion retention, git-status badges).
   `test/review-conformance/noteSize.ts` pin the boundary the two prototype rules disagreed
   at, including a note whose summary, rationale, and markup each fit while the note itself is
   three times the bound. Wire and composer sites adopt it in Phases 3 and 5.
-  _Repaid (Phase 3, wire site)_: `isTransportableReviewNote` in `src/session/reviewProtocol.ts`
+  _Repaid (Phase 3, wire site)_: `isTransportableReviewNote` in `packages/hunk/src/session/reviewProtocol.ts`
   is `reviewNoteWithinSizeLimit` and nothing else — the wire has no per-field check any more, and
   declares no second bound. The protocol module is registered as a consumer of the note-size
   corpus, so `every-field-fits-but-the-note-does-not` — the note whose summary, rationale, and
@@ -437,7 +437,7 @@ path suffixes, expansion retention, git-status badges).
   the prototype's failure impossible rather than merely fixed: its broker copy re-derived
   intersections, omitted the fallback branch, and rejected a legal expanded-gap note — and
   with it the whole registration. The case is pinned from the wire end in
-  `src/app/session/reviewCommands.test.ts`: a note created remotely on an expanded-gap line
+  `packages/hunk/src/app/session/reviewCommands.test.ts`: a note created remotely on an expanded-gap line
   ends up with an empty intersection set and the fallback owner the caller declared, which is
   exactly the shape the dropped branch produced. Web `pierreNoteAnchor` closes in Phase 5.
 - **D4. Canonical-file ↔ manifest consistency — 3 checks, 3 field lists.** Producer
@@ -471,7 +471,7 @@ path suffixes, expansion retention, git-status badges).
   variant is what let a writer and a reader disagree — with `normalizeReviewDigest` for values
   arriving from outside and `reviewDigestsEqual` normalizing _both_ operands. Hashing itself is
   an injected `ReviewDigestFn` rather than inline `createHash` calls; the producer supplies
-  Node's at the edge (`src/core/reviewDigest.ts`), which is also what repaid the shared model's
+  Node's at the edge (`packages/hunk/src/core/reviewDigest.ts`), which is also what repaid the shared model's
   last node-debt entry. Resource bounds are constants in `core/review/resources.ts` that the
   producer imports rather than restates. Wire constants, the action-envelope parser, and the
   two note-filter namings are Phase 3.
@@ -497,7 +497,7 @@ path suffixes, expansion retention, git-status badges).
 - **E1. File stat badges.** Terminal `ui/lib/files.ts` `formatSidebarStat` (zero-hiding,
   truncation marker) vs web inline `+${additions} −${deletions}` in `treeSource.ts`. One
   shared formatter.
-- **E2. Theme.** Web hardcodes two standalone palettes disconnected from `src/ui/themes` and
+- **E2. Theme.** Web hardcodes two standalone palettes disconnected from `packages/hunk/src/ui/themes` and
   the `AppTheme` mapping; whether the browser mirrors the terminal theme is an open product
   decision — decide before Phase 5, don't unify by default.
 
@@ -508,14 +508,14 @@ like A–E; they are the copies the browser _would_ grow the moment shortcuts ar
 here so the extraction happens before the duplication exists. Design detail in
 `browser-review-rebuild.md` § "Commands and keyboard shortcuts in the browser".
 
-- **F1. Command catalog fused with terminal binding and effects.** `src/ui/lib/appCommands.ts`
+- **F1. Command catalog fused with terminal binding and effects.** `packages/hunk/src/ui/lib/appCommands.ts`
   couples identity (id, title, chords), binding (terminal `KeyEvent` matchers), and effect
   (closures over live App state) in one table; menus (`ui/lib/appMenus.ts`) and the help
   dialog render from it, so a browser palette or help screen would have to restate the list.
   Fix: extract a renderer-neutral catalog (id, title, category, default chords, resolution
   locus — semantic / client-local / host-only); terminal keeps matchers and handlers, browser
   adds its own, both render menus/help/palette from the catalog.
-  _Repaid (Phase 1 PR 3)_: `src/core/run/commandCatalog.ts` carries id, title, category, default
+  _Repaid (Phase 1 PR 3)_: `packages/hunk/src/core/run/commandCatalog.ts` carries id, title, category, default
   chords, resolution locus, extension visibility, and menu-closing behavior for all 44 built-ins.
   `ui/lib/appCommands.ts` builds its dispatch table from it — the handler map is keyed by
   `AppCommandId`, so a catalogued command with no terminal handler fails to typecheck — and
@@ -624,13 +624,13 @@ implementation does.
   `no-dead-modules` rule now flags exactly that shape. The grammar above still stands as the
   design; write it again beside the first consumer that addresses a review across a boundary.
 - **G4. User-facing error catalog.** The repo already solves this once for agents:
-  `src/session/agent/errors.ts` single-sources every message the generated skill quotes, with
+  `packages/hunk/src/session/agent/errors.ts` single-sources every message the generated skill quotes, with
   contract tests. The browser has no equivalent — action rejections (`invalid-action`,
   `stale-generation`, resource integrity failures) would surface as ad-hoc strings invented in
-  `src/web`, drifting from what the terminal shows for the same failure. One error-code →
+  `packages/hunk/src/web`, drifting from what the terminal shows for the same failure. One error-code →
   user-message catalog beside the wire protocol, consumed by both clients (and reused by the
   agent surface where codes overlap). Phase 4 (codes stabilize) / Phase 5 (browser consumes).
-  _Repaid (Phase 4, catalog creation)_: `src/session/reviewErrorCatalog.ts` gives every code a
+  _Repaid (Phase 4, catalog creation)_: `packages/hunk/src/session/reviewErrorCatalog.ts` gives every code a
   statement and a remedy, in the agent surface's own pattern. Totality is mechanical rather
   than reviewed: the catalog is a `Record` over `HunkReviewClientErrorCodeV1`, itself
   _composed_ — resource plus request plus intent-planning plus the transport's own codes —

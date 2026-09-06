@@ -25,23 +25,24 @@ import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { MAX_WS_MESSAGE_BYTES } from "@hunk/session-broker-core";
-import { REVIEW_INTENT_TYPES } from "../src/core/review/intents";
-import { REVIEW_RESOURCE_CHUNK_BYTES } from "../src/core/review/resources";
+import { REVIEW_INTENT_TYPES } from "../packages/hunk/src/core/review/intents";
+import { REVIEW_RESOURCE_CHUNK_BYTES } from "../packages/hunk/src/core/review/resources";
 import {
   MAX_REVIEW_EVENT_CHUNKS,
   MAX_REVIEW_EVENT_PAYLOAD_BYTES,
   REVIEW_EVENT_CHUNK_BYTES,
-} from "../src/session/reviewEventProtocol";
+} from "../packages/hunk/src/session/reviewEventProtocol";
 import {
   HUNK_REVIEW_ACTION_TYPES,
   MAX_HUNK_REVIEW_ENVELOPE_BYTES,
   parseHunkReviewAction,
-} from "../src/session/reviewProtocol";
+} from "../packages/hunk/src/session/reviewProtocol";
 
 const REPO_ROOT = resolve(import.meta.dir, "..");
-const REVIEW_MODEL_ROOT = join(REPO_ROOT, "src", "core", "review");
-const SESSION_ROOT = join(REPO_ROOT, "src", "session");
-const PRODUCER_ROOT = join(REPO_ROOT, "src", "app");
+const HUNK_SOURCE_ROOT = join(REPO_ROOT, "packages", "hunk", "src");
+const REVIEW_MODEL_ROOT = join(HUNK_SOURCE_ROOT, "core", "review");
+const SESSION_ROOT = join(HUNK_SOURCE_ROOT, "session");
+const PRODUCER_ROOT = join(HUNK_SOURCE_ROOT, "app");
 
 /** Every production TypeScript file below one directory. */
 function sourceFiles(directory: string): string[] {
@@ -123,7 +124,7 @@ describe("review constant derivation", () => {
       ...sourceFiles(REVIEW_MODEL_ROOT),
       ...sourceFiles(PRODUCER_ROOT),
     ]
-      .filter((path) => repoPath(path) !== "src/core/review/validation.ts")
+      .filter((path) => repoPath(path) !== "packages/hunk/src/core/review/validation.ts")
       .filter((path) => pattern.test(readFileSync(path, "utf8")))
       .map(repoPath);
 

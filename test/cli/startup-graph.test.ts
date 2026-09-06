@@ -14,7 +14,7 @@ import { dirname, join, relative, resolve } from "node:path";
  */
 
 const REPO_ROOT = resolve(import.meta.dir, "../..");
-const ENTRYPOINT = join(REPO_ROOT, "src/main.tsx");
+const ENTRYPOINT = join(REPO_ROOT, "packages/hunk/src/main.tsx");
 
 /**
  * Package prefixes the entrypoint must not load before a command selects an interactive plan.
@@ -103,7 +103,7 @@ describe("CLI startup graph", () => {
     // The entrypoint resolves once the app is mounted, so disposing from there would terminate the
     // worker before the first large diff requested it.
     const interactiveAppSource = readFileSync(
-      join(REPO_ROOT, "src/ui/runInteractiveApp.tsx"),
+      join(REPO_ROOT, "packages/hunk/src/ui/runInteractiveApp.tsx"),
       "utf8",
     );
 

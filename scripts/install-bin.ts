@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-import { chmodSync, copyFileSync, mkdirSync, rmSync } from "node:fs";
+import { chmodSync, copyFileSync, cpSync, mkdirSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -9,6 +9,7 @@ const isWindows = process.platform === "win32";
 const binaryName = isWindows ? "hunk.exe" : "hunk";
 const legacyBinaryName = isWindows ? "otdiff.exe" : "otdiff";
 const binaryPath = path.join(repoRoot, "dist", binaryName);
+const builtSkillsDir = path.join(repoRoot, "dist", "skills");
 
 function defaultInstallDir() {
   if (isWindows) {
@@ -42,6 +43,13 @@ if (!isWindows) {
   chmodSync(installPath, 0o755);
 }
 rmSync(legacyInstallPath, { force: true });
+
+// Keep source installs compatible with npm/prebuilt skill discovery without placing
+// generic skill names directly beside every executable in the user's bin directory.
+const installedSkillsDir = path.join(installDir, "hunkdiff", "skills");
+rmSync(installedSkillsDir, { recursive: true, force: true });
+mkdirSync(path.dirname(installedSkillsDir), { recursive: true });
+cpSync(builtSkillsDir, installedSkillsDir, { recursive: true });
 
 console.log(`Installed ${installPath}`);
 

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:net";
 import { SESSION_BROKER_REGISTRATION_VERSION } from "@hunk/session-broker-core";
-import { HUNK_SESSION_API_PATH } from "../src/session/protocol";
+import { HUNK_SESSION_API_PATH } from "../packages/hunk/src/session/protocol";
 
 type MemorySample = {
   label: string;
@@ -498,7 +498,7 @@ async function main() {
   const options = parseArgs(process.argv.slice(2));
   const port = await reserveLoopbackPort();
   const scratch = mkdtempSync(join(tmpdir(), "hunk-daemon-memory-"));
-  const child = Bun.spawn([process.execPath, "src/main.tsx", "daemon", "serve"], {
+  const child = Bun.spawn([process.execPath, "packages/hunk/src/main.tsx", "daemon", "serve"], {
     cwd: process.cwd(),
     env: {
       ...process.env,

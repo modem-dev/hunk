@@ -5,7 +5,7 @@ Lists every note currently saved in Hunk's shared ReviewStore, then navigates to
 Run it directly from this checkout:
 
 ```bash
-bun run src/main.tsx -- diff --extension ./examples/extensions/review-note-navigator
+bun run packages/hunk/src/main.tsx -- diff --extension ./examples/extensions/review-note-navigator
 ```
 
 Save one or more review notes, then run **Extensions → Navigate saved review note…** (`F8`). Each choice includes its reconciliation status, file, preferred line, side, and summary.

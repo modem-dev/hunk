@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { dirname, join } from "node:path";
-import { BUNDLED_SHIKI_THEME_DIFF_COLORS } from "../src/core/theme/catalog";
+import { dirname, join, resolve } from "node:path";
+import { BUNDLED_SHIKI_THEME_DIFF_COLORS } from "../packages/hunk/src/core/theme/catalog";
 import {
   harvestBundledThemeDiffColors,
   harvestThemeDiffColors,
   normalizeTokenColor,
+  resolveThemeCatalogPath,
 } from "./generate-theme-diff-colors";
 
 describe("normalizeTokenColor", () => {
@@ -109,6 +110,21 @@ describe("harvestThemeDiffColors", () => {
 });
 
 describe("checked-in catalog table", () => {
+  test("resolves the catalog inside packages/hunk", async () => {
+    const expected = resolve(
+      import.meta.dir,
+      "..",
+      "packages",
+      "hunk",
+      "src",
+      "core",
+      "theme",
+      "catalog.ts",
+    );
+    expect(resolveThemeCatalogPath()).toBe(expected);
+    expect(await Bun.file(resolveThemeCatalogPath()).exists()).toBe(true);
+  });
+
   test("matches a fresh harvest of the installed @shikijs/themes", async () => {
     expect(BUNDLED_SHIKI_THEME_DIFF_COLORS).toEqual(await harvestBundledThemeDiffColors());
   });

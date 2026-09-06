@@ -26,7 +26,7 @@ DiffFile[] -> projectReviewDocument -> ReviewDocumentV1 -> ReviewStore
 ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> surface projection
 ```
 
-- **Model:** `src/core/review/{types,document,identity}.ts` owns the ordered, JSON-safe document.
+- **Model:** `packages/hunk/src/core/review/{types,document,identity}.ts` owns the ordered, JSON-safe document.
   File order is review/sidebar order; use `key` (referenced as `fileKey` elsewhere),
   `contentIdentity`, and `sourceIdentity` (cached source text additionally requires
   `sourceAttested`) — not runtime IDs or indexes — across reloads/surfaces.
@@ -53,9 +53,9 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
   repaid seam finding deletes copies, adds a file or banned-symbol tombstone and adversarial
   fixture, registers consumers, and updates `docs/browser-review-seam-audit.md`.
 
-- Bundled VCS implementations live under `src/extensions/default/vcs/<provider>/` and consume the
-  public extension contract; `src/app` composes their registrations into the provider-neutral
-  core VCS catalog. Do not add provider commands, spawning, or source readers under `src/core`.
+- Bundled VCS implementations live under `packages/hunk/src/extensions/default/vcs/<provider>/` and consume the
+  public extension contract; `packages/hunk/src/app` composes their registrations into the provider-neutral
+  core VCS catalog. Do not add provider commands, spawning, or source readers under `packages/hunk/src/core`.
 - `hunk daemon serve` is the one loopback daemon for all live sessions; sessions auto-start and
   register with it rather than opening per-TUI ports. Reuse `classifyReviewPublication` and
   `ReviewChunkAssembler` for publication ordering and bounded, digest-verified resources. Browser
@@ -63,17 +63,17 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
   its digest. Transport semantics come from the browser-safe review protocol modules and the
   existing intent path. See `docs/browser-review-rebuild.md` and the relevant module headers.
 - User and bundled extensions share one API and registry. Shipped VCS backends and the built-in
-  sidebar register through the public contract. Keep `src/extension-api/types.ts` import-free,
+  sidebar register through the public contract. Keep `packages/hunk/src/extension-api/types.ts` import-free,
   bundled VCS renderer-free, repo-local extensions trust-gated, and bundled extensions active under
   `--no-extensions`. See `docs/extension-architecture.md`, `docs/extensions.md`, and
-  `skills/hunk-extensions/SKILL.md`.
+  `packages/hunk/skills/hunk-extensions/SKILL.md`.
 - Sidecar file order is intentional sidebar and review-stream order.
 - Derive shared rendering, navigation, scrolling, and note behavior from one planning layer. Make
   shared geometry explicit, and remove obsolete paths instead of retaining parallel implementations.
 
 ## architectural rules
 
-- Import boundaries between `src/` top-level trees are enforced by `bun run deps:check`
+- Import boundaries between `packages/hunk/src/` top-level trees are enforced by `bun run deps:check`
   (dependency-cruiser; rules in `.dependency-cruiser.cjs`, target tiers in
   `docs/module-boundaries.md`). The known-violations baseline is shrink-only: fix an edge, rerun
   `bun run deps:baseline`, never add to it.
@@ -95,16 +95,16 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
 
 ## theme guidance
 
-- Built-in theme ids and source metadata live in `src/core/theme/catalog.ts`; `src/ui/themes.ts`
+- Built-in theme ids and source metadata live in `packages/hunk/src/core/theme/catalog.ts`; `packages/hunk/src/ui/themes.ts`
   derives Hunk's semantic `AppTheme` values.
 - When adding or renaming a built-in theme, update validation, public exports, docs/examples, the
   appropriate Changeset, and tests. Keep source palette tokens separate from semantic mappings and
   cover non-trivial derived colors.
-- `BUNDLED_SHIKI_THEME_DIFF_COLORS` in `src/core/theme/catalog.ts` is generated. Edit the sourcing policy in `scripts/generate-theme-diff-colors.ts`, then run `bun run generate:theme-colors`.
+- `BUNDLED_SHIKI_THEME_DIFF_COLORS` in `packages/hunk/src/core/theme/catalog.ts` is generated. Edit the sourcing policy in `scripts/generate-theme-diff-colors.ts`, then run `bun run generate:theme-colors`.
 
 ## testing
 
-- Colocate unit tests with the code they cover (`src/core/foo.ts` + `src/core/foo.test.ts`, `src/ui/AppHost.*.test.tsx`, `src/ui/lib/*.test.ts`).
+- Colocate unit tests with the code they cover (`packages/hunk/src/core/foo.ts` + `packages/hunk/src/core/foo.test.ts`, `packages/hunk/src/ui/AppHost.*.test.tsx`, `packages/hunk/src/ui/lib/*.test.ts`).
 - Put shared unit-test helpers in `test/helpers/`.
 - Name test helpers so they explicitly include `Test` and are clearly test-only (`createTestDiffFile`).
 - Use repo-level `test/` directories by intent:
@@ -145,11 +145,11 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
 - Agent context belongs beside the code, not hidden in a separate mode or workflow.
 - Agent notes are hunk-specific: show notes for the selected hunk, render them in the diff flow near the annotated row, and keep a clear spatial relationship to the code they explain.
 - Keep note behavior explicit. If the UI intentionally prioritizes one note, one selection, or one active target, encode that as a named policy rather than scattering array-index assumptions through the codebase.
-- STML markup notes (experimental) live in `src/ui/lib/stml/`. The layout engine is deliberately a deterministic line layout, not OpenTUI flexbox: the row-windowed review stream needs exact note heights before mount, so `(markup, width)` must always produce the same lines. Colors stay symbolic until render time so measurement never needs a theme. Do not "simplify" this into flexbox renderables, and keep note-card geometry in `agentNoteGeometry` as the single source for rendering, measurement, and agent-facing width reporting.
+- STML markup notes (experimental) live in `packages/hunk/src/ui/lib/stml/`. The layout engine is deliberately a deterministic line layout, not OpenTUI flexbox: the row-windowed review stream needs exact note heights before mount, so `(markup, width)` must always produce the same lines. Colors stay symbolic until render time so measurement never needs a theme. Do not "simplify" this into flexbox renderables, and keep note-card geometry in `agentNoteGeometry` as the single source for rendering, measurement, and agent-facing width reporting.
 - Keep temporary sidecars concise and review-oriented. Their file order is intentional, while the
   visible note UI remains hunk-note driven rather than showing generic explainer cards.
-- Agents review via `skills/hunk-review/SKILL.md` using `hunk session *` commands; do not run interactive TUI commands directly.
-- `skills/hunk-review/SKILL.md` is generated. Edit `src/hunk-review/skillDocument.ts`, `src/session/agent/surface.ts`, or `src/session/agent/errors.ts`, then run `bun run generate:skill`; never hand-edit the skill file.
+- Agents review via `packages/hunk/skills/hunk-review/SKILL.md` using `hunk session *` commands; do not run interactive TUI commands directly.
+- `packages/hunk/skills/hunk-review/SKILL.md` is generated. Edit `packages/hunk/src/hunk-review/skillDocument.ts`, `packages/hunk/src/session/agent/surface.ts`, or `packages/hunk/src/session/agent/errors.ts`, then run `bun run generate:skill`; never hand-edit the skill file.
 
 ## binary notes
 

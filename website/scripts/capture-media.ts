@@ -1,7 +1,7 @@
 /**
  * Capture the landing page's feature media from the real Hunk TUI.
  *
- * Drives `bun run src/main.tsx` inside a PTY (tuistory), renders styled
+ * Drives `bun run packages/hunk/src/main.tsx` inside a PTY (tuistory), renders styled
  * terminal frames to retina images (ghostty-opentui), and assembles the
  * animated captures into looping mp4 + webm clips with ffmpeg.
  *
@@ -60,7 +60,7 @@ async function launchHunkForCapture(options: { args: string[]; cols: number; row
   const configHome = mkdtempSync(join(tmpdir(), "hunk-capture-config-"));
   const session = await launchTerminal({
     command: process.execPath,
-    args: ["run", join(repoRoot, "src/main.tsx"), "--", ...options.args],
+    args: ["run", join(repoRoot, "packages/hunk/src/main.tsx"), "--", ...options.args],
     cwd: repoRoot,
     cols: options.cols,
     rows: options.rows,

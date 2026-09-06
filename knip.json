@@ -3,29 +3,39 @@
   "workspaces": {
     ".": {
       "entry": [
-        "src/extension-api/index.ts",
-        "src/opentui/index.ts",
-        "src/**/*.test.{ts,tsx}",
         "scripts/**/*.test.ts",
         "test/**/*.test.{ts,tsx}",
         "test/cli/fixtures/compiled-opentui-positive-control.ts",
+        "test/cli/fixtures/compiled-highlight-worker-control.ts",
+        "test/cli/install-vm/validate-release-result.ts",
+        "test/session-broker-node/*.ts",
+        "test/session-broker-runtime/*.ts",
         "scripts/launch-video/*.{ts,mjs}",
         "scripts/probe-terminal-theme.ts",
         "scripts/test-large-untracked-render.tsx",
         "examples/extensions/**/index.{ts,tsx}",
-        "examples/extensions/**/run.ts"
+        "examples/extensions/**/run.ts",
+        "examples/**/*.test.ts"
       ],
       "project": [
-        "src/**/*.{ts,tsx}",
         "scripts/**/*.{ts,tsx,mjs}",
         "test/**/*.{ts,tsx}",
         "benchmarks/**/*.ts",
-        "examples/extensions/**/*.{ts,tsx}",
-        "bin/**/*.cjs"
+        "examples/extensions/**/*.{ts,tsx}"
       ],
       "ignore": ["examples/extensions/**/fixtures/**"],
       "ignoreBinaries": ["nix"],
-      "ignoreDependencies": ["@changesets/changelog-github", "@shikijs/themes"],
+      "ignoreDependencies": ["@changesets/changelog-github", "@shikijs/themes", "playwright"],
+      "ignoreExportsUsedInFile": true
+    },
+    "packages/hunk": {
+      "entry": [
+        "src/highlightWorkerEntry.ts",
+        "src/extension-api/index.ts",
+        "src/opentui/index.ts",
+        "src/**/*.test.{ts,tsx}"
+      ],
+      "project": ["src/**/*.{ts,tsx}", "bin/**/*.cjs"],
       "ignoreExportsUsedInFile": true
     },
     "packages/session-broker*": {
@@ -39,7 +49,14 @@
     }
   },
   "ignoreIssues": {
-    "src/app/review/capability.ts": ["exports"],
-    "src/extension-api/types.ts": ["duplicates"]
+    "packages/hunk/src/app/review/capability.ts": ["exports"],
+    "packages/hunk/src/extension-api/types.ts": ["duplicates"],
+    "packages/hunk/src/core/install/latestRelease.ts": ["exports", "types"],
+    "packages/hunk/src/core/process/updateNotice.ts": ["exports", "types"],
+    "packages/hunk/src/extensions/types.ts": ["exports", "types"],
+    "packages/hunk/src/extensions/default/ui/sidebar/index.tsx": ["exports", "types"],
+    "packages/hunk/src/extensions/default/vcs/diffRange.ts": ["exports"],
+    "packages/hunk/src/session/broker/appContract.ts": ["exports", "types"],
+    "packages/hunk/src/ui/diff/worker/index.ts": ["exports", "types"]
   }
 }

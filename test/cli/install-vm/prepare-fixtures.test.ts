@@ -38,6 +38,12 @@ import {
   rewriteDaemonUpgradeVariantSources,
   snapshotDaemonUpgradeDependencies,
 } from "./prepare-daemon-upgrade-fixtures";
+import {
+  resolveHunkBinWrapperPath,
+  resolveHunkPackagePath,
+  resolveHunkProtocolPath,
+  resolveHunkSkillPath,
+} from "./repo-layout";
 
 /** Initialize the minimal Git checkout required by source-identity discovery. */
 function initializeTestGitRepo(repo: string) {
@@ -68,11 +74,11 @@ function writeTestFixtures(repo: string, fixtures: string) {
   const httpRoot = path.join(fixtures, "http");
   mkdirSync(packageRoot, { recursive: true });
   mkdirSync(httpRoot, { recursive: true });
-  mkdirSync(path.join(repo, "src", "session"), { recursive: true });
+  mkdirSync(path.join(repo, "packages", "hunk", "src", "session"), { recursive: true });
   mkdirSync(path.join(repo, "node_modules"), { recursive: true });
   writeFileSync(path.join(repo, "node_modules", "fixture-dependency"), "dependency\n");
   writeFileSync(
-    path.join(repo, "src", "session", "protocol.ts"),
+    path.join(repo, "packages", "hunk", "src", "session", "protocol.ts"),
     "export const HUNK_SESSION_DAEMON_VERSION = 11;\n",
   );
   const versions = [
@@ -145,6 +151,23 @@ function writeTestFixtures(repo: string, fixtures: string) {
 }
 
 describe("install VM package fixtures", () => {
+  test("resolves real release inputs from the package-first checkout topology", () => {
+    const repoRoot = path.resolve(import.meta.dir, "../../..");
+
+    expect(readFileSync(resolveHunkPackagePath(repoRoot, "package.json"), "utf8")).toContain(
+      '"name": "hunkdiff"',
+    );
+    expect(
+      readDaemonRevision(readFileSync(resolveHunkProtocolPath(repoRoot), "utf8")),
+    ).toBeGreaterThan(1);
+    expect(readFileSync(resolveHunkBinWrapperPath(repoRoot), "utf8")).toContain("node");
+    for (const skill of ["hunk-review", "hunk-extensions"]) {
+      expect(
+        readFileSync(path.join(resolveHunkSkillPath(repoRoot, skill), "SKILL.md"), "utf8"),
+      ).toContain("---");
+    }
+  });
+
   test("derives trusted daemon binary digests from the actual platform tarballs", async () => {
     if (process.platform !== "linux") return;
     const root = mkdtempSync(path.join(tmpdir(), "hunk-daemon-tarball-digests-"));
@@ -259,16 +282,22 @@ describe("install VM package fixtures", () => {
     const externalPackage = path.join(root, "external-package.json");
     const externalSource = path.join(root, "external-src");
     try {
-      mkdirSync(path.join(repo, "src", "session"), { recursive: true });
+      mkdirSync(path.join(repo, "packages", "hunk", "src", "session"), { recursive: true });
       initializeTestGitRepo(repo);
       writeFileSync(path.join(repo, "package.json"), '{"version":"1.0.0"}\n');
       writeFileSync(
-        path.join(repo, "src", "session", "protocol.ts"),
+        path.join(repo, "packages", "hunk", "src", "session", "protocol.ts"),
         "export const HUNK_SESSION_DAEMON_VERSION = 11;\n",
       );
       writeFileSync(path.join(repo, "AGENTS.md"), "instructions\n");
       symlinkSync("AGENTS.md", path.join(repo, "CLAUDE.md"), "file");
-      addTestGitFiles(repo, "package.json", "src/session/protocol.ts", "AGENTS.md", "CLAUDE.md");
+      addTestGitFiles(
+        repo,
+        "package.json",
+        "packages/hunk/src/session/protocol.ts",
+        "AGENTS.md",
+        "CLAUDE.md",
+      );
 
       writeFileSync(externalPackage, '{"version":"outside"}\n');
       rmSync(path.join(repo, "package.json"));
@@ -285,16 +314,17 @@ describe("install VM package fixtures", () => {
         path.join(externalSource, "session", "protocol.ts"),
         "export const HUNK_SESSION_DAEMON_VERSION = 99;\n",
       );
-      rmSync(path.join(repo, "src"), { recursive: true });
-      symlinkSync(path.relative(repo, externalSource), path.join(repo, "src"), "dir");
+      const packageRoot = path.join(repo, "packages", "hunk");
+      rmSync(path.join(packageRoot, "src"), { recursive: true });
+      symlinkSync(path.relative(packageRoot, externalSource), path.join(packageRoot, "src"), "dir");
       expect(() => copyDaemonUpgradeCheckoutFiles(repo, path.join(root, "parent-copy"))).toThrow(
         "entry escapes the checkout",
       );
 
-      unlinkSync(path.join(repo, "src"));
-      mkdirSync(path.join(repo, "src", "session"), { recursive: true });
+      unlinkSync(path.join(packageRoot, "src"));
+      mkdirSync(path.join(repo, "packages", "hunk", "src", "session"), { recursive: true });
       writeFileSync(
-        path.join(repo, "src", "session", "protocol.ts"),
+        path.join(repo, "packages", "hunk", "src", "session", "protocol.ts"),
         "export const HUNK_SESSION_DAEMON_VERSION = 11;\n",
       );
       const containedCopy = path.join(root, "contained-copy");
@@ -320,11 +350,15 @@ describe("install VM package fixtures", () => {
     const packageTarget = path.join(checkout, "package-target.json");
     const externalSource = path.join(root, "external-src");
     try {
-      mkdirSync(path.join(checkout, "src", "session"), { recursive: true });
+      mkdirSync(path.join(checkout, "packages", "hunk", "src", "session"), { recursive: true });
       writeFileSync(packageTarget, '{"version":"unchanged"}\n');
-      symlinkSync("package-target.json", path.join(checkout, "package.json"), "file");
+      symlinkSync(
+        "../../package-target.json",
+        path.join(checkout, "packages", "hunk", "package.json"),
+        "file",
+      );
       writeFileSync(
-        path.join(checkout, "src", "session", "protocol.ts"),
+        path.join(checkout, "packages", "hunk", "src", "session", "protocol.ts"),
         "export const HUNK_SESSION_DAEMON_VERSION = 11;\n",
       );
       expect(() => rewriteDaemonUpgradeVariantSources(checkout, "899.0.0", 10)).toThrow(
@@ -332,17 +366,23 @@ describe("install VM package fixtures", () => {
       );
       expect(readFileSync(packageTarget, "utf8")).toBe('{"version":"unchanged"}\n');
 
-      rmSync(path.join(checkout, "package.json"));
-      writeFileSync(path.join(checkout, "package.json"), '{"version":"unchanged"}\n');
+      rmSync(path.join(checkout, "packages", "hunk", "package.json"));
+      writeFileSync(
+        path.join(checkout, "packages", "hunk", "package.json"),
+        '{"version":"unchanged"}\n',
+      );
       mkdirSync(path.join(externalSource, "session"), { recursive: true });
       const externalProtocol = path.join(externalSource, "session", "protocol.ts");
       writeFileSync(externalProtocol, "export const HUNK_SESSION_DAEMON_VERSION = 99;\n");
-      rmSync(path.join(checkout, "src"), { recursive: true });
-      symlinkSync(path.relative(checkout, externalSource), path.join(checkout, "src"), "dir");
+      const packageRoot = path.join(checkout, "packages", "hunk");
+      rmSync(path.join(packageRoot, "src"), { recursive: true });
+      symlinkSync(path.relative(packageRoot, externalSource), path.join(packageRoot, "src"), "dir");
       expect(() => rewriteDaemonUpgradeVariantSources(checkout, "899.0.0", 10)).toThrow(
         "rewrite path may not contain a symlink",
       );
-      expect(readFileSync(path.join(checkout, "package.json"), "utf8")).toContain("unchanged");
+      expect(
+        readFileSync(path.join(checkout, "packages", "hunk", "package.json"), "utf8"),
+      ).toContain("unchanged");
       expect(readFileSync(externalProtocol, "utf8")).toContain("VERSION = 99");
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -510,7 +550,12 @@ describe("install VM package fixtures", () => {
       mkdirSync(path.join(repo, "test", "cli", "install-vm"), {
         recursive: true,
       });
-      writeFileSync(path.join(repo, "package.json"), '{"name":"fixture","version":"1.0.0"}\n');
+      writeFileSync(path.join(repo, "package.json"), '{"name":"@hunk/workspace","private":true}\n');
+      mkdirSync(path.join(repo, "packages", "hunk"), { recursive: true });
+      writeFileSync(
+        path.join(repo, "packages", "hunk", "package.json"),
+        '{"name":"fixture","version":"1.0.0"}\n',
+      );
       writeFileSync(path.join(repo, "test", "cli", "install-vm", "source.txt"), "source\n");
       const manifest = writeTestFixtures(repo, fixtures);
       expect(verifyInstallVmFixtures(repo, fixtures).sourceIdentity).toBe(manifest.sourceIdentity);

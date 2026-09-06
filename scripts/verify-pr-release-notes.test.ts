@@ -15,7 +15,7 @@ const generatedPaths = [
   ".changeset/pre.json",
   ".changeset/old-fix.md",
   "CHANGELOG.md",
-  "package.json",
+  "packages/hunk/package.json",
   "benchmarks/release/bench-0.18.0-beta.0.json",
 ];
 
@@ -53,15 +53,19 @@ function createTestRepo() {
   const root = mkdtempSync(path.join(os.tmpdir(), "hunk-pr-release-notes-"));
   tempRoots.push(root);
   mkdirSync(path.join(root, ".changeset"));
+  mkdirSync(path.join(root, "packages", "hunk"), { recursive: true });
   runGit(root, ["init", "--quiet"]);
   runGit(root, ["config", "user.email", "test@example.com"]);
   runGit(root, ["config", "user.name", "Hunk Test"]);
 
   writeJson(path.join(root, "package.json"), {
-    name: "hunkdiff",
-    version: "0.17.7",
+    name: "@hunk/workspace",
     private: true,
     scripts: { "changeset:status": "bun run ./record-status.ts" },
+  });
+  writeJson(path.join(root, "packages", "hunk", "package.json"), {
+    name: "hunkdiff",
+    version: "0.17.7",
   });
   writeFileSync(path.join(root, "CHANGELOG.md"), "# Changelog\n");
   writeFileSync(path.join(root, ".changeset", "new-feature.md"), "---\n---\n");
@@ -75,9 +79,11 @@ function createTestRepo() {
 }
 
 function writeGeneratedPrerelease(root: string, initialVersion = "0.17.7") {
-  const packageJson = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
+  const packageJson = JSON.parse(
+    readFileSync(path.join(root, "packages", "hunk", "package.json"), "utf8"),
+  );
   packageJson.version = "0.18.0-beta.0";
-  writeJson(path.join(root, "package.json"), packageJson);
+  writeJson(path.join(root, "packages", "hunk", "package.json"), packageJson);
   writeJson(path.join(root, ".changeset", "pre.json"), {
     mode: "pre",
     tag: "beta",
@@ -99,7 +105,7 @@ describe("isGeneratedReleasePath", () => {
       expect(isGeneratedReleasePath(filePath)).toBe(true);
     }
 
-    expect(isGeneratedReleasePath("src/main.tsx")).toBe(false);
+    expect(isGeneratedReleasePath("packages/hunk/src/main.tsx")).toBe(false);
     expect(isGeneratedReleasePath("benchmarks/run.ts")).toBe(false);
     expect(isGeneratedReleasePath("bun.lock")).toBe(false);
   });
@@ -111,12 +117,18 @@ describe("isGeneratedPrereleasePreparation", () => {
   });
 
   test("keeps ordinary changesets on the standard status path", () => {
-    expect(isGeneratedPrereleasePreparation(["src/main.tsx", ".changeset/fix.md"])).toBe(false);
-    expect(isGeneratedPrereleasePreparation(["CHANGELOG.md", "package.json"])).toBe(false);
+    expect(
+      isGeneratedPrereleasePreparation(["packages/hunk/src/main.tsx", ".changeset/fix.md"]),
+    ).toBe(false);
+    expect(isGeneratedPrereleasePreparation(["CHANGELOG.md", "packages/hunk/package.json"])).toBe(
+      false,
+    );
   });
 
   test("does not exempt release preparation mixed with source changes", () => {
-    expect(isGeneratedPrereleasePreparation([...generatedPaths, "src/main.tsx"])).toBe(false);
+    expect(
+      isGeneratedPrereleasePreparation([...generatedPaths, "packages/hunk/src/main.tsx"]),
+    ).toBe(false);
   });
 });
 
@@ -203,9 +215,11 @@ describe("verifyPrReleaseNotes", () => {
     const { root } = createTestRepo();
     writeGeneratedPrerelease(root);
     const prereleaseBase = runGit(root, ["rev-parse", "HEAD"]);
-    const packageJson = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
+    const packageJson = JSON.parse(
+      readFileSync(path.join(root, "packages", "hunk", "package.json"), "utf8"),
+    );
     packageJson.version = "0.18.0";
-    writeJson(path.join(root, "package.json"), packageJson);
+    writeJson(path.join(root, "packages", "hunk", "package.json"), packageJson);
     writeFileSync(path.join(root, "CHANGELOG.md"), "# Changelog\n\n## 0.18.0\n\n## 0.17.7\n");
     rmSync(path.join(root, ".changeset", "pre.json"));
     rmSync(path.join(root, ".changeset", "new-feature.md"));

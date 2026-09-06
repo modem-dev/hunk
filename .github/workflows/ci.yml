@@ -150,7 +150,7 @@ jobs:
           pkg_dir="$(mktemp -d)"
           install_dir="$(mktemp -d)"
           node_dir="$(dirname "$(command -v node)")"
-          npm pack --pack-destination "$pkg_dir" >/dev/null
+          npm pack ./packages/hunk --ignore-scripts --pack-destination "$pkg_dir" >/dev/null
           pkg="$(find "$pkg_dir" -maxdepth 1 -name 'hunkdiff-*.tgz' | head -n1)"
           npm install -g --prefix "$install_dir" "$pkg"
           PATH="$install_dir/bin:$node_dir:/usr/bin:/bin"

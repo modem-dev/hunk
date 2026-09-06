@@ -3,7 +3,7 @@
 Defines the target import boundaries between Hunk's top-level source trees and records what the
 dependency graph actually looks like today. The boundaries are enforced by
 [dependency-cruiser](https://github.com/sverweij/dependency-cruiser) over the production import
-graph (`src/` plus `packages/`, tests excluded):
+graph (`packages/hunk/src/` plus `packages/`, tests excluded):
 
 - `bun run deps:check` — fails CI on any boundary violation not in the baseline.
 - `bun run deps:baseline` — regenerates `.dependency-cruiser-known-violations.json` after fixing
@@ -20,28 +20,28 @@ tier-level complement, with real module resolution instead of regex import scann
 Tiers, bottom to top. A tier may import anything strictly below it and nothing above it:
 
 ```text
-src/extension-api      published contract; imports nothing
-src/lib                dependency-free helpers; may import extension-api only
-src/core               domain model (changesets, review, vcs catalog, config)
+packages/hunk/src/extension-api      published contract; imports nothing
+packages/hunk/src/lib                dependency-free helpers; may import extension-api only
+packages/hunk/src/core               domain model (changesets, review, vcs catalog, config)
 packages/*             standalone publishable units (session broker, term-video);
-                       never import src/; the per-app broker contract is in
+                       never import packages/hunk/src/; the per-app broker contract is in
                        docs/session-broker-sdk.md
-src/extensions         extension host + bundled extensions; consume core, never surfaces
-src/session            daemon/broker transport + protocol; consumes core and packages
-src/app                startup composition: CLI parsing plus the wiring of core,
+packages/hunk/src/extensions         extension host + bundled extensions; consume core, never surfaces
+packages/hunk/src/session            daemon/broker transport + protocol; consumes core and packages
+packages/hunk/src/app                startup composition: CLI parsing plus the wiring of core,
                        extensions, and the session broker; no rendering
-src/ui                 terminal surface; only the composition shell (App, AppHost,
+packages/hunk/src/ui                 terminal surface; only the composition shell (App, AppHost,
                        runInteractiveApp), the named session adapter hooks
                        (useTerminalReview, useHunkSessionBridge), and their shared
                        navigation helper (ui/lib/reviewState) may import app/session
-src/opentui            published facade re-exporting ui/core pieces for `hunkdiff/opentui`
-src/main.tsx           CLI entry
+packages/hunk/src/opentui            published facade re-exporting ui/core pieces for `hunkdiff/opentui`
+packages/hunk/src/main.tsx           CLI entry
 ```
 
 Intentional exceptions, allowed by the rules:
 
-- `src/opentui` imports `src/ui` internals: it is a packaging facade whose job is re-export.
-- `src/hunk-review` imports `src/session/agent`: the skill document is generated from the agent
+- `packages/hunk/src/opentui` imports `packages/hunk/src/ui` internals: it is a packaging facade whose job is re-export.
+- `packages/hunk/src/hunk-review` imports `packages/hunk/src/session/agent`: the skill document is generated from the agent
   surface by design.
 - Tests are excluded: they are colocated and free to reach across boundaries.
 
@@ -54,7 +54,7 @@ accidental reach-in fails `bun run deps:check` instead of quietly becoming API.
 
 Two supporting rules keep the interiors honest:
 
-- **`no-dead-modules`** flags any module under `src/` that no entry point reaches
+- **`no-dead-modules`** flags any module under `packages/hunk/src/` that no entry point reaches
   (`main.tsx`, `highlightWorkerEntry.ts`, the `opentui` and `extension-api` facades, and the
   skill generator). It uses `reachable: false` rather than `orphan`, which only catches fully
   disconnected files and so misses dead code that still imports. A hit is deleted, or — when
@@ -69,7 +69,7 @@ Phase 0 (2026-08-17) established the mechanism: it deleted `core/review/address.
 speculative primitive with no consumers), added the two rules above, and froze the first
 interior — `core/review/reducer.ts` is importable only from within `core/review/`, because
 callers state intent and `planReviewIntent` owns the transition. Later phases extend the same
-pattern across `src/core` as its subdirectories take shape; the review model's named modules
+pattern across `packages/hunk/src/core` as its subdirectories take shape; the review model's named modules
 (`document`, `identity`, `geometry`, `state`, …) stay public by design.
 
 Phase 1 (2026-08-17) grouped the changeset model and its acquisition pipeline — twelve loose
@@ -133,7 +133,7 @@ model: `terminal`, `jobControl`, `shutdown`, and `updateNotice` serve the intera
 `pager` serves the CLI entry and the startup plan; `projectRoot` and `appStateFile` serve the
 extension host and config resolution.
 
-After this phase `src/core/` root holds only `types.ts`, `reviewDigest.ts`, and `liveComments.ts`
+After this phase `packages/hunk/src/core/` root holds only `types.ts`, `reviewDigest.ts`, and `liveComments.ts`
 beside the seven subdirectories. Phase 4 melts what is left of `core/types.ts`.
 
 Phase 4 (2026-08-17) melted that shell. `core/types.ts` had stopped declaring most of what it
@@ -156,7 +156,7 @@ module that owns their behaviour, one home each:
   is the line a user note hangs on, and every consumer reaches it through note code.
 
 Deleting the re-exports made one hidden dependency visible: `core/review/annotations.ts` names
-`AgentAnnotation`, which is declared in `src/extension-api/types.ts` because it is
+`AgentAnnotation`, which is declared in `packages/hunk/src/extension-api/types.ts` because it is
 simultaneously an internal model type and part of the published contract. Routing that through
 `core/types.ts` had disguised it as a core-local import, and `scripts/source-boundaries.test.ts`
 ("keeps the review model contained in core") caught it the moment the disguise came off. The
@@ -171,9 +171,9 @@ changeset and command-input models they now name. `core/bootstrap.ts` imports do
 edge from every module directory. One exception is carved out and named in the rule:
 `core/changeset/loaders.ts` returns an `AppBootstrap` from `loadAppBootstrap`, so it names the
 shape it assembles; that function is composition living in the domain tier, and moving it to
-`src/app` retires the exception.
+`packages/hunk/src/app` retires the exception.
 
-`src/core/` root now holds `bootstrap.ts`, `reviewDigest.ts`, and `liveComments.ts` beside the
+`packages/hunk/src/core/` root now holds `bootstrap.ts`, `reviewDigest.ts`, and `liveComments.ts` beside the
 eight module directories.
 
 Phase 5 (2026-08-18) grouped **how this binary was installed and how it gets replaced** into
@@ -206,29 +206,29 @@ rules:
   moved beside the client class it aliases; `CopySelectedRowRange` moved into
   `ui/lib/diffSpatial.ts`; `extensions/notifications.ts` now imports `ExtensionNotifyType`
   from its declaring module.
-- **`src/core/cli.ts` → `src/app/cli.ts`.** CLI parsing that registers every tier's command
+- **`packages/hunk/src/core/cli.ts` → `packages/hunk/src/app/cli.ts`.** CLI parsing that registers every tier's command
   surface (including `hunk session *` from `session/agent/surface.ts`) is composition, not
   domain — moving it made the core→session edges legal app→session edges.
-- **`src/session/app/` → `src/app/session/`.** The mounted-review registration, bridge, and
+- **`packages/hunk/src/session/app/` → `packages/hunk/src/app/session/`.** The mounted-review registration, bridge, and
   reload-authorization modules compose the app process with the session broker, and nothing
-  inside `src/session` imported them — they were app-tier code homed on the wrong side.
+  inside `packages/hunk/src/session` imported them — they were app-tier code homed on the wrong side.
   Moving the directory removed every session→app edge at once.
-- **`src/lib/reviewDigest.ts` → `src/core/reviewDigest.ts`.** The Node digest implementation
+- **`packages/hunk/src/lib/reviewDigest.ts` → `packages/hunk/src/core/reviewDigest.ts`.** The Node digest implementation
   is review-semantic and platform-bound; core root (Node-full, outside the platform-free
   `core/review/` seam) is its tier.
 - **`ui/lib/reviewState.ts`** resolves session-daemon navigation for the adapter hooks and is
   now a named entry in the adapter allowlist rather than an accidental reach-in.
-- **The bundled sidebar's `src/ui` imports are documented design, not debt.** Its module
+- **The bundled sidebar's `packages/hunk/src/ui` imports are documented design, not debt.** Its module
   header defines the dogfooding boundary as the published props contract (data, actions,
   theme); rendering helpers are host code. The rules now encode exactly that:
-  `src/extensions/default/ui/` may consume `src/ui`, and still may never touch
-  `src/app`/`src/session`.
+  `packages/hunk/src/extensions/default/ui/` may consume `packages/hunk/src/ui`, and still may never touch
+  `packages/hunk/src/app`/`packages/hunk/src/session`.
 
 ## After the baseline: next targets
 
 The tier rules now hold with no exceptions. Two follow-ups are worth doing next:
 
-1. **Give `src/core` an interior.** _Done (phases 0–4, see Module interiors)._ Every group is a
+1. **Give `packages/hunk/src/core` an interior.** _Done (phases 0–4, see Module interiors)._ Every group is a
    module directory — `review/`, `vcs/`, `theme/`, `watch/`, `patch/`, `changeset/`,
    `run/`, `process/` — and `core/*` root is down to `bootstrap.ts`, `reviewDigest.ts`,
    and `liveComments.ts`, with no grab-bag left to import. What remains is per-file public
@@ -236,7 +236,7 @@ The tier rules now hold with no exceptions. Two follow-ups are worth doing next:
    `changeset-internals-stay-in-module` and `review` has `review-reducer-is-module-internal`,
    while `run`, `process`, `theme`, `vcs`, `watch`, and `patch` are still public in full
    because every file in them has an outside importer today. Two named follow-ups: move
-   `loadAppBootstrap` out of `core/changeset/loaders.ts` into `src/app` (it is composition, and
+   `loadAppBootstrap` out of `core/changeset/loaders.ts` into `packages/hunk/src/app` (it is composition, and
    it is the one exception `core-leaves-stay-below-bootstrap` has to carve out), and split
    `core/run/config.ts`, whose readers reach it for three unrelated reasons — the
    resolved `HunkConfigResolution`, the persisted view preferences, and the extension/keybinding

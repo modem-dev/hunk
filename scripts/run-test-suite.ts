@@ -13,7 +13,6 @@
 import { availableParallelism } from "node:os";
 
 export const DEFAULT_TEST_PATTERNS = [
-  "./src",
   "./packages",
   "./scripts",
   "./examples",

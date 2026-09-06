@@ -64,7 +64,9 @@ function parseArgs(argv: string[]) {
 }
 
 function loadRootPackage(repoRoot: string) {
-  return JSON.parse(readFileSync(path.join(repoRoot, "package.json"), "utf8")) as RootPackageJson;
+  return JSON.parse(
+    readFileSync(path.join(repoRoot, "packages", "hunk", "package.json"), "utf8"),
+  ) as RootPackageJson;
 }
 
 function ensureDirectory(directory: string) {
@@ -82,14 +84,15 @@ function stageMetaPackage(
   specs: readonly PlatformPackageSpec[],
 ) {
   const metaDir = path.join(releaseRoot, rootPackage.name);
+  const appRoot = path.join(repoRoot, "packages", "hunk");
   ensureDirectory(path.join(metaDir, "bin"));
-  cpSync(path.join(repoRoot, "bin", "hunk.cjs"), path.join(metaDir, "bin", "hunk.cjs"));
-  cpSync(path.join(repoRoot, "dist", "npm"), path.join(metaDir, "dist", "npm"), {
+  cpSync(path.join(appRoot, "bin", "hunk.cjs"), path.join(metaDir, "bin", "hunk.cjs"));
+  cpSync(path.join(appRoot, "dist", "npm"), path.join(metaDir, "dist", "npm"), {
     recursive: true,
   });
-  cpSync(path.join(repoRoot, "skills"), path.join(metaDir, "skills"), { recursive: true });
-  cpSync(path.join(repoRoot, "README.md"), path.join(metaDir, "README.md"));
-  cpSync(path.join(repoRoot, "LICENSE"), path.join(metaDir, "LICENSE"));
+  cpSync(path.join(appRoot, "skills"), path.join(metaDir, "skills"), { recursive: true });
+  cpSync(path.join(appRoot, "README.md"), path.join(metaDir, "README.md"));
+  cpSync(path.join(appRoot, "LICENSE"), path.join(metaDir, "LICENSE"));
 
   writeJson(path.join(metaDir, "package.json"), {
     name: rootPackage.name,
@@ -136,7 +139,7 @@ function stagePlatformPackage(
   const stagedBinary = path.join(packageDir, "bin", binaryName);
   cpSync(compiledBinary, stagedBinary);
   chmodSync(stagedBinary, 0o755);
-  cpSync(path.join(repoRoot, "LICENSE"), path.join(packageDir, "LICENSE"));
+  cpSync(path.join(repoRoot, "packages", "hunk", "LICENSE"), path.join(packageDir, "LICENSE"));
 
   writeJson(path.join(packageDir, "package.json"), buildPlatformPackageManifest(rootPackage, spec));
 }

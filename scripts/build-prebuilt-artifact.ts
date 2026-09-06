@@ -2,7 +2,7 @@
 
 import { chmodSync, cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { BUNDLED_SKILL_NAMES } from "../src/core/run/paths";
+import { BUNDLED_SKILL_NAMES } from "../packages/hunk/src/core/run/paths";
 import {
   binaryFilenameForSpec,
   getHostPlatformPackageSpec,
@@ -73,7 +73,7 @@ export function stagePrebuiltArtifact(options: StagePrebuiltArtifactOptions = {}
     chmodSync(stagedBinary, 0o755);
   }
 
-  const skillsSource = path.join(repoRoot, "skills");
+  const skillsSource = path.join(repoRoot, "packages", "hunk", "skills");
   if (!existsSync(skillsSource)) {
     throw new Error(`Missing skills directory at ${skillsSource}.`);
   }

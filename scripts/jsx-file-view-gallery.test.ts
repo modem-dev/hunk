@@ -6,7 +6,7 @@ import type {
   ExtensionCommandHandler,
   ExtensionFileView,
   HunkExtensionAPI,
-} from "../src/extension-api/types";
+} from "../packages/hunk/src/extension-api/types";
 import { createTestDiffFile, createTestSourceFetcher } from "../test/helpers/diff-helpers";
 import galleryExtension, {
   createChangeAtlasLayout,
@@ -15,8 +15,8 @@ import galleryExtension, {
   impactMeter,
   versionChangeHighlights,
 } from "../examples/extensions/jsx-file-view-gallery";
-import { createFileViewInput, fileViewHunkCount } from "../src/ui/fileViews/host";
-import { validateFileViewLayout } from "../src/ui/fileViews/layout";
+import { createFileViewInput, fileViewHunkCount } from "../packages/hunk/src/ui/fileViews/host";
+import { validateFileViewLayout } from "../packages/hunk/src/ui/fileViews/layout";
 
 const galleryRoot = join(import.meta.dir, "../examples/extensions/jsx-file-view-gallery");
 

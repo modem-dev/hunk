@@ -99,7 +99,9 @@ function gitSha() {
 
 async function packageVersion() {
   try {
-    const packageJson = JSON.parse(await Bun.file("package.json").text()) as { version?: string };
+    const packageJson = JSON.parse(await Bun.file("packages/hunk/package.json").text()) as {
+      version?: string;
+    };
     return packageJson.version;
   } catch {
     return undefined;

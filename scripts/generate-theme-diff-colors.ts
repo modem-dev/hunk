@@ -4,11 +4,12 @@ import {
   BUNDLED_SHIKI_THEME_BACKGROUNDS,
   type BundledShikiThemeDiffColors,
   type BundledShikiThemeId,
-} from "../src/core/theme/catalog";
+} from "../packages/hunk/src/core/theme/catalog";
 
 /**
- * Regenerates `BUNDLED_SHIKI_THEME_DIFF_COLORS` in `src/core/theme/catalog.ts` from the bundled
- * Shiki theme JSONs. Run it with `bun run generate:theme-colors`.
+ * Regenerates `BUNDLED_SHIKI_THEME_DIFF_COLORS` in
+ * `packages/hunk/src/core/theme/catalog.ts` from the bundled Shiki theme JSONs. Run it with
+ * `bun run generate:theme-colors`.
  */
 
 type DiffColorSlot = "added" | "removed" | "modified";
@@ -228,9 +229,14 @@ function renderDiffColorTable(
   return lines.join("\n");
 }
 
+/** Resolves the Hunk package's checked-in theme catalog from this generator's directory. */
+export function resolveThemeCatalogPath(scriptDirectory = import.meta.dir) {
+  return join(scriptDirectory, "..", "packages", "hunk", "src", "core", "theme", "catalog.ts");
+}
+
 /** Rewrites the generated table region of catalog.ts in place. */
 async function writeCatalog(rendered: string) {
-  const catalogPath = join(import.meta.dir, "..", "src", "core", "theme", "catalog.ts");
+  const catalogPath = resolveThemeCatalogPath();
   const source = await Bun.file(catalogPath).text();
   const startIndex = source.indexOf(GENERATED_START);
   const endIndex = source.indexOf(GENERATED_END);

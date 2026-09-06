@@ -35,7 +35,7 @@ Please discuss a change before implementation when it introduces or substantiall
 
 Before adding a built-in workflow, integration, or alternate presentation, check whether it can be implemented as an extension. Extensions are usually the better home for opt-in behavior such as VCS integrations, sidebars, file views, commands, keyboard modes, line highlighters, and repository-specific review workflows.
 
-Start with [`docs/extensions.md`](docs/extensions.md) and the checked-in [`examples/extensions/`](examples/extensions/). If you use a coding agent, [`skills/hunk-extensions/SKILL.md`](skills/hunk-extensions/SKILL.md) maps the public API and its implementation. A small prototype is often the fastest way to learn whether the current API is enough.
+Start with [`docs/extensions.md`](docs/extensions.md) and the checked-in [`examples/extensions/`](examples/extensions/). If you use a coding agent, [`packages/hunk/skills/hunk-extensions/SKILL.md`](packages/hunk/skills/hunk-extensions/SKILL.md) maps the public API and its implementation. A small prototype is often the fastest way to learn whether the current API is enough.
 
 If the extension API cannot express the idea, do not immediately bypass it with feature-specific core code. Explain:
 
@@ -80,7 +80,7 @@ Install dependencies and run Hunk from source:
 
 ```bash
 bun install
-bun run src/main.tsx -- diff
+bun run packages/hunk/src/main.tsx -- diff
 ```
 
 Nix users can run `nix develop` or use [direnv](https://direnv.net/) to enter the development shell.

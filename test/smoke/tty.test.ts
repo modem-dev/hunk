@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { cleanupTestConfigHomes, createTestConfigHome } from "../helpers/config-home";
 
 const repoRoot = process.cwd();
-const sourceEntrypoint = join(repoRoot, "src/main.tsx");
+const sourceEntrypoint = join(repoRoot, "packages/hunk/src/main.tsx");
 // Spawned hunk processes must assert built-in defaults, not the developer's ambient user config.
 const testConfigHome = createTestConfigHome();
 

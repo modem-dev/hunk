@@ -4,12 +4,12 @@ import { performance } from "node:perf_hooks";
 import { parsePatchFiles } from "@pierre/diffs";
 import { testRender } from "@opentui/react/test-utils";
 import React, { act } from "react";
-import type { AppBootstrap } from "../src/core/bootstrap";
-import type { DiffFile } from "../src/core/changeset/model";
-import { AppHost } from "../src/ui/AppHost";
-import { prefetchHighlightedDiff } from "../src/ui/diff/useHighlightedDiff";
-import { VIEWPORT_READ_COALESCE_MS } from "../src/ui/lib/viewportTiming";
-import { resolveTheme } from "../src/ui/themes";
+import type { AppBootstrap } from "../packages/hunk/src/core/bootstrap";
+import type { DiffFile } from "../packages/hunk/src/core/changeset/model";
+import { AppHost } from "../packages/hunk/src/ui/AppHost";
+import { prefetchHighlightedDiff } from "../packages/hunk/src/ui/diff/useHighlightedDiff";
+import { VIEWPORT_READ_COALESCE_MS } from "../packages/hunk/src/ui/lib/viewportTiming";
+import { resolveTheme } from "../packages/hunk/src/ui/themes";
 import {
   destroyRenderer,
   renderPass,

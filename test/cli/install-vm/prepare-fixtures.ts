@@ -32,6 +32,11 @@ import {
   prepareDaemonUpgradeBinaries,
   readDaemonRevision,
 } from "./prepare-daemon-upgrade-fixtures";
+import {
+  resolveHunkBinWrapperPath,
+  resolveHunkProtocolPath,
+  resolveHunkSkillPath,
+} from "./repo-layout";
 
 export const FIXTURE_VERSION_A = "900.0.0";
 export const FIXTURE_VERSION_B = "900.0.1";
@@ -203,7 +208,7 @@ export function verifyInstallVmFixtures(repoRoot: string, outputRoot: string) {
   }
 
   const rootVersion = (
-    JSON.parse(readFileSync(path.join(repoRoot, "package.json"), "utf8")) as {
+    JSON.parse(readFileSync(path.join(repoRoot, "packages", "hunk", "package.json"), "utf8")) as {
       version?: unknown;
     }
   ).version;
@@ -221,7 +226,7 @@ export function verifyInstallVmFixtures(repoRoot: string, outputRoot: string) {
     );
   }
   const expectedRevisionB = readDaemonRevision(
-    readFileSync(path.join(repoRoot, "src", "session", "protocol.ts"), "utf8"),
+    readFileSync(resolveHunkProtocolPath(repoRoot), "utf8"),
   );
   const daemonUpgrade = manifest.daemonUpgrade;
   if (
@@ -443,7 +448,7 @@ function writeSyntheticBinary(binaryPath: string, version: string) {
 /** Copy bundled skills into a synthetic install fixture. */
 function copyFixtureSkills(repoRoot: string, destination: string) {
   for (const skill of ["hunk-review", "hunk-extensions"]) {
-    cpSync(path.join(repoRoot, "skills", skill), path.join(destination, "skills", skill), {
+    cpSync(resolveHunkSkillPath(repoRoot, skill), path.join(destination, "skills", skill), {
       recursive: true,
     });
   }
@@ -466,7 +471,7 @@ async function stageSyntheticPackage(
   const metaDir = path.join(stageRoot, `hunkdiff-${version}`);
   mkdirSync(path.join(metaDir, "bin"), { recursive: true });
   mkdirSync(path.join(metaDir, "dist", "npm"), { recursive: true });
-  copyFileSync(path.join(repoRoot, "bin", "hunk.cjs"), path.join(metaDir, "bin", "hunk.cjs"));
+  copyFileSync(resolveHunkBinWrapperPath(repoRoot), path.join(metaDir, "bin", "hunk.cjs"));
   chmodSync(path.join(metaDir, "bin", "hunk.cjs"), 0o755);
   copyFixtureSkills(repoRoot, metaDir);
   writeFileSync(
@@ -512,7 +517,7 @@ async function stageDaemonUpgradePackage(
   const metaDir = path.join(stageRoot, `hunkdiff-daemon-${version}`);
   mkdirSync(path.join(metaDir, "bin"), { recursive: true });
   mkdirSync(path.join(metaDir, "dist", "npm"), { recursive: true });
-  copyFileSync(path.join(repoRoot, "bin", "hunk.cjs"), path.join(metaDir, "bin", "hunk.cjs"));
+  copyFileSync(resolveHunkBinWrapperPath(repoRoot), path.join(metaDir, "bin", "hunk.cjs"));
   chmodSync(path.join(metaDir, "bin", "hunk.cjs"), 0o755);
   copyFixtureSkills(repoRoot, metaDir);
   writeFileSync(

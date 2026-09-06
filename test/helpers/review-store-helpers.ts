@@ -4,13 +4,17 @@
  * Builders stay minimal on purpose: a test states only the facts it cares about, so a
  * later phase widening the document shape does not rewrite every expectation.
  */
-import { reviewLineAnchor } from "../../src/core/review/anchors";
+import { reviewLineAnchor } from "../../packages/hunk/src/core/review/anchors";
 import {
   createInitialReviewState,
   type ReviewState,
   type ReviewStoredNote,
-} from "../../src/core/review/state";
-import type { ReviewDocumentV1, ReviewFileV1, ReviewHunkV1 } from "../../src/core/review/types";
+} from "../../packages/hunk/src/core/review/state";
+import type {
+  ReviewDocumentV1,
+  ReviewFileV1,
+  ReviewHunkV1,
+} from "../../packages/hunk/src/core/review/types";
 
 export interface TestReviewFileInput {
   key: string;

@@ -15,6 +15,7 @@ import {
 import path from "node:path";
 import { delimiter } from "node:path";
 import { createHash } from "node:crypto";
+import { resolveHunkProtocolPath } from "./repo-layout";
 
 export const DAEMON_UPGRADE_VERSION_A = "899.0.0";
 export const DAEMON_UPGRADE_VERSION_B = "899.0.1";
@@ -271,8 +272,11 @@ export function rewriteDaemonUpgradeVariantSources(
   packageVersion: string,
   daemonRevision: number,
 ) {
-  const packagePath = daemonUpgradeRewriteFile(destination, "package.json");
-  const protocolPath = daemonUpgradeRewriteFile(destination, "src/session/protocol.ts");
+  const packagePath = daemonUpgradeRewriteFile(destination, "packages/hunk/package.json");
+  const protocolPath = daemonUpgradeRewriteFile(
+    destination,
+    "packages/hunk/src/session/protocol.ts",
+  );
   const packageManifest = JSON.parse(readFileSync(packagePath, "utf8")) as Record<string, unknown>;
   packageManifest.version = packageVersion;
   writeFileSync(packagePath, `${JSON.stringify(packageManifest, null, 2)}\n`);
@@ -340,7 +344,7 @@ export async function prepareDaemonUpgradeBinaries(repoRoot: string, buildRoot: 
   rmSync(buildRoot, { recursive: true, force: true });
   mkdirSync(buildRoot, { recursive: true });
   const daemonUpgradeBuildInputIdentity = computeDaemonUpgradeBuildInputIdentity(repoRoot);
-  const protocolSource = readFileSync(path.join(repoRoot, "src", "session", "protocol.ts"), "utf8");
+  const protocolSource = readFileSync(resolveHunkProtocolPath(repoRoot), "utf8");
   const revisionB = readDaemonRevision(protocolSource);
   const revisionA = revisionB - 1;
   const binaryA = await buildVariant(

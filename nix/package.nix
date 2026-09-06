@@ -7,7 +7,7 @@
   stdenv,
   ...
 }: let
-  packageJson = lib.importJSON ../package.json;
+  packageJson = lib.importJSON ../packages/hunk/package.json;
   bunVersion = lib.removePrefix "bun@" packageJson.packageManager;
   bunCompilerArchives = {
     "aarch64-darwin" = fetchurl {
@@ -73,7 +73,7 @@ in
       BUN_INSTALL=$PWD/.bun-install \
       "$bun_compiler" build --compile \
         --no-compile-autoload-bunfig \
-        "./src/main.tsx" \
+        "./packages/hunk/src/main.tsx" \
         --outfile "hunk-bin"
       runHook postBuild
     '';
@@ -82,7 +82,7 @@ in
       runHook preInstall
       mkdir -p $out/bin
       cp -p ./hunk-bin $out/bin/hunk
-      cp -r ./skills $out/
+      cp -r ./packages/hunk/skills $out/
       wrapProgram $out/bin/hunk --set HUNK_INSTALL_SOURCE nix
       runHook postInstall
     '';

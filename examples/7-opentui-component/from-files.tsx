@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-import { parseDiffFromFile } from "../../src/opentui";
+import { parseDiffFromFile } from "../../packages/hunk/src/opentui";
 import { readExampleFile, runExample } from "./support";
 
 const path = "src/reviewSummary.ts";

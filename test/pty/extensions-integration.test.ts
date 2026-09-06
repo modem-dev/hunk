@@ -225,7 +225,7 @@ export default function (hunk) {
  * that the refresh controls route: a valid refresh answers with the fixture's
  * own toast, an unknown id with the host's attribution warning. The paint
  * decisions themselves (columns, tones, backgrounds) are unit-tested in
- * src/ui/diff/lineHighlightPaint.test.ts and rowStyle.test.ts.
+ * packages/hunk/src/ui/diff/lineHighlightPaint.test.ts and rowStyle.test.ts.
  */
 const LINE_HIGHLIGHT_EXTENSION_SOURCE = `export default function (hunk) {
   hunk.registerLineHighlighter({

@@ -18,7 +18,7 @@
       "@hunk/session-broker-bun": ["packages/session-broker-bun/src/index.ts"],
       "@hunk/session-broker-core": ["packages/session-broker-core/src/index.ts"],
       "@hunk/session-broker-node": ["packages/session-broker-node/src/index.ts"],
-      "hunkdiff/extension": ["src/extension-api/index.ts"]
+      "hunkdiff/extension": ["packages/hunk/src/extension-api/index.ts"]
     },
     "strict": true,
     "skipLibCheck": true,
@@ -29,8 +29,8 @@
     "noUnusedParameters": false
   },
   "include": [
-    "src/**/*.ts",
-    "src/**/*.tsx",
+    "packages/hunk/src/**/*.ts",
+    "packages/hunk/src/**/*.tsx",
     "scripts/**/*.ts",
     "packages/**/*.ts",
     "test/**/*.ts",

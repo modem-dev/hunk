@@ -134,6 +134,6 @@ none), and patch chips appear only when a series has more than one release.
   launch-video pipeline keeps generated media out of Git.
 - **Contributor lists.** The GitHub release bodies name first-time contributors, which is community
   goodwill and organic links. `CHANGELOG.md` does not carry authors, so this needs a second input.
-- **The in-app update notice.** `src/core/process/updateNotice.ts` tells users a new version exists without
+- **The in-app update notice.** `packages/hunk/src/core/process/updateNotice.ts` tells users a new version exists without
   linking what changed. Appending `hunk.dev/changelog/<minor>` is the highest-intent entry point
   available and is tracked separately.

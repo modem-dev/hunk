@@ -252,9 +252,9 @@ request ID, HTTP status, and the canonical structured-body digest.
 
 Hunk uses this package for the generic broker lifecycle, then layers product-specific behavior on top:
 
-- Hunk-specific daemon routes stay in `src/session/broker/brokerServer.ts`
-- Hunk-specific CLI commands stay in `src/session/`
-- Hunk-specific review projections stay in `src/session/broker/`
+- Hunk-specific daemon routes stay in `packages/hunk/src/session/broker/brokerServer.ts`
+- Hunk-specific CLI commands stay in `packages/hunk/src/session/`
+- Hunk-specific review projections stay in `packages/hunk/src/session/broker/`
 
 That split is intentional: this package owns generic broker behavior, while Hunk owns what the session data means.
 

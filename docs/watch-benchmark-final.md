@@ -259,7 +259,7 @@ Fourteen commits implement the production change:
 - `c152100`, `0659a30`, `d36c33f`, `fd00dd6` add resource fallback, Git ignored-root pruning, native recursive selection, and a bounded readiness deadline
 - `f6165bd`, `4f35a0e` stabilize cross-platform and sidecar watch coverage
 
-Production implementation/seams are in `src/core/watch/signature.ts`, `plan.ts`, `controller.ts`, `observer.ts`, `src/core/vcs/*`, loader/type plumbing, `src/ui/hooks/useWatchedInput.ts`, and the App/AppHost integration. Matching unit, filesystem, AppHost, helper, and PTY coverage lives beside those files and in `test/helpers/watchTest.ts` and `test/pty/watch.test.ts`. CI and PR CI add a compiled-binary watch PTY check. README documents continuous observation with fallback.
+Production implementation/seams are in `packages/hunk/src/core/watch/signature.ts`, `plan.ts`, `controller.ts`, `observer.ts`, `packages/hunk/src/core/vcs/*`, loader/type plumbing, `packages/hunk/src/ui/hooks/useWatchedInput.ts`, and the App/AppHost integration. Matching unit, filesystem, AppHost, helper, and PTY coverage lives beside those files and in `test/helpers/watchTest.ts` and `test/pty/watch.test.ts`. CI and PR CI add a compiled-binary watch PTY check. README documents continuous observation with fallback.
 
 The only new runtime dependency is `chokidar@^4.0.3` (and transitive `readdirp@4.1.2`), recorded in `package.json`, `bun.lock`, and `nix/bun.lock.nix`. The two user-visible patch changesets are `.changeset/calm-files-watch.md` and `.changeset/native-recursive-watch.md`. Existing benchmark fixture imports received small type/data updates, but no benchmark runner is a production runtime dependency.
 
@@ -275,7 +275,7 @@ Complete harness file inventory:
 - **Terminal, ConPTY, sampling, and Git instrumentation:** `terminal.ts`, `sampler.ts`, `git-log.ts`, `observer-probe.ts`, `artifacts.ts`, with `terminal.test.ts`, `sampler.test.ts`, `git-log.test.ts`, and `observer-probe.test.ts`.
 - **Freeze, provenance, transfer, build, and preflight:** `freeze.ts`, `stage.ts`, `build-host.ts`, `host-identity.ts`, `host-preflight.ts`, `prepare-preflight.ts`, with `stage.test.ts`, `build-host.test.ts`, `host-identity.test.ts`, `host-preflight.test.ts`, and shared `test-helpers.ts`.
 - **Package/build integration:** seven `bench:watch*` scripts in `package.json`; dev-only `@xterm/headless@5.5.0` and `ghostty-opentui@1.4.10` plus `bun.lock`; `scripts/build-bin.ts` reuses `process.execPath` to prevent ambient-Bun builds.
-- **Benchmark-only production seams:** `src/core/watch/observer.ts` and `.test.ts` accept an injected `auto|native|chokidar` backend for forced probes; production remains `auto`.
+- **Benchmark-only production seams:** `packages/hunk/src/core/watch/observer.ts` and `.test.ts` accept an injected `auto|native|chokidar` backend for forced probes; production remains `auto`.
 - **Workflow:** `.github/workflows/benchmarks.yml` contains the Windows adapter.
 - **Maintenance changesets:** `.changeset/watch-benchmark-harness.md` and `.changeset/witty-schools-sit.md` are empty/non-release changesets.
 

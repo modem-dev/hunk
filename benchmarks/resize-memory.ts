@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import React from "react";
-import { AppHost } from "../src/ui/AppHost";
+import { AppHost } from "../packages/hunk/src/ui/AppHost";
 import { createLargeSplitStreamBootstrap } from "./large-stream-fixture";
 
 type MemorySample = {

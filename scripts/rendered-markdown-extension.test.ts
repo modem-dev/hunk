@@ -4,7 +4,7 @@ import type {
   ExtensionCommandHandler,
   ExtensionFileView,
   HunkExtensionAPI,
-} from "../src/extension-api/types";
+} from "../packages/hunk/src/extension-api/types";
 import renderedMarkdownExtension from "../examples/extensions/rendered-markdown";
 
 function registerMarkdownTestView() {

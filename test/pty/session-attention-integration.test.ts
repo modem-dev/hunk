@@ -81,7 +81,7 @@ async function reserveLoopbackPort() {
 
 /** Run one `hunk session ...` CLI invocation against the test daemon port. */
 function runSessionCli(args: string[], port: number, configHome: string) {
-  const proc = Bun.spawnSync(["bun", "run", "src/main.tsx", "session", ...args], {
+  const proc = Bun.spawnSync(["bun", "run", "packages/hunk/src/main.tsx", "session", ...args], {
     cwd: repoRoot,
     stdin: "ignore",
     stdout: "pipe",

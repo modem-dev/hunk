@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
 
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
+import { HUNK_PACKAGE_ROOT, HUNK_SOURCE_ROOT, REPO_ROOT } from "./package-paths";
 
 /**
  * Resolves the Bun compile target for one host, or null to keep Bun's own host default.
@@ -47,7 +48,7 @@ export function bunCompilerCacheEnvironment(repoRoot: string, runtimeVersion: st
 }
 
 if (import.meta.main) {
-  const repoRoot = path.resolve(import.meta.dir, "..");
+  const repoRoot = REPO_ROOT;
   const distDir = path.join(repoRoot, "dist");
   const binaryName = process.platform === "win32" ? "hunk.exe" : "hunk";
   const outfile = path.join(distDir, binaryName);
@@ -65,8 +66,8 @@ if (import.meta.main) {
       "--compile",
       "--no-compile-autoload-bunfig",
       ...(target ? [`--target=${target}`] : []),
-      path.join(repoRoot, "src", "main.tsx"),
-      path.join(repoRoot, "src", "highlightWorkerEntry.ts"),
+      path.join(HUNK_SOURCE_ROOT, "main.tsx"),
+      path.join(HUNK_SOURCE_ROOT, "highlightWorkerEntry.ts"),
       "--outfile",
       outfile,
     ],
@@ -92,5 +93,10 @@ if (import.meta.main) {
     throw new Error(`bun build --compile failed with exit ${proc.exitCode}.${offlineHint}`);
   }
 
+  const skillsOutdir = path.join(distDir, "skills");
+  rmSync(skillsOutdir, { recursive: true, force: true });
+  cpSync(path.join(HUNK_PACKAGE_ROOT, "skills"), skillsOutdir, { recursive: true });
+
   console.log(`Built ${outfile}${target ? ` for ${target}` : ""}`);
+  console.log(`Staged ${skillsOutdir}`);
 }

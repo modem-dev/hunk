@@ -1,8 +1,8 @@
 // Track retained memory for the all-files geometry cache used by review scrolling/navigation.
 import { heapStats } from "bun:jsc";
 import { performance } from "node:perf_hooks";
-import { measureDiffSectionGeometry } from "../src/ui/diff/diffSectionGeometry";
-import { resolveTheme } from "../src/ui/themes";
+import { measureDiffSectionGeometry } from "../packages/hunk/src/ui/diff/diffSectionGeometry";
+import { resolveTheme } from "../packages/hunk/src/ui/themes";
 import {
   createGiantSingleDiffFile,
   createLargeSplitStreamBootstrap,

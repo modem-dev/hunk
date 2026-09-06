@@ -193,7 +193,7 @@ run without installing anything.
 
 Every VCS backend Hunk ships — **Git, Jujutsu, and Sapling** — is an extension,
 and so is the **built-in file-navigation pane**. They live in
-`src/extensions/default/`, are compiled into the binary, and register through
+`packages/hunk/src/extensions/default/`, are compiled into the binary, and register through
 the same `hunk.registerVcsAdapter` and `hunk.registerPane` this guide
 documents. There is no private registration path.
 
@@ -412,7 +412,7 @@ removes the patch on extension shutdown. Run it
 from this checkout with:
 
 ```bash
-bun run src/main.tsx --extension ./examples/extensions/github-pr gh 123
+bun run packages/hunk/src/main.tsx --extension ./examples/extensions/github-pr gh 123
 ```
 
 ### `hunk.configureSession(options)`
@@ -1053,7 +1053,7 @@ whatever version Hunk pins — a wider surface than `hunkdiff/extension` itself.
 The built-in files pane uses the same calls, so changes that break this contract
 break Hunk first. Keep scroll handling small and behind your own helpers.
 
-Its implementation lives in `src/extensions/default/ui/sidebar/` and serves as
+Its implementation lives in `packages/hunk/src/extensions/default/ui/sidebar/` and serves as
 the reference for third-party panes.
 
 #### Pane state from events
