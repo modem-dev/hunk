@@ -38,6 +38,10 @@
       "project": ["src/**/*.{ts,tsx}", "bin/**/*.cjs"],
       "ignoreExportsUsedInFile": true
     },
+    "packages/hunk-git": {
+      "entry": ["src/**/*.test.ts"],
+      "project": ["src/**/*.ts"]
+    },
     "packages/hunk-vcs": {
       "entry": ["src/**/*.test.ts"],
       "project": ["src/**/*.ts"]

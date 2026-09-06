@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { replaceExtensionFileLanguages } from "./fileLanguage";
 import { SourceTextTooLargeError } from "./fileSource";
 import { getBundledVcsCatalog } from "../../app/vcsCatalog";
-import { createGitVcsAdapter } from "../../extensions/default/vcs/git";
+import { createGitVcsAdapter } from "@hunk/git";
 import { toInternalVcsAdapter } from "../../extensions/runExtension";
 import { createVcsCatalog } from "../vcs";
 import { loadAppBootstrap as loadCoreAppBootstrap, type LoadAppBootstrapOptions } from "./loaders";

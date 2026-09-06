@@ -7,6 +7,7 @@ const SRC_ROOT = join(REPO_ROOT, "packages", "hunk", "src");
 const CORE_ROOT = join(SRC_ROOT, "core");
 const EXTENSIONS_ROOT = join(SRC_ROOT, "extensions");
 const BUNDLED_PROVIDER_ROOT = join(EXTENSIONS_ROOT, "default", "vcs");
+const GIT_PACKAGE_ROOT = join(REPO_ROOT, "packages", "hunk-git", "src");
 const VCS_PACKAGE_ROOT = join(REPO_ROOT, "packages", "hunk-vcs", "src");
 const REVIEW_MODEL_ROOT = join(CORE_ROOT, "review");
 // The published extension contract, which the review model may name for the annotation shapes
@@ -166,18 +167,25 @@ function unexpectedProviderImports() {
     "@hunk/vcs/path",
     "@hunk/vcs/source",
   ]);
-  return sourceFiles(BUNDLED_PROVIDER_ROOT).flatMap((path) =>
-    importSpecifiers(path)
-      // The repository-wide lightweight scanner can also match prose ending in `from "…"`;
-      // real module specifiers never contain whitespace.
-      .filter((specifier) => !/\s/.test(specifier))
-      .filter(
-        (specifier) =>
-          !specifier.startsWith(".") &&
-          !specifier.startsWith("node:") &&
-          !allowedImports.has(specifier),
-      )
-      .map((specifier) => `${repoPath(path)} -> ${specifier}`),
+  return [BUNDLED_PROVIDER_ROOT, GIT_PACKAGE_ROOT].flatMap((providerRoot) =>
+    sourceFiles(providerRoot).flatMap((path) =>
+      importSpecifiers(path)
+        // The lightweight scanner can match prose ending in `from "…"`; module specifiers
+        // never contain whitespace.
+        .filter((specifier) => !/\s/.test(specifier))
+        .filter((specifier) => {
+          if (
+            specifier.startsWith(".") ||
+            specifier.startsWith("node:") ||
+            specifier.startsWith("bun:") ||
+            allowedImports.has(specifier)
+          ) {
+            return false;
+          }
+          return !(path === join(BUNDLED_PROVIDER_ROOT, "index.ts") && specifier === "@hunk/git");
+        })
+        .map((specifier) => `${repoPath(path)} -> ${specifier}`),
+    ),
   );
 }
 
@@ -303,6 +311,7 @@ describe("source architecture boundaries", () => {
 
   test("keeps bundled providers on the public contract and explicit VCS helper leaves", () => {
     expect(forbiddenImports(BUNDLED_PROVIDER_ROOT, CORE_ROOT)).toEqual([]);
+    expect(escapingImports(GIT_PACKAGE_ROOT, [GIT_PACKAGE_ROOT])).toEqual([]);
     expect(unexpectedProviderImports()).toEqual([]);
   });
 

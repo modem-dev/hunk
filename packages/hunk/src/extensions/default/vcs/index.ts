@@ -1,4 +1,4 @@
-import gitExtension from "./git";
+import gitExtension from "@hunk/git";
 import jjExtension from "./jujutsu";
 import slExtension from "./sapling";
 import { runExtensionFactory } from "../../runExtension";

@@ -72,6 +72,17 @@ module.exports = {
       to: { path: "^packages/", pathNot: "^packages/hunk-vcs/src/" },
     },
     {
+      name: "hunk-git-stays-on-vcs-contract",
+      comment:
+        "@hunk/git owns the Git provider and may reach only its local modules, the public extension contract, and explicit dependency-bottom @hunk/vcs leaves.",
+      severity: "error",
+      from: { path: "^packages/hunk-git/src/" },
+      to: {
+        path: "^packages/",
+        pathNot: "^packages/(hunk-git|hunk-vcs)/src/|^packages/hunk/src/extension-api/",
+      },
+    },
+    {
       name: "lib-is-a-leaf",
       comment:
         "packages/hunk/src/lib holds leaf compatibility exports; it may reach the extension contract and dependency-bottom @hunk/vcs helpers only.",
@@ -177,9 +188,12 @@ module.exports = {
     {
       name: "packages-stay-standalone",
       comment:
-        "Workspace packages are standalone publishable units; they never import the app source tree.",
+        "Workspace packages are standalone units; bundled providers are governed by their narrower public-contract rules above, while other packages never import the app source tree.",
       severity: "error",
-      from: { path: "^packages/(?!hunk/)" },
+      from: {
+        path: "^packages/(?!hunk/)",
+        pathNot: "^packages/hunk-git/",
+      },
       to: { path: "^packages/hunk/src/" },
     },
   ],

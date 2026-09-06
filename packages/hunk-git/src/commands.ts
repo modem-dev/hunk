@@ -14,9 +14,8 @@ import { runAbortableCommand } from "@hunk/vcs/async-process";
 /**
  * Every Git command Hunk runs, and the failures they translate into.
  *
- * This is the implementation layer behind the bundled Git backend
- * (`packages/hunk/src/extensions/default/vcs/git/`), so nothing here reaches into core, the
- * diff engine, or the adapter registry — user-facing failures are raised as the
+ * This is the implementation layer behind the bundled Git backend. Nothing here
+ * reaches into core, the diff engine, or the adapter registry — user-facing failures are raised as the
  * published `HunkExtensionUserError`, which is exactly what a third-party
  * backend would throw.
  */
@@ -51,7 +50,7 @@ export interface GitColorMovedOptions {
 }
 
 /** Append Git pathspec arguments only when the caller requested them. */
-export function appendGitPathspecs(args: string[], pathspecs?: string[]) {
+function appendGitPathspecs(args: string[], pathspecs?: string[]) {
   if (!pathspecs || pathspecs.length === 0) {
     return;
   }
@@ -65,7 +64,7 @@ export function appendGitPathspecs(args: string[], pathspecs?: string[]) {
  * example `--output=<path>`) that Git would parse as a flag; it fails closed here instead
  * of reaching the spawned command.
  */
-export function requireGitRevisionArg(input: GitBackedInput, value: string) {
+function requireGitRevisionArg(input: GitBackedInput, value: string) {
   if (value.length === 0) {
     throw new HunkExtensionUserError(
       `\`${formatGitCommandLabel(input)}\` refused an empty revision.`,
@@ -306,7 +305,7 @@ export function buildGitStashShowArgs(
   return withNormalizedDiffPrefixes(withGitMovedLineColorConfig(args, colorMoved));
 }
 
-export function formatGitCommandLabel(input: GitBackedInput) {
+function formatGitCommandLabel(input: GitBackedInput) {
   switch (input.kind) {
     case "vcs": {
       if (input.staged) {
@@ -869,7 +868,7 @@ export function resolveGitRepoRoot(
 }
 
 /** Resolve one commit-ish ref to the exact commit object used for later blob reads. */
-export function resolveGitCommitRef(
+function resolveGitCommitRef(
   input: GitBackedInput,
   ref: string,
   options: Omit<RunGitTextOptions, "input" | "args"> = {},
