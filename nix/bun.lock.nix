@@ -806,7 +806,6 @@
     url = "https://registry.npmjs.org/get-east-asian-width/-/get-east-asian-width-1.5.0.tgz";
     hash = "sha512-CQ+bEO+Tva/qlmw24dCejulK5pMzVnUOFOijVogd3KQs07HnRIgp8TGipvCCRT06xeYEbpbgwaCxglFyiuIcmA==";
   };
-  "hunkdiff" = copyPathToStore ../packages/hunk;
   "get-stream@9.0.1" = fetchurl {
     url = "https://registry.npmjs.org/get-stream/-/get-stream-9.0.1.tgz";
     hash = "sha512-kVCxPF3vQM/N0B1PmoqVUqgHP+EeVjmZSQn+1oCRPxd2P21P2F19lIgbR3HBosbB1PUhOAoctJnfEn2GbN2eZA==";
@@ -863,6 +862,7 @@
     url = "https://registry.npmjs.org/human-signals/-/human-signals-8.0.1.tgz";
     hash = "sha512-eKCa6bwnJhvxj14kZk5NCPc6Hb6BdsU9DZcOnmQKSnO1VKrfV0zCvtttPZUsBvjmNDn8rpcJfpwSYnHBjc95MQ==";
   };
+  "hunkdiff" = copyPathToStore ../packages/hunk;
   "ignore@7.0.6" = fetchurl {
     url = "https://registry.npmjs.org/ignore/-/ignore-7.0.6.tgz";
     hash = "sha512-BAg6QkE8W+TuQLrrw0Ugr7HegXduRuuj8/ti2kSOc+jz1dmx8/WNcjr6XGnq5YpDWxFwwaavqD0+jIUOKelTsw==";
