@@ -38,6 +38,10 @@
       "project": ["src/**/*.{ts,tsx}", "bin/**/*.cjs"],
       "ignoreExportsUsedInFile": true
     },
+    "packages/hunk-vcs": {
+      "entry": ["src/**/*.test.ts"],
+      "project": ["src/**/*.ts"]
+    },
     "packages/session-broker*": {
       "entry": ["src/**/*.test.ts"],
       "project": ["src/**/*.ts"]
@@ -55,7 +59,6 @@
     "packages/hunk/src/core/process/updateNotice.ts": ["exports", "types"],
     "packages/hunk/src/extensions/types.ts": ["exports", "types"],
     "packages/hunk/src/extensions/default/ui/sidebar/index.tsx": ["exports", "types"],
-    "packages/hunk/src/extensions/default/vcs/diffRange.ts": ["exports"],
     "packages/hunk/src/session/broker/appContract.ts": ["exports", "types"],
     "packages/hunk/src/ui/diff/worker/index.ts": ["exports", "types"]
   }

@@ -64,12 +64,23 @@ module.exports = {
       to: { path: "^packages/", pathNot: "^packages/hunk/src/extension-api/" },
     },
     {
+      name: "hunk-vcs-stays-provider-neutral",
+      comment:
+        "@hunk/vcs owns dependency-bottom implementation helpers; it never imports Hunk, public contracts, or a provider implementation.",
+      severity: "error",
+      from: { path: "^packages/hunk-vcs/src/" },
+      to: { path: "^packages/", pathNot: "^packages/hunk-vcs/src/" },
+    },
+    {
       name: "lib-is-a-leaf",
       comment:
-        "packages/hunk/src/lib holds dependency-free helpers usable from any tier; it may reach the import-free extension API contract and nothing else.",
+        "packages/hunk/src/lib holds leaf compatibility exports; it may reach the extension contract and dependency-bottom @hunk/vcs helpers only.",
       severity: "error",
       from: { path: "^packages/hunk/src/lib/" },
-      to: { path: "^packages/", pathNot: "^packages/hunk/src/(lib|extension-api)/" },
+      to: {
+        path: "^packages/",
+        pathNot: "^packages/(hunk/src/(lib|extension-api)/|hunk-vcs/src/)",
+      },
     },
     {
       name: "core-stays-domain",

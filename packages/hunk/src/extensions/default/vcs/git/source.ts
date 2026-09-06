@@ -9,7 +9,7 @@ import {
   readFileTextWithLimit,
   readStreamTextWithLimit,
   terminateSourceSubprocess,
-} from "../../../../lib/sourceText";
+} from "@hunk/vcs/source";
 import type { GitDiffEndpoint } from "./commands";
 
 /** A provider-local signal converted to the public structural result at this boundary. */

@@ -7,7 +7,7 @@ import {
   logSourceDiagnostic,
   readStreamTextWithLimit,
   terminateSourceSubprocess,
-} from "../../../../lib/sourceText";
+} from "@hunk/vcs/source";
 
 /** Stops a Jujutsu source read as soon as it crosses Hunk's byte limit. */
 class JjSourceTooLargeError extends Error {

@@ -4,9 +4,9 @@ import {
   type ExtensionVcsRangeEndpoints,
   type ExtensionVcsShowInput,
 } from "hunkdiff/extension";
-import { normalizePathForOS } from "../../../../lib/osPath";
-import { describeDiffTargets } from "../diffRange";
-import { runAbortableCommand } from "../asyncProcess";
+import { normalizePathForOS } from "@hunk/vcs/path";
+import { describeDiffTargets } from "@hunk/vcs/diff-target";
+import { runAbortableCommand } from "@hunk/vcs/async-process";
 
 export type JjBackedInput = ExtensionVcsDiffInput | ExtensionVcsShowInput;
 

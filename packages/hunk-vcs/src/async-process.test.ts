@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { runAbortableCommand } from "./asyncProcess";
+import { runAbortableCommand } from "./async-process";
 
 describe("abortable bundled VCS subprocesses", () => {
   test("does not spawn after cancellation already won", async () => {

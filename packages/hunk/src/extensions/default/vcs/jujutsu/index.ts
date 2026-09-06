@@ -13,7 +13,7 @@ import {
 } from "./commands";
 import { openJjHistory } from "./history";
 import { readJjFileSource } from "./source";
-import { describeDiffRange } from "../diffRange";
+import { describeDiffRange } from "@hunk/vcs/diff-target";
 import {
   HUNK_VCS_DETECTION_BASELINE_PRIORITY,
   type ExtensionVcsAdapter,

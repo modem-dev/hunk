@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { normalizePathForOS } from "./osPath";
+import { normalizePathForOS } from "./path";
 
 describe("normalizePathForOS", () => {
   test("normalizes Unix-style Windows paths for native subprocess cwd", () => {

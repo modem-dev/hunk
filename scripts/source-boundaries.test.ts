@@ -7,12 +7,13 @@ const SRC_ROOT = join(REPO_ROOT, "packages", "hunk", "src");
 const CORE_ROOT = join(SRC_ROOT, "core");
 const EXTENSIONS_ROOT = join(SRC_ROOT, "extensions");
 const BUNDLED_PROVIDER_ROOT = join(EXTENSIONS_ROOT, "default", "vcs");
+const VCS_PACKAGE_ROOT = join(REPO_ROOT, "packages", "hunk-vcs", "src");
 const REVIEW_MODEL_ROOT = join(CORE_ROOT, "review");
 // The published extension contract, which the review model may name for the annotation shapes
 // that are simultaneously internal model types and part of `hunkdiff/extension`. It cannot widen
-// the seam: `extension-api-is-import-free` (.dependency-cruiser.cjs) forbids it any import at
-// all, so it can never carry a renderer or a platform runtime in. Only this one file is allowed,
-// not the tree — `extension-api/index.ts` is the runtime boundary and imports freely.
+// the seam: `extension-api-is-import-free` (.dependency-cruiser.cjs) prevents it from carrying a
+// renderer or platform runtime in. Only this one file is allowed, not the tree —
+// `extension-api/index.ts` is the runtime boundary.
 const EXTENSION_API_TYPES_PATH = join(SRC_ROOT, "extension-api", "types.ts");
 const REVIEW_PROTOCOL_PATH = join(SRC_ROOT, "session", "reviewProtocol.ts");
 const REVIEW_DESCRIPTOR_PATH = join(CORE_ROOT, "reviewDescriptor.ts");
@@ -155,12 +156,28 @@ function unexpectedExternalImports(
   });
 }
 
-/** Find bundled provider imports that bypass the published extension barrel. */
-function privateProviderApiImports() {
+/** Find bundled provider imports outside local modules, Node, and approved public leaves. */
+function unexpectedProviderImports() {
+  const allowedImports = new Set([
+    "hunkdiff/extension",
+    "@hunk/vcs/async-process",
+    "@hunk/vcs/diff-target",
+    "@hunk/vcs/large-file",
+    "@hunk/vcs/path",
+    "@hunk/vcs/source",
+  ]);
   return sourceFiles(BUNDLED_PROVIDER_ROOT).flatMap((path) =>
-    importSpecifiers(path).some((specifier) => specifier.includes("extension-api"))
-      ? [repoPath(path)]
-      : [],
+    importSpecifiers(path)
+      // The repository-wide lightweight scanner can also match prose ending in `from "…"`;
+      // real module specifiers never contain whitespace.
+      .filter((specifier) => !/\s/.test(specifier))
+      .filter(
+        (specifier) =>
+          !specifier.startsWith(".") &&
+          !specifier.startsWith("node:") &&
+          !allowedImports.has(specifier),
+      )
+      .map((specifier) => `${repoPath(path)} -> ${specifier}`),
   );
 }
 
@@ -284,9 +301,20 @@ describe("source architecture boundaries", () => {
     }
   });
 
-  test("keeps bundled providers on their public host contract", () => {
+  test("keeps bundled providers on the public contract and explicit VCS helper leaves", () => {
     expect(forbiddenImports(BUNDLED_PROVIDER_ROOT, CORE_ROOT)).toEqual([]);
-    expect(privateProviderApiImports()).toEqual([]);
+    expect(unexpectedProviderImports()).toEqual([]);
+  });
+
+  test("keeps @hunk/vcs dependency-bottom and contained", () => {
+    expect(escapingImports(VCS_PACKAGE_ROOT, [VCS_PACKAGE_ROOT])).toEqual([]);
+    expect(
+      sourceFiles(VCS_PACKAGE_ROOT).flatMap((path) =>
+        importSpecifiers(path)
+          .filter((specifier) => !specifier.startsWith(".") && !specifier.startsWith("node:"))
+          .map((specifier) => `${repoPath(path)} -> ${specifier}`),
+      ),
+    ).toEqual([]);
   });
 });
 

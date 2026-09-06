@@ -21,11 +21,13 @@ Tiers, bottom to top. A tier may import anything strictly below it and nothing a
 
 ```text
 packages/hunk/src/extension-api      published contract; imports nothing
-packages/hunk/src/lib                dependency-free helpers; may import extension-api only
-packages/hunk/src/core               domain model (changesets, review, vcs catalog, config)
-packages/*             standalone publishable units (session broker, term-video);
-                       never import packages/hunk/src/; the per-app broker contract is in
-                       docs/session-broker-sdk.md
+packages/hunk-vcs                     private dependency-bottom VCS implementation helpers
+packages/hunk/src/lib                 compatibility helpers; may import extension-api and hunk-vcs
+packages/hunk/src/core                domain model (changesets, review, vcs catalog, config)
+packages/*                            isolated workspace units; private provider packages may import
+                                      hunkdiff/extension and explicit @hunk/vcs subpaths, while other
+                                      packages never import packages/hunk/src/; the per-app broker
+                                      contract is in docs/session-broker-sdk.md
 packages/hunk/src/extensions         extension host + bundled extensions; consume core, never surfaces
 packages/hunk/src/session            daemon/broker transport + protocol; consumes core and packages
 packages/hunk/src/app                startup composition: CLI parsing plus the wiring of core,

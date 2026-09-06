@@ -25,7 +25,7 @@ import {
 } from "./commands";
 import { openGitHistory } from "./history";
 import { gitEndpointSourceSpec, readGitFileSource } from "./source";
-import { describeDiffRange } from "../diffRange";
+import { describeDiffRange } from "@hunk/vcs/diff-target";
 import {
   HUNK_VCS_DETECTION_BASELINE_PRIORITY,
   type ExtensionVcsAdapter,
@@ -44,11 +44,11 @@ import {
  * file sources, skipped-too-large placeholders, untracked files, watch plans,
  * rich failures — so it is deliberately written the way a third-party backend
  * would be: it sees only the published `hunkdiff/extension` contract plus
- * implementation helpers owned by this extension directory and generic `packages/hunk/src/lib`
- * utilities. Nothing here reaches into core, the diff engine, or the
- * adapter registry. If something Git needs cannot be said in these types, the
- * published contract is missing it, and that is the point of shipping it this
- * way.
+ * implementation helpers owned by this extension directory and explicit
+ * `@hunk/vcs` infrastructure leaves. Nothing here reaches into core, the diff
+ * engine, or the adapter registry. If something Git needs cannot be said in
+ * these types, the published contract is missing it, and that is the point of
+ * shipping it this way.
  */
 
 /** Return the last path segment for review titles. */

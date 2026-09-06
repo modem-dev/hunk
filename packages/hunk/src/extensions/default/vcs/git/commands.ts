@@ -6,10 +6,10 @@ import {
   type ExtensionVcsShowInput,
   type ExtensionVcsStashShowInput,
 } from "hunkdiff/extension";
-import { LARGE_DIFF_FILE_MAX_BYTES, LARGE_DIFF_FILE_MAX_LINES } from "../../../../lib/largeFile";
-import { normalizePathForOS } from "../../../../lib/osPath";
-import { describeDiffRange, describeDiffTargets } from "../diffRange";
-import { runAbortableCommand } from "../asyncProcess";
+import { LARGE_DIFF_FILE_MAX_BYTES, LARGE_DIFF_FILE_MAX_LINES } from "@hunk/vcs/large-file";
+import { normalizePathForOS } from "@hunk/vcs/path";
+import { describeDiffRange, describeDiffTargets } from "@hunk/vcs/diff-target";
+import { runAbortableCommand } from "@hunk/vcs/async-process";
 
 /**
  * Every Git command Hunk runs, and the failures they translate into.

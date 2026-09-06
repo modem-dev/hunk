@@ -10,6 +10,7 @@
         "@hunk/session-broker-bun": "workspace:*",
         "@hunk/session-broker-core": "workspace:*",
         "@hunk/term-video": "workspace:*",
+        "@hunk/vcs": "workspace:*",
         "@opentui/core": "^0.5.6",
         "@opentui/react": "^0.5.6",
         "@pierre/diffs": "1.3.5",
@@ -68,6 +69,10 @@
       "optionalPeers": [
         "@pierre/diffs",
       ],
+    },
+    "packages/hunk-vcs": {
+      "name": "@hunk/vcs",
+      "version": "0.0.0",
     },
     "packages/session-broker": {
       "name": "@hunk/session-broker",
@@ -133,6 +138,8 @@
     "@hunk/session-broker-node": ["@hunk/session-broker-node@workspace:packages/session-broker-node"],
 
     "@hunk/term-video": ["@hunk/term-video@workspace:packages/term-video"],
+
+    "@hunk/vcs": ["@hunk/vcs@workspace:packages/hunk-vcs"],
 
     "@napi-rs/wasm-runtime": ["@napi-rs/wasm-runtime@1.2.2", "", { "dependencies": { "@tybys/wasm-util": "^0.10.3" }, "peerDependencies": { "@emnapi/core": "^1.7.1 || ^2.0.0-alpha.3", "@emnapi/runtime": "^1.7.1 || ^2.0.0-alpha.3" } }, "sha512-JfB4kuJQjaoHuCTseIINHtHWeJnvgEcxjwA5t/Y00ZgaOO1Crz3fjT/p8kT28zA/Caz7oiUMn3d6H2yOVCVwuw=="],
 

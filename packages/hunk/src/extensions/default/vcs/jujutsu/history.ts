@@ -7,7 +7,7 @@ import {
   type ExtensionVcsHistoryInput,
   type ExtensionVcsHistorySource,
 } from "hunkdiff/extension";
-import { normalizePathForOS } from "../../../../lib/osPath";
+import { normalizePathForOS } from "@hunk/vcs/path";
 
 const HISTORY_FIELDS_PER_COMMIT = 13;
 const REF_SEPARATOR = "\x1f";
