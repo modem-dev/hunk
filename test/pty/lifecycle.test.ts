@@ -210,6 +210,66 @@ function waitForStreamOutput(stream: NodeJS.ReadableStream, pattern: RegExp, tim
 }
 
 describe("PTY lifecycle", () => {
+  test.skipIf(process.platform === "win32")(
+    "resumes a suspended job after fg without losing app state",
+    async () => {
+      const fixture = harness.createTabbedFilePair();
+      const hunkCommand = harness.buildHunkCommand([
+        "diff",
+        "--files",
+        fixture.before,
+        fixture.after,
+        "--mode",
+        "stack",
+      ]);
+      const session = await harness.launchShellCommand({
+        command: "exec /bin/bash --noprofile --norc -i",
+        cwd: fixture.dir,
+      });
+
+      try {
+        session.writeRaw("PS1='HUNK_SHELL> '\r");
+        await session.waitForText(/HUNK_SHELL>/, { timeout: 5_000 });
+        session.writeRaw(`${hunkCommand}\r`);
+        await session.waitForText(/before\.txt.*after\.txt/, { timeout: 15_000 });
+        await Bun.sleep(1_000);
+        await session.press("c");
+        await session.waitForText(/Draft note/, { timeout: 5_000 });
+        await session.type("Keep this note after resume.");
+        await session.press(["ctrl", "s"]);
+        await session.waitForText(/Keep this note after resume\./, { timeout: 5_000 });
+
+        // OpenTUI parses Ctrl-Z in raw mode, so send its control byte instead of SIGTSTP.
+        session.writeRaw("\x1a");
+        await session.waitForText(/\[\d+\][^\n]*(?:Stopped|suspended)/, { timeout: 5_000 });
+        await Bun.sleep(5_000);
+        session.writeRaw("fg\r");
+        await Bun.sleep(1_000);
+        expect(await session.text({ immediate: true })).not.toContain("HUNK_SHELL>");
+        await harness.ensureKeyboardIsLive(session);
+        const resumed = await session.text({ immediate: true });
+        expect(resumed).toMatch(/before\.txt.*after\.txt/);
+        expect(resumed).toContain("Keep this note after resume.");
+
+        // A resumed job stays suspendable, so Ctrl-Z is not a one-shot escape hatch. An echoed
+        // shell command proves the stop really happened: the earlier job lines are still on the
+        // normal screen, so matching them again would pass even if Ctrl-Z did nothing.
+        session.writeRaw("\x1a");
+        await session.waitForText(/\[\d+\][^\n]*(?:Stopped|suspended)/, { timeout: 5_000 });
+        session.writeRaw("echo SECOND_SUSPEND_OK\r");
+        await session.waitForText(/HUNK_SHELL> echo SECOND_SUSPEND_OK/, { timeout: 5_000 });
+
+        session.writeRaw("fg\r");
+        await Bun.sleep(1_000);
+        const secondResume = await session.text({ immediate: true });
+        expect(secondResume).not.toContain("SECOND_SUSPEND_OK");
+        expect(secondResume).toContain("Keep this note after resume.");
+      } finally {
+        session.close();
+      }
+    },
+  );
+
   for (const signal of ["SIGHUP", "SIGQUIT", "SIGPIPE"] as const) {
     test.skipIf(process.platform === "win32")(`exits cleanly on ${signal}`, async () => {
       const fixture = harness.createLongWrapFilePair();

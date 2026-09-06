@@ -1,6 +1,5 @@
 import type { CliRenderer, KeyEvent } from "@opentui/core";
 
-type SignalListener = () => void;
 type KeypressListener = (key: KeyEvent) => void;
 
 type JobControlRenderer = Pick<CliRenderer, "isDestroyed" | "resume" | "suspend"> & {
@@ -13,8 +12,6 @@ type JobControlRenderer = Pick<CliRenderer, "isDestroyed" | "resume" | "suspend"
 /** Test seams for installing process-level Unix job-control signal handling. */
 export interface JobControlSuspendDeps {
   kill?: (pid: number, signal: NodeJS.Signals) => unknown;
-  off?: (signal: NodeJS.Signals, listener: SignalListener) => unknown;
-  once?: (signal: NodeJS.Signals, listener: SignalListener) => unknown;
   platform?: NodeJS.Platform | string;
   /** Signal target passed to process.kill; defaults to 0 for the foreground process group. */
   pid?: number;
@@ -73,7 +70,16 @@ export function installJobControlInterruptSupport(
  * OpenTUI receives Ctrl-Z as a parsed keypress instead of letting the terminal driver turn it into
  * SIGTSTP. Match the common TUI pattern used by apps like opencode: treat Ctrl-Z as an app command,
  * ask OpenTUI to restore the terminal, then send SIGTSTP to the foreground process group so the
- * shell can manage Hunk as a normal suspended job. SIGCONT resumes the renderer after `fg`.
+ * shell can manage Hunk as a normal suspended job.
+ *
+ * The stop takes effect before `kill` returns, because POSIX delivers a signal sent to the caller's
+ * own process group before the call completes. Suspend and resume are therefore one straight line:
+ * the statement after `kill` runs only once the shell continues the job with `fg`. Staying on that
+ * call stack is also what keeps the job alive, since OpenTUI's suspend drops its keep-alive timer
+ * and stops reading stdin, so a runtime that reached an idle event loop here could exit before
+ * being continued. A `kill` that returns without stopping — a runtime that refuses SIGTSTP, or an
+ * orphaned process group that discards it — reaches the same restore instead of waiting for a
+ * SIGCONT nobody will send.
  */
 export function installJobControlSuspendSupport(
   renderer: JobControlRenderer,
@@ -85,38 +91,21 @@ export function installJobControlSuspendSupport(
   }
 
   const kill = deps.kill ?? process.kill.bind(process);
-  const off = deps.off ?? process.off.bind(process);
-  const once = deps.once ?? process.once.bind(process);
   const pid = deps.pid ?? 0;
   let disposed = false;
-  let resumeOnContinue: SignalListener | null = null;
-
-  const clearPendingContinue = () => {
-    if (resumeOnContinue) {
-      off("SIGCONT", resumeOnContinue);
-      resumeOnContinue = null;
-    }
-  };
 
   const suspend = () => {
-    resumeOnContinue = () => {
-      resumeOnContinue = null;
-      if (!renderer.isDestroyed) {
-        renderer.resume();
-      }
-    };
-
     renderer.suspend();
-    once("SIGCONT", resumeOnContinue);
 
     try {
+      // Blocks until the shell continues this job; see the note above.
       kill(pid, "SIGTSTP");
     } catch {
-      // If the platform/runtime refuses SIGTSTP, leave the app usable instead of half-suspended.
-      clearPendingContinue();
-      if (!renderer.isDestroyed) {
-        renderer.resume();
-      }
+      // A runtime that refuses SIGTSTP leaves the app usable instead of half-suspended.
+    }
+
+    if (!renderer.isDestroyed) {
+      renderer.resume();
     }
   };
 
@@ -135,7 +124,6 @@ export function installJobControlSuspendSupport(
   return {
     dispose: () => {
       disposed = true;
-      clearPendingContinue();
       renderer.keyInput.off("keypress", keypressListener);
     },
   };
