@@ -7,19 +7,33 @@
 
 ## architecture
 
+### workspace map
+
 ```text
-CLI input
-  -> parse runtime + config-backed view options
-  -> normalize into one Changeset / DiffFile model
-  -> App shell coordinates state, layout, and review navigation
-  -> pane components render review UI
-  -> Pierre-backed terminal renderer draws diff rows
+packages/hunk/                 published CLI, application, and public extension/OpenTUI facades
+packages/hunk-vcs/             private dependency-bottom VCS helpers
+packages/hunk-{git,jj,sapling}/ private bundled VCS providers
+packages/session-broker-core/  low-level broker protocol and state
+packages/session-broker/       runtime-neutral broker, daemon, auth, and connection lifecycle
+packages/session-broker-{bun,node}/ runtime listener adapters
+packages/term-video/           private terminal capture tooling
+website/                       product/documentation site, not the browser review client
+```
+
+### application flow
+
+```text
+main.tsx -> app/startup.ts -> app/cli.ts
+  -> headless command/history plan returned to main.tsx, or
+  -> app plan: extensionBootstrap.ts -> sessionBootstrap.ts -> normalized Changeset / DiffFile[]
+     -> main.tsx lazy-loads runInteractiveApp.tsx -> HunkSessionHost -> AppHost -> App
+     -> pane/diff planning -> Pierre-backed terminal rows
 ```
 
 ### shared review seam
 
-Review core serves multiple surfaces: TUI today; web, API, and agent/runtime consumers later. Do
-not recreate semantic review behavior in a surface:
+Terminal, agent/session, broker/protocol, extension, and HTTP/SSE consumers share review semantics.
+The browser client and UI remain planned. Do not recreate semantic review behavior in a surface:
 
 ```text
 DiffFile[] -> projectReviewDocument -> ReviewDocumentV1 -> ReviewStore
@@ -63,8 +77,9 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
   review stays same-origin with no CORS; each session mints its capability and gives the daemon only
   its digest. Transport semantics come from the browser-safe review protocol modules and the
   existing intent path. See `docs/browser-review-rebuild.md` and the relevant module headers.
-- User and bundled extensions share one API and registry. Shipped VCS backends and the built-in
-  sidebar register through the public contract. Keep `packages/hunk/src/extension-api/types.ts` import-free,
+- User extensions, bundled VCS providers, and bundled UI share one public registration API and
+  registry model, but use separate registry instances and lifecycles. `ExtensionSession` owns the
+  user registry across routed surfaces. Keep `packages/hunk/src/extension-api/types.ts` import-free,
   bundled VCS renderer-free, repo-local extensions trust-gated, and bundled extensions active under
   `--no-extensions`. See `docs/extension-architecture.md`, `docs/extensions.md`, and
   `packages/hunk/skills/hunk-extensions/SKILL.md`.
@@ -74,10 +89,12 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
 
 ## architectural rules
 
-- Import boundaries between `packages/hunk/src/` top-level trees are enforced by `bun run deps:check`
-  (dependency-cruiser; rules in `.dependency-cruiser.cjs`, target tiers in
-  `docs/module-boundaries.md`). The known-violations baseline is shrink-only: fix an edge, rerun
-  `bun run deps:baseline`, never add to it.
+- `bun run deps:check` enforces both the `packages/*` workspace graph and
+  `packages/hunk/src/*` tiers; `.dependency-cruiser.cjs` is authoritative and
+  `docs/module-boundaries.md` explains the model. Standalone packages do not import Hunk internals.
+  Bundled providers use only provider-local modules, platform built-ins, `hunkdiff/extension`, and
+  explicit `@hunk/vcs/*` leaves. The known-violations baseline is shrink-only: fix an edge, rerun
+  `bun run deps:baseline`, and never add to it.
 - Keep the app review-first: the main pane is a single top-to-bottom stream of all visible file diffs.
 - The sidebar is for navigation. Selecting a file jumps to that file in the main review stream; it should not collapse the main pane to one file.
 - Keep Pierre as the diff engine and renderer foundation. Do not switch the main renderer back to OpenTUI's built-in `<diff>` widget.
@@ -87,8 +104,10 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
 
 ## component guidance
 
-- Keep `App` as the orchestration shell for state, navigation, layout, theme, filtering, and pane
-  coordination; pane rendering belongs in dedicated components.
+- `HunkSessionHost` owns history/review routing in one React root. `AppHost` owns reload
+  serialization, extension adoption, and broker/content/React commit ordering. `App` owns review
+  interaction, navigation, layout, theme, filtering, and pane coordination. Pane and diff modules
+  own rendering and geometry.
 - Confirmation prompts with a small set of choices should reuse `ConfirmDialog` (body rows plus a clickable key-legend action row) instead of composing `ModalFrame` with a hand-rolled footer; keyboard handling for its actions stays in `useAppKeyboardShortcuts`.
 - Extend existing components or add focused components rather than growing `App` into a monolith.
 - Shared formatting, ids, and small derivations belong in helpers, not repeated inline.
@@ -113,7 +132,27 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
   - `test/session/` for daemon/session integration and end-to-end flows.
   - `test/pty/` for PTY-backed live UI integration tests.
   - `test/review-conformance/` for the shared review model's golden fixtures and per-consumer conformance suites.
+  - `test/session-broker-node/` for real Node listener/adapter conformance.
+  - `test/session-broker-runtime/` for shared Bun/Node broker fixtures.
   - `test/smoke/` for opt-in terminal transcript smoke coverage.
+- `bun run test` does not include review conformance, PTY, TTY smoke, or real-Node adapter
+  conformance under `test/session-broker-node/`. Run the dedicated command documented in
+  `test/README.md` when changing those areas.
+
+## writing and agent efficiency
+
+- Inspect with targeted `rg`, `find`, and bounded reads before opening large files. Summarize long
+  output; do not dump generated files, lockfiles, or logs when a focused excerpt answers the question.
+- Lead with the result, decision, or finding. Do not restate the request, repeat conclusions, narrate
+  routine tool use, or add headings and examples merely to make a short point look substantial.
+- Keep progress updates and final responses concise. Report changed paths, validation results, and
+  residual risks without generic reassurance.
+- Use concrete nouns, verbs, paths, symbols, and observed behavior. Avoid filler such as “delve,”
+  “leverage,” “robust,” “seamless,” or “it is worth noting,” and avoid promotional or unsupported
+  claims such as “elegant,” “future-proof,” or “ensures correctness.”
+- Distinguish current facts, decisions, limitations, and future plans. Date status claims that can
+  age. Brevity must not omit compatibility constraints, security boundaries, failure behavior,
+  validation evidence, or residual risk.
 
 ## code comments
 
@@ -127,8 +166,9 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
   neighboring authority it deliberately leaves elsewhere, and call out preservation or
   non-reloadable invariants. Prefer concrete flows ("watch changes and manual refresh both rebuild
   the mounted review") over abstract labels ("handles refresh").
-- Add inline comments for intent, invariants, or tricky behavior that would not be obvious to a fresh reader.
-- Skip comments that only narrate what the code already says.
+- Add inline comments for intent, invariants, ownership, or non-obvious tradeoffs. Do not narrate
+  syntax, praise the implementation, address the reader conversationally, or record temporary
+  implementation history that belongs in Git or maintainer docs.
 
 ## naming
 
@@ -163,6 +203,8 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
 - For rendering changes: run `bun run typecheck`, `bun run test`, `bun run test:integration`,
   `bun run test:tty-smoke`, and do one real TTY smoke run on an actual diff.
 - For interaction, layout, scrolling, navigation, windowing, or other terminal-native behavior: add or update PTY integration coverage in `test/pty/*-integration.test.ts` and run it with `bun run test:integration`.
+- For broker/runtime changes, run `bun run test:session-broker-node` in addition to the relevant
+  Bun tests.
 - For CLI, config, or pager work: make sure the relevant source invocation still works (`diff`, `show`, `patch`, or `pager`).
 - Preserve current interaction model unless the user asks to change it explicitly.
 

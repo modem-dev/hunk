@@ -192,16 +192,16 @@ run without installing anything.
 ## Bundled extensions
 
 Every VCS backend Hunk ships — **Git, Jujutsu, and Sapling** — is an extension,
-and so is the **built-in file-navigation pane**. They live in
-`packages/hunk/src/extensions/default/`, are compiled into the binary, and register through
-the same `hunk.registerVcsAdapter` and `hunk.registerPane` this guide
-documents. There is no private registration path.
+and so is the **built-in file-navigation pane**. Provider implementations live in the private
+`packages/hunk-{git,jj,sapling}` workspaces and are statically imported by
+`packages/hunk/src/extensions/default/vcs/index.ts`. Bundled UI registrations live under
+`packages/hunk/src/extensions/default/ui/`. All register through the same
+`hunk.registerVcsAdapter` and `hunk.registerPane` contract documented here; there is no private
+registration path.
 
-Git in particular is the reason: it is the backend that exercises every
-integration point there is — exact file sources, skipped-too-large placeholders,
-untracked files, watch plans, rich failures — so running it through the
-published API is what keeps that API honest. Anything Git can do, your adapter
-can do, because Git does it the same way you would.
+Git exercises exact file sources, skipped-too-large placeholders, untracked files, watch plans,
+and structured failures through the public adapter contract. Its package and boundary tests keep
+those capabilities on the same registration path available to third-party adapters.
 
 Bundled extensions differ from yours in three ways, all of them consequences of
 being Hunk's own code:
@@ -214,9 +214,10 @@ being Hunk's own code:
   Those switches exist to triage extensions _you_ installed; losing VCS support
   from a debugging flag would break every workflow there is.
 
-Failure isolation still applies to them. The ids `git`, `jj`, and `sl` are
-reserved as a result — see `registerVcsAdapter` below — and so is `hunk`, the
-id the bundled files pane and every built-in command are named under.
+A bundled VCS factory failure becomes a load issue rather than crashing the session. Bundled UI
+panes are required host code, so failure to register the expected panes aborts startup. The ids
+`git`, `jj`, and `sl` are reserved as a result — see `registerVcsAdapter` below — and so is `hunk`,
+the id the bundled files pane and every built-in command are named under.
 
 ## Trust
 
@@ -522,7 +523,7 @@ reuses one is skipped with a notice.
 map off entirely — produces a clear "not supported" error for that command
 instead of a crash.
 
-API version 17 adds the optional, read-only `history` capability used by the built-in `hunk log` surface:
+API version 19 adds the optional, read-only `history` capability used by the built-in `hunk log` surface:
 
 ```ts
 hunk.registerVcsAdapter({
@@ -644,9 +645,9 @@ hunk.registerVcsAdapter({
 Detection runs the same way for every adapter, whichever tier registered it:
 the nearest checkout wins, `detectionPriority` breaks ties between adapters
 that recognize the same root, and equal priorities fall back to registration
-order. Config resolves the session's VCS before your extension has been
-imported, so detection runs again once extensions are loaded — with the full
-adapter list — and that second answer is the one the session uses.
+order. Hunk first resolves config and project root with the available catalog. If newly loaded
+adapters change the detected project root, it reruns root and config resolution before loading the
+session.
 
 What detection never overrides is an explicit choice: a `vcs = "<id>"` in Hunk
 config naming a backend this session loaded is honored as-is, however near a
@@ -2206,6 +2207,6 @@ Menu entries, standalone keybindings (a chord contributed without a command —
 commands registered through `registerCommand` **are** already user-remappable
 via `[keybindings]`), custom note renderers, and session commands are not
 contributable yet. Generic top-level CLI trees use `registerCliCommand`; TUI
-commands and their default key bindings use `registerCommand`. See
-[docs/extension-system-exploration.md](extension-system-exploration.md) for the
-design and phasing.
+commands and their default key bindings use `registerCommand`. See the
+[extension architecture](extension-architecture.md) for the current host design. The
+[original exploration](extension-system-exploration.md) records historical rationale and phasing.

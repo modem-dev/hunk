@@ -106,11 +106,13 @@ export const HUNK_REVIEW_ACTOR_KINDS: readonly HunkReviewActorKindV1[] = [
  * G2). The four parts of that finding split cleanly across phases, and only the first is
  * here: (1) actions carry an actor tag — this type; (2) selection is shared-with-follow
  * or per-client-with-follow — a product decision, Phase 5; (3) note authorship defaults
- * from the actor — Phase 5, where notes are composed remotely; (4) how a client obtains
- * its identity — Phase 4, with the capability the HTTP surface issues.
+ * from the actor — Phase 5, where notes are composed remotely; (4) the browser client
+ * mints its own tab-local identity in Phase 5. The Phase 4 capability authorizes a review,
+ * not one client.
  *
- * Until then the producer records the tag and applies no policy to it, so adding one
- * later changes behavior rather than the schema.
+ * Until then the wire parser validates the tag and the broker forwards it to the owning
+ * session, where the producer-side action handler drops it before semantic planning. Adding
+ * actor policy later changes behavior rather than the schema.
  */
 export interface HunkReviewActorV1 {
   /** Stable within one attached client; opaque to the producer. */

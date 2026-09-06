@@ -49,7 +49,7 @@ mise use -g hunk                     # macOS, Linux, or Windows
 > [!NOTE]
 > If you previously installed hunk via `modem-dev/tap`, be sure to uninstall it first with `brew uninstall modem-dev/tap/hunk`.
 
-Windows requires mise 2026.8.6 or newer. Nix users can use the `default` package exported in `flake.nix`; see [nix/README.md](./nix/README.md) for details. Hunk also ships as a default tool in [Omarchy](https://omarchy.org), installed through mise.
+Windows requires mise 2026.8.6 or newer. Nix users can use the `default` package exported in `flake.nix`; see [the Nix guide](https://github.com/modem-dev/hunk/blob/main/nix/README.md) for details. Hunk also ships as a default tool in [Omarchy](https://omarchy.org), installed through mise.
 
 Requirements:
 
@@ -127,7 +127,7 @@ A good generic prompt is:
 Load the Hunk skill and use it for this review. Run `hunk skill path` to get the skill path.
 ```
 
-For the full live-session and `--agent-context` workflow guide, see [docs/agent-workflows.md](docs/agent-workflows.md). Experimental rich STML note bodies require starting the review with `--experimental`; plain agent notes remain the default.
+For the full live-session and `--agent-context` workflow guide, see [the agent workflow guide](https://github.com/modem-dev/hunk/blob/main/docs/agent-workflows.md). Experimental rich STML note bodies require starting the review with `--experimental`; plain agent notes remain the default.
 
 ## Feature comparison
 
@@ -175,7 +175,7 @@ transparent_background = false
 ```
 
 Choose a built-in theme, `auto`, or a custom theme with `theme`. See
-[docs/themes.md](docs/themes.md) for automatic selection, custom theme tables,
+[the theme guide](https://hunk.dev/docs/configure/themes/) for automatic selection, custom theme tables,
 syntax scopes, and legacy syntax-table migration.
 
 `exclude_untracked` affects Git/Sapling working-tree `hunk diff` sessions only.
@@ -189,7 +189,7 @@ syntax scopes, and legacy syntax-table migration.
 Every keyboard shortcut is a named command, and a `[keybindings]` table in your
 user config remaps command ids to the keys you want them on — several keys per
 command, exclusive claims over defaults, and `false` to unbind. See
-[docs/keybindings.md](docs/keybindings.md) for the rules, the chord grammar,
+[the keybinding guide](https://hunk.dev/docs/configure/keybindings/) for the rules, the chord grammar,
 and the full table of built-in commands and their default keys.
 
 ### Git integration
@@ -279,24 +279,24 @@ Browse community extensions at
 publish yours by pushing the extension to a repository root and adding that
 topic.
 
-See [docs/extensions.md](docs/extensions.md) for the full API, the trust model,
+See [the extension guide](https://hunk.dev/docs/extend/extensions/) for the full API, the trust model,
 publishing guidance, and the `[extensions]` / `[extension.<id>]` config reference.
 Installable examples include a dependency-free
-[`hunk gh 123` GitHub PR workflow](examples/extensions/github-pr/),
-[review triage](examples/extensions/review-triage/),
-[authoritative review snapshot export](examples/extensions/review-snapshot-export/), an optional
-[rendered Markdown file view](examples/extensions/rendered-markdown/), and a
-[Vim navigation mode](examples/extensions/vim-navigation/) built from public semantic commands.
+[`hunk gh 123` GitHub PR workflow](https://github.com/modem-dev/hunk/tree/main/examples/extensions/github-pr),
+[review triage](https://github.com/modem-dev/hunk/tree/main/examples/extensions/review-triage),
+[authoritative review snapshot export](https://github.com/modem-dev/hunk/tree/main/examples/extensions/review-snapshot-export), an optional
+[rendered Markdown file view](https://github.com/modem-dev/hunk/tree/main/examples/extensions/rendered-markdown), and a
+[Vim navigation mode](https://github.com/modem-dev/hunk/tree/main/examples/extensions/vim-navigation) built from public semantic commands.
 
 ### OpenTUI component
 
 Hunk also publishes `HunkDiffView` and lower-level primitives from `hunkdiff/opentui` for embedding the same diff renderer in your own OpenTUI app.
 
-See [docs/opentui-component.md](docs/opentui-component.md) for install, API, and runnable examples.
+See [the OpenTUI component guide](https://hunk.dev/docs/reference/opentui-components/) for install, API, and runnable examples.
 
 ## Examples
 
-Ready-to-run demo diffs live in [`examples/`](examples/README.md).
+Ready-to-run demo diffs live in [the examples directory](https://github.com/modem-dev/hunk/tree/main/examples).
 
 Each example includes the exact command to run from the repository root.
 
@@ -304,7 +304,7 @@ Each example includes the exact command to run from the repository root.
 
 💬 _Chat with users/contributors on the [Modem Discord server](https://discord.gg/WZFjaP6Gt8)_
 
-For source setup, tests, packaging checks, and repo architecture, see [CONTRIBUTING.md](CONTRIBUTING.md).
+For source setup, tests, packaging checks, and repo architecture, see [the contribution guide](https://github.com/modem-dev/hunk/blob/main/CONTRIBUTING.md).
 
 ## Sponsor
 
@@ -320,4 +320,4 @@ Sponsored by [Modem](https://modem.dev?utm_source=github&utm_medium=oss&utm_camp
 
 ## License
 
-[MIT](LICENSE)
+[MIT](https://github.com/modem-dev/hunk/blob/main/LICENSE)

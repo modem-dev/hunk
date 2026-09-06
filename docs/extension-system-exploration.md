@@ -1,8 +1,13 @@
 # Hunk extensions: an exploration
 
-What a JavaScript/TypeScript extension system for Hunk could look like, modeled
-on the extension system of [pi](https://pi.dev) (`@earendil-works/pi`), grounded
-in Hunk's actual architecture. This is a design exploration, not a spec.
+> **Historical design note (July 2026).** This proposal preceded Hunk's implemented extension
+> system. See the [extension guide](extensions.md) and
+> [extension architecture](extension-architecture.md) for the current contract. The implementation
+> now includes trust-gated TypeScript loading, named commands, panes, file views, VCS adapters,
+> review controls, and API versioning.
+
+The proposal modeled a JavaScript/TypeScript extension system on
+[pi](https://pi.dev) (`@earendil-works/pi`) and Hunk's architecture.
 
 ## 1. How pi does it
 
@@ -215,10 +220,8 @@ Every UI-facing capability above lands on the same prerequisite: core actions
 become data (`{id, label, hint, keys, menuId, isAvailable, run}`) in one
 registry that `useAppKeyboardShortcuts`, `buildAppMenus`, and `HelpDialog` all
 derive from. This is worth doing even if extensions never ship — it deletes the
-existing triplication and the 650-line key ladder — and it is exactly the
-"single source of truth per user-visible behavior" rule in our own guidance.
-User keybinding remapping (a long-standing wish in tools like this) falls out
-of the same structure for free.
+existing triplication and the 650-line key ladder while giving each user-visible behavior one
+owner. The same structure can support user keybinding remapping.
 
 ## 6. Suggested phasing
 

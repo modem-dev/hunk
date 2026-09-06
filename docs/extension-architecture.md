@@ -11,17 +11,18 @@ exists so you know which module owns what.
 Extensions come in two tiers running through the same per-extension API
 object and registry collection (`packages/hunk/src/extensions/runExtension.ts`):
 
-- **User extensions** load at interactive-app startup, before
-  `loadAppBootstrap` (`packages/hunk/src/extensions/startup.ts`, `packages/hunk/src/extensions/host.ts`).
-  Discovery groups and trust gating: `packages/hunk/src/extensions/discovery.ts`,
+- **User extensions** load during app bootstrap after initial config resolution and before final
+  session bootstrap (`packages/hunk/src/app/extensionBootstrap.ts`,
+  `packages/hunk/src/extensions/startup.ts`, `packages/hunk/src/extensions/host.ts`). Discovery
+  groups and trust gating live in `packages/hunk/src/extensions/discovery.ts` and
   `packages/hunk/src/extensions/trust.ts`.
 - **Bundled extensions** are compiled into the binary. The private
   `packages/hunk-{git,jj,sapling}` provider workspaces are statically imported by
   `packages/hunk/src/extensions/default/vcs/index.ts`; the app composition root
   (`app/vcsCatalog.ts`) loads them synchronously before config resolution, so backends exist
-  without making core import the extension host. `default/ui/index.ts` is deliberately not part of that list:
-  it synchronously loads the bundled files and delegated review-info panes through
-  `runExtensionFactory` only where the app resolves UI panes.
+  without making core import the extension host. `default/ui/index.ts` is deliberately not part of
+  that list: the UI pane planner loads its bundled files and delegated review-info registrations
+  through `runExtensionFactory`.
 
 Git, built-in file navigation, and delegated change-request identity use the public
 `registerVcsAdapter` and `registerPane` paths. The external [Hunk Lens](https://github.com/modem-dev/hunk-lens)
@@ -41,13 +42,16 @@ unsplittable), and the later of two sources claiming one id; each refusal is a
 load issue and costs only that extension. The rules themselves are stated in
 `packages/hunk/src/extensions/extensionIds.ts`.
 
-## One registry, one apply path
+## One registry model, separate composition paths
 
 Registrations (session behavior, themes, file languages, VCS adapters,
 changeset transforms, panes, interactive commands, top-level CLI commands,
-lifecycle/UI events, and inter-extension bus listeners) collect into one
-`ExtensionRegistry` (`packages/hunk/src/extensions/types.ts`) and are resolved/applied
-through `packages/hunk/src/extensions/apply.ts` on both startup and reload. File-language registrations stay as
+lifecycle/UI events, and inter-extension bus listeners) collect into an
+`ExtensionRegistry` (`packages/hunk/src/extensions/types.ts`). Bundled VCS, bundled UI, and user
+extensions use separate registry instances and lifecycle owners. `app/vcsCatalog.ts` composes
+bundled VCS registrations directly; `ui/lib/extensionPanes.ts` reads bundled UI pane registrations;
+and `extensions/apply.ts` applies user registrations during session bootstrap and reload.
+File-language registrations stay as
 declarative extension, filename, or glob selectors until `fileLanguageLookup.ts` resolves them;
 Hunk then pins that answer into Pierre's metadata so rendering cannot re-derive a conflicting
 language. A live reload replaces the compiled selector generation while preparing its changeset
@@ -58,9 +62,9 @@ receives bounded `shutdown` before being rebuilt. Live registry replacement uses
 the same shutdown/startup lifecycle. `src/extensions/session.ts` owns active, provisional, and
 retiring registries by identity; it synchronously closes authority at adoption/shutdown and drains
 all known bounded retirements. Surfaces borrow that session and cannot retire it independently.
-A factory that throws is rolled back to its
-pre-run registration counts (`runExtension.ts`); failures cost a warning, not the
-session.
+A user or bundled-VCS factory that throws is rolled back to its pre-run registration counts
+(`runExtension.ts`); failures cost a warning, not the session. Bundled UI registration instead
+requires every expected pane and throws if Hunk's own invariant fails.
 
 Generic CLI commands deliberately remain separate from the interactive named-command
 table. `parseCli` resolves known built-ins first, preserving static help/version and

@@ -1,5 +1,10 @@
 # Browser review seam audit — prototype duplication findings
 
+> **Current status (2026-09-06; after Phase 4).** Core review semantics, terminal adoption, producer and broker
+> projections, wire protocol, bounded resources, HTTP actions, and SSE have landed. There is no
+> browser client or served review page. Historical prototype locators below may name deleted files;
+> each finding's latest status annotation is authoritative.
+
 Companion to `browser-review-rebuild.md`. This is the per-finding work-list behind the plan's
 seam inventory: every duplicated derivation found in the prototype, the sites on each side, the
 observed or reachable divergence, and the shared primitive that replaces it. File/line
@@ -9,11 +14,7 @@ should delete the copies its primitive replaces and check off the finding here.
 
 ## Run boundary — after Phase 4
 
-Phases 0–4 have landed: the seam contract and its gates, the shared review model with the
-terminal on it, the producer runtime, the wire protocol with the daemon's review mirror and
-resource path, and now the HTTP surface — capability authorization, publication and resource
-reads, the SSE event stream, and action submission — with no browser client. What remains
-open, and where the plan puts it:
+Open work and its planned phase:
 
 - **C3, C5** — the epoch/supersede queue and one reconnect scheduler, both browser-client
   work (Phase 5). C4 is repaid on the server side; its client half closes with the reader
@@ -26,10 +27,11 @@ open, and where the plan puts it:
   rather than retained frames. The stream carries no deltas, so a publication _is_ a
   complete resynchronization and a history would be an optimization; if Phase 5 measures a
   need for one, it is additive.
-- **Browser sites of A, B, C, D** — every finding whose fix landed in core with only the
-  terminal, producer, broker, and wire converted keeps its browser half open: A6, A7, A11,
-  B3–B8, B10's client, C1 and C2's client sites, D1's composer sites, D3's
-  `pierreNoteAnchor`, D4's `parseCanonicalReviewFile`.
+- **Browser sites of A, B, C, D** — every finding whose latest annotation still requires a
+  browser consumer remains open: A3–A11; B3–B8 and B10's client; C1 and C2's client; D1's
+  composer, D2 and D5's browser sites, D3's `pierreNoteAnchor`, and D4's
+  `parseCanonicalReviewFile`. B5 still needs its browser source policy. B7 and B8 also retain
+  terminal adoption/behavior work.
 - **E1, E2** — the shared stat-badge formatter, and the product decision about whether the
   browser mirrors the terminal theme. Both Phase 5; E2 must be decided before its second PR.
 - **F browser bindings** — F1–F3's browser halves (palette, keymap resolution onto DOM
@@ -37,15 +39,15 @@ open, and where the plan puts it:
 - **G1, G2 policy** — view-option classification and persistence, and the multi-client
   selection and authorship policy. G2's _wire fields_ are done (see G2); what a receiver
   should do with an actor tag is the decision, due before Phase 5 PR 2.
-- **G3 adoption** — the address grammar exists with no consumers; browser deep links
-  (Phase 5) and opener fragments (Phase 6) close it.
+- **G3 adoption** — no address grammar exists on current main. It was removed as dead code and
+  returns beside the first browser deep-link or opener-fragment consumer (Phases 5–6).
 - **G5** — a placement rule for undo, if undo is ever built. Not work.
 
-Two residuals earlier runs created rather than inherited: remote note _composition_ has no
-draft-body intent yet (recorded under B12), and the publication a client reads over HTTP is
-a position plus a resource catalog rather than a serialized `ReviewState` — selection,
-filter, and notes reach a client through the resources and actions it already has, and
-whether a client needs more than that is Phase 5's first question.
+Remote draft composition now reaches `notes/update-draft` through core and the wire protocol, but
+has no browser caller until Phase 5. HTTP publications contain only a position and resource catalog;
+resource reads provide canonical files, patches, and sources, while successful actions acknowledge a
+new position. Phase 5 must define bounded snapshot or delta transport for live selection, filter,
+and note state before a browser can render those changes.
 
 ## A. Diff geometry
 
@@ -545,12 +547,10 @@ here so the extraction happens before the duplication exists. Design detail in
   `selectReviewGapForSelection` in core, replacing the terminal's `selectGapForKeyboardToggle`.
   `SEMANTIC_COMMANDS_WITHOUT_REVIEW_EFFECT` is now empty, and every semantic command lowers to
   an intent a remote client could fire.
-  Residual (found in review): `lowerAppCommandToReviewIntent` still has no production caller —
-  the terminal's handlers read the catalog's declared scope/direction but build their intents
-  inline, so the lowering and the terminal closures can diverge with only
-  `commandCatalog.test.ts` noticing half the drift. Closes when the lowering gains its second
-  consumer (the Phase 5 palette / wire command path); until then any change to a declared
-  review effect must update both sites, and a review-effect parity check is the missing test.
+  _Repaid (terminal adoption)_: `useTerminalReview.ts` calls
+  `lowerAppCommandToReviewIntent`, so the terminal no longer rebuilds semantic command intents
+  inline. The future browser palette remains a second surface, not a prerequisite for terminal
+  parity.
 - **F3. Keymap resolution is terminal-owned.** Chords are shared config strings (`keymap.ts`,
   `[keybindings]`), but resolution against defaults and conflict handling lives with the
   terminal table; a browser keymap would duplicate it and drift on user rebinds. Fix: resolve
@@ -595,10 +595,10 @@ implementation does.
   four parts split cleanly, and only the first is done: (1) actions carry an actor tag, here;
   (2) whether selection is shared-with-follow or per-client-with-follow is a product decision,
   due before Phase 5 PR 2; (3) note authorship defaulting from the actor lands with remote
-  note composition in Phase 5; (4) how a client obtains its identity lands with the capability
-  the HTTP surface issues in Phase 4. The producer records the tag and applies no policy to
-  it, and a client cannot widen what it may do by claiming a kind — so adding a policy later
-  changes behavior rather than the schema, which is the whole point of carrying the field now.
+  note composition in Phase 5; (4) how a client obtains its identity was originally assigned to
+  Phase 4. The wire parser validates the tag, the broker forwards it to the owning session, and
+  the producer-side action handler drops it before semantic planning. A client cannot widen what
+  it may do by claiming a kind; adding policy later changes behavior rather than the schema.
   _Amended (Phase 4)_: part (4) does not land with the HTTP surface after all, and the
   reason is worth stating. The capability authorizes _a review_, not _a client_: one link
   may be opened in several tabs, and the surface deliberately cannot tell them apart,

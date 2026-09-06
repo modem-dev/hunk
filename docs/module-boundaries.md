@@ -1,7 +1,6 @@
 # Module boundaries
 
-Defines the target import boundaries between Hunk's top-level source trees and records what the
-dependency graph actually looks like today. The boundaries are enforced by
+Defines Hunk's current import boundaries and preserves the migration record that established them. The boundaries are enforced by
 [dependency-cruiser](https://github.com/sverweij/dependency-cruiser) over the production import
 graph (`packages/hunk/src/` plus `packages/`, tests excluded):
 
@@ -15,30 +14,35 @@ graph (`packages/hunk/src/` plus `packages/`, tests excluded):
 (browser-safe closure, Node-debt tombstones). The dependency-cruiser rules are the coarse
 tier-level complement, with real module resolution instead of regex import scanning.
 
-## Target architecture
+## Current architecture
 
-Tiers, bottom to top. A tier may import anything strictly below it and nothing above it:
+The product source follows these tiers, bottom to top. A tier imports only lower tiers unless an
+explicit rule below names a facade or adapter exception.
 
 ```text
-packages/hunk/src/extension-api      published contract; imports nothing
-packages/hunk-vcs                     private dependency-bottom VCS implementation helpers
-packages/hunk/src/lib                 compatibility helpers; may import extension-api and hunk-vcs
-packages/hunk/src/core                domain model (changesets, review, vcs catalog, config)
-packages/*                            isolated workspace units; private provider packages may import
-                                      hunkdiff/extension and explicit @hunk/vcs subpaths, while other
-                                      packages never import packages/hunk/src/; the per-app broker
-                                      contract is in docs/session-broker-sdk.md
-packages/hunk/src/extensions         extension host + bundled extensions; consume core, never surfaces
-packages/hunk/src/session            daemon/broker transport + protocol; consumes core and packages
-packages/hunk/src/app                startup composition: CLI parsing plus the wiring of core,
-                       extensions, and the session broker; no rendering
-packages/hunk/src/ui                 terminal surface; only the composition shell (App, AppHost,
-                       runInteractiveApp, session/HunkSessionHost), the named session adapter hooks
-                       (useTerminalReview, useHunkSessionBridge), and their shared
-                       navigation helper (ui/lib/reviewState) may import app/session
-packages/hunk/src/opentui            published facade re-exporting ui/core pieces for `hunkdiff/opentui`
-packages/hunk/src/main.tsx           CLI entry
+packages/hunk/src/extension-api   published contract; imports nothing
+packages/hunk-vcs/                private dependency-bottom VCS helpers; explicit leaf exports only
+packages/hunk/src/lib             small compatibility helpers
+packages/hunk/src/core            product model, non-rendering runtime primitives, and policy
+packages/hunk/src/extensions      extension host and bundled registration adapters
+packages/hunk/src/session         daemon/broker transport and protocol
+packages/hunk/src/app             CLI/startup/session composition; no rendering
+packages/hunk/src/ui              terminal surface and named app/session adapters
+packages/hunk/src/opentui         published facade re-exporting selected ui/core pieces
+packages/hunk/src/main.tsx        final CLI composition and entrypoint
 ```
+
+Other workspaces are bounded units rather than one tier in that stack:
+
+- `packages/hunk-{git,jj,sapling}` implement private bundled providers through
+  `hunkdiff/extension` and explicit `@hunk/vcs/*` leaves.
+- `packages/session-broker{,-core,-bun,-node}` form a runtime-neutral broker stack plus listener
+  adapters. They do not import Hunk source internals.
+- `packages/term-video` owns terminal capture tooling and does not import Hunk source internals.
+
+Current `core/` modules are `changeset/`, `history/`, `install/`, `patch/`, `process/`, `review/`,
+`run/`, `theme/`, `vcs/`, and `watch/`. Its root contains `bootstrap.ts`, `liveComments.ts`,
+`reviewDescriptor.ts`, and `reviewDigest.ts` plus tests.
 
 Intentional exceptions, allowed by the rules:
 
@@ -63,9 +67,14 @@ Two supporting rules keep the interiors honest:
   tests are its only genuine consumer — listed in the rule's `TEST_ONLY_MODULES` allowlist
   with the reason. That allowlist is **shrink-only**, like the baseline.
 - **`core-leaves-stay-below-bootstrap`** freezes the cycle fix below: `core/bootstrap.ts`
-  composes the module directories to describe one launch, so none of them may import it back.
+  describes one composed launch, so the core module paths named by the rule may not import it back.
   (Through phase 3 this rule was `core-leaves-never-reimport-types` and guarded
   `core/types.ts`; phase 4 melted that shell and repointed the rule at what replaced it.)
+
+## Historical migration record
+
+The following dated phases explain why the current rules exist. Paths and inventories describe the
+repository at that phase unless a later note updates them.
 
 Phase 0 (2026-08-17) established the mechanism: it deleted `core/review/address.ts` (a
 speculative primitive with no consumers), added the two rules above, and froze the first
@@ -187,9 +196,10 @@ process a run lives in. `process/updateNotice` stays where phase 3 put it — it
 startup-notice producer built on `appStateFile` — and consumes `core/install` for detection and
 release lookup. The move is path-only; no exported symbol changed.
 
-## Snapshot (2026-08-17, v0.19.0)
+## Historical snapshot (2026-08-17, v0.19.0)
 
-331 production modules, 1322 internal edges, **zero boundary violations and zero import
+This snapshot records the migration baseline; it is not a count of current main. At that point the
+graph contained 331 production modules, 1322 internal edges, **zero boundary violations and zero import
 cycles** — the baseline is empty. (The edge count grew from 1282 in phase 4: import sites that
 used to funnel through one re-export shell now name the modules they actually depend on, so the
 same dependencies are finally visible in the graph.) The initial audit (2026-08-16) found 28
@@ -232,8 +242,8 @@ The tier rules now hold with no exceptions. Two follow-ups are worth doing next:
 
 1. **Give `packages/hunk/src/core` an interior.** _Done (phases 0–4, see Module interiors)._ Every group is a
    module directory — `review/`, `vcs/`, `theme/`, `watch/`, `patch/`, `changeset/`,
-   `run/`, `process/` — and `core/*` root is down to `bootstrap.ts`, `reviewDigest.ts`,
-   and `liveComments.ts`, with no grab-bag left to import. What remains is per-file public
+   `history/`, `install/`, `run/`, `process/` — and `core/*` root contains `bootstrap.ts`,
+   `reviewDigest.ts`, `reviewDescriptor.ts`, and `liveComments.ts`, with no grab-bag re-export shell. What remains is per-file public
    surfaces for the modules that never got one: `changeset` has
    `changeset-internals-stay-in-module` and `review` has `review-reducer-is-module-internal`,
    while `run`, `process`, `theme`, `vcs`, `watch`, and `patch` are still public in full
@@ -244,6 +254,6 @@ The tier rules now hold with no exceptions. Two follow-ups are worth doing next:
    resolved `HunkConfigResolution`, the persisted view preferences, and the extension/keybinding
    tables. The review seam's named modules (`document`, `geometry`, `state`, …) stay public;
    their helpers become internal.
-2. **Tighten the adapter allowlist.** `ui-couples-to-session-via-adapters` currently allowlists
-   six files. As session coupling consolidates into `useTerminalReview` /
-   `useHunkSessionBridge`, shrink the list.
+2. **Tighten the adapter allowlist.** `ui-couples-to-session-via-adapters` names its current files
+   in `UI_SESSION_ADAPTERS` inside `.dependency-cruiser.cjs`. As session coupling consolidates into
+   `useTerminalReview` / `useHunkSessionBridge`, shrink that list rather than copying a count here.
