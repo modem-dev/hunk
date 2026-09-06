@@ -436,6 +436,38 @@ export function isCommandEnabled(command: AppCommand): boolean {
 }
 
 /**
+ * Labels this command should advertise given first-match dispatch.
+ *
+ * Help and menus must not show a chord that an earlier enabled command still
+ * answers to. Remaining aliases stay visible, so Space can become staging
+ * while page-down still shows `f`.
+ */
+export function advertisedKeyLabels(
+  commands: readonly AppCommand[],
+  command: AppCommand,
+): string[] {
+  if (!isCommandEnabled(command)) {
+    return [];
+  }
+
+  const index = commands.findIndex((candidate) => candidate.id === command.id);
+  const claimed = new Set<string>();
+  for (const candidate of commands.slice(0, Math.max(0, index))) {
+    if (!isCommandEnabled(candidate)) {
+      continue;
+    }
+    for (const key of candidate.keys) {
+      claimed.add(key);
+    }
+  }
+
+  return command.keys.flatMap((key, keyIndex) => {
+    const label = command.keyLabels[keyIndex];
+    return claimed.has(key) || !label ? [] : [label];
+  });
+}
+
+/**
  * Find the resolved vertical movement binding that matches one key.
  *
  * Modal selectors use the same command table as the review, so built-in aliases and user

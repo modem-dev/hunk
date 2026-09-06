@@ -1134,6 +1134,8 @@ export function App({
   // Diff headers select file staging scope without giving the sidebar keyboard ownership.
   const fileQuickActionsFocused =
     filesPaneVisible && focusArea === "files" && filePanelFocused && !hunkActionFocused;
+  // Hunk navigation can focus a binary or hunk-less file; Space then keeps the file action.
+  const hunkStagingActive = hunkActionFocused && workingTree.canToggleSelectedHunk;
 
   // One dispatch table for every app-level shortcut: the built-in commands
   // over App's live callbacks, then extension commands, so built-ins always
@@ -1145,8 +1147,8 @@ export function App({
         canStashSelectedFile: fileQuickActionsFocused && workingTree.canStashSelected,
         discardSelectedFile: workingTree.discardSelected,
         stashSelectedFile: workingTree.stashSelected,
-        canToggleFileStaged: !hunkActionFocused && workingTree.canToggleSelected,
-        canToggleHunkStaged: hunkActionFocused && workingTree.canToggleSelectedHunk,
+        canToggleFileStaged: !hunkStagingActive && workingTree.canToggleSelected,
+        canToggleHunkStaged: hunkStagingActive,
         toggleHunkStaged: workingTree.toggleSelectedHunk,
         canSwitchStagedView: Boolean(workingTree.pane),
         toggleFileStaged: workingTree.toggleSelected,
@@ -1437,13 +1439,11 @@ export function App({
           pane={workingTree.pane}
           theme={activeTheme}
           width={terminal.width}
-          hunkFocused={hunkActionFocused}
-          canToggle={
-            hunkActionFocused ? workingTree.canToggleSelectedHunk : workingTree.canToggleSelected
-          }
+          hunkFocused={hunkStagingActive}
+          canToggle={hunkStagingActive || workingTree.canToggleSelected}
           switchView={workingTree.switchView}
           toggleSelected={
-            hunkActionFocused ? workingTree.toggleSelectedHunk : workingTree.toggleSelected
+            hunkStagingActive ? workingTree.toggleSelectedHunk : workingTree.toggleSelected
           }
         />
       )}
@@ -1558,6 +1558,7 @@ export function App({
               setFilePanelFocused(false);
               setHunkActionFocused(true);
             }}
+            onReviewPointerDown={() => setFilePanelFocused(false)}
             canToggleHunkStaged={workingTree.canToggleHunk}
             onToggleHunkStaged={workingTree.pane ? workingTree.toggleHunk : undefined}
           />

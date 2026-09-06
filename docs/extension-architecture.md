@@ -318,7 +318,7 @@ key runs it, so the mouse surfaces read from it rather than restating it: the
 dropdown menus (`packages/hunk/src/ui/lib/appMenus.ts`) declare items as command ids plus
 menu-specific wording and checkbox state, and the controls help dialog
 (`packages/hunk/src/ui/lib/helpContent.ts`) declares curated rows the same way — both render
-their key text from resolved `keyLabels` and run entries through
+their key text from the chords first-match dispatch still delivers and run entries through
 `executeAppCommand`. A few commands ship with `defaultKeys: []` because they
 exist for a menu item; they never match a key but remain bindable by id.
 

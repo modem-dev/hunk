@@ -335,6 +335,37 @@ describe("PTY working-tree staging", () => {
     }
   });
 
+  test("a hunk-header click leaves file quick actions", async () => {
+    const root = createFixture();
+    const session = await harness.launchHunk({
+      cwd: root,
+      args: ["diff", "--sidebar", "--no-extensions", "--mode", "stack"],
+      cols: 150,
+      rows: 30,
+    });
+    try {
+      await session.waitForText("changed alpha", { timeout: 15_000 });
+      await session.press("d");
+      await session.waitForText("Discard changes");
+      await session.press("escape");
+      const lines = session
+        .getTerminalData()
+        .lines.map((line) => line.spans.map((span) => span.text).join(""));
+      const row = lines.findIndex((line) => line.includes("@@"));
+      expect(row).toBeGreaterThan(1);
+      const column = lines[row]!.indexOf("@@") + 1;
+      session.writeRaw(`\x1b[<0;${column};${row + 1}M\x1b[<0;${column};${row + 1}m`);
+      await session.waitIdle();
+      await session.press("d");
+      expect(await session.text()).not.toContain("Discard changes");
+      await session.press("s");
+      await harness.waitForSnapshot(session, (text) => !/M\s+alpha\.txt/.test(text), 5_000);
+      expect(await session.text()).not.toContain("Stash selected file");
+    } finally {
+      session.close();
+    }
+  });
+
   test("a file header returns Space from hunk scope to whole-file scope", async () => {
     const root = createFixture();
     const original = Array.from({ length: 40 }, (_, index) => `line ${index + 1}\n`).join("");

@@ -1,13 +1,14 @@
-import { isCommandEnabled, type AppCommand } from "./appCommands";
+import { advertisedKeyLabels, type AppCommand } from "./appCommands";
 
 /**
  * The curated content of the controls help dialog.
  *
  * The rows are hand-written — grouped, ordered, and worded for someone learning
  * the app — but the keys in them are not: each row names the commands it
- * documents and the key column is rendered from whatever chords those commands
- * currently answer to. Remap a command and help says so; unbind it and its row
- * disappears rather than advertising a key that does nothing.
+ * documents and the key column is rendered from the chords those commands would
+ * currently receive. Remap a command and help says so; unbind it, disable it, or
+ * let an earlier enabled command take its chord and that key disappears rather
+ * than advertising a shortcut that does something else.
  *
  * A few rows document behavior that is not a command at all (the mouse wheel,
  * F10 opening the menus, which belong to the widgets that own them). Those
@@ -151,11 +152,11 @@ export const HELP_COMMAND_IDS: readonly string[] = HELP_SECTIONS.flatMap((sectio
 /**
  * Render one entry's key column, or nothing when it documents no live key.
  *
- * A row about one command lists every chord it answers to, since there is room
+ * A row about one command lists every chord it currently answers to, since there is room
  * for the alternates; a row covering several commands shows each one's primary
- * chord instead, so the column stays readable. Either way a command that is
- * disabled or unbound contributes nothing, and a row left with no keys at all
- * is dropped by the caller.
+ * reachable chord instead, so the column stays readable. Either way a command that is
+ * disabled, unbound, or fully shadowed by an earlier enabled command contributes nothing,
+ * and a row left with no keys at all is dropped by the caller.
  */
 function helpEntryKeys(commands: readonly AppCommand[], spec: HelpEntrySpec): string | undefined {
   if ("keys" in spec) {
@@ -164,11 +165,12 @@ function helpEntryKeys(commands: readonly AppCommand[], spec: HelpEntrySpec): st
 
   const labels = spec.commandIds.flatMap((id) => {
     const command = commands.find((candidate) => candidate.id === id);
-    if (!command || !isCommandEnabled(command)) {
+    if (!command) {
       return [];
     }
 
-    return spec.commandIds.length === 1 ? [...command.keyLabels] : command.keyLabels.slice(0, 1);
+    const reachable = advertisedKeyLabels(commands, command);
+    return spec.commandIds.length === 1 ? reachable : reachable.slice(0, 1);
   });
 
   return labels.length > 0 ? labels.join(" / ") : undefined;

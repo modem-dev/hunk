@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, test } from "bun:test";
 import { KeyEvent, type ParsedKey } from "@opentui/core";
 import {
+  advertisedKeyLabels,
   buildAppCommands,
   builtinCommandKeyDefaults,
   dispatchAppCommand,
@@ -135,6 +136,49 @@ describe("built-in command chords", () => {
     expect(dispatchAppCommand(remapped.commands, keyEvent({ name: "s", sequence: "s" }))?.id).toBe(
       "hunk.view.toggleFilesPane",
     );
+  });
+
+  test("help and menus omit chords an earlier enabled command currently owns", () => {
+    const { commands } = createTestCommands(undefined, {
+      canDiscardSelectedFile: true,
+      canStashSelectedFile: true,
+      canToggleFileStaged: true,
+      canSwitchStagedView: true,
+    });
+    const labels = (id: string) =>
+      advertisedKeyLabels(commands, commands.find((command) => command.id === id)!);
+    const helpKeys = (description: string) =>
+      buildHelpSections(commands)
+        .flatMap((section) => section.rows)
+        .find((row) => row.description === description)?.keys;
+    const menus = buildAppMenus({
+      commands,
+      copyDecorations: false,
+      cursorLine: "row",
+      layoutMode: "stack",
+      filesPaneVisible: true,
+      showAgentNotes: false,
+      showHelp: false,
+      showHunkHeaders: true,
+      showLineNumbers: true,
+      showMenuBar: true,
+      wrapLines: false,
+    });
+    const fileHint = (commandId: string) =>
+      menus.file?.find((entry) => entry.kind === "item" && entry.commandId === commandId);
+
+    expect(labels("hunk.review.pageDown")).toEqual(["PageDown", "f"]);
+    expect(labels("hunk.review.halfPageDown")).toEqual(["Ctrl+D"]);
+    expect(labels("hunk.view.toggleFilesPane")).toEqual([]);
+    expect(labels("hunk.app.toggleFocusArea")).toEqual([]);
+    expect(helpKeys("page down")).toBe("PageDown / f");
+    expect(helpKeys("half page down / up")).toBe("Ctrl+D / u");
+    expect(helpKeys("sidebar / theme selector")).toBe("t");
+    expect(helpKeys("toggle files/filter focus")).toBeUndefined();
+    expect(helpKeys("stage / unstage focused file or hunk")).toBe("Space");
+    expect(helpKeys("switch unstaged / staged stream")).toBe("Tab");
+    expect(fileHint("hunk.app.toggleFocusArea")).toMatchObject({ hint: undefined });
+    expect(fileHint("hunk.review.toggleStagedView")).toMatchObject({ hint: "Tab" });
   });
 
   test("focused hunk staging owns Space without invoking file staging", () => {

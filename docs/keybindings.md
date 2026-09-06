@@ -161,7 +161,10 @@ entry.
 
 The menus and the controls help dialog (`?`) show the keys for the commands they
 present, so remapping something changes what they advertise. Unbinding a menu
-command keeps its menu item and simply stops showing a key.
+command keeps its menu item and simply stops showing a key. When two enabled
+commands share a chord, only the first-match owner advertises it; remaining
+aliases stay visible (`f` still pages, `Ctrl+d` still half-pages, `/` still
+focuses the filter).
 
 Extension commands are named `<extensionId>.<commandId>` and remap the same way
 (see [docs/extensions.md](extensions.md)). An explicitly activated extension

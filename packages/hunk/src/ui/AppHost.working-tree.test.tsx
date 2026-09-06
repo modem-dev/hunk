@@ -164,6 +164,25 @@ describe("working-tree stream actions", () => {
     expect(runTestGit(root, "show", ":beta.txt")).toBe("staged beta\n");
   });
 
+  test("Space keeps the file action when hunk staging is not available", async () => {
+    const root = await createReview({
+      prepare: (root) => {
+        writeFileSync(join(root, "alpha.txt"), "one\ntwo\nthree\n");
+        writeFileSync(join(root, "blob.bin"), Buffer.from([0, 1, 0, 2, 255]));
+        runTestGit(root, "add", "--", "blob.bin");
+        runTestGit(root, "commit", "--only", "-m", "binary", "--", "blob.bin");
+        writeFileSync(join(root, "blob.bin"), Buffer.from([0, 1, 0, 3, 255]));
+      },
+    });
+    await waitForReview(() => setup!.captureCharFrame().includes("blob.bin"));
+    await press("]");
+    await waitForReview(() => setup!.captureCharFrame().includes("Stage file"));
+    expect(setup!.captureCharFrame()).not.toContain("Stage hunk");
+    await press(" ");
+    await waitForReview(() => setup!.captureCharFrame().includes("Staged blob.bin."));
+    expect(runTestGit(root, "status", "--porcelain", "--", "blob.bin").trim()).toBe("M  blob.bin");
+  });
+
   test("hunk navigation makes Space mutate only the active hunk on either stream side", async () => {
     const original = Array.from({ length: 40 }, (_, index) => `line ${index + 1}\n`).join("");
     const root = await createReview({

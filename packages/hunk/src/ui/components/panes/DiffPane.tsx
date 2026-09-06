@@ -365,6 +365,7 @@ export function DiffPane({
   onViewportCenteredHunkChange,
   onViewportLineCursorChange,
   onHunkFocus,
+  onReviewPointerDown,
   canToggleHunkStaged,
   onToggleHunkStaged,
 }: {
@@ -441,6 +442,8 @@ export function DiffPane({
   onViewportCenteredHunkChange?: (fileId: string, hunkIndex: number) => void;
   onViewportLineCursorChange?: (cursor: LineCursor, explicit?: boolean) => void;
   onHunkFocus?: () => void;
+  /** Review-stream clicks that this pane consumes, so ancestors can drop file-panel scope. */
+  onReviewPointerDown?: () => void;
   canToggleHunkStaged?: (fileId: string, hunkIndex: number) => boolean;
   onToggleHunkStaged?: (fileId: string, hunkIndex: number) => boolean;
 }) {
@@ -1537,6 +1540,10 @@ export function DiffPane({
         return;
       }
 
+      // Consumed review hits never bubble to App's wrapper. Leave file quick-action
+      // scope here so d/s cannot discard/stash after a hunk-header or gap click.
+      onReviewPointerDown?.();
+
       // Detect double-click and triple-click for word/line selection.
       const now = Date.now();
       const timeSinceLastClick = now - lastClickTimeRef.current;
@@ -1607,6 +1614,7 @@ export function DiffPane({
       renderer,
       resolveCopySelectionPoint,
       suppressNativeSelection,
+      onReviewPointerDown,
       onToggleHunkStaged,
       canToggleHunkStaged,
       lineCursors,
