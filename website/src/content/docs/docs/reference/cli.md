@@ -412,30 +412,30 @@ hunk session reload --session-path /path/to/live-window --source /path/to/other-
 attach one live inline review note
 
 ```bash
-hunk session comment add (<session-id> | --repo <path>) --file <path> (--old-line <n> | --new-line <n>) --summary <text> [--rationale <text>] [--author <name>] [--markup <stml>] [--focus] [--json]
+hunk session comment add (<session-id> | --repo <path>) (--reply-to <note-id> | --file <path> (--old-line <n> | --new-line <n>)) --summary <text> [--rationale <text>] [--author <name>] [--markup <stml>] [--focus] [--json]
 ```
 
-| Option               | Description                                               |
-| -------------------- | --------------------------------------------------------- |
-| `--file <path>`      | diff file path as shown by Hunk Required.                 |
-| `--summary <text>`   | short review note Required.                               |
-| `--repo <path>`      | target the live session whose repo root matches this path |
-| `--old-line <n>`     | 1-based line number on the old side                       |
-| `--new-line <n>`     | 1-based line number on the new side                       |
-| `--rationale <text>` | optional longer explanation                               |
-| `--markup <stml>`    | experimental STML body (target session must opt in)       |
-| `--author <name>`    | optional author label                                     |
-| `--focus`            | add the note and focus the viewport on it                 |
-| `--json`             | emit structured JSON                                      |
+| Option                 | Description                                               |
+| ---------------------- | --------------------------------------------------------- |
+| `--file <path>`        | diff file path as shown by Hunk                           |
+| `--reply-to <note-id>` | reply to an existing note at its anchor                   |
+| `--summary <text>`     | short review note Required.                               |
+| `--repo <path>`        | target the live session whose repo root matches this path |
+| `--old-line <n>`       | 1-based line number on the old side                       |
+| `--new-line <n>`       | 1-based line number on the new side                       |
+| `--rationale <text>`   | optional longer explanation                               |
+| `--markup <stml>`      | experimental STML body (target session must opt in)       |
+| `--author <name>`      | optional author label                                     |
+| `--focus`              | add the note and focus the viewport on it                 |
+| `--json`               | emit structured JSON                                      |
 
 **Positionals:** `[sessionId]`.
-
-**Constraints:** exactly one of `--old-line <n>`, `--new-line <n>`.
 
 **Examples:**
 
 ```bash
 hunk session comment add --repo . --file README.md --new-line 103 --summary "Tighten this wording"
+hunk session comment add --repo . --reply-to user:123 --summary "Addressed in the latest revision"
 ```
 
 ### `hunk session comment apply`
@@ -473,9 +473,14 @@ Stdin JSON shape:
         "summary": "Explain this hunk",
         "rationale": "Optional detail",
         "author": "Pi"
+      },
+      {
+        "replyTo": "user:123",
+        "summary": "Addressed in the latest revision"
       }
     ]
   }
+Each item is either a reply with `replyTo`, or a root with `filePath` and one target.
 ```
 
 ### `hunk session comment list`
