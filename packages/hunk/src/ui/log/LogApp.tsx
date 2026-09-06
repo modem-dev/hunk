@@ -553,7 +553,7 @@ export function LogApp({
                     >
                       <HistoryGraphLine text={projected.graph} colors={graphColors} />
                       <HistoryGraphLine text={projected.continuation} colors={graphColors} />
-                      <HistoryGraphLine text={projected.continuation} colors={graphColors} />
+                      <HistoryGraphLine text={projected.convergence} colors={graphColors} />
                     </box>
                   ) : null}
                   <box

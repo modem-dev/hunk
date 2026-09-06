@@ -81,6 +81,8 @@ describe("responsive log layout", () => {
     expect(wide.relativeTime).toBe("1 day ago");
     expect(wide.metadata).toBe("adalovelace · 1 day ago");
     expect(wide.secondary).toContain("HEAD -> main");
+    expect(wide.secondary).toContain("tag: v1.0.0");
+    expect(wide.convergence).toBe(wide.continuation);
     expect(measureTextWidth(wide.displayId)).toBe(8);
     expect(wide.copyIcon).toBe("⧉");
     expect(wide.graphWidth + wide.leftWidth + wide.rightWidth + 2).toBeLessThanOrEqual(116);
@@ -117,7 +119,64 @@ describe("responsive log layout", () => {
     });
     expect(grouped.graph).toBe("│");
     expect(grouped.continuation).toBe("│");
+    expect(grouped.convergence).toBe("│");
     expect(grouped.graphWidth).toBe(3);
+  });
+
+  test("shows compact refs below the wide breakpoint when decorations are enabled", () => {
+    const medium = projectResponsiveLogRow({
+      row,
+      presentation,
+      layout: resolveLogResponsiveLayout(80, 24),
+      width: 80,
+      now,
+    });
+    expect(medium.secondary).toBe("(main)");
+    const unsafe = projectResponsiveLogRow({
+      row: {
+        ...row,
+        commit: {
+          ...row.commit,
+          decorations: [
+            {
+              kind: "head",
+              label: "HEAD\u001b[31m",
+              attachedLocalBranch: "main\nforged",
+            },
+          ],
+        },
+      },
+      presentation,
+      layout: resolveLogResponsiveLayout(80, 24),
+      width: 80,
+      now,
+    });
+    expect(unsafe.secondary).not.toMatch(/[\u001b\n]/);
+    expect(
+      projectResponsiveLogRow({
+        row,
+        presentation: { ...presentation, decorations: false },
+        layout: resolveLogResponsiveLayout(80, 24),
+        width: 80,
+        now,
+      }).secondary,
+    ).toBe("");
+  });
+
+  test("renders lane convergence in graph view", () => {
+    const converging = projectResponsiveLogRow({
+      row: {
+        ...row,
+        lanesBefore: ["main", "branch"],
+        lanesAfter: ["main"],
+        convergences: [{ from: 1, to: 0 }],
+      },
+      presentation,
+      layout: resolveLogResponsiveLayout(80, 24),
+      width: 80,
+      now,
+    });
+    expect(converging.convergence).toContain("╯");
   });
 
   test("keeps the grouped rail and every column inside narrow terminal bounds", () => {

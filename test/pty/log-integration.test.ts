@@ -361,6 +361,13 @@ describe("interactive hunk log", () => {
       await session.waitForText(/Merge side/, { timeout: 15_000 });
       await session.press("f10");
       await session.press("right");
+      await session.press("down");
+      await session.press("enter");
+      const graph = await session.waitForText(/╯/, { timeout: 5_000 });
+      expect(graph).not.toContain("Commits on");
+
+      await session.press("f10");
+      await session.press("right");
       await session.press("right");
       await session.press("right");
       await session.waitForText(/Compare with parent/, { timeout: 5_000 });

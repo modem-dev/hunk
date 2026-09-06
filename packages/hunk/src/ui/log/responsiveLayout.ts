@@ -3,6 +3,7 @@ import { sanitizeTerminalLine } from "../../lib/terminalText";
 import {
   formatHistoryDecorations,
   renderHistoryContinuation,
+  renderHistoryConvergence,
   renderHistoryGraph,
 } from "../history/staticProjection";
 import { fitText, measureTextWidth } from "../lib/text";
@@ -20,6 +21,7 @@ export interface LogResponsiveLayout {
 export interface LogResponsiveRow {
   graph: string;
   continuation: string;
+  convergence: string;
   graphWidth: number;
   leftWidth: number;
   rightWidth: number;
@@ -45,15 +47,20 @@ export function resolveLogResponsiveLayout(width: number, height: number): LogRe
 }
 
 /** Keep the most relevant ref summary complete before falling back to marked truncation. */
-function fitResponsiveDecorations(row: HistoryGraphRow, width: number) {
+function fitResponsiveDecorations(row: HistoryGraphRow, width: number, compact: boolean) {
   const full = formatHistoryDecorations(row).trim();
-  if (measureTextWidth(full) <= width) return full;
   const head = row.commit.decorations.find((entry) => entry.kind === "head");
+  const safeLabel = (label: string) => sanitizeTerminalLine(label).replaceAll("\t", " ");
+  const headLabel = head ? safeLabel(head.label) : "";
+  const attachedBranch = head?.attachedLocalBranch ? safeLabel(head.attachedLocalBranch) : "";
   const headOnly = head
-    ? `(${head.attachedLocalBranch ? `${head.label} -> ${head.attachedLocalBranch}` : head.label})`
+    ? `(${attachedBranch ? `${headLabel} -> ${attachedBranch}` : headLabel})`
     : "";
-  if (headOnly && measureTextWidth(headOnly) <= width) return headOnly;
-  const preferred = headOnly || full;
+  if (!compact && measureTextWidth(full) <= width) return full;
+  const first = row.commit.decorations[0];
+  const compactLabel = attachedBranch || headLabel || (first ? safeLabel(first.label) : "");
+  const preferred = compact && compactLabel ? `(${compactLabel})` : headOnly || full;
+  if (measureTextWidth(preferred) <= width) return preferred;
   if (preferred.startsWith("(") && preferred.endsWith(")") && width >= 3) {
     return `${fitText(preferred.slice(0, -1), width - 1, "…")})`;
   }
@@ -84,6 +91,10 @@ export function projectResponsiveLogRow({
   const rawContinuation = presentation.graph
     ? renderHistoryContinuation(row, !presentation.unicode)
     : rawGraph;
+  const renderedConvergence = presentation.graph
+    ? renderHistoryConvergence(row, !presentation.unicode)
+    : "";
+  const rawConvergence = renderedConvergence || rawContinuation;
   const safeId = sanitizeTerminalLine(row.commit.displayId).replaceAll("\t", " ");
   const maxIdWidth = Math.max(
     1,
@@ -93,10 +104,9 @@ export function projectResponsiveLogRow({
   const copyIcon = presentation.unicode ? "⧉" : "c";
   const idActionWidth = measureTextWidth(displayId) + 1 + measureTextWidth(copyIcon);
   const secondaryWidth = Math.max(idActionWidth, Math.floor(contentWidth * 0.35));
-  const secondary =
-    presentation.decorations && layout.density === "wide"
-      ? fitResponsiveDecorations(row, secondaryWidth)
-      : "";
+  const secondary = presentation.decorations
+    ? fitResponsiveDecorations(row, secondaryWidth, layout.density !== "wide")
+    : "";
   const rightWidth = Math.max(idActionWidth, measureTextWidth(secondary));
   const minimumGraphWidth = presentation.graph
     ? 0
@@ -111,10 +121,15 @@ export function projectResponsiveLogRow({
   const graph = graphContentWidth > 0 ? fitText(rawGraph, graphContentWidth, "…") : "";
   const continuation =
     graphContentWidth > 0 ? fitText(rawContinuation, graphContentWidth, "…") : "";
+  const convergence = graphContentWidth > 0 ? fitText(rawConvergence, graphContentWidth, "…") : "";
   const graphWidth = graph
     ? Math.min(
         maximumGraphWidth,
-        Math.max(measureTextWidth(graph), measureTextWidth(continuation)) + 2,
+        Math.max(
+          measureTextWidth(graph),
+          measureTextWidth(continuation),
+          measureTextWidth(convergence),
+        ) + 2,
       )
     : 0;
   const columnGap = contentWidth > graphWidth + rightWidth ? desiredGap : 0;
@@ -142,6 +157,7 @@ export function projectResponsiveLogRow({
   return {
     graph,
     continuation,
+    convergence,
     graphWidth,
     leftWidth,
     rightWidth,
