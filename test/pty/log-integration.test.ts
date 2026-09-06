@@ -235,6 +235,7 @@ describe("interactive hunk log", () => {
     try {
       const wide = await session.waitForText(/Commits on Sep 6, 2026/, { timeout: 15_000 });
       expect(wide).toContain("history ·");
+      expect(wide).toContain("○─ Commits on Sep 6, 2026");
       expect(wide).toContain("Commits on Sep 5, 2026");
       expect(wide).toMatch(/Commits on Sep 6, 2026\n\s*│\s*\n\s*│\s+Second history commit/);
       expect(wide).not.toContain("Responsive description");
@@ -303,7 +304,7 @@ describe("interactive hunk log", () => {
     });
     try {
       const history = await session.waitForText(/Second history commit/, { timeout: 15_000 });
-      expect(history).toContain("-o Commits on Sep 6, 2026");
+      expect(history).toContain("o- Commits on Sep 6, 2026");
       expect(history).toContain("|");
 
       await session.press("f10");

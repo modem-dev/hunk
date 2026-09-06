@@ -511,7 +511,7 @@ export function LogApp({
                 {showDayHeader ? (
                   <text>
                     <span fg={logPalette.timeline}>
-                      {snapshot.presentation.unicode ? "─○" : "-o"}
+                      {snapshot.presentation.unicode ? "○─" : "o-"}
                     </span>
                     <span fg={logPalette.separator}> </span>
                     <span fg={logPalette.dayHeading}>
