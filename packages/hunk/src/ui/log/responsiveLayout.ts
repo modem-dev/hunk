@@ -44,6 +44,22 @@ export function resolveLogResponsiveLayout(width: number, height: number): LogRe
   };
 }
 
+/** Keep the most relevant ref summary complete before falling back to marked truncation. */
+function fitResponsiveDecorations(row: HistoryGraphRow, width: number) {
+  const full = formatHistoryDecorations(row).trim();
+  if (measureTextWidth(full) <= width) return full;
+  const head = row.commit.decorations.find((entry) => entry.kind === "head");
+  const headOnly = head
+    ? `(${head.attachedLocalBranch ? `${head.label} -> ${head.attachedLocalBranch}` : head.label})`
+    : "";
+  if (headOnly && measureTextWidth(headOnly) <= width) return headOnly;
+  const preferred = headOnly || full;
+  if (preferred.startsWith("(") && preferred.endsWith(")") && width >= 3) {
+    return `${fitText(preferred.slice(0, -1), width - 1, "…")})`;
+  }
+  return fitText(preferred, width, "…");
+}
+
 /** Project one commit into left/right responsive columns using terminal display-cell widths. */
 export function projectResponsiveLogRow({
   row,
@@ -75,12 +91,12 @@ export function projectResponsiveLogRow({
   );
   const displayId = fitText(safeId, maxIdWidth, "…");
   const copyIcon = presentation.unicode ? "⧉" : "c";
-  const rawSecondary =
-    presentation.decorations && layout.density === "wide"
-      ? formatHistoryDecorations(row).trim()
-      : "";
   const idActionWidth = measureTextWidth(displayId) + 1 + measureTextWidth(copyIcon);
-  const secondary = fitText(rawSecondary, Math.max(idActionWidth, Math.floor(contentWidth * 0.35)));
+  const secondaryWidth = Math.max(idActionWidth, Math.floor(contentWidth * 0.35));
+  const secondary =
+    presentation.decorations && layout.density === "wide"
+      ? fitResponsiveDecorations(row, secondaryWidth)
+      : "";
   const rightWidth = Math.max(idActionWidth, measureTextWidth(secondary));
   const minimumGraphWidth = presentation.graph
     ? 0

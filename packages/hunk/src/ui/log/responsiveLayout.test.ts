@@ -98,6 +98,7 @@ describe("responsive log layout", () => {
       width: 120,
       now,
     });
+    expect(longDecoration.secondary).toEndWith("…)");
     expect(
       longDecoration.graphWidth +
         longDecoration.leftWidth +
