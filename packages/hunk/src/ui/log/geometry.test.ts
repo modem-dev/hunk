@@ -69,6 +69,29 @@ describe("log viewport geometry", () => {
     expect(geometry.usedHeight).toBe(9);
   });
 
+  test("bounds planning work when jumping deep into a large history", () => {
+    let indexedReads = 0;
+    const manyRows = new Proxy(
+      Array.from({ length: 10_000 }, (_, index) => rows[index % rows.length]!),
+      {
+        get(target, property, receiver) {
+          if (typeof property === "string" && /^\d+$/.test(property)) indexedReads += 1;
+          return Reflect.get(target, property, receiver);
+        },
+      },
+    );
+    const geometry = planLogViewportGeometry({
+      rows: manyRows,
+      selected: 9_999,
+      requestedTop: 0,
+      bodyHeight: 17,
+      groupByDay: false,
+    });
+    expect(geometry.top).toBe(9_995);
+    expect(geometry.entries).toHaveLength(5);
+    expect(indexedReads).toBeLessThan(100);
+  });
+
   test("advances the commit-index top until the selection fits", () => {
     const geometry = planLogViewportGeometry({
       rows,

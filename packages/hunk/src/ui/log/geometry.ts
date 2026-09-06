@@ -68,9 +68,12 @@ export function planLogViewportGeometry({
   }
 
   const safeSelected = Math.max(0, Math.min(rows.length - 1, selected));
-  let top = Math.max(0, Math.min(safeSelected, requestedTop));
-  while (top < safeSelected && !selectionFits(rows, top, safeSelected, bodyHeight, groupByDay))
-    top += 1;
+  const minimumTop = Math.max(0, Math.min(safeSelected, requestedTop));
+  let top = safeSelected;
+  // Walk backward only through entries that can share the viewport with the selection. Starting
+  // at requestedTop would revisit the same bounded window for every skipped commit in long logs.
+  while (top > minimumTop && selectionFits(rows, top - 1, safeSelected, bodyHeight, groupByDay))
+    top -= 1;
   // Near EOF, backfill earlier commits instead of leaving rows empty below the last group.
   while (top > 0) {
     let candidateHeight = 0;
