@@ -553,26 +553,6 @@ export async function runGitTextAsync(options: RunGitTextOptions): Promise<strin
 const GIT_BOOLEAN_TRUE_VALUES = new Set(["true", "yes", "on", "1", "always"]);
 const GIT_BOOLEAN_FALSE_VALUES = new Set(["false", "no", "off", "0", "never"]);
 
-/** Read an optional Git config value without treating an unset key as an error. */
-function readOptionalGitConfig(
-  input: GitBackedInput,
-  key: string,
-  options: Omit<RunGitTextOptions, "input" | "args"> = {},
-) {
-  const result = runGitCommand({
-    input,
-    args: ["config", "--get", key],
-    ...options,
-    acceptedExitCodes: [0, 1],
-  });
-
-  if (result.exitCode !== 0) {
-    return undefined;
-  }
-
-  return result.stdout.trim() || undefined;
-}
-
 /** Normalize Git's diff.colorMoved config into the mode Hunk should request from Git. */
 function normalizeGitColorMovedMode(value: string | undefined) {
   if (!value) {
@@ -589,31 +569,6 @@ function normalizeGitColorMovedMode(value: string | undefined) {
   }
 
   return value;
-}
-
-/** Resolve whether Hunk should ask Git to color moved lines for this patch command. */
-export function resolveGitColorMovedOptions(
-  input: GitBackedInput,
-  options: Omit<RunGitTextOptions, "input" | "args"> = {},
-): GitColorMovedOptions | null {
-  const gitMode = normalizeGitColorMovedMode(
-    readOptionalGitConfig(input, "diff.colorMoved", options),
-  );
-
-  if (gitMode === null) {
-    return null;
-  }
-
-  const mode = gitMode ?? (input.options.colorMoved ? "zebra" : undefined);
-  if (!mode) {
-    return null;
-  }
-
-  const whitespaceMode = readOptionalGitConfig(input, "diff.colorMovedWS", options);
-  return {
-    mode,
-    whitespaceMode,
-  };
 }
 
 /** Resolve moved-line configuration without blocking an embedded renderer. */

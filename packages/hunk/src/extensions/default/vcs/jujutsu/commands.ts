@@ -414,18 +414,6 @@ export async function resolveJjRangeEndpointsAsync(
   return { newCommitId: toCommitIds[0]!, oldCommitIds: [fromCommitIds[0]!] };
 }
 
-export function resolveJjRepoRoot(
-  input: JjBackedInput,
-  options: Omit<RunJjTextOptions, "input" | "args"> = {},
-) {
-  const repoRoot = runJjText({
-    input,
-    args: ["root"],
-    ...options,
-  }).trim();
-  return normalizePathForOS(repoRoot);
-}
-
 /** Resolve the JJ repository root without blocking renderer input. */
 export async function resolveJjRepoRootAsync(
   input: JjBackedInput,

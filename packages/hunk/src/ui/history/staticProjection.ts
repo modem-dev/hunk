@@ -28,14 +28,6 @@ export function foreground(color: string) {
   return `\x1b[38;2;${red};${green};${blue}m`;
 }
 
-/** Convert a validated #rrggbb theme color to a terminal SGR background. */
-export function background(color: string) {
-  const [red, green, blue] = [1, 3, 5].map((offset) =>
-    Number.parseInt(color.slice(offset, offset + 2), 16),
-  );
-  return `\x1b[48;2;${red};${green};${blue}m`;
-}
-
 /** Render one symbolic lane prefix without consulting commit metadata or refs. */
 export function renderHistoryGraph(row: HistoryGraphRow, ascii: boolean) {
   const vertical = ascii ? "|" : "│";
