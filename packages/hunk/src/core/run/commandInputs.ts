@@ -204,31 +204,60 @@ export interface SessionReloadCommandInput {
   sourcePath?: string;
 }
 
-export interface SessionCommentAddCommandInput {
+interface SessionCommentBodyInput {
+  summary: string;
+  rationale?: string;
+  markup?: string;
+  author?: string;
+}
+
+export type SessionCommentAddTargetInput =
+  | {
+      filePath: string;
+      side: "old" | "new";
+      line: number;
+      replyTo?: never;
+    }
+  | {
+      filePath?: never;
+      side?: never;
+      line?: never;
+      replyTo: string;
+    };
+
+export type SessionCommentAddCommandInput = {
   kind: "session";
   action: "comment-add";
   output: SessionCommandOutput;
   selector: SessionSelectorInput;
-  filePath: string;
-  side: "old" | "new";
-  line: number;
-  summary: string;
-  rationale?: string;
-  markup?: string;
-  author?: string;
   reveal: boolean;
-}
+} & SessionCommentBodyInput &
+  SessionCommentAddTargetInput;
 
-export interface SessionCommentApplyItemInput {
-  filePath: string;
-  hunkNumber?: number;
-  side?: "old" | "new";
-  line?: number;
-  summary: string;
-  rationale?: string;
-  markup?: string;
-  author?: string;
-}
+export type SessionCommentApplyTargetInput =
+  | {
+      filePath: string;
+      hunkNumber: number;
+      side?: "old" | "new";
+      line?: number;
+      replyTo?: never;
+    }
+  | {
+      filePath: string;
+      hunkNumber?: never;
+      side: "old" | "new";
+      line: number;
+      replyTo?: never;
+    }
+  | {
+      filePath?: never;
+      hunkNumber?: never;
+      side?: never;
+      line?: never;
+      replyTo: string;
+    };
+
+export type SessionCommentApplyItemInput = SessionCommentBodyInput & SessionCommentApplyTargetInput;
 
 export interface SessionCommentApplyCommandInput {
   kind: "session";

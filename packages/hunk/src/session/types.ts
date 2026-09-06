@@ -114,11 +114,12 @@ export interface HunkSessionState {
 export type HunkSessionRegistration = SessionRegistration<HunkSessionInfo>;
 export type HunkSessionSnapshot = SessionSnapshot<HunkSessionState>;
 
-export interface CommentToolInput extends SessionTargetInput, CommentTargetInput {
-  reveal?: boolean;
-}
+export type CommentToolInput = SessionTargetInput &
+  CommentTargetInput & {
+    reveal?: boolean;
+  };
 
-export interface CommentBatchItemInput extends CommentTargetInput {}
+export type CommentBatchItemInput = CommentTargetInput;
 
 export interface CommentBatchToolInput extends SessionTargetInput {
   comments: CommentBatchItemInput[];
@@ -174,6 +175,7 @@ export interface ClearHighlightsToolInput extends SessionTargetInput {
 
 export interface SessionLiveCommentSummary {
   commentId: string;
+  parentId?: string;
   filePath: string;
   hunkIndex: number;
   side: DiffSide;

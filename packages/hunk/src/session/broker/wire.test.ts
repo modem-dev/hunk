@@ -220,7 +220,18 @@ describe("hunk session wire parsing", () => {
         selectedHunkOldRange: [0, 0],
         selectedHunkNewRange: [0, 3],
         showAgentNotes: true,
-        liveComments: [],
+        liveComments: [
+          {
+            commentId: "reply-1",
+            parentId: "note-root",
+            filePath: "new-file.ts",
+            hunkIndex: 0,
+            side: "new",
+            line: 1,
+            summary: "Reply",
+            createdAt: "2026-03-22T00:00:00.000Z",
+          },
+        ],
         reviewNotes: [
           {
             noteId: "note-1",
@@ -239,6 +250,7 @@ describe("hunk session wire parsing", () => {
     expect(snapshot?.state).toMatchObject({
       selectedHunkOldRange: [0, 0],
       selectedHunkNewRange: [0, 3],
+      liveComments: [{ commentId: "reply-1", parentId: "note-root" }],
       reviewNotes: [{ parentId: "note-root", oldRange: [0, 0], newRange: [0, 3] }],
     });
   });

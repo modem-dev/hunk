@@ -90,18 +90,23 @@ For one note, use `comment add`:
 hunk session comment add --repo . --file README.md --new-line 103 --summary "Tighten this wording"
 ```
 
-For multiple notes, use one stdin batch with `comment apply`:
+Reply to an existing note by id; the reply inherits the parent's file and code anchor:
 
 ```bash
-printf '%s\n' '{"comments":[{"filePath":"README.md","newLine":103,"summary":"Tighten this wording"}]}' \
+hunk session comment add --repo . --reply-to user:123 --summary "Addressed in the latest revision"
+```
+
+For multiple notes or replies, use one stdin batch with `comment apply`:
+
+```bash
+printf '%s\n' '{"comments":[{"filePath":"README.md","newLine":103,"summary":"Tighten this wording"},{"replyTo":"user:123","summary":"Addressed"}]}' \
   | hunk session comment apply --repo . --stdin
 ```
 
-`comment apply` payload items need:
+Each `comment apply` item requires `summary` and either:
 
-- `filePath`
-- `summary`
-- exactly one target such as `hunk`, `hunkNumber`, `oldLine`, or `newLine`
+- `replyTo` by itself to inherit an existing note's anchor, or
+- `filePath` with exactly one target such as `hunk`, `hunkNumber`, `oldLine`, or `newLine`
 
 If you want the UI to jump to the new note, add `--focus` to `comment add` or `comment apply`.
 

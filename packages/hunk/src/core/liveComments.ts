@@ -14,11 +14,7 @@ export interface UserNoteLineTarget {
   line: number;
 }
 
-export interface CommentTargetInput {
-  filePath: string;
-  hunkIndex?: number;
-  side?: DiffSide;
-  line?: number;
+export interface CommentBodyInput {
   summary: string;
   rationale?: string;
   /** Optional STML markup rendered as the note body (see packages/hunk/src/ui/lib/stml). */
@@ -26,8 +22,35 @@ export interface CommentTargetInput {
   author?: string;
 }
 
+export type CommentTargetInput = CommentBodyInput &
+  (
+    | {
+        filePath: string;
+        hunkIndex: number;
+        side?: DiffSide;
+        line?: number;
+        replyTo?: never;
+      }
+    | {
+        filePath: string;
+        hunkIndex?: never;
+        side: DiffSide;
+        line: number;
+        replyTo?: never;
+      }
+    | {
+        filePath?: never;
+        hunkIndex?: never;
+        side?: never;
+        line?: never;
+        /** Existing semantic note whose file and anchor this reply inherits. */
+        replyTo: string;
+      }
+  );
+
 export interface LiveComment extends AgentAnnotation {
   id: string;
+  parentId?: string;
   source: "mcp";
   author?: string;
   createdAt: string;
@@ -56,7 +79,12 @@ export function findHunkIndexForLine(file: DiffFile, side: DiffSide, line: numbe
 /** Resolve either a hunk-wide or line-specific target against one visible diff file. */
 export function resolveCommentTarget(
   file: DiffFile,
-  input: CommentTargetInput,
+  input: CommentBodyInput & {
+    filePath: string;
+    hunkIndex?: number;
+    side?: DiffSide;
+    line?: number;
+  },
 ): ResolvedCommentTarget {
   if (input.hunkIndex !== undefined) {
     const hunk = file.metadata.hunks[input.hunkIndex];
@@ -88,13 +116,19 @@ export function resolveCommentTarget(
 
 /** Convert one incoming session-daemon comment command into a live annotation. */
 export function buildLiveComment(
-  input: CommentTargetInput & { side: DiffSide; line: number },
+  input: CommentBodyInput & {
+    filePath: string;
+    side: DiffSide;
+    line: number;
+    replyTo?: string;
+  },
   commentId: string,
   createdAt: string,
   hunkIndex: number,
 ): LiveComment {
   return {
     id: commentId,
+    ...(input.replyTo ? { parentId: input.replyTo } : {}),
     source: "mcp",
     author: input.author,
     createdAt,

@@ -135,16 +135,42 @@ export const cliInputSchema: z.ZodType<CliInput> = z.union([
   }),
 ]) satisfies z.ZodType<CliInput>;
 
-const commentApplyItemSchema = z.strictObject({
-  filePath: z.string(),
-  hunkNumber: z.int().positive().optional(),
-  side: sideSchema.optional(),
-  line: z.int().positive().optional(),
-  summary: z.string(),
-  rationale: z.string().optional(),
-  markup: z.string().optional(),
-  author: z.string().optional(),
-});
+/** Require a comment to name either one parent or one complete root anchor. */
+function hasValidCommentTarget(input: {
+  filePath?: string;
+  hunkNumber?: number;
+  side?: "old" | "new";
+  line?: number;
+  replyTo?: string;
+}) {
+  if (input.replyTo !== undefined) {
+    return (
+      input.filePath === undefined &&
+      input.hunkNumber === undefined &&
+      input.side === undefined &&
+      input.line === undefined
+    );
+  }
+  if (input.filePath === undefined) return false;
+  // Preserve the existing hunk-first resolution when callers also send line fields.
+  return input.hunkNumber !== undefined || (input.side !== undefined && input.line !== undefined);
+}
+
+const commentApplyItemSchema = z
+  .strictObject({
+    filePath: z.string().optional(),
+    hunkNumber: z.int().positive().optional(),
+    side: sideSchema.optional(),
+    line: z.int().positive().optional(),
+    replyTo: z.string().min(1).optional(),
+    summary: z.string(),
+    rationale: z.string().optional(),
+    markup: z.string().optional(),
+    author: z.string().optional(),
+  })
+  .refine(hasValidCommentTarget, {
+    message: "A comment must be either a reply or one explicitly anchored root note.",
+  });
 
 export const sessionDaemonRequestSchema = z.discriminatedUnion("action", [
   z.strictObject({ action: z.literal("list") }),
@@ -172,18 +198,23 @@ export const sessionDaemonRequestSchema = z.discriminatedUnion("action", [
     nextInput: cliInputSchema,
     sourcePath: z.string().optional(),
   }),
-  z.strictObject({
-    action: z.literal("comment-add"),
-    selector: selectorSchema,
-    filePath: z.string(),
-    side: sideSchema,
-    line: z.int().positive(),
-    summary: z.string(),
-    rationale: z.string().optional(),
-    markup: z.string().optional(),
-    author: z.string().optional(),
-    reveal: z.boolean(),
-  }),
+  z
+    .strictObject({
+      action: z.literal("comment-add"),
+      selector: selectorSchema,
+      filePath: z.string().optional(),
+      side: sideSchema.optional(),
+      line: z.int().positive().optional(),
+      replyTo: z.string().min(1).optional(),
+      summary: z.string(),
+      rationale: z.string().optional(),
+      markup: z.string().optional(),
+      author: z.string().optional(),
+      reveal: z.boolean(),
+    })
+    .refine(hasValidCommentTarget, {
+      message: "A comment must be either a reply or one explicitly anchored root note.",
+    }),
   z.strictObject({
     action: z.literal("comment-apply"),
     selector: selectorSchema,
@@ -267,6 +298,7 @@ const reviewFileSchema = fileSummarySchema.extend({
 });
 const liveCommentSchema = z.strictObject({
   commentId: z.string(),
+  parentId: z.string().optional(),
   filePath: z.string(),
   hunkIndex: nonnegative,
   side: sideSchema,

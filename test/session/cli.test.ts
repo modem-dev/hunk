@@ -678,6 +678,59 @@ sessionDescribe("session CLI integration", () => {
           : null;
       });
 
+      const parentId = addedComment.result?.commentId;
+      expect(parentId).toBeDefined();
+      const reply = runSessionCli(
+        [
+          "comment",
+          "add",
+          sessionId,
+          "--reply-to",
+          parentId!,
+          "--summary",
+          "Reply from the CLI",
+          "--json",
+        ],
+        port,
+      );
+      expect(reply.proc.exitCode).toBe(0);
+      expect(reply.stderr).toBe("");
+      expect(JSON.parse(reply.stdout)).toMatchObject({
+        result: {
+          filePath: fixture.afterName,
+          hunkIndex: 1,
+          side: "new",
+          line: 10,
+        },
+      });
+
+      const listedReply = await waitUntil("reply registered with its parent", () => {
+        const listedComments = runSessionCli(["comment", "list", sessionId, "--json"], port);
+        if (listedComments.proc.exitCode !== 0) {
+          return null;
+        }
+        const parsed = JSON.parse(listedComments.stdout) as {
+          comments?: Array<{ summary?: string; parentId?: string }>;
+        };
+        return parsed.comments?.some(
+          (comment) => comment.summary === "Reply from the CLI" && comment.parentId === parentId,
+        )
+          ? parsed
+          : null;
+      });
+      expect(listedReply.comments).toContainEqual(
+        expect.objectContaining({ summary: "Reply from the CLI", parentId }),
+      );
+
+      const allNotes = runSessionCli(
+        ["comment", "list", sessionId, "--type", "all", "--json"],
+        port,
+      );
+      expect(allNotes.proc.exitCode).toBe(0);
+      expect(JSON.parse(allNotes.stdout).comments).toContainEqual(
+        expect.objectContaining({ body: "Reply from the CLI", parentId }),
+      );
+
       const unchangedContext = runSessionCli(["context", sessionId, "--json"], port);
       expect(unchangedContext.proc.exitCode).toBe(0);
       expect(JSON.parse(unchangedContext.stdout)).toMatchObject({
@@ -849,7 +902,10 @@ sessionDescribe("session CLI integration", () => {
 
       expect(apply.proc.exitCode).toBe(0);
       expect(apply.stderr).toBe("");
-      expect(JSON.parse(apply.stdout)).toMatchObject({
+      const appliedBatch = JSON.parse(apply.stdout) as {
+        result: { applied: Array<{ commentId: string }> };
+      };
+      expect(appliedBatch).toMatchObject({
         result: {
           applied: [
             {
@@ -883,6 +939,47 @@ sessionDescribe("session CLI integration", () => {
       expect(JSON.parse(comments.stdout)).toMatchObject({
         comments: [{ summary: "First hunk note" }, { summary: "Second hunk note" }],
       });
+
+      const parentId = appliedBatch.result.applied[1]!.commentId;
+      const replyApply = runSessionCli(
+        ["comment", "apply", sessionId, "--stdin", "--json"],
+        port,
+        JSON.stringify({
+          comments: [{ replyTo: parentId, summary: "Batch reply" }],
+        }),
+      );
+      expect(replyApply.proc.exitCode).toBe(0);
+      expect(replyApply.stderr).toBe("");
+      expect(JSON.parse(replyApply.stdout)).toMatchObject({
+        result: {
+          applied: [
+            {
+              filePath: fixture.afterName,
+              hunkIndex: 1,
+              side: "new",
+              line: 13,
+            },
+          ],
+        },
+      });
+
+      const replyList = await waitUntil("batch reply registered with its parent", () => {
+        const listedComments = runSessionCli(["comment", "list", sessionId, "--json"], port);
+        if (listedComments.proc.exitCode !== 0) {
+          return null;
+        }
+        const parsed = JSON.parse(listedComments.stdout) as {
+          comments?: Array<{ summary?: string; parentId?: string }>;
+        };
+        return parsed.comments?.some(
+          (comment) => comment.summary === "Batch reply" && comment.parentId === parentId,
+        )
+          ? parsed
+          : null;
+      });
+      expect(replyList.comments).toContainEqual(
+        expect.objectContaining({ summary: "Batch reply", parentId }),
+      );
     } finally {
       await cleanupHunkSession(session, fixture, port);
     }

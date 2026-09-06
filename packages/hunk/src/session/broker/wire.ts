@@ -160,7 +160,7 @@ function parseSessionLiveCommentSummary(value: unknown): SessionLiveCommentSumma
   const record = exactRecord(
     value,
     ["commentId", "filePath", "hunkIndex", "summary", "createdAt", "line", "side"],
-    ["rationale", "author"],
+    ["parentId", "rationale", "author"],
   );
 
   const commentId = brokerWireParsers.parseRequiredString(record.commentId);
@@ -184,6 +184,7 @@ function parseSessionLiveCommentSummary(value: unknown): SessionLiveCommentSumma
 
   return {
     commentId,
+    parentId: brokerWireParsers.parseOptionalString(record.parentId),
     filePath,
     hunkIndex,
     side,

@@ -973,6 +973,85 @@ describe("parseCli", () => {
     });
   });
 
+  test("parses a reply-only session comment add", async () => {
+    const parsed = await parseCli([
+      "bun",
+      "hunk",
+      "session",
+      "comment",
+      "add",
+      "session-1",
+      "--reply-to",
+      "user:parent",
+      "--summary",
+      "Addressed in the latest revision",
+      "--json",
+    ]);
+
+    expect(parsed).toEqual({
+      kind: "session",
+      action: "comment-add",
+      selector: { sessionId: "session-1" },
+      replyTo: "user:parent",
+      summary: "Addressed in the latest revision",
+      reveal: false,
+      output: "json",
+    });
+  });
+
+  test("rejects mixing a reply target with root comment fields", async () => {
+    await expect(
+      parseCli([
+        "bun",
+        "hunk",
+        "session",
+        "comment",
+        "add",
+        "session-1",
+        "--reply-to",
+        "user:parent",
+        "--file",
+        "README.md",
+        "--new-line",
+        "7",
+        "--summary",
+        "mixed",
+      ]),
+    ).rejects.toThrow("Do not mix --reply-to with --file, --old-line, or --new-line.");
+  });
+
+  test("rejects an empty reply target", async () => {
+    await expect(
+      parseCli([
+        "bun",
+        "hunk",
+        "session",
+        "comment",
+        "add",
+        "session-1",
+        "--reply-to",
+        "",
+        "--summary",
+        "empty target",
+      ]),
+    ).rejects.toThrow("--reply-to requires a non-empty note id.");
+  });
+
+  test("rejects comment add without a root or reply target", async () => {
+    await expect(
+      parseCli([
+        "bun",
+        "hunk",
+        "session",
+        "comment",
+        "add",
+        "session-1",
+        "--summary",
+        "missing target",
+      ]),
+    ).rejects.toThrow("Root comments require --file <path>.");
+  });
+
   test("parses markup render with defaults and options", async () => {
     expect(await parseCli(["bun", "hunk", "markup", "render"])).toEqual({
       kind: "markup-render",
@@ -2187,6 +2266,45 @@ describe("parseCli session comment apply payload", () => {
       ],
       revealMode: "none",
     });
+  });
+
+  test("parses reply-only batch items", async () => {
+    const parsed = await applyWithPayload(
+      JSON.stringify({
+        comments: [
+          { replyTo: "user:parent", summary: "Reply", rationale: "Details", author: "Pi" },
+        ],
+      }),
+    );
+
+    expect(parsed).toMatchObject({
+      kind: "session",
+      action: "comment-apply",
+      comments: [
+        {
+          replyTo: "user:parent",
+          summary: "Reply",
+          rationale: "Details",
+          author: "Pi",
+        },
+      ],
+    });
+  });
+
+  test("rejects reply batch items mixed with root fields", async () => {
+    await expect(
+      applyWithPayload(
+        JSON.stringify({
+          comments: [{ replyTo: "user:parent", filePath: "a.ts", newLine: 1, summary: "mixed" }],
+        }),
+      ),
+    ).rejects.toThrow("must not mix `replyTo` with `filePath` or an explicit target");
+  });
+
+  test("rejects an invalid replyTo batch field", async () => {
+    await expect(
+      applyWithPayload(JSON.stringify({ comments: [{ replyTo: "", summary: "empty" }] })),
+    ).rejects.toThrow("field `replyTo` must be a non-empty string");
   });
 
   test("rejects an empty stdin payload", async () => {

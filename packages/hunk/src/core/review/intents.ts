@@ -546,6 +546,21 @@ function planExpansionToggle(
   };
 }
 
+/** Resolve an active or stale note that may parent a new reply. */
+export function requireReviewReplyParent(
+  state: Pick<ReviewState, "liveNotes" | "userNotes">,
+  parentId: string,
+): ReviewStoredNote {
+  const parent = selectStoredReviewNoteById(state, parentId);
+  if (!parent || parent.resolution === "orphaned") {
+    throw new ReviewIntentPlanningError(
+      "invalid-note-parent",
+      `Review note ${parentId} is no longer available as a reply parent.`,
+    );
+  }
+  return parent;
+}
+
 /** Plan persistence of an active create/reply draft as one user note. */
 function planUserNoteCreation(state: ReviewState, facts: ReviewIntentFacts): ReviewIntentPlan {
   const draft = state.draftNote;
@@ -573,13 +588,7 @@ function planUserNoteCreation(state: ReviewState, facts: ReviewIntentFacts): Rev
   }
 
   const parent =
-    draft.kind === "reply" ? selectStoredReviewNoteById(state, draft.parentId) : undefined;
-  if (draft.kind === "reply" && (!parent || parent.resolution === "orphaned")) {
-    throw new ReviewIntentPlanningError(
-      "invalid-note-parent",
-      `Review note ${draft.parentId} is no longer available as a reply parent.`,
-    );
-  }
+    draft.kind === "reply" ? requireReviewReplyParent(state, draft.parentId) : undefined;
   if (parent && parent.note.fileKey !== file.key) {
     throw new ReviewIntentPlanningError(
       "invalid-note-parent",

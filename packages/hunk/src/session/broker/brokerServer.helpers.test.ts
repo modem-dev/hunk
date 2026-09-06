@@ -416,6 +416,44 @@ describe("handleSessionApiRequest", () => {
     expect(calls.filter((c) => c.method === "dispatchCommand")).toHaveLength(4);
   });
 
+  test("forwards reply targets through single and batched comment dispatch", async () => {
+    const { state, calls } = createFakeState();
+    const requests: SessionDaemonRequest[] = [
+      {
+        action: "comment-add",
+        selector: { sessionId: "s-1" },
+        replyTo: "user:parent",
+        summary: "single reply",
+        reveal: false,
+      },
+      {
+        action: "comment-apply",
+        selector: { sessionId: "s-1" },
+        comments: [{ replyTo: "user:parent", summary: "batch reply" }],
+        revealMode: "none",
+      },
+    ];
+
+    for (const body of requests) {
+      const response = await handleSessionApiRequest(state, apiRequest(body));
+      expect(response.status).toBe(200);
+    }
+
+    const dispatched = calls
+      .filter((call) => call.method === "dispatchCommand")
+      .map((call) => call.args[0]);
+    expect(dispatched).toMatchObject([
+      {
+        command: "comment",
+        input: { replyTo: "user:parent", summary: "single reply" },
+      },
+      {
+        command: "comment_batch",
+        input: { comments: [{ replyTo: "user:parent", summary: "batch reply" }] },
+      },
+    ]);
+  });
+
   test("serves the live comment-list path from state.listComments", async () => {
     const { state, calls } = createFakeState();
     const response = await handleSessionApiRequest(

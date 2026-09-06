@@ -34,6 +34,7 @@ import {
 import { SourceTextTooLargeError } from "../../core/changeset/fileSource";
 import {
   applyReviewIntent,
+  requireReviewReplyParent,
   ReviewIntentPlanningError,
   type ReviewIntent,
   type ReviewIntentFacts,
@@ -49,7 +50,12 @@ import {
   selectThreadedStoredReviewNotes,
   selectVisibleThreadedStoredReviewNotes,
 } from "../../core/review/selectors";
-import { REVIEW_VIEWPORT_ANCHOR_REVEAL, type ReviewRevealRequest } from "../../core/review/state";
+import {
+  REVIEW_VIEWPORT_ANCHOR_REVEAL,
+  reviewNoteAnchorLine,
+  reviewNoteOwnerHunkIndex,
+  type ReviewRevealRequest,
+} from "../../core/review/state";
 import { createReviewStore, type ReviewStore } from "../../core/review/store";
 import { noDiffFileMatchesMessage } from "../../session/agent/errors";
 import type { DiffFile } from "../../core/changeset/model";
@@ -1129,19 +1135,58 @@ export function useTerminalReview({
     [noteGeometry, stmlEnabled],
   );
 
-  /** Resolve one comment request against the review stream, rejecting unknown files. */
+  /** Resolve one root or reply comment against the review stream. */
   const resolveCommentRequest = useCallback(
     (input: CommentToolInput | CommentBatchItemInput) => {
+      if (input.replyTo !== undefined) {
+        if (
+          input.filePath !== undefined ||
+          input.hunkIndex !== undefined ||
+          input.side !== undefined ||
+          input.line !== undefined
+        ) {
+          throw new Error("A reply comment must not include an explicit file or target.");
+        }
+        const replyParent = requireReviewReplyParent(store.getSnapshot(), input.replyTo);
+        const file = fileByKey.get(replyParent.note.fileKey);
+        if (!file) {
+          throw new ReviewIntentPlanningError(
+            "invalid-note-parent",
+            `Review note ${input.replyTo} is no longer available as a reply parent.`,
+          );
+        }
+        const target = {
+          hunkIndex: reviewNoteOwnerHunkIndex(replyParent.note),
+          ...reviewNoteAnchorLine(replyParent.note),
+        };
+        return {
+          file,
+          fileKey: replyParent.note.fileKey,
+          target,
+          replyParent,
+          feedback: markupFeedback(input.markup, target.side),
+        };
+      }
+
+      if (!input.filePath) {
+        throw new Error("A root comment requires a file path.");
+      }
       const file = findDiffFileByPath(allFiles, input.filePath);
       const fileKey = file ? keyByFileId.get(file.id) : undefined;
       if (!file || !fileKey) {
         throw new Error(noDiffFileMatchesMessage(input.filePath));
       }
 
-      const target = resolveCommentTarget(file, input);
-      return { file, fileKey, target, feedback: markupFeedback(input.markup, target.side) };
+      const target = resolveCommentTarget(file, { ...input, filePath: input.filePath });
+      return {
+        file,
+        fileKey,
+        target,
+        replyParent: undefined,
+        feedback: markupFeedback(input.markup, target.side),
+      };
     },
-    [allFiles, keyByFileId, markupFeedback],
+    [allFiles, fileByKey, keyByFileId, markupFeedback, store],
   );
 
   /** Add one live comment, optionally revealing its hunk in the active review. */
@@ -1151,16 +1196,16 @@ export function useTerminalReview({
       commentId: string,
       options?: { reveal?: boolean },
     ): AppliedCommentResult => {
-      const { file, fileKey, target, feedback } = resolveCommentRequest(input);
+      const { file, fileKey, target, replyParent, feedback } = resolveCommentRequest(input);
       const liveComment = buildLiveComment(
-        { ...input, side: target.side, line: target.line },
+        { ...input, filePath: file.path, side: target.side, line: target.line },
         commentId,
         new Date().toISOString(),
         target.hunkIndex,
       );
       store.dispatch({
         type: "notes/add-live",
-        notes: [liveCommentToStoredNote(liveComment, fileKey, file.metadata.hunks)],
+        notes: [liveCommentToStoredNote(liveComment, fileKey, file.metadata.hunks, replyParent)],
       });
 
       if (options?.reveal ?? false) {
@@ -1193,7 +1238,12 @@ export function useTerminalReview({
         return {
           ...resolved,
           liveComment: buildLiveComment(
-            { ...input, side: resolved.target.side, line: resolved.target.line },
+            {
+              ...input,
+              filePath: resolved.file.path,
+              side: resolved.target.side,
+              line: resolved.target.line,
+            },
             `mcp:${requestId}:${index}`,
             createdAt,
             resolved.target.hunkIndex,
@@ -1205,7 +1255,12 @@ export function useTerminalReview({
         store.dispatch({
           type: "notes/add-live",
           notes: prepared.map((entry) =>
-            liveCommentToStoredNote(entry.liveComment, entry.fileKey, entry.file.metadata.hunks),
+            liveCommentToStoredNote(
+              entry.liveComment,
+              entry.fileKey,
+              entry.file.metadata.hunks,
+              entry.replyParent,
+            ),
           ),
         });
       }
@@ -1497,6 +1552,7 @@ export function useTerminalReview({
       allFiles.flatMap((file) =>
         (liveCommentsByFileId[file.id] ?? []).map((comment) => ({
           commentId: comment.id,
+          ...(comment.parentId ? { parentId: comment.parentId } : {}),
           filePath: file.path,
           hunkIndex: comment.hunkIndex,
           side: comment.side,

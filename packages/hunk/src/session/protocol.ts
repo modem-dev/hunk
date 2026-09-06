@@ -36,7 +36,7 @@ export const HUNK_SESSION_API_VERSION = 1;
  * builds can refresh an older daemon even when it still exposes the same API endpoints. Bump this
  * when daemon-forwarded payloads change, even if the supported action names stay stable.
  */
-export const HUNK_SESSION_DAEMON_VERSION = 13;
+export const HUNK_SESSION_DAEMON_VERSION = 14;
 
 export type SessionDaemonAction =
   | "list"
@@ -96,9 +96,10 @@ export type SessionDaemonRequest =
   | {
       action: "comment-add";
       selector: SessionCommentAddCommandInput["selector"];
-      filePath: string;
-      side: "old" | "new";
-      line: number;
+      filePath?: string;
+      side?: "old" | "new";
+      line?: number;
+      replyTo?: string;
       summary: string;
       rationale?: string;
       markup?: string;
@@ -108,7 +109,17 @@ export type SessionDaemonRequest =
   | {
       action: "comment-apply";
       selector: SessionCommentApplyCommandInput["selector"];
-      comments: SessionCommentApplyCommandInput["comments"];
+      comments: Array<{
+        filePath?: string;
+        hunkNumber?: number;
+        side?: "old" | "new";
+        line?: number;
+        replyTo?: string;
+        summary: string;
+        rationale?: string;
+        markup?: string;
+        author?: string;
+      }>;
       revealMode: SessionCommentApplyCommandInput["revealMode"];
     }
   | {

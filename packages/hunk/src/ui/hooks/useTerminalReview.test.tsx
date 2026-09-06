@@ -944,6 +944,88 @@ describe("useTerminalReview", () => {
     }
   });
 
+  test("live replies inherit semantic anchors and reject unavailable parents atomically", async () => {
+    const { controllerRef, setup } = await renderTerminalReview([
+      createAlphaFile(),
+      createDiffFile("beta", "beta.ts", "export const beta = 1;\n", "export const beta = 2;\n"),
+    ]);
+
+    try {
+      await flush(setup);
+      let parentId = "";
+      await act(async () => {
+        const controller = expectValue(controllerRef.current);
+        controller.startUserNote("beta", 0, { side: "new", line: 1 });
+        controller.updateDraftNote("Parent note");
+        parentId = controller.saveDraftNote()?.id ?? "";
+      });
+      await flush(setup);
+
+      const parent = expectValue(controllerRef.current)
+        .store.getSnapshot()
+        .userNotes.find((entry) => entry.note.id === parentId)!;
+      await act(async () => {
+        const result = expectValue(controllerRef.current).addLiveComment(
+          { replyTo: parentId, summary: "Agent reply" },
+          "comment-reply",
+        );
+        expect(result).toMatchObject({
+          commentId: "comment-reply",
+          filePath: "beta.ts",
+          hunkIndex: 0,
+          side: "new",
+          line: 1,
+        });
+      });
+      await flush(setup);
+
+      const reply = expectValue(controllerRef.current)
+        .store.getSnapshot()
+        .liveNotes.find((entry) => entry.note.id === "comment-reply")!;
+      expect(reply.note.parentId).toBe(parentId);
+      expect(reply.note.fileKey).toBe(parent.note.fileKey);
+      expect(reply.note.anchor).toEqual(parent.note.anchor);
+      expect(reply.note.editable).toBe(false);
+      expect(expectValue(controllerRef.current).liveCommentSummaries).toMatchObject([
+        { commentId: "comment-reply", parentId, filePath: "beta.ts", side: "new", line: 1 },
+      ]);
+      expect(expectValue(controllerRef.current).reviewNoteSummaries).toContainEqual(
+        expect.objectContaining({ noteId: "comment-reply", parentId, editable: false }),
+      );
+
+      const countBeforeInvalidBatch = expectValue(controllerRef.current).liveCommentCount;
+      expect(() =>
+        expectValue(controllerRef.current).addLiveCommentBatch(
+          [
+            { replyTo: parentId, summary: "Would otherwise be valid" },
+            { replyTo: "missing-parent", summary: "Invalid reply" },
+          ],
+          "reply-batch",
+        ),
+      ).toThrow("Review note missing-parent is no longer available as a reply parent.");
+      expect(expectValue(controllerRef.current).liveCommentCount).toBe(countBeforeInvalidBatch);
+
+      act(() => {
+        expectValue(controllerRef.current).store.dispatch({
+          type: "notes/add-live",
+          notes: [
+            { ...parent, note: { ...parent.note, id: "orphan-parent" }, resolution: "orphaned" },
+          ],
+        });
+      });
+      expect(() =>
+        expectValue(controllerRef.current).addLiveComment(
+          { replyTo: "orphan-parent", summary: "Invalid orphan reply" },
+          "orphan-reply",
+        ),
+      ).toThrow("Review note orphan-parent is no longer available as a reply parent.");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("mouse-targeted edit and reply drafts preserve the current viewport anchor", async () => {
     const { controllerRef, setup } = await renderTerminalReview([createAlphaFile()]);
 

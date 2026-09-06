@@ -100,8 +100,8 @@ describe("createHunkSessionBridge", () => {
         sessionId: "session-1",
         revealMode: "first",
         comments: [
-          { filePath: "src/example.ts", summary: "First" },
-          { filePath: "src/example.ts", summary: "Second" },
+          { filePath: "src/example.ts", hunkIndex: 0, summary: "First" },
+          { filePath: "src/example.ts", hunkIndex: 0, summary: "Second" },
         ],
       },
     });

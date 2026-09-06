@@ -204,7 +204,7 @@ describe("HTTP Hunk session CLI client", () => {
         kind: "session",
         action: "comment-apply",
         selector,
-        comments: [{ filePath: "src/app.ts", summary: "Check this" }],
+        comments: [{ filePath: "src/app.ts", hunkNumber: 1, summary: "Check this" }],
         revealMode: "first",
         output: "json",
       }),
@@ -301,7 +301,7 @@ describe("HTTP Hunk session CLI client", () => {
       {
         action: "comment-apply",
         selector,
-        comments: [{ filePath: "src/app.ts", summary: "Check this" }],
+        comments: [{ filePath: "src/app.ts", hunkNumber: 1, summary: "Check this" }],
         revealMode: "first",
       },
       { action: "comment-list", selector, filePath: "src/app.ts" },

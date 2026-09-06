@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { z } from "zod";
-import type { CliInput } from "../core/run/commandInputs";
+import type {
+  CliInput,
+  SessionCommentAddCommandInput,
+  SessionCommentApplyItemInput,
+} from "../core/run/commandInputs";
 import {
   createTestSessionRegistration,
   createTestSessionSnapshot,
@@ -41,10 +45,42 @@ const _dualSelectorIsNotCliInput: CliInput = {
   options: {},
 };
 void _dualSelectorIsNotCliInput;
+// @ts-expect-error Comment creation requires either a root anchor or a reply parent.
+const _targetlessCommentIsNotACommand: SessionCommentAddCommandInput = {
+  kind: "session",
+  action: "comment-add",
+  output: "json",
+  selector: { sessionId: "s-1" },
+  summary: "missing target",
+  reveal: false,
+};
+void _targetlessCommentIsNotACommand;
+// @ts-expect-error Reply targets cannot be mixed with explicit root anchors.
+const _mixedCommentIsNotACommand: SessionCommentAddCommandInput = {
+  kind: "session",
+  action: "comment-add",
+  output: "json",
+  selector: { sessionId: "s-1" },
+  filePath: "a.ts",
+  side: "new",
+  line: 1,
+  replyTo: "user:parent",
+  summary: "mixed target",
+  reveal: false,
+};
+void _mixedCommentIsNotACommand;
+// @ts-expect-error Batch replies cannot carry root target fields.
+const _mixedBatchItemIsNotACommand: SessionCommentApplyItemInput = {
+  filePath: "a.ts",
+  hunkNumber: 1,
+  replyTo: "user:parent",
+  summary: "mixed target",
+};
+void _mixedBatchItemIsNotACommand;
 
 describe("session daemon request validation", () => {
   test("uses the daemon revision for structured two-endpoint reload payloads", () => {
-    expect(HUNK_SESSION_DAEMON_VERSION).toBe(13);
+    expect(HUNK_SESSION_DAEMON_VERSION).toBe(14);
   });
 
   test("strictly parses cross-process capabilities", () => {
@@ -135,9 +171,26 @@ describe("session daemon request validation", () => {
         reveal: false,
       },
       {
+        action: "comment-add",
+        selector: { sessionId: "s-1" },
+        replyTo: "user:parent",
+        summary: "reply",
+        reveal: false,
+      },
+      {
         action: "comment-apply",
         selector: { sessionId: "s-1" },
-        comments: [{ filePath: "a.ts", summary: "note", hunkNumber: 2 }],
+        comments: [
+          { filePath: "a.ts", summary: "note", hunkNumber: 2 },
+          {
+            filePath: "a.ts",
+            summary: "hunk target keeps precedence",
+            hunkNumber: 2,
+            side: "new",
+            line: 99,
+          },
+          { replyTo: "user:parent", summary: "reply" },
+        ],
         revealMode: "first",
       },
       { action: "comment-list", selector: { sessionId: "s-1" }, type: "user" },
@@ -379,6 +432,22 @@ describe("session daemon request validation", () => {
         selector: { sessionId: "s-1" },
         comments: [{ filePath: "a.ts", summary: "note", hunkNumber: 0 }],
         revealMode: "first",
+      },
+      {
+        action: "comment-add",
+        selector: { sessionId: "s-1" },
+        replyTo: "user:parent",
+        filePath: "a.ts",
+        side: "new",
+        line: 1,
+        summary: "mixed",
+        reveal: false,
+      },
+      {
+        action: "comment-apply",
+        selector: { sessionId: "s-1" },
+        comments: [{ replyTo: "user:parent", filePath: "a.ts", summary: "mixed" }],
+        revealMode: "none",
       },
       ...Array.from({ length: 8 }, (_, index) => ({
         action: "navigate",
