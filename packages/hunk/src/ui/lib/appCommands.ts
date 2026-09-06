@@ -125,7 +125,11 @@ export interface BuildAppCommandsOptions {
   canRefreshCurrentInput: boolean;
   alignCurrentLine: (alignment: "top" | "center" | "bottom") => void;
   applyFilePresentationToAllMatching: () => void;
+  canFocusDiffPane?: boolean;
+  canFocusFilesPane?: boolean;
+  focusDiffPane: () => void;
   focusFilter: () => void;
+  focusFilesPane: () => void;
   editActiveNote?: () => void;
   replyToActiveNote?: () => void;
   /** Step the review selection through one scope, as the catalog entry declares it. */
@@ -212,6 +216,14 @@ function builtinCommandHandlers(
     "hunk.app.openAgentSkill": { run: () => options.openAgentSkill() },
     "hunk.app.toggleFocusArea": { run: () => options.toggleFocusArea() },
     "hunk.review.focusFilter": { run: () => options.focusFilter() },
+    "hunk.review.focusDiffPane": {
+      isEnabled: () => Boolean(options.canFocusDiffPane),
+      run: () => options.focusDiffPane(),
+    },
+    "hunk.review.focusFilesPane": {
+      isEnabled: () => Boolean(options.canFocusFilesPane),
+      run: () => options.focusFilesPane(),
+    },
     "hunk.review.startNote": { run: () => options.startUserNote() },
     "hunk.review.editActiveNote": {
       isEnabled: () => Boolean(options.canEditActiveNote),
@@ -352,10 +364,14 @@ const NOOP_COMMAND_OPTIONS: BuildAppCommandsOptions = (() => {
   return {
     canAlignCurrentLine: false,
     canApplyFilePresentationToAllMatching: false,
+    canFocusDiffPane: true,
+    canFocusFilesPane: true,
     canRefreshCurrentInput: true,
     alignCurrentLine: noop,
     applyFilePresentationToAllMatching: noop,
+    focusDiffPane: noop,
     focusFilter: noop,
+    focusFilesPane: noop,
     moveSelection: noop,
     openAgentSkill: noop,
     openThemeSelector: noop,

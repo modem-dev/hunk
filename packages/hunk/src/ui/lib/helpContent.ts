@@ -45,6 +45,10 @@ const HELP_SECTIONS: readonly HelpSectionSpec[] = [
         commandIds: ["hunk.review.stepUp", "hunk.review.stepDown"],
         description: "move in the focused pane",
       },
+      {
+        commandIds: ["hunk.review.focusDiffPane", "hunk.review.focusFilesPane"],
+        description: "focus review / files pane",
+      },
       { commandIds: ["hunk.review.pageDown"], description: "page down" },
       { commandIds: ["hunk.review.pageUp"], description: "page up" },
       {

@@ -590,6 +590,24 @@ function leftPaneBorderColor(setup: Awaited<ReturnType<typeof testRender>>, row:
   return capturedTestColorToHex(border?.fg);
 }
 
+/** Wait until the files pane's left frame on `row` uses `expected`. */
+async function waitForLeftPaneBorder(
+  setup: Awaited<ReturnType<typeof testRender>>,
+  row: number,
+  expected: string,
+) {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    if (leftPaneBorderColor(setup, row) === expected) {
+      return;
+    }
+    await act(async () => {
+      await Bun.sleep(30);
+      await setup.renderOnce();
+    });
+  }
+  expect(leftPaneBorderColor(setup, row)).toBe(expected);
+}
+
 async function waitForSnapshot(
   setup: Awaited<ReturnType<typeof testRender>>,
   getSnapshot: () => HunkSessionSnapshot["state"] | null,
@@ -3880,6 +3898,107 @@ describe("App interactions", () => {
       await flush(setup);
 
       expect(getLatestSnapshot()?.selectedFileId).toBe("first");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("Enter focuses the selected file's review and Esc returns to the files pane", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const focusedBorder = paneFrameBorderColor(theme, true);
+    const unfocusedBorder = paneFrameBorderColor(theme, false);
+    const { getLatestSnapshot, hostClient } = createMockHostClient();
+    const setup = await testRender(
+      <AppHost bootstrap={createMouseScrollSelectionBootstrap()} hostClient={hostClient} />,
+      {
+        width: 220,
+        height: 16,
+      },
+    );
+
+    try {
+      await flush(setup);
+
+      const firstFileY = sidebarFileRow(setup, "first.ts");
+      expect(firstFileY).toBeGreaterThan(0);
+
+      await act(async () => {
+        await setup.mockMouse.click(6, firstFileY);
+      });
+      await flush(setup);
+      expect(leftPaneBorderColor(setup, firstFileY)).toBe(focusedBorder);
+      expect(getLatestSnapshot()?.selectedFileId).toBe("first");
+      expect(getLatestSnapshot()?.selectedHunkIndex).toBe(0);
+
+      await act(async () => {
+        await setup.mockInput.pressEnter();
+      });
+      await waitForLeftPaneBorder(setup, firstFileY, unfocusedBorder);
+      expect(getLatestSnapshot()?.selectedFileId).toBe("first");
+      expect(getLatestSnapshot()?.selectedHunkIndex).toBe(0);
+
+      await act(async () => {
+        await setup.mockInput.pressArrow("down");
+      });
+      await flush(setup);
+      expect(getLatestSnapshot()?.selectedFileId).toBe("first");
+
+      await pressHunkNavigationKey(setup, "]", 2);
+      const hunkSnapshot = await waitForSnapshot(
+        setup,
+        getLatestSnapshot,
+        (nextSnapshot) =>
+          nextSnapshot.selectedFileId === "second" && nextSnapshot.selectedHunkIndex === 1,
+      );
+      expect(hunkSnapshot).toMatchObject({
+        selectedFileId: "second",
+        selectedHunkIndex: 1,
+      });
+
+      await act(async () => {
+        await setup.mockInput.pressEscape();
+      });
+      const secondFileY = sidebarFileRow(setup, "second.ts");
+      expect(secondFileY).toBeGreaterThan(0);
+      await waitForLeftPaneBorder(setup, secondFileY, focusedBorder);
+      expect(getLatestSnapshot()).toMatchObject({
+        selectedFileId: "second",
+        selectedHunkIndex: 1,
+      });
+
+      await act(async () => {
+        await setup.mockInput.pressEnter();
+      });
+      await waitForLeftPaneBorder(setup, secondFileY, unfocusedBorder);
+      expect(getLatestSnapshot()).toMatchObject({
+        selectedFileId: "second",
+        selectedHunkIndex: 1,
+      });
+
+      await act(async () => {
+        await setup.mockInput.pressArrow("down");
+      });
+      await flush(setup);
+      expect(getLatestSnapshot()?.selectedFileId).toBe("second");
+
+      await act(async () => {
+        await setup.mockInput.pressEscape();
+      });
+      await waitForLeftPaneBorder(setup, secondFileY, focusedBorder);
+
+      await act(async () => {
+        await setup.mockInput.pressArrow("up");
+      });
+      await flush(setup);
+
+      const snapshot = await waitForSnapshot(
+        setup,
+        getLatestSnapshot,
+        (nextSnapshot) => nextSnapshot.selectedFileId === "first",
+      );
+      expect(snapshot?.selectedFileId).toBe("first");
     } finally {
       await act(async () => {
         setup.renderer.destroy();

@@ -187,6 +187,12 @@ function matchesNamedKey(base: string, key: ExtensionKeyEvent) {
     return true;
   }
 
+  // Escape arrives named "escape" from OpenTUI's parser, as "esc" from some
+  // hosts, and as the bare C0 byte from others.
+  if (base === "escape" && (name === "esc" || key.sequence === "\u001b")) {
+    return true;
+  }
+
   // Space arrives named "space" from OpenTUI's parser, but as the bare
   // character from other input paths, so accept both spellings of one key.
   return base === "space" && (name === " " || key.sequence === " ");

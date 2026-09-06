@@ -1173,12 +1173,22 @@ export function App({
         toggleStagedView: () => workingTree.switchView(!workingTree.staged),
         canAlignCurrentLine: cursorLine !== "off" && review.lineCursor !== null,
         canApplyFilePresentationToAllMatching: selectedFileViewBulkTarget !== null,
+        canFocusDiffPane:
+          filesPaneFocused && selectedFile !== undefined && !workingTree.selectedIsFolder,
+        canFocusFilesPane: reviewPaneFocused,
         canEditActiveNote: activeEditableNoteId !== undefined && review.draftNote === null,
         canReplyToActiveNote: activeReplyableNoteId !== undefined && review.draftNote === null,
         canRefreshCurrentInput,
         alignCurrentLine,
         applyFilePresentationToAllMatching,
+        focusDiffPane: () => {
+          if (!selectedFile) {
+            return;
+          }
+          setFilePanelFocused(false);
+        },
         focusFilter,
+        focusFilesPane: focusFiles,
         editActiveNote: () => {
           if (activeEditableNoteId) startUserNoteEdit(activeEditableNoteId);
         },

@@ -145,6 +145,8 @@ export function buildAppMenus({
     file: [
       { commandId: "hunk.app.toggleFocusArea", label: "Toggle files/filter focus" },
       { commandId: "hunk.review.focusFilter", label: "Focus filter" },
+      { commandId: "hunk.review.focusDiffPane", label: "Focus selected file in review" },
+      { commandId: "hunk.review.focusFilesPane", label: "Focus files pane" },
       { commandId: "hunk.review.editSelectedFile", label: "Edit selected or changed line" },
       { commandId: "hunk.review.discardSelectedFile" },
       { commandId: "hunk.review.stashSelectedFile" },

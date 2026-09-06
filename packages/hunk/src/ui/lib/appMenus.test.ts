@@ -39,10 +39,14 @@ function createTestCommands(overrides: Partial<BuildAppCommandsOptions> = {}) {
   const commands = buildAppCommands({
     canAlignCurrentLine: true,
     canApplyFilePresentationToAllMatching: false,
+    canFocusDiffPane: true,
+    canFocusFilesPane: true,
     canRefreshCurrentInput: true,
     alignCurrentLine: record("alignCurrentLine"),
     applyFilePresentationToAllMatching: record("applyFilePresentationToAllMatching"),
+    focusDiffPane: noop,
     focusFilter: noop,
+    focusFilesPane: noop,
     moveSelection: record("moveSelection"),
     openAgentSkill: record("openAgentSkill"),
     openThemeSelector: noop,
@@ -118,6 +122,8 @@ describe("buildAppMenus", () => {
     expect(items(menus.file).map((item) => item.label)).toEqual([
       "Toggle files/filter focus",
       "Focus filter",
+      "Focus selected file in review",
+      "Focus files pane",
       "Edit selected or changed line",
       "Reload",
       "Quit",
@@ -157,6 +163,8 @@ describe("buildAppMenus", () => {
     expect(items(menus.file).map((item) => item.commandId)).toEqual([
       "hunk.app.toggleFocusArea",
       "hunk.review.focusFilter",
+      "hunk.review.focusDiffPane",
+      "hunk.review.focusFilesPane",
       "hunk.review.editSelectedFile",
       "hunk.app.refresh",
       "hunk.app.quit",
@@ -231,6 +239,8 @@ describe("buildAppMenus", () => {
     expect(items(menus.file).map((item) => item.label)).toEqual([
       "Toggle files/filter focus",
       "Focus filter",
+      "Focus selected file in review",
+      "Focus files pane",
       "Edit selected or changed line",
       "Quit",
     ]);

@@ -165,6 +165,9 @@ describe("matchesKeyChord", () => {
   test("named keys match by name with enter/return and space aliased", () => {
     expect(matchesKeyChord(parsed("f2"), keyEvent({ name: "f2" }))).toBe(true);
     expect(matchesKeyChord(parsed("enter"), keyEvent({ name: "return" }))).toBe(true);
+    expect(matchesKeyChord(parsed("escape"), keyEvent({ name: "escape" }))).toBe(true);
+    expect(matchesKeyChord(parsed("escape"), keyEvent({ name: "esc" }))).toBe(true);
+    expect(matchesKeyChord(parsed("escape"), keyEvent({ sequence: "\u001b" }))).toBe(true);
     expect(matchesKeyChord(parsed("pageup"), keyEvent({ name: "pageup" }))).toBe(true);
     // Space arrives named from OpenTUI's parser and as the bare character from
     // other input paths; both spell one key.

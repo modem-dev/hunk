@@ -203,6 +203,23 @@ const BUILTIN_COMMANDS = [
     publicToExtensions: true,
   },
   {
+    id: "hunk.review.focusDiffPane",
+    title: "Focus the selected file's review",
+    category: "review",
+    defaultKeys: ["enter"],
+    locus: "client-local",
+    publicToExtensions: true,
+  },
+  {
+    id: "hunk.review.focusFilesPane",
+    title: "Focus the files pane",
+    category: "review",
+    defaultKeys: ["escape"],
+    // Overlay, mode, and text-input Escape still outrank this command.
+    locus: "client-local",
+    publicToExtensions: true,
+  },
+  {
     id: "hunk.review.startNote",
     title: "Add a review note",
     category: "review",

@@ -110,6 +110,8 @@ remain remappable, and an explicit user binding takes precedence over contextual
 | `hunk.review.discardSelectedFile`              | Discard selected file or folder changes        | `d`                          |
 | `hunk.review.editActiveNote`                   | Edit the active review note                    | `E`                          |
 | `hunk.review.editSelectedFile`                 | Open the selected file in your editor          | `e`                          |
+| `hunk.review.focusDiffPane`                    | Focus the selected file's review               | `enter`                      |
+| `hunk.review.focusFilesPane`                   | Focus the files pane                           | `escape`                     |
 | `hunk.review.focusFilter`                      | Focus the file filter                          | `/`                          |
 | `hunk.review.halfPageDown`                     | Scroll down half a page                        | `d`, `ctrl+d`                |
 | `hunk.review.halfPageUp`                       | Scroll up half a page                          | `u`, `ctrl+u`                |

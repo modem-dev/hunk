@@ -4089,13 +4089,13 @@ describe("UI components", () => {
     const frame = await captureFrame(
       <HelpDialog
         commands={builtinCommandMatchProbes()}
-        terminalHeight={39}
+        terminalHeight={41}
         terminalWidth={76}
         theme={theme}
         onClose={() => {}}
       />,
       76,
-      39,
+      41,
     );
 
     const expectedRows = [
@@ -4103,6 +4103,7 @@ describe("UI components", () => {
       "[Esc]",
       "Navigation",
       "Up / Down                move in the focused pane",
+      "Enter / Esc              focus review / files pane",
       "PageDown / Space / f     page down",
       "PageUp / b / Shift+Space page up",
       "d / u                    half page down / up",
@@ -4210,13 +4211,13 @@ describe("UI components", () => {
     const frame = await captureFrame(
       <HelpDialog
         commands={builtinCommandMatchProbes(keys)}
-        terminalHeight={39}
+        terminalHeight={41}
         terminalWidth={76}
         theme={theme}
         onClose={() => {}}
       />,
       76,
-      39,
+      41,
     );
 
     expect(frame).toContain("Ctrl+X");

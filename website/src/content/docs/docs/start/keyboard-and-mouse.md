@@ -10,6 +10,8 @@ Press `?` at any time for Hunk's in-app shortcut reference. Menus and primary re
 | Keys                      | Action                                                |
 | ------------------------- | ----------------------------------------------------- |
 | `↑` / `↓`, `k` / `j`      | Move in the focused pane                              |
+| `Enter`                   | Focus the selected file's review                      |
+| `Esc`                     | Focus the files pane                                  |
 | `Space` / `f`, `b`        | Page down / up                                        |
 | `Shift+Space`             | Page up                                               |
 | `d` / `u`                 | Half page down / up                                   |
@@ -21,7 +23,7 @@ Press `?` at any time for Hunk's in-app shortcut reference. Menus and primary re
 
 Hunk navigation stays review-wide: hunk and file shortcuts move through the same multi-file stream shown in the main pane.
 
-When the files pane and review are both visible, the focused pane uses a brighter border. Click a pane to focus it. `,` / `.` also focus the files pane; `[` / `]` focus the review. With the files pane focused, `↑` / `↓` and `k` / `j` move between files, and in working-tree reviews they also land on folders; with the review focused they move a highlighted current line, and the view scrolls only far enough to keep it visible. Paging or scrolling past it moves it to the nearest line still on screen, and `c` anchors a note on it. Pick the marker from the View menu, or set [`cursor_line`](/docs/configure/layout-and-display/): `number` marks only the line number, and `off` turns the marker off and lets those keys scroll the view one row at a time instead.
+When the files pane and review are both visible, the focused pane uses a brighter border. Click a pane to focus it. `,` / `.` also focus the files pane; `[` / `]` focus the review. With the files pane focused and a file selected, `Enter` focuses that file's review; `Esc` returns to the files pane on the current file. With the files pane focused, `↑` / `↓` and `k` / `j` move between files, and in working-tree reviews they also land on folders; with the review focused they move a highlighted current line, and the view scrolls only far enough to keep it visible. Paging or scrolling past it moves it to the nearest line still on screen, and `c` anchors a note on it. Pick the marker from the View menu, or set [`cursor_line`](/docs/configure/layout-and-display/): `number` marks only the line number, and `off` turns the marker off and lets those keys scroll the view one row at a time instead.
 
 ## Change the view
 

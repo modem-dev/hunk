@@ -49,10 +49,14 @@ function createTestCommands(
   const options: BuildAppCommandsOptions = {
     canAlignCurrentLine: true,
     canApplyFilePresentationToAllMatching: false,
+    canFocusDiffPane: true,
+    canFocusFilesPane: true,
     canRefreshCurrentInput: true,
     alignCurrentLine: record("alignCurrentLine"),
     applyFilePresentationToAllMatching: record("applyFilePresentationToAllMatching"),
+    focusDiffPane: record("focusDiffPane"),
     focusFilter: record("focusFilter"),
+    focusFilesPane: record("focusFilesPane"),
     moveSelection: record("moveSelection"),
     openAgentSkill: record("openAgentSkill"),
     openThemeSelector: record("openThemeSelector"),
@@ -339,6 +343,25 @@ describe("built-in commands under user keybindings", () => {
     // Page-down keeps the chords nobody claimed.
     expect(press({ name: "space" })).toBe("hunk.review.pageDown");
     expect(press({ name: "pagedown" })).toBe("hunk.review.pageDown");
+  });
+
+  test("Enter and Esc switch review and files pane focus only while enabled", () => {
+    const enabled = createTestCommands();
+    expect(dispatchAppCommand(enabled.commands, keyEvent({ name: "return" }))?.id).toBe(
+      "hunk.review.focusDiffPane",
+    );
+    expect(dispatchAppCommand(enabled.commands, keyEvent({ name: "escape" }))?.id).toBe(
+      "hunk.review.focusFilesPane",
+    );
+    expect(enabled.ran).toEqual(["focusDiffPane", "focusFilesPane"]);
+
+    const disabled = createTestCommands(undefined, {
+      canFocusDiffPane: false,
+      canFocusFilesPane: false,
+    });
+    expect(dispatchAppCommand(disabled.commands, keyEvent({ name: "return" }))).toBeUndefined();
+    expect(dispatchAppCommand(disabled.commands, keyEvent({ name: "escape" }))).toBeUndefined();
+    expect(disabled.ran).toEqual([]);
   });
 
   test("an unbound command matches nothing", () => {
