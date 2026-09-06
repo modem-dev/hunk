@@ -23,7 +23,7 @@ export function resolveInteractiveLogPalette(theme: AppTheme): InteractiveLogPal
     author: theme.addedSignColor,
     separator: theme.lineNumberFg,
     relativeTime: theme.muted,
-    decoration: theme.fileRenamed,
+    decoration: theme.addedSignColor,
     commitId: theme.accent,
     copyAction: theme.lineNumberFg,
     graphLanes: [
