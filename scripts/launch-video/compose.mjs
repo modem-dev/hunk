@@ -20,6 +20,8 @@ const STML_TITLE = "hunk patch — agent review";
 // shell the capture doesn't launch.
 const CLI_TITLE = "shell — authoring a note";
 const PAGER_TITLE = "shell — git diff | hunk pager";
+const AGENT_TITLE = "hunk diff — agent-driven review";
+const AGENT_SHELL_TITLE = "shell — hunk session";
 const TRIAGE_TITLE = "hunk diff — review-triage extension";
 const GALLERY_TITLE = "hunk diff — file-view gallery extension";
 
@@ -203,6 +205,54 @@ const SHOTS = [
     dur: 3.2,
     capKey: "semver",
     caption: `<span class="dim">example:</span> dependency bumps, highlighted by <span class="hl">semver</span>`,
+  },
+  {
+    kind: "term",
+    img: "agent-review",
+    title: AGENT_TITLE,
+    dur: 2.4,
+    capKey: "agent",
+    caption: `<span class="dim">agent-driven:</span> your coding agent steers the review you're watching`,
+  },
+  {
+    kind: "term",
+    img: "agent-shell-nav",
+    title: AGENT_SHELL_TITLE,
+    dur: 3.0,
+    capKey: "agent-cli",
+    caption: `<span class="badge">NEW</span> <span class="hl">hunk session navigate</span> — line-exact, from the CLI`,
+  },
+  {
+    kind: "term",
+    img: "agent-line-nav",
+    title: AGENT_TITLE,
+    dur: 3.0,
+    capKey: "agent-nav",
+    caption: `lands the buried line — <span class="hl">not just its hunk</span>`,
+  },
+  {
+    kind: "term",
+    img: "agent-mark-warning",
+    title: AGENT_TITLE,
+    dur: 3.0,
+    capKey: "agent-mark",
+    caption: `<span class="badge">NEW</span> attention marks — <span class="hl">paint the exact range</span> being explained`,
+  },
+  {
+    kind: "term",
+    img: "agent-mark-focus",
+    title: AGENT_TITLE,
+    dur: 2.8,
+    capKey: "agent-focus",
+    caption: `<span class="hl">--focus</span> walks your eyes to the next file`,
+  },
+  {
+    kind: "term",
+    img: "agent-comment",
+    title: AGENT_TITLE,
+    dur: 3.2,
+    capKey: "agent-note",
+    caption: `marks are ephemeral — a <span class="hl">note</span> stays with the code`,
   },
   { kind: "card", html: OUTRO_CARD, dur: 4.8, enter: true },
 ];

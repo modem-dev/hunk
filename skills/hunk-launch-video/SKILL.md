@@ -234,9 +234,10 @@ Sandbox-specific bullets are marked; each cost real debugging time.
 
 - Shared geometry is 140x32 cells rendered at fontSize 16 / dpr 2 → 2688x1536
   PNGs. Keep every scene at this size so all frames fit one window.
-- Helpers: `createDemoRepo()` and `launchHunkShell()` are hunk-side glue in
-  the script (git repo built from `examples/2-mini-app-refactor`; interactive
-  bash with a real `hunk` command on PATH and a clean `❯` prompt); `snap`,
+- Helpers: `createDemoRepo()` (in `demoContent.ts`) and `launchHunkShell()`
+  are hunk-side glue in the scripts (git repo built from
+  `examples/2-mini-app-refactor`; interactive bash with a real `hunk` command
+  on PATH and a clean `❯` prompt); `snap`,
   `typeCommand`, `launchApp`/`launchShell`, and `createCommandWrapper` come
   from `@hunk/term-video/capture`.
 - Always `waitForText` on scene-specific content before the first snap, and
@@ -259,6 +260,27 @@ Sandbox-specific bullets are marked; each cost real debugging time.
   paths skip the repo trust prompt). The pager pipe is `git diff | hunk pager`
   — bare `hunk` on piped stdin prints help. Sidebar toggle is `s`; comment
   draft is `c`, save with Ctrl+S (`\x13`).
+
+### Agent-driven scenes
+
+Scenes where a coding agent drives the review over the `hunk session` CLI use
+`scripts/launch-video/agentDriver.ts`:
+
+- `launchAgentDrivenHunk()` gives the scene a daemon nobody else can see: a
+  scratch `XDG_RUNTIME_DIR` plus an OS-assigned `HUNK_MCP_PORT`. Never set
+  `HUNK_MCP_DISABLE` — it kills the broker registration the scene depends on.
+  Registration is asynchronous, so the driver polls `session list --json`
+  instead of racing it.
+- `driveGestures()` plays a declarative sequence: `silent` gestures run a
+  session command off camera and snap the TUI reacting; `shell` gestures type
+  the same kind of command on camera in a driver shell that shares the
+  isolated env, then snap the shell and/or the TUI.
+- On-camera commands select the session with `--repo .` from the demo repo —
+  a selector is mandatory, and the absolute path or a session UUID reads badly
+  on screen.
+- Demo content and every line/offset a command points at are generated and
+  computed in `demoContent.ts` (`buildReportModule`, `locateNeedle`), never
+  hand-counted, so the shots stay aimed at the right code.
 
 ## Storyboard model (compose.mjs)
 
