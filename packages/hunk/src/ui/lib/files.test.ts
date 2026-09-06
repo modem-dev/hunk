@@ -8,6 +8,7 @@ import {
   fileLabelParts,
   resolveFileSidebarMode,
   sidebarDirectoryPaths,
+  workingTreeSidebarSources,
 } from "./files";
 
 describe("files helpers", () => {
@@ -150,6 +151,43 @@ describe("files helpers", () => {
       "b.ts",
       "./",
       "LICENSE",
+    ]);
+  });
+
+  test("workingTreeSidebarSources keeps inventory stats when the current review omits a file", () => {
+    const reviewed = createTestDiffFile({
+      id: "unstaged",
+      path: "docs/unstaged.md",
+      before: "old\n",
+      after: "new\n",
+    });
+    const sources = workingTreeSidebarSources(
+      [reviewed],
+      [
+        {
+          path: "docs/unstaged.md",
+          staged: false,
+          unstaged: true,
+          untracked: false,
+          conflicted: false,
+          stats: { additions: 9, deletions: 9 },
+          version: "u",
+        },
+        {
+          path: "src/staged.ts",
+          staged: true,
+          unstaged: false,
+          untracked: false,
+          conflicted: false,
+          stats: { additions: 36, deletions: 0 },
+          version: "s",
+        },
+      ],
+    );
+
+    expect(sources).toMatchObject([
+      { path: "docs/unstaged.md", stats: reviewed.stats },
+      { path: "src/staged.ts", stats: { additions: 36, deletions: 0 } },
     ]);
   });
 

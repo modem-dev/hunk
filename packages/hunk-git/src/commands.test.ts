@@ -556,9 +556,25 @@ describe("git diff stats helpers", () => {
     ]);
   });
 
+  test("parseGitNumstat records rename and copy counts under the destination path", () => {
+    const text = ["3\t1\tsrc/a.ts", "1\t1\t", "alpha.txt", "renamed.txt", "2\t0\tsrc/c.ts"].join(
+      "\0",
+    );
+    expect(parseGitNumstat(text)).toEqual([
+      { path: "src/a.ts", additions: 3, deletions: 1 },
+      { path: "renamed.txt", additions: 1, deletions: 1 },
+      { path: "src/c.ts", additions: 2, deletions: 0 },
+    ]);
+  });
+
   test("parseGitNumstat drops binary-file entries that report '-' counts", () => {
     // Git emits `-\t-\t<path>` for binary files; the non-numeric counts fail the finite guard.
     const text = ["-\t-\tsrc/logo.png", "3\t1\tsrc/a.ts"].join("\0");
+    expect(parseGitNumstat(text)).toEqual([{ path: "src/a.ts", additions: 3, deletions: 1 }]);
+  });
+
+  test("parseGitNumstat drops a binary rename without consuming the next file", () => {
+    const text = ["-\t-\t", "old.bin", "new.bin", "3\t1\tsrc/a.ts"].join("\0");
     expect(parseGitNumstat(text)).toEqual([{ path: "src/a.ts", additions: 3, deletions: 1 }]);
   });
 

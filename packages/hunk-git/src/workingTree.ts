@@ -3,14 +3,23 @@
  * The host owns selection, consent and refresh; Git owns path resolution and index locking.
  * Attestations bind pending actions to the status and filesystem state the user reviewed.
  */
-import { lstatSync } from "node:fs";
+import { lstatSync, readFileSync, readlinkSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import {
   HunkExtensionUserError,
   type ExtensionVcsDiffInput,
   type ExtensionWorkingTreeFile,
 } from "hunkdiff/extension";
-import { appendGitPathspecs, resolveGitRepoRoot, runGitMutation, runGitText } from "./commands";
+import { inspectLargeUntrackedFile } from "@hunk/vcs/large-file";
+import {
+  appendGitPathspecs,
+  buildGitDiffNumstatArgs,
+  parseGitNumstat,
+  resolveGitRepoRoot,
+  runGitMutation,
+  runGitText,
+  type GitNumstatFile,
+} from "./commands";
 
 interface GitWorkingTreeContext {
   cwd: string;
@@ -108,6 +117,97 @@ export function loadGitWorkingTreeFiles(
     });
   }
   return files;
+}
+
+/** Add one numstat list into a path-keyed running total. */
+function addNumstat(
+  stats: Map<string, { additions: number; deletions: number }>,
+  files: readonly GitNumstatFile[],
+) {
+  for (const file of files) {
+    const current = stats.get(file.path) ?? { additions: 0, deletions: 0 };
+    stats.set(file.path, {
+      additions: current.additions + file.additions,
+      deletions: current.deletions + file.deletions,
+    });
+  }
+}
+
+/** Count text lines, treating a trailing newline as a terminator rather than an extra row. */
+function countTextLines(text: string) {
+  if (text.length === 0) return 0;
+  const lines = text.split("\n");
+  return text.endsWith("\n") ? lines.length - 1 : lines.length;
+}
+
+/**
+ * Count untracked lines for sidebar stats without following symlinks or
+ * reading past the large-file cap used for review synthesis.
+ */
+function countWorkingTreeLines(root: string, path: string) {
+  const absolutePath = join(root, path);
+  try {
+    if (lstatSync(absolutePath).isSymbolicLink()) {
+      return countTextLines(readlinkSync(absolutePath));
+    }
+  } catch {
+    return 0;
+  }
+
+  const largeFileCheck = inspectLargeUntrackedFile(root, path);
+  if (largeFileCheck.shouldSkip) {
+    return largeFileCheck.stats?.additions ?? 0;
+  }
+
+  try {
+    return countTextLines(readFileSync(absolutePath, "utf8"));
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Attach staged plus unstaged line counts to a status inventory.
+ * Mutation verification keeps using the status-only load so extra numstat
+ * queries do not run on every stage/unstage.
+ */
+export function attachGitWorkingTreeLineStats(
+  files: readonly ExtensionWorkingTreeFile[],
+  input: ExtensionVcsDiffInput,
+  context: GitWorkingTreeContext,
+): ExtensionWorkingTreeFile[] {
+  if (files.length === 0) return [];
+  const stats = new Map<string, { additions: number; deletions: number }>();
+  const query = { cwd: context.cwd, gitExecutable: context.gitExecutable };
+  addNumstat(
+    stats,
+    parseGitNumstat(
+      runGitText({
+        ...query,
+        input,
+        args: buildGitDiffNumstatArgs({ ...input, staged: false }),
+      }),
+    ),
+  );
+  addNumstat(
+    stats,
+    parseGitNumstat(
+      runGitText({
+        ...query,
+        input,
+        args: buildGitDiffNumstatArgs({ ...input, staged: true }),
+      }),
+    ),
+  );
+  const root = resolveGitRepoRoot(input, context);
+  return files.map((file) => {
+    const fileStats =
+      stats.get(file.path) ??
+      (file.untracked
+        ? { additions: countWorkingTreeLines(root, file.path), deletions: 0 }
+        : undefined);
+    return fileStats ? { ...file, stats: fileStats } : file;
+  });
 }
 
 /** Revalidate an exact reviewed path and its source attestation before index writes. */

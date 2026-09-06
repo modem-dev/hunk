@@ -557,6 +557,61 @@ describe("UI components", () => {
     expect(frame).not.toContain("M +2 -1 AI");
   });
 
+  test("selecting a compact folder keeps line stats on files outside that folder", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const files = toReadOnlyFileViews([
+      createTestDiffFile("docs-a", "docs/extensions.md", "a\n", "aa\n"),
+      createTestDiffFile("docs-b", "docs/keybindings.md", "b\n", "bb\n"),
+      createTestDiffFile(
+        "hook",
+        "src/ui/hooks/useWorkingTreeActions.ts",
+        "export const value = 1;\n",
+        `${"export const extra = true;\n".repeat(267)}export const value = 1;\n`,
+      ),
+    ]);
+    const entries = files.map((file) => ({
+      path: file.path,
+      staged: false,
+      unstaged: true,
+      untracked: false,
+      conflicted: false,
+      version: "test",
+    }));
+    const frame = await captureFrame(
+      <FlexFileSidebar
+        files={files}
+        selectedFileId="group:docs:0"
+        selectedHunkIndex={0}
+        theme={theme}
+        width={30}
+        keybindings={{ matches: () => false, getKeys: () => [] }}
+        actions={{
+          selectFile: () => {},
+          selectHunk: () => {},
+          revealLine: () => {},
+          notify: () => {},
+        }}
+        workingTree={{
+          files: entries,
+          selectedPath: "docs/extensions.md",
+          selectedEntryId: "group:docs:0",
+          staged: false,
+          busy: false,
+          selectFile: () => {},
+          selectEntry: () => {},
+          toggleStaged: () => {},
+          toggleEntry: () => {},
+        }}
+      />,
+      36,
+      12,
+    );
+
+    expect(frame).toContain("docs/");
+    expect(frame).toContain("+1");
+    expect(frame).toContain("+267");
+  });
+
   test.each([30, 42])(
     "working-tree sidebar colors status and the entire selected row at width %s",
     async (width) => {

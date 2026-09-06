@@ -90,7 +90,9 @@ renames whose former path has been recreated. Stashing requires an initial commi
 with the file panel hidden, or outside an actionable working-tree review, **d** retains half-page scrolling and **s** toggles the files pane;
 **Ctrl+d** and the View menu remain available in working-tree reviews.
 **Tab** switches the complete Unstaged/Staged review stream; selecting a sidebar file that only
-has changes on the other side switches automatically. Use `/` to focus the filter.
+has changes on the other side switches automatically. Selecting a folder stays on the current
+side when any file under it belongs there. The files pane keeps +/- counts on every status row,
+including files that only have changes on the other tab. Use `/` to focus the filter.
 Actions wait for Git and its refreshed diff before accepting another mutation. Outside this
 context, Space still pages and Tab retains its files/filter focus behavior. All these commands
 remain remappable, and an explicit user binding takes precedence over contextual defaults.

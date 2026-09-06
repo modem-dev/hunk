@@ -51,7 +51,7 @@ Press `c` on the selected hunk or use a visible add-note affordance with the mou
 
 ## Mouse behavior
 
-- Click a sidebar file to jump to it in the review stream and focus the files pane. Click a folder to select it; Space then stages or unstages the files shown under that folder.
+- Click a sidebar file to jump to it in the review stream and focus the files pane. Click a folder to select it; Space then stages or unstages the files shown under that folder. A folder stays on the current Unstaged/Staged side when any file under it belongs there. The files pane keeps +/- counts on every status row, including files that only have changes on the other tab.
 - Click the review stream to focus it. The focused pane uses a brighter border.
 - Click menus and dialog actions instead of their key equivalents.
 - Use the wheel or scrollbar to move through the review; hold Shift while scrolling to move horizontally through unwrapped code.

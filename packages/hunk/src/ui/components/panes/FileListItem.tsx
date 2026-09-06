@@ -46,11 +46,12 @@ function getFileStateIcon(
   }
 }
 
-/** Render one folder header in the navigation sidebar. */
+/** Render one compact folder header, leaving the shared stats column empty. */
 export function FileGroupHeader({
   entry,
   paddingLeft = 1,
   selected = false,
+  statsWidth = 0,
   textWidth,
   theme,
   onSelect,
@@ -58,11 +59,14 @@ export function FileGroupHeader({
   entry: FileGroupEntry;
   paddingLeft?: number;
   selected?: boolean;
+  statsWidth?: number;
   textWidth: number;
   theme: ExtensionSidebarTheme;
   onSelect?: (entryId: string) => void;
 }) {
   const rowBackground = selected ? theme.accentMuted : theme.panel;
+  const statsSectionWidth = statsWidth > 0 ? statsWidth + 1 : 0;
+  const labelWidth = Math.max(1, textWidth - statsSectionWidth);
   return (
     <box
       id={fileRowId(entry.id)}
@@ -77,9 +81,7 @@ export function FileGroupHeader({
         onSelect(entry.id);
       }}
     >
-      <text fg={selected ? theme.text : theme.muted}>
-        {fitText(entry.label, Math.max(1, textWidth))}
-      </text>
+      <text fg={selected ? theme.text : theme.muted}>{fitText(entry.label, labelWidth, "…")}</text>
     </box>
   );
 }
@@ -250,6 +252,8 @@ export const FileListItem = memo(function FileListItem({
           <box
             style={{
               width: statsSectionWidth,
+              minWidth: statsSectionWidth,
+              flexShrink: 0,
               height: 1,
               flexDirection: "row",
               justifyContent: "flex-end",

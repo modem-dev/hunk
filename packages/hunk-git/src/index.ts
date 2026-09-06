@@ -28,7 +28,11 @@ import {
 } from "./commands";
 import { openGitHistory } from "./history";
 import { gitEndpointSourceSpec, readGitFileSource } from "./source";
-import { loadGitWorkingTreeFiles, mutateGitFileStaging } from "./workingTree";
+import {
+  attachGitWorkingTreeLineStats,
+  loadGitWorkingTreeFiles,
+  mutateGitFileStaging,
+} from "./workingTree";
 import {
   HUNK_VCS_DETECTION_BASELINE_PRIORITY,
   type ExtensionVcsAdapter,
@@ -377,12 +381,15 @@ export function createGitVcsAdapter({
           const largeTrackedFiles = parseGitNumstat(numstat).filter((file) =>
             shouldSkipLargeTrackedDiff(file, repoRoot),
           );
+          const statusFiles = loadGitWorkingTreeFiles(input, { cwd, gitExecutable });
 
           return {
             repoRoot,
             sourceLabel: repoRoot,
             title,
-            workingTreeFiles: loadGitWorkingTreeFiles(input, { cwd, gitExecutable }),
+            workingTreeFiles: statusFiles
+              ? attachGitWorkingTreeLineStats(statusFiles, input, { cwd, gitExecutable })
+              : undefined,
             patchText: await runGitTextAsync({
               input,
               args: buildGitDiffArgs(

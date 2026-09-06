@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 24;
+export const HUNK_EXTENSION_API_VERSION = 25;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -1087,6 +1087,12 @@ export interface ExtensionWorkingTreeFile {
   readonly conflicted: boolean;
   /** Optional two-column Git-style status: index then worktree, or ?? for untracked files. */
   readonly statusCode?: string;
+  /**
+   * Optional line counts covering this path's staged and unstaged changes.
+   * The files pane uses these when the current Unstaged/Staged stream does not
+   * include the file, so +/- counts stay visible on both tabs.
+   */
+  readonly stats?: { additions: number; deletions: number };
   /** Provider-owned refusal for paths that cannot be mutated as ordinary files. */
   readonly unavailableReason?: string;
   /** Opaque state attestation checked by the provider immediately before a mutation. */

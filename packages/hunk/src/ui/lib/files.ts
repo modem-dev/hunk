@@ -174,7 +174,7 @@ export function workingTreeSidebarSources(
       id: status.path,
       path: status.path,
       previousPath: status.previousPath,
-      stats: reviewed?.stats ?? { additions: 0, deletions: 0 },
+      stats: reviewed?.stats ?? status.stats ?? { additions: 0, deletions: 0 },
       isUntracked: status.untracked,
       stageStatus: status.untracked
         ? "??"

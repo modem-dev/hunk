@@ -3,6 +3,7 @@ import { createTestDiffFile } from "../../../../../test/helpers/diff-helpers";
 import {
   cursorFromSidebarIndex,
   filesVisuallyUnderSidebarEntry,
+  nestedRevealPath,
   sidebarIndexFromCursor,
   stepSidebarIndex,
 } from "./filePaneSelection";
@@ -91,6 +92,19 @@ describe("file pane visual selection", () => {
     expect(sidebarIndexFromCursor(entries, { kind: "file", id: "root" })).toBe(
       entries.findIndex((entry) => entry.kind === "file" && entry.id === "root"),
     );
+  });
+
+  test("folder reveal stays on the current side when any nested file is there", () => {
+    const nested = [{ id: "docs/staged.md" }, { id: "docs/unstaged.md" }, { id: "docs/both.md" }];
+
+    expect(nestedRevealPath(nested, new Set(["docs/unstaged.md", "docs/both.md"]))).toBe(
+      "docs/unstaged.md",
+    );
+    expect(nestedRevealPath(nested, new Set(["docs/staged.md", "docs/both.md"]))).toBe(
+      "docs/staged.md",
+    );
+    expect(nestedRevealPath(nested, new Set(["src/other.ts"]))).toBe("docs/staged.md");
+    expect(nestedRevealPath([], new Set(["docs/unstaged.md"]))).toBeUndefined();
   });
 
   test("a stale duplicate folder cursor does not bind a different branch", () => {

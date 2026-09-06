@@ -78,7 +78,8 @@ export function HunkFileNav({
               key={entry.id}
               entry={entry}
               paddingLeft={0}
-              textWidth={Math.max(1, width)}
+              statsWidth={statsWidth}
+              textWidth={textWidth}
               theme={resolvedTheme}
             />
           );

@@ -209,25 +209,40 @@ export interface GitNumstatFile {
   deletions: number;
 }
 
-/** Parse `git diff --numstat -z` output for normal path entries. */
+/**
+ * Parse `git diff --numstat -z` output.
+ * Rename and copy records use an empty path field followed by NUL-separated
+ * old and new paths; counts are keyed by the destination path that status
+ * inventory rows use.
+ */
 export function parseGitNumstat(text: string): GitNumstatFile[] {
-  return text
-    .split("\0")
-    .filter(Boolean)
-    .flatMap((entry) => {
-      const [additionsText, deletionsText, path] = entry.split("\t");
-      if (!additionsText || !deletionsText || !path) {
-        return [];
-      }
+  const files: GitNumstatFile[] = [];
+  const parts = text.split("\0");
+  for (let i = 0; i < parts.length; i += 1) {
+    const entry = parts[i]!;
+    if (!entry) continue;
 
-      const additions = Number.parseInt(additionsText, 10);
-      const deletions = Number.parseInt(deletionsText, 10);
-      if (!Number.isFinite(additions) || !Number.isFinite(deletions)) {
-        return [];
-      }
+    const [additionsText, deletionsText, pathField] = entry.split("\t");
+    if (!additionsText || !deletionsText) continue;
 
-      return [{ path, additions, deletions }];
-    });
+    let path = pathField;
+    // Empty path field is the -z rename/copy triplet, not a dropped record.
+    if (pathField === "") {
+      const previousPath = parts[i + 1];
+      const nextPath = parts[i + 2];
+      i += 2;
+      if (!previousPath || !nextPath) continue;
+      path = nextPath;
+    }
+    if (!path) continue;
+
+    const additions = Number.parseInt(additionsText, 10);
+    const deletions = Number.parseInt(deletionsText, 10);
+    if (!Number.isFinite(additions) || !Number.isFinite(deletions)) continue;
+
+    files.push({ path, additions, deletions });
+  }
+  return files;
 }
 
 /** Return whether tracked diff stats are too large to render by default. */

@@ -20,6 +20,7 @@ import type { WorkspaceWriteRunner } from "./useExtensionWorkspaceControls";
 import {
   cursorFromSidebarIndex,
   filesVisuallyUnderSidebarEntry,
+  nestedRevealPath,
   sidebarEntryIdAtIndex,
   sidebarIndexFromCursor,
   stepSidebarIndex,
@@ -229,14 +230,17 @@ export function useWorkingTreeActions({
       const cursor = cursorFromSidebarIndex(entries, index);
       if (!cursor) return;
       const nested = filesVisuallyUnderSidebarEntry(entries, index);
-      const firstPath = nested[0]?.id;
-      if (firstPath) revealStatusPath(firstPath, cursor);
+      const currentSidePaths = new Set(
+        files.filter((file) => (staged ? file.staged : file.unstaged)).map((file) => file.path),
+      );
+      const revealPath = nestedRevealPath(nested, currentSidePaths);
+      if (revealPath) revealStatusPath(revealPath, cursor);
       else {
         focusFiles();
         setChosenCursor(cursor);
       }
     },
-    [entries, focusFiles, revealStatusPath],
+    [entries, files, focusFiles, revealStatusPath, staged],
   );
 
   const canToggleFile = useCallback(

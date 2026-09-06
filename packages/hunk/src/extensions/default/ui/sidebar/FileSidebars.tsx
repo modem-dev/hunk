@@ -101,6 +101,7 @@ export function VirtualizedFileSidebarRows({
               entry={entry}
               paddingLeft={paddingLeft}
               selected={entry.id === selectedFileId}
+              statsWidth={statsWidth}
               textWidth={textWidth}
               theme={theme}
               onSelect={onSelectEntry}

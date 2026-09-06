@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { LARGE_DIFF_FILE_MAX_BYTES } from "@hunk/vcs/large-file";
 import { createTestWorkingTreeRepo, runTestGit } from "../../../test/helpers/working-tree";
 import { loadGitWorkingTreeFiles, mutateGitFileStaging } from "./workingTree";
 import { createGitVcsAdapter } from ".";
@@ -153,8 +154,71 @@ describe("working-tree file staging", () => {
     for (const staged of [false, true]) {
       const result = await operation.load({ ...input, staged }, { cwd: root });
       expect(result.workingTreeFiles?.map((file) => file.path)).toEqual(["alpha.txt", "beta.txt"]);
+      expect(result.workingTreeFiles?.find((file) => file.path === "alpha.txt")?.stats).toEqual({
+        additions: 1,
+        deletions: 3,
+      });
+      expect(result.workingTreeFiles?.find((file) => file.path === "beta.txt")?.stats).toEqual({
+        additions: 1,
+        deletions: 1,
+      });
       expect(result.patchText).toContain(staged ? "a/alpha.txt" : "a/beta.txt");
       expect(result.patchText).not.toContain(staged ? "a/beta.txt" : "a/alpha.txt");
     }
+  });
+
+  test("staged review still reports untracked line counts on the status inventory", async () => {
+    const root = createRepo();
+    writeFileSync(join(root, "new.txt"), "a\nb\nc\n");
+    const result = await createGitVcsAdapter().operations["working-tree-diff"]!.load(
+      { ...input, staged: true },
+      { cwd: root },
+    );
+    expect(result.workingTreeFiles?.find((file) => file.path === "new.txt")).toMatchObject({
+      untracked: true,
+      stats: { additions: 3, deletions: 0 },
+    });
+  });
+
+  test("unstaged review still reports staged rename line counts on the status inventory", async () => {
+    const root = createRepo();
+    renameSync(join(root, "alpha.txt"), join(root, "renamed.txt"));
+    writeFileSync(join(root, "renamed.txt"), "one\nedited\nthree\n");
+    runTestGit(root, "add", "-A");
+    const result = await createGitVcsAdapter().operations["working-tree-diff"]!.load(input, {
+      cwd: root,
+    });
+    expect(result.workingTreeFiles?.find((file) => file.path === "renamed.txt")?.stats).toEqual({
+      additions: 1,
+      deletions: 1,
+    });
+  });
+
+  test("staged review caps untracked inventory stats at the large-file byte budget", async () => {
+    const root = createRepo();
+    const line = `${"x".repeat(99)}\n`;
+    writeFileSync(join(root, "huge.txt"), line.repeat(15_000));
+    const result = await createGitVcsAdapter().operations["working-tree-diff"]!.load(
+      { ...input, staged: true },
+      { cwd: root },
+    );
+    expect(result.workingTreeFiles?.find((file) => file.path === "huge.txt")).toMatchObject({
+      untracked: true,
+      stats: { additions: LARGE_DIFF_FILE_MAX_BYTES / line.length, deletions: 0 },
+    });
+  });
+
+  test("staged review counts an untracked symlink as its target path, not the target file", async () => {
+    const root = createRepo();
+    writeFileSync(join(root, "target.txt"), "a\nb\nc\nd\ne\n");
+    symlinkSync("target.txt", join(root, "link.txt"));
+    const result = await createGitVcsAdapter().operations["working-tree-diff"]!.load(
+      { ...input, staged: true },
+      { cwd: root },
+    );
+    expect(result.workingTreeFiles?.find((file) => file.path === "link.txt")).toMatchObject({
+      untracked: true,
+      stats: { additions: 1, deletions: 0 },
+    });
   });
 });

@@ -303,6 +303,20 @@ describe("working-tree stream actions", () => {
     expect(setup!.captureCharFrame()).toContain("beta.txt");
   });
 
+  test("unstaged review keeps +/- stats on staged-only files in the sidebar", async () => {
+    await createReview();
+    const sidebar = setup!
+      .captureCharFrame()
+      .split("\n")
+      .map((line) => {
+        const parts = line.split("│");
+        return parts.length >= 3 ? (parts[1] ?? "") : "";
+      })
+      .join("\n");
+    expect(sidebar).toMatch(/alpha\.txt.*\+/);
+    expect(sidebar).toMatch(/beta\.txt.*\+1/);
+  });
+
   test("Tab changes the full stream and does not mutate Git", async () => {
     const root = await createReview();
     const before = runTestGit(root, "status", "--porcelain");
@@ -319,6 +333,42 @@ describe("working-tree stream actions", () => {
     await press(" ");
     await waitForReview(() => setup!.captureCharFrame().includes("Unstaged beta.txt."));
     expect(runTestGit(root, "diff", "--cached")).toBe("");
+  });
+
+  test("selecting a mixed folder stays on the current side and keeps its line stats", async () => {
+    await createReview({
+      prepare: (nextRoot) => {
+        mkdirSync(join(nextRoot, "docs"), { recursive: true });
+        writeFileSync(join(nextRoot, "docs", "aaa-staged.md"), "staged docs\n");
+        writeFileSync(join(nextRoot, "docs", "zzz-unstaged.md"), "unstaged docs\n");
+        runTestGit(nextRoot, "add", "docs/aaa-staged.md");
+      },
+    });
+    await waitForReview(() => setup!.captureCharFrame().includes("zzz-unstaged.md"));
+    const folderY = setup!
+      .captureCharFrame()
+      .split("\n")
+      .findIndex((line) => {
+        const parts = line.split("│");
+        const sidebar = parts.length >= 3 ? (parts[1] ?? "") : (parts[0] ?? "");
+        return sidebar.includes("docs/") && !sidebar.includes(".md");
+      });
+    expect(folderY).toBeGreaterThan(0);
+    await act(async () => {
+      await setup!.mockMouse.click(6, folderY);
+    });
+    await waitForReview(() => {
+      const frame = setup!.captureCharFrame();
+      return frame.includes("Unstaged (") && frame.includes("zzz-unstaged.md");
+    });
+    const frame = setup!.captureCharFrame();
+    expect(frame).toContain("Unstaged (");
+    expect(frame).toContain("Stage folder");
+    expect(frame).toContain("zzz-unstaged.md");
+    expect(frame).toContain("unstaged docs");
+    expect(frame).not.toContain("aaa-staged.md");
+    expect(frame).toMatch(/\+1/);
+    expect(frame).toContain("alpha.txt");
   });
 
   test("Space on a compact folder stages only the files listed under that header", async () => {
