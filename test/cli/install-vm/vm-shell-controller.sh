@@ -5,7 +5,7 @@ shopt -s inherit_errexit
 umask 077
 
 cache=/cache
-hunk_input=/hunk-input
+shell_input=/shell-input
 with_hunk=${WITH_HUNK:-0}
 [[ -t 0 && -t 1 ]] || { echo 'Disposable VM shell requires docker run -it.' >&2; exit 2; }
 [[ ${HOST_UID:?HOST_UID is required} =~ ^[0-9]+$ ]] || { echo 'HOST_UID must be numeric.' >&2; exit 2; }
@@ -15,12 +15,24 @@ with_hunk=${WITH_HUNK:-0}
   exit 2
 }
 [[ $with_hunk == 0 || $with_hunk == 1 ]] || { echo 'WITH_HUNK must be 0 or 1.' >&2; exit 2; }
+[[ -d $shell_input/fixtures && ! -L $shell_input/fixtures ]] || {
+  echo 'Staged VM fixtures are missing or unsafe.' >&2
+  exit 2
+}
+[[ -f $shell_input/fixtures/README.md && ! -L $shell_input/fixtures/README.md ]] || {
+  echo 'Staged VM fixture index is missing or unsafe.' >&2
+  exit 2
+}
+if [[ -n $(find "$shell_input/fixtures" -type l -print -quit) ]]; then
+  echo 'Staged VM fixtures may not contain symlinks.' >&2
+  exit 2
+fi
 if [[ $with_hunk == 1 ]]; then
-  [[ -f $hunk_input/hunk && ! -L $hunk_input/hunk ]] || {
+  [[ -f $shell_input/hunk && ! -L $shell_input/hunk ]] || {
     echo 'Staged Hunk binary is missing or unsafe.' >&2
     exit 2
   }
-  [[ -d $hunk_input/hunkdiff/skills && ! -L $hunk_input/hunkdiff/skills ]] || {
+  [[ -d $shell_input/hunkdiff/skills && ! -L $shell_input/hunkdiff/skills ]] || {
     echo 'Staged Hunk skills are missing or unsafe.' >&2
     exit 2
   }
@@ -202,8 +214,13 @@ fi
 ssh "${ssh_options[@]}" "root@$guest_ip" \
   "ip route replace default via $controller_ip dev eth0; rm -f /etc/resolv.conf; printf 'nameserver 1.1.1.1\\noptions single-request-reopen\\n' > /etc/resolv.conf"
 
+scp -r "${ssh_options[@]}" "$shell_input/fixtures" "root@$guest_ip:/tmp/" >/dev/null
+ssh "${ssh_options[@]}" "root@$guest_ip" \
+  'rm -rf /root/fixtures; install -d -m 0700 /root/fixtures; cp -R /tmp/fixtures/. /root/fixtures/; test -f /root/fixtures/README.md; test -f /root/fixtures/benchmarks/balanced-changeset.patch; rm -rf /tmp/fixtures'
+echo 'Fixtures are available under /root/fixtures.'
+
 if [[ $with_hunk == 1 ]]; then
-  scp -r "${ssh_options[@]}" "$hunk_input/hunk" "$hunk_input/hunkdiff" \
+  scp -r "${ssh_options[@]}" "$shell_input/hunk" "$shell_input/hunkdiff" \
     "root@$guest_ip:/tmp/" >/dev/null
   ssh "${ssh_options[@]}" "root@$guest_ip" \
     'install -m 0755 /tmp/hunk /usr/local/bin/hunk; rm -rf /usr/local/bin/hunkdiff; install -d -m 0755 /usr/local/bin/hunkdiff; cp -R /tmp/hunkdiff/skills /usr/local/bin/hunkdiff/skills; test -f /usr/local/bin/hunkdiff/skills/hunk-review/SKILL.md; /usr/local/bin/hunk --version; rm -rf /tmp/hunk /tmp/hunkdiff'

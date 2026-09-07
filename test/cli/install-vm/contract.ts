@@ -538,10 +538,10 @@ export function buildDockerVmShellCommand(
   image: string,
   cacheDir: string,
   hostIdentity: { uid: number; gid: number },
-  options: { hunkInputDir?: string } = {},
+  options: { shellInputDir: string; withHunk: boolean },
 ) {
   assertSafeDockerBindPath(cacheDir);
-  if (options.hunkInputDir) assertSafeDockerBindPath(options.hunkInputDir);
+  assertSafeDockerBindPath(options.shellInputDir);
   return [
     "docker",
     "run",
@@ -563,12 +563,8 @@ export function buildDockerVmShellCommand(
     `--env=HOST_UID=${hostIdentity.uid}`,
     `--env=HOST_GID=${hostIdentity.gid}`,
     `--mount=type=bind,src=${cacheDir},dst=/cache`,
-    ...(options.hunkInputDir
-      ? [
-          "--env=WITH_HUNK=1",
-          `--mount=type=bind,src=${options.hunkInputDir},dst=/hunk-input,readonly`,
-        ]
-      : []),
+    ...(options.withHunk ? ["--env=WITH_HUNK=1"] : []),
+    `--mount=type=bind,src=${options.shellInputDir},dst=/shell-input,readonly`,
     "--entrypoint=/opt/install-vm/vm-shell-controller.sh",
     image,
   ];

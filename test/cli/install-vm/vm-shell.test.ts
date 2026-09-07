@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { parsePatchFiles } from "@pierre/diffs";
 import {
   chmodSync,
   existsSync,
@@ -17,14 +18,25 @@ import { InstallVmCommandRunner } from "./runner";
 import { acquireInstallVmRuntimeLock } from "./runtime-lock";
 import {
   parseVmShellArgs,
-  prepareVmShellHunkInput,
-  removeVmShellHunkInput,
+  prepareVmShellInput,
+  removeVmShellInput,
   runWithVmShellRuntime,
-  stageVmShellHunkInput,
+  stageVmShellInput,
   validateVmShellTty,
+  VM_SHELL_EXAMPLE_FILES,
 } from "./vm-shell";
 
 const harnessRoot = import.meta.dir;
+const repoRoot = path.resolve(harnessRoot, "../../..");
+
+/** Create the allowlisted example files expected by shell-input staging tests. */
+function writeTestVmShellExamples(repo: string) {
+  for (const relativePath of VM_SHELL_EXAMPLE_FILES) {
+    const destination = path.join(repo, "examples", relativePath);
+    mkdirSync(path.dirname(destination), { recursive: true });
+    writeFileSync(destination, `example ${relativePath}\n`);
+  }
+}
 
 describe("disposable VM shell", () => {
   test("parses only one optional local Hunk installation", () => {
@@ -40,11 +52,13 @@ describe("disposable VM shell", () => {
     expect(() => validateVmShellTty(true, false)).toThrow("interactive stdin and stdout");
   });
 
-  test("builds an interactive cache-only least-privilege Docker invocation", () => {
-    const command = buildDockerVmShellCommand("hunk-install-vm:test", "/safe/cache", {
-      uid: 1000,
-      gid: 1000,
-    });
+  test("builds an interactive least-privilege Docker invocation with curated shell input", () => {
+    const command = buildDockerVmShellCommand(
+      "hunk-install-vm:test",
+      "/safe/cache",
+      { uid: 1000, gid: 1000 },
+      { shellInputDir: "/safe/shell-input", withHunk: false },
+    );
     expect(command).toContain("--interactive");
     expect(command).toContain("--tty");
     expect(command).toContain("--stop-timeout=30");
@@ -59,75 +73,105 @@ describe("disposable VM shell", () => {
     expect(command).toContain("--tmpfs=/tmp:rw,nosuid,nodev,mode=1777");
     expect(command).toContain("--tmpfs=/run:rw,nosuid,nodev,mode=755");
     expect(command).toContain("--mount=type=bind,src=/safe/cache,dst=/cache");
+    expect(command).toContain("--mount=type=bind,src=/safe/shell-input,dst=/shell-input,readonly");
     expect(command).toContain("--entrypoint=/opt/install-vm/vm-shell-controller.sh");
-    expect(command.filter((argument) => argument.startsWith("--mount="))).toHaveLength(1);
+    expect(command.filter((argument) => argument.startsWith("--mount="))).toHaveLength(2);
     expect(command.join(" ")).not.toContain("docker.sock");
     expect(command.join(" ")).not.toContain("/repo");
     expect(command.join(" ")).not.toContain("/fixtures");
     expect(command.join(" ")).not.toContain("/artifacts");
     expect(command.join(" ")).not.toContain("INSTALL_VM_SCENARIOS");
     expect(command.join(" ")).not.toContain("WITH_HUNK");
-    expect(command.join(" ")).not.toContain("/hunk-input");
 
     const withHunk = buildDockerVmShellCommand(
       "hunk-install-vm:test",
       "/safe/cache",
       { uid: 1000, gid: 1000 },
-      { hunkInputDir: "/safe/hunk-input" },
+      { shellInputDir: "/safe/shell-input", withHunk: true },
     );
     expect(withHunk).toContain("--env=WITH_HUNK=1");
-    expect(withHunk).toContain("--mount=type=bind,src=/safe/hunk-input,dst=/hunk-input,readonly");
+    expect(withHunk).toContain("--mount=type=bind,src=/safe/shell-input,dst=/shell-input,readonly");
     expect(withHunk.filter((argument) => argument.startsWith("--mount="))).toHaveLength(2);
-    expect(() => buildDockerVmShellCommand("image", "/unsafe,cache", { uid: 1, gid: 1 })).toThrow(
-      "Unsafe Docker bind path",
-    );
+    expect(() =>
+      buildDockerVmShellCommand(
+        "image",
+        "/unsafe,cache",
+        { uid: 1, gid: 1 },
+        { shellInputDir: "/safe/input", withHunk: false },
+      ),
+    ).toThrow("Unsafe Docker bind path");
     expect(() =>
       buildDockerVmShellCommand(
         "image",
         "/safe/cache",
         { uid: 1, gid: 1 },
-        { hunkInputDir: "/unsafe,input" },
+        { shellInputDir: "/unsafe,input", withHunk: false },
       ),
     ).toThrow("Unsafe Docker bind path");
   });
 
-  test("stages only a regular binary and the source-install skills layout", () => {
+  test("stages only curated examples and deterministic benchmark patches by default", () => {
     const repo = mkdtempSync(path.join(tmpdir(), "hunk-vm-shell-stage-"));
     const outside = mkdtempSync(path.join(tmpdir(), "hunk-vm-shell-outside-"));
     try {
       const runtime = path.join(repo, "tmp", "install-vm");
       const staging = path.join(runtime, "vm-shell-input");
-      mkdirSync(path.join(repo, "dist", "skills", "hunk-review"), { recursive: true });
-      writeFileSync(path.join(repo, "dist", "hunk"), "fresh binary\n");
-      writeFileSync(path.join(repo, "dist", "skills", "hunk-review", "SKILL.md"), "fresh skill\n");
+      writeTestVmShellExamples(repo);
       mkdirSync(runtime, { recursive: true });
 
-      expect(stageVmShellHunkInput(repo, staging)).toBe(staging);
-      expect(readFileSync(path.join(staging, "hunk"), "utf8")).toBe("fresh binary\n");
-      expect(
-        readFileSync(path.join(staging, "hunkdiff", "skills", "hunk-review", "SKILL.md"), "utf8"),
-      ).toBe("fresh skill\n");
-      if (process.platform !== "win32") {
-        expect(statSync(path.join(staging, "hunk")).mode & 0o777).toBe(0o755);
+      expect(stageVmShellInput(repo, staging, { withHunk: false })).toBe(staging);
+      for (const relativePath of VM_SHELL_EXAMPLE_FILES) {
+        expect(readFileSync(path.join(staging, "fixtures", "examples", relativePath), "utf8")).toBe(
+          `example ${relativePath}\n`,
+        );
       }
+      expect(readFileSync(path.join(staging, "fixtures", "README.md"), "utf8")).toContain(
+        "hunk patch fixtures/benchmarks/balanced-changeset.patch",
+      );
+      for (const name of [
+        "many-small-files.patch",
+        "balanced-changeset.patch",
+        "large-single-file.patch",
+      ]) {
+        expect(readFileSync(path.join(staging, "fixtures", "benchmarks", name), "utf8")).toContain(
+          "@@",
+        );
+      }
+      expect(existsSync(path.join(staging, "hunk"))).toBe(false);
 
-      removeVmShellHunkInput(repo, staging);
+      removeVmShellInput(repo, staging);
       expect(existsSync(staging)).toBe(false);
       symlinkSync(outside, staging);
-      expect(() => stageVmShellHunkInput(repo, staging)).toThrow("symlink ancestor");
+      expect(() => stageVmShellInput(repo, staging, { withHunk: false })).toThrow(
+        "symlink ancestor",
+      );
     } finally {
       rmSync(repo, { recursive: true, force: true });
       rmSync(outside, { recursive: true, force: true });
     }
   });
 
-  test("runs a fresh host build before replacing stale staged Hunk files", async () => {
+  test("keeps every allowlisted real example usable as a review input", () => {
+    for (const relativePath of VM_SHELL_EXAMPLE_FILES) {
+      const contents = readFileSync(path.join(repoRoot, "examples", relativePath), "utf8");
+      expect(contents.length).toBeGreaterThan(0);
+      if (relativePath.endsWith(".patch")) {
+        expect(
+          parsePatchFiles(contents, relativePath, true).flatMap((entry) => entry.files).length,
+        ).toBeGreaterThan(0);
+      }
+      if (relativePath.endsWith(".json")) expect(() => JSON.parse(contents)).not.toThrow();
+    }
+  });
+
+  test("runs a fresh host build before adding Hunk to the staged shell input", async () => {
     const repo = mkdtempSync(path.join(tmpdir(), "hunk-vm-shell-build-"));
     try {
       const runtime = path.join(repo, "tmp", "install-vm");
       const staging = path.join(runtime, "vm-shell-input");
       mkdirSync(staging, { recursive: true });
       writeFileSync(path.join(staging, "hunk"), "stale staged binary\n");
+      writeTestVmShellExamples(repo);
       let command: string[] | undefined;
       let cwd: string | undefined;
       const runner = {
@@ -142,10 +186,16 @@ describe("disposable VM shell", () => {
         },
       };
 
-      await prepareVmShellHunkInput(repo, staging, runner, "/test/bun");
+      await prepareVmShellInput(repo, staging, { withHunk: true }, runner, "/test/bun");
       expect(command).toEqual(["/test/bun", "run", "build:bin"]);
       expect(cwd).toBe(repo);
       expect(readFileSync(path.join(staging, "hunk"), "utf8")).toBe("fresh build\n");
+      expect(
+        readFileSync(path.join(staging, "hunkdiff", "skills", "hunk-review", "SKILL.md"), "utf8"),
+      ).toBe("skill\n");
+      if (process.platform !== "win32") {
+        expect(statSync(path.join(staging, "hunk")).mode & 0o777).toBe(0o755);
+      }
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
@@ -218,9 +268,14 @@ describe("disposable VM shell", () => {
     expect(script).toContain("ip route replace default via $controller_ip dev eth0");
     expect(script).toContain("printf 'nameserver 1.1.1.1\\\\noptions single-request-reopen\\\\n'");
     expect(script).toContain("with_hunk=${WITH_HUNK:-0}");
+    expect(script).toContain("shell_input=/shell-input");
+    expect(script).toContain('scp -r "${ssh_options[@]}" "$shell_input/fixtures"');
+    expect(script).toContain("install -d -m 0700 /root/fixtures");
+    expect(script).toContain("/root/fixtures/benchmarks/balanced-changeset.patch");
+    expect(script).toContain("Fixtures are available under /root/fixtures");
     expect(script).toContain("if [[ $with_hunk == 1 ]]");
     expect(script).toContain(
-      'scp -r "${ssh_options[@]}" "$hunk_input/hunk" "$hunk_input/hunkdiff"',
+      'scp -r "${ssh_options[@]}" "$shell_input/hunk" "$shell_input/hunkdiff"',
     );
     expect(script).toContain("install -m 0755 /tmp/hunk /usr/local/bin/hunk");
     expect(script).toContain("cp -R /tmp/hunkdiff/skills /usr/local/bin/hunkdiff/skills");
