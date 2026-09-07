@@ -466,6 +466,7 @@ export function App({
     filesPaneVisible,
     onCurrentLinePaintChange,
     paneLayout,
+    paneLayoutSettled,
     reportPaneRenderFailure,
     renderSidebar,
     resizingPaneKey,
@@ -496,6 +497,7 @@ export function App({
     bodyHeight,
     bodyWidth,
     paneLayout,
+    paneLayoutSettled,
     resizing: resizingPaneKey !== null,
   });
 

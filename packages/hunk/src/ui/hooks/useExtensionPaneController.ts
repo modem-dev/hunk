@@ -83,6 +83,7 @@ export interface ExtensionPaneController {
   filesPaneVisible: boolean;
   onCurrentLinePaintChange: (update: ExtensionCurrentLinePaintUpdate) => void;
   paneLayout: ExtensionPaneLayoutPlan;
+  paneLayoutSettled: boolean;
   reportPaneRenderFailure: (pane: SessionPane) => void;
   renderSidebar: boolean;
   resizingPaneKey: string | null;
@@ -641,6 +642,7 @@ export function useExtensionPaneController({
     filesPaneVisible: visiblePaneKeys.includes(visibleFilesPaneKey),
     onCurrentLinePaintChange,
     paneLayout,
+    paneLayoutSettled: availabilitySnapshot.request === availabilityRequest,
     reportPaneRenderFailure,
     renderSidebar: paneLayout.panes.some(
       ({ pane }) => pane.placement === "left" || pane.placement === "right",

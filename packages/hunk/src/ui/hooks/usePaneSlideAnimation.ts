@@ -20,6 +20,7 @@ interface PaneSlideAnimationOptions {
   bodyHeight: number;
   bodyWidth: number;
   paneLayout: ExtensionPaneLayoutPlan;
+  paneLayoutSettled: boolean;
   resizing: boolean;
 }
 
@@ -45,6 +46,7 @@ export function usePaneSlideAnimation({
   bodyHeight,
   bodyWidth,
   paneLayout,
+  paneLayoutSettled,
   resizing,
 }: PaneSlideAnimationOptions): PaneSlidePresentation {
   const duration = paneSlideAnimationDuration();
@@ -92,6 +94,16 @@ export function usePaneSlideAnimation({
   }, [duration, timeline]);
 
   useLayoutEffect(() => {
+    if (!paneLayoutSettled) {
+      activeTransitionRef.current = null;
+      timeline.pause();
+      if (semanticSnapshotRef.current === null) {
+        presentedLayoutRef.current = paneLayout;
+        setPresentedLayout(paneLayout);
+      }
+      return;
+    }
+
     const previous = semanticSnapshotRef.current;
     semanticSnapshotRef.current = { bodyHeight, bodyWidth, paneLayout };
     const transitionKey = previous
@@ -121,7 +133,7 @@ export function usePaneSlideAnimation({
       paneKey: transitionKey,
     };
     timeline.restart();
-  }, [bodyHeight, bodyWidth, paneLayout, resizing, timeline]);
+  }, [bodyHeight, bodyWidth, paneLayout, paneLayoutSettled, resizing, timeline]);
 
   return {
     animating: activeTransitionRef.current !== null,
