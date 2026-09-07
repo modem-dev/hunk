@@ -85,6 +85,7 @@ describe("PTY scrolling", () => {
       const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
+      await harness.ensureKeyboardIsLive(session);
       await session.waitIdle({ timeout: 300 });
 
       expect(await measureKeyScroll(session, "j", 12)).toBe(1);

@@ -1,3 +1,7 @@
+import {
+  getTestSidebarDividerColumn,
+  getTestSidebarFrame,
+} from "../../../../test/helpers/sidebar-frame";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
@@ -69,22 +73,6 @@ async function flush(setup: Awaited<ReturnType<typeof testRender>>) {
   });
 }
 
-/** Column of the vertical sidebar/diff divider on the probe row, or -1 when absent. */
-function dividerColumn(setup: Awaited<ReturnType<typeof testRender>>) {
-  const row = setup.captureCharFrame().split("\n")[PROBE_ROW] ?? "";
-  return row.indexOf("│");
-}
-
-/** Return only the file-sidebar columns so diff headers cannot satisfy sidebar assertions. */
-function sidebarFrame(setup: Awaited<ReturnType<typeof testRender>>) {
-  const divider = dividerColumn(setup);
-  return setup
-    .captureCharFrame()
-    .split("\n")
-    .map((line) => line.slice(0, divider))
-    .join("\n");
-}
-
 /**
  * Press the divider, drag to a target x, then release. The resize handlers read React state
  * (`isResizingSidebar`), so each phase needs its own commit before the next event's closure sees
@@ -145,41 +133,43 @@ describe("AppHost sidebar resize", () => {
   test("resizes the default sidebar with the terminal until the user drags it", async () => {
     setup = await testRender(<AppHost bootstrap={createResizeBootstrap()} />, WIDE);
     await flush(setup);
-    expect(dividerColumn(setup)).toBe(INITIAL_DIVIDER_COLUMN);
+    expect(getTestSidebarDividerColumn(setup.captureCharFrame())).toBe(INITIAL_DIVIDER_COLUMN);
 
     await act(async () => setup!.resize(300, WIDE.height));
     await flush(setup);
-    expect(dividerColumn(setup)).toBe(49);
+    expect(getTestSidebarDividerColumn(setup.captureCharFrame())).toBe(49);
 
     await act(async () => setup!.resize(220, WIDE.height));
     await flush(setup);
-    expect(dividerColumn(setup)).toBe(36);
+    expect(getTestSidebarDividerColumn(setup.captureCharFrame())).toBe(36);
 
     await act(async () => setup!.resize(360, WIDE.height));
     await flush(setup);
-    expect(dividerColumn(setup)).toBe(57);
+    expect(getTestSidebarDividerColumn(setup.captureCharFrame())).toBe(57);
   });
 
   test("dragging the divider rightward widens the sidebar", async () => {
     setup = await testRender(<AppHost bootstrap={createResizeBootstrap()} />, WIDE);
     await flush(setup);
-    expect(dividerColumn(setup)).toBe(INITIAL_DIVIDER_COLUMN);
+    expect(getTestSidebarDividerColumn(setup.captureCharFrame())).toBe(INITIAL_DIVIDER_COLUMN);
 
     await dragDivider(setup, INITIAL_DIVIDER_COLUMN, INITIAL_DIVIDER_COLUMN + 30);
 
     // The divider follows the new width: startWidth + (currentX - originX).
-    expect(dividerColumn(setup)).toBeGreaterThan(INITIAL_DIVIDER_COLUMN);
+    expect(getTestSidebarDividerColumn(setup.captureCharFrame())).toBeGreaterThan(
+      INITIAL_DIVIDER_COLUMN,
+    );
   });
 
   test("resizing across the content-width threshold switches the file projection", async () => {
     setup = await testRender(<AppHost bootstrap={createResizeBootstrap()} />, WIDE);
     await flush(setup);
-    expect(sidebarFrame(setup)).not.toContain("src/ui/");
+    expect(getTestSidebarFrame(setup.captureCharFrame())).not.toContain("src/ui/");
 
     // Raw pane width 33 leaves 31 content columns, just below the preferred tree width.
     await dragDivider(setup, INITIAL_DIVIDER_COLUMN, 34);
 
-    expect(sidebarFrame(setup)).toContain("src/ui/");
+    expect(getTestSidebarFrame(setup.captureCharFrame())).toContain("src/ui/");
   });
 
   test("dragging the divider far left clamps the sidebar at its minimum width", async () => {
@@ -189,7 +179,7 @@ describe("AppHost sidebar resize", () => {
     await dragDivider(setup, INITIAL_DIVIDER_COLUMN, 2);
 
     // SIDEBAR_MIN_WIDTH is 22, plus the 1-column body padding => divider clamps at column 23.
-    expect(dividerColumn(setup)).toBe(23);
+    expect(getTestSidebarDividerColumn(setup.captureCharFrame())).toBe(23);
   });
 
   test("dragging a horizontal divider resizes a top pane on the row axis", async () => {
@@ -214,7 +204,7 @@ describe("AppHost sidebar resize", () => {
     await flush(setup);
 
     expect(setup.captureCharFrame()).toBe(before);
-    expect(dividerColumn(setup)).toBe(INITIAL_DIVIDER_COLUMN);
+    expect(getTestSidebarDividerColumn(setup.captureCharFrame())).toBe(INITIAL_DIVIDER_COLUMN);
   });
 
   test("a non-left mouse button on the divider does not start a resize", async () => {
@@ -235,6 +225,6 @@ describe("AppHost sidebar resize", () => {
     });
     await flush(setup);
 
-    expect(dividerColumn(setup)).toBe(INITIAL_DIVIDER_COLUMN);
+    expect(getTestSidebarDividerColumn(setup.captureCharFrame())).toBe(INITIAL_DIVIDER_COLUMN);
   });
 });

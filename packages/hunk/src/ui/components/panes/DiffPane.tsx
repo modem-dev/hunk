@@ -1983,13 +1983,8 @@ export function DiffPane({
   const visibleBodyBoundsByFile = useMemo(() => {
     const previous = previousVisibleBodyBoundsRef.current;
     const next = new Map<string, VisibleBodyBounds>();
-    if (!wrapLines && scrollViewport.height <= 0) {
-      previousVisibleBodyBoundsRef.current = next;
-      return next;
-    }
-
-    // Keep this provisional height render-only. Navigation and selection effects must continue to
-    // wait for the exact scrollbox viewport represented by scrollViewport.height.
+    // Bound the first mount before Yoga measures the viewport instead of mounting the whole file.
+    // Keep this estimate render-only; navigation and selection still wait for measured geometry.
     const hasMeasuredViewport = scrollViewport.height > 0;
     const renderViewportHeight = hasMeasuredViewport
       ? scrollViewport.height

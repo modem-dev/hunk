@@ -33,48 +33,52 @@ function visibleWorkerLineIndexes(snapshot: string) {
 }
 
 describe("PTY syntax highlighting", () => {
-  test("keeps key input responsive while a large added file highlights", async () => {
-    const fixture = createLargeHighlightTestFiles();
-    const session = await harness.launchHunk({
-      args: ["diff", "--files", fixture.before, fixture.after, "--fast", "--mode", "stack"],
-      cwd: fixture.dir,
-      cols: 120,
-      rows: 24,
-    });
-
-    try {
-      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
-      const initial = await session.waitForText(/export const workerLine\d+ = \d+;/, {
-        timeout: 15_000,
+  test.each(["stack", "split"])(
+    "keeps key input responsive while a large added file highlights in %s",
+    async (mode) => {
+      const fixture = createLargeHighlightTestFiles();
+      const session = await harness.launchHunk({
+        args: ["diff", "--files", fixture.before, fixture.after, "--fast", "--mode", mode],
+        cwd: fixture.dir,
+        cols: 120,
+        rows: 24,
       });
-      const lastInitialLineIndex = Math.max(...visibleWorkerLineIndexes(initial));
-      expect(lastInitialLineIndex).toBeGreaterThanOrEqual(0);
 
-      // Effects schedule highlighting after the first plain-text paint. Inject input as soon as
-      // source rows make that paint observable, then require Hunk to process the navigation.
-      // Tuistory's press() waits up to 500ms for idleness, so observe the viewport instead.
-      session.sendKey("pagedown");
-      await harness.waitForSnapshot(
-        session,
-        (snapshot) =>
-          visibleWorkerLineIndexes(snapshot).some((index) => index > lastInitialLineIndex),
-        1_000,
-      );
+      try {
+        await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+        const initial = await session.waitForText(/export const workerLine\d+ = \d+;/, {
+          timeout: 15_000,
+        });
+        const lastInitialLineIndex = Math.max(...visibleWorkerLineIndexes(initial));
+        expect(lastInitialLineIndex).toBeGreaterThanOrEqual(0);
 
-      let colored = "";
-      for (let iteration = 0; iteration < 200; iteration += 1) {
-        await session.waitIdle({ timeout: 50 });
-        colored = await session.text({ immediate: true, only: { foreground: "#ff7b72" } });
-        if (colored.includes("export")) {
-          break;
+        // Effects schedule highlighting after the first plain-text paint. Inject input as soon as
+        // source rows make that paint observable, then require Hunk to process the navigation.
+        // The first mount must already be windowed so tearing down offscreen rows cannot stall input.
+        // Tuistory's press() waits up to 500ms for idleness, so observe the viewport instead.
+        session.sendKey("pagedown");
+        await harness.waitForSnapshot(
+          session,
+          (snapshot) =>
+            visibleWorkerLineIndexes(snapshot).some((index) => index > lastInitialLineIndex),
+          1_000,
+        );
+
+        let colored = "";
+        for (let iteration = 0; iteration < 200; iteration += 1) {
+          await session.waitIdle({ timeout: 50 });
+          colored = await session.text({ immediate: true, only: { foreground: "#ff7b72" } });
+          if (colored.includes("export")) {
+            break;
+          }
         }
+        expect(colored).toContain("export");
+      } finally {
+        session.close();
+        rmSync(fixture.dir, { recursive: true, force: true });
       }
-      expect(colored).toContain("export");
-    } finally {
-      session.close();
-      rmSync(fixture.dir, { recursive: true, force: true });
-    }
-  });
+    },
+  );
 
   test("keeps code after a hidden Elixir heredoc opener out of the string token state", async () => {
     const fixture = harness.createElixirHeredocRepoFixture();

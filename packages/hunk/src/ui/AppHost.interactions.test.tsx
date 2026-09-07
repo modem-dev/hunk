@@ -1,3 +1,4 @@
+import { getTestSidebarFrame } from "../../../../test/helpers/sidebar-frame";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -3718,9 +3719,9 @@ describe("App interactions", () => {
       await flush(setup);
 
       let frame = setup.captureCharFrame();
-      const directoryY = frame
+      const directoryY = getTestSidebarFrame(frame)
         .split("\n")
-        .findIndex((line) => line.split("│", 1)[0]?.includes("⌄ src/"));
+        .findIndex((line) => line.includes("⌄ src/"));
       expect(directoryY).toBeGreaterThan(0);
       expect((frame.match(/alpha\.ts/g) ?? []).length).toBe(2);
       expect((frame.match(/beta\.ts/g) ?? []).length).toBe(2);
@@ -3732,7 +3733,7 @@ describe("App interactions", () => {
 
       frame = setup.captureCharFrame();
       expect(frame.split("\n")[directoryY]).toContain("› src/");
-      expect(frame.split("\n")[directoryY]?.split("│", 1)[0]).toContain("2 files");
+      expect(getTestSidebarFrame(frame).split("\n")[directoryY]).toContain("2 files");
       expect((frame.match(/alpha\.ts/g) ?? []).length).toBe(1);
       expect((frame.match(/beta\.ts/g) ?? []).length).toBe(1);
       expect((frame.match(/README\.md/g) ?? []).length).toBe(2);
