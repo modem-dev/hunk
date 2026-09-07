@@ -40,6 +40,8 @@ test/
 | `bun run test:session-broker-node`   | Real Node listener/adapter conformance using the checked-in cross-runtime fixtures                                     |
 | `bun run test:integration`           | PTY-backed tests under `test/pty/`                                                                                     |
 | `bun run test:tty-smoke`             | Opt-in real-TTY smoke tests under `test/smoke/`                                                                        |
+| `bun run test:install-vm`            | Opt-in Firecracker install compatibility scenarios under `test/cli/install-vm/`                                        |
+| `bun run vm:shell [-- --with-hunk]`  | Disposable Ubuntu Firecracker shell, optionally with a fresh local Hunk build                                          |
 
 The dedicated trees are not selected directly by `bun run test`, though package tests import some
 shared runtime fixtures. Run the commands that match the changed behavior; omission from the default

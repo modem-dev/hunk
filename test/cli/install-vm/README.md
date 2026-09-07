@@ -17,6 +17,15 @@ bun run test:install-vm -- --scenario authenticated-daemon-upgrade
 bun run test:install-vm
 ```
 
+For manual investigation, open a root shell in a clean Ubuntu 24.04 guest. Add `--with-hunk` to build the current checkout and install its Linux x64 baseline binary and bundled skills before the shell opens:
+
+```sh
+bun run vm:shell
+bun run vm:shell -- --with-hunk
+```
+
+The default command stays pristine for install and upgrade testing: it does not build package fixtures, stage Hunk, or mount the checkout. Both modes require an interactive terminal and reuse the pinned kernel, Firecracker binary, and prepared Node rootfs cache. The guest has 2 vCPU, 2 GiB RAM, public-internet egress, and Node under `/opt/node`; controller-enforced filtering rejects spoofed guest sources and private, link-local, metadata, and reserved destinations. `--with-hunk` mounts only an owner-only staging directory containing the freshly compiled binary and generated `hunkdiff/skills` tree, copies those files into the guest, and removes the staging directory after the session. Exit the SSH shell to stop Firecracker and delete the writable disk, ephemeral SSH key, socket, configuration, TAP device, and firewall rules. The immutable base cache remains for later sessions. The shell and install suite share a runtime lock and cannot run concurrently.
+
 Use `--reuse-fixtures` to reuse package fixtures only when their checkout identity and every tarball checksum still match; stale or altered fixtures are rebuilt. Automation that intentionally permits unsupported hosts may pass `--allow-skip`; a requested local run otherwise fails with an actionable preflight report. In GitHub Actions, an allowed skip emits a workflow warning and a prominent step summary in addition to a structured skipped result—it is not VM success.
 
 The first run lazily builds the controller image and downloads checksum-pinned Firecracker, kernel, rootfs, and Node inputs. They live under `tmp/install-vm/cache`; generated package fixtures and structured runs live under `tmp/install-vm/fixtures` and `tmp/install-vm/runs`. Remove only those harness-owned artifacts with:
@@ -35,7 +44,7 @@ Every scenario gets a sparse/reflink clone of the verified immutable base image,
 
 The controller container receives only `/dev/kvm`, `/dev/net/tun`, `NET_ADMIN`, `CHOWN`, and `DAC_OVERRIDE`. The last two let it traverse the owner-only validated cache/result binds while running, then return their ownership to the invoking user; the directories are never made world-writable. The container drops all other capabilities, enables `no-new-privileges`, uses a read-only container root, and never mounts the repository or Docker socket. TAP and NAT changes stay in its Docker network namespace and are removed on exit. Third-party package lifecycle scripts run as root only inside disposable guests with no repository, host credentials, or host-writable package cache.
 
-This is development/test isolation, not a production Firecracker jail. Run repository-controlled KVM jobs only on trusted disposable hosts. The dedicated workflow is manual and never runs for pull requests.
+This is development/test isolation, not a production Firecracker jail. Run repository-controlled KVM jobs only on trusted disposable hosts. The interactive shell has filtered public-internet egress and should not receive host secrets; its controller mounts only the harness cache. The dedicated workflow is manual and never runs for pull requests.
 
 ## Coverage boundaries
 

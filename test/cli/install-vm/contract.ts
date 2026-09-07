@@ -467,6 +467,13 @@ export interface DockerRunPaths {
   outputDir: string;
 }
 
+/** Reject paths that Docker's comma-delimited bind syntax cannot represent safely. */
+function assertSafeDockerBindPath(mountPath: string) {
+  if (/[,\0-\x1f\x7f]/.test(mountPath)) {
+    throw new Error(`Unsafe Docker bind path for install VM: ${mountPath}`);
+  }
+}
+
 /** Build the controller image from the same validated image and Node pins used by the guest. */
 export function buildControllerImageCommand(
   image: string,
@@ -497,11 +504,7 @@ export function buildDockerRunCommand(
   scenarioIds: readonly string[],
   hostIdentity: { uid: number; gid: number },
 ) {
-  for (const mountPath of Object.values(paths)) {
-    if (/[,\0-\x1f\x7f]/.test(mountPath)) {
-      throw new Error(`Unsafe Docker bind path for install VM: ${mountPath}`);
-    }
-  }
+  for (const mountPath of Object.values(paths)) assertSafeDockerBindPath(mountPath);
   if (scenarioIds.some((id) => !SCENARIO_ID_PATTERN.test(id))) {
     throw new Error("Unsafe install VM scenario id in Docker command.");
   }
@@ -526,6 +529,47 @@ export function buildDockerRunCommand(
     `--mount=type=bind,src=${paths.cacheDir},dst=/cache`,
     `--mount=type=bind,src=${paths.fixtureDir},dst=/fixtures,readonly`,
     `--mount=type=bind,src=${paths.outputDir},dst=/artifacts`,
+    image,
+  ];
+}
+
+/** Build the least-privilege interactive Docker command for one disposable VM shell. */
+export function buildDockerVmShellCommand(
+  image: string,
+  cacheDir: string,
+  hostIdentity: { uid: number; gid: number },
+  options: { hunkInputDir?: string } = {},
+) {
+  assertSafeDockerBindPath(cacheDir);
+  if (options.hunkInputDir) assertSafeDockerBindPath(options.hunkInputDir);
+  return [
+    "docker",
+    "run",
+    "--rm",
+    "--interactive",
+    "--tty",
+    "--stop-timeout=30",
+    "--cap-drop=ALL",
+    "--cap-add=NET_ADMIN",
+    "--cap-add=CHOWN",
+    "--cap-add=DAC_OVERRIDE",
+    "--device=/dev/kvm",
+    "--device=/dev/net/tun",
+    "--security-opt=no-new-privileges",
+    "--sysctl=net.ipv4.ip_forward=1",
+    "--read-only",
+    "--tmpfs=/tmp:rw,nosuid,nodev,mode=1777",
+    "--tmpfs=/run:rw,nosuid,nodev,mode=755",
+    `--env=HOST_UID=${hostIdentity.uid}`,
+    `--env=HOST_GID=${hostIdentity.gid}`,
+    `--mount=type=bind,src=${cacheDir},dst=/cache`,
+    ...(options.hunkInputDir
+      ? [
+          "--env=WITH_HUNK=1",
+          `--mount=type=bind,src=${options.hunkInputDir},dst=/hunk-input,readonly`,
+        ]
+      : []),
+    "--entrypoint=/opt/install-vm/vm-shell-controller.sh",
     image,
   ];
 }

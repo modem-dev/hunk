@@ -45,6 +45,7 @@
     "test:tty-smoke": "HUNK_RUN_TTY_SMOKE=1 \"${npm_execpath:-bun}\" test ./test/smoke",
     "test:install-vm": "bun run ./test/cli/install-vm/runner.ts",
     "test:install-vm:clean": "bun run ./test/cli/install-vm/runner.ts --clean",
+    "vm:shell": "bun run ./test/cli/install-vm/vm-shell.ts",
     "check:pack": "bun run ./scripts/packaging/check-pack.ts",
     "check:prebuilt-pack": "bun run ./scripts/packaging/check-prebuilt-pack.ts",
     "smoke:prebuilt-install": "bun run ./scripts/packaging/smoke-prebuilt-install.ts",

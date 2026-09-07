@@ -35,9 +35,9 @@ COPY controller-deps ./controller-deps
 RUN cd controller-deps \
  && npm ci --ignore-scripts \
  && ln -s /opt/install-vm/controller-deps/node_modules/.bin/verdaccio /usr/local/bin/verdaccio
-COPY controller.sh pins.json scenarios.json ./
+COPY controller.sh vm-shell-controller.sh pins.json scenarios.json ./
 COPY guest ./guest
 COPY scenarios ./scenarios
-RUN chmod +x controller.sh guest/*.sh scenarios/*.sh
+RUN chmod +x controller.sh vm-shell-controller.sh guest/*.sh scenarios/*.sh
 
 ENTRYPOINT ["/opt/install-vm/controller.sh"]
