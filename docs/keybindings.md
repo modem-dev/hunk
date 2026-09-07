@@ -57,8 +57,10 @@ commands use the same configurable keybinding resolver as review while retaining
 Shared application commands such as `hunk.app.quit`, `hunk.app.toggleHelp`, and
 `hunk.view.openThemeSelector` keep the same ids on both surfaces. `F10` opens File, View, Navigate, Commit, and Help menus;
 View includes Hunk's shared theme selector and an optional **Graph view** that replaces the default
-day-grouped timeline with commit-topology lanes. It uses `Up`/`Down` or `j`/`k` to move, `Shift+Up`/`Shift+Down`
-or uppercase `K`/`J` to extend a contiguous commit selection, `PageUp`/`PageDown`, `g`/`G` or `Home`/`End` to jump,
+day-grouped timeline with commit-topology lanes. It uses `Up`/`Down` or `j`/`k` to move; press `v` first to
+extend a contiguous commit selection with those same keys. `Shift+Up`/`Shift+Down` or uppercase `K`/`J` extend
+directly, and `Escape` collapses the selection. `PageUp`/`PageDown`, `b`/`f`, or `Shift+Space`/`Space` page
+through history; `u`/`d` or `Ctrl-U`/`Ctrl-D` move by half a page; `g`/`G` or `Home`/`End` jump,
 `/` to search, `n`/`N` for matches, `t` to choose a theme, `r` to refresh, `y` to copy the focused commit's full id,
 `Enter` to open the selection in normal Hunk review, and `q` or `Ctrl-C` to quit. With a mouse, Shift-click a row to extend the
 selection when the terminal forwards modifiers, click a commit id to open it immediately, click the adjacent copy
@@ -70,30 +72,34 @@ an ordered provider-owned parent; they do not navigate the history selection to 
 
 History-specific commands:
 
-| Command id                       | Does                         | Default keys      |
-| -------------------------------- | ---------------------------- | ----------------- |
-| `hunk.history.openSelection`     | Open the selected commit(s)  | `enter`           |
-| `hunk.history.copyRevision`      | Copy the focused commit id   | `y`               |
-| `hunk.history.refresh`           | Refresh repository history   | `r`               |
-| `hunk.history.previousCommit`    | Move to the previous commit  | `up`, `k`         |
-| `hunk.history.nextCommit`        | Move to the next commit      | `down`, `j`       |
-| `hunk.history.extendPrevious`    | Extend selection upward      | `shift+up`, `K`   |
-| `hunk.history.extendNext`        | Extend selection downward    | `shift+down`, `J` |
-| `hunk.history.pageUp`            | Move up one page             | `pageup`          |
-| `hunk.history.pageDown`          | Move down one page           | `pagedown`        |
-| `hunk.history.jumpToFirst`       | Jump to the first commit     | `home`, `g`       |
-| `hunk.history.jumpToLast`        | Jump to the last commit      | `end`, `G`        |
-| `hunk.history.search`            | Search history               | `/`               |
-| `hunk.history.nextMatch`         | Select the next match        | `n`               |
-| `hunk.history.previousMatch`     | Select the previous match    | `N`               |
-| `hunk.history.toggleGraph`       | Toggle graph presentation    | _(none)_          |
-| `hunk.history.toggleUnicode`     | Toggle Unicode graph lines   | _(none)_          |
-| `hunk.history.toggleAuthor`      | Toggle author metadata       | _(none)_          |
-| `hunk.history.toggleDate`        | Toggle date metadata         | _(none)_          |
-| `hunk.history.toggleDecorations` | Toggle ref decorations       | _(none)_          |
-| `hunk.history.openFirstParent`   | Compare with first parent    | _(none)_          |
-| `hunk.history.openParent`        | Choose a parent to compare   | _(none)_          |
-| `hunk.history.showAbout`         | Show application information | _(none)_          |
+| Command id                          | Does                         | Default keys                 |
+| ----------------------------------- | ---------------------------- | ---------------------------- |
+| `hunk.history.openSelection`        | Open the selected commit(s)  | `enter`                      |
+| `hunk.history.copyRevision`         | Copy the focused commit id   | `y`                          |
+| `hunk.history.refresh`              | Refresh repository history   | `r`                          |
+| `hunk.history.previousCommit`       | Move to the previous commit  | `up`, `k`                    |
+| `hunk.history.nextCommit`           | Move to the next commit      | `down`, `j`                  |
+| `hunk.history.startVisualSelection` | Start visual selection       | `v`                          |
+| `hunk.history.clearSelection`       | Clear visual selection       | `escape`                     |
+| `hunk.history.extendPrevious`       | Extend selection upward      | `shift+up`, `K`              |
+| `hunk.history.extendNext`           | Extend selection downward    | `shift+down`, `J`            |
+| `hunk.history.pageUp`               | Move up one page             | `pageup`, `b`, `shift+space` |
+| `hunk.history.pageDown`             | Move down one page           | `pagedown`, `space`, `f`     |
+| `hunk.history.halfPageUp`           | Move up half a page          | `u`, `ctrl+u`                |
+| `hunk.history.halfPageDown`         | Move down half a page        | `d`, `ctrl+d`                |
+| `hunk.history.jumpToFirst`          | Jump to the first commit     | `home`, `g`                  |
+| `hunk.history.jumpToLast`           | Jump to the last commit      | `end`, `G`                   |
+| `hunk.history.search`               | Search history               | `/`                          |
+| `hunk.history.nextMatch`            | Select the next match        | `n`                          |
+| `hunk.history.previousMatch`        | Select the previous match    | `N`                          |
+| `hunk.history.toggleGraph`          | Toggle graph presentation    | _(none)_                     |
+| `hunk.history.toggleUnicode`        | Toggle Unicode graph lines   | _(none)_                     |
+| `hunk.history.toggleAuthor`         | Toggle author metadata       | _(none)_                     |
+| `hunk.history.toggleDate`           | Toggle date metadata         | _(none)_                     |
+| `hunk.history.toggleDecorations`    | Toggle ref decorations       | _(none)_                     |
+| `hunk.history.openFirstParent`      | Compare with first parent    | _(none)_                     |
+| `hunk.history.openParent`           | Choose a parent to compare   | _(none)_                     |
+| `hunk.history.showAbout`            | Show application information | _(none)_                     |
 
 Review and shared commands:
 

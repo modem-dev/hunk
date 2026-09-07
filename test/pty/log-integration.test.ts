@@ -143,7 +143,9 @@ describe("interactive hunk log", () => {
       const rootRowIndex = history
         .split("\n")
         .findIndex((line) => line.includes("First history commit"));
-      session.writeRaw("J");
+      session.writeRaw("v");
+      await session.waitForText(/1 commit selected/, { timeout: 5_000 });
+      session.writeRaw("j");
       await session.waitForText(/2 commits selected/, { timeout: 5_000 });
       await session.press("enter");
       const review = await session.waitForText(/rootOnly = true/, { timeout: 15_000 });
@@ -154,9 +156,12 @@ describe("interactive hunk log", () => {
       await session.press("q");
       await session.waitForText(/2 commits selected/, { timeout: 15_000 });
 
-      // SGR mouse modifier bit 4 forwards Shift+click through capable terminals.
+      // Escape collapses visual mode before direct Shift selection starts another range.
+      await session.press("escape");
+      await harness.waitForSnapshot(session, (text) => !text.includes("commits selected"), 5_000);
       session.writeRaw("k");
-      await harness.waitForSnapshot(session, (text) => !text.includes("2 commits selected"), 5_000);
+
+      // SGR mouse modifier bit 4 forwards Shift+click through capable terminals.
       session.writeRaw(`\x1b[<4;50;${rootRowIndex + 1}M\x1b[<4;50;${rootRowIndex + 1}m`);
       await session.waitForText(/2 commits selected/, { timeout: 5_000 });
       await session.press("q");
@@ -272,7 +277,7 @@ describe("interactive hunk log", () => {
     mkdirSync(configDir, { recursive: true });
     writeFileSync(
       join(configDir, "config.toml"),
-      '[keybindings]\n"hunk.history.nextCommit" = "ctrl+n"\n',
+      '[keybindings]\n"hunk.history.nextCommit" = "ctrl+n"\n"hunk.history.startVisualSelection" = "x"\n',
     );
     const session = await harness.launchHunk({
       args: ["log", "--color", "never", "--no-extensions"],
@@ -283,7 +288,12 @@ describe("interactive hunk log", () => {
     });
 
     try {
-      await session.waitForText(/Second history commit/, { timeout: 15_000 });
+      const remapped = await session.waitForText(/Second history commit/, { timeout: 15_000 });
+      expect(remapped).toContain("x select");
+      expect(remapped).not.toContain("v select");
+      session.writeRaw("x");
+      await session.waitForText(/1 commit selected/, { timeout: 5_000 });
+      await session.press("escape");
       await session.press("down");
       await session.press("enter");
       await session.waitForText(/historyValue = 'second'/, { timeout: 15_000 });

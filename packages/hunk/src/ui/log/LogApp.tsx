@@ -282,13 +282,23 @@ export function LogApp({
     "hunk.history.toggleAuthor": () => controller.togglePresentation("author"),
     "hunk.history.toggleDate": () => controller.togglePresentation("date"),
     "hunk.history.toggleDecorations": () => controller.togglePresentation("decorations"),
-    "hunk.history.previousCommit": () => void controller.move(-1, viewportBodyHeight),
-    "hunk.history.nextCommit": () => void controller.move(1, viewportBodyHeight),
+    "hunk.history.startVisualSelection": () => controller.beginVisualSelection(),
+    "hunk.history.clearSelection": () => void controller.clearSelection(),
+    "hunk.history.previousCommit": () =>
+      void controller.move(-1, viewportBodyHeight, {
+        extend: controller.getSnapshot().visualSelectionActive,
+      }),
+    "hunk.history.nextCommit": () =>
+      void controller.move(1, viewportBodyHeight, {
+        extend: controller.getSnapshot().visualSelectionActive,
+      }),
     "hunk.history.extendPrevious": () =>
       void controller.move(-1, viewportBodyHeight, { extend: true }),
     "hunk.history.extendNext": () => void controller.move(1, viewportBodyHeight, { extend: true }),
     "hunk.history.pageUp": () => void controller.page(-1, viewportBodyHeight),
     "hunk.history.pageDown": () => void controller.page(1, viewportBodyHeight),
+    "hunk.history.halfPageUp": () => void controller.halfPage(-1, viewportBodyHeight),
+    "hunk.history.halfPageDown": () => void controller.halfPage(1, viewportBodyHeight),
     "hunk.history.jumpToFirst": () => void controller.first(viewportBodyHeight),
     "hunk.history.jumpToLast": () => void controller.last(viewportBodyHeight),
     "hunk.history.search": () => controller.beginSearch(),
@@ -364,10 +374,14 @@ export function LogApp({
     navigate: [
       commandItem("hunk.history.previousCommit"),
       commandItem("hunk.history.nextCommit"),
+      commandItem("hunk.history.startVisualSelection"),
+      commandItem("hunk.history.clearSelection"),
       commandItem("hunk.history.extendPrevious"),
       commandItem("hunk.history.extendNext"),
       commandItem("hunk.history.pageUp"),
       commandItem("hunk.history.pageDown"),
+      commandItem("hunk.history.halfPageUp"),
+      commandItem("hunk.history.halfPageDown"),
       commandItem("hunk.history.jumpToFirst"),
       commandItem("hunk.history.jumpToLast"),
       { kind: "separator" },
@@ -543,11 +557,13 @@ export function LogApp({
     groupByDay: !snapshot.presentation.graph,
   });
   const visible = viewportGeometry.entries;
+  const visualSelectionKey = findAppCommandById(commands, "hunk.history.startVisualSelection")
+    ?.keyLabels[0];
   const statusHint =
     terminal.width >= 120
-      ? "↑↓ move · Shift-↑↓ / J/K select · Enter open · / search · F10 menu"
+      ? `↑↓ move · ${visualSelectionKey ? `${visualSelectionKey} or ` : ""}Shift-↑↓ select · Enter open · / search · F10 menu`
       : terminal.width >= 60
-        ? "J/K select · Enter open · F10 menu"
+        ? `${visualSelectionKey ? `${visualSelectionKey} select · ` : ""}Enter open · F10 menu`
         : "";
   const statusTextWidth = Math.max(
     1,
@@ -785,8 +801,8 @@ export function LogApp({
               ? `/${snapshot.search}`
               : transientNotice ||
                   snapshot.notice ||
-                  ((selection?.count ?? 0) > 1
-                    ? `${selection!.count} commits selected`
+                  ((selection?.count ?? 0) > 1 || snapshot.visualSelectionActive
+                    ? `${selection?.count ?? 0} commit${selection?.count === 1 ? "" : "s"} selected`
                     : `${runtime.providerName} · ${snapshot.rows.length}${snapshot.historyDone ? " commits" : "+ commits"}`),
             statusTextWidth,
           )}

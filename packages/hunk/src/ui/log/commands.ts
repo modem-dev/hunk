@@ -37,12 +37,19 @@ export function historyCommandKeyDefaults(): readonly CommandKeyDefaults[] {
 /** Apply context-sensitive availability consistently to keyboard and menus. */
 export function isHistoryCommandEnabled(id: HistoryCommandId, snapshot: LogSnapshot) {
   const selected = snapshot.rows[snapshot.selected];
-  if (id === "hunk.history.openSelection" || id === "hunk.history.copyRevision")
+  if (
+    id === "hunk.history.openSelection" ||
+    id === "hunk.history.copyRevision" ||
+    id === "hunk.history.startVisualSelection"
+  )
     return Boolean(selected);
+  if (id === "hunk.history.clearSelection")
+    return snapshot.selectionAnchor !== null || snapshot.visualSelectionActive;
   if (
     id === "hunk.history.previousCommit" ||
     id === "hunk.history.extendPrevious" ||
     id === "hunk.history.pageUp" ||
+    id === "hunk.history.halfPageUp" ||
     id === "hunk.history.jumpToFirst"
   )
     return snapshot.selected > 0;
@@ -50,6 +57,7 @@ export function isHistoryCommandEnabled(id: HistoryCommandId, snapshot: LogSnaps
     id === "hunk.history.nextCommit" ||
     id === "hunk.history.extendNext" ||
     id === "hunk.history.pageDown" ||
+    id === "hunk.history.halfPageDown" ||
     id === "hunk.history.jumpToLast"
   )
     return !(snapshot.historyDone && snapshot.selected >= snapshot.rows.length - 1);
