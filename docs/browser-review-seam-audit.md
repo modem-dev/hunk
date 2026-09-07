@@ -286,7 +286,7 @@ duplication); hunk header text (browser delegates to Pierre separators); platfor
   the members that need them — and `toReviewIntent` strips them again, so an action is
   validated and narrowed rather than restated. The action-type-to-parser table is keyed by the
   vocabulary, so a wire-reachable intent without a parser does not compile.
-  `scripts/review-vocabulary.test.ts` is the ladder's rung 5: it asserts the equality, that
+  `scripts/quality/review-vocabulary.test.ts` is the ladder's rung 5: it asserts the equality, that
   every exclusion names a real intent once, and that every type in the vocabulary really
   reaches a parser. Round-trip fixtures for every action live in
   `test/review-conformance/wireFixtures.ts`, registered as the `review wire protocol` consumer.
@@ -385,7 +385,7 @@ path suffixes, expansion retention, git-status badges).
   clamped to the ceiling a reader is allowed to hold rather than emitting frames the reader
   will refuse. `browserReviewServer.ts` imports all of it and declares none of it; the
   browser client imports the same module unchanged in Phase 5, which
-  `scripts/source-boundaries.test.ts` keeps possible by gating the module's transitive
+  `scripts/quality/source-boundaries.test.ts` keeps possible by gating the module's transitive
   closure platform-free. Two decisions differ from the prototype deliberately: a chunked
   payload is framed and verified as the byte stream it is, so reading it is the shared
   `ReviewChunkAssembler` rather than a fourth reassembly loop (C2's rule applied here); and
@@ -488,7 +488,7 @@ path suffixes, expansion retention, git-status badges).
   registration's file limit, and every digest check is `isReviewSha256Digest`. The one
   coupling the protocol cannot express as an import is the transport frame size — importing
   the broker package would cost the module its browser safety — so
-  `scripts/review-vocabulary.test.ts` asserts it instead, alongside a check that no session
+  `scripts/quality/review-vocabulary.test.ts` asserts it instead, alongside a check that no session
   module re-declares a name the review model exports and that no module writes its own
   64-character digest pattern. Naming `isActiveStoredReviewNote` beside
   `isRenderableStoredReviewNote` and commenting `parseReviewState` are browser-tier work and
@@ -653,11 +653,11 @@ implementation does.
 The per-phase verification ladder lives in `browser-review-rebuild.md` § "Per-phase seam
 verification". A finding here counts as repaid only when all four hold: duplicate copies
 deleted, their paths (for whole files) or banned-symbol entries (for function-level
-deletions) appended to the tombstone lists in `scripts/source-boundaries.test.ts`,
+deletions) appended to the tombstone lists in `scripts/quality/source-boundaries.test.ts`,
 the finding's adversarial fixture landed in the conformance harness, and the consumer
 registered against that harness.
 
-- The seam boundary tests (`scripts/source-boundaries.test.ts`) keep deleted copies deleted.
+- The seam boundary tests (`scripts/quality/source-boundaries.test.ts`) keep deleted copies deleted.
 - Renderer parity tests (Phase 5 gate) drive shared fixtures through the terminal planner and
   browser projection and assert identical note placement, gap addressing, reveal targets, and
   default note targets — the drift class import gates cannot catch.

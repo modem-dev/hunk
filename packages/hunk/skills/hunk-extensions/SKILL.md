@@ -320,7 +320,7 @@ Only when the work is in the `hunk` repo rather than in a user extension:
   that is a real gap, not a reason for a private path. `default/vcs/` loads from
   VCS adapter resolution and must stay renderer-free.
 - `packages/hunk/src/extension-api/types.ts` must stay **import-free**; declaration emission
-  publishes whatever it reaches, and `scripts/check-pack.ts` fails the pack
+  publishes whatever it reaches, and `scripts/packaging/check-pack.ts` fails the pack
   otherwise. Shapes shared with internal code are declared there and re-exported
   inward.
 - New API surface means updating `docs/extensions.md` (its examples are

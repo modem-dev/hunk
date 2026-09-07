@@ -102,8 +102,8 @@ path. The browser client and UI remain planned.
   public/provider contracts.
 
 `bun run deps:check` applies `.dependency-cruiser.cjs` to every package and to Hunk's internal tiers.
-`scripts/source-boundaries.test.ts` adds browser-safe review and provider checks. The executable
-rules take precedence over this summary.
+`scripts/quality/source-boundaries.test.ts` adds browser-safe review and provider checks. The
+executable rules take precedence over this summary.
 
 ## Bootstrap and lifecycle
 

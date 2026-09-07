@@ -1,7 +1,7 @@
 # Release notes on hunk.dev
 
-`CHANGELOG.md` is the source of truth for what shipped. `scripts/generate-changelog.ts` projects it
-into the pages published at `hunk.dev/changelog`, the same way `scripts/generate-docs.ts` projects
+`CHANGELOG.md` is the source of truth for what shipped. `scripts/generate/generate-changelog.ts` projects it
+into the pages published at `hunk.dev/changelog`, the same way `scripts/generate/generate-docs.ts` projects
 runtime metadata into the CLI and config references. Nothing under the generated paths is
 hand-edited; `bun run check:changelog` fails the build when they drift.
 
@@ -103,7 +103,7 @@ Presentation lives in the site:
 - The landing page imports `website/releases/latest.json` for its release ribbon, so the current
   version is a static import rather than a build-time parse of generated Markdown.
 
-`vercel.json` must keep `CHANGELOG.md` and `scripts/generate-changelog.ts` in its `ignoreCommand`
+`vercel.json` must keep `CHANGELOG.md` and `scripts/generate/generate-changelog.ts` in its `ignoreCommand`
 path list, or release commits will not trigger a deploy.
 
 ## Social cards

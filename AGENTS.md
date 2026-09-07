@@ -62,7 +62,7 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
 - **Conformance:** `test/review-conformance/` has hand-authored semantic fixtures covering every
   registered core, terminal, producer, broker, protocol, and extension projection. Every new
   semantic consumer registers its real projection and runs the whole corpus.
-  `scripts/source-boundaries.test.ts` keeps the seam
+  `scripts/quality/source-boundaries.test.ts` keeps the seam
   renderer/platform-free; its Node-debt list is shrink-only and tombstone lists append-only. A
   repaid seam finding deletes copies, adds a file or banned-symbol tombstone and adversarial
   fixture, registers consumers, and updates `docs/browser-review-seam-audit.md`.
@@ -120,7 +120,7 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
 - When adding or renaming a built-in theme, update validation, public exports, docs/examples, the
   appropriate Changeset, and tests. Keep source palette tokens separate from semantic mappings and
   cover non-trivial derived colors.
-- `BUNDLED_SHIKI_THEME_DIFF_COLORS` in `packages/hunk/src/core/theme/catalog.ts` is generated. Edit the sourcing policy in `scripts/generate-theme-diff-colors.ts`, then run `bun run generate:theme-colors`.
+- `BUNDLED_SHIKI_THEME_DIFF_COLORS` in `packages/hunk/src/core/theme/catalog.ts` is generated. Edit the sourcing policy in `scripts/generate/generate-theme-diff-colors.ts`, then run `bun run generate:theme-colors`.
 
 ## testing
 

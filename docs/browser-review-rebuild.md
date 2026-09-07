@@ -10,7 +10,7 @@ stack of small, independently reviewable PRs. Its Hunk-owned capability, resourc
 protocol remains separate from the generic per-application daemon contract in
 [`session-broker-sdk.md`](session-broker-sdk.md). Each phase has a hard gate and stands on the
 previous one. The seam contract — shared primitives stay renderer-free and platform-neutral —
-is enforced by `scripts/source-boundaries.test.ts`, whose debt lists may only shrink.
+is enforced by `scripts/quality/source-boundaries.test.ts`, whose debt lists may only shrink.
 
 Each phase lists the audit findings it repays (`browser-review-seam-audit.md`, ids A1–G5). A
 finding whose duplicate sites span phases is checked off when its **last** site converts; until
@@ -222,7 +222,7 @@ allowlist design exists.
 Import gates prove code _may_ use a primitive, not that it _does_ — a consumer can silently
 re-derive. Every phase therefore passes the same five-rung ladder, and each rung is mechanical:
 
-1. **Boundary gates** (every phase, exists today): `scripts/source-boundaries.test.ts` —
+1. **Boundary gates** (every phase, exists today): `scripts/quality/source-boundaries.test.ts` —
    import containment, shrink-only debt lists, and the extracted-duplicate tombstone list.
    Repaying an audit finding means deleting the duplicate copies **and appending their paths to
    the tombstone list in the same PR**; a resurrected path fails CI forever after.

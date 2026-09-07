@@ -11,8 +11,8 @@
         "test/session-broker-node/*.ts",
         "test/session-broker-runtime/*.ts",
         "scripts/launch-video/*.{ts,mjs}",
-        "scripts/probe-terminal-theme.ts",
-        "scripts/test-large-untracked-render.tsx",
+        "scripts/dev/probe-terminal-theme.ts",
+        "scripts/dev/test-large-untracked-render.tsx",
         "examples/extensions/**/index.{ts,tsx}",
         "examples/extensions/**/run.ts",
         "examples/**/*.test.ts"

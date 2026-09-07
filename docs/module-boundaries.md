@@ -10,7 +10,7 @@ graph (`packages/hunk/src/` plus `packages/`, tests excluded):
   and nothing is ever added. New code must respect the boundaries from day one.
 - Rules live in `.dependency-cruiser.cjs`; each rule's comment states the boundary it protects.
 
-`scripts/source-boundaries.test.ts` remains the deeper, hand-authored gate for the review seam
+`scripts/quality/source-boundaries.test.ts` remains the deeper, hand-authored gate for the review seam
 (browser-safe closure, Node-debt tombstones). The dependency-cruiser rules are the coarse
 tier-level complement, with real module resolution instead of regex import scanning.
 
@@ -169,7 +169,7 @@ module that owns their behaviour, one home each:
 Deleting the re-exports made one hidden dependency visible: `core/review/annotations.ts` names
 `AgentAnnotation`, which is declared in `packages/hunk/src/extension-api/types.ts` because it is
 simultaneously an internal model type and part of the published contract. Routing that through
-`core/types.ts` had disguised it as a core-local import, and `scripts/source-boundaries.test.ts`
+`core/types.ts` had disguised it as a core-local import, and `scripts/quality/source-boundaries.test.ts`
 ("keeps the review model contained in core") caught it the moment the disguise came off. The
 allowance is now explicit and narrow — that one file, not the tree — and it cannot widen the
 seam, since `extension-api-is-import-free` forbids `extension-api/types.ts` any import at all.

@@ -47,7 +47,7 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.sha }}
-        run: bun run ./scripts/verify-pr-release-notes.ts "$BASE_SHA" "$HEAD_SHA"
+        run: bun run ./scripts/release/verify-pr-release-notes.ts "$BASE_SHA" "$HEAD_SHA"
 
   windows-compat:
     name: Windows compatibility

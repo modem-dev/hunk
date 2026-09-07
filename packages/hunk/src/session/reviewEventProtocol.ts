@@ -12,7 +12,7 @@
  * refuse (`docs/browser-review-seam-audit.md`, C4). Here the server imports these
  * definitions, and the browser client will import the same ones unchanged — which is what
  * makes the module browser-safe by construction, gated as such by
- * `scripts/source-boundaries.test.ts`.
+ * `scripts/quality/source-boundaries.test.ts`.
  *
  * Three properties worth stating up front:
  *

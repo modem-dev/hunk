@@ -59,7 +59,7 @@ module.exports = {
     {
       name: "extension-api-is-import-free",
       comment:
-        "packages/hunk/src/extension-api is the published contract; declaration emission publishes whatever it reaches (scripts/check-pack.ts gates the pack, this gates the graph).",
+        "packages/hunk/src/extension-api is the published contract; declaration emission publishes whatever it reaches (scripts/packaging/check-pack.ts gates the pack, this gates the graph).",
       severity: "error",
       from: { path: "^packages/hunk/src/extension-api/" },
       to: { path: "^packages/", pathNot: "^packages/hunk/src/extension-api/" },

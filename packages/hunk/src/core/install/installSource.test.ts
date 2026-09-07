@@ -156,7 +156,7 @@ describe("install source detection", () => {
   });
 
   test("detects local source builds installed into the default install directory", () => {
-    // Built from this platform's own default so the check tracks `scripts/install-bin.ts`.
+    // Built from this platform's own default so the check tracks `scripts/build/install-bin.ts`.
     const installDir = resolveDevInstallDir({}, HOME_DIR);
     expect(installDir).toBeDefined();
     expect(

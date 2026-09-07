@@ -47,7 +47,7 @@
     "access": "public"
   },
   "scripts": {
-    "prepack": "bun run ../../scripts/build-npm.ts"
+    "prepack": "bun run ../../scripts/build/build-npm.ts"
   },
   "dependencies": {
     "bun": "^1.4.2",

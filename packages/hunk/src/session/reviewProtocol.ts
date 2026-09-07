@@ -22,9 +22,9 @@
  *
  * The module is browser-safe by construction and gated as such: it imports from
  * `packages/hunk/src/core/review/` and nothing else — no Node builtins, no broker package, no
- * transport. `scripts/source-boundaries.test.ts` enforces that, and the transport-side
+ * transport. `scripts/quality/source-boundaries.test.ts` enforces that, and the transport-side
  * couplings it deliberately does not import (frame sizes) are asserted against this
- * module's own bounds in `scripts/review-vocabulary.test.ts`.
+ * module's own bounds in `scripts/quality/review-vocabulary.test.ts`.
  */
 import type { ReviewExpandedLineClaim } from "../core/review/expansion";
 import {
@@ -68,7 +68,7 @@ export const HUNK_REVIEW_PROTOCOL_VERSION = 1 as const;
  *
  * The protocol's own bound rather than a repetition of a frame size: a transport that
  * cannot carry this much is the transport's problem to declare, and
- * `scripts/review-vocabulary.test.ts` asserts the session transport's frame limit still
+ * `scripts/quality/review-vocabulary.test.ts` asserts the session transport's frame limit still
  * accommodates it. Keeping the import out is what lets this module stay browser-safe.
  */
 export const MAX_HUNK_REVIEW_ENVELOPE_BYTES = 4 * 1024 * 1024;

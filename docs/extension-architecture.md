@@ -372,7 +372,7 @@ ordering before core or UI consumes it.
 The authoring surface is the `hunkdiff/extension` export — a façade over
 internal types, declared in `packages/hunk/src/extension-api/types.ts`. That module must
 stay import-free: declaration emission ships every module the entry reaches,
-so an import there publishes Hunk internals (`scripts/check-pack.ts` fails
+so an import there publishes Hunk internals (`scripts/packaging/check-pack.ts` fails
 the pack when it does, and typechecks every `docs/extensions.md` example as
 a consumer). Shapes shared with internal code are declared there and
 re-exported inward.

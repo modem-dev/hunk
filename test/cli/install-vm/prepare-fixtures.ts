@@ -22,9 +22,9 @@ import {
   buildPlatformPackageManifest,
   getPlatformPackageSpecForHost,
   releaseNpmDir,
-} from "../../../scripts/prebuilt-package-helpers";
-import { stagePrebuiltArtifact } from "../../../scripts/build-prebuilt-artifact";
-import { npmCommand } from "../../../scripts/script-helpers";
+} from "../../../scripts/packaging/prebuilt-package-helpers";
+import { stagePrebuiltArtifact } from "../../../scripts/packaging/build-prebuilt-artifact";
+import { npmCommand } from "../../../scripts/packaging/script-helpers";
 import {
   DAEMON_UPGRADE_VERSION_A,
   DAEMON_UPGRADE_VERSION_B,
