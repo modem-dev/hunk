@@ -394,7 +394,7 @@ describe("startup update notice", () => {
     }
   });
 
-  test("checks automatically at most once per 24 hours", async () => {
+  test("checks automatically at most once per four hours", async () => {
     await withTempStatePath(async (statePath) => {
       const start = Date.parse("2026-09-07T12:00:00.000Z");
       let now = start;
@@ -412,15 +412,15 @@ describe("startup update notice", () => {
         });
 
       await expect(resolve()).resolves.toBeNull();
-      now = start + 23 * 60 * 60 * 1_000;
+      now = start + 3 * 60 * 60 * 1_000;
       await expect(resolve()).resolves.toBeNull();
       expect(fetchCount).toBe(1);
 
-      now = start + 24 * 60 * 60 * 1_000;
+      now = start + 4 * 60 * 60 * 1_000;
       await expect(resolve()).resolves.toBeNull();
       expect(fetchCount).toBe(2);
       expect(JSON.parse(readFileSync(statePath, "utf8"))).toMatchObject({
-        lastReleaseCheckAt: "2026-09-08T12:00:00.000Z",
+        lastReleaseCheckAt: "2026-09-07T16:00:00.000Z",
       });
     });
   });

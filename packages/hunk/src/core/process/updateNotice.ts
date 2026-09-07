@@ -18,7 +18,7 @@ import {
 
 const DISABLE_STARTUP_UPDATE_NOTICE_ENV = "HUNK_DISABLE_UPDATE_NOTICE";
 const STARTUP_STATE_VERSION = 1;
-const STARTUP_RELEASE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1_000;
+const STARTUP_RELEASE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1_000;
 
 interface PersistedStartupState {
   version: number;
