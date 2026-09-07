@@ -127,13 +127,21 @@ export function usePaneSlideAnimation({
       return;
     }
 
+    if (duration === 0) {
+      activeTransitionRef.current = null;
+      timeline.pause();
+      presentedLayoutRef.current = paneLayout;
+      setPresentedLayout(paneLayout);
+      return;
+    }
+
     activeTransitionRef.current = {
       from: presentedLayoutRef.current,
       to: paneLayout,
       paneKey: transitionKey,
     };
     timeline.restart();
-  }, [bodyHeight, bodyWidth, paneLayout, paneLayoutSettled, resizing, timeline]);
+  }, [bodyHeight, bodyWidth, duration, paneLayout, paneLayoutSettled, resizing, timeline]);
 
   return {
     animating: activeTransitionRef.current !== null,
