@@ -1621,6 +1621,9 @@ describe("UI components", () => {
       await act(async () => {
         await setup.mockMouse.moveTo(32, secondHunkY);
         await setup.renderOnce();
+        // Let the deferred viewport observation run after the newer mouse move.
+        await Bun.sleep(50);
+        await setup.renderOnce();
       });
       const affordanceFrame = await waitForFrame(
         setup,

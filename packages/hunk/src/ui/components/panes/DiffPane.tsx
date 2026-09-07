@@ -468,6 +468,7 @@ export function DiffPane({
   const [addNoteHoverClearSignal, setAddNoteHoverClearSignal] = useState(0);
   const [addNoteHoverClearFileId, setAddNoteHoverClearFileId] = useState<string | null>(null);
   const hoveredFileIdRef = useRef<string | null>(null);
+  const hoverScrollTopRef = useRef<number | null>(null);
   const onActiveAddNoteAffordanceChangeRef = useRef(onActiveAddNoteAffordanceChange);
   onActiveAddNoteAffordanceChangeRef.current = onActiveAddNoteAffordanceChange;
 
@@ -875,10 +876,14 @@ export function DiffPane({
   }, []);
 
   /** Track the currently hover-owned file without making scroll handlers depend on render state. */
-  const setHoveredFileForRowActions = useCallback((fileId: string) => {
-    hoveredFileIdRef.current = fileId;
-    setHoveredFileId(fileId);
-  }, []);
+  const setHoveredFileForRowActions = useCallback(
+    (fileId: string) => {
+      hoveredFileIdRef.current = fileId;
+      hoverScrollTopRef.current = scrollRef.current?.scrollTop ?? 0;
+      setHoveredFileId(fileId);
+    },
+    [scrollRef],
+  );
 
   /** Temporarily widen the mounted diff window while scroll input is arriving in bursts. */
   const activateRapidScrollOverscan = useCallback((overscanRows: number) => {
@@ -965,7 +970,11 @@ export function DiffPane({
         // now sit over a different row, but only an actual mouse move should reveal row actions.
         const previousTop = prevScrollTopRef.current;
         scrollbarRef.current?.show();
-        clearAddNoteHoverForScroll();
+        // A mouse move after this scroll already targets the new viewport. A deferred
+        // observation of the older scroll must not erase that newer row action.
+        if (hoverScrollTopRef.current !== nextTop) {
+          clearAddNoteHoverForScroll();
+        }
         const rapidOverscanRows = computeRapidScrollOverscanRows({
           deltaRows: nextTop - previousTop,
           viewportHeight: nextHeight,
