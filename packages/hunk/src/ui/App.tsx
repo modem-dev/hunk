@@ -42,6 +42,7 @@ import type { ReloadedSessionResult, ReloadSessionOptions } from "../session/typ
 import { MenuBar } from "./components/chrome/MenuBar";
 import { ConfirmDialog, confirmDialogHeight } from "./components/chrome/ConfirmDialog";
 import { ExtensionDialog } from "./components/chrome/ExtensionDialog";
+import { ViewPreferenceQuitDialog } from "./components/chrome/ViewPreferenceQuitDialog";
 import { ExtensionToast } from "./components/chrome/ExtensionToast";
 import { StatusBar } from "./components/chrome/StatusBar";
 import { DiffPane } from "./components/panes/DiffPane";
@@ -357,17 +358,7 @@ export function App({
   const closeHelp = useCallback(() => {
     setShowHelp(false);
   }, []);
-  const {
-    changedViewPreferences,
-    saveConfigPromptOpen,
-    viewPreferenceDiffLines,
-    viewPreferencesConfigLabel,
-    requestQuit,
-    saveViewPreferencesAndQuit,
-    discardViewPreferencesAndQuit,
-    neverAskToSaveViewPreferencesAndQuit,
-    closeSaveConfigPrompt,
-  } = useViewPreferenceQuitController({
+  const viewPreferenceQuit = useViewPreferenceQuitController({
     currentPreferences: currentViewPreferences,
     configPath: bootstrap.viewPreferencesConfigPath,
     pagerMode,
@@ -380,6 +371,14 @@ export function App({
     closeHelp,
     homeDirectory: process.env.HOME,
   });
+  const {
+    saveConfigPromptOpen,
+    requestQuit,
+    saveViewPreferencesAndQuit,
+    discardViewPreferencesAndQuit,
+    neverAskToSaveViewPreferencesAndQuit,
+    closeSaveConfigPrompt,
+  } = viewPreferenceQuit;
   const notifyExtensionMode = useCallback(
     (message: string, type?: ExtensionNotifyType) => extensions?.context.notify(message, type),
     [extensions],
@@ -1527,45 +1526,12 @@ export function App({
       ) : null}
 
       {saveConfigPromptOpen ? (
-        <ConfirmDialog
-          actions={[
-            { keyLabel: "enter/s", label: "save", run: saveViewPreferencesAndQuit },
-            { keyLabel: "q", label: "discard", run: discardViewPreferencesAndQuit },
-            { keyLabel: "n", label: "never ask", run: neverAskToSaveViewPreferencesAndQuit },
-            { keyLabel: "esc", label: "cancel", run: closeSaveConfigPrompt },
-          ]}
-          height={confirmDialogHeight(4 + viewPreferenceDiffLines.length)}
+        <ViewPreferenceQuitDialog
+          controller={viewPreferenceQuit}
           terminalHeight={terminal.height}
           terminalWidth={terminal.width}
           theme={baseTheme}
-          title="Save view preferences?"
-          width={68}
-          onClose={closeSaveConfigPrompt}
-        >
-          <box style={{ width: "100%", height: 1 }}>
-            <text fg={baseTheme.muted}>
-              You changed {changedViewPreferences.length} view{" "}
-              {changedViewPreferences.length === 1 ? "setting" : "settings"} during this review.
-            </text>
-          </box>
-          <box style={{ width: "100%", height: 1 }}>
-            <text fg={baseTheme.muted}>
-              Save {changedViewPreferences.length === 1 ? "it" : "them"} to your config before
-              quitting?
-            </text>
-          </box>
-          <box style={{ width: "100%", height: 1 }} />
-          <box style={{ width: "100%", height: 1 }}>
-            <text fg={baseTheme.badgeNeutral}>{viewPreferencesConfigLabel}</text>
-          </box>
-          {viewPreferenceDiffLines.map((line) => (
-            <box key={line.text} style={{ width: "100%", height: 1 }}>
-              <text fg={line.removed ? baseTheme.badgeRemoved : baseTheme.badgeAdded}>
-                {line.text}
-              </text>
-            </box>
-          ))}
-        </ConfirmDialog>
+        />
       ) : null}
 
       {extensionTrustPromptOpen && extensionTrustPromptRoot ? (

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createPtyHarness, rightmostColumnOf } from "./harness";
@@ -213,6 +213,39 @@ describe("interactive hunk log", () => {
       await session.press("q");
       await session.waitForText(/Second history commit/, { timeout: 15_000 });
       await session.press("q");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("prompts to save a changed theme when the history session quits", async () => {
+    const cwd = createHistoryRepo();
+    const configHome = mkdtempSync(join(tmpdir(), "hunk-log-view-preferences-"));
+    tempDirs.push(configHome);
+    const session = await harness.launchHunk({
+      args: ["log", "--color", "never", "--no-extensions"],
+      cwd,
+      cols: 100,
+      rows: 20,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      await session.waitForText(/Second history commit/, { timeout: 15_000 });
+      await session.press("t");
+      await session.waitForText(/Theme selector/, { timeout: 5_000 });
+      await session.press("down");
+      await session.press("enter");
+      await session.press("q");
+      const prompt = await session.waitForText(/Save view preferences\?/, { timeout: 5_000 });
+      expect(prompt).toContain('- theme = "github-dark-default"');
+      expect(prompt).toContain('+ theme = "github-dark-dimmed"');
+
+      await session.press("s");
+      const configPath = join(configHome, "hunk", "config.toml");
+      const deadline = Date.now() + 5_000;
+      while (Date.now() < deadline && !existsSync(configPath)) await Bun.sleep(50);
+      expect(readFileSync(configPath, "utf8")).toContain('theme = "github-dark-dimmed"');
     } finally {
       session.close();
     }

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { HistoryCommandInput } from "../core/run/commandInputs";
@@ -21,6 +21,12 @@ describe("history bootstrap cursor ownership", () => {
   test("cancels refresh before opening and closes each active provider cursor once", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "hunk-history-bootstrap-"));
     const configHome = mkdtempSync(join(tmpdir(), "hunk-history-config-"));
+    const configPath = join(configHome, "hunk", "config.toml");
+    mkdirSync(join(configHome, "hunk"), { recursive: true });
+    writeFileSync(
+      configPath,
+      'theme = "github-dark-dimmed"\nline_numbers = false\nprompt_save_view_preferences = false\n',
+    );
     const closeCounts: number[] = [];
     let opens = 0;
     const makeSource = (): VcsHistorySource => {
@@ -62,6 +68,14 @@ describe("history bootstrap cursor ownership", () => {
         env: { ...process.env, XDG_CONFIG_HOME: configHome },
         baseVcsCatalog: catalog,
       });
+      expect(bootstrap.input.theme).toBe("github-dark-dimmed");
+      expect(bootstrap.initialViewPreferences).toMatchObject({
+        theme: "github-dark-dimmed",
+        showLineNumbers: false,
+      });
+      expect(bootstrap.viewPreferencesConfigPath).toBe(configPath);
+      expect(bootstrap.promptSaveViewPreferences).toBe(false);
+
       const cancelled = new AbortController();
       cancelled.abort();
       await expect(bootstrap.reopenSource(cancelled.signal)).rejects.toThrow();

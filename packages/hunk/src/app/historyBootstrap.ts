@@ -1,4 +1,8 @@
 import type { HistoryCommandInput } from "../core/run/commandInputs";
+import {
+  persistedViewPreferencesFromOptions,
+  type PersistedViewPreferences,
+} from "../core/run/config";
 import { collectSessionCustomThemes } from "../core/theme/customThemes";
 import type {
   ExtensionVcsHistoryCommit,
@@ -34,6 +38,10 @@ export interface HistoryBootstrap {
   extensionSession: ExtensionSession;
   notices: readonly string[];
   customThemes: readonly NamedCustomThemeConfig[];
+  /** Launch baseline retained so the owning history surface can persist theme changes on quit. */
+  initialViewPreferences: PersistedViewPreferences;
+  viewPreferencesConfigPath?: string;
+  promptSaveViewPreferences: boolean;
   planReview(
     commit: ExtensionVcsHistoryCommit,
     options?: ExtensionVcsHistoryReviewOptions,
@@ -136,6 +144,10 @@ export async function loadHistoryBootstrap({
     repoRoot,
     extensionSession,
     customThemes: sessionThemes.themes,
+    initialViewPreferences: persistedViewPreferencesFromOptions(resolved.configured.input.options),
+    viewPreferencesConfigPath: resolved.configured.viewPreferencesConfigPath,
+    promptSaveViewPreferences:
+      resolved.configured.input.options.promptSaveViewPreferences !== false,
     notices: [
       ...(mergeStartupNotices(resolved.configured.startupNotices, resolved.extensions) ?? []).map(
         (notice) => sanitizeTerminalLine(notice.message),

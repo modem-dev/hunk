@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createTestExtensionSession } from "../../../../../test/helpers/extension-session";
+import { persistedViewPreferencesFromOptions } from "../../core/run/config";
 import type { HistoryRuntime } from "../history/types";
 import { LogController } from "./controller";
 
@@ -43,6 +44,8 @@ function createRuntime(subjects = ["first", "second", "third"]) {
     repoRoot: "/repo",
     notices: [],
     customThemes: [],
+    initialViewPreferences: persistedViewPreferencesFromOptions({}),
+    promptSaveViewPreferences: true,
     async planReview(commit) {
       return { kind: "revision-show", revisionId: commit.revisionId };
     },

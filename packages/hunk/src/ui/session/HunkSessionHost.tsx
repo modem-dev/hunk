@@ -142,6 +142,13 @@ export function HunkSessionHost({
     historyRoute: HistorySurfaceRoute,
     outcome: LogAppOutcome,
   ) => {
+    if (outcome.kind === "cancel-open-review") {
+      preparationGenerationRef.current += 1;
+      preparationControllerRef.current?.abort(
+        new Error("Hunk review preparation was cancelled before a history quit decision."),
+      );
+      return;
+    }
     if (outcome.kind === "quit") {
       requestQuit(outcome.exitCode);
       return;

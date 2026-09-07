@@ -1,6 +1,6 @@
 /**
  * Coordinates view-preference dirty state, persistence choices, prompt state, and safe delayed quits.
- * App continues to render the dialog and own its keyboard and UI composition.
+ * Each interactive surface renders the shared dialog and owns its keyboard routing.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -31,7 +31,7 @@ export interface ViewPreferenceDiffLine {
   text: string;
 }
 
-/** Dirty-state projection and quit actions consumed by App's existing UI composition. */
+/** Dirty-state projection and quit actions consumed by an interactive surface. */
 export interface ViewPreferenceQuitController {
   changedViewPreferences: ViewPreferenceChange[];
   saveConfigPromptOpen: boolean;
@@ -44,7 +44,7 @@ export interface ViewPreferenceQuitController {
   closeSaveConfigPrompt: () => void;
 }
 
-/** App-owned facts and side effects required by the view-preference quit workflow. */
+/** Surface-owned facts and side effects required by the view-preference quit workflow. */
 export interface UseViewPreferenceQuitControllerOptions {
   currentPreferences: PersistedViewPreferences;
   configPath?: string;
@@ -70,7 +70,7 @@ function buildViewPreferenceDiffLines(
   ]);
 }
 
-/** Own view-preference dirty state and the save-or-discard quit workflow for one mounted App. */
+/** Own view-preference dirty state and the save-or-discard quit workflow for one surface. */
 export function useViewPreferenceQuitController({
   currentPreferences,
   configPath,

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { EventEmitter } from "node:events";
 import type { HistoryCommit } from "../../core/history/types";
+import { persistedViewPreferencesFromOptions } from "../../core/run/config";
 import { createTestExtensionSession } from "../../../../../test/helpers/extension-session";
 import type { HistoryRuntime } from "./types";
 import { runStaticHistory } from "./runStaticHistory";
@@ -32,6 +33,8 @@ function runtime(commits: HistoryCommit[], maxCount?: number, closeFailure?: Err
     repoRoot: "/repo",
     notices: [],
     customThemes: [],
+    initialViewPreferences: persistedViewPreferencesFromOptions({}),
+    promptSaveViewPreferences: true,
     async planReview(commit) {
       return { kind: "revision-show", revisionId: commit.revisionId };
     },

@@ -4,6 +4,7 @@ import { act } from "react";
 import { createTestVcsAppBootstrap } from "../../../../../test/helpers/app-bootstrap";
 import { createTestDiffFile } from "../../../../../test/helpers/diff-helpers";
 import { createTestExtensionSession } from "../../../../../test/helpers/extension-session";
+import { persistedViewPreferencesFromOptions } from "../../core/run/config";
 import { createEmptyExtensionLoadResult } from "../../extensions/types";
 import type { HistoryRuntime } from "../history/types";
 import { LogController } from "../log/controller";
@@ -52,6 +53,8 @@ async function createHistoryRoute() {
     repoRoot: "/repo",
     notices: [],
     customThemes: [],
+    initialViewPreferences: persistedViewPreferencesFromOptions({}),
+    promptSaveViewPreferences: true,
     async planReview() {
       return { kind: "revision-show", revisionId: "revision-a" };
     },
@@ -344,6 +347,56 @@ test("waits for non-cooperative provider planning before menu quit", async () =>
     await settle(setup);
     expect(prepareReview).not.toHaveBeenCalled();
     expect(quit).toHaveBeenCalledTimes(1);
+  } finally {
+    setup.renderer.destroy();
+    await history.controller.close();
+  }
+});
+
+test("keeps a dirty quit prompt mounted while cancelling review preparation", async () => {
+  const history = await createHistoryRoute();
+  let resolvePlanning!: (value: { kind: "revision-show"; revisionId: string }) => void;
+  const planning = new Promise<{ kind: "revision-show"; revisionId: string }>((resolve) => {
+    resolvePlanning = resolve;
+  });
+  history.runtime.planReview = mock(() => planning);
+  const prepareReview = mock(async () => {
+    throw new Error("cancelled planning reached preparation");
+  });
+  const quit = mock(() => undefined);
+  const setup = await testRender(
+    <HunkSessionHost
+      initialRoute={history}
+      externalQuitSignal={new AbortController().signal}
+      onQuit={quit}
+      deps={{ prepareReview: prepareReview as never }}
+    />,
+    { width: 100, height: 20 },
+  );
+  try {
+    await setup.renderOnce();
+    await act(async () => setup.mockInput.typeText("t"));
+    await setup.renderOnce();
+    expect(setup.captureCharFrame()).toContain("Theme selector");
+    await act(async () => setup.mockInput.pressArrow("down"));
+    await setup.renderOnce();
+    expect(setup.captureCharFrame()).toContain("›  github-dark-dimmed");
+    await act(async () => setup.mockInput.pressEnter());
+    await setup.renderOnce();
+    await act(async () => setup.mockInput.pressEnter());
+    await Bun.sleep(10);
+    await selectHistoryMenuQuit(setup);
+    await setup.renderOnce();
+    expect(setup.captureCharFrame()).toContain("Save view preferences?");
+
+    resolvePlanning({ kind: "revision-show", revisionId: "revision-a" });
+    await settle(setup);
+    expect(prepareReview).not.toHaveBeenCalled();
+    expect(setup.captureCharFrame()).toContain("Save view preferences?");
+    expect(quit).not.toHaveBeenCalled();
+
+    await act(async () => setup.mockInput.pressKey("escape"));
+    expect(setup.captureCharFrame()).toContain("History row");
   } finally {
     setup.renderer.destroy();
     await history.controller.close();

@@ -99,6 +99,23 @@ const DEFAULT_VIEW_PREFERENCES: PersistedViewPreferences = {
   cursorLine: "row",
 };
 
+/** Project resolved launch options into the complete preference shape used by persistence. */
+export function persistedViewPreferencesFromOptions(
+  options: CommonOptions,
+): PersistedViewPreferences {
+  return {
+    mode: options.mode ?? DEFAULT_VIEW_PREFERENCES.mode,
+    ...(options.theme === undefined ? {} : { theme: options.theme }),
+    showLineNumbers: options.lineNumbers ?? DEFAULT_VIEW_PREFERENCES.showLineNumbers,
+    wrapLines: options.wrapLines ?? DEFAULT_VIEW_PREFERENCES.wrapLines,
+    showHunkHeaders: options.hunkHeaders ?? DEFAULT_VIEW_PREFERENCES.showHunkHeaders,
+    showMenuBar: options.menuBar ?? DEFAULT_VIEW_PREFERENCES.showMenuBar,
+    showAgentNotes: options.agentNotes ?? DEFAULT_VIEW_PREFERENCES.showAgentNotes,
+    copyDecorations: options.copyDecorations ?? DEFAULT_VIEW_PREFERENCES.copyDecorations,
+    cursorLine: options.cursorLine ?? DEFAULT_VIEW_PREFERENCES.cursorLine,
+  };
+}
+
 const VIEW_PREFERENCES_PROMPT_CONFIG_KEY = "prompt_save_view_preferences";
 const PERSISTED_VIEW_PREFERENCE_KEYS: Array<{
   configKey: string;

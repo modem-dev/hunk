@@ -17,6 +17,7 @@ import type { ExtensionDialogRequest } from "../lib/extensionDialogs";
 import { toExtensionKeyEvent } from "../lib/extensionKeyEvent";
 import { isEscapeKey, isSaveDraftNoteKey } from "../lib/keyboard";
 import { routeKeyOwnership, type KeyOwner } from "../lib/keyRouting";
+import { handleViewPreferenceQuitPromptKey } from "../lib/viewPreferenceQuitKeys";
 
 type FocusArea = "files" | "filter" | "note";
 
@@ -260,27 +261,12 @@ export function useAppKeyboardShortcuts({
       return "notMine";
     }
 
-    if (key.name === "return" || key.name === "enter" || key.name === "s" || key.sequence === "s") {
-      saveViewPreferencesAndQuit();
-      return "mine";
-    }
-
-    // "q" again quits and discards, so a double-tap of the quit key always exits.
-    if (key.name === "q" || key.sequence === "q") {
-      discardViewPreferencesAndQuit();
-      return "mine";
-    }
-
-    if (key.name === "n" || key.sequence === "n") {
-      neverAskToSaveViewPreferencesAndQuit();
-      return "mine";
-    }
-
-    if (isEscapeKey(key)) {
-      closeSaveConfigPrompt();
-      return "mine";
-    }
-
+    handleViewPreferenceQuitPromptKey(key, {
+      saveViewPreferencesAndQuit,
+      discardViewPreferencesAndQuit,
+      neverAskToSaveViewPreferencesAndQuit,
+      closeSaveConfigPrompt,
+    });
     return "mine";
   };
 
