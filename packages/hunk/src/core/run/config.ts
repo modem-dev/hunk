@@ -16,7 +16,21 @@ import {
   LEGACY_CUSTOM_SYNTAX_COLOR_KEYS,
   resolveSyntaxScopeOverrides,
 } from "../theme/legacySyntaxScopes";
+import {
+  ADAPTIVE_THEME_SELECTION_KEYS,
+  isAdaptiveThemeSelection,
+  readThemeSelection,
+  themeSelectionsEqual,
+  type ThemeSelection,
+} from "../theme/selection";
+import { HunkUserError } from "./errors";
 import { resolveGlobalConfigPath } from "./paths";
+import {
+  serializeTomlValue,
+  tomlTableDefinesKey,
+  upsertTomlValue,
+  type TomlWritableValue,
+} from "./tomlSourceEdit";
 import { LEGACY_CUSTOM_SYNTAX_NOTICES, type StartupNotice } from "../process/startupNotice";
 import {
   DEFAULT_FILE_GAP,
@@ -74,7 +88,7 @@ export type UserKeyBinding = string | readonly string[] | false;
 /** The view options a session persists back to config when the reader saves them. */
 export interface PersistedViewPreferences {
   mode: LayoutMode;
-  theme?: string;
+  theme?: ThemeSelection;
   showLineNumbers: boolean;
   wrapLines: boolean;
   showHunkHeaders: boolean;
@@ -117,11 +131,31 @@ export function persistedViewPreferencesFromOptions(
 }
 
 const VIEW_PREFERENCES_PROMPT_CONFIG_KEY = "prompt_save_view_preferences";
+
+type PersistedPreferenceValue = string | boolean | ThemeSelection | undefined;
+
+/** Express one preference value in the shape the TOML writer accepts. */
+function toWritablePreferenceValue(
+  value: Exclude<PersistedPreferenceValue, undefined>,
+): TomlWritableValue {
+  if (typeof value === "boolean" || typeof value === "string") return value;
+  return Object.fromEntries(ADAPTIVE_THEME_SELECTION_KEYS.map((key) => [key, value[key]]));
+}
+
 const PERSISTED_VIEW_PREFERENCE_KEYS: Array<{
   configKey: string;
-  value: (preferences: PersistedViewPreferences) => string | boolean | undefined;
+  value: (preferences: PersistedViewPreferences) => PersistedPreferenceValue;
+  equals?: (previous: PersistedPreferenceValue, next: PersistedPreferenceValue) => boolean;
 }> = [
-  { configKey: "theme", value: (preferences) => preferences.theme },
+  {
+    configKey: "theme",
+    value: (preferences) => preferences.theme,
+    equals: (previous, next) =>
+      themeSelectionsEqual(
+        previous as ThemeSelection | undefined,
+        next as ThemeSelection | undefined,
+      ),
+  },
   { configKey: "mode", value: (preferences) => preferences.mode },
   { configKey: "line_numbers", value: (preferences) => preferences.showLineNumbers },
   { configKey: "wrap_lines", value: (preferences) => preferences.wrapLines },
@@ -155,6 +189,11 @@ export interface ExtensionBootstrapConfigOptions extends ConfigResolutionOptions
 const CONFIG_FALLBACK_VCS_ID = "git";
 const EMPTY_CONFIG_VCS_CATALOG = createVcsCatalog([], CONFIG_FALLBACK_VCS_ID, []);
 
+export interface ViewPreferenceScope {
+  command?: keyof typeof CONFIG_COMMAND_SECTIONS;
+  pager?: boolean;
+}
+
 export interface HunkConfigResolution {
   input: CliInput;
   /** Config-defined custom themes in declaration order, user layer before repo layer. */
@@ -183,51 +222,11 @@ export interface HunkConfigResolution {
   projectRoot?: string;
   repoConfigPath?: string;
   viewPreferencesConfigPath?: string;
+  viewPreferenceScope?: ViewPreferenceScope;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/** Serialize one primitive TOML preference value. */
-function serializeTomlPreferenceValue(value: string | boolean) {
-  if (typeof value === "boolean") {
-    return value ? "true" : "false";
-  }
-
-  return JSON.stringify(value);
-}
-
-/** Update one top-level TOML key while preserving sections and unrelated comments. */
-function upsertTopLevelTomlValue(source: string, key: string, value: string | boolean) {
-  const lines = source.length > 0 ? source.split("\n") : [];
-  const serialized = serializeTomlPreferenceValue(value);
-  const assignment = `${key} = ${serialized}`;
-  let firstTableIndex = lines.findIndex((line) => /^\s*\[/.test(line));
-  if (firstTableIndex < 0) {
-    firstTableIndex = lines.length;
-  }
-
-  const keyPattern = new RegExp(`^\\s*${key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*=`);
-  for (let index = 0; index < firstTableIndex; index += 1) {
-    if (keyPattern.test(lines[index] ?? "")) {
-      lines[index] = assignment;
-      return `${lines.join("\n").replace(/\n*$/, "")}\n`;
-    }
-  }
-
-  let insertAt = firstTableIndex;
-  const hasTableSpacer = insertAt > 0 && lines[insertAt - 1] === "";
-  if (hasTableSpacer) {
-    insertAt -= 1;
-  }
-  lines.splice(
-    insertAt,
-    0,
-    assignment,
-    ...(hasTableSpacer || insertAt === lines.length ? [] : [""]),
-  );
-  return `${lines.join("\n").replace(/\n*$/, "")}\n`;
 }
 
 /** Accept only the layout names Hunk already supports. */
@@ -265,6 +264,19 @@ function normalizeSidebarVisibility(value: unknown): SidebarVisibility | undefin
 /** Accept only plain booleans from config files. */
 function normalizeBoolean(value: unknown) {
   return typeof value === "boolean" ? value : undefined;
+}
+
+function normalizeThemeSelection(value: unknown, origin: ConfigValueOrigin = {}) {
+  const read = readThemeSelection(value, `${origin.section ?? ""}theme`);
+  if (read === undefined) {
+    return undefined;
+  }
+
+  if ("issue" in read) {
+    throw new Error(origin.file ? `${read.issue} (${origin.file})` : read.issue);
+  }
+
+  return read.selection;
 }
 
 /** Accept only plain strings from config files. */
@@ -350,10 +362,12 @@ export const CONFIG_REFERENCE_OPTIONS: readonly ConfigReferenceOption[] = [
   {
     key: "theme",
     property: "theme",
-    type: "string",
-    accepted: "a built-in theme id or `custom`",
+    type: "string or table",
+    accepted:
+      "a built-in theme id, `custom`, `auto`, or a `[theme]` table setting `dark` and `light` (plus an optional `fallback`)",
     runtimeDefault: DEFAULT_THEME_ID,
-    description: "Select the active color theme.",
+    description:
+      "Select the active color theme, or one theme per terminal background. A `[theme]` table follows the terminal between its `dark` and `light` ids, using `fallback` (else `dark`) when the terminal does not report a background.",
   },
   {
     key: "watch",
@@ -964,8 +978,17 @@ function resolveExtensionsConfig(
   };
 }
 
+interface ConfigValueOrigin {
+  file?: string;
+  section?: string;
+}
+
 /** Normalize one cataloged config value according to its runtime property. */
-function normalizeConfigReferenceValue(property: keyof CommonOptions, value: unknown) {
+function normalizeConfigReferenceValue(
+  property: keyof CommonOptions,
+  value: unknown,
+  origin: ConfigValueOrigin = {},
+) {
   switch (property) {
     case "mode":
       return normalizeLayoutMode(value);
@@ -974,7 +997,7 @@ function normalizeConfigReferenceValue(property: keyof CommonOptions, value: unk
     case "vcs":
       return normalizeVcsMode(value);
     case "theme":
-      return normalizeString(value);
+      return normalizeThemeSelection(value, origin);
     case "tabWidth":
       return normalizeTabWidth(value);
     case "fileGap":
@@ -989,7 +1012,10 @@ function normalizeConfigReferenceValue(property: keyof CommonOptions, value: unk
 }
 
 /** Read the view preferences stored at one TOML object level. */
-function readConfigPreferences(source: Record<string, unknown>): CommonOptions {
+function readConfigPreferences(
+  source: Record<string, unknown>,
+  origin: ConfigValueOrigin = {},
+): CommonOptions {
   const preferences: CommonOptions = {};
   const mutable = preferences as Record<string, unknown>;
 
@@ -1000,7 +1026,7 @@ function readConfigPreferences(source: Record<string, unknown>): CommonOptions {
     ];
     let normalized: unknown;
     for (const key of runtimeKeys) {
-      normalized = normalizeConfigReferenceValue(option.property, source[key]);
+      normalized = normalizeConfigReferenceValue(option.property, source[key], origin);
       if (normalized !== undefined) {
         break;
       }
@@ -1057,17 +1083,27 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
 }
 
 /** Apply one parsed config object, including command/pager sections, to the current invocation. */
-function resolveConfigLayer(source: Record<string, unknown>, input: CliInput): CommonOptions {
-  let resolved = readConfigPreferences(source);
+function resolveConfigLayer(
+  source: Record<string, unknown>,
+  input: CliInput,
+  file?: string,
+): CommonOptions {
+  let resolved = readConfigPreferences(source, { file });
 
   const commandSection = CONFIG_COMMAND_SECTIONS[input.kind] ? source[input.kind] : undefined;
   if (isRecord(commandSection)) {
-    resolved = mergeOptions(resolved, readConfigPreferences(commandSection));
+    resolved = mergeOptions(
+      resolved,
+      readConfigPreferences(commandSection, { file, section: `${input.kind}.` }),
+    );
   }
 
   const pagerSection = source.pager;
   if (input.options.pager && isRecord(pagerSection)) {
-    resolved = mergeOptions(resolved, readConfigPreferences(pagerSection));
+    resolved = mergeOptions(
+      resolved,
+      readConfigPreferences(pagerSection, { file, section: "pager." }),
+    );
   }
 
   return resolved;
@@ -1107,10 +1143,97 @@ function resolveWritableConfigPath(configuredPath: string | undefined, env: Node
   return configPath;
 }
 
-/** Write an updated config source after ensuring the parent directory exists. */
+/** Write an updated config source through a sibling temp file so a crash never leaves it half-written. */
 function writeConfigSource(configPath: string, source: string) {
   fs.mkdirSync(dirname(configPath), { recursive: true });
-  fs.writeFileSync(configPath, source);
+  const stagingPath = `${configPath}.${process.pid}.tmp`;
+  try {
+    fs.writeFileSync(stagingPath, source);
+    fs.renameSync(stagingPath, configPath);
+  } finally {
+    fs.rmSync(stagingPath, { force: true });
+  }
+}
+
+interface ConfigEdit {
+  configKey: string;
+  value: TomlWritableValue;
+}
+
+function chooseConfigEditTable(
+  source: string,
+  scope: ViewPreferenceScope | undefined,
+  key: string,
+) {
+  const candidates: string[][] = [
+    ...(scope?.pager ? [["pager"]] : []),
+    ...(scope?.command ? [[scope.command]] : []),
+  ];
+  return candidates.find((table) => tomlTableDefinesKey(source, table, key)) ?? [];
+}
+
+function expectedParsedValue(value: TomlWritableValue): unknown {
+  if (typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined));
+}
+
+/** Set one nested key on a parsed TOML object, creating intermediate tables. */
+function setParsedValue(target: Record<string, unknown>, path: readonly string[], value: unknown) {
+  let cursor = target;
+  for (const segment of path.slice(0, -1)) {
+    const next = cursor[segment];
+    if (!isRecord(next)) {
+      cursor[segment] = {};
+    }
+    cursor = cursor[segment] as Record<string, unknown>;
+  }
+  cursor[path[path.length - 1]!] = value;
+}
+
+/** Apply config edits to the file at `configPath` and write the result only after proving it. */
+function writeConfigEdits(
+  configPath: string,
+  edits: readonly ConfigEdit[],
+  scope: ViewPreferenceScope | undefined,
+) {
+  const source = readConfigSource(configPath);
+  let expected: Record<string, unknown>;
+  try {
+    const parsed = source.length > 0 ? Bun.TOML.parse(source) : {};
+    if (!isRecord(parsed)) throw new Error("Expected a TOML table.");
+    expected = structuredClone(parsed);
+  } catch (error) {
+    throw new HunkUserError(`Could not update ${configPath} because it is not valid TOML.`, [
+      error instanceof Error ? error.message : String(error),
+    ]);
+  }
+
+  const unsafe = (keyPath: string) =>
+    new HunkUserError(
+      `Could not update ${keyPath} in ${configPath} without changing the rest of the file, so it was left as it was.`,
+      [`Set ${keyPath} in ${configPath} by hand.`],
+    );
+  let next = source;
+  for (const edit of edits) {
+    const table = chooseConfigEditTable(next, scope, edit.configKey);
+    const keyPath = [...table, edit.configKey].join(".");
+    const updated = upsertTomlValue(next, table, edit.configKey, edit.value);
+    if (updated === null) throw unsafe(keyPath);
+    next = updated;
+    setParsedValue(expected, [...table, edit.configKey], expectedParsedValue(edit.value));
+  }
+  if (next === source) return;
+
+  let reparsed: unknown;
+  try {
+    reparsed = Bun.TOML.parse(next);
+  } catch {
+    throw unsafe(edits.map((edit) => edit.configKey).join(", "));
+  }
+  if (!Bun.deepEquals(reparsed, expected, true)) {
+    throw unsafe(edits.map((edit) => edit.configKey).join(", "));
+  }
+  writeConfigSource(configPath, next);
 }
 
 /** One view preference the quit prompt would rewrite, as TOML assignment text. */
@@ -1133,19 +1256,33 @@ export function diffPersistedViewPreferences(
   for (const key of PERSISTED_VIEW_PREFERENCE_KEYS) {
     const previousValue = key.value(previous);
     const nextValue = key.value(next);
-    if (previousValue === nextValue) {
+    const unchanged = key.equals
+      ? key.equals(previousValue, nextValue)
+      : previousValue === nextValue;
+    if (unchanged) {
       continue;
     }
 
     changes.push({
       configKey: key.configKey,
       previousValue:
-        previousValue === undefined ? "unset" : serializeTomlPreferenceValue(previousValue),
-      nextValue: nextValue === undefined ? "unset" : serializeTomlPreferenceValue(nextValue),
+        previousValue === undefined
+          ? "unset"
+          : serializeTomlValue(toWritablePreferenceValue(previousValue)),
+      nextValue:
+        nextValue === undefined
+          ? "unset"
+          : serializeTomlValue(toWritablePreferenceValue(nextValue)),
     });
   }
 
   return changes;
+}
+
+export interface SaveViewPreferencesOptions extends Pick<ConfigResolutionOptions, "env"> {
+  configPath?: string;
+  baseline?: PersistedViewPreferences;
+  scope?: ViewPreferenceScope;
 }
 
 /** Persist accepted in-app view preferences to the selected Hunk config file. */
@@ -1154,18 +1291,23 @@ export function saveGlobalViewPreferences(
   {
     configPath: configuredPath,
     env = process.env,
-  }: Pick<ConfigResolutionOptions, "env"> & { configPath?: string } = {},
+    baseline,
+    scope,
+  }: SaveViewPreferencesOptions = {},
 ) {
   const configPath = resolveWritableConfigPath(configuredPath, env);
-  let nextSource = readConfigSource(configPath);
+  const edits: ConfigEdit[] = [];
   for (const key of PERSISTED_VIEW_PREFERENCE_KEYS) {
     const value = key.value(preferences);
-    if (value !== undefined) {
-      nextSource = upsertTopLevelTomlValue(nextSource, key.configKey, value);
+    if (value === undefined) continue;
+    if (baseline) {
+      const previous = key.value(baseline);
+      if (key.equals ? key.equals(previous, value) : previous === value) continue;
     }
+    edits.push({ configKey: key.configKey, value: toWritablePreferenceValue(value) });
   }
 
-  writeConfigSource(configPath, nextSource);
+  writeConfigEdits(configPath, edits, scope);
   return configPath;
 }
 
@@ -1178,13 +1320,11 @@ export function saveViewPreferencesPromptPreference(
   }: Pick<ConfigResolutionOptions, "env"> & { configPath?: string } = {},
 ) {
   const configPath = resolveWritableConfigPath(configuredPath, env);
-  const nextSource = upsertTopLevelTomlValue(
-    readConfigSource(configPath),
-    VIEW_PREFERENCES_PROMPT_CONFIG_KEY,
-    promptSaveViewPreferences,
+  writeConfigEdits(
+    configPath,
+    [{ configKey: VIEW_PREFERENCES_PROMPT_CONFIG_KEY, value: promptSaveViewPreferences }],
+    undefined,
   );
-
-  writeConfigSource(configPath, nextSource);
   return configPath;
 }
 
@@ -1283,7 +1423,7 @@ export function resolveConfiguredCliInput(
 
   if (userConfigPath && sources.userConfig) {
     const userConfig = sources.userConfig;
-    const userLayer = resolveConfigLayer(userConfig, input);
+    const userLayer = resolveConfigLayer(userConfig, input, userConfigPath);
     explicitVcsId = userLayer.vcs ?? explicitVcsId;
     resolvedOptions = mergeOptions(resolvedOptions, userLayer);
     applyCustomThemeLayer(readCustomThemes(userConfig));
@@ -1293,7 +1433,7 @@ export function resolveConfiguredCliInput(
 
   if (repoConfigPath && sources.repoConfig) {
     const repoConfig = sources.repoConfig;
-    const repoLayer = resolveConfigLayer(repoConfig, input);
+    const repoLayer = resolveConfigLayer(repoConfig, input, repoConfigPath);
     explicitVcsId = repoLayer.vcs ?? explicitVcsId;
     resolvedOptions = mergeOptions(resolvedOptions, repoLayer);
     applyCustomThemeLayer(readCustomThemes(repoConfig));
@@ -1330,8 +1470,12 @@ export function resolveConfiguredCliInput(
 
   // Only the legacy `custom` id is a hard error: every other unknown id may still name a theme an
   // extension contributes later, so those fall back to the default theme instead of failing startup.
+  const themeSelection = resolvedOptions.theme;
+  const selectedThemeIds = isAdaptiveThemeSelection(themeSelection)
+    ? ADAPTIVE_THEME_SELECTION_KEYS.map((key) => themeSelection[key])
+    : [themeSelection];
   if (
-    resolvedOptions.theme === LEGACY_CUSTOM_THEME_ID &&
+    selectedThemeIds.includes(LEGACY_CUSTOM_THEME_ID) &&
     !resolvedCustomThemes.some((theme) => theme.id === LEGACY_CUSTOM_THEME_ID)
   ) {
     throw new Error('Expected a [custom_theme] table when config selects theme = "custom".');
@@ -1370,5 +1514,9 @@ export function resolveConfiguredCliInput(
     // choices user-scoped so Hunk does not create project policy files from an interactive prompt.
     viewPreferencesConfigPath:
       repoConfigPath && fs.existsSync(repoConfigPath) ? repoConfigPath : userConfigPath,
+    viewPreferenceScope: {
+      ...(CONFIG_COMMAND_SECTIONS[input.kind] ? { command: input.kind } : {}),
+      ...(resolvedOptions.pager ? { pager: true } : {}),
+    },
   };
 }

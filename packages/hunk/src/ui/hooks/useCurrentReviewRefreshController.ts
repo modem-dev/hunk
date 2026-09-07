@@ -68,7 +68,7 @@ export function useCurrentReviewRefreshController({
       view.showHunkHeaders,
       view.showLineNumbers,
       view.showMenuBar,
-      view.themeId,
+      view.themeSelection,
       view.wrapLines,
     ],
   );

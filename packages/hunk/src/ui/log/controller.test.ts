@@ -173,7 +173,7 @@ describe("LogController", () => {
     controller.setTheme("github-dark");
     await controller.refresh();
     expect(controller.getSnapshot().rows).toHaveLength(1);
-    expect(controller.getSnapshot().themeId).toBe("github-dark");
+    expect(controller.getSnapshot().theme).toBe("github-dark");
     await controller.close();
     await controller.close();
     expect(closeCount()).toBe(1);

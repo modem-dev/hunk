@@ -52,10 +52,10 @@ Select the version-control adapter explicitly. An explicit id outranks detection
 
 **`theme`**
 
-Select the active color theme.
+Select the active color theme, or one theme per terminal background. A `[theme]` table follows the terminal between its `dark` and `light` ids, using `fallback` (else `dark`) when the terminal does not report a background.
 
-- **Type:** string
-- **Accepted:** a built-in theme id or `custom`
+- **Type:** string or table
+- **Accepted:** a built-in theme id, `custom`, `auto`, or a `[theme]` table setting `dark` and `light` (plus an optional `fallback`)
 - **Built-in default:** `github-dark-default`
 
 ---
@@ -221,6 +221,8 @@ Enable moved-line coloring when the renderer supports it.
 | `[difftool]`   | Git difftool pair reviews (`hunk difftool`)               |
 
 `[pager]` is an additional overlay for any review opened with pager-style chrome. It is applied after the matching command table in the same file.
+
+When you save view preferences from the app, each changed key is written back into the most specific table that already defines it: `[pager]` first, then the command table, then the root. Keys no table defines are added at the root.
 
 ## Custom themes
 

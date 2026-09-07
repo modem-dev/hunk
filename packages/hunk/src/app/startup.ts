@@ -7,6 +7,7 @@ import type { loadAppBootstrap } from "../core/changeset/loaders";
 import { looksLikePatchInput } from "../core/process/pager";
 import { sanitizeTerminalText } from "../lib/terminalText";
 import { detectTerminalThemeModeFromBackground } from "../core/theme/detection";
+import { themeSelectionNeedsTerminalMode } from "../core/theme/selection";
 import {
   openControllingTerminal,
   resolveRuntimeCliInput,
@@ -563,22 +564,6 @@ export async function prepareStartupPlan(
     controllingTerminal = openControllingTerminalImpl();
   }
 
-  // Embedded reviews inherit their owner's detected mode so bootstrap never queries a terminal
-  // whose input and renderer are already exclusively owned.
-  let initialThemeMode: AppBootstrap["initialThemeMode"] = deps.terminalThemeMode;
-  if (!initialThemeMode && cliInput.options.theme === "auto" && stdoutIsTTY) {
-    const themeInput = controllingTerminal?.stdin ?? (stdinIsTTY ? process.stdin : null);
-    if (themeInput) {
-      initialThemeMode =
-        (await whileStartupOwnsExtensions(() =>
-          detectTerminalThemeModeFromBackgroundImpl({
-            input: themeInput,
-            output: stdout,
-          }),
-        )) ?? undefined;
-    }
-  }
-
   // Extensions load before the changeset so later stages can hand their VCS adapters and
   // changeset transforms to the loading pipeline. External adapters may settle a root the
   // bundled catalog could not; the shared resolver then appends newly discovered repo
@@ -618,6 +603,24 @@ export async function prepareStartupPlan(
   if (deps.signal?.aborted) {
     await retirePreloadedExtensions();
     deps.signal.throwIfAborted();
+  }
+
+  // Probe the terminal background only now that the theme selection is final: an extension
+  // VCS backend may have settled a repo root whose `.hunk/config.toml` introduces an adaptive
+  // pair the first resolution never saw. Embedded reviews inherit their owner's detected mode
+  // so bootstrap never queries a terminal whose input and renderer are already exclusively owned.
+  let initialThemeMode: AppBootstrap["initialThemeMode"] = deps.terminalThemeMode;
+  if (!initialThemeMode && themeSelectionNeedsTerminalMode(cliInput.options.theme) && stdoutIsTTY) {
+    const themeInput = controllingTerminal?.stdin ?? (stdinIsTTY ? process.stdin : null);
+    if (themeInput) {
+      initialThemeMode =
+        (await whileStartupOwnsExtensions(() =>
+          detectTerminalThemeModeFromBackgroundImpl({
+            input: themeInput,
+            output: stdout,
+          }),
+        )) ?? undefined;
+    }
   }
 
   let preparedSession: SessionBootstrapResult;

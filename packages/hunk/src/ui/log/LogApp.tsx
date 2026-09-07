@@ -90,7 +90,7 @@ export function LogApp({
   const pendingExitCode = useRef<number | undefined>(undefined);
   const themeController = useThemeSelectorController({
     customThemes: runtime.customThemes,
-    initialTheme: snapshot.themeId,
+    initialTheme: snapshot.theme,
     initialThemeMode: renderer.themeMode,
     onTransientNotice: setTransientNotice,
     onThemeCommitted: (id) => controller.setTheme(id),
@@ -109,12 +109,13 @@ export function LogApp({
   const responsiveLayout = resolveLogResponsiveLayout(terminal.width, terminal.height);
   const viewportBodyHeight = responsiveLayout.bodyHeight;
   const currentViewPreferences = useMemo(
-    () => ({ ...runtime.initialViewPreferences, theme: themeController.themeId }),
-    [runtime.initialViewPreferences, themeController.themeId],
+    () => ({ ...runtime.initialViewPreferences, theme: themeController.themeSelection }),
+    [runtime.initialViewPreferences, themeController.themeSelection],
   );
   const viewPreferenceQuit = useViewPreferenceQuitController({
     currentPreferences: currentViewPreferences,
     configPath: runtime.viewPreferencesConfigPath,
+    configScope: runtime.viewPreferenceScope,
     pagerMode: false,
     promptSaveViewPreferences: runtime.promptSaveViewPreferences,
     transientViewPreferences: resolveExtensionSessionOptions(

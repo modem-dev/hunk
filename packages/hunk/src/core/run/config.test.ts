@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getBundledVcsCatalog } from "../../app/vcsCatalog";
 import type { CliInput } from "./commandInputs";
+import type { PersistedViewPreferences } from "./config";
 import {
   diffPersistedViewPreferences,
   resolveConfiguredCliInput,
@@ -130,6 +131,45 @@ describe("config persistence", () => {
     );
   });
 
+  test("appends after a trailing comment when the file has no table to document", () => {
+    const home = createTempDir("hunk-save-config-trailing-comment-home-");
+    const configPath = join(home, ".config", "hunk", "config.toml");
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    // No trailing newline, so the comment is the last line the writer sees.
+    writeFileSync(configPath, "# personal defaults");
+
+    saveGlobalViewPreferences(
+      {
+        mode: "split",
+        theme: "dracula",
+        showLineNumbers: false,
+        wrapLines: true,
+        showHunkHeaders: false,
+        showMenuBar: false,
+        showAgentNotes: true,
+        copyDecorations: true,
+        cursorLine: "row",
+      },
+      { env: { HOME: home } },
+    );
+
+    expect(readFileSync(configPath, "utf8")).toBe(
+      [
+        "# personal defaults",
+        'theme = "dracula"',
+        'mode = "split"',
+        "line_numbers = false",
+        "wrap_lines = true",
+        "hunk_headers = false",
+        "menu_bar = false",
+        "agent_notes = true",
+        "copy_decorations = true",
+        'cursor_line = "row"',
+        "",
+      ].join("\n"),
+    );
+  });
+
   test("diffs view preference snapshots as the TOML assignments a save would rewrite", () => {
     const initial = {
       mode: "auto",
@@ -160,6 +200,586 @@ describe("config persistence", () => {
       { configKey: "mode", previousValue: '"auto"', nextValue: '"split"' },
       { configKey: "line_numbers", previousValue: "false", nextValue: "true" },
     ]);
+  });
+});
+
+describe("adaptive theme config", () => {
+  function writeUserConfig(home: string, lines: readonly string[]) {
+    const configPath = join(home, ".config", "hunk", "config.toml");
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(configPath, lines.join("\n"));
+    return configPath;
+  }
+
+  test('leaves an unchanged ["theme"] table byte-for-byte when only another key changes', () => {
+    const home = createTempDir("hunk-quoted-theme-home-");
+    const configPath = writeUserConfig(home, [
+      'mode = "auto"',
+      "",
+      '["theme"]',
+      'dark = "vitesse-dark"',
+      'light = "vitesse-light"',
+      "",
+    ]);
+    const pair = { dark: "vitesse-dark", light: "vitesse-light" };
+    const baseline = themePreferences(pair);
+
+    saveGlobalViewPreferences({ ...baseline, mode: "split" }, { configPath, baseline });
+
+    expect(readFileSync(configPath, "utf8")).toBe(
+      [
+        'mode = "split"',
+        "",
+        '["theme"]',
+        'dark = "vitesse-dark"',
+        'light = "vitesse-light"',
+        "",
+      ].join("\n"),
+    );
+  });
+
+  test('collapses a quoted ["theme"] header instead of adding a second root theme', () => {
+    const home = createTempDir("hunk-quoted-theme-collapse-home-");
+    const configPath = writeUserConfig(home, [
+      '["theme"]',
+      'dark = "vitesse-dark"',
+      'light = "vitesse-light"',
+    ]);
+
+    saveGlobalViewPreferences(themePreferences("dracula"), {
+      configPath,
+      baseline: themePreferences({ dark: "vitesse-dark", light: "vitesse-light" }),
+    });
+
+    const saved = readFileSync(configPath, "utf8");
+    expect(saved).toBe('theme = "dracula"\n');
+    expect(Bun.TOML.parse(saved)).toEqual({ theme: "dracula" });
+  });
+
+  test("ignores a [theme] example inside a multiline extension string", () => {
+    const home = createTempDir("hunk-multiline-theme-home-");
+    const configPath = writeUserConfig(home, [
+      "[extension.notes]",
+      'template = """',
+      "[theme]",
+      'dark = "example"',
+      'light = "example"',
+      '"""',
+      "",
+      "[theme]",
+      'dark = "vitesse-dark"',
+      'light = "vitesse-light"',
+      "",
+    ]);
+
+    saveGlobalViewPreferences(themePreferences("dracula"), {
+      configPath,
+      baseline: themePreferences({ dark: "vitesse-dark", light: "vitesse-light" }),
+    });
+
+    const saved = readFileSync(configPath, "utf8");
+    expect(saved).toBe(
+      [
+        'theme = "dracula"',
+        "",
+        "[extension.notes]",
+        'template = """',
+        "[theme]",
+        'dark = "example"',
+        'light = "example"',
+        '"""',
+        "",
+      ].join("\n"),
+    );
+    expect(Bun.TOML.parse(saved)).toMatchObject({ theme: "dracula" });
+  });
+
+  test("writes a theme picked under a [diff.theme] override back into the [diff] table", () => {
+    const home = createTempDir("hunk-scoped-theme-home-");
+    const configPath = writeUserConfig(home, [
+      'theme = "github-dark-default"',
+      "",
+      "[diff]",
+      'mode = "stack"',
+      "",
+      "[diff.theme]",
+      'dark = "vitesse-dark"',
+      'light = "vitesse-light"',
+      "",
+    ]);
+
+    saveGlobalViewPreferences(themePreferences("dracula"), {
+      configPath,
+      baseline: themePreferences({ dark: "vitesse-dark", light: "vitesse-light" }),
+      scope: { command: "diff" },
+    });
+
+    const saved = readFileSync(configPath, "utf8");
+    expect(saved).toBe(
+      [
+        'theme = "github-dark-default"',
+        "",
+        "[diff]",
+        'mode = "stack"',
+        'theme = "dracula"',
+        "",
+      ].join("\n"),
+    );
+    const resolved = resolveConfiguredCliInput(
+      { kind: "diff", left: "a", right: "b", options: {} },
+      { cwd: home, env: { HOME: home } },
+    );
+    expect(resolved.input.options.theme).toBe("dracula");
+    expect(resolved.viewPreferenceScope).toEqual({ command: "diff" });
+  });
+
+  test("prefers the [pager] table over the command table when both define the key", () => {
+    const home = createTempDir("hunk-pager-theme-home-");
+    const configPath = writeUserConfig(home, [
+      "[patch]",
+      'theme = "one-light"',
+      "",
+      "[pager]",
+      'theme = "vitesse-dark" # in less',
+      "",
+    ]);
+
+    saveGlobalViewPreferences(themePreferences("dracula"), {
+      configPath,
+      baseline: themePreferences("vitesse-dark"),
+      scope: { command: "patch", pager: true },
+    });
+
+    expect(readFileSync(configPath, "utf8")).toBe(
+      ["[patch]", 'theme = "one-light"', "", "[pager]", 'theme = "dracula" # in less', ""].join(
+        "\n",
+      ),
+    );
+  });
+
+  test("keeps root keys at the root when the command table does not define them", () => {
+    const home = createTempDir("hunk-scoped-other-key-home-");
+    const configPath = writeUserConfig(home, [
+      'theme = "one-light"',
+      "",
+      "[diff]",
+      'mode = "stack"',
+      "",
+    ]);
+
+    saveGlobalViewPreferences(themePreferences("dracula"), {
+      configPath,
+      baseline: themePreferences("one-light"),
+      scope: { command: "diff" },
+    });
+
+    expect(readFileSync(configPath, "utf8")).toBe(
+      ['theme = "dracula"', "", "[diff]", 'mode = "stack"', ""].join("\n"),
+    );
+  });
+
+  test("refuses to save when the rewritten file would not parse back to the same document", () => {
+    const home = createTempDir("hunk-unsafe-save-home-");
+    // An array of tables named `theme` is not something the writer can turn into a plain key.
+    const original = ["[[theme]]", 'dark = "vitesse-dark"', 'light = "vitesse-light"', ""].join(
+      "\n",
+    );
+    const configPath = writeUserConfig(home, [original]);
+
+    expect(() =>
+      saveGlobalViewPreferences(themePreferences("dracula"), {
+        configPath,
+        baseline: themePreferences("one-light"),
+      }),
+    ).toThrow(/Could not update theme in .* without changing the rest of the file/);
+    expect(readFileSync(configPath, "utf8")).toBe(original);
+  });
+
+  test("refuses to save into a config file that no longer parses", () => {
+    const home = createTempDir("hunk-broken-config-home-");
+    const configPath = writeUserConfig(home, ["mode = ", ""]);
+
+    expect(() => saveGlobalViewPreferences(themePreferences("dracula"), { configPath })).toThrow(
+      /because it is not valid TOML/,
+    );
+    expect(readFileSync(configPath, "utf8")).toBe("mode = \n");
+  });
+
+  test("reads a [theme] table into an adaptive selection", () => {
+    const home = createTempDir("hunk-adaptive-theme-home-");
+    const repo = createTempDir("hunk-adaptive-theme-repo-");
+    createRepo(repo);
+    writeUserConfig(home, [
+      "[theme]",
+      'dark = "catppuccin-mocha"',
+      'light = "catppuccin-latte"',
+      'fallback = "nord"',
+    ]);
+
+    const resolved = resolveConfiguredCliInput(createPatchPagerInput(), {
+      cwd: repo,
+      env: { HOME: home },
+    });
+
+    expect(resolved.input.options.theme).toEqual({
+      dark: "catppuccin-mocha",
+      light: "catppuccin-latte",
+      fallback: "nord",
+    });
+  });
+
+  test("lets an explicit --theme id outrank a configured pair", () => {
+    const home = createTempDir("hunk-adaptive-theme-cli-home-");
+    const repo = createTempDir("hunk-adaptive-theme-cli-repo-");
+    createRepo(repo);
+    writeUserConfig(home, ["[theme]", 'dark = "vitesse-dark"', 'light = "vitesse-light"']);
+
+    const resolved = resolveConfiguredCliInput(createPatchPagerInput({ theme: "dracula" }), {
+      cwd: repo,
+      env: { HOME: home },
+    });
+
+    expect(resolved.input.options.theme).toBe("dracula");
+  });
+
+  test("lets a repo layer replace a user pair with one id", () => {
+    const home = createTempDir("hunk-adaptive-theme-layer-home-");
+    const repo = createTempDir("hunk-adaptive-theme-layer-repo-");
+    createRepo(repo);
+    writeUserConfig(home, ["[theme]", 'dark = "vitesse-dark"', 'light = "vitesse-light"']);
+    mkdirSync(join(repo, ".hunk"), { recursive: true });
+    writeFileSync(join(repo, ".hunk", "config.toml"), 'theme = "nord"\n');
+
+    const resolved = resolveConfiguredCliInput(createPatchPagerInput(), {
+      cwd: repo,
+      env: { HOME: home },
+    });
+
+    expect(resolved.input.options.theme).toBe("nord");
+  });
+
+  test("rejects a [theme] table that leaves one background unanswered", () => {
+    const home = createTempDir("hunk-adaptive-theme-invalid-home-");
+    const repo = createTempDir("hunk-adaptive-theme-invalid-repo-");
+    createRepo(repo);
+    writeUserConfig(home, ["[theme]", 'dark = "vitesse-dark"']);
+
+    expect(() =>
+      resolveConfiguredCliInput(createPatchPagerInput(), { cwd: repo, env: { HOME: home } }),
+    ).toThrow("Expected [theme] to set both `dark` and `light` to theme ids.");
+  });
+
+  test("requires a [custom_theme] table when a pair names the custom theme", () => {
+    const home = createTempDir("hunk-adaptive-theme-custom-home-");
+    const repo = createTempDir("hunk-adaptive-theme-custom-repo-");
+    createRepo(repo);
+    writeUserConfig(home, ["[theme]", 'dark = "custom"', 'light = "github-light-default"']);
+
+    expect(() =>
+      resolveConfiguredCliInput(createPatchPagerInput(), { cwd: repo, env: { HOME: home } }),
+    ).toThrow('Expected a [custom_theme] table when config selects theme = "custom".');
+  });
+
+  test("treats an unchanged pair as clean and shows the collapse when one theme is picked", () => {
+    const base = {
+      mode: "auto",
+      theme: { dark: "vitesse-dark", light: "vitesse-light" },
+      showLineNumbers: true,
+      wrapLines: false,
+      showHunkHeaders: true,
+      showMenuBar: true,
+      showAgentNotes: false,
+      copyDecorations: false,
+      cursorLine: "row",
+    } as const;
+
+    expect(
+      diffPersistedViewPreferences(base, {
+        ...base,
+        theme: { dark: "vitesse-dark", light: "vitesse-light" },
+      }),
+    ).toEqual([]);
+    expect(diffPersistedViewPreferences(base, { ...base, theme: "dracula" })).toEqual([
+      {
+        configKey: "theme",
+        previousValue: '{ dark = "vitesse-dark", light = "vitesse-light" }',
+        nextValue: '"dracula"',
+      },
+    ]);
+  });
+
+  test("rewrites a [theme] table in place instead of duplicating the key", () => {
+    const home = createTempDir("hunk-adaptive-theme-save-home-");
+    const configPath = writeUserConfig(home, [
+      "wrap_lines = false",
+      "",
+      "[theme]",
+      "# follow the terminal",
+      'dark = "vitesse-dark"',
+      'light = "vitesse-light"',
+      "",
+      "[custom_theme]",
+      'label = "Keep me"',
+    ]);
+
+    saveGlobalViewPreferences(
+      {
+        mode: "auto",
+        theme: { dark: "nord", light: "one-light", fallback: "nord" },
+        showLineNumbers: true,
+        wrapLines: true,
+        showHunkHeaders: true,
+        showMenuBar: true,
+        showAgentNotes: false,
+        copyDecorations: false,
+        cursorLine: "row",
+      },
+      { configPath },
+    );
+
+    const saved = readFileSync(configPath, "utf8");
+    expect(saved).toContain(
+      [
+        "[theme]",
+        "# follow the terminal",
+        'dark = "nord"',
+        'light = "one-light"',
+        'fallback = "nord"',
+        "",
+        "[custom_theme]",
+        'label = "Keep me"',
+      ].join("\n"),
+    );
+    expect(saved).not.toContain("theme = ");
+    expect(saved).toContain("wrap_lines = true");
+  });
+
+  test("removes the [theme] table when a single theme replaces the pair", () => {
+    const home = createTempDir("hunk-adaptive-theme-collapse-home-");
+    const configPath = writeUserConfig(home, [
+      "[theme]",
+      'dark = "vitesse-dark"',
+      'light = "vitesse-light"',
+      "",
+      "[custom_theme]",
+      'label = "Keep me"',
+    ]);
+
+    saveGlobalViewPreferences(
+      {
+        mode: "auto",
+        theme: "dracula",
+        showLineNumbers: true,
+        wrapLines: false,
+        showHunkHeaders: true,
+        showMenuBar: true,
+        showAgentNotes: false,
+        copyDecorations: false,
+        cursorLine: "row",
+      },
+      { configPath },
+    );
+
+    const saved = readFileSync(configPath, "utf8");
+    expect(saved).toContain('theme = "dracula"');
+    expect(saved).not.toContain("[theme]");
+    expect(saved).toContain("[custom_theme]");
+  });
+
+  function themePreferences(theme: PersistedViewPreferences["theme"]): PersistedViewPreferences {
+    return {
+      mode: "auto",
+      theme,
+      showLineNumbers: true,
+      wrapLines: false,
+      showHunkHeaders: true,
+      showMenuBar: true,
+      showAgentNotes: false,
+      copyDecorations: false,
+      cursorLine: "row",
+    };
+  }
+
+  test("replaces dotted theme keys instead of appending a second definition", () => {
+    const home = createTempDir("hunk-adaptive-theme-dotted-home-");
+    const configPath = writeUserConfig(home, [
+      "wrap_lines = false",
+      'theme.dark = "vitesse-dark"',
+      'theme.light = "vitesse-light"',
+    ]);
+
+    saveGlobalViewPreferences(themePreferences("dracula"), { configPath });
+
+    const saved = readFileSync(configPath, "utf8");
+    expect(() => Bun.TOML.parse(saved)).not.toThrow();
+    expect(Bun.TOML.parse(saved)).toMatchObject({ theme: "dracula" });
+    expect(saved).not.toContain("theme.light");
+  });
+
+  test("replaces a quoted key inside the [theme] table rather than duplicating it", () => {
+    const home = createTempDir("hunk-adaptive-theme-quoted-home-");
+    const configPath = writeUserConfig(home, [
+      "[theme]",
+      '"dark" = "vitesse-dark"',
+      'light = "vitesse-light"',
+    ]);
+
+    saveGlobalViewPreferences(themePreferences({ dark: "nord", light: "one-light" }), {
+      configPath,
+    });
+
+    const saved = readFileSync(configPath, "utf8");
+    expect(() => Bun.TOML.parse(saved)).not.toThrow();
+    expect(Bun.TOML.parse(saved)).toMatchObject({
+      theme: { dark: "nord", light: "one-light" },
+    });
+  });
+
+  test("keeps the next section's comments when the [theme] table collapses", () => {
+    const home = createTempDir("hunk-adaptive-theme-comments-home-");
+    const configPath = writeUserConfig(home, [
+      'mode = "split"',
+      "",
+      "# theme picked per background",
+      "[theme]",
+      'dark = "vitesse-dark" # night',
+      'light = "vitesse-light"',
+      "",
+      "# my custom colors",
+      "[custom_theme]",
+      'label = "Keep me"',
+    ]);
+
+    saveGlobalViewPreferences(themePreferences({ dark: "nord", light: "one-light" }), {
+      configPath,
+    });
+
+    let saved = readFileSync(configPath, "utf8");
+    expect(saved).toContain('dark = "nord" # night');
+    expect(saved).toContain("# my custom colors");
+
+    saveGlobalViewPreferences(themePreferences("dracula"), { configPath });
+
+    saved = readFileSync(configPath, "utf8");
+    expect(() => Bun.TOML.parse(saved)).not.toThrow();
+    expect(saved).not.toContain("[theme]");
+    // The collapsed key takes the table's place, so each comment still introduces what follows
+    // it, and a comment that rode on a removed value line survives as a line of its own.
+    expect(saved).toContain(
+      [
+        "",
+        "# theme picked per background",
+        "# night",
+        'theme = "dracula"',
+        "",
+        "# my custom colors",
+        "[custom_theme]",
+        'label = "Keep me"',
+        "",
+      ].join("\n"),
+    );
+  });
+
+  test("indents a key added to an indented [theme] table like its siblings", () => {
+    const home = createTempDir("hunk-adaptive-theme-indent-home-");
+    const configPath = writeUserConfig(home, [
+      "[theme]",
+      '  dark = "vitesse-dark"',
+      '  light = "vitesse-light"',
+    ]);
+
+    saveGlobalViewPreferences(
+      themePreferences({ dark: "nord", light: "one-light", fallback: "dracula" }),
+      { configPath },
+    );
+
+    const saved = readFileSync(configPath, "utf8");
+    expect(() => Bun.TOML.parse(saved)).not.toThrow();
+    expect(saved).toContain('  fallback = "dracula"');
+  });
+
+  test("keeps a collapsed theme out of a table that precedes it", () => {
+    const home = createTempDir("hunk-adaptive-theme-late-table-home-");
+    const configPath = writeUserConfig(home, [
+      "[custom_theme]",
+      'label = "Keep me"',
+      "",
+      "[theme]",
+      'dark = "vitesse-dark"',
+      'light = "vitesse-light"',
+    ]);
+
+    saveGlobalViewPreferences(themePreferences("dracula"), { configPath });
+
+    const saved = readFileSync(configPath, "utf8");
+    expect(Bun.TOML.parse(saved)).toMatchObject({
+      theme: "dracula",
+      custom_theme: { label: "Keep me" },
+    });
+  });
+
+  test("leaves one blank line where a collapsed [theme] table used to separate its neighbours", () => {
+    const home = createTempDir("hunk-adaptive-theme-seam-home-");
+    const configPath = writeUserConfig(home, [
+      "[custom_theme]",
+      'label = "Keep me"',
+      "",
+      "[theme]",
+      'dark = "vitesse-dark"',
+      'light = "vitesse-light"',
+      "",
+      "[extensions]",
+      "enabled = true",
+      "",
+    ]);
+
+    saveGlobalViewPreferences(themePreferences("dracula"), { configPath });
+
+    const saved = readFileSync(configPath, "utf8");
+    expect(saved).toContain('label = "Keep me"\n\n[extensions]');
+    expect(saved).not.toMatch(/\n\n\n/);
+    expect(Bun.TOML.parse(saved)).toMatchObject({
+      theme: "dracula",
+      custom_theme: { label: "Keep me" },
+      extensions: { enabled: true },
+    });
+  });
+
+  test("collapsing a theme-only config leaves no leading blank line", () => {
+    const home = createTempDir("hunk-adaptive-theme-only-home-");
+    const configPath = writeUserConfig(home, [
+      "[theme]",
+      'dark = "vitesse-dark"',
+      'light = "vitesse-light"',
+    ]);
+
+    saveGlobalViewPreferences(themePreferences("dracula"), { configPath });
+
+    expect(readFileSync(configPath, "utf8").startsWith('theme = "dracula"\n')).toBe(true);
+  });
+
+  test("writes a pair as an inline table when the file has no [theme] section", () => {
+    const home = createTempDir("hunk-adaptive-theme-inline-home-");
+    const configPath = writeUserConfig(home, ['theme = "dracula"', "wrap_lines = false"]);
+
+    saveGlobalViewPreferences(
+      {
+        mode: "auto",
+        theme: { dark: "nord", light: "one-light" },
+        showLineNumbers: true,
+        wrapLines: false,
+        showHunkHeaders: true,
+        showMenuBar: true,
+        showAgentNotes: false,
+        copyDecorations: false,
+        cursorLine: "row",
+      },
+      { configPath },
+    );
+
+    expect(readFileSync(configPath, "utf8")).toContain(
+      'theme = { dark = "nord", light = "one-light" }',
+    );
   });
 });
 
