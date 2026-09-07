@@ -371,6 +371,7 @@ describe("startup update notice", () => {
   test("stores the current version on first run without showing a copied-skill notice", async () => {
     const stateDir = mkdtempSync(join(tmpdir(), "hunk-startup-notice-"));
     const statePath = join(stateDir, "state.json");
+    const now = Date.parse("2026-09-07T12:00:00.000Z");
 
     try {
       await expect(
@@ -379,16 +380,102 @@ describe("startup update notice", () => {
           fetchImpl: async () => createDistTagsResponse({ latest: "0.7.0" }),
           resolveInstalledVersion: () => "0.7.0",
           statePath,
+          now: () => now,
         }),
       ).resolves.toBeNull();
 
       expect(JSON.parse(readFileSync(statePath, "utf8"))).toEqual({
         version: 1,
         lastSeenCliVersion: "0.7.0",
+        lastReleaseCheckAt: "2026-09-07T12:00:00.000Z",
       });
     } finally {
       rmSync(stateDir, { recursive: true, force: true });
     }
+  });
+
+  test("checks automatically at most once per 24 hours", async () => {
+    await withTempStatePath(async (statePath) => {
+      const start = Date.parse("2026-09-07T12:00:00.000Z");
+      let now = start;
+      let fetchCount = 0;
+      const resolve = () =>
+        resolveStartupUpdateNotice({
+          resolveExecutablePath: () => NPM_EXECUTABLE_PATH,
+          fetchImpl: async () => {
+            fetchCount += 1;
+            return createDistTagsResponse({ latest: "0.7.0" });
+          },
+          resolveInstalledVersion: () => "0.7.0",
+          statePath,
+          now: () => now,
+        });
+
+      await expect(resolve()).resolves.toBeNull();
+      now = start + 23 * 60 * 60 * 1_000;
+      await expect(resolve()).resolves.toBeNull();
+      expect(fetchCount).toBe(1);
+
+      now = start + 24 * 60 * 60 * 1_000;
+      await expect(resolve()).resolves.toBeNull();
+      expect(fetchCount).toBe(2);
+      expect(JSON.parse(readFileSync(statePath, "utf8"))).toMatchObject({
+        lastReleaseCheckAt: "2026-09-08T12:00:00.000Z",
+      });
+    });
+  });
+
+  test("does not let a future timestamp suppress checks after clock rollback", async () => {
+    await withTempStatePath(async (statePath) => {
+      const future = Date.parse("2099-01-01T00:00:00.000Z");
+      const now = Date.parse("2026-09-07T12:00:00.000Z");
+      let fetchCount = 0;
+
+      await resolveStartupUpdateNotice({
+        resolveExecutablePath: () => NPM_EXECUTABLE_PATH,
+        fetchImpl: async () => createDistTagsResponse({ latest: "0.7.0" }),
+        resolveInstalledVersion: () => "0.7.0",
+        statePath,
+        now: () => future,
+      });
+      await resolveStartupUpdateNotice({
+        resolveExecutablePath: () => NPM_EXECUTABLE_PATH,
+        fetchImpl: async () => {
+          fetchCount += 1;
+          return createDistTagsResponse({ latest: "0.7.0" });
+        },
+        resolveInstalledVersion: () => "0.7.0",
+        statePath,
+        now: () => now,
+      });
+
+      expect(fetchCount).toBe(1);
+      expect(JSON.parse(readFileSync(statePath, "utf8"))).toMatchObject({
+        lastReleaseCheckAt: "2026-09-07T12:00:00.000Z",
+      });
+    });
+  });
+
+  test("does not retry a failed automatic check on every launch", async () => {
+    await withTempStatePath(async (statePath) => {
+      const now = Date.parse("2026-09-07T12:00:00.000Z");
+      let fetchCount = 0;
+      const resolve = () =>
+        resolveStartupUpdateNotice({
+          resolveExecutablePath: () => NPM_EXECUTABLE_PATH,
+          fetchImpl: async () => {
+            fetchCount += 1;
+            throw new Error("offline");
+          },
+          resolveInstalledVersion: () => "0.7.0",
+          statePath,
+          now: () => now,
+        });
+
+      await expect(resolve()).resolves.toBeNull();
+      await expect(resolve()).resolves.toBeNull();
+      expect(fetchCount).toBe(1);
+    });
   });
 
   test("shows a one-time copied-skill refresh notice after a version change", async () => {
