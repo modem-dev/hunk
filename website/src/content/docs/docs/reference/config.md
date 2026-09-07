@@ -222,6 +222,8 @@ Enable moved-line coloring when the renderer supports it.
 
 `[pager]` is an additional overlay for any review opened with pager-style chrome. It is applied after the matching command table in the same file.
 
+When you save view preferences from the app, each changed key is written back into the most specific table that already defines it: `[pager]` first, then the command table, then the root. Keys no table defines are added at the root.
+
 ## Custom themes
 
 Set `theme = "custom"` and add a root `[custom_theme]` table. `custom_theme.base` accepts one of these built-in ids and defaults to `github-dark-default` when layered custom themes need a base:

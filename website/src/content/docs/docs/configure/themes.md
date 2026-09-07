@@ -24,7 +24,7 @@ fallback = "github-dark-default"
 
 `dark` and `light` are required. Hunk queries the terminal background the way `auto` does, then draws the matching side. The optional `fallback` covers sessions where Hunk never gets an answer: terminals that ignore the query, and captured pager hosts such as LazyGit, where Hunk never asks. Without it those sessions use `dark`. Both sides accept built-in ids, custom theme ids, and the compatibility aliases.
 
-A `--theme <id>` flag overrides the table for one run. Picking a theme in the app replaces the pair with that single id, and the save-on-quit prompt shows the change before writing it.
+A `--theme <id>` flag overrides the table for one run. Picking a theme in the app replaces the pair with that single id, and the save-on-quit prompt shows the change before writing it. The save touches only the keys you changed, keeps your comments, and writes a key back into the command table or `[pager]` table that defined it. If the file cannot be updated without changing anything else, Hunk leaves it untouched and asks you to edit it by hand.
 
 ## Create a custom theme
 

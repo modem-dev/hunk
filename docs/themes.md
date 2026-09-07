@@ -35,7 +35,11 @@ any built-in id, a custom theme id, and the compatibility aliases.
 
 A `--theme <id>` flag overrides the table for that run, and picking a theme in
 the app (`t`, or `View -> Themes…`) replaces the pair with the single id you
-chose — the save-on-quit prompt shows that before writing anything.
+chose — the save-on-quit prompt shows that before writing anything. The save
+rewrites only the keys you changed, keeps the comments around them, and writes
+a key back into the command table or `[pager]` table that defined it, so the
+next run of that command sees your pick. If the file cannot be updated without
+changing anything else, Hunk leaves it untouched and asks you to edit it by hand.
 
 Older theme ids such as `graphite` and `paper` remain accepted as compatibility
 aliases.
