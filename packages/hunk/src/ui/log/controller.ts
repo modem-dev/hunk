@@ -34,7 +34,6 @@ export interface LogSnapshot {
   historyDone: boolean;
   loading: boolean;
   notice: string;
-  themeId?: string;
   presentation: LogPresentation;
 }
 
@@ -67,7 +66,6 @@ export class LogController {
       historyDone: false,
       loading: false,
       notice: runtime.notices[0] ?? "",
-      themeId: runtime.input.theme,
       presentation: {
         graph: false,
         unicode: !runtime.input.ascii && process.env.TERM !== "dumb",
@@ -306,10 +304,6 @@ export class LogController {
       }, 2500);
       this.noticeTimer.unref?.();
     }
-  }
-
-  setTheme(themeId: string) {
-    this.publish({ themeId });
   }
 
   togglePresentation(key: keyof LogPresentation) {

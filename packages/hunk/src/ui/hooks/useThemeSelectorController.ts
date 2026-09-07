@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { TerminalThemeMode } from "../../core/theme/detection";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { NamedCustomThemeConfig } from "../../extension-api/types";
 import type { ThemeSelectorItem } from "../components/chrome/ThemeSelectorDialog";
+import type { ThemeController } from "../theme/controller";
 import { availableThemes, resolveTheme, withTransparentSurfaces } from "../themes";
 
 interface ThemeSelectorControllerState {
-  committedThemeId: string;
   open: boolean;
   previewThemeId: string | null;
   selectedThemeId: string | null;
@@ -13,28 +12,23 @@ interface ThemeSelectorControllerState {
 
 export interface UseThemeSelectorControllerOptions {
   customThemes?: readonly NamedCustomThemeConfig[];
-  initialTheme?: string;
-  initialThemeMode?: TerminalThemeMode | null;
   onTransientNotice: (text: string) => void;
-  /** Observe committed choices so a remounting surface can retain them. */
-  onThemeCommitted?: (themeId: string) => void;
+  themeController: ThemeController;
   transparentBackground: boolean;
 }
 
 /** Drive theme resolution, committed selection, and transient selector previews. */
 export function useThemeSelectorController({
   customThemes,
-  initialTheme,
-  initialThemeMode,
   onTransientNotice,
-  onThemeCommitted,
+  themeController,
   transparentBackground,
 }: UseThemeSelectorControllerOptions) {
-  // Startup detection is launch state. Soft bootstrap reloads may replace the
-  // incoming record, but they must not reinterpret an in-session theme choice.
-  const [detectedThemeMode] = useState(initialThemeMode);
+  const { themeId: committedThemeId } = useSyncExternalStore(
+    themeController.subscribe,
+    themeController.getSnapshot,
+  );
   const [state, setState] = useState<ThemeSelectorControllerState>(() => ({
-    committedThemeId: resolveTheme(initialTheme, initialThemeMode ?? null, customThemes).id,
     open: false,
     previewThemeId: null,
     selectedThemeId: null,
@@ -42,8 +36,8 @@ export function useThemeSelectorController({
 
   const themeOptions = useMemo(() => availableThemes(customThemes), [customThemes]);
   const committedTheme = useMemo(
-    () => resolveTheme(state.committedThemeId, detectedThemeMode ?? null, customThemes),
-    [customThemes, detectedThemeMode, state.committedThemeId],
+    () => resolveTheme(committedThemeId, themeController.themeMode ?? null, customThemes),
+    [committedThemeId, customThemes, themeController.themeMode],
   );
   const committedIndex = themeOptions.findIndex((theme) => theme.id === committedTheme.id);
   const storedSelectedIndex = themeOptions.findIndex((theme) => theme.id === state.selectedThemeId);
@@ -59,9 +53,9 @@ export function useThemeSelectorController({
   const baseTheme = useMemo(
     () =>
       previewThemeId
-        ? resolveTheme(previewThemeId, detectedThemeMode ?? null, customThemes)
+        ? resolveTheme(previewThemeId, themeController.themeMode ?? null, customThemes)
         : committedTheme,
-    [committedTheme, customThemes, detectedThemeMode, previewThemeId],
+    [committedTheme, customThemes, previewThemeId, themeController.themeMode],
   );
   const activeTheme = useMemo(
     () => (transparentBackground ? withTransparentSurfaces(baseTheme) : baseTheme),
@@ -175,15 +169,14 @@ export function useThemeSelectorController({
       selectedThemeIdRef.current = item.id;
       setState((current) => ({
         ...current,
-        committedThemeId: item.id,
         open: false,
         previewThemeId: null,
         selectedThemeId: item.id,
       }));
-      onThemeCommitted?.(item.id);
+      themeController.commitTheme(item.id);
       onTransientNotice(`Theme: ${item.label}`);
     },
-    [onThemeCommitted, onTransientNotice],
+    [onTransientNotice, themeController],
   );
 
   /** Commit one pointer-selected item when its current catalog entry is valid. */
@@ -204,7 +197,7 @@ export function useThemeSelectorController({
   return {
     activeTheme,
     baseTheme,
-    themeId: state.committedThemeId,
+    themeId: committedThemeId,
     themeSelectorItems: items,
     themeSelectorOpen: state.open,
     themeSelectorSelectedIndex: selectedIndex,

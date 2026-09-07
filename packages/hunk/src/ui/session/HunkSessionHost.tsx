@@ -1,3 +1,4 @@
+import { useRenderer } from "@opentui/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   prepareEmbeddedHistoryReview,
@@ -21,6 +22,7 @@ import { interactiveLogUsesColor } from "../log/colorPolicy";
 import { LogApp, type LogAppOutcome } from "../log/LogApp";
 import type { LogController } from "../log/controller";
 import { resolveHistoryAuthorLabel } from "../log/formatting";
+import { ThemeController } from "../theme/controller";
 
 export interface HistorySurfaceRoute {
   kind: "history";
@@ -133,8 +135,26 @@ export function HunkSessionHost({
   startupNoticeResolver?: () => Promise<StartupNotice | null>;
   deps?: HunkSessionHostDeps;
 }) {
+  const renderer = useRenderer();
   const prepareReview = deps.prepareReview ?? prepareEmbeddedHistoryReview;
   const createReviewRuntime = deps.createReviewRuntime ?? createReviewSessionRuntime;
+  const [themeController] = useState(
+    () =>
+      new ThemeController({
+        initialTheme:
+          initialRoute.kind === "history"
+            ? initialRoute.runtime.input.theme
+            : initialRoute.bootstrap.initialTheme,
+        initialThemeMode:
+          initialRoute.kind === "review"
+            ? (initialRoute.bootstrap.initialThemeMode ?? renderer.themeMode)
+            : renderer.themeMode,
+        customThemes:
+          initialRoute.kind === "history"
+            ? initialRoute.runtime.customThemes
+            : initialRoute.bootstrap.customThemes,
+      }),
+  );
   const [route, setRoute] = useState<ActiveSurfaceRoute>(() =>
     initialRoute.kind === "history"
       ? initialRoute
@@ -266,8 +286,8 @@ export function HunkSessionHost({
         extensionsEnabled: historyRoute.runtime.input.extensionsEnabled,
         extensionPaths: historyRoute.runtime.input.extensionPaths,
         extensionSession: historyRoute.runtime.extensionSession.current,
-        themeId: outcome.themeId,
-        themeMode: outcome.themeMode,
+        themeId: themeController.getSnapshot().themeId,
+        themeMode: themeController.themeMode,
       };
       plan = await prepareReview(request, { signal });
       const historyReview = historyReviewDescriptor(historyRoute.runtime, outcome, action);
@@ -376,6 +396,7 @@ export function HunkSessionHost({
         }
         reviewProducer={route.runtime.reviewProducer}
         startupNoticeResolver={startupNoticeResolver}
+        themeController={themeController}
       />
     );
   }
@@ -387,6 +408,7 @@ export function HunkSessionHost({
       useColor={interactiveLogUsesColor(route.runtime.input.color, process.env)}
       onOutcome={(outcome) => handleHistoryOutcome(route, outcome)}
       quitScheduler={deps.viewPreferenceQuitScheduler}
+      themeController={themeController}
     />
   );
 }

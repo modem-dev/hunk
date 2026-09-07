@@ -24,6 +24,7 @@ import {
 } from "../hooks/useViewPreferenceQuitController";
 import { fitText, measureTextWidth } from "../lib/text";
 import { handleViewPreferenceQuitPromptKey } from "../lib/viewPreferenceQuitKeys";
+import type { ThemeController } from "../theme/controller";
 import type { HistoryRuntime } from "../history/types";
 import type { LogController } from "./controller";
 import { LOG_HELP_SECTIONS } from "./logHelp";
@@ -62,8 +63,6 @@ export type LogAppOutcome =
       commits: readonly ExtensionVcsHistoryCommit[];
       count: number;
       parentRevisionId?: string;
-      themeId: string;
-      themeMode: "dark" | "light";
     };
 
 /** Render the bounded history list inside Hunk's shared desktop chrome. */
@@ -71,12 +70,14 @@ export function LogApp({
   controller,
   runtime,
   onOutcome,
+  themeController,
   useColor,
   quitScheduler,
 }: {
   controller: LogController;
   runtime: HistoryRuntime;
   onOutcome: (outcome: LogAppOutcome) => void | Promise<void>;
+  themeController: ThemeController;
   useColor: boolean;
   quitScheduler?: ViewPreferenceQuitScheduler;
 }) {
@@ -99,21 +100,19 @@ export function LogApp({
   const reviewQuitEnabled = useRef(false);
   const quitRequestCaptured = useRef(false);
   const pendingExitCode = useRef<number | undefined>(undefined);
-  const themeController = useThemeSelectorController({
+  const themeSelector = useThemeSelectorController({
     customThemes: runtime.customThemes,
-    initialTheme: snapshot.themeId,
-    initialThemeMode: renderer.themeMode,
     onTransientNotice: setTransientNotice,
-    onThemeCommitted: (id) => controller.setTheme(id),
+    themeController,
     transparentBackground: false,
   });
   const terminalThemeMode = renderer.themeMode ?? "dark";
   const theme = useColor
-    ? themeController.activeTheme
-    : monochromeLogTheme(themeController.activeTheme, terminalThemeMode);
+    ? themeSelector.activeTheme
+    : monochromeLogTheme(themeSelector.activeTheme, terminalThemeMode);
   const chromeTheme = useColor
-    ? themeController.baseTheme
-    : monochromeLogTheme(themeController.baseTheme, terminalThemeMode);
+    ? themeSelector.baseTheme
+    : monochromeLogTheme(themeSelector.baseTheme, terminalThemeMode);
   const logPalette = resolveInteractiveLogPalette(theme);
   const graphColors = snapshot.presentation.graph ? logPalette.graphLanes : [logPalette.timeline];
   const selection = controller.getSelection();
@@ -121,11 +120,15 @@ export function LogApp({
   const responsiveLayout = resolveLogResponsiveLayout(terminal.width, terminal.height);
   const viewportBodyHeight = responsiveLayout.bodyHeight;
   const currentViewPreferences = useMemo(
-    () => ({ ...runtime.initialViewPreferences, theme: themeController.themeId }),
-    [runtime.initialViewPreferences, themeController.themeId],
+    () => ({ ...runtime.initialViewPreferences, theme: themeSelector.themeId }),
+    [runtime.initialViewPreferences, themeSelector.themeId],
   );
   const viewPreferenceQuit = useViewPreferenceQuitController({
     currentPreferences: currentViewPreferences,
+    initialPreferences: {
+      ...runtime.initialViewPreferences,
+      theme: themeController.initialThemeId,
+    },
     configPath: runtime.viewPreferencesConfigPath,
     pagerMode: false,
     promptSaveViewPreferences: runtime.promptSaveViewPreferences,
@@ -184,8 +187,6 @@ export function LogApp({
         commits: controller.getSelectedRows(8).map((row) => row.commit),
         count: currentSelection.count,
         ...(parentRevisionId === undefined ? {} : { parentRevisionId }),
-        themeId: themeController.themeId,
-        themeMode: terminalThemeMode,
       });
     } catch (error) {
       reviewPending.current = false;
@@ -267,7 +268,7 @@ export function LogApp({
         requestLogQuit(exitCode);
         break;
       case "theme":
-        themeController.openThemeSelector();
+        themeSelector.openThemeSelector();
         break;
       case "toggle-graph":
         controller.togglePresentation("graph");
@@ -490,12 +491,12 @@ export function LogApp({
       consume();
       return;
     }
-    if (themeController.themeSelectorOpen) {
-      if (name === "escape") themeController.closeThemeSelector();
-      else if (name === "up") themeController.moveThemeSelector(-1);
+    if (themeSelector.themeSelectorOpen) {
+      if (name === "escape") themeSelector.closeThemeSelector();
+      else if (name === "up") themeSelector.moveThemeSelector(-1);
       else if (name === "down" || name === "tab")
-        themeController.moveThemeSelector(key.shift ? -1 : 1);
-      else if (name === "return" || name === "enter") themeController.acceptThemeSelector();
+        themeSelector.moveThemeSelector(key.shift ? -1 : 1);
+      else if (name === "return" || name === "enter") themeSelector.acceptThemeSelector();
       else return;
       consume();
       return;
@@ -834,16 +835,16 @@ export function LogApp({
           onSelect={setParentSelectorIndex}
         />
       ) : null}
-      {themeController.themeSelectorOpen ? (
+      {themeSelector.themeSelectorOpen ? (
         <ThemeSelectorDialog
-          items={themeController.themeSelectorItems}
-          selectedIndex={themeController.themeSelectorSelectedIndex}
+          items={themeSelector.themeSelectorItems}
+          selectedIndex={themeSelector.themeSelectorSelectedIndex}
           terminalHeight={terminal.height}
           terminalWidth={terminal.width}
           theme={chromeTheme}
-          onAcceptItem={themeController.acceptThemeSelectorItem}
-          onClose={themeController.closeThemeSelector}
-          onPreviewItem={themeController.previewThemeSelectorItem}
+          onAcceptItem={themeSelector.acceptThemeSelectorItem}
+          onClose={themeSelector.closeThemeSelector}
+          onPreviewItem={themeSelector.previewThemeSelectorItem}
         />
       ) : null}
       {showHelp ? (

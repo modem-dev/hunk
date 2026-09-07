@@ -1,3 +1,4 @@
+import { useRenderer } from "@opentui/react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { resolveConfiguredExtensions } from "../app/extensionBootstrap";
 import { ReviewProducer } from "../app/review/producer";
@@ -39,6 +40,7 @@ import type {
 } from "./hooks/useExtensionWorkspaceControls";
 import { assertReliableWatchRuntime } from "../core/watch/runtime";
 import type { WatchedInputRuntime } from "./hooks/useWatchedInput";
+import { ThemeController } from "./theme/controller";
 
 /** Build the stable refusal returned once quit becomes terminal for reload coordination. */
 function reloadRefusedDuringShutdown() {
@@ -65,6 +67,7 @@ export function AppHost({
   onRequestSessionShutdown,
   reviewProducer,
   startupNoticeResolver,
+  themeController,
   watchRuntime,
   workspaceFileWriter,
   bunVersion = Bun.version,
@@ -93,11 +96,14 @@ export function AppHost({
    */
   reviewProducer?: ReviewProducer;
   startupNoticeResolver?: () => Promise<StartupNotice | null>;
+  /** Session-owned committed theme state shared across routed surfaces. */
+  themeController?: ThemeController;
   watchRuntime?: WatchedInputRuntime;
   workspaceFileWriter?: WorkspaceFileWriter;
   /** Runtime identity injection for reload compatibility tests. */
   bunVersion?: string;
 }) {
+  const renderer = useRenderer();
   const initialBootstrap = bootstrap.reloadContext.vcsCatalog
     ? bootstrap
     : {
@@ -107,6 +113,15 @@ export function AppHost({
           vcsCatalog: getBundledVcsCatalog(),
         },
       };
+  const [ownedThemeController] = useState(
+    () =>
+      new ThemeController({
+        initialTheme: initialBootstrap.initialTheme,
+        initialThemeMode: initialBootstrap.initialThemeMode ?? renderer.themeMode,
+        customThemes: initialBootstrap.customThemes,
+      }),
+  );
+  const activeThemeController = themeController ?? ownedThemeController;
   const [activeExtensionSession] = useState(extensionSession);
   // Direct renderer harnesses can mount extension-free bootstraps while still supplying an
   // explicit empty owner. Production startup always attaches the owner's current result.
@@ -583,6 +598,7 @@ export function AppHost({
       onWorkspaceWriteCompleted={reloadAfterWorkspaceWrite}
       reviewProducer={producer}
       runWorkspaceWrite={runWorkspaceWrite}
+      themeController={activeThemeController}
       watchRuntime={watchRuntime}
       workspaceFileWriter={workspaceFileWriter}
     />

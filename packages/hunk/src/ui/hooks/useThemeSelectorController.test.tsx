@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act, useState } from "react";
 import type { NamedCustomThemeConfig } from "../../extension-api/types";
+import type { TerminalThemeMode } from "../../core/theme/detection";
+import { ThemeController } from "../theme/controller";
 import { availableThemes, TRANSPARENT_BACKGROUND } from "../themes";
 import {
   useThemeSelectorController,
@@ -9,16 +11,33 @@ import {
 } from "./useThemeSelectorController";
 
 type ThemeSelectorController = ReturnType<typeof useThemeSelectorController>;
+interface ThemeSelectorHarnessOptions extends Omit<
+  UseThemeSelectorControllerOptions,
+  "themeController"
+> {
+  initialTheme?: string;
+  initialThemeMode?: TerminalThemeMode | null;
+}
 
 /** Mount the controller with replaceable bootstrap-like inputs. */
-async function renderThemeSelectorController(initial: UseThemeSelectorControllerOptions) {
+async function renderThemeSelectorController(initial: ThemeSelectorHarnessOptions) {
   let controller!: ThemeSelectorController;
-  let replaceOptions!: (options: UseThemeSelectorControllerOptions) => void;
+  let replaceOptions!: (options: ThemeSelectorHarnessOptions) => void;
+  const themeController = new ThemeController({
+    initialTheme: initial.initialTheme,
+    initialThemeMode: initial.initialThemeMode,
+    customThemes: initial.customThemes,
+  });
 
   function Probe() {
     const [options, setOptions] = useState(initial);
     replaceOptions = setOptions;
-    controller = useThemeSelectorController(options);
+    const {
+      initialTheme: _initialTheme,
+      initialThemeMode: _initialThemeMode,
+      ...selectorOptions
+    } = options;
+    controller = useThemeSelectorController({ ...selectorOptions, themeController });
     return null;
   }
 
@@ -149,10 +168,8 @@ describe("useThemeSelectorController", () => {
 
   test("pointer and keyboard acceptance commit atomically and preserve notices", async () => {
     const notices: string[] = [];
-    const committed: string[] = [];
     const harness = await renderThemeSelectorController({
       initialTheme: "github-dark-default",
-      onThemeCommitted: (themeId) => committed.push(themeId),
       onTransientNotice: (notice) => notices.push(notice),
       transparentBackground: false,
     });
@@ -177,7 +194,6 @@ describe("useThemeSelectorController", () => {
       expect(harness.controller.themeId).toBe(keyboardItem.id);
       expect(harness.controller.baseTheme.id).toBe(keyboardItem.id);
       expect(notices.at(-1)).toBe(`Theme: ${keyboardItem.label}`);
-      expect(committed).toEqual([pointerItem.id, keyboardItem.id]);
     } finally {
       await destroyController(harness.setup);
     }

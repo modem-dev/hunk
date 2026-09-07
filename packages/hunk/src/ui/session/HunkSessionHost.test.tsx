@@ -158,6 +158,83 @@ test("routes repeated history reviews through fresh runtimes and returns instead
   }
 });
 
+test("shares committed themes across history and repeated review surfaces", async () => {
+  const history = await createHistoryRoute();
+  const requests: Array<{ themeId?: string }> = [];
+  const deps: HunkSessionHostDeps = {
+    prepareReview: (async (request: { themeId?: string }) => {
+      requests.push(request);
+      const bootstrap = createTestVcsAppBootstrap({
+        changesetId: `theme-review-${requests.length}`,
+        files: [createTestDiffFile({ id: "review.ts", path: "review.ts" })],
+      });
+      bootstrap.extensions = history.runtime.extensionSession.current;
+      return { bootstrap, borrowsExtensions: true };
+    }) as never,
+    createReviewRuntime: (() => ({
+      hostClient: undefined,
+      reviewProducer: undefined,
+      stop: mock(() => undefined),
+    })) as never,
+  };
+  const setup = await testRender(
+    <HunkSessionHost
+      initialRoute={history}
+      externalQuitSignal={new AbortController().signal}
+      onQuit={() => undefined}
+      deps={deps}
+    />,
+    { width: 100, height: 20 },
+  );
+  try {
+    await setup.renderOnce();
+    await act(async () => setup.mockInput.typeText("t"));
+    await setup.renderOnce();
+    await act(async () => setup.mockInput.pressArrow("down"));
+    await act(async () => setup.mockInput.pressEnter());
+    await setup.renderOnce();
+
+    await act(async () => setup.mockInput.pressEnter());
+    await settle(setup);
+    expect(requests[0]?.themeId).toBe("github-dark-dimmed");
+
+    await act(async () => setup.mockInput.typeText("t"));
+    await setup.renderOnce();
+    await act(async () => setup.mockInput.pressArrow("down"));
+    await act(async () => setup.mockInput.pressEnter());
+    await setup.renderOnce();
+    expect(setup.captureCharFrame()).toContain("Theme: github-dark-high-contrast");
+
+    await act(async () => setup.mockInput.pressKey("q"));
+    await settle(setup);
+    expect(setup.captureCharFrame()).toContain("Test history");
+    await act(async () => setup.mockInput.typeText("t"));
+    await setup.renderOnce();
+    expect(setup.captureCharFrame()).toContain("›  github-dark-high-contrast");
+    await act(async () => setup.mockInput.pressEnter());
+    await settle(setup);
+    expect(setup.captureCharFrame()).not.toContain("Theme selector");
+
+    await act(async () => setup.mockInput.pressEnter());
+    await settle(setup);
+    expect(requests[1]?.themeId).toBe("github-dark-high-contrast");
+    await act(async () => setup.mockInput.typeText("t"));
+    await setup.renderOnce();
+    expect(setup.captureCharFrame()).toContain("›  github-dark-high-contrast");
+
+    await act(async () => setup.mockInput.pressEnter());
+    await act(async () => setup.mockInput.pressKey("q"));
+    await settle(setup);
+    await act(async () => setup.mockInput.pressKey("q"));
+    await setup.renderOnce();
+    expect(setup.captureCharFrame()).toContain("Save view preferences?");
+    expect(setup.captureCharFrame()).toContain('+ theme = "github-dark-high-contrast"');
+  } finally {
+    setup.renderer.destroy();
+    await history.controller.close();
+  }
+});
+
 test("opens an extended history selection as one inclusive comparison", async () => {
   const history = await createHistoryRoute(["Newest", "Oldest"]);
   const requests: unknown[] = [];

@@ -112,6 +112,7 @@ import { setMouseCapture } from "./lib/mouseCapture";
 import { openSelectedFileInEditor } from "./lib/openInEditor";
 import { resolveResponsiveLayout } from "./lib/responsive";
 import type { WorkspaceRefreshRequest } from "./currentReviewRefresh";
+import { ThemeController } from "./theme/controller";
 
 type FocusArea = "files" | "filter" | "note";
 
@@ -149,6 +150,7 @@ export function App({
   onWorkspaceWriteCompleted,
   reviewProducer,
   runWorkspaceWrite,
+  themeController,
   returnToHistory = process.env.HUNK_RETURN_TO_HISTORY === "1",
   watchRuntime,
   workspaceFileWriter,
@@ -177,6 +179,8 @@ export function App({
   reviewProducer?: ReviewProducer;
   /** Start and track one irreversible write, or refuse it once graceful shutdown begins. */
   runWorkspaceWrite: WorkspaceWriteRunner;
+  /** Session-owned committed theme state shared across routed surfaces. */
+  themeController?: ThemeController;
   /** Present quit as returning to the owning history surface. */
   returnToHistory?: boolean;
   watchRuntime?: WatchedInputRuntime;
@@ -250,6 +254,15 @@ export function App({
   const extensions = bootstrap.extensions as ExtensionLoadResult | undefined;
   const pendingTrustRepoRoot = extensions?.pendingTrustRepoRoot;
   const extensionToast = useExtensionNotifications(extensions?.notifications);
+  const [ownedThemeController] = useState(
+    () =>
+      new ThemeController({
+        initialTheme: bootstrap.initialTheme,
+        initialThemeMode: bootstrap.initialThemeMode ?? renderer.themeMode,
+        customThemes: bootstrap.customThemes,
+      }),
+  );
+  const activeThemeController = themeController ?? ownedThemeController;
 
   const {
     activeTheme,
@@ -266,9 +279,8 @@ export function App({
     previewThemeSelectorItem,
   } = useThemeSelectorController({
     customThemes: bootstrap.customThemes,
-    initialTheme: bootstrap.initialTheme,
-    initialThemeMode: bootstrap.initialThemeMode ?? renderer.themeMode,
     onTransientNotice: showTransientNotice,
+    themeController: activeThemeController,
     transparentBackground: bootstrap.input.options.transparentBackground ?? false,
   });
   const currentViewPreferences = useMemo<PersistedViewPreferences>(
@@ -370,6 +382,10 @@ export function App({
   }, []);
   const viewPreferenceQuit = useViewPreferenceQuitController({
     currentPreferences: currentViewPreferences,
+    initialPreferences: {
+      ...currentViewPreferences,
+      theme: activeThemeController.initialThemeId,
+    },
     configPath: bootstrap.viewPreferencesConfigPath,
     pagerMode,
     promptSaveViewPreferences:
