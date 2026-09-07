@@ -18,6 +18,7 @@ import type { HunkDiffBodyProps } from "./types";
 export function HunkDiffBody({
   file,
   layout = "split",
+  canonicalLayout,
   width,
   theme = "github-dark-default",
   showLineNumbers = true,
@@ -29,7 +30,7 @@ export function HunkDiffBody({
   highlight = true,
   selectedHunkIndex = 0,
 }: HunkDiffBodyProps) {
-  const resolvedLayout = normalizeHunkDiffLayout(layout);
+  const resolvedLayout = canonicalLayout ?? normalizeHunkDiffLayout(layout);
   const resolvedTheme = resolveTheme(theme, null);
   const internalFile = useMemo(() => (file ? toInternalDiffFile(file) : undefined), [file]);
   const resolvedHighlighted = useHighlightedDiff({

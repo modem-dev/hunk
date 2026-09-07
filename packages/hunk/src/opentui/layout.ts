@@ -1,9 +1,8 @@
-import type { HunkDiffLayout, LegacyHunkDiffLayout } from "./types";
-
-/** Canonical layout vocabulary consumed by Hunk's renderer. */
-export type CanonicalHunkDiffLayout = Exclude<HunkDiffLayout, LegacyHunkDiffLayout>;
+import type { CanonicalHunkDiffLayout, HunkDiffLayout } from "./types";
 
 /** Normalize the deprecated public `stack` prop before it reaches renderer state. */
-export function normalizeHunkDiffLayout(layout: HunkDiffLayout): CanonicalHunkDiffLayout {
+export function normalizeHunkDiffLayout(
+  layout: HunkDiffLayout | CanonicalHunkDiffLayout,
+): CanonicalHunkDiffLayout {
   return layout === "stack" ? "unified" : layout;
 }

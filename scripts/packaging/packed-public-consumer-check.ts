@@ -71,10 +71,14 @@ export function checkPackedPublicConsumers(repoRoot: string) {
     writeFileSync(
       path.join(consumerRoot, "consumer.tsx"),
       `import type { HunkExtensionAPI } from "hunkdiff/extension";\n` +
-        `import type { HunkDiffFileInput } from "hunkdiff/opentui";\n` +
+        `import type { CanonicalHunkDiffLayout, HunkDiffFileInput, HunkDiffLayout } from "hunkdiff/opentui";\n` +
         `import { HunkDiffView, createHunkDiffFile } from "hunkdiff/opentui";\n` +
         `declare const api: HunkExtensionAPI; declare const input: HunkDiffFileInput;\n` +
-        `api.log("packed"); createHunkDiffFile(input); void <HunkDiffView diff={input} width={80} />;\n`,
+        `const legacyLabels: Record<HunkDiffLayout, string> = { split: "split", stack: "stack" };\n` +
+        `const canonicalLabels: Record<CanonicalHunkDiffLayout, string> = { split: "split", unified: "unified" };\n` +
+        `api.log("packed"); createHunkDiffFile(input); void legacyLabels; void canonicalLabels;\n` +
+        `void <HunkDiffView diff={input} width={80} layout="stack" />;\n` +
+        `void <HunkDiffView diff={input} width={80} canonicalLayout="unified" />;\n`,
     );
 
     for (const [mode, resolution] of Object.entries(MODES)) {

@@ -13,6 +13,10 @@ function bundledMetadata(id: string) {
 }
 
 describe("runExtensionFactory", () => {
+  test("advertises canonical layout event fields through extension API v23", () => {
+    expect(HUNK_EXTENSION_API_VERSION).toBe(23);
+  });
+
   test("applies a synchronous factory before returning, with nothing to await", () => {
     const registry = createEmptyExtensionRegistry();
     const issues: ExtensionLoadIssue[] = [];

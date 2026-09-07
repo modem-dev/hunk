@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 22;
+export const HUNK_EXTENSION_API_VERSION = 23;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -2158,9 +2158,9 @@ export type ExtensionLegacyLayout = "stack";
 export type ExtensionCanonicalLayoutMode = "auto" | "split" | "unified";
 /** Concrete canonical layout emitted to extensions. */
 export type ExtensionCanonicalResolvedLayout = Exclude<ExtensionCanonicalLayoutMode, "auto">;
-/** Pre-v22 layout vocabulary retained so existing extension source remains exhaustive. */
+/** Pre-v23 layout vocabulary retained so existing extension source remains exhaustive. */
 export type ExtensionLayoutMode = "auto" | "split" | ExtensionLegacyLayout;
-/** Pre-v22 concrete layout vocabulary retained for source and event compatibility. */
+/** Pre-v23 concrete layout vocabulary retained for source and event compatibility. */
 export type ExtensionResolvedLayout = Exclude<ExtensionLayoutMode, "auto">;
 
 /** A user-authored note as reported by note lifecycle events. */
@@ -2212,7 +2212,7 @@ export interface ExtensionEventPayloads {
   /**
    * The configured layout mode or responsive resolved layout changed.
    *
-   * `mode` and `layout` preserve the pre-v22 vocabulary for existing handlers.
+   * `mode` and `layout` preserve the pre-v23 vocabulary for existing handlers.
    * New integrations should consume the canonical fields.
    */
   layout_changed: {

@@ -19,6 +19,7 @@ function resolveSelection(files: HunkDiffFileInput[], selection: HunkDiffSelecti
 export function HunkReviewStream({
   files,
   layout = "split",
+  canonicalLayout,
   width,
   theme = "github-dark-default",
   selection,
@@ -34,7 +35,7 @@ export function HunkReviewStream({
   highlight = true,
   onSelectionChange,
 }: HunkReviewStreamProps) {
-  const resolvedLayout = normalizeHunkDiffLayout(layout);
+  const resolvedLayout = canonicalLayout ?? normalizeHunkDiffLayout(layout);
   const resolvedTheme = resolveTheme(theme, null);
   const activeSelection = resolveSelection(files, selection);
 
@@ -85,7 +86,7 @@ export function HunkReviewStream({
             ) : null}
             <HunkDiffBody
               file={file}
-              layout={resolvedLayout}
+              canonicalLayout={resolvedLayout}
               width={width}
               theme={theme}
               showLineNumbers={showLineNumbers}
