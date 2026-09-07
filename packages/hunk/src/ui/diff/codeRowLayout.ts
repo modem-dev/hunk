@@ -182,7 +182,7 @@ export function planCodeRowLayout(
 }
 
 /** Adapt a raw diff row for surfaces that do not use the review render plan. */
-export function legacyPlannedDiffRow(
+export function plannedDiffRowFromRaw(
   row: DiffRow,
   anchorId?: string,
   noteGuideSide?: "old" | "new",
@@ -224,7 +224,7 @@ export function measureRenderedRowHeight(
   _theme: AppTheme,
   reserveAddNoteColumn = false,
 ) {
-  return measurePlannedRenderedRowHeight(legacyPlannedDiffRow(row), {
+  return measurePlannedRenderedRowHeight(plannedDiffRowFromRaw(row), {
     width,
     lineNumberDigits,
     showLineNumbers,

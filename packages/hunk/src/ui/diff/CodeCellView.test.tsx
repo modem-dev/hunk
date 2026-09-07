@@ -9,7 +9,7 @@ import {
   selectionHighlightBg,
   stackCellPalette,
 } from "./rowStyle";
-import { legacyPlannedDiffRow, planCodeRowLayout } from "./codeRowLayout";
+import { plannedDiffRowFromRaw, planCodeRowLayout } from "./codeRowLayout";
 import type { DiffRow } from "./diffRows";
 import { lineHighlightPaintKey, type LineHighlightPaintIndex } from "./lineHighlightPaint";
 import { RawDiffRowView } from "./RawDiffRowView";
@@ -89,7 +89,7 @@ describe("CodeCellView painting", () => {
     const theme = resolveTheme("github-dark-default", null);
 
     for (const wrapLines of [false, true]) {
-      const plannedRow = legacyPlannedDiffRow(stackRow);
+      const plannedRow = plannedDiffRowFromRaw(stackRow);
       const layout = planCodeRowLayout(plannedRow, {
         width: 12,
         lineNumberDigits: 1,
@@ -192,7 +192,7 @@ describe("CodeCellView painting", () => {
     ]);
 
     for (const wrapLines of [false, true]) {
-      const plannedRow = legacyPlannedDiffRow(row);
+      const plannedRow = plannedDiffRowFromRaw(row);
       const layout = planCodeRowLayout(plannedRow, {
         width: 12,
         lineNumberDigits: 1,

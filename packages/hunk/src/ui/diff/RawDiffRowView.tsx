@@ -2,7 +2,7 @@
 import { memo } from "react";
 import type { DiffRow } from "./diffRows";
 import { DiffRowView, type DiffRowViewProps } from "./DiffRowView";
-import { legacyPlannedDiffRow } from "./codeRowLayout";
+import { plannedDiffRowFromRaw } from "./codeRowLayout";
 
 /** Inputs for a raw row rendered outside the shared review plan. */
 export interface RawDiffRowViewProps extends Omit<DiffRowViewProps, "plannedRow"> {
@@ -19,6 +19,6 @@ export const RawDiffRowView = memo(function RawDiffRowViewComponent({
   ...viewProps
 }: RawDiffRowViewProps) {
   return (
-    <DiffRowView {...viewProps} plannedRow={legacyPlannedDiffRow(row, anchorId, noteGuideSide)} />
+    <DiffRowView {...viewProps} plannedRow={plannedDiffRowFromRaw(row, anchorId, noteGuideSide)} />
   );
 });
