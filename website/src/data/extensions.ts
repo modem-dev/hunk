@@ -202,6 +202,15 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     apiVersion: 6,
   },
   {
+    repo: "rschoch/hunk-compact-filenav",
+    name: "hunk-compact-filenav",
+    summary:
+      "A smart alternative files pane for Hunk that shows compact file paths, useful when viewing deeply nested file and package structures.",
+    categories: ["Pane", "Command"],
+    version: "0.1.0",
+    apiVersion: 16,
+  },
+  {
     repo: "sadick254/hunk-commit-log",
     name: "hunk-commit-log",
     summary:
