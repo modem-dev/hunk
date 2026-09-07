@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { resolveConfiguredExtensions } from "../app/extensionBootstrap";
 import { ReviewProducer } from "../app/review/producer";
-import { reviewDescriptorAfterReload } from "../app/delegatedReview";
+import { reviewDescriptorAfterReload, reviewDescriptorResourceCwd } from "../app/delegatedReview";
 import { loadConfiguredSessionBootstrap } from "../app/sessionBootstrap";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";
 import { restoreFileLanguageRegistrations } from "../core/changeset/fileLanguage";
@@ -114,7 +114,11 @@ export function AppHost({
   const [activeBootstrap, setActiveBootstrap] = useState(initialBootstrap);
   const reviewIdentityRef = useRef({
     input: initialBootstrap.input,
-    cwd: initialBootstrap.reloadContext.cwd,
+    cwd: reviewDescriptorResourceCwd(
+      initialBootstrap.input,
+      initialBootstrap.reloadContext.cwd,
+      initialBootstrap.changeset.sourceLabel,
+    ),
     review: initialBootstrap.review,
   });
   const [producer] = useState(
@@ -322,17 +326,23 @@ export function AppHost({
       }
 
       let nextBootstrap!: AppBootstrap;
+      let nextReviewCwd!: string;
       let nextSnapshot!: ReturnType<typeof createInitialSessionSnapshot>;
       let sessionId = "local-session";
       try {
         const { applied, bootstrap, input: reloadInput, sessionVcs } = loaded;
         nextBootstrap = bootstrap;
+        nextReviewCwd = reviewDescriptorResourceCwd(
+          nextBootstrap.input,
+          cwd,
+          nextBootstrap.changeset.sourceLabel,
+        );
         const preservedReview = reviewDescriptorAfterReload(
           reviewIdentityRef.current.input,
           reviewIdentityRef.current.cwd,
           reviewIdentityRef.current.review,
           nextBootstrap.input,
-          cwd,
+          nextReviewCwd,
         );
         if (preservedReview) nextBootstrap.review = preservedReview;
         if (extensions) {
@@ -398,7 +408,7 @@ export function AppHost({
 
       reviewIdentityRef.current = {
         input: nextBootstrap.input,
-        cwd,
+        cwd: nextReviewCwd,
         review: nextBootstrap.review,
       };
       setActiveBootstrap(nextBootstrap);

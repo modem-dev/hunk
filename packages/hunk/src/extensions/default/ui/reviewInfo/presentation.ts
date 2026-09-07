@@ -1,4 +1,8 @@
-import type { ExtensionChangeRequestReviewDescriptor } from "../../../../extension-api/types";
+import type {
+  ExtensionChangeRequestReviewDescriptor,
+  ExtensionCommitReviewDescriptor,
+} from "../../../../extension-api/types";
+import { formatHistoryRelativeTime } from "../../../../ui/log/formatting";
 import { measureClusterWidth, textClusters } from "../../../../ui/lib/text";
 
 /** Collapse unsafe or layout-changing provider text into one deterministic terminal line. */
@@ -29,22 +33,69 @@ export function fitReviewInfoText(value: string, width: number): string {
   return `${fitted}…`;
 }
 
-/** Derive the two concise rows rendered by the bundled change-request pane. */
-export function reviewInfoLines(
-  review: ExtensionChangeRequestReviewDescriptor,
+type ReviewInfoDescriptor =
+  | ExtensionChangeRequestReviewDescriptor
+  | ExtensionCommitReviewDescriptor;
+
+/** Join one metadata row after sanitizing optional provider fields. */
+function reviewInfoRow(values: readonly (string | undefined)[]) {
+  return values
+    .filter((value): value is string => typeof value === "string" && value.length > 0)
+    .map(sanitizeReviewInfoText)
+    .filter(Boolean)
+    .join(" · ");
+}
+
+export interface ReviewInfoContent {
+  primary: string;
+  secondary: string;
+  /** Right-aligned identity on the primary row. */
+  trailing?: string;
+}
+
+/** Measure sanitized display text in terminal cells. */
+function reviewInfoTextWidth(value: string) {
+  return textClusters(value).reduce((sum, cluster) => sum + measureClusterWidth(cluster), 0);
+}
+
+/** Derive the concise rows and optional right edge rendered by the review-info pane. */
+export function reviewInfoContent(
+  review: ReviewInfoDescriptor,
   width: number,
-): readonly [string, string] {
+  now = Date.now(),
+): ReviewInfoContent {
+  if (review.kind === "commit") {
+    const trailingWidth = Math.max(0, Math.min(width, Math.floor(width * 0.35)));
+    const trailing = fitReviewInfoText(review.revision, trailingWidth);
+    // Reserve one cell each for the gap before the id and its adjacent copy action.
+    const primaryWidth = Math.max(0, width - reviewInfoTextWidth(trailing) - (trailing ? 2 : 0));
+    const relativeTime = review.authoredAt
+      ? formatHistoryRelativeTime(review.authoredAt, now)
+      : undefined;
+    return {
+      primary: fitReviewInfoText(review.title, primaryWidth),
+      secondary: fitReviewInfoText(reviewInfoRow([review.author, relativeTime]), width),
+      ...(trailing ? { trailing } : {}),
+    };
+  }
+
   const state = review.draft ? "DRAFT" : review.state?.toUpperCase();
-  const first = [state, review.id, review.title]
-    .filter((value): value is string => typeof value === "string" && value.length > 0)
-    .map(sanitizeReviewInfoText)
-    .filter(Boolean)
-    .join(" · ");
   const refs = review.base && review.head ? `${review.base} ← ${review.head}` : undefined;
-  const second = [review.author, review.provider, review.repository, refs]
-    .filter((value): value is string => typeof value === "string" && value.length > 0)
-    .map(sanitizeReviewInfoText)
-    .filter(Boolean)
-    .join(" · ");
-  return [fitReviewInfoText(first, width), fitReviewInfoText(second, width)];
+  return {
+    primary: fitReviewInfoText(reviewInfoRow([state, review.id, review.title]), width),
+    secondary: fitReviewInfoText(
+      reviewInfoRow([review.author, review.provider, review.repository, refs]),
+      width,
+    ),
+  };
+}
+
+/** Return only the two left-aligned rows for callers that do not paint the trailing identity. */
+export function reviewInfoLines(
+  review: ReviewInfoDescriptor,
+  width: number,
+  now = Date.now(),
+): readonly [string, string] {
+  const content = reviewInfoContent(review, width, now);
+  return [content.primary, content.secondary];
 }

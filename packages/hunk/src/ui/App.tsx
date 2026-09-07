@@ -1253,6 +1253,18 @@ export function App({
           showTopChrome={showMenuBar}
           keybindings={paneKeybindings}
           notify={(message, type) => extensions?.context.notify(message, type)}
+          onCopyText={(text) => {
+            if (
+              !renderer.isOsc52Supported?.() ||
+              typeof renderer.copyToClipboardOSC52 !== "function"
+            ) {
+              showTransientNotice("Clipboard is unavailable in this terminal.");
+              return false;
+            }
+            renderer.copyToClipboardOSC52(text);
+            showTransientNotice("Copied text to clipboard");
+            return true;
+          }}
           onSelectFile={(fileId) => {
             focusFiles();
             jumpToFile(fileId, { alignFileHeaderTop: true });

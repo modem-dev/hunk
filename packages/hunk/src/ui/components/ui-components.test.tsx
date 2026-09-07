@@ -529,6 +529,7 @@ describe("UI components", () => {
         width={30}
         keybindings={{ matches: () => false, getKeys: () => [] }}
         actions={{
+          copyText: () => false,
           selectFile: () => {},
           selectHunk: () => {},
           revealLine: () => {},
@@ -544,7 +545,7 @@ describe("UI components", () => {
     expect(frame).toContain("./");
     expect(frame).toContain(" zzz-root.ts");
     expect(frame.indexOf("src/ui/")).toBeLessThan(frame.indexOf("./"));
-    expect(frame).toContain(" App.tsx");
+    expect(frame).toContain("▌ M App.tsx");
     expect(frame).toContain(" MenuDropdown.tsx");
     expect(frame).toContain(" signature.ts");
     expect(frame).toContain("*1 +2 -1");
@@ -563,6 +564,7 @@ describe("UI components", () => {
     ]);
     const sharedProps = {
       actions: {
+        copyText: () => false,
         selectFile: () => {},
         selectHunk: () => {},
         revealLine: () => {},

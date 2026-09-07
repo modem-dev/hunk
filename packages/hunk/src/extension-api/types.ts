@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 19;
+export const HUNK_EXTENSION_API_VERSION = 20;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -1117,6 +1117,8 @@ export interface ExtensionPaintTheme {
   border: string;
   accent: string;
   accentMuted: string;
+  /** Bright foreground for clickable copy affordances. */
+  copyAction: string;
   text: string;
   muted: string;
   /** Background highlighting the selected row or hunk. */
@@ -1180,6 +1182,8 @@ export interface ExtensionReviewNavigation {
  * Actions stay valid for as long as the component is mounted.
  */
 export interface ExtensionPaneActions extends ExtensionReviewNavigation {
+  /** Copy text through the terminal clipboard integration, returning false when unavailable. */
+  copyText(text: string): boolean;
   /** Show one toast, attributed to the owning extension. */
   notify(message: string, type?: ExtensionNotifyType): void;
 }
@@ -1257,7 +1261,7 @@ export interface ExtensionCurrentLinePaint {
 /** Immutable state used to decide whether an open pane is meaningful this frame. */
 export interface ExtensionPaneAvailabilityContext {
   readonly placement: ExtensionPanePlacement;
-  /** Immutable delegated review metadata, or null for ordinary reviews. */
+  /** Immutable review-source metadata, or null for ordinary reviews. */
   readonly review: ExtensionReviewDescriptor | null;
   readonly files: readonly ExtensionDiffFile[];
   readonly selectedFileId: string | null;
@@ -1267,7 +1271,7 @@ export interface ExtensionPaneAvailabilityContext {
 
 /** Everything a custom pane component receives, refreshed as the app changes. */
 export interface ExtensionPaneProps {
-  /** Immutable delegated review metadata, or null for ordinary reviews. */
+  /** Immutable review-source metadata, or null for ordinary reviews. */
   readonly review: ExtensionReviewDescriptor | null;
   readonly files: readonly ExtensionDiffFile[];
   readonly selectedFileId: string | null;
@@ -1426,6 +1430,8 @@ export interface ExtensionCommitReviewDescriptor extends ExtensionReviewDescript
   /** Provider revision identifier. */
   readonly revision: string;
   readonly author?: string;
+  /** ISO timestamp used for relative commit time when available. */
+  readonly authoredAt?: string;
 }
 
 /** Metadata for one comparison between two provider refs. */
@@ -1435,7 +1441,7 @@ export interface ExtensionComparisonReviewDescriptor extends ExtensionReviewDesc
   readonly head: string;
 }
 
-/** Bounded provider-neutral metadata attached to an extension-delegated patch review. */
+/** Bounded provider-neutral metadata describing a delegated or history-selected review. */
 export type ExtensionReviewDescriptor =
   | ExtensionChangeRequestReviewDescriptor
   | ExtensionCommitReviewDescriptor

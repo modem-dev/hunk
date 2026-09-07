@@ -117,7 +117,17 @@ test("routes repeated history reviews through fresh runtimes and returns instead
 
     await act(async () => setup.mockInput.pressEnter());
     await settle(setup);
-    expect(setup.captureCharFrame()).not.toContain("History row");
+    const reviewFrame = setup.captureCharFrame();
+    expect(reviewFrame).not.toContain("Commits on");
+    expect(reviewFrame).toContain("History row");
+    expect(
+      reviewFrame
+        .split("\n")
+        .find((line) => line.includes("History row"))
+        ?.trimEnd(),
+    ).toEndWith("revision ⧉");
+    expect(reviewFrame).toContain("Ada ·");
+    expect(reviewFrame).not.toContain("Ada · Test");
     await act(async () => setup.mockInput.pressKey("q"));
     await settle(setup);
     expect(setup.captureCharFrame()).toContain("History row");

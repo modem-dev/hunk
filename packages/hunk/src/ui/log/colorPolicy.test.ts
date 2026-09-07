@@ -25,8 +25,8 @@ describe("interactive log color policy", () => {
       separator: selected.lineNumberFg,
       relativeTime: selected.muted,
       decoration: selected.addedSignColor,
-      commitId: selected.accent,
-      copyAction: selected.lineNumberFg,
+      commitId: selected.fileRenamed,
+      copyAction: selected.copyAction,
       graphLanes: [
         selected.accent,
         selected.addedSignColor,
@@ -35,6 +35,7 @@ describe("interactive log color policy", () => {
         selected.noteBorder,
       ],
     });
+    expect(selected.copyAction).toBe(selected.lineNumberFg);
     expect(palette.decoration).not.toBe(palette.commitId);
     expect(new Set(Object.values(palette).flat()).size).toBeGreaterThanOrEqual(5);
   });

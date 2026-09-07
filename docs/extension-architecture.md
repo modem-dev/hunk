@@ -24,7 +24,7 @@ object and registry collection (`packages/hunk/src/extensions/runExtension.ts`):
   that list: the UI pane planner loads its bundled files and delegated review-info registrations
   through `runExtensionFactory`.
 
-Git, built-in file navigation, and delegated change-request identity use the public
+Git, built-in file navigation, and change-request or history-commit identity use the public
 `registerVcsAdapter` and `registerPane` paths. The external [Hunk Lens](https://github.com/modem-dev/hunk-lens)
 extension exercises current-line pane paint through that same public contract.
 
@@ -106,9 +106,9 @@ the planner resolves it to an integer target before applying bounds and lets a
 session-local divider drag override that automatic size.
 
 `packages/hunk/src/ui/components/panes/ExtensionPane.tsx` mounts panes with guarded actions,
-immutable delegated review metadata, and failure containment. The fixed three-row
-`hunk:review-info` top pane uses one border row above two metadata rows and is available only for
-delegated change requests, so ordinary reviews spend no geometry on it. `DiffPane` exposes optional current-line paint — the row
+immutable review metadata, and failure containment. The fixed three-row `hunk:review-info` top
+pane uses one border row above two metadata rows and is available for delegated change requests or
+commits selected from interactive history, so ordinary reviews spend no geometry on it. `DiffPane` exposes optional current-line paint — the row
 painter plus the public `{ side, line }` address — without publishing Pierre
 rows, plans, cursor keys, or caches. Deprecated sidebar APIs
 normalize into this same registry and layout path.

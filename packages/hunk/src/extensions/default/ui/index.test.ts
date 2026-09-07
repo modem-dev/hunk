@@ -29,6 +29,21 @@ describe("bundled UI registry", () => {
     ).toBeTrue();
     expect(
       reviewInfo.available?.({
+        review: {
+          kind: "commit",
+          provider: "GitHub",
+          title: "Commit title",
+          revision: "abc1234",
+        },
+        placement: "top",
+        files: [],
+        selectedFileId: null,
+        selectedHunkIndex: null,
+        currentLine: null,
+      }),
+    ).toBeTrue();
+    expect(
+      reviewInfo.available?.({
         review: null,
         placement: "top",
         files: [],

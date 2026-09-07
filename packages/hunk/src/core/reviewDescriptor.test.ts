@@ -24,8 +24,13 @@ describe("delegated review descriptor validation", () => {
         provider: "GitHub",
         title: "Commit",
         revision: "abc1234",
+        authoredAt: "2026-01-01T00:00:00Z",
       }),
-    ).toMatchObject({ kind: "commit", revision: "abc1234" });
+    ).toMatchObject({
+      kind: "commit",
+      revision: "abc1234",
+      authoredAt: "2026-01-01T00:00:00Z",
+    });
     expect(
       validateExtensionReviewDescriptor({
         kind: "comparison",
@@ -44,6 +49,13 @@ describe("delegated review descriptor validation", () => {
       { ...review, url: "http://github.com/modem-dev/hunk/pull/123" },
       { ...review, title: "é".repeat(1025) },
       { ...review, repository: "x".repeat(513) },
+      {
+        kind: "commit",
+        provider: "GitHub",
+        title: "Commit",
+        revision: "abc1234",
+        authoredAt: "yesterday",
+      },
       {
         ...review,
         provider: "p".repeat(256),

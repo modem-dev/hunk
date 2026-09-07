@@ -11,6 +11,7 @@ export function toExtensionPaintTheme(theme: AppTheme): ExtensionPaintTheme {
     border: theme.border,
     accent: theme.accent,
     accentMuted: theme.accentMuted,
+    copyAction: theme.copyAction,
     text: theme.text,
     muted: theme.muted,
     selectedHunk: theme.selectedHunk,

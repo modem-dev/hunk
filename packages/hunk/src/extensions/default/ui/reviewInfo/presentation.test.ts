@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { fitReviewInfoText, reviewInfoLines, sanitizeReviewInfoText } from "./presentation";
+import {
+  fitReviewInfoText,
+  reviewInfoContent,
+  reviewInfoLines,
+  sanitizeReviewInfoText,
+} from "./presentation";
 
 const review = {
   kind: "change-request" as const,
@@ -22,6 +27,45 @@ describe("review info presentation", () => {
     expect(reviewInfoLines({ ...review, draft: true, state: "closed" }, 200)[0]).toStartWith(
       "DRAFT · #123",
     );
+  });
+
+  test("formats commit identity and provider facts into two lines", () => {
+    const content = reviewInfoContent(
+      {
+        kind: "commit",
+        provider: "GitHub",
+        title: "Render commit review metadata",
+        revision: "abc1234",
+        author: "octocat",
+        authoredAt: "2026-01-01T00:00:00Z",
+      },
+      200,
+      Date.parse("2026-01-01T10:00:00Z"),
+    );
+    expect(content).toEqual({
+      primary: "Render commit review metadata",
+      secondary: "octocat · 10 hours ago",
+      trailing: "abc1234",
+    });
+  });
+
+  test("caps a long commit id so narrow layouts retain the title", () => {
+    expect(
+      reviewInfoContent(
+        {
+          kind: "commit",
+          provider: "Git",
+          title: "Visible title",
+          revision: "1234567890abcdef",
+          author: "ada",
+        },
+        20,
+      ),
+    ).toEqual({
+      primary: "Visible ti…",
+      secondary: "ada",
+      trailing: "123456…",
+    });
   });
 
   test("omits unknown state while preserving explicit draft identity", () => {

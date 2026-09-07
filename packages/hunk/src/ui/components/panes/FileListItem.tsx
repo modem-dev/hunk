@@ -1,6 +1,7 @@
 import { MouseButton, type MouseEvent as TuiMouseEvent } from "@opentui/core";
 import { memo } from "react";
 import type { ExtensionSidebarTheme } from "../../../extension-api/types";
+import { diffRailMarker } from "../../diff/rowStyle";
 import { fileRowId } from "../../lib/ids";
 import {
   sidebarEntryStats,
@@ -188,13 +189,9 @@ export const FileListItem = memo(function FileListItem({
       }}
       onMouseUp={() => onSelectFile(entry.id)}
     >
-      <box
-        style={{
-          width: 1,
-          height: 1,
-          backgroundColor: selected ? theme.accent : rowBackground,
-        }}
-      />
+      <text fg={selected ? theme.accent : rowBackground} bg={rowBackground}>
+        {selected ? diffRailMarker() : " "}
+      </text>
       <box
         style={{
           flexGrow: 1,

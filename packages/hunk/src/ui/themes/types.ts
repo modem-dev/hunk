@@ -8,6 +8,8 @@ export interface AppTheme {
   border: string;
   accent: string;
   accentMuted: string;
+  /** Bright foreground for clickable copy affordances. */
+  copyAction: string;
   text: string;
   muted: string;
   addedBg: string;

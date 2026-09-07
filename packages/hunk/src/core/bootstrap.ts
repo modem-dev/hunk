@@ -55,7 +55,7 @@ export interface AppBootstrap<ExtensionState = unknown> {
   initialCopyDecorations?: boolean;
   initialCursorLine?: CursorLine;
   startupNotices?: readonly StartupNotice[];
-  /** Validated metadata attached only by an extension-delegated patch review. */
+  /** Validated metadata describing a delegated or history-selected review source. */
   review?: ExtensionReviewDescriptor;
   viewPreferencesConfigPath?: string;
   /** The user's `[keybindings]` table, resolved against command defaults in App. */

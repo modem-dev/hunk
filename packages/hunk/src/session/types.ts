@@ -66,7 +66,7 @@ export interface HunkSessionInfo {
   title: string;
   sourceLabel: string;
   experimentalFeatures?: ExperimentalFeature[];
-  /** Provider-neutral metadata attached by the CLI extension that delegated this review. */
+  /** Provider-neutral metadata describing the review source. */
   review?: ExtensionReviewDescriptor;
   files: SessionReviewFile[];
   /**

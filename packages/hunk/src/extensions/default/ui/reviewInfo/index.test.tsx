@@ -1,8 +1,9 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
 import { capturedTestColorToHex } from "../../../../../../../test/helpers/test-color-helpers";
 import type { ExtensionPaneProps } from "../../../../extension-api/types";
+import { toExtensionPaintTheme } from "../../../../ui/lib/extensionPaintTheme";
 import { resolveTheme } from "../../../../ui/themes";
 import { ReviewInfoPane } from ".";
 import { reviewInfoLines } from "./presentation";
@@ -36,8 +37,9 @@ function backgroundsAtColumn(
 }
 
 describe("ReviewInfoPane", () => {
-  test("separates review chrome with an accent rail and panel background", async () => {
-    const theme = resolveTheme("github-dark-default", null);
+  test("separates review chrome with the diff's thin accent rail and panel background", async () => {
+    const appTheme = resolveTheme("github-dark-default", null);
+    const theme = toExtensionPaintTheme(appTheme);
     const width = 30;
     const setup = await testRender(
       <ReviewInfoPane
@@ -57,9 +59,13 @@ describe("ReviewInfoPane", () => {
       });
       expect(backgroundsAtColumn(setup, 0)).toEqual([
         theme.panel.toLowerCase(),
-        theme.accent.toLowerCase(),
-        theme.accent.toLowerCase(),
+        theme.panel.toLowerCase(),
+        theme.panel.toLowerCase(),
       ]);
+      for (const line of setup.captureSpans().lines.slice(1, 3)) {
+        const rail = line.spans.find((span) => span.text === "▌");
+        expect(capturedTestColorToHex(rail?.fg)).toBe(theme.accent.toLowerCase());
+      }
       expect(backgroundsAtColumn(setup, 1)).toEqual([
         theme.panel.toLowerCase(),
         theme.panel.toLowerCase(),
@@ -84,25 +90,76 @@ describe("ReviewInfoPane", () => {
     }
   });
 
-  test("keeps the border deterministic when no metadata text fits", async () => {
-    const theme = resolveTheme("github-dark-default", null);
+  test("renders commit metadata with the same panel chrome", async () => {
+    const appTheme = resolveTheme("github-dark-default", null);
+    const theme = toExtensionPaintTheme(appTheme);
+    const width = 60;
+    const copyText = mock(() => true);
     const setup = await testRender(
       <ReviewInfoPane
         {...({
-          review,
-          width: 1,
+          actions: { copyText } as unknown as ExtensionPaneProps["actions"],
+          review: {
+            kind: "commit",
+            provider: "GitHub",
+            title: "Render selected commit metadata",
+            revision: "abc1234",
+            author: "octocat",
+            authoredAt: new Date(Date.now() - 10 * 60 * 60 * 1_000).toISOString(),
+          },
+          width,
           height: 3,
           theme,
         } as unknown as ExtensionPaneProps)}
       />,
-      { width: 1, height: 3 },
+      { width, height: 3 },
     );
 
     try {
       await act(async () => {
         await setup.renderOnce();
       });
-      expect(setup.captureCharFrame().split("\n").slice(0, 3)).toEqual(["─", " ", " "]);
+      const frame = setup.captureCharFrame();
+      expect(frame).toContain("Render selected commit metadata");
+      expect(frame).toContain("octocat · 10 hours ago");
+      expect(frame.split("\n")[1]?.trimEnd()).toEndWith("abc1234 ⧉");
+      expect(frame).not.toContain("GitHub");
+      const revisionSpan = setup
+        .captureSpans()
+        .lines[1]?.spans.find((span) => span.text.includes("abc1234"));
+      expect(capturedTestColorToHex(revisionSpan?.fg)).toBe(theme.fileRenamed.toLowerCase());
+      const copySpan = setup.captureSpans().lines[1]?.spans.find((span) => span.text === "⧉");
+      expect(capturedTestColorToHex(copySpan?.fg)).toBe(appTheme.lineNumberFg.toLowerCase());
+      await act(async () => setup.mockMouse.click(width - 2, 1));
+      expect(copyText).toHaveBeenCalledWith("abc1234");
+      expect(backgroundsAtColumn(setup, 0).slice(1)).toEqual([
+        theme.panel.toLowerCase(),
+        theme.panel.toLowerCase(),
+      ]);
+    } finally {
+      setup.renderer.destroy();
+    }
+  });
+
+  test("keeps the border deterministic when no metadata text fits", async () => {
+    const theme = toExtensionPaintTheme(resolveTheme("github-dark-default", null));
+    const setup = await testRender(
+      <ReviewInfoPane
+        {...({
+          review,
+          width: 3,
+          height: 3,
+          theme,
+        } as unknown as ExtensionPaneProps)}
+      />,
+      { width: 3, height: 3 },
+    );
+
+    try {
+      await act(async () => {
+        await setup.renderOnce();
+      });
+      expect(setup.captureCharFrame().split("\n").slice(0, 3)).toEqual(["───", "▌  ", "▌  "]);
     } finally {
       setup.renderer.destroy();
     }

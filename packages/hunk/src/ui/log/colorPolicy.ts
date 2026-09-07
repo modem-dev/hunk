@@ -24,8 +24,8 @@ export function resolveInteractiveLogPalette(theme: AppTheme): InteractiveLogPal
     separator: theme.lineNumberFg,
     relativeTime: theme.muted,
     decoration: theme.addedSignColor,
-    commitId: theme.accent,
-    copyAction: theme.lineNumberFg,
+    commitId: theme.fileRenamed,
+    copyAction: theme.copyAction,
     graphLanes: [
       theme.accent,
       theme.addedSignColor,
@@ -62,6 +62,7 @@ export function monochromeLogTheme(theme: AppTheme, terminalMode: ThemeMode): Ap
     border: foreground,
     accent: foreground,
     accentMuted: selection,
+    copyAction: foreground,
     text: foreground,
     muted: foreground,
     addedBg: background,

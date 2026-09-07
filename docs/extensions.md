@@ -302,8 +302,9 @@ and retires the replaced instance at that explicit ownership boundary.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `19`). Branch on it if you want
-one file to support several Hunk versions. Version 19 adds provider-owned history
+The API generation this Hunk speaks (currently `20`). Branch on it if you want
+one file to support several Hunk versions. Version 20 adds optional commit timestamps to review
+metadata and pane clipboard actions; version 19 adds provider-owned history
 enumeration and review planning; version 18 lets lifecycle and custom-event handlers request
 a host-owned review reload; version 17 adds structured review metadata to delegated patch
 commands and projects it into pane availability and component props; version 16 adds pane-wide
@@ -370,15 +371,18 @@ A delegated built-in `patch` command may include a provider-neutral `review` des
 strings with an optional credential-free HTTPS URL. Hunk rejects unknown fields, control
 characters, invalid types, unsafe URLs, fields over their byte limits, and descriptors over 4 KiB,
 then copies and freezes the accepted value. `provider` and change-request `id` allow 256 bytes;
-`repository`, `author`, `base`, `head`, and `revision` allow 512; `title` and `url` allow 2 KiB.
-Change requests may also carry `state` (`open`, `closed`, or `merged`) and boolean `draft`. Exit results and delegation to any built-in other than
+`repository`, `author`, `base`, `head`, and `revision` allow 512; `authoredAt` allows 128;
+`title` and `url` allow 2 KiB. Change requests may also carry `state` (`open`, `closed`, or
+`merged`) and boolean `draft`; commits may carry an ISO `authoredAt` timestamp. Exit results and delegation to any built-in other than
 `patch` cannot carry review metadata. An ordinary `hunk patch` has no descriptor.
 
 The descriptor describes the review source rather than its diff contents: it stays on the app
 bootstrap and does not enter changeset transforms or `ReviewDocumentV1`. Refreshing the same
 file-backed patch preserves it, including watch and manual refresh; an explicit reload to a
-different patch path or input kind clears it. Live-session list, context, and review JSON snapshots
-project the same optional descriptor from registration metadata; it remains outside the semantic
+different patch path or input kind clears it. Opening a commit from interactive `hunk log` attaches
+a commit descriptor from the selected provider history row and preserves it while refreshing that
+exact provider review request. Live-session list, context, and review JSON snapshots project the
+same optional descriptor from registration metadata; it remains outside the semantic
 review document and grants no remote reload or provider capability.
 
 Delegation cannot target another extension command or change extension bootstrap
@@ -872,9 +876,9 @@ registration owns that slot and later claims are skipped with a warning.
 `replaces` may also name another pane by its fully qualified
 `"<extensionId>:<paneId>"` key, and Hunk follows those replacement chains.
 Both `available(context)` and the mounted component receive `review`: immutable
-metadata supplied by a delegated patch command, or `null` for ordinary reviews.
-The bundled `hunk:review-info` top pane uses this to show change-request identity
-without taking any rows when no change-request descriptor exists. Pane extensions that read
+metadata supplied by a delegated patch command or an interactive history selection, or `null` for
+ordinary reviews. The bundled `hunk:review-info` top pane uses this to show change-request and
+commit identity without taking any rows when no supported descriptor exists. Pane extensions that read
 `review` should declare `"hunk": { "apiVersion": 17 }` in their manifest so older Hunk versions
 refuse them cleanly instead of mounting with an incomplete prop contract.
 
@@ -912,7 +916,7 @@ The component receives fresh props as the app changes:
 
 | Prop                | What it is                                                                                                                                                                |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `review`            | immutable delegated review metadata (`change-request`, `commit`, or `comparison`), or `null` for ordinary reviews                                                         |
+| `review`            | immutable review-source metadata (`change-request`, `commit`, or `comparison`), or `null` for ordinary reviews                                                            |
 | `files`             | the visible reviewed files, review-stream order, filtered, frozen views (each carries `changeType`, `statsTruncated`, and `hunks` summaries beside the usual file fields) |
 | `selectedFileId`    | the selected file, or `null`                                                                                                                                              |
 | `selectedHunkIndex` | the selected hunk within that file, or `null`                                                                                                                             |
@@ -922,7 +926,7 @@ The component receives fresh props as the app changes:
 | `currentLine`       | selected-row painter plus `{ side, line }` when the registration opts in, otherwise `null`                                                                                |
 | `theme`             | hex color tokens from the active theme, updated on theme switch                                                                                                           |
 | `keybindings`       | the current command bindings, resolved from defaults and the user's `[keybindings]` table                                                                                 |
-| `actions`           | navigation and notifications the pane may trigger                                                                                                                         |
+| `actions`           | navigation, clipboard, and notifications the pane may trigger                                                                                                             |
 
 API-v3 sidebar names remain as deprecated aliases: use `registerPane`,
 `ExtensionPane*`, `ctx.panes`, and `replaces: "hunk:files"` in new code.
@@ -931,7 +935,8 @@ API-v3 sidebar names remain as deprecated aliases: use `registerPane`,
 `actions.revealLine(fileId, side, line)` route through the same review
 controller as the built-in files pane and the keyboard shortcuts, so the review
 stream scrolls, selection updates, and the `selection_changed` event fires
-exactly as if the user had clicked a built-in row. `actions.notify(message,
+exactly as if the user had clicked a built-in row. `actions.copyText(text)` uses the terminal's
+OSC 52 clipboard integration and returns `false` when unavailable. `actions.notify(message,
 type?)` shows a toast attributed to your extension. An action given a file id
 that is not currently visible is refused with a warning rather than corrupting
 the selection. A pane's `actions` carry the same navigation methods a command

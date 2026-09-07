@@ -90,6 +90,7 @@ export interface ExtensionPaneHostProps {
   showTopChrome?: boolean;
   keybindings: ExtensionPaneKeybindings;
   notify: ExtensionNotifySink;
+  onCopyText?: (text: string) => boolean;
   onSelectFile: (fileId: string) => void;
   onSelectHunk: (fileId: string, hunkIndex: number) => void;
   onRevealLine: (fileId: string, side: "old" | "new", line: number) => "line" | "hunk" | "none";
@@ -112,6 +113,7 @@ function ExtensionPaneHostView({
   showTopChrome = false,
   keybindings,
   notify,
+  onCopyText,
   onSelectFile,
   onSelectHunk,
   onRevealLine,
@@ -122,8 +124,8 @@ function ExtensionPaneHostView({
   // Selection rerenders the pane host, but it does not replace the capabilities these callbacks
   // represent. Keep the public actions stable so memoized extension rows do not all repaint when
   // only the selected file changed; ref indirection still invokes the latest host generation.
-  const actionTargetsRef = useRef({ notify, onSelectFile, onSelectHunk, onRevealLine });
-  actionTargetsRef.current = { notify, onSelectFile, onSelectHunk, onRevealLine };
+  const actionTargetsRef = useRef({ notify, onCopyText, onSelectFile, onSelectHunk, onRevealLine });
+  actionTargetsRef.current = { notify, onCopyText, onSelectFile, onSelectHunk, onRevealLine };
   const actions = useMemo<ExtensionPaneActions>(
     () =>
       Object.freeze({
@@ -137,6 +139,9 @@ function ExtensionPaneHostView({
           onRevealLine: (fileId, side, line) =>
             actionTargetsRef.current.onRevealLine(fileId, side, line),
         }),
+        copyText(text: string) {
+          return actionTargetsRef.current.onCopyText?.(text) ?? false;
+        },
         notify(message: string, type: ExtensionNotifyType = "info") {
           actionTargetsRef.current.notify(`${extensionId}: ${message}`, type);
         },
