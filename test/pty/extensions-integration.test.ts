@@ -912,8 +912,8 @@ describe("PTY extensions", () => {
 
       await session.press("f9");
       await session.waitForText(/Export review snapshot/, { timeout: 5_000 });
-      await session.type(outputPath);
-      await session.press("enter");
+      // Input and acceptance may arrive together, before React paints the edited field.
+      session.writeRaw(`${outputPath}\r`);
       await session.waitForText(/Exported 1 saved note/, { timeout: 5_000 });
 
       const snapshot = JSON.parse(readFileSync(outputPath, "utf8")) as {
