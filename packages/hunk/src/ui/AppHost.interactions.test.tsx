@@ -3188,12 +3188,7 @@ describe("App interactions", () => {
       await flush(setup);
 
       await act(async () => {
-        await setup.mockInput.typeText("Save from tmux CSI-u.");
-      });
-      await flush(setup);
-
-      await act(async () => {
-        await setup.mockInput.pressKeys(["\u001b[115;5u"]);
+        await setup.mockInput.typeText("Save from tmux CSI-u.\u001b[115;5u");
       });
       await flush(setup);
 

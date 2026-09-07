@@ -65,6 +65,7 @@ function baseOptions(
 ): UseUserNoteComposerOptions {
   return {
     draftNote: null,
+    getDraftNoteId: () => overrides.draftNote?.id ?? null,
     keyboardCursorEnabled: true,
     getLineCursor: () => null,
     startDraft: () => null,
@@ -78,6 +79,70 @@ function baseOptions(
 }
 
 describe("useUserNoteComposer", () => {
+  test.each(["save", "cancel"])(
+    "ignores callbacks after a queued %s consumes the draft",
+    async (first) => {
+      let currentId: string | null = draftNote.id;
+      const calls: string[] = [];
+      const harness = await renderComposer(
+        baseOptions({
+          draftNote,
+          getDraftNoteId: () => currentId,
+          saveDraft: () => {
+            calls.push("save");
+            currentId = null;
+            return savedNote;
+          },
+          cancelDraft: () => {
+            calls.push("cancel");
+            currentId = null;
+          },
+          updateDraft: () => calls.push("late edit"),
+        }),
+      );
+      try {
+        await act(async () => {
+          if (first === "save") harness.composer().saveDraftNote();
+          else harness.composer().cancelDraftNote();
+          harness.composer().cancelDraftNote();
+          harness.composer().saveDraftNote();
+          queueMicrotask(() => harness.composer().updateDraftNote("late native publication"));
+        });
+        expect(calls).toEqual([first]);
+      } finally {
+        await act(async () => harness.setup.renderer.destroy());
+      }
+    },
+  );
+
+  test("queued callbacks cannot consume or edit a replacement draft", async () => {
+    let currentId = draftNote.id;
+    const calls: string[] = [];
+    const harness = await renderComposer(
+      baseOptions({
+        draftNote,
+        getDraftNoteId: () => currentId,
+        saveDraft: () => {
+          calls.push("save");
+          return savedNote;
+        },
+        cancelDraft: () => calls.push("cancel"),
+        updateDraft: () => calls.push("update"),
+      }),
+    );
+    try {
+      await act(async () => {
+        harness.composer().saveDraftNote();
+        harness.composer().cancelDraftNote();
+        currentId = "replacement-draft";
+        harness.composer().updateDraftNote("retired editor body");
+      });
+      expect(calls).toEqual([]);
+    } finally {
+      await act(async () => harness.setup.renderer.destroy());
+    }
+  });
+
   test("prefers explicit targets, then hover, then the enabled keyboard cursor", async () => {
     const starts: Parameters<UseUserNoteComposerOptions["startDraft"]>[] = [];
     let cursorReads = 0;
@@ -251,6 +316,7 @@ describe("useUserNoteComposer", () => {
     let cancelCount = 0;
     const harness = await renderComposer(
       baseOptions({
+        draftNote,
         cancelDraft: () => {
           cancelCount += 1;
         },

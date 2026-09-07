@@ -1130,6 +1130,7 @@ export function App({
     updateDraftNote,
   } = useUserNoteComposer({
     draftNote: review.draftNote,
+    getDraftNoteId: () => review.store.getSnapshot().draftNote?.id ?? null,
     keyboardCursorEnabled: cursorLine !== "off",
     getLineCursor: review.getLineCursor,
     startDraft: review.startUserNote,

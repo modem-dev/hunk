@@ -906,8 +906,8 @@ describe("PTY extensions", () => {
       await harness.ensureKeyboardIsLive(session);
       await session.press("c");
       await session.waitForText(/Draft note/, { timeout: 5_000 });
-      await session.type("Publish this exact note.");
-      await session.type("\x13");
+      // The save key can share an input chunk with the final note characters.
+      session.writeRaw("Publish this exact note.\x13");
       await session.waitForText(/Your note/, { timeout: 5_000 });
 
       await session.press("f9");
