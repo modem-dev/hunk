@@ -132,12 +132,8 @@ export function validateExtensionReviewDescriptor(value: unknown): ExtensionRevi
     };
   } else if (kind === "commit") {
     const authoredAt = validateDescriptorString(candidate, "authoredAt", false);
-    if (
-      authoredAt !== undefined &&
-      (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(authoredAt) ||
-        Number.isNaN(Date.parse(authoredAt)))
-    ) {
-      throw new Error("delegate review authoredAt must be an ISO timestamp");
+    if (authoredAt !== undefined && Number.isNaN(Date.parse(authoredAt))) {
+      throw new Error("delegate review authoredAt must be a valid timestamp");
     }
     descriptor = {
       kind,
