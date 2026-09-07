@@ -159,7 +159,6 @@ export function buildGitDiffArgs(
   input: ExtensionVcsDiffInput,
   excludedPathspecs: string[] = [],
   colorMoved: GitColorMovedOptions | null = null,
-  _endpoints: GitDiffEndpoints | null = null,
 ) {
   const args = ["diff", "--no-ext-diff", "--find-renames", ...gitPatchColorArgs(colorMoved)];
 
@@ -186,10 +185,7 @@ export function buildGitDiffArgs(
 }
 
 /** Build the cheap tracked-file stats query used to skip huge file diffs before patch output. */
-export function buildGitDiffNumstatArgs(
-  input: ExtensionVcsDiffInput,
-  _endpoints: GitDiffEndpoints | null = null,
-) {
+export function buildGitDiffNumstatArgs(input: ExtensionVcsDiffInput) {
   const args = ["diff", "--no-ext-diff", "--find-renames", "--no-color", "--numstat", "-z"];
 
   if (input.staged) {
