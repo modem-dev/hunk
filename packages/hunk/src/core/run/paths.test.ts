@@ -120,16 +120,13 @@ describe("paths", () => {
     }
   });
 
-  test("prefers an install's own skills over both staging trees beside it", () => {
+  test("prefers Hunk's staging tree over generic skills and a nested package", () => {
     const tempRoot = createTempRoot("hunk-skill-specificity-");
 
     try {
-      // All three shapes at one ancestor. The official installer writes `skills/` beside the
-      // binary while a source install stages `hunkdiff/skills/`, and neither removes the
-      // other's tree — so reinstalling one way over the other leaves a stale sibling that must
-      // not win. `node_modules/hunkdiff` belongs to whatever project shares the directory.
-      const installedSkill = join(tempRoot, "skills", "hunk-review", "SKILL.md");
-      const staleStagedSkill = join(tempRoot, "hunkdiff", "skills", "hunk-review", "SKILL.md");
+      // All three shapes at one ancestor: the source install's namespaced copy wins.
+      const installedSkill = join(tempRoot, "hunkdiff", "skills", "hunk-review", "SKILL.md");
+      const staleGenericSkill = join(tempRoot, "skills", "hunk-review", "SKILL.md");
       const staleNestedSkill = join(
         tempRoot,
         "node_modules",
@@ -140,11 +137,11 @@ describe("paths", () => {
       );
       const fakeBinary = join(tempRoot, "hunk");
 
-      for (const skill of [installedSkill, staleStagedSkill, staleNestedSkill]) {
+      for (const skill of [installedSkill, staleGenericSkill, staleNestedSkill]) {
         mkdirSync(dirname(skill), { recursive: true });
       }
       writeFileSync(installedSkill, "# installed\n");
-      writeFileSync(staleStagedSkill, "# stale staging\n");
+      writeFileSync(staleGenericSkill, "# stale generic\n");
       writeFileSync(staleNestedSkill, "# stale nested\n");
       writeFileSync(fakeBinary, "binary\n");
 

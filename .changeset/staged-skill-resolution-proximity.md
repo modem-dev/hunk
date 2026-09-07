@@ -2,4 +2,4 @@
 "hunkdiff": patch
 ---
 
-Stop an unrelated `skills/` directory above the install location from shadowing the bundled skill a source install staged beside the Hunk executable.
+Resolve bundled skills from the nearest matching directory, preferring `hunkdiff/skills`, then `skills`, then `node_modules/hunkdiff/skills` within that directory to avoid unrelated ancestor and nested-package copies.

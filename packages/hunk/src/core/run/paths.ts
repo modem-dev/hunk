@@ -157,10 +157,8 @@ function findRelativePathFromAncestors(startPath: string, relativePaths: readonl
  * Resolve one bundled skill's path from source, npm, or prebuilt package layouts.
  *
  * Every shipped skill lives at `skills/<name>/SKILL.md` in all three layouts, so the name is
- * the only thing that varies and the search stays one walk. What differs is the prefix each
- * layout puts in front of it, and their relative order is load-bearing: an install's own
- * `skills/` must outrank both a leftover `hunkdiff/skills/` staging tree and a
- * `node_modules/hunkdiff` belonging to some other project, or a stale copy wins.
+ * the only thing that varies and the search stays one walk. Within each directory, prefer
+ * Hunk's namespaced staging tree, then standalone skills, then a nested npm package.
  */
 export function resolveBundledSkillPath(
   name: BundledSkillName = DEFAULT_BUNDLED_SKILL_NAME,
@@ -168,14 +166,11 @@ export function resolveBundledSkillPath(
 ) {
   const roots = searchRoots ?? [import.meta.dir, process.execPath];
   const skillRelativePath = join("skills", name, "SKILL.md");
-  // Order within one directory, own-copy first. Both installers write their skills beside the
-  // binary — the official one to `skills/`, a source install to `hunkdiff/skills/` — and neither
-  // removes the other's tree, so `skills/` leads or a leftover source staging tree serves a
-  // newer install's skills. `node_modules/hunkdiff` is last either way: it belongs to whatever
-  // project shares the directory and may be pinned to another version.
+  // Prefer the Hunk-specific staging tree over generic skills. Both shipped layouts outrank
+  // node_modules/hunkdiff, which may belong to another project and contain a stale copy.
   const relativeCandidates = [
-    skillRelativePath,
     join("hunkdiff", skillRelativePath),
+    skillRelativePath,
     join("node_modules", "hunkdiff", skillRelativePath),
   ];
 
