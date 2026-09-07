@@ -420,6 +420,17 @@ export class LogController {
     };
   }
 
+  /** Return at most `limit` selected rows in newest-first display order. */
+  getSelectedRows(limit = Number.POSITIVE_INFINITY) {
+    const selection = this.getSelection();
+    if (!selection) return [];
+    const boundedLimit = Math.max(0, Math.floor(limit));
+    return this.snapshot.rows.slice(
+      selection.newestIndex,
+      Math.min(selection.oldestIndex + 1, selection.newestIndex + boundedLimit),
+    );
+  }
+
   /** Return the currently focused immutable provider history row. */
   getSelectedRow() {
     return this.getSelection()?.focus;

@@ -2,7 +2,10 @@ import type { KeyEvent, MouseEvent as TuiMouseEvent } from "@opentui/core";
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
 import { basename } from "node:path";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import type { ExtensionVcsHistoryRangeSelection } from "../../extension-api/types";
+import type {
+  ExtensionVcsHistoryCommit,
+  ExtensionVcsHistoryRangeSelection,
+} from "../../extension-api/types";
 import { sanitizeTerminalLine } from "../../lib/terminalText";
 import { resolveExtensionSessionOptions } from "../../extensions/apply";
 import { HelpDialog } from "../components/chrome/HelpDialog";
@@ -10,6 +13,8 @@ import { MenuBar } from "../components/chrome/MenuBar";
 import { MenuDropdown } from "../components/chrome/MenuDropdown";
 import type { AppMenus, MenuEntry } from "../components/chrome/menu";
 import { ThemeSelectorDialog } from "../components/chrome/ThemeSelectorDialog";
+import { CommitMetadataText } from "../components/CommitMetadataText";
+import { RevisionIdControl } from "../components/RevisionIdControl";
 import { ViewPreferenceQuitDialog } from "../components/chrome/ViewPreferenceQuitDialog";
 import { useMenuController } from "../hooks/useMenuController";
 import { useThemeSelectorController } from "../hooks/useThemeSelectorController";
@@ -54,6 +59,7 @@ export type LogAppOutcome =
   | {
       kind: "open-review";
       selection: ExtensionVcsHistoryRangeSelection;
+      commits: readonly ExtensionVcsHistoryCommit[];
       count: number;
       parentRevisionId?: string;
       themeId: string;
@@ -175,6 +181,7 @@ export function LogApp({
           newestCommit: currentSelection.newest.commit,
           oldestCommit: currentSelection.oldest.commit,
         },
+        commits: controller.getSelectedRows(8).map((row) => row.commit),
         count: currentSelection.count,
         ...(parentRevisionId === undefined ? {} : { parentRevisionId }),
         themeId: themeController.themeId,
@@ -697,17 +704,13 @@ export function LogApp({
                     }}
                   >
                     <text fg={theme.text}>{projected.title}</text>
-                    <text>
-                      {projected.author ? (
-                        <span fg={logPalette.author}>{projected.author}</span>
-                      ) : null}
-                      {projected.author && projected.relativeTime ? (
-                        <span fg={logPalette.separator}> · </span>
-                      ) : null}
-                      {projected.relativeTime ? (
-                        <span fg={logPalette.relativeTime}>{projected.relativeTime}</span>
-                      ) : null}
-                    </text>
+                    <CommitMetadataText
+                      author={projected.author}
+                      relativeTime={projected.relativeTime}
+                      authorColor={logPalette.author}
+                      separatorColor={logPalette.separator}
+                      relativeTimeColor={logPalette.relativeTime}
+                    />
                     <text> </text>
                   </box>
                   {projected.columnGap ? <box style={{ width: projected.columnGap }} /> : null}
@@ -721,6 +724,11 @@ export function LogApp({
                     onMouseUp={(event: TuiMouseEvent) => {
                       event.stopPropagation();
                       clearTransientNotice();
+                      if (event.modifiers.shift) {
+                        lastClick.current = { index: -1, at: 0 };
+                        void controller.select(index, viewportBodyHeight, { extend: true });
+                        return;
+                      }
                       const copyIconStart =
                         1 +
                         projected.graphWidth +
@@ -728,21 +736,35 @@ export function LogApp({
                         projected.columnGap +
                         projected.rightWidth -
                         measureTextWidth(projected.copyIcon);
-                      if (event.modifiers.shift) {
-                        lastClick.current = { index: -1, at: 0 };
-                        void controller.select(index, viewportBodyHeight, { extend: true });
-                        return;
-                      }
                       void controller.select(index, viewportBodyHeight).then(() => {
                         if (event.x >= copyIconStart) copySelected(row);
                         else void openSelected();
                       });
                     }}
                   >
-                    <box style={{ flexDirection: "row", gap: 1 }}>
-                      <text fg={logPalette.commitId}>{projected.displayId}</text>
-                      <text fg={logPalette.copyAction}>{projected.copyIcon}</text>
-                    </box>
+                    <RevisionIdControl
+                      displayRevision={projected.displayId}
+                      revisionColor={logPalette.commitId}
+                      copyColor={logPalette.copyAction}
+                      copyIcon={projected.copyIcon}
+                      onRevisionClick={() => {
+                        clearTransientNotice();
+                        void controller
+                          .select(index, viewportBodyHeight)
+                          .then(() => openSelected());
+                      }}
+                      onShiftClick={() => {
+                        clearTransientNotice();
+                        lastClick.current = { index: -1, at: 0 };
+                        void controller.select(index, viewportBodyHeight, { extend: true });
+                      }}
+                      onCopy={() => {
+                        clearTransientNotice();
+                        void controller
+                          .select(index, viewportBodyHeight)
+                          .then(() => copySelected(row));
+                      }}
+                    />
                     {projected.secondary ? (
                       <text fg={logPalette.decoration}>{projected.secondary}</text>
                     ) : null}

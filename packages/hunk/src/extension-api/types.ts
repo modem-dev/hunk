@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 21;
+export const HUNK_EXTENSION_API_VERSION = 22;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -1144,6 +1144,12 @@ export interface ExtensionPaintTheme {
   accentMuted: string;
   /** Bright foreground for clickable copy affordances. */
   copyAction: string;
+  /** Author identity used by commit-history metadata. */
+  historyAuthor?: string;
+  /** Punctuation between commit-history metadata fields. */
+  historySeparator?: string;
+  /** Relative timestamp used by commit-history metadata. */
+  historyRelativeTime?: string;
   text: string;
   muted: string;
   /** Background highlighting the selected row or hunk. */
@@ -1338,6 +1344,15 @@ interface ExtensionPaneBase {
   currentLine?: boolean;
   /** Synchronous frame-availability policy. */
   available?(context: ExtensionPaneAvailabilityContext): boolean;
+  /**
+   * Resolve the preferred width or height for the current frame.
+   *
+   * Hunk clamps the returned positive whole-cell target to the registered
+   * dimension bounds. A session-local divider drag still takes precedence.
+   */
+  preferredSize?(context: ExtensionPaneAvailabilityContext): number;
+  /** Set false to suppress divider resizing even when the dimension bounds differ. */
+  resizable?: boolean;
   /** Observes primary mouse presses inside the pane without consuming child interaction. */
   onActivate?(): void;
   component: ExtensionPaneComponent;
@@ -1459,11 +1474,25 @@ export interface ExtensionCommitReviewDescriptor extends ExtensionReviewDescript
   readonly authoredAt?: string;
 }
 
+/** Compact display metadata for one commit included in a comparison. */
+export interface ExtensionComparisonCommitDescriptor {
+  readonly title: string;
+  readonly author?: string;
+  readonly authoredAt?: string;
+  /** Full provider revision copied by the adjacent action. */
+  readonly revision: string;
+  readonly displayRevision: string;
+}
+
 /** Metadata for one comparison between two provider refs. */
 export interface ExtensionComparisonReviewDescriptor extends ExtensionReviewDescriptorBase {
   readonly kind: "comparison";
   readonly base: string;
   readonly head: string;
+  /** Total commits represented, including entries omitted from the bounded list. */
+  readonly commitCount?: number;
+  /** Newest-first commit summaries for compact review-info presentation. */
+  readonly commits?: readonly ExtensionComparisonCommitDescriptor[];
 }
 
 /** Bounded provider-neutral metadata describing a delegated or history-selected review. */

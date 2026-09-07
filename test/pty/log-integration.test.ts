@@ -140,6 +140,9 @@ describe("interactive hunk log", () => {
       await session.press("enter");
       const review = await session.waitForText(/rootOnly = true/, { timeout: 15_000 });
       expect(review).toContain("historyValue = 'second'");
+      expect(review).toContain("Second history commit");
+      expect(review).toContain("First history commit");
+      expect(review).toMatch(/history · .* ago\s+[0-9a-f]{8} ⧉/);
       await session.press("q");
       await session.waitForText(/2 commits selected/, { timeout: 15_000 });
 

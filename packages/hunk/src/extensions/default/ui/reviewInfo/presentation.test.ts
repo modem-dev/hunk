@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  comparisonCommitContent,
   fitReviewInfoText,
   reviewInfoContent,
   reviewInfoLines,
@@ -45,7 +46,68 @@ describe("review info presentation", () => {
     expect(content).toEqual({
       primary: "Render commit review metadata",
       secondary: "octocat · 10 hours ago",
+      secondaryCommitMetadata: {
+        text: "octocat · 10 hours ago",
+        author: "octocat",
+        relativeTime: "10 hours ago",
+      },
       trailing: "abc1234",
+    });
+  });
+
+  test("fits comparison commits responsively while keeping the revision pinned", () => {
+    const commit = {
+      title: "Keep comparison metadata visible in narrow terminals",
+      author: "Ada",
+      authoredAt: "2026-01-01T00:00:00Z",
+      revision: "a9c17e2f00000000000000000000000000000000",
+      displayRevision: "a9c17e2f",
+    };
+    expect(comparisonCommitContent(commit, 80, Date.parse("2026-01-01T02:00:00Z"))).toEqual({
+      title: "Keep comparison metadata visible in narrow termina…",
+      metadata: "Ada · 2 hours ago",
+      metadataAuthor: "Ada",
+      metadataRelativeTime: "2 hours ago",
+      displayRevision: "a9c17e2f",
+      titleWidth: 51,
+      metadataWidth: 17,
+      revisionWidth: 10,
+    });
+    expect(comparisonCommitContent(commit, 42, Date.parse("2026-01-01T02:00:00Z"))).toEqual({
+      title: "Keep comparison me…",
+      metadata: "2 hours ago",
+      metadataAuthor: "",
+      metadataRelativeTime: "2 hours ago",
+      displayRevision: "a9c17e2f",
+      titleWidth: 19,
+      metadataWidth: 11,
+      revisionWidth: 10,
+    });
+    for (let width = 0; width < 20; width += 1) {
+      const row = comparisonCommitContent(commit, width);
+      const allocated =
+        row.titleWidth +
+        (row.metadataWidth ? row.metadataWidth + 1 : 0) +
+        (row.revisionWidth ? row.revisionWidth + 1 : 0);
+      expect(allocated).toBeLessThanOrEqual(width);
+    }
+  });
+
+  test("formats a direct comparison with provider and endpoint direction", () => {
+    expect(
+      reviewInfoContent(
+        {
+          kind: "comparison",
+          provider: "Git",
+          title: "3 commits",
+          base: "base1234",
+          head: "head5678",
+        },
+        200,
+      ),
+    ).toEqual({
+      primary: "3 commits",
+      secondary: "Git · base1234 ← head5678",
     });
   });
 
@@ -64,6 +126,7 @@ describe("review info presentation", () => {
     ).toEqual({
       primary: "Visible ti…",
       secondary: "ada",
+      secondaryCommitMetadata: { text: "ada", author: "ada", relativeTime: "" },
       trailing: "123456…",
     });
   });

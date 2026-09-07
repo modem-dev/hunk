@@ -67,11 +67,13 @@ interface AvailabilityRequest {
   context: Omit<ExtensionPaneAvailabilityContext, "placement" | "currentLine">;
   currentLine: ExtensionCurrentLinePaint | null;
   retainCurrentLineRegistrations?: ReadonlySet<RegisteredPane>;
+  retainedPreferredSizes?: ReadonlyMap<RegisteredPane, number>;
 }
 
 interface AvailabilitySnapshot {
   request: AvailabilityRequest | null;
   available: ReadonlySet<RegisteredPane>;
+  preferredSizes: ReadonlyMap<RegisteredPane, number>;
 }
 
 export interface ExtensionPaneController {
@@ -175,6 +177,7 @@ export function useExtensionPaneController({
   const [availabilitySnapshot, setAvailabilitySnapshot] = useState<AvailabilitySnapshot>({
     request: null,
     available: new Set(),
+    preferredSizes: new Map(),
   });
 
   const sessionPanesRef = useRef(sessionPanes);
@@ -188,6 +191,7 @@ export function useExtensionPaneController({
   const lastAvailabilityProbeRef = useRef<{
     request: AvailabilityRequest;
     available: ReadonlySet<RegisteredPane>;
+    preferredSizes: ReadonlyMap<RegisteredPane, number>;
   } | null>(null);
 
   // Reconcile registrations before committed controls can observe the new pane set.
@@ -350,6 +354,7 @@ export function useExtensionPaneController({
       ...(currentLinePaintPending
         ? {
             retainCurrentLineRegistrations: retainedCurrentLinePaneRegistrationsRef.current,
+            retainedPreferredSizes: lastAvailabilityProbeRef.current?.preferredSizes,
           }
         : {}),
     }),
@@ -369,12 +374,15 @@ export function useExtensionPaneController({
   // Probe availability after commit and quarantine callbacks that throw.
   useLayoutEffect(() => {
     let available: ReadonlySet<RegisteredPane>;
+    let preferredSizes: ReadonlyMap<RegisteredPane, number>;
     const cached = lastAvailabilityProbeRef.current;
     if (cached?.request === availabilityRequest) {
       available = cached.available;
+      preferredSizes = cached.preferredSizes;
     } else {
       const probe = probeExtensionPaneAvailability(availabilityRequest);
       available = probe.available;
+      preferredSizes = probe.preferredSizes;
       for (const failure of probe.failures) {
         quarantinedRef.current.add(failure.pane.registered);
         if (!reportedAvailabilityFailuresRef.current.has(failure.pane.registered)) {
@@ -382,12 +390,18 @@ export function useExtensionPaneController({
           notifyWarning(availabilityFailureMessage(failure.pane, failure.error));
         }
       }
-      lastAvailabilityProbeRef.current = { request: availabilityRequest, available };
+      lastAvailabilityProbeRef.current = {
+        request: availabilityRequest,
+        available,
+        preferredSizes,
+      };
     }
     setAvailabilitySnapshot((current) =>
-      current.request === availabilityRequest && current.available === available
+      current.request === availabilityRequest &&
+      current.available === available &&
+      current.preferredSizes === preferredSizes
         ? current
-        : { request: availabilityRequest, available },
+        : { request: availabilityRequest, available, preferredSizes },
     );
   }, [availabilityRequest, notifyWarning]);
 
@@ -427,6 +441,10 @@ export function useExtensionPaneController({
         panes: sessionPanes,
         openKeys: acceptedOpenPaneKeys,
         sizes: paneSizes,
+        preferredSizes:
+          availabilitySnapshot.request === availabilityRequest
+            ? availabilitySnapshot.preferredSizes
+            : undefined,
         bodyWidth,
         bodyHeight,
         minReviewWidth,
@@ -434,6 +452,8 @@ export function useExtensionPaneController({
       }),
     [
       acceptedOpenPaneKeys.join("\0"),
+      availabilityRequest,
+      availabilitySnapshot,
       bodyHeight,
       bodyWidth,
       minReviewHeight,

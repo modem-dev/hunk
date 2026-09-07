@@ -38,8 +38,18 @@ describe("delegated review descriptor validation", () => {
         title: "Comparison",
         base: "main",
         head: "feature",
+        commitCount: 1,
+        commits: [
+          {
+            title: "Commit",
+            author: "Ada",
+            authoredAt: "2026-01-01T00:00:00Z",
+            revision: "abc1234",
+            displayRevision: "abc1234",
+          },
+        ],
       }),
-    ).toMatchObject({ kind: "comparison", base: "main", head: "feature" });
+    ).toMatchObject({ kind: "comparison", base: "main", head: "feature", commitCount: 1 });
   });
 
   test("rejects unknown fields, controls, insecure URLs, and byte overflows", () => {

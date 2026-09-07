@@ -302,9 +302,9 @@ and retires the replaced instance at that explicit ownership boundary.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `21`). Branch on it if you want
-one file to support several Hunk versions. Version 21 adds optional inclusive history-range review
-planning; version 20 adds optional commit timestamps to review
+The API generation this Hunk speaks (currently `22`). Branch on it if you want
+one file to support several Hunk versions. Version 22 adds frame-derived pane preferred sizing, non-resizable dynamic panes, and commit-history paint tokens; version 21 adds optional inclusive history-range review
+planning and bounded comparison commit summaries; version 20 adds optional commit timestamps to review
 metadata, pane clipboard actions, and the `theme.copyAction` paint token; version 19 adds provider-owned history
 enumeration and review planning; version 18 lets lifecycle and custom-event handlers request
 a host-owned review reload; version 17 adds structured review metadata to delegated patch
@@ -882,6 +882,13 @@ later terminal shrink may clamp it temporarily, and expanding restores it.
 Panes without `fraction` retain their fixed preferred startup size. Folder
 extensions that use `fraction` should declare `"hunk": { "apiVersion": 12 }` in
 their manifest.
+
+`preferredSize(context)` can derive that automatic cell target from current
+review facts. Hunk invokes it synchronously with the same context as
+`available`, clamps its positive whole-number result to `min`/`max`, and still
+lets a session-local divider drag take precedence. Set `resizable: false` when a
+dynamic pane should track that target without exposing a divider. These options
+require API version 22.
 
 Use `defaultOpen` to open a pane initially, `replaces: "hunk:files"` to replace
 the initial files pane (and override `defaultOpen`), and `available(context)` to

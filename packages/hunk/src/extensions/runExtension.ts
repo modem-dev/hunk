@@ -870,6 +870,12 @@ export function createExtensionApi(
       if (pane.available !== undefined && typeof pane.available !== "function") {
         throw new Error("registerPane available must be a function.");
       }
+      if (pane.preferredSize !== undefined && typeof pane.preferredSize !== "function") {
+        throw new Error("registerPane preferredSize must be a function.");
+      }
+      if (pane.resizable !== undefined && typeof pane.resizable !== "boolean") {
+        throw new Error("registerPane resizable must be a boolean.");
+      }
       if (pane.onActivate !== undefined && typeof pane.onActivate !== "function") {
         throw new Error("registerPane onActivate must be a function.");
       }

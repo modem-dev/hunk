@@ -146,7 +146,10 @@ export interface PlanExtensionPanesOptions {
   panes: readonly SessionPane[];
   /** Pane keys accepted by logical state and commit-phase availability probing. */
   openKeys: readonly string[];
+  /** Session-local manual sizes, which take precedence over automatic targets. */
   sizes: Readonly<Record<string, number>>;
+  /** Frame-derived automatic targets supplied by committed extension callbacks. */
+  preferredSizes?: ReadonlyMap<RegisteredPane, number>;
   bodyWidth: number;
   bodyHeight: number;
   minReviewWidth: number;
@@ -160,6 +163,7 @@ export interface PaneAvailabilityFailure {
 
 export interface PaneAvailabilityProbe {
   available: ReadonlySet<RegisteredPane>;
+  preferredSizes: ReadonlyMap<RegisteredPane, number>;
   failures: readonly PaneAvailabilityFailure[];
 }
 
@@ -169,41 +173,53 @@ export function probeExtensionPaneAvailability({
   context,
   currentLine,
   retainCurrentLineRegistrations,
+  retainedPreferredSizes,
 }: {
   panes: readonly SessionPane[];
   context: Omit<ExtensionPaneAvailabilityContext, "placement" | "currentLine">;
   currentLine: ExtensionCurrentLinePaint | null;
   retainCurrentLineRegistrations?: ReadonlySet<RegisteredPane>;
+  retainedPreferredSizes?: ReadonlyMap<RegisteredPane, number>;
 }): PaneAvailabilityProbe {
   const available = new Set<RegisteredPane>();
+  const preferredSizes = new Map<RegisteredPane, number>();
   const failures: PaneAvailabilityFailure[] = [];
 
   for (const pane of panes) {
     const registration = pane.registered.pane;
     if (registration.currentLine && retainCurrentLineRegistrations?.has(pane.registered)) {
       available.add(pane.registered);
+      const retainedSize = retainedPreferredSizes?.get(pane.registered);
+      if (retainedSize !== undefined) preferredSizes.set(pane.registered, retainedSize);
       continue;
     }
-    if (!registration.available) {
-      available.add(pane.registered);
-      continue;
-    }
+    const callbackContext = {
+      ...context,
+      placement: pane.placement,
+      currentLine: registration.currentLine ? currentLine : null,
+    };
     try {
-      const result = registration.available({
-        ...context,
-        placement: pane.placement,
-        currentLine: registration.currentLine ? currentLine : null,
-      });
-      if (typeof result !== "boolean") {
-        throw new Error("available() must return a boolean synchronously");
+      if (registration.available) {
+        const result = registration.available(callbackContext);
+        if (typeof result !== "boolean") {
+          throw new Error("available() must return a boolean synchronously");
+        }
+        if (!result) continue;
       }
-      if (result) available.add(pane.registered);
+      if (registration.preferredSize) {
+        const preferredSize = registration.preferredSize(callbackContext);
+        if (!Number.isSafeInteger(preferredSize) || preferredSize <= 0) {
+          throw new Error("preferredSize() must return a positive safe integer synchronously");
+        }
+        preferredSizes.set(pane.registered, preferredSize);
+      }
+      available.add(pane.registered);
     } catch (error) {
       failures.push({ pane, error });
     }
   }
 
-  return { available, failures };
+  return { available, preferredSizes, failures };
 }
 
 /** Plan exact rectangles without invoking extension code or mutating host state. */
@@ -229,10 +245,11 @@ export function planExtensionPanes(options: PlanExtensionPanesOptions): Extensio
     const automaticSize =
       spec.fraction === undefined ? spec.preferred : Math.round(axisSize * spec.fraction);
     return {
-      target: options.sizes[pane.key] ?? automaticSize,
+      target:
+        options.sizes[pane.key] ?? options.preferredSizes?.get(pane.registered) ?? automaticSize,
       min,
       max,
-      fixed: min === max,
+      fixed: pane.registered.pane.resizable === false || min === max,
     };
   };
 

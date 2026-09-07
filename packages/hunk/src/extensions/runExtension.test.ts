@@ -220,6 +220,8 @@ describe("registerPane", () => {
       { id: "replacement", replaces: "", component: () => null },
       { id: "self", replaces: "bad-pane:self", component: () => null },
       { id: "availability", available: true, component: () => null },
+      { id: "preferred-size", preferredSize: 3, component: () => null },
+      { id: "resizable", resizable: "yes", component: () => null },
     ]) {
       const registry = createEmptyExtensionRegistry();
       const issues: ExtensionLoadIssue[] = [];

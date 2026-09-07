@@ -53,6 +53,20 @@ export interface HunkSessionHostDeps {
   viewPreferenceQuitScheduler?: ViewPreferenceQuitScheduler;
 }
 
+/** Truncate one display field without splitting Unicode code points or exceeding transport bytes. */
+function truncateReviewText(value: string, maxBytes: number) {
+  const encoder = new TextEncoder();
+  let result = "";
+  let bytes = 0;
+  for (const character of value) {
+    const characterBytes = encoder.encode(character).byteLength;
+    if (bytes + characterBytes > maxBytes) break;
+    result += character;
+    bytes += characterBytes;
+  }
+  return result;
+}
+
 /** Describe a history selection with bounded metadata shared by every review surface. */
 function historyReviewDescriptor(
   runtime: HistoryRuntime,
@@ -60,28 +74,43 @@ function historyReviewDescriptor(
   action: ExtensionVcsHistoryReviewAction,
 ) {
   const newest = outcome.selection.newestCommit;
-  const review = parseExtensionReviewDescriptor(
-    outcome.count === 1
-      ? {
-          kind: "commit",
-          provider: runtime.providerName,
-          title: newest.subject,
-          revision: newest.revisionId,
-          author: resolveHistoryAuthorLabel(newest),
-          authoredAt: newest.authoredAt,
-        }
-      : {
-          kind: "comparison",
-          provider: runtime.providerName,
-          title: `${outcome.count} commits`,
-          base:
-            action.kind === "revision-range"
-              ? action.fromRevisionId
-              : outcome.selection.oldestCommit.revisionId,
-          head: action.kind === "revision-range" ? action.toRevisionId : newest.revisionId,
-        },
-  );
-  return review;
+  if (outcome.count === 1) {
+    return parseExtensionReviewDescriptor({
+      kind: "commit",
+      provider: runtime.providerName,
+      title: newest.subject,
+      revision: newest.revisionId,
+      author: resolveHistoryAuthorLabel(newest),
+      authoredAt: newest.authoredAt,
+    });
+  }
+
+  const commits = outcome.commits.slice(0, 8).map((commit) => ({
+    title: truncateReviewText(commit.subject, 128),
+    author: truncateReviewText(resolveHistoryAuthorLabel(commit), 64),
+    authoredAt: commit.authoredAt,
+    revision: commit.revisionId,
+    displayRevision: truncateReviewText(commit.displayId, 64),
+  }));
+  const comparison = {
+    kind: "comparison" as const,
+    provider: runtime.providerName,
+    title: `${outcome.count} commits`,
+    base:
+      action.kind === "revision-range"
+        ? action.fromRevisionId
+        : outcome.selection.oldestCommit.revisionId,
+    head: action.kind === "revision-range" ? action.toRevisionId : newest.revisionId,
+    commitCount: outcome.count,
+  };
+  for (let count = commits.length; count >= 0; count -= 1) {
+    const review = parseExtensionReviewDescriptor({
+      ...comparison,
+      ...(count > 0 ? { commits: commits.slice(0, count) } : {}),
+    });
+    if (review) return review;
+  }
+  return null;
 }
 
 /**

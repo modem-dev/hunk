@@ -86,6 +86,7 @@ export type {
   ExtensionReviewDescriptorBase,
   ExtensionChangeRequestReviewDescriptor,
   ExtensionCommitReviewDescriptor,
+  ExtensionComparisonCommitDescriptor,
   ExtensionComparisonReviewDescriptor,
   ExtensionCommand,
   ExtensionCommandContext,

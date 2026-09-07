@@ -28,6 +28,8 @@ type TestPaneOverrides = Partial<{
   replaces: string;
   currentLine: boolean;
   available: (context: ExtensionPaneAvailabilityContext) => boolean;
+  preferredSize: (context: ExtensionPaneAvailabilityContext) => number;
+  resizable: boolean;
   component: ExtensionPaneComponent;
 }>;
 
@@ -50,8 +52,12 @@ function loadResultWith(panes: RegisteredPane[]) {
 describe("extension panes", () => {
   test("offers the bundled files pane before user panes", () => {
     const panes = buildSessionPanes(undefined);
-    expect(panes.map((pane) => pane.key)).toEqual([HUNK_FILES_PANE_KEY, "hunk:review-info"]);
-    expect(panes.map((pane) => pane.defaultOpen)).toEqual([true, true]);
+    expect(panes.map((pane) => pane.key)).toEqual([
+      HUNK_FILES_PANE_KEY,
+      "hunk:review-info",
+      "hunk:comparison-review-info",
+    ]);
+    expect(panes.map((pane) => pane.defaultOpen)).toEqual([true, true, true]);
   });
 
   test("a replacement changes only the initial bundled files default", () => {
@@ -61,6 +67,7 @@ describe("extension panes", () => {
     expect(panes.map((pane) => [pane.key, pane.defaultOpen])).toEqual([
       [HUNK_FILES_PANE_KEY, false],
       ["hunk:review-info", true],
+      ["hunk:comparison-review-info", true],
       ["meta:files", true],
     ]);
   });
@@ -217,6 +224,7 @@ describe("extension panes", () => {
   test("separates commit-phase availability from pure geometry planning", () => {
     let available = false;
     let availabilityCalls = 0;
+    let preferredSizeCalls = 0;
     const registered = registeredPane("a", "detail", {
       placement: "bottom",
       height: { preferred: 3, min: 3, max: 3 },
@@ -224,6 +232,10 @@ describe("extension panes", () => {
       available: ({ currentLine }) => {
         availabilityCalls += 1;
         return available && currentLine !== null;
+      },
+      preferredSize: () => {
+        preferredSizeCalls += 1;
+        return 3;
       },
     });
     const panes = buildSessionPanes(loadResultWith([registered]));
@@ -251,17 +263,82 @@ describe("extension panes", () => {
     const paint = { side: "new" as const, line: 1, render: () => null };
     const restored = probeExtensionPaneAvailability({ panes, context, currentLine: paint });
     expect(restored.available.has(registered)).toBeTrue();
+    expect(restored.preferredSizes.get(registered)).toBe(3);
     expect(planExtensionPanes({ ...geometry, openKeys: ["a:detail"] }).panes).toHaveLength(1);
 
     const callsBeforePending = availabilityCalls;
+    const sizeCallsBeforePending = preferredSizeCalls;
     const pending = probeExtensionPaneAvailability({
       panes,
       context,
       currentLine: null,
       retainCurrentLineRegistrations: new Set([registered]),
+      retainedPreferredSizes: restored.preferredSizes,
     });
     expect(pending.available.has(registered)).toBeTrue();
+    expect(pending.preferredSizes.get(registered)).toBe(3);
     expect(availabilityCalls).toBe(callsBeforePending);
+    expect(preferredSizeCalls).toBe(sizeCallsBeforePending);
+  });
+
+  test("uses a committed frame-derived preferred size before static sizing", () => {
+    const registered = registeredPane("a", "summary", {
+      placement: "top",
+      height: { preferred: 3, min: 3, max: 10 },
+      resizable: false,
+      preferredSize: ({ review }) =>
+        review?.kind === "comparison" ? (review.commits?.length ?? 0) + 1 : 3,
+    });
+    const panes = buildSessionPanes(loadResultWith([registered]));
+    const probe = probeExtensionPaneAvailability({
+      panes,
+      context: {
+        review: {
+          kind: "comparison",
+          provider: "Git",
+          title: "Three commits",
+          base: "base",
+          head: "head",
+          commits: [
+            { title: "A", revision: "a", displayRevision: "a" },
+            { title: "B", revision: "b", displayRevision: "b" },
+            { title: "C", revision: "c", displayRevision: "c" },
+          ],
+        },
+        files: [],
+        selectedFileId: null,
+        selectedHunkIndex: null,
+      },
+      currentLine: null,
+    });
+    const plan = planExtensionPanes({
+      panes,
+      openKeys: ["a:summary"],
+      sizes: {},
+      preferredSizes: probe.preferredSizes,
+      bodyWidth: 100,
+      bodyHeight: 40,
+      minReviewWidth: 40,
+      minReviewHeight: 5,
+    });
+
+    expect(plan.panes[0]?.bounds.height).toBe(4);
+    expect(plan.panes[0]?.divider).toBeUndefined();
+    expect(plan.reviewBounds.y).toBe(4);
+  });
+
+  test("contains invalid frame-derived preferred sizes as availability failures", () => {
+    const registered = registeredPane("a", "bad-size", { preferredSize: () => 0 });
+    const panes = buildSessionPanes(loadResultWith([registered]));
+    const probe = probeExtensionPaneAvailability({
+      panes,
+      context: { review: null, files: [], selectedFileId: null, selectedHunkIndex: null },
+      currentLine: null,
+    });
+
+    expect(probe.available.has(registered)).toBeFalse();
+    expect(probe.preferredSizes.size).toBe(0);
+    expect((probe.failures[0]!.error as Error).message).toContain("positive safe integer");
   });
 
   test("passes delegated review metadata into pane availability", () => {

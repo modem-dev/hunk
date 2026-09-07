@@ -11,6 +11,7 @@ const REVIEW_DESCRIPTOR_FIELD_LIMITS = Object.freeze({
   base: 512,
   head: 512,
   revision: 512,
+  displayRevision: 64,
   authoredAt: 128,
 });
 
@@ -56,6 +57,41 @@ function copyOptionalDescriptorFields(
   return copied;
 }
 
+/** Copy a bounded newest-first commit list for comparison presentation. */
+function validateComparisonCommits(value: unknown) {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.length > 8) {
+    throw new Error("delegate review comparison commits must contain at most 8 entries");
+  }
+  return Object.freeze(
+    value.map((entry) => {
+      if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+        throw new Error("delegate review comparison commit must be an object");
+      }
+      const prototype = Object.getPrototypeOf(entry);
+      if (prototype !== Object.prototype && prototype !== null) {
+        throw new Error("delegate review comparison commit must be a plain object");
+      }
+      const candidate = entry as Record<string, unknown>;
+      const allowed = new Set(["title", "author", "authoredAt", "revision", "displayRevision"]);
+      if (Reflect.ownKeys(candidate).some((key) => typeof key !== "string" || !allowed.has(key))) {
+        throw new Error("delegate review comparison commit contains unknown fields");
+      }
+      const authoredAt = validateDescriptorString(candidate, "authoredAt", false);
+      if (authoredAt !== undefined && Number.isNaN(Date.parse(authoredAt))) {
+        throw new Error("delegate review comparison commit authoredAt must be a valid timestamp");
+      }
+      return Object.freeze({
+        title: validateDescriptorString(candidate, "title", true)!,
+        ...copyOptionalDescriptorFields(candidate, ["author"]),
+        ...(authoredAt === undefined ? {} : { authoredAt }),
+        revision: validateDescriptorString(candidate, "revision", true)!,
+        displayRevision: validateDescriptorString(candidate, "displayRevision", true)!,
+      });
+    }),
+  );
+}
+
 /** Validate optional provider change-request state. */
 function validateChangeRequestState(value: unknown): "open" | "closed" | "merged" | undefined {
   if (value === undefined || value === "open" || value === "closed" || value === "merged") {
@@ -94,7 +130,7 @@ export function validateExtensionReviewDescriptor(value: unknown): ExtensionRevi
       ? ["id", "repository", "author", "base", "head", "state", "draft"]
       : kind === "commit"
         ? ["revision", "author", "authoredAt"]
-        : ["base", "head"];
+        : ["base", "head", "commitCount", "commits"];
   const allowed = new Set([...common, ...kindFields]);
   const ownKeys = Reflect.ownKeys(value);
   if (ownKeys.some((key) => typeof key !== "string" || !allowed.has(key))) {
@@ -145,6 +181,16 @@ export function validateExtensionReviewDescriptor(value: unknown): ExtensionRevi
       ...(authoredAt === undefined ? {} : { authoredAt }),
     };
   } else {
+    const commits = validateComparisonCommits(candidate.commits);
+    const commitCount = candidate.commitCount;
+    if (
+      commitCount !== undefined &&
+      (!Number.isSafeInteger(commitCount) ||
+        (commitCount as number) < 1 ||
+        (commits !== undefined && (commitCount as number) < commits.length))
+    ) {
+      throw new Error("delegate review comparison commitCount must cover the commit list");
+    }
     descriptor = {
       kind,
       provider,
@@ -152,6 +198,8 @@ export function validateExtensionReviewDescriptor(value: unknown): ExtensionRevi
       ...(url === undefined ? {} : { url }),
       base: validateDescriptorString(candidate, "base", true)!,
       head: validateDescriptorString(candidate, "head", true)!,
+      ...(commitCount === undefined ? {} : { commitCount: commitCount as number }),
+      ...(commits === undefined ? {} : { commits }),
     };
   }
 

@@ -19,8 +19,8 @@ export function reviewDescriptorResourceCwd(
   return isVcsReviewInput(input) ? (repoRoot ?? startupCwd) : startupCwd;
 }
 
-/** Resolve one exact provider review identity used by commits opened from interactive history. */
-function historyCommitInputIdentity(input: CliInput, cwd: string): string | undefined {
+/** Resolve one exact provider review identity opened from interactive history. */
+function historyReviewInputIdentity(input: CliInput, cwd: string): string | undefined {
   const root = resolveCanonicalPath(cwd);
   if (input.kind === "show" && input.ref && !input.pathspecs?.length) {
     return JSON.stringify([root, input.options.vcs ?? null, "show", input.ref]);
@@ -55,10 +55,10 @@ export function reviewDescriptorAfterReload(
   if (previousPatchIdentity && previousPatchIdentity === patchFileIdentity(nextInput, nextCwd)) {
     return previousReview;
   }
-  if (previousReview.kind !== "commit") return undefined;
-  const previousCommitIdentity = historyCommitInputIdentity(previousInput, previousCwd);
-  return previousCommitIdentity &&
-    previousCommitIdentity === historyCommitInputIdentity(nextInput, nextCwd)
+  if (previousReview.kind !== "commit" && previousReview.kind !== "comparison") return undefined;
+  const previousHistoryIdentity = historyReviewInputIdentity(previousInput, previousCwd);
+  return previousHistoryIdentity &&
+    previousHistoryIdentity === historyReviewInputIdentity(nextInput, nextCwd)
     ? previousReview
     : undefined;
 }

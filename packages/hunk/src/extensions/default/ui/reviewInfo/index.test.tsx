@@ -142,6 +142,65 @@ describe("ReviewInfoPane", () => {
     }
   });
 
+  test("renders comparison commits as tight rows with reusable copy actions", async () => {
+    const theme = toExtensionPaintTheme(resolveTheme("github-dark-default", null));
+    const copyText = mock(() => true);
+    const commits = [
+      {
+        title: "Keep comparison metadata visible",
+        author: "Ada",
+        authoredAt: new Date(Date.now() - 2 * 60 * 60 * 1_000).toISOString(),
+        revision: "a9c17e2f00000000000000000000000000000000",
+        displayRevision: "a9c17e2f",
+      },
+      {
+        title: "Review contiguous commit ranges",
+        author: "Ben",
+        authoredAt: new Date(Date.now() - 5 * 60 * 60 * 1_000).toISOString(),
+        revision: "ff97b44200000000000000000000000000000000",
+        displayRevision: "ff97b442",
+      },
+    ];
+    const width = 80;
+    const setup = await testRender(
+      <ReviewInfoPane
+        {...({
+          actions: { copyText } as unknown as ExtensionPaneProps["actions"],
+          review: {
+            kind: "comparison",
+            provider: "Git",
+            title: "2 commits",
+            base: "base1234",
+            head: "head5678",
+            commitCount: 2,
+            commits,
+          },
+          width,
+          height: 3,
+          theme,
+        } as unknown as ExtensionPaneProps)}
+      />,
+      { width, height: 3 },
+    );
+
+    try {
+      await act(async () => {
+        await setup.renderOnce();
+      });
+      const frame = setup.captureCharFrame();
+      expect(frame).toContain("Keep comparison metadata visible");
+      expect(frame).toContain("Ada · 2 hours ago");
+      expect(frame).toContain("a9c17e2f ⧉");
+      expect(frame).toContain("Review contiguous commit ranges");
+      expect(frame).toContain("Ben · 5 hours ago");
+      expect(frame).toContain("ff97b442 ⧉");
+      await act(async () => setup.mockMouse.click(width - 2, 1));
+      expect(copyText).toHaveBeenCalledWith(commits[0]!.revision);
+    } finally {
+      setup.renderer.destroy();
+    }
+  });
+
   test("keeps the border deterministic when no metadata text fits", async () => {
     const theme = toExtensionPaintTheme(resolveTheme("github-dark-default", null));
     const setup = await testRender(

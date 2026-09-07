@@ -14,6 +14,13 @@ const commitReview: ExtensionReviewDescriptor = {
   title: "Commit title",
   revision: "abc1234",
 };
+const comparisonReview: ExtensionReviewDescriptor = {
+  kind: "comparison",
+  provider: "Git",
+  title: "2 commits",
+  base: "parent-a",
+  head: "revision-a",
+};
 const patch = (file?: string) => ({ kind: "patch" as const, file, options: {} });
 
 describe("delegated review reload identity", () => {
@@ -95,6 +102,15 @@ describe("delegated review reload identity", () => {
         "/repo",
       ),
     ).toBe(commitReview);
+    expect(
+      reviewDescriptorAfterReload(
+        range("parent-a", "revision-a"),
+        "/repo",
+        comparisonReview,
+        range("parent-a", "revision-a"),
+        "/repo",
+      ),
+    ).toBe(comparisonReview);
     expect(
       reviewDescriptorAfterReload(
         show("revision-a"),

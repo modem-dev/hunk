@@ -7,9 +7,9 @@ The extension factory receives one API object. Registration calls are only valid
 
 ## `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `21`). Branch on it if you want
-one file to support several Hunk versions. Version 21 adds optional inclusive history-range review
-planning; version 20 adds optional commit timestamps to review
+The API generation this Hunk speaks (currently `22`). Branch on it if you want
+one file to support several Hunk versions. Version 22 adds frame-derived pane preferred sizing, non-resizable dynamic panes, and commit-history paint tokens; version 21 adds optional inclusive history-range review
+planning and bounded comparison commit summaries; version 20 adds optional commit timestamps to review
 metadata, pane clipboard actions, and the `theme.copyAction` paint token; version 19 adds provider-owned history enumeration and review planning; version 18 lets
 lifecycle and custom-event handlers request a host-owned review reload; version 17 adds structured review metadata to delegated
 patch commands and projects it into pane availability and component props; version 16 adds pane-wide
@@ -166,7 +166,7 @@ Full contract: [VCS adapters](/docs/extend/vcs-adapters/).
 
 ## `hunk.registerPane(pane)`
 
-Render a React component on the `left`, `right`, `top`, or `bottom` of the review. Panes receive their dimensions, review state, actions, keybindings, and optional current-line paint (including `{ side, line }` when opted in). `props.review` and `available(context).review` expose immutable metadata from a delegated patch command or interactive history selection, or `null` for ordinary reviews. `registerSidebarView` remains a deprecated alias.
+Render a React component on the `left`, `right`, `top`, or `bottom` of the review. Panes receive their dimensions, review state, actions, keybindings, and optional current-line paint (including `{ side, line }` when opted in). `props.review`, `available(context).review`, and `preferredSize(context).review` expose immutable metadata from a delegated patch command or interactive history selection, or `null` for ordinary reviews. `preferredSize` derives an automatic whole-cell target within the registered bounds; a manual divider drag takes precedence unless `resizable: false` suppresses that divider. `registerSidebarView` remains a deprecated alias.
 
 Full contract: [Custom panes](/docs/extend/custom-sidebars/).
 

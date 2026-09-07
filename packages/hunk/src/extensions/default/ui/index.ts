@@ -6,12 +6,13 @@ import {
   type ExtensionLoadIssue,
   type ExtensionRegistry,
 } from "../../types";
-import registerBundledReviewInfo from "./reviewInfo";
+import registerBundledReviewInfo, { registerBundledComparisonReviewInfo } from "./reviewInfo";
 import registerBundledSidebar from "./sidebar";
 
 const factories: readonly [string, ExtensionFactory][] = [
   ["files", registerBundledSidebar],
   ["review-info", registerBundledReviewInfo],
+  ["comparison-review-info", registerBundledComparisonReviewInfo],
 ];
 let cachedRegistry: ExtensionRegistry | undefined;
 
