@@ -1,0 +1,1144 @@
+{
+  "schemaVersion": 2,
+  "baseHead": "42d2b9dd2f3144e33080f159f4cc9c2824ad1708",
+  "currentHead": "42d2b9dd2f3144e33080f159f4cc9c2824ad1708",
+  "changedFiles": [
+    {
+      "path": "docs/session-broker-effect-lifecycle-experiment-results.md",
+      "classification": "experiment-support",
+      "exists": true,
+      "bytes": 5418,
+      "sha256": "7b0a270659e22f56904333700d7495400d1944a96a695febb8145fd845f84250"
+    },
+    {
+      "path": "docs/session-broker-effect-lifecycle-experiment.md",
+      "classification": "experiment-support",
+      "exists": true,
+      "bytes": 15732,
+      "sha256": "9f9ffdd2068e2a02f6f4380d8928105e1cd592b2b43f955855b149ed42633cf5"
+    },
+    {
+      "path": "packages/session-broker-bun/src/connectionRuntime.test.ts",
+      "classification": "experiment-support",
+      "exists": true,
+      "bytes": 3305,
+      "sha256": "eabb3ff9d2e06c27a600ce6bd6d13f6ea0ff2574eb247cfc5b07e7901c7a371c"
+    },
+    {
+      "path": "packages/session-broker/src/connection.test.ts",
+      "classification": "experiment-support",
+      "exists": true,
+      "bytes": 38776,
+      "sha256": "a9b1b8a16929e8896eabd39093e2815ef204215ff36ccb41de9b480fcd469830"
+    },
+    {
+      "path": "scripts/session-broker-effect-lifecycle-experiment.ts",
+      "classification": "experiment-support",
+      "exists": true,
+      "bytes": 56839,
+      "sha256": "ab809ae95145a41fa9e3d4f4de1173582b50f425531c88d33be097c44c6f9d85"
+    },
+    {
+      "path": "scripts/session-lifecycle-ownership-analysis.ts",
+      "classification": "experiment-support",
+      "exists": true,
+      "bytes": 25164,
+      "sha256": "78bce16eaa7c757ffd79f7f0118b93089543b9df77b5ad1506e0eb7e29b060cd"
+    },
+    {
+      "path": "scripts/source-boundaries.test.ts",
+      "classification": "experiment-support",
+      "exists": true,
+      "bytes": 20485,
+      "sha256": "7b61f489bf87ac8d9d4960b65852f3c8829b605f6989865f8f3aa2ffc994378e"
+    },
+    {
+      "path": "scripts/test-session-broker-node.ts",
+      "classification": "experiment-support",
+      "exists": true,
+      "bytes": 1921,
+      "sha256": "e5a966843b6970538deebcb746eab0e7c1efc70f74398cb8bd473611adf107bf"
+    },
+    {
+      "path": "src/session/broker/brokerClient.test.ts",
+      "classification": "experiment-support",
+      "exists": true,
+      "bytes": 23604,
+      "sha256": "ebed0b4807d5e21a0053c42b07a45ee8a2a77780003d8599f2aec74a7cef5f31"
+    },
+    {
+      "path": "src/session/broker/brokerLauncher.test.ts",
+      "classification": "experiment-support",
+      "exists": true,
+      "bytes": 11327,
+      "sha256": "79b4f1cb2fb43f6caa9199c5700db07aa652fddf891384b48bfc44c3e71ce41c"
+    },
+    {
+      "path": "test/session-broker-node/adapter.test.mjs",
+      "classification": "experiment-support",
+      "exists": true,
+      "bytes": 12165,
+      "sha256": "21dca2de748bf1ddd8a9ba0c6578006d85974e111fa4a7daa9b0f58e745fdfeb"
+    },
+    {
+      "path": "test/session-broker-node/connection-fixture.ts",
+      "classification": "experiment-support",
+      "exists": true,
+      "bytes": 948,
+      "sha256": "91c4cea63bdcf8188bb4688d3cf6fceeb6e18cbbbd12233593bf77abc7e007b2"
+    },
+    {
+      "path": "test/session-broker-runtime/bun-connection-fixture.ts",
+      "classification": "experiment-support",
+      "exists": true,
+      "bytes": 686,
+      "sha256": "05e0710382840a5a4b171e42157ed4211b1f993d46e5b0e3b4c0ad0dbd6a6a95"
+    },
+    {
+      "path": "test/session-broker-runtime/connectionFixture.ts",
+      "classification": "experiment-support",
+      "exists": true,
+      "bytes": 9263,
+      "sha256": "d4162f1bc31791b7d285ed5d39457eff421832fd18225b7fd77b20f9055765f3"
+    }
+  ],
+  "behavioralTestContracts": [
+    {
+      "path": "packages/session-broker/src/connection.test.ts",
+      "tests": [
+        {
+          "name": "throws an initial socket construction failure synchronously from start",
+          "line": 117,
+          "column": 3,
+          "mode": "normal",
+          "assertions": [
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 129,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(() => connection.start())"
+            }
+          ]
+        },
+        {
+          "name": "arms delayed fixed-rate heartbeats through one cleared native interval",
+          "line": 133,
+          "column": 3,
+          "mode": "normal",
+          "assertions": [
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 162,
+              "column": 7,
+              "kind": "expect",
+              "text": "expect(intervalMs)"
+            },
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 163,
+              "column": 7,
+              "kind": "expect",
+              "text": "expect(socket.sent.map((message) => JSON.parse(message).type))"
+            },
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 164,
+              "column": 7,
+              "kind": "expect",
+              "text": "expect(intervalCallback)"
+            },
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 166,
+              "column": 7,
+              "kind": "expect",
+              "text": "expect(socket.sent.map((message) => JSON.parse(message).type))"
+            },
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 172,
+              "column": 7,
+              "kind": "expect",
+              "text": "expect(cleared)"
+            }
+          ]
+        },
+        {
+          "name": "clears each producer handshake timeout on close and terminal stop",
+          "line": 179,
+          "column": 3,
+          "mode": "normal",
+          "assertions": [
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 239,
+              "column": 7,
+              "kind": "expect",
+              "text": "expect(handles)"
+            },
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 240,
+              "column": 7,
+              "kind": "expect",
+              "text": "expect(cleared)"
+            }
+          ]
+        },
+        {
+          "name": "clears the producer handshake timeout after successful signed activation",
+          "line": 247,
+          "column": 3,
+          "mode": "normal",
+          "assertions": [
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 320,
+              "column": 7,
+              "kind": "expect",
+              "text": "expect(broker.getSessionIds())"
+            },
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 321,
+              "column": 7,
+              "kind": "expect",
+              "text": "expect(cleared)"
+            }
+          ]
+        },
+        {
+          "name": "registers on open and sends later snapshot updates",
+          "line": 331,
+          "column": 3,
+          "mode": "normal",
+          "assertions": [
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 357,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(registerMessage.type)"
+            },
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 368,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(snapshotMessage.type)"
+            },
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 369,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(snapshotMessage.snapshot)"
+            }
+          ]
+        },
+        {
+          "name": "withholds registration and replacement updates until producer authentication completes",
+          "line": 375,
+          "column": 3,
+          "mode": "normal",
+          "assertions": [
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 422,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(socket.sent)"
+            },
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 423,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(JSON.parse(socket.sent[0]!))"
+            }
+          ]
+        },
+        {
+          "name": "keeps the previous registration when replacement send throws",
+          "line": 427,
+          "column": 3,
+          "mode": "normal",
+          "assertions": [
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 447,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(() =>\n      connection.replaceSession(\n        { ...registration, sessionId: \"session-2\" },\n        { ...createSnapshot(), state: { selectedIndex: 2 } },\n      ),\n    )"
+            },
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 453,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(connection.getRegistration())"
+            }
+          ]
+        },
+        {
+          "name": "queues broker commands until the app bridge is ready",
+          "line": 457,
+          "column": 3,
+          "mode": "normal",
+          "assertions": [
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 493,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(resultMessage)"
+            }
+          ]
+        },
+        {
+          "name": "parses and transforms each server command once before bridge dispatch",
+          "line": 496,
+          "column": 3,
+          "mode": "normal",
+          "assertions": [
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 559,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(bridgedInput)"
+            },
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 560,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect({ inputCalls, resultCalls })"
+            }
+          ]
+        },
+        {
+          "name": "closes malformed and mismatched commands without invoking the bridge",
+          "line": 567,
+          "column": 3,
+          "mode": "normal",
+          "assertions": [
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 611,
+              "column": 7,
+              "kind": "expect",
+              "text": "expect(socket.lastClose)"
+            },
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 617,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(dispatched)"
+            }
+          ]
+        },
+        {
+          "name": "enforces text framing and the exact websocket message ceiling before app parsing",
+          "line": 621,
+          "column": 3,
+          "mode": "normal",
+          "assertions": [
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 685,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(new TextEncoder().encode(exact).byteLength)"
+            },
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 688,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect({ inputCalls, bridgeCalls })"
+            },
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 723,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(emitRejected(`${exact} `))"
+            },
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 724,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(emitRejected(\"{\".repeat(maxBytes + 1)))"
+            },
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 725,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(\n      emitRejected(\n        JSON.stringify({\n          type: \"command\",\n          requestId: \"request-extra\",\n          command: \"annotate\",\n          input: { summary: \"not parsed\" },\n          extra: true,\n        }),\n      ),\n   "
+            },
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 736,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(emitRejected(new Uint8Array([123, 125])))"
+            },
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 737,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect({ inputCalls, bridgeCalls })"
+            }
+          ]
+        },
+        {
+          "name": "ignores a late socket callback after stop before parsing or reserving",
+          "line": 740,
+          "column": 3,
+          "mode": "normal",
+          "assertions": [
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 799,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect({ inputCalls, bridgeCalls })"
+            }
+          ]
+        },
+        {
+          "name": "does not migrate a late command result onto a replacement socket",
+          "line": 802,
+          "column": 3,
+          "mode": "normal",
+          "assertions": [
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 845,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(sockets[0]!.sent.map((message) => JSON.parse(message).type))"
+            },
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 846,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(sockets[1]!.sent.map((message) => JSON.parse(message).type))"
+            }
+          ]
+        },
+        {
+          "name": "discards queued commands when their source socket disconnects",
+          "line": 850,
+          "column": 3,
+          "mode": "normal",
+          "assertions": [
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 894,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(dispatched)"
+            },
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 895,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(sockets[1]!.sent.map((message) => JSON.parse(message).type))"
+            }
+          ]
+        },
+        {
+          "name": "stops replaying a queued batch when its source socket disconnects",
+          "line": 899,
+          "column": 3,
+          "mode": "normal",
+          "assertions": [
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 947,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(dispatched)"
+            }
+          ]
+        },
+        {
+          "name": "keeps 32 missing-bridge commands FIFO and explicitly rejects the 33rd",
+          "line": 951,
+          "column": 3,
+          "mode": "normal",
+          "assertions": [
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 980,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(overflow)"
+            },
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 989,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(dispatched)"
+            }
+          ]
+        },
+        {
+          "name": "keeps a hung bridge plus queued commands within the same 32-command budget",
+          "line": 993,
+          "column": 3,
+          "mode": "normal",
+          "assertions": [
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 1023,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(JSON.parse(socket.sent.at(-1)!))"
+            }
+          ]
+        },
+        {
+          "name": "retains a hung command reservation across disconnect and reconnect",
+          "line": 1030,
+          "column": 3,
+          "mode": "normal",
+          "assertions": [
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 1077,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(JSON.parse(sockets[1]!.sent.at(-1)!))"
+            }
+          ]
+        },
+        {
+          "name": "serializes bridge execution while preserving arrival order",
+          "line": 1084,
+          "column": 3,
+          "mode": "normal",
+          "assertions": [
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 1124,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(started)"
+            },
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 1127,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(started)"
+            }
+          ]
+        },
+        {
+          "name": "rejects producer hello wrappers with unknown or dangerous keys",
+          "line": 1131,
+          "column": 3,
+          "mode": "normal",
+          "assertions": [
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 1173,
+              "column": 7,
+              "kind": "expect",
+              "text": "expect(socket.lastClose)"
+            }
+          ]
+        },
+        {
+          "name": "prepares reconnect once per attempt and stops after awaited preparation",
+          "line": 1181,
+          "column": 3,
+          "mode": "normal",
+          "assertions": [
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 1211,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(attempts)"
+            },
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 1212,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(warnings)"
+            },
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 1213,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(sockets)"
+            },
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 1229,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(sockets)"
+            }
+          ]
+        },
+        {
+          "name": "reconnects after socket close unless a close directive disables it",
+          "line": 1232,
+          "column": 3,
+          "mode": "normal",
+          "assertions": [
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 1263,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(sockets)"
+            },
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 1267,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(warnings)"
+            },
+            {
+              "file": "packages/session-broker/src/connection.test.ts",
+              "line": 1268,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(sockets)"
+            }
+          ]
+        }
+      ],
+      "forbiddenModes": []
+    },
+    {
+      "path": "src/session/broker/brokerClient.test.ts",
+      "tests": [
+        {
+          "name": "only treats exact pre-authentication compatibility closes as quiescent refusals",
+          "line": 101,
+          "column": 3,
+          "mode": "normal",
+          "assertions": [
+            {
+              "file": "src/session/broker/brokerClient.test.ts",
+              "line": 103,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(isQuiescentUpgradeRefusal({ code: 1008, reason, authenticated: false }))"
+            },
+            {
+              "file": "src/session/broker/brokerClient.test.ts",
+              "line": 104,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(\n      isQuiescentUpgradeRefusal({\n        code: 1008,\n        reason: \"Malformed session broker protocol.\",\n        authenticated: false,\n      }),\n    )"
+            },
+            {
+              "file": "src/session/broker/brokerClient.test.ts",
+              "line": 111,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(isQuiescentUpgradeRefusal({ code: 1008, reason, authenticated: true }))"
+            },
+            {
+              "file": "src/session/broker/brokerClient.test.ts",
+              "line": 112,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(isQuiescentUpgradeRefusal({ code: 1006, reason, authenticated: false }))"
+            },
+            {
+              "file": "src/session/broker/brokerClient.test.ts",
+              "line": 113,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(\n      isQuiescentUpgradeRefusal({\n        code: 1008,\n        reason: \"Session broker authentication failed.\",\n        authenticated: false,\n      }),\n    )"
+            }
+          ]
+        },
+        {
+          "name": "keeps its previous registration when the live connection rejects replacement",
+          "line": 122,
+          "column": 3,
+          "mode": "normal",
+          "assertions": [
+            {
+              "file": "src/session/broker/brokerClient.test.ts",
+              "line": 131,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(() =>\n      client.replaceSession(\n        { ...registration, sessionId: \"replacement-session\" },\n        createSnapshot(),\n      ),\n    )"
+            },
+            {
+              "file": "src/session/broker/brokerClient.test.ts",
+              "line": 137,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(client.getRegistration())"
+            }
+          ]
+        },
+        {
+          "name": "shares one active first-attempt promise across concurrent starts",
+          "line": 140,
+          "column": 3,
+          "mode": "normal",
+          "assertions": [
+            {
+              "file": "src/session/broker/brokerClient.test.ts",
+              "line": 154,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(first)"
+            },
+            {
+              "file": "src/session/broker/brokerClient.test.ts",
+              "line": 155,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(attempts)"
+            }
+          ]
+        },
+        {
+          "name": "an explicit start bypasses but does not displace the scheduled automatic retry",
+          "line": 162,
+          "column": 3,
+          "mode": "normal",
+          "assertions": [
+            {
+              "file": "src/session/broker/brokerClient.test.ts",
+              "line": 191,
+              "column": 7,
+              "kind": "expect",
+              "text": "expect(attempts)"
+            },
+            {
+              "file": "src/session/broker/brokerClient.test.ts",
+              "line": 192,
+              "column": 7,
+              "kind": "expect",
+              "text": "expect(messages)"
+            },
+            {
+              "file": "src/session/broker/brokerClient.test.ts",
+              "line": 193,
+              "column": 7,
+              "kind": "expect",
+              "text": "expect(retryCallback)"
+            },
+            {
+              "file": "src/session/broker/brokerClient.test.ts",
+              "line": 194,
+              "column": 7,
+              "kind": "expect",
+              "text": "expect((client as any).reconnectTimer)"
+            },
+            {
+              "file": "src/session/broker/brokerClient.test.ts",
+              "line": 197,
+              "column": 7,
+              "kind": "expect",
+              "text": "expect(attempts)"
+            },
+            {
+              "file": "src/session/broker/brokerClient.test.ts",
+              "line": 198,
+              "column": 7,
+              "kind": "expect",
+              "text": "expect((client as any).reconnectTimer)"
+            },
+            {
+              "file": "src/session/broker/brokerClient.test.ts",
+              "line": 199,
+              "column": 7,
+              "kind": "expect",
+              "text": "expect(cleared)"
+            },
+            {
+              "file": "src/session/broker/brokerClient.test.ts",
+              "line": 203,
+              "column": 7,
+              "kind": "expect",
+              "text": "expect(attempts)"
+            },
+            {
+              "file": "src/session/broker/brokerClient.test.ts",
+              "line": 204,
+              "column": 7,
+              "kind": "expect",
+              "text": "expect((client as any).reconnectTimer)"
+            }
+          ]
+        },
+        {
+          "name": "logs one actionable warning when the session daemon is configured for a non-loopback host without opt-in",
+          "line": 212,
+          "column": 3,
+          "mode": "normal",
+          "assertions": [
+            {
+              "file": "src/session/broker/brokerClient.test.ts",
+              "line": 229,
+              "column": 7,
+              "kind": "expect",
+              "text": "expect(messages[0])"
+            },
+            {
+              "file": "src/session/broker/brokerClient.test.ts",
+              "line": 232,
+              "column": 7,
+              "kind": "expect",
+              "text": "expect(messages[0])"
+            }
+          ]
+        },
+        {
+          "name": "does not retain the legacy PID-based incompatible-daemon replacement path",
+          "line": 238,
+          "column": 3,
+          "mode": "normal",
+          "assertions": [
+            {
+              "file": "src/session/broker/brokerClient.test.ts",
+              "line": 240,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect((client as any).restartIncompatibleDaemon)"
+            }
+          ]
+        },
+        {
+          "name": "logs one actionable warning when a refreshed daemon rejects an older Hunk window",
+          "line": 244,
+          "column": 3,
+          "mode": "normal",
+          "assertions": [
+            {
+              "file": "src/session/broker/brokerClient.test.ts",
+              "line": 350,
+              "column": 7,
+              "kind": "expect",
+              "text": "expect(messages.every((message) => message.includes(\"Close older Hunk windows\")))"
+            },
+            {
+              "file": "src/session/broker/brokerClient.test.ts",
+              "line": 352,
+              "column": 7,
+              "kind": "expect",
+              "text": "expect(websocketOpens)"
+            },
+            {
+              "file": "src/session/broker/brokerClient.test.ts",
+              "line": 353,
+              "column": 7,
+              "kind": "expect",
+              "text": "expect((client as any).waitingForIncumbentExit)"
+            },
+            {
+              "file": "src/session/broker/brokerClient.test.ts",
+              "line": 354,
+              "column": 7,
+              "kind": "expect",
+              "text": "expect((skewedClient as any).waitingForIncumbentExit)"
+            }
+          ]
+        },
+        {
+          "name": "authenticates after a successor becomes healthy before the waiter observes absence",
+          "line": 362,
+          "column": 3,
+          "mode": "normal",
+          "assertions": [
+            {
+              "file": "src/session/broker/brokerClient.test.ts",
+              "line": 459,
+              "column": 7,
+              "kind": "expect",
+              "text": "expect(helloAttempts)"
+            },
+            {
+              "file": "src/session/broker/brokerClient.test.ts",
+              "line": 460,
+              "column": 7,
+              "kind": "expect",
+              "text": "expect((client as any).connection)"
+            }
+          ]
+        },
+        {
+          "name": "waits out an incompatible incumbent and registers on its successor with one connection",
+          "line": 471,
+          "column": 3,
+          "mode": "normal",
+          "assertions": [
+            {
+              "file": "src/session/broker/brokerClient.test.ts",
+              "line": 531,
+              "column": 7,
+              "kind": "expect",
+              "text": "expect(helloAttempts)"
+            },
+            {
+              "file": "src/session/broker/brokerClient.test.ts",
+              "line": 551,
+              "column": 7,
+              "kind": "expect",
+              "text": "expect((client as any).connection)"
+            },
+            {
+              "file": "src/session/broker/brokerClient.test.ts",
+              "line": 577,
+              "column": 7,
+              "kind": "expect",
+              "text": "expect((client as any).connection)"
+            }
+          ]
+        },
+        {
+          "name": "retries the complete startup cycle and recovers without restarting the client",
+          "line": 590,
+          "column": 3,
+          "mode": "normal",
+          "assertions": [
+            {
+              "file": "src/session/broker/brokerClient.test.ts",
+              "line": 607,
+              "column": 7,
+              "kind": "expect",
+              "text": "expect(messages)"
+            }
+          ]
+        },
+        {
+          "name": "does no daemon work when start follows terminal stop",
+          "line": 613,
+          "column": 3,
+          "mode": "normal",
+          "assertions": [
+            {
+              "file": "src/session/broker/brokerClient.test.ts",
+              "line": 622,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(attempts)"
+            }
+          ]
+        },
+        {
+          "name": "does not warn or schedule recovery after stop wins a foreign startup race",
+          "line": 625,
+          "column": 3,
+          "mode": "normal",
+          "assertions": [
+            {
+              "file": "src/session/broker/brokerClient.test.ts",
+              "line": 648,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(reconnectScheduled)"
+            },
+            {
+              "file": "src/session/broker/brokerClient.test.ts",
+              "line": 649,
+              "column": 5,
+              "kind": "expect",
+              "text": "expect(messages)"
+            }
+          ]
+        },
+        {
+          "name": "logs one actionable warning when a non-Hunk listener owns the session daemon port",
+          "line": 652,
+          "column": 3,
+          "mode": "normal",
+          "assertions": [
+            {
+              "file": "src/session/broker/brokerClient.test.ts",
+              "line": 680,
+              "column": 7,
+              "kind": "expect",
+              "text": "expect(messages)"
+            },
+            {
+              "file": "src/session/broker/brokerClient.test.ts",
+              "line": 684,
+              "column": 7,
+              "kind": "expect",
+              "text": "expect(messages)"
+            },
+            {
+              "file": "src/session/broker/brokerClient.test.ts",
+              "line": 685,
+              "column": 7,
+              "kind": "expect",
+              "text": "expect(messages[0])"
+            },
+            {
+              "file": "src/session/broker/brokerClient.test.ts",
+              "line": 688,
+              "column": 7,
+              "kind": "expect",
+              "text": "expect(messages[0])"
+            }
+          ]
+        }
+      ],
+      "forbiddenModes": []
+    }
+  ],
+  "production": [
+    {
+      "path": "bun.lock",
+      "currentExists": true,
+      "baseExists": true,
+      "currentSha256": "b2b43bcbac57d09213916d9bec04f883f06e482074dd754fde5b8f8bbd379bd9",
+      "baseSha256": "b2b43bcbac57d09213916d9bec04f883f06e482074dd754fde5b8f8bbd379bd9",
+      "matchesBase": true
+    },
+    {
+      "path": "packages/session-broker-bun/src/serve.ts",
+      "currentExists": true,
+      "baseExists": true,
+      "currentSha256": "336ae69a5d1ea336002a2bac9775c9233f5569a8e10a2e051fdd286999cb62f9",
+      "baseSha256": "336ae69a5d1ea336002a2bac9775c9233f5569a8e10a2e051fdd286999cb62f9",
+      "matchesBase": true
+    },
+    {
+      "path": "packages/session-broker-node/src/serve.ts",
+      "currentExists": true,
+      "baseExists": true,
+      "currentSha256": "3f982a1df9727f7f9a03e6271f80bbea91138a94c7ab8dcd1c676cda11f8a46a",
+      "baseSha256": "3f982a1df9727f7f9a03e6271f80bbea91138a94c7ab8dcd1c676cda11f8a46a",
+      "matchesBase": true
+    },
+    {
+      "path": "packages/session-broker/package.json",
+      "currentExists": true,
+      "baseExists": true,
+      "currentSha256": "5c9f0ee3a0da36098e0ab8160bb66ab13f3cf1be238d6d69123fa6d5040628ee",
+      "baseSha256": "5c9f0ee3a0da36098e0ab8160bb66ab13f3cf1be238d6d69123fa6d5040628ee",
+      "matchesBase": true
+    },
+    {
+      "path": "packages/session-broker/src/connection.ts",
+      "currentExists": true,
+      "baseExists": true,
+      "currentSha256": "d3fbeed7502a31d9d8be82da0f282e523227ab67cd495aa85a8b9208802d6c76",
+      "baseSha256": "d3fbeed7502a31d9d8be82da0f282e523227ab67cd495aa85a8b9208802d6c76",
+      "matchesBase": true
+    },
+    {
+      "path": "packages/session-broker/src/daemon.ts",
+      "currentExists": true,
+      "baseExists": true,
+      "currentSha256": "f0fbd88158f2295c0ea21fc4b682b8af5306f76dbe7192da5dc3ea7a7642d82f",
+      "baseSha256": "f0fbd88158f2295c0ea21fc4b682b8af5306f76dbe7192da5dc3ea7a7642d82f",
+      "matchesBase": true
+    },
+    {
+      "path": "packages/session-broker/src/index.ts",
+      "currentExists": true,
+      "baseExists": true,
+      "currentSha256": "b89de9f5fdce27371ecd9d8e92cc7be194a3daa49ecea45e4a235dbebd680264",
+      "baseSha256": "b89de9f5fdce27371ecd9d8e92cc7be194a3daa49ecea45e4a235dbebd680264",
+      "matchesBase": true
+    },
+    {
+      "path": "packages/session-broker/src/processLifecycle.ts",
+      "currentExists": false,
+      "baseExists": false,
+      "currentSha256": null,
+      "baseSha256": null,
+      "matchesBase": true
+    },
+    {
+      "path": "src/session/broker/brokerClient.ts",
+      "currentExists": true,
+      "baseExists": true,
+      "currentSha256": "996abced18f1e921753b566fa45577dd39650ac7a679d6fbdc447ee91ebb66c3",
+      "baseSha256": "996abced18f1e921753b566fa45577dd39650ac7a679d6fbdc447ee91ebb66c3",
+      "matchesBase": true
+    },
+    {
+      "path": "src/session/broker/brokerLauncher.ts",
+      "currentExists": true,
+      "baseExists": true,
+      "currentSha256": "05d9ad750fc9e0f737cd70eb1e444791a9c15e41a31680b3c7803bbba0a86300",
+      "baseSha256": "05d9ad750fc9e0f737cd70eb1e444791a9c15e41a31680b3c7803bbba0a86300",
+      "matchesBase": true
+    },
+    {
+      "path": "src/session/broker/brokerServer.ts",
+      "currentExists": true,
+      "baseExists": true,
+      "currentSha256": "b04e38987932851dbe5aedb98110be55bf86087163e6ce620f2bfcf0141f3b0a",
+      "baseSha256": "b04e38987932851dbe5aedb98110be55bf86087163e6ce620f2bfcf0141f3b0a",
+      "matchesBase": true
+    },
+    {
+      "path": "src/ui/runInteractiveApp.tsx",
+      "currentExists": true,
+      "baseExists": true,
+      "currentSha256": "b57be57b9ee97a50267262090dea660c90cba8f84019d2fe9b03e05fa8e6c5a1",
+      "baseSha256": "b57be57b9ee97a50267262090dea660c90cba8f84019d2fe9b03e05fa8e6c5a1",
+      "matchesBase": true
+    }
+  ],
+  "productionMatchesBase": true,
+  "productionChangePolicy": {
+    "changedProduction": [],
+    "allowed": [
+      "bun.lock",
+      "packages/session-broker/package.json",
+      "packages/session-broker/src/connection.ts",
+      "packages/session-broker/src/index.ts",
+      "packages/session-broker/src/processLifecycle.ts",
+      "src/session/broker/brokerClient.ts",
+      "src/session/broker/brokerLauncher.ts",
+      "src/ui/runInteractiveApp.tsx"
+    ],
+    "required": [
+      "bun.lock",
+      "packages/session-broker/package.json",
+      "packages/session-broker/src/index.ts",
+      "packages/session-broker/src/processLifecycle.ts",
+      "packages/session-broker/src/connection.ts",
+      "src/session/broker/brokerClient.ts",
+      "src/ui/runInteractiveApp.tsx"
+    ],
+    "violations": []
+  },
+  "reconstructablePatch": {
+    "path": "tmp/session-lifecycle-effect/control/complete-experiment.patch",
+    "bytes": 150070,
+    "sha256": "e7b9a0c6e639841fe65532ebf1cd3c9ce5a14e688b9c3fe28cf1c53288674757",
+    "includesUntracked": true
+  },
+  "firstExperiment": {
+    "expectedPatchSha256": "f02a469527d49034beb5172929b74aa4ad1f7106e5d66cb1cb259fb410f39e56",
+    "observation": {
+      "suppliedPath": null,
+      "observedSha256": null,
+      "status": "expected-hash-only"
+    }
+  }
+}

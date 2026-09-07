@@ -1,0 +1,3722 @@
+diff --git a/docs/session-broker-effect-lifecycle-experiment-results.md b/docs/session-broker-effect-lifecycle-experiment-results.md
+new file mode 100644
+index 00000000..614a4803
+--- /dev/null
++++ b/docs/session-broker-effect-lifecycle-experiment-results.md
+@@ -0,0 +1,79 @@
++# Session broker Effect lifecycle experiment results
++
++Status: Phase 0 control recollected after independent review; Phase 1 treatment not started.
++
++## Control
++
++The control is fresh `origin/main` at
++`42d2b9dd2f3144e33080f159f4cc9c2824ad1708`. The experiment plan, characterization tests,
++fixtures, and harness form a separate experiment-support patch. Every candidate production file,
++package manifest, and lockfile remains byte-identical to the control commit.
++
++Control evidence is stored locally under `tmp/session-lifecycle-effect/control/`. Each harness
++invocation removes that complete directory before running validation. The current invocation itself
++ran focused tests, the real Node suite, typecheck, lint, dependency boundaries, the full unit suite,
++and PTY integration; it accepts no inherited transcript or hard-coded count.
++
++The recollected control establishes:
++
++- the Bun-native and Node-native child fixtures each create a real `SessionBrokerAuthenticator`,
++  real `SessionBrokerDaemon`, and native transport, complete the signed producer hello, and wait
++  until the actual broker observes `register` before stopping;
++- focused lifecycle/broker/source-boundary validation: 379 passed and 0 failed;
++- real Node adapter/producer validation: 4 passed and 0 failed;
++- the full unit command passed; its multi-suite runner emits multiple summaries, so the harness
++  records exact exit/transcript hashes but deliberately does not present the first summary as an
++  aggregate count;
++- PTY integration: 139 passed, 1 skipped, and 0 failed;
++- typecheck, lint, dependency boundaries, declaration emission, Bun/Node process-exit modes, and
++  the bounded canary scan passed;
++- minified standalone broker builds are deterministic at 90,116 bytes for Bun and 90,118 bytes for
++  Node across three retained builds;
++- compiled Hunk is deterministic at 177,268,864 bytes across three measurements. Its identity is
++  recorded, but the binaries remain in `dist/` and are not retained as arm artifacts;
++- cold Bun process-to-lifecycle-ready is measured by fresh subprocesses. Control dynamically proves
++  the factory is absent; treatment must create, close, and settle the factory;
++- direct synchronous connection-stop latency is measured separately from fixture construction;
++- listener acquisition and daemon ordered stop are labeled unchanged transport context, not
++  producer lifecycle startup or stop;
++- CPU and RSS are coarse, non-isolated observations and support no strong performance or security
++  conclusion;
++- source identity includes all dirty files, dynamically classifies production changes, and stores a
++  reconstructable binary patch including untracked experiment support.
++
++Authenticated-registration latency remains `not-measured`: the signed runtime fixtures prove the
++complete hello/register behavior but do not expose one stable isolated timestamp in both arms. Hunk
++startup polling also remains `not-measured` because it has no honest portable real-Node equivalent.
++The canary exercises only a reconnect close-policy defect. Control exposes its raw Error to the
++synchronous caller in memory; the harness catches it without persisting the random marker. It does
++not claim credential, payload, finalizer, diagnostic, snapshot, or rendered-Cause coverage.
++
++## Treatment
++
++Not started. No Effect dependency or production lifecycle change is present in the Phase 0 tree.
++The frozen treatment harness requires an externally supplied control attestation-file hash before
++it trusts control identities. It freezes every existing control support input except this results
++report and raw evidence, and enforces the exact allowed production change set. It then fails closed
++on named AST-derived mechanical patterns: lifecycle factory/façade shape, exact class property sets,
++Promise/native timing owners, Effect declaration/import placement, registries/classes,
++runtime/Clock/fixed-heartbeat construction sites, and factory call location. Bun executes only a
++fixture bundle produced through a `ws`-rejecting build-graph plugin whose direct `ws` probe must fail.
++The defect canary permits no synchronous treatment escape, enumerates callable console methods
++across the console prototype chain, self-tests error/warn/log/info/debug/trace/dir/table capture, and
++intercepts direct stdout/stderr writes while requiring exactly one total fixed hook message. Production
++imports into test-named or experiment-support modules are forbidden, and Effect scans include every
++tracked or untracked repository TypeScript source with only the dedicated lifecycle test allowed. These
++checks are reproducible source-shape evidence, not proof of lifecycle semantics.
++
++All control support remains byte-frozen except the results report/raw evidence and exactly
++`connection.test.ts` plus `brokerClient.test.ts`. Those two lifecycle-injection tests instead retain
++AST-derived ordered test names and assertion-call locations/counts; treatment must preserve every
++control name, may not reduce a matching body's assertion count, and may not introduce skip/todo/only.
++New tests remain allowed. This is mechanical anti-weakening evidence requiring independent review,
++not behavioral proof.
++Independent correctness/security review remains required.
++
++## Verdict
++
++Pending Phase 1. This document must end with either **discard Phase 1** or **recommend a separately
++approved Phase 2 experiment** after treatment evidence and independent review exist.
+diff --git a/docs/session-broker-effect-lifecycle-experiment.md b/docs/session-broker-effect-lifecycle-experiment.md
+new file mode 100644
+index 00000000..d6881af4
+--- /dev/null
++++ b/docs/session-broker-effect-lifecycle-experiment.md
+@@ -0,0 +1,252 @@
++# Session broker Effect lifecycle experiment
++
++Status: Phase 0 control frozen; Phase 1 treatment not started.
++
++## Question
++
++The first experiment replaced only the generic connection's three native timers. It paid Effect's
++fixed runtime and audit cost without removing lifecycle ownership. This follow-up asks a narrower,
++falsifiable question:
++
++> Can one process-owned Effect lifecycle supervise Hunk's complete producer startup and connection
++> path while deleting independent retry/timer ownership across both the generic connection and the
++> Hunk client?
++
++This is a disposable experiment, not production migration approval.
++
++## Identities
++
++- Control source: `42d2b9dd2f3144e33080f159f4cc9c2824ad1708`
++- Control source description: `fix(ui): restore review stream responsiveness (#942)`
++- Required treatment dependency: exactly `effect@3.22.1`, only in
++  `packages/session-broker/package.json`
++- Required Bun: `1.3.14`
++- First experiment patch SHA-256:
++  `f02a469527d49034beb5172929b74aa4ad1f7106e5d66cb1cb259fb410f39e56`
++- First experiment remains untouched in `/home/bentlegen/Projects/hunk-effect-experiment`.
++
++The control harness records the system Node version, Bun's embedded Node version, OS, kernel,
++architecture, lockfile, fixtures, all changed-file identities, and fresh command transcripts. It
++creates a complete reconstructable binary patch through a temporary Git index so untracked support
++files are included. The first-experiment patch path is optional; when unavailable, evidence records
++only its frozen expected hash. Raw evidence lives under ignored `tmp/session-lifecycle-effect/`.
++
++## Scope
++
++Phase 1 may change only the producer lifecycle path:
++
++```text
++ensure daemon
++-> signed hello/connect
++-> register
++-> heartbeat/reconnect
++-> terminal stop
++```
++
++Candidate production modules are:
++
++- `packages/session-broker/src/connection.ts`
++- a new private Effect-backed lifecycle module in `packages/session-broker/src/`
++- `src/session/broker/brokerClient.ts`
++- polling mechanics only in `src/session/broker/brokerLauncher.ts`
++- the interactive-process composition root in `src/ui/runInteractiveApp.tsx`
++
++Phase 1 must not change the daemon engine, Node adapter, Bun adapter, authentication,
++cryptography, exact validation, broker state, resource budgets, ownership policy, delivery
++semantics, browser-review authority, or public Effect-free API style. Phase 2 is forbidden without a
++new decision after the Phase 1 gate.
++
++## Frozen control semantics
++
++The treatment must preserve these observations unless this document names an explicit difference:
++
++1. `SessionBrokerConnection.start()` constructs its first socket synchronously, so a construction
++   throw escapes synchronously.
++2. Heartbeat uses delayed fixed-rate native `setInterval`: activation arms one interval, no heartbeat
++   is sent before its first callback, and the runtime owns cadence/catch-up behavior.
++3. Producer handshake timeout starts with socket creation and is cleared by activation, close, or
++   terminal stop.
++4. Reconnect preparation is not cancellable. Stop may win while preparation is pending; the foreign
++   Promise still settles, but no new socket may be created afterward.
++5. Connection stop is synchronous and terminal. It closes the current socket and refuses future
++   starts, but it does not await crypto, reconnect preparation, or app bridge work.
++6. Concurrent first `SessionBrokerClient.start()` calls return the same active attempt Promise.
++7. A first startup failure is warned once, resolves the public first-attempt Promise, and schedules a
++   complete retry. An explicit `start()` while that retry timer is waiting starts an immediate new
++   attempt; the existing retry timer remains owned until stop or callback.
++8. Client stop is synchronous and terminal. It does not cancel already-started health, credential,
++   crypto, filesystem, or detached-spawn work, but late settlement cannot connect, warn, or schedule
++   another retry.
++9. Launcher lock owners receive a fresh full health-poll timeout after the outer deadline was
++   established. This can exceed the nominal startup timeout. Lock release remains in `finally`.
++10. Fetch abort timers and TCP socket timeouts are native transport controls, not lifecycle-loop
++    ownership targeted by Phase 1.
++11. One generic connection object retains registration, snapshot, bridge queue, command budgets,
++    and reconnect ownership across socket generations.
++
++## Explicit treatment decisions
++
++These are decisions, not parity claims:
++
++- **Heartbeat:** use a delayed first tick followed by Effect `Schedule.fixed`. Any observable
++  catch-up difference from native `setInterval` is reported as a treatment difference.
++- **Defects:** `createSessionBrokerProcessLifecycle` accepts the ordinary TypeScript option
++  `{ onDefect?: (message: string) => void }`. Unexpected lifecycle defects call it only with the
++  fixed text `Session broker lifecycle failed unexpectedly.` This is an intentional replacement for
++  today's mixture of uncaught timer exceptions and unhandled Promise rejections. Raw Effect Causes,
++  URLs, credentials, payloads, callback values, and defect objects must never reach this hook or the
++  console.
++- **Shutdown:** public `start()`/`stop()` gates remain synchronous and terminal. A separate internal
++  settlement Promise describes eventual scope closure; synchronous stop never claims that async
++  finalization has completed.
++- **Cancellation:** Effect interruption does not prove cancellation of foreign Promises or detached
++  processes. Phase 1 does not add `AbortSignal` to health, credential, crypto, filesystem, TCP, or
++  spawn operations. Synchronous terminal/epoch gates prevent late commits while native work settles.
++- **Runtime ownership:** `runInteractiveApp` constructs exactly one process lifecycle, runtime, and
++  unref-aware Clock and injects it through an ordinary TypeScript façade. There is no package-global
++  singleton, fallback runtime, runtime per connection, or Effect import outside the private package
++  lifecycle implementation.
++
++## Frozen treatment source shape
++
++The disposable treatment uses these exact mechanical names so Phase 1 evidence is falsifiable:
++
++- implementation classes: `EffectSessionBrokerProcessLifecycle`,
++  `EffectSessionBrokerStartupSupervisor`, and `EffectSessionBrokerConnectionSupervisor`;
++- `SessionBrokerConnection` owns exactly one
++  `connectionSupervisor: SessionBrokerConnectionSupervisor` property. Its complete treatment
++  property set is frozen as `socket`, `activeSocket`, `bridge`, `limits`, `queuedMessages`,
++  `executingMessages`, `queuedCommandCountBudget`, `queuedCommandByteBudget`, `draining`, `stopped`,
++  `registration`, `snapshot`, `producerHellos`, `options`, and `connectionSupervisor`;
++- `SessionBrokerClient` owns exactly one
++  `startupSupervisor: SessionBrokerStartupSupervisor` property and retains its terminal `stopped`
++  commit gate. Its complete treatment property set is frozen as `connection`, `bridge`, `stopped`,
++  `lastConnectionWarning`, `credentials`, `waitingForIncumbentExit`, `incumbentLaunchFingerprint`,
++  `registration`, `snapshot`, `timing`, and `startupSupervisor`;
++- `createUnrefClock()` is the only lexical region allowed to call raw `setTimeout` or
++  `clearTimeout`; the process lifecycle calls it at exactly one construction site;
++- `runDelayedFixedHeartbeat()` performs the initial `Effect.sleep` and contains the only
++  `Schedule.fixed` call;
++- `ManagedRuntime.make` occurs exactly once in `processLifecycle.ts`;
++- `createSessionBrokerProcessLifecycle()` is called in production exactly once, from
++  `src/ui/runInteractiveApp.tsx`.
++
++Conditional AST gates reject native timing calls in converted connection/client paths, `Bun.sleep`
++in the launcher, any property outside those exact domain sets, Promise/timer/task/fiber/handle
++owners, task registries, per-delay classes, additional runtime/Clock construction, or factory calls
++elsewhere. Existing connection queues and `producerHellos` remain allowed only by exact name. These
++named mechanical gates do
++not prove scheduling, interruption, shutdown, authentication, or resource semantics; independent
++review remains mandatory.
++
++## Mechanical ownership inventory
++
++The control owns these independent lifecycle mechanisms:
++
++| Owner              | Mechanism                                   | Phase 1 disposition                   |
++| ------------------ | ------------------------------------------- | ------------------------------------- |
++| generic connection | reconnect timeout handle                    | delete into one generation supervisor |
++| generic connection | heartbeat interval handle                   | delete into one generation supervisor |
++| generic connection | handshake timeout WeakMap                   | delete into one generation supervisor |
++| Hunk client        | outer reconnect timeout handle              | delete into one startup supervisor    |
++| Hunk client        | active startup Promise field                | delete into one startup supervisor    |
++| Hunk client        | terminal `stopped` gate                     | retain as public commit fence         |
++| launcher           | health deadline/poll loop and `Bun.sleep`   | route through supervised attempt time |
++| launcher           | launch-lock ownership and `finally` release | retain as cross-process authority     |
++| launcher           | fetch abort and TCP socket timeout          | retain as native transport controls   |
++
++Renaming native timer fields to task/fiber fields, adding equivalent task Sets/maps, or retaining
++parallel native scheduling is not ownership reduction.
++
++## Phase 1 gate
++
++Phase 1 is promising only if all of the following hold:
++
++1. The connection's reconnect, heartbeat, and handshake timer ownership becomes one whole-generation
++   supervisor with no per-delay task handles or task registry.
++2. The client's outer retry timer and startup Promise owner become one startup supervisor.
++3. The reduction spans both modules and deletes at least three independent native ownership
++   mechanisms.
++4. Exactly one runtime and one custom Clock are constructed at the interactive process root.
++5. Security/domain state stays explicit and byte-for-byte protocol behavior remains unchanged.
++6. Every frozen control characterization remains green, or a difference listed above is measured
++   and reported honestly.
++7. Bun and real Node authenticate/register where supported and exit with handshake, heartbeat, and
++   reconnect maintenance pending. Hunk startup timing is a Bun product path; absence of a stable
++   real-Node Hunk startup fixture is recorded rather than simulated.
++8. No Effect type appears in public declarations; core and `src/**` do not import Effect; Bun never
++   imports or executes `ws`.
++9. The bounded reconnect-close-policy canary reaches the fixed defect hook in treatment, its random
++   marker appears in no generated text evidence, and the hook/console contain only the fixed message.
++   This canary does not claim coverage of credentials, application payloads, finalizers, diagnostics,
++   snapshots, or rendered Effect Causes.
++10. Independent reviewers can find stop gates, retries, authority rechecks, and releases without
++    relying on Effect expertise.
++11. Bundle, startup, registration, command, reconnect, stop, CPU, and RSS evidence is recorded. A
++    greater-than-25% standalone broker increase requires a material, independently reviewed
++    ownership win; the coarse 1 MiB ceiling alone is insufficient.
++
++Failure of any hard boundary, ownership, security, process-exit, or auditability item ends the
++experiment as a null result. Phase 2 never starts automatically.
++
++## Evidence protocol
++
++One unchanged harness, `scripts/session-broker-effect-lifecycle-experiment.ts`, collects both arms.
++It stores full command transcripts and hashes rather than truncated output. Each arm contains:
++
++- `result.json`
++- `source-identity.json`
++- `ownership-inventory.json`
++- `semantics.json`
++- `validation/manifest.json`
++- three retained Bun broker bundles and three retained Node broker bundles
++- identities and timings for three compiled Hunk builds whose binaries remain in `dist/` and are not
++  retained as arm artifacts
++- raw warmups/samples for stable local fixtures
++- process-exit results
++- dependency/declaration/canary evidence
++- `MANIFEST.sha256` and `MANIFEST.attestation.sha256`
++
++Every invocation clears the complete arm output first, then itself runs focused tests, the real Node
++suite, typecheck, lint, dependency boundaries, the full unit suite, and PTY integration. Non-zero
++exit fails the arm; counts are recorded only when a stable Bun/TAP summary can be parsed. A requested
++metric without a stable fixture is recorded as `not-measured` with a reason. It is never replaced
++with test-command duration or synthetic evidence. Listener acquisition and daemon ordered stop are
++unchanged transport context, not producer lifecycle startup/stop. Cold Bun subprocess lifecycle
++readiness and synchronous connection stop are the lifecycle measurements. CPU and RSS are coarse,
++non-isolated observations from which no strong performance or security conclusion may be drawn.
++
++Treatment invocation additionally requires
++`--control-attestation-sha256 <sha256>`. The harness first verifies that external hash against
++`control/MANIFEST.attestation.sha256`, verifies the attested `MANIFEST.sha256`, and then verifies
++every manifest entry before trusting control identities. It freezes every existing control
++experiment-support input hash except the results report, raw evidence, and exactly
++`packages/session-broker/src/connection.test.ts` plus `src/session/broker/brokerClient.test.ts`.
++Those two tests may change only to inject the process lifecycle: AST evidence requires every ordered
++control test name to remain, each matching body to retain at least its control assertion-call count,
++and no treatment test to use skip/todo/only. New treatment tests may be added. The plan, harness,
++analyzer, source-boundary test, launcher tests, fixtures, and runners remain exact-frozen. This is
++mechanical anti-weakening evidence plus independent review, not proof. The parent must anchor the final attestation-file hash outside the arm before
++Phase 1. This is local integrity and reproducibility evidence, not a cryptographic signer or trusted
++timestamp.
++
++The treatment production change set is exact: `bun.lock`, `packages/session-broker/package.json`,
++`packages/session-broker/src/{index,processLifecycle,connection}.ts`,
++`src/session/broker/{brokerClient,brokerLauncher}.ts`, and `src/ui/runInteractiveApp.tsx` are the only
++allowed production changes. Every item except the optional launcher change is required. Daemon,
++adapters, authentication, crypto, validation, core, budgets, and browser-review production files
++remain forbidden. The Bun fixture is bundled by `Bun.build` through a `ws`/`ws/*` rejecting
++`onResolve` plugin using a package-bundling target, a direct `ws` import probe must fail under that
++plugin, and only the produced bundle is executed by Bun. AST specifier checks remain an independent
++backstop. Production modules may not import/re-export/require/dynamically import `.test.ts`, `test/`,
++`docs/`, `scripts/`, or any experiment-support module. Effect specifier scans include every tracked
++or untracked TypeScript source in the repository;
++only `processLifecycle.ts` and its unreachable dedicated `processLifecycle.test.ts` may import it.
++
++## Operating constraints
++
++- Use one writer and fresh independent reviewers.
++- Do not edit or delete the first experiment.
++- Do not commit, push, open a PR, merge, publish, or begin production migration.
++- Do not begin daemon/adapters Phase 2 without separate approval.
++- A well-attested null result is a successful experiment outcome.
+diff --git a/packages/session-broker-bun/src/connectionRuntime.test.ts b/packages/session-broker-bun/src/connectionRuntime.test.ts
+new file mode 100644
+index 00000000..069cade3
+--- /dev/null
++++ b/packages/session-broker-bun/src/connectionRuntime.test.ts
+@@ -0,0 +1,92 @@
++import { expect, test } from "bun:test";
++import { mkdtemp, rm, writeFile } from "node:fs/promises";
++import { tmpdir } from "node:os";
++import { join, resolve } from "node:path";
++
++const fixture = resolve(
++  import.meta.dir,
++  "../../../test/session-broker-runtime/bun-connection-fixture.ts",
++);
++
++/** Reject any ws module reachable from a Bun fixture build graph. */
++function rejectWsPlugin(onRejected: (specifier: string) => void): Bun.BunPlugin {
++  return {
++    name: "reject-ws-in-bun-session-fixture",
++    setup(builder) {
++      builder.onResolve({ filter: /^ws(?:\/|$)/ }, (args) => {
++        onRejected(args.path);
++        throw new Error(`Forbidden ws resolution in Bun lifecycle fixture: ${args.path}`);
++      });
++    },
++  };
++}
++
++/** Run one bundled Bun fixture with a hard test-owned timeout and retain its transcript. */
++async function runFixture(bundle: string, args: readonly string[]) {
++  const child = Bun.spawn({
++    cmd: [process.execPath, bundle, ...args],
++    cwd: resolve(import.meta.dir, "../../.."),
++    stdout: "pipe",
++    stderr: "pipe",
++  });
++  const timeout = setTimeout(() => child.kill(), 3_000);
++  const [stdout, stderr, exitCode] = await Promise.all([
++    new Response(child.stdout).text(),
++    new Response(child.stderr).text(),
++    child.exited,
++  ]);
++  clearTimeout(timeout);
++  return { stdout, stderr, exitCode };
++}
++
++test("bundles without ws, authenticates, registers, and leaves maintenance time unref'ed", async () => {
++  const directory = await mkdtemp(join(tmpdir(), "hunk-bun-lifecycle-fixture-"));
++  try {
++    const probe = join(directory, "ws-probe.ts");
++    await writeFile(probe, 'import WebSocket from "ws"; console.log(WebSocket);\n');
++    const rejected: string[] = [];
++    let probeFailed = false;
++    try {
++      await Bun.build({
++        entrypoints: [probe],
++        outdir: join(directory, "probe"),
++        target: "node",
++        plugins: [rejectWsPlugin((specifier) => rejected.push(specifier))],
++      });
++    } catch {
++      probeFailed = true;
++    }
++    expect(probeFailed).toBe(true);
++    expect(rejected).toEqual(["ws"]);
++
++    const fixtureRejected: string[] = [];
++    const bundle = join(directory, "bun-connection-fixture.js");
++    const fixtureBuild = await Bun.build({
++      entrypoints: [fixture],
++      outdir: directory,
++      naming: "bun-connection-fixture.js",
++      target: "node",
++      format: "esm",
++      sourcemap: "none",
++      plugins: [rejectWsPlugin((specifier) => fixtureRejected.push(specifier))],
++    });
++    expect(fixtureBuild.success).toBe(true);
++    expect(fixtureRejected).toEqual([]);
++
++    const real = await runFixture(bundle, ["real"]);
++    expect(real).toMatchObject({ exitCode: 0, stderr: "" });
++    expect(real.stdout).toBe("signed-producer-register-observed\n");
++
++    const ready = await runFixture(bundle, ["lifecycle-ready"]);
++    expect(ready).toMatchObject({ exitCode: 0, stderr: "" });
++    expect(ready.stdout).toMatch(/^lifecycle-ready:(?:control|treatment)\n$/);
++
++    for (const mode of ["unref-handshake", "unref-heartbeat", "unref-reconnect"] as const) {
++      const result = await runFixture(bundle, [mode]);
++      expect(result).toMatchObject({ exitCode: 0, stderr: "" });
++      expect(result.stdout).toContain(mode);
++    }
++  } finally {
++    await rm(directory, { force: true, recursive: true });
++  }
++});
+diff --git a/packages/session-broker/src/connection.test.ts b/packages/session-broker/src/connection.test.ts
+index 2eed8032..2d13ddf7 100644
+--- a/packages/session-broker/src/connection.test.ts
++++ b/packages/session-broker/src/connection.test.ts
+@@ -9,7 +9,10 @@ import {
+   SESSION_BROKER_REGISTRATION_VERSION,
+   SESSION_BROKER_SIGNATURE_ALGORITHM,
+ } from "@hunk/session-broker-core";
++import { SessionBroker } from "./broker";
++import { SessionBrokerAuthenticator } from "./authentication";
+ import { createSessionBrokerConnection } from "./connection";
++import { createSessionBrokerDaemon } from "./daemon";
+ import { createSessionBrokerProtocolParsers } from "./protocolParsers";
+ import type { SessionBrokerSocketLike } from "./types";
+ 
+@@ -28,6 +31,7 @@ class TestSocket implements SessionBrokerSocketLike {
+   sent: string[] = [];
+   throwOnSend = false;
+   lastClose: { code?: number; reason?: string } | null = null;
++  onSend?: (data: string) => void;
+   onopen: (() => void) | null = null;
+   onmessage: ((event: { data: unknown }) => void) | null = null;
+   onclose: ((event: { code: number; reason: string }) => void) | null = null;
+@@ -36,6 +40,7 @@ class TestSocket implements SessionBrokerSocketLike {
+   send(data: string) {
+     if (this.throwOnSend) throw new Error("socket exploded");
+     this.sent.push(data);
++    this.onSend?.(data);
+   }
+ 
+   close(code?: number, reason?: string) {
+@@ -109,6 +114,220 @@ const protocolParsers = createSessionBrokerProtocolParsers<
+ });
+ 
+ describe("session broker connection", () => {
++  test("throws an initial socket construction failure synchronously from start", () => {
++    const failure = new Error("socket construction failed");
++    const connection = createSessionBrokerConnection({
++      url: "ws://broker.test/session",
++      createSocket: (): TestSocket => {
++        throw failure;
++      },
++      registration: createRegistration(),
++      snapshot: createSnapshot(),
++      protocolParsers,
++    });
++
++    expect(() => connection.start()).toThrow(failure);
++    connection.stop();
++  });
++
++  test("arms delayed fixed-rate heartbeats through one cleared native interval", () => {
++    const socket = new TestSocket();
++    const originalSetInterval = globalThis.setInterval;
++    const originalClearInterval = globalThis.clearInterval;
++    const intervalHandle = { unref() {} } as ReturnType<typeof setInterval>;
++    let intervalCallback: (() => void) | null = null;
++    let intervalMs: number | undefined;
++    const cleared: Array<ReturnType<typeof setInterval>> = [];
++    globalThis.setInterval = ((callback: () => void, delay?: number) => {
++      intervalCallback = callback;
++      intervalMs = delay;
++      return intervalHandle;
++    }) as typeof setInterval;
++    globalThis.clearInterval = ((handle: ReturnType<typeof setInterval>) => {
++      cleared.push(handle);
++    }) as typeof clearInterval;
++
++    try {
++      const connection = createSessionBrokerConnection({
++        url: "ws://broker.test/session",
++        createSocket: () => socket,
++        registration: createRegistration(),
++        snapshot: createSnapshot(),
++        protocolParsers,
++        heartbeatIntervalMs: 25,
++      });
++      connection.start();
++      socket.emitOpen();
++
++      expect(intervalMs).toBe(25);
++      expect(socket.sent.map((message) => JSON.parse(message).type)).toEqual(["register"]);
++      expect(intervalCallback).not.toBeNull();
++      (intervalCallback as unknown as () => void)();
++      expect(socket.sent.map((message) => JSON.parse(message).type)).toEqual([
++        "register",
++        "heartbeat",
++      ]);
++
++      connection.stop();
++      expect(cleared).toEqual([intervalHandle]);
++    } finally {
++      globalThis.setInterval = originalSetInterval;
++      globalThis.clearInterval = originalClearInterval;
++    }
++  });
++
++  test("clears each producer handshake timeout on close and terminal stop", async () => {
++    const pair = (await crypto.subtle.generateKey("Ed25519", false, [
++      "sign",
++      "verify",
++    ])) as CryptoKeyPair;
++    const grant: ProducerGrant = {
++      kind: "producer",
++      appId: "dev.example",
++      principalId: "producer-1",
++      keyId: "producer-key-1",
++      grantId: "producer-grant-1",
++      algorithm: SESSION_BROKER_SIGNATURE_ALGORITHM,
++      issuedAt: Date.now() - 1_000,
++      expiresAt: Date.now() + 60_000,
++      revocationId: "producer-revocation-1",
++      mayDelegate: false,
++      operations: ["register"],
++    };
++    const originalSetTimeout = globalThis.setTimeout;
++    const originalClearTimeout = globalThis.clearTimeout;
++    const handles: Array<ReturnType<typeof setTimeout>> = [];
++    const cleared: Array<ReturnType<typeof setTimeout>> = [];
++    globalThis.setTimeout = ((_callback: () => void, _delay?: number) => {
++      const handle = { unref() {} } as ReturnType<typeof setTimeout>;
++      handles.push(handle);
++      return handle;
++    }) as typeof setTimeout;
++    globalThis.clearTimeout = ((handle: ReturnType<typeof setTimeout>) => {
++      cleared.push(handle);
++    }) as typeof clearTimeout;
++
++    try {
++      const createConnection = (socket: TestSocket) =>
++        createSessionBrokerConnection({
++          url: "ws://broker.test/session",
++          createSocket: () => socket,
++          registration: createRegistration(),
++          snapshot: createSnapshot(),
++          protocolParsers,
++          producerAuthentication: {
++            appId: "dev.example",
++            appRevision: 1,
++            credential: { grant, privateKey: pair.privateKey },
++            daemon: { keyId: "daemon-key-1", publicKey: pair.publicKey },
++          },
++          reconnectDelayMs: 60_000,
++          resolveClose: () => ({ reconnect: false }),
++        });
++
++      const closedSocket = new TestSocket();
++      const closedConnection = createConnection(closedSocket);
++      closedConnection.start();
++      closedSocket.emitClose();
++      closedConnection.stop();
++
++      const stoppedSocket = new TestSocket();
++      const stoppedConnection = createConnection(stoppedSocket);
++      stoppedConnection.start();
++      stoppedConnection.stop();
++
++      expect(handles).toHaveLength(2);
++      expect(cleared).toEqual(handles);
++    } finally {
++      globalThis.setTimeout = originalSetTimeout;
++      globalThis.clearTimeout = originalClearTimeout;
++    }
++  });
++
++  test("clears the producer handshake timeout after successful signed activation", async () => {
++    const producerPair = (await crypto.subtle.generateKey("Ed25519", false, [
++      "sign",
++      "verify",
++    ])) as CryptoKeyPair;
++    const daemonPair = (await crypto.subtle.generateKey("Ed25519", false, [
++      "sign",
++      "verify",
++    ])) as CryptoKeyPair;
++    const grant: ProducerGrant = {
++      kind: "producer",
++      appId: "dev.example",
++      principalId: "producer-1",
++      keyId: "producer-key-1",
++      grantId: "producer-grant-1",
++      algorithm: SESSION_BROKER_SIGNATURE_ALGORITHM,
++      issuedAt: Date.now() - 1_000,
++      expiresAt: Date.now() + 60_000,
++      revocationId: "producer-revocation-1",
++      mayDelegate: false,
++      operations: ["register"],
++    };
++    const authenticator = new SessionBrokerAuthenticator({
++      appId: grant.appId,
++      appRevision: 1,
++      generation: "generation-1",
++      daemonIdentity: { keyId: "daemon-key-1", privateKey: daemonPair.privateKey },
++      credentials: [{ grant, publicKey: producerPair.publicKey }],
++    });
++    const broker = new SessionBroker({ protocolParsers });
++    const daemon = createSessionBrokerDaemon({
++      broker,
++      appId: grant.appId,
++      producerEndpoint: "ws://broker.test/session",
++      helloAuthenticator: authenticator,
++      idleTimeoutMs: 0,
++    });
++    const socket = new TestSocket();
++    const peer = {
++      send: (data: string) => queueMicrotask(() => socket.emitMessage(data)),
++      close: (code?: number, reason?: string) => socket.close(code, reason),
++      markAuthenticated() {},
++    };
++    socket.onSend = (data) => daemon.handleConnectionMessage(peer, data);
++
++    const originalSetTimeout = globalThis.setTimeout;
++    const originalClearTimeout = globalThis.clearTimeout;
++    const handle = { unref() {} } as ReturnType<typeof setTimeout>;
++    const cleared: Array<ReturnType<typeof setTimeout>> = [];
++    globalThis.setTimeout = (() => handle) as unknown as typeof setTimeout;
++    globalThis.clearTimeout = ((value: ReturnType<typeof setTimeout>) => {
++      cleared.push(value);
++    }) as typeof clearTimeout;
++
++    const connection = createSessionBrokerConnection({
++      url: "ws://broker.test/session",
++      createSocket: () => socket,
++      registration: createRegistration(),
++      snapshot: createSnapshot(),
++      protocolParsers,
++      producerAuthentication: {
++        appId: grant.appId,
++        appRevision: 1,
++        credential: { grant, privateKey: producerPair.privateKey },
++        daemon: { keyId: "daemon-key-1", publicKey: daemonPair.publicKey },
++      },
++    });
++    try {
++      connection.start();
++      socket.emitOpen();
++      for (let index = 0; index < 200 && broker.getSessionIds().length === 0; index += 1) {
++        await Bun.sleep(1);
++      }
++      expect(broker.getSessionIds()).toEqual(["session-1"]);
++      expect(cleared).toEqual([handle]);
++    } finally {
++      connection.stop();
++      daemon.shutdown();
++      await daemon.stopped;
++      globalThis.setTimeout = originalSetTimeout;
++      globalThis.clearTimeout = originalClearTimeout;
++    }
++  });
++
+   test("registers on open and sends later snapshot updates", () => {
+     const sockets: TestSocket[] = [];
+     const connection = createSessionBrokerConnection<
+diff --git a/scripts/session-broker-effect-lifecycle-experiment.ts b/scripts/session-broker-effect-lifecycle-experiment.ts
+new file mode 100644
+index 00000000..1da37549
+--- /dev/null
++++ b/scripts/session-broker-effect-lifecycle-experiment.ts
+@@ -0,0 +1,1520 @@
++#!/usr/bin/env bun
++
++import { createHash } from "node:crypto";
++import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
++import { arch, cpus, platform, release } from "node:os";
++import { basename, join, relative, resolve } from "node:path";
++import {
++  SESSION_BROKER_REGISTRATION_VERSION,
++  SessionBroker,
++  createSessionBrokerConnection,
++  createSessionBrokerDaemon,
++  createSessionBrokerProtocolParsers,
++  type SessionBrokerSocketLike,
++} from "@hunk/session-broker";
++import * as sessionBroker from "@hunk/session-broker";
++import { serveSessionBrokerDaemon } from "@hunk/session-broker-bun";
++import {
++  allTypeScriptFiles,
++  analyzeTestContinuity,
++  analyzeTreatmentOwnership,
++  astModuleSpecifiers,
++  forbiddenProductionSupportImports,
++  repositoryTypeScriptFiles,
++} from "./session-lifecycle-ownership-analysis";
++
++const CONTROL_SHA = "42d2b9dd2f3144e33080f159f4cc9c2824ad1708";
++const BEHAVIORALLY_FROZEN_TESTS = [
++  "packages/session-broker/src/connection.test.ts",
++  "src/session/broker/brokerClient.test.ts",
++] as const;
++const FIRST_EXPERIMENT_PATCH_SHA256 =
++  "f02a469527d49034beb5172929b74aa4ad1f7106e5d66cb1cb259fb410f39e56";
++const REDACTED_LIFECYCLE_DEFECT = "Session broker lifecycle failed unexpectedly.";
++const WARMUPS = 5;
++const SAMPLES = 30;
++
++interface CommandEvidence {
++  readonly name: string;
++  readonly command: readonly string[];
++  readonly cwd: string;
++  readonly startedAt: string;
++  readonly finishedAt: string;
++  readonly durationMs: number;
++  readonly exitCode: number;
++  readonly stdoutTranscript: string;
++  readonly stderrTranscript: string;
++  readonly stdoutSha256: string;
++  readonly stderrSha256: string;
++  readonly parsedCounts?: Record<string, number>;
++}
++
++interface SampleSeries {
++  readonly status: "measured";
++  readonly unit: "ms";
++  readonly warmups: readonly number[];
++  readonly samples: readonly number[];
++  readonly median: number;
++  readonly p95: number;
++}
++
++interface NotMeasured {
++  readonly status: "not-measured";
++  readonly reason: string;
++}
++
++type Measurement = SampleSeries | NotMeasured;
++
++type Arm = "control" | "treatment";
++
++interface ExperimentLifecycle {
++  close(): void;
++  readonly settled: Promise<void>;
++}
++
++interface LifecycleFactoryOptions {
++  readonly onDefect?: (message: string) => void;
++}
++
++/** Hash bytes without normalizing text or line endings. */
++function sha256(bytes: Uint8Array | string) {
++  return createHash("sha256").update(bytes).digest("hex");
++}
++
++/** Hash one file exactly as stored. */
++async function hashFile(path: string) {
++  return sha256(await readFile(path));
++}
++
++/** Return one nearest-rank percentile from raw sorted samples. */
++function percentile(samples: readonly number[], fraction: number) {
++  const sorted = [...samples].sort((left, right) => left - right);
++  return sorted[Math.max(0, Math.ceil(sorted.length * fraction) - 1)] ?? 0;
++}
++
++/** Measure one stable local operation with frozen warmup and sample counts. */
++async function measure(operation: () => void | Promise<void>): Promise<SampleSeries> {
++  return measureReported(async () => {
++    const startedAt = performance.now();
++    await operation();
++    return performance.now() - startedAt;
++  });
++}
++
++/** Retain measurements reported directly by the operation rather than including fixture setup. */
++async function measureReported(operation: () => number | Promise<number>): Promise<SampleSeries> {
++  const warmups: number[] = [];
++  const samples: number[] = [];
++  for (let index = 0; index < WARMUPS + SAMPLES; index += 1) {
++    const duration = await operation();
++    (index < WARMUPS ? warmups : samples).push(duration);
++  }
++  return {
++    status: "measured",
++    unit: "ms",
++    warmups,
++    samples,
++    median: percentile(samples, 0.5),
++    p95: percentile(samples, 0.95),
++  };
++}
++
++/** Recursively list files in stable protocol-path order. */
++async function listFiles(root: string): Promise<string[]> {
++  const entries = await readdir(root, { withFileTypes: true });
++  const files: string[] = [];
++  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
++    const path = join(root, entry.name);
++    if (entry.isDirectory()) files.push(...(await listFiles(path)));
++    else if (entry.isFile()) files.push(path);
++  }
++  return files;
++}
++
++/** Parse only stable summary lines emitted by Bun test or Node's TAP runner. */
++function parseTestCounts(stdout: string, stderr: string) {
++  const text = `${stdout}\n${stderr}`;
++  const counts: Record<string, number> = {};
++  const patterns = {
++    passed: [
++      /(?:^|\n)\s*(\d+) pass(?:ed)?\b/m,
++      /(?:^|\n)# pass (\d+)\b/m,
++      /(?:^|\n)ℹ pass (\d+)\b/m,
++    ],
++    failed: [
++      /(?:^|\n)\s*(\d+) fail(?:ed)?\b/m,
++      /(?:^|\n)# fail (\d+)\b/m,
++      /(?:^|\n)ℹ fail (\d+)\b/m,
++    ],
++    skipped: [
++      /(?:^|\n)\s*(\d+) skip(?:ped)?\b/m,
++      /(?:^|\n)# skipped (\d+)\b/m,
++      /(?:^|\n)ℹ skipped (\d+)\b/m,
++    ],
++  };
++  let ambiguous = false;
++  for (const [name, candidates] of Object.entries(patterns)) {
++    const matches = candidates.flatMap((pattern) => [
++      ...text.matchAll(new RegExp(pattern.source, "gm")),
++    ]);
++    if (matches.length > 1) ambiguous = true;
++    if (matches.length === 1 && matches[0]?.[1]) counts[name] = Number(matches[0][1]);
++  }
++  return !ambiguous && counts.passed !== undefined ? counts : undefined;
++}
++
++/** Run one command and persist complete stdout/stderr transcripts and exact identities. */
++async function runCommand(
++  root: string,
++  transcriptRoot: string,
++  name: string,
++  command: readonly string[],
++  parseCounts = false,
++): Promise<CommandEvidence> {
++  await mkdir(transcriptRoot, { recursive: true });
++  const stdoutPath = join(transcriptRoot, `${name}.stdout.log`);
++  const stderrPath = join(transcriptRoot, `${name}.stderr.log`);
++  const startedAt = new Date().toISOString();
++  const started = performance.now();
++  const child = Bun.spawn({
++    cmd: [...command],
++    cwd: root,
++    env: { ...process.env, NO_COLOR: "1" },
++    stdout: "pipe",
++    stderr: "pipe",
++  });
++  const [stdoutBuffer, stderrBuffer, exitCode] = await Promise.all([
++    new Response(child.stdout).arrayBuffer(),
++    new Response(child.stderr).arrayBuffer(),
++    child.exited,
++  ]);
++  const stdout = new Uint8Array(stdoutBuffer);
++  const stderr = new Uint8Array(stderrBuffer);
++  await writeFile(stdoutPath, stdout);
++  await writeFile(stderrPath, stderr);
++  return {
++    name,
++    command,
++    cwd: root,
++    startedAt,
++    finishedAt: new Date().toISOString(),
++    durationMs: performance.now() - started,
++    exitCode,
++    stdoutTranscript: relative(root, stdoutPath),
++    stderrTranscript: relative(root, stderrPath),
++    stdoutSha256: sha256(stdout),
++    stderrSha256: sha256(stderr),
++    ...(parseCounts
++      ? {
++          parsedCounts: parseTestCounts(
++            new TextDecoder().decode(stdout),
++            new TextDecoder().decode(stderr),
++          ),
++        }
++      : {}),
++  };
++}
++
++/** Run a required validation command and fail the arm on any non-zero exit. */
++async function runRequiredCommand(
++  root: string,
++  transcriptRoot: string,
++  name: string,
++  command: readonly string[],
++  parseCounts = false,
++) {
++  const evidence = await runCommand(root, transcriptRoot, name, command, parseCounts);
++  if (evidence.exitCode !== 0) throw new Error(`Required command failed: ${name}.`);
++  return evidence;
++}
++
++/** Find every installed version of one package in an npm dependency-tree projection. */
++function findDependencyVersions(value: unknown, name: string, versions = new Set<string>()) {
++  if (!value || typeof value !== "object") return versions;
++  const dependencies = (value as { dependencies?: unknown }).dependencies;
++  if (!dependencies || typeof dependencies !== "object") return versions;
++  for (const [dependencyName, dependency] of Object.entries(dependencies)) {
++    if (dependencyName === name) {
++      const version = (dependency as { version?: unknown })?.version;
++      if (typeof version === "string") versions.add(version);
++    }
++    findDependencyVersions(dependency, name, versions);
++  }
++  return versions;
++}
++
++/** Construct exactly one arm lifecycle and fail closed on a missing treatment factory. */
++function createArmLifecycle(
++  label: Arm,
++  onDefect: (message: string) => void,
++): ExperimentLifecycle | undefined {
++  const factory = (
++    sessionBroker as typeof sessionBroker & {
++      createSessionBrokerProcessLifecycle?: (
++        options?: LifecycleFactoryOptions,
++      ) => ExperimentLifecycle | undefined;
++    }
++  ).createSessionBrokerProcessLifecycle;
++  if (label === "control") {
++    if (factory) throw new Error("Control unexpectedly exports the treatment lifecycle factory.");
++    return undefined;
++  }
++  if (!factory) throw new Error("Treatment does not export createSessionBrokerProcessLifecycle.");
++  const lifecycle = factory({ onDefect });
++  if (
++    !lifecycle ||
++    typeof lifecycle.close !== "function" ||
++    !(lifecycle.settled instanceof Promise)
++  ) {
++    throw new Error("Treatment lifecycle factory returned an invalid lifecycle façade.");
++  }
++  return lifecycle;
++}
++
++class FixtureSocket implements SessionBrokerSocketLike {
++  readyState = 0;
++  sent: string[] = [];
++  onopen: (() => void) | null = null;
++  onmessage: ((event: { data: unknown }) => void) | null = null;
++  onclose: ((event: { code: number; reason: string }) => void) | null = null;
++  onerror: (() => void) | null = null;
++  onSend?: (value: unknown) => void;
++
++  send(data: string) {
++    this.sent.push(data);
++    this.onSend?.(JSON.parse(data));
++  }
++
++  close(code = 1000, reason = "") {
++    if (this.readyState === 3) return;
++    this.readyState = 3;
++    this.onclose?.({ code, reason });
++  }
++
++  open() {
++    this.readyState = 1;
++    this.onopen?.();
++  }
++}
++
++const protocolParsers = createSessionBrokerProtocolParsers({
++  appRevision: 1,
++  features: [],
++  parseRegistration: (value) => value as never,
++  parseSnapshot: (value) => value as never,
++  commands: [
++    {
++      command: "ping",
++      version: 1,
++      parseInput: (value) => (value === "ping" ? "ping" : null),
++      parseResult: (value) => (value === "pong" ? "pong" : null),
++    },
++  ],
++});
++
++/** Localize the planned required lifecycle option across control and treatment declarations. */
++function createExperimentConnection(options: Record<string, unknown>) {
++  const factory = createSessionBrokerConnection as unknown as (
++    value: Record<string, unknown>,
++  ) => ReturnType<typeof createSessionBrokerConnection>;
++  return factory(options);
++}
++
++/** Build common connection options without adding treatment types to the control. */
++function connectionOptions(createSocket: () => FixtureSocket, lifecycle?: ExperimentLifecycle) {
++  return {
++    url: "ws://127.0.0.1/session",
++    createSocket,
++    registration: {
++      registrationVersion: SESSION_BROKER_REGISTRATION_VERSION,
++      sessionId: "experiment-session",
++      pid: process.pid,
++      cwd: process.cwd(),
++      launchedAt: new Date(0).toISOString(),
++      info: {},
++    },
++    snapshot: { updatedAt: new Date(0).toISOString(), state: {} },
++    protocolParsers,
++    heartbeatIntervalMs: 60_000,
++    reconnectDelayMs: 1,
++    ...(lifecycle ? { lifecycle } : {}),
++  };
++}
++
++/** Measure one explicitly unauthenticated in-memory registration projection. */
++async function measureUnauthenticatedRegistration(lifecycle?: ExperimentLifecycle) {
++  const socket = new FixtureSocket();
++  const connection = createExperimentConnection(connectionOptions(() => socket, lifecycle));
++  connection.start();
++  socket.open();
++  if ((JSON.parse(socket.sent[0] ?? "null") as { type?: string } | null)?.type !== "register") {
++    throw new Error("Registration fixture did not emit register.");
++  }
++  connection.stop();
++}
++
++/** Measure one parsed command/result through the real FIFO bridge path. */
++async function measureCommand(lifecycle?: ExperimentLifecycle) {
++  const socket = new FixtureSocket();
++  let resolveCompleted!: () => void;
++  const completed = new Promise<void>((resolve) => (resolveCompleted = resolve));
++  socket.onSend = (value) => {
++    if ((value as { type?: unknown }).type === "command-result") resolveCompleted();
++  };
++  const connection = createExperimentConnection({
++    ...connectionOptions(() => socket, lifecycle),
++    bridge: { dispatchCommand: async () => "pong" },
++  });
++  connection.start();
++  socket.open();
++  socket.onmessage?.({
++    data: JSON.stringify({
++      type: "command",
++      requestId: "experiment-request",
++      command: "ping",
++      input: "ping",
++    }),
++  });
++  await completed;
++  connection.stop();
++}
++
++/** Measure one close, delay, preparation, and replacement socket creation. */
++async function measureReconnect(lifecycle?: ExperimentLifecycle) {
++  const sockets: FixtureSocket[] = [];
++  let resolveReconnected!: () => void;
++  const reconnected = new Promise<void>((resolve) => (resolveReconnected = resolve));
++  const connection = createExperimentConnection({
++    ...connectionOptions(() => {
++      const socket = new FixtureSocket();
++      sockets.push(socket);
++      if (sockets.length === 2) resolveReconnected();
++      return socket;
++    }, lifecycle),
++    prepareReconnect: async () => {},
++  });
++  connection.start();
++  sockets[0]!.open();
++  sockets[0]!.close(1006, "retry");
++  await reconnected;
++  connection.stop();
++}
++
++/** Measure only the synchronous connection stop call, excluding fixture construction. */
++async function measureSynchronousConnectionStop(lifecycle?: ExperimentLifecycle) {
++  const socket = new FixtureSocket();
++  const connection = createExperimentConnection(connectionOptions(() => socket, lifecycle));
++  connection.start();
++  socket.open();
++  const startedAt = performance.now();
++  connection.stop();
++  const duration = performance.now() - startedAt;
++  if (socket.readyState !== 3) throw new Error("Synchronous stop did not close the socket.");
++  return duration;
++}
++
++/** Create the unchanged daemon/adapter context used by transport-only measurements. */
++function createFixtureDaemon() {
++  return createSessionBrokerDaemon({
++    broker: new SessionBroker({ protocolParsers }),
++    idleTimeoutMs: 0,
++  });
++}
++
++/** Measure native Bun listener acquisition while settling cleanup before returning. */
++async function measureTransportListenerAcquisition() {
++  const daemon = createFixtureDaemon();
++  const startedAt = performance.now();
++  const server = serveSessionBrokerDaemon({ daemon, hostname: "127.0.0.1", port: 0 });
++  const duration = performance.now() - startedAt;
++  server.stop(true);
++  await server.stopped;
++  return duration;
++}
++
++/** Measure unchanged daemon-plus-Bun-adapter ordered stop context. */
++async function measureTransportOrderedStop() {
++  const daemon = createFixtureDaemon();
++  const server = serveSessionBrokerDaemon({ daemon, hostname: "127.0.0.1", port: 0 });
++  server.stop(true);
++  await server.stopped;
++}
++
++/** Bundle the Bun fixture through a ws-rejecting graph and prove the plugin with a direct probe. */
++async function buildBunRuntimeFixture(root: string, outputRoot: string) {
++  const runtimeRoot = join(outputRoot, "bun-runtime-fixture");
++  await mkdir(runtimeRoot, { recursive: true });
++  const rejected: string[] = [];
++  const rejectWsPlugin = (sink: string[]): Bun.BunPlugin => ({
++    name: "reject-ws-in-bun-session-fixture",
++    setup(builder) {
++      builder.onResolve({ filter: /^ws(?:\/|$)/ }, (args) => {
++        sink.push(args.path);
++        throw new Error(`Forbidden ws resolution in Bun lifecycle fixture: ${args.path}`);
++      });
++    },
++  });
++  const probe = join(runtimeRoot, "ws-probe.ts");
++  await writeFile(probe, 'import WebSocket from "ws"; console.log(WebSocket);\n');
++  let probeFailed = false;
++  try {
++    await Bun.build({
++      entrypoints: [probe],
++      outdir: join(runtimeRoot, "probe-output"),
++      target: "node",
++      plugins: [rejectWsPlugin(rejected)],
++    });
++  } catch {
++    probeFailed = true;
++  }
++  if (!probeFailed || rejected.length !== 1 || rejected[0] !== "ws") {
++    throw new Error("Bun ws-rejection plugin direct probe did not fail closed.");
++  }
++  await rm(probe, { force: true });
++  await rm(join(runtimeRoot, "probe-output"), { force: true, recursive: true });
++
++  const fixtureRejected: string[] = [];
++  const bundle = join(runtimeRoot, "bun-connection-fixture.js");
++  const fixtureBuild = await Bun.build({
++    entrypoints: [join(root, "test/session-broker-runtime/bun-connection-fixture.ts")],
++    outdir: runtimeRoot,
++    naming: "bun-connection-fixture.js",
++    target: "node",
++    format: "esm",
++    sourcemap: "none",
++    plugins: [rejectWsPlugin(fixtureRejected)],
++  });
++  if (!fixtureBuild.success || fixtureRejected.length !== 0) {
++    throw new Error("Bun lifecycle fixture build graph reached ws.");
++  }
++  return {
++    bundle,
++    evidence: {
++      buildTarget: "node package-bundling graph; produced bundle executed by Bun",
++      pluginFilter: "^ws(?:\\/|$)",
++      directProbeRejected: rejected,
++      fixtureRejected,
++      bundleSha256: await hashFile(bundle),
++    },
++  };
++}
++
++/** Measure cold process-to-lifecycle-ready using the gated Bun bundle in both arms. */
++async function measureColdLifecycleReady(root: string, label: Arm, bundle: string) {
++  return measureReported(async () => {
++    const startedAt = performance.now();
++    const child = Bun.spawn({
++      cmd: [process.execPath, bundle, "lifecycle-ready"],
++      cwd: root,
++      stdout: "pipe",
++      stderr: "pipe",
++    });
++    const [stdout, stderr, exitCode] = await Promise.all([
++      new Response(child.stdout).text(),
++      new Response(child.stderr).text(),
++      child.exited,
++    ]);
++    const duration = performance.now() - startedAt;
++    const expected = `lifecycle-ready:${label}\n`;
++    if (exitCode !== 0 || stderr !== "" || stdout !== expected) {
++      throw new Error("Cold lifecycle-ready subprocess did not exercise the requested arm.");
++    }
++    return duration;
++  });
++}
++
++/** Build one minified standalone broker bundle and return its exact identity. */
++async function buildBrokerBundle(
++  root: string,
++  buildRoot: string,
++  target: "bun" | "node",
++  index: number,
++) {
++  const name = `session-broker-${target}-${index}.js`;
++  const startedAt = performance.now();
++  const result = await Bun.build({
++    entrypoints: [join(root, "packages/session-broker/src/index.ts")],
++    target,
++    format: "esm",
++    minify: true,
++    sourcemap: "none",
++    outdir: buildRoot,
++    naming: name,
++  });
++  if (!result.success) throw new Error(result.logs.map((entry) => entry.message).join("\n"));
++  return {
++    target,
++    index,
++    retained: true,
++    durationMs: performance.now() - startedAt,
++    bytes: (await stat(join(buildRoot, name))).size,
++    sha256: await hashFile(join(buildRoot, name)),
++  };
++}
++
++/** Read one file when present without treating a control-only absence as an error. */
++async function readOptional(path: string) {
++  return readFile(path).catch((error: NodeJS.ErrnoException) => {
++    if (error.code === "ENOENT") return null;
++    throw error;
++  });
++}
++
++/** List the complete dirty tree as tracked differences plus untracked non-ignored files. */
++function changedFiles(root: string) {
++  const tracked = Bun.spawnSync({
++    cmd: ["git", "diff", "--name-only", CONTROL_SHA, "--"],
++    cwd: root,
++    stdout: "pipe",
++    stderr: "pipe",
++  });
++  const untracked = Bun.spawnSync({
++    cmd: ["git", "ls-files", "--others", "--exclude-standard"],
++    cwd: root,
++    stdout: "pipe",
++    stderr: "pipe",
++  });
++  if (tracked.exitCode !== 0 || untracked.exitCode !== 0) {
++    throw new Error(`${tracked.stderr}${untracked.stderr}`);
++  }
++  return [tracked.stdout, untracked.stdout]
++    .flatMap((bytes) => bytes.toString().split("\n"))
++    .map((path) => path.trim())
++    .filter(Boolean)
++    .filter((path, index, paths) => paths.indexOf(path) === index)
++    .sort();
++}
++
++/** Classify experiment support separately so new production files cannot hide among fixtures. */
++function isExperimentSupport(path: string) {
++  return (
++    path === "docs/session-broker-effect-lifecycle-experiment.md" ||
++    path === "docs/session-broker-effect-lifecycle-experiment-results.md" ||
++    path === "scripts/session-broker-effect-lifecycle-experiment.ts" ||
++    path === "scripts/session-lifecycle-ownership-analysis.ts" ||
++    path === "scripts/test-session-broker-node.ts" ||
++    path.startsWith("test/") ||
++    /(?:^|\/)\w[^/]*\.test\.[cm]?[jt]sx?$/.test(path)
++  );
++}
++
++/** Produce one complete binary patch using a temporary index so untracked files are included. */
++async function createReconstructablePatch(root: string, outputRoot: string) {
++  const indexPath = join(outputRoot, ".reconstruct-index");
++  await rm(indexPath, { force: true });
++  const env = { ...process.env, GIT_INDEX_FILE: indexPath };
++  for (const command of [
++    ["git", "read-tree", CONTROL_SHA],
++    ["git", "add", "-A", "--", "."],
++  ]) {
++    const result = Bun.spawnSync({ cmd: command, cwd: root, env, stdout: "pipe", stderr: "pipe" });
++    if (result.exitCode !== 0) throw new Error(result.stderr.toString());
++  }
++  const diff = Bun.spawnSync({
++    cmd: ["git", "diff", "--cached", "--binary", CONTROL_SHA, "--"],
++    cwd: root,
++    env,
++    stdout: "pipe",
++    stderr: "pipe",
++  });
++  await rm(indexPath, { force: true });
++  if (diff.exitCode !== 0) throw new Error(diff.stderr.toString());
++  const path = join(outputRoot, "complete-experiment.patch");
++  await writeFile(path, diff.stdout);
++  return {
++    path: relative(root, path),
++    bytes: diff.stdout.byteLength,
++    sha256: sha256(diff.stdout),
++    includesUntracked: true,
++  };
++}
++
++/** Hash all changed files and every required production candidate against the frozen base. */
++async function collectSourceIdentity(
++  root: string,
++  outputRoot: string,
++  label: Arm,
++  optionalFirstPatch?: string,
++) {
++  const changed = changedFiles(root);
++  const identities = await Promise.all(
++    changed.map(async (path) => {
++      const bytes = await readOptional(join(root, path));
++      return {
++        path,
++        classification: isExperimentSupport(path) ? "experiment-support" : "production",
++        exists: bytes !== null,
++        ...(bytes ? { bytes: bytes.byteLength, sha256: sha256(bytes) } : {}),
++      };
++    }),
++  );
++  const requiredProductionPaths = [
++    "bun.lock",
++    "packages/session-broker/package.json",
++    "packages/session-broker/src/index.ts",
++    "packages/session-broker/src/processLifecycle.ts",
++    "packages/session-broker/src/connection.ts",
++    "packages/session-broker/src/daemon.ts",
++    "packages/session-broker-node/src/serve.ts",
++    "packages/session-broker-bun/src/serve.ts",
++    "src/session/broker/brokerClient.ts",
++    "src/session/broker/brokerLauncher.ts",
++    "src/session/broker/brokerServer.ts",
++    "src/ui/runInteractiveApp.tsx",
++  ];
++  const dynamicProductionPaths = identities
++    .filter((entry) => entry.classification === "production")
++    .map((entry) => entry.path);
++  const productionPaths = [
++    ...new Set([...requiredProductionPaths, ...dynamicProductionPaths]),
++  ].sort();
++  const production = await Promise.all(
++    productionPaths.map(async (path) => {
++      const current = await readOptional(join(root, path));
++      const base = Bun.spawnSync({
++        cmd: ["git", "show", `${CONTROL_SHA}:${path}`],
++        cwd: root,
++        stdout: "pipe",
++        stderr: "pipe",
++      });
++      const baseBytes = base.exitCode === 0 ? new Uint8Array(base.stdout) : null;
++      return {
++        path,
++        currentExists: current !== null,
++        baseExists: baseBytes !== null,
++        currentSha256: current ? sha256(current) : null,
++        baseSha256: baseBytes ? sha256(baseBytes) : null,
++        matchesBase:
++          current === null && baseBytes === null
++            ? true
++            : current !== null && baseBytes !== null && sha256(current) === sha256(baseBytes),
++      };
++    }),
++  );
++  const productionMatchesBase = production.every((entry) => entry.matchesBase);
++  const changedProduction = identities
++    .filter((entry) => entry.classification === "production")
++    .map((entry) => entry.path)
++    .sort();
++  const allowedTreatmentProduction = new Set([
++    "bun.lock",
++    "packages/session-broker/package.json",
++    "packages/session-broker/src/index.ts",
++    "packages/session-broker/src/processLifecycle.ts",
++    "packages/session-broker/src/connection.ts",
++    "src/session/broker/brokerClient.ts",
++    "src/session/broker/brokerLauncher.ts",
++    "src/ui/runInteractiveApp.tsx",
++  ]);
++  const requiredTreatmentProduction = [
++    "bun.lock",
++    "packages/session-broker/package.json",
++    "packages/session-broker/src/index.ts",
++    "packages/session-broker/src/processLifecycle.ts",
++    "packages/session-broker/src/connection.ts",
++    "src/session/broker/brokerClient.ts",
++    "src/ui/runInteractiveApp.tsx",
++  ];
++  const productionChangeViolations =
++    label === "treatment"
++      ? [
++          ...changedProduction
++            .filter((path) => !allowedTreatmentProduction.has(path))
++            .map((path) => `disallowed:${path}`),
++          ...requiredTreatmentProduction
++            .filter((path) => !changedProduction.includes(path))
++            .map((path) => `missing:${path}`),
++        ]
++      : [];
++  if (productionChangeViolations.length > 0) {
++    throw new Error(
++      `Treatment production change set rejected: ${productionChangeViolations.join(", ")}`,
++    );
++  }
++  if (label === "control" && !productionMatchesBase) {
++    throw new Error("Control production files do not match the frozen base.");
++  }
++  if (label === "treatment" && productionMatchesBase) {
++    throw new Error("Treatment did not change the required production lifecycle path.");
++  }
++  const behavioralTestContracts = BEHAVIORALLY_FROZEN_TESTS.map((path) =>
++    analyzeTestContinuity(root, join(root, path)),
++  );
++  const reconstructablePatch = await createReconstructablePatch(root, outputRoot);
++  const observedFirstPatch = optionalFirstPatch
++    ? await readOptional(resolve(optionalFirstPatch))
++    : null;
++  if (observedFirstPatch && sha256(observedFirstPatch) !== FIRST_EXPERIMENT_PATCH_SHA256) {
++    throw new Error("Optional first-experiment patch does not match its frozen identity.");
++  }
++  return {
++    schemaVersion: 2,
++    baseHead: CONTROL_SHA,
++    currentHead: Bun.spawnSync({ cmd: ["git", "rev-parse", "HEAD"], cwd: root })
++      .stdout.toString()
++      .trim(),
++    changedFiles: identities,
++    behavioralTestContracts,
++    production,
++    productionMatchesBase,
++    productionChangePolicy: {
++      changedProduction,
++      allowed: [...allowedTreatmentProduction].sort(),
++      required: requiredTreatmentProduction,
++      violations: productionChangeViolations,
++    },
++    reconstructablePatch,
++    firstExperiment: {
++      expectedPatchSha256: FIRST_EXPERIMENT_PATCH_SHA256,
++      observation: observedFirstPatch
++        ? { suppliedPath: resolve(optionalFirstPatch!), observedSha256: sha256(observedFirstPatch) }
++        : { suppliedPath: null, observedSha256: null, status: "expected-hash-only" },
++    },
++  };
++}
++
++/** Enforce AST-derived ownership gates and retain every relevant source location. */
++async function collectOwnership(root: string, label: Arm) {
++  const analysis = analyzeTreatmentOwnership(root);
++  if (label === "control") {
++    if (
++      analysis.treatmentPresent ||
++      analysis.locations.connectionNativeTiming.length === 0 ||
++      analysis.locations.clientNativeTiming.length === 0 ||
++      analysis.locations.launcherBunSleep.length === 0
++    ) {
++      throw new Error("Control no longer exposes the frozen native lifecycle mechanisms.");
++    }
++  } else if (!analysis.treatmentPresent || analysis.violations.length > 0) {
++    throw new Error(`Treatment ownership gate failed: ${analysis.violations.join("; ")}`);
++  }
++  return { schemaVersion: 3, label, ...analysis };
++}
++
++/** Label semantics from AST-derived mechanism locations without claiming semantic proof. */
++function collectSemantics(label: Arm, ownership: Awaited<ReturnType<typeof collectOwnership>>) {
++  const locations = ownership.locations;
++  return {
++    schemaVersion: 3,
++    label,
++    heartbeat:
++      locations.fixedHeartbeatSchedule.length === 1
++        ? "delayed-Effect-Schedule.fixed-mechanical-match"
++        : "native-timing-control",
++    connectionOwner:
++      locations.connectionSupervisorProperties.length === 1
++        ? "one-frozen-supervisor-property"
++        : "native-timing-control",
++    clientStartupOwner:
++      locations.clientSupervisorProperties.length === 1
++        ? "one-frozen-supervisor-property"
++        : "native-timing-control",
++    staticAnalysisLimit:
++      "AST gates prove only named mechanical source shapes; independent review must establish lifecycle semantics and correctness.",
++    cancellationBoundary:
++      "foreign native promises and detached processes are not claimed cancelled",
++    intentionalTreatmentDifferences:
++      label === "treatment"
++        ? [
++            "Schedule.fixed catch-up may differ from native setInterval.",
++            `Unexpected lifecycle defects use the fixed message: ${REDACTED_LIFECYCLE_DEFECT}`,
++          ]
++        : [],
++  };
++}
++
++/** Enforce exact Effect placement and return all package declarations that mention it. */
++async function collectDependencyPlacement(root: string, label: Arm, effectVersions: string[]) {
++  const packageList = Bun.spawnSync({
++    cmd: ["git", "ls-files", "package.json", "**/package.json"],
++    cwd: root,
++    stdout: "pipe",
++    stderr: "pipe",
++  });
++  if (packageList.exitCode !== 0) throw new Error(packageList.stderr.toString());
++  const declarations: Array<{ path: string; section: string; value: string }> = [];
++  for (const path of packageList.stdout.toString().split("\n").filter(Boolean).sort()) {
++    const value = JSON.parse(await readFile(join(root, path), "utf8")) as Record<string, unknown>;
++    for (const section of [
++      "dependencies",
++      "devDependencies",
++      "peerDependencies",
++      "optionalDependencies",
++    ] as const) {
++      const dependency = (value[section] as Record<string, unknown> | undefined)?.effect;
++      if (typeof dependency === "string") declarations.push({ path, section, value: dependency });
++    }
++  }
++  if (label === "control") {
++    if (effectVersions.length > 0 || declarations.length > 0) {
++      throw new Error("Control unexpectedly contains Effect.");
++    }
++  } else if (
++    effectVersions.length !== 1 ||
++    effectVersions[0] !== "3.22.1" ||
++    declarations.length !== 1 ||
++    declarations[0]?.path !== "packages/session-broker/package.json" ||
++    declarations[0]?.section !== "dependencies" ||
++    declarations[0]?.value !== "3.22.1"
++  ) {
++    throw new Error(
++      "Treatment must declare and resolve exact effect@3.22.1 only in session-broker.",
++    );
++  }
++  return { effectVersions, declarations };
++}
++
++/** Enforce actual Effect/ws module specifier boundaries and retain syntax-derived locations. */
++function collectModuleBoundaries(root: string, label: Arm) {
++  const processLifecycle = "packages/session-broker/src/processLifecycle.ts";
++  const allFiles = repositoryTypeScriptFiles(root);
++  const effectImports = allFiles.flatMap((path) =>
++    astModuleSpecifiers(path)
++      .filter(({ specifier }) => specifier === "effect" || specifier.startsWith("effect/"))
++      .map(({ specifier, location }) => ({ specifier, ...location })),
++  );
++  const allowedEffectFiles = new Set([
++    processLifecycle,
++    "packages/session-broker/src/processLifecycle.test.ts",
++  ]);
++  const misplacedEffectImports = effectImports.filter(
++    (entry) => !allowedEffectFiles.has(entry.file),
++  );
++  const forbiddenSupportImports = forbiddenProductionSupportImports(root);
++  const bunFiles = [
++    ...allTypeScriptFiles(join(root, "packages/session-broker-bun")),
++    ...allTypeScriptFiles(join(root, "test/session-broker-runtime")),
++  ];
++  const bunWsImports = bunFiles.flatMap((path) =>
++    astModuleSpecifiers(path)
++      .filter(({ specifier }) => specifier === "ws" || specifier.startsWith("ws/"))
++      .map(({ specifier, location }) => ({ specifier, ...location })),
++  );
++  if (
++    misplacedEffectImports.length > 0 ||
++    forbiddenSupportImports.length > 0 ||
++    bunWsImports.length > 0 ||
++    (label === "control" && effectImports.length > 0) ||
++    (label === "treatment" &&
++      (effectImports.length === 0 ||
++        effectImports.some((entry) => !allowedEffectFiles.has(entry.file))))
++  ) {
++    throw new Error("Effect/ws syntax-aware module boundary failed.");
++  }
++  return {
++    effectImports,
++    misplacedEffectImports,
++    forbiddenSupportImports,
++    bunWsImports,
++    bunBuildGate:
++      "The Bun runtime fixture is executed only from a bundle built with a ws/ws/* rejecting onResolve plugin; a direct ws import probe must fail under the same plugin.",
++  };
++}
++
++/** Trigger the frozen unexpected-close-policy defect without persisting the random marker. */
++async function exerciseCanary(
++  label: Arm,
++  lifecycle: ExperimentLifecycle | undefined,
++  marker: string,
++  defectMessages: string[],
++) {
++  const socket = new FixtureSocket();
++  const outputMessages: Array<{ channel: string; text: string }> = [];
++  const consoleMethodNames = new Set<string>();
++  for (
++    let value: object | null = console;
++    value && value !== Object.prototype;
++    value = Object.getPrototypeOf(value)
++  ) {
++    for (const name of Object.getOwnPropertyNames(value)) {
++      if (name !== "constructor" && typeof Reflect.get(console, name) === "function") {
++        consoleMethodNames.add(name);
++      }
++    }
++  }
++  const previousConsoleDescriptors = new Map<string, PropertyDescriptor | undefined>();
++  for (const method of consoleMethodNames) {
++    previousConsoleDescriptors.set(method, Object.getOwnPropertyDescriptor(console, method));
++    Object.defineProperty(console, method, {
++      configurable: true,
++      writable: true,
++      value: (...values: unknown[]) => {
++        outputMessages.push({
++          channel: `console.${method}`,
++          text: values.map((value) => String(value)).join(" "),
++        });
++      },
++    });
++  }
++  const previousStdoutWrite = process.stdout.write;
++  const previousStderrWrite = process.stderr.write;
++  process.stdout.write = ((chunk: unknown) => {
++    outputMessages.push({ channel: "process.stdout.write", text: String(chunk) });
++    return true;
++  }) as typeof process.stdout.write;
++  process.stderr.write = ((chunk: unknown) => {
++    outputMessages.push({ channel: "process.stderr.write", text: String(chunk) });
++    return true;
++  }) as typeof process.stderr.write;
++  let synchronousEscape: string | null = null;
++  if (label === "treatment" && defectMessages.length !== 0) {
++    throw new Error("Treatment emitted a lifecycle defect before the canary.");
++  }
++  defectMessages.length = 0;
++  try {
++    for (const method of ["error", "warn", "log", "info", "debug", "trace", "dir", "table"]) {
++      (console as unknown as Record<string, (...values: unknown[]) => void>)[method]?.("self-test");
++    }
++    const selfTestChannels = new Set(outputMessages.map((entry) => entry.channel));
++    for (const method of ["error", "warn", "log", "info", "debug", "trace", "dir", "table"]) {
++      if (!selfTestChannels.has(`console.${method}`)) {
++        throw new Error(`Console interception self-test missed ${method}.`);
++      }
++    }
++    outputMessages.length = 0;
++    const connection = createExperimentConnection({
++      ...connectionOptions(() => socket, lifecycle),
++      resolveClose: () => {
++        throw new Error(marker);
++      },
++    });
++    connection.start();
++    socket.open();
++    try {
++      socket.close(1006, "canary");
++    } catch (error) {
++      synchronousEscape = String(error);
++    }
++    for (
++      let index = 0;
++      label === "treatment" && defectMessages.length === 0 && index < 40;
++      index += 1
++    ) {
++      await Bun.sleep(5);
++    }
++    connection.stop();
++  } finally {
++    for (const [method, descriptor] of previousConsoleDescriptors) {
++      if (descriptor) Object.defineProperty(console, method, descriptor);
++      else delete (console as unknown as Record<string, unknown>)[method];
++    }
++    process.stdout.write = previousStdoutWrite;
++    process.stderr.write = previousStderrWrite;
++  }
++  const controlExposedRawDefect = synchronousEscape?.includes(marker) ?? false;
++  if (label === "control" && !controlExposedRawDefect) {
++    throw new Error("Control canary no longer exposes the frozen synchronous close-policy defect.");
++  }
++  const canaryDefectMessages = [...defectMessages];
++  if (label === "treatment") {
++    if (synchronousEscape !== null) {
++      throw new Error("Treatment synchronously exposed a lifecycle defect.");
++    }
++    if (
++      canaryDefectMessages.length !== 1 ||
++      canaryDefectMessages[0] !== REDACTED_LIFECYCLE_DEFECT
++    ) {
++      throw new Error("Treatment must report exactly one fixed redacted lifecycle defect.");
++    }
++    if (outputMessages.length !== 0) {
++      throw new Error(
++        "Treatment wrote process or console output during the lifecycle defect canary.",
++      );
++    }
++  }
++  return {
++    schemaVersion: 3,
++    label,
++    markerSha256: sha256(marker),
++    exercised: "resolveClose callback defect during reconnect close policy",
++    fixedTreatmentMessage: REDACTED_LIFECYCLE_DEFECT,
++    defectCallbackMessages: canaryDefectMessages,
++    outputMessages,
++    synchronousEscapeCharacterized: synchronousEscape !== null,
++    controlLimitation:
++      label === "control"
++        ? "The raw Error remains synchronously observable to the close caller in memory; the harness catches it and never persists the marker. This does not exercise credentials, payloads, finalizers, or rendered Effect Causes."
++        : null,
++    treatmentAssertionsApplied: label === "treatment",
++  };
++}
++
++/** Scan all generated evidence bytes for the random marker. */
++async function scanCanary(outputRoot: string, marker: string) {
++  const matches: string[] = [];
++  for (const path of await listFiles(outputRoot)) {
++    if (basename(path).startsWith("MANIFEST")) continue;
++    const bytes = await readFile(path);
++    if (bytes.includes(Buffer.from(marker))) matches.push(relative(outputRoot, path));
++  }
++  return matches;
++}
++
++/** Write JSON with one stable final newline. */
++async function writeJson(path: string, value: unknown) {
++  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`);
++}
++
++/** Write a sorted checksum manifest without making it self-referential. */
++async function writeManifest(outputRoot: string) {
++  const manifestPath = join(outputRoot, "MANIFEST.sha256");
++  const attestationPath = join(outputRoot, "MANIFEST.attestation.sha256");
++  const files = (await listFiles(outputRoot)).filter(
++    (path) => path !== manifestPath && path !== attestationPath,
++  );
++  const lines = await Promise.all(
++    files.map(async (path) => `${await hashFile(path)}  ${relative(outputRoot, path)}`),
++  );
++  await writeFile(manifestPath, `${lines.sort().join("\n")}\n`);
++  await writeFile(attestationPath, `${await hashFile(manifestPath)}  ${basename(manifestPath)}\n`);
++}
++
++/** Verify an externally anchored local control manifest before trusting control identities. */
++async function verifyControlAttestation(root: string, expectedAttestationSha256: string) {
++  if (!/^[a-f0-9]{64}$/.test(expectedAttestationSha256)) {
++    throw new TypeError("Control attestation SHA-256 must be 64 lowercase hexadecimal characters.");
++  }
++  const controlRoot = join(root, "tmp/session-lifecycle-effect/control");
++  const attestationPath = join(controlRoot, "MANIFEST.attestation.sha256");
++  const manifestPath = join(controlRoot, "MANIFEST.sha256");
++  const attestation = await readFile(attestationPath);
++  if (sha256(attestation) !== expectedAttestationSha256) {
++    throw new Error("External control attestation SHA-256 does not match the attestation file.");
++  }
++  const attestationMatch = attestation.toString().match(/^([a-f0-9]{64})  MANIFEST\.sha256\n$/);
++  if (!attestationMatch?.[1] || (await hashFile(manifestPath)) !== attestationMatch[1]) {
++    throw new Error("Control attestation does not authenticate MANIFEST.sha256.");
++  }
++  const entries = (await readFile(manifestPath, "utf8")).trimEnd().split("\n");
++  let resultVerified = false;
++  for (const entry of entries) {
++    const match = entry.match(/^([a-f0-9]{64})  (.+)$/);
++    if (!match?.[1] || !match[2]) throw new Error("Control manifest contains a malformed entry.");
++    const relativePath = match[2];
++    const resolvedPath = resolve(controlRoot, relativePath);
++    if (
++      relative(controlRoot, resolvedPath).startsWith("..") ||
++      (await hashFile(resolvedPath)) !== match[1]
++    ) {
++      throw new Error(`Control manifest verification failed for ${relativePath}.`);
++    }
++    if (relativePath === "result.json") resultVerified = true;
++  }
++  if (!resultVerified) throw new Error("Control manifest does not authenticate result.json.");
++  return {
++    attestationFileSha256: expectedAttestationSha256,
++    manifestSha256: attestationMatch[1],
++    verifiedEntries: entries.length,
++    note: "Local integrity/reproducibility evidence only; this is not a cryptographic signer or timestamp.",
++  };
++}
++
++/** Freeze support bytes except lifecycle-injection tests, whose assertions remain monotonic. */
++async function verifyFrozenControlInputs(root: string, sourceIdentity: unknown) {
++  type TestContract = ReturnType<typeof analyzeTestContinuity>;
++  const controlIdentity = sourceIdentity as {
++    changedFiles?: Array<{ path: string; classification: string; sha256?: string }>;
++    behavioralTestContracts?: TestContract[];
++  };
++  const entries = controlIdentity.changedFiles;
++  if (!Array.isArray(entries))
++    throw new Error("Control source identity lacks changed-file hashes.");
++  const frozen = entries.filter(
++    (entry) =>
++      entry.classification === "experiment-support" &&
++      entry.path !== "docs/session-broker-effect-lifecycle-experiment-results.md" &&
++      !BEHAVIORALLY_FROZEN_TESTS.includes(entry.path as (typeof BEHAVIORALLY_FROZEN_TESTS)[number]),
++  );
++  for (const entry of frozen) {
++    if (!entry.sha256 || (await hashFile(join(root, entry.path))) !== entry.sha256) {
++      throw new Error(`Frozen control input changed before treatment: ${entry.path}.`);
++    }
++  }
++  const controlContracts = controlIdentity.behavioralTestContracts;
++  if (
++    !Array.isArray(controlContracts) ||
++    controlContracts.length !== BEHAVIORALLY_FROZEN_TESTS.length
++  ) {
++    throw new Error("Control source identity lacks behavioral test contracts.");
++  }
++  const currentContracts = BEHAVIORALLY_FROZEN_TESTS.map((path) =>
++    analyzeTestContinuity(root, join(root, path)),
++  );
++  for (const current of currentContracts) {
++    if (current.forbiddenModes.length > 0) {
++      throw new Error(`Treatment weakened tests with skip/todo/only: ${current.path}.`);
++    }
++    const control = controlContracts.find((entry) => entry.path === current.path);
++    if (!control) throw new Error(`Missing control test contract: ${current.path}.`);
++    const seenNames = new Map<string, number>();
++    for (const expected of control.tests) {
++      const occurrence = seenNames.get(expected.name) ?? 0;
++      seenNames.set(expected.name, occurrence + 1);
++      const observed = current.tests.filter((test) => test.name === expected.name)[occurrence];
++      if (!observed || observed.assertions.length < expected.assertions.length) {
++        throw new Error(`Treatment weakened control test: ${current.path} :: ${expected.name}.`);
++      }
++    }
++  }
++  return {
++    count: frozen.length,
++    files: frozen.map((entry) => ({ path: entry.path, sha256: entry.sha256 })),
++    behavioralTestContinuity: {
++      control: controlContracts,
++      treatment: currentContracts,
++      note: "Mechanical anti-weakening evidence only; independent review must establish behavioral preservation.",
++    },
++    excluded: [
++      "docs/session-broker-effect-lifecycle-experiment-results.md",
++      ...BEHAVIORALLY_FROZEN_TESTS,
++      "raw arm evidence",
++    ],
++  };
++}
++
++/** Collect one fresh, enforced control or treatment arm. */
++async function main() {
++  const labelIndex = process.argv.indexOf("--label");
++  const label = labelIndex >= 0 ? process.argv[labelIndex + 1] : undefined;
++  if (label !== "control" && label !== "treatment") {
++    throw new TypeError("Expected --label control or --label treatment.");
++  }
++  const firstPatchIndex = process.argv.indexOf("--first-experiment-patch");
++  const optionalFirstPatch = firstPatchIndex >= 0 ? process.argv[firstPatchIndex + 1] : undefined;
++  const controlAttestationIndex = process.argv.indexOf("--control-attestation-sha256");
++  const externalControlAttestation =
++    controlAttestationIndex >= 0 ? process.argv[controlAttestationIndex + 1] : undefined;
++  const root = process.cwd();
++  const outputRoot = resolve(root, "tmp/session-lifecycle-effect", label);
++  const buildRoot = join(outputRoot, "builds");
++  const commandRoot = join(outputRoot, "commands");
++  const validationRoot = join(outputRoot, "validation");
++  const declarationRoot = join(outputRoot, "declarations");
++  const harnessPath = join(root, "scripts/session-broker-effect-lifecycle-experiment.ts");
++  const planPath = join(root, "docs/session-broker-effect-lifecycle-experiment.md");
++
++  let verifiedControlAttestation: Awaited<ReturnType<typeof verifyControlAttestation>> | null =
++    null;
++  let frozenControlInputs: Awaited<ReturnType<typeof verifyFrozenControlInputs>> | null = null;
++  if (label === "treatment") {
++    if (!externalControlAttestation) {
++      throw new TypeError("Treatment requires --control-attestation-sha256 <sha256>.");
++    }
++    verifiedControlAttestation = await verifyControlAttestation(root, externalControlAttestation);
++    const controlResult = JSON.parse(
++      await readFile(join(root, "tmp/session-lifecycle-effect/control/result.json"), "utf8"),
++    ) as { identities?: { harnessSha256?: string; planSha256?: string } };
++    const controlSourceIdentity = JSON.parse(
++      await readFile(
++        join(root, "tmp/session-lifecycle-effect/control/source-identity.json"),
++        "utf8",
++      ),
++    );
++    frozenControlInputs = await verifyFrozenControlInputs(root, controlSourceIdentity);
++    if (
++      controlResult.identities?.harnessSha256 !== (await hashFile(harnessPath)) ||
++      controlResult.identities?.planSha256 !== (await hashFile(planPath))
++    ) {
++      throw new Error("Treatment must use the unchanged frozen control harness and plan.");
++    }
++  }
++
++  // No prior arm file may satisfy a current run or enter its manifest.
++  await rm(outputRoot, { force: true, recursive: true });
++  await mkdir(buildRoot, { recursive: true });
++
++  const validationCommands = [
++    await runRequiredCommand(
++      root,
++      validationRoot,
++      "focused",
++      [
++        "bun",
++        "test",
++        "packages/session-broker-core",
++        "packages/session-broker",
++        "packages/session-broker-bun",
++        "src/session/broker",
++        "scripts/source-boundaries.test.ts",
++      ],
++      true,
++    ),
++    await runRequiredCommand(
++      root,
++      validationRoot,
++      "real-node",
++      ["bun", "run", "test:session-broker-node"],
++      true,
++    ),
++    await runRequiredCommand(root, validationRoot, "typecheck", ["bun", "run", "typecheck"]),
++    await runRequiredCommand(root, validationRoot, "lint", ["bun", "run", "lint"]),
++    await runRequiredCommand(root, validationRoot, "dependencies", ["bun", "run", "deps:check"]),
++    await runRequiredCommand(root, validationRoot, "full-unit", ["bun", "run", "test"], true),
++    await runRequiredCommand(
++      root,
++      validationRoot,
++      "pty-integration",
++      ["bun", "run", "test:integration"],
++      true,
++    ),
++  ];
++
++  const commandEvidence: CommandEvidence[] = [];
++  const systemNode = await runRequiredCommand(root, commandRoot, "system-node-version", [
++    "node",
++    "--version",
++  ]);
++  commandEvidence.push(systemNode);
++  const dependencyTree = await runCommand(root, commandRoot, "dependency-tree", [
++    "npm",
++    "ls",
++    "effect",
++    "--all",
++    "--json",
++  ]);
++  commandEvidence.push(dependencyTree);
++  const dependencyTreeValue = JSON.parse(
++    await readFile(join(root, dependencyTree.stdoutTranscript), "utf8"),
++  );
++  const effectVersions = [...findDependencyVersions(dependencyTreeValue, "effect")].sort();
++  const dependencyPlacement = await collectDependencyPlacement(root, label, effectVersions);
++  if (label === "treatment" && dependencyTree.exitCode !== 0) {
++    throw new Error("Treatment dependency-tree command must exit successfully.");
++  }
++  const moduleBoundaries = collectModuleBoundaries(root, label);
++
++  const builds = [];
++  for (let index = 1; index <= 3; index += 1) {
++    builds.push(await buildBrokerBundle(root, buildRoot, "bun", index));
++    builds.push(await buildBrokerBundle(root, buildRoot, "node", index));
++  }
++  for (let index = 1; index <= 3; index += 1) {
++    const evidence = await runRequiredCommand(root, commandRoot, `compiled-hunk-${index}`, [
++      "bun",
++      "run",
++      "build:bin",
++    ]);
++    commandEvidence.push(evidence);
++    const binary = join(root, "dist", platform() === "win32" ? "hunk.exe" : "hunk");
++    builds.push({
++      target: "compiled-hunk" as const,
++      index,
++      retained: false,
++      retentionNote:
++        "Identity measured in dist and recorded; binary is not copied into arm evidence.",
++      durationMs: evidence.durationMs,
++      bytes: (await stat(binary)).size,
++      sha256: await hashFile(binary),
++    });
++  }
++
++  const bunRuntimeFixture = await buildBunRuntimeFixture(root, outputRoot);
++  const defectMessages: string[] = [];
++  const lifecycle = createArmLifecycle(label, (message) => defectMessages.push(message));
++  const measurements: Record<string, Measurement> = {
++    processToLifecycleReadyCold: await measureColdLifecycleReady(
++      root,
++      label,
++      bunRuntimeFixture.bundle,
++    ),
++    synchronousConnectionStop: await measureReported(() =>
++      measureSynchronousConnectionStop(lifecycle),
++    ),
++    unauthenticatedInMemoryRegistration: await measure(() =>
++      measureUnauthenticatedRegistration(lifecycle),
++    ),
++    authenticatedRegistration: {
++      status: "not-measured",
++      reason:
++        "The signed Bun/Node fixtures prove hello and broker-observed register, but do not expose a stable isolated registration timestamp in both arms.",
++    },
++    commandRoundTrip: await measure(() => measureCommand(lifecycle)),
++    reconnectGeneration: await measure(() => measureReconnect(lifecycle)),
++    transportListenerAcquisitionContext: await measureReported(measureTransportListenerAcquisition),
++    transportDaemonOrderedStopContext: await measure(measureTransportOrderedStop),
++    hunkStartupPolling: {
++      status: "not-measured",
++      reason:
++        "Hunk startup polling is a Bun product path with no honest portable real-Node equivalent; characterization tests freeze behavior instead of timing a synthetic timer.",
++    },
++  };
++
++  const cpuBefore = process.cpuUsage();
++  const cpuStartedAt = performance.now();
++  for (let index = 0; index < 100; index += 1) await measureCommand(lifecycle);
++  const cpu = {
++    classification: "coarse-non-isolated-observation",
++    conclusionPolicy:
++      "Do not infer lifecycle performance or security conclusions from this sample.",
++    operations: 100,
++    wallMs: performance.now() - cpuStartedAt,
++    ...process.cpuUsage(cpuBefore),
++  };
++  const rssSamples: number[] = [];
++  for (let index = 0; index < 5; index += 1) {
++    await Bun.sleep(10);
++    rssSamples.push(process.memoryUsage.rss());
++  }
++
++  const declaration = await runRequiredCommand(root, commandRoot, "public-declarations", [
++    "./node_modules/.bin/tsc",
++    "packages/session-broker/src/index.ts",
++    "--declaration",
++    "--emitDeclarationOnly",
++    "--outDir",
++    relative(root, declarationRoot),
++    "--module",
++    "ESNext",
++    "--moduleResolution",
++    "Bundler",
++    "--target",
++    "ES2022",
++    "--lib",
++    "ES2022,DOM",
++    "--skipLibCheck",
++    "--strict",
++    "--types",
++    "bun",
++  ]);
++  commandEvidence.push(declaration);
++  const declarationFiles = (await listFiles(declarationRoot)).filter((path) =>
++    path.endsWith(".d.ts"),
++  );
++  const forbiddenDeclarationPattern =
++    /(?:from\s+["']effect["']|\b(?:Effect|ManagedRuntime|Runtime|Layer|Scope|Fiber|Cause|Exit|Duration|Schedule|Clock)\b)/;
++  const declarationMatches: Array<{ file: string; line: number; text: string }> = [];
++  for (const path of declarationFiles) {
++    const lines = (await readFile(path, "utf8")).split("\n");
++    lines.forEach((text, index) => {
++      const declarationText = /^\s*(?:\/\*|\*|\/\/)/.test(text) ? "" : text;
++      if (forbiddenDeclarationPattern.test(declarationText)) {
++        declarationMatches.push({ file: relative(declarationRoot, path), line: index + 1, text });
++      }
++    });
++  }
++  if (declarationMatches.length > 0)
++    throw new Error("Public declarations expose Effect vocabulary.");
++
++  const canaryMarker = `session-lifecycle-canary-${crypto.randomUUID()}`;
++  const canary = await exerciseCanary(label, lifecycle, canaryMarker, defectMessages);
++  lifecycle?.close();
++  await lifecycle?.settled;
++  if (
++    label === "treatment" &&
++    (defectMessages.length !== 1 || defectMessages[0] !== REDACTED_LIFECYCLE_DEFECT)
++  ) {
++    throw new Error(
++      "Treatment lifecycle emitted defect-hook output outside the single canary event.",
++    );
++  }
++
++  const sourceIdentity = await collectSourceIdentity(root, outputRoot, label, optionalFirstPatch);
++  const ownership = await collectOwnership(root, label);
++  const semantics = collectSemantics(label, ownership);
++  await writeJson(join(outputRoot, "source-identity.json"), sourceIdentity);
++  await writeJson(join(outputRoot, "ownership-inventory.json"), ownership);
++  await writeJson(join(outputRoot, "semantics.json"), semantics);
++  await writeJson(join(outputRoot, "canary.json"), canary);
++  await writeJson(join(validationRoot, "manifest.json"), {
++    schemaVersion: 2,
++    recordedAt: new Date().toISOString(),
++    freshness: "all required commands executed by this arm invocation after clearing output",
++    commands: validationCommands,
++  });
++
++  const result = {
++    schemaVersion: 3,
++    label,
++    recordedAt: new Date().toISOString(),
++    environment: {
++      head: sourceIdentity.currentHead,
++      bun: Bun.version,
++      embeddedNode: process.versions.node,
++      systemNodeTranscript: systemNode.stdoutTranscript,
++      os: platform(),
++      release: release(),
++      arch: arch(),
++      cpu: cpus()[0]?.model ?? "unknown",
++    },
++    identities: {
++      harnessSha256: await hashFile(harnessPath),
++      planSha256: await hashFile(planPath),
++      lockfileSha256: await hashFile(join(root, "bun.lock")),
++      firstExperimentPatchSha256: FIRST_EXPERIMENT_PATCH_SHA256,
++    },
++    builds,
++    measurements,
++    coarseObservations: {
++      cpu,
++      rss: {
++        classification: "coarse-non-isolated-observation",
++        conclusionPolicy:
++          "Do not infer lifecycle performance or security conclusions from this sample.",
++        unit: "bytes",
++        samples: rssSamples,
++        median: percentile(rssSamples, 0.5),
++        p95: percentile(rssSamples, 0.95),
++      },
++    },
++    processExit: {
++      bun: {
++        status: "passed",
++        evidence: validationCommands.find((entry) => entry.name === "focused"),
++        modes: [
++          "signed-register",
++          "lifecycle-ready",
++          "pending-handshake",
++          "heartbeat",
++          "reconnect",
++        ],
++      },
++      node: {
++        status: "passed",
++        evidence: validationCommands.find((entry) => entry.name === "real-node"),
++        modes: [
++          "signed-register",
++          "lifecycle-ready",
++          "pending-handshake",
++          "heartbeat",
++          "reconnect",
++        ],
++      },
++    },
++    declarations: {
++      files: declarationFiles.map((path) => relative(declarationRoot, path)),
++      forbiddenPattern: forbiddenDeclarationPattern.source,
++      forbiddenMatches: declarationMatches,
++    },
++    dependencyPlacement: {
++      ...dependencyPlacement,
++      commandExitCode: dependencyTree.exitCode,
++      commandExpectation:
++        label === "control"
++          ? "Effect is absent; npm ls may exit nonzero for the missing requested package."
++          : "Treatment requires exit 0 with exact effect@3.22.1.",
++    },
++    moduleBoundaries: {
++      ...moduleBoundaries,
++      bunBuildGraph: bunRuntimeFixture.evidence,
++    },
++    behavioralTestContinuity: {
++      contracts: sourceIdentity.behavioralTestContracts,
++      treatmentComparison: frozenControlInputs?.behavioralTestContinuity ?? null,
++      note: "Mechanical anti-weakening evidence only; independent review must establish behavioral preservation.",
++    },
++    verifiedControlAttestation,
++    frozenControlInputs,
++    validation: validationCommands,
++    commands: commandEvidence,
++  };
++  await writeJson(join(outputRoot, "result.json"), result);
++
++  const canaryMatches = await scanCanary(outputRoot, canaryMarker);
++  if (canaryMatches.length > 0) {
++    throw new Error(`Canary marker escaped into evidence: ${canaryMatches.join(", ")}`);
++  }
++  await writeManifest(outputRoot);
++  console.log(join(outputRoot, "result.json"));
++}
++
++await main();
+diff --git a/scripts/session-lifecycle-ownership-analysis.ts b/scripts/session-lifecycle-ownership-analysis.ts
+new file mode 100644
+index 00000000..645bd84b
+--- /dev/null
++++ b/scripts/session-lifecycle-ownership-analysis.ts
+@@ -0,0 +1,676 @@
++import { execFileSync } from "node:child_process";
++import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
++import { extname, join, relative, resolve, sep } from "node:path";
++import ts from "typescript";
++
++export interface SourceLocationFact {
++  readonly file: string;
++  readonly line: number;
++  readonly column: number;
++  readonly kind: string;
++  readonly text: string;
++}
++
++export interface TreatmentOwnershipAnalysis {
++  readonly treatmentPresent: boolean;
++  readonly locations: {
++    readonly connectionNativeTiming: readonly SourceLocationFact[];
++    readonly clientNativeTiming: readonly SourceLocationFact[];
++    readonly launcherBunSleep: readonly SourceLocationFact[];
++    readonly connectionProperties: readonly SourceLocationFact[];
++    readonly clientProperties: readonly SourceLocationFact[];
++    readonly connectionSupervisorProperties: readonly SourceLocationFact[];
++    readonly clientSupervisorProperties: readonly SourceLocationFact[];
++    readonly connectionDelayOwnerProperties: readonly SourceLocationFact[];
++    readonly clientDelayOwnerProperties: readonly SourceLocationFact[];
++    readonly clientPromiseOwnerProperties: readonly SourceLocationFact[];
++    readonly processTaskRegistries: readonly SourceLocationFact[];
++    readonly processImplementationClasses: readonly SourceLocationFact[];
++    readonly processDelayClasses: readonly SourceLocationFact[];
++    readonly processSetInterval: readonly SourceLocationFact[];
++    readonly processTimersOutsideClock: readonly SourceLocationFact[];
++    readonly managedRuntimeConstruction: readonly SourceLocationFact[];
++    readonly customClockConstruction: readonly SourceLocationFact[];
++    readonly fixedHeartbeatSchedule: readonly SourceLocationFact[];
++    readonly delayedHeartbeatSleep: readonly SourceLocationFact[];
++    readonly runtimeFactoryCalls: readonly SourceLocationFact[];
++  };
++  readonly violations: readonly string[];
++}
++
++/** Return stable repo-relative paths in evidence and failures. */
++function repoPath(root: string, path: string) {
++  return relative(root, path).split(sep).join("/");
++}
++
++/** Identify TypeScript source extensions while excluding declaration files. */
++function isTypeScriptSource(path: string) {
++  return /\.(?:ts|tsx|mts|cts)$/.test(path) && !/\.d\.(?:ts|tsx|mts|cts)$/.test(path);
++}
++
++/** Return every TypeScript source file, including tests, while excluding declarations. */
++export function allTypeScriptFiles(directory: string): string[] {
++  if (!existsSync(directory)) return [];
++  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
++    const path = join(directory, entry.name);
++    if (entry.isDirectory()) return allTypeScriptFiles(path);
++    return isTypeScriptSource(entry.name) ? [path] : [];
++  });
++}
++
++/** Return every tracked or untracked TypeScript source in a repository. */
++export function repositoryTypeScriptFiles(repoRoot: string): string[] {
++  const root = resolve(repoRoot);
++  const paths = execFileSync(
++    "git",
++    ["-C", root, "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
++    { encoding: "utf8" },
++  ).split("\0");
++  return paths.filter(isTypeScriptSource).map((path) => join(root, path));
++}
++
++/** Return production TypeScript files while excluding tests and declarations. */
++export function productionTypeScriptFiles(directory: string): string[] {
++  return allTypeScriptFiles(directory).filter((path) => !/\.test\.(?:ts|tsx|mts|cts)$/.test(path));
++}
++
++/** Resolve a relative ESM specifier to its TypeScript source when one exists. */
++function resolveTypeScriptSpecifier(importer: string, specifier: string) {
++  const base = resolve(join(importer, ".."), specifier);
++  const extension = extname(base);
++  const mapped =
++    extension === ".js"
++      ? [`${base.slice(0, -3)}.ts`, `${base.slice(0, -3)}.tsx`]
++      : extension === ".mjs"
++        ? [`${base.slice(0, -4)}.mts`]
++        : extension === ".cjs"
++          ? [`${base.slice(0, -4)}.cts`]
++          : [];
++  const extensionless = extension
++    ? []
++    : [".ts", ".tsx", ".mts", ".cts"].map((suffix) => `${base}${suffix}`);
++  const indexes = ["index.ts", "index.tsx", "index.mts", "index.cts"].map((name) =>
++    join(base, name),
++  );
++  return (
++    [base, ...mapped, ...extensionless, ...indexes].find(
++      (candidate) => existsSync(candidate) && statSync(candidate).isFile(),
++    ) ?? base
++  );
++}
++
++/** Reject production edges into tests or other experiment-support trees. */
++export function forbiddenProductionSupportImports(repoRoot: string) {
++  const root = resolve(repoRoot);
++  const files = [
++    ...productionTypeScriptFiles(join(root, "packages")),
++    ...productionTypeScriptFiles(join(root, "src")),
++  ];
++  return files.flatMap((path) =>
++    astModuleSpecifiers(path).flatMap(({ specifier, location }) => {
++      if (!specifier.startsWith(".")) return [];
++      const target = resolveTypeScriptSpecifier(path, specifier);
++      const relativeTarget = repoPath(root, target);
++      return /\.test\.(?:ts|tsx|mts|cts)$/.test(relativeTarget) ||
++        /^(?:test|docs|scripts)\//.test(relativeTarget)
++        ? [{ ...location, file: repoPath(root, path), specifier, resolved: relativeTarget }]
++        : [];
++    }),
++  );
++}
++
++/** Record test names and assertion-call locations for cross-arm anti-weakening checks. */
++export function analyzeTestContinuity(repoRoot: string, path: string) {
++  const source = parseTypeScript(path);
++  const forbiddenModes: SourceLocationFact[] = [];
++  const tests: Array<{
++    name: string;
++    line: number;
++    column: number;
++    mode: string;
++    assertions: SourceLocationFact[];
++  }> = [];
++  const testCall = (node: ts.CallExpression) => {
++    if (ts.isIdentifier(node.expression) && ["test", "it"].includes(node.expression.text)) {
++      return { mode: "normal", nameArgument: node.arguments[0], body: node.arguments[1] };
++    }
++    if (
++      ts.isPropertyAccessExpression(node.expression) &&
++      ts.isIdentifier(node.expression.expression) &&
++      ["test", "it"].includes(node.expression.expression.text)
++    ) {
++      return {
++        mode: node.expression.name.text,
++        nameArgument: node.arguments[0],
++        body: node.arguments[1],
++      };
++    }
++    return null;
++  };
++  const assertionName = (node: ts.CallExpression) => {
++    if (ts.isIdentifier(node.expression)) {
++      return /^(?:expect|assert|assertEquals|assertStrictEquals|deepStrictEqual|strictEqual|ok|fail)$/.test(
++        node.expression.text,
++      )
++        ? node.expression.text
++        : null;
++    }
++    if (
++      ts.isPropertyAccessExpression(node.expression) &&
++      ts.isIdentifier(node.expression.expression) &&
++      node.expression.expression.text === "assert"
++    ) {
++      return `assert.${node.expression.name.text}`;
++    }
++    return null;
++  };
++  const visit = (node: ts.Node) => {
++    if (ts.isCallExpression(node)) {
++      if (
++        ts.isPropertyAccessExpression(node.expression) &&
++        ts.isIdentifier(node.expression.expression) &&
++        ["test", "it", "describe"].includes(node.expression.expression.text) &&
++        /^(?:skip|todo|only)/.test(node.expression.name.text)
++      ) {
++        forbiddenModes.push(locationFact(repoRoot, path, source, node, node.expression.name.text));
++      }
++      const declaration = testCall(node);
++      const nameArgument = declaration?.nameArgument;
++      if (declaration && nameArgument && ts.isStringLiteralLike(nameArgument)) {
++        const assertions: SourceLocationFact[] = [];
++        if (declaration.body) {
++          const findAssertions = (child: ts.Node) => {
++            if (ts.isCallExpression(child)) {
++              const name = assertionName(child);
++              if (name) assertions.push(locationFact(repoRoot, path, source, child, name));
++            }
++            ts.forEachChild(child, findAssertions);
++          };
++          findAssertions(declaration.body);
++        }
++        const position = source.getLineAndCharacterOfPosition(node.getStart(source));
++        tests.push({
++          name: nameArgument.text,
++          line: position.line + 1,
++          column: position.character + 1,
++          mode: declaration.mode,
++          assertions,
++        });
++      }
++    }
++    ts.forEachChild(node, visit);
++  };
++  visit(source);
++  return { path: repoPath(repoRoot, path), tests, forbiddenModes };
++}
++
++/** Parse one TypeScript module for syntax-aware import and mechanism checks. */
++export function parseTypeScript(path: string) {
++  return ts.createSourceFile(
++    path,
++    readFileSync(path, "utf8"),
++    ts.ScriptTarget.Latest,
++    true,
++    path.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
++  );
++}
++
++/** Read real static/dynamic import, export, require, and import-meta resolution specifiers. */
++export function astModuleSpecifiers(path: string) {
++  const source = parseTypeScript(path);
++  const specifiers: Array<{ specifier: string; location: SourceLocationFact }> = [];
++  const add = (node: ts.Node, value: ts.Expression | undefined, kind: string) => {
++    if (!value || !ts.isStringLiteralLike(value)) return;
++    specifiers.push({
++      specifier: value.text,
++      location: locationFact(process.cwd(), path, source, node, kind),
++    });
++  };
++  const visit = (node: ts.Node) => {
++    if (ts.isImportDeclaration(node)) add(node, node.moduleSpecifier, "import");
++    if (ts.isExportDeclaration(node)) add(node, node.moduleSpecifier, "export");
++    if (ts.isCallExpression(node) && node.arguments.length > 0) {
++      if (node.expression.kind === ts.SyntaxKind.ImportKeyword) {
++        add(node, node.arguments[0], "dynamic-import");
++      } else if (ts.isIdentifier(node.expression) && node.expression.text === "require") {
++        add(node, node.arguments[0], "require");
++      } else if (ts.isPropertyAccessExpression(node.expression)) {
++        const owner = node.expression.expression;
++        const method = node.expression.name.text;
++        if (ts.isMetaProperty(owner) && method === "resolve") {
++          add(node, node.arguments[0], "import-meta-resolve");
++        } else if (ts.isIdentifier(owner) && owner.text === "require" && method === "resolve") {
++          add(node, node.arguments[0], "require-resolve");
++        } else if (ts.isIdentifier(owner) && owner.text === "Bun" && method === "resolveSync") {
++          add(node, node.arguments[0], "bun-resolve-sync");
++        }
++      }
++    }
++    ts.forEachChild(node, visit);
++  };
++  visit(source);
++  return specifiers;
++}
++
++/** Describe one AST node without reading comments or unrelated string literals. */
++function locationFact(
++  root: string,
++  path: string,
++  source: ts.SourceFile,
++  node: ts.Node,
++  kind: string,
++): SourceLocationFact {
++  const start = node.getStart(source);
++  const position = source.getLineAndCharacterOfPosition(start);
++  return {
++    file: repoPath(root, path),
++    line: position.line + 1,
++    column: position.character + 1,
++    kind,
++    text: node.getText(source).slice(0, 240),
++  };
++}
++
++/** Return a class property name without treating computed expressions as ownership names. */
++function propertyName(member: ts.PropertyDeclaration) {
++  return ts.isIdentifier(member.name) || ts.isStringLiteralLike(member.name)
++    ? member.name.text
++    : member.name.getText();
++}
++
++/** Return whether a node is lexically contained by one frozen named function. */
++function isInsideFunction(node: ts.Node, expectedName: string) {
++  let current: ts.Node | undefined = node.parent;
++  while (current) {
++    if (
++      (ts.isFunctionDeclaration(current) ||
++        ts.isMethodDeclaration(current) ||
++        ts.isFunctionExpression(current)) &&
++      current.name &&
++      ts.isIdentifier(current.name) &&
++      current.name.text === expectedName
++    ) {
++      return true;
++    }
++    if (
++      ts.isArrowFunction(current) &&
++      ts.isVariableDeclaration(current.parent) &&
++      ts.isIdentifier(current.parent.name) &&
++      current.parent.name.text === expectedName
++    ) {
++      return true;
++    }
++    current = current.parent;
++  }
++  return false;
++}
++
++/** Collect calls with one exact identifier or property-access shape. */
++function callFacts(
++  root: string,
++  path: string,
++  source: ts.SourceFile,
++  predicate: (call: ts.CallExpression) => boolean,
++  kind: string,
++) {
++  const facts: SourceLocationFact[] = [];
++  const visit = (node: ts.Node) => {
++    if (ts.isCallExpression(node) && predicate(node)) {
++      facts.push(locationFact(root, path, source, node, kind));
++    }
++    ts.forEachChild(node, visit);
++  };
++  visit(source);
++  return facts;
++}
++
++/** Match direct or global timing APIs while ignoring comments, strings, and similarly named methods. */
++function nativeTimingCall(call: ts.CallExpression) {
++  const expression = call.expression;
++  if (ts.isIdentifier(expression)) {
++    return new Set(["setTimeout", "setInterval", "clearTimeout", "clearInterval"]).has(
++      expression.text,
++    );
++  }
++  if (!ts.isPropertyAccessExpression(expression)) return false;
++  if (
++    ts.isIdentifier(expression.expression) &&
++    expression.expression.text === "Bun" &&
++    expression.name.text === "sleep"
++  ) {
++    return true;
++  }
++  return (
++    ts.isIdentifier(expression.expression) &&
++    new Set(["globalThis", "window"]).has(expression.expression.text) &&
++    new Set(["setTimeout", "setInterval", "clearTimeout", "clearInterval"]).has(
++      expression.name.text,
++    )
++  );
++}
++
++/** Analyze frozen Phase 1 ownership mechanics and report source locations for independent review. */
++export function analyzeTreatmentOwnership(repoRoot: string): TreatmentOwnershipAnalysis {
++  const root = resolve(repoRoot);
++  const paths = {
++    connection: join(root, "packages/session-broker/src/connection.ts"),
++    client: join(root, "src/session/broker/brokerClient.ts"),
++    launcher: join(root, "src/session/broker/brokerLauncher.ts"),
++    lifecycle: join(root, "packages/session-broker/src/processLifecycle.ts"),
++  };
++  const treatmentPresent = existsSync(paths.lifecycle);
++  const connection = parseTypeScript(paths.connection);
++  const client = parseTypeScript(paths.client);
++  const launcher = parseTypeScript(paths.launcher);
++  const lifecycle = treatmentPresent ? parseTypeScript(paths.lifecycle) : undefined;
++
++  const connectionNativeTiming = callFacts(
++    root,
++    paths.connection,
++    connection,
++    nativeTimingCall,
++    "native-timing-call",
++  );
++  const clientNativeTiming = callFacts(
++    root,
++    paths.client,
++    client,
++    nativeTimingCall,
++    "native-timing-call",
++  );
++  const launcherBunSleep = callFacts(
++    root,
++    paths.launcher,
++    launcher,
++    (call) =>
++      ts.isPropertyAccessExpression(call.expression) &&
++      ts.isIdentifier(call.expression.expression) &&
++      call.expression.expression.text === "Bun" &&
++      call.expression.name.text === "sleep",
++    "Bun.sleep",
++  );
++
++  const classProperties = (
++    path: string,
++    source: ts.SourceFile,
++    className: string,
++  ): SourceLocationFact[] => {
++    const facts: SourceLocationFact[] = [];
++    source.forEachChild((node) => {
++      if (!ts.isClassDeclaration(node) || node.name?.text !== className) return;
++      for (const member of node.members) {
++        if (ts.isPropertyDeclaration(member)) {
++          facts.push(locationFact(root, path, source, member, `property:${propertyName(member)}`));
++        }
++        if (ts.isConstructorDeclaration(member)) {
++          for (const parameter of member.parameters) {
++            const ownsProperty = parameter.modifiers?.some((modifier) =>
++              new Set([
++                ts.SyntaxKind.PrivateKeyword,
++                ts.SyntaxKind.ProtectedKeyword,
++                ts.SyntaxKind.PublicKeyword,
++                ts.SyntaxKind.ReadonlyKeyword,
++              ]).has(modifier.kind),
++            );
++            if (ownsProperty && ts.isIdentifier(parameter.name)) {
++              facts.push(
++                locationFact(root, path, source, parameter, `property:${parameter.name.text}`),
++              );
++            }
++          }
++        }
++      }
++    });
++    return facts;
++  };
++  const connectionProperties = classProperties(
++    paths.connection,
++    connection,
++    "SessionBrokerConnection",
++  );
++  const clientProperties = classProperties(paths.client, client, "SessionBrokerClient");
++  const supervisorProperty = (fact: SourceLocationFact, expected: string, typeName: string) =>
++    fact.kind === `property:${expected}` && new RegExp(`\\b${typeName}\\b`).test(fact.text);
++  const delayOwnerProperty = (fact: SourceLocationFact) =>
++    /(?:timer|task|fiber|handle|delay)/i.test(fact.kind.replace("property:", "")) ||
++    /\b(?:Timeout|Interval|Task|Fiber|Handle)\b/.test(fact.text);
++  const connectionSupervisorProperties = connectionProperties.filter((fact) =>
++    supervisorProperty(fact, "connectionSupervisor", "SessionBrokerConnectionSupervisor"),
++  );
++  const clientSupervisorProperties = clientProperties.filter((fact) =>
++    supervisorProperty(fact, "startupSupervisor", "SessionBrokerStartupSupervisor"),
++  );
++  const connectionDelayOwnerProperties = connectionProperties.filter(delayOwnerProperty);
++  const clientDelayOwnerProperties = clientProperties.filter(delayOwnerProperty);
++  const clientPromiseOwnerProperties = clientProperties.filter(
++    (fact) => /Promise/i.test(fact.kind.replace("property:", "")) || /\bPromise\b/.test(fact.text),
++  );
++
++  const processTaskRegistries: SourceLocationFact[] = [];
++  const processImplementationClasses: SourceLocationFact[] = [];
++  const processDelayClasses: SourceLocationFact[] = [];
++  const processSetInterval: SourceLocationFact[] = [];
++  const processTimersOutsideClock: SourceLocationFact[] = [];
++  const managedRuntimeConstruction: SourceLocationFact[] = [];
++  const customClockConstruction: SourceLocationFact[] = [];
++  const fixedHeartbeatSchedule: SourceLocationFact[] = [];
++  const delayedHeartbeatSleep: SourceLocationFact[] = [];
++  if (lifecycle) {
++    const visit = (node: ts.Node) => {
++      if (
++        ts.isNewExpression(node) &&
++        ts.isIdentifier(node.expression) &&
++        new Set(["Set", "Map", "WeakMap"]).has(node.expression.text)
++      ) {
++        processTaskRegistries.push(
++          locationFact(root, paths.lifecycle, lifecycle, node, "task-registry-construction"),
++        );
++      }
++      if (ts.isClassDeclaration(node) && node.name) {
++        processImplementationClasses.push(
++          locationFact(root, paths.lifecycle, lifecycle, node, `class:${node.name.text}`),
++        );
++        if (/(?:Delay|Timer|Task|Fiber|Handle)/.test(node.name.text)) {
++          processDelayClasses.push(
++            locationFact(root, paths.lifecycle, lifecycle, node, "per-delay-class"),
++          );
++        }
++      }
++      if (ts.isCallExpression(node)) {
++        const expression = node.expression;
++        if (ts.isIdentifier(expression) && expression.text === "setInterval") {
++          processSetInterval.push(
++            locationFact(root, paths.lifecycle, lifecycle, node, "setInterval"),
++          );
++        }
++        if (
++          (ts.isIdentifier(expression) &&
++            new Set(["setTimeout", "clearTimeout"]).has(expression.text)) ||
++          (ts.isPropertyAccessExpression(expression) &&
++            ts.isIdentifier(expression.expression) &&
++            expression.expression.text === "globalThis" &&
++            new Set(["setTimeout", "clearTimeout"]).has(expression.name.text))
++        ) {
++          if (!isInsideFunction(node, "createUnrefClock")) {
++            processTimersOutsideClock.push(
++              locationFact(root, paths.lifecycle, lifecycle, node, "timer-outside-custom-clock"),
++            );
++          }
++        }
++        if (
++          ts.isPropertyAccessExpression(expression) &&
++          expression.expression.getText(lifecycle) === "ManagedRuntime" &&
++          expression.name.text === "make"
++        ) {
++          managedRuntimeConstruction.push(
++            locationFact(root, paths.lifecycle, lifecycle, node, "ManagedRuntime.make"),
++          );
++        }
++        if (ts.isIdentifier(expression) && expression.text === "createUnrefClock") {
++          customClockConstruction.push(
++            locationFact(root, paths.lifecycle, lifecycle, node, "createUnrefClock"),
++          );
++        }
++        if (
++          ts.isPropertyAccessExpression(expression) &&
++          expression.expression.getText(lifecycle) === "Schedule" &&
++          expression.name.text === "fixed" &&
++          isInsideFunction(node, "runDelayedFixedHeartbeat")
++        ) {
++          fixedHeartbeatSchedule.push(
++            locationFact(root, paths.lifecycle, lifecycle, node, "Schedule.fixed"),
++          );
++        }
++        if (
++          ts.isPropertyAccessExpression(expression) &&
++          expression.expression.getText(lifecycle) === "Effect" &&
++          expression.name.text === "sleep" &&
++          isInsideFunction(node, "runDelayedFixedHeartbeat")
++        ) {
++          delayedHeartbeatSleep.push(
++            locationFact(root, paths.lifecycle, lifecycle, node, "Effect.sleep"),
++          );
++        }
++      }
++      ts.forEachChild(node, visit);
++    };
++    visit(lifecycle);
++  }
++
++  const runtimeFactoryCalls: SourceLocationFact[] = [];
++  for (const path of [
++    ...productionTypeScriptFiles(join(root, "packages")),
++    ...productionTypeScriptFiles(join(root, "src")),
++  ]) {
++    const source = parseTypeScript(path);
++    runtimeFactoryCalls.push(
++      ...callFacts(
++        root,
++        path,
++        source,
++        (call) =>
++          ts.isIdentifier(call.expression) &&
++          call.expression.text === "createSessionBrokerProcessLifecycle",
++        "process-lifecycle-factory-call",
++      ),
++    );
++  }
++
++  const locations = {
++    connectionNativeTiming,
++    clientNativeTiming,
++    launcherBunSleep,
++    connectionProperties,
++    clientProperties,
++    connectionSupervisorProperties,
++    clientSupervisorProperties,
++    connectionDelayOwnerProperties,
++    clientDelayOwnerProperties,
++    clientPromiseOwnerProperties,
++    processTaskRegistries,
++    processImplementationClasses,
++    processDelayClasses,
++    processSetInterval,
++    processTimersOutsideClock,
++    managedRuntimeConstruction,
++    customClockConstruction,
++    fixedHeartbeatSchedule,
++    delayedHeartbeatSleep,
++    runtimeFactoryCalls,
++  };
++  const violations: string[] = [];
++  if (treatmentPresent) {
++    const empty = (name: keyof typeof locations) => {
++      if (locations[name].length > 0) violations.push(`${name} must be empty`);
++    };
++    for (const name of [
++      "connectionNativeTiming",
++      "clientNativeTiming",
++      "launcherBunSleep",
++      "connectionDelayOwnerProperties",
++      "clientDelayOwnerProperties",
++      "clientPromiseOwnerProperties",
++      "processTaskRegistries",
++      "processDelayClasses",
++      "processSetInterval",
++      "processTimersOutsideClock",
++    ] as const) {
++      empty(name);
++    }
++    const exactlyOne = (name: keyof typeof locations) => {
++      if (locations[name].length !== 1)
++        violations.push(`${name} must contain exactly one location`);
++    };
++    for (const name of [
++      "connectionSupervisorProperties",
++      "clientSupervisorProperties",
++      "managedRuntimeConstruction",
++      "customClockConstruction",
++      "fixedHeartbeatSchedule",
++      "delayedHeartbeatSleep",
++      "runtimeFactoryCalls",
++    ] as const) {
++      exactlyOne(name);
++    }
++    const propertyNames = (facts: readonly SourceLocationFact[]) =>
++      facts.map((fact) => fact.kind.replace("property:", "")).sort();
++    const expectedConnectionProperties = [
++      "activeSocket",
++      "bridge",
++      "connectionSupervisor",
++      "draining",
++      "executingMessages",
++      "limits",
++      "options",
++      "producerHellos",
++      "queuedCommandByteBudget",
++      "queuedCommandCountBudget",
++      "queuedMessages",
++      "registration",
++      "snapshot",
++      "socket",
++      "stopped",
++    ].sort();
++    const expectedClientProperties = [
++      "bridge",
++      "connection",
++      "credentials",
++      "incumbentLaunchFingerprint",
++      "lastConnectionWarning",
++      "registration",
++      "snapshot",
++      "startupSupervisor",
++      "stopped",
++      "timing",
++      "waitingForIncumbentExit",
++    ].sort();
++    if (
++      JSON.stringify(propertyNames(connectionProperties)) !==
++      JSON.stringify(expectedConnectionProperties)
++    ) {
++      violations.push("SessionBrokerConnection properties must equal the frozen treatment set");
++    }
++    if (
++      JSON.stringify(propertyNames(clientProperties)) !== JSON.stringify(expectedClientProperties)
++    ) {
++      violations.push("SessionBrokerClient properties must equal the frozen treatment set");
++    }
++    const implementationClasses = processImplementationClasses.map((fact) => fact.kind).sort();
++    const expectedClasses = [
++      "class:EffectSessionBrokerConnectionSupervisor",
++      "class:EffectSessionBrokerProcessLifecycle",
++      "class:EffectSessionBrokerStartupSupervisor",
++    ];
++    if (JSON.stringify(implementationClasses) !== JSON.stringify(expectedClasses)) {
++      violations.push(
++        "processLifecycle.ts must contain exactly the three frozen implementation classes",
++      );
++    }
++    if (runtimeFactoryCalls[0]?.file !== "src/ui/runInteractiveApp.tsx") {
++      violations.push(
++        "the only process lifecycle factory call must be in src/ui/runInteractiveApp.tsx",
++      );
++    }
++  }
++  return { treatmentPresent, locations, violations };
++}
+diff --git a/scripts/source-boundaries.test.ts b/scripts/source-boundaries.test.ts
+index a0835172..cf73a128 100644
+--- a/scripts/source-boundaries.test.ts
++++ b/scripts/source-boundaries.test.ts
+@@ -1,6 +1,22 @@
+ import { describe, expect, test } from "bun:test";
+-import { existsSync, readdirSync, readFileSync } from "node:fs";
++import {
++  existsSync,
++  mkdirSync,
++  mkdtempSync,
++  readdirSync,
++  readFileSync,
++  rmSync,
++  writeFileSync,
++} from "node:fs";
++import { tmpdir } from "node:os";
+ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
++import {
++  allTypeScriptFiles,
++  analyzeTreatmentOwnership,
++  astModuleSpecifiers,
++  forbiddenProductionSupportImports,
++  repositoryTypeScriptFiles,
++} from "./session-lifecycle-ownership-analysis";
+ 
+ const REPO_ROOT = resolve(import.meta.dir, "..");
+ const SRC_ROOT = join(REPO_ROOT, "src");
+@@ -16,6 +32,19 @@ const REVIEW_MODEL_ROOT = join(CORE_ROOT, "review");
+ const EXTENSION_API_TYPES_PATH = join(SRC_ROOT, "extension-api", "types.ts");
+ const REVIEW_PROTOCOL_PATH = join(SRC_ROOT, "session", "reviewProtocol.ts");
+ const WEB_CLIENT_ROOT = join(SRC_ROOT, "web");
++const SESSION_BROKER_PACKAGE_ROOT = join(REPO_ROOT, "packages", "session-broker");
++const SESSION_BROKER_PROCESS_LIFECYCLE = join(
++  SESSION_BROKER_PACKAGE_ROOT,
++  "src",
++  "processLifecycle.ts",
++);
++const SESSION_BROKER_BUN_ROOT = join(REPO_ROOT, "packages", "session-broker-bun");
++const BUN_CONNECTION_FIXTURE = join(
++  REPO_ROOT,
++  "test",
++  "session-broker-runtime",
++  "bun-connection-fixture.ts",
++);
+ 
+ // Session modules a browser bundle imports verbatim: the wire schema, the HTTP surface's
+ // addressing and authorization grammar, the SSE event contract, and the user-facing error
+@@ -243,6 +272,107 @@ describe("source architecture boundaries", () => {
+   });
+ });
+ 
++describe("session broker lifecycle experiment boundaries", () => {
++  test("keeps Effect imports isolated to the private process lifecycle implementation", () => {
++    const files = repositoryTypeScriptFiles(REPO_ROOT);
++    const violations = files.flatMap((path) =>
++      astModuleSpecifiers(path)
++        .filter(({ specifier }) => specifier === "effect" || specifier.startsWith("effect/"))
++        .filter(
++          () =>
++            path !== SESSION_BROKER_PROCESS_LIFECYCLE &&
++            path !== join(SESSION_BROKER_PACKAGE_ROOT, "src", "processLifecycle.test.ts"),
++        )
++        .map(({ specifier, location }) => `${location.file}:${location.line} -> ${specifier}`),
++    );
++    expect(violations).toEqual([]);
++  });
++
++  test("declares exact Effect only in the session-broker package when treatment exists", () => {
++    const packagePaths = [
++      join(REPO_ROOT, "package.json"),
++      ...readdirSync(join(REPO_ROOT, "packages"), { withFileTypes: true })
++        .filter((entry) => entry.isDirectory())
++        .map((entry) => join(REPO_ROOT, "packages", entry.name, "package.json"))
++        .filter(existsSync),
++    ];
++    const declarations = packagePaths.flatMap((path) => {
++      const value = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
++      return [
++        "dependencies",
++        "devDependencies",
++        "peerDependencies",
++        "optionalDependencies",
++      ].flatMap((section) => {
++        const effect = (value[section] as Record<string, unknown> | undefined)?.effect;
++        return typeof effect === "string" ? [{ path: repoPath(path), section, effect }] : [];
++      });
++    });
++    expect(declarations).toEqual(
++      existsSync(SESSION_BROKER_PROCESS_LIFECYCLE)
++        ? [
++            {
++              path: "packages/session-broker/package.json",
++              section: "dependencies",
++              effect: "3.22.1",
++            },
++          ]
++        : [],
++    );
++  });
++
++  test("keeps ws resolution out of the Bun adapter and Bun runtime fixture", () => {
++    const files = [
++      ...allTypeScriptFiles(SESSION_BROKER_BUN_ROOT),
++      ...(existsSync(BUN_CONNECTION_FIXTURE) ? [BUN_CONNECTION_FIXTURE] : []),
++    ];
++    const violations = files.flatMap((path) =>
++      astModuleSpecifiers(path)
++        .filter(({ specifier }) => specifier === "ws" || specifier.startsWith("ws/"))
++        .map(({ specifier, location }) => `${location.file}:${location.line} -> ${specifier}`),
++    );
++    expect(violations).toEqual([]);
++  });
++
++  test("keeps production imports out of tests and experiment-support trees", () => {
++    expect(forbiddenProductionSupportImports(REPO_ROOT)).toEqual([]);
++  });
++
++  test("rejects a production import of a test-named Effect implementation", () => {
++    const root = mkdtempSync(join(tmpdir(), "hunk-support-import-boundary-"));
++    try {
++      const sourceRoot = join(root, "src");
++      mkdirSync(sourceRoot, { recursive: true });
++      writeFileSync(
++        join(sourceRoot, "runtime.ts"),
++        'export { lifecycle } from "./runtime.test.js";\n',
++      );
++      writeFileSync(
++        join(sourceRoot, "runtime.test.ts"),
++        'import "effect"; export const lifecycle = 1;\n',
++      );
++      expect(forbiddenProductionSupportImports(root)).toEqual([
++        expect.objectContaining({
++          file: "src/runtime.ts",
++          specifier: "./runtime.test.js",
++          resolved: "src/runtime.test.ts",
++        }),
++      ]);
++    } finally {
++      rmSync(root, { force: true, recursive: true });
++    }
++  });
++
++  test("enforces the frozen treatment ownership shape when the lifecycle exists", () => {
++    const analysis = analyzeTreatmentOwnership(REPO_ROOT);
++    if (!analysis.treatmentPresent) {
++      expect(analysis.violations).toEqual([]);
++      return;
++    }
++    expect(analysis.violations).toEqual([]);
++  });
++});
++
+ // The seam contract for sharing the review experience with a browser surface: the semantic
+ // review model and its wire protocol are the primitives every consumer (terminal UI, session
+ // runtime, browser client) builds on, so they must stay renderer-free and platform-neutral.
+diff --git a/scripts/test-session-broker-node.ts b/scripts/test-session-broker-node.ts
+index b772d3e5..247d5ec1 100644
+--- a/scripts/test-session-broker-node.ts
++++ b/scripts/test-session-broker-node.ts
+@@ -6,25 +6,47 @@ import { join } from "node:path";
+ async function main() {
+   const directory = await mkdtemp(join(tmpdir(), "hunk-session-broker-node-"));
+   const outfile = join(directory, "adapter.mjs");
++  const connectionFixture = join(directory, "connection-fixture.mjs");
+   try {
+-    const build = await Bun.build({
+-      entrypoints: [join(process.cwd(), "packages/session-broker-node/src/index.ts")],
+-      outdir: directory,
+-      naming: "adapter.mjs",
+-      target: "node",
+-      format: "esm",
+-      minify: false,
+-      sourcemap: "none",
+-    });
+-    if (!build.success) {
+-      for (const log of build.logs) console.error(log);
++    const builds = await Promise.all([
++      Bun.build({
++        entrypoints: [join(process.cwd(), "packages/session-broker-node/src/index.ts")],
++        outdir: directory,
++        naming: "adapter.mjs",
++        target: "node",
++        format: "esm",
++        minify: false,
++        sourcemap: "none",
++      }),
++      Bun.build({
++        entrypoints: [join(process.cwd(), "test/session-broker-node/connection-fixture.ts")],
++        outdir: directory,
++        naming: "connection-fixture.mjs",
++        target: "node",
++        format: "esm",
++        minify: false,
++        sourcemap: "none",
++      }),
++    ]);
++    if (builds.some((build) => !build.success)) {
++      for (const build of builds) {
++        for (const log of build.logs) console.error(log);
++      }
+       process.exitCode = 1;
+       return;
+     }
+     const child = Bun.spawn({
+       cmd: ["node", "--test", "test/session-broker-node/adapter.test.mjs"],
+       cwd: process.cwd(),
+-      env: { ...process.env, HUNK_NODE_ADAPTER_BUNDLE: outfile },
++      env: {
++        ...process.env,
++        HUNK_NODE_ADAPTER_BUNDLE: outfile,
++        HUNK_NODE_CONNECTION_FIXTURE: connectionFixture,
++        HUNK_SESSION_BROKER_NODE_PACKAGE_JSON: join(
++          process.cwd(),
++          "packages/session-broker-node/package.json",
++        ),
++      },
+       stdout: "inherit",
+       stderr: "inherit",
+     });
+diff --git a/src/session/broker/brokerClient.test.ts b/src/session/broker/brokerClient.test.ts
+index ee213dc3..615991f2 100644
+--- a/src/session/broker/brokerClient.test.ts
++++ b/src/session/broker/brokerClient.test.ts
+@@ -137,6 +137,78 @@ describe("Hunk session daemon client", () => {
+     expect(client.getRegistration()).toBe(registration);
+   });
+ 
++  test("shares one active first-attempt promise across concurrent starts", async () => {
++    let release!: () => void;
++    const gate = new Promise<void>((resolve) => {
++      release = resolve;
++    });
++    const client = new SessionBrokerClient(createRegistration(), createSnapshot());
++    let attempts = 0;
++    (client as any).ensureDaemonAndConnect = async () => {
++      attempts += 1;
++      await gate;
++    };
++
++    const first = client.start();
++    const second = client.start();
++    expect(first).toBe(second);
++    expect(attempts).toBe(1);
++
++    client.stop();
++    release();
++    await first;
++  });
++
++  test("an explicit start bypasses but does not displace the scheduled automatic retry", async () => {
++    const messages: string[] = [];
++    console.error = (...args: unknown[]) => {
++      messages.push(args.map((value) => String(value)).join(" "));
++    };
++    const originalSetTimeout = globalThis.setTimeout;
++    const originalClearTimeout = globalThis.clearTimeout;
++    let retryCallback: (() => void) | null = null;
++    const retryHandle = { unref() {} } as ReturnType<typeof setTimeout>;
++    const cleared: Array<ReturnType<typeof setTimeout>> = [];
++    globalThis.setTimeout = ((callback: () => void) => {
++      retryCallback = callback;
++      return retryHandle;
++    }) as typeof setTimeout;
++    globalThis.clearTimeout = ((handle: ReturnType<typeof setTimeout>) => {
++      cleared.push(handle);
++    }) as typeof clearTimeout;
++
++    const client = new SessionBrokerClient(createRegistration(), createSnapshot(), {
++      reconnectDelayMs: 60_000,
++    });
++    let attempts = 0;
++    (client as any).ensureDaemonAndConnect = async () => {
++      attempts += 1;
++      if (attempts === 1) throw new Error("first startup failed");
++    };
++
++    try {
++      await client.start();
++      expect(attempts).toBe(1);
++      expect(messages).toEqual(["[session:broker] first startup failed"]);
++      expect(retryCallback).not.toBeNull();
++      expect((client as any).reconnectTimer).toBe(retryHandle);
++
++      await client.start();
++      expect(attempts).toBe(2);
++      expect((client as any).reconnectTimer).toBe(retryHandle);
++      expect(cleared).toEqual([]);
++
++      (retryCallback as unknown as () => void)();
++      await Bun.sleep(0);
++      expect(attempts).toBe(3);
++      expect((client as any).reconnectTimer).toBeNull();
++    } finally {
++      client.stop();
++      globalThis.setTimeout = originalSetTimeout;
++      globalThis.clearTimeout = originalClearTimeout;
++    }
++  });
++
+   test("logs one actionable warning when the session daemon is configured for a non-loopback host without opt-in", async () => {
+     process.env.HUNK_MCP_HOST = "0.0.0.0";
+     process.env.HUNK_MCP_PORT = "47657";
+@@ -550,12 +622,16 @@ describe("Hunk session daemon client", () => {
+     expect(attempts).toBe(0);
+   });
+ 
+-  test("does not schedule recovery after stop wins a startup race", async () => {
++  test("does not warn or schedule recovery after stop wins a foreign startup race", async () => {
+     let release!: () => void;
+     const gate = new Promise<void>((resolve) => {
+       release = resolve;
+     });
+     let reconnectScheduled = false;
++    const messages: string[] = [];
++    console.error = (...args: unknown[]) => {
++      messages.push(args.map((value) => String(value)).join(" "));
++    };
+     const client = new SessionBrokerClient(createRegistration(), createSnapshot());
+     (client as any).ensureDaemonAndConnect = async () => {
+       await gate;
+@@ -570,6 +646,7 @@ describe("Hunk session daemon client", () => {
+     release();
+     await startup;
+     expect(reconnectScheduled).toBe(false);
++    expect(messages).toEqual([]);
+   });
+ 
+   test("logs one actionable warning when a non-Hunk listener owns the session daemon port", async () => {
+diff --git a/src/session/broker/brokerLauncher.test.ts b/src/session/broker/brokerLauncher.test.ts
+index c544d268..9919a3f2 100644
+--- a/src/session/broker/brokerLauncher.test.ts
++++ b/src/session/broker/brokerLauncher.test.ts
+@@ -205,6 +205,66 @@ describe("session daemon launcher", () => {
+     });
+   });
+ 
++  test("releases an acquired launch lock when the protected health check rejects", async () => {
++    const runtimeDir = createRuntimeDir();
++    const env = { ...process.env, XDG_RUNTIME_DIR: runtimeDir };
++    const failure = new Error("health fixture failed");
++    let healthCalls = 0;
++
++    await expect(
++      ensureSessionBrokerAvailable({
++        config: testConfig,
++        env,
++        timeoutMs: 100,
++        intervalMs: 5,
++        isHealthy: async () => {
++          healthCalls += 1;
++          if (healthCalls === 1) return false;
++          throw failure;
++        },
++        isPortReachable: async () => false,
++        launchDaemon: () => {
++          throw new Error("launch must not run");
++        },
++      }),
++    ).rejects.toBe(failure);
++
++    const paths = resolveSessionBrokerRuntimePaths(testConfig, env);
++    expect(healthCalls).toBe(2);
++    expect(existsSync(paths.lockPath)).toBe(false);
++  });
++
++  test("gives a lock owner one fresh full health-poll timeout after the outer deadline", async () => {
++    const runtimeDir = createRuntimeDir();
++    const env = { ...process.env, XDG_RUNTIME_DIR: runtimeDir };
++    let healthCalls = 0;
++    const startedAt = performance.now();
++
++    await expect(
++      ensureSessionBrokerAvailable({
++        config: testConfig,
++        env,
++        timeoutMs: 10,
++        intervalMs: 1,
++        isHealthy: async () => {
++          healthCalls += 1;
++          await Bun.sleep(12);
++          return false;
++        },
++        isPortReachable: async () => false,
++        launchDaemon: () => ({ pid: process.pid }) as ChildProcess,
++      }),
++    ).rejects.toThrow("Timed out waiting for the session broker daemon");
++
++    const elapsedMs = performance.now() - startedAt;
++    const paths = resolveSessionBrokerRuntimePaths(testConfig, env);
++    // Initial health plus the protected recheck already exhaust the outer 10ms deadline. A third
++    // call proves the lock owner still receives its separate full polling window.
++    expect(healthCalls).toBeGreaterThanOrEqual(3);
++    expect(elapsedMs).toBeGreaterThanOrEqual(30);
++    expect(existsSync(paths.lockPath)).toBe(false);
++  });
++
+   test("recovers a stale launch lock from a dead launcher and overwrites stale metadata", async () => {
+     const runtimeDir = createRuntimeDir();
+     const env = { ...process.env, XDG_RUNTIME_DIR: runtimeDir };
+diff --git a/test/session-broker-node/adapter.test.mjs b/test/session-broker-node/adapter.test.mjs
+index 90f8d943..024d5502 100644
+--- a/test/session-broker-node/adapter.test.mjs
++++ b/test/session-broker-node/adapter.test.mjs
+@@ -1,4 +1,5 @@
+ import assert from "node:assert/strict";
++import { spawn } from "node:child_process";
+ import { readFile } from "node:fs/promises";
+ import { connect, createServer } from "node:net";
+ import { createRequire } from "node:module";
+@@ -19,6 +20,32 @@ const corpus = JSON.parse(
+ const bundlePath = process.env.HUNK_NODE_ADAPTER_BUNDLE;
+ if (!bundlePath) throw new Error("HUNK_NODE_ADAPTER_BUNDLE must name the built Node adapter.");
+ const { serveSessionBrokerDaemon } = await import(pathToFileURL(bundlePath).href);
++const connectionFixture = process.env.HUNK_NODE_CONNECTION_FIXTURE;
++if (!connectionFixture) {
++  throw new Error("HUNK_NODE_CONNECTION_FIXTURE must name the built producer fixture.");
++}
++
++async function runConnectionFixture(args) {
++  return new Promise((resolve, reject) => {
++    const child = spawn(process.execPath, [connectionFixture, ...args], {
++      env: process.env,
++      stdio: ["ignore", "pipe", "pipe"],
++    });
++    let stdout = "";
++    let stderr = "";
++    child.stdout.on("data", (chunk) => (stdout += chunk));
++    child.stderr.on("data", (chunk) => (stderr += chunk));
++    const timeout = setTimeout(() => {
++      child.kill();
++      reject(new Error(`Timed out waiting for connection fixture: ${args.join(" ")}`));
++    }, 2_000);
++    child.once("error", reject);
++    child.once("exit", (exitCode) => {
++      clearTimeout(timeout);
++      resolve({ exitCode, stdout, stderr });
++    });
++  });
++}
+ 
+ async function reservePort() {
+   const server = createServer();
+@@ -117,6 +144,25 @@ function fakeDaemon(overrides = {}, behavior = {}) {
+   };
+ }
+ 
++test("Node producer authenticates, registers, and leaves maintenance time unref'ed", async () => {
++  const real = await runConnectionFixture(["real"]);
++  assert.deepEqual(real, {
++    exitCode: 0,
++    stdout: "signed-producer-register-observed\n",
++    stderr: "",
++  });
++
++  const ready = await runConnectionFixture(["lifecycle-ready"]);
++  assert.equal(ready.exitCode, 0);
++  assert.equal(ready.stderr, "");
++  assert.match(ready.stdout, /^lifecycle-ready:(?:control|treatment)\n$/);
++
++  for (const mode of ["unref-handshake", "unref-heartbeat", "unref-reconnect"]) {
++    const result = await runConnectionFixture([mode]);
++    assert.deepEqual(result, { exitCode: 0, stdout: `${mode}\n`, stderr: "" });
++  }
++});
++
+ test("Node WebCrypto Ed25519 and base64url work without Bun globals", async () => {
+   assert.equal(typeof globalThis.Bun, "undefined");
+   const keys = await crypto.subtle.generateKey("Ed25519", false, ["sign", "verify"]);
+diff --git a/test/session-broker-node/connection-fixture.ts b/test/session-broker-node/connection-fixture.ts
+new file mode 100644
+index 00000000..86911f2d
+--- /dev/null
++++ b/test/session-broker-node/connection-fixture.ts
+@@ -0,0 +1,22 @@
++import { createRequire } from "node:module";
++import type { SessionBrokerDaemon, SessionBrokerSocketLike } from "@hunk/session-broker";
++import { serveSessionBrokerDaemon } from "@hunk/session-broker-node";
++import {
++  runConnectionFixture,
++  type ConnectionFixtureMode,
++} from "../session-broker-runtime/connectionFixture";
++
++const mode = process.argv[2] as ConnectionFixtureMode;
++const packageJson = process.env.HUNK_SESSION_BROKER_NODE_PACKAGE_JSON;
++if (!packageJson) throw new TypeError("HUNK_SESSION_BROKER_NODE_PACKAGE_JSON is required.");
++const require = createRequire(packageJson);
++const WebSocket = require("ws") as new (url: string) => SessionBrokerSocketLike;
++
++await runConnectionFixture({
++  mode,
++  createSocket: (target) => new WebSocket(target),
++  startDaemon: async (daemon: SessionBrokerDaemon, port: number) => {
++    const running = await serveSessionBrokerDaemon({ daemon, hostname: "127.0.0.1", port });
++    return running;
++  },
++});
+diff --git a/test/session-broker-runtime/bun-connection-fixture.ts b/test/session-broker-runtime/bun-connection-fixture.ts
+new file mode 100644
+index 00000000..404819ed
+--- /dev/null
++++ b/test/session-broker-runtime/bun-connection-fixture.ts
+@@ -0,0 +1,17 @@
++import type { SessionBrokerDaemon, SessionBrokerSocketLike } from "@hunk/session-broker";
++import { serveSessionBrokerDaemon } from "@hunk/session-broker-bun";
++import { runConnectionFixture, type ConnectionFixtureMode } from "./connectionFixture";
++
++const mode = process.argv[2] as ConnectionFixtureMode;
++
++await runConnectionFixture({
++  mode,
++  createSocket: (target) => new WebSocket(target) as unknown as SessionBrokerSocketLike,
++  startDaemon: async (daemon: SessionBrokerDaemon, port: number) => {
++    const running = serveSessionBrokerDaemon({ daemon, hostname: "127.0.0.1", port });
++    return {
++      stop: () => running.stop(true),
++      stopped: running.stopped,
++    };
++  },
++});
+diff --git a/test/session-broker-runtime/connectionFixture.ts b/test/session-broker-runtime/connectionFixture.ts
+new file mode 100644
+index 00000000..f1862e4c
+--- /dev/null
++++ b/test/session-broker-runtime/connectionFixture.ts
+@@ -0,0 +1,295 @@
++import { createServer } from "node:net";
++import * as sessionBroker from "@hunk/session-broker";
++import {
++  SESSION_BROKER_REGISTRATION_VERSION,
++  SESSION_BROKER_SIGNATURE_ALGORITHM,
++  SessionBroker,
++  SessionBrokerAuthenticator,
++  createSessionBrokerConnection,
++  createSessionBrokerDaemon,
++  createSessionBrokerProtocolParsers,
++  type ProducerGrant,
++  type SessionBrokerDaemon,
++  type SessionBrokerSocketLike,
++  type SessionRegistration,
++  type SessionSnapshot,
++} from "@hunk/session-broker";
++
++interface ProcessLifecycle {
++  close(): void;
++  readonly settled?: Promise<void>;
++}
++
++interface RunningDaemon {
++  stop(): void | Promise<void>;
++  readonly stopped: Promise<void>;
++}
++
++interface LifecycleFactoryOptions {
++  readonly onDefect?: (message: string) => void;
++}
++
++class FixtureSocket implements SessionBrokerSocketLike {
++  readyState = 0;
++  onopen: (() => void) | null = null;
++  onmessage: ((event: { data: unknown }) => void) | null = null;
++  onclose: ((event: { code: number; reason: string }) => void) | null = null;
++  onerror: (() => void) | null = null;
++
++  send(_data: string) {}
++
++  close(code = 1000, reason = "") {
++    this.readyState = 3;
++    this.onclose?.({ code, reason });
++  }
++
++  open() {
++    this.readyState = 1;
++    this.onopen?.();
++  }
++}
++
++const protocolParsers = createSessionBrokerProtocolParsers({
++  appRevision: 1,
++  features: [],
++  parseRegistration: (value) => value as SessionRegistration<unknown>,
++  parseSnapshot: (value) => value as SessionSnapshot<unknown>,
++  commands: [],
++});
++
++/** Call the treatment factory when exported and reject a present-but-invalid treatment façade. */
++function createDetectedProcessLifecycle(): ProcessLifecycle | undefined {
++  const factory = (
++    sessionBroker as typeof sessionBroker & {
++      createSessionBrokerProcessLifecycle?: (
++        options?: LifecycleFactoryOptions,
++      ) => ProcessLifecycle | undefined;
++    }
++  ).createSessionBrokerProcessLifecycle;
++  if (!factory) return undefined;
++  const lifecycle = factory({
++    onDefect: (message) => console.error(message),
++  });
++  if (!lifecycle || typeof lifecycle.close !== "function") {
++    throw new TypeError("The treatment lifecycle factory did not return a lifecycle.");
++  }
++  return lifecycle;
++}
++
++/** Localize the control/treatment option difference without weakening production declarations. */
++function createFixtureConnection(options: Record<string, unknown>) {
++  const factory = createSessionBrokerConnection as unknown as (
++    value: Record<string, unknown>,
++  ) => ReturnType<typeof createSessionBrokerConnection>;
++  return factory(options);
++}
++
++function createOptions(
++  createSocket: (url: string) => SessionBrokerSocketLike,
++  lifecycle?: ProcessLifecycle,
++) {
++  return {
++    url: "ws://127.0.0.1/session",
++    createSocket,
++    registration: {
++      registrationVersion: SESSION_BROKER_REGISTRATION_VERSION,
++      sessionId: "runtime-fixture",
++      pid: process.pid,
++      cwd: process.cwd(),
++      launchedAt: new Date(0).toISOString(),
++      info: {},
++    },
++    snapshot: {
++      updatedAt: new Date(0).toISOString(),
++      state: {},
++    },
++    protocolParsers,
++    heartbeatIntervalMs: 60_000,
++    reconnectDelayMs: 60_000,
++    ...(lifecycle ? { lifecycle } : {}),
++  };
++}
++
++/** Reserve one loopback port without passing credentials across a process boundary. */
++async function reservePort() {
++  const server = createServer();
++  await new Promise<void>((resolve, reject) => {
++    server.once("error", reject);
++    server.listen(0, "127.0.0.1", resolve);
++  });
++  const address = server.address();
++  const port = typeof address === "object" && address ? address.port : 0;
++  await new Promise<void>((resolve) => server.close(() => resolve()));
++  return port;
++}
++
++/** Generate one daemon identity and one independently signed producer grant in-process. */
++async function createSignedProducerAuthentication(endpoint: string) {
++  const producerPair = (await crypto.subtle.generateKey("Ed25519", false, [
++    "sign",
++    "verify",
++  ])) as CryptoKeyPair;
++  const daemonPair = (await crypto.subtle.generateKey("Ed25519", false, [
++    "sign",
++    "verify",
++  ])) as CryptoKeyPair;
++  const grant: ProducerGrant = {
++    kind: "producer",
++    appId: "dev.example",
++    principalId: "runtime-fixture",
++    keyId: "runtime-fixture-key",
++    grantId: "runtime-fixture-grant",
++    algorithm: SESSION_BROKER_SIGNATURE_ALGORITHM,
++    issuedAt: Date.now() - 1_000,
++    expiresAt: Date.now() + 60_000,
++    revocationId: "runtime-fixture-revocation",
++    mayDelegate: false,
++    operations: ["register", "reconnect"],
++  };
++  const authenticator = new SessionBrokerAuthenticator({
++    appId: grant.appId,
++    appRevision: 1,
++    generation: "runtime-fixture-generation",
++    daemonIdentity: {
++      keyId: "runtime-fixture-daemon",
++      privateKey: daemonPair.privateKey,
++    },
++    credentials: [{ grant, publicKey: producerPair.publicKey }],
++  });
++  return {
++    authenticator,
++    connection: {
++      appId: grant.appId,
++      appRevision: 1,
++      credential: { grant, privateKey: producerPair.privateKey },
++      daemon: {
++        keyId: "runtime-fixture-daemon",
++        publicKey: daemonPair.publicKey,
++      },
++    },
++    endpoint,
++  };
++}
++
++/** Wait until the actual broker has accepted the register message after signed hello. */
++async function waitForRegistration(broker: { getSessionIds(): readonly string[] }) {
++  const deadline = Date.now() + 2_000;
++  while (Date.now() < deadline) {
++    if (broker.getSessionIds().includes("runtime-fixture")) return;
++    await new Promise<void>((resolve) => setTimeout(resolve, 5));
++  }
++  throw new Error("Timed out waiting for the signed producer register message.");
++}
++
++/** Exercise signed hello and registration through one runtime's native daemon and socket adapters. */
++async function runSignedConnection({
++  createSocket,
++  startDaemon,
++}: {
++  createSocket: (url: string) => SessionBrokerSocketLike;
++  startDaemon: (daemon: SessionBrokerDaemon, port: number) => Promise<RunningDaemon>;
++}) {
++  const lifecycle = createDetectedProcessLifecycle();
++  const port = await reservePort();
++  const endpoint = `ws://127.0.0.1:${port}/session`;
++  const authentication = await createSignedProducerAuthentication(endpoint);
++  const broker = new SessionBroker({ protocolParsers });
++  const daemon = createSessionBrokerDaemon({
++    broker,
++    appId: "dev.example",
++    producerEndpoint: endpoint,
++    helloAuthenticator: authentication.authenticator,
++    idleTimeoutMs: 0,
++  });
++  const running = await startDaemon(daemon, port);
++  const connection = createFixtureConnection({
++    ...createOptions(createSocket, lifecycle),
++    url: endpoint,
++    producerAuthentication: authentication.connection,
++  });
++  try {
++    connection.start();
++    await waitForRegistration(broker);
++    console.log("signed-producer-register-observed");
++  } finally {
++    connection.stop();
++    lifecycle?.close();
++    await lifecycle?.settled;
++    await running.stop();
++    await running.stopped;
++  }
++}
++
++/** Create a valid producer credential that intentionally leaves its handshake incomplete. */
++async function createPendingProducerAuthentication() {
++  const pair = (await crypto.subtle.generateKey("Ed25519", false, [
++    "sign",
++    "verify",
++  ])) as CryptoKeyPair;
++  const grant: ProducerGrant = {
++    kind: "producer",
++    appId: "dev.example",
++    principalId: "runtime-fixture",
++    keyId: "runtime-fixture-key",
++    grantId: "runtime-fixture-grant",
++    algorithm: SESSION_BROKER_SIGNATURE_ALGORITHM,
++    issuedAt: Date.now() - 1_000,
++    expiresAt: Date.now() + 60_000,
++    revocationId: "runtime-fixture-revocation",
++    mayDelegate: false,
++    operations: ["register"],
++  };
++  return {
++    appId: grant.appId,
++    appRevision: 1,
++    credential: { grant, privateKey: pair.privateKey },
++    daemon: { keyId: "runtime-fixture-daemon", publicKey: pair.publicKey },
++  };
++}
++
++export type ConnectionFixtureMode =
++  | "real"
++  | "lifecycle-ready"
++  | "unref-handshake"
++  | "unref-heartbeat"
++  | "unref-reconnect";
++
++/** Exercise producer lifecycle behavior in a standalone runtime process. */
++export async function runConnectionFixture({
++  mode,
++  createSocket,
++  startDaemon,
++}: {
++  mode: ConnectionFixtureMode;
++  createSocket: (url: string) => SessionBrokerSocketLike;
++  startDaemon: (daemon: SessionBrokerDaemon, port: number) => Promise<RunningDaemon>;
++}) {
++  if (mode === "real") {
++    await runSignedConnection({ createSocket, startDaemon });
++    return;
++  }
++
++  if (mode === "lifecycle-ready") {
++    const lifecycle = createDetectedProcessLifecycle();
++    console.log(lifecycle ? "lifecycle-ready:treatment" : "lifecycle-ready:control");
++    lifecycle?.close();
++    await lifecycle?.settled;
++    return;
++  }
++
++  const lifecycle = createDetectedProcessLifecycle();
++  const socket = new FixtureSocket();
++  const options = createOptions(() => socket, lifecycle);
++  const connection =
++    mode === "unref-handshake"
++      ? createFixtureConnection({
++          ...options,
++          producerAuthentication: await createPendingProducerAuthentication(),
++        })
++      : createFixtureConnection(options);
++  connection.start();
++  socket.open();
++  if (mode === "unref-reconnect") socket.close(1006, "retry");
++  console.log(mode);
++  // Do not stop: the process proves that maintenance sleeps and the treatment root are unref-aware.
++}
