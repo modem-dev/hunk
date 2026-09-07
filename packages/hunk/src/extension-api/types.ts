@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 20;
+export const HUNK_EXTENSION_API_VERSION = 21;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -801,7 +801,15 @@ export interface ExtensionVcsHistorySource {
   close(): void | Promise<void>;
 }
 
-/** Optional provider-neutral selection facts for reviewing one history item. */
+/** The inclusive endpoint commits selected from one history page stream. */
+export interface ExtensionVcsHistoryRangeSelection {
+  /** Newer endpoint whose tree becomes the review's new side. */
+  newestCommit: ExtensionVcsHistoryCommit;
+  /** Older endpoint whose chosen parent becomes the review's old side. */
+  oldestCommit: ExtensionVcsHistoryCommit;
+}
+
+/** Optional provider-neutral selection facts for reviewing history items. */
 export interface ExtensionVcsHistoryReviewOptions {
   /** One ordered parent id returned on the commit, when the caller chooses a specific parent. */
   parentRevisionId?: string;
@@ -818,6 +826,12 @@ export type ExtensionVcsHistoryReviewAction =
       fromRevisionId: string;
       toRevisionId: string;
     };
+
+/** Provider-owned direct endpoint action for one inclusive history selection. */
+export type ExtensionVcsHistoryRangeReviewAction = Extract<
+  ExtensionVcsHistoryReviewAction,
+  { kind: "revision-range" }
+>;
 
 /** Optional read-only history capability implemented independently of review operations. */
 export interface ExtensionVcsHistoryCapability {
@@ -836,6 +850,17 @@ export interface ExtensionVcsHistoryCapability {
     context: ExtensionVcsLoadContext,
     options?: ExtensionVcsHistoryReviewOptions,
   ): ExtensionVcsHistoryReviewAction | Promise<ExtensionVcsHistoryReviewAction>;
+  /**
+   * Declare how to compare an inclusive contiguous history selection.
+   *
+   * Providers choose the oldest commit's root or parent baseline and verify
+   * that the endpoints form one ancestry range. Older providers may omit this.
+   */
+  planRangeReview?(
+    selection: ExtensionVcsHistoryRangeSelection,
+    context: ExtensionVcsLoadContext,
+    options?: ExtensionVcsHistoryReviewOptions,
+  ): ExtensionVcsHistoryRangeReviewAction | Promise<ExtensionVcsHistoryRangeReviewAction>;
 }
 
 /** Stash review request, as extension adapters receive it. */

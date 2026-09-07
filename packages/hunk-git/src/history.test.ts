@@ -1,6 +1,14 @@
 import { describe, expect, test } from "bun:test";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createGitVcsAdapter } from "./index";
-import { buildGitHistoryArgs, gitHistoryUsesBoundaryTopology, parseGitHistory } from "./history";
+import {
+  buildGitHistoryArgs,
+  gitHistoryUsesBoundaryTopology,
+  parseGitHistory,
+  planGitHistoryRangeReview,
+} from "./history";
 
 describe("Git history production", () => {
   test("builds the strict supported query with literal pathspec separation", () => {
@@ -158,6 +166,125 @@ describe("Git history production", () => {
       toRevisionId: "b".repeat(40),
     });
   });
+
+  test("plans a root-inclusive direct range with Git's native empty tree", async () => {
+    const repo = mkdtempSync(join(tmpdir(), "hunk-git-history-range-"));
+    const git = (...args: string[]) => {
+      const result = Bun.spawnSync(["git", ...args], {
+        cwd: repo,
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      if (result.exitCode !== 0) throw new Error(result.stderr.toString());
+      return result.stdout.toString().trim();
+    };
+    try {
+      git("init", "--quiet");
+      git("config", "user.name", "Test");
+      git("config", "user.email", "test@example.com");
+      writeFileSync(join(repo, "root.txt"), "root\n");
+      git("add", "root.txt");
+      git("commit", "--quiet", "-m", "root");
+      const rootId = git("rev-parse", "HEAD");
+      writeFileSync(join(repo, "newest.txt"), "newest\n");
+      git("add", "newest.txt");
+      git("commit", "--quiet", "-m", "newest");
+      const newestId = git("rev-parse", "HEAD");
+      const commit = (revisionId: string, parentRevisionIds: string[]) => ({
+        revisionId,
+        displayId: revisionId.slice(0, 8),
+        parentRevisionIds,
+        subject: revisionId,
+        authorName: "Test",
+        authoredAt: "2026-01-01T00:00:00Z",
+        decorations: [],
+      });
+      const plan = await createGitVcsAdapter().history!.planRangeReview!(
+        {
+          newestCommit: commit(newestId, [rootId]),
+          oldestCommit: commit(rootId, []),
+        },
+        { cwd: repo },
+      );
+      expect(plan).toMatchObject({ kind: "revision-range", toRevisionId: newestId });
+      expect(plan.kind === "revision-range" && plan.fromRevisionId).toMatch(/^[0-9a-f]{40,64}$/);
+      expect(
+        git(
+          "diff",
+          "--name-only",
+          `${plan.kind === "revision-range" ? plan.fromRevisionId : ""}..${newestId}`,
+        ),
+      ).toEqual("newest.txt\nroot.txt");
+
+      writeFileSync(join(repo, "third.txt"), "third\n");
+      git("add", "third.txt");
+      git("commit", "--quiet", "-m", "third");
+      const thirdId = git("rev-parse", "HEAD");
+      expect(
+        await createGitVcsAdapter().history!.planRangeReview!(
+          {
+            newestCommit: commit(thirdId, [newestId]),
+            oldestCommit: commit(newestId, [rootId]),
+          },
+          { cwd: repo },
+        ),
+      ).toEqual({
+        kind: "revision-range",
+        fromRevisionId: rootId,
+        toRevisionId: thirdId,
+      });
+
+      git("checkout", "--quiet", "-b", "side", rootId);
+      writeFileSync(join(repo, "side.txt"), "side\n");
+      git("add", "side.txt");
+      git("commit", "--quiet", "-m", "side");
+      const sideId = git("rev-parse", "HEAD");
+      await expect(
+        createGitVcsAdapter().history!.planRangeReview!(
+          {
+            newestCommit: commit(sideId, [rootId]),
+            oldestCommit: commit(newestId, [rootId]),
+          },
+          { cwd: repo },
+        ),
+      ).rejects.toThrow("not on one Git ancestry path");
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  test.skipIf(process.platform === "win32")(
+    "cancels provider range planning without blocking the renderer",
+    async () => {
+      const temp = mkdtempSync(join(tmpdir(), "hunk-git-range-cancel-"));
+      const executable = join(temp, "slow-git");
+      writeFileSync(executable, "#!/bin/sh\nsleep 30\n");
+      chmodSync(executable, 0o755);
+      const controller = new AbortController();
+      const revision = "a".repeat(40);
+      const commit = {
+        revisionId: revision,
+        displayId: revision.slice(0, 8),
+        parentRevisionIds: ["b".repeat(40)],
+        subject: "commit",
+        authorName: "Test",
+        authoredAt: "2026-01-01T00:00:00Z",
+        decorations: [],
+      };
+
+      try {
+        const planning = planGitHistoryRangeReview(
+          { newestCommit: commit, oldestCommit: commit },
+          { cwd: temp, gitExecutable: executable, signal: controller.signal },
+        );
+        controller.abort(new Error("planning cancelled"));
+        await expect(planning).rejects.toThrow("planning cancelled");
+      } finally {
+        rmSync(temp, { recursive: true, force: true });
+      }
+    },
+  );
 
   test("rejects truncated records and invalid SHA object ids", () => {
     expect(() => parseGitHistory("id\0short\0parent")).toThrow("truncated history record");

@@ -100,7 +100,10 @@ date, message, branch/bookmark, remote, and tag details; `--oneline` provides co
 `--theme` uses the same palette as Hunk review. Interactive history groups commits by local-calendar
 day with account-like author handles and relative times, while keeping commit ids right-aligned and
 clickable. Enable **Graph view** from the View menu to replace day groups with commit-topology lanes.
-After opening a commit, quit its normal Hunk review to return to the same selection.
+Use `Shift+Up`/`Shift+Down`, uppercase `K`/`J`, or Shift-click to select a contiguous range; opening it
+reviews the inclusive cumulative change from the oldest commit's parent through the newest commit.
+Range selection is disabled with `--all` or author, message, date, and path filters because traversal can interleave or hide commits.
+After opening a commit or range, quit its normal Hunk review to return to the same selection.
 
 ### Working with Jujutsu and Sapling
 

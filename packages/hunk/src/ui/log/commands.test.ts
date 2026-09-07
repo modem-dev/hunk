@@ -9,7 +9,8 @@ import {
   matchLogCommand,
 } from "./commands";
 
-const key = (name: string, sequence = name, ctrl = false) => ({ name, sequence, ctrl }) as KeyEvent;
+const key = (name: string, sequence = name, ctrl = false, shift = false) =>
+  ({ name, sequence, ctrl, shift }) as KeyEvent;
 
 const snapshot = (parents: string[] = []): LogSnapshot => ({
   rows: [
@@ -32,6 +33,7 @@ const snapshot = (parents: string[] = []): LogSnapshot => ({
     },
   ],
   selected: 0,
+  selectionAnchor: null,
   top: 0,
   search: "",
   searchEditing: false,
@@ -50,6 +52,10 @@ const snapshot = (parents: string[] = []): LogSnapshot => ({
 describe("log command authority", () => {
   test("drives keyboard dispatch, menu hints, and help from one definition", () => {
     expect(matchLogCommand(key("down", ""))).toBe("next");
+    expect(matchLogCommand(key("down", "", false, true))).toBe("extend-next");
+    expect(matchLogCommand(key("x", "J"))).toBe("extend-next");
+    expect(matchLogCommand(key("up", "", false, true))).toBe("extend-previous");
+    expect(matchLogCommand(key("x", "K"))).toBe("extend-previous");
     expect(matchLogCommand(key("x", "j"))).toBe("next");
     expect(matchLogCommand(key("c", "\x03", true))).toBe("quit");
     expect(matchLogCommand(key("t"))).toBe("theme");
@@ -59,6 +65,10 @@ describe("log command authority", () => {
     expect(logCommand("open-parent").label).toBe("Compare with parent…");
     const helpRows = buildLogHelpSections().flatMap((section) => section.rows);
     expect(helpRows).toContainEqual({ keys: "↓ / j", description: "next commit" });
+    expect(helpRows).toContainEqual({
+      keys: "Shift-↓ / J",
+      description: "extend selection down",
+    });
     expect(helpRows).toContainEqual({ keys: "t", description: "theme…" });
   });
 
@@ -66,6 +76,9 @@ describe("log command authority", () => {
     expect(isLogCommandEnabled("open-first-parent", snapshot())).toBe(false);
     expect(isLogCommandEnabled("open-first-parent", snapshot(["p1", "p2"]))).toBe(true);
     expect(isLogCommandEnabled("open-parent", snapshot(["p1", "p2"]))).toBe(true);
+    const range = { ...snapshot(["p1", "p2"]), selectionAnchor: 1 };
+    expect(isLogCommandEnabled("open-first-parent", range)).toBe(false);
+    expect(isLogCommandEnabled("open-parent", range)).toBe(false);
     expect(isLogCommandEnabled("next-match", snapshot())).toBe(false);
   });
 });

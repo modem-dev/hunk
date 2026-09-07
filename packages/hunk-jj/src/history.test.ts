@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createJjVcsAdapter } from "./index";
@@ -9,10 +9,12 @@ import {
   jjHistoryUsesBoundaryTopology,
   openJjHistory,
   parseJjHistory,
+  planJjHistoryRangeReview,
 } from "./history";
 
 const tempDirs: string[] = [];
 const jjTest = Bun.which("jj") ? test : test.skip;
+const unixTest = process.platform === "win32" ? test.skip : test;
 
 /** Create a real JJ-only workspace without a colocated `.git` directory. */
 function createJjOnlyTestRepo() {
@@ -49,6 +51,31 @@ afterEach(() => {
 });
 
 describe("Jujutsu history production", () => {
+  unixTest("cancels provider range planning without blocking the renderer", async () => {
+    const temp = mkdtempSync(join(tmpdir(), "hunk-jj-range-cancel-"));
+    tempDirs.push(temp);
+    const executable = join(temp, "slow-jj");
+    writeFileSync(executable, "#!/bin/sh\nsleep 30\n");
+    chmodSync(executable, 0o755);
+    const controller = new AbortController();
+    const revision = "a".repeat(40);
+    const commit = {
+      revisionId: revision,
+      displayId: revision.slice(0, 8),
+      parentRevisionIds: ["b".repeat(40)],
+      subject: "commit",
+      authorName: "Test",
+      authoredAt: "2026-01-01T00:00:00Z",
+      decorations: [],
+    };
+
+    const planning = planJjHistoryRangeReview(
+      { newestCommit: commit, oldestCommit: commit },
+      { cwd: temp, jjExecutable: executable, signal: controller.signal },
+    );
+    controller.abort(new Error("planning cancelled"));
+    await expect(planning).rejects.toThrow("planning cancelled");
+  });
   test("builds a provider-owned revset and preserves literal filesets", () => {
     expect(
       buildJjHistoryArgs({
@@ -257,6 +284,17 @@ describe("Jujutsu history production", () => {
         "cancel fixture",
       );
       await cancelled.close();
+
+      jj(repo, "config", "set", "--repo", "template-aliases.commit_id", '"wrong"');
+      const rangePlan = await createJjVcsAdapter().history!.planRangeReview!(
+        { newestCommit: commits[1]!, oldestCommit: commits[2]! },
+        { cwd: repo },
+      );
+      expect(rangePlan).toMatchObject({
+        kind: "revision-range",
+        toRevisionId: commits[1]!.revisionId,
+      });
+      expect(rangePlan.kind === "revision-range" && rangePlan.fromRevisionId).toMatch(/^0+$/);
     },
     20_000,
   );

@@ -5,8 +5,12 @@ import {
   type ExtensionVcsHistoryCommit,
   type ExtensionVcsHistoryDecoration,
   type ExtensionVcsHistoryInput,
+  type ExtensionVcsHistoryRangeReviewAction,
+  type ExtensionVcsHistoryRangeSelection,
+  type ExtensionVcsHistoryReviewOptions,
   type ExtensionVcsHistorySource,
 } from "hunkdiff/extension";
+import { runAbortableCommand } from "@hunk/vcs/async-process";
 import { normalizePathForOS } from "@hunk/vcs/path";
 
 const HISTORY_FIELDS_PER_COMMIT = 13;
@@ -36,6 +40,7 @@ const JJ_HISTORY_TEMPLATE =
 export interface JjHistoryOptions {
   cwd: string;
   jjExecutable?: string;
+  signal?: AbortSignal;
 }
 
 /** Return one safely quoted Jujutsu string literal for a generated revset. */
@@ -184,6 +189,72 @@ export function parseJjHistory(
     });
   }
   return commits;
+}
+
+/** Run one cancellable JJ query used while preparing a history range. */
+async function runJjHistoryQuery(
+  args: string[],
+  { cwd, jjExecutable = "jj", signal }: JjHistoryOptions,
+) {
+  let result: Awaited<ReturnType<typeof runAbortableCommand>>;
+  try {
+    result = await runAbortableCommand(
+      [jjExecutable, "--ignore-working-copy", "--no-pager", "--color", "never", ...args],
+      { cwd, signal },
+    );
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    throw new HunkExtensionUserError(`Could not run ${jjExecutable}.`, {
+      suggestions: ["Install Jujutsu or configure Hunk to use another VCS backend."],
+    });
+  }
+  if (result.exitCode !== 0) {
+    throw new HunkExtensionUserError(
+      result.stderr.trim().split("\n")[0] || "Jujutsu could not read this repository.",
+      { suggestions: ["Check the revision and repository, then try again."] },
+    );
+  }
+  return result.stdout;
+}
+
+/** Plan an inclusive ancestry range without exposing JJ revsets to Hunk core. */
+export async function planJjHistoryRangeReview(
+  selection: ExtensionVcsHistoryRangeSelection,
+  options: JjHistoryOptions,
+  reviewOptions?: ExtensionVcsHistoryReviewOptions,
+): Promise<ExtensionVcsHistoryRangeReviewAction> {
+  const newest = selection.newestCommit.revisionId;
+  const oldest = selection.oldestCommit.revisionId;
+  if (!FULL_COMMIT_ID_PATTERN.test(newest) || !FULL_COMMIT_ID_PATTERN.test(oldest)) {
+    throw new Error("Jujutsu history range endpoints must be full immutable commit ids.");
+  }
+  const ancestor = (
+    await runJjHistoryQuery(
+      ["log", "--no-graph", "-r", `${oldest} & ancestors(${newest})`, "-T", "self.commit_id()"],
+      options,
+    )
+  ).trim();
+  if (ancestor !== oldest) {
+    throw new HunkExtensionUserError("The selected commits are not on one Jujutsu ancestry path.", {
+      suggestions: ["Choose a contiguous range whose oldest commit is an ancestor of the newest."],
+    });
+  }
+  const parent = reviewOptions?.parentRevisionId ?? selection.oldestCommit.parentRevisionIds[0];
+  if (parent && !selection.oldestCommit.parentRevisionIds.includes(parent)) {
+    throw new Error("The selected revision is not a parent of the oldest Jujutsu commit.");
+  }
+  const fromRevisionId =
+    parent ??
+    (
+      await runJjHistoryQuery(
+        ["log", "--no-graph", "-r", "root()", "-T", "self.commit_id()"],
+        options,
+      )
+    ).trim();
+  if (!FULL_COMMIT_ID_PATTERN.test(fromRevisionId)) {
+    throw new Error("Jujutsu returned an invalid root comparison identity.");
+  }
+  return { kind: "revision-range", fromRevisionId, toRevisionId: newest };
 }
 
 /** Run a small synchronous JJ query used only to establish the repository root. */

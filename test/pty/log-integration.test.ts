@@ -33,7 +33,8 @@ function createHistoryRepo() {
   tempDirs.push(cwd);
   git(cwd, ["init", "-q"]);
   writeFileSync(join(cwd, "history.ts"), "export const historyValue = 'first';\n");
-  git(cwd, ["add", "history.ts"]);
+  writeFileSync(join(cwd, "root-only.ts"), "export const rootOnly = true;\n");
+  git(cwd, ["add", "history.ts", "root-only.ts"]);
   const firstDate = new Date(2026, 8, 5, 12).toISOString();
   git(cwd, ["commit", "-qm", "First history commit"], {
     GIT_AUTHOR_DATE: firstDate,
@@ -120,6 +121,39 @@ describe("interactive hunk log", () => {
     }
   });
 
+  test("opens an inclusive root range and retains it when returning", async () => {
+    const cwd = createHistoryRepo();
+    const session = await harness.launchHunk({
+      args: ["log", "--color", "never", "--no-extensions"],
+      cwd,
+      cols: 100,
+      rows: 20,
+    });
+
+    try {
+      const history = await session.waitForText(/Second history commit/, { timeout: 15_000 });
+      const rootRowIndex = history
+        .split("\n")
+        .findIndex((line) => line.includes("First history commit"));
+      session.writeRaw("J");
+      await session.waitForText(/2 commits selected/, { timeout: 5_000 });
+      await session.press("enter");
+      const review = await session.waitForText(/rootOnly = true/, { timeout: 15_000 });
+      expect(review).toContain("historyValue = 'second'");
+      await session.press("q");
+      await session.waitForText(/2 commits selected/, { timeout: 15_000 });
+
+      // SGR mouse modifier bit 4 forwards Shift+click through capable terminals.
+      session.writeRaw("k");
+      await harness.waitForSnapshot(session, (text) => !text.includes("2 commits selected"), 5_000);
+      session.writeRaw(`\x1b[<4;50;${rootRowIndex + 1}M\x1b[<4;50;${rootRowIndex + 1}m`);
+      await session.waitForText(/2 commits selected/, { timeout: 5_000 });
+      await session.press("q");
+    } finally {
+      session.close();
+    }
+  });
+
   test("opens the selected immutable commit and returns to the retained history", async () => {
     const cwd = createHistoryRepo();
     const session = await harness.launchHunk({
@@ -139,7 +173,7 @@ describe("interactive hunk log", () => {
 
       // Mouse and keyboard share the same menu model and actions.
       session.writeRaw("\x1b[<0;2;1M\x1b[<0;2;1m");
-      await session.waitForText(/Open selected commit/, { timeout: 5_000 });
+      await session.waitForText(/Open selection/, { timeout: 5_000 });
       await session.press("right");
       await session.press("enter");
       await session.waitForText(/Theme selector/, { timeout: 5_000 });
@@ -185,13 +219,9 @@ describe("interactive hunk log", () => {
 
       // Scrolling the history body dismisses an open dropdown before moving selection.
       await session.press("f10");
-      await session.waitForText(/Open selected commit/, { timeout: 5_000 });
+      await session.waitForText(/Open selection/, { timeout: 5_000 });
       session.writeRaw("\x1b[<65;50;5M");
-      await harness.waitForSnapshot(
-        session,
-        (text) => !text.includes("Open selected commit"),
-        5_000,
-      );
+      await harness.waitForSnapshot(session, (text) => !text.includes("Open selection"), 5_000);
 
       // Clicking outside the id selects the second row without opening it.
       session.writeRaw("\x1b[<0;50;5M\x1b[<0;50;5m");
@@ -205,7 +235,7 @@ describe("interactive hunk log", () => {
 
       // A command key closes an open menu and falls through to canonical dispatch.
       await session.press("f10");
-      await session.waitForText(/Open selected commit/, { timeout: 5_000 });
+      await session.waitForText(/Open selection/, { timeout: 5_000 });
       session.writeRaw("k\r");
       await session.waitForText(/historyValue = 'second'/, { timeout: 15_000 });
       await session.press("q");

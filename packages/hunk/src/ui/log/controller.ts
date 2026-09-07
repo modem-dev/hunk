@@ -12,9 +12,22 @@ export interface LogPresentation {
   decorations: boolean;
 }
 
+/** Return whether traversal filters can omit commits between adjacent displayed rows. */
+export function historyFiltersCanHideIntermediateCommits(input: HistoryRuntime["input"]) {
+  return Boolean(
+    input.all ||
+    input.author !== undefined ||
+    input.grep !== undefined ||
+    input.since !== undefined ||
+    input.until !== undefined ||
+    Boolean(input.pathspecs?.length),
+  );
+}
+
 export interface LogSnapshot {
   rows: readonly HistoryGraphRow[];
   selected: number;
+  selectionAnchor: number | null;
   top: number;
   search: string;
   searchEditing: boolean;
@@ -35,6 +48,8 @@ export class LogController {
   private loadingPromise: Promise<void> | null = null;
   private refreshPromise: Promise<void> | null = null;
   private navigationTarget: number | null = null;
+  private navigationPromise: Promise<void> | null = null;
+  private selectionGeneration = 0;
   private closed = false;
   private viewportBodyHeight = 1;
   private noticeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -45,6 +60,7 @@ export class LogController {
     this.snapshot = {
       rows: [],
       selected: 0,
+      selectionAnchor: null,
       top: 0,
       search: "",
       searchEditing: false,
@@ -130,37 +146,71 @@ export class LogController {
       bodyHeight: safeHeight,
       groupByDay: !this.snapshot.presentation.graph,
     });
-    if (selected !== this.snapshot.selected || geometry.top !== this.snapshot.top)
-      this.publish({ selected, top: geometry.top });
+    const selectionAnchor =
+      this.snapshot.selectionAnchor === null
+        ? null
+        : Math.max(
+            0,
+            Math.min(Math.max(0, this.snapshot.rows.length - 1), this.snapshot.selectionAnchor),
+          );
+    if (
+      selected !== this.snapshot.selected ||
+      selectionAnchor !== this.snapshot.selectionAnchor ||
+      geometry.top !== this.snapshot.top
+    )
+      this.publish({ selected, selectionAnchor, top: geometry.top });
   }
 
-  /** Select a target, loading bounded continuation pages until it exists or EOF is known. */
-  async select(index: number, viewportBodyHeight: number) {
+  /** Select a target, optionally extending a contiguous range from the current focus. */
+  select(index: number, viewportBodyHeight: number, { extend = false }: { extend?: boolean } = {}) {
     this.clearNotice();
-    const target = Math.max(0, index);
-    this.navigationTarget = target;
-    while (target >= this.snapshot.rows.length && !this.snapshot.historyDone && !this.closed) {
-      await this.loadMore();
+    if (extend && historyFiltersCanHideIntermediateCommits(this.runtime.input)) {
+      this.setNotice(
+        "Multi-commit selection is unavailable when history traversal can hide or interleave commits.",
+      );
+      return Promise.resolve();
     }
-    if (this.closed) return;
-    this.publish({ selected: Math.max(0, Math.min(this.snapshot.rows.length - 1, target)) });
-    this.clampViewport(viewportBodyHeight);
-    if (this.navigationTarget === target) this.navigationTarget = null;
-    const visibleCount = planLogViewportGeometry({
-      rows: this.snapshot.rows,
-      selected: this.snapshot.selected,
-      requestedTop: this.snapshot.top,
-      bodyHeight: viewportBodyHeight,
-      groupByDay: !this.snapshot.presentation.graph,
-    }).entries.length;
-    if (target + visibleCount >= this.snapshot.rows.length && !this.snapshot.historyDone)
-      void this.loadMore();
+    const target = Math.max(0, index);
+    const anchor = extend ? (this.snapshot.selectionAnchor ?? this.snapshot.selected) : null;
+    const requestGeneration = ++this.selectionGeneration;
+    this.publish({ selectionAnchor: anchor });
+    this.navigationTarget = target;
+    const navigation = (async () => {
+      while (target >= this.snapshot.rows.length && !this.snapshot.historyDone && !this.closed) {
+        await this.loadMore();
+      }
+      if (this.closed || requestGeneration !== this.selectionGeneration) return;
+      const selected = Math.max(0, Math.min(this.snapshot.rows.length - 1, target));
+      this.publish({ selected, selectionAnchor: anchor === selected ? null : anchor });
+      this.clampViewport(viewportBodyHeight);
+      if (this.navigationTarget === target) this.navigationTarget = null;
+      const visibleCount = planLogViewportGeometry({
+        rows: this.snapshot.rows,
+        selected: this.snapshot.selected,
+        requestedTop: this.snapshot.top,
+        bodyHeight: viewportBodyHeight,
+        groupByDay: !this.snapshot.presentation.graph,
+      }).entries.length;
+      if (target + visibleCount >= this.snapshot.rows.length && !this.snapshot.historyDone)
+        void this.loadMore();
+    })();
+    this.navigationPromise = navigation;
+    void navigation.finally(() => {
+      if (this.navigationPromise === navigation) this.navigationPromise = null;
+    });
+    return navigation;
   }
 
-  move(delta: number, viewportBodyHeight: number) {
+  /** Wait until the most recently requested selection has settled. */
+  async settleNavigation() {
+    while (this.navigationPromise) await this.navigationPromise;
+  }
+
+  move(delta: number, viewportBodyHeight: number, options: { extend?: boolean } = {}) {
     return this.select(
       (this.navigationTarget ?? this.snapshot.selected) + delta,
       viewportBodyHeight,
+      options,
     );
   }
 
@@ -231,7 +281,7 @@ export class LogController {
         .join(" ")
         .toLocaleLowerCase();
       if (haystack.includes(needle)) {
-        this.publish({ selected: index, notice: "" });
+        this.publish({ selected: index, selectionAnchor: null, notice: "" });
         this.clampViewport(viewportHeight);
         return;
       }
@@ -284,8 +334,14 @@ export class LogController {
   private async performRefresh() {
     if (this.closed) return;
     const selectedId = this.snapshot.rows[this.snapshot.selected]?.commit.revisionId;
+    const anchorId =
+      this.snapshot.selectionAnchor === null
+        ? undefined
+        : this.snapshot.rows[this.snapshot.selectionAnchor]?.commit.revisionId;
     const viewportOffset = this.snapshot.selected - this.snapshot.top;
     this.generation += 1;
+    this.selectionGeneration += 1;
+    this.navigationTarget = null;
     const generation = this.generation;
     this.abort.abort();
     await this.loadingPromise;
@@ -309,44 +365,72 @@ export class LogController {
     this.publish({
       rows: [],
       selected: 0,
+      selectionAnchor: null,
       top: 0,
       historyDone: false,
       loading: false,
       notice: "",
     });
     await this.loadMore();
-    if (selectedId) {
-      while (
-        !this.snapshot.historyDone &&
-        !this.snapshot.rows.some((row) => row.commit.revisionId === selectedId)
-      ) {
-        await this.loadMore();
-      }
-      const index = this.snapshot.rows.findIndex((row) => row.commit.revisionId === selectedId);
-      if (index >= 0) {
-        const requestedTop = Math.max(0, index - viewportOffset);
-        const geometry = planLogViewportGeometry({
-          rows: this.snapshot.rows,
-          selected: index,
-          requestedTop,
-          bodyHeight: this.viewportBodyHeight,
-          groupByDay: !this.snapshot.presentation.graph,
-        });
-        this.publish({ selected: index, top: geometry.top });
-      }
+    const endpointIds = [selectedId, anchorId].filter((id): id is string => Boolean(id));
+    while (
+      !this.snapshot.historyDone &&
+      endpointIds.some((id) => !this.snapshot.rows.some((row) => row.commit.revisionId === id))
+    ) {
+      await this.loadMore();
     }
+    const selectedIndex = selectedId
+      ? this.snapshot.rows.findIndex((row) => row.commit.revisionId === selectedId)
+      : -1;
+    const anchorIndex = anchorId
+      ? this.snapshot.rows.findIndex((row) => row.commit.revisionId === anchorId)
+      : -1;
+    const restoredSelected = selectedIndex >= 0 ? selectedIndex : Math.max(0, anchorIndex);
+    const restoredAnchor = selectedIndex >= 0 && anchorIndex >= 0 ? anchorIndex : null;
+    const requestedTop = Math.max(0, restoredSelected - viewportOffset);
+    const geometry = planLogViewportGeometry({
+      rows: this.snapshot.rows,
+      selected: restoredSelected,
+      requestedTop,
+      bodyHeight: this.viewportBodyHeight,
+      groupByDay: !this.snapshot.presentation.graph,
+    });
+    this.publish({
+      selected: restoredSelected,
+      selectionAnchor: restoredAnchor === restoredSelected ? null : restoredAnchor,
+      top: geometry.top,
+    });
     this.setNotice("History refreshed.");
   }
 
-  /** Return the currently selected immutable provider history row. */
+  /** Return the focused row and normalized inclusive selection endpoints. */
+  getSelection() {
+    const focus = this.snapshot.rows[this.snapshot.selected];
+    if (!focus) return undefined;
+    const anchor = this.snapshot.selectionAnchor ?? this.snapshot.selected;
+    const newestIndex = Math.min(anchor, this.snapshot.selected);
+    const oldestIndex = Math.max(anchor, this.snapshot.selected);
+    return {
+      focus,
+      newest: this.snapshot.rows[newestIndex]!,
+      oldest: this.snapshot.rows[oldestIndex]!,
+      newestIndex,
+      oldestIndex,
+      count: oldestIndex - newestIndex + 1,
+    };
+  }
+
+  /** Return the currently focused immutable provider history row. */
   getSelectedRow() {
-    return this.snapshot.rows[this.snapshot.selected];
+    return this.getSelection()?.focus;
   }
 
   async close() {
     if (this.closed) return;
     this.closed = true;
     this.generation += 1;
+    this.selectionGeneration += 1;
+    this.navigationTarget = null;
     this.abort.abort();
     if (this.noticeTimer) clearTimeout(this.noticeTimer);
     this.noticeTimer = null;

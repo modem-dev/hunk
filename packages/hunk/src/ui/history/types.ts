@@ -4,6 +4,8 @@ import type { VcsHistorySource } from "../../core/vcs/types";
 import type { ExtensionSession } from "../../extensions/session";
 import type {
   ExtensionVcsHistoryCommit,
+  ExtensionVcsHistoryRangeReviewAction,
+  ExtensionVcsHistoryRangeSelection,
   ExtensionVcsHistoryReviewAction,
   ExtensionVcsHistoryReviewOptions,
   NamedCustomThemeConfig,
@@ -29,7 +31,13 @@ export interface HistoryRuntime {
   planReview(
     commit: ExtensionVcsHistoryCommit,
     options?: ExtensionVcsHistoryReviewOptions,
+    signal?: AbortSignal,
   ): Promise<ExtensionVcsHistoryReviewAction>;
+  planRangeReview?(
+    selection: ExtensionVcsHistoryRangeSelection,
+    options?: ExtensionVcsHistoryReviewOptions,
+    signal?: AbortSignal,
+  ): Promise<ExtensionVcsHistoryRangeReviewAction>;
   /** Replace the current provider cursor for an explicit interactive refresh. */
   reopenSource(signal?: AbortSignal): Promise<VcsHistorySource>;
   close(): Promise<void>;

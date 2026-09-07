@@ -11,7 +11,7 @@ import {
   runJjTextAsync,
   type JjDiffEndpoints,
 } from "./commands";
-import { openJjHistory } from "./history";
+import { openJjHistory, planJjHistoryRangeReview } from "./history";
 import { readJjFileSource } from "./source";
 import { describeDiffRange } from "@hunk/vcs/diff-target";
 import {
@@ -152,6 +152,9 @@ export function createJjVcsAdapter({ jjExecutable = "jj" }: Readonly<JjVcsAdapte
               toRevisionId: commit.revisionId,
             }
           : { kind: "revision-show" as const, revisionId: commit.revisionId };
+      },
+      planRangeReview(selection, { cwd, signal }, options?: { parentRevisionId?: string }) {
+        return planJjHistoryRangeReview(selection, { cwd, jjExecutable, signal }, options);
       },
     },
     operations: {

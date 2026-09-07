@@ -23,7 +23,7 @@ import {
   type GitBackedInput,
   type GitDiffEndpoints,
 } from "./commands";
-import { openGitHistory } from "./history";
+import { openGitHistory, planGitHistoryRangeReview } from "./history";
 import { gitEndpointSourceSpec, readGitFileSource } from "./source";
 import { describeDiffRange } from "@hunk/vcs/diff-target";
 import {
@@ -303,6 +303,9 @@ export function createGitVcsAdapter({
               toRevisionId: commit.revisionId,
             }
           : { kind: "revision-show" as const, revisionId: commit.revisionId };
+      },
+      planRangeReview(selection, { cwd, signal }, options?: { parentRevisionId?: string }) {
+        return planGitHistoryRangeReview(selection, { cwd, gitExecutable, signal }, options);
       },
     },
     operations: {

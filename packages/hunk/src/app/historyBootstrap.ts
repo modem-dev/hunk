@@ -6,6 +6,8 @@ import {
 import { collectSessionCustomThemes } from "../core/theme/customThemes";
 import type {
   ExtensionVcsHistoryCommit,
+  ExtensionVcsHistoryRangeReviewAction,
+  ExtensionVcsHistoryRangeSelection,
   ExtensionVcsHistoryReviewAction,
   ExtensionVcsHistoryReviewOptions,
   NamedCustomThemeConfig,
@@ -17,6 +19,7 @@ import {
   getDefaultVcsAdapter,
   getVcsAdapter,
   openVcsHistory,
+  planVcsHistoryRangeReview,
   planVcsHistoryReview,
 } from "../core/vcs";
 import type { VcsCatalog, VcsHistorySource } from "../core/vcs/types";
@@ -45,7 +48,13 @@ export interface HistoryBootstrap {
   planReview(
     commit: ExtensionVcsHistoryCommit,
     options?: ExtensionVcsHistoryReviewOptions,
+    signal?: AbortSignal,
   ): Promise<ExtensionVcsHistoryReviewAction>;
+  planRangeReview?(
+    selection: ExtensionVcsHistoryRangeSelection,
+    options?: ExtensionVcsHistoryReviewOptions,
+    signal?: AbortSignal,
+  ): Promise<ExtensionVcsHistoryRangeReviewAction>;
   reopenSource(signal?: AbortSignal): Promise<VcsHistorySource>;
   close(): Promise<void>;
 }
@@ -160,9 +169,14 @@ export async function loadHistoryBootstrap({
           ]
         : []),
     ],
-    planReview(commit, options) {
-      return planVcsHistoryReview(adapter, commit, { cwd: repoRoot }, options);
+    planReview(commit, options, signal) {
+      return planVcsHistoryReview(adapter, commit, { cwd: repoRoot, signal }, options);
     },
+    ...(adapter.history?.planRangeReview && {
+      planRangeReview(selection, options, signal) {
+        return planVcsHistoryRangeReview(adapter, selection, { cwd: repoRoot, signal }, options);
+      },
+    }),
     async reopenSource(signal) {
       if (closed) throw new Error("History session is closed.");
       signal?.throwIfAborted();

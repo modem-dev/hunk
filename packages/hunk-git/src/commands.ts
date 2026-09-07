@@ -1089,6 +1089,23 @@ export async function resolveGitCommitRefAsync(
     .trim();
 }
 
+/** Resolve one tree-ish ref to the exact tree object used for later blob reads. */
+export async function resolveGitTreeRefAsync(
+  input: GitBackedInput,
+  ref: string,
+  options: Omit<RunGitTextOptions, "input" | "args"> = {},
+) {
+  return (
+    await runGitTextAsync({
+      input,
+      args: ["rev-parse", "--verify", "--end-of-options", `${ref}^{tree}`],
+      ...options,
+    })
+  )
+    .split("\n")[0]!
+    .trim();
+}
+
 /** Resolve old/new Git endpoints asynchronously for review-load source capabilities. */
 export async function resolveGitDiffEndpointsAsync(
   input: ExtensionVcsDiffInput,
@@ -1102,7 +1119,7 @@ export async function resolveGitDiffEndpointsAsync(
   const range = requireGitDiffRangeArg(input);
   const commandCwd = repoRoot ?? cwd;
   const resolveRef = (ref: string) =>
-    resolveGitCommitRefAsync(input, ref, { cwd: commandCwd, gitExecutable, signal });
+    resolveGitTreeRefAsync(input, ref, { cwd: commandCwd, gitExecutable, signal });
   const resolveRevisions = async (value: string) => {
     const revs = (
       await runGitTextAsync({

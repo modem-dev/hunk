@@ -2,7 +2,7 @@ import type { KeyEvent, MouseEvent as TuiMouseEvent } from "@opentui/core";
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
 import { basename } from "node:path";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import type { ExtensionVcsHistoryCommit } from "../../extension-api/types";
+import type { ExtensionVcsHistoryRangeSelection } from "../../extension-api/types";
 import { sanitizeTerminalLine } from "../../lib/terminalText";
 import { resolveExtensionSessionOptions } from "../../extensions/apply";
 import { HelpDialog } from "../components/chrome/HelpDialog";
@@ -53,7 +53,8 @@ export type LogAppOutcome =
   | { kind: "cancel-open-review" }
   | {
       kind: "open-review";
-      commit: ExtensionVcsHistoryCommit;
+      selection: ExtensionVcsHistoryRangeSelection;
+      count: number;
       parentRevisionId?: string;
       themeId: string;
       themeMode: "dark" | "light";
@@ -80,7 +81,11 @@ export function LogApp({
   const [parentSelectorIndex, setParentSelectorIndex] = useState<number | null>(null);
   const [transientNotice, setTransientNotice] = useState("");
   const [relativeTimeNow, setRelativeTimeNow] = useState(() => Date.now());
-  const [openingCommit, setOpeningCommit] = useState<{ id: string; subject: string } | null>(null);
+  const [openingCommit, setOpeningCommit] = useState<{
+    id: string;
+    subject: string;
+    count: number;
+  } | null>(null);
   const lastClick = useRef({ index: -1, at: 0 });
   // Lock synchronously before requesting review preparation so coalesced input cannot
   // open two child reviews. Quit remains available while the host settles pending work.
@@ -105,7 +110,8 @@ export function LogApp({
     : monochromeLogTheme(themeController.baseTheme, terminalThemeMode);
   const logPalette = resolveInteractiveLogPalette(theme);
   const graphColors = snapshot.presentation.graph ? logPalette.graphLanes : [logPalette.timeline];
-  const selectedRow = snapshot.rows[snapshot.selected];
+  const selection = controller.getSelection();
+  const parentRow = selection?.oldest;
   const responsiveLayout = resolveLogResponsiveLayout(terminal.width, terminal.height);
   const viewportBodyHeight = responsiveLayout.bodyHeight;
   const currentViewPreferences = useMemo(
@@ -143,15 +149,20 @@ export function LogApp({
       setTransientNotice("Clipboard is unavailable in this terminal.");
     }
   };
-  const openSelected = async (parentRevisionId?: string) => {
-    if (reviewPending.current) return;
-    const currentRow = controller.getSelectedRow();
-    if (!currentRow) return;
+  const openSelected = async (parentRevisionId?: string, pending = false) => {
+    if (reviewPending.current && !pending) return;
     reviewPending.current = true;
     reviewQuitEnabled.current = false;
+    await controller.settleNavigation();
+    const currentSelection = controller.getSelection();
+    if (!currentSelection) {
+      reviewPending.current = false;
+      return;
+    }
     setOpeningCommit({
-      id: sanitizeTerminalLine(currentRow.commit.displayId),
-      subject: sanitizeTerminalLine(currentRow.commit.subject),
+      id: sanitizeTerminalLine(currentSelection.focus.commit.displayId),
+      subject: sanitizeTerminalLine(currentSelection.focus.commit.subject),
+      count: currentSelection.count,
     });
     try {
       // Commit the loading surface and consume input coalesced with the opening key/click before
@@ -160,7 +171,11 @@ export function LogApp({
       reviewQuitEnabled.current = true;
       await onOutcome({
         kind: "open-review",
-        commit: currentRow.commit,
+        selection: {
+          newestCommit: currentSelection.newest.commit,
+          oldestCommit: currentSelection.oldest.commit,
+        },
+        count: currentSelection.count,
         ...(parentRevisionId === undefined ? {} : { parentRevisionId }),
         themeId: themeController.themeId,
         themeMode: terminalThemeMode,
@@ -211,12 +226,29 @@ export function LogApp({
     ...viewPreferenceQuit,
     closeSaveConfigPrompt: closeLogSaveConfigPrompt,
   };
+  const requestOpenSelected = async () => {
+    if (reviewPending.current) return;
+    reviewPending.current = true;
+    reviewQuitEnabled.current = false;
+    await controller.settleNavigation();
+    const currentSelection = controller.getSelection();
+    if (
+      currentSelection &&
+      currentSelection.count > 1 &&
+      currentSelection.oldest.commit.parentRevisionIds.length > 1
+    ) {
+      reviewPending.current = false;
+      setParentSelectorIndex(0);
+      return;
+    }
+    await openSelected(undefined, true);
+  };
   const executeCommand = (id: LogCommandId, exitCode?: number) => {
     clearTransientNotice();
     if (!isLogCommandEnabled(id, controller.getSnapshot())) return;
     switch (id) {
       case "open":
-        void openSelected();
+        void requestOpenSelected();
         break;
       case "copy":
         copySelected();
@@ -250,6 +282,12 @@ export function LogApp({
         break;
       case "next":
         void controller.move(1, viewportBodyHeight);
+        break;
+      case "extend-previous":
+        void controller.move(-1, viewportBodyHeight, { extend: true });
+        break;
+      case "extend-next":
+        void controller.move(1, viewportBodyHeight, { extend: true });
         break;
       case "page-up":
         void controller.page(-1, viewportBodyHeight);
@@ -323,6 +361,8 @@ export function LogApp({
     navigate: [
       commandItem("previous"),
       commandItem("next"),
+      commandItem("extend-previous"),
+      commandItem("extend-next"),
       commandItem("page-up"),
       commandItem("page-down"),
       commandItem("first"),
@@ -392,6 +432,10 @@ export function LogApp({
     }
     if (reviewPending.current) {
       if (!reviewQuitEnabled.current) {
+        const command = matchLogCommand(key);
+        if (command === "quit" && key.ctrl && key.name === "c") {
+          executeCommand(command, 130);
+        }
         consume();
         return;
       }
@@ -423,7 +467,7 @@ export function LogApp({
       return;
     }
     if (parentSelectorIndex !== null) {
-      const parents = controller.getSelectedRow()?.commit.parentRevisionIds ?? [];
+      const parents = controller.getSelection()?.oldest.commit.parentRevisionIds ?? [];
       if (name === "escape") setParentSelectorIndex(null);
       else if (name === "up")
         setParentSelectorIndex((parentSelectorIndex - 1 + parents.length) % parents.length);
@@ -500,7 +544,12 @@ export function LogApp({
     groupByDay: !snapshot.presentation.graph,
   });
   const visible = viewportGeometry.entries;
-  const statusHint = terminal.width >= 60 ? "↑↓ move · Enter open · / search · F10 menu" : "";
+  const statusHint =
+    terminal.width >= 120
+      ? "↑↓ move · Shift-↑↓ / J/K select · Enter open · / search · F10 menu"
+      : terminal.width >= 60
+        ? "J/K select · Enter open · F10 menu"
+        : "";
   const statusTextWidth = Math.max(
     1,
     terminal.width - measureTextWidth(statusHint) - (statusHint ? 3 : 2),
@@ -552,7 +601,11 @@ export function LogApp({
               alignItems: "center",
             }}
           >
-            <text fg={theme.text}>Opening commit</text>
+            <text fg={theme.text}>
+              {openingCommit.count > 1
+                ? `Opening ${openingCommit.count} commits`
+                : "Opening commit"}
+            </text>
             <text fg={theme.accent}>
               {fitText(
                 `${openingCommit.id} · ${openingCommit.subject}`,
@@ -563,7 +616,10 @@ export function LogApp({
           </box>
         ) : (
           visible.map(({ index, row, showDayHeader }) => {
-            const selected = index === snapshot.selected;
+            const selected =
+              selection !== undefined &&
+              index >= selection.newestIndex &&
+              index <= selection.oldestIndex;
             const projected = projectResponsiveLogRow({
               row,
               presentation: snapshot.presentation,
@@ -604,8 +660,13 @@ export function LogApp({
                     flexDirection: "row",
                     backgroundColor: selected ? theme.selectedHunk : theme.background,
                   }}
-                  onMouseUp={() => {
+                  onMouseUp={(event: TuiMouseEvent) => {
                     clearTransientNotice();
+                    if (event.modifiers.shift) {
+                      lastClick.current = { index: -1, at: 0 };
+                      void controller.select(index, viewportBodyHeight, { extend: true });
+                      return;
+                    }
                     const now = Date.now();
                     const shouldOpen =
                       lastClick.current.index === index && now - lastClick.current.at < 400;
@@ -667,6 +728,11 @@ export function LogApp({
                         projected.columnGap +
                         projected.rightWidth -
                         measureTextWidth(projected.copyIcon);
+                      if (event.modifiers.shift) {
+                        lastClick.current = { index: -1, at: 0 };
+                        void controller.select(index, viewportBodyHeight, { extend: true });
+                        return;
+                      }
                       void controller.select(index, viewportBodyHeight).then(() => {
                         if (event.x >= copyIconStart) copySelected(row);
                         else void openSelected();
@@ -705,7 +771,9 @@ export function LogApp({
               ? `/${snapshot.search}`
               : transientNotice ||
                   snapshot.notice ||
-                  `${runtime.providerName} · ${snapshot.rows.length}${snapshot.historyDone ? " commits" : "+ commits"}`,
+                  ((selection?.count ?? 0) > 1
+                    ? `${selection!.count} commits selected`
+                    : `${runtime.providerName} · ${snapshot.rows.length}${snapshot.historyDone ? " commits" : "+ commits"}`),
             statusTextWidth,
           )}
         </text>
@@ -728,15 +796,15 @@ export function LogApp({
           }}
         />
       ) : null}
-      {parentSelectorIndex !== null && selectedRow ? (
+      {parentSelectorIndex !== null && parentRow ? (
         <ParentSelectorDialog
-          parentRevisionIds={selectedRow.commit.parentRevisionIds}
+          parentRevisionIds={parentRow.commit.parentRevisionIds}
           selectedIndex={parentSelectorIndex}
           terminalHeight={terminal.height}
           terminalWidth={terminal.width}
           theme={chromeTheme}
           onAccept={(index) => {
-            const parent = selectedRow.commit.parentRevisionIds[index];
+            const parent = parentRow.commit.parentRevisionIds[index];
             setParentSelectorIndex(null);
             if (parent) void openSelected(parent);
           }}

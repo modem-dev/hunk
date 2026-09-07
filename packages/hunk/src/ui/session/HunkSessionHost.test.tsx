@@ -19,8 +19,18 @@ import {
 
 mock.restore();
 
-/** Create a loaded one-row history route for session-host navigation tests. */
-async function createHistoryRoute() {
+/** Create a loaded history route for session-host navigation tests. */
+async function createHistoryRoute(subjects = ["History row"]) {
+  const commits = subjects.map((subject, index) => ({
+    revisionId: `revision-${String.fromCharCode(97 + index)}`,
+    displayId: index === 0 ? "revision" : `rev-${index}`,
+    parentRevisionIds:
+      index + 1 < subjects.length ? [`revision-${String.fromCharCode(98 + index)}`] : [],
+    subject,
+    authorName: "Ada",
+    authoredAt: "2026-01-01T00:00:00Z",
+    decorations: [],
+  }));
   const runtime: HistoryRuntime = {
     input: {
       kind: "history",
@@ -34,20 +44,7 @@ async function createHistoryRoute() {
     extensionSession: createTestExtensionSession(),
     source: {
       async read() {
-        return {
-          commits: [
-            {
-              revisionId: "revision-a",
-              displayId: "revision",
-              parentRevisionIds: [],
-              subject: "History row",
-              authorName: "Ada",
-              authoredAt: "2026-01-01T00:00:00Z",
-              decorations: [],
-            },
-          ],
-          done: true,
-        };
+        return { commits, done: true };
       },
       async close() {},
     },
@@ -58,8 +55,16 @@ async function createHistoryRoute() {
     customThemes: [],
     initialViewPreferences: persistedViewPreferencesFromOptions({}),
     promptSaveViewPreferences: true,
-    async planReview() {
-      return { kind: "revision-show", revisionId: "revision-a" };
+    async planReview(commit) {
+      return { kind: "revision-show", revisionId: commit.revisionId };
+    },
+    async planRangeReview(selection, options) {
+      return {
+        kind: "revision-range",
+        fromRevisionId:
+          options?.parentRevisionId ?? selection.oldestCommit.parentRevisionIds[0] ?? "empty",
+        toRevisionId: selection.newestCommit.revisionId,
+      };
     },
     async reopenSource() {
       return this.source;
@@ -147,6 +152,55 @@ test("routes repeated history reviews through fresh runtimes and returns instead
     expect(stops[0]).toHaveBeenCalledTimes(1);
     expect(stops[1]).toHaveBeenCalledTimes(1);
     expect(quit).not.toHaveBeenCalled();
+  } finally {
+    setup.renderer.destroy();
+    await history.controller.close();
+  }
+});
+
+test("opens an extended history selection as one inclusive comparison", async () => {
+  const history = await createHistoryRoute(["Newest", "Oldest"]);
+  const requests: unknown[] = [];
+  const deps: HunkSessionHostDeps = {
+    prepareReview: (async (request: unknown) => {
+      requests.push(request);
+      const bootstrap = createTestVcsAppBootstrap({
+        changesetId: "range-review",
+        files: [createTestDiffFile({ id: "range.ts", path: "range.ts" })],
+      });
+      bootstrap.extensions = history.runtime.extensionSession.current;
+      return { bootstrap, borrowsExtensions: true };
+    }) as never,
+    createReviewRuntime: (() => ({
+      hostClient: undefined,
+      reviewProducer: undefined,
+      stop: mock(() => undefined),
+    })) as never,
+  };
+  const setup = await testRender(
+    <HunkSessionHost
+      initialRoute={history}
+      externalQuitSignal={new AbortController().signal}
+      onQuit={() => undefined}
+      deps={deps}
+    />,
+    { width: 100, height: 20 },
+  );
+  try {
+    await setup.renderOnce();
+    await act(async () => setup.mockInput.typeText("J"));
+    await setup.renderOnce();
+    expect(setup.captureCharFrame()).toContain("2 commits selected");
+    await act(async () => setup.mockInput.pressEnter());
+    await settle(setup);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      action: {
+        kind: "revision-range",
+        fromRevisionId: "empty",
+        toRevisionId: "revision-a",
+      },
+    });
   } finally {
     setup.renderer.destroy();
     await history.controller.close();
@@ -335,7 +389,11 @@ test("waits for non-cooperative provider planning before menu quit", async () =>
   const planning = new Promise<{ kind: "revision-show"; revisionId: string }>((resolve) => {
     resolvePlanning = resolve;
   });
-  history.runtime.planReview = mock(() => planning);
+  let planningSignal: AbortSignal | undefined;
+  history.runtime.planReview = mock((_commit, _options, signal) => {
+    planningSignal = signal;
+    return planning;
+  });
   const prepareReview = mock(async () => {
     throw new Error("cancelled planning reached preparation");
   });
@@ -355,6 +413,7 @@ test("waits for non-cooperative provider planning before menu quit", async () =>
     await Bun.sleep(10);
     await selectHistoryMenuQuit(setup);
     expect(quit).not.toHaveBeenCalled();
+    expect(planningSignal?.aborted).toBeTrue();
 
     resolvePlanning({ kind: "revision-show", revisionId: "revision-a" });
     await settle(setup);

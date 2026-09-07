@@ -2,6 +2,8 @@ import type {
   ExtensionVcsHistoryCommit,
   ExtensionVcsHistoryInput,
   ExtensionVcsHistoryPage,
+  ExtensionVcsHistoryRangeReviewAction,
+  ExtensionVcsHistoryRangeSelection,
   ExtensionVcsHistoryReviewAction,
   ExtensionVcsHistoryReviewOptions,
   ExtensionVcsWatchPlan,
@@ -61,6 +63,11 @@ export interface VcsHistoryCapability {
     context: VcsLoadContext,
     options?: ExtensionVcsHistoryReviewOptions,
   ): Promise<ExtensionVcsHistoryReviewAction>;
+  planRangeReview?(
+    selection: ExtensionVcsHistoryRangeSelection,
+    context: VcsLoadContext,
+    options?: ExtensionVcsHistoryReviewOptions,
+  ): Promise<ExtensionVcsHistoryRangeReviewAction>;
 }
 
 /**

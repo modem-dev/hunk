@@ -302,8 +302,9 @@ and retires the replaced instance at that explicit ownership boundary.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `20`). Branch on it if you want
-one file to support several Hunk versions. Version 20 adds optional commit timestamps to review
+The API generation this Hunk speaks (currently `21`). Branch on it if you want
+one file to support several Hunk versions. Version 21 adds optional inclusive history-range review
+planning; version 20 adds optional commit timestamps to review
 metadata, pane clipboard actions, and the `theme.copyAction` paint token; version 19 adds provider-owned history
 enumeration and review planning; version 18 lets lifecycle and custom-event handlers request
 a host-owned review reload; version 17 adds structured review metadata to delegated patch
@@ -527,7 +528,7 @@ reuses one is skipped with a notice.
 map off entirely — produces a clear "not supported" error for that command
 instead of a crash.
 
-API version 19 adds the optional, read-only `history` capability used by the built-in `hunk log` surface:
+API version 19 adds the optional, read-only `history` capability used by the built-in `hunk log` surface. API version 21 adds optional inclusive range planning:
 
 ```ts
 hunk.registerVcsAdapter({
@@ -553,6 +554,15 @@ hunk.registerVcsAdapter({
           }
         : { kind: "revision-show", revisionId: commit.revisionId };
     },
+    planRangeReview({ newestCommit, oldestCommit }, _context, options) {
+      const parent = options?.parentRevisionId ?? oldestCommit.parentRevisionIds[0];
+      if (!parent) throw new Error("Resolve this provider's empty root baseline here.");
+      return {
+        kind: "revision-range",
+        fromRevisionId: parent,
+        toRevisionId: newestCommit.revisionId,
+      };
+    },
   },
 });
 ```
@@ -565,8 +575,12 @@ opening. Otherwise Enter reports that the corresponding review operation is unsu
 History is deliberately separate from patch-producing `operations`. The built-in host owns command
 routing, graph planning, themes, terminal lifecycle, and static/interactive presentation. The
 adapter owns every repository semantic: traversal and filtering, immutable identities, refs, and
-`planReview`'s decision about how roots and merges open through that adapter's ordinary review
-operations. Hunk treats revision ids as opaque strings and never invents provider revision syntax.
+review-planning decisions about roots, merges, ancestry, and direct endpoints. `planRangeReview` is
+optional so older adapters remain compatible; without it, Hunk reports multi-commit opening as
+unsupported rather than silently opening one commit. A range planner compares the chosen parent—or
+provider-specific empty/root baseline—of `oldestCommit` directly with `newestCommit` and must not use
+merge-base/triple-dot semantics. Hunk treats revision ids as opaque strings and never invents provider
+revision syntax.
 
 Commits must carry an immutable full `revisionId`, display id, ordered parent ids, subject, optional
 message body, author (and optional email), ISO authored time, and structured ref decorations. The

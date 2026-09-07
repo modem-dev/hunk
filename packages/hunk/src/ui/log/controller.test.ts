@@ -120,6 +120,83 @@ describe("LogController", () => {
     await controller.close();
   });
 
+  test("extends, shrinks, reverses, and collapses an inclusive range", async () => {
+    const { runtime } = createRuntime(["one", "two", "three", "four"]);
+    const controller = new LogController(runtime);
+    await controller.loadMore();
+    await controller.move(1, 1);
+    await Promise.all([
+      controller.move(1, 1, { extend: true }),
+      controller.move(1, 1, { extend: true }),
+    ]);
+    expect(controller.getSelection()).toMatchObject({
+      newestIndex: 1,
+      oldestIndex: 3,
+      count: 3,
+    });
+    await controller.move(-2, 1, { extend: true });
+    expect(controller.getSelection()?.count).toBe(1);
+    await controller.move(-1, 1, { extend: true });
+    expect(controller.getSelection()).toMatchObject({ newestIndex: 0, oldestIndex: 1, count: 2 });
+    expect(controller.getSelection()?.focus.commit.revisionId).toBe("one");
+    await controller.move(1, 1);
+    expect(controller.getSnapshot().selectionAnchor).toBeNull();
+    expect(controller.getSelection()?.count).toBe(1);
+    await controller.close();
+  });
+
+  test("rejects ranges when traversal options can hide or interleave commits", async () => {
+    for (const input of [{ grep: "matching" }, { all: true }]) {
+      const { runtime } = createRuntime(["one", "two", "three"]);
+      runtime.input = { ...runtime.input, ...input };
+      const controller = new LogController(runtime);
+      await controller.loadMore();
+      await controller.move(1, 1, { extend: true });
+
+      expect(controller.getSelection()?.count).toBe(1);
+      expect(controller.getSnapshot().notice).toBe(
+        "Multi-commit selection is unavailable when history traversal can hide or interleave commits.",
+      );
+      await controller.close();
+    }
+  });
+
+  test("settles deferred navigation and prevents stale selection overwrite", async () => {
+    const { runtime } = createRuntime(["one", "two", "three"]);
+    const originalRead = runtime.source.read.bind(runtime.source);
+    let readCount = 0;
+    let release!: () => void;
+    const deferred = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    runtime.source.read = async (options) => {
+      readCount += 1;
+      if (readCount === 2) await deferred;
+      return originalRead(options);
+    };
+    const controller = new LogController(runtime);
+    await controller.loadMore();
+    const staleExtension = controller.move(2, 1, { extend: true });
+    const latestSelection = controller.select(0, 1);
+    release();
+    await Promise.all([staleExtension, latestSelection, controller.settleNavigation()]);
+    expect(controller.getSnapshot()).toMatchObject({ selected: 0, selectionAnchor: null });
+    await controller.close();
+  });
+
+  test("refresh reconciles both range endpoints by immutable revision id", async () => {
+    const { runtime } = createRuntime(["one", "two", "three", "four"]);
+    const controller = new LogController(runtime);
+    await controller.loadMore();
+    await controller.move(2, 2, { extend: true });
+    expect(controller.getSelection()?.count).toBe(3);
+    await controller.refresh();
+    expect(controller.getSelection()?.newest.commit.revisionId).toBe("one");
+    expect(controller.getSelection()?.oldest.commit.revisionId).toBe("three");
+    expect(controller.getSelection()?.count).toBe(3);
+    await controller.close();
+  });
+
   test("search reveals its match and refresh preserves immutable selection viewport offset", async () => {
     const { runtime } = createRuntime(["one", "two", "three", "four"]);
     const controller = new LogController(runtime);

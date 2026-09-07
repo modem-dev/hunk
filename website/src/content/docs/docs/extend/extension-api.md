@@ -7,8 +7,9 @@ The extension factory receives one API object. Registration calls are only valid
 
 ## `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `20`). Branch on it if you want
-one file to support several Hunk versions. Version 20 adds optional commit timestamps to review
+The API generation this Hunk speaks (currently `21`). Branch on it if you want
+one file to support several Hunk versions. Version 21 adds optional inclusive history-range review
+planning; version 20 adds optional commit timestamps to review
 metadata, pane clipboard actions, and the `theme.copyAction` paint token; version 19 adds provider-owned history enumeration and review planning; version 18 lets
 lifecycle and custom-event handlers request a host-owned review reload; version 17 adds structured review metadata to delegated
 patch commands and projects it into pane availability and component props; version 16 adds pane-wide

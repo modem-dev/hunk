@@ -16,6 +16,8 @@ export type LogCommandId =
   | "toggle-decorations"
   | "previous"
   | "next"
+  | "extend-previous"
+  | "extend-next"
   | "page-up"
   | "page-down"
   | "first"
@@ -42,7 +44,7 @@ export interface LogCommandDefinition {
 export const LOG_COMMANDS: readonly LogCommandDefinition[] = [
   {
     id: "open",
-    label: "Open selected commit",
+    label: "Open selection",
     menu: "file",
     shortcuts: [{ token: "name:enter", display: "Enter" }],
     helpSection: "Commit",
@@ -83,6 +85,26 @@ export const LOG_COMMANDS: readonly LogCommandDefinition[] = [
   { id: "toggle-author", label: "Show author", menu: "view" },
   { id: "toggle-date", label: "Show date", menu: "view" },
   { id: "toggle-decorations", label: "Show decorations", menu: "view" },
+  {
+    id: "extend-previous",
+    label: "Extend selection up",
+    menu: "navigate",
+    shortcuts: [
+      { token: "shift:up", display: "Shift-↑ / K" },
+      { token: "sequence:K", display: "Shift-↑ / K" },
+    ],
+    helpSection: "Navigation",
+  },
+  {
+    id: "extend-next",
+    label: "Extend selection down",
+    menu: "navigate",
+    shortcuts: [
+      { token: "shift:down", display: "Shift-↓ / J" },
+      { token: "sequence:J", display: "Shift-↓ / J" },
+    ],
+    helpSection: "Navigation",
+  },
   {
     id: "previous",
     label: "Previous commit",
@@ -188,9 +210,10 @@ export function logCommandHint(id: LogCommandId) {
 
 /** Resolve a keyboard event to the canonical log command. */
 export function matchLogCommand(key: KeyEvent): LogCommandId | null {
+  const normalizedName = key.name === "return" ? "enter" : key.name;
   const tokens = [
     key.ctrl ? `ctrl:${key.name}` : "",
-    `name:${key.name === "return" ? "enter" : key.name}`,
+    key.shift ? `shift:${normalizedName}` : `name:${normalizedName}`,
     key.sequence ? `sequence:${key.sequence}` : "",
   ];
   return (
@@ -204,12 +227,17 @@ export function matchLogCommand(key: KeyEvent): LogCommandId | null {
 export function isLogCommandEnabled(id: LogCommandId, snapshot: LogSnapshot) {
   const selected = snapshot.rows[snapshot.selected];
   if (["open", "copy"].includes(id)) return Boolean(selected);
-  if (id === "previous" || id === "page-up" || id === "first") return snapshot.selected > 0;
-  if (id === "next" || id === "page-down" || id === "last")
+  if (id === "previous" || id === "extend-previous" || id === "page-up" || id === "first")
+    return snapshot.selected > 0;
+  if (id === "next" || id === "extend-next" || id === "page-down" || id === "last")
     return !(snapshot.historyDone && snapshot.selected >= snapshot.rows.length - 1);
   if (id === "next-match" || id === "previous-match") return Boolean(snapshot.search);
-  if (id === "open-first-parent") return Boolean(selected?.commit.parentRevisionIds.length);
-  if (id === "open-parent") return (selected?.commit.parentRevisionIds.length ?? 0) > 1;
+  if (id === "open-first-parent")
+    return snapshot.selectionAnchor === null && Boolean(selected?.commit.parentRevisionIds.length);
+  if (id === "open-parent")
+    return (
+      snapshot.selectionAnchor === null && (selected?.commit.parentRevisionIds.length ?? 0) > 1
+    );
   return true;
 }
 

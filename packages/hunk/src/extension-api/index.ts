@@ -153,6 +153,8 @@ export type {
   ExtensionVcsHistoryDecoration,
   ExtensionVcsHistoryInput,
   ExtensionVcsHistoryPage,
+  ExtensionVcsHistoryRangeReviewAction,
+  ExtensionVcsHistoryRangeSelection,
   ExtensionVcsHistoryReviewAction,
   ExtensionVcsHistoryReviewOptions,
   ExtensionVcsHistorySource,

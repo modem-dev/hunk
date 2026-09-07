@@ -1,10 +1,14 @@
 import { spawn } from "node:child_process";
 import { StringDecoder } from "node:string_decoder";
+import { runAbortableCommand } from "@hunk/vcs/async-process";
 import {
   HunkExtensionUserError,
   type ExtensionVcsHistoryCommit,
   type ExtensionVcsHistoryDecoration,
   type ExtensionVcsHistoryInput,
+  type ExtensionVcsHistoryRangeReviewAction,
+  type ExtensionVcsHistoryRangeSelection,
+  type ExtensionVcsHistoryReviewOptions,
   type ExtensionVcsHistorySource,
 } from "hunkdiff/extension";
 
@@ -18,19 +22,21 @@ const MAX_HISTORY_STDERR_BYTES = 16 * 1024;
 interface GitHistoryOptions {
   cwd: string;
   gitExecutable?: string;
+  signal?: AbortSignal;
 }
 
-/** Run one shell-free bounded Git query and retain byte-exact NUL delimiters. */
-function runGit(
+/** Run one shell-free bounded Git query and retain its exit status. */
+function runGitResult(
   args: string[],
   { cwd, gitExecutable = "git" }: GitHistoryOptions,
   acceptedExitCodes: readonly number[] = [0],
+  stdin?: Uint8Array,
 ) {
   let result: ReturnType<typeof Bun.spawnSync>;
   try {
     result = Bun.spawnSync([gitExecutable, ...args], {
       cwd,
-      stdin: "ignore",
+      stdin: stdin ?? "ignore",
       stdout: "pipe",
       stderr: "pipe",
       maxBuffer: MAX_SYNC_OUTPUT_BYTES,
@@ -48,7 +54,74 @@ function runGit(
       suggestions: ["Check the revision, filters, and repository, then try again."],
     });
   }
-  return result.stdout?.toString() ?? "";
+  return result;
+}
+
+/** Run one shell-free bounded Git query and retain byte-exact NUL delimiters. */
+function runGit(
+  args: string[],
+  options: GitHistoryOptions,
+  acceptedExitCodes: readonly number[] = [0],
+  stdin?: Uint8Array,
+) {
+  return runGitResult(args, options, acceptedExitCodes, stdin).stdout?.toString() ?? "";
+}
+
+/** Run one cancellable Git query used while preparing a history range. */
+async function runGitPlanningQuery(
+  args: string[],
+  { cwd, gitExecutable = "git", signal }: GitHistoryOptions,
+  acceptedExitCodes: readonly number[] = [0],
+) {
+  let result: Awaited<ReturnType<typeof runAbortableCommand>>;
+  try {
+    result = await runAbortableCommand([gitExecutable, ...args], {
+      cwd,
+      signal,
+      env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
+    });
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    throw new HunkExtensionUserError(`Could not run ${gitExecutable}.`, {
+      suggestions: ["Install Git or configure Hunk to use another VCS backend."],
+    });
+  }
+  if (!acceptedExitCodes.includes(result.exitCode)) {
+    throw new HunkExtensionUserError(
+      result.stderr.trim().split("\n")[0] || "Git could not read this repository.",
+      { suggestions: ["Check the revision, filters, and repository, then try again."] },
+    );
+  }
+  return result;
+}
+
+/** Plan an inclusive ancestry range without exposing Git syntax to Hunk core. */
+export async function planGitHistoryRangeReview(
+  selection: ExtensionVcsHistoryRangeSelection,
+  options: GitHistoryOptions,
+  reviewOptions?: ExtensionVcsHistoryReviewOptions,
+): Promise<ExtensionVcsHistoryRangeReviewAction> {
+  const newest = requireRevision(selection.newestCommit.revisionId);
+  const oldest = requireRevision(selection.oldestCommit.revisionId);
+  const ancestry = await runGitPlanningQuery(
+    ["merge-base", "--is-ancestor", oldest, newest],
+    options,
+    [0, 1],
+  );
+  if (ancestry.exitCode === 1) {
+    throw new HunkExtensionUserError("The selected commits are not on one Git ancestry path.", {
+      suggestions: ["Choose a contiguous range whose oldest commit is an ancestor of the newest."],
+    });
+  }
+  const parent = reviewOptions?.parentRevisionId ?? selection.oldestCommit.parentRevisionIds[0];
+  if (parent && !selection.oldestCommit.parentRevisionIds.includes(parent)) {
+    throw new Error("The selected revision is not a parent of the oldest Git commit.");
+  }
+  const fromRevisionId = parent
+    ? requireRevision(parent)
+    : (await runGitPlanningQuery(["hash-object", "-t", "tree", "--stdin"], options)).stdout.trim();
+  if (!fromRevisionId) throw new Error("Git returned an empty root comparison identity.");
+  return { kind: "revision-range", fromRevisionId, toRevisionId: newest };
 }
 
 /** Resolve the repository root, including a bare repository with no worktree. */

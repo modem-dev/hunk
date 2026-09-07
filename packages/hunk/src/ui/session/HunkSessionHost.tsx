@@ -10,6 +10,7 @@ import {
 } from "../../app/session/reviewRuntime";
 import type { StartupNotice } from "../../core/process/startupNotice";
 import type { AppBootstrap } from "../../core/bootstrap";
+import type { ExtensionVcsHistoryReviewAction } from "../../extension-api/types";
 import { parseExtensionReviewDescriptor } from "../../core/reviewDescriptor";
 import type { ExtensionSession } from "../../extensions/session";
 import type { ExtensionLoadResult } from "../../extensions/types";
@@ -52,20 +53,35 @@ export interface HunkSessionHostDeps {
   viewPreferenceQuitScheduler?: ViewPreferenceQuitScheduler;
 }
 
-/** Describe the selected history commit with bounded metadata shared by every review surface. */
-function historyCommitReviewDescriptor(
+/** Describe a history selection with bounded metadata shared by every review surface. */
+function historyReviewDescriptor(
   runtime: HistoryRuntime,
   outcome: Extract<LogAppOutcome, { kind: "open-review" }>,
+  action: ExtensionVcsHistoryReviewAction,
 ) {
-  const review = parseExtensionReviewDescriptor({
-    kind: "commit",
-    provider: runtime.providerName,
-    title: outcome.commit.subject,
-    revision: outcome.commit.revisionId,
-    author: resolveHistoryAuthorLabel(outcome.commit),
-    authoredAt: outcome.commit.authoredAt,
-  });
-  return review?.kind === "commit" ? review : undefined;
+  const newest = outcome.selection.newestCommit;
+  const review = parseExtensionReviewDescriptor(
+    outcome.count === 1
+      ? {
+          kind: "commit",
+          provider: runtime.providerName,
+          title: newest.subject,
+          revision: newest.revisionId,
+          author: resolveHistoryAuthorLabel(newest),
+          authoredAt: newest.authoredAt,
+        }
+      : {
+          kind: "comparison",
+          provider: runtime.providerName,
+          title: `${outcome.count} commits`,
+          base:
+            action.kind === "revision-range"
+              ? action.fromRevisionId
+              : outcome.selection.oldestCommit.revisionId,
+          head: action.kind === "revision-range" ? action.toRevisionId : newest.revisionId,
+        },
+  );
+  return review;
 }
 
 /**
@@ -198,12 +214,21 @@ export function HunkSessionHost({
     const startupCwd = historyRoute.runtime.startupCwd ?? historyRoute.runtime.repoRoot;
     let plan: EmbeddedHistoryReview | undefined;
     try {
-      const action = await historyRoute.runtime.planReview(
-        outcome.commit,
+      const reviewOptions =
         outcome.parentRevisionId === undefined
           ? undefined
-          : { parentRevisionId: outcome.parentRevisionId },
-      );
+          : { parentRevisionId: outcome.parentRevisionId };
+      const action =
+        outcome.count === 1
+          ? await historyRoute.runtime.planReview(
+              outcome.selection.newestCommit,
+              reviewOptions,
+              signal,
+            )
+          : await historyRoute.runtime.planRangeReview?.(outcome.selection, reviewOptions, signal);
+      if (!action) {
+        throw new Error("This history provider does not support multi-commit review.");
+      }
       signal.throwIfAborted();
       const request: EmbeddedHistoryReviewRequest = {
         action,
@@ -216,8 +241,8 @@ export function HunkSessionHost({
         themeMode: outcome.themeMode,
       };
       plan = await prepareReview(request, { signal });
-      const commitReview = historyCommitReviewDescriptor(historyRoute.runtime, outcome);
-      if (commitReview) plan.bootstrap.review = commitReview;
+      const historyReview = historyReviewDescriptor(historyRoute.runtime, outcome, action);
+      if (historyReview) plan.bootstrap.review = historyReview;
       if (!plan.bootstrap.extensions) {
         throw new Error("Embedded review startup did not provide extension authority.");
       }

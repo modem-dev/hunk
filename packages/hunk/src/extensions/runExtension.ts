@@ -29,6 +29,7 @@ import { toUserFacingError } from "../core/run/errors";
 import { toInternalVcsPatchResult } from "./vcsPatchResult";
 import type {
   ExtensionVcsHistoryCommit,
+  ExtensionVcsHistoryRangeSelection,
   ExtensionVcsHistoryReviewAction,
   ExtensionVcsHistorySource,
   ExtensionVcsOperation,
@@ -318,6 +319,18 @@ function normalizeHistoryCommit(value: unknown): ExtensionVcsHistoryCommit {
   };
 }
 
+/** Copy and validate both immutable endpoints in one history range selection. */
+function normalizeHistoryRangeSelection(value: unknown): ExtensionVcsHistoryRangeSelection {
+  if (!isPlainObject(value)) {
+    throw new Error("VCS history range selection must be an object.");
+  }
+  const fields = snapshotProperties(value, ["newestCommit", "oldestCommit"]);
+  return {
+    newestCommit: normalizeHistoryCommit(fields.newestCommit),
+    oldestCommit: normalizeHistoryCommit(fields.oldestCommit),
+  };
+}
+
 /** Copy and validate a provider-owned plan for opening one opaque history item. */
 function normalizeHistoryReviewAction(value: unknown): ExtensionVcsHistoryReviewAction {
   if (!isPlainObject(value)) {
@@ -493,15 +506,17 @@ export function toInternalVcsAdapter(
 
   const history = adapterFields.history;
   const historyFields = isPlainObject(history)
-    ? snapshotProperties(history, ["open", "planReview"])
+    ? snapshotProperties(history, ["open", "planReview", "planRangeReview"])
     : undefined;
   const historyOpen = historyFields?.open;
   const historyPlanReview = historyFields?.planReview;
+  const historyPlanRangeReview = historyFields?.planRangeReview;
   if (
     history !== undefined &&
     (!isPlainObject(history) ||
       typeof historyOpen !== "function" ||
-      typeof historyPlanReview !== "function")
+      typeof historyPlanReview !== "function" ||
+      (historyPlanRangeReview !== undefined && typeof historyPlanRangeReview !== "function"))
   ) {
     throw new Error("registerVcsAdapter history must provide open() and planReview() functions.");
   }
@@ -510,6 +525,9 @@ export function toInternalVcsAdapter(
   const planHistoryReview = historyPlanReview as NonNullable<
     ExtensionVcsAdapter["history"]
   >["planReview"];
+  const planHistoryRangeReview = historyPlanRangeReview as NonNullable<
+    ExtensionVcsAdapter["history"]
+  >["planRangeReview"];
   const detect = adapterFields.detect;
   if (typeof detect !== "function") {
     throw new Error("registerVcsAdapter requires a detect() function.");
@@ -586,6 +604,42 @@ export function toInternalVcsAdapter(
             throw toUserFacingError(error);
           }
         },
+        ...(typeof planHistoryRangeReview === "function" && {
+          async planRangeReview(
+            selection: ExtensionVcsHistoryRangeSelection,
+            context: Parameters<NonNullable<typeof planHistoryRangeReview>>[1],
+            options?: Parameters<NonNullable<typeof planHistoryRangeReview>>[2],
+          ) {
+            try {
+              const normalizedSelection = normalizeHistoryRangeSelection(selection);
+              const parentRevisionId = options?.parentRevisionId;
+              if (
+                parentRevisionId !== undefined &&
+                !normalizedSelection.oldestCommit.parentRevisionIds.includes(parentRevisionId)
+              ) {
+                throw new Error(
+                  "VCS history range parent selection must name one of the oldest commit's parents.",
+                );
+              }
+              const action = normalizeHistoryReviewAction(
+                await planHistoryRangeReview.call(
+                  history,
+                  normalizedSelection,
+                  context,
+                  parentRevisionId === undefined ? undefined : { parentRevisionId },
+                ),
+              );
+              if (action.kind !== "revision-range") {
+                throw new Error(
+                  "VCS history planRangeReview() must return a revision-range action.",
+                );
+              }
+              return action;
+            } catch (error) {
+              throw toUserFacingError(error);
+            }
+          },
+        }),
       },
     }),
   };
