@@ -1,5 +1,8 @@
 import { expect, mock, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { act } from "react";
 import { createTestVcsAppBootstrap } from "../../../../../test/helpers/app-bootstrap";
 import { createTestDiffFile } from "../../../../../test/helpers/diff-helpers";
@@ -353,7 +356,7 @@ test("waits for non-cooperative provider planning before menu quit", async () =>
   }
 });
 
-test("keeps a dirty quit prompt mounted while cancelling review preparation", async () => {
+test("blocks reopening until dirty-quit cancellation settles", async () => {
   const history = await createHistoryRoute();
   let resolvePlanning!: (value: { kind: "revision-show"; revisionId: string }) => void;
   const planning = new Promise<{ kind: "revision-show"; revisionId: string }>((resolve) => {
@@ -389,17 +392,73 @@ test("keeps a dirty quit prompt mounted while cancelling review preparation", as
     await setup.renderOnce();
     expect(setup.captureCharFrame()).toContain("Save view preferences?");
 
+    await act(async () => setup.mockInput.pressKey("escape"));
+    await setup.renderOnce();
+    await act(async () => setup.mockInput.pressEnter());
+    expect(setup.captureCharFrame()).not.toContain("Save view preferences?");
+
     resolvePlanning({ kind: "revision-show", revisionId: "revision-a" });
     await settle(setup);
+    await act(async () => Bun.sleep(20));
+    await setup.renderOnce();
     expect(prepareReview).not.toHaveBeenCalled();
-    expect(setup.captureCharFrame()).toContain("Save view preferences?");
-    expect(quit).not.toHaveBeenCalled();
-
-    await act(async () => setup.mockInput.pressKey("escape"));
     expect(setup.captureCharFrame()).toContain("History row");
+    expect(setup.captureCharFrame()).not.toContain("Preparing review");
+    expect(quit).not.toHaveBeenCalled();
   } finally {
     setup.renderer.destroy();
     await history.controller.close();
+  }
+});
+
+test("preserves the original exit status while a saved-preferences quit is delayed", async () => {
+  const history = await createHistoryRoute();
+  const configHome = mkdtempSync(join(tmpdir(), "hunk-log-delayed-quit-"));
+  history.runtime.viewPreferencesConfigPath = join(configHome, "config.toml");
+  const quit = mock(() => undefined);
+  let scheduledQuit: (() => void) | undefined;
+  const setup = await testRender(
+    <HunkSessionHost
+      initialRoute={history}
+      externalQuitSignal={new AbortController().signal}
+      onQuit={quit}
+      deps={{
+        viewPreferenceQuitScheduler: {
+          schedule(callback) {
+            scheduledQuit = callback;
+            return callback;
+          },
+          cancel() {},
+        },
+      }}
+    />,
+    { width: 100, height: 20 },
+  );
+  try {
+    await setup.renderOnce();
+    await act(async () => setup.mockInput.typeText("t"));
+    await setup.renderOnce();
+    await act(async () => setup.mockInput.pressArrow("down"));
+    await setup.renderOnce();
+    await act(async () => setup.mockInput.pressEnter());
+    await setup.renderOnce();
+    await act(async () => setup.mockInput.typeText("q"));
+    await setup.renderOnce();
+    expect(setup.captureCharFrame()).toContain("Save view preferences?");
+
+    await act(async () => setup.mockInput.typeText("s"));
+    await setup.renderOnce();
+    expect(setup.captureCharFrame()).toContain("Saved view preferences");
+    await act(async () => setup.mockInput.pressKey("c", { ctrl: true }));
+    expect(scheduledQuit).toBeDefined();
+    await act(async () => scheduledQuit?.());
+
+    expect(quit).toHaveBeenCalledTimes(1);
+    expect(quit).toHaveBeenCalledWith(undefined);
+  } finally {
+    setup.renderer.destroy();
+    await history.controller.close();
+    rmSync(configHome, { recursive: true, force: true });
   }
 });
 

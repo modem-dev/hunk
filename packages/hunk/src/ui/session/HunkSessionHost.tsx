@@ -14,6 +14,7 @@ import type { ExtensionSession } from "../../extensions/session";
 import type { ExtensionLoadResult } from "../../extensions/types";
 import { AppHost } from "../AppHost";
 import type { HistoryRuntime } from "../history/types";
+import type { ViewPreferenceQuitScheduler } from "../hooks/useViewPreferenceQuitController";
 import { interactiveLogUsesColor } from "../log/colorPolicy";
 import { LogApp, type LogAppOutcome } from "../log/LogApp";
 import type { LogController } from "../log/controller";
@@ -46,6 +47,7 @@ type ActiveSurfaceRoute = HistorySurfaceRoute | ActiveReviewSurfaceRoute;
 export interface HunkSessionHostDeps {
   prepareReview?: typeof prepareEmbeddedHistoryReview;
   createReviewRuntime?: typeof createReviewSessionRuntime;
+  viewPreferenceQuitScheduler?: ViewPreferenceQuitScheduler;
 }
 
 /**
@@ -86,6 +88,7 @@ export function HunkSessionHost({
   const preparingRef = useRef(false);
   const preparationControllerRef = useRef<AbortController | null>(null);
   const preparationGenerationRef = useRef(0);
+  const preparationSettlementRef = useRef<Promise<void> | null>(null);
   const nextInstanceRef = useRef(initialRoute.kind === "review" ? initialRoute.instanceId + 1 : 1);
   const quitRequestedRef = useRef(false);
   const shutdownPendingRef = useRef(false);
@@ -143,10 +146,12 @@ export function HunkSessionHost({
     outcome: LogAppOutcome,
   ) => {
     if (outcome.kind === "cancel-open-review") {
+      const settlement = preparationSettlementRef.current;
       preparationGenerationRef.current += 1;
       preparationControllerRef.current?.abort(
         new Error("Hunk review preparation was cancelled before a history quit decision."),
       );
+      await settlement;
       return;
     }
     if (outcome.kind === "quit") {
@@ -163,6 +168,11 @@ export function HunkSessionHost({
       return;
     }
     preparingRef.current = true;
+    let settlePreparation!: () => void;
+    const preparationSettlement = new Promise<void>((resolve) => {
+      settlePreparation = resolve;
+    });
+    preparationSettlementRef.current = preparationSettlement;
     const generation = ++preparationGenerationRef.current;
     const preparationController = new AbortController();
     preparationControllerRef.current = preparationController;
@@ -239,6 +249,10 @@ export function HunkSessionHost({
         preparationControllerRef.current = null;
       }
       preparingRef.current = false;
+      if (preparationSettlementRef.current === preparationSettlement) {
+        preparationSettlementRef.current = null;
+      }
+      settlePreparation();
       if (shutdownPendingRef.current && routeRef.current.kind === "history") {
         completeQuit();
       }
@@ -298,6 +312,7 @@ export function HunkSessionHost({
       runtime={route.runtime}
       useColor={interactiveLogUsesColor(route.runtime.input.color, process.env)}
       onOutcome={(outcome) => handleHistoryOutcome(route, outcome)}
+      quitScheduler={deps.viewPreferenceQuitScheduler}
     />
   );
 }
