@@ -27,6 +27,7 @@ import { resolveVisiblePlannedRowWindow, type VisibleBodyBounds } from "./rowWin
 import { diffMessage, fitText } from "./plannedRowText";
 import { DiffRowView } from "./DiffRowView";
 import { plannedRowMatchesCursor, type CursorHighlight } from "./cursorHighlight";
+import { resolveCodeRowNoteTarget } from "./codeRowAffordance";
 import { useHighlightedDiff } from "./useHighlightedDiff";
 import { useHighlightedSource } from "./useHighlightedSource";
 
@@ -48,26 +49,9 @@ function isAddNoteTargetRow(row: DiffRow): row is AddNoteTargetRow {
 
 /** Resolve the note insertion target represented by a visible add-note affordance. */
 function addNoteAffordanceForRow(row: AddNoteTargetRow): ActiveAddNoteAffordance {
-  if (row.type === "split-line") {
-    return {
-      hunkIndex: row.hunkIndex,
-      target:
-        row.right.lineNumber !== undefined
-          ? { side: "new", line: row.right.lineNumber }
-          : row.left.lineNumber !== undefined
-            ? { side: "old", line: row.left.lineNumber }
-            : undefined,
-    };
-  }
-
   return {
     hunkIndex: row.hunkIndex,
-    target:
-      row.cell.newLineNumber !== undefined
-        ? { side: "new", line: row.cell.newLineNumber }
-        : row.cell.oldLineNumber !== undefined
-          ? { side: "old", line: row.cell.oldLineNumber }
-          : undefined,
+    target: resolveCodeRowNoteTarget(row),
   };
 }
 

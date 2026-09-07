@@ -2,7 +2,11 @@
 import type { UserNoteLineTarget } from "../../core/liveComments";
 import type { CopySelectedRowRange } from "../lib/diffSpatial";
 import type { AppTheme } from "../themes";
-import { CODE_ROW_ADD_NOTE_BADGE_TEXT, CODE_ROW_ADD_NOTE_BADGE_WIDTH } from "./codeRowAffordance";
+import {
+  CODE_ROW_ADD_NOTE_BADGE_TEXT,
+  CODE_ROW_ADD_NOTE_BADGE_WIDTH,
+  resolveCodeRowNoteTarget,
+} from "./codeRowAffordance";
 import { planCodeRowLayout, type CodeRowLayoutPlan } from "./codeRowLayout";
 import { codeCellView, FULL_CODE_CELL_COL_RANGE, type CodeCellHighlight } from "./CodeCellView";
 import type { CursorHighlight } from "./cursorHighlight";
@@ -164,12 +168,7 @@ export function CodeRowView({
     const splitLayout = codeRowLayout as Extract<CodeRowLayoutPlan, { kind: "split" }>;
     const guideOnOldSide = splitLayout.noteGuideSide === "old";
     const guideOnNewSide = splitLayout.noteGuideSide === "new";
-    const addNoteTarget: UserNoteLineTarget | undefined =
-      row.right.lineNumber !== undefined
-        ? { side: "new", line: row.right.lineNumber }
-        : row.left.lineNumber !== undefined
-          ? { side: "old", line: row.left.lineNumber }
-          : undefined;
+    const addNoteTarget = resolveCodeRowNoteTarget(row);
 
     const addBadgeWidth = splitLayout.addNoteBadgeWidth;
     const leftPrefix = {
@@ -280,12 +279,7 @@ export function CodeRowView({
   const stackLayout = codeRowLayout as Extract<CodeRowLayoutPlan, { kind: "stack" }>;
   const guideOnOldSide = stackLayout.noteGuideSide === "old";
   const guideOnNewSide = stackLayout.noteGuideSide === "new";
-  const addNoteTarget: UserNoteLineTarget | undefined =
-    row.cell.newLineNumber !== undefined
-      ? { side: "new", line: row.cell.newLineNumber }
-      : row.cell.oldLineNumber !== undefined
-        ? { side: "old", line: row.cell.oldLineNumber }
-        : undefined;
+  const addNoteTarget = resolveCodeRowNoteTarget(row);
   const addBadgeWidth = stackLayout.addNoteBadgeWidth;
   const prefix = {
     text: guideOnOldSide ? "│" : diffRailMarker(),
