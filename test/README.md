@@ -33,13 +33,13 @@ test/
 
 ## Commands and coverage
 
-| Command                              | Coverage                                                                                                          |
-| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
-| `bun run test`                       | `packages/`, `scripts/`, `examples/`, `test/cli/`, and `test/session/`, as defined by `scripts/run-test-suite.ts` |
-| `bun test ./test/review-conformance` | Shared review fixtures and registered consumer projections                                                        |
-| `bun run test:session-broker-node`   | Real Node listener/adapter conformance using the checked-in cross-runtime fixtures                                |
-| `bun run test:integration`           | PTY-backed tests under `test/pty/`                                                                                |
-| `bun run test:tty-smoke`             | Opt-in real-TTY smoke tests under `test/smoke/`                                                                   |
+| Command                              | Coverage                                                                                                               |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| `bun run test`                       | `packages/`, `scripts/`, `examples/`, `test/cli/`, and `test/session/`, as defined by `scripts/test/run-test-suite.ts` |
+| `bun test ./test/review-conformance` | Shared review fixtures and registered consumer projections                                                             |
+| `bun run test:session-broker-node`   | Real Node listener/adapter conformance using the checked-in cross-runtime fixtures                                     |
+| `bun run test:integration`           | PTY-backed tests under `test/pty/`                                                                                     |
+| `bun run test:tty-smoke`             | Opt-in real-TTY smoke tests under `test/smoke/`                                                                        |
 
 The dedicated trees are not selected directly by `bun run test`, though package tests import some
 shared runtime fixtures. Run the commands that match the changed behavior; omission from the default

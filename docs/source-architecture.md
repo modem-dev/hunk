@@ -20,7 +20,7 @@ for executable rules and migration history.
 
 Of the checked-in workspaces, only `hunkdiff` is published. Release automation also generates the
 public `hunkdiff-{platform}-{arch}` binary packages from the matrix in
-`scripts/prebuilt-package-helpers.ts`. Provider, VCS helper, broker, and term-video workspaces remain
+`scripts/packaging/prebuilt-package-helpers.ts`. Provider, VCS helper, broker, and term-video workspaces remain
 private.
 
 ## Hunk source ownership
