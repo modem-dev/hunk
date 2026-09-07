@@ -111,7 +111,7 @@ bad or duplicate id is skipped with a startup notice.
 | Reload after an external agent changes reviewed inputs   | `ctx.review.requestReload()` in an event     |
 | Read user-supplied settings                              | `hunk.config` (`[extension.<id>]` table)     |
 | Snapshot stable files and every saved review note        | `ctx.review.snapshot()` in a command         |
-| Branch on the API generation (currently `18`)            | `hunk.apiVersion`                            |
+| Branch on the host API generation                        | `hunk.apiVersion`                            |
 
 Registration is only valid while the factory runs — Hunk seals the API object
 afterwards.
@@ -169,6 +169,10 @@ transform — gets `ctx.cwd` and `ctx.notify(message, type?)`. A file view's
   (with `{ side, line }` when opted in), semantic `theme`, resolved `keybindings`, and
   guarded navigation/notification `actions`. Availability callbacks receive the same
   `review` value, so a pane can consume no geometry for ordinary reviews.
+  Plain working-tree reviews also supply optional `workingTree`: both status sides,
+  exact selected path, busy state, and leased file-selection/staging actions. Keep
+  inactive-side entries in the sidebar inventory rather than fabricating diff files;
+  see `docs/extensions.md`.
 - **File-view `layout`** gets `file`, `width`, `signal`, `changes`, and a lazy
   `readDocument(side)`.
 - **File-view `mode` handlers** get `ctx.file` and `ctx.fileViews`. `onKey`,

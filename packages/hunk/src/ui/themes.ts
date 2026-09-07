@@ -132,10 +132,15 @@ function readableSeparatedRowBackground(
 }
 
 /** Keep semantic status colors readable on sidebar and menu surfaces. */
-function readableChromeColor(preferred: string, panel: string, panelAlt: string) {
+function readableChromeColor(
+  preferred: string,
+  panel: string,
+  panelAlt: string,
+  selectedBackground: string,
+) {
+  const backgrounds = [panel, panelAlt, selectedBackground];
   if (
-    contrastRatio(preferred, panel) >= MIN_GUTTER_CONTRAST &&
-    contrastRatio(preferred, panelAlt) >= MIN_GUTTER_CONTRAST
+    backgrounds.every((background) => contrastRatio(preferred, background) >= MIN_GUTTER_CONTRAST)
   ) {
     return preferred;
   }
@@ -145,8 +150,7 @@ function readableChromeColor(preferred: string, panel: string, panelAlt: string)
   for (const amount of [0.35, 0.5, 0.65, 0.8, 1]) {
     const candidate = blendHex(anchor, preferred, amount);
     if (
-      contrastRatio(candidate, panel) >= MIN_GUTTER_CONTRAST &&
-      contrastRatio(candidate, panelAlt) >= MIN_GUTTER_CONTRAST
+      backgrounds.every((background) => contrastRatio(candidate, background) >= MIN_GUTTER_CONTRAST)
     ) {
       return candidate;
     }
@@ -229,9 +233,24 @@ function buildShikiTheme(themeId: BundledShikiThemeId): AppTheme {
     selectedTint,
   );
   const syntaxColors = buildSyntaxColors(textForeground);
-  const badgeAdded = readableChromeColor(addedSignColor, neutralPanel, neutralPanelAlt);
-  const badgeRemoved = readableChromeColor(removedSignColor, neutralPanel, neutralPanelAlt);
-  const badgeModified = readableChromeColor(modifiedColor, neutralPanel, neutralPanelAlt);
+  const badgeAdded = readableChromeColor(
+    addedSignColor,
+    neutralPanel,
+    neutralPanelAlt,
+    accentMuted,
+  );
+  const badgeRemoved = readableChromeColor(
+    removedSignColor,
+    neutralPanel,
+    neutralPanelAlt,
+    accentMuted,
+  );
+  const badgeModified = readableChromeColor(
+    modifiedColor,
+    neutralPanel,
+    neutralPanelAlt,
+    accentMuted,
+  );
   const themeBase: ThemeBase = {
     id: themeId,
     label: themeId,

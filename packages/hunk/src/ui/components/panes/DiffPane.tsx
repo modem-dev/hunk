@@ -1,3 +1,4 @@
+import { mousePressSequence, recordMousePress } from "../../lib/mousePressSequence";
 import {
   MouseButton,
   type MouseEvent as TuiMouseEvent,
@@ -85,6 +86,7 @@ import {
   type ViewportRowAnchor,
 } from "../../lib/viewportAnchor";
 import type { AppTheme } from "../../themes";
+import { paneFrameBorderColor, reviewPaneFrameSides } from "../../lib/paneFocus";
 import { DiffSection } from "./DiffSection";
 import type { FileViewRowFailure } from "../../fileViews/types";
 import type { ValidatedLineHighlight } from "../../highlights/validate";
@@ -323,6 +325,8 @@ export function DiffPane({
   screenTop = 0,
   showTopChrome,
   skipInitialIntermediateRender = false,
+  focused = false,
+  framed = false,
   showAgentNotes,
   showLineNumbers,
   showHunkHeaders,
@@ -363,6 +367,10 @@ export function DiffPane({
   onCurrentLinePaintChange,
   onViewportCenteredHunkChange,
   onViewportLineCursorChange,
+  onHunkFocus,
+  onReviewPointerDown,
+  canToggleHunkStaged,
+  onToggleHunkStaged,
 }: {
   codeHorizontalOffset?: number;
   diffContentWidth: number;
@@ -394,6 +402,10 @@ export function DiffPane({
   showTopChrome?: boolean;
   /** Avoid clearing another surface when this pane mounts dynamically in the shared renderer. */
   skipInitialIntermediateRender?: boolean;
+  /** True when the review pane currently owns keyboard movement. */
+  focused?: boolean;
+  /** Draw a full pane frame when another pane is visible beside the review. */
+  framed?: boolean;
   showAgentNotes: boolean;
   showLineNumbers: boolean;
   showHunkHeaders: boolean;
@@ -435,7 +447,12 @@ export function DiffPane({
   currentLinePaintRequested?: boolean;
   onCurrentLinePaintChange?: (update: ExtensionCurrentLinePaintUpdate) => void;
   onViewportCenteredHunkChange?: (fileId: string, hunkIndex: number) => void;
-  onViewportLineCursorChange?: (cursor: LineCursor) => void;
+  onViewportLineCursorChange?: (cursor: LineCursor, explicit?: boolean) => void;
+  onHunkFocus?: () => void;
+  /** Review-stream clicks that this pane consumes, so ancestors can drop file-panel scope. */
+  onReviewPointerDown?: () => void;
+  canToggleHunkStaged?: (fileId: string, hunkIndex: number) => boolean;
+  onToggleHunkStaged?: (fileId: string, hunkIndex: number) => boolean;
 }) {
   const renderTopChrome = showTopChrome ?? !pagerMode;
   const renderer = useRenderer();
@@ -451,6 +468,7 @@ export function DiffPane({
   const [addNoteHoverClearSignal, setAddNoteHoverClearSignal] = useState(0);
   const [addNoteHoverClearFileId, setAddNoteHoverClearFileId] = useState<string | null>(null);
   const hoveredFileIdRef = useRef<string | null>(null);
+  const hoverScrollTopRef = useRef<number | null>(null);
   const onActiveAddNoteAffordanceChangeRef = useRef(onActiveAddNoteAffordanceChange);
   onActiveAddNoteAffordanceChangeRef.current = onActiveAddNoteAffordanceChange;
 
@@ -802,8 +820,10 @@ export function DiffPane({
   const [copySelectionDrag, setCopySelectionDrag] = useState<CopySelectionDrag | null>(null);
   // Mirror the drag state in a ref so updateCopySelection can suppress native selection
   // on the very first drag event, before React has re-rendered with the new state.
+  const hunkClickCandidateRef = useRef<{ fileId: string; hunkIndex: number } | null>(null);
   const copySelectionDragRef = useRef<CopySelectionDrag | null>(null);
   const lastClickTimeRef = useRef(0);
+  const lastClickPressRef = useRef(0);
   const clickCountRef = useRef(0);
   const lastClickPointRef = useRef<CopySelectionPoint | null>(null);
   const scrollbarRef = useRef<VerticalScrollbarHandle>(null);
@@ -856,10 +876,14 @@ export function DiffPane({
   }, []);
 
   /** Track the currently hover-owned file without making scroll handlers depend on render state. */
-  const setHoveredFileForRowActions = useCallback((fileId: string) => {
-    hoveredFileIdRef.current = fileId;
-    setHoveredFileId(fileId);
-  }, []);
+  const setHoveredFileForRowActions = useCallback(
+    (fileId: string) => {
+      hoveredFileIdRef.current = fileId;
+      hoverScrollTopRef.current = scrollRef.current?.scrollTop ?? 0;
+      setHoveredFileId(fileId);
+    },
+    [scrollRef],
+  );
 
   /** Temporarily widen the mounted diff window while scroll input is arriving in bursts. */
   const activateRapidScrollOverscan = useCallback((overscanRows: number) => {
@@ -946,7 +970,11 @@ export function DiffPane({
         // now sit over a different row, but only an actual mouse move should reveal row actions.
         const previousTop = prevScrollTopRef.current;
         scrollbarRef.current?.show();
-        clearAddNoteHoverForScroll();
+        // A mouse move after this scroll already targets the new viewport. A deferred
+        // observation of the older scroll must not erase that newer row action.
+        if (hoverScrollTopRef.current !== nextTop) {
+          clearAddNoteHoverForScroll();
+        }
         const rapidOverscanRows = computeRapidScrollOverscanRows({
           deltaRows: nextTop - previousTop,
           viewportHeight: nextHeight,
@@ -1513,6 +1541,8 @@ export function DiffPane({
   /** Start selecting diff text when the user drags inside the review stream. */
   const beginCopySelection = useCallback(
     (event: TuiMouseEvent) => {
+      hunkClickCandidateRef.current = null;
+      recordMousePress(renderer, event);
       if (event.button !== MouseButton.LEFT) {
         return;
       }
@@ -1526,6 +1556,10 @@ export function DiffPane({
         return;
       }
 
+      // Consumed review hits never bubble to App's wrapper. Leave file quick-action
+      // scope here so d/s cannot discard/stash after a hunk-header or gap click.
+      onReviewPointerDown?.();
+
       // Detect double-click and triple-click for word/line selection.
       const now = Date.now();
       const timeSinceLastClick = now - lastClickTimeRef.current;
@@ -1534,18 +1568,39 @@ export function DiffPane({
         previousClickPoint !== null &&
         copySelectionPointsShareRow(previousClickPoint, point) &&
         Math.abs(previousClickPoint.column - point.column) <= 2;
+      const press = mousePressSequence(renderer);
+      const consecutivePress = press === lastClickPressRef.current + 1;
+      lastClickPressRef.current = press;
       lastClickTimeRef.current = now;
       lastClickPointRef.current = point;
 
       let clickCount = 1;
-      if (timeSinceLastClick < 350 && timeSinceLastClick >= 0 && repeatedClickTarget) {
+      if (
+        consecutivePress &&
+        timeSinceLastClick < 350 &&
+        timeSinceLastClick >= 0 &&
+        repeatedClickTarget
+      ) {
         clickCountRef.current += 1;
         clickCount = Math.min(clickCountRef.current, 3);
       } else {
         clickCountRef.current = 1;
       }
 
-      if (clickCount >= 2 && point.kind === "review-row") {
+      if (clickCount === 2 && onToggleHunkStaged && !isNestedRowMouseAction(event)) {
+        const cursor = findLineCursorForClick({
+          cursors: lineCursors,
+          fileSectionLayouts,
+          point,
+          sectionGeometry,
+          side: resolveCopySelectionSide(point.column, layout, diffContentWidth),
+        });
+        // Unavailable mutations must leave repeated-click word/line copying intact.
+        if (cursor && canToggleHunkStaged?.(cursor.fileId, cursor.hunkIndex))
+          hunkClickCandidateRef.current = cursor;
+      }
+
+      if (!hunkClickCandidateRef.current && clickCount >= 2 && point.kind === "review-row") {
         const expanded = expandSelectionPoint(point, clickCount as 2 | 3, copySelectionContext);
         if (expanded) {
           const drag: CopySelectionDrag = {
@@ -1570,7 +1625,20 @@ export function DiffPane({
       event.preventDefault();
       event.stopPropagation();
     },
-    [copySelectionContext, resolveCopySelectionPoint, suppressNativeSelection],
+    [
+      copySelectionContext,
+      renderer,
+      resolveCopySelectionPoint,
+      suppressNativeSelection,
+      onReviewPointerDown,
+      onToggleHunkStaged,
+      canToggleHunkStaged,
+      lineCursors,
+      fileSectionLayouts,
+      sectionGeometry,
+      layout,
+      diffContentWidth,
+    ],
   );
 
   /** Extend the active diff text selection while the pointer moves. */
@@ -1628,6 +1696,8 @@ export function DiffPane({
   /** Finish a mouse gesture by selecting its clicked line or copying its deliberate drag. */
   const endCopySelection = useCallback(
     (event?: TuiMouseEvent) => {
+      const hunkCandidate = hunkClickCandidateRef.current;
+      hunkClickCandidateRef.current = null;
       const pending = copySelectionDragRef.current;
       if (!pending) {
         return;
@@ -1649,6 +1719,20 @@ export function DiffPane({
       event?.preventDefault();
       event?.stopPropagation();
 
+      // A second press may become a copy drag. Only its unmoved release consents to staging.
+      if (
+        event &&
+        endPoint &&
+        !current.moved &&
+        hunkCandidate &&
+        !isNestedRowMouseAction(event) &&
+        onToggleHunkStaged?.(hunkCandidate.fileId, hunkCandidate.hunkIndex)
+      ) {
+        onHunkFocus?.();
+        clickCountRef.current = 0;
+        return;
+      }
+
       if (copySelectionDragIsClick(current)) {
         if (event && isNestedRowMouseAction(event)) {
           return;
@@ -1662,7 +1746,8 @@ export function DiffPane({
           side: resolveCopySelectionSide(current.anchor.column, layout, diffContentWidth),
         });
         if (clickedCursor && onViewportLineCursorChange) {
-          onViewportLineCursorChange(clickedCursor);
+          onHunkFocus?.();
+          onViewportLineCursorChange(clickedCursor, true);
           return;
         }
         if (!current.moved) {
@@ -1688,6 +1773,8 @@ export function DiffPane({
       layout,
       lineCursors,
       onViewportLineCursorChange,
+      onToggleHunkStaged,
+      onHunkFocus,
       resolveCopySelectionPoint,
       sectionGeometry,
     ],
@@ -1905,13 +1992,8 @@ export function DiffPane({
   const visibleBodyBoundsByFile = useMemo(() => {
     const previous = previousVisibleBodyBoundsRef.current;
     const next = new Map<string, VisibleBodyBounds>();
-    if (!wrapLines && scrollViewport.height <= 0) {
-      previousVisibleBodyBoundsRef.current = next;
-      return next;
-    }
-
-    // Keep this provisional height render-only. Navigation and selection effects must continue to
-    // wait for the exact scrollbox viewport represented by scrollViewport.height.
+    // Bound the first mount before Yoga measures the viewport instead of mounting the whole file.
+    // Keep this estimate render-only; navigation and selection still wait for measured geometry.
     const hasMeasuredViewport = scrollViewport.height > 0;
     const renderViewportHeight = hasMeasuredViewport
       ? scrollViewport.height
@@ -2672,14 +2754,16 @@ export function DiffPane({
       style={{
         width,
         ...(height === undefined ? {} : { height }),
-        border: renderTopChrome ? ["top"] : [],
-        borderColor: theme.border,
+        border: framed ? reviewPaneFrameSides(renderTopChrome) : renderTopChrome ? ["top"] : [],
+        borderColor: paneFrameBorderColor(theme, focused),
         backgroundColor: theme.panel,
         paddingX: 0,
         flexDirection: "column",
-        ...(renderTopChrome
-          ? { paddingY: 1 }
-          : { paddingTop: 0, paddingBottom: pagerMode ? 0 : 1 }),
+        ...(framed
+          ? { paddingTop: renderTopChrome ? 1 : 0, paddingBottom: 0 }
+          : renderTopChrome
+            ? { paddingY: 1 }
+            : { paddingTop: 0, paddingBottom: pagerMode ? 0 : 1 }),
       }}
       onMouseDragEnd={endCopySelection}
       onMouseUp={endCopySelection}

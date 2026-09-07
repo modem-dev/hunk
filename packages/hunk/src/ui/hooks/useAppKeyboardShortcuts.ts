@@ -1,3 +1,4 @@
+import type { useWorkingTreeActions } from "./useWorkingTreeActions";
 import type { KeyEvent } from "@opentui/core";
 import { useKeyboard, useRenderer } from "@opentui/react";
 import { useRef } from "react";
@@ -22,6 +23,10 @@ import { handleViewPreferenceQuitPromptKey } from "../lib/viewPreferenceQuitKeys
 type FocusArea = "files" | "filter" | "note";
 
 export interface UseAppKeyboardShortcutsOptions {
+  workingTreeDialog?: Pick<
+    ReturnType<typeof useWorkingTreeActions>,
+    "getPrompt" | "acceptPrompt" | "cancelPrompt"
+  >;
   activeMenuId: MenuId | null;
   activateCurrentMenuItem: () => void;
   closeAgentSkill: () => void;
@@ -97,6 +102,7 @@ export interface UseAppKeyboardShortcutsOptions {
  * full contract, including why a boolean cannot express it.
  */
 export function useAppKeyboardShortcuts({
+  workingTreeDialog,
   activeMenuId,
   activateCurrentMenuItem,
   closeAgentSkill,
@@ -137,6 +143,8 @@ export function useAppKeyboardShortcuts({
   themeSelectorOpen,
 }: UseAppKeyboardShortcutsOptions) {
   const renderer = useRenderer();
+  const workingTreeDialogRef = useRef(workingTreeDialog);
+  workingTreeDialogRef.current = workingTreeDialog;
   const activeMenuIdRef = useRef(activeMenuId);
   const commandsRef = useRef(commands);
   const focusAreaRef = useRef(focusArea);
@@ -297,6 +305,25 @@ export function useAppKeyboardShortcuts({
       return "mine";
     }
 
+    return "mine";
+  };
+
+  /** Own prompt keys without allowing destructive choices to fall through to review commands. */
+  const handleWorkingTreeDialogShortcut = (key: KeyEvent): KeyOwner => {
+    const controller = workingTreeDialogRef.current;
+    const prompt = controller?.getPrompt();
+    if (!prompt) return "notMine";
+    if (isEscapeKey(key)) {
+      controller!.cancelPrompt();
+      return "mine";
+    }
+    if (key.name === "return" || key.name === "enter") {
+      controller!.acceptPrompt("all");
+      return "mine";
+    }
+    if (prompt.kind === "stash") return "focused";
+    if (key.name === "x" || key.sequence === "x") controller!.acceptPrompt("all");
+    if (key.name === "u" || key.sequence === "u") controller!.acceptPrompt("unstaged");
     return "mine";
   };
 
@@ -583,6 +610,7 @@ export function useAppKeyboardShortcuts({
       [
         handleExtensionTrustPromptShortcut,
         handleSaveConfigPromptShortcut,
+        handleWorkingTreeDialogShortcut,
         handleExtensionDialogShortcut,
         handleMenuToggleShortcut,
         handleDialogShortcut,

@@ -71,7 +71,7 @@ export function useExtensionWorkspaceControls({
   onWorkspaceWriteCompleted: () => void;
   /** The current repository root, or the review's working directory. */
   root: string;
-  /** Start and track one irreversible write, or refuse it during shutdown. */
+  /** Start and track one irreversible write, or refuse it during shutdown or a Git mutation. */
   runWorkspaceWrite: WorkspaceWriteRunner;
   workspaceFileWriter?: WorkspaceFileWriter;
 }): ExtensionWorkspaceControlsController {
@@ -154,7 +154,12 @@ export function useExtensionWorkspaceControls({
             const started = await runWorkspaceWrite(() =>
               workspaceFileWriter(target.absolutePath, text),
             );
-            if (!started) return expiredWorkspaceWrite();
+            if (!started)
+              return {
+                ok: false,
+                reason: "unavailable",
+                detail: "Another workspace operation is active or Hunk is shutting down.",
+              };
           } catch (error) {
             return {
               ok: false,

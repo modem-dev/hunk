@@ -1,5 +1,6 @@
 import type { MouseEvent as TuiMouseEvent } from "@opentui/core";
 import type { AppTheme } from "../../themes";
+import { paneFrameBorderColor } from "../../lib/paneFocus";
 
 const PANE_DIVIDER_HIT_AREA_SIZE = 5;
 const PANE_DIVIDER_HIT_AREA_OFFSET = Math.floor(PANE_DIVIDER_HIT_AREA_SIZE / 2);
@@ -10,6 +11,7 @@ export function PaneDivider({
   width,
   height,
   isResizing,
+  emphasized = false,
   theme,
   onMouseDown,
   onMouseDrag,
@@ -20,6 +22,8 @@ export function PaneDivider({
   width: number;
   height: number;
   isResizing: boolean;
+  /** Brighten the shared edge so it belongs to the focused pane's rectangle. */
+  emphasized?: boolean;
   theme: AppTheme;
   onMouseDown: (event: TuiMouseEvent) => void;
   onMouseDrag: (event: TuiMouseEvent) => void;
@@ -54,7 +58,7 @@ export function PaneDivider({
           flexShrink: 0,
           backgroundColor: isResizing ? theme.accentMuted : theme.panel,
           border: orientation === "vertical" ? ["left"] : ["top"],
-          borderColor: isResizing ? theme.accent : theme.border,
+          borderColor: isResizing ? theme.accent : paneFrameBorderColor(theme, emphasized),
         }}
         customBorderChars={{
           topLeft: orientation === "vertical" ? "│" : "─",

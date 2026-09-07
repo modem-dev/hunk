@@ -133,6 +133,7 @@ export function DiffMetaRowView({
         <box
           key={badge.key}
           style={{ width: badge.text.length + 1, height: 1 }}
+          onMouseDown={markNestedRowMouseAction}
           onMouseUp={(event) => {
             markNestedRowMouseAction(event);
             badge.onClick();

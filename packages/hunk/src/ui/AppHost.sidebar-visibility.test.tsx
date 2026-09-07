@@ -76,12 +76,15 @@ async function flush(setup: Awaited<ReturnType<typeof testRender>>) {
   });
 }
 
-/** Return only the columns before the left pane divider. */
+/** Return only the columns inside the files pane, between its frame and the divider. */
 function sidebarFrame(setup: Awaited<ReturnType<typeof testRender>>) {
   return setup
     .captureCharFrame()
     .split("\n")
-    .map((line) => line.split("│", 1)[0])
+    .map((line) => {
+      const parts = line.split("│");
+      return parts.length >= 3 ? (parts[1] ?? "") : (parts[0] ?? "");
+    })
     .join("\n");
 }
 

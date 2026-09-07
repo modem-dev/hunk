@@ -1,3 +1,7 @@
+import { getConfiguredVcsAdapter } from "../core/vcs";
+import { WorkingTreeDialog } from "./components/chrome/WorkingTreeDialog";
+import { useLiveState } from "./hooks/useLiveState";
+import { recordMousePress } from "./lib/mousePressSequence";
 import type {
   BoxRenderable,
   MouseEvent as TuiMouseEvent,
@@ -21,6 +25,7 @@ import { DEFAULT_FILE_GAP, DEFAULT_HUNK_GAP } from "../core/run/reviewGap";
 import { DEFAULT_TAB_WIDTH } from "../core/run/tabWidth";
 import { isVcsReviewInput } from "../core/vcs";
 import type { AppBootstrap } from "../core/bootstrap";
+import type { ReviewSelectionScope } from "../core/review/navigation";
 import {
   selectActiveEditableReviewNoteId,
   selectActiveReplyableReviewNoteId,
@@ -45,6 +50,8 @@ import { ExtensionDialog } from "./components/chrome/ExtensionDialog";
 import { ViewPreferenceQuitDialog } from "./components/chrome/ViewPreferenceQuitDialog";
 import { ExtensionToast } from "./components/chrome/ExtensionToast";
 import { StatusBar } from "./components/chrome/StatusBar";
+import { WorkingTreeBar } from "./components/chrome/WorkingTreeBar";
+import { hasWorkingTreeInventory, useWorkingTreeActions } from "./hooks/useWorkingTreeActions";
 import { DiffPane } from "./components/panes/DiffPane";
 import { ExtensionPaneHost } from "./components/panes/ExtensionPane";
 import { PaneDivider } from "./components/panes/PaneDivider";
@@ -107,7 +114,7 @@ import {
 import { HUNK_FILES_PANE_KEY } from "../extensions/extensionIds";
 import { maxFileHeaderStatsWidth } from "./lib/fileHeader";
 import { setMouseCapture } from "./lib/mouseCapture";
-import { openSelectedFileInEditor } from "./lib/openInEditor";
+import { openSelectedFileInEditor, resolveSelectedEditorLine } from "./lib/openInEditor";
 import { resolveResponsiveLayout } from "./lib/responsive";
 import type { WorkspaceRefreshRequest } from "./currentReviewRefresh";
 
@@ -145,9 +152,11 @@ export function App({
   onReloadSession,
   onRequestExtensionReviewReload,
   onWorkspaceWriteCompleted,
+  onVcsMutationCompleted,
   reviewProducer,
   runWorkspaceWrite,
   returnToHistory = process.env.HUNK_RETURN_TO_HISTORY === "1",
+  runVcsMutation,
   watchRuntime,
   workspaceFileWriter,
 }: {
@@ -171,12 +180,14 @@ export function App({
   ) => Promise<ExtensionReviewReloadResult>;
   /** Reconcile the currently mounted review after a consented filesystem write succeeds. */
   onWorkspaceWriteCompleted: () => void;
+  onVcsMutationCompleted: (follow?: { root: string; staged: boolean }) => Promise<void>;
   /** The producer publishing this review's generations, when the host mounted one. */
   reviewProducer?: ReviewProducer;
   /** Start and track one irreversible write, or refuse it once graceful shutdown begins. */
   runWorkspaceWrite: WorkspaceWriteRunner;
   /** Present quit as returning to the owning history surface. */
   returnToHistory?: boolean;
+  runVcsMutation: WorkspaceWriteRunner;
   watchRuntime?: WatchedInputRuntime;
   workspaceFileWriter?: WorkspaceFileWriter;
 }) {
@@ -185,6 +196,7 @@ export function App({
   const BODY_PADDING = 2;
 
   const pagerMode = Boolean(bootstrap.input.options.pager);
+  const workingTreeBarHeight = hasWorkingTreeInventory(bootstrap) ? 1 : 0;
   const tabWidth = bootstrap.initialTabWidth ?? DEFAULT_TAB_WIDTH;
   const fileGap = bootstrap.initialFileGap ?? DEFAULT_FILE_GAP;
   const hunkGap = bootstrap.initialHunkGap ?? DEFAULT_HUNK_GAP;
@@ -242,7 +254,7 @@ export function App({
   const [showMenuBar, setShowMenuBar] = useState(bootstrap.initialShowMenuBar ?? true);
   const [showHelp, setShowHelp] = useState(false);
   const [showAgentSkill, setShowAgentSkill] = useState(false);
-  const [focusArea, setFocusArea] = useState<FocusArea>("files");
+  const [focusArea, setFocusArea, getFocusArea] = useLiveState<FocusArea>("files");
   const { text: sessionNoticeText, show: showSessionNotice } = useTimedNotice(4_000);
   const extensions = bootstrap.extensions as ExtensionLoadResult | undefined;
   const pendingTrustRepoRoot = extensions?.pendingTrustRepoRoot;
@@ -343,8 +355,11 @@ export function App({
     getSelectedFileId,
     getSelection: getExtensionSelection,
   } = extensionRuntime;
+  const [hunkActionFocused, setHunkActionFocused, getHunkActionFocused] = useLiveState(false);
+  const [filePanelFocused, setFilePanelFocused, getFilePanelFocused] = useLiveState(false);
   const jumpToFile = useCallback(
     (fileId: string, options?: { alignFileHeaderTop?: boolean }) => {
+      setHunkActionFocused(false);
       review.selectFile(fileId, { alignFileHeaderTop: options?.alignFileHeaderTop });
     },
     [review.selectFile],
@@ -450,7 +465,11 @@ export function App({
     );
   const bodyHeight = Math.max(
     0,
-    terminal.height - (showMenuBar ? 1 : 0) - (extensionToast ? 1 : 0) - (statusBarVisible ? 1 : 0),
+    terminal.height -
+      (showMenuBar ? 1 : 0) -
+      workingTreeBarHeight -
+      (extensionToast ? 1 : 0) -
+      (statusBarVisible ? 1 : 0),
   );
   const showPaneWarning = useCallback(
     (message: string) => extensions?.context.notify(message, "warning"),
@@ -893,7 +912,7 @@ export function App({
     setShowMenuBar((current) => !current);
   };
 
-  const { canRefreshCurrentInput, refreshCurrentInput, triggerRefreshCurrentInput } =
+  const { canRefreshCurrentInput, refreshCurrentInput, triggerRefreshCurrentInput, setStagedView } =
     useCurrentReviewRefreshController({
       input: bootstrap.input,
       onRegisterWorkspaceRefreshRequest,
@@ -927,34 +946,70 @@ export function App({
     showNotice: showSessionNotice,
   });
 
-  const triggerEditSelectedFile = useCallback(() => {
-    const basePath = isVcsReviewInput(bootstrap.input)
-      ? bootstrap.changeset.sourceLabel
-      : undefined;
-    const message = openSelectedFileInEditor({
-      basePath,
-      file: selectedFile,
-      lineCursor: activeLineCursor,
-      renderer,
-      selectedHunk: review.selectedHunk,
-    });
-
-    if (message) {
-      showSessionNotice(message);
-      return;
-    }
-
-    if (canRefreshCurrentInput) {
-      triggerRefreshCurrentInput();
+  const editorPendingRef = useRef<{ lease: ReturnType<typeof createReviewCapabilityLease> } | null>(
+    null,
+  );
+  const triggerEditSelectedFile = useCallback(async () => {
+    if (editorPendingRef.current?.lease.isLive()) return;
+    const request = { lease: createReviewCapabilityLease() };
+    editorPendingRef.current = request;
+    const { lease } = request;
+    const lineCursor = review.getExplicitLineCursor();
+    const selection = review.getSelection();
+    const file = bootstrap.changeset.files.find((candidate) => candidate.id === selection.fileId);
+    const hunk = file?.metadata.hunks[selection.hunkIndex ?? 0];
+    try {
+      const basePath = isVcsReviewInput(bootstrap.input)
+        ? bootstrap.changeset.sourceLabel
+        : undefined;
+      let mappedLine: number | undefined;
+      if (file && bootstrap.input.kind === "vcs" && bootstrap.reloadContext.vcsCatalog) {
+        const status = bootstrap.changeset.workingTreeFiles?.find(
+          (candidate) => candidate.path === file.path,
+        );
+        const resolveLine = getConfiguredVcsAdapter(
+          bootstrap.input.options.vcs,
+          bootstrap.reloadContext.vcsCatalog,
+        ).operations["working-tree-diff"]?.resolveWorkingTreeLine;
+        if (status && resolveLine) {
+          showSessionNotice(`Locating ${file.path} in the working tree…`);
+          mappedLine = await resolveLine(
+            bootstrap.input,
+            status,
+            Math.max(1, resolveSelectedEditorLine(file, hunk, lineCursor)),
+            { cwd: bootstrap.changeset.sourceLabel },
+          );
+          if (!lease.isLive()) return;
+        }
+      }
+      const message = openSelectedFileInEditor({
+        basePath,
+        file,
+        lineCursor,
+        mappedLine,
+        renderer,
+        selectedHunk: hunk,
+      });
+      if (message) {
+        showSessionNotice(message);
+        return;
+      }
+      if (canRefreshCurrentInput) triggerRefreshCurrentInput();
+    } catch (error) {
+      if (lease.isLive())
+        showSessionNotice(
+          `Cannot open editor: ${error instanceof Error ? error.message : String(error)}`,
+        );
+    } finally {
+      if (editorPendingRef.current === request) editorPendingRef.current = null;
     }
   }, [
-    activeLineCursor,
-    bootstrap.changeset.sourceLabel,
-    bootstrap.input.kind,
+    bootstrap,
     canRefreshCurrentInput,
+    createReviewCapabilityLease,
     renderer,
-    review.selectedHunk,
-    selectedFile,
+    review.getExplicitLineCursor,
+    review.getSelection,
     showSessionNotice,
     triggerRefreshCurrentInput,
   ]);
@@ -989,7 +1044,36 @@ export function App({
   /** Focus the file list/sidebar navigation area. */
   const focusFiles = useCallback(() => {
     setFocusArea("files");
+    setFilePanelFocused(true);
+    setHunkActionFocused(false);
   }, []);
+
+  const filesPaneFocused =
+    filesPaneVisible && focusArea === "files" && filePanelFocused && !hunkActionFocused;
+  const isFilesPaneFocused = () =>
+    filesPaneVisible &&
+    getFocusArea() === "files" &&
+    getFilePanelFocused() &&
+    !getHunkActionFocused();
+  const filesPaneWidth =
+    paneLayout.panes.find((planned) => planned.pane.key === HUNK_FILES_PANE_KEY)?.bounds.width ?? 0;
+  const workingTree = useWorkingTreeActions({
+    bootstrap,
+    selectedFile,
+    getSelection: review.getSelection,
+    isFilesPaneFocused,
+    filter: review.filter,
+    reviewFiles: filteredFiles,
+    filesPaneFocused,
+    filesPaneWidth,
+    createLease: createReviewCapabilityLease,
+    selectReviewFile: jumpToFile,
+    focusFiles,
+    setStagedView,
+    runMutation: runVcsMutation,
+    refreshAfterMutation: onVcsMutationCompleted,
+    showNotice: showSessionNotice,
+  });
 
   /** Focus the file filter input in the status bar. */
   const focusFilter = useCallback(() => {
@@ -1004,10 +1088,12 @@ export function App({
       },
       onSelectHunk: (fileId: string, hunkIndex: number) => {
         focusFiles();
+        setHunkActionFocused(true);
         review.selectHunk(fileId, hunkIndex);
       },
       onRevealLine: (fileId: string, side: "old" | "new", line: number) => {
         focusFiles();
+        setHunkActionFocused(true);
         return review.revealLine(fileId, side, line);
       },
     }),
@@ -1016,8 +1102,12 @@ export function App({
 
   /** Toggle keyboard focus between the file list and the file filter. */
   const toggleFocusArea = useCallback(() => {
-    setFocusArea((current) => (current === "files" ? "filter" : "files"));
-  }, []);
+    if (focusArea === "files") {
+      setFocusArea("filter");
+      return;
+    }
+    focusFiles();
+  }, [focusArea, focusFiles]);
 
   /** Move keyboard ownership into the draft note editor. */
   const focusDraftNoteEditor = useCallback(() => setFocusArea("note"), []);
@@ -1040,6 +1130,7 @@ export function App({
     updateDraftNote,
   } = useUserNoteComposer({
     draftNote: review.draftNote,
+    getDraftNoteId: () => review.store.getSnapshot().draftNote?.id ?? null,
     keyboardCursorEnabled: cursorLine !== "off",
     getLineCursor: review.getLineCursor,
     startDraft: review.startUserNote,
@@ -1058,6 +1149,19 @@ export function App({
 
   const activeEditableNoteId = selectActiveEditableReviewNoteId(review.store.getSnapshot());
   const activeReplyableNoteId = selectActiveReplyableReviewNoteId(review.store.getSnapshot());
+  // Files-pane keyboard ownership: vertical movement, stash, and discard. Diff
+  // headers can select a file for staging without giving the sidebar that ownership.
+  const reviewPaneFocused = filesPaneVisible && focusArea === "files" && !filesPaneFocused;
+
+  /** Step the review selection and record which pane now owns keyboard movement. */
+  const moveReviewSelection = (scope: ReviewSelectionScope, delta: number) => {
+    setFilePanelFocused(scope === "file");
+    setHunkActionFocused(scope === "hunk" || scope === "annotated-hunk");
+    if (scope === "file" && workingTree.pane) workingTree.moveFile(delta);
+    else review.moveSelection(scope, delta);
+  };
+  // Hunk navigation can focus a binary or hunk-less file; Space then keeps the file action.
+  const hunkStagingActive = hunkActionFocused && workingTree.canToggleSelectedHunk;
 
   // One dispatch table for every app-level shortcut: the built-in commands
   // over App's live callbacks, then extension commands, so built-ins always
@@ -1065,28 +1169,76 @@ export function App({
   const appCommands = observeAppCommandDispatch(
     [
       ...buildAppCommands({
+        get canDiscardSelectedFile() {
+          return isFilesPaneFocused() && workingTree.canDiscardSelected;
+        },
+        get canStashSelectedFile() {
+          return isFilesPaneFocused() && workingTree.canStashSelected;
+        },
+        discardSelectedFile: workingTree.discardSelected,
+        stashSelectedFile: workingTree.stashSelected,
+        get canToggleFileStaged() {
+          return (
+            !(getHunkActionFocused() && workingTree.canToggleSelectedHunk) &&
+            workingTree.canToggleSelected
+          );
+        },
+        get canToggleHunkStaged() {
+          return getHunkActionFocused() && workingTree.canToggleSelectedHunk;
+        },
+        toggleHunkStaged: workingTree.toggleSelectedHunk,
+        canSwitchStagedView: Boolean(workingTree.pane),
+        toggleFileStaged: workingTree.toggleSelected,
+        toggleStagedView: () => workingTree.switchView(!workingTree.staged),
         canAlignCurrentLine: cursorLine !== "off" && review.lineCursor !== null,
         canApplyFilePresentationToAllMatching: selectedFileViewBulkTarget !== null,
+        get canFocusDiffPane() {
+          return (
+            isFilesPaneFocused() && selectedFile !== undefined && !workingTree.isSelectedFolder()
+          );
+        },
+        get canFocusFilesPane() {
+          return filesPaneVisible && getFocusArea() === "files" && !isFilesPaneFocused();
+        },
         canEditActiveNote: activeEditableNoteId !== undefined && review.draftNote === null,
         canReplyToActiveNote: activeReplyableNoteId !== undefined && review.draftNote === null,
         canRefreshCurrentInput,
         alignCurrentLine,
         applyFilePresentationToAllMatching,
+        focusDiffPane: () => {
+          if (!selectedFile) {
+            return;
+          }
+          setFilePanelFocused(false);
+        },
         focusFilter,
+        focusFilesPane: focusFiles,
         editActiveNote: () => {
           if (activeEditableNoteId) startUserNoteEdit(activeEditableNoteId);
         },
         replyToActiveNote: () => {
           if (activeReplyableNoteId) startUserNoteReply(activeReplyableNoteId);
         },
-        moveSelection: review.moveSelection,
+        moveSelection: moveReviewSelection,
         openAgentSkill,
         openThemeSelector,
         requestQuit,
         resolvedKeys: resolvedCommandKeys,
         scrollCodeHorizontally,
         scrollDiff,
-        stepDiffLine,
+        stepDiffLine: (delta) => {
+          if (isFilesPaneFocused()) {
+            if (workingTree.pane) {
+              setFilePanelFocused(true);
+              setHunkActionFocused(false);
+              workingTree.moveEntry(delta);
+              return;
+            }
+            moveReviewSelection("file", delta);
+            return;
+          }
+          stepDiffLine(delta);
+        },
         selectCursorLine: setCursorLine,
         selectLayoutMode,
         startUserNote: () => startUserNote(),
@@ -1166,6 +1318,7 @@ export function App({
   } = useMenuController(menus);
 
   useAppKeyboardShortcuts({
+    workingTreeDialog: workingTree,
     activeMenuId,
     activateCurrentMenuItem,
     closeAgentSkill,
@@ -1220,7 +1373,8 @@ export function App({
   const diffHeaderStatsWidth = maxFileHeaderStatsWidth(filteredFiles);
   const diffHeaderLabelWidth = Math.max(0, diffContentWidth - diffHeaderStatsWidth - 1);
   const diffSeparatorWidth = Math.max(0, diffContentWidth - 2);
-  const diffPaneScreenTop = (showMenuBar ? 1 : 0) + paneLayout.reviewBounds.y;
+  const diffPaneScreenTop =
+    (showMenuBar ? 1 : 0) + workingTreeBarHeight + paneLayout.reviewBounds.y;
 
   /** Render one pane from the exact accepted host rectangle. */
   const renderPane = (planned: PlannedPane) => {
@@ -1242,6 +1396,7 @@ export function App({
           review={bootstrap.review ?? null}
           files={filteredFiles}
           fileViews={getRenderExtensionFileViews()}
+          workingTree={workingTree.pane}
           selectedFileId={selection.file?.id ?? null}
           selectedHunkIndex={selection.hunkIndex}
           placement={pane.placement}
@@ -1250,6 +1405,7 @@ export function App({
           height={bounds.height}
           currentLine={pane.registered.pane.currentLine ? currentLinePaint : null}
           showTopChrome={showMenuBar}
+          focused={pane.key === HUNK_FILES_PANE_KEY && filesPaneFocused}
           keybindings={paneKeybindings}
           notify={(message, type) => extensions?.context.notify(message, type)}
           onCopyText={(text) => {
@@ -1264,18 +1420,10 @@ export function App({
             showTransientNotice("Copied text to clipboard");
             return true;
           }}
-          onSelectFile={(fileId) => {
-            focusFiles();
-            jumpToFile(fileId, { alignFileHeaderTop: true });
-          }}
-          onSelectHunk={(fileId, hunkIndex) => {
-            focusFiles();
-            review.selectHunk(fileId, hunkIndex);
-          }}
-          onRevealLine={(fileId, side, line) => {
-            focusFiles();
-            return review.revealLine(fileId, side, line);
-          }}
+          onFocus={pane.key === HUNK_FILES_PANE_KEY ? focusFiles : undefined}
+          onSelectFile={extensionNavigationBindings.onSelectFile}
+          onSelectHunk={extensionNavigationBindings.onSelectHunk}
+          onRevealLine={extensionNavigationBindings.onRevealLine}
           onRenderFailure={
             pane.key === HUNK_FILES_PANE_KEY ? undefined : () => reportPaneRenderFailure(pane)
           }
@@ -1287,6 +1435,7 @@ export function App({
   // OpenTUI normally chooses a drag target only after the pointer first moves. Capture on press
   // so a fast motion or a sidebar projection swap cannot transfer the gesture to a transient row.
   const beginCapturedPaneResize = (planned: PlannedPane, event: TuiMouseEvent) => {
+    recordMousePress(renderer, event);
     if (!beginPaneResize(planned, event)) return;
     if (paneResizeCaptureRef.current) {
       setMouseCapture(renderer, paneResizeCaptureRef.current);
@@ -1311,6 +1460,7 @@ export function App({
           width={planned.divider.width}
           height={planned.divider.height}
           isResizing={resizingPaneKey === planned.pane.key}
+          emphasized={planned.pane.key === HUNK_FILES_PANE_KEY}
           theme={activeTheme}
           onMouseDown={(event) => beginCapturedPaneResize(planned, event)}
           onMouseDrag={updatePaneResize}
@@ -1322,6 +1472,7 @@ export function App({
 
   return (
     <box
+      onMouseDown={(event) => recordMousePress(renderer, event)}
       style={{
         width: "100%",
         height: "100%",
@@ -1344,6 +1495,22 @@ export function App({
           onToggleMenu={toggleMenu}
         />
       ) : null}
+
+      {workingTree.pane && (
+        <WorkingTreeBar
+          pane={workingTree.pane}
+          theme={activeTheme}
+          width={terminal.width}
+          hunkFocused={hunkStagingActive}
+          selectedIsFolder={workingTree.selectedIsFolder}
+          selectedWillStage={workingTree.selectedWillStage}
+          canToggle={hunkStagingActive || workingTree.canToggleSelected}
+          switchView={workingTree.switchView}
+          toggleSelected={
+            hunkStagingActive ? workingTree.toggleSelectedHunk : workingTree.toggleSelected
+          }
+        />
+      )}
 
       <box
         ref={paneResizeCaptureRef}
@@ -1369,6 +1536,7 @@ export function App({
         {paneLayout.panes.map(renderPane)}
         {paneLayout.panes.map(renderDivider)}
         <box
+          onMouseDown={() => setFilePanelFocused(false)}
           style={{
             position: "absolute",
             left: bodyPadding / 2 + paneLayout.reviewBounds.x,
@@ -1391,6 +1559,8 @@ export function App({
             screenTop={diffPaneScreenTop}
             showTopChrome={showMenuBar}
             skipInitialIntermediateRender={Boolean(onFirstFrameReady)}
+            focused={reviewPaneFocused}
+            framed={filesPaneVisible}
             headerLabelWidth={diffHeaderLabelWidth}
             headerStatsWidth={diffHeaderStatsWidth}
             layout={resolvedLayout}
@@ -1438,7 +1608,10 @@ export function App({
             }}
             onCopyFeedback={showTransientNotice}
             onFileViewRowFailure={reportFileViewRowFailure}
-            onSelectFile={jumpToFile}
+            onSelectFile={(fileId) => {
+              setFilePanelFocused(false);
+              jumpToFile(fileId);
+            }}
             onToggleGap={review.toggleGap}
             onViewportCenteredHunkChange={(fileId, hunkIndex) =>
               review.anchorSelection(fileId, hunkIndex)
@@ -1447,6 +1620,13 @@ export function App({
             currentLinePaintRequested={currentLinePaintRequested}
             onCurrentLinePaintChange={onCurrentLinePaintChange}
             onViewportLineCursorChange={review.anchorLineCursor}
+            onHunkFocus={() => {
+              setFilePanelFocused(false);
+              setHunkActionFocused(true);
+            }}
+            onReviewPointerDown={() => setFilePanelFocused(false)}
+            canToggleHunkStaged={workingTree.canToggleHunk}
+            onToggleHunkStaged={workingTree.pane ? workingTree.toggleHunk : undefined}
           />
         </box>
       </box>
@@ -1534,6 +1714,19 @@ export function App({
           onCancel={cancelExtensionDialog}
           onChangeInput={setExtensionDialogInputValue}
           onPickOption={setExtensionDialogSelectedIndex}
+        />
+      ) : null}
+
+      {workingTree.prompt ? (
+        <WorkingTreeDialog
+          prompt={workingTree.prompt}
+          message={workingTree.message}
+          onChangeMessage={workingTree.setMessage}
+          onAccept={workingTree.acceptPrompt}
+          onCancel={workingTree.cancelPrompt}
+          terminalHeight={terminal.height}
+          terminalWidth={terminal.width}
+          theme={baseTheme}
         />
       ) : null}
 

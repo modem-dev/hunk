@@ -37,7 +37,7 @@ import type {
   VcsDiffCommandInput,
   VcsStashShowCommandInput,
 } from "../run/commandInputs";
-import type { SidecarContext, Changeset, DiffFile } from "./model";
+import type { SidecarContext, Changeset } from "./model";
 
 export interface LoadAppBootstrapOptions {
   cwd?: string;
@@ -74,7 +74,10 @@ function createSourceFetcherBuilder(
 }
 
 /** Reorder files to follow agent-context narrative order when a sidecar provides one. */
-export function orderDiffFiles(files: DiffFile[], sidecar: SidecarContext | null) {
+export function orderDiffFiles<File extends { path: string; previousPath?: string }>(
+  files: File[],
+  sidecar: SidecarContext | null,
+) {
   if (!sidecar || sidecar.files.length === 0) {
     return files;
   }
@@ -253,6 +256,10 @@ async function loadVcsChangeset(
     changeset: {
       ...parsedChangeset,
       files: [...parsedChangeset.files, ...adapterFiles],
+      workingTreeFiles: result.workingTreeFiles?.map((file) => ({
+        ...file,
+        agentSummary: findSidecarFileContext(sidecar, file.path, file.previousPath)?.summary,
+      })),
     } satisfies Changeset,
     repoRoot: result.repoRoot,
   };
@@ -326,6 +333,8 @@ export async function loadAppBootstrap(
   changeset = {
     ...changeset,
     files: orderDiffFiles(changeset.files, sidecar),
+    workingTreeFiles:
+      changeset.workingTreeFiles && orderDiffFiles([...changeset.workingTreeFiles], sidecar),
   };
 
   return {

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { getTestSidebarDividerColumn, getTestSidebarFrame } from "../helpers/sidebar-frame";
 import stringWidth from "string-width";
 import { createPtyHarness, dragMouse, rightmostColumnOf, sleep } from "./harness";
 
@@ -10,24 +11,6 @@ setDefaultTimeout(20_000);
 afterEach(() => {
   harness.cleanup();
 });
-
-/** Locate the left pane divider from a rendered terminal frame. */
-function sidebarDividerColumn(frame: string) {
-  const columns = frame
-    .split("\n")
-    .map((line) => line.indexOf("│"))
-    .filter((column) => column >= 0);
-  return columns.length === 0 ? -1 : Math.min(...columns);
-}
-
-/** Return the rendered columns owned by the left sidebar. */
-function sidebarFrame(frame: string) {
-  const divider = sidebarDividerColumn(frame);
-  return frame
-    .split("\n")
-    .map((line) => line.slice(0, divider))
-    .join("\n");
-}
 
 describe("PTY layout", () => {
   test("the first frame fills the viewport bottom with the next file section", async () => {
@@ -366,13 +349,13 @@ describe("PTY layout", () => {
       });
 
       expect(harness.countMatches(wide, /alpha\.ts/g)).toBeGreaterThanOrEqual(2);
-      expect(sidebarFrame(wide)).not.toContain("src/ui/");
+      expect(getTestSidebarFrame(wide)).not.toContain("src/ui/");
       expect(wide).toMatch(/▌.*▌/);
 
       session.resize({ cols: 180, rows: 24 });
       const medium = await harness.waitForSnapshot(
         session,
-        (text) => sidebarFrame(text).includes("src/ui/"),
+        (text) => getTestSidebarFrame(text).includes("src/ui/"),
         5_000,
       );
       expect(harness.countMatches(medium, /alpha\.ts/g)).toBeGreaterThanOrEqual(2);
@@ -458,7 +441,7 @@ describe("PTY layout", () => {
         timeout: 15_000,
       });
       const initialMainColumn = rightmostColumnOf(initial, "alpha.ts");
-      const initialDividerColumn = sidebarDividerColumn(initial);
+      const initialDividerColumn = getTestSidebarDividerColumn(initial);
 
       expect(initialDividerColumn).toBeGreaterThan(0);
       expect(initialMainColumn).toBeGreaterThan(initialDividerColumn);
@@ -491,7 +474,7 @@ describe("PTY layout", () => {
         timeout: 15_000,
       });
       const initialMainColumn = rightmostColumnOf(initial, "alpha.ts");
-      const initialDividerColumn = sidebarDividerColumn(initial);
+      const initialDividerColumn = getTestSidebarDividerColumn(initial);
       const pressColumn = initialDividerColumn - 2;
       const projectionSwitchColumn = initialDividerColumn - 4;
 
@@ -540,7 +523,7 @@ describe("PTY layout", () => {
       const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
-      const initialDividerColumn = sidebarDividerColumn(initial);
+      const initialDividerColumn = getTestSidebarDividerColumn(initial);
       const compactDividerColumn = initialDividerColumn - 2;
       const initialSidebar = initial
         .split("\n")
@@ -555,7 +538,7 @@ describe("PTY layout", () => {
           .split("\n")
           .find((line) => line.includes("src/"))
           ?.indexOf("src/"),
-      ).toBe(4);
+      ).toBe(5);
 
       await dragMouse(session, initialDividerColumn - 2, 6, initialDividerColumn - 4, 6);
       const resized = await harness.waitForSnapshot(
@@ -579,7 +562,7 @@ describe("PTY layout", () => {
           .split("\n")
           .find((line) => line.includes("src/ui/"))
           ?.indexOf("src/ui/"),
-      ).toBe(2);
+      ).toBe(3);
       expect(resizedSidebar).toContain("alpha.ts");
       expect(resizedSidebar).toContain("beta.ts");
     } finally {

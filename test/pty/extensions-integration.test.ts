@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createPtyHarness, dragMouse, lineIndexOf } from "./harness";
@@ -681,8 +681,14 @@ describe("PTY extensions", () => {
     }
   });
 
-  test("the files shortcut and View menu follow a named pane slot", async () => {
+  test("an explicit files shortcut and View menu follow a named pane slot", async () => {
     const configHome = harness.createIsolatedConfigHome();
+    mkdirSync(join(configHome, "hunk"));
+    // Working-tree s defaults to stash; an explicit binding still owns its chosen key.
+    writeFileSync(
+      join(configHome, "hunk", "config.toml"),
+      '[keybindings]\n"hunk.view.toggleFilesPane" = "s"\n',
+    );
     const fixture = harness.createRepoExtensionFixture(FILES_SLOT_EXTENSION_SOURCE);
     const session = await harness.launchHunk({
       args: [
@@ -900,14 +906,14 @@ describe("PTY extensions", () => {
       await harness.ensureKeyboardIsLive(session);
       await session.press("c");
       await session.waitForText(/Draft note/, { timeout: 5_000 });
-      await session.type("Publish this exact note.");
-      await session.type("\x13");
+      // The save key can share an input chunk with the final note characters.
+      session.writeRaw("Publish this exact note.\x13");
       await session.waitForText(/Your note/, { timeout: 5_000 });
 
       await session.press("f9");
       await session.waitForText(/Export review snapshot/, { timeout: 5_000 });
-      await session.type(outputPath);
-      await session.press("enter");
+      // Input and acceptance may arrive together, before React paints the edited field.
+      session.writeRaw(`${outputPath}\r`);
       await session.waitForText(/Exported 1 saved note/, { timeout: 5_000 });
 
       const snapshot = JSON.parse(readFileSync(outputPath, "utf8")) as {

@@ -1,6 +1,11 @@
 import type { CursorLine, LayoutMode } from "../../core/run/commandInputs";
 import type { AppMenus, MenuEntry, MenuId } from "../components/chrome/menu";
-import { executeAppCommand, isCommandEnabled, type AppCommand } from "./appCommands";
+import {
+  advertisedKeyLabels,
+  executeAppCommand,
+  isCommandEnabled,
+  type AppCommand,
+} from "./appCommands";
 
 /**
  * The dropdown menus, expressed as references into the command table.
@@ -76,9 +81,8 @@ function toMenuEntries(
       kind: "item",
       label: spec.label ?? command.title,
       commandId: spec.commandId,
-      // The first resolved chord is the one the menu advertises; a command the
-      // user unbound (or that ships unbound) simply shows no key.
-      hint: command.keyLabels[0],
+      // First-match dispatch owns the hint: unbound, disabled, or fully shadowed items show no key.
+      hint: advertisedKeyLabels(commands, command)[0],
       checked: spec.checked,
       action: () => {
         executeAppCommand(commands, spec.commandId);
@@ -141,7 +145,14 @@ export function buildAppMenus({
     file: [
       { commandId: "hunk.app.toggleFocusArea", label: "Toggle files/filter focus" },
       { commandId: "hunk.review.focusFilter", label: "Focus filter" },
-      { commandId: "hunk.review.editSelectedFile", label: "Open file in editor" },
+      { commandId: "hunk.review.focusDiffPane", label: "Focus selected file in review" },
+      { commandId: "hunk.review.focusFilesPane", label: "Focus files pane" },
+      { commandId: "hunk.review.editSelectedFile", label: "Edit selected or changed line" },
+      { commandId: "hunk.review.discardSelectedFile" },
+      { commandId: "hunk.review.stashSelectedFile" },
+      { commandId: "hunk.review.toggleFileStaged" },
+      { commandId: "hunk.review.toggleHunkStaged" },
+      { commandId: "hunk.review.toggleStagedView" },
       { commandId: "hunk.app.refresh", label: "Reload" },
       SEPARATOR,
       { commandId: "hunk.app.quit" },

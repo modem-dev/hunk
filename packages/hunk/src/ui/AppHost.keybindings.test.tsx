@@ -193,7 +193,7 @@ describe("user keybindings", () => {
     const repo = createTestRepo("hunk-keybindings-files-pane-alias-");
     const bootstrap = await launchWithConfig(
       repo,
-      '[keybindings]\n"hunk.view.toggleSidebar" = "f6"\n',
+      '[keybindings]\n"hunk.view.toggleSidebar" = "f6"\n"hunk.review.stashSelectedFile" = []\n',
     );
     const extensions = createEmptyExtensionLoadResult(repo);
     const seen: string[] = [];
@@ -414,7 +414,7 @@ describe("user keybindings", () => {
 
     await withAppHost(bootstrap, async (setup) => {
       await act(async () => {
-        await setup.mockInput.pressTab();
+        await setup.mockInput.typeText("/");
       });
       await flush(setup);
       seen.length = 0;

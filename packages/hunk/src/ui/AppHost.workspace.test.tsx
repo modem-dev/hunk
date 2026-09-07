@@ -522,6 +522,112 @@ describe("extension workspace reads", () => {
 });
 
 describe("extension workspace writes", () => {
+  test.each(["git-first", "extension-first"])(
+    "excludes overlapping Git and extension writes: %s",
+    async (order) => {
+      const repo = createTestRepo("hunk-ext-write-git-race-");
+      const extDir = createTempDir("hunk-ext-write-git-race-ext-");
+      const extPath = join(extDir, "ext.ts");
+      const logPath = join(extDir, "probe.log");
+      writeWorkspaceFixture(extPath, logPath);
+      const bootstrap = await launchWithExtension(repo, extPath, {
+        kind: "vcs",
+        staged: false,
+        options: { mode: "stack", extensionPaths: [extPath] },
+      });
+      let release!: () => void;
+      const barrier = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let gitStarts = 0;
+      let extensionStarts = 0;
+      const catalog = bootstrap.reloadContext.vcsCatalog!;
+      bootstrap.reloadContext.vcsCatalog = {
+        ...catalog,
+        adapters: catalog.adapters.map((adapter) => {
+          const workingTree = adapter.operations["working-tree-diff"];
+          if (!workingTree?.stageFile) return adapter;
+          const stageFile = workingTree.stageFile;
+          return {
+            ...adapter,
+            operations: {
+              ...adapter.operations,
+              "working-tree-diff": {
+                ...workingTree,
+                stageFile: async (...args: Parameters<typeof stageFile>) => {
+                  gitStarts += 1;
+                  await barrier;
+                  await stageFile(...args);
+                },
+              },
+            },
+          };
+        }),
+      };
+      await withAppHost(
+        bootstrap,
+        async (setup) => {
+          try {
+            if (order === "git-first") {
+              await act(async () => setup.mockInput.typeText(" "));
+              await flushUntil(setup, () => gitStarts === 1, "the Git action to start");
+            }
+            await act(async () => setup.mockInput.typeText("y"));
+            await flushUntil(
+              setup,
+              () => setup.captureCharFrame().includes("Write alpha.txt?"),
+              "extension write consent",
+            );
+            await act(async () => setup.mockInput.pressEnter());
+            if (order === "git-first") {
+              await flushUntil(
+                setup,
+                () => readProbeLog(logPath).some((line) => line.includes('"reason":"unavailable"')),
+                "extension write refusal",
+              );
+              expect(extensionStarts).toBe(0);
+              expect(
+                readProbeLog(logPath).some((line) =>
+                  line.includes("Another workspace operation is active"),
+                ),
+              ).toBe(true);
+            } else {
+              await flushUntil(setup, () => extensionStarts === 1, "the extension write to start");
+              await act(async () => setup.mockInput.typeText(" "));
+              await flushUntil(
+                setup,
+                () => setup.captureCharFrame().includes("Another workspace operation is active"),
+                "Git action refusal",
+              );
+              expect(gitStarts).toBe(0);
+            }
+            release();
+            await flushUntil(
+              setup,
+              () =>
+                order === "git-first"
+                  ? setup.captureCharFrame().includes("Staged alpha.txt.")
+                  : readProbeLog(logPath).includes('result {"ok":true}'),
+              "the admitted operation to complete",
+            );
+            expect(readFileSync(join(repo, "alpha.txt"), "utf8")).toBe(
+              order === "git-first" ? "one\ntwo\n" : "rewritten\n",
+            );
+          } finally {
+            release();
+          }
+        },
+        {
+          workspaceFileWriter: async (absolutePath, text) => {
+            extensionStarts += 1;
+            await barrier;
+            writeFileSync(absolutePath, text);
+          },
+        },
+      );
+    },
+  );
+
   test("a confirmed write replaces the reviewed file and reloads the review", async () => {
     const repo = createTestRepo("hunk-ext-write-confirm-");
     // Outside the repo, so the fixture and its log never join the review.

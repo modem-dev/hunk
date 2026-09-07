@@ -212,3 +212,21 @@ describe("normalizedReviewSourceLines", () => {
     expect(normalizedReviewSourceLines("\n")).toEqual([]);
   });
 });
+
+test("first-change targeting preserves an earlier deletion without changing note-anchor preference", () => {
+  const hunk = {
+    additionStart: 1,
+    additionCount: 8,
+    deletionStart: 1,
+    deletionCount: 8,
+    hunkContent: [
+      { type: "context" as const, lines: 1 },
+      { type: "change" as const, deletions: 1, additions: 0 },
+      { type: "context" as const, lines: 3 },
+      { type: "change" as const, deletions: 0, additions: 1 },
+      { type: "context" as const, lines: 3 },
+    ],
+  };
+  expect(reviewDefaultHunkLineTarget(hunk)).toEqual({ side: "new", line: 5 });
+  expect(reviewDefaultHunkLineTarget(hunk, "first-change")).toEqual({ side: "old", line: 2 });
+});

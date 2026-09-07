@@ -5,6 +5,13 @@ description: Render React panes around Hunk's review stream.
 
 `hunk.registerPane(pane)` renders a React component on the left, right, top, or bottom of the review. Pair it with [`registerCommand`](/docs/extend/extension-api/#hunkregistercommandcommand-handler) so a key opens it:
 
+Mounted panes may receive optional `props.workingTree`: the complete status inventory for both staged and
+unstaged files, `selectedPath`, `staged`, and `busy`. Use `selectFile(path)` to navigate a path and
+switch tabs when necessary, or `toggleStaged(path)` to stage remaining changes or unstage a fully
+staged file. API v25 adds `selectedEntryId`, `selectEntry(id)`, and `toggleEntry(id)` so a pane can
+highlight and mutate folder rows as well as files. Retained controls expire on review reload. Ordinary `props.files` and navigation
+continue to describe the active diff stream; the status inventory does not fabricate diff files.
+
 ```tsx
 // ~/.config/hunk/extensions/flat-sidebar.tsx
 import { useMemo } from "react";

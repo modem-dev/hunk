@@ -42,7 +42,7 @@ describe("buildExtensionAppCommands", () => {
 
   test("refuses chords owned by built-in shortcuts", () => {
     const { commands, conflicts } = buildExtensionAppCommands({
-      // "s" toggles the files pane and "[" is hunk navigation; both are taken.
+      // "s" is the contextual stash shortcut; extensions cannot claim built-in chords.
       registered: [registeredCommand("meta", "steal-s", "s"), registeredCommand("meta", "ok", "y")],
       builtins: builtinCommandMatchProbes(),
       runCommand: () => {},
@@ -56,7 +56,7 @@ describe("buildExtensionAppCommands", () => {
         extensionId: "meta",
         fullId: "meta.steal-s",
         key: "s",
-        conflictingId: "hunk.view.toggleFilesPane",
+        conflictingId: "hunk.review.stashSelectedFile",
       },
     ]);
   });
@@ -96,7 +96,7 @@ describe("buildExtensionAppCommands", () => {
 
   test("drops only the conflicting chord of a multi-key command", () => {
     const { commands, conflicts } = buildExtensionAppCommands({
-      // "s" toggles the files pane; "y" is free.
+      // "s" is reserved by built-ins; "y" is free.
       registered: [registeredCommand("meta", "toggle", ["s", "y"])],
       builtins: builtinCommandMatchProbes(),
       runCommand: () => {},
@@ -107,7 +107,7 @@ describe("buildExtensionAppCommands", () => {
         extensionId: "meta",
         fullId: "meta.toggle",
         key: "s",
-        conflictingId: "hunk.view.toggleFilesPane",
+        conflictingId: "hunk.review.stashSelectedFile",
       },
     ]);
     // The command stays registered and keeps the chord nobody else owns.
@@ -129,9 +129,10 @@ describe("buildExtensionAppCommands", () => {
   });
 
   test("a chord a built-in released is free for an extension to claim", () => {
-    // The user moved the files-pane toggle to "ctrl+b", so "s" belongs to nobody.
+    // Releasing every built-in s binding makes the chord available to extensions.
     const resolvedKeys = new Map<string, readonly string[]>([
       ["hunk.view.toggleFilesPane", ["ctrl+b"]],
+      ["hunk.review.stashSelectedFile", []],
     ]);
     const { commands, conflicts } = buildExtensionAppCommands({
       registered: [registeredCommand("meta", "steal-s", "s")],

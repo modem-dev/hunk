@@ -318,7 +318,7 @@ key runs it, so the mouse surfaces read from it rather than restating it: the
 dropdown menus (`packages/hunk/src/ui/lib/appMenus.ts`) declare items as command ids plus
 menu-specific wording and checkbox state, and the controls help dialog
 (`packages/hunk/src/ui/lib/helpContent.ts`) declares curated rows the same way — both render
-their key text from resolved `keyLabels` and run entries through
+their key text from the chords first-match dispatch still delivers and run entries through
 `executeAppCommand`. A few commands ship with `defaultKeys: []` because they
 exist for a menu item; they never match a key but remain bindable by id.
 
@@ -336,6 +336,25 @@ none — which is why the visible menu list is derived from the menus record
 (`buildMenuSpecs` in `packages/hunk/src/ui/components/chrome/menu.ts`) rather than fixed.
 
 ## VCS adapters
+
+Plain working-tree reviews additionally carry an optional provider-owned status inventory beside
+the active diff changeset. `packages/hunk-git/src/workingTree.ts` derives both
+index/worktree status and attestations, and implements the public file-staging methods.
+`packages/hunk-git/src/hunkStaging.ts` selects attested raw Git hunks for
+index-only writes; sanitized render text is never applied. The conversion boundary preserves these
+optional methods and normalizes their errors. `packages/hunk/src/ui/hooks/useWorkingTreeActions.ts`
+binds status paths to the existing review navigation and AppHost's tracked mutation/serialized
+refresh lifecycle, excluding extension writes while a Git action is active. The bundled sidebar consumes `ExtensionPaneProps.workingTree` through the public
+pane contract; inactive-side files never become fabricated review-document entries. Stream tabs
+replace the active canonical diff, not the sidebar inventory. Browser/session exports remain
+read-only with respect to Git state. The same leased mutation controller owns exact-file
+discard/stash prompts; keyboard routing remains in the App keyboard hook and mouse choices reuse
+ConfirmDialog. Git builds file-only stash trees through an isolated index and publishes a normal
+stash before cleaning the selected live paths. Cleanup failure retains that stash and reports
+partial completion. The terminal cursor adapter distinguishes deliberate source selection from
+automatic viewport rows; editor fallback consumes the shared first-change target. Git's optional
+read-only line resolver validates source coordinates and maps staged addresses through later
+worktree edits, while App retains editor launch and refresh ownership.
 
 `packages/hunk/src/core/vcs/index.ts` owns provider-neutral catalog ordering, lookup,
 detection, and operation dispatch. `packages/hunk/src/app/vcsCatalog.ts` composes bundled

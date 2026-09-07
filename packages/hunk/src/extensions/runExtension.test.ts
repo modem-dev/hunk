@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { resolveExtensionPanes } from "./apply";
 import { runExtensionFactory, toInternalVcsAdapter } from "./runExtension";
+import { HunkExtensionUserError, type ExtensionWorkingTreeFile } from "../extension-api/types";
 import {
   createEmptyExtensionRegistry,
   HUNK_EXTENSION_API_VERSION,
@@ -11,6 +12,53 @@ import {
 function bundledMetadata(id: string) {
   return { id, sourcePath: `hunk:bundled/${id}`, origin: "bundled" as const };
 }
+
+test("working-tree mutation conversion preserves optionality, inputs and user-facing errors", async () => {
+  const file: ExtensionWorkingTreeFile = {
+    path: "alpha.txt",
+    staged: false,
+    unstaged: true,
+    untracked: false,
+    conflicted: false,
+    version: "reviewed",
+  };
+  const calls: unknown[] = [];
+  const adapter = toInternalVcsAdapter({
+    id: "test",
+    name: "Test",
+    detect: () => null,
+    operations: {
+      "working-tree-diff": {
+        async load() {
+          return {
+            repoRoot: "repo",
+            sourceLabel: "repo",
+            title: "Test",
+            patchText: "",
+            workingTreeFiles: [file],
+          };
+        },
+        async stageFile(input, target, context) {
+          calls.push([input, target, context]);
+          throw new HunkExtensionUserError("Index locked", {
+            suggestions: ["Wait for the other Git process."],
+          });
+        },
+      },
+    },
+  });
+  const operation = adapter.operations["working-tree-diff"]!;
+  const input = { kind: "vcs" as const, staged: false, options: {} };
+  expect((await operation.load(input, { cwd: "repo" })).workingTreeFiles).toEqual([file]);
+  expect(operation.unstageFile).toBeUndefined();
+  expect(operation.stageHunk).toBeUndefined();
+  await expect(operation.stageFile!(input, file, { cwd: "repo" })).rejects.toMatchObject({
+    name: "HunkUserError",
+    message: "Index locked",
+    suggestions: ["Wait for the other Git process."],
+  });
+  expect(calls).toEqual([[input, file, { cwd: "repo" }]]);
+});
 
 describe("runExtensionFactory", () => {
   test("applies a synchronous factory before returning, with nothing to await", () => {

@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, test } from "bun:test";
 import { KeyEvent, type ParsedKey } from "@opentui/core";
 import {
+  advertisedKeyLabels,
   buildAppCommands,
   builtinCommandKeyDefaults,
   dispatchAppCommand,
@@ -35,7 +36,10 @@ function keyEvent(fields: Partial<ParsedKey>): KeyEvent {
 }
 
 /** Build the built-in table over recording callbacks, plus the log it writes. */
-function createTestCommands(resolvedKeys?: ResolvedCommandKeys) {
+function createTestCommands(
+  resolvedKeys?: ResolvedCommandKeys,
+  overrides: Partial<BuildAppCommandsOptions> = {},
+) {
   const ran: string[] = [];
   const record =
     (name: string) =>
@@ -45,10 +49,14 @@ function createTestCommands(resolvedKeys?: ResolvedCommandKeys) {
   const options: BuildAppCommandsOptions = {
     canAlignCurrentLine: true,
     canApplyFilePresentationToAllMatching: false,
+    canFocusDiffPane: true,
+    canFocusFilesPane: true,
     canRefreshCurrentInput: true,
     alignCurrentLine: record("alignCurrentLine"),
     applyFilePresentationToAllMatching: record("applyFilePresentationToAllMatching"),
+    focusDiffPane: record("focusDiffPane"),
     focusFilter: record("focusFilter"),
+    focusFilesPane: record("focusFilesPane"),
     moveSelection: record("moveSelection"),
     openAgentSkill: record("openAgentSkill"),
     openThemeSelector: record("openThemeSelector"),
@@ -72,12 +80,125 @@ function createTestCommands(resolvedKeys?: ResolvedCommandKeys) {
     toggleFilesPane: record("toggleFilesPane"),
     triggerEditSelectedFile: record("triggerEditSelectedFile"),
     triggerRefreshCurrentInput: record("triggerRefreshCurrentInput"),
+    ...overrides,
   };
 
   return { commands: buildAppCommands(options), ran };
 }
 
 describe("built-in command chords", () => {
+  test("contextual staging consumes Space and Tab while explicit remaps keep ownership", () => {
+    const actions: string[] = [];
+    const options = {
+      canToggleFileStaged: true,
+      canSwitchStagedView: true,
+      toggleFileStaged: () => actions.push("stage"),
+      toggleStagedView: () => actions.push("tab"),
+    };
+    const { commands } = createTestCommands(undefined, options);
+    expect(dispatchAppCommand(commands, keyEvent({ name: "space" }))?.id).toBe(
+      "hunk.review.toggleFileStaged",
+    );
+    expect(dispatchAppCommand(commands, keyEvent({ name: "tab" }))?.id).toBe(
+      "hunk.review.toggleStagedView",
+    );
+    expect(actions).toEqual(["stage", "tab"]);
+    const { keys } = resolveCommandKeys({
+      defaults: builtinCommandKeyDefaults(),
+      userBindings: { "hunk.review.pageDown": "space" },
+    });
+    const remapped = createTestCommands(keys, options);
+    expect(dispatchAppCommand(remapped.commands, keyEvent({ name: "space" }))?.id).toBe(
+      "hunk.review.pageDown",
+    );
+    expect(actions).toHaveLength(2);
+  });
+  test("file discard and stash defaults override paging and pane toggle only when actionable", () => {
+    const actions: string[] = [];
+    const options = {
+      canDiscardSelectedFile: true,
+      canStashSelectedFile: true,
+      discardSelectedFile: () => actions.push("discard"),
+      stashSelectedFile: () => actions.push("stash"),
+    };
+    const { commands } = createTestCommands(undefined, options);
+    expect(dispatchAppCommand(commands, keyEvent({ name: "d", sequence: "d" }))?.id).toBe(
+      "hunk.review.discardSelectedFile",
+    );
+    expect(dispatchAppCommand(commands, keyEvent({ name: "s", sequence: "s" }))?.id).toBe(
+      "hunk.review.stashSelectedFile",
+    );
+    expect(actions).toEqual(["discard", "stash"]);
+    const { keys } = resolveCommandKeys({
+      defaults: builtinCommandKeyDefaults(),
+      userBindings: { "hunk.review.halfPageDown": "d", "hunk.view.toggleFilesPane": "s" },
+    });
+    const remapped = createTestCommands(keys, options);
+    expect(dispatchAppCommand(remapped.commands, keyEvent({ name: "d", sequence: "d" }))?.id).toBe(
+      "hunk.review.halfPageDown",
+    );
+    expect(dispatchAppCommand(remapped.commands, keyEvent({ name: "s", sequence: "s" }))?.id).toBe(
+      "hunk.view.toggleFilesPane",
+    );
+  });
+
+  test("help and menus omit chords an earlier enabled command currently owns", () => {
+    const { commands } = createTestCommands(undefined, {
+      canDiscardSelectedFile: true,
+      canStashSelectedFile: true,
+      canToggleFileStaged: true,
+      canSwitchStagedView: true,
+    });
+    const labels = (id: string) =>
+      advertisedKeyLabels(commands, commands.find((command) => command.id === id)!);
+    const helpKeys = (description: string) =>
+      buildHelpSections(commands)
+        .flatMap((section) => section.rows)
+        .find((row) => row.description === description)?.keys;
+    const menus = buildAppMenus({
+      commands,
+      copyDecorations: false,
+      cursorLine: "row",
+      layoutMode: "stack",
+      filesPaneVisible: true,
+      showAgentNotes: false,
+      showHelp: false,
+      showHunkHeaders: true,
+      showLineNumbers: true,
+      showMenuBar: true,
+      wrapLines: false,
+    });
+    const fileHint = (commandId: string) =>
+      menus.file?.find((entry) => entry.kind === "item" && entry.commandId === commandId);
+
+    expect(labels("hunk.review.pageDown")).toEqual(["PageDown", "f"]);
+    expect(labels("hunk.review.halfPageDown")).toEqual(["Ctrl+D"]);
+    expect(labels("hunk.view.toggleFilesPane")).toEqual([]);
+    expect(labels("hunk.app.toggleFocusArea")).toEqual([]);
+    expect(helpKeys("page down")).toBe("PageDown / f");
+    expect(helpKeys("half page down / up")).toBe("Ctrl+D / u");
+    expect(helpKeys("sidebar / theme selector")).toBe("t");
+    expect(helpKeys("toggle files/filter focus")).toBeUndefined();
+    expect(helpKeys("stage / unstage focused file, folder, or hunk")).toBe("Space");
+    expect(helpKeys("switch unstaged / staged stream")).toBe("Tab");
+    expect(fileHint("hunk.app.toggleFocusArea")).toMatchObject({ hint: undefined });
+    expect(fileHint("hunk.review.toggleStagedView")).toMatchObject({ hint: "Tab" });
+  });
+
+  test("focused hunk staging owns Space without invoking file staging", () => {
+    const actions: string[] = [];
+    const { commands } = createTestCommands(undefined, {
+      canToggleFileStaged: false,
+      canToggleHunkStaged: true,
+      toggleHunkStaged: () => actions.push("hunk"),
+      toggleFileStaged: () => actions.push("file"),
+    });
+    expect(dispatchAppCommand(commands, keyEvent({ name: "space" }))?.id).toBe(
+      "hunk.review.toggleHunkStaged",
+    );
+    expect(actions).toEqual(["hunk"]);
+  });
+
   test("every alias of the scroll shortcuts still dispatches", () => {
     const { commands, ran } = createTestCommands();
     const press = (fields: Partial<ParsedKey>) =>
@@ -224,6 +345,25 @@ describe("built-in commands under user keybindings", () => {
     expect(press({ name: "pagedown" })).toBe("hunk.review.pageDown");
   });
 
+  test("Enter and Esc switch review and files pane focus only while enabled", () => {
+    const enabled = createTestCommands();
+    expect(dispatchAppCommand(enabled.commands, keyEvent({ name: "return" }))?.id).toBe(
+      "hunk.review.focusDiffPane",
+    );
+    expect(dispatchAppCommand(enabled.commands, keyEvent({ name: "escape" }))?.id).toBe(
+      "hunk.review.focusFilesPane",
+    );
+    expect(enabled.ran).toEqual(["focusDiffPane", "focusFilesPane"]);
+
+    const disabled = createTestCommands(undefined, {
+      canFocusDiffPane: false,
+      canFocusFilesPane: false,
+    });
+    expect(dispatchAppCommand(disabled.commands, keyEvent({ name: "return" }))).toBeUndefined();
+    expect(dispatchAppCommand(disabled.commands, keyEvent({ name: "escape" }))).toBeUndefined();
+    expect(disabled.ran).toEqual([]);
+  });
+
   test("an unbound command matches nothing", () => {
     const { keys } = resolveCommandKeys({
       defaults: builtinCommandKeyDefaults(),
@@ -257,7 +397,15 @@ describe("builtinCommandKeyDefaults", () => {
     const { commands } = createTestCommands();
 
     expect(defaults.map((entry) => entry.id)).toEqual(commands.map((command) => command.id));
-    expect(commands.every((command) => command.publicToExtensions)).toBe(true);
+    expect(
+      commands.filter((command) => !command.publicToExtensions).map((command) => command.id),
+    ).toEqual([
+      "hunk.review.discardSelectedFile",
+      "hunk.review.stashSelectedFile",
+      "hunk.review.toggleHunkStaged",
+      "hunk.review.toggleFileStaged",
+      "hunk.review.toggleStagedView",
+    ]);
     expect(defaults.find((entry) => entry.id === "hunk.review.pageDown")?.defaultKeys).toEqual([
       "pagedown",
       "space",

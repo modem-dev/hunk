@@ -1940,7 +1940,7 @@ describe("loadAppBootstrap source fetcher attachment", () => {
       mutableBun.spawn = originalSpawn;
     }
 
-    expect(syncCalls).toEqual([]);
+    expect(syncCalls.some((call) => call.includes("status"))).toBe(true);
     expect(asyncCalls.some((call) => call.includes("rev-parse"))).toBe(true);
     expect(asyncCalls.some((call) => call.includes("diff"))).toBe(true);
     expect(asyncCalls).toContainEqual([gitExecutable, "show", ":value.txt"]);

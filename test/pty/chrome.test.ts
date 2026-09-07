@@ -181,7 +181,9 @@ describe("PTY chrome", () => {
       expect(initial).toContain("add = true");
       expect(initial).toContain("betaValue");
 
-      await session.press("tab");
+      await harness.ensureKeyboardIsLive(session);
+      await session.press("/");
+      await session.waitForText("filter: type to filter files");
       await session.type("beta");
       const filtered = await harness.waitForSnapshot(
         session,
@@ -205,7 +207,7 @@ describe("PTY chrome", () => {
       args: ["diff", "--mode", "split"],
       cwd: fixture.dir,
       cols: 220,
-      rows: 12,
+      rows: 13,
     });
 
     try {
@@ -261,12 +263,12 @@ describe("PTY chrome", () => {
         session,
         (text) =>
           (text.includes("Keyboard help") || text.includes("Controls help")) &&
-          text.includes("move line-by-line"),
+          text.includes("move in the focused pane"),
         5_000,
       );
 
       expect(help.includes("Keyboard help") || help.includes("Controls help")).toBe(true);
-      expect(help).toContain("move line-by-line");
+      expect(help).toContain("move in the focused pane");
     } finally {
       session.close();
     }

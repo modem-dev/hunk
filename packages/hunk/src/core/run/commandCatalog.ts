@@ -99,6 +99,50 @@ export interface AppCommandCatalogEntry {
  */
 const BUILTIN_COMMANDS = [
   {
+    id: "hunk.review.discardSelectedFile",
+    title: "Discard selected file or folder changes",
+    category: "review",
+    defaultKeys: ["d"],
+    locus: "host-only",
+    publicToExtensions: false,
+    closesMenu: true,
+  },
+  {
+    id: "hunk.review.stashSelectedFile",
+    title: "Stash selected file or folder",
+    category: "review",
+    defaultKeys: ["s"],
+    locus: "host-only",
+    publicToExtensions: false,
+    closesMenu: true,
+  },
+  {
+    id: "hunk.review.toggleHunkStaged",
+    title: "Stage / unstage selected hunk",
+    category: "review",
+    defaultKeys: ["space"],
+    locus: "host-only",
+    publicToExtensions: false,
+  },
+  {
+    id: "hunk.review.toggleFileStaged",
+    title: "Stage / unstage selected file or folder",
+    category: "review",
+    defaultKeys: ["space"],
+    locus: "host-only",
+    publicToExtensions: false,
+    closesMenu: true,
+  },
+  {
+    id: "hunk.review.toggleStagedView",
+    title: "Switch unstaged / staged stream",
+    category: "review",
+    defaultKeys: ["tab"],
+    locus: "host-only",
+    publicToExtensions: false,
+    closesMenu: true,
+  },
+  {
     id: "hunk.review.jumpToBottom",
     title: "Jump to end",
     category: "review",
@@ -155,6 +199,23 @@ const BUILTIN_COMMANDS = [
     defaultKeys: ["/"],
     // Moving keyboard focus is this client's business; the filter value it edits is
     // shared review state, changed through `filter/set` rather than by this command.
+    locus: "client-local",
+    publicToExtensions: true,
+  },
+  {
+    id: "hunk.review.focusDiffPane",
+    title: "Focus the selected file's review",
+    category: "review",
+    defaultKeys: ["enter"],
+    locus: "client-local",
+    publicToExtensions: true,
+  },
+  {
+    id: "hunk.review.focusFilesPane",
+    title: "Focus the files pane",
+    category: "review",
+    defaultKeys: ["escape"],
+    // Overlay, mode, and text-input Escape still outrank this command.
     locus: "client-local",
     publicToExtensions: true,
   },
@@ -226,7 +287,7 @@ const BUILTIN_COMMANDS = [
   },
   {
     id: "hunk.review.stepDown",
-    title: "Scroll down one row",
+    title: "Move down in the focused pane",
     category: "review",
     defaultKeys: ["down", "j"],
     locus: "client-local",
@@ -235,7 +296,7 @@ const BUILTIN_COMMANDS = [
   },
   {
     id: "hunk.review.stepUp",
-    title: "Scroll up one row",
+    title: "Move up in the focused pane",
     category: "review",
     defaultKeys: ["up", "k"],
     locus: "client-local",

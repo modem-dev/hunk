@@ -2,7 +2,7 @@
  * Coordinates terminal user-note targeting, draft focus, and public note events.
  * Semantic draft and saved-note transitions remain owned by the terminal review controller.
  */
-import { useCallback, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import type { UserNoteLineTarget } from "../../core/liveComments";
 import type { ExtensionEventPayloads, ExtensionReviewNote } from "../../extensions/types";
 import type { ActiveAddNoteAffordance } from "../diff/DiffSectionBody";
@@ -45,6 +45,8 @@ export function projectExtensionReviewNote(
 
 export interface UseUserNoteComposerOptions {
   draftNote: DraftReviewNote | null;
+  /** Read semantic draft identity before delivering deferred native editor events. */
+  getDraftNoteId: () => string | null;
   /** Whether an implicit keyboard start may use the terminal's current-line cursor. */
   keyboardCursorEnabled: boolean;
   getLineCursor: () => LineCursor | null;
@@ -73,6 +75,7 @@ export interface UseUserNoteComposerOptions {
 /** Coordinate one terminal user-note composition flow around shared semantic actions. */
 export function useUserNoteComposer({
   draftNote,
+  getDraftNoteId,
   keyboardCursorEnabled,
   getLineCursor,
   startDraft,
@@ -86,6 +89,18 @@ export function useUserNoteComposer({
 }: UseUserNoteComposerOptions) {
   const [activeAddNoteTarget, setActiveAddNoteTarget] = useState<ActiveAddNoteTarget | null>(null);
   const { draft: focusDraft, review: focusReview, blurDraft: blurDraftFocus } = focus;
+  const mountedRef = useRef(true);
+  useLayoutEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+  /** Ignore editor callbacks after their draft is consumed, replaced, or unmounted. */
+  const isCurrentDraft = useCallback(
+    () => mountedRef.current && draftNote !== null && getDraftNoteId() === draftNote.id,
+    [draftNote, getDraftNoteId],
+  );
 
   /** Start a draft at an explicit target, hovered affordance, or enabled line cursor. */
   const startUserNote = useCallback(
@@ -148,22 +163,26 @@ export function useUserNoteComposer({
     blurDraftFocus();
   }, [blurDraftFocus]);
 
-  /** Save the current draft, publish it once, and return to review navigation. */
+  /** Save after OpenTUI publishes native edits queued earlier in this input batch. */
   const saveDraftNote = useCallback(() => {
-    // `saveDraft` consumes the semantic draft synchronously. Retain its runtime file id
-    // first because the saved terminal projection is keyed by path rather than runtime id.
-    const priorDraft = draftNote;
-    const saved = saveDraft();
-    if (saved && priorDraft) {
-      const note = projectExtensionReviewNote({ ...saved, fileId: priorDraft.fileId }, false);
-      publishEvent(priorDraft.kind === "edit" ? "note_edited" : "note_created", { note });
-    }
-    focusReview();
-  }, [draftNote, focusReview, publishEvent, saveDraft]);
+    queueMicrotask(() => {
+      if (!isCurrentDraft()) return;
+      // Native content-change events are microtasks. Consume the semantic draft only
+      // after those preceding edits have arrived, including a final character before Ctrl-S.
+      const priorDraft = draftNote;
+      const saved = saveDraft();
+      if (saved && priorDraft) {
+        const note = projectExtensionReviewNote({ ...saved, fileId: priorDraft.fileId }, false);
+        publishEvent(priorDraft.kind === "edit" ? "note_edited" : "note_created", { note });
+      }
+      focusReview();
+    });
+  }, [draftNote, focusReview, isCurrentDraft, publishEvent, saveDraft]);
 
   /** Update the semantic draft and publish the body supplied by the editor. */
   const updateDraftNote = useCallback(
     (body: string) => {
+      if (!isCurrentDraft()) return;
       const priorDraft = draftNote;
       updateDraft(body);
       if (priorDraft) {
@@ -182,14 +201,17 @@ export function useUserNoteComposer({
         });
       }
     },
-    [draftNote, publishEvent, updateDraft],
+    [draftNote, isCurrentDraft, publishEvent, updateDraft],
   );
 
-  /** Cancel the semantic draft and return to review navigation. */
+  /** Let queued native edits settle before cancelling their semantic draft. */
   const cancelDraftNote = useCallback(() => {
-    cancelDraft();
-    focusReview();
-  }, [cancelDraft, focusReview]);
+    queueMicrotask(() => {
+      if (!isCurrentDraft()) return;
+      cancelDraft();
+      focusReview();
+    });
+  }, [cancelDraft, focusReview, isCurrentDraft]);
 
   return {
     blurDraftNote,

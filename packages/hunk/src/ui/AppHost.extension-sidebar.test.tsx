@@ -125,6 +125,8 @@ async function launchWithExtension(repo: string, extPath: string): Promise<AppBo
     cliExtensionPaths: [extPath],
   });
   expect(bootstrap.extensions.issues).toEqual([]);
+  // Pane tests explicitly retain s; working-tree sessions otherwise use it for stash.
+  bootstrap.keybindings = { ...bootstrap.keybindings, "hunk.view.toggleFilesPane": "s" };
   return bootstrap;
 }
 
@@ -498,7 +500,7 @@ describe("extension sidebar views", () => {
 
     const bootstrap = await launchWithExtension(repo, extPath);
     await withAppHost(bootstrap, async (setup) => {
-      // The sidebar file rows carry the "M <name>" status prefix; the diff
+      // The sidebar file rows carry the "M <name>" modified-status prefix; the diff
       // pane's own headers do not, so the prefix marks the area's visibility.
       await flushUntil(
         setup,

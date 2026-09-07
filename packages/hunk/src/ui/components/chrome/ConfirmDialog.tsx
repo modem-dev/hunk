@@ -1,4 +1,4 @@
-import type { MouseEvent as TuiMouseEvent } from "@opentui/core";
+import { MouseButton, type MouseEvent as TuiMouseEvent } from "@opentui/core";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { MODAL_FRAME_CHROME_ROWS, resolveModalGeometry } from "../../lib/modalGeometry";
@@ -53,7 +53,7 @@ export function DialogActionRow({
               }
               onMouseUp={(event: TuiMouseEvent) => {
                 event.stopPropagation();
-                action.run();
+                if (event.button === MouseButton.LEFT) action.run();
               }}
             >
               <text fg={theme.accent}>{action.keyLabel}</text>

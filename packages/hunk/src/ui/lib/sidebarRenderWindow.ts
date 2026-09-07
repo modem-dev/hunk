@@ -102,9 +102,7 @@ export function buildSidebarRenderWindow({
   }
 
   if (selectedFileId) {
-    const selectedIndex = entries.findIndex(
-      (entry) => entry.kind === "file" && entry.id === selectedFileId,
-    );
+    const selectedIndex = entries.findIndex((entry) => entry.id === selectedFileId);
     if (selectedIndex >= 0) {
       mountedIndices.add(selectedIndex);
     }

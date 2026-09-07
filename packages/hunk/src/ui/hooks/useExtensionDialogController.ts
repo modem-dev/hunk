@@ -28,16 +28,31 @@ export function useExtensionDialogController({
 }): ExtensionDialogController {
   const [queue] = useState(createExtensionDialogQueue);
   const request = useSyncExternalStore(queue.subscribe, queue.current, queue.current);
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const [inputValue, setInputValue] = useState("");
-  const requestId = request?.id ?? null;
-  const initialInput = request?.kind === "input" ? request.initial : "";
+  const [answer, setAnswer] = useState({
+    requestId: request?.id,
+    selectedIndex: 0,
+    inputValue: "",
+  });
+  const answerRef = useRef(answer);
+  const currentAnswer =
+    answer.requestId === request?.id
+      ? answer
+      : {
+          requestId: request?.id,
+          selectedIndex: 0,
+          inputValue: request?.kind === "input" ? request.initial : "",
+        };
 
-  useEffect(() => {
-    // A promoted queued request must never inherit the previous request's answer state.
-    setSelectedIndex(0);
-    setInputValue(initialInput);
-  }, [initialInput, requestId]);
+  /** Read edits synchronously, even when another key arrives before React commits. */
+  const readAnswer = () =>
+    answerRef.current.requestId === request?.id ? answerRef.current : currentAnswer;
+
+  /** Keep the visible answer and the next keypress scoped to the same request. */
+  const updateAnswer = (patch: Partial<Pick<typeof answer, "selectedIndex" | "inputValue">>) => {
+    const next = { ...readAnswer(), ...patch };
+    answerRef.current = next;
+    setAnswer(next);
+  };
 
   const previousReviewGenerationRef = useRef(reviewGeneration);
   useLayoutEffect(() => {
@@ -60,11 +75,14 @@ export function useExtensionDialogController({
     if (!request) return;
 
     if (request.kind === "select") {
-      queue.accept(request.id, request.options[selectedIndexOverride ?? selectedIndex]);
+      queue.accept(
+        request.id,
+        request.options[selectedIndexOverride ?? readAnswer().selectedIndex],
+      );
       return;
     }
 
-    queue.accept(request.id, request.kind === "input" ? inputValue : undefined);
+    queue.accept(request.id, request.kind === "input" ? readAnswer().inputValue : undefined);
   };
 
   /** Dismiss the visible request with its kind-specific cancel value. */
@@ -77,18 +95,20 @@ export function useExtensionDialogController({
     if (request?.kind !== "select") return;
 
     const optionCount = request.options.length;
-    setSelectedIndex((current) => (current + delta + optionCount) % optionCount);
+    updateAnswer({
+      selectedIndex: (readAnswer().selectedIndex + delta + optionCount) % optionCount,
+    });
   };
 
   return {
     createDialogs: queue.createDialogs,
     request,
-    selectedIndex,
-    inputValue,
+    selectedIndex: currentAnswer.selectedIndex,
+    inputValue: currentAnswer.inputValue,
     accept,
     cancel,
     moveSelection,
-    pickOption: setSelectedIndex,
-    updateInput: setInputValue,
+    pickOption: (selectedIndex) => updateAnswer({ selectedIndex }),
+    updateInput: (inputValue) => updateAnswer({ inputValue }),
   };
 }

@@ -1,7 +1,6 @@
 import { MouseButton, type MouseEvent as TuiMouseEvent } from "@opentui/core";
 import { memo } from "react";
 import type { ExtensionSidebarTheme } from "../../../extension-api/types";
-import { diffRailMarker } from "../../diff/rowStyle";
 import { fileRowId } from "../../lib/ids";
 import {
   sidebarEntryStats,
@@ -23,8 +22,13 @@ function getFileStateIcon(
   entry: FileListEntry,
   theme: ExtensionSidebarTheme,
 ): { icon: string; color: string } {
+  if (entry.stageStatus)
+    return {
+      icon: entry.stageStatus,
+      color: ["??", "!!"].includes(entry.stageStatus) ? theme.badgeRemoved : theme.badgeAdded,
+    };
   if (entry.isUntracked) {
-    return { icon: "?", color: theme.fileUntracked };
+    return { icon: "??", color: theme.badgeRemoved };
   }
 
   switch (entry.changeType) {
@@ -42,28 +46,42 @@ function getFileStateIcon(
   }
 }
 
-/** Render one folder header in the navigation sidebar. */
+/** Render one compact folder header, leaving the shared stats column empty. */
 export function FileGroupHeader({
   entry,
   paddingLeft = 1,
+  selected = false,
+  statsWidth = 0,
   textWidth,
   theme,
+  onSelect,
 }: {
   entry: FileGroupEntry;
   paddingLeft?: number;
+  selected?: boolean;
+  statsWidth?: number;
   textWidth: number;
   theme: ExtensionSidebarTheme;
+  onSelect?: (entryId: string) => void;
 }) {
+  const rowBackground = selected ? theme.accentMuted : theme.panel;
+  const statsSectionWidth = statsWidth > 0 ? statsWidth + 1 : 0;
+  const labelWidth = Math.max(1, textWidth - statsSectionWidth);
   return (
     <box
+      id={fileRowId(entry.id)}
       style={{
         width: "100%",
         height: 1,
         paddingLeft,
-        backgroundColor: theme.panel,
+        backgroundColor: rowBackground,
+      }}
+      onMouseUp={(event) => {
+        if (event.button !== MouseButton.LEFT || !onSelect) return;
+        onSelect(entry.id);
       }}
     >
-      <text fg={theme.muted}>{fitText(entry.label, Math.max(1, textWidth))}</text>
+      <text fg={selected ? theme.text : theme.muted}>{fitText(entry.label, labelWidth, "…")}</text>
     </box>
   );
 }
@@ -79,18 +97,23 @@ export function FileDirectoryRow({
   entry,
   onToggleDirectory,
   paddingLeft = 1,
+  selected = false,
   statsWidth = 0,
   textWidth,
   theme,
+  onSelect,
 }: {
   collapsed: boolean;
   entry: FileDirectoryEntry;
   onToggleDirectory: (path: string) => void;
   paddingLeft?: number;
+  selected?: boolean;
   statsWidth?: number;
   textWidth: number;
   theme: ExtensionSidebarTheme;
+  onSelect?: (entryId: string) => void;
 }) {
+  const rowBackground = selected ? theme.accentMuted : theme.panel;
   const statsSectionWidth = statsWidth > 0 ? statsWidth + 1 : 0;
   const countText = collapsed
     ? `${entry.descendantFileCount} ${entry.descendantFileCount === 1 ? "file" : "files"}`
@@ -106,30 +129,34 @@ export function FileDirectoryRow({
 
   return (
     <box
+      id={fileRowId(entry.id)}
       style={{
         width: "100%",
         height: 1,
         flexDirection: "row",
-        backgroundColor: theme.panel,
+        backgroundColor: rowBackground,
       }}
       onMouseUp={(event: TuiMouseEvent) => {
         if (event.button === MouseButton.LEFT) {
+          onSelect?.(entry.id);
           onToggleDirectory(entry.path);
         }
       }}
     >
-      <box style={{ width: 1, height: 1, backgroundColor: theme.panel }} />
+      <box style={{ width: 1, height: 1, backgroundColor: rowBackground }} />
       <box
         style={{
           flexGrow: 1,
           height: 1,
           paddingLeft: paddingLeft + indentWidth,
           flexDirection: "row",
-          backgroundColor: theme.panel,
+          backgroundColor: rowBackground,
         }}
       >
         <text fg={theme.muted}>{collapsed ? "› " : "⌄ "}</text>
-        <text fg={theme.muted}>{padText(fitText(entry.label, labelWidth), labelWidth)}</text>
+        <text fg={selected ? theme.text : theme.muted}>
+          {padText(fitText(entry.label, labelWidth), labelWidth)}
+        </text>
         {countText && (
           <box
             style={{
@@ -166,10 +193,12 @@ export const FileListItem = memo(function FileListItem({
   theme: ExtensionSidebarTheme;
   onSelectFile: (fileId: string) => void;
 }) {
-  const rowBackground = selected ? theme.panelAlt : theme.panel;
+  const rowBackground = selected ? theme.accentMuted : theme.panel;
   const stats = sidebarEntryStats(entry);
   const { icon, color } = getFileStateIcon(entry, theme);
-  const iconWidth = icon ? 2 : 0; // icon + space
+  const fullyStaged = entry.stageStatus?.[0] !== " " && entry.stageStatus?.[1] === " ";
+  const nameColor = fullyStaged ? theme.badgeAdded : theme.text;
+  const iconWidth = icon ? icon.length + 1 : 0;
   const statsSectionWidth = statsWidth > 0 ? statsWidth + 1 : 0;
   const indentWidth = fileSidebarIndentWidth(
     entry.depth,
@@ -187,11 +216,18 @@ export const FileListItem = memo(function FileListItem({
         backgroundColor: rowBackground,
         flexDirection: "row",
       }}
-      onMouseUp={() => onSelectFile(entry.id)}
+      onMouseUp={(event) => {
+        if (event.button !== MouseButton.LEFT) return;
+        onSelectFile(entry.id);
+      }}
     >
-      <text fg={selected ? theme.accent : rowBackground} bg={rowBackground}>
-        {selected ? diffRailMarker() : " "}
-      </text>
+      <box
+        style={{
+          width: 1,
+          height: 1,
+          backgroundColor: rowBackground,
+        }}
+      />
       <box
         style={{
           flexGrow: 1,
@@ -201,12 +237,25 @@ export const FileListItem = memo(function FileListItem({
           backgroundColor: rowBackground,
         }}
       >
-        {icon && <text fg={color}>{icon} </text>}
-        <text fg={theme.text}>{padText(fitText(entry.name, nameWidth, "…"), nameWidth)}</text>
+        {icon && (
+          <text fg={color}>
+            {entry.stageStatus ? (
+              <>
+                {icon[0]}
+                <span fg={theme.badgeRemoved}>{icon[1]}</span>
+              </>
+            ) : (
+              icon
+            )}{" "}
+          </text>
+        )}
+        <text fg={nameColor}>{padText(fitText(entry.name, nameWidth, "…"), nameWidth)}</text>
         {statsSectionWidth > 0 && (
           <box
             style={{
               width: statsSectionWidth,
+              minWidth: statsSectionWidth,
+              flexShrink: 0,
               height: 1,
               flexDirection: "row",
               justifyContent: "flex-end",
@@ -222,7 +271,9 @@ export const FileListItem = memo(function FileListItem({
                 <text
                   fg={
                     stat.kind === "agent-comment"
-                      ? theme.noteBorder
+                      ? selected
+                        ? theme.fileModified
+                        : theme.noteBorder
                       : stat.kind === "addition"
                         ? theme.badgeAdded
                         : theme.badgeRemoved

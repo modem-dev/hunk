@@ -7,6 +7,7 @@ import {
   buildEditorCommand,
   openSelectedFileInEditor,
   resolveEditableFilePath,
+  resolveSelectedEditorLine,
   shouldSuspendForEditor,
 } from "./openInEditor";
 
@@ -69,6 +70,23 @@ describe("open in editor helpers", () => {
     });
   });
 
+  test.each([
+    ["micro", "micro", []],
+    ["micro -readonly true", "micro", ["-readonly", "true"]],
+    [
+      '"C:\\Program Files\\Micro\\micro.exe" -readonly true',
+      "C:\\Program Files\\Micro\\micro.exe",
+      ["-readonly", "true"],
+    ],
+  ])("builds micro line jumps for %s", (editor, command, flags) => {
+    const filePath = join("project", "file with spaces.ts");
+    expect(buildEditorCommand({ editor, filePath, line: 12 })).toEqual({
+      command,
+      args: [...flags, "+12", filePath],
+    });
+    expect(shouldSuspendForEditor(editor)).toBe(true);
+  });
+
   test("preserves editor flags before appending the target file", () => {
     expect(
       buildEditorCommand({
@@ -95,17 +113,14 @@ describe("open in editor helpers", () => {
     });
   });
 
-  test("defaults unknown editors to opening the file path only", () => {
+  test("refuses unknown editor line syntax rather than opening at file start", () => {
     expect(
       buildEditorCommand({
         editor: "zed --new-window",
         filePath: "/tmp/project/example.ts",
         line: 4,
       }),
-    ).toEqual({
-      command: "zed",
-      args: ["--new-window", "/tmp/project/example.ts"],
-    });
+    ).toBeNull();
   });
 
   test("does not suspend for code-style GUI editors", () => {
@@ -220,6 +235,31 @@ describe("open in editor helpers", () => {
     ]);
     expect(renderer.suspend).toHaveBeenCalledTimes(1);
     expect(renderer.resume).toHaveBeenCalledTimes(1);
+  });
+
+  test("falls back to a changed line rather than leading context", () => {
+    const file = createTestDiffFile({
+      before: "one\ntwo\nthree\nfour\nfive\n",
+      after: "one\ntwo\nchanged\nfour\nfive\n",
+      context: 3,
+    });
+    expect(resolveSelectedEditorLine(file, file.metadata.hunks[0], null)).toBe(3);
+    expect(
+      resolveSelectedEditorLine(file, file.metadata.hunks[0], {
+        fileId: file.id,
+        hunkIndex: 0,
+        target: { side: "new", line: 1 },
+      }),
+    ).toBe(1);
+  });
+
+  test("an earlier deletion wins over a later addition for editor fallback", () => {
+    const file = createTestDiffFile({
+      before: "a\nb\nc\nd\ne\nf\ng\nh\n",
+      after: "a\nc\nd\ne\nNEW\nf\ng\nh\n",
+      context: 3,
+    });
+    expect(resolveSelectedEditorLine(file, file.metadata.hunks[0], null)).toBe(2);
   });
 
   test("opens the current line instead of the selected hunk start", () => {

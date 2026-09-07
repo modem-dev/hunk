@@ -31,6 +31,8 @@ export interface CurrentReviewRefreshController {
   triggerRefreshCurrentInput: () => void;
   /** Reload because watch mode observed a source change. */
   refreshWatchedInput: () => Promise<void>;
+  /** Switch the complete working-tree stream while retaining the mounted view preferences. */
+  setStagedView: (staged: boolean) => Promise<void>;
 }
 
 /** Derive, register, and refresh the current mounted review descriptor. */
@@ -99,6 +101,19 @@ export function useCurrentReviewRefreshController({
     });
   }, [refreshCurrentInput]);
 
+  const setStagedView = useCallback(async (staged: boolean) => {
+    const current = requestRef.current;
+    if (!current || current.nextInput.kind !== "vcs") return;
+    await reloadSessionRef.current(
+      { ...current.nextInput, staged },
+      {
+        reason: "manual",
+        resetApp: false,
+        sourcePath: current.sourcePath,
+      },
+    );
+  }, []);
+
   const refreshWatchedInput = useCallback(
     () => refreshCurrentInput({ reason: "watch" }),
     [refreshCurrentInput],
@@ -118,5 +133,6 @@ export function useCurrentReviewRefreshController({
     refreshCurrentInput,
     triggerRefreshCurrentInput,
     refreshWatchedInput,
+    setStagedView,
   };
 }

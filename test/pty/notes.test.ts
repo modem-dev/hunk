@@ -19,6 +19,51 @@ afterEach(() => {
 });
 
 describe("PTY notes", () => {
+  test("trailing input after a save key cannot update a consumed draft", async () => {
+    const fixture = harness.createAgentFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "stack"],
+      cols: 140,
+      rows: 20,
+    });
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+      await harness.ensureKeyboardIsLive(session);
+      await session.press("c");
+      await session.waitForText(/Draft note/);
+      session.writeRaw("Saved note.\x13!\x13");
+      await session.waitForText(/Your note/);
+      await session.press("?");
+      const help = await session.waitForText(/Controls help/);
+      expect(help).not.toContain("Console (Focused)");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("cancelling in the same input burst as typing does not leave an editor error", async () => {
+    const fixture = harness.createAgentFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "stack"],
+      cols: 140,
+      rows: 20,
+    });
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+      await harness.ensureKeyboardIsLive(session);
+      await session.press("c");
+      await session.waitForText(/Draft note/);
+      session.writeRaw("Discard this draft.\x1b");
+      await harness.waitForSnapshot(session, (text) => !text.includes("Draft note"));
+      await session.press("?");
+      const help = await session.waitForText(/Controls help/);
+      expect(help).not.toContain("Console (Focused)");
+      expect(help).not.toContain("Your note");
+    } finally {
+      session.close();
+    }
+  });
+
   test("agent notes can be revealed and hidden in the live diff UI", async () => {
     const fixture = harness.createAgentFilePair();
     const session = await harness.launchHunk({

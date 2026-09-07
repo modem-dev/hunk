@@ -1,3 +1,4 @@
+import { getTestSidebarFrame } from "../../../../test/helpers/sidebar-frame";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -23,6 +24,7 @@ import {
 import { createEmptyExtensionLoadResult } from "../extensions/types";
 import { AGENT_SKILL_COMMAND, AGENT_SKILL_PROMPT } from "./components/chrome/AgentSkillDialog";
 import { App } from "./App";
+import { paneFrameBorderColor } from "./lib/paneFocus";
 import { availableThemes, resolveTheme } from "./themes";
 
 const { loadAppBootstrap } = await import("../core/changeset/loaders");
@@ -566,6 +568,45 @@ function firstCrossFileHunkNavigationHeader(frame: string) {
       .map((line) => line.trim())
       .find((line) => line.startsWith("long-file.txt") || line.startsWith("short-file.ts")) ?? ""
   );
+}
+
+/** Columns inside the files pane, between its left frame and the divider. */
+function sidebarColumns(line: string) {
+  const parts = line.split("│");
+  return parts.length >= 3 ? (parts[1] ?? "") : (parts[0] ?? "");
+}
+
+/** Row index of a file name in the files pane. */
+function sidebarFileRow(setup: Awaited<ReturnType<typeof testRender>>, fileName: string) {
+  return setup
+    .captureCharFrame()
+    .split("\n")
+    .findIndex((line) => sidebarColumns(line).includes(fileName));
+}
+
+/** Foreground of the files pane's left frame on one rendered row. */
+function leftPaneBorderColor(setup: Awaited<ReturnType<typeof testRender>>, row: number) {
+  const line = setup.captureSpans().lines[row];
+  const border = line?.spans.find((span) => span.text.includes("│"));
+  return capturedTestColorToHex(border?.fg);
+}
+
+/** Wait until the files pane's left frame on `row` uses `expected`. */
+async function waitForLeftPaneBorder(
+  setup: Awaited<ReturnType<typeof testRender>>,
+  row: number,
+  expected: string,
+) {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    if (leftPaneBorderColor(setup, row) === expected) {
+      return;
+    }
+    await act(async () => {
+      await Bun.sleep(30);
+      await setup.renderOnce();
+    });
+  }
+  expect(leftPaneBorderColor(setup, row)).toBe(expected);
 }
 
 async function waitForSnapshot(
@@ -1139,6 +1180,11 @@ describe("App interactions", () => {
             detail: "The test host does not reload reviews.",
           })}
           onWorkspaceWriteCompleted={() => {}}
+          onVcsMutationCompleted={async () => {}}
+          runVcsMutation={async (write) => {
+            await write();
+            return true;
+          }}
           runWorkspaceWrite={async (write) => {
             await write();
             return true;
@@ -3142,12 +3188,7 @@ describe("App interactions", () => {
       await flush(setup);
 
       await act(async () => {
-        await setup.mockInput.typeText("Save from tmux CSI-u.");
-      });
-      await flush(setup);
-
-      await act(async () => {
-        await setup.mockInput.pressKeys(["\u001b[115;5u"]);
+        await setup.mockInput.typeText("Save from tmux CSI-u.\u001b[115;5u");
       });
       await flush(setup);
 
@@ -3673,9 +3714,9 @@ describe("App interactions", () => {
       await flush(setup);
 
       let frame = setup.captureCharFrame();
-      const directoryY = frame
+      const directoryY = getTestSidebarFrame(frame)
         .split("\n")
-        .findIndex((line) => line.split("│", 1)[0]?.includes("⌄ src/"));
+        .findIndex((line) => line.includes("⌄ src/"));
       expect(directoryY).toBeGreaterThan(0);
       expect((frame.match(/alpha\.ts/g) ?? []).length).toBe(2);
       expect((frame.match(/beta\.ts/g) ?? []).length).toBe(2);
@@ -3687,7 +3728,7 @@ describe("App interactions", () => {
 
       frame = setup.captureCharFrame();
       expect(frame.split("\n")[directoryY]).toContain("› src/");
-      expect(frame.split("\n")[directoryY]?.split("│", 1)[0]).toContain("2 files");
+      expect(getTestSidebarFrame(frame).split("\n")[directoryY]).toContain("2 files");
       expect((frame.match(/alpha\.ts/g) ?? []).length).toBe(1);
       expect((frame.match(/beta\.ts/g) ?? []).length).toBe(1);
       expect((frame.match(/README\.md/g) ?? []).length).toBe(2);
@@ -3725,10 +3766,7 @@ describe("App interactions", () => {
         await flush(setup);
       }
 
-      const secondFileY = setup
-        .captureCharFrame()
-        .split("\n")
-        .findIndex((line) => line.split("│", 1)[0]?.includes("second.ts"));
+      const secondFileY = sidebarFileRow(setup, "second.ts");
       expect(secondFileY).toBeGreaterThan(0);
 
       await act(async () => {
@@ -3744,6 +3782,257 @@ describe("App interactions", () => {
       );
       expect(frame).toContain("second.ts");
       expect((frame.match(/first\.ts/g) ?? []).length).toBe(1);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("Tab back from the filter focuses the files pane", async () => {
+    const { getLatestSnapshot, hostClient } = createMockHostClient();
+    const setup = await testRender(
+      <AppHost bootstrap={createTwoFileHunkBootstrap()} hostClient={hostClient} />,
+      {
+        width: 220,
+        height: 16,
+      },
+    );
+
+    try {
+      await flush(setup);
+      expect(getLatestSnapshot()?.selectedFileId).toBe("first");
+
+      await act(async () => {
+        await setup.mockInput.pressArrow("down");
+      });
+      await flush(setup);
+      expect(getLatestSnapshot()?.selectedFileId).toBe("first");
+
+      await act(async () => {
+        await setup.mockInput.pressTab();
+      });
+      await flush(setup);
+      expect(setup.captureCharFrame()).toContain("filter:");
+
+      await act(async () => {
+        await setup.mockInput.pressTab();
+      });
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.pressArrow("down");
+      });
+      await flush(setup);
+
+      const snapshot = await waitForSnapshot(
+        setup,
+        getLatestSnapshot,
+        (nextSnapshot) => nextSnapshot.selectedFileId === "second",
+      );
+      expect(snapshot?.selectedFileId).toBe("second");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("arrow keys move between files while the files pane is focused", async () => {
+    const { getLatestSnapshot, hostClient } = createMockHostClient();
+    const setup = await testRender(
+      <AppHost bootstrap={createTwoFileHunkBootstrap()} hostClient={hostClient} />,
+      {
+        width: 220,
+        height: 16,
+      },
+    );
+
+    try {
+      await flush(setup);
+      expect(getLatestSnapshot()?.selectedFileId).toBe("first");
+
+      const firstFileY = sidebarFileRow(setup, "first.ts");
+      expect(firstFileY).toBeGreaterThan(0);
+
+      await act(async () => {
+        await setup.mockMouse.click(6, firstFileY);
+      });
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.pressArrow("down");
+      });
+      await flush(setup);
+
+      let snapshot = await waitForSnapshot(
+        setup,
+        getLatestSnapshot,
+        (nextSnapshot) => nextSnapshot.selectedFileId === "second",
+      );
+      expect(snapshot?.selectedFileId).toBe("second");
+
+      await act(async () => {
+        await setup.mockInput.pressArrow("up");
+      });
+      await flush(setup);
+
+      snapshot = await waitForSnapshot(
+        setup,
+        getLatestSnapshot,
+        (nextSnapshot) => nextSnapshot.selectedFileId === "first",
+      );
+      expect(snapshot?.selectedFileId).toBe("first");
+
+      await act(async () => {
+        await setup.mockMouse.click(140, 6);
+      });
+      await flush(setup);
+      await act(async () => {
+        await setup.mockInput.pressArrow("down");
+      });
+      await flush(setup);
+
+      expect(getLatestSnapshot()?.selectedFileId).toBe("first");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("Enter focuses the selected file's review and Esc returns to the files pane", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const focusedBorder = paneFrameBorderColor(theme, true);
+    const unfocusedBorder = paneFrameBorderColor(theme, false);
+    const { getLatestSnapshot, hostClient } = createMockHostClient();
+    const setup = await testRender(
+      <AppHost bootstrap={createMouseScrollSelectionBootstrap()} hostClient={hostClient} />,
+      {
+        width: 220,
+        height: 16,
+      },
+    );
+
+    try {
+      await flush(setup);
+
+      const firstFileY = sidebarFileRow(setup, "first.ts");
+      expect(firstFileY).toBeGreaterThan(0);
+
+      await act(async () => {
+        await setup.mockMouse.click(6, firstFileY);
+      });
+      await flush(setup);
+      expect(leftPaneBorderColor(setup, firstFileY)).toBe(focusedBorder);
+      expect(getLatestSnapshot()?.selectedFileId).toBe("first");
+      expect(getLatestSnapshot()?.selectedHunkIndex).toBe(0);
+
+      await act(async () => {
+        await setup.mockInput.pressEnter();
+      });
+      await waitForLeftPaneBorder(setup, firstFileY, unfocusedBorder);
+      expect(getLatestSnapshot()?.selectedFileId).toBe("first");
+      expect(getLatestSnapshot()?.selectedHunkIndex).toBe(0);
+
+      await act(async () => {
+        await setup.mockInput.pressArrow("down");
+      });
+      await flush(setup);
+      expect(getLatestSnapshot()?.selectedFileId).toBe("first");
+
+      await pressHunkNavigationKey(setup, "]", 2);
+      const hunkSnapshot = await waitForSnapshot(
+        setup,
+        getLatestSnapshot,
+        (nextSnapshot) =>
+          nextSnapshot.selectedFileId === "second" && nextSnapshot.selectedHunkIndex === 1,
+      );
+      expect(hunkSnapshot).toMatchObject({
+        selectedFileId: "second",
+        selectedHunkIndex: 1,
+      });
+
+      await act(async () => {
+        await setup.mockInput.pressEscape();
+      });
+      const secondFileY = sidebarFileRow(setup, "second.ts");
+      expect(secondFileY).toBeGreaterThan(0);
+      await waitForLeftPaneBorder(setup, secondFileY, focusedBorder);
+      expect(getLatestSnapshot()).toMatchObject({
+        selectedFileId: "second",
+        selectedHunkIndex: 1,
+      });
+
+      await act(async () => {
+        await setup.mockInput.pressEnter();
+      });
+      await waitForLeftPaneBorder(setup, secondFileY, unfocusedBorder);
+      expect(getLatestSnapshot()).toMatchObject({
+        selectedFileId: "second",
+        selectedHunkIndex: 1,
+      });
+
+      await act(async () => {
+        await setup.mockInput.pressArrow("down");
+      });
+      await flush(setup);
+      expect(getLatestSnapshot()?.selectedFileId).toBe("second");
+
+      await act(async () => {
+        await setup.mockInput.pressEscape();
+      });
+      await waitForLeftPaneBorder(setup, secondFileY, focusedBorder);
+
+      await act(async () => {
+        await setup.mockInput.pressArrow("up");
+      });
+      await flush(setup);
+
+      const snapshot = await waitForSnapshot(
+        setup,
+        getLatestSnapshot,
+        (nextSnapshot) => nextSnapshot.selectedFileId === "first",
+      );
+      expect(snapshot?.selectedFileId).toBe("first");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("the focused pane uses a brighter border than the other pane", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const focusedBorder = paneFrameBorderColor(theme, true);
+    const unfocusedBorder = paneFrameBorderColor(theme, false);
+    const setup = await testRender(<AppHost bootstrap={createTwoFileHunkBootstrap()} />, {
+      width: 220,
+      height: 16,
+    });
+
+    try {
+      await flush(setup);
+
+      const firstFileY = sidebarFileRow(setup, "first.ts");
+      expect(firstFileY).toBeGreaterThan(0);
+
+      await act(async () => {
+        await setup.mockMouse.click(6, firstFileY);
+      });
+      await flush(setup);
+
+      const filesFocusedColor = leftPaneBorderColor(setup, firstFileY);
+      expect(filesFocusedColor).toBe(focusedBorder);
+
+      await act(async () => {
+        await setup.mockMouse.click(140, 6);
+      });
+      await flush(setup);
+
+      const filesUnfocusedColor = leftPaneBorderColor(setup, firstFileY);
+      expect(filesUnfocusedColor).toBe(unfocusedBorder);
+      expect(filesUnfocusedColor).not.toBe(focusedBorder);
     } finally {
       await act(async () => {
         setup.renderer.destroy();

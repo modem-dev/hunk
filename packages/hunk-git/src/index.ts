@@ -1,3 +1,6 @@
+import { resolveGitWorkingTreeLine } from "./editorLine";
+import { discardGitFile, stashGitFile, stashGitFiles } from "./fileActions";
+import { mutateGitHunkStaging } from "./hunkStaging";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
@@ -25,6 +28,11 @@ import {
 } from "./commands";
 import { openGitHistory } from "./history";
 import { gitEndpointSourceSpec, readGitFileSource } from "./source";
+import {
+  attachGitWorkingTreeLineStats,
+  loadGitWorkingTreeFiles,
+  mutateGitFileStaging,
+} from "./workingTree";
 import {
   HUNK_VCS_DETECTION_BASELINE_PRIORITY,
   type ExtensionVcsAdapter,
@@ -373,11 +381,15 @@ export function createGitVcsAdapter({
           const largeTrackedFiles = parseGitNumstat(numstat).filter((file) =>
             shouldSkipLargeTrackedDiff(file, repoRoot),
           );
+          const statusFiles = loadGitWorkingTreeFiles(input, { cwd, gitExecutable });
 
           return {
             repoRoot,
             sourceLabel: repoRoot,
             title,
+            workingTreeFiles: statusFiles
+              ? attachGitWorkingTreeLineStats(statusFiles, input, { cwd, gitExecutable })
+              : undefined,
             patchText: await runGitTextAsync({
               input,
               args: buildGitDiffArgs(
@@ -406,6 +418,22 @@ export function createGitVcsAdapter({
             untrackedPaths,
           };
         },
+        resolveWorkingTreeLine: (input, file, line, { cwd }) =>
+          resolveGitWorkingTreeLine(input, file, line, { cwd, gitExecutable }),
+        discardFile: (input, file, scope, { cwd }) =>
+          discardGitFile(input, file, scope, { cwd, gitExecutable }),
+        stashFile: (input, file, message, { cwd }) =>
+          stashGitFile(input, file, message, { cwd, gitExecutable }),
+        stashFiles: (input, files, message, { cwd }) =>
+          stashGitFiles(input, files, message, { cwd, gitExecutable }),
+        stageFile: (input, file, { cwd }) =>
+          mutateGitFileStaging(input, file, { cwd, gitExecutable }, true),
+        unstageFile: (input, file, { cwd }) =>
+          mutateGitFileStaging(input, file, { cwd, gitExecutable }, false),
+        stageHunk: (input, file, hunk, { cwd }) =>
+          mutateGitHunkStaging(input, file, hunk, { cwd, gitExecutable }, true),
+        unstageHunk: (input, file, hunk, { cwd }) =>
+          mutateGitHunkStaging(input, file, hunk, { cwd, gitExecutable }, false),
         watchPlan(input, { cwd }) {
           return buildGitWatchPlan(input, cwd, gitExecutable);
         },
@@ -428,7 +456,9 @@ export function createGitVcsAdapter({
             gitExecutable,
             preventOptionalLocks: true,
           }).map((filePath) => `untracked:${statSignature(join(repoRoot, filePath))}`);
-          return [trackedPatch, ...untrackedSignatures].join("\n---\n");
+          // Both sidebar sides stay live even when the active patch is unchanged.
+          const inventory = loadGitWorkingTreeFiles(input, { cwd, gitExecutable });
+          return [trackedPatch, JSON.stringify(inventory), ...untrackedSignatures].join("\n---\n");
         },
       },
       "revision-show": {

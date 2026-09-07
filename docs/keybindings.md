@@ -60,6 +60,44 @@ Quitting the opened review returns to the retained history selection and viewpor
 **Compare with first parent** and **Compare with parent…** actions compare the selected commit against
 an ordered provider-owned parent; they do not navigate the history selection to that parent.
 
+In plain working-tree reviews, **Space** stages the selected file's remaining unstaged changes,
+or unstages it when fully staged. Folder rows in the files pane are selectable too: Space
+and the clickable action beside the stream tabs apply to the files shown under that folder — nested files
+in the wide tree projection, or only the files listed under that header in the compact grouped projection.
+Clicking a wide-tree folder selects it and collapses or expands it; double-clicking never stages a folder.
+If any of those files still have unstaged changes, Space stages them; otherwise it unstages the fully staged ones.
+File-row double-click and the clickable action beside the stream tabs do the same for a selected file.
+The sidebar shows Git-style status columns: green index changes and red worktree changes,
+including partially staged files. Untracked files show red `??`; staged additions show green `A`
+and a green filename. The selected file or folder has a full-row highlight. A successful file action follows the file to the other tab.
+Clicking a code line or navigating with `[` / `]` selects **hunk** action scope: Space then stages
+that unstaged hunk, or unstages that staged hunk, without changing other hunks or disk contents.
+Double-clicking a code line applies its hunk on release, provided the pointer did not move. Hunk actions keep the current stream tab;
+use Tab to review the other side. Clicking a sidebar file or file header, or using `,` / `.` returns to file scope.
+The action beside the tabs names the current scope. Drag-to-copy remains available; hunks without an available staging action and non-working-tree
+reviews retain word/line selection on repeated clicks. Binary, text-converted, and metadata-only changes use file actions.
+**e** opens `$EDITOR` at a deliberately clicked, stepped-to, or revealed source line. Otherwise it
+uses the active hunk's first changed line, not its leading context. From the staged view, Git maps
+that index line through further unstaged insertions, replacements, and deletions to the current
+working-tree location. Missing files, stale source state, and text-converted lines produce
+a notice instead of a guessed location. Supported line-jump syntax covers vi/vim/nvim,
+code/code-insiders/cursor, hx, and micro; unknown editor syntax is refused instead of opening at file start.
+**d** opens discard choices for the selected file or folder: Enter or **x** discards all its changes,
+**u** discards only unstaged changes when both sides have changes, and Escape cancels.
+**s** opens a selected-file or selected-folder stash message input; Enter stashes and Escape cancels. The stash
+contains only those files' changes, including each staged/unstaged split, not unrelated staged files.
+These actions require a selected actionable file or folder in the visible, focused file panel. They reject stale targets and
+renames whose former path has been recreated. Stashing requires an initial commit. While reviewing a hunk,
+with the file panel hidden, or outside an actionable working-tree review, **d** retains half-page scrolling and **s** toggles the files pane;
+**Ctrl+d** and the View menu remain available in working-tree reviews.
+**Tab** switches the complete Unstaged/Staged review stream; selecting a sidebar file that only
+has changes on the other side switches automatically. Selecting a folder stays on the current
+side when any file under it belongs there. The files pane keeps +/- counts on every status row,
+including files that only have changes on the other tab. Use `/` to focus the filter.
+Actions wait for Git and its refreshed diff before accepting another mutation. Outside this
+context, Space still pages and Tab retains its files/filter focus behavior. All these commands
+remain remappable, and an explicit user binding takes precedence over contextual defaults.
+
 | Command id                                     | Does                                           | Default keys                 |
 | ---------------------------------------------- | ---------------------------------------------- | ---------------------------- |
 | `hunk.app.openAgentSkill`                      | Show agent skill                               | _(none)_                     |
@@ -70,8 +108,11 @@ an ordered provider-owned parent; they do not navigate the history selection to 
 | `hunk.review.alignCurrentLineBottom`           | Align current line to viewport bottom          | _(none)_                     |
 | `hunk.review.alignCurrentLineCenter`           | Center current line in viewport                | _(none)_                     |
 | `hunk.review.alignCurrentLineTop`              | Align current line to viewport top             | _(none)_                     |
+| `hunk.review.discardSelectedFile`              | Discard selected file or folder changes        | `d`                          |
 | `hunk.review.editActiveNote`                   | Edit the active review note                    | `E`                          |
 | `hunk.review.editSelectedFile`                 | Open the selected file in your editor          | `e`                          |
+| `hunk.review.focusDiffPane`                    | Focus the selected file's review               | `enter`                      |
+| `hunk.review.focusFilesPane`                   | Focus the files pane                           | `escape`                     |
 | `hunk.review.focusFilter`                      | Focus the file filter                          | `/`                          |
 | `hunk.review.halfPageDown`                     | Scroll down half a page                        | `d`, `ctrl+d`                |
 | `hunk.review.halfPageUp`                       | Scroll up half a page                          | `u`, `ctrl+u`                |
@@ -91,9 +132,13 @@ an ordered provider-owned parent; they do not navigate the history selection to 
 | `hunk.review.scrollCodeLeft`                   | Scroll code left (shifted scrolls fast)        | `left`, `shift+left`         |
 | `hunk.review.scrollCodeRight`                  | Scroll code right (shifted scrolls fast)       | `right`, `shift+right`       |
 | `hunk.review.startNote`                        | Add a review note                              | `c`                          |
-| `hunk.review.stepDown`                         | Scroll down one row                            | `down`, `j`                  |
-| `hunk.review.stepUp`                           | Scroll up one row                              | `up`, `k`                    |
+| `hunk.review.stashSelectedFile`                | Stash selected file or folder                  | `s`                          |
+| `hunk.review.stepDown`                         | Move down in the focused pane                  | `down`, `j`                  |
+| `hunk.review.stepUp`                           | Move up in the focused pane                    | `up`, `k`                    |
+| `hunk.review.toggleFileStaged`                 | Stage / unstage selected file or folder        | `space`                      |
 | `hunk.review.toggleHunkGap`                    | Expand or collapse the selected context        | `z`                          |
+| `hunk.review.toggleHunkStaged`                 | Stage / unstage selected hunk                  | `space`                      |
+| `hunk.review.toggleStagedView`                 | Switch unstaged / staged stream                | `tab`                        |
 | `hunk.view.applyFilePresentationToAllMatching` | Apply current file presentation to all matches | _(none)_                     |
 | `hunk.view.cursorLineNumber`                   | Mark the current line number                   | _(none)_                     |
 | `hunk.view.cursorLineOff`                      | Hide the current-line marker                   | _(none)_                     |
@@ -125,7 +170,10 @@ entry.
 
 The menus and the controls help dialog (`?`) show the keys for the commands they
 present, so remapping something changes what they advertise. Unbinding a menu
-command keeps its menu item and simply stops showing a key.
+command keeps its menu item and simply stops showing a key. When two enabled
+commands share a chord, only the first-match owner advertises it; remaining
+aliases stay visible (`f` still pages, `Ctrl+d` still half-pages, `/` still
+focuses the filter).
 
 Extension commands are named `<extensionId>.<commandId>` and remap the same way
 (see [docs/extensions.md](extensions.md)). An explicitly activated extension

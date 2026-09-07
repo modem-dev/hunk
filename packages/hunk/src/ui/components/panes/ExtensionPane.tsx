@@ -15,6 +15,7 @@ import { HUNK_FILES_PANE_KEY } from "../../../extensions/extensionIds";
 import type { ExtensionNotifySink, RegisteredPane } from "../../../extensions/types";
 import { createGuardedReviewNavigation } from "../../lib/extensionNavigation";
 import { toExtensionPaintTheme } from "../../lib/extensionPaintTheme";
+import { filesPaneFrameSides, paneFrameBorderColor } from "../../lib/paneFocus";
 import type { AppTheme } from "../../themes";
 
 function describeError(error: unknown) {
@@ -79,6 +80,7 @@ export interface ExtensionPaneHostProps {
   registered: RegisteredPane;
   review?: ExtensionPaneProps["review"];
   files: DiffFile[];
+  workingTree?: ExtensionPaneProps["workingTree"];
   fileViews: ExtensionDiffFile[];
   selectedFileId: string | null;
   selectedHunkIndex: number | null;
@@ -91,6 +93,9 @@ export interface ExtensionPaneHostProps {
   keybindings: ExtensionPaneKeybindings;
   notify: ExtensionNotifySink;
   onCopyText?: (text: string) => boolean;
+  /** True when this pane currently owns keyboard movement. */
+  focused?: boolean;
+  onFocus?: () => void;
   onSelectFile: (fileId: string) => void;
   onSelectHunk: (fileId: string, hunkIndex: number) => void;
   onRevealLine: (fileId: string, side: "old" | "new", line: number) => "line" | "hunk" | "none";
@@ -103,6 +108,7 @@ function ExtensionPaneHostView({
   review = null,
   files,
   fileViews,
+  workingTree,
   selectedFileId,
   selectedHunkIndex,
   placement,
@@ -114,6 +120,8 @@ function ExtensionPaneHostView({
   keybindings,
   notify,
   onCopyText,
+  focused = false,
+  onFocus,
   onSelectFile,
   onSelectHunk,
   onRevealLine,
@@ -152,6 +160,7 @@ function ExtensionPaneHostView({
   const viewProps: ExtensionPaneProps = {
     review,
     files: fileViews,
+    workingTree,
     selectedFileId,
     selectedHunkIndex,
     placement,
@@ -164,7 +173,9 @@ function ExtensionPaneHostView({
   };
   const filesChrome = paneKey(registered) === HUNK_FILES_PANE_KEY;
   const onMouseDown = (event: TuiMouseEvent) => {
-    if (event.button === MouseButton.LEFT) activatePane(registered, notify);
+    if (event.button !== MouseButton.LEFT) return;
+    onFocus?.();
+    activatePane(registered, notify);
   };
   const box = (children: ReactNode) => (
     <box
@@ -178,9 +189,10 @@ function ExtensionPaneHostView({
         backgroundColor: theme.panel,
         ...(filesChrome
           ? {
-              border: showTopChrome ? (["top"] as const) : [],
-              borderColor: theme.border,
-              ...(showTopChrome ? { paddingTop: 1, paddingBottom: 1 } : { paddingBottom: 1 }),
+              border: filesPaneFrameSides(showTopChrome),
+              borderColor: paneFrameBorderColor(theme, focused),
+              paddingTop: showTopChrome ? 1 : 0,
+              paddingBottom: 0,
             }
           : {}),
       }}
@@ -218,6 +230,7 @@ export const ExtensionPaneHost = memo(
   (previous, next) =>
     previous.registered === next.registered &&
     previous.review === next.review &&
+    previous.workingTree === next.workingTree &&
     previous.files.length === next.files.length &&
     previous.files.every((file, index) => file === next.files[index]) &&
     previous.selectedFileId === next.selectedFileId &&
@@ -227,6 +240,8 @@ export const ExtensionPaneHost = memo(
     previous.width === next.width &&
     previous.height === next.height &&
     previous.showTopChrome === next.showTopChrome &&
+    previous.focused === next.focused &&
+    previous.onFocus === next.onFocus &&
     previous.keybindings === next.keybindings &&
     (!next.registered.pane.currentLine || previous.currentLine === next.currentLine),
 );

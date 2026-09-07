@@ -151,7 +151,9 @@ function createInteractiveModeExtension() {
  * second while the first holds the keyboard must tear the first down. The
  * Escape binding is the observable for the other question — whether a second
  * Escape arriving in the same input flush, after the first already exited the
- * mode, is still swallowed as if the mode were running.
+ * mode, is still swallowed as if the mode were running. Tests that use this
+ * probe unbind `hunk.review.focusFilesPane` so the host's default Escape chord
+ * does not take the key.
  */
 function createModeHandoffExtension() {
   return createModeExtension(
@@ -233,6 +235,7 @@ function createBrokenModeExtension() {
 async function renderWithExtension(
   { extension, root }: { extension: string; root: string },
   files = [createTestDiffFile({ id: "alpha", path: "alpha.ts" })],
+  keybindings?: Record<string, string | string[] | false>,
 ) {
   const extensions = await loadStartupExtensions({
     cliExtensionPaths: [extension],
@@ -257,6 +260,9 @@ async function renderWithExtension(
     vcsOptions: { extensionPaths: [extension] },
   });
   bootstrap.extensions = extensions;
+  if (keybindings) {
+    bootstrap.keybindings = { ...bootstrap.keybindings, ...keybindings };
+  }
   const setup = await testRender(<AppHost bootstrap={bootstrap} onQuit={() => {}} />, {
     width: 120,
     height: 24,
@@ -547,7 +553,9 @@ describe("AppHost file-view modes", () => {
   });
 
   test("entering a second mode exits the first before the new one starts", async () => {
-    const { notices, setup } = await renderWithExtension(createModeHandoffExtension());
+    const { notices, setup } = await renderWithExtension(createModeHandoffExtension(), undefined, {
+      "hunk.review.focusFilesPane": false,
+    });
 
     try {
       await waitForFrame(setup, (frame) => frame.includes("alpha.ts"));
@@ -576,7 +584,9 @@ describe("AppHost file-view modes", () => {
   });
 
   test("an exiting key handler does not tear down the mode it handed off to", async () => {
-    const { notices, setup } = await renderWithExtension(createModeHandoffExtension());
+    const { notices, setup } = await renderWithExtension(createModeHandoffExtension(), undefined, {
+      "hunk.review.focusFilesPane": false,
+    });
 
     try {
       await waitForFrame(setup, (frame) => frame.includes("alpha.ts"));
@@ -641,7 +651,9 @@ describe("AppHost file-view modes", () => {
   });
 
   test("a second Escape in one input flush is routed as if no mode were running", async () => {
-    const { notices, setup } = await renderWithExtension(createModeHandoffExtension());
+    const { notices, setup } = await renderWithExtension(createModeHandoffExtension(), undefined, {
+      "hunk.review.focusFilesPane": false,
+    });
 
     try {
       await waitForFrame(setup, (frame) => frame.includes("alpha.ts"));

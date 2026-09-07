@@ -5,6 +5,8 @@ import type {
   ExtensionVcsHistoryReviewAction,
   ExtensionVcsHistoryReviewOptions,
   ExtensionVcsWatchPlan,
+  ExtensionVcsWorkingTreeOperation,
+  ExtensionWorkingTreeFile,
 } from "../../extension-api/types";
 import type { DiffFile } from "../changeset/model";
 import type {
@@ -42,7 +44,18 @@ export interface VcsOperation<Input extends VcsReviewInput> {
 }
 
 export interface VcsOperations {
-  "working-tree-diff"?: VcsOperation<VcsDiffCommandInput>;
+  "working-tree-diff"?: VcsOperation<VcsDiffCommandInput> &
+    Pick<
+      ExtensionVcsWorkingTreeOperation,
+      | "stageFile"
+      | "unstageFile"
+      | "stageHunk"
+      | "unstageHunk"
+      | "discardFile"
+      | "stashFile"
+      | "stashFiles"
+      | "resolveWorkingTreeLine"
+    >;
   "revision-show"?: VcsOperation<VcsShowCommandInput>;
   "stash-show"?: VcsOperation<VcsStashShowCommandInput>;
 }
@@ -76,6 +89,7 @@ export interface VcsPatchResult {
   sourceLabel: string;
   title: string;
   patchText: string;
+  workingTreeFiles?: readonly ExtensionWorkingTreeFile[];
   /** Repo-root-relative untracked paths Hunk synthesizes into added-file diffs. */
   untrackedPaths?: string[];
   /** Exact old/new content lookups, built from the result's `readFileSource`. */

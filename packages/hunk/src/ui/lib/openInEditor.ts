@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { basename, resolve, win32 } from "node:path";
 import type { CliRenderer } from "@opentui/core";
 import type { DiffFile } from "../../core/changeset/model";
+import { reviewDefaultHunkLineTarget } from "../../core/review/geometry";
 import type { LineCursor } from "./lineCursors";
 
 export interface EditorCommand {
@@ -49,8 +50,8 @@ function deletionLineToFileLine(hunk: DiffHunk, deletionLine: number) {
   return additionCursor;
 }
 
-/** Prefer the current line over the selected hunk's first line. */
-function selectedLine(
+/** Prefer a deliberate source line, otherwise the selected hunk's first change rather than context. */
+export function resolveSelectedEditorLine(
   file: DiffFile,
   selectedHunk: DiffHunk | undefined,
   lineCursor: EditorLineCursor | null | undefined,
@@ -75,7 +76,9 @@ function selectedLine(
     return selectedHunk?.deletionStart ?? 1;
   }
 
-  return selectedHunk?.additionStart ?? 1;
+  if (!selectedHunk) return 1;
+  const target = reviewDefaultHunkLineTarget(selectedHunk, "first-change");
+  return target.side === "new" ? target.line : deletionLineToFileLine(selectedHunk, target.line);
 }
 
 function splitEditorCommand(editor: string) {
@@ -93,7 +96,7 @@ function editorProgram(editor: string) {
     .toLowerCase();
 }
 
-const VI_STYLE_EDITORS = ["vim", "nvim", "vi"];
+const PLUS_LINE_EDITORS = ["vim", "nvim", "vi", "micro"];
 const CODE_STYLE_EDITORS = ["code", "code-insiders", "cursor"];
 
 /** Suspend for terminal editors. */
@@ -115,11 +118,11 @@ export function buildEditorCommand({
   editor: string;
   filePath: string;
   line: number;
-}): EditorCommand {
+}): EditorCommand | null {
   const [command = "", ...editorArgs] = splitEditorCommand(editor);
   const program = editorProgram(editor);
 
-  if (VI_STYLE_EDITORS.includes(program)) {
+  if (PLUS_LINE_EDITORS.includes(program)) {
     return { command, args: [...editorArgs, `+${line}`, filePath] };
   }
 
@@ -131,7 +134,7 @@ export function buildEditorCommand({
     return { command, args: [...editorArgs, `${filePath}:${line}`] };
   }
 
-  return { command, args: [...editorArgs, filePath] };
+  return null;
 }
 
 /** Resolve diff paths relative to their source repo instead of the launch cwd. */
@@ -144,12 +147,15 @@ export function openSelectedFileInEditor({
   basePath,
   file,
   lineCursor,
+  mappedLine,
   renderer,
   selectedHunk,
 }: {
   basePath?: string;
   file: DiffFile | undefined;
   lineCursor?: EditorLineCursor | null;
+  /** Provider-resolved working-tree location for a staged source line. */
+  mappedLine?: number;
   renderer: Pick<CliRenderer, "suspend" | "resume" | "isDestroyed">;
   selectedHunk: DiffHunk | undefined;
 }) {
@@ -167,12 +173,15 @@ export function openSelectedFileInEditor({
     return `Cannot edit ${file.path}: file does not exist on disk.`;
   }
 
-  const line = Math.max(1, selectedLine(file, selectedHunk, lineCursor));
+  const line = Math.max(1, mappedLine ?? resolveSelectedEditorLine(file, selectedHunk, lineCursor));
   const command = buildEditorCommand({
     editor,
     filePath: absolutePath,
     line,
   });
+
+  if (!command)
+    return "Cannot position this editor at a source line. Set $EDITOR to vi, vim, nvim, code, code-insiders, cursor, hx, or micro.";
 
   const shouldSuspend = shouldSuspendForEditor(editor);
   if (shouldSuspend) {

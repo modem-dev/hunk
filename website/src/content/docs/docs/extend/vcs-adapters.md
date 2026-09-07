@@ -40,6 +40,46 @@ A `load` result is patch text plus how to label it. Everything else on it is opt
 
 `untrackedPaths` is the shorthand: list the repo-root-relative paths your VCS reports as unknown and Hunk synthesizes the added-file diffs for you, skipping binaries and files too large to render. Honor `input.options.excludeUntracked` when you do, so `--exclude-untracked` still means what it says. The other two are covered below.
 
+## Working-tree status and staging
+
+Working-tree `load` results may include `workingTreeFiles`: ordered status entries with `path`,
+optional `previousPath`, independent `staged`/`unstaged` flags, `untracked`, `conflicted`, an opaque
+`version`, and an optional `unavailableReason`. The inventory covers both stream tabs, not only
+the side selected by `input.staged`; omit it for revision comparisons.
+
+The same operation may implement `stageFile(input, file, ctx)` and `unstageFile(input, file, ctx)`.
+Validate the exact path and attestation before writing, preserve disk contents when unstaging,
+and throw `HunkExtensionUserError` for failures. The host tracks started writes through shutdown
+and refreshes status and diff before allowing another action. These are terminal-host actions,
+not implicit remote capabilities.
+
+API v25 adds `stageHunk(input, file, hunk, ctx)` and `unstageHunk(input, file, hunk, ctx)`.
+The target uses `ExtensionDiffHunk`'s numbered summary. Recover and validate the canonical provider
+patch and comparison base before applying original bytes, not text-converted output; leave other hunks and worktree bytes untouched. These actions address
+the active stream side, even when the file has both staged and unstaged changes.
+
+API v25 adds `discardFile(input, file, scope, ctx)` and `stashFile(input, file, message, ctx)`.
+The host confirms one exact file; discard scope is `"all"` or `"unstaged"`. Revalidate the file,
+preserve its staged content for unstaged-only discard, and exclude unrelated changes from both
+live cleanup and every stash tree. Retain a published stash and report partial completion if
+cleanup fails. Messages may be empty. Omit unsupported operations.
+
+API v25 adds optional `stashFiles(input, files, message, ctx)` so a selected folder can become one
+stash. Apply the same attestation, partial-staging, and unrelated-change rules as `stashFile`.
+
+API v25 adds optional `resolveWorkingTreeLine(input, file, line, ctx): Promise<number>` for
+read-only validation of a new-side source address and mapping staged addresses through later worktree changes. Revalidate the source
+attestation and refuse unmappable transforms. The host owns editor launch and drops results after
+review revocation; this method grants no remote write capability.
+
+API v25 adds optional inventory `statusCode`: two Git-style status columns (index, worktree),
+or `??` for untracked files. The sidebar colors index changes green and worktree changes red;
+providers that omit it retain the staged/unstaged letter indicators.
+
+API v25 adds optional inventory `stats` (`additions` / `deletions`) for that path's staged and
+unstaged line counts. The files pane uses these when the current stream omits the file, so +/-
+counts stay visible on both Unstaged and Staged tabs.
+
 ## Detection order
 
 Detection prefers the **nearest** checkout: a Git repository nested inside a jj workspace is reviewed as Git, whatever the priorities say. The same rule covers your adapter — a Mercurial checkout inside a Git repository is reviewed as Mercurial. `detectionPriority` only decides which backend wins when several recognize the _same_ directory — the colocated case, where one working copy carries two sets of markers.

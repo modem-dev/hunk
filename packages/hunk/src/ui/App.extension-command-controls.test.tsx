@@ -65,6 +65,11 @@ describe("extension command control authority", () => {
             detail: "The test host does not reload reviews.",
           })}
           onWorkspaceWriteCompleted={() => {}}
+          onVcsMutationCompleted={async () => {}}
+          runVcsMutation={async (write) => {
+            await write();
+            return true;
+          }}
           runWorkspaceWrite={async (write) => {
             await write();
             return true;

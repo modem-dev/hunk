@@ -96,7 +96,7 @@ export const coreModelConsumer: ReviewGeometryConsumer = {
           path: file.path,
           gaps: gapsOf(file),
           hunkRanges: file.hunks.map(reviewHunkRanges),
-          defaultNoteTargets: file.hunks.map(reviewDefaultHunkLineTarget),
+          defaultNoteTargets: file.hunks.map((hunk) => reviewDefaultHunkLineTarget(hunk)),
           ...(file.hunks.length === 0
             ? {
                 emptyDiffReason: reviewEmptyDiffReason({

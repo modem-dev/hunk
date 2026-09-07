@@ -103,7 +103,7 @@ describe("hunk log CLI contract", () => {
     expect(result.stdout).toContain("First commit");
     expect(result.stdout).toContain("A detailed body.");
     expect(result.stdout).toContain("Author: Ada Lovelace <ada@example.com>");
-    expect(result.stdout).toContain("Date:   2026-01-02 00:00:00Z");
+    expect(result.stdout).toContain("Date:   2026-01-02 00:00:00+00:00");
     expect(result.stdout).toMatch(/commit [0-9a-f]{40} \(HEAD -> /);
     expect(result.stdout).toContain("tag: v1.0.0");
     expect(result.stdout).toContain("tag: v1.0.0-annotated");

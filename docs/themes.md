@@ -72,6 +72,11 @@ Custom themes appear in the selector after the built-in themes, in the order
 you declare them. A repo `.hunk/config.toml` overrides a user config table by
 table for the same id.
 
+The file panel uses `accentMuted` for the selected row, `badgeAdded` for staged status
+and filenames, and `badgeRemoved` for unstaged status. Selected note counts use `fileModified`.
+Built-in themes keep these status
+colors readable on both normal and selected rows; keep that contrast when overriding them.
+
 ## Syntax scopes
 
 `syntax_scopes` uses [Shiki/TextMate scope selectors](https://shiki.style/guide/themes#token-colors)

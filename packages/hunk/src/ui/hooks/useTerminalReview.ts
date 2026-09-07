@@ -217,10 +217,12 @@ export interface TerminalReview {
   lineCursor: LineCursor | null;
   /** Read the current cursor synchronously between terminal key events. */
   getLineCursor: () => LineCursor | null;
+  /** Return only a deliberately selected source line, not an automatically seeded viewport row. */
+  getExplicitLineCursor: () => LineCursor | null;
   /** Read the current normalized selection synchronously with the cursor. */
   getSelection: () => { fileId: string | null; hunkIndex: number | null };
   lineCursorRevealRequest: LineCursorRevealRequest;
-  anchorLineCursor: (cursor: LineCursor) => void;
+  anchorLineCursor: (cursor: LineCursor, explicit?: boolean) => void;
   /** Adopt the hunk a viewport settled on, without asking any viewport to move. */
   anchorSelection: (fileId: string, hunkIndex: number) => void;
   moveLineCursor: (delta: number) => void;
@@ -392,10 +394,15 @@ export function useTerminalReview({
   // A held key drains as one stdin chunk, so every press in the burst would otherwise read the
   // same pre-batch state and the cursor would advance a single row.
   const lineCursorRef = useRef<LineCursor | null>(null);
+  const explicitLineCursorRef = useRef(false);
   const lineCursorsRef = useRef(lineCursors);
   lineCursorsRef.current = lineCursors;
   /** Read the latest cursor without waiting for React to publish a render. */
   const getLineCursor = useCallback(() => lineCursorRef.current, []);
+  const getExplicitLineCursor = useCallback(
+    () => (explicitLineCursorRef.current ? lineCursorRef.current : null),
+    [],
+  );
   const [lineCursorRevealRequest, setLineCursorRevealRequest] = useState<LineCursorRevealRequest>({
     id: 0,
     placement: "nearest",
@@ -559,6 +566,7 @@ export function useTerminalReview({
         return;
       }
 
+      explicitLineCursorRef.current = false;
       runIntent({
         type: "selection/select",
         fileKey,
@@ -596,6 +604,7 @@ export function useTerminalReview({
         return;
       }
 
+      explicitLineCursorRef.current = false;
       runIntent({ type: "selection/select-file", fileKey, reveal: revealRequestFor(options) });
     },
     [keyByFileId, runIntent],
@@ -620,7 +629,8 @@ export function useTerminalReview({
    * Seeding from the selected hunk makes the marker visible from launch, not just after the
    * first keypress.
    */
-  const applyLineCursor = useCallback((next: LineCursor | null) => {
+  const applyLineCursor = useCallback((next: LineCursor | null, explicit = false) => {
+    explicitLineCursorRef.current = explicit;
     lineCursorRef.current = next;
     setLineCursor(next);
   }, []);
@@ -628,7 +638,7 @@ export function useTerminalReview({
   /** Move the current line to a row the reviewer just asked to see, and scroll to it. */
   const revealLineCursor = useCallback(
     (cursor: LineCursor, placement: LineRevealPlacement = "nearest") => {
-      applyLineCursor(cursor);
+      applyLineCursor(cursor, true);
       setLineCursorRevealRequest((current) => ({ id: current.id + 1, placement }));
       // The line cursor carries its own reveal request; the selection only follows it.
       anchorSelection(cursor.fileId, cursor.hunkIndex);
@@ -676,7 +686,7 @@ export function useTerminalReview({
 
     const resolved = resolveLineCursor(lineCursors, lineCursorRef.current);
     if (resolved?.fileId === selectedFileId && resolved?.hunkIndex === selectedHunkIndex) {
-      applyLineCursor(resolved);
+      applyLineCursor(resolved, explicitLineCursorRef.current);
       return;
     }
 
@@ -689,8 +699,8 @@ export function useTerminalReview({
 
   /** Adopt a current line the viewport already settled on, without scrolling back to it. */
   const anchorLineCursor = useCallback(
-    (cursor: LineCursor) => {
-      applyLineCursor(cursor);
+    (cursor: LineCursor, explicit = false) => {
+      applyLineCursor(cursor, explicit);
       anchorSelection(cursor.fileId, cursor.hunkIndex);
     },
     [anchorSelection, applyLineCursor],
@@ -729,8 +739,10 @@ export function useTerminalReview({
    * the session's comment navigation, and later a browser client all move identically.
    */
   const moveSelection = useCallback(
-    (scope: ReviewSelectionScope, delta: number) =>
-      runIntent({ type: "selection/move", scope, delta }, { annotations }),
+    (scope: ReviewSelectionScope, delta: number) => {
+      explicitLineCursorRef.current = false;
+      return runIntent({ type: "selection/move", scope, delta }, { annotations });
+    },
     [annotations, runIntent],
   );
 
@@ -1377,6 +1389,7 @@ export function useTerminalReview({
       );
       applyLineCursor(
         lineCursorAt(lineCursors, file.id, hunkIndex, { side: draft.side, line: draft.line }),
+        true,
       );
       return storedDraftToDraftNote(draft, file);
     },
@@ -1413,6 +1426,7 @@ export function useTerminalReview({
             side: draft.side,
             line: draft.line,
           }),
+          true,
         );
       }
       return storedDraftToDraftNote(draft, file);
@@ -1441,6 +1455,7 @@ export function useTerminalReview({
             side: draft.side,
             line: draft.line,
           }),
+          true,
         );
       }
       return storedDraftToDraftNote(draft, file);
@@ -1579,6 +1594,7 @@ export function useTerminalReview({
     liveCommentsByFileId,
     lineCursor,
     getLineCursor,
+    getExplicitLineCursor,
     getSelection,
     lineCursorRevealRequest,
     reviewNoteCount: reviewNoteSummaries.length,

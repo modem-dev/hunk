@@ -2,7 +2,7 @@ import { basename, dirname } from "node:path/posix";
 import type { FileDiffMetadata } from "@pierre/diffs";
 import { normalizeDiffPath } from "../../core/changeset/diffPaths";
 import type { DiffFile } from "../../core/changeset/model";
-import type { AgentAnnotation } from "../../extension-api/types";
+import type { AgentAnnotation, ExtensionWorkingTreeFile } from "../../extension-api/types";
 import { readMetadataChangeType } from "../../extensions/events";
 import { formatTerminalPath } from "../../lib/terminalText";
 
@@ -16,6 +16,7 @@ export interface FileListEntry {
   deletionsText: string | null;
   changeType: FileDiffMetadata["type"];
   isUntracked: boolean;
+  stageStatus?: string;
 }
 
 /**
@@ -37,19 +38,23 @@ export interface SidebarFileSource {
   agent?: { annotations: readonly unknown[] } | null;
   changeType?: FileDiffMetadata["type"];
   metadata?: unknown;
+  stageStatus?: string;
 }
 
 export interface FileGroupEntry {
   kind: "group";
   id: string;
   label: string;
+  /** Directory this compact group represents, without a trailing slash. */
+  path: string;
 }
 
 export interface FileDirectoryEntry {
   kind: "directory";
   id: string;
-  path: string;
   label: string;
+  /** Directory this expanded row represents, without a trailing slash. */
+  path: string;
   depth: number;
   descendantFileCount: number;
 }
@@ -59,9 +64,24 @@ export type SidebarEntry = FileListEntry | FileGroupEntry | FileDirectoryEntry;
 
 export const TREE_FILE_SIDEBAR_MIN_CONTENT_WIDTH = 32;
 
+/** Inner text width the built-in files pane uses to choose compact vs tree rows. */
+export function fileSidebarContentWidth(paneWidth: number) {
+  return Math.max(8, paneWidth - 2);
+}
+
 /** Choose the compact or hierarchical sidebar projection for an available content width. */
 export function resolveFileSidebarMode(contentWidth: number): FileSidebarMode {
   return contentWidth >= TREE_FILE_SIDEBAR_MIN_CONTENT_WIDTH ? "tree" : "flat";
+}
+
+/** Build the visible files-pane rows for the current sidebar projection. */
+export function buildFilePaneEntries(
+  files: readonly SidebarFileSource[],
+  contentWidth: number,
+): SidebarEntry[] {
+  return resolveFileSidebarMode(contentWidth) === "tree"
+    ? buildTreeSidebarEntries(files)
+    : buildFlatSidebarEntries(files);
 }
 
 /** Build the filename-first label shown inside one sidebar row. */
@@ -140,6 +160,30 @@ export function mergeFileAnnotationsByFileId<T extends AgentAnnotation>(
   });
 }
 
+/** Project working-tree status rows onto the sidebar source list, keeping review stats. */
+export function workingTreeSidebarSources(
+  reviewFiles: readonly SidebarFileSource[],
+  statusFiles: readonly ExtensionWorkingTreeFile[],
+): SidebarFileSource[] {
+  const reviewedByPath = new Map(reviewFiles.map((file) => [file.path, file]));
+  return statusFiles.map((status) => {
+    const reviewed = reviewedByPath.get(status.path);
+    return {
+      ...reviewed,
+      id: status.path,
+      path: status.path,
+      previousPath: status.previousPath,
+      stats: reviewed?.stats ?? status.stats ?? { additions: 0, deletions: 0 },
+      isUntracked: status.untracked,
+      stageStatus: status.untracked
+        ? "??"
+        : status.conflicted
+          ? "!!"
+          : (status.statusCode ?? `${status.staged ? "S" : " "}${status.unstaged ? "U" : " "}`),
+    };
+  });
+}
+
 /** Build the shared file-row metadata used by both sidebar projections. */
 function buildSidebarFileEntry(file: SidebarFileSource, depth: number): FileListEntry {
   const agentCommentCount = file.agent?.annotations.length ?? 0;
@@ -154,6 +198,7 @@ function buildSidebarFileEntry(file: SidebarFileSource, depth: number): FileList
     deletionsText: formatSidebarStat("-", file.stats.deletions),
     changeType: file.changeType ?? readMetadataChangeType(file.metadata) ?? "change",
     isUntracked: file.isUntracked ?? false,
+    stageStatus: file.stageStatus,
   };
 }
 
@@ -172,6 +217,7 @@ export function buildFlatSidebarEntries(files: readonly SidebarFileSource[]): Si
         kind: "group",
         id: `group:${group}:${index}`,
         label: group === "." ? "./" : `${group}/`,
+        path: group,
       });
     }
 

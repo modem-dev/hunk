@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 20;
+export const HUNK_EXTENSION_API_VERSION = 25;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -969,6 +969,8 @@ export interface ExtensionVcsPatchResult {
   sourceLabel: string;
   title: string;
   patchText: string;
+  /** Status inventory for both sides of a plain working-tree review, in sidebar order. */
+  workingTreeFiles?: readonly ExtensionWorkingTreeFile[];
   /**
    * Untracked files to review beside the patch, as repo-root-relative paths.
    *
@@ -1068,9 +1070,105 @@ export interface ExtensionVcsOperation<Input> {
  * "not supported" error for that command instead of a crash.
  */
 export interface ExtensionVcsOperations {
-  "working-tree-diff"?: ExtensionVcsOperation<ExtensionVcsDiffInput>;
+  "working-tree-diff"?: ExtensionVcsWorkingTreeOperation;
   "revision-show"?: ExtensionVcsOperation<ExtensionVcsShowInput>;
   "stash-show"?: ExtensionVcsOperation<ExtensionVcsStashShowInput>;
+}
+
+/** Describe one working-tree path independently of the currently displayed diff side. */
+export interface ExtensionWorkingTreeFile {
+  readonly path: string;
+  readonly previousPath?: string;
+  /** Optional review-context summary consumed by the shared file filter. */
+  readonly agentSummary?: string;
+  readonly staged: boolean;
+  readonly unstaged: boolean;
+  readonly untracked: boolean;
+  readonly conflicted: boolean;
+  /** Optional two-column Git-style status: index then worktree, or ?? for untracked files. */
+  readonly statusCode?: string;
+  /**
+   * Optional line counts covering this path's staged and unstaged changes.
+   * The files pane uses these when the current Unstaged/Staged stream does not
+   * include the file, so +/- counts stay visible on both tabs.
+   */
+  readonly stats?: { additions: number; deletions: number };
+  /** Provider-owned refusal for paths that cannot be mutated as ordinary files. */
+  readonly unavailableReason?: string;
+  /** Opaque state attestation checked by the provider immediately before a mutation. */
+  readonly version: string;
+}
+
+/** Mutate an attested file without interpreting host IDs or renderer rows. */
+export type ExtensionVcsFileMutation = (
+  input: ExtensionVcsDiffInput,
+  file: ExtensionWorkingTreeFile,
+  context: ExtensionVcsLoadContext,
+) => Promise<void>;
+
+/** Mutate one attested, numbered patch hunk while preserving the other hunks and worktree. */
+export type ExtensionVcsHunkMutation = (
+  input: ExtensionVcsDiffInput,
+  file: ExtensionWorkingTreeFile,
+  hunk: ExtensionDiffHunk,
+  context: ExtensionVcsLoadContext,
+) => Promise<void>;
+
+/** Choose which reviewed changes to discard from one file. */
+export type ExtensionVcsDiscardScope = "all" | "unstaged";
+
+/** Load a working-tree review and optionally offer explicit local mutations. */
+export interface ExtensionVcsWorkingTreeOperation extends ExtensionVcsOperation<ExtensionVcsDiffInput> {
+  stageFile?: ExtensionVcsFileMutation;
+  unstageFile?: ExtensionVcsFileMutation;
+  stageHunk?: ExtensionVcsHunkMutation;
+  unstageHunk?: ExtensionVcsHunkMutation;
+  /** Validate a new-side source line and map staged addresses to the worktree without modifying files. */
+  resolveWorkingTreeLine?: (
+    input: ExtensionVcsDiffInput,
+    file: ExtensionWorkingTreeFile,
+    line: number,
+    context: ExtensionVcsLoadContext,
+  ) => Promise<number>;
+  /** Discard only the confirmed file and scope, rejecting stale attestations. */
+  discardFile?: (
+    input: ExtensionVcsDiffInput,
+    file: ExtensionWorkingTreeFile,
+    scope: ExtensionVcsDiscardScope,
+    context: ExtensionVcsLoadContext,
+  ) => Promise<void>;
+  /** Stash only this file, preserving its partial staging and excluding unrelated stash content. */
+  stashFile?: (
+    input: ExtensionVcsDiffInput,
+    file: ExtensionWorkingTreeFile,
+    message: string,
+    context: ExtensionVcsLoadContext,
+  ) => Promise<void>;
+  /** Stash several attested files as one stash, preserving each file's partial staging. */
+  stashFiles?: (
+    input: ExtensionVcsDiffInput,
+    files: readonly ExtensionWorkingTreeFile[],
+    message: string,
+    context: ExtensionVcsLoadContext,
+  ) => Promise<void>;
+}
+
+/** Navigate and stage the host's current working-tree inventory from a mounted pane. */
+export interface ExtensionWorkingTreePane {
+  readonly files: readonly ExtensionWorkingTreeFile[];
+  readonly selectedPath: string | null;
+  /** Highlighted files-pane row id: a file path, or a folder row id. */
+  readonly selectedEntryId: string | null;
+  readonly staged: boolean;
+  readonly busy: boolean;
+  /** Select a path, switching diff sides if needed, without reducing the review to one file. */
+  selectFile(path: string): void;
+  /** Select a visible files-pane row, including folder headers. */
+  selectEntry(id: string): void;
+  /** Stage remaining unstaged changes, or unstage a fully staged file; inert after reload. */
+  toggleStaged(path: string): void;
+  /** Stage or unstage the files visually under a files-pane row. */
+  toggleEntry(id: string): void;
 }
 
 /**
@@ -1276,6 +1374,8 @@ export interface ExtensionPaneProps {
   /** Immutable review-source metadata, or null for ordinary reviews. */
   readonly review: ExtensionReviewDescriptor | null;
   readonly files: readonly ExtensionDiffFile[];
+  /** Optional status-aware navigation and index actions for a plain working-tree review. */
+  readonly workingTree?: ExtensionWorkingTreePane;
   readonly selectedFileId: string | null;
   readonly selectedHunkIndex: number | null;
   readonly placement: ExtensionPanePlacement;

@@ -496,7 +496,7 @@ describe("Hunk session daemon client", () => {
       host: "127.0.0.1",
       port,
     }).metadataPath;
-    mkdirSync(join(metadataPath, ".."), { recursive: true });
+    mkdirSync(join(metadataPath, ".."), { recursive: true, mode: 0o700 });
     const writeMetadata = (pid: number) =>
       writeFileSync(
         metadataPath,

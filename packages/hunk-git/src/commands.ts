@@ -37,6 +37,7 @@ export interface RunGitTextOptions {
 interface RunGitCommandResult {
   stderr: string;
   stdout: string;
+  stdoutBytes: Buffer;
   exitCode: number;
 }
 
@@ -50,7 +51,7 @@ export interface GitColorMovedOptions {
 }
 
 /** Append Git pathspec arguments only when the caller requested them. */
-function appendGitPathspecs(args: string[], pathspecs?: string[]) {
+export function appendGitPathspecs(args: string[], pathspecs?: string[]) {
   if (!pathspecs || pathspecs.length === 0) {
     return;
   }
@@ -208,25 +209,40 @@ export interface GitNumstatFile {
   deletions: number;
 }
 
-/** Parse `git diff --numstat -z` output for normal path entries. */
+/**
+ * Parse `git diff --numstat -z` output.
+ * Rename and copy records use an empty path field followed by NUL-separated
+ * old and new paths; counts are keyed by the destination path that status
+ * inventory rows use.
+ */
 export function parseGitNumstat(text: string): GitNumstatFile[] {
-  return text
-    .split("\0")
-    .filter(Boolean)
-    .flatMap((entry) => {
-      const [additionsText, deletionsText, path] = entry.split("\t");
-      if (!additionsText || !deletionsText || !path) {
-        return [];
-      }
+  const files: GitNumstatFile[] = [];
+  const parts = text.split("\0");
+  for (let i = 0; i < parts.length; i += 1) {
+    const entry = parts[i]!;
+    if (!entry) continue;
 
-      const additions = Number.parseInt(additionsText, 10);
-      const deletions = Number.parseInt(deletionsText, 10);
-      if (!Number.isFinite(additions) || !Number.isFinite(deletions)) {
-        return [];
-      }
+    const [additionsText, deletionsText, pathField] = entry.split("\t");
+    if (!additionsText || !deletionsText) continue;
 
-      return [{ path, additions, deletions }];
-    });
+    let path = pathField;
+    // Empty path field is the -z rename/copy triplet, not a dropped record.
+    if (pathField === "") {
+      const previousPath = parts[i + 1];
+      const nextPath = parts[i + 2];
+      i += 2;
+      if (!previousPath || !nextPath) continue;
+      path = nextPath;
+    }
+    if (!path) continue;
+
+    const additions = Number.parseInt(additionsText, 10);
+    const deletions = Number.parseInt(deletionsText, 10);
+    if (!Number.isFinite(additions) || !Number.isFinite(deletions)) continue;
+
+    files.push({ path, additions, deletions });
+  }
+  return files;
 }
 
 /** Return whether tracked diff stats are too large to render by default. */
@@ -492,7 +508,8 @@ function runGitCommand({
     throw translateGitSpawnFailure(input, error, gitExecutable);
   }
 
-  const stdout = Buffer.from(proc.stdout ?? []).toString("utf8");
+  const stdoutBytes = Buffer.from(proc.stdout ?? []);
+  const stdout = stdoutBytes.toString("utf8");
   const stderr = Buffer.from(proc.stderr ?? []).toString("utf8");
 
   if (!acceptedExitCodes.includes(proc.exitCode)) {
@@ -505,6 +522,7 @@ function runGitCommand({
   return {
     stderr,
     stdout,
+    stdoutBytes,
     exitCode: proc.exitCode,
   };
 }
@@ -523,7 +541,7 @@ async function runGitCommandAsync({
   preventOptionalLocks = false,
   signal,
   acceptedExitCodes = [0],
-}: RunGitCommandOptions): Promise<RunGitCommandResult> {
+}: RunGitCommandOptions): Promise<Omit<RunGitCommandResult, "stdoutBytes">> {
   let result: Awaited<ReturnType<typeof runAbortableCommand>>;
   try {
     result = await runAbortableCommand([gitExecutable, ...args], {
@@ -547,6 +565,43 @@ async function runGitCommandAsync({
 /** Run one Git command asynchronously and return its decoded stdout. */
 export async function runGitTextAsync(options: RunGitTextOptions): Promise<string> {
   return (await runGitCommandAsync(options)).stdout;
+}
+
+/** Read canonical source bytes without decoding through UTF-8. */
+export function runGitBytes(options: RunGitTextOptions) {
+  return runGitCommand(options).stdoutBytes;
+}
+
+/** Run an interactive mutation without blocking terminal input or progress painting. */
+export async function runGitMutation({
+  input,
+  args,
+  cwd = process.cwd(),
+  gitExecutable = "git",
+  stdin,
+  env,
+}: RunGitTextOptions & {
+  stdin?: string | Uint8Array;
+  env?: Record<string, string | undefined>;
+}): Promise<string> {
+  try {
+    const child = Bun.spawn([gitExecutable, ...args], {
+      cwd,
+      env: env ? { ...process.env, ...env } : undefined,
+      stdin: typeof stdin === "string" ? new TextEncoder().encode(stdin) : (stdin ?? "ignore"),
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [exitCode, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ]);
+    if (exitCode !== 0) throw translateGitExitFailure(input, stderr);
+    return stdout;
+  } catch (error) {
+    throw translateGitSpawnFailure(input, error, gitExecutable);
+  }
 }
 
 const GIT_BOOLEAN_TRUE_VALUES = new Set(["true", "yes", "on", "1", "always"]);

@@ -46,10 +46,10 @@ describe("useExtensionDialogController", () => {
       expect(harness.controller().request).toMatchObject({ kind: "select", title: "Target?" });
       expect(harness.controller().selectedIndex).toBe(0);
 
-      await act(async () => harness.controller().moveSelection(-1));
-      expect(harness.controller().selectedIndex).toBe(2);
-
-      await act(async () => harness.controller().accept());
+      await act(async () => {
+        harness.controller().moveSelection(-1);
+        harness.controller().accept();
+      });
       expect(await selected).toBe("three");
       await flush(harness.setup);
 
@@ -57,8 +57,10 @@ describe("useExtensionDialogController", () => {
       expect(harness.controller().selectedIndex).toBe(0);
       expect(harness.controller().inputValue).toBe("feature/base");
 
-      await act(async () => harness.controller().updateInput("feature/typed"));
-      await act(async () => harness.controller().accept());
+      await act(async () => {
+        harness.controller().updateInput("feature/typed");
+        harness.controller().accept();
+      });
       expect(await typed).toBe("feature/typed");
       await flush(harness.setup);
       expect(harness.controller().request).toBeNull();

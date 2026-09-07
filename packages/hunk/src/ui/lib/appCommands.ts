@@ -108,6 +108,16 @@ interface BuiltinCommandHandler {
 
 /** The callbacks the built-in command set drives; App supplies its own handlers. */
 export interface BuildAppCommandsOptions {
+  canDiscardSelectedFile?: boolean;
+  canStashSelectedFile?: boolean;
+  discardSelectedFile?: () => void;
+  stashSelectedFile?: () => void;
+  canToggleFileStaged?: boolean;
+  canToggleHunkStaged?: boolean;
+  toggleHunkStaged?: () => void;
+  canSwitchStagedView?: boolean;
+  toggleFileStaged?: () => void;
+  toggleStagedView?: () => void;
   canAlignCurrentLine: boolean;
   canApplyFilePresentationToAllMatching: boolean;
   canEditActiveNote?: boolean;
@@ -115,7 +125,11 @@ export interface BuildAppCommandsOptions {
   canRefreshCurrentInput: boolean;
   alignCurrentLine: (alignment: "top" | "center" | "bottom") => void;
   applyFilePresentationToAllMatching: () => void;
+  canFocusDiffPane?: boolean;
+  canFocusFilesPane?: boolean;
+  focusDiffPane: () => void;
   focusFilter: () => void;
+  focusFilesPane: () => void;
   editActiveNote?: () => void;
   replyToActiveNote?: () => void;
   /** Step the review selection through one scope, as the catalog entry declares it. */
@@ -175,6 +189,26 @@ function builtinCommandHandlers(
   options: BuildAppCommandsOptions,
 ): Record<AppCommandId, BuiltinCommandHandler> {
   return {
+    "hunk.review.discardSelectedFile": {
+      isEnabled: () => Boolean(options.canDiscardSelectedFile),
+      run: () => options.discardSelectedFile?.(),
+    },
+    "hunk.review.stashSelectedFile": {
+      isEnabled: () => Boolean(options.canStashSelectedFile),
+      run: () => options.stashSelectedFile?.(),
+    },
+    "hunk.review.toggleHunkStaged": {
+      isEnabled: () => Boolean(options.canToggleHunkStaged),
+      run: () => options.toggleHunkStaged?.(),
+    },
+    "hunk.review.toggleFileStaged": {
+      isEnabled: () => Boolean(options.canToggleFileStaged),
+      run: () => options.toggleFileStaged?.(),
+    },
+    "hunk.review.toggleStagedView": {
+      isEnabled: () => Boolean(options.canSwitchStagedView),
+      run: () => options.toggleStagedView?.(),
+    },
     "hunk.review.jumpToBottom": { run: () => options.scrollDiff(1, "content") },
     "hunk.review.jumpToTop": { run: () => options.scrollDiff(-1, "content") },
     "hunk.app.quit": { run: () => options.requestQuit() },
@@ -182,6 +216,14 @@ function builtinCommandHandlers(
     "hunk.app.openAgentSkill": { run: () => options.openAgentSkill() },
     "hunk.app.toggleFocusArea": { run: () => options.toggleFocusArea() },
     "hunk.review.focusFilter": { run: () => options.focusFilter() },
+    "hunk.review.focusDiffPane": {
+      isEnabled: () => Boolean(options.canFocusDiffPane),
+      run: () => options.focusDiffPane(),
+    },
+    "hunk.review.focusFilesPane": {
+      isEnabled: () => Boolean(options.canFocusFilesPane),
+      run: () => options.focusFilesPane(),
+    },
     "hunk.review.startNote": { run: () => options.startUserNote() },
     "hunk.review.editActiveNote": {
       isEnabled: () => Boolean(options.canEditActiveNote),
@@ -322,10 +364,14 @@ const NOOP_COMMAND_OPTIONS: BuildAppCommandsOptions = (() => {
   return {
     canAlignCurrentLine: false,
     canApplyFilePresentationToAllMatching: false,
+    canFocusDiffPane: true,
+    canFocusFilesPane: true,
     canRefreshCurrentInput: true,
     alignCurrentLine: noop,
     applyFilePresentationToAllMatching: noop,
+    focusDiffPane: noop,
     focusFilter: noop,
+    focusFilesPane: noop,
     moveSelection: noop,
     openAgentSkill: noop,
     openThemeSelector: noop,
@@ -403,6 +449,38 @@ export function builtinCommandKeyDefaults(): readonly CommandKeyDefaults[] {
  */
 export function isCommandEnabled(command: AppCommand): boolean {
   return !command.isEnabled || command.isEnabled();
+}
+
+/**
+ * Labels this command should advertise given first-match dispatch.
+ *
+ * Help and menus must not show a chord that an earlier enabled command still
+ * answers to. Remaining aliases stay visible, so Space can become staging
+ * while page-down still shows `f`.
+ */
+export function advertisedKeyLabels(
+  commands: readonly AppCommand[],
+  command: AppCommand,
+): string[] {
+  if (!isCommandEnabled(command)) {
+    return [];
+  }
+
+  const index = commands.findIndex((candidate) => candidate.id === command.id);
+  const claimed = new Set<string>();
+  for (const candidate of commands.slice(0, Math.max(0, index))) {
+    if (!isCommandEnabled(candidate)) {
+      continue;
+    }
+    for (const key of candidate.keys) {
+      claimed.add(key);
+    }
+  }
+
+  return command.keys.flatMap((key, keyIndex) => {
+    const label = command.keyLabels[keyIndex];
+    return claimed.has(key) || !label ? [] : [label];
+  });
 }
 
 /**

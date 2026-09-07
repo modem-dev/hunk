@@ -226,7 +226,23 @@ describe("Jujutsu source reading", () => {
     ]);
   });
 
-  test("logs unexpected source failures with revision and path context", async () => {
+  test("logs missing executables with repository, revision, and path context", async () => {
+    const repoRoot = createTempDir("hunk-source-jj-missing-executable-");
+    const loggedErrors = await captureConsoleErrors(async () => {
+      await expect(
+        readJjFileSource(
+          { repoRoot, commitId: "0123456789abcdef", path: "note.txt" },
+          { jjExecutable: join(repoRoot, "missing-jj") },
+        ),
+      ).resolves.toBeNull();
+    });
+
+    expect(loggedErrors).toHaveLength(1);
+    expect(String(loggedErrors[0]?.[0])).toContain("0123456789abcdef:note.txt");
+    expect(String(loggedErrors[0]?.[0])).toContain(repoRoot);
+  });
+
+  jjTest("logs unexpected source failures with revision and path context", async () => {
     const repoRoot = createTempDir("hunk-source-jj-not-repo-");
     const loggedErrors = await captureConsoleErrors(async () => {
       await expect(

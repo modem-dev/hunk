@@ -77,10 +77,11 @@ export function reviewHunkIndexForLine(
  * Policy: the hunk's first added line, else its first deleted line, else the first line
  * of its new-side extent. Anchoring to the hunk's first line instead would usually land
  * on leading context — technically inside the hunk, but not on the change the note is
- * about.
+ * about. Editor callers choose first-change to retain an earlier deletion before a later addition.
  */
 export function reviewDefaultHunkLineTarget(
   hunk: ReviewHunkSpan & ReviewHunkContent,
+  preference: "first-addition" | "first-change" = "first-addition",
 ): ReviewLineAddressV1 {
   let deletionLine = hunk.deletionStart;
   let additionLine = hunk.additionStart;
@@ -94,6 +95,9 @@ export function reviewDefaultHunkLineTarget(
     }
     if ((content.additions ?? 0) > 0) {
       return { side: "new", line: additionLine };
+    }
+    if ((content.deletions ?? 0) > 0 && preference === "first-change") {
+      return { side: "old", line: deletionLine };
     }
     if ((content.deletions ?? 0) > 0 && firstDeletionLine === undefined) {
       firstDeletionLine = deletionLine;

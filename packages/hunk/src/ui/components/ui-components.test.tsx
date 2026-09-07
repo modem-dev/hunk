@@ -546,7 +546,7 @@ describe("UI components", () => {
     expect(frame).toContain("./");
     expect(frame).toContain(" zzz-root.ts");
     expect(frame.indexOf("src/ui/")).toBeLessThan(frame.indexOf("./"));
-    expect(frame).toContain("▌ M App.tsx");
+    expect(frame).toContain(" M App.tsx");
     expect(frame).toContain(" MenuDropdown.tsx");
     expect(frame).toContain(" signature.ts");
     expect(frame).toContain("*1 +2 -1");
@@ -555,6 +555,222 @@ describe("UI components", () => {
     expect(frame).not.toContain("+0");
     expect(frame).not.toContain("-0");
     expect(frame).not.toContain("M +2 -1 AI");
+  });
+
+  test("selecting a compact folder keeps line stats on files outside that folder", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const files = toReadOnlyFileViews([
+      createTestDiffFile("docs-a", "docs/extensions.md", "a\n", "aa\n"),
+      createTestDiffFile("docs-b", "docs/keybindings.md", "b\n", "bb\n"),
+      createTestDiffFile(
+        "hook",
+        "src/ui/hooks/useWorkingTreeActions.ts",
+        "export const value = 1;\n",
+        `${"export const extra = true;\n".repeat(267)}export const value = 1;\n`,
+      ),
+    ]);
+    const entries = files.map((file) => ({
+      path: file.path,
+      staged: false,
+      unstaged: true,
+      untracked: false,
+      conflicted: false,
+      version: "test",
+    }));
+    const frame = await captureFrame(
+      <FlexFileSidebar
+        files={files}
+        selectedFileId="group:docs:0"
+        selectedHunkIndex={0}
+        theme={theme}
+        width={30}
+        keybindings={{ matches: () => false, getKeys: () => [] }}
+        actions={{
+          copyText: () => false,
+          selectFile: () => {},
+          selectHunk: () => {},
+          revealLine: () => {},
+          notify: () => {},
+        }}
+        workingTree={{
+          files: entries,
+          selectedPath: "docs/extensions.md",
+          selectedEntryId: "group:docs:0",
+          staged: false,
+          busy: false,
+          selectFile: () => {},
+          selectEntry: () => {},
+          toggleStaged: () => {},
+          toggleEntry: () => {},
+        }}
+      />,
+      36,
+      12,
+    );
+
+    expect(frame).toContain("docs/");
+    expect(frame).toContain("+1");
+    expect(frame).toContain("+267");
+  });
+
+  test.each([30, 42])(
+    "working-tree sidebar colors status and the entire selected row at width %s",
+    async (width) => {
+      const theme = resolveTheme("github-dark-default", null);
+      const setup = await testRender(
+        <FlexFileSidebar
+          files={toReadOnlyFileViews([createTestDiffFile("added", "added.txt", "", "new\n", true)])}
+          selectedFileId={null}
+          selectedHunkIndex={0}
+          theme={theme}
+          width={width}
+          keybindings={{ matches: () => false, getKeys: () => [] }}
+          actions={{
+            copyText: () => false,
+            selectFile: () => {},
+            selectHunk: () => {},
+            revealLine: () => {},
+            notify: () => {},
+          }}
+          workingTree={{
+            files: [
+              {
+                path: "new.txt",
+                staged: false,
+                unstaged: true,
+                untracked: true,
+                conflicted: false,
+                statusCode: "??",
+                version: "new",
+              },
+              {
+                path: "added.txt",
+                staged: true,
+                unstaged: false,
+                untracked: false,
+                conflicted: false,
+                statusCode: "A ",
+                version: "added",
+              },
+              {
+                path: "mixed.txt",
+                staged: true,
+                unstaged: true,
+                untracked: false,
+                conflicted: false,
+                statusCode: "MM",
+                version: "mixed",
+              },
+            ],
+            selectedPath: "added.txt",
+            selectedEntryId: "added.txt",
+            staged: false,
+            busy: false,
+            selectFile: () => {},
+            selectEntry: () => {},
+            toggleStaged: () => {},
+            toggleEntry: () => {},
+          }}
+        />,
+        { width, height: 8 },
+      );
+      try {
+        await act(async () => setup.renderOnce());
+        const rows = setup.captureSpans().lines;
+        const cellsFor = (name: string) => {
+          const row = rows.find((row) => row.spans.some((span) => span.text.includes(name)))!;
+          return row.spans.flatMap((span) =>
+            [...span.text].map((text) => ({
+              text,
+              fg: capturedTestColorToHex(span.fg),
+              bg: capturedTestColorToHex(span.bg),
+            })),
+          );
+        };
+        const untracked = cellsFor("new.txt");
+        expect(untracked.filter((cell) => cell.text === "?").map((cell) => cell.fg)).toEqual([
+          theme.badgeRemoved,
+          theme.badgeRemoved,
+        ]);
+        const added = cellsFor("added.txt");
+        expect(added.find((cell) => cell.text === "A")?.fg).toBe(theme.badgeAdded);
+        expect(added.find((cell) => cell.text === "a")?.fg).toBe(theme.badgeAdded);
+        expect(added.find((cell) => cell.text === "*")?.fg).toBe(theme.fileModified);
+        expect(added.length).toBe(width);
+        expect(added.every((cell) => cell.bg === theme.accentMuted)).toBe(true);
+        expect(
+          cellsFor("mixed.txt")
+            .filter((cell) => cell.text === "M")
+            .map((cell) => cell.fg),
+        ).toEqual([theme.badgeAdded, theme.badgeRemoved]);
+      } finally {
+        await act(async () => setup.renderer.destroy());
+      }
+    },
+  );
+
+  test("working-tree sidebar requires consecutive clicks on one row to stage", async () => {
+    const files = toReadOnlyFileViews([
+      createTestDiffFile("alpha", "alpha.ts", "a\n", "aa\n"),
+      createTestDiffFile("beta", "beta.ts", "b\n", "bb\n"),
+    ]);
+    const selectFile = mock(() => {});
+    const selectEntry = mock(() => {});
+    const toggleStaged = mock(() => {});
+    const toggleEntry = mock(() => {});
+    const setup = await testRender(
+      <FlexFileSidebar
+        files={files}
+        selectedFileId="alpha"
+        selectedHunkIndex={0}
+        theme={resolveTheme("github-dark-default", null)}
+        width={40}
+        keybindings={{ matches: () => false, getKeys: () => [] }}
+        actions={{
+          copyText: () => false,
+          selectFile,
+          selectHunk: () => {},
+          revealLine: () => {},
+          notify: () => {},
+        }}
+        workingTree={{
+          files: files.map((file) => ({
+            path: file.path,
+            staged: false,
+            unstaged: true,
+            untracked: false,
+            conflicted: false,
+            version: "test",
+          })),
+          selectedPath: "alpha.ts",
+          selectedEntryId: "alpha.ts",
+          staged: false,
+          busy: false,
+          selectFile,
+          selectEntry,
+          toggleStaged,
+          toggleEntry,
+        }}
+      />,
+      { width: 40, height: 8 },
+    );
+    const time = spyOn(Date, "now").mockReturnValue(1000);
+    try {
+      await act(async () => setup.renderOnce());
+      const lines = setup.captureCharFrame().split("\n");
+      const alpha = lines.findIndex((line) => line.includes("alpha.ts"));
+      const beta = lines.findIndex((line) => line.includes("beta.ts"));
+      for (const row of [alpha, beta, alpha]) {
+        await act(async () => setup.mockMouse.click(5, row));
+      }
+      expect(selectEntry.mock.calls).toHaveLength(3);
+      expect(toggleEntry).not.toHaveBeenCalled();
+      await act(async () => setup.mockMouse.click(5, alpha));
+      expect(toggleEntry).toHaveBeenCalledWith("alpha.ts");
+    } finally {
+      time.mockRestore();
+      await act(async () => setup.renderer.destroy());
+    }
   });
 
   test("the bundled sidebar switches to its expanded tree at 32 content columns", async () => {
@@ -715,6 +931,36 @@ describe("UI components", () => {
     }
   });
 
+  test("DiffPane preserves double-click word copy when a hunk action is unavailable", async () => {
+    const file = createTestDiffFile("copy-word", "copy.ts", "old answer\n", "new answer\n");
+    const copyText = mock((_text: string) => undefined);
+    const toggleHunk = mock(() => false);
+    const setup = await testRender(
+      <DiffPane
+        {...createDiffPaneProps([file], resolveTheme("github-dark-default", null), {
+          onCopySelectionText: copyText,
+          canToggleHunkStaged: () => false,
+          onToggleHunkStaged: toggleHunk,
+        })}
+      />,
+      { width: 80, height: 8 },
+    );
+    try {
+      await settleDiffPane(setup);
+      const rows = setup.captureCharFrame().split("\n");
+      const y = rows.findIndex((row) => row.includes("new answer"));
+      const x = rows[y]!.indexOf("new answer") + 5;
+      await act(async () => {
+        await setup.mockMouse.click(x, y);
+        await setup.mockMouse.click(x, y);
+      });
+      expect(copyText).toHaveBeenCalledWith("answer");
+      expect(toggleHunk).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
   test("DiffPane selects the exact split line side on click without consuming add-note clicks", async () => {
     const file = createTestDiffFile(
       "click-line",
@@ -754,6 +1000,7 @@ describe("UI components", () => {
       });
       expect(selectLine).toHaveBeenLastCalledWith(
         expect.objectContaining({ fileId: file.id, target: { side: "old", line: 1 } }),
+        true,
       );
 
       await act(async () => {
@@ -761,6 +1008,7 @@ describe("UI components", () => {
       });
       expect(selectLine).toHaveBeenLastCalledWith(
         expect.objectContaining({ fileId: file.id, target: { side: "new", line: 1 } }),
+        true,
       );
 
       selectLine.mockClear();
@@ -769,6 +1017,7 @@ describe("UI components", () => {
       });
       expect(selectLine).toHaveBeenLastCalledWith(
         expect.objectContaining({ fileId: file.id, target: { side: "new", line: 2 } }),
+        true,
       );
 
       await act(async () => {
@@ -778,6 +1027,7 @@ describe("UI components", () => {
       });
       expect(selectLine).toHaveBeenLastCalledWith(
         expect.objectContaining({ fileId: file.id, target: { side: "old", line: 1 } }),
+        true,
       );
       expect(copyText).not.toHaveBeenCalled();
 
@@ -1378,6 +1628,9 @@ describe("UI components", () => {
 
       await act(async () => {
         await setup.mockMouse.moveTo(32, secondHunkY);
+        await setup.renderOnce();
+        // Let the deferred viewport observation run after the newer mouse move.
+        await Bun.sleep(50);
         await setup.renderOnce();
       });
       const affordanceFrame = await waitForFrame(
@@ -3847,20 +4100,21 @@ describe("UI components", () => {
     const frame = await captureFrame(
       <HelpDialog
         commands={builtinCommandMatchProbes()}
-        terminalHeight={39}
+        terminalHeight={41}
         terminalWidth={76}
         theme={theme}
         onClose={() => {}}
       />,
       76,
-      39,
+      41,
     );
 
     const expectedRows = [
       "Controls help",
       "[Esc]",
       "Navigation",
-      "Up / Down                move line-by-line",
+      "Up / Down                move in the focused pane",
+      "Enter / Esc              focus review / files pane",
       "PageDown / Space / f     page down",
       "PageUp / b / Shift+Space page up",
       "d / u                    half page down / up",
@@ -3879,7 +4133,7 @@ describe("UI components", () => {
       "a                        toggle AI notes",
       "z                        toggle unchanged context",
       "l / w / m / M            lines / wrap / metadata / menu",
-      "e                        open file in $EDITOR",
+      "e                        edit selected line in $EDITOR",
       "Review",
       "/                        focus file filter",
       "c                        create review note",
@@ -3968,13 +4222,13 @@ describe("UI components", () => {
     const frame = await captureFrame(
       <HelpDialog
         commands={builtinCommandMatchProbes(keys)}
-        terminalHeight={39}
+        terminalHeight={41}
         terminalWidth={76}
         theme={theme}
         onClose={() => {}}
       />,
       76,
-      39,
+      41,
     );
 
     expect(frame).toContain("Ctrl+X");

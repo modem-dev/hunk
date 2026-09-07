@@ -85,6 +85,7 @@ describe("PTY scrolling", () => {
       const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
+      await harness.ensureKeyboardIsLive(session);
       await session.waitIdle({ timeout: 300 });
 
       expect(await measureKeyScroll(session, "j", 12)).toBe(1);
@@ -167,7 +168,7 @@ describe("PTY scrolling", () => {
       args: ["diff", "--mode", "split"],
       cwd: fixture.dir,
       cols: 220,
-      rows: 10,
+      rows: 11,
     });
 
     try {
@@ -329,7 +330,7 @@ describe("PTY scrolling", () => {
       args: ["diff", "--mode", "split"],
       cwd: fixture.dir,
       cols: 220,
-      rows: 10,
+      rows: 11,
     });
 
     try {
@@ -360,7 +361,7 @@ describe("PTY scrolling", () => {
       args: ["diff", "--mode", "split"],
       cwd: fixture.dir,
       cols: 220,
-      rows: 10,
+      rows: 11,
     });
 
     try {

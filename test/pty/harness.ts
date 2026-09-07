@@ -68,12 +68,19 @@ export function sleep(ms: number) {
  * Count how many rows one keypress moved the stream by following the text that
  * sat on a fixed screen row.
  *
- * Positive means the content moved up (scrolled down); zero means the anchor
- * row did not move at all. `press` already performs Tuistory's bounded idle
- * wait, so another wait would only repeat the same readiness contract.
+ * Positive means the content moved up (scrolled down). Wait for the anchor to
+ * move: PTY output can be idle while the application still has a redraw queued.
+ * Cursor-mode callers wait for a repaint instead, since moving the current-line
+ * marker need not move the viewport. Both modes require a visible input effect.
  */
-export async function measureKeyScroll(session: Session, key: Key, anchorRow: number) {
+export async function measureKeyScroll(
+  session: Session,
+  key: Key,
+  anchorRow: number,
+  waitFor: "scroll" | "paint" = "scroll",
+) {
   const before = (await session.text({ immediate: true })).split("\n");
+  const beforePaint = waitFor === "paint" ? JSON.stringify(session.getTerminalData().lines) : "";
   const anchor = before[anchorRow]?.trim() ?? "";
   if (anchor.length === 0) {
     throw new Error(`measureKeyScroll: anchor row ${anchorRow} is empty.`);
@@ -81,7 +88,15 @@ export async function measureKeyScroll(session: Session, key: Key, anchorRow: nu
 
   await session.press(key);
 
-  const after = (await session.text({ immediate: true })).split("\n");
+  const after = (
+    await session.text({
+      timeout: 5_000,
+      waitFor: (text) =>
+        waitFor === "paint"
+          ? JSON.stringify(session.getTerminalData().lines) !== beforePaint
+          : text.split("\n").findIndex((line) => line.trim() === anchor) !== anchorRow,
+    })
+  ).split("\n");
   const movedTo = after.findIndex((line) => line.trim() === anchor);
   if (movedTo < 0) {
     throw new Error(

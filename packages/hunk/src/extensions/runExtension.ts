@@ -32,6 +32,7 @@ import type {
   ExtensionVcsHistoryReviewAction,
   ExtensionVcsHistorySource,
   ExtensionVcsOperation,
+  ExtensionVcsWorkingTreeOperation,
 } from "../extension-api/types";
 import type { VcsAdapter, VcsHistorySource, VcsOperation, VcsReviewInput } from "../core/vcs/types";
 import { sanitizeTerminalLine, sanitizeTerminalText } from "../lib/terminalText";
@@ -489,6 +490,101 @@ export function toInternalVcsAdapter(
         operation as unknown as ExtensionVcsOperation<VcsReviewInput>,
       );
     }
+  }
+
+  const workingTree = isPlainObject(operations)
+    ? (operations as { "working-tree-diff"?: ExtensionVcsWorkingTreeOperation })[
+        "working-tree-diff"
+      ]
+    : undefined;
+  const internalWorkingTree = internalOperations["working-tree-diff"] as
+    | (VcsOperation<VcsReviewInput> &
+        Pick<
+          ExtensionVcsWorkingTreeOperation,
+          | "stageFile"
+          | "unstageFile"
+          | "stageHunk"
+          | "unstageHunk"
+          | "discardFile"
+          | "stashFile"
+          | "stashFiles"
+          | "resolveWorkingTreeLine"
+        >)
+    | undefined;
+  if (workingTree && internalWorkingTree) {
+    for (const name of ["stageFile", "unstageFile"] as const) {
+      const mutate = workingTree[name];
+      if (typeof mutate !== "function") continue;
+      internalWorkingTree[name] = async (input, file, context) => {
+        try {
+          await mutate(input, file, context);
+        } catch (error) {
+          throw toUserFacingError(error);
+        }
+      };
+    }
+  }
+
+  if (workingTree && internalWorkingTree) {
+    for (const name of ["stageHunk", "unstageHunk"] as const) {
+      const mutate = workingTree[name];
+      if (typeof mutate !== "function") continue;
+      internalWorkingTree[name] = async (input, file, hunk, context) => {
+        try {
+          await mutate(input, file, hunk, context);
+        } catch (error) {
+          throw toUserFacingError(error);
+        }
+      };
+    }
+  }
+
+  if (workingTree && internalWorkingTree) {
+    if (typeof workingTree.discardFile === "function") {
+      const discard = workingTree.discardFile;
+      internalWorkingTree.discardFile = async (input, file, scope, context) => {
+        try {
+          await discard(input, file, scope, context);
+        } catch (error) {
+          throw toUserFacingError(error);
+        }
+      };
+    }
+    if (typeof workingTree.stashFile === "function") {
+      const stash = workingTree.stashFile;
+      internalWorkingTree.stashFile = async (input, file, message, context) => {
+        try {
+          await stash(input, file, message, context);
+        } catch (error) {
+          throw toUserFacingError(error);
+        }
+      };
+    }
+    if (typeof workingTree.stashFiles === "function") {
+      const stash = workingTree.stashFiles;
+      internalWorkingTree.stashFiles = async (input, files, message, context) => {
+        try {
+          await stash(input, files, message, context);
+        } catch (error) {
+          throw toUserFacingError(error);
+        }
+      };
+    }
+  }
+
+  if (
+    workingTree &&
+    internalWorkingTree &&
+    typeof workingTree.resolveWorkingTreeLine === "function"
+  ) {
+    const resolveLine = workingTree.resolveWorkingTreeLine;
+    internalWorkingTree.resolveWorkingTreeLine = async (input, file, line, context) => {
+      try {
+        return await resolveLine(input, file, line, context);
+      } catch (error) {
+        throw toUserFacingError(error);
+      }
+    };
   }
 
   const history = adapterFields.history;
