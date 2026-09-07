@@ -117,7 +117,7 @@ export async function readJjFileSource(
     });
   } catch (error) {
     logSourceDiagnostic(
-      `failed to run Jujutsu while reading source ${spec.commitId}:${spec.path}`,
+      `failed to run Jujutsu while reading source ${spec.commitId}:${spec.path} in ${spec.repoRoot}`,
       error,
     );
     return null;
@@ -146,7 +146,10 @@ export async function readJjFileSource(
       return tooLarge(error.maxBytes);
     }
 
-    logSourceDiagnostic(`failed to collect Jujutsu source ${spec.commitId}:${spec.path}`, error);
+    logSourceDiagnostic(
+      `failed to collect Jujutsu source ${spec.commitId}:${spec.path} in ${spec.repoRoot}`,
+      error,
+    );
     return null;
   }
 
