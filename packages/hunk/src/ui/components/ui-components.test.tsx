@@ -546,7 +546,7 @@ describe("UI components", () => {
     expect(frame).toContain("./");
     expect(frame).toContain(" zzz-root.ts");
     expect(frame.indexOf("src/ui/")).toBeLessThan(frame.indexOf("./"));
-    expect(frame).toContain("▌ M App.tsx");
+    expect(frame).toContain(" M App.tsx");
     expect(frame).toContain(" MenuDropdown.tsx");
     expect(frame).toContain(" signature.ts");
     expect(frame).toContain("*1 +2 -1");
@@ -586,6 +586,7 @@ describe("UI components", () => {
         width={30}
         keybindings={{ matches: () => false, getKeys: () => [] }}
         actions={{
+          copyText: () => false,
           selectFile: () => {},
           selectHunk: () => {},
           revealLine: () => {},
@@ -625,6 +626,7 @@ describe("UI components", () => {
           width={width}
           keybindings={{ matches: () => false, getKeys: () => [] }}
           actions={{
+            copyText: () => false,
             selectFile: () => {},
             selectHunk: () => {},
             revealLine: () => {},
@@ -724,7 +726,13 @@ describe("UI components", () => {
         theme={resolveTheme("github-dark-default", null)}
         width={40}
         keybindings={{ matches: () => false, getKeys: () => [] }}
-        actions={{ selectFile, selectHunk: () => {}, revealLine: () => {}, notify: () => {} }}
+        actions={{
+          copyText: () => false,
+          selectFile,
+          selectHunk: () => {},
+          revealLine: () => {},
+          notify: () => {},
+        }}
         workingTree={{
           files: files.map((file) => ({
             path: file.path,

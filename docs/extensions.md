@@ -532,7 +532,7 @@ staged and unstaged files, independent of `input.staged`. Each entry supplies `p
 `previousPath`, `staged`, `unstaged`, `untracked`, `conflicted`, an opaque `version` attestation, and
 optionally an `unavailableReason`. Do not return this inventory for revision comparisons.
 
-API v23 adds optional `statusCode`, a two-character Git-style index/worktree status (`??` for
+API v25 adds optional `statusCode`, a two-character Git-style index/worktree status (`??` for
 untracked files). The sidebar colors these columns independently and retains `S`/`U` indicators
 for providers that omit the code. This display field does not replace mutation attestations.
 
@@ -546,14 +546,14 @@ unstaging must leave worktree contents unchanged. Throw `HunkExtensionUserError`
 failure. Hunk tracks started mutations through shutdown, blocks repeated actions until refresh,
 and reloads authoritative state even after a failed mutation; extension workspace writes are refused while that Git action is active.
 
-API v20 also adds optional `stageHunk(input, file, hunk, ctx)` and
+API v25 also adds optional `stageHunk(input, file, hunk, ctx)` and
 `unstageHunk(input, file, hunk, ctx)`. `hunk` is the existing `ExtensionDiffHunk` summary.
 Validate its numbered identity against the canonical provider patch after checking the file
 attestation, including its comparison base. Apply original patch bytes, never decoded or
 text-converted source. Preserve all other hunks and worktree content; reject unsupported textual changes.
 Hunk actions use the currently reviewed side rather than the file's combined staged status.
 
-API v21 adds optional `discardFile(input, file, scope, ctx)` and
+API v25 adds optional `discardFile(input, file, scope, ctx)` and
 `stashFile(input, file, message, ctx)`. Discard scope is `"all"` or `"unstaged"`;
 the host obtains exact-file confirmation before calling either operation. Unstaged-only discard
 preserves the index and is offered when both status sides have changes. Stash receives the entered
@@ -562,11 +562,11 @@ excluding unrelated changes from every stash tree and from live cleanup. Revalid
 before writes, retain a published stash if cleanup fails, and report partial completion explicitly.
 These optional operations remain absent for read-only providers and revision comparisons.
 
-API v24 adds optional `stashFiles(input, files, message, ctx)` for one stash covering several
+API v25 adds optional `stashFiles(input, files, message, ctx)` for one stash covering several
 attested paths. The host confirms a selected folder before calling it. Preserve each file's partial
 staging and exclude unrelated changes, the same way `stashFile` does for one path.
 
-API v22 adds optional `resolveWorkingTreeLine(input, file, line, ctx): Promise<number>`.
+API v25 adds optional `resolveWorkingTreeLine(input, file, line, ctx): Promise<number>`.
 This read-only operation validates a new-side source line and maps staged addresses into the actual
 worktree before an external editor is launched. Validate the reviewed file's source attestation, account for later
 unstaged edits, and refuse unmappable source transforms rather than guessing. Hunk drops a result

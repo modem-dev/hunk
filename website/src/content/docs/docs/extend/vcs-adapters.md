@@ -53,26 +53,26 @@ and throw `HunkExtensionUserError` for failures. The host tracks started writes 
 and refreshes status and diff before allowing another action. These are terminal-host actions,
 not implicit remote capabilities.
 
-API v20 adds `stageHunk(input, file, hunk, ctx)` and `unstageHunk(input, file, hunk, ctx)`.
+API v25 adds `stageHunk(input, file, hunk, ctx)` and `unstageHunk(input, file, hunk, ctx)`.
 The target uses `ExtensionDiffHunk`'s numbered summary. Recover and validate the canonical provider
 patch and comparison base before applying original bytes, not text-converted output; leave other hunks and worktree bytes untouched. These actions address
 the active stream side, even when the file has both staged and unstaged changes.
 
-API v21 adds `discardFile(input, file, scope, ctx)` and `stashFile(input, file, message, ctx)`.
+API v25 adds `discardFile(input, file, scope, ctx)` and `stashFile(input, file, message, ctx)`.
 The host confirms one exact file; discard scope is `"all"` or `"unstaged"`. Revalidate the file,
 preserve its staged content for unstaged-only discard, and exclude unrelated changes from both
 live cleanup and every stash tree. Retain a published stash and report partial completion if
 cleanup fails. Messages may be empty. Omit unsupported operations.
 
-API v24 adds optional `stashFiles(input, files, message, ctx)` so a selected folder can become one
+API v25 adds optional `stashFiles(input, files, message, ctx)` so a selected folder can become one
 stash. Apply the same attestation, partial-staging, and unrelated-change rules as `stashFile`.
 
-API v22 adds optional `resolveWorkingTreeLine(input, file, line, ctx): Promise<number>` for
+API v25 adds optional `resolveWorkingTreeLine(input, file, line, ctx): Promise<number>` for
 read-only validation of a new-side source address and mapping staged addresses through later worktree changes. Revalidate the source
 attestation and refuse unmappable transforms. The host owns editor launch and drops results after
 review revocation; this method grants no remote write capability.
 
-API v23 adds optional inventory `statusCode`: two Git-style status columns (index, worktree),
+API v25 adds optional inventory `statusCode`: two Git-style status columns (index, worktree),
 or `??` for untracked files. The sidebar colors index changes green and worktree changes red;
 providers that omit it retain the staged/unstaged letter indicators.
 
