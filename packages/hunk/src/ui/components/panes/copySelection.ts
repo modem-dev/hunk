@@ -902,6 +902,7 @@ export function selectionInvalidationIdentity(facts: SelectionInvalidationFacts)
 export interface SelectionActionBarPlacement {
   top: number;
   left: number;
+  width: number;
   height: number;
   compact: boolean;
   reasonLines?: readonly string[];
@@ -945,6 +946,7 @@ export function planSelectionActionBar({
   return {
     top,
     left: Math.max(0, paneWidth - width),
+    width,
     height,
     compact,
     ...(reasonLines.length > 0 ? { reasonLines } : {}),

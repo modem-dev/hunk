@@ -47,7 +47,7 @@ describe("planSelectionActionBar", () => {
         paneWidth: 80,
         preferredWidth: 34,
       }),
-    ).toEqual({ top: 3, left: 46, height: 3, compact: false });
+    ).toEqual({ top: 3, left: 46, width: 34, height: 3, compact: false });
     expect(
       planSelectionActionBar({
         focusVisualRow: 17,
@@ -56,7 +56,7 @@ describe("planSelectionActionBar", () => {
         paneWidth: 20,
         preferredWidth: 34,
       }),
-    ).toEqual({ top: 2, left: 0, height: 5, compact: true });
+    ).toEqual({ top: 2, left: 0, width: 20, height: 5, compact: true });
     expect(
       planSelectionActionBar({
         focusVisualRow: 15,
@@ -69,6 +69,7 @@ describe("planSelectionActionBar", () => {
     ).toEqual({
       top: 1,
       left: 46,
+      width: 34,
       height: 4,
       compact: false,
       reasonLines: ["Unavailable"],
@@ -85,6 +86,7 @@ describe("planSelectionActionBar", () => {
     ).toEqual({
       top: 4,
       left: 0,
+      width: 20,
       height: 8,
       compact: true,
       reasonLines: ["Comment requires", "contiguous code", "from one file"],

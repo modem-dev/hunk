@@ -1,8 +1,4 @@
-import {
-  MouseButton,
-  type MouseEvent as TuiMouseEvent,
-  type ScrollBoxRenderable,
-} from "@opentui/core";
+import { type MouseEvent as TuiMouseEvent, type ScrollBoxRenderable } from "@opentui/core";
 import { useRenderer } from "@opentui/react";
 import {
   useCallback,
@@ -17,7 +13,6 @@ import { DEFAULT_FILE_GAP, DEFAULT_HUNK_GAP } from "../../../core/run/reviewGap"
 import { DEFAULT_TAB_WIDTH } from "../../../core/run/tabWidth";
 import type { DiffFile } from "../../../core/changeset/model";
 import type { CursorLine, LayoutMode } from "../../../core/run/commandInputs";
-import { resolveSplitPaneWidths } from "../../diff/codeColumns";
 import type { ReviewNoteTargetV1 } from "../../../core/review/types";
 import type { AgentAnnotation } from "../../../extension-api/types";
 import { resolveReviewRevealNoteId } from "../../../core/review/selectors";
@@ -29,9 +24,7 @@ import {
 import type { FileSourceStatus } from "../../diff/expandCollapsedRows";
 import type { ActiveAddNoteAffordance } from "../../diff/DiffSectionBody";
 import type { CursorHighlight } from "../../diff/cursorHighlight";
-import { isNestedRowMouseAction } from "../../diff/rowMouseActions";
 import { useIntermediateRenderAfterMount } from "../../hooks/useIntermediateRenderAfterMount";
-import { setMouseCapture } from "../../lib/mouseCapture";
 import type { DraftReviewNote, StoredReviewNoteRenderMetadata } from "../../lib/reviewNoteMapping";
 import {
   createVisibleAgentNote,
@@ -49,7 +42,7 @@ import {
   type CurrentLineAlignment,
   type LineRevealPlacement,
 } from "../../lib/hunkScroll";
-import { contextLineStableKeySides, inlineNoteStableKey } from "../../diff/reviewRenderPlan";
+import { inlineNoteStableKey } from "../../diff/reviewRenderPlan";
 import {
   buildLineCursors,
   clampLineCursorToViewport,
@@ -105,43 +98,20 @@ import {
   buildFileSectionIndexById,
   type FileRenderWindowItem,
 } from "../../lib/fileRenderWindow";
+import { selectionInvalidationIdentity, type CopySelectionContext } from "./copySelection";
+import { SelectionActionBar } from "./SelectionActionBar";
 import {
-  buildCopySelectedRowKeys,
-  clampCopyColumn,
-  copySelectionDragIsClick,
-  copySelectionPointsEqual,
-  copySelectionPointsShareRow,
-  expandSelectionPoint,
-  findCopySelectionPoint,
-  findLineCursorForClick,
-  normalizeCopySelectionRange,
-  planSelectionActionBar,
-  projectCommentSelection,
-  renderCopySelectionText,
-  resolveCopySelectionSide,
-  selectionInvalidationIdentity,
-  type CopySelectionContext,
-  type CopySelectionDrag,
-  type CopySelectionPoint,
-  type CopySelectionSide,
-} from "./copySelection";
+  useDiffSelectionController,
+  type ReviewSelectionActionsHandle,
+} from "./useDiffSelectionController";
+
+export type { ReviewSelectionActionsHandle } from "./useDiffSelectionController";
 
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
-const SELECTION_ACTION_BAR_WIDTH = 34;
 
 type StartUserNoteAtHunk = {
   bivarianceHack(fileId: string, hunkIndex: number, target?: ReviewNoteTargetV1): void;
 }["bivarianceHack"];
-
-/** Commands App may route to the pane's active persistent selection. */
-export interface ReviewSelectionActionsHandle {
-  hasSelection: () => boolean;
-  beginKeyboardSelection: () => boolean;
-  copy: () => boolean;
-  comment: () => boolean;
-  clear: () => boolean;
-  move: (delta: number) => boolean;
-}
 
 /** Read terminal-only semantic note metadata without granting it to static sidecars. */
 function storedReviewNoteMetadata(
@@ -850,29 +820,6 @@ export function DiffPane({
   );
   const [rapidScrollOverscanRows, setRapidScrollOverscanRows] = useState(0);
   const [hoveredFileId, setHoveredFileId] = useState<string | null>(null);
-  const [copySelectionDrag, setCopySelectionDrag] = useState<CopySelectionDrag | null>(null);
-  // Pointer gestures and committed selections are separate: mouse-up retires capture while
-  // the committed range remains painted and available to Comment/Copy/Clear.
-  const copySelectionDragRef = useRef<CopySelectionDrag | null>(null);
-  const committedCopySelectionRef = useRef<CopySelectionDrag | null>(null);
-  const keyboardSelectionRef = useRef<{
-    anchorTop: number;
-    anchorBottom: number;
-    side: "old" | "new";
-    focus: LineCursor;
-  } | null>(null);
-  const clearCopySelection = useCallback(() => {
-    const hadSelection =
-      copySelectionDragRef.current !== null || committedCopySelectionRef.current !== null;
-    copySelectionDragRef.current = null;
-    committedCopySelectionRef.current = null;
-    keyboardSelectionRef.current = null;
-    setCopySelectionDrag(null);
-    return hadSelection;
-  }, []);
-  const lastClickTimeRef = useRef(0);
-  const clickCountRef = useRef(0);
-  const lastClickPointRef = useRef<CopySelectionPoint | null>(null);
   const scrollbarRef = useRef<VerticalScrollbarHandle>(null);
   const prevScrollTopRef = useRef(0);
   const hasReadScrollViewportRef = useRef(false);
@@ -1299,14 +1246,6 @@ export function DiffPane({
       wrapLines,
     ],
   );
-  const previousSelectionGeometryKeyRef = useRef(selectionGeometryKey);
-  useEffect(() => {
-    if (previousSelectionGeometryKeyRef.current !== selectionGeometryKey) {
-      clearCopySelection();
-      previousSelectionGeometryKeyRef.current = selectionGeometryKey;
-    }
-  }, [clearCopySelection, selectionGeometryKey]);
-
   const fileSectionIndexById = useMemo(
     () => buildFileSectionIndexById(fileSectionLayouts),
     [fileSectionLayouts],
@@ -1400,15 +1339,6 @@ export function DiffPane({
       wrapLines,
     ],
   );
-
-  // In split layout, anchor the visible selection (and clipboard copy) to whichever side of
-  // the diff the drag began on. Stack layout has only one column, so the side stays undefined.
-  const copySelectionSide: CopySelectionSide | undefined = useMemo(() => {
-    if (!copySelectionDrag || copySelectionDrag.anchor.kind !== "review-row") {
-      return undefined;
-    }
-    return resolveCopySelectionSide(copySelectionDrag.anchor.column, layout, diffContentWidth);
-  }, [copySelectionDrag, diffContentWidth, layout]);
 
   // Display the selected hunk's first line on the initial mount while the controller adopts the
   // measured cursor list. Because both paths reuse the same cursor object, the follow-up state
@@ -1525,509 +1455,36 @@ export function DiffPane({
     [onCurrentLinePaintChange],
   );
 
-  const copySelectedRowKeysByFile = useMemo(
-    () =>
-      buildCopySelectedRowKeys({
-        drag: copySelectionDrag,
-        fileSectionLayouts,
-        sectionGeometry,
-        width: diffContentWidth,
-      }),
-    [copySelectionDrag, diffContentWidth, fileSectionLayouts, sectionGeometry],
-  );
-
-  /** Copy selected text through the injected boundary or the renderer's OSC 52 clipboard support. */
-  const copySelectionText = useCallback(
-    (text: string) => {
-      if (text.length === 0) {
-        return;
-      }
-
-      if (onCopySelectionText) {
-        onCopySelectionText(text);
-        return;
-      }
-
-      const supportsOsc52 = renderer.isOsc52Supported?.() ?? false;
-      if (supportsOsc52 && typeof renderer.copyToClipboardOSC52 === "function") {
-        renderer.copyToClipboardOSC52(text);
-        onCopyFeedback?.("Copied selection to clipboard");
-        return;
-      }
-
-      onCopyFeedback?.(
-        "Clipboard copy unsupported in this terminal (enable OSC 52 to capture selections)",
-      );
-    },
-    [onCopyFeedback, onCopySelectionText, renderer],
-  );
-
-  /** Project one visual selection through the canonical section geometry. */
-  const projectSelectionForComment = useCallback(
-    (drag: CopySelectionDrag | null) =>
-      projectCommentSelection({
-        drag,
-        fileSectionLayouts,
-        sectionGeometry,
-        side:
-          drag?.anchor.kind === "review-row"
-            ? resolveCopySelectionSide(drag.anchor.column, layout, diffContentWidth)
-            : undefined,
-      }),
-    [diffContentWidth, fileSectionLayouts, layout, sectionGeometry],
-  );
-  const commentSelection = useMemo(
-    () => projectSelectionForComment(copySelectionDrag),
-    [copySelectionDrag, projectSelectionForComment],
-  );
-  const selectionCommentLabel = `${selectionCommentKeyLabel ? `${selectionCommentKeyLabel} ` : ""}Comment`;
-  const selectionCopyLabel = `${selectionCopyKeyLabel ? `${selectionCopyKeyLabel} ` : ""}Copy`;
-  // Two spaces surround each dynamic label, ` Esc Clear ` occupies eleven columns,
-  // and the border occupies two more when the actions fit on one horizontal row.
-  const selectionActionBarWidth = Math.max(
-    SELECTION_ACTION_BAR_WIDTH,
-    selectionCommentLabel.length + selectionCopyLabel.length + 17,
-  );
-  const selectionActionPlacement = useMemo(() => {
-    if (!copySelectionDrag || committedCopySelectionRef.current === null) return null;
-    const focusVisualRow =
-      copySelectionDrag.focus.kind === "review-row"
-        ? copySelectionDrag.focus.visualRow
-        : copySelectionDrag.focus.nextVisualRow - 1;
-    const splitWidths = layout === "split" ? resolveSplitPaneWidths(diffContentWidth) : null;
-    const selectedPaneLeft =
-      splitWidths && copySelectionSide === "right" ? splitWidths.leftWidth : 0;
-    const selectedPaneWidth = splitWidths
-      ? copySelectionSide === "right"
-        ? splitWidths.rightWidth
-        : splitWidths.leftWidth
-      : diffContentWidth;
-    const placement = planSelectionActionBar({
-      focusVisualRow,
-      scrollTop: effectiveScrollTop,
-      viewportHeight:
-        scrollViewport.height ||
-        scrollRef.current?.viewport.height ||
-        Math.max(0, (height ?? 0) - 1),
-      paneWidth: selectedPaneWidth,
-      preferredWidth: selectionActionBarWidth,
-      reason: commentSelection.ok ? undefined : commentSelection.reason,
-    });
-    return placement ? { ...placement, left: placement.left + selectedPaneLeft } : null;
-  }, [
-    copySelectionDrag,
-    commentSelection,
-    copySelectionSide,
-    diffContentWidth,
-    effectiveScrollTop,
-    height,
-    layout,
-    scrollRef,
-    scrollViewport.height,
-    selectionActionBarWidth,
-  ]);
-
-  /** Copy the committed range without coupling selection acquisition to clipboard support. */
-  const copyCommittedSelection = useCallback(() => {
-    const selection = committedCopySelectionRef.current;
-    if (!selection) return false;
-    const { start, end } = normalizeCopySelectionRange(selection.anchor, selection.focus);
-    copySelectionText(
-      renderCopySelectionText({
-        context: copySelectionContext,
-        end,
-        side: resolveCopySelectionSide(selection.anchor.column, layout, diffContentWidth),
-        start,
-      }),
-    );
-    return true;
-  }, [copySelectionContext, copySelectionText, diffContentWidth, layout]);
-
-  /** Start a range note when the committed visual selection has one semantic projection. */
-  const commentOnCommittedSelection = useCallback(() => {
-    const selection = committedCopySelectionRef.current;
-    if (!selection) return false;
-    const committedCommentSelection = projectSelectionForComment(selection);
-    if (!committedCommentSelection.ok) {
-      onCopyFeedback?.(committedCommentSelection.reason);
-      return true;
-    }
-    onStartUserNoteAtHunk?.(
-      committedCommentSelection.selection.fileId,
-      committedCommentSelection.selection.hunkIndex,
-      committedCommentSelection.selection.target,
-    );
-    clearCopySelection();
-    return true;
-  }, [clearCopySelection, onCopyFeedback, onStartUserNoteAtHunk, projectSelectionForComment]);
-
-  /** Return full-line terminal columns for one source side in the active layout. */
-  const keyboardSelectionColumns = useCallback(
-    (side: "old" | "new") => {
-      if (layout !== "split") return { start: 0, end: Math.max(0, diffContentWidth - 1) };
-      const { leftWidth } = resolveSplitPaneWidths(diffContentWidth);
-      return side === "old"
-        ? { start: 0, end: Math.max(0, leftWidth - 1) }
-        : { start: leftWidth, end: Math.max(leftWidth, diffContentWidth - 1) };
-    },
-    [diffContentWidth, layout],
-  );
-
-  /** Commit keyboard selection geometry synchronously for batched input. */
-  const commitKeyboardSelectionFocus = useCallback(
-    (focus: LineCursor) => {
-      const keyboardSelection = keyboardSelectionRef.current;
-      if (!keyboardSelection || focus.target.side !== keyboardSelection.side) return false;
-      const bounds = lineCursorBoundsOf(focus);
-      if (!bounds) return false;
-      const focusTop = bounds.top;
-      const focusBottom = bounds.top + Math.max(0, bounds.height - 1);
-      const columns = keyboardSelectionColumns(keyboardSelection.side);
-      const movingDown = focusTop >= keyboardSelection.anchorTop;
-      const selection: CopySelectionDrag = {
-        anchor: {
-          kind: "review-row",
-          visualRow: movingDown ? keyboardSelection.anchorTop : keyboardSelection.anchorBottom,
-          column: movingDown ? columns.start : columns.end,
-        },
-        focus: {
-          kind: "review-row",
-          visualRow: movingDown ? focusBottom : focusTop,
-          column: movingDown ? columns.end : columns.start,
-        },
-        moved: true,
-        expanded: true,
-      };
-      keyboardSelection.focus = focus;
-      committedCopySelectionRef.current = selection;
-      setCopySelectionDrag(selection);
-      return true;
-    },
-    [keyboardSelectionColumns, lineCursorBoundsOf],
-  );
-
-  /** Begin keyboard range acquisition at the current measured source row. */
-  const beginKeyboardSelection = useCallback(() => {
-    if (!renderedLineCursor) return false;
-    const bounds = lineCursorBoundsOf(renderedLineCursor);
-    if (!bounds) return false;
-    keyboardSelectionRef.current = {
-      anchorTop: bounds.top,
-      anchorBottom: bounds.top + Math.max(0, bounds.height - 1),
-      side: renderedLineCursor.target.side,
-      focus: renderedLineCursor,
-    };
-    copySelectionDragRef.current = null;
-    return commitKeyboardSelectionFocus(renderedLineCursor);
-  }, [commitKeyboardSelectionFocus, lineCursorBoundsOf, renderedLineCursor]);
-
-  /** Move the keyboard selection focus through source rows on its anchored side. */
-  const moveKeyboardSelection = useCallback(
-    (delta: number) => {
-      const keyboardSelection = keyboardSelectionRef.current;
-      if (!keyboardSelection || !onViewportLineCursorChange) return false;
-      const candidates = lineCursors.flatMap((cursor) => {
-        if (cursor.target.side === keyboardSelection.side) return [cursor];
-        const context = contextLineStableKeySides(cursor.stableKey);
-        return keyboardSelection.side === "old" && context
-          ? [{ ...cursor, target: { side: "old" as const, line: context.oldLine } }]
-          : [];
-      });
-      const currentIndex = candidates.findIndex(
-        (cursor) =>
-          cursor.fileId === keyboardSelection.focus.fileId &&
-          cursor.stableKey === keyboardSelection.focus.stableKey,
-      );
-      if (currentIndex < 0) return false;
-      const next = candidates[Math.min(candidates.length - 1, Math.max(0, currentIndex + delta))];
-      if (!next) return true;
-      commitKeyboardSelectionFocus(next);
-      onViewportLineCursorChange(next);
-      return true;
-    },
-    [commitKeyboardSelectionFocus, lineCursors, onViewportLineCursorChange],
-  );
-
-  useEffect(() => {
-    if (keyboardSelectionRef.current && renderedLineCursor) {
-      commitKeyboardSelectionFocus(renderedLineCursor);
-    }
-  }, [commitKeyboardSelectionFocus, renderedLineCursor]);
-
-  /** Convert one mouse event into a review-stream copy-selection point. */
-  const resolveCopySelectionPoint = useCallback(
-    (event: TuiMouseEvent): CopySelectionPoint | null => {
-      const scrollBox = scrollRef.current;
-      if (!scrollBox) {
-        return null;
-      }
-
-      // Resolve against OpenTUI's measured viewport instead of reconstructing its screen position
-      // from borders, padding, chrome, and the pinned-header lane. Those decorations can shift by
-      // a row as layouts settle, while the measured viewport and translated content coordinates
-      // always match what OpenTUI actually painted and hit-tested.
-      const viewportScreenX = scrollBox.viewport.screenX;
-      const viewportScreenY = scrollBox.viewport.screenY;
-      const contentScreenY = scrollBox.content.screenY;
-      const column = Math.floor(event.x - viewportScreenX);
-      if (copyDecorations && pinnedHeaderFileId && Math.floor(event.y) === viewportScreenY - 1) {
-        return {
-          kind: "pinned-header",
-          column: clampCopyColumn(column, diffContentWidth),
-          fileId: pinnedHeaderFileId,
-          nextVisualRow: Math.floor(viewportScreenY - contentScreenY),
-        };
-      }
-
-      const viewportY = Math.floor(event.y - viewportScreenY);
-      if (viewportY < 0 || viewportY >= Math.max(1, scrollBox.viewport.height ?? 0)) {
-        return null;
-      }
-
-      return findCopySelectionPoint({
-        column,
-        copyDecorations,
-        fileSectionLayouts,
-        sectionGeometry,
-        visualRow: Math.floor(event.y - contentScreenY),
-        width: diffContentWidth,
-      });
-    },
-    [
-      copyDecorations,
-      diffContentWidth,
-      fileSectionLayouts,
-      pinnedHeaderFileId,
-      scrollRef,
-      sectionGeometry,
-    ],
-  );
-
-  // OpenTUI starts a native cross-renderable text selection on mouse-down over any selectable
-  // <text> before our handler runs. That native selection ignores element bounds and paints
-  // across the whole screen, so we eagerly clear it whenever Hunk owns the drag.
-  const suppressNativeSelection = useCallback(() => {
-    if (renderer.hasSelection) {
-      renderer.clearSelection();
-    }
-  }, [renderer]);
-
-  /** Start selecting diff text when the user drags inside the review stream. */
-  const beginCopySelection = useCallback(
-    (event: TuiMouseEvent) => {
-      if (event.button !== MouseButton.LEFT) {
-        return;
-      }
-
-      const point = resolveCopySelectionPoint(event);
-      if (!point) {
-        clearCopySelection();
-        clickCountRef.current = 0;
-        lastClickPointRef.current = null;
-        return;
-      }
-
-      committedCopySelectionRef.current = null;
-      keyboardSelectionRef.current = null;
-
-      // Detect double-click and triple-click for word/line selection.
-      const now = Date.now();
-      const timeSinceLastClick = now - lastClickTimeRef.current;
-      const previousClickPoint = lastClickPointRef.current;
-      const repeatedClickTarget =
-        previousClickPoint !== null &&
-        copySelectionPointsShareRow(previousClickPoint, point) &&
-        Math.abs(previousClickPoint.column - point.column) <= 2;
-      lastClickTimeRef.current = now;
-      lastClickPointRef.current = point;
-
-      let clickCount = 1;
-      if (timeSinceLastClick < 350 && timeSinceLastClick >= 0 && repeatedClickTarget) {
-        clickCountRef.current += 1;
-        clickCount = Math.min(clickCountRef.current, 3);
-      } else {
-        clickCountRef.current = 1;
-      }
-
-      if (clickCount >= 2 && point.kind === "review-row") {
-        const expanded = expandSelectionPoint(point, clickCount as 2 | 3, copySelectionContext);
-        if (expanded) {
-          const drag: CopySelectionDrag = {
-            anchor: { ...point, column: expanded.startCol },
-            focus: { ...point, column: expanded.endCol },
-            moved: true,
-            expanded: true,
-          };
-          copySelectionDragRef.current = drag;
-          setCopySelectionDrag(drag);
-          suppressNativeSelection();
-          event.preventDefault();
-          event.stopPropagation();
-          return;
-        }
-      }
-
-      const initial: CopySelectionDrag = { anchor: point, focus: point, moved: false };
-      copySelectionDragRef.current = initial;
-      setCopySelectionDrag(initial);
-      suppressNativeSelection();
-      event.preventDefault();
-      event.stopPropagation();
-    },
-    [clearCopySelection, copySelectionContext, resolveCopySelectionPoint, suppressNativeSelection],
-  );
-
-  /** Extend the active diff text selection while the pointer moves. */
-  const updateCopySelection = useCallback(
-    (event: TuiMouseEvent) => {
-      // Use the ref (not state) so that native-selection suppression fires on the very
-      // first drag event, before React has re-rendered with the new copySelectionDrag.
-      setCopySelectionDrag((current) => {
-        if (!current) {
-          return current;
-        }
-
-        const point = resolveCopySelectionPoint(event);
-        if (!point) {
-          return current;
-        }
-
-        return {
-          anchor: current.anchor,
-          focus: point,
-          moved: current.moved || !copySelectionPointsEqual(point, current.anchor),
-          expanded: current.expanded,
-        };
-      });
-
-      // The state updater above sets the ref during the render phase. Update the ref
-      // synchronously as well so that endCopySelection can read the correct moved flag
-      // even if the mouse-up event fires before React processes the pending state update.
-      const refDrag = copySelectionDragRef.current;
-      if (refDrag) {
-        const point = resolveCopySelectionPoint(event);
-        if (point) {
-          copySelectionDragRef.current = {
-            anchor: refDrag.anchor,
-            focus: point,
-            moved: refDrag.moved || !copySelectionPointsEqual(point, refDrag.anchor),
-            expanded: refDrag.expanded,
-          };
-        }
-      }
-
-      if (copySelectionDragRef.current) {
-        const scrollBox = scrollRef.current;
-        if (scrollBox) {
-          setMouseCapture(renderer, scrollBox);
-        }
-        suppressNativeSelection();
-        event.preventDefault();
-        event.stopPropagation();
-      }
-    },
-    [renderer, resolveCopySelectionPoint, scrollRef, suppressNativeSelection],
-  );
-
-  /** Finish a mouse gesture by selecting its clicked line or copying its deliberate drag. */
-  const endCopySelection = useCallback(
-    (event?: TuiMouseEvent) => {
-      const pending = copySelectionDragRef.current;
-      if (!pending) {
-        return;
-      }
-
-      // Resolve mouse-up itself because terminal hosts may coalesce the final motion event.
-      const endPoint = event && !pending.expanded ? resolveCopySelectionPoint(event) : null;
-      const current = endPoint
-        ? {
-            anchor: pending.anchor,
-            focus: endPoint,
-            moved: pending.moved || !copySelectionPointsEqual(endPoint, pending.anchor),
-            expanded: pending.expanded,
-          }
-        : pending;
-
-      copySelectionDragRef.current = null;
-      event?.preventDefault();
-      event?.stopPropagation();
-
-      if (copySelectionDragIsClick(current)) {
-        committedCopySelectionRef.current = null;
-        setCopySelectionDrag(null);
-        if (event && isNestedRowMouseAction(event)) {
-          return;
-        }
-
-        const clickedCursor = findLineCursorForClick({
-          cursors: lineCursors,
-          fileSectionLayouts,
-          point: current.anchor,
-          sectionGeometry,
-          side: resolveCopySelectionSide(current.anchor.column, layout, diffContentWidth),
-        });
-        if (clickedCursor && onViewportLineCursorChange) {
-          onViewportLineCursorChange(clickedCursor);
-          return;
-        }
-        if (!current.moved) {
-          return;
-        }
-      }
-
-      // Mouse-up commits the range without choosing an action. Copy and Comment are
-      // explicit so the same acquired selection works for pointer and keyboard users.
-      committedCopySelectionRef.current = current;
-      setCopySelectionDrag(current);
-    },
-    [
-      diffContentWidth,
-      fileSectionLayouts,
-      layout,
-      lineCursors,
-      onViewportLineCursorChange,
-      resolveCopySelectionPoint,
-      sectionGeometry,
-    ],
-  );
-
-  // Expose the cancel hook so an ancestor (App's outer container) can release a stuck drag when
-  // the pointer leaves the diff pane and is released over the sidebar, menu bar, or status bar.
-  useEffect(() => {
-    if (!cancelCopySelectionRef) {
-      return;
-    }
-    cancelCopySelectionRef.current = () => {
-      if (copySelectionDragRef.current) endCopySelection();
-    };
-    return () => {
-      if (cancelCopySelectionRef.current) {
-        cancelCopySelectionRef.current = null;
-      }
-    };
-  }, [cancelCopySelectionRef, clearCopySelection, endCopySelection]);
-
-  useEffect(() => {
-    if (!selectionActionsRef) return;
-    selectionActionsRef.current = {
-      hasSelection: () => committedCopySelectionRef.current !== null,
-      beginKeyboardSelection,
-      copy: copyCommittedSelection,
-      comment: commentOnCommittedSelection,
-      clear: clearCopySelection,
-      move: moveKeyboardSelection,
-    };
-    return () => {
-      selectionActionsRef.current = null;
-    };
-  }, [
-    beginKeyboardSelection,
-    clearCopySelection,
+  const {
+    actionBarModel: selectionActionBarModel,
+    beginSelection: beginCopySelection,
+    clearSelection: clearCopySelection,
     commentOnCommittedSelection,
     copyCommittedSelection,
-    moveKeyboardSelection,
+    endSelection: endCopySelection,
+    selectedRowKeysByFile: copySelectedRowKeysByFile,
+    selectionSide: copySelectionSide,
+    suppressNativeSelection: suppressCopyNativeSelection,
+    updateSelection: updateCopySelection,
+  } = useDiffSelectionController({
+    cancelCopySelectionRef,
     selectionActionsRef,
-  ]);
+    selectionGeometryKey,
+    context: copySelectionContext,
+    effectiveScrollTop,
+    height,
+    lineCursorBoundsOf,
+    lineCursors,
+    onCopyFeedback,
+    onCopySelectionText,
+    onStartUserNoteAtHunk,
+    onViewportLineCursorChange,
+    renderedLineCursor,
+    scrollRef,
+    scrollViewportHeight: scrollViewport.height,
+    selectionCommentKeyLabel,
+    selectionCopyKeyLabel,
+  });
 
   /** Clamp one requested review scroll target against the latest planned content height. */
   const clampReviewScrollTop = useCallback(
@@ -3139,87 +2596,15 @@ export function DiffPane({
                   })}
                 </box>
               </scrollbox>
-              {selectionActionPlacement ? (
-                <box
-                  style={{
-                    position: "absolute",
-                    top: selectionActionPlacement.top,
-                    left: selectionActionPlacement.left,
-                    width: Math.min(
-                      layout === "split"
-                        ? copySelectionSide === "right"
-                          ? resolveSplitPaneWidths(diffContentWidth).rightWidth
-                          : resolveSplitPaneWidths(diffContentWidth).leftWidth
-                        : diffContentWidth,
-                      selectionActionBarWidth,
-                    ),
-                    height: selectionActionPlacement.height,
-                    flexDirection: "column",
-                    border: true,
-                    borderColor: theme.accent,
-                    backgroundColor: theme.panelAlt,
-                    zIndex: 20,
-                  }}
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                  }}
-                  onMouseUp={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                  }}
-                >
-                  <box
-                    style={{
-                      height: selectionActionPlacement.compact ? 3 : 1,
-                      flexDirection: selectionActionPlacement.compact ? "column" : "row",
-                    }}
-                  >
-                    <box
-                      style={{ height: 1 }}
-                      onMouseDown={(event) => event.stopPropagation()}
-                      onMouseUp={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        commentOnCommittedSelection();
-                      }}
-                    >
-                      <text fg={commentSelection.ok ? theme.accent : theme.muted}>
-                        {` ${selectionCommentLabel} `}
-                      </text>
-                    </box>
-                    <box
-                      style={{ height: 1 }}
-                      onMouseDown={(event) => event.stopPropagation()}
-                      onMouseUp={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        copyCommittedSelection();
-                      }}
-                    >
-                      <text fg={theme.text}>{` ${selectionCopyLabel} `}</text>
-                    </box>
-                    <box
-                      style={{ height: 1 }}
-                      onMouseDown={(event) => event.stopPropagation()}
-                      onMouseUp={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        clearCopySelection();
-                      }}
-                    >
-                      <text fg={theme.muted}> Esc Clear </text>
-                    </box>
-                  </box>
-                  {selectionActionPlacement.reasonLines?.map((line, index) => (
-                    <box
-                      key={`selection-reason:${index}`}
-                      style={{ height: 1, paddingLeft: 1, paddingRight: 1 }}
-                    >
-                      <text fg={theme.muted}>{line}</text>
-                    </box>
-                  ))}
-                </box>
+              {selectionActionBarModel ? (
+                <SelectionActionBar
+                  model={selectionActionBarModel}
+                  onClear={clearCopySelection}
+                  onComment={commentOnCommittedSelection}
+                  onCopy={copyCommittedSelection}
+                  onPointerActionStart={suppressCopyNativeSelection}
+                  theme={theme}
+                />
               ) : null}
               <VerticalScrollbar
                 ref={scrollbarRef}
