@@ -2,6 +2,7 @@ import type { HistoryCommandInput } from "../core/run/commandInputs";
 import {
   persistedViewPreferencesFromOptions,
   type PersistedViewPreferences,
+  type ViewPreferenceScope,
 } from "../core/run/config";
 import { collectSessionCustomThemes } from "../core/theme/customThemes";
 import type { ThemeSelection } from "../core/theme/selection";
@@ -43,6 +44,7 @@ export interface HistoryBootstrap {
   /** Launch baseline retained so the owning history surface can persist theme changes on quit. */
   initialViewPreferences: PersistedViewPreferences;
   viewPreferencesConfigPath?: string;
+  viewPreferenceScope?: ViewPreferenceScope;
   promptSaveViewPreferences: boolean;
   planReview(
     commit: ExtensionVcsHistoryCommit,
@@ -148,6 +150,7 @@ export async function loadHistoryBootstrap({
     customThemes: sessionThemes.themes,
     initialViewPreferences: persistedViewPreferencesFromOptions(resolved.configured.input.options),
     viewPreferencesConfigPath: resolved.configured.viewPreferencesConfigPath,
+    viewPreferenceScope: resolved.configured.viewPreferenceScope,
     promptSaveViewPreferences:
       resolved.configured.input.options.promptSaveViewPreferences !== false,
     notices: [

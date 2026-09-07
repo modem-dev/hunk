@@ -362,6 +362,7 @@ export function App({
   const viewPreferenceQuit = useViewPreferenceQuitController({
     currentPreferences: currentViewPreferences,
     configPath: bootstrap.viewPreferencesConfigPath,
+    configScope: bootstrap.viewPreferenceScope,
     pagerMode,
     promptSaveViewPreferences:
       bootstrap.input.options.promptSaveViewPreferences !== false && !returnToHistory,

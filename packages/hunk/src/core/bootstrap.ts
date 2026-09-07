@@ -14,7 +14,7 @@
 import type { ExtensionReviewDescriptor, NamedCustomThemeConfig } from "../extension-api/types";
 import type { Changeset } from "./changeset/model";
 import type { CliInput, CursorLine, LayoutMode, SidebarVisibility } from "./run/commandInputs";
-import type { UserKeyBinding } from "./run/config";
+import type { UserKeyBinding, ViewPreferenceScope } from "./run/config";
 import type { StartupNotice } from "./process/startupNotice";
 import type { TerminalThemeMode } from "./theme/detection";
 import type { ThemeSelection } from "./theme/selection";
@@ -59,6 +59,7 @@ export interface AppBootstrap<ExtensionState = unknown> {
   /** Validated metadata describing a delegated or history-selected review source. */
   review?: ExtensionReviewDescriptor;
   viewPreferencesConfigPath?: string;
+  viewPreferenceScope?: ViewPreferenceScope;
   /** The user's `[keybindings]` table, resolved against command defaults in App. */
   keybindings?: Record<string, UserKeyBinding>;
   /** App-owned extension state carried without coupling core to the extension host. */

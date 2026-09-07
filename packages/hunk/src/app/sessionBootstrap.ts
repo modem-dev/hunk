@@ -96,6 +96,7 @@ export async function loadConfiguredSessionBootstrap({
     bootstrap.initialThemeMode = initialThemeMode ?? bootstrap.initialThemeMode;
     bootstrap.extensions = extensions;
     bootstrap.viewPreferencesConfigPath = configured.viewPreferencesConfigPath;
+    bootstrap.viewPreferenceScope = configured.viewPreferenceScope;
     bootstrap.keybindings = configured.keybindings;
 
     return { applied, bootstrap, input, previousFileLanguages, sessionThemes, sessionVcs };

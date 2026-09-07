@@ -1,5 +1,5 @@
 import type { HistoryCommandInput } from "../../core/run/commandInputs";
-import type { PersistedViewPreferences } from "../../core/run/config";
+import type { PersistedViewPreferences, ViewPreferenceScope } from "../../core/run/config";
 import type { ThemeSelection } from "../../core/theme/selection";
 import type { VcsHistorySource } from "../../core/vcs/types";
 import type { ExtensionSession } from "../../extensions/session";
@@ -25,6 +25,7 @@ export interface HistoryRuntime {
   /** Resolved launch preferences retained while history owns the session-wide quit flow. */
   initialViewPreferences: PersistedViewPreferences;
   viewPreferencesConfigPath?: string;
+  viewPreferenceScope?: ViewPreferenceScope;
   promptSaveViewPreferences: boolean;
   /** Command-owned extension authority borrowed by embedded reviews. */
   extensionSession: ExtensionSession;

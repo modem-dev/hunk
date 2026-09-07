@@ -115,6 +115,7 @@ export function LogApp({
   const viewPreferenceQuit = useViewPreferenceQuitController({
     currentPreferences: currentViewPreferences,
     configPath: runtime.viewPreferencesConfigPath,
+    configScope: runtime.viewPreferenceScope,
     pagerMode: false,
     promptSaveViewPreferences: runtime.promptSaveViewPreferences,
     transientViewPreferences: resolveExtensionSessionOptions(
