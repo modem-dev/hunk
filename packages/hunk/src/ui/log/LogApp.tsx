@@ -26,7 +26,7 @@ import {
 import { fitText, measureTextWidth } from "../lib/text";
 import { handleViewPreferenceQuitPromptKey } from "../lib/viewPreferenceQuitKeys";
 import type { ThemeController } from "../theme/controller";
-import type { HistoryRuntime } from "../history/types";
+import type { InteractiveHistoryRuntime } from "../history/types";
 import type { LogController } from "./controller";
 import { dispatchAppCommand, executeAppCommand, findAppCommandById } from "../lib/appCommands";
 import { resolveCommandKeys } from "../lib/keymap";
@@ -78,7 +78,7 @@ export function LogApp({
   quitScheduler,
 }: {
   controller: LogController;
-  runtime: HistoryRuntime;
+  runtime: InteractiveHistoryRuntime;
   onOutcome: (outcome: LogAppOutcome) => void | Promise<void>;
   themeController: ThemeController;
   useColor: boolean;
@@ -104,7 +104,6 @@ export function LogApp({
   const quitRequestCaptured = useRef(false);
   const pendingExitCode = useRef<number | undefined>(undefined);
   const themeSelector = useThemeSelectorController({
-    customThemes: runtime.initialization.theme.customThemes,
     onTransientNotice: setTransientNotice,
     themeController,
     transparentBackground: false,

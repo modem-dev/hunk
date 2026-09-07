@@ -1,5 +1,5 @@
 import { HunkUserError } from "../../core/run/errors";
-import type { HistoryRuntime } from "../history/types";
+import type { InteractiveHistoryRuntime } from "../history/types";
 import { HunkSessionHost, type HistorySurfaceRoute } from "../session/HunkSessionHost";
 import { runHunkSession } from "../session/runHunkSession";
 import { LogController } from "./controller";
@@ -16,7 +16,7 @@ export function logSignalExitCode(signal: NodeJS.Signals) {
 
 /** Browse history and fresh commit reviews inside one renderer and one stable React root. */
 export async function runInteractiveLog(
-  runtime: HistoryRuntime,
+  runtime: InteractiveHistoryRuntime,
   {
     stdin = process.stdin,
     stdout = process.stdout,

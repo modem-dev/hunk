@@ -4,9 +4,10 @@ import { resolveTheme } from "../themes";
 
 export interface ThemeSnapshot {
   themeId: string;
+  customThemes: readonly NamedCustomThemeConfig[];
 }
 
-/** Retain the committed theme across every surface mounted in one Hunk session. */
+/** Own the committed theme and reloadable catalog across one Hunk session. */
 export class ThemeController {
   readonly initialThemeId: string;
   readonly themeMode: TerminalThemeMode | undefined;
@@ -24,7 +25,7 @@ export class ThemeController {
   }) {
     this.initialThemeId = resolveTheme(initialTheme, initialThemeMode ?? null, customThemes).id;
     this.themeMode = initialThemeMode ?? undefined;
-    this.snapshot = { themeId: this.initialThemeId };
+    this.snapshot = { themeId: this.initialThemeId, customThemes: customThemes ?? [] };
   }
 
   /** Return the immutable committed-theme snapshot. */
@@ -39,7 +40,14 @@ export class ThemeController {
   /** Commit one validated theme identity for all current and future surfaces. */
   commitTheme(themeId: string) {
     if (themeId === this.snapshot.themeId) return;
-    this.snapshot = { themeId };
+    this.snapshot = { ...this.snapshot, themeId };
+    for (const listener of this.listeners) listener();
+  }
+
+  /** Replace the reloadable custom-theme catalog without changing the committed identity. */
+  replaceCustomThemes(customThemes: readonly NamedCustomThemeConfig[]) {
+    if (customThemes === this.snapshot.customThemes) return;
+    this.snapshot = { ...this.snapshot, customThemes };
     for (const listener of this.listeners) listener();
   }
 }

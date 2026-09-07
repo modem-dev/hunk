@@ -9,8 +9,9 @@ import { createTestDiffFile } from "../../../../../test/helpers/diff-helpers";
 import { createTestExtensionSession } from "../../../../../test/helpers/extension-session";
 import { persistedViewPreferencesFromOptions } from "../../core/run/config";
 import { createEmptyExtensionLoadResult } from "../../extensions/types";
-import type { HistoryRuntime } from "../history/types";
+import type { InteractiveHistoryRuntime } from "../history/types";
 import { LogController } from "../log/controller";
+import { availableThemes } from "../themes";
 import {
   HunkSessionHost,
   type HistorySurfaceRoute,
@@ -18,6 +19,17 @@ import {
 } from "./HunkSessionHost";
 
 mock.restore();
+
+const historyCustomTheme = {
+  id: "history-only",
+  label: "History only",
+  accent: "#112233",
+} as const;
+const reviewCustomTheme = {
+  id: "review-only",
+  label: "Review only",
+  accent: "#abcdef",
+} as const;
 
 /** Create a loaded history route for session-host navigation tests. */
 async function createHistoryRoute(subjects = ["History row"]) {
@@ -31,7 +43,7 @@ async function createHistoryRoute(subjects = ["History row"]) {
     authoredAt: "2026-01-01T00:00:00Z",
     decorations: [],
   }));
-  const runtime: HistoryRuntime = {
+  const runtime: InteractiveHistoryRuntime = {
     input: {
       kind: "history",
       color: "never",
@@ -52,6 +64,7 @@ async function createHistoryRoute(subjects = ["History row"]) {
     providerName: "Test",
     repoRoot: "/repo",
     notices: [],
+    customThemes: [],
     initialization: { theme: { customThemes: [] } },
     keybindings: {},
     initialViewPreferences: persistedViewPreferencesFromOptions({}),
@@ -93,6 +106,19 @@ async function settle(setup: Awaited<ReturnType<typeof testRender>>) {
   });
 }
 
+/** Preview the trailing custom theme from one known committed bundled theme. */
+async function previewTrailingCustomTheme(
+  setup: Awaited<ReturnType<typeof testRender>>,
+  committedThemeId: string,
+) {
+  const committedIndex = availableThemes().findIndex((theme) => theme.id === committedThemeId);
+  if (committedIndex < 0) throw new Error(`Unknown bundled theme: ${committedThemeId}`);
+  await act(async () => {
+    for (let step = 0; step <= committedIndex; step++) setup.mockInput.pressArrow("up");
+  });
+  await setup.renderOnce();
+}
+
 test("routes repeated history reviews through fresh runtimes and returns instead of quitting", async () => {
   const history = await createHistoryRoute();
   const quit = mock(() => undefined);
@@ -105,7 +131,11 @@ test("routes repeated history reviews through fresh runtimes and returns instead
         files: [createTestDiffFile({ id: "review.ts", path: "review.ts" })],
       });
       bootstrap.extensions = history.runtime.extensionSession.current;
-      return { bootstrap, borrowsExtensions: true };
+      return {
+        bootstrap,
+        initialization: history.runtime.initialization,
+        borrowsExtensions: true,
+      };
     }) as never,
     createReviewRuntime: (() => {
       const stop = mock(() => undefined);
@@ -162,6 +192,9 @@ test("routes repeated history reviews through fresh runtimes and returns instead
 
 test("shares committed themes across history and repeated review surfaces", async () => {
   const history = await createHistoryRoute();
+  history.runtime.initialization = {
+    theme: { customThemes: [historyCustomTheme] },
+  };
   const requests: Array<{ themeId?: string }> = [];
   const deps: HunkSessionHostDeps = {
     prepareReview: (async (request: { themeId?: string }) => {
@@ -171,7 +204,11 @@ test("shares committed themes across history and repeated review surfaces", asyn
         files: [createTestDiffFile({ id: "review.ts", path: "review.ts" })],
       });
       bootstrap.extensions = history.runtime.extensionSession.current;
-      return { bootstrap, borrowsExtensions: true };
+      return {
+        bootstrap,
+        initialization: { theme: { customThemes: [reviewCustomTheme] } },
+        borrowsExtensions: true,
+      };
     }) as never,
     createReviewRuntime: (() => ({
       hostClient: undefined,
@@ -203,27 +240,31 @@ test("shares committed themes across history and repeated review surfaces", asyn
 
     await act(async () => setup.mockInput.typeText("t"));
     await setup.renderOnce();
-    await act(async () => setup.mockInput.pressArrow("down"));
+    await previewTrailingCustomTheme(setup, "github-dark-dimmed");
+    expect(setup.captureCharFrame()).toContain("Review only");
+    expect(setup.captureCharFrame()).not.toContain("History only");
     await act(async () => setup.mockInput.pressEnter());
     await setup.renderOnce();
-    expect(setup.captureCharFrame()).toContain("Theme: github-dark-high-contrast");
+    expect(setup.captureCharFrame()).toContain("Theme: Review only");
 
     await act(async () => setup.mockInput.pressKey("q"));
     await settle(setup);
     expect(setup.captureCharFrame()).toContain("Test history");
     await act(async () => setup.mockInput.typeText("t"));
     await setup.renderOnce();
-    expect(setup.captureCharFrame()).toContain("›  github-dark-high-contrast");
+    expect(setup.captureCharFrame()).toContain("›  Review only");
+    expect(setup.captureCharFrame()).toContain("Review only");
+    expect(setup.captureCharFrame()).not.toContain("History only");
     await act(async () => setup.mockInput.pressEnter());
     await settle(setup);
     expect(setup.captureCharFrame()).not.toContain("Theme selector");
 
     await act(async () => setup.mockInput.pressEnter());
     await settle(setup);
-    expect(requests[1]?.themeId).toBe("github-dark-high-contrast");
+    expect(requests[1]?.themeId).toBe("review-only");
     await act(async () => setup.mockInput.typeText("t"));
     await setup.renderOnce();
-    expect(setup.captureCharFrame()).toContain("›  github-dark-high-contrast");
+    expect(setup.captureCharFrame()).toContain("›  Review only");
 
     await act(async () => setup.mockInput.pressEnter());
     await act(async () => setup.mockInput.pressKey("q"));
@@ -231,7 +272,52 @@ test("shares committed themes across history and repeated review surfaces", asyn
     await act(async () => setup.mockInput.pressKey("q"));
     await setup.renderOnce();
     expect(setup.captureCharFrame()).toContain("Save view preferences?");
-    expect(setup.captureCharFrame()).toContain('+ theme = "github-dark-high-contrast"');
+    expect(setup.captureCharFrame()).toContain('+ theme = "review-only"');
+  } finally {
+    setup.renderer.destroy();
+    await history.controller.close();
+  }
+});
+
+test("seeds the shared catalog from interactive initialization, not static history data", async () => {
+  const history = await createHistoryRoute();
+  history.runtime.customThemes = [
+    {
+      id: "static-only",
+      label: "Static only",
+      accent: "#112233",
+    },
+  ];
+  history.runtime.initialization = {
+    theme: {
+      initialTheme: "session-only",
+      customThemes: [
+        {
+          id: "session-only",
+          label: "Session only",
+          accent: "#abcdef",
+        },
+      ],
+    },
+  };
+  const setup = await testRender(
+    <HunkSessionHost
+      initialRoute={history}
+      initialization={history.runtime.initialization}
+      externalQuitSignal={new AbortController().signal}
+      onQuit={() => undefined}
+    />,
+    { width: 100, height: 20 },
+  );
+  try {
+    await setup.renderOnce();
+    await act(async () => setup.mockInput.typeText("t"));
+    await setup.renderOnce();
+
+    const frame = setup.captureCharFrame();
+    expect(frame).toContain("Session only");
+    expect(frame).not.toContain("Static only");
+    expect(frame).toContain("active");
   } finally {
     setup.renderer.destroy();
     await history.controller.close();
@@ -249,7 +335,11 @@ test("opens an extended history selection as one inclusive comparison", async ()
         files: [createTestDiffFile({ id: "range.ts", path: "range.ts" })],
       });
       bootstrap.extensions = history.runtime.extensionSession.current;
-      return { bootstrap, borrowsExtensions: true };
+      return {
+        bootstrap,
+        initialization: history.runtime.initialization,
+        borrowsExtensions: true,
+      };
     }) as never,
     createReviewRuntime: (() => ({
       hostClient: undefined,
@@ -406,6 +496,9 @@ test("does not start provider planning after shutdown wins the pre-dispatch wind
 
 test("refuses a nested review that returns independent extension authority", async () => {
   const history = await createHistoryRoute();
+  history.runtime.initialization = {
+    theme: { initialTheme: historyCustomTheme.id, customThemes: [historyCustomTheme] },
+  };
   const foreign = createEmptyExtensionLoadResult("/repo");
   const createReviewRuntime = mock(() => {
     throw new Error("nested runtime mounted");
@@ -425,6 +518,7 @@ test("refuses a nested review that returns independent extension authority", asy
             }),
             extensions: foreign,
           },
+          initialization: { theme: { customThemes: [reviewCustomTheme] } },
           borrowsExtensions: false,
         })) as never,
         createReviewRuntime: createReviewRuntime as never,
@@ -441,6 +535,10 @@ test("refuses a nested review that returns independent extension authority", asy
     expect(createReviewRuntime).not.toHaveBeenCalled();
     expect(foreign.registry.eventBusPhase).toBe("closed");
     expect(history.runtime.extensionSession.closing).toBe(false);
+    await act(async () => setup.mockInput.typeText("t"));
+    await setup.renderOnce();
+    expect(setup.captureCharFrame()).toContain("History only");
+    expect(setup.captureCharFrame()).not.toContain("Review only");
   } finally {
     setup.renderer.destroy();
     await history.controller.close();
@@ -699,6 +797,7 @@ test("defers menu quit until cancelled preparation and retirement settle", async
         }),
         extensions: createEmptyExtensionLoadResult("/repo"),
       },
+      initialization: history.runtime.initialization,
       borrowsExtensions: false,
     });
     await settle(setup);
@@ -758,6 +857,7 @@ test("cancels stale preparation, retires its owned registry, and quits once", as
         }),
         extensions: createEmptyExtensionLoadResult("/repo"),
       },
+      initialization: history.runtime.initialization,
       borrowsExtensions: false,
     });
     await act(async () => {

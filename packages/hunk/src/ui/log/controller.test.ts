@@ -43,7 +43,7 @@ function createRuntime(subjects = ["first", "second", "third"], notices: readonl
     providerName: "Test",
     repoRoot: "/repo",
     notices,
-    initialization: { theme: { customThemes: [] } },
+    customThemes: [],
     keybindings: {},
     initialViewPreferences: persistedViewPreferencesFromOptions({}),
     promptSaveViewPreferences: true,

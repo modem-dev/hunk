@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import type { AppBootstrap } from "../core/bootstrap";
+import type { InteractiveSessionInitialization } from "../core/session/initialization";
 import type { TerminalThemeMode } from "../core/theme/detection";
 import type { ExtensionVcsHistoryReviewAction } from "../extension-api/types";
 import { retireExtensionLoadResult } from "../extensions/events";
@@ -19,6 +20,7 @@ export interface EmbeddedHistoryReviewRequest {
 
 export interface EmbeddedHistoryReview {
   bootstrap: AppBootstrap<ExtensionLoadResult>;
+  initialization: InteractiveSessionInitialization;
   /** The history session owns this bootstrap's extension registry. */
   borrowsExtensions: boolean;
 }
@@ -76,6 +78,7 @@ export async function prepareEmbeddedHistoryReview(
   plan.controllingTerminal?.close();
   return {
     bootstrap: plan.bootstrap as AppBootstrap<ExtensionLoadResult>,
+    initialization: plan.initialization,
     borrowsExtensions: plan.bootstrap.extensions?.registry === request.extensionSession?.registry,
   };
 }

@@ -32,7 +32,7 @@ function runtime(commits: HistoryCommit[], maxCount?: number, closeFailure?: Err
     providerName: "Test",
     repoRoot: "/repo",
     notices: [],
-    initialization: { theme: { customThemes: [] } },
+    customThemes: [],
     keybindings: {},
     initialViewPreferences: persistedViewPreferencesFromOptions({}),
     promptSaveViewPreferences: true,

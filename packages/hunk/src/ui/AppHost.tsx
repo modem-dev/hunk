@@ -421,6 +421,7 @@ export function AppHost({
           })
         : undefined;
 
+      activeThemeController.replaceCustomThemes(loaded.initialization.theme.customThemes);
       reviewIdentityRef.current = {
         input: nextBootstrap.input,
         cwd: nextReviewCwd,
@@ -451,6 +452,7 @@ export function AppHost({
       extensionLifecycleEnabled,
       extensionOwnership,
       activeExtensionSession,
+      activeThemeController,
       hostClient,
       launchExperimental,
       launchFast,

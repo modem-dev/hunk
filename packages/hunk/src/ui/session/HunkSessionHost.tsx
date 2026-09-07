@@ -17,7 +17,7 @@ import { parseExtensionReviewDescriptor } from "../../core/reviewDescriptor";
 import type { ExtensionSession } from "../../extensions/session";
 import type { ExtensionLoadResult } from "../../extensions/types";
 import { AppHost } from "../AppHost";
-import type { HistoryRuntime } from "../history/types";
+import type { InteractiveHistoryRuntime } from "../history/types";
 import type { ViewPreferenceQuitScheduler } from "../hooks/useViewPreferenceQuitController";
 import { interactiveLogUsesColor } from "../log/colorPolicy";
 import { LogApp, type LogAppOutcome } from "../log/LogApp";
@@ -28,7 +28,7 @@ import { ThemeController } from "../theme/controller";
 export interface HistorySurfaceRoute {
   kind: "history";
   controller: LogController;
-  runtime: HistoryRuntime;
+  runtime: InteractiveHistoryRuntime;
 }
 
 export interface StandaloneReviewSurfaceRoute {
@@ -72,7 +72,7 @@ function truncateReviewText(value: string, maxBytes: number) {
 
 /** Describe a history selection with bounded metadata shared by every review surface. */
 function historyReviewDescriptor(
-  runtime: HistoryRuntime,
+  runtime: InteractiveHistoryRuntime,
   outcome: Extract<LogAppOutcome, { kind: "open-review" }>,
   action: ExtensionVcsHistoryReviewAction,
 ) {
@@ -306,6 +306,7 @@ export function HunkSessionHost({
         throw new Error("An embedded review cannot replace the owning extension session.");
       }
       const reviewRuntime = createReviewRuntime(plan.bootstrap, startupCwd);
+      themeController.replaceCustomThemes(plan.initialization.theme.customThemes);
       const reviewRoute: ActiveReviewSurfaceRoute = {
         kind: "review",
         instanceId: nextInstanceRef.current++,

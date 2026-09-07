@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import type { NamedCustomThemeConfig } from "../../extension-api/types";
 import type { ThemeSelectorItem } from "../components/chrome/ThemeSelectorDialog";
 import type { ThemeController } from "../theme/controller";
 import { availableThemes, resolveTheme, withTransparentSurfaces } from "../themes";
@@ -11,7 +10,6 @@ interface ThemeSelectorControllerState {
 }
 
 export interface UseThemeSelectorControllerOptions {
-  customThemes?: readonly NamedCustomThemeConfig[];
   onTransientNotice: (text: string) => void;
   themeController: ThemeController;
   transparentBackground: boolean;
@@ -19,12 +17,11 @@ export interface UseThemeSelectorControllerOptions {
 
 /** Drive theme resolution, committed selection, and transient selector previews. */
 export function useThemeSelectorController({
-  customThemes,
   onTransientNotice,
   themeController,
   transparentBackground,
 }: UseThemeSelectorControllerOptions) {
-  const { themeId: committedThemeId } = useSyncExternalStore(
+  const { themeId: committedThemeId, customThemes } = useSyncExternalStore(
     themeController.subscribe,
     themeController.getSnapshot,
   );

@@ -9,6 +9,7 @@ import type {
   ExtensionVcsHistoryRangeSelection,
   ExtensionVcsHistoryReviewAction,
   ExtensionVcsHistoryReviewOptions,
+  NamedCustomThemeConfig,
 } from "../../extension-api/types";
 
 /** Renderer-facing history resources with cursor data and command-owned extension authority. */
@@ -21,7 +22,7 @@ export interface HistoryRuntime {
   startupCwd?: string;
   repoRoot: string;
   notices: readonly string[];
-  initialization: InteractiveSessionInitialization;
+  customThemes: readonly NamedCustomThemeConfig[];
   /** User command overrides resolved by the active interactive surface. */
   keybindings: Readonly<Record<string, UserKeyBinding>>;
   /** Resolved launch preferences retained while history owns the session-wide quit flow. */
@@ -43,4 +44,9 @@ export interface HistoryRuntime {
   /** Replace the current provider cursor for an explicit interactive refresh. */
   reopenSource(signal?: AbortSignal): Promise<VcsHistorySource>;
   close(): Promise<void>;
+}
+
+/** Add launch inputs required only while history participates in an interactive routed session. */
+export interface InteractiveHistoryRuntime extends HistoryRuntime {
+  initialization: InteractiveSessionInitialization;
 }

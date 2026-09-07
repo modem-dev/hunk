@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
-import type { HistoryRuntime } from "../history/types";
+import type { InteractiveHistoryRuntime } from "../history/types";
 import { logSignalExitCode, runInteractiveLog } from "./runInteractiveLog";
 
 describe("interactive log lifecycle", () => {
@@ -20,7 +20,7 @@ describe("interactive log lifecycle", () => {
           events.push("extensions");
         }),
       },
-    } as unknown as HistoryRuntime;
+    } as unknown as InteractiveHistoryRuntime;
 
     await expect(
       runInteractiveLog(runtime, {
@@ -44,7 +44,7 @@ describe("interactive log lifecycle", () => {
           events.push("extensions");
         }),
       },
-    } as unknown as HistoryRuntime;
+    } as unknown as InteractiveHistoryRuntime;
 
     await expect(
       runInteractiveLog(runtime, {

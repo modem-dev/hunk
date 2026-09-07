@@ -25,4 +25,26 @@ describe("ThemeController", () => {
     controller.commitTheme("github-dark-default");
     expect(publications).toBe(1);
   });
+
+  test("publishes catalog replacements without changing the committed identity", () => {
+    const initialThemes = [{ id: "team", accent: "#123456" }];
+    const replacementThemes = [{ id: "team", accent: "#abcdef" }];
+    const controller = new ThemeController({
+      initialTheme: "team",
+      customThemes: initialThemes,
+    });
+    let publications = 0;
+    controller.subscribe(() => {
+      publications += 1;
+    });
+
+    controller.replaceCustomThemes(replacementThemes);
+    controller.replaceCustomThemes(replacementThemes);
+
+    expect(controller.getSnapshot()).toEqual({
+      themeId: "team",
+      customThemes: replacementThemes,
+    });
+    expect(publications).toBe(1);
+  });
 });

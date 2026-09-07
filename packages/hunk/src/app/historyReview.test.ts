@@ -33,12 +33,14 @@ describe("embedded history review bootstrap", () => {
             bootstrap: { extensions: { ...request.extensionSession } },
             cliInput: {},
             controllingTerminal: null,
+            initialization: { theme: { customThemes: [] } },
           };
         }) as never,
       },
     );
 
     expect(result.bootstrap).toBeDefined();
+    expect(result.initialization).toEqual({ theme: { customThemes: [] } });
     expect(captured?.argv).toContain(resolve("invocation", "extensions/provider.ts"));
     expect(captured?.deps).toMatchObject({
       cwd: resolve("invocation"),
@@ -65,6 +67,7 @@ describe("embedded history review bootstrap", () => {
             bootstrap: { extensions: { ...request.extensionSession } },
             cliInput: {},
             controllingTerminal: { close },
+            initialization: { theme: { customThemes: [] } },
           };
         }) as never,
       }),

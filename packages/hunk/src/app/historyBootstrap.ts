@@ -15,6 +15,7 @@ import type {
   ExtensionVcsHistoryRangeSelection,
   ExtensionVcsHistoryReviewAction,
   ExtensionVcsHistoryReviewOptions,
+  NamedCustomThemeConfig,
 } from "../extension-api/types";
 import { sanitizeTerminalLine } from "../lib/terminalText";
 import {
@@ -44,6 +45,8 @@ export interface HistoryBootstrap {
   /** Command-owned extension authority borrowed by embedded reviews. */
   extensionSession: ExtensionSession;
   notices: readonly string[];
+  /** Surface-neutral catalog used by static history rendering. */
+  customThemes: readonly NamedCustomThemeConfig[];
   initialization: InteractiveSessionInitialization;
   /** User command overrides resolved by the active interactive surface. */
   keybindings: Readonly<Record<string, UserKeyBinding>>;
@@ -158,6 +161,7 @@ export async function loadHistoryBootstrap({
     startupCwd: cwd,
     repoRoot,
     extensionSession,
+    customThemes: sessionThemes.themes,
     initialization: createInteractiveSessionInitialization({
       theme: {
         initialTheme: resolved.configured.input.options.theme,

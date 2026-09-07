@@ -66,7 +66,7 @@ export async function runStaticHistory(
   const stdoutIsTTY = Boolean(deps.stdout.isTTY);
   const ascii = input.ascii || deps.env.TERM === "dumb";
   const color = resolveHistoryColor({ mode: input.color, stdoutIsTTY, env: deps.env });
-  const theme = resolveHistoryTheme(input.theme, bootstrap.initialization.theme.customThemes);
+  const theme = resolveHistoryTheme(input.theme, bootstrap.customThemes);
   const terminalColumns = deps.stdout.columns;
   const width = stdoutIsTTY
     ? terminalColumns && terminalColumns > 0

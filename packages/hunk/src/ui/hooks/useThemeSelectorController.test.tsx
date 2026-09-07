@@ -15,6 +15,7 @@ interface ThemeSelectorHarnessOptions extends Omit<
   UseThemeSelectorControllerOptions,
   "themeController"
 > {
+  customThemes?: readonly NamedCustomThemeConfig[];
   initialTheme?: string;
   initialThemeMode?: TerminalThemeMode | null;
 }
@@ -31,8 +32,12 @@ async function renderThemeSelectorController(initial: ThemeSelectorHarnessOption
 
   function Probe() {
     const [options, setOptions] = useState(initial);
-    replaceOptions = setOptions;
+    replaceOptions = (nextOptions) => {
+      themeController.replaceCustomThemes(nextOptions.customThemes ?? []);
+      setOptions(nextOptions);
+    };
     const {
+      customThemes: _customThemes,
       initialTheme: _initialTheme,
       initialThemeMode: _initialThemeMode,
       ...selectorOptions

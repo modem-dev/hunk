@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, mock, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
-import { act, useState } from "react";
+import { act } from "react";
 import { SESSION_BROKER_REGISTRATION_VERSION } from "@hunk/session-broker-core";
 import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
 import type {
@@ -23,6 +23,7 @@ import {
 import { createEmptyExtensionLoadResult } from "../extensions/types";
 import { AGENT_SKILL_COMMAND, AGENT_SKILL_PROMPT } from "./components/chrome/AgentSkillDialog";
 import { App } from "./App";
+import { ThemeController } from "./theme/controller";
 import { availableThemes, resolveTheme } from "./themes";
 
 const { loadAppBootstrap } = await import("../core/changeset/loaders");
@@ -1120,15 +1121,17 @@ describe("App interactions", () => {
     bootstrap.initialTheme = custom.id;
     bootstrap.customThemes = [custom];
     bootstrap.extensions = extensions;
+    const themeController = new ThemeController({
+      initialTheme: custom.id,
+      customThemes: [custom],
+    });
     let replaceCustomThemes!: (themes: AppBootstrap["customThemes"]) => void;
 
     function ThemeEventProbe() {
-      const [currentBootstrap, setCurrentBootstrap] = useState(bootstrap);
-      replaceCustomThemes = (themes) =>
-        setCurrentBootstrap((current) => ({ ...current, customThemes: themes }));
+      replaceCustomThemes = (themes) => themeController.replaceCustomThemes(themes ?? []);
       return (
         <App
-          bootstrap={currentBootstrap}
+          bootstrap={bootstrap}
           onRegisterWorkspaceRefreshRequest={() => () => {}}
           onReloadSession={async () => {
             throw new Error("Theme event test does not reload the session.");
@@ -1143,6 +1146,7 @@ describe("App interactions", () => {
             await write();
             return true;
           }}
+          themeController={themeController}
         />
       );
     }
