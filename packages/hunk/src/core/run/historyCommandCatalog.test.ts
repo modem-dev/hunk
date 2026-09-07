@@ -18,6 +18,7 @@ describe("history command catalog", () => {
     expect(ids).toContain("hunk.app.toggleHelp");
     expect(ids).toContain("hunk.view.openThemeSelector");
     expect(ids).toContain("hunk.history.nextCommit");
+    expect(historyCommandCatalogEntry("hunk.app.quit")?.defaultKeys).toEqual(["q", "ctrl+c"]);
   });
 
   test("publishes every canonical and compatibility name for cross-surface validation", () => {
