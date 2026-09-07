@@ -52,7 +52,6 @@ export interface FileGroupEntry {
 export interface FileDirectoryEntry {
   kind: "directory";
   id: string;
-  path: string;
   label: string;
   /** Directory this expanded row represents, without a trailing slash. */
   path: string;
@@ -290,7 +289,6 @@ export function buildTreeSidebarEntries(files: readonly SidebarFileSource[]): Si
         id: `directory:${fileIndex}:${depth}:${directoryPath}`,
         path: directoryPath,
         label: sidebarDirectoryLabel(segment),
-        path: directoryPath,
         depth,
         descendantFileCount: 0,
       };

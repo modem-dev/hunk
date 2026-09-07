@@ -102,6 +102,8 @@ describe("PTY external editor positioning", () => {
       await session.press("e");
       await harness.waitForSnapshot(session, () => calls().length >= 2, 10_000);
       expect(calls()[1]).toEqual(["+20", join(root, "alpha.txt")]);
+      // The editor records its arguments before the session restores and repaints the TUI.
+      await session.waitForText("alpha.txt");
       const headerLines = session
         .getTerminalData()
         .lines.map((line) => line.spans.map((span) => span.text).join(""));

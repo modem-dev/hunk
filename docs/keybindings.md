@@ -61,9 +61,10 @@ Quitting the opened review returns to the retained history selection and viewpor
 an ordered provider-owned parent; they do not navigate the history selection to that parent.
 
 In plain working-tree reviews, **Space** stages the selected file's remaining unstaged changes,
-or unstages it when fully staged. Folder rows in the files pane are selectable too: Space, double-click,
+or unstages it when fully staged. Folder rows in the files pane are selectable too: Space
 and the clickable action beside the stream tabs apply to the files shown under that folder — nested files
 in the wide tree projection, or only the files listed under that header in the compact grouped projection.
+Clicking a wide-tree folder selects it and collapses or expands it; double-clicking never stages a folder.
 If any of those files still have unstaged changes, Space stages them; otherwise it unstages the fully staged ones.
 File-row double-click and the clickable action beside the stream tabs do the same for a selected file.
 The sidebar shows Git-style status columns: green index changes and red worktree changes,

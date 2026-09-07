@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { createTestWorkingTreeRepo, runTestGit } from "../../../../test/helpers/working-tree";
 import { loadAppBootstrap } from "../core/changeset/loaders";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";
-import { AppHost } from "./AppHost";
+import { TestAppHost as AppHost } from "../../../../test/helpers/app-host";
 import { loadStartupExtensions } from "../extensions/startup";
 
 setDefaultTimeout(30_000);

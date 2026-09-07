@@ -154,7 +154,9 @@ export function FileDirectoryRow({
         }}
       >
         <text fg={theme.muted}>{collapsed ? "› " : "⌄ "}</text>
-        <text fg={selected ? theme.text : theme.muted}>{padText(fitText(entry.label, labelWidth), labelWidth)}</text>
+        <text fg={selected ? theme.text : theme.muted}>
+          {padText(fitText(entry.label, labelWidth), labelWidth)}
+        </text>
         {countText && (
           <box
             style={{

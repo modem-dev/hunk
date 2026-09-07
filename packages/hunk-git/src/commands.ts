@@ -51,7 +51,7 @@ export interface GitColorMovedOptions {
 }
 
 /** Append Git pathspec arguments only when the caller requested them. */
-function appendGitPathspecs(args: string[], pathspecs?: string[]) {
+export function appendGitPathspecs(args: string[], pathspecs?: string[]) {
   if (!pathspecs || pathspecs.length === 0) {
     return;
   }

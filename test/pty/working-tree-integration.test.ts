@@ -118,7 +118,7 @@ describe("PTY working-tree staging", () => {
     }
   });
 
-  test("Space on a selected folder stages the nested files shown under it", async () => {
+  test("folder clicks toggle collapse without staging and Space stages and unstages nested files", async () => {
     const root = createTestWorkingTreeRepo();
     roots.push(root);
     mkdirSync(join(root, "src", "nested"), { recursive: true });
@@ -146,14 +146,18 @@ describe("PTY working-tree staging", () => {
       const click = `\x1b[<0;${col};${row + 1}M\x1b[<0;${col};${row + 1}m`;
       session.writeRaw(click);
       await session.waitForText("Stage folder");
+      await session.waitForText("2 files");
+      expect(runTestGit(root, "diff", "--cached", "--name-only")).toBe("");
+      session.writeRaw(click + click);
+      await session.waitForText("2 files");
+      expect(runTestGit(root, "diff", "--cached", "--name-only")).toBe("");
       await session.press("space");
-      await harness.waitForSnapshot(
-        session,
-        (text) => /A\s+one\.ts/.test(text) && /A\s+two\.ts/.test(text),
-        10_000,
-      );
+      await session.waitForText("Unstage folder");
       expect(runTestGit(root, "show", ":src/one.ts")).toBe("one\n");
       expect(runTestGit(root, "show", ":src/nested/two.ts")).toBe("two\n");
+      await session.press("space");
+      await session.waitForText("Stage folder");
+      expect(runTestGit(root, "diff", "--cached", "--name-only")).toBe("");
     } finally {
       session.close();
     }
