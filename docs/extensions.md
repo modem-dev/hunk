@@ -544,7 +544,7 @@ The working-tree operation may implement `stageFile(input, file, ctx)` and
 `unstageFile(input, file, ctx)`. Revalidate the supplied attestation and exact path before writing;
 unstaging must leave worktree contents unchanged. Throw `HunkExtensionUserError` on refusal or
 failure. Hunk tracks started mutations through shutdown, blocks repeated actions until refresh,
-and reloads authoritative state even after a failed mutation.
+and reloads authoritative state even after a failed mutation; extension workspace writes are refused while that Git action is active.
 
 API v20 also adds optional `stageHunk(input, file, hunk, ctx)` and
 `unstageHunk(input, file, hunk, ctx)`. `hunk` is the existing `ExtensionDiffHunk` summary.
@@ -1932,7 +1932,7 @@ path.
 
 `canWriteDocument` checks the review and file policy without prompting or
 inspecting the filesystem. A later `writeDocument` can still refuse if the file
-has moved or become unsafe.
+has moved or become unsafe, or a Git mutation owns the host write boundary.
 
 `writeDocument` verifies the target, asks for consent through the attributed
 `ctx.dialogs` queue, then verifies it again before writing. The second check
@@ -1944,7 +1944,7 @@ reconciliation of the review then active, and the write promise may settle
 before that reload finishes.
 
 A declined prompt returns `cancelled`, an ineligible or unsafe target returns
-`unavailable`, and an attempted write failure returns `failed` with a
+`unavailable` (also returned while a Git action is active or Hunk is shutting down), and an attempted write failure returns `failed` with a
 displayable `detail`. Malformed requests reject the promise.
 
 ### `hunk.transformChangeset(fn)`

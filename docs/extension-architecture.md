@@ -338,13 +338,13 @@ none — which is why the visible menu list is derived from the menus record
 ## VCS adapters
 
 Plain working-tree reviews additionally carry an optional provider-owned status inventory beside
-the active diff changeset. `packages/hunk/src/extensions/default/vcs/git/workingTree.ts` derives both
+the active diff changeset. `packages/hunk-git/src/workingTree.ts` derives both
 index/worktree status and attestations, and implements the public file-staging methods.
-`packages/hunk/src/extensions/default/vcs/git/hunkStaging.ts` selects attested raw Git hunks for
+`packages/hunk-git/src/hunkStaging.ts` selects attested raw Git hunks for
 index-only writes; sanitized render text is never applied. The conversion boundary preserves these
 optional methods and normalizes their errors. `packages/hunk/src/ui/hooks/useWorkingTreeActions.ts`
 binds status paths to the existing review navigation and AppHost's tracked mutation/serialized
-refresh lifecycle. The bundled sidebar consumes `ExtensionPaneProps.workingTree` through the public
+refresh lifecycle, excluding extension writes while a Git action is active. The bundled sidebar consumes `ExtensionPaneProps.workingTree` through the public
 pane contract; inactive-side files never become fabricated review-document entries. Stream tabs
 replace the active canonical diff, not the sidebar inventory. Browser/session exports remain
 read-only with respect to Git state. The same leased mutation controller owns exact-file

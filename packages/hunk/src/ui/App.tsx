@@ -1060,8 +1060,8 @@ export function App({
   const workingTree = useWorkingTreeActions({
     bootstrap,
     selectedFile,
-    selectedHunkIndex,
-    getSelectedFileId,
+    getSelection: review.getSelection,
+    isFilesPaneFocused,
     filter: review.filter,
     reviewFiles: filteredFiles,
     filesPaneFocused,
@@ -1177,8 +1177,15 @@ export function App({
         },
         discardSelectedFile: workingTree.discardSelected,
         stashSelectedFile: workingTree.stashSelected,
-        canToggleFileStaged: !hunkStagingActive && workingTree.canToggleSelected,
-        canToggleHunkStaged: hunkStagingActive,
+        get canToggleFileStaged() {
+          return (
+            !(getHunkActionFocused() && workingTree.canToggleSelectedHunk) &&
+            workingTree.canToggleSelected
+          );
+        },
+        get canToggleHunkStaged() {
+          return getHunkActionFocused() && workingTree.canToggleSelectedHunk;
+        },
         toggleHunkStaged: workingTree.toggleSelectedHunk,
         canSwitchStagedView: Boolean(workingTree.pane),
         toggleFileStaged: workingTree.toggleSelected,

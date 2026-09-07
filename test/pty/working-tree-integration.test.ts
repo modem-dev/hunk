@@ -48,6 +48,46 @@ async function focusFilesPane(session: Session) {
 }
 
 describe("PTY working-tree staging", () => {
+  test("raw navigation bursts stage the latest file and hunk without an intervening frame", async () => {
+    const root = createFixture();
+    const original = Array.from({ length: 40 }, (_, index) => `line ${index + 1}\n`).join("");
+    writeFileSync(join(root, "alpha.txt"), original);
+    runTestGit(root, "add", "alpha.txt");
+    runTestGit(root, "commit", "--only", "-m", "Long alpha", "--", "alpha.txt");
+    writeFileSync(
+      join(root, "alpha.txt"),
+      original.replace("line 2\n", "first change\n").replace("line 35\n", "second change\n"),
+    );
+    writeFileSync(join(root, "beta.txt"), "unstaged beta\n");
+    const session = await harness.launchHunk({
+      cwd: root,
+      args: ["diff", "--sidebar", "--no-extensions", "--mode", "stack"],
+      cols: 150,
+      rows: 30,
+    });
+    try {
+      await session.waitForText("first change", { timeout: 15_000 });
+      await harness.ensureKeyboardIsLive(session);
+      session.writeRaw(",. ");
+      await session.waitForText("Staged beta.txt.");
+      expect(runTestGit(root, "show", ":beta.txt")).toBe("unstaged beta\n");
+      expect(runTestGit(root, "show", ":alpha.txt")).toBe(original);
+      await session.press("tab");
+      await session.waitForText("first change");
+      await session.press(",");
+      session.writeRaw("] ");
+      await session.waitForText("Staged hunk 2 in alpha.txt.");
+      expect(runTestGit(root, "show", ":alpha.txt")).toBe(
+        original.replace("line 35\n", "second change\n"),
+      );
+      session.writeRaw(", ");
+      await session.waitForText("Staged alpha.txt.");
+      expect(runTestGit(root, "diff", "--", "alpha.txt")).toBe("");
+    } finally {
+      session.close();
+    }
+  });
+
   test("file quick actions yield to built-ins outside the visible file panel's scope", async () => {
     const root = createFixture();
     const before = readFileSync(join(root, "alpha.txt"), "utf8");

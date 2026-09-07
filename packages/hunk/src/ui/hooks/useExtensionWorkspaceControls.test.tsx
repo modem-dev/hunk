@@ -491,7 +491,11 @@ describe("useExtensionWorkspaceControls writes", () => {
           .controller()
           .createWorkspaceControls("probe")
           .writeDocument({ fileId: "alpha", text: "replacement" }),
-      ).resolves.toEqual(EXPIRED);
+      ).resolves.toEqual({
+        ok: false,
+        reason: "unavailable",
+        detail: "Another workspace operation is active or Hunk is shutting down.",
+      });
       expect(runnerCalls).toBe(1);
       expect(writes).toBe(0);
     } finally {

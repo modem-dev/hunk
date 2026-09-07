@@ -2,4 +2,4 @@
 "hunkdiff": patch
 ---
 
-With the files pane focused on a file, Enter focuses that file's review. Esc returns to the files pane on the current file.
+Use Enter to focus the selected file’s review from the files pane and Escape to return to the files pane on the current file.

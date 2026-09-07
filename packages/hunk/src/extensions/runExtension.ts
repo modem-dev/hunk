@@ -493,7 +493,9 @@ export function toInternalVcsAdapter(
   }
 
   const workingTree = isPlainObject(operations)
-    ? (operations as { "working-tree-diff"?: ExtensionVcsWorkingTreeOperation })["working-tree-diff"]
+    ? (operations as { "working-tree-diff"?: ExtensionVcsWorkingTreeOperation })[
+        "working-tree-diff"
+      ]
     : undefined;
   const internalWorkingTree = internalOperations["working-tree-diff"] as
     | (VcsOperation<VcsReviewInput> &

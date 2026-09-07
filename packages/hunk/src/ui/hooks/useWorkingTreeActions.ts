@@ -57,8 +57,8 @@ export function hasWorkingTreeInventory(bootstrap: AppBootstrap) {
 export function useWorkingTreeActions({
   bootstrap,
   selectedFile,
-  selectedHunkIndex,
-  getSelectedFileId,
+  getSelection,
+  isFilesPaneFocused,
   filter,
   reviewFiles,
   filesPaneFocused,
@@ -73,8 +73,8 @@ export function useWorkingTreeActions({
 }: {
   bootstrap: AppBootstrap;
   selectedFile: DiffFile | undefined;
-  selectedHunkIndex: number;
-  getSelectedFileId: () => string | null;
+  getSelection: () => { fileId: string | null; hunkIndex: number | null };
+  isFilesPaneFocused: () => boolean;
   filter: string;
   reviewFiles: readonly SidebarFileSource[];
   filesPaneFocused: boolean;
@@ -152,7 +152,7 @@ export function useWorkingTreeActions({
   } = selectionAt(selectedIndex);
   /** Read the sidebar cursor after all preceding navigation in this input burst. */
   const liveCursor = () => {
-    const fileId = getSelectedFileId();
+    const { fileId } = getSelection();
     if (fileId !== cursorReviewFileIdRef.current) {
       const file = bootstrap.changeset.files.find((file) => file.id === fileId);
       activeCursorRef.current = file ? { kind: "file", id: file.path } : null;
@@ -237,7 +237,7 @@ export function useWorkingTreeActions({
         : undefined;
       if (file) {
         selectReviewFile(file.id, { alignFileHeaderTop: true });
-        cursorReviewFileIdRef.current = getSelectedFileId();
+        cursorReviewFileIdRef.current = getSelection().fileId;
         return;
       }
       pendingCursorRef.current = { cursor, changeset: bootstrap.changeset };
@@ -249,7 +249,7 @@ export function useWorkingTreeActions({
       focusFiles,
       bootstrap.changeset,
       selectReviewFile,
-      getSelectedFileId,
+      getSelection,
       switchView,
       staged,
     ],
@@ -583,7 +583,13 @@ export function useWorkingTreeActions({
         ? files.filter((file) => file.path === selectedPath)
         : [],
   );
-  const canToggleSelectedTargets = selectedToggle.files.length > 0;
+  /** Read file staging targets from the latest pane focus and semantic selection. */
+  const liveStagingFiles = () => {
+    if (isFilesPaneFocused()) return liveSelection().statusFiles;
+    const { fileId } = getSelection();
+    const reviewed = bootstrap.changeset.files.find((file) => file.id === fileId);
+    return files.filter((file) => file.path === reviewed?.path);
+  };
 
   return {
     prompt: promptState?.lease.isLive() ? promptState : null,
@@ -607,20 +613,31 @@ export function useWorkingTreeActions({
     selectedIsFolder: Boolean(filesPaneFocused && selectedIsFolder),
     isSelectedFolder: () => liveSelection().folder,
     selectedWillStage: selectedToggle.stage,
-    canToggleSelected: enabled && canToggleSelectedTargets,
-    canToggleSelectedHunk: enabled && canToggleHunk(selectedFile?.id, selectedHunkIndex),
+    get canToggleSelected() {
+      return enabled && stagingTargets(liveStagingFiles()).files.length > 0;
+    },
+    get canToggleSelectedHunk() {
+      const { fileId, hunkIndex } = getSelection();
+      return enabled && hunkIndex !== null && canToggleHunk(fileId ?? undefined, hunkIndex);
+    },
     canToggleHunk,
     toggleHunk,
     toggleSelectedHunk: () => {
-      if (selectedFile) toggleHunk(selectedFile.id, selectedHunkIndex);
+      const { fileId, hunkIndex } = getSelection();
+      if (fileId && hunkIndex !== null) toggleHunk(fileId, hunkIndex);
     },
     toggleSelected: () => {
       if (busyRef.current) return;
-      if (filesPaneFocused && selectedEntryId) {
-        toggleEntry(selectedEntryId);
+      if (isFilesPaneFocused()) {
+        const entryId = sidebarEntryIdAtIndex(
+          entries,
+          sidebarIndexFromCursor(entries, liveCursor()),
+        );
+        if (entryId) toggleEntry(entryId);
         return;
       }
-      if (selectedPath) toggleStaged(selectedPath);
+      const file = liveStagingFiles()[0];
+      if (file) toggleStaged(file.path);
     },
     switchView: (next: boolean) => {
       void switchView(next);

@@ -218,7 +218,7 @@ export function AppHost({
   ]);
 
   /** Start one irreversible write atomically with host tracking, unless quit already won. */
-  const runWorkspaceWrite = useCallback<WorkspaceWriteRunner>(async (write) => {
+  const trackWorkspaceWrite = useCallback<WorkspaceWriteRunner>(async (write) => {
     if (quitRequestedRef.current) return false;
     const pending = write();
     pendingWorkspaceWritesRef.current.add(pending);
@@ -230,18 +230,27 @@ export function AppHost({
     }
   }, []);
 
+  /** Refuse extension writes while a Git action owns the write-and-refresh boundary. */
+  const runWorkspaceWrite = useCallback<WorkspaceWriteRunner>(
+    async (write) => {
+      if (vcsMutationPendingRef.current) return false;
+      return trackWorkspaceWrite(write);
+    },
+    [trackWorkspaceWrite],
+  );
+
   /** Hold one index-changing action through its refresh, including across App remounts. */
   const runVcsMutation = useCallback<WorkspaceWriteRunner>(
     async (write) => {
       if (vcsMutationPendingRef.current || pendingWorkspaceWritesRef.current.size > 0) return false;
       vcsMutationPendingRef.current = true;
       try {
-        return await runWorkspaceWrite(write);
+        return await trackWorkspaceWrite(write);
       } finally {
         vcsMutationPendingRef.current = false;
       }
     },
-    [runWorkspaceWrite],
+    [trackWorkspaceWrite],
   );
 
   const performReloadSession = useCallback(

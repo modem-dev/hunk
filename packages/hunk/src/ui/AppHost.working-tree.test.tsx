@@ -131,6 +131,74 @@ afterEach(async () => {
 });
 
 describe("working-tree stream actions", () => {
+  test.each([". ", ",j "])("stages the latest file in one input burst %s", async (keys) => {
+    const root = await createReview({
+      prepare: (root) => writeFileSync(join(root, "beta.txt"), "unstaged beta\n"),
+    });
+    await pressTestBurst(keys);
+    await waitForReview(() => setup!.captureCharFrame().includes("Staged beta.txt."));
+    expect(runTestGit(root, "show", ":alpha.txt")).toBe("one\ntwo\nthree\n");
+    expect(runTestGit(root, "show", ":beta.txt")).toBe("unstaged beta\n");
+  });
+
+  test.each([150, 220])(
+    "stages the latest folder in one input burst at width %i",
+    async (width) => {
+      const root = await createReview({
+        width,
+        prepare: (root) => {
+          writeFileSync(join(root, "beta.txt"), "unstaged beta\n");
+          mkdirSync(join(root, "src"), { recursive: true });
+          writeFileSync(join(root, "src", "one.ts"), "one\n");
+          writeFileSync(join(root, "src", "two.ts"), "two\n");
+        },
+      });
+      await pressTestBurst(",jj ");
+      await waitForReview(() => setup!.captureCharFrame().includes("Staged 2 files in src/."));
+      expect(runTestGit(root, "diff", "--cached", "--name-only").trim().split("\n")).toEqual([
+        "beta.txt",
+        "src/one.ts",
+        "src/two.ts",
+      ]);
+      expect(runTestGit(root, "show", ":alpha.txt")).toBe("one\ntwo\nthree\n");
+    },
+  );
+
+  test.each([false, true])(
+    "uses live hunk selection for a staging burst, staged=%s",
+    async (staged) => {
+      const original = Array.from({ length: 40 }, (_, index) => `line ${index + 1}\n`).join("");
+      const changed = original
+        .replace("line 2\n", "first change\n")
+        .replace("line 35\n", "second change\n");
+      const root = await createReview({
+        staged,
+        prepare: (root) => {
+          writeFileSync(join(root, "alpha.txt"), original);
+          runTestGit(root, "add", "alpha.txt");
+          runTestGit(root, "commit", "--only", "-m", "Long alpha", "--", "alpha.txt");
+          writeFileSync(join(root, "alpha.txt"), changed);
+          if (staged) runTestGit(root, "add", "alpha.txt");
+        },
+      });
+      await pressTestBurst("] ");
+      await waitForReview(() =>
+        setup!
+          .captureCharFrame()
+          .includes(`${staged ? "Unstaged" : "Staged"} hunk 2 in alpha.txt.`),
+      );
+      expect(runTestGit(root, "show", ":alpha.txt")).toBe(
+        staged
+          ? original.replace("line 2\n", "first change\n")
+          : original.replace("line 35\n", "second change\n"),
+      );
+      expect(readFileSync(join(root, "alpha.txt"), "utf8")).toBe(changed);
+      await pressTestBurst(", ");
+      await waitForReview(() => setup!.captureCharFrame().includes("Staged alpha.txt."));
+      expect(runTestGit(root, "show", ":alpha.txt")).toBe(changed);
+    },
+  );
+
   test.each([
     [",d", "alpha.txt"],
     [".d", "beta.txt"],
