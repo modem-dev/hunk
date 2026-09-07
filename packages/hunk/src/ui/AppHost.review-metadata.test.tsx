@@ -149,10 +149,11 @@ async function flushUntil(
   predicate: () => boolean,
   description: string,
 ) {
-  for (let attempt = 0; attempt < 30 && !predicate(); attempt++) {
+  const deadline = Date.now() + 5_000;
+  while (!predicate() && Date.now() < deadline) {
     await act(async () => {
       await setup.renderOnce();
-      await Promise.resolve();
+      await Bun.sleep(10);
       await setup.renderOnce();
     });
   }
