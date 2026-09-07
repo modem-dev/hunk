@@ -70,6 +70,23 @@ describe("open in editor helpers", () => {
     });
   });
 
+  test.each([
+    ["micro", "micro", []],
+    ["micro -readonly true", "micro", ["-readonly", "true"]],
+    [
+      '"C:\\Program Files\\Micro\\micro.exe" -readonly true',
+      "C:\\Program Files\\Micro\\micro.exe",
+      ["-readonly", "true"],
+    ],
+  ])("builds micro line jumps for %s", (editor, command, flags) => {
+    const filePath = join("project", "file with spaces.ts");
+    expect(buildEditorCommand({ editor, filePath, line: 12 })).toEqual({
+      command,
+      args: [...flags, "+12", filePath],
+    });
+    expect(shouldSuspendForEditor(editor)).toBe(true);
+  });
+
   test("preserves editor flags before appending the target file", () => {
     expect(
       buildEditorCommand({

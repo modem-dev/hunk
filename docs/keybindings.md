@@ -81,7 +81,7 @@ uses the active hunk's first changed line, not its leading context. From the sta
 that index line through further unstaged insertions, replacements, and deletions to the current
 working-tree location. Missing files, stale source state, and text-converted lines produce
 a notice instead of a guessed location. Supported line-jump syntax covers vi/vim/nvim,
-code/code-insiders/cursor, and hx; unknown editor syntax is refused instead of opening at file start.
+code/code-insiders/cursor, hx, and micro; unknown editor syntax is refused instead of opening at file start.
 **d** opens discard choices for the selected file or folder: Enter or **x** discards all its changes,
 **u** discards only unstaged changes when both sides have changes, and Escape cancels.
 **s** opens a selected-file or selected-folder stash message input; Enter stashes and Escape cancels. The stash

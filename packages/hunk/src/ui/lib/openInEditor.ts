@@ -96,7 +96,7 @@ function editorProgram(editor: string) {
     .toLowerCase();
 }
 
-const VI_STYLE_EDITORS = ["vim", "nvim", "vi"];
+const PLUS_LINE_EDITORS = ["vim", "nvim", "vi", "micro"];
 const CODE_STYLE_EDITORS = ["code", "code-insiders", "cursor"];
 
 /** Suspend for terminal editors. */
@@ -122,7 +122,7 @@ export function buildEditorCommand({
   const [command = "", ...editorArgs] = splitEditorCommand(editor);
   const program = editorProgram(editor);
 
-  if (VI_STYLE_EDITORS.includes(program)) {
+  if (PLUS_LINE_EDITORS.includes(program)) {
     return { command, args: [...editorArgs, `+${line}`, filePath] };
   }
 
@@ -181,7 +181,7 @@ export function openSelectedFileInEditor({
   });
 
   if (!command)
-    return "Cannot position this editor at a source line. Set $EDITOR to vi, vim, nvim, code, code-insiders, cursor, or hx.";
+    return "Cannot position this editor at a source line. Set $EDITOR to vi, vim, nvim, code, code-insiders, cursor, hx, or micro.";
 
   const shouldSuspend = shouldSuspendForEditor(editor);
   if (shouldSuspend) {
