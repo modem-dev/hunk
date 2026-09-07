@@ -36,21 +36,21 @@ describe("PTY current line", () => {
       await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
       await session.waitIdle({ timeout: 300 });
 
-      expect(await measureKeyScroll(session, "j", 12)).toBe(0);
+      expect(await measureKeyScroll(session, "j", 12, "paint")).toBe(0);
 
       let stepsBeforeScrolling = 1;
       let firstScroll = 0;
       for (let step = 0; step < 40 && firstScroll === 0; step += 1) {
-        firstScroll = await measureKeyScroll(session, "j", 12);
+        firstScroll = await measureKeyScroll(session, "j", 12, "paint");
         stepsBeforeScrolling += 1;
       }
 
       expect(stepsBeforeScrolling).toBeGreaterThan(5);
       expect(firstScroll).toBeGreaterThan(0);
 
-      expect(await measureKeyScroll(session, "j", 12)).toBe(1);
-      expect(await measureKeyScroll(session, "j", 12)).toBe(1);
-      expect(await measureKeyScroll(session, "k", 12)).toBe(0);
+      expect(await measureKeyScroll(session, "j", 12, "paint")).toBe(1);
+      expect(await measureKeyScroll(session, "j", 12, "paint")).toBe(1);
+      expect(await measureKeyScroll(session, "k", 12, "paint")).toBe(0);
     } finally {
       session.close();
     }
@@ -232,7 +232,7 @@ describe("PTY current line", () => {
 
       let scrolled = 0;
       for (let step = 0; step < 40 && scrolled === 0; step += 1) {
-        scrolled = await measureKeyScroll(session, "j", 12);
+        scrolled = await measureKeyScroll(session, "j", 12, "paint");
       }
       expect(scrolled).toBeGreaterThan(0);
 
@@ -335,7 +335,7 @@ describe("PTY current line", () => {
       await session.press("space");
       await session.waitIdle({ timeout: 400 });
 
-      expect(await measureKeyScroll(session, "j", 12)).toBeLessThanOrEqual(1);
+      expect(await measureKeyScroll(session, "j", 12, "paint")).toBeLessThanOrEqual(1);
     } finally {
       session.close();
     }
