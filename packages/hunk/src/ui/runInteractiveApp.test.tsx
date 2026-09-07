@@ -30,7 +30,7 @@ test("retires extensions and closes the controlling terminal when review runtime
     runInteractiveApp(
       {
         bootstrap: bootstrap as never,
-        theme: { customThemes: [] },
+        initialization: { theme: { customThemes: [] } },
         controllingTerminal: {
           stdin: { isTTY: true } as never,
           close,
@@ -74,7 +74,11 @@ test("stops the broker and retires extensions before exceptional renderer teardo
 
   await expect(
     runInteractiveApp(
-      { bootstrap: bootstrap as never, controllingTerminal: null, theme: { customThemes: [] } },
+      {
+        bootstrap: bootstrap as never,
+        controllingTerminal: null,
+        initialization: { theme: { customThemes: [] } },
+      },
       {
         createReviewRuntime: (() => ({
           hostClient: undefined,
@@ -120,7 +124,11 @@ test("retries broker cleanup before teardown when the exceptional stop attempt f
 
   await expect(
     runInteractiveApp(
-      { bootstrap: bootstrap as never, controllingTerminal: null, theme: { customThemes: [] } },
+      {
+        bootstrap: bootstrap as never,
+        controllingTerminal: null,
+        initialization: { theme: { customThemes: [] } },
+      },
       {
         createReviewRuntime: (() => ({
           hostClient: undefined,

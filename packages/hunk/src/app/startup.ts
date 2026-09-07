@@ -30,7 +30,7 @@ import { parseCli } from "./cli";
 import { resolveSessionSelectorBoundary } from "./sessionSelector";
 import type { VcsCatalog } from "../core/vcs/types";
 import type { ExtensionReviewDescriptor } from "../extension-api/types";
-import type { SessionThemeInitialization } from "../core/theme/initialization";
+import type { InteractiveSessionInitialization } from "../core/session/initialization";
 
 /**
  * Load the bundled VCS catalog, memoized per call to `prepareStartupPlan`.
@@ -108,7 +108,7 @@ export type StartupPlan =
       bootstrap: AppBootstrap;
       cliInput: CliInput;
       controllingTerminal: ControllingTerminal | null;
-      theme: SessionThemeInitialization;
+      initialization: InteractiveSessionInitialization;
     };
 
 function isCapturedPagerHost(env: NodeJS.ProcessEnv) {
@@ -644,7 +644,7 @@ export async function prepareStartupPlan(
     input: resolvedInput,
     sessionThemes,
     sessionVcs,
-    theme,
+    initialization,
   } = preparedSession;
   cliInput = resolvedInput;
   if (delegatedReview) bootstrap.review = delegatedReview;
@@ -696,6 +696,6 @@ export async function prepareStartupPlan(
     bootstrap,
     cliInput,
     controllingTerminal,
-    theme,
+    initialization,
   };
 }

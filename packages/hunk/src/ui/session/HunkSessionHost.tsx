@@ -11,7 +11,7 @@ import {
 } from "../../app/session/reviewRuntime";
 import type { StartupNotice } from "../../core/process/startupNotice";
 import type { AppBootstrap } from "../../core/bootstrap";
-import type { SessionThemeInitialization } from "../../core/theme/initialization";
+import type { InteractiveSessionInitialization } from "../../core/session/initialization";
 import type { ExtensionVcsHistoryReviewAction } from "../../extension-api/types";
 import { parseExtensionReviewDescriptor } from "../../core/reviewDescriptor";
 import type { ExtensionSession } from "../../extensions/session";
@@ -125,14 +125,14 @@ function historyReviewDescriptor(
  */
 export function HunkSessionHost({
   initialRoute,
-  theme,
+  initialization,
   externalQuitSignal,
   onQuit,
   startupNoticeResolver,
   deps = {},
 }: {
   initialRoute: HunkSurfaceRoute;
-  theme: SessionThemeInitialization;
+  initialization: InteractiveSessionInitialization;
   externalQuitSignal: AbortSignal;
   onQuit: (exitCode?: number) => void;
   startupNoticeResolver?: () => Promise<StartupNotice | null>;
@@ -144,8 +144,8 @@ export function HunkSessionHost({
   const [themeController] = useState(
     () =>
       new ThemeController({
-        ...theme,
-        initialThemeMode: theme.initialThemeMode ?? renderer.themeMode,
+        ...initialization.theme,
+        initialThemeMode: initialization.theme.initialThemeMode ?? renderer.themeMode,
       }),
   );
   const [route, setRoute] = useState<ActiveSurfaceRoute>(() =>

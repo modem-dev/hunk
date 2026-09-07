@@ -108,6 +108,9 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
   serialization, extension adoption, and broker/content/React commit ordering. `App` owns review
   interaction, navigation, layout, theme, filtering, and pane coordination. Pane and diff modules
   own rendering and geometry.
+- `InteractiveSessionInitialization` in `packages/hunk/src/core/session/initialization.ts` carries
+  finalized launch inputs whose lifetime spans routed surfaces. Add a concern there only when
+  `HunkSessionHost` owns that cross-surface lifetime; keep surface-local bootstrap data out.
 - Confirmation prompts with a small set of choices should reuse `ConfirmDialog` (body rows plus a clickable key-legend action row) instead of composing `ModalFrame` with a hand-rolled footer; keyboard handling for its actions stays in `useAppKeyboardShortcuts`.
 - Extend existing components or add focused components rather than growing `App` into a monolith.
 - Shared formatting, ids, and small derivations belong in helpers, not repeated inline.

@@ -6,9 +6,9 @@ import {
 } from "../core/run/config";
 import { collectSessionCustomThemes } from "../core/theme/customThemes";
 import {
-  createSessionThemeInitialization,
-  type SessionThemeInitialization,
-} from "../core/theme/initialization";
+  createInteractiveSessionInitialization,
+  type InteractiveSessionInitialization,
+} from "../core/session/initialization";
 import type {
   ExtensionVcsHistoryCommit,
   ExtensionVcsHistoryRangeReviewAction,
@@ -44,7 +44,7 @@ export interface HistoryBootstrap {
   /** Command-owned extension authority borrowed by embedded reviews. */
   extensionSession: ExtensionSession;
   notices: readonly string[];
-  theme: SessionThemeInitialization;
+  initialization: InteractiveSessionInitialization;
   /** User command overrides resolved by the active interactive surface. */
   keybindings: Readonly<Record<string, UserKeyBinding>>;
   /** Launch baseline retained so the owning history surface can persist theme changes on quit. */
@@ -158,9 +158,11 @@ export async function loadHistoryBootstrap({
     startupCwd: cwd,
     repoRoot,
     extensionSession,
-    theme: createSessionThemeInitialization({
-      initialTheme: resolved.configured.input.options.theme,
-      customThemes: sessionThemes.themes,
+    initialization: createInteractiveSessionInitialization({
+      theme: {
+        initialTheme: resolved.configured.input.options.theme,
+        customThemes: sessionThemes.themes,
+      },
     }),
     keybindings: resolved.configured.keybindings,
     initialViewPreferences: persistedViewPreferencesFromOptions(resolved.configured.input.options),

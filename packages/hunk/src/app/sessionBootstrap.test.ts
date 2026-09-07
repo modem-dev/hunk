@@ -63,13 +63,15 @@ describe("loadConfiguredSessionBootstrap", () => {
     expect(result.bootstrap.changeset.title).toBe("after");
     expect(result.bootstrap.extensions).toBe(extensions);
     expect(result.bootstrap.initialThemeMode).toBe("dark");
-    expect(result.theme).toEqual({
-      initialTheme: "config-theme",
-      initialThemeMode: "dark",
-      customThemes: [
-        { id: "config-theme", accent: "#654321" },
-        { id: "extension-theme", accent: "#123456" },
-      ],
+    expect(result.initialization).toEqual({
+      theme: {
+        initialTheme: "config-theme",
+        initialThemeMode: "dark",
+        customThemes: [
+          { id: "config-theme", accent: "#654321" },
+          { id: "extension-theme", accent: "#123456" },
+        ],
+      },
     });
     expect(result.bootstrap.keybindings).toEqual({ "hunk.review.nextHunk": "]" });
     expect(result.bootstrap.viewPreferencesConfigPath).toBe("/tmp/hunk-config.toml");
