@@ -1990,7 +1990,11 @@ Starting with extension API v21, `layout_changed` adds `canonicalMode` and
 `canonicalLayout`. They emit `"auto"`, `"split"`, or `"unified"` for the mode and
 `"split"` or `"unified"` for its resolved layout. The original `mode` and `layout`
 fields remain available for compatibility and continue to report `"stack"`
-where their canonical counterparts report `"unified"`.
+where their canonical counterparts report `"unified"`. Public extension layout
+types accept both `"stack"` and `"unified"` during the deprecation window. New
+extensions should use `"unified"` and read the canonical fields; Hunk will keep
+the deprecated literal and legacy event fields until a separately announced
+major API revision.
 
 `selection_changed` is trailing-debounced on purpose: holding `[`/`]` retargets
 the selection many times a second, and handlers only care where the user landed.
