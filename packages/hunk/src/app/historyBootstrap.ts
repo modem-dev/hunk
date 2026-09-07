@@ -4,13 +4,16 @@ import {
   type PersistedViewPreferences,
 } from "../core/run/config";
 import { collectSessionCustomThemes } from "../core/theme/customThemes";
+import {
+  createSessionThemeInitialization,
+  type SessionThemeInitialization,
+} from "../core/theme/initialization";
 import type {
   ExtensionVcsHistoryCommit,
   ExtensionVcsHistoryRangeReviewAction,
   ExtensionVcsHistoryRangeSelection,
   ExtensionVcsHistoryReviewAction,
   ExtensionVcsHistoryReviewOptions,
-  NamedCustomThemeConfig,
 } from "../extension-api/types";
 import { sanitizeTerminalLine } from "../lib/terminalText";
 import {
@@ -40,7 +43,7 @@ export interface HistoryBootstrap {
   /** Command-owned extension authority borrowed by embedded reviews. */
   extensionSession: ExtensionSession;
   notices: readonly string[];
-  customThemes: readonly NamedCustomThemeConfig[];
+  theme: SessionThemeInitialization;
   /** Launch baseline retained so the owning history surface can persist theme changes on quit. */
   initialViewPreferences: PersistedViewPreferences;
   viewPreferencesConfigPath?: string;
@@ -152,7 +155,10 @@ export async function loadHistoryBootstrap({
     startupCwd: cwd,
     repoRoot,
     extensionSession,
-    customThemes: sessionThemes.themes,
+    theme: createSessionThemeInitialization({
+      initialTheme: resolved.configured.input.options.theme,
+      customThemes: sessionThemes.themes,
+    }),
     initialViewPreferences: persistedViewPreferencesFromOptions(resolved.configured.input.options),
     viewPreferencesConfigPath: resolved.configured.viewPreferencesConfigPath,
     promptSaveViewPreferences:

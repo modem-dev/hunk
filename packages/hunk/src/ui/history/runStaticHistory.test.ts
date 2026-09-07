@@ -32,7 +32,7 @@ function runtime(commits: HistoryCommit[], maxCount?: number, closeFailure?: Err
     providerName: "Test",
     repoRoot: "/repo",
     notices: [],
-    customThemes: [],
+    theme: { customThemes: [] },
     initialViewPreferences: persistedViewPreferencesFromOptions({}),
     promptSaveViewPreferences: true,
     async planReview(commit) {

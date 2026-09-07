@@ -69,6 +69,10 @@ describe("history bootstrap cursor ownership", () => {
         baseVcsCatalog: catalog,
       });
       expect(bootstrap.input.theme).toBe("github-dark-dimmed");
+      expect(bootstrap.theme).toEqual({
+        initialTheme: "github-dark-dimmed",
+        customThemes: [],
+      });
       expect(bootstrap.initialViewPreferences).toMatchObject({
         theme: "github-dark-dimmed",
         showLineNumbers: false,

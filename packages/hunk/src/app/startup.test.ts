@@ -772,6 +772,7 @@ describe("startup planning", () => {
       kind: "app",
       controllingTerminal,
       bootstrap: { initialThemeMode: "dark" },
+      theme: { initialThemeMode: "dark" },
     });
     expect(opened).toBe(1);
   });
@@ -798,7 +799,11 @@ describe("startup planning", () => {
       terminalThemeMode: "dark",
     });
 
-    expect(plan).toMatchObject({ kind: "app", bootstrap: { initialThemeMode: "dark" } });
+    expect(plan).toMatchObject({
+      kind: "app",
+      bootstrap: { initialThemeMode: "dark" },
+      theme: { initialThemeMode: "dark" },
+    });
     expect(detected).toBe(0);
   });
 

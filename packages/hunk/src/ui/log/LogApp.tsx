@@ -101,7 +101,7 @@ export function LogApp({
   const quitRequestCaptured = useRef(false);
   const pendingExitCode = useRef<number | undefined>(undefined);
   const themeSelector = useThemeSelectorController({
-    customThemes: runtime.customThemes,
+    customThemes: runtime.theme.customThemes,
     onTransientNotice: setTransientNotice,
     themeController,
     transparentBackground: false,

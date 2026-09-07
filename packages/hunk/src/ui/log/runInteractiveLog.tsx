@@ -57,6 +57,7 @@ export async function runInteractiveLog(
       render: ({ externalQuitSignal, finish }) => (
         <HunkSessionHost
           initialRoute={initialRoute}
+          theme={runtime.theme}
           externalQuitSignal={externalQuitSignal}
           onQuit={finish}
         />
