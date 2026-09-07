@@ -9,6 +9,7 @@ import {
   saveViewPreferencesPromptPreference,
   type PersistedViewPreferences,
   type ViewPreferenceChange,
+  type ViewPreferenceScope,
 } from "../../core/run/config";
 
 const POST_PERSISTENCE_QUIT_DELAY_MS = 120;
@@ -48,6 +49,7 @@ export interface ViewPreferenceQuitController {
 export interface UseViewPreferenceQuitControllerOptions {
   currentPreferences: PersistedViewPreferences;
   configPath?: string;
+  configScope?: ViewPreferenceScope;
   pagerMode: boolean;
   promptSaveViewPreferences: boolean;
   transientViewPreferences: boolean;
@@ -74,6 +76,7 @@ function buildViewPreferenceDiffLines(
 export function useViewPreferenceQuitController({
   currentPreferences,
   configPath,
+  configScope,
   pagerMode,
   promptSaveViewPreferences,
   transientViewPreferences,
@@ -133,14 +136,26 @@ export function useViewPreferenceQuitController({
     if (quitPendingRef.current) return;
 
     try {
-      const savedPath = saveGlobalViewPreferences(currentPreferences, { configPath });
+      const savedPath = saveGlobalViewPreferences(currentPreferences, {
+        configPath,
+        baseline: savedPreferences,
+        scope: configScope,
+      });
       setSavedPreferences(currentPreferences);
       showNotice(`Saved view preferences to ${savedPath}`);
       scheduleQuit();
     } catch (error) {
       showError(error instanceof Error ? error.message : "Failed to save view preferences.");
     }
-  }, [configPath, currentPreferences, scheduleQuit, showError, showNotice]);
+  }, [
+    configPath,
+    configScope,
+    currentPreferences,
+    savedPreferences,
+    scheduleQuit,
+    showError,
+    showNotice,
+  ]);
 
   /** Leave without persisting either the current preferences or prompt policy. */
   const discardViewPreferencesAndQuit = useCallback(() => {

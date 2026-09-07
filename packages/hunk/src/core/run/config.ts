@@ -23,7 +23,14 @@ import {
   themeSelectionsEqual,
   type ThemeSelection,
 } from "../theme/selection";
+import { HunkUserError } from "./errors";
 import { resolveGlobalConfigPath } from "./paths";
+import {
+  serializeTomlValue,
+  tomlTableDefinesKey,
+  upsertTomlValue,
+  type TomlWritableValue,
+} from "./tomlSourceEdit";
 import { LEGACY_CUSTOM_SYNTAX_NOTICES, type StartupNotice } from "../process/startupNotice";
 import {
   DEFAULT_FILE_GAP,
@@ -127,11 +134,18 @@ const VIEW_PREFERENCES_PROMPT_CONFIG_KEY = "prompt_save_view_preferences";
 
 type PersistedPreferenceValue = string | boolean | ThemeSelection | undefined;
 
+/** Express one preference value in the shape the TOML writer accepts. */
+function toWritablePreferenceValue(
+  value: Exclude<PersistedPreferenceValue, undefined>,
+): TomlWritableValue {
+  if (typeof value === "boolean" || typeof value === "string") return value;
+  return Object.fromEntries(ADAPTIVE_THEME_SELECTION_KEYS.map((key) => [key, value[key]]));
+}
+
 const PERSISTED_VIEW_PREFERENCE_KEYS: Array<{
   configKey: string;
   value: (preferences: PersistedViewPreferences) => PersistedPreferenceValue;
   equals?: (previous: PersistedPreferenceValue, next: PersistedPreferenceValue) => boolean;
-  upsert?: (source: string, value: PersistedPreferenceValue) => string;
 }> = [
   {
     configKey: "theme",
@@ -141,7 +155,6 @@ const PERSISTED_VIEW_PREFERENCE_KEYS: Array<{
         previous as ThemeSelection | undefined,
         next as ThemeSelection | undefined,
       ),
-    upsert: (source, value) => upsertThemeTomlValue(source, value as ThemeSelection),
   },
   { configKey: "mode", value: (preferences) => preferences.mode },
   { configKey: "line_numbers", value: (preferences) => preferences.showLineNumbers },
@@ -176,6 +189,11 @@ export interface ExtensionBootstrapConfigOptions extends ConfigResolutionOptions
 const CONFIG_FALLBACK_VCS_ID = "git";
 const EMPTY_CONFIG_VCS_CATALOG = createVcsCatalog([], CONFIG_FALLBACK_VCS_ID, []);
 
+export interface ViewPreferenceScope {
+  command?: keyof typeof CONFIG_COMMAND_SECTIONS;
+  pager?: boolean;
+}
+
 export interface HunkConfigResolution {
   input: CliInput;
   /** Config-defined custom themes in declaration order, user layer before repo layer. */
@@ -204,211 +222,11 @@ export interface HunkConfigResolution {
   projectRoot?: string;
   repoConfigPath?: string;
   viewPreferencesConfigPath?: string;
+  viewPreferenceScope?: ViewPreferenceScope;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/** Serialize one primitive or inline-table TOML preference value. */
-function serializeTomlPreferenceValue(value: string | boolean | ThemeSelection) {
-  if (typeof value === "boolean") {
-    return value ? "true" : "false";
-  }
-
-  if (isAdaptiveThemeSelection(value)) {
-    const entries = ADAPTIVE_THEME_SELECTION_KEYS.filter((key) => value[key] !== undefined).map(
-      (key) => `${key} = ${JSON.stringify(value[key])}`,
-    );
-    return `{ ${entries.join(", ")} }`;
-  }
-
-  return JSON.stringify(value);
-}
-
-function tomlKeyPattern(key: string) {
-  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`^\\s*(?:${escaped}|"${escaped}"|'${escaped}')\\s*(?:\\.|=)`);
-}
-
-function findTrailingTomlComment(line: string) {
-  let inSingle = false;
-  let inDouble = false;
-  for (let index = 0; index < line.length; index += 1) {
-    const char = line[index];
-    if (char === "\\" && inDouble) {
-      index += 1;
-      continue;
-    }
-    if (char === '"' && !inSingle) {
-      inDouble = !inDouble;
-      continue;
-    }
-    if (char === "'" && !inDouble) {
-      inSingle = !inSingle;
-      continue;
-    }
-    if (char === "#" && !inSingle && !inDouble) {
-      return line.slice(index).trimEnd();
-    }
-  }
-
-  return "";
-}
-
-function rewriteAssignmentLine(existing: string, assignment: string) {
-  const indent = existing.match(/^\s*/)?.[0] ?? "";
-  const comment = findTrailingTomlComment(existing);
-  return `${indent}${assignment}${comment ? ` ${comment}` : ""}`;
-}
-
-/** Update one top-level TOML key while preserving sections and unrelated comments. */
-function upsertTopLevelTomlValue(
-  source: string,
-  key: string,
-  value: string | boolean | ThemeSelection,
-) {
-  const lines = source.length > 0 ? source.split("\n") : [];
-  const serialized = serializeTomlPreferenceValue(value);
-  const assignment = `${key} = ${serialized}`;
-  const tableIndex = lines.findIndex((line) => /^\s*\[/.test(line));
-  const firstTableIndex = tableIndex < 0 ? lines.length : tableIndex;
-
-  const keyPattern = tomlKeyPattern(key);
-  const matches: number[] = [];
-  for (let index = 0; index < firstTableIndex; index += 1) {
-    if (keyPattern.test(lines[index] ?? "")) {
-      matches.push(index);
-    }
-  }
-
-  const [first, ...duplicates] = matches;
-  if (first !== undefined) {
-    lines[first] = rewriteAssignmentLine(lines[first] ?? "", assignment);
-    for (const index of duplicates.reverse()) {
-      lines.splice(index, 1);
-    }
-    return `${lines.join("\n").replace(/\n*$/, "")}\n`;
-  }
-
-  let insertAt = firstTableIndex;
-  if (tableIndex >= 0) {
-    while (insertAt > 0 && (lines[insertAt - 1] ?? "").trim().startsWith("#")) {
-      insertAt -= 1;
-    }
-  }
-  const hasTableSpacer = insertAt > 0 && lines[insertAt - 1] === "";
-  if (hasTableSpacer) {
-    insertAt -= 1;
-  }
-  lines.splice(
-    insertAt,
-    0,
-    assignment,
-    ...(hasTableSpacer || insertAt === lines.length ? [] : [""]),
-  );
-  return `${lines.join("\n").replace(/\n*$/, "")}\n`;
-}
-
-function findThemeTableRange(lines: readonly string[]) {
-  const headerIndex = lines.findIndex((line) => /^\s*\[\s*theme\s*\]\s*(?:#.*)?$/.test(line));
-  if (headerIndex < 0) {
-    return null;
-  }
-
-  const nextHeaderOffset = lines.slice(headerIndex + 1).findIndex((line) => /^\s*\[/.test(line));
-  let end = nextHeaderOffset < 0 ? lines.length : headerIndex + 1 + nextHeaderOffset;
-  while (end > headerIndex + 1) {
-    const line = (lines[end - 1] ?? "").trim();
-    if (line.length > 0 && !line.startsWith("#")) {
-      break;
-    }
-    end -= 1;
-  }
-
-  return { headerIndex, end };
-}
-
-function collapseBlankSeam(lines: string[], index: number) {
-  let start = index;
-  while (start > 0 && (lines[start - 1] ?? "").trim().length === 0) {
-    start -= 1;
-  }
-
-  let end = index;
-  while (end < lines.length && (lines[end] ?? "").trim().length === 0) {
-    end += 1;
-  }
-
-  const separators = start > 0 && end < lines.length ? [""] : [];
-  lines.splice(start, end - start, ...separators);
-}
-
-function applyThemeTableKey(
-  lines: string[],
-  range: { headerIndex: number; end: number },
-  key: string,
-  value: string | undefined,
-) {
-  const keyPattern = tomlKeyPattern(key);
-  const existingIndex = lines
-    .slice(range.headerIndex + 1, range.end)
-    .findIndex((line) => keyPattern.test(line));
-  if (existingIndex >= 0) {
-    const absolute = range.headerIndex + 1 + existingIndex;
-    if (value === undefined) {
-      lines.splice(absolute, 1);
-      range.end -= 1;
-      return;
-    }
-    lines[absolute] = rewriteAssignmentLine(
-      lines[absolute] ?? "",
-      `${key} = ${JSON.stringify(value)}`,
-    );
-    return;
-  }
-
-  if (value === undefined) {
-    return;
-  }
-
-  const indent = (lines[range.end - 1] ?? "").match(/^\s*/)?.[0] ?? "";
-  lines.splice(range.end, 0, `${indent}${key} = ${JSON.stringify(value)}`);
-  range.end += 1;
-}
-
-function upsertThemeTomlValue(source: string, value: ThemeSelection | undefined) {
-  if (value === undefined) {
-    return source;
-  }
-
-  const lines = source.length > 0 ? source.split("\n") : [];
-  const range = findThemeTableRange(lines);
-  if (!range) {
-    return upsertTopLevelTomlValue(source, "theme", value);
-  }
-
-  if (isAdaptiveThemeSelection(value)) {
-    for (const key of ADAPTIVE_THEME_SELECTION_KEYS) {
-      applyThemeTableKey(lines, range, key, value[key]);
-    }
-    return `${lines.join("\n").replace(/\n*$/, "")}\n`;
-  }
-
-  const firstTableIndex = lines.findIndex((line) => /^\s*\[/.test(line));
-  if (firstTableIndex === range.headerIndex) {
-    lines.splice(
-      range.headerIndex,
-      range.end - range.headerIndex,
-      `theme = ${serializeTomlPreferenceValue(value)}`,
-    );
-    return `${lines.join("\n").replace(/\n*$/, "")}\n`;
-  }
-
-  lines.splice(range.headerIndex, range.end - range.headerIndex);
-  collapseBlankSeam(lines, range.headerIndex);
-  const remaining = lines.join("\n").replace(/^\n+/, "").replace(/\n*$/, "");
-  return upsertTopLevelTomlValue(remaining.length > 0 ? `${remaining}\n` : "", "theme", value);
 }
 
 /** Accept only the layout names Hunk already supports. */
@@ -1325,10 +1143,97 @@ function resolveWritableConfigPath(configuredPath: string | undefined, env: Node
   return configPath;
 }
 
-/** Write an updated config source after ensuring the parent directory exists. */
+/** Write an updated config source through a sibling temp file so a crash never leaves it half-written. */
 function writeConfigSource(configPath: string, source: string) {
   fs.mkdirSync(dirname(configPath), { recursive: true });
-  fs.writeFileSync(configPath, source);
+  const stagingPath = `${configPath}.${process.pid}.tmp`;
+  try {
+    fs.writeFileSync(stagingPath, source);
+    fs.renameSync(stagingPath, configPath);
+  } finally {
+    fs.rmSync(stagingPath, { force: true });
+  }
+}
+
+interface ConfigEdit {
+  configKey: string;
+  value: TomlWritableValue;
+}
+
+function chooseConfigEditTable(
+  source: string,
+  scope: ViewPreferenceScope | undefined,
+  key: string,
+) {
+  const candidates: string[][] = [
+    ...(scope?.pager ? [["pager"]] : []),
+    ...(scope?.command ? [[scope.command]] : []),
+  ];
+  return candidates.find((table) => tomlTableDefinesKey(source, table, key)) ?? [];
+}
+
+function expectedParsedValue(value: TomlWritableValue): unknown {
+  if (typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined));
+}
+
+/** Set one nested key on a parsed TOML object, creating intermediate tables. */
+function setParsedValue(target: Record<string, unknown>, path: readonly string[], value: unknown) {
+  let cursor = target;
+  for (const segment of path.slice(0, -1)) {
+    const next = cursor[segment];
+    if (!isRecord(next)) {
+      cursor[segment] = {};
+    }
+    cursor = cursor[segment] as Record<string, unknown>;
+  }
+  cursor[path[path.length - 1]!] = value;
+}
+
+/** Apply config edits to the file at `configPath` and write the result only after proving it. */
+function writeConfigEdits(
+  configPath: string,
+  edits: readonly ConfigEdit[],
+  scope: ViewPreferenceScope | undefined,
+) {
+  const source = readConfigSource(configPath);
+  let expected: Record<string, unknown>;
+  try {
+    const parsed = source.length > 0 ? Bun.TOML.parse(source) : {};
+    if (!isRecord(parsed)) throw new Error("Expected a TOML table.");
+    expected = structuredClone(parsed);
+  } catch (error) {
+    throw new HunkUserError(`Could not update ${configPath} because it is not valid TOML.`, [
+      error instanceof Error ? error.message : String(error),
+    ]);
+  }
+
+  const unsafe = (keyPath: string) =>
+    new HunkUserError(
+      `Could not update ${keyPath} in ${configPath} without changing the rest of the file, so it was left as it was.`,
+      [`Set ${keyPath} in ${configPath} by hand.`],
+    );
+  let next = source;
+  for (const edit of edits) {
+    const table = chooseConfigEditTable(next, scope, edit.configKey);
+    const keyPath = [...table, edit.configKey].join(".");
+    const updated = upsertTomlValue(next, table, edit.configKey, edit.value);
+    if (updated === null) throw unsafe(keyPath);
+    next = updated;
+    setParsedValue(expected, [...table, edit.configKey], expectedParsedValue(edit.value));
+  }
+  if (next === source) return;
+
+  let reparsed: unknown;
+  try {
+    reparsed = Bun.TOML.parse(next);
+  } catch {
+    throw unsafe(edits.map((edit) => edit.configKey).join(", "));
+  }
+  if (!Bun.deepEquals(reparsed, expected, true)) {
+    throw unsafe(edits.map((edit) => edit.configKey).join(", "));
+  }
+  writeConfigSource(configPath, next);
 }
 
 /** One view preference the quit prompt would rewrite, as TOML assignment text. */
@@ -1361,12 +1266,23 @@ export function diffPersistedViewPreferences(
     changes.push({
       configKey: key.configKey,
       previousValue:
-        previousValue === undefined ? "unset" : serializeTomlPreferenceValue(previousValue),
-      nextValue: nextValue === undefined ? "unset" : serializeTomlPreferenceValue(nextValue),
+        previousValue === undefined
+          ? "unset"
+          : serializeTomlValue(toWritablePreferenceValue(previousValue)),
+      nextValue:
+        nextValue === undefined
+          ? "unset"
+          : serializeTomlValue(toWritablePreferenceValue(nextValue)),
     });
   }
 
   return changes;
+}
+
+export interface SaveViewPreferencesOptions extends Pick<ConfigResolutionOptions, "env"> {
+  configPath?: string;
+  baseline?: PersistedViewPreferences;
+  scope?: ViewPreferenceScope;
 }
 
 /** Persist accepted in-app view preferences to the selected Hunk config file. */
@@ -1375,22 +1291,23 @@ export function saveGlobalViewPreferences(
   {
     configPath: configuredPath,
     env = process.env,
-  }: Pick<ConfigResolutionOptions, "env"> & { configPath?: string } = {},
+    baseline,
+    scope,
+  }: SaveViewPreferencesOptions = {},
 ) {
   const configPath = resolveWritableConfigPath(configuredPath, env);
-  let nextSource = readConfigSource(configPath);
+  const edits: ConfigEdit[] = [];
   for (const key of PERSISTED_VIEW_PREFERENCE_KEYS) {
     const value = key.value(preferences);
-    if (value === undefined) {
-      continue;
+    if (value === undefined) continue;
+    if (baseline) {
+      const previous = key.value(baseline);
+      if (key.equals ? key.equals(previous, value) : previous === value) continue;
     }
-
-    nextSource = key.upsert
-      ? key.upsert(nextSource, value)
-      : upsertTopLevelTomlValue(nextSource, key.configKey, value);
+    edits.push({ configKey: key.configKey, value: toWritablePreferenceValue(value) });
   }
 
-  writeConfigSource(configPath, nextSource);
+  writeConfigEdits(configPath, edits, scope);
   return configPath;
 }
 
@@ -1403,13 +1320,11 @@ export function saveViewPreferencesPromptPreference(
   }: Pick<ConfigResolutionOptions, "env"> & { configPath?: string } = {},
 ) {
   const configPath = resolveWritableConfigPath(configuredPath, env);
-  const nextSource = upsertTopLevelTomlValue(
-    readConfigSource(configPath),
-    VIEW_PREFERENCES_PROMPT_CONFIG_KEY,
-    promptSaveViewPreferences,
+  writeConfigEdits(
+    configPath,
+    [{ configKey: VIEW_PREFERENCES_PROMPT_CONFIG_KEY, value: promptSaveViewPreferences }],
+    undefined,
   );
-
-  writeConfigSource(configPath, nextSource);
   return configPath;
 }
 
@@ -1599,5 +1514,9 @@ export function resolveConfiguredCliInput(
     // choices user-scoped so Hunk does not create project policy files from an interactive prompt.
     viewPreferencesConfigPath:
       repoConfigPath && fs.existsSync(repoConfigPath) ? repoConfigPath : userConfigPath,
+    viewPreferenceScope: {
+      ...(CONFIG_COMMAND_SECTIONS[input.kind] ? { command: input.kind } : {}),
+      ...(resolvedOptions.pager ? { pager: true } : {}),
+    },
   };
 }
