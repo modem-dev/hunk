@@ -4,6 +4,7 @@ import {
   type PersistedViewPreferences,
 } from "../core/run/config";
 import { collectSessionCustomThemes } from "../core/theme/customThemes";
+import type { ThemeSelection } from "../core/theme/selection";
 import type {
   ExtensionVcsHistoryCommit,
   ExtensionVcsHistoryReviewAction,
@@ -38,6 +39,7 @@ export interface HistoryBootstrap {
   extensionSession: ExtensionSession;
   notices: readonly string[];
   customThemes: readonly NamedCustomThemeConfig[];
+  themeSelection?: ThemeSelection;
   /** Launch baseline retained so the owning history surface can persist theme changes on quit. */
   initialViewPreferences: PersistedViewPreferences;
   viewPreferencesConfigPath?: string;
@@ -133,10 +135,10 @@ export async function loadHistoryBootstrap({
     throw error;
   }
 
-  const resolvedTheme = resolved.configured.input.options.theme;
   let closed = false;
   return {
-    input: resolvedTheme ? { ...input, theme: resolvedTheme } : input,
+    input,
+    themeSelection: resolved.configured.input.options.theme,
     source,
     providerId: sanitizeTerminalLine(adapter.id),
     providerName: sanitizeTerminalLine(adapter.name),

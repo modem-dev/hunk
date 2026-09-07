@@ -17,6 +17,44 @@ const input: HistoryCommandInput = {
   extensionPaths: [],
 };
 
+/** Build one history-capable adapter whose cursor open/close counts are observable. */
+function createTestHistoryCatalog(cwd: string) {
+  const closeCounts: number[] = [];
+  let opens = 0;
+  const makeSource = (): VcsHistorySource => {
+    const index = opens++;
+    closeCounts[index] = 0;
+    return {
+      async read() {
+        return { commits: [], done: true };
+      },
+      async close() {
+        closeCounts[index]! += 1;
+      },
+    };
+  };
+  const adapter: VcsAdapter = {
+    id: "test",
+    name: "Test",
+    detect: () => ({ id: "test", repoRoot: cwd }),
+    operations: {},
+    history: {
+      async open() {
+        return makeSource();
+      },
+      async planReview(commit) {
+        return { kind: "revision-show", revisionId: commit.revisionId };
+      },
+    },
+  };
+  const catalog: VcsCatalog = {
+    adapters: [adapter],
+    defaultAdapterId: "test",
+    reservedIds: new Set(["test"]),
+  };
+  return { catalog, closeCounts, opens: () => opens };
+}
+
 describe("history bootstrap cursor ownership", () => {
   test("cancels refresh before opening and closes each active provider cursor once", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "hunk-history-bootstrap-"));
@@ -27,39 +65,7 @@ describe("history bootstrap cursor ownership", () => {
       configPath,
       'theme = "github-dark-dimmed"\nline_numbers = false\nprompt_save_view_preferences = false\n',
     );
-    const closeCounts: number[] = [];
-    let opens = 0;
-    const makeSource = (): VcsHistorySource => {
-      const index = opens++;
-      closeCounts[index] = 0;
-      return {
-        async read() {
-          return { commits: [], done: true };
-        },
-        async close() {
-          closeCounts[index]! += 1;
-        },
-      };
-    };
-    const adapter: VcsAdapter = {
-      id: "test",
-      name: "Test",
-      detect: () => ({ id: "test", repoRoot: cwd }),
-      operations: {},
-      history: {
-        async open() {
-          return makeSource();
-        },
-        async planReview(commit) {
-          return { kind: "revision-show", revisionId: commit.revisionId };
-        },
-      },
-    };
-    const catalog: VcsCatalog = {
-      adapters: [adapter],
-      defaultAdapterId: "test",
-      reservedIds: new Set(["test"]),
-    };
+    const { catalog, closeCounts, opens } = createTestHistoryCatalog(cwd);
 
     try {
       const bootstrap = await loadHistoryBootstrap({
@@ -68,7 +74,8 @@ describe("history bootstrap cursor ownership", () => {
         env: { ...process.env, XDG_CONFIG_HOME: configHome },
         baseVcsCatalog: catalog,
       });
-      expect(bootstrap.input.theme).toBe("github-dark-dimmed");
+      expect(bootstrap.input.theme).toBeUndefined();
+      expect(bootstrap.themeSelection).toBe("github-dark-dimmed");
       expect(bootstrap.initialViewPreferences).toMatchObject({
         theme: "github-dark-dimmed",
         showLineNumbers: false,
@@ -79,10 +86,10 @@ describe("history bootstrap cursor ownership", () => {
       const cancelled = new AbortController();
       cancelled.abort();
       await expect(bootstrap.reopenSource(cancelled.signal)).rejects.toThrow();
-      expect(opens).toBe(1);
+      expect(opens()).toBe(1);
 
       await bootstrap.reopenSource();
-      expect(opens).toBe(2);
+      expect(opens()).toBe(2);
       expect(closeCounts).toEqual([1, 0]);
       await bootstrap.close();
       await bootstrap.close();
@@ -91,6 +98,35 @@ describe("history bootstrap cursor ownership", () => {
       await bootstrap.extensionSession.shutdown();
       await bootstrap.extensionSession.shutdown();
       expect(bootstrap.extensionSession.current.registry.eventBusPhase).toBe("closed");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      rmSync(configHome, { recursive: true, force: true });
+    }
+  });
+
+  test("keeps a configured [theme] pair intact for the history surface", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "hunk-history-bootstrap-"));
+    const configHome = mkdtempSync(join(tmpdir(), "hunk-history-config-"));
+    mkdirSync(join(configHome, "hunk"), { recursive: true });
+    writeFileSync(
+      join(configHome, "hunk", "config.toml"),
+      '[theme]\ndark = "github-dark-dimmed"\nlight = "github-light-default"\n',
+    );
+    const { catalog } = createTestHistoryCatalog(cwd);
+
+    try {
+      const bootstrap = await loadHistoryBootstrap({
+        input,
+        cwd,
+        env: { ...process.env, XDG_CONFIG_HOME: configHome },
+        baseVcsCatalog: catalog,
+      });
+      const pair = { dark: "github-dark-dimmed", light: "github-light-default" };
+      expect(bootstrap.input.theme).toBeUndefined();
+      expect(bootstrap.themeSelection).toEqual(pair);
+      expect(bootstrap.initialViewPreferences.theme).toEqual(pair);
+      await bootstrap.close();
+      await bootstrap.extensionSession.shutdown();
     } finally {
       rmSync(cwd, { recursive: true, force: true });
       rmSync(configHome, { recursive: true, force: true });

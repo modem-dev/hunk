@@ -421,6 +421,35 @@ test("blocks reopening until dirty-quit cancellation settles", async () => {
   }
 });
 
+test("quits history without a save prompt when a configured theme pair was never changed", async () => {
+  const history = await createHistoryRoute();
+  const pair = { dark: "github-dark-default", light: "github-light-default" };
+  history.runtime.themeSelection = pair;
+  history.runtime.initialViewPreferences = persistedViewPreferencesFromOptions({ theme: pair });
+  history.controller = new LogController(history.runtime);
+  await history.controller.loadMore();
+  const quit = mock(() => undefined);
+  const setup = await testRender(
+    <HunkSessionHost
+      initialRoute={history}
+      externalQuitSignal={new AbortController().signal}
+      onQuit={quit}
+    />,
+    { width: 100, height: 20 },
+  );
+  try {
+    await setup.renderOnce();
+    await act(async () => setup.mockInput.typeText("q"));
+    await setup.renderOnce();
+    expect(setup.captureCharFrame()).not.toContain("Save view preferences?");
+    await settle(setup);
+    expect(quit).toHaveBeenCalledTimes(1);
+  } finally {
+    setup.renderer.destroy();
+    await history.controller.close();
+  }
+});
+
 test("preserves the original exit status while a saved-preferences quit is delayed", async () => {
   const history = await createHistoryRoute();
   const configHome = mkdtempSync(join(tmpdir(), "hunk-log-delayed-quit-"));

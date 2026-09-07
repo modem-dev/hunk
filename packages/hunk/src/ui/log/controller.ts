@@ -1,5 +1,6 @@
 import { createHistoryLaneCheckpoint, planHistoryPage } from "../../core/history/lanePlanner";
 import type { HistoryGraphRow, HistoryLaneCheckpoint } from "../../core/history/types";
+import type { ThemeSelection } from "../../core/theme/selection";
 import { sanitizeTerminalLine } from "../../lib/terminalText";
 import type { HistoryRuntime } from "../history/types";
 import { planLogViewportGeometry } from "./geometry";
@@ -21,7 +22,7 @@ export interface LogSnapshot {
   historyDone: boolean;
   loading: boolean;
   notice: string;
-  themeId?: string;
+  theme?: ThemeSelection;
   presentation: LogPresentation;
 }
 
@@ -51,7 +52,7 @@ export class LogController {
       historyDone: false,
       loading: false,
       notice: runtime.notices[0] ?? "",
-      themeId: runtime.input.theme,
+      theme: runtime.themeSelection,
       presentation: {
         graph: false,
         unicode: !runtime.input.ascii && process.env.TERM !== "dumb",
@@ -258,8 +259,8 @@ export class LogController {
     }
   }
 
-  setTheme(themeId: string) {
-    this.publish({ themeId });
+  setTheme(theme: ThemeSelection) {
+    this.publish({ theme });
   }
 
   togglePresentation(key: keyof LogPresentation) {
