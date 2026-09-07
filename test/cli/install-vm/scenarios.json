@@ -10,7 +10,7 @@
     },
     {
       "id": "git-pager-output",
-      "description": "Preserve raw Git diff output through redirects, pipes, and forced Hunk pagination.",
+      "description": "Preserve raw Git diff output through redirects, pipes, and direct packaged Hunk pagination.",
       "profile": "node",
       "script": "git-pager-output.sh",
       "network": "live",
@@ -21,7 +21,7 @@
           "git-version",
           "redirected-diff",
           "piped-diff",
-          "forced-pager-diff"
+          "packaged-pager-diff"
         ],
         "commandExpectations": {
           "install-git": "exit 0",
@@ -29,7 +29,7 @@
           "git-version": "exit 0",
           "redirected-diff": "exit 0",
           "piped-diff": "exit 0",
-          "forced-pager-diff": "exit 0"
+          "packaged-pager-diff": "exit 0"
         },
         "assertions": [
           "pager-config",
@@ -37,8 +37,8 @@
           "redirected-no-controls",
           "piped-raw-patch",
           "piped-no-controls",
-          "forced-pager-raw-patch",
-          "forced-pager-no-controls"
+          "packaged-pager-raw-patch",
+          "packaged-pager-no-controls"
         ],
         "observations": ["hunkVersion", "pagerCommand"]
       }

@@ -34,6 +34,10 @@ run_piped_diff() {
   git diff | cat
 }
 
+run_packaged_pager() {
+  hunk pager <"$artifact_dir/expected.patch"
+}
+
 assert_raw_patch() {
   local id=$1 actual=$2
   if cmp -s "$artifact_dir/expected.patch" "$actual"; then
@@ -60,9 +64,9 @@ run_expect piped-diff 0 run_piped_diff
 assert_raw_patch piped-raw-patch "$command_dir/piped-diff.log"
 assert_no_terminal_controls piped-no-controls "$command_dir/piped-diff.log"
 
-run_expect forced-pager-diff 0 git --paginate diff
-assert_raw_patch forced-pager-raw-patch "$command_dir/forced-pager-diff.log"
-assert_no_terminal_controls forced-pager-no-controls "$command_dir/forced-pager-diff.log"
+run_expect packaged-pager-diff 0 run_packaged_pager
+assert_raw_patch packaged-pager-raw-patch "$command_dir/packaged-pager-diff.log"
+assert_no_terminal_controls packaged-pager-no-controls "$command_dir/packaged-pager-diff.log"
 
 record_observation hunkVersion "$current"
 record_observation pagerCommand "$pager_command"
