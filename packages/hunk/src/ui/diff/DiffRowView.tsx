@@ -10,71 +10,6 @@ import { DiffMetaRowView, type PlannedDiffMetaReviewRow } from "./DiffMetaRowVie
 import type { DiffRow } from "./diffRows";
 import type { LineHighlightPaintIndex } from "./lineHighlightPaint";
 
-/** Dispatch one planned diff row to its focused metadata or code view. */
-function renderRow(
-  plannedRow: PlannedDiffReviewRow,
-  width: number,
-  lineNumberDigits: number,
-  showLineNumbers: boolean,
-  showHunkHeaders: boolean,
-  wrapLines: boolean,
-  codeHorizontalOffset: number,
-  theme: AppTheme,
-  selected: boolean,
-  copySelectedRowRange: CopySelectedRowRange | undefined,
-  copySelectedSide: "left" | "right" | undefined,
-  cursorHighlight: CursorHighlight | undefined,
-  lineHighlights: LineHighlightPaintIndex | undefined,
-  showAddNoteBadge = false,
-  onHoverRow?: (rowKey: string) => void,
-  onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void,
-  onToggleGap?: (gapKey: string) => void,
-) {
-  if (plannedRow.row.type === "collapsed" || plannedRow.row.type === "hunk-header") {
-    return (
-      <DiffMetaRowView
-        plannedRow={plannedRow as PlannedDiffMetaReviewRow}
-        width={width}
-        theme={theme}
-        selected={selected || copySelectedRowRange !== undefined}
-        showHunkHeaders={showHunkHeaders}
-        showAddNoteBadge={showAddNoteBadge}
-        onHoverRow={onHoverRow}
-        onStartUserNoteAtHunk={onStartUserNoteAtHunk}
-        onToggleGap={onToggleGap}
-      />
-    );
-  }
-
-  if (plannedRow.row.type === "split-line" || plannedRow.row.type === "stack-line") {
-    return (
-      <CodeRowView
-        plannedRow={plannedRow as PlannedCodeReviewRow}
-        width={width}
-        lineNumberDigits={lineNumberDigits}
-        showLineNumbers={showLineNumbers}
-        wrapLines={wrapLines}
-        codeHorizontalOffset={codeHorizontalOffset}
-        theme={theme}
-        selected={selected}
-        copySelectedRowRange={copySelectedRowRange}
-        copySelectedSide={copySelectedSide}
-        cursorHighlight={cursorHighlight}
-        lineHighlights={lineHighlights}
-        showAddNoteBadge={showAddNoteBadge}
-        onHoverRow={onHoverRow}
-        onStartUserNoteAtHunk={onStartUserNoteAtHunk}
-      />
-    );
-  }
-
-  return (
-    <box style={{ width: "100%", height: 1 }}>
-      <text fg={theme.muted}>Unsupported row.</text>
-    </box>
-  );
-}
-
 /** Inputs accepted by the memoized diff-row facade. */
 export interface DiffRowViewProps {
   /** Complete review-stream row; preferred when the caller owns the shared render plan. */
@@ -137,23 +72,53 @@ export const DiffRowView = memo(function DiffRowViewComponent({
     return null;
   }
 
-  return renderRow(
-    resolvedPlannedRow,
-    width,
-    lineNumberDigits,
-    showLineNumbers,
-    showHunkHeaders,
-    wrapLines,
-    codeHorizontalOffset,
-    theme,
-    selected,
-    copySelectedRowRange,
-    copySelectedSide,
-    cursorHighlight,
-    lineHighlights,
-    showAddNoteBadge,
-    onHoverRow,
-    onStartUserNoteAtHunk,
-    onToggleGap,
+  if (
+    resolvedPlannedRow.row.type === "collapsed" ||
+    resolvedPlannedRow.row.type === "hunk-header"
+  ) {
+    return (
+      <DiffMetaRowView
+        plannedRow={resolvedPlannedRow as PlannedDiffMetaReviewRow}
+        width={width}
+        theme={theme}
+        selected={selected || copySelectedRowRange !== undefined}
+        showHunkHeaders={showHunkHeaders}
+        showAddNoteBadge={showAddNoteBadge}
+        onHoverRow={onHoverRow}
+        onStartUserNoteAtHunk={onStartUserNoteAtHunk}
+        onToggleGap={onToggleGap}
+      />
+    );
+  }
+
+  if (
+    resolvedPlannedRow.row.type === "split-line" ||
+    resolvedPlannedRow.row.type === "stack-line"
+  ) {
+    return (
+      <CodeRowView
+        plannedRow={resolvedPlannedRow as PlannedCodeReviewRow}
+        width={width}
+        lineNumberDigits={lineNumberDigits}
+        showLineNumbers={showLineNumbers}
+        wrapLines={wrapLines}
+        codeHorizontalOffset={codeHorizontalOffset}
+        theme={theme}
+        selected={selected}
+        copySelectedRowRange={copySelectedRowRange}
+        copySelectedSide={copySelectedSide}
+        cursorHighlight={cursorHighlight}
+        lineHighlights={lineHighlights}
+        showAddNoteBadge={showAddNoteBadge}
+        onHoverRow={onHoverRow}
+        onStartUserNoteAtHunk={onStartUserNoteAtHunk}
+      />
+    );
+  }
+
+  return (
+    <box style={{ width: "100%", height: 1 }}>
+      <text fg={theme.muted}>Unsupported row.</text>
+    </box>
   );
 });
