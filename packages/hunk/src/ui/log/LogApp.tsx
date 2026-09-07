@@ -153,6 +153,7 @@ export function LogApp({
       theme: themeController.initialThemeSelection,
     },
     configPath: runtime.viewPreferencesConfigPath,
+    configScope: runtime.viewPreferenceScope,
     pagerMode: false,
     promptSaveViewPreferences: runtime.promptSaveViewPreferences && !returnToStatus,
     transientViewPreferences: resolveExtensionSessionOptions(
