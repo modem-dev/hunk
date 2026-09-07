@@ -189,6 +189,7 @@ describe("startup planning", () => {
       loadStartupExtensionsImpl: async () => extensions,
       loadAppBootstrapImpl: async (input) => createBootstrap(input),
       usesPipedPatchInputImpl: () => false,
+      stdoutIsTTY: true,
     });
 
     expect(plan.kind).toBe("app");
@@ -619,6 +620,7 @@ describe("startup planning", () => {
         createTestConfigResolution(input, { startupNotices: [startupNotice] }),
       loadAppBootstrapImpl: async (input) => createBootstrap(input),
       usesPipedPatchInputImpl: () => false,
+      stdoutIsTTY: true,
     });
 
     expect(plan.kind).toBe("app");
@@ -804,6 +806,7 @@ describe("startup planning", () => {
         opened += 1;
         return controllingTerminal;
       },
+      stdoutIsTTY: true,
     });
 
     expect(plan).toMatchObject({
@@ -812,6 +815,33 @@ describe("startup planning", () => {
       controllingTerminal,
     });
     expect(opened).toBe(1);
+  });
+
+  test("does not open a controlling terminal for static output", async () => {
+    const cliInput: CliInput = {
+      kind: "patch",
+      file: "-",
+      text: "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n",
+      options: {},
+    };
+    let opened = 0;
+
+    const plan = await prepareStartupPlan(["bun", "hunk", "patch", "-"], {
+      parseCliImpl: async () => cliInput as ParsedCliInput,
+      resolveRuntimeCliInputImpl: (input) => input,
+      resolveConfiguredCliInputImpl: (input) => createTestConfigResolution(input),
+      loadAppBootstrapImpl: async (input) => createBootstrap(input),
+      usesPipedPatchInputImpl: () => true,
+      openControllingTerminalImpl: () => {
+        opened += 1;
+        return { stdin: {} as never, close: () => {} };
+      },
+      stdinIsTTY: false,
+      stdoutIsTTY: false,
+    });
+
+    expect(plan.kind).toBe("static-diff");
+    expect(opened).toBe(0);
   });
 
   test("loads extensions before the changeset and attaches them to the bootstrap", async () => {
@@ -851,6 +881,7 @@ describe("startup planning", () => {
         return createBootstrap(input);
       },
       usesPipedPatchInputImpl: () => false,
+      stdoutIsTTY: true,
     });
 
     expect(order).toEqual(["extensions", "bootstrap"]);
@@ -890,6 +921,7 @@ describe("startup planning", () => {
         return createBootstrap(input);
       },
       usesPipedPatchInputImpl: () => false,
+      stdoutIsTTY: true,
     });
 
     // Config themes keep their id; extension themes fill the ids that are still free.

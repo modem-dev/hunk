@@ -1,5 +1,5 @@
 /**
- * Non-interactive `hunk pager` renderer for captured pager hosts.
+ * Non-interactive diff renderer for pipelines and captured pager hosts.
  *
  * Hunk's normal pager integration is a full-screen interactive TUI: Git pipes patch text on stdin,
  * and Hunk opens the controlling terminal for keyboard/mouse input. That works for `core.pager`,
@@ -7,7 +7,8 @@
  * constrained environment (notably `TERM=dumb`). Launching the TUI there either hangs, corrupts the
  * host panel with alternate-screen control sequences, or leaves no usable diff output.
  *
- * This module is the fallback output adapter for those contexts. It intentionally reuses Hunk's
+ * This module is the output adapter for those contexts and for ordinary commands whose stdout is
+ * captured. It intentionally reuses Hunk's
  * normal parse/highlight/render planning stack (`loadAppBootstrap`, Pierre metadata,
  * `loadHighlightedDiff`, and Pierre row builders) and only serializes the resulting rows to ANSI
  * text. Keep it as a thin adapter: do not introduce a second diff parser or a parallel review model
@@ -17,7 +18,7 @@
 import { loadAppBootstrap } from "../core/changeset/loaders";
 import { reviewEmptyDiffReason, type ReviewEmptyDiffReason } from "../core/review/document";
 import { DEFAULT_TAB_WIDTH } from "../core/run/tabWidth";
-import type { DiffFile } from "../core/changeset/model";
+import type { Changeset, DiffFile } from "../core/changeset/model";
 import type { CommonOptions } from "../core/run/commandInputs";
 import type { NamedCustomThemeConfig } from "../extension-api/types";
 import {
@@ -394,6 +395,7 @@ export interface StaticDiffPagerDeps {
   customThemes?: readonly NamedCustomThemeConfig[];
   stderr?: Pick<NodeJS.WriteStream, "write">;
   terminalColumns?: number;
+  color?: boolean;
 }
 
 function resolveStaticWidth(deps: StaticDiffPagerDeps) {
@@ -407,6 +409,25 @@ function warnFallback(deps: StaticDiffPagerDeps, reason: string) {
   deps.stderr?.write(
     `hunk: static pager render failed; falling back to raw diff (${sanitizeTerminalLine(reason)}).\n`,
   );
+}
+
+/** Render one normalized changeset without taking over the terminal screen. */
+export async function renderStaticDiff(
+  changeset: Changeset,
+  options: CommonOptions = {},
+  deps: StaticDiffPagerDeps = {},
+) {
+  const resolvedTheme = resolveTheme(options.theme, null, deps.customThemes);
+  const theme = options.transparentBackground
+    ? withTransparentSurfaces(resolvedTheme)
+    : resolvedTheme;
+  const width = resolveStaticWidth(deps);
+  const rendered = await Promise.all(
+    changeset.files.map((file) => renderStaticFile(file, theme, options, width)),
+  );
+  const output = rendered.length > 0 ? `${rendered.join("\n\n")}\n` : "";
+
+  return deps.color === false ? sanitizeTerminalText(output) : output;
 }
 
 /** Render diff-like pager stdin as colored static output, falling back to the original patch on failure. */
@@ -425,21 +446,12 @@ export async function renderStaticDiffPager(
         pager: true,
       },
     });
-    const resolvedTheme = resolveTheme(options.theme, null, deps.customThemes);
-    const theme = options.transparentBackground
-      ? withTransparentSurfaces(resolvedTheme)
-      : resolvedTheme;
-    const width = resolveStaticWidth(deps);
-    const rendered = await Promise.all(
-      bootstrap.changeset.files.map((file) => renderStaticFile(file, theme, options, width)),
-    );
-
-    if (rendered.length === 0) {
+    if (bootstrap.changeset.files.length === 0) {
       warnFallback(deps, "no files rendered");
       return sanitizeTerminalText(text);
     }
 
-    return `${rendered.join("\n\n")}\n`;
+    return await renderStaticDiff(bootstrap.changeset, options, deps);
   } catch (error) {
     warnFallback(deps, fallbackMessage(error));
     return sanitizeTerminalText(text);

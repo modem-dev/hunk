@@ -123,6 +123,28 @@ async function main() {
     process.exit(0);
   }
 
+  if (startupPlan.kind === "static-diff") {
+    const [{ renderStaticDiff }, { retireExtensionLoadResult }] = await Promise.all([
+      import("./ui/staticDiffPager"),
+      import("./extensions/events"),
+    ]);
+    try {
+      writeStdout(
+        await renderStaticDiff(
+          startupPlan.bootstrap.changeset,
+          startupPlan.bootstrap.input.options,
+          {
+            customThemes: startupPlan.bootstrap.customThemes,
+            color: false,
+          },
+        ),
+      );
+    } finally {
+      await retireExtensionLoadResult(startupPlan.bootstrap.extensions);
+    }
+    process.exit(0);
+  }
+
   if (startupPlan.kind !== "app") {
     throw new Error("Unreachable startup plan.");
   }

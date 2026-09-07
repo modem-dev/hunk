@@ -80,6 +80,10 @@ export type StartupPlan =
       customThemes?: AppBootstrap["customThemes"];
     }
   | {
+      kind: "static-diff";
+      bootstrap: AppBootstrap;
+    }
+  | {
       kind: "markup-render";
       input: MarkupRenderCommandInput;
     }
@@ -661,10 +665,18 @@ export async function prepareStartupPlan(
       : configured.startupNotices,
     extensionResult,
   );
-  controllingTerminal ??= usesPipedPatchInputImpl(cliInput) ? openControllingTerminalImpl() : null;
+  controllingTerminal ??=
+    stdoutIsTTY && usesPipedPatchInputImpl(cliInput) ? openControllingTerminalImpl() : null;
 
-  // The mounted app now owns the registry and performs its one eventual shutdown.
+  // The selected runner now owns the registry and performs its one eventual shutdown.
   preloadedExtensions = undefined;
+  if (!stdoutIsTTY) {
+    return {
+      kind: "static-diff",
+      bootstrap,
+    };
+  }
+
   return {
     kind: "app",
     bootstrap,
