@@ -116,8 +116,9 @@ describe("PTY current line", () => {
     });
 
     try {
-      const initial = await session.waitForText(/export const line06 = 6;/, { timeout: 15_000 });
+      await session.waitForText(/export const line06 = 6;/, { timeout: 15_000 });
       await session.waitIdle({ timeout: 300 });
+      const initial = await session.text({ immediate: true });
       const startRow = lineIndexOf(initial, "export const line02 = 2;") - 1;
       const endRow = lineIndexOf(initial, "export const line06 = 6;") - 1;
       expect(startRow).toBeGreaterThan(0);
@@ -131,8 +132,12 @@ describe("PTY current line", () => {
         session.writeRaw(`\x1b[<32;31;${row + 1}M`);
         await sleep(20);
       }
-      await session.waitIdle();
-
+      await harness.waitForSnapshot(session, () =>
+        rows.every((row, index) => {
+          const backgrounds = rowCellBackgrounds(session, row);
+          return backgrounds.some((color, column) => color !== before[index]?.[column]);
+        }),
+      );
       const selected = rows.map((row) => rowCellBackgrounds(session, row));
       for (let index = 0; index < rows.length; index += 1) {
         expect(selected[index]).not.toEqual(before[index]);
