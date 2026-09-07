@@ -178,37 +178,6 @@ async function waitForPtyOutput(fd: number, pattern: RegExp, timeoutMs = 20_000)
   throw new Error(`Timed out waiting for ${pattern} on the PTY. Saw:\n${text}`);
 }
 
-/** Read child output until the app paints, then leave the stream flowing for teardown. */
-function waitForStreamOutput(stream: NodeJS.ReadableStream, pattern: RegExp, timeoutMs = 20_000) {
-  return new Promise<void>((resolve, reject) => {
-    let text = "";
-    const cleanup = () => {
-      clearTimeout(timer);
-      stream.off("data", onData);
-      stream.off("end", onEnd);
-    };
-    const onData = (chunk: Buffer | string) => {
-      text += Buffer.isBuffer(chunk) ? chunk.toString("utf8") : chunk;
-      if (pattern.test(text)) {
-        cleanup();
-        stream.resume();
-        resolve();
-      }
-    };
-    const onEnd = () => {
-      cleanup();
-      reject(new Error(`Child output ended before ${pattern}. Saw:\n${text}`));
-    };
-    const timer = setTimeout(() => {
-      cleanup();
-      reject(new Error(`Timed out waiting for ${pattern}. Saw:\n${text}`));
-    }, timeoutMs);
-
-    stream.on("data", onData);
-    stream.on("end", onEnd);
-  });
-}
-
 describe("PTY lifecycle", () => {
   test.skipIf(process.platform === "win32")(
     "restores a directly launched renderer when SIGTSTP is discarded",
@@ -298,6 +267,9 @@ describe("PTY lifecycle", () => {
     test.skipIf(process.platform === "win32")(`exits cleanly on ${signal}`, async () => {
       const fixture = harness.createLongWrapFilePair();
       const runtimeDir = harness.createIsolatedConfigHome();
+      // Signal shutdown belongs to the interactive runner; piped stdout intentionally selects
+      // one-shot static output instead.
+      const { master, slave } = openPtyPair();
       const hunkCommand = harness.buildHunkCommand([
         "diff",
         "--files",
@@ -306,7 +278,7 @@ describe("PTY lifecycle", () => {
       ]);
       const child = spawn("/bin/sh", ["-c", `exec ${hunkCommand}`], {
         cwd: fixture.dir,
-        stdio: ["pipe", "pipe", "pipe"],
+        stdio: [slave, slave, slave],
         env: {
           ...process.env,
           TERM: "xterm-256color",
@@ -317,14 +289,22 @@ describe("PTY lifecycle", () => {
           HUNK_DISABLE_UPDATE_NOTICE: "1",
         },
       });
-      child.stderr?.resume();
+      closeSync(slave);
+
+      let masterClosed = false;
+      const closeMaster = () => {
+        if (masterClosed) return;
+        masterClosed = true;
+        closeSync(master);
+      };
 
       try {
-        await waitForStreamOutput(child.stdout!, /this is a very long wrapped line/);
+        await waitForPtyOutput(master, /this is a very long wrapped line/);
         process.kill(child.pid!, signal);
 
         await expect(waitForChildExit(child)).resolves.toEqual({ code: 0, signal: null });
       } finally {
+        closeMaster();
         await stopChild(child);
         await stopDaemonsUnder(runtimeDir);
       }
