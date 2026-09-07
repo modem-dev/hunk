@@ -58,6 +58,7 @@ export function useWorkingTreeActions({
   bootstrap,
   selectedFile,
   selectedHunkIndex,
+  getSelectedFileId,
   filter,
   reviewFiles,
   filesPaneFocused,
@@ -73,6 +74,7 @@ export function useWorkingTreeActions({
   bootstrap: AppBootstrap;
   selectedFile: DiffFile | undefined;
   selectedHunkIndex: number;
+  getSelectedFileId: () => string | null;
   filter: string;
   reviewFiles: readonly SidebarFileSource[];
   filesPaneFocused: boolean;
@@ -122,18 +124,44 @@ export function useWorkingTreeActions({
   const activeCursor = pendingCursor ?? folderCursor ?? reviewFileCursor ?? chosenCursor;
   const selectedIndex = sidebarIndexFromCursor(entries, activeCursor);
   const selectedEntryId = sidebarEntryIdAtIndex(entries, selectedIndex);
-  const selectedVisualFiles = filesVisuallyUnderSidebarEntry(entries, selectedIndex);
-  const selectedStatusFiles = selectedVisualFiles
-    .map((entry) => files.find((file) => file.path === entry.id))
-    .filter((file): file is ExtensionWorkingTreeFile => Boolean(file));
-  const selectedPath = selectedStatusFiles[0]?.path ?? null;
-  const selectedIsFolder = Boolean(
-    entries[selectedIndex] && entries[selectedIndex]!.kind !== "file",
-  );
-  const selectedLabel =
-    entries[selectedIndex] && entries[selectedIndex]!.kind !== "file"
-      ? entries[selectedIndex]!.label
-      : (selectedPath ?? "");
+  // Rendered review selection remains authoritative between input batches; sidebar
+  // handlers advance this cursor eagerly before a following mutation key can run.
+  const activeCursorRef = useRef(activeCursor);
+  activeCursorRef.current = activeCursor;
+  const cursorReviewFileIdRef = useRef(selectedFile?.id ?? null);
+  cursorReviewFileIdRef.current = selectedFile?.id ?? null;
+  /** Derive rendered and input-time mutation targets from the same sidebar entry. */
+  const selectionAt = (index: number) => {
+    const statusFiles = filesVisuallyUnderSidebarEntry(entries, index)
+      .map((entry) => files.find((file) => file.path === entry.id))
+      .filter((file): file is ExtensionWorkingTreeFile => Boolean(file));
+    const path = statusFiles[0]?.path ?? null;
+    const entry = entries[index];
+    const folder = Boolean(entry && entry.kind !== "file");
+    return {
+      statusFiles,
+      path,
+      folder,
+      label: entry && entry.kind !== "file" ? entry.label : (path ?? ""),
+    };
+  };
+  const {
+    statusFiles: selectedStatusFiles,
+    path: selectedPath,
+    folder: selectedIsFolder,
+  } = selectionAt(selectedIndex);
+  /** Read the sidebar cursor after all preceding navigation in this input burst. */
+  const liveCursor = () => {
+    const fileId = getSelectedFileId();
+    if (fileId !== cursorReviewFileIdRef.current) {
+      const file = bootstrap.changeset.files.find((file) => file.id === fileId);
+      activeCursorRef.current = file ? { kind: "file", id: file.path } : null;
+      cursorReviewFileIdRef.current = fileId;
+    }
+    return activeCursorRef.current;
+  };
+  /** Derive mutation targets after both sidebar and review-stream navigation. */
+  const liveSelection = () => selectionAt(sidebarIndexFromCursor(entries, liveCursor()));
   const lease = useMemo(() => createLease(), [bootstrap, createLease]);
   const [promptState, setPromptState] = useState<WorkingTreePrompt | null>(null);
   const promptRef = useRef<WorkingTreePrompt | null>(null);
@@ -200,6 +228,7 @@ export function useWorkingTreeActions({
       const status = files.find((file) => file.path === path);
       if (!status) return;
       focusFiles();
+      activeCursorRef.current = cursor;
       pendingCursorRef.current = null;
       setChosenCursor(cursor);
       // A recreated rename source is a separate status row, never an alias for the destination.
@@ -208,12 +237,22 @@ export function useWorkingTreeActions({
         : undefined;
       if (file) {
         selectReviewFile(file.id, { alignFileHeaderTop: true });
+        cursorReviewFileIdRef.current = getSelectedFileId();
         return;
       }
       pendingCursorRef.current = { cursor, changeset: bootstrap.changeset };
       void switchView(!staged);
     },
-    [lease, files, focusFiles, bootstrap.changeset, selectReviewFile, switchView, staged],
+    [
+      lease,
+      files,
+      focusFiles,
+      bootstrap.changeset,
+      selectReviewFile,
+      getSelectedFileId,
+      switchView,
+      staged,
+    ],
   );
 
   const selectFile = useCallback(
@@ -237,6 +276,7 @@ export function useWorkingTreeActions({
       if (revealPath) revealStatusPath(revealPath, cursor);
       else {
         focusFiles();
+        activeCursorRef.current = cursor;
         setChosenCursor(cursor);
       }
     },
@@ -417,35 +457,43 @@ export function useWorkingTreeActions({
     [canToggleHunk, bootstrap, files, operation, staged, startMutation],
   );
 
-  const actionableFiles = selectedStatusFiles.filter(
-    (file) => !file.conflicted && !file.unavailableReason,
-  );
-  const canDiscardSelected = Boolean(
-    enabled && actionableFiles.length > 0 && operation?.discardFile,
-  );
-  const canStashSelected = Boolean(
-    enabled &&
-    actionableFiles.length > 0 &&
-    (actionableFiles.length === 1
-      ? operation?.stashFile || operation?.stashFiles
-      : operation?.stashFiles),
-  );
+  /** Resolve prompt eligibility from the cursor reached by the latest input event. */
+  const promptSelection = () => {
+    const selection = liveSelection();
+    const actionableFiles = selection.statusFiles.filter(
+      (file) => !file.conflicted && !file.unavailableReason,
+    );
+    return {
+      ...selection,
+      actionableFiles,
+      canDiscard: Boolean(enabled && actionableFiles.length > 0 && operation?.discardFile),
+      canStash: Boolean(
+        enabled &&
+        actionableFiles.length > 0 &&
+        (actionableFiles.length === 1
+          ? operation?.stashFile || operation?.stashFiles
+          : operation?.stashFiles),
+      ),
+    };
+  };
 
   /** Open a generation-bound prompt; rapid repeated keys cannot replace its captured target. */
   const openPrompt = (kind: WorkingTreePrompt["kind"]) => {
+    const selection = promptSelection();
+    const { actionableFiles } = selection;
     if (
       !lease.isLive() ||
       busyRef.current ||
       getPrompt() ||
       actionableFiles.length === 0 ||
-      !(kind === "discard" ? canDiscardSelected : canStashSelected)
+      !(kind === "discard" ? selection.canDiscard : selection.canStash)
     )
       return;
     const pending = {
       kind,
       files: actionableFiles,
-      label: selectedLabel || actionableFiles[0]!.path,
-      folder: selectedIsFolder,
+      label: selection.label || actionableFiles[0]!.path,
+      folder: selection.folder,
       lease,
     };
     setMessage("");
@@ -544,8 +592,12 @@ export function useWorkingTreeActions({
     acceptPrompt,
     message,
     setMessage,
-    canDiscardSelected,
-    canStashSelected,
+    get canDiscardSelected() {
+      return promptSelection().canDiscard;
+    },
+    get canStashSelected() {
+      return promptSelection().canStash;
+    },
     discardSelected: () => openPrompt("discard"),
     stashSelected: () => openPrompt("stash"),
     pane,
@@ -553,6 +605,7 @@ export function useWorkingTreeActions({
     staged,
     selectedPath,
     selectedIsFolder: Boolean(filesPaneFocused && selectedIsFolder),
+    isSelectedFolder: () => liveSelection().folder,
     selectedWillStage: selectedToggle.stage,
     canToggleSelected: enabled && canToggleSelectedTargets,
     canToggleSelectedHunk: enabled && canToggleHunk(selectedFile?.id, selectedHunkIndex),
@@ -573,14 +626,16 @@ export function useWorkingTreeActions({
       void switchView(next);
     },
     moveFile: (delta: number) => {
+      const selectedPath = liveSelection().path;
       const index = files.findIndex((file) => file.path === selectedPath);
       const file = files[Math.max(0, Math.min(files.length - 1, index + delta))];
       if (file && file.path !== selectedPath) selectFile(file.path);
     },
     moveEntry: (delta: number) => {
+      const selectedIndex = sidebarIndexFromCursor(entries, liveCursor());
       const nextIndex = stepSidebarIndex(entries, selectedIndex, delta);
       const next = entries[nextIndex];
-      if (next && next.id !== selectedEntryId) selectEntry(next.id);
+      if (next && next.id !== sidebarEntryIdAtIndex(entries, selectedIndex)) selectEntry(next.id);
     },
   };
 }

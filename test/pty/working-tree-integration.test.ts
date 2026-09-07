@@ -175,8 +175,8 @@ describe("PTY working-tree staging", () => {
     });
     try {
       await session.waitForText("later alpha", { timeout: 15_000 });
-      await focusFilesPane(session);
-      await session.press("d");
+      await harness.ensureKeyboardIsLive(session);
+      session.writeRaw(",d");
       await session.waitForText("Discard changes");
       await session.press("escape");
       expect(readFileSync(join(root, "alpha.txt"), "utf8")).toBe("later alpha\n");

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, setDefaultTimeout, spyOn, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
+import { KeyEvent } from "@opentui/core";
 import { act } from "react";
 import { mkdirSync, readFileSync, rmSync, writeFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
@@ -97,6 +98,29 @@ async function press(key: string) {
   });
 }
 
+/** Deliver consecutive keys without allowing React to commit between them. */
+async function pressTestBurst(keys: string) {
+  await act(async () => {
+    for (const key of keys) {
+      setup!.renderer.keyInput.emit(
+        "keypress",
+        new KeyEvent({
+          name: key === "\r" ? "return" : key === "\x1b" ? "escape" : key,
+          sequence: key,
+          raw: key,
+          ctrl: false,
+          meta: false,
+          option: false,
+          shift: false,
+          number: false,
+          eventType: "press",
+          source: "raw",
+        }),
+      );
+    }
+  });
+}
+
 afterEach(async () => {
   if (setup) {
     const current = setup;
@@ -107,6 +131,73 @@ afterEach(async () => {
 });
 
 describe("working-tree stream actions", () => {
+  test.each([
+    [",d", "alpha.txt"],
+    [".d", "beta.txt"],
+    [".,d", "alpha.txt"],
+    [",jd", "beta.txt"],
+    ["]\x1bd", "beta.txt"],
+  ])("captures the current discard target for one input burst %s", async (keys, path) => {
+    const root = await createReview({
+      prepare: (root) => writeFileSync(join(root, "beta.txt"), "unstaged beta\n"),
+    });
+    await pressTestBurst(keys);
+    await waitForReview(() => setup!.captureCharFrame().includes("Discard changes"));
+    expect(setup!.captureCharFrame()).toContain(`"${path}"`);
+    await press("x");
+    await waitForReview(() =>
+      setup!.captureCharFrame().includes(`Discarded all changes in ${path}.`),
+    );
+    expect(readFileSync(join(root, "alpha.txt"), "utf8")).toBe(
+      path === "alpha.txt" ? "one\ntwo\nthree\n" : "one\nchanged alpha\nthree\n",
+    );
+    expect(readFileSync(join(root, "beta.txt"), "utf8")).toBe(
+      path === "beta.txt" ? "other\n" : "unstaged beta\n",
+    );
+  });
+
+  test.each([",]d", ",\rd", ",\rjd"])(
+    "does not discard after leaving file focus in burst %s",
+    async (keys) => {
+      const root = await createReview();
+      await pressTestBurst(keys);
+      await act(async () => setup!.renderOnce());
+      expect(setup!.captureCharFrame()).not.toContain("Discard changes");
+      expect(readFileSync(join(root, "alpha.txt"), "utf8")).toContain("changed alpha");
+    },
+  );
+
+  test.each([".s", "]\x1bs"])("captures the latest stash target in burst %s", async (keys) => {
+    await createReview({
+      prepare: (root) => writeFileSync(join(root, "beta.txt"), "unstaged beta\n"),
+    });
+    await pressTestBurst(keys);
+    await waitForReview(() => setup!.captureCharFrame().includes("Stash selected file"));
+    expect(setup!.captureCharFrame()).toContain('"beta.txt"');
+  });
+
+  test.each([
+    ["j\rd", false],
+    ["jk\rd", true],
+  ])("Enter uses the latest folder status in burst %s", async (keys, opensPrompt) => {
+    await createReview({
+      prepare: (root) => {
+        mkdirSync(join(root, "docs"));
+        writeFileSync(join(root, "docs", "note.txt"), "new note\n");
+      },
+    });
+    const row = setup!
+      .captureCharFrame()
+      .split("\n")
+      .findIndex((line) => line.includes("docs/"));
+    expect(row).toBeGreaterThan(0);
+    await act(async () => setup!.mockMouse.click(6, row));
+    await waitForReview(() => setup!.captureCharFrame().includes("Stage folder"));
+    await pressTestBurst(keys);
+    await act(async () => setup!.renderOnce());
+    expect(setup!.captureCharFrame().includes("Discard changes")).toBe(opensPrompt);
+  });
+
   test("a retired editor lookup neither blocks nor overwrites a reloaded review", async () => {
     let rejectRetired!: (error: Error) => void;
     const retired = new Promise<number>((_, reject) => {

@@ -1,5 +1,6 @@
 import { getConfiguredVcsAdapter } from "../core/vcs";
 import { WorkingTreeDialog } from "./components/chrome/WorkingTreeDialog";
+import { useLiveState } from "./hooks/useLiveState";
 import { recordMousePress } from "./lib/mousePressSequence";
 import type {
   BoxRenderable,
@@ -253,7 +254,7 @@ export function App({
   const [showMenuBar, setShowMenuBar] = useState(bootstrap.initialShowMenuBar ?? true);
   const [showHelp, setShowHelp] = useState(false);
   const [showAgentSkill, setShowAgentSkill] = useState(false);
-  const [focusArea, setFocusArea] = useState<FocusArea>("files");
+  const [focusArea, setFocusArea, getFocusArea] = useLiveState<FocusArea>("files");
   const { text: sessionNoticeText, show: showSessionNotice } = useTimedNotice(4_000);
   const extensions = bootstrap.extensions as ExtensionLoadResult | undefined;
   const pendingTrustRepoRoot = extensions?.pendingTrustRepoRoot;
@@ -354,8 +355,8 @@ export function App({
     getSelectedFileId,
     getSelection: getExtensionSelection,
   } = extensionRuntime;
-  const [hunkActionFocused, setHunkActionFocused] = useState(false);
-  const [filePanelFocused, setFilePanelFocused] = useState(false);
+  const [hunkActionFocused, setHunkActionFocused, getHunkActionFocused] = useLiveState(false);
+  const [filePanelFocused, setFilePanelFocused, getFilePanelFocused] = useLiveState(false);
   const jumpToFile = useCallback(
     (fileId: string, options?: { alignFileHeaderTop?: boolean }) => {
       setHunkActionFocused(false);
@@ -1049,12 +1050,18 @@ export function App({
 
   const filesPaneFocused =
     filesPaneVisible && focusArea === "files" && filePanelFocused && !hunkActionFocused;
+  const isFilesPaneFocused = () =>
+    filesPaneVisible &&
+    getFocusArea() === "files" &&
+    getFilePanelFocused() &&
+    !getHunkActionFocused();
   const filesPaneWidth =
     paneLayout.panes.find((planned) => planned.pane.key === HUNK_FILES_PANE_KEY)?.bounds.width ?? 0;
   const workingTree = useWorkingTreeActions({
     bootstrap,
     selectedFile,
     selectedHunkIndex,
+    getSelectedFileId,
     filter: review.filter,
     reviewFiles: filteredFiles,
     filesPaneFocused,
@@ -1161,8 +1168,12 @@ export function App({
   const appCommands = observeAppCommandDispatch(
     [
       ...buildAppCommands({
-        canDiscardSelectedFile: filesPaneFocused && workingTree.canDiscardSelected,
-        canStashSelectedFile: filesPaneFocused && workingTree.canStashSelected,
+        get canDiscardSelectedFile() {
+          return isFilesPaneFocused() && workingTree.canDiscardSelected;
+        },
+        get canStashSelectedFile() {
+          return isFilesPaneFocused() && workingTree.canStashSelected;
+        },
         discardSelectedFile: workingTree.discardSelected,
         stashSelectedFile: workingTree.stashSelected,
         canToggleFileStaged: !hunkStagingActive && workingTree.canToggleSelected,
@@ -1173,9 +1184,14 @@ export function App({
         toggleStagedView: () => workingTree.switchView(!workingTree.staged),
         canAlignCurrentLine: cursorLine !== "off" && review.lineCursor !== null,
         canApplyFilePresentationToAllMatching: selectedFileViewBulkTarget !== null,
-        canFocusDiffPane:
-          filesPaneFocused && selectedFile !== undefined && !workingTree.selectedIsFolder,
-        canFocusFilesPane: reviewPaneFocused,
+        get canFocusDiffPane() {
+          return (
+            isFilesPaneFocused() && selectedFile !== undefined && !workingTree.isSelectedFolder()
+          );
+        },
+        get canFocusFilesPane() {
+          return filesPaneVisible && getFocusArea() === "files" && !isFilesPaneFocused();
+        },
         canEditActiveNote: activeEditableNoteId !== undefined && review.draftNote === null,
         canReplyToActiveNote: activeReplyableNoteId !== undefined && review.draftNote === null,
         canRefreshCurrentInput,
@@ -1203,7 +1219,7 @@ export function App({
         scrollCodeHorizontally,
         scrollDiff,
         stepDiffLine: (delta) => {
-          if (filesPaneFocused) {
+          if (isFilesPaneFocused()) {
             if (workingTree.pane) {
               setFilePanelFocused(true);
               setHunkActionFocused(false);
