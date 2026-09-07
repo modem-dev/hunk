@@ -10,13 +10,13 @@ function patchFileIdentity(input: CliInput, cwd: string): string | undefined {
   return resolveCanonicalPath(resolve(cwd, input.file));
 }
 
-/** Use the repository-root source label as stable VCS identity across subdirectory reloads. */
+/** Use the authoritative repository root as stable VCS identity across subdirectory reloads. */
 export function reviewDescriptorResourceCwd(
   input: CliInput,
   startupCwd: string,
-  sourceLabel: string,
+  repoRoot: string | undefined,
 ): string {
-  return isVcsReviewInput(input) ? sourceLabel : startupCwd;
+  return isVcsReviewInput(input) ? (repoRoot ?? startupCwd) : startupCwd;
 }
 
 /** Resolve one exact provider review identity used by commits opened from interactive history. */

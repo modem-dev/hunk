@@ -125,7 +125,7 @@ test("routes repeated history reviews through fresh runtimes and returns instead
         .split("\n")
         .find((line) => line.includes("History row"))
         ?.trimEnd(),
-    ).toEndWith("revision ⧉");
+    ).toEndWith("revision-a ⧉");
     expect(reviewFrame).toContain("Ada ·");
     expect(reviewFrame).not.toContain("Ada · Test");
     await act(async () => setup.mockInput.pressKey("q"));

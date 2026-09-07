@@ -117,7 +117,7 @@ export function AppHost({
     cwd: reviewDescriptorResourceCwd(
       initialBootstrap.input,
       initialBootstrap.reloadContext.cwd,
-      initialBootstrap.changeset.sourceLabel,
+      initialBootstrap.reloadContext.repoRoot,
     ),
     review: initialBootstrap.review,
   });
@@ -335,7 +335,7 @@ export function AppHost({
         nextReviewCwd = reviewDescriptorResourceCwd(
           nextBootstrap.input,
           cwd,
-          nextBootstrap.changeset.sourceLabel,
+          nextBootstrap.reloadContext.repoRoot,
         );
         const preservedReview = reviewDescriptorAfterReload(
           reviewIdentityRef.current.input,

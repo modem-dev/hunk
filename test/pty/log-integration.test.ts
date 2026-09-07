@@ -162,7 +162,7 @@ describe("interactive hunk log", () => {
         timeout: 15_000,
       });
       expect(review).toContain("history.ts");
-      expect(review).toMatch(/Second history commit.*[0-9a-f]{8}\s+⧉/);
+      expect(review).toMatch(/Second history commit.*[0-9a-f]{8,}…\s+⧉/);
       expect(review).toMatch(/history · (?:in .*|.* ago)/);
       expect(review).not.toContain("history · Git");
       expect(session.getRawOutput().slice(transitionOutputStart)).not.toContain("\x1b[?1049l");

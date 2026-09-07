@@ -59,7 +59,7 @@ function historyCommitReviewDescriptor(
     kind: "commit",
     provider: runtime.providerName,
     title: outcome.commit.subject,
-    revision: outcome.commit.displayId,
+    revision: outcome.commit.revisionId,
     author: resolveHistoryAuthorLabel(outcome.commit),
     authoredAt: outcome.commit.authoredAt,
   });

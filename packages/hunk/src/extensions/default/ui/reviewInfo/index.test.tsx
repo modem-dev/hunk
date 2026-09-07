@@ -90,7 +90,8 @@ describe("ReviewInfoPane", () => {
     }
   });
 
-  test("renders commit metadata with the same panel chrome", async () => {
+  test("renders commit metadata with the same panel chrome and copies its full revision", async () => {
+    const fullRevision = "0123456789abcdef0123456789abcdef01234567";
     const appTheme = resolveTheme("github-dark-default", null);
     const theme = toExtensionPaintTheme(appTheme);
     const width = 60;
@@ -103,7 +104,7 @@ describe("ReviewInfoPane", () => {
             kind: "commit",
             provider: "GitHub",
             title: "Render selected commit metadata",
-            revision: "abc1234",
+            revision: fullRevision,
             author: "octocat",
             authoredAt: new Date(Date.now() - 10 * 60 * 60 * 1_000).toISOString(),
           },
@@ -122,16 +123,16 @@ describe("ReviewInfoPane", () => {
       const frame = setup.captureCharFrame();
       expect(frame).toContain("Render selected commit metadata");
       expect(frame).toContain("octocat · 10 hours ago");
-      expect(frame.split("\n")[1]?.trimEnd()).toEndWith("abc1234 ⧉");
+      expect(frame.split("\n")[1]?.trimEnd()).toEndWith("0123456789abcdef01… ⧉");
       expect(frame).not.toContain("GitHub");
       const revisionSpan = setup
         .captureSpans()
-        .lines[1]?.spans.find((span) => span.text.includes("abc1234"));
+        .lines[1]?.spans.find((span) => span.text.includes("0123456789abcdef01…"));
       expect(capturedTestColorToHex(revisionSpan?.fg)).toBe(theme.fileRenamed.toLowerCase());
       const copySpan = setup.captureSpans().lines[1]?.spans.find((span) => span.text === "⧉");
       expect(capturedTestColorToHex(copySpan?.fg)).toBe(appTheme.lineNumberFg.toLowerCase());
       await act(async () => setup.mockMouse.click(width - 2, 1));
-      expect(copyText).toHaveBeenCalledWith("abc1234");
+      expect(copyText).toHaveBeenCalledWith(fullRevision);
       expect(backgroundsAtColumn(setup, 0).slice(1)).toEqual([
         theme.panel.toLowerCase(),
         theme.panel.toLowerCase(),

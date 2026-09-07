@@ -68,6 +68,21 @@ describe("review info presentation", () => {
     });
   });
 
+  test("keeps the title instead of showing an unusable revision at tiny widths", () => {
+    const commit = {
+      kind: "commit" as const,
+      provider: "Git",
+      title: "Title",
+      revision: "1234567890abcdef",
+    };
+    expect(reviewInfoContent(commit, 6)).toEqual({ primary: "Title", secondary: "" });
+    expect(reviewInfoContent(commit, 12)).toEqual({
+      primary: "Title",
+      secondary: "",
+      trailing: "123…",
+    });
+  });
+
   test("omits unknown state while preserving explicit draft identity", () => {
     const { state: _state, ...withoutState } = review;
     expect(reviewInfoLines(withoutState, 200)[0]).toBe("#123 · Add delegated review metadata");

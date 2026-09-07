@@ -1430,7 +1430,7 @@ export interface ExtensionCommitReviewDescriptor extends ExtensionReviewDescript
   /** Provider revision identifier. */
   readonly revision: string;
   readonly author?: string;
-  /** ISO timestamp used for relative commit time when available. */
+  /** Date-time string used for relative commit time when available. */
   readonly authoredAt?: string;
 }
 

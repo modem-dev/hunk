@@ -304,7 +304,7 @@ and retires the replaced instance at that explicit ownership boundary.
 
 The API generation this Hunk speaks (currently `20`). Branch on it if you want
 one file to support several Hunk versions. Version 20 adds optional commit timestamps to review
-metadata and pane clipboard actions; version 19 adds provider-owned history
+metadata, pane clipboard actions, and the `theme.copyAction` paint token; version 19 adds provider-owned history
 enumeration and review planning; version 18 lets lifecycle and custom-event handlers request
 a host-owned review reload; version 17 adds structured review metadata to delegated patch
 commands and projects it into pane availability and component props; version 16 adds pane-wide
@@ -373,7 +373,7 @@ characters, invalid types, unsafe URLs, fields over their byte limits, and descr
 then copies and freezes the accepted value. `provider` and change-request `id` allow 256 bytes;
 `repository`, `author`, `base`, `head`, and `revision` allow 512; `authoredAt` allows 128;
 `title` and `url` allow 2 KiB. Change requests may also carry `state` (`open`, `closed`, or
-`merged`) and boolean `draft`; commits may carry an ISO `authoredAt` timestamp. Exit results and delegation to any built-in other than
+`merged`) and boolean `draft`; commits may carry a parseable `authoredAt` date-time. Exit results and delegation to any built-in other than
 `patch` cannot carry review metadata. An ordinary `hunk patch` has no descriptor.
 
 The descriptor describes the review source rather than its diff contents: it stays on the app
@@ -936,7 +936,8 @@ API-v3 sidebar names remain as deprecated aliases: use `registerPane`,
 controller as the built-in files pane and the keyboard shortcuts, so the review
 stream scrolls, selection updates, and the `selection_changed` event fires
 exactly as if the user had clicked a built-in row. `actions.copyText(text)` uses the terminal's
-OSC 52 clipboard integration and returns `false` when unavailable. `actions.notify(message,
+OSC 52 clipboard integration and returns `false` when unavailable. Extensions that call it or read
+`theme.copyAction` should declare `"hunk": { "apiVersion": 20 }` in their manifest. `actions.notify(message,
 type?)` shows a toast attributed to your extension. An action given a file id
 that is not currently visible is refused with a warning rather than corrupting
 the selection. A pane's `actions` carry the same navigation methods a command
