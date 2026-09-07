@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
+import { UNKNOWN_CLI_VERSION } from "../run/version";
 import type { InstallSource } from "./installSource";
 import {
   parseUpdateMethod,
@@ -370,5 +371,78 @@ describe("hunk update", () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain("Hunk was installed with mise.");
+  });
+
+  test("links the release notes for the version it installed", async () => {
+    const result = await runUpdate({
+      installSource: "npm",
+      installedVersion: "1.0.0",
+      latestVersion: "1.1.0",
+    });
+
+    expect(result.stdout).toContain("Updated hunk to 1.1.0.");
+    expect(result.stdout).toContain("Release notes: https://hunk.dev/changelog/1.1/#v1-1-0");
+  });
+
+  test("links the release notes for a version that is already current", async () => {
+    const result = await runUpdate({
+      installSource: "npm",
+      installedVersion: "1.1.0",
+      latestVersion: "1.1.0",
+    });
+
+    expect(result.stdout).toContain("hunk 1.1.0 is already up to date.");
+    expect(result.stdout).toContain("Release notes: https://hunk.dev/changelog/1.1/#v1-1-0");
+  });
+
+  test("links the release notes for a prerelease it installed", async () => {
+    const result = await runUpdate({
+      installSource: "npm",
+      installedVersion: "1.0.0",
+      latestVersion: "1.1.0-beta.0",
+      input: { version: "1.1.0-beta.0" },
+    });
+
+    expect(result.stdout).toContain("Release notes: https://hunk.dev/changelog/1.1/#v1-1-0-beta-0");
+  });
+
+  test("links the release notes for an explicit downgrade", async () => {
+    const result = await runUpdate({
+      installSource: "npm",
+      installedVersion: "1.1.0",
+      latestVersion: "1.1.0",
+      input: { version: "1.0.5" },
+    });
+
+    expect(result.stdout).toContain("Updated hunk to 1.0.5.");
+    expect(result.stdout).toContain("Release notes: https://hunk.dev/changelog/1.0/#v1-0-5");
+  });
+
+  test("links the latest available release notes for --check", async () => {
+    const result = await runUpdate({
+      installSource: "npm",
+      installedVersion: "1.0.0",
+      latestVersion: "1.1.0",
+      input: { check: true },
+    });
+
+    expect(result.stdout).toContain("An update is available.");
+    expect(result.stdout).toContain("Release notes: https://hunk.dev/changelog/1.1/#v1-1-0");
+  });
+
+  test("omits the release notes link for a version with no changelog page", async () => {
+    // `--check` reports the installed version too, and a local build reports `0.0.0-unknown`.
+    // Only the latest release gets a link; printing a plausible-looking URL to a 404 for the
+    // unparseable one would be worse than printing nothing.
+    const result = await runUpdate({
+      installSource: "npm",
+      installedVersion: UNKNOWN_CLI_VERSION,
+      latestVersion: "1.1.0",
+      input: { check: true },
+    });
+
+    expect(result.stdout).toContain(UNKNOWN_CLI_VERSION);
+    expect(result.stdout).toContain("Release notes: https://hunk.dev/changelog/1.1/#v1-1-0");
+    expect(result.stdout).not.toContain(`#v0-0-0-unknown`);
   });
 });
