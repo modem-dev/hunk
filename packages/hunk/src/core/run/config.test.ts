@@ -310,6 +310,25 @@ describe("config resolution", () => {
     ).toBe(true);
   });
 
+  test("enables animations by default and accepts a config override", () => {
+    const home = createTempDir("hunk-config-home-");
+    const repo = createTempDir("hunk-config-repo-");
+    createRepo(repo);
+    const input = createPatchPagerInput();
+    const env = { HOME: home };
+
+    expect(resolveConfiguredCliInput(input, { cwd: repo, env }).input.options.animations).toBe(
+      true,
+    );
+
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), "animations = false\n");
+
+    expect(resolveConfiguredCliInput(input, { cwd: repo, env }).input.options.animations).toBe(
+      false,
+    );
+  });
+
   test("defaults tab width to 4 and rejects invalid configured widths", () => {
     const home = createTempDir("hunk-config-home-");
     const repo = createTempDir("hunk-config-repo-");

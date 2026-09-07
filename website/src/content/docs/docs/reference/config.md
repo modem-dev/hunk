@@ -150,6 +150,16 @@ Show the top application menu bar.
 
 ---
 
+**`animations`**
+
+Animate panes as they open and close.
+
+- **Type:** boolean
+- **Accepted:** `true` or `false`
+- **Built-in default:** `true`
+
+---
+
 **`sidebar`**
 
 Show the files pane if it fits, keep it closed, or let the responsive layout decide. Pager sessions always open with the files pane closed.

@@ -25,6 +25,7 @@ hunk_gap = 0
 wrap_lines = false
 hunk_headers = true
 menu_bar = true
+animations = true
 sidebar = "auto"
 agent_notes = false
 transparent_background = false

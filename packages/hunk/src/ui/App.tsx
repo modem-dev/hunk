@@ -505,6 +505,7 @@ export function App({
   const { animating: paneLayoutAnimating, layout: presentedPaneLayout } = usePaneSlideAnimation({
     bodyHeight,
     bodyWidth,
+    enabled: bootstrap.input.options.animations !== false,
     paneLayout,
     paneLayoutSettled,
     resizing: resizingPaneKey !== null,

@@ -149,7 +149,7 @@ describe("session daemon request validation", () => {
       {
         action: "reload",
         selector: { sessionId: "s-1" },
-        nextInput: { kind: "show", ref: "HEAD~1", options: {} },
+        nextInput: { kind: "show", ref: "HEAD~1", options: { animations: false } },
       },
       {
         action: "reload",

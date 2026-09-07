@@ -42,6 +42,7 @@ export interface CommonOptions {
   wrapLines?: boolean;
   hunkHeaders?: boolean;
   menuBar?: boolean;
+  animations?: boolean;
   sidebar?: SidebarVisibility;
   agentNotes?: boolean;
   copyDecorations?: boolean;

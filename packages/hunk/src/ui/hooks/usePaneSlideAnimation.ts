@@ -20,6 +20,7 @@ import {
 interface PaneSlideAnimationOptions {
   bodyHeight: number;
   bodyWidth: number;
+  enabled: boolean;
   paneLayout: ExtensionPaneLayoutPlan;
   paneLayoutSettled: boolean;
   resizing: boolean;
@@ -46,11 +47,12 @@ interface PaneSlidePresentation {
 export function usePaneSlideAnimation({
   bodyHeight,
   bodyWidth,
+  enabled,
   paneLayout,
   paneLayoutSettled,
   resizing,
 }: PaneSlideAnimationOptions): PaneSlidePresentation {
-  const duration = paneSlideAnimationDuration();
+  const duration = paneSlideAnimationDuration(enabled);
   const timeline = useTimeline({
     autoplay: false,
     duration: Math.max(1, duration),

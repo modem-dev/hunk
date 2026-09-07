@@ -10,6 +10,7 @@ import {
 import {
   interpolatePaneLayout,
   paneLayoutGeometryEqual,
+  paneSlideAnimationDuration,
   paneSlideFrameDue,
   paneVisibilityTransitionKey,
   PANE_SLIDE_MAX_FPS,
@@ -60,6 +61,10 @@ function createPaneLayouts(placement: SessionPane["placement"]): {
 }
 
 describe("pane slide presentation", () => {
+  test("settles immediately when animations are disabled", () => {
+    expect(paneSlideAnimationDuration(false)).toBe(0);
+  });
+
   test("caps presentation commits at the configured frame rate", () => {
     const frameInterval = 1_000 / PANE_SLIDE_MAX_FPS;
 

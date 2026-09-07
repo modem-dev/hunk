@@ -39,6 +39,7 @@ hunk_headers = true
 file_gap = 1
 hunk_gap = 0
 menu_bar = true
+animations = true
 sidebar = "auto"
 agent_notes = false
 copy_decorations = false
@@ -47,6 +48,8 @@ cursor_line = "row"
 ```
 
 `transparent_background` lets the terminal paint Hunk surfaces; turn it off when exact theme surfaces matter more than matching terminal transparency.
+
+Set `animations = false` to make panes open and close immediately.
 
 `cursor_line` chooses how the line you are on is marked: `row` highlights the whole row, `number` marks only its line number, and `off` removes the marker and returns `k` / `j` to scrolling the view one row at a time. Switch it mid-review from the View menu, or set `--cursor-line <style>` for a single run.
 

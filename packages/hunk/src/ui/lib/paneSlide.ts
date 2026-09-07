@@ -8,9 +8,9 @@ export const PANE_SLIDE_MAX_FPS = 30;
 
 const PANE_SLIDE_FRAME_INTERVAL_MS = 1_000 / PANE_SLIDE_MAX_FPS;
 
-/** Keep test-renderer transitions deterministic without changing interactive timing. */
-export function paneSlideAnimationDuration(): number {
-  return process.env.NODE_ENV === "test" ? 0 : PANE_SLIDE_DURATION_MS;
+/** Resolve pane motion to an immediate transition when tests or configuration disable it. */
+export function paneSlideAnimationDuration(enabled: boolean = true): number {
+  return !enabled || process.env.NODE_ENV === "test" ? 0 : PANE_SLIDE_DURATION_MS;
 }
 
 /** Return whether enough wall-clock time elapsed to present another animation frame. */
