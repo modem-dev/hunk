@@ -283,7 +283,14 @@ describe("review metadata reloads", () => {
       expect(setup.captureCharFrame()).toContain("history ·");
     } finally {
       await act(async () => setup.renderer.destroy());
-      rmSync(fixture.directory, { recursive: true, force: true });
+      // Windows can retain the Git fixture as a child-process cwd briefly after renderer teardown.
+      if (process.platform === "win32") await Bun.sleep(100);
+      rmSync(fixture.directory, {
+        recursive: true,
+        force: true,
+        maxRetries: process.platform === "win32" ? 5 : 0,
+        retryDelay: 100,
+      });
     }
   });
 
