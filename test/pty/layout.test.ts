@@ -548,14 +548,14 @@ describe("PTY layout", () => {
         .join("\n");
 
       expect(initialSidebar).not.toContain("src/ui/");
-      expect(initialSidebar).toContain("src/");
-      expect(initialSidebar).toContain("ui/");
+      expect(initialSidebar).toContain("⌄ src/");
+      expect(initialSidebar).toContain("⌄ ui/");
       expect(
         initialSidebar
           .split("\n")
           .find((line) => line.includes("src/"))
           ?.indexOf("src/"),
-      ).toBe(2);
+      ).toBe(4);
 
       await dragMouse(session, initialDividerColumn - 2, 6, initialDividerColumn - 4, 6);
       const resized = await harness.waitForSnapshot(

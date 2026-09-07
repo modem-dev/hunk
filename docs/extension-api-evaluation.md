@@ -1,14 +1,24 @@
 # Extension API field notes: Review triage
 
+> **Historical field report (July 2026).** This evaluation describes the API when the review-triage
+> example was introduced. Use the [extension guide](extensions.md) and
+> [extension architecture](extension-architecture.md) for current behavior. Since this report,
+> command handlers gained review navigation and pane components gained exact host-owned width and
+> height. Host-managed persistence, richer dialogs/menu layout, and a public pane viewport-scroll
+> contract remain open design areas.
+
 `examples/extensions/review-triage/` is a deliberately ordinary, user-installable extension built only against `hunkdiff/extension`. It provides a session-local hunk triage board: a reviewer can open a right sidebar, navigate through public hunk summaries, mark the current hunk approved/investigate/blocked with an optional rationale, and clear decisions. Its commands are ordinary **Extensions** menu entries, while lifecycle and bus events keep the board current.
 
 Building it validated the API's central path: a third-party extension can compose a React sidebar, menu-reachable commands, host-owned modal dialogs, selection snapshots, lifecycle subscriptions, notifications, and a small inter-extension bus without imports from Hunk internals. The PTY integration test loads this exact directory rather than a string fixture.
 
 ## Findings
 
-### Sidebar geometry and selection following are missing
+### Sidebar geometry and selection following were missing
 
-The public sidebar props expose width but not pane height, viewport bounds, scroll position, or a way to scroll an item into view. The bundled file sidebar uses host-internal `ScrollBoxRenderable` viewport events and `scrollChildIntoView`; a third-party sidebar cannot reproduce its windowing or follow-selection behavior. Review triage therefore uses a simple scrollbox and compact rows, but selected hunks can fall out of view for a large review.
+**Current status:** partially resolved. Pane props now expose exact host-owned width and height;
+viewport bounds and a host scroll-item capability are still not public.
+
+At the time of this report, the public sidebar props exposed width but not pane height, viewport bounds, scroll position, or a way to scroll an item into view. The bundled file sidebar uses host-internal `ScrollBoxRenderable` viewport events and `scrollChildIntoView`; a third-party sidebar cannot reproduce its windowing or follow-selection behavior. Review triage therefore uses a simple scrollbox and compact rows, but selected hunks can fall out of view for a large review.
 
 **Suggested addition:** expose read-only pane viewport geometry plus a narrow `actions.scrollItemIntoView(id)` capability (or a supported scrollbox ref contract). This would let extensions virtualize and retain selection visibility without exposing OpenTUI internals.
 
@@ -18,11 +28,14 @@ The triage board can only be session-local. Extension config is repository-overr
 
 **Suggested addition:** a namespaced, user-owned storage API with explicit scopes such as session and local-user/repository, plus a changeset identity available for reconciliation. Hunk should own the file location and trust semantics.
 
-### Command handlers cannot navigate the review stream
+### Command handlers could not navigate the review stream
 
-Commands receive a selection snapshot, dialogs, and sidebar open/close controls, but no `selectFile` or `selectHunk`. A "next blocked hunk" command therefore cannot navigate directly; it would need to rely on a mounted sidebar to perform navigation, which is both indirect and unreliable on a narrow terminal. Review triage avoids shipping that misleading command and makes hunk rows clickable instead.
+**Current status:** resolved. `ExtensionCommandContext.navigation` now exposes guarded
+`selectFile`, `selectHunk`, and `revealLine` actions.
 
-**Suggested addition:** place the existing guarded `selectFile` / `selectHunk` navigation methods on command context as well as sidebar actions.
+At the time of this report, commands received a selection snapshot, dialogs, and sidebar open/close controls, but no `selectFile` or `selectHunk`. A "next blocked hunk" command therefore cannot navigate directly; it would need to rely on a mounted sidebar to perform navigation, which is both indirect and unreliable on a narrow terminal. Review triage avoids shipping that misleading command and makes hunk rows clickable instead.
+
+**Implemented:** command context now exposes the guarded navigation methods used by pane actions.
 
 ### Dialogs are intentionally simple, but triage exposes their limits
 

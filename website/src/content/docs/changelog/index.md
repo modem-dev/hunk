@@ -24,7 +24,7 @@ head:
 
 ## [Hunk 0.21](/changelog/0.21/)
 
-Latest · August 30, 2026 – September 2, 2026 · 3 releases · 75 changes
+Latest · August 30, 2026 – September 4, 2026 · 4 releases · 77 changes
 
 Hunk 0.21 turns reviews into a richer agent-aware workspace with authenticated live sessions, editable threaded notes, two-revision and two-file comparisons, more responsive navigation, and a broader extension surface.
 

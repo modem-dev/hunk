@@ -7,14 +7,14 @@
  * builder ever re-derives a gap range or a note target on its own, this adapter reports
  * the divergence.
  */
-import { resolveCommentTarget } from "../../../src/core/liveComments";
-import { reviewGapId } from "../../../src/core/review/expansion";
-import type { DiffFile } from "../../../src/core/changeset/model";
-import { buildDiffSectionRowPlan } from "../../../src/ui/diff/diffSectionRowPlan";
-import { DIFF_MESSAGES, diffMessage } from "../../../src/ui/diff/plannedRowText";
-import type { DiffRow } from "../../../src/ui/diff/diffRows";
-import { buildSelectedHunkSummary } from "../../../src/ui/lib/reviewState";
-import { resolveTheme } from "../../../src/ui/themes";
+import { resolveCommentTarget } from "../../../packages/hunk/src/core/liveComments";
+import { reviewGapId } from "../../../packages/hunk/src/core/review/expansion";
+import type { DiffFile } from "../../../packages/hunk/src/core/changeset/model";
+import { buildDiffSectionRowPlan } from "../../../packages/hunk/src/ui/diff/diffSectionRowPlan";
+import { DIFF_MESSAGES, diffMessage } from "../../../packages/hunk/src/ui/diff/plannedRowText";
+import type { DiffRow } from "../../../packages/hunk/src/ui/diff/diffRows";
+import { buildSelectedHunkSummary } from "../../../packages/hunk/src/ui/lib/reviewState";
+import { resolveTheme } from "../../../packages/hunk/src/ui/themes";
 import type {
   ConformanceExpandedRow,
   ConformanceGap,

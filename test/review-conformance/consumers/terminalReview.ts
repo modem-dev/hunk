@@ -6,14 +6,17 @@
  * planning paths without mounting OpenTUI, so the shared corpus catches a terminal
  * lifecycle regression as well as a core-planner regression.
  */
-import type { ReviewAction } from "../../../src/core/review/actions";
-import { projectReviewDocument } from "../../../src/core/review/document";
-import { applyReviewIntent } from "../../../src/core/review/intents";
-import { reduceReviewState } from "../../../src/core/review/reducer";
-import { selectRevealTarget } from "../../../src/core/review/selectors";
-import { createInitialReviewState, type ReviewState } from "../../../src/core/review/state";
-import type { ReviewStore } from "../../../src/core/review/store";
-import { planTerminalSelectionReconciliation } from "../../../src/ui/lib/reviewState";
+import type { ReviewAction } from "../../../packages/hunk/src/core/review/actions";
+import { projectReviewDocument } from "../../../packages/hunk/src/core/review/document";
+import { applyReviewIntent } from "../../../packages/hunk/src/core/review/intents";
+import { reduceReviewState } from "../../../packages/hunk/src/core/review/reducer";
+import { selectRevealTarget } from "../../../packages/hunk/src/core/review/selectors";
+import {
+  createInitialReviewState,
+  type ReviewState,
+} from "../../../packages/hunk/src/core/review/state";
+import type { ReviewStore } from "../../../packages/hunk/src/core/review/store";
+import { planTerminalSelectionReconciliation } from "../../../packages/hunk/src/ui/lib/reviewState";
 import { toAnnotationIndex, toConformanceSelection, toSemanticSelection } from "./intentPlanner";
 import type { ReviewNavigationConsumer, ReviewNavigationFixture } from "../types";
 

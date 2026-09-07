@@ -1,9 +1,9 @@
 // Benchmark raw patch parsing and sanitized DiffFile construction for several diff shapes.
 import { performance } from "perf_hooks";
 import { parsePatchFiles } from "@pierre/diffs";
-import { buildDiffFile } from "../src/core/changeset/diffFile";
-import { findPatchChunk, splitPatchIntoFileChunks } from "../src/core/patch/chunks";
-import { sanitizePatchText } from "../src/core/patch/sanitize";
+import { buildDiffFile } from "../packages/hunk/src/core/changeset/diffFile";
+import { findPatchChunk, splitPatchIntoFileChunks } from "../packages/hunk/src/core/patch/chunks";
+import { sanitizePatchText } from "../packages/hunk/src/core/patch/sanitize";
 import { createSyntheticPatch } from "./lib/fixtures";
 
 interface Scenario {

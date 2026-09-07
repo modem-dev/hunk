@@ -19,4 +19,4 @@ bun run examples/8-opentui-primitives/primitives-demo.tsx
 - Host-owned window borders/chrome around each primitive so you can inspect component boundaries
 - Host-owned state for selected file and split/stack layout
 
-The in-repo demo imports from `../../src/opentui` so it runs from source. Published consumers should import from `hunkdiff/opentui` instead.
+The in-repo demo imports from `../../packages/hunk/src/opentui` so it runs from source. Published consumers should import from `hunkdiff/opentui` instead.

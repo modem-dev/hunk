@@ -1,4 +1,4 @@
-import { BUNDLED_SHIKI_THEME_IDS } from "../../../src/core/theme/catalog";
+import { BUNDLED_SHIKI_THEME_IDS } from "../../../packages/hunk/src/core/theme/catalog";
 import { SITE_ORIGIN } from "../lib/site";
 
 /**

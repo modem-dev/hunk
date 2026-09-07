@@ -1,10 +1,10 @@
 // Compare a resident main-process cache hit with a worker-LRU revisit after main-cache eviction.
 import { performance } from "node:perf_hooks";
 import { parseDiffFromFile } from "@pierre/diffs";
-import type { DiffFile } from "../src/core/changeset/model";
-import { resolveTheme } from "../src/ui/themes";
-import { disposeHighlightWorker } from "../src/ui/diff/worker/highlightWorkerClient";
-import { prefetchHighlightedDiff } from "../src/ui/diff/useHighlightedDiff";
+import type { DiffFile } from "../packages/hunk/src/core/changeset/model";
+import { resolveTheme } from "../packages/hunk/src/ui/themes";
+import { disposeHighlightWorker } from "../packages/hunk/src/ui/diff/worker/highlightWorkerClient";
+import { prefetchHighlightedDiff } from "../packages/hunk/src/ui/diff/useHighlightedDiff";
 
 const lineCount = 8_000;
 const theme = resolveTheme("github-dark-default", null);

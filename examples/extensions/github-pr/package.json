@@ -7,6 +7,6 @@
     "extensions": [
       "./index.ts"
     ],
-    "apiVersion": 10
+    "apiVersion": 17
   }
 }

@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { performance } from "perf_hooks";
 import { parsePatchFiles } from "@pierre/diffs";
-import { getBundledVcsCatalog } from "../src/app/vcsCatalog";
-import { loadAppBootstrap } from "../src/core/changeset/loaders";
+import { getBundledVcsCatalog } from "../packages/hunk/src/app/vcsCatalog";
+import { loadAppBootstrap } from "../packages/hunk/src/core/changeset/loaders";
 
 const FILE_COUNT = 64;
 const LINES_PER_FILE = 420;

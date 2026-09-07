@@ -5,7 +5,7 @@ A session-local hunk review board for Hunk. It records which hunks you have visi
 Run it directly from this checkout:
 
 ```bash
-bun run src/main.tsx -- diff --extension ./examples/extensions/review-triage
+bun run packages/hunk/src/main.tsx -- diff --extension ./examples/extensions/review-triage
 ```
 
 Or copy the directory to your Hunk extensions directory and keep its `package.json`; its manifest makes the folder a single `review-triage` extension.

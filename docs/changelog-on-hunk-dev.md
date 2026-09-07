@@ -1,7 +1,7 @@
 # Release notes on hunk.dev
 
-`CHANGELOG.md` is the source of truth for what shipped. `scripts/generate-changelog.ts` projects it
-into the pages published at `hunk.dev/changelog`, the same way `scripts/generate-docs.ts` projects
+`CHANGELOG.md` is the source of truth for what shipped. `scripts/generate/generate-changelog.ts` projects it
+into the pages published at `hunk.dev/changelog`, the same way `scripts/generate/generate-docs.ts` projects
 runtime metadata into the CLI and config references. Nothing under the generated paths is
 hand-edited; `bun run check:changelog` fails the build when they drift.
 
@@ -103,7 +103,7 @@ Presentation lives in the site:
 - The landing page imports `website/releases/latest.json` for its release ribbon, so the current
   version is a static import rather than a build-time parse of generated Markdown.
 
-`vercel.json` must keep `CHANGELOG.md` and `scripts/generate-changelog.ts` in its `ignoreCommand`
+`vercel.json` must keep `CHANGELOG.md` and `scripts/generate/generate-changelog.ts` in its `ignoreCommand`
 path list, or release commits will not trigger a deploy.
 
 ## Social cards
@@ -134,6 +134,6 @@ none), and patch chips appear only when a series has more than one release.
   launch-video pipeline keeps generated media out of Git.
 - **Contributor lists.** The GitHub release bodies name first-time contributors, which is community
   goodwill and organic links. `CHANGELOG.md` does not carry authors, so this needs a second input.
-- **The in-app update notice.** `src/core/process/updateNotice.ts` tells users a new version exists without
+- **The in-app update notice.** `packages/hunk/src/core/process/updateNotice.ts` tells users a new version exists without
   linking what changed. Appending `hunk.dev/changelog/<minor>` is the highest-intent entry point
   available and is tracked separately.

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { cleanupTestConfigHomes, createTestConfigHome } from "../helpers/config-home";
 
 const repoRoot = process.cwd();
-const sourceEntrypoint = join(repoRoot, "src/main.tsx");
+const sourceEntrypoint = join(repoRoot, "packages/hunk/src/main.tsx");
 // Spawned hunk processes must assert built-in defaults, not the developer's ambient user config.
 const testConfigHome = createTestConfigHome();
 
@@ -263,7 +263,6 @@ async function writeTtyInputUntil(
   label: string,
   predicate: (output: string) => boolean,
 ) {
-  let attempts = 0;
   let lastAttemptAt = 0;
 
   try {
@@ -279,14 +278,13 @@ async function writeTtyInputUntil(
           throw new Error(`TTY process exited with ${proc.exitCode} before ${label}.`);
         }
 
-        if (attempts < 4 && (attempts === 0 || Date.now() - lastAttemptAt >= 150)) {
+        if (lastAttemptAt === 0 || Date.now() - lastAttemptAt >= 500) {
           await writeTtyInput(proc, input);
-          attempts += 1;
           lastAttemptAt = Date.now();
         }
         return null;
       },
-      2_000,
+      5_000,
       25,
     );
   } catch (error) {

@@ -19,13 +19,13 @@
 import type {
   ReviewPublicationAddress,
   ReviewPublicationOrder,
-} from "../../src/core/review/generationOrder";
-import type { ReviewIntent } from "../../src/core/review/intents";
-import type { ReviewSelectionScope } from "../../src/core/review/navigation";
-import type { ReviewState } from "../../src/core/review/state";
-import type { ReviewNoteV1 } from "../../src/core/review/types";
-import type { HunkReviewPublicationBodyV1 } from "../../src/session/reviewHttpProtocol";
-import type { DiffFile } from "../../src/core/changeset/model";
+} from "../../packages/hunk/src/core/review/generationOrder";
+import type { ReviewIntent } from "../../packages/hunk/src/core/review/intents";
+import type { ReviewSelectionScope } from "../../packages/hunk/src/core/review/navigation";
+import type { ReviewState } from "../../packages/hunk/src/core/review/state";
+import type { ReviewNoteV1 } from "../../packages/hunk/src/core/review/types";
+import type { HunkReviewPublicationBodyV1 } from "../../packages/hunk/src/session/reviewHttpProtocol";
+import type { DiffFile } from "../../packages/hunk/src/core/changeset/model";
 
 export interface ConformanceGap {
   gapId: string;

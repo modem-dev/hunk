@@ -8,7 +8,7 @@ Use Hunk with agents in two ways:
 ## Recommended workflow: steer a live Hunk window
 
 1. Open Hunk in one terminal with a normal review command such as `hunk diff` or `hunk show`.
-2. Load the Hunk review skill: [`skills/hunk-review/SKILL.md`](../skills/hunk-review/SKILL.md).
+2. Load the Hunk review skill: [`packages/hunk/skills/hunk-review/SKILL.md`](../packages/hunk/skills/hunk-review/SKILL.md).
 3. Ask the agent to use the skill and review the current session.
 
 A good generic prompt is:
@@ -42,6 +42,10 @@ hunk session review --repo . --json
 - `list` shows the active Hunk windows
 - `get --repo .` confirms which live session matches the current repo
 - `review --json` returns the loaded file and hunk structure without dumping the full raw patch
+
+When a CLI extension delegated the review, JSON list, context, and review outputs may also include a
+bounded `review` descriptor with provider, title, URL, and kind-specific identity. It is descriptive
+context only and does not add remote provider or reload capabilities.
 
 Only add `--include-patch` when an agent truly needs raw unified diff text:
 
@@ -86,18 +90,23 @@ For one note, use `comment add`:
 hunk session comment add --repo . --file README.md --new-line 103 --summary "Tighten this wording"
 ```
 
-For multiple notes, use one stdin batch with `comment apply`:
+Reply to an existing note by id; the reply inherits the parent's file and code anchor:
 
 ```bash
-printf '%s\n' '{"comments":[{"filePath":"README.md","newLine":103,"summary":"Tighten this wording"}]}' \
+hunk session comment add --repo . --reply-to user:123 --summary "Addressed in the latest revision"
+```
+
+For multiple notes or replies, use one stdin batch with `comment apply`:
+
+```bash
+printf '%s\n' '{"comments":[{"filePath":"README.md","newLine":103,"summary":"Tighten this wording"},{"replyTo":"user:123","summary":"Addressed"}]}' \
   | hunk session comment apply --repo . --stdin
 ```
 
-`comment apply` payload items need:
+Each `comment apply` item requires `summary` and either:
 
-- `filePath`
-- `summary`
-- exactly one target such as `hunk`, `hunkNumber`, `oldLine`, or `newLine`
+- `replyTo` by itself to inherit an existing note's anchor, or
+- `filePath` with exactly one target such as `hunk`, `hunkNumber`, `oldLine`, or `newLine`
 
 If you want the UI to jump to the new note, add `--focus` to `comment add` or `comment apply`.
 

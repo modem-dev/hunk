@@ -1,7 +1,7 @@
 import {
   createHighlightWorker,
   supportsHighlightWorkerOffload,
-} from "../../../src/highlightWorkerClient";
+} from "../../../packages/hunk/src/highlightWorkerClient";
 
 if (!supportsHighlightWorkerOffload()) {
   process.stdout.write("compiled highlight worker disabled\n");

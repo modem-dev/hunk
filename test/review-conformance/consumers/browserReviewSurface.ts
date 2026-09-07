@@ -10,21 +10,21 @@
  * on a client's screen (`docs/browser-review-seam-audit.md`, C4).
  */
 import { SESSION_BROKER_REGISTRATION_VERSION } from "@hunk/session-broker-core";
-import { reviewProcessCapability } from "../../../src/app/review/capability";
-import { nodeReviewDigest } from "../../../src/core/reviewDigest";
-import { BrowserReviewServer } from "../../../src/session/broker/browserReviewServer";
-import { HunkSessionBrokerState } from "../../../src/session/broker/state";
+import { reviewProcessCapability } from "../../../packages/hunk/src/app/review/capability";
+import { nodeReviewDigest } from "../../../packages/hunk/src/core/reviewDigest";
+import { BrowserReviewServer } from "../../../packages/hunk/src/session/broker/browserReviewServer";
+import { HunkSessionBrokerState } from "../../../packages/hunk/src/session/broker/state";
 import {
   parseReviewEventBegin,
   parseReviewEventChunk,
   parseReviewEventEnd,
   parseReviewEventFrame,
   ReviewEventAssembler,
-} from "../../../src/session/reviewEventProtocol";
+} from "../../../packages/hunk/src/session/reviewEventProtocol";
 import {
   HUNK_REVIEW_CAPABILITY_HEADER,
   reviewHttpPath,
-} from "../../../src/session/reviewHttpProtocol";
+} from "../../../packages/hunk/src/session/reviewHttpProtocol";
 import { EVENT_FIXTURE_SESSION_ID } from "../eventFixtures";
 import { collapseChunkRun, resolveFixtureChunkBytes } from "../eventFraming";
 import type { ReviewEventConsumer, ReviewEventFixture } from "../types";

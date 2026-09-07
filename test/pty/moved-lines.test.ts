@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { DEFAULT_DARK_THEME_ID, resolveTheme } from "../../src/ui/themes";
+import { DEFAULT_DARK_THEME_ID, resolveTheme } from "../../packages/hunk/src/ui/themes";
 import { createPtyHarness } from "./harness";
 
 const harness = createPtyHarness();

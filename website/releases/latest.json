@@ -1,6 +1,6 @@
 {
-  "version": "0.21.0",
+  "version": "0.21.1",
   "minor": "0.21",
-  "date": "2026-09-02",
+  "date": "2026-09-04",
   "summary": "Secure sessions, threaded notes, richer comparisons"
 }

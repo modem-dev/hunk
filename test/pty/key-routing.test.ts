@@ -22,7 +22,7 @@ afterEach(() => {
  * Pager mode is where the focused-widget half of this is directly reachable:
  * the review scroll box is focused there by design, and since pager gained the
  * full review controls it also has menus and the theme selector. Review mode's
- * equivalents are covered in `src/ui/AppHost.key-routing.test.tsx`, which hands
+ * equivalents are covered in `packages/hunk/src/ui/AppHost.key-routing.test.tsx`, which hands
  * the scroll box focus directly.
  */
 describe("PTY key routing", () => {

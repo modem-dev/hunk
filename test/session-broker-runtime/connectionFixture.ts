@@ -12,8 +12,11 @@ import {
   type SessionRegistration,
   type SessionSnapshot,
 } from "@hunk/session-broker";
-import { SessionBrokerClient } from "../../src/session/broker/brokerClient";
-import type { HunkSessionRegistration, HunkSessionSnapshot } from "../../src/session/types";
+import { SessionBrokerClient } from "../../packages/hunk/src/session/broker/brokerClient";
+import type {
+  HunkSessionRegistration,
+  HunkSessionSnapshot,
+} from "../../packages/hunk/src/session/types";
 
 interface RunningDaemon {
   stop(): void | Promise<void>;

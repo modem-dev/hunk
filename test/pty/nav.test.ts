@@ -171,6 +171,49 @@ describe("PTY navigation", () => {
     }
   });
 
+  test("file navigation reveals a destination hidden by a collapsed tree folder", async () => {
+    const fixture = harness.createNestedSidebarRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 220,
+      rows: 12,
+    });
+
+    try {
+      const initial = await session.waitForText(/⌄ src\//, { timeout: 15_000 });
+      const initialAlphaCount = harness.countMatches(initial, /alpha\.ts/g);
+      const initialBetaCount = harness.countMatches(initial, /beta\.ts/g);
+      expect(initialAlphaCount).toBeGreaterThanOrEqual(2);
+      expect(initialBetaCount).toBeGreaterThanOrEqual(2);
+
+      await session.click(/⌄ src\//);
+      const collapsed = await harness.waitForSnapshot(
+        session,
+        (text) =>
+          text.includes("› src/") &&
+          harness.countMatches(text, /alpha\.ts/g) === initialAlphaCount - 1 &&
+          harness.countMatches(text, /beta\.ts/g) === initialBetaCount - 1,
+        5_000,
+      );
+      expect(collapsed).toContain("› src/");
+      expect(collapsed).toContain("2 files");
+
+      await session.press(".");
+      const expanded = await harness.waitForSnapshot(
+        session,
+        (text) =>
+          text.includes("⌄ src/") &&
+          harness.countMatches(text, /alpha\.ts/g) === initialAlphaCount &&
+          harness.countMatches(text, /beta\.ts/g) === initialBetaCount,
+        5_000,
+      );
+      expect(expanded).toContain("⌄ src/");
+    } finally {
+      session.close();
+    }
+  });
+
   test("sidebar selection jumps the main pane without collapsing the review stream", async () => {
     const fixture = harness.createSidebarJumpRepoFixture();
     const session = await harness.launchHunk({

@@ -7,8 +7,9 @@ The extension factory receives one API object. Registration calls are only valid
 
 ## `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `16`). Branch on it if you want
-one file to support several Hunk versions. Version 16 adds pane-wide
+The API generation this Hunk speaks (currently `18`). Branch on it if you want
+one file to support several Hunk versions. Version 18 lets lifecycle and custom-event handlers request a host-owned review reload; version 17 adds structured review metadata to delegated
+patch commands and projects it into pane availability and component props; version 16 adds pane-wide
 `onActivate`; version 15 added `{ side, line }` to opted-in pane `currentLine`
 paint; version 14 added structured two-revision
 VCS diff endpoints; version 13 added saved-note parent identities
@@ -37,7 +38,23 @@ hunk.registerCliCommand(
       return { kind: "exit" };
     }
     await ctx.stderr.write("Preparing review…\n");
-    return { kind: "delegate", argv: ["diff"] };
+    return {
+      kind: "delegate",
+      argv: ["patch", "review.diff"],
+      review: {
+        kind: "change-request",
+        provider: "GitHub",
+        title: "Add structured review metadata",
+        url: "https://github.com/acme/project/pull/123",
+        id: "#123",
+        repository: "acme/project",
+        author: "octocat",
+        base: "main",
+        head: "review-metadata",
+        state: "open",
+        draft: false,
+      },
+    };
   },
 );
 ```
@@ -45,9 +62,20 @@ hunk.registerCliCommand(
 Handlers receive `ctx.cwd`, cooperative `ctx.signal`, streaming `ctx.stdin`,
 and leased, backpressure-aware stdout/stderr writers. They may access networks,
 services, processes, and files. Return a validated exit status or delegate once
-to a built-in Hunk command. Delegation cannot follow stdout output or any stdin
-read, target another extension command, or change extension bootstrap flags. Built-ins and aliases cannot be shadowed; the first extension claim in
-discovery order wins.
+to a built-in Hunk command. A delegated `patch` command may also carry a provider-neutral
+`review` descriptor whose exact shape is `change-request`, `commit`, or `comparison`. Hunk bounds
+all strings and the 4 KiB payload, rejects control characters, unknown fields, and unsafe URLs,
+then copies and freezes it. `provider` and change-request `id` allow 256 bytes; `repository`,
+`author`, `base`, `head`, and `revision` allow 512; `title` and `url` allow 2 KiB. Change requests
+may also carry `state` (`open`, `closed`, or `merged`) and boolean `draft`. The descriptor remains app-bootstrap metadata rather than entering
+changeset transforms or `ReviewDocumentV1`; same-file refreshes preserve it, while unrelated
+reloads clear it. Live-session list, context, and review JSON snapshots project the same optional
+bounded descriptor without granting provider or remote-reload capabilities. Exit results and
+non-`patch` delegation cannot carry one.
+
+Delegation cannot follow stdout output or any stdin read, target another extension command, or
+change extension bootstrap flags. Built-ins and aliases cannot be shadowed; the first extension
+claim in discovery order wins.
 
 Use a leading explicit path while developing:
 
@@ -132,7 +160,7 @@ Full contract: [VCS adapters](/docs/extend/vcs-adapters/).
 
 ## `hunk.registerPane(pane)`
 
-Render a React component on the `left`, `right`, `top`, or `bottom` of the review. Panes receive their dimensions, review state, actions, keybindings, and optional current-line paint (including `{ side, line }` when opted in). `registerSidebarView` remains a deprecated alias.
+Render a React component on the `left`, `right`, `top`, or `bottom` of the review. Panes receive their dimensions, review state, actions, keybindings, and optional current-line paint (including `{ side, line }` when opted in). `props.review` and `available(context).review` expose immutable metadata supplied by a delegated patch command, or `null` for ordinary reviews. `registerSidebarView` remains a deprecated alias.
 
 Full contract: [Custom panes](/docs/extend/custom-sidebars/).
 
@@ -362,7 +390,7 @@ Writes require a reloadable, unstaged working-tree review and a writable reviewe
 
 ## `hunk.on(event, handler)`
 
-Subscribe to a lifecycle or UI event. Handlers may be async; Hunk never blocks the UI waiting for one. Every handler receives `ctx.panes`, live `ctx.navigation`, and attributed `ctx.dialogs` alongside `cwd` and `notify`, so a `startup` handler can present one focused welcome dialog and navigate to its first example without a keypress. `ctx.sidebars` is deprecated. Controls retained across a review or extension-registry replacement expire instead of controlling the replacement UI; workspace reads and writes that have not started return `null`/`unavailable`. Once a consented filesystem write starts, it reports its actual outcome, graceful shutdown waits for it, and success reconciles the review then active.
+Subscribe to a lifecycle or UI event. Handlers may be async; Hunk never blocks the UI waiting for one. Every handler receives `ctx.panes`, live `ctx.navigation`, attributed `ctx.dialogs`, and `ctx.review.requestReload()` alongside `cwd` and `notify`, so a `startup` handler can present one focused welcome dialog and navigate to its first example without a keypress. `ctx.sidebars` is deprecated. Controls retained across a review or extension-registry replacement expire instead of controlling the replacement UI; workspace reads and writes that have not started return `null`/`unavailable`. Once a consented filesystem write starts, it reports its actual outcome, graceful shutdown waits for it, and success reconciles the review then active.
 
 | Event                  | Payload                 | When                                                     |
 | ---------------------- | ----------------------- | -------------------------------------------------------- |
@@ -386,9 +414,9 @@ Subscribe to a lifecycle or UI event. Handlers may be async; Hunk never blocks t
 - `selection_changed` is trailing-debounced: holding `[`/`]` retargets many times a second, and handlers only care where the user landed. `fileId` and `hunkIndex` are `null` when nothing is selected.
 - `hunk_viewed` fires when the settled `(file, hunk)` pair changes, including `[`/`]` inside one file. Current-line movement within a hunk does not emit it. `file_viewed` still fires only when the selected file object changes.
 - `command_executed` reports stable command ids after terminal dispatch from a key, menu, or `ctx.commands.execute`. Detached async extension work may still be running; the event observes the accepted action rather than promise settlement. It follows remapped keys; browser/session review intents and widget-owned Escape, Enter, note-editor Ctrl-S, and F10 menu navigation are not terminal commands.
-- `session_reload`'s `reason` is `"watch"`, `"daemon"` (an agent command through the session broker), or `"manual"`.
+- `session_reload`'s `reason` is `"watch"`, `"daemon"` (an agent command through the session broker), `"extension"` (an in-process extension request), or `"manual"`.
 - `note_created` and `note_edited` cover notes authored in Hunk's own UI this session. Agent session comments do not emit them, and a reload may remap or drop notes. Use them for incremental reactions.
-- `note_changed` is store-backed: `kind` is `"created"`, `"updated"`, or `"removed"`, and `note` matches `ctx.review.snapshot()`. It includes agent session comments and user deletes; drafts never appear. Reloads that remap notes do not emit it — use `session_reload` plus `ctx.review.snapshot()` for the complete current record.
+- `note_changed` is store-backed: `kind` is `"created"`, `"updated"`, or `"removed"`, and `note` matches the snapshot shape command handlers read through `ctx.review.snapshot()`. It includes agent session comments and user deletes; drafts never appear. Reloads that remap notes do not emit it — use `session_reload` to invalidate extension-owned state and read the complete current record from a later command snapshot.
 - `shutdown` handlers get 250ms before Hunk exits anyway; treat it as best-effort flushing. UI authority has already been revoked, so shutdown is for releasing extension-owned resources rather than navigation or dialogs.
 
 ## `hunk.events`
@@ -412,6 +440,25 @@ export default function (hunk: HunkExtensionAPI) {
 
 Bus payloads are shallow-frozen copies when they are objects. Keep nested data immutable if multiple extensions will read it.
 
+## `ctx.review.requestReload()` in event handlers
+
+Request a soft reload after an external agent, service, or process changes the current review's inputs. Hunk preserves mounted UI state and selection where possible, serializes the request with every other reload, and coalesces concurrent extension requests. This does not require `--watch`.
+
+```ts
+import type { HunkExtensionAPI } from "hunkdiff/extension";
+
+export default function (hunk: HunkExtensionAPI) {
+  hunk.events.on("agent:files-changed", async (_payload, ctx) => {
+    const result = await ctx.review.requestReload();
+    if (!result.ok) ctx.notify(result.detail, "warning");
+  });
+}
+```
+
+Success resolves `{ ok: true }` after the replacement commits and emits `session_reload` with reason `"extension"`. Non-reloadable inputs and expired controls resolve `unavailable`; started reloads that fail resolve `failed` with a displayable `detail`. Factory-time bus events run before live controls mount, so they cannot request a reload.
+
+Requests made from the successor's lifecycle handlers can schedule a trailing reload. Check `session_reload.reason` before requesting from that event so an extension does not create its own reload loop.
+
 ## `hunk.config`
 
 Your extension's own `[extension.<id>]` config table, as a plain object. Hunk does not interpret the keys, and repo config overrides user config key by key.
@@ -430,7 +477,7 @@ const patterns = (hunk.config.patterns as string[] | undefined) ?? ["*.lock"];
 
 ## `ctx.notify(message, type?)`
 
-Every handler and transform receives a context with `cwd` and `notify`; event and bus handlers add `panes` and `events.emit`, command handlers add `commands`, `panes`, `fileViews`, `selection`, `navigation`, and `dialogs`. `notify` shows one transient line at the bottom of the app; `type` is `"info"` (default), `"warning"`, or `"error"`. Messages raised before the UI mounts are buffered, so a `startup` handler can notify safely.
+Every handler and transform receives a context with `cwd` and `notify`; event and bus handlers add `panes`, `review.requestReload`, and `events.emit`, command handlers add `commands`, `panes`, `fileViews`, `selection`, `navigation`, and `dialogs`. `notify` shows one transient line at the bottom of the app; `type` is `"info"` (default), `"warning"`, or `"error"`. Messages raised before the UI mounts are buffered, so a `startup` handler can notify safely.
 
 ## `hunk.log(message)`
 
@@ -438,4 +485,4 @@ Record a diagnostic line. Logs are collected per extension rather than written t
 
 ## Not contributable yet
 
-Menu entries, standalone keybindings (chords without a command — `registerCommand` commands are already user-remappable), custom note renderers, and session commands. Generic CLI trees are available through `registerCliCommand`. See [`docs/extension-system-exploration.md`](https://github.com/modem-dev/hunk/blob/main/docs/extension-system-exploration.md) for the design and phasing.
+Menu entries, standalone keybindings (chords without a command — `registerCommand` commands are already user-remappable), custom note renderers, and session commands. Generic CLI trees are available through `registerCliCommand`. See the [extension architecture](https://github.com/modem-dev/hunk/blob/main/docs/extension-architecture.md) for the current host design. The [original exploration](https://github.com/modem-dev/hunk/blob/main/docs/extension-system-exploration.md) records historical rationale and phasing.

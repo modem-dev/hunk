@@ -231,4 +231,4 @@ If you need direct access to Pierre's parser, `parsePatchFiles(...)` is still re
 - Runnable demo overview: [`examples/README.md`](../examples/README.md)
 - Component demos: [`examples/7-opentui-component/README.md`](../examples/7-opentui-component/README.md)
 
-The in-repo demos import from `../../src/opentui` so they run from source. Published consumers should import from `hunkdiff/opentui`.
+The in-repo demos import from `../../packages/hunk/src/opentui` so they run from source. Published consumers should import from `hunkdiff/opentui`.

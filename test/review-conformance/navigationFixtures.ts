@@ -8,7 +8,7 @@
  * disagreed about, so a captured expectation would preserve the disagreement.
  */
 import { createTestDiffFile, lines } from "../helpers/diff-helpers";
-import type { DiffFile } from "../../src/core/changeset/model";
+import type { DiffFile } from "../../packages/hunk/src/core/changeset/model";
 import type { ReviewNavigationFixture } from "./types";
 
 /** Twelve numbered lines, the base every navigation fixture edits. */
