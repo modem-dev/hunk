@@ -55,6 +55,7 @@ describe("@hunk/vcs package boundary", () => {
     expect(nixLock).toContain('"@hunk/vcs" = copyPathToStore ../packages/hunk-vcs;');
   });
 
+  // The isolated compiler also loads the standard libraries on contended CI workers.
   test("resolves its structural diff helper from an isolated package copy", () => {
     const consumerRoot = createTempConsumer();
     const installedPackage = join(consumerRoot, "node_modules", "@hunk", "vcs");
@@ -96,5 +97,5 @@ describe("@hunk/vcs package boundary", () => {
     expect(new TextDecoder().decode(result.stderr)).toBe("");
     expect(new TextDecoder().decode(result.stdout)).toBe("");
     expect(result.exitCode).toBe(0);
-  });
+  }, 20_000);
 });
