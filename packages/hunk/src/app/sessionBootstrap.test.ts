@@ -35,15 +35,24 @@ function createTestBootstrap(input: CliInput): AppBootstrap {
 
 describe("loadConfiguredSessionBootstrap", () => {
   test("shares extension-aware loading and session fields across launch and reload callers", async () => {
-    const input = createTestInput();
+    const input = {
+      ...createTestInput(),
+      options: { vcs: "git", theme: "config-theme" },
+    } satisfies CliInput;
     const extensions = createEmptyExtensionLoadResult();
+    extensions.registry.themes.push({
+      extensionId: "test-extension",
+      theme: { id: "extension-theme", accent: "#123456" },
+    });
     extensions.registry.changesetTransforms.push({
       extensionId: "test-extension",
       transform: (changeset) => ({ ...changeset, title: "after" }),
     });
 
+    const configured = createTestConfig(input);
+    configured.customThemes = [{ id: "config-theme", accent: "#654321" }];
     const result = await loadConfiguredSessionBootstrap({
-      configured: createTestConfig(input),
+      configured,
       cwd: process.cwd(),
       extensions,
       initialThemeMode: "dark",
@@ -54,6 +63,14 @@ describe("loadConfiguredSessionBootstrap", () => {
     expect(result.bootstrap.changeset.title).toBe("after");
     expect(result.bootstrap.extensions).toBe(extensions);
     expect(result.bootstrap.initialThemeMode).toBe("dark");
+    expect(result.theme).toEqual({
+      initialTheme: "config-theme",
+      initialThemeMode: "dark",
+      customThemes: [
+        { id: "config-theme", accent: "#654321" },
+        { id: "extension-theme", accent: "#123456" },
+      ],
+    });
     expect(result.bootstrap.keybindings).toEqual({ "hunk.review.nextHunk": "]" });
     expect(result.bootstrap.viewPreferencesConfigPath).toBe("/tmp/hunk-config.toml");
   });

@@ -52,7 +52,7 @@ async function createHistoryRoute(subjects = ["History row"]) {
     providerName: "Test",
     repoRoot: "/repo",
     notices: [],
-    customThemes: [],
+    theme: { customThemes: [] },
     keybindings: {},
     initialViewPreferences: persistedViewPreferencesFromOptions({}),
     promptSaveViewPreferences: true,
@@ -117,6 +117,7 @@ test("routes repeated history reviews through fresh runtimes and returns instead
   const setup = await testRender(
     <HunkSessionHost
       initialRoute={history}
+      theme={history.runtime.theme}
       externalQuitSignal={abort.signal}
       onQuit={quit}
       deps={deps}
@@ -181,6 +182,7 @@ test("shares committed themes across history and repeated review surfaces", asyn
   const setup = await testRender(
     <HunkSessionHost
       initialRoute={history}
+      theme={history.runtime.theme}
       externalQuitSignal={new AbortController().signal}
       onQuit={() => undefined}
       deps={deps}
@@ -258,6 +260,7 @@ test("opens an extended history selection as one inclusive comparison", async ()
   const setup = await testRender(
     <HunkSessionHost
       initialRoute={history}
+      theme={history.runtime.theme}
       externalQuitSignal={new AbortController().signal}
       onQuit={() => undefined}
       deps={deps}
@@ -308,6 +311,7 @@ test("quits the session from a standalone review route", async () => {
         } as never,
         extensionSession,
       }}
+      theme={{ initialTheme: bootstrap.initialTheme!, customThemes: [] }}
       externalQuitSignal={abort.signal}
       onQuit={quit}
     />,
@@ -349,6 +353,7 @@ test("finishes review navigation even when broker shutdown throws", async () => 
         } as never,
         extensionSession,
       }}
+      theme={{ initialTheme: bootstrap.initialTheme!, customThemes: [] }}
       externalQuitSignal={abort.signal}
       onQuit={quit}
     />,
@@ -372,7 +377,12 @@ test("does not start provider planning after shutdown wins the pre-dispatch wind
   const abort = new AbortController();
   const quit = mock(() => undefined);
   const setup = await testRender(
-    <HunkSessionHost initialRoute={history} externalQuitSignal={abort.signal} onQuit={quit} />,
+    <HunkSessionHost
+      initialRoute={history}
+      theme={history.runtime.theme}
+      externalQuitSignal={abort.signal}
+      onQuit={quit}
+    />,
     { width: 100, height: 20 },
   );
   try {
@@ -399,6 +409,7 @@ test("refuses a nested review that returns independent extension authority", asy
   const setup = await testRender(
     <HunkSessionHost
       initialRoute={history}
+      theme={history.runtime.theme}
       externalQuitSignal={new AbortController().signal}
       onQuit={() => undefined}
       deps={{
@@ -438,6 +449,7 @@ test("keeps history mounted when review preparation fails", async () => {
   const setup = await testRender(
     <HunkSessionHost
       initialRoute={history}
+      theme={history.runtime.theme}
       externalQuitSignal={new AbortController().signal}
       onQuit={quit}
       deps={{
@@ -479,6 +491,7 @@ test("waits for non-cooperative provider planning before menu quit", async () =>
   const setup = await testRender(
     <HunkSessionHost
       initialRoute={history}
+      theme={history.runtime.theme}
       externalQuitSignal={new AbortController().signal}
       onQuit={quit}
       deps={{ prepareReview: prepareReview as never }}
@@ -517,6 +530,7 @@ test("blocks reopening until dirty-quit cancellation settles", async () => {
   const setup = await testRender(
     <HunkSessionHost
       initialRoute={history}
+      theme={history.runtime.theme}
       externalQuitSignal={new AbortController().signal}
       onQuit={quit}
       deps={{ prepareReview: prepareReview as never }}
@@ -567,6 +581,7 @@ test("preserves the original exit status while a saved-preferences quit is delay
   const setup = await testRender(
     <HunkSessionHost
       initialRoute={history}
+      theme={history.runtime.theme}
       externalQuitSignal={new AbortController().signal}
       onQuit={quit}
       deps={{
@@ -619,7 +634,12 @@ test("waits for non-cooperative provider planning after an external signal", asy
   const abort = new AbortController();
   const quit = mock(() => undefined);
   const setup = await testRender(
-    <HunkSessionHost initialRoute={history} externalQuitSignal={abort.signal} onQuit={quit} />,
+    <HunkSessionHost
+      initialRoute={history}
+      theme={history.runtime.theme}
+      externalQuitSignal={abort.signal}
+      onQuit={quit}
+    />,
     { width: 100, height: 20 },
   );
   try {
@@ -653,6 +673,7 @@ test("defers menu quit until cancelled preparation and retirement settle", async
   const setup = await testRender(
     <HunkSessionHost
       initialRoute={history}
+      theme={history.runtime.theme}
       externalQuitSignal={new AbortController().signal}
       onQuit={quit}
       deps={{ prepareReview: (() => preparation) as never }}
@@ -707,6 +728,7 @@ test("cancels stale preparation, retires its owned registry, and quits once", as
   const setup = await testRender(
     <HunkSessionHost
       initialRoute={history}
+      theme={history.runtime.theme}
       externalQuitSignal={abort.signal}
       onQuit={quit}
       deps={{

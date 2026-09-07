@@ -1,5 +1,6 @@
 import type { HistoryCommandInput } from "../../core/run/commandInputs";
 import type { PersistedViewPreferences, UserKeyBinding } from "../../core/run/config";
+import type { SessionThemeInitialization } from "../../core/theme/initialization";
 import type { VcsHistorySource } from "../../core/vcs/types";
 import type { ExtensionSession } from "../../extensions/session";
 import type {
@@ -8,7 +9,6 @@ import type {
   ExtensionVcsHistoryRangeSelection,
   ExtensionVcsHistoryReviewAction,
   ExtensionVcsHistoryReviewOptions,
-  NamedCustomThemeConfig,
 } from "../../extension-api/types";
 
 /** Renderer-facing history resources with cursor data and command-owned extension authority. */
@@ -21,7 +21,7 @@ export interface HistoryRuntime {
   startupCwd?: string;
   repoRoot: string;
   notices: readonly string[];
-  customThemes: readonly NamedCustomThemeConfig[];
+  theme: SessionThemeInitialization;
   /** User command overrides resolved by the active interactive surface. */
   keybindings: Readonly<Record<string, UserKeyBinding>>;
   /** Resolved launch preferences retained while history owns the session-wide quit flow. */
