@@ -2158,9 +2158,9 @@ export type ExtensionLegacyLayout = "stack";
 export type ExtensionCanonicalLayoutMode = "auto" | "split" | "unified";
 /** Concrete canonical layout emitted to extensions. */
 export type ExtensionCanonicalResolvedLayout = Exclude<ExtensionCanonicalLayoutMode, "auto">;
-/** Pre-v21 layout vocabulary retained so existing extension source remains exhaustive. */
+/** Pre-v22 layout vocabulary retained so existing extension source remains exhaustive. */
 export type ExtensionLayoutMode = "auto" | "split" | ExtensionLegacyLayout;
-/** Pre-v21 concrete layout vocabulary retained for source and event compatibility. */
+/** Pre-v22 concrete layout vocabulary retained for source and event compatibility. */
 export type ExtensionResolvedLayout = Exclude<ExtensionLayoutMode, "auto">;
 
 /** A user-authored note as reported by note lifecycle events. */
@@ -2212,7 +2212,7 @@ export interface ExtensionEventPayloads {
   /**
    * The configured layout mode or responsive resolved layout changed.
    *
-   * `mode` and `layout` preserve the pre-v21 vocabulary for existing handlers.
+   * `mode` and `layout` preserve the pre-v22 vocabulary for existing handlers.
    * New integrations should consume the canonical fields.
    */
   layout_changed: {

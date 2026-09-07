@@ -303,9 +303,10 @@ and retires the replaced instance at that explicit ownership boundary.
 ### `hunk.apiVersion`
 
 The API generation this Hunk speaks (currently `22`). Branch on it if you want
-one file to support several Hunk versions. Version 22 adds frame-derived pane preferred sizing, non-resizable dynamic panes, and commit-history paint tokens; version 21 adds optional inclusive history-range review
-planning, bounded comparison commit summaries, and canonical unified-layout fields while preserving
-the previous event vocabulary; version 20 adds optional commit timestamps to review
+one file to support several Hunk versions. Version 22 adds frame-derived pane preferred sizing,
+non-resizable dynamic panes, commit-history paint tokens, and canonical unified-layout fields while
+preserving the previous event vocabulary; version 21 adds optional inclusive history-range review
+planning and bounded comparison commit summaries; version 20 adds optional commit timestamps to review
 metadata, pane clipboard actions, and the `theme.copyAction` paint token; version 19 adds provider-owned history
 enumeration and review planning; version 18 lets lifecycle and custom-event handlers request
 a host-owned review reload; version 17 adds structured review metadata to delegated patch
@@ -1986,13 +1987,13 @@ A newly mounted extension instance receives `startup` before its first
 `changeset_loaded`; reloads then deliver `changeset_loaded` before
 `session_reload` once the matching review generation has committed.
 
-Starting with extension API v21, `layout_changed` adds `canonicalMode` and
+Starting with extension API v22, `layout_changed` adds `canonicalMode` and
 `canonicalLayout`. They emit `"auto"`, `"split"`, or `"unified"` for the mode and
 `"split"` or `"unified"` for its resolved layout. The original `mode` and `layout`
 fields remain available for compatibility and continue to report `"stack"`
 where their canonical counterparts report `"unified"`. To preserve exhaustive
 existing source, `ExtensionLayoutMode` and `ExtensionResolvedLayout` retain their
-pre-v21 shapes; new extensions use `ExtensionCanonicalLayoutMode` and
+pre-v22 shapes; new extensions use `ExtensionCanonicalLayoutMode` and
 `ExtensionCanonicalResolvedLayout`. Hunk will keep the deprecated `"stack"`
 literal and legacy event fields until a separately announced major API revision.
 

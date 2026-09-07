@@ -8,8 +8,8 @@ The extension factory receives one API object. Registration calls are only valid
 ## `hunk.apiVersion`
 
 The API generation this Hunk speaks (currently `22`). Branch on it if you want
-one file to support several Hunk versions. Version 22 adds frame-derived pane preferred sizing, non-resizable dynamic panes, and commit-history paint tokens; version 21 adds optional inclusive history-range review
-planning, bounded comparison commit summaries, and canonical unified-layout fields while preserving the previous event vocabulary; version 20 adds optional commit timestamps to review
+one file to support several Hunk versions. Version 22 adds frame-derived pane preferred sizing, non-resizable dynamic panes, commit-history paint tokens, and canonical unified-layout fields while preserving the previous event vocabulary; version 21 adds optional inclusive history-range review
+planning and bounded comparison commit summaries; version 20 adds optional commit timestamps to review
 metadata, pane clipboard actions, and the `theme.copyAction` paint token; version 19 adds provider-owned history enumeration and review planning; version 18 lets
 lifecycle and custom-event handlers request a host-owned review reload; version 17 adds structured review metadata to delegated
 patch commands and projects it into pane availability and component props; version 16 adds pane-wide
@@ -417,7 +417,7 @@ Subscribe to a lifecycle or UI event. Handlers may be async; Hunk never blocks t
 | `shutdown`             | `{}`                                                 | on exit, best-effort within a short timeout              |
 
 - A newly mounted instance receives `startup` before its first `changeset_loaded`; reloads deliver `changeset_loaded` before `session_reload` after the matching review commits.
-- Starting with extension API v21, `layout_changed` adds `canonicalMode` and `canonicalLayout`, which use `"unified"`. The original `mode` and `layout` fields remain available for compatibility and continue to report `"stack"` where their canonical counterparts report `"unified"`. To preserve exhaustive existing source, `ExtensionLayoutMode` and `ExtensionResolvedLayout` retain their pre-v21 shapes; new extensions use `ExtensionCanonicalLayoutMode` and `ExtensionCanonicalResolvedLayout`. Hunk will keep `"stack"` and the legacy fields until a separately announced major API revision.
+- Starting with extension API v22, `layout_changed` adds `canonicalMode` and `canonicalLayout`, which use `"unified"`. The original `mode` and `layout` fields remain available for compatibility and continue to report `"stack"` where their canonical counterparts report `"unified"`. To preserve exhaustive existing source, `ExtensionLayoutMode` and `ExtensionResolvedLayout` retain their pre-v22 shapes; new extensions use `ExtensionCanonicalLayoutMode` and `ExtensionCanonicalResolvedLayout`. Hunk will keep `"stack"` and the legacy fields until a separately announced major API revision.
 - `selection_changed` is trailing-debounced: holding `[`/`]` retargets many times a second, and handlers only care where the user landed. `fileId` and `hunkIndex` are `null` when nothing is selected.
 - `hunk_viewed` fires when the settled `(file, hunk)` pair changes, including `[`/`]` inside one file. Current-line movement within a hunk does not emit it. `file_viewed` still fires only when the selected file object changes.
 - `command_executed` reports stable command ids after terminal dispatch from a key, menu, or `ctx.commands.execute`. For a renamed command, `commandId` preserves the deprecated identity and `canonicalCommandId` names its replacement. Detached async extension work may still be running; the event observes the accepted action rather than promise settlement. It follows remapped keys; browser/session review intents and widget-owned Escape, Enter, note-editor Ctrl-S, and F10 menu navigation are not terminal commands.
