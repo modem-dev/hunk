@@ -343,6 +343,9 @@ function unavailableDialogs(result: ExtensionLoadResult, extensionId: string): E
       unavailable();
       return null;
     },
+    open: async () => {
+      unavailable();
+    },
   };
 }
 

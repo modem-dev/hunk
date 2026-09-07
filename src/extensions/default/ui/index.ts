@@ -7,6 +7,7 @@ import {
   type ExtensionRegistry,
 } from "../../types";
 import registerBundledEditor, { BUNDLED_EDITOR_COMMAND_FULL_ID } from "./editor";
+import registerBundledAgentSkill, { BUNDLED_AGENT_SKILL_COMMAND_FULL_ID } from "./agentSkill";
 import registerBundledSidebar from "./sidebar";
 
 let cachedRegistry: ExtensionRegistry | undefined;
@@ -15,6 +16,7 @@ let cachedRegistry: ExtensionRegistry | undefined;
 const registerBundledUI: ExtensionFactory = (hunk) => {
   registerBundledSidebar(hunk);
   registerBundledEditor(hunk);
+  registerBundledAgentSkill(hunk);
 };
 
 /** Load bundled UI registrations through the public factory path, once per process. */
@@ -38,7 +40,16 @@ export function getBundledUIRegistry(): ExtensionRegistry {
   const editorCommandRegistered = registry.commands.some(
     ({ extensionId, command }) => `${extensionId}.${command.id}` === BUNDLED_EDITOR_COMMAND_FULL_ID,
   );
-  if (issues.length > 0 || !filesPaneRegistered || !editorCommandRegistered) {
+  const agentSkillCommandRegistered = registry.commands.some(
+    ({ extensionId, command }) =>
+      `${extensionId}.${command.id}` === BUNDLED_AGENT_SKILL_COMMAND_FULL_ID,
+  );
+  if (
+    issues.length > 0 ||
+    !filesPaneRegistered ||
+    !editorCommandRegistered ||
+    !agentSkillCommandRegistered
+  ) {
     throw new Error(
       `Bundled UI failed to register: ${issues[0]?.message ?? "missing required contribution"}`,
     );

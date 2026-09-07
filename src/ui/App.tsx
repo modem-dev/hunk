@@ -1,6 +1,7 @@
 import type {
   BoxRenderable,
   MouseEvent as TuiMouseEvent,
+  Renderable,
   ScrollBoxRenderable,
 } from "@opentui/core";
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
@@ -35,6 +36,7 @@ import {
 import { projectExtensionReviewNotes } from "../extensions/reviewSnapshot";
 import type { ExtensionNotifyType, ExtensionLoadResult } from "../extensions/types";
 import { getBundledUIRegistry } from "../extensions/default/ui";
+import { BUNDLED_AGENT_SKILL_COMMAND_FULL_ID } from "../extensions/default/ui/agentSkill";
 import { BUNDLED_EDITOR_COMMAND_FULL_ID } from "../extensions/default/ui/editor";
 import type { ReviewProducer } from "../app/review/producer";
 import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
@@ -88,6 +90,7 @@ import {
 } from "./lib/appCommands";
 import { buildAppMenus } from "./lib/appMenus";
 import { buildExtensionAppCommands, extensionCommandKeyDefaults } from "./lib/extensionCommands";
+import { normalizeExtensionDialogClipboardText } from "./lib/extensionDialogs";
 import type { CurrentLineAlignment } from "./lib/hunkScroll";
 import type { LineCursor } from "./lib/lineCursors";
 import { useFilePresentationController } from "./fileViews/useFilePresentationController";
@@ -112,9 +115,6 @@ type FocusArea = "files" | "filter" | "note";
 
 const FAST_CODE_HORIZONTAL_SCROLL_COLUMNS = 8;
 
-const LazyAgentSkillDialog = lazy(async () => ({
-  default: (await import("./components/chrome/AgentSkillDialog")).AgentSkillDialog,
-}));
 const LazyHelpDialog = lazy(async () => ({
   default: (await import("./components/chrome/HelpDialog")).HelpDialog,
 }));
@@ -205,6 +205,17 @@ export function App({
   const wrapToggleScrollTopRef = useRef<number | null>(null);
   const layoutToggleScrollTopRef = useRef<number | null>(null);
   const cancelCopySelectionRef = useRef<(() => void) | null>(null);
+  const activeReviewGenerationRef = useRef(bootstrap);
+  const renderedReviewGenerationRef = useRef(bootstrap);
+  renderedReviewGenerationRef.current = bootstrap;
+  const bundledDialogsLiveRef = useRef(false);
+  useLayoutEffect(() => {
+    activeReviewGenerationRef.current = bootstrap;
+    bundledDialogsLiveRef.current = true;
+    return () => {
+      bundledDialogsLiveRef.current = false;
+    };
+  }, [bootstrap]);
   const [layoutToggleRequestId, setLayoutToggleRequestId] = useState(0);
   const [scrollEdgeRequest, setScrollEdgeRequest] = useState<{
     id: number;
@@ -224,7 +235,6 @@ export function App({
   const [showHunkHeaders, setShowHunkHeaders] = useState(bootstrap.initialShowHunkHeaders ?? true);
   const [showMenuBar, setShowMenuBar] = useState(bootstrap.initialShowMenuBar ?? true);
   const [showHelp, setShowHelp] = useState(false);
-  const [showAgentSkill, setShowAgentSkill] = useState(false);
   const [focusArea, setFocusArea] = useState<FocusArea>("files");
   const { text: sessionNoticeText, show: showSessionNotice } = useTimedNotice(4_000);
   const extensions = bootstrap.extensions as ExtensionLoadResult | undefined;
@@ -482,9 +492,13 @@ export function App({
 
   const {
     accept: acceptExtensionDialog,
+    acceptRequest: acceptExtensionDialogRequest,
     cancel: cancelExtensionDialog,
+    cancelRequest: cancelExtensionDialogRequest,
     cancelAll: cancelAllExtensionDialogs,
     createDialogs: createQueuedExtensionDialogs,
+    getCurrentRequest: getCurrentExtensionDialogRequest,
+    isCurrentRequestLive: isCurrentExtensionDialogRequestLive,
     inputValue: extensionDialogInputValue,
     moveSelection: moveExtensionDialogSelection,
     pickOption: setExtensionDialogSelectedIndex,
@@ -503,15 +517,30 @@ export function App({
   const createExtensionDialogs = useCallback(
     (extensionId: string) => {
       const lease = createReviewCapabilityLease();
-      const bundled = extensions?.registry.extensions.some(
-        (metadata) => metadata.id === extensionId && metadata.origin === "bundled",
-      );
+      const bundled = [
+        ...getBundledUIRegistry().extensions,
+        ...(extensions?.registry.extensions ?? []),
+      ].some((metadata) => metadata.id === extensionId && metadata.origin === "bundled");
       return createQueuedExtensionDialogs(extensionId, {
-        isLive: () => lease.isLive() && !extensionAppController.isAppActive(),
+        // Bundled registrations are process-static rather than owned by the
+        // reloadable user-extension registry, but their review-scoped controls
+        // still retire when the mounted review changes.
+        isLive: () =>
+          renderedReviewGenerationRef.current === bootstrap &&
+          !extensionAppController.isAppActive() &&
+          (bundled
+            ? bundledDialogsLiveRef.current && activeReviewGenerationRef.current === bootstrap
+            : lease.isLive()),
         showAttribution: !bundled,
       });
     },
-    [createQueuedExtensionDialogs, createReviewCapabilityLease, extensionAppController, extensions],
+    [
+      bootstrap,
+      createQueuedExtensionDialogs,
+      createReviewCapabilityLease,
+      extensionAppController,
+      extensions,
+    ],
   );
 
   const extensionWorkspaceController = useExtensionWorkspaceControls({
@@ -553,6 +582,15 @@ export function App({
         `${extensionId}.${registration.id}` === BUNDLED_EDITOR_COMMAND_FULL_ID,
     );
     if (!command) throw new Error("Bundled editor command is not registered.");
+    return command;
+  }, []);
+
+  const bundledAgentSkillCommand = useMemo(() => {
+    const command = resolveExtensionCommands(getBundledUIRegistry()).commands.find(
+      ({ extensionId, command: registration }) =>
+        `${extensionId}.${registration.id}` === BUNDLED_AGENT_SKILL_COMMAND_FULL_ID,
+    );
+    if (!command) throw new Error("Bundled agent skill command is not registered.");
     return command;
   }, []);
 
@@ -907,27 +945,105 @@ export function App({
     showNotice: showSessionNotice,
   });
 
-  /** Close the agent skill setup overlay. */
-  const closeAgentSkill = useCallback(() => {
-    setShowAgentSkill(false);
-  }, []);
-
-  /** Open the agent skill setup overlay. */
+  /** Delegate the shared host command shell to the bundled agent skill extension. */
   const openAgentSkill = useCallback(() => {
-    setShowAgentSkill(true);
-  }, []);
+    runExtensionCommand(bundledAgentSkillCommand);
+  }, [bundledAgentSkillCommand, runExtensionCommand]);
 
-  /** Copy the agent skill prompt through the terminal clipboard integration. */
-  const copyAgentSkillPrompt = useCallback(async () => {
-    const { AGENT_SKILL_PROMPT } = await import("./components/chrome/AgentSkillDialog");
-    if (renderer.isOsc52Supported?.() && typeof renderer.copyToClipboardOSC52 === "function") {
-      renderer.copyToClipboardOSC52(AGENT_SKILL_PROMPT);
-      showTransientNotice("Copied agent skill prompt to clipboard");
-      return;
+  const extensionDialogCopySupported =
+    (renderer.isOsc52Supported?.() ?? false) && typeof renderer.copyToClipboardOSC52 === "function";
+  const extensionDialogActive = extensionDialog !== null;
+  const extensionOpenDialogActive = extensionDialog?.kind === "open";
+  const extensionOpenDialogFocusLeaseRef = useRef<{
+    active: boolean;
+    previous: Renderable | null;
+  }>({ active: false, previous: null });
+  if (extensionOpenDialogActive && !extensionOpenDialogFocusLeaseRef.current.active) {
+    // Capture before the custom tree commits and takes focus. OpenTUI exposes
+    // one process-wide focus owner, so restoring this exact renderable also
+    // preserves imperative review-scroll focus outside pager mode.
+    extensionOpenDialogFocusLeaseRef.current = {
+      active: true,
+      previous: renderer.currentFocusedRenderable,
+    };
+  }
+  useLayoutEffect(() => {
+    const lease = extensionOpenDialogFocusLeaseRef.current;
+    if (!extensionDialog && lease.active) {
+      extensionOpenDialogFocusLeaseRef.current = { active: false, previous: null };
+      // `focus()` is inert when teardown already destroyed the old owner.
+      lease.previous?.focus();
     }
+  }, [extensionDialog]);
 
-    showTransientNotice("Clipboard copy unsupported in this terminal (enable OSC 52)");
-  }, [renderer, showTransientNotice]);
+  /** Copy text only for the custom dialog that still owns the mounted component. */
+  const copyExtensionDialogText = useCallback(
+    (requestId: number, text: string) => {
+      const current = getCurrentExtensionDialogRequest();
+      if (
+        current?.kind !== "open" ||
+        current.id !== requestId ||
+        !isCurrentExtensionDialogRequestLive(requestId) ||
+        !(renderer.isOsc52Supported?.() ?? false) ||
+        typeof renderer.copyToClipboardOSC52 !== "function"
+      ) {
+        return false;
+      }
+
+      const normalized = normalizeExtensionDialogClipboardText(text);
+      return normalized !== null && renderer.copyToClipboardOSC52(normalized);
+    },
+    [getCurrentExtensionDialogRequest, isCurrentExtensionDialogRequestLive, renderer],
+  );
+
+  /** Show status only for the custom dialog that still owns the mounted component. */
+  const notifyExtensionDialog = useCallback(
+    (requestId: number, message: string) => {
+      const current = getCurrentExtensionDialogRequest();
+      if (
+        current?.kind !== "open" ||
+        current.id !== requestId ||
+        !isCurrentExtensionDialogRequestLive(requestId)
+      ) {
+        return;
+      }
+      const safeMessage = sanitizeTerminalLine(message).trim();
+      if (!safeMessage) return;
+      showTransientNotice(
+        current.showAttribution ? `Extension ${current.extensionId}: ${safeMessage}` : safeMessage,
+      );
+    },
+    [getCurrentExtensionDialogRequest, isCurrentExtensionDialogRequestLive, showTransientNotice],
+  );
+
+  /** Close only the custom dialog whose mounted component owns this action. */
+  const closeExtensionDialogComponent = useCallback(
+    (requestId: number) => {
+      if (isCurrentExtensionDialogRequestLive(requestId)) {
+        cancelExtensionDialogRequest(requestId);
+      }
+    },
+    [cancelExtensionDialogRequest, isCurrentExtensionDialogRequestLive],
+  );
+
+  /** Contain one custom component failure and leave its host frame dismissible. */
+  const reportExtensionDialogRenderFailure = useCallback(
+    (requestId: number, error: unknown) => {
+      const current = getCurrentExtensionDialogRequest();
+      if (
+        current?.kind !== "open" ||
+        current.id !== requestId ||
+        !isCurrentExtensionDialogRequestLive(requestId)
+      ) {
+        return;
+      }
+      const detail = error instanceof Error ? error.message || error.name : String(error);
+      showSessionNotice(
+        `Extension ${current.extensionId} dialog failed rendering • ${sanitizeTerminalLine(detail)}`,
+      );
+    },
+    [getCurrentExtensionDialogRequest, isCurrentExtensionDialogRequestLive, showSessionNotice],
+  );
 
   /** Toggle the modal keyboard help overlay. */
   const toggleHelp = useCallback(() => {
@@ -1112,7 +1228,6 @@ export function App({
   useAppKeyboardShortcuts({
     activeMenuId,
     activateCurrentMenuItem,
-    closeAgentSkill,
     closeHelp,
     closeMenu,
     acceptThemeSelector,
@@ -1121,7 +1236,7 @@ export function App({
     closeExtensionTrustPrompt,
     commands: appCommands,
     denyRepoExtensions,
-    extensionDialog,
+    getExtensionDialog: getCurrentExtensionDialogRequest,
     acceptExtensionDialog,
     cancelExtensionDialog,
     moveExtensionDialogSelection,
@@ -1143,7 +1258,6 @@ export function App({
     neverAskToSaveViewPreferencesAndQuit,
     closeSaveConfigPrompt,
     saveDraftNote,
-    showAgentSkill,
     showHelp,
     switchMenu,
     toggleFocusArea,
@@ -1329,7 +1443,8 @@ export function App({
             selectedHunkIndex={selectedHunkIndex}
             scrollToNote={review.scrollToNote}
             draftNote={review.draftNote}
-            draftNoteFocused={focusArea === "note"}
+            draftNoteFocused={focusArea === "note" && !extensionDialogActive}
+            keyboardFocusBlocked={extensionDialogActive}
             separatorWidth={diffSeparatorWidth}
             showAgentNotes={showAgentNotes}
             showLineNumbers={showLineNumbers}
@@ -1392,7 +1507,7 @@ export function App({
       {statusBarVisible ? (
         <StatusBar
           filter={review.filter}
-          filterFocused={focusArea === "filter"}
+          filterFocused={focusArea === "filter" && !extensionDialogActive}
           modeText={keyboardModeHint ?? undefined}
           noticeText={
             sessionNoticeText ?? transientNoticeText ?? noticeText ?? fileViewModeHint ?? undefined
@@ -1426,19 +1541,6 @@ export function App({
         </Suspense>
       ) : null}
 
-      {showAgentSkill ? (
-        <Suspense fallback={null}>
-          <LazyAgentSkillDialog
-            copySupported={renderer.isOsc52Supported?.() ?? false}
-            terminalHeight={terminal.height}
-            terminalWidth={terminal.width}
-            theme={baseTheme}
-            onClose={closeAgentSkill}
-            onCopyPrompt={copyAgentSkillPrompt}
-          />
-        </Suspense>
-      ) : null}
-
       {showHelp ? (
         <Suspense fallback={null}>
           <LazyHelpDialog
@@ -1453,16 +1555,21 @@ export function App({
 
       {extensionDialog ? (
         <ExtensionDialog
+          copySupported={extensionDialogCopySupported}
           inputValue={extensionDialogInputValue}
           request={extensionDialog}
           selectedIndex={extensionDialogSelectedIndex}
           terminalHeight={terminal.height}
           terminalWidth={terminal.width}
           theme={baseTheme}
-          onAccept={acceptExtensionDialog}
-          onCancel={cancelExtensionDialog}
-          onChangeInput={setExtensionDialogInputValue}
-          onPickOption={setExtensionDialogSelectedIndex}
+          onAcceptRequest={acceptExtensionDialogRequest}
+          onCancelRequest={cancelExtensionDialogRequest}
+          onChangeInputRequest={setExtensionDialogInputValue}
+          onClose={closeExtensionDialogComponent}
+          onCopy={copyExtensionDialogText}
+          onNotify={notifyExtensionDialog}
+          onPickOptionRequest={setExtensionDialogSelectedIndex}
+          onRenderFailure={reportExtensionDialogRenderFailure}
         />
       ) : null}
 
