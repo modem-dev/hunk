@@ -2158,10 +2158,10 @@ export type ExtensionLegacyLayout = "stack";
 export type ExtensionCanonicalLayoutMode = "auto" | "split" | "unified";
 /** Concrete canonical layout emitted to extensions. */
 export type ExtensionCanonicalResolvedLayout = Exclude<ExtensionCanonicalLayoutMode, "auto">;
-/** Layout mode vocabulary supported during the `stack` deprecation window. */
-export type ExtensionLayoutMode = ExtensionCanonicalLayoutMode | ExtensionLegacyLayout;
-/** Concrete layout vocabulary supported during the `stack` deprecation window. */
-export type ExtensionResolvedLayout = ExtensionCanonicalResolvedLayout | ExtensionLegacyLayout;
+/** Pre-v21 layout vocabulary retained so existing extension source remains exhaustive. */
+export type ExtensionLayoutMode = "auto" | "split" | ExtensionLegacyLayout;
+/** Pre-v21 concrete layout vocabulary retained for source and event compatibility. */
+export type ExtensionResolvedLayout = Exclude<ExtensionLayoutMode, "auto">;
 
 /** A user-authored note as reported by note lifecycle events. */
 export interface ExtensionReviewNote {

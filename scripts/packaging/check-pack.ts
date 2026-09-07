@@ -57,23 +57,24 @@ import type {
 export default function (hunk: HunkExtensionAPI) {
   const canonicalMode: ExtensionCanonicalLayoutMode = "unified";
   const canonicalLayout: ExtensionCanonicalResolvedLayout = "unified";
-  const supportedCanonicalMode: ExtensionLayoutMode = "unified";
-  const supportedCanonicalLayout: ExtensionResolvedLayout = "unified";
   const legacyLayout: ExtensionLayoutMode = "stack";
   const legacyResolvedLayout: ExtensionResolvedLayout = "stack";
-  const layoutLabels: Record<ExtensionLayoutMode, string> = {
+  const legacyLayoutLabels: Record<ExtensionLayoutMode, string> = {
     auto: "auto",
     split: "split",
     stack: "stack",
+  };
+  const canonicalLayoutLabels: Record<ExtensionCanonicalLayoutMode, string> = {
+    auto: "auto",
+    split: "split",
     unified: "unified",
   };
   void canonicalMode;
   void canonicalLayout;
-  void supportedCanonicalMode;
-  void supportedCanonicalLayout;
   void legacyLayout;
   void legacyResolvedLayout;
-  void layoutLabels;
+  void legacyLayoutLabels;
+  void canonicalLayoutLabels;
   const sessionOptions: ExtensionSessionOptions = { viewPreferences: "transient" };
   hunk.configureSession(sessionOptions);
   const noSelection: ExtensionReviewSelection = {
