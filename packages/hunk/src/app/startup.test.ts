@@ -806,6 +806,66 @@ describe("startup planning", () => {
     expect(probes).toBe(1);
   });
 
+  test("probes the terminal for a pair that only extension-discovered repo config introduces", async () => {
+    const cliInput: CliInput = {
+      kind: "patch",
+      file: "-",
+      options: { theme: "github-dark-default", pager: true },
+    };
+    // A user extension recognizes the checkout the bundled catalog could not, so config resolves
+    // a second time against that repo's `.hunk/config.toml`, which is where the pair lives.
+    const extensionResult = createEmptyExtensionLoadResult();
+    extensionResult.registry.vcsAdapters.push({
+      extensionId: "probe",
+      adapter: {
+        id: "probe",
+        name: "Probe",
+        detect: (cwd) => ({ id: "probe", repoRoot: cwd }),
+        operations: {},
+      },
+    });
+    let resolutions = 0;
+    let probes = 0;
+
+    const plan = await prepareStartupPlan(["bun", "hunk", "patch", "-"], {
+      parseCliImpl: async () => cliInput as ParsedCliInput,
+      resolveRuntimeCliInputImpl: (input) => input,
+      resolveConfiguredCliInputImpl: (input) => {
+        resolutions += 1;
+        return createTestConfigResolution(
+          resolutions === 1
+            ? input
+            : {
+                ...input,
+                options: { ...input.options, theme: { dark: "vitesse-dark", light: "one-light" } },
+              },
+          { extensions: { enabled: true, paths: [], repoPaths: [], extensionConfigs: {} } },
+        );
+      },
+      loadStartupExtensionsImpl: async () => extensionResult,
+      loadAppBootstrapImpl: async (input) => createBootstrap(input),
+      openControllingTerminalImpl: () => ({ stdin: {} as never, close: () => {} }),
+      detectTerminalThemeModeFromBackgroundImpl: async () => {
+        probes += 1;
+        return "light";
+      },
+      usesPipedPatchInputImpl: () => false,
+      stdinIsTTY: false,
+      stdoutIsTTY: true,
+      stdout: { write: () => true } as never,
+    });
+
+    expect(resolutions).toBe(2);
+    expect(probes).toBe(1);
+    expect(plan).toMatchObject({
+      kind: "app",
+      bootstrap: {
+        initialThemeMode: "light",
+        input: { options: { theme: { dark: "vitesse-dark", light: "one-light" } } },
+      },
+    });
+  });
+
   test("skips the background probe when one theme covers every terminal", async () => {
     const cliInput: CliInput = {
       kind: "patch",
