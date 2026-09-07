@@ -1,7 +1,7 @@
 const GITHUB_LATEST_RELEASE_URL = "https://api.github.com/repos/modem-dev/hunk/releases/latest";
 const RELEASE_ROUTE = "/v1/curl/latest";
-const CACHE_CONTROL = "public, max-age=300";
-const ERROR_CACHE_CONTROL = "no-store";
+const UPSTREAM_CACHE_CONTROL = "public, max-age=300";
+const CLIENT_CACHE_CONTROL = "no-store";
 const UPSTREAM_TIMEOUT_MS = 5_000;
 
 const REQUEST_SOURCES = ["install", "startup", "update-check", "update"] as const;
@@ -57,11 +57,18 @@ function jsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
     status,
     headers: {
-      "cache-control": status === 200 ? CACHE_CONTROL : ERROR_CACHE_CONTROL,
+      "cache-control": status === 200 ? UPSTREAM_CACHE_CONTROL : CLIENT_CACHE_CONTROL,
       "content-type": "application/json; charset=utf-8",
       "x-content-type-options": "nosniff",
     },
   });
+}
+
+/** Prevent Cloudflare's outer cache from bypassing per-request aggregate logging. */
+function clientResponse(response: Response) {
+  const headers = new Headers(response.headers);
+  headers.set("cache-control", CLIENT_CACHE_CONTROL);
+  return new Response(response.body, { status: response.status, headers });
 }
 
 /** Resolve Cloudflare's default cache without requiring it in direct unit tests. */
@@ -97,7 +104,7 @@ export function createReleaseProxyHandler(deps: ReleaseProxyDeps = {}) {
     const cacheKey = new Request(`${url.origin}${RELEASE_ROUTE}`);
     const cached = await cache?.match(cacheKey);
     if (cached) {
-      return cached;
+      return clientResponse(cached);
     }
 
     let upstream: Response;
@@ -136,7 +143,7 @@ export function createReleaseProxyHandler(deps: ReleaseProxyDeps = {}) {
     if (cache) {
       ctx.waitUntil(cache.put(cacheKey, response.clone()));
     }
-    return response;
+    return clientResponse(response);
   };
 }
 

@@ -47,7 +47,7 @@ describe("release proxy Worker", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ version: "1.2.3" });
-    expect(response.headers.get("cache-control")).toBe("public, max-age=300");
+    expect(response.headers.get("cache-control")).toBe("no-store");
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
     expect(upstreamRequests).toHaveLength(1);
     expect(upstreamRequests[0]?.url).toBe(
@@ -55,7 +55,9 @@ describe("release proxy Worker", () => {
     );
     expect(upstreamRequests[0]?.headers.get("accept")).toBe("application/vnd.github+json");
     expect(upstreamRequests[0]?.headers.get("user-agent")).toBe("hunk-release-proxy");
-    expect(entries.has("https://updates.hunk.dev/v1/curl/latest")).toBe(true);
+    expect(
+      entries.get("https://updates.hunk.dev/v1/curl/latest")?.headers.get("cache-control"),
+    ).toBe("public, max-age=300");
 
     const second = await handler(
       new Request("https://updates.hunk.dev/v1/curl/latest"),
@@ -63,6 +65,7 @@ describe("release proxy Worker", () => {
       context,
     );
     expect(await second.json()).toEqual({ version: "1.2.3" });
+    expect(second.headers.get("cache-control")).toBe("no-store");
     expect(upstreamRequests).toHaveLength(1);
   });
 
