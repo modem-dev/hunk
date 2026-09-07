@@ -53,6 +53,7 @@ async function createHistoryRoute(subjects = ["History row"]) {
     repoRoot: "/repo",
     notices: [],
     customThemes: [],
+    keybindings: {},
     initialViewPreferences: persistedViewPreferencesFromOptions({}),
     promptSaveViewPreferences: true,
     async planReview(commit) {

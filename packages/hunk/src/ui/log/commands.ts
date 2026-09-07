@@ -1,258 +1,111 @@
 import type { KeyEvent } from "@opentui/core";
+import {
+  HISTORY_COMMAND_CATALOG,
+  type HistoryCommandCatalogEntry,
+  type HistoryCommandHelpSection,
+  type HistoryCommandId,
+} from "../../core/run/historyCommandCatalog";
+import { matchesAnyKeyChord } from "../../lib/commandKeys";
 import type { HelpSection } from "../lib/helpContent";
-import type { MenuId } from "../components/chrome/menu";
+import { formatKeyChord, type CommandKeyDefaults } from "../lib/keymap";
+import type { AppCommand, ResolvedCommandKeys } from "../lib/appCommands";
 import type { LogSnapshot } from "./controller";
 
-export type LogCommandId =
-  | "open"
-  | "copy"
-  | "refresh"
-  | "quit"
-  | "theme"
-  | "toggle-graph"
-  | "toggle-unicode"
-  | "toggle-author"
-  | "toggle-date"
-  | "toggle-decorations"
-  | "previous"
-  | "next"
-  | "extend-previous"
-  | "extend-next"
-  | "page-up"
-  | "page-down"
-  | "first"
-  | "last"
-  | "search"
-  | "next-match"
-  | "previous-match"
-  | "open-first-parent"
-  | "open-parent"
-  | "help"
-  | "about";
+export type { HistoryCommandId } from "../../core/run/historyCommandCatalog";
 
-type Shortcut = { token: string; display: string };
+/** What each canonical history command does in the terminal history surface. */
+export type HistoryCommandHandlers = Record<
+  HistoryCommandId,
+  (key: KeyEvent, entry: HistoryCommandCatalogEntry) => void
+>;
 
-export interface LogCommandDefinition {
-  id: LogCommandId;
-  label: string;
-  menu: MenuId;
-  shortcuts?: readonly Shortcut[];
-  helpSection?: "Navigation" | "Commit" | "Application";
+export interface BuildHistoryCommandsOptions {
+  getSnapshot: () => LogSnapshot;
+  handlers: HistoryCommandHandlers;
+  resolvedKeys?: ResolvedCommandKeys;
 }
 
-/** Define log labels and bindings once for keyboard dispatch, menus, and help. */
-export const LOG_COMMANDS: readonly LogCommandDefinition[] = [
-  {
-    id: "open",
-    label: "Open selection",
-    menu: "file",
-    shortcuts: [{ token: "name:enter", display: "Enter" }],
-    helpSection: "Commit",
-  },
-  {
-    id: "copy",
-    label: "Copy commit ID",
-    menu: "file",
-    shortcuts: [{ token: "sequence:y", display: "y" }],
-    helpSection: "Commit",
-  },
-  {
-    id: "refresh",
-    label: "Refresh history",
-    menu: "file",
-    shortcuts: [{ token: "sequence:r", display: "r" }],
-    helpSection: "Application",
-  },
-  {
-    id: "quit",
-    label: "Quit",
-    menu: "file",
-    shortcuts: [
-      { token: "sequence:q", display: "q" },
-      { token: "ctrl:c", display: "Ctrl-C" },
-    ],
-    helpSection: "Application",
-  },
-  {
-    id: "theme",
-    label: "Theme…",
-    menu: "view",
-    shortcuts: [{ token: "sequence:t", display: "t" }],
-    helpSection: "Application",
-  },
-  { id: "toggle-graph", label: "Graph view", menu: "view" },
-  { id: "toggle-unicode", label: "Unicode lines", menu: "view" },
-  { id: "toggle-author", label: "Show author", menu: "view" },
-  { id: "toggle-date", label: "Show date", menu: "view" },
-  { id: "toggle-decorations", label: "Show decorations", menu: "view" },
-  {
-    id: "extend-previous",
-    label: "Extend selection up",
-    menu: "navigate",
-    shortcuts: [
-      { token: "shift:up", display: "Shift-↑ / K" },
-      { token: "sequence:K", display: "Shift-↑ / K" },
-    ],
-    helpSection: "Navigation",
-  },
-  {
-    id: "extend-next",
-    label: "Extend selection down",
-    menu: "navigate",
-    shortcuts: [
-      { token: "shift:down", display: "Shift-↓ / J" },
-      { token: "sequence:J", display: "Shift-↓ / J" },
-    ],
-    helpSection: "Navigation",
-  },
-  {
-    id: "previous",
-    label: "Previous commit",
-    menu: "navigate",
-    shortcuts: [
-      { token: "name:up", display: "↑ / k" },
-      { token: "sequence:k", display: "↑ / k" },
-    ],
-    helpSection: "Navigation",
-  },
-  {
-    id: "next",
-    label: "Next commit",
-    menu: "navigate",
-    shortcuts: [
-      { token: "name:down", display: "↓ / j" },
-      { token: "sequence:j", display: "↓ / j" },
-    ],
-    helpSection: "Navigation",
-  },
-  {
-    id: "page-up",
-    label: "Page up",
-    menu: "navigate",
-    shortcuts: [{ token: "name:pageup", display: "PgUp" }],
-    helpSection: "Navigation",
-  },
-  {
-    id: "page-down",
-    label: "Page down",
-    menu: "navigate",
-    shortcuts: [{ token: "name:pagedown", display: "PgDn" }],
-    helpSection: "Navigation",
-  },
-  {
-    id: "first",
-    label: "First commit",
-    menu: "navigate",
-    shortcuts: [
-      { token: "name:home", display: "Home / g" },
-      { token: "sequence:g", display: "Home / g" },
-    ],
-    helpSection: "Navigation",
-  },
-  {
-    id: "last",
-    label: "Last commit",
-    menu: "navigate",
-    shortcuts: [
-      { token: "name:end", display: "End / G" },
-      { token: "sequence:G", display: "End / G" },
-    ],
-    helpSection: "Navigation",
-  },
-  {
-    id: "search",
-    label: "Search…",
-    menu: "navigate",
-    shortcuts: [{ token: "sequence:/", display: "/" }],
-    helpSection: "Navigation",
-  },
-  {
-    id: "next-match",
-    label: "Next match",
-    menu: "navigate",
-    shortcuts: [{ token: "sequence:n", display: "n" }],
-    helpSection: "Navigation",
-  },
-  {
-    id: "previous-match",
-    label: "Previous match",
-    menu: "navigate",
-    shortcuts: [{ token: "sequence:N", display: "N" }],
-    helpSection: "Navigation",
-  },
-  {
-    id: "open-first-parent",
-    label: "Compare with first parent",
-    menu: "commit",
-  },
-  { id: "open-parent", label: "Compare with parent…", menu: "commit" },
-  {
-    id: "help",
-    label: "Keyboard shortcuts",
-    menu: "help",
-    shortcuts: [{ token: "sequence:?", display: "?" }],
-    helpSection: "Application",
-  },
-  { id: "about", label: "About Hunk", menu: "help" },
-];
-
-const BY_ID = new Map(LOG_COMMANDS.map((command) => [command.id, command]));
-
-/** Return the canonical definition for one command. */
-export function logCommand(id: LogCommandId) {
-  return BY_ID.get(id)!;
-}
-
-/** Derive one menu/help hint from the same shortcuts used for dispatch. */
-export function logCommandHint(id: LogCommandId) {
-  return logCommand(id).shortcuts?.[0]?.display;
-}
-
-/** Resolve a keyboard event to the canonical log command. */
-export function matchLogCommand(key: KeyEvent): LogCommandId | null {
-  const normalizedName = key.name === "return" ? "enter" : key.name;
-  const tokens = [
-    key.ctrl ? `ctrl:${key.name}` : "",
-    key.shift ? `shift:${normalizedName}` : `name:${normalizedName}`,
-    key.sequence ? `sequence:${key.sequence}` : "",
-  ];
-  return (
-    LOG_COMMANDS.find((command) =>
-      command.shortcuts?.some((shortcut) => tokens.includes(shortcut.token)),
-    )?.id ?? null
-  );
+/** Return the history command defaults consumed by shared keymap resolution. */
+export function historyCommandKeyDefaults(): readonly CommandKeyDefaults[] {
+  return HISTORY_COMMAND_CATALOG.map((entry) => ({
+    id: entry.id,
+    aliases: entry.aliases,
+    defaultKeys: entry.defaultKeys,
+  }));
 }
 
 /** Apply context-sensitive availability consistently to keyboard and menus. */
-export function isLogCommandEnabled(id: LogCommandId, snapshot: LogSnapshot) {
+export function isHistoryCommandEnabled(id: HistoryCommandId, snapshot: LogSnapshot) {
   const selected = snapshot.rows[snapshot.selected];
-  if (["open", "copy"].includes(id)) return Boolean(selected);
-  if (id === "previous" || id === "extend-previous" || id === "page-up" || id === "first")
+  if (id === "hunk.history.openSelection" || id === "hunk.history.copyRevision")
+    return Boolean(selected);
+  if (
+    id === "hunk.history.previousCommit" ||
+    id === "hunk.history.extendPrevious" ||
+    id === "hunk.history.pageUp" ||
+    id === "hunk.history.jumpToFirst"
+  )
     return snapshot.selected > 0;
-  if (id === "next" || id === "extend-next" || id === "page-down" || id === "last")
+  if (
+    id === "hunk.history.nextCommit" ||
+    id === "hunk.history.extendNext" ||
+    id === "hunk.history.pageDown" ||
+    id === "hunk.history.jumpToLast"
+  )
     return !(snapshot.historyDone && snapshot.selected >= snapshot.rows.length - 1);
-  if (id === "next-match" || id === "previous-match") return Boolean(snapshot.search);
-  if (id === "open-first-parent")
+  if (id === "hunk.history.nextMatch" || id === "hunk.history.previousMatch")
+    return Boolean(snapshot.search);
+  if (id === "hunk.history.openFirstParent")
     return snapshot.selectionAnchor === null && Boolean(selected?.commit.parentRevisionIds.length);
-  if (id === "open-parent")
+  if (id === "hunk.history.openParent")
     return (
       snapshot.selectionAnchor === null && (selected?.commit.parentRevisionIds.length ?? 0) > 1
     );
   return true;
 }
 
-/** Build log help from the same labels and bindings used by dispatch and menus. */
-export function buildLogHelpSections(): readonly HelpSection[] {
-  const order: NonNullable<LogCommandDefinition["helpSection"]>[] = [
-    "Navigation",
-    "Commit",
-    "Application",
-  ];
+/** Bind canonical history command identity to live terminal handlers. */
+export function buildHistoryCommands({
+  getSnapshot,
+  handlers,
+  resolvedKeys,
+}: BuildHistoryCommandsOptions): AppCommand[] {
+  return HISTORY_COMMAND_CATALOG.map((entry) => {
+    const keys = resolvedKeys?.get(entry.id) ?? entry.defaultKeys;
+    return {
+      id: entry.id,
+      aliases: entry.aliases,
+      title: entry.title,
+      keys,
+      keyLabels: keys.map(formatKeyChord),
+      defaultKeys: entry.defaultKeys,
+      isEnabled: () => isHistoryCommandEnabled(entry.id as HistoryCommandId, getSnapshot()),
+      publicToExtensions: entry.publicToExtensions,
+      verticalDirection: entry.verticalDirection,
+      closesMenu: entry.closesMenu,
+      match: matchesAnyKeyChord(keys),
+      run: (key) => handlers[entry.id as HistoryCommandId](key, entry),
+    };
+  });
+}
+
+/** Find the canonical history definition used by menus and tests. */
+export function historyCommand(id: HistoryCommandId) {
+  return HISTORY_COMMAND_CATALOG.find((entry) => entry.id === id)!;
+}
+
+/** Build history help from effective session bindings rather than shipped defaults. */
+export function buildHistoryHelpSections(commands: readonly AppCommand[]): readonly HelpSection[] {
+  const order: readonly HistoryCommandHelpSection[] = ["Navigation", "Commit", "Application"];
+  const byId = new Map(commands.map((command) => [command.id, command]));
   return order.map((title) => ({
     title,
-    rows: LOG_COMMANDS.filter((command) => command.helpSection === title).map((command) => ({
-      keys: command.shortcuts?.[0]?.display ?? "",
-      description: command.label.toLocaleLowerCase(),
-    })),
+    rows: HISTORY_COMMAND_CATALOG.filter((entry) => entry.helpSection === title)
+      .map((entry) => ({ entry, command: byId.get(entry.id) }))
+      .filter(({ command }) => command !== undefined && command.keyLabels.length > 0)
+      .map(({ entry, command }) => ({
+        keys: command!.keyLabels.join(" / "),
+        description: entry.title.toLocaleLowerCase(),
+      })),
   }));
 }

@@ -40,7 +40,7 @@ import type { ReviewNoteTargetV1 } from "../review/types";
 export type AppCommandLocus = "semantic" | "client-local" | "host-only";
 
 /** The id group a command lives under, and the menu-level grouping users read. */
-export type AppCommandCategory = "app" | "review" | "view";
+export type AppCommandCategory = "app" | "history" | "review" | "view";
 
 /** The direction a command moves a vertically ordered surface. */
 export type VerticalCommandDirection = -1 | 1;
@@ -572,6 +572,11 @@ const BUILTIN_COMMANDS = [
 export type AppCommandId = (typeof BUILTIN_COMMANDS)[number]["id"];
 
 export const APP_COMMAND_CATALOG: readonly AppCommandCatalogEntry[] = BUILTIN_COMMANDS;
+
+/** Canonical and compatibility names accepted for review-surface built-ins. */
+export const APP_COMMAND_NAMES: ReadonlySet<string> = new Set(
+  APP_COMMAND_CATALOG.flatMap((entry) => [entry.id, ...(entry.aliases ?? [])]),
+);
 
 /** Look one command up by its canonical id or a compatibility alias. */
 export function appCommandCatalogEntry(id: string): AppCommandCatalogEntry | undefined {

@@ -13,6 +13,7 @@ import {
   type ResolvedCommandKeys,
 } from "./appCommands";
 import { APP_COMMAND_CATALOG } from "../../core/run/commandCatalog";
+import { HISTORY_COMMAND_CATALOG } from "../../core/run/historyCommandCatalog";
 import { buildAppMenus } from "./appMenus";
 import { buildHelpSections, HELP_COMMAND_IDS } from "./helpContent";
 import { resolveCommandKeys } from "./keymap";
@@ -237,7 +238,7 @@ describe("built-in commands under user keybindings", () => {
 });
 
 describe("builtinCommandKeyDefaults", () => {
-  test("keeps the documented command-id table sorted and identical to the runtime catalog", () => {
+  test("keeps the documented command-id tables identical to the surface catalogs", () => {
     const markdown = readFileSync(
       resolve(import.meta.dir, "../../../../../docs/keybindings.md"),
       "utf8",
@@ -246,10 +247,13 @@ describe("builtinCommandKeyDefaults", () => {
       markdown.matchAll(/^\| `(hunk\.[^`]+)`\s+\|/gm),
       (match) => match[1],
     );
-    const { commands } = createTestCommands();
-    const sortedRuntimeIds = commands.map((command) => command.id).toSorted();
+    const catalogIds = new Set([
+      ...APP_COMMAND_CATALOG.map((command) => command.id),
+      ...HISTORY_COMMAND_CATALOG.map((command) => command.id),
+    ]);
 
-    expect(documentedIds).toEqual(sortedRuntimeIds);
+    expect(new Set(documentedIds).size).toBe(documentedIds.length);
+    expect(documentedIds.toSorted()).toEqual([...catalogIds].toSorted());
   });
 
   test("reports every built-in command with the chords it ships with", () => {

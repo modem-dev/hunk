@@ -138,6 +138,21 @@ describe("resolveCommandKeys", () => {
     expect(issues[0]?.message).not.toContain("may not be loaded");
   });
 
+  test("accepts known commands owned by another surface without claiming their chords", () => {
+    const { keys, issues } = resolveCommandKeys({
+      defaults: [{ id: "hunk.review.nextHunk", defaultKeys: ["]"] }],
+      inactiveCommandNames: new Set(["hunk.history.nextCommit"]),
+      userBindings: {
+        "hunk.review.nextHunk": "ctrl+n",
+        "hunk.history.nextCommit": "ctrl+n",
+      },
+    });
+
+    expect(issues).toEqual([]);
+    expect(keys.get("hunk.review.nextHunk")).toEqual(["ctrl+n"]);
+    expect(keys.has("hunk.history.nextCommit")).toBe(false);
+  });
+
   test("duplicate ids in the command table keep the first entry's keys", () => {
     const { keys, issues } = resolveCommandKeys({
       defaults: [

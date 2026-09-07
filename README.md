@@ -104,6 +104,7 @@ Use `Shift+Up`/`Shift+Down`, uppercase `K`/`J`, or Shift-click to select a conti
 reviews the inclusive cumulative change from the oldest commit's parent through the newest commit.
 Range selection is disabled with `--all` or author, message, date, and path filters because traversal can interleave or hide commits.
 After opening a commit or range, quit its normal Hunk review to return to the same selection.
+History controls are configurable through canonical `hunk.history.*` [keybindings](https://hunk.dev/docs/configure/keybindings/).
 
 ### Working with Jujutsu and Sapling
 

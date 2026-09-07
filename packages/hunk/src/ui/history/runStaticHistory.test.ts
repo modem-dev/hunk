@@ -33,6 +33,7 @@ function runtime(commits: HistoryCommit[], maxCount?: number, closeFailure?: Err
     repoRoot: "/repo",
     notices: [],
     customThemes: [],
+    keybindings: {},
     initialViewPreferences: persistedViewPreferencesFromOptions({}),
     promptSaveViewPreferences: true,
     async planReview(commit) {

@@ -2,12 +2,13 @@ import type { KeyEvent, MouseEvent as TuiMouseEvent } from "@opentui/core";
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
 import { basename } from "node:path";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { APP_COMMAND_NAMES } from "../../core/run/commandCatalog";
 import type {
   ExtensionVcsHistoryCommit,
   ExtensionVcsHistoryRangeSelection,
 } from "../../extension-api/types";
 import { sanitizeTerminalLine } from "../../lib/terminalText";
-import { resolveExtensionSessionOptions } from "../../extensions/apply";
+import { resolveExtensionCommands, resolveExtensionSessionOptions } from "../../extensions/apply";
 import { HelpDialog } from "../components/chrome/HelpDialog";
 import { MenuBar } from "../components/chrome/MenuBar";
 import { MenuDropdown } from "../components/chrome/MenuDropdown";
@@ -27,13 +28,15 @@ import { handleViewPreferenceQuitPromptKey } from "../lib/viewPreferenceQuitKeys
 import type { ThemeController } from "../theme/controller";
 import type { HistoryRuntime } from "../history/types";
 import type { LogController } from "./controller";
-import { LOG_HELP_SECTIONS } from "./logHelp";
+import { dispatchAppCommand, executeAppCommand, findAppCommandById } from "../lib/appCommands";
+import { resolveCommandKeys } from "../lib/keymap";
 import {
-  isLogCommandEnabled,
-  logCommand,
-  logCommandHint,
-  matchLogCommand,
-  type LogCommandId,
+  buildHistoryCommands,
+  buildHistoryHelpSections,
+  historyCommand,
+  historyCommandKeyDefaults,
+  type HistoryCommandHandlers,
+  type HistoryCommandId,
 } from "./commands";
 import { ParentSelectorDialog } from "./ParentSelectorDialog";
 import { monochromeLogTheme, resolveInteractiveLogPalette } from "./colorPolicy";
@@ -251,143 +254,135 @@ export function LogApp({
     }
     await openSelected(undefined, true);
   };
-  const executeCommand = (id: LogCommandId, exitCode?: number) => {
-    clearTransientNotice();
-    if (!isLogCommandEnabled(id, controller.getSnapshot())) return;
-    switch (id) {
-      case "open":
-        void requestOpenSelected();
-        break;
-      case "copy":
-        copySelected();
-        break;
-      case "refresh":
-        void controller.refresh();
-        break;
-      case "quit":
-        requestLogQuit(exitCode);
-        break;
-      case "theme":
-        themeSelector.openThemeSelector();
-        break;
-      case "toggle-graph":
-        controller.togglePresentation("graph");
-        break;
-      case "toggle-unicode":
-        controller.togglePresentation("unicode");
-        break;
-      case "toggle-author":
-        controller.togglePresentation("author");
-        break;
-      case "toggle-date":
-        controller.togglePresentation("date");
-        break;
-      case "toggle-decorations":
-        controller.togglePresentation("decorations");
-        break;
-      case "previous":
-        void controller.move(-1, viewportBodyHeight);
-        break;
-      case "next":
-        void controller.move(1, viewportBodyHeight);
-        break;
-      case "extend-previous":
-        void controller.move(-1, viewportBodyHeight, { extend: true });
-        break;
-      case "extend-next":
-        void controller.move(1, viewportBodyHeight, { extend: true });
-        break;
-      case "page-up":
-        void controller.page(-1, viewportBodyHeight);
-        break;
-      case "page-down":
-        void controller.page(1, viewportBodyHeight);
-        break;
-      case "first":
-        void controller.first(viewportBodyHeight);
-        break;
-      case "last":
-        void controller.last(viewportBodyHeight);
-        break;
-      case "search":
-        controller.beginSearch();
-        break;
-      case "next-match":
-        void controller.findMatch(1, viewportBodyHeight);
-        break;
-      case "previous-match":
-        void controller.findMatch(-1, viewportBodyHeight);
-        break;
-      case "open-first-parent": {
-        const parent = controller.getSelectedRow()?.commit.parentRevisionIds[0];
-        if (parent) void openSelected(parent);
-        break;
-      }
-      case "open-parent":
-        setParentSelectorIndex(0);
-        break;
-      case "help":
-        setShowHelp(true);
-        break;
-      case "about":
-        setTransientNotice("Hunk · terminal-native code review");
-        break;
+  const inactiveHistoryCommandNames = useMemo(() => {
+    const names = new Set(APP_COMMAND_NAMES);
+    for (const registered of resolveExtensionCommands(runtime.extensionSession.current.registry)
+      .commands) {
+      names.add(`${registered.extensionId}.${registered.command.id}`);
     }
+    return names;
+  }, [runtime.extensionSession]);
+  const historyKeymap = useMemo(
+    () =>
+      resolveCommandKeys({
+        defaults: historyCommandKeyDefaults(),
+        inactiveCommandNames: inactiveHistoryCommandNames,
+        userBindings: runtime.keybindings,
+      }),
+    [inactiveHistoryCommandNames, runtime.keybindings],
+  );
+  const commandHandlers: HistoryCommandHandlers = {
+    "hunk.history.openSelection": () => void requestOpenSelected(),
+    "hunk.history.copyRevision": () => copySelected(),
+    "hunk.history.refresh": () => void controller.refresh(),
+    "hunk.app.quit": (key) => requestLogQuit(key.ctrl && key.name === "c" ? 130 : undefined),
+    "hunk.view.openThemeSelector": () => themeSelector.openThemeSelector(),
+    "hunk.history.toggleGraph": () => controller.togglePresentation("graph"),
+    "hunk.history.toggleUnicode": () => controller.togglePresentation("unicode"),
+    "hunk.history.toggleAuthor": () => controller.togglePresentation("author"),
+    "hunk.history.toggleDate": () => controller.togglePresentation("date"),
+    "hunk.history.toggleDecorations": () => controller.togglePresentation("decorations"),
+    "hunk.history.previousCommit": () => void controller.move(-1, viewportBodyHeight),
+    "hunk.history.nextCommit": () => void controller.move(1, viewportBodyHeight),
+    "hunk.history.extendPrevious": () =>
+      void controller.move(-1, viewportBodyHeight, { extend: true }),
+    "hunk.history.extendNext": () => void controller.move(1, viewportBodyHeight, { extend: true }),
+    "hunk.history.pageUp": () => void controller.page(-1, viewportBodyHeight),
+    "hunk.history.pageDown": () => void controller.page(1, viewportBodyHeight),
+    "hunk.history.jumpToFirst": () => void controller.first(viewportBodyHeight),
+    "hunk.history.jumpToLast": () => void controller.last(viewportBodyHeight),
+    "hunk.history.search": () => controller.beginSearch(),
+    "hunk.history.nextMatch": () => void controller.findMatch(1, viewportBodyHeight),
+    "hunk.history.previousMatch": () => void controller.findMatch(-1, viewportBodyHeight),
+    "hunk.history.openFirstParent": () => {
+      const parent = controller.getSelectedRow()?.commit.parentRevisionIds[0];
+      if (parent) void openSelected(parent);
+    },
+    "hunk.history.openParent": () => setParentSelectorIndex(0),
+    "hunk.app.toggleHelp": () => setShowHelp(true),
+    "hunk.history.showAbout": () => setTransientNotice("Hunk · terminal-native code review"),
+  };
+  const commands = buildHistoryCommands({
+    getSnapshot: controller.getSnapshot,
+    handlers: commandHandlers,
+    resolvedKeys: historyKeymap.keys,
+  });
+  const reportedKeymapIssues = useRef(new Set<string>());
+  useEffect(() => {
+    const unreported = historyKeymap.issues.filter(
+      (issue) => !reportedKeymapIssues.current.has(issue.message),
+    );
+    const first = unreported[0];
+    if (!first) return;
+    for (const issue of unreported) reportedKeymapIssues.current.add(issue.message);
+    const remaining = unreported.length - 1;
+    controller.addStartupNotices([
+      remaining > 0
+        ? `${first.message} (+${remaining} more keybinding issue${remaining === 1 ? "" : "s"})`
+        : first.message,
+    ]);
+  }, [controller, historyKeymap]);
+  const executeCommand = (id: HistoryCommandId) => {
+    clearTransientNotice();
+    return executeAppCommand(commands, id);
   };
   const commandItem = (
-    id: LogCommandId,
+    id: HistoryCommandId,
     options: Pick<Extract<MenuEntry, { kind: "item" }>, "checked"> = {},
   ): Extract<MenuEntry, { kind: "item" }> => {
-    const definition = logCommand(id);
+    const definition = historyCommand(id);
+    const command = findAppCommandById(commands, id)!;
     return {
       kind: "item",
-      commandId: `hunk.log.${id}`,
-      label: definition.label,
-      ...(logCommandHint(id) ? { hint: logCommandHint(id) } : {}),
-      disabled: !isLogCommandEnabled(id, snapshot),
+      commandId: id,
+      label: definition.title,
+      ...(command.keyLabels.length ? { hint: command.keyLabels.join(" / ") } : {}),
+      disabled: command.isEnabled ? !command.isEnabled() : false,
       action: () => executeCommand(id),
       ...options,
     };
   };
   const menus: AppMenus = {
     file: [
-      commandItem("open"),
-      commandItem("copy"),
-      commandItem("refresh"),
+      commandItem("hunk.history.openSelection"),
+      commandItem("hunk.history.copyRevision"),
+      commandItem("hunk.history.refresh"),
       { kind: "separator" },
-      commandItem("quit"),
+      commandItem("hunk.app.quit"),
     ],
     view: [
-      commandItem("theme"),
+      commandItem("hunk.view.openThemeSelector"),
       { kind: "separator" },
-      commandItem("toggle-graph", { checked: snapshot.presentation.graph }),
-      commandItem("toggle-unicode", { checked: snapshot.presentation.unicode }),
-      commandItem("toggle-author", { checked: snapshot.presentation.author }),
-      commandItem("toggle-date", { checked: snapshot.presentation.date }),
-      commandItem("toggle-decorations", { checked: snapshot.presentation.decorations }),
+      commandItem("hunk.history.toggleGraph", { checked: snapshot.presentation.graph }),
+      commandItem("hunk.history.toggleUnicode", { checked: snapshot.presentation.unicode }),
+      commandItem("hunk.history.toggleAuthor", { checked: snapshot.presentation.author }),
+      commandItem("hunk.history.toggleDate", { checked: snapshot.presentation.date }),
+      commandItem("hunk.history.toggleDecorations", {
+        checked: snapshot.presentation.decorations,
+      }),
     ],
     navigate: [
-      commandItem("previous"),
-      commandItem("next"),
-      commandItem("extend-previous"),
-      commandItem("extend-next"),
-      commandItem("page-up"),
-      commandItem("page-down"),
-      commandItem("first"),
-      commandItem("last"),
+      commandItem("hunk.history.previousCommit"),
+      commandItem("hunk.history.nextCommit"),
+      commandItem("hunk.history.extendPrevious"),
+      commandItem("hunk.history.extendNext"),
+      commandItem("hunk.history.pageUp"),
+      commandItem("hunk.history.pageDown"),
+      commandItem("hunk.history.jumpToFirst"),
+      commandItem("hunk.history.jumpToLast"),
       { kind: "separator" },
-      commandItem("search"),
-      commandItem("next-match"),
-      commandItem("previous-match"),
+      commandItem("hunk.history.search"),
+      commandItem("hunk.history.nextMatch"),
+      commandItem("hunk.history.previousMatch"),
     ],
     commit: [
-      commandItem("open"),
-      commandItem("copy"),
+      commandItem("hunk.history.openSelection"),
+      commandItem("hunk.history.copyRevision"),
       { kind: "separator" },
-      commandItem("open-first-parent"),
-      commandItem("open-parent"),
+      commandItem("hunk.history.openFirstParent"),
+      commandItem("hunk.history.openParent"),
     ],
-    help: [commandItem("help"), commandItem("about")],
+    help: [commandItem("hunk.app.toggleHelp"), commandItem("hunk.history.showAbout")],
   };
   const menu = useMenuController(menus);
 
@@ -440,9 +435,9 @@ export function LogApp({
     }
     if (reviewPending.current) {
       if (!reviewQuitEnabled.current) {
-        const command = matchLogCommand(key);
-        if (command === "quit" && key.ctrl && key.name === "c") {
-          executeCommand(command, 130);
+        const quit = findAppCommandById(commands, "hunk.app.quit");
+        if (quit?.match(key) && key.ctrl && key.name === "c") {
+          quit.run(key, 1);
         }
         consume();
         return;
@@ -455,10 +450,10 @@ export function LogApp({
         else if (name === "down") menu.moveMenuItem(1);
         else if (name === "return" || name === "enter") menu.activateCurrentMenuItem();
         else {
-          const command = matchLogCommand(key);
-          if (command === "quit") {
+          const quit = findAppCommandById(commands, "hunk.app.quit");
+          if (quit?.match(key)) {
             menu.closeMenu();
-            executeCommand(command, key.ctrl && key.name === "c" ? 130 : undefined);
+            quit.run(key, 1);
           }
         }
         consume();
@@ -466,10 +461,8 @@ export function LogApp({
       }
       if (name === "f10") menu.openMenu("file");
       else {
-        const command = matchLogCommand(key);
-        if (command === "quit") {
-          executeCommand(command, key.ctrl && key.name === "c" ? 130 : undefined);
-        }
+        const quit = findAppCommandById(commands, "hunk.app.quit");
+        if (quit?.match(key)) quit.run(key, 1);
       }
       consume();
       return;
@@ -515,10 +508,9 @@ export function LogApp({
       else if (name === "down") menu.moveMenuItem(1);
       else if (name === "return" || name === "enter") menu.activateCurrentMenuItem();
       else {
-        const command = matchLogCommand(key);
+        const command = dispatchAppCommand(commands, key);
         if (!command) return;
         menu.closeMenu();
-        executeCommand(command, key.ctrl && key.name === "c" ? 130 : undefined);
       }
       consume();
       return;
@@ -538,9 +530,8 @@ export function LogApp({
       consume();
       return;
     }
-    const command = matchLogCommand(key);
+    const command = dispatchAppCommand(commands, key);
     if (!command) return;
-    executeCommand(command, key.ctrl && key.name === "c" ? 130 : undefined);
     consume();
   });
 
@@ -849,7 +840,7 @@ export function LogApp({
       ) : null}
       {showHelp ? (
         <HelpDialog
-          sections={LOG_HELP_SECTIONS}
+          sections={buildHistoryHelpSections(commands)}
           terminalHeight={terminal.height}
           terminalWidth={terminal.width}
           theme={chromeTheme}

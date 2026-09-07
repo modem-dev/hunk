@@ -15,6 +15,7 @@ import {
   useState,
 } from "react";
 import type { PersistedViewPreferences } from "../core/run/config";
+import { HISTORY_COMMAND_NAMES } from "../core/run/historyCommandCatalog";
 import type { ExtensionReviewReloadResult } from "../extension-api/types";
 import { experimentalFeatureEnabled, resolveExperimentalDiffFiles } from "../core/run/experimental";
 import { DEFAULT_FILE_GAP, DEFAULT_HUNK_GAP } from "../core/run/reviewGap";
@@ -615,6 +616,7 @@ export function App({
           ...builtinCommandKeyDefaults(),
           ...extensionCommandKeyDefaults(registeredExtensionCommands),
         ],
+        inactiveCommandNames: HISTORY_COMMAND_NAMES,
         userBindings: bootstrap.keybindings,
       }),
     [bootstrap.keybindings, registeredExtensionCommands],

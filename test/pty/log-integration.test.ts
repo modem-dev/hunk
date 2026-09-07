@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createPtyHarness, rightmostColumnOf } from "./harness";
@@ -248,6 +256,42 @@ describe("interactive hunk log", () => {
       // coalesced trailing q must be consumed by the log transition rather than closing the child.
       session.writeRaw("\rq");
       await session.waitForText(/historyValue = 'second'/, { timeout: 15_000 });
+      await session.press("q");
+      await session.waitForText(/Second history commit/, { timeout: 15_000 });
+      await session.press("q");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("resolves canonical history command remaps from user keybindings", async () => {
+    const cwd = createHistoryRepo();
+    const configHome = mkdtempSync(join(tmpdir(), "hunk-log-keybindings-"));
+    tempDirs.push(configHome);
+    const configDir = join(configHome, "hunk");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(
+      join(configDir, "config.toml"),
+      '[keybindings]\n"hunk.history.nextCommit" = "ctrl+n"\n',
+    );
+    const session = await harness.launchHunk({
+      args: ["log", "--color", "never", "--no-extensions"],
+      cwd,
+      cols: 100,
+      rows: 20,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      await session.waitForText(/Second history commit/, { timeout: 15_000 });
+      await session.press("down");
+      await session.press("enter");
+      await session.waitForText(/historyValue = 'second'/, { timeout: 15_000 });
+      await session.press("q");
+      await session.waitForText(/Second history commit/, { timeout: 15_000 });
+      session.writeRaw("\x0e");
+      await session.press("enter");
+      await session.waitForText(/historyValue = 'first'/, { timeout: 15_000 });
       await session.press("q");
       await session.waitForText(/Second history commit/, { timeout: 15_000 });
       await session.press("q");

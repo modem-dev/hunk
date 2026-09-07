@@ -4,7 +4,7 @@ import { persistedViewPreferencesFromOptions } from "../../core/run/config";
 import type { HistoryRuntime } from "../history/types";
 import { LogController } from "./controller";
 
-function createRuntime(subjects = ["first", "second", "third"]) {
+function createRuntime(subjects = ["first", "second", "third"], notices: readonly string[] = []) {
   let cursor = 0;
   let closeCount = 0;
   const makeSource = () => ({
@@ -42,8 +42,9 @@ function createRuntime(subjects = ["first", "second", "third"]) {
     providerId: "test",
     providerName: "Test",
     repoRoot: "/repo",
-    notices: [],
+    notices,
     customThemes: [],
+    keybindings: {},
     initialViewPreferences: persistedViewPreferencesFromOptions({}),
     promptSaveViewPreferences: true,
     async planReview(commit) {
@@ -62,6 +63,22 @@ function createRuntime(subjects = ["first", "second", "third"]) {
 }
 
 describe("LogController", () => {
+  test("preserves bootstrap notices when keymap diagnostics arrive after mount", async () => {
+    const { runtime } = createRuntime(undefined, [
+      "Configured VCS is unavailable.",
+      "Extension registration was skipped.",
+    ]);
+    const controller = new LogController(runtime);
+
+    controller.addStartupNotices(["Unknown history command."]);
+    controller.addStartupNotices(["Unknown history command."]);
+
+    expect(controller.getSnapshot().notice).toBe(
+      "Configured VCS is unavailable. • Extension registration was skipped. • Unknown history command.",
+    );
+    await controller.close();
+  });
+
   test("loads bounded pages and retains navigation/search state", async () => {
     const { runtime } = createRuntime();
     const controller = new LogController(runtime);

@@ -25,7 +25,7 @@ describe("history bootstrap cursor ownership", () => {
     mkdirSync(join(configHome, "hunk"), { recursive: true });
     writeFileSync(
       configPath,
-      'theme = "github-dark-dimmed"\nline_numbers = false\nprompt_save_view_preferences = false\n',
+      'theme = "github-dark-dimmed"\nline_numbers = false\nprompt_save_view_preferences = false\n\n[keybindings]\n"hunk.history.nextCommit" = "ctrl+n"\n',
     );
     const closeCounts: number[] = [];
     let opens = 0;
@@ -73,6 +73,7 @@ describe("history bootstrap cursor ownership", () => {
         theme: "github-dark-dimmed",
         showLineNumbers: false,
       });
+      expect(bootstrap.keybindings).toEqual({ "hunk.history.nextCommit": "ctrl+n" });
       expect(bootstrap.viewPreferencesConfigPath).toBe(configPath);
       expect(bootstrap.promptSaveViewPreferences).toBe(false);
 

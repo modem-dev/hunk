@@ -2,6 +2,7 @@ import type { HistoryCommandInput } from "../core/run/commandInputs";
 import {
   persistedViewPreferencesFromOptions,
   type PersistedViewPreferences,
+  type UserKeyBinding,
 } from "../core/run/config";
 import { collectSessionCustomThemes } from "../core/theme/customThemes";
 import type {
@@ -41,6 +42,8 @@ export interface HistoryBootstrap {
   extensionSession: ExtensionSession;
   notices: readonly string[];
   customThemes: readonly NamedCustomThemeConfig[];
+  /** User command overrides resolved by the active interactive surface. */
+  keybindings: Readonly<Record<string, UserKeyBinding>>;
   /** Launch baseline retained so the owning history surface can persist theme changes on quit. */
   initialViewPreferences: PersistedViewPreferences;
   viewPreferencesConfigPath?: string;
@@ -153,6 +156,7 @@ export async function loadHistoryBootstrap({
     repoRoot,
     extensionSession,
     customThemes: sessionThemes.themes,
+    keybindings: resolved.configured.keybindings,
     initialViewPreferences: persistedViewPreferencesFromOptions(resolved.configured.input.options),
     viewPreferencesConfigPath: resolved.configured.viewPreferencesConfigPath,
     promptSaveViewPreferences:

@@ -52,10 +52,13 @@ export class LogController {
   private closed = false;
   private viewportBodyHeight = 1;
   private noticeTimer: ReturnType<typeof setTimeout> | null = null;
+  private startupNotices = new Set<string>();
   private snapshot: LogSnapshot;
 
   constructor(private readonly runtime: HistoryRuntime) {
     this.source = runtime.source;
+    const startupNotices = runtime.notices.map(sanitizeTerminalLine).filter(Boolean);
+    this.startupNotices = new Set(startupNotices);
     this.snapshot = {
       rows: [],
       selected: 0,
@@ -65,7 +68,7 @@ export class LogController {
       searchEditing: false,
       historyDone: false,
       loading: false,
-      notice: runtime.notices[0] ?? "",
+      notice: startupNotices.join(" • "),
       presentation: {
         graph: false,
         unicode: !runtime.input.ascii && process.env.TERM !== "dumb",
@@ -291,6 +294,17 @@ export class LogController {
     if (this.noticeTimer) clearTimeout(this.noticeTimer);
     this.noticeTimer = null;
     if (this.snapshot.notice) this.publish({ notice: "" });
+  }
+
+  /** Add startup diagnostics without replacing notices gathered before the UI mounted. */
+  addStartupNotices(notices: readonly string[]) {
+    const additions = notices
+      .map(sanitizeTerminalLine)
+      .filter((notice) => notice && !this.startupNotices.has(notice));
+    if (additions.length === 0) return;
+    for (const notice of additions) this.startupNotices.add(notice);
+    const existing = this.snapshot.notice ? [this.snapshot.notice] : [];
+    this.publish({ notice: [...existing, ...additions].join(" • ") });
   }
 
   setNotice(notice: string) {

@@ -15,7 +15,8 @@ command ids to the keys you want them on:
 Every id starts with the name of whoever owns the command: Hunk's own commands
 live under `hunk.`, and an extension's live under its extension id. That split
 is structural — `hunk` is a reserved extension id, so an extension can never
-mint a command id that shadows a built-in, whatever Hunk adds later.
+mint a command id that shadows a built-in, whatever Hunk adds later. Extension commands currently
+run on review surfaces; history resolves its built-in command set without claiming review-only extension chords.
 
 Rules worth knowing:
 
@@ -51,19 +52,50 @@ deleted until its replies are removed.
 
 The built-in commands and the keys they ship with:
 
-On a terminal, `hunk log` opens its read-only history browser automatically. Its controls are
-separate from the configurable review command table. `F10` opens File, View, Navigate, Commit, and Help menus;
+On a terminal, `hunk log` opens its read-only history browser automatically. Its `hunk.history.*`
+commands use the same configurable keybinding resolver as review while retaining history-specific effects.
+Shared application commands such as `hunk.app.quit`, `hunk.app.toggleHelp`, and
+`hunk.view.openThemeSelector` keep the same ids on both surfaces. `F10` opens File, View, Navigate, Commit, and Help menus;
 View includes Hunk's shared theme selector and an optional **Graph view** that replaces the default
 day-grouped timeline with commit-topology lanes. It uses `Up`/`Down` or `j`/`k` to move, `Shift+Up`/`Shift+Down`
 or uppercase `K`/`J` to extend a contiguous commit selection, `PageUp`/`PageDown`, `g`/`G` or `Home`/`End` to jump,
 `/` to search, `n`/`N` for matches, `t` to choose a theme, `r` to refresh, `y` to copy the focused commit's full id,
-`Enter` to open the selection in normal Hunk review, and `q` to quit. With a mouse, Shift-click a row to extend the
+`Enter` to open the selection in normal Hunk review, and `q` or `Ctrl-C` to quit. With a mouse, Shift-click a row to extend the
 selection when the terminal forwards modifiers, click a commit id to open it immediately, click the adjacent copy
 icon to copy its full immutable id, click elsewhere on a row to select it, or double-click a row to open it.
 Range selection is unavailable with `--all` or author, message, date, and path filters because those traversals
 can interleave unrelated commits or hide intermediate commits. Quitting the opened review returns to the retained history selection and viewport. The Commit menu's
 **Compare with first parent** and **Compare with parent…** actions compare the selected commit against
 an ordered provider-owned parent; they do not navigate the history selection to that parent.
+
+History-specific commands:
+
+| Command id                       | Does                         | Default keys      |
+| -------------------------------- | ---------------------------- | ----------------- |
+| `hunk.history.openSelection`     | Open the selected commit(s)  | `enter`           |
+| `hunk.history.copyRevision`      | Copy the focused commit id   | `y`               |
+| `hunk.history.refresh`           | Refresh repository history   | `r`               |
+| `hunk.history.previousCommit`    | Move to the previous commit  | `up`, `k`         |
+| `hunk.history.nextCommit`        | Move to the next commit      | `down`, `j`       |
+| `hunk.history.extendPrevious`    | Extend selection upward      | `shift+up`, `K`   |
+| `hunk.history.extendNext`        | Extend selection downward    | `shift+down`, `J` |
+| `hunk.history.pageUp`            | Move up one page             | `pageup`          |
+| `hunk.history.pageDown`          | Move down one page           | `pagedown`        |
+| `hunk.history.jumpToFirst`       | Jump to the first commit     | `home`, `g`       |
+| `hunk.history.jumpToLast`        | Jump to the last commit      | `end`, `G`        |
+| `hunk.history.search`            | Search history               | `/`               |
+| `hunk.history.nextMatch`         | Select the next match        | `n`               |
+| `hunk.history.previousMatch`     | Select the previous match    | `N`               |
+| `hunk.history.toggleGraph`       | Toggle graph presentation    | _(none)_          |
+| `hunk.history.toggleUnicode`     | Toggle Unicode graph lines   | _(none)_          |
+| `hunk.history.toggleAuthor`      | Toggle author metadata       | _(none)_          |
+| `hunk.history.toggleDate`        | Toggle date metadata         | _(none)_          |
+| `hunk.history.toggleDecorations` | Toggle ref decorations       | _(none)_          |
+| `hunk.history.openFirstParent`   | Compare with first parent    | _(none)_          |
+| `hunk.history.openParent`        | Choose a parent to compare   | _(none)_          |
+| `hunk.history.showAbout`         | Show application information | _(none)_          |
+
+Review and shared commands:
 
 | Command id                                     | Does                                           | Default keys                 |
 | ---------------------------------------------- | ---------------------------------------------- | ---------------------------- |
