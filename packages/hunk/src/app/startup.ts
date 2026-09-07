@@ -539,6 +539,11 @@ export async function prepareStartupPlan(
 
   if (cliInput.options.watch) {
     await whileStartupOwnsExtensions(() => {
+      if (!stdoutIsTTY) {
+        throw new HunkUserError("`--watch` requires an interactive output terminal.", [
+          "Remove `--watch` when redirecting or piping Hunk's output.",
+        ]);
+      }
       assertReliableWatchRuntime(bunVersion);
       if (!canReloadInput(cliInput)) {
         throw new HunkUserError(

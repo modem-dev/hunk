@@ -41,7 +41,7 @@ import {
   stackGutterText,
   stackRailColor,
 } from "./diff/rowStyle";
-import { sliceTextByWidth } from "./lib/text";
+import { measureTextWidth, sliceTextByWidth } from "./lib/text";
 import {
   formatTerminalPath,
   sanitizeTerminalLine,
@@ -88,18 +88,25 @@ function serializeSpans(spans: RenderSpan[], rowBg: string) {
   return spans.map((span) => colorText(span.text, span.fg, span.bg ?? rowBg)).join("");
 }
 
-/** Serialize spans into one fixed-width pane so split rows keep both sides aligned. */
-function serializeSpansFixedWidth(spans: RenderSpan[], rowBg: string, width: number) {
+/** Serialize one split pane, clipping for terminal hosts but preserving redirected source lines. */
+function serializeSplitSpans(
+  spans: RenderSpan[],
+  rowBg: string,
+  width: number,
+  preserveFullLines: boolean,
+) {
   let remaining = Math.max(0, width);
   let usedWidth = 0;
   let output = "";
 
   for (const span of spans) {
-    if (remaining <= 0) {
+    if (!preserveFullLines && remaining <= 0) {
       break;
     }
 
-    const visible = sliceTextByWidth(span.text, 0, remaining);
+    const visible = preserveFullLines
+      ? { text: span.text, width: measureTextWidth(span.text) }
+      : sliceTextByWidth(span.text, 0, remaining);
     if (visible.text) {
       output += colorText(visible.text, span.fg, span.bg ?? rowBg);
       usedWidth += visible.width;
@@ -182,6 +189,7 @@ function renderStaticSplitCell(
   theme: AppTheme,
   lineNumberWidth: number,
   options: CommonOptions,
+  preserveFullLines: boolean,
 ) {
   const palette = splitCellPalette(cell.kind, theme, cell.moveKind);
   const { gutterWidth, contentWidth } = resolveSplitCellGeometry(
@@ -203,7 +211,7 @@ function renderStaticSplitCell(
     gutterText,
     palette.numberColor,
     palette.gutterBg,
-  )}${serializeSpansFixedWidth(cell.spans, palette.contentBg, contentWidth)}`;
+  )}${serializeSplitSpans(cell.spans, palette.contentBg, contentWidth, preserveFullLines)}`;
 }
 
 /** Render one non-interactive split diff row as ANSI text. */
@@ -213,6 +221,7 @@ function renderStaticSplitRow(
   lineNumberWidth: number,
   options: CommonOptions,
   width: number,
+  preserveFullLines: boolean,
 ) {
   if (row.type === "collapsed") {
     return renderHeaderLikeRow(`··· ${row.text} ···`, theme.muted, theme.panelAlt, theme);
@@ -236,7 +245,16 @@ function renderStaticSplitRow(
     theme,
     lineNumberWidth,
     options,
-  )}${renderStaticSplitCell(row.right, "right", rightWidth, theme, lineNumberWidth, options)}`;
+    preserveFullLines,
+  )}${renderStaticSplitCell(
+    row.right,
+    "right",
+    rightWidth,
+    theme,
+    lineNumberWidth,
+    options,
+    preserveFullLines,
+  )}`;
 }
 
 function maxLineNumberWidth(file: DiffFile, rows: DiffRow[]) {
@@ -353,6 +371,7 @@ async function renderStaticFile(
   theme: AppTheme,
   options: CommonOptions,
   width: number,
+  preserveFullLines: boolean,
 ) {
   const highlighted =
     file.isBinary || file.isTooLarge ? null : await loadHighlightedDiff(file, theme);
@@ -376,7 +395,7 @@ async function renderStaticFile(
     ...rows
       .map((row) =>
         layout === "split"
-          ? renderStaticSplitRow(row, theme, lineNumberWidth, options, width)
+          ? renderStaticSplitRow(row, theme, lineNumberWidth, options, width, preserveFullLines)
           : renderStaticStackRow(row, theme, lineNumberWidth, options),
       )
       .filter(Boolean),
@@ -396,6 +415,7 @@ export interface StaticDiffPagerDeps {
   stderr?: Pick<NodeJS.WriteStream, "write">;
   terminalColumns?: number;
   color?: boolean;
+  preserveFullLines?: boolean;
 }
 
 function resolveStaticWidth(deps: StaticDiffPagerDeps) {
@@ -423,7 +443,9 @@ export async function renderStaticDiff(
     : resolvedTheme;
   const width = resolveStaticWidth(deps);
   const rendered = await Promise.all(
-    changeset.files.map((file) => renderStaticFile(file, theme, options, width)),
+    changeset.files.map((file) =>
+      renderStaticFile(file, theme, options, width, deps.preserveFullLines === true),
+    ),
   );
   const output = rendered.length > 0 ? `${rendered.join("\n\n")}\n` : "";
 

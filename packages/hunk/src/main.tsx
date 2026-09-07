@@ -4,7 +4,7 @@ import { formatCliError } from "./core/run/errors";
 import { pagePlainText } from "./core/process/pager";
 import { writeStdout } from "./core/process/stdout";
 import { prepareStartupPlan } from "./app/startup";
-import { sanitizeTerminalText } from "./lib/terminalText";
+import { sanitizeTerminalLine, sanitizeTerminalText } from "./lib/terminalText";
 import { serveSessionBrokerDaemon } from "./session/broker/brokerServer";
 import { runSessionCommand } from "./session/agent/commands";
 
@@ -129,6 +129,9 @@ async function main() {
       import("./extensions/events"),
     ]);
     try {
+      for (const notice of startupPlan.bootstrap.startupNotices ?? []) {
+        process.stderr.write(`hunk: warning: ${sanitizeTerminalLine(notice.message)}\n`);
+      }
       writeStdout(
         await renderStaticDiff(
           startupPlan.bootstrap.changeset,
@@ -136,6 +139,7 @@ async function main() {
           {
             customThemes: startupPlan.bootstrap.customThemes,
             color: false,
+            preserveFullLines: true,
           },
         ),
       );

@@ -90,6 +90,31 @@ describe("static diff pager", () => {
     expect(plain).not.toContain("▌  1 +  const value = 2;");
   });
 
+  test("preserves redirected split lines without padding every row to the longest line", async () => {
+    const shortLines = Array.from({ length: 100 }, (_, index) => `line ${index}`);
+    const oldLines = [`${"x".repeat(1_000)}OLDTAIL`, ...shortLines];
+    const newLines = [`${"x".repeat(1_000)}NEWTAIL`, ...shortLines];
+    const patchText = [
+      "diff --git a/a.txt b/a.txt",
+      "--- a/a.txt",
+      "+++ b/a.txt",
+      "@@ -1,101 +1,101 @@",
+      ...oldLines.map((line) => `-${line}`),
+      ...newLines.map((line) => `+${line}`),
+      "",
+    ].join("\n");
+
+    const output = await renderStaticDiffPager(
+      patchText,
+      { mode: "split" },
+      { color: false, preserveFullLines: true, stderr: { write: () => true } },
+    );
+
+    expect(output).toContain("OLDTAIL");
+    expect(output).toContain("NEWTAIL");
+    expect(output.length).toBeLessThan(50_000);
+  });
+
   test("keeps auto mode stacked in static pager output", async () => {
     const patchText =
       "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-const value = 1;\n+const value = 2;\n";

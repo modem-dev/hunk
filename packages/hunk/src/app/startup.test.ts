@@ -674,8 +674,33 @@ describe("startup planning", () => {
         parseCliImpl: async () => cliInput as ParsedCliInput,
         resolveRuntimeCliInputImpl: (input) => input,
         resolveConfiguredCliInputImpl: (input) => createTestConfigResolution(input),
+        stdoutIsTTY: true,
       }),
     ).rejects.toBeInstanceOf(HunkUserError);
+  });
+
+  test("rejects watch mode when stdout is not a terminal", async () => {
+    const cliInput: CliInput = {
+      kind: "vcs",
+      staged: false,
+      options: { watch: true },
+    };
+    let loaded = false;
+
+    await expect(
+      prepareStartupPlan(["bun", "hunk", "diff", "--watch"], {
+        parseCliImpl: async () => cliInput as ParsedCliInput,
+        resolveRuntimeCliInputImpl: (input) => input,
+        resolveConfiguredCliInputImpl: (input) => createTestConfigResolution(input),
+        loadAppBootstrapImpl: async (input) => {
+          loaded = true;
+          return createBootstrap(input);
+        },
+        stdinIsTTY: true,
+        stdoutIsTTY: false,
+      }),
+    ).rejects.toThrow("`--watch` requires an interactive output terminal");
+    expect(loaded).toBe(false);
   });
 
   test("opens the controlling terminal for any app startup with piped stdin", async () => {
