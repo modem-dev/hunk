@@ -2,4 +2,4 @@
 "hunkdiff": patch
 ---
 
-Route curl-install release checks through a privacy-preserving, cached Hunk endpoint, limit automatic checks to once daily, and retain direct GitHub fallback and analytics opt-outs.
+Add an opt-in, privacy-preserving cached endpoint for curl-install release checks, rate-limit automatic checks, and retain direct GitHub fallback and analytics opt-outs.

@@ -204,7 +204,11 @@ describe("hunk update", () => {
     const result = await runUpdate({
       installSource: "curl",
       latestVersion: "1.1.0",
-      env: { PATH: "/usr/bin", HOME: "/home/reviewer" },
+      env: {
+        PATH: "/usr/bin",
+        HOME: "/home/reviewer",
+        HUNK_ENABLE_RELEASE_PROXY: "1",
+      },
     });
 
     expect(result.exitCode).toBe(0);
@@ -212,7 +216,12 @@ describe("hunk update", () => {
     // The installer resolves the version from its environment, so the child carries the target
     // alongside the rest of this process's environment.
     expect(result.commandEnvs).toEqual([
-      { PATH: "/usr/bin", HOME: "/home/reviewer", HUNK_VERSION: "1.1.0" },
+      {
+        PATH: "/usr/bin",
+        HOME: "/home/reviewer",
+        HUNK_ENABLE_RELEASE_PROXY: "1",
+        HUNK_VERSION: "1.1.0",
+      },
     ]);
     expect(result.releaseRequests[0]?.headers.get("x-hunk-request-source")).toBe("update");
     expect(result.releaseRequests[0]?.headers.get("x-hunk-current-version")).toBe("1.0.0");
@@ -232,7 +241,11 @@ describe("hunk update", () => {
   });
 
   test("classifies curl --check release requests without installing", async () => {
-    const result = await runUpdate({ installSource: "curl", input: { check: true } });
+    const result = await runUpdate({
+      installSource: "curl",
+      input: { check: true },
+      env: { HUNK_ENABLE_RELEASE_PROXY: "1" },
+    });
 
     expect(result.exitCode).toBe(0);
     expect(result.commands).toEqual([]);

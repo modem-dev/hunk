@@ -133,7 +133,7 @@ describe("startup update notice", () => {
 
       await expect(
         resolveStartupUpdateNotice({
-          env: {},
+          env: { HUNK_ENABLE_RELEASE_PROXY: "1" },
           fetchImpl: async (input, init) => {
             requested.push(String(input));
             headers.push(new Headers(init?.headers));
