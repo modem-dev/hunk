@@ -152,14 +152,12 @@ export async function loadHistoryBootstrap({
     throw error;
   }
 
-  const resolvedTheme = resolved.configured.input.options.theme;
   const initialViewPreferences = persistedViewPreferencesFromOptions(
     resolved.configured.input.options,
   );
   let closed = false;
   return {
-    // Static history renders from the command input, which only carries one theme id.
-    input: typeof resolvedTheme === "string" ? { ...input, theme: resolvedTheme } : input,
+    input,
     source,
     providerId: sanitizeTerminalLine(adapter.id),
     providerName: sanitizeTerminalLine(adapter.name),

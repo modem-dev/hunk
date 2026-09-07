@@ -1,4 +1,5 @@
 import type { HistoryGraphRow } from "../../core/history/types";
+import type { ThemeSelection } from "../../core/theme/selection";
 import type { NamedCustomThemeConfig } from "../../extension-api/types";
 import { sanitizeTerminalLine, sanitizeTerminalText } from "../../lib/terminalText";
 import { fitText, measureTextWidth } from "../lib/text";
@@ -14,10 +15,10 @@ export interface HistoryProjectionOptions {
 
 /** Resolve history colors from the same built-in and custom themes as review. */
 export function resolveHistoryTheme(
-  themeId: string | undefined,
+  selection: ThemeSelection | undefined,
   customThemes: readonly NamedCustomThemeConfig[] = [],
 ) {
-  return resolveTheme(themeId, null, customThemes);
+  return resolveTheme(selection, null, customThemes);
 }
 
 /** Convert a validated #rrggbb theme color to a terminal SGR foreground. */
