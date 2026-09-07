@@ -12,8 +12,8 @@ import {
 import type { ExtensionVcsDiffInput as VcsDiffCommandInput } from "hunkdiff/extension";
 
 const tempDirs: string[] = [];
-// Windows subprocess setup can exceed Bun's default 5s timeout while generating enough jj changes.
-const JjAmbiguousPrefixTestTimeoutMs = 20_000;
+// Windows subprocess setup can exceed Bun's default 5s timeout for multi-command jj fixtures.
+const JjFixtureTestTimeoutMs = 20_000;
 
 function cleanupTempDirs() {
   while (tempDirs.length > 0) {
@@ -263,31 +263,35 @@ describe("jj command helpers", () => {
     expect(resolveJjDiffEndpoints(diffInput(), "@- | @--", { cwd: dir })).toBeUndefined();
   });
 
-  jjTest("marks a merge base as synthesized instead of choosing one parent", () => {
-    const dir = createTempJjRepo("hunk-jj-endpoints-merge-");
-    writeFileSync(join(dir, "base.txt"), "base\n");
-    jj(dir, "commit", "-m", "base");
-    const baseCommitId = jj(dir, "log", "--no-graph", "-r", "@-", "-T", "commit_id");
+  jjTest(
+    "marks a merge base as synthesized instead of choosing one parent",
+    () => {
+      const dir = createTempJjRepo("hunk-jj-endpoints-merge-");
+      writeFileSync(join(dir, "base.txt"), "base\n");
+      jj(dir, "commit", "-m", "base");
+      const baseCommitId = jj(dir, "log", "--no-graph", "-r", "@-", "-T", "commit_id");
 
-    writeFileSync(join(dir, "left.txt"), "left\n");
-    jj(dir, "commit", "-m", "left");
-    const leftCommitId = jj(dir, "log", "--no-graph", "-r", "@-", "-T", "commit_id");
+      writeFileSync(join(dir, "left.txt"), "left\n");
+      jj(dir, "commit", "-m", "left");
+      const leftCommitId = jj(dir, "log", "--no-graph", "-r", "@-", "-T", "commit_id");
 
-    jj(dir, "new", baseCommitId);
-    writeFileSync(join(dir, "right.txt"), "right\n");
-    jj(dir, "commit", "-m", "right");
-    const rightCommitId = jj(dir, "log", "--no-graph", "-r", "@-", "-T", "commit_id");
+      jj(dir, "new", baseCommitId);
+      writeFileSync(join(dir, "right.txt"), "right\n");
+      jj(dir, "commit", "-m", "right");
+      const rightCommitId = jj(dir, "log", "--no-graph", "-r", "@-", "-T", "commit_id");
 
-    jj(dir, "new", leftCommitId, rightCommitId);
-    writeFileSync(join(dir, "merge.txt"), "merge\n");
-    const mergeCommitId = jj(dir, "log", "--no-graph", "-r", "@", "-T", "commit_id");
-    const endpoints = resolveJjDiffEndpoints(diffInput(), "@", { cwd: dir });
+      jj(dir, "new", leftCommitId, rightCommitId);
+      writeFileSync(join(dir, "merge.txt"), "merge\n");
+      const mergeCommitId = jj(dir, "log", "--no-graph", "-r", "@", "-T", "commit_id");
+      const endpoints = resolveJjDiffEndpoints(diffInput(), "@", { cwd: dir });
 
-    expect(endpoints).toEqual({
-      newCommitId: mergeCommitId,
-      oldCommitIds: [leftCommitId, rightCommitId].sort(),
-    });
-  });
+      expect(endpoints).toEqual({
+        newCommitId: mergeCommitId,
+        oldCommitIds: [leftCommitId, rightCommitId].sort(),
+      });
+    },
+    JjFixtureTestTimeoutMs,
+  );
 
   jjTest(
     "reports a friendly error for ambiguous change id prefixes",
@@ -318,6 +322,6 @@ describe("jj command helpers", () => {
         }),
       ).toThrow(`\`hunk diff ${prefix}\` could not resolve Jujutsu revset \`${prefix}\`.`);
     },
-    JjAmbiguousPrefixTestTimeoutMs,
+    JjFixtureTestTimeoutMs,
   );
 });
