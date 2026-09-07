@@ -438,6 +438,7 @@ export function App({
       theme: activeThemeController.initialThemeSelection,
     },
     configPath: bootstrap.viewPreferencesConfigPath,
+    configScope: bootstrap.viewPreferenceScope,
     pagerMode,
     promptSaveViewPreferences:
       bootstrap.input.options.promptSaveViewPreferences !== false && !returnToHistory,
