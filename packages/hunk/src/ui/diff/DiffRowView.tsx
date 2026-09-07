@@ -105,14 +105,40 @@ export interface DiffRowViewProps {
 /**
  * Render one diff row, memoized to avoid unnecessary rerenders.
  *
- * The comparator checks every handler by reference, so callers (DiffSectionBody) must pass
- * identity-stable callbacks — e.g. one shared onHoverRow that receives the row key — or the memo
+ * React's shallow comparison checks every handler by reference, so callers (DiffSectionBody) must
+ * pass identity-stable callbacks — e.g. one shared onHoverRow that receives the row key — or memo
  * silently degrades to re-rendering every visible row per parent render.
  */
-export const DiffRowView = memo(
-  function DiffRowViewComponent({
-    plannedRow,
-    row,
+export const DiffRowView = memo(function DiffRowViewComponent({
+  plannedRow,
+  row,
+  width,
+  lineNumberDigits,
+  showLineNumbers,
+  showHunkHeaders,
+  wrapLines,
+  codeHorizontalOffset,
+  theme,
+  selected,
+  copySelectedRowRange,
+  copySelectedSide,
+  cursorHighlight,
+  lineHighlights,
+  anchorId,
+  noteGuideSide,
+  showAddNoteBadge,
+  onHoverRow,
+  onStartUserNoteAtHunk,
+  onToggleGap,
+}: DiffRowViewProps) {
+  const resolvedPlannedRow =
+    plannedRow ?? (row ? legacyPlannedDiffRow(row, anchorId, noteGuideSide) : undefined);
+  if (!resolvedPlannedRow) {
+    return null;
+  }
+
+  return renderRow(
+    resolvedPlannedRow,
     width,
     lineNumberDigits,
     showLineNumbers,
@@ -125,61 +151,9 @@ export const DiffRowView = memo(
     copySelectedSide,
     cursorHighlight,
     lineHighlights,
-    anchorId,
-    noteGuideSide,
     showAddNoteBadge,
     onHoverRow,
     onStartUserNoteAtHunk,
     onToggleGap,
-  }: DiffRowViewProps) {
-    const resolvedPlannedRow =
-      plannedRow ?? (row ? legacyPlannedDiffRow(row, anchorId, noteGuideSide) : undefined);
-    if (!resolvedPlannedRow) {
-      return null;
-    }
-
-    return renderRow(
-      resolvedPlannedRow,
-      width,
-      lineNumberDigits,
-      showLineNumbers,
-      showHunkHeaders,
-      wrapLines,
-      codeHorizontalOffset,
-      theme,
-      selected,
-      copySelectedRowRange,
-      copySelectedSide,
-      cursorHighlight,
-      lineHighlights,
-      showAddNoteBadge,
-      onHoverRow,
-      onStartUserNoteAtHunk,
-      onToggleGap,
-    );
-  },
-  (previous, next) => {
-    return (
-      previous.plannedRow === next.plannedRow &&
-      previous.row === next.row &&
-      previous.width === next.width &&
-      previous.lineNumberDigits === next.lineNumberDigits &&
-      previous.showLineNumbers === next.showLineNumbers &&
-      previous.showHunkHeaders === next.showHunkHeaders &&
-      previous.wrapLines === next.wrapLines &&
-      previous.codeHorizontalOffset === next.codeHorizontalOffset &&
-      previous.theme === next.theme &&
-      previous.selected === next.selected &&
-      previous.copySelectedRowRange === next.copySelectedRowRange &&
-      previous.copySelectedSide === next.copySelectedSide &&
-      previous.cursorHighlight === next.cursorHighlight &&
-      previous.lineHighlights === next.lineHighlights &&
-      previous.anchorId === next.anchorId &&
-      previous.noteGuideSide === next.noteGuideSide &&
-      previous.showAddNoteBadge === next.showAddNoteBadge &&
-      previous.onHoverRow === next.onHoverRow &&
-      previous.onStartUserNoteAtHunk === next.onStartUserNoteAtHunk &&
-      previous.onToggleGap === next.onToggleGap
-    );
-  },
-);
+  );
+});
