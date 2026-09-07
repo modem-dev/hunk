@@ -156,8 +156,11 @@ function findRelativePathFromAncestors(startPath: string, relativePaths: readonl
 /**
  * Resolve one bundled skill's path from source, npm, or prebuilt package layouts.
  *
- * Every shipped skill lives at `skills/<name>/SKILL.md` in all three layouts, so
- * the name is the only thing that varies and the search itself stays one walk.
+ * Every shipped skill lives at `skills/<name>/SKILL.md` in all three layouts, so the name is
+ * the only thing that varies and the search stays one walk. What differs is the prefix each
+ * layout puts in front of it, and their relative order is load-bearing: an install's own
+ * `skills/` must outrank both a leftover `hunkdiff/skills/` staging tree and a
+ * `node_modules/hunkdiff` belonging to some other project, or a stale copy wins.
  */
 export function resolveBundledSkillPath(
   name: BundledSkillName = DEFAULT_BUNDLED_SKILL_NAME,
@@ -165,13 +168,15 @@ export function resolveBundledSkillPath(
 ) {
   const roots = searchRoots ?? [import.meta.dir, process.execPath];
   const skillRelativePath = join("skills", name, "SKILL.md");
-  // Most specific first, so a directory holding several layouts resolves to the one that
-  // names Hunk explicitly. A source install stages its skills under `hunkdiff/` beside the
-  // executable precisely to avoid claiming the generic `skills/` name in a bin directory.
+  // Order within one directory, own-copy first. Both installers write their skills beside the
+  // binary — the official one to `skills/`, a source install to `hunkdiff/skills/` — and neither
+  // removes the other's tree, so `skills/` leads or a leftover source staging tree serves a
+  // newer install's skills. `node_modules/hunkdiff` is last either way: it belongs to whatever
+  // project shares the directory and may be pinned to another version.
   const relativeCandidates = [
-    join("node_modules", "hunkdiff", skillRelativePath),
-    join("hunkdiff", skillRelativePath),
     skillRelativePath,
+    join("hunkdiff", skillRelativePath),
+    join("node_modules", "hunkdiff", skillRelativePath),
   ];
 
   for (const root of roots) {
