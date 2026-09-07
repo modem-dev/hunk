@@ -10,7 +10,9 @@ import {
 import {
   interpolatePaneLayout,
   paneLayoutGeometryEqual,
+  paneSlideFrameDue,
   paneVisibilityTransitionKey,
+  PANE_SLIDE_MAX_FPS,
 } from "./paneSlide";
 
 /** Build one test pane from the bundled pane's valid registration shell. */
@@ -58,6 +60,14 @@ function createPaneLayouts(placement: SessionPane["placement"]): {
 }
 
 describe("pane slide presentation", () => {
+  test("caps presentation commits at the configured frame rate", () => {
+    const frameInterval = 1_000 / PANE_SLIDE_MAX_FPS;
+
+    expect(paneSlideFrameDue(Number.NEGATIVE_INFINITY, 0)).toBe(true);
+    expect(paneSlideFrameDue(100, 100 + frameInterval - 0.01)).toBe(false);
+    expect(paneSlideFrameDue(100, 100 + frameInterval)).toBe(true);
+  });
+
   test("recognizes any sole pane visibility change", () => {
     for (const placement of ["left", "right", "top", "bottom"] as const) {
       const { closed, open, paneKey } = createPaneLayouts(placement);
