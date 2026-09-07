@@ -220,8 +220,14 @@ export class LogController {
       );
       return;
     }
-    if (!this.snapshot.rows[this.snapshot.selected]) return;
-    this.publish({ selectionAnchor: this.snapshot.selected, visualSelectionActive: true });
+    const hasSelectedRow = Boolean(this.snapshot.rows[this.snapshot.selected]);
+    if (!hasSelectedRow && !this.refreshPromise) return;
+    this.selectionGeneration += 1;
+    this.navigationTarget = null;
+    this.publish({
+      selectionAnchor: hasSelectedRow ? this.snapshot.selected : null,
+      visualSelectionActive: true,
+    });
   }
 
   /** Collapse any range to the focused commit and leave visual selection mode. */
@@ -424,13 +430,17 @@ export class LogController {
       notice: "",
     });
     await this.loadMore();
+    if (this.closed || generation !== this.generation) return;
     const endpointIds = [selectedId, anchorId].filter((id): id is string => Boolean(id));
     while (
       !this.snapshot.historyDone &&
+      !this.closed &&
+      generation === this.generation &&
       endpointIds.some((id) => !this.snapshot.rows.some((row) => row.commit.revisionId === id))
     ) {
       await this.loadMore();
     }
+    if (this.closed || generation !== this.generation) return;
     const selectedIndex = selectedId
       ? this.snapshot.rows.findIndex((row) => row.commit.revisionId === selectedId)
       : -1;
@@ -448,13 +458,20 @@ export class LogController {
       groupByDay: !this.snapshot.presentation.graph,
     });
     const restoreRange = refreshSelectionGeneration === this.selectionGeneration;
+    const hasRestoredSelection = Boolean(this.snapshot.rows[restoredSelected]);
+    const restoredVisualSelectionActive =
+      hasRestoredSelection &&
+      (restoreRange ? visualSelectionActive : this.snapshot.visualSelectionActive);
     this.publish({
       selected: restoredSelected,
-      selectionAnchor:
-        restoreRange && (restoredAnchor !== restoredSelected || visualSelectionActive)
+      selectionAnchor: restoreRange
+        ? restoredAnchor !== restoredSelected || visualSelectionActive
           ? restoredAnchor
+          : null
+        : restoredVisualSelectionActive
+          ? restoredSelected
           : null,
-      visualSelectionActive: restoreRange && visualSelectionActive,
+      visualSelectionActive: restoredVisualSelectionActive,
       top: geometry.top,
     });
     this.setNotice("History refreshed.");
