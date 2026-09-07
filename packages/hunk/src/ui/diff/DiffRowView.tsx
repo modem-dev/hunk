@@ -3,11 +3,15 @@ import { memo } from "react";
 import type { UserNoteLineTarget } from "../../core/liveComments";
 import type { CopySelectedRowRange } from "../lib/diffSpatial";
 import type { AppTheme } from "../themes";
-import { CodeRowView, type PlannedCodeReviewRow } from "./CodeRowView";
-import type { PlannedDiffReviewRow } from "./codeRowLayout";
+import { CodeRowView } from "./CodeRowView";
 import type { CursorHighlight } from "./cursorHighlight";
-import { DiffMetaRowView, type PlannedDiffMetaReviewRow } from "./DiffMetaRowView";
+import { DiffMetaRowView } from "./DiffMetaRowView";
 import type { LineHighlightPaintIndex } from "./lineHighlightPaint";
+import {
+  isPlannedCodeReviewRow,
+  isPlannedDiffMetaReviewRow,
+  type PlannedDiffReviewRow,
+} from "./reviewRenderPlan";
 
 /** Inputs accepted by the memoized diff-row facade. */
 export interface DiffRowViewProps {
@@ -30,6 +34,11 @@ export interface DiffRowViewProps {
   onHoverRow?: (rowKey: string) => void;
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void;
   onToggleGap?: (gapKey: string) => void;
+}
+
+/** Reject a planned row variant that lacks a mounted row view. */
+function unsupportedPlannedDiffRow(plannedRow: never): never {
+  throw new Error(`Unsupported planned diff row: ${JSON.stringify(plannedRow)}`);
 }
 
 /**
@@ -58,10 +67,10 @@ export const DiffRowView = memo(function DiffRowViewComponent({
   onStartUserNoteAtHunk,
   onToggleGap,
 }: DiffRowViewProps) {
-  if (plannedRow.row.type === "collapsed" || plannedRow.row.type === "hunk-header") {
+  if (isPlannedDiffMetaReviewRow(plannedRow)) {
     return (
       <DiffMetaRowView
-        plannedRow={plannedRow as PlannedDiffMetaReviewRow}
+        plannedRow={plannedRow}
         width={width}
         theme={theme}
         selected={selected || copySelectedRowRange !== undefined}
@@ -74,10 +83,10 @@ export const DiffRowView = memo(function DiffRowViewComponent({
     );
   }
 
-  if (plannedRow.row.type === "split-line" || plannedRow.row.type === "stack-line") {
+  if (isPlannedCodeReviewRow(plannedRow)) {
     return (
       <CodeRowView
-        plannedRow={plannedRow as PlannedCodeReviewRow}
+        plannedRow={plannedRow}
         width={width}
         lineNumberDigits={lineNumberDigits}
         showLineNumbers={showLineNumbers}
@@ -96,9 +105,5 @@ export const DiffRowView = memo(function DiffRowViewComponent({
     );
   }
 
-  return (
-    <box style={{ width: "100%", height: 1 }}>
-      <text fg={theme.muted}>Unsupported row.</text>
-    </box>
-  );
+  return unsupportedPlannedDiffRow(plannedRow);
 });

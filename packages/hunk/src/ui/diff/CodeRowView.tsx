@@ -3,15 +3,11 @@ import type { UserNoteLineTarget } from "../../core/liveComments";
 import type { CopySelectedRowRange } from "../lib/diffSpatial";
 import type { AppTheme } from "../themes";
 import { CODE_ROW_ADD_NOTE_BADGE_TEXT, CODE_ROW_ADD_NOTE_BADGE_WIDTH } from "./codeRowAffordance";
-import {
-  planCodeRowLayout,
-  type CodeRowLayoutPlan,
-  type PlannedDiffReviewRow,
-} from "./codeRowLayout";
+import { planCodeRowLayout, type CodeRowLayoutPlan } from "./codeRowLayout";
 import { codeCellView, FULL_CODE_CELL_COL_RANGE, type CodeCellHighlight } from "./CodeCellView";
 import type { CursorHighlight } from "./cursorHighlight";
-import type { DiffRow } from "./diffRows";
 import type { LineHighlightPaintIndex } from "./lineHighlightPaint";
+import type { CodeDiffRow, PlannedCodeReviewRow } from "./reviewRenderPlan";
 import {
   cursorLineHighlightBg,
   diffRailMarker,
@@ -21,13 +17,6 @@ import {
   stackRailColor,
 } from "./rowStyle";
 import { markNestedRowMouseAction } from "./rowMouseActions";
-
-type CodeDiffRow = Extract<DiffRow, { type: "split-line" | "stack-line" }>;
-
-/** Planned review row carrying split or stack code cells. */
-export type PlannedCodeReviewRow = Omit<PlannedDiffReviewRow, "row"> & {
-  row: CodeDiffRow;
-};
 
 export interface CodeRowViewProps {
   plannedRow: PlannedCodeReviewRow;

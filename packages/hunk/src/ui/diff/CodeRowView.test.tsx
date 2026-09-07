@@ -3,7 +3,8 @@ import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
 import { capturedTestColorToHex } from "../../../../../test/helpers/test-color-helpers";
 import { resolveTheme } from "../themes";
-import { CodeRowView, type PlannedCodeReviewRow } from "./CodeRowView";
+import { CodeRowView } from "./CodeRowView";
+import type { PlannedCodeReviewRow } from "./reviewRenderPlan";
 import { cursorLineHighlightBg, selectionHighlightBg, stackCellPalette } from "./rowStyle";
 
 /** Return the normalized background painted behind matching captured text. */

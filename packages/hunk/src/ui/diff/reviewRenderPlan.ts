@@ -22,18 +22,26 @@ interface InlineVisibleNotePlacement {
   noteIndex: number;
 }
 
+interface PlannedDiffReviewRowFields {
+  kind: "diff-row";
+  key: string;
+  stableKey: string;
+  stableAliasKeys?: string[];
+  fileId: string;
+  hunkIndex: number;
+  anchorId?: string;
+  noteGuideSide?: "old" | "new";
+}
+
+/** Planned review row carrying one terminal diff row subtype. */
+export type PlannedDiffReviewRow<Row extends DiffRow = DiffRow> = Row extends DiffRow
+  ? PlannedDiffReviewRowFields & { row: Row }
+  : never;
+
+export type PlannedDiffReviewRowInput = Omit<PlannedDiffReviewRowFields, "kind">;
+
 export type PlannedReviewRow =
-  | {
-      kind: "diff-row";
-      key: string;
-      stableKey: string;
-      stableAliasKeys?: string[];
-      fileId: string;
-      hunkIndex: number;
-      row: DiffRow;
-      anchorId?: string;
-      noteGuideSide?: "old" | "new";
-    }
+  | PlannedDiffReviewRow
   | {
       kind: "inline-note";
       key: string;
@@ -55,6 +63,53 @@ export type PlannedReviewRow =
       hunkIndex: number;
       height: number;
     };
+
+/** Create a planned diff row while preserving its concrete row subtype. */
+export function createPlannedDiffReviewRow<Row extends DiffRow>(
+  row: Row,
+  fields: PlannedDiffReviewRowInput,
+): PlannedDiffReviewRow<Row>;
+export function createPlannedDiffReviewRow(
+  row: DiffRow,
+  fields: PlannedDiffReviewRowInput,
+): PlannedDiffReviewRow {
+  switch (row.type) {
+    case "collapsed":
+      return { kind: "diff-row", ...fields, row };
+    case "hunk-header":
+      return { kind: "diff-row", ...fields, row };
+    case "split-line":
+      return { kind: "diff-row", ...fields, row };
+    case "stack-line":
+      return { kind: "diff-row", ...fields, row };
+  }
+}
+
+/** Split or stack code row accepted by code-row rendering and interaction policy. */
+export type CodeDiffRow = Extract<DiffRow, { type: "split-line" | "stack-line" }>;
+
+/** Collapsed gap or hunk-header row accepted by metadata rendering. */
+export type DiffMetaRow = Extract<DiffRow, { type: "collapsed" | "hunk-header" }>;
+
+/** Planned review row carrying split or stack code cells. */
+export type PlannedCodeReviewRow = PlannedDiffReviewRow<CodeDiffRow>;
+
+/** Planned review row carrying metadata rather than code cells. */
+export type PlannedDiffMetaReviewRow = PlannedDiffReviewRow<DiffMetaRow>;
+
+/** Return whether a planned diff row carries renderable code cells. */
+export function isPlannedCodeReviewRow(
+  plannedRow: PlannedDiffReviewRow,
+): plannedRow is PlannedCodeReviewRow {
+  return plannedRow.row.type === "split-line" || plannedRow.row.type === "stack-line";
+}
+
+/** Return whether a planned diff row carries a gap or hunk header. */
+export function isPlannedDiffMetaReviewRow(
+  plannedRow: PlannedDiffReviewRow,
+): plannedRow is PlannedDiffMetaReviewRow {
+  return plannedRow.row.type === "collapsed" || plannedRow.row.type === "hunk-header";
+}
 
 function lineRows(rows: DiffRow[]) {
   return rows.filter(
@@ -396,17 +451,17 @@ export function buildReviewRenderPlan({
       anchoredHunks.add(row.hunkIndex);
     }
 
-    plannedRows.push({
-      kind: "diff-row",
-      key: `diff-row:${row.key}`,
-      stableKey: diffStableKey,
-      stableAliasKeys: diffStableAliasKeys,
-      fileId: row.fileId,
-      hunkIndex: row.hunkIndex,
-      row,
-      anchorId,
-      noteGuideSide: noteGuideSideByRowKey.get(row.key),
-    });
+    plannedRows.push(
+      createPlannedDiffReviewRow(row, {
+        key: `diff-row:${row.key}`,
+        stableKey: diffStableKey,
+        stableAliasKeys: diffStableAliasKeys,
+        fileId: row.fileId,
+        hunkIndex: row.hunkIndex,
+        anchorId,
+        noteGuideSide: noteGuideSideByRowKey.get(row.key),
+      }),
+    );
 
     const anchoredNotes = placementsByAnchor.get(row.key) ?? [];
     anchoredNotes.forEach((placement) => {

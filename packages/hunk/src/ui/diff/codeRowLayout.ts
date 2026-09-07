@@ -7,11 +7,12 @@ import {
 } from "./codeColumns";
 import { CODE_ROW_ADD_NOTE_BADGE_WIDTH } from "./codeRowAffordance";
 import type { DiffRow, RenderSpan } from "./diffRowModel";
-import type { PlannedReviewRow } from "./reviewRenderPlan";
+import {
+  createPlannedDiffReviewRow,
+  type PlannedDiffReviewRow,
+  type PlannedReviewRow,
+} from "./reviewRenderPlan";
 import { measureWrappedSpansLineCount } from "./styledSpanLayout";
-
-/** Planned review row that carries one terminal diff row. */
-export type PlannedDiffReviewRow = Extract<PlannedReviewRow, { kind: "diff-row" }>;
 
 /** Concrete width and wrapping decisions for one rendered code cell. */
 export interface CodeCellLayoutPlan {
@@ -186,16 +187,14 @@ export function legacyPlannedDiffRow(
   anchorId?: string,
   noteGuideSide?: "old" | "new",
 ): PlannedDiffReviewRow {
-  return {
-    kind: "diff-row",
+  return createPlannedDiffReviewRow(row, {
     key: row.key,
     stableKey: row.key,
     fileId: row.fileId,
     hunkIndex: row.hunkIndex,
-    row,
     anchorId,
     noteGuideSide,
-  };
+  });
 }
 
 /** Measure how many terminal rows one complete planned diff row occupies. */

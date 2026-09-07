@@ -3,18 +3,10 @@ import type { UserNoteLineTarget } from "../../core/liveComments";
 import { reviewGapId } from "../../core/review/expansion";
 import type { AppTheme } from "../themes";
 import { CODE_ROW_ADD_NOTE_BADGE_TEXT } from "./codeRowAffordance";
-import type { PlannedDiffReviewRow } from "./codeRowLayout";
-import type { DiffRow } from "./diffRows";
+import type { PlannedDiffMetaReviewRow } from "./reviewRenderPlan";
 import { fitText } from "./plannedRowText";
 import { diffRailMarker, dimRailColor, neutralRailColor } from "./rowStyle";
 import { markNestedRowMouseAction } from "./rowMouseActions";
-
-type DiffMetaRow = Extract<DiffRow, { type: "collapsed" | "hunk-header" }>;
-
-/** Planned review row carrying metadata rather than code cells. */
-export type PlannedDiffMetaReviewRow = Omit<PlannedDiffReviewRow, "row"> & {
-  row: DiffMetaRow;
-};
 
 export interface DiffMetaRowViewProps {
   plannedRow: PlannedDiffMetaReviewRow;
