@@ -2,7 +2,7 @@ import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { platform, tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
-import { GitVcsAdapter, statSignature } from ".";
+import { describeGitDiffTitleRange, GitVcsAdapter, statSignature } from ".";
 import type {
   ExtensionVcsDiffInput,
   ExtensionVcsOperations,
@@ -78,6 +78,29 @@ afterEach(() => {
 });
 
 describe("GitVcsAdapter", () => {
+  test("uses GitHub-style seven-character object IDs in comparison titles", () => {
+    const sha1From = "0123456789abcdef0123456789abcdef01234567";
+    const sha1To = "89abcdef0123456789abcdef0123456789abcdef";
+    const sha256 = "a".repeat(64);
+
+    expect(describeGitDiffTitleRange({ rangeEndpoints: { from: sha1From, to: sha1To } })).toBe(
+      "0123456..89abcde",
+    );
+    expect(describeGitDiffTitleRange({ range: `${sha1From}...${sha256}` })).toBe(
+      "0123456...aaaaaaa",
+    );
+    expect(describeGitDiffTitleRange({ range: `..${sha1To}` })).toBe("..89abcde");
+    expect(describeGitDiffTitleRange({ range: `${sha1From}..` })).toBe("0123456..");
+    expect(describeGitDiffTitleRange({ rangeEndpoints: { from: "main", to: "feature" } })).toBe(
+      "main..feature",
+    );
+    expect(
+      describeGitDiffTitleRange({
+        rangeEndpoints: { from: `refs/heads/${"a".repeat(40)}`, to: "main" },
+      }),
+    ).toBe(`refs/heads/${"a".repeat(40)}..main`);
+  });
+
   test("detects Git repositories from nested directories", () => {
     const repo = createTempRepo("hunk-git-adapter-detect-");
     const nested = join(repo, "src", "nested");
@@ -165,7 +188,9 @@ describe("GitVcsAdapter", () => {
     const result = await GitVcsAdapter.operations["working-tree-diff"]!.load(input, { cwd: repo });
     const file = { path: "tracked.txt", changeType: "change", isUntracked: false } as const;
 
-    expect(result.title).toContain(`${from}..${to}`);
+    expect(result.title).toContain(`${from.slice(0, 7)}..${to.slice(0, 7)}`);
+    expect(result.title).not.toContain(from);
+    expect(result.title).not.toContain(to);
     expect(result.untrackedPaths).toEqual([]);
     expect(await result.readFileSource?.({ ...file, side: "old" })).toBe("old\ncontext\n");
     expect(await result.readFileSource?.({ ...file, side: "new" })).toBe("new\ncontext\n");

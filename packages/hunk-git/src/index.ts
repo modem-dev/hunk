@@ -25,7 +25,6 @@ import {
 } from "./commands";
 import { openGitHistory } from "./history";
 import { gitEndpointSourceSpec, readGitFileSource } from "./source";
-import { describeDiffRange } from "@hunk/vcs/diff-target";
 import {
   HUNK_VCS_DETECTION_BASELINE_PRIORITY,
   type ExtensionVcsAdapter,
@@ -54,6 +53,34 @@ import {
 /** Return the last path segment for review titles. */
 function basename(path: string) {
   return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+}
+
+const GIT_SHORT_OBJECT_ID_LENGTH = 7;
+const FULL_GIT_OBJECT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
+const GIT_RANGE = /^(.*?)(\.\.\.?)(.*)$/;
+
+/** Shorten one complete Git object ID while preserving every named revision spelling. */
+function shortenGitObjectId(revision: string) {
+  return FULL_GIT_OBJECT_ID.test(revision)
+    ? revision.slice(0, GIT_SHORT_OBJECT_ID_LENGTH)
+    : revision;
+}
+
+/** Shorten full Git object IDs in a display range while preserving named revisions. */
+export function describeGitDiffTitleRange(input: {
+  readonly range?: string;
+  readonly rangeEndpoints?: { readonly from: string; readonly to: string };
+}) {
+  if (input.rangeEndpoints) {
+    return `${shortenGitObjectId(input.rangeEndpoints.from)}..${shortenGitObjectId(input.rangeEndpoints.to)}`;
+  }
+
+  const range = input.range;
+  if (range === undefined) return undefined;
+  const parsedRange = GIT_RANGE.exec(range);
+  return parsedRange
+    ? `${shortenGitObjectId(parsedRange[1]!)}${parsedRange[2]}${shortenGitObjectId(parsedRange[3]!)}`
+    : shortenGitObjectId(range);
 }
 
 /** Walk upward to detect a Git worktree marker without spawning Git during config resolution. */
@@ -310,7 +337,7 @@ export function createGitVcsAdapter({
         async load(input, { cwd, signal }) {
           const repoRoot = await resolveGitRepoRootAsync(input, { cwd, gitExecutable, signal });
           const repoName = basename(repoRoot);
-          const range = describeDiffRange(input);
+          const range = describeGitDiffTitleRange(input);
           const title = input.staged
             ? `${repoName} staged changes`
             : range
