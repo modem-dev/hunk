@@ -23,9 +23,9 @@ Hunk is a review-first terminal diff viewer for agent-authored changesets, built
      <sub>Split view with sidebar and inline AI notes</sub>
    </td>
    <td width="40%" align="center">
-     <img width="507"alt="image" src="https://github.com/user-attachments/assets/92eb8993-f044-436d-a038-8139da5ad8de" />
+     <img width="507"alt="image" src="https://raw.githubusercontent.com/modem-dev/hunk/refs/heads/main/website/public/docs/images/agent-comments.webp" />
      <br />
-      <sub>Unified view and mouse-selectable menus</sub>
+     <sub>Unified view and mouse-selectable menus</sub>
    </td>
  </tr>
 </table>
