@@ -322,7 +322,7 @@ export const CONFIG_REFERENCE_OPTIONS: readonly ConfigReferenceOption[] = [
     key: "mode",
     property: "mode",
     type: "string",
-    accepted: "`auto`, `split`, or `unified`",
+    accepted: "`auto`, `split`, `unified`, or deprecated alias `stack`",
     runtimeDefault: DEFAULT_VIEW_PREFERENCES.mode,
     description: "Choose responsive, side-by-side, or unified diff layout.",
   },

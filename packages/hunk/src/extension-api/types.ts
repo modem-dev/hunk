@@ -2152,14 +2152,16 @@ export interface ExtensionEventContext extends ExtensionContext {
  */
 export type SessionReloadReason = "watch" | "daemon" | "extension" | "manual";
 
-/** @deprecated Hunk accepts this legacy vocabulary only for source compatibility. */
+/** @deprecated Use the canonical `unified` vocabulary in new integrations. */
 export type ExtensionLegacyLayout = "stack";
 /** Canonical layout mode vocabulary emitted to extensions. */
 export type ExtensionCanonicalLayoutMode = "auto" | "split" | "unified";
-/** Layout vocabulary exposed for source compatibility; new code should use `unified`. */
-export type ExtensionLayoutMode = ExtensionCanonicalLayoutMode | ExtensionLegacyLayout;
 /** Concrete canonical layout emitted to extensions. */
-export type ExtensionResolvedLayout = Exclude<ExtensionCanonicalLayoutMode, "auto">;
+export type ExtensionCanonicalResolvedLayout = Exclude<ExtensionCanonicalLayoutMode, "auto">;
+/** @deprecated Use `ExtensionCanonicalLayoutMode` for new integrations. */
+export type ExtensionLayoutMode = "auto" | "split" | ExtensionLegacyLayout;
+/** @deprecated Use `ExtensionCanonicalResolvedLayout` for new integrations. */
+export type ExtensionResolvedLayout = Exclude<ExtensionLayoutMode, "auto">;
 
 /** A user-authored note as reported by note lifecycle events. */
 export interface ExtensionReviewNote {
@@ -2187,7 +2189,12 @@ export interface ExtensionEventPayloads {
   startup: { cwd: string };
   changeset_loaded: { changeset: ExtensionChangeset };
   /** A named built-in or extension command was dispatched in this terminal host. */
-  command_executed: { commandId: string };
+  command_executed: {
+    /** Stable command identity, including deprecated ids preserved for existing handlers. */
+    commandId: string;
+    /** Canonical replacement when `commandId` is a deprecated compatibility identity. */
+    canonicalCommandId?: string;
+  };
   selection_changed: { fileId: string | null; hunkIndex: number | null };
   /** The review stream settled on a different file. */
   file_viewed: { file: ExtensionDiffFile; hunkIndex: number | null };
@@ -2205,10 +2212,17 @@ export interface ExtensionEventPayloads {
   /**
    * The configured layout mode or responsive resolved layout changed.
    *
-   * Hunk emits only `auto`, `split`, and `unified`; the deprecated `stack`
-   * literal remains in the public aliases solely so existing source compiles.
+   * `mode` and `layout` preserve the pre-v21 vocabulary for existing handlers.
+   * New integrations should consume the canonical fields.
    */
-  layout_changed: { mode: ExtensionCanonicalLayoutMode; layout: ExtensionResolvedLayout };
+  layout_changed: {
+    /** @deprecated Use `canonicalMode`. */
+    mode: ExtensionLayoutMode;
+    /** @deprecated Use `canonicalLayout`. */
+    layout: ExtensionResolvedLayout;
+    canonicalMode?: ExtensionCanonicalLayoutMode;
+    canonicalLayout?: ExtensionCanonicalResolvedLayout;
+  };
   /** A watch source observed a change and is waiting to check/reload it. */
   watch_reload_pending: Record<string, never>;
   /** A user saved a new inline review note. */

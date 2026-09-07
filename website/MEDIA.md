@@ -15,7 +15,7 @@ Video assets need an ffmpeg with libx264 and libvpx-vp9 on PATH (or pointed at v
 
 The two workflow captures in `public/docs/images/` are current product screenshots used by the docs and repository README:
 
-- `review-stream.webp` — `https://github.com/user-attachments/assets/35605618-be3f-479e-b6e0-edb089910651`
+- `review-stream.webp` — `https://raw.githubusercontent.com/modem-dev/hunk/refs/heads/main/website/public/docs/images/review-stream.webp`
 - `agent-comments.webp` — `https://raw.githubusercontent.com/modem-dev/hunk/refs/heads/main/website/public/docs/images/agent-comments.webp`
 
 They teach the full review stream and inline agent-note workflows rather than serving as decorative art. Refresh them when those workflows visibly change.

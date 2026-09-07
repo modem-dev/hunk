@@ -304,7 +304,8 @@ and retires the replaced instance at that explicit ownership boundary.
 
 The API generation this Hunk speaks (currently `22`). Branch on it if you want
 one file to support several Hunk versions. Version 22 adds frame-derived pane preferred sizing, non-resizable dynamic panes, and commit-history paint tokens; version 21 adds optional inclusive history-range review
-planning and bounded comparison commit summaries; version 20 adds optional commit timestamps to review
+planning, bounded comparison commit summaries, and canonical unified-layout fields while preserving
+the previous event vocabulary; version 20 adds optional commit timestamps to review
 metadata, pane clipboard actions, and the `theme.copyAction` paint token; version 19 adds provider-owned history
 enumeration and review planning; version 18 lets lifecycle and custom-event handlers request
 a host-owned review reload; version 17 adds structured review metadata to delegated patch
@@ -1963,33 +1964,33 @@ normal cancel value, and workspace reads or not-yet-started writes return
 filesystem write starts, it reports its actual outcome and success reconciles
 the review then active.
 
-| Event                  | Payload                 | When                                                      |
-| ---------------------- | ----------------------- | --------------------------------------------------------- |
-| `startup`              | `{ cwd }`               | once per loaded instance, after its review UI mounts      |
-| `changeset_loaded`     | `{ changeset }`         | first load and every reload                               |
-| `command_executed`     | `{ commandId }`         | after a named command dispatches in this terminal host    |
-| `selection_changed`    | `{ fileId, hunkIndex }` | when the review selection settles (debounced ~150ms)      |
-| `file_viewed`          | `{ file, hunkIndex }`   | when selection settles on a file or a reload replaces it  |
-| `hunk_viewed`          | `{ file, hunkIndex }`   | when selection settles on a different hunk                |
-| `filter_changed`       | `{ filter }`            | whenever the file-filter query changes                    |
-| `theme_changed`        | `{ themeId }`           | when the user commits a new theme                         |
-| `layout_changed`       | `{ mode, layout }`      | mode or responsive split/unified layout changes           |
-| `watch_reload_pending` | `{}`                    | watcher observed a change before its reload check         |
-| `note_created`         | `{ note }`              | a user saves an inline review note                        |
-| `note_edited`          | `{ note }`              | a draft body changes or an existing note is saved         |
-| `note_changed`         | `{ kind, note }`        | a saved ReviewStore note is created, updated, or removed  |
-| `session_reload`       | `{ changeset, reason }` | on every session reload                                   |
-| `shutdown`             | `{}`                    | before instance replacement or exit, with a short timeout |
+| Event                  | Payload                                              | When                                                      |
+| ---------------------- | ---------------------------------------------------- | --------------------------------------------------------- |
+| `startup`              | `{ cwd }`                                            | once per loaded instance, after its review UI mounts      |
+| `changeset_loaded`     | `{ changeset }`                                      | first load and every reload                               |
+| `command_executed`     | `{ commandId, canonicalCommandId? }`                 | after a named command dispatches in this terminal host    |
+| `selection_changed`    | `{ fileId, hunkIndex }`                              | when the review selection settles (debounced ~150ms)      |
+| `file_viewed`          | `{ file, hunkIndex }`                                | when selection settles on a file or a reload replaces it  |
+| `hunk_viewed`          | `{ file, hunkIndex }`                                | when selection settles on a different hunk                |
+| `filter_changed`       | `{ filter }`                                         | whenever the file-filter query changes                    |
+| `theme_changed`        | `{ themeId }`                                        | when the user commits a new theme                         |
+| `layout_changed`       | `{ mode, layout, canonicalMode?, canonicalLayout? }` | mode or responsive split/unified layout changes           |
+| `watch_reload_pending` | `{}`                                                 | watcher observed a change before its reload check         |
+| `note_created`         | `{ note }`                                           | a user saves an inline review note                        |
+| `note_edited`          | `{ note }`                                           | a draft body changes or an existing note is saved         |
+| `note_changed`         | `{ kind, note }`                                     | a saved ReviewStore note is created, updated, or removed  |
+| `session_reload`       | `{ changeset, reason }`                              | on every session reload                                   |
+| `shutdown`             | `{}`                                                 | before instance replacement or exit, with a short timeout |
 
 A newly mounted extension instance receives `startup` before its first
 `changeset_loaded`; reloads then deliver `changeset_loaded` before
 `session_reload` once the matching review generation has committed.
 
-Starting with extension API v21, `layout_changed` emits canonical layout values:
-`mode` is `"auto"`, `"split"`, or `"unified"`, while `layout` is `"split"` or
-`"unified"`. The deprecated `"stack"` literal remains in the public layout types
-so existing extension source continues to compile, but Hunk no longer emits it;
-branch on `"unified"` instead.
+Starting with extension API v21, `layout_changed` adds `canonicalMode` and
+`canonicalLayout`. They emit `"auto"`, `"split"`, or `"unified"` for the mode and
+`"split"` or `"unified"` for its resolved layout. The original `mode` and `layout`
+fields remain available for compatibility and continue to report `"stack"`
+where their canonical counterparts report `"unified"`.
 
 `selection_changed` is trailing-debounced on purpose: holding `[`/`]` retargets
 the selection many times a second, and handlers only care where the user landed.
@@ -2001,9 +2002,10 @@ does not fire for current-line movement within a hunk. `file_viewed` still fires
 only when the selected file object changes, so a soft reload can report a fresh
 file without counting as a new hunk read.
 
-`command_executed` reports the stable canonical command id after the terminal dispatcher invokes
+`command_executed` reports a stable command id after the terminal dispatcher invokes
 it, whether the user reached it through a key, a menu, an old command alias, or
-`ctx.commands.execute`. Extension commands
+`ctx.commands.execute`. When a command was renamed, `commandId` preserves its deprecated
+identity for existing handlers and `canonicalCommandId` names the replacement. Extension commands
 may still have detached async work in flight; this event observes the accepted user action, not
 promise settlement. Listen for ids rather than key chords so behavior follows the user's live
 `[keybindings]` table. Browser/session actions lower to shared review intents rather than terminal

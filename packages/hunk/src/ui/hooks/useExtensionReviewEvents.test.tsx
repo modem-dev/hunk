@@ -368,7 +368,15 @@ describe("useExtensionReviewEvents", () => {
 
       expect(seen).toEqual([
         { event: "filter_changed", payload: { filter: "src/" } },
-        { event: "layout_changed", payload: { mode: "unified", layout: "unified" } },
+        {
+          event: "layout_changed",
+          payload: {
+            mode: "stack",
+            layout: "stack",
+            canonicalMode: "unified",
+            canonicalLayout: "unified",
+          },
+        },
         { event: "theme_changed", payload: { themeId: "github-light-default" } },
       ]);
     } finally {
@@ -512,7 +520,15 @@ describe("useExtensionReviewEvents", () => {
       ]);
       expect(secondSeen.slice(3)).toEqual([
         { event: "filter_changed", payload: { filter: "test/" } },
-        { event: "layout_changed", payload: { mode: "auto", layout: "split" } },
+        {
+          event: "layout_changed",
+          payload: {
+            mode: "auto",
+            layout: "split",
+            canonicalMode: "auto",
+            canonicalLayout: "split",
+          },
+        },
         { event: "theme_changed", payload: { themeId: "github-dark-default" } },
       ]);
     } finally {
@@ -579,7 +595,7 @@ describe("useExtensionReviewEvents", () => {
     try {
       harness.current().publishNoteEvent("note_created", { note });
       harness.current().publishNoteEvent("note_edited", { note: { ...note, draft: true } });
-      harness.current().publishCommandExecuted("hunk.review.nextHunk");
+      harness.current().publishCommandExecuted("hunk.view.layoutStack", "hunk.view.layoutUnified");
 
       expect(seen.map(({ event }) => event)).toEqual([
         "note_created",
@@ -587,6 +603,10 @@ describe("useExtensionReviewEvents", () => {
         "command_executed",
       ]);
       expect(seen[0]?.payload).toEqual({ note });
+      expect(seen[2]?.payload).toEqual({
+        commandId: "hunk.view.layoutStack",
+        canonicalCommandId: "hunk.view.layoutUnified",
+      });
     } finally {
       await destroy(harness.setup);
     }

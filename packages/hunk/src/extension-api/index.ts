@@ -123,6 +123,7 @@ export type {
   ExtensionVerticalPane,
   ExtensionCurrentLinePaint,
   ExtensionCanonicalLayoutMode,
+  ExtensionCanonicalResolvedLayout,
   ExtensionLayoutMode,
   ExtensionLegacyLayout,
   ExtensionResolvedLayout,

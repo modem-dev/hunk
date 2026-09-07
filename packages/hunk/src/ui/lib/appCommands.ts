@@ -85,7 +85,7 @@ export interface AppCommand {
  */
 export function observeAppCommandDispatch(
   commands: readonly AppCommand[],
-  onDispatched: (commandId: string) => void,
+  onDispatched: (commandId: string, canonicalCommandId?: string) => void,
 ): AppCommand[] {
   return commands.map((command) => ({
     ...command,
@@ -93,7 +93,11 @@ export function observeAppCommandDispatch(
       command.run(key, count);
       // AppCommand is deliberately synchronous. Extension handlers may have
       // detached async work still running after terminal dispatch returns.
-      onDispatched(command.id);
+      if (command.id === "hunk.view.layoutUnified") {
+        onDispatched("hunk.view.layoutStack", command.id);
+      } else {
+        onDispatched(command.id);
+      }
     },
   }));
 }

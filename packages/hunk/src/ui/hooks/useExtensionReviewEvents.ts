@@ -41,7 +41,7 @@ const defaultScheduler: ExtensionReviewEventScheduler = {
 };
 
 export interface ExtensionReviewEventPublishers {
-  publishCommandExecuted: (commandId: string) => void;
+  publishCommandExecuted: (commandId: string, canonicalCommandId?: string) => void;
   publishNoteEvent: <Event extends NoteEventName>(
     event: Event,
     payload: ExtensionEventPayloads[Event],
@@ -188,8 +188,10 @@ export function useExtensionReviewEvents({
     const reported = reportedLayoutRef.current;
     if (reported && reported.extensions === extensions && reported.value !== layoutSignature) {
       emitExtensionEvent(extensions, "layout_changed", {
-        mode: layoutMode,
-        layout: resolvedLayout,
+        mode: layoutMode === "unified" ? "stack" : layoutMode,
+        layout: resolvedLayout === "unified" ? "stack" : resolvedLayout,
+        canonicalMode: layoutMode,
+        canonicalLayout: resolvedLayout,
       });
     }
     reportedLayoutRef.current = { extensions, value: layoutSignature };
@@ -206,8 +208,11 @@ export function useExtensionReviewEvents({
   }, [extensions, themeId]);
 
   // Keep action publishers stable while resolving the current runtime at call time.
-  const publishCommandExecuted = useCallback((commandId: string) => {
-    emitExtensionEvent(activeExtensionsRef.current, "command_executed", { commandId });
+  const publishCommandExecuted = useCallback((commandId: string, canonicalCommandId?: string) => {
+    emitExtensionEvent(activeExtensionsRef.current, "command_executed", {
+      commandId,
+      ...(canonicalCommandId ? { canonicalCommandId } : {}),
+    });
   }, []);
 
   const publishNoteEvent = useCallback(

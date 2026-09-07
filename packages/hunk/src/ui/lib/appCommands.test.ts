@@ -385,15 +385,20 @@ describe("executeAppCommand", () => {
 });
 
 describe("observeAppCommandDispatch", () => {
-  test("observes successful terminal dispatch exactly once with the canonical command id", () => {
+  test("observes successful terminal dispatch with stable and canonical command ids", () => {
     const { commands, ran } = createTestCommands();
-    const observed: string[] = [];
-    const wrapped = observeAppCommandDispatch(commands, (id) => observed.push(id));
+    const observed: Array<[string, string | undefined]> = [];
+    const wrapped = observeAppCommandDispatch(commands, (id, canonicalId) =>
+      observed.push([id, canonicalId]),
+    );
 
     expect(dispatchAppCommand(wrapped, keyEvent({ name: "q" }))?.id).toBe("hunk.app.quit");
     expect(executeAppCommand(wrapped, "hunk.view.layoutStack")).toBe(true);
     expect(ran).toEqual(["requestQuit", "selectLayoutMode:unified"]);
-    expect(observed).toEqual(["hunk.app.quit", "hunk.view.layoutUnified"]);
+    expect(observed).toEqual([
+      ["hunk.app.quit", undefined],
+      ["hunk.view.layoutStack", "hunk.view.layoutUnified"],
+    ]);
   });
 
   test("does not observe disabled or throwing commands", () => {
