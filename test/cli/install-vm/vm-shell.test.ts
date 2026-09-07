@@ -107,7 +107,9 @@ describe("disposable VM shell", () => {
       expect(
         readFileSync(path.join(staging, "hunkdiff", "skills", "hunk-review", "SKILL.md"), "utf8"),
       ).toBe("fresh skill\n");
-      expect(statSync(path.join(staging, "hunk")).mode & 0o777).toBe(0o755);
+      if (process.platform !== "win32") {
+        expect(statSync(path.join(staging, "hunk")).mode & 0o777).toBe(0o755);
+      }
 
       removeVmShellHunkInput(repo, staging);
       expect(existsSync(staging)).toBe(false);
