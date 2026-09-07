@@ -1,6 +1,6 @@
 import type { ExtensionCurrentLinePaint } from "../../extension-api/types";
 import type { DiffRow, SplitLineCell, StackLineCell } from "../diff/diffRows";
-import { DiffRowView } from "../diff/DiffRowView";
+import { RawDiffRowView } from "../diff/RawDiffRowView";
 import type { DiffSectionRowPlan } from "../diff/diffSectionRowPlan";
 import type { LineCursor } from "./lineCursors";
 import type { AppTheme } from "../themes";
@@ -104,7 +104,7 @@ export function createExtensionCurrentLinePaint({
     line: cursor.target.line,
     render(side: "old" | "new", width: number) {
       return (
-        <DiffRowView
+        <RawDiffRowView
           key={rows[side].key}
           row={rows[side]}
           width={width}

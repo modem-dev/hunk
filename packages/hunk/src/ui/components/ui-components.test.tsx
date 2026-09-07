@@ -41,6 +41,7 @@ const { DiffSectionBody } = await import("../diff/DiffSectionBody");
 const { measurePlannedRenderedRowHeight, measureRenderedRowHeight } =
   await import("../diff/codeRowLayout");
 const { DiffRowView } = await import("../diff/DiffRowView");
+const { RawDiffRowView } = await import("../diff/RawDiffRowView");
 
 function createTestDiffFile(
   id: string,
@@ -658,7 +659,7 @@ describe("UI components", () => {
     const theme = resolveTheme("github-dark-default", null);
     const startUserNote = mock(() => undefined);
     const setup = await testRender(
-      <DiffRowView
+      <RawDiffRowView
         row={{
           type: "stack-line",
           key: "alpha:line:1",
@@ -828,7 +829,7 @@ describe("UI components", () => {
     };
     const renderRow = (showAddNoteBadge: boolean) =>
       captureFrame(
-        <DiffRowView
+        <RawDiffRowView
           row={row}
           width={24}
           lineNumberDigits={1}
@@ -860,7 +861,7 @@ describe("UI components", () => {
   test("DiffRowView fills the reserved wrapped add-note column with row background", async () => {
     const theme = resolveTheme("github-dark-default", null);
     const setup = await testRender(
-      <DiffRowView
+      <RawDiffRowView
         row={{
           type: "stack-line",
           key: "alpha:line:hover-wrap-bg",
@@ -910,7 +911,7 @@ describe("UI components", () => {
   test("DiffRowView keeps metadata row background within the measured row width", async () => {
     const theme = resolveTheme("github-dark-default", null);
     const setup = await testRender(
-      <DiffRowView
+      <RawDiffRowView
         row={{
           type: "hunk-header",
           key: "alpha:hunk:0",
@@ -965,7 +966,7 @@ describe("UI components", () => {
 
     for (const wrapLines of [false, true]) {
       const setup = await testRender(
-        <DiffRowView
+        <RawDiffRowView
           row={row}
           width={40}
           lineNumberDigits={1}
@@ -1009,7 +1010,7 @@ describe("UI components", () => {
     };
     const measuredHeight = measureRenderedRowHeight(row, 4, 1, false, true, true, theme);
     const setup = await testRender(
-      <DiffRowView
+      <RawDiffRowView
         row={row}
         width={4}
         lineNumberDigits={1}
@@ -1203,7 +1204,7 @@ describe("UI components", () => {
       };
       const measuredHeight = measureRenderedRowHeight(row, 4, 1, false, true, true, theme);
       const setup = await testRender(
-        <DiffRowView
+        <RawDiffRowView
           row={row}
           width={4}
           lineNumberDigits={1}

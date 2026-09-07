@@ -12,7 +12,7 @@ import {
 import { legacyPlannedDiffRow, planCodeRowLayout } from "./codeRowLayout";
 import type { DiffRow } from "./diffRows";
 import { lineHighlightPaintKey, type LineHighlightPaintIndex } from "./lineHighlightPaint";
-import { DiffRowView } from "./DiffRowView";
+import { RawDiffRowView } from "./RawDiffRowView";
 import { resolveTheme, withTransparentSurfaces } from "../themes";
 
 /** Capture one code-row component and always release its OpenTUI renderer. */
@@ -66,10 +66,10 @@ const stackRow: Extract<DiffRow, { type: "stack-line" }> = {
 };
 
 /** Render common DiffRowView props while varying paint-sensitive inputs. */
-function codeRowView(row: DiffRow, options: Partial<Parameters<typeof DiffRowView>[0]> = {}) {
+function codeRowView(row: DiffRow, options: Partial<Parameters<typeof RawDiffRowView>[0]> = {}) {
   const theme = options.theme ?? resolveTheme("github-dark-default", null);
   return (
-    <DiffRowView
+    <RawDiffRowView
       row={row}
       width={12}
       lineNumberDigits={1}
