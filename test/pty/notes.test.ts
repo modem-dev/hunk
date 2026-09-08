@@ -667,6 +667,36 @@ describe("PTY notes", () => {
     }
   });
 
+  test("late textarea events after a fast save do not crash the review", async () => {
+    const fixture = harness.createLongWrapFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "split"],
+      cols: 120,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+
+      await session.press("c");
+      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await session.type("Fast sav");
+      await session.waitForText(/Fast sav/, { timeout: 5_000 });
+
+      // Keep the final edits and save in one PTY write so queued textarea events can
+      // arrive after the semantic draft has already been consumed.
+      session.writeRaw("e.\x13");
+      await session.waitIdle();
+
+      const saved = await session.waitForText(/Fast save\./, { timeout: 5_000 });
+      expect(saved).toContain("Your note");
+      await sleep(250);
+      expect(await session.text({ immediate: true })).not.toContain("Console (Focused)");
+    } finally {
+      session.close();
+    }
+  });
+
   test("add-note affordance appears only after mouse movement in a real PTY", async () => {
     const fixture = harness.createScrollableFilePair();
     const session = await harness.launchHunk({

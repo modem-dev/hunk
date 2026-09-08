@@ -455,7 +455,7 @@ export function DiffPane({
   onReplyToNote?: (noteId: string, options?: { preserveViewport?: boolean }) => void;
   onRemoveLiveNote?: (noteId: string) => void;
   onRemoveUserNote?: (noteId: string) => void;
-  onSaveDraftNote?: () => void;
+  onSaveDraftNote?: (editorBody?: string) => void;
   onStartUserNoteAtHunk?: StartUserNoteAtHunk;
   onUpdateDraftNote?: (body: string) => void;
   onBlurDraftNote?: () => void;

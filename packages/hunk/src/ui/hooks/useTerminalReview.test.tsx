@@ -1146,6 +1146,39 @@ describe("useTerminalReview", () => {
     }
   });
 
+  test("ignores delayed editor updates from saved and replaced drafts", async () => {
+    const { controllerRef, setup } = await renderTerminalReview([createAlphaFile()]);
+
+    try {
+      await flush(setup);
+      let savedDraftId = "";
+      await act(async () => {
+        const controller = expectValue(controllerRef.current);
+        const draft = controller.startUserNote();
+        savedDraftId = expectValue(draft).id;
+        expect(controller.updateDraftNote("Saved body", savedDraftId)).toBe(true);
+        controller.saveDraftNote();
+        expect(controller.updateDraftNote("Late saved body", savedDraftId)).toBe(false);
+      });
+      await flush(setup);
+
+      await act(async () => {
+        const controller = expectValue(controllerRef.current);
+        const replacement = expectValue(controller.startUserNote());
+        expect(controller.updateDraftNote("Stale replacement body", savedDraftId)).toBe(false);
+        expect(controller.store.getSnapshot().draftNote?.body).toBe("");
+        expect(controller.updateDraftNote("Current replacement body", replacement.id)).toBe(true);
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).store.getSnapshot().draftNote?.body).toBe(
+        "Current replacement body",
+      );
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
   test("session clear can include human user notes", async () => {
     const { controllerRef, setup } = await renderTerminalReview([createTwoHunkFile()]);
 

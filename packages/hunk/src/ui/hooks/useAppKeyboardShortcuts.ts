@@ -70,7 +70,7 @@ export interface UseAppKeyboardShortcutsOptions {
   discardViewPreferencesAndQuit: () => void;
   neverAskToSaveViewPreferencesAndQuit: () => void;
   closeSaveConfigPrompt: () => void;
-  saveDraftNote: () => void;
+  saveDraftNote: (editorBody?: string) => void;
   showAgentSkill: boolean;
   showHelp: boolean;
   switchMenu: (delta: number) => void;
@@ -494,7 +494,7 @@ export function useAppKeyboardShortcuts({
     }
 
     if (isSaveDraftNoteKey(key)) {
-      saveDraftNote();
+      saveDraftNote(renderer.currentFocusedEditor?.plainText);
       return "mine";
     }
 

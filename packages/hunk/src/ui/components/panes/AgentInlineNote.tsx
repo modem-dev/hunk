@@ -219,7 +219,7 @@ export function AgentInlineNote({
     onCancel: () => void;
     onFocus?: () => void;
     onInput: (value: string) => void;
-    onSave: () => void;
+    onSave: (editorBody?: string) => void;
   };
   actions?: AgentInlineNoteActions;
   /** Make this saved note the keyboard action target when its card is clicked. */
@@ -546,7 +546,12 @@ export function AgentInlineNote({
     const draftTitleText = fitText(` ${titleText} `, Math.max(0, boxWidth - 4));
     const draftTopBorderSuffix = `${"─".repeat(Math.max(0, boxWidth - 3 - draftTitleText.length))}${rangeGuideConnection ? "┬" : "╮"}`;
     const draftActionItems: BorderActionItem[] = [
-      { id: "save", keyLabel: "^S", label: "save", onMouseUp: draft.onSave },
+      {
+        id: "save",
+        keyLabel: "^S",
+        label: "save",
+        onMouseUp: () => draft.onSave(textareaRef.current?.plainText),
+      },
       { id: "cancel", keyLabel: "Esc", label: "cancel", onMouseUp: draft.onCancel },
     ];
     const draftTextareaRows = draftVisibleLineCount;

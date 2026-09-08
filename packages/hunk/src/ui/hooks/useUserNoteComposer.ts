@@ -66,7 +66,7 @@ export interface UseUserNoteComposerOptions {
   ) => DraftReviewNote | null;
   startEdit?: (noteId: string, options?: { preserveViewport?: boolean }) => DraftReviewNote | null;
   startReply?: (noteId: string, options?: { preserveViewport?: boolean }) => DraftReviewNote | null;
-  updateDraft: (body: string) => void;
+  updateDraft: (body: string, expectedDraftId?: string) => boolean;
   saveDraft: () => UserReviewNote | null;
   cancelDraft: () => void;
   focus: {
@@ -159,38 +159,49 @@ export function useUserNoteComposer({
   }, [blurDraftFocus]);
 
   /** Save the current draft, publish it once, and return to review navigation. */
-  const saveDraftNote = useCallback(() => {
-    // `saveDraft` consumes the semantic draft synchronously. Retain its runtime file id
-    // first because the saved terminal projection is keyed by path rather than runtime id.
-    const priorDraft = draftNote;
-    const saved = saveDraft();
-    if (saved && priorDraft) {
-      const note = projectExtensionReviewNote({ ...saved, fileId: priorDraft.fileId }, false);
-      publishEvent(priorDraft.kind === "edit" ? "note_edited" : "note_created", { note });
-    }
-    focusReview();
-  }, [draftNote, focusReview, publishEvent, saveDraft]);
+  const saveDraftNote = useCallback(
+    (editorBody?: string) => {
+      // `saveDraft` consumes the semantic draft synchronously. Retain its runtime file id
+      // first because the saved terminal projection is keyed by path rather than runtime id.
+      const priorDraft = draftNote;
+      if (
+        priorDraft &&
+        editorBody !== undefined &&
+        editorBody !== priorDraft.body &&
+        !updateDraft(editorBody, priorDraft.id)
+      ) {
+        return;
+      }
+      const saved = saveDraft();
+      if (saved && priorDraft) {
+        const note = projectExtensionReviewNote({ ...saved, fileId: priorDraft.fileId }, false);
+        publishEvent(priorDraft.kind === "edit" ? "note_edited" : "note_created", { note });
+      }
+      focusReview();
+    },
+    [draftNote, focusReview, publishEvent, saveDraft, updateDraft],
+  );
 
   /** Update the semantic draft and publish the body supplied by the editor. */
   const updateDraftNote = useCallback(
     (body: string) => {
       const priorDraft = draftNote;
-      updateDraft(body);
-      if (priorDraft) {
-        publishEvent("note_edited", {
-          note: projectExtensionReviewNote(
-            {
-              ...priorDraft,
-              id:
-                priorDraft.kind === "edit" && priorDraft.targetNoteId
-                  ? priorDraft.targetNoteId
-                  : priorDraft.id,
-              body,
-            },
-            true,
-          ),
-        });
+      if (!priorDraft || !updateDraft(body, priorDraft.id)) {
+        return;
       }
+      publishEvent("note_edited", {
+        note: projectExtensionReviewNote(
+          {
+            ...priorDraft,
+            id:
+              priorDraft.kind === "edit" && priorDraft.targetNoteId
+                ? priorDraft.targetNoteId
+                : priorDraft.id,
+            body,
+          },
+          true,
+        ),
+      });
     },
     [draftNote, publishEvent, updateDraft],
   );

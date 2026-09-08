@@ -298,7 +298,7 @@ export interface TerminalReview {
     options?: { preserveViewport?: boolean },
   ) => DraftReviewNote | null;
   setFilter: (value: string) => void;
-  updateDraftNote: (body: string) => void;
+  updateDraftNote: (body: string, expectedDraftId?: string) => boolean;
 }
 
 /** Live note-card geometry the app publishes for markup validation. */
@@ -426,6 +426,7 @@ export function useTerminalReview({
   >(null);
   // Monotonic suffix that keeps `user:*` note ids unique within one millisecond.
   const userNoteSequenceRef = useRef(0);
+  const draftNoteSequenceRef = useRef(0);
 
   const keyByFileId = useMemo(
     () => new Map(document.files.map((file) => [file.runtimeId, file.key] as const)),
@@ -1501,7 +1502,9 @@ export function useTerminalReview({
           ...intent,
           ...(options?.preserveViewport ? { reveal: REVIEW_VIEWPORT_ANCHOR_REVEAL } : {}),
         },
-        { draftId: `draft:${file.id}:${hunkIndex}:${Date.now()}` },
+        {
+          draftId: `draft:${file.id}:${hunkIndex}:${Date.now()}-${++draftNoteSequenceRef.current}`,
+        },
       );
       applyLineCursor(
         lineCursorAt(lineCursors, file.id, hunkIndex, { side: draft.side, line: draft.line }),
@@ -1529,7 +1532,9 @@ export function useTerminalReview({
           noteId,
           ...(options?.preserveViewport ? { reveal: REVIEW_VIEWPORT_ANCHOR_REVEAL } : {}),
         },
-        { draftId: `draft:edit:${noteId}:${Date.now()}` },
+        {
+          draftId: `draft:edit:${noteId}:${Date.now()}-${++draftNoteSequenceRef.current}`,
+        },
       );
       const file = fileByKey.get(draft.fileKey);
       if (!file) {
@@ -1557,7 +1562,9 @@ export function useTerminalReview({
           noteId,
           ...(options?.preserveViewport ? { reveal: REVIEW_VIEWPORT_ANCHOR_REVEAL } : {}),
         },
-        { draftId: `draft:reply:${noteId}:${Date.now()}` },
+        {
+          draftId: `draft:reply:${noteId}:${Date.now()}-${++draftNoteSequenceRef.current}`,
+        },
       );
       const file = fileByKey.get(draft.fileKey);
       if (!file) {
@@ -1576,12 +1583,16 @@ export function useTerminalReview({
     [applyLineCursor, fileByKey, runIntent],
   );
 
-  /** Update the body of the active draft note through the shared intent path. */
+  /** Update the expected active draft through the shared intent path. */
   const updateDraftNote = useCallback(
-    (body: string) => {
+    (body: string, expectedDraftId?: string) => {
+      if (expectedDraftId !== undefined && store.getSnapshot().draftNote?.id !== expectedDraftId) {
+        return false;
+      }
       runIntent({ type: "notes/update-draft", body });
+      return true;
     },
-    [runIntent],
+    [runIntent, store],
   );
 
   /** Discard the active human note draft through the shared intent path. */
