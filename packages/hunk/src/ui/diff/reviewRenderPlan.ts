@@ -493,11 +493,17 @@ export function buildReviewRenderPlan({
     );
 
     const anchoredNotes = placementsByAnchor.get(row.key) ?? [];
-    anchoredNotes.forEach((placement, placementIndex) => {
+    let remainingRootNotes = anchoredNotes.reduce(
+      (count, placement) => count + ((placement.note.thread?.depth ?? 0) === 0 ? 1 : 0),
+      0,
+    );
+
+    anchoredNotes.forEach((placement) => {
       const isThreadReply = (placement.note.thread?.depth ?? 0) > 0;
-      const hasLaterRootNote = anchoredNotes
-        .slice(placementIndex + 1)
-        .some((candidate) => (candidate.note.thread?.depth ?? 0) === 0);
+      if (!isThreadReply) {
+        remainingRootNotes -= 1;
+      }
+      const hasLaterRootNote = remainingRootNotes > 0;
 
       plannedRows.push({
         kind: "inline-note",
