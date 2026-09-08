@@ -40,7 +40,7 @@
     "prepare": "simple-git-hooks",
     "test": "bun run ./scripts/test/run-test-suite.ts",
     "test:theme-contrast": "bun test packages/hunk/src/ui/themes.test.ts --test-name-pattern contrast",
-    "test:integration": "\"${npm_execpath:-bun}\" test ./test/pty",
+    "test:integration": "bun run ./scripts/test/run-test-suite.ts --group=integration",
     "test:session-broker-node": "bun run ./scripts/test/test-session-broker-node.ts",
     "test:tty-smoke": "HUNK_RUN_TTY_SMOKE=1 \"${npm_execpath:-bun}\" test ./test/smoke",
     "test:install-vm": "bun run ./test/cli/install-vm/runner.ts",

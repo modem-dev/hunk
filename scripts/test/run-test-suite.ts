@@ -1,24 +1,25 @@
 #!/usr/bin/env bun
 
 /**
- * Runs Hunk's default tests concurrently without Bun's isolated parallel worker mode.
+ * Runs Hunk's test groups concurrently without Bun's isolated parallel worker mode.
  *
  * Bun 1.3.14's `--parallel` implies `--isolate`, which makes OpenTUI's native FFI
  * renderer fail to initialize with "Cannot access 'default' before initialization."
  * Independent `--shard=N/M` processes avoid that failure, but Bun runs only the one
- * requested shard, so this module launches and supervises every shard. Sharding stays
- * Linux-only because the complete multi-process suite is validated and benchmarked there.
+ * requested shard, so this module launches and supervises every shard. The default suite
+ * shards automatically on Linux; resource-intensive PTY tests and non-Linux platforms
+ * stay serial unless CI or a developer explicitly chooses a validated shard count.
  */
 
 import { availableParallelism } from "node:os";
 
-export const DEFAULT_TEST_PATTERNS = [
-  "./packages",
-  "./scripts",
-  "./examples",
-  "./test/cli",
-  "./test/session",
-] as const;
+export const TEST_PATTERN_GROUPS = {
+  default: ["./packages", "./scripts", "./examples", "./test/cli", "./test/session"],
+  integration: ["./test/pty"],
+} as const;
+
+export const DEFAULT_TEST_PATTERNS = TEST_PATTERN_GROUPS.default;
+export type TestPatternGroup = keyof typeof TEST_PATTERN_GROUPS;
 
 const MAX_AUTOMATIC_TEST_SHARDS = 2;
 const MAX_EXPLICIT_TEST_SHARDS = 64;
@@ -28,14 +29,12 @@ type KillableProcess = {
   kill(signal?: number | NodeJS.Signals): void;
 };
 
-/** Resolve a Linux shard override or choose a bounded count from the available CPUs. */
+/** Resolve an explicit shard override or choose a bounded Linux count from available CPUs. */
 export function resolveTestShardCount(
   cpuCount: number,
   override?: string,
   platform: NodeJS.Platform = process.platform,
 ) {
-  if (platform !== "linux") return 1;
-
   if (override !== undefined) {
     const count = Number(override);
     if (!/^\d+$/.test(override) || !Number.isSafeInteger(count) || count < 1) {
@@ -47,7 +46,50 @@ export function resolveTestShardCount(
     return count;
   }
 
+  if (platform !== "linux") return 1;
   return Math.min(MAX_AUTOMATIC_TEST_SHARDS, Math.max(1, Math.floor(cpuCount)));
+}
+
+/** Keep resource-intensive PTY tests serial unless the caller explicitly chooses a shard count. */
+export function resolveTestGroupShardCount(
+  cpuCount: number,
+  override: string | undefined,
+  platform: NodeJS.Platform,
+  group: TestPatternGroup,
+) {
+  if (group === "integration" && override === undefined) return 1;
+  return resolveTestShardCount(cpuCount, override, platform);
+}
+
+/** Resolve the selected test group while preserving arguments meant for Bun's test runner. */
+export function resolveTestInvocation(args: string[]) {
+  const groupArguments = args.filter((arg) => arg.startsWith("--group="));
+  if (groupArguments.length > 1) {
+    throw new Error("Only one --group argument may be provided");
+  }
+
+  const group = (groupArguments[0]?.slice("--group=".length) ?? "default") as TestPatternGroup;
+  if (!Object.hasOwn(TEST_PATTERN_GROUPS, group)) {
+    throw new Error(`Unknown test group: ${group}`);
+  }
+
+  return {
+    forwardedArgs: args.filter((arg) => !arg.startsWith("--group=")),
+    group,
+    patterns: TEST_PATTERN_GROUPS[group],
+  };
+}
+
+/** Keep filtered runs and shared file-backed output on one process. */
+export function requiresSerialTestExecution(args: string[]) {
+  return args.some(
+    (arg) =>
+      arg === "-t" ||
+      arg === "--only" ||
+      arg.startsWith("--test-name-pattern") ||
+      arg.startsWith("--coverage") ||
+      arg.startsWith("--reporter-outfile"),
+  );
 }
 
 /** Build one Bun test command for an independent file shard. */
@@ -57,13 +99,14 @@ export function buildTestShardCommand(
   shardCount: number,
   forwardedArgs: string[] = [],
   platform: NodeJS.Platform = process.platform,
+  patterns: readonly string[] = DEFAULT_TEST_PATTERNS,
 ) {
   return [
     bunExecutable,
     "test",
     ...(platform === "win32" ? [] : ["--no-orphans"]),
     ...(shardCount > 1 ? [`--shard=${shard}/${shardCount}`] : []),
-    ...DEFAULT_TEST_PATTERNS,
+    ...patterns,
     ...forwardedArgs,
   ];
 }
@@ -79,19 +122,35 @@ export function terminateTestShardProcesses(processes: KillableProcess[], signal
   }
 }
 
-/** Run the default suite in independent Bun processes without enabling Bun's isolate mode. */
+/** Run one test group in independent Bun processes without enabling Bun's isolate mode. */
 export async function main(args = Bun.argv.slice(2)) {
-  const shardCount = resolveTestShardCount(availableParallelism(), process.env.HUNK_TEST_SHARDS);
+  const { forwardedArgs, group, patterns } = resolveTestInvocation(args);
+  const resolvedShardCount = resolveTestGroupShardCount(
+    availableParallelism(),
+    process.env.HUNK_TEST_SHARDS,
+    process.platform,
+    group,
+  );
+  const shardCount = requiresSerialTestExecution(forwardedArgs) ? 1 : resolvedShardCount;
   const bunExecutable = process.execPath;
 
-  console.error(`Running the test suite in ${shardCount} shard${shardCount === 1 ? "" : "s"}...`);
+  console.error(
+    `Running the ${group} test group in ${shardCount} shard${shardCount === 1 ? "" : "s"}...`,
+  );
 
   const shards: Array<{ proc: ReturnType<typeof Bun.spawn>; shard: number }> = [];
   try {
     for (let index = 0; index < shardCount; index += 1) {
       const shard = index + 1;
       const proc = Bun.spawn(
-        buildTestShardCommand(bunExecutable, shard, shardCount, args, process.platform),
+        buildTestShardCommand(
+          bunExecutable,
+          shard,
+          shardCount,
+          forwardedArgs,
+          process.platform,
+          patterns,
+        ),
         {
           cwd: process.cwd(),
           env: { ...process.env, npm_execpath: bunExecutable },

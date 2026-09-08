@@ -2,7 +2,11 @@ import { describe, expect, test } from "bun:test";
 import {
   buildTestShardCommand,
   DEFAULT_TEST_PATTERNS,
+  requiresSerialTestExecution,
+  resolveTestGroupShardCount,
+  resolveTestInvocation,
   resolveTestShardCount,
+  TEST_PATTERN_GROUPS,
   terminateTestShardProcesses,
 } from "./run-test-suite";
 
@@ -18,12 +22,19 @@ describe("test suite sharding", () => {
     expect(resolveTestShardCount(2, "16", "linux")).toBe(16);
   });
 
-  test("keeps non-Linux suites serial", () => {
+  test("keeps automatic non-Linux suites serial but accepts explicit CI sharding", () => {
     expect(resolveTestShardCount(32, undefined, "win32")).toBe(1);
-    expect(resolveTestShardCount(32, "16", "darwin")).toBe(1);
+    expect(resolveTestShardCount(32, "2", "win32")).toBe(2);
+    expect(resolveTestShardCount(32, "16", "darwin")).toBe(16);
   });
 
-  test("rejects malformed or excessive Linux shard overrides", () => {
+  test("keeps PTY integration serial by default while allowing measured overrides", () => {
+    expect(resolveTestGroupShardCount(32, undefined, "linux", "integration")).toBe(1);
+    expect(resolveTestGroupShardCount(32, "2", "linux", "integration")).toBe(2);
+    expect(resolveTestGroupShardCount(32, undefined, "linux", "default")).toBe(2);
+  });
+
+  test("rejects malformed or excessive shard overrides", () => {
     expect(() => resolveTestShardCount(8, "0", "linux")).toThrow(
       "HUNK_TEST_SHARDS must be a positive safe integer",
     );
@@ -36,6 +47,34 @@ describe("test suite sharding", () => {
     expect(() => resolveTestShardCount(8, "65", "linux")).toThrow(
       "HUNK_TEST_SHARDS cannot exceed 64",
     );
+  });
+
+  test("resolves named test groups without forwarding the selector", () => {
+    expect(resolveTestInvocation(["--group=integration", "--rerun-each=2"])).toEqual({
+      forwardedArgs: ["--rerun-each=2"],
+      group: "integration",
+      patterns: TEST_PATTERN_GROUPS.integration,
+    });
+    expect(resolveTestInvocation([]).group).toBe("default");
+    expect(() => resolveTestInvocation(["--group=missing"])).toThrow("Unknown test group: missing");
+    expect(() => resolveTestInvocation(["--group=toString"])).toThrow(
+      "Unknown test group: toString",
+    );
+    expect(() => resolveTestInvocation(["--group=default", "--group=integration"])).toThrow(
+      "Only one --group argument may be provided",
+    );
+  });
+
+  test("keeps filtered and file-output invocations serial", () => {
+    expect(requiresSerialTestExecution([])).toBe(false);
+    expect(requiresSerialTestExecution(["--rerun-each=2"])).toBe(false);
+    expect(requiresSerialTestExecution(["-t", "one test"])).toBe(true);
+    expect(requiresSerialTestExecution(["--only"])).toBe(true);
+    expect(requiresSerialTestExecution(["--test-name-pattern=one test"])).toBe(true);
+    expect(requiresSerialTestExecution(["--coverage"])).toBe(true);
+    expect(requiresSerialTestExecution(["--coverage-dir=coverage/custom"])).toBe(true);
+    expect(requiresSerialTestExecution(["--reporter-outfile=reports/junit.xml"])).toBe(true);
+    expect(requiresSerialTestExecution(["--reporter-outfile", "reports/junit.xml"])).toBe(true);
   });
 
   test("builds serial and sharded Bun commands", () => {
@@ -53,11 +92,9 @@ describe("test suite sharding", () => {
       ...DEFAULT_TEST_PATTERNS,
       "--rerun-each=2",
     ]);
-    expect(buildTestShardCommand("C:\\bun.exe", 1, 1, [], "win32")).toEqual([
-      "C:\\bun.exe",
-      "test",
-      ...DEFAULT_TEST_PATTERNS,
-    ]);
+    expect(
+      buildTestShardCommand("C:\\bun.exe", 1, 1, [], "win32", TEST_PATTERN_GROUPS.integration),
+    ).toEqual(["C:\\bun.exe", "test", ...TEST_PATTERN_GROUPS.integration]);
   });
 
   test("forwards termination while tolerating an already stopped shard", () => {
