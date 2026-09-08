@@ -32,6 +32,7 @@ bun run bench:release:compare
 Run focused scripts while iterating:
 
 ```bash
+bun run bench:startup-first-frame
 bun run bench:bootstrap-load
 bun run bench:working-tree-load
 bun run bench:changeset-parse
@@ -55,6 +56,7 @@ bun run bench:competitors
 
 ## Scripts
 
+- `startup-first-frame.ts` — launches `hunk diff` in a real PTY on a small committed repo with a dirty working tree and measures time from process spawn to the first painted review frame. It is the only metric that includes Bun boot, CLI and config resolution, git bootstrap, and the OpenTUI import with its native-library load; in-process first-frame metrics start after the renderer is already imported. It answers the terminal background probe like a real terminal would. Set `HUNK_BENCHMARK_EXECUTABLE` to measure a compiled binary instead of the source entrypoint.
 - `bootstrap-load.ts` — measures bootstrap and git-loader cost on a synthetic large repo, including file-pair bootstrap.
 - `working-tree-load.ts` — measures git working-tree loads across small, medium, large, many-untracked, and few-large-untracked repos.
 - `changeset-parse.ts` — measures patch normalization, Pierre parsing, patch chunking, and normalized `DiffFile` construction for many-small-files, balanced, and large-single-file patches.
