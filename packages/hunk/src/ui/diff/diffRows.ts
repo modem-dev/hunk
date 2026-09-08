@@ -5,15 +5,7 @@
  * named for that role rather than for Pierre, whose highlighter it calls to build the spans
  * each row carries.
  */
-import {
-  cleanLastNewline,
-  getHighlighterOptions,
-  getSharedHighlighter,
-  renderDiffWithHighlighter,
-  renderFileWithHighlighter,
-  type FileContents,
-  type FileDiffMetadata,
-} from "@pierre/diffs";
+import { cleanLastNewline, renderDiffWithHighlighter, type FileDiffMetadata } from "@pierre/diffs";
 import { formatHunkHeader } from "../../core/changeset/hunkHeader";
 import {
   reviewLeadingGap,
@@ -44,12 +36,15 @@ import {
   remapSourceBackedHighlight,
   type SourceBackedHighlightPlan,
 } from "./sourceBackedHighlight";
+import { syntaxHighlightThemeName } from "./syntaxHighlightTheme";
 import {
-  ensureSyntaxHighlightThemeRegistered,
-  syntaxHighlightThemeName,
-} from "./syntaxHighlightTheme";
-
-type HighlightThemeInput = AppTheme | AppTheme["appearance"];
+  highlightThemeAppearance,
+  prepareDocumentHighlighter,
+  queueDocumentHighlightWork,
+  renderHighlightedDocumentLines,
+  type HighlightThemeInput,
+} from "./documentHighlightRenderer";
+import { pierreHighlightRenderOptions } from "./highlightRenderOptions";
 
 export const HIGHLIGHT_WORKER_MIN_LINES = 40;
 
@@ -57,27 +52,6 @@ export interface LoadHighlightedDiffOptions {
   /** Allow the interactive TUI to move eligible highlighting into the Bun worker. */
   offloadLargeDiff?: boolean;
 }
-
-/** Return the light/dark mode for a theme object or legacy appearance argument. */
-function highlightThemeAppearance(theme: HighlightThemeInput) {
-  return typeof theme === "string" ? theme : theme.appearance;
-}
-
-/** Build render options for the active syntax theme. */
-function pierreRenderOptions(theme: HighlightThemeInput) {
-  return {
-    theme: syntaxHighlightThemeName(theme),
-    useTokenTransformer: false,
-    tokenizeMaxLineLength: 1_000,
-    lineDiffType: "word-alt" as const,
-    maxLineDiffLength: 10_000,
-  };
-}
-
-type HighlightOptions = ReturnType<typeof getHighlighterOptions>;
-
-const highlighterOptionsByKey = new Map<string, HighlightOptions>();
-let queuedHighlightWork = Promise.resolve();
 
 export interface CompactHighlightedDiffCode {
   payload: CompactHighlightedDiff;
@@ -106,6 +80,11 @@ export type {
   SplitLineCell,
   UnifiedLineCell,
 } from "./diffRowModel";
+export {
+  loadDocumentHighlight,
+  type DocumentHighlightInput,
+  type DocumentHighlightResult,
+} from "./documentHighlightService";
 
 /** Expand source tabs before terminal rendering so downstream geometry stays predictable. */
 function tabify(text: string, tabWidth: number, initialColumn = 0) {
@@ -439,72 +418,6 @@ function collapsedGapRow(
   };
 }
 
-/** Prepare syntax highlighting for one language/theme pair using Pierre's shared highlighter. */
-async function prepareHighlighter(language: string | undefined, theme: HighlightThemeInput) {
-  const resolvedLanguage = language ?? "text";
-  const syntaxTheme = ensureSyntaxHighlightThemeRegistered(theme);
-  const cacheKey = `${syntaxTheme}:${resolvedLanguage}`;
-  const options =
-    highlighterOptionsByKey.get(cacheKey) ??
-    getHighlighterOptions(resolvedLanguage, {
-      theme: syntaxTheme,
-    });
-
-  if (!highlighterOptionsByKey.has(cacheKey)) {
-    highlighterOptionsByKey.set(cacheKey, options);
-  }
-
-  return getSharedHighlighter({
-    ...options,
-    preferredHighlighter: "shiki-wasm",
-  });
-}
-
-/** Queue highlight rendering so startup work stays serialized without starving input/render timers. */
-function queueHighlightedWork<T>(run: () => T) {
-  const queued = queuedHighlightWork.then(
-    () =>
-      new Promise<T>((resolve, reject) => {
-        // Highlighting is CPU-heavy background work. Scheduling each serialized job as a timer,
-        // rather than a microtask, yields back to OpenTUI input and frame timers between files.
-        setTimeout(() => {
-          try {
-            resolve(run());
-          } catch (error) {
-            reject(error);
-          }
-        }, 0);
-      }),
-  );
-
-  queuedHighlightWork = queued.then(
-    () => undefined,
-    () => undefined,
-  );
-
-  return queued;
-}
-
-/** Normalize source text the same way expanded-row slicing does before highlighting. */
-function normalizeSourceText(text: string) {
-  return text.replaceAll("\r\n", "\n");
-}
-
-/** Build Pierre file contents for a full-source highlight request. */
-function sourceFileContents(file: DiffFile, text: string, language: string | undefined) {
-  const contents: FileContents = {
-    name: file.path,
-    contents: normalizeSourceText(text),
-    cacheKey: `${file.id}:${file.path}:${language ?? ""}:${text.length}`,
-  };
-
-  if (language) {
-    contents.lang = language as FileContents["lang"];
-  }
-
-  return contents;
-}
-
 /** Load and validate authoritative source snapshots for one partial diff when available. */
 async function loadSourceBackedHighlightPlan(file: DiffFile) {
   if (!file.metadata.isPartial || !file.sourceFetcher || file.metadata.hunks.length === 0) {
@@ -546,15 +459,15 @@ function finalizeHighlightedDiff(
 function renderHighlightedDiff(
   file: DiffFile,
   metadata: FileDiffMetadata,
-  highlighter: Awaited<ReturnType<typeof prepareHighlighter>>,
+  highlighter: Awaited<ReturnType<typeof prepareDocumentHighlighter>>,
   theme: HighlightThemeInput,
   sourcePlan: SourceBackedHighlightPlan | null,
 ) {
-  return queueHighlightedWork(() => {
+  return queueDocumentHighlightWork(() => {
     const highlighted = renderDiffWithHighlighter(
       metadata,
       highlighter,
-      pierreRenderOptions(theme),
+      pierreHighlightRenderOptions(syntaxHighlightThemeName(theme)),
     );
     return finalizeHighlightedDiff(file, sourcePlan, highlighted);
   });
@@ -679,7 +592,7 @@ export async function loadHighlightedDiff(
   }
 
   try {
-    const highlighter = await prepareHighlighter(file.language, theme);
+    const highlighter = await prepareDocumentHighlighter(file.language, theme);
     try {
       return await renderHighlightedDiff(file, metadata, highlighter, theme, highlightSourcePlan);
     } catch (error) {
@@ -693,7 +606,7 @@ export async function loadHighlightedDiff(
     }
   } catch {
     const fallbackTheme = highlightThemeAppearance(theme);
-    const highlighter = await prepareHighlighter("text", fallbackTheme);
+    const highlighter = await prepareDocumentHighlighter("text", fallbackTheme);
     return await renderHighlightedDiff(
       file,
       { ...file.metadata, lang: "text" },
@@ -714,31 +627,28 @@ export async function loadHighlightedSourceLines({
   text: string;
   theme?: HighlightThemeInput;
 }): Promise<HighlightedSourceCode> {
+  const normalizedText = text.replaceAll("\r\n", "\n");
   try {
-    const highlighter = await prepareHighlighter(file.language, theme);
-    return queueHighlightedWork(() => {
-      const highlighted = renderFileWithHighlighter(
-        sourceFileContents(file, text, file.language),
-        highlighter,
-        pierreRenderOptions(theme),
-      );
-      return {
-        lines: highlighted.code as Array<HastNode | undefined>,
-      };
-    });
+    return {
+      lines: await renderHighlightedDocumentLines({
+        cacheKey: `${file.id}:${file.path}:${file.language ?? ""}:${text.length}`,
+        language: file.language ?? "text",
+        path: file.path,
+        text: normalizedText,
+        theme,
+      }),
+    };
   } catch {
     const fallbackTheme = highlightThemeAppearance(theme);
-    const highlighter = await prepareHighlighter("text", fallbackTheme);
-    return queueHighlightedWork(() => {
-      const highlighted = renderFileWithHighlighter(
-        sourceFileContents(file, text, "text"),
-        highlighter,
-        pierreRenderOptions(fallbackTheme),
-      );
-      return {
-        lines: highlighted.code as Array<HastNode | undefined>,
-      };
-    });
+    return {
+      lines: await renderHighlightedDocumentLines({
+        cacheKey: `${file.id}:${file.path}:text:${text.length}`,
+        language: "text",
+        path: file.path,
+        text: normalizedText,
+        theme: fallbackTheme,
+      }),
+    };
   }
 }
 

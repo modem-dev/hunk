@@ -25,6 +25,7 @@ export {
   compactHighlightedDocumentByteLength,
   compactHighlightedDocumentRunsForLine,
   compactHighlightedDocumentTransferList,
+  cloneCompactHighlightedDocument,
   encodeCompactHighlightedDiff,
   encodeCompactHighlightedDocument,
   validateCompactHighlightedDiff,
