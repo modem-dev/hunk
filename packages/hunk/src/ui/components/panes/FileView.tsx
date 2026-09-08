@@ -112,7 +112,7 @@ function SymbolicFileViewRow({
       }
     }
     // Resolve graphemes once across the complete authored row. Retained tabs pass through so
-    // OpenTUI paints each as the same indivisible two-cell unit used by geometry measurement.
+    // OpenTUI paints each at the same fixed two-cell width used by geometry measurement.
     const displayRuns = preserveCrossSpanGraphemes(paintRuns);
     const chunks: TextChunk[] = displayRuns.map((run) => ({
       __isChunk: true,
