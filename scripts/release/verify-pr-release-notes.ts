@@ -32,6 +32,7 @@ export function isGeneratedReleasePath(filePath: string) {
     filePath === ".changeset/pre.json" ||
     filePath === "CHANGELOG.md" ||
     filePath === "packages/hunk/package.json" ||
+    filePath === "website/releases/notes.json" ||
     CHANGESET_PATTERN.test(filePath) ||
     RELEASE_BENCHMARK_PATTERN.test(filePath)
   );

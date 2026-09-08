@@ -16,6 +16,7 @@ const generatedPaths = [
   ".changeset/old-fix.md",
   "CHANGELOG.md",
   "packages/hunk/package.json",
+  "website/releases/notes.json",
   "benchmarks/release/bench-0.18.0-beta.0.json",
 ];
 
