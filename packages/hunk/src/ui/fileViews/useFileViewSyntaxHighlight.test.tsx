@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
-import { act, StrictMode, useState } from "react";
+import { act, StrictMode, useState, type ReactNode } from "react";
 import { createTestDiffFile } from "../../../../../test/helpers/diff-helpers";
 import type { DiffFile } from "../../core/changeset/model";
 import type {
@@ -37,7 +37,7 @@ type DocumentLoader = (input: DocumentHighlightInput) => Promise<DocumentHighlig
 
 /** Build one immutable fallback with controllable retry semantics. */
 function fallback(
-  reason: "invalid-document" | "highlight-failed" | "unsupported-language",
+  reason: "busy" | "invalid-document" | "highlight-failed" | "unsupported-language",
   retryable = false,
 ) {
   return Object.freeze({
@@ -91,9 +91,19 @@ async function renderHookHarness(
     return null;
   }
 
-  const setup = await testRender(<Harness />, { width: 80, height: 8 });
-  await flush(setup);
+  const setup = await renderTestTree(<Harness />);
   return { current: () => current, setProps, setup };
+}
+
+/** Mount one test tree and settle its initial layout effects inside React act. */
+async function renderTestTree(tree: ReactNode) {
+  let setup: Awaited<ReturnType<typeof testRender>> | undefined;
+  await act(async () => {
+    setup = await testRender(tree, { width: 80, height: 8 });
+    await setup.renderOnce();
+    await Bun.sleep(5);
+  });
+  return setup!;
 }
 
 /** Let layout effects, promises, and short retry timers settle. */
@@ -102,6 +112,21 @@ async function flush(setup: Awaited<ReturnType<typeof testRender>>, delay = 5) {
     await setup.renderOnce();
     await Bun.sleep(delay);
   });
+}
+
+/** Encode one complete single-line highlight for isolated service tests. */
+function compactHighlight(text: string, color = "#ff0000") {
+  return encodeCompactHighlightedDocument(
+    [
+      {
+        type: "element",
+        tagName: "span",
+        properties: { style: `color: ${color}` },
+        children: [{ type: "text", value: text }],
+      },
+    ],
+    "dark",
+  );
 }
 
 /** Return one externally controlled promise. */
@@ -342,9 +367,8 @@ describe("file-view syntax demand", () => {
       );
     }
 
-    const setup = await testRender(<Harness />, { width: 80, height: 8 });
+    const setup = await renderTestTree(<Harness />);
     try {
-      await flush(setup);
       const mountedCalls = calls;
       for (let update = 0; update < 10; update += 1) {
         await act(async () => bump());
@@ -413,10 +437,10 @@ describe("file-view syntax demand", () => {
       await flush(harness.setup);
       expect(signals[0]?.aborted).toBe(true);
       expect(pending).toHaveLength(2);
-      pending[0]!.resolve(fallback("unsupported-language"));
+      await act(async () => pending[0]!.resolve(fallback("unsupported-language")));
       await flush(harness.setup);
       expect(harness.current().size).toBe(0);
-      pending[1]!.resolve(fallback("invalid-document"));
+      await act(async () => pending[1]!.resolve(fallback("invalid-document")));
       await flush(harness.setup);
       expect(harness.current().get("old")?.status).toBe("fallback");
       expect(harness.current().get("old")).toMatchObject({
@@ -491,6 +515,180 @@ describe("file-view syntax demand", () => {
     expect(calls).toBe(2);
     expect(harness.current().get("old")).toMatchObject({ retryable: false });
     await act(async () => harness.setup.renderer.destroy());
+  });
+
+  test("retries an exhausted busy result after demand is removed and restored", async () => {
+    let calls = 0;
+    const recoveryService = createDocumentHighlightService({
+      inlineHighlight: async ({ text }) => compactHighlight(text),
+    });
+    const fileView = resolveTestLayout([documents[0]!], [rows[0]!]);
+    const demandedRows = plannedRows(fileView);
+    const harness = await renderHookHarness(
+      {
+        file,
+        fileView,
+        mountedRows: demandedRows,
+        offloadLargeDiff: false,
+        shouldLoadHighlight: true,
+        theme,
+      },
+      async (input) => {
+        calls += 1;
+        return calls <= 2 ? fallback("busy", true) : recoveryService.highlight(input);
+      },
+      { maxRetries: 1, retryDelayMs: 0 },
+    );
+
+    try {
+      await flush(harness.setup, 10);
+      expect(calls).toBe(2);
+      expect(harness.current().get("old")).toMatchObject({
+        status: "fallback",
+        reason: "busy",
+        retryable: true,
+      });
+      await flush(harness.setup, 10);
+      expect(calls).toBe(2);
+
+      await act(async () =>
+        harness.setProps({
+          file,
+          fileView,
+          mountedRows: [],
+          offloadLargeDiff: false,
+          shouldLoadHighlight: true,
+          theme,
+        }),
+      );
+      await flush(harness.setup);
+      expect(harness.current().size).toBe(0);
+
+      await act(async () =>
+        harness.setProps({
+          file,
+          fileView,
+          mountedRows: demandedRows,
+          offloadLargeDiff: false,
+          shouldLoadHighlight: true,
+          theme,
+        }),
+      );
+      await flush(harness.setup);
+      expect(calls).toBe(3);
+      expect(harness.current().get("old")?.status).toBe("highlighted");
+    } finally {
+      await act(async () => harness.setup.renderer.destroy());
+    }
+  });
+
+  test("bounds 64 demanded documents and recovers busy results after capacity release", async () => {
+    const stressDocuments = Array.from({ length: 64 }, (_, index) => ({
+      id: `document-${index}`,
+      text: `const value${index} = ${index};`,
+      language: "typescript",
+    }));
+    const stressRows = stressDocuments.map(
+      (document, index) =>
+        ({
+          id: `row-${index}`,
+          spans: [
+            {
+              text: document.text,
+              syntax: { documentId: document.id, line: 1 },
+            },
+          ],
+        }) satisfies ExtensionFileViewRow,
+    );
+    const pending: Array<{
+      text: string;
+      work: ReturnType<typeof deferred<ReturnType<typeof compactHighlight>>>;
+    }> = [];
+    let capacityReleased = false;
+    const service = createDocumentHighlightService({
+      maxInFlightEntries: 16,
+      inlineHighlight: ({ text }) => {
+        if (capacityReleased) return Promise.resolve(compactHighlight(text));
+        const work = deferred<ReturnType<typeof compactHighlight>>();
+        pending.push({ text, work });
+        return work.promise;
+      },
+    });
+    const fileView = resolveTestLayout(stressDocuments, stressRows);
+    const allRows = plannedRows(fileView);
+    const harness = await renderHookHarness(
+      {
+        file,
+        fileView,
+        mountedRows: allRows,
+        offloadLargeDiff: false,
+        shouldLoadHighlight: true,
+        theme,
+      },
+      (input) => service.highlight(input),
+      { maxRetries: 0 },
+    );
+
+    try {
+      expect(pending).toHaveLength(16);
+      expect(service.stats()).toMatchObject({
+        inFlight: 16,
+        outstandingEntries: 16,
+      });
+      expect(harness.current().size).toBe(48);
+      expect(
+        [...harness.current().values()].every(
+          (result) => result.status === "fallback" && result.reason === "busy" && result.retryable,
+        ),
+      ).toBe(true);
+
+      await act(async () =>
+        harness.setProps({
+          file,
+          fileView,
+          mountedRows: [],
+          offloadLargeDiff: false,
+          shouldLoadHighlight: true,
+          theme,
+        }),
+      );
+      await flush(harness.setup);
+      expect(harness.current().size).toBe(0);
+
+      capacityReleased = true;
+      await act(async () => {
+        for (const { text, work } of pending) work.resolve(compactHighlight(text));
+      });
+      await flush(harness.setup);
+      expect(service.stats()).toMatchObject({
+        inFlight: 0,
+        outstandingEntries: 0,
+      });
+
+      const previouslyBusyRows = allRows.slice(16, 32);
+      await act(async () =>
+        harness.setProps({
+          file,
+          fileView,
+          mountedRows: previouslyBusyRows,
+          offloadLargeDiff: false,
+          shouldLoadHighlight: true,
+          theme,
+        }),
+      );
+      await flush(harness.setup, 10);
+      expect(harness.current().size).toBe(16);
+      expect(
+        [...harness.current().values()].every((result) => result.status === "highlighted"),
+      ).toBe(true);
+      expect(service.stats().outstandingEntries).toBe(0);
+    } finally {
+      capacityReleased = true;
+      await act(async () => {
+        for (const { text, work } of pending) work.resolve(compactHighlight(text));
+        await harness.setup.renderer.destroy();
+      });
+    }
   });
 
   test("cancels a scheduled retry when demand disappears", async () => {
@@ -627,24 +825,25 @@ describe("file-view syntax demand", () => {
       );
     }
 
-    const setup = await testRender(<Harness />, { width: 80, height: 8 });
+    const setup = await renderTestTree(<Harness />);
     try {
-      await flush(setup);
       expect(inlineCalls).toBe(1);
       await act(async () => hideFirst());
       await flush(setup);
       expect(underlyingSignal?.aborted).toBe(false);
-      underlying.resolve(
-        encodeCompactHighlightedDocument(
-          [
-            {
-              type: "element",
-              tagName: "span",
-              properties: { style: "color: #ff0000" },
-              children: [{ type: "text", value: documents[0]!.text }],
-            },
-          ],
-          "dark",
+      await act(async () =>
+        underlying.resolve(
+          encodeCompactHighlightedDocument(
+            [
+              {
+                type: "element",
+                tagName: "span",
+                properties: { style: "color: #ff0000" },
+                children: [{ type: "text", value: documents[0]!.text }],
+              },
+            ],
+            "dark",
+          ),
         ),
       );
       await flush(setup);

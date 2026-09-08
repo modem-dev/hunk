@@ -157,6 +157,16 @@ export function useFileViewSyntaxHighlight(
       }
     }
 
+    // A demand cycle grants exhausted transient failures one new bounded attempt.
+    const demandedCacheKeys = shouldLoadHighlight
+      ? new Set([...currentRequests.values()].map((request) => request.cacheKey))
+      : new Set<string>();
+    for (const [cacheKey, result] of retainedRef.current) {
+      if (result.retryable && !demandedCacheKeys.has(cacheKey)) {
+        retainedRef.current.delete(cacheKey);
+      }
+    }
+
     if (!shouldLoadHighlight || currentRequests.size === 0) {
       return;
     }
