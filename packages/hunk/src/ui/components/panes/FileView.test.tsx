@@ -98,6 +98,42 @@ describe("FileView custom rows", () => {
     }
   });
 
+  test("paints the same terminal-safe symbolic text that validation measured", async () => {
+    const file = createTestDiffFile({ id: "safe", path: "safe.ts" });
+    const fileView = resolveTestLayout(
+      {
+        rows: [
+          {
+            id: "unsafe",
+            spans: [{ text: "safe\u001b]8;;https://example.com\u0007link\u001b]8;;\u0007\u0000" }],
+          },
+        ],
+        hunkRows: [{ startRow: 0, endRow: 0 }],
+      },
+      20,
+    );
+    const geometry = measureTestGeometry(fileView, 20);
+    const setup = await testRender(
+      <FileView
+        file={file}
+        fileView={fileView}
+        geometry={geometry}
+        selectedHunkIndex={0}
+        theme={resolveTheme("github-dark-default", null)}
+        width={20}
+      />,
+      { width: 20, height: 2 },
+    );
+
+    try {
+      await act(async () => setup.renderOnce());
+      expect(fileView.layout.rows[0]?.spans[0]?.text).toBe("safelink");
+      expect(setup.captureCharFrame()).toContain("safelink");
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
   test("renders a host-owned note immediately after its bound alternate row", async () => {
     const file = createTestDiffFile({ id: "noted", path: "noted.ts" });
     const fileView = resolveTestLayout(

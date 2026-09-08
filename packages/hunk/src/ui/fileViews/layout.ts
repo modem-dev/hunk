@@ -4,6 +4,7 @@ import type {
   ExtensionFileViewRow,
   ExtensionFileViewSourceRange,
 } from "../../extension-api/types";
+import { sanitizeTerminalLine } from "../../lib/terminalText";
 import { wrapSanitizedTextByWidth } from "../lib/text";
 
 /** Resource limits keep one extension layout from exhausting the review stream. */
@@ -138,10 +139,12 @@ export function validateFileViewLayout(
           issue: `rows[${index}] contains invalid span attributes`,
         };
       }
-      const text = span.text;
+      // Snapshot one terminal-safe representation so validation, geometry, and paint cannot
+      // disagree about controls that alter cursor position or terminal state.
+      const text = sanitizeTerminalLine(span.text);
       const tone = span.tone;
       const attributes = span.attributes ? Object.freeze([...span.attributes]) : undefined;
-      textLength += text.length;
+      textLength += span.text.length;
       if (textLength > FILE_VIEW_MAX_TEXT_LENGTH) {
         return {
           valid: false,
