@@ -16,6 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       code: ${{ steps.detect.outputs.code_changed }}
+      nix_lock: ${{ steps.detect.outputs.nix_lock_changed }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -44,6 +45,7 @@ jobs:
             extra-trusted-public-keys = nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
 
       - name: Verify Nix dependency lockfile
+        if: needs.changes.outputs.nix_lock == 'true'
         run: |
           nix run .#update-bun-lock
           if ! git diff --exit-code nix/bun.lock.nix; then
@@ -51,6 +53,8 @@ jobs:
             exit 1
           fi
 
+      # The host check realizes bun2nix paths that the following cross-system
+      # evaluation references, even though that evaluation does not build outputs.
       - name: Check flake outputs
         run: nix flake check --print-build-logs
 
