@@ -1090,7 +1090,7 @@ export async function resolveGitCommitRefAsync(
 }
 
 /** Resolve one tree-ish ref to the exact tree object used for later blob reads. */
-export async function resolveGitTreeRefAsync(
+async function resolveGitTreeRefAsync(
   input: GitBackedInput,
   ref: string,
   options: Omit<RunGitTextOptions, "input" | "args"> = {},
