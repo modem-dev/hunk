@@ -22,6 +22,33 @@ describe("file-view layout validation", () => {
     if (result.valid) expect(result.value.rowHeights).toEqual([3, 2]);
   });
 
+  test("snapshots one terminal-safe span representation for geometry and paint", () => {
+    const result = validateFileViewLayout(
+      {
+        rows: [
+          {
+            id: "unsafe",
+            spans: [
+              { text: "left\u001b]8;;https://example.com\u0007link\u001b]8;;\u0007" },
+              { text: "\u0000\u0085\t界e\u0301🙂" },
+            ],
+          },
+        ],
+        hunkRows: [{ startRow: 0, endRow: 0 }],
+      },
+      1,
+      8,
+    );
+
+    expect(result).toMatchObject({ valid: true });
+    if (!result.valid) return;
+    expect(result.value.layout.rows[0]?.spans.map((span) => span.text)).toEqual([
+      "leftlink",
+      "\t界e\u0301🙂",
+    ]);
+    expect(result.value.rowHeights).toEqual([2]);
+  });
+
   test("returns a deeply immutable host snapshot detached from extension mutation", () => {
     const firstRender = () => "first";
     const secondRender = () => "second";
