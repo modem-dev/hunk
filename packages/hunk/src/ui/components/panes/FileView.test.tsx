@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { TextAttributes } from "@opentui/core";
 import { testRender } from "@opentui/react/test-utils";
 import { act, useState } from "react";
 import { createTestDiffFile } from "../../../../../../test/helpers/diff-helpers";
@@ -6,12 +7,17 @@ import type {
   ExtensionFileViewLayout,
   ExtensionFileViewRowComponentProps,
 } from "../../../extension-api/types";
+import {
+  documentHighlightRunsForLine,
+  loadDocumentHighlight,
+} from "../../diff/documentHighlightService";
 import { measureFileViewGeometry } from "../../fileViews/geometry";
 import { validateFileViewLayout } from "../../fileViews/layout";
 import { buildFileViewRenderPlan } from "../../fileViews/renderPlan";
 import type { ResolvedFileViewLayout } from "../../fileViews/useFileViews";
 import { createVisibleAgentNote } from "../../lib/agentAnnotations";
 import { reviewRowId } from "../../lib/ids";
+import { capturedTestColorToHex } from "../../../../../../test/helpers/test-color-helpers";
 import { resolveTheme } from "../../themes";
 import { FileView, isFileViewRowSelected } from "./FileView";
 
@@ -40,6 +46,28 @@ function measureTestGeometry(fileView: ResolvedFileViewLayout, width: number) {
     plannedRows: buildFileViewRenderPlan(fileView.layout, []).rows,
     width,
   });
+}
+
+/** Return the captured foreground for the first terminal run containing text. */
+function foregroundForText(
+  capture: ReturnType<Awaited<ReturnType<typeof testRender>>["captureSpans"]>,
+  text: string,
+) {
+  const span = capture.lines
+    .flatMap((line) => line.spans)
+    .find((candidate) => candidate.text.includes(text));
+  return capturedTestColorToHex(span?.fg)?.toLowerCase();
+}
+
+/** Return the captured background for the first terminal run containing text. */
+function backgroundForText(
+  capture: ReturnType<Awaited<ReturnType<typeof testRender>>["captureSpans"]>,
+  text: string,
+) {
+  const span = capture.lines
+    .flatMap((line) => line.spans)
+    .find((candidate) => candidate.text.includes(text));
+  return capturedTestColorToHex(span?.bg)?.toLowerCase();
 }
 
 const layout: ExtensionFileViewLayout = {
@@ -98,6 +126,126 @@ describe("FileView custom rows", () => {
     }
   });
 
+  test("paints syntax foregrounds without changing retained text, geometry, or row backgrounds", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const code = "const value = 42;";
+    const file = createTestDiffFile({ id: "syntax", path: "syntax.ts" });
+    const highlighted = await loadDocumentHighlight({
+      text: code,
+      path: file.path,
+      language: "typescript",
+      theme,
+      offloadLargeDiff: false,
+    });
+    const syntaxForeground = documentHighlightRunsForLine(highlighted, 0).find((run) => run.fg)?.fg;
+    expect(syntaxForeground).toBeDefined();
+
+    const fileView = resolveTestLayout(
+      {
+        codeDocuments: [{ id: "code", text: code, language: "typescript" }],
+        rows: [
+          {
+            id: "syntax-row",
+            spans: [
+              { text: "1 ", tone: "muted" },
+              {
+                text: code,
+                tone: "removed",
+                attributes: ["bold", "underline"],
+                syntax: { documentId: "code", line: 1 },
+              },
+            ],
+          },
+        ],
+        hunkRows: [{ startRow: 0, endRow: 0 }],
+      },
+      10,
+    );
+    const geometry = measureTestGeometry(fileView, 10);
+    let enableHighlight = () => {};
+    function Harness() {
+      const [shouldLoadHighlight, setShouldLoadHighlight] = useState(false);
+      enableHighlight = () => setShouldLoadHighlight(true);
+      return (
+        <FileView
+          file={file}
+          fileView={fileView}
+          geometry={geometry}
+          selectedHunkIndex={0}
+          shouldLoadHighlight={shouldLoadHighlight}
+          theme={theme}
+          width={10}
+        />
+      );
+    }
+
+    let setup: Awaited<ReturnType<typeof testRender>> | undefined;
+    await act(async () => {
+      setup = await testRender(<Harness />, {
+        width: 10,
+        height: geometry.bodyHeight,
+      });
+      await setup.renderOnce();
+    });
+    await act(async () => {
+      await setup!.renderOnce();
+    });
+
+    try {
+      const plainFrame = setup!.captureCharFrame();
+      const plainCapture = setup!.captureSpans();
+      const plainHeight = setup!.renderer.root.findDescendantById(
+        reviewRowId("file-view:syntax-row"),
+      )?.height;
+      expect(foregroundForText(plainCapture, "const")).toBe(theme.fileDeleted.toLowerCase());
+
+      await act(async () => {
+        enableHighlight();
+        await setup!.renderOnce();
+        await Bun.sleep(5);
+      });
+      await act(async () => {
+        await setup!.renderOnce();
+        await Bun.sleep(5);
+      });
+      const frame = setup!.captureCharFrame();
+      const capture = setup!.captureSpans();
+      const retainedFrameText = (value: string) =>
+        value
+          .split("\n")
+          .map((line) => line.trimEnd())
+          .join("");
+      expect(retainedFrameText(plainFrame)).toContain(`1 ${code}`);
+      expect(retainedFrameText(frame)).toBe(retainedFrameText(plainFrame));
+      expect(
+        setup!.renderer.root.findDescendantById(reviewRowId("file-view:syntax-row"))?.height,
+      ).toBe(plainHeight);
+      expect(plainHeight).toBe(geometry.rowBounds[0]?.height);
+      expect(foregroundForText(capture, "1 ")).toBe(theme.muted.toLowerCase());
+      expect(
+        capture.lines
+          .flatMap((line) => line.spans)
+          .some(
+            (span) =>
+              capturedTestColorToHex(span.fg)?.toLowerCase() === syntaxForeground?.toLowerCase(),
+          ),
+      ).toBe(true);
+      expect(backgroundForText(capture, "const")).toBe(theme.selectedHunk.toLowerCase());
+      expect(
+        capture.lines
+          .flatMap((line) => line.spans)
+          .filter((span) => /const|value|42/u.test(span.text))
+          .every(
+            (span) =>
+              (span.attributes & (TextAttributes.BOLD | TextAttributes.UNDERLINE)) ===
+              (TextAttributes.BOLD | TextAttributes.UNDERLINE),
+          ),
+      ).toBe(true);
+    } finally {
+      await act(async () => setup!.renderer.destroy());
+    }
+  });
+
   test("paints the same terminal-safe symbolic text that validation measured", async () => {
     const file = createTestDiffFile({ id: "safe", path: "safe.ts" });
     const fileView = resolveTestLayout(
@@ -105,7 +253,11 @@ describe("FileView custom rows", () => {
         rows: [
           {
             id: "unsafe",
-            spans: [{ text: "safe\u001b]8;;https://example.com\u0007link\u001b]8;;\u0007\u0000" }],
+            spans: [
+              {
+                text: "safe\u001b]8;;https://example.com\u0007link\u001b]8;;\u0007\u0000",
+              },
+            ],
           },
         ],
         hunkRows: [{ startRow: 0, endRow: 0 }],
@@ -152,7 +304,11 @@ describe("FileView custom rows", () => {
     const plan = buildFileViewRenderPlan(fileView.layout, [
       createVisibleAgentNote([], {
         id: "note",
-        annotation: { id: "note", summary: "Review bound output", newRange: [1, 1] },
+        annotation: {
+          id: "note",
+          summary: "Review bound output",
+          newRange: [1, 1],
+        },
       }),
     ]);
     const geometry = measureFileViewGeometry({
@@ -249,7 +405,10 @@ describe("FileView custom rows", () => {
         height: 2,
         selected: true,
         rowIndex: 1,
-        theme: expect.objectContaining({ appearance: "dark", text: expect.any(String) }),
+        theme: expect.objectContaining({
+          appearance: "dark",
+          text: expect.any(String),
+        }),
       });
       expect(Object.isFrozen(paintProps.at(-1)?.theme)).toBe(true);
     } finally {
@@ -269,7 +428,11 @@ describe("FileView custom rows", () => {
             height: 1,
             render: ({ theme }) => {
               const [token] = useState(() => ++mountSequence);
-              paints.push({ appearance: theme.appearance, text: theme.text, token });
+              paints.push({
+                appearance: theme.appearance,
+                text: theme.text,
+                token,
+              });
               return <text content={`${theme.appearance} ${token}`} style={{ fg: theme.text }} />;
             },
           },
@@ -335,7 +498,12 @@ describe("FileView custom rows", () => {
       ],
       hunkRows: [{ startRow: 0, endRow: 0 }],
     };
-    const file = createTestDiffFile({ id: "stateful", path: "state.ts", before: "a", after: "b" });
+    const file = createTestDiffFile({
+      id: "stateful",
+      path: "state.ts",
+      before: "a",
+      after: "b",
+    });
     const initial = resolveTestLayout(statefulLayout, 20);
     let selectHunk: (index: number) => void = () => {};
     let showRow: (visible: boolean) => void = () => {};
@@ -403,7 +571,9 @@ describe("FileView custom rows", () => {
         id: `row-${index}`,
         spans: [{ text: `fallback ${index}` }],
         ...(index === 500
-          ? { sourceRanges: [{ side: "new" as const, range: [500, 500] as const }] }
+          ? {
+              sourceRanges: [{ side: "new" as const, range: [500, 500] as const }],
+            }
           : {}),
         component: {
           height: 1,
@@ -519,12 +689,36 @@ describe("FileView custom rows", () => {
     }
   });
 
-  test("contains a component render error to its symbolic row fallback", async () => {
+  test("contains a component error while syntax-painting only its symbolic fallback", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const code = "const fallback = true;";
+    const file = createTestDiffFile({
+      id: "broken",
+      path: "broken.ts",
+      before: "a",
+      after: "b",
+    });
+    const highlighted = await loadDocumentHighlight({
+      text: code,
+      path: file.path,
+      language: "typescript",
+      theme,
+      offloadLargeDiff: false,
+    });
+    const syntaxForeground = documentHighlightRunsForLine(highlighted, 0).find((run) => run.fg)?.fg;
+    expect(syntaxForeground).toBeDefined();
     const brokenLayout: ExtensionFileViewLayout = {
+      codeDocuments: [{ id: "code", text: code, language: "typescript" }],
       rows: [
         {
           id: "broken",
-          spans: [{ text: "SAFE FALLBACK" }],
+          spans: [
+            {
+              text: code,
+              tone: "removed",
+              syntax: { documentId: "code", line: 1 },
+            },
+          ],
           component: {
             height: 2,
             render: () => {
@@ -535,15 +729,13 @@ describe("FileView custom rows", () => {
       ],
       hunkRows: [{ startRow: 0, endRow: 0 }],
     };
-    const file = createTestDiffFile({
-      id: "broken",
-      path: "broken.ts",
-      before: "a",
-      after: "b",
-    });
     const originalConsoleError = console.error;
     console.error = () => {};
-    const failures: Array<{ message: string; rowId: string; layoutGeneration: number }> = [];
+    const failures: Array<{
+      message: string;
+      rowId: string;
+      layoutGeneration: number;
+    }> = [];
     const fileView = resolveTestLayout(brokenLayout, 20, 7);
     const setup = await testRender(
       <FileView
@@ -551,7 +743,8 @@ describe("FileView custom rows", () => {
         fileView={fileView}
         geometry={measureTestGeometry(fileView, 20)}
         selectedHunkIndex={0}
-        theme={resolveTheme("github-dark-default", null)}
+        shouldLoadHighlight
+        theme={theme}
         width={20}
         onRowFailure={(failure) => failures.push(failure)}
       />,
@@ -559,8 +752,24 @@ describe("FileView custom rows", () => {
     );
 
     try {
-      await act(async () => setup.renderOnce());
-      expect(setup.captureCharFrame()).toContain("SAFE FALLBACK");
+      await act(async () => {
+        await setup.renderOnce();
+        await Bun.sleep(5);
+      });
+      await act(async () => {
+        await setup.renderOnce();
+        await Bun.sleep(5);
+      });
+      expect(setup.captureCharFrame()).toContain("const fallback");
+      expect(
+        setup
+          .captureSpans()
+          .lines.flatMap((line) => line.spans)
+          .some(
+            (span) =>
+              capturedTestColorToHex(span.fg)?.toLowerCase() === syntaxForeground?.toLowerCase(),
+          ),
+      ).toBe(true);
       expect(failures).toEqual([
         expect.objectContaining({
           message: "broken custom row",
