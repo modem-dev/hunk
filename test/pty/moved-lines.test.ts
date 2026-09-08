@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { DEFAULT_DARK_THEME_ID, resolveTheme } from "../../src/ui/themes";
+import { DEFAULT_DARK_THEME_ID, resolveTheme } from "../../packages/hunk/src/ui/themes";
 import { createPtyHarness } from "./harness";
 
 const harness = createPtyHarness();
@@ -18,7 +18,7 @@ afterEach(() => {
  * for the same reason: each combination reaches the palette through its own cell builder.
  */
 describe("PTY moved-line coloring", () => {
-  for (const layout of ["stack", "split"] as const) {
+  for (const layout of ["unified", "split"] as const) {
     for (const wrap of ["--wrap", "--no-wrap"] as const) {
       test(`tints moved rows apart from ordinary added rows in ${layout} with ${wrap}`, async () => {
         const fixture = harness.createMovedLinesRepoFixture();

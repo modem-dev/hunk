@@ -7,7 +7,7 @@ import type { Key, Session } from "tuistory";
 
 const integrationDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(integrationDir, "../..");
-const sourceEntrypoint = join(repoRoot, "src/main.tsx");
+const sourceEntrypoint = join(repoRoot, "packages/hunk/src/main.tsx");
 // Hunk renders atomically and tests wait on concrete UI predicates, so the safer 200ms default is unnecessary.
 const tuistoryIdleDelayMs = 60;
 
@@ -515,13 +515,12 @@ export function createPtyHarness() {
     return { dir, before, after };
   }
 
-  /** Build direct files whose watched side can be replaced atomically during a PTY test. */
+  /** Build direct files outside a repository for atomic-save watch coverage. */
   function createWatchFilePair() {
     const dir = makeTempDir("hunk-tuistory-watch-files-");
     const before = join(dir, "before.ts");
     const after = join(dir, "after.ts");
 
-    runGit(["init"], dir);
     writeText(before, "export const watchedValue = 'before';\n");
     writeText(after, "export const watchedValue = 'initial change';\n");
 

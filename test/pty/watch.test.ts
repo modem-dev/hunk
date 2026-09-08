@@ -16,7 +16,7 @@ describe("PTY watch mode", () => {
   test("passively refreshes direct files after an atomic save", async () => {
     const fixture = harness.createWatchFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", "--files", fixture.before, fixture.after, "--watch", "--mode", "stack"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--watch", "--mode", "unified"],
       cwd: fixture.dir,
       cols: 120,
       rows: 16,
@@ -44,7 +44,7 @@ describe("PTY watch mode", () => {
   test("passively refreshes a tracked file in a linked Git worktree", async () => {
     const fixture = harness.createLinkedWorktreeWatchFixture();
     const session = await harness.launchHunk({
-      args: ["diff", "--watch", "--mode", "stack"],
+      args: ["diff", "--watch", "--mode", "unified"],
       cwd: fixture.worktreeDir,
       cols: 120,
       rows: 16,

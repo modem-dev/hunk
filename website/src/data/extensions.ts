@@ -66,6 +66,15 @@ export type ExtensionEntry = ExtensionListing & ExtensionActivity;
  */
 export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
   {
+    repo: "modem-dev/hunk-gh",
+    name: "hunk-gh",
+    summary:
+      "Opens a GitHub pull request, commit, or comparison diff in Hunk straight from the command line, without installing the GitHub CLI.",
+    categories: ["Command"],
+    version: "0.1.0",
+    apiVersion: 10,
+  },
+  {
     repo: "modem-dev/hunk-hg",
     name: "hunk-hg",
     summary:
@@ -149,6 +158,15 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     apiVersion: 6,
   },
   {
+    repo: "jacegodk/hunk-viewed",
+    name: "hunk-viewed",
+    summary:
+      "GitLab-style viewed marks: fold viewed files, browse one at a time, and skip what's already reviewed, with marks kept between runs.",
+    categories: ["Pane", "File view", "Command", "Keyboard mode"],
+    version: "0.1.0",
+    apiVersion: 16,
+  },
+  {
     repo: "joshedler/hunk-git-lite",
     name: "hunk-git-lite",
     summary:
@@ -184,6 +202,15 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     apiVersion: 6,
   },
   {
+    repo: "rschoch/hunk-compact-filenav",
+    name: "hunk-compact-filenav",
+    summary:
+      "A smart alternative files pane for Hunk that shows compact file paths, useful when viewing deeply nested file and package structures.",
+    categories: ["Pane", "Command"],
+    version: "0.1.0",
+    apiVersion: 16,
+  },
+  {
     repo: "sadick254/hunk-commit-log",
     name: "hunk-commit-log",
     summary:
@@ -201,20 +228,16 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     version: "0.1.0",
     apiVersion: 1,
   },
+  {
+    repo: "victor-software-house/hunk-history",
+    name: "hunk-history",
+    summary:
+      "Browses live Git history in Files/History tabs, with immediate commit review, double-click ranges, and staged or unstaged comparisons.",
+    categories: ["Pane", "Command", "Changeset transform"],
+    version: "0.0.4",
+    apiVersion: 16,
+  },
 ];
-
-/**
- * Serialize one value for a raw `<script type="application/ld+json">` body.
- *
- * `JSON.stringify` leaves `<` alone, so a listing whose text contained
- * `</script>` would close the element and turn the rest of the payload into
- * markup. Escaping `<` as its JSON unicode escape keeps the document valid
- * JSON-LD while making that impossible. The catalog is hand-reviewed today and
- * will be generated from repository descriptions nobody reviews.
- */
-export function toJsonLdScriptBody(value: unknown) {
-  return JSON.stringify(value).replaceAll("<", "\\u003c");
-}
 
 /** GitHub account that publishes one listing. */
 export function ownerOf(listing: ExtensionListing) {

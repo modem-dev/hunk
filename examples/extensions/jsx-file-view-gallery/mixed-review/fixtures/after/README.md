@@ -30,7 +30,7 @@ The repository file may define a theme, default layout, ignored paths, and exten
 ```json
 {
   "theme": "midnight",
-  "layout": "stack",
+  "layout": "unified",
   "ignored": ["dist/**"],
   "extensions": ["./review-extensions"]
 }

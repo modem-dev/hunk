@@ -1,6 +1,7 @@
 ---
 import BrandFooter from "../components/BrandFooter.astro";
 import BrandHeader from "../components/BrandHeader.astro";
+import PageHead from "../components/PageHead.astro";
 import {
   avatarUrl,
   categoryFacets,
@@ -9,7 +10,6 @@ import {
   loadExtensionEntries,
   ownerOf,
   repositoryUrl,
-  toJsonLdScriptBody,
 } from "../data/extensions";
 import "../styles/marketing.css";
 import "../styles/extensions.css";
@@ -45,38 +45,15 @@ const schema = {
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width" />
-    <meta name="theme-color" content="#f4f1ea" />
-    <meta name="description" content={description} />
-    <meta
-      name="keywords"
-      content="hunk extensions, terminal diff, code review, TypeScript extensions, hunk-extension"
+    <PageHead
+      title={title}
+      description={description}
+      keywords="hunk extensions, terminal diff, code review, TypeScript extensions, hunk-extension"
+      path="/extensions/"
+      ogImage="https://hunk.dev/extensions/og.png"
+      ogImageAlt="Hunk extensions: community extensions for panes, themes, highlighters, and more."
+      schema={schema}
     />
-    <meta name="author" content="Modem" />
-    <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="hunk" />
-    <meta property="og:title" content={title} />
-    <meta property="og:description" content={description} />
-    <meta property="og:url" content="https://hunk.dev/extensions/" />
-    <meta property="og:image" content="https://hunk.dev/extensions/og.png" />
-    <meta property="og:image:width" content="1200" />
-    <meta property="og:image:height" content="630" />
-    <meta
-      property="og:image:alt"
-      content="Hunk extensions: community extensions for panes, themes, highlighters, and more."
-    />
-    <meta property="og:locale" content="en_US" />
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content={title} />
-    <meta name="twitter:description" content={description} />
-    <meta name="twitter:image" content="https://hunk.dev/extensions/og.png" />
-    <link rel="canonical" href="https://hunk.dev/extensions/" />
-    <link rel="icon" href="/icon.png" type="image/png" />
-    <link rel="apple-touch-icon" href="/apple-icon.png" />
-    <title>{title}</title>
-    <script type="application/ld+json" is:inline set:html={toJsonLdScriptBody(schema)}></script>
-    <script is:inline defer src="/_vercel/insights/script.js"></script>
   </head>
   <body>
     <div class="marketing">

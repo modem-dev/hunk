@@ -5,8 +5,8 @@ Demonstrates a generic top-level command tree. The handler owns every token belo
 Run it directly from this checkout:
 
 ```bash
-bun run src/main.tsx --extension ./examples/extensions/cli-tools cli-tools status
-bun run src/main.tsx --extension ./examples/extensions/cli-tools cli-tools review
+bun run packages/hunk/src/main.tsx --extension ./examples/extensions/cli-tools cli-tools status
+bun run packages/hunk/src/main.tsx --extension ./examples/extensions/cli-tools cli-tools review
 ```
 
 `status` writes to stdout and exits. `review` performs signal-aware asynchronous preprocessing, writes progress to stderr, then delegates to `hunk diff`. A delegating handler must not write stdout or read stdin because the built-in command or TUI takes ownership of both.

@@ -1,11 +1,16 @@
 # Browser review rebuild plan
 
+> **Current status (2026-09-06; after Phase 4).** Shared review semantics, producer publication, the broker
+> mirror, bounded resources, capability-authenticated HTTP actions, and SSE have landed. No browser
+> client, served review page, browser assets, or browser CLI entrypoint exists yet. Phases 5 and 6
+> remain planned. Semantic deep-link grammar is deferred until its first browser/opener consumer.
+
 The synchronized browser-review feature (originally prototyped in one large branch) lands as a
 stack of small, independently reviewable PRs. Its Hunk-owned capability, resource, and semantic
 protocol remains separate from the generic per-application daemon contract in
 [`session-broker-sdk.md`](session-broker-sdk.md). Each phase has a hard gate and stands on the
 previous one. The seam contract — shared primitives stay renderer-free and platform-neutral —
-is enforced by `scripts/source-boundaries.test.ts`, whose debt lists may only shrink.
+is enforced by `scripts/quality/source-boundaries.test.ts`, whose debt lists may only shrink.
 
 Each phase lists the audit findings it repays (`browser-review-seam-audit.md`, ids A1–G5). A
 finding whose duplicate sites span phases is checked off when its **last** site converts; until
@@ -15,20 +20,20 @@ Phase 6 carries the `minor` changeset announcing the feature.
 
 ## Phase 0 — seam contract and guardrails (this doc)
 
-- Boundary gates for `src/core/review/` (the shared review model), `src/session/reviewProtocol.ts`
-  (the wire schema), and `src/web/` (the browser client). The gates tolerate absent trees, so
+- Boundary gates for `packages/hunk/src/core/review/` (the shared review model), `packages/hunk/src/session/reviewProtocol.ts`
+  (the wire schema), and `packages/hunk/src/web/` (the browser client). The gates tolerate absent trees, so
   they land ahead of the code they constrain.
 - A shrink-only debt map for the Node-only primitives the prototype's model files still carry;
   each entry must be repaid with a platform-neutral implementation before a browser bundle may
   import that file.
 - The existing architecture boundaries stay at full strength. The prototype relocated bundled
-  VCS providers into `src/core/vcs/` and weakened this suite to compensate; that relocation must
+  VCS providers into `packages/hunk/src/core/vcs/` and weakened this suite to compensate; that relocation must
   not ride along with any rebuild phase — extraction PRs land against the restored gates.
 
 ## Phase 1 — review model + terminal adoption (three PRs)
 
 1. **Review store**: `state / actions / reducer / store / intents / selectors` in
-   `src/core/review/`, with `useReviewController` / `App` / `AppHost` refactored onto it in the
+   `packages/hunk/src/core/review/`, with `useReviewController` / `App` / `AppHost` refactored onto it in the
    same PR. Behavior-neutral; existing PTY integration tests must pass untouched.
 2. **Review document projection + diff geometry**: `document / identity / sourceIdentity /
 anchors / contentManifest / notes / expansion / reconcile / jsonStream` plus the geometry
@@ -39,9 +44,10 @@ anchors / contentManifest / notes / expansion / reconcile / jsonStream` plus the
 3. **Navigation intents + command catalog**: `selection/move` / `selection/select-file` and
    the shared navigation/reveal/note selectors; the agent runtime's `navigateSession` deleted
    in favor of the shared walk; the command catalog split with semantic commands lowered to
-   intents; the semantic address grammar.
+   intents. A semantic address grammar landed here and was later removed because it had no
+   consumer; recreate it beside the first Phase 5 or 6 consumer.
 
-Repays: A1–A10 (PR 2); B1–B9, B11, F1–F3, G3 core grammar (PR 3); D2 core and terminal sites.
+Repays: A1–A10 (PR 2); B1–B9, B11, F1–F3 (PR 3); D2 core and terminal sites. G3's first grammar was later removed as unused.
 B-findings with browser sites stay open until Phase 5 consumes the selectors.
 Gate: ladder rungs 1–4 — tombstones appended for every deleted copy, terminal planner
 registered in the conformance harness, adversarial fixtures landed per repaid finding, and the
@@ -49,9 +55,11 @@ existing PTY suite passing untouched.
 
 ## Phase 2 — producer runtime
 
-`src/app/reviewSessionRuntime.ts`: generations, snapshot serving, resource materialization,
-serving the existing `hunk session` surface only. Resource read failures map to distinct error
-codes (integrity failures are never collapsed into `unknown-resource`).
+`packages/hunk/src/app/review/producer.ts` owns generations, snapshot serving, and resource
+materialization. `packages/hunk/src/app/session/reviewRuntime.ts` mounts the producer and broker
+client for an interactive session. This phase serves the existing `hunk session` surface only.
+Resource read failures map to distinct error codes; integrity failures are never collapsed into
+`unknown-resource`.
 
 Repays: D1 and D4 producer/snapshot sites (helpers land in core beside the model; remaining
 sites convert in Phase 3); D5 producer sites.
@@ -63,7 +71,9 @@ untouched (rung 4).
 `reviewProtocol.ts`, broker `wire.ts` validation, broker review mirror, `reviewResourceCache`
 (bounded in-flight budget). Patch reconstruction for `hunk session review --include-patch` uses
 bounded-parallel loads from day one. Valuable without any web UI: agents get chunked,
-digest-verified, memory-bounded resource access. The wire vocabulary is derived from
+digest-verified, memory-bounded resource access. Optional extension-delegated review identity rides
+in bounded registration metadata and projects into list, context, and review snapshots; it never
+enters `ReviewDocumentV1` or creates a remote reload/provider capability. The wire vocabulary is derived from
 `ReviewIntent` (B12) and carries `expandedLineProof` (B10) and actor identity (G2) from its
 first version so the browser never needs a schema break.
 
@@ -174,7 +184,7 @@ browser mirrors the terminal theme.
 
 ## Commands and keyboard shortcuts in the browser
 
-The terminal command system (`src/ui/lib/appCommands.ts`) fuses three separable things per
+The terminal command system (`packages/hunk/src/ui/lib/appCommands.ts`) fuses three separable things per
 command: identity (id, title, chords), binding (terminal `KeyEvent` matching), and effect
 (closures over live App state). Making commands work in the browser means splitting them, not
 transporting them:
@@ -212,7 +222,7 @@ allowlist design exists.
 Import gates prove code _may_ use a primitive, not that it _does_ — a consumer can silently
 re-derive. Every phase therefore passes the same five-rung ladder, and each rung is mechanical:
 
-1. **Boundary gates** (every phase, exists today): `scripts/source-boundaries.test.ts` —
+1. **Boundary gates** (every phase, exists today): `scripts/quality/source-boundaries.test.ts` —
    import containment, shrink-only debt lists, and the extracted-duplicate tombstone list.
    Repaying an audit finding means deleting the duplicate copies **and appending their paths to
    the tombstone list in the same PR**; a resurrected path fails CI forever after.

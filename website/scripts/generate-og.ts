@@ -38,7 +38,7 @@ const fontFile = join(
   "jetbrains-mono-latin-wght-normal.woff2",
 );
 
-/** Mirrors `SocialCard` in `scripts/generate-changelog.ts`. */
+/** Mirrors `SocialCard` in `scripts/generate/generate-changelog.ts`. */
 type SocialCard = {
   slug: string;
   title: string;

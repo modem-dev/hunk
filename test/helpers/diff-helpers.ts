@@ -1,7 +1,13 @@
 import { parseDiffFromFile } from "@pierre/diffs";
-import type { FileSourceFetcher, FileSourceSide } from "../../src/core/changeset/fileSource";
-import type { DiffFile } from "../../src/core/changeset/model";
-import type { AgentAnnotation, AgentFileContext } from "../../src/extension-api/types";
+import type {
+  FileSourceFetcher,
+  FileSourceSide,
+} from "../../packages/hunk/src/core/changeset/fileSource";
+import type { DiffFile } from "../../packages/hunk/src/core/changeset/model";
+import type {
+  AgentAnnotation,
+  AgentFileContext,
+} from "../../packages/hunk/src/extension-api/types";
 
 function collectChangeStats(metadata: DiffFile["metadata"]) {
   let additions = 0;

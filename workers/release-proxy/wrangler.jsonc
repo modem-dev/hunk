@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json.schemastore.org/wrangler.json",
+  "name": "hunk-release-proxy",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  "routes": [{ "pattern": "updates.hunk.dev", "custom_domain": true }],
+  "observability": { "enabled": true },
+}

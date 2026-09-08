@@ -15,7 +15,8 @@ command ids to the keys you want them on:
 Every id starts with the name of whoever owns the command: Hunk's own commands
 live under `hunk.`, and an extension's live under its extension id. That split
 is structural — `hunk` is a reserved extension id, so an extension can never
-mint a command id that shadows a built-in, whatever Hunk adds later.
+mint a command id that shadows a built-in, whatever Hunk adds later. Extension commands currently
+run on review surfaces; history resolves its built-in command set without claiming review-only extension chords.
 
 Rules worth knowing:
 
@@ -28,6 +29,9 @@ Rules worth knowing:
 - Two entries claiming one chord is a conflict: the first in the file wins and
   the session reports the other. Unknown command ids and unusable chords are
   reported the same way, and the rest of the table still applies.
+- **Escape clears an active visual selection contextually** after overlays and
+  extension modes have had their normal ownership. Without a selection, Escape
+  remains available to extension commands because clear-selection is unbound.
 
 Chords are `ctrl`, `alt`/`option`, `cmd`/`meta`, and `shift` joined with `+`
 around a base key: a character (`"y"`, `"["`), an uppercase letter for its
@@ -35,7 +39,10 @@ shifted form (`"G"`), or a named key (`"tab"`, `"pageup"`, `"left"`, `"f2"`).
 `shift` applies to letters and named keys only — for a shifted symbol or digit,
 write the character the shift produces (`"!"`, not `"shift+1"`), since that is
 what terminals report. `ctrl+<letter>` also matches an unnamed bare control
-byte; named Tab and Enter events stay distinct.
+byte; named Tab and Enter events stay distinct. `alt`/`option` matches both
+explicit Alt events and the Escape-prefixed form used by legacy terminals. A
+legacy terminal cannot distinguish Alt from Meta, so `alt+n` and `meta+n` may
+overlap there; Kitty keyboard events keep them distinct.
 
 Inline saved notes also expose clickable **Edit**, **Reply**, and (for reply-free user notes)
 **Delete** actions. `E` edits the first editable user note in the selected hunk and `R` replies
@@ -44,6 +51,57 @@ product depth limit. Static sidecar annotations are not reply targets, and a par
 deleted until its replies are removed.
 
 The built-in commands and the keys they ship with:
+
+On a terminal, `hunk log` opens its read-only history browser automatically. Its `hunk.history.*`
+commands use the same configurable keybinding resolver as review while retaining history-specific effects.
+Shared application commands such as `hunk.app.quit`, `hunk.app.toggleHelp`, and
+`hunk.view.openThemeSelector` keep the same ids on both surfaces. `F10` opens File, View, Navigate, Commit, and Help menus;
+View includes Hunk's shared theme selector and an optional **Graph view** that replaces the default
+day-grouped timeline with commit-topology lanes. It uses `Up`/`Down` or `j`/`k` to move; press `v` first to
+extend a contiguous commit selection with those same keys. `Shift+Up`/`Shift+Down` or uppercase `K`/`J` extend
+directly, and `Escape` collapses the selection. `PageUp`/`PageDown`, `b`/`f`, or `Shift+Space`/`Space` page
+through history; `u`/`d` or `Ctrl-U`/`Ctrl-D` move by half a page; `g`/`G` or `Home`/`End` jump,
+`/` to search, `n`/`N` for matches, `t` to choose a theme, `r` to refresh, `y` to copy the focused commit's full id,
+`Enter` to open the selection in normal Hunk review, and `q` or `Ctrl-C` to quit. With a mouse, Shift-click a row to extend the
+selection when the terminal forwards modifiers, click a commit id to open it immediately, click the adjacent copy
+icon to copy its full immutable id, click elsewhere on a row to select it, or double-click a row to open it.
+Range selection is unavailable with `--all` or author, message, date, and path filters because those traversals
+can interleave unrelated commits or hide intermediate commits. Quitting the opened review returns to the retained history selection and viewport. The Commit menu's
+**Compare with first parent** and **Compare with parent…** actions compare the selected commit against
+an ordered provider-owned parent; they do not navigate the history selection to that parent.
+
+History-specific commands:
+
+| Command id                          | Does                         | Default keys                 |
+| ----------------------------------- | ---------------------------- | ---------------------------- |
+| `hunk.history.openSelection`        | Open the selected commit(s)  | `enter`                      |
+| `hunk.history.copyRevision`         | Copy the focused commit id   | `y`                          |
+| `hunk.history.refresh`              | Refresh repository history   | `r`                          |
+| `hunk.history.previousCommit`       | Move to the previous commit  | `up`, `k`                    |
+| `hunk.history.nextCommit`           | Move to the next commit      | `down`, `j`                  |
+| `hunk.history.startVisualSelection` | Start visual selection       | `v`                          |
+| `hunk.history.clearSelection`       | Clear visual selection       | `escape`                     |
+| `hunk.history.extendPrevious`       | Extend selection upward      | `shift+up`, `K`              |
+| `hunk.history.extendNext`           | Extend selection downward    | `shift+down`, `J`            |
+| `hunk.history.pageUp`               | Move up one page             | `pageup`, `b`, `shift+space` |
+| `hunk.history.pageDown`             | Move down one page           | `pagedown`, `space`, `f`     |
+| `hunk.history.halfPageUp`           | Move up half a page          | `u`, `ctrl+u`                |
+| `hunk.history.halfPageDown`         | Move down half a page        | `d`, `ctrl+d`                |
+| `hunk.history.jumpToFirst`          | Jump to the first commit     | `home`, `g`                  |
+| `hunk.history.jumpToLast`           | Jump to the last commit      | `end`, `G`                   |
+| `hunk.history.search`               | Search history               | `/`                          |
+| `hunk.history.nextMatch`            | Select the next match        | `n`                          |
+| `hunk.history.previousMatch`        | Select the previous match    | `N`                          |
+| `hunk.history.toggleGraph`          | Toggle graph presentation    | _(none)_                     |
+| `hunk.history.toggleUnicode`        | Toggle Unicode graph lines   | _(none)_                     |
+| `hunk.history.toggleAuthor`         | Toggle author metadata       | _(none)_                     |
+| `hunk.history.toggleDate`           | Toggle date metadata         | _(none)_                     |
+| `hunk.history.toggleDecorations`    | Toggle ref decorations       | _(none)_                     |
+| `hunk.history.openFirstParent`      | Compare with first parent    | _(none)_                     |
+| `hunk.history.openParent`           | Choose a parent to compare   | _(none)_                     |
+| `hunk.history.showAbout`            | Show application information | _(none)_                     |
+
+Review and shared commands:
 
 | Command id                                     | Does                                           | Default keys                 |
 | ---------------------------------------------- | ---------------------------------------------- | ---------------------------- |
@@ -55,7 +113,10 @@ The built-in commands and the keys they ship with:
 | `hunk.review.alignCurrentLineBottom`           | Align current line to viewport bottom          | _(none)_                     |
 | `hunk.review.alignCurrentLineCenter`           | Center current line in viewport                | _(none)_                     |
 | `hunk.review.alignCurrentLineTop`              | Align current line to viewport top             | _(none)_                     |
-| `hunk.review.editActiveNote`                   | Edit the active review note                    | `E`                          |
+| `hunk.review.clearSelection`                   | Clear the active visual selection              | _(none)_                     |
+| `hunk.review.copySelection`                    | Copy the active visual selection               | `y`                          |
+| `hunk.review.deleteActiveNote`                 | Delete active review note                      | `D`                          |
+| `hunk.review.editActiveNote`                   | Edit active review note                        | `E`                          |
 | `hunk.review.editSelectedFile`                 | Open the selected file in your editor          | `e`                          |
 | `hunk.review.focusFilter`                      | Focus the file filter                          | `/`                          |
 | `hunk.review.halfPageDown`                     | Scroll down half a page                        | `d`, `ctrl+d`                |
@@ -66,19 +127,22 @@ The built-in commands and the keys they ship with:
 | `hunk.review.nextAnnotatedHunk`                | Next annotated hunk                            | `}`                          |
 | `hunk.review.nextFile`                         | Next file                                      | `.`                          |
 | `hunk.review.nextHunk`                         | Next hunk                                      | `]`                          |
+| `hunk.review.nextNote`                         | Next review note                               | `n`                          |
 | `hunk.review.pageDown`                         | Scroll down one page                           | `pagedown`, `space`, `f`     |
 | `hunk.review.pageUp`                           | Scroll up one page                             | `pageup`, `b`, `shift+space` |
 | `hunk.review.previousAnnotatedFile`            | Previous annotated file                        | _(none)_                     |
 | `hunk.review.previousAnnotatedHunk`            | Previous annotated hunk                        | `{`                          |
 | `hunk.review.previousFile`                     | Previous file                                  | `,`                          |
 | `hunk.review.previousHunk`                     | Previous hunk                                  | `[`                          |
-| `hunk.review.replyToActiveNote`                | Reply to the active review note                | `R`                          |
+| `hunk.review.previousNote`                     | Previous review note                           | `N`                          |
+| `hunk.review.replyToActiveNote`                | Reply to active review note                    | `R`                          |
 | `hunk.review.saveNote`                         | Save a draft review note                       | `ctrl+s`                     |
 | `hunk.review.scrollCodeLeft`                   | Scroll code left (shifted scrolls fast)        | `left`, `shift+left`         |
 | `hunk.review.scrollCodeRight`                  | Scroll code right (shifted scrolls fast)       | `right`, `shift+right`       |
 | `hunk.review.startNote`                        | Add a review note                              | `c`                          |
-| `hunk.review.stepDown`                         | Scroll down one row                            | `down`, `j`                  |
-| `hunk.review.stepUp`                           | Scroll up one row                              | `up`, `k`                    |
+| `hunk.review.startVisualSelection`             | Start visual line selection                    | `v`                          |
+| `hunk.review.stepDown`                         | Move down one line or note                     | `down`, `j`                  |
+| `hunk.review.stepUp`                           | Move up one line or note                       | `up`, `k`                    |
 | `hunk.review.toggleHunkGap`                    | Expand or collapse the selected context        | `z`                          |
 | `hunk.view.applyFilePresentationToAllMatching` | Apply current file presentation to all matches | _(none)_                     |
 | `hunk.view.cursorLineNumber`                   | Mark the current line number                   | _(none)_                     |
@@ -86,7 +150,7 @@ The built-in commands and the keys they ship with:
 | `hunk.view.cursorLineRow`                      | Highlight the current row                      | _(none)_                     |
 | `hunk.view.layoutAuto`                         | Auto layout                                    | `0`                          |
 | `hunk.view.layoutSplit`                        | Split layout                                   | `1`                          |
-| `hunk.view.layoutStack`                        | Stack layout                                   | `2`                          |
+| `hunk.view.layoutUnified`                      | Unified layout                                 | `2`                          |
 | `hunk.view.openThemeSelector`                  | Choose theme                                   | `t`                          |
 | `hunk.view.toggleAgentNotes`                   | Toggle agent notes                             | `a`                          |
 | `hunk.view.toggleCopyDecorations`              | Toggle copy decorations                        | _(none)_                     |
@@ -102,7 +166,9 @@ replacement on any terminal edge without changing unrelated panes. Remapping or
 unbinding `hunk.view.toggleFilesPane` changes that role-aware action, not an
 extension pane's own commands. The former `hunk.view.toggleSidebar` id remains a
 compatibility alias; prefer the files-pane name in new config and extension
-code.
+code. Likewise, `hunk.view.layoutStack` remains a deprecated alias for
+`hunk.view.layoutUnified`, so existing keybindings and extension command calls
+continue to select the canonical unified layout.
 
 Commands marked _(none)_ ship without a key: they remain callable by command id
 and can be assigned a shortcut through `[keybindings]`. Some also appear in a

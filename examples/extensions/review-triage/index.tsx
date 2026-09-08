@@ -232,7 +232,7 @@ export default function registerReviewTriage(hunk: HunkExtensionAPI) {
     component: ReviewTriagePane,
   });
 
-  hunk.registerCommand({ id: "toggle", title: "Toggle review triage", key: "y" }, (ctx) =>
+  hunk.registerCommand({ id: "toggle", title: "Toggle review triage", key: "Y" }, (ctx) =>
     ctx.panes.toggle("triage"),
   );
 

@@ -9,7 +9,8 @@ const executable = process.env.HUNK_TEST_EXECUTABLE
   : undefined;
 const compiledTest = executable ? test : test.skip;
 const compiledLinuxTest = executable && process.platform === "linux" ? test : test.skip;
-const BUN_NATIVE_ARTIFACT_PATTERN = /^\.[0-9a-f]{16}-[0-9a-f]{8}\.(?:so|dylib|dll)$/;
+const BUN_NATIVE_ARTIFACT_PATTERN =
+  /^(?:\.[0-9a-f]{16}-[0-9a-f]{8}|\.bun-\d+-[0-9a-f]{16})\.(?:so|dylib|dll)$/;
 const positiveControlBuildRoot = executable
   ? mkdtempSync(resolve(tmpdir(), "hunk-compiled-opentui-control-"))
   : undefined;
@@ -45,10 +46,10 @@ function buildCompiledControls() {
       name: "highlight worker control",
       entries: [
         resolve(import.meta.dir, "fixtures", "compiled-highlight-worker-control.ts"),
-        resolve(import.meta.dir, "..", "..", "src", "highlightWorkerEntry.ts"),
+        resolve(import.meta.dir, "..", "..", "packages", "hunk", "src", "highlightWorkerEntry.ts"),
       ],
       executable: highlightWorkerControlExecutable,
-      root: resolve(import.meta.dir, "..", "..", "src"),
+      root: resolve(import.meta.dir, "..", "..", "packages", "hunk", "src"),
     },
   ];
 

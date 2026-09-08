@@ -1,0 +1,38 @@
+{
+  "name": "@hunk/vcs",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Shared implementation infrastructure for Hunk VCS backends.",
+  "license": "MIT",
+  "files": [
+    "src"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    "./async-process": {
+      "types": "./src/async-process.ts",
+      "import": "./src/async-process.ts"
+    },
+    "./diff-target": {
+      "types": "./src/diff-target.ts",
+      "import": "./src/diff-target.ts"
+    },
+    "./large-file": {
+      "types": "./src/large-file.ts",
+      "import": "./src/large-file.ts"
+    },
+    "./path": {
+      "types": "./src/path.ts",
+      "import": "./src/path.ts"
+    },
+    "./source": {
+      "types": "./src/source.ts",
+      "import": "./src/source.ts"
+    }
+  },
+  "engines": {
+    "bun": ">=1.3.14",
+    "node": ">=22"
+  }
+}

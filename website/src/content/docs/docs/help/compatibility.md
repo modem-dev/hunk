@@ -11,10 +11,10 @@ Hunk is a terminal-native application built on OpenTUI. The best experience need
 
 - a modern terminal with Unicode and truecolor support
 - alternate-screen and mouse protocol support
-- enough columns for split mode (auto mode stacks on narrow screens)
+- enough columns for split mode (auto mode uses unified layout on narrow screens)
 - OSC 52 support when Hunk copies through the terminal clipboard protocol
 
-If a terminal omits one capability, keyboard navigation and stack layout remain the safest fallback.
+If a terminal omits one capability, keyboard navigation and unified layout remain the safest fallback.
 
 ## Remote sessions and multiplexers
 

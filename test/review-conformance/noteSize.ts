@@ -1,7 +1,7 @@
 /**
  * The note-size corpus: one note, one measurement, at the boundary.
  *
- * A note is measured whole, once, by `src/core/review/noteSize.ts`
+ * A note is measured whole, once, by `packages/hunk/src/core/review/noteSize.ts`
  * (`docs/browser-review-seam-audit.md`, D1). These fixtures are the cases that would split
  * a whole-note measurement apart from a per-field one, written from the semantics: each
  * states the field sizes and whether the whole note fits.
@@ -9,8 +9,8 @@
  * Sizes are stated relative to the shared bound rather than as literals, so the corpus
  * still means the same thing if the bound moves.
  */
-import { MAX_REVIEW_NOTE_BYTES } from "../../src/core/review/noteSize";
-import type { ReviewNoteV1 } from "../../src/core/review/types";
+import { MAX_REVIEW_NOTE_BYTES } from "../../packages/hunk/src/core/review/noteSize";
+import type { ReviewNoteV1 } from "../../packages/hunk/src/core/review/types";
 
 export interface ReviewNoteSizeFixture {
   id: string;

@@ -1,75 +1,30 @@
 {
-  "name": "hunkdiff",
-  "version": "0.21.0-beta.0",
-  "description": "Desktop-inspired terminal diff viewer for understanding agent-authored changesets.",
-  "keywords": [
-    "ai",
-    "code-review",
-    "diff",
-    "git",
-    "terminal",
-    "tui"
-  ],
-  "homepage": "https://hunk.dev",
-  "bugs": {
-    "url": "https://github.com/modem-dev/hunk/issues"
-  },
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/modem-dev/hunk.git"
-  },
-  "bin": {
-    "hunk": "./bin/hunk.cjs",
-    "hunkdiff": "./bin/hunk.cjs"
-  },
+  "name": "@hunk/workspace",
+  "private": true,
   "workspaces": [
-    ".",
     "packages/*"
   ],
-  "files": [
-    "bin",
-    "dist/npm",
-    "skills/hunk-review",
-    "skills/hunk-extensions",
-    "README.md",
-    "LICENSE"
-  ],
   "type": "module",
-  "exports": {
-    "./extension": {
-      "types": "./dist/npm/extension/index.d.ts",
-      "import": "./dist/npm/extension/index.js"
-    },
-    "./opentui": {
-      "types": "./dist/npm/opentui/index.d.ts",
-      "import": "./dist/npm/opentui/index.js"
-    },
-    "./package.json": "./package.json"
-  },
-  "publishConfig": {
-    "access": "public"
-  },
   "scripts": {
-    "start": "bun run src/main.tsx",
-    "dev": "bun --watch src/main.tsx",
-    "build:npm": "bun run ./scripts/build-npm.ts",
-    "build:bin": "bun run ./scripts/build-bin.ts",
-    "build:prebuilt:npm": "bun run build:npm && bun run build:bin && bun run ./scripts/stage-prebuilt-npm.ts",
-    "build:prebuilt:artifact": "bun run build:bin && bun run ./scripts/build-prebuilt-artifact.ts",
-    "stage:prebuilt:release": "bun run build:npm && bun run ./scripts/stage-prebuilt-npm.ts --artifact-root ./dist/release/artifacts",
-    "install:bin": "bun run ./scripts/install-bin.ts",
-    "generate:skill": "bun run ./scripts/generate-skill.ts",
-    "generate:theme-colors": "bun run ./scripts/generate-theme-diff-colors.ts",
-    "generate:docs": "bun run ./scripts/generate-docs.ts",
-    "generate:changelog": "bun run ./scripts/generate-changelog.ts",
+    "start": "bun run packages/hunk/src/main.tsx",
+    "dev": "bun --watch packages/hunk/src/main.tsx",
+    "build:npm": "bun run ./scripts/build/build-npm.ts",
+    "build:bin": "bun run ./scripts/build/build-bin.ts",
+    "build:prebuilt:npm": "bun run build:npm && bun run build:bin && bun run ./scripts/packaging/stage-prebuilt-npm.ts",
+    "build:prebuilt:artifact": "bun run build:bin && bun run ./scripts/packaging/build-prebuilt-artifact.ts",
+    "stage:prebuilt:release": "bun run build:npm && bun run ./scripts/packaging/stage-prebuilt-npm.ts --artifact-root ./dist/release/artifacts",
+    "install:bin": "bun run ./scripts/build/install-bin.ts",
+    "generate:skill": "bun run ./scripts/generate/generate-skill.ts",
+    "generate:theme-colors": "bun run ./scripts/generate/generate-theme-diff-colors.ts",
+    "generate:docs": "bun run ./scripts/generate/generate-docs.ts",
+    "generate:changelog": "bun run ./scripts/generate/generate-changelog.ts",
     "generate:og": "bun run ./website/scripts/generate-og.ts",
-    "check:docs": "bun run ./scripts/generate-docs.ts --check",
-    "check:changelog": "bun run ./scripts/generate-changelog.ts --check",
+    "check:docs": "bun run ./scripts/generate/generate-docs.ts --check",
+    "check:changelog": "bun run ./scripts/generate/generate-changelog.ts --check",
     "website:dev": "bun run --cwd website dev",
-    "website:build": "bun run check:docs && bun run check:changelog && bun run --cwd website build && bun run ./scripts/stage-install-script.ts",
+    "website:build": "bun run check:docs && bun run check:changelog && bun run --cwd website build && bun run ./scripts/packaging/stage-install-script.ts",
     "website:check": "bun run check:docs && bun run check:changelog && bun run --cwd website check",
-    "website:links": "bun run ./scripts/check-website-links.ts",
+    "website:links": "bun run ./scripts/website/check-website-links.ts",
     "website:test:browser": "bun run --cwd website test:browser",
     "typecheck": "tsc --noEmit",
     "format": "oxfmt --write .",
@@ -77,27 +32,27 @@
     "lint": "oxlint . --deny-warnings",
     "lint:fix": "oxlint . --fix",
     "knip": "knip",
-    "deps:check": "depcruise src packages --config .dependency-cruiser.cjs --ignore-known",
-    "deps:baseline": "depcruise src packages --config .dependency-cruiser.cjs --output-type baseline --output-to .dependency-cruiser-known-violations.json",
+    "deps:check": "depcruise packages --config .dependency-cruiser.cjs --ignore-known",
+    "deps:baseline": "depcruise packages --config .dependency-cruiser.cjs --output-type baseline --output-to .dependency-cruiser-known-violations.json",
     "changeset": "bunx @changesets/cli@2.31.0",
     "changeset:status": "bunx @changesets/cli@2.31.0 status",
-    "release:version": "bunx @changesets/cli@2.31.0 version",
+    "release:version": "bun run ./scripts/release/changeset-version.ts",
     "prepare": "simple-git-hooks",
-    "test": "bun run ./scripts/run-test-suite.ts",
-    "test:theme-contrast": "bun test src/ui/themes.test.ts --test-name-pattern contrast",
+    "test": "bun run ./scripts/test/run-test-suite.ts",
+    "test:theme-contrast": "bun test packages/hunk/src/ui/themes.test.ts --test-name-pattern contrast",
     "test:integration": "\"${npm_execpath:-bun}\" test ./test/pty",
-    "test:session-broker-node": "bun run ./scripts/test-session-broker-node.ts",
+    "test:session-broker-node": "bun run ./scripts/test/test-session-broker-node.ts",
     "test:tty-smoke": "HUNK_RUN_TTY_SMOKE=1 \"${npm_execpath:-bun}\" test ./test/smoke",
     "test:install-vm": "bun run ./test/cli/install-vm/runner.ts",
     "test:install-vm:clean": "bun run ./test/cli/install-vm/runner.ts --clean",
-    "check:pack": "bun run ./scripts/check-pack.ts",
-    "check:prebuilt-pack": "bun run ./scripts/check-prebuilt-pack.ts",
-    "smoke:prebuilt-install": "bun run ./scripts/smoke-prebuilt-install.ts",
-    "publish:prebuilt:npm": "bun run ./scripts/publish-prebuilt-npm.ts",
-    "prepack": "bun run build:npm",
+    "vm:shell": "bun run ./test/cli/install-vm/vm-shell.ts",
+    "check:pack": "bun run ./scripts/packaging/check-pack.ts",
+    "check:prebuilt-pack": "bun run ./scripts/packaging/check-prebuilt-pack.ts",
+    "smoke:prebuilt-install": "bun run ./scripts/packaging/smoke-prebuilt-install.ts",
+    "publish:prebuilt:npm": "bun run ./scripts/packaging/publish-prebuilt-npm.ts",
     "bench": "bun run benchmarks/run.ts",
-    "bench:release": "bun run ./scripts/run-release-benchmark.ts",
-    "bench:release:compare": "bun run ./scripts/compare-release-benchmarks.ts",
+    "bench:release": "bun run ./scripts/benchmarks/run-release-benchmark.ts",
+    "bench:release:compare": "bun run ./scripts/benchmarks/compare-release-benchmarks.ts",
     "bench:bootstrap-load": "bun run benchmarks/bootstrap-load.ts",
     "bench:working-tree-load": "bun run benchmarks/working-tree-load.ts",
     "bench:changeset-parse": "bun run benchmarks/changeset-parse.ts",
@@ -117,54 +72,40 @@
     "bench:geometry-memory": "bun run benchmarks/geometry-memory.ts",
     "bench:navigation-memory": "bun run benchmarks/navigation-memory.ts",
     "bench:resize-memory": "bun run benchmarks/resize-memory.ts",
-    "bench:daemon-memory": "bun run scripts/daemon-memory-check.ts",
+    "bench:daemon-memory": "bun run scripts/benchmarks/daemon-memory-check.ts",
     "bench:competitors": "bun run benchmarks/competitors.ts",
     "nix:update-lock": "nix run .#update-bun-lock"
   },
-  "dependencies": {
-    "bun": "^1.3.14",
-    "chokidar": "^4.0.3",
-    "commander": "^14.0.3",
-    "diff": "^8.0.3",
-    "get-east-asian-width": "^1.5.0",
-    "shell-quote": "1.9.0",
-    "string-width": "^8.2.1",
-    "zod": "~4.4.3"
-  },
   "devDependencies": {
     "@changesets/changelog-github": "^0.7.0",
+    "@hunk/git": "workspace:*",
+    "@hunk/jj": "workspace:*",
+    "@hunk/sapling": "workspace:*",
     "@hunk/session-broker": "workspace:*",
     "@hunk/session-broker-bun": "workspace:*",
     "@hunk/session-broker-core": "workspace:*",
     "@hunk/term-video": "workspace:*",
+    "@hunk/vcs": "workspace:*",
     "@opentui/core": "^0.5.6",
     "@opentui/react": "^0.5.6",
     "@pierre/diffs": "1.3.5",
     "@shikijs/themes": "3.23.0",
-    "@types/bun": "1.3.14",
+    "@types/bun": "1.4.1",
     "@types/react": "^19.2.14",
     "@types/ws": "^8.18.1",
+    "bun": "^1.4.2",
     "dependency-cruiser": "18.2.0",
+    "diff": "^8.0.3",
     "knip": "^6.32.0",
     "lint-staged": "^16.4.0",
     "marked": "17.0.1",
     "oxfmt": "^0.41.0",
     "oxlint": "^1.56.0",
     "react": "^19.2.4",
-    "simple-git-hooks": "^2.13.1",
+    "simple-git-hooks": "^2.14.0",
+    "string-width": "^8.2.1",
     "tuistory": "^0.11.0",
     "typescript": "^5.9.3"
-  },
-  "peerDependencies": {
-    "@opentui/core": "^0.5.6",
-    "@opentui/react": "^0.5.6",
-    "@pierre/diffs": "1.3.5",
-    "react": "^19.2.4"
-  },
-  "peerDependenciesMeta": {
-    "@pierre/diffs": {
-      "optional": true
-    }
   },
   "overrides": {
     "shell-quote": "1.9.0"
@@ -175,10 +116,11 @@
   "engines": {
     "node": ">=22"
   },
-  "packageManager": "bun@1.3.14",
+  "packageManager": "bun@1.4.2",
   "pi": {
     "skills": [
-      "./skills"
+      "./skills",
+      "./packages/hunk/skills"
     ]
   }
 }

@@ -10,14 +10,14 @@ Hunk uses the same normalized review model in every layout.
 ```bash
 hunk diff --mode auto
 hunk diff --mode split
-hunk diff --mode stack
+hunk diff --mode unified
 ```
 
-- `auto` chooses split on wide terminals and stack on narrow ones.
+- `auto` chooses split on wide terminals and unified on narrow ones.
 - `split` keeps before and after columns side by side.
-- `stack` shows changed rows in a single-width flow.
+- `unified` shows changed rows in a single-width flow.
 
-Explicit split and stack choices override responsive behavior. Press `0`, `1`, or `2` to switch while reviewing.
+Explicit split and unified choices override responsive behavior. Press `0`, `1`, or `2` to switch while reviewing. The former `stack` value remains accepted as a deprecated input alias and normalizes to `unified`.
 
 ## Tune code rows
 
@@ -39,6 +39,7 @@ hunk_headers = true
 file_gap = 1
 hunk_gap = 0
 menu_bar = true
+animations = true
 sidebar = "auto"
 agent_notes = false
 copy_decorations = false
@@ -47,6 +48,8 @@ cursor_line = "row"
 ```
 
 `transparent_background` lets the terminal paint Hunk surfaces; turn it off when exact theme surfaces matter more than matching terminal transparency.
+
+Set `animations = false` to make panes open and close immediately.
 
 `cursor_line` chooses how the line you are on is marked: `row` highlights the whole row, `number` marks only its line number, and `off` removes the marker and returns `k` / `j` to scrolling the view one row at a time. Switch it mid-review from the View menu, or set `--cursor-line <style>` for a single run.
 

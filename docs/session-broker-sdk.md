@@ -40,7 +40,7 @@ all associated UI semantics.
 Publish one package, `@hunk/session-broker`, with protocol/state, daemon/connection, managed-host,
 and Node/Bun adapter boundaries kept as internal modules. Its only first-release entry point exports
 the shared primitives, broker APIs, supervision, managed producer API, and an automatically selected
-`serveSessionBrokerDaemon`. Hunk composes the package; the package never imports `src/*`.
+`serveSessionBrokerDaemon`. Hunk composes the package; the package never imports `packages/hunk/src/*`.
 
 Publication requires verified npm `@hunk` scope ownership and trusted publishing. An approved
 replacement name must not alter `appId`, wire identity, or runtime namespaces.

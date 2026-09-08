@@ -1,0 +1,748 @@
+import { describe, expect, test } from "bun:test";
+import { testRender } from "@opentui/react/test-utils";
+import { MouseButtons } from "@opentui/core/testing";
+import { act } from "react";
+import type { AppBootstrap } from "../core/bootstrap";
+import { createTestVcsAppBootstrap } from "../../../../test/helpers/app-bootstrap";
+import { createTestDiffFile, lines } from "../../../../test/helpers/diff-helpers";
+import { measureTextWidth } from "./lib/text";
+
+// These tests drive the DiffPane mouse-drag text-selection path end to end: begin/update/end
+// copy-selection, double/triple-click word and line expansion, and the OSC 52 clipboard copy.
+// They use the real @opentui render harness with synthetic mouse events, so the selection
+// geometry runs against an actual rendered frame rather than a mocked layout.
+
+/** Build a diff with many distinct changed rows so drags can span several review rows. */
+function createSelectionBootstrap(): AppBootstrap {
+  const before = Array.from(
+    { length: 24 },
+    (_, index) => `export const item${String(index + 1).padStart(2, "0")} = ${index + 1};`,
+  );
+  // Change every row so the review stream is dense with selectable changed code.
+  const after = before.map((line, index) => line.replace(/= \d+;/, `= ${(index + 1) * 1000};`));
+
+  return createTestVcsAppBootstrap({
+    changesetId: "changeset:copy-selection",
+    files: [
+      createTestDiffFile({
+        id: "selection",
+        path: "selection.ts",
+        before: lines(...before),
+        after: lines(...after),
+        context: 1,
+      }),
+    ],
+    initialMode: "unified",
+    initialCopyDecorations: true,
+  });
+}
+
+/** Build a split-layout diff so the copy can resolve an old/new side from the drag column. */
+function createSplitSelectionBootstrap(): AppBootstrap {
+  const bootstrap = createSelectionBootstrap();
+  return { ...bootstrap, initialMode: "split", input: { ...bootstrap.input } };
+}
+
+/** Build a diff whose changed line mixes full-width (CJK) and ASCII characters. */
+function createWideCharSelectionBootstrap(): AppBootstrap {
+  return createTestVcsAppBootstrap({
+    changesetId: "changeset:copy-selection-cjk",
+    files: [
+      createTestDiffFile({
+        id: "i18n",
+        path: "i18n.ts",
+        before: lines("export const message = 'hello'; // greeting"),
+        after: lines("export const message = 'こんにちは'; // greeting"),
+        context: 1,
+      }),
+    ],
+    initialMode: "unified",
+    initialCopyDecorations: true,
+  });
+}
+
+type Harness = Awaited<ReturnType<typeof testRender>>;
+
+/** Settle pending renders so a frame reflects the latest interaction. */
+async function flush(setup: Harness) {
+  await act(async () => {
+    await setup.renderOnce();
+    await Bun.sleep(0);
+    await setup.renderOnce();
+  });
+}
+
+/** Invoke the explicit Copy Selection action after a gesture commits its range. */
+async function copyCommittedSelection(setup: Harness) {
+  await act(async () => setup.mockInput.pressKey("y"));
+  await flush(setup);
+}
+
+/** Poll rendered frames until `predicate` matches, resilient to async repaints. */
+async function waitForFrame(
+  setup: Harness,
+  predicate: (frame: string) => boolean,
+  description = "frame predicate",
+  attempts = 10,
+) {
+  let frame = setup.captureCharFrame();
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (predicate(frame)) {
+      return frame;
+    }
+    await act(async () => {
+      await Bun.sleep(20);
+      await setup.renderOnce();
+    });
+    frame = setup.captureCharFrame();
+  }
+  throw new Error(
+    `Timed out waiting for "${description}" after ${attempts} attempts. Last frame:\n${frame}`,
+  );
+}
+
+/** Find the screen position of the first occurrence of `needle` in the rendered frame. */
+function locateText(frame: string, needle: string) {
+  const rows = frame.split("\n");
+  for (let y = 0; y < rows.length; y += 1) {
+    const x = rows[y]?.indexOf(needle) ?? -1;
+    if (x >= 0) {
+      return { x, y };
+    }
+  }
+  return null;
+}
+
+/**
+ * Render the selection app and capture every OSC 52 clipboard write.
+ *
+ * `useRenderer()` inside DiffPane returns this same renderer instance, so forcing OSC 52 support
+ * and spying on the copy method makes the clipboard side effect deterministic and observable.
+ */
+async function renderSelectionApp(
+  bootstrap: AppBootstrap,
+  {
+    width = 110,
+    height = 26,
+    osc52 = true,
+  }: { width?: number; height?: number; osc52?: boolean } = {},
+) {
+  const { TestAppHost: AppHost } = await import("../../../../test/helpers/app-host");
+  const setup = await testRender(<AppHost bootstrap={bootstrap} />, { width, height });
+
+  const copied: string[] = [];
+  setup.renderer.isOsc52Supported = () => osc52;
+  setup.renderer.copyToClipboardOSC52 = (text: string) => {
+    copied.push(text);
+    return true;
+  };
+
+  // Destroy the renderer if the initial settle throws, since the caller's try/finally only
+  // takes over once this helper has returned the harness.
+  try {
+    await flush(setup);
+  } catch (error) {
+    await act(async () => {
+      setup.renderer.destroy();
+    });
+    throw error;
+  }
+  return { setup, copied };
+}
+
+describe("DiffPane copy selection", () => {
+  test("dragging across changed rows copies the rendered selection to the clipboard", async () => {
+    const { setup, copied } = await renderSelectionApp(createSelectionBootstrap());
+
+    try {
+      const frame = setup.captureCharFrame();
+      const start = locateText(frame, "item01");
+      const end = locateText(frame, "item05");
+      expect(start).not.toBeNull();
+      expect(end).not.toBeNull();
+
+      await act(async () => {
+        await setup.mockMouse.drag(start!.x + 2, start!.y, end!.x + 4, end!.y, MouseButtons.LEFT);
+      });
+      await flush(setup);
+      await copyCommittedSelection(setup);
+
+      // The drag moved across rows, so release copies the rendered text and shows feedback.
+      expect(copied.length).toBeGreaterThan(0);
+      expect(copied.join("\n")).toContain("item");
+      const noticeFrame = await waitForFrame(
+        setup,
+        (text) => text.includes("Copied selection to clipboard"),
+        "copied-selection notice",
+      );
+      expect(noticeFrame).toContain("Copied selection to clipboard");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("vertical scrolling preserves a committed selection for keyboard actions", async () => {
+    const { setup, copied } = await renderSelectionApp(createSelectionBootstrap());
+
+    try {
+      const frame = setup.captureCharFrame();
+      const start = locateText(frame, "item01");
+      const end = locateText(frame, "item03");
+      expect(start).not.toBeNull();
+      expect(end).not.toBeNull();
+      await act(async () => {
+        await setup.mockMouse.drag(start!.x + 2, start!.y, end!.x + 4, end!.y, MouseButtons.LEFT);
+      });
+      await flush(setup);
+      await act(async () => setup.mockInput.pressKey("PAGEDOWN"));
+      await flush(setup);
+      await copyCommittedSelection(setup);
+
+      expect(copied.at(-1)).toContain("em01");
+      expect(copied.at(-1)).toContain("item02");
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("a height-only resize clears the committed selection", async () => {
+    const { setup, copied } = await renderSelectionApp(createSelectionBootstrap());
+
+    try {
+      const frame = setup.captureCharFrame();
+      const start = locateText(frame, "item01");
+      const end = locateText(frame, "item03");
+      expect(start).not.toBeNull();
+      expect(end).not.toBeNull();
+      await act(async () => {
+        await setup.mockMouse.drag(start!.x + 2, start!.y, end!.x + 4, end!.y, MouseButtons.LEFT);
+      });
+      await flush(setup);
+      expect(setup.captureCharFrame()).toContain("c Comment");
+
+      await act(async () => setup.resize(110, 24));
+      await flush(setup);
+      await act(async () => setup.mockInput.pressKey("y"));
+      await flush(setup);
+
+      expect(copied).toEqual([]);
+      expect(setup.captureCharFrame()).not.toContain("c Comment");
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("mouse-up extends a copy through drag events coalesced by the terminal host", async () => {
+    const { setup, copied } = await renderSelectionApp(createSelectionBootstrap());
+
+    try {
+      const frame = setup.captureCharFrame();
+      const start = locateText(frame, "item01");
+      const firstMotion = locateText(frame, "item02");
+      const end = locateText(frame, "item05");
+      expect(start).not.toBeNull();
+      expect(firstMotion).not.toBeNull();
+      expect(end).not.toBeNull();
+
+      await act(async () => {
+        await setup.mockMouse.pressDown(start!.x + 2, start!.y, MouseButtons.LEFT);
+        await setup.mockMouse.moveTo(firstMotion!.x + 2, firstMotion!.y);
+        await setup.mockMouse.release(end!.x + 8, end!.y, MouseButtons.LEFT);
+      });
+      await flush(setup);
+      await copyCommittedSelection(setup);
+
+      expect(copied.length).toBeGreaterThan(0);
+      expect(copied.at(-1)).toContain("item05");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("dragging across wide (CJK) characters copies exactly the selected cells", async () => {
+    const { setup, copied } = await renderSelectionApp(createWideCharSelectionBootstrap());
+
+    try {
+      const frame = setup.captureCharFrame();
+      const wide = locateText(frame, "こんにちは");
+      expect(wide).not.toBeNull();
+
+      // Everything left of the code is single-cell glyphs, so the string index of the code
+      // start is also its screen column; the drag end is then measured in terminal cells.
+      const row = frame.split("\n")[wide!.y]!;
+      const startX = row.indexOf("export const message");
+      expect(startX).toBeGreaterThanOrEqual(0);
+      const throughWide = "export const message = 'こんにちは";
+
+      await act(async () => {
+        await setup.mockMouse.drag(
+          startX,
+          wide!.y,
+          startX + measureTextWidth(throughWide) - 1,
+          wide!.y,
+          MouseButtons.LEFT,
+        );
+      });
+      await flush(setup);
+      await copyCommittedSelection(setup);
+
+      // Cell-aware slicing keeps the copy aligned with the drag: without it, each full-width
+      // character shifted the endpoint and the clipboard over-included "'; //".
+      expect(copied.length).toBeGreaterThan(0);
+      expect(copied[copied.length - 1]).toBe(throughWide);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("double-clicking a token selects and copies the word under the pointer", async () => {
+    const { setup, copied } = await renderSelectionApp(createSelectionBootstrap());
+
+    try {
+      const frame = setup.captureCharFrame();
+      const target = locateText(frame, "item05");
+      expect(target).not.toBeNull();
+
+      await act(async () => {
+        await setup.mockMouse.doubleClick(target!.x + 2, target!.y, MouseButtons.LEFT);
+      });
+      await flush(setup);
+      await copyCommittedSelection(setup);
+
+      expect(copied.length).toBeGreaterThan(0);
+      // Word expansion copies a single contiguous token, not a whole multi-token line.
+      expect(copied.some((text) => text.includes("item") && !text.includes(" "))).toBe(true);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("triple-clicking a row selects and copies the whole line", async () => {
+    const { setup, copied } = await renderSelectionApp(createSelectionBootstrap());
+
+    try {
+      const frame = setup.captureCharFrame();
+      const target = locateText(frame, "item06");
+      expect(target).not.toBeNull();
+
+      // Three rapid clicks at the same point escalate to a full-line selection.
+      await act(async () => {
+        await setup.mockMouse.click(target!.x + 2, target!.y, MouseButtons.LEFT);
+        await setup.mockMouse.click(target!.x + 2, target!.y, MouseButtons.LEFT);
+        await setup.mockMouse.click(target!.x + 2, target!.y, MouseButtons.LEFT);
+      });
+      await flush(setup);
+      await copyCommittedSelection(setup);
+
+      expect(copied.length).toBeGreaterThan(0);
+      // Line expansion copies the full token sequence including the assignment.
+      expect(copied.some((text) => text.includes("item06") && text.includes("="))).toBe(true);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("an invalid metadata overlap shows its disabled Comment reason beside the selection", async () => {
+    const { setup } = await renderSelectionApp(createSelectionBootstrap());
+
+    try {
+      const frame = setup.captureCharFrame();
+      const header = locateText(frame, "@@");
+      const end = locateText(frame, "item03");
+      expect(header).not.toBeNull();
+      expect(end).not.toBeNull();
+
+      await act(async () => {
+        await setup.mockMouse.drag(header!.x, header!.y, end!.x + 4, end!.y, MouseButtons.LEFT);
+      });
+      const invalidFrame = await waitForFrame(
+        setup,
+        (text) =>
+          text.includes("Comment requires contiguous") && text.includes("code from one file"),
+        "selection Comment reason",
+      );
+      expect(invalidFrame).toContain("Comment requires contiguous");
+      expect(invalidFrame).toContain("code from one file");
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("a compact invalid action bar wraps its reason below vertical actions", async () => {
+    const { setup } = await renderSelectionApp(createSelectionBootstrap(), {
+      width: 32,
+      height: 26,
+    });
+
+    try {
+      const frame = setup.captureCharFrame();
+      const header = locateText(frame, "@@");
+      expect(header).not.toBeNull();
+
+      await act(async () => {
+        await setup.mockMouse.drag(
+          header!.x,
+          header!.y,
+          30,
+          Math.min(header!.y + 3, 24),
+          MouseButtons.LEFT,
+        );
+      });
+      const invalidFrame = await waitForFrame(
+        setup,
+        (text) => text.includes("Comment requires") && text.includes("contiguous code from one"),
+        "wrapped compact selection reason",
+      );
+      const rows = invalidFrame.split("\n");
+      const commentRow = rows.findIndex((row) => row.includes("c Comment"));
+      const copyRow = rows.findIndex((row) => row.includes("y Copy"));
+      const clearRow = rows.findIndex((row) => row.includes("Esc Clear"));
+      expect(copyRow).toBe(commentRow + 1);
+      expect(clearRow).toBe(copyRow + 1);
+      expect(rows[clearRow + 1]).toContain("Comment requires");
+      expect(rows[clearRow + 2]).toContain("contiguous code");
+      expect(rows[clearRow + 3]).toContain("file");
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("selection actions show and honor remapped command bindings", async () => {
+    const bootstrap = {
+      ...createSelectionBootstrap(),
+      keybindings: {
+        "hunk.review.startNote": "ctrl+n",
+        "hunk.review.copySelection": "ctrl+x",
+      },
+    };
+    const { setup, copied } = await renderSelectionApp(bootstrap);
+
+    try {
+      const frame = setup.captureCharFrame();
+      const start = locateText(frame, "item01");
+      const end = locateText(frame, "item03");
+      await act(async () => {
+        await setup.mockMouse.drag(start!.x + 2, start!.y, end!.x + 4, end!.y, MouseButtons.LEFT);
+      });
+      await flush(setup);
+      const selectedFrame = setup.captureCharFrame();
+      expect(selectedFrame).toContain("Ctrl+N Comment");
+      expect(selectedFrame).toContain("Ctrl+X Copy");
+      expect(selectedFrame).not.toContain("c Comment");
+      expect(selectedFrame).not.toContain("y Copy");
+
+      await act(async () => setup.mockInput.pressKey("x", { ctrl: true }));
+      await flush(setup);
+      expect(copied).toHaveLength(1);
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("selection actions omit key hints for unbound commands", async () => {
+    const bootstrap: AppBootstrap = {
+      ...createSelectionBootstrap(),
+      keybindings: {
+        "hunk.review.startNote": false,
+        "hunk.review.copySelection": false,
+      },
+    };
+    const { setup } = await renderSelectionApp(bootstrap);
+
+    try {
+      const frame = setup.captureCharFrame();
+      const start = locateText(frame, "item01");
+      const end = locateText(frame, "item03");
+      await act(async () => {
+        await setup.mockMouse.drag(start!.x + 2, start!.y, end!.x + 4, end!.y, MouseButtons.LEFT);
+      });
+      await flush(setup);
+      const selectedFrame = setup.captureCharFrame();
+      expect(selectedFrame).toContain(" Comment ");
+      expect(selectedFrame).toContain(" Copy ");
+      expect(selectedFrame).not.toContain("c Comment");
+      expect(selectedFrame).not.toContain("y Copy");
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("a committed mouse range opens the inline composer with c", async () => {
+    const { setup } = await renderSelectionApp(createSelectionBootstrap());
+
+    try {
+      const frame = setup.captureCharFrame();
+      const start = locateText(frame, "item01");
+      const end = locateText(frame, "item03");
+      expect(start).not.toBeNull();
+      expect(end).not.toBeNull();
+
+      await act(async () => {
+        await setup.mockMouse.drag(start!.x + 2, start!.y, end!.x + 4, end!.y, MouseButtons.LEFT);
+      });
+      await flush(setup);
+      await act(async () => setup.mockInput.pressKey("c"));
+      const composerFrame = await waitForFrame(
+        setup,
+        (text) => text.includes("Write a note"),
+        "range note composer",
+      );
+      expect(composerFrame).toContain("Write a note");
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("Escape contextually clears an active selection without a global command binding", async () => {
+    const { setup } = await renderSelectionApp(createSelectionBootstrap());
+
+    try {
+      const frame = setup.captureCharFrame();
+      const start = locateText(frame, "item01");
+      const end = locateText(frame, "item03");
+      expect(start).not.toBeNull();
+      expect(end).not.toBeNull();
+      await act(async () => {
+        await setup.mockMouse.drag(start!.x + 2, start!.y, end!.x + 4, end!.y, MouseButtons.LEFT);
+      });
+      await flush(setup);
+      expect(setup.captureCharFrame()).toContain("c Comment");
+
+      await act(async () => setup.mockInput.pressEscape());
+      const clearedFrame = await waitForFrame(
+        setup,
+        (text) => !text.includes("c Comment"),
+        "selection to clear on Escape",
+      );
+      expect(clearedFrame).not.toContain("c Comment");
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("keyboard visual selection extends with line navigation and copies with y", async () => {
+    const { setup, copied } = await renderSelectionApp(createSelectionBootstrap());
+
+    try {
+      await act(async () => {
+        await setup.mockInput.pressKey("v");
+        await setup.mockInput.pressKey("j");
+        await setup.mockInput.pressKey("j");
+        await setup.mockInput.pressKey("y");
+      });
+      await flush(setup);
+
+      expect(copied).toHaveLength(1);
+      expect(copied[0]).toContain("item01");
+      expect(copied[0]).toContain("item02");
+      expect(copied[0]).toContain("item03");
+      expect(copied[0]).not.toContain("item04");
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("a press and release without movement does not copy anything", async () => {
+    const { setup, copied } = await renderSelectionApp(createSelectionBootstrap());
+
+    try {
+      const frame = setup.captureCharFrame();
+      const target = locateText(frame, "item07");
+      expect(target).not.toBeNull();
+
+      await act(async () => {
+        await setup.mockMouse.pressDown(target!.x + 2, target!.y, MouseButtons.LEFT);
+      });
+      await act(async () => {
+        await setup.mockMouse.release(target!.x + 2, target!.y, MouseButtons.LEFT);
+      });
+      await flush(setup);
+
+      // endCopySelection returns early when the drag never moved, so nothing is copied.
+      expect(copied.length).toBe(0);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("one-cell drags still copy when current-line selection is disabled", async () => {
+    const bootstrap = { ...createSelectionBootstrap(), initialCursorLine: "off" as const };
+    const { setup, copied } = await renderSelectionApp(bootstrap);
+
+    try {
+      const frame = setup.captureCharFrame();
+      const target = locateText(frame, "item07");
+      expect(target).not.toBeNull();
+
+      await act(async () => {
+        await setup.mockMouse.drag(
+          target!.x + 2,
+          target!.y,
+          target!.x + 3,
+          target!.y,
+          MouseButtons.LEFT,
+        );
+      });
+      await flush(setup);
+      await copyCommittedSelection(setup);
+
+      expect(copied.length).toBeGreaterThan(0);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("pressing outside the review viewport clears any pending selection", async () => {
+    const { setup, copied } = await renderSelectionApp(createSelectionBootstrap());
+
+    try {
+      // Row 0 is the menu bar / top chrome, which resolves to no review-row point.
+      await act(async () => {
+        await setup.mockMouse.pressDown(40, 0, MouseButtons.LEFT);
+      });
+      await act(async () => {
+        await setup.mockMouse.release(40, 0, MouseButtons.LEFT);
+      });
+      await flush(setup);
+
+      expect(copied.length).toBe(0);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("a non-left mouse button never starts a selection", async () => {
+    const { setup, copied } = await renderSelectionApp(createSelectionBootstrap());
+
+    try {
+      const frame = setup.captureCharFrame();
+      const target = locateText(frame, "item04");
+      expect(target).not.toBeNull();
+
+      // Right-button drags belong to other handlers, so the copy-selection path bails immediately.
+      await act(async () => {
+        await setup.mockMouse.drag(
+          target!.x + 2,
+          target!.y,
+          target!.x + 8,
+          target!.y + 2,
+          MouseButtons.RIGHT,
+        );
+      });
+      await flush(setup);
+
+      expect(copied.length).toBe(0);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("a terminal without OSC 52 support reports that copying is unavailable", async () => {
+    const { setup, copied } = await renderSelectionApp(createSelectionBootstrap(), {
+      osc52: false,
+    });
+
+    try {
+      const frame = setup.captureCharFrame();
+      const start = locateText(frame, "item02");
+      const end = locateText(frame, "item06");
+      expect(start).not.toBeNull();
+      expect(end).not.toBeNull();
+
+      await act(async () => {
+        await setup.mockMouse.drag(start!.x + 2, start!.y, end!.x + 4, end!.y, MouseButtons.LEFT);
+      });
+      await flush(setup);
+      await copyCommittedSelection(setup);
+
+      // The drag still resolves a selection, but the unsupported terminal falls back to a notice.
+      expect(copied.length).toBe(0);
+      const noticeFrame = await waitForFrame(
+        setup,
+        (text) => text.includes("Clipboard copy"),
+        "clipboard-unsupported notice",
+      );
+      expect(noticeFrame).toContain("Clipboard copy");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("a drag starting on the pinned file header resolves a header selection point", async () => {
+    const { setup, copied } = await renderSelectionApp(createSelectionBootstrap());
+
+    try {
+      const frame = setup.captureCharFrame();
+      const header = locateText(frame, "selection.ts");
+      const body = locateText(frame, "item06");
+      expect(header).not.toBeNull();
+      expect(body).not.toBeNull();
+
+      // Begin the drag on the always-pinned header row, then move down into the diff body.
+      await act(async () => {
+        await setup.mockMouse.drag(
+          header!.x + 2,
+          header!.y,
+          body!.x + 4,
+          body!.y,
+          MouseButtons.LEFT,
+        );
+      });
+      await flush(setup);
+      await copyCommittedSelection(setup);
+
+      // Dragging from the pinned header into the body still produces a copied selection.
+      expect(copied.length).toBeGreaterThan(0);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("dragging in split layout resolves a side and copies one column of code", async () => {
+    const { setup, copied } = await renderSelectionApp(createSplitSelectionBootstrap(), {
+      width: 160,
+    });
+
+    try {
+      const frame = setup.captureCharFrame();
+      const start = locateText(frame, "item01");
+      const end = locateText(frame, "item03");
+      expect(start).not.toBeNull();
+      expect(end).not.toBeNull();
+
+      await act(async () => {
+        await setup.mockMouse.drag(start!.x + 2, start!.y, end!.x + 2, end!.y, MouseButtons.LEFT);
+      });
+      await flush(setup);
+      await copyCommittedSelection(setup);
+
+      expect(copied.length).toBeGreaterThan(0);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+});

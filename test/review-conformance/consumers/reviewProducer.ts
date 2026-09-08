@@ -10,18 +10,18 @@
  * Each fixture is also self-checked at the boundary the producer actually serves: every
  * canonical file it would hand out is compared against the manifest entry for it (D4).
  */
-import { ReviewProducer } from "../../../src/app/review/producer";
-import { assertCanonicalFileMatchesManifest } from "../../../src/core/review/canonicalFile";
+import { ReviewProducer } from "../../../packages/hunk/src/app/review/producer";
+import { assertCanonicalFileMatchesManifest } from "../../../packages/hunk/src/core/review/canonicalFile";
 import type {
   ReviewContentManifestFile,
   ReviewContentManifestGap,
-} from "../../../src/core/review/contentManifest";
+} from "../../../packages/hunk/src/core/review/contentManifest";
 import {
   ReviewIntentPlanningError,
   type ReviewExpansionToggledOutcome,
-} from "../../../src/core/review/intents";
-import { normalizedReviewSourceLines } from "../../../src/core/review/geometry";
-import { createReviewStore } from "../../../src/core/review/store";
+} from "../../../packages/hunk/src/core/review/intents";
+import { normalizedReviewSourceLines } from "../../../packages/hunk/src/core/review/geometry";
+import { createReviewStore } from "../../../packages/hunk/src/core/review/store";
 import type {
   ConformanceExpandedRow,
   ConformanceGap,

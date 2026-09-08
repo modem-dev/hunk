@@ -10,11 +10,12 @@ Every keyboard shortcut is a named command. A `[keybindings]` table in your user
 "hunk.app.quit" = "ctrl+x"               # one chord
 "hunk.review.nextHunk" = ["]", "ctrl+n"] # several chords for one command
 "hunk.review.focusFilter" = "f"          # takes "f" away from page-down
+"hunk.history.nextCommit" = "ctrl+n"     # history has its own command ids
 "hunk.view.toggleMenuBar" = false        # unbind it entirely
 "myext.toggle" = "ctrl+g"                # extension commands too
 ```
 
-Every id starts with the name of whoever owns the command: Hunk's own commands live under `hunk.`, and an extension's live under its extension id. `hunk` is a reserved extension id, so an extension can never shadow a built-in command.
+Every id starts with the name of whoever owns the command: Hunk's own commands live under `hunk.`, and an extension's live under its extension id. `hunk` is a reserved extension id, so an extension can never shadow a built-in command. Interactive history uses `hunk.history.*` for commit-specific behavior while truly shared actions retain ids such as `hunk.app.quit` and `hunk.view.openThemeSelector`.
 
 ## Rules
 

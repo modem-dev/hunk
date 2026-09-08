@@ -298,6 +298,124 @@ describe("install VM contract", () => {
     }
   });
 
+  test("runs an interactive host command without scheduling a deadline", async () => {
+    const scheduled: number[] = [];
+    const runner = new InstallVmCommandRunner({
+      spawn: () => ({ exited: Promise.resolve(0), kill: () => {} }),
+      schedule: (_callback, delayMs) => {
+        scheduled.push(delayMs);
+        return delayMs;
+      },
+    });
+    await runner.run(["interactive-command"], { timeoutMs: false });
+    expect(scheduled).toEqual([]);
+  });
+
+  test("uses a per-command grace before forcing interrupted cleanup", async () => {
+    const scheduled: number[] = [];
+    const kills: NodeJS.Signals[] = [];
+    let resolveExit!: (exitCode: number) => void;
+    const runner = new InstallVmCommandRunner({
+      spawn: () => ({
+        exited: new Promise<number>((resolve) => {
+          resolveExit = resolve;
+        }),
+        kill: (signal) => {
+          kills.push(signal);
+          if (signal === "SIGTERM") resolveExit(143);
+        },
+      }),
+      schedule: (_callback, delayMs) => {
+        scheduled.push(delayMs);
+        return delayMs;
+      },
+    });
+    runner.start();
+    try {
+      const command = runner.run(["interactive-command"], {
+        timeoutMs: false,
+        terminationGraceMs: 30_000,
+      });
+      process.emit("SIGTERM", "SIGTERM");
+      const failure = await command.then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(kills).toEqual(["SIGTERM"]);
+      expect(scheduled).toEqual([30_000]);
+      expect(failure).toBeInstanceOf(InstallVmCommandError);
+      expect((failure as Error).message).toBe("Install VM command interrupted.");
+    } finally {
+      runner.stop();
+    }
+  });
+
+  test("rejects invalid host-command termination grace", async () => {
+    const runner = new InstallVmCommandRunner();
+    await expect(
+      runner.run(["unused-command"], { terminationGraceMs: Number.POSITIVE_INFINITY }),
+    ).rejects.toThrow("positive finite duration");
+  });
+
+  test("forwards terminal resize signals without interrupting the host command", async () => {
+    const kills: NodeJS.Signals[] = [];
+    let resolveExit!: (exitCode: number) => void;
+    const runner = new InstallVmCommandRunner({
+      spawn: () => ({
+        exited: new Promise<number>((resolve) => {
+          resolveExit = resolve;
+        }),
+        kill: (signal) => kills.push(signal),
+      }),
+    });
+    runner.start();
+    try {
+      const command = runner.run(["interactive-command"], { timeoutMs: false });
+      process.emit("SIGWINCH", "SIGWINCH");
+      resolveExit(0);
+      await command;
+      expect(kills).toEqual(["SIGWINCH"]);
+    } finally {
+      runner.stop();
+    }
+  });
+
+  test("forwards host termination signals with conventional exit codes", async () => {
+    for (const [signal, expectedExitCode] of [
+      ["SIGHUP", 129],
+      ["SIGQUIT", 131],
+      ["SIGTERM", 143],
+    ] as const) {
+      let resolveExit!: (exitCode: number) => void;
+      const kills: NodeJS.Signals[] = [];
+      const runner = new InstallVmCommandRunner({
+        spawn: () => ({
+          exited: new Promise<number>((resolve) => {
+            resolveExit = resolve;
+          }),
+          kill: (receivedSignal) => {
+            kills.push(receivedSignal);
+            resolveExit(expectedExitCode);
+          },
+        }),
+      });
+      runner.start();
+      try {
+        const command = runner.run(["interactive-command"], { timeoutMs: false });
+        process.emit(signal, signal);
+        const failure = await command.then(
+          () => undefined,
+          (error: unknown) => error,
+        );
+        expect(kills).toEqual([signal]);
+        expect(failure).toBeInstanceOf(InstallVmCommandError);
+        expect((failure as InstallVmCommandError).exitCode).toBe(expectedExitCode);
+      } finally {
+        runner.stop();
+      }
+    }
+  });
+
   test("terminates an asynchronously spawned host command at its deadline", async () => {
     const runner = new InstallVmCommandRunner();
     runner.start();

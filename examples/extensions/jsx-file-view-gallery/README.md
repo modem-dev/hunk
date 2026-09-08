@@ -7,9 +7,9 @@ Three opt-in presentations exercise the constrained React/OpenTUI row contract a
 Nested boxes, responsive meters, semantic color, and selected-hunk styling summarize a multi-hunk TypeScript refactor. It uses no source parser and works from public hunk/change metadata alone.
 
 ```bash
-bun run src/main.tsx -- diff \
+bun run packages/hunk/src/main.tsx -- diff \
   --extension ./examples/extensions/jsx-file-view-gallery \
-  --mode stack \
+  --mode unified \
   examples/extensions/jsx-file-view-gallery/fixtures/change-atlas/before.ts \
   examples/extensions/jsx-file-view-gallery/fixtures/change-atlas/after.ts
 ```
@@ -19,9 +19,9 @@ bun run src/main.tsx -- diff \
 The extension lazily reads both exact documents, associates changed opaque three- or six-digit hexadecimal custom properties with each real diff hunk, and paints old/new terminal color swatches inside deterministic two-row rectangles.
 
 ```bash
-bun run src/main.tsx -- diff \
+bun run packages/hunk/src/main.tsx -- diff \
   --extension ./examples/extensions/jsx-file-view-gallery \
-  --mode stack \
+  --mode unified \
   examples/extensions/jsx-file-view-gallery/fixtures/css-palette/before.css \
   examples/extensions/jsx-file-view-gallery/fixtures/css-palette/after.css
 ```
@@ -31,9 +31,9 @@ bun run src/main.tsx -- diff \
 A conservative package-file parser highlights only the changed semantic-version segment: patch-only changes emphasize the patch number, minor upgrades emphasize the minor number, and major upgrades emphasize the full old/new strings. It retains positional bounds for every parsed hunk; invalid JSON or unavailable source falls back to raw diff.
 
 ```bash
-bun run src/main.tsx -- diff \
+bun run packages/hunk/src/main.tsx -- diff \
   --extension ./examples/extensions/jsx-file-view-gallery \
-  --mode stack \
+  --mode unified \
   examples/extensions/jsx-file-view-gallery/fixtures/package-dependencies/before/package.json \
   examples/extensions/jsx-file-view-gallery/fixtures/package-dependencies/after/package.json
 ```

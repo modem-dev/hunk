@@ -16,21 +16,31 @@ hunk --version
 
 When the release publishes `SHA256SUMS` and your machine has `sha256sum` or `shasum`, the script verifies the downloaded archive before installing. Otherwise it warns that verification was skipped and continues. It installs into `~/.hunk` (binary at `~/.hunk/bin/hunk`, bundled agent skills beside it) and adds `~/.hunk/bin` to `PATH` in your shell's startup file. Restart your shell afterwards.
 
-The script reads three settings:
+The script accepts these settings:
 
-| Setting                                         | Effect                                                                                      |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `HUNK_VERSION`                                  | Install an exact release instead of the newest one. Also accepted as a positional argument. |
-| `HUNK_INSTALL_DIR`                              | Install the binary into this directory instead of `~/.hunk/bin`.                            |
-| `--no-modify-path` (or `HUNK_NO_MODIFY_PATH=1`) | Leave shell startup files alone.                                                            |
+| Setting                                            | Effect                                                                                      |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `HUNK_VERSION`                                     | Install an exact release instead of the newest one. Also accepted as a positional argument. |
+| `HUNK_INSTALL_DIR`                                 | Install the binary into this directory instead of `~/.hunk/bin`.                            |
+| `--no-modify-path` (or `HUNK_NO_MODIFY_PATH=1`)    | Leave shell startup files alone.                                                            |
+| `--force` (or `HUNK_ALLOW_CONFLICTING_INSTALLS=1`) | Install despite another Hunk on PATH or in a known version-manager directory.               |
+| `HUNK_ENABLE_RELEASE_PROXY=1`                      | Test Hunk's anonymous aggregate release endpoint instead of resolving directly from GitHub. |
+| `HUNK_DISABLE_ANALYTICS=1` or `DO_NOT_TRACK=1`     | Keep release discovery direct to GitHub even when proxy testing is enabled.                 |
+
+By default, the installer refuses to create a second Hunk installation. It lists every competing
+path it finds, its version and PATH precedence, and the command that removes it. Remove those
+installs first; use `--force` only when you deliberately manage multiple copies.
 
 ```bash
 curl -fsSL https://hunk.dev/install.sh | sh -s -- 0.19.0
 curl -fsSL https://hunk.dev/install.sh | sh -s -- --no-modify-path
+curl -fsSL https://hunk.dev/install.sh | sh -s -- --force
 curl -fsSL https://hunk.dev/install.sh | HUNK_VERSION=0.19.0 sh
 ```
 
 On Hunk 0.20 and newer, `hunk update` refreshes a default install in place. An install redirected with `HUNK_INSTALL_DIR` cannot be auto-detected later (the variable is gone once your shell exits), so update one of those by re-running the script with the same `HUNK_INSTALL_DIR`; the installer prints a reminder at the end of a custom-directory install.
+
+Release discovery remains direct to GitHub by default while Hunk's cached endpoint is evaluated. Set `HUNK_ENABLE_RELEASE_PROXY=1` to route default install-script release resolution, automatic startup update checks, `hunk update --check`, and `hunk update` through it for curl-managed installs. Automatic checks normally run at most once every four hours for each user profile; simultaneous processes can produce an occasional duplicate, while explicit update commands and installer runs remain immediate. The endpoint records aggregate request source and current-version fields, but Hunk sends no installation ID, repository, hostname, cookie, or request body. `HUNK_DISABLE_ANALYTICS=1` and `DO_NOT_TRACK=1` override the testing flag, and every endpoint failure falls back directly to GitHub.
 
 Windows is not covered by the script; use npm or mise there.
 

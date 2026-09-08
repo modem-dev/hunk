@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "astro dev",
-    "build": "astro build",
+    "build": "astro build && bun scripts/publish-sitemap-alias.ts",
     "preview": "astro preview",
     "check": "astro check",
     "test:browser": "playwright test"
