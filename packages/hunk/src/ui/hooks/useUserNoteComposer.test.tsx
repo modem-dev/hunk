@@ -398,6 +398,33 @@ describe("useUserNoteComposer", () => {
     }
   });
 
+  test("does not save when the editor belongs to a stale draft", async () => {
+    const updates: Array<[string, string | undefined]> = [];
+    let saveCount = 0;
+    const harness = await renderComposer(
+      baseOptions({
+        draftNote,
+        updateDraft: (body, expectedDraftId) => {
+          updates.push([body, expectedDraftId]);
+          return false;
+        },
+        saveDraft: () => {
+          saveCount += 1;
+          return savedNote;
+        },
+      }),
+    );
+
+    try {
+      await act(async () => harness.composer().saveDraftNote(draftNote.body));
+
+      expect(updates).toEqual([[draftNote.body, draftNote.id]]);
+      expect(saveCount).toBe(0);
+    } finally {
+      await act(async () => harness.setup.renderer.destroy());
+    }
+  });
+
   test("updates the semantic draft and publishes the editor's current body", async () => {
     const bodies: string[] = [];
     const events: Array<{ event: string; payload: unknown }> = [];

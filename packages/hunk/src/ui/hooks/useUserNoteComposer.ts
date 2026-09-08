@@ -164,12 +164,7 @@ export function useUserNoteComposer({
       // `saveDraft` consumes the semantic draft synchronously. Retain its runtime file id
       // first because the saved terminal projection is keyed by path rather than runtime id.
       const priorDraft = draftNote;
-      if (
-        priorDraft &&
-        editorBody !== undefined &&
-        editorBody !== priorDraft.body &&
-        !updateDraft(editorBody, priorDraft.id)
-      ) {
+      if (priorDraft && editorBody !== undefined && !updateDraft(editorBody, priorDraft.id)) {
         return;
       }
       const saved = saveDraft();
