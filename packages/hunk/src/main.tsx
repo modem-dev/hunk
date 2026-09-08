@@ -157,7 +157,7 @@ async function main() {
     } finally {
       await retireExtensionLoadResult(startupPlan.bootstrap.extensions);
     }
-    process.exit(0);
+    await exitAfterSweep(0);
   }
 
   if (startupPlan.kind !== "app") {
