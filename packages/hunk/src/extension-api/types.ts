@@ -341,6 +341,10 @@ export interface ExtensionFileViewSyntaxReference {
 
 /** One symbolic run in a host-rendered file-view row. */
 export interface ExtensionFileViewSpan {
+  /**
+   * Authoritative terminal-safe text. Horizontal tabs remain UTF-16 source coordinates for syntax
+   * references and expand to two display cells only after host paint projection.
+   */
   readonly text: string;
   /** A generic semantic color the host maps to its active terminal theme at paint time. */
   readonly tone?: "muted" | "accent" | "accent-muted" | "syntax" | "added" | "removed";

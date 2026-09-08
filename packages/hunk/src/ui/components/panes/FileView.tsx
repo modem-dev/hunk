@@ -15,7 +15,12 @@ import { resolveVisibleRowIndexWindow, type VisibleBodyBounds } from "../../diff
 import { reviewRowId } from "../../lib/ids";
 import { toExtensionPaintTheme } from "../../lib/extensionPaintTheme";
 import type { PlannedFileViewRow } from "../../fileViews/renderPlan";
-import { projectFileViewSyntaxSpan } from "../../fileViews/syntaxPaint";
+import { preserveCrossSpanGraphemes } from "../../diff/styledSpanLayout";
+import {
+  createFileViewSyntaxProjector,
+  type FileViewSyntaxProjector,
+} from "../../fileViews/syntaxPaint";
+import { fileViewDisplaySpans } from "../../fileViews/textDisplay";
 import type { FileViewRowFailure } from "../../fileViews/types";
 import { useFileViewSyntaxHighlight } from "../../fileViews/useFileViewSyntaxHighlight";
 import type { ResolvedFileViewLayout } from "../../fileViews/useFileViews";
@@ -85,32 +90,40 @@ function fileViewPaintColor(value: string) {
 
 /** Paint one row through the symbolic host-rendered path, adding syntax foregrounds only. */
 function SymbolicFileViewRow({
-  highlights,
+  projector,
   row,
   theme,
 }: {
-  highlights: ReturnType<typeof useFileViewSyntaxHighlight>;
+  projector: FileViewSyntaxProjector;
   row: ExtensionFileViewRow;
   theme: AppTheme;
 }) {
   const content = useMemo(() => {
-    const chunks: TextChunk[] = [];
+    const paintRuns: Array<{ text: string; fg: string; attributes: number }> = [];
     for (const span of row.spans) {
       const fallbackForeground = fileViewToneColor(span.tone, theme);
       const attributes = fileViewTextAttributes(span.attributes);
-      const syntaxRuns = projectFileViewSyntaxSpan(span, highlights);
+      const syntaxRuns = projector.projectSpan(span);
       for (const run of syntaxRuns ?? [{ text: span.text }]) {
-        chunks.push({
-          __isChunk: true,
+        paintRuns.push({
           text: run.text,
-          fg: fileViewPaintColor(run.fg ?? fallbackForeground),
+          fg: run.fg ?? fallbackForeground,
           attributes,
         });
       }
     }
+    // Resolve graphemes once across the complete authored row. Tabs expand afterward so document
+    // references and syntax ranges continue to use the extension's original UTF-16 coordinates.
+    const displayRuns = fileViewDisplaySpans(preserveCrossSpanGraphemes(paintRuns));
+    const chunks: TextChunk[] = displayRuns.map((run) => ({
+      __isChunk: true,
+      text: run.text,
+      fg: fileViewPaintColor(run.fg),
+      attributes: run.attributes,
+    }));
     return new StyledText(chunks);
-  }, [highlights, row.spans, theme]);
-  return <text content={content} wrapMode="char" />;
+  }, [projector, row.spans, theme]);
+  return <text content={content} wrapMode="word" />;
 }
 
 /** Contain synchronous render/lifecycle failures to one row and attribute them to the host. */
@@ -207,6 +220,10 @@ function FileViewComponent({
     shouldLoadHighlight,
     theme,
   });
+  const syntaxProjector = useMemo(
+    () => createFileViewSyntaxProjector(syntaxHighlights),
+    [syntaxHighlights],
+  );
   return (
     <box style={{ width: "100%", flexDirection: "column" }}>
       {rowWindow.topSpacerHeight > 0 ? (
@@ -250,7 +267,7 @@ function FileViewComponent({
           | ((props: ExtensionFileViewRowComponentProps) => ReactNode)
           | undefined;
         const fallback = (
-          <SymbolicFileViewRow highlights={syntaxHighlights} row={row} theme={theme} />
+          <SymbolicFileViewRow projector={syntaxProjector} row={row} theme={theme} />
         );
         // Selection is deliberately absent: hook state survives ordinary selected-prop updates.
         // Window unmount or any accepted layout/registration generation creates a fresh identity.
