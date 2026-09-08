@@ -371,7 +371,7 @@ describe("FileView custom rows", () => {
     }
   });
 
-  test("retains native indivisible tabs across authored styles and wrap widths", async () => {
+  test("retains native fixed-width tabs across authored styles and wrap widths", async () => {
     const theme = resolveTheme("github-dark-default", null);
     const file = createTestDiffFile({ id: "tabs", path: "tabs.ts" });
     const cases = [
