@@ -7,7 +7,7 @@ import type {
   ExtensionFileViewSyntaxReference,
 } from "../../extension-api/types";
 import { sanitizeTerminalLine } from "../../lib/terminalText";
-import { wrapSanitizedTextByWidth } from "../lib/text";
+import { FileViewTextMeasurer } from "./textDisplay";
 
 /** Resource limits keep one extension layout from exhausting the review stream. */
 export const FILE_VIEW_MAX_ROWS = 10_000;
@@ -172,11 +172,12 @@ function validateCodeDocuments(layout: ExtensionFileViewLayout):
   return { valid: true, snapshots: Object.freeze(snapshots), byId };
 }
 
-/** Explain why an extension result cannot safely join the host-owned review stream. */
-export function validateFileViewLayout(
+/** Validate and snapshot one layout while sharing its native text-measurement state. */
+function validateFileViewLayoutWithMeasurer(
   value: unknown,
   hunkCount: number,
   width: number,
+  textMeasurer: FileViewTextMeasurer,
 ): { valid: true; value: ValidatedFileViewLayout } | { valid: false; issue: string } {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return { valid: false, issue: "layout is not an object" };
@@ -428,7 +429,7 @@ export function validateFileViewLayout(
     // Measure exactly once at validation. Geometry consumes this retained value without rewrapping.
     const rowHeight = componentSnapshot
       ? componentSnapshot.height
-      : Math.max(1, wrapSanitizedTextByWidth(rowText, usableWidth).length);
+      : textMeasurer.measure(rowText, usableWidth);
     layoutHeight += rowHeight;
     if (layoutHeight > FILE_VIEW_MAX_LAYOUT_HEIGHT) {
       return {
@@ -517,6 +518,20 @@ export function validateFileViewLayout(
     valid: true,
     value: Object.freeze({ layout: snapshot, rowHeights: Object.freeze(rowHeights) }),
   };
+}
+
+/** Explain why an extension result cannot safely join the host-owned review stream. */
+export function validateFileViewLayout(
+  value: unknown,
+  hunkCount: number,
+  width: number,
+): { valid: true; value: ValidatedFileViewLayout } | { valid: false; issue: string } {
+  const textMeasurer = new FileViewTextMeasurer();
+  try {
+    return validateFileViewLayoutWithMeasurer(value, hunkCount, width, textMeasurer);
+  } finally {
+    textMeasurer.destroy();
+  }
 }
 
 /** Count one-based source lines without inventing a line after a trailing newline. */

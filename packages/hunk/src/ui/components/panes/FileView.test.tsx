@@ -11,6 +11,7 @@ import {
   documentHighlightRunsForLine,
   loadDocumentHighlight,
 } from "../../diff/documentHighlightService";
+import { cursorLineHighlightBg } from "../../diff/rowStyle";
 import { measureFileViewGeometry } from "../../fileViews/geometry";
 import { validateFileViewLayout } from "../../fileViews/layout";
 import { buildFileViewRenderPlan } from "../../fileViews/renderPlan";
@@ -68,6 +69,30 @@ function backgroundForText(
     .flatMap((line) => line.spans)
     .find((candidate) => candidate.text.includes(text));
   return capturedTestColorToHex(span?.bg)?.toLowerCase();
+}
+
+/** Read the semantic text buffer below one host-owned row, independent of visual word wrapping. */
+function rowPlainText(setup: Awaited<ReturnType<typeof testRender>>, rowId: string) {
+  const row = setup.renderer.root.findDescendantById(reviewRowId(`file-view:${rowId}`));
+  const pending = [...(row?.getChildren() ?? [])];
+  while (pending.length > 0) {
+    const candidate = pending.shift()!;
+    if ("plainText" in candidate && typeof candidate.plainText === "string") {
+      return candidate.plainText;
+    }
+    pending.push(...candidate.getChildren());
+  }
+  return undefined;
+}
+
+/** Return visible captured rows without terminal-width padding. */
+function capturedLines(setup: Awaited<ReturnType<typeof testRender>>) {
+  const lines = setup
+    .captureCharFrame()
+    .split("\n")
+    .map((line) => line.trimEnd());
+  if (lines.at(-1) === "") lines.pop();
+  return lines;
 }
 
 const layout: ExtensionFileViewLayout = {
@@ -210,13 +235,8 @@ describe("FileView custom rows", () => {
       });
       const frame = setup!.captureCharFrame();
       const capture = setup!.captureSpans();
-      const retainedFrameText = (value: string) =>
-        value
-          .split("\n")
-          .map((line) => line.trimEnd())
-          .join("");
-      expect(retainedFrameText(plainFrame)).toContain(`1 ${code}`);
-      expect(retainedFrameText(frame)).toBe(retainedFrameText(plainFrame));
+      expect(rowPlainText(setup!, "syntax-row")).toBe(`1 ${code}`);
+      expect(frame).toBe(plainFrame);
       expect(
         setup!.renderer.root.findDescendantById(reviewRowId("file-view:syntax-row"))?.height,
       ).toBe(plainHeight);
@@ -241,6 +261,355 @@ describe("FileView custom rows", () => {
               (TextAttributes.BOLD | TextAttributes.UNDERLINE),
           ),
       ).toBe(true);
+    } finally {
+      await act(async () => setup!.renderer.destroy());
+    }
+  });
+
+  test("retains default word wrapping before and after syntax paint", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const text = "hello world";
+    const file = createTestDiffFile({ id: "word-wrap", path: "word-wrap.ts" });
+    await loadDocumentHighlight({
+      text,
+      path: file.path,
+      language: "typescript",
+      theme,
+      offloadLargeDiff: false,
+    });
+
+    for (const syntax of [false, true]) {
+      const fileView = resolveTestLayout(
+        {
+          ...(syntax ? { codeDocuments: [{ id: "code", text, language: "typescript" }] } : {}),
+          rows: [
+            {
+              id: "word-row",
+              spans: [syntax ? { text, syntax: { documentId: "code", line: 1 } } : { text }],
+            },
+          ],
+          hunkRows: [{ startRow: 0, endRow: 0 }],
+        },
+        7,
+      );
+      const geometry = measureTestGeometry(fileView, 7);
+      let setup: Awaited<ReturnType<typeof testRender>> | undefined;
+      await act(async () => {
+        setup = await testRender(
+          <FileView
+            file={file}
+            fileView={fileView}
+            geometry={geometry}
+            selectedHunkIndex={0}
+            shouldLoadHighlight={syntax}
+            theme={theme}
+            width={7}
+          />,
+          { width: 7, height: geometry.bodyHeight },
+        );
+        await setup.renderOnce();
+      });
+      try {
+        await act(async () => {
+          await setup!.renderOnce();
+          await Bun.sleep(5);
+        });
+        await act(async () => setup!.renderOnce());
+        expect(capturedLines(setup!)).toEqual(["hello", "world"]);
+        expect(rowPlainText(setup!, "word-row")).toBe(text);
+        expect(geometry.rowBounds[0]?.height).toBe(2);
+        expect(
+          setup!.renderer.root.findDescendantById(reviewRowId("file-view:word-row"))?.height,
+        ).toBe(2);
+      } finally {
+        await act(async () => setup!.renderer.destroy());
+      }
+    }
+  });
+
+  test("expands retained tabs after syntax projection with renderer-backed geometry parity", async () => {
+    let nativeTabReference: Awaited<ReturnType<typeof testRender>> | undefined;
+    await act(async () => {
+      nativeTabReference = await testRender(<text content={"a\tb"} wrapMode="word" />, {
+        width: 4,
+        height: 1,
+      });
+      await nativeTabReference.renderOnce();
+    });
+    await act(async () => nativeTabReference!.renderOnce());
+    expect(capturedLines(nativeTabReference!)).toEqual(["a  b"]);
+    await act(async () => nativeTabReference!.renderer.destroy());
+
+    const theme = resolveTheme("github-dark-default", null);
+    const file = createTestDiffFile({ id: "tabs", path: "tabs.ts" });
+    const cases = [
+      {
+        text: "a\tb",
+        width: 2,
+        spans: [
+          {
+            text: "a",
+            syntax: { documentId: "code", line: 1, range: [0, 1] as const },
+          },
+          {
+            text: "\t",
+            syntax: { documentId: "code", line: 1, range: [1, 2] as const },
+          },
+          {
+            text: "b",
+            syntax: { documentId: "code", line: 1, range: [2, 3] as const },
+          },
+        ],
+        lines: ["a", " b"],
+      },
+      {
+        text: "\t12345678",
+        width: 7,
+        spans: [
+          { text: "\t", tone: "muted" as const },
+          {
+            text: "12345678",
+            syntax: { documentId: "code", line: 1, range: [1, 9] as const },
+          },
+        ],
+        lines: ["", "1234567", "8"],
+      },
+    ];
+
+    for (const [index, input] of cases.entries()) {
+      await loadDocumentHighlight({
+        text: input.text,
+        path: file.path,
+        language: "typescript",
+        theme,
+        offloadLargeDiff: false,
+      });
+      const fileView = resolveTestLayout(
+        {
+          codeDocuments: [{ id: "code", text: input.text, language: "typescript" }],
+          rows: [{ id: `tab-${index}`, spans: input.spans }],
+          hunkRows: [{ startRow: 0, endRow: 0 }],
+        },
+        input.width,
+      );
+      const geometry = measureTestGeometry(fileView, input.width);
+      let setup: Awaited<ReturnType<typeof testRender>> | undefined;
+      await act(async () => {
+        setup = await testRender(
+          <FileView
+            file={file}
+            fileView={fileView}
+            geometry={geometry}
+            selectedHunkIndex={0}
+            shouldLoadHighlight
+            theme={theme}
+            width={input.width}
+          />,
+          { width: input.width, height: geometry.bodyHeight },
+        );
+        await setup.renderOnce();
+      });
+      try {
+        await act(async () => {
+          await setup!.renderOnce();
+          await Bun.sleep(5);
+        });
+        await act(async () => setup!.renderOnce());
+        expect(fileView.layout.rows[0]?.spans.map((span) => span.text).join("")).toBe(input.text);
+        expect(rowPlainText(setup!, `tab-${index}`)).toBe(input.text.replaceAll("\t", "  "));
+        expect(capturedLines(setup!)).toEqual(input.lines);
+        expect(geometry.rowBounds[0]?.height).toBe(input.lines.length);
+        expect(
+          setup!.renderer.root.findDescendantById(reviewRowId(`file-view:tab-${index}`))?.height,
+        ).toBe(input.lines.length);
+      } finally {
+        await act(async () => setup!.renderer.destroy());
+      }
+    }
+  });
+
+  test("preserves graphemes split across final authored row spans", async () => {
+    const cases = [
+      { id: "surrogate", text: "😀", spans: ["\ud83d", "\ude00"] },
+      { id: "combining", text: "é", spans: ["e", "́"] },
+      { id: "variation", text: "❤️", spans: ["❤", "️"] },
+      { id: "zwj", text: "👩‍💻", spans: ["👩", "‍", "💻"] },
+    ];
+    const theme = resolveTheme("github-dark-default", null);
+    const file = createTestDiffFile({ id: "graphemes", path: "graphemes.ts" });
+    await Promise.all(
+      cases.map((input) =>
+        loadDocumentHighlight({
+          text: input.text,
+          path: file.path,
+          language: "typescript",
+          theme,
+          offloadLargeDiff: false,
+        }),
+      ),
+    );
+    const fileView = resolveTestLayout(
+      {
+        codeDocuments: cases.map((input) => ({
+          id: input.id,
+          text: input.text,
+          language: "typescript",
+        })),
+        rows: cases.map((input) => {
+          let offset = 0;
+          return {
+            id: input.id,
+            spans: input.spans.map((text, index) => {
+              const start = offset;
+              offset += text.length;
+              return {
+                text,
+                tone: index === 0 ? ("accent" as const) : ("removed" as const),
+                syntax: {
+                  documentId: input.id,
+                  line: 1,
+                  range: [start, offset] as const,
+                },
+              };
+            }),
+          };
+        }),
+        hunkRows: cases.map((_, index) => ({ startRow: index, endRow: index })),
+      },
+      4,
+    );
+    const geometry = measureTestGeometry(fileView, 4);
+    let setup: Awaited<ReturnType<typeof testRender>> | undefined;
+    await act(async () => {
+      setup = await testRender(
+        <FileView
+          file={file}
+          fileView={fileView}
+          geometry={geometry}
+          selectedHunkIndex={0}
+          shouldLoadHighlight
+          theme={theme}
+          width={4}
+        />,
+        { width: 4, height: geometry.bodyHeight },
+      );
+      await setup.renderOnce();
+    });
+    try {
+      await act(async () => {
+        await setup!.renderOnce();
+        await Bun.sleep(5);
+      });
+      await act(async () => setup!.renderOnce());
+      const frame = setup!.captureCharFrame();
+      expect(frame).not.toContain("�");
+      for (const [index, input] of cases.entries()) {
+        expect(rowPlainText(setup!, input.id)).toBe(input.text);
+        expect(frame).toContain(input.text);
+        expect(geometry.rowBounds[index]?.height).toBe(1);
+        expect(
+          setup!.renderer.root.findDescendantById(reviewRowId(`file-view:${input.id}`))?.height,
+        ).toBe(1);
+      }
+    } finally {
+      await act(async () => setup!.renderer.destroy());
+    }
+  });
+
+  test("paints two document slices independently and keeps the current-row background", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const file = createTestDiffFile({ id: "two-docs", path: "two-docs.ts" });
+    const leftText = "const oldValue = 1;";
+    const rightText = '"new text"';
+    const [leftResult, rightResult] = await Promise.all([
+      loadDocumentHighlight({
+        text: leftText,
+        path: file.path,
+        language: "typescript",
+        theme,
+        offloadLargeDiff: false,
+      }),
+      loadDocumentHighlight({
+        text: rightText,
+        path: file.path,
+        language: "typescript",
+        theme,
+        offloadLargeDiff: false,
+      }),
+    ]);
+    const leftColor = documentHighlightRunsForLine(leftResult, 0).find(
+      (run) => run.start === 0 && run.fg,
+    )?.fg;
+    const rightColor = documentHighlightRunsForLine(rightResult, 0).find(
+      (run) => run.start <= 1 && run.end > 1 && run.fg,
+    )?.fg;
+    expect(leftColor).toBeDefined();
+    expect(rightColor).toBeDefined();
+    expect(leftColor).not.toBe(rightColor);
+
+    const fileView = resolveTestLayout(
+      {
+        codeDocuments: [
+          { id: "left", text: leftText, language: "typescript" },
+          { id: "right", text: rightText, language: "typescript" },
+        ],
+        rows: [
+          {
+            id: "split",
+            spans: [
+              {
+                text: "const",
+                syntax: { documentId: "left", line: 1, range: [0, 5] },
+              },
+              { text: " | ", tone: "muted" },
+              {
+                text: "new text",
+                syntax: { documentId: "right", line: 1, range: [1, 9] },
+              },
+            ],
+          },
+        ],
+        hunkRows: [{ startRow: 0, endRow: 0 }],
+      },
+      30,
+    );
+    const geometry = measureTestGeometry(fileView, 30);
+    let setup: Awaited<ReturnType<typeof testRender>> | undefined;
+    await act(async () => {
+      setup = await testRender(
+        <FileView
+          file={file}
+          fileView={fileView}
+          geometry={geometry}
+          cursorHighlight={{
+            stableKey: "file-view:split",
+            side: "new",
+            style: "row",
+          }}
+          selectedHunkIndex={9}
+          shouldLoadHighlight
+          theme={theme}
+          width={30}
+        />,
+        { width: 30, height: 1 },
+      );
+      await setup.renderOnce();
+    });
+    try {
+      await act(async () => {
+        await setup!.renderOnce();
+        await Bun.sleep(5);
+      });
+      await act(async () => setup!.renderOnce());
+      const capture = setup!.captureSpans();
+      expect(foregroundForText(capture, "const")).toBe(leftColor?.toLowerCase());
+      expect(foregroundForText(capture, "new text")).toBe(rightColor?.toLowerCase());
+      expect(backgroundForText(capture, "const")).toBe(
+        cursorLineHighlightBg(theme.panel, theme).toLowerCase(),
+      );
+      expect(backgroundForText(capture, "new text")).toBe(
+        cursorLineHighlightBg(theme.panel, theme).toLowerCase(),
+      );
     } finally {
       await act(async () => setup!.renderer.destroy());
     }

@@ -6,8 +6,9 @@ import {
   type DocumentHighlightResult,
   type DocumentHighlightRun,
 } from "../diff/documentHighlightService";
+import { preserveCrossSpanGraphemes } from "../diff/styledSpanLayout";
 import type { CompactHighlightedDocument } from "../diff/worker";
-import { projectFileViewSyntaxSpan } from "./syntaxPaint";
+import { createFileViewSyntaxProjector, projectFileViewSyntaxSpan } from "./syntaxPaint";
 
 const theme = THEMES.find((candidate) => candidate.id === "github-dark-default")!;
 
@@ -129,7 +130,7 @@ describe("file-view syntax paint projection", () => {
         { start: 2, end: 4, fg: "#222222" },
       ],
     );
-    expect(astral).toEqual([
+    expect(preserveCrossSpanGraphemes([...(astral ?? [])])).toEqual([
       { text: "A😀", fg: "#111111" },
       { text: "B", fg: "#222222" },
     ]);
@@ -138,7 +139,7 @@ describe("file-view syntax paint projection", () => {
       { start: 0, end: 1, fg: "#111111" },
       { start: 1, end: 3, fg: "#222222" },
     ]);
-    expect(combining).toEqual([
+    expect(preserveCrossSpanGraphemes([...(combining ?? [])])).toEqual([
       { text: "é", fg: "#111111" },
       { text: "x", fg: "#222222" },
     ]);
@@ -153,8 +154,36 @@ describe("file-view syntax paint projection", () => {
     ]);
 
     expect(projected?.map((run) => run.text).join("")).toBe(text);
-    expect(projected?.some((run) => run.text.includes("👩‍💻"))).toBe(true);
-    expect(projected?.every((run) => !run.text.includes("\uFFFD"))).toBe(true);
+    const graphemeSafe = preserveCrossSpanGraphemes([...(projected ?? [])]);
+    expect(graphemeSafe.some((run) => run.text.includes("👩‍💻"))).toBe(true);
+    expect(graphemeSafe.every((run) => !run.text.includes("\uFFFD"))).toBe(true);
+  });
+
+  test("projects a shared 999-run line once for 40,000 clipped spans", async () => {
+    const source = "x".repeat(999);
+    const result = await highlightedResult(
+      source,
+      Array.from({ length: 999 }, (_, index) => ({
+        start: index,
+        end: index + 1,
+        fg: index % 2 === 0 ? "#111111" : "#222222",
+      })),
+    );
+    const projector = createFileViewSyntaxProjector(new Map([["code", result]]));
+    let projectedSpanCount = 0;
+    for (let index = 0; index < 40_000; index += 1) {
+      const start = index % source.length;
+      if (
+        projector.projectSpan({
+          text: "x",
+          syntax: { documentId: "code", line: 1, range: [start, start + 1] },
+        })?.length === 1
+      ) {
+        projectedSpanCount += 1;
+      }
+    }
+    expect(projectedSpanCount).toBe(40_000);
+    expect(projector.projectedLineCount).toBe(1);
   });
 
   test("falls back for unavailable, stale, mismatched, or out-of-bounds projections", async () => {
