@@ -41,6 +41,28 @@ interface ValidatedCodeDocument {
   readonly lines: readonly string[];
 }
 
+/** Count logical lines without allocating an attacker-controlled split array. */
+function boundedCodeDocumentLineCount(text: string, maximum: number) {
+  if (text.length === 0) return 0;
+
+  let lineBreaks = 0;
+  let endsWithLineBreak = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const code = text.charCodeAt(index);
+    if (code !== 0x0a && code !== 0x0d) {
+      endsWithLineBreak = false;
+      continue;
+    }
+    if (code === 0x0d && text.charCodeAt(index + 1) === 0x0a) index += 1;
+    lineBreaks += 1;
+    endsWithLineBreak = true;
+    if (lineBreaks > maximum) return null;
+  }
+
+  const lineCount = lineBreaks + (endsWithLineBreak ? 0 : 1);
+  return lineCount <= maximum ? lineCount : null;
+}
+
 /** Normalize one code document without changing its logical line count. */
 function normalizeCodeDocumentText(text: string) {
   const normalizedNewlines = text.replace(/\r\n?/g, "\n");
@@ -90,7 +112,8 @@ function validateCodeDocuments(layout: ExtensionFileViewLayout):
     if (
       typeof document.id !== "string" ||
       document.id.length === 0 ||
-      document.id.length > FILE_VIEW_MAX_CODE_DOCUMENT_ID_LENGTH
+      document.id.length > FILE_VIEW_MAX_CODE_DOCUMENT_ID_LENGTH ||
+      /[\x00-\x1f\x7f-\x9f]/u.test(document.id)
     ) {
       return {
         valid: false,
@@ -123,14 +146,18 @@ function validateCodeDocuments(layout: ExtensionFileViewLayout):
         issue: `code document text exceeds ${FILE_VIEW_MAX_CODE_DOCUMENT_TEXT_LENGTH} characters`,
       };
     }
-    const normalized = normalizeCodeDocumentText(document.text);
-    lineCount += normalized.lines.length;
-    if (lineCount > FILE_VIEW_MAX_CODE_DOCUMENT_LINES) {
+    const documentLineCount = boundedCodeDocumentLineCount(
+      document.text,
+      FILE_VIEW_MAX_CODE_DOCUMENT_LINES - lineCount,
+    );
+    if (documentLineCount === null) {
       return {
         valid: false,
         issue: `code documents have more than ${FILE_VIEW_MAX_CODE_DOCUMENT_LINES} lines`,
       };
     }
+    lineCount += documentLineCount;
+    const normalized = normalizeCodeDocumentText(document.text);
 
     const snapshot = Object.freeze({
       id: document.id,
@@ -231,7 +258,20 @@ export function validateFileViewLayout(
           issue: `layout has more than ${FILE_VIEW_MAX_SPANS} spans`,
         };
       }
-      if (!span || typeof span.text !== "string" || span.text.includes("\n")) {
+      if (!span || typeof span.text !== "string") {
+        return {
+          valid: false,
+          issue: `rows[${index}] contains an invalid span`,
+        };
+      }
+      textLength += span.text.length;
+      if (textLength > FILE_VIEW_MAX_TEXT_LENGTH) {
+        return {
+          valid: false,
+          issue: `layout text exceeds ${FILE_VIEW_MAX_TEXT_LENGTH} characters`,
+        };
+      }
+      if (span.text.includes("\n")) {
         return {
           valid: false,
           issue: `rows[${index}] contains an invalid span`,
@@ -270,10 +310,15 @@ export function validateFileViewLayout(
             issue: `rows[${index}] contains an invalid syntax reference`,
           };
         }
-        if (typeof reference.documentId !== "string" || reference.documentId.length === 0) {
+        if (
+          typeof reference.documentId !== "string" ||
+          reference.documentId.length === 0 ||
+          reference.documentId.length > FILE_VIEW_MAX_CODE_DOCUMENT_ID_LENGTH ||
+          /[\x00-\x1f\x7f-\x9f]/u.test(reference.documentId)
+        ) {
           return {
             valid: false,
-            issue: `rows[${index}] contains a syntax reference without a document id`,
+            issue: `rows[${index}] contains a syntax reference without a bounded terminal-safe document id`,
           };
         }
         const document = codeDocuments.byId.get(reference.documentId);
@@ -330,13 +375,6 @@ export function validateFileViewLayout(
           line: reference.line,
           ...(range === undefined ? {} : { range }),
         });
-      }
-      textLength += span.text.length;
-      if (textLength > FILE_VIEW_MAX_TEXT_LENGTH) {
-        return {
-          valid: false,
-          issue: `layout text exceeds ${FILE_VIEW_MAX_TEXT_LENGTH} characters`,
-        };
       }
       rowText += text;
       spans.push(

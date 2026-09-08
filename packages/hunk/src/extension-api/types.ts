@@ -309,7 +309,12 @@ export interface ExtensionFileViewSourceRange {
   readonly range: readonly [number, number];
 }
 
-/** One complete code document a file view can ask Hunk to syntax-highlight. */
+/**
+ * Declares complete lexical context for syntax-painted file-view spans.
+ *
+ * Hunk treats highlighting as optional paint: pending, unsupported, oversized, or failed work keeps
+ * the ordinary symbolic spans and never invalidates layout geometry.
+ */
 export interface ExtensionFileViewCodeDocument {
   /** Stable and unique within this layout result. */
   readonly id: string;
@@ -342,8 +347,10 @@ export interface ExtensionFileViewSpan {
   /** Theme-independent terminal emphasis. */
   readonly attributes?: readonly ("bold" | "italic" | "underline" | "strikethrough")[];
   /**
-   * Optional host-owned syntax paint for an exact slice of a declared code document. The retained
-   * terminal-safe `text` must equal that complete line or range.
+   * Requests host-owned syntax paint for an exact slice of a declared code document. The retained
+   * terminal-safe `text` must equal that complete line or range. A resolved syntax foreground
+   * overrides `tone` for that token; unstyled gaps and unavailable highlighting keep `tone`, while
+   * authored `attributes` apply to every resulting run. Highlighting never changes text or geometry.
    */
   readonly syntax?: ExtensionFileViewSyntaxReference;
 }

@@ -157,9 +157,21 @@ describe("file-view layout validation", () => {
       valid: false,
       issue: "codeDocuments[0].language is not a bounded language id",
     });
+    expect(validate({ codeDocuments: [{ id: "unsafe\u001b]0;title\u0007", text: "a" }] })).toEqual({
+      valid: false,
+      issue: "codeDocuments[0] has no bounded non-empty id",
+    });
 
     for (const [syntax, issue] of [
       [{ documentId: "missing", line: 1 }, 'rows[0] references missing code document "missing"'],
+      [
+        { documentId: "unsafe\u001b]0;title\u0007", line: 1 },
+        "rows[0] contains a syntax reference without a bounded terminal-safe document id",
+      ],
+      [
+        { documentId: "x".repeat(257), line: 1 },
+        "rows[0] contains a syntax reference without a bounded terminal-safe document id",
+      ],
       [
         { documentId: "code", line: 0 },
         "rows[0] contains a syntax reference with an invalid one-based line",
@@ -244,6 +256,41 @@ describe("file-view layout validation", () => {
     ).toEqual({
       valid: false,
       issue: "code documents have more than 10000 lines",
+    });
+    expect(
+      validateFileViewLayout(
+        {
+          codeDocuments: [{ id: "newline-flood", text: "\n".repeat(500_000) }],
+          rows: [],
+          hunkRows: [],
+        },
+        0,
+        80,
+      ),
+    ).toEqual({
+      valid: false,
+      issue: "code documents have more than 10000 lines",
+    });
+  });
+
+  test("bounds authored span text before scanning or sanitizing its contents", () => {
+    expect(
+      validateFileViewLayout(
+        {
+          rows: [
+            {
+              id: "large",
+              spans: [{ text: `${"x".repeat(1_000_001)}\n\u001b]0;title\u0007` }],
+            },
+          ],
+          hunkRows: [],
+        },
+        0,
+        80,
+      ),
+    ).toEqual({
+      valid: false,
+      issue: "layout text exceeds 1000000 characters",
     });
   });
 

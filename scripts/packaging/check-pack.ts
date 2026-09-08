@@ -29,6 +29,8 @@ import type {
   ExtensionCommandControls,
   ExtensionCommandExecutionOptions,
   ExtensionFileLanguageMatcher,
+  ExtensionFileViewCodeDocument,
+  ExtensionFileViewLayout,
   ExtensionFileViewRow,
   ExtensionFileViewRowComponentProps,
   ExtensionFileViewSourceRange,
@@ -153,6 +155,11 @@ export default function (hunk: HunkExtensionAPI) {
     return null;
   };
   const sourceRange: ExtensionFileViewSourceRange = { side: "new", range: [1, 1] };
+  const codeDocument: ExtensionFileViewCodeDocument = {
+    id: "rendered-markdown",
+    text: "# rendered markdown",
+    language: "markdown",
+  };
   const componentRow: ExtensionFileViewRow = {
     id: "component",
     spans: [{ text: "fallback" }],
@@ -187,10 +194,25 @@ export default function (hunk: HunkExtensionAPI) {
       // @ts-expect-error The single layout input is readonly.
       input.width = 1;
       hunk.log(document ?? String(firstRange?.[0] ?? input.width));
-      return {
-        rows: [componentRow],
-        hunkRows: (input.file.hunks ?? []).map(() => ({ startRow: 0, endRow: 0 })),
+      const layout: ExtensionFileViewLayout = {
+        codeDocuments: [codeDocument],
+        rows: [
+          {
+            id: "syntax",
+            spans: [
+              {
+                text: "# rendered markdown",
+                tone: "muted",
+                attributes: ["bold"],
+                syntax: { documentId: codeDocument.id, line: 1, range: [0, 19] },
+              },
+            ],
+          },
+          componentRow,
+        ],
+        hunkRows: (input.file.hunks ?? []).map(() => ({ startRow: 0, endRow: 1 })),
       };
+      return layout;
     },
   });
   const matchTone: ExtensionLineHighlightTone = "match";
