@@ -25,23 +25,23 @@
  * describes UI vocabulary rather than review semantics, and that module stays purely about
  * what a review *is*.
  */
-import type { ReviewIntent } from '../review/intents';
-import type { ReviewSelectionScope } from '../review/navigation';
+import type { ReviewIntent } from "../review/intents";
+import type { ReviewSelectionScope } from "../review/navigation";
 import {
   selectActiveEditableReviewNoteId,
   selectActiveRemovableReviewNote,
   selectActiveReplyableReviewNoteId,
   selectNormalizedSelection,
   selectReviewGapForSelection,
-} from '../review/selectors';
-import type { ReviewState } from '../review/state';
-import type { ReviewNoteTargetV1 } from '../review/types';
+} from "../review/selectors";
+import type { ReviewState } from "../review/state";
+import type { ReviewNoteTargetV1 } from "../review/types";
 
 /** Where one command's effect resolves, and therefore who may invoke it. */
-export type AppCommandLocus = 'semantic' | 'client-local' | 'host-only';
+export type AppCommandLocus = "semantic" | "client-local" | "host-only";
 
 /** The id group a command lives under, and the menu-level grouping users read. */
-export type AppCommandCategory = 'app' | 'history' | 'review' | 'view';
+export type AppCommandCategory = "app" | "history" | "review" | "view";
 
 /** The direction a command moves a vertically ordered surface. */
 export type VerticalCommandDirection = -1 | 1;
@@ -54,18 +54,18 @@ export type VerticalCommandDirection = -1 | 1;
  * answer instead of one per surface.
  */
 export type AppCommandReviewEffect =
-  | { kind: 'selection/move'; scope: ReviewSelectionScope; direction: 1 | -1 }
-  | { kind: 'notes/toggle-visibility' }
+  | { kind: "selection/move"; scope: ReviewSelectionScope; direction: 1 | -1 }
+  | { kind: "notes/toggle-visibility" }
   /** Open a draft at the current selection; the client may supply a measured line. */
-  | { kind: 'notes/start-draft' }
+  | { kind: "notes/start-draft" }
   /** Edit the active note when that same card is an editable reviewer note. */
-  | { kind: 'notes/start-edit-active' }
+  | { kind: "notes/start-edit-active" }
   /** Reply to the active stored note. */
-  | { kind: 'notes/start-reply-active' }
+  | { kind: "notes/start-reply-active" }
   /** Delete or dismiss the active stored leaf note. */
-  | { kind: 'notes/remove-active' }
+  | { kind: "notes/remove-active" }
   /** Flip the gap the shared policy says this selection reaches. */
-  | { kind: 'expansion/toggle-selected-gap' };
+  | { kind: "expansion/toggle-selected-gap" };
 
 export interface AppCommandCatalogEntry {
   /** Stable canonical identifier, `hunk.<category>.<name>` for every built-in. */
@@ -102,506 +102,506 @@ export interface AppCommandCatalogEntry {
  */
 const BUILTIN_COMMANDS = [
   {
-    id: 'hunk.review.jumpToBottom',
-    title: 'Jump to end',
-    category: 'review',
-    defaultKeys: ['G', 'end'],
-    locus: 'client-local',
+    id: "hunk.review.jumpToBottom",
+    title: "Jump to end",
+    category: "review",
+    defaultKeys: ["G", "end"],
+    locus: "client-local",
     publicToExtensions: true,
   },
   {
-    id: 'hunk.review.jumpToTop',
-    title: 'Jump to start',
-    category: 'review',
-    defaultKeys: ['g', 'home'],
-    locus: 'client-local',
+    id: "hunk.review.jumpToTop",
+    title: "Jump to start",
+    category: "review",
+    defaultKeys: ["g", "home"],
+    locus: "client-local",
     publicToExtensions: true,
   },
   {
-    id: 'hunk.app.quit',
-    title: 'Quit',
-    category: 'app',
-    defaultKeys: ['q'],
-    locus: 'host-only',
+    id: "hunk.app.quit",
+    title: "Quit",
+    category: "app",
+    defaultKeys: ["q"],
+    locus: "host-only",
     publicToExtensions: true,
   },
   {
-    id: 'hunk.app.toggleHelp',
-    title: 'Toggle help',
-    category: 'app',
-    defaultKeys: ['?'],
-    locus: 'client-local',
+    id: "hunk.app.toggleHelp",
+    title: "Toggle help",
+    category: "app",
+    defaultKeys: ["?"],
+    locus: "client-local",
     publicToExtensions: true,
     closesMenu: true,
   },
   {
-    id: 'hunk.app.openAgentSkill',
-    title: 'Show agent skill',
-    category: 'app',
+    id: "hunk.app.openAgentSkill",
+    title: "Show agent skill",
+    category: "app",
     defaultKeys: [],
-    locus: 'host-only',
+    locus: "host-only",
     publicToExtensions: true,
     closesMenu: true,
   },
   {
-    id: 'hunk.app.toggleFocusArea',
-    title: 'Switch focus between files and filter',
-    category: 'app',
-    defaultKeys: ['tab'],
-    locus: 'client-local',
+    id: "hunk.app.toggleFocusArea",
+    title: "Switch focus between files and filter",
+    category: "app",
+    defaultKeys: ["tab"],
+    locus: "client-local",
     publicToExtensions: true,
   },
   {
-    id: 'hunk.review.focusFilter',
-    title: 'Focus the file filter',
-    category: 'review',
-    defaultKeys: ['/'],
+    id: "hunk.review.focusFilter",
+    title: "Focus the file filter",
+    category: "review",
+    defaultKeys: ["/"],
     // Moving keyboard focus is this client's business; the filter value it edits is
     // shared review state, changed through `filter/set` rather than by this command.
-    locus: 'client-local',
+    locus: "client-local",
     publicToExtensions: true,
   },
   {
-    id: 'hunk.review.startVisualSelection',
-    title: 'Start visual selection',
-    category: 'review',
-    defaultKeys: ['v'],
-    locus: 'client-local',
+    id: "hunk.review.startVisualSelection",
+    title: "Start visual selection",
+    category: "review",
+    defaultKeys: ["v"],
+    locus: "client-local",
     publicToExtensions: true,
   },
   {
-    id: 'hunk.review.copySelection',
-    title: 'Copy selection',
-    category: 'review',
-    defaultKeys: ['y'],
-    locus: 'client-local',
+    id: "hunk.review.copySelection",
+    title: "Copy selection",
+    category: "review",
+    defaultKeys: ["y"],
+    locus: "client-local",
     publicToExtensions: true,
   },
   {
-    id: 'hunk.review.clearSelection',
-    title: 'Clear selection',
-    category: 'review',
+    id: "hunk.review.clearSelection",
+    title: "Clear selection",
+    category: "review",
     defaultKeys: [],
-    locus: 'client-local',
+    locus: "client-local",
     publicToExtensions: true,
   },
   {
-    id: 'hunk.review.startNote',
-    title: 'Add a review note',
-    category: 'review',
-    defaultKeys: ['c'],
-    locus: 'semantic',
-    review: { kind: 'notes/start-draft' },
-    publicToExtensions: true,
-    closesMenu: true,
-  },
-  {
-    id: 'hunk.review.editActiveNote',
-    title: 'Edit active review note',
-    category: 'review',
-    defaultKeys: ['E'],
-    locus: 'semantic',
-    review: { kind: 'notes/start-edit-active' },
+    id: "hunk.review.startNote",
+    title: "Add a review note",
+    category: "review",
+    defaultKeys: ["c"],
+    locus: "semantic",
+    review: { kind: "notes/start-draft" },
     publicToExtensions: true,
     closesMenu: true,
   },
   {
-    id: 'hunk.review.replyToActiveNote',
-    title: 'Reply to active review note',
-    category: 'review',
-    defaultKeys: ['R'],
-    locus: 'semantic',
-    review: { kind: 'notes/start-reply-active' },
+    id: "hunk.review.editActiveNote",
+    title: "Edit active review note",
+    category: "review",
+    defaultKeys: ["E"],
+    locus: "semantic",
+    review: { kind: "notes/start-edit-active" },
     publicToExtensions: true,
     closesMenu: true,
   },
   {
-    id: 'hunk.review.saveNote',
-    title: 'Save review note',
-    category: 'review',
-    defaultKeys: ['ctrl+s'],
+    id: "hunk.review.replyToActiveNote",
+    title: "Reply to active review note",
+    category: "review",
+    defaultKeys: ["R"],
+    locus: "semantic",
+    review: { kind: "notes/start-reply-active" },
+    publicToExtensions: true,
+    closesMenu: true,
+  },
+  {
+    id: "hunk.review.saveNote",
+    title: "Save review note",
+    category: "review",
+    defaultKeys: ["ctrl+s"],
     // The TUI draft buffer is this client's; persist already goes through
     // `notes/create-user` / `notes/update-user` inside the save handler.
-    locus: 'client-local',
+    locus: "client-local",
     publicToExtensions: true,
   },
   {
-    id: 'hunk.review.deleteActiveNote',
-    title: 'Delete active review note',
-    category: 'review',
-    defaultKeys: ['D'],
-    locus: 'semantic',
-    review: { kind: 'notes/remove-active' },
-    publicToExtensions: true,
-    closesMenu: true,
-  },
-  {
-    id: 'hunk.review.previousNote',
-    title: 'Previous review note',
-    category: 'review',
-    defaultKeys: ['N'],
-    locus: 'client-local',
-    verticalDirection: -1,
+    id: "hunk.review.deleteActiveNote",
+    title: "Delete active review note",
+    category: "review",
+    defaultKeys: ["D"],
+    locus: "semantic",
+    review: { kind: "notes/remove-active" },
     publicToExtensions: true,
     closesMenu: true,
   },
   {
-    id: 'hunk.review.nextNote',
-    title: 'Next review note',
-    category: 'review',
-    defaultKeys: ['n'],
-    locus: 'client-local',
+    id: "hunk.review.previousNote",
+    title: "Previous review note",
+    category: "review",
+    defaultKeys: ["N"],
+    locus: "client-local",
+    verticalDirection: -1,
+    publicToExtensions: true,
+    closesMenu: true,
+  },
+  {
+    id: "hunk.review.nextNote",
+    title: "Next review note",
+    category: "review",
+    defaultKeys: ["n"],
+    locus: "client-local",
     verticalDirection: 1,
     publicToExtensions: true,
     closesMenu: true,
   },
   {
-    id: 'hunk.review.pageDown',
-    title: 'Scroll down one page',
-    category: 'review',
-    defaultKeys: ['pagedown', 'space', 'f'],
-    locus: 'client-local',
+    id: "hunk.review.pageDown",
+    title: "Scroll down one page",
+    category: "review",
+    defaultKeys: ["pagedown", "space", "f"],
+    locus: "client-local",
     verticalDirection: 1,
     publicToExtensions: true,
   },
   {
-    id: 'hunk.review.pageUp',
-    title: 'Scroll up one page',
-    category: 'review',
-    defaultKeys: ['pageup', 'b', 'shift+space'],
-    locus: 'client-local',
+    id: "hunk.review.pageUp",
+    title: "Scroll up one page",
+    category: "review",
+    defaultKeys: ["pageup", "b", "shift+space"],
+    locus: "client-local",
     verticalDirection: -1,
     publicToExtensions: true,
   },
   {
-    id: 'hunk.review.halfPageDown',
-    title: 'Scroll down half a page',
-    category: 'review',
-    defaultKeys: ['d', 'ctrl+d'],
-    locus: 'client-local',
+    id: "hunk.review.halfPageDown",
+    title: "Scroll down half a page",
+    category: "review",
+    defaultKeys: ["d", "ctrl+d"],
+    locus: "client-local",
     verticalDirection: 1,
     publicToExtensions: true,
   },
   {
-    id: 'hunk.review.halfPageUp',
-    title: 'Scroll up half a page',
-    category: 'review',
-    defaultKeys: ['u', 'ctrl+u'],
-    locus: 'client-local',
+    id: "hunk.review.halfPageUp",
+    title: "Scroll up half a page",
+    category: "review",
+    defaultKeys: ["u", "ctrl+u"],
+    locus: "client-local",
     verticalDirection: -1,
     publicToExtensions: true,
   },
   {
-    id: 'hunk.review.stepDown',
-    title: 'Move down one line or note',
-    category: 'review',
-    defaultKeys: ['down', 'j'],
-    locus: 'client-local',
+    id: "hunk.review.stepDown",
+    title: "Move down one line or note",
+    category: "review",
+    defaultKeys: ["down", "j"],
+    locus: "client-local",
     verticalDirection: 1,
     publicToExtensions: true,
   },
   {
-    id: 'hunk.review.stepUp',
-    title: 'Move up one line or note',
-    category: 'review',
-    defaultKeys: ['up', 'k'],
-    locus: 'client-local',
+    id: "hunk.review.stepUp",
+    title: "Move up one line or note",
+    category: "review",
+    defaultKeys: ["up", "k"],
+    locus: "client-local",
     verticalDirection: -1,
     publicToExtensions: true,
   },
   {
-    id: 'hunk.review.scrollCodeLeft',
-    title: 'Scroll code left',
-    category: 'review',
+    id: "hunk.review.scrollCodeLeft",
+    title: "Scroll code left",
+    category: "review",
     // Both chords run the same command; the shifted one scrolls further, so the handler
     // reads the event rather than splitting this into two commands.
-    defaultKeys: ['left', 'shift+left'],
-    locus: 'client-local',
+    defaultKeys: ["left", "shift+left"],
+    locus: "client-local",
     publicToExtensions: true,
   },
   {
-    id: 'hunk.review.scrollCodeRight',
-    title: 'Scroll code right',
-    category: 'review',
-    defaultKeys: ['right', 'shift+right'],
-    locus: 'client-local',
+    id: "hunk.review.scrollCodeRight",
+    title: "Scroll code right",
+    category: "review",
+    defaultKeys: ["right", "shift+right"],
+    locus: "client-local",
     publicToExtensions: true,
   },
   {
-    id: 'hunk.review.alignCurrentLineTop',
-    title: 'Align current line to top',
-    category: 'review',
+    id: "hunk.review.alignCurrentLineTop",
+    title: "Align current line to top",
+    category: "review",
     defaultKeys: [],
-    locus: 'client-local',
+    locus: "client-local",
     publicToExtensions: true,
   },
   {
-    id: 'hunk.review.alignCurrentLineCenter',
-    title: 'Align current line to center',
-    category: 'review',
+    id: "hunk.review.alignCurrentLineCenter",
+    title: "Align current line to center",
+    category: "review",
     defaultKeys: [],
-    locus: 'client-local',
+    locus: "client-local",
     publicToExtensions: true,
   },
   {
-    id: 'hunk.review.alignCurrentLineBottom',
-    title: 'Align current line to bottom',
-    category: 'review',
+    id: "hunk.review.alignCurrentLineBottom",
+    title: "Align current line to bottom",
+    category: "review",
     defaultKeys: [],
-    locus: 'client-local',
+    locus: "client-local",
     publicToExtensions: true,
   },
   {
-    id: 'hunk.view.cursorLineRow',
-    title: 'Highlight the current row',
-    category: 'view',
+    id: "hunk.view.cursorLineRow",
+    title: "Highlight the current row",
+    category: "view",
     defaultKeys: [],
-    locus: 'client-local',
+    locus: "client-local",
     publicToExtensions: true,
     closesMenu: true,
   },
   {
-    id: 'hunk.view.cursorLineNumber',
-    title: 'Mark the current line number',
-    category: 'view',
+    id: "hunk.view.cursorLineNumber",
+    title: "Mark the current line number",
+    category: "view",
     defaultKeys: [],
-    locus: 'client-local',
+    locus: "client-local",
     publicToExtensions: true,
     closesMenu: true,
   },
   {
-    id: 'hunk.view.cursorLineOff',
-    title: 'Hide the current-line marker',
-    category: 'view',
+    id: "hunk.view.cursorLineOff",
+    title: "Hide the current-line marker",
+    category: "view",
     defaultKeys: [],
-    locus: 'client-local',
+    locus: "client-local",
     publicToExtensions: true,
     closesMenu: true,
   },
   {
-    id: 'hunk.view.layoutSplit',
-    title: 'Split layout',
-    category: 'view',
-    defaultKeys: ['1'],
-    locus: 'client-local',
+    id: "hunk.view.layoutSplit",
+    title: "Split layout",
+    category: "view",
+    defaultKeys: ["1"],
+    locus: "client-local",
     publicToExtensions: true,
     closesMenu: true,
   },
   {
-    id: 'hunk.view.layoutUnified',
-    aliases: ['hunk.view.layoutStack'],
-    title: 'Unified layout',
-    category: 'view',
-    defaultKeys: ['2'],
-    locus: 'client-local',
+    id: "hunk.view.layoutUnified",
+    aliases: ["hunk.view.layoutStack"],
+    title: "Unified layout",
+    category: "view",
+    defaultKeys: ["2"],
+    locus: "client-local",
     publicToExtensions: true,
     closesMenu: true,
   },
   {
-    id: 'hunk.view.layoutAuto',
-    title: 'Auto layout',
-    category: 'view',
-    defaultKeys: ['0'],
-    locus: 'client-local',
+    id: "hunk.view.layoutAuto",
+    title: "Auto layout",
+    category: "view",
+    defaultKeys: ["0"],
+    locus: "client-local",
     publicToExtensions: true,
     closesMenu: true,
   },
   {
-    id: 'hunk.view.applyFilePresentationToAllMatching',
-    title: 'Apply the current file presentation to all matching files',
-    category: 'view',
+    id: "hunk.view.applyFilePresentationToAllMatching",
+    title: "Apply the current file presentation to all matching files",
+    category: "view",
     defaultKeys: [],
-    locus: 'client-local',
+    locus: "client-local",
     publicToExtensions: true,
     closesMenu: true,
   },
   {
-    id: 'hunk.view.toggleFilesPane',
-    aliases: ['hunk.view.toggleSidebar'],
-    title: 'Toggle files pane',
-    category: 'view',
-    defaultKeys: ['s'],
-    locus: 'client-local',
+    id: "hunk.view.toggleFilesPane",
+    aliases: ["hunk.view.toggleSidebar"],
+    title: "Toggle files pane",
+    category: "view",
+    defaultKeys: ["s"],
+    locus: "client-local",
     publicToExtensions: true,
     closesMenu: true,
   },
   {
-    id: 'hunk.app.refresh',
-    title: 'Refresh the review',
-    category: 'app',
-    defaultKeys: ['r'],
-    locus: 'host-only',
+    id: "hunk.app.refresh",
+    title: "Refresh the review",
+    category: "app",
+    defaultKeys: ["r"],
+    locus: "host-only",
     publicToExtensions: true,
     closesMenu: true,
   },
   {
-    id: 'hunk.view.openThemeSelector',
-    title: 'Choose theme',
-    category: 'view',
-    defaultKeys: ['t'],
-    locus: 'client-local',
+    id: "hunk.view.openThemeSelector",
+    title: "Choose theme",
+    category: "view",
+    defaultKeys: ["t"],
+    locus: "client-local",
     publicToExtensions: true,
     closesMenu: true,
   },
   {
-    id: 'hunk.view.toggleAgentNotes',
-    title: 'Toggle agent notes',
-    category: 'view',
-    defaultKeys: ['a'],
-    locus: 'semantic',
-    review: { kind: 'notes/toggle-visibility' },
+    id: "hunk.view.toggleAgentNotes",
+    title: "Toggle agent notes",
+    category: "view",
+    defaultKeys: ["a"],
+    locus: "semantic",
+    review: { kind: "notes/toggle-visibility" },
     publicToExtensions: true,
     closesMenu: true,
   },
   {
-    id: 'hunk.view.toggleLineNumbers',
-    title: 'Toggle line numbers',
-    category: 'view',
-    defaultKeys: ['l'],
-    locus: 'client-local',
+    id: "hunk.view.toggleLineNumbers",
+    title: "Toggle line numbers",
+    category: "view",
+    defaultKeys: ["l"],
+    locus: "client-local",
     publicToExtensions: true,
     closesMenu: true,
   },
   {
-    id: 'hunk.view.toggleLineWrap',
-    title: 'Toggle line wrapping',
-    category: 'view',
-    defaultKeys: ['w'],
-    locus: 'client-local',
+    id: "hunk.view.toggleLineWrap",
+    title: "Toggle line wrapping",
+    category: "view",
+    defaultKeys: ["w"],
+    locus: "client-local",
     publicToExtensions: true,
     closesMenu: true,
   },
   {
-    id: 'hunk.view.toggleMenuBar',
-    title: 'Toggle menu bar',
-    category: 'view',
-    defaultKeys: ['M'],
-    locus: 'client-local',
+    id: "hunk.view.toggleMenuBar",
+    title: "Toggle menu bar",
+    category: "view",
+    defaultKeys: ["M"],
+    locus: "client-local",
     publicToExtensions: true,
     closesMenu: true,
   },
   {
-    id: 'hunk.view.toggleHunkHeaders',
-    title: 'Toggle hunk headers',
-    category: 'view',
-    defaultKeys: ['m'],
-    locus: 'client-local',
+    id: "hunk.view.toggleHunkHeaders",
+    title: "Toggle hunk headers",
+    category: "view",
+    defaultKeys: ["m"],
+    locus: "client-local",
     publicToExtensions: true,
     closesMenu: true,
   },
   {
-    id: 'hunk.view.toggleCopyDecorations',
-    title: 'Toggle copy decorations',
-    category: 'view',
+    id: "hunk.view.toggleCopyDecorations",
+    title: "Toggle copy decorations",
+    category: "view",
     defaultKeys: [],
-    locus: 'client-local',
+    locus: "client-local",
     publicToExtensions: true,
     closesMenu: true,
   },
   {
-    id: 'hunk.review.toggleHunkGap',
-    title: 'Expand or collapse context for the selected hunk',
-    category: 'review',
-    defaultKeys: ['z'],
-    locus: 'semantic',
-    review: { kind: 'expansion/toggle-selected-gap' },
+    id: "hunk.review.toggleHunkGap",
+    title: "Expand or collapse context for the selected hunk",
+    category: "review",
+    defaultKeys: ["z"],
+    locus: "semantic",
+    review: { kind: "expansion/toggle-selected-gap" },
     publicToExtensions: true,
     closesMenu: true,
   },
   {
-    id: 'hunk.review.editSelectedFile',
-    title: 'Open the selected file in your editor',
-    category: 'review',
-    defaultKeys: ['e'],
-    locus: 'host-only',
+    id: "hunk.review.editSelectedFile",
+    title: "Open the selected file in your editor",
+    category: "review",
+    defaultKeys: ["e"],
+    locus: "host-only",
     publicToExtensions: true,
     closesMenu: true,
   },
   {
-    id: 'hunk.review.previousHunk',
-    title: 'Previous hunk',
-    category: 'review',
-    defaultKeys: ['['],
-    locus: 'semantic',
+    id: "hunk.review.previousHunk",
+    title: "Previous hunk",
+    category: "review",
+    defaultKeys: ["["],
+    locus: "semantic",
     verticalDirection: -1,
-    review: { kind: 'selection/move', scope: 'hunk', direction: -1 },
+    review: { kind: "selection/move", scope: "hunk", direction: -1 },
     publicToExtensions: true,
     closesMenu: true,
   },
   {
-    id: 'hunk.review.nextHunk',
-    title: 'Next hunk',
-    category: 'review',
-    defaultKeys: [']'],
-    locus: 'semantic',
+    id: "hunk.review.nextHunk",
+    title: "Next hunk",
+    category: "review",
+    defaultKeys: ["]"],
+    locus: "semantic",
     verticalDirection: 1,
-    review: { kind: 'selection/move', scope: 'hunk', direction: 1 },
+    review: { kind: "selection/move", scope: "hunk", direction: 1 },
     publicToExtensions: true,
     closesMenu: true,
   },
   {
-    id: 'hunk.review.previousFile',
-    title: 'Previous file',
-    category: 'review',
-    defaultKeys: [','],
-    locus: 'semantic',
+    id: "hunk.review.previousFile",
+    title: "Previous file",
+    category: "review",
+    defaultKeys: [","],
+    locus: "semantic",
     verticalDirection: -1,
-    review: { kind: 'selection/move', scope: 'file', direction: -1 },
+    review: { kind: "selection/move", scope: "file", direction: -1 },
     publicToExtensions: true,
     closesMenu: true,
   },
   {
-    id: 'hunk.review.nextFile',
-    title: 'Next file',
-    category: 'review',
-    defaultKeys: ['.'],
-    locus: 'semantic',
+    id: "hunk.review.nextFile",
+    title: "Next file",
+    category: "review",
+    defaultKeys: ["."],
+    locus: "semantic",
     verticalDirection: 1,
-    review: { kind: 'selection/move', scope: 'file', direction: 1 },
+    review: { kind: "selection/move", scope: "file", direction: 1 },
     publicToExtensions: true,
     closesMenu: true,
   },
   {
-    id: 'hunk.review.previousAnnotatedHunk',
-    title: 'Previous annotated hunk',
-    category: 'review',
-    defaultKeys: ['{'],
-    locus: 'semantic',
+    id: "hunk.review.previousAnnotatedHunk",
+    title: "Previous annotated hunk",
+    category: "review",
+    defaultKeys: ["{"],
+    locus: "semantic",
     verticalDirection: -1,
-    review: { kind: 'selection/move', scope: 'annotated-hunk', direction: -1 },
+    review: { kind: "selection/move", scope: "annotated-hunk", direction: -1 },
     publicToExtensions: true,
     closesMenu: true,
   },
   {
-    id: 'hunk.review.nextAnnotatedHunk',
-    title: 'Next annotated hunk',
-    category: 'review',
-    defaultKeys: ['}'],
-    locus: 'semantic',
+    id: "hunk.review.nextAnnotatedHunk",
+    title: "Next annotated hunk",
+    category: "review",
+    defaultKeys: ["}"],
+    locus: "semantic",
     verticalDirection: 1,
-    review: { kind: 'selection/move', scope: 'annotated-hunk', direction: 1 },
+    review: { kind: "selection/move", scope: "annotated-hunk", direction: 1 },
     publicToExtensions: true,
     closesMenu: true,
   },
   {
-    id: 'hunk.review.previousAnnotatedFile',
-    title: 'Previous annotated file',
-    category: 'review',
+    id: "hunk.review.previousAnnotatedFile",
+    title: "Previous annotated file",
+    category: "review",
     defaultKeys: [],
-    locus: 'semantic',
+    locus: "semantic",
     verticalDirection: -1,
-    review: { kind: 'selection/move', scope: 'annotated-file', direction: -1 },
+    review: { kind: "selection/move", scope: "annotated-file", direction: -1 },
     publicToExtensions: true,
     closesMenu: true,
   },
   {
-    id: 'hunk.review.nextAnnotatedFile',
-    title: 'Next annotated file',
-    category: 'review',
+    id: "hunk.review.nextAnnotatedFile",
+    title: "Next annotated file",
+    category: "review",
     defaultKeys: [],
-    locus: 'semantic',
+    locus: "semantic",
     verticalDirection: 1,
-    review: { kind: 'selection/move', scope: 'annotated-file', direction: 1 },
+    review: { kind: "selection/move", scope: "annotated-file", direction: 1 },
     publicToExtensions: true,
     closesMenu: true,
   },
@@ -613,10 +613,9 @@ const BUILTIN_COMMANDS = [
  * Derived from the literal declaration above, which is why that one stays `as const` while
  * the exported catalog is widened to the entry shape consumers read.
  */
-export type AppCommandId = (typeof BUILTIN_COMMANDS)[number]['id'];
+export type AppCommandId = (typeof BUILTIN_COMMANDS)[number]["id"];
 
-export const APP_COMMAND_CATALOG: readonly AppCommandCatalogEntry[] =
-  BUILTIN_COMMANDS;
+export const APP_COMMAND_CATALOG: readonly AppCommandCatalogEntry[] = BUILTIN_COMMANDS;
 
 /** Canonical and compatibility names accepted for review-surface built-ins. */
 export const APP_COMMAND_NAMES: ReadonlySet<string> = new Set(
@@ -624,12 +623,8 @@ export const APP_COMMAND_NAMES: ReadonlySet<string> = new Set(
 );
 
 /** Look one command up by its canonical id or a compatibility alias. */
-export function appCommandCatalogEntry(
-  id: string,
-): AppCommandCatalogEntry | undefined {
-  return APP_COMMAND_CATALOG.find(
-    (entry) => entry.id === id || entry.aliases?.includes(id),
-  );
+export function appCommandCatalogEntry(id: string): AppCommandCatalogEntry | undefined {
+  return APP_COMMAND_CATALOG.find((entry) => entry.id === id || entry.aliases?.includes(id));
 }
 
 /**
@@ -640,9 +635,7 @@ export function appCommandCatalogEntry(
  * possibility that the command does not exist.
  */
 export function builtinAppCommand(id: AppCommandId): AppCommandCatalogEntry {
-  return APP_COMMAND_CATALOG.find(
-    (entry) => entry.id === id,
-  ) as AppCommandCatalogEntry;
+  return APP_COMMAND_CATALOG.find((entry) => entry.id === id) as AppCommandCatalogEntry;
 }
 
 /** The facts a command needs to become one concrete review intent. */
@@ -688,44 +681,43 @@ export function lowerAppCommandToReviewIntent(
   { count, state, noteTarget, noteLocation }: AppCommandLoweringContext,
 ): ReviewIntent | undefined {
   switch (entry.review?.kind) {
-    case 'selection/move':
+    case "selection/move":
       return {
-        type: 'selection/move',
+        type: "selection/move",
         scope: entry.review.scope,
         delta: entry.review.direction * count,
       };
-    case 'notes/toggle-visibility':
-      return { type: 'notes/set-visibility', visible: !state.showAgentNotes };
-    case 'notes/start-draft': {
-      const { fileKey, hunkIndex } =
-        noteLocation ?? selectNormalizedSelection(state);
+    case "notes/toggle-visibility":
+      return { type: "notes/set-visibility", visible: !state.showAgentNotes };
+    case "notes/start-draft": {
+      const { fileKey, hunkIndex } = noteLocation ?? selectNormalizedSelection(state);
       return fileKey === null
         ? undefined
         : {
-            type: 'notes/start-draft',
+            type: "notes/start-draft",
             fileKey,
             hunkIndex,
             ...(noteTarget ? { target: noteTarget } : {}),
           };
     }
-    case 'notes/start-edit-active': {
+    case "notes/start-edit-active": {
       const noteId = selectActiveEditableReviewNoteId(state);
-      return noteId ? { type: 'notes/start-edit', noteId } : undefined;
+      return noteId ? { type: "notes/start-edit", noteId } : undefined;
     }
-    case 'notes/start-reply-active': {
+    case "notes/start-reply-active": {
       const noteId = selectActiveReplyableReviewNoteId(state);
-      return noteId ? { type: 'notes/start-reply', noteId } : undefined;
+      return noteId ? { type: "notes/start-reply", noteId } : undefined;
     }
-    case 'notes/remove-active': {
+    case "notes/remove-active": {
       const target = selectActiveRemovableReviewNote(state);
       if (!target) return undefined;
-      return target.source === 'user'
-        ? { type: 'notes/remove-user', noteId: target.noteId }
-        : { type: 'notes/remove-live', noteId: target.noteId };
+      return target.source === "user"
+        ? { type: "notes/remove-user", noteId: target.noteId }
+        : { type: "notes/remove-live", noteId: target.noteId };
     }
-    case 'expansion/toggle-selected-gap': {
+    case "expansion/toggle-selected-gap": {
       const target = selectReviewGapForSelection(state);
-      return target ? { type: 'expansion/toggle', ...target } : undefined;
+      return target ? { type: "expansion/toggle", ...target } : undefined;
     }
     case undefined:
       return undefined;

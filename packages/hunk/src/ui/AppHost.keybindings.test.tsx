@@ -268,6 +268,13 @@ describe("user keybindings", () => {
       });
       await flush(setup);
       expect(seen).toContain("hunk.review.stepDown");
+
+      seen.length = 0;
+      await act(async () => {
+        setup.mockInput.pressKey("s", { ctrl: true });
+      });
+      await flush(setup);
+      expect(seen).toEqual([]);
     });
   });
 
