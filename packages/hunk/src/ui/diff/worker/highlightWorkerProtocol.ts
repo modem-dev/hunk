@@ -1,4 +1,5 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
+import { DOCUMENT_HIGHLIGHT_MAX_LINE_LENGTH } from "../highlightRenderOptions";
 import type { CompactHighlightedDiff, CompactHighlightedDocument } from "./highlightCompact";
 
 /** Identifies the private main-thread/worker message contract. */
@@ -8,7 +9,7 @@ export const HIGHLIGHT_WORKER_PROTOCOL_VERSION = 4;
 export const MAX_WORKER_DOCUMENT_TEXT_LENGTH = 1_000_000;
 export const MAX_WORKER_DOCUMENT_LINES = 10_000;
 /** Pierre skips tokenization at this length, so document jobs fall back instead of losing state. */
-export const WORKER_DOCUMENT_TOKENIZE_MAX_LINE_LENGTH = 1_000;
+export const WORKER_DOCUMENT_TOKENIZE_MAX_LINE_LENGTH = DOCUMENT_HIGHLIGHT_MAX_LINE_LENGTH;
 
 interface HighlightWorkerRequestBase {
   version: typeof HIGHLIGHT_WORKER_PROTOCOL_VERSION;

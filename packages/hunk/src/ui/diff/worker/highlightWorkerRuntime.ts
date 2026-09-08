@@ -12,6 +12,7 @@ import {
   renderDiffWithHighlighter,
   renderFileWithHighlighter,
 } from "@pierre/diffs";
+import { pierreHighlightRenderOptions } from "../highlightRenderOptions";
 import { aliasContextHighlightLines } from "./highlightContext";
 import {
   cloneCompactHighlightedDiff,
@@ -34,23 +35,11 @@ import {
   highlightWorkerDocumentLineLengths,
   HIGHLIGHT_WORKER_PROTOCOL_VERSION,
   isHighlightWorkerFailureRetryable,
-  WORKER_DOCUMENT_TOKENIZE_MAX_LINE_LENGTH,
   type HighlightWorkerFailure,
   type HighlightWorkerFailureCode,
   type HighlightWorkerRequest,
   type HighlightWorkerResponse,
 } from "./highlightWorkerProtocol";
-
-/** Build the fixed Pierre render options shared with the terminal highlighter. */
-function workerRenderOptions(theme: string) {
-  return {
-    theme: theme as "pierre-dark",
-    useTokenTransformer: false,
-    tokenizeMaxLineLength: WORKER_DOCUMENT_TOKENIZE_MAX_LINE_LENGTH,
-    lineDiffType: "word-alt" as const,
-    maxLineDiffLength: 10_000,
-  };
-}
 
 class HighlightWorkerRuntimeFailure extends Error {
   readonly retryable: boolean;
@@ -195,7 +184,7 @@ async function renderRequest(request: HighlightWorkerRequest, cacheKey: string) 
     const result = renderDiffWithHighlighter(
       request.metadata,
       highlighter,
-      workerRenderOptions(request.theme),
+      pierreHighlightRenderOptions(request.theme),
     );
     const highlighted = result.code as {
       deletionLines: HighlightedHastLines;
@@ -219,7 +208,7 @@ async function renderRequest(request: HighlightWorkerRequest, cacheKey: string) 
       cacheKey,
     },
     highlighter,
-    workerRenderOptions(request.theme),
+    pierreHighlightRenderOptions(request.theme),
   );
   const payload = encodeCompactHighlightedDocument(
     normalizedHighlightedDocumentLines(request.text, result.code as HighlightedHastLines),
