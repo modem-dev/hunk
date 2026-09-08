@@ -1311,15 +1311,17 @@ appear outside hunk rows; they never establish hunk ownership, note placement, n
 or source provenance. `sourceRanges` retain the exact note/navigation semantics below.
 
 Code-document validation is bounded to 64 documents, 1,000,000 aggregate UTF-16 code units, and
-10,000 normalized lines per layout. Highlighting separately bounds UTF-8 input, line length,
-compact output, outstanding jobs, subscribers, and completed caches. Hunk only starts work when a
-visible/halo row demands a document, deduplicates identical work, cancels subscribers that leave
-demand, and discards stale theme/file/view/layout results. Unsupported languages, oversize input,
-queue pressure, cancellation, worker failure, and tokenization failure all retain the original
-symbolic FileView content. By contrast, invalid layout data or unavailable native text measurement
-fails layout preparation and falls back to the raw diff, because Hunk cannot safely retain a view
-without exact geometry. Folder extensions using `codeDocuments` or `syntax` must declare
-`"hunk": { "apiVersion": 26 }`.
+10,000 aggregate normalized lines per layout. Highlighting applies the same UTF-16 input and
+normalized-line ceilings, requires every tokenized line to stay below 1,000 UTF-16 code units, bounds
+compact output and completed caches by bytes and entries, and admits at most 16 unique outstanding
+document jobs. Identical requests share one job; subscribers to that same job are not subject to a
+separate numeric ceiling. Hunk only starts work when a visible/halo row demands a document, cancels
+subscribers that leave demand, and discards stale theme/file/view/layout results. Unsupported
+languages, oversize input, queue pressure, cancellation, worker failure, and tokenization failure
+all retain the original symbolic FileView content. By contrast, invalid layout data or unavailable
+native text measurement fails layout preparation and falls back to the raw diff, because Hunk
+cannot safely retain a view without exact geometry. Folder extensions using `codeDocuments` or
+`syntax` must declare `"hunk": { "apiVersion": 26 }`.
 
 A row's optional `sourceRanges` contains inclusive, one-based exact-source
 bindings such as `{ side: "new", range: [12, 18] }`. Hunk reads only the bound
@@ -1327,8 +1329,8 @@ source sides, verifies every range is in bounds, rejects overlapping ranges on
 the same side across rows, and requires each bound row to belong to exactly one
 `hunkRows` extent. One source line and one bound row therefore resolve to one
 presentation/hunk target. Inline notes anchor by their existing preferred-side start
-line and are inserted before the bound row. Placement is **all-or-raw** per
-file: if any visible note is range-less or unbound, Hunk temporarily renders
+line; Hunk renders the bound file-view row first and inserts its note cards afterward. Placement is
+**all-or-raw** per file: if any visible note is range-less or unbound, Hunk temporarily renders
 the complete raw diff rather than guessing or dropping review data. The stored
 presentation selection returns when the note layer is hidden or the mapping
 becomes resolvable. Draft note editing remains raw-only.
@@ -2281,6 +2283,9 @@ Installable extensions and examples include:
 - [`examples/extensions/rendered-markdown/`](../examples/extensions/rendered-markdown/)
   parses Markdown into generic host-owned file-view rows. Its README shows how
   to run it from the checkout or copy it into the global extensions directory.
+- [`examples/extensions/code-document-file-view/`](../examples/extensions/code-document-file-view/)
+  maps complete old/new code documents and partial UTF-16 slices into symbolic rows while Hunk owns
+  syntax colors and fallback.
 
 Collapse lockfiles and generated output out of every review, and say how many
 files were hidden.

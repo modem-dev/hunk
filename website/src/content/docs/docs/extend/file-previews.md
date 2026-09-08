@@ -163,6 +163,8 @@ Hunk normalizes CRLF and lone CR to LF, preserves final-newline semantics, and s
 
 Syntax foregrounds override the span tone where tokens exist; gaps keep the tone, authored attributes survive, and selected/current-row backgrounds remain Hunk-owned. Highlight arrival is async and paint-only: it never changes text, wrapping, row height, geometry, notes, navigation, layout generation, or scrolling. Unsupported/oversized work, cancellation, queue pressure, stale replies, and highlighter failures retain symbolic FileView spans. Invalid layouts or unavailable native text measurement fall back to raw diff because exact geometry cannot be guaranteed.
 
+Syntax input uses the UTF-16 code-unit and aggregate normalized-line limits below. Every tokenized line must stay below 1,000 UTF-16 code units; an overlong line keeps the document plain so it cannot corrupt later multiline lexical state. Hunk bounds compact output and completed caches by bytes and entries, and admits at most 16 unique outstanding document jobs. Identical requests share one job; that job's subscribers have no separate numeric ceiling.
+
 Syntax references do not replace `sourceRanges`. `syntax` controls paint only and can appear outside hunks; `sourceRanges` alone bind note placement and navigation. Custom components do not receive tokens or syntax colors, though their symbolic fallback spans may request syntax paint.
 
 Declare `"hunk": { "apiVersion": 26 }` in a folder extension that uses `codeDocuments` or `syntax`. See the checked-in [code-document file view](https://github.com/modem-dev/hunk/tree/main/examples/extensions/code-document-file-view) example for full old/new documents, gutters, and complete/partial references.
@@ -181,7 +183,7 @@ A row may declare the exact old/new source lines it presents:
 
 Source ranges are inclusive and one-based. Hunk verifies that they exist in the exact source document, do not overlap ranges owned by other rows on the same side, and belong to one hunk extent.
 
-When agent notes are visible, Hunk uses these bindings to insert its own note cards before the matching preview row. The extension never receives note contents and never measures note UI.
+When agent notes are visible, Hunk renders the matching preview row first and inserts its own note cards afterward. The extension never receives note contents and never measures note UI.
 
 Note placement is all-or-raw for each file. If any visible note has no unique bound row, Hunk temporarily shows the complete raw diff rather than hiding the note or guessing where it belongs. The selected preview returns when notes are hidden or all bindings become resolvable. Draft note editing also remains on raw diff.
 

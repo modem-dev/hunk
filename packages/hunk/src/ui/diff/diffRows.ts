@@ -80,9 +80,6 @@ export type {
   SplitLineCell,
   UnifiedLineCell,
 } from "./diffRowModel";
-export { loadDocumentHighlight, type DocumentHighlightInput } from "./documentHighlightService";
-export type { DocumentHighlightResult } from "./documentHighlightService";
-
 /** Expand source tabs before terminal rendering so downstream geometry stays predictable. */
 function tabify(text: string, tabWidth: number, initialColumn = 0) {
   return expandDiffTabs(sanitizeTerminalLine(text), tabWidth, initialColumn);
