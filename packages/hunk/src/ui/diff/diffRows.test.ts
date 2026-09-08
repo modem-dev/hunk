@@ -899,11 +899,7 @@ describe("Pierre diff rows", () => {
       text,
       theme,
     });
-    const spans = spansForHighlightedSourceLine(
-      "export const hiddenMarker = true;",
-      highlighted,
-      theme,
-    );
+    const spans = spansForHighlightedSourceLine("export const hiddenMarker = true;", highlighted);
 
     expect(spans.map((span) => span.text).join("")).toBe("export const hiddenMarker = true;");
     expect(spans.some((span) => span.text.includes("export") && typeof span.fg === "string")).toBe(
@@ -920,13 +916,13 @@ describe("Pierre diff rows", () => {
       theme,
     });
 
-    expect(highlighted.result).toEqual({
+    expect(highlighted).toEqual({
       status: "fallback",
       reason: "invalid-document",
       retryable: false,
     });
     expect(
-      spansForHighlightedSourceLine("const first = 1;\rconst second = 2;", highlighted, theme)
+      spansForHighlightedSourceLine("const first = 1;\rconst second = 2;", highlighted)
         .map((span) => span.text)
         .join(""),
     ).toBe("const first = 1;const second = 2;");
@@ -941,7 +937,7 @@ describe("Pierre diff rows", () => {
       text: `${rawLine}\n`,
       theme,
     });
-    const spans = spansForHighlightedSourceLine(rawLine, highlighted, theme, 4);
+    const spans = spansForHighlightedSourceLine(rawLine, highlighted, 4);
     const expected = expandDiffTabs(sanitizeTerminalLine(rawLine), 4);
 
     expect(spans.map((span) => span.text).join("")).toBe(expected);
@@ -983,16 +979,8 @@ describe("Pierre diff rows", () => {
       loadHighlightedSourceLines({ file, text, theme: firstTheme }),
       loadHighlightedSourceLines({ file, text, theme: secondTheme }),
     ]);
-    const firstSpans = spansForHighlightedSourceLine(
-      "// expanded comment",
-      firstHighlighted,
-      firstTheme,
-    );
-    const secondSpans = spansForHighlightedSourceLine(
-      "// expanded comment",
-      secondHighlighted,
-      secondTheme,
-    );
+    const firstSpans = spansForHighlightedSourceLine("// expanded comment", firstHighlighted);
+    const secondSpans = spansForHighlightedSourceLine("// expanded comment", secondHighlighted);
 
     expect(firstSpans[0]?.fg?.toLowerCase()).toBe("#abcdef");
     expect(secondSpans[0]?.fg?.toLowerCase()).toBe("#fedcba");
