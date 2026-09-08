@@ -145,7 +145,7 @@ describe("compact highlighted document payload", () => {
       {
         type: "element",
         tagName: "span",
-        properties: { style: "color:#syntax" },
+        properties: { style: "color:#112233" },
         children: [{ type: "text", value: "a🙂b\n" }],
       },
       undefined,
@@ -155,15 +155,15 @@ describe("compact highlighted document payload", () => {
     const payload = encodeCompactHighlightedDocument(lines, "dark");
     validateCompactHighlightedDocument(payload, [0, 4, 7, 4]);
 
-    expect(payload.foregroundPalette).toEqual(["#syntax"]);
+    expect(payload.foregroundPalette).toEqual(["#112233"]);
     expect(payload.document.lineOffsets).toEqual(Uint32Array.from([0, 0, 1, 1, 2]));
     expect(compactHighlightedDocumentRunsForLine(payload, 0)).toEqual([]);
     expect(compactHighlightedDocumentRunsForLine(payload, 1)).toEqual([
-      { start: 0, end: 4, fg: "#syntax", wordDiff: false },
+      { start: 0, end: 4, fg: "#112233" },
     ]);
     expect(compactHighlightedDocumentRunsForLine(payload, 2)).toEqual([]);
     expect(compactHighlightedDocumentRunsForLine(payload, 3)).toEqual([
-      { start: 0, end: 4, fg: undefined, wordDiff: false },
+      { start: 0, end: 4, fg: undefined },
     ]);
     expect(JSON.stringify(payload)).not.toContain("a🙂b");
     expect(compactHighlightedDocumentByteLength(payload)).toBeGreaterThan(0);
@@ -180,7 +180,7 @@ describe("compact highlighted document payload", () => {
     validateCompactHighlightedDocument(cached, [6]);
     validateCompactHighlightedDocument(transferred, [6]);
     expect(compactHighlightedDocumentRunsForLine(cached, 0)).toEqual([
-      { start: 0, end: 6, fg: undefined, wordDiff: false },
+      { start: 0, end: 6, fg: undefined },
     ]);
     expect(cached.document.starts).not.toBe(transferred.document.starts);
   });
@@ -192,7 +192,7 @@ describe("compact highlighted document payload", () => {
           {
             type: "element",
             tagName: "span",
-            properties: { style: "color:#syntax" },
+            properties: { style: "color:#112233" },
             children: [{ type: "text", value: "code\n" }],
           },
         ],
@@ -221,6 +221,23 @@ describe("compact highlighted document payload", () => {
       "outside its palette",
     );
 
+    const unsafePalette = createPayload();
+    unsafePalette.foregroundPalette[0] = "red; background:#ffffff";
+    expect(() => validateCompactHighlightedDocument(unsafePalette, [4])).toThrow("invalid color");
+    expect(() =>
+      encodeCompactHighlightedDocument(
+        [
+          {
+            type: "element",
+            tagName: "span",
+            properties: { style: "color:rgb(1, 2, 3)" },
+            children: [{ type: "text", value: "code\n" }],
+          },
+        ],
+        "dark",
+      ),
+    ).toThrow("invalid color");
+
     const invalidFlag = createPayload();
     invalidFlag.document.flags[0] = 2;
     expect(() => validateCompactHighlightedDocument(invalidFlag, [4])).toThrow("unsupported flags");
@@ -241,6 +258,25 @@ describe("compact highlighted document payload", () => {
     );
   });
 
+  test("drops diff-only word emphasis from document artifacts", () => {
+    const payload = encodeCompactHighlightedDocument(
+      [
+        {
+          type: "element",
+          tagName: "span",
+          properties: { "data-diff-span": "changed", style: "color:#112233" },
+          children: [{ type: "text", value: "code\n" }],
+        },
+      ],
+      "dark",
+    );
+
+    expect(payload.document.flags).toEqual(Uint8Array.of(0));
+    expect(compactHighlightedDocumentRunsForLine(payload, 0)).toEqual([
+      { start: 0, end: 4, fg: "#112233" },
+    ]);
+  });
+
   test("rejects out-of-range document line projection", () => {
     const payload = encodeCompactHighlightedDocument([], "dark");
     validateCompactHighlightedDocument(payload, []);
@@ -255,14 +291,14 @@ describe("compact worker highlight payload", () => {
     const nestedLine: HastNode = {
       type: "element",
       tagName: "span",
-      properties: { style: "color:#base" },
+      properties: { style: "color:#445566" },
       children: [
         { type: "text", value: "const " },
         {
           type: "element",
           tagName: "span",
           properties: {
-            style: "--diffs-token-dark:#keyword;--diffs-token-light:#light-keyword",
+            style: "--diffs-token-dark:#778899;--diffs-token-light:#aabbcc",
             "data-diff-span": "changed",
           },
           children: [{ type: "text", value: "answer" }],
@@ -278,10 +314,10 @@ describe("compact worker highlight payload", () => {
     const payload = encodeCompactHighlightedDiff(code, "dark");
     validateCompactHighlightedDiff(payload, { deletion: [12], addition: [] });
 
-    expect(payload.foregroundPalette).toEqual(["#base", "#keyword"]);
+    expect(payload.foregroundPalette).toEqual(["#445566", "#778899"]);
     expect(compactHighlightRunsForLine(payload, "deletion", 0)).toEqual([
-      { start: 0, end: 6, fg: "#base", wordDiff: false },
-      { start: 6, end: 12, fg: "#keyword", wordDiff: true },
+      { start: 0, end: 6, fg: "#445566", wordDiff: false },
+      { start: 6, end: 12, fg: "#778899", wordDiff: true },
     ]);
     expect(payload.deletion.flags).toEqual(Uint8Array.from([0, COMPACT_HIGHLIGHT_FLAG_WORD_DIFF]));
   });

@@ -1,3 +1,4 @@
+import { describeThemeColorIssue } from "../../../core/theme/customThemes";
 import { collectHastHighlightRuns, type HastNode } from "./highlightHast";
 
 /** HAST lines for one diff side; `undefined` marks lines the highlighter skipped. */
@@ -41,11 +42,15 @@ export interface CompactHighlightedDiff {
   addition: CompactHighlightSide;
 }
 
-/** Exposes one decoded range without reconstructing a HAST node or text string. */
-export interface CompactHighlightRun {
+/** Exposes one decoded syntax range without reconstructing a HAST node or text string. */
+export interface CompactDocumentHighlightRun {
   start: number;
   end: number;
   fg?: string;
+}
+
+/** Exposes one decoded diff range, including the diff-only word emphasis policy. */
+export interface CompactHighlightRun extends CompactDocumentHighlightRun {
   wordDiff: boolean;
 }
 
@@ -77,6 +82,9 @@ function compactPaletteId(
   if (!foreground) {
     return 0;
   }
+  if (describeThemeColorIssue(foreground)) {
+    throw new Error("Compact syntax palette contains an invalid color.");
+  }
 
   const existingId = paletteIds.get(foreground);
   if (existingId !== undefined) {
@@ -98,11 +106,13 @@ function encodeSide({
   appearance,
   foregroundPalette,
   paletteIds,
+  preserveWordDiff,
 }: {
   lines: HighlightedHastLines;
   appearance: "dark" | "light";
   foregroundPalette: string[];
   paletteIds: Map<string, number>;
+  preserveWordDiff: boolean;
 }) {
   const side = createMutableSide();
 
@@ -121,7 +131,7 @@ function encodeSide({
       side.starts.push(start);
       side.ends.push(end);
       side.styleIds.push(styleId);
-      side.flags.push(run.wordDiff ? COMPACT_HIGHLIGHT_FLAG_WORD_DIFF : 0);
+      side.flags.push(preserveWordDiff && run.wordDiff ? COMPACT_HIGHLIGHT_FLAG_WORD_DIFF : 0);
     }
     side.lineOffsets.push(side.starts.length);
   }
@@ -149,6 +159,7 @@ export function encodeCompactHighlightedDocument(
       appearance,
       foregroundPalette,
       paletteIds: new Map(),
+      preserveWordDiff: false,
     }),
   };
 }
@@ -175,12 +186,14 @@ export function encodeCompactHighlightedDiff(
       appearance,
       foregroundPalette,
       paletteIds,
+      preserveWordDiff: true,
     }),
     addition: encodeSide({
       lines: code.additionLines,
       appearance,
       foregroundPalette,
       paletteIds,
+      preserveWordDiff: true,
     }),
   };
 }
@@ -269,11 +282,13 @@ function validateSide({
   paletteLength,
   lineLengths,
   name,
+  allowWordDiff,
 }: {
   side: CompactHighlightSide;
   paletteLength: number;
   lineLengths?: readonly number[];
   name: string;
+  allowWordDiff: boolean;
 }) {
   if (
     !side ||
@@ -333,7 +348,7 @@ function validateSide({
       if (styleId > paletteLength) {
         throw new Error(`Compact ${name} highlight style ID is outside its palette.`);
       }
-      if ((flags & ~COMPACT_HIGHLIGHT_FLAG_WORD_DIFF) !== 0) {
+      if ((flags & ~COMPACT_HIGHLIGHT_FLAG_WORD_DIFF) !== 0 || (!allowWordDiff && flags !== 0)) {
         throw new Error(`Compact ${name} highlight contains unsupported flags.`);
       }
       previousEnd = end;
@@ -358,7 +373,7 @@ function validatePayloadEnvelope(
   if (
     !Array.isArray(payload.foregroundPalette) ||
     payload.foregroundPalette.length > 0xffff ||
-    payload.foregroundPalette.some((color) => typeof color !== "string" || color.length === 0)
+    payload.foregroundPalette.some((color) => describeThemeColorIssue(color) !== undefined)
   ) {
     throw new Error("Compact syntax palette contains an invalid color.");
   }
@@ -375,6 +390,7 @@ export function validateCompactHighlightedDocument(
     paletteLength: payload.foregroundPalette.length,
     lineLengths,
     name: "document",
+    allowWordDiff: false,
   });
 }
 
@@ -393,12 +409,14 @@ export function validateCompactHighlightedDiff(
     paletteLength: payload.foregroundPalette.length,
     lineLengths: lineLengths?.deletion,
     name: "deletion",
+    allowWordDiff: true,
   });
   validateSide({
     side: payload.addition,
     paletteLength: payload.foregroundPalette.length,
     lineLengths: lineLengths?.addition,
     name: "addition",
+    allowWordDiff: true,
   });
 }
 
@@ -428,12 +446,14 @@ function runsForSide(
   return runs;
 }
 
-/** Read one compact document line's styles against caller-retained authoritative text. */
+/** Read one compact document line's syntax styles without exposing diff-only emphasis flags. */
 export function compactHighlightedDocumentRunsForLine(
   payload: CompactHighlightedDocument,
   lineIndex: number,
-) {
-  return runsForSide(payload.document, payload.foregroundPalette, lineIndex, "document");
+): CompactDocumentHighlightRun[] {
+  return runsForSide(payload.document, payload.foregroundPalette, lineIndex, "document").map(
+    ({ start, end, fg }) => ({ start, end, fg }),
+  );
 }
 
 /** Read one compact diff line's styles without rebuilding HAST nodes or token text. */

@@ -1,21 +1,20 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createTestDiffFile } from "../../../../../../test/helpers/diff-helpers";
 import { supportsHighlightWorkerOffload } from "../../../highlightWorkerClient";
-import type { CompactHighlightedDiff } from "./highlightCompact";
+import type { CompactHighlightedDiff, CompactHighlightedDocument } from "./highlightCompact";
 import {
   disposeHighlightWorker,
   highlightDiffInWorker,
+  highlightDocumentInWorker,
   registerHighlightWorker,
 } from "./highlightWorkerClient";
+import {
+  HIGHLIGHT_WORKER_PROTOCOL_VERSION,
+  type HighlightWorkerRequest,
+} from "./highlightWorkerProtocol";
 
-interface TestWorkerRequest {
-  version: 3;
-  id: number;
-  aliasContext: boolean;
-}
-
-/** Build the smallest valid compact worker response. */
-function emptyCompactResponse(): CompactHighlightedDiff {
+/** Build the smallest valid compact diff worker response. */
+function emptyCompactDiffResponse(): CompactHighlightedDiff {
   const side = () => ({
     lineOffsets: Uint32Array.of(0),
     starts: new Uint32Array(),
@@ -32,17 +31,32 @@ function emptyCompactResponse(): CompactHighlightedDiff {
   };
 }
 
-/** Build a controllable Worker double for queue and lifecycle tests. */
+/** Build the smallest valid compact document worker response. */
+function emptyCompactDocumentResponse(): CompactHighlightedDocument {
+  return {
+    version: 1,
+    foregroundPalette: [],
+    document: {
+      lineOffsets: Uint32Array.of(0),
+      starts: new Uint32Array(),
+      ends: new Uint32Array(),
+      styleIds: new Uint16Array(),
+      flags: new Uint8Array(),
+    },
+  };
+}
+
+/** Build a controllable Worker double for queue, protocol, and lifecycle tests. */
 function createTestHighlightWorker({ throwOnPost }: { throwOnPost?: Error } = {}) {
   const state = {
-    messages: [] as TestWorkerRequest[],
+    messages: [] as HighlightWorkerRequest[],
     terminateCalls: 0,
     unrefCalls: 0,
   };
   const worker = {
     onmessage: null as ((event: MessageEvent) => void) | null,
     onerror: null as ((event: ErrorEvent) => void) | null,
-    postMessage(message: TestWorkerRequest) {
+    postMessage(message: HighlightWorkerRequest) {
       if (throwOnPost) {
         throw throwOnPost;
       }
@@ -63,16 +77,30 @@ function createTestHighlightWorker({ throwOnPost }: { throwOnPost?: Error } = {}
     reply(data: unknown) {
       worker.onmessage?.({ data } as MessageEvent);
     },
+    fail(message: string) {
+      worker.onerror?.({ message } as ErrorEvent);
+    },
   };
 }
 
-/** Queue one representative request through the worker client. */
-function requestHighlight(aliasContext = false) {
+/** Queue one representative diff request through the worker client. */
+function requestDiff(aliasContext = false) {
   return highlightDiffInWorker({
     aliasContext,
     appearance: "dark",
     language: "typescript",
     metadata: createTestDiffFile().metadata,
+    theme: "github-dark-default",
+  });
+}
+
+/** Queue one representative complete-document request through the worker client. */
+function requestDocument() {
+  return highlightDocumentInWorker({
+    appearance: "dark",
+    language: "typescript",
+    path: "example.ts",
+    text: "const answer = 42;\n",
     theme: "github-dark-default",
   });
 }
@@ -103,36 +131,105 @@ describe("highlight worker client", () => {
     ).toBe(true);
   });
 
-  test("serializes requests, ignores stale replies, and propagates worker responses", async () => {
+  test("serializes diff and document requests while ignoring stale IDs", async () => {
     const control = createTestHighlightWorker();
     registerHighlightWorker(control.worker);
 
-    const first = requestHighlight(true);
-    const second = requestHighlight();
+    const first = requestDiff(true);
+    const second = requestDocument();
     expect(control.state.unrefCalls).toBe(1);
     expect(control.state.messages).toHaveLength(1);
-    expect(control.state.messages[0]?.aliasContext).toBe(true);
+    expect(control.state.messages[0]).toMatchObject({ kind: "diff", aliasContext: true });
 
-    control.reply({ version: 2, id: control.state.messages[0]?.id, ok: true });
+    control.reply({
+      version: HIGHLIGHT_WORKER_PROTOCOL_VERSION,
+      id: 999_999,
+      kind: "diff",
+      ok: true,
+      code: emptyCompactDiffResponse(),
+    });
     await Promise.resolve();
     expect(control.state.messages).toHaveLength(1);
 
     control.reply({
-      version: 3,
+      version: HIGHLIGHT_WORKER_PROTOCOL_VERSION,
       id: control.state.messages[0]?.id,
+      kind: "diff",
       ok: true,
-      code: emptyCompactResponse(),
+      code: emptyCompactDiffResponse(),
     });
-    await expect(first).resolves.toEqual(emptyCompactResponse());
+    await expect(first).resolves.toEqual(emptyCompactDiffResponse());
     expect(control.state.messages).toHaveLength(2);
+    expect(control.state.messages[1]).toMatchObject({
+      kind: "document",
+      path: "example.ts",
+      text: "const answer = 42;\n",
+    });
 
     control.reply({
-      version: 3,
+      version: HIGHLIGHT_WORKER_PROTOCOL_VERSION,
       id: control.state.messages[1]?.id,
+      kind: "document",
+      ok: true,
+      code: emptyCompactDocumentResponse(),
+    });
+    await expect(second).resolves.toEqual(emptyCompactDocumentResponse());
+  });
+
+  test("rejects matching replies with a wrong version, kind, or malformed payload", async () => {
+    for (const reply of [
+      (request: HighlightWorkerRequest) => ({
+        version: 3,
+        id: request.id,
+        kind: request.kind,
+        ok: true,
+        code: emptyCompactDiffResponse(),
+      }),
+      (request: HighlightWorkerRequest) => ({
+        version: HIGHLIGHT_WORKER_PROTOCOL_VERSION,
+        id: request.id,
+        kind: "document",
+        ok: true,
+        code: emptyCompactDocumentResponse(),
+      }),
+      (request: HighlightWorkerRequest) => ({
+        version: HIGHLIGHT_WORKER_PROTOCOL_VERSION,
+        id: request.id,
+        kind: "diff",
+        ok: true,
+        code: { version: 1, foregroundPalette: [] },
+      }),
+    ]) {
+      const control = createTestHighlightWorker();
+      registerHighlightWorker(control.worker);
+      const pending = requestDiff();
+      control.reply(reply(control.state.messages[0]!));
+      await expect(pending).rejects.toThrow(/mismatch|typed arrays/);
+      expect(control.state.terminateCalls).toBe(1);
+    }
+  });
+
+  test("propagates typed worker failures and runtime crashes", async () => {
+    const rejected = createTestHighlightWorker();
+    registerHighlightWorker(rejected.worker);
+    const pending = requestDocument();
+    const request = rejected.state.messages[0]!;
+    rejected.reply({
+      version: HIGHLIGHT_WORKER_PROTOCOL_VERSION,
+      id: request.id,
+      kind: "document",
       ok: false,
       message: "highlight rejected",
     });
-    await expect(second).rejects.toThrow("highlight rejected");
+    await expect(pending).rejects.toThrow("highlight rejected");
+
+    const crashed = createTestHighlightWorker();
+    registerHighlightWorker(crashed.worker);
+    const active = requestDiff();
+    const queued = requestDocument();
+    crashed.fail("worker crashed");
+    await expect(active).rejects.toThrow("worker crashed");
+    await expect(queued).rejects.toThrow("worker crashed");
   });
 
   test("rejects active and queued work when a replacement worker takes over", async () => {
@@ -140,8 +237,8 @@ describe("highlight worker client", () => {
     const replacement = createTestHighlightWorker();
     registerHighlightWorker(first.worker);
 
-    const active = requestHighlight();
-    const queued = requestHighlight();
+    const active = requestDiff();
+    const queued = requestDocument();
     registerHighlightWorker(replacement.worker);
 
     await expect(active).rejects.toThrow("replaced");
@@ -154,22 +251,40 @@ describe("highlight worker client", () => {
     const broken = createTestHighlightWorker({ throwOnPost: new Error("post failed") });
     registerHighlightWorker(broken.worker);
 
-    await expect(requestHighlight()).rejects.toThrow("post failed");
+    await expect(requestDiff()).rejects.toThrow("post failed");
     expect(broken.state.terminateCalls).toBe(1);
 
     const recovered = createTestHighlightWorker();
     registerHighlightWorker(recovered.worker);
-    const pending = requestHighlight();
+    const pending = requestDiff();
     const request = recovered.state.messages[0]!;
-    recovered.reply({ version: 3, id: request.id, ok: true, code: emptyCompactResponse() });
-    await expect(pending).resolves.toEqual(emptyCompactResponse());
+    recovered.reply({
+      version: HIGHLIGHT_WORKER_PROTOCOL_VERSION,
+      id: request.id,
+      kind: "diff",
+      ok: true,
+      code: emptyCompactDiffResponse(),
+    });
+    await expect(pending).resolves.toEqual(emptyCompactDiffResponse());
+  });
+
+  test("rejects unbounded or non-normalized documents before queueing", async () => {
+    await expect(
+      highlightDocumentInWorker({
+        appearance: "dark",
+        language: "typescript",
+        path: "example.ts",
+        text: "line one\r\nline two",
+        theme: "pierre-dark",
+      }),
+    ).rejects.toThrow("normalized LF");
   });
 
   test("disposal terminates the worker and rejects active plus queued work", async () => {
     const control = createTestHighlightWorker();
     registerHighlightWorker(control.worker);
-    const active = requestHighlight();
-    const queued = requestHighlight();
+    const active = requestDiff();
+    const queued = requestDocument();
 
     disposeHighlightWorker();
 
