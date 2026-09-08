@@ -1,5 +1,7 @@
-import { describeThemeColorIssue } from "../../../core/theme/customThemes";
 import { collectHastHighlightRuns, type HastNode } from "./highlightHast";
+
+/** Matches the CSS hex forms OpenTUI's `parseColor` accepts for syntax token paint. */
+const COMPACT_PALETTE_COLOR_PATTERN = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
 
 /** HAST lines for one diff side; `undefined` marks lines the highlighter skipped. */
 export type HighlightedHastLines = Array<HastNode | undefined>;
@@ -82,11 +84,12 @@ function compactPaletteId(
   if (!foreground) {
     return 0;
   }
-  if (describeThemeColorIssue(foreground)) {
+  if (!COMPACT_PALETTE_COLOR_PATTERN.test(foreground)) {
     throw new Error("Compact syntax palette contains an invalid color.");
   }
+  const normalizedForeground = foreground.toLowerCase();
 
-  const existingId = paletteIds.get(foreground);
+  const existingId = paletteIds.get(normalizedForeground);
   if (existingId !== undefined) {
     return existingId;
   }
@@ -96,7 +99,7 @@ function compactPaletteId(
 
   foregroundPalette.push(foreground);
   const styleId = foregroundPalette.length;
-  paletteIds.set(foreground, styleId);
+  paletteIds.set(normalizedForeground, styleId);
   return styleId;
 }
 
@@ -172,7 +175,10 @@ export function encodeCompactHighlightedDocument(
  * semantic flag so each row can apply its existing theme policy.
  */
 export function encodeCompactHighlightedDiff(
-  code: { deletionLines: HighlightedHastLines; additionLines: HighlightedHastLines },
+  code: {
+    deletionLines: HighlightedHastLines;
+    additionLines: HighlightedHastLines;
+  },
   appearance: "dark" | "light",
 ): CompactHighlightedDiff {
   const foregroundPalette: string[] = [];
@@ -373,7 +379,9 @@ function validatePayloadEnvelope(
   if (
     !Array.isArray(payload.foregroundPalette) ||
     payload.foregroundPalette.length > 0xffff ||
-    payload.foregroundPalette.some((color) => describeThemeColorIssue(color) !== undefined)
+    payload.foregroundPalette.some(
+      (color) => typeof color !== "string" || !COMPACT_PALETTE_COLOR_PATTERN.test(color),
+    )
   ) {
     throw new Error("Compact syntax palette contains an invalid color.");
   }

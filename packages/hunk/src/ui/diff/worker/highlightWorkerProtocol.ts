@@ -7,6 +7,8 @@ export const HIGHLIGHT_WORKER_PROTOCOL_VERSION = 4;
 /** Bounds one complete document before it enters the worker queue. */
 export const MAX_WORKER_DOCUMENT_TEXT_LENGTH = 1_000_000;
 export const MAX_WORKER_DOCUMENT_LINES = 10_000;
+/** Pierre skips tokenization at this length, so document jobs fall back instead of losing state. */
+export const WORKER_DOCUMENT_TOKENIZE_MAX_LINE_LENGTH = 1_000;
 
 interface HighlightWorkerRequestBase {
   version: typeof HIGHLIGHT_WORKER_PROTOCOL_VERSION;
@@ -59,6 +61,24 @@ export interface HighlightWorkerFailure extends HighlightWorkerResponseBase {
 
 export type HighlightWorkerResponse = HighlightWorkerSuccess | HighlightWorkerFailure;
 
+/** Return logical UTF-16 line lengths without adding a line after a terminating newline. */
+export function highlightWorkerDocumentLineLengths(text: string) {
+  if (text.length === 0) return [];
+
+  const lengths: number[] = [];
+  let lineLength = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    if (text.charCodeAt(index) === 10) {
+      lengths.push(lineLength);
+      lineLength = 0;
+    } else {
+      lineLength += 1;
+    }
+  }
+  if (!text.endsWith("\n")) lengths.push(lineLength);
+  return lengths;
+}
+
 /** Explain why one document request cannot safely enter Shiki, or return undefined. */
 export function describeHighlightWorkerDocumentIssue({
   language,
@@ -73,14 +93,24 @@ export function describeHighlightWorkerDocumentIssue({
     return "Document text must use normalized LF newlines.";
   }
 
-  let lineCount = text.length === 0 ? 0 : 1;
+  let lineCount = 0;
+  let lineLength = 0;
   for (let index = 0; index < text.length; index += 1) {
-    if (text.charCodeAt(index) === 10 && index < text.length - 1) {
+    if (text.charCodeAt(index) === 10) {
       lineCount += 1;
+      lineLength = 0;
       if (lineCount > MAX_WORKER_DOCUMENT_LINES) {
         return `Document text exceeds ${MAX_WORKER_DOCUMENT_LINES} lines.`;
       }
+    } else {
+      lineLength += 1;
+      if (lineLength >= WORKER_DOCUMENT_TOKENIZE_MAX_LINE_LENGTH) {
+        return `Document lines must be shorter than ${WORKER_DOCUMENT_TOKENIZE_MAX_LINE_LENGTH} characters.`;
+      }
     }
+  }
+  if (text.length > 0 && !text.endsWith("\n") && lineCount === MAX_WORKER_DOCUMENT_LINES) {
+    return `Document text exceeds ${MAX_WORKER_DOCUMENT_LINES} lines.`;
   }
 
   if (typeof path !== "string" || path.length === 0 || path.length > 4_096) {

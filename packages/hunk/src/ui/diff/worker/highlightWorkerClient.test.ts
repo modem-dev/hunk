@@ -9,6 +9,7 @@ import {
   registerHighlightWorker,
 } from "./highlightWorkerClient";
 import {
+  highlightWorkerDocumentLineLengths,
   HIGHLIGHT_WORKER_PROTOCOL_VERSION,
   type HighlightWorkerRequest,
 } from "./highlightWorkerProtocol";
@@ -31,19 +32,25 @@ function emptyCompactDiffResponse(): CompactHighlightedDiff {
   };
 }
 
-/** Build the smallest valid compact document worker response. */
-function emptyCompactDocumentResponse(): CompactHighlightedDocument {
+/** Build one plain compact document response matching exact request geometry. */
+function compactDocumentResponseForText(text: string): CompactHighlightedDocument {
+  const lineLengths = highlightWorkerDocumentLineLengths(text);
   return {
     version: 1,
     foregroundPalette: [],
     document: {
-      lineOffsets: Uint32Array.of(0),
-      starts: new Uint32Array(),
-      ends: new Uint32Array(),
-      styleIds: new Uint16Array(),
-      flags: new Uint8Array(),
+      lineOffsets: Uint32Array.from({ length: lineLengths.length + 1 }, (_, index) => index),
+      starts: Uint32Array.from({ length: lineLengths.length }, () => 0),
+      ends: Uint32Array.from(lineLengths),
+      styleIds: new Uint16Array(lineLengths.length),
+      flags: new Uint8Array(lineLengths.length),
     },
   };
+}
+
+/** Build the smallest zero-line compact document response. */
+function emptyCompactDocumentResponse(): CompactHighlightedDocument {
+  return compactDocumentResponseForText("");
 }
 
 /** Build a controllable Worker double for queue, protocol, and lifecycle tests. */
@@ -139,7 +146,10 @@ describe("highlight worker client", () => {
     const second = requestDocument();
     expect(control.state.unrefCalls).toBe(1);
     expect(control.state.messages).toHaveLength(1);
-    expect(control.state.messages[0]).toMatchObject({ kind: "diff", aliasContext: true });
+    expect(control.state.messages[0]).toMatchObject({
+      kind: "diff",
+      aliasContext: true,
+    });
 
     control.reply({
       version: HIGHLIGHT_WORKER_PROTOCOL_VERSION,
@@ -171,9 +181,9 @@ describe("highlight worker client", () => {
       id: control.state.messages[1]?.id,
       kind: "document",
       ok: true,
-      code: emptyCompactDocumentResponse(),
+      code: compactDocumentResponseForText("const answer = 42;\n"),
     });
-    await expect(second).resolves.toEqual(emptyCompactDocumentResponse());
+    await expect(second).resolves.toEqual(compactDocumentResponseForText("const answer = 42;\n"));
   });
 
   test("rejects matching replies with a wrong version, kind, or malformed payload", async () => {
@@ -205,6 +215,32 @@ describe("highlight worker client", () => {
       const pending = requestDiff();
       control.reply(reply(control.state.messages[0]!));
       await expect(pending).rejects.toThrow(/mismatch|typed arrays/);
+      expect(control.state.terminateCalls).toBe(1);
+    }
+  });
+
+  test("rejects document replies that do not match exact request geometry", async () => {
+    for (const code of [
+      emptyCompactDocumentResponse(),
+      {
+        ...compactDocumentResponseForText("const answer = 42;\n"),
+        document: {
+          ...compactDocumentResponseForText("const answer = 42;\n").document,
+          ends: Uint32Array.of(16),
+        },
+      },
+    ]) {
+      const control = createTestHighlightWorker();
+      registerHighlightWorker(control.worker);
+      const pending = requestDocument();
+      control.reply({
+        version: HIGHLIGHT_WORKER_PROTOCOL_VERSION,
+        id: control.state.messages[0]?.id,
+        kind: "document",
+        ok: true,
+        code,
+      });
+      await expect(pending).rejects.toThrow(/line count|cover/);
       expect(control.state.terminateCalls).toBe(1);
     }
   });
@@ -247,8 +283,37 @@ describe("highlight worker client", () => {
     expect(replacement.state.unrefCalls).toBe(1);
   });
 
+  test("ignores late events from a terminated worker generation", async () => {
+    const first = createTestHighlightWorker();
+    const replacement = createTestHighlightWorker();
+    registerHighlightWorker(first.worker);
+    const lateError = first.worker.onerror;
+    const lateMessage = first.worker.onmessage;
+    registerHighlightWorker(replacement.worker);
+
+    const pending = requestDiff();
+    lateError?.call(first.worker, {
+      message: "late old failure",
+    } as ErrorEvent);
+    lateMessage?.call(first.worker, {
+      data: { id: replacement.state.messages[0]?.id },
+    } as MessageEvent);
+    expect(replacement.state.terminateCalls).toBe(0);
+
+    replacement.reply({
+      version: HIGHLIGHT_WORKER_PROTOCOL_VERSION,
+      id: replacement.state.messages[0]?.id,
+      kind: "diff",
+      ok: true,
+      code: emptyCompactDiffResponse(),
+    });
+    await expect(pending).resolves.toEqual(emptyCompactDiffResponse());
+  });
+
   test("fails all work when posting throws and permits a later worker", async () => {
-    const broken = createTestHighlightWorker({ throwOnPost: new Error("post failed") });
+    const broken = createTestHighlightWorker({
+      throwOnPost: new Error("post failed"),
+    });
     registerHighlightWorker(broken.worker);
 
     await expect(requestDiff()).rejects.toThrow("post failed");
@@ -268,16 +333,26 @@ describe("highlight worker client", () => {
     await expect(pending).resolves.toEqual(emptyCompactDiffResponse());
   });
 
-  test("rejects unbounded or non-normalized documents before queueing", async () => {
+  test("rejects unbounded, non-normalized, or tokenizer-skipped documents before queueing", async () => {
+    const control = createTestHighlightWorker();
+    registerHighlightWorker(control.worker);
+    const base = {
+      appearance: "dark" as const,
+      language: "typescript",
+      path: "example.ts",
+      theme: "pierre-dark",
+    };
+
+    await expect(
+      highlightDocumentInWorker({ ...base, text: "line one\r\nline two" }),
+    ).rejects.toThrow("normalized LF");
     await expect(
       highlightDocumentInWorker({
-        appearance: "dark",
-        language: "typescript",
-        path: "example.ts",
-        text: "line one\r\nline two",
-        theme: "pierre-dark",
+        ...base,
+        text: `${"/*".padEnd(1_000, "x")}\nconst live = true;`,
       }),
-    ).rejects.toThrow("normalized LF");
+    ).rejects.toThrow("shorter than 1000");
+    expect(control.state.messages).toHaveLength(0);
   });
 
   test("disposal terminates the worker and rejects active plus queued work", async () => {

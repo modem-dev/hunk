@@ -98,6 +98,30 @@ describe("highlight worker cache", () => {
     expect(cache.get("third")).toBeDefined();
   });
 
+  test("bounds tiny document artifacts by entry count as well as bytes", () => {
+    const emptyDocument = (): CompactHighlightedDocument => ({
+      version: 1,
+      foregroundPalette: [],
+      document: {
+        lineOffsets: Uint32Array.of(0),
+        starts: new Uint32Array(),
+        ends: new Uint32Array(),
+        styleIds: new Uint16Array(),
+        flags: new Uint8Array(),
+      },
+    });
+    const cache = new HighlightWorkerCache(1_000_000, 2);
+
+    cache.set("first", emptyDocument());
+    cache.set("second", emptyDocument());
+    cache.set("third", emptyDocument());
+
+    expect(cache.getEntryCount()).toBe(2);
+    expect(cache.get("first")).toBeUndefined();
+    expect(cache.get("second")).toBeDefined();
+    expect(cache.get("third")).toBeDefined();
+  });
+
   test("skips an oversized payload without evicting a fitting resident entry", () => {
     const payload = createTestCompactPayload();
     const measured = new HighlightWorkerCache();

@@ -29,7 +29,9 @@ import {
 } from "./highlightWorkerIdentity";
 import {
   describeHighlightWorkerDocumentIssue,
+  highlightWorkerDocumentLineLengths,
   HIGHLIGHT_WORKER_PROTOCOL_VERSION,
+  WORKER_DOCUMENT_TOKENIZE_MAX_LINE_LENGTH,
   type HighlightWorkerFailure,
   type HighlightWorkerRequest,
   type HighlightWorkerResponse,
@@ -40,7 +42,7 @@ function workerRenderOptions(theme: string) {
   return {
     theme: theme as "pierre-dark",
     useTokenTransformer: false,
-    tokenizeMaxLineLength: 1_000,
+    tokenizeMaxLineLength: WORKER_DOCUMENT_TOKENIZE_MAX_LINE_LENGTH,
     lineDiffType: "word-alt" as const,
     maxLineDiffLength: 10_000,
   };
@@ -49,13 +51,6 @@ function workerRenderOptions(theme: string) {
 /** Convert an unknown thrown value into a reply that survives structured clone. */
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
-}
-
-/** Build source line lengths without adding a line after a terminating newline. */
-function documentLineLengths(text: string) {
-  if (text.length === 0) return [];
-  const body = text.endsWith("\n") ? text.slice(0, -1) : text;
-  return body.split("\n").map((line) => line.length);
 }
 
 /** Match the public code-document model by dropping Pierre's trailing placeholder line. */
@@ -103,7 +98,12 @@ function validateRequest(request: unknown): asserts request is HighlightWorkerRe
     throw new Error("Highlight worker request has invalid syntax inputs.");
   }
   if (candidate.kind === "diff") {
-    if (typeof candidate.aliasContext !== "boolean" || !candidate.metadata) {
+    if (
+      typeof candidate.aliasContext !== "boolean" ||
+      !candidate.metadata ||
+      typeof candidate.metadata !== "object" ||
+      Array.isArray(candidate.metadata)
+    ) {
       throw new Error("Highlight worker diff request is malformed.");
     }
   } else {
@@ -126,9 +126,11 @@ function payloadMatchesKind(
 }
 
 /** Render one cache miss into a validated compact payload. */
-async function renderRequest(request: HighlightWorkerRequest) {
+async function renderRequest(request: HighlightWorkerRequest, cacheKey: string) {
   const highlighter = await getSharedHighlighter({
-    ...getHighlighterOptions(request.language, { theme: request.theme as never }),
+    ...getHighlighterOptions(request.language, {
+      theme: request.theme as never,
+    }),
     preferredHighlighter: "shiki-wasm",
   });
 
@@ -157,14 +159,7 @@ async function renderRequest(request: HighlightWorkerRequest) {
       name: request.path,
       contents: request.text,
       lang: request.language as never,
-      cacheKey: highlightWorkerCacheKey({
-        kind: "document",
-        appearance: request.appearance,
-        language: request.language,
-        path: request.path,
-        text: request.text,
-        theme: request.theme,
-      }),
+      cacheKey,
     },
     highlighter,
     workerRenderOptions(request.theme),
@@ -173,7 +168,7 @@ async function renderRequest(request: HighlightWorkerRequest) {
     normalizedHighlightedDocumentLines(request.text, result.code as HighlightedHastLines),
     request.appearance,
   );
-  validateCompactHighlightedDocument(payload, documentLineLengths(request.text));
+  validateCompactHighlightedDocument(payload, highlightWorkerDocumentLineLengths(request.text));
   return payload;
 }
 
@@ -193,7 +188,7 @@ export async function processHighlightWorkerRequest(
       throw new Error("Highlight worker cache returned the wrong payload kind.");
     }
     if (!code) {
-      const cachedCode = await renderRequest(request);
+      const cachedCode = await renderRequest(request, cacheKey);
       // Oversized payloads stay uncached and transfer their only copy, avoiding a temporary
       // second typed-array payload that would violate the worker cache's memory bound.
       code = cache.set(cacheKey, cachedCode)
