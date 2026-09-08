@@ -1,15 +1,41 @@
 import {
   cloneCompactHighlightedDiff,
+  cloneCompactHighlightedDocument,
   compactHighlightedDiffByteLength,
+  compactHighlightedDocumentByteLength,
   type CompactHighlightedDiff,
+  type CompactHighlightedDocument,
 } from "./highlightCompact";
 
 /** Bounds compact worker response bytes retained after the terminal-owned cache evicts them. */
 export const MAX_WORKER_HIGHLIGHT_CACHE_BYTES = 8 * 1024 * 1024;
 
+export type HighlightWorkerCachePayload = CompactHighlightedDiff | CompactHighlightedDocument;
+
 interface HighlightWorkerCacheEntry {
   bytes: number;
-  payload: CompactHighlightedDiff;
+  payload: HighlightWorkerCachePayload;
+}
+
+/** Return whether one compact payload represents a complete document rather than a diff. */
+function isDocumentPayload(
+  payload: HighlightWorkerCachePayload,
+): payload is CompactHighlightedDocument {
+  return "document" in payload;
+}
+
+/** Clone a compact payload without surrendering the worker-owned typed arrays. */
+function clonePayload(payload: HighlightWorkerCachePayload) {
+  return isDocumentPayload(payload)
+    ? cloneCompactHighlightedDocument(payload)
+    : cloneCompactHighlightedDiff(payload);
+}
+
+/** Measure the retained wire representation for either compact payload kind. */
+function payloadByteLength(payload: HighlightWorkerCachePayload) {
+  return isDocumentPayload(payload)
+    ? compactHighlightedDocumentByteLength(payload)
+    : compactHighlightedDiffByteLength(payload);
 }
 
 /** Holds a byte-bounded LRU of compact worker results without surrendering response buffers. */
@@ -31,12 +57,12 @@ export class HighlightWorkerCache {
 
     this.entries.delete(cacheKey);
     this.entries.set(cacheKey, entry);
-    return cloneCompactHighlightedDiff(entry.payload);
+    return clonePayload(entry.payload);
   }
 
   /** Retains one worker-owned payload and evicts least-recently-used entries over budget. */
-  set(cacheKey: string, payload: CompactHighlightedDiff) {
-    const entry = { bytes: compactHighlightedDiffByteLength(payload), payload };
+  set(cacheKey: string, payload: HighlightWorkerCachePayload) {
+    const entry = { bytes: payloadByteLength(payload), payload };
     if (entry.bytes > this.maxBytes) {
       return false;
     }

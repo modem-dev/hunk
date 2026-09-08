@@ -1,12 +1,17 @@
 import { describe, expect, test } from "bun:test";
-import { compactHighlightTransferList, type CompactHighlightedDiff } from "./highlightCompact";
+import {
+  compactHighlightTransferList,
+  compactHighlightedDocumentTransferList,
+  type CompactHighlightedDiff,
+  type CompactHighlightedDocument,
+} from "./highlightCompact";
 import { HighlightWorkerCache } from "./highlightWorkerCache";
 
 /** Builds one valid compact payload with a predictable retained size. */
 function createTestCompactPayload(lineCount = 1): CompactHighlightedDiff {
   return {
     version: 1,
-    foregroundPalette: ["#keyword"],
+    foregroundPalette: ["#112233"],
     deletion: {
       lineOffsets: Uint32Array.from({ length: lineCount + 1 }, (_, index) => index),
       starts: Uint32Array.from({ length: lineCount }, () => 0),
@@ -24,13 +29,28 @@ function createTestCompactPayload(lineCount = 1): CompactHighlightedDiff {
   };
 }
 
+/** Builds one document payload to exercise the shared cache's other response kind. */
+function createTestDocumentPayload(): CompactHighlightedDocument {
+  return {
+    version: 1,
+    foregroundPalette: ["#445566"],
+    document: {
+      lineOffsets: Uint32Array.of(0, 1),
+      starts: Uint32Array.of(0),
+      ends: Uint32Array.of(4),
+      styleIds: Uint16Array.of(1),
+      flags: Uint8Array.of(0),
+    },
+  };
+}
+
 describe("highlight worker cache", () => {
   test("returns a transferable clone without detaching its retained payload", () => {
     const cache = new HighlightWorkerCache();
     const payload = createTestCompactPayload();
     cache.set("first", payload);
 
-    const firstResponse = cache.get("first");
+    const firstResponse = cache.get("first") as CompactHighlightedDiff | undefined;
     expect(firstResponse).toBeDefined();
     expect(firstResponse).not.toBe(payload);
     expect(firstResponse?.deletion.starts).not.toBe(payload.deletion.starts);
@@ -40,7 +60,26 @@ describe("highlight worker cache", () => {
     });
     expect(firstResponse?.deletion.starts.byteLength).toBe(0);
     expect(transferred.deletion.starts).toEqual(Uint32Array.of(0));
-    expect(cache.get("first")?.deletion.starts).toEqual(Uint32Array.of(0));
+    expect((cache.get("first") as CompactHighlightedDiff | undefined)?.deletion.starts).toEqual(
+      Uint32Array.of(0),
+    );
+  });
+
+  test("clones and transfers document payloads through the same cache", () => {
+    const cache = new HighlightWorkerCache();
+    const payload = createTestDocumentPayload();
+    cache.set("document", payload);
+
+    const response = cache.get("document") as CompactHighlightedDocument;
+    const transferred = structuredClone(response, {
+      transfer: compactHighlightedDocumentTransferList(response),
+    });
+
+    expect(response.document.starts.byteLength).toBe(0);
+    expect(transferred.document.starts).toEqual(Uint32Array.of(0));
+    expect((cache.get("document") as CompactHighlightedDocument).document.starts).toEqual(
+      Uint32Array.of(0),
+    );
   });
 
   test("evicts the least-recently-used payload under its byte budget", () => {
