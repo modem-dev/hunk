@@ -5,11 +5,17 @@ import { loadHighlightedDiff, type HighlightedDiffCode } from "../diffRows";
 import {
   COMPACT_HIGHLIGHT_FLAG_WORD_DIFF,
   COMPACT_HIGHLIGHT_PROTOCOL_VERSION,
+  cloneCompactHighlightedDocument,
   compactHighlightRunsForLine,
   compactHighlightTransferList,
   compactHighlightedDiffByteLength,
+  compactHighlightedDocumentByteLength,
+  compactHighlightedDocumentRunsForLine,
+  compactHighlightedDocumentTransferList,
   encodeCompactHighlightedDiff,
+  encodeCompactHighlightedDocument,
   validateCompactHighlightedDiff,
+  validateCompactHighlightedDocument,
 } from "./highlightCompact";
 import { collectHastHighlightRuns, type HastNode } from "./highlightHast";
 import { resolveTheme } from "../../themes";
@@ -131,6 +137,118 @@ function expectedCompactRuns(
     });
   });
 }
+
+describe("compact highlighted document payload", () => {
+  test("encodes empty, skipped, final-newline, and astral lines as text-free UTF-16 ranges", () => {
+    const lines: Array<HastNode | undefined> = [
+      { type: "text", value: "\n" },
+      {
+        type: "element",
+        tagName: "span",
+        properties: { style: "color:#syntax" },
+        children: [{ type: "text", value: "a🙂b\n" }],
+      },
+      undefined,
+      { type: "text", value: "tail\n" },
+    ];
+
+    const payload = encodeCompactHighlightedDocument(lines, "dark");
+    validateCompactHighlightedDocument(payload, [0, 4, 7, 4]);
+
+    expect(payload.foregroundPalette).toEqual(["#syntax"]);
+    expect(payload.document.lineOffsets).toEqual(Uint32Array.from([0, 0, 1, 1, 2]));
+    expect(compactHighlightedDocumentRunsForLine(payload, 0)).toEqual([]);
+    expect(compactHighlightedDocumentRunsForLine(payload, 1)).toEqual([
+      { start: 0, end: 4, fg: "#syntax", wordDiff: false },
+    ]);
+    expect(compactHighlightedDocumentRunsForLine(payload, 2)).toEqual([]);
+    expect(compactHighlightedDocumentRunsForLine(payload, 3)).toEqual([
+      { start: 0, end: 4, fg: undefined, wordDiff: false },
+    ]);
+    expect(JSON.stringify(payload)).not.toContain("a🙂b");
+    expect(compactHighlightedDocumentByteLength(payload)).toBeGreaterThan(0);
+  });
+
+  test("clones cache ownership independently from a transferred document", () => {
+    const payload = encodeCompactHighlightedDocument([{ type: "text", value: "cached\n" }], "dark");
+    const cached = cloneCompactHighlightedDocument(payload);
+    const transferred = structuredClone(payload, {
+      transfer: compactHighlightedDocumentTransferList(payload),
+    });
+
+    expect(payload.document.starts.byteLength).toBe(0);
+    validateCompactHighlightedDocument(cached, [6]);
+    validateCompactHighlightedDocument(transferred, [6]);
+    expect(compactHighlightedDocumentRunsForLine(cached, 0)).toEqual([
+      { start: 0, end: 6, fg: undefined, wordDiff: false },
+    ]);
+    expect(cached.document.starts).not.toBe(transferred.document.starts);
+  });
+
+  test("rejects invalid document shapes, offsets, palettes, flags, and coverage", () => {
+    const createPayload = () =>
+      encodeCompactHighlightedDocument(
+        [
+          {
+            type: "element",
+            tagName: "span",
+            properties: { style: "color:#syntax" },
+            children: [{ type: "text", value: "code\n" }],
+          },
+        ],
+        "dark",
+      );
+
+    const invalidShape = createPayload();
+    invalidShape.document.starts = new Uint16Array([0]) as unknown as Uint32Array;
+    expect(() => validateCompactHighlightedDocument(invalidShape, [4])).toThrow("typed arrays");
+
+    const invalidInitialOffset = createPayload();
+    invalidInitialOffset.document.lineOffsets[0] = 1;
+    expect(() => validateCompactHighlightedDocument(invalidInitialOffset, [4])).toThrow(
+      "must start at zero",
+    );
+
+    const invalidFinalOffset = createPayload();
+    invalidFinalOffset.document.lineOffsets[1] = 0;
+    expect(() => validateCompactHighlightedDocument(invalidFinalOffset, [4])).toThrow(
+      "final offset",
+    );
+
+    const invalidPalette = createPayload();
+    invalidPalette.document.styleIds[0] = 2;
+    expect(() => validateCompactHighlightedDocument(invalidPalette, [4])).toThrow(
+      "outside its palette",
+    );
+
+    const invalidFlag = createPayload();
+    invalidFlag.document.flags[0] = 2;
+    expect(() => validateCompactHighlightedDocument(invalidFlag, [4])).toThrow("unsupported flags");
+
+    const invalidStart = createPayload();
+    invalidStart.document.starts[0] = 1;
+    expect(() => validateCompactHighlightedDocument(invalidStart, [4])).toThrow(
+      "ranges are invalid",
+    );
+
+    const invalidCoverage = createPayload();
+    invalidCoverage.document.ends[0] = 3;
+    expect(() => validateCompactHighlightedDocument(invalidCoverage, [4])).toThrow("do not cover");
+
+    const invalidLineCount = createPayload();
+    expect(() => validateCompactHighlightedDocument(invalidLineCount, [])).toThrow(
+      "line count does not match",
+    );
+  });
+
+  test("rejects out-of-range document line projection", () => {
+    const payload = encodeCompactHighlightedDocument([], "dark");
+    validateCompactHighlightedDocument(payload, []);
+    expect(() => compactHighlightedDocumentRunsForLine(payload, 0)).toThrow(
+      "line index is outside",
+    );
+  });
+});
 
 describe("compact worker highlight payload", () => {
   test("preserves nested syntax inheritance and semantic word-diff emphasis without text", () => {
