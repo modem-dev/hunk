@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { ExtensionFileViewLayout } from "../../extension-api/types";
 import { createVisibleAgentNote, type VisibleAgentNote } from "../lib/agentAnnotations";
+import { validateFileViewLayout } from "./layout";
 import { buildFileViewRenderPlan } from "./renderPlan";
 
 const layout: ExtensionFileViewLayout = {
@@ -61,8 +62,16 @@ describe("file-view render plan", () => {
   test("gives one source line to the first row that presents it", () => {
     const repeated: ExtensionFileViewLayout = {
       rows: [
-        { id: "first", spans: [{ text: "a" }], sourceRanges: [{ side: "new", range: [5, 5] }] },
-        { id: "second", spans: [{ text: "b" }], sourceRanges: [{ side: "new", range: [5, 5] }] },
+        {
+          id: "first",
+          spans: [{ text: "a" }],
+          sourceRanges: [{ side: "new", range: [5, 5] }],
+        },
+        {
+          id: "second",
+          spans: [{ text: "b" }],
+          sourceRanges: [{ side: "new", range: [5, 5] }],
+        },
       ],
       hunkRows: [{ startRow: 0, endRow: 1 }],
     };
@@ -99,6 +108,121 @@ describe("file-view render plan", () => {
     expect(notes.map((row) => [row.noteIndex, row.noteCount])).toEqual([
       [0, 2],
       [1, 2],
+    ]);
+  });
+
+  test("keeps note ownership and navigation identical when code documents are declared", () => {
+    const oldLines = ["outside 😀", "const\t界 = 'old long value';", "oldCell"];
+    const newLines = ["outside 😀", "const\t界 = 'new long value';", "newCell"];
+    const rows: ExtensionFileViewLayout["rows"] = [
+      { id: "outside", spans: [{ text: oldLines[0]! }] },
+      {
+        id: "old-code",
+        spans: [{ text: oldLines[1]! }],
+        sourceRanges: [{ side: "old", range: [2, 2] }],
+      },
+      {
+        id: "split-code",
+        spans: [{ text: oldLines[2]! }, { text: " | " }, { text: newLines[2]! }],
+        sourceRanges: [{ side: "new", range: [3, 3] }],
+      },
+      {
+        id: "long-code",
+        spans: [{ text: "é界 long wrapping words long wrapping words" }],
+        sourceRanges: [{ side: "new", range: [20, 20] }],
+      },
+    ];
+    const plain: ExtensionFileViewLayout = {
+      rows,
+      hunkRows: [
+        { startRow: 1, endRow: 2 },
+        { startRow: 3, endRow: 3 },
+      ],
+    };
+    const syntax: ExtensionFileViewLayout = {
+      codeDocuments: [
+        { id: "old", text: oldLines.join("\n"), language: "typescript" },
+        {
+          id: "new",
+          text: `${newLines.join("\n")}\né界 long wrapping words long wrapping words`,
+          language: "typescript",
+        },
+      ],
+      rows: [
+        {
+          ...rows[0]!,
+          spans: [{ text: oldLines[0]!, syntax: { documentId: "old", line: 1 } }],
+        },
+        {
+          ...rows[1]!,
+          spans: [{ text: oldLines[1]!, syntax: { documentId: "old", line: 2 } }],
+        },
+        {
+          ...rows[2]!,
+          spans: [
+            { text: oldLines[2]!, syntax: { documentId: "old", line: 3 } },
+            { text: " | " },
+            { text: newLines[2]!, syntax: { documentId: "new", line: 3 } },
+          ],
+        },
+        {
+          ...rows[3]!,
+          spans: [
+            {
+              text: "é界 long wrapping words long wrapping words",
+              syntax: { documentId: "new", line: 4 },
+            },
+          ],
+        },
+      ],
+      hunkRows: plain.hunkRows,
+    };
+    const checked = [plain, syntax].map((candidate) => {
+      const result = validateFileViewLayout(candidate, 2, 9);
+      if (!result.valid) throw new Error(result.issue);
+      return result.value.layout;
+    });
+    const notes = [
+      note("bound", { newRange: [3, 3] }),
+      note("unresolved", { newRange: [999, 999] }),
+    ];
+    const plans = checked.map((candidate) => buildFileViewRenderPlan(candidate, notes));
+    const summarize = (plan: (typeof plans)[number]) => ({
+      unresolvedNoteIds: plan.unresolvedNoteIds,
+      rows: plan.rows.map((row) =>
+        row.kind === "file-view-row"
+          ? {
+              kind: row.kind,
+              key: row.key,
+              stableKey: row.stableKey,
+              stableAliasKeys: row.stableAliasKeys,
+              rowIndex: row.rowIndex,
+            }
+          : {
+              kind: row.kind,
+              key: row.key,
+              stableKey: row.stableKey,
+              anchorRowIndex: row.anchorRowIndex,
+              anchorSide: row.anchorSide,
+              hunkIndex: row.hunkIndex,
+            },
+      ),
+    });
+
+    expect(summarize(plans[1]!)).toEqual(summarize(plans[0]!));
+    expect(plans[1]!.unresolvedNoteIds).toEqual(["unresolved"]);
+    expect(plans[1]!.rows[0]?.kind).toBe("file-view-row");
+    expect(
+      plans[1]!.rows[0]?.kind === "file-view-row"
+        ? plans[1]!.rows[0].stableAliasKeys
+        : "unexpected note",
+    ).toBeUndefined();
+    expect(plans[1]!.rows.map((row) => row.stableKey)).toEqual([
+      "file-view:outside",
+      "file-view:old-code",
+      "file-view:split-code",
+      "inline-note:bound",
+      "file-view:long-code",
     ]);
   });
 

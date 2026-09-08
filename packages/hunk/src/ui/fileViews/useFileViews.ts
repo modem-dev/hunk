@@ -129,6 +129,7 @@ export async function runFileViewLayoutRequest(
   parentSignal: AbortSignal,
   timeoutMs = FILE_VIEW_LAYOUT_TIMEOUT_MS,
   snapshot?: FileViewInputSnapshot,
+  validateLayout: typeof validateFileViewLayout = validateFileViewLayout,
 ): Promise<ValidatedFileViewLayout | null> {
   const { controller, detach } = createLayoutController(parentSignal);
   let timeout: ReturnType<typeof setTimeout> | undefined;
@@ -161,7 +162,7 @@ export async function runFileViewLayoutRequest(
     if (candidate === null) {
       return null;
     }
-    const checked = validateFileViewLayout(candidate, fileViewHunkCount(file), width);
+    const checked = validateLayout(candidate, fileViewHunkCount(file), width);
     if (!checked.valid) {
       throw new Error(`invalid layout: ${checked.issue}`);
     }
@@ -223,6 +224,7 @@ export function useFileViewLayouts({
   width,
   epochs = EMPTY_FILE_VIEW_EPOCHS,
   onIssue,
+  validateLayoutForTest = validateFileViewLayout,
 }: {
   files: readonly DiffFile[];
   selections: Readonly<Record<string, string>>;
@@ -230,6 +232,8 @@ export function useFileViewLayouts({
   width: number;
   epochs?: FileViewEpochState;
   onIssue: (message: string) => void;
+  /** Override validation only in tests that exercise contained host measurement failures. */
+  validateLayoutForTest?: typeof validateFileViewLayout;
 }) {
   const cache = useRef(new Map<string, CacheEntry>());
   const registrationIdentities = useRef(new WeakMap<RegisteredFileView, number>());
@@ -308,6 +312,7 @@ export function useFileViewLayouts({
           controller.signal,
           FILE_VIEW_LAYOUT_TIMEOUT_MS,
           snapshot,
+          validateLayoutForTest,
         );
         if (controller.signal.aborted || !active) return;
         if (validated === null) {
@@ -373,7 +378,7 @@ export function useFileViewLayouts({
       if (startTimer) clearTimeout(startTimer);
       controller.abort();
     };
-  }, [epochs, files, hasSelectedViews, onIssue, selections, views, width]);
+  }, [epochs, files, hasSelectedViews, onIssue, selections, validateLayoutForTest, views, width]);
 
   return useMemo(() => {
     if (!hasSelectedViews) return EMPTY_RESOLVED_FILE_VIEW_LAYOUTS;

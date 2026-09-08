@@ -59,7 +59,11 @@ function createInteractiveViewExtension(directory: string) {
   mkdirSync(extension, { recursive: true });
   writeFileSync(
     join(extension, "package.json"),
-    JSON.stringify({ name: "cursor-mode", private: true, hunk: { extensions: ["./index.ts"] } }),
+    JSON.stringify({
+      name: "cursor-mode",
+      private: true,
+      hunk: { extensions: ["./index.ts"] },
+    }),
     "utf8",
   );
   writeFileSync(
@@ -99,6 +103,68 @@ function createInteractiveViewExtension(directory: string) {
   return extension;
 }
 
+/** Write a large syntax-enabled file view with a delayed explicit refresh. */
+function createSyntaxViewExtension(directory: string) {
+  const extension = join(directory, "syntax-preview");
+  mkdirSync(extension, { recursive: true });
+  writeFileSync(
+    join(extension, "package.json"),
+    JSON.stringify({
+      name: "syntax-preview",
+      private: true,
+      hunk: { extensions: ["./index.ts"] },
+    }),
+    "utf8",
+  );
+  writeFileSync(
+    join(extension, "index.ts"),
+    `export default function (hunk) {
+  let delayNext = false;
+  const makeLayout = (file) => {
+    const lines = Array.from({ length: 80 }, (_, index) => {
+      const label = "ROW " + String(index + 1).padStart(3, "0") + " ";
+      if (index === 8) return label + "/* multiline comment";
+      if (index === 9) return label + "still commented */";
+      if (index === 20) return label + "const template = " + String.fromCharCode(96) + "first";
+      if (index === 21) return label + "value \${21}";
+      if (index === 22) return label + "last" + String.fromCharCode(96) + ";";
+      return label + "const phaseLine" + (index + 1) + " = " + (index + 1) + ";";
+    });
+    return {
+      codeDocuments: [{ id: "generated", text: lines.join("\\n"), language: "typescript" }],
+      rows: lines.map((text, index) => ({
+        id: "syntax-" + index,
+        spans: [{ text, syntax: { documentId: "generated", line: index + 1 } }],
+      })),
+      hunkRows: (file.hunks ?? []).map(() => ({ startRow: 0, endRow: lines.length - 1 })),
+    };
+  };
+  hunk.registerFileView({
+    id: "syntax-preview",
+    title: "Syntax preview",
+    matches: () => true,
+    layout: async ({ file }) => {
+      if (delayNext) {
+        delayNext = false;
+        await new Promise((resolve) => setTimeout(resolve, 800));
+      }
+      return makeLayout(file);
+    },
+  });
+  hunk.registerCommand({ id: "toggle-syntax", title: "Toggle syntax", key: "f8" }, (ctx) =>
+    ctx.fileViews.toggle("syntax-preview"),
+  );
+  hunk.registerCommand({ id: "reload-syntax", title: "Reload syntax", key: "f9" }, (ctx) => {
+    delayNext = true;
+    ctx.fileViews.refresh("syntax-preview");
+  });
+}
+`,
+    "utf8",
+  );
+  return extension;
+}
+
 /** Poll one file until the host's write lands, so the assertion is not a race. */
 async function waitForWrittenFile(path: string, expected: string, timeout = 15_000) {
   const deadline = Date.now() + timeout;
@@ -125,6 +191,93 @@ describe("PTY file views", () => {
       await session.click(/View/);
       const menu = await session.waitForText(/File presentation: Raw diff/);
       expect(menu).not.toContain("File presentation: Rendered Markdown");
+    } finally {
+      session.close();
+      rmSync(pair.directory, { recursive: true, force: true });
+    }
+  });
+
+  test("keeps a large syntax preview live through scroll, theme, resize, refresh, and view switches", async () => {
+    const pair = createMarkdownPairTest();
+    const extension = createSyntaxViewExtension(pair.directory);
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--extension",
+        extension,
+        "--mode",
+        "unified",
+        "--files",
+        pair.before,
+        pair.after,
+      ],
+      cwd: pair.directory,
+      cols: 120,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/before\.md/, { timeout: 20_000 });
+      await harness.ensureKeyboardIsLive(session);
+      await session.press("f8");
+      await session.waitForText(/ROW 001 const phaseLine1 = 1;/, {
+        timeout: 20_000,
+      });
+
+      let reachedComment = false;
+      for (let step = 0; step < 8 && !reachedComment; step += 1) {
+        await session.scrollDown(5);
+        try {
+          await session.waitForText(/ROW 009 \/\* multiline comment/, {
+            timeout: 750,
+          });
+          reachedComment = true;
+        } catch {
+          // Continue until the generated multiline lexical context enters the mounted window.
+        }
+      }
+      expect(reachedComment).toBe(true);
+      await harness.ensureKeyboardIsLive(session);
+
+      await session.press("t");
+      await session.waitForText(/Theme selector/, { timeout: 5_000 });
+      await session.press("down");
+      await session.press("enter");
+      await session.waitForText(/Theme: github-dark-dimmed/, {
+        timeout: 5_000,
+      });
+      await session.waitForText(/ROW 009 \/\* multiline comment/);
+
+      let reachedTemplate = false;
+      for (let step = 0; step < 8 && !reachedTemplate; step += 1) {
+        await session.scrollDown(5);
+        try {
+          await session.waitForText(/ROW 022 value \$\{21\}/, { timeout: 750 });
+          reachedTemplate = true;
+        } catch {
+          // Continue until the middle of the multiline template enters the mounted window.
+        }
+      }
+      expect(reachedTemplate).toBe(true);
+      session.resize({ cols: 92, rows: 20 });
+      await session.waitForText(/ROW 022 value \$\{21\}/, { timeout: 5_000 });
+      await session.waitIdle();
+
+      // Both view transitions are explicit user commands rather than highlight fallback.
+      await session.press("f8");
+      await session.waitForText(/new item/, { timeout: 5_000 });
+      await session.press("f8");
+      await session.waitForText(/ROW 001 const phaseLine1 = 1;/, {
+        timeout: 10_000,
+      });
+
+      await session.press("f9");
+      // The accepted layout stays readable while its delayed replacement prepares.
+      await Bun.sleep(100);
+      expect(await session.text({ immediate: true })).toContain("ROW 001 const phaseLine1 = 1;");
+      await Bun.sleep(800);
+      await session.waitForText(/ROW 001 const phaseLine1 = 1;/, { timeout: 5_000 });
+      await harness.ensureKeyboardIsLive(session);
     } finally {
       session.close();
       rmSync(pair.directory, { recursive: true, force: true });
@@ -226,7 +379,9 @@ describe("PTY file views", () => {
       });
 
       try {
-        await session.waitForText(/before\.|package\.json/, { timeout: 20_000 });
+        await session.waitForText(/before\.|package\.json/, {
+          timeout: 20_000,
+        });
         await harness.ensureKeyboardIsLive(session);
         await session.click(/View/);
         await session.waitForText(demo.view, { timeout: 20_000 });
@@ -236,7 +391,9 @@ describe("PTY file views", () => {
         await session.press("]");
         await session.waitForText(demo.second, { timeout: 20_000 });
         await session.click(/View/);
-        await session.waitForText(/File presentation: Raw diff/, { timeout: 20_000 });
+        await session.waitForText(/File presentation: Raw diff/, {
+          timeout: 20_000,
+        });
         await session.click(/File presentation: Raw diff/);
         await session.waitForText(demo.raw, { timeout: 20_000 });
       } finally {
@@ -271,12 +428,16 @@ describe("PTY file views", () => {
       await session.click(/package\.json/, { first: true });
       await session.waitForText(/@opentui\/core/, { timeout: 20_000 });
       await session.click(/README\.md/, { first: true });
-      await session.waitForText(/understanding release changes/, { timeout: 20_000 });
+      await session.waitForText(/understanding release changes/, {
+        timeout: 20_000,
+      });
       let reachedRetainedPreview = false;
       for (let step = 0; step < 10 && !reachedRetainedPreview; step += 1) {
         await session.scrollDown(8);
         try {
-          await session.waitForText(/Package metadata hunk 1/, { timeout: 750 });
+          await session.waitForText(/Package metadata hunk 1/, {
+            timeout: 750,
+          });
           reachedRetainedPreview = true;
         } catch {
           // Continue through the intentionally tall raw README until the retained preview appears.
@@ -373,7 +534,9 @@ describe("PTY file views", () => {
       // keys for, so the rows and the keyboard arrive together.
       await session.press("f9");
       await session.waitForText(/CURSOR AT 0/, { timeout: 20_000 });
-      await session.waitForText(/cursor-mode:cursor mode — Esc exits/, { timeout: 20_000 });
+      await session.waitForText(/cursor-mode:cursor mode — Esc exits/, {
+        timeout: 20_000,
+      });
 
       // Handled keys reach the extension, and the redraw it asks for is what
       // the terminal actually shows.
@@ -393,12 +556,16 @@ describe("PTY file views", () => {
       expect(stillActive).not.toContain("Controls help");
 
       await session.press("escape");
-      const exited = await session.waitForText(/CURSOR AT 2/, { timeout: 20_000 });
+      const exited = await session.waitForText(/CURSOR AT 2/, {
+        timeout: 20_000,
+      });
       expect(exited).not.toContain("Esc exits");
 
       // The command table owns the keyboard again.
       await session.press("f8");
-      const raw = await session.waitForText(/line60 = 6000/, { timeout: 20_000 });
+      const raw = await session.waitForText(/line60 = 6000/, {
+        timeout: 20_000,
+      });
       expect(raw).not.toContain("CURSOR AT");
     } finally {
       session.close();
@@ -425,15 +592,21 @@ describe("PTY file views", () => {
       // The view shows the new document alone, so the removed old-side line is
       // how the terminal reports that the presentation actually switched.
       await harness.waitForSnapshot(session, (text) => !text.includes("alpha = 1"), 20_000);
-      await session.waitForText(/EDITING — Esc exits · ctrl\+s writes/, { timeout: 20_000 });
-      await session.waitForText(/inline-edit:inline-edit mode — Esc exits/, { timeout: 20_000 });
+      await session.waitForText(/EDITING — Esc exits · ctrl\+s writes/, {
+        timeout: 20_000,
+      });
+      await session.waitForText(/inline-edit:inline-edit mode — Esc exits/, {
+        timeout: 20_000,
+      });
 
       // `z` is Hunk's expand-context key; while the mode runs it is text, and
       // each keystroke reaches the screen only through `fileViews.refresh`.
       await session.press("z");
       await session.press("z");
       await session.press("z");
-      const typed = await session.waitForText(/zzzexport const alpha = 2;/, { timeout: 20_000 });
+      const typed = await session.waitForText(/zzzexport const alpha = 2;/, {
+        timeout: 20_000,
+      });
       expect(typed).toContain("MODIFIED");
 
       // `?` is an explicitly host-owned printable key, so help remains
@@ -441,13 +614,17 @@ describe("PTY file views", () => {
       await session.press("?");
       await session.waitForText(/Controls help/, { timeout: 20_000 });
       await session.press("escape");
-      await session.waitForText(/inline-edit:inline-edit mode — Esc exits/, { timeout: 20_000 });
+      await session.waitForText(/inline-edit:inline-edit mode — Esc exits/, {
+        timeout: 20_000,
+      });
 
       // The mode can only request the write; the command handler awaiting the
       // session performs it, and the host asks the user first.
       await session.press(["ctrl", "s"]);
       await session.waitForText(/Write alpha\.ts\?/, { timeout: 20_000 });
-      const prompt = await session.waitForText(/ext inline-edit/, { timeout: 20_000 });
+      const prompt = await session.waitForText(/ext inline-edit/, {
+        timeout: 20_000,
+      });
       expect(prompt).toContain("replace this file's contents on disk");
       await session.press("enter");
 
@@ -456,7 +633,9 @@ describe("PTY file views", () => {
       ).toBe("zzzexport const alpha = 2;\nexport const add = true;\n");
 
       // A successful write reloads the review, and the reload exits the mode.
-      await session.waitForText(/zzzexport const alpha = 2;/, { timeout: 20_000 });
+      await session.waitForText(/zzzexport const alpha = 2;/, {
+        timeout: 20_000,
+      });
       await harness.waitForSnapshot(session, (text) => !text.includes("Esc exits"), 20_000);
 
       // The command table owns the keyboard again: `z` no longer types.
@@ -503,7 +682,9 @@ describe("PTY file views", () => {
     });
 
     try {
-      await session.waitForText(/Keep this note visible\./, { timeout: 20_000 });
+      await session.waitForText(/Keep this note visible\./, {
+        timeout: 20_000,
+      });
       await harness.ensureKeyboardIsLive(session);
       await session.press(["ctrl", "e"]);
       await session.waitForText(/EDITING — Esc exits/, { timeout: 20_000 });
