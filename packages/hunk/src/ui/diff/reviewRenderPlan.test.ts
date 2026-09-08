@@ -164,6 +164,39 @@ describe("review render plan", () => {
     expect(inlineNotes.map((row) => row.rangeGuideConnection)).toEqual(["continue", "continue"]);
   });
 
+  test("connects only the root card of a reply thread to the external range rail", () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const file = createDiffFile(
+      "thread",
+      "thread.ts",
+      "export const alpha = 1;\n",
+      "export const alpha = 2;\nexport const beta = 3;\n",
+    );
+    const rows = buildSplitRows(file, null, theme);
+    const notes = [
+      createVisibleAgentNote(file.metadata.hunks, {
+        id: "root",
+        annotation: { newRange: [2, 2], summary: "Root note" },
+        thread: { noteId: "root", depth: 0, hasNextSibling: false },
+      }),
+      createVisibleAgentNote(file.metadata.hunks, {
+        id: "child",
+        annotation: { newRange: [2, 2], summary: "Child reply" },
+        thread: { noteId: "child", parentId: "root", depth: 1, hasNextSibling: false },
+      }),
+    ];
+    const plannedRows = buildReviewRenderPlan({
+      fileId: file.id,
+      rows,
+      showHunkHeaders: true,
+      visibleAgentNotes: notes,
+    });
+    const inlineNotes = plannedRows.filter((row) => row.kind === "inline-note");
+
+    expect(inlineNotes).toHaveLength(2);
+    expect(inlineNotes.map((row) => row.rangeGuideConnection)).toEqual(["terminate", undefined]);
+  });
+
   test("connects a deletion-only anchor row directly into its inline note", () => {
     const theme = resolveTheme("github-dark-default", null);
     const file = createDiffFile(

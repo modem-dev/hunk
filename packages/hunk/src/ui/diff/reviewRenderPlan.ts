@@ -493,7 +493,12 @@ export function buildReviewRenderPlan({
     );
 
     const anchoredNotes = placementsByAnchor.get(row.key) ?? [];
-    anchoredNotes.forEach((placement) => {
+    anchoredNotes.forEach((placement, placementIndex) => {
+      const isThreadReply = (placement.note.thread?.depth ?? 0) > 0;
+      const hasLaterRootNote = anchoredNotes
+        .slice(placementIndex + 1)
+        .some((candidate) => (candidate.note.thread?.depth ?? 0) === 0);
+
       plannedRows.push({
         kind: "inline-note",
         key: `inline-note:${placement.note.id}:${row.key}:${placement.noteIndex}`,
@@ -506,11 +511,14 @@ export function buildReviewRenderPlan({
         anchorSide: placement.anchorSide,
         noteCount: placement.noteCount,
         noteIndex: placement.noteIndex,
-        rangeGuideConnection: !noteGuideSideByRowKey.has(row.key)
-          ? undefined
-          : placement.noteIndex < placement.noteCount - 1 || rangeGuideContinuationRows.has(row.key)
-            ? "continue"
-            : "terminate",
+        // Replies already connect through the thread gutter on the left. Keep the
+        // external range rail on root cards so the thread has only one range connection.
+        rangeGuideConnection:
+          isThreadReply || !noteGuideSideByRowKey.has(row.key)
+            ? undefined
+            : hasLaterRootNote || rangeGuideContinuationRows.has(row.key)
+              ? "continue"
+              : "terminate",
       });
     });
   }
