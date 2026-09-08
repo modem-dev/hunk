@@ -174,7 +174,9 @@ function DiffSectionComponent({
             }
           }
           cursorHighlight={cursorHighlight}
+          offloadLargeDiff={offloadLargeDiff}
           selectedHunkIndex={selectedHunkIndex}
+          shouldLoadHighlight={shouldLoadHighlight}
           theme={theme}
           visibleBodyBounds={visibleBodyBounds}
           width={viewWidth}

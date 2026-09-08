@@ -15,6 +15,7 @@ import { toExtensionPaintTheme } from "../../lib/extensionPaintTheme";
 import { symbolicTextAttributes, symbolicToneColor } from "../../lib/symbolicSpans";
 import type { PlannedFileViewRow } from "../../fileViews/renderPlan";
 import type { FileViewRowFailure } from "../../fileViews/types";
+import { useFileViewSyntaxHighlight } from "../../fileViews/useFileViewSyntaxHighlight";
 import type { ResolvedFileViewLayout } from "../../fileViews/useFileViews";
 import { AgentInlineNote } from "./AgentInlineNote";
 
@@ -69,7 +70,9 @@ function FileViewComponent({
   fileView,
   geometry,
   cursorHighlight,
+  offloadLargeDiff = false,
   selectedHunkIndex,
+  shouldLoadHighlight = false,
   theme,
   visibleBodyBounds,
   width,
@@ -80,7 +83,9 @@ function FileViewComponent({
   geometry: DiffSectionGeometry;
   /** The current line within this file, when the review-stream cursor rests in it. */
   cursorHighlight?: CursorHighlight;
+  offloadLargeDiff?: boolean;
   selectedHunkIndex: number;
+  shouldLoadHighlight?: boolean;
   theme: AppTheme;
   visibleBodyBounds?: VisibleBodyBounds;
   width: number;
@@ -88,15 +93,18 @@ function FileViewComponent({
 }) {
   const { layout } = fileView;
   const publicTheme = useMemo(() => toExtensionPaintTheme(theme), [theme]);
-  const plannedRows: readonly PlannedFileViewRow[] =
-    geometry.fileViewRows ??
-    layout.rows.map((row, rowIndex) => ({
-      kind: "file-view-row" as const,
-      key: `file-view:${row.id}`,
-      stableKey: `file-view:${row.id}`,
-      row,
-      rowIndex,
-    }));
+  const plannedRows: readonly PlannedFileViewRow[] = useMemo(
+    () =>
+      geometry.fileViewRows ??
+      layout.rows.map((row, rowIndex) => ({
+        kind: "file-view-row" as const,
+        key: `file-view:${row.id}`,
+        stableKey: `file-view:${row.id}`,
+        row,
+        rowIndex,
+      })),
+    [geometry.fileViewRows, layout.rows],
+  );
   const rowWindow = useMemo(() => {
     if (!visibleBodyBounds) {
       return {
@@ -113,7 +121,19 @@ function FileViewComponent({
     });
   }, [geometry.bodyHeight, geometry.rowBounds, plannedRows.length, visibleBodyBounds]);
 
-  const mountedRows = plannedRows.slice(rowWindow.startIndex, rowWindow.endIndex);
+  const mountedRows = useMemo(
+    () => plannedRows.slice(rowWindow.startIndex, rowWindow.endIndex),
+    [plannedRows, rowWindow.endIndex, rowWindow.startIndex],
+  );
+  // Demand follows the host row window so inserted notes and offscreen extension rows add no work.
+  useFileViewSyntaxHighlight({
+    file,
+    fileView,
+    mountedRows,
+    offloadLargeDiff,
+    shouldLoadHighlight,
+    theme,
+  });
   return (
     <box style={{ width: "100%", flexDirection: "column" }}>
       {rowWindow.topSpacerHeight > 0 ? (
