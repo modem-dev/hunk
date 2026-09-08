@@ -280,6 +280,143 @@ describe("PTY notes", () => {
     }
   });
 
+  test("saved notes are visibly active and keyboard-navigable without hover", async () => {
+    const fixture = harness.createLongWrapFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "unified"],
+      cols: 100,
+      rows: 30,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+
+      await session.press("c");
+      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await session.type("First keyboard note.");
+      await session.type("\x13");
+      await session.waitForText(/First keyboard note\./, { timeout: 5_000 });
+
+      await session.press("c");
+      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await session.type("Second keyboard note.");
+      await session.type("\x13");
+      const savedActive = await harness.waitForSnapshot(
+        session,
+        (text) =>
+          lineIndexOf(text, "Second keyboard note.") - lineIndexOf(text, "● Your note") === 2,
+        5_000,
+      );
+      expect(savedActive).toContain("R reply");
+      expect(savedActive).toContain("E edit");
+      expect(savedActive).toContain("D delete");
+
+      await session.press("k");
+      await session.press("k");
+      const firstActive = await harness.waitForSnapshot(
+        session,
+        (text) => {
+          const markerRow = lineIndexOf(text, "● Your note");
+          const firstBodyRow = lineIndexOf(text, "First keyboard note.");
+          return markerRow >= 0 && firstBodyRow - markerRow === 2;
+        },
+        5_000,
+      );
+      expect(firstActive).toContain("R reply");
+      expect(firstActive).toContain("E edit");
+      expect(firstActive).toContain("D delete");
+
+      await session.press("down");
+      await session.press("down");
+      const secondActive = await harness.waitForSnapshot(
+        session,
+        (text) => {
+          const markerRow = lineIndexOf(text, "● Your note");
+          const secondBodyRow = lineIndexOf(text, "Second keyboard note.");
+          return markerRow >= 0 && secondBodyRow - markerRow === 2;
+        },
+        5_000,
+      );
+      expect(secondActive).toContain("Second keyboard note.");
+
+      await session.press("k");
+      await session.press("k");
+      await harness.waitForSnapshot(
+        session,
+        (text) => {
+          const markerRow = lineIndexOf(text, "● Your note");
+          const firstBodyRow = lineIndexOf(text, "First keyboard note.");
+          return markerRow >= 0 && firstBodyRow - markerRow === 2;
+        },
+        5_000,
+      );
+      await session.press("j");
+      await session.press("j");
+      await session.type("D");
+      const deleted = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("Second keyboard note."),
+        5_000,
+      );
+      expect(deleted).toContain("First keyboard note.");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("next and previous note work when the current-line marker is off", async () => {
+    const fixture = harness.createLongWrapFilePair();
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--files",
+        fixture.before,
+        fixture.after,
+        "--mode",
+        "unified",
+        "--cursor-line",
+        "off",
+      ],
+      cols: 100,
+      rows: 30,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+      for (const body of ["First note-only stop.", "Second note-only stop."]) {
+        await session.press("c");
+        await session.waitForText(/Draft note/, { timeout: 5_000 });
+        await session.type(body);
+        await session.type("\x13");
+        await session.waitForText(new RegExp(body.replaceAll(".", "\\.")), { timeout: 5_000 });
+      }
+
+      await session.type("N");
+      await harness.waitForSnapshot(
+        session,
+        (text) =>
+          lineIndexOf(text, "First note-only stop.") - lineIndexOf(text, "● Your note") === 2,
+        5_000,
+      );
+      await session.press("n");
+      await harness.waitForSnapshot(
+        session,
+        (text) =>
+          lineIndexOf(text, "Second note-only stop.") - lineIndexOf(text, "● Your note") === 2,
+        5_000,
+      );
+      await session.type("N");
+      await harness.waitForSnapshot(
+        session,
+        (text) =>
+          lineIndexOf(text, "First note-only stop.") - lineIndexOf(text, "● Your note") === 2,
+        5_000,
+      );
+    } finally {
+      session.close();
+    }
+  });
+
   test("saved notes can be edited and replied to through clickable threaded actions", async () => {
     const fixture = harness.createLongWrapFilePair();
     const session = await harness.launchHunk({
@@ -296,11 +433,10 @@ describe("PTY notes", () => {
       await session.type("Root review note.");
       await session.waitForText(/Root review note\./, { timeout: 5_000 });
       await session.type("\x13");
-      const root = await session.waitForText(/Root review note\./, { timeout: 5_000 });
-      expect(root).not.toContain("r reply");
+      const root = await session.waitForText(/R reply E edit D delete/, { timeout: 5_000 });
       expect(root).toMatch(/before\.ts -> after\.ts [LR]1/);
 
-      const revealActionsForBody = async (body: string) => {
+      const selectNoteByBody = async (body: string, assertHoverOnly = false) => {
         const snapshot = await session.waitForText(
           new RegExp(body.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
           {
@@ -310,19 +446,31 @@ describe("PTY notes", () => {
         const row = lineIndexOf(snapshot, body);
         const column = snapshot.split("\n")[row]!.indexOf(body) + 1;
         await moveMouse(session, 0, 0);
-        await moveMouse(session, column, row);
-        return session.waitForText(/r reply e edit/, { timeout: 5_000 });
+        await moveMouse(session, column, row - 2);
+        const hovered = await session.waitForText(/reply.*edit/, { timeout: 5_000 });
+        if (assertHoverOnly) {
+          expect(hovered).not.toContain("● Your note");
+        }
+        await session.clickAt(column, row);
+        return harness.waitForSnapshot(
+          session,
+          (text) => {
+            const markerRow = lineIndexOf(text, "● Your note");
+            return markerRow >= 0 && lineIndexOf(text, body) - markerRow === 2;
+          },
+          5_000,
+        );
       };
 
-      const hoveredRoot = await revealActionsForBody("Root review note.");
+      const hoveredRoot = await selectNoteByBody("Root review note.");
       const rootBottomBorder = hoveredRoot
         .split("\n")
-        .find((line) => line.includes("r reply e edit d delete"));
+        .find((line) => line.includes("R reply E edit D delete"));
       expect(rootBottomBorder?.trimStart().startsWith("╰")).toBe(true);
       expect(rootBottomBorder?.trimEnd().endsWith("╯")).toBe(true);
 
       const rootRowBeforeEdit = lineIndexOf(hoveredRoot, "Root review note.");
-      await session.click(/e edit/);
+      await session.click(/edit/);
       const editing = await session.waitForText(/Edit note/, { timeout: 5_000 });
       expect(editing).toContain("Root review note.");
       expect(lineIndexOf(editing, "Root review note.")).toBe(rootRowBeforeEdit);
@@ -332,54 +480,79 @@ describe("PTY notes", () => {
       await session.type("\x13");
       const edited = await session.waitForText(/Updated\. Root review note\./, { timeout: 5_000 });
       expect((edited.match(/Your note/g) ?? []).length).toBe(1);
-      expect(edited).not.toContain("r reply");
+      await session.press("j");
 
-      const rootBeforeReply = await revealActionsForBody("Updated. Root review note.");
+      const rootBeforeReply = await selectNoteByBody("Updated. Root review note.", true);
       const rootRowBeforeReply = lineIndexOf(rootBeforeReply, "Updated. Root review note.");
-      await session.click(/r reply/);
+      await session.type("R");
       const replying = await session.waitForText(/╰─╭─ Reply -/, { timeout: 5_000 });
       expect(lineIndexOf(replying, "Updated. Root review note.")).toBe(rootRowBeforeReply);
       await session.type("First reply.");
       await session.waitForText(/First reply\./, { timeout: 5_000 });
       await session.type("\x13");
       const firstReply = await session.waitForText(/First reply\./, { timeout: 5_000 });
-      expect(firstReply).toMatch(/╰─╭─ Your note/);
+      expect(firstReply).toMatch(/╰─╭─ ● Your note/);
 
-      await revealActionsForBody("First reply.");
-      await session.click(/r reply/);
+      await session.press("k");
+      await harness.waitForSnapshot(
+        session,
+        (text) => {
+          const markerRow = lineIndexOf(text, "● Your note");
+          return (
+            markerRow >= 0 && lineIndexOf(text, "Updated. Root review note.") - markerRow === 2
+          );
+        },
+        5_000,
+      );
+      await session.press("j");
+      await harness.waitForSnapshot(
+        session,
+        (text) => {
+          const markerRow = lineIndexOf(text, "● Your note");
+          return markerRow >= 0 && lineIndexOf(text, "First reply.") - markerRow === 2;
+        },
+        5_000,
+      );
+      await selectNoteByBody("First reply.");
+      await session.click(/R reply/);
       await session.waitForText(/╰─╭─ Reply -/, { timeout: 5_000 });
       await session.type("Nested reply.");
       await session.waitForText(/Nested reply\./, { timeout: 5_000 });
       await session.type("\x13");
 
       const nested = await session.waitForText(/Nested reply\./, { timeout: 5_000 });
-      expect(nested).toMatch(/╰─╭─ Your note/);
+      expect(nested).toMatch(/╰─╭─ ● Your note/);
 
-      await revealActionsForBody("Updated. Root review note.");
-      await session.click(/r reply/);
+      await selectNoteByBody("Updated. Root review note.");
+      await session.click(/R reply/);
       const siblingDraft = await session.waitForText(/╰─╭─ Reply -/, { timeout: 5_000 });
       expect(siblingDraft).toMatch(/├─╭─ Your note/);
       expect(siblingDraft).toMatch(/│ ╰─╭─ Your note/);
       await session.click(/Esc cancel/);
       await harness.waitForSnapshot(session, (text) => !text.includes("╭─ Reply -"), 5_000);
 
+      await session.press("j");
       await session.type("E");
       await session.waitForText(/╭─ Edit note -/, { timeout: 5_000 });
       await session.click(/Esc cancel/);
       await harness.waitForSnapshot(session, (text) => !text.includes("╭─ Edit note -"), 5_000);
+      await session.press("j");
       await session.type("R");
       const keyboardReply = await session.waitForText(/╭─ Reply -/, { timeout: 5_000 });
 
       const threadedTitles = keyboardReply
         .split("\n")
         .filter((line) => line.includes("╭─ Your note"));
-      expect(threadedTitles.length).toBeGreaterThanOrEqual(3);
+      expect(threadedTitles.length).toBeGreaterThanOrEqual(2);
       expect(threadedTitles[1]!.indexOf("╭")).toBeGreaterThan(threadedTitles[0]!.indexOf("╭"));
 
       await session.click(/Esc cancel/);
       await harness.waitForSnapshot(session, (text) => !text.includes("╭─ Reply -"), 5_000);
-      await revealActionsForBody("Nested reply.");
-      await session.click(/d delete/);
+      await session.press("j");
+      await session.press("j");
+      await session.press("j");
+      await selectNoteByBody("Nested reply.");
+      await session.click(/delete/);
       const deletedLeaf = await harness.waitForSnapshot(
         session,
         (text) => !text.includes("Nested reply."),
@@ -394,7 +567,7 @@ describe("PTY notes", () => {
   test("mouse range across replacement sides opens and saves the exact multiline draft", async () => {
     const fixture = harness.createWideCharacterFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "stack"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "unified"],
       cols: 110,
       rows: 22,
     });

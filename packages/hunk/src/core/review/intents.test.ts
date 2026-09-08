@@ -122,6 +122,76 @@ describe("selection movement intent", () => {
     });
   });
 
+  test("moves between exact visible stored notes and carries the active identity atomically", () => {
+    const state = {
+      ...createTestReviewState(undefined, { showAgentNotes: true }),
+      liveNotes: [
+        createTestStoredNote({ id: "later", fileKey: "alpha", hunkIndex: 0, line: 8 }),
+        createTestStoredNote({ id: "next-file", fileKey: "beta", hunkIndex: 1, line: 21 }),
+        createTestStoredNote({ id: "earlier", fileKey: "alpha", hunkIndex: 0, line: 2 }),
+      ],
+    };
+
+    expect(planReviewIntent(state, { type: "selection/move", scope: "note", delta: 1 })).toEqual({
+      actions: [
+        {
+          type: "selection/select",
+          fileKey: "alpha",
+          hunkIndex: 0,
+          activeNoteId: "earlier",
+          reveal: { anchor: "hunk", scrollToNote: true },
+        },
+      ],
+      outcome: { type: "selection/changed", fileKey: "alpha", hunkIndex: 0 },
+    });
+
+    const activeLater = { ...state, activeNoteId: "later" };
+    expect(
+      planReviewIntent(activeLater, { type: "selection/move", scope: "note", delta: 1 }).actions[0],
+    ).toMatchObject({ fileKey: "beta", hunkIndex: 1, activeNoteId: "next-file" });
+    expect(
+      planReviewIntent(
+        { ...activeLater, filter: "alpha" },
+        { type: "selection/move", scope: "note", delta: 1 },
+      ),
+    ).toEqual({ actions: [] });
+  });
+
+  test("selects one exact visible note and rejects a mismatched location", () => {
+    const state = {
+      ...createTestReviewState(undefined, { showAgentNotes: true }),
+      liveNotes: [createTestStoredNote({ id: "target", fileKey: "alpha", hunkIndex: 0 })],
+    };
+    const reveal = { anchor: "none" as const, scrollToNote: false };
+
+    expect(
+      planReviewIntent(state, {
+        type: "selection/select",
+        fileKey: "alpha",
+        hunkIndex: 0,
+        activeNoteId: "target",
+        reveal,
+      }).actions,
+    ).toEqual([
+      {
+        type: "selection/select",
+        fileKey: "alpha",
+        hunkIndex: 0,
+        activeNoteId: "target",
+        reveal,
+      },
+    ]);
+    expect(() =>
+      planReviewIntent(state, {
+        type: "selection/select",
+        fileKey: "beta",
+        hunkIndex: 0,
+        activeNoteId: "target",
+        reveal,
+      }),
+    ).toThrow(ReviewIntentPlanningError);
+  });
+
   test("requires the annotation index for annotated navigation", () => {
     const state = createTestReviewState();
 
@@ -214,6 +284,22 @@ describe("viewport anchor intent", () => {
     const next = plan.actions.reduce(reduceReviewState, state);
     expect(next.selection).toEqual({ fileKey: "beta", hunkIndex: 1 });
     expect(next.reveal).toEqual({ fileTopToken: 0, hunkToken: 0, scrollToNote: false });
+  });
+
+  test("preserves exact note focus when the viewport reports the same hunk", () => {
+    const state = {
+      ...createTestReviewState(),
+      activeNoteId: "note-2",
+      selection: { fileKey: "alpha", hunkIndex: 1 },
+    };
+
+    expect(
+      planReviewIntent(state, {
+        type: "selection/anchor",
+        fileKey: "alpha",
+        hunkIndex: 1,
+      }).actions[0],
+    ).toMatchObject({ activeNoteId: "note-2" });
   });
 });
 

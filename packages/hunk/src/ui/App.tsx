@@ -24,7 +24,9 @@ import { isVcsReviewInput } from "../core/vcs";
 import type { AppBootstrap } from "../core/bootstrap";
 import {
   selectActiveEditableReviewNoteId,
+  selectActiveRemovableReviewNote,
   selectActiveReplyableReviewNoteId,
+  selectActiveStoredReviewNote,
 } from "../core/review/selectors";
 import type { CliInput, CursorLine, LayoutMode } from "../core/run/commandInputs";
 import { sanitizeTerminalLine } from "../lib/terminalText";
@@ -95,6 +97,7 @@ import { buildExtensionAppCommands, extensionCommandKeyDefaults } from "./lib/ex
 import { createExtensionReviewReloadControls } from "./lib/extensionReviewReload";
 import type { CurrentLineAlignment } from "./lib/hunkScroll";
 import type { LineCursor } from "./lib/lineCursors";
+import type { ReviewVerticalStop } from "./lib/reviewVerticalStops";
 import { useFilePresentationController } from "./fileViews/useFilePresentationController";
 import { useFilePresentationRendering } from "./fileViews/useFilePresentationRendering";
 import { mergeLineHighlightMaps } from "./highlights/merge";
@@ -204,10 +207,12 @@ export function App({
   // the current values through a ref instead of a render-time parameter.
   const noteGeometryRef = useRef<AgentNoteGeometrySnapshot | null>(null);
   const [lineCursors, setLineCursors] = useState<LineCursor[]>([]);
+  const [reviewVerticalStops, setReviewVerticalStops] = useState<ReviewVerticalStop[]>([]);
   const review = useTerminalReview({
     files: reviewFiles,
     initialShowAgentNotes: bootstrap.initialShowAgentNotes ?? false,
     lineCursors,
+    reviewVerticalStops,
     noteGeometry: noteGeometryRef,
     sourceLabel: bootstrap.changeset.sourceLabel,
     stmlEnabled,
@@ -852,7 +857,7 @@ export function App({
   /** Step one line: move the current line, or scroll the viewport when there is no marker. */
   const stepDiffLine = (delta: number) => {
     if (selectionActionsRef.current?.move(delta)) return;
-    if (!activeLineCursor) {
+    if (cursorLine === "off") {
       scrollDiff(delta, "step");
       return;
     }
@@ -1096,8 +1101,11 @@ export function App({
     publishEvent: publishNoteEvent,
   });
 
-  const activeEditableNoteId = selectActiveEditableReviewNoteId(review.store.getSnapshot());
-  const activeReplyableNoteId = selectActiveReplyableReviewNoteId(review.store.getSnapshot());
+  const reviewSnapshot = review.store.getSnapshot();
+  const activeNoteId = selectActiveStoredReviewNote(reviewSnapshot)?.note.id;
+  const activeEditableNoteId = selectActiveEditableReviewNoteId(reviewSnapshot);
+  const activeReplyableNoteId = selectActiveReplyableReviewNoteId(reviewSnapshot);
+  const activeRemovableNote = selectActiveRemovableReviewNote(reviewSnapshot);
 
   // One dispatch table for every app-level shortcut: the built-in commands
   // over App's live callbacks, then extension commands, so built-ins always
@@ -1107,12 +1115,21 @@ export function App({
       ...buildAppCommands({
         canAlignCurrentLine: cursorLine !== "off" && review.lineCursor !== null,
         canApplyFilePresentationToAllMatching: selectedFileViewBulkTarget !== null,
+        canDeleteActiveNote: activeRemovableNote !== undefined && review.draftNote === null,
         canEditActiveNote: activeEditableNoteId !== undefined && review.draftNote === null,
         canReplyToActiveNote: activeReplyableNoteId !== undefined && review.draftNote === null,
         canRefreshCurrentInput,
         alignCurrentLine,
         applyFilePresentationToAllMatching,
         focusFilter,
+        deleteActiveNote: () => {
+          if (!activeRemovableNote) return;
+          if (activeRemovableNote.source === "user") {
+            review.removeUserNote(activeRemovableNote.noteId);
+          } else {
+            review.removeLiveComment(activeRemovableNote.noteId);
+          }
+        },
         editActiveNote: () => {
           if (activeEditableNoteId) startUserNoteEdit(activeEditableNoteId);
         },
@@ -1120,6 +1137,7 @@ export function App({
           if (activeReplyableNoteId) startUserNoteReply(activeReplyableNoteId);
         },
         moveSelection: review.moveSelection,
+        moveNoteCursor: review.moveNoteCursor,
         openAgentSkill,
         openThemeSelector,
         requestQuit,
@@ -1161,6 +1179,16 @@ export function App({
     ?.keyLabels[0];
   const selectionCopyKeyLabel = findAppCommandById(appCommands, "hunk.review.copySelection")
     ?.keyLabels[0];
+  const deleteNoteKeyLabel =
+    findAppCommandById(appCommands, "hunk.review.deleteActiveNote")?.keyLabels[0] ?? "";
+  const editNoteKeyLabel =
+    findAppCommandById(appCommands, "hunk.review.editActiveNote")?.keyLabels[0] ?? "";
+  const replyNoteKeyLabel =
+    findAppCommandById(appCommands, "hunk.review.replyToActiveNote")?.keyLabels[0] ?? "";
+  const noteActionKeyLabels = useMemo(
+    () => ({ delete: deleteNoteKeyLabel, edit: editNoteKeyLabel, reply: replyNoteKeyLabel }),
+    [deleteNoteKeyLabel, editNoteKeyLabel, replyNoteKeyLabel],
+  );
   useExtensionRuntimeBindings({
     commands: appCommands,
     navigation: extensionNavigationBindings,
@@ -1459,6 +1487,8 @@ export function App({
             scrollRef={diffScrollRef}
             selectedFileId={selectedFile?.id}
             selectedHunkIndex={selectedHunkIndex}
+            activeNoteId={activeNoteId}
+            noteActionKeyLabels={noteActionKeyLabels}
             scrollToNote={review.scrollToNote}
             draftNote={review.draftNote}
             draftNoteFocused={focusArea === "note"}
@@ -1485,6 +1515,7 @@ export function App({
             width={diffPaneWidth}
             height={diffPaneHeight}
             onActiveAddNoteAffordanceChange={onActiveAddNoteAffordanceChange}
+            onActivateNote={review.activateNote}
             onEditUserNote={startUserNoteEdit}
             onReplyToNote={startUserNoteReply}
             onRemoveLiveNote={review.removeLiveComment}
@@ -1506,6 +1537,7 @@ export function App({
               review.anchorSelection(fileId, hunkIndex)
             }
             onLineCursorsChange={setLineCursors}
+            onReviewVerticalStopsChange={setReviewVerticalStops}
             currentLinePaintRequested={currentLinePaintRequested}
             onCurrentLinePaintChange={onCurrentLinePaintChange}
             onViewportLineCursorChange={review.anchorLineCursor}

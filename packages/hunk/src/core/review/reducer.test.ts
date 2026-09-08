@@ -128,6 +128,25 @@ describe("selection", () => {
     expect(next.reveal).toEqual(state.reveal);
   });
 
+  test("commits exact note focus with selection and clears it on ordinary selection", () => {
+    const noteSelected = reduceReviewState(createTestReviewState(), {
+      type: "selection/select",
+      fileKey: "beta",
+      hunkIndex: 1,
+      activeNoteId: "note-2",
+      reveal: { anchor: "hunk", scrollToNote: true },
+    });
+    expect(noteSelected.activeNoteId).toBe("note-2");
+    expect(noteSelected.selection).toEqual({ fileKey: "beta", hunkIndex: 1 });
+
+    const ordinarySelection = reduceReviewState(noteSelected, {
+      type: "selection/select",
+      fileKey: "beta",
+      hunkIndex: 0,
+    });
+    expect(ordinarySelection.activeNoteId).toBeNull();
+  });
+
   test("retires a note-scroll request even when the selection is unchanged", () => {
     const noteSelected = reduceReviewState(createTestReviewState(), {
       type: "selection/select",
@@ -497,6 +516,7 @@ describe("drafts", () => {
 
     expect(saved.draftNote).toBeNull();
     expect(saved.userNotes.map((entry) => entry.note.id)).toEqual(["user-1"]);
+    expect(saved.activeNoteId).toBe("user-1");
   });
 
   test("saving an edit replaces the note in place", () => {
@@ -517,6 +537,7 @@ describe("drafts", () => {
       ["user-1", "updated"],
       ["user-2", "note user-2"],
     ]);
+    expect(saved.activeNoteId).toBe("user-1");
   });
 });
 
@@ -584,6 +605,19 @@ describe("filter and note visibility", () => {
 
     expect(next.filter).toBe("alpha");
     expect(next.selection).toEqual(state.selection);
+  });
+
+  test("clears an active agent note when hiding the agent-note layer", () => {
+    const state = {
+      ...createTestReviewState([], { showAgentNotes: true }),
+      activeNoteId: "agent-1",
+      liveNotes: [createTestStoredNote({ id: "agent-1", fileKey: "alpha" })],
+    };
+
+    const next = reduceReviewState(state, { type: "notes/set-visibility", visible: false });
+
+    expect(next.showAgentNotes).toBe(false);
+    expect(next.activeNoteId).toBeNull();
   });
 
   test("ignores a repeated filter or visibility value", () => {

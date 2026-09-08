@@ -394,6 +394,9 @@ export function DiffSectionBody({
                 anchorSide={plannedRow.anchorSide}
                 draft={plannedRow.note.draft}
                 actions={plannedRow.note.actions}
+                active={plannedRow.note.active}
+                actionKeyLabels={plannedRow.note.actionKeyLabels}
+                onActivate={plannedRow.note.onActivate}
                 thread={plannedRow.note.thread}
                 file={file}
                 layout={layout}

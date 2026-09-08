@@ -11,6 +11,8 @@ import {
   reviewFileMatchesFilter,
   selectActiveReplyableReviewNoteId,
   selectActiveRevealNoteId,
+  selectActiveStoredReviewNote,
+  selectNavigableStoredReviewNotes,
   selectExpandedGapIdsByFileKey,
   selectFallbackFileKey,
   selectNormalizedSelection,
@@ -260,7 +262,10 @@ describe("note selectors", () => {
         visibleDepth,
       })),
     ).toEqual([{ id: "user-reply", visibleDepth: 0 }]);
-    expect(selectActiveReplyableReviewNoteId(state)).toBe("user-reply");
+    expect(selectActiveReplyableReviewNoteId(state)).toBeUndefined();
+    expect(selectActiveReplyableReviewNoteId({ ...state, activeNoteId: "user-reply" })).toBe(
+      "user-reply",
+    );
   });
 
   test("group notes by the hunk that owns them, not by range containment", () => {
@@ -287,7 +292,7 @@ describe("note selectors", () => {
   // Intent: the reviewer's own draft is what a "jump to the note" reveal is about.
   test("prefer an active draft in the selected hunk over stored notes", () => {
     const state = {
-      ...createTestReviewState(["alpha"]),
+      ...createTestReviewState(["alpha"], { showAgentNotes: true }),
       selection: { fileKey: "alpha", hunkIndex: 0 },
       liveNotes: [createTestStoredNote({ id: "live-1", fileKey: "alpha", line: 2 })],
       draftNote: {
@@ -307,9 +312,53 @@ describe("note selectors", () => {
     ).toBe("live-1");
   });
 
+  test("uses one explicit active note for reveal and actions", () => {
+    const state = {
+      ...createTestReviewState(["alpha"], { showAgentNotes: true }),
+      activeNoteId: "live-late",
+      selection: { fileKey: "alpha", hunkIndex: 0 },
+      liveNotes: [
+        createTestStoredNote({ id: "live-late", fileKey: "alpha", line: 3 }),
+        createTestStoredNote({ id: "live-early", fileKey: "alpha", line: 1 }),
+      ],
+    };
+
+    expect(selectActiveStoredReviewNote(state)?.note.id).toBe("live-late");
+    expect(selectActiveReplyableReviewNoteId(state)).toBe("live-late");
+    expect(selectActiveRevealNoteId(state)).toBe("live-late");
+  });
+
+  test("orders navigable notes by file, owner hunk, anchor line, then thread order", () => {
+    const state = {
+      ...createTestReviewState(["alpha", "beta"], { showAgentNotes: true }),
+      liveNotes: [
+        createTestStoredNote({ id: "alpha-late", fileKey: "alpha", line: 5 }),
+        createTestStoredNote({ id: "beta", fileKey: "beta", line: 1 }),
+        createTestStoredNote({ id: "alpha-early", fileKey: "alpha", line: 1 }),
+      ],
+    };
+
+    expect(selectNavigableStoredReviewNotes(state).map(({ entry }) => entry.note.id)).toEqual([
+      "alpha-early",
+      "alpha-late",
+      "beta",
+    ]);
+  });
+
+  test("does not navigate retained notes when their file no longer renders hunks", () => {
+    const state = {
+      ...createTestReviewState(["alpha"], { showAgentNotes: true }),
+      liveNotes: [createTestStoredNote({ id: "retained", fileKey: "alpha" })],
+    };
+    state.document.files[0]!.hunks = [];
+
+    expect(selectNavigableStoredReviewNotes(state)).toEqual([]);
+    expect(selectActiveStoredReviewNote(state)).toBeUndefined();
+  });
+
   test("otherwise take the earliest anchored note in the selected hunk", () => {
     const state = {
-      ...createTestReviewState(["alpha"]),
+      ...createTestReviewState(["alpha"], { showAgentNotes: true }),
       selection: { fileKey: "alpha", hunkIndex: 0 },
       liveNotes: [
         createTestStoredNote({ id: "live-late", fileKey: "alpha", line: 3 }),

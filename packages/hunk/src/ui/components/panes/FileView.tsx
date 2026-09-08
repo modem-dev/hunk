@@ -168,6 +168,8 @@ function FileViewComponent({
             >
               <AgentInlineNote
                 annotation={plannedRow.annotation}
+                active={plannedRow.note.active}
+                actionKeyLabels={plannedRow.note.actionKeyLabels}
                 anchorSide={plannedRow.anchorSide}
                 file={file}
                 layout="unified"
@@ -175,6 +177,7 @@ function FileViewComponent({
                 noteIndex={plannedRow.noteIndex}
                 draft={plannedRow.note.draft}
                 actions={plannedRow.note.actions}
+                onActivate={plannedRow.note.onActivate}
                 thread={plannedRow.note.thread}
                 theme={theme}
                 width={width}

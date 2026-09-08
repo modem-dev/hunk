@@ -57,6 +57,7 @@ describe("review action round trip", () => {
       type: "selection/select",
       fileKey: FILE_KEY,
       hunkIndex: 2,
+      activeNoteId: "user:1",
       reveal: { anchor: "hunk", scrollToNote: false },
     },
     { type: "selection/move", scope: "annotated-hunk", delta: -1 },

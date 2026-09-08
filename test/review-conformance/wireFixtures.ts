@@ -38,6 +38,16 @@ export const REVIEW_WIRE_FIXTURES: readonly ReviewWireFixture[] = [
     },
   },
   {
+    id: "move-next-note",
+    findings: ["B12"],
+    description: "Exact stored-note navigation uses the same wire intent vocabulary.",
+    action: { type: "selection/move", scope: "note", delta: 1 },
+    expected: {
+      accepted: true,
+      intent: { type: "selection/move", scope: "note", delta: 1 },
+    },
+  },
+  {
     id: "move-annotated-hunk-backwards",
     findings: ["B12"],
     description: "Relative navigation, whose scope and wrap policy are core's to decide.",

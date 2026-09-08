@@ -44,7 +44,9 @@ import { reviewHunkIndexForLine } from "../../core/review/geometry";
 import type { ReviewSelectionScope } from "../../core/review/navigation";
 import {
   reviewFileKeysWithRetiredContent,
+  selectActiveStoredReviewNote,
   selectExpandedGapIdsByFileKey,
+  selectNavigableStoredReviewNotes,
   selectNormalizedSelection,
   selectThreadedStoredReviewNotes,
   selectVisibleThreadedStoredReviewNotes,
@@ -89,13 +91,18 @@ import type { LineRevealPlacement } from "../lib/hunkScroll";
 import {
   EMPTY_LINE_CURSORS,
   findLineCursorAt,
-  findNextLineCursor,
   firstLineCursorInHunk,
   hasLineCursor,
   lineCursorAt,
   resolveLineCursor,
   type LineCursor,
 } from "../lib/lineCursors";
+import {
+  EMPTY_REVIEW_VERTICAL_STOPS,
+  findNextReviewNoteStop,
+  findNextReviewVerticalStop,
+  type ReviewVerticalStop,
+} from "../lib/reviewVerticalStops";
 import { agentNoteMarkupWidth } from "../lib/agentNoteGeometry";
 import { reviewNoteSource } from "../lib/agentAnnotations";
 import { STML_REFERENCE_WIDTH, validateStmlMarkup } from "../lib/stml/layout";
@@ -164,6 +171,8 @@ interface SourceLoadRequest {
 export interface LineCursorRevealRequest {
   id: number;
   placement: LineRevealPlacement;
+  /** Explicit measured row used when the active vertical stop is a note rather than a line. */
+  target?: { fileId: string; stableKey: string };
 }
 
 /**
@@ -226,6 +235,10 @@ export interface TerminalReview {
   /** Adopt the hunk a viewport settled on, without asking any viewport to move. */
   anchorSelection: (fileId: string, hunkIndex: number) => void;
   moveLineCursor: (delta: number) => void;
+  /** Select a visible semantic note without moving the viewport. */
+  activateNote: (noteId: string) => void;
+  /** Step only between semantic note cards in their rendered order. */
+  moveNoteCursor: (delta: number) => void;
   /** Step the selection through one navigable scope; the scope owns wrap and reveal. */
   moveSelection: (scope: ReviewSelectionScope, delta: number) => void;
   revealLine: (fileId: string, side: "old" | "new", line: number) => RevealedLineResult;
@@ -300,6 +313,7 @@ export function useTerminalReview({
   files,
   initialShowAgentNotes = false,
   lineCursors = EMPTY_LINE_CURSORS,
+  reviewVerticalStops = EMPTY_REVIEW_VERTICAL_STOPS,
   noteGeometry,
   sourceLabel = "",
   stmlEnabled = false,
@@ -312,6 +326,8 @@ export function useTerminalReview({
    * Headless callers get none, which leaves `j` and `k` scrolling the viewport.
    */
   lineCursors?: LineCursor[];
+  /** Mixed rendered line and semantic-note stops used by vertical keyboard movement. */
+  reviewVerticalStops?: ReviewVerticalStop[];
   /**
    * Identity of the review's input as a whole.
    *
@@ -643,15 +659,28 @@ export function useTerminalReview({
   /** Move the current line to a row the reviewer just asked to see, and scroll to it. */
   const revealLineCursor = useCallback(
     (cursor: LineCursor, placement: LineRevealPlacement = "nearest") => {
+      const fileKey = keyByFileId.get(cursor.fileId);
+      if (!fileKey) return;
       applyLineCursor(cursor);
       setLineCursorRevealRequest((current) => ({ id: current.id + 1, placement }));
-      // The line cursor carries its own reveal request; the selection only follows it.
-      anchorSelection(cursor.fileId, cursor.hunkIndex);
+      // A source line and note card are mutually exclusive vertical stops. This viewport-preserving
+      // selection follows the line while clearing any exact semantic note focus.
+      runIntent({
+        type: "selection/select",
+        fileKey,
+        hunkIndex: cursor.hunkIndex,
+        reveal: REVIEW_VIEWPORT_ANCHOR_REVEAL,
+      });
     },
-    [anchorSelection, applyLineCursor],
+    [applyLineCursor, keyByFileId, runIntent],
   );
 
   const reconcileLineCursor = useCallback(() => {
+    if (selectActiveStoredReviewNote(store.getSnapshot())) {
+      applyLineCursor(null);
+      return;
+    }
+
     // Expansion remeasures before its source text loads, so a toggle records what it wants and
     // this waits for the list that actually carries the revealed rows. Each request survives until
     // it resolves or the next toggle replaces it.
@@ -696,7 +725,15 @@ export function useTerminalReview({
     }
 
     applyLineCursor(firstLineCursorInHunk(lineCursors, selectedFileId, selectedHunkIndex));
-  }, [applyLineCursor, lineCursors, revealLineCursor, selectedFileId, selectedHunkIndex]);
+  }, [
+    applyLineCursor,
+    lineCursors,
+    revealLineCursor,
+    selectedFileId,
+    selectedHunkIndex,
+    state.activeNoteId,
+    store,
+  ]);
 
   useEffect(() => {
     reconcileLineCursor();
@@ -705,23 +742,99 @@ export function useTerminalReview({
   /** Adopt a current line the viewport already settled on, without scrolling back to it. */
   const anchorLineCursor = useCallback(
     (cursor: LineCursor) => {
+      const fileKey = keyByFileId.get(cursor.fileId);
+      if (!fileKey) return;
       applyLineCursor(cursor);
-      anchorSelection(cursor.fileId, cursor.hunkIndex);
+      runIntent({
+        type: "selection/select",
+        fileKey,
+        hunkIndex: cursor.hunkIndex,
+        reveal: REVIEW_VIEWPORT_ANCHOR_REVEAL,
+      });
     },
-    [anchorSelection, applyLineCursor],
+    [applyLineCursor, keyByFileId, runIntent],
   );
 
-  /** Move the current line one row through the visible review stream. */
+  /** Read the exact rendered stop that currently owns keyboard focus. */
+  const currentReviewVerticalStop = useCallback((): ReviewVerticalStop | null => {
+    const activeNoteId = selectActiveStoredReviewNote(store.getSnapshot())?.note.id;
+    if (activeNoteId) {
+      return (
+        reviewVerticalStops.find((stop) => stop.kind === "note" && stop.noteId === activeNoteId) ??
+        null
+      );
+    }
+    return lineCursorRef.current ? { kind: "line", cursor: lineCursorRef.current } : null;
+  }, [reviewVerticalStops, store]);
+
+  /** Focus one measured note stop through its current semantic owner. */
+  const focusReviewNoteStop = useCallback(
+    (next: Extract<ReviewVerticalStop, { kind: "note" }>) => {
+      const snapshot = store.getSnapshot();
+      const target = selectNavigableStoredReviewNotes(snapshot).find(
+        (item) => item.entry.note.id === next.noteId,
+      );
+      if (!target || keyByFileId.get(next.fileId) !== target.fileKey) return;
+
+      applyLineCursor(null);
+      runIntent({
+        type: "selection/select",
+        fileKey: target.fileKey,
+        hunkIndex: target.hunkIndex,
+        activeNoteId: next.noteId,
+        reveal: REVIEW_VIEWPORT_ANCHOR_REVEAL,
+      });
+      setLineCursorRevealRequest((request) => ({
+        id: request.id + 1,
+        placement: "nearest",
+        target: { fileId: next.fileId, stableKey: next.stableKey },
+      }));
+    },
+    [applyLineCursor, keyByFileId, runIntent, store],
+  );
+
+  /** Select one visible semantic note as the keyboard action target without scrolling. */
+  const activateNote = useCallback(
+    (noteId: string) => {
+      const target = selectNavigableStoredReviewNotes(store.getSnapshot()).find(
+        (item) => item.entry.note.id === noteId,
+      );
+      if (!target) return;
+
+      applyLineCursor(null);
+      runIntent({
+        type: "selection/select",
+        fileKey: target.fileKey,
+        hunkIndex: target.hunkIndex,
+        activeNoteId: noteId,
+        reveal: REVIEW_VIEWPORT_ANCHOR_REVEAL,
+      });
+    },
+    [applyLineCursor, runIntent, store],
+  );
+
+  /** Move through source lines and semantic note cards in exact rendered order. */
   const moveLineCursor = useCallback(
     (delta: number) => {
-      const nextCursor = findNextLineCursor(lineCursors, lineCursorRef.current, delta);
-      if (!nextCursor) {
-        return;
-      }
-
-      revealLineCursor(nextCursor);
+      const next = findNextReviewVerticalStop(
+        reviewVerticalStops,
+        currentReviewVerticalStop(),
+        delta,
+      );
+      if (!next) return;
+      if (next.kind === "line") revealLineCursor(next.cursor);
+      else focusReviewNoteStop(next);
     },
-    [lineCursors, revealLineCursor],
+    [currentReviewVerticalStop, focusReviewNoteStop, reviewVerticalStops, revealLineCursor],
+  );
+
+  /** Move only through note cards, using the active presentation's visual order. */
+  const moveNoteCursor = useCallback(
+    (delta: number) => {
+      const next = findNextReviewNoteStop(reviewVerticalStops, currentReviewVerticalStop(), delta);
+      if (next) focusReviewNoteStop(next);
+    },
+    [currentReviewVerticalStop, focusReviewNoteStop, reviewVerticalStops],
   );
 
   // `revealLine` is handed to surfaces that hold it across commits — a memoized
@@ -1503,8 +1616,13 @@ export function useTerminalReview({
               timestamp,
             },
           );
+    if (saved) {
+      // Saving transfers vertical focus to the note in the same synchronous input turn, before
+      // viewport settlement can re-anchor the source-line cursor that opened the composer.
+      applyLineCursor(null);
+    }
     return saved ? storedNoteToUserNote(saved.note.note, file.path) : null;
-  }, [fileByKey, runIntent, store]);
+  }, [applyLineCursor, fileByKey, runIntent, store]);
 
   /** Remove one in-memory user note by id. */
   const removeUserNote = useCallback(
@@ -1616,6 +1734,7 @@ export function useTerminalReview({
     addLiveComment,
     addLiveCommentBatch,
     agentLineHighlightsByFileId,
+    activateNote,
     anchorLineCursor,
     anchorSelection,
     clearAgentLineHighlights,
@@ -1623,6 +1742,7 @@ export function useTerminalReview({
     cancelDraftNote,
     clearLiveComments,
     moveLineCursor,
+    moveNoteCursor,
     moveSelection,
     navigateToLocation,
     removeLiveComment,

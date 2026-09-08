@@ -2863,6 +2863,7 @@ describe("UI components", () => {
         theme={theme}
         width={60}
         actions={actions}
+        actionKeyLabels={{ delete: "d", edit: "e", reply: "r" }}
         thread={thread}
       />,
       { width: 64, height: measured + 1 },
@@ -3874,13 +3875,13 @@ describe("UI components", () => {
       "Controls help",
       "[Esc]",
       "Navigation",
-      "Up / Down                move line-by-line",
+      "Up / Down                move through lines and notes",
       "PageDown / Space / f     page down",
       "PageUp / b / Shift+Space page up",
       "d / u                    half page down / up",
       "[ / ]                    previous / next hunk",
       ", / .                    previous / next file",
-      "{ / }                    previous / next comment",
+      "{ / } / N / n            annotated hunk / exact note",
       "Left / Right             scroll code sideways (Shift = faster)",
       "g / Home                 jump to start",
       "G / End                  jump to end",

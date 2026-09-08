@@ -89,7 +89,7 @@ function createInteractiveModeExtension() {
           ctx.fileViews.refresh("outline");
           return "handled";
         }
-        if (key.name === "n") return "handled";
+        if (key.name === "i") return "handled";
         if (key.name === "x") return "exit";
         return "pass";
       },
@@ -133,8 +133,8 @@ function createInteractiveModeExtension() {
     ctx.fileViews.exitMode();
     ctx.fileViews.exitMode();
   });
-  hunk.registerCommand({ id: "answered", title: "Answered command", key: "n" }, (ctx) =>
-    ctx.notify("COMMAND N RAN"),
+  hunk.registerCommand({ id: "answered", title: "Answered command", key: "i" }, (ctx) =>
+    ctx.notify("COMMAND I RAN"),
   );
   hunk.registerCommand({ id: "declined", title: "Declined command", key: "p" }, (ctx) =>
     ctx.notify("COMMAND P RAN"),
@@ -443,9 +443,9 @@ describe("AppHost file-view modes", () => {
       await waitForFrame(setup, (frame) => frame.includes("CURSOR 1"));
 
       // "handled" for a key the command table binds: the command must not run.
-      await act(async () => setup.mockInput.typeText("n"));
+      await act(async () => setup.mockInput.typeText("i"));
       await act(async () => setup.renderOnce());
-      expect(notices).not.toContain("COMMAND N RAN");
+      expect(notices).not.toContain("COMMAND I RAN");
 
       // "pass": the command bound to the key still fires, exactly as it would
       // with no mode running.
@@ -461,8 +461,8 @@ describe("AppHost file-view modes", () => {
       expect(notices).not.toContain("MODE KEY escape");
 
       // With the mode gone, the previously answered key reaches its command.
-      await act(async () => setup.mockInput.typeText("n"));
-      await waitForNotice(setup, notices, "COMMAND N RAN");
+      await act(async () => setup.mockInput.typeText("i"));
+      await waitForNotice(setup, notices, "COMMAND I RAN");
     } finally {
       await act(async () => setup.renderer.destroy());
     }

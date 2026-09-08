@@ -267,8 +267,8 @@ describe("UI key routing with a focused scroll box", () => {
       await flush(setup);
       expect(scrollBox.scrollTop).toBe(scrollTopBefore);
 
-      // "pass" leaves scrolling exactly as it is with no mode running.
-      await act(async () => setup.mockInput.typeText("j"));
+      // "pass" leaves paging exactly as it is with no mode running.
+      await act(async () => setup.mockInput.typeText("f"));
       await flush(setup);
       expect(scrollBox.scrollTop).toBeGreaterThan(scrollTopBefore);
     } finally {

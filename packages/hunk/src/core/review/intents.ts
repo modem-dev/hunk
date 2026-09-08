@@ -31,6 +31,8 @@ import {
   isReviewNoteWithinClearScope,
   reviewNoteCurrentOwnerHunkIndex,
   reviewNoteHasDescendants,
+  selectActiveStoredReviewNote,
+  selectNavigableStoredReviewNotes,
   selectNormalizedSelection,
   selectReviewFileByKey,
   selectReviewNavigationFiles,
@@ -86,7 +88,14 @@ export interface ReviewIntentFacts {
 
 export type ReviewIntent =
   /** Select one hunk outright, revealing it the way the caller asks. */
-  | { type: "selection/select"; fileKey: string; hunkIndex: number; reveal: ReviewRevealRequest }
+  | {
+      type: "selection/select";
+      fileKey: string;
+      hunkIndex: number;
+      reveal: ReviewRevealRequest;
+      /** Exact visible stored note to focus instead of the selected hunk's source line. */
+      activeNoteId?: string;
+    }
   /** Step the selection through one navigable scope; the scope decides wrap and reveal. */
   | { type: "selection/move"; scope: ReviewSelectionScope; delta: number }
   /** Jump to one file, landing on its first hunk. */
@@ -344,9 +353,18 @@ function planSelection(
   fileKey: string,
   hunkIndex: number,
   reveal: ReviewRevealRequest,
+  activeNoteId?: string,
 ): ReviewIntentPlan {
   return {
-    actions: [{ type: "selection/select", fileKey, hunkIndex, reveal }],
+    actions: [
+      {
+        type: "selection/select",
+        fileKey,
+        hunkIndex,
+        reveal,
+        ...(activeNoteId ? { activeNoteId } : {}),
+      },
+    ],
     outcome: { type: "selection/changed", fileKey, hunkIndex },
   };
 }
@@ -375,13 +393,21 @@ function planSelectionMove(
     {
       files: selectReviewNavigationFiles(state),
       annotations: facts.annotations ?? EMPTY_REVIEW_ANNOTATION_INDEX,
+      notes: selectNavigableStoredReviewNotes(state).map((item) => ({
+        fileKey: item.fileKey,
+        hunkIndex: item.hunkIndex,
+        noteId: item.entry.note.id,
+      })),
+      activeNoteId: selectActiveStoredReviewNote(state)?.note.id,
     },
     selectNormalizedSelection(state),
     { scope: intent.scope, delta: intent.delta },
   );
   // A refused move publishes nothing at all: no selection change, and no reveal token
   // bump that would scroll a viewport for a key press that went nowhere.
-  return target ? planSelection(target.fileKey, target.hunkIndex, target.reveal) : { actions: [] };
+  return target
+    ? planSelection(target.fileKey, target.hunkIndex, target.reveal, target.activeNoteId)
+    : { actions: [] };
 }
 
 /**
@@ -814,6 +840,17 @@ export function planReviewIntent(
       // Only the file is required: an out-of-range hunk clamps rather than rejecting, so
       // a stale index from a reloaded file still lands the reviewer somewhere real.
       const file = requireReviewFile(state, intent.fileKey);
+      if (intent.activeNoteId) {
+        const target = selectNavigableStoredReviewNotes(state).find(
+          (item) => item.entry.note.id === intent.activeNoteId,
+        );
+        if (!target || target.fileKey !== file.key || target.hunkIndex !== intent.hunkIndex) {
+          throw new ReviewIntentPlanningError(
+            "note-not-found",
+            `No visible review note matches id ${intent.activeNoteId} at the requested selection.`,
+          );
+        }
+      }
       return {
         actions: [
           {
@@ -821,6 +858,7 @@ export function planReviewIntent(
             fileKey: file.key,
             hunkIndex: intent.hunkIndex,
             reveal: intent.reveal,
+            ...(intent.activeNoteId ? { activeNoteId: intent.activeNoteId } : {}),
           },
         ],
       };
@@ -839,6 +877,13 @@ export function planReviewIntent(
     }
     case "selection/anchor": {
       const file = requireReviewFile(state, intent.fileKey);
+      const anchoredHunkIndex = Math.min(
+        Math.max(intent.hunkIndex, 0),
+        Math.max(0, file.hunks.length - 1),
+      );
+      const current = selectNormalizedSelection(state);
+      const preservesActiveNote =
+        current.fileKey === file.key && current.hunkIndex === anchoredHunkIndex;
       return {
         actions: [
           {
@@ -846,6 +891,9 @@ export function planReviewIntent(
             fileKey: file.key,
             hunkIndex: intent.hunkIndex,
             reveal: REVIEW_VIEWPORT_ANCHOR_REVEAL,
+            ...(preservesActiveNote && state.activeNoteId
+              ? { activeNoteId: state.activeNoteId }
+              : {}),
           },
         ],
       };

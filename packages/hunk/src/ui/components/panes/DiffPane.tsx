@@ -53,6 +53,11 @@ import {
   type LineCursorBoundsLookup,
 } from "../../lib/lineCursors";
 import {
+  buildReviewVerticalStops,
+  createReviewVerticalStopStabilizer,
+  type ReviewVerticalStop,
+} from "../../lib/reviewVerticalStops";
+import {
   measureDiffSectionGeometry,
   type DiffSectionGeometry,
 } from "../../diff/diffSectionGeometry";
@@ -320,6 +325,8 @@ export function DiffPane({
   scrollRef,
   selectedFileId,
   selectedHunkIndex,
+  activeNoteId,
+  noteActionKeyLabels,
   cursorLine = "off",
   lineCursor = null,
   lineCursorRevealRequest = { id: 0, placement: "nearest" },
@@ -355,6 +362,7 @@ export function DiffPane({
   selectionCommentKeyLabel,
   selectionCopyKeyLabel,
   onActiveAddNoteAffordanceChange,
+  onActivateNote,
   onEditUserNote,
   onReplyToNote,
   onRemoveLiveNote,
@@ -372,6 +380,7 @@ export function DiffPane({
   onSelectFile,
   onToggleGap = NOOP_TOGGLE_GAP,
   onLineCursorsChange,
+  onReviewVerticalStopsChange,
   currentLinePaintRequested = false,
   onCurrentLinePaintChange,
   onViewportCenteredHunkChange,
@@ -395,9 +404,15 @@ export function DiffPane({
   scrollRef: RefObject<ScrollBoxRenderable | null>;
   selectedFileId?: string;
   selectedHunkIndex: number;
+  activeNoteId?: string;
+  noteActionKeyLabels?: { delete: string; edit: string; reply: string };
   cursorLine?: CursorLine;
   lineCursor?: LineCursor | null;
-  lineCursorRevealRequest?: { id: number; placement: LineRevealPlacement };
+  lineCursorRevealRequest?: {
+    id: number;
+    placement: LineRevealPlacement;
+    target?: { fileId: string; stableKey: string };
+  };
   lineCursorAlignmentRequest?: { id: number; alignment: CurrentLineAlignment };
   scrollToNote?: boolean;
   draftNote?: DraftReviewNote | null;
@@ -434,6 +449,8 @@ export function DiffPane({
   onActiveAddNoteAffordanceChange?: (
     affordance: (ActiveAddNoteAffordance & { fileId: string }) | null,
   ) => void;
+  /** Select a clicked semantic note as the keyboard action target. */
+  onActivateNote?: (noteId: string) => void;
   onEditUserNote?: (noteId: string, options?: { preserveViewport?: boolean }) => void;
   onReplyToNote?: (noteId: string, options?: { preserveViewport?: boolean }) => void;
   onRemoveLiveNote?: (noteId: string) => void;
@@ -451,6 +468,7 @@ export function DiffPane({
   onSelectFile: (fileId: string) => void;
   onToggleGap?: (fileId: string, gapKey: string) => void;
   onLineCursorsChange?: (cursors: LineCursor[]) => void;
+  onReviewVerticalStopsChange?: (stops: ReviewVerticalStop[]) => void;
   currentLinePaintRequested?: boolean;
   onCurrentLinePaintChange?: (update: ExtensionCurrentLinePaintUpdate) => void;
   onViewportCenteredHunkChange?: (fileId: string, hunkIndex: number) => void;
@@ -649,6 +667,13 @@ export function DiffPane({
             ...(storedTarget ? { target: storedTarget } : {}),
             ...(metadata
               ? {
+                  active: metadata.reviewNoteId === activeNoteId,
+                  ...(metadata.reviewNoteId === activeNoteId && noteActionKeyLabels
+                    ? { actionKeyLabels: noteActionKeyLabels }
+                    : {}),
+                  ...(onActivateNote
+                    ? { onActivate: () => onActivateNote(metadata.reviewNoteId) }
+                    : {}),
                   thread: {
                     noteId: metadata.reviewNoteId,
                     ...(metadata.parentId ? { parentId: metadata.parentId } : {}),
@@ -776,9 +801,11 @@ export function DiffPane({
 
     return next;
   }, [
+    activeNoteId,
     draftNote,
     draftNoteFocused,
     files,
+    onActivateNote,
     onBlurDraftNote,
     onCancelDraftNote,
     onFocusDraftNote,
@@ -788,6 +815,7 @@ export function DiffPane({
     onRemoveUserNote,
     onSaveDraftNote,
     onUpdateDraftNote,
+    noteActionKeyLabels,
     showAgentNotes,
   ]);
 
@@ -1283,6 +1311,20 @@ export function DiffPane({
     onLineCursorsChange?.(lineCursors);
   }, [lineCursors, onLineCursorsChange]);
 
+  const measuredReviewVerticalStops = useMemo(
+    () => buildReviewVerticalStops(files, sectionGeometry, lineCursors),
+    [files, lineCursors, sectionGeometry],
+  );
+  const reviewVerticalStopStabilizerRef = useRef<ReturnType<
+    typeof createReviewVerticalStopStabilizer
+  > | null>(null);
+  reviewVerticalStopStabilizerRef.current ??= createReviewVerticalStopStabilizer();
+  const reviewVerticalStops = reviewVerticalStopStabilizerRef.current(measuredReviewVerticalStops);
+
+  useEffect(() => {
+    onReviewVerticalStopsChange?.(reviewVerticalStops);
+  }, [onReviewVerticalStopsChange, reviewVerticalStops]);
+
   // Read the live scroll box position during render so pinned-header ownership flips
   // immediately after imperative scrolls instead of waiting for the polled viewport snapshot.
   const effectiveScrollTop = pendingScrollEdgeRequest
@@ -1344,8 +1386,11 @@ export function DiffPane({
   // measured cursor list. Because both paths reuse the same cursor object, the follow-up state
   // publication does not invalidate and repaint an expensive wrapped row.
   const renderedLineCursor = useMemo(
-    () => lineCursor ?? firstLineCursorInHunk(lineCursors, selectedFileId, selectedHunkIndex),
-    [lineCursor, lineCursors, selectedFileId, selectedHunkIndex],
+    () =>
+      activeNoteId
+        ? null
+        : (lineCursor ?? firstLineCursorInHunk(lineCursors, selectedFileId, selectedHunkIndex)),
+    [activeNoteId, lineCursor, lineCursors, selectedFileId, selectedHunkIndex],
   );
 
   // One object per cursor move, so the section and row memos below only see a new reference when
@@ -1561,6 +1606,12 @@ export function DiffPane({
       return;
     }
 
+    // An active note is the vertical cursor. Card relayout after save or click must not let
+    // viewport settlement manufacture a simultaneous source-line cursor and clear that target.
+    if (activeNoteId) {
+      return;
+    }
+
     if (lineCursors.length > 0) {
       const clampedCursor = clampLineCursorToViewport({
         boundsOf: lineCursorBoundsOf,
@@ -1595,6 +1646,7 @@ export function DiffPane({
 
     onViewportCenteredHunkChange?.(centeredTarget.fileId, centeredTarget.hunkIndex);
   }, [
+    activeNoteId,
     fileSectionLayouts,
     files,
     lineCursor,
@@ -1827,6 +1879,7 @@ export function DiffPane({
                     id: note.id,
                     line: reviewNoteAnchorLine(note).line,
                     draft: note.source === "draft",
+                    active: note.active,
                   },
                 ]
               : [],
@@ -2337,11 +2390,16 @@ export function DiffPane({
     previousLineCursorRevealRequestIdRef.current = lineCursorRevealRequest.id;
 
     const scrollBox = scrollRef.current;
-    if (!scrollBox || !lineCursor) {
+    const requestTarget = lineCursorRevealRequest.target;
+    if (!scrollBox || (!lineCursor && !requestTarget)) {
       return;
     }
 
-    const bounds = lineCursorBoundsOf(lineCursor);
+    const bounds = requestTarget
+      ? rowBoundsInStream(requestTarget.fileId, requestTarget.stableKey)
+      : lineCursor
+        ? lineCursorBoundsOf(lineCursor)
+        : undefined;
     if (!bounds) {
       return;
     }
@@ -2350,19 +2408,21 @@ export function DiffPane({
     // A jump lands the line where hunk and note reveals land theirs; stepping only closes the
     // gap to the viewport edge, so a held key does not drag the whole stream past the marker.
     const revealScrollTop =
-      lineCursorRevealRequest.placement === "reveal"
-        ? computeHunkRevealScrollTop({
-            hunkTop: bounds.top,
-            hunkHeight: bounds.height,
-            preferredTopPadding: Math.max(2, Math.floor(viewportHeight * 0.25)),
-            viewportHeight,
-          })
-        : computeLineRevealScrollTop({
-            lineTop: bounds.top,
-            lineHeight: bounds.height,
-            scrollTop: scrollBox.scrollTop,
-            viewportHeight,
-          });
+      requestTarget && bounds.height > viewportHeight
+        ? bounds.top
+        : lineCursorRevealRequest.placement === "reveal"
+          ? computeHunkRevealScrollTop({
+              hunkTop: bounds.top,
+              hunkHeight: bounds.height,
+              preferredTopPadding: Math.max(2, Math.floor(viewportHeight * 0.25)),
+              viewportHeight,
+            })
+          : computeLineRevealScrollTop({
+              lineTop: bounds.top,
+              lineHeight: bounds.height,
+              scrollTop: scrollBox.scrollTop,
+              viewportHeight,
+            });
     // A named line is the final scroll policy for this request, exactly as an
     // explicit alignment is: a cross-file reveal changes the selection, and the
     // selection reveal it schedules would otherwise run its zero-delay retry
@@ -2383,6 +2443,7 @@ export function DiffPane({
     lineCursor,
     lineCursorBoundsOf,
     lineCursorRevealRequest,
+    rowBoundsInStream,
     scrollRef,
     scrollViewport.height,
     supersedePendingSelectionReveal,

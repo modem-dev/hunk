@@ -44,6 +44,7 @@ function createTestCommands(overrides: Partial<BuildAppCommandsOptions> = {}) {
     applyFilePresentationToAllMatching: record("applyFilePresentationToAllMatching"),
     focusFilter: noop,
     moveSelection: record("moveSelection"),
+    moveNoteCursor: record("moveNoteCursor"),
     openAgentSkill: record("openAgentSkill"),
     openThemeSelector: noop,
     requestQuit: record("requestQuit"),

@@ -194,6 +194,8 @@ export interface ReviewState {
   reveal: ReviewRevealIntent;
   filter: string;
   showAgentNotes: boolean;
+  /** Stable identity of the stored note the reviewer explicitly selected. */
+  activeNoteId: string | null;
   /** Notes contributed by agents during the review, in arrival order. */
   liveNotes: ReviewStoredNote[];
   /** Notes written by the reviewer, in creation order. */
@@ -222,6 +224,7 @@ export function createInitialReviewState(
     },
     filter: "",
     showAgentNotes: options.showAgentNotes ?? false,
+    activeNoteId: null,
     liveNotes: [],
     userNotes: [],
     draftNote: null,

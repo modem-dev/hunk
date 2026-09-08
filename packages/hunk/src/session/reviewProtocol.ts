@@ -406,9 +406,15 @@ const REVIEW_SELECTION_SCOPES = Object.keys(REVIEW_SELECTION_WRAP_POLICY) as Rev
  */
 const ACTION_PARSERS: Record<ReviewIntentType, (record: Record<string, unknown>) => boolean> = {
   "selection/select": (record) =>
-    hasExactKeys(record, ["type", "fileKey", "hunkIndex", "reveal"]) &&
+    hasExactKeys(
+      record,
+      keysWith(["type", "fileKey", "hunkIndex", "reveal"], {
+        activeNoteId: record.activeNoteId,
+      }),
+    ) &&
     isIdentifier(record.fileKey) &&
     isIndex(record.hunkIndex) &&
+    (record.activeNoteId === undefined || isIdentifier(record.activeNoteId)) &&
     parseReveal(record.reveal) !== undefined,
   "selection/move": (record) =>
     hasExactKeys(record, ["type", "scope", "delta"]) &&

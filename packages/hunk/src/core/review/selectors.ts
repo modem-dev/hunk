@@ -411,6 +411,8 @@ export interface ReviewRevealNoteCandidate {
   line: number;
   /** The reviewer's open draft, which outranks every settled note. */
   draft?: boolean;
+  /** The explicitly selected stored note, which outranks unselected settled notes. */
+  active?: boolean;
 }
 
 /**
@@ -430,6 +432,10 @@ export function resolveReviewRevealNoteId(
   if (draft) {
     return draft.id;
   }
+  const active = candidates.find((candidate) => candidate.active);
+  if (active) {
+    return active.id;
+  }
 
   return candidates
     .map((candidate, arrival) => ({ candidate, arrival }))
@@ -438,61 +444,120 @@ export function resolveReviewRevealNoteId(
     )[0]?.candidate.id;
 }
 
-/** Pick the first stored note in the selection that satisfies one card capability. */
-function selectActiveStoredNoteId(
-  state: Pick<ReviewState, "document" | "liveNotes" | "selection" | "showAgentNotes" | "userNotes">,
-  accepts: (entry: ReviewStoredNote) => boolean,
-): string | undefined {
-  const { fileKey, hunkIndex } = state.selection;
-  const file = selectReviewFileByKey(state, fileKey);
-  if (!file) {
+type ActiveNoteState = Pick<
+  ReviewState,
+  | "activeNoteId"
+  | "document"
+  | "filter"
+  | "liveNotes"
+  | "selection"
+  | "showAgentNotes"
+  | "userNotes"
+>;
+
+/** One keyboard-addressable stored note in top-to-bottom review order. */
+export interface ReviewNavigableStoredNote extends ReviewVisibleThreadedStoredNote {
+  fileKey: string;
+  hunkIndex: number;
+  line: number;
+}
+
+/** Order visible stored notes exactly as keyboard note navigation walks them. */
+export function selectNavigableStoredReviewNotes(
+  state: ActiveNoteState,
+): ReviewNavigableStoredNote[] {
+  const files = selectVisibleReviewFiles(state);
+  const fileOrder = new Map(files.map((file, index) => [file.key, index] as const));
+  const fileByKey = new Map(files.map((file) => [file.key, file] as const));
+
+  return selectVisibleThreadedStoredReviewNotes(state)
+    .map((item, threadedOrder) => {
+      const file = fileByKey.get(item.entry.note.fileKey);
+      return file && file.hunks.length > 0
+        ? {
+            ...item,
+            fileKey: file.key,
+            hunkIndex: reviewNoteCurrentOwnerHunkIndex(item.entry.note, file),
+            line: reviewNoteAnchorLine(item.entry.note).line,
+            threadedOrder,
+          }
+        : null;
+    })
+    .filter((item): item is NonNullable<typeof item> => item !== null)
+    .sort(
+      (left, right) =>
+        (fileOrder.get(left.fileKey) ?? 0) - (fileOrder.get(right.fileKey) ?? 0) ||
+        left.hunkIndex - right.hunkIndex ||
+        left.line - right.line ||
+        left.threadedOrder - right.threadedOrder,
+    )
+    .map(({ threadedOrder: _threadedOrder, ...item }) => item);
+}
+
+/** Resolve the explicitly selected stored note keyboard actions target. */
+export function selectActiveStoredReviewNote(state: ActiveNoteState): ReviewStoredNote | undefined {
+  if (!state.activeNoteId) {
     return undefined;
   }
-  return selectVisibleThreadedStoredReviewNotes(state)
-    .map(({ entry }) => entry)
-    .filter(
-      (entry) =>
-        isRenderableStoredReviewNote(entry) &&
-        entry.note.fileKey === fileKey &&
-        reviewNoteCurrentOwnerHunkIndex(entry.note, file) === hunkIndex &&
-        accepts(entry),
-    )
-    .sort(
-      (left, right) => reviewNoteAnchorLine(left.note).line - reviewNoteAnchorLine(right.note).line,
-    )[0]?.note.id;
+  const { fileKey, hunkIndex } = selectNormalizedSelection(state);
+  if (fileKey === null) {
+    return undefined;
+  }
+  return selectNavigableStoredReviewNotes(state).find(
+    (item) =>
+      item.entry.note.id === state.activeNoteId &&
+      item.fileKey === fileKey &&
+      item.hunkIndex === hunkIndex,
+  )?.entry;
 }
 
 /** Editable reviewer note the keyboard acts on in the selected hunk. */
-export function selectActiveEditableReviewNoteId(
-  state: Pick<ReviewState, "document" | "liveNotes" | "selection" | "showAgentNotes" | "userNotes">,
-) {
-  return selectActiveStoredNoteId(state, ({ note }) => note.source === "user" && note.editable);
+export function selectActiveEditableReviewNoteId(state: ActiveNoteState) {
+  const entry = selectActiveStoredReviewNote(state);
+  return entry?.note.source === "user" && entry.note.editable ? entry.note.id : undefined;
 }
 
 /** Replyable semantic note the keyboard acts on in the selected hunk. */
-export function selectActiveReplyableReviewNoteId(
-  state: Pick<ReviewState, "document" | "liveNotes" | "selection" | "showAgentNotes" | "userNotes">,
-) {
-  return selectActiveStoredNoteId(state, () => true);
+export function selectActiveReplyableReviewNoteId(state: ActiveNoteState) {
+  return selectActiveStoredReviewNote(state)?.note.id;
+}
+
+/** Removable leaf note the keyboard acts on, including its owning collection. */
+export function selectActiveRemovableReviewNote(
+  state: ActiveNoteState,
+): { noteId: string; source: "live" | "user" } | undefined {
+  const entry = selectActiveStoredReviewNote(state);
+  if (!entry || reviewNoteHasDescendants(state, entry.note.id)) {
+    return undefined;
+  }
+  return {
+    noteId: entry.note.id,
+    source: entry.note.source === "user" ? "user" : "live",
+  };
 }
 
 /** Which note a "jump to the note" reveal targets among the notes the store holds. */
 export function selectActiveRevealNoteId(
-  state: Pick<ReviewState, "draftNote" | "liveNotes" | "selection" | "userNotes">,
+  state: ActiveNoteState & Pick<ReviewState, "draftNote">,
 ): string | undefined {
-  const { fileKey, hunkIndex } = state.selection;
+  const { fileKey, hunkIndex } = selectNormalizedSelection(state);
   if (fileKey === null) {
     return undefined;
   }
 
   const draft = state.draftNote;
+  const activeNoteId = selectActiveStoredReviewNote(state)?.note.id;
   return resolveReviewRevealNoteId([
     ...(draft && draft.fileKey === fileKey && draft.hunkIndex === hunkIndex
       ? [{ id: draft.id, line: draft.line, draft: true }]
       : []),
-    ...renderableNotes(state)
-      .filter((note) => note.fileKey === fileKey && reviewNoteOwnerHunkIndex(note) === hunkIndex)
-      .map((note) => ({ id: note.id, line: reviewNoteAnchorLine(note).line })),
+    ...selectNavigableStoredReviewNotes(state)
+      .filter((item) => item.fileKey === fileKey && item.hunkIndex === hunkIndex)
+      .map(({ entry, line }) => ({
+        id: entry.note.id,
+        line,
+        active: entry.note.id === activeNoteId,
+      })),
   ]);
 }
 

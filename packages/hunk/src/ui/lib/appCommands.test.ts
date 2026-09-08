@@ -51,6 +51,7 @@ function createTestCommands(resolvedKeys?: ResolvedCommandKeys) {
     applyFilePresentationToAllMatching: record("applyFilePresentationToAllMatching"),
     focusFilter: record("focusFilter"),
     moveSelection: record("moveSelection"),
+    moveNoteCursor: record("moveNoteCursor"),
     openAgentSkill: record("openAgentSkill"),
     openThemeSelector: record("openThemeSelector"),
     requestQuit: record("requestQuit"),
@@ -364,9 +365,15 @@ describe("executeAppCommand", () => {
     const { commands, ran } = createTestCommands();
 
     expect(executeAppCommand(commands, "hunk.review.nextHunk", { count: 3 })).toBe(true);
+    expect(executeAppCommand(commands, "hunk.review.previousNote", { count: 2 })).toBe(true);
     expect(executeAppCommand(commands, "hunk.review.stepUp", { count: 4 })).toBe(true);
     expect(executeAppCommand(commands, "hunk.review.pageDown", { count: 2 })).toBe(true);
-    expect(ran).toEqual(["moveSelection:hunk,3", "stepDiffLine:-4", "scrollDiff:2,viewport"]);
+    expect(ran).toEqual([
+      "moveSelection:hunk,3",
+      "moveNoteCursor:-2",
+      "stepDiffLine:-4",
+      "scrollDiff:2,viewport",
+    ]);
   });
 
   test("runs one-shot commands once regardless of count", () => {

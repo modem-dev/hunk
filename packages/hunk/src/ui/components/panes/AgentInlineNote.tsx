@@ -185,6 +185,8 @@ export function measureAgentInlineNoteHeight({
 /** Render the note card itself before the start of an annotated range. */
 export function AgentInlineNote({
   annotation,
+  active = false,
+  actionKeyLabels,
   anchorSide,
   file,
   layout,
@@ -193,6 +195,7 @@ export function AgentInlineNote({
   rangeGuideConnection,
   draft,
   actions,
+  onActivate,
   onClose,
   thread,
   threadDepth = thread?.depth ?? 0,
@@ -200,6 +203,8 @@ export function AgentInlineNote({
   width,
 }: {
   annotation: AgentAnnotation;
+  active?: boolean;
+  actionKeyLabels?: { delete: string; edit: string; reply: string };
   anchorSide?: "old" | "new";
   file?: DiffFile;
   layout: Exclude<LayoutMode, "auto">;
@@ -217,6 +222,8 @@ export function AgentInlineNote({
     onSave: () => void;
   };
   actions?: AgentInlineNoteActions;
+  /** Make this saved note the keyboard action target when its card is clicked. */
+  onActivate?: () => void;
   /** Legacy compact delete affordance; semantic cards use explicit `actions`. */
   onClose?: () => void;
   thread?: VisibleAgentNote["thread"];
@@ -230,6 +237,8 @@ export function AgentInlineNote({
   const [hoveredActionId, setHoveredActionId] = useState<string | null>(null);
   const isDraft = Boolean(draft);
   const hasSavedActions = Boolean(actions && Object.values(actions).some(Boolean));
+  /** Reveal card actions while the pointer is over a saved note. */
+  const showActions = () => setActionsHovered(true);
 
   useEffect(() => {
     if (isDraft || !hasSavedActions) {
@@ -371,6 +380,7 @@ export function AgentInlineNote({
   const closeText = onClose ? "[x]" : "";
   const closeGapWidth = closeText ? 1 : 0;
   const closeWidth = closeText.length;
+  const savedBorderColor = active ? theme.accent : theme.noteBorder;
   const savedTitleBudget = Math.max(0, boxWidth - 4 - closeGapWidth - closeWidth);
   const savedTitleText = (() => {
     if (!thread || !file) {
@@ -400,7 +410,10 @@ export function AgentInlineNote({
     const fittedRange = fitText(range, rangeBudget, "…");
     return ` ${fittedAuthor} · ${fittedPath} ${fittedRange} `;
   })();
-  const savedTitleWidth = measureTextWidth(savedTitleText);
+  const displayedSavedTitleText = active
+    ? fitText(` ● ${savedTitleText.trim()} `, savedTitleBudget)
+    : savedTitleText;
+  const savedTitleWidth = measureTextWidth(displayedSavedTitleText);
   const savedTopBorderSuffixWidth = Math.max(
     0,
     boxWidth - 3 - savedTitleWidth - closeGapWidth - closeWidth,
@@ -409,35 +422,61 @@ export function AgentInlineNote({
   const savedActionItems: BorderActionItem[] = actions
     ? [
         actions.onReply
-          ? { id: "reply", keyLabel: "r", label: "reply", onMouseUp: actions.onReply }
+          ? {
+              id: "reply",
+              keyLabel: actionKeyLabels?.reply ?? "",
+              label: "reply",
+              onMouseUp: actions.onReply,
+            }
           : null,
         actions.onEdit
-          ? { id: "edit", keyLabel: "e", label: "edit", onMouseUp: actions.onEdit }
+          ? {
+              id: "edit",
+              keyLabel: actionKeyLabels?.edit ?? "",
+              label: "edit",
+              onMouseUp: actions.onEdit,
+            }
           : null,
         actions.onDelete
-          ? { id: "delete", keyLabel: "d", label: "delete", onMouseUp: actions.onDelete }
+          ? {
+              id: "delete",
+              keyLabel: actionKeyLabels?.delete ?? "",
+              label: "delete",
+              onMouseUp: actions.onDelete,
+            }
           : null,
       ].filter((item): item is BorderActionItem => item !== null)
     : [];
 
   /** Render clickable controls in place of the trailing cells of a bottom border. */
-  const renderBottomBorder = (items: readonly BorderActionItem[]) => {
+  const renderBottomBorder = (
+    items: readonly BorderActionItem[],
+    borderColor = theme.noteBorder,
+  ) => {
     const availableItemsWidth = Math.max(0, boxWidth - 4);
+    const itemWidth = (keyLabel: string, label: string) =>
+      measureTextWidth(keyLabel) + (keyLabel && label ? 1 : 0) + measureTextWidth(label);
     const fullItemsWidth = items.reduce(
-      (total, item, index) =>
-        total + item.keyLabel.length + 1 + item.label.length + (index > 0 ? 1 : 0),
+      (total, item, index) => total + itemWidth(item.keyLabel, item.label) + (index > 0 ? 1 : 0),
       0,
     );
-    const renderedItems = items.map((item) => ({
-      ...item,
-      displayLabel: fullItemsWidth <= availableItemsWidth ? item.label : "",
-    }));
+    const showFullItems = fullItemsWidth <= availableItemsWidth;
+    const compactItemWidth = Math.max(
+      0,
+      Math.floor((availableItemsWidth - Math.max(0, items.length - 1)) / items.length),
+    );
+    const renderedItems = items
+      .map((item) => ({
+        ...item,
+        keyLabel: showFullItems
+          ? item.keyLabel
+          : fitTrailingText(item.keyLabel || item.label, compactItemWidth, "…"),
+        displayLabel: showFullItems ? item.label : "",
+      }))
+      .filter((item) => item.keyLabel || item.displayLabel);
     const itemsWidth = renderedItems.reduce(
       (total, item, index) =>
-        total +
-        item.keyLabel.length +
-        (item.displayLabel ? 1 + item.displayLabel.length : 0) +
-        (index > 0 ? 1 : 0),
+        total + itemWidth(item.keyLabel, item.displayLabel) + (index > 0 ? 1 : 0),
       0,
     );
     const innerWidth = Math.max(0, boxWidth - 2);
@@ -452,23 +491,23 @@ export function AgentInlineNote({
           flexDirection: "row",
           backgroundColor: theme.panel,
         }}
-        onMouseMove={() => setActionsHovered(true)}
-        onMouseOver={() => setActionsHovered(true)}
+        onMouseMove={showActions}
+        onMouseOver={showActions}
         onMouseOut={() => setActionsHovered(false)}
+        onMouseUp={onActivate}
       >
-        <text fg={theme.noteBorder} bg={theme.panel}>
+        <text fg={borderColor} bg={theme.panel}>
           {`╰${"─".repeat(leadingWidth)} `}
         </text>
         {renderedItems.map((item, index) => {
           const hovered = hoveredActionId === item.id;
           const backgroundColor = hovered ? theme.accentMuted : theme.panel;
-          const itemWidth =
-            item.keyLabel.length + (item.displayLabel ? 1 + item.displayLabel.length : 0);
+          const renderedItemWidth = itemWidth(item.keyLabel, item.displayLabel);
           return (
             <box
               key={item.id}
               style={{
-                width: itemWidth + (index > 0 ? 1 : 0),
+                width: renderedItemWidth + (index > 0 ? 1 : 0),
                 height: 1,
                 flexDirection: "row",
                 backgroundColor: theme.panel,
@@ -481,19 +520,21 @@ export function AgentInlineNote({
                   setHoveredActionId((current) => (current === item.id ? null : current))
                 }
                 onMouseUp={item.onMouseUp}
-                style={{ width: itemWidth, height: 1, backgroundColor }}
+                style={{ width: renderedItemWidth, height: 1, backgroundColor }}
               >
                 <text bg={backgroundColor}>
                   <span fg={theme.noteTitleText}>{item.keyLabel}</span>
                   {item.displayLabel ? (
-                    <span fg={hovered ? theme.text : theme.muted}>{` ${item.displayLabel}`}</span>
+                    <span fg={hovered ? theme.text : theme.muted}>
+                      {`${item.keyLabel ? " " : ""}${item.displayLabel}`}
+                    </span>
                   ) : null}
                 </text>
               </box>
             </box>
           );
         })}
-        <text fg={theme.noteBorder} bg={theme.panel}>
+        <text fg={borderColor} bg={theme.panel}>
           {" ╯"}
         </text>
       </box>
@@ -712,22 +753,28 @@ export function AgentInlineNote({
           flexDirection: "row",
           backgroundColor: theme.panel,
         }}
-        onMouseMove={() => setActionsHovered(true)}
-        onMouseOver={() => setActionsHovered(true)}
+        onMouseMove={showActions}
+        onMouseOver={showActions}
         onMouseOut={() => setActionsHovered(false)}
+        onMouseDown={onActivate}
+        onMouseUp={onActivate}
       >
         <box style={{ width: 1, height: 1, backgroundColor: theme.panel }}>
-          <text fg={theme.noteBorder} bg={theme.panel}>
+          <text fg={savedBorderColor} bg={theme.panel}>
             │
           </text>
         </box>
         <box style={{ width: 1, height: 1, backgroundColor: theme.panel }} />
-        <box style={{ width: contentWidth, height: 1, backgroundColor: theme.panel }}>
+        <box
+          style={{ width: contentWidth, height: 1, backgroundColor: theme.panel }}
+          onMouseDown={onActivate}
+          onMouseUp={onActivate}
+        >
           {content}
         </box>
         <box style={{ width: 1, height: 1, backgroundColor: theme.panel }} />
         <box style={{ width: 1, height: 1, backgroundColor: theme.panel }}>
-          <text fg={theme.noteBorder} bg={theme.panel}>
+          <text fg={savedBorderColor} bg={theme.panel}>
             │
           </text>
         </box>
@@ -739,7 +786,7 @@ export function AgentInlineNote({
     const usedWidth = line.spans.reduce((total, span) => total + measureTextWidth(span.text), 0);
     return renderBodyRow(
       key,
-      <text bg={theme.panel}>
+      <text bg={theme.panel} onMouseDown={onActivate} onMouseUp={onActivate}>
         {line.spans.map((span, spanIndex) => (
           <span key={`${key}:span:${spanIndex}`} {...markupSpanProps(span)}>
             {span.text}
@@ -755,13 +802,18 @@ export function AgentInlineNote({
   const renderSavedBodyRow = (key: string, text: string, kind: AgentInlineNoteLine["kind"]) =>
     renderBodyRow(
       key,
-      <text fg={kind === "summary" ? theme.text : theme.muted} bg={theme.panel}>
+      <text
+        fg={kind === "summary" ? theme.text : theme.muted}
+        bg={theme.panel}
+        onMouseDown={onActivate}
+        onMouseUp={onActivate}
+      >
         {padText(text, contentWidth)}
       </text>,
     );
 
   const bottomBorderInnerWidth = Math.max(0, boxWidth - 2);
-  const showActionOverlay = actionsHovered && savedActionItems.length > 0;
+  const showActionOverlay = (active || actionsHovered) && savedActionItems.length > 0;
 
   const savedHeight = (markupLines?.length ?? lines.length) + 3;
 
@@ -788,19 +840,24 @@ export function AgentInlineNote({
             flexDirection: "row",
             backgroundColor: theme.panel,
           }}
-          onMouseMove={() => setActionsHovered(true)}
-          onMouseOver={() => setActionsHovered(true)}
+          onMouseMove={showActions}
+          onMouseOver={showActions}
           onMouseOut={() => setActionsHovered(false)}
+          onMouseUp={onActivate}
         >
-          <box style={{ width: savedTopPrefixWidth, height: 1, backgroundColor: theme.panel }}>
-            <text>
-              <span fg={theme.noteBorder} bg={theme.panel}>
+          <box
+            style={{ width: savedTopPrefixWidth, height: 1, backgroundColor: theme.panel }}
+            onMouseDown={onActivate}
+            onMouseUp={onActivate}
+          >
+            <text onMouseDown={onActivate} onMouseUp={onActivate}>
+              <span fg={savedBorderColor} bg={theme.panel}>
                 ╭─
               </span>
               <span fg={theme.noteTitleText} bg={theme.panel}>
-                {savedTitleText}
+                {displayedSavedTitleText}
               </span>
-              <span fg={theme.noteBorder} bg={theme.panel}>
+              <span fg={savedBorderColor} bg={theme.panel}>
                 {"─".repeat(savedTopBorderSuffixWidth)}
               </span>
             </text>
@@ -821,7 +878,7 @@ export function AgentInlineNote({
             </box>
           ) : null}
           <box style={{ width: 1, height: 1, backgroundColor: theme.panel }}>
-            <text fg={theme.noteBorder} bg={theme.panel}>
+            <text fg={savedBorderColor} bg={theme.panel}>
               {rangeGuideConnection ? "┬" : "╮"}
             </text>
           </box>
@@ -844,14 +901,15 @@ export function AgentInlineNote({
           </text>
         </box>
         {showActionOverlay ? (
-          renderBottomBorder(savedActionItems)
+          renderBottomBorder(savedActionItems, savedBorderColor)
         ) : (
           <box
             style={{ width: boxWidth, height: 1, backgroundColor: theme.panel }}
-            onMouseOver={() => setActionsHovered(true)}
+            onMouseOver={showActions}
             onMouseOut={() => setActionsHovered(false)}
+            onMouseUp={onActivate}
           >
-            <text fg={theme.noteBorder} bg={theme.panel}>
+            <text fg={savedBorderColor} bg={theme.panel}>
               {`╰${"─".repeat(bottomBorderInnerWidth)}╯`}
             </text>
           </box>

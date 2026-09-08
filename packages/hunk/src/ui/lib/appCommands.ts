@@ -114,16 +114,20 @@ interface BuiltinCommandHandler {
 export interface BuildAppCommandsOptions {
   canAlignCurrentLine: boolean;
   canApplyFilePresentationToAllMatching: boolean;
+  canDeleteActiveNote?: boolean;
   canEditActiveNote?: boolean;
   canReplyToActiveNote?: boolean;
   canRefreshCurrentInput: boolean;
   alignCurrentLine: (alignment: "top" | "center" | "bottom") => void;
   applyFilePresentationToAllMatching: () => void;
   focusFilter: () => void;
+  deleteActiveNote?: () => void;
   editActiveNote?: () => void;
   replyToActiveNote?: () => void;
-  /** Step the review selection through one scope, as the catalog entry declares it. */
+  /** Step shared semantic selection through one scope. */
   moveSelection: (scope: ReviewSelectionScope, delta: number) => void;
+  /** Step note selection through the active surface's measured card order. */
+  moveNoteCursor: (delta: number) => void;
   openAgentSkill: () => void;
   openThemeSelector: () => void;
   requestQuit: () => void;
@@ -207,6 +211,16 @@ function builtinCommandHandlers(
     "hunk.review.replyToActiveNote": {
       isEnabled: () => Boolean(options.canReplyToActiveNote),
       run: () => options.replyToActiveNote?.(),
+    },
+    "hunk.review.deleteActiveNote": {
+      isEnabled: () => Boolean(options.canDeleteActiveNote),
+      run: () => options.deleteActiveNote?.(),
+    },
+    "hunk.review.previousNote": {
+      run: (_key, count, entry) => options.moveNoteCursor((entry.verticalDirection ?? -1) * count),
+    },
+    "hunk.review.nextNote": {
+      run: (_key, count, entry) => options.moveNoteCursor((entry.verticalDirection ?? 1) * count),
     },
     "hunk.review.pageDown": { run: (_key, count) => options.scrollDiff(count, "viewport") },
     "hunk.review.pageUp": { run: (_key, count) => options.scrollDiff(-count, "viewport") },
@@ -344,6 +358,7 @@ const NOOP_COMMAND_OPTIONS: BuildAppCommandsOptions = (() => {
     applyFilePresentationToAllMatching: noop,
     focusFilter: noop,
     moveSelection: noop,
+    moveNoteCursor: noop,
     openAgentSkill: noop,
     openThemeSelector: noop,
     requestQuit: noop,

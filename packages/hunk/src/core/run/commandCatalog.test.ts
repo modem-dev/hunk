@@ -73,7 +73,20 @@ describe("app command catalog", () => {
     ]);
   });
 
-  test("lowers navigation commands to the move their scope and direction declare", () => {
+  test("keeps presentation-relative note navigation client-local", () => {
+    const state = createTestReviewState();
+
+    expect(entry("hunk.review.previousNote").locus).toBe("client-local");
+    expect(entry("hunk.review.nextNote").locus).toBe("client-local");
+    expect(
+      lowerAppCommandToReviewIntent(entry("hunk.review.previousNote"), { count: 1, state }),
+    ).toBeUndefined();
+    expect(
+      lowerAppCommandToReviewIntent(entry("hunk.review.nextNote"), { count: 1, state }),
+    ).toBeUndefined();
+  });
+
+  test("lowers semantic navigation commands to the move their scope and direction declare", () => {
     const state = createTestReviewState();
 
     expect(
@@ -157,6 +170,7 @@ describe("app command catalog", () => {
   test("lowers edit and reply commands through the active-note policies", () => {
     const state = {
       ...createTestReviewState(["alpha"]),
+      activeNoteId: "user-1",
       liveNotes: [createTestStoredNote({ id: "live-1", fileKey: "alpha" })],
       userNotes: [
         createTestStoredNote({
@@ -175,6 +189,36 @@ describe("app command catalog", () => {
     expect(
       lowerAppCommandToReviewIntent(entry("hunk.review.replyToActiveNote"), { count: 1, state }),
     ).toEqual({ type: "notes/start-reply", noteId: "user-1" });
+    expect(
+      lowerAppCommandToReviewIntent(entry("hunk.review.deleteActiveNote"), { count: 1, state }),
+    ).toEqual({ type: "notes/remove-user", noteId: "user-1" });
+  });
+
+  test("does not retarget actions away from the one active note", () => {
+    const state = {
+      ...createTestReviewState(["alpha"], { showAgentNotes: true }),
+      activeNoteId: "live-1",
+      liveNotes: [createTestStoredNote({ id: "live-1", fileKey: "alpha" })],
+      userNotes: [
+        createTestStoredNote({
+          id: "user-reply",
+          parentId: "live-1",
+          fileKey: "alpha",
+          source: "user",
+          editable: true,
+        }),
+      ],
+    };
+
+    expect(
+      lowerAppCommandToReviewIntent(entry("hunk.review.editActiveNote"), { count: 1, state }),
+    ).toBeUndefined();
+    expect(
+      lowerAppCommandToReviewIntent(entry("hunk.review.deleteActiveNote"), { count: 1, state }),
+    ).toBeUndefined();
+    expect(
+      lowerAppCommandToReviewIntent(entry("hunk.review.replyToActiveNote"), { count: 1, state }),
+    ).toEqual({ type: "notes/start-reply", noteId: "live-1" });
   });
 
   test("lowers the gap toggle to the gap the shared policy reaches", () => {

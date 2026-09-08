@@ -158,41 +158,85 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       const hunkIndex = clamp(action.hunkIndex, 0, Math.max(0, file.hunks.length - 1));
       const selectionChanged =
         file.key !== state.selection.fileKey || hunkIndex !== state.selection.hunkIndex;
+      const activeNoteId = action.activeNoteId ?? null;
+      const activeNoteChanged = activeNoteId !== state.activeNoteId;
       const reveal = action.reveal
         ? applyReviewRevealRequest(state.reveal, action.reveal)
         : state.reveal;
-      if (!selectionChanged && reviewRevealIntentsEqual(reveal, state.reveal)) {
+      if (
+        !selectionChanged &&
+        !activeNoteChanged &&
+        reviewRevealIntentsEqual(reveal, state.reveal)
+      ) {
         return state;
       }
-      return { ...state, selection: { fileKey: file.key, hunkIndex }, reveal };
+      return {
+        ...state,
+        selection: { fileKey: file.key, hunkIndex },
+        activeNoteId,
+        reveal,
+      };
     }
     case "filter/set":
       return action.filter === state.filter ? state : { ...state, filter: action.filter };
-    case "notes/set-visibility":
-      return action.visible === state.showAgentNotes
-        ? state
-        : { ...state, showAgentNotes: action.visible };
+    case "notes/set-visibility": {
+      if (action.visible === state.showAgentNotes) {
+        return state;
+      }
+      const activeNote = [...state.liveNotes, ...state.userNotes].find(
+        (entry) => entry.note.id === state.activeNoteId,
+      );
+      return {
+        ...state,
+        showAgentNotes: action.visible,
+        activeNoteId:
+          !action.visible && activeNote?.note.source !== "user" ? null : state.activeNoteId,
+      };
+    }
     case "notes/add-live":
       return action.notes.length === 0
         ? state
         : { ...state, liveNotes: [...state.liveNotes, ...action.notes] };
     case "notes/remove-live": {
       const liveNotes = withoutNote(state.liveNotes, action.noteId);
-      return liveNotes === state.liveNotes ? state : { ...state, liveNotes };
+      return liveNotes === state.liveNotes
+        ? state
+        : {
+            ...state,
+            liveNotes,
+            activeNoteId: state.activeNoteId === action.noteId ? null : state.activeNoteId,
+          };
     }
     case "notes/clear": {
       const keep = (entry: ReviewStoredNote) =>
         !isReviewNoteWithinClearScope(entry, action.fileKey);
       const liveNotes = state.liveNotes.filter(keep);
       const userNotes = action.includeUser ? state.userNotes.filter(keep) : state.userNotes;
-      return liveNotes.length === state.liveNotes.length &&
+      if (
+        liveNotes.length === state.liveNotes.length &&
         userNotes.length === state.userNotes.length
-        ? state
-        : { ...state, liveNotes, userNotes };
+      ) {
+        return state;
+      }
+      const activeStillExists = [...liveNotes, ...userNotes].some(
+        (entry) => entry.note.id === state.activeNoteId,
+      );
+      return {
+        ...state,
+        liveNotes,
+        userNotes,
+        activeNoteId: activeStillExists ? state.activeNoteId : null,
+      };
     }
     case "notes/remove-user": {
       const userNotes = withoutNote(state.userNotes, action.noteId);
-      return userNotes === state.userNotes ? state : { ...state, userNotes };
+      return userNotes === state.userNotes
+        ? state
+        : {
+            ...state,
+            userNotes,
+            activeNoteId: state.activeNoteId === action.noteId ? null : state.activeNoteId,
+          };
     }
     case "draft/start":
       return { ...state, draftNote: action.draft };
@@ -204,7 +248,12 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       return state.draftNote ? { ...state, draftNote: null } : state;
     case "draft/save":
       return state.draftNote
-        ? { ...state, draftNote: null, userNotes: [...state.userNotes, action.note] }
+        ? {
+            ...state,
+            draftNote: null,
+            userNotes: [...state.userNotes, action.note],
+            activeNoteId: action.note.note.id,
+          }
         : state;
     case "draft/save-edit": {
       if (!state.draftNote) {
@@ -216,7 +265,12 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       }
       const userNotes = [...state.userNotes];
       userNotes[index] = action.note;
-      return { ...state, draftNote: null, userNotes };
+      return {
+        ...state,
+        draftNote: null,
+        userNotes,
+        activeNoteId: action.note.note.id,
+      };
     }
     case "expansion/toggle": {
       const index = state.expandedGaps.findIndex(

@@ -29,6 +29,7 @@ import type { ReviewIntent } from "../review/intents";
 import type { ReviewSelectionScope } from "../review/navigation";
 import {
   selectActiveEditableReviewNoteId,
+  selectActiveRemovableReviewNote,
   selectActiveReplyableReviewNoteId,
   selectNormalizedSelection,
   selectReviewGapForSelection,
@@ -57,10 +58,12 @@ export type AppCommandReviewEffect =
   | { kind: "notes/toggle-visibility" }
   /** Open a draft at the current selection; the client may supply a measured line. */
   | { kind: "notes/start-draft" }
-  /** Edit the selected hunk's first editable reviewer note. */
+  /** Edit the active note when that same card is an editable reviewer note. */
   | { kind: "notes/start-edit-active" }
-  /** Reply to the selected hunk's first stored note. */
+  /** Reply to the active stored note. */
   | { kind: "notes/start-reply-active" }
+  /** Delete or dismiss the active stored leaf note. */
+  | { kind: "notes/remove-active" }
   /** Flip the gap the shared policy says this selection reaches. */
   | { kind: "expansion/toggle-selected-gap" };
 
@@ -213,6 +216,36 @@ const BUILTIN_COMMANDS = [
     closesMenu: true,
   },
   {
+    id: "hunk.review.deleteActiveNote",
+    title: "Delete active review note",
+    category: "review",
+    defaultKeys: ["D"],
+    locus: "semantic",
+    review: { kind: "notes/remove-active" },
+    publicToExtensions: true,
+    closesMenu: true,
+  },
+  {
+    id: "hunk.review.previousNote",
+    title: "Previous review note",
+    category: "review",
+    defaultKeys: ["N"],
+    locus: "client-local",
+    verticalDirection: -1,
+    publicToExtensions: true,
+    closesMenu: true,
+  },
+  {
+    id: "hunk.review.nextNote",
+    title: "Next review note",
+    category: "review",
+    defaultKeys: ["n"],
+    locus: "client-local",
+    verticalDirection: 1,
+    publicToExtensions: true,
+    closesMenu: true,
+  },
+  {
     id: "hunk.review.pageDown",
     title: "Scroll down one page",
     category: "review",
@@ -250,7 +283,7 @@ const BUILTIN_COMMANDS = [
   },
   {
     id: "hunk.review.stepDown",
-    title: "Scroll down one row",
+    title: "Move down one line or note",
     category: "review",
     defaultKeys: ["down", "j"],
     locus: "client-local",
@@ -259,7 +292,7 @@ const BUILTIN_COMMANDS = [
   },
   {
     id: "hunk.review.stepUp",
-    title: "Scroll up one row",
+    title: "Move up one line or note",
     category: "review",
     defaultKeys: ["up", "k"],
     locus: "client-local",
@@ -664,6 +697,13 @@ export function lowerAppCommandToReviewIntent(
     case "notes/start-reply-active": {
       const noteId = selectActiveReplyableReviewNoteId(state);
       return noteId ? { type: "notes/start-reply", noteId } : undefined;
+    }
+    case "notes/remove-active": {
+      const target = selectActiveRemovableReviewNote(state);
+      if (!target) return undefined;
+      return target.source === "user"
+        ? { type: "notes/remove-user", noteId: target.noteId }
+        : { type: "notes/remove-live", noteId: target.noteId };
     }
     case "expansion/toggle-selected-gap": {
       const target = selectReviewGapForSelection(state);

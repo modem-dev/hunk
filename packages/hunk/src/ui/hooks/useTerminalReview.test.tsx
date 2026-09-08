@@ -1,6 +1,6 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
-import { act, StrictMode, useEffect, useRef, useState } from "react";
+import { act, StrictMode, useEffect, useMemo, useRef, useState } from "react";
 import { builtinAppCommand } from "../../core/run/commandCatalog";
 import { SourceTextTooLargeError } from "../../core/changeset/fileSource";
 import type { DiffFile } from "../../core/changeset/model";
@@ -12,7 +12,9 @@ import {
 } from "../../../../../test/helpers/diff-helpers";
 import { measureDiffSectionGeometry } from "../diff/diffSectionGeometry";
 import { buildLineCursors, type LineCursor } from "../lib/lineCursors";
+import type { ReviewVerticalStop } from "../lib/reviewVerticalStops";
 import { resolveTheme } from "../themes";
+import { createTestStoredNote } from "../../../../../test/helpers/review-store-helpers";
 import { useTerminalReview, type TerminalReview } from "./useTerminalReview";
 
 /** Build a DiffFile with real parsed hunks using the controller's preferred defaults. */
@@ -157,6 +159,7 @@ function TerminalReviewHarness({
   initialFiles,
   noteGeometry,
   publishLineCursors = true,
+  reviewVerticalStops,
   stmlEnabled,
   onController,
   onFirstController,
@@ -166,6 +169,7 @@ function TerminalReviewHarness({
   noteGeometry?: Parameters<typeof useTerminalReview>[0]["noteGeometry"];
   /** Publish measured stops, as the diff pane does unless the current-line marker is off. */
   publishLineCursors?: boolean;
+  reviewVerticalStops?: ReviewVerticalStop[];
   stmlEnabled?: boolean;
   onController: (controller: TerminalReview) => void;
   /** Receive the first render's controller, before any cursors were published. */
@@ -173,8 +177,20 @@ function TerminalReviewHarness({
   onSetFiles?: (setFiles: (nextFiles: DiffFile[]) => void) => void;
 }) {
   const [files, setFiles] = useState(initialFiles);
-  const [lineCursors, setLineCursors] = useState<LineCursor[]>([]);
-  const controller = useTerminalReview({ files, lineCursors, noteGeometry, stmlEnabled });
+  const [lineCursors, setLineCursors] = useState<LineCursor[]>(() =>
+    (reviewVerticalStops ?? []).flatMap((stop) => (stop.kind === "line" ? [stop.cursor] : [])),
+  );
+  const lineOnlyVerticalStops = useMemo(
+    () => lineCursors.map((cursor) => ({ kind: "line" as const, cursor })),
+    [lineCursors],
+  );
+  const controller = useTerminalReview({
+    files,
+    lineCursors,
+    reviewVerticalStops: reviewVerticalStops ?? lineOnlyVerticalStops,
+    noteGeometry,
+    stmlEnabled,
+  });
   // Capture during render, as a memoized consumer's closure would: the effects
   // below have not yet published measured cursors on the first pass.
   const firstControllerRef = useRef<TerminalReview | null>(null);
@@ -229,12 +245,14 @@ async function renderTerminalReview(
     strictMode = false,
     noteGeometry,
     publishLineCursors,
+    reviewVerticalStops,
     stmlEnabled,
     onFirstController,
   }: {
     strictMode?: boolean;
     noteGeometry?: Parameters<typeof useTerminalReview>[0]["noteGeometry"];
     publishLineCursors?: boolean;
+    reviewVerticalStops?: ReviewVerticalStop[];
     stmlEnabled?: boolean;
     onFirstController?: (controller: TerminalReview) => void;
   } = {},
@@ -246,6 +264,7 @@ async function renderTerminalReview(
       initialFiles={initialFiles}
       noteGeometry={noteGeometry}
       publishLineCursors={publishLineCursors}
+      reviewVerticalStops={reviewVerticalStops}
       stmlEnabled={stmlEnabled}
       onFirstController={onFirstController}
       onController={(nextController) => {
@@ -855,6 +874,7 @@ describe("useTerminalReview", () => {
       await flush(setup);
 
       expect(savedNoteId).toStartWith("user:");
+      expect(expectValue(controllerRef.current).store.getSnapshot().activeNoteId).toBe(savedNoteId);
       expect(expectValue(controllerRef.current).userNotesByFileId.alpha).toHaveLength(1);
       expect(expectValue(controllerRef.current).reviewNoteSummaries).toMatchObject([
         {
@@ -1848,6 +1868,101 @@ describe("useTerminalReview", () => {
       await act(async () => {
         setup.renderer.destroy();
       });
+    }
+  });
+
+  test("moves between lines, root notes, and replies without dual focus", async () => {
+    const file = createAlphaFile();
+    const cursors = buildLineCursors(
+      [file],
+      [
+        measureDiffSectionGeometry(
+          file,
+          "unified",
+          true,
+          resolveTheme("github-dark-default", null),
+        ),
+      ],
+    );
+    const first = expectValue(cursors[0]);
+    const second = expectValue(cursors[1]);
+    const reviewVerticalStops: ReviewVerticalStop[] = [
+      { kind: "line", cursor: first },
+      {
+        kind: "note",
+        fileId: file.id,
+        hunkIndex: first.hunkIndex,
+        noteId: "root",
+        stableKey: "inline-note:root-card",
+      },
+      {
+        kind: "note",
+        fileId: file.id,
+        hunkIndex: first.hunkIndex,
+        noteId: "reply",
+        stableKey: "inline-note:reply-card",
+      },
+      { kind: "line", cursor: second },
+    ];
+    const { controllerRef, setup } = await renderTerminalReview([file], {
+      publishLineCursors: false,
+      reviewVerticalStops,
+    });
+
+    try {
+      await flush(setup);
+      const controller = expectValue(controllerRef.current);
+      const fileKey = expectValue(controller.store.getSnapshot().document.files[0]).key;
+      await act(async () => {
+        controller.store.dispatch({
+          type: "notes/add-live",
+          notes: [
+            createTestStoredNote({ id: "root", fileKey, source: "user" }),
+            createTestStoredNote({ id: "reply", fileKey, parentId: "root", source: "user" }),
+          ],
+        });
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).lineCursor).toEqual(first);
+      expect(expectValue(controllerRef.current).store.getSnapshot().activeNoteId).toBeNull();
+
+      await act(async () => expectValue(controllerRef.current).moveLineCursor(1));
+      await flush(setup);
+      expect(expectValue(controllerRef.current).lineCursor).toBeNull();
+      expect(expectValue(controllerRef.current).store.getSnapshot().activeNoteId).toBe("root");
+      expect(expectValue(controllerRef.current).lineCursorRevealRequest.target).toEqual({
+        fileId: file.id,
+        stableKey: "inline-note:root-card",
+      });
+
+      await act(async () => expectValue(controllerRef.current).moveLineCursor(1));
+      await flush(setup);
+      expect(expectValue(controllerRef.current).lineCursor).toBeNull();
+      expect(expectValue(controllerRef.current).store.getSnapshot().activeNoteId).toBe("reply");
+
+      await act(async () => expectValue(controllerRef.current).moveLineCursor(1));
+      await flush(setup);
+      expect(expectValue(controllerRef.current).lineCursor).toEqual(second);
+      expect(expectValue(controllerRef.current).store.getSnapshot().activeNoteId).toBeNull();
+
+      await act(async () => expectValue(controllerRef.current).moveLineCursor(-1));
+      await flush(setup);
+      expect(expectValue(controllerRef.current).lineCursor).toBeNull();
+      expect(expectValue(controllerRef.current).store.getSnapshot().activeNoteId).toBe("reply");
+
+      await act(async () => expectValue(controllerRef.current).moveNoteCursor(-1));
+      await flush(setup);
+      expect(expectValue(controllerRef.current).store.getSnapshot().activeNoteId).toBe("root");
+
+      const revealRequest = expectValue(controllerRef.current).lineCursorRevealRequest;
+      await act(async () => expectValue(controllerRef.current).activateNote("reply"));
+      await flush(setup);
+      expect(expectValue(controllerRef.current).lineCursor).toBeNull();
+      expect(expectValue(controllerRef.current).store.getSnapshot().activeNoteId).toBe("reply");
+      expect(expectValue(controllerRef.current).lineCursorRevealRequest).toBe(revealRequest);
+    } finally {
+      await act(async () => setup.renderer.destroy());
     }
   });
 

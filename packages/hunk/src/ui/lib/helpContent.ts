@@ -42,7 +42,7 @@ const HELP_SECTIONS: readonly HelpSectionSpec[] = [
     entries: [
       {
         commandIds: ["hunk.review.stepUp", "hunk.review.stepDown"],
-        description: "move line-by-line",
+        description: "move through lines and notes",
       },
       { commandIds: ["hunk.review.pageDown"], description: "page down" },
       { commandIds: ["hunk.review.pageUp"], description: "page up" },
@@ -59,8 +59,13 @@ const HELP_SECTIONS: readonly HelpSectionSpec[] = [
         description: "previous / next file",
       },
       {
-        commandIds: ["hunk.review.previousAnnotatedHunk", "hunk.review.nextAnnotatedHunk"],
-        description: "previous / next comment",
+        commandIds: [
+          "hunk.review.previousAnnotatedHunk",
+          "hunk.review.nextAnnotatedHunk",
+          "hunk.review.previousNote",
+          "hunk.review.nextNote",
+        ],
+        description: "annotated hunk / exact note",
       },
       {
         commandIds: ["hunk.review.scrollCodeLeft", "hunk.review.scrollCodeRight"],
@@ -108,8 +113,12 @@ const HELP_SECTIONS: readonly HelpSectionSpec[] = [
       { commandIds: ["hunk.review.focusFilter"], description: "focus file filter" },
       { commandIds: ["hunk.review.startNote"], description: "create review note" },
       {
-        commandIds: ["hunk.review.editActiveNote", "hunk.review.replyToActiveNote"],
-        description: "edit / reply to active note",
+        commandIds: [
+          "hunk.review.editActiveNote",
+          "hunk.review.replyToActiveNote",
+          "hunk.review.deleteActiveNote",
+        ],
+        description: "edit / reply / delete active note",
       },
       { commandIds: ["hunk.app.toggleFocusArea"], description: "toggle files/filter focus" },
       { keys: "F10", description: "open menus" },
