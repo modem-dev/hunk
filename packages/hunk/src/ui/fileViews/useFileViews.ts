@@ -232,7 +232,7 @@ export function useFileViewLayouts({
   width: number;
   epochs?: FileViewEpochState;
   onIssue: (message: string) => void;
-  /** Override validation only in tests that exercise contained host measurement failures. */
+  /** Override validation only for contained host-failure tests; callers must keep its identity stable. */
   validateLayoutForTest?: typeof validateFileViewLayout;
 }) {
   const cache = useRef(new Map<string, CacheEntry>());
