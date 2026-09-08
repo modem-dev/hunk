@@ -147,46 +147,51 @@ export function CodeRowView({
   const splitContextRow =
     row.type === "split-line" && row.left.kind === "context" && row.right.kind === "context";
   const onCursorRow = cursorHighlight !== undefined;
-  const selectionHighlight = (visualLineIndex: number): CodeCellHighlight => ({
-    bg: (baseBg) => selectionHighlightBg(baseBg, theme),
-    colRange: copySelectedRangeAtVisualLine(copySelectedRowRange, visualLineIndex),
-  });
   const cursorRowHighlight: CodeCellHighlight | undefined = onCursorRow
     ? {
         bg: (baseBg) => cursorLineHighlightBg(baseBg, theme),
         colRange: cursorHighlight.style === "row" ? FULL_CODE_CELL_COL_RANGE : undefined,
       }
     : undefined;
-  /** Resolve copy-selection boundaries separately for each wrapped visual line. */
-  const highlightsAtVisualLine = (visualLineIndex: number) => {
-    const selectedRange = copySelectedRangeAtVisualLine(copySelectedRowRange, visualLineIndex);
-    const lineHasSelection = selectedRange !== undefined;
-    const lineSelectionHighlight = selectionHighlight(visualLineIndex);
-    return {
-      left: pickRowHighlight(
-        lineSelectionHighlight,
-        cursorRowHighlight,
-        lineHasSelection && copySelectedSide !== "right",
-        onCursorRow && (splitContextRow || cursorHighlight.side === "old"),
-      ),
-      right: pickRowHighlight(
-        lineSelectionHighlight,
-        cursorRowHighlight,
-        lineHasSelection && copySelectedSide !== "left",
-        onCursorRow && (splitContextRow || cursorHighlight.side === "new"),
-      ),
-      unified: pickRowHighlight(
-        lineSelectionHighlight,
-        cursorRowHighlight,
-        lineHasSelection,
-        onCursorRow,
-      ),
-    };
-  };
-  const firstLineHighlights = highlightsAtVisualLine(0);
-  const leftHighlight = firstLineHighlights.left;
-  const rightHighlight = firstLineHighlights.right;
-  const cellHighlight = firstLineHighlights.unified;
+  /** Resolve copy-selection boundaries separately for each wrapped visual line when needed. */
+  const highlightsAtVisualLine =
+    copySelectedRowRange || cursorRowHighlight
+      ? (visualLineIndex: number) => {
+          const selectedRange = copySelectedRangeAtVisualLine(
+            copySelectedRowRange,
+            visualLineIndex,
+          );
+          const lineHasSelection = selectedRange !== undefined;
+          const lineSelectionHighlight: CodeCellHighlight = {
+            bg: (baseBg) => selectionHighlightBg(baseBg, theme),
+            colRange: selectedRange,
+          };
+          return {
+            left: pickRowHighlight(
+              lineSelectionHighlight,
+              cursorRowHighlight,
+              lineHasSelection && copySelectedSide !== "right",
+              onCursorRow && (splitContextRow || cursorHighlight.side === "old"),
+            ),
+            right: pickRowHighlight(
+              lineSelectionHighlight,
+              cursorRowHighlight,
+              lineHasSelection && copySelectedSide !== "left",
+              onCursorRow && (splitContextRow || cursorHighlight.side === "new"),
+            ),
+            unified: pickRowHighlight(
+              lineSelectionHighlight,
+              cursorRowHighlight,
+              lineHasSelection,
+              onCursorRow,
+            ),
+          };
+        }
+      : undefined;
+  const firstLineHighlights = highlightsAtVisualLine?.(0);
+  const leftHighlight = firstLineHighlights?.left;
+  const rightHighlight = firstLineHighlights?.right;
+  const cellHighlight = firstLineHighlights?.unified;
 
   if (row.type === "split-line") {
     // The planner and row type are derived from the same complete planned row.
@@ -269,8 +274,18 @@ export function CodeRowView({
           const styledRow = wrapped.paintLine(
             index,
             showBadgeOnLine ? 0 : addBadgeWidth,
-            highlightsAtVisualLine(index),
+            highlightsAtVisualLine?.(index),
           );
+
+          if (!showBadgeOnLine && !hasRangeGuide) {
+            return (
+              <text
+                key={`${row.key}:wrap:${index}`}
+                content={styledRow}
+                onMouseMove={() => onHoverRow?.(row.key)}
+              />
+            );
+          }
 
           return (
             <box
@@ -377,7 +392,17 @@ export function CodeRowView({
     <box id={anchorId} style={{ width: "100%", flexDirection: "column", overflow: "visible" }}>
       {Array.from({ length: wrapped.lineCount }, (_, index) => {
         const showBadgeOnLine = showAddNoteBadge && index === 0;
-        const styledRow = wrapped.paintLine(index, 0, highlightsAtVisualLine(index));
+        const styledRow = wrapped.paintLine(index, 0, highlightsAtVisualLine?.(index));
+
+        if (!showBadgeOnLine && addBadgeWidth === 0 && !hasRangeGuide) {
+          return (
+            <text
+              key={`${row.key}:wrap:${index}`}
+              content={styledRow}
+              onMouseMove={() => onHoverRow?.(row.key)}
+            />
+          );
+        }
 
         return (
           <box

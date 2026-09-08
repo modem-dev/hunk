@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
-import { act } from "react";
+import { Children, act, isValidElement, type ReactNode } from "react";
 import { capturedTestColorToHex } from "../../../../../test/helpers/test-color-helpers";
 import { resolveTheme } from "../themes";
 import { CodeRowView } from "./CodeRowView";
@@ -93,6 +93,54 @@ test("CodeRowView limits character selections to source text instead of cell chr
       setup.renderer.destroy();
     });
   }
+});
+
+test("CodeRowView mounts ordinary wrapped split lines as direct text nodes", () => {
+  const theme = resolveTheme("github-dark-default", null);
+  const plannedRow: PlannedCodeReviewRow = {
+    kind: "diff-row",
+    key: "diff-row:wrapped-fast-path",
+    stableKey: "line:0:new:1",
+    fileId: "paint",
+    hunkIndex: 0,
+    row: {
+      type: "split-line",
+      key: "wrapped-fast-path",
+      fileId: "paint",
+      hunkIndex: 0,
+      left: {
+        kind: "deletion",
+        sign: "-",
+        lineNumber: 1,
+        spans: [{ text: "abcdefghijklmnopqrstuvwxyz0123456789" }],
+      },
+      right: {
+        kind: "addition",
+        sign: "+",
+        lineNumber: 1,
+        spans: [{ text: "abcdefghijklmnopqrstuvwxyz0123456789" }],
+      },
+    },
+  };
+
+  const rendered = CodeRowView({
+    plannedRow,
+    width: 20,
+    lineNumberDigits: 1,
+    showLineNumbers: false,
+    wrapLines: true,
+    codeHorizontalOffset: 0,
+    theme,
+    selected: false,
+    onStartUserNoteAtHunk: () => {},
+  });
+  if (!isValidElement<{ children?: ReactNode }>(rendered)) {
+    throw new Error("Expected CodeRowView to return a wrapped row element");
+  }
+  const visualLines = Children.toArray(rendered.props.children);
+
+  expect(visualLines.length).toBeGreaterThan(1);
+  expect(visualLines.every((line) => isValidElement(line) && line.type === "text")).toBe(true);
 });
 
 test("CodeRowView paints wrapped selection boundaries per visual line", async () => {
