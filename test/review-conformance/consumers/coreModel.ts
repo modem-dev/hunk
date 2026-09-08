@@ -6,7 +6,10 @@
  * against the primitives first, so a renderer failure means the renderer diverged, not
  * that the fixture drifted.
  */
-import { projectReviewDocument, reviewEmptyDiffReason } from "../../../src/core/review/document";
+import {
+  projectReviewDocument,
+  reviewEmptyDiffReason,
+} from "../../../packages/hunk/src/core/review/document";
 import {
   reviewExpansionSide,
   reviewGapAddress,
@@ -14,13 +17,13 @@ import {
   reviewGapSourceForFile,
   reviewLeadingGap,
   reviewTrailingGap,
-} from "../../../src/core/review/expansion";
+} from "../../../packages/hunk/src/core/review/expansion";
 import {
   normalizedReviewSourceLines,
   reviewDefaultHunkLineTarget,
   reviewHunkRanges,
-} from "../../../src/core/review/geometry";
-import type { ReviewFileV1 } from "../../../src/core/review/types";
+} from "../../../packages/hunk/src/core/review/geometry";
+import type { ReviewFileV1 } from "../../../packages/hunk/src/core/review/types";
 import type {
   ConformanceExpandedRow,
   ConformanceGap,

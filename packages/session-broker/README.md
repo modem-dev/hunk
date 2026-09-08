@@ -2,6 +2,17 @@
 
 Runtime-neutral session broker daemon and connection helpers.
 
+The [session broker SDK contract](https://github.com/modem-dev/hunk/blob/main/docs/session-broker-sdk.md)
+describes the future supported public package. These private `0.0.0` source workspaces predate that
+contract and do not yet satisfy all of its security, compatibility, supervision, packaging, or
+release gates.
+
+The current package provides signed producer/caller hello, short-lived caller sessions, replay
+admission, and default-deny raw HTTP authorization primitives. Hunk discovers app-scoped
+credentials, starts session producers, and authenticates callers in its own runtime adapters. The
+legacy Hunk WebSocket and custom session routes remain internal-only; no bearer fallback is
+available. Browser-review capabilities are separate from broker caller credentials.
+
 This is the **main broker package** in the workspace. It owns the reusable broker behavior without committing to Bun or Node server APIs.
 
 Use this package when you want to:
@@ -12,16 +23,18 @@ Use this package when you want to:
 - expose broker health and optional raw list/get/dispatch APIs
 - manage session-side websocket connection state
 
-## Package roles
+## Current workspace roles
 
-This workspace is split into layers:
+The source tree is currently split into four private workspaces:
 
 - `@hunk/session-broker-core` — low-level shared primitives and envelope parsing
 - `@hunk/session-broker` — **main runtime-neutral broker API**
 - `@hunk/session-broker-bun` — Bun HTTP/websocket adapter
 - `@hunk/session-broker-node` — Node HTTP/websocket adapter
 
-If you are choosing one package to build against, start here.
+The public SDK contract consolidates these into one `@hunk/session-broker` package whose root
+selects Node or Bun automatically. Until that migration lands, these names and examples describe
+internal workspace usage only.
 
 ## What this package owns
 
@@ -40,7 +53,7 @@ If you are choosing one package to build against, start here.
 - app-specific projections like Hunk review exports, comments, or selected hunks
 - daemon process launch policy
 
-## Quick start
+## Current internal quick start
 
 ### 1. Create a broker
 
@@ -48,6 +61,7 @@ If you are choosing one package to build against, start here.
 import {
   SessionBroker,
   brokerWireParsers,
+  createSessionBrokerProtocolParsers,
   parseSessionRegistrationEnvelope,
   parseSessionSnapshotEnvelope,
 } from "@hunk/session-broker";
@@ -80,10 +94,22 @@ function parseState(value: unknown): SessionState | null {
   return selectedIndex === null ? null : { selectedIndex };
 }
 
-const broker = new SessionBroker({
+const protocolParsers = createSessionBrokerProtocolParsers({
+  appRevision: 1,
+  features: [],
   parseRegistration: (value) => parseSessionRegistrationEnvelope(value, parseInfo),
   parseSnapshot: (value) => parseSessionSnapshotEnvelope(value, parseState),
+  commands: [
+    {
+      command: "select",
+      version: 1,
+      parseInput: (value) => (brokerWireParsers.parseNonNegativeInt(value) === null ? null : value),
+      parseResult: (value) => (value === true ? true : null),
+    },
+  ],
 });
+
+const broker = new SessionBroker({ protocolParsers });
 ```
 
 ### 2. Create a daemon engine
@@ -106,18 +132,13 @@ At this point the daemon can:
 - process websocket register/snapshot/heartbeat/result messages
 - prune stale sessions and request idle shutdown
 
-The raw HTTP broker API is opt-in. Enable it only when your host application wants to expose the generic `list` / `get` / `dispatch` command surface:
-
-```ts
-const daemon = createSessionBrokerDaemon({
-  broker,
-  capabilities: {
-    version: 1,
-    name: "example-broker",
-  },
-  exposeHttpApi: true,
-});
-```
+The raw HTTP broker API is opt-in and fails closed: `exposeHttpApi: true` exposes no control route
+unless an explicit immutable `appId`, a singleton `appRevision`, a `callerAuthenticator`, and an app
+`authorizer` are supplied. The included
+`SessionBrokerAuthenticator` implements Ed25519 challenge/proof and signed requests; applications
+inject app-scoped grants, public verifiers, daemon signing identity, revocation policy, and their
+own default-deny authorization hook. It performs no filesystem, environment, coordinator, or Hunk
+credential discovery.
 
 ### 3. Serve it through a runtime adapter
 
@@ -150,22 +171,51 @@ const server = await serveSessionBrokerDaemon({
 Use `SessionBrokerConnection` when an app window or live process needs to stay registered with the broker.
 
 ```ts
-import { createSessionBrokerConnection } from "@hunk/session-broker";
+import {
+  createNativeSessionBrokerLifecycleClock,
+  createSessionBrokerConnection,
+  type SessionBrokerSocketLike,
+} from "@hunk/session-broker";
 
+const lifecycleClock = createNativeSessionBrokerLifecycleClock();
 const connection = createSessionBrokerConnection({
   url: "ws://127.0.0.1:47657/session",
-  createSocket: (url) => new WebSocket(url),
+  createSocket: (url) => new WebSocket(url) as unknown as SessionBrokerSocketLike,
   registration,
   snapshot,
+  protocolParsers,
+  lifecycleClock,
   bridge: {
     dispatchCommand: async (message) => {
-      return handleCommand(message);
+      if (message.command !== "select") throw new Error("Unsupported command.");
+      selectFile(message.input);
+      return true;
     },
   },
 });
 
 connection.start();
 ```
+
+`lifecycleClock` may be supplied in the connection options when an application needs to share
+lifecycle timing with its launcher or make producer scheduling deterministic. The ordinary
+`SessionBrokerLifecycleClock` contract provides current time, one-shot scheduling, delayed-first
+fixed-rate interval scheduling, and awaitable delay. Scheduled callbacks return idempotent
+disposers. `createNativeSessionBrokerLifecycleClock()` uses unref'd native timers so pending
+handshake, heartbeat, reconnect, and polling work does not retain the process.
+
+`createSocket` must return a fresh socket object for every generation because the helper installs
+property callbacks that cannot distinguish queued events after object reuse. Reconnect and close
+callbacks receive a frozen opaque generation token; after foreign work settles, use
+`connection.isGenerationCurrent(token)` before committing app-owned state. These checks fence
+commits only: they do not cancel foreign promises, cryptography, probes, or other work already in
+progress.
+
+Unexpected defects in connection-owned native callbacks, scheduled work, or fire-and-forget work
+terminally retire that connection. Applications may supply `onDefect` to observe the event. The
+callback receives only `SESSION_BROKER_LIFECYCLE_DEFECT_MESSAGE`; thrown values and lifecycle data
+are never forwarded, the callback runs at most once, and callback failures are contained. This
+runtime-neutral package does not write defect reports to process output.
 
 The helper owns:
 
@@ -178,9 +228,10 @@ The helper owns:
 
 ## Raw broker API
 
-The daemon's runtime-neutral HTTP API is intentionally small and disabled by default. When `exposeHttpApi: true` is set, it serves:
+The daemon always serves `GET /health`. Its raw capability/control API is intentionally small and
+disabled by default. When `exposeHttpApi: true` is set together with an explicit `appId`, singleton
+`appRevision`, caller authenticator, and authorizer, it additionally serves:
 
-- `GET /health`
 - `GET /broker/capabilities`
 - `POST /broker`
 
@@ -189,20 +240,25 @@ Request body shapes:
 ```ts
 { action: "list" }
 { action: "get", selector: { sessionId: "..." } }
-{ action: "dispatch", selector: { sessionId: "..." }, command: "...", input: {...} }
+{ action: "dispatch", selector: { sessionId: "..." }, command: "...", commandVersion: 1, input: {...} }
 ```
 
-Responses return raw session records or command results.
+An omitted `commandVersion` is validated and deliberately defaults to revision `1` for current
+internal callers. Authentication covers the exact bounded HTTP body bytes before strict UTF-8 and
+JSON decoding. Authenticated responses use `{ body, authentication }`; the signed authentication
+record binds daemon generation, broker revision, target application contract when applicable,
+request ID, HTTP status, and the canonical structured-body digest.
 
 ## Hunk-specific layering
 
-Hunk uses this package for the generic broker lifecycle, then layers product-specific behavior on top:
+Hunk uses this package for generic broker lifecycle and keeps product behavior in `packages/hunk`:
 
-- Hunk-specific daemon routes stay in `src/session/broker/brokerServer.ts`
-- Hunk-specific CLI commands stay in `src/session/`
-- Hunk-specific review projections stay in `src/session/broker/`
+- credential discovery: `packages/hunk/src/session/broker/credentials.ts`
+- daemon and Hunk-specific routes: `packages/hunk/src/session/broker/brokerServer.ts`
+- authenticated agent caller: `packages/hunk/src/session/agent/cliClient.ts`
+- session commands and review projections: `packages/hunk/src/session/`
 
-That split is intentional: this package owns generic broker behavior, while Hunk owns what the session data means.
+The broker owns transport and lifecycle; Hunk owns session meaning and policy.
 
 ## License
 

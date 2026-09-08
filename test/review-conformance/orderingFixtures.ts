@@ -1,13 +1,13 @@
 /**
  * The publication-ordering corpus: what is ahead, what is behind, and what needs a resnap.
  *
- * The rule these fixtures pin lives in `src/core/review/generationOrder.ts`
+ * The rule these fixtures pin lives in `packages/hunk/src/core/review/generationOrder.ts`
  * (`docs/browser-review-seam-audit.md`, C1). They pin it from both ends: the
  * classification itself, and the transitions a real producer actually emits.
  *
  * Verdicts are written by hand from the invariant, never captured from the classifier.
  */
-import type { ReviewPublicationOrder } from "../../src/core/review/generationOrder";
+import type { ReviewPublicationOrder } from "../../packages/hunk/src/core/review/generationOrder";
 
 /** One arriving publication judged against the position a receiver already holds. */
 export interface ReviewPublicationOrderFixture {

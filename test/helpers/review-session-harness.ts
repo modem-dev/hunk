@@ -9,19 +9,22 @@
  * asynchronously exactly as the websocket does. Nothing else is stubbed, so concurrency
  * and ordering are real rather than collapsed into synchronous calls.
  */
-import { ReviewProducer } from "../../src/app/review/producer";
-import { createReviewStore } from "../../src/core/review/store";
-import { createHunkSessionBridge } from "../../src/app/session/bridge";
+import { ReviewProducer } from "../../packages/hunk/src/app/review/producer";
+import { createReviewStore } from "../../packages/hunk/src/core/review/store";
+import { createHunkSessionBridge } from "../../packages/hunk/src/app/session/bridge";
 import {
   createInitialSessionSnapshot,
   createSessionRegistration,
   updateSessionRegistration,
-} from "../../src/app/session/registration";
-import { HunkSessionBrokerState } from "../../src/session/broker/state";
-import { ReviewResourceCache } from "../../src/session/broker/reviewResourceCache";
-import type { AppBootstrap } from "../../src/core/bootstrap";
-import type { DiffFile } from "../../src/core/changeset/model";
-import type { HunkSessionRegistration, HunkSessionServerMessage } from "../../src/session/types";
+} from "../../packages/hunk/src/app/session/registration";
+import { HunkSessionBrokerState } from "../../packages/hunk/src/session/broker/state";
+import { ReviewResourceCache } from "../../packages/hunk/src/session/broker/reviewResourceCache";
+import type { AppBootstrap } from "../../packages/hunk/src/core/bootstrap";
+import type { DiffFile } from "../../packages/hunk/src/core/changeset/model";
+import type {
+  HunkSessionRegistration,
+  HunkSessionServerMessage,
+} from "../../packages/hunk/src/session/types";
 import { createTestDiffFile } from "./diff-helpers";
 
 export interface ReviewSessionHarnessOptions {
@@ -137,7 +140,7 @@ export function connectReviewSession(files: DiffFile[], options: ReviewSessionHa
                 },
               }
             : result;
-        state.handleCommandResult({
+        state.handleCommandResult(socket, {
           requestId: message.requestId,
           ok: true,
           result: delivered as typeof result,
@@ -166,6 +169,7 @@ export function connectReviewSession(files: DiffFile[], options: ReviewSessionHa
     const publication = producer.getPublication();
     const snapshot = createInitialSessionSnapshot(bootstrap, publication);
     state.updateSnapshot(
+      socket,
       sessionId,
       JSON.parse(
         JSON.stringify({

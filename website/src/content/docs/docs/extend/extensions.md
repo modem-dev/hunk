@@ -130,9 +130,12 @@ Extensions run with your shell permissions. For reviewed files, prefer [`ctx.wor
 ## CLI flags and config
 
 ```bash
-hunk diff --extension ./path/to/entry.ts   # load one entry file (repeatable)
+hunk diff --extension ./path/to/entry.ts   # load one entry file for a review (repeatable)
 hunk diff --extension ./my-ext             # a folder extension: loads ./my-ext/index.ts
-hunk diff --no-extensions                  # disable user extensions for this run
+hunk --extension ./my-ext cli-tools status # run an extension-provided top-level command
+hunk --extension ./examples/extensions/github-pr gh 123 # fetch and review a GitHub PR
+hunk --no-extensions cli-tools status      # hard-disable lookup and importing
+hunk diff --no-extensions                  # disable user extensions for this review
 ```
 
 ```toml
@@ -145,7 +148,7 @@ paths = ["~/dev/hunk-ext/index.ts"] # extra entry files or directories
 some_key = "some value"
 ```
 
-`[extensions] enabled` layers like every other option (repo config overrides user config); `--no-extensions` is a hard off switch no config layer can re-enable. `[extension.<id>]` tables pass through to the extension uninterpreted — see [`hunk.config`](/docs/extend/extension-api/#hunkconfig) for the merge rules and their caveats.
+`[extensions] enabled` layers like every other option (repo config overrides user config); `--no-extensions` is a hard off switch no config layer can re-enable. Extension-provided CLI trees use [`registerCliCommand`](/docs/extend/extension-api/#hunkregisterclicommandcommand-handler); bare help stays static, while `hunk <extension-command> --help` belongs to the extension. The dependency-free [`github-pr` example](https://github.com/modem-dev/hunk/tree/main/examples/extensions/github-pr) demonstrates direct HTTP preprocessing, cancellation, temporary input ownership, and one-time delegation. `[extension.<id>]` tables pass through to the extension uninterpreted — see [`hunk.config`](/docs/extend/extension-api/#hunkconfig) for the merge rules and their caveats.
 
 ## A complete example
 

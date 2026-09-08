@@ -14,9 +14,14 @@
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
   "ignore": [
+    "@hunk/git",
+    "@hunk/jj",
+    "@hunk/sapling",
     "@hunk/session-broker",
     "@hunk/session-broker-bun",
     "@hunk/session-broker-core",
-    "@hunk/session-broker-node"
+    "@hunk/session-broker-node",
+    "@hunk/term-video",
+    "@hunk/vcs"
   ]
 }

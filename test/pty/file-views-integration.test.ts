@@ -114,7 +114,7 @@ describe("PTY file views", () => {
   test("does not load the Markdown example unless the user installs it", async () => {
     const pair = createMarkdownPairTest();
     const session = await harness.launchHunk({
-      args: ["diff", "--mode", "stack", pair.before, pair.after],
+      args: ["diff", "--mode", "unified", "--files", pair.before, pair.after],
       cwd: pair.directory,
       cols: 140,
       rows: 24,
@@ -139,7 +139,8 @@ describe("PTY file views", () => {
         "--extension",
         RENDERED_MARKDOWN_EXTENSION,
         "--mode",
-        "stack",
+        "unified",
+        "--files",
         pair.before,
         pair.after,
       ],
@@ -210,7 +211,8 @@ describe("PTY file views", () => {
           "--extension",
           JSX_FILE_VIEW_GALLERY,
           "--mode",
-          "stack",
+          "unified",
+          "--files",
           demo.before,
           demo.after,
         ],
@@ -291,7 +293,16 @@ describe("PTY file views", () => {
     const extension = join(pair.dir, "jsx-runtime-proof");
     cpSync(JSX_FILE_VIEW_EXTENSION, extension, { recursive: true });
     const session = await harness.launchHunk({
-      args: ["diff", "--extension", extension, "--mode", "stack", pair.before, pair.after],
+      args: [
+        "diff",
+        "--extension",
+        extension,
+        "--mode",
+        "unified",
+        "--files",
+        pair.before,
+        pair.after,
+      ],
       cwd: pair.dir,
       cols: 140,
       rows: 24,
@@ -335,7 +346,16 @@ describe("PTY file views", () => {
     const pair = harness.createMultiHunkFilePair();
     const extension = createInteractiveViewExtension(pair.dir);
     const session = await harness.launchHunk({
-      args: ["diff", "--extension", extension, "--mode", "stack", pair.before, pair.after],
+      args: [
+        "diff",
+        "--extension",
+        extension,
+        "--mode",
+        "unified",
+        "--files",
+        pair.before,
+        pair.after,
+      ],
       cwd: pair.dir,
       cols: 140,
       rows: 24,
@@ -385,7 +405,7 @@ describe("PTY file views", () => {
     const repo = harness.createTwoFileRepoFixture();
     const edited = join(repo.dir, "alpha.ts");
     const session = await harness.launchHunk({
-      args: ["diff", "--extension", INLINE_EDIT_EXTENSION, "--mode", "stack"],
+      args: ["diff", "--extension", INLINE_EDIT_EXTENSION, "--mode", "unified"],
       cwd: repo.dir,
       cols: 140,
       rows: 24,
@@ -468,7 +488,7 @@ describe("PTY file views", () => {
         "--extension",
         INLINE_EDIT_EXTENSION,
         "--mode",
-        "stack",
+        "unified",
         "--agent-context",
         agentContext,
         "--agent-notes",
@@ -507,7 +527,7 @@ describe("PTY file views", () => {
     const edited = join(repo.dir, "alpha.ts");
     writeFileSync(edited, "😀\n", "utf8");
     const session = await harness.launchHunk({
-      args: ["diff", "--extension", INLINE_EDIT_EXTENSION, "--mode", "stack"],
+      args: ["diff", "--extension", INLINE_EDIT_EXTENSION, "--mode", "unified"],
       cwd: repo.dir,
       cols: 140,
       rows: 24,
@@ -538,10 +558,11 @@ describe("PTY file views", () => {
         "--extension",
         RENDERED_MARKDOWN_EXTENSION,
         "--mode",
-        "stack",
+        "unified",
         "--agent-context",
         pair.agentContext,
         "--agent-notes",
+        "--files",
         pair.before,
         pair.after,
       ],
@@ -574,10 +595,11 @@ describe("PTY file views", () => {
         "--extension",
         RENDERED_MARKDOWN_EXTENSION,
         "--mode",
-        "stack",
+        "unified",
         "--agent-context",
         pair.agentContext,
         "--agent-notes",
+        "--files",
         pair.before,
         pair.after,
       ],

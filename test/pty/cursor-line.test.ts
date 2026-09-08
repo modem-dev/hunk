@@ -26,7 +26,7 @@ describe("PTY current line", () => {
   test("stepping moves the current line before it moves the viewport", async () => {
     const fixture = harness.createPinnedHeaderRepoFixture();
     const session = await harness.launchHunk({
-      args: ["show", "HEAD", "--mode", "stack"],
+      args: ["show", "HEAD", "--mode", "unified"],
       cwd: fixture.dir,
       cols: 120,
       rows: 24,
@@ -48,7 +48,8 @@ describe("PTY current line", () => {
       expect(stepsBeforeScrolling).toBeGreaterThan(5);
       expect(firstScroll).toBeGreaterThan(0);
 
-      expect(await measureKeyScroll(session, "j", 12)).toBe(1);
+      // The commit-info pane makes the first pinned file-header handoff span several rows.
+      expect(await measureKeyScroll(session, "j", 12)).toBeGreaterThan(0);
       expect(await measureKeyScroll(session, "j", 12)).toBe(1);
       expect(await measureKeyScroll(session, "k", 12)).toBe(0);
     } finally {
@@ -61,6 +62,7 @@ describe("PTY current line", () => {
     const session = await harness.launchHunk({
       args: [
         "diff",
+        "--files",
         fixture.before,
         fixture.after,
         "--mode",
@@ -109,7 +111,7 @@ describe("PTY current line", () => {
   test("multi-row copy drag keeps extending after highlighted rows repaint", async () => {
     const fixture = harness.createScrollableFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "split"],
       cols: 120,
       rows: 20,
     });
@@ -138,17 +140,19 @@ describe("PTY current line", () => {
       }
 
       session.writeRaw(`\x1b[<0;31;${endRow + 1}m`);
+      await session.press("y");
       await session.waitForText(/Copied selection to clipboard/, { timeout: 5_000 });
     } finally {
       session.close();
     }
   });
 
-  test("a current-line pane pins old above new and hides in stack mode", async () => {
+  test("a current-line pane pins old above new and hides in unified mode", async () => {
     const fixture = harness.createLongWrapFilePair();
     const session = await harness.launchHunk({
       args: [
         "diff",
+        "--files",
         fixture.before,
         fixture.after,
         "--mode",
@@ -184,6 +188,7 @@ describe("PTY current line", () => {
     const session = await harness.launchHunk({
       args: [
         "diff",
+        "--files",
         fixture.before,
         fixture.after,
         "--mode",
@@ -217,7 +222,7 @@ describe("PTY current line", () => {
   test("a held step key advances one line per press", async () => {
     const fixture = harness.createPinnedHeaderRepoFixture();
     const session = await harness.launchHunk({
-      args: ["show", "HEAD", "--mode", "stack"],
+      args: ["show", "HEAD", "--mode", "unified"],
       cwd: fixture.dir,
       cols: 120,
       rows: 24,
@@ -232,9 +237,12 @@ describe("PTY current line", () => {
         scrolled = await measureKeyScroll(session, "j", 12);
       }
       expect(scrolled).toBeGreaterThan(0);
+      // Settle the pinned file-header handoff before measuring the held-key burst.
+      expect(await measureKeyScroll(session, "j", 12)).toBeGreaterThan(0);
 
       const before = (await session.text({ immediate: true })).split("\n");
-      const anchor = before[12]?.trim() ?? "";
+      const anchorIndex = before.findLastIndex((line) => /line\d+ = \d+;/.test(line));
+      const anchor = before[anchorIndex]?.trim() ?? "";
       expect(anchor.length).toBeGreaterThan(0);
 
       // A held key arrives as one chunk and drains synchronously, so every press in the burst
@@ -243,7 +251,7 @@ describe("PTY current line", () => {
       await session.waitIdle({ timeout: 800 });
 
       const after = (await session.text({ immediate: true })).split("\n");
-      expect(12 - after.findIndex((line) => line.trim() === anchor)).toBe(5);
+      expect(anchorIndex - after.findIndex((line) => line.trim() === anchor)).toBe(5);
     } finally {
       session.close();
     }
@@ -252,7 +260,7 @@ describe("PTY current line", () => {
   test("stepping reaches the lines an expanded gap reveals", async () => {
     const fixture = harness.createExpandableContextFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "stack"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "unified"],
       cols: 140,
       rows: 16,
     });
@@ -278,7 +286,7 @@ describe("PTY current line", () => {
   test("expanding a gap moves the current line into it and collapsing puts it back", async () => {
     const fixture = harness.createExpandableContextFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "stack"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "unified"],
       cols: 140,
       rows: 16,
     });
@@ -319,7 +327,7 @@ describe("PTY current line", () => {
   test("paging leaves the current line on screen", async () => {
     const fixture = harness.createPinnedHeaderRepoFixture();
     const session = await harness.launchHunk({
-      args: ["show", "HEAD", "--mode", "stack"],
+      args: ["show", "HEAD", "--mode", "unified"],
       cwd: fixture.dir,
       cols: 120,
       rows: 24,
@@ -341,7 +349,7 @@ describe("PTY current line", () => {
   test("a note after paging opens where the reviewer is looking", async () => {
     const fixture = harness.createPinnedHeaderRepoFixture();
     const session = await harness.launchHunk({
-      args: ["show", "HEAD", "--mode", "stack"],
+      args: ["show", "HEAD", "--mode", "unified"],
       cwd: fixture.dir,
       cols: 120,
       rows: 24,
@@ -369,7 +377,7 @@ describe("PTY current line", () => {
   test("a note anchors at the current line instead of the top of the hunk", async () => {
     const fixture = harness.createPinnedHeaderRepoFixture();
     const session = await harness.launchHunk({
-      args: ["show", "HEAD", "--mode", "stack"],
+      args: ["show", "HEAD", "--mode", "unified"],
       cwd: fixture.dir,
       cols: 120,
       rows: 24,

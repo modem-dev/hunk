@@ -3,3 +3,8 @@ export * from "./types";
 export * from "./broker";
 export * from "./daemon";
 export * from "./connection";
+export * from "./lifecycleClock";
+export * from "./crypto";
+export * from "./authentication";
+export * from "./clientAuthentication";
+export * from "./protocolParsers";

@@ -7,7 +7,7 @@
  * they are the inputs the deleted copies got wrong.
  */
 import { createTestDiffFile, lines } from "../helpers/diff-helpers";
-import type { DiffFile } from "../../src/core/changeset/model";
+import type { DiffFile } from "../../packages/hunk/src/core/changeset/model";
 import type { ReviewGeometryFixture } from "./types";
 
 /** Twelve numbered lines, the base every geometry fixture edits. */

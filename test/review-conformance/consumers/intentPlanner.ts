@@ -6,12 +6,18 @@
  * than by calling the walk directly, so a planner that stopped consulting the shared
  * selectors would show up here.
  */
-import { projectReviewDocument } from "../../../src/core/review/document";
-import { planReviewIntent } from "../../../src/core/review/intents";
-import type { ReviewAnnotationIndex } from "../../../src/core/review/navigation";
-import { selectNormalizedSelection, selectRevealTarget } from "../../../src/core/review/selectors";
-import { createInitialReviewState, type ReviewState } from "../../../src/core/review/state";
-import type { ReviewDocumentV1 } from "../../../src/core/review/types";
+import { projectReviewDocument } from "../../../packages/hunk/src/core/review/document";
+import { planReviewIntent } from "../../../packages/hunk/src/core/review/intents";
+import type { ReviewAnnotationIndex } from "../../../packages/hunk/src/core/review/navigation";
+import {
+  selectNormalizedSelection,
+  selectRevealTarget,
+} from "../../../packages/hunk/src/core/review/selectors";
+import {
+  createInitialReviewState,
+  type ReviewState,
+} from "../../../packages/hunk/src/core/review/state";
+import type { ReviewDocumentV1 } from "../../../packages/hunk/src/core/review/types";
 import type {
   ConformanceSelection,
   ConformanceSelectionInput,

@@ -5,7 +5,7 @@
 import { performance } from "node:perf_hooks";
 import { testRender } from "@opentui/react/test-utils";
 import React from "react";
-import { AppHost } from "../src/ui/AppHost";
+import { BenchmarkAppHost as AppHost } from "./lib/appHost";
 import { createLargeSplitStreamBootstrap } from "./large-stream-fixture";
 import {
   destroyRenderer,
@@ -13,6 +13,7 @@ import {
   measureScrollTickLatencies,
   printLatencyMetrics,
   renderPass,
+  settleInteractionRenderer,
 } from "./lib/interaction";
 
 // Moderate scale: the point is content shape, not stream size.
@@ -52,7 +53,7 @@ async function measureScrolling() {
   );
 
   try {
-    await renderPass(setup, 2);
+    await settleInteractionRenderer(setup);
     const tickLatencies = await measureScrollTickLatencies(setup, SCROLL_TICKS);
     printLatencyMetrics("non_ascii_scroll_tick", tickLatencies);
   } finally {

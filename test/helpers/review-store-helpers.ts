@@ -4,13 +4,17 @@
  * Builders stay minimal on purpose: a test states only the facts it cares about, so a
  * later phase widening the document shape does not rewrite every expectation.
  */
-import { reviewLineAnchor } from "../../src/core/review/anchors";
+import { reviewLineAnchor } from "../../packages/hunk/src/core/review/anchors";
 import {
   createInitialReviewState,
   type ReviewState,
   type ReviewStoredNote,
-} from "../../src/core/review/state";
-import type { ReviewDocumentV1, ReviewFileV1, ReviewHunkV1 } from "../../src/core/review/types";
+} from "../../packages/hunk/src/core/review/state";
+import type {
+  ReviewDocumentV1,
+  ReviewFileV1,
+  ReviewHunkV1,
+} from "../../packages/hunk/src/core/review/types";
 
 export interface TestReviewFileInput {
   key: string;
@@ -116,8 +120,11 @@ export function createTestStoredNote(input: {
   hunkIndex?: number;
   line?: number;
   source?: ReviewStoredNote["note"]["source"];
+  parentId?: string;
   resolution?: ReviewStoredNote["resolution"];
   summary?: string;
+  editable?: boolean;
+  createdAt?: string;
 }): ReviewStoredNote {
   const hunkIndex = input.hunkIndex ?? 0;
   const line = input.line ?? 1;
@@ -127,11 +134,13 @@ export function createTestStoredNote(input: {
   return {
     note: {
       id: input.id,
+      ...(input.parentId ? { parentId: input.parentId } : {}),
       source: input.source ?? "agent",
       fileKey: input.fileKey,
       anchor: reviewLineAnchor(hunks, { hunkIndex, side: "new", line }),
       summary: input.summary ?? `note ${input.id}`,
-      editable: false,
+      ...(input.createdAt ? { createdAt: input.createdAt } : {}),
+      editable: input.editable ?? false,
     },
     resolution: input.resolution ?? "active",
   };

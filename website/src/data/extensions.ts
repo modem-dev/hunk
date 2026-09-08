@@ -66,6 +66,15 @@ export type ExtensionEntry = ExtensionListing & ExtensionActivity;
  */
 export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
   {
+    repo: "modem-dev/hunk-gh",
+    name: "hunk-gh",
+    summary:
+      "Opens a GitHub pull request, commit, or comparison diff in Hunk straight from the command line, without installing the GitHub CLI.",
+    categories: ["Command"],
+    version: "0.1.0",
+    apiVersion: 10,
+  },
+  {
     repo: "modem-dev/hunk-hg",
     name: "hunk-hg",
     summary:
@@ -108,12 +117,29 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     apiVersion: 6,
   },
   {
+    repo: "astwys/hunk-file-order",
+    name: "hunk-file-order",
+    summary: "Chooses the file order in Hunk reviews, including Lazygit's mixed order.",
+    categories: ["Changeset transform"],
+    version: "0.1.0",
+    apiVersion: 6,
+  },
+  {
     repo: "elucid/hunk-less-search",
     name: "hunk-less-search",
     summary: "less-style forward search across the review stream, with in-diff match marks.",
     categories: ["Keyboard mode", "Line highlighter", "Pane", "Command"],
     version: "0.1.0",
     apiVersion: 5,
+  },
+  {
+    repo: "evantravers/hunk-mark-as-reviewed",
+    name: "hunk-mark-as-reviewed",
+    summary:
+      "Marks hunks and files as reviewed, tracks progress in a review pane, and can hide what you've finished.",
+    categories: ["Pane", "Command", "Line highlighter", "Changeset transform"],
+    version: "0.1.0",
+    apiVersion: 8,
   },
   {
     repo: "evantravers/hunk-notes-to-markdown",
@@ -132,12 +158,39 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     apiVersion: 6,
   },
   {
+    repo: "jacegodk/hunk-viewed",
+    name: "hunk-viewed",
+    summary:
+      "GitLab-style viewed marks: fold viewed files, browse one at a time, and skip what's already reviewed, with marks kept between runs.",
+    categories: ["Pane", "File view", "Command", "Keyboard mode"],
+    version: "0.1.0",
+    apiVersion: 16,
+  },
+  {
+    repo: "joshedler/hunk-git-lite",
+    name: "hunk-git-lite",
+    summary:
+      "Adds a git status pane with stage/unstage commands, so you can act on a review without leaving it.",
+    categories: ["Pane", "Command"],
+    version: "0.1.0",
+    apiVersion: 6,
+  },
+  {
     repo: "mikeclarke/hunk-tutor",
     name: "hunk-tutor",
     summary: "An interactive tour of Hunk, taught inside a practice review.",
     categories: ["Pane", "Theme", "Line highlighter", "Command", "VCS backend"],
     version: "0.1.0",
     apiVersion: 5,
+  },
+  {
+    repo: "muzomer/hunk-commit",
+    name: "hunk-commit",
+    summary:
+      "Marks hunks while you review, then stages, commits, or folds them into an earlier commit — in git or Jujutsu, leaving files on disk untouched.",
+    categories: ["Command", "Line highlighter"],
+    version: "0.1.0",
+    apiVersion: 8,
   },
   {
     repo: "phl28/hunk-gh-review",
@@ -147,6 +200,15 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     categories: ["Pane", "Keyboard mode", "Command"],
     version: "0.1.0",
     apiVersion: 6,
+  },
+  {
+    repo: "rschoch/hunk-compact-filenav",
+    name: "hunk-compact-filenav",
+    summary:
+      "A smart alternative files pane for Hunk that shows compact file paths, useful when viewing deeply nested file and package structures.",
+    categories: ["Pane", "Command"],
+    version: "0.1.0",
+    apiVersion: 16,
   },
   {
     repo: "sadick254/hunk-commit-log",
@@ -166,20 +228,16 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     version: "0.1.0",
     apiVersion: 1,
   },
+  {
+    repo: "victor-software-house/hunk-history",
+    name: "hunk-history",
+    summary:
+      "Browses live Git history in Files/History tabs, with immediate commit review, double-click ranges, and staged or unstaged comparisons.",
+    categories: ["Pane", "Command", "Changeset transform"],
+    version: "0.0.4",
+    apiVersion: 16,
+  },
 ];
-
-/**
- * Serialize one value for a raw `<script type="application/ld+json">` body.
- *
- * `JSON.stringify` leaves `<` alone, so a listing whose text contained
- * `</script>` would close the element and turn the rest of the payload into
- * markup. Escaping `<` as its JSON unicode escape keeps the document valid
- * JSON-LD while making that impossible. The catalog is hand-reviewed today and
- * will be generated from repository descriptions nobody reviews.
- */
-export function toJsonLdScriptBody(value: unknown) {
-  return JSON.stringify(value).replaceAll("<", "\\u003c");
-}
 
 /** GitHub account that publishes one listing. */
 export function ownerOf(listing: ExtensionListing) {

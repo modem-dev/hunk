@@ -192,16 +192,16 @@ run without installing anything.
 ## Bundled extensions
 
 Every VCS backend Hunk ships — **Git, Jujutsu, and Sapling** — is an extension,
-and so is the **built-in file-navigation pane**. They live in
-`src/extensions/default/`, are compiled into the binary, and register through
-the same `hunk.registerVcsAdapter` and `hunk.registerPane` this guide
-documents. There is no private registration path.
+and so is the **built-in file-navigation pane**. Provider implementations live in the private
+`packages/hunk-{git,jj,sapling}` workspaces and are statically imported by
+`packages/hunk/src/extensions/default/vcs/index.ts`. Bundled UI registrations live under
+`packages/hunk/src/extensions/default/ui/`. All register through the same
+`hunk.registerVcsAdapter` and `hunk.registerPane` contract documented here; there is no private
+registration path.
 
-Git in particular is the reason: it is the backend that exercises every
-integration point there is — exact file sources, skipped-too-large placeholders,
-untracked files, watch plans, rich failures — so running it through the
-published API is what keeps that API honest. Anything Git can do, your adapter
-can do, because Git does it the same way you would.
+Git exercises exact file sources, skipped-too-large placeholders, untracked files, watch plans,
+and structured failures through the public adapter contract. Its package and boundary tests keep
+those capabilities on the same registration path available to third-party adapters.
 
 Bundled extensions differ from yours in three ways, all of them consequences of
 being Hunk's own code:
@@ -214,9 +214,10 @@ being Hunk's own code:
   Those switches exist to triage extensions _you_ installed; losing VCS support
   from a debugging flag would break every workflow there is.
 
-Failure isolation still applies to them. The ids `git`, `jj`, and `sl` are
-reserved as a result — see `registerVcsAdapter` below — and so is `hunk`, the
-id the bundled files pane and every built-in command are named under.
+A bundled VCS factory failure becomes a load issue rather than crashing the session. Bundled UI
+panes are required host code, so failure to register the expected panes aborts startup. The ids
+`git`, `jj`, and `sl` are reserved as a result — see `registerVcsAdapter` below — and so is `hunk`,
+the id the bundled files pane and every built-in command are named under.
 
 ## Trust
 
@@ -278,16 +279,155 @@ start watchers, processes, connections, and other long-lived resources from
 `startup`, and release them from `shutdown`. Extension-registry reloads create
 new instances and run that shutdown/startup pair around the replacement.
 
+One host-owned `ExtensionSession` holds active, provisional, and retiring registries for a
+command lifetime. It revokes replaced authority at the review commit gate, drains bounded shutdown
+handlers before terminal teardown, and prevents surfaces from independently replacing or retiring
+the shared registry.
+
+An interactive history workspace owns one extension instance for its complete
+lifetime. Opening a commit review inside that workspace borrows the same
+instance: the factory and `startup` do not run again, and returning to history
+does not send `shutdown`. Review-specific `changeset_loaded` events still run
+for each opened commit. The owning history workspace sends the one eventual
+`shutdown` when it exits. This makes module-local clients and stores safe to
+share deliberately between retained history and its commit reviews without a
+review closing resources that history still uses.
+
+Keep mutable review-generation data keyed by the identities in event payloads
+or replace it on `changeset_loaded`; module scope is workspace state, not a
+fresh namespace per opened commit. An embedded review cannot replace its
+borrowed registry; extension replacement remains an operation of the owning
+workspace. A true owner-driven extension-registry reload creates a new instance
+and retires the replaced instance at that explicit ownership boundary.
+
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `8`). Branch on it if you want
-one file to support several Hunk versions. Version 8 adds authoritative review
-snapshots to command handlers; version 7 added the current source line to
-command selection snapshots. Version 6 added session behavior,
+The API generation this Hunk speaks (currently `24`). Branch on it if you want
+one file to support several Hunk versions. Version 24 adds review metadata to VCS patch results and
+short display revisions to commit descriptors; version 23 adds canonical unified-layout fields
+while preserving the previous event vocabulary; version 22 adds frame-derived pane preferred sizing,
+non-resizable dynamic panes, and commit-history paint tokens; version 21 adds optional inclusive history-range review
+planning and bounded comparison commit summaries; version 20 adds optional commit timestamps to review
+metadata, pane clipboard actions, and the `theme.copyAction` paint token; version 19 adds provider-owned history
+enumeration and review planning; version 18 lets lifecycle and custom-event handlers request
+a host-owned review reload; version 17 adds structured review metadata to delegated patch
+commands and projects it into pane availability and component props; version 16 adds pane-wide
+`onActivate`; version 15 added `{ side, line }` to opted-in pane `currentLine`
+paint; version 14 added structured `rangeEndpoints`
+to two-revision VCS diff requests; version 13 added saved-note parent identities and
+committed note-edit events; version 12 adds responsive fractional pane sizing; version 11 added
+the `"dim"` line-highlight tone; version 10 added generic top-level CLI commands; version 9
+added exact-filename and glob selectors to `registerFileLanguage`; version 8
+added authoritative review snapshots to command handlers; version 7 added the
+current source line to command selection snapshots. Version 6 added session behavior,
 terminal-command observation, and live navigation/dialogs in event handlers;
 version 5 added line highlighters and line-granular navigation (`revealLine`);
 version 4 added keyboard modes and docked panes, with API-v3 sidebar names
 remaining as deprecated aliases.
+
+### `hunk.registerCliCommand(command, handler)`
+
+Register a generic top-level command tree. The name must use lowercase kebab
+case, cannot replace a built-in command or alias, and is global across loaded
+extensions. Discovery order decides collisions: explicit flag, user-config path,
+global/managed, then trusted repo extensions; the first claim wins.
+
+```ts
+hunk.registerCliCommand(
+  { name: "greptile", summary: "Work with Greptile", usage: "<sync|review>" },
+  async (args, ctx) => {
+    if (args[0] === "sync") {
+      await ctx.stdout.write("Synced.\n");
+      return { kind: "exit", code: 0 };
+    }
+
+    await ctx.stderr.write("Preparing review…\n");
+    return {
+      kind: "delegate",
+      argv: ["patch", "review.diff"],
+      review: {
+        kind: "change-request",
+        provider: "GitHub",
+        title: "Add structured review metadata",
+        url: "https://github.com/acme/project/pull/123",
+        id: "#123",
+        repository: "acme/project",
+        author: "octocat",
+        base: "main",
+        head: "review-metadata",
+        state: "open",
+        draft: false,
+      },
+    };
+  },
+);
+```
+
+The handler receives the frozen raw tokens below its top-level name plus
+`ctx.cwd`, cooperative `ctx.signal`, byte-streaming `ctx.stdin`, and leased,
+backpressure-aware `ctx.stdout`/`ctx.stderr`. It may use ordinary JavaScript APIs
+to access networks, processes, services, and files. Return `{ kind: "exit",
+code? }` with a status from 0 through 255, or delegate exactly once to a
+built-in Hunk command.
+
+A delegated built-in `patch` command may include a provider-neutral `review` descriptor. Its
+`kind` is `change-request`, `commit`, or `comparison`; each exact shape combines bounded display
+strings with an optional credential-free HTTPS URL. Hunk rejects unknown fields, control
+characters, invalid types, unsafe URLs, fields over their byte limits, and descriptors over 4 KiB,
+then copies and freezes the accepted value. `provider` and change-request `id` allow 256 bytes;
+`repository`, `author`, `base`, `head`, and `revision` allow 512; `authoredAt` allows 128;
+`title` and `url` allow 2 KiB. Change requests may also carry `state` (`open`, `closed`, or
+`merged`) and boolean `draft`; commits may carry a parseable `authoredAt` date-time. Exit results and delegation to any built-in other than
+`patch` cannot carry review metadata. An ordinary `hunk patch` has no descriptor.
+
+The descriptor describes the review source rather than its diff contents: it stays on the app
+bootstrap and does not enter changeset transforms or `ReviewDocumentV1`. Refreshing the same
+file-backed patch preserves it, including watch and manual refresh; an explicit reload to a
+different patch path or input kind clears it. Opening a commit from interactive `hunk log` attaches
+a commit descriptor from the selected provider history row and preserves it while refreshing that
+exact provider review request. Live-session list, context, and review JSON snapshots project the
+same optional descriptor from registration metadata; it remains outside the semantic
+review document and grants no remote reload or provider capability.
+
+Delegation cannot target another extension command or change extension bootstrap
+flags. Do not write stdout or read stdin before delegating; use stderr for
+progress. Reading stdin is an exit-only workflow because even a pending read can
+steal terminal input from the delegated command. Writers and stdin iterators
+reject after the handler settles. SIGINT and SIGTERM abort
+`ctx.signal`; handlers should stop promptly. Extensions are not sandboxed, so
+direct process stream access cannot be enforced by these capabilities and must
+be avoided.
+
+Bare `hunk --help` remains static and does not load extensions. The extension
+owns `hunk <name> --help` and receives `--help` unchanged.
+
+`summary` and `usage` are what Hunk shows when a top-level token reaches
+extension discovery but no extension claims it. That failure has already paid
+for the registry, so it lists every loaded command rather than only naming the
+token that was wrong:
+
+```text
+hunk: Unknown command: nosuchthing
+
+Extension commands available here:
+hunk cli-tools <status|review> [args...] — Demonstrate extension-provided CLI workflows
+hunk gh <number|owner/repo#number|pull-request-url> [--repo <owner/repo>] — Review a GitHub pull request
+```
+
+Both fields are collapsed to one sanitized line, so an extension cannot forge
+host output with newlines or escape sequences.
+
+The dependency-free [`github-pr` example](../examples/extensions/github-pr/)
+is a complete network workflow built on this contract. It fetches bounded GitHub PR metadata and
+the diff without the `gh` CLI, attaches a `change-request` descriptor so the bundled review-info
+pane shows the provider facts above the diff, writes a temporary patch with restrictive POSIX modes
+(and inherited temporary-directory ACLs on Windows), delegates to the built-in `patch` command, and
+removes the patch on extension shutdown. Run it
+from this checkout with:
+
+```bash
+bun run packages/hunk/src/main.tsx --extension ./examples/extensions/github-pr gh 123
+```
 
 ### `hunk.configureSession(options)`
 
@@ -324,18 +464,38 @@ built-in id. Config-defined themes always win over extension themes for the same
 id; the loser is reported as a startup notice. Extension themes appear in the
 selector after config themes, in load order.
 
-### `hunk.registerFileLanguage(extension, language)`
+### `hunk.registerFileLanguage(matcher, language)`
 
-Map a file extension to a syntax-highlighting language. The extension may be
-written with or without a leading dot and is lowercased.
+Map file extensions, exact filenames, or globs to an existing syntax-highlighting language. The
+string shorthand registers a case-insensitive extension with or without its leading dot. Explicit
+extension matchers use the same trimming, leading-dot removal, and lowercasing:
 
 ```ts
 hunk.registerFileLanguage(".zig", "zig");
-hunk.registerFileLanguage("bzl", "python");
+hunk.registerFileLanguage({ kind: "extension", value: "bzl" }, "python");
+hunk.registerFileLanguage({ kind: "filename", value: "BUILD" }, "python");
+hunk.registerFileLanguage(
+  { kind: "glob", value: "generated/**/*.proto", target: "path" },
+  "protobuf",
+);
+hunk.registerFileLanguage({ kind: "glob", value: "*.component", target: "basename" }, "typescript");
 ```
 
-Later registrations win over earlier ones. Hunk's own `.mts` and `.cts`
-mappings cannot be overridden; attempts are skipped with a notice.
+Filename and glob matching is case-sensitive on every platform. Exact filenames match a basename
+at any directory depth. Globs use Bun's shell-style glob syntax and must explicitly target either
+the basename or the review path exactly as Hunk decoded it. `/` is the review-path separator;
+backslashes remain literal filename characters. Exact filename and glob values preserve leading and
+trailing whitespace. Globs reject NUL and do not run against NUL-bearing decoded patch paths; exact
+filename selectors can still address those paths. VCS review paths are normally repo-relative,
+while generic patch input may carry an absolute path.
+
+Hunk's reserved `.mts` and `.cts` mappings run first and cannot be overridden. Otherwise, exact
+filenames take precedence over globs, which take precedence over extensions. The longest matching
+extension wins, and later registrations win ties within each category. Direct attempts to register
+those two reserved extensions are skipped with a notice.
+
+This API selects a language already available to Pierre/Shiki. It does not load a new syntax
+grammar; an unknown language remains plain text.
 
 ### `hunk.registerVcsAdapter(adapter)`
 
@@ -371,15 +531,107 @@ reuses one is skipped with a notice.
 map off entirely — produces a clear "not supported" error for that command
 instead of a crash.
 
+API version 19 adds the optional, read-only `history` capability used by the built-in `hunk log` surface. API version 21 adds optional inclusive range planning:
+
+```ts
+hunk.registerVcsAdapter({
+  id: "hg-history",
+  name: "Mercurial history",
+  detect: () => null,
+  history: {
+    async open() {
+      return {
+        async read({ signal }) {
+          signal?.throwIfAborted();
+          return { commits: [], done: true };
+        },
+        close() {},
+      };
+    },
+    planReview(commit) {
+      return commit.parentRevisionIds[0]
+        ? {
+            kind: "revision-range",
+            fromRevisionId: commit.parentRevisionIds[0],
+            toRevisionId: commit.revisionId,
+          }
+        : { kind: "revision-show", revisionId: commit.revisionId };
+    },
+    planRangeReview({ newestCommit, oldestCommit }, _context, options) {
+      const parent = options?.parentRevisionId ?? oldestCommit.parentRevisionIds[0];
+      if (!parent) throw new Error("Resolve this provider's empty root baseline here.");
+      return {
+        kind: "revision-range",
+        fromRevisionId: parent,
+        toRevisionId: newestCommit.revisionId,
+      };
+    },
+  },
+});
+```
+
+The snippet above demonstrates static history production only; it is not a complete interactive
+adapter. Add a `revision-show` operation for `revision-show` actions and a `working-tree-diff`
+operation that accepts `rangeEndpoints` for `revision-range` actions before advertising interactive
+opening. Otherwise Enter reports that the corresponding review operation is unsupported.
+
+History is deliberately separate from patch-producing `operations`. The built-in host owns command
+routing, graph planning, themes, terminal lifecycle, and static/interactive presentation. The
+adapter owns every repository semantic: traversal and filtering, immutable identities, refs, and
+review-planning decisions about roots, merges, ancestry, and direct endpoints. `planRangeReview` is
+optional so older adapters remain compatible; without it, Hunk reports multi-commit opening as
+unsupported rather than silently opening one commit. A range planner compares the chosen parent—or
+provider-specific empty/root baseline—of `oldestCommit` directly with `newestCommit` and must not use
+merge-base/triple-dot semantics. Hunk treats revision ids as opaque strings and never invents provider
+revision syntax.
+
+Commits must carry an immutable full `revisionId`, display id, ordered parent ids, subject, optional
+message body, author (and optional email), ISO authored time, and structured ref decorations. The
+optional `logicalId` identifies the same logical change across provider rewrites (for example, a
+Jujutsu change id); Hunk treats it as metadata and continues to key graph and review operations by
+immutable `revisionId`. A `head` decoration carries an optional `attachedLocalBranch`; use that field
+rather than embedding an arrow or branch identity in its display label.
+
+Every source must emit commits in **child-before-parent topological order**. If both a child and one
+of its parents are included, the child appears first. This invariant spans the source's complete
+lifetime: page boundaries do not reset it, and a parent returned on one page cannot be followed by
+its child on a later page. Reads may return at most the requested limit and must distinguish a page
+boundary from repository end with `done`. Hunk copies and validates every page, strips terminal
+controls from display metadata, rejects duplicate revisions and parent-before-child output across
+pages, forwards cancellation, and closes the source at EOF or failure.
+
+The bundled Git and Jujutsu extensions implement this public capability today; Sapling currently
+reports it as unsupported. Jujutsu supplies commit/change identities, bookmarks, tags, traversal,
+and native merge-review semantics without routing through a colocated Git repository. Third-party
+adapters use exactly the same contract.
+
+Every operation `load` receives `context.signal`. Use asynchronous subprocess
+APIs, pass cancellation through, and terminate plus reap provider processes when
+it aborts; a synchronous spawn blocks Hunk's renderer and prevents the abort
+handler from running. Watch signatures remain synchronous because the watch
+runtime calls them as short, noninteractive probes.
+
 A `load` result is patch text plus how to label it. Everything else on it is
-optional, and each optional field buys one thing:
+optional, and each optional field buys one thing. API version 24 adds `review`:
 
 | Field            | What it adds                                                       |
 | ---------------- | ------------------------------------------------------------------ |
+| `review`         | commit or comparison context above a revision-backed review        |
 | `untrackedPaths` | files your VCS calls unknown, synthesized into added-file diffs    |
 | `readFileSource` | exact whole-file contents, for context expansion and highlighting  |
 | `sourceCacheKey` | stable source-snapshot identity for highlight reuse across reloads |
 | `extraFiles`     | files reviewed outside the patch, including skipped placeholders   |
+
+Use the same `ExtensionReviewDescriptor` accepted by delegated CLI reviews. Return a `commit`
+descriptor when the operation resolves one reviewed commit, or a `comparison` descriptor when both
+sides resolve to commits. Comparison `commits` are newest-first and bounded to eight entries; retain
+the exact total in `commitCount` when known. Commit descriptors and comparison commit rows carry the
+full immutable ID in `revision` for copying and should carry the provider-formatted short ID in
+`displayRevision` for display. `displayRevision` remains optional on a single commit for extensions
+built against an older API; Hunk abbreviates `revision` when it is absent. Omit `review` when either
+side is working-copy, staged, stash, or otherwise cannot be identified accurately. Hunk validates,
+copies, and freezes the descriptor before mounting it, then recomputes provider-supplied metadata on
+reload so moving refs do not retain stale information.
 
 `untrackedPaths` is the shorthand: list the repo-root-relative paths your VCS
 reports as unknown and Hunk synthesizes the added-file diffs for you, skipping
@@ -426,9 +678,9 @@ hunk.registerVcsAdapter({
 Detection runs the same way for every adapter, whichever tier registered it:
 the nearest checkout wins, `detectionPriority` breaks ties between adapters
 that recognize the same root, and equal priorities fall back to registration
-order. Config resolves the session's VCS before your extension has been
-imported, so detection runs again once extensions are loaded — with the full
-adapter list — and that second answer is the one the session uses.
+order. Hunk first resolves config and project root with the available catalog. If newly loaded
+adapters change the detected project root, it reruns root and config resolution before loading the
+session.
 
 What detection never overrides is an explicit choice: a `vcs = "<id>"` in Hunk
 config naming a backend this session loaded is honored as-is, however near a
@@ -632,9 +884,26 @@ export default function (hunk: HunkExtensionAPI) {
 ```
 
 `placement` defaults to `"left"`. Left/right panes use `width`; top/bottom panes
-use `height`. Both accept `{ preferred, min?, max? }`; equal bounds make a fixed
-pane. Defaults are `{ preferred: 34, min: 22 }` columns and
+use `height`. Both accept `{ preferred, min?, max?, fraction? }`; equal bounds
+make a fixed pane. Defaults are `{ preferred: 34, min: 22 }` columns and
 `{ preferred: 8, min: 3 }` rows.
+
+`fraction` opts into live responsive sizing until the user drags the divider. It
+must be greater than `0` and at most `1`; Hunk rounds that fraction of the full
+host body width or height to a terminal cell, then applies `min`, `max`, and the
+space required by the review. `preferred` remains the fixed-cell target when
+`fraction` is omitted. A divider drag establishes a session-local cell override:
+later terminal shrink may clamp it temporarily, and expanding restores it.
+Panes without `fraction` retain their fixed preferred startup size. Folder
+extensions that use `fraction` should declare `"hunk": { "apiVersion": 12 }` in
+their manifest.
+
+`preferredSize(context)` can derive that automatic cell target from current
+review facts. Hunk invokes it synchronously with the same context as
+`available`, clamps its positive whole-number result to `min`/`max`, and still
+lets a session-local divider drag take precedence. Set `resizable: false` when a
+dynamic pane should track that target without exposing a divider. These options
+require API version 22.
 
 Use `defaultOpen` to open a pane initially, `replaces: "hunk:files"` to replace
 the initial files pane (and override `defaultOpen`), and `available(context)` to
@@ -642,6 +911,19 @@ hide it conditionally. One pane may replace each named target; the first
 registration owns that slot and later claims are skipped with a warning.
 `replaces` may also name another pane by its fully qualified
 `"<extensionId>:<paneId>"` key, and Hunk follows those replacement chains.
+Both `available(context)` and the mounted component receive `review`: immutable
+metadata supplied by a delegated patch command or an interactive history selection, or `null` for
+ordinary reviews. The bundled `hunk:review-info` top pane uses this to show change-request and
+commit identity without taking any rows when no supported descriptor exists. Pane extensions that read
+`review` should declare `"hunk": { "apiVersion": 17 }` in their manifest so older Hunk versions
+refuse them cleanly instead of mounting with an incomplete prop contract.
+
+`onActivate()` observes a primary mouse press anywhere in the pane's content,
+including content nested in a `<scrollbox>`. Use it to focus an extension-owned
+editor or update pane-local active state without adding mouse handlers to every
+row. Hunk does not stop propagation or prevent the press, so extension-local
+mouse behavior can continue. Other mouse buttons do not activate the pane. A
+thrown or rejected callback is contained and reported as an attributed warning.
 
 `hunk:files` is a named role, not a left-edge location. The
 `hunk.view.toggleFilesPane` command (`s` by default) and **View → Files pane**
@@ -651,10 +933,13 @@ panes keep their own open state. User remaps and unbindings of
 `hunk.view.toggleFilesPane` apply to the resolved slot in the usual way. The
 former `hunk.view.toggleSidebar` id remains a compatibility alias.
 
-`currentLine: true` opts into the opaque `currentLine.render(side, width)`
-painter. The installable [Hunk Lens](https://github.com/modem-dev/hunk-lens)
-extension uses this API; it is not bundled Hunk UI. Install it with
-`hunk extension install modem-dev/hunk-lens`.
+`currentLine: true` opts into the selected-row painter. `currentLine.render(side, width)`
+paints one side as a clipped row; `currentLine.side` and `currentLine.line` are
+the same public source address command handlers see on `ctx.selection.currentLine`
+(context rows use Hunk's canonical new-side). The installable
+[Hunk Lens](https://github.com/modem-dev/hunk-lens) extension uses the painter; a
+blame or diagnostic pane can use the address without waiting for a keypress.
+Install the lens with `hunk extension install modem-dev/hunk-lens`.
 
 Import `react` normally — Hunk serves its own React instance to extension files
 at import time, so hooks, context, and JSX all run on the reconciler drawing the
@@ -667,16 +952,17 @@ The component receives fresh props as the app changes:
 
 | Prop                | What it is                                                                                                                                                                |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `review`            | immutable review-source metadata (`change-request`, `commit`, or `comparison`), or `null` for ordinary reviews                                                            |
 | `files`             | the visible reviewed files, review-stream order, filtered, frozen views (each carries `changeType`, `statsTruncated`, and `hunks` summaries beside the usual file fields) |
 | `selectedFileId`    | the selected file, or `null`                                                                                                                                              |
 | `selectedHunkIndex` | the selected hunk within that file, or `null`                                                                                                                             |
 | `placement`         | the accepted terminal edge                                                                                                                                                |
 | `width`             | exact terminal columns in the host-owned rectangle                                                                                                                        |
 | `height`            | exact terminal rows in the host-owned rectangle                                                                                                                           |
-| `currentLine`       | opaque selected-row painter when the registration opts in, otherwise `null`                                                                                               |
+| `currentLine`       | selected-row painter plus `{ side, line }` when the registration opts in, otherwise `null`                                                                                |
 | `theme`             | hex color tokens from the active theme, updated on theme switch                                                                                                           |
 | `keybindings`       | the current command bindings, resolved from defaults and the user's `[keybindings]` table                                                                                 |
-| `actions`           | navigation and notifications the pane may trigger                                                                                                                         |
+| `actions`           | navigation, clipboard, and notifications the pane may trigger                                                                                                             |
 
 API-v3 sidebar names remain as deprecated aliases: use `registerPane`,
 `ExtensionPane*`, `ctx.panes`, and `replaces: "hunk:files"` in new code.
@@ -685,7 +971,9 @@ API-v3 sidebar names remain as deprecated aliases: use `registerPane`,
 `actions.revealLine(fileId, side, line)` route through the same review
 controller as the built-in files pane and the keyboard shortcuts, so the review
 stream scrolls, selection updates, and the `selection_changed` event fires
-exactly as if the user had clicked a built-in row. `actions.notify(message,
+exactly as if the user had clicked a built-in row. `actions.copyText(text)` uses the terminal's
+OSC 52 clipboard integration and returns `false` when unavailable. Extensions that call it or read
+`theme.copyAction` should declare `"hunk": { "apiVersion": 20 }` in their manifest. `actions.notify(message,
 type?)` shows a toast attributed to your extension. An action given a file id
 that is not currently visible is refused with a warning rather than corrupting
 the selection. A pane's `actions` carry the same navigation methods a command
@@ -813,7 +1101,7 @@ whatever version Hunk pins — a wider surface than `hunkdiff/extension` itself.
 The built-in files pane uses the same calls, so changes that break this contract
 break Hunk first. Keep scroll handling small and behind your own helpers.
 
-Its implementation lives in `src/extensions/default/ui/sidebar/` and serves as
+Its implementation lives in `packages/hunk/src/extensions/default/ui/sidebar/` and serves as
 the reference for third-party panes.
 
 #### Pane state from events
@@ -1126,7 +1414,7 @@ Marks are addressed by **source coordinates**, never by rendered rows: `side`
 (`"old"` or `"new"`), a 1-based `line` on that side, and a `[start, end)`
 range in UTF-16 code units of the line's raw text — exactly what `indexOf` and
 `RegExp.exec` return against `file.patch` lines or a `readDocument` result.
-That addressing survives split vs stack layout, line wrapping, horizontal
+That addressing survives split vs unified layout, line wrapping, horizontal
 scrolling, and collapsed-context expansion, and the extension never learns
 Hunk's row model. A context line may be addressed through either side's line
 number; split view mirrors the mark onto both halves of the row. Offsets that
@@ -1135,19 +1423,23 @@ mark paints terminal columns, so a range covering only characters that occupy
 no column — bidi controls, zero-width spaces and joiners — paints nothing.
 
 The `tone` says what a mark means — `"match"` (the default), `"current"` for
-the one hit a search is standing on, `"info"`, `"warning"`, or `"error"`.
-Tones exist because a **color would be the extension's problem to get right
-and it cannot be**: a fixed background that reads on a context line is
+the one hit a search is standing on, `"info"`, `"warning"`, `"error"`, or
+`"dim"`. Tones exist because a **color would be the extension's problem to get
+right and it cannot be**: a fixed background that reads on a context line is
 invisible on an added line's green. Hunk resolves each tinted tone against the
 actual background of each marked line until it clears a minimum perceptual
 distance — stronger than its own word-diff emphasis, backing off only before
 the code on top would stop being readable — per theme, so a mark is never
-invisible on a line kind or a theme. On a transparent cell there is no color to
-blend against, so resolution falls back to the theme background and then to the
-appearance's own extreme: the mark still paints, chosen against the surface
-Hunk assumes rather than the one behind the terminal. `"current"` renders as
-reverse video (theme text as the block, theme background as the glyphs), the
-convention `less` and vim use for the active hit.
+invisible on a line kind or a theme. `"dim"` recedes the marked text toward the
+line background (blending token foregrounds ~45% into the line background while
+preserving token hues) with a guaranteed readability floor, ideal for
+review-progress workflows (e.g. marked-as-reviewed hunks) or noise de-emphasis.
+On a transparent cell there is no color to blend against, so resolution falls
+back to the theme background and then to the appearance's own extreme: the mark
+still paints, chosen against the surface Hunk assumes rather than the one behind
+the terminal. `"current"` renders as reverse video (theme text as the block,
+theme background as the glyphs), the convention `less` and vim use for the
+active hit.
 
 `highlight({ file, signal, readDocument })` may be sync or async, and returns
 the complete set of marks for one file — or `null` for none. Hunk calls it per
@@ -1408,8 +1700,8 @@ ReviewStore, or `null` after this command's review generation has been retired.
 It contains the opaque producer `generation`, the store's `stateRevision`, every
 file in authoritative review/sidebar order, and every saved live or reviewer
 note. Files carry their stable `fileKey`, transient `runtimeId`, content identity,
-paths, stats, and flags; notes carry their complete resolved old/new anchor and
-`active`/`stale`/`orphaned` reconciliation status.
+paths, stats, and flags; notes carry their complete resolved old/new anchor,
+optional direct `parentId`, and `active`/`stale`/`orphaned` reconciliation status.
 
 This is the command-time source for exporters, publishers, and audit tools. Drafts
 are excluded because they are not saved. Static sidecar annotations that never
@@ -1673,9 +1965,8 @@ the metadata actually parses to.
 
 Subscribe to a lifecycle or UI event. Handlers may be async; Hunk never blocks
 the UI waiting for one. Alongside `cwd` and `notify`, every handler receives
-`ctx.panes`, live `ctx.navigation`, and attributed `ctx.dialogs`, the same
-controls command handlers receive. `ctx.sidebars` is a deprecated alias for
-`ctx.panes`. That means a `startup` handler can present
+`ctx.panes`, live `ctx.navigation`, attributed `ctx.dialogs`, and review reload
+controls. `ctx.sidebars` is a deprecated alias for `ctx.panes`. That means a `startup` handler can present
 one focused welcome question and navigate to its first example, while a
 `changeset_loaded` handler can reveal a pane when it finds something worth
 showing — no keypress required. Dialog calls made before the mounted app is
@@ -1687,33 +1978,52 @@ normal cancel value, and workspace reads or not-yet-started writes return
 filesystem write starts, it reports its actual outcome and success reconciles
 the review then active.
 
-| Event                  | Payload                 | When                                                      |
-| ---------------------- | ----------------------- | --------------------------------------------------------- |
-| `startup`              | `{ cwd }`               | once per loaded instance, after its review UI mounts      |
-| `changeset_loaded`     | `{ changeset }`         | first load and every reload                               |
-| `command_executed`     | `{ commandId }`         | after a named command dispatches in this terminal host    |
-| `selection_changed`    | `{ fileId, hunkIndex }` | when the review selection settles (debounced ~150ms)      |
-| `file_viewed`          | `{ file, hunkIndex }`   | when selection settles on a file or a reload replaces it  |
-| `filter_changed`       | `{ filter }`            | whenever the file-filter query changes                    |
-| `theme_changed`        | `{ themeId }`           | when the user commits a new theme                         |
-| `layout_changed`       | `{ mode, layout }`      | mode or responsive split/stack layout changes             |
-| `watch_reload_pending` | `{}`                    | watcher observed a change before its reload check         |
-| `note_created`         | `{ note }`              | a user saves an inline review note                        |
-| `note_edited`          | `{ note }`              | an in-progress inline note's body changes                 |
-| `session_reload`       | `{ changeset, reason }` | on every session reload                                   |
-| `shutdown`             | `{}`                    | before instance replacement or exit, with a short timeout |
+| Event                  | Payload                                              | When                                                      |
+| ---------------------- | ---------------------------------------------------- | --------------------------------------------------------- |
+| `startup`              | `{ cwd }`                                            | once per loaded instance, after its review UI mounts      |
+| `changeset_loaded`     | `{ changeset }`                                      | first load and every reload                               |
+| `command_executed`     | `{ commandId, canonicalCommandId? }`                 | after a named command dispatches in this terminal host    |
+| `selection_changed`    | `{ fileId, hunkIndex }`                              | when the review selection settles (debounced ~150ms)      |
+| `file_viewed`          | `{ file, hunkIndex }`                                | when selection settles on a file or a reload replaces it  |
+| `hunk_viewed`          | `{ file, hunkIndex }`                                | when selection settles on a different hunk                |
+| `filter_changed`       | `{ filter }`                                         | whenever the file-filter query changes                    |
+| `theme_changed`        | `{ themeId }`                                        | when the user commits a new theme                         |
+| `layout_changed`       | `{ mode, layout, canonicalMode?, canonicalLayout? }` | mode or responsive split/unified layout changes           |
+| `watch_reload_pending` | `{}`                                                 | watcher observed a change before its reload check         |
+| `note_created`         | `{ note }`                                           | a user saves an inline review note                        |
+| `note_edited`          | `{ note }`                                           | a draft body changes or an existing note is saved         |
+| `note_changed`         | `{ kind, note }`                                     | a saved ReviewStore note is created, updated, or removed  |
+| `session_reload`       | `{ changeset, reason }`                              | on every session reload                                   |
+| `shutdown`             | `{}`                                                 | before instance replacement or exit, with a short timeout |
 
 A newly mounted extension instance receives `startup` before its first
 `changeset_loaded`; reloads then deliver `changeset_loaded` before
 `session_reload` once the matching review generation has committed.
 
+Starting with extension API v23, `layout_changed` adds `canonicalMode` and
+`canonicalLayout`. They emit `"auto"`, `"split"`, or `"unified"` for the mode and
+`"split"` or `"unified"` for its resolved layout. The original `mode` and `layout`
+fields remain available for compatibility and continue to report `"stack"`
+where their canonical counterparts report `"unified"`. To preserve exhaustive
+existing source, `ExtensionLayoutMode` and `ExtensionResolvedLayout` retain their
+pre-v23 shapes; new extensions use `ExtensionCanonicalLayoutMode` and
+`ExtensionCanonicalResolvedLayout`. Hunk will keep the deprecated `"stack"`
+literal and legacy event fields until a separately announced major API revision.
+
 `selection_changed` is trailing-debounced on purpose: holding `[`/`]` retargets
 the selection many times a second, and handlers only care where the user landed.
 `fileId` and `hunkIndex` are `null` when nothing is selected.
 
-`command_executed` reports the stable canonical command id after the terminal dispatcher invokes
+`hunk_viewed` is the hunk-grain sibling of `file_viewed`. It fires when the
+settled `(file, hunk)` pair changes — including `[`/`]` inside one file — and
+does not fire for current-line movement within a hunk. `file_viewed` still fires
+only when the selected file object changes, so a soft reload can report a fresh
+file without counting as a new hunk read.
+
+`command_executed` reports a stable command id after the terminal dispatcher invokes
 it, whether the user reached it through a key, a menu, an old command alias, or
-`ctx.commands.execute`. Extension commands
+`ctx.commands.execute`. When a command was renamed, `commandId` preserves its deprecated
+identity for existing handlers and `canonicalCommandId` names the replacement. Extension commands
 may still have detached async work in flight; this event observes the accepted user action, not
 promise settlement. Listen for ids rather than key chords so behavior follows the user's live
 `[keybindings]` table. Browser/session actions lower to shared review intents rather than terminal
@@ -1721,15 +2031,29 @@ commands and do not emit this event. Modal widget keys such as Escape, Enter, no
 and F10 menu navigation are also not commands.
 
 `session_reload`'s `reason` is `"watch"` (the watcher saw the source change),
-`"daemon"` (an agent command through the session broker), or `"manual"` (the
-refresh key, or the reload after granting extension trust).
+`"daemon"` (an agent command through the session broker), `"extension"` (an
+in-process extension request), or `"manual"` (the refresh key, or the reload
+after granting extension trust).
 
 `note_created` and `note_edited` cover notes authored in Hunk's own UI, in this
-session. Review notes are session-local state, so there is no backlog to replay
+session. `note_edited` carries `note.draft: true` for composer changes and
+`note.draft: false` for an identity-preserving saved-note edit. Replies include their direct
+`parentId`. Optional `note.oldRange` and `note.newRange` values are inclusive, one-based source
+ranges: line notes may carry singleton ranges, while replacement selections may carry both.
+`note.side` and `note.line` identify the preferred endpoint used to place the note. Review notes
+are session-local state, so there is no backlog to replay
 on startup — but comments added through agent session commands do not emit
 these events, and a `session_reload` may remap or drop notes without one
-either. Use them for incremental UI reactions only. A command that needs the
-complete current saved-note record uses `ctx.review.snapshot()` instead.
+either. Use them for incremental UI reactions only.
+
+`note_changed` is the store-backed path: `kind` is `"created"`, `"updated"`, or
+`"removed"`, and `note` is the same snapshot shape `ctx.review.snapshot()`
+returns. It fires for user saves and deletes and for agent session comments.
+Drafts never appear. A TUI save therefore emits both `note_created` (or
+`note_edited`) and `note_changed`. Reloads that remap or drop notes do not emit
+`note_changed`; listen for `session_reload` to invalidate extension-owned state,
+then read `ctx.review.snapshot()` from a later command when it needs the complete
+current saved-note record.
 
 `shutdown` handlers get a short window (250ms) to finish before Hunk replaces
 the extension registry or exits anyway, so make cleanup prompt and idempotent.
@@ -1742,8 +2066,8 @@ The replacement instance receives `startup` after its review is mounted.
 `hunk.events` is a small bus shared by every loaded extension. Use it to
 coordinate extensions without coupling them through a command or global state.
 Names are open-ended, so namespace them with your extension id. Listeners get
-the same `ctx.panes`, `ctx.navigation`, and `ctx.dialogs` controls as lifecycle
-handlers; `ctx.sidebars` remains a deprecated pane alias. Delivery is
+the same `ctx.panes`, `ctx.navigation`, `ctx.dialogs`, and `ctx.review` reload
+controls as lifecycle handlers; `ctx.sidebars` remains a deprecated pane alias. Delivery is
 fire-and-forget and one listener's failure is reported without stopping the
 others. Events an
 extension emits while factories are loading are queued until every extension
@@ -1766,6 +2090,36 @@ export default function (hunk: HunkExtensionAPI) {
 
 Bus payloads are shallow-frozen copies when they are objects. Keep nested data
 immutable if multiple extensions will read it.
+
+### `ctx.review.requestReload()` in event handlers
+
+Request a soft reload of the currently mounted review after an external agent,
+service, or process changes its inputs. This does not require `--watch`. Hunk
+reuses the current input and live view options, preserves mounted UI state and
+selection where possible, serializes the work with every other reload, and
+coalesces concurrent extension requests into one operation.
+
+```ts
+import type { HunkExtensionAPI } from "hunkdiff/extension";
+
+export default function (hunk: HunkExtensionAPI) {
+  hunk.events.on("agent:files-changed", async (_payload, ctx) => {
+    const result = await ctx.review.requestReload();
+    if (!result.ok) ctx.notify(result.detail, "warning");
+  });
+}
+```
+
+Success resolves `{ ok: true }` after the replacement review commits and emits
+`session_reload` with reason `"extension"`. Non-reloadable inputs and controls
+retained from an expired review resolve `unavailable`; a reload that starts but
+cannot complete resolves `failed` with a displayable `detail`. Factory-time bus
+events can run before the app mounts, so their reload requests are unavailable.
+Once a live request starts, it reports that operation's actual result even
+though a successful reload expires the context that requested it.
+Requests made from the successor's lifecycle handlers are a new generation and
+can schedule a trailing reload. Check `session_reload.reason` before requesting
+from that event so an extension does not create its own reload loop.
 
 ### `hunk.config`
 
@@ -1795,7 +2149,7 @@ const patterns = (hunk.config.patterns as string[] | undefined) ?? ["*.lock"];
 ### `ctx.notify(message, type?)`
 
 Every handler and transform receives a context object with `cwd` and `notify`.
-Event and bus handlers additionally receive `panes` and `events.emit`; command
+Event and bus handlers additionally receive `panes`, `review.requestReload`, and `events.emit`; command
 handlers receive `panes`, `selection`, `navigation`, and `dialogs`. The deprecated
 `sidebars` alias remains available during the API-v4 compatibility window. `notify`
 shows a single unobtrusive line at the bottom of the app that clears
@@ -1879,9 +2233,11 @@ hunk diff --extension ./collapse-generated.ts
 ## CLI flags and config reference
 
 ```bash
-hunk diff --extension ./path/to/entry.ts   # load one entry file (repeatable)
+hunk diff --extension ./path/to/entry.ts   # load one entry file for a review (repeatable)
 hunk diff --extension ./my-ext             # a folder extension: loads ./my-ext/index.ts
-hunk diff --no-extensions                  # disable user extensions for this run
+hunk --extension ./my-ext cli-tools status # load then run its top-level CLI command
+hunk --no-extensions cli-tools status      # no discovery or import; command is unavailable
+hunk diff --no-extensions                  # disable user extensions for this review
 ```
 
 ```toml
@@ -1905,9 +2261,8 @@ repo-controlled either way.
 
 Menu entries, standalone keybindings (a chord contributed without a command —
 commands registered through `registerCommand` **are** already user-remappable
-via `[keybindings]`), custom note renderers, session commands, and CLI
-subcommands are not contributable yet. Commands and their default key bindings
-landed with `registerCommand` — the named-command registry the rest build on;
-see
-[docs/extension-system-exploration.md](extension-system-exploration.md) for the
-design and phasing.
+via `[keybindings]`), custom note renderers, and session commands are not
+contributable yet. Generic top-level CLI trees use `registerCliCommand`; TUI
+commands and their default key bindings use `registerCommand`. See the
+[extension architecture](extension-architecture.md) for the current host design. The
+[original exploration](extension-system-exploration.md) records historical rationale and phasing.

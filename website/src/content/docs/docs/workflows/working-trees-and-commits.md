@@ -3,7 +3,7 @@ title: Working trees and commits
 description: Review repository changes, staged work, refs, and path-limited changesets.
 ---
 
-Use `diff` for working-copy or comparison input and `show` for one committed change.
+Use `diff` for working-copy or comparison input and `show` for one committed change. For a concise overview of Git-specific workflows, see [Hunk for Git](/git/).
 
 ## Review the working tree
 

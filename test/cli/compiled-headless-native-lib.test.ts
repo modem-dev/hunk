@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { createServer } from "node:net";
-import { mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
@@ -9,7 +9,8 @@ const executable = process.env.HUNK_TEST_EXECUTABLE
   : undefined;
 const compiledTest = executable ? test : test.skip;
 const compiledLinuxTest = executable && process.platform === "linux" ? test : test.skip;
-const BUN_NATIVE_ARTIFACT_PATTERN = /^\.[0-9a-f]{16}-[0-9a-f]{8}\.(?:so|dylib|dll)$/;
+const BUN_NATIVE_ARTIFACT_PATTERN =
+  /^(?:\.[0-9a-f]{16}-[0-9a-f]{8}|\.bun-\d+-[0-9a-f]{16})\.(?:so|dylib|dll)$/;
 const positiveControlBuildRoot = executable
   ? mkdtempSync(resolve(tmpdir(), "hunk-compiled-opentui-control-"))
   : undefined;
@@ -28,7 +29,8 @@ const highlightWorkerControlExecutable = positiveControlBuildRoot
 
 let rootsToClean: string[] = [];
 
-beforeAll(() => {
+/** Builds the compiled controls that calibrate native-library assertions. */
+function buildCompiledControls() {
   if (!positiveControlExecutable || !highlightWorkerControlExecutable) {
     return;
   }
@@ -44,10 +46,10 @@ beforeAll(() => {
       name: "highlight worker control",
       entries: [
         resolve(import.meta.dir, "fixtures", "compiled-highlight-worker-control.ts"),
-        resolve(import.meta.dir, "..", "..", "src", "highlightWorkerEntry.ts"),
+        resolve(import.meta.dir, "..", "..", "packages", "hunk", "src", "highlightWorkerEntry.ts"),
       ],
       executable: highlightWorkerControlExecutable,
-      root: resolve(import.meta.dir, "..", "..", "src"),
+      root: resolve(import.meta.dir, "..", "..", "packages", "hunk", "src"),
     },
   ];
 
@@ -75,7 +77,10 @@ beforeAll(() => {
       );
     }
   }
-});
+}
+
+// Two cold Bun compilations can exceed the default 5s hook deadline on hosted Windows runners.
+beforeAll(buildCompiledControls, { timeout: 15_000 });
 
 afterAll(() => {
   if (positiveControlBuildRoot) {
@@ -96,19 +101,23 @@ function createTestEnvironment(port?: number) {
   rootsToClean.push(root);
   const home = resolve(root, "home");
   const cache = resolve(root, "cache");
+  const config = resolve(root, "config");
   const runtime = resolve(root, "runtime");
   const temp = resolve(root, "tmp");
-  for (const dir of [home, cache, runtime, temp]) {
+  for (const dir of [home, cache, config, runtime, temp]) {
     mkdirSync(dir, { recursive: true });
   }
 
   return {
+    config,
+    home,
     temp,
     env: {
       ...process.env,
       HOME: home,
       USERPROFILE: home,
       XDG_CACHE_HOME: cache,
+      XDG_CONFIG_HOME: config,
       XDG_RUNTIME_DIR: runtime,
       TMPDIR: temp,
       BUN_TMPDIR: temp,
@@ -224,6 +233,53 @@ describe("compiled headless native-library loading", () => {
     },
     15_000,
   );
+
+  compiledTest("keeps a non-UI extension CLI command OpenTUI-free", () => {
+    const { env, temp } = createTestEnvironment();
+    const extensionPath = resolve(temp, "headless-cli.ts");
+    writeFileSync(
+      extensionPath,
+      `export default function (hunk) {
+  hunk.registerCliCommand({ name: "headless-probe", summary: "Probe" }, async (_args, ctx) => {
+    await ctx.stdout.write("ok\\n");
+    return { kind: "exit" };
+  });
+}\n`,
+    );
+
+    const proc = Bun.spawnSync([executable!, "--extension", extensionPath, "headless-probe"], {
+      env,
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    expect(proc.exitCode).toBe(0);
+    expect(Buffer.from(proc.stdout).toString("utf8")).toBe("ok\n");
+    expect(Buffer.from(proc.stderr).toString("utf8")).toBe("");
+    expect(nativeArtifacts(temp)).toEqual([]);
+  });
+
+  compiledTest("discovers the installed-shape GitHub extension for literal hunk gh", () => {
+    const { config, env, temp } = createTestEnvironment();
+    const installedPath = resolve(config, "hunk", "extensions", "github-pr");
+    mkdirSync(resolve(config, "hunk", "extensions"), { recursive: true });
+    cpSync(resolve(import.meta.dir, "../../examples/extensions/github-pr"), installedPath, {
+      recursive: true,
+    });
+
+    const proc = Bun.spawnSync([executable!, "gh", "--help"], {
+      env,
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    expect(proc.exitCode).toBe(0);
+    expect(Buffer.from(proc.stderr).toString("utf8")).toBe("");
+    expect(Buffer.from(proc.stdout).toString("utf8")).toContain("Usage: hunk gh");
+    expect(nativeArtifacts(temp)).toEqual([]);
+  });
 
   compiledLinuxTest("keeps captured-host static pager rendering OpenTUI-free", () => {
     const { env, temp } = createTestEnvironment();

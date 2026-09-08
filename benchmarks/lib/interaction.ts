@@ -2,6 +2,10 @@
 import { performance } from "node:perf_hooks";
 import type { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
+import {
+  hasPendingHighlightedDiffs,
+  waitForHighlightedDiffIdle,
+} from "../../packages/hunk/src/ui/diff/useHighlightedDiff";
 import { percentile } from "./benchmark-result";
 
 export type TestRendererSetup = Awaited<ReturnType<typeof testRender>>;
@@ -20,6 +24,24 @@ export async function renderPass(setup: TestRendererSetup, passes = 1) {
       await Bun.sleep(0);
     });
   }
+}
+
+/** Settle render-driven highlight work before timing an interaction. */
+export async function settleInteractionRenderer(setup: TestRendererSetup) {
+  for (let pass = 0; pass < 10; pass += 1) {
+    await act(async () => {
+      await setup.renderOnce();
+      await waitForHighlightedDiffIdle();
+      await setup.renderOnce();
+      await Bun.sleep(0);
+    });
+
+    if (!hasPendingHighlightedDiffs()) {
+      return;
+    }
+  }
+
+  throw new Error("Interaction benchmark did not settle syntax highlighting");
 }
 
 /** Destroy the test renderer inside act so pending React work settles. */
@@ -47,6 +69,9 @@ export async function measureKeyPressLatencies(
     latencies.push(performance.now() - start);
   }
 
+  if (process.env.HUNK_BENCHMARK_TRACE === "1") {
+    console.error(`TRACE key:${key} ${JSON.stringify(latencies)}`);
+  }
   return latencies;
 }
 
@@ -68,6 +93,9 @@ export async function measureScrollTickLatencies(
     latencies.push(performance.now() - start);
   }
 
+  if (process.env.HUNK_BENCHMARK_TRACE === "1") {
+    console.error(`TRACE scroll ${JSON.stringify(latencies)}`);
+  }
   return latencies;
 }
 

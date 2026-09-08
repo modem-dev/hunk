@@ -1,0 +1,106 @@
+import { DEFAULT_FILE_GAP, DEFAULT_HUNK_GAP } from "../core/run/reviewGap";
+import { resolveTheme } from "../ui/themes";
+import { HunkDiffBody } from "./HunkDiffBody";
+import { normalizeHunkDiffLayout } from "./layout";
+import { HunkDiffFileHeader } from "./HunkDiffFileHeader";
+import type { HunkDiffFileInput, HunkDiffSelection, HunkReviewStreamProps } from "./types";
+
+/** Resolve the active selection, defaulting to the first file and first hunk. */
+function resolveSelection(files: HunkDiffFileInput[], selection: HunkDiffSelection | undefined) {
+  if (selection && files.some((file) => file.id === selection.fileId)) {
+    return selection;
+  }
+
+  const first = files[0];
+  return first ? { fileId: first.id, hunkIndex: 0 } : undefined;
+}
+
+/** Render a top-to-bottom multi-file review stream without Hunk's app shell, keybindings, or scrolling. */
+export function HunkReviewStream({
+  files,
+  layout = "split",
+  canonicalLayout,
+  width,
+  theme = "github-dark-default",
+  selection,
+  showFileHeaders = true,
+  showFileSeparators = true,
+  showLineNumbers = true,
+  showHunkHeaders = true,
+  tabWidth,
+  fileGap = DEFAULT_FILE_GAP,
+  hunkGap = DEFAULT_HUNK_GAP,
+  wrapLines = false,
+  horizontalOffset = 0,
+  highlight = true,
+  onSelectionChange,
+}: HunkReviewStreamProps) {
+  const resolvedLayout = canonicalLayout ?? normalizeHunkDiffLayout(layout);
+  const resolvedTheme = resolveTheme(theme, null);
+  const activeSelection = resolveSelection(files, selection);
+
+  if (files.length === 0) {
+    return (
+      <box style={{ width: "100%", paddingLeft: 1, paddingRight: 1 }}>
+        <text fg={resolvedTheme.muted}>No files to render.</text>
+      </box>
+    );
+  }
+
+  return (
+    <box style={{ width: "100%", flexDirection: "column", backgroundColor: resolvedTheme.panel }}>
+      {files.map((file, index) => {
+        const selectedHunkIndex =
+          activeSelection?.fileId === file.id ? activeSelection.hunkIndex : -1;
+
+        return (
+          <box
+            key={file.id}
+            style={{
+              width: "100%",
+              flexDirection: "column",
+              backgroundColor: resolvedTheme.panel,
+            }}
+          >
+            {showFileSeparators && index > 0 && fileGap > 0 ? (
+              <box
+                style={{
+                  width: "100%",
+                  height: fileGap,
+                  flexDirection: "column",
+                  paddingLeft: 1,
+                  paddingRight: 1,
+                }}
+              >
+                {fileGap > 1 ? <box style={{ width: "100%", height: fileGap - 1 }} /> : null}
+                <text fg={resolvedTheme.border}>{"─".repeat(Math.max(1, width - 2))}</text>
+              </box>
+            ) : null}
+            {showFileHeaders ? (
+              <HunkDiffFileHeader
+                file={file}
+                width={width}
+                theme={theme}
+                onSelect={() => onSelectionChange?.({ fileId: file.id, hunkIndex: 0 })}
+              />
+            ) : null}
+            <HunkDiffBody
+              file={file}
+              canonicalLayout={resolvedLayout}
+              width={width}
+              theme={theme}
+              showLineNumbers={showLineNumbers}
+              showHunkHeaders={showHunkHeaders}
+              tabWidth={tabWidth}
+              hunkGap={hunkGap}
+              wrapLines={wrapLines}
+              horizontalOffset={horizontalOffset}
+              highlight={highlight}
+              selectedHunkIndex={selectedHunkIndex}
+            />
+          </box>
+        );
+      })}
+    </box>
+  );
+}

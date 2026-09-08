@@ -7,7 +7,7 @@ Use `HunkDiffView` when you want a batteries-included single-file diff, or compo
 ## Install
 
 ```bash
-npm i hunkdiff @pierre/diffs@1.3.5 @opentui/core@^0.5.1 @opentui/react@^0.5.1 react
+npm i hunkdiff @pierre/diffs@1.3.5 @opentui/core@^0.5.6 @opentui/react@^0.5.6 react
 ```
 
 `hunkdiff` declares Pierre diffs, OpenTUI, and React as peer dependencies, so install them in your app. Pierre diffs is optional for CLI-only installs but required when importing `hunkdiff/opentui`.
@@ -65,7 +65,7 @@ In a real app, derive `width` from your layout or `useTerminalDimensions()`.
 `HunkDiffView` renders one file and can own an OpenTUI `scrollbox`:
 
 ```tsx
-<HunkDiffView diff={file} width={88} layout="split" scrollable />
+<HunkDiffView diff={file} width={88} canonicalLayout="split" scrollable />
 ```
 
 Use it when you just want a drop-in diff viewer.
@@ -76,7 +76,7 @@ Use it when you just want a drop-in diff viewer.
 
 ```tsx
 <scrollbox width="100%" height="100%" scrollY>
-  <HunkDiffBody file={file} width={88} layout="stack" selectedHunkIndex={2} />
+  <HunkDiffBody file={file} width={88} canonicalLayout="unified" selectedHunkIndex={2} />
 </scrollbox>
 ```
 
@@ -190,14 +190,21 @@ If you need direct access to Pierre's parser, `parsePatchFiles(...)` is still re
 
 ## Common props
 
+Use `canonicalLayout` in new integrations. The legacy `layout` prop and `HunkDiffLayout` type keep
+their original `split | stack` shape so existing exhaustive TypeScript consumers continue to
+compile; when both props are present, `canonicalLayout` wins.
+
 | Prop                 | Type                                                                                                                                                       | Default      | Notes                                                                               |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ----------------------------------------------------------------------------------- |
-| `layout`             | `"split" \| "stack"`                                                                                                                                       | `"split"`    | Chooses side-by-side or stacked rendering.                                          |
+| `canonicalLayout`    | `"split" \| "unified"`                                                                                                                                     | `"split"`    | Chooses side-by-side or unified rendering in new integrations.                      |
+| `layout`             | `"split" \| "stack"`                                                                                                                                       | `undefined`  | Legacy source-compatible input; `stack` renders as unified.                         |
 | `width`              | `number`                                                                                                                                                   | —            | Required content width in terminal columns.                                         |
 | `theme`              | `"graphite" \| "midnight" \| "paper" \| "ember" \| "catppuccin-latte" \| "catppuccin-frappe" \| "catppuccin-macchiato" \| "catppuccin-mocha" \| "zenburn"` | `"graphite"` | Matches Hunk's built-in themes.                                                     |
 | `showLineNumbers`    | `boolean`                                                                                                                                                  | `true`       | Toggles line-number columns.                                                        |
 | `showHunkHeaders`    | `boolean`                                                                                                                                                  | `true`       | Toggles `@@ ... @@` hunk header rows.                                               |
 | `tabWidth`           | `number`                                                                                                                                                   | `4`          | Sets source-code tab stops from 1 to 16 columns.                                    |
+| `fileGap`            | `number`                                                                                                                                                   | `1`          | Rows between files in `HunkReviewStream`, including the `─` rule. `0` hides it.     |
+| `hunkGap`            | `number`                                                                                                                                                   | `0`          | Blank rows before each hunk after the first.                                        |
 | `showFileSeparators` | `boolean`                                                                                                                                                  | `true`       | Toggles separator rows between files in `HunkReviewStream`.                         |
 | `wrapLines`          | `boolean`                                                                                                                                                  | `false`      | Wraps long lines instead of clipping horizontally.                                  |
 | `horizontalOffset`   | `number`                                                                                                                                                   | `0`          | Scroll offset for non-wrapped code rows.                                            |
@@ -215,6 +222,7 @@ If you need direct access to Pierre's parser, `parsePatchFiles(...)` is still re
 - `countHunkDiffStats`
 - `HUNK_DIFF_THEME_NAMES`
 - `HunkDiffThemeName`
+- `CanonicalHunkDiffLayout`
 - `HunkDiffLayout`
 - `HunkDiffFile`
 - `HunkDiffFileInput`
@@ -229,4 +237,4 @@ If you need direct access to Pierre's parser, `parsePatchFiles(...)` is still re
 - Runnable demo overview: [`examples/README.md`](../examples/README.md)
 - Component demos: [`examples/7-opentui-component/README.md`](../examples/7-opentui-component/README.md)
 
-The in-repo demos import from `../../src/opentui` so they run from source. Published consumers should import from `hunkdiff/opentui`.
+The in-repo demos import from `../../packages/hunk/src/opentui` so they run from source. Published consumers should import from `hunkdiff/opentui`.

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { createPtyHarness, dragMouse, lineIndexOf, measureKeyScroll } from "./harness";
+import { createPtyHarness, dragMouse, measureKeyScroll } from "./harness";
 
 const harness = createPtyHarness();
 
@@ -90,7 +90,7 @@ describe("PTY scrolling", () => {
       expect(await measureKeyScroll(session, "j", 12)).toBe(1);
       expect(await measureKeyScroll(session, "k", 12)).toBe(-1);
 
-      const codeRow = lineIndexOf(initial, "line16 = 16;");
+      const codeRow = initial.split("\n").findIndex((line) => /line\d+ = \d+;/.test(line));
       expect(codeRow).toBeGreaterThan(0);
       await session.clickAt(60, codeRow);
       await session.waitIdle({ timeout: 400 });
@@ -106,7 +106,7 @@ describe("PTY scrolling", () => {
   test("clicking and dragging the live scrollbar scrolls the review pane", async () => {
     const fixture = harness.createScrollableFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "split"],
       cols: 120,
       rows: 10,
     });
@@ -240,7 +240,7 @@ describe("PTY scrolling", () => {
   test("mouse wheel scrolling moves the review pane", async () => {
     const fixture = harness.createScrollableFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "split"],
       cols: 220,
       rows: 12,
     });
@@ -283,7 +283,7 @@ describe("PTY scrolling", () => {
   test("repeated mouse-wheel input remains stable at the end of the review stream", async () => {
     const fixture = harness.createScrollableFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "split"],
       cols: 220,
       rows: 12,
     });

@@ -5,7 +5,7 @@ Exports Hunk's authoritative saved review state as JSON. The example shows why `
 Run it directly from this checkout:
 
 ```bash
-bun run src/main.tsx -- diff --extension ./examples/extensions/review-snapshot-export
+bun run packages/hunk/src/main.tsx -- diff --extension ./examples/extensions/review-snapshot-export
 ```
 
 Add one or more review notes, then run **Extensions → Export review snapshot…** (`F9`) and choose a new output path. Relative paths resolve from the review's working directory; the example refuses to overwrite an existing file.

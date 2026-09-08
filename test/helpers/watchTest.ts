@@ -1,8 +1,8 @@
 import type {
   WatchControllerClock,
   WatchEventSourceCallbacks,
-} from "../../src/core/watch/controller";
-import type { WatchedInputRuntime } from "../../src/ui/hooks/useWatchedInput";
+} from "../../packages/hunk/src/core/watch/controller";
+import type { WatchedInputRuntime } from "../../packages/hunk/src/ui/hooks/useWatchedInput";
 
 interface ScheduledWatchTestTimer {
   callback: () => void;

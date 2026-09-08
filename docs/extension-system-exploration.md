@@ -1,8 +1,13 @@
 # Hunk extensions: an exploration
 
-What a JavaScript/TypeScript extension system for Hunk could look like, modeled
-on the extension system of [pi](https://pi.dev) (`@earendil-works/pi`), grounded
-in Hunk's actual architecture. This is a design exploration, not a spec.
+> **Historical design note (July 2026).** This proposal preceded Hunk's implemented extension
+> system. See the [extension guide](extensions.md) and
+> [extension architecture](extension-architecture.md) for the current contract. The implementation
+> now includes trust-gated TypeScript loading, named commands, panes, file views, VCS adapters,
+> review controls, and API versioning.
+
+The proposal modeled a JavaScript/TypeScript extension system on
+[pi](https://pi.dev) (`@earendil-works/pi`) and Hunk's architecture.
 
 ## 1. How pi does it
 
@@ -106,21 +111,21 @@ seams in very different states of readiness:
 
 **Nearly plugin-shaped already:**
 
-- `vcsAdapters` (`src/core/vcs/index.ts`) — a real adapter pattern: detection,
+- `vcsAdapters` (`packages/hunk/src/core/vcs/index.ts`) — a real adapter pattern: detection,
   per-operation handler maps, capability probing. Making the array appendable
   is almost the whole job for third-party VCS support.
 - The session broker (`packages/session-broker*`) is generic over session
   info/state/message types by design, and the app installs its command
   dispatcher at runtime via `createHunkSessionBridge(handlers)` +
-  `hostClient.setBridge(...)` (`src/app/session/bridge.ts`). That bridge is
+  `hostClient.setBridge(...)` (`packages/hunk/src/app/session/bridge.ts`). That bridge is
   the single clearest injection point for extension-provided session commands.
 - Dynamic theme registration exists (`ensureSyntaxHighlightThemeRegistered` →
   Pierre's `registerCustomTheme`), but the config layer caps custom themes at
   one `"custom"` slot.
-- Pierre's `setCustomExtension` (`src/core/changeset/fileLanguage.ts`) is already used at
+- Pierre's `setCustomExtension` (`packages/hunk/src/core/changeset/fileLanguage.ts`) is already used at
   import time for `.mts`/`.cts`; extending it to plugin-declared mappings is
   trivial.
-- `StartupDeps` (`src/app/startup.ts`) fully injects the startup pipeline
+- `StartupDeps` (`packages/hunk/src/app/startup.ts`) fully injects the startup pipeline
   (currently only tests use it), and unknown TOML keys are silently ignored, so
   an `[extensions]` config section is backward-compatible on day one.
 
@@ -131,9 +136,12 @@ seams in very different states of readiness:
   re-enumerated as callback props there, in `buildAppMenus`, and in a
   hardcoded `HelpDialog` sections array. Extensions can't contribute a command
   or a keybinding because _core_ has no named-command concept to contribute to.
-- **CLI dispatch is a closed switch.** `parseCli` ends in a hardcoded
-  `switch (commandName)` and help text is a hand-maintained string array, so
-  extension CLI subcommands need a command-table refactor first.
+- **Generic CLI dispatch now has an extension fallback.** Built-ins still win
+  through `parseCli`'s closed fast path, while an unknown top-level token loads
+  enabled/trusted extensions and resolves `registerCliCommand` registrations.
+  Handlers own raw nested args and leased I/O, and may exit or delegate once to
+  a built-in plan without rerunning an unchanged factory prefix. Bare help stays
+  static; unloaded command discovery remains a future manifest/listing problem.
 - **Session actions take five files in lockstep** (`protocol.ts` union +
   version bump, `brokerServer.ts` switch + supported-actions list, `bridge.ts`,
   session `cli.ts`, `core/cli.ts` parser). A registry keyed by action name
@@ -171,7 +179,7 @@ export default function (hunk: HunkExtensionAPI) {
 ````
 
 - Discovery: `~/.config/hunk/extensions/*.ts` and `*/index.ts` (global, follows
-  our existing XDG path logic in `src/core/run/paths.ts`), `.hunk/extensions/`
+  our existing XDG path logic in `packages/hunk/src/core/run/paths.ts`), `.hunk/extensions/`
   (repo-local, **trust-gated**, same posture as pi's project trust), explicit
   `[extensions] paths = [...]` in `config.toml`, and a `--extension <path>`
   dev flag. `--no-extensions` for a clean run and for bug triage.
@@ -212,10 +220,8 @@ Every UI-facing capability above lands on the same prerequisite: core actions
 become data (`{id, label, hint, keys, menuId, isAvailable, run}`) in one
 registry that `useAppKeyboardShortcuts`, `buildAppMenus`, and `HelpDialog` all
 derive from. This is worth doing even if extensions never ship — it deletes the
-existing triplication and the 650-line key ladder — and it is exactly the
-"single source of truth per user-visible behavior" rule in our own guidance.
-User keybinding remapping (a long-standing wish in tools like this) falls out
-of the same structure for free.
+existing triplication and the 650-line key ladder while giving each user-visible behavior one
+owner. The same structure can support user keybinding remapping.
 
 ## 6. Suggested phasing
 

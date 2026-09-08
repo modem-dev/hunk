@@ -1,5 +1,5 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,7 +7,7 @@ import { cleanupTestConfigHomes, createTestConfigHome } from "../helpers/config-
 import { removeTestDirectory } from "../helpers/filesystem";
 
 const repoRoot = process.cwd();
-const sourceEntrypoint = join(repoRoot, "src/main.tsx");
+const sourceEntrypoint = join(repoRoot, "packages/hunk/src/main.tsx");
 // Spawned hunk processes must assert built-in defaults, not the developer's ambient user config.
 const testConfigHome = createTestConfigHome();
 const testRuntimeDir = mkdtempSync(join(tmpdir(), "hunk-session-cli-runtime-"));
@@ -110,7 +110,7 @@ function createFixtureFiles(name: string, beforeLines: string[], afterLines: str
 }
 
 function spawnHunkSession(fixture: ReturnType<typeof createFixtureFiles>, port: number) {
-  const innerCommand = `bun run ${shellQuote(sourceEntrypoint)} diff ${shellQuote(fixture.before)} ${shellQuote(fixture.after)}`;
+  const innerCommand = `bun run ${shellQuote(sourceEntrypoint)} diff --files ${shellQuote(fixture.before)} ${shellQuote(fixture.after)}`;
 
   return Bun.spawn(["script", "-q", "-f", "-e", "-c", innerCommand, fixture.transcript], {
     cwd: fixture.dir,
@@ -214,20 +214,24 @@ async function quitHunkSession(
 
 const ownedDaemonPids = new Map<number, number>();
 
-/** Poll daemon health directly before exercising the CLI boundary once. */
+/** Poll through the authenticated CLI because public health intentionally exposes no session facts. */
 async function waitForRegisteredSessions(port: number) {
-  await waitUntil("registered live session", async () => {
-    const health = await readDaemonHealth(port);
-    if (!health || (health.sessions ?? 0) === 0) return null;
-    ownedDaemonPids.set(port, health.pid);
-    return true;
+  return waitUntil("registered live session", () => {
+    const { proc, stdout } = runSessionCli(["list", "--json"], port);
+    if (proc.exitCode !== 0) return null;
+    const sessions = (JSON.parse(stdout) as SessionListJson).sessions;
+    if (sessions.length === 0) return null;
+    try {
+      const metadata = JSON.parse(
+        readFileSync(join(testRuntimeDir, "hunk-mcp", `daemon-127-0-0-1-${port}.json`), "utf8"),
+      ) as { pid?: unknown };
+      if (typeof metadata.pid === "number" && metadata.pid > 0)
+        ownedDaemonPids.set(port, metadata.pid);
+    } catch {
+      // Teardown can still rely on daemon idleness if metadata publication raced this read.
+    }
+    return sessions;
   });
-
-  const { proc, stdout, stderr } = runSessionCli(["list", "--json"], port);
-  if (proc.exitCode !== 0) {
-    throw new Error(stderr.trim() || "Failed to list the registered Hunk session.");
-  }
-  return (JSON.parse(stdout) as SessionListJson).sessions;
 }
 
 /** Read one test daemon's health without leaking connection failures into teardown. */
@@ -235,7 +239,7 @@ async function readDaemonHealth(port: number) {
   try {
     const response = await fetch(`http://127.0.0.1:${port}/health`);
     if (!response.ok) return null;
-    return (await response.json()) as { pid: number; sessions?: number };
+    return (await response.json()) as { ok: boolean };
   } catch {
     return null;
   }
@@ -267,9 +271,6 @@ async function waitForDaemonExit(port: number, pid: number, label: string) {
     label,
     async () => {
       const health = await readDaemonHealth(port);
-      if (health && health.pid !== pid) {
-        throw new Error(`Refusing to manage unexpected daemon ${health.pid} on port ${port}.`);
-      }
       return !isProcessRunning(pid) && health === null ? true : null;
     },
     1_500,
@@ -283,17 +284,10 @@ async function stopTestDaemon(port: number) {
   ownedDaemonPids.delete(port);
   if (pid === undefined) return;
 
-  const health = await readDaemonHealth(port);
-  if (health && health.pid !== pid) {
-    throw new Error(`Refusing to stop unexpected daemon ${health.pid} on port ${port}.`);
-  }
-
   signalProcess(pid, "SIGTERM");
   try {
     await waitForDaemonExit(port, pid, "session daemon exit");
-  } catch (error) {
-    const remaining = await readDaemonHealth(port);
-    if (remaining && remaining.pid !== pid) throw error;
+  } catch {
     signalProcess(pid, "SIGKILL");
     await waitForDaemonExit(port, pid, "killed session daemon exit");
   }
@@ -313,7 +307,7 @@ async function cleanupHunkSession(
 }
 
 function runSessionCli(args: string[], port: number, stdinText?: string) {
-  const proc = Bun.spawnSync(["bun", "run", "src/main.tsx", "session", ...args], {
+  const proc = Bun.spawnSync(["bun", "run", "packages/hunk/src/main.tsx", "session", ...args], {
     cwd: repoRoot,
     stdin: stdinText === undefined ? "ignore" : Buffer.from(stdinText),
     stdout: "pipe",
@@ -402,7 +396,7 @@ sessionDescribe("session CLI integration", () => {
       writeFileSync(fixture.after, "export const after = 20;\nexport const extra = 'yes';\n");
 
       const reload = runSessionCli(
-        ["reload", sessionId, "--json", "--", "diff", fixture.before, fixture.after],
+        ["reload", sessionId, "--json", "--", "diff", "--files", fixture.before, fixture.after],
         port,
       );
       expect(reload.proc.exitCode).toBe(0);
@@ -471,6 +465,7 @@ sessionDescribe("session CLI integration", () => {
           outside.dir,
           "--",
           "diff",
+          "--files",
           outside.before,
           outside.after,
         ],
@@ -478,6 +473,56 @@ sessionDescribe("session CLI integration", () => {
       );
       expect(reload.proc.exitCode).not.toBe(0);
       expect(reload.stderr).toContain("outside the initial Hunk root");
+
+      const get = runSessionCli(["get", sessionId, "--json"], port);
+      expect(get.proc.exitCode).toBe(0);
+      expect(JSON.parse(get.stdout)).toMatchObject({
+        session: {
+          files: [{ path: fixture.afterName }],
+        },
+      });
+    } finally {
+      await cleanupHunkSession(session, fixture, port);
+    }
+  }, 20_000);
+
+  test("raw session API callers cannot present option-like VCS ranges", async () => {
+    const port = await reserveLoopbackPort();
+    const fixture = createFixtureFiles(
+      "reload-injection",
+      ["export const visible = 1;"],
+      ["export const visible = 2;"],
+    );
+    mkdirSync(join(fixture.dir, ".git"));
+    const session = spawnHunkSession(fixture, port);
+
+    try {
+      const listed = await waitForRegisteredSessions(port);
+
+      const sessionId = listed[0]!.sessionId;
+      // Raw callers never reach app parsing without the owner-private signed caller session.
+      const sentinel = join(fixture.dir, "hunk-poc");
+      const response = await fetch(`http://127.0.0.1:${port}/session-api`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "reload",
+          selector: { sessionId },
+          nextInput: {
+            kind: "vcs",
+            range: `--output=${sentinel}`,
+            staged: false,
+            options: {},
+          },
+        }),
+      });
+
+      expect(response.status).toBe(401);
+      await expect(response.json()).resolves.toMatchObject({
+        error: "authentication-required",
+        message: expect.stringContaining("upgraded"),
+      });
+      expect(existsSync(sentinel)).toBe(false);
 
       const get = runSessionCli(["get", sessionId, "--json"], port);
       expect(get.proc.exitCode).toBe(0);
@@ -633,6 +678,59 @@ sessionDescribe("session CLI integration", () => {
           : null;
       });
 
+      const parentId = addedComment.result?.commentId;
+      expect(parentId).toBeDefined();
+      const reply = runSessionCli(
+        [
+          "comment",
+          "add",
+          sessionId,
+          "--reply-to",
+          parentId!,
+          "--summary",
+          "Reply from the CLI",
+          "--json",
+        ],
+        port,
+      );
+      expect(reply.proc.exitCode).toBe(0);
+      expect(reply.stderr).toBe("");
+      expect(JSON.parse(reply.stdout)).toMatchObject({
+        result: {
+          filePath: fixture.afterName,
+          hunkIndex: 1,
+          side: "new",
+          line: 10,
+        },
+      });
+
+      const listedReply = await waitUntil("reply registered with its parent", () => {
+        const listedComments = runSessionCli(["comment", "list", sessionId, "--json"], port);
+        if (listedComments.proc.exitCode !== 0) {
+          return null;
+        }
+        const parsed = JSON.parse(listedComments.stdout) as {
+          comments?: Array<{ summary?: string; parentId?: string }>;
+        };
+        return parsed.comments?.some(
+          (comment) => comment.summary === "Reply from the CLI" && comment.parentId === parentId,
+        )
+          ? parsed
+          : null;
+      });
+      expect(listedReply.comments).toContainEqual(
+        expect.objectContaining({ summary: "Reply from the CLI", parentId }),
+      );
+
+      const allNotes = runSessionCli(
+        ["comment", "list", sessionId, "--type", "all", "--json"],
+        port,
+      );
+      expect(allNotes.proc.exitCode).toBe(0);
+      expect(JSON.parse(allNotes.stdout).comments).toContainEqual(
+        expect.objectContaining({ body: "Reply from the CLI", parentId }),
+      );
+
       const unchangedContext = runSessionCli(["context", sessionId, "--json"], port);
       expect(unchangedContext.proc.exitCode).toBe(0);
       expect(JSON.parse(unchangedContext.stdout)).toMatchObject({
@@ -642,6 +740,56 @@ sessionDescribe("session CLI integration", () => {
           },
           showAgentNotes: false,
         },
+      });
+
+      const commentId = addedComment.result?.commentId;
+      expect(commentId).toBeDefined();
+      const navigateToComment = runSessionCli(
+        ["navigate", sessionId, "--comment", commentId!, "--json"],
+        port,
+      );
+      expect(navigateToComment.proc.exitCode).toBe(0);
+      expect(navigateToComment.stderr).toBe("");
+      expect(JSON.parse(navigateToComment.stdout)).toMatchObject({
+        result: {
+          filePath: fixture.afterName,
+          hunkIndex: 1,
+          side: "new",
+          line: 10,
+        },
+      });
+
+      await waitUntil("comment navigation context", () => {
+        const context = runSessionCli(["context", sessionId, "--json"], port);
+        if (context.proc.exitCode !== 0) {
+          return null;
+        }
+
+        const parsed = JSON.parse(context.stdout) as {
+          context?: { selectedHunk?: { index: number } };
+        };
+        return parsed.context?.selectedHunk?.index === 1 ? parsed : null;
+      });
+
+      const resetAfterCommentNavigation = runSessionCli(
+        ["navigate", sessionId, "--file", fixture.afterName, "--hunk", "1", "--json"],
+        port,
+      );
+      expect(resetAfterCommentNavigation.proc.exitCode).toBe(0);
+      expect(resetAfterCommentNavigation.stderr).toBe("");
+
+      await waitUntil("reset after comment navigation", () => {
+        const context = runSessionCli(["context", sessionId, "--json"], port);
+        if (context.proc.exitCode !== 0) {
+          return null;
+        }
+
+        const parsed = JSON.parse(context.stdout) as {
+          context?: { selectedHunk?: { index: number }; showAgentNotes?: boolean };
+        };
+        return parsed.context?.selectedHunk?.index === 0 && parsed.context?.showAgentNotes === false
+          ? parsed
+          : null;
       });
 
       const focusedComment = runSessionCli(
@@ -754,7 +902,10 @@ sessionDescribe("session CLI integration", () => {
 
       expect(apply.proc.exitCode).toBe(0);
       expect(apply.stderr).toBe("");
-      expect(JSON.parse(apply.stdout)).toMatchObject({
+      const appliedBatch = JSON.parse(apply.stdout) as {
+        result: { applied: Array<{ commentId: string }> };
+      };
+      expect(appliedBatch).toMatchObject({
         result: {
           applied: [
             {
@@ -788,6 +939,47 @@ sessionDescribe("session CLI integration", () => {
       expect(JSON.parse(comments.stdout)).toMatchObject({
         comments: [{ summary: "First hunk note" }, { summary: "Second hunk note" }],
       });
+
+      const parentId = appliedBatch.result.applied[1]!.commentId;
+      const replyApply = runSessionCli(
+        ["comment", "apply", sessionId, "--stdin", "--json"],
+        port,
+        JSON.stringify({
+          comments: [{ replyTo: parentId, summary: "Batch reply" }],
+        }),
+      );
+      expect(replyApply.proc.exitCode).toBe(0);
+      expect(replyApply.stderr).toBe("");
+      expect(JSON.parse(replyApply.stdout)).toMatchObject({
+        result: {
+          applied: [
+            {
+              filePath: fixture.afterName,
+              hunkIndex: 1,
+              side: "new",
+              line: 13,
+            },
+          ],
+        },
+      });
+
+      const replyList = await waitUntil("batch reply registered with its parent", () => {
+        const listedComments = runSessionCli(["comment", "list", sessionId, "--json"], port);
+        if (listedComments.proc.exitCode !== 0) {
+          return null;
+        }
+        const parsed = JSON.parse(listedComments.stdout) as {
+          comments?: Array<{ summary?: string; parentId?: string }>;
+        };
+        return parsed.comments?.some(
+          (comment) => comment.summary === "Batch reply" && comment.parentId === parentId,
+        )
+          ? parsed
+          : null;
+      });
+      expect(replyList.comments).toContainEqual(
+        expect.objectContaining({ summary: "Batch reply", parentId }),
+      );
     } finally {
       await cleanupHunkSession(session, fixture, port);
     }

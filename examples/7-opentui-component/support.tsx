@@ -3,15 +3,15 @@ import path from "node:path";
 import { createCliRenderer } from "@opentui/core";
 import { createRoot, useTerminalDimensions } from "@opentui/react";
 import { useState } from "react";
-import type { HunkDiffFile, HunkDiffLayout } from "../../src/opentui";
-import { HunkDiffView } from "../../src/opentui";
-import { fitText } from "../../src/ui/lib/text";
+import type { CanonicalHunkDiffLayout, HunkDiffFile } from "../../packages/hunk/src/opentui";
+import { HunkDiffView } from "../../packages/hunk/src/opentui";
+import { fitText } from "../../packages/hunk/src/ui/lib/text";
 
 interface ExampleProps {
   title: string;
   subtitle: string;
   diff: HunkDiffFile;
-  layout?: HunkDiffLayout;
+  layout?: CanonicalHunkDiffLayout;
 }
 
 /** Read one checked-in example file relative to this folder. */
@@ -76,14 +76,19 @@ function ExampleApp({ title, subtitle, diff, layout = "split" }: ExampleProps) {
         />
         <box style={{ width: 1, height: 1 }} />
         <LayoutButton
-          active={activeLayout === "stack"}
-          label="Stack"
-          onPress={() => setActiveLayout("stack")}
+          active={activeLayout === "unified"}
+          label="Unified"
+          onPress={() => setActiveLayout("unified")}
         />
       </box>
       <box style={{ height: 1 }} />
       <box style={{ flexGrow: 1 }}>
-        <HunkDiffView diff={diff} layout={activeLayout} width={diffWidth} theme="midnight" />
+        <HunkDiffView
+          diff={diff}
+          canonicalLayout={activeLayout}
+          width={diffWidth}
+          theme="midnight"
+        />
       </box>
     </box>
   );

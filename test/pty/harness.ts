@@ -7,7 +7,9 @@ import type { Key, Session } from "tuistory";
 
 const integrationDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(integrationDir, "../..");
-const sourceEntrypoint = join(repoRoot, "src/main.tsx");
+const sourceEntrypoint = join(repoRoot, "packages/hunk/src/main.tsx");
+// Hunk renders atomically and tests wait on concrete UI predicates, so the safer 200ms default is unnecessary.
+const tuistoryIdleDelayMs = 60;
 
 function resolveBunExecutable() {
   const envCandidate = process.env.BUN_BIN ?? process.env.BUN;
@@ -513,13 +515,12 @@ export function createPtyHarness() {
     return { dir, before, after };
   }
 
-  /** Build direct files whose watched side can be replaced atomically during a PTY test. */
+  /** Build direct files outside a repository for atomic-save watch coverage. */
   function createWatchFilePair() {
     const dir = makeTempDir("hunk-tuistory-watch-files-");
     const before = join(dir, "before.ts");
     const after = join(dir, "after.ts");
 
-    runGit(["init"], dir);
     writeText(before, "export const watchedValue = 'before';\n");
     writeText(after, "export const watchedValue = 'initial change';\n");
 
@@ -726,6 +727,33 @@ end
     ]);
   }
 
+  /** Build nested changed files whose sidebar labels distinguish flat and tree projections. */
+  function createNestedSidebarRepoFixture() {
+    return createGitRepoFixture([
+      {
+        path: "src/ui/alpha.ts",
+        before: "export const alpha = 1;\n",
+        after: "export const alpha = 2;\nexport const add = true;\n",
+      },
+      {
+        path: "src/ui/beta.ts",
+        before: "export const beta = 1;\n",
+        after: "export const betaValue = 1;\n",
+      },
+    ]);
+  }
+
+  /** Build many short files so a tall first paint must mount past the first-file overscan neighbor. */
+  function createManyShortFileRepoFixture() {
+    return createGitRepoFixture(
+      Array.from({ length: 8 }, (_, index) => ({
+        path: `short-${index}.ts`,
+        before: `export const short${index} = ${index};\n`,
+        after: `export const short${index} = ${index + 10};\n`,
+      })),
+    );
+  }
+
   function createPinnedHeaderRepoFixture() {
     return createGitRepoFixture([
       {
@@ -739,6 +767,17 @@ end
         after: `${createNumberedExportLines(17, 16, 100)}\n`,
       },
     ]);
+  }
+
+  /** Build enough syntax-highlighted changes to exercise rapid whole-review theme previews. */
+  function createRapidThemePreviewTestRepoFixture() {
+    return createGitRepoFixture(
+      Array.from({ length: 8 }, (_, fileIndex) => ({
+        path: `theme-preview-${fileIndex}.ts`,
+        before: `${createNumberedExportLines(1, 150, fileIndex * 1_000)}\n`,
+        after: `${createNumberedExportLines(1, 150, (fileIndex + 8) * 1_000)}\n`,
+      })),
+    );
   }
 
   function createCollapsedTopRepoFixture() {
@@ -944,6 +983,7 @@ end
 
     return launchTerminal({
       command: explicitHunkExecutable ?? bunExecutable,
+      idleDelayMs: tuistoryIdleDelayMs,
       args: explicitHunkExecutable
         ? options.args
         : ["run", sourceEntrypoint, "--", ...options.args],
@@ -972,6 +1012,7 @@ end
 
     return launchTerminal({
       command: "/bin/bash",
+      idleDelayMs: tuistoryIdleDelayMs,
       args: ["-c", options.command],
       cwd: options.cwd ?? repoRoot,
       cols: options.cols ?? 140,
@@ -1079,10 +1120,13 @@ end
     createLongWrapFilePair,
     createMovedLinesRepoFixture,
     createMultiFilePagerPatchFixture,
+    createNestedSidebarRepoFixture,
     createMultiHunkFilePair,
     createNarrowHeaderTestRepoFixture,
     createPagerPatchFixture,
+    createManyShortFileRepoFixture,
     createPinnedHeaderRepoFixture,
+    createRapidThemePreviewTestRepoFixture,
     createScrollableFilePair,
     createSidebarJumpRepoFixture,
     createTabbedFilePair,

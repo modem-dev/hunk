@@ -13,9 +13,12 @@
  * byte count; how many chunks a payload needs is arithmetic, and pinning it would only
  * make the corpus brittle about sizes it is not about.
  */
-import { REVIEW_PATCH_CONTENT_TYPE, reviewResourceId } from "../../src/core/review/resources";
-import { HUNK_REVIEW_PROTOCOL_VERSION } from "../../src/session/reviewProtocol";
-import type { HunkReviewPublicationBodyV1 } from "../../src/session/reviewHttpProtocol";
+import {
+  REVIEW_PATCH_CONTENT_TYPE,
+  reviewResourceId,
+} from "../../packages/hunk/src/core/review/resources";
+import { HUNK_REVIEW_PROTOCOL_VERSION } from "../../packages/hunk/src/session/reviewProtocol";
+import type { HunkReviewPublicationBodyV1 } from "../../packages/hunk/src/session/reviewHttpProtocol";
 import type { ReviewEventFixture } from "./types";
 
 export const EVENT_FIXTURE_SESSION_ID = "session-conformance";

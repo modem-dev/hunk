@@ -56,7 +56,7 @@ describe("PTY navigation", () => {
   test("real hunk navigation jumps to later hunks in the review stream", async () => {
     const fixture = harness.createMultiHunkFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "split"],
       cols: 104,
       rows: 12,
     });
@@ -134,7 +134,7 @@ describe("PTY navigation", () => {
   test("PTY sessions can navigate forward and backward between distant hunks in one large file", async () => {
     const fixture = harness.createMultiHunkFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "split"],
       cols: 104,
       rows: 12,
     });
@@ -166,6 +166,49 @@ describe("PTY navigation", () => {
 
       expect(firstHunk).toContain("line1 = 100");
       expect(firstHunk).not.toContain("line60 = 6000");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("file navigation reveals a destination hidden by a collapsed tree folder", async () => {
+    const fixture = harness.createNestedSidebarRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 220,
+      rows: 12,
+    });
+
+    try {
+      const initial = await session.waitForText(/⌄ src\//, { timeout: 15_000 });
+      const initialAlphaCount = harness.countMatches(initial, /alpha\.ts/g);
+      const initialBetaCount = harness.countMatches(initial, /beta\.ts/g);
+      expect(initialAlphaCount).toBeGreaterThanOrEqual(2);
+      expect(initialBetaCount).toBeGreaterThanOrEqual(2);
+
+      await session.click(/⌄ src\//);
+      const collapsed = await harness.waitForSnapshot(
+        session,
+        (text) =>
+          text.includes("› src/") &&
+          harness.countMatches(text, /alpha\.ts/g) === initialAlphaCount - 1 &&
+          harness.countMatches(text, /beta\.ts/g) === initialBetaCount - 1,
+        5_000,
+      );
+      expect(collapsed).toContain("› src/");
+      expect(collapsed).toContain("2 files");
+
+      await session.press(".");
+      const expanded = await harness.waitForSnapshot(
+        session,
+        (text) =>
+          text.includes("⌄ src/") &&
+          harness.countMatches(text, /alpha\.ts/g) === initialAlphaCount &&
+          harness.countMatches(text, /beta\.ts/g) === initialBetaCount,
+        5_000,
+      );
+      expect(expanded).toContain("⌄ src/");
     } finally {
       session.close();
     }

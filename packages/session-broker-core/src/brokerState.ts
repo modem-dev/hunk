@@ -1,4 +1,16 @@
 import { randomUUID } from "node:crypto";
+import { isValidBrokerRevision } from "./auth";
+import {
+  BrokerCapacityError,
+  ReservationGroup,
+  ResourceBudget,
+  resolveSessionBrokerLimits,
+  type BudgetReservation,
+  type SessionBrokerLimitOptions,
+  type SessionBrokerLimits,
+} from "./budgets";
+import { utf8ByteLength } from "./limits";
+import { BrokerProtocolError, parseBrokerAppPayload } from "./validation";
 import { matchesSessionSelector, repoSelectorDistance, type SelectableSession } from "./selectors";
 import type {
   SessionRegistration,
@@ -8,10 +20,17 @@ import type {
 } from "./types";
 
 interface PendingCommand<Result> {
+  requestId: string;
   sessionId: string;
+  socket: DaemonSessionSocket;
+  command: string;
+  commandVersion: number;
+  serializedMessage: string;
+  reservation: BudgetReservation;
   resolve: (result: Result) => void;
   reject: (error: Error) => void;
   timeout: ReturnType<typeof setTimeout>;
+  active: boolean;
 }
 
 interface DaemonSessionSocket {
@@ -46,9 +65,21 @@ export interface SessionBrokerViewAdapter<
   SelectedContext,
   SessionReview,
   SessionCommentSummary,
+  ServerMessage extends SessionServerMessage = SessionServerMessage,
+  CommandResult = unknown,
 > {
   parseRegistration: (value: unknown) => SessionRegistration<Info> | null;
   parseSnapshot: (value: unknown) => SessionSnapshot<State> | null;
+  parseCommandInput: (
+    command: ServerMessage["command"],
+    version: number,
+    value: unknown,
+  ) => unknown;
+  parseCommandResult: (
+    command: ServerMessage["command"],
+    version: number,
+    value: unknown,
+  ) => CommandResult | null;
   buildListedSession: (entry: SessionBrokerEntry<Info, State>) => ListedSession;
   buildSelectedContext: (session: ListedSession) => SelectedContext;
   buildSessionReview: (
@@ -58,9 +89,33 @@ export interface SessionBrokerViewAdapter<
   listComments: (session: ListedSession, filter: { filePath?: string }) => SessionCommentSummary[];
 }
 
-export type UpdateSnapshotResult = "updated" | "invalid" | "not-found";
+export type RegisterSessionResult =
+  | "registered"
+  | "invalid"
+  | "already-connected"
+  | "capacity-exceeded"
+  | "shutdown";
+export type UpdateSnapshotResult = "updated" | "invalid" | "not-owner" | "capacity-exceeded";
+export type MarkSessionSeenResult = "seen" | "not-owner";
+export type HandleCommandResult = "handled" | "not-found" | "not-owner" | "invalid";
 
 export type SessionTargetSelector = SessionTargetInput;
+
+const RETAINED_SESSION_OVERHEAD_BYTES = 256;
+const QUEUED_COMMAND_OVERHEAD_BYTES = 128;
+
+/** Measure one JSON-safe retained value in UTF-8 plus its fixed broker bookkeeping overhead. */
+function retainedJsonBytes(value: unknown, overhead: number): number {
+  let serialized: string | undefined;
+  try {
+    serialized = JSON.stringify(value);
+  } catch {
+    throw new TypeError("Session broker data is not JSON serializable.");
+  }
+  if (serialized === undefined)
+    throw new TypeError("Session broker data is not JSON serializable.");
+  return utf8ByteLength(serialized) + overhead;
+}
 
 function describeSessionChoices<ListedSession extends SessionBrokerListedSession>(
   sessions: ListedSession[],
@@ -153,10 +208,20 @@ export class SessionBrokerState<
   SessionReview = unknown,
   SessionCommentSummary = unknown,
 > {
+  readonly limits: Readonly<SessionBrokerLimits>;
+
   private sessions = new Map<string, SessionBrokerEntry<Info, State>>();
   private sessionIdsBySocket = new Map<DaemonSessionSocket, string>();
   private pendingCommands = new Map<string, PendingCommand<CommandResult>>();
+  private commandQueues = new Map<string, string[]>();
+  private retainedReservations = new Map<string, BudgetReservation>();
+  private sessionReservations = new Map<string, BudgetReservation>();
+  private readonly sessionBudget: ResourceBudget;
+  private readonly commandBudget: ResourceBudget;
+  private readonly queuedCommandByteBudget: ResourceBudget;
+  private readonly retainedByteBudget: ResourceBudget;
   private lastPruneAt: number | null = null;
+  private shutdownError: Error | null = null;
 
   constructor(
     private view: SessionBrokerViewAdapter<
@@ -165,9 +230,26 @@ export class SessionBrokerState<
       ListedSession,
       SelectedContext,
       SessionReview,
-      SessionCommentSummary
+      SessionCommentSummary,
+      ServerMessage,
+      CommandResult
     >,
-  ) {}
+    limitOptions: SessionBrokerLimitOptions = {},
+  ) {
+    this.limits = resolveSessionBrokerLimits(limitOptions);
+    this.sessionBudget = new ResourceBudget(this.limits.maxSessions, "maxSessions");
+    this.commandBudget = new ResourceBudget(
+      this.limits.maxCommandsTotal,
+      "maxCommandsTotal",
+      "queue-full",
+    );
+    this.queuedCommandByteBudget = new ResourceBudget(
+      this.limits.maxQueuedCommandBytes,
+      "maxQueuedCommandBytes",
+      "queue-full",
+    );
+    this.retainedByteBudget = new ResourceBudget(this.limits.maxRetainedBytes, "maxRetainedBytes");
+  }
 
   listSessions(): ListedSession[] {
     return [...this.sessions.values()]
@@ -203,80 +285,185 @@ export class SessionBrokerState<
     return this.pendingCommands.size;
   }
 
-  registerSession(socket: DaemonSessionSocket, registrationInput: unknown, snapshotInput: unknown) {
-    const registration = this.view.parseRegistration(registrationInput);
-    const snapshot = this.view.parseSnapshot(snapshotInput);
-    if (!registration || !snapshot) {
-      const previousSessionId = this.sessionIdsBySocket.get(socket);
-      if (previousSessionId) {
-        // Drop any stale session already tied to this socket so an incompatible replacement
-        // payload cannot leave old review data behind after an upgrade or reload.
-        this.removeSession(
-          previousSessionId,
-          new Error("The session sent an incompatible registration payload."),
-        );
-      }
+  registerSession(
+    socket: DaemonSessionSocket,
+    registrationInput: unknown,
+    snapshotInput: unknown,
+    options: { replaceOwner?: boolean } = {},
+  ): RegisterSessionResult {
+    if (this.shutdownError) return "shutdown";
 
-      return false;
-    }
-
-    const previousSessionId = this.sessionIdsBySocket.get(socket);
-    if (previousSessionId && previousSessionId !== registration.sessionId) {
-      this.unregisterSocket(socket);
-    }
-
-    const existing = this.sessions.get(registration.sessionId);
-    if (existing && existing.socket !== socket) {
-      this.sessionIdsBySocket.delete(existing.socket);
-      // A reconnect on a new socket supersedes the old transport immediately. Reject in-flight
-      // commands so callers do not wait on a connection that can never answer.
-      this.rejectPendingCommandsForSession(
-        registration.sessionId,
-        new Error("Session reconnected before the command completed."),
-      );
-    }
-
-    const now = new Date().toISOString();
-    this.sessions.set(registration.sessionId, {
-      registration,
-      snapshot,
-      socket,
-      connectedAt: now,
-      lastSeenAt: now,
-    });
-    this.sessionIdsBySocket.set(socket, registration.sessionId);
-    return true;
-  }
-
-  updateSnapshot(sessionId: string, snapshotInput: unknown): UpdateSnapshotResult {
-    const entry = this.sessions.get(sessionId);
-    if (!entry) {
-      return "not-found";
-    }
-
-    const snapshot = this.view.parseSnapshot(snapshotInput);
-    if (!snapshot) {
+    let registration: SessionRegistration<Info> | null;
+    let snapshot: SessionSnapshot<State> | null;
+    try {
+      registration = this.view.parseRegistration(registrationInput);
+      snapshot = this.view.parseSnapshot(snapshotInput);
+    } catch {
       return "invalid";
     }
+    if (!registration || !snapshot) return "invalid";
 
-    this.sessions.set(sessionId, {
-      ...entry,
-      snapshot,
-      lastSeenAt: new Date().toISOString(),
-    });
-    return "updated";
+    let retainedBytes: number;
+    try {
+      // Measure the values the parser actually retains so transforming parsers cannot expand past
+      // either the per-session or aggregate ceiling.
+      retainedBytes = retainedJsonBytes(
+        { registration, snapshot },
+        RETAINED_SESSION_OVERHEAD_BYTES,
+      );
+    } catch {
+      return "invalid";
+    }
+    if (retainedBytes > this.limits.maxRetainedSessionBytes) return "capacity-exceeded";
+
+    const existing = this.sessions.get(registration.sessionId);
+    if (existing && existing.socket !== socket && !options.replaceOwner) return "already-connected";
+    const previousSessionId = this.sessionIdsBySocket.get(socket);
+    const transferSessionId = existing ? registration.sessionId : previousSessionId;
+    const previousRetained = transferSessionId
+      ? this.retainedReservations.get(transferSessionId)
+      : undefined;
+    const previousCount = transferSessionId
+      ? this.sessionReservations.get(transferSessionId)
+      : undefined;
+    const abandonedRetained =
+      existing && previousSessionId && previousSessionId !== registration.sessionId
+        ? this.retainedReservations.get(previousSessionId)
+        : undefined;
+    const abandonedCount =
+      existing && previousSessionId && previousSessionId !== registration.sessionId
+        ? this.sessionReservations.get(previousSessionId)
+        : undefined;
+
+    let retainedReservation: BudgetReservation | null = null;
+    let sessionReservation: BudgetReservation | null = null;
+    try {
+      try {
+        retainedReservation = previousRetained
+          ? abandonedRetained
+            ? this.retainedByteBudget.resizeWithCredit(
+                previousRetained,
+                retainedBytes,
+                abandonedRetained,
+              )
+            : this.retainedByteBudget.resize(previousRetained, retainedBytes)
+          : this.retainedByteBudget.reserve(retainedBytes);
+        sessionReservation = previousCount ?? this.sessionBudget.reserve();
+      } catch {
+        return "capacity-exceeded";
+      }
+
+      const now = new Date().toISOString();
+      if (existing && existing.socket !== socket) {
+        this.sessionIdsBySocket.delete(existing.socket);
+        this.rejectPendingCommandsForSession(
+          registration.sessionId,
+          new Error("The session owner reconnected."),
+        );
+      }
+      if (previousSessionId && previousSessionId !== registration.sessionId) {
+        // Detach the old identity without releasing the reservations transferred to its replacement.
+        this.sessions.delete(previousSessionId);
+        this.retainedReservations.delete(previousSessionId);
+        this.sessionReservations.delete(previousSessionId);
+        abandonedRetained?.release();
+        abandonedCount?.release();
+        this.rejectPendingCommandsForSession(
+          previousSessionId,
+          new Error("The session registration was replaced."),
+        );
+      }
+      this.sessions.set(registration.sessionId, {
+        registration,
+        snapshot,
+        socket,
+        connectedAt: existing?.connectedAt ?? now,
+        lastSeenAt: now,
+      });
+      this.sessionIdsBySocket.set(socket, registration.sessionId);
+      this.retainedReservations.set(registration.sessionId, retainedReservation);
+      this.sessionReservations.set(registration.sessionId, sessionReservation);
+      retainedReservation = null;
+      sessionReservation = null;
+      return "registered";
+    } finally {
+      retainedReservation?.release();
+      if (sessionReservation && sessionReservation !== previousCount) sessionReservation.release();
+    }
   }
 
-  markSessionSeen(sessionId: string) {
-    const entry = this.sessions.get(sessionId);
-    if (!entry) {
-      return;
+  updateSnapshot(
+    socket: DaemonSessionSocket,
+    sessionIdAssertion: string,
+    snapshotInput: unknown,
+  ): UpdateSnapshotResult {
+    const ownedSessionId = this.sessionIdsBySocket.get(socket);
+    if (!ownedSessionId || ownedSessionId !== sessionIdAssertion) {
+      return "not-owner";
     }
 
-    this.sessions.set(sessionId, {
+    const entry = this.sessions.get(ownedSessionId);
+    if (!entry || entry.socket !== socket) {
+      return "not-owner";
+    }
+
+    let snapshot: SessionSnapshot<State> | null;
+    try {
+      snapshot = this.view.parseSnapshot(snapshotInput);
+    } catch {
+      return "invalid";
+    }
+    if (!snapshot) return "invalid";
+
+    let retainedBytes: number;
+    try {
+      retainedBytes = retainedJsonBytes(
+        { registration: entry.registration, snapshot },
+        RETAINED_SESSION_OVERHEAD_BYTES,
+      );
+    } catch {
+      return "invalid";
+    }
+    if (retainedBytes > this.limits.maxRetainedSessionBytes) return "capacity-exceeded";
+
+    const previous = this.retainedReservations.get(ownedSessionId);
+    if (!previous) return "capacity-exceeded";
+    let reservation: BudgetReservation | null;
+    try {
+      reservation = this.retainedByteBudget.resize(previous, retainedBytes);
+    } catch {
+      return "capacity-exceeded";
+    }
+    try {
+      this.sessions.set(ownedSessionId, {
+        ...entry,
+        snapshot,
+        lastSeenAt: new Date().toISOString(),
+      });
+      this.retainedReservations.set(ownedSessionId, reservation);
+      reservation = null;
+      return "updated";
+    } finally {
+      reservation?.release();
+    }
+  }
+
+  markSessionSeen(socket: DaemonSessionSocket, sessionIdAssertion: string): MarkSessionSeenResult {
+    const ownedSessionId = this.sessionIdsBySocket.get(socket);
+    if (!ownedSessionId || ownedSessionId !== sessionIdAssertion) {
+      return "not-owner";
+    }
+
+    const entry = this.sessions.get(ownedSessionId);
+    if (!entry || entry.socket !== socket) {
+      return "not-owner";
+    }
+
+    this.sessions.set(ownedSessionId, {
       ...entry,
       lastSeenAt: new Date().toISOString(),
     });
+    return "seen";
   }
 
   unregisterSocket(socket: DaemonSessionSocket) {
@@ -320,99 +507,218 @@ export class SessionBrokerState<
     return removed;
   }
 
-  /** Dispatch one app-owned command through the generic broker transport. */
+  /** Admit one command and schedule it through the target session's capacity-one FIFO. */
   dispatchCommand<ResultType extends CommandResult, CommandName extends ServerMessage["command"]>({
     selector,
     command,
+    commandVersion = 1,
     input,
     timeoutMessage,
-    timeoutMs = 15_000,
+    timeoutMs = this.limits.defaultCommandTimeoutMs,
   }: {
     selector: SessionTargetInput;
     command: CommandName;
+    commandVersion?: number;
     input: Extract<ServerMessage, { command: CommandName }>["input"];
     timeoutMessage: string;
     timeoutMs?: number;
   }) {
+    if (this.shutdownError) throw this.shutdownError;
+    if (!isValidBrokerRevision(commandVersion)) {
+      throw new TypeError("Command version must be a positive safe integer.");
+    }
+    if (
+      !Number.isSafeInteger(timeoutMs) ||
+      timeoutMs < 1 ||
+      timeoutMs > this.limits.maxCommandTimeoutMs
+    ) {
+      throw new BrokerCapacityError("capacity-exceeded", "maxCommandTimeoutMs");
+    }
     const session = resolveSessionTarget(this.listSessions(), selector);
-    const requestId = randomUUID();
+    const entry = this.sessions.get(session.sessionId);
+    if (!entry) return Promise.reject(new Error("The targeted session is no longer connected."));
+    const sessionCount = this.commandQueues.get(session.sessionId)?.length ?? 0;
+    if (sessionCount >= this.limits.maxCommandsPerSession) {
+      throw new BrokerCapacityError("queue-full", "maxCommandsPerSession");
+    }
 
-    return new Promise<ResultType>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        this.pendingCommands.delete(requestId);
-        reject(new Error(timeoutMessage));
-      }, timeoutMs);
-
-      // Record the pending request before sending so synchronous transport failures and later close
-      // events can both resolve the same command bookkeeping path.
-
-      this.pendingCommands.set(requestId, {
-        sessionId: session.sessionId,
-        resolve: (result) => resolve(result as ResultType),
-        reject,
-        timeout,
+    // Measure the untrusted app input before its parser and hold aggregate capacity until terminal.
+    let inputBytes: number;
+    try {
+      inputBytes = retainedJsonBytes(input, 0);
+    } catch {
+      throw new BrokerProtocolError("invalid-app-payload");
+    }
+    if (inputBytes > this.limits.maxCommandInputBytes) {
+      throw new BrokerCapacityError("capacity-exceeded", "maxCommandInputBytes");
+    }
+    const reservations = new ReservationGroup();
+    try {
+      reservations.add(this.commandBudget.reserve());
+      const parsedInput = parseBrokerAppPayload(
+        (value) => this.view.parseCommandInput(command, commandVersion, value),
+        input,
+      ) as Extract<ServerMessage, { command: CommandName }>["input"];
+      if (retainedJsonBytes(parsedInput, 0) > this.limits.maxCommandInputBytes) {
+        throw new BrokerCapacityError("capacity-exceeded", "maxCommandInputBytes");
+      }
+      const requestId = randomUUID();
+      const serializedMessage = JSON.stringify({
+        type: "command",
+        requestId,
+        command,
+        commandVersion,
+        input: parsedInput,
       });
+      const queuedBytes = utf8ByteLength(serializedMessage) + QUEUED_COMMAND_OVERHEAD_BYTES;
+      reservations.add(this.queuedCommandByteBudget.reserve(queuedBytes));
 
-      const entry = this.sessions.get(session.sessionId);
-      if (!entry) {
-        clearTimeout(timeout);
-        this.pendingCommands.delete(requestId);
-        reject(new Error("The targeted session is no longer connected."));
-        return;
-      }
-
-      try {
-        const message = {
-          type: "command",
+      return new Promise<ResultType>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          const pending = this.pendingCommands.get(requestId);
+          if (!pending) return;
+          this.finishPending(pending, () => reject(new Error(timeoutMessage)));
+        }, timeoutMs);
+        const pending: PendingCommand<CommandResult> = {
           requestId,
+          sessionId: session.sessionId,
+          socket: entry.socket,
           command,
-          input,
-        } as Extract<ServerMessage, { command: CommandName }>;
-
-        entry.socket.send(JSON.stringify(message));
-      } catch (error) {
-        clearTimeout(timeout);
-        this.pendingCommands.delete(requestId);
-        reject(
-          error instanceof Error
-            ? error
-            : new Error("The targeted session could not receive the command."),
-        );
-      }
-    });
+          commandVersion,
+          serializedMessage,
+          reservation: reservations,
+          resolve: (result) => resolve(result as ResultType),
+          reject,
+          timeout,
+          active: false,
+        };
+        this.pendingCommands.set(requestId, pending);
+        const queue = this.commandQueues.get(session.sessionId) ?? [];
+        queue.push(requestId);
+        this.commandQueues.set(session.sessionId, queue);
+        this.advanceSessionQueue(session.sessionId);
+      });
+    } catch (error) {
+      reservations.release();
+      throw error;
+    }
   }
 
-  handleCommandResult(message: {
-    requestId: string;
-    ok: boolean;
-    result?: CommandResult;
-    error?: string;
-  }) {
+  handleCommandResult(
+    socket: DaemonSessionSocket,
+    message: {
+      requestId: string;
+      ok: boolean;
+      result?: CommandResult;
+      error?: string;
+    },
+  ): HandleCommandResult {
     const pending = this.pendingCommands.get(message.requestId);
     if (!pending) {
-      return;
+      return "not-found";
     }
 
-    clearTimeout(pending.timeout);
-    this.pendingCommands.delete(message.requestId);
+    if (pending.socket !== socket) {
+      return "not-owner";
+    }
 
     if (message.ok) {
-      pending.resolve(message.result as CommandResult);
-      return;
+      let result: CommandResult;
+      try {
+        if (retainedJsonBytes(message.result, 0) > this.limits.maxCommandResultBytes) {
+          return "invalid";
+        }
+        result = parseBrokerAppPayload(
+          (value) =>
+            this.view.parseCommandResult(
+              pending.command as ServerMessage["command"],
+              pending.commandVersion,
+              value,
+            ),
+          message.result,
+        );
+        if (retainedJsonBytes(result, 0) > this.limits.maxCommandResultBytes) return "invalid";
+      } catch {
+        // Keep the pending entry intact until the malformed producer is closed and normal
+        // connection cleanup rejects it. This avoids resolving work from an invalid contract.
+        return "invalid";
+      }
+      this.finishPending(pending, () => pending.resolve(result));
+      return "handled";
     }
 
-    pending.reject(new Error(message.error ?? "The session failed to handle the command."));
+    this.finishPending(pending, () =>
+      pending.reject(new Error(message.error ?? "The session failed to handle the command.")),
+    );
+    return "handled";
   }
 
   shutdown(error = new Error("The session broker daemon shut down.")) {
-    for (const [requestId, pending] of this.pendingCommands.entries()) {
-      clearTimeout(pending.timeout);
-      this.pendingCommands.delete(requestId);
-      pending.reject(error);
+    if (this.shutdownError) return;
+    this.shutdownError = error;
+
+    for (const pending of this.pendingCommands.values()) {
+      this.finishPending(pending, () => pending.reject(error), false);
     }
 
+    this.commandQueues.clear();
     this.sessionIdsBySocket.clear();
     this.sessions.clear();
+    for (const reservation of this.retainedReservations.values()) reservation.release();
+    for (const reservation of this.sessionReservations.values()) reservation.release();
+    this.retainedReservations.clear();
+    this.sessionReservations.clear();
+  }
+
+  /** Write the oldest queued command only when the session has no active command. */
+  private advanceSessionQueue(sessionId: string): void {
+    const queue = this.commandQueues.get(sessionId);
+    if (!queue?.length) {
+      this.commandQueues.delete(sessionId);
+      return;
+    }
+    const first = this.pendingCommands.get(queue[0]!);
+    if (!first || first.active) return;
+    const entry = this.sessions.get(sessionId);
+    if (!entry || entry.socket !== first.socket) {
+      this.finishPending(first, () =>
+        first.reject(new Error("The targeted session is no longer connected.")),
+      );
+      return;
+    }
+    first.active = true;
+    try {
+      const accepted = entry.socket.send(first.serializedMessage);
+      if (accepted === false) throw new BrokerCapacityError("busy", "outbound");
+    } catch (error) {
+      this.finishPending(first, () =>
+        first.reject(
+          error instanceof Error
+            ? error
+            : new Error("The targeted session could not receive the command."),
+        ),
+      );
+    }
+  }
+
+  /** Complete one command exactly once, release reservations, and advance its session FIFO. */
+  private finishPending(
+    pending: PendingCommand<CommandResult>,
+    settle: () => void,
+    advance = true,
+  ): void {
+    if (this.pendingCommands.get(pending.requestId) !== pending) return;
+    clearTimeout(pending.timeout);
+    this.pendingCommands.delete(pending.requestId);
+    const queue = this.commandQueues.get(pending.sessionId);
+    if (queue) {
+      const index = queue.indexOf(pending.requestId);
+      if (index >= 0) queue.splice(index, 1);
+      if (queue.length === 0) this.commandQueues.delete(pending.sessionId);
+    }
+    pending.reservation.release();
+    settle();
+    if (advance) this.advanceSessionQueue(pending.sessionId);
   }
 
   /** Resolve one live session selector into the full in-memory registration entry. */
@@ -435,6 +741,10 @@ export class SessionBrokerState<
     }
 
     this.sessions.delete(sessionId);
+    this.retainedReservations.get(sessionId)?.release();
+    this.retainedReservations.delete(sessionId);
+    this.sessionReservations.get(sessionId)?.release();
+    this.sessionReservations.delete(sessionId);
     if (this.sessionIdsBySocket.get(entry.socket) === sessionId) {
       this.sessionIdsBySocket.delete(entry.socket);
     }
@@ -443,14 +753,10 @@ export class SessionBrokerState<
   }
 
   private rejectPendingCommandsForSession(sessionId: string, error: Error) {
-    for (const [requestId, pending] of this.pendingCommands.entries()) {
-      if (pending.sessionId !== sessionId) {
-        continue;
-      }
-
-      clearTimeout(pending.timeout);
-      this.pendingCommands.delete(requestId);
-      pending.reject(error);
+    for (const pending of this.pendingCommands.values()) {
+      if (pending.sessionId !== sessionId) continue;
+      this.finishPending(pending, () => pending.reject(error), false);
     }
+    this.commandQueues.delete(sessionId);
   }
 }

@@ -1,4 +1,7 @@
-import type { CustomThemeConfig, NamedCustomThemeConfig } from "../../src/extension-api/types";
+import type {
+  CustomThemeConfig,
+  NamedCustomThemeConfig,
+} from "../../packages/hunk/src/extension-api/types";
 
 /**
  * Name one custom palette so it can be passed to the theme APIs, which take the
