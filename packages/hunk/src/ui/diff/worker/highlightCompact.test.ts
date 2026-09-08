@@ -185,6 +185,41 @@ describe("compact highlighted document payload", () => {
     expect(cached.document.starts).not.toBe(transferred.document.starts);
   });
 
+  test("accepts every renderer-supported CSS hex form", () => {
+    const payload = encodeCompactHighlightedDocument(
+      [
+        {
+          type: "element",
+          tagName: "span",
+          properties: { style: "color:#FFF" },
+          children: [{ type: "text", value: "a" }],
+        },
+        {
+          type: "element",
+          tagName: "span",
+          properties: { style: "color:#ABCD" },
+          children: [{ type: "text", value: "b" }],
+        },
+        {
+          type: "element",
+          tagName: "span",
+          properties: { style: "color:#112233" },
+          children: [{ type: "text", value: "c" }],
+        },
+        {
+          type: "element",
+          tagName: "span",
+          properties: { style: "color:#11223344" },
+          children: [{ type: "text", value: "d" }],
+        },
+      ],
+      "dark",
+    );
+
+    expect(payload.foregroundPalette).toEqual(["#FFF", "#ABCD", "#112233", "#11223344"]);
+    validateCompactHighlightedDocument(payload, [1, 1, 1, 1]);
+  });
+
   test("rejects invalid document shapes, offsets, palettes, flags, and coverage", () => {
     const createPayload = () =>
       encodeCompactHighlightedDocument(
@@ -374,7 +409,9 @@ describe("compact worker highlight payload", () => {
       additionLines: [],
     };
     const payload = encodeCompactHighlightedDiff(code, "dark");
-    const cloned = structuredClone(payload, { transfer: compactHighlightTransferList(payload) });
+    const cloned = structuredClone(payload, {
+      transfer: compactHighlightTransferList(payload),
+    });
 
     validateCompactHighlightedDiff(cloned, { deletion: [6], addition: [] });
     expect(cloned.deletion.starts).toEqual(Uint32Array.from([0]));

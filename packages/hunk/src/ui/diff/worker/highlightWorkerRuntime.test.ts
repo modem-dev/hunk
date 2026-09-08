@@ -32,7 +32,9 @@ function documentRequest(
 }
 
 /** Build one existing diff request to guard its worker behavior. */
-function diffRequest(): HighlightWorkerDiffRequest {
+function diffRequest(
+  overrides: Partial<HighlightWorkerDiffRequest> = {},
+): HighlightWorkerDiffRequest {
   return {
     version: HIGHLIGHT_WORKER_PROTOCOL_VERSION,
     id: 2,
@@ -42,6 +44,7 @@ function diffRequest(): HighlightWorkerDiffRequest {
     language: "typescript",
     metadata: createTestDiffFile().metadata,
     theme: "pierre-dark",
+    ...overrides,
   };
 }
 
@@ -79,7 +82,50 @@ describe("highlight worker runtime", () => {
     expect(response.code.addition.lineOffsets.length).toBeGreaterThan(0);
   });
 
-  test("returns protocol failures for wrong versions and malformed document jobs", async () => {
+  test("keeps bundled themes with shorthand or alpha hex tokens on the worker path", async () => {
+    const themes = [
+      ["ayu-dark", "dark"],
+      ["ayu-light", "light"],
+      ["ayu-mirage", "dark"],
+      ["horizon", "dark"],
+      ["laserwave", "dark"],
+      ["min-light", "light"],
+      ["red", "dark"],
+      ["synthwave-84", "dark"],
+      ["vesper", "dark"],
+    ] as const;
+    const cache = new HighlightWorkerCache();
+
+    for (const [theme, appearance] of themes) {
+      const response = await processHighlightWorkerRequest(
+        diffRequest({
+          id: themes.findIndex(([id]) => id === theme) + 10,
+          theme,
+          appearance,
+        }),
+        cache,
+      );
+      expect(response.ok, `${theme}: ${response.ok ? "" : response.message}`).toBe(true);
+      if (!response.ok || response.kind !== "diff") throw new Error(`Expected ${theme} diff`);
+      validateCompactHighlightedDiff(response.code);
+      expect(response.code.foregroundPalette.length).toBeGreaterThan(0);
+    }
+  });
+
+  test("rejects overlong lexical-state lines instead of corrupting following highlights", async () => {
+    const response = await processHighlightWorkerRequest(
+      documentRequest({
+        text: `${"/*".padEnd(1_000, "x")}\nconst looksLikeCode = false;`,
+      }),
+      new HighlightWorkerCache(),
+    );
+
+    expect(response.ok).toBe(false);
+    if (response.ok) throw new Error("Expected overlong document failure");
+    expect(response.message).toContain("shorter than 1000");
+  });
+
+  test("returns protocol failures for wrong versions and malformed jobs", async () => {
     const cache = new HighlightWorkerCache();
     const wrongVersion = await processHighlightWorkerRequest(
       { ...documentRequest(), version: 3 },
@@ -101,6 +147,16 @@ describe("highlight worker runtime", () => {
     expect(malformed.ok).toBe(false);
     if (malformed.ok) throw new Error("Expected failure");
     expect(malformed.message).toContain("normalized LF");
+
+    for (const metadata of [null, [], "diff", 42]) {
+      const malformedDiff = await processHighlightWorkerRequest(
+        { ...diffRequest(), metadata },
+        cache,
+      );
+      expect(malformedDiff.ok).toBe(false);
+      if (malformedDiff.ok) throw new Error("Expected malformed diff failure");
+      expect(malformedDiff.message).toContain("malformed");
+    }
   });
 
   test("returns independent cached clones and leaves oversized payloads uncached", async () => {

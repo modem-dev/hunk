@@ -14,6 +14,7 @@ import {
 } from "./highlightCompact";
 import {
   describeHighlightWorkerDocumentIssue,
+  highlightWorkerDocumentLineLengths,
   HIGHLIGHT_WORKER_PROTOCOL_VERSION,
   type HighlightWorkerDiffRequest,
   type HighlightWorkerDocumentRequest,
@@ -41,8 +42,8 @@ const queuedRequests: PendingHighlightRequest[] = [];
 function useHighlightWorker(nextWorker: Worker) {
   // Bun workers otherwise keep a static command or test process alive after its last request.
   (nextWorker as Worker & { unref?: () => void }).unref?.();
-  nextWorker.onmessage = handleWorkerMessage;
-  nextWorker.onerror = handleWorkerError;
+  nextWorker.onmessage = (event) => handleWorkerMessage(nextWorker, event);
+  nextWorker.onerror = (event) => handleWorkerError(nextWorker, event);
   worker = nextWorker;
   return nextWorker;
 }
@@ -111,13 +112,20 @@ function validatedResponse(value: unknown, request: HighlightWorkerRequest) {
   if (response.kind === "diff") {
     validateCompactHighlightedDiff(response.code as CompactHighlightedDiff);
   } else {
-    validateCompactHighlightedDocument(response.code as CompactHighlightedDocument);
+    if (request.kind !== "document") {
+      throw new Error("The syntax highlighting worker returned a mismatched response.");
+    }
+    validateCompactHighlightedDocument(
+      response.code as CompactHighlightedDocument,
+      highlightWorkerDocumentLineLengths(request.text),
+    );
   }
   return response as unknown as HighlightWorkerResponse;
 }
 
 /** Receive replies from the one worker and ignore replies for no-longer-relevant request IDs. */
-function handleWorkerMessage(event: MessageEvent<unknown>) {
+function handleWorkerMessage(sourceWorker: Worker, event: MessageEvent<unknown>) {
+  if (sourceWorker !== worker) return;
   const request = activeRequest;
   if (!request) {
     return;
@@ -149,6 +157,8 @@ function resetWorker(error: Error) {
   const currentWorker = worker;
   worker = null;
   if (currentWorker) {
+    currentWorker.onmessage = null;
+    currentWorker.onerror = null;
     void currentWorker.terminate();
   }
 
@@ -163,7 +173,8 @@ function resetWorker(error: Error) {
 }
 
 /** Fail pending work when Bun reports a worker startup or runtime error. */
-function handleWorkerError(event: ErrorEvent) {
+function handleWorkerError(sourceWorker: Worker, event: ErrorEvent) {
+  if (sourceWorker !== worker) return;
   resetWorker(new Error(event.message || "The syntax highlighting worker failed."));
 }
 
@@ -239,7 +250,12 @@ export function highlightDocumentInWorker({
   text: string;
   theme: string;
 }) {
-  const issue = describeHighlightWorkerDocumentIssue({ language, path, text, theme });
+  const issue = describeHighlightWorkerDocumentIssue({
+    language,
+    path,
+    text,
+    theme,
+  });
   if (issue) {
     return Promise.reject(new Error(issue));
   }
