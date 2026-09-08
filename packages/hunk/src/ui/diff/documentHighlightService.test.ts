@@ -12,6 +12,7 @@ import {
   type DocumentHighlightInput,
 } from "./documentHighlightService";
 import {
+  disposeHighlightWorker,
   HighlightWorkerClientError,
   type CompactHighlightedDocument,
   type DocumentWorkerEligibility,
@@ -96,6 +97,41 @@ describe("document highlight service", () => {
         theme: { ...theme, syntaxScopeOverrides: { keyword: "#112233" } },
       }),
     ).not.toBe(key);
+  });
+
+  test("normalizes equivalent newline forms before identity and rendering", async () => {
+    expect(documentHighlightCacheKey({ ...base, text: "one\r\ntwo\r" })).toBe(
+      documentHighlightCacheKey({ ...base, text: "one\ntwo\n" }),
+    );
+
+    let calls = 0;
+    let renderedText = "";
+    const service = createDocumentHighlightService({
+      inlineHighlight: async ({ text }) => {
+        calls += 1;
+        renderedText = text;
+        return compact(3);
+      },
+    });
+    const crlf = await service.highlight({ ...base, text: "one\r\ntwo\r" });
+    const lf = await service.highlight({ ...base, text: "one\ntwo\n" });
+
+    expect(renderedText).toBe("one\ntwo\n");
+    expect(calls).toBe(1);
+    expect(lf).toBe(crlf);
+  });
+
+  test("does not project an invented logical line after a normalized final newline", async () => {
+    const service = createDocumentHighlightService();
+    const result = await service.highlight({
+      ...base,
+      text: "const one = '😀';\r\nconst two = 2;\r\n",
+    });
+
+    expect(result.status).toBe("highlighted");
+    expect(documentHighlightRunsForLine(result, 0).length).toBeGreaterThan(0);
+    expect(documentHighlightRunsForLine(result, 1).length).toBeGreaterThan(0);
+    expect(documentHighlightRunsForLine(result, 2)).toEqual([]);
   });
 
   test("single-flights identical requests and reuses the completed result after remount", async () => {
@@ -525,25 +561,70 @@ describe("document highlight service", () => {
     expect(byteBound.stats().completedEntries).toBe(2);
   });
 
-  test("never exposes cache-owned compact buffers through line projections", async () => {
+  test("shares one hidden artifact across many subscribers and cache hits", async () => {
     let calls = 0;
+    let release!: (value: CompactHighlightedDocument) => void;
+    const artifact = compact(base.text.length);
+    const pending = new Promise<CompactHighlightedDocument>((resolve) => {
+      release = resolve;
+    });
     const service = createDocumentHighlightService({
       inlineHighlight: async () => {
         calls += 1;
-        return compact(base.text.length);
+        return pending;
       },
     });
-    const first = await service.highlight(base);
-    expect(Object.getOwnPropertySymbols(first)).toHaveLength(0);
-    expect(Object.keys(first)).toEqual(["status", "retryable"]);
-    const firstRuns = documentHighlightRunsForLine(first, 0);
+
+    const subscribers = Array.from({ length: 1_000 }, () => service.highlight(base));
+    await Promise.resolve();
+    release(artifact);
+    const results = await Promise.all(subscribers);
+    expect(new Set(results).size).toBe(1);
+    expect(Object.isFrozen(results[0])).toBe(true);
+    expect(Object.getOwnPropertySymbols(results[0]!)).toHaveLength(0);
+    expect(Object.keys(results[0]!)).toEqual(["status", "retryable"]);
+
+    const cached = await Promise.all(Array.from({ length: 100 }, () => service.highlight(base)));
+    expect(cached.every((result) => result === results[0])).toBe(true);
+    expect(calls).toBe(1);
+
+    const firstRuns = documentHighlightRunsForLine(results[0], 0);
     expect(firstRuns).toEqual([{ start: 0, end: base.text.length, fg: "#112233" }]);
     firstRuns[0]!.start = 99;
-
-    const cached = await service.highlight(base);
-    expect(documentHighlightRunsForLine(cached, 0)).toEqual([
+    firstRuns.push({ start: 0, end: 0 });
+    expect(documentHighlightRunsForLine(cached[0], 0)).toEqual([
       { start: 0, end: base.text.length, fg: "#112233" },
     ]);
-    expect(calls).toBe(1);
+  });
+
+  test("matches inline and real-worker projections for complete documents", async () => {
+    const text = "/* open\nconst hidden = '😀';\n*/\nconst visible = `ok`;\n";
+    try {
+      for (const themeId of ["github-dark-default", "ayu-dark"]) {
+        const parityTheme = THEMES.find((candidate) => candidate.id === themeId)!;
+        const inline = createDocumentHighlightService();
+        const offloaded = createDocumentHighlightService({ workerEligibility: eligible });
+        const input = {
+          ...base,
+          text,
+          theme: parityTheme,
+        };
+        const [inlineResult, workerResult] = await Promise.all([
+          inline.highlight({ ...input, offloadLargeDiff: false }),
+          offloaded.highlight({ ...input, offloadLargeDiff: true }),
+        ]);
+
+        expect(workerResult.status).toBe("highlighted");
+        expect(inlineResult.status).toBe("highlighted");
+        for (let line = 0; line < 4; line += 1) {
+          expect(documentHighlightRunsForLine(workerResult, line)).toEqual(
+            documentHighlightRunsForLine(inlineResult, line),
+          );
+        }
+        expect(documentHighlightRunsForLine(workerResult, 4)).toEqual([]);
+      }
+    } finally {
+      disposeHighlightWorker();
+    }
   });
 });

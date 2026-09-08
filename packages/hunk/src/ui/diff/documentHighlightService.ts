@@ -7,7 +7,6 @@ import {
 import { DOCUMENT_HIGHLIGHT_RENDER_OPTIONS_REVISION } from "./highlightRenderOptions";
 import { syntaxHighlightThemeName } from "./syntaxHighlightTheme";
 import {
-  cloneCompactHighlightedDocument,
   compactHighlightedDocumentByteLength,
   compactHighlightedDocumentRunsForLine,
   documentWorkerEligibility,
@@ -121,20 +120,26 @@ function compactDocument(result: HighlightedDocumentResult) {
   return compact;
 }
 
-/** Clone one result so callers cannot mutate cache-owned typed-array buffers. */
-function cloneResult(result: DocumentHighlightResult): DocumentHighlightResult {
-  return result.status === "highlighted"
-    ? highlightedResult(cloneCompactHighlightedDocument(compactDocument(result)))
-    : { ...result };
-}
-
 /** Project one line's syntax ranges without exposing worker payload types to consumers. */
 export function documentHighlightRunsForLine(
   result: DocumentHighlightResult | null | undefined,
   lineIndex: number,
 ): DocumentHighlightRun[] {
   if (!result || result.status !== "highlighted") return [];
-  return compactHighlightedDocumentRunsForLine(compactDocument(result), lineIndex);
+  const compact = compactDocument(result);
+  if (
+    !Number.isInteger(lineIndex) ||
+    lineIndex < 0 ||
+    lineIndex >= compact.document.lineOffsets.length - 1
+  ) {
+    return [];
+  }
+  return compactHighlightedDocumentRunsForLine(compact, lineIndex);
+}
+
+/** Normalize authored newlines before identity, validation, or rendering observes the document. */
+function normalizeDocumentText(text: string) {
+  return text.includes("\r") ? text.replace(/\r\n?/g, "\n") : text;
 }
 
 /** Snapshot caller-owned inputs before identity or asynchronous scheduling can observe mutation. */
@@ -148,7 +153,7 @@ function snapshotInput(input: DocumentHighlightInput): Omit<DocumentHighlightInp
     ...(syntaxScopeOverrides === undefined ? {} : { syntaxScopeOverrides }),
   });
   return Object.freeze({
-    text: input.text,
+    text: normalizeDocumentText(input.text),
     path: input.path,
     language: input.language,
     theme,
@@ -156,8 +161,8 @@ function snapshotInput(input: DocumentHighlightInput): Omit<DocumentHighlightInp
   });
 }
 
-/** Hash every render-affecting input with explicit field boundaries. */
-export function documentHighlightCacheKey({
+/** Hash normalized render-affecting inputs with explicit field boundaries. */
+function normalizedDocumentHighlightCacheKey({
   language,
   path,
   text,
@@ -178,6 +183,16 @@ export function documentHighlightCacheKey({
   return hash.digest("hex");
 }
 
+/** Hash every render-affecting input after applying the service's newline normalization. */
+export function documentHighlightCacheKey(
+  input: Omit<DocumentHighlightInput, "offloadLargeDiff" | "signal">,
+) {
+  return normalizedDocumentHighlightCacheKey({
+    ...input,
+    text: normalizeDocumentText(input.text),
+  });
+}
+
 /** Return the cache charge for one immutable completed result. */
 function resultCost(result: DocumentHighlightResult) {
   return (
@@ -186,6 +201,14 @@ function resultCost(result: DocumentHighlightResult) {
       ? compactHighlightedDocumentByteLength(compactDocument(result))
       : 0)
   );
+}
+
+/** Build one immutable fallback result that is safe to share through cache hits. */
+function fallbackResult(
+  reason: DocumentHighlightFallbackReason,
+  retryable: boolean,
+): DocumentHighlightResult {
+  return Object.freeze({ status: "fallback", reason, retryable });
 }
 
 /** Classify a worker failure without relying on human-readable messages. */
@@ -199,9 +222,9 @@ function workerFallback(error: unknown): DocumentHighlightResult {
           : error.retryable
             ? "worker-failed"
             : "highlight-failed";
-    return { status: "fallback", reason, retryable: error.retryable };
+    return fallbackResult(reason, error.retryable);
   }
-  return { status: "fallback", reason: "worker-failed", retryable: true };
+  return fallbackResult("worker-failed", true);
 }
 
 /** Build one isolated service; production uses the shared instance below. */
@@ -236,25 +259,24 @@ export function createDocumentHighlightService(options: DocumentHighlightService
       return encodeCompactHighlightedDocument(lines, theme.appearance);
     });
 
-  /** Read and refresh one cache entry without exposing its retained buffers. */
+  /** Read and refresh one immutable cache entry without exposing its retained buffers. */
   const cachedResult = (key: string) => {
     const entry = completed.get(key);
     if (!entry) return undefined;
     completed.delete(key);
     completed.set(key, entry);
-    return cloneResult(entry.result);
+    return entry.result;
   };
 
-  /** Store one owned clone while enforcing both byte and entry ceilings. */
+  /** Store one immutable result while enforcing both byte and entry ceilings. */
   const cacheResult = (key: string, result: DocumentHighlightResult) => {
-    const owned = cloneResult(result);
-    const cost = resultCost(owned);
+    const cost = resultCost(result);
     if (cost > maxCacheBytes) return;
 
     const previous = completed.get(key);
     if (previous) completedCost -= previous.cost;
     completed.delete(key);
-    completed.set(key, { cost, result: owned });
+    completed.set(key, { cost, result });
     completedCost += cost;
 
     while (completedCost > maxCacheBytes || completed.size > maxCacheEntries) {
@@ -273,11 +295,7 @@ export function createDocumentHighlightService(options: DocumentHighlightService
   ): Promise<DocumentHighlightResult> => {
     const workerDecision = eligibility(input);
     if (!workerDecision.eligible && workerDecision.reason === "invalid-document") {
-      return {
-        status: "fallback",
-        reason: "invalid-document",
-        retryable: false,
-      };
+      return fallbackResult("invalid-document", false);
     }
 
     if (input.offloadLargeDiff && workerDecision.eligible) {
@@ -305,16 +323,8 @@ export function createDocumentHighlightService(options: DocumentHighlightService
         throw new DocumentHighlightAbortedError();
       }
       return error instanceof DocumentHighlighterConfigurationError
-        ? {
-            status: "fallback",
-            reason: "unsupported-language",
-            retryable: false,
-          }
-        : {
-            status: "fallback",
-            reason: "highlight-failed",
-            retryable: true,
-          };
+        ? fallbackResult("unsupported-language", false)
+        : fallbackResult("highlight-failed", true);
     }
   };
 
@@ -344,7 +354,7 @@ export function createDocumentHighlightService(options: DocumentHighlightService
 
       signal?.addEventListener("abort", abort, { once: true });
       entry.promise.then(
-        (result) => finish(() => resolve(cloneResult(result))),
+        (result) => finish(() => resolve(result)),
         (error) => finish(() => reject(error)),
       );
     });
@@ -358,18 +368,14 @@ export function createDocumentHighlightService(options: DocumentHighlightService
       }
 
       const snapshot = snapshotInput(input);
-      const key = documentHighlightCacheKey(snapshot);
+      const key = normalizedDocumentHighlightCacheKey(snapshot);
       const cached = cachedResult(key);
       if (cached) return Promise.resolve(cached);
 
       let entry = inFlight.get(key);
       if (!entry) {
         if (outstandingEntries >= maxInFlightEntries) {
-          return Promise.resolve({
-            status: "fallback",
-            reason: "busy",
-            retryable: true,
-          } satisfies DocumentHighlightResult);
+          return Promise.resolve(fallbackResult("busy", true));
         }
         const controller = new AbortController();
         entry = {
