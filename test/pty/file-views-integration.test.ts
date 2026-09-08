@@ -106,7 +106,13 @@ function createInteractiveViewExtension(directory: string) {
 /** Write a syntax view with observable generations and one deliberately late refresh. */
 function createSyntaxViewExtension(directory: string) {
   const extension = join(directory, "syntax-preview");
+  const generationOneStarted = join(extension, "generation-001-started");
+  const generationOneRelease = join(extension, "generation-001-release");
+  const generationOneCompleted = join(extension, "generation-001-completed");
   mkdirSync(extension, { recursive: true });
+  writeFileSync(generationOneStarted, "", "utf8");
+  writeFileSync(generationOneRelease, "", "utf8");
+  writeFileSync(generationOneCompleted, "", "utf8");
   writeFileSync(
     join(extension, "package.json"),
     JSON.stringify({
@@ -118,9 +124,14 @@ function createSyntaxViewExtension(directory: string) {
   );
   writeFileSync(
     join(extension, "index.ts"),
-    `export default function (hunk) {
+    `import { readFileSync, writeFileSync } from "node:fs";
+
+const generationOneStarted = ${JSON.stringify(generationOneStarted)};
+const generationOneRelease = ${JSON.stringify(generationOneRelease)};
+const generationOneCompleted = ${JSON.stringify(generationOneCompleted)};
+
+export default function (hunk) {
   let generation = 0;
-  let delayNext = false;
   const makeLayout = (file, requestedGeneration) => {
     const codeLines = Array.from({ length: 80 }, (_, index) => {
       if (index === 8) return "/* multiline comment";
@@ -145,7 +156,7 @@ function createSyntaxViewExtension(directory: string) {
           { text, syntax: { documentId: "generated", line: index + 1 } },
         ],
       })),
-      hunkRows: (file.hunks ?? []).map(() => ({ startRow: 0, endRow: codeLines.length - 1 })),
+      hunkRows: (file.hunks ?? []).map(() => ({ startRow: 0, endRow: 0 })),
     };
   };
   hunk.registerFileView({
@@ -154,9 +165,13 @@ function createSyntaxViewExtension(directory: string) {
     matches: () => true,
     layout: async ({ file }) => {
       const requestedGeneration = generation;
-      const shouldDelay = delayNext;
-      delayNext = false;
-      if (shouldDelay) await new Promise((resolve) => setTimeout(resolve, 800));
+      if (requestedGeneration === 1) {
+        writeFileSync(generationOneStarted, "started", "utf8");
+        while (readFileSync(generationOneRelease, "utf8") !== "release") {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        writeFileSync(generationOneCompleted, "completed", "utf8");
+      }
       return makeLayout(file, requestedGeneration);
     },
   });
@@ -165,14 +180,13 @@ function createSyntaxViewExtension(directory: string) {
   );
   hunk.registerCommand({ id: "reload-syntax", title: "Reload syntax", key: "f9" }, (ctx) => {
     generation += 1;
-    delayNext = generation === 1;
     ctx.fileViews.refresh("syntax-preview");
   });
 }
 `,
     "utf8",
   );
-  return extension;
+  return { extension, generationOneCompleted, generationOneRelease, generationOneStarted };
 }
 
 /** Return the exact first mounted syntax row so viewport stability cannot pass by containment. */
@@ -231,13 +245,13 @@ describe("PTY file views", () => {
 
   test("keeps syntax paint and exact viewport stable through theme, resize, refresh, and files", async () => {
     const repo = harness.createTwoFileRepoFixture();
-    const extension = createSyntaxViewExtension(repo.dir);
+    const syntaxFixture = createSyntaxViewExtension(repo.dir);
     writeFileSync(join(repo.dir, ".git", "info", "exclude"), "syntax-preview/\n", {
       encoding: "utf8",
       flag: "a",
     });
     const session = await harness.launchHunk({
-      args: ["diff", "--extension", extension, "--mode", "unified"],
+      args: ["diff", "--extension", syntaxFixture.extension, "--mode", "unified"],
       cwd: repo.dir,
       cols: 120,
       rows: 24,
@@ -300,42 +314,47 @@ describe("PTY file views", () => {
       await session.waitIdle();
       expect(firstVisibleSyntaxRow(await session.text({ immediate: true }))).toBe(resizeAnchor);
 
-      // Generation 1 remains pending while generation 2 commits; the late result cannot win.
+      // Generation 1 proves it entered layout and remains blocked while generation 2 commits.
       await session.press("f9");
-      await Bun.sleep(100);
+      expect(await waitForWrittenFile(syntaxFixture.generationOneStarted, "started")).toBe(
+        "started",
+      );
       expect(await session.text({ immediate: true })).toContain(resizeAnchor!);
       await session.press("f9");
       const generationTwo = new RegExp(resizeAnchor!.replace("GEN 000", "GEN 002"));
       await session.waitForText(generationTwo, { timeout: 5_000 });
-      await Bun.sleep(900);
+
+      // Release generation 1 only after generation 2 is visible, then observe its late completion.
+      writeFileSync(syntaxFixture.generationOneRelease, "release", "utf8");
+      expect(await waitForWrittenFile(syntaxFixture.generationOneCompleted, "completed")).toBe(
+        "completed",
+      );
+      // A complete keyboard round-trip runs after the layout promise's microtasks, proving the host
+      // observed the late completion before we inspect the accepted generation.
+      await harness.ensureKeyboardIsLive(session);
       const refreshed = await session.text({ immediate: true });
       expect(refreshed).toMatch(generationTwo);
       expect(refreshed).not.toContain("GEN 001");
 
-      // Each file owns a syntax request identity. AppHost tests control late completions explicitly;
-      // this real PTY proves both files paint and returning restores the accepted generation.
+      // Assert both hunk-navigation directions immediately from the exact current-file marker.
       await harness.ensureKeyboardIsLive(session);
       session.resize({ cols: 160, rows: 20 });
-      await session.waitForText(/beta\.ts/, { timeout: 5_000 });
+      await session.waitForText(/▌ M beta\.ts/, { timeout: 5_000 });
+      await session.press("[");
+      await session.waitForText(/▌ M alpha\.ts/, { timeout: 10_000 });
       await session.press("]");
-      await session.press("end");
+      await session.waitForText(/▌ M beta\.ts/, { timeout: 10_000 });
+
+      // Scroll explicitly only after navigation is proven, then load and paint the second file.
+      await session.scrollDown(100);
       await session.waitForText(/betaValue/, { timeout: 10_000 });
       await session.press("f8");
       await session.waitForText(/FILE beta\.ts GEN 002 ROW 001 const phaseLine1 = 1;/, {
         timeout: 10_000,
       });
       await waitForSyntaxForeground(session, "#f47067", "const");
-      await session.press("[");
-      await session.press("home");
-      await session.waitForText(/FILE alpha\.ts GEN 002 ROW \d{3}/, {
-        timeout: 10_000,
-      });
-      await waitForSyntaxForeground(session, "#f47067", "const");
-
-      // Full-stream hunk navigation remains host-owned after both files select the custom view.
-      await session.press("]");
-      await session.press("end");
-      await session.waitForText(/FILE beta\.ts GEN 002 ROW \d{3}/, {
+      await session.scrollUp(100);
+      await session.waitForText(/FILE alpha\.ts GEN 002 ROW 001 const phaseLine1 = 1;/, {
         timeout: 10_000,
       });
       await harness.ensureKeyboardIsLive(session);
