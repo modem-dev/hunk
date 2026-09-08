@@ -18,6 +18,7 @@ import {
   printLatencyMetrics,
   printMemoryMetrics,
   renderPass,
+  settleInteractionRenderer,
 } from "./lib/interaction";
 
 const NAVIGATION_PRESSES = 6;
@@ -36,9 +37,9 @@ async function measureNavigation() {
     console.log(`METRIC first_frame_ms=${(performance.now() - firstFrameStart).toFixed(2)}`);
     printMemoryMetrics("after_first_frame");
 
-    // Settle initial async work (selection reveal, highlight kick-off) so the
-    // press latencies measure navigation, not startup spillover.
-    await renderPass(setup, 2);
+    // Settle initial selection and syntax highlighting so the press latencies
+    // measure navigation rather than runtime-dependent startup spillover.
+    await settleInteractionRenderer(setup);
 
     const pressLatencies = await measureKeyPressLatencies(setup, "]", NAVIGATION_PRESSES);
     printLatencyMetrics("hunk_nav_press", pressLatencies);
@@ -56,7 +57,7 @@ async function measureScrolling() {
   );
 
   try {
-    await renderPass(setup, 2);
+    await settleInteractionRenderer(setup);
     const tickLatencies = await measureScrollTickLatencies(setup, SCROLL_TICKS);
     printLatencyMetrics("scroll_tick", tickLatencies);
   } finally {

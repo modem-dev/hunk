@@ -131,6 +131,7 @@ export function CodeRowView({
     theme,
   ) as CodeDiffRow;
   const { anchorId } = plannedRow;
+  const handleMouseMove = () => onHoverRow?.(row.key);
   const codeRowLayout = planCodeRowLayout(plannedRow, {
     lineNumberDigits,
     reserveAddNoteColumn: Boolean(onStartUserNoteAtHunk),
@@ -154,44 +155,48 @@ export function CodeRowView({
       }
     : undefined;
   /** Resolve copy-selection boundaries separately for each wrapped visual line when needed. */
-  const highlightsAtVisualLine =
-    copySelectedRowRange || cursorRowHighlight
-      ? (visualLineIndex: number) => {
-          const selectedRange = copySelectedRangeAtVisualLine(
-            copySelectedRowRange,
-            visualLineIndex,
-          );
-          const lineHasSelection = selectedRange !== undefined;
-          const lineSelectionHighlight: CodeCellHighlight = {
-            bg: (baseBg) => selectionHighlightBg(baseBg, theme),
-            colRange: selectedRange,
-          };
-          return {
-            left: pickRowHighlight(
-              lineSelectionHighlight,
-              cursorRowHighlight,
-              lineHasSelection && copySelectedSide !== "right",
-              onCursorRow && (splitContextRow || cursorHighlight.side === "old"),
-            ),
-            right: pickRowHighlight(
-              lineSelectionHighlight,
-              cursorRowHighlight,
-              lineHasSelection && copySelectedSide !== "left",
-              onCursorRow && (splitContextRow || cursorHighlight.side === "new"),
-            ),
-            unified: pickRowHighlight(
-              lineSelectionHighlight,
-              cursorRowHighlight,
-              lineHasSelection,
-              onCursorRow,
-            ),
-          };
-        }
-      : undefined;
+  const highlightsAtVisualLine = copySelectedRowRange
+    ? (visualLineIndex: number) => {
+        const selectedRange = copySelectedRangeAtVisualLine(copySelectedRowRange, visualLineIndex);
+        const lineHasSelection = selectedRange !== undefined;
+        const lineSelectionHighlight: CodeCellHighlight = {
+          bg: (baseBg) => selectionHighlightBg(baseBg, theme),
+          colRange: selectedRange,
+        };
+        return {
+          left: pickRowHighlight(
+            lineSelectionHighlight,
+            cursorRowHighlight,
+            lineHasSelection && copySelectedSide !== "right",
+            onCursorRow && (splitContextRow || cursorHighlight.side === "old"),
+          ),
+          right: pickRowHighlight(
+            lineSelectionHighlight,
+            cursorRowHighlight,
+            lineHasSelection && copySelectedSide !== "left",
+            onCursorRow && (splitContextRow || cursorHighlight.side === "new"),
+          ),
+          unified: pickRowHighlight(
+            lineSelectionHighlight,
+            cursorRowHighlight,
+            lineHasSelection,
+            onCursorRow,
+          ),
+        };
+      }
+    : undefined;
   const firstLineHighlights = highlightsAtVisualLine?.(0);
-  const leftHighlight = firstLineHighlights?.left;
-  const rightHighlight = firstLineHighlights?.right;
-  const cellHighlight = firstLineHighlights?.unified;
+  const leftHighlight =
+    firstLineHighlights?.left ??
+    (onCursorRow && (splitContextRow || cursorHighlight.side === "old")
+      ? cursorRowHighlight
+      : undefined);
+  const rightHighlight =
+    firstLineHighlights?.right ??
+    (onCursorRow && (splitContextRow || cursorHighlight.side === "new")
+      ? cursorRowHighlight
+      : undefined);
+  const cellHighlight = firstLineHighlights?.unified ?? cursorRowHighlight;
 
   if (row.type === "split-line") {
     // The planner and row type are derived from the same complete planned row.
@@ -222,7 +227,7 @@ export function CodeRowView({
             flexDirection: "row",
             overflow: "visible",
           }}
-          onMouseMove={() => onHoverRow?.(row.key)}
+          onMouseMove={handleMouseMove}
         >
           <box style={{ width: "100%", height: 1 }}>
             {codeCellView.renderNowrapSplit({
@@ -268,7 +273,11 @@ export function CodeRowView({
     });
 
     return (
-      <box id={anchorId} style={{ width: "100%", flexDirection: "column", overflow: "visible" }}>
+      <box
+        id={anchorId}
+        style={{ width: "100%", flexDirection: "column", overflow: "visible" }}
+        onMouseMove={handleMouseMove}
+      >
         {Array.from({ length: wrapped.lineCount }, (_, index) => {
           const showBadgeOnLine = showAddNoteBadge && index === 0;
           const styledRow = wrapped.paintLine(
@@ -278,13 +287,7 @@ export function CodeRowView({
           );
 
           if (!showBadgeOnLine && !hasRangeGuide) {
-            return (
-              <text
-                key={`${row.key}:wrap:${index}`}
-                content={styledRow}
-                onMouseMove={() => onHoverRow?.(row.key)}
-              />
-            );
+            return <text key={`${row.key}:wrap:${index}`} content={styledRow} />;
           }
 
           return (
@@ -297,7 +300,6 @@ export function CodeRowView({
                 flexDirection: "row",
                 overflow: "visible",
               }}
-              onMouseMove={() => onHoverRow?.(row.key)}
             >
               {showBadgeOnLine ? (
                 <>
@@ -347,7 +349,7 @@ export function CodeRowView({
           flexDirection: "row",
           overflow: "visible",
         }}
-        onMouseMove={() => onHoverRow?.(row.key)}
+        onMouseMove={handleMouseMove}
       >
         <box style={{ width: "100%", height: 1 }}>
           {codeCellView.renderNowrapUnified({
@@ -389,19 +391,17 @@ export function CodeRowView({
   });
 
   return (
-    <box id={anchorId} style={{ width: "100%", flexDirection: "column", overflow: "visible" }}>
+    <box
+      id={anchorId}
+      style={{ width: "100%", flexDirection: "column", overflow: "visible" }}
+      onMouseMove={handleMouseMove}
+    >
       {Array.from({ length: wrapped.lineCount }, (_, index) => {
         const showBadgeOnLine = showAddNoteBadge && index === 0;
         const styledRow = wrapped.paintLine(index, 0, highlightsAtVisualLine?.(index));
 
         if (!showBadgeOnLine && addBadgeWidth === 0 && !hasRangeGuide) {
-          return (
-            <text
-              key={`${row.key}:wrap:${index}`}
-              content={styledRow}
-              onMouseMove={() => onHoverRow?.(row.key)}
-            />
-          );
+          return <text key={`${row.key}:wrap:${index}`} content={styledRow} />;
         }
 
         return (
@@ -414,7 +414,6 @@ export function CodeRowView({
               flexDirection: "row",
               overflow: "visible",
             }}
-            onMouseMove={() => onHoverRow?.(row.key)}
           >
             <box
               style={{

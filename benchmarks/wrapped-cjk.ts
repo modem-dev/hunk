@@ -7,7 +7,10 @@ import React, { act } from "react";
 import type { AppBootstrap } from "../packages/hunk/src/core/bootstrap";
 import type { DiffFile } from "../packages/hunk/src/core/changeset/model";
 import { BenchmarkAppHost as AppHost } from "./lib/appHost";
-import { prefetchHighlightedDiff } from "../packages/hunk/src/ui/diff/useHighlightedDiff";
+import {
+  prefetchHighlightedDiff,
+  waitForHighlightedDiffIdle,
+} from "../packages/hunk/src/ui/diff/useHighlightedDiff";
 import { VIEWPORT_READ_COALESCE_MS } from "../packages/hunk/src/ui/lib/viewportTiming";
 import { resolveTheme } from "../packages/hunk/src/ui/themes";
 import {
@@ -85,6 +88,8 @@ function createIssuePhysicalLines() {
 
 /** Include renderer creation and initial React planning in first-frame latency. */
 async function measureMountToFirstFrameMs(bootstrap: AppBootstrap) {
+  // Each fixture measures its own mount, not collection left behind by the preceding renderer.
+  Bun.gc(true);
   const start = performance.now();
   const setup = await testRender(React.createElement(AppHost, { bootstrap }), VIEWPORT);
 
@@ -100,6 +105,9 @@ async function measureMountToFirstFrameMs(bootstrap: AppBootstrap) {
     }
     return elapsedMs;
   } finally {
+    // Cold first-frame timing ends above, but its deferred highlighter must finish before the
+    // next fixture starts or runtime scheduling can charge one fixture's startup to another.
+    await act(async () => waitForHighlightedDiffIdle());
     await destroyRenderer(setup);
   }
 }

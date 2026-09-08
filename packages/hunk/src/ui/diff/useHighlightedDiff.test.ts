@@ -5,7 +5,12 @@ import {
 } from "../../../../../test/helpers/diff-helpers";
 import { resolveTheme } from "../themes";
 import { HIGHLIGHT_WORKER_MIN_LINES } from "./diffRows";
-import { prefetchHighlightedDiff, highlightedDiffCacheKey } from "./useHighlightedDiff";
+import {
+  hasPendingHighlightedDiffs,
+  highlightedDiffCacheKey,
+  prefetchHighlightedDiff,
+  waitForHighlightedDiffIdle,
+} from "./useHighlightedDiff";
 import { registerHighlightWorker } from "./worker";
 
 /** Build one file large enough to qualify for worker highlighting. */
@@ -48,6 +53,23 @@ function registerFailingHighlightWorkerForTest() {
 }
 
 describe("highlighted diff cache", () => {
+  test("reports idle only after every started highlight finishes", async () => {
+    const file = createTestDiffFile({
+      after: 'export const status = "pending";\n',
+      before: 'export const status = "idle";\n',
+      id: "highlight-idle",
+      path: "highlight-idle.ts",
+    });
+    const theme = resolveTheme("github-dark-default", null);
+    const pending = prefetchHighlightedDiff({ file, theme });
+
+    expect(hasPendingHighlightedDiffs()).toBe(true);
+    await waitForHighlightedDiffIdle();
+
+    expect(hasPendingHighlightedDiffs()).toBe(false);
+    await pending;
+  });
+
   test("does not reuse stale highlighted text for patches that collide under sampling", async () => {
     const firstPatch = createAdversarialPatch("a");
     const secondPatch = createAdversarialPatch("b");

@@ -95,8 +95,9 @@ test("CodeRowView limits character selections to source text instead of cell chr
   }
 });
 
-test("CodeRowView mounts ordinary wrapped split lines as direct text nodes", () => {
+test("CodeRowView mounts ordinary wrapped split lines under one hover target", async () => {
   const theme = resolveTheme("github-dark-default", null);
+  const hoveredRows: string[] = [];
   const plannedRow: PlannedCodeReviewRow = {
     kind: "diff-row",
     key: "diff-row:wrapped-fast-path",
@@ -132,15 +133,39 @@ test("CodeRowView mounts ordinary wrapped split lines as direct text nodes", () 
     codeHorizontalOffset: 0,
     theme,
     selected: false,
+    onHoverRow: (rowKey) => hoveredRows.push(rowKey),
     onStartUserNoteAtHunk: () => {},
   });
-  if (!isValidElement<{ children?: ReactNode }>(rendered)) {
+  if (
+    !isValidElement<{
+      children?: ReactNode;
+      onMouseMove?: () => void;
+    }>(rendered)
+  ) {
     throw new Error("Expected CodeRowView to return a wrapped row element");
   }
   const visualLines = Children.toArray(rendered.props.children);
 
   expect(visualLines.length).toBeGreaterThan(1);
-  expect(visualLines.every((line) => isValidElement(line) && line.type === "text")).toBe(true);
+  expect(
+    visualLines.every(
+      (line) =>
+        isValidElement<{ onMouseMove?: () => void }>(line) &&
+        line.type === "text" &&
+        line.props.onMouseMove === undefined,
+    ),
+  ).toBe(true);
+  const setup = await testRender(rendered, { width: 20, height: 6 });
+  try {
+    await act(async () => {
+      await setup.renderOnce();
+      // Exercise a continuation line rather than invoking the parent's prop directly.
+      await setup.mockMouse.moveTo(5, 2);
+    });
+    expect(hoveredRows).toEqual(["wrapped-fast-path"]);
+  } finally {
+    await act(async () => setup.renderer.destroy());
+  }
 });
 
 test("CodeRowView paints wrapped selection boundaries per visual line", async () => {

@@ -13,6 +13,7 @@ import {
   measureScrollTickLatencies,
   printLatencyMetrics,
   renderPass,
+  settleInteractionRenderer,
 } from "./lib/interaction";
 
 // Moderate scale: the point is content shape, not stream size.
@@ -52,7 +53,7 @@ async function measureScrolling() {
   );
 
   try {
-    await renderPass(setup, 2);
+    await settleInteractionRenderer(setup);
     const tickLatencies = await measureScrollTickLatencies(setup, SCROLL_TICKS);
     printLatencyMetrics("non_ascii_scroll_tick", tickLatencies);
   } finally {

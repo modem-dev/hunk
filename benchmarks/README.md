@@ -63,9 +63,9 @@ bun run bench:competitors
 - `worker-highlight-cache.ts` — measures a cold worker highlight against an immediate compact-result cache hit.
 - `highlight-cache-layers.ts` — measures a resident terminal-cache hit against a worker-cache revisit after the terminal cache evicts the diff.
 - `large-stream.ts` — measures large split-stream first-frame and scroll cost.
-- `interaction-latency.ts` — measures per-press `]` hunk-navigation latency and per-scroll-tick latency (median + p95) on the large stream, plus RSS/heap ceilings after first frame and after navigation (the default-suite slice of `memory.ts`).
-- `non-ascii-stream.ts` — measures first-frame and per-scroll-tick latency on a stream whose diff content embeds CJK, emoji, and box-drawing characters, exercising the string-width path on content rather than chrome glyphs.
-- `wrapped-cjk.ts` — reproduces issue #579 with 518 wrapped Japanese Markdown lines plus one pathological long logical line, includes renderer setup in first-frame latency, and measures immediate/coalesced frames from a real wheel burst.
+- `interaction-latency.ts` — measures per-press `]` hunk-navigation latency and per-scroll-tick latency (median + p95) on the large stream, plus RSS/heap ceilings after first frame and after navigation (the default-suite slice of `memory.ts`). Interaction timing starts after render-driven syntax highlighting reaches idle so Bun scheduler changes cannot move startup work into the first input sample.
+- `non-ascii-stream.ts` — measures first-frame and per-scroll-tick latency on a stream whose diff content embeds CJK, emoji, and box-drawing characters, exercising the string-width path on content rather than chrome glyphs. Its scroll timing uses the same highlight-idle boundary.
+- `wrapped-cjk.ts` — reproduces issue #579 with 518 wrapped Japanese Markdown lines plus one pathological long logical line, isolates each mount with a full GC while including renderer setup in first-frame latency, and measures immediate/coalesced frames from a real wheel burst.
 - `terminal-width.ts` — measures scalar-heavy CJK and emoji width calls plus cached complex-cluster measurements against equivalent `string-width` reference paths, verifying identical width checksums.
 - `huge-stream.ts` — opt-in huge tier (`--include-huge` or `HUNK_BENCH_INCLUDE_HUGE=1`): cold first frame, scroll-tick and hunk-navigation latency, and memory ceilings on ~1k files / 300k+ diff lines plus one giant ~50k-line file.
 - `large-stream-profile.ts` — optional local profiler for the main pure planning stages behind the large split-stream benchmark.
@@ -109,4 +109,5 @@ Each script prints `METRIC name=value` lines. `benchmarks/run.ts` repeats script
 - Fixture tiers: the moderate tier (180 files × 120 lines) backs `large-stream.ts` and `interaction-latency.ts`; the huge tier (1,000 files × 300 lines + one 50,000-line file) backs `huge-stream.ts` and is opt-in because one sample can take minutes before hot-path fixes land.
 - Competitor comparisons are informational because installed tool versions and feature parity vary by environment.
 - Use `--samples 5` locally when validating borderline changes.
+- Set `HUNK_BENCHMARK_TRACE=1` on an interaction benchmark to print the raw per-input latency distribution behind each median and p95.
 - Use `benchmarks/results/` for local benchmark output; result files in that directory are ignored by default.
