@@ -13,7 +13,7 @@ function bundledMetadata(id: string) {
 }
 
 describe("runExtensionFactory", () => {
-  test("advertises async watch signatures through extension API v25", () => {
+  test("advertises code-document file views and async watch signatures through extension API v25", () => {
     expect(HUNK_EXTENSION_API_VERSION).toBe(25);
   });
 

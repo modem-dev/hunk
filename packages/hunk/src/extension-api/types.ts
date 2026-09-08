@@ -309,6 +309,31 @@ export interface ExtensionFileViewSourceRange {
   readonly range: readonly [number, number];
 }
 
+/** One complete code document a file view can ask Hunk to syntax-highlight. */
+export interface ExtensionFileViewCodeDocument {
+  /** Stable and unique within this layout result. */
+  readonly id: string;
+  /**
+   * Complete code retained as multiline lexical context. Hunk normalizes CRLF and CR to LF and
+   * strips terminal controls line by line before validating span references.
+   */
+  readonly text: string;
+  /** Syntax language override; omitted values use the reviewed file's detected language. */
+  readonly language?: string;
+}
+
+/** One exact code-document slice painted through Hunk's active syntax theme. */
+export interface ExtensionFileViewSyntaxReference {
+  readonly documentId: string;
+  /** One-based line in the declared code document. */
+  readonly line: number;
+  /**
+   * Zero-based, half-open UTF-16 columns in Hunk's normalized terminal-safe line. Omitted ranges
+   * reference the complete line.
+   */
+  readonly range?: readonly [number, number];
+}
+
 /** One symbolic run in a host-rendered file-view row. */
 export interface ExtensionFileViewSpan {
   readonly text: string;
@@ -316,6 +341,11 @@ export interface ExtensionFileViewSpan {
   readonly tone?: "muted" | "accent" | "accent-muted" | "syntax" | "added" | "removed";
   /** Theme-independent terminal emphasis. */
   readonly attributes?: readonly ("bold" | "italic" | "underline" | "strikethrough")[];
+  /**
+   * Optional host-owned syntax paint for an exact slice of a declared code document. The retained
+   * terminal-safe `text` must equal that complete line or range.
+   */
+  readonly syntax?: ExtensionFileViewSyntaxReference;
 }
 
 /** Bounded paint-only props handed to a custom file-view row component. */
@@ -359,6 +389,8 @@ export interface ExtensionFileViewRow {
 /** The deterministic, symbolic layout returned by a file-view extension. */
 export interface ExtensionFileViewLayout {
   readonly rows: readonly ExtensionFileViewRow[];
+  /** Complete code documents referenced by syntax-painted spans. */
+  readonly codeDocuments?: readonly ExtensionFileViewCodeDocument[];
   /** Inclusive row extents ordered to correspond to `input.file.hunks`. */
   readonly hunkRows: readonly {
     readonly startRow: number;
