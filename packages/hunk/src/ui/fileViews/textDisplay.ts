@@ -1,44 +1,30 @@
 import { TextBuffer, TextBufferView } from "@opentui/core";
-import { measureClusterWidth, measureSanitizedTextWidth, textClusters } from "../lib/text";
+import { measureClusterWidth, textClusters } from "../lib/text";
 
-/** OpenTUI's text buffer expands each tab to two cells rather than positional tab stops. */
+/** OpenTUI renders each retained tab as one indivisible two-cell cluster. */
 export const FILE_VIEW_TAB_WIDTH = 2;
 
-/** Expand retained tabs only for terminal display, after syntax ranges have used original offsets. */
-export function fileViewDisplayText(text: string) {
-  return text.includes("\t") ? text.replaceAll("\t", " ".repeat(FILE_VIEW_TAB_WIDTH)) : text;
-}
-
-/** Expand tabs independently inside styled chunks without changing their paint metadata. */
-export function fileViewDisplaySpans<T extends { text: string }>(spans: readonly T[]): T[] {
-  let expanded: T[] | null = null;
-  for (let index = 0; index < spans.length; index += 1) {
-    const span = spans[index]!;
-    const text = fileViewDisplayText(span.text);
-    if (text === span.text) {
-      expanded?.push(span);
-      continue;
-    }
-    expanded ??= spans.slice(0, index);
-    expanded.push({ ...span, text });
-  }
-  return expanded ?? [...spans];
-}
-
 interface MeasuredCluster {
-  readonly text: string;
   readonly width: number;
-  readonly whitespace: boolean;
+  /** OpenTUI wraps whitespace, narrow words, and adjacent wide clusters as distinct flows. */
+  readonly wordClass: "whitespace" | "narrow" | "wide";
 }
 
-/** Count word-wrapped rows without native state when OpenTUI measurement is unavailable. */
-function measureFileViewDisplayTextHeightFallback(text: string, width: number) {
+/** Return the display width OpenTUI uses for one retained file-view cluster. */
+function fileViewClusterWidth(cluster: string) {
+  return cluster === "\t" ? FILE_VIEW_TAB_WIDTH : measureClusterWidth(cluster);
+}
+
+/** Count word-wrapped rows if native OpenTUI measurement fails unexpectedly. */
+function measureFileViewTextHeightFallback(text: string, width: number) {
   const lineWidth = Math.max(1, Math.floor(width));
-  const clusters: MeasuredCluster[] = textClusters(fileViewDisplayText(text)).map((cluster) => ({
-    text: cluster,
-    width: measureClusterWidth(cluster),
-    whitespace: /^\s+$/u.test(cluster),
-  }));
+  const clusters: MeasuredCluster[] = textClusters(text).map((cluster) => {
+    const width = fileViewClusterWidth(cluster);
+    return {
+      width,
+      wordClass: /^\s+$/u.test(cluster) ? "whitespace" : width > 1 ? "wide" : "narrow",
+    };
+  });
   if (clusters.length === 0) return 1;
 
   let lines = 0;
@@ -53,28 +39,28 @@ function measureFileViewDisplayTextHeightFallback(text: string, width: number) {
     currentHasNonWhitespace = false;
   };
 
-  /** Add clusters with character fallback once a word exceeds the complete row. */
+  /** Add indivisible clusters with character fallback once a word exceeds a complete row. */
   const addFlow = (flow: readonly MeasuredCluster[]) => {
     for (const cluster of flow) {
       if (cluster.width > lineWidth) {
         commit();
-        lines += 1;
+        lines += Math.ceil(cluster.width / lineWidth);
         continue;
       }
       if (currentWidth + cluster.width > lineWidth) commit();
       currentWidth += cluster.width;
-      currentHasNonWhitespace ||= !cluster.whitespace;
+      currentHasNonWhitespace ||= cluster.wordClass !== "whitespace";
     }
   };
 
   for (let index = 0; index < clusters.length; ) {
-    const whitespace = clusters[index]!.whitespace;
+    const wordClass = clusters[index]!.wordClass;
     let end = index + 1;
-    while (end < clusters.length && clusters[end]!.whitespace === whitespace) end += 1;
+    while (end < clusters.length && clusters[end]!.wordClass === wordClass) end += 1;
     const group = clusters.slice(index, end);
     index = end;
 
-    if (whitespace) {
+    if (wordClass === "whitespace") {
       addFlow(group);
       continue;
     }
@@ -108,20 +94,15 @@ export class FileViewTextMeasurer {
   #view: TextBufferView | undefined;
   #nativeAvailable = true;
 
-  /** Measure the exact display text that FileView passes to its word-wrapped text renderable. */
+  /** Measure retained text exactly as FileView passes it to OpenTUI's word-wrapped renderable. */
   measure(text: string, width: number) {
+    if (text.length === 0) return 1;
     const usableWidth = Math.max(1, Math.floor(width));
-    const displayText = fileViewDisplayText(text);
-    if (displayText.length === 0 || measureSanitizedTextWidth(displayText) <= usableWidth) return 1;
-    // With no breakable whitespace, OpenTUI word wrapping is identical to character fallback.
-    if (!/\s/u.test(displayText)) {
-      return measureFileViewDisplayTextHeightFallback(displayText, usableWidth);
-    }
     if (this.#nativeAvailable) {
       try {
         this.#buffer ??= TextBuffer.create("unicode");
         this.#view ??= TextBufferView.create(this.#buffer);
-        this.#buffer.setText(displayText);
+        this.#buffer.setText(text);
         this.#view.setWrapMode("word");
         this.#view.setWrapWidth(usableWidth);
         const measured = this.#view.measureForDimensions(usableWidth, 1_000_001);
@@ -131,7 +112,7 @@ export class FileViewTextMeasurer {
         this.destroy();
       }
     }
-    return measureFileViewDisplayTextHeightFallback(text, usableWidth);
+    return measureFileViewTextHeightFallback(text, usableWidth);
   }
 
   /** Release native measurement resources after one layout validation. */
@@ -141,6 +122,11 @@ export class FileViewTextMeasurer {
     this.#view = undefined;
     this.#buffer = undefined;
   }
+}
+
+/** Expose native-failure measurement only for parity tests of the production fallback. */
+export function measureFileViewTextHeightFallbackForTest(text: string, width: number) {
+  return measureFileViewTextHeightFallback(text, width);
 }
 
 /** Measure one standalone row with the same native word-wrap engine as FileView paint. */

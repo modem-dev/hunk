@@ -11,13 +11,15 @@ export interface FileViewSyntaxPaintRun {
   readonly fg?: string;
 }
 
-interface ProjectedLine {
+export interface ValidatedFileViewSyntaxLine {
   readonly length: number;
   readonly runs: readonly DocumentHighlightRun[];
 }
 
-/** Return whether service-projected ranges cover one complete document line exactly. */
-function projectedLineLength(runs: readonly DocumentHighlightRun[]) {
+/** Accept only integer, positive, contiguous half-open runs covering one complete projected line. */
+export function validateFileViewSyntaxLineProjection(
+  runs: readonly DocumentHighlightRun[],
+): ValidatedFileViewSyntaxLine | null {
   let cursor = 0;
   for (const run of runs) {
     if (
@@ -30,7 +32,7 @@ function projectedLineLength(runs: readonly DocumentHighlightRun[]) {
     }
     cursor = run.end;
   }
-  return cursor;
+  return runs.length > 0 ? { length: cursor, runs } : null;
 }
 
 /** Return the first run whose end may intersect `column`. */
@@ -69,7 +71,10 @@ function coalescePaintRuns(runs: readonly FileViewSyntaxPaintRun[]) {
 export function createFileViewSyntaxProjector(
   highlights: ReadonlyMap<string, DocumentHighlightResult>,
 ) {
-  const projectedLines = new WeakMap<DocumentHighlightResult, Map<number, ProjectedLine | null>>();
+  const projectedLines = new WeakMap<
+    DocumentHighlightResult,
+    Map<number, ValidatedFileViewSyntaxLine | null>
+  >();
   let projectedLineCount = 0;
 
   /** Load and validate one line at most once for this projector's lifetime. */
@@ -89,8 +94,7 @@ export function createFileViewSyntaxProjector(
       lines.set(lineIndex, null);
       return null;
     }
-    const length = projectedLineLength(projected);
-    const value = projected.length > 0 && length !== null ? { length, runs: projected } : null;
+    const value = validateFileViewSyntaxLineProjection(projected);
     lines.set(lineIndex, value);
     return value;
   };

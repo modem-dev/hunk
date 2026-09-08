@@ -8,7 +8,11 @@ import {
 } from "../diff/documentHighlightService";
 import { preserveCrossSpanGraphemes } from "../diff/styledSpanLayout";
 import type { CompactHighlightedDocument } from "../diff/worker";
-import { createFileViewSyntaxProjector, projectFileViewSyntaxSpan } from "./syntaxPaint";
+import {
+  createFileViewSyntaxProjector,
+  projectFileViewSyntaxSpan,
+  validateFileViewSyntaxLineProjection,
+} from "./syntaxPaint";
 
 const theme = THEMES.find((candidate) => candidate.id === "github-dark-default")!;
 
@@ -95,6 +99,43 @@ describe("file-view syntax paint projection", () => {
       { text: "cde", fg: "#222222" },
       { text: "fg" },
     ]);
+  });
+
+  test("honors half-open boundaries at adjacent token runs", async () => {
+    const runs = [
+      { start: 0, end: 2, fg: "#111111" },
+      { start: 2, end: 4, fg: "#222222" },
+    ];
+    expect(
+      await project(
+        { text: "ab", syntax: { documentId: "code", line: 1, range: [0, 2] } },
+        "abcd",
+        runs,
+      ),
+    ).toEqual([{ text: "ab", fg: "#111111" }]);
+    expect(
+      await project(
+        { text: "cd", syntax: { documentId: "code", line: 1, range: [2, 4] } },
+        "abcd",
+        runs,
+      ),
+    ).toEqual([{ text: "cd", fg: "#222222" }]);
+  });
+
+  test("rejects malformed projected lines with overlaps or gaps", () => {
+    expect(
+      validateFileViewSyntaxLineProjection([
+        { start: 0, end: 2 },
+        { start: 1, end: 3 },
+      ]),
+    ).toBeNull();
+    expect(
+      validateFileViewSyntaxLineProjection([
+        { start: 0, end: 1 },
+        { start: 2, end: 3 },
+      ]),
+    ).toBeNull();
+    expect(validateFileViewSyntaxLineProjection([{ start: 0, end: 0 }])).toBeNull();
   });
 
   test("keeps split-style references independent by document lookup", async () => {
