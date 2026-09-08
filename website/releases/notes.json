@@ -1,4 +1,17 @@
 {
+  "0.22": {
+    "summary": "Hunk 0.22 turns repository history into a responsive review workspace with commit-range browsing, persistent multiline selections, keyboard-driven threaded notes, and richer extension context.",
+    "tagline": "History browsing, range reviews, precise comments",
+    "links": [
+      {
+        "label": "Working trees and commits",
+        "href": "/docs/workflows/working-trees-and-commits/"
+      },
+      { "label": "Comments and annotations", "href": "/docs/agents/comments-and-annotations/" },
+      { "label": "Keyboard and mouse", "href": "/docs/start/keyboard-and-mouse/" },
+      { "label": "Extension API", "href": "/docs/extend/extension-api/" }
+    ]
+  },
   "0.21": {
     "summary": "Hunk 0.21 turns reviews into a richer agent-aware workspace with authenticated live sessions, editable threaded notes, two-revision and two-file comparisons, more responsive navigation, and a broader extension surface.",
     "tagline": "Secure sessions, threaded notes, richer comparisons",
