@@ -118,6 +118,7 @@ describe("disposable VM shell", () => {
       const staging = path.join(runtime, "vm-shell-input");
       writeTestVmShellExamples(repo);
       mkdirSync(runtime, { recursive: true });
+      symlinkSync(outside, path.join(repo, "examples", "2-mini-app-refactor", "not-staged"));
 
       expect(stageVmShellInput(repo, staging, { withHunk: false })).toBe(staging);
       for (const relativePath of VM_SHELL_EXAMPLE_FILES) {
@@ -141,6 +142,14 @@ describe("disposable VM shell", () => {
 
       removeVmShellInput(repo, staging);
       expect(existsSync(staging)).toBe(false);
+      const selectedSource = path.join(repo, "examples", "2-mini-app-refactor", "change.patch");
+      rmSync(selectedSource);
+      symlinkSync(outside, selectedSource);
+      expect(() => stageVmShellInput(repo, staging, { withHunk: false })).toThrow(
+        "may not be a symlink",
+      );
+      rmSync(selectedSource);
+      writeFileSync(selectedSource, "restored example\n");
       symlinkSync(outside, staging);
       expect(() => stageVmShellInput(repo, staging, { withHunk: false })).toThrow(
         "symlink ancestor",

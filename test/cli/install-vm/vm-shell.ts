@@ -114,6 +114,25 @@ function assertRegularTree(root: string) {
   }
 }
 
+/** Reject unsafe path segments, symlink ancestors, and non-regular allowlisted source files. */
+function assertRegularFilePath(root: string, relativePath: string) {
+  const segments = relativePath.split("/");
+  if (segments.some((segment) => !segment || segment === "." || segment === "..")) {
+    throw new Error(`VM shell input path is unsafe: ${relativePath}`);
+  }
+
+  let current = root;
+  for (let index = -1; index < segments.length; index += 1) {
+    if (index >= 0) current = path.join(current, segments[index]!);
+    const stat = lstatSync(current);
+    if (stat.isSymbolicLink()) throw new Error(`VM shell input may not be a symlink: ${current}`);
+    const expectsFile = index === segments.length - 1;
+    if (expectsFile ? !stat.isFile() : !stat.isDirectory()) {
+      throw new Error(`VM shell input path has an unexpected file type: ${current}`);
+    }
+  }
+}
+
 /** Remove one staging path only after revalidating its harness-owned location. */
 export function removeVmShellInput(repo: string, stagingDir: string) {
   const safeStagingDir = assertSafeInstallVmRuntimePath(repo, stagingDir);
@@ -129,8 +148,8 @@ export function stageVmShellInput(
   const safeStagingDir = assertSafeInstallVmRuntimePath(repo, stagingDir);
   const stagingParent = path.dirname(safeStagingDir);
   const examplesRoot = path.join(repo, "examples");
-  for (const directory of new Set(VM_SHELL_EXAMPLE_FILES.map((entry) => entry.split("/")[0]!))) {
-    assertRegularTree(path.join(examplesRoot, directory));
+  for (const relativePath of VM_SHELL_EXAMPLE_FILES) {
+    assertRegularFilePath(examplesRoot, relativePath);
   }
 
   const binary = path.join(repo, "dist", "hunk");
