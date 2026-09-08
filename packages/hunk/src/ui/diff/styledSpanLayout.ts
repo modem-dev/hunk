@@ -77,7 +77,7 @@ function mergeCrossSpanGraphemes(spans: RenderSpan[]) {
 }
 
 /** Merge only indivisible graphemes that may cross styled-span boundaries. */
-function preserveCrossSpanGraphemes(spans: RenderSpan[]) {
+export function preserveCrossSpanGraphemes(spans: RenderSpan[]) {
   return spansMaySplitGrapheme(spans) ? mergeCrossSpanGraphemes(spans) : spans;
 }
 

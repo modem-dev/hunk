@@ -1,3 +1,4 @@
+import { parseColor, StyledText, type TextChunk } from "@opentui/core";
 import { Component, memo, useMemo, type ReactNode } from "react";
 import type { DiffFile } from "../../../core/changeset/model";
 import type {
@@ -14,6 +15,7 @@ import { reviewRowId } from "../../lib/ids";
 import { toExtensionPaintTheme } from "../../lib/extensionPaintTheme";
 import { symbolicTextAttributes, symbolicToneColor } from "../../lib/symbolicSpans";
 import type { PlannedFileViewRow } from "../../fileViews/renderPlan";
+import { projectFileViewSyntaxSpan } from "../../fileViews/syntaxPaint";
 import type { FileViewRowFailure } from "../../fileViews/types";
 import { useFileViewSyntaxHighlight } from "../../fileViews/useFileViewSyntaxHighlight";
 import type { ResolvedFileViewLayout } from "../../fileViews/useFileViews";
@@ -31,22 +33,56 @@ export function isFileViewRowSelected(
   );
 }
 
-/** Paint one row through the original symbolic host-rendered path. */
-function SymbolicFileViewRow({ row, theme }: { row: ExtensionFileViewRow; theme: AppTheme }) {
-  return row.spans.map((span, spanIndex) => (
-    <text
-      key={`${row.id}:${spanIndex}`}
-      fg={symbolicToneColor(span.tone, theme)}
-      attributes={symbolicTextAttributes(span.attributes)}
-    >
-      {span.text}
-    </text>
-  ));
+const fileViewPaintColorCache = new Map<string, ReturnType<typeof parseColor>>();
+
+/** Parse one host-owned paint color while reusing immutable terminal color values. */
+function fileViewPaintColor(value: string) {
+  let parsed = fileViewPaintColorCache.get(value);
+  if (!parsed) {
+    parsed = parseColor(value);
+    fileViewPaintColorCache.set(value, parsed);
+  }
+  return parsed;
+}
+
+/** Paint one row through the symbolic host-rendered path, adding syntax foregrounds only. */
+function SymbolicFileViewRow({
+  highlights,
+  row,
+  theme,
+}: {
+  highlights: ReturnType<typeof useFileViewSyntaxHighlight>;
+  row: ExtensionFileViewRow;
+  theme: AppTheme;
+}) {
+  const content = useMemo(() => {
+    const chunks: TextChunk[] = [];
+    for (const span of row.spans) {
+      const fallbackForeground = symbolicToneColor(span.tone, theme);
+      const attributes = symbolicTextAttributes(span.attributes);
+      const syntaxRuns = projectFileViewSyntaxSpan(span, highlights);
+      for (const run of syntaxRuns ?? [{ text: span.text }]) {
+        chunks.push({
+          __isChunk: true,
+          text: run.text,
+          fg: fileViewPaintColor(run.fg ?? fallbackForeground),
+          attributes,
+        });
+      }
+    }
+    return new StyledText(chunks);
+  }, [highlights, row.spans, theme]);
+  return <text content={content} wrapMode="char" />;
+}
 }
 
 /** Contain synchronous render/lifecycle failures to one row and attribute them to the host. */
 class FileViewRowErrorBoundary extends Component<
-  { children: ReactNode; fallback: ReactNode; onError: (error: unknown) => void },
+  {
+    children: ReactNode;
+    fallback: ReactNode;
+    onError: (error: unknown) => void;
+  },
   { failed: boolean }
 > {
   override state = { failed: false };
@@ -126,7 +162,7 @@ function FileViewComponent({
     [plannedRows, rowWindow.endIndex, rowWindow.startIndex],
   );
   // Demand follows the host row window so inserted notes and offscreen extension rows add no work.
-  useFileViewSyntaxHighlight({
+  const syntaxHighlights = useFileViewSyntaxHighlight({
     file,
     fileView,
     mountedRows,
@@ -176,7 +212,9 @@ function FileViewComponent({
         const View = row.component?.render as
           | ((props: ExtensionFileViewRowComponentProps) => ReactNode)
           | undefined;
-        const fallback = <SymbolicFileViewRow row={row} theme={theme} />;
+        const fallback = (
+          <SymbolicFileViewRow highlights={syntaxHighlights} row={row} theme={theme} />
+        );
         // Selection is deliberately absent: hook state survives ordinary selected-prop updates.
         // Window unmount or any accepted layout/registration generation creates a fresh identity.
         const paintIdentity = `${file.id}:${fileView.registrationIdentity}:${fileView.layoutGeneration}:${row.id}`;

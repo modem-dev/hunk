@@ -7,6 +7,38 @@ import { validateFileViewLayout } from "./layout";
 import { buildFileViewRenderPlan } from "./renderPlan";
 
 describe("file-view geometry", () => {
+  test("keeps row and review geometry identical when syntax metadata is added", () => {
+    const text = "1 const value = '界😀';";
+    const plain: ExtensionFileViewLayout = {
+      rows: [{ id: "code", spans: [{ text }] }],
+      hunkRows: [{ startRow: 0, endRow: 0 }],
+    };
+    const syntax: ExtensionFileViewLayout = {
+      codeDocuments: [{ id: "document", text }],
+      rows: [
+        {
+          id: "code",
+          spans: [{ text, syntax: { documentId: "document", line: 1 } }],
+        },
+      ],
+      hunkRows: [{ startRow: 0, endRow: 0 }],
+    };
+    const geometries = [plain, syntax].map((layout) => {
+      const checked = validateFileViewLayout(layout, 1, 8);
+      if (!checked.valid) throw new Error(checked.issue);
+      return measureFileViewGeometry({
+        resolved: checked.value,
+        plannedRows: buildFileViewRenderPlan(checked.value.layout, []).rows,
+        width: 8,
+      });
+    });
+
+    const { fileViewRows: plainRows, ...plainGeometry } = geometries[0]!;
+    const { fileViewRows: syntaxRows, ...syntaxGeometry } = geometries[1]!;
+    expect(syntaxGeometry).toEqual(plainGeometry);
+    expect(syntaxRows?.map((row) => row.stableKey)).toEqual(plainRows?.map((row) => row.stableKey));
+  });
+
   test("uses declared component heights while retaining stable row ids and hunk bounds", () => {
     const layout: ExtensionFileViewLayout = {
       rows: [
@@ -83,7 +115,10 @@ describe("file-view geometry", () => {
 
     expect(geometry.bodyHeight).toBe(10_000);
     expect(geometry.hunkAnchorRows.get(9_999)).toBe(9_999);
-    expect(geometry.hunkBounds.get(9_999)).toMatchObject({ top: 9_999, height: 1 });
+    expect(geometry.hunkBounds.get(9_999)).toMatchObject({
+      top: 9_999,
+      height: 1,
+    });
   });
 
   test("measures host notes and underlying rows from one planned stream", () => {
@@ -127,7 +162,10 @@ describe("file-view geometry", () => {
     expect(geometry.rowBounds.map((row) => row.height)).toEqual([2, noteHeight]);
     expect(geometry.bodyHeight).toBe(noteHeight + 2);
     expect(geometry.hunkAnchorRows.get(0)).toBe(0);
-    expect(geometry.hunkBounds.get(0)).toMatchObject({ top: 0, height: noteHeight + 2 });
+    expect(geometry.hunkBounds.get(0)).toMatchObject({
+      top: 0,
+      height: noteHeight + 2,
+    });
   });
 
   test("indexes every navigable row under the source line the review stream reveals it by", () => {
@@ -155,7 +193,9 @@ describe("file-view geometry", () => {
       width: 80,
     });
 
-    expect(geometry.rowBoundsByStableKey.get("line:0:new:1")).toMatchObject({ top: 0 });
+    expect(geometry.rowBoundsByStableKey.get("line:0:new:1")).toMatchObject({
+      top: 0,
+    });
     expect(geometry.rowBoundsByStableKey.get("file-view:summary")).toMatchObject({ top: 0 });
   });
 });
