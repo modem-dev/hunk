@@ -119,6 +119,8 @@ export interface BuildAppCommandsOptions {
   canDeleteActiveNote?: boolean;
   canEditActiveNote?: boolean;
   canReplyToActiveNote?: boolean;
+  /** True while the composer has a draft the save command can persist. */
+  canSaveDraftNote?: boolean;
   canRefreshCurrentInput: boolean;
   alignCurrentLine: (alignment: "top" | "center" | "bottom") => void;
   applyFilePresentationToAllMatching: () => void;
@@ -215,6 +217,10 @@ function builtinCommandHandlers(
       isEnabled: () => Boolean(options.canReplyToActiveNote),
       run: () => options.replyToActiveNote?.(),
     },
+    "hunk.review.saveNote": {
+      isEnabled: () => Boolean(options.canSaveDraftNote),
+      run: () => options.saveDraftNote(),
+    },
     "hunk.review.deleteActiveNote": {
       isEnabled: () => Boolean(options.canDeleteActiveNote),
       run: () => options.deleteActiveNote?.(),
@@ -225,7 +231,6 @@ function builtinCommandHandlers(
     "hunk.review.nextNote": {
       run: (_key, count, entry) => options.moveNoteCursor((entry.verticalDirection ?? 1) * count),
     },
-    "hunk.review.saveNote": { run: () => options.saveDraftNote() },
     "hunk.review.pageDown": { run: (_key, count) => options.scrollDiff(count, "viewport") },
     "hunk.review.pageUp": { run: (_key, count) => options.scrollDiff(-count, "viewport") },
     "hunk.review.halfPageDown": { run: (_key, count) => options.scrollDiff(count, "half") },
@@ -358,6 +363,7 @@ const NOOP_COMMAND_OPTIONS: BuildAppCommandsOptions = (() => {
     canAlignCurrentLine: false,
     canApplyFilePresentationToAllMatching: false,
     canRefreshCurrentInput: true,
+    canSaveDraftNote: true,
     alignCurrentLine: noop,
     applyFilePresentationToAllMatching: noop,
     focusFilter: noop,
