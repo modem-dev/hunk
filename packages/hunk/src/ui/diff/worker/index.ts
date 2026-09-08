@@ -8,9 +8,16 @@ export {
   highlightDiffInWorker,
   highlightDocumentInWorker,
   registerHighlightWorker,
+  HighlightWorkerClientError,
+  type HighlightWorkerClientErrorCode,
   type WorkerHighlightedDiffCode,
   type WorkerHighlightedDocumentCode,
 } from "./highlightWorkerClient";
+export {
+  documentWorkerEligibility,
+  type DocumentWorkerEligibility,
+  type DocumentWorkerHighlightInput,
+} from "./documentWorkerEligibility";
 export {
   compactHighlightRunsForLine,
   compactHighlightTransferList,

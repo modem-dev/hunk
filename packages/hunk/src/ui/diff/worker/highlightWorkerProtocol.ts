@@ -53,9 +53,38 @@ export interface HighlightWorkerDocumentSuccess extends HighlightWorkerResponseB
 
 export type HighlightWorkerSuccess = HighlightWorkerDiffSuccess | HighlightWorkerDocumentSuccess;
 
+/** Classifies worker-side failures without making callers parse human-readable messages. */
+export type HighlightWorkerFailureCode =
+  | "invalid-request"
+  | "unsupported-language"
+  | "unsupported-theme"
+  | "highlight-failed";
+
+const HIGHLIGHT_WORKER_FAILURE_CODES = new Set<HighlightWorkerFailureCode>([
+  "invalid-request",
+  "unsupported-language",
+  "unsupported-theme",
+  "highlight-failed",
+]);
+
+/** Return whether a structured-cloned value names one protocol failure class. */
+export function isHighlightWorkerFailureCode(value: unknown): value is HighlightWorkerFailureCode {
+  return (
+    typeof value === "string" &&
+    HIGHLIGHT_WORKER_FAILURE_CODES.has(value as HighlightWorkerFailureCode)
+  );
+}
+
+/** Return the protocol retry policy for one worker-side failure class. */
+export function isHighlightWorkerFailureRetryable(code: HighlightWorkerFailureCode) {
+  return code === "highlight-failed";
+}
+
 export interface HighlightWorkerFailure extends HighlightWorkerResponseBase {
   kind: HighlightWorkerRequest["kind"];
   ok: false;
+  code: HighlightWorkerFailureCode;
+  retryable: boolean;
   message: string;
 }
 

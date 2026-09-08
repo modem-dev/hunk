@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { createTestDiffFile } from "../../../../../../test/helpers/diff-helpers";
 import { supportsHighlightWorkerOffload } from "../../../highlightWorkerClient";
 import type { CompactHighlightedDiff, CompactHighlightedDocument } from "./highlightCompact";
 import {
   disposeHighlightWorker,
+  HighlightWorkerClientError,
   highlightDiffInWorker,
   highlightDocumentInWorker,
   registerHighlightWorker,
@@ -102,12 +103,16 @@ function requestDiff(aliasContext = false) {
 }
 
 /** Queue one representative complete-document request through the worker client. */
-function requestDocument() {
+function requestDocument({
+  signal,
+  text = "const answer = 42;\n",
+}: { signal?: AbortSignal; text?: string } = {}) {
   return highlightDocumentInWorker({
     appearance: "dark",
     language: "typescript",
     path: "example.ts",
-    text: "const answer = 42;\n",
+    signal,
+    text,
     theme: "github-dark-default",
   });
 }
@@ -209,12 +214,21 @@ describe("highlight worker client", () => {
         ok: true,
         code: { version: 1, foregroundPalette: [] },
       }),
+      (request: HighlightWorkerRequest) => ({
+        version: HIGHLIGHT_WORKER_PROTOCOL_VERSION,
+        id: request.id,
+        kind: "diff",
+        ok: false,
+        code: "unsupported-language",
+        retryable: true,
+        message: "inconsistent retry policy",
+      }),
     ]) {
       const control = createTestHighlightWorker();
       registerHighlightWorker(control.worker);
       const pending = requestDiff();
       control.reply(reply(control.state.messages[0]!));
-      await expect(pending).rejects.toThrow(/mismatch|typed arrays/);
+      await expect(pending).rejects.toThrow(/mismatch|typed arrays|malformed/);
       expect(control.state.terminateCalls).toBe(1);
     }
   });
@@ -255,17 +269,29 @@ describe("highlight worker client", () => {
       id: request.id,
       kind: "document",
       ok: false,
+      code: "unsupported-language",
+      retryable: false,
       message: "highlight rejected",
     });
-    await expect(pending).rejects.toThrow("highlight rejected");
+    const rejectedError = await pending.catch((error: unknown) => error);
+    expect(rejectedError).toBeInstanceOf(HighlightWorkerClientError);
+    expect(rejectedError).toMatchObject({
+      code: "unsupported-language",
+      retryable: false,
+      message: "highlight rejected",
+    });
 
     const crashed = createTestHighlightWorker();
     registerHighlightWorker(crashed.worker);
     const active = requestDiff();
     const queued = requestDocument();
     crashed.fail("worker crashed");
-    await expect(active).rejects.toThrow("worker crashed");
-    await expect(queued).rejects.toThrow("worker crashed");
+    const [activeError, queuedError] = await Promise.all([
+      active.catch((error: unknown) => error),
+      queued.catch((error: unknown) => error),
+    ]);
+    expect(activeError).toMatchObject({ code: "worker-failed", retryable: true });
+    expect(queuedError).toMatchObject({ code: "worker-failed", retryable: true });
   });
 
   test("rejects active and queued work when a replacement worker takes over", async () => {
@@ -353,6 +379,107 @@ describe("highlight worker client", () => {
       }),
     ).rejects.toThrow("shorter than 1000");
     expect(control.state.messages).toHaveLength(0);
+  });
+
+  test("removes aborted queued document jobs without disturbing queue order", async () => {
+    const control = createTestHighlightWorker();
+    registerHighlightWorker(control.worker);
+    const active = requestDiff();
+    const cancelledController = new AbortController();
+    const cancelled = requestDocument({
+      signal: cancelledController.signal,
+      text: "const cancelled = true;\n",
+    });
+    const following = requestDocument({ text: "const following = true;\n" });
+
+    cancelledController.abort();
+    await expect(cancelled).rejects.toMatchObject({ code: "aborted", retryable: false });
+    expect(control.state.messages).toHaveLength(1);
+
+    control.reply({
+      version: HIGHLIGHT_WORKER_PROTOCOL_VERSION,
+      id: control.state.messages[0]!.id,
+      kind: "diff",
+      ok: true,
+      code: emptyCompactDiffResponse(),
+    });
+    await expect(active).resolves.toEqual(emptyCompactDiffResponse());
+    expect(control.state.messages).toHaveLength(2);
+    expect(control.state.messages[1]).toMatchObject({
+      kind: "document",
+      text: "const following = true;\n",
+    });
+
+    control.reply({
+      version: HIGHLIGHT_WORKER_PROTOCOL_VERSION,
+      id: control.state.messages[1]!.id,
+      kind: "document",
+      ok: true,
+      code: compactDocumentResponseForText("const following = true;\n"),
+    });
+    await expect(following).resolves.toEqual(
+      compactDocumentResponseForText("const following = true;\n"),
+    );
+    expect(control.state.terminateCalls).toBe(0);
+  });
+
+  test("ignores an aborted active result and preserves unrelated queued work", async () => {
+    const control = createTestHighlightWorker();
+    registerHighlightWorker(control.worker);
+    const controller = new AbortController();
+    const cancelled = requestDocument({ signal: controller.signal });
+    const unrelated = requestDiff();
+
+    controller.abort();
+    await expect(cancelled).rejects.toMatchObject({ code: "aborted", retryable: false });
+    expect(control.state.messages).toHaveLength(1);
+    expect(control.state.terminateCalls).toBe(0);
+
+    control.reply({
+      version: HIGHLIGHT_WORKER_PROTOCOL_VERSION,
+      id: control.state.messages[0]!.id,
+      kind: "document",
+      ok: true,
+      code: compactDocumentResponseForText("const answer = 42;\n"),
+    });
+    expect(control.state.messages).toHaveLength(2);
+    expect(control.state.messages[1]?.kind).toBe("diff");
+
+    control.reply({
+      version: HIGHLIGHT_WORKER_PROTOCOL_VERSION,
+      id: control.state.messages[1]!.id,
+      kind: "diff",
+      ok: true,
+      code: emptyCompactDiffResponse(),
+    });
+    await expect(unrelated).resolves.toEqual(emptyCompactDiffResponse());
+    expect(control.state.terminateCalls).toBe(0);
+  });
+
+  test("detaches abort listeners on success and disposal", async () => {
+    const control = createTestHighlightWorker();
+    registerHighlightWorker(control.worker);
+    const controller = new AbortController();
+    const addEventListener = spyOn(controller.signal, "addEventListener");
+    const removeEventListener = spyOn(controller.signal, "removeEventListener");
+
+    const completed = requestDocument({ signal: controller.signal });
+    control.reply({
+      version: HIGHLIGHT_WORKER_PROTOCOL_VERSION,
+      id: control.state.messages[0]!.id,
+      kind: "document",
+      ok: true,
+      code: compactDocumentResponseForText("const answer = 42;\n"),
+    });
+    await completed;
+    expect(addEventListener).toHaveBeenCalledTimes(1);
+    expect(removeEventListener).toHaveBeenCalledTimes(1);
+
+    const disposed = requestDocument({ signal: controller.signal });
+    disposeHighlightWorker();
+    await expect(disposed).rejects.toMatchObject({ code: "worker-disposed", retryable: false });
+    expect(addEventListener).toHaveBeenCalledTimes(2);
+    expect(removeEventListener).toHaveBeenCalledTimes(2);
   });
 
   test("disposal terminates the worker and rejects active plus queued work", async () => {
