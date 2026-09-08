@@ -1,13 +1,17 @@
 import { describe, expect, test } from "bun:test";
 import { THEMES, type AppTheme } from "../themes";
 import {
+  DocumentHighlighterConfigurationError,
+  queueDocumentHighlightWork,
+} from "./documentHighlightRenderer";
+import {
   createDocumentHighlightService,
   documentHighlightCacheKey,
+  documentHighlightRunsForLine,
   DocumentHighlightAbortedError,
   type DocumentHighlightInput,
 } from "./documentHighlightService";
 import {
-  compactHighlightedDocumentRunsForLine,
   HighlightWorkerClientError,
   type CompactHighlightedDocument,
   type DocumentWorkerEligibility,
@@ -70,10 +74,8 @@ describe("document highlight service", () => {
     expect(code.status).toBe("highlighted");
     if (comment.status !== "highlighted" || code.status !== "highlighted") return;
 
-    const commentColors = compactHighlightedDocumentRunsForLine(comment.compact, 1).map(
-      (run) => run.fg,
-    );
-    const codeColors = compactHighlightedDocumentRunsForLine(code.compact, 1).map((run) => run.fg);
+    const commentColors = documentHighlightRunsForLine(comment, 1).map((run) => run.fg);
+    const codeColors = documentHighlightRunsForLine(code, 1).map((run) => run.fg);
     expect(commentColors).not.toEqual(codeColors);
   });
 
@@ -289,6 +291,204 @@ describe("document highlight service", () => {
     });
   });
 
+  test("bounds unique in-flight inputs while allowing same-key joins and later recovery", async () => {
+    const releases = new Map<string, (value: CompactHighlightedDocument) => void>();
+    let calls = 0;
+    const service = createDocumentHighlightService({
+      maxInFlightEntries: 2,
+      inlineHighlight: ({ path }) => {
+        calls += 1;
+        return new Promise<CompactHighlightedDocument>((resolve) => {
+          releases.set(path, resolve);
+        });
+      },
+    });
+
+    const first = service.highlight({ ...base, path: "one.ts" });
+    const firstJoin = service.highlight({ ...base, path: "one.ts" });
+    const second = service.highlight({ ...base, path: "two.ts" });
+    const rejected = await service.highlight({ ...base, path: "three.ts" });
+    await Promise.resolve();
+
+    expect(rejected).toEqual({
+      status: "fallback",
+      reason: "busy",
+      retryable: true,
+    });
+    expect(service.stats().inFlight).toBe(2);
+    expect(calls).toBe(2);
+
+    releases.get("one.ts")!(compact(base.text.length));
+    await Promise.all([first, firstJoin]);
+    const recovered = service.highlight({ ...base, path: "three.ts" });
+    await Promise.resolve();
+    expect(calls).toBe(3);
+    releases.get("two.ts")!(compact(base.text.length));
+    releases.get("three.ts")!(compact(base.text.length));
+    await Promise.all([second, recovered]);
+    expect(service.stats().inFlight).toBe(0);
+  });
+
+  test("keeps aborted underlying work charged until it settles", async () => {
+    const releases: Array<(value: CompactHighlightedDocument) => void> = [];
+    const service = createDocumentHighlightService({
+      maxInFlightEntries: 2,
+      inlineHighlight: () =>
+        new Promise<CompactHighlightedDocument>((resolve) => {
+          releases.push(resolve);
+        }),
+    });
+    const firstController = new AbortController();
+    const secondController = new AbortController();
+    const first = service.highlight({
+      ...base,
+      path: "one.ts",
+      signal: firstController.signal,
+    });
+    const second = service.highlight({
+      ...base,
+      path: "two.ts",
+      signal: secondController.signal,
+    });
+    await Promise.resolve();
+    firstController.abort();
+    secondController.abort();
+    await expect(first).rejects.toBeInstanceOf(DocumentHighlightAbortedError);
+    await expect(second).rejects.toBeInstanceOf(DocumentHighlightAbortedError);
+
+    expect(service.stats()).toMatchObject({
+      inFlight: 0,
+      outstandingEntries: 2,
+    });
+    expect(await service.highlight({ ...base, path: "three.ts" })).toEqual({
+      status: "fallback",
+      reason: "busy",
+      retryable: true,
+    });
+
+    releases.splice(0).forEach((release) => release(compact(base.text.length)));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(service.stats().outstandingEntries).toBe(0);
+    const recovered = service.highlight({ ...base, path: "three.ts" });
+    await Promise.resolve();
+    releases.shift()!(compact(base.text.length));
+    expect((await recovered).status).toBe("highlighted");
+  });
+
+  test("snapshots input and nested theme fields before asynchronous work", async () => {
+    let captured:
+      | {
+          text: string;
+          path: string;
+          language: string;
+          theme: AppTheme;
+        }
+      | undefined;
+    let workerCalls = 0;
+    const service = createDocumentHighlightService({
+      workerEligibility: eligible,
+      workerHighlight: async () => {
+        workerCalls += 1;
+        return compact(base.text.length);
+      },
+      inlineHighlight: async (input) => {
+        captured = input;
+        return compact(input.text.length);
+      },
+    });
+    const mutableTheme: AppTheme = {
+      ...theme,
+      syntaxColors: { ...theme.syntaxColors },
+      syntaxScopeOverrides: { keyword: "#112233" },
+    };
+    const mutableInput: DocumentHighlightInput = {
+      ...base,
+      theme: mutableTheme,
+    };
+    const pending = service.highlight(mutableInput);
+
+    mutableInput.text = "mutated";
+    mutableInput.path = "mutated.ts";
+    mutableInput.language = "javascript";
+    mutableInput.offloadLargeDiff = true;
+    mutableTheme.appearance = "light";
+    mutableTheme.syntaxTheme = "github-light-default";
+    mutableTheme.syntaxScopeOverrides!.keyword = "#ffffff";
+    mutableTheme.syntaxColors.keyword = "#000000";
+
+    expect((await pending).status).toBe("highlighted");
+    expect(captured).toMatchObject({
+      text: base.text,
+      path: base.path,
+      language: base.language,
+      theme: {
+        appearance: theme.appearance,
+        syntaxScopeOverrides: { keyword: "#112233" },
+      },
+    });
+    expect(captured?.theme.syntaxColors.keyword).toBe(theme.syntaxColors.keyword);
+    expect(workerCalls).toBe(0);
+  });
+
+  test("caches typed unsupported inline resources but retries unexpected inline failures", async () => {
+    let permanentCalls = 0;
+    const permanent = createDocumentHighlightService({
+      inlineHighlight: async () => {
+        permanentCalls += 1;
+        throw new DocumentHighlighterConfigurationError("unsupported");
+      },
+    });
+    expect(await permanent.highlight(base)).toEqual({
+      status: "fallback",
+      reason: "unsupported-language",
+      retryable: false,
+    });
+    await permanent.highlight(base);
+    expect(permanentCalls).toBe(1);
+
+    let retryCalls = 0;
+    const retryable = createDocumentHighlightService({
+      inlineHighlight: async () => {
+        retryCalls += 1;
+        if (retryCalls === 1) throw new Error("transient initialization failure");
+        return compact(base.text.length);
+      },
+    });
+    expect(await retryable.highlight(base)).toEqual({
+      status: "fallback",
+      reason: "highlight-failed",
+      retryable: true,
+    });
+    expect((await retryable.highlight(base)).status).toBe("highlighted");
+    expect(retryCalls).toBe(2);
+  });
+
+  test("skips production inline preparation when queued work loses every subscriber", async () => {
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const blocker = queueDocumentHighlightWork(() => blocked);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    const service = createDocumentHighlightService();
+    const controller = new AbortController();
+    const pending = service.highlight({
+      ...base,
+      language: "not-a-real-grammar",
+      signal: controller.signal,
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    controller.abort();
+    await expect(pending).rejects.toBeInstanceOf(DocumentHighlightAbortedError);
+    release();
+    await blocker;
+
+    expect((await service.highlight(base)).status).toBe("highlighted");
+    expect(service.stats().inFlight).toBe(0);
+  });
+
   test("bounds completed results by entry count and retained bytes", async () => {
     let calls = 0;
     const entryBound = createDocumentHighlightService({
@@ -325,7 +525,7 @@ describe("document highlight service", () => {
     expect(byteBound.stats().completedEntries).toBe(2);
   });
 
-  test("never exposes or retains a caller-detached cache buffer", async () => {
+  test("never exposes cache-owned compact buffers through line projections", async () => {
     let calls = 0;
     const service = createDocumentHighlightService({
       inlineHighlight: async () => {
@@ -334,17 +534,16 @@ describe("document highlight service", () => {
       },
     });
     const first = await service.highlight(base);
-    expect(first.status).toBe("highlighted");
-    if (first.status !== "highlighted") return;
-
-    const buffer = first.compact.document.starts.buffer;
-    structuredClone(first.compact, { transfer: [buffer] });
-    expect(buffer.byteLength).toBe(0);
+    expect(Object.getOwnPropertySymbols(first)).toHaveLength(0);
+    expect(Object.keys(first)).toEqual(["status", "retryable"]);
+    const firstRuns = documentHighlightRunsForLine(first, 0);
+    expect(firstRuns).toEqual([{ start: 0, end: base.text.length, fg: "#112233" }]);
+    firstRuns[0]!.start = 99;
 
     const cached = await service.highlight(base);
-    expect(cached.status).toBe("highlighted");
-    if (cached.status !== "highlighted") return;
-    expect(cached.compact.document.starts.buffer.byteLength).toBeGreaterThan(0);
+    expect(documentHighlightRunsForLine(cached, 0)).toEqual([
+      { start: 0, end: base.text.length, fg: "#112233" },
+    ]);
     expect(calls).toBe(1);
   });
 });

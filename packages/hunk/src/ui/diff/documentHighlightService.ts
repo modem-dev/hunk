@@ -1,11 +1,15 @@
 import { createHash } from "node:crypto";
 import type { AppTheme } from "../themes";
-import { renderHighlightedDocumentLines } from "./documentHighlightRenderer";
+import {
+  DocumentHighlighterConfigurationError,
+  renderHighlightedDocumentLines,
+} from "./documentHighlightRenderer";
 import { DOCUMENT_HIGHLIGHT_RENDER_OPTIONS_REVISION } from "./highlightRenderOptions";
 import { syntaxHighlightThemeName } from "./syntaxHighlightTheme";
 import {
   cloneCompactHighlightedDocument,
   compactHighlightedDocumentByteLength,
+  compactHighlightedDocumentRunsForLine,
   documentWorkerEligibility,
   encodeCompactHighlightedDocument,
   highlightDocumentInWorker,
@@ -16,6 +20,8 @@ import {
 
 const DEFAULT_CACHE_BYTES = 32 * 1024 * 1024;
 const DEFAULT_CACHE_ENTRIES = 128;
+// Each unique entry can retain a 1 MiB input while worker and inline execution are serialized.
+const DEFAULT_MAX_IN_FLIGHT_ENTRIES = 16;
 const CACHE_ENTRY_OVERHEAD_BYTES = 256;
 
 /** Inputs that fully determine one complete-document syntax result. */
@@ -29,22 +35,33 @@ export interface DocumentHighlightInput {
 }
 
 export type DocumentHighlightFallbackReason =
+  | "busy"
   | "invalid-document"
   | "unsupported-language"
   | "highlight-failed"
   | "worker-failed";
 
-/** Stable paint input returned by document highlighting or its readable fallback. */
+/** One paint-only syntax range projected from a highlighted document line. */
+export interface DocumentHighlightRun {
+  start: number;
+  end: number;
+  fg?: string;
+}
+
+interface HighlightedDocumentResult {
+  readonly status: "highlighted";
+  readonly retryable: false;
+}
+
+const compactDocuments = new WeakMap<HighlightedDocumentResult, CompactHighlightedDocument>();
+
+/** Stable document-oriented result returned by highlighting or its readable fallback. */
 export type DocumentHighlightResult =
+  | HighlightedDocumentResult
   | {
-      status: "highlighted";
-      compact: CompactHighlightedDocument;
-      retryable: false;
-    }
-  | {
-      status: "fallback";
-      reason: DocumentHighlightFallbackReason;
-      retryable: boolean;
+      readonly status: "fallback";
+      readonly reason: DocumentHighlightFallbackReason;
+      readonly retryable: boolean;
     };
 
 /** Marks a subscriber that stopped waiting without changing other shared subscribers. */
@@ -69,6 +86,7 @@ interface InFlightEntry {
 interface DocumentHighlightServiceOptions {
   maxCacheBytes?: number;
   maxCacheEntries?: number;
+  maxInFlightEntries?: number;
   workerEligibility?: (input: {
     language: string;
     path: string;
@@ -86,15 +104,56 @@ interface DocumentHighlightServiceOptions {
   }) => Promise<CompactHighlightedDocument>;
 }
 
+/** Wrap one compact artifact behind the document-oriented service boundary. */
+function highlightedResult(compact: CompactHighlightedDocument): HighlightedDocumentResult {
+  const result: HighlightedDocumentResult = {
+    status: "highlighted",
+    retryable: false,
+  };
+  compactDocuments.set(result, compact);
+  return Object.freeze(result);
+}
+
+/** Read the compact artifact behind one service-owned highlighted result. */
+function compactDocument(result: HighlightedDocumentResult) {
+  const compact = compactDocuments.get(result);
+  if (!compact) throw new Error("Highlighted document result lost its compact artifact.");
+  return compact;
+}
+
 /** Clone one result so callers cannot mutate cache-owned typed-array buffers. */
 function cloneResult(result: DocumentHighlightResult): DocumentHighlightResult {
   return result.status === "highlighted"
-    ? {
-        status: "highlighted",
-        compact: cloneCompactHighlightedDocument(result.compact),
-        retryable: false,
-      }
+    ? highlightedResult(cloneCompactHighlightedDocument(compactDocument(result)))
     : { ...result };
+}
+
+/** Project one line's syntax ranges without exposing worker payload types to consumers. */
+export function documentHighlightRunsForLine(
+  result: DocumentHighlightResult | null | undefined,
+  lineIndex: number,
+): DocumentHighlightRun[] {
+  if (!result || result.status !== "highlighted") return [];
+  return compactHighlightedDocumentRunsForLine(compactDocument(result), lineIndex);
+}
+
+/** Snapshot caller-owned inputs before identity or asynchronous scheduling can observe mutation. */
+function snapshotInput(input: DocumentHighlightInput): Omit<DocumentHighlightInput, "signal"> {
+  const syntaxScopeOverrides = input.theme.syntaxScopeOverrides
+    ? Object.freeze({ ...input.theme.syntaxScopeOverrides })
+    : undefined;
+  const theme = Object.freeze({
+    ...input.theme,
+    syntaxColors: Object.freeze({ ...input.theme.syntaxColors }),
+    ...(syntaxScopeOverrides === undefined ? {} : { syntaxScopeOverrides }),
+  });
+  return Object.freeze({
+    text: input.text,
+    path: input.path,
+    language: input.language,
+    theme,
+    offloadLargeDiff: input.offloadLargeDiff === true,
+  });
 }
 
 /** Hash every render-affecting input with explicit field boundaries. */
@@ -123,7 +182,9 @@ export function documentHighlightCacheKey({
 function resultCost(result: DocumentHighlightResult) {
   return (
     CACHE_ENTRY_OVERHEAD_BYTES +
-    (result.status === "highlighted" ? compactHighlightedDocumentByteLength(result.compact) : 0)
+    (result.status === "highlighted"
+      ? compactHighlightedDocumentByteLength(compactDocument(result))
+      : 0)
   );
 }
 
@@ -147,9 +208,15 @@ function workerFallback(error: unknown): DocumentHighlightResult {
 export function createDocumentHighlightService(options: DocumentHighlightServiceOptions = {}) {
   const maxCacheBytes = Math.max(1, Math.floor(options.maxCacheBytes ?? DEFAULT_CACHE_BYTES));
   const maxCacheEntries = Math.max(1, Math.floor(options.maxCacheEntries ?? DEFAULT_CACHE_ENTRIES));
+  const maxInFlightEntries = Math.max(
+    1,
+    Math.floor(options.maxInFlightEntries ?? DEFAULT_MAX_IN_FLIGHT_ENTRIES),
+  );
   const completed = new Map<string, CompletedCacheEntry>();
   const inFlight = new Map<string, InFlightEntry>();
   let completedCost = 0;
+  // Aborted entries remain charged until their queued or active underlying work settles.
+  let outstandingEntries = 0;
 
   const eligibility = options.workerEligibility ?? documentWorkerEligibility;
   const workerHighlight = options.workerHighlight ?? highlightDocumentInWorker;
@@ -161,6 +228,7 @@ export function createDocumentHighlightService(options: DocumentHighlightService
         cacheKey,
         language,
         path,
+        signal,
         text,
         theme,
       });
@@ -218,7 +286,7 @@ export function createDocumentHighlightService(options: DocumentHighlightService
           ...workerDecision.input,
           signal,
         });
-        return { status: "highlighted", compact, retryable: false };
+        return highlightedResult(compact);
       } catch (error) {
         if (signal.aborted) throw new DocumentHighlightAbortedError();
         return workerFallback(error);
@@ -231,16 +299,22 @@ export function createDocumentHighlightService(options: DocumentHighlightService
         cacheKey: key,
         signal,
       });
-      return { status: "highlighted", compact, retryable: false };
+      return highlightedResult(compact);
     } catch (error) {
       if (signal.aborted || error instanceof DocumentHighlightAbortedError) {
         throw new DocumentHighlightAbortedError();
       }
-      return {
-        status: "fallback",
-        reason: "unsupported-language",
-        retryable: false,
-      };
+      return error instanceof DocumentHighlighterConfigurationError
+        ? {
+            status: "fallback",
+            reason: "unsupported-language",
+            retryable: false,
+          }
+        : {
+            status: "fallback",
+            reason: "highlight-failed",
+            retryable: true,
+          };
     }
   };
 
@@ -283,12 +357,20 @@ export function createDocumentHighlightService(options: DocumentHighlightService
         return Promise.reject(new DocumentHighlightAbortedError());
       }
 
-      const key = documentHighlightCacheKey(input);
+      const snapshot = snapshotInput(input);
+      const key = documentHighlightCacheKey(snapshot);
       const cached = cachedResult(key);
       if (cached) return Promise.resolve(cached);
 
       let entry = inFlight.get(key);
       if (!entry) {
+        if (outstandingEntries >= maxInFlightEntries) {
+          return Promise.resolve({
+            status: "fallback",
+            reason: "busy",
+            retryable: true,
+          } satisfies DocumentHighlightResult);
+        }
         const controller = new AbortController();
         entry = {
           controller,
@@ -296,8 +378,9 @@ export function createDocumentHighlightService(options: DocumentHighlightService
           promise: Promise.resolve(undefined as never),
         };
         const capturedEntry = entry;
+        outstandingEntries += 1;
         entry.promise = Promise.resolve()
-          .then(() => execute(input, key, controller.signal))
+          .then(() => execute(snapshot, key, controller.signal))
           .then((result) => {
             if (
               inFlight.get(key) === capturedEntry &&
@@ -309,6 +392,7 @@ export function createDocumentHighlightService(options: DocumentHighlightService
             return result;
           })
           .finally(() => {
+            outstandingEntries -= 1;
             if (inFlight.get(key) === capturedEntry) inFlight.delete(key);
           });
         inFlight.set(key, entry);
@@ -329,6 +413,7 @@ export function createDocumentHighlightService(options: DocumentHighlightService
         completedEntries: completed.size,
         completedBytes: completedCost,
         inFlight: inFlight.size,
+        outstandingEntries,
       };
     },
   };
