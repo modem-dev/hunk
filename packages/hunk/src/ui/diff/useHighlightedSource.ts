@@ -1,19 +1,18 @@
-import { useLayoutEffect, useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { DiffFile } from "../../core/changeset/model";
 import type { AppTheme } from "../themes";
+import { loadHighlightedSourceLines, sourceHasIncompatibleLoneCarriageReturn } from "./diffRows";
 import {
-  loadHighlightedSourceLines,
-  sourceHasIncompatibleLoneCarriageReturn,
-  type HighlightedSourceCode,
-} from "./diffRows";
-import { documentHighlightCacheKey } from "./documentHighlightService";
+  documentHighlightCacheKey,
+  type DocumentHighlightResult,
+} from "./documentHighlightService";
 
 const SOURCE_HIGHLIGHT_MAX_RETRIES = 1;
 const SOURCE_HIGHLIGHT_RETRY_DELAY_MS = 25;
 
 interface HighlightedSourceState {
   cacheKey: string;
-  highlighted: HighlightedSourceCode;
+  highlighted: DocumentHighlightResult;
 }
 
 interface HighlightedSourceDependencies {
@@ -84,42 +83,48 @@ export function useHighlightedSource(
     0,
     Math.floor(dependencies.retryDelayMs ?? SOURCE_HIGHLIGHT_RETRY_DELAY_MS),
   );
+  // The effect is keyed by the service's semantic identity rather than caller object identity.
+  // Keep the latest equivalent snapshots available without restarting work when parents recreate
+  // `file` or `theme` objects during unrelated renders.
+  const requestRef = useRef({ file, offloadLargeDiff, text, theme });
+  requestRef.current = { file, offloadLargeDiff, text, theme };
 
   useLayoutEffect(() => {
-    if (!file || text === undefined || !cacheKey || !shouldLoadHighlight) {
+    const request = requestRef.current;
+    if (!request.file || request.text === undefined || !cacheKey || !shouldLoadHighlight) {
       setState(null);
       return;
     }
 
+    const requestFile = request.file;
+    const requestText = request.text;
     const controller = new AbortController();
     let active = true;
     setState((current) => (current?.cacheKey === cacheKey ? current : null));
 
     void (async () => {
       for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
-        let highlighted: HighlightedSourceCode;
+        let highlighted: DocumentHighlightResult;
         try {
           highlighted = await load({
-            file,
-            offloadLargeDiff,
+            file: requestFile,
+            offloadLargeDiff: request.offloadLargeDiff,
             signal: controller.signal,
-            text,
-            theme,
+            text: requestText,
+            theme: request.theme,
           });
         } catch {
           if (!active || controller.signal.aborted) return;
-          highlighted = {
-            result: Object.freeze({
-              status: "fallback",
-              reason: "highlight-failed",
-              retryable: true,
-            }),
-          };
+          highlighted = Object.freeze({
+            status: "fallback",
+            reason: "highlight-failed",
+            retryable: true,
+          });
         }
 
         if (!active || controller.signal.aborted) return;
         setState({ cacheKey, highlighted });
-        if (!highlighted.result.retryable || attempt === maxRetries) return;
+        if (!highlighted.retryable || attempt === maxRetries) return;
 
         try {
           await waitForRetry(retryDelayMs, controller.signal);
@@ -133,17 +138,7 @@ export function useHighlightedSource(
       active = false;
       controller.abort();
     };
-  }, [
-    cacheKey,
-    file,
-    load,
-    maxRetries,
-    offloadLargeDiff,
-    retryDelayMs,
-    shouldLoadHighlight,
-    text,
-    theme,
-  ]);
+  }, [cacheKey, load, maxRetries, offloadLargeDiff, retryDelayMs, shouldLoadHighlight]);
 
   return state?.cacheKey === cacheKey ? state.highlighted : null;
 }

@@ -207,14 +207,8 @@ export function DiffSectionBody({
   });
   const sourceLineSpans = useCallback(
     (line: string | undefined, sourceLineNumber: number) =>
-      spansForHighlightedSourceLine(
-        line,
-        resolvedHighlightedSource,
-        theme,
-        tabWidth,
-        sourceLineNumber,
-      ),
-    [resolvedHighlightedSource, tabWidth, theme],
+      spansForHighlightedSourceLine(line, resolvedHighlightedSource, tabWidth, sourceLineNumber),
+    [resolvedHighlightedSource, tabWidth],
   );
 
   const sectionRowPlan = useMemo(

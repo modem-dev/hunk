@@ -48,9 +48,9 @@ import {
   loadDocumentHighlight,
   type DocumentHighlightResult,
 } from "./documentHighlightService";
-import { pierreHighlightRenderOptions } from "./highlightRenderOptions";
+import { HIGHLIGHT_WORKER_MIN_LINES, pierreHighlightRenderOptions } from "./highlightRenderOptions";
 
-export const HIGHLIGHT_WORKER_MIN_LINES = 40;
+export { HIGHLIGHT_WORKER_MIN_LINES } from "./highlightRenderOptions";
 
 export interface LoadHighlightedDiffOptions {
   /** Allow the interactive TUI to move eligible highlighting into the Bun worker. */
@@ -71,11 +71,6 @@ export interface HighlightedDiffCode {
   compact?: CompactHighlightedDiffCode;
   /** Keeps a transient offload failure out of the shared cache so a later visit can retry it. */
   retryable?: true;
-}
-
-export interface HighlightedSourceCode {
-  /** Shared complete-document result projected against authoritative source text at paint time. */
-  result: DocumentHighlightResult;
 }
 
 export type {
@@ -637,42 +632,36 @@ export async function loadHighlightedSourceLines({
   signal?: AbortSignal;
   text: string;
   theme: AppTheme;
-}): Promise<HighlightedSourceCode> {
+}): Promise<DocumentHighlightResult> {
   // Review geometry currently treats a lone CR as content, while the document service normalizes
   // it as a newline. Keep line ownership stable by declining syntax paint for that rare source.
   if (sourceHasIncompatibleLoneCarriageReturn(text)) {
-    return {
-      result: Object.freeze({
-        status: "fallback",
-        reason: "invalid-document",
-        retryable: false,
-      }),
-    };
+    return Object.freeze({
+      status: "fallback",
+      reason: "invalid-document",
+      retryable: false,
+    });
   }
 
-  return {
-    result: await loadDocumentHighlight({
-      language: file.language ?? "text",
-      offloadLargeDiff,
-      path: file.path,
-      signal,
-      text,
-      theme,
-    }),
-  };
+  return await loadDocumentHighlight({
+    language: file.language ?? "text",
+    offloadLargeDiff,
+    path: file.path,
+    signal,
+    text,
+    theme,
+  });
 }
 
 /** Convert one highlighted full-source line into the spans used by expanded context rows. */
 export function spansForHighlightedSourceLine(
   rawLine: string | undefined,
-  highlighted: HighlightedSourceCode | DocumentHighlightResult | null | undefined,
-  _theme: AppTheme,
+  highlighted: DocumentHighlightResult | null | undefined,
   tabWidth = DEFAULT_TAB_WIDTH,
   sourceLineIndex = 0,
 ): RenderSpan[] {
-  const result = highlighted && "result" in highlighted ? highlighted.result : highlighted;
   const source = cleanLastNewline(rawLine ?? "");
-  const runs = documentHighlightRunsForLine(result, sourceLineIndex);
+  const runs = documentHighlightRunsForLine(highlighted, sourceLineIndex);
   const spans: RenderSpan[] = [];
   let sourceColumn = 0;
   let codeColumn = 0;
