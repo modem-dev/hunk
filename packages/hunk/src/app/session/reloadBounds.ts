@@ -13,8 +13,8 @@ import type { VcsCatalog } from "../../core/vcs/types";
  * | `hunk diff` / `hunk show` / `hunk stash show` | Initial repo root | Anything outside that repo root. |
  * | `hunk diff --files fileA fileB` inside a repo, both files in repo | The repo root | Anything outside that repo root. |
  * | `hunk difftool fileA fileB` inside a repo, both files in repo | The repo root | Anything outside that repo root. |
- * | `hunk diff --files fileA fileB` outside a repo | None | All session reloads. |
- * | `hunk difftool fileA fileB` outside a repo | None | All session reloads. |
+ * | `hunk diff --files fileA fileB` outside a repo | Exact initial files | Other files and every repository-backed reload. |
+ * | `hunk difftool fileA fileB` outside a repo | Exact initial files | Other files and every repository-backed reload. |
  * | `hunk patch patchfile` inside a repo | The repo root | Anything outside that repo root. |
  * | `hunk patch patchfile` outside a repo | Exact initial patch file | Other files and every repository-backed reload. |
  * | stdin-backed patch startup | None | All session reloads. |
@@ -92,13 +92,14 @@ export function createSessionReloadBounds(
       roots = [bootstrap.reloadContext.repoRoot ?? bootstrap.reloadContext.cwd];
       break;
     case "diff":
-    case "difftool":
-      roots = resolveRepoReloadRoots(
-        initialCwd,
-        [bootstrap.input.left, bootstrap.input.right],
-        bootstrap.reloadContext.vcsCatalog,
-      );
+    case "difftool": {
+      const inputFiles = [bootstrap.input.left, bootstrap.input.right];
+      roots = resolveRepoReloadRoots(initialCwd, inputFiles, bootstrap.reloadContext.vcsCatalog);
+      if (roots.length === 0) {
+        exactFiles = inputFiles.map((path) => resolve(initialCwd, path));
+      }
       break;
+    }
     case "patch":
       if (bootstrap.input.file && bootstrap.input.file !== "-") {
         roots = resolveRepoReloadRoots(
@@ -206,8 +207,8 @@ export function validateSessionReloadWithinBounds(
   switch (nextInput.kind) {
     case "diff":
     case "difftool":
-      assertReloadFileWithinBounds(bounds, sourceCwd, nextInput.left, "left file");
-      assertReloadFileWithinBounds(bounds, sourceCwd, nextInput.right, "right file");
+      assertReloadFileWithinBounds(bounds, sourceCwd, nextInput.left, "left file", true);
+      assertReloadFileWithinBounds(bounds, sourceCwd, nextInput.right, "right file", true);
       break;
     case "patch":
       if (nextInput.file && nextInput.file !== "-") {

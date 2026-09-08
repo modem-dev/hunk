@@ -1664,8 +1664,8 @@ describe("App interactions", () => {
     }
   });
 
-  test("reload shortcut reloads the current file diff from disk", async () => {
-    const dir = mkdtempSync(join(process.cwd(), ".hunk-reload-"));
+  test("reload shortcut refreshes direct files launched outside a repository", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "hunk-reload-"));
     const left = join(dir, "before.ts");
     const right = join(dir, "after.ts");
 
