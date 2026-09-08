@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { platform, tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
-import { describeGitDiffTitleRange, GitVcsAdapter, statSignature } from ".";
+import { createGitVcsAdapter, describeGitDiffTitleRange, GitVcsAdapter, statSignature } from ".";
 import type {
   ExtensionVcsDiffInput,
   ExtensionVcsOperations,
@@ -66,6 +66,29 @@ function createTempRepo(prefix: string) {
   git(dir, "config", "user.email", "test@example.com");
   git(dir, "config", "commit.gpgsign", "false");
   return dir;
+}
+
+/** Wrap Git and move master after review metadata captures an immutable revision. */
+function createRefMovingGitExecutable(repo: string, movedRevision: string) {
+  const gitExecutable = Bun.which("git");
+  if (!gitExecutable) throw new Error("Git is required for adapter tests.");
+  const wrapper = join(repo, "move-ref-git");
+  writeFileSync(
+    wrapper,
+    [
+      "#!/bin/sh",
+      'if [ "$1" = "log" ]; then',
+      `  ${JSON.stringify(gitExecutable)} "$@"`,
+      "  status=$?",
+      `  ${JSON.stringify(gitExecutable)} update-ref refs/heads/master ${JSON.stringify(movedRevision)}`,
+      '  exit "$status"',
+      "fi",
+      `exec ${JSON.stringify(gitExecutable)} "$@"`,
+      "",
+    ].join("\n"),
+  );
+  chmodSync(wrapper, 0o755);
+  return wrapper;
 }
 
 afterEach(() => {
@@ -257,6 +280,76 @@ describe("GitVcsAdapter", () => {
     expect(stashResult.patchText).toContain("+three");
     expect("review" in stashResult).toBe(false);
   });
+
+  test.skipIf(process.platform === "win32")(
+    "pins revision metadata, patch text, and source reads to one resolved commit",
+    async () => {
+      const repo = createTempRepo("hunk-git-adapter-moving-show-ref-");
+      writeFileSync(join(repo, "file.txt"), "one\n");
+      git(repo, "add", "file.txt");
+      git(repo, "commit", "-m", "initial");
+      writeFileSync(join(repo, "file.txt"), "two\n");
+      git(repo, "commit", "-am", "reviewed");
+      const reviewedRevision = git(repo, "rev-parse", "HEAD").trim();
+      writeFileSync(join(repo, "file.txt"), "three\n");
+      git(repo, "commit", "-am", "moved");
+      const movedRevision = git(repo, "rev-parse", "HEAD").trim();
+      git(repo, "reset", "--hard", reviewedRevision);
+
+      const adapter = createGitVcsAdapter({
+        gitExecutable: createRefMovingGitExecutable(repo, movedRevision),
+      });
+      const result = await adapter.operations["revision-show"]!.load(
+        { kind: "show", ref: "HEAD", options: {} },
+        { cwd: repo },
+      );
+      const file = { path: "file.txt", changeType: "change", isUntracked: false } as const;
+
+      expect(git(repo, "rev-parse", "HEAD").trim()).toBe(movedRevision);
+      expect(result.review).toMatchObject({ revision: reviewedRevision, title: "reviewed" });
+      expect(result.patchText).toContain("+two");
+      expect(result.patchText).not.toContain("+three");
+      expect(await result.readFileSource?.({ ...file, side: "new" })).toBe("two\n");
+    },
+  );
+
+  test.skipIf(process.platform === "win32")(
+    "pins comparison metadata, patch text, and source reads to one endpoint pair",
+    async () => {
+      const repo = createTempRepo("hunk-git-adapter-moving-diff-ref-");
+      writeFileSync(join(repo, "file.txt"), "one\n");
+      git(repo, "add", "file.txt");
+      git(repo, "commit", "-m", "initial");
+      const baseRevision = git(repo, "rev-parse", "HEAD").trim();
+      writeFileSync(join(repo, "file.txt"), "two\n");
+      git(repo, "commit", "-am", "reviewed");
+      const reviewedRevision = git(repo, "rev-parse", "HEAD").trim();
+      writeFileSync(join(repo, "file.txt"), "three\n");
+      git(repo, "commit", "-am", "moved");
+      const movedRevision = git(repo, "rev-parse", "HEAD").trim();
+      git(repo, "reset", "--hard", reviewedRevision);
+
+      const adapter = createGitVcsAdapter({
+        gitExecutable: createRefMovingGitExecutable(repo, movedRevision),
+      });
+      const result = await adapter.operations["working-tree-diff"]!.load(
+        {
+          kind: "vcs",
+          staged: false,
+          rangeEndpoints: { from: baseRevision, to: "master" },
+          options: {},
+        },
+        { cwd: repo },
+      );
+      const file = { path: "file.txt", changeType: "change", isUntracked: false } as const;
+
+      expect(git(repo, "rev-parse", "HEAD").trim()).toBe(movedRevision);
+      expect(result.review).toMatchObject({ base: baseRevision, head: reviewedRevision });
+      expect(result.patchText).toContain("+two");
+      expect(result.patchText).not.toContain("+three");
+      expect(await result.readFileSource?.({ ...file, side: "new" })).toBe("two\n");
+    },
+  );
 
   test("returns null when no Git marker exists up to the filesystem root", () => {
     // A bare temp dir has no .git in any ancestor, exercising the walk-to-root null return.

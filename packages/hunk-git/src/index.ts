@@ -39,6 +39,7 @@ import {
   type ExtensionVcsDirectoryTreeWatchTarget,
   type ExtensionVcsExtraFile,
   type ExtensionVcsFileSourceReader,
+  type ExtensionVcsShowInput,
   type ExtensionVcsWatchPlan,
   type HunkExtensionAPI,
 } from "hunkdiff/extension";
@@ -202,7 +203,10 @@ async function createGitComparisonReview(
     loadGitReviewCommits(revision, { cwd: repoRoot, gitExecutable, signal }),
     countGitReviewCommits(revision, { cwd: repoRoot, gitExecutable, signal }),
   ]);
-  return comparisonReviewInfo("Git", endpoints.base, endpoints.head, commits, commitCount);
+  return {
+    endpoints,
+    review: comparisonReviewInfo("Git", endpoints.base, endpoints.head, commits, commitCount),
+  };
 }
 
 /** Build exact source capability data while asynchronously hashing a possible index. */
@@ -378,6 +382,23 @@ export function createGitVcsAdapter({
           const repoRoot = await resolveGitRepoRootAsync(input, { cwd, gitExecutable, signal });
           const repoName = basename(repoRoot);
           const range = describeGitDiffTitleRange(input);
+          const comparison = await createGitComparisonReview(
+            input,
+            cwd,
+            repoRoot,
+            gitExecutable,
+            signal,
+          );
+          const patchInput: ExtensionVcsDiffInput = comparison
+            ? {
+                ...input,
+                range: undefined,
+                rangeEndpoints: {
+                  from: comparison.endpoints.base,
+                  to: comparison.endpoints.head,
+                },
+              }
+            : input;
           const title = input.staged
             ? `${repoName} staged changes`
             : range
@@ -387,7 +408,7 @@ export function createGitVcsAdapter({
           // excluded from the diff instead of generating output nobody reads.
           const numstat = await runGitTextAsync({
             input,
-            args: buildGitDiffNumstatArgs(input),
+            args: buildGitDiffNumstatArgs(patchInput),
             cwd,
             gitExecutable,
             signal,
@@ -397,20 +418,18 @@ export function createGitVcsAdapter({
             gitExecutable,
             signal,
           });
-          const sourceCapability = await createGitDiffSourceCapabilityAsync(
-            input,
-            repoRoot,
-            cwd,
-            gitExecutable,
-            signal,
-          );
-          const review = await createGitComparisonReview(
-            input,
-            cwd,
-            repoRoot,
-            gitExecutable,
-            signal,
-          );
+          const sourceCapability = comparison
+            ? await createGitSourceCapabilityAsync(
+                input,
+                repoRoot,
+                {
+                  old: { kind: "git-ref", ref: comparison.endpoints.base },
+                  new: { kind: "git-ref", ref: comparison.endpoints.head },
+                },
+                gitExecutable,
+                signal,
+              )
+            : await createGitDiffSourceCapabilityAsync(input, repoRoot, cwd, gitExecutable, signal);
           const untrackedPaths = await listGitUntrackedFilesAsync(input, {
             cwd,
             repoRoot,
@@ -428,7 +447,7 @@ export function createGitVcsAdapter({
             patchText: await runGitTextAsync({
               input,
               args: buildGitDiffArgs(
-                input,
+                patchInput,
                 largeTrackedFiles.map((file) => file.path),
                 colorMoved,
               ),
@@ -436,7 +455,7 @@ export function createGitVcsAdapter({
               gitExecutable,
               signal,
             }),
-            review,
+            review: comparison?.review,
             ...sourceCapability,
             extraFiles: largeTrackedFiles.map(
               (file): ExtensionVcsExtraFile => ({
@@ -501,6 +520,7 @@ export function createGitVcsAdapter({
               1,
             )
           )[0];
+          const patchInput: ExtensionVcsShowInput = { ...input, ref: revisionId };
 
           return {
             repoRoot,
@@ -509,7 +529,7 @@ export function createGitVcsAdapter({
             patchText: await runGitTextAsync({
               input,
               args: buildGitShowArgs(
-                input,
+                patchInput,
                 await resolveGitColorMovedOptionsAsync(input, { cwd, gitExecutable, signal }),
               ),
               cwd,

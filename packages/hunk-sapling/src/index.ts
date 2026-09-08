@@ -16,6 +16,8 @@ import { createSlCommitReview, createSlComparisonReview } from "./reviewInfo";
 import {
   HUNK_VCS_DETECTION_BASELINE_PRIORITY,
   type ExtensionVcsAdapter,
+  type ExtensionVcsDiffInput,
+  type ExtensionVcsShowInput,
   type HunkExtensionAPI,
 } from "hunkdiff/extension";
 
@@ -71,70 +73,118 @@ function statSignature(path: string) {
   return `${path}:${stat.size}:${stat.mtimeMs}:${stat.ino}`;
 }
 
-/** VCS adapter translating neutral review operations to Sapling commands. */
-export const SaplingVcsAdapter = {
-  id: "sl",
-  name: "Sapling",
-  detect: detectSlRepo,
-  // Above Git for the same reason Jujutsu is: `sl init --git` leaves Git
-  // metadata behind, and the Sapling working copy is the one under review.
-  detectionPriority: HUNK_VCS_DETECTION_BASELINE_PRIORITY + 100,
-  operations: {
-    "working-tree-diff": {
-      async load(input, { cwd, signal }) {
-        if (input.staged) {
-          throw createSlStagedError(input);
-        }
-        const diffArgs = buildSlDiffArgs(input);
-        const repoRoot = await resolveSlRepoRootAsync(input, { cwd, signal });
-        const repoName = basename(repoRoot);
-        const range = describeDiffRange(input);
-        const review = input.rangeEndpoints
-          ? await createSlComparisonReview(
+export interface SaplingVcsAdapterOptions {
+  slExecutable?: string;
+}
+
+/** Create a Sapling adapter with provider-owned process dependencies. */
+export function createSaplingVcsAdapter({
+  slExecutable = "sl",
+}: Readonly<SaplingVcsAdapterOptions> = {}) {
+  return {
+    id: "sl",
+    name: "Sapling",
+    detect: detectSlRepo,
+    // Above Git for the same reason Jujutsu is: `sl init --git` leaves Git
+    // metadata behind, and the Sapling working copy is the one under review.
+    detectionPriority: HUNK_VCS_DETECTION_BASELINE_PRIORITY + 100,
+    operations: {
+      "working-tree-diff": {
+        async load(input, { cwd, signal }) {
+          if (input.staged) {
+            throw createSlStagedError(input);
+          }
+          const diffArgs = buildSlDiffArgs(input);
+          const repoRoot = await resolveSlRepoRootAsync(input, { cwd, slExecutable, signal });
+          const repoName = basename(repoRoot);
+          const range = describeDiffRange(input);
+          const review = input.rangeEndpoints
+            ? await createSlComparisonReview(
+                input,
+                input.rangeEndpoints.from,
+                input.rangeEndpoints.to,
+                { cwd: repoRoot, slExecutable, signal },
+              )
+            : undefined;
+          const patchInput: ExtensionVcsDiffInput =
+            review?.kind === "comparison"
+              ? {
+                  ...input,
+                  range: undefined,
+                  rangeEndpoints: { from: review.base, to: review.head },
+                }
+              : input;
+          return {
+            repoRoot,
+            sourceLabel: repoRoot,
+            title: range ? `${repoName} ${range}` : `${repoName} working copy`,
+            patchText: await runSlTextAsync({
               input,
-              input.rangeEndpoints.from,
-              input.rangeEndpoints.to,
-              { cwd: repoRoot, signal },
-            )
-          : undefined;
-        return {
-          repoRoot,
-          sourceLabel: repoRoot,
-          title: range ? `${repoName} ${range}` : `${repoName} working copy`,
-          patchText: await runSlTextAsync({ input, args: diffArgs, cwd, signal }),
-          review,
-          untrackedPaths: await listSlUntrackedFilesAsync(input, { cwd, repoRoot, signal }),
-        };
+              args: review?.kind === "comparison" ? buildSlDiffArgs(patchInput) : diffArgs,
+              cwd,
+              slExecutable,
+              signal,
+            }),
+            review,
+            untrackedPaths: await listSlUntrackedFilesAsync(input, {
+              cwd,
+              repoRoot,
+              slExecutable,
+              signal,
+            }),
+          };
+        },
+        watchSignature(input, { cwd }) {
+          const trackedPatch = runSlText({
+            input,
+            args: buildSlDiffArgs(input),
+            cwd,
+            slExecutable,
+          });
+          const repoRoot = resolveSlRepoRoot(input, { cwd, slExecutable });
+          const untrackedSignatures = listSlUntrackedFiles(input, {
+            cwd,
+            repoRoot,
+            slExecutable,
+          }).map((filePath) => `untracked:${statSignature(join(repoRoot, filePath))}`);
+          return [trackedPatch, ...untrackedSignatures].join("\n---\n");
+        },
       },
-      watchSignature(input, { cwd }) {
-        const trackedPatch = runSlText({ input, args: buildSlDiffArgs(input), cwd });
-        const repoRoot = resolveSlRepoRoot(input, { cwd });
-        const untrackedSignatures = listSlUntrackedFiles(input, { cwd, repoRoot }).map(
-          (filePath) => `untracked:${statSignature(join(repoRoot, filePath))}`,
-        );
-        return [trackedPatch, ...untrackedSignatures].join("\n---\n");
+      "revision-show": {
+        async load(input, { cwd, signal }) {
+          const repoRoot = await resolveSlRepoRootAsync(input, { cwd, slExecutable, signal });
+          const repoName = basename(repoRoot);
+          const revset = input.ref ?? ".";
+          const review = await createSlCommitReview(input, revset, {
+            cwd: repoRoot,
+            slExecutable,
+            signal,
+          });
+          const patchInput: ExtensionVcsShowInput =
+            review?.kind === "commit" ? { ...input, ref: review.revision } : input;
+          return {
+            repoRoot,
+            sourceLabel: repoRoot,
+            title: `${repoName} show ${revset}`,
+            patchText: await runSlTextAsync({
+              input,
+              args: buildSlShowArgs(patchInput),
+              cwd,
+              slExecutable,
+              signal,
+            }),
+            review,
+          };
+        },
+        watchSignature(input, { cwd }) {
+          return runSlText({ input, args: buildSlShowArgs(input), cwd, slExecutable });
+        },
       },
     },
-    "revision-show": {
-      async load(input, { cwd, signal }) {
-        const repoRoot = await resolveSlRepoRootAsync(input, { cwd, signal });
-        const repoName = basename(repoRoot);
-        const revset = input.ref ?? ".";
-        const review = await createSlCommitReview(input, revset, { cwd: repoRoot, signal });
-        return {
-          repoRoot,
-          sourceLabel: repoRoot,
-          title: `${repoName} show ${revset}`,
-          patchText: await runSlTextAsync({ input, args: buildSlShowArgs(input), cwd, signal }),
-          review,
-        };
-      },
-      watchSignature(input, { cwd }) {
-        return runSlText({ input, args: buildSlShowArgs(input), cwd });
-      },
-    },
-  },
-} satisfies ExtensionVcsAdapter;
+  } satisfies ExtensionVcsAdapter;
+}
+
+export const SaplingVcsAdapter = createSaplingVcsAdapter();
 
 export default function (hunk: HunkExtensionAPI) {
   hunk.registerVcsAdapter(SaplingVcsAdapter);

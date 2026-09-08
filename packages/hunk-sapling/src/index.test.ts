@@ -1,8 +1,16 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { platform, tmpdir } from "node:os";
 import { join } from "node:path";
-import { SaplingVcsAdapter } from ".";
+import { createSaplingVcsAdapter, SaplingVcsAdapter } from ".";
 import type {
   ExtensionVcsOperations,
   ExtensionVcsShowInput,
@@ -95,6 +103,88 @@ describe("SaplingVcsAdapter", () => {
 
     expect(SaplingVcsAdapter.detect(repo)).toBeNull();
   });
+
+  test.skipIf(process.platform === "win32")(
+    "pins revision-show patches to the node resolved for metadata",
+    async () => {
+      const repo = createTempDir("hunk-sl-adapter-pinned-show-");
+      const executable = join(repo, "fake-sl");
+      const callsPath = join(repo, "calls.txt");
+      const revision = "a".repeat(40);
+      writeFileSync(
+        executable,
+        [
+          "#!/bin/sh",
+          `printf '%s\\n' "$*" >> ${JSON.stringify(callsPath)}`,
+          'case " $* " in',
+          `  *" root "*) printf '%s\\n' ${JSON.stringify(repo)} ;;`,
+          `  *" log "*) printf '%s\\0%s\\0%s\\0%s\\0%s\\0%s\\0' ${JSON.stringify(revision)} ${JSON.stringify(revision.slice(0, 12))} 'Pinned commit' 'Test User' 'test@example.com' '2026-09-08 12:00:00 +0000' ;;`,
+          `  *" diff "*) printf 'pinned patch\\n' ;;`,
+          "  *) exit 1 ;;",
+          "esac",
+          "",
+        ].join("\n"),
+      );
+      chmodSync(executable, 0o755);
+
+      const adapter = createSaplingVcsAdapter({ slExecutable: executable });
+      const result = await adapter.operations["revision-show"]!.load(
+        { kind: "show", ref: ".", options: {} },
+        { cwd: repo },
+      );
+
+      expect(result.review).toMatchObject({ revision, title: "Pinned commit" });
+      expect(result.patchText).toBe("pinned patch\n");
+      expect(readFileSync(callsPath, "utf8")).toContain(`diff --git --change ${revision}`);
+    },
+  );
+
+  test.skipIf(process.platform === "win32")(
+    "pins comparison patches to the nodes resolved for metadata",
+    async () => {
+      const repo = createTempDir("hunk-sl-adapter-pinned-comparison-");
+      const executable = join(repo, "fake-sl");
+      const callsPath = join(repo, "calls.txt");
+      const baseRevision = "a".repeat(40);
+      const headRevision = "b".repeat(40);
+      const record = (revision: string, title: string) =>
+        `printf '%s\\0%s\\0%s\\0%s\\0%s\\0%s\\0' ${JSON.stringify(revision)} ${JSON.stringify(revision.slice(0, 12))} ${JSON.stringify(title)} 'Test User' 'test@example.com' '2026-09-08 12:00:00 +0000'`;
+      writeFileSync(
+        executable,
+        [
+          "#!/bin/sh",
+          `printf '%s\\n' "$*" >> ${JSON.stringify(callsPath)}`,
+          'case " $* " in',
+          `  *" root "*) printf '%s\\n' ${JSON.stringify(repo)} ;;`,
+          `  *" log -r only("*) ${record(headRevision, "Head commit")} ;;`,
+          `  *" log -r base "*) ${record(baseRevision, "Base commit")} ;;`,
+          `  *" log -r head "*) ${record(headRevision, "Head commit")} ;;`,
+          `  *" diff "*) printf 'pinned comparison patch\\n' ;;`,
+          "  *) exit 1 ;;",
+          "esac",
+          "",
+        ].join("\n"),
+      );
+      chmodSync(executable, 0o755);
+
+      const adapter = createSaplingVcsAdapter({ slExecutable: executable });
+      const result = await adapter.operations["working-tree-diff"]!.load(
+        {
+          kind: "vcs",
+          staged: false,
+          rangeEndpoints: { from: "base", to: "head" },
+          options: {},
+        },
+        { cwd: repo },
+      );
+
+      expect(result.review).toMatchObject({ base: baseRevision, head: headRevision });
+      expect(result.patchText).toBe("pinned comparison patch\n");
+      expect(readFileSync(callsPath, "utf8")).toContain(
+        `diff --git -r ${baseRevision} -r ${headRevision}`,
+      );
+    },
+  );
 
   test.skipIf(!slAvailable)(
     "loads working-copy and revision patches through neutral operations",
