@@ -41,6 +41,7 @@ import type {
 import { assertReliableWatchRuntime } from "../core/watch/runtime";
 import type { WatchedInputRuntime } from "./hooks/useWatchedInput";
 import { ThemeController } from "./theme/controller";
+import type { PersistedViewPreferences } from "../core/run/config";
 
 /** Build the stable refusal returned once quit becomes terminal for reload coordination. */
 function reloadRefusedDuringShutdown() {
@@ -61,6 +62,7 @@ export function AppHost({
   onQuit = () => process.exit(0),
   onActiveBootstrapChange,
   onFirstFrameReady,
+  onViewPreferencesChange,
   returnToHistory = false,
   extensionSession,
   extensionOwnership,
@@ -81,6 +83,8 @@ export function AppHost({
   onActiveBootstrapChange?: (bootstrap: AppBootstrap) => void;
   /** Report once the dynamically mounted review has committed its first requested frame. */
   onFirstFrameReady?: () => void;
+  /** Publish live preferences to the owner of a routed review surface. */
+  onViewPreferencesChange?: (preferences: PersistedViewPreferences) => void;
   /** Present quit as returning to an owning history surface. */
   returnToHistory?: boolean;
   /** Session authority shared by every routed surface in this process. */
@@ -593,6 +597,7 @@ export function AppHost({
       noticeText={startupNoticeText}
       onQuit={quitAfterShutdownEvent}
       onFirstFrameReady={onFirstFrameReady}
+      onViewPreferencesChange={onViewPreferencesChange}
       returnToHistory={returnToHistory}
       onRegisterWorkspaceRefreshRequest={registerWorkspaceRefreshRequest}
       onReloadSession={reloadSession}

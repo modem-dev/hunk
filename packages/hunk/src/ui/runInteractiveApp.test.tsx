@@ -1,7 +1,10 @@
 import { expect, mock, test } from "bun:test";
 import { createTestVcsAppBootstrap } from "../../../../test/helpers/app-bootstrap";
+import { persistedViewPreferencesFromOptions } from "../core/run/config";
 import { createEmptyExtensionLoadResult, type ExtensionLoadResult } from "../extensions/types";
 import { runInteractiveApp } from "./runInteractiveApp";
+
+const viewPreferences = persistedViewPreferencesFromOptions({});
 
 /** Register one shutdown observer on a test bootstrap's explicit extension authority. */
 function onShutdown(
@@ -30,7 +33,7 @@ test("retires extensions and closes the controlling terminal when review runtime
     runInteractiveApp(
       {
         bootstrap: bootstrap as never,
-        initialization: { theme: { customThemes: [] } },
+        initialization: { theme: { customThemes: [] }, viewPreferences },
         controllingTerminal: {
           stdin: { isTTY: true } as never,
           close,
@@ -77,7 +80,7 @@ test("stops the broker and retires extensions before exceptional renderer teardo
       {
         bootstrap: bootstrap as never,
         controllingTerminal: null,
-        initialization: { theme: { customThemes: [] } },
+        initialization: { theme: { customThemes: [] }, viewPreferences },
       },
       {
         createReviewRuntime: (() => ({
@@ -127,7 +130,7 @@ test("retries broker cleanup before teardown when the exceptional stop attempt f
       {
         bootstrap: bootstrap as never,
         controllingTerminal: null,
-        initialization: { theme: { customThemes: [] } },
+        initialization: { theme: { customThemes: [] }, viewPreferences },
       },
       {
         createReviewRuntime: (() => ({

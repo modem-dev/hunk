@@ -3,6 +3,7 @@ import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react"
 import { basename } from "node:path";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { APP_COMMAND_NAMES } from "../../core/run/commandCatalog";
+import type { PersistedViewPreferences } from "../../core/run/config";
 import type {
   ExtensionVcsHistoryCommit,
   ExtensionVcsHistoryRangeSelection,
@@ -73,6 +74,7 @@ export function LogApp({
   controller,
   runtime,
   onOutcome,
+  sessionViewPreferences,
   themeController,
   useColor,
   quitScheduler,
@@ -80,6 +82,8 @@ export function LogApp({
   controller: LogController;
   runtime: InteractiveHistoryRuntime;
   onOutcome: (outcome: LogAppOutcome) => void | Promise<void>;
+  /** Latest review preferences retained by the routed interactive session. */
+  sessionViewPreferences: PersistedViewPreferences;
   themeController: ThemeController;
   useColor: boolean;
   quitScheduler?: ViewPreferenceQuitScheduler;
@@ -122,8 +126,8 @@ export function LogApp({
   const responsiveLayout = resolveLogResponsiveLayout(terminal.width, terminal.height);
   const viewportBodyHeight = responsiveLayout.bodyHeight;
   const currentViewPreferences = useMemo(
-    () => ({ ...runtime.initialViewPreferences, theme: themeSelector.themeId }),
-    [runtime.initialViewPreferences, themeSelector.themeId],
+    () => ({ ...sessionViewPreferences, theme: themeSelector.themeId }),
+    [sessionViewPreferences, themeSelector.themeId],
   );
   const viewPreferenceQuit = useViewPreferenceQuitController({
     currentPreferences: currentViewPreferences,

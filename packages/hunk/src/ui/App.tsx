@@ -145,6 +145,7 @@ export function App({
   noticeText,
   onQuit = () => process.exit(0),
   onFirstFrameReady,
+  onViewPreferencesChange,
   onRegisterWorkspaceRefreshRequest,
   onReloadSession,
   onRequestExtensionReviewReload,
@@ -164,6 +165,8 @@ export function App({
   onQuit?: () => void;
   /** Report once OpenTUI has committed the review's first requested frame. */
   onFirstFrameReady?: () => void;
+  /** Publish the complete live preference snapshot to a routed session owner. */
+  onViewPreferencesChange?: (preferences: PersistedViewPreferences) => void;
   /** Register the mounted review descriptor AppHost should reconcile after a completed write. */
   onRegisterWorkspaceRefreshRequest: (request: WorkspaceRefreshRequest) => () => void;
   onReloadSession: (
@@ -307,6 +310,20 @@ export function App({
       wrapLines,
     ],
   );
+  const currentViewPreferencesRef = useRef(currentViewPreferences);
+  currentViewPreferencesRef.current = currentViewPreferences;
+  const publishViewPreferenceChanges = useCallback(
+    (changes: Partial<PersistedViewPreferences>) => {
+      const preferences = { ...currentViewPreferencesRef.current, ...changes };
+      currentViewPreferencesRef.current = preferences;
+      onViewPreferencesChange?.(preferences);
+    },
+    [onViewPreferencesChange],
+  );
+  useLayoutEffect(() => {
+    currentViewPreferencesRef.current = currentViewPreferences;
+    onViewPreferencesChange?.(currentViewPreferences);
+  }, [currentViewPreferences, onViewPreferencesChange]);
   const filteredFiles = review.visibleFiles;
   const semanticFileIdentities = useMemo(
     () =>
@@ -373,8 +390,9 @@ export function App({
   );
 
   const openAgentNotes = useCallback(() => {
+    publishViewPreferenceChanges({ showAgentNotes: true });
     review.setShowAgentNotes(true);
-  }, [review.setShowAgentNotes]);
+  }, [publishViewPreferenceChanges, review.setShowAgentNotes]);
 
   /** Close the modal keyboard help overlay. */
   const closeHelp = useCallback(() => {
@@ -893,25 +911,44 @@ export function App({
   );
 
   /** Preserve the current review position before changing the active diff layout. */
-  const selectLayoutMode = useCallback((mode: LayoutMode) => {
-    layoutToggleScrollTopRef.current = diffScrollRef.current?.scrollTop ?? 0;
-    setLayoutToggleRequestId((current) => current + 1);
-    setLayoutMode(mode);
-  }, []);
+  const selectLayoutMode = useCallback(
+    (mode: LayoutMode) => {
+      layoutToggleScrollTopRef.current = diffScrollRef.current?.scrollTop ?? 0;
+      publishViewPreferenceChanges({ mode });
+      setLayoutToggleRequestId((current) => current + 1);
+      setLayoutMode(mode);
+    },
+    [publishViewPreferenceChanges],
+  );
+
+  /** Select one current-line presentation before coalesced quit input can unmount the review. */
+  const selectCursorLine = useCallback(
+    (nextCursorLine: CursorLine) => {
+      publishViewPreferenceChanges({ cursorLine: nextCursorLine });
+      setCursorLine(nextCursorLine);
+    },
+    [publishViewPreferenceChanges],
+  );
 
   /** Toggle the global agent note layer on or off. */
   const toggleAgentNotes = () => {
-    review.toggleAgentNotes();
+    const nextShowAgentNotes = !currentViewPreferencesRef.current.showAgentNotes;
+    publishViewPreferenceChanges({ showAgentNotes: nextShowAgentNotes });
+    review.setShowAgentNotes(nextShowAgentNotes);
   };
 
   /** Toggle line-number gutters without changing the diff content itself. */
   const toggleLineNumbers = () => {
-    setShowLineNumbers((current) => !current);
+    const nextShowLineNumbers = !currentViewPreferencesRef.current.showLineNumbers;
+    publishViewPreferenceChanges({ showLineNumbers: nextShowLineNumbers });
+    setShowLineNumbers(nextShowLineNumbers);
   };
 
   /** Toggle whether mouse selection copies review decorations or only file content. */
   const toggleCopyDecorations = () => {
-    setCopyDecorations((current) => !current);
+    const nextCopyDecorations = !currentViewPreferencesRef.current.copyDecorations;
+    publishViewPreferenceChanges({ copyDecorations: nextCopyDecorations });
+    setCopyDecorations(nextCopyDecorations);
   };
 
   /** Toggle whether diff code rows wrap instead of truncating to one terminal row. */
@@ -919,18 +956,24 @@ export function App({
     // Capture the pre-toggle viewport position synchronously so DiffPane can restore the same
     // top-most source row after wrapped row heights change.
     wrapToggleScrollTopRef.current = diffScrollRef.current?.scrollTop ?? 0;
+    const nextWrapLines = !currentViewPreferencesRef.current.wrapLines;
+    publishViewPreferenceChanges({ wrapLines: nextWrapLines });
     setCodeHorizontalOffset(0);
-    setWrapLines((current) => !current);
+    setWrapLines(nextWrapLines);
   };
 
   /** Toggle visibility of hunk metadata rows without changing the actual diff lines. */
   const toggleHunkHeaders = () => {
-    setShowHunkHeaders((current) => !current);
+    const nextShowHunkHeaders = !currentViewPreferencesRef.current.showHunkHeaders;
+    publishViewPreferenceChanges({ showHunkHeaders: nextShowHunkHeaders });
+    setShowHunkHeaders(nextShowHunkHeaders);
   };
 
   /** Toggle the top menu bar while keeping F10 menu navigation available. */
   const toggleMenuBar = () => {
-    setShowMenuBar((current) => !current);
+    const nextShowMenuBar = !currentViewPreferencesRef.current.showMenuBar;
+    publishViewPreferenceChanges({ showMenuBar: nextShowMenuBar });
+    setShowMenuBar(nextShowMenuBar);
   };
 
   const { canRefreshCurrentInput, refreshCurrentInput, triggerRefreshCurrentInput } =
@@ -1127,7 +1170,7 @@ export function App({
         scrollCodeHorizontally,
         scrollDiff,
         stepDiffLine,
-        selectCursorLine: setCursorLine,
+        selectCursorLine,
         selectLayoutMode,
         hasVisualSelection: () => selectionActionsRef.current?.hasSelection() ?? false,
         startVisualSelection: () => selectionActionsRef.current?.beginKeyboardSelection(),

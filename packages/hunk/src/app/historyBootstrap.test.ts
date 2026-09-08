@@ -75,6 +75,7 @@ describe("history bootstrap cursor ownership", () => {
           initialTheme: "github-dark-dimmed",
           customThemes: [],
         },
+        viewPreferences: bootstrap.initialViewPreferences,
       });
       expect(bootstrap.initialViewPreferences).toMatchObject({
         theme: "github-dark-dimmed",

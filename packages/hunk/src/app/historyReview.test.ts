@@ -1,7 +1,10 @@
 import { describe, expect, mock, test } from "bun:test";
 import { resolve } from "node:path";
 import { createEmptyExtensionLoadResult } from "../extensions/types";
+import { persistedViewPreferencesFromOptions } from "../core/run/config";
 import { prepareEmbeddedHistoryReview } from "./historyReview";
+
+const viewPreferences = persistedViewPreferencesFromOptions({});
 
 /** Provide only the provider-neutral fields embedded review startup consumes. */
 function createTestRequest() {
@@ -33,14 +36,14 @@ describe("embedded history review bootstrap", () => {
             bootstrap: { extensions: { ...request.extensionSession } },
             cliInput: {},
             controllingTerminal: null,
-            initialization: { theme: { customThemes: [] } },
+            initialization: { theme: { customThemes: [] }, viewPreferences },
           };
         }) as never,
       },
     );
 
     expect(result.bootstrap).toBeDefined();
-    expect(result.initialization).toEqual({ theme: { customThemes: [] } });
+    expect(result.initialization).toEqual({ theme: { customThemes: [] }, viewPreferences });
     expect(captured?.argv).toContain(resolve("invocation", "extensions/provider.ts"));
     expect(captured?.deps).toMatchObject({
       cwd: resolve("invocation"),
@@ -67,7 +70,7 @@ describe("embedded history review bootstrap", () => {
             bootstrap: { extensions: { ...request.extensionSession } },
             cliInput: {},
             controllingTerminal: { close },
-            initialization: { theme: { customThemes: [] } },
+            initialization: { theme: { customThemes: [] }, viewPreferences },
           };
         }) as never,
       }),

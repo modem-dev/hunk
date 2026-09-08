@@ -152,6 +152,9 @@ export async function loadHistoryBootstrap({
   }
 
   const resolvedTheme = resolved.configured.input.options.theme;
+  const initialViewPreferences = persistedViewPreferencesFromOptions(
+    resolved.configured.input.options,
+  );
   let closed = false;
   return {
     input: resolvedTheme ? { ...input, theme: resolvedTheme } : input,
@@ -167,9 +170,10 @@ export async function loadHistoryBootstrap({
         initialTheme: resolved.configured.input.options.theme,
         customThemes: sessionThemes.themes,
       },
+      viewPreferences: initialViewPreferences,
     }),
     keybindings: resolved.configured.keybindings,
-    initialViewPreferences: persistedViewPreferencesFromOptions(resolved.configured.input.options),
+    initialViewPreferences,
     viewPreferencesConfigPath: resolved.configured.viewPreferencesConfigPath,
     promptSaveViewPreferences:
       resolved.configured.input.options.promptSaveViewPreferences !== false,

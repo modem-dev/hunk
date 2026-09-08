@@ -3,7 +3,7 @@ import {
   restoreFileLanguageRegistrations,
   type FileLanguageRegistrationSnapshot,
 } from "../core/changeset/fileLanguage";
-import type { HunkConfigResolution } from "../core/run/config";
+import { persistedViewPreferencesFromOptions, type HunkConfigResolution } from "../core/run/config";
 import { isVcsReviewInput } from "../core/vcs";
 import type { VcsCatalog } from "../core/vcs/types";
 import { getBundledVcsCatalog } from "./vcsCatalog";
@@ -105,6 +105,7 @@ export async function loadConfiguredSessionBootstrap({
         initialThemeMode: bootstrap.initialThemeMode,
         customThemes: sessionThemes.themes,
       },
+      viewPreferences: persistedViewPreferencesFromOptions(input.options),
     });
     bootstrap.extensions = extensions;
     bootstrap.viewPreferencesConfigPath = configured.viewPreferencesConfigPath;

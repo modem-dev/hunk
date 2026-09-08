@@ -343,6 +343,53 @@ describe("interactive hunk log", () => {
     }
   });
 
+  test("retains changed review layout across repeated history reviews", async () => {
+    const cwd = createHistoryRepo();
+    const configHome = mkdtempSync(join(tmpdir(), "hunk-log-layout-preferences-"));
+    tempDirs.push(configHome);
+    const configDir = join(configHome, "hunk");
+    const configPath = join(configDir, "config.toml");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(configPath, 'mode = "split"\n');
+    const session = await harness.launchHunk({
+      args: ["log", "--color", "never", "--no-extensions"],
+      cwd,
+      cols: 120,
+      rows: 20,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      await session.waitForText(/Second history commit/, { timeout: 15_000 });
+      await session.press("enter");
+      const split = await session.waitForText(/historyValue = 'second'/, { timeout: 15_000 });
+      expect(split).toMatch(/▌.*▌/);
+
+      session.writeRaw("2q");
+      await session.waitForText(/Second history commit/, { timeout: 15_000 });
+
+      await session.press("enter");
+      const retained = await harness.waitForSnapshot(
+        session,
+        (text) => !/▌.*▌/.test(text) && text.includes("historyValue = 'second'"),
+        15_000,
+      );
+      expect(retained).not.toMatch(/▌.*▌/);
+
+      await session.press("q");
+      await session.waitForText(/Second history commit/, { timeout: 15_000 });
+      await session.press("q");
+      const prompt = await session.waitForText(/Save view preferences\?/, { timeout: 5_000 });
+      expect(prompt).toContain('- mode = "split"');
+      expect(prompt).toContain('+ mode = "unified"');
+
+      await session.press("q");
+      expect(readFileSync(configPath, "utf8")).toBe('mode = "split"\n');
+    } finally {
+      session.close();
+    }
+  });
+
   test("adapts GitHub-style grouped rows and right-aligned ids on resize", async () => {
     const cwd = createHistoryRepo();
     const displayId = Bun.spawnSync(["git", "rev-parse", "--short=8", "HEAD"], {

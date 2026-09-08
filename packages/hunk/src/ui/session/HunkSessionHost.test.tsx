@@ -43,6 +43,7 @@ async function createHistoryRoute(subjects = ["History row"]) {
     authoredAt: "2026-01-01T00:00:00Z",
     decorations: [],
   }));
+  const initialViewPreferences = persistedViewPreferencesFromOptions({});
   const runtime: InteractiveHistoryRuntime = {
     input: {
       kind: "history",
@@ -65,9 +66,9 @@ async function createHistoryRoute(subjects = ["History row"]) {
     repoRoot: "/repo",
     notices: [],
     customThemes: [],
-    initialization: { theme: { customThemes: [] } },
+    initialization: { theme: { customThemes: [] }, viewPreferences: initialViewPreferences },
     keybindings: {},
-    initialViewPreferences: persistedViewPreferencesFromOptions({}),
+    initialViewPreferences,
     promptSaveViewPreferences: true,
     async planReview(commit) {
       return { kind: "revision-show", revisionId: commit.revisionId };
@@ -190,9 +191,78 @@ test("routes repeated history reviews through fresh runtimes and returns instead
   }
 });
 
+test("retains review view preferences across repeated history reviews", async () => {
+  const history = await createHistoryRoute();
+  const initialViewPreferences = persistedViewPreferencesFromOptions({ mode: "split" });
+  history.runtime.initialViewPreferences = initialViewPreferences;
+  history.runtime.initialization = {
+    ...history.runtime.initialization,
+    viewPreferences: initialViewPreferences,
+  };
+  const quit = mock(() => undefined);
+  const deps: HunkSessionHostDeps = {
+    prepareReview: (async () => {
+      const bootstrap = createTestVcsAppBootstrap({
+        changesetId: "preference-review",
+        files: [createTestDiffFile({ id: "review.ts", path: "review.ts" })],
+        initialMode: "split",
+      });
+      bootstrap.extensions = history.runtime.extensionSession.current;
+      return {
+        bootstrap,
+        initialization: history.runtime.initialization,
+        borrowsExtensions: true,
+      };
+    }) as never,
+    createReviewRuntime: (() => ({
+      hostClient: undefined,
+      reviewProducer: undefined,
+      stop: mock(() => undefined),
+    })) as never,
+  };
+  const setup = await testRender(
+    <HunkSessionHost
+      initialRoute={history}
+      initialization={history.runtime.initialization}
+      externalQuitSignal={new AbortController().signal}
+      onQuit={quit}
+      deps={deps}
+    />,
+    { width: 120, height: 20 },
+  );
+  try {
+    await setup.renderOnce();
+    await act(async () => setup.mockInput.pressEnter());
+    await settle(setup);
+    expect(setup.captureCharFrame()).toMatch(/▌.*▌/);
+
+    await act(async () => setup.mockInput.typeText("2q"));
+    await settle(setup);
+    expect(setup.captureCharFrame()).toContain("Test history");
+    expect(setup.captureCharFrame()).not.toContain("Save view preferences?");
+
+    await act(async () => setup.mockInput.pressEnter());
+    await settle(setup);
+    expect(setup.captureCharFrame()).not.toMatch(/▌.*▌/);
+
+    await act(async () => setup.mockInput.pressKey("q"));
+    await settle(setup);
+    await act(async () => setup.mockInput.pressKey("q"));
+    await setup.renderOnce();
+    expect(setup.captureCharFrame()).toContain("Save view preferences?");
+    expect(setup.captureCharFrame()).toContain('- mode = "split"');
+    expect(setup.captureCharFrame()).toContain('+ mode = "unified"');
+    expect(quit).not.toHaveBeenCalled();
+  } finally {
+    setup.renderer.destroy();
+    await history.controller.close();
+  }
+});
+
 test("shares committed themes across history and repeated review surfaces", async () => {
   const history = await createHistoryRoute();
   history.runtime.initialization = {
+    ...history.runtime.initialization,
     theme: { customThemes: [historyCustomTheme] },
   };
   const requests: Array<{ themeId?: string }> = [];
@@ -206,7 +276,10 @@ test("shares committed themes across history and repeated review surfaces", asyn
       bootstrap.extensions = history.runtime.extensionSession.current;
       return {
         bootstrap,
-        initialization: { theme: { customThemes: [reviewCustomTheme] } },
+        initialization: {
+          ...history.runtime.initialization,
+          theme: { customThemes: [reviewCustomTheme] },
+        },
         borrowsExtensions: true,
       };
     }) as never,
@@ -289,6 +362,7 @@ test("seeds the shared catalog from interactive initialization, not static histo
     },
   ];
   history.runtime.initialization = {
+    ...history.runtime.initialization,
     theme: {
       initialTheme: "session-only",
       customThemes: [
@@ -403,6 +477,7 @@ test("quits the session from a standalone review route", async () => {
       }}
       initialization={{
         theme: { initialTheme: bootstrap.initialTheme!, customThemes: [] },
+        viewPreferences: persistedViewPreferencesFromOptions(bootstrap.input.options),
       }}
       externalQuitSignal={abort.signal}
       onQuit={quit}
@@ -447,6 +522,7 @@ test("finishes review navigation even when broker shutdown throws", async () => 
       }}
       initialization={{
         theme: { initialTheme: bootstrap.initialTheme!, customThemes: [] },
+        viewPreferences: persistedViewPreferencesFromOptions(bootstrap.input.options),
       }}
       externalQuitSignal={abort.signal}
       onQuit={quit}
@@ -497,6 +573,7 @@ test("does not start provider planning after shutdown wins the pre-dispatch wind
 test("refuses a nested review that returns independent extension authority", async () => {
   const history = await createHistoryRoute();
   history.runtime.initialization = {
+    ...history.runtime.initialization,
     theme: { initialTheme: historyCustomTheme.id, customThemes: [historyCustomTheme] },
   };
   const foreign = createEmptyExtensionLoadResult("/repo");
@@ -518,7 +595,10 @@ test("refuses a nested review that returns independent extension authority", asy
             }),
             extensions: foreign,
           },
-          initialization: { theme: { customThemes: [reviewCustomTheme] } },
+          initialization: {
+            ...history.runtime.initialization,
+            theme: { customThemes: [reviewCustomTheme] },
+          },
           borrowsExtensions: false,
         })) as never,
         createReviewRuntime: createReviewRuntime as never,

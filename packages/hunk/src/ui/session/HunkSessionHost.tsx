@@ -11,6 +11,7 @@ import {
 } from "../../app/session/reviewRuntime";
 import type { StartupNotice } from "../../core/process/startupNotice";
 import type { AppBootstrap } from "../../core/bootstrap";
+import type { PersistedViewPreferences } from "../../core/run/config";
 import type { InteractiveSessionInitialization } from "../../core/session/initialization";
 import type { ExtensionVcsHistoryReviewAction } from "../../extension-api/types";
 import { parseExtensionReviewDescriptor } from "../../core/reviewDescriptor";
@@ -24,6 +25,7 @@ import { LogApp, type LogAppOutcome } from "../log/LogApp";
 import type { LogController } from "../log/controller";
 import { resolveHistoryAuthorLabel } from "../log/formatting";
 import { ThemeController } from "../theme/controller";
+import { applySessionViewPreferences } from "./viewPreferences";
 
 export interface HistorySurfaceRoute {
   kind: "history";
@@ -170,6 +172,10 @@ export function HunkSessionHost({
   const shutdownPendingRef = useRef(false);
   const pendingExitCodeRef = useRef<number | undefined>(undefined);
   const failedReviewStopsRef = useRef(new Set<ReviewSessionRuntime>());
+  const sessionViewPreferencesRef = useRef(initialization.viewPreferences);
+  const retainSessionViewPreferences = useCallback((preferences: PersistedViewPreferences) => {
+    sessionViewPreferencesRef.current = preferences;
+  }, []);
 
   /** Attempt broker cleanup and retain failed runtimes for the final unmount retry. */
   const stopReviewRuntime = useCallback((runtime: ReviewSessionRuntime) => {
@@ -305,12 +311,16 @@ export function HunkSessionHost({
         await historyRoute.runtime.extensionSession.retirePrepared(plan.bootstrap.extensions);
         throw new Error("An embedded review cannot replace the owning extension session.");
       }
-      const reviewRuntime = createReviewRuntime(plan.bootstrap, startupCwd);
+      const reviewBootstrap = applySessionViewPreferences(plan.bootstrap, {
+        ...sessionViewPreferencesRef.current,
+        theme: themeController.getSnapshot().themeId,
+      });
+      const reviewRuntime = createReviewRuntime(reviewBootstrap, startupCwd);
       themeController.replaceCustomThemes(plan.initialization.theme.customThemes);
       const reviewRoute: ActiveReviewSurfaceRoute = {
         kind: "review",
         instanceId: nextInstanceRef.current++,
-        bootstrap: plan.bootstrap,
+        bootstrap: reviewBootstrap,
         runtime: reviewRuntime,
         extensionSession: historyRoute.runtime.extensionSession,
         extensionOwnership: "borrowed",
@@ -379,6 +389,9 @@ export function HunkSessionHost({
         externalQuitSignal={externalQuitSignal}
         hostClient={route.runtime.hostClient}
         onQuit={retireReview}
+        {...(route.quitBehavior === "return-to-history"
+          ? { onViewPreferencesChange: retainSessionViewPreferences }
+          : {})}
         {...(route.mountMode === "dynamic" ? { onFirstFrameReady: () => undefined } : {})}
         returnToHistory={route.quitBehavior === "return-to-history"}
         extensionSession={route.extensionSession}
@@ -402,6 +415,7 @@ export function HunkSessionHost({
       useColor={interactiveLogUsesColor(route.runtime.input.color, process.env)}
       onOutcome={(outcome) => handleHistoryOutcome(route, outcome)}
       quitScheduler={deps.viewPreferenceQuitScheduler}
+      sessionViewPreferences={sessionViewPreferencesRef.current}
       themeController={themeController}
     />
   );

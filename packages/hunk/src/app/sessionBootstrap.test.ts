@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { fileLanguageForPath } from "../core/changeset/fileLanguageLookup";
 import { replaceExtensionFileLanguages } from "../core/changeset/fileLanguage";
-import type { HunkConfigResolution } from "../core/run/config";
+import { persistedViewPreferencesFromOptions, type HunkConfigResolution } from "../core/run/config";
 import type { AppBootstrap } from "../core/bootstrap";
 import type { CliInput } from "../core/run/commandInputs";
 import { createEmptyExtensionLoadResult } from "../extensions/types";
@@ -72,6 +72,7 @@ describe("loadConfiguredSessionBootstrap", () => {
           { id: "extension-theme", accent: "#123456" },
         ],
       },
+      viewPreferences: persistedViewPreferencesFromOptions(input.options),
     });
     expect(result.bootstrap.keybindings).toEqual({ "hunk.review.nextHunk": "]" });
     expect(result.bootstrap.viewPreferencesConfigPath).toBe("/tmp/hunk-config.toml");

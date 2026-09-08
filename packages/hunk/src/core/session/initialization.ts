@@ -1,5 +1,6 @@
 import type { TerminalThemeMode } from "../theme/detection";
 import type { NamedCustomThemeConfig } from "../../extension-api/types";
+import type { PersistedViewPreferences } from "../run/config";
 
 /** Theme inputs finalized during startup and retained for every surface in one session. */
 export interface SessionThemeInitialization {
@@ -14,15 +15,19 @@ export interface SessionThemeInitialization {
  */
 export interface InteractiveSessionInitialization {
   theme: SessionThemeInitialization;
+  /** Resolved launch preferences that routed review surfaces may update in memory. */
+  viewPreferences: PersistedViewPreferences;
 }
 
 /** Package finalized cross-surface inputs into one interactive-session launch record. */
 export function createInteractiveSessionInitialization({
   theme,
+  viewPreferences,
 }: {
   theme: Omit<SessionThemeInitialization, "customThemes"> & {
     customThemes?: readonly NamedCustomThemeConfig[];
   };
+  viewPreferences: PersistedViewPreferences;
 }): InteractiveSessionInitialization {
   return {
     theme: {
@@ -30,5 +35,6 @@ export function createInteractiveSessionInitialization({
       ...(theme.initialThemeMode === undefined ? {} : { initialThemeMode: theme.initialThemeMode }),
       customThemes: theme.customThemes ?? [],
     },
+    viewPreferences,
   };
 }
