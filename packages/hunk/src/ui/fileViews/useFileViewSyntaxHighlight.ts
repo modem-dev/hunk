@@ -15,6 +15,14 @@ import type { ResolvedFileViewLayout } from "./useFileViews";
 const FILE_VIEW_HIGHLIGHT_MAX_RETRIES = 1;
 const FILE_VIEW_HIGHLIGHT_RETRY_DELAY_MS = 25;
 const EMPTY_FILE_VIEW_HIGHLIGHTS: ReadonlyMap<string, DocumentHighlightResult> = new Map();
+let fileViewSyntaxHighlightLoader = loadDocumentHighlight;
+
+/** Override FileView's host-private loader for deterministic integration tests, or reset it. */
+export function setFileViewSyntaxHighlightLoaderForTest(
+  loader?: (input: DocumentHighlightInput) => Promise<DocumentHighlightResult>,
+) {
+  fileViewSyntaxHighlightLoader = loader ?? loadDocumentHighlight;
+}
 
 interface FileViewHighlightRequest {
   cacheKey: string;
@@ -127,8 +135,8 @@ export function useFileViewSyntaxHighlight(
   const contextRef = useRef(contextIdentity);
   const requestRef = useRef({ offloadLargeDiff, requests, theme });
   requestRef.current = { offloadLargeDiff, requests, theme };
-  const loadRef = useRef(dependencies.load ?? loadDocumentHighlight);
-  loadRef.current = dependencies.load ?? loadDocumentHighlight;
+  const loadRef = useRef(dependencies.load ?? fileViewSyntaxHighlightLoader);
+  loadRef.current = dependencies.load ?? fileViewSyntaxHighlightLoader;
   const maxRetries = Math.max(
     0,
     Math.floor(dependencies.maxRetries ?? FILE_VIEW_HIGHLIGHT_MAX_RETRIES),

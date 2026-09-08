@@ -103,7 +103,7 @@ function createInteractiveViewExtension(directory: string) {
   return extension;
 }
 
-/** Write a large syntax-enabled file view with a delayed explicit refresh. */
+/** Write a syntax view with observable generations and one deliberately late refresh. */
 function createSyntaxViewExtension(directory: string) {
   const extension = join(directory, "syntax-preview");
   mkdirSync(extension, { recursive: true });
@@ -119,24 +119,33 @@ function createSyntaxViewExtension(directory: string) {
   writeFileSync(
     join(extension, "index.ts"),
     `export default function (hunk) {
+  let generation = 0;
   let delayNext = false;
-  const makeLayout = (file) => {
-    const lines = Array.from({ length: 80 }, (_, index) => {
-      const label = "ROW " + String(index + 1).padStart(3, "0") + " ";
-      if (index === 8) return label + "/* multiline comment";
-      if (index === 9) return label + "still commented */";
-      if (index === 20) return label + "const template = " + String.fromCharCode(96) + "first";
-      if (index === 21) return label + "value \${21}";
-      if (index === 22) return label + "last" + String.fromCharCode(96) + ";";
-      return label + "const phaseLine" + (index + 1) + " = " + (index + 1) + ";";
+  const makeLayout = (file, requestedGeneration) => {
+    const codeLines = Array.from({ length: 80 }, (_, index) => {
+      if (index === 8) return "/* multiline comment";
+      if (index === 9) return "still commented */";
+      if (index === 20) return "const template = " + String.fromCharCode(96) + "first";
+      if (index === 21) return "value \${21}";
+      if (index === 22) return "last" + String.fromCharCode(96) + ";";
+      return "const phaseLine" + (index + 1) + " = " + (index + 1) + ";";
     });
+    const generationLabel = String(requestedGeneration).padStart(3, "0");
     return {
-      codeDocuments: [{ id: "generated", text: lines.join("\\n"), language: "typescript" }],
-      rows: lines.map((text, index) => ({
+      codeDocuments: [{ id: "generated", text: codeLines.join("\\n"), language: "typescript" }],
+      rows: codeLines.map((text, index) => ({
         id: "syntax-" + index,
-        spans: [{ text, syntax: { documentId: "generated", line: index + 1 } }],
+        spans: [
+          {
+            text:
+              "FILE " + file.path + " GEN " + generationLabel + " ROW " +
+              String(index + 1).padStart(3, "0") + " ",
+            tone: "accent",
+          },
+          { text, syntax: { documentId: "generated", line: index + 1 } },
+        ],
       })),
-      hunkRows: (file.hunks ?? []).map(() => ({ startRow: 0, endRow: lines.length - 1 })),
+      hunkRows: (file.hunks ?? []).map(() => ({ startRow: 0, endRow: codeLines.length - 1 })),
     };
   };
   hunk.registerFileView({
@@ -144,18 +153,19 @@ function createSyntaxViewExtension(directory: string) {
     title: "Syntax preview",
     matches: () => true,
     layout: async ({ file }) => {
-      if (delayNext) {
-        delayNext = false;
-        await new Promise((resolve) => setTimeout(resolve, 800));
-      }
-      return makeLayout(file);
+      const requestedGeneration = generation;
+      const shouldDelay = delayNext;
+      delayNext = false;
+      if (shouldDelay) await new Promise((resolve) => setTimeout(resolve, 800));
+      return makeLayout(file, requestedGeneration);
     },
   });
   hunk.registerCommand({ id: "toggle-syntax", title: "Toggle syntax", key: "f8" }, (ctx) =>
     ctx.fileViews.toggle("syntax-preview"),
   );
   hunk.registerCommand({ id: "reload-syntax", title: "Reload syntax", key: "f9" }, (ctx) => {
-    delayNext = true;
+    generation += 1;
+    delayNext = generation === 1;
     ctx.fileViews.refresh("syntax-preview");
   });
 }
@@ -163,6 +173,28 @@ function createSyntaxViewExtension(directory: string) {
     "utf8",
   );
   return extension;
+}
+
+/** Return the exact first mounted syntax row so viewport stability cannot pass by containment. */
+function firstVisibleSyntaxRow(snapshot: string) {
+  return snapshot.match(/FILE [^\s]+ GEN \d{3} ROW \d{3}/)?.[0];
+}
+
+/** Poll foreground-filtered terminal output until one exact syntax color reaches the PTY. */
+async function waitForSyntaxForeground(
+  session: Awaited<ReturnType<typeof harness.launchHunk>>,
+  foreground: string,
+  text: string,
+) {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    await session.waitIdle({ timeout: 50 });
+    const colored = await session.text({
+      immediate: true,
+      only: { foreground },
+    });
+    if (colored.includes(text)) return colored;
+  }
+  throw new Error(`Timed out waiting for ${foreground} syntax foreground on ${text}`);
 }
 
 /** Poll one file until the host's write lands, so the assertion is not a race. */
@@ -197,48 +229,55 @@ describe("PTY file views", () => {
     }
   });
 
-  test("keeps a large syntax preview live through scroll, theme, resize, refresh, and view switches", async () => {
-    const pair = createMarkdownPairTest();
-    const extension = createSyntaxViewExtension(pair.directory);
+  test("keeps syntax paint and exact viewport stable through theme, resize, refresh, and files", async () => {
+    const repo = harness.createTwoFileRepoFixture();
+    const extension = createSyntaxViewExtension(repo.dir);
+    writeFileSync(join(repo.dir, ".git", "info", "exclude"), "syntax-preview/\n", {
+      encoding: "utf8",
+      flag: "a",
+    });
     const session = await harness.launchHunk({
-      args: [
-        "diff",
-        "--extension",
-        extension,
-        "--mode",
-        "unified",
-        "--files",
-        pair.before,
-        pair.after,
-      ],
-      cwd: pair.directory,
+      args: ["diff", "--extension", extension, "--mode", "unified"],
+      cwd: repo.dir,
       cols: 120,
       rows: 24,
     });
 
     try {
-      await session.waitForText(/before\.md/, { timeout: 20_000 });
+      await session.waitForText(/alpha\.ts/, { timeout: 20_000 });
       await harness.ensureKeyboardIsLive(session);
       await session.press("f8");
-      await session.waitForText(/ROW 001 const phaseLine1 = 1;/, {
+      await session.waitForText(/FILE alpha\.ts GEN 000 ROW 001 const phaseLine1 = 1;/, {
         timeout: 20_000,
       });
 
-      let reachedComment = false;
-      for (let step = 0; step < 8 && !reachedComment; step += 1) {
-        await session.scrollDown(5);
-        try {
-          await session.waitForText(/ROW 009 \/\* multiline comment/, {
-            timeout: 750,
-          });
-          reachedComment = true;
-        } catch {
-          // Continue until the generated multiline lexical context enters the mounted window.
+      // Scroll until the second comment line is visible while its lexical opener is offscreen.
+      let commentSnapshot = "";
+      for (let step = 0; step < 20; step += 1) {
+        await session.scrollDown(1);
+        commentSnapshot = await session.text({ immediate: true });
+        if (
+          commentSnapshot.includes("ROW 010 still commented */") &&
+          !commentSnapshot.includes("ROW 009 /* multiline comment")
+        ) {
+          break;
         }
       }
-      expect(reachedComment).toBe(true);
-      await harness.ensureKeyboardIsLive(session);
+      expect(commentSnapshot).toContain("ROW 010 still commented */");
+      expect(commentSnapshot).not.toContain("ROW 009 /* multiline comment");
 
+      // PTY owns real Shiki completion; deterministic pending/stale/failure races live in AppHost.
+      const commentPaint = await waitForSyntaxForeground(session, "#8b949e", "still commented */");
+      expect(commentPaint).not.toContain("FILE alpha.ts");
+      expect(
+        await session.text({
+          immediate: true,
+          only: { foreground: "#bb8009" },
+        }),
+      ).toContain("FILE alpha.ts GEN 000 ROW 010");
+
+      const themeAnchor = firstVisibleSyntaxRow(await session.text({ immediate: true }));
+      expect(themeAnchor).toBeDefined();
       await session.press("t");
       await session.waitForText(/Theme selector/, { timeout: 5_000 });
       await session.press("down");
@@ -246,41 +285,62 @@ describe("PTY file views", () => {
       await session.waitForText(/Theme: github-dark-dimmed/, {
         timeout: 5_000,
       });
-      await session.waitForText(/ROW 009 \/\* multiline comment/);
+      await waitForSyntaxForeground(session, "#768390", "still commented */");
+      expect(firstVisibleSyntaxRow(await session.text({ immediate: true }))).toBe(themeAnchor);
 
-      let reachedTemplate = false;
-      for (let step = 0; step < 8 && !reachedTemplate; step += 1) {
-        await session.scrollDown(5);
-        try {
-          await session.waitForText(/ROW 022 value \$\{21\}/, { timeout: 750 });
-          reachedTemplate = true;
-        } catch {
-          // Continue until the middle of the multiline template enters the mounted window.
-        }
-      }
-      expect(reachedTemplate).toBe(true);
+      await session.press("home");
+      await session.waitForText(/FILE alpha\.ts GEN 000 ROW 001/, {
+        timeout: 5_000,
+      });
+      const resizeAnchor = firstVisibleSyntaxRow(await session.text({ immediate: true }));
       session.resize({ cols: 92, rows: 20 });
-      await session.waitForText(/ROW 022 value \$\{21\}/, { timeout: 5_000 });
+      await session.waitForText(/FILE alpha\.ts GEN 000 ROW 001/, {
+        timeout: 5_000,
+      });
       await session.waitIdle();
+      expect(firstVisibleSyntaxRow(await session.text({ immediate: true }))).toBe(resizeAnchor);
 
-      // Both view transitions are explicit user commands rather than highlight fallback.
+      // Generation 1 remains pending while generation 2 commits; the late result cannot win.
+      await session.press("f9");
+      await Bun.sleep(100);
+      expect(await session.text({ immediate: true })).toContain(resizeAnchor!);
+      await session.press("f9");
+      const generationTwo = new RegExp(resizeAnchor!.replace("GEN 000", "GEN 002"));
+      await session.waitForText(generationTwo, { timeout: 5_000 });
+      await Bun.sleep(900);
+      const refreshed = await session.text({ immediate: true });
+      expect(refreshed).toMatch(generationTwo);
+      expect(refreshed).not.toContain("GEN 001");
+
+      // Each file owns a syntax request identity. AppHost tests control late completions explicitly;
+      // this real PTY proves both files paint and returning restores the accepted generation.
+      await harness.ensureKeyboardIsLive(session);
+      session.resize({ cols: 160, rows: 20 });
+      await session.waitForText(/beta\.ts/, { timeout: 5_000 });
+      await session.press("]");
+      await session.press("end");
+      await session.waitForText(/betaValue/, { timeout: 10_000 });
       await session.press("f8");
-      await session.waitForText(/new item/, { timeout: 5_000 });
-      await session.press("f8");
-      await session.waitForText(/ROW 001 const phaseLine1 = 1;/, {
+      await session.waitForText(/FILE beta\.ts GEN 002 ROW 001 const phaseLine1 = 1;/, {
         timeout: 10_000,
       });
+      await waitForSyntaxForeground(session, "#f47067", "const");
+      await session.press("[");
+      await session.press("home");
+      await session.waitForText(/FILE alpha\.ts GEN 002 ROW \d{3}/, {
+        timeout: 10_000,
+      });
+      await waitForSyntaxForeground(session, "#f47067", "const");
 
-      await session.press("f9");
-      // The accepted layout stays readable while its delayed replacement prepares.
-      await Bun.sleep(100);
-      expect(await session.text({ immediate: true })).toContain("ROW 001 const phaseLine1 = 1;");
-      await Bun.sleep(800);
-      await session.waitForText(/ROW 001 const phaseLine1 = 1;/, { timeout: 5_000 });
+      // Full-stream hunk navigation remains host-owned after both files select the custom view.
+      await session.press("]");
+      await session.press("end");
+      await session.waitForText(/FILE beta\.ts GEN 002 ROW \d{3}/, {
+        timeout: 10_000,
+      });
       await harness.ensureKeyboardIsLive(session);
     } finally {
       session.close();
-      rmSync(pair.directory, { recursive: true, force: true });
     }
   });
 
