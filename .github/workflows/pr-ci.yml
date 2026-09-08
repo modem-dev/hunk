@@ -130,8 +130,8 @@ jobs:
         env:
           HUNK_TEST_EXECUTABLE: ${{ github.workspace }}/${{ matrix.executable }}
 
-  pr-validate:
-    name: Typecheck + Test + Smoke
+  linux-validate:
+    name: Linux validation and packaging
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
@@ -190,14 +190,6 @@ jobs:
       - name: Real Node broker adapter tests
         run: bun run test:session-broker-node
 
-      - name: PTY integration tests
-        run: bun run test:integration
-
-      - name: Verify terminal tools
-        run: |
-          command -v script
-          command -v timeout
-
       - name: TTY smoke tests
         run: bun run test:tty-smoke
 
@@ -223,7 +215,9 @@ jobs:
           hunk --help | grep 'Usage: hunk'
 
       - name: Stage prebuilt npm packages
-        run: bun run build:prebuilt:npm
+        # Reuse the runtime bundle built and packed above; only the native binary
+        # and prebuilt package layout remain for this validation pass.
+        run: bun run build:bin && bun run ./scripts/packaging/stage-prebuilt-npm.ts
 
       - name: Verify compiled headless commands skip OpenTUI
         run: bun test ./test/cli/compiled-headless-native-lib.test.ts
@@ -240,3 +234,58 @@ jobs:
 
       - name: Smoke test prebuilt global install
         run: bun run smoke:prebuilt-install
+
+  pty-integration:
+    name: PTY integration tests
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Verify terminal tools
+        run: |
+          command -v script
+          command -v timeout
+
+      - name: PTY integration tests
+        run: bun run test:integration
+
+  pr-validate:
+    name: Typecheck + Test + Smoke
+    needs:
+      - changes
+      - linux-validate
+      - pty-integration
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify validation jobs
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          CODE_CHANGED: ${{ needs.changes.outputs.code }}
+          LINUX_RESULT: ${{ needs.linux-validate.result }}
+          PTY_RESULT: ${{ needs.pty-integration.result }}
+        run: |
+          if [[ "$CHANGES_RESULT" != "success" ]]; then
+            echo "Change detection: $CHANGES_RESULT" >&2
+            exit 1
+          fi
+          if [[ "$CODE_CHANGED" != "true" ]]; then
+            echo "No code changes require validation."
+            exit 0
+          fi
+          if [[ "$LINUX_RESULT" != "success" || "$PTY_RESULT" != "success" ]]; then
+            echo "Linux validation: $LINUX_RESULT" >&2
+            echo "PTY integration: $PTY_RESULT" >&2
+            exit 1
+          fi
