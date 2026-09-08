@@ -218,25 +218,29 @@ describe("jj command helpers", () => {
     });
   });
 
-  jjTest("ignores template aliases when resolving immutable endpoints", () => {
-    const dir = createTempJjRepo("hunk-jj-endpoints-template-alias-");
-    writeFileSync(join(dir, "file.txt"), "one\n");
-    jj(dir, "commit", "-m", "first");
-    const firstCommitId = jj(dir, "log", "--no-graph", "-r", "@-", "-T", "self.commit_id()");
+  jjTest(
+    "ignores template aliases when resolving immutable endpoints",
+    () => {
+      const dir = createTempJjRepo("hunk-jj-endpoints-template-alias-");
+      writeFileSync(join(dir, "file.txt"), "one\n");
+      jj(dir, "commit", "-m", "first");
+      const firstCommitId = jj(dir, "log", "--no-graph", "-r", "@-", "-T", "self.commit_id()");
 
-    writeFileSync(join(dir, "file.txt"), "two\n");
-    jj(dir, "commit", "-m", "second");
-    const secondCommitId = jj(dir, "log", "--no-graph", "-r", "@-", "-T", "self.commit_id()");
+      writeFileSync(join(dir, "file.txt"), "two\n");
+      jj(dir, "commit", "-m", "second");
+      const secondCommitId = jj(dir, "log", "--no-graph", "-r", "@-", "-T", "self.commit_id()");
 
-    writeFileSync(join(dir, "file.txt"), "three\n");
-    const thirdCommitId = jj(dir, "log", "--no-graph", "-r", "@", "-T", "self.commit_id()");
-    jj(dir, "config", "set", "--repo", "template-aliases.commit_id", `'"${firstCommitId}"'`);
+      writeFileSync(join(dir, "file.txt"), "three\n");
+      const thirdCommitId = jj(dir, "log", "--no-graph", "-r", "@", "-T", "self.commit_id()");
+      jj(dir, "config", "set", "--repo", "template-aliases.commit_id", `'"${firstCommitId}"'`);
 
-    expect(resolveJjDiffEndpoints(diffInput(), "@", { cwd: dir })).toEqual({
-      newCommitId: thirdCommitId,
-      oldCommitIds: [secondCommitId],
-    });
-  });
+      expect(resolveJjDiffEndpoints(diffInput(), "@", { cwd: dir })).toEqual({
+        newCommitId: thirdCommitId,
+        oldCommitIds: [secondCommitId],
+      });
+    },
+    JjFixtureTestTimeoutMs,
+  );
 
   jjTest("resolves two revisions to immutable source-expansion endpoints", () => {
     const dir = createTempJjRepo("hunk-jj-two-endpoints-");
