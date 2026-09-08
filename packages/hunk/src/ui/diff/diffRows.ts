@@ -41,9 +41,13 @@ import {
   highlightThemeAppearance,
   prepareDocumentHighlighter,
   queueDocumentHighlightWork,
-  renderHighlightedDocumentLines,
   type HighlightThemeInput,
 } from "./documentHighlightRenderer";
+import {
+  documentHighlightRunsForLine,
+  loadDocumentHighlight,
+  type DocumentHighlightResult,
+} from "./documentHighlightService";
 import { pierreHighlightRenderOptions } from "./highlightRenderOptions";
 
 export const HIGHLIGHT_WORKER_MIN_LINES = 40;
@@ -70,7 +74,8 @@ export interface HighlightedDiffCode {
 }
 
 export interface HighlightedSourceCode {
-  lines: Array<HastNode | undefined>;
+  /** Shared complete-document result projected against authoritative source text at paint time. */
+  result: DocumentHighlightResult;
 }
 
 export type {
@@ -80,11 +85,8 @@ export type {
   SplitLineCell,
   UnifiedLineCell,
 } from "./diffRowModel";
-export {
-  loadDocumentHighlight,
-  type DocumentHighlightInput,
-  type DocumentHighlightResult,
-} from "./documentHighlightService";
+export { loadDocumentHighlight, type DocumentHighlightInput } from "./documentHighlightService";
+export type { DocumentHighlightResult } from "./documentHighlightService";
 
 /** Expand source tabs before terminal rendering so downstream geometry stays predictable. */
 function tabify(text: string, tabWidth: number, initialColumn = 0) {
@@ -617,58 +619,79 @@ export async function loadHighlightedDiff(
   }
 }
 
+/** Return whether source newlines disagree with review geometry's CRLF-only normalization. */
+export function sourceHasIncompatibleLoneCarriageReturn(text: string) {
+  return /\r(?!\n)/u.test(text);
+}
+
 /** Highlight a full source file for unchanged lines synthesized during gap expansion. */
 export async function loadHighlightedSourceLines({
   file,
+  offloadLargeDiff = false,
+  signal,
   text,
-  theme = "dark",
+  theme,
 }: {
   file: DiffFile;
+  offloadLargeDiff?: boolean;
+  signal?: AbortSignal;
   text: string;
-  theme?: HighlightThemeInput;
+  theme: AppTheme;
 }): Promise<HighlightedSourceCode> {
-  const normalizedText = text.replaceAll("\r\n", "\n");
-  try {
+  // Review geometry currently treats a lone CR as content, while the document service normalizes
+  // it as a newline. Keep line ownership stable by declining syntax paint for that rare source.
+  if (sourceHasIncompatibleLoneCarriageReturn(text)) {
     return {
-      lines: await renderHighlightedDocumentLines({
-        cacheKey: `${file.id}:${file.path}:${file.language ?? ""}:${text.length}`,
-        language: file.language ?? "text",
-        path: file.path,
-        text: normalizedText,
-        theme,
-      }),
-    };
-  } catch {
-    const fallbackTheme = highlightThemeAppearance(theme);
-    return {
-      lines: await renderHighlightedDocumentLines({
-        cacheKey: `${file.id}:${file.path}:text:${text.length}`,
-        language: "text",
-        path: file.path,
-        text: normalizedText,
-        theme: fallbackTheme,
+      result: Object.freeze({
+        status: "fallback",
+        reason: "invalid-document",
+        retryable: false,
       }),
     };
   }
+
+  return {
+    result: await loadDocumentHighlight({
+      language: file.language ?? "text",
+      offloadLargeDiff,
+      path: file.path,
+      signal,
+      text,
+      theme,
+    }),
+  };
 }
 
 /** Convert one highlighted full-source line into the spans used by expanded context rows. */
 export function spansForHighlightedSourceLine(
   rawLine: string | undefined,
-  highlightedLine: HastNode | undefined,
-  theme: AppTheme,
+  highlighted: HighlightedSourceCode | DocumentHighlightResult | null | undefined,
+  _theme: AppTheme,
   tabWidth = DEFAULT_TAB_WIDTH,
+  sourceLineIndex = 0,
 ): RenderSpan[] {
-  if (highlightedLine === undefined) {
-    const fallbackText = cleanDiffLine(rawLine, tabWidth);
-    return fallbackText.length > 0 ? [{ text: fallbackText }] : [];
-  }
+  const result = highlighted && "result" in highlighted ? highlighted.result : highlighted;
+  const source = cleanLastNewline(rawLine ?? "");
+  const runs = documentHighlightRunsForLine(result, sourceLineIndex);
+  const spans: RenderSpan[] = [];
+  let sourceColumn = 0;
+  let codeColumn = 0;
 
-  const spans = flattenHighlightedLine(highlightedLine, theme, theme.contextContentBg, tabWidth);
-  if (spans.length > 0) {
-    return spans;
-  }
+  /** Append one source slice after terminal sanitization and cumulative-column tab expansion. */
+  const appendText = (text: string, fg?: string) => {
+    const tabified = tabify(text, tabWidth, codeColumn);
+    mergeSpan(spans, { text: tabified, fg });
+    codeColumn += measureTextWidth(tabified);
+  };
 
+  for (const run of runs) {
+    appendText(source.slice(sourceColumn, run.start));
+    appendText(source.slice(run.start, run.end), run.fg);
+    sourceColumn = run.end;
+  }
+  appendText(source.slice(sourceColumn));
+
+  if (spans.length > 0) return spans;
   const fallbackText = cleanDiffLine(rawLine, tabWidth);
   return fallbackText.length > 0 ? [{ text: fallbackText }] : [];
 }
