@@ -1,78 +1,149 @@
 import { useLayoutEffect, useMemo, useState } from "react";
 import type { DiffFile } from "../../core/changeset/model";
 import type { AppTheme } from "../themes";
-import { loadHighlightedSourceLines, type HighlightedSourceCode } from "./diffRows";
-import { syntaxHighlightThemeName } from "./syntaxHighlightTheme";
+import {
+  loadHighlightedSourceLines,
+  sourceHasIncompatibleLoneCarriageReturn,
+  type HighlightedSourceCode,
+} from "./diffRows";
+import { documentHighlightCacheKey } from "./documentHighlightService";
+
+const SOURCE_HIGHLIGHT_MAX_RETRIES = 1;
+const SOURCE_HIGHLIGHT_RETRY_DELAY_MS = 25;
 
 interface HighlightedSourceState {
   cacheKey: string;
   highlighted: HighlightedSourceCode;
 }
 
-/** Summarize loaded source text for expansion highlighting invalidation. */
-function sourceTextFingerprint(text: string) {
-  let hash = 2166136261;
-
-  for (let index = 0; index < text.length; index += 1) {
-    hash ^= text.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-
-  return `${text.length}:${(hash >>> 0).toString(36)}`;
+interface HighlightedSourceDependencies {
+  load?: typeof loadHighlightedSourceLines;
+  maxRetries?: number;
+  retryDelayMs?: number;
 }
 
-/** Cache key for full-source highlights used by expanded unchanged rows. */
+/** Build the same strong identity as the shared service plus source-geometry newline policy. */
 function buildSourceCacheKey(theme: AppTheme, file: DiffFile, text: string) {
-  return `${theme.id}:${syntaxHighlightThemeName(theme)}:${file.id}:${file.path}:${file.language ?? ""}:${sourceTextFingerprint(text)}`;
+  const serviceKey = documentHighlightCacheKey({
+    language: file.language ?? "text",
+    path: file.path,
+    text,
+    theme,
+  });
+  return `${serviceKey}:source-newlines:${sourceHasIncompatibleLoneCarriageReturn(text) ? "incompatible" : "compatible"}`;
 }
 
-/** Resolve highlighted full-source content for expanded unchanged rows. */
-export function useHighlightedSource({
-  file,
-  text,
-  theme,
-  shouldLoadHighlight,
-}: {
-  file: DiffFile | undefined;
-  text: string | undefined;
-  theme: AppTheme;
-  shouldLoadHighlight?: boolean;
-}) {
+/** Wait between bounded retries while allowing effect cleanup to cancel the timer. */
+function waitForRetry(delayMs: number, signal: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    if (signal.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const timer = setTimeout(finish, delayMs);
+    function finish() {
+      signal.removeEventListener("abort", abort);
+      resolve();
+    }
+    function abort() {
+      clearTimeout(timer);
+      reject(signal.reason);
+    }
+    signal.addEventListener("abort", abort, { once: true });
+  });
+}
+
+/** Resolve shared full-source highlighting while preserving plain rows throughout async work. */
+export function useHighlightedSource(
+  {
+    file,
+    offloadLargeDiff = false,
+    text,
+    theme,
+    shouldLoadHighlight,
+  }: {
+    file: DiffFile | undefined;
+    offloadLargeDiff?: boolean;
+    text: string | undefined;
+    theme: AppTheme;
+    shouldLoadHighlight?: boolean;
+  },
+  dependencies: HighlightedSourceDependencies = {},
+) {
   const [state, setState] = useState<HighlightedSourceState | null>(null);
   const cacheKey = useMemo(
     () => (file && text !== undefined ? buildSourceCacheKey(theme, file, text) : null),
     [file, text, theme],
   );
+  const load = dependencies.load ?? loadHighlightedSourceLines;
+  const maxRetries = Math.max(
+    0,
+    Math.floor(dependencies.maxRetries ?? SOURCE_HIGHLIGHT_MAX_RETRIES),
+  );
+  const retryDelayMs = Math.max(
+    0,
+    Math.floor(dependencies.retryDelayMs ?? SOURCE_HIGHLIGHT_RETRY_DELAY_MS),
+  );
 
   useLayoutEffect(() => {
-    if (!file || text === undefined || !cacheKey) {
+    if (!file || text === undefined || !cacheKey || !shouldLoadHighlight) {
       setState(null);
       return;
     }
 
-    if (state?.cacheKey === cacheKey || !shouldLoadHighlight) {
-      return;
-    }
+    const controller = new AbortController();
+    let active = true;
+    setState((current) => (current?.cacheKey === cacheKey ? current : null));
 
-    let cancelled = false;
-    setState(null);
+    void (async () => {
+      for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+        let highlighted: HighlightedSourceCode;
+        try {
+          highlighted = await load({
+            file,
+            offloadLargeDiff,
+            signal: controller.signal,
+            text,
+            theme,
+          });
+        } catch {
+          if (!active || controller.signal.aborted) return;
+          highlighted = {
+            result: Object.freeze({
+              status: "fallback",
+              reason: "highlight-failed",
+              retryable: true,
+            }),
+          };
+        }
 
-    loadHighlightedSourceLines({ file, text, theme })
-      .then((highlighted) => {
-        if (!cancelled) {
-          setState({ cacheKey, highlighted });
+        if (!active || controller.signal.aborted) return;
+        setState({ cacheKey, highlighted });
+        if (!highlighted.result.retryable || attempt === maxRetries) return;
+
+        try {
+          await waitForRetry(retryDelayMs, controller.signal);
+        } catch {
+          return;
         }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setState({ cacheKey, highlighted: { lines: [] } });
-        }
-      });
+      }
+    })();
 
     return () => {
-      cancelled = true;
+      active = false;
+      controller.abort();
     };
-  }, [cacheKey, file, shouldLoadHighlight, state?.cacheKey, text]);
+  }, [
+    cacheKey,
+    file,
+    load,
+    maxRetries,
+    offloadLargeDiff,
+    retryDelayMs,
+    shouldLoadHighlight,
+    text,
+    theme,
+  ]);
 
   return state?.cacheKey === cacheKey ? state.highlighted : null;
 }

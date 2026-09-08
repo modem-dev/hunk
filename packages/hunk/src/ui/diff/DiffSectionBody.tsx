@@ -200,6 +200,7 @@ export function DiffSectionBody({
     sourceStatus?.kind === "loaded" && expandedGapKeys.size > 0 ? sourceStatus.text : undefined;
   const resolvedHighlightedSource = useHighlightedSource({
     file,
+    offloadLargeDiff,
     text: sourceTextForHighlight,
     theme,
     shouldLoadHighlight: shouldLoadHighlight && expandedGapKeys.size > 0,
@@ -208,9 +209,10 @@ export function DiffSectionBody({
     (line: string | undefined, sourceLineNumber: number) =>
       spansForHighlightedSourceLine(
         line,
-        resolvedHighlightedSource?.lines[sourceLineNumber],
+        resolvedHighlightedSource,
         theme,
         tabWidth,
+        sourceLineNumber,
       ),
     [resolvedHighlightedSource, tabWidth, theme],
   );
@@ -348,7 +350,14 @@ export function DiffSectionBody({
 
   if (file.metadata.hunks.length === 0) {
     return (
-      <box style={{ width: "100%", paddingLeft: 1, paddingRight: 1, paddingBottom: 1 }}>
+      <box
+        style={{
+          width: "100%",
+          paddingLeft: 1,
+          paddingRight: 1,
+          paddingBottom: 1,
+        }}
+      >
         <text fg={theme.muted}>{fitText(diffMessage(file), Math.max(1, width - 2))}</text>
       </box>
     );
