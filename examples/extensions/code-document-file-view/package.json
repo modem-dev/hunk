@@ -1,0 +1,10 @@
+{
+  "name": "hunk-code-document-file-view-example",
+  "private": true,
+  "hunk": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "apiVersion": 26
+  }
+}

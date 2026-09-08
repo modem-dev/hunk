@@ -302,11 +302,12 @@ and retires the replaced instance at that explicit ownership boundary.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `25`). Branch on it if you want
-one file to support several Hunk versions. Version 25 adds Promise-returning watch signatures and
-watch cancellation; version 24 adds review metadata to VCS patch results and
-short display revisions to commit descriptors; version 23 adds canonical unified-layout fields
-while preserving the previous event vocabulary; version 22 adds frame-derived pane preferred sizing,
+The API generation this Hunk speaks (currently `26`). Branch on it if you want
+one file to support several Hunk versions. Version 26 adds host-owned syntax highlighting for
+file-view code documents; version 25 adds Promise-returning watch signatures and watch cancellation;
+version 24 adds review metadata to VCS patch results and short display revisions to commit descriptors;
+version 23 adds canonical unified-layout fields while preserving the previous event vocabulary;
+version 22 adds frame-derived pane preferred sizing,
 non-resizable dynamic panes, and commit-history paint tokens; version 21 adds optional inclusive history-range review
 planning and bounded comparison commit summaries; version 20 adds optional commit timestamps to review
 metadata, pane clipboard actions, and the `theme.copyAction` paint token; version 19 adds provider-owned history
@@ -1225,6 +1226,101 @@ extension's content format and measurement remains theme-independent. Every
 parsed hunk needs one in-bounds, inclusive `hunkRows` entry at the same array
 position as `input.file.hunks`.
 
+#### Host-owned syntax paint (API v26)
+
+A file view may declare complete `codeDocuments` and map individual symbolic spans into them.
+Extensions provide code and coordinates, never colors, Shiki/Pierre objects, HAST, grammars, or
+terminal tokens. Hunk resolves the language and active syntax theme, tokenizes the complete
+document so multiline comments, strings, templates, and Markdown fences retain lexical context,
+and projects only the ranges demanded by the mounted row window. Highlighting arrives
+asynchronously and is paint-only: it cannot change retained text, wrapping, row height, layout
+generation, note placement, navigation, selection, or scroll position.
+
+```ts
+import type { ExtensionFileViewLayout, HunkExtensionAPI } from "hunkdiff/extension";
+
+export default function (hunk: HunkExtensionAPI) {
+  hunk.registerFileView({
+    id: "split-code",
+    title: "Old / new code",
+    matches: (file) => file.path.endsWith(".ts"),
+    async layout(input): Promise<ExtensionFileViewLayout | null> {
+      const [oldText, newText] = await Promise.all([
+        input.readDocument("old"),
+        input.readDocument("new"),
+      ]);
+      if (oldText === null || newText === null || (input.file.hunks?.length ?? 0) !== 1)
+        return null;
+
+      const oldLine = oldText.replace(/\r\n?|\n/g, "\n").split("\n")[0] ?? "";
+      const newLine = newText.replace(/\r\n?|\n/g, "\n").split("\n")[0] ?? "";
+      const newCodeStart = Math.min(newLine.length, /^\s*/.exec(newLine)?.[0].length ?? 0);
+      return {
+        codeDocuments: [
+          { id: "old", text: oldText },
+          { id: "new", text: newText, language: "typescript" },
+        ],
+        rows: [
+          {
+            id: "split:1",
+            spans: [
+              { text: "OLD 1 │ ", tone: "muted" },
+              { text: oldLine, syntax: { documentId: "old", line: 1 } },
+              { text: "   NEW 1 │ ", tone: "muted" },
+              { text: newLine.slice(0, newCodeStart) },
+              {
+                text: newLine.slice(newCodeStart),
+                syntax: { documentId: "new", line: 1, range: [newCodeStart, newLine.length] },
+              },
+            ],
+          },
+        ],
+        hunkRows: [{ startRow: 0, endRow: 0 }],
+      };
+    },
+  });
+}
+```
+
+`ExtensionFileViewCodeDocument` has a layout-local unique `id`, complete `text`, and optional
+`language`. An omitted language uses the reviewed file's host-detected language. An explicit
+language is still resolved by Hunk; an unavailable grammar leaves ordinary symbolic paint. A
+span's `syntax` is an `ExtensionFileViewSyntaxReference`: `documentId`, a one-based `line`, and an
+optional zero-based, half-open UTF-16 `range`. Omit `range` to reference the complete line. This
+supports generated/transformed documents as well as reviewed old/new source, and one split-style
+row may independently reference old and new documents. Keep gutters, blame metadata, diff markers,
+ellipses, separators, and padding in separate non-syntax spans.
+
+Hunk normalizes CRLF and lone CR to LF without inventing a line after a final newline, strips
+terminal controls line by line, and snapshots the resulting terminal-safe document. The retained
+terminal-safe `span.text` must exactly equal the referenced complete line or slice. References use
+JavaScript UTF-16 columns before terminal-cell conversion, so astral code points occupy two column
+units. Horizontal tabs remain one UTF-16 unit and pass through to OpenTUI, which displays each tab
+at its fixed two-cell width. If sanitization would make the authored span and document slice differ,
+the layout is rejected rather than guessing an offset.
+
+When syntax succeeds, its token foreground overrides the span's `tone`; token gaps retain the tone,
+and authored `attributes` apply to every projected run. Hunk continues to own selected-hunk and
+current-row backgrounds. `added` and `removed` remain their existing semantic foreground tones;
+code documents do not opt into raw-diff backgrounds. Custom row components never receive syntax
+colors or token data: only their symbolic fallback spans can use `syntax`, while successful custom
+component output remains untouched.
+
+`syntax` and `sourceRanges` are deliberately independent. Syntax references address paint and may
+appear outside hunk rows; they never establish hunk ownership, note placement, navigation aliases,
+or source provenance. `sourceRanges` retain the exact note/navigation semantics below.
+
+Code-document validation is bounded to 64 documents, 1,000,000 aggregate UTF-16 code units, and
+10,000 normalized lines per layout. Highlighting separately bounds UTF-8 input, line length,
+compact output, outstanding jobs, subscribers, and completed caches. Hunk only starts work when a
+visible/halo row demands a document, deduplicates identical work, cancels subscribers that leave
+demand, and discards stale theme/file/view/layout results. Unsupported languages, oversize input,
+queue pressure, cancellation, worker failure, and tokenization failure all retain the original
+symbolic FileView content. By contrast, invalid layout data or unavailable native text measurement
+fails layout preparation and falls back to the raw diff, because Hunk cannot safely retain a view
+without exact geometry. Folder extensions using `codeDocuments` or `syntax` must declare
+`"hunk": { "apiVersion": 26 }`.
+
 A row's optional `sourceRanges` contains inclusive, one-based exact-source
 bindings such as `{ side: "new", range: [12, 18] }`. Hunk reads only the bound
 source sides, verifies every range is in bounds, rejects overlapping ranges on
@@ -1252,7 +1348,9 @@ propagation, while wheel, drag, and unhandled input remain host-owned. Hunk
 makes no portal, renderer, focus, or input-delivery guarantee; see the linked
 JSX POC for state lifetime, clipping, and error boundaries. The opt-in
 [`jsx-file-view-gallery`](../examples/extensions/jsx-file-view-gallery/) runs
-fixed JSX rows against checked-in TypeScript, CSS, and package dependency diffs.
+fixed JSX rows against checked-in TypeScript, CSS, and package dependency diffs. The focused
+[`code-document-file-view`](../examples/extensions/code-document-file-view/) example declares
+complete old/new documents and maps full and partial code slices beside non-syntax gutters.
 
 A command handler can control the selected file's view through
 `ctx.fileViews.select("view-id")`, `toggle("view-id")`, and

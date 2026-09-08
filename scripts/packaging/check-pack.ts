@@ -2,7 +2,10 @@
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { checkExtensionConsumerTypes } from "./extension-consumer-check";
+import {
+  checkExtensionConsumerTypes,
+  FILE_VIEW_SYNTAX_CONSUMER_SOURCE,
+} from "./extension-consumer-check";
 import { buildDocExamples } from "./extension-doc-examples";
 import { checkPackedPublicConsumers } from "./packed-public-consumer-check";
 import { npmCommand } from "./script-helpers";
@@ -583,6 +586,7 @@ const { modes } = checkExtensionConsumerTypes({
   repoRoot,
   sources: [
     { name: "consumer.ts", text: CONSUMER_SOURCE },
+    FILE_VIEW_SYNTAX_CONSUMER_SOURCE,
     ...docExamples.map((example) => ({ name: example.name, text: example.text })),
   ],
 });

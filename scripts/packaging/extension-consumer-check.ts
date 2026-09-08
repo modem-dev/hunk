@@ -31,6 +31,44 @@ export interface CheckExtensionConsumerOptions {
   moduleResolutions?: readonly ("nodenext" | "bundler")[];
 }
 
+/** Compile the API-v26 file-view syntax surface as an isolated published-package consumer. */
+export const FILE_VIEW_SYNTAX_CONSUMER_SOURCE: ExtensionConsumerSource = {
+  name: "file-view-syntax-consumer.ts",
+  text: `
+import { HUNK_EXTENSION_API_VERSION } from "hunkdiff/extension";
+import type {
+  ExtensionFileViewCodeDocument,
+  ExtensionFileViewLayout,
+  ExtensionFileViewSpan,
+  ExtensionFileViewSyntaxReference,
+} from "hunkdiff/extension";
+
+const apiVersion: 26 = HUNK_EXTENSION_API_VERSION;
+const document = {
+  id: "generated",
+  text: "const answer = 42;",
+  language: "typescript",
+} satisfies ExtensionFileViewCodeDocument;
+const fullLine = { documentId: document.id, line: 1 } satisfies ExtensionFileViewSyntaxReference;
+const partial = {
+  documentId: document.id,
+  line: 1,
+  range: [6, 12],
+} as const satisfies ExtensionFileViewSyntaxReference;
+const spans = [
+  { text: "1 │ ", tone: "muted" },
+  { text: "const answer = 42;", syntax: fullLine },
+  { text: "answer", attributes: ["bold"], syntax: partial },
+] satisfies readonly ExtensionFileViewSpan[];
+export const layout = {
+  codeDocuments: [document],
+  rows: [{ id: "generated:1", spans }],
+  hunkRows: [{ startRow: 0, endRow: 0 }],
+} satisfies ExtensionFileViewLayout;
+void apiVersion;
+`,
+};
+
 /** Module/moduleResolution pairs that have to accept the published declarations. */
 const RESOLUTION_CONFIGS = {
   nodenext: { module: "nodenext", moduleResolution: "nodenext" },
