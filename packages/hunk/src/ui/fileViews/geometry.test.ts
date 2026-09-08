@@ -39,6 +39,95 @@ describe("file-view geometry", () => {
     expect(syntaxRows?.map((row) => row.stableKey)).toEqual(plainRows?.map((row) => row.stableKey));
   });
 
+  test("keeps narrow wrapped note and navigation bounds isolated from syntax metadata", () => {
+    const outside = "outside 😀";
+    const oldCell = "old\t界";
+    const newCell = "new é value";
+    const long = "long wrapping words long wrapping words";
+    const plain: ExtensionFileViewLayout = {
+      rows: [
+        { id: "outside", spans: [{ text: outside }] },
+        {
+          id: "split",
+          spans: [{ text: oldCell }, { text: " | " }, { text: newCell }],
+          sourceRanges: [{ side: "new", range: [5, 5] }],
+        },
+        {
+          id: "long",
+          spans: [{ text: long }],
+          sourceRanges: [{ side: "new", range: [9, 9] }],
+        },
+      ],
+      hunkRows: [{ startRow: 1, endRow: 2 }],
+    };
+    const syntax: ExtensionFileViewLayout = {
+      codeDocuments: [
+        { id: "old", text: `${outside}\n${oldCell}`, language: "typescript" },
+        { id: "new", text: `${newCell}\n${long}`, language: "typescript" },
+      ],
+      rows: [
+        {
+          id: "outside",
+          spans: [{ text: outside, syntax: { documentId: "old", line: 1 } }],
+        },
+        {
+          id: "split",
+          spans: [
+            { text: oldCell, syntax: { documentId: "old", line: 2 } },
+            { text: " | " },
+            { text: newCell, syntax: { documentId: "new", line: 1 } },
+          ],
+          sourceRanges: [{ side: "new", range: [5, 5] }],
+        },
+        {
+          id: "long",
+          spans: [{ text: long, syntax: { documentId: "new", line: 2 } }],
+          sourceRanges: [{ side: "new", range: [9, 9] }],
+        },
+      ],
+      hunkRows: plain.hunkRows,
+    };
+    const visibleNotes = [
+      createVisibleAgentNote([], {
+        id: "note",
+        annotation: { id: "note", summary: "Stable note", newRange: [5, 5] },
+      }),
+    ];
+    const results = [plain, syntax].map((candidate) => {
+      const checked = validateFileViewLayout(candidate, 1, 8);
+      if (!checked.valid) throw new Error(checked.issue);
+      const plan = buildFileViewRenderPlan(checked.value.layout, visibleNotes);
+      const geometry = measureFileViewGeometry({
+        resolved: checked.value,
+        plannedRows: plan.rows,
+        width: 8,
+      });
+      return { checked: checked.value, plan, geometry };
+    });
+    const summarizeGeometry = ({
+      fileViewRows: _rows,
+      ...geometry
+    }: (typeof results)[number]["geometry"]) => ({
+      ...geometry,
+      rowBoundsByKey: [...geometry.rowBoundsByKey],
+      rowBoundsByStableKey: [...geometry.rowBoundsByStableKey],
+      hunkAnchorRows: [...geometry.hunkAnchorRows],
+      hunkBounds: [...geometry.hunkBounds],
+    });
+
+    expect(results[1]!.checked.rowHeights).toEqual(results[0]!.checked.rowHeights);
+    expect(results[1]!.plan.rows.map((row) => row.stableKey)).toEqual(
+      results[0]!.plan.rows.map((row) => row.stableKey),
+    );
+    expect(summarizeGeometry(results[1]!.geometry)).toEqual(
+      summarizeGeometry(results[0]!.geometry),
+    );
+    expect(results[1]!.geometry.rowBoundsByStableKey.get("line:0:new:5")).toMatchObject({
+      stableKey: "file-view:split",
+    });
+    expect(results[1]!.geometry.hunkBounds.get(0)?.height).toBeGreaterThan(2);
+  });
+
   test("uses declared component heights while retaining stable row ids and hunk bounds", () => {
     const layout: ExtensionFileViewLayout = {
       rows: [

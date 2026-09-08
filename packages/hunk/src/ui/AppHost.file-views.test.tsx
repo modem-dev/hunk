@@ -7,7 +7,13 @@ import { act } from "react";
 import { createTestVcsAppBootstrap } from "../../../../test/helpers/app-bootstrap";
 import { createTestDiffFile, createTestSourceFetcher } from "../../../../test/helpers/diff-helpers";
 import { loadStartupExtensions } from "../extensions/startup";
+import {
+  documentHighlightRunsForLine,
+  loadDocumentHighlight,
+} from "./diff/documentHighlightService";
+import { resolveTheme } from "./themes";
 import { TestAppHost as AppHost } from "../../../../test/helpers/app-host";
+import { capturedTestColorToHex } from "../../../../test/helpers/test-color-helpers";
 
 const JSX_FILE_VIEW_EXTENSION = join(
   import.meta.dir,
@@ -39,7 +45,11 @@ function createBrokenFileViewExtension() {
   mkdirSync(extension, { recursive: true });
   writeFileSync(
     join(extension, "package.json"),
-    JSON.stringify({ name: "broken-row", private: true, hunk: { extensions: ["./index.ts"] } }),
+    JSON.stringify({
+      name: "broken-row",
+      private: true,
+      hunk: { extensions: ["./index.ts"] },
+    }),
   );
   writeFileSync(
     join(extension, "index.ts"),
@@ -67,6 +77,66 @@ function createBrokenFileViewExtension() {
   return { extension, root };
 }
 
+/** Write a syntax-enabled preview whose layout count remains observable across paint-only updates. */
+function createSyntaxFileViewExtension() {
+  const root = mkdtempSync(join(tmpdir(), "hunk-apphost-syntax-view-"));
+  tempDirs.push(root);
+  const extension = join(root, "syntax-view");
+  mkdirSync(extension, { recursive: true });
+  writeFileSync(
+    join(extension, "package.json"),
+    JSON.stringify({
+      name: "syntax-view",
+      private: true,
+      hunk: { extensions: ["./index.ts"] },
+    }),
+  );
+  writeFileSync(
+    join(extension, "index.ts"),
+    `export default function (hunk) {
+  globalThis.__hunkPhase9SyntaxLayouts = 0;
+  hunk.registerFileView({
+    id: "syntax",
+    title: "Syntax preview",
+    matches: () => true,
+    layout: ({ file }) => {
+      globalThis.__hunkPhase9SyntaxLayouts += 1;
+      const lines = Array.from({ length: 80 }, (_, index) =>
+        index === 8 ? "/* multiline comment" :
+        index === 9 ? "still commented */" :
+        index === 20 ? "const template = ` +
+      "`value ${21}`" +
+      `;" :
+        "const phase9Line" + (index + 1) + " = " + (index + 1) + ";"
+      );
+      return {
+        codeDocuments: [{ id: "source", text: lines.join("\\n"), language: "typescript" }],
+        rows: lines.map((text, index) => ({
+          id: "syntax-" + index,
+          spans: [{ text, syntax: { documentId: "source", line: index + 1 } }],
+        })),
+        hunkRows: (file.hunks ?? []).map(() => ({ startRow: 0, endRow: lines.length - 1 })),
+      };
+    },
+  });
+  hunk.registerCommand({ id: "toggle-syntax", title: "Toggle syntax", key: "f8" }, (ctx) =>
+    ctx.fileViews.toggle("syntax"),
+  );
+}
+`,
+  );
+  return { extension, root };
+}
+
+/** Return the first captured foreground for a terminal span containing the requested text. */
+function capturedForeground(setup: Awaited<ReturnType<typeof testRender>>, text: string) {
+  const span = setup
+    .captureSpans()
+    .lines.flatMap((line) => line.spans)
+    .find((candidate) => candidate.text.includes(text));
+  return capturedTestColorToHex(span?.fg)?.toLowerCase();
+}
+
 /** Write a matching-files preview used to prove the host-owned bulk View action. */
 function createBulkFileViewExtension() {
   const root = mkdtempSync(join(tmpdir(), "hunk-apphost-bulk-view-"));
@@ -75,7 +145,11 @@ function createBulkFileViewExtension() {
   mkdirSync(extension, { recursive: true });
   writeFileSync(
     join(extension, "package.json"),
-    JSON.stringify({ name: "bulk-view", private: true, hunk: { extensions: ["./index.ts"] } }),
+    JSON.stringify({
+      name: "bulk-view",
+      private: true,
+      hunk: { extensions: ["./index.ts"] },
+    }),
   );
   writeFileSync(
     join(extension, "index.ts"),
@@ -107,7 +181,11 @@ function createStatefulFileViewExtension() {
   mkdirSync(extension, { recursive: true });
   writeFileSync(
     join(extension, "package.json"),
-    JSON.stringify({ name: "stateful-view", private: true, hunk: { extensions: ["./index.ts"] } }),
+    JSON.stringify({
+      name: "stateful-view",
+      private: true,
+      hunk: { extensions: ["./index.ts"] },
+    }),
   );
   writeFileSync(
     join(extension, "index.ts"),
@@ -230,13 +308,125 @@ async function renderFrames(setup: Awaited<ReturnType<typeof testRender>>, frame
 }
 
 describe("AppHost file views", () => {
+  test("keeps a syntax preview mounted and geometrically stable across highlight and theme paint", async () => {
+    const { extension, root } = createSyntaxFileViewExtension();
+    const extensions = await loadStartupExtensions({
+      cliExtensionPaths: [extension],
+      cwd: root,
+      env: { XDG_CONFIG_HOME: root } as NodeJS.ProcessEnv,
+      extensions: {
+        enabled: true,
+        extensionConfigs: {},
+        paths: [],
+        repoPaths: [],
+      },
+    });
+    expect(extensions.issues).toEqual([]);
+    const sourceFetcher = createTestSourceFetcher(async () => "source should not be read");
+    const file = createTestDiffFile({
+      id: "syntax-apphost",
+      path: "syntax-apphost.ts",
+      before: "const before = 1;\n",
+      after: "const after = 2;\n",
+      sourceFetcher,
+    });
+    const bootstrap = createTestVcsAppBootstrap({
+      changesetId: "changeset:syntax-apphost",
+      files: [file],
+      initialMode: "unified",
+      inputMode: "unified",
+      vcsOptions: { extensionPaths: [extension] },
+    });
+    bootstrap.extensions = extensions;
+    const expectedForeground = async (themeId: "github-dark-default" | "github-dark-dimmed") => {
+      const result = await loadDocumentHighlight({
+        text: "const phase9Line1 = 1;",
+        // Use a distinct strong cache identity so the mounted AppHost still exercises async arrival.
+        path: "expected-colors.ts",
+        language: "typescript",
+        theme: resolveTheme(themeId, null),
+        offloadLargeDiff: false,
+      });
+      return documentHighlightRunsForLine(result, 0)
+        .find((run) => run.start === 0 && run.fg)
+        ?.fg?.toLowerCase();
+    };
+    const expectedDark = await expectedForeground("github-dark-default");
+    const expectedDimmed = await expectedForeground("github-dark-dimmed");
+    expect(expectedDark).toBeDefined();
+    expect(expectedDimmed).toBeDefined();
+    expect(expectedDimmed).not.toBe(expectedDark);
+    const setup = await testRender(<AppHost bootstrap={bootstrap} onQuit={() => {}} />, {
+      width: 120,
+      height: 24,
+    });
+    const metrics = globalThis as typeof globalThis & {
+      __hunkPhase9SyntaxLayouts?: number;
+    };
+
+    try {
+      await waitForFrame(setup, (frame) => frame.includes("syntax-apphost.ts"));
+      await act(async () => setup.mockInput.pressKey("F8"));
+      const highlightedFrame = await waitForFrame(setup, (frame) =>
+        frame.includes("const phase9Line1 = 1;"),
+      );
+      let darkForeground: string | undefined;
+      for (let attempt = 0; attempt < 80 && darkForeground !== expectedDark; attempt += 1) {
+        await act(async () => {
+          await setup.renderOnce();
+          await Bun.sleep(20);
+        });
+        darkForeground = capturedForeground(setup, "const");
+      }
+      expect(darkForeground).toBe(expectedDark);
+      expect(metrics.__hunkPhase9SyntaxLayouts).toBe(1);
+      expect(sourceFetcher.calls).toEqual([]);
+
+      await act(async () => setup.mockInput.typeText("t"));
+      await waitForFrame(setup, (frame) => frame.includes("Theme selector"));
+      await act(async () => {
+        await setup.mockInput.pressArrow("down");
+        await setup.mockInput.pressEnter();
+      });
+      await waitForFrame(setup, (frame) => frame.includes("Theme: github-dark-dimmed"));
+      let themedForeground = darkForeground;
+      for (let attempt = 0; attempt < 80 && themedForeground !== expectedDimmed; attempt += 1) {
+        await act(async () => {
+          await setup.renderOnce();
+          await Bun.sleep(20);
+        });
+        themedForeground = capturedForeground(setup, "const");
+      }
+      const themedFrame = setup.captureCharFrame();
+
+      expect(themedForeground).toBe(expectedDimmed);
+      expect(themedForeground).not.toBe(darkForeground);
+      expect(themedFrame).toContain("const phase9Line1 = 1;");
+      expect(highlightedFrame).toContain("const phase9Line1 = 1;");
+      expect(metrics.__hunkPhase9SyntaxLayouts).toBe(1);
+      expect(sourceFetcher.calls).toEqual([]);
+      await act(async () => setup.mockInput.typeText("j"));
+      const movedFrame = setup.captureCharFrame();
+      expect(movedFrame).toContain("const phase9Line2 = 2;");
+      expect(movedFrame).not.toContain("const after = 2;");
+    } finally {
+      delete metrics.__hunkPhase9SyntaxLayouts;
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
   test("attributes one synchronous row-render warning and keeps the symbolic fallback", async () => {
     const { extension, root } = createBrokenFileViewExtension();
     const extensions = await loadStartupExtensions({
       cliExtensionPaths: [extension],
       cwd: root,
       env: { XDG_CONFIG_HOME: root } as NodeJS.ProcessEnv,
-      extensions: { enabled: true, extensionConfigs: {}, paths: [], repoPaths: [] },
+      extensions: {
+        enabled: true,
+        extensionConfigs: {},
+        paths: [],
+        repoPaths: [],
+      },
     });
     expect(extensions.issues).toEqual([]);
 
@@ -286,7 +476,12 @@ describe("AppHost file views", () => {
       cliExtensionPaths: [extension],
       cwd: root,
       env: { XDG_CONFIG_HOME: root } as NodeJS.ProcessEnv,
-      extensions: { enabled: true, extensionConfigs: {}, paths: [], repoPaths: [] },
+      extensions: {
+        enabled: true,
+        extensionConfigs: {},
+        paths: [],
+        repoPaths: [],
+      },
     });
     expect(extensions.issues).toEqual([]);
     const bootstrap = createTestVcsAppBootstrap({
@@ -344,7 +539,12 @@ describe("AppHost file views", () => {
       cliExtensionPaths: [extension],
       cwd: root,
       env: { XDG_CONFIG_HOME: root } as NodeJS.ProcessEnv,
-      extensions: { enabled: true, extensionConfigs: {}, paths: [], repoPaths: [] },
+      extensions: {
+        enabled: true,
+        extensionConfigs: {},
+        paths: [],
+        repoPaths: [],
+      },
     });
     expect(extensions.issues).toEqual([]);
     const bootstrap = createTestVcsAppBootstrap({
@@ -399,7 +599,12 @@ describe("AppHost file views", () => {
       cliExtensionPaths: [extension],
       cwd: root,
       env: { XDG_CONFIG_HOME: root } as NodeJS.ProcessEnv,
-      extensions: { enabled: true, extensionConfigs: {}, paths: [], repoPaths: [] },
+      extensions: {
+        enabled: true,
+        extensionConfigs: {},
+        paths: [],
+        repoPaths: [],
+      },
     });
     expect(extensions.issues).toEqual([]);
     const files = [
@@ -468,7 +673,12 @@ describe("AppHost file views", () => {
       cliExtensionPaths: [extension],
       cwd: root,
       env: { XDG_CONFIG_HOME: root } as NodeJS.ProcessEnv,
-      extensions: { enabled: true, extensionConfigs: {}, paths: [], repoPaths: [] },
+      extensions: {
+        enabled: true,
+        extensionConfigs: {},
+        paths: [],
+        repoPaths: [],
+      },
     });
     expect(extensions.issues).toEqual([]);
 
@@ -548,7 +758,12 @@ describe("AppHost file views", () => {
       cliExtensionPaths: [extension],
       cwd: root,
       env: { XDG_CONFIG_HOME: root } as NodeJS.ProcessEnv,
-      extensions: { enabled: true, extensionConfigs: {}, paths: [], repoPaths: [] },
+      extensions: {
+        enabled: true,
+        extensionConfigs: {},
+        paths: [],
+        repoPaths: [],
+      },
     });
     expect(extensions.issues).toEqual([]);
 

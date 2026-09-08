@@ -6,6 +6,7 @@ import {
   createTestSourceFetcher,
 } from "../../../../../test/helpers/diff-helpers";
 import type { RegisteredFileView } from "../../extensions/types";
+import { validateFileViewLayout } from "./layout";
 import { bumpFileViewEpoch, registeredFileViewKey, type FileViewEpochState } from "./state";
 import {
   FILE_VIEW_LAYOUT_CACHE_MAX_ENTRIES,
@@ -848,6 +849,70 @@ describe("file-view layout invalidation", () => {
         });
       }
       expect(rowText()).toBe("after refresh");
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("removes refreshed geometry when native text measurement fails", async () => {
+    const issues: string[] = [];
+    const view = createTestView(({ file: inputFile }) => ({
+      rows: [{ id: "row", spans: [{ text: "measured preview" }] }],
+      hunkRows: (inputFile.hunks ?? []).map(() => ({ startRow: 0, endRow: 0 })),
+    }));
+    const key = registeredFileViewKey(view);
+    const selections = { [file.id]: key };
+    const measurementViews = [view];
+    let refresh = () => {};
+    let measurementAvailable = true;
+    let latest: ReadonlyMap<string, ResolvedFileViewLayout> = new Map();
+    const validateLayout: typeof validateFileViewLayout = (value, hunkCount, width) => {
+      if (!measurementAvailable) throw new Error("native file-view text measurement unavailable");
+      return validateFileViewLayout(value, hunkCount, width);
+    };
+    const reportIssue = (issue: string) => issues.push(issue);
+
+    function Harness() {
+      const [epochs, setEpochs] = useState<FileViewEpochState>(() => new Map());
+      refresh = () => setEpochs((current) => bumpFileViewEpoch(current, key));
+      latest = useFileViewLayouts({
+        files,
+        selections,
+        views: measurementViews,
+        width: 80,
+        epochs,
+        onIssue: reportIssue,
+        validateLayoutForTest: validateLayout,
+      });
+      return null;
+    }
+
+    const setup = await testRender(createElement(Harness), { width: 10, height: 2 });
+    try {
+      for (let attempt = 0; attempt < 20 && latest.size === 0; attempt += 1) {
+        await act(async () => {
+          await Promise.resolve();
+          await setup.renderOnce();
+        });
+      }
+      expect(latest.get(file.id)?.layout.rows[0]?.spans[0]?.text).toBe("measured preview");
+
+      measurementAvailable = false;
+      await act(async () => {
+        refresh();
+        await setup.renderOnce();
+      });
+      for (let attempt = 0; attempt < 20 && latest.size > 0; attempt += 1) {
+        await act(async () => {
+          await Promise.resolve();
+          await setup.renderOnce();
+        });
+      }
+
+      expect(latest.size).toBe(0);
+      expect(issues).toEqual([
+        'Extension test-extension file view "test-view" failed laying out request.ts • using raw diff',
+      ]);
     } finally {
       await act(async () => setup.renderer.destroy());
     }
