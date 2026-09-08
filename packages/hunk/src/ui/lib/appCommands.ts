@@ -27,7 +27,9 @@ const FAST_CODE_HORIZONTAL_SCROLL_COLUMNS = 8;
  * `useAppKeyboardShortcuts`. Modal navigation (arrow keys inside a dialog,
  * escape closing a prompt) is deliberately not a command: those keys are the
  * structure of the widget that owns them, not shortcuts a user rebinds or an
- * extension extends.
+ * extension extends. The note composer's save shortcut is a command
+ * (`hunk.review.saveNote`); focused-input routing still claims it first so
+ * typing is not stolen, but the chord comes from the resolved keymap.
  */
 export const MAX_APP_COMMAND_COUNT = 10_000;
 
@@ -117,6 +119,8 @@ export interface BuildAppCommandsOptions {
   canDeleteActiveNote?: boolean;
   canEditActiveNote?: boolean;
   canReplyToActiveNote?: boolean;
+  /** True while the composer has a draft the save command can persist. */
+  canSaveDraftNote?: boolean;
   canRefreshCurrentInput: boolean;
   alignCurrentLine: (alignment: "top" | "center" | "bottom") => void;
   applyFilePresentationToAllMatching: () => void;
@@ -138,6 +142,7 @@ export interface BuildAppCommandsOptions {
   stepDiffLine: (delta: number) => void;
   selectCursorLine: (style: CursorLine) => void;
   selectLayoutMode: (mode: LayoutMode) => void;
+  saveDraftNote: (editorBody?: string) => void;
   hasVisualSelection?: () => boolean;
   startVisualSelection?: () => void;
   copySelection?: () => void;
@@ -211,6 +216,10 @@ function builtinCommandHandlers(
     "hunk.review.replyToActiveNote": {
       isEnabled: () => Boolean(options.canReplyToActiveNote),
       run: () => options.replyToActiveNote?.(),
+    },
+    "hunk.review.saveNote": {
+      isEnabled: () => Boolean(options.canSaveDraftNote),
+      run: () => options.saveDraftNote(),
     },
     "hunk.review.deleteActiveNote": {
       isEnabled: () => Boolean(options.canDeleteActiveNote),
@@ -354,6 +363,7 @@ const NOOP_COMMAND_OPTIONS: BuildAppCommandsOptions = (() => {
     canAlignCurrentLine: false,
     canApplyFilePresentationToAllMatching: false,
     canRefreshCurrentInput: true,
+    canSaveDraftNote: true,
     alignCurrentLine: noop,
     applyFilePresentationToAllMatching: noop,
     focusFilter: noop,
@@ -367,6 +377,7 @@ const NOOP_COMMAND_OPTIONS: BuildAppCommandsOptions = (() => {
     stepDiffLine: noop,
     selectCursorLine: noop,
     selectLayoutMode: noop,
+    saveDraftNote: noop,
     hasVisualSelection: () => false,
     startVisualSelection: noop,
     copySelection: noop,

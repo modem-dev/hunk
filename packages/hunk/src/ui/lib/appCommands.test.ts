@@ -36,7 +36,10 @@ function keyEvent(fields: Partial<ParsedKey>): KeyEvent {
 }
 
 /** Build the built-in table over recording callbacks, plus the log it writes. */
-function createTestCommands(resolvedKeys?: ResolvedCommandKeys) {
+function createTestCommands(
+  resolvedKeys?: ResolvedCommandKeys,
+  overrides: Partial<BuildAppCommandsOptions> = {},
+) {
   const ran: string[] = [];
   const record =
     (name: string) =>
@@ -61,6 +64,7 @@ function createTestCommands(resolvedKeys?: ResolvedCommandKeys) {
     selectCursorLine: record("selectCursorLine"),
     stepDiffLine: record("stepDiffLine"),
     selectLayoutMode: record("selectLayoutMode"),
+    saveDraftNote: record("saveDraftNote"),
     startUserNote: record("startUserNote"),
     toggleAgentNotes: record("toggleAgentNotes"),
     toggleCopyDecorations: record("toggleCopyDecorations"),
@@ -74,6 +78,7 @@ function createTestCommands(resolvedKeys?: ResolvedCommandKeys) {
     toggleFilesPane: record("toggleFilesPane"),
     triggerEditSelectedFile: record("triggerEditSelectedFile"),
     triggerRefreshCurrentInput: record("triggerRefreshCurrentInput"),
+    ...overrides,
   };
 
   return { commands: buildAppCommands(options), ran };
@@ -276,6 +281,9 @@ describe("builtinCommandKeyDefaults", () => {
       "u",
       "ctrl+u",
     ]);
+    expect(defaults.find((entry) => entry.id === "hunk.review.saveNote")?.defaultKeys).toEqual([
+      "ctrl+s",
+    ]);
     // Commands with contextual or menu routing ship unbound and remain user-bindable.
     expect(
       defaults
@@ -392,6 +400,20 @@ describe("executeAppCommand", () => {
     expect(executeAppCommand(disabled, "hunk.app.refresh")).toBe(false);
     expect(executeAppCommand(commands, "nobody.registered.this")).toBe(false);
     expect(ran).toEqual([]);
+  });
+
+  test("save-note stays idle until a draft exists", () => {
+    const idle = createTestCommands();
+    expect(dispatchAppCommand(idle.commands, keyEvent({ name: "s", ctrl: true }))).toBeUndefined();
+    expect(executeAppCommand(idle.commands, "hunk.review.saveNote")).toBe(false);
+    expect(idle.ran).toEqual([]);
+
+    const drafting = createTestCommands(undefined, { canSaveDraftNote: true });
+    expect(dispatchAppCommand(drafting.commands, keyEvent({ name: "s", ctrl: true }))?.id).toBe(
+      "hunk.review.saveNote",
+    );
+    expect(executeAppCommand(drafting.commands, "hunk.review.saveNote")).toBe(true);
+    expect(drafting.ran).toEqual(["saveDraftNote", "saveDraftNote"]);
   });
 });
 

@@ -42,6 +42,7 @@ describe("buildHelpSections", () => {
     expect(keysFor(sections, "page down")).toBe("PageDown / Space / f");
     expect(keysFor(sections, "page up")).toBe("PageUp / b / Shift+Space");
     expect(keysFor(sections, "jump to start")).toBe("g / Home");
+    expect(keysFor(sections, "save draft note")).toBe("Ctrl+S");
   });
 
   test("keeps the rows that are not commands at all", () => {
@@ -59,6 +60,9 @@ describe("buildHelpSections", () => {
 
     expect(keysFor(sections, "previous / next hunk")).toBe("[ / Ctrl+N");
     expect(keysFor(sections, "quit")).toBe("Ctrl+X");
+    expect(keysFor(helpSections({ "hunk.review.saveNote": "ctrl+enter" }), "save draft note")).toBe(
+      "Ctrl+Enter",
+    );
   });
 
   test("an unbound command drops out of its row, and an empty row drops out entirely", () => {
@@ -71,6 +75,9 @@ describe("buildHelpSections", () => {
     expect(keysFor(sections, "previous / next hunk")).toBe("]");
     // Nothing left to document, so the row is gone rather than blank.
     expect(keysFor(sections, "create review note")).toBeUndefined();
+    expect(
+      keysFor(helpSections({ "hunk.review.saveNote": false }), "save draft note"),
+    ).toBeUndefined();
   });
 
   test("a disabled command is documented only while it can run", () => {

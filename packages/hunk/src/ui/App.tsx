@@ -1161,6 +1161,7 @@ export function App({
         canDeleteActiveNote: activeRemovableNote !== undefined && review.draftNote === null,
         canEditActiveNote: activeEditableNoteId !== undefined && review.draftNote === null,
         canReplyToActiveNote: activeReplyableNoteId !== undefined && review.draftNote === null,
+        canSaveDraftNote: review.draftNote !== null,
         canRefreshCurrentInput,
         alignCurrentLine,
         applyFilePresentationToAllMatching,
@@ -1190,6 +1191,7 @@ export function App({
         stepDiffLine,
         selectCursorLine,
         selectLayoutMode,
+        saveDraftNote,
         hasVisualSelection: () => selectionActionsRef.current?.hasSelection() ?? false,
         startVisualSelection: () => selectionActionsRef.current?.beginKeyboardSelection(),
         copySelection: () => selectionActionsRef.current?.copy(),
@@ -1218,6 +1220,7 @@ export function App({
     ],
     publishCommandExecuted,
   );
+  const draftSaveKeyLabel = findAppCommandById(appCommands, "hunk.review.saveNote")?.keyLabels[0];
   const selectionCommentKeyLabel = findAppCommandById(appCommands, "hunk.review.startNote")
     ?.keyLabels[0];
   const selectionCopyKeyLabel = findAppCommandById(appCommands, "hunk.review.copySelection")
@@ -1564,6 +1567,7 @@ export function App({
             onRemoveLiveNote={review.removeLiveComment}
             onRemoveUserNote={review.removeUserNote}
             onSaveDraftNote={saveDraftNote}
+            draftSaveKeyLabel={draftSaveKeyLabel}
             onStartUserNoteAtHunk={startUserNote}
             onUpdateDraftNote={updateDraftNote}
             onBlurDraftNote={blurDraftNote}

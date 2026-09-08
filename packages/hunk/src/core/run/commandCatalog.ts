@@ -216,6 +216,16 @@ const BUILTIN_COMMANDS = [
     closesMenu: true,
   },
   {
+    id: "hunk.review.saveNote",
+    title: "Save review note",
+    category: "review",
+    defaultKeys: ["ctrl+s"],
+    // The TUI draft buffer is this client's; persist already goes through
+    // `notes/create-user` / `notes/update-user` inside the save handler.
+    locus: "client-local",
+    publicToExtensions: true,
+  },
+  {
     id: "hunk.review.deleteActiveNote",
     title: "Delete active review note",
     category: "review",
