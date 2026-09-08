@@ -143,6 +143,7 @@ describe("GitVcsAdapter", () => {
     expect(result.patchText).toContain("diff --git a/tracked.txt b/tracked.txt");
     expect(result.patchText).toContain("+new");
     expect(result.untrackedPaths).toContain("untracked.txt");
+    expect(result.review).toBeUndefined();
     expect(result.sourceCacheKey).toContain("git-source-v1");
 
     const equivalentResult = await GitVcsAdapter.operations["working-tree-diff"]!.load(input, {
@@ -192,6 +193,15 @@ describe("GitVcsAdapter", () => {
     expect(result.title).not.toContain(from);
     expect(result.title).not.toContain(to);
     expect(result.untrackedPaths).toEqual([]);
+    expect(result.review).toMatchObject({
+      kind: "comparison",
+      provider: "Git",
+      base: from,
+      head: to,
+      title: "1 commit",
+      commitCount: 1,
+      commits: [{ title: "new", revision: to, displayRevision: to.slice(0, 8) }],
+    });
     expect(await result.readFileSource?.({ ...file, side: "old" })).toBe("old\ncontext\n");
     expect(await result.readFileSource?.({ ...file, side: "new" })).toBe("new\ncontext\n");
   });
@@ -217,6 +227,14 @@ describe("GitVcsAdapter", () => {
     expect(showResult.patchText).toContain("diff --git a/file.txt b/file.txt");
     expect(showResult.patchText).toContain("+two");
     expect(showResult.sourceCacheKey).toContain("git-source-v1");
+    expect(showResult.review).toMatchObject({
+      kind: "commit",
+      provider: "Git",
+      title: "change",
+      revision: git(repo, "rev-parse", "HEAD").trim(),
+      displayRevision: git(repo, "rev-parse", "--short=8", "HEAD").trim(),
+      author: "test",
+    });
 
     const showFile = { path: "file.txt", changeType: "change", isUntracked: false } as const;
     expect(await showResult.readFileSource?.({ ...showFile, side: "old" })).toBe("one\n");
@@ -237,6 +255,7 @@ describe("GitVcsAdapter", () => {
     expect(stashResult.patchText).toContain("diff --git a/file.txt b/file.txt");
     expect(stashResult.sourceCacheKey).toContain("git-source-v1");
     expect(stashResult.patchText).toContain("+three");
+    expect("review" in stashResult).toBe(false);
   });
 
   test("returns null when no Git marker exists up to the filesystem root", () => {

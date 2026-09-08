@@ -88,6 +88,48 @@ afterEach(() => {
   for (const path of tempDirs.splice(0)) rmSync(path, { recursive: true, force: true });
 });
 
+describe("direct revision reviews", () => {
+  test("shows commit information for hunk show", async () => {
+    const cwd = createHistoryRepo();
+    const session = await harness.launchHunk({
+      args: ["show", "HEAD", "--no-extensions"],
+      cwd,
+      cols: 100,
+      rows: 20,
+    });
+
+    try {
+      const review = await session.waitForText(/Second history commit/, { timeout: 15_000 });
+      expect(review).toContain("historyValue = 'second'");
+      expect(review).toMatch(/Second history commit.*[0-9a-f]{8}\s+⧉/);
+      expect(review).toMatch(/history · (?:in .*|.* ago)/);
+    } finally {
+      session.close();
+    }
+  });
+
+  test("shows included commits for a direct revision comparison", async () => {
+    const cwd = createHistoryRepo();
+    writeFileSync(join(cwd, "history.ts"), "export const historyValue = 'third';\n");
+    git(cwd, ["commit", "-qam", "Third history commit"]);
+    const session = await harness.launchHunk({
+      args: ["diff", "HEAD~2", "HEAD", "--no-extensions"],
+      cwd,
+      cols: 100,
+      rows: 20,
+    });
+
+    try {
+      const review = await session.waitForText(/Third history commit/, { timeout: 15_000 });
+      expect(review).toContain("Second history commit");
+      expect(review).toContain("historyValue = 'third'");
+      expect(review.match(/[0-9a-f]{8} ⧉/g)).toHaveLength(2);
+    } finally {
+      session.close();
+    }
+  });
+});
+
 describe("interactive hunk log", () => {
   test("cancels a slow bundled Git review without blocking terminal input", async () => {
     const cwd = createHistoryRepo();
@@ -212,7 +254,7 @@ describe("interactive hunk log", () => {
         timeout: 15_000,
       });
       expect(review).toContain("history.ts");
-      expect(review).toMatch(/Second history commit.*[0-9a-f]{8,}…\s+⧉/);
+      expect(review).toMatch(/Second history commit.*[0-9a-f]{8}\s+⧉/);
       expect(review).toMatch(/history · (?:in .*|.* ago)/);
       expect(review).not.toContain("history · Git");
       expect(session.getRawOutput().slice(transitionOutputStart)).not.toContain("\x1b[?1049l");

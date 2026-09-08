@@ -123,6 +123,7 @@ describe("JjVcsAdapter", () => {
       expect(diffResult.patchText).toContain("diff --git a/file.txt b/file.txt");
       expect(diffResult.patchText).toContain("+two");
       expect(diffResult.sourceCacheKey).toContain("jj-source-v1");
+      expect(diffResult.review).toBeUndefined();
       const reviewedFile = {
         path: "file.txt",
         changeType: "change",
@@ -148,6 +149,13 @@ describe("JjVcsAdapter", () => {
       expect(showResult.title).toContain("show @");
       expect(showResult.patchText).toContain("diff --git a/file.txt b/file.txt");
       expect(showResult.sourceCacheKey).toContain("jj-source-v1");
+      expect(showResult.review).toMatchObject({
+        kind: "commit",
+        provider: "Jujutsu",
+        title: "(no description set)",
+        displayRevision: expect.stringMatching(/^[a-z0-9]{8}$/),
+        author: "test",
+      });
       expect(await showResult.readFileSource?.({ ...reviewedFile, side: "old" })).toBe("one\n");
       expect(await showResult.readFileSource?.({ ...reviewedFile, side: "new" })).toBe("two\n");
 
@@ -192,6 +200,14 @@ describe("JjVcsAdapter", () => {
       const result = await JjVcsAdapter.operations["working-tree-diff"]!.load(input, { cwd: repo });
       const file = { path: "file.txt", changeType: "change", isUntracked: false } as const;
       expect(result.title).toContain(`${from}..@`);
+      expect(result.review).toMatchObject({
+        kind: "comparison",
+        provider: "Jujutsu",
+        base: from,
+        title: "1 commit",
+        commitCount: 1,
+        commits: [{ revision: result.review?.kind === "comparison" ? result.review.head : "" }],
+      });
       expect(result.patchText).toContain("+two");
       expect(await result.readFileSource?.({ ...file, side: "old" })).toBe("one\ncontext\n");
       expect(await result.readFileSource?.({ ...file, side: "new" })).toBe("two\ncontext\n");

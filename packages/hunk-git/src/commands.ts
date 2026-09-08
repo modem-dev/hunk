@@ -1198,3 +1198,77 @@ export async function resolveGitDiffEndpointsAsync(
   }
   return null;
 }
+
+/** Resolve a direct diff to two commits when neither side is live working state. */
+export async function resolveGitComparisonEndpointsAsync(
+  input: ExtensionVcsDiffInput,
+  {
+    cwd = process.cwd(),
+    gitExecutable = "git",
+    repoRoot,
+    signal,
+  }: Omit<RunGitTextOptions, "input" | "args"> & { repoRoot?: string } = {},
+): Promise<{ base: string; head: string } | null> {
+  const range = requireGitDiffRangeArg(input);
+  if (input.staged || !range) return null;
+  const commandCwd = repoRoot ?? cwd;
+
+  const symmetric = parseSymmetricDiffRange(range);
+  if (symmetric) {
+    const base = (
+      await runGitTextAsync({
+        input,
+        args: ["merge-base", symmetric.left, symmetric.right],
+        cwd: commandCwd,
+        gitExecutable,
+        signal,
+      })
+    )
+      .split("\n")[0]
+      ?.trim();
+    if (!base) return null;
+    const head = await resolveGitCommitRefAsync(input, symmetric.right, {
+      cwd: commandCwd,
+      gitExecutable,
+      signal,
+    });
+    return { base, head };
+  }
+
+  const revisions = (
+    await runGitTextAsync({
+      input,
+      args: ["rev-parse", "--revs-only", requireGitRevisionArg(input, range)],
+      cwd: commandCwd,
+      gitExecutable,
+      signal,
+    })
+  )
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const positives = revisions.filter((revision) => !revision.startsWith("^"));
+  const negatives = revisions
+    .filter((revision) => revision.startsWith("^"))
+    .map((revision) => revision.slice(1));
+  if (positives.length !== 1 || negatives.length !== 1) return null;
+
+  try {
+    const [base, head] = await Promise.all([
+      resolveGitCommitRefAsync(input, negatives[0]!, {
+        cwd: commandCwd,
+        gitExecutable,
+        signal,
+      }),
+      resolveGitCommitRefAsync(input, positives[0]!, {
+        cwd: commandCwd,
+        gitExecutable,
+        signal,
+      }),
+    ]);
+    return { base, head };
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    return null;
+  }
+}

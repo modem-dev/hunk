@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 23;
+export const HUNK_EXTENSION_API_VERSION = 24;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -994,6 +994,8 @@ export interface ExtensionVcsPatchResult {
   sourceLabel: string;
   title: string;
   patchText: string;
+  /** Commit or comparison context shown above revision-backed reviews. */
+  review?: ExtensionReviewDescriptor;
   /**
    * Untracked files to review beside the patch, as repo-root-relative paths.
    *
@@ -1469,8 +1471,10 @@ export interface ExtensionChangeRequestReviewDescriptor extends ExtensionReviewD
 /** Metadata for one reviewed commit. */
 export interface ExtensionCommitReviewDescriptor extends ExtensionReviewDescriptorBase {
   readonly kind: "commit";
-  /** Provider revision identifier. */
+  /** Full provider revision copied by the adjacent action. */
   readonly revision: string;
+  /** Provider-formatted short revision rendered in the review header. */
+  readonly displayRevision?: string;
   readonly author?: string;
   /** Date-time string used for relative commit time when available. */
   readonly authoredAt?: string;

@@ -118,6 +118,7 @@ describe("SaplingVcsAdapter", () => {
       expect(diffResult.title).toContain("working copy");
       expect(diffResult.patchText).toContain("diff --git a/file.txt b/file.txt");
       expect(diffResult.patchText).toContain("+two");
+      expect(diffResult.review).toBeUndefined();
 
       const showInput = {
         kind: "show",
@@ -130,6 +131,13 @@ describe("SaplingVcsAdapter", () => {
 
       expect(showResult.title).toContain("show .");
       expect(showResult.patchText).toContain("diff --git a/file.txt b/file.txt");
+      expect(showResult.review).toMatchObject({
+        kind: "commit",
+        provider: "Sapling",
+        title: "initial",
+        displayRevision: expect.stringMatching(/^[0-9a-f]{12}$/),
+        author: "test",
+      });
       expect(
         SaplingVcsAdapter.operations["working-tree-diff"]!.watchSignature!(diffInput, {
           cwd: repo,
@@ -138,6 +146,41 @@ describe("SaplingVcsAdapter", () => {
       expect(
         SaplingVcsAdapter.operations["revision-show"]!.watchSignature!(showInput, { cwd: repo }),
       ).toContain("diff --git");
+    },
+    SlAdapterIntegrationTestTimeoutMs,
+  );
+
+  test.skipIf(!slAvailable)(
+    "describes direct Sapling revision comparisons with included commits",
+    async () => {
+      const repo = createTempSlRepo("hunk-sl-adapter-comparison-");
+      writeFileSync(join(repo, "file.txt"), "one\n");
+      sl(repo, "add", "file.txt");
+      sl(repo, "commit", "-m", "initial");
+      const from = sl(repo, "log", "-r", ".", "--template", "{node}");
+      writeFileSync(join(repo, "file.txt"), "two\n");
+      sl(repo, "commit", "-m", "second");
+      const to = sl(repo, "log", "-r", ".", "--template", "{node}");
+      const input = {
+        kind: "vcs",
+        rangeEndpoints: { from, to },
+        staged: false,
+        options: {},
+      } satisfies ExtensionVcsDiffInput;
+
+      const result = await SaplingVcsAdapter.operations["working-tree-diff"]!.load(input, {
+        cwd: repo,
+      });
+
+      expect(result.review).toMatchObject({
+        kind: "comparison",
+        provider: "Sapling",
+        base: from,
+        head: to,
+        title: "1 commit",
+        commitCount: 1,
+        commits: [{ title: "second", revision: to }],
+      });
     },
     SlAdapterIntegrationTestTimeoutMs,
   );

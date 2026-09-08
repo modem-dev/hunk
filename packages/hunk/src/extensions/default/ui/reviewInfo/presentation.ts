@@ -8,6 +8,7 @@ import { formatHistoryRelativeTime } from "../../../../ui/log/formatting";
 import { measureClusterWidth, textClusters } from "../../../../ui/lib/text";
 
 const MIN_COMMIT_REVISION_DISPLAY_WIDTH = 4;
+const MAX_COMMIT_REVISION_DISPLAY_WIDTH = 12;
 
 /** Collapse unsafe or layout-changing provider text into one deterministic terminal line. */
 export function sanitizeReviewInfoText(value: string): string {
@@ -164,10 +165,15 @@ export function reviewInfoContent(
   now = Date.now(),
 ): ReviewInfoContent {
   if (review.kind === "commit") {
-    const trailingWidth = Math.max(0, Math.min(width, Math.floor(width * 0.35)));
+    const displayRevision =
+      review.displayRevision ?? Array.from(review.revision).slice(0, 8).join("");
+    const trailingWidth = Math.max(
+      0,
+      Math.min(MAX_COMMIT_REVISION_DISPLAY_WIDTH, width, Math.floor(width * 0.35)),
+    );
     const trailing =
       trailingWidth >= MIN_COMMIT_REVISION_DISPLAY_WIDTH && width - trailingWidth - 2 >= 1
-        ? fitReviewInfoText(review.revision, trailingWidth)
+        ? fitReviewInfoText(displayRevision, trailingWidth)
         : "";
     // Reserve one cell each for the gap before the id and its adjacent copy action.
     const primaryWidth = Math.max(0, width - reviewInfoTextWidth(trailing) - (trailing ? 2 : 0));

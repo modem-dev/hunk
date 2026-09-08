@@ -148,6 +148,32 @@ describe("published source readers", () => {
   });
 });
 
+describe("published review metadata", () => {
+  test("is validated, copied, and frozen at the adapter boundary", () => {
+    const review = {
+      kind: "commit" as const,
+      provider: "Demo VCS",
+      title: "Direct commit",
+      revision: "abc123",
+      displayRevision: "abc123",
+      author: "demo",
+      authoredAt: "2026-09-08T12:00:00Z",
+    };
+    const result = toInternalVcsPatchResult(baseResult({ review }));
+
+    expect(result.review).toEqual(review);
+    expect(result.review).not.toBe(review);
+    expect(Object.isFrozen(result.review)).toBe(true);
+    expect(() =>
+      toInternalVcsPatchResult(baseResult({ review: { ...review, title: "unsafe\nmetadata" } })),
+    ).toThrow("cannot contain control characters");
+  });
+
+  test("stays absent when an operation does not describe a commit review", () => {
+    expect(toInternalVcsPatchResult(baseResult()).review).toBeUndefined();
+  });
+});
+
 describe("published extra files", () => {
   test("build a diff file from a one-file patch, labeled with the declared path", () => {
     const result = toInternalVcsPatchResult(

@@ -255,6 +255,7 @@ async function loadVcsChangeset(
       files: [...parsedChangeset.files, ...adapterFiles],
     } satisfies Changeset,
     repoRoot: result.repoRoot,
+    review: result.review,
   };
 }
 
@@ -297,6 +298,7 @@ export async function loadAppBootstrap(
 
   let changeset: Changeset;
   let repoRoot: string | undefined;
+  let review: AppBootstrap["review"];
 
   switch (input.kind) {
     case "vcs":
@@ -309,6 +311,7 @@ export async function loadAppBootstrap(
         const result = await loadVcsChangeset(input, sidecar, cwd, vcsCatalog, signal);
         changeset = result.changeset;
         repoRoot = result.repoRoot;
+        review = result.review;
       }
       break;
     case "diff":
@@ -332,6 +335,8 @@ export async function loadAppBootstrap(
     input,
     reloadContext: { cwd, repoRoot, initialWatchSignature, vcsCatalog },
     changeset,
+    review,
+    ...(review ? { reviewSource: "provider" as const } : {}),
     initialMode: input.options.mode ?? "auto",
     initialTheme: input.options.theme,
     customThemes,

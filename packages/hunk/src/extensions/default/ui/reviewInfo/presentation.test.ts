@@ -37,6 +37,7 @@ describe("review info presentation", () => {
         provider: "GitHub",
         title: "Render commit review metadata",
         revision: "abc1234",
+        displayRevision: "abc1234",
         author: "octocat",
         authoredAt: "2026-01-01T00:00:00Z",
       },
@@ -119,6 +120,7 @@ describe("review info presentation", () => {
           provider: "Git",
           title: "Visible title",
           revision: "1234567890abcdef",
+          displayRevision: "12345678",
           author: "ada",
         },
         20,
@@ -137,6 +139,7 @@ describe("review info presentation", () => {
       provider: "Git",
       title: "Title",
       revision: "1234567890abcdef",
+      displayRevision: "12345678",
     };
     expect(reviewInfoContent(commit, 6)).toEqual({ primary: "Title", secondary: "" });
     expect(reviewInfoContent(commit, 12)).toEqual({
@@ -144,6 +147,20 @@ describe("review info presentation", () => {
       secondary: "",
       trailing: "123…",
     });
+  });
+
+  test("abbreviates legacy commit revisions that do not provide a display id", () => {
+    expect(
+      reviewInfoContent(
+        {
+          kind: "commit",
+          provider: "Git",
+          title: "Legacy extension commit",
+          revision: "0123456789abcdef0123456789abcdef01234567",
+        },
+        80,
+      ).trailing,
+    ).toBe("01234567");
   });
 
   test("omits unknown state while preserving explicit draft identity", () => {

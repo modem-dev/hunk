@@ -85,6 +85,7 @@ function historyReviewDescriptor(
       provider: runtime.providerName,
       title: newest.subject,
       revision: newest.revisionId,
+      displayRevision: truncateReviewText(newest.displayId, 64),
       author: resolveHistoryAuthorLabel(newest),
       authoredAt: newest.authoredAt,
     });
@@ -290,7 +291,10 @@ export function HunkSessionHost({
       };
       plan = await prepareReview(request, { signal });
       const historyReview = historyReviewDescriptor(historyRoute.runtime, outcome, action);
-      if (historyReview) plan.bootstrap.review = historyReview;
+      if (historyReview) {
+        plan.bootstrap.review = historyReview;
+        plan.bootstrap.reviewSource = "caller";
+      }
       if (!plan.bootstrap.extensions) {
         throw new Error("Embedded review startup did not provide extension authority.");
       }

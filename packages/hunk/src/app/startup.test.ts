@@ -214,7 +214,13 @@ describe("startup planning", () => {
       handler: () => ({
         kind: "delegate",
         argv: ["--version"],
-        review: { kind: "commit", provider: "GitHub", title: "Commit", revision: "abc" },
+        review: {
+          kind: "commit",
+          provider: "GitHub",
+          title: "Commit",
+          revision: "abc",
+          displayRevision: "abc",
+        },
       }),
     });
 

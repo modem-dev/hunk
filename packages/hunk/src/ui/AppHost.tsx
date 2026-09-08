@@ -139,6 +139,8 @@ export function AppHost({
       initialBootstrap.reloadContext.repoRoot,
     ),
     review: initialBootstrap.review,
+    preserveReviewOnReload:
+      initialBootstrap.review !== undefined && initialBootstrap.reviewSource !== "provider",
   });
   const [producer] = useState(
     () =>
@@ -356,14 +358,19 @@ export function AppHost({
           cwd,
           nextBootstrap.reloadContext.repoRoot,
         );
-        const preservedReview = reviewDescriptorAfterReload(
-          reviewIdentityRef.current.input,
-          reviewIdentityRef.current.cwd,
-          reviewIdentityRef.current.review,
-          nextBootstrap.input,
-          nextReviewCwd,
-        );
-        if (preservedReview) nextBootstrap.review = preservedReview;
+        const preservedReview = reviewIdentityRef.current.preserveReviewOnReload
+          ? reviewDescriptorAfterReload(
+              reviewIdentityRef.current.input,
+              reviewIdentityRef.current.cwd,
+              reviewIdentityRef.current.review,
+              nextBootstrap.input,
+              nextReviewCwd,
+            )
+          : undefined;
+        if (preservedReview) {
+          nextBootstrap.review = preservedReview;
+          nextBootstrap.reviewSource = "caller";
+        }
         if (extensions) {
           reportExtensionApplyIssues(applied.issues, extensions.context);
         }
@@ -430,6 +437,8 @@ export function AppHost({
         input: nextBootstrap.input,
         cwd: nextReviewCwd,
         review: nextBootstrap.review,
+        preserveReviewOnReload:
+          nextBootstrap.review !== undefined && nextBootstrap.reviewSource !== "provider",
       };
       setActiveBootstrap(nextBootstrap);
       if (options?.resetApp !== false) {

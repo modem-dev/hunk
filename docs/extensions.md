@@ -611,14 +611,26 @@ handler from running. Watch signatures remain synchronous because the watch
 runtime calls them as short, noninteractive probes.
 
 A `load` result is patch text plus how to label it. Everything else on it is
-optional, and each optional field buys one thing:
+optional, and each optional field buys one thing. API version 24 adds `review`:
 
 | Field            | What it adds                                                       |
 | ---------------- | ------------------------------------------------------------------ |
+| `review`         | commit or comparison context above a revision-backed review        |
 | `untrackedPaths` | files your VCS calls unknown, synthesized into added-file diffs    |
 | `readFileSource` | exact whole-file contents, for context expansion and highlighting  |
 | `sourceCacheKey` | stable source-snapshot identity for highlight reuse across reloads |
 | `extraFiles`     | files reviewed outside the patch, including skipped placeholders   |
+
+Use the same `ExtensionReviewDescriptor` accepted by delegated CLI reviews. Return a `commit`
+descriptor when the operation resolves one reviewed commit, or a `comparison` descriptor when both
+sides resolve to commits. Comparison `commits` are newest-first and bounded to eight entries; retain
+the exact total in `commitCount` when known. Commit descriptors and comparison commit rows carry the
+full immutable ID in `revision` for copying and should carry the provider-formatted short ID in
+`displayRevision` for display. `displayRevision` remains optional on a single commit for extensions
+built against an older API; Hunk abbreviates `revision` when it is absent. Omit `review` when either
+side is working-copy, staged, stash, or otherwise cannot be identified accurately. Hunk validates,
+copies, and freezes the descriptor before mounting it, then recomputes provider-supplied metadata on
+reload so moving refs do not retain stale information.
 
 `untrackedPaths` is the shorthand: list the repo-root-relative paths your VCS
 reports as unknown and Hunk synthesizes the added-file diffs for you, skipping

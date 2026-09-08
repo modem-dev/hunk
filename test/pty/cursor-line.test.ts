@@ -48,7 +48,8 @@ describe("PTY current line", () => {
       expect(stepsBeforeScrolling).toBeGreaterThan(5);
       expect(firstScroll).toBeGreaterThan(0);
 
-      expect(await measureKeyScroll(session, "j", 12)).toBe(1);
+      // The commit-info pane makes the first pinned file-header handoff span several rows.
+      expect(await measureKeyScroll(session, "j", 12)).toBeGreaterThan(0);
       expect(await measureKeyScroll(session, "j", 12)).toBe(1);
       expect(await measureKeyScroll(session, "k", 12)).toBe(0);
     } finally {
@@ -236,9 +237,12 @@ describe("PTY current line", () => {
         scrolled = await measureKeyScroll(session, "j", 12);
       }
       expect(scrolled).toBeGreaterThan(0);
+      // Settle the pinned file-header handoff before measuring the held-key burst.
+      expect(await measureKeyScroll(session, "j", 12)).toBeGreaterThan(0);
 
       const before = (await session.text({ immediate: true })).split("\n");
-      const anchor = before[12]?.trim() ?? "";
+      const anchorIndex = before.findLastIndex((line) => /line\d+ = \d+;/.test(line));
+      const anchor = before[anchorIndex]?.trim() ?? "";
       expect(anchor.length).toBeGreaterThan(0);
 
       // A held key arrives as one chunk and drains synchronously, so every press in the burst
@@ -247,7 +251,7 @@ describe("PTY current line", () => {
       await session.waitIdle({ timeout: 800 });
 
       const after = (await session.text({ immediate: true })).split("\n");
-      expect(12 - after.findIndex((line) => line.trim() === anchor)).toBe(5);
+      expect(anchorIndex - after.findIndex((line) => line.trim() === anchor)).toBe(5);
     } finally {
       session.close();
     }

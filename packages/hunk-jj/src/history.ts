@@ -191,6 +191,37 @@ export function parseJjHistory(
   return commits;
 }
 
+/** Load a bounded newest-first commit list for direct review metadata. */
+export async function loadJjReviewCommits(revset: string, options: JjHistoryOptions, limit = 8) {
+  const output = await runJjHistoryQuery(
+    [
+      "log",
+      "--no-graph",
+      "-r",
+      requireHistoryRevision(revset),
+      "--limit",
+      String(limit),
+      "-T",
+      JJ_HISTORY_TEMPLATE,
+    ],
+    options,
+  );
+  return parseJjHistory(output);
+}
+
+/** Count commits in one provider-owned revset without loading their descriptions. */
+export async function countJjReviewCommits(revset: string, options: JjHistoryOptions) {
+  const output = await runJjHistoryQuery(
+    ["log", "-r", requireHistoryRevision(revset), "--count"],
+    options,
+  );
+  const count = Number.parseInt(output.trim(), 10);
+  if (!Number.isSafeInteger(count) || count < 0) {
+    throw new Error("Jujutsu returned an invalid review commit count.");
+  }
+  return count;
+}
+
 /** Run one cancellable JJ query used while preparing a history range. */
 async function runJjHistoryQuery(
   args: string[],

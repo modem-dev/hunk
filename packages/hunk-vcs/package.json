@@ -26,6 +26,10 @@
       "types": "./src/path.ts",
       "import": "./src/path.ts"
     },
+    "./review-info": {
+      "types": "./src/review-info.ts",
+      "import": "./src/review-info.ts"
+    },
     "./source": {
       "types": "./src/source.ts",
       "import": "./src/source.ts"

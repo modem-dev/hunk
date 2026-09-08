@@ -647,7 +647,10 @@ export async function prepareStartupPlan(
     initialization,
   } = preparedSession;
   cliInput = resolvedInput;
-  if (delegatedReview) bootstrap.review = delegatedReview;
+  if (delegatedReview) {
+    bootstrap.review = delegatedReview;
+    bootstrap.reviewSource = "caller";
+  }
 
   // Built after adapter resolution so the notice names the backend the session really loads with.
   const unknownVcsNotices =

@@ -12,6 +12,7 @@ import {
   runSlTextAsync,
 } from "./commands";
 import { describeDiffRange } from "@hunk/vcs/diff-target";
+import { createSlCommitReview, createSlComparisonReview } from "./reviewInfo";
 import {
   HUNK_VCS_DETECTION_BASELINE_PRIORITY,
   type ExtensionVcsAdapter,
@@ -88,11 +89,20 @@ export const SaplingVcsAdapter = {
         const repoRoot = await resolveSlRepoRootAsync(input, { cwd, signal });
         const repoName = basename(repoRoot);
         const range = describeDiffRange(input);
+        const review = input.rangeEndpoints
+          ? await createSlComparisonReview(
+              input,
+              input.rangeEndpoints.from,
+              input.rangeEndpoints.to,
+              { cwd: repoRoot, signal },
+            )
+          : undefined;
         return {
           repoRoot,
           sourceLabel: repoRoot,
           title: range ? `${repoName} ${range}` : `${repoName} working copy`,
           patchText: await runSlTextAsync({ input, args: diffArgs, cwd, signal }),
+          review,
           untrackedPaths: await listSlUntrackedFilesAsync(input, { cwd, repoRoot, signal }),
         };
       },
@@ -110,11 +120,13 @@ export const SaplingVcsAdapter = {
         const repoRoot = await resolveSlRepoRootAsync(input, { cwd, signal });
         const repoName = basename(repoRoot);
         const revset = input.ref ?? ".";
+        const review = await createSlCommitReview(input, revset, { cwd: repoRoot, signal });
         return {
           repoRoot,
           sourceLabel: repoRoot,
           title: `${repoName} show ${revset}`,
           patchText: await runSlTextAsync({ input, args: buildSlShowArgs(input), cwd, signal }),
+          review,
         };
       },
       watchSignature(input, { cwd }) {

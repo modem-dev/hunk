@@ -137,9 +137,11 @@ async function createHistoryCommitBootstrap() {
     provider: "Git",
     title: "After",
     revision: "abc1234",
+    displayRevision: "abc1234",
     author: "history",
     authoredAt: "2026-01-01T00:00:00Z",
   });
+  bootstrap.reviewSource = "caller";
   return { bootstrap, directory };
 }
 
@@ -286,6 +288,53 @@ describe("review metadata reloads", () => {
       await act(async () => setup.renderer.destroy());
       // Bun can retain the Git fixture as a child-process cwd past renderer teardown on Windows;
       // the ephemeral CI/user temp directory owns cleanup there.
+      if (process.platform !== "win32") {
+        rmSync(fixture.directory, { recursive: true, force: true });
+      }
+    }
+  });
+
+  test("manual refresh recomputes direct provider metadata when a ref moves", async () => {
+    const fixture = await createHistoryCommitBootstrap();
+    const nested = join(fixture.directory, "nested");
+    const bootstrap = await loadAppBootstrap(
+      { kind: "show", ref: "HEAD", options: { mode: "unified", vcs: "git" } },
+      { cwd: nested, vcsCatalog: getBundledVcsCatalog() },
+    );
+    const initialReview = bootstrap.review;
+    const committed: AppBootstrap[] = [];
+    const setup = await testRender(
+      <AppHost bootstrap={bootstrap} onActiveBootstrapChange={(next) => committed.push(next)} />,
+      { width: 100, height: 12 },
+    );
+
+    try {
+      await flushUntil(setup, () => committed.length === 1, "the direct review to mount");
+      writeFileSync(join(fixture.directory, "example.txt"), "newest\n");
+      execFileSync(
+        "git",
+        [
+          "-c",
+          "user.name=History Tester",
+          "-c",
+          "user.email=history@example.com",
+          "commit",
+          "-am",
+          "Newest",
+        ],
+        { cwd: fixture.directory, stdio: "ignore" },
+      );
+      await act(async () => setup.mockInput.typeText("r"));
+      await flushUntil(setup, () => committed.length >= 2, "the moved ref refresh to commit");
+
+      expect(committed.at(-1)?.review).not.toBe(initialReview);
+      expect(committed.at(-1)?.review).toMatchObject({
+        kind: "commit",
+        provider: "Git",
+        title: "Newest",
+      });
+    } finally {
+      await act(async () => setup.renderer.destroy());
       if (process.platform !== "win32") {
         rmSync(fixture.directory, { recursive: true, force: true });
       }

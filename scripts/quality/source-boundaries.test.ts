@@ -16,6 +16,7 @@ const PROVIDER_IMPORTS = new Set([
   "@hunk/vcs/async-process",
   "@hunk/vcs/diff-target",
   "@hunk/vcs/large-file",
+  "@hunk/vcs/review-info",
   "@hunk/vcs/path",
   "@hunk/vcs/source",
 ]);

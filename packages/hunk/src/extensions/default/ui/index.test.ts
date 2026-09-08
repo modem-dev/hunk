@@ -64,6 +64,7 @@ describe("bundled UI registry", () => {
           provider: "GitHub",
           title: "Commit title",
           revision: "abc1234",
+          displayRevision: "abc1234",
         },
         placement: "top",
         files: [],

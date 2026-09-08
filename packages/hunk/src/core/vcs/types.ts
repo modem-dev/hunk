@@ -1,4 +1,5 @@
 import type {
+  ExtensionReviewDescriptor,
   ExtensionVcsHistoryCommit,
   ExtensionVcsHistoryInput,
   ExtensionVcsHistoryPage,
@@ -83,6 +84,8 @@ export interface VcsPatchResult {
   sourceLabel: string;
   title: string;
   patchText: string;
+  /** Validated provider-neutral context for a revision-backed review. */
+  review?: ExtensionReviewDescriptor;
   /** Repo-root-relative untracked paths Hunk synthesizes into added-file diffs. */
   untrackedPaths?: string[];
   /** Exact old/new content lookups, built from the result's `readFileSource`. */

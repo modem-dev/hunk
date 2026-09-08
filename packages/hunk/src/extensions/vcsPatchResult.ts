@@ -16,6 +16,7 @@ import type {
   ExtensionVcsFileSourceReader,
   ExtensionVcsPatchResult,
 } from "../extension-api/types";
+import { validateExtensionReviewDescriptor } from "../core/reviewDescriptor";
 
 /**
  * Turning a published VCS patch result into the model Hunk reviews.
@@ -144,6 +145,8 @@ export function toInternalVcsPatchResult(result: ExtensionVcsPatchResult): VcsPa
     sourceLabel: result.sourceLabel,
     title: result.title,
     patchText: result.patchText,
+    review:
+      result.review === undefined ? undefined : validateExtensionReviewDescriptor(result.review),
     untrackedPaths: result.untrackedPaths,
     sourceFetcherBuilder,
     extraFiles: result.extraFiles?.map((entry, index) =>

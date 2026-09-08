@@ -296,6 +296,32 @@ export function parseGitHistory(
   return commits;
 }
 
+/** Load a bounded newest-first commit list for direct review metadata. */
+export async function loadGitReviewCommits(
+  revision: string,
+  options: GitHistoryOptions,
+  limit = 8,
+) {
+  const result = await runGitPlanningQuery(
+    buildGitHistoryArgs({ revision: requireRevision(revision), maxCount: limit }),
+    options,
+  );
+  return parseGitHistory(result.stdout);
+}
+
+/** Count commits in one provider-owned range without loading their messages. */
+export async function countGitReviewCommits(revision: string, options: GitHistoryOptions) {
+  const result = await runGitPlanningQuery(
+    ["rev-list", "--count", requireRevision(revision)],
+    options,
+  );
+  const count = Number.parseInt(result.stdout.trim(), 10);
+  if (!Number.isSafeInteger(count) || count < 0) {
+    throw new Error("Git returned an invalid review commit count.");
+  }
+  return count;
+}
+
 /** Return whether traversal filters can omit direct parents from the emitted commit stream. */
 export function gitHistoryUsesBoundaryTopology(input: ExtensionVcsHistoryInput) {
   return Boolean(

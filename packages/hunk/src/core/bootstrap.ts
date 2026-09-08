@@ -55,8 +55,10 @@ export interface AppBootstrap<ExtensionState = unknown> {
   initialCopyDecorations?: boolean;
   initialCursorLine?: CursorLine;
   startupNotices?: readonly StartupNotice[];
-  /** Validated metadata describing a delegated or history-selected review source. */
+  /** Validated metadata describing the review source. */
   review?: ExtensionReviewDescriptor;
+  /** Internal provenance used to preserve caller context or recompute provider context on reload. */
+  reviewSource?: "caller" | "provider";
   viewPreferencesConfigPath?: string;
   /** The user's `[keybindings]` table, resolved against command defaults in App. */
   keybindings?: Record<string, UserKeyBinding>;

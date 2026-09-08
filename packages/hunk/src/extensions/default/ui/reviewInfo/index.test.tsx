@@ -105,6 +105,7 @@ describe("ReviewInfoPane", () => {
             provider: "GitHub",
             title: "Render selected commit metadata",
             revision: fullRevision,
+            displayRevision: "01234567",
             author: "octocat",
             authoredAt: new Date(Date.now() - 10 * 60 * 60 * 1_000).toISOString(),
           },
@@ -123,11 +124,11 @@ describe("ReviewInfoPane", () => {
       const frame = setup.captureCharFrame();
       expect(frame).toContain("Render selected commit metadata");
       expect(frame).toContain("octocat · 10 hours ago");
-      expect(frame.split("\n")[1]?.trimEnd()).toEndWith("0123456789abcdef01… ⧉");
+      expect(frame.split("\n")[1]?.trimEnd()).toEndWith("01234567 ⧉");
       expect(frame).not.toContain("GitHub");
       const revisionSpan = setup
         .captureSpans()
-        .lines[1]?.spans.find((span) => span.text.includes("0123456789abcdef01…"));
+        .lines[1]?.spans.find((span) => span.text.includes("01234567"));
       expect(capturedTestColorToHex(revisionSpan?.fg)).toBe(theme.fileRenamed.toLowerCase());
       const copySpan = setup.captureSpans().lines[1]?.spans.find((span) => span.text === "⧉");
       expect(capturedTestColorToHex(copySpan?.fg)).toBe(appTheme.lineNumberFg.toLowerCase());

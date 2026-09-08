@@ -11,12 +11,19 @@ import {
   runJjTextAsync,
   type JjDiffEndpoints,
 } from "./commands";
-import { openJjHistory, planJjHistoryRangeReview } from "./history";
+import {
+  countJjReviewCommits,
+  loadJjReviewCommits,
+  openJjHistory,
+  planJjHistoryRangeReview,
+} from "./history";
 import { readJjFileSource } from "./source";
 import { describeDiffRange } from "@hunk/vcs/diff-target";
+import { commitReviewInfo, comparisonReviewInfo } from "@hunk/vcs/review-info";
 import {
   HUNK_VCS_DETECTION_BASELINE_PRIORITY,
   type ExtensionVcsAdapter,
+  type ExtensionVcsDiffInput,
   type ExtensionVcsFileSourceReader,
   type HunkExtensionAPI,
 } from "hunkdiff/extension";
@@ -117,6 +124,40 @@ function createJjSourceCapability(
   };
 }
 
+/** Describe resolved Jujutsu commits without treating the default working copy as a commit review. */
+async function createJjReviewInfo(
+  input: ExtensionVcsDiffInput,
+  endpoints: JjDiffEndpoints | undefined,
+  repoRoot: string,
+  jjExecutable: string,
+  signal?: AbortSignal,
+) {
+  if (!endpoints) return undefined;
+  if (input.rangeEndpoints && endpoints.oldCommitIds.length === 1) {
+    const base = endpoints.oldCommitIds[0]!;
+    const head = endpoints.newCommitId;
+    const revset = `${base}..${head}`;
+    const [commits, commitCount] = await Promise.all([
+      loadJjReviewCommits(revset, { cwd: repoRoot, jjExecutable, signal }),
+      countJjReviewCommits(revset, { cwd: repoRoot, jjExecutable, signal }),
+    ]);
+    return comparisonReviewInfo("Jujutsu", base, head, commits, commitCount);
+  }
+  if (!input.range) return undefined;
+  const commit = (
+    await loadJjReviewCommits(
+      endpoints.newCommitId,
+      {
+        cwd: repoRoot,
+        jjExecutable,
+        signal,
+      },
+      1,
+    )
+  )[0];
+  return commit ? commitReviewInfo("Jujutsu", commit) : undefined;
+}
+
 /* -------------------------------------------------------------------------- */
 /* The adapter                                                                 */
 /* -------------------------------------------------------------------------- */
@@ -179,6 +220,13 @@ export function createJjVcsAdapter({ jjExecutable = "jj" }: Readonly<JjVcsAdapte
           const sourceCapability = sourceEndpoints
             ? createJjSourceCapability(repoRoot, sourceEndpoints, jjExecutable)
             : undefined;
+          const review = await createJjReviewInfo(
+            input,
+            sourceEndpoints,
+            repoRoot,
+            jjExecutable,
+            signal,
+          );
           const pinnedInput = input.rangeEndpoints
             ? sourceEndpoints?.oldCommitIds.length === 1
               ? {
@@ -199,6 +247,7 @@ export function createJjVcsAdapter({ jjExecutable = "jj" }: Readonly<JjVcsAdapte
               jjExecutable,
               signal,
             }),
+            review,
             ...sourceCapability,
           };
         },
@@ -224,6 +273,19 @@ export function createJjVcsAdapter({ jjExecutable = "jj" }: Readonly<JjVcsAdapte
           const sourceCapability = sourceEndpoints
             ? createJjSourceCapability(repoRoot, sourceEndpoints, jjExecutable)
             : undefined;
+          const commit = sourceEndpoints
+            ? (
+                await loadJjReviewCommits(
+                  sourceEndpoints.newCommitId,
+                  {
+                    cwd: repoRoot,
+                    jjExecutable,
+                    signal,
+                  },
+                  1,
+                )
+              )[0]
+            : undefined;
           return {
             repoRoot,
             sourceLabel: repoRoot,
@@ -235,6 +297,7 @@ export function createJjVcsAdapter({ jjExecutable = "jj" }: Readonly<JjVcsAdapte
               jjExecutable,
               signal,
             }),
+            ...(commit ? { review: commitReviewInfo("Jujutsu", commit) } : {}),
             ...sourceCapability,
           };
         },

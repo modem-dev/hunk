@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { createPtyHarness, dragMouse, lineIndexOf, measureKeyScroll } from "./harness";
+import { createPtyHarness, dragMouse, measureKeyScroll } from "./harness";
 
 const harness = createPtyHarness();
 
@@ -90,7 +90,7 @@ describe("PTY scrolling", () => {
       expect(await measureKeyScroll(session, "j", 12)).toBe(1);
       expect(await measureKeyScroll(session, "k", 12)).toBe(-1);
 
-      const codeRow = lineIndexOf(initial, "line16 = 16;");
+      const codeRow = initial.split("\n").findIndex((line) => /line\d+ = \d+;/.test(line));
       expect(codeRow).toBeGreaterThan(0);
       await session.clickAt(60, codeRow);
       await session.waitIdle({ timeout: 400 });

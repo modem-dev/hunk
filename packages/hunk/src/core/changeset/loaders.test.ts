@@ -241,6 +241,46 @@ describe("loadAppBootstrap", () => {
     expect(bootstrap.reloadContext.vcsCatalog?.adapters).toEqual([adapter]);
   });
 
+  test("carries provider review metadata into direct CLI review bootstraps", async () => {
+    const dir = createTempDir("hunk-adapter-review-info-");
+    const adapter: VcsAdapter = {
+      id: "demo",
+      name: "Demo VCS",
+      detect: () => null,
+      operations: {
+        "revision-show": {
+          load: async () => ({
+            repoRoot: dir,
+            sourceLabel: dir,
+            title: "demo show",
+            patchText: "",
+            review: {
+              kind: "commit",
+              provider: "Demo VCS",
+              title: "Direct commit",
+              revision: "abc123",
+              displayRevision: "abc123",
+            },
+          }),
+        },
+      },
+    };
+
+    const bootstrap = await loadAppBootstrap(
+      { kind: "show", ref: "tip", options: { vcs: "demo" } },
+      { cwd: dir, vcsCatalog: createVcsCatalog([adapter], "demo", []) },
+    );
+
+    expect(bootstrap.review).toEqual({
+      kind: "commit",
+      provider: "Demo VCS",
+      title: "Direct commit",
+      revision: "abc123",
+      displayRevision: "abc123",
+    });
+    expect(bootstrap.reviewSource).toBe("provider");
+  });
+
   test("captures a watched signature before content loading", async () => {
     const dir = createTempDir("hunk-watch-bootstrap-");
     const left = join(dir, "before.ts");

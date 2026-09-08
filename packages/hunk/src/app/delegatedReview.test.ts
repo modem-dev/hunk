@@ -13,6 +13,7 @@ const commitReview: ExtensionReviewDescriptor = {
   provider: "Git",
   title: "Commit title",
   revision: "abc1234",
+  displayRevision: "abc1234",
 };
 const comparisonReview: ExtensionReviewDescriptor = {
   kind: "comparison",

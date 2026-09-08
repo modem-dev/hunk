@@ -5,7 +5,14 @@ import { join, resolve } from "node:path";
 
 const REPO_ROOT = resolve(import.meta.dir, "../..");
 const PACKAGE_ROOT = join(REPO_ROOT, "packages", "hunk-vcs");
-const EXPECTED_EXPORTS = ["./async-process", "./diff-target", "./large-file", "./path", "./source"];
+const EXPECTED_EXPORTS = [
+  "./async-process",
+  "./diff-target",
+  "./large-file",
+  "./path",
+  "./review-info",
+  "./source",
+];
 const tempDirs: string[] = [];
 
 /** Create one temporary package consumer tracked for cleanup. */
