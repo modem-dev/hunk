@@ -6,6 +6,8 @@
  */
 import {
   getHighlighterOptions,
+  getResolvedOrResolveLanguage,
+  getResolvedOrResolveTheme,
   getSharedHighlighter,
   renderDiffWithHighlighter,
   renderFileWithHighlighter,
@@ -31,8 +33,10 @@ import {
   describeHighlightWorkerDocumentIssue,
   highlightWorkerDocumentLineLengths,
   HIGHLIGHT_WORKER_PROTOCOL_VERSION,
+  isHighlightWorkerFailureRetryable,
   WORKER_DOCUMENT_TOKENIZE_MAX_LINE_LENGTH,
   type HighlightWorkerFailure,
+  type HighlightWorkerFailureCode,
   type HighlightWorkerRequest,
   type HighlightWorkerResponse,
 } from "./highlightWorkerProtocol";
@@ -48,9 +52,29 @@ function workerRenderOptions(theme: string) {
   };
 }
 
+class HighlightWorkerRuntimeFailure extends Error {
+  readonly retryable: boolean;
+
+  constructor(
+    readonly code: HighlightWorkerFailureCode,
+    message: string,
+  ) {
+    super(message);
+    this.name = "HighlightWorkerRuntimeFailure";
+    this.retryable = isHighlightWorkerFailureRetryable(code);
+  }
+}
+
 /** Convert an unknown thrown value into a reply that survives structured clone. */
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** Convert one runtime failure into the stable protocol classification. */
+function classifiedFailure(error: unknown) {
+  return error instanceof HighlightWorkerRuntimeFailure
+    ? error
+    : new HighlightWorkerRuntimeFailure("highlight-failed", errorMessage(error));
 }
 
 /** Match the public code-document model by dropping Pierre's trailing placeholder line. */
@@ -60,34 +84,44 @@ function normalizedHighlightedDocumentLines(text: string, lines: HighlightedHast
 }
 
 /** Return a protocol-shaped failure even when a malformed sender omitted envelope fields. */
-function failureResponse(request: unknown, message: string): HighlightWorkerFailure {
+function failureResponse(
+  request: unknown,
+  error: HighlightWorkerRuntimeFailure,
+): HighlightWorkerFailure {
   const envelope = request && typeof request === "object" ? request : {};
   return {
     version: HIGHLIGHT_WORKER_PROTOCOL_VERSION,
     id: "id" in envelope && typeof envelope.id === "number" ? envelope.id : -1,
     kind: "kind" in envelope && envelope.kind === "document" ? "document" : "diff",
     ok: false,
-    message,
+    code: error.code,
+    retryable: error.retryable,
+    message: error.message,
   };
+}
+
+/** Mark malformed caller input as permanent before Pierre observes it. */
+function invalidRequest(message: string): never {
+  throw new HighlightWorkerRuntimeFailure("invalid-request", message);
 }
 
 /** Validate the request envelope before Pierre observes any caller-controlled fields. */
 function validateRequest(request: unknown): asserts request is HighlightWorkerRequest {
   if (!request || typeof request !== "object") {
-    throw new Error("Highlight worker request must be an object.");
+    invalidRequest("Highlight worker request must be an object.");
   }
   const candidate = request as Record<string, unknown>;
   if (candidate.version !== HIGHLIGHT_WORKER_PROTOCOL_VERSION) {
-    throw new Error(`Unsupported highlight worker protocol version: ${String(candidate.version)}`);
+    invalidRequest(`Unsupported highlight worker protocol version: ${String(candidate.version)}`);
   }
   if (!Number.isSafeInteger(candidate.id) || (candidate.id as number) < 0) {
-    throw new Error("Highlight worker request has an invalid id.");
+    invalidRequest("Highlight worker request has an invalid id.");
   }
   if (candidate.kind !== "diff" && candidate.kind !== "document") {
-    throw new Error("Highlight worker request has an invalid kind.");
+    invalidRequest("Highlight worker request has an invalid kind.");
   }
   if (candidate.appearance !== "dark" && candidate.appearance !== "light") {
-    throw new Error("Highlight worker request has an invalid appearance.");
+    invalidRequest("Highlight worker request has an invalid appearance.");
   }
   if (
     typeof candidate.language !== "string" ||
@@ -95,7 +129,7 @@ function validateRequest(request: unknown): asserts request is HighlightWorkerRe
     typeof candidate.theme !== "string" ||
     candidate.theme.length === 0
   ) {
-    throw new Error("Highlight worker request has invalid syntax inputs.");
+    invalidRequest("Highlight worker request has invalid syntax inputs.");
   }
   if (candidate.kind === "diff") {
     if (
@@ -104,7 +138,7 @@ function validateRequest(request: unknown): asserts request is HighlightWorkerRe
       typeof candidate.metadata !== "object" ||
       Array.isArray(candidate.metadata)
     ) {
-      throw new Error("Highlight worker diff request is malformed.");
+      invalidRequest("Highlight worker diff request is malformed.");
     }
   } else {
     const issue = describeHighlightWorkerDocumentIssue({
@@ -113,7 +147,7 @@ function validateRequest(request: unknown): asserts request is HighlightWorkerRe
       text: candidate.text as string,
       theme: candidate.theme as string,
     });
-    if (issue) throw new Error(issue);
+    if (issue) invalidRequest(issue);
   }
 }
 
@@ -125,8 +159,31 @@ function payloadMatchesKind(
   return kind === "document" ? "document" in payload : "deletion" in payload;
 }
 
+/** Resolve grammar and theme separately so unsupported inputs get permanent error codes. */
+async function resolveWorkerSyntaxInputs(request: HighlightWorkerRequest) {
+  if (request.language !== "text" && request.language !== "ansi") {
+    try {
+      await getResolvedOrResolveLanguage(request.language as never);
+    } catch (error) {
+      throw new HighlightWorkerRuntimeFailure(
+        "unsupported-language",
+        `Unsupported syntax language "${request.language}": ${errorMessage(error)}`,
+      );
+    }
+  }
+  try {
+    await getResolvedOrResolveTheme(request.theme as never);
+  } catch (error) {
+    throw new HighlightWorkerRuntimeFailure(
+      "unsupported-theme",
+      `Unsupported syntax theme "${request.theme}": ${errorMessage(error)}`,
+    );
+  }
+}
+
 /** Render one cache miss into a validated compact payload. */
 async function renderRequest(request: HighlightWorkerRequest, cacheKey: string) {
+  await resolveWorkerSyntaxInputs(request);
   const highlighter = await getSharedHighlighter({
     ...getHighlighterOptions(request.language, {
       theme: request.theme as never,
@@ -215,6 +272,6 @@ export async function processHighlightWorkerRequest(
       code: code as CompactHighlightedDiff,
     };
   } catch (error) {
-    return failureResponse(value, errorMessage(error));
+    return failureResponse(value, classifiedFailure(error));
   }
 }

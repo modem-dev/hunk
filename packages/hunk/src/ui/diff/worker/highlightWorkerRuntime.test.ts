@@ -122,6 +122,7 @@ describe("highlight worker runtime", () => {
 
     expect(response.ok).toBe(false);
     if (response.ok) throw new Error("Expected overlong document failure");
+    expect(response).toMatchObject({ code: "invalid-request", retryable: false });
     expect(response.message).toContain("shorter than 1000");
   });
 
@@ -138,6 +139,7 @@ describe("highlight worker runtime", () => {
       ok: false,
     });
     if (wrongVersion.ok) throw new Error("Expected failure");
+    expect(wrongVersion).toMatchObject({ code: "invalid-request", retryable: false });
     expect(wrongVersion.message).toContain("Unsupported");
 
     const malformed = await processHighlightWorkerRequest(
@@ -146,6 +148,7 @@ describe("highlight worker runtime", () => {
     );
     expect(malformed.ok).toBe(false);
     if (malformed.ok) throw new Error("Expected failure");
+    expect(malformed).toMatchObject({ code: "invalid-request", retryable: false });
     expect(malformed.message).toContain("normalized LF");
 
     for (const metadata of [null, [], "diff", 42]) {
@@ -155,8 +158,50 @@ describe("highlight worker runtime", () => {
       );
       expect(malformedDiff.ok).toBe(false);
       if (malformedDiff.ok) throw new Error("Expected malformed diff failure");
+      expect(malformedDiff).toMatchObject({ code: "invalid-request", retryable: false });
       expect(malformedDiff.message).toContain("malformed");
     }
+  });
+
+  test("classifies unsupported syntax inputs without string parsing by consumers", async () => {
+    const unsupportedLanguage = await processHighlightWorkerRequest(
+      documentRequest({ language: "definitely-not-a-language" }),
+      new HighlightWorkerCache(),
+    );
+    expect(unsupportedLanguage).toMatchObject({
+      ok: false,
+      code: "unsupported-language",
+      retryable: false,
+    });
+
+    const unsupportedTheme = await processHighlightWorkerRequest(
+      documentRequest({ theme: "definitely-not-a-theme" }),
+      new HighlightWorkerCache(),
+    );
+    expect(unsupportedTheme).toMatchObject({
+      ok: false,
+      code: "unsupported-theme",
+      retryable: false,
+    });
+  });
+
+  test("classifies unexpected highlighting failures as retryable", async () => {
+    class FailingHighlightWorkerCache extends HighlightWorkerCache {
+      override get(): undefined {
+        throw new Error("transient cache failure");
+      }
+    }
+
+    const response = await processHighlightWorkerRequest(
+      documentRequest(),
+      new FailingHighlightWorkerCache(),
+    );
+    expect(response).toMatchObject({
+      ok: false,
+      code: "highlight-failed",
+      retryable: true,
+      message: "transient cache failure",
+    });
   });
 
   test("returns independent cached clones and leaves oversized payloads uncached", async () => {
