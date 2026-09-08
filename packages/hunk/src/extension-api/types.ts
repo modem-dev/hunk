@@ -343,7 +343,7 @@ export interface ExtensionFileViewSyntaxReference {
 export interface ExtensionFileViewSpan {
   /**
    * Authoritative terminal-safe text. Horizontal tabs remain UTF-16 source coordinates for syntax
-   * references and expand to two display cells only after host paint projection.
+   * references and pass through to OpenTUI, which displays each as one indivisible two-cell unit.
    */
   readonly text: string;
   /** A generic semantic color the host maps to its active terminal theme at paint time. */

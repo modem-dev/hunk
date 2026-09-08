@@ -20,7 +20,6 @@ import {
   createFileViewSyntaxProjector,
   type FileViewSyntaxProjector,
 } from "../../fileViews/syntaxPaint";
-import { fileViewDisplaySpans } from "../../fileViews/textDisplay";
 import type { FileViewRowFailure } from "../../fileViews/types";
 import { useFileViewSyntaxHighlight } from "../../fileViews/useFileViewSyntaxHighlight";
 import type { ResolvedFileViewLayout } from "../../fileViews/useFileViews";
@@ -112,9 +111,9 @@ function SymbolicFileViewRow({
         });
       }
     }
-    // Resolve graphemes once across the complete authored row. Tabs expand afterward so document
-    // references and syntax ranges continue to use the extension's original UTF-16 coordinates.
-    const displayRuns = fileViewDisplaySpans(preserveCrossSpanGraphemes(paintRuns));
+    // Resolve graphemes once across the complete authored row. Retained tabs pass through so
+    // OpenTUI paints each as the same indivisible two-cell unit used by geometry measurement.
+    const displayRuns = preserveCrossSpanGraphemes(paintRuns);
     const chunks: TextChunk[] = displayRuns.map((run) => ({
       __isChunk: true,
       text: run.text,

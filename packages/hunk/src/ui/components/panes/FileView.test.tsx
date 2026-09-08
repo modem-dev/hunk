@@ -327,68 +327,74 @@ describe("FileView custom rows", () => {
     }
   });
 
-  test("expands retained tabs after syntax projection with renderer-backed geometry parity", async () => {
-    let nativeTabReference: Awaited<ReturnType<typeof testRender>> | undefined;
+  test("matches native wrapping for unbroken wide text and following-row geometry", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const file = createTestDiffFile({ id: "wide-wrap", path: "wide-wrap.ts" });
+    const fileView = resolveTestLayout(
+      {
+        rows: [
+          { id: "wide", spans: [{ text: "ab界界cd" }] },
+          { id: "after-wide", spans: [{ text: "after" }] },
+        ],
+        hunkRows: [{ startRow: 0, endRow: 1 }],
+      },
+      4,
+    );
+    const geometry = measureTestGeometry(fileView, 4);
+    let setup: Awaited<ReturnType<typeof testRender>> | undefined;
     await act(async () => {
-      nativeTabReference = await testRender(<text content={"a\tb"} wrapMode="word" />, {
-        width: 4,
-        height: 1,
-      });
-      await nativeTabReference.renderOnce();
+      setup = await testRender(
+        <FileView
+          file={file}
+          fileView={fileView}
+          geometry={geometry}
+          selectedHunkIndex={0}
+          theme={theme}
+          width={4}
+        />,
+        { width: 4, height: geometry.bodyHeight },
+      );
+      await setup.renderOnce();
     });
-    await act(async () => nativeTabReference!.renderOnce());
-    expect(capturedLines(nativeTabReference!)).toEqual(["a  b"]);
-    await act(async () => nativeTabReference!.renderer.destroy());
+    try {
+      await act(async () => setup!.renderOnce());
+      const wideRow = setup!.renderer.root.findDescendantById(reviewRowId("file-view:wide"));
+      const followingRow = setup!.renderer.root.findDescendantById(
+        reviewRowId("file-view:after-wide"),
+      );
+      expect(geometry.rowBounds[0]?.height).toBe(3);
+      expect(geometry.rowBounds[1]?.top).toBe(3);
+      expect(wideRow?.height).toBe(3);
+      expect((followingRow?.y ?? -1) - (wideRow?.y ?? -1)).toBe(3);
+    } finally {
+      await act(async () => setup!.renderer.destroy());
+    }
+  });
 
+  test("retains native indivisible tabs across authored styles and wrap widths", async () => {
     const theme = resolveTheme("github-dark-default", null);
     const file = createTestDiffFile({ id: "tabs", path: "tabs.ts" });
     const cases = [
-      {
-        text: "a\tb",
-        width: 2,
-        spans: [
-          {
-            text: "a",
-            syntax: { documentId: "code", line: 1, range: [0, 1] as const },
-          },
-          {
-            text: "\t",
-            syntax: { documentId: "code", line: 1, range: [1, 2] as const },
-          },
-          {
-            text: "b",
-            syntax: { documentId: "code", line: 1, range: [2, 3] as const },
-          },
-        ],
-        lines: ["a", " b"],
-      },
-      {
-        text: "\t12345678",
-        width: 7,
-        spans: [
-          { text: "\t", tone: "muted" as const },
-          {
-            text: "12345678",
-            syntax: { documentId: "code", line: 1, range: [1, 9] as const },
-          },
-        ],
-        lines: ["", "1234567", "8"],
-      },
-    ];
+      { text: "a\tb", heights: [4, 3, 2, 1] },
+      { text: "\t\t", heights: [4, 2, 2, 1] },
+      { text: "\ta\t", heights: [5, 3, 2, 2] },
+      { text: "a\t\tb", heights: [6, 4, 2, 2] },
+    ].flatMap(({ text, heights }) =>
+      heights.map((height, widthIndex) => ({ text, width: widthIndex + 1, height })),
+    );
 
     for (const [index, input] of cases.entries()) {
-      await loadDocumentHighlight({
-        text: input.text,
-        path: file.path,
-        language: "typescript",
-        theme,
-        offloadLargeDiff: false,
-      });
+      const spans = [...input.text].map((text, spanIndex) => ({
+        text,
+        tone: (["accent", "muted", "added"] as const)[spanIndex % 3],
+      }));
       const fileView = resolveTestLayout(
         {
-          codeDocuments: [{ id: "code", text: input.text, language: "typescript" }],
-          rows: [{ id: `tab-${index}`, spans: input.spans }],
-          hunkRows: [{ startRow: 0, endRow: 0 }],
+          rows: [
+            { id: `tab-${index}`, spans },
+            { id: `after-tab-${index}`, spans: [{ text: "z" }] },
+          ],
+          hunkRows: [{ startRow: 0, endRow: 1 }],
         },
         input.width,
       );
@@ -401,7 +407,6 @@ describe("FileView custom rows", () => {
             fileView={fileView}
             geometry={geometry}
             selectedHunkIndex={0}
-            shouldLoadHighlight
             theme={theme}
             width={input.width}
           />,
@@ -410,18 +415,24 @@ describe("FileView custom rows", () => {
         await setup.renderOnce();
       });
       try {
-        await act(async () => {
-          await setup!.renderOnce();
-          await Bun.sleep(5);
-        });
         await act(async () => setup!.renderOnce());
-        expect(fileView.layout.rows[0]?.spans.map((span) => span.text).join("")).toBe(input.text);
-        expect(rowPlainText(setup!, `tab-${index}`)).toBe(input.text.replaceAll("\t", "  "));
-        expect(capturedLines(setup!)).toEqual(input.lines);
-        expect(geometry.rowBounds[0]?.height).toBe(input.lines.length);
-        expect(
-          setup!.renderer.root.findDescendantById(reviewRowId(`file-view:tab-${index}`))?.height,
-        ).toBe(input.lines.length);
+        const row = setup!.renderer.root.findDescendantById(reviewRowId(`file-view:tab-${index}`));
+        const following = setup!.renderer.root.findDescendantById(
+          reviewRowId(`file-view:after-tab-${index}`),
+        );
+        expect(rowPlainText(setup!, `tab-${index}`)).toBe(input.text);
+        if (index === 1) {
+          const renderedTab = setup!.captureSpans().lines[1]?.spans[0];
+          expect(renderedTab?.text).toBe("  ");
+          expect(renderedTab?.width).toBe(2);
+          expect(capturedTestColorToHex(renderedTab?.fg)?.toLowerCase()).toBe(
+            theme.muted.toLowerCase(),
+          );
+        }
+        expect(geometry.rowBounds[0]?.height).toBe(input.height);
+        expect(geometry.rowBounds[1]?.top).toBe(input.height);
+        expect(row?.height).toBe(input.height);
+        expect((following?.y ?? -1) - (row?.y ?? -1)).toBe(input.height);
       } finally {
         await act(async () => setup!.renderer.destroy());
       }
