@@ -130,9 +130,13 @@ export async function composeStoryboard(options) {
   const lines = ["ffconcat version 1.0"];
   for (const entry of entries) {
     lines.push(`file '${join(outDir, entry.file)}'`);
+    // PNGs otherwise default to a 25 fps time base, which rounds 30 fps
+    // animation timestamps and makes the encoded video longer than the plan.
+    lines.push(`option framerate ${fps}`);
     lines.push(`duration ${entry.duration.toFixed(5)}`);
   }
   lines.push(`file '${join(outDir, entries[entries.length - 1].file)}'`);
+  lines.push(`option framerate ${fps}`);
   const concatPath = join(workDir, "concat.txt");
   writeFileSync(concatPath, `${lines.join("\n")}\n`);
 
