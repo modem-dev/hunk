@@ -55,6 +55,16 @@ describe("test suite sharding", () => {
       group: "integration",
       patterns: TEST_PATTERN_GROUPS.integration,
     });
+    expect(resolveTestInvocation(["--group=windows", "--rerun-each=2"])).toEqual({
+      forwardedArgs: ["--path-ignore-patterns=**/packages/hunk/src/ui/**", "--rerun-each=2"],
+      group: "windows",
+      patterns: TEST_PATTERN_GROUPS.windows,
+    });
+    expect(resolveTestInvocation(["--group=windows-ui"])).toEqual({
+      forwardedArgs: [],
+      group: "windows-ui",
+      patterns: TEST_PATTERN_GROUPS["windows-ui"],
+    });
     expect(resolveTestInvocation([]).group).toBe("default");
     expect(() => resolveTestInvocation(["--group=missing"])).toThrow("Unknown test group: missing");
     expect(() => resolveTestInvocation(["--group=toString"])).toThrow(

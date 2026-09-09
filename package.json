@@ -39,6 +39,7 @@
     "release:version": "bun run ./scripts/release/changeset-version.ts",
     "prepare": "simple-git-hooks",
     "test": "bun run ./scripts/test/run-test-suite.ts",
+    "test:windows": "bun run ./scripts/test/run-test-suite.ts --group=windows && bun run ./scripts/test/run-test-suite.ts --group=windows-ui",
     "test:theme-contrast": "bun test packages/hunk/src/ui/themes.test.ts --test-name-pattern contrast",
     "test:integration": "bun run ./scripts/test/run-test-suite.ts --group=integration",
     "test:session-broker-node": "bun run ./scripts/test/test-session-broker-node.ts",
