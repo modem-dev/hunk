@@ -27,6 +27,9 @@ const UI_SESSION_ADAPTERS = [
 const PRODUCTION_ENTRY_POINTS = [
   "^packages/hunk/src/main\\.tsx$",
   "^packages/hunk/src/highlightWorkerEntry\\.ts$",
+  // Account for Pierre's shiki/wasm alias from untraversed node_modules and its ambient asset types.
+  "^packages/hunk/src/lib/shikiWasm\\.ts$",
+  "^packages/hunk/src/lib/shikiWasmAssets\\.d\\.ts$",
   "^packages/hunk/src/opentui/index\\.ts$",
   "^packages/hunk/src/extension-api/index\\.ts$",
   "^packages/hunk/src/hunk-review/skillDocument\\.ts$",
