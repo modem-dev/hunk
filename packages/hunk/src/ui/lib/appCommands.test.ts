@@ -276,6 +276,12 @@ describe("builtinCommandKeyDefaults", () => {
       "u",
       "ctrl+u",
     ]);
+    expect(defaults.find((entry) => entry.id === "hunk.view.layoutUnified")?.defaultKeys).toEqual([
+      "1",
+    ]);
+    expect(defaults.find((entry) => entry.id === "hunk.view.layoutSplit")?.defaultKeys).toEqual([
+      "2",
+    ]);
     // Commands with contextual or menu routing ship unbound and remain user-bindable.
     expect(
       defaults

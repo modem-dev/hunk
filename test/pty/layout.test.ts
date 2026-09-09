@@ -690,7 +690,7 @@ describe("PTY layout", () => {
       expect(initial).not.toMatch(/▌.*▌/);
       expect(initial).toContain("1   -  export const alpha = 1;");
 
-      await session.press("1");
+      await session.press("2");
       const split = await harness.waitForSnapshot(
         session,
         (text) => /▌.*▌/.test(text) && harness.countMatches(text, /alpha\.ts/g) >= 2,
@@ -699,7 +699,7 @@ describe("PTY layout", () => {
 
       expect(split).toMatch(/▌.*▌/);
 
-      await session.press("2");
+      await session.press("1");
       const unified = await harness.waitForSnapshot(
         session,
         (text) => !/▌.*▌/.test(text) && text.includes("1   -  export const alpha = 1;"),
@@ -754,7 +754,7 @@ describe("PTY layout", () => {
       expect(anchored).not.toContain("line01 = 101");
       expect(anchoredLineNumber).toBeDefined();
 
-      await session.press("2");
+      await session.press("1");
       const unified = await harness.waitForSnapshot(
         session,
         (text) => !/▌.*▌/.test(text) && text.includes(`line${anchoredLineNumber} =`),
@@ -763,7 +763,7 @@ describe("PTY layout", () => {
 
       expect(unified).toContain(`line${anchoredLineNumber} =`);
 
-      await session.press("1");
+      await session.press("2");
       const split = await harness.waitForSnapshot(
         session,
         (text) => /▌.*▌/.test(text) && text.includes(`line${anchoredLineNumber} =`),

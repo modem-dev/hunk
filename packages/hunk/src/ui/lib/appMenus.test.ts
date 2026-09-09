@@ -128,6 +128,8 @@ describe("buildAppMenus", () => {
       label: "Toggle files/filter focus",
       hint: "Tab",
     });
+    expect(entry(menus, "view", "Unified view").hint).toBe("1");
+    expect(entry(menus, "view", "Split view").hint).toBe("2");
     expect(
       items(menus.view)
         .filter((item) => item.checked)

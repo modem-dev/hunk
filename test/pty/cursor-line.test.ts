@@ -173,10 +173,10 @@ describe("PTY current line", () => {
       expect(splitLines[lensIndex + 1]).toContain("export const message = 'short';");
       expect(splitLines[lensIndex + 2]).toContain("this is a very long wrapped line");
 
-      await session.press("2");
+      await session.press("1");
       await harness.waitForSnapshot(session, (text) => !text.includes("Current line"), 5_000);
 
-      await session.press("1");
+      await session.press("2");
       await session.waitForText(/Current line · old above, new below/, { timeout: 5_000 });
     } finally {
       session.close();

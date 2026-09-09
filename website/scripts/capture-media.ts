@@ -409,13 +409,13 @@ async function captureLayout() {
     await waitForReview(session, /after\.tsx/);
 
     const story = new Storyboard(session);
-    await session.press("1");
-    await sleep(400);
-    await story.hold(1_900);
     await session.press("2");
     await sleep(400);
     await story.hold(1_900);
     await session.press("1");
+    await sleep(400);
+    await story.hold(1_900);
+    await session.press("2");
     await sleep(400);
     await story.hold(1_900);
 

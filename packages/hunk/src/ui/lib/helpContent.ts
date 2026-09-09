@@ -86,8 +86,8 @@ const HELP_SECTIONS: readonly HelpSectionSpec[] = [
     title: "View",
     entries: [
       {
-        commandIds: ["hunk.view.layoutSplit", "hunk.view.layoutUnified", "hunk.view.layoutAuto"],
-        description: "split / unified / auto",
+        commandIds: ["hunk.view.layoutUnified", "hunk.view.layoutSplit", "hunk.view.layoutAuto"],
+        description: "unified / split / auto",
       },
       {
         commandIds: ["hunk.view.toggleFilesPane", "hunk.view.openThemeSelector"],

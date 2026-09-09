@@ -148,8 +148,8 @@ Review and shared commands:
 | `hunk.view.cursorLineOff`                      | Hide the current-line marker                   | _(none)_                     |
 | `hunk.view.cursorLineRow`                      | Highlight the current row                      | _(none)_                     |
 | `hunk.view.layoutAuto`                         | Auto layout                                    | `0`                          |
-| `hunk.view.layoutSplit`                        | Split layout                                   | `1`                          |
-| `hunk.view.layoutUnified`                      | Unified layout                                 | `2`                          |
+| `hunk.view.layoutSplit`                        | Split layout                                   | `2`                          |
+| `hunk.view.layoutUnified`                      | Unified layout                                 | `1`                          |
 | `hunk.view.openThemeSelector`                  | Choose theme                                   | `t`                          |
 | `hunk.view.toggleAgentNotes`                   | Toggle agent notes                             | `a`                          |
 | `hunk.view.toggleCopyDecorations`              | Toggle copy decorations                        | _(none)_                     |

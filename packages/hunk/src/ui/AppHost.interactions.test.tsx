@@ -1646,10 +1646,6 @@ describe("App interactions", () => {
       });
       await flush(setup);
       await act(async () => {
-        await setup.mockInput.pressArrow("down");
-      });
-      await flush(setup);
-      await act(async () => {
         await setup.mockInput.pressEnter();
       });
       await flush(setup);
@@ -2325,7 +2321,7 @@ describe("App interactions", () => {
       expect(anchoredLineNumber).not.toBeNull();
 
       await act(async () => {
-        await setup.mockInput.typeText("2");
+        await setup.mockInput.typeText("1");
       });
       await flush(setup);
       await act(async () => {
@@ -2338,7 +2334,7 @@ describe("App interactions", () => {
       expect(firstVisibleSourceLineNumber(frame)).toBe(anchoredLineNumber);
 
       await act(async () => {
-        await setup.mockInput.typeText("1");
+        await setup.mockInput.typeText("2");
       });
       await flush(setup);
       await act(async () => {

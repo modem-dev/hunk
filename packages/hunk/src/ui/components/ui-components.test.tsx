@@ -3618,8 +3618,8 @@ describe("UI components", () => {
       <MenuDropdown
         activeMenuId="view"
         activeMenuEntries={[
-          { kind: "item", label: "Split view", hint: "1", checked: true, action: () => {} },
-          { kind: "item", label: "Unified view", hint: "2", checked: false, action: () => {} },
+          { kind: "item", label: "Unified view", hint: "1", checked: false, action: () => {} },
+          { kind: "item", label: "Split view", hint: "2", checked: true, action: () => {} },
           { kind: "item", label: "Line numbers", hint: "l", checked: true, action: () => {} },
           { kind: "item", label: "Line wrapping", hint: "w", checked: false, action: () => {} },
           { kind: "item", label: "Hunk metadata", hint: "m", checked: true, action: () => {} },
@@ -3889,7 +3889,7 @@ describe("UI components", () => {
       "Wheel                    scroll vertically",
       "Shift+Wheel              scroll code horizontally",
       "View",
-      "1 / 2 / 0                split / unified / auto",
+      "1 / 2 / 0                unified / split / auto",
       "s / t                    sidebar / theme selector",
       "a                        toggle AI notes",
       "z                        toggle unchanged context",
