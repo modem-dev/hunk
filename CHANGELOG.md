@@ -11,6 +11,8 @@
 
 - [#1069](https://github.com/modem-dev/hunk/pull/1069) [`f5b8b24`](https://github.com/modem-dev/hunk/commit/f5b8b247f2d9a20ff96fc1e53be8377b2b2397f4) - Route curl-install release checks through globally refreshed metadata by default while retaining direct GitHub fallback and analytics opt-outs.
 
+- [#1068](https://github.com/modem-dev/hunk/pull/1068) [`795d835`](https://github.com/modem-dev/hunk/commit/795d83501e3d42535d63c237f3e04ab9401c4715) - Use `1` for unified diffs and `2` for split diffs by default.
+
 ## 0.22.0-beta.0
 
 ### Minor Changes
