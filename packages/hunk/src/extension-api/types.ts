@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 24;
+export const HUNK_EXTENSION_API_VERSION = 25;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -1077,8 +1077,11 @@ export interface ExtensionVcsWatchPlan {
 /** One review operation an adapter implements. */
 export interface ExtensionVcsOperation<Input> {
   load(input: Input, context: ExtensionVcsLoadContext): Promise<ExtensionVcsPatchResult>;
-  /** Optional cheap fingerprint of the reviewed state, for `--watch`. */
-  watchSignature?: (input: Input, context: ExtensionVcsLoadContext) => string;
+  /**
+   * Optional fingerprint for `--watch`; use async I/O and honor context.signal.
+   * Promise returns and watch cancellation require extension API version 25.
+   */
+  watchSignature?: (input: Input, context: ExtensionVcsLoadContext) => string | Promise<string>;
   /**
    * Optional filesystem targets `--watch` observes instead of polling.
    *

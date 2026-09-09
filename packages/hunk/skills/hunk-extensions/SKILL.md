@@ -111,10 +111,15 @@ bad or duplicate id is skipped with a startup notice.
 | Reload after an external agent changes reviewed inputs   | `ctx.review.requestReload()` in an event     |
 | Read user-supplied settings                              | `hunk.config` (`[extension.<id>]` table)     |
 | Snapshot stable files and every saved review note        | `ctx.review.snapshot()` in a command         |
-| Branch on the API generation (currently `21`)            | `hunk.apiVersion`                            |
+| Branch on the API generation (currently `25`)            | `hunk.apiVersion`                            |
 
 Registration is only valid while the factory runs — Hunk seals the API object
 afterwards.
+
+Promise-returning VCS `watchSignature` hooks and watch cancellation require API
+version 25. Declare `{"hunk": {"apiVersion": 25}}` in the manifest, or branch on
+`hunk.apiVersion` and return signatures synchronously on older hosts. Use async
+I/O and honor `ctx.signal` on API 25; existing synchronous hooks remain supported.
 
 ### Generic CLI handlers
 

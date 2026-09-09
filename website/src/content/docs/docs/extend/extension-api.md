@@ -7,8 +7,8 @@ The extension factory receives one API object. Registration calls are only valid
 
 ## `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `23`). Branch on it if you want
-one file to support several Hunk versions. Version 23 adds canonical unified-layout fields while preserving the previous event vocabulary; version 22 adds frame-derived pane preferred sizing, non-resizable dynamic panes, and commit-history paint tokens; version 21 adds optional inclusive history-range review
+The API generation this Hunk speaks (currently `25`). Branch on it if you want
+one file to support several Hunk versions. Version 25 adds Promise-returning watch signatures and watch cancellation; version 24 adds review metadata to VCS patch results and short display revisions to commit descriptors; version 23 adds canonical unified-layout fields while preserving the previous event vocabulary; version 22 adds frame-derived pane preferred sizing, non-resizable dynamic panes, and commit-history paint tokens; version 21 adds optional inclusive history-range review
 planning and bounded comparison commit summaries; version 20 adds optional commit timestamps to review
 metadata, pane clipboard actions, and the `theme.copyAction` paint token; version 19 adds provider-owned history enumeration and review planning; version 18 lets
 lifecycle and custom-event handlers request a host-owned review reload; version 17 adds structured review metadata to delegated

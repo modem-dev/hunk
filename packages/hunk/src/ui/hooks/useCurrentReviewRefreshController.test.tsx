@@ -204,6 +204,12 @@ describe("useCurrentReviewRefreshController", () => {
 
     try {
       await act(async () => setup.renderOnce());
+      // Without a bootstrap signature, readiness must refresh before accepting a baseline.
+      await act(async () => {
+        watch.sources[0]?.callbacks.onReady?.();
+        await Promise.resolve();
+      });
+      expect(reloads.map((options) => options.reason)).toEqual(["watch"]);
       controller.triggerRefreshCurrentInput();
       await act(async () => {
         await Promise.resolve();
@@ -215,7 +221,7 @@ describe("useCurrentReviewRefreshController", () => {
       });
 
       expect(pendingCount).toBe(1);
-      expect(reloads.map((options) => options.reason)).toEqual(["manual", "watch"]);
+      expect(reloads.map((options) => options.reason)).toEqual(["watch", "manual", "watch"]);
       expect(reloads.every((options) => options.resetApp === false)).toBe(true);
     } finally {
       await act(async () => setup.renderer.destroy());

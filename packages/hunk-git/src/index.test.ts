@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { afterEach, describe, expect, setDefaultTimeout, spyOn, test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { platform, tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
@@ -476,7 +476,53 @@ describe("GitVcsAdapter", () => {
     ]);
   });
 
-  test("computes watch signatures for each review operation", () => {
+  test("watch probes spawn asynchronously without optional locks and honor cancellation", async () => {
+    const repo = createTempRepo("hunk-git-async-watch-");
+    writeFileSync(join(repo, "file.txt"), "one\n");
+    git(repo, "add", "file.txt");
+    git(repo, "commit", "-m", "initial");
+    writeFileSync(join(repo, "file.txt"), "two\n");
+    git(repo, "stash", "push", "-m", "watch");
+    writeFileSync(join(repo, "untracked.txt"), "fresh\n");
+
+    const syncSpawn = spyOn(Bun, "spawnSync");
+    const asyncSpawn = spyOn(Bun, "spawn");
+    const abort = new AbortController();
+    const probes = [
+      () =>
+        GitVcsAdapter.operations["working-tree-diff"].watchSignature(
+          { kind: "vcs", staged: false, range: "HEAD", options: {} },
+          { cwd: repo, signal: abort.signal },
+        ),
+      () =>
+        GitVcsAdapter.operations["revision-show"].watchSignature(
+          { kind: "show", ref: "HEAD", options: {} },
+          { cwd: repo, signal: abort.signal },
+        ),
+      () =>
+        GitVcsAdapter.operations["stash-show"].watchSignature(
+          { kind: "stash-show", options: {} },
+          { cwd: repo, signal: abort.signal },
+        ),
+    ];
+    try {
+      for (const probe of probes) await probe();
+      expect(syncSpawn).not.toHaveBeenCalled();
+      // Diff, root, range classification, status, show, and stash show all suppress index writes.
+      expect(asyncSpawn.mock.calls).toHaveLength(6);
+      for (const call of asyncSpawn.mock.calls) {
+        expect(call[1]?.env?.GIT_OPTIONAL_LOCKS).toBe("0");
+      }
+      abort.abort(new Error("watch closed"));
+      for (const probe of probes) await expect(probe()).rejects.toThrow("watch closed");
+      expect(asyncSpawn.mock.calls).toHaveLength(6);
+    } finally {
+      syncSpawn.mockRestore();
+      asyncSpawn.mockRestore();
+    }
+  });
+
+  test("computes watch signatures for each review operation", async () => {
     const repo = createTempRepo("hunk-git-adapter-watch-");
     writeFileSync(join(repo, "file.txt"), "one\n");
     git(repo, "add", "file.txt");
@@ -486,14 +532,14 @@ describe("GitVcsAdapter", () => {
 
     // Measure the working-tree signature while the tree is actually dirty, so the assertion is
     // meaningful: it must carry the tracked diff and an untracked-file stat signature.
-    const diffSignature = GitVcsAdapter.operations["working-tree-diff"]!.watchSignature!(
+    const diffSignature = await GitVcsAdapter.operations["working-tree-diff"]!.watchSignature!(
       { kind: "vcs", staged: false, options: {} },
       { cwd: repo },
     );
     expect(diffSignature).toContain("diff --git a/file.txt b/file.txt");
     expect(diffSignature).toContain("untracked:");
 
-    const showSignature = GitVcsAdapter.operations["revision-show"]!.watchSignature!(
+    const showSignature = await GitVcsAdapter.operations["revision-show"]!.watchSignature!(
       { kind: "show", ref: "HEAD", options: {} },
       { cwd: repo },
     );
@@ -501,7 +547,7 @@ describe("GitVcsAdapter", () => {
 
     // Stash the dirty state so a stash entry exists for the stash-show signature.
     git(repo, "stash", "push", "--include-untracked", "-m", "watch stash");
-    const stashSignature = GitVcsAdapter.operations["stash-show"]!.watchSignature!(
+    const stashSignature = await GitVcsAdapter.operations["stash-show"]!.watchSignature!(
       { kind: "stash-show", options: {} },
       { cwd: repo },
     );

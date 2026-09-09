@@ -7,7 +7,6 @@ import {
   buildGitShowArgs,
   buildGitStashShowArgs,
   listGitIgnoredDirectoryRoots,
-  listGitUntrackedFiles,
   listGitUntrackedFilesAsync,
   parseGitNumstat,
   resolveGitColorMovedOptionsAsync,
@@ -16,9 +15,7 @@ import {
   resolveGitDiffEndpoints,
   resolveGitDiffEndpointsAsync,
   resolveGitMetadata,
-  resolveGitRepoRoot,
   resolveGitRepoRootAsync,
-  runGitText,
   runGitTextAsync,
   shouldSkipLargeTrackedDiff,
   type GitBackedInput,
@@ -476,25 +473,31 @@ export function createGitVcsAdapter({
         watchPlan(input, { cwd }) {
           return buildGitWatchPlan(input, cwd, gitExecutable);
         },
-        watchSignature(input, { cwd }) {
-          const trackedPatch = runGitText({
+        async watchSignature(input, { cwd, signal }) {
+          const trackedPatch = await runGitTextAsync({
             input,
             args: buildGitDiffArgs(input),
             cwd,
             gitExecutable,
             preventOptionalLocks: true,
+            signal,
           });
-          const repoRoot = resolveGitRepoRoot(input, {
+          const repoRoot = await resolveGitRepoRootAsync(input, {
             cwd,
             gitExecutable,
             preventOptionalLocks: true,
+            signal,
           });
-          const untrackedSignatures = listGitUntrackedFiles(input, {
+          const untrackedPaths = await listGitUntrackedFilesAsync(input, {
             cwd,
             repoRoot,
             gitExecutable,
             preventOptionalLocks: true,
-          }).map((filePath) => `untracked:${statSignature(join(repoRoot, filePath))}`);
+            signal,
+          });
+          const untrackedSignatures = untrackedPaths.map(
+            (filePath) => `untracked:${statSignature(join(repoRoot, filePath))}`,
+          );
           return [trackedPatch, ...untrackedSignatures].join("\n---\n");
         },
       },
@@ -543,13 +546,14 @@ export function createGitVcsAdapter({
         watchPlan(input, { cwd }) {
           return buildGitWatchPlan(input, cwd, gitExecutable);
         },
-        watchSignature(input, { cwd }) {
-          return runGitText({
+        watchSignature(input, { cwd, signal }) {
+          return runGitTextAsync({
             input,
             args: buildGitShowArgs(input),
             cwd,
             gitExecutable,
             preventOptionalLocks: true,
+            signal,
           });
         },
       },
@@ -586,13 +590,14 @@ export function createGitVcsAdapter({
         watchPlan(input, { cwd }) {
           return buildGitWatchPlan(input, cwd, gitExecutable);
         },
-        watchSignature(input, { cwd }) {
-          return runGitText({
+        watchSignature(input, { cwd, signal }) {
+          return runGitTextAsync({
             input,
             args: buildGitStashShowArgs(input),
             cwd,
             gitExecutable,
             preventOptionalLocks: true,
+            signal,
           });
         },
       },

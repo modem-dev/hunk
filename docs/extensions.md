@@ -302,8 +302,9 @@ and retires the replaced instance at that explicit ownership boundary.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `24`). Branch on it if you want
-one file to support several Hunk versions. Version 24 adds review metadata to VCS patch results and
+The API generation this Hunk speaks (currently `25`). Branch on it if you want
+one file to support several Hunk versions. Version 25 adds Promise-returning watch signatures and
+watch cancellation; version 24 adds review metadata to VCS patch results and
 short display revisions to commit descriptors; version 23 adds canonical unified-layout fields
 while preserving the previous event vocabulary; version 22 adds frame-derived pane preferred sizing,
 non-resizable dynamic panes, and commit-history paint tokens; version 21 adds optional inclusive history-range review
@@ -605,11 +606,10 @@ reports it as unsupported. Jujutsu supplies commit/change identities, bookmarks,
 and native merge-review semantics without routing through a colocated Git repository. Third-party
 adapters use exactly the same contract.
 
-Every operation `load` receives `context.signal`. Use asynchronous subprocess
-APIs, pass cancellation through, and terminate plus reap provider processes when
-it aborts; a synchronous spawn blocks Hunk's renderer and prevents the abort
-handler from running. Watch signatures remain synchronous because the watch
-runtime calls them as short, noninteractive probes.
+Every operation `load` and `watchSignature` receives optional `context.signal`.
+Use asynchronous subprocess APIs, pass cancellation through, and terminate plus
+reap provider processes when it aborts; a synchronous spawn blocks Hunk's renderer
+and prevents the abort handler from running.
 
 A `load` result is patch text plus how to label it. Everything else on it is
 optional, and each optional field buys one thing. API version 24 adds `review`:
@@ -694,10 +694,16 @@ factory config, Hunk sends that provisional instance `shutdown` before rebuildin
 
 #### Watch support
 
+Promise-returning `watchSignature` hooks and watch cancellation require API version 25.
+Declare `"hunk": { "apiVersion": 25 }` in the extension manifest so older hosts refuse to
+load it, or branch on `hunk.apiVersion` and keep a synchronous hook on older hosts.
+Existing synchronous hooks remain supported.
+
 `--watch` works through extension adapters. Each operation may add:
 
-- `watchSignature(input, ctx)` — a cheap fingerprint of the reviewed state.
-  Hunk polls it and reloads when it changes.
+- `watchSignature(input, ctx)` — a fingerprint of the reviewed state, returning
+  `string | Promise<string>`. Hunk awaits it and reloads when it changes. Prefer
+  async I/O and honor `ctx.signal`, which aborts when observation closes.
 - `watchPlan(input, ctx)` — the filesystem targets that cover that state, so
   Hunk reacts to events instead of polling on a timer.
 

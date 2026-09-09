@@ -286,13 +286,14 @@ export async function loadAppBootstrap(
   if (input.options.watch) {
     try {
       if (vcsCatalog || !isVcsReviewInput(input)) {
-        initialWatchSignature = computeWatchSignature(input, { cwd, vcsCatalog });
+        initialWatchSignature = await computeWatchSignature(input, { cwd, vcsCatalog, signal });
       }
     } catch {
       // A transient signature failure must not prevent an otherwise valid initial review.
     }
   }
 
+  signal?.throwIfAborted();
   const sidecar = await loadSidecarContext(input.options.agentContext, { cwd });
   signal?.throwIfAborted();
 

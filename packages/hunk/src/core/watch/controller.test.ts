@@ -330,21 +330,27 @@ describe("createWatchController", () => {
     expect(refreshes).toBe(1);
   });
 
-  test("checks the bootstrap signature immediately after source readiness", async () => {
+  test("checks an unchanged bootstrap signature on readiness without refreshing", async () => {
     const clock = new FakeWatchClock();
     const source = fakeSource();
     let checks = 0;
-    createWatchController({
+    let refreshes = 0;
+    const controller = createWatchController({
       initialSignature: "same",
       clock,
       createEventSource: source.create,
       getSignature: () => (++checks, "same"),
-      refresh: () => {},
+      refresh: () => {
+        refreshes++;
+      },
     });
 
     source.ready();
     await settle();
     expect(checks).toBe(1);
+    expect(refreshes).toBe(0);
+    expect(controller.getState().appliedSignature).toBe("same");
+    controller.close();
   });
 
   test("degrades a stalled source after the default startup deadline", async () => {
@@ -572,6 +578,107 @@ describe("createWatchController", () => {
     await settle();
     expect(checks).toBe(1);
   });
+
+  test("refreshes a change before readiness when the bootstrap baseline is missing", async () => {
+    const clock = new FakeWatchClock();
+    const source = fakeSource();
+    const pendingRefresh = deferred<void>();
+    let signature = "initial";
+    let refreshes = 0;
+    const controller = createWatchController({
+      // A failed bootstrap probe leaves the loaded content without a baseline.
+      initialSignature: undefined,
+      clock,
+      createEventSource: source.create,
+      getSignature: async () => signature,
+      refresh: () => {
+        refreshes++;
+        return pendingRefresh.promise;
+      },
+    });
+    signature = "changed";
+    source.ready();
+    await settle();
+    expect(refreshes).toBe(1);
+    expect(controller.getState().appliedSignature).toBeUndefined();
+    expect(controller.getState().phase).toBe("refreshing");
+
+    pendingRefresh.resolve();
+    await settle();
+    expect(controller.getState().appliedSignature).toBe("changed");
+    source.event();
+    clock.advance(200);
+    await settle();
+    clock.advance(10_000);
+    await settle();
+    expect(refreshes).toBe(1);
+    controller.close();
+  });
+
+  test("retries a missing baseline after the readiness refresh rejects", async () => {
+    const clock = new FakeWatchClock();
+    const source = fakeSource();
+    const failure = new Error("reload failed");
+    const errors: unknown[] = [];
+    let attempts = 0;
+    const controller = createWatchController({
+      clock,
+      createEventSource: source.create,
+      getSignature: async () => "changed",
+      refresh: async () => {
+        if (++attempts === 1) throw failure;
+      },
+      reportError: (error) => errors.push(error),
+    });
+
+    source.ready();
+    await settle();
+    expect(attempts).toBe(1);
+    expect(controller.getState().appliedSignature).toBeUndefined();
+    expect(errors).toEqual([failure]);
+
+    clock.advance(10_000);
+    await settle();
+    expect(attempts).toBe(2);
+    expect(controller.getState().appliedSignature).toBe("changed");
+    controller.close();
+  });
+
+  test.each(["resolve", "reject"] as const)(
+    "close aborts an in-flight signature and ignores late %s",
+    async (completion) => {
+      const clock = new FakeWatchClock();
+      const source = fakeSource();
+      const pending = deferred<string>();
+      let signal: AbortSignal | undefined;
+      let refreshes = 0;
+      const errors: unknown[] = [];
+      const controller = createWatchController({
+        initialSignature: "old",
+        clock,
+        createEventSource: source.create,
+        getSignature: (nextSignal) => {
+          signal = nextSignal;
+          return pending.promise;
+        },
+        refresh: () => {
+          refreshes++;
+        },
+        reportError: (error) => errors.push(error),
+      });
+      source.ready();
+      expect(signal?.aborted).toBe(false);
+      controller.close();
+      expect(signal?.aborted).toBe(true);
+      if (completion === "resolve") pending.resolve("new");
+      else pending.reject(signal?.reason);
+      await settle();
+      expect(refreshes).toBe(0);
+      expect(errors).toEqual([]);
+      expect(clock.timers.size).toBe(0);
+      expect(controller.getState().appliedSignature).toBe("old");
+    },
+  );
 
   test("close is idempotent, cancels timers, and ignores late completion", async () => {
     const clock = new FakeWatchClock();

@@ -40,7 +40,7 @@ export type VcsReviewOperationKind = VcsReviewOperation["kind"];
 
 export interface VcsOperation<Input extends VcsReviewInput> {
   load(input: Input, context: VcsLoadContext): Promise<VcsPatchResult>;
-  watchSignature?: (input: Input, context: VcsLoadContext) => string;
+  watchSignature?: (input: Input, context: VcsLoadContext) => string | Promise<string>;
   watchPlan?: (input: Input, context: VcsLoadContext) => ExtensionVcsWatchPlan;
 }
 
