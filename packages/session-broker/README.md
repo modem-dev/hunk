@@ -2,16 +2,16 @@
 
 Runtime-neutral session broker daemon and connection helpers.
 
-The implementation and release contract for turning these internal workspaces into a supported
-per-application SDK lives in
-[`docs/session-broker-sdk.md`](https://github.com/modem-dev/hunk/blob/main/docs/session-broker-sdk.md).
-Current package APIs predate that contract and do not yet satisfy every security, compatibility,
-supervision, or packaging gate it defines. The package now provides signed producer/caller hello,
-short-lived caller sessions, replay admission, and default-deny raw HTTP authorization primitives.
-**Hunk credential discovery and automatic producer/caller activation intentionally remain deferred
-to the later Hunk runtime-adapter change (PR 5 of this stack).** Until that composition lands, the
+The [session broker SDK contract](https://github.com/modem-dev/hunk/blob/main/docs/session-broker-sdk.md)
+describes the future supported public package. These private `0.0.0` source workspaces predate that
+contract and do not yet satisfy all of its security, compatibility, supervision, packaging, or
+release gates.
+
+The current package provides signed producer/caller hello, short-lived caller sessions, replay
+admission, and default-deny raw HTTP authorization primitives. Hunk discovers app-scoped
+credentials, starts session producers, and authenticates callers in its own runtime adapters. The
 legacy Hunk WebSocket and custom session routes remain internal-only; no bearer fallback is
-available. Hunk's separate browser-review capabilities remain independent.
+available. Browser-review capabilities are separate from broker caller credentials.
 
 This is the **main broker package** in the workspace. It owns the reusable broker behavior without committing to Bun or Node server APIs.
 
@@ -171,14 +171,20 @@ const server = await serveSessionBrokerDaemon({
 Use `SessionBrokerConnection` when an app window or live process needs to stay registered with the broker.
 
 ```ts
-import { createSessionBrokerConnection } from "@hunk/session-broker";
+import {
+  createNativeSessionBrokerLifecycleClock,
+  createSessionBrokerConnection,
+  type SessionBrokerSocketLike,
+} from "@hunk/session-broker";
 
+const lifecycleClock = createNativeSessionBrokerLifecycleClock();
 const connection = createSessionBrokerConnection({
   url: "ws://127.0.0.1:47657/session",
-  createSocket: (url) => new WebSocket(url),
+  createSocket: (url) => new WebSocket(url) as unknown as SessionBrokerSocketLike,
   registration,
   snapshot,
   protocolParsers,
+  lifecycleClock,
   bridge: {
     dispatchCommand: async (message) => {
       if (message.command !== "select") throw new Error("Unsupported command.");
@@ -190,6 +196,26 @@ const connection = createSessionBrokerConnection({
 
 connection.start();
 ```
+
+`lifecycleClock` may be supplied in the connection options when an application needs to share
+lifecycle timing with its launcher or make producer scheduling deterministic. The ordinary
+`SessionBrokerLifecycleClock` contract provides current time, one-shot scheduling, delayed-first
+fixed-rate interval scheduling, and awaitable delay. Scheduled callbacks return idempotent
+disposers. `createNativeSessionBrokerLifecycleClock()` uses unref'd native timers so pending
+handshake, heartbeat, reconnect, and polling work does not retain the process.
+
+`createSocket` must return a fresh socket object for every generation because the helper installs
+property callbacks that cannot distinguish queued events after object reuse. Reconnect and close
+callbacks receive a frozen opaque generation token; after foreign work settles, use
+`connection.isGenerationCurrent(token)` before committing app-owned state. These checks fence
+commits only: they do not cancel foreign promises, cryptography, probes, or other work already in
+progress.
+
+Unexpected defects in connection-owned native callbacks, scheduled work, or fire-and-forget work
+terminally retire that connection. Applications may supply `onDefect` to observe the event. The
+callback receives only `SESSION_BROKER_LIFECYCLE_DEFECT_MESSAGE`; thrown values and lifecycle data
+are never forwarded, the callback runs at most once, and callback failures are contained. This
+runtime-neutral package does not write defect reports to process output.
 
 The helper owns:
 
@@ -225,13 +251,14 @@ request ID, HTTP status, and the canonical structured-body digest.
 
 ## Hunk-specific layering
 
-Hunk uses this package for the generic broker lifecycle, then layers product-specific behavior on top:
+Hunk uses this package for generic broker lifecycle and keeps product behavior in `packages/hunk`:
 
-- Hunk-specific daemon routes stay in `src/session/broker/brokerServer.ts`
-- Hunk-specific CLI commands stay in `src/session/`
-- Hunk-specific review projections stay in `src/session/broker/`
+- credential discovery: `packages/hunk/src/session/broker/credentials.ts`
+- daemon and Hunk-specific routes: `packages/hunk/src/session/broker/brokerServer.ts`
+- authenticated agent caller: `packages/hunk/src/session/agent/cliClient.ts`
+- session commands and review projections: `packages/hunk/src/session/`
 
-That split is intentional: this package owns generic broker behavior, while Hunk owns what the session data means.
+The broker owns transport and lifecycle; Hunk owns session meaning and policy.
 
 ## License
 

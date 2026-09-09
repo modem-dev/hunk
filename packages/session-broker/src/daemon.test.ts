@@ -5,6 +5,7 @@ import {
   parseSessionRegistrationEnvelope,
   parseSessionSnapshotEnvelope,
   type CallerPrincipal,
+  type ProducerOperation,
   type SessionRegistration,
   type SessionServerMessage,
   type SessionSnapshot,
@@ -12,7 +13,11 @@ import {
 import { SessionBroker } from "./broker";
 import { createSessionBrokerDaemon } from "./daemon";
 import { createSessionBrokerProtocolParsers } from "./protocolParsers";
-import type { AuthenticatedCallerRequest } from "./authentication";
+import type {
+  AuthenticatedCallerRequest,
+  AuthenticatedProducerHello,
+  SessionBrokerHelloChallenge,
+} from "./authentication";
 
 interface TestSessionInfo {
   title: string;
@@ -131,7 +136,9 @@ function authenticatedRequest(principal: CallerPrincipal): AuthenticatedCallerRe
         generation: "generation-1",
         brokerRevision: 1,
         ...(input.appContract ? { appContract: input.appContract } : {}),
+        callerSessionId: "caller-session-1",
         requestId: "request-1",
+        sequence: "1",
         httpStatus: input.httpStatus,
         bodyDigest: "test-body-digest",
         daemonKeyId: "daemon-key-1",
@@ -170,9 +177,13 @@ async function authenticatedBody(response: Response | null) {
 function createConnection() {
   const sent: string[] = [];
   let closed: { code?: number; reason?: string } | null = null;
+  let authenticated = false;
 
   return {
     sent,
+    get authenticated() {
+      return authenticated;
+    },
     get closed() {
       return closed;
     },
@@ -183,11 +194,84 @@ function createConnection() {
       close(code?: number, reason?: string) {
         closed = { code, reason };
       },
+      markAuthenticated() {
+        authenticated = true;
+      },
     },
   };
 }
 
 describe("session broker daemon", () => {
+  test("closes late producer messages without parsing or recreating state after shutdown", () => {
+    let registrationParses = 0;
+    const parsers = createSessionBrokerProtocolParsers({
+      appRevision: 1,
+      features: [],
+      parseRegistration: (value) => {
+        registrationParses += 1;
+        return parseSessionRegistrationEnvelope(value, parseInfo);
+      },
+      parseSnapshot: (value) => parseSessionSnapshotEnvelope(value, parseState),
+      commands: [],
+    });
+    const broker = new SessionBroker({ protocolParsers: parsers });
+    const daemon = createSessionBrokerDaemon({ broker });
+    const peer = createConnection();
+    daemon.shutdown();
+    daemon.handleConnectionMessage(
+      peer.connection,
+      JSON.stringify({
+        type: "register",
+        registration: createRegistration(),
+        snapshot: createSnapshot(),
+      }),
+    );
+
+    expect(registrationParses).toBe(0);
+    expect(broker.listSessions()).toHaveLength(0);
+    expect(peer.closed).toEqual({
+      code: 1001,
+      reason: "Session broker shutting down.",
+    });
+  });
+
+  test("does not send a deferred producer challenge after shutdown", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const daemon = createSessionBrokerDaemon({
+      broker: createBroker(),
+      appId: "dev.example",
+      appRevision: 1,
+      producerEndpoint: "ws://broker.test/session",
+      helloAuthenticator: {
+        async issueChallenge() {
+          await gate;
+          return { challengeId: "challenge-1" } as SessionBrokerHelloChallenge;
+        },
+        async completeCallerHello() {
+          throw new Error("not used");
+        },
+        async completeProducerHello() {
+          throw new Error("not used");
+        },
+      },
+    });
+    const peer = createConnection();
+    daemon.handleConnectionMessage(
+      peer.connection,
+      JSON.stringify({ type: "hello-init", hello: {} }),
+    );
+    await Bun.sleep(0);
+    daemon.shutdown();
+    release();
+    await Bun.sleep(0);
+
+    expect(peer.sent).toEqual([]);
+    expect(daemon.listSessions()).toEqual([]);
+  });
+
   test("serves health and raw list/get requests when the HTTP API is enabled", async () => {
     const daemon = createSessionBrokerDaemon({
       broker: createBroker(),
@@ -315,7 +399,10 @@ describe("session broker daemon", () => {
       ["HEAD", new Headers({ "content-length": "1" })],
     ] as const) {
       const response = await daemon.handleRequest(
-        new Request("http://broker.test/broker/capabilities", { method, headers }),
+        new Request("http://broker.test/broker/capabilities", {
+          method,
+          headers,
+        }),
       );
       expect(response?.status).toBe(400);
       await expect(response?.json()).resolves.toEqual({
@@ -679,6 +766,299 @@ describe("session broker daemon", () => {
     daemon.shutdown();
   });
 
+  test("rejects producer hello wrappers with unknown or dangerous keys", async () => {
+    let challengeCalls = 0;
+    const daemon = createSessionBrokerDaemon({
+      broker: createBroker(),
+      appId: "dev.example",
+      appRevision: 1,
+      producerEndpoint: "ws://broker.test/session",
+      helloAuthenticator: {
+        async issueChallenge() {
+          challengeCalls += 1;
+          return { challengeId: "challenge-1" } as SessionBrokerHelloChallenge;
+        },
+        async completeCallerHello() {
+          throw new Error("not used");
+        },
+        async completeProducerHello() {
+          throw new Error("not used");
+        },
+      },
+    });
+
+    for (const message of [
+      '{"type":"hello-init","hello":{},"extra":true}',
+      '{"type":"hello-init","hello":{},"__proto__":{}}',
+    ]) {
+      const peer = createConnection();
+      daemon.handleConnectionMessage(peer.connection, message);
+      await Bun.sleep(0);
+      expect(peer.closed?.reason).toContain("authentication required");
+    }
+    expect(challengeCalls).toBe(0);
+    daemon.shutdown();
+  });
+
+  test("pre-registration authentication failures do not postpone idle shutdown", async () => {
+    const daemon = createSessionBrokerDaemon({
+      broker: createBroker(),
+      appId: "dev.example",
+      appRevision: 1,
+      producerEndpoint: "ws://broker.test/session",
+      idleTimeoutMs: 50,
+      helloAuthenticator: {
+        async issueChallenge() {
+          throw new Error("incompatible");
+        },
+        async completeCallerHello() {
+          throw new Error("not used");
+        },
+        async completeProducerHello() {
+          throw new Error("not used");
+        },
+      },
+    });
+    const activityBeforeRefusal = (daemon as any).lastActivityAt;
+    await Bun.sleep(10);
+    const peer = createConnection();
+    daemon.handleConnectionMessage(
+      peer.connection,
+      JSON.stringify({ type: "hello-init", hello: {} }),
+    );
+    await Bun.sleep(0);
+    daemon.handleConnectionClose(peer.connection);
+    expect((daemon as any).lastActivityAt).toBe(activityBeforeRefusal);
+
+    const outcome = await Promise.race([
+      daemon.stopped.then(() => "stopped"),
+      Bun.sleep(80).then(() => "timed-out"),
+    ]);
+    expect(outcome).toBe("stopped");
+  });
+
+  test("requires reconnect scope and rechecks retained producer authority", async () => {
+    let operations: readonly ProducerOperation[] = ["register"];
+    let active = true;
+    let activeChecks = 0;
+    const principal = () => ({
+      kind: "producer" as const,
+      appId: "dev.example",
+      principalId: "producer-1",
+      keyId: "producer-key-1",
+      grantId: "producer-grant-1",
+      scopes: operations,
+    });
+    const broker = createBroker();
+    const daemon = createSessionBrokerDaemon({
+      broker,
+      appId: "dev.example",
+      appRevision: 1,
+      producerEndpoint: "ws://broker.test/session",
+      helloAuthenticator: {
+        async issueChallenge() {
+          return { challengeId: "challenge-1" } as SessionBrokerHelloChallenge;
+        },
+        async completeCallerHello() {
+          throw new Error("not used");
+        },
+        async completeProducerHello(_proof, connectionId) {
+          return {
+            ack: {
+              principal: principal(),
+              connectionId: String(connectionId),
+              brokerRevision: 1,
+              appRevision: 1,
+              features: [],
+              helloTranscriptHash: "transcript-1",
+              daemonKeyId: "daemon-key-1",
+              daemonSignature: "signature-1",
+            },
+            assertActive() {
+              activeChecks += 1;
+              if (!active) throw new Error("revoked");
+            },
+          } satisfies AuthenticatedProducerHello;
+        },
+      },
+    });
+    const first = createConnection();
+    const denied = createConnection();
+    const replacement = createConnection();
+    const authenticate = async (connection: ReturnType<typeof createConnection>["connection"]) => {
+      daemon.handleConnectionMessage(connection, JSON.stringify({ type: "hello-init", hello: {} }));
+      await Bun.sleep(0);
+      daemon.handleConnectionMessage(
+        connection,
+        JSON.stringify({ type: "hello-proof", proof: {} }),
+      );
+      await Bun.sleep(0);
+    };
+    const register = (connection: ReturnType<typeof createConnection>["connection"]) =>
+      daemon.handleConnectionMessage(
+        connection,
+        JSON.stringify({
+          type: "register",
+          registration: createRegistration(),
+          snapshot: createSnapshot(),
+        }),
+      );
+
+    await authenticate(first.connection);
+    expect(first.authenticated).toBe(false);
+    register(first.connection);
+    expect(first.authenticated).toBe(true);
+    await authenticate(denied.connection);
+    register(denied.connection);
+    expect(denied.closed?.reason).toContain("scope rejected");
+    expect(first.closed).toBeNull();
+
+    operations = ["reconnect"];
+    await authenticate(replacement.connection);
+    register(replacement.connection);
+    expect(first.closed?.reason).toContain("owner reconnected");
+    expect(daemon.listSessions()).toHaveLength(1);
+
+    // Deliver work that was already queued on the displaced transport after replacement. Its
+    // retired authentication state must not let it reclaim the session.
+    register(first.connection);
+    expect(first.closed?.reason).toContain("authentication required");
+    expect(daemon.listSessions()).toHaveLength(1);
+
+    const checksBeforeRevocation = activeChecks;
+    const sentBeforeRevocation = replacement.sent.length;
+    active = false;
+    await expect(
+      broker.dispatchCommand({
+        selector: { sessionId: "session-1" },
+        command: "annotate",
+        input: { summary: "must stay private" },
+        timeoutMessage: "timed out",
+      }),
+    ).rejects.toThrow("revoked");
+    expect(replacement.sent).toHaveLength(sentBeforeRevocation);
+    expect(replacement.closed?.reason).toContain("authority expired");
+
+    daemon.handleConnectionMessage(
+      replacement.connection,
+      JSON.stringify({ type: "heartbeat", sessionId: "session-1" }),
+    );
+    daemon.handleConnectionMessage(
+      replacement.connection,
+      JSON.stringify({
+        type: "snapshot",
+        sessionId: "session-1",
+        snapshot: createSnapshot({ selectedIndex: 1 }),
+      }),
+    );
+    expect(activeChecks).toBe(checksBeforeRevocation + 3);
+    expect(replacement.closed?.reason).toContain("authority expired");
+    expect(daemon.getSession({ sessionId: "session-1" })).toMatchObject({
+      snapshot: { state: { selectedIndex: 0 } },
+    });
+  });
+
+  test("retains active reconnect ownership when reconciliation prunes a stale session", async () => {
+    let operations: readonly ProducerOperation[] = ["register", "reconnect"];
+    let principalId = "producer-1";
+    let active = true;
+    const broker = createBroker();
+    const daemon = createSessionBrokerDaemon({
+      broker,
+      appId: "dev.example",
+      appRevision: 1,
+      producerEndpoint: "ws://broker.test/session",
+      helloAuthenticator: {
+        async issueChallenge() {
+          return { challengeId: "challenge-1" } as SessionBrokerHelloChallenge;
+        },
+        async completeCallerHello() {
+          throw new Error("not used");
+        },
+        async completeProducerHello(_proof, connectionId) {
+          return {
+            ack: {
+              principal: {
+                kind: "producer" as const,
+                appId: "dev.example",
+                principalId,
+                keyId: "producer-key-1",
+                grantId: "producer-grant-1",
+                scopes: operations,
+              },
+              connectionId: String(connectionId),
+              brokerRevision: 1,
+              appRevision: 1,
+              features: [],
+              helloTranscriptHash: "transcript-1",
+              daemonKeyId: "daemon-key-1",
+              daemonSignature: "signature-1",
+            },
+            assertActive() {
+              if (!active) throw new Error("revoked");
+            },
+          } satisfies AuthenticatedProducerHello;
+        },
+      },
+    });
+    const authenticate = async (peer: ReturnType<typeof createConnection>) => {
+      daemon.handleConnectionMessage(
+        peer.connection,
+        JSON.stringify({ type: "hello-init", hello: {} }),
+      );
+      await Bun.sleep(0);
+      daemon.handleConnectionMessage(
+        peer.connection,
+        JSON.stringify({ type: "hello-proof", proof: {} }),
+      );
+      await Bun.sleep(0);
+    };
+    const register = (peer: ReturnType<typeof createConnection>) =>
+      daemon.handleConnectionMessage(
+        peer.connection,
+        JSON.stringify({
+          type: "register",
+          registration: createRegistration(),
+          snapshot: createSnapshot(),
+        }),
+      );
+
+    const owner = createConnection();
+    await authenticate(owner);
+    register(owner);
+    const staleAt = Date.now() + 2_000;
+    expect(broker.pruneStaleSessions({ ttlMs: 1_000, now: staleAt })).toBe(1);
+    (daemon as any).reconcileProducerOwners();
+    expect(owner.closed?.reason).toContain("authority retired");
+
+    principalId = "different-producer";
+    operations = ["reconnect"];
+    const differentBinding = createConnection();
+    await authenticate(differentBinding);
+    register(differentBinding);
+    expect(differentBinding.closed?.reason).toContain("scope rejected");
+
+    principalId = "producer-1";
+    operations = ["register"];
+    const registerOnly = createConnection();
+    await authenticate(registerOnly);
+    register(registerOnly);
+    expect(registerOnly.closed?.reason).toContain("scope rejected");
+
+    operations = ["reconnect"];
+    const replacement = createConnection();
+    await authenticate(replacement);
+    register(replacement);
+    expect(replacement.closed).toBeNull();
+    expect(daemon.listSessions()).toHaveLength(1);
+
+    active = false;
+    expect(broker.pruneStaleSessions({ ttlMs: 1_000, now: staleAt + 1 })).toBe(1);
+    (daemon as any).reconcileProducerOwners();
+    expect((daemon as any).producerReconnects.size).toBe(0);
+    daemon.shutdown();
+  });
+
   test("rejects duplicate live registration without retiring the owner", () => {
     const daemon = createSessionBrokerDaemon({
       broker: createBroker(),
@@ -919,6 +1299,15 @@ describe("session broker daemon", () => {
         return true;
       },
     });
+    const owner = createConnection();
+    daemon.handleConnectionMessage(
+      owner.connection,
+      JSON.stringify({
+        type: "register",
+        registration: createRegistration(),
+        snapshot: createSnapshot(),
+      }),
+    );
     const post = (body: unknown) =>
       daemon.handleRequest(
         new Request("http://broker.test/broker", {
@@ -928,13 +1317,13 @@ describe("session broker daemon", () => {
         }),
       );
 
-    expect((await post({ action: "get", selector: { sessionId: "missing" } }))?.status).toBe(403);
+    expect((await post({ action: "get", selector: { sessionId: "session-1" } }))?.status).toBe(403);
     expect(appAuthorizerCalls).toBe(0);
     expect(
       (
         await post({
           action: "dispatch",
-          selector: { sessionId: "missing" },
+          selector: { sessionId: "session-1" },
           command: "forbidden",
           input: {},
         })
@@ -945,7 +1334,7 @@ describe("session broker daemon", () => {
       (
         await post({
           action: "dispatch",
-          selector: { sessionId: "missing" },
+          selector: { sessionId: "session-1" },
           command: "allowed",
           commandVersion: 0,
           input: {},
@@ -960,6 +1349,7 @@ describe("session broker daemon", () => {
 
   test("returns stable redacted authentication failures without invoking app authorization", async () => {
     let authorized = false;
+    const auditedOperations: string[] = [];
     const daemon = createSessionBrokerDaemon({
       broker: createBroker(),
       exposeHttpApi: true,
@@ -975,6 +1365,9 @@ describe("session broker daemon", () => {
         authorized = true;
         return true;
       },
+      audit: (event) => {
+        auditedOperations.push(event.operation);
+      },
     });
     const response = await daemon.handleRequest(
       new Request("http://broker.test/broker", {
@@ -989,8 +1382,22 @@ describe("session broker daemon", () => {
       error: "authentication-failed",
       code: "invalid-signature",
     });
+    const capabilitiesResponse = await daemon.handleRequest(
+      new Request("http://broker.test/broker/capabilities"),
+    );
+    expect(capabilitiesResponse?.status).toBe(401);
+    const customResponse = await daemon.handleAuthenticatedControl(
+      new Request("http://broker.test/custom"),
+      {
+        authenticationFailureOperation: "shutdown",
+        resolve: () => ({ operation: "shutdown" }),
+        handle: () => ({ body: { ok: true } }),
+      },
+    );
+    expect(customResponse.status).toBe(401);
     expect(authorized).toBe(false);
     expect(responseText).not.toContain("private");
+    expect(auditedOperations).toEqual(["unknown", "diagnostics", "shutdown"]);
     daemon.shutdown();
   });
 
@@ -1042,7 +1449,7 @@ describe("session broker daemon", () => {
   test("supports a lower route-specific body ceiling and releases its reservation", async () => {
     const daemon = createSessionBrokerDaemon({
       broker: createBroker(),
-      limits: { maxHttpBodyBytes: 8, maxInFlightHttpBodyBytes: 8 },
+      limits: { maxHttpBodyBytes: 4, maxInFlightHttpBodyBytes: 8 },
     });
     let handled = 0;
     const invoke = (body: string) =>

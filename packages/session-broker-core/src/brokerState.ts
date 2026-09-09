@@ -93,7 +93,8 @@ export type RegisterSessionResult =
   | "registered"
   | "invalid"
   | "already-connected"
-  | "capacity-exceeded";
+  | "capacity-exceeded"
+  | "shutdown";
 export type UpdateSnapshotResult = "updated" | "invalid" | "not-owner" | "capacity-exceeded";
 export type MarkSessionSeenResult = "seen" | "not-owner";
 export type HandleCommandResult = "handled" | "not-found" | "not-owner" | "invalid";
@@ -220,6 +221,7 @@ export class SessionBrokerState<
   private readonly queuedCommandByteBudget: ResourceBudget;
   private readonly retainedByteBudget: ResourceBudget;
   private lastPruneAt: number | null = null;
+  private shutdownError: Error | null = null;
 
   constructor(
     private view: SessionBrokerViewAdapter<
@@ -287,7 +289,10 @@ export class SessionBrokerState<
     socket: DaemonSessionSocket,
     registrationInput: unknown,
     snapshotInput: unknown,
+    options: { replaceOwner?: boolean } = {},
   ): RegisterSessionResult {
+    if (this.shutdownError) return "shutdown";
+
     let registration: SessionRegistration<Info> | null;
     let snapshot: SessionSnapshot<State> | null;
     try {
@@ -312,7 +317,7 @@ export class SessionBrokerState<
     if (retainedBytes > this.limits.maxRetainedSessionBytes) return "capacity-exceeded";
 
     const existing = this.sessions.get(registration.sessionId);
-    if (existing && existing.socket !== socket) return "already-connected";
+    if (existing && existing.socket !== socket && !options.replaceOwner) return "already-connected";
     const previousSessionId = this.sessionIdsBySocket.get(socket);
     const transferSessionId = existing ? registration.sessionId : previousSessionId;
     const previousRetained = transferSessionId
@@ -321,13 +326,27 @@ export class SessionBrokerState<
     const previousCount = transferSessionId
       ? this.sessionReservations.get(transferSessionId)
       : undefined;
+    const abandonedRetained =
+      existing && previousSessionId && previousSessionId !== registration.sessionId
+        ? this.retainedReservations.get(previousSessionId)
+        : undefined;
+    const abandonedCount =
+      existing && previousSessionId && previousSessionId !== registration.sessionId
+        ? this.sessionReservations.get(previousSessionId)
+        : undefined;
 
     let retainedReservation: BudgetReservation | null = null;
     let sessionReservation: BudgetReservation | null = null;
     try {
       try {
         retainedReservation = previousRetained
-          ? this.retainedByteBudget.resize(previousRetained, retainedBytes)
+          ? abandonedRetained
+            ? this.retainedByteBudget.resizeWithCredit(
+                previousRetained,
+                retainedBytes,
+                abandonedRetained,
+              )
+            : this.retainedByteBudget.resize(previousRetained, retainedBytes)
           : this.retainedByteBudget.reserve(retainedBytes);
         sessionReservation = previousCount ?? this.sessionBudget.reserve();
       } catch {
@@ -335,11 +354,20 @@ export class SessionBrokerState<
       }
 
       const now = new Date().toISOString();
+      if (existing && existing.socket !== socket) {
+        this.sessionIdsBySocket.delete(existing.socket);
+        this.rejectPendingCommandsForSession(
+          registration.sessionId,
+          new Error("The session owner reconnected."),
+        );
+      }
       if (previousSessionId && previousSessionId !== registration.sessionId) {
         // Detach the old identity without releasing the reservations transferred to its replacement.
         this.sessions.delete(previousSessionId);
         this.retainedReservations.delete(previousSessionId);
         this.sessionReservations.delete(previousSessionId);
+        abandonedRetained?.release();
+        abandonedCount?.release();
         this.rejectPendingCommandsForSession(
           previousSessionId,
           new Error("The session registration was replaced."),
@@ -495,6 +523,7 @@ export class SessionBrokerState<
     timeoutMessage: string;
     timeoutMs?: number;
   }) {
+    if (this.shutdownError) throw this.shutdownError;
     if (!isValidBrokerRevision(commandVersion)) {
       throw new TypeError("Command version must be a positive safe integer.");
     }
@@ -625,6 +654,9 @@ export class SessionBrokerState<
   }
 
   shutdown(error = new Error("The session broker daemon shut down.")) {
+    if (this.shutdownError) return;
+    this.shutdownError = error;
+
     for (const pending of this.pendingCommands.values()) {
       this.finishPending(pending, () => pending.reject(error), false);
     }

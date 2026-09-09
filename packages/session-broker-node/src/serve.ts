@@ -49,6 +49,7 @@ function toNodeConnection(
   socket: WebSocket,
   outboundBudget: ResourceBudget,
   maxPeerBytes: number,
+  markAuthenticated: () => void,
 ): SessionBrokerPeer {
   return {
     send(data: string) {
@@ -77,6 +78,7 @@ function toNodeConnection(
     close(code?: number, reason?: string) {
       socket.close(code, reason);
     },
+    markAuthenticated,
   };
 }
 
@@ -231,6 +233,7 @@ export async function serveSessionBrokerDaemon<
   // connection object that registration and message handling used earlier.
   const peerBySocket = new WeakMap<WebSocket, SessionBrokerPeer>();
   const admissionBySocket = new WeakMap<WebSocket, BudgetReservation>();
+  const handshakeTimers = new WeakMap<WebSocket, ReturnType<typeof setTimeout>>();
   const activeWebSockets = new Set<WebSocket>();
   const activeSockets = new Set<Socket>();
   server.on("connection", (socket) => {
@@ -254,11 +257,28 @@ export async function serveSessionBrokerDaemon<
 
   webSocketServer.on("connection", (socket: WebSocket) => {
     activeWebSockets.add(socket);
+    const markAuthenticated = () => {
+      admissionBySocket.get(socket)?.release();
+      admissionBySocket.delete(socket);
+      const timer = handshakeTimers.get(socket);
+      if (timer) clearTimeout(timer);
+      handshakeTimers.delete(socket);
+    };
     const peer = toNodeConnection(
       socket,
       outboundBudget,
       options.daemon.limits.maxOutboundBytesPerPeer,
+      markAuthenticated,
     );
+    if (options.daemon.requiresProducerAuthentication) {
+      const timer = setTimeout(() => {
+        socket.close(1008, "Session broker authentication timed out.");
+      }, options.daemon.limits.maxHandshakeDurationMs);
+      timer.unref?.();
+      handshakeTimers.set(socket, timer);
+    } else {
+      markAuthenticated();
+    }
     peerBySocket.set(socket, peer);
     socket.on("message", (message: Buffer | ArrayBuffer | Buffer[], isBinary: boolean) => {
       if (stopping) {
@@ -269,21 +289,26 @@ export async function serveSessionBrokerDaemon<
         socket.close(1003, "Session broker accepts text messages only.");
         return;
       }
-      const bytes = Array.isArray(message)
-        ? Buffer.concat(message)
-        : message instanceof ArrayBuffer
-          ? Buffer.from(new Uint8Array(message))
-          : Buffer.from(message);
-      if (bytes.byteLength > options.daemon.limits.maxWsMessageBytes) {
+      const byteLength = Array.isArray(message)
+        ? message.reduce((total, chunk) => total + chunk.byteLength, 0)
+        : message.byteLength;
+      if (byteLength > options.daemon.limits.maxWsMessageBytes) {
         socket.close(1009, "Message exceeds the session broker size limit.");
         return;
       }
-      const reservation = inboundBudget.tryReserve(bytes.byteLength);
+      const reservation = inboundBudget.tryReserve(byteLength);
       if (!reservation) {
         socket.close(1013, "Session broker inbound pressure exceeded.");
         return;
       }
       try {
+        // ws usually supplies one Buffer. Concatenate only fragmented array variants, and create a
+        // zero-copy Buffer view for ArrayBuffer so broker accounting covers any required copy.
+        const bytes = Array.isArray(message)
+          ? Buffer.concat(message, byteLength)
+          : message instanceof ArrayBuffer
+            ? Buffer.from(message)
+            : message;
         let text: string;
         try {
           text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
@@ -308,7 +333,11 @@ export async function serveSessionBrokerDaemon<
     socket.on("error", () => {});
     socket.on("close", (code: number, reason: Buffer) => {
       activeWebSockets.delete(socket);
+      const timer = handshakeTimers.get(socket);
+      if (timer) clearTimeout(timer);
+      handshakeTimers.delete(socket);
       admissionBySocket.get(socket)?.release();
+      admissionBySocket.delete(socket);
       options.daemon.handleConnectionClose(peerBySocket.get(socket) ?? peer);
       // The runtime-neutral daemon only cares that the transport closed; Node-specific close data
       // stays ignored here instead of leaking into the shared broker API.
@@ -323,8 +352,18 @@ export async function serveSessionBrokerDaemon<
       socket.destroy();
       return;
     }
-    const pathname = new URL(`http://${options.hostname}:${options.port}${request.url ?? "/"}`)
-      .pathname;
+    let pathname: string;
+    try {
+      const target = request.url;
+      if (!target?.startsWith("/") || target.startsWith("//")) {
+        throw new TypeError("Expected an origin-form WebSocket request target.");
+      }
+      pathname = new URL(target, `http://${options.hostname}:${options.port}`).pathname;
+    } catch {
+      socket.write("HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n");
+      socket.destroy();
+      return;
+    }
     if (!options.daemon.matchesSocketPath(pathname)) {
       socket.destroy();
       return;

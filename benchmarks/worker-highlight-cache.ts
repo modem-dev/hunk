@@ -4,8 +4,8 @@ import { parseDiffFromFile } from "@pierre/diffs";
 import {
   disposeHighlightWorker,
   highlightDiffInWorker,
-} from "../src/ui/diff/worker/highlightWorkerClient";
-import { compactHighlightedDiffByteLength } from "../src/ui/diff/worker/highlightCompact";
+} from "../packages/hunk/src/ui/diff/worker/highlightWorkerClient";
+import { compactHighlightedDiffByteLength } from "../packages/hunk/src/ui/diff/worker/highlightCompact";
 
 const lineCount = 8_000;
 const additions = Array.from(

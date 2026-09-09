@@ -3,20 +3,20 @@
 // normalizes it, and the terminal paint seam remains a later milestone.
 import { performance } from "node:perf_hooks";
 import { cleanLastNewline, parseDiffFromFile } from "@pierre/diffs";
-import type { DiffFile } from "../src/core/changeset/model";
+import type { DiffFile } from "../packages/hunk/src/core/changeset/model";
 import {
   buildSplitRows,
   loadHighlightedDiff,
   type HighlightedDiffCode,
-} from "../src/ui/diff/diffRows";
+} from "../packages/hunk/src/ui/diff/diffRows";
 import {
   compactHighlightRunsForLine,
   compactHighlightTransferList,
   compactHighlightedDiffByteLength,
   encodeCompactHighlightedDiff,
   validateCompactHighlightedDiff,
-} from "../src/ui/diff/worker";
-import { resolveTheme } from "../src/ui/themes";
+} from "../packages/hunk/src/ui/diff/worker";
+import { resolveTheme } from "../packages/hunk/src/ui/themes";
 
 const LINE_COUNT = Number(process.env.HUNK_COMPACT_HIGHLIGHT_LINES ?? 8_000);
 const SAMPLES = Number(process.env.HUNK_COMPACT_HIGHLIGHT_SAMPLES ?? 7);

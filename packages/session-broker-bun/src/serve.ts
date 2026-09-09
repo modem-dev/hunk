@@ -10,6 +10,7 @@ import type { SessionBrokerDaemon, SessionBrokerPeer } from "@hunk/session-broke
 
 interface BrokerWebSocketData {
   admission: BudgetReservation;
+  handshakeTimer?: ReturnType<typeof setTimeout>;
 }
 
 export interface ServeSessionBrokerDaemonOptions<
@@ -158,6 +159,16 @@ export function serveSessionBrokerDaemon<
         }
       },
       close: (code, reason) => socket.close(code, reason),
+      markAuthenticated() {
+        const data = (socket as typeof socket & { data?: BrokerWebSocketData }).data;
+        if (!data) return;
+        if (data.handshakeTimer) {
+          clearTimeout(data.handshakeTimer);
+          data.handshakeTimer = undefined;
+        }
+        activeAdmissions.delete(data.admission);
+        data.admission.release();
+      },
     };
     peers.set(key, peer);
     return peer;
@@ -212,15 +223,20 @@ export function serveSessionBrokerDaemon<
             const admission = unauthenticatedSocketBudget.tryReserve();
             if (!admission) return new Response(null, { status: 503 });
             activeAdmissions.add(admission);
-            if (bunServer.upgrade(request, { data: { admission } })) {
-              return undefined;
+            try {
+              if (bunServer.upgrade(request, { data: { admission } })) {
+                return undefined;
+              }
+            } catch (error) {
+              activeAdmissions.delete(admission);
+              admission.release();
+              throw error;
             }
             activeAdmissions.delete(admission);
             admission.release();
 
             // Bun signals failed upgrades by returning false from upgrade rather than by throwing,
             // so surface that as one explicit HTTP response here.
-
             return new Response("Expected websocket upgrade.", { status: 426 });
           }
 
@@ -236,16 +252,20 @@ export function serveSessionBrokerDaemon<
         }
       },
       websocket: {
-        // Bun cannot customize the close code of its native payload rejection. Keep the native cap
-        // at the fixed aggregate ceiling so decoded messages above the per-message limit reach the
-        // portable 1009 path while runtime buffering remains bounded.
-        maxPayloadLength: Math.min(
-          Number.MAX_SAFE_INTEGER,
-          Math.max(
-            options.daemon.limits.maxWsMessageBytes + 1,
-            options.daemon.limits.maxInFlightWsBytes,
-          ),
-        ),
+        open: (socket) => {
+          if (!options.daemon.requiresProducerAuthentication) {
+            activeAdmissions.delete(socket.data.admission);
+            socket.data.admission.release();
+            return;
+          }
+          socket.data.handshakeTimer = setTimeout(() => {
+            socket.close(1008, "Session broker authentication timed out.");
+          }, options.daemon.limits.maxHandshakeDurationMs);
+          socket.data.handshakeTimer.unref?.();
+        },
+        // Bun bounds native frame assembly per message but exposes no accounting hook before it
+        // delivers the decoded string. The broker budget below covers only application processing.
+        maxPayloadLength: Math.max(1, options.daemon.limits.maxWsMessageBytes),
         message: (socket, message) => {
           const peer = peerFor(socket);
           if (typeof message !== "string") {
@@ -265,6 +285,11 @@ export function serveSessionBrokerDaemon<
           }
           try {
             options.daemon.handleConnectionMessage(peer, message);
+          } catch (error) {
+            socket.close(
+              error instanceof BrokerCapacityError ? 1013 : 1011,
+              "Session broker message handling failed.",
+            );
           } finally {
             reservation.release();
           }
@@ -283,6 +308,7 @@ export function serveSessionBrokerDaemon<
         },
         close: (socket) => {
           const key = socket as object;
+          if (socket.data.handshakeTimer) clearTimeout(socket.data.handshakeTimer);
           bufferedReservations.get(key)?.release();
           bufferedReservations.delete(key);
           activeAdmissions.delete(socket.data.admission);

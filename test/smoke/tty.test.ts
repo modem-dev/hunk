@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { cleanupTestConfigHomes, createTestConfigHome } from "../helpers/config-home";
 
 const repoRoot = process.cwd();
-const sourceEntrypoint = join(repoRoot, "src/main.tsx");
+const sourceEntrypoint = join(repoRoot, "packages/hunk/src/main.tsx");
 // Spawned hunk processes must assert built-in defaults, not the developer's ambient user config.
 const testConfigHome = createTestConfigHome();
 
@@ -263,7 +263,6 @@ async function writeTtyInputUntil(
   label: string,
   predicate: (output: string) => boolean,
 ) {
-  let attempts = 0;
   let lastAttemptAt = 0;
 
   try {
@@ -279,14 +278,13 @@ async function writeTtyInputUntil(
           throw new Error(`TTY process exited with ${proc.exitCode} before ${label}.`);
         }
 
-        if (attempts < 4 && (attempts === 0 || Date.now() - lastAttemptAt >= 150)) {
+        if (lastAttemptAt === 0 || Date.now() - lastAttemptAt >= 500) {
           await writeTtyInput(proc, input);
-          attempts += 1;
           lastAttemptAt = Date.now();
         }
         return null;
       },
-      2_000,
+      5_000,
       25,
     );
   } catch (error) {
@@ -421,7 +419,7 @@ async function driveTtySmoke(options: {
 }
 
 async function runTtySmoke(options: {
-  mode?: "split" | "stack";
+  mode?: "split" | "unified" | "stack";
   pager?: boolean;
   agentContext?: boolean;
   interaction?: TtyInteraction;
@@ -429,7 +427,7 @@ async function runTtySmoke(options: {
 }) {
   const fixture = options.longWrapFixture ? createLongWrapFixtureFiles() : createFixtureFiles();
   const transcript = join(fixture.dir, "transcript.txt");
-  const args = ["diff", fixture.before, fixture.after];
+  const args = ["diff", "--files", fixture.before, fixture.after];
 
   if (options.mode) {
     args.push("--mode", options.mode);
@@ -519,9 +517,9 @@ describe("TTY render smoke", () => {
   });
 
   ttyTest(
-    "stack mode keeps the terminal-native stacked rows without split separators",
+    "unified mode keeps the terminal-native unified rows without split separators",
     async () => {
-      const output = await runTtySmoke({ mode: "stack" });
+      const output = await runTtySmoke({ mode: "unified" });
 
       expect(output).toContain("View  Navigate  Agent  Help");
       expect(output).toContain("▌1   -  export const answer = 41;");
@@ -529,6 +527,14 @@ describe("TTY render smoke", () => {
       expect(output).not.toContain("│1 + export const answer = 42;");
     },
   );
+
+  ttyTest("deprecated stack input renders canonical unified rows", async () => {
+    const output = await runTtySmoke({ mode: "stack" });
+
+    expect(output).toContain("▌1   -  export const answer = 41;");
+    expect(output).toContain("▌  1 +  export const answer = 42;");
+    expect(output).not.toContain("│1 + export const answer = 42;");
+  });
 
   ttyTest("pager mode hides chrome while still rendering the diff transcript", async () => {
     const output = await runTtySmoke({ pager: true });

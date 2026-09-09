@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { createPtyHarness, lineIndexOf, sleep } from "./harness";
 
 const harness = createPtyHarness();
@@ -22,10 +24,40 @@ afterEach(() => {
  * Pager mode is where the focused-widget half of this is directly reachable:
  * the review scroll box is focused there by design, and since pager gained the
  * full review controls it also has menus and the theme selector. Review mode's
- * equivalents are covered in `src/ui/AppHost.key-routing.test.tsx`, which hands
+ * equivalents are covered in `packages/hunk/src/ui/AppHost.key-routing.test.tsx`, which hands
  * the scroll box focus directly.
  */
 describe("PTY key routing", () => {
+  test("an alt binding accepts the Escape-prefixed form from legacy terminals", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const configDir = join(configHome, "hunk");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(
+      join(configDir, "config.toml"),
+      '[keybindings]\n"hunk.app.toggleHelp" = "alt+n"\n',
+    );
+    const fixture = harness.createTwoFileRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 220,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+      await session.press("f10");
+      await session.waitForText(/Reload/, { timeout: 5_000 });
+      await session.press("escape");
+
+      session.writeRaw("\u001bn");
+      await session.waitForText(/Controls help/, { timeout: 5_000 });
+    } finally {
+      session.close();
+    }
+  });
+
   test("one Escape closes the help overlay without wiping typed filter text", async () => {
     const fixture = harness.createTwoFileRepoFixture();
     const session = await harness.launchHunk({
@@ -97,19 +129,18 @@ describe("PTY key routing", () => {
         5_000,
       );
 
-      // Open the menu bar and pick "Stacked view" from the View menu with Enter.
+      // Open the menu bar and pick "Unified view" from the View menu with Enter.
       await session.press("f10");
       await session.waitForText(/Reload/, { timeout: 5_000 });
       await session.press("right");
       await harness.waitForSnapshot(
         session,
-        (text) => text.includes("Split view") && text.includes("Stacked view"),
+        (text) => text.includes("Split view") && text.includes("Unified view"),
         5_000,
       );
-      await session.press("down");
       await session.press("enter");
 
-      // The menu item must run (layout switches to stacked) and the Enter must
+      // The menu item must run (layout switches to unified) and the Enter must
       // stop there: the filter keeps focus and its text instead of submitting.
       const afterEnter = await harness.waitForSnapshot(
         session,
@@ -127,7 +158,7 @@ describe("PTY key routing", () => {
   test("F10 does not open the menu bar while a note draft is focused", async () => {
     const fixture = harness.createLongWrapFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "split"],
       cols: 120,
       rows: 24,
     });

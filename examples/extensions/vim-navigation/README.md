@@ -7,7 +7,7 @@ This example is **not bundled or loaded by Hunk**. Install it explicitly if you 
 ## Try it from this checkout
 
 ```bash
-bun run src/main.tsx -- diff --extension ./examples/extensions/vim-navigation
+bun run packages/hunk/src/main.tsx -- diff --extension ./examples/extensions/vim-navigation
 ```
 
 Press `F6` or choose **Extensions → Toggle Vim navigation**. The persistent status badge shows when the mode owns review-level keys; click the badge, choose the host-owned exit menu item, or press `Esc` to leave.

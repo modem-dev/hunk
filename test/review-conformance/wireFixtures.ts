@@ -38,6 +38,16 @@ export const REVIEW_WIRE_FIXTURES: readonly ReviewWireFixture[] = [
     },
   },
   {
+    id: "move-next-note",
+    findings: ["B12"],
+    description: "Exact stored-note navigation uses the same wire intent vocabulary.",
+    action: { type: "selection/move", scope: "note", delta: 1 },
+    expected: {
+      accepted: true,
+      intent: { type: "selection/move", scope: "note", delta: 1 },
+    },
+  },
+  {
     id: "move-annotated-hunk-backwards",
     findings: ["B12"],
     description: "Relative navigation, whose scope and wrap policy are core's to decide.",
@@ -87,6 +97,141 @@ export const REVIEW_WIRE_FIXTURES: readonly ReviewWireFixture[] = [
       accepted: true,
       intent: { type: "notes/start-draft", fileKey: FILE_KEY, hunkIndex: 1 },
     },
+  },
+  {
+    id: "start-edit-draft",
+    findings: ["B12"],
+    description: "Opening one saved reviewer note for identity-preserving editing.",
+    action: { type: "notes/start-edit", noteId: "user:1" },
+    expected: { accepted: true, intent: { type: "notes/start-edit", noteId: "user:1" } },
+  },
+  {
+    id: "start-reply-draft",
+    findings: ["B12"],
+    description: "Opening a reply composer beneath one semantically stored note.",
+    action: { type: "notes/start-reply", noteId: "live:1" },
+    expected: { accepted: true, intent: { type: "notes/start-reply", noteId: "live:1" } },
+  },
+  {
+    id: "update-draft-body",
+    findings: ["B12"],
+    description: "Transporting composer text through the shared semantic path.",
+    action: { type: "notes/update-draft", body: "A remote reply" },
+    expected: {
+      accepted: true,
+      intent: { type: "notes/update-draft", body: "A remote reply" },
+    },
+  },
+  {
+    id: "cancel-draft",
+    findings: ["B12"],
+    description: "Cancelling the one active shared composer.",
+    action: { type: "notes/cancel-draft" },
+    expected: { accepted: true, intent: { type: "notes/cancel-draft" } },
+  },
+  {
+    id: "start-draft-on-a-multiline-range",
+    findings: ["B12"],
+    description: "A multiline target retains its inclusive range and preferred endpoint.",
+    action: {
+      type: "notes/start-draft",
+      fileKey: FILE_KEY,
+      hunkIndex: 1,
+      target: { newRange: [7, 9], preferred: { side: "new", line: 9 } },
+    },
+    expected: {
+      accepted: true,
+      intent: {
+        type: "notes/start-draft",
+        fileKey: FILE_KEY,
+        hunkIndex: 1,
+        target: { newRange: [7, 9], preferred: { side: "new", line: 9 } },
+      },
+    },
+  },
+  {
+    id: "start-draft-on-a-dual-sided-range",
+    findings: ["B12"],
+    description: "A replacement selection carries both source-side ranges on the wire.",
+    action: {
+      type: "notes/start-draft",
+      fileKey: FILE_KEY,
+      hunkIndex: 1,
+      target: {
+        oldRange: [7, 8],
+        newRange: [7, 9],
+        preferred: { side: "old", line: 8 },
+      },
+    },
+    expected: {
+      accepted: true,
+      intent: {
+        type: "notes/start-draft",
+        fileKey: FILE_KEY,
+        hunkIndex: 1,
+        target: {
+          oldRange: [7, 8],
+          newRange: [7, 9],
+          preferred: { side: "old", line: 8 },
+        },
+      },
+    },
+  },
+  {
+    id: "save-user-note-at-an-exact-range",
+    findings: ["B12"],
+    description: "A range save precondition is validated on the wire and removed before planning.",
+    action: {
+      type: "notes/create-user",
+      consumeDraft: true,
+      fileKey: FILE_KEY,
+      hunkIndex: 1,
+      target: { newRange: [7, 9], preferred: { side: "new", line: 9 } },
+    },
+    expected: {
+      accepted: true,
+      intent: { type: "notes/create-user", consumeDraft: true },
+    },
+  },
+  {
+    id: "reject-inverted-review-range",
+    findings: ["B12"],
+    description: "An inclusive range cannot end before it starts.",
+    action: {
+      type: "notes/start-draft",
+      fileKey: FILE_KEY,
+      hunkIndex: 1,
+      target: {
+        oldRange: [7, 7],
+        newRange: [9, 7],
+        preferred: { side: "old", line: 7 },
+      },
+    },
+    expected: { accepted: false },
+  },
+  {
+    id: "reject-preferred-line-outside-review-range",
+    findings: ["B12"],
+    description: "The preferred endpoint must stay inside its own side's inclusive range.",
+    action: {
+      type: "notes/start-draft",
+      fileKey: FILE_KEY,
+      hunkIndex: 1,
+      target: { newRange: [7, 9], preferred: { side: "new", line: 10 } },
+    },
+    expected: { accepted: false },
+  },
+  {
+    id: "reject-preferred-side-absent-from-review-range",
+    findings: ["B12"],
+    description: "The preferred endpoint cannot name a side the target does not carry.",
+    action: {
+      type: "notes/start-draft",
+      fileKey: FILE_KEY,
+      hunkIndex: 1,
+      target: { oldRange: [7, 8], preferred: { side: "new", line: 8 } },
+    },
+    expected: { accepted: false },
   },
   {
     id: "start-draft-on-an-expanded-line",
@@ -140,6 +285,16 @@ export const REVIEW_WIRE_FIXTURES: readonly ReviewWireFixture[] = [
     description: "Persisting the active draft, with no precondition on where it sits.",
     action: { type: "notes/create-user", consumeDraft: true },
     expected: { accepted: true, intent: { type: "notes/create-user", consumeDraft: true } },
+  },
+  {
+    id: "update-user-note",
+    findings: ["B12"],
+    description: "Committing an edit against the same saved reviewer note.",
+    action: { type: "notes/update-user", noteId: "user:1", consumeDraft: true },
+    expected: {
+      accepted: true,
+      intent: { type: "notes/update-user", noteId: "user:1", consumeDraft: true },
+    },
   },
   {
     id: "create-user-note-at-an-expanded-line",

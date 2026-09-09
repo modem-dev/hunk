@@ -8,13 +8,13 @@ Use file comparison when you already have before and after content, and patch mo
 ## Compare files
 
 ```bash
-hunk diff before.ts after.ts
+hunk diff --files before.ts after.ts
 ```
 
-When both operands are existing concrete files, Hunk treats them as a direct comparison instead of VCS targets. Add `--watch` to reload when either file changes:
+The explicit `--files` option keeps file comparison distinct from `hunk diff <from> <to>`, which compares two VCS revisions. Add `--watch` to reload when either file changes:
 
 ```bash
-hunk diff before.ts after.ts --watch
+hunk diff --files before.ts after.ts --watch
 ```
 
 ## Open a patch file

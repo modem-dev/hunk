@@ -1,6 +1,6 @@
 # Runs the hunk.dev install script end to end against the newest published release.
 #
-# The unit suite (scripts/install-sh.test.ts) checks the script as text and exercises its
+# The unit suite (scripts/packaging/install-sh.test.ts) checks the script as text and exercises its
 # functions in isolation; this workflow is the only place the real download, checksum, extract,
 # and PATH flow runs against real release assets. It triggers on changes to the script itself,
 # on a weekly schedule to catch release-asset drift the script did not cause, and on demand.

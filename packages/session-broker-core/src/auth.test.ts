@@ -75,13 +75,15 @@ describe("session broker authentication core", () => {
           generation: "generation-1",
           brokerRevision: 1,
           appContract: { appRevision: 7, features: [] },
+          callerSessionId: "caller-session-1",
           requestId: "request-1",
+          sequence: "1",
           httpStatus: 200,
           bodyDigest: "body-hash",
         }),
       ),
     ).toBe(
-      '{"appContract":{"appRevision":7,"features":[]},"appId":"dev.example","bodyDigest":"body-hash","brokerRevision":1,"domain":"dev.hunk.session-broker.v1/caller-response","generation":"generation-1","httpStatus":200,"requestId":"request-1"}',
+      '{"appContract":{"appRevision":7,"features":[]},"appId":"dev.example","bodyDigest":"body-hash","brokerRevision":1,"callerSessionId":"caller-session-1","domain":"dev.hunk.session-broker.v1/caller-response","generation":"generation-1","httpStatus":200,"requestId":"request-1","sequence":"1"}',
     );
     expect(
       new TextDecoder().decode(

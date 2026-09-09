@@ -8,12 +8,8 @@ pnpm config set registry https://registry.npmjs.org/
 hunkdiff_version=${HISTORICAL_HUNKDIFF_VERSION:?HISTORICAL_HUNKDIFF_VERSION is required}
 bun_version=${HISTORICAL_BUN_VERSION:?HISTORICAL_BUN_VERSION is required}
 
-# Force the historical Hunk dependency to the exact Bun release that mutated pnpm's projection.
-cat >"$HOME/pnpm/global/pnpm-workspace.yaml" <<YAML
-overrides:
-  bun: $bun_version
-YAML
-run_expect historical-install 0 pnpm add -g "hunkdiff@$hunkdiff_version"
+# Add Bun explicitly so pnpm resolves Hunk's compatible transitive range to the historical release.
+run_expect historical-install 0 pnpm add -g "hunkdiff@$hunkdiff_version" "bun@$bun_version"
 bun_manifest=$(find "$HOME/pnpm/store" -path "*/bun/$bun_version/*/node_modules/bun/package.json" -type f -print -quit 2>/dev/null)
 run_expect historical-bun-version 0 node -e 'console.log(require(process.argv[1]).version)' "$bun_manifest"
 assert_contains historical-bun-pinned "$command_dir/historical-bun-version.log" "$bun_version"

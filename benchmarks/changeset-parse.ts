@@ -1,30 +1,20 @@
 // Benchmark raw patch parsing and sanitized DiffFile construction for several diff shapes.
 import { performance } from "perf_hooks";
 import { parsePatchFiles } from "@pierre/diffs";
-import { buildDiffFile } from "../src/core/changeset/diffFile";
-import { findPatchChunk, splitPatchIntoFileChunks } from "../src/core/patch/chunks";
-import { sanitizePatchText } from "../src/core/patch/sanitize";
-import { createSyntheticPatch } from "./lib/fixtures";
+import { buildDiffFile } from "../packages/hunk/src/core/changeset/diffFile";
+import { findPatchChunk, splitPatchIntoFileChunks } from "../packages/hunk/src/core/patch/chunks";
+import { sanitizePatchText } from "../packages/hunk/src/core/patch/sanitize";
+import { CHANGESET_PARSE_SCENARIOS, createSyntheticPatch } from "./lib/fixtures";
 
 interface Scenario {
   name: string;
   patch: string;
 }
 
-const scenarios: Scenario[] = [
-  {
-    name: "many_small_files",
-    patch: createSyntheticPatch({ fileCount: 240, lines: 48, changedLines: 8 }),
-  },
-  {
-    name: "balanced_changeset",
-    patch: createSyntheticPatch({ fileCount: 96, lines: 220, changedLines: 48 }),
-  },
-  {
-    name: "large_single_file",
-    patch: createSyntheticPatch({ fileCount: 1, lines: 18_000, changedLines: 2_000 }),
-  },
-];
+const scenarios: Scenario[] = CHANGESET_PARSE_SCENARIOS.map(({ name, options }) => ({
+  name,
+  patch: createSyntheticPatch(options),
+}));
 
 function measureScenario({ name, patch }: Scenario) {
   const normalizeStart = performance.now();

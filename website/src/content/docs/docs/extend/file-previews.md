@@ -220,7 +220,7 @@ A `null`, invalid, oversized, cancelled, timed-out, or throwing layout produces 
 The examples are not bundled or loaded by default. Run one directly while developing:
 
 ```bash
-bun run src/main.tsx -- diff \
+bun run packages/hunk/src/main.tsx -- diff \
   --extension ./examples/extensions/rendered-markdown \
   ./examples/extensions/jsx-file-view-gallery/mixed-review/fixtures/before/README.md \
   ./examples/extensions/jsx-file-view-gallery/mixed-review/fixtures/after/README.md

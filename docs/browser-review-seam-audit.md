@@ -1,5 +1,10 @@
 # Browser review seam audit — prototype duplication findings
 
+> **Current status (2026-09-06; after Phase 4).** Core review semantics, terminal adoption, producer and broker
+> projections, wire protocol, bounded resources, HTTP actions, and SSE have landed. There is no
+> browser client or served review page. Historical prototype locators below may name deleted files;
+> each finding's latest status annotation is authoritative.
+
 Companion to `browser-review-rebuild.md`. This is the per-finding work-list behind the plan's
 seam inventory: every duplicated derivation found in the prototype, the sites on each side, the
 observed or reachable divergence, and the shared primitive that replaces it. File/line
@@ -9,11 +14,7 @@ should delete the copies its primitive replaces and check off the finding here.
 
 ## Run boundary — after Phase 4
 
-Phases 0–4 have landed: the seam contract and its gates, the shared review model with the
-terminal on it, the producer runtime, the wire protocol with the daemon's review mirror and
-resource path, and now the HTTP surface — capability authorization, publication and resource
-reads, the SSE event stream, and action submission — with no browser client. What remains
-open, and where the plan puts it:
+Open work and its planned phase:
 
 - **C3, C5** — the epoch/supersede queue and one reconnect scheduler, both browser-client
   work (Phase 5). C4 is repaid on the server side; its client half closes with the reader
@@ -26,10 +27,11 @@ open, and where the plan puts it:
   rather than retained frames. The stream carries no deltas, so a publication _is_ a
   complete resynchronization and a history would be an optimization; if Phase 5 measures a
   need for one, it is additive.
-- **Browser sites of A, B, C, D** — every finding whose fix landed in core with only the
-  terminal, producer, broker, and wire converted keeps its browser half open: A6, A7, A11,
-  B3–B8, B10's client, C1 and C2's client sites, D1's composer sites, D3's
-  `pierreNoteAnchor`, D4's `parseCanonicalReviewFile`.
+- **Browser sites of A, B, C, D** — every finding whose latest annotation still requires a
+  browser consumer remains open: A3–A11; B3–B8 and B10's client; C1 and C2's client; D1's
+  composer, D2 and D5's browser sites, D3's `pierreNoteAnchor`, and D4's
+  `parseCanonicalReviewFile`. B5 still needs its browser source policy. B7 and B8 also retain
+  terminal adoption/behavior work.
 - **E1, E2** — the shared stat-badge formatter, and the product decision about whether the
   browser mirrors the terminal theme. Both Phase 5; E2 must be decided before its second PR.
 - **F browser bindings** — F1–F3's browser halves (palette, keymap resolution onto DOM
@@ -37,21 +39,21 @@ open, and where the plan puts it:
 - **G1, G2 policy** — view-option classification and persistence, and the multi-client
   selection and authorship policy. G2's _wire fields_ are done (see G2); what a receiver
   should do with an actor tag is the decision, due before Phase 5 PR 2.
-- **G3 adoption** — the address grammar exists with no consumers; browser deep links
-  (Phase 5) and opener fragments (Phase 6) close it.
+- **G3 adoption** — no address grammar exists on current main. It was removed as dead code and
+  returns beside the first browser deep-link or opener-fragment consumer (Phases 5–6).
 - **G5** — a placement rule for undo, if undo is ever built. Not work.
 
-Two residuals earlier runs created rather than inherited: remote note _composition_ has no
-draft-body intent yet (recorded under B12), and the publication a client reads over HTTP is
-a position plus a resource catalog rather than a serialized `ReviewState` — selection,
-filter, and notes reach a client through the resources and actions it already has, and
-whether a client needs more than that is Phase 5's first question.
+Remote draft composition now reaches `notes/update-draft` through core and the wire protocol, but
+has no browser caller until Phase 5. HTTP publications contain only a position and resource catalog;
+resource reads provide canonical files, patches, and sources, while successful actions acknowledge a
+new position. Phase 5 must define bounded snapshot or delta transport for live selection, filter,
+and note state before a browser can render those changes.
 
 ## A. Diff geometry
 
 - **A1. Collapsed-gap line ranges — 3 implementations, terminal off by one.** Terminal
-  `src/ui/diff/pierre.ts` (`leadingCollapsedRanges`/`trailingCollapsedRanges`, ~:456-480) vs
-  core `src/core/review/expansion.ts` (`reviewGapAddress`); web already consumes core's gap
+  `packages/hunk/src/ui/diff/pierre.ts` (`leadingCollapsedRanges`/`trailingCollapsedRanges`, ~:456-480) vs
+  core `packages/hunk/src/core/review/expansion.ts` (`reviewGapAddress`); web already consumes core's gap
   objects. For a pure-insertion hunk the terminal's leading range is off by one against core's,
   and the trailing math diverges for zero-count sides; a note created on a terminal-expanded
   line can be rejected on reload because `intents.ts` validates against `reviewGapAddress`.
@@ -63,7 +65,7 @@ whether a client needs more than that is Phase 5's first question.
   anchor side has zero rows, so `pure-deletion-hunk` pins lines 1–5 instead of preserving the
   former one-line undercount. A2's separate trailing-gap residual remains.
 - **A2. Trailing-context existence — 3 formulations.** `pierre.ts` `trailingCollapsedLines`,
-  producer `src/app/session/registration.ts` (~:131-139, boolean `hasTrailingContext`), core
+  producer `packages/hunk/src/app/session/registration.ts` (~:131-139, boolean `hasTrailingContext`), core
   `expansion.ts`. The browser can offer a "Trailing context" button whose expansion core then
   rejects (`gap-not-found`). Fix: one `reviewTrailingGap(file)` in core.
   _Repaid (Phase 1 PR 2)_: `reviewTrailingGap` in `core/review/expansion.ts`;
@@ -137,7 +139,7 @@ whether a client needs more than that is Phase 5's first question.
 - **A11. Language registration side effect missing in browser.** `core/changeset/fileLanguage.ts`
   registers `.mts`/`.cts`; the web bundle never imports it, so Pierre's own inference runs
   unregistered for files without an explicit `language`. Fix: side-effect import in
-  `src/web/main.tsx` (or fold registration into the shared model).
+  `packages/hunk/src/web/main.tsx` (or fold registration into the shared model).
 
 Renderer-specific, do not unify: terminal row construction and measured-cell windowing
 (`rowWindowing.ts`, `diffSectionGeometry.ts`) vs browser IntersectionObserver windowing and
@@ -251,7 +253,7 @@ duplication); hunk header text (browser delegates to Pierre separators); platfor
   decides whether the claim holds. The wire carries it as `expandedLineProof` on the two
   actions that can name a line (`notes/start-draft`'s target, and `notes/create-user`'s
   precondition on the draft it is saving), refusing evidence that accompanies no line, and
-  `src/app/session/reviewCommands.ts` checks it before planning. Where the resulting note hangs
+  `packages/hunk/src/app/session/reviewCommands.ts` checks it before planning. Where the resulting note hangs
   is deliberately _not_ decided there: it goes through `reviewLineAnchor`'s fallback owner
   exactly as a terminal note does, which `reviewCommands.test.ts` pins by asserting an empty
   intersection set and the declared owner. Fixtures `start-draft-on-an-expanded-line`,
@@ -284,14 +286,14 @@ duplication); hunk header text (browser delegates to Pierre separators); platfor
   the members that need them — and `toReviewIntent` strips them again, so an action is
   validated and narrowed rather than restated. The action-type-to-parser table is keyed by the
   vocabulary, so a wire-reachable intent without a parser does not compile.
-  `scripts/review-vocabulary.test.ts` is the ladder's rung 5: it asserts the equality, that
+  `scripts/quality/review-vocabulary.test.ts` is the ladder's rung 5: it asserts the equality, that
   every exclusion names a real intent once, and that every type in the vocabulary really
-  reaches a parser. Round-trip fixtures for all twelve actions live in
+  reaches a parser. Round-trip fixtures for every action live in
   `test/review-conformance/wireFixtures.ts`, registered as the `review wire protocol` consumer.
-  Residual: remote note _composition_ is not expressible yet. The vocabulary has no
-  draft-body intent, so a remote client can open a draft and save it but not type into it;
-  adding one is Phase 5's note-editing work, and until then the gap is a named absence rather
-  than a forgotten action.
+  _Repaid (note editing and replies)_: `notes/update-draft` now carries remote composer text,
+  while `notes/start-edit`, `notes/start-reply`, and `notes/update-user` share saved-note
+  mutation and reply semantics across terminal and remote surfaces. Their strict parsers and
+  hand-authored wire fixtures keep the expanded vocabulary total.
 
 Renderer-specific, do not unify: terminal line-cursor measurement/reconciliation; browser
 requestAnimationFrame/MutationObserver reveal mechanics; tree presentation details (duplicate
@@ -320,7 +322,7 @@ path suffixes, expansion retention, git-status badges).
   `test/review-conformance/orderingFixtures.ts` and cover both the classification and the
   transitions a real producer emits. Broker and browser sites close in Phases 3 and 5.
   _Repaid (Phase 3, broker site)_: the daemon's `ReviewMirror`
-  (`src/session/broker/reviewMirror.ts`) holds one publication per session and orders every
+  (`packages/hunk/src/session/broker/reviewMirror.ts`) holds one publication per session and orders every
   arriving one with a single `classifyReviewPublication` call — `accepted` advances the
   revision, `gap` replaces the generation and retires everything derived from the old one,
   `stale` is ignored. It has no comparison of its own, so the prototype's "accept equal
@@ -328,7 +330,7 @@ path suffixes, expansion retention, git-status badges).
   new position is a replay, exactly as the contract says. The one non-ordering rule it does
   apply is stated as such — a later generation is adoptable only together with the catalog
   describing it, because a mirror holding a position whose resources it cannot name would
-  advertise reads nobody can serve. `src/app/session/reviewCommands.ts` makes the same one
+  advertise reads nobody can serve. `packages/hunk/src/app/session/reviewCommands.ts` makes the same one
   call for an action's `expectedStateRevision`, so "has the review moved past what this
   caller decided from" is the same question as "is this publication ahead". The mirror is
   registered against the Phase 2 fixtures as the `broker review mirror` ordering consumer,
@@ -342,7 +344,7 @@ path suffixes, expansion retention, git-status badges).
   reservations, and concurrency tuning stay at the edges.
   _Repaid (Phase 2, producer site)_: `core/review/resources.ts` owns resource addressing, the
   chunk bound both ends validate against, and the failure vocabulary;
-  `src/app/review/resourceStore.ts` produces and serves the bytes. Single flight is
+  `packages/hunk/src/app/review/resourceStore.ts` produces and serves the bytes. Single flight is
   structural rather than a cache bolted on — a read reaches the underlying reader only
   through the in-flight map — and bulk loads run under an explicit concurrency limit instead
   of an unbounded `Promise.all`, which is the pair of defects the original review found.
@@ -354,7 +356,7 @@ path suffixes, expansion retention, git-status badges).
   each chunk to start where the last ended, treats a chunk that neither advances nor ends as
   a failure, accepts a zero-length resource as one empty end-of-stream chunk, and verifies
   the assembled bytes against the digest with a `ReviewDigestFn` the caller injects. The
-  broker's load loop (`src/session/broker/state.ts`) does nothing but ask for the next window
+  broker's load loop (`packages/hunk/src/session/broker/state.ts`) does nothing but ask for the next window
   and decode it; there is one loop, where the prototype had two near-verbatim copies inside
   this file that already disagreed about progress and end-of-stream. Bounding is
   `reviewResourceCache.ts`: an LRU with a daemon-wide byte budget plus a reservation taken
@@ -362,7 +364,7 @@ path suffixes, expansion retention, git-status badges).
   resource reserves one chunk and is resized to what the writer declares rather than
   reserving its kind's ceiling, which is what let a handful of ordinary patches serialize the
   parallel loads. Single flight is one map keyed by session, generation, and resource id;
-  concurrent callers await the same assembly. `src/session/broker/reviewResources.integration.test.ts`
+  concurrent callers await the same assembly. `packages/hunk/src/session/broker/reviewResources.integration.test.ts`
   drives the whole path with only the socket replaced. The browser's `apiClient` range loop
   closes in Phase 5.
 - **C3. Epoch/supersede/trailing-retry — 2 parallel machines.** Runtime reload queue
@@ -373,9 +375,9 @@ path suffixes, expansion retention, git-status badges).
   begin/end envelopes, and the event-id grammar are built in `browserReviewServer.ts` and
   re-declared/regex-parsed in `mirror.ts`/`apiClient.ts`; client bounds (12 MiB / 1024 chunks)
   are unlinked from server bounds and only coincidentally compatible. Fix:
-  `src/session/reviewEventProtocol.ts` owning names, envelopes, id grammar, and bounds derived
+  `packages/hunk/src/session/reviewEventProtocol.ts` owning names, envelopes, id grammar, and bounds derived
   from `MAX_BROWSER_REVIEW_SNAPSHOT_BYTES`.
-  _Repaid (Phase 4, server side)_: `src/session/reviewEventProtocol.ts` owns the event
+  _Repaid (Phase 4, server side)_: `packages/hunk/src/session/reviewEventProtocol.ts` owns the event
   vocabulary, the frame names and their phases, the begin/chunk/end envelopes and their
   parsers, the event-id grammar, and every bound — `MAX_REVIEW_EVENT_PAYLOAD_BYTES` is the
   protocol's envelope bound, `REVIEW_EVENT_CHUNK_BYTES` is the shared resource chunk size,
@@ -383,7 +385,7 @@ path suffixes, expansion retention, git-status badges).
   clamped to the ceiling a reader is allowed to hold rather than emitting frames the reader
   will refuse. `browserReviewServer.ts` imports all of it and declares none of it; the
   browser client imports the same module unchanged in Phase 5, which
-  `scripts/source-boundaries.test.ts` keeps possible by gating the module's transitive
+  `scripts/quality/source-boundaries.test.ts` keeps possible by gating the module's transitive
   closure platform-free. Two decisions differ from the prototype deliberately: a chunked
   payload is framed and verified as the byte stream it is, so reading it is the shared
   `ReviewChunkAssembler` rather than a fourth reassembly loop (C2's rule applied here); and
@@ -413,7 +415,7 @@ path suffixes, expansion retention, git-status badges).
   `test/review-conformance/noteSize.ts` pin the boundary the two prototype rules disagreed
   at, including a note whose summary, rationale, and markup each fit while the note itself is
   three times the bound. Wire and composer sites adopt it in Phases 3 and 5.
-  _Repaid (Phase 3, wire site)_: `isTransportableReviewNote` in `src/session/reviewProtocol.ts`
+  _Repaid (Phase 3, wire site)_: `isTransportableReviewNote` in `packages/hunk/src/session/reviewProtocol.ts`
   is `reviewNoteWithinSizeLimit` and nothing else — the wire has no per-field check any more, and
   declares no second bound. The protocol module is registered as a consumer of the note-size
   corpus, so `every-field-fits-but-the-note-does-not` — the note whose summary, rationale, and
@@ -437,7 +439,7 @@ path suffixes, expansion retention, git-status badges).
   the prototype's failure impossible rather than merely fixed: its broker copy re-derived
   intersections, omitted the fallback branch, and rejected a legal expanded-gap note — and
   with it the whole registration. The case is pinned from the wire end in
-  `src/app/session/reviewCommands.test.ts`: a note created remotely on an expanded-gap line
+  `packages/hunk/src/app/session/reviewCommands.test.ts`: a note created remotely on an expanded-gap line
   ends up with an empty intersection set and the fallback owner the caller declared, which is
   exactly the shape the dropped branch produced. Web `pierreNoteAnchor` closes in Phase 5.
 - **D4. Canonical-file ↔ manifest consistency — 3 checks, 3 field lists.** Producer
@@ -471,7 +473,7 @@ path suffixes, expansion retention, git-status badges).
   variant is what let a writer and a reader disagree — with `normalizeReviewDigest` for values
   arriving from outside and `reviewDigestsEqual` normalizing _both_ operands. Hashing itself is
   an injected `ReviewDigestFn` rather than inline `createHash` calls; the producer supplies
-  Node's at the edge (`src/core/reviewDigest.ts`), which is also what repaid the shared model's
+  Node's at the edge (`packages/hunk/src/core/reviewDigest.ts`), which is also what repaid the shared model's
   last node-debt entry. Resource bounds are constants in `core/review/resources.ts` that the
   producer imports rather than restates. Wire constants, the action-envelope parser, and the
   two note-filter namings are Phase 3.
@@ -486,7 +488,7 @@ path suffixes, expansion retention, git-status badges).
   registration's file limit, and every digest check is `isReviewSha256Digest`. The one
   coupling the protocol cannot express as an import is the transport frame size — importing
   the broker package would cost the module its browser safety — so
-  `scripts/review-vocabulary.test.ts` asserts it instead, alongside a check that no session
+  `scripts/quality/review-vocabulary.test.ts` asserts it instead, alongside a check that no session
   module re-declares a name the review model exports and that no module writes its own
   64-character digest pattern. Naming `isActiveStoredReviewNote` beside
   `isRenderableStoredReviewNote` and commenting `parseReviewState` are browser-tier work and
@@ -497,7 +499,7 @@ path suffixes, expansion retention, git-status badges).
 - **E1. File stat badges.** Terminal `ui/lib/files.ts` `formatSidebarStat` (zero-hiding,
   truncation marker) vs web inline `+${additions} −${deletions}` in `treeSource.ts`. One
   shared formatter.
-- **E2. Theme.** Web hardcodes two standalone palettes disconnected from `src/ui/themes` and
+- **E2. Theme.** Web hardcodes two standalone palettes disconnected from `packages/hunk/src/ui/themes` and
   the `AppTheme` mapping; whether the browser mirrors the terminal theme is an open product
   decision — decide before Phase 5, don't unify by default.
 
@@ -508,14 +510,14 @@ like A–E; they are the copies the browser _would_ grow the moment shortcuts ar
 here so the extraction happens before the duplication exists. Design detail in
 `browser-review-rebuild.md` § "Commands and keyboard shortcuts in the browser".
 
-- **F1. Command catalog fused with terminal binding and effects.** `src/ui/lib/appCommands.ts`
+- **F1. Command catalog fused with terminal binding and effects.** `packages/hunk/src/ui/lib/appCommands.ts`
   couples identity (id, title, chords), binding (terminal `KeyEvent` matchers), and effect
   (closures over live App state) in one table; menus (`ui/lib/appMenus.ts`) and the help
   dialog render from it, so a browser palette or help screen would have to restate the list.
   Fix: extract a renderer-neutral catalog (id, title, category, default chords, resolution
   locus — semantic / client-local / host-only); terminal keeps matchers and handlers, browser
   adds its own, both render menus/help/palette from the catalog.
-  _Repaid (Phase 1 PR 3)_: `src/core/run/commandCatalog.ts` carries id, title, category, default
+  _Repaid (Phase 1 PR 3)_: `packages/hunk/src/core/run/commandCatalog.ts` carries id, title, category, default
   chords, resolution locus, extension visibility, and menu-closing behavior for all 44 built-ins.
   `ui/lib/appCommands.ts` builds its dispatch table from it — the handler map is keyed by
   `AppCommandId`, so a catalogued command with no terminal handler fails to typecheck — and
@@ -545,12 +547,10 @@ here so the extraction happens before the duplication exists. Design detail in
   `selectReviewGapForSelection` in core, replacing the terminal's `selectGapForKeyboardToggle`.
   `SEMANTIC_COMMANDS_WITHOUT_REVIEW_EFFECT` is now empty, and every semantic command lowers to
   an intent a remote client could fire.
-  Residual (found in review): `lowerAppCommandToReviewIntent` still has no production caller —
-  the terminal's handlers read the catalog's declared scope/direction but build their intents
-  inline, so the lowering and the terminal closures can diverge with only
-  `commandCatalog.test.ts` noticing half the drift. Closes when the lowering gains its second
-  consumer (the Phase 5 palette / wire command path); until then any change to a declared
-  review effect must update both sites, and a review-effect parity check is the missing test.
+  _Repaid (terminal adoption)_: `useTerminalReview.ts` calls
+  `lowerAppCommandToReviewIntent`, so the terminal no longer rebuilds semantic command intents
+  inline. The future browser palette remains a second surface, not a prerequisite for terminal
+  parity.
 - **F3. Keymap resolution is terminal-owned.** Chords are shared config strings (`keymap.ts`,
   `[keybindings]`), but resolution against defaults and conflict handling lives with the
   terminal table; a browser keymap would duplicate it and drift on user rebinds. Fix: resolve
@@ -595,10 +595,10 @@ implementation does.
   four parts split cleanly, and only the first is done: (1) actions carry an actor tag, here;
   (2) whether selection is shared-with-follow or per-client-with-follow is a product decision,
   due before Phase 5 PR 2; (3) note authorship defaulting from the actor lands with remote
-  note composition in Phase 5; (4) how a client obtains its identity lands with the capability
-  the HTTP surface issues in Phase 4. The producer records the tag and applies no policy to
-  it, and a client cannot widen what it may do by claiming a kind — so adding a policy later
-  changes behavior rather than the schema, which is the whole point of carrying the field now.
+  note composition in Phase 5; (4) how a client obtains its identity was originally assigned to
+  Phase 4. The wire parser validates the tag, the broker forwards it to the owning session, and
+  the producer-side action handler drops it before semantic planning. A client cannot widen what
+  it may do by claiming a kind; adding policy later changes behavior rather than the schema.
   _Amended (Phase 4)_: part (4) does not land with the HTTP surface after all, and the
   reason is worth stating. The capability authorizes _a review_, not _a client_: one link
   may be opened in several tabs, and the surface deliberately cannot tell them apart,
@@ -624,13 +624,13 @@ implementation does.
   `no-dead-modules` rule now flags exactly that shape. The grammar above still stands as the
   design; write it again beside the first consumer that addresses a review across a boundary.
 - **G4. User-facing error catalog.** The repo already solves this once for agents:
-  `src/session/agent/errors.ts` single-sources every message the generated skill quotes, with
+  `packages/hunk/src/session/agent/errors.ts` single-sources every message the generated skill quotes, with
   contract tests. The browser has no equivalent — action rejections (`invalid-action`,
   `stale-generation`, resource integrity failures) would surface as ad-hoc strings invented in
-  `src/web`, drifting from what the terminal shows for the same failure. One error-code →
+  `packages/hunk/src/web`, drifting from what the terminal shows for the same failure. One error-code →
   user-message catalog beside the wire protocol, consumed by both clients (and reused by the
   agent surface where codes overlap). Phase 4 (codes stabilize) / Phase 5 (browser consumes).
-  _Repaid (Phase 4, catalog creation)_: `src/session/reviewErrorCatalog.ts` gives every code a
+  _Repaid (Phase 4, catalog creation)_: `packages/hunk/src/session/reviewErrorCatalog.ts` gives every code a
   statement and a remedy, in the agent surface's own pattern. Totality is mechanical rather
   than reviewed: the catalog is a `Record` over `HunkReviewClientErrorCodeV1`, itself
   _composed_ — resource plus request plus intent-planning plus the transport's own codes —
@@ -653,11 +653,11 @@ implementation does.
 The per-phase verification ladder lives in `browser-review-rebuild.md` § "Per-phase seam
 verification". A finding here counts as repaid only when all four hold: duplicate copies
 deleted, their paths (for whole files) or banned-symbol entries (for function-level
-deletions) appended to the tombstone lists in `scripts/source-boundaries.test.ts`,
+deletions) appended to the tombstone lists in `scripts/quality/source-boundaries.test.ts`,
 the finding's adversarial fixture landed in the conformance harness, and the consumer
 registered against that harness.
 
-- The seam boundary tests (`scripts/source-boundaries.test.ts`) keep deleted copies deleted.
+- The seam boundary tests (`scripts/quality/source-boundaries.test.ts`) keep deleted copies deleted.
 - Renderer parity tests (Phase 5 gate) drive shared fixtures through the terminal planner and
   browser projection and assert identical note placement, gap addressing, reveal targets, and
   default note targets — the drift class import gates cannot catch.

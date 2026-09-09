@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { createServer } from "node:net";
+import { connect, createServer } from "node:net";
 import {
+  BrokerCapacityError,
   SESSION_BROKER_REGISTRATION_VERSION,
   brokerWireParsers,
   parseSessionRegistrationEnvelope,
   parseSessionSnapshotEnvelope,
   type SessionRegistration,
+  type SessionServerMessage,
   type SessionSnapshot,
 } from "@hunk/session-broker-core";
 import {
@@ -115,6 +117,36 @@ async function waitUntil<T>(
   }
 }
 
+/** Return the HTTP status from one raw WebSocket upgrade attempt. */
+async function rawWebSocketUpgradeStatus(port: number) {
+  return await new Promise<number>((resolve, reject) => {
+    const socket = connect({ host: "127.0.0.1", port }, () => {
+      socket.write(
+        [
+          "GET /session HTTP/1.1",
+          `Host: 127.0.0.1:${port}`,
+          "Connection: Upgrade",
+          "Upgrade: websocket",
+          "Sec-WebSocket-Version: 13",
+          "Sec-WebSocket-Key: dGVzdC1zZXNzaW9uLWtleQ==",
+          "",
+          "",
+        ].join("\r\n"),
+      );
+    });
+    let response = "";
+    socket.on("data", (chunk) => {
+      response += chunk.toString("utf8");
+      if (!response.includes("\r\n\r\n")) return;
+      const status = Number(response.match(/^HTTP\/1\.1 (\d{3})/)?.[1]);
+      socket.destroy();
+      if (Number.isInteger(status)) resolve(status);
+      else reject(new Error("WebSocket upgrade returned an invalid HTTP response."));
+    });
+    socket.on("error", reject);
+  });
+}
+
 async function openTestSocket(url: string) {
   const socket = new WebSocket(url);
   await new Promise<void>((resolve, reject) => {
@@ -196,18 +228,11 @@ afterEach(() => {
 });
 
 describe("session broker bun adapter", () => {
-  test("uses the shared binary, oversize, and pressure close corpus", () => {
-    expect(SESSION_BROKER_ADAPTER_CONFORMANCE).toMatchObject({
-      textOnly: { binaryCloseCode: 1003 },
-      inbound: { oversizedCloseCode: 1009, pressureCloseCode: 1013 },
-    });
-  });
-
-  test("closes binary, oversized, and aggregate-pressure messages per the shared corpus", async () => {
+  test("closes binary and oversized messages per the shared corpus", async () => {
     const broker = new SessionBroker({ protocolParsers });
     const daemon = createSessionBrokerDaemon({
       broker,
-      limits: { maxWsMessageBytes: 8, maxInFlightWsBytes: 0 },
+      limits: { maxWsMessageBytes: 8 },
     });
     const port = await reserveLoopbackPort();
     const server = serveSessionBrokerDaemon({ daemon, hostname: "127.0.0.1", port });
@@ -220,16 +245,60 @@ describe("session broker bun adapter", () => {
       const oversized = await openTestSocket(`ws://127.0.0.1:${port}/session`);
       const oversizedClosed = testSocketCloseCode(oversized);
       oversized.send("123456789");
-      expect(await oversizedClosed).toBe(
-        SESSION_BROKER_ADAPTER_CONFORMANCE.inbound.oversizedCloseCode,
+      expect(SESSION_BROKER_ADAPTER_CONFORMANCE.inbound.bunNativeOversizedCloseCodes).toContain(
+        await oversizedClosed,
       );
+    } finally {
+      server.stop(true);
+      await server.stopped;
+    }
+  });
 
-      const pressure = await openTestSocket(`ws://127.0.0.1:${port}/session`);
-      const pressureClosed = testSocketCloseCode(pressure);
-      pressure.send("{}");
-      expect(await pressureClosed).toBe(
-        SESSION_BROKER_ADAPTER_CONFORMANCE.inbound.pressureCloseCode,
+  test("returns the shared HTTP status when socket admission is full and releases on close", async () => {
+    const broker = new SessionBroker({ protocolParsers });
+    const daemon = createSessionBrokerDaemon({
+      broker,
+      limits: { maxUnauthenticatedSockets: 1, maxHandshakeDurationMs: 1_000 },
+      helloAuthenticator: {} as never,
+      producerEndpoint: "ws://127.0.0.1/session",
+    });
+    const port = await reserveLoopbackPort();
+    const server = serveSessionBrokerDaemon({ daemon, hostname: "127.0.0.1", port });
+    try {
+      const first = await openTestSocket(`ws://127.0.0.1:${port}/session`);
+      expect(await rawWebSocketUpgradeStatus(port)).toBe(
+        SESSION_BROKER_ADAPTER_CONFORMANCE.inbound.admissionHttpStatus,
       );
+      const closed = testSocketCloseCode(first);
+      first.close();
+      await closed;
+      const afterRelease = await openTestSocket(`ws://127.0.0.1:${port}/session`);
+      afterRelease.close();
+    } finally {
+      server.stop(true);
+      await server.stopped;
+    }
+  });
+
+  test("contains handler failures and closes the affected peer", async () => {
+    const broker = new SessionBroker({ protocolParsers });
+    const daemon = createSessionBrokerDaemon({ broker });
+    daemon.handleConnectionMessage = (_peer, message) => {
+      if (message === "capacity") throw new BrokerCapacityError("busy", "test");
+      throw new Error("unexpected handler failure");
+    };
+    const port = await reserveLoopbackPort();
+    const server = serveSessionBrokerDaemon({ daemon, hostname: "127.0.0.1", port });
+    try {
+      const capacity = await openTestSocket(`ws://127.0.0.1:${port}/session`);
+      const capacityClosed = testSocketCloseCode(capacity);
+      capacity.send("capacity");
+      expect(await capacityClosed).toBe(1013);
+
+      const unexpected = await openTestSocket(`ws://127.0.0.1:${port}/session`);
+      const unexpectedClosed = testSocketCloseCode(unexpected);
+      unexpected.send("unexpected");
+      expect(await unexpectedClosed).toBe(1011);
     } finally {
       server.stop(true);
       await server.stopped;
@@ -256,6 +325,76 @@ describe("session broker bun adapter", () => {
         broker.listSessions().length === 1 ? true : null,
       );
       socket.close();
+    } finally {
+      server.stop(true);
+      await server.stopped;
+    }
+  });
+
+  test("closes outbound aggregate pressure and releases socket capacity for reconnect", async () => {
+    type PressureMessage = SessionServerMessage<"annotate", { summary: string }>;
+    const pressureParsers = createSessionBrokerProtocolParsers<
+      TestSessionInfo,
+      TestSessionState,
+      PressureMessage,
+      { applied: true }
+    >({
+      appRevision: 1,
+      features: [],
+      parseRegistration: (value) => parseSessionRegistrationEnvelope(value, parseInfo),
+      parseSnapshot: (value) => parseSessionSnapshotEnvelope(value, parseState),
+      commands: [
+        {
+          command: "annotate",
+          version: 1,
+          parseInput: (value) =>
+            typeof (value as { summary?: unknown })?.summary === "string"
+              ? { summary: (value as { summary: string }).summary }
+              : null,
+          parseResult: (value) =>
+            (value as { applied?: unknown })?.applied === true ? { applied: true } : null,
+        },
+      ],
+    });
+    const broker = new SessionBroker({ protocolParsers: pressureParsers });
+    const daemon = createSessionBrokerDaemon({
+      broker,
+      limits: { maxOutboundBytesTotal: 8 },
+    });
+    const port = await reserveLoopbackPort();
+    const server = serveSessionBrokerDaemon({ daemon, hostname: "127.0.0.1", port });
+    try {
+      const socket = await openTestSocket(`ws://127.0.0.1:${port}/session`);
+      socket.send(
+        JSON.stringify({
+          type: "register",
+          registration: createRegistration(),
+          snapshot: createSnapshot(),
+        }),
+      );
+      await waitUntil("pressure registration", () =>
+        broker.listSessions().length === 1 ? true : null,
+      );
+      const closed = testSocketCloseCode(socket);
+      const dispatchResult = broker
+        .dispatchCommand({
+          selector: { sessionId: "session-1" },
+          command: "annotate",
+          input: { summary: "pressure" },
+          timeoutMessage: "timeout",
+        })
+        .then(
+          () => null,
+          (error: unknown) => error,
+        );
+      expect(await closed).toBe(SESSION_BROKER_ADAPTER_CONFORMANCE.outbound.pressureCloseCode);
+      expect(await dispatchResult).toBeInstanceOf(Error);
+      await waitUntil("pressure disconnect cleanup", () =>
+        broker.listSessions().length === 0 ? true : null,
+      );
+
+      const afterRelease = await openTestSocket(`ws://127.0.0.1:${port}/session`);
+      afterRelease.close();
     } finally {
       server.stop(true);
       await server.stopped;
@@ -366,11 +505,13 @@ describe("session broker bun adapter", () => {
     expect(stoppedSettled).toBe(true);
   });
 
-  test("admits exactly the configured number of active websocket peers", async () => {
+  test("admits exactly the configured number of unauthenticated websocket peers", async () => {
     const broker = new SessionBroker({ protocolParsers });
     const daemon = createSessionBrokerDaemon({
       broker,
-      limits: { maxUnauthenticatedSockets: 1 },
+      limits: { maxUnauthenticatedSockets: 1, maxHandshakeDurationMs: 50 },
+      helloAuthenticator: {} as never,
+      producerEndpoint: "ws://127.0.0.1/session",
     });
     const port = await reserveLoopbackPort();
     const server = serveSessionBrokerDaemon({ daemon, hostname: "127.0.0.1", port });
@@ -378,8 +519,7 @@ describe("session broker bun adapter", () => {
       const first = await openTestSocket(`ws://127.0.0.1:${port}/session`);
       await expect(openTestSocket(`ws://127.0.0.1:${port}/session`)).rejects.toThrow();
       const closed = testSocketCloseCode(first);
-      first.close();
-      await closed;
+      expect(await closed).toBe(1008);
       const afterRelease = await openTestSocket(`ws://127.0.0.1:${port}/session`);
       afterRelease.close();
     } finally {
@@ -413,7 +553,9 @@ describe("session broker bun adapter", () => {
             generation: "generation-1",
             brokerRevision: 1 as const,
             ...(appContract ? { appContract } : {}),
+            callerSessionId: "caller-session-1",
             requestId: "request-1",
+            sequence: "1",
             httpStatus,
             bodyDigest: "test-digest",
             daemonKeyId: "daemon-key-1",

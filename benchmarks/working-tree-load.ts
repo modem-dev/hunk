@@ -1,7 +1,7 @@
 // Benchmark git-backed working-tree loading, including untracked file handling.
 import { performance } from "perf_hooks";
-import { getBundledVcsCatalog } from "../src/app/vcsCatalog";
-import { loadAppBootstrap } from "../src/core/changeset/loaders";
+import { getBundledVcsCatalog } from "../packages/hunk/src/app/vcsCatalog";
+import { loadAppBootstrap } from "../packages/hunk/src/core/changeset/loaders";
 import { addUntrackedFiles, createChangedRepo } from "./lib/fixtures";
 
 interface Scenario {

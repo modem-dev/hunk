@@ -1,13 +1,16 @@
 import { describe, expect, test } from "bun:test";
-import { ReviewProducer } from "../../src/app/review/producer";
+import { ReviewProducer } from "../../packages/hunk/src/app/review/producer";
 import {
   classifyReviewPublication,
   type ReviewPublicationAddress,
-} from "../../src/core/review/generationOrder";
-import { isBlankReviewNoteBody, planReviewIntent } from "../../src/core/review/intents";
-import { reviewNoteWithinSizeLimit } from "../../src/core/review/noteSize";
-import { createInitialReviewState } from "../../src/core/review/state";
-import { createReviewStore } from "../../src/core/review/store";
+} from "../../packages/hunk/src/core/review/generationOrder";
+import {
+  isBlankReviewNoteBody,
+  planReviewIntent,
+} from "../../packages/hunk/src/core/review/intents";
+import { reviewNoteWithinSizeLimit } from "../../packages/hunk/src/core/review/noteSize";
+import { createInitialReviewState } from "../../packages/hunk/src/core/review/state";
+import { createReviewStore } from "../../packages/hunk/src/core/review/store";
 import { createTestDiffFile } from "../helpers/diff-helpers";
 import { createTestReviewDocument } from "../helpers/review-store-helpers";
 import {

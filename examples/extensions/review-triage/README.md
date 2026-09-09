@@ -5,14 +5,14 @@ A session-local hunk review board for Hunk. It records which hunks you have visi
 Run it directly from this checkout:
 
 ```bash
-bun run src/main.tsx -- diff --extension ./examples/extensions/review-triage
+bun run packages/hunk/src/main.tsx -- diff --extension ./examples/extensions/review-triage
 ```
 
 Or copy the directory to your Hunk extensions directory and keep its `package.json`; its manifest makes the folder a single `review-triage` extension.
 
 ## Use
 
-Open **Extensions → Toggle review triage** (`y`). The right pane lists each visible file's hunks; click a hunk to navigate the review stream. Use **Extensions → Mark selected hunk…** (`x`) to choose a status and enter an optional rationale. **Center current review line**, **Set review focus…**, and **Clear triage decisions** are menu-only commands.
+Open **Extensions → Toggle review triage** (`Y`). The right pane lists each visible file's hunks; click a hunk to navigate the review stream. Use **Extensions → Mark selected hunk…** (`x`) to choose a status and enter an optional rationale. **Center current review line**, **Set review focus…**, and **Clear triage decisions** are menu-only commands.
 
 The board intentionally keeps state only for the running Hunk session. Reloading reconciles decisions against the newly parsed hunks and drops entries that no longer match, rather than silently transferring a decision to changed code.
 

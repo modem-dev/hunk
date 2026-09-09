@@ -2,9 +2,10 @@
 interface Props {
   current?: "home" | "docs" | "changelog" | "extensions";
   context?: "marketing" | "docs";
+  stars?: string | null;
 }
 
-const { current, context = "marketing" } = Astro.props;
+const { current, context = "marketing", stars } = Astro.props;
 const hasTools = Astro.slots.has("tools");
 const REPO = "https://github.com/modem-dev/hunk";
 const DISCORD = "https://discord.gg/WZFjaP6Gt8";
@@ -22,7 +23,13 @@ const installHref = context === "docs" ? "/docs/start/install/" : "/#install";
       </a>
       <a href="/changelog/" aria-current={current === "changelog" ? "page" : undefined}>Changelog</a>
       <a class="brand-discord" href={DISCORD}>Discord</a>
-      <a href={REPO}>GitHub ↗</a>
+      <a class="brand-star" href={REPO} aria-label="Star Hunk on GitHub">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="m12 3 2.75 5.57 6.15.9-4.45 4.33 1.05 6.12L12 17.03l-5.5 2.89 1.05-6.12L3.1 9.47l6.15-.9L12 3Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"></path>
+        </svg>
+        <span class="brand-star-label">Star</span>
+        {stars && <span class="brand-star-count">{stars}</span>}
+      </a>
     </nav>
     {
       hasTools && (

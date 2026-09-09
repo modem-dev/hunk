@@ -99,6 +99,36 @@
   color: var(--hunk-accent);
 }
 
+.brand-nav .brand-star {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--hunk-rule);
+  border-radius: 7px;
+  background: var(--hunk-paper);
+  color: var(--hunk-ink);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.brand-nav .brand-star:hover {
+  border-color: var(--hunk-ink);
+  color: var(--hunk-accent);
+}
+
+.brand-star svg {
+  flex: none;
+}
+
+.brand-star-count {
+  padding-left: 7px;
+  border-left: 1px solid var(--hunk-rule);
+  color: var(--hunk-muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .brand-tools {
   min-width: 0;
   gap: 14px;
@@ -195,7 +225,7 @@
 
 /*
  * The marketing header keeps its links inline at every width, so each breakpoint drops the least
- * essential one still present. Docs, Changelog, and GitHub survive everywhere. Docs pages hide the
+ * essential one still present. Docs, Changelog, and the GitHub star control survive everywhere. Docs pages hide the
  * whole nav below 50rem in favour of Starlight's menu, so these only affect marketing.
  */
 /* Extensions is the longest label and has its own entry points from the docs and
@@ -207,8 +237,14 @@
 }
 
 @media (max-width: 430px) {
-  .brand-header-inner[data-context="marketing"] .brand-discord {
+  .brand-header-inner[data-context="marketing"] .brand-discord,
+  .brand-header-inner[data-context="marketing"] .brand-star-label {
     display: none;
+  }
+
+  .brand-header-inner[data-context="marketing"] .brand-star-count {
+    padding-left: 0;
+    border-left: 0;
   }
 }
 

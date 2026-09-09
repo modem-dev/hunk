@@ -4,12 +4,20 @@ import path from "node:path";
 export type InstallVmProfile = "minimal" | "node";
 export type InstallVmNetwork = "local" | "live";
 
+export interface InstallVmScenarioRequiredEvidence {
+  commands?: string[];
+  commandExpectations?: Record<string, string>;
+  assertions?: string[];
+  observations?: string[];
+}
+
 export interface InstallVmScenario {
   id: string;
   description: string;
   profile: InstallVmProfile;
   script: string;
   network: InstallVmNetwork;
+  requiredEvidence?: InstallVmScenarioRequiredEvidence;
 }
 
 export interface InstallVmScenarioManifest {
@@ -97,6 +105,36 @@ export interface InstallVmPins {
 const SCENARIO_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const EXACT_VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
+const ZERO_EXIT_COMMAND_EXPECTATIONS = new Set([
+  "background PTY remains live",
+  "SIGSTOP exact owned B client",
+  "SIGCONT exact owned B client",
+]);
+
+/** Validate one expectation against the closed install-VM command grammar. */
+export function validateInstallVmCommandExpectation(expectation: string, exitCode?: number) {
+  const exitMatch = /^exit (-?(?:0|[1-9][0-9]*))$/.exec(expectation);
+  if (exitMatch) {
+    if (exitCode !== undefined && exitCode !== Number(exitMatch[1])) {
+      throw new Error(`Install VM command has impossible exit expectation: ${expectation}.`);
+    }
+    return;
+  }
+  if (expectation === "nonzero exit") {
+    if (exitCode === 0) {
+      throw new Error("Install VM command has impossible nonzero exit expectation.");
+    }
+    return;
+  }
+  if (expectation === "observed exit") return;
+  if (ZERO_EXIT_COMMAND_EXPECTATIONS.has(expectation)) {
+    if (exitCode !== undefined && exitCode !== 0) {
+      throw new Error(`Install VM command has impossible zero-exit expectation: ${expectation}.`);
+    }
+    return;
+  }
+  throw new Error(`Install VM command has unsupported expectation: ${expectation}.`);
+}
 
 /** Validate checksum-attested VM inputs and exact versions used by compatibility scenarios. */
 export function validateInstallVmPins(value: unknown) {
@@ -217,6 +255,62 @@ export function validateScenarioManifest(value: unknown): InstallVmScenarioManif
     }
     if (path.basename(scenario.script) !== scenario.script || !scenario.script.endsWith(".sh")) {
       throw new Error(`Scenario ${scenario.id} has an unsafe script path.`);
+    }
+    if (scenario.requiredEvidence !== undefined) {
+      if (!scenario.requiredEvidence || typeof scenario.requiredEvidence !== "object") {
+        throw new Error(`Scenario ${scenario.id} has malformed required evidence.`);
+      }
+      const requiredEvidence = scenario.requiredEvidence as Record<string, unknown>;
+      const expectedKeys = ["commands", "commandExpectations", "assertions", "observations"];
+      if (Object.keys(requiredEvidence).some((key) => !expectedKeys.includes(key))) {
+        throw new Error(`Scenario ${scenario.id} has unknown required evidence.`);
+      }
+      for (const key of ["commands", "assertions", "observations"] as const) {
+        const entries = requiredEvidence[key];
+        if (entries === undefined) continue;
+        if (
+          !Array.isArray(entries) ||
+          entries.length === 0 ||
+          entries.some(
+            (entry) =>
+              typeof entry !== "string" ||
+              (key === "observations"
+                ? !/^[A-Za-z][A-Za-z0-9]*$/.test(entry)
+                : !SCENARIO_ID_PATTERN.test(entry)),
+          ) ||
+          new Set(entries).size !== entries.length
+        ) {
+          throw new Error(`Scenario ${scenario.id} has malformed required ${key}.`);
+        }
+      }
+      const commandExpectations = requiredEvidence.commandExpectations;
+      if (commandExpectations !== undefined) {
+        if (
+          !commandExpectations ||
+          typeof commandExpectations !== "object" ||
+          Array.isArray(commandExpectations) ||
+          (Object.getPrototypeOf(commandExpectations) !== Object.prototype &&
+            Object.getPrototypeOf(commandExpectations) !== null)
+        ) {
+          throw new Error(`Scenario ${scenario.id} has malformed command expectations.`);
+        }
+        const commands = requiredEvidence.commands;
+        const expectationRecord = commandExpectations as Record<string, unknown>;
+        if (
+          !Array.isArray(commands) ||
+          Object.keys(expectationRecord).sort().join("\0") !== [...commands].sort().join("\0")
+        ) {
+          throw new Error(
+            `Scenario ${scenario.id} command expectations must exactly match required commands.`,
+          );
+        }
+        for (const [commandId, expectation] of Object.entries(expectationRecord)) {
+          if (!SCENARIO_ID_PATTERN.test(commandId) || typeof expectation !== "string") {
+            throw new Error(`Scenario ${scenario.id} has malformed command expectations.`);
+          }
+          validateInstallVmCommandExpectation(expectation);
+        }
+      }
     }
   }
 
@@ -373,6 +467,13 @@ export interface DockerRunPaths {
   outputDir: string;
 }
 
+/** Reject paths that Docker's comma-delimited bind syntax cannot represent safely. */
+function assertSafeDockerBindPath(mountPath: string) {
+  if (/[,\0-\x1f\x7f]/.test(mountPath)) {
+    throw new Error(`Unsafe Docker bind path for install VM: ${mountPath}`);
+  }
+}
+
 /** Build the controller image from the same validated image and Node pins used by the guest. */
 export function buildControllerImageCommand(
   image: string,
@@ -403,11 +504,7 @@ export function buildDockerRunCommand(
   scenarioIds: readonly string[],
   hostIdentity: { uid: number; gid: number },
 ) {
-  for (const mountPath of Object.values(paths)) {
-    if (/[,\0-\x1f\x7f]/.test(mountPath)) {
-      throw new Error(`Unsafe Docker bind path for install VM: ${mountPath}`);
-    }
-  }
+  for (const mountPath of Object.values(paths)) assertSafeDockerBindPath(mountPath);
   if (scenarioIds.some((id) => !SCENARIO_ID_PATTERN.test(id))) {
     throw new Error("Unsafe install VM scenario id in Docker command.");
   }
@@ -432,6 +529,43 @@ export function buildDockerRunCommand(
     `--mount=type=bind,src=${paths.cacheDir},dst=/cache`,
     `--mount=type=bind,src=${paths.fixtureDir},dst=/fixtures,readonly`,
     `--mount=type=bind,src=${paths.outputDir},dst=/artifacts`,
+    image,
+  ];
+}
+
+/** Build the least-privilege interactive Docker command for one disposable VM shell. */
+export function buildDockerVmShellCommand(
+  image: string,
+  cacheDir: string,
+  hostIdentity: { uid: number; gid: number },
+  options: { shellInputDir: string; withHunk: boolean },
+) {
+  assertSafeDockerBindPath(cacheDir);
+  assertSafeDockerBindPath(options.shellInputDir);
+  return [
+    "docker",
+    "run",
+    "--rm",
+    "--interactive",
+    "--tty",
+    "--stop-timeout=30",
+    "--cap-drop=ALL",
+    "--cap-add=NET_ADMIN",
+    "--cap-add=CHOWN",
+    "--cap-add=DAC_OVERRIDE",
+    "--device=/dev/kvm",
+    "--device=/dev/net/tun",
+    "--security-opt=no-new-privileges",
+    "--sysctl=net.ipv4.ip_forward=1",
+    "--read-only",
+    "--tmpfs=/tmp:rw,nosuid,nodev,mode=1777",
+    "--tmpfs=/run:rw,nosuid,nodev,mode=755",
+    `--env=HOST_UID=${hostIdentity.uid}`,
+    `--env=HOST_GID=${hostIdentity.gid}`,
+    `--mount=type=bind,src=${cacheDir},dst=/cache`,
+    ...(options.withHunk ? ["--env=WITH_HUNK=1"] : []),
+    `--mount=type=bind,src=${options.shellInputDir},dst=/shell-input,readonly`,
+    "--entrypoint=/opt/install-vm/vm-shell-controller.sh",
     image,
   ];
 }

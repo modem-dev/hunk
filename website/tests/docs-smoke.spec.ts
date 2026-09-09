@@ -144,9 +144,18 @@ test("docs pages serve their Markdown source at .md URLs", async ({ request }) =
   expect(body).not.toContain("<!DOCTYPE html");
   expect(body.startsWith("---")).toBe(true);
   expect(body).toContain("title: Install");
-  // Content matches the rendered page, including fenced code blocks.
+  // Content matches the rendered page, including the default and alternative install methods.
   expect(body).toContain("```bash");
+  expect(body).toContain("curl -fsSL https://hunk.dev/install.sh | sh");
   expect(body).toContain("npm install --global hunkdiff");
+  expect(body).toContain("`hunk update` is the canonical way");
+  expect(body).toContain("Starting with Hunk 0.20");
+  expect(body).toContain("On an older Hunk release, update once");
+  expect(body).toContain("warns that verification was skipped");
+  expect(body).toContain("hunk update --check  # check without installing");
+  expect(body).toContain("exact npm or default install-script release");
+  expect(body).toContain("custom `HUNK_INSTALL_DIR`");
+  expect(body.indexOf("## Install script (default)")).toBeLessThan(body.indexOf("## npm"));
 
   // The .md route is a companion to the HTML page, which must still render.
   const html = await request.get("/docs/start/install/");

@@ -4,9 +4,9 @@
     "noEmit": false,
     "declaration": true,
     "emitDeclarationOnly": true,
-    "outDir": "./dist/npm-extension-types",
-    "rootDir": "./src"
+    "outDir": "./packages/hunk/dist/npm-extension-types",
+    "rootDir": "./packages/hunk/src"
   },
   "include": [],
-  "files": ["src/extension-api/index.ts"]
+  "files": ["packages/hunk/src/extension-api/index.ts"]
 }

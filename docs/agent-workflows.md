@@ -8,7 +8,7 @@ Use Hunk with agents in two ways:
 ## Recommended workflow: steer a live Hunk window
 
 1. Open Hunk in one terminal with a normal review command such as `hunk diff` or `hunk show`.
-2. Load the Hunk review skill: [`skills/hunk-review/SKILL.md`](../skills/hunk-review/SKILL.md).
+2. Load the Hunk review skill: [`packages/hunk/skills/hunk-review/SKILL.md`](../packages/hunk/skills/hunk-review/SKILL.md).
 3. Ask the agent to use the skill and review the current session.
 
 A good generic prompt is:
@@ -25,15 +25,7 @@ When a Hunk TUI starts, it registers with a local loopback daemon. `hunk session
 
 Most users only need `hunk session ...`. Use `hunk mcp serve` only for manual startup or debugging of the local daemon.
 
-If `hunk session list` reports no sessions while Hunk is visibly running, the agent sandbox may be blocking loopback access. Probe the daemon directly:
-
-```bash
-curl -s -X POST http://127.0.0.1:47657/session-api \
-  -H 'content-type: application/json' \
-  --data '{"action":"list"}'
-```
-
-If this shows sessions, rerun the command with the agent's network/sandbox escalation. If you run the daemon with a custom `HUNK_MCP_PORT`, use that port instead.
+If `hunk session list` reports no sessions while Hunk is visibly running, the agent sandbox may be blocking loopback access. Rerun `hunk session list --json` with the agent's network/sandbox escalation. Do not probe `/session-api` with raw `curl`: session controls require an automatically discovered, owner-private caller credential and signed responses, and Hunk intentionally exposes no credential flags.
 
 ## The commands you will use most
 
@@ -50,6 +42,10 @@ hunk session review --repo . --json
 - `list` shows the active Hunk windows
 - `get --repo .` confirms which live session matches the current repo
 - `review --json` returns the loaded file and hunk structure without dumping the full raw patch
+
+When a CLI extension delegated the review, JSON list, context, and review outputs may also include a
+bounded `review` descriptor with provider, title, URL, and kind-specific identity. It is descriptive
+context only and does not add remote provider or reload capabilities.
 
 Only add `--include-patch` when an agent truly needs raw unified diff text:
 
@@ -94,18 +90,23 @@ For one note, use `comment add`:
 hunk session comment add --repo . --file README.md --new-line 103 --summary "Tighten this wording"
 ```
 
-For multiple notes, use one stdin batch with `comment apply`:
+Reply to an existing note by id; the reply inherits the parent's file and code anchor:
 
 ```bash
-printf '%s\n' '{"comments":[{"filePath":"README.md","newLine":103,"summary":"Tighten this wording"}]}' \
+hunk session comment add --repo . --reply-to user:123 --summary "Addressed in the latest revision"
+```
+
+For multiple notes or replies, use one stdin batch with `comment apply`:
+
+```bash
+printf '%s\n' '{"comments":[{"filePath":"README.md","newLine":103,"summary":"Tighten this wording"},{"replyTo":"user:123","summary":"Addressed"}]}' \
   | hunk session comment apply --repo . --stdin
 ```
 
-`comment apply` payload items need:
+Each `comment apply` item requires `summary` and either:
 
-- `filePath`
-- `summary`
-- exactly one target such as `hunk`, `hunkNumber`, `oldLine`, or `newLine`
+- `replyTo` by itself to inherit an existing note's anchor, or
+- `filePath` with exactly one target such as `hunk`, `hunkNumber`, `oldLine`, or `newLine`
 
 If you want the UI to jump to the new note, add `--focus` to `comment add` or `comment apply`.
 

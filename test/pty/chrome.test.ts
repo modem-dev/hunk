@@ -2,7 +2,7 @@ import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { availableThemes } from "../../src/ui/themes";
+import { availableThemes } from "../../packages/hunk/src/ui/themes";
 import { createPtyHarness, lineIndexOf, rowCellBackgrounds, sleep } from "./harness";
 
 const harness = createPtyHarness();
@@ -20,6 +20,7 @@ describe("PTY chrome", () => {
     const session = await harness.launchHunk({
       args: [
         "diff",
+        "--files",
         fixture.before,
         fixture.after,
         "--mode",
@@ -123,7 +124,7 @@ describe("PTY chrome", () => {
     const configHome = mkdtempSync(join(tmpdir(), "hunk-tuistory-save-view-"));
     const fixture = harness.createMultiHunkFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after],
+      args: ["diff", "--files", fixture.before, fixture.after],
       cwd: fixture.dir,
       cols: 120,
       rows: 24,
@@ -260,12 +261,12 @@ describe("PTY chrome", () => {
         session,
         (text) =>
           (text.includes("Keyboard help") || text.includes("Controls help")) &&
-          text.includes("move line-by-line"),
+          text.includes("move through lines and notes"),
         5_000,
       );
 
       expect(help.includes("Keyboard help") || help.includes("Controls help")).toBe(true);
-      expect(help).toContain("move line-by-line");
+      expect(help).toContain("move through lines and notes");
     } finally {
       session.close();
     }
@@ -290,23 +291,23 @@ describe("PTY chrome", () => {
       await session.click(/View/);
       const menu = await harness.waitForSnapshot(
         session,
-        (text) => text.includes("Stacked view") && text.includes("Split view"),
+        (text) => text.includes("Unified view") && text.includes("Split view"),
         5_000,
       );
 
-      expect(menu).toContain("Stacked view");
+      expect(menu).toContain("Unified view");
       expect(menu).toContain("Split view");
 
-      await session.click(/Stacked view/);
-      const stacked = await harness.waitForSnapshot(
+      await session.click(/Unified view/);
+      const unified = await harness.waitForSnapshot(
         session,
         (text) => !/▌.*▌/.test(text) && text.includes("1   -  export const alpha = 1;"),
         5_000,
       );
 
-      expect(stacked).not.toMatch(/▌.*▌/);
-      expect(stacked).toContain("1   -  export const alpha = 1;");
-      expect(stacked).toContain("1   -  export const beta = 1;");
+      expect(unified).not.toMatch(/▌.*▌/);
+      expect(unified).toContain("1   -  export const alpha = 1;");
+      expect(unified).toContain("1   -  export const beta = 1;");
     } finally {
       session.close();
     }
@@ -340,22 +341,21 @@ describe("PTY chrome", () => {
       await session.press("right");
       const viewMenu = await harness.waitForSnapshot(
         session,
-        (text) => text.includes("Split view") && text.includes("Stacked view"),
+        (text) => text.includes("Split view") && text.includes("Unified view"),
         5_000,
       );
 
       expect(viewMenu).toContain("Auto layout");
 
-      await session.press("down");
       await session.press("enter");
-      const stacked = await harness.waitForSnapshot(
+      const unified = await harness.waitForSnapshot(
         session,
         (text) => !/▌.*▌/.test(text) && text.includes("1   -  export const alpha = 1;"),
         5_000,
       );
 
-      expect(stacked).not.toMatch(/▌.*▌/);
-      expect(stacked).toContain("1   -  export const alpha = 1;");
+      expect(unified).not.toMatch(/▌.*▌/);
+      expect(unified).toContain("1   -  export const alpha = 1;");
     } finally {
       session.close();
     }

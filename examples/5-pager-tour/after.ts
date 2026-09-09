@@ -34,7 +34,7 @@ export const tourLine24 =
   "Readable filler text makes navigation practice feel intentional instead of synthetic.";
 export const tourLine25 = "A few distinct hunks are better than one endless wall of edits.";
 export const tourLine26 = "Split view is great when you want both sides visible at once.";
-export const tourLine27 = "Stack view can feel calmer when lines are long or heavily wrapped.";
+export const tourLine27 = "Unified view can feel calmer when lines are long or heavily wrapped.";
 export const tourLine28 =
   "Pager mode should stay familiar to people who already live in git diff and less.";
 export const tourLine29 =

@@ -16,7 +16,7 @@ It exists to demonstrate that Hunk's interactive extension surfaces compose, so 
 ## Try it from this checkout
 
 ```bash
-bun run src/main.tsx -- diff --extension ./examples/extensions/inline-edit
+bun run packages/hunk/src/main.tsx -- diff --extension ./examples/extensions/inline-edit
 ```
 
 ## Install it globally
