@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { mkdtemp, mkdir, rename, rm, unlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rename, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { watch as chokidarWatch } from "chokidar";
 
 import { createWatchController } from "./controller";
 import { createWatchEventSource, createWatchObserver, type WatchObserver } from "./observer";
 import type { WatchPlan } from "./plan";
+import { createChunkedTreeWatcher } from "./portableTree";
 
 const WAIT_MS = 3_000;
 const ABSENCE_MS = 250;
@@ -47,21 +49,25 @@ function entriesPlan(directory: string, entries: string[]): WatchPlan {
 }
 
 /** Start an observer and expose queued events so mutations cannot race test listeners. */
-async function startObserver(plan: WatchPlan) {
+async function startObserver(plan: WatchPlan, platform = process.platform) {
   let eventCount = 0;
   let pendingEvents = 0;
   const waiters: Array<() => void> = [];
-  const observer = createWatchObserver(plan, {
-    onEvent() {
-      eventCount++;
-      const waiter = waiters.shift();
-      if (waiter) waiter();
-      else pendingEvents++;
+  const observer = createWatchObserver(
+    plan,
+    {
+      onEvent() {
+        eventCount++;
+        const waiter = waiters.shift();
+        if (waiter) waiter();
+        else pendingEvents++;
+      },
+      onError(error) {
+        throw error;
+      },
     },
-    onError(error) {
-      throw error;
-    },
-  });
+    { platform },
+  );
   cleanups.push(async () => {
     observer.close();
     await bounded(observer.closed);
@@ -266,6 +272,121 @@ describe("filesystem watch observer", () => {
       () => readFileSync(worktreeFile, "utf8"),
       () => writeFile(metadata, "after"),
     );
+  });
+
+  // Creating directory symlinks requires privileges not guaranteed on Windows CI.
+  test.skipIf(process.platform === "win32")(
+    "portable batches prune ignored and symlinked trees",
+    async () => {
+      const parent = await temporaryDirectory();
+      const directory = join(parent, "worktree");
+      const ignored = join(directory, "node_modules");
+      const external = join(parent, "external");
+      await mkdir(ignored, { recursive: true });
+      await mkdir(external);
+      await writeFile(join(ignored, "dependency.ts"), "before");
+      await writeFile(join(external, "external.ts"), "before");
+      await symlink(external, join(directory, "linked"), "dir");
+      const source = await startObserver(
+        {
+          coverage: "hybrid",
+          targets: [
+            { kind: "directory-tree", directory, ignoredRoots: [ignored], sources: ["worktree"] },
+          ],
+        },
+        "linux",
+      );
+      const initialEvents = source.eventCount;
+      await writeFile(join(ignored, "dependency.ts"), "after");
+      await writeFile(join(external, "external.ts"), "after");
+      await new Promise((resolve) => setTimeout(resolve, ABSENCE_MS));
+      expect(source.eventCount).toBe(initialEvents);
+      await mkdir(join(directory, "new", "nested"), { recursive: true });
+      await bounded(source.nextEvent());
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const afterCreation = source.eventCount;
+      await writeFile(join(directory, "new", "nested", "file.ts"), "after");
+      await bounded(
+        (async () => {
+          while (source.eventCount === afterCreation)
+            await new Promise((resolve) => setTimeout(resolve, 5));
+        })(),
+      );
+    },
+  );
+
+  test.skipIf(process.platform === "win32")(
+    "a portable symlink root does not traverse its referent",
+    async () => {
+      const parent = await temporaryDirectory();
+      const external = join(parent, "external");
+      const directory = join(parent, "linked");
+      await mkdir(join(external, "nested"), { recursive: true });
+      const file = join(external, "nested", "file.ts");
+      await writeFile(file, "before");
+      await symlink(external, directory, "dir");
+      const admitted: string[] = [];
+      const source = createChunkedTreeWatcher(
+        directory,
+        () => false,
+        () => {},
+        {
+          watch(paths, options) {
+            admitted.push(...(typeof paths === "string" ? [paths] : paths));
+            return chokidarWatch(paths, options);
+          },
+        },
+      );
+      cleanups.push(() => bounded(source.close()));
+      await bounded(new Promise<void>((resolveReady) => source.whenReady(resolveReady)));
+      await writeFile(file, "after");
+      await new Promise((resolve) => setTimeout(resolve, ABSENCE_MS));
+      // A symlink-root watcher can emit conservative hints from its parent. Assert the
+      // traversal boundary, not absence of hints from that public Chokidar fallback.
+      expect(admitted).toEqual([directory]);
+    },
+  );
+
+  test("portable observation recovers a missing root without recursively watching its parent", async () => {
+    const parent = await temporaryDirectory();
+    const directory = join(parent, "missing");
+    const errors: unknown[] = [];
+    let events = 0;
+    const observer = createWatchObserver(
+      {
+        coverage: "hybrid",
+        targets: [{ kind: "directory-tree", directory, ignoredRoots: [], sources: ["worktree"] }],
+      },
+      {
+        onEvent() {
+          events++;
+        },
+        onError(error) {
+          errors.push(error);
+        },
+      },
+      { platform: "linux" },
+    );
+    cleanups.push(async () => {
+      observer.close();
+      await bounded(observer.closed);
+    });
+    await bounded(observer.ready);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({ code: "ENOENT" });
+    for (let index = 0; index < 2; index++) {
+      await mkdir(join(directory, "nested"), { recursive: true });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      const beforeWrite = events;
+      await writeFile(join(directory, "nested", "file.ts"), "content");
+      await bounded(
+        (async () => {
+          while (events === beforeWrite) await new Promise((resolve) => setTimeout(resolve, 5));
+        })(),
+      );
+      await rm(directory, { recursive: true });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
   });
 
   test("close releases handles and suppresses later events", async () => {

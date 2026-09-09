@@ -1,9 +1,15 @@
+/**
+ * Observe review inputs and forward event hints, startup progress, and final readiness.
+ * Native recursive paths remain platform-owned. Portable trees use separate depth-zero
+ * Chokidar batches for public ready boundaries; one wide directory's scan remains indivisible.
+ */
 import { watch as nativeFsWatch } from "node:fs";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { watch as chokidarWatch, type ChokidarOptions, type FSWatcher } from "chokidar";
 
 import type { WatchEventSource, WatchEventSourceCallbacks } from "./controller";
 import type { DirectoryTreeWatchTarget, WatchPlan, WatchTarget } from "./plan";
+import { createChunkedTreeWatcher } from "./portableTree";
 
 export interface WatchObserver extends WatchEventSource {
   ready: Promise<void>;
@@ -14,6 +20,7 @@ export interface WatchRegistration {
   close(): void | Promise<void>;
   onError(callback: (error: unknown) => void): void;
   whenReady(callback: () => void): void;
+  onProgress?(callback: () => void): void;
 }
 
 export type WatchTreeBackend = (
@@ -53,17 +60,34 @@ function normalizedPath(path: string) {
   return process.platform === "win32" ? absolute.toLowerCase() : absolute;
 }
 
-/** Build an ancestor-set matcher whose cost depends on path depth, not ignored-root count. */
+/** Match immutable ignored roots without repeatedly walking shared ancestors during a scan. */
 function createIgnoredRootMatcher(ignoredRoots: string[]) {
   const roots = new Set(ignoredRoots.map(normalizedPath));
+  const decisions = new Map<string, boolean>();
   return (path: string) => {
     let current = normalizedPath(path);
+    const ancestors: string[] = [];
+    let ignored = false;
     for (;;) {
-      if (roots.has(current)) return true;
+      if (roots.has(current)) {
+        ignored = true;
+        break;
+      }
+      const cached = decisions.get(current);
+      if (cached !== undefined) {
+        ignored = cached;
+        break;
+      }
+      ancestors.push(current);
       const parent = dirname(current);
-      if (parent === current) return false;
+      if (parent === current) break;
       current = parent;
     }
+    // Root membership cannot change within a plan. Bound memoization so runtime file churn
+    // cannot retain every path ever observed; clearing it changes cost, never pruning policy.
+    if (decisions.size + ancestors.length > 8_192) decisions.clear();
+    for (const ancestor of ancestors) decisions.set(ancestor, ignored);
+    return ignored;
   };
 }
 
@@ -123,12 +147,7 @@ function createPortableTreeWatcher(
   onEvent: () => void,
 ): WatchRegistration {
   const isIgnored = createIgnoredRootMatcher(target.ignoredRoots);
-  const watcher = chokidarWatch(target.directory, {
-    ...WATCH_OPTIONS,
-    ignored: (path) => isIgnored(path),
-  });
-  watcher.on("all", onEvent);
-  return chokidarRegistration(watcher);
+  return createChunkedTreeWatcher(target.directory, isIgnored, onEvent);
 }
 
 const DEFAULT_TREE_BACKENDS = {
@@ -199,6 +218,7 @@ export function createWatchObserver(
   const markReady = () => {
     if (isClosed) return;
     remainingReady--;
+    callbacks.onProgress?.();
     if (remainingReady === 0) {
       resolveReady();
       callbacks.onReady?.();
@@ -211,6 +231,9 @@ export function createWatchObserver(
       registrations.push(registration);
       registration.onError((error) => {
         if (!isClosed) callbacks.onError(error);
+      });
+      registration.onProgress?.(() => {
+        if (!isClosed) callbacks.onProgress?.();
       });
       registration.whenReady(markReady);
     }
