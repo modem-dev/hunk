@@ -50,6 +50,8 @@ describe("PTY key routing", () => {
       await session.press("f10");
       await session.waitForText(/Reload/, { timeout: 5_000 });
       await session.press("escape");
+      // Keep the menu's lone Escape separate from the next Escape-prefixed input.
+      await harness.waitForSnapshot(session, (text) => !text.includes("Toggle files/filter focus"));
 
       session.writeRaw("\u001bn");
       await session.waitForText(/Controls help/, { timeout: 5_000 });

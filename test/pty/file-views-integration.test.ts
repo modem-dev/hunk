@@ -158,6 +158,9 @@ describe("PTY file views", () => {
       expect(menu).toContain("File presentation: Raw diff");
 
       await session.press("escape");
+      // A short idle wait can finish while the terminal parser still holds a lone Escape.
+      // Verify close before F8 so the two inputs cannot become an Alt-modified function key.
+      await harness.waitForSnapshot(session, (text) => !text.includes("File presentation:"));
       await session.press("f8");
       await session.waitForText(/• new item/);
       await session.click(/View/);
@@ -167,6 +170,7 @@ describe("PTY file views", () => {
       expect(toggled).not.toContain("# Heading");
 
       await session.press("escape");
+      await harness.waitForSnapshot(session, (text) => !text.includes("File presentation:"));
       await session.press("]");
       await session.waitIdle();
     } finally {
