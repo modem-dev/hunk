@@ -24,7 +24,7 @@ head:
 
 ## [Hunk 0.22](/changelog/0.22/)
 
-Prerelease · September 8, 2026 · 1 release · 36 changes
+Prerelease · September 8, 2026 – September 9, 2026 · 2 releases · 39 changes
 
 Hunk 0.22 turns repository history into a responsive review workspace with commit-range browsing, persistent multiline selections, keyboard-driven threaded notes, and richer extension context.
 
