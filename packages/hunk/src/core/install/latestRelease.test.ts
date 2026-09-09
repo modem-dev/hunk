@@ -38,13 +38,13 @@ describe("release channel lookups", () => {
     expect(requested).toEqual(["https://formulae.brew.sh/api/formula/hunk.json"]);
   });
 
-  test("reads curl release metadata through the first-party endpoint", async () => {
+  test("reads curl release metadata through the first-party endpoint by default", async () => {
     const requested: string[] = [];
     const headers: Headers[] = [];
 
     await expect(
       fetchChannelVersions("curl", {
-        env: { HUNK_ENABLE_RELEASE_PROXY: "1" },
+        env: {},
         requestSource: "startup",
         currentVersion: "1.3.0",
         fetchImpl: async (input, init) => {
@@ -65,7 +65,7 @@ describe("release channel lookups", () => {
       const accepts: Array<string | null> = [];
       await expect(
         fetchChannelVersions("curl", {
-          env: { HUNK_ENABLE_RELEASE_PROXY: "1" },
+          env: {},
           fetchImpl: async (input, init) => {
             requested.push(String(input));
             accepts.push(new Headers(init?.headers).get("accept"));
@@ -83,25 +83,8 @@ describe("release channel lookups", () => {
     }
   });
 
-  test("uses GitHub directly unless first-party release testing is enabled", async () => {
-    const requested: string[] = [];
-    await expect(
-      fetchChannelVersions("curl", {
-        env: {},
-        fetchImpl: async (input) => {
-          requested.push(String(input));
-          return jsonResponse({ tag_name: "v1.4.0" });
-        },
-      }),
-    ).resolves.toEqual({ latest: "1.4.0" });
-    expect(requested).toEqual(["https://api.github.com/repos/modem-dev/hunk/releases/latest"]);
-  });
-
   test("bypasses first-party analytics when either opt-out is set", async () => {
-    for (const env of [
-      { HUNK_ENABLE_RELEASE_PROXY: "1", HUNK_DISABLE_ANALYTICS: "1" },
-      { HUNK_ENABLE_RELEASE_PROXY: "1", DO_NOT_TRACK: "1" },
-    ]) {
+    for (const env of [{ HUNK_DISABLE_ANALYTICS: "1" }, { DO_NOT_TRACK: "1" }]) {
       const requested: string[] = [];
       await expect(
         fetchChannelVersions("curl", {
@@ -119,7 +102,7 @@ describe("release channel lookups", () => {
   test("drops curl release metadata that is not a stable version", async () => {
     await expect(
       fetchChannelVersions("curl", {
-        env: { HUNK_ENABLE_RELEASE_PROXY: "1" },
+        env: {},
         fetchImpl: async (input) =>
           String(input).includes("updates.hunk.dev")
             ? jsonResponse({ version: "1.4.0-beta.1" })

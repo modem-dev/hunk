@@ -32,7 +32,7 @@ Hunk is a review-first terminal diff viewer for agent-authored changesets, built
 
 ## Install
 
-The default installation method on macOS and Linux downloads a standalone binary and installs it into `~/.hunk`. It checks the archive against the release checksum when both `SHA256SUMS` and a supported checksum tool are available, and warns otherwise. Release discovery stays direct to GitHub while Hunk's anonymous aggregate endpoint is evaluated; set `HUNK_ENABLE_RELEASE_PROXY=1` to opt into testing it:
+The default installation method on macOS and Linux downloads a standalone binary and installs it into `~/.hunk`. It checks the archive against the release checksum when both `SHA256SUMS` and a supported checksum tool are available, and warns otherwise. Release discovery uses Hunk's anonymous aggregate endpoint with direct GitHub fallback:
 
 ```bash
 curl -fsSL https://hunk.dev/install.sh | sh

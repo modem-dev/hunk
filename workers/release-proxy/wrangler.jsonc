@@ -3,6 +3,25 @@
   "name": "hunk-release-proxy",
   "main": "src/index.ts",
   "compatibility_date": "2026-08-01",
-  "routes": [{ "pattern": "updates.hunk.dev", "custom_domain": true }],
-  "observability": { "enabled": true },
+  "routes": [
+    {
+      "pattern": "updates.hunk.dev",
+      "custom_domain": true,
+    },
+  ],
+  "observability": {
+    "enabled": true,
+  },
+  "secrets": {
+    "required": ["GITHUB_TOKEN"],
+  },
+  "triggers": {
+    "crons": ["* * * * *"],
+  },
+  "kv_namespaces": [
+    {
+      "binding": "RELEASE_METADATA",
+      "id": "003a65eac0354e3f8f6f53bcd3b09949",
+    },
+  ],
 }

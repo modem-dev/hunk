@@ -16,7 +16,6 @@ const HOMEBREW_FORMULA_URL = "https://formulae.brew.sh/api/formula/hunk.json";
 const HUNK_CURL_RELEASE_URL = "https://updates.hunk.dev/v1/curl/latest";
 const GITHUB_LATEST_RELEASE_URL = "https://api.github.com/repos/modem-dev/hunk/releases/latest";
 const DEFAULT_RELEASE_FETCH_TIMEOUT_MS = 5_000;
-const ENABLE_RELEASE_PROXY_ENV = "HUNK_ENABLE_RELEASE_PROXY";
 const DISABLE_ANALYTICS_ENV = "HUNK_DISABLE_ANALYTICS";
 const DO_NOT_TRACK_ENV = "DO_NOT_TRACK";
 
@@ -125,13 +124,9 @@ export async function fetchHomebrewChannelVersions(
   return { latest: stable && isStableVersion(stable) ? stable : undefined };
 }
 
-/** Return whether this process explicitly opts into the first-party release proxy. */
+/** Return whether this process permits the first-party release proxy. */
 function releaseProxyEnabled(env: NodeJS.ProcessEnv | undefined) {
-  return (
-    env?.[ENABLE_RELEASE_PROXY_ENV] === "1" &&
-    env[DISABLE_ANALYTICS_ENV] !== "1" &&
-    env[DO_NOT_TRACK_ENV] !== "1"
-  );
+  return env?.[DISABLE_ANALYTICS_ENV] !== "1" && env?.[DO_NOT_TRACK_ENV] !== "1";
 }
 
 /** Build bounded headers for the first-party curl release endpoint. */
@@ -149,9 +144,9 @@ function curlReleaseHeaders(deps: ReleaseLookupDeps) {
 /**
  * Fetch the stable release published for curl installs.
  *
- * The opt-in first-party endpoint supplies aggregate release-check observability and normalized
- * metadata while it is evaluated before general rollout. Every other client and every endpoint
- * failure uses GitHub directly so the proxy can never make update discovery less reliable.
+ * The first-party endpoint supplies aggregate release-check observability and normalized metadata.
+ * Analytics opt-outs and every endpoint failure use GitHub directly so the proxy cannot make update
+ * discovery less reliable.
  */
 export async function fetchCurlChannelVersions(
   deps: ReleaseLookupDeps = {},

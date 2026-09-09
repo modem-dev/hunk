@@ -126,14 +126,14 @@ describe("startup update notice", () => {
     });
   });
 
-  test("reads the GitHub releases API for curl installer installs", async () => {
+  test("reads the first-party release endpoint for curl installer installs", async () => {
     await withTempStatePath(async (statePath) => {
       const requested: string[] = [];
       const headers: Headers[] = [];
 
       await expect(
         resolveStartupUpdateNotice({
-          env: { HUNK_ENABLE_RELEASE_PROXY: "1" },
+          env: {},
           fetchImpl: async (input, init) => {
             requested.push(String(input));
             headers.push(new Headers(init?.headers));

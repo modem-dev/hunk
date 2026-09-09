@@ -130,7 +130,7 @@ function runConflictCheck(
 
 /** Run default-version resolution against a stub downloader and an already-current target. */
 function runReleaseResolution(
-  options: { enableProxy?: boolean; proxyFails?: boolean; disableAnalytics?: boolean } = {},
+  options: { proxyFails?: boolean; disableAnalytics?: boolean; doNotTrack?: boolean } = {},
 ) {
   const root = mkdtempSync(join(tmpdir(), "hunk-install-release-"));
   const home = join(root, "home");
@@ -165,8 +165,8 @@ function runReleaseResolution(
         PATH: [toolsDir, targetDir, "/usr/bin", "/bin"].join(":"),
         CURL_LOG: curlLog,
         PROXY_FAILS: options.proxyFails ? "1" : "0",
-        HUNK_ENABLE_RELEASE_PROXY: options.enableProxy ? "1" : undefined,
         HUNK_DISABLE_ANALYTICS: options.disableAnalytics ? "1" : undefined,
+        DO_NOT_TRACK: options.doNotTrack ? "1" : undefined,
       },
       stdin: "ignore",
       stdout: "pipe",
@@ -251,12 +251,12 @@ describe("hunk.dev install script", () => {
   test.skipIf(process.platform === "win32")(
     "resolves through Hunk and falls back directly to GitHub",
     () => {
-      const proxied = runReleaseResolution({ enableProxy: true });
+      const proxied = runReleaseResolution();
       expect(proxied.exitCode).toBe(0);
       expect(proxied.requests).toEqual(["https://updates.hunk.dev/v1/curl/latest"]);
       expect(proxied.stdout).toContain("hunk 1.2.3 is already installed.");
 
-      const fallback = runReleaseResolution({ enableProxy: true, proxyFails: true });
+      const fallback = runReleaseResolution({ proxyFails: true });
       expect(fallback.exitCode).toBe(0);
       expect(fallback.requests).toEqual([
         "https://updates.hunk.dev/v1/curl/latest",
@@ -266,24 +266,15 @@ describe("hunk.dev install script", () => {
   );
 
   test.skipIf(process.platform === "win32")(
-    "uses GitHub directly unless proxy testing is enabled",
-    () => {
-      const result = runReleaseResolution();
-      expect(result.exitCode).toBe(0);
-      expect(result.requests).toEqual([
-        "https://api.github.com/repos/modem-dev/hunk/releases/latest",
-      ]);
-    },
-  );
-
-  test.skipIf(process.platform === "win32")(
     "bypasses Hunk release analytics when opted out",
     () => {
-      const result = runReleaseResolution({ enableProxy: true, disableAnalytics: true });
-      expect(result.exitCode).toBe(0);
-      expect(result.requests).toEqual([
-        "https://api.github.com/repos/modem-dev/hunk/releases/latest",
-      ]);
+      for (const options of [{ disableAnalytics: true }, { doNotTrack: true }]) {
+        const result = runReleaseResolution(options);
+        expect(result.exitCode).toBe(0);
+        expect(result.requests).toEqual([
+          "https://api.github.com/repos/modem-dev/hunk/releases/latest",
+        ]);
+      }
     },
   );
 

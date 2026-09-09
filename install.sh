@@ -18,8 +18,6 @@
 #   HUNK_NO_MODIFY_PATH   set to 1 to leave shell startup files alone
 #   HUNK_ALLOW_CONFLICTING_INSTALLS
 #                         set to 1 to install alongside another Hunk
-#   HUNK_ENABLE_RELEASE_PROXY
-#                         set to 1 to test Hunk's aggregate release endpoint
 #   HUNK_DISABLE_ANALYTICS
 #                         set to 1 to resolve releases directly from GitHub
 #   DO_NOT_TRACK          set to 1 to resolve releases directly from GitHub
@@ -77,8 +75,6 @@ Environment:
   HUNK_NO_MODIFY_PATH  set to 1 for --no-modify-path
   HUNK_ALLOW_CONFLICTING_INSTALLS
                        set to 1 for --force
-  HUNK_ENABLE_RELEASE_PROXY
-                       set to 1 to test Hunk's aggregate release endpoint
   HUNK_DISABLE_ANALYTICS
                        set to 1 to bypass Hunk's aggregate release endpoint
   DO_NOT_TRACK         set to 1 to bypass Hunk's aggregate release endpoint
@@ -438,7 +434,7 @@ main() {
 			release_current="$(installed_version "${HOME}/.hunk/bin/hunk")"
 		fi
 		# Parsed with sed rather than jq so the installer needs nothing but a shell and a downloader.
-		if [ "${HUNK_ENABLE_RELEASE_PROXY:-0}" = "1" ] && [ "${HUNK_DISABLE_ANALYTICS:-0}" != "1" ] && [ "${DO_NOT_TRACK:-0}" != "1" ]; then
+		if [ "${HUNK_DISABLE_ANALYTICS:-0}" != "1" ] && [ "${DO_NOT_TRACK:-0}" != "1" ]; then
 			proxy_payload="$(fetch_release_proxy "$release_current" 2>/dev/null)" || proxy_payload=""
 			version="$(printf '%s\n' "$proxy_payload" | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
 			printf '%s\n' "$version" | grep -q '^[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$' || version=""
