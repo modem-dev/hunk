@@ -1,5 +1,5 @@
 import { afterAll, afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cleanupTestConfigHomes, createTestConfigHome } from "../helpers/config-home";
@@ -585,4 +585,70 @@ describe("TTY render smoke", () => {
     expect(output).toContain("@@ -1 +1,2 @@");
     expect(output).toContain("export const answer = 42;");
   });
+
+  ttyTest(
+    "status enters a real multi-file diff and returns before restoring the terminal",
+    async () => {
+      const root = mkdtempSync(join(tmpdir(), "hunk-status-tty-"));
+      tempDirs.push(root);
+      const cwd = join(root, "repo");
+      mkdirSync(cwd);
+      const git = (args: string[]) => {
+        const result = Bun.spawnSync(["git", ...args], {
+          cwd,
+          stdout: "pipe",
+          stderr: "pipe",
+          env: {
+            ...process.env,
+            GIT_AUTHOR_NAME: "Status",
+            GIT_AUTHOR_EMAIL: "status@example.com",
+            GIT_COMMITTER_NAME: "Status",
+            GIT_COMMITTER_EMAIL: "status@example.com",
+          },
+        });
+        if (result.exitCode) throw new Error(result.stderr.toString());
+      };
+      git(["init", "-qb", "main"]);
+      writeFileSync(join(cwd, "one.ts"), "export const statusOne = 1;\n");
+      writeFileSync(join(cwd, "two.ts"), "export const statusTwo = 1;\n");
+      git(["add", "."]);
+      git(["commit", "-qm", "Status smoke"]);
+      writeFileSync(join(cwd, "one.ts"), "export const statusOne = 2;\n");
+      writeFileSync(join(cwd, "two.ts"), "export const statusTwo = 2;\n");
+      const transcript = join(root, "status.typescript");
+      const proc = spawnTtySmokeProcess(
+        `${shellQuote(process.execPath)} run ${shellQuote(sourceEntrypoint)} status --vcs git --no-extensions`,
+        cwd,
+        transcript,
+      );
+      try {
+        const status = await waitForTranscript(proc, transcript, "status ready", (output) =>
+          output.includes("Other worktrees"),
+        );
+        const review = await writeTtyInputUntil(
+          proc,
+          transcript,
+          status.length,
+          "u",
+          "full comparison",
+          (output) => output.includes("statusTwo = 2"),
+        );
+        expect(stripTerminalControl(review)).toContain("statusOne = 2");
+        await writeTtyInput(proc, "q");
+        await waitForTranscriptUpdate(
+          proc,
+          transcript,
+          review.length,
+          "return to status",
+          (output) => output.includes("Other worktrees"),
+        );
+        await writeTtyInput(proc, "q");
+        await waitForTtyExit(proc);
+        expect(await readTranscript(transcript)).toContain("\x1b[?1049l");
+      } finally {
+        proc.kill();
+        await proc.exited;
+      }
+    },
+  );
 });

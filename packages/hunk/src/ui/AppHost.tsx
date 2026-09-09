@@ -63,7 +63,9 @@ export function AppHost({
   onActiveBootstrapChange,
   onFirstFrameReady,
   onViewPreferencesChange,
-  returnToHistory = false,
+  returnToSurface,
+  initialFilePath,
+  sessionCustomThemes,
   extensionSession,
   extensionOwnership,
   onRequestSessionShutdown,
@@ -85,8 +87,12 @@ export function AppHost({
   onFirstFrameReady?: () => void;
   /** Publish live preferences to the owner of a routed review surface. */
   onViewPreferencesChange?: (preferences: PersistedViewPreferences) => void;
-  /** Present quit as returning to an owning history surface. */
-  returnToHistory?: boolean;
+  /** Present quit as returning to an owning status or history surface. */
+  returnToSurface?: "history" | "status";
+  /** Reveal a launch-selected path within the full comparison, only on first mount. */
+  initialFilePath?: string;
+  /** Keep the owning session's custom palettes across source-target reloads. */
+  sessionCustomThemes?: AppBootstrap["customThemes"];
   /** Session authority shared by every routed surface in this process. */
   extensionSession: ExtensionSession;
   /** Whether this surface may ask the session to adopt a replacement registry. */
@@ -329,6 +335,7 @@ export function AppHost({
           configured,
           cwd,
           extensions,
+          sessionCustomThemes,
           loadAtCwd: true,
           baseVcsCatalog,
         });
@@ -464,6 +471,7 @@ export function AppHost({
     [
       extensionLifecycleEnabled,
       extensionOwnership,
+      sessionCustomThemes,
       activeExtensionSession,
       activeThemeController,
       hostClient,
@@ -607,7 +615,8 @@ export function AppHost({
       onQuit={quitAfterShutdownEvent}
       onFirstFrameReady={onFirstFrameReady}
       onViewPreferencesChange={onViewPreferencesChange}
-      returnToHistory={returnToHistory}
+      returnToSurface={returnToSurface}
+      initialFilePath={initialFilePath}
       onRegisterWorkspaceRefreshRequest={registerWorkspaceRefreshRequest}
       onReloadSession={reloadSession}
       onRequestExtensionReviewReload={requestExtensionReviewReload}

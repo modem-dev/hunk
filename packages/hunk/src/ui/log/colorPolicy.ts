@@ -1,6 +1,6 @@
 import type { ThemeMode } from "@opentui/core";
 import type { HistoryColorMode } from "../../core/run/commandInputs";
-import type { AppTheme } from "../themes";
+import { TRANSPARENT_BACKGROUND, withTransparentSurfaces, type AppTheme } from "../themes";
 import { resolveHistoryColor } from "../history/staticProjection";
 
 export interface InteractiveLogPalette {
@@ -51,7 +51,7 @@ export function monochromeLogTheme(theme: AppTheme, terminalMode: ThemeMode): Ap
   const background = light ? "#ffffff" : "#000000";
   const foreground = light ? "#000000" : "#ffffff";
   const selection = light ? "#d0d0d0" : "#404040";
-  return {
+  const neutral: AppTheme = {
     ...theme,
     id: "terminal-monochrome",
     label: "Terminal monochrome",
@@ -95,4 +95,5 @@ export function monochromeLogTheme(theme: AppTheme, terminalMode: ThemeMode): Ap
     ) as AppTheme["syntaxColors"],
     syntaxScopeOverrides: undefined,
   };
+  return theme.background === TRANSPARENT_BACKGROUND ? withTransparentSurfaces(neutral) : neutral;
 }

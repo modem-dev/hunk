@@ -33,6 +33,18 @@ export {
   HunkExtensionUserError,
 } from "./types.js";
 export type {
+  ExtensionVcsStatusFact,
+  ExtensionVcsStatusPathState,
+  ExtensionVcsStatusPath,
+  ExtensionVcsStatusHead,
+  ExtensionVcsStatusFetch,
+  ExtensionVcsStatusUpstream,
+  ExtensionVcsStatusOperation,
+  ExtensionVcsStatusWorktree,
+  ExtensionVcsStatusWorktreeSummary,
+  ExtensionVcsStatusSiblings,
+  ExtensionVcsStatusSnapshot,
+  ExtensionVcsStatusCapability,
   AgentAnnotation,
   AgentFileContext,
   ChangesetTransform,

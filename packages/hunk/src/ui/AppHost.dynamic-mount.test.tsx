@@ -28,7 +28,7 @@ function DynamicReviewHost({ onReady }: { onReady: () => void }) {
         ],
       })}
       onFirstFrameReady={onReady}
-      returnToHistory
+      returnToSurface="history"
     />
   );
 }

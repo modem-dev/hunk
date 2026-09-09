@@ -26,6 +26,7 @@ import {
 } from "./types";
 import { parseKeyChord, toKeyChordList } from "../lib/commandKeys";
 import { toUserFacingError } from "../core/run/errors";
+import { toInternalVcsStatus } from "./vcsStatus";
 import { toInternalVcsPatchResult } from "./vcsPatchResult";
 import type {
   ExtensionVcsHistoryCommit,
@@ -485,6 +486,7 @@ export function toInternalVcsAdapter(
     "name",
     "operations",
     "history",
+    "status",
     "detect",
     "detectionPriority",
   ]);
@@ -568,6 +570,7 @@ export function toInternalVcsAdapter(
       return { id: adapterId, repoRoot: detectionFields.repoRoot };
     },
     operations: internalOperations,
+    status: toInternalVcsStatus(adapterFields.status),
     ...(history && {
       history: {
         async open(input, context) {
