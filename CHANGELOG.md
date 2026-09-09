@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.22.0-beta.1
+
+### Minor Changes
+
+- [#1064](https://github.com/modem-dev/hunk/pull/1064) [`661534f`](https://github.com/modem-dev/hunk/commit/661534f40a4c258f756679797c7e6738b72051da) - Show commit and comparison information, including short revision IDs, above direct CLI revision
+  reviews for Git, Jujutsu, and Sapling.
+
+### Patch Changes
+
+- [#1069](https://github.com/modem-dev/hunk/pull/1069) [`f5b8b24`](https://github.com/modem-dev/hunk/commit/f5b8b247f2d9a20ff96fc1e53be8377b2b2397f4) - Route curl-install release checks through globally refreshed metadata by default while retaining direct GitHub fallback and analytics opt-outs.
+
 ## 0.22.0-beta.0
 
 ### Minor Changes
