@@ -42,6 +42,10 @@ import type { ExtensionNotifyType, ExtensionLoadResult } from "../extensions/typ
 import type { ReviewProducer } from "../app/review/producer";
 import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
 import type { ReloadedSessionResult, ReloadSessionOptions } from "../session/types";
+// Keep lightweight interaction chrome synchronous: first-use lazy suspension otherwise
+// delays its visible commit behind React's Suspense fallback/retry throttle.
+import { HelpDialog } from "./components/chrome/HelpDialog";
+import { MenuDropdown } from "./components/chrome/MenuDropdown";
 import { MenuBar } from "./components/chrome/MenuBar";
 import { ConfirmDialog, confirmDialogHeight } from "./components/chrome/ConfirmDialog";
 import { ExtensionDialog } from "./components/chrome/ExtensionDialog";
@@ -124,12 +128,6 @@ const FAST_CODE_HORIZONTAL_SCROLL_COLUMNS = 8;
 
 const LazyAgentSkillDialog = lazy(async () => ({
   default: (await import("./components/chrome/AgentSkillDialog")).AgentSkillDialog,
-}));
-const LazyHelpDialog = lazy(async () => ({
-  default: (await import("./components/chrome/HelpDialog")).HelpDialog,
-}));
-const LazyMenuDropdown = lazy(async () => ({
-  default: (await import("./components/chrome/MenuDropdown")).MenuDropdown,
 }));
 const LazyThemeSelectorDialog = lazy(async () => ({
   default: (await import("./components/chrome/ThemeSelectorDialog")).ThemeSelectorDialog,
@@ -1614,24 +1612,22 @@ export function App({
       ) : null}
 
       {activeMenuId && activeMenuSpec ? (
-        <Suspense fallback={null}>
-          <LazyMenuDropdown
-            activeMenuId={activeMenuId}
-            activeMenuEntries={activeMenuEntries}
-            activeMenuItemIndex={activeMenuItemIndex}
-            activeMenuSpec={activeMenuSpec}
-            activeMenuWidth={activeMenuWidth}
-            top={showMenuBar ? 1 : 0}
-            terminalHeight={terminal.height}
-            terminalWidth={terminal.width}
-            theme={baseTheme}
-            onHoverItem={setActiveMenuItemIndex}
-            onSelectItem={(entry) => {
-              entry.action();
-              closeMenu();
-            }}
-          />
-        </Suspense>
+        <MenuDropdown
+          activeMenuId={activeMenuId}
+          activeMenuEntries={activeMenuEntries}
+          activeMenuItemIndex={activeMenuItemIndex}
+          activeMenuSpec={activeMenuSpec}
+          activeMenuWidth={activeMenuWidth}
+          top={showMenuBar ? 1 : 0}
+          terminalHeight={terminal.height}
+          terminalWidth={terminal.width}
+          theme={baseTheme}
+          onHoverItem={setActiveMenuItemIndex}
+          onSelectItem={(entry) => {
+            entry.action();
+            closeMenu();
+          }}
+        />
       ) : null}
 
       {showAgentSkill ? (
@@ -1648,15 +1644,13 @@ export function App({
       ) : null}
 
       {showHelp ? (
-        <Suspense fallback={null}>
-          <LazyHelpDialog
-            commands={appCommands}
-            terminalHeight={terminal.height}
-            terminalWidth={terminal.width}
-            theme={baseTheme}
-            onClose={closeHelp}
-          />
-        </Suspense>
+        <HelpDialog
+          commands={appCommands}
+          terminalHeight={terminal.height}
+          terminalWidth={terminal.width}
+          theme={baseTheme}
+          onClose={closeHelp}
+        />
       ) : null}
 
       {extensionDialog ? (
