@@ -289,8 +289,10 @@ Sandbox-specific bullets are marked; each cost real debugging time.
   the transition length in seconds. The planner interpolates camera changes
   and outline geometry, while the stage keeps the camera inside the captured
   image and paints an animated glow around the source-aligned region. Set the
-  same `highlightKey` on related keyframes when their normalized coordinates
-  share one capture geometry; outlines never leak across unrelated images.
+  same `cameraKey` or `highlightKey` on related keyframes when their normalized
+  coordinates share one capture geometry. Cross-image camera changes cut to
+  their target unless `cameraKey` explicitly permits a pan, and outlines never
+  leak across unrelated images.
 - Caption HTML vocabulary: `<span class="badge">NEW</span>` amber pill,
   `<span class="hl">` amber highlight, `<span class="dim">` muted. Cards use
   `badge` / `h1`/`h2` / `sub` / `cmds`+`cmd` / `foot` classes from
@@ -319,8 +321,9 @@ Use this framing process:
 5. Give irregular states explicit rectangles. A growing commit range that
    crosses day separators should use measured per-keyframe heights instead of
    assuming every added item occupies the same vertical distance.
-6. Share a `highlightKey` only when captures use the same source geometry. This
-   allows the outline to morph safely; unrelated keyframes must fade separately.
+6. Share `cameraKey` or `highlightKey` only when captures use the same source
+   geometry. This allows pans and outline morphs across related captures;
+   unrelated keyframes cut or fade separately.
 
 The outline should direct attention, not become the subject. Use one callout at
 a time, keep labels short, and remove the outline once the viewer has enough

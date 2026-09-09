@@ -122,9 +122,11 @@ function createHistoryDemoRepo() {
   runGit(["config", "user.name", "Hunk Team"], repoDir);
   runGit(["config", "user.email", "hello@hunk.dev"], repoDir);
 
+  const utcBaseDate = new Date();
+  utcBaseDate.setUTCHours(0, 0, 0, 0);
   /** Keep fixture ages current while preserving stable UTC day groups. */
   function utcDate(daysAgo: number, hour: number, minute: number) {
-    const date = new Date();
+    const date = new Date(utcBaseDate);
     date.setUTCHours(hour, minute, 0, 0);
     date.setUTCDate(date.getUTCDate() - daysAgo);
     return date.toISOString();

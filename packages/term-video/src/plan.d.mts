@@ -20,6 +20,8 @@ export interface Shot {
   enter?: boolean;
   /** Source-relative camera center and zoom; omitted terminal shots use the full frame. */
   camera?: CameraTarget;
+  /** Identity shared by captured frames whose camera coordinates are compatible. */
+  cameraKey?: string;
   /** Source-relative rectangle outlined over the terminal frame. */
   highlight?: HighlightTarget;
   /** Identity shared by captured frames whose highlight coordinates are compatible. */

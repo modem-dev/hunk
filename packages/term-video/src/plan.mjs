@@ -4,7 +4,7 @@
 //
 // Shot shape (one entry per storyboard beat):
 //   { kind: "card", html, dur, enter? }
-//   { kind: "term", img, title, dur, caption?, capKey?, enter?, camera?, highlight?, motion? }
+//   { kind: "term", img, title, dur, caption?, capKey?, enter?, camera?, cameraKey?, highlight?, motion? }
 //
 // Semantics:
 // - `capKey` is caption identity: a caption slides in only when the key
@@ -66,6 +66,7 @@ export function planFrames(shots, options = {}) {
   let previousCamera = DEFAULT_CAMERA;
   let previousHighlight = null;
   let previousImage = null;
+  let previousCameraKey = null;
   let previousHighlightKey = null;
 
   for (const shot of shots) {
@@ -73,6 +74,11 @@ export function planFrames(shots, options = {}) {
       shot.caption ?? (shot.capKey && shot.capKey === previousCapKey ? previousCaption : null);
     const targetCamera = shot.kind === "term" ? (shot.camera ?? DEFAULT_CAMERA) : DEFAULT_CAMERA;
     const targetHighlight = shot.kind === "term" ? (shot.highlight ?? null) : null;
+    const sharesCameraSource =
+      shot.kind === "term" &&
+      (shot.img === previousImage || (shot.cameraKey && shot.cameraKey === previousCameraKey));
+    const sourceCamera =
+      previousImage === null || sharesCameraSource ? previousCamera : targetCamera;
     const sharesHighlightSource =
       shot.kind === "term" &&
       (shot.img === previousImage ||
@@ -83,7 +89,7 @@ export function planFrames(shots, options = {}) {
         ? { kind: "card", html: shot.html }
         : { kind: "term", img: shot.img, title: shot.title, caption };
     const captionChanges = shot.kind === "term" && shot.caption && shot.capKey !== previousCapKey;
-    const cameraChanges = shot.kind === "term" && !equalValue(previousCamera, targetCamera);
+    const cameraChanges = shot.kind === "term" && !equalValue(sourceCamera, targetCamera);
     const highlightChanges = shot.kind === "term" && !equalValue(sourceHighlight, targetHighlight);
     const surfaceSeconds = shot.enter ? Math.min(captionAnimSeconds, shot.dur * 0.6) : 0;
     const captionSeconds = captionChanges ? Math.min(captionAnimSeconds, shot.dur * 0.6) : 0;
@@ -105,7 +111,7 @@ export function planFrames(shots, options = {}) {
           ...base,
           shotT,
           capT,
-          camera: interpolateCamera(previousCamera, targetCamera, motionT),
+          camera: interpolateCamera(sourceCamera, targetCamera, motionT),
           ...highlightState,
           highlightPulseT: motionT,
         },
@@ -135,6 +141,7 @@ export function planFrames(shots, options = {}) {
     previousCamera = targetCamera;
     previousHighlight = targetHighlight;
     previousImage = shot.kind === "term" ? shot.img : null;
+    previousCameraKey = shot.kind === "term" ? (shot.cameraKey ?? null) : null;
     previousHighlightKey = shot.kind === "term" ? (shot.highlightKey ?? null) : null;
   }
 

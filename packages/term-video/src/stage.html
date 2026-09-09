@@ -238,6 +238,10 @@
     <div id="caption"></div>
     <div id="card" style="display: none"></div>
 
+    <script type="module">
+      import { projectTerminalFocus } from "STAGE_GEOMETRY_URL";
+      window.projectTerminalFocus = projectTerminalFocus;
+    </script>
     <script>
       const $ = (id) => document.getElementById(id);
       const easeOut = (t) => 1 - Math.pow(1 - Math.min(Math.max(t, 0), 1), 4);
@@ -270,34 +274,38 @@
         el.style.transform = `translateY(${(1 - t) * 26}px)`;
       }
 
+      /** Project normalized capture geometry through the active camera and paint its callout. */
       function renderTerminalFocus(camera, highlight, highlightT, pulseT) {
         const content = $("term-content");
         const visual = $("term-visual");
-        const activeCamera = camera ?? { x: 0.5, y: 0.5, scale: 1 };
-        const width = content.clientWidth;
-        const height = content.clientHeight;
-        const requestedX = width / 2 - activeCamera.x * width * activeCamera.scale;
-        const requestedY = height / 2 - activeCamera.y * height * activeCamera.scale;
-        const translateX = Math.min(0, Math.max(width - width * activeCamera.scale, requestedX));
-        const translateY = Math.min(0, Math.max(height - height * activeCamera.scale, requestedY));
-        visual.style.transform = `translate(${translateX}px, ${translateY}px) scale(${activeCamera.scale})`;
+        const img = $("term-img");
+        const projection = window.projectTerminalFocus({
+          camera,
+          highlight,
+          sourceHeight: img.clientHeight,
+          sourceWidth: img.clientWidth,
+          viewportHeight: content.clientHeight,
+          viewportWidth: content.clientWidth,
+        });
+        visual.style.transform = `translate(${projection.translateX}px, ${projection.translateY}px) scale(${projection.scale})`;
 
         const outline = $("term-highlight");
         if (!highlight || highlightT <= 0) {
           outline.style.display = "none";
           return;
         }
-        const screenX = translateX + highlight.x * width * activeCamera.scale;
-        const screenY = translateY + highlight.y * height * activeCamera.scale;
-        const screenWidth = highlight.width * width * activeCamera.scale;
-        const screenHeight = highlight.height * height * activeCamera.scale;
+        const projectedHighlight = projection.highlight;
+        if (!projectedHighlight) {
+          outline.style.display = "none";
+          return;
+        }
         const t = easeOut(highlightT);
         const pulse = Math.sin(Math.min(Math.max(pulseT, 0), 1) * Math.PI);
         outline.style.display = "block";
-        outline.style.left = `${screenX}px`;
-        outline.style.top = `${screenY}px`;
-        outline.style.width = `${screenWidth}px`;
-        outline.style.height = `${screenHeight}px`;
+        outline.style.left = `${projectedHighlight.x}px`;
+        outline.style.top = `${projectedHighlight.y}px`;
+        outline.style.width = `${projectedHighlight.width}px`;
+        outline.style.height = `${projectedHighlight.height}px`;
         outline.style.opacity = String(t);
         outline.style.transform = `scale(${0.97 + 0.03 * t})`;
         outline.style.boxShadow = `0 0 0 2px rgba(12, 16, 28, 0.82), 0 0 ${28 + pulse * 26}px rgba(224, 175, 104, ${0.72 + pulse * 0.2}), inset 0 0 22px rgba(224, 175, 104, 0.08)`;

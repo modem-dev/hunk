@@ -15,6 +15,7 @@
       "import": "./src/capture.ts"
     },
     "./compose": {
+      "types": "./src/compose.d.mts",
       "import": "./src/compose.mjs"
     },
     "./plan": {
