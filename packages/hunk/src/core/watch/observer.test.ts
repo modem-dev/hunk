@@ -544,6 +544,120 @@ describe("portable tree batches", () => {
     expect(fixture.batches.map((batch) => batch.closes)).toEqual([1, 1, 1]);
   });
 
+  test.each(["parent", "owner"] as const)(
+    "%s unlinkDir invalidates descendant batches and queued children without reusing stale owners",
+    async (origin) => {
+      const fixture = createTestPortableTree();
+      const child = join(fixture.root, "a");
+      const nested = join(child, "b");
+      const queued = join(nested, "queued");
+      const sibling = join(fixture.root, "ab");
+      fixture.directories.set(fixture.root, [child, sibling]);
+      fixture.directories.set(child, [nested]);
+      let events = 0;
+      const source = createChunkedTreeWatcher(
+        fixture.root,
+        () => false,
+        () => events++,
+        fixture.runtime,
+      );
+      try {
+        await fixture.advanceBatch();
+        await fixture.ready(0);
+        await fixture.advanceBatch();
+        await fixture.ready(1);
+        await fixture.advanceBatch();
+        await fixture.ready(2);
+        fixture.batches[2]!.watcher.emit("all", "addDir", queued);
+        // No descendant unlinkDir events are required to invalidate their ownership.
+        fixture.batches[origin === "parent" ? 0 : 1]!.watcher.emit("all", "unlinkDir", child);
+        await settleTestBatch();
+        expect(fixture.batches.map((batch) => batch.closes)).toEqual([0, 1, 1]);
+        const afterRemoval = events;
+        fixture.batches[2]!.watcher.emit("all", "addDir", queued);
+        const retiredFilter = fixture.batches[2]!.options!.ignored;
+        if (typeof retiredFilter !== "function") throw new Error("Expected an ignored predicate");
+        expect(retiredFilter(queued, statSync(process.cwd()))).toBe(true);
+        expect(events).toBe(afterRemoval);
+        await fixture.advanceBatch();
+        expect(fixture.batches[3]!.paths).toEqual([sibling]);
+        await fixture.ready(3);
+        fixture.batches[0]!.watcher.emit("all", "addDir", child);
+        fixture.batches[0]!.watcher.emit("all", "addDir", child);
+        await fixture.advanceBatch();
+        expect(fixture.batches[4]!.paths).toEqual([child]);
+        await fixture.ready(4);
+        await fixture.advanceBatch();
+        expect(fixture.batches[5]!.paths).toEqual([nested]);
+        await fixture.ready(5);
+        expect(fixture.tasks.size).toBe(0);
+      } finally {
+        await source.close();
+      }
+      expect(fixture.batches.every((batch) => batch.closes === 1)).toBe(true);
+    },
+  );
+
+  test("a removed anchor discovers the replacement root without owning its new inode", async () => {
+    const fixture = createTestPortableTree();
+    const source = createChunkedTreeWatcher(
+      fixture.root,
+      () => false,
+      () => {},
+      fixture.runtime,
+    );
+    try {
+      await fixture.advanceBatch();
+      await fixture.ready(0);
+      const anchor = fixture.batches[0]!;
+      anchor.watcher.emit("all", "unlinkDir", fixture.root);
+      const filter = anchor.options!.ignored;
+      if (typeof filter !== "function") throw new Error("Expected an ignored predicate");
+      expect(filter(fixture.root, statSync(process.cwd()))).toBe(true);
+      anchor.watcher.emit("all", "addDir", fixture.root);
+      await fixture.advanceBatch();
+      await fixture.ready(1);
+      expect(fixture.batches[1]!.paths).toEqual([fixture.root]);
+      expect(filter(fixture.root, statSync(process.cwd()))).toBe(true);
+      expect(fixture.tasks.size).toBe(0);
+      expect(anchor.closes).toBe(0);
+    } finally {
+      await source.close();
+    }
+    expect(fixture.batches.map((batch) => batch.closes)).toEqual([1, 1]);
+  });
+
+  test("subtree invalidation discards an outstanding enumeration's late children", async () => {
+    const fixture = createTestPortableTree();
+    const child = join(fixture.root, "a");
+    let finishRead!: (children: string[]) => void;
+    fixture.runtime.readDirectories = async (path) =>
+      path === fixture.root
+        ? [child]
+        : new Promise((resolveRead) => {
+            finishRead = resolveRead;
+          });
+    const source = createChunkedTreeWatcher(
+      fixture.root,
+      () => false,
+      () => {},
+      fixture.runtime,
+    );
+    try {
+      await fixture.advanceBatch();
+      await fixture.ready(0);
+      await fixture.advanceBatch();
+      await fixture.ready(1);
+      fixture.batches[0]!.watcher.emit("all", "unlinkDir", child);
+      finishRead([join(child, "late")]);
+      await settleTestBatch();
+      expect(fixture.tasks.size).toBe(0);
+      expect(fixture.batches[1]!.closes).toBe(1);
+    } finally {
+      await source.close();
+    }
+  });
+
   test("the public directory filter queues runtime children once without admitting ignored or outside paths", async () => {
     const fixture = createTestPortableTree();
     const ignored = join(fixture.root, "ignored");
@@ -560,8 +674,8 @@ describe("portable tree batches", () => {
     if (typeof filter !== "function") throw new Error("Expected a public ignored predicate");
     const stats = statSync(process.cwd());
     const child = join(fixture.root, "new");
-    expect(filter(child, stats)).toBe(true);
-    expect(filter(child, stats)).toBe(true);
+    expect(filter(child, stats)).toBe(false);
+    expect(filter(child, stats)).toBe(false);
     expect(filter(ignored, stats)).toBe(true);
     // Missing-root fallback can inspect its parent, but must never recursively queue it.
     expect(filter(dirname(fixture.root), stats)).toBe(false);

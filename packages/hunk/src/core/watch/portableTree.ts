@@ -44,7 +44,10 @@ export function createChunkedTreeWatcher(
   const runtime = { ...defaultRuntime, ...runtimeOverrides };
   const root = resolve(directory);
   const rootPrefix = root.endsWith(sep) ? root : `${root}${sep}`;
-  const watchers = new Set<FSWatcher>();
+  const watchers = new Map<
+    FSWatcher,
+    { roots: Set<string>; markReady: () => void; active: boolean }
+  >();
   const retiring = new Set<Promise<void>>();
   const queued = new Set<string>();
   const known = new Set<string>();
@@ -73,6 +76,46 @@ export function createChunkedTreeWatcher(
     queued.add(path);
     schedule();
     if (ready) onEvent();
+  }
+
+  /** Forget a removed subtree and retire its owners before admitting replacement inodes. */
+  function invalidate(path: string) {
+    path = resolve(path);
+    const prefix = path.endsWith(sep) ? path : `${path}${sep}`;
+    const contains = (candidate: string) => candidate === path || candidate.startsWith(prefix);
+    for (const candidate of known) {
+      if (contains(candidate)) {
+        known.delete(candidate);
+        queued.delete(candidate);
+      }
+    }
+    for (const [watcher, batch] of watchers) {
+      if (![...batch.roots].some(contains)) continue;
+      if (watcher === anchor) {
+        // Preserve the missing-root parent fallback, but turn its old root into discovery
+        // only. A replacement batch owns the new inode and its file events.
+        batch.roots.clear();
+        batch.markReady();
+        continue;
+      }
+      watchers.delete(watcher);
+      batch.active = false;
+      batch.markReady();
+      // Chokidar unwatch(root) does not recursively close file handles. Retire the whole
+      // bounded batch, then re-admit surviving siblings instead of retaining stale owners.
+      for (const candidate of batch.roots) {
+        if (!contains(candidate)) {
+          known.delete(candidate);
+          enqueue(candidate);
+        }
+      }
+      batch.roots.clear();
+      const released = Promise.resolve()
+        .then(() => watcher.close())
+        .catch(reportError);
+      retiring.add(released);
+      void released.then(() => retiring.delete(released));
+    }
   }
 
   /** Yield between batches instead of chaining directory traversal through microtasks. */
@@ -106,6 +149,7 @@ export function createChunkedTreeWatcher(
     if (paths.length) {
       let watcher: FSWatcher;
       const roots = new Set(paths);
+      const batch = { roots, markReady: () => {}, active: true };
       try {
         watcher = runtime.watch(paths, {
           depth: 0,
@@ -115,18 +159,18 @@ export function createChunkedTreeWatcher(
           usePolling: false,
           awaitWriteFinish: false,
           ignored(path, stats) {
-            if (isIgnored(path)) return true;
+            if (closed || !batch.active || isIgnored(path)) return true;
             const normalized = resolve(path);
             if (
               stats?.isDirectory() &&
-              normalized.startsWith(rootPrefix) &&
+              (normalized === root || normalized.startsWith(rootPrefix)) &&
               !roots.has(normalized)
             ) {
-              // Depth zero still stats each child twice unless it is pruned. Discover
-              // non-root directories through the public filter and admit them in a later
-              // batch instead; this also catches runtime creation without a raw-event hook.
               enqueue(normalized);
-              return true;
+              // Keep child directory entries visible to depth-zero Chokidar so removing
+              // an intermediate directory emits unlinkDir, even when it contains no files.
+              // A removed anchor root only discovers replacements; it must not own them.
+              return paths.includes(normalized);
             }
             return false;
           },
@@ -138,37 +182,19 @@ export function createChunkedTreeWatcher(
         reportError(error);
         return;
       }
-      watchers.add(watcher);
       anchor ??= watcher;
       let markReady!: () => void;
       const batchReady = new Promise<void>((resolveReady) => {
         markReady = resolveReady;
       });
+      batch.markReady = markReady;
+      watchers.set(watcher, batch);
       watcher.once("ready", markReady);
       watcher.on("error", reportError);
       watcher.on("all", (event, path) => {
-        if (closed) return;
+        if (closed || !watchers.has(watcher)) return;
         if (event === "addDir") enqueue(path);
-        if (event === "unlinkDir") {
-          known.delete(resolve(path));
-          queued.delete(resolve(path));
-          roots.delete(resolve(path));
-          if (roots.size === 0) {
-            // Keep the initial anchor: Chokidar may be watching a missing root's parent
-            // there. Retire later empty batches so runtime churn does not retain instances.
-            if (watcher !== anchor) {
-              watchers.delete(watcher);
-              const released = Promise.resolve()
-                .then(() => watcher.close())
-                .catch(reportError);
-              retiring.add(released);
-              void released.then(() => retiring.delete(released));
-            }
-            // Removal can race the initial scan. Enumeration reconciles missing paths;
-            // do not await a ready event from a batch whose roots have all disappeared.
-            markReady();
-          }
-        }
+        if (event === "unlinkDir") invalidate(path);
         onEvent();
       });
       await Promise.race([batchReady, cancelled]);
@@ -178,13 +204,16 @@ export function createChunkedTreeWatcher(
       await Promise.race([
         Promise.all(
           paths.map(async (path) => {
+            if (!roots.has(path)) return;
             try {
               const children = await runtime.readDirectories(path);
+              if (!roots.has(path)) return;
               for (const child of children) enqueue(child);
             } catch (error) {
+              if (!roots.has(path)) return;
               // A directory may disappear between Chokidar's scan and enumeration. Allow a
               // later addDir to rediscover it; report other filesystem failures the same way.
-              known.delete(path);
+              invalidate(path);
               reportError(error);
             }
           }),
@@ -218,7 +247,7 @@ export function createChunkedTreeWatcher(
       closing = Promise.all([
         draining,
         ...retiring,
-        ...[...watchers].map((watcher) => Promise.resolve().then(() => watcher.close())),
+        ...[...watchers.keys()].map((watcher) => Promise.resolve().then(() => watcher.close())),
       ]).then(() => {
         watchers.clear();
       });

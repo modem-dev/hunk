@@ -245,6 +245,54 @@ describe("filesystem watch observer", () => {
     );
   });
 
+  // Exercise inotify re-registration rather than native recursive backends.
+  for (const scenario of ["initial", "runtime", "new-child", "rename"] as const) {
+    test.skipIf(process.platform !== "linux")(
+      `portable batches observe writes after intermediate directory recreation (${scenario})`,
+      async () => {
+        const parent = await temporaryDirectory();
+        const directory = join(parent, "root");
+        const intermediate = join(directory, "a");
+        const nested = join(intermediate, "b");
+        await mkdir(directory);
+        if (scenario !== "runtime") {
+          await mkdir(nested, { recursive: true });
+          await writeFile(join(nested, "file"), "before");
+        }
+        const source = await startObserver({
+          coverage: "hybrid",
+          targets: [{ kind: "directory-tree", directory, ignoredRoots: [], sources: ["worktree"] }],
+        });
+        if (scenario === "runtime") {
+          await mkdir(nested, { recursive: true });
+          await writeFile(join(nested, "file"), "before");
+          await new Promise((resolve) => setTimeout(resolve, ABSENCE_MS));
+        }
+        const moved = join(parent, "moved");
+        if (scenario === "rename") await rename(intermediate, moved);
+        else await rm(intermediate, { recursive: true });
+        // Let unlinkDir retire the old inode before recreating the same pathname.
+        await new Promise((resolve) => setTimeout(resolve, ABSENCE_MS));
+        if (scenario === "rename") await rename(moved, intermediate);
+        else await mkdir(nested, { recursive: true });
+        const destination = scenario === "new-child" ? join(intermediate, "c") : nested;
+        await mkdir(destination, { recursive: true });
+        // Discard earlier hints: both the subtree and intermediate inode must recover.
+        for (const file of [join(destination, "new-file"), join(intermediate, "direct-file")]) {
+          await new Promise((resolve) => setTimeout(resolve, ABSENCE_MS));
+          const beforeWrite = source.eventCount;
+          await writeFile(file, "after");
+          await bounded(
+            (async () => {
+              while (source.eventCount === beforeWrite)
+                await new Promise((resolve) => setTimeout(resolve, 5));
+            })(),
+          );
+        }
+      },
+    );
+  }
+
   test("does not refresh for excluded worktree metadata churn", async () => {
     const directory = await temporaryDirectory();
     const metadataDirectory = join(directory, ".git");
