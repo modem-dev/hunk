@@ -87,6 +87,10 @@ function fakeSource() {
     ready() {
       callbacks.onReady?.();
     },
+    /** Report one chunk of startup progress from a still-registering source. */
+    progress() {
+      callbacks.onProgress?.();
+    },
     get closes() {
       return closes;
     },
@@ -378,6 +382,173 @@ describe("createWatchController", () => {
     clock.advance(2_000);
     await settle();
     expect(checks).toBe(2);
+  });
+
+  test("extends the startup deadline while a slow source keeps reporting progress", async () => {
+    const clock = new FakeWatchClock();
+    const source = fakeSource();
+    const errors: unknown[] = [];
+    let checks = 0;
+    const controller = createWatchController({
+      initialSignature: "same",
+      clock,
+      createEventSource: source.create,
+      getSignature: () => (++checks, "same"),
+      refresh: () => {},
+      reportError: (error) => errors.push(error),
+    });
+
+    // Six 1.5 s gaps carry startup past the original 2 s deadline without ever going silent.
+    for (let chunk = 0; chunk < 6; chunk += 1) {
+      clock.advance(1_500);
+      source.progress();
+      expect(controller.getState().degraded).toBe(false);
+      expect(source.closes).toBe(0);
+    }
+    expect(clock.now()).toBeGreaterThan(2_000);
+    expect(errors).toEqual([]);
+
+    source.ready();
+    await settle();
+    expect(checks).toBe(1);
+    clock.advance(2_000);
+    await settle();
+    expect(controller.getState().degraded).toBe(false);
+    expect(source.closes).toBe(0);
+    // Readiness stays a single signal even after a long progress-extended startup.
+    expect(checks).toBe(1);
+  });
+
+  test("degrades two seconds after the last startup progress report", async () => {
+    const clock = new FakeWatchClock();
+    const source = fakeSource();
+    const errors: unknown[] = [];
+    const controller = createWatchController({
+      initialSignature: "same",
+      clock,
+      createEventSource: source.create,
+      getSignature: () => "same",
+      refresh: () => {},
+      reportError: (error) => errors.push(error),
+    });
+
+    clock.advance(1_500);
+    source.progress();
+    clock.advance(1_500);
+    source.progress();
+    const stalledAt = clock.now();
+
+    clock.advance(1_999);
+    expect(controller.getState().degraded).toBe(false);
+    expect(source.closes).toBe(0);
+    clock.advance(1);
+    expect(clock.now()).toBe(stalledAt + 2_000);
+    expect(controller.getState().degraded).toBe(true);
+    expect(source.closes).toBe(1);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({ code: WATCH_EVENT_SOURCE_STARTUP_TIMEOUT_CODE });
+  });
+
+  test("does not let ordinary filesystem events extend the startup deadline", async () => {
+    const clock = new FakeWatchClock();
+    const source = fakeSource();
+    const errors: unknown[] = [];
+    const controller = createWatchController({
+      initialSignature: "same",
+      clock,
+      createEventSource: source.create,
+      getSignature: () => "same",
+      refresh: () => {},
+      reportError: (error) => errors.push(error),
+    });
+
+    // Events are change hints, not evidence that registration is still advancing.
+    clock.advance(500);
+    source.event();
+    clock.advance(500);
+    source.event();
+    clock.advance(999);
+    await settle();
+    expect(controller.getState().degraded).toBe(false);
+    clock.advance(1);
+    await settle();
+    expect(clock.now()).toBe(2_000);
+    expect(controller.getState().degraded).toBe(true);
+    expect(source.closes).toBe(1);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({ code: WATCH_EVENT_SOURCE_STARTUP_TIMEOUT_CODE });
+  });
+
+  test("ignores progress reported after degradation, readiness, or close", async () => {
+    const clock = new FakeWatchClock();
+    const degradedSource = fakeSource();
+    const degradedErrors: unknown[] = [];
+    const degraded = createWatchController({
+      initialSignature: "same",
+      clock,
+      createEventSource: degradedSource.create,
+      getSignature: () => "same",
+      refresh: () => {},
+      reportError: (error) => degradedErrors.push(error),
+      startupTimeoutMs: 500,
+    });
+
+    clock.advance(500);
+    expect(degraded.getState().degraded).toBe(true);
+    degradedSource.progress();
+    degradedSource.ready();
+    clock.advance(10_000);
+    await settle();
+    // Late progress cannot revive the closed source or clear the degraded fallback.
+    expect(degraded.getState().degraded).toBe(true);
+    expect(degradedSource.closes).toBe(1);
+    expect(degradedErrors).toHaveLength(1);
+    degraded.close();
+
+    const readyClock = new FakeWatchClock();
+    const readySource = fakeSource();
+    let readyChecks = 0;
+    const ready = createWatchController({
+      initialSignature: "same",
+      clock: readyClock,
+      createEventSource: readySource.create,
+      getSignature: () => (++readyChecks, "same"),
+      refresh: () => {},
+      startupTimeoutMs: 500,
+    });
+
+    readySource.ready();
+    await settle();
+    expect(readyChecks).toBe(1);
+    readySource.progress();
+    readyClock.advance(9_999);
+    await settle();
+    // Progress after readiness neither reopens startup nor forces an extra check.
+    expect(readyChecks).toBe(1);
+    expect(ready.getState().degraded).toBe(false);
+    expect(readySource.closes).toBe(0);
+    ready.close();
+
+    const closedClock = new FakeWatchClock();
+    const closedSource = fakeSource();
+    const closedErrors: unknown[] = [];
+    const closed = createWatchController({
+      initialSignature: "same",
+      clock: closedClock,
+      createEventSource: closedSource.create,
+      getSignature: () => "same",
+      refresh: () => {},
+      reportError: (error) => closedErrors.push(error),
+      startupTimeoutMs: 500,
+    });
+
+    closed.close();
+    closedSource.progress();
+    closedClock.advance(10_000);
+    await settle();
+    expect(closedErrors).toEqual([]);
+    expect(closedSource.closes).toBe(1);
+    expect(closedClock.timers.size).toBe(0);
   });
 
   test("accepts readiness just before an injected startup deadline", async () => {
