@@ -138,7 +138,6 @@ describe("PTY key routing", () => {
         (text) => text.includes("Split view") && text.includes("Unified view"),
         5_000,
       );
-      await session.press("down");
       await session.press("enter");
 
       // The menu item must run (layout switches to unified) and the Enter must

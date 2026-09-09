@@ -407,7 +407,7 @@ describe("interactive hunk log", () => {
       const split = await session.waitForText(/historyValue = 'second'/, { timeout: 15_000 });
       expect(split).toMatch(/▌.*▌/);
 
-      session.writeRaw("2q");
+      session.writeRaw("1q");
       await session.waitForText(/Second history commit/, { timeout: 15_000 });
 
       await session.press("enter");

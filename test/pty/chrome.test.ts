@@ -347,7 +347,6 @@ describe("PTY chrome", () => {
 
       expect(viewMenu).toContain("Auto layout");
 
-      await session.press("down");
       await session.press("enter");
       const unified = await harness.waitForSnapshot(
         session,
