@@ -5,12 +5,15 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { REPO_ROOT } from "../../../../scripts/build/package-paths";
 
-// Exercise Pierre's actual import, not just the adapter, in fresh processes: Shiki caches its engine.
-const highlightTestProgram = `
+// Install the main-thread counter before Pierre evaluates its static imports.
+const highlightDecodeTestPreload = `
   const originalAtob = globalThis.atob;
-  let decodes = 0;
-  globalThis.atob = (value) => { decodes++; return originalAtob(value); };
-  const { getSharedHighlighter } = await import("@pierre/diffs");
+  globalThis.shikiTestDecodes = 0;
+  globalThis.atob = (value) => { globalThis.shikiTestDecodes++; return originalAtob(value); };
+`;
+
+// Exercise Pierre's actual import, not just the adapter, in fresh processes: Shiki caches its engine.
+const highlightTestBody = `
   const highlighter = await getSharedHighlighter({
     langs: ["typescript", "elixir"], themes: ["github-dark-default"],
     preferredHighlighter: "shiki-wasm",
@@ -19,7 +22,19 @@ const highlightTestProgram = `
     highlighter.codeToTokens("export const answer: number = 42;", { lang: "typescript", theme: "github-dark-default" }),
     highlighter.codeToTokens('def hello, do: "world"', { lang: "elixir", theme: "github-dark-default" }),
   ];
-  console.log(JSON.stringify({ decodes, tokens, assets: Bun.embeddedFiles.map(file => file.size) }));
+  console.log(JSON.stringify({ decodes: globalThis.shikiTestDecodes, tokens, assets: Bun.embeddedFiles.map(file => file.size) }));
+`;
+
+const highlightTestProgram = `
+  import { getSharedHighlighter } from "@pierre/diffs";
+  ${highlightTestBody}
+`;
+
+// Compiled executables have no runtime --preload; instrument before the dynamic import instead.
+const compiledHighlightTestProgram = `
+  ${highlightDecodeTestPreload}
+  const { getSharedHighlighter } = await import("@pierre/diffs");
+  ${highlightTestBody}
 `;
 
 // Install counters in the worker realm before its real entry imports Pierre or Shiki.
@@ -45,7 +60,7 @@ const workerDecodeTestPreload = `
 function workerHighlightTestProgram(preload: string) {
   const entry = pathToFileURL(join(REPO_ROOT, "packages/hunk/src/highlightWorkerEntry.ts"));
   return `
-    const { parseDiffFromFile } = await import("@pierre/diffs");
+    import { parseDiffFromFile } from "@pierre/diffs";
     const worker = new Worker(${JSON.stringify(entry.href)}, { preload: [${JSON.stringify(preload)}] });
     try {
       const result = await new Promise((resolve, reject) => {
@@ -82,8 +97,12 @@ test("Pierre avoids base64 decoding in source, workers, bundles, and binaries wi
   try {
     const config = join(temporary, "tsconfig.json");
     writeFileSync(config, JSON.stringify({ compilerOptions: { target: "ESNext" } }));
+    const mainPreload = join(temporary, "main-preload.ts");
+    writeFileSync(mainPreload, highlightDecodeTestPreload);
     const stock = runHighlightTestProcess([
       process.execPath,
+      "--preload",
+      mainPreload,
       "--tsconfig-override",
       config,
       "--eval",
@@ -91,7 +110,13 @@ test("Pierre avoids base64 decoding in source, workers, bundles, and binaries wi
     ]);
     expect(stock.decodes).toBe(1);
 
-    const source = runHighlightTestProcess([process.execPath, "--eval", highlightTestProgram]);
+    const source = runHighlightTestProcess([
+      process.execPath,
+      "--preload",
+      mainPreload,
+      "--eval",
+      highlightTestProgram,
+    ]);
     expect(source.decodes).toBe(0);
     expect(source.tokens).toEqual(stock.tokens);
 
@@ -111,7 +136,7 @@ test("Pierre avoids base64 decoding in source, workers, bundles, and binaries wi
 
     const entry = join(sourceDir, "highlight.ts");
     const binary = join(temporary, process.platform === "win32" ? "highlight.exe" : "highlight");
-    writeFileSync(entry, highlightTestProgram);
+    writeFileSync(entry, compiledHighlightTestProgram);
     const build = Bun.spawnSync(
       [
         process.execPath,
@@ -125,6 +150,7 @@ test("Pierre avoids base64 decoding in source, workers, bundles, and binaries wi
       { cwd: REPO_ROOT, stdout: "pipe", stderr: "pipe", timeout: 30_000 },
     );
     expect(build.exitCode, build.stderr.toString()).toBe(0);
+    writeFileSync(entry, highlightTestProgram);
     const bundleDir = join(temporary, "bundle");
     const bundle = Bun.spawnSync(
       [process.execPath, "build", "--target=bun", entry, "--outdir", bundleDir],
@@ -135,7 +161,7 @@ test("Pierre avoids base64 decoding in source, workers, bundles, and binaries wi
 
     // npm consumers launch from arbitrary repositories, not the directory containing the asset.
     const bundled = runHighlightTestProcess(
-      [process.execPath, join(bundleDir, "highlight.js")],
+      [process.execPath, "--preload", mainPreload, join(bundleDir, "highlight.js")],
       temporary,
     );
     expect(bundled.decodes).toBe(0);
