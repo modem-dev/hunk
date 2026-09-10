@@ -59,13 +59,15 @@ test("a release page carries its versions, dates, and install command", async ({
   await expect(page.locator("#v0-18-0-beta-0")).toHaveCount(1);
 });
 
-test("a promoted prerelease series publishes stable install guidance", async ({ page }) => {
-  await page.goto("/changelog/0.21/");
-  for (const version of ["0.21.0", "0.21.0-beta.1", "0.21.0-beta.0"]) {
+test("the latest promoted prerelease series publishes stable install guidance", async ({
+  page,
+}) => {
+  await page.goto("/changelog/0.22/");
+  for (const version of ["0.22.0", "0.22.0-beta.1", "0.22.0-beta.0"]) {
     await expect(page.getByRole("heading", { level: 3, name: version, exact: true })).toBeVisible();
   }
-  await expect(page.locator("#v0-21-0")).toHaveCount(1);
-  await expect(page.locator("#v0-21-0-beta-0")).toHaveCount(1);
+  await expect(page.locator("#v0-22-0")).toHaveCount(1);
+  await expect(page.locator("#v0-22-0-beta-0")).toHaveCount(1);
 
   const installBlocks = page.locator(".sl-markdown-content pre");
   await expect(installBlocks.filter({ hasText: "curl -fsSL" })).toHaveCount(1);
@@ -90,8 +92,7 @@ test("the index lists every series newest first and links each one", async ({ pa
   expect(labels.length).toBeGreaterThan(5);
   expect(labels[0]).toBe("Hunk 0.22");
 
-  // Prereleases lead the index without moving the stable Latest marker.
-  await expect(page.getByText(/^Prerelease ·/)).toHaveCount(1);
+  await expect(page.getByText(/^Prerelease ·/)).toHaveCount(0);
   await expect(page.getByText(/^Latest ·/)).toHaveCount(1);
 });
 
@@ -102,8 +103,8 @@ test("the changelog feed and Markdown twins are served", async ({ request }) => 
   expect(feedBody).toContain("<title>Hunk releases</title>");
   expect(feedBody).toContain("https://hunk.dev/changelog/0.19/");
   expect(feedBody).toContain("https://hunk.dev/changelog/0.21/");
-  expect(feedBody).toContain("https://hunk.dev/changelog/0.22/#v0-22-0-beta-0");
-  expect(feedBody).toContain("Tue, 08 Sep 2026 00:00:00 GMT");
+  expect(feedBody).toContain("https://hunk.dev/changelog/0.22/#v0-22-0");
+  expect(feedBody).toContain("Thu, 10 Sep 2026 00:00:00 GMT");
 
   const markdown = await request.get("/changelog/0.18.md");
   expect(markdown.ok()).toBe(true);
