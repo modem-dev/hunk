@@ -844,9 +844,10 @@ describe("PTY layout", () => {
       expect(initial).not.toContain("ge';");
 
       let shifted = initial;
-      for (let index = 0; index < 96; index += 1) {
-        // SGR button 69 is a wheel-down event with the Shift modifier.
-        session.writeRaw("\x1b[<69;61;11M");
+      for (let index = 0; index < 96; index += horizontalRepeatBatchSize) {
+        // SGR button 69 is a wheel-down event with the Shift modifier. Real wheel input arrives
+        // in bursts, so settle the same bounded batch used for held horizontal arrow keys.
+        session.writeRaw("\x1b[<69;61;11M".repeat(horizontalRepeatBatchSize));
         await session.waitIdle();
         shifted = await session.text({ immediate: true });
         if (shifted.includes("ge';")) {
