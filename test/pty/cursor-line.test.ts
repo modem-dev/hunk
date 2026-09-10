@@ -433,7 +433,6 @@ describe("PTY current line", () => {
 
       for (let step = 0; step < 4; step += 1) {
         await session.press("j");
-        await session.waitIdle({ timeout: 200 });
       }
 
       const draftAtCursor = await harness.pressAndWaitForText(session, "c", /Draft note/, {

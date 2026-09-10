@@ -212,7 +212,6 @@ describe("PTY key routing", () => {
 
       for (let press = 0; press < 3; press += 1) {
         await session.press("down");
-        await session.waitIdle({ timeout: 300 });
       }
 
       const afterArrows = await session.text({ immediate: true });

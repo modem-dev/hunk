@@ -36,7 +36,6 @@ describe("PTY scrolling", () => {
 
       for (let iteration = 0; iteration < 4; iteration += 1) {
         await session.press("up");
-        await session.waitIdle({ timeout: 200 });
       }
 
       const movedUp = await harness.waitForSnapshot(
