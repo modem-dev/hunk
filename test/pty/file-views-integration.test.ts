@@ -169,8 +169,11 @@ describe("PTY file views", () => {
       });
       expect(toggled).not.toContain("# Heading");
 
-      await session.press("escape");
-      await harness.waitForSnapshot(session, (text) => !text.includes("File presentation:"));
+      await harness.pressAndWaitForSnapshot(
+        session,
+        "escape",
+        (text) => !text.includes("File presentation:"),
+      );
       await session.press("]");
       await session.waitIdle();
     } finally {

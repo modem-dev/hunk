@@ -25,9 +25,9 @@ describe("PTY scrolling", () => {
         timeout: 15_000,
       });
 
-      await session.press("]");
-      const bottomAligned = await harness.waitForSnapshot(
+      const bottomAligned = await harness.pressAndWaitForSnapshot(
         session,
+        "]",
         (text) => text.includes("shortLine1 = 10;"),
         5_000,
       );

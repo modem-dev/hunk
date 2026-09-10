@@ -138,8 +138,12 @@ describe("PTY chrome", () => {
       await session.waitForText(/Theme selector/, { timeout: 5_000 });
       await session.press("down");
       await session.waitForText(/›\s+github-dark-dimmed/, { timeout: 5_000 });
-      await session.press("enter");
-      await harness.waitForSnapshot(session, (text) => !text.includes("Theme selector"), 5_000);
+      await harness.pressAndWaitForSnapshot(
+        session,
+        "enter",
+        (text) => !text.includes("Theme selector"),
+        5_000,
+      );
 
       await session.press("q");
       const prompt = await session.waitForText(/Save view preferences\?/, { timeout: 5_000 });
@@ -258,9 +262,9 @@ describe("PTY chrome", () => {
         timeout: 15_000,
       });
 
-      await session.press("?");
-      const help = await harness.waitForSnapshot(
+      const help = await harness.pressAndWaitForSnapshot(
         session,
+        "?",
         (text) =>
           (text.includes("Keyboard help") || text.includes("Controls help")) &&
           text.includes("move through lines and notes"),
@@ -331,27 +335,27 @@ describe("PTY chrome", () => {
 
       expect(initial).toMatch(/▌.*▌/);
 
-      await session.press("f10");
-      const fileMenu = await harness.waitForSnapshot(
+      const fileMenu = await harness.pressAndWaitForSnapshot(
         session,
+        "f10",
         (text) => text.includes("Toggle files/filter focus") && text.includes("Quit"),
         5_000,
       );
 
       expect(fileMenu).toContain("Reload");
 
-      await session.press("right");
-      const viewMenu = await harness.waitForSnapshot(
+      const viewMenu = await harness.pressAndWaitForSnapshot(
         session,
+        "right",
         (text) => text.includes("Split view") && text.includes("Unified view"),
         5_000,
       );
 
       expect(viewMenu).toContain("Auto layout");
 
-      await session.press("enter");
-      const unified = await harness.waitForSnapshot(
+      const unified = await harness.pressAndWaitForSnapshot(
         session,
+        "enter",
         (text) => !/▌.*▌/.test(text) && text.includes("1   -  export const alpha = 1;"),
         5_000,
       );

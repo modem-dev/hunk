@@ -210,8 +210,12 @@ describe("interactive hunk log", () => {
       await session.waitForText(/2 commits selected/, { timeout: 15_000 });
 
       // Escape collapses visual mode before direct Shift selection starts another range.
-      await session.press("escape");
-      await harness.waitForSnapshot(session, (text) => !text.includes("commits selected"), 5_000);
+      await harness.pressAndWaitForSnapshot(
+        session,
+        "escape",
+        (text) => !text.includes("commits selected"),
+        5_000,
+      );
       session.writeRaw("k");
 
       // SGR mouse modifier bit 4 forwards Shift+click through capable terminals.
@@ -271,9 +275,9 @@ describe("interactive hunk log", () => {
       expect(session.getRawOutput().slice(transitionOutputStart)).not.toContain("\x1b[?1049l");
 
       const returnOutputStart = session.getRawOutput().length;
-      await session.press("q");
-      const returned = await harness.waitForSnapshot(
+      const returned = await harness.pressAndWaitForSnapshot(
         session,
+        "q",
         (text) => text.includes("Second history commit") && text.includes("Enter open"),
         15_000,
       );
@@ -425,9 +429,9 @@ describe("interactive hunk log", () => {
         15_000,
       );
 
-      await session.press("enter");
-      const retained = await harness.waitForSnapshot(
+      const retained = await harness.pressAndWaitForSnapshot(
         session,
+        "enter",
         (text) => !/▌.*▌/.test(text) && text.includes("historyValue = 'second'"),
         15_000,
       );
@@ -543,9 +547,9 @@ describe("interactive hunk log", () => {
       await session.press("f10");
       await session.press("right");
       await session.press("down");
-      await session.press("enter");
-      const graph = await harness.waitForSnapshot(
+      const graph = await harness.pressAndWaitForSnapshot(
         session,
+        "enter",
         (text) => text.includes("*") && !text.includes("Commits on Sep 6, 2026"),
         5_000,
       );

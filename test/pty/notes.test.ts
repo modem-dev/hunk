@@ -50,9 +50,9 @@ describe("PTY notes", () => {
       expect(withNotes).toContain("Highlights the follow-up addition for review.");
       expect(withNotes).not.toContain("STML ACTIVE");
 
-      await session.press("a");
-      const withoutNotes = await harness.waitForSnapshot(
+      const withoutNotes = await harness.pressAndWaitForSnapshot(
         session,
+        "a",
         (text) => !text.includes("Adds bonus export."),
         5_000,
       );
@@ -156,8 +156,12 @@ describe("PTY notes", () => {
       expect(lineIndexOf(pushedDraft, "Draft note")).toBe(firstActiveRow + 1);
       expect(lineIndexOf(pushedDraft, followingLine)).toBeGreaterThan(followingRowBefore);
 
-      await session.press("escape");
-      await harness.waitForSnapshot(session, (text) => !text.includes("Draft note"), 5_000);
+      await harness.pressAndWaitForSnapshot(
+        session,
+        "escape",
+        (text) => !text.includes("Draft note"),
+        5_000,
+      );
       for (let index = 0; index < 8; index += 1) {
         await session.press("down");
       }
@@ -318,9 +322,9 @@ describe("PTY notes", () => {
       expect(savedActive).toContain("D delete");
 
       await session.press("k");
-      await session.press("k");
-      const firstActive = await harness.waitForSnapshot(
+      const firstActive = await harness.pressAndWaitForSnapshot(
         session,
+        "k",
         (text) => {
           const markerRow = lineIndexOf(text, "● Your note");
           const firstBodyRow = lineIndexOf(text, "First keyboard note.");
@@ -333,9 +337,9 @@ describe("PTY notes", () => {
       expect(firstActive).toContain("D delete");
 
       await session.press("down");
-      await session.press("down");
-      const secondActive = await harness.waitForSnapshot(
+      const secondActive = await harness.pressAndWaitForSnapshot(
         session,
+        "down",
         (text) => {
           const markerRow = lineIndexOf(text, "● Your note");
           const secondBodyRow = lineIndexOf(text, "Second keyboard note.");
@@ -346,9 +350,9 @@ describe("PTY notes", () => {
       expect(secondActive).toContain("Second keyboard note.");
 
       await session.press("k");
-      await session.press("k");
-      await harness.waitForSnapshot(
+      await harness.pressAndWaitForSnapshot(
         session,
+        "k",
         (text) => {
           const markerRow = lineIndexOf(text, "● Your note");
           const firstBodyRow = lineIndexOf(text, "First keyboard note.");
@@ -408,9 +412,9 @@ describe("PTY notes", () => {
           lineIndexOf(text, "First note-only stop.") - lineIndexOf(text, "● Your note") === 2,
         5_000,
       );
-      await session.press("n");
-      await harness.waitForSnapshot(
+      await harness.pressAndWaitForSnapshot(
         session,
+        "n",
         (text) =>
           lineIndexOf(text, "Second note-only stop.") - lineIndexOf(text, "● Your note") === 2,
         5_000,
@@ -503,9 +507,9 @@ describe("PTY notes", () => {
       const firstReply = await session.waitForText(/First reply\./, { timeout: 5_000 });
       expect(firstReply).toMatch(/╰─╭─ ● Your note/);
 
-      await session.press("k");
-      await harness.waitForSnapshot(
+      await harness.pressAndWaitForSnapshot(
         session,
+        "k",
         (text) => {
           const markerRow = lineIndexOf(text, "● Your note");
           return (
@@ -514,9 +518,9 @@ describe("PTY notes", () => {
         },
         5_000,
       );
-      await session.press("j");
-      await harness.waitForSnapshot(
+      await harness.pressAndWaitForSnapshot(
         session,
+        "j",
         (text) => {
           const markerRow = lineIndexOf(text, "● Your note");
           return markerRow >= 0 && lineIndexOf(text, "First reply.") - markerRow === 2;
@@ -741,9 +745,9 @@ describe("PTY notes", () => {
       await moveMouse(session, 9, 5);
       await session.waitForText(/\[\+\]/, { timeout: 5_000 });
 
-      await session.press("down");
-      const afterKeyboard = await harness.waitForSnapshot(
+      const afterKeyboard = await harness.pressAndWaitForSnapshot(
         session,
+        "down",
         (text) => !text.includes("[+]"),
         5_000,
       );
@@ -776,9 +780,9 @@ describe("PTY notes", () => {
       await session.press("c");
       await session.waitForText(/Draft note/, { timeout: 5_000 });
 
-      await session.press("escape");
-      const cancelled = await harness.waitForSnapshot(
+      const cancelled = await harness.pressAndWaitForSnapshot(
         session,
+        "escape",
         (text) => !text.includes("Draft note"),
         5_000,
       );
@@ -939,9 +943,9 @@ describe("PTY notes", () => {
       await session.press("c");
       await session.waitForText(/Draft note/, { timeout: 5_000 });
       await session.type("Keep focus here");
-      await session.press("]");
-      const whileFocused = await harness.waitForSnapshot(
+      const whileFocused = await harness.pressAndWaitForSnapshot(
         session,
+        "]",
         (text) => text.includes("Keep focus here]") && !text.includes("line60 = 6000"),
         5_000,
       );
@@ -949,11 +953,15 @@ describe("PTY notes", () => {
 
       // Cancel from the focused editor so the tight viewport can keep the target line fixed even
       // when the form's action row is intentionally below the visible bounds.
-      await session.press("escape");
-      await harness.waitForSnapshot(session, (text) => !text.includes("Draft note"), 5_000);
-      await session.press("]");
-      const afterCancel = await harness.waitForSnapshot(
+      await harness.pressAndWaitForSnapshot(
         session,
+        "escape",
+        (text) => !text.includes("Draft note"),
+        5_000,
+      );
+      const afterCancel = await harness.pressAndWaitForSnapshot(
+        session,
+        "]",
         (text) => text.includes("line60 = 6000"),
         5_000,
       );
@@ -994,9 +1002,9 @@ describe("PTY notes", () => {
 
       await session.click(/Esc cancel/);
       await harness.waitForSnapshot(session, (text) => !text.includes("Draft note"), 5_000);
-      await session.press("s");
-      const afterCancel = await harness.waitForSnapshot(
+      const afterCancel = await harness.pressAndWaitForSnapshot(
         session,
+        "s",
         (text) => sidebarRow.test(text),
         5_000,
       );

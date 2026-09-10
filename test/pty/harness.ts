@@ -1080,12 +1080,17 @@ end
    * Never resend input on timeout; a dropped key must remain a test failure.
    */
   async function pressAndWaitForSnapshot(
-    session: Pick<Session, "press" | "text" | "waitIdle">,
+    session: Pick<Session, "sendKey" | "text" | "waitIdle">,
     key: Key | Key[],
     predicate: (text: string) => boolean,
     timeoutMs = 5_000,
   ) {
-    await session.press(key);
+    const before = await session.text({ immediate: true });
+    if (predicate(before)) {
+      throw new Error("pressAndWaitForSnapshot: destination was visible before the keypress.");
+    }
+
+    session.sendKey(key);
     return waitForSnapshot(session, predicate, timeoutMs);
   }
 

@@ -2,12 +2,12 @@ import { describe, expect, test } from "bun:test";
 import type { Session } from "tuistory";
 import { createPtyHarness } from "./harness";
 
-/** Simulate a key whose output-idle wait returns before its destination is painted. */
+/** Simulate a key whose first output-idle cycle ends before its destination is painted. */
 function createTestTransitionSession(screens: string[]) {
-  const inputs: Parameters<Session["press"]>[0][] = [];
+  const inputs: Parameters<Session["sendKey"]>[0][] = [];
   let frame = 0;
-  const session: Pick<Session, "press" | "text" | "waitIdle"> = {
-    async press(key) {
+  const session: Pick<Session, "sendKey" | "text" | "waitIdle"> = {
+    sendKey(key) {
       inputs.push(key);
     },
     async text() {
@@ -46,5 +46,14 @@ describe("PTY transition synchronization", () => {
       ),
     ).rejects.toThrow("Last snapshot:\nDraft note — body");
     expect(inputs).toEqual([["ctrl", "s"]]);
+  });
+
+  test("rejects a predicate that cannot distinguish the destination", async () => {
+    const { session, inputs } = createTestTransitionSession(["Shared content"]);
+    const harness = createPtyHarness();
+    await expect(
+      harness.pressAndWaitForSnapshot(session, "q", (text) => text.includes("Shared content")),
+    ).rejects.toThrow("destination was visible before the keypress");
+    expect(inputs).toEqual([]);
   });
 });

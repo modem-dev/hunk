@@ -173,8 +173,12 @@ describe("PTY current line", () => {
       expect(splitLines[lensIndex + 1]).toContain("export const message = 'short';");
       expect(splitLines[lensIndex + 2]).toContain("this is a very long wrapped line");
 
-      await session.press("1");
-      await harness.waitForSnapshot(session, (text) => !text.includes("Current line"), 5_000);
+      await harness.pressAndWaitForSnapshot(
+        session,
+        "1",
+        (text) => !text.includes("Current line"),
+        5_000,
+      );
 
       await session.press("2");
       await session.waitForText(/Current line · old above, new below/, { timeout: 5_000 });
@@ -267,8 +271,12 @@ describe("PTY current line", () => {
 
     try {
       await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
-      await session.press("z");
-      await harness.waitForSnapshot(session, (text) => text.includes("hiddenLine01"), 5_000);
+      await harness.pressAndWaitForSnapshot(
+        session,
+        "z",
+        (text) => text.includes("hiddenLine01"),
+        5_000,
+      );
       // The revealed rows reach navigation one commit after they reach the screen.
       await session.waitIdle({ timeout: 500 });
 
@@ -298,22 +306,38 @@ describe("PTY current line", () => {
       const beforeExpand = await session.waitForText(/Draft note/, { timeout: 5_000 });
       const startRow = /Draft note[^R]*R(\d+)/.exec(beforeExpand)?.[1];
       expect(startRow).toBeDefined();
-      await session.press("escape");
-      await harness.waitForSnapshot(session, (text) => !text.includes("Draft note"), 5_000);
+      await harness.pressAndWaitForSnapshot(
+        session,
+        "escape",
+        (text) => !text.includes("Draft note"),
+        5_000,
+      );
 
-      await session.press("z");
-      await harness.waitForSnapshot(session, (text) => text.includes("hiddenLine01"), 5_000);
+      await harness.pressAndWaitForSnapshot(
+        session,
+        "z",
+        (text) => text.includes("hiddenLine01"),
+        5_000,
+      );
       await session.waitIdle({ timeout: 500 });
       await session.press("c");
       const expanded = await session.waitForText(/Draft note/, { timeout: 5_000 });
 
       expect(expanded).toContain("R1 ");
       expect(lineIndexOf(expanded, "Draft note")).toBe(lineIndexOf(expanded, "hiddenLine01") + 1);
-      await session.press("escape");
-      await harness.waitForSnapshot(session, (text) => !text.includes("Draft note"), 5_000);
+      await harness.pressAndWaitForSnapshot(
+        session,
+        "escape",
+        (text) => !text.includes("Draft note"),
+        5_000,
+      );
 
-      await session.press("z");
-      await harness.waitForSnapshot(session, (text) => !text.includes("hiddenLine01"), 5_000);
+      await harness.pressAndWaitForSnapshot(
+        session,
+        "z",
+        (text) => !text.includes("hiddenLine01"),
+        5_000,
+      );
       await session.waitIdle({ timeout: 500 });
       await session.press("c");
       const collapsed = await session.waitForText(/Draft note/, { timeout: 5_000 });
@@ -392,8 +416,12 @@ describe("PTY current line", () => {
       const draftRowAtTop = lineIndexOf(draftAtTop, "Draft note");
       expect(draftRowAtTop).toBeGreaterThan(0);
 
-      await session.press("escape");
-      await harness.waitForSnapshot(session, (text) => !text.includes("Draft note"), 5_000);
+      await harness.pressAndWaitForSnapshot(
+        session,
+        "escape",
+        (text) => !text.includes("Draft note"),
+        5_000,
+      );
 
       for (let step = 0; step < 4; step += 1) {
         await session.press("j");

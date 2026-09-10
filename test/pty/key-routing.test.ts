@@ -77,9 +77,9 @@ describe("PTY key routing", () => {
       await session.press("?");
       await session.waitForText(/Controls help/, { timeout: 5_000 });
 
-      await session.press("/");
-      await harness.waitForSnapshot(
+      await harness.pressAndWaitForSnapshot(
         session,
+        "/",
         (text) => text.includes("filter: type to filter files"),
         5_000,
       );
@@ -88,9 +88,9 @@ describe("PTY key routing", () => {
 
       // One Escape must close the overlay and do nothing else. The overlay
       // handler owns the key; the filter input must never see it.
-      await session.press("escape");
-      const afterEscape = await harness.waitForSnapshot(
+      const afterEscape = await harness.pressAndWaitForSnapshot(
         session,
+        "escape",
         (text) => !text.includes("Controls help"),
         5_000,
       );
@@ -118,9 +118,9 @@ describe("PTY key routing", () => {
       expect(initial).toMatch(/▌.*▌/);
 
       // Focus the filter and narrow to one file so the filter is visibly live.
-      await session.press("/");
-      await harness.waitForSnapshot(
+      await harness.pressAndWaitForSnapshot(
         session,
+        "/",
         (text) => text.includes("filter: type to filter files"),
         5_000,
       );
@@ -134,9 +134,9 @@ describe("PTY key routing", () => {
       // Open the menu bar and pick "Unified view" from the View menu with Enter.
       await session.press("f10");
       await session.waitForText(/Reload/, { timeout: 5_000 });
-      await session.press("right");
-      await harness.waitForSnapshot(
+      await harness.pressAndWaitForSnapshot(
         session,
+        "right",
         (text) => text.includes("Split view") && text.includes("Unified view"),
         5_000,
       );
@@ -203,9 +203,9 @@ describe("PTY key routing", () => {
 
       // Pager focuses the review scroll box, so every key the global chain
       // leaves unconsumed also reaches the scroll box's own arrow scrolling.
-      await session.press("f10");
-      const menuOpen = await harness.waitForSnapshot(
+      const menuOpen = await harness.pressAndWaitForSnapshot(
         session,
+        "f10",
         (text) => text.includes("Quit"),
         5_000,
       );
@@ -239,9 +239,9 @@ describe("PTY key routing", () => {
       await session.waitForText(/scroll\.ts/, { timeout: 15_000 });
       await session.waitIdle({ timeout: 300 });
 
-      await session.press("t");
-      const selectorOpen = await harness.waitForSnapshot(
+      const selectorOpen = await harness.pressAndWaitForSnapshot(
         session,
+        "t",
         (text) => text.includes("Theme selector"),
         5_000,
       );
@@ -283,9 +283,9 @@ describe("PTY key routing", () => {
 
       // An open menu is deliberately not fully modal: keys the menu does not
       // use keep falling through to the command table.
-      await session.press("?");
-      const help = await harness.waitForSnapshot(
+      const help = await harness.pressAndWaitForSnapshot(
         session,
+        "?",
         (text) => text.includes("Controls help"),
         5_000,
       );

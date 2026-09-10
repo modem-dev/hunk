@@ -82,36 +82,36 @@ describe("PTY pager", () => {
       expect(initial).toContain("before_01");
       expect(initial).not.toContain("before_12");
 
-      await session.press(["ctrl", "d"]);
-      const halfPaged = await harness.waitForSnapshot(
+      const halfPaged = await harness.pressAndWaitForSnapshot(
         session,
+        ["ctrl", "d"],
         (text) => !text.includes("before_01"),
         5_000,
       );
 
       expect(halfPaged).not.toContain("before_01");
 
-      await session.press(["ctrl", "u"]);
-      const halfPageRestored = await harness.waitForSnapshot(
+      const halfPageRestored = await harness.pressAndWaitForSnapshot(
         session,
+        ["ctrl", "u"],
         (text) => text.includes("before_01"),
         5_000,
       );
 
       expect(halfPageRestored).toContain("before_01");
 
-      await session.press("space");
-      const paged = await harness.waitForSnapshot(
+      const paged = await harness.pressAndWaitForSnapshot(
         session,
+        "space",
         (text) => text.includes("before_18"),
         5_000,
       );
 
       expect(paged).toContain("before_18");
 
-      await session.press("b");
-      const pageRestored = await harness.waitForSnapshot(
+      const pageRestored = await harness.pressAndWaitForSnapshot(
         session,
+        "b",
         (text) => text.includes("before_01") && !text.includes("before_18"),
         5_000,
       );
@@ -119,18 +119,18 @@ describe("PTY pager", () => {
       expect(pageRestored).toContain("before_01");
       expect(pageRestored).not.toContain("before_18");
 
-      await session.press("end");
-      const bottom = await harness.waitForSnapshot(
+      const bottom = await harness.pressAndWaitForSnapshot(
         session,
+        "end",
         (text) => text.includes("after_60"),
         5_000,
       );
 
       expect(bottom).toContain("after_60");
 
-      await session.press("home");
-      const top = await harness.waitForSnapshot(
+      const top = await harness.pressAndWaitForSnapshot(
         session,
+        "home",
         (text) => text.includes("before_01") && !text.includes("after_60"),
         5_000,
       );
@@ -336,9 +336,9 @@ describe("PTY pager", () => {
       expect(nextFile).toContain("secondValue = 2;");
       expect(nextFile).not.toContain("line01 = 1;");
 
-      await session.press(",");
-      const previousFile = await harness.waitForSnapshot(
+      const previousFile = await harness.pressAndWaitForSnapshot(
         session,
+        ",",
         (text) => text.includes("line01 = 1;") && !text.includes("secondValue = 2;"),
         5_000,
       );
@@ -368,17 +368,21 @@ describe("PTY pager", () => {
       expect(initial).toMatch(/▌.*▌/);
 
       await session.waitIdle({ timeout: 200 });
-      await session.press("1");
-      const unified = await harness.waitForSnapshot(
+      const unified = await harness.pressAndWaitForSnapshot(
         session,
+        "1",
         (text) => !/▌.*▌/.test(text) && text.includes("line01 = 1;"),
         5_000,
       );
 
       expect(unified).not.toMatch(/▌.*▌/);
 
-      await session.press("2");
-      const split = await harness.waitForSnapshot(session, (text) => /▌.*▌/.test(text), 5_000);
+      const split = await harness.pressAndWaitForSnapshot(
+        session,
+        "2",
+        (text) => /▌.*▌/.test(text),
+        5_000,
+      );
 
       expect(split).toMatch(/▌.*▌/);
 

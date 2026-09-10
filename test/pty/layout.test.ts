@@ -289,18 +289,18 @@ describe("PTY layout", () => {
       expect(initial).toContain("this is a very long");
       expect(initial).not.toContain("ge';");
 
-      await session.press("w");
-      const wrapped = await harness.waitForSnapshot(
+      const wrapped = await harness.pressAndWaitForSnapshot(
         session,
+        "w",
         (text) => text.includes("ge';"),
         5_000,
       );
 
       expect(wrapped).toContain("ge';");
 
-      await session.press("w");
-      const unwrapped = await harness.waitForSnapshot(
+      const unwrapped = await harness.pressAndWaitForSnapshot(
         session,
+        "w",
         (text) => !text.includes("ge';"),
         5_000,
       );
@@ -327,18 +327,18 @@ describe("PTY layout", () => {
       expect(initial).toContain("▾ 1 unchanged line");
       expect(initial).not.toContain("hiddenLine01");
 
-      await session.press("z");
-      const expanded = await harness.waitForSnapshot(
+      const expanded = await harness.pressAndWaitForSnapshot(
         session,
+        "z",
         (text) => text.includes("Hide 1 unchanged line") && text.includes("hiddenLine01"),
         5_000,
       );
 
       expect(expanded).toContain("hiddenLine01");
 
-      await session.press("z");
-      const collapsed = await harness.waitForSnapshot(
+      const collapsed = await harness.pressAndWaitForSnapshot(
         session,
+        "z",
         (text) => text.includes("▾ 1 unchanged line") && !text.includes("hiddenLine01"),
         5_000,
       );
@@ -690,18 +690,18 @@ describe("PTY layout", () => {
       expect(initial).not.toMatch(/▌.*▌/);
       expect(initial).toContain("1   -  export const alpha = 1;");
 
-      await session.press("2");
-      const split = await harness.waitForSnapshot(
+      const split = await harness.pressAndWaitForSnapshot(
         session,
+        "2",
         (text) => /▌.*▌/.test(text) && harness.countMatches(text, /alpha\.ts/g) >= 2,
         5_000,
       );
 
       expect(split).toMatch(/▌.*▌/);
 
-      await session.press("1");
-      const unified = await harness.waitForSnapshot(
+      const unified = await harness.pressAndWaitForSnapshot(
         session,
+        "1",
         (text) => !/▌.*▌/.test(text) && text.includes("1   -  export const alpha = 1;"),
         5_000,
       );
@@ -709,9 +709,9 @@ describe("PTY layout", () => {
       expect(unified).not.toMatch(/▌.*▌/);
       expect(unified).toContain("1   -  export const alpha = 1;");
 
-      await session.press("0");
-      const auto = await harness.waitForSnapshot(
+      const auto = await harness.pressAndWaitForSnapshot(
         session,
+        "0",
         (text) => /▌.*▌/.test(text) && harness.countMatches(text, /alpha\.ts/g) >= 2,
         5_000,
       );
@@ -754,18 +754,18 @@ describe("PTY layout", () => {
       expect(anchored).not.toContain("line01 = 101");
       expect(anchoredLineNumber).toBeDefined();
 
-      await session.press("1");
-      const unified = await harness.waitForSnapshot(
+      const unified = await harness.pressAndWaitForSnapshot(
         session,
+        "1",
         (text) => !/▌.*▌/.test(text) && text.includes(`line${anchoredLineNumber} =`),
         5_000,
       );
 
       expect(unified).toContain(`line${anchoredLineNumber} =`);
 
-      await session.press("2");
-      const split = await harness.waitForSnapshot(
+      const split = await harness.pressAndWaitForSnapshot(
         session,
+        "2",
         (text) => /▌.*▌/.test(text) && text.includes(`line${anchoredLineNumber} =`),
         5_000,
       );
@@ -896,9 +896,9 @@ describe("PTY layout", () => {
       expect(wrapped).toContain("wrapped line");
       expect(wrapped).toContain("ge';");
 
-      await session.press("w");
-      const reset = await harness.waitForSnapshot(
+      const reset = await harness.pressAndWaitForSnapshot(
         session,
+        "w",
         (text) => text.includes("this is a very long") && !text.includes("ge';"),
         5_000,
       );
