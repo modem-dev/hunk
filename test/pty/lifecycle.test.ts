@@ -227,8 +227,7 @@ describe("PTY lifecycle", () => {
         session.writeRaw(`${hunkCommand}\r`);
         await session.waitForText(/before\.txt.*after\.txt/, { timeout: 15_000 });
         await harness.ensureKeyboardIsLive(session);
-        await session.press("c");
-        await session.waitForText(/Draft note/, { timeout: 5_000 });
+        await harness.pressAndWaitForText(session, "c", /Draft note/, { timeout: 5_000 });
         await session.type("Keep this note after resume.");
         await session.press(["ctrl", "s"]);
         await session.waitForText(/Keep this note after resume\./, { timeout: 5_000 });

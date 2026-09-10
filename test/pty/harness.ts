@@ -1094,6 +1094,26 @@ end
     return waitForSnapshot(session, predicate, timeoutMs);
   }
 
+  /** Send one key and wait for text that was absent before the transition. */
+  async function pressAndWaitForText(
+    session: Pick<Session, "sendKey" | "text" | "waitForText">,
+    key: Key | Key[],
+    pattern: Parameters<Session["waitForText"]>[0],
+    options?: Parameters<Session["waitForText"]>[1],
+  ) {
+    const before = await session.text({ immediate: true });
+    const matchedBefore =
+      typeof pattern === "string"
+        ? before.includes(pattern)
+        : new RegExp(pattern.source, pattern.flags.replace(/[gy]/g, "")).test(before);
+    if (matchedBefore) {
+      throw new Error("pressAndWaitForText: destination was visible before the keypress.");
+    }
+
+    session.sendKey(key);
+    return session.waitForText(pattern, options);
+  }
+
   function countMatches(text: string, pattern: RegExp) {
     return (text.match(pattern) ?? []).length;
   }
@@ -1163,6 +1183,7 @@ end
     buildHunkCommand,
     shellQuote,
     pressAndWaitForSnapshot,
+    pressAndWaitForText,
     waitForSnapshot,
   };
 }

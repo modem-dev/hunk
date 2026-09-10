@@ -161,8 +161,7 @@ describe("PTY file views", () => {
       // A short idle wait can finish while the terminal parser still holds a lone Escape.
       // Verify close before F8 so the two inputs cannot become an Alt-modified function key.
       await harness.waitForSnapshot(session, (text) => !text.includes("File presentation:"));
-      await session.press("f8");
-      await session.waitForText(/• new item/);
+      await harness.pressAndWaitForText(session, "f8", /• new item/);
       await session.click(/View/);
       const toggled = await session.waitForText(/\[x\] File presentation: Rendered Markdown/, {
         timeout: 20_000,
@@ -234,10 +233,8 @@ describe("PTY file views", () => {
         await session.click(/View/);
         await session.waitForText(demo.view, { timeout: 20_000 });
         await session.press("escape");
-        await session.press("f8");
-        await session.waitForText(demo.first, { timeout: 20_000 });
-        await session.press("]");
-        await session.waitForText(demo.second, { timeout: 20_000 });
+        await harness.pressAndWaitForText(session, "f8", demo.first, { timeout: 20_000 });
+        await harness.pressAndWaitForText(session, "]", demo.second, { timeout: 20_000 });
         await session.click(/View/);
         await session.waitForText(/File presentation: Raw diff/, { timeout: 20_000 });
         await session.click(/File presentation: Raw diff/);
@@ -260,12 +257,12 @@ describe("PTY file views", () => {
       await harness.ensureKeyboardIsLive(session);
 
       await session.click(/package\.json/, { first: true });
-      await session.press("f8");
-      await session.waitForText(/Package metadata hunk 1/, { timeout: 20_000 });
+      await harness.pressAndWaitForText(session, "f8", /Package metadata hunk 1/, {
+        timeout: 20_000,
+      });
 
       await session.click(/invoice\.ts/, { first: true });
-      await session.press("f8");
-      await session.waitForText(/CHANGE 01/, { timeout: 20_000 });
+      await harness.pressAndWaitForText(session, "f8", /CHANGE 01/, { timeout: 20_000 });
 
       await session.click(/theme\.css/, { first: true });
       await session.press("f8");
@@ -330,12 +327,10 @@ describe("PTY file views", () => {
       custom = await session.waitForText(/lines 1–4 · @@ -1,4 \+1,4 @@/);
       expect(custom).not.toContain("row 0 · click for detail");
 
-      await session.press("]");
-      const secondHunk = await session.waitForText(/▶ Hunk 2/);
+      const secondHunk = await harness.pressAndWaitForText(session, "]", /▶ Hunk 2/);
       expect(secondHunk).not.toContain("▶ Hunk 1");
 
-      await session.press("f8");
-      const raw = await session.waitForText(/line60 = 6000/);
+      const raw = await harness.pressAndWaitForText(session, "f8", /line60 = 6000/);
       expect(raw).not.toContain("Hunk 1");
 
       await session.click(/Extensions/);
@@ -374,21 +369,17 @@ describe("PTY file views", () => {
 
       // One press from raw diff: entering the mode selects the view it takes
       // keys for, so the rows and the keyboard arrive together.
-      await session.press("f9");
-      await session.waitForText(/CURSOR AT 0/, { timeout: 20_000 });
+      await harness.pressAndWaitForText(session, "f9", /CURSOR AT 0/, { timeout: 20_000 });
       await session.waitForText(/cursor-mode:cursor mode — Esc exits/, { timeout: 20_000 });
 
       // Handled keys reach the extension, and the redraw it asks for is what
       // the terminal actually shows.
-      await session.press("j");
-      await session.waitForText(/CURSOR AT 1/, { timeout: 20_000 });
-      await session.press("j");
-      await session.waitForText(/CURSOR AT 2/, { timeout: 20_000 });
+      await harness.pressAndWaitForText(session, "j", /CURSOR AT 1/, { timeout: 20_000 });
+      await harness.pressAndWaitForText(session, "j", /CURSOR AT 2/, { timeout: 20_000 });
 
       // A declined key reaches Hunk's own commands, and the overlay it opens
       // outranks the mode: its Escape closes the overlay, not the mode.
-      await session.press("?");
-      await session.waitForText(/Controls help/, { timeout: 20_000 });
+      await harness.pressAndWaitForText(session, "?", /Controls help/, { timeout: 20_000 });
       await session.press("escape");
       const stillActive = await session.waitForText(/cursor-mode:cursor mode — Esc exits/, {
         timeout: 20_000,
@@ -400,8 +391,9 @@ describe("PTY file views", () => {
       expect(exited).not.toContain("Esc exits");
 
       // The command table owns the keyboard again.
-      await session.press("f8");
-      const raw = await session.waitForText(/line60 = 6000/, { timeout: 20_000 });
+      const raw = await harness.pressAndWaitForText(session, "f8", /line60 = 6000/, {
+        timeout: 20_000,
+      });
       expect(raw).not.toContain("CURSOR AT");
     } finally {
       session.close();
@@ -435,21 +427,22 @@ describe("PTY file views", () => {
       // each keystroke reaches the screen only through `fileViews.refresh`.
       await session.press("z");
       await session.press("z");
-      await session.press("z");
-      const typed = await session.waitForText(/zzzexport const alpha = 2;/, { timeout: 20_000 });
+      const typed = await harness.pressAndWaitForText(session, "z", /zzzexport const alpha = 2;/, {
+        timeout: 20_000,
+      });
       expect(typed).toContain("MODIFIED");
 
       // `?` is an explicitly host-owned printable key, so help remains
       // reachable and one Escape closes only the overlay, not the editor.
-      await session.press("?");
-      await session.waitForText(/Controls help/, { timeout: 20_000 });
+      await harness.pressAndWaitForText(session, "?", /Controls help/, { timeout: 20_000 });
       await session.press("escape");
       await session.waitForText(/inline-edit:inline-edit mode — Esc exits/, { timeout: 20_000 });
 
       // The mode can only request the write; the command handler awaiting the
       // session performs it, and the host asks the user first.
-      await session.press(["ctrl", "s"]);
-      await session.waitForText(/Write alpha\.ts\?/, { timeout: 20_000 });
+      await harness.pressAndWaitForText(session, ["ctrl", "s"], /Write alpha\.ts\?/, {
+        timeout: 20_000,
+      });
       const prompt = await session.waitForText(/ext inline-edit/, { timeout: 20_000 });
       expect(prompt).toContain("replace this file's contents on disk");
       await session.press("enter");
@@ -508,8 +501,9 @@ describe("PTY file views", () => {
     try {
       await session.waitForText(/Keep this note visible\./, { timeout: 20_000 });
       await harness.ensureKeyboardIsLive(session);
-      await session.press(["ctrl", "e"]);
-      await session.waitForText(/EDITING — Esc exits/, { timeout: 20_000 });
+      await harness.pressAndWaitForText(session, ["ctrl", "e"], /EDITING — Esc exits/, {
+        timeout: 20_000,
+      });
 
       await session.press("down");
       await session.press("backspace");
@@ -543,12 +537,14 @@ describe("PTY file views", () => {
     try {
       await session.waitForText(/😀/, { timeout: 20_000 });
       await harness.ensureKeyboardIsLive(session);
-      await session.press(["ctrl", "e"]);
-      await session.waitForText(/EDITING — Esc exits/, { timeout: 20_000 });
+      await harness.pressAndWaitForText(session, ["ctrl", "e"], /EDITING — Esc exits/, {
+        timeout: 20_000,
+      });
       await session.press("right");
       await session.press("backspace");
-      await session.press(["ctrl", "s"]);
-      await session.waitForText(/Write alpha\.ts\?/, { timeout: 20_000 });
+      await harness.pressAndWaitForText(session, ["ctrl", "s"], /Write alpha\.ts\?/, {
+        timeout: 20_000,
+      });
       await session.press("enter");
 
       expect(await waitForWrittenFile(edited, "\n")).toBe("\n");
@@ -581,8 +577,7 @@ describe("PTY file views", () => {
     try {
       await session.waitForText(/before\.md/, { timeout: 20_000 });
       await harness.ensureKeyboardIsLive(session);
-      await session.press("f8");
-      const preview = await session.waitForText(/• new item/);
+      const preview = await harness.pressAndWaitForText(session, "f8", /• new item/);
       expect(preview).toContain("Review the new item.");
       expect(preview).not.toContain("old item");
       await session.click(/View/);
@@ -625,8 +620,7 @@ describe("PTY file views", () => {
       await session.waitForText(/\[x\] File presentation: Rendered Markdown/);
       await session.press("escape");
 
-      await session.press("a");
-      const restored = await session.waitForText(/• new item/);
+      const restored = await harness.pressAndWaitForText(session, "a", /• new item/);
       expect(restored).not.toContain("old item");
     } finally {
       session.close();

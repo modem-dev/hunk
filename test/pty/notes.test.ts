@@ -44,8 +44,9 @@ describe("PTY notes", () => {
 
       expect(initial).not.toContain("Adds bonus export.");
 
-      await session.press("a");
-      const withNotes = await session.waitForText(/Adds bonus export\./, { timeout: 5_000 });
+      const withNotes = await harness.pressAndWaitForText(session, "a", /Adds bonus export\./, {
+        timeout: 5_000,
+      });
 
       expect(withNotes).toContain("Highlights the follow-up addition for review.");
       expect(withNotes).not.toContain("STML ACTIVE");
@@ -82,8 +83,9 @@ describe("PTY notes", () => {
 
     try {
       await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
-      await session.press("a");
-      const withNotes = await session.waitForText(/GAP NOTE/, { timeout: 5_000 });
+      const withNotes = await harness.pressAndWaitForText(session, "a", /GAP NOTE/, {
+        timeout: 5_000,
+      });
 
       // Lines 6-7 are collapsed away, so the note hangs from the hunk that owns the gap:
       // it lands just below that hunk's first row, not at the top of the file.
@@ -115,8 +117,9 @@ describe("PTY notes", () => {
 
     try {
       await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
-      await session.press("a");
-      const withMarkup = await session.waitForText(/STML ACTIVE/, { timeout: 5_000 });
+      const withMarkup = await harness.pressAndWaitForText(session, "a", /STML ACTIVE/, {
+        timeout: 5_000,
+      });
 
       expect(withMarkup).not.toContain("Highlights the follow-up addition for review.");
     } finally {
@@ -146,8 +149,9 @@ describe("PTY notes", () => {
       const firstActiveRow = lineIndexOf(beforePushedDraft, firstActiveLine);
       const followingRowBefore = lineIndexOf(beforePushedDraft, followingLine);
 
-      await session.press("c");
-      await session.waitForText(/Draft note - before\.ts -> after\.ts L9/, { timeout: 5_000 });
+      await harness.pressAndWaitForText(session, "c", /Draft note - before\.ts -> after\.ts L9/, {
+        timeout: 5_000,
+      });
       await sleep(100);
       const pushedDraft = await session.text({ immediate: true });
 
@@ -171,8 +175,7 @@ describe("PTY notes", () => {
       const bottomActiveRow = lineIndexOf(beforeBottomDraft, bottomActiveLine);
       expect(bottomActiveRow).toBeGreaterThan(0);
 
-      await session.press("c");
-      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await harness.pressAndWaitForText(session, "c", /Draft note/, { timeout: 5_000 });
       await sleep(100);
       const bottomDraft = await session.text({ immediate: true });
 
@@ -211,8 +214,7 @@ describe("PTY notes", () => {
       const paged = await session.text({ immediate: true });
       expect(paged).not.toContain("export const line01 = 1;");
 
-      await session.press("c");
-      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await harness.pressAndWaitForText(session, "c", /Draft note/, { timeout: 5_000 });
       await sleep(100);
       const draft = await session.text({ immediate: true });
 
@@ -236,8 +238,9 @@ describe("PTY notes", () => {
         timeout: 15_000,
       });
 
-      await session.press("c");
-      const freshDraft = await session.waitForText(/Draft note/, { timeout: 5_000 });
+      const freshDraft = await harness.pressAndWaitForText(session, "c", /Draft note/, {
+        timeout: 5_000,
+      });
       // The "c" that opened the note must not be inserted into the editor. A fresh, empty draft
       // shows its placeholder; if the opening keystroke leaked in, the editor would hold "c" and
       // the placeholder would be gone.
@@ -295,8 +298,7 @@ describe("PTY notes", () => {
     try {
       await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
 
-      await session.press("c");
-      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await harness.pressAndWaitForText(session, "c", /Draft note/, { timeout: 5_000 });
       await session.type("First keyboard note.");
       await harness.pressAndWaitForSnapshot(
         session,
@@ -307,8 +309,7 @@ describe("PTY notes", () => {
           text.includes("First keyboard note."),
       );
 
-      await session.press("c");
-      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await harness.pressAndWaitForText(session, "c", /Draft note/, { timeout: 5_000 });
       await session.type("Second keyboard note.");
       await session.type("\x13");
       const savedActive = await harness.waitForSnapshot(
@@ -394,8 +395,7 @@ describe("PTY notes", () => {
     try {
       await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
       for (const body of ["First note-only stop.", "Second note-only stop."]) {
-        await session.press("c");
-        await session.waitForText(/Draft note/, { timeout: 5_000 });
+        await harness.pressAndWaitForText(session, "c", /Draft note/, { timeout: 5_000 });
         await session.type(body);
         await harness.pressAndWaitForSnapshot(
           session,
@@ -442,8 +442,7 @@ describe("PTY notes", () => {
     try {
       await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
 
-      await session.press("c");
-      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await harness.pressAndWaitForText(session, "c", /Draft note/, { timeout: 5_000 });
       await session.type("Root review note.");
       await session.waitForText(/Root review note\./, { timeout: 5_000 });
       await session.type("\x13");
@@ -597,8 +596,9 @@ describe("PTY notes", () => {
 
       await dragMouse(session, 12, oldEndRow, 24, newStartRow);
       await session.waitForText(/c Comment\s+y Copy\s+Esc Clear/, { timeout: 5_000 });
-      await session.press("c");
-      const draft = await session.waitForText(/Draft note/, { timeout: 5_000 });
+      const draft = await harness.pressAndWaitForText(session, "c", /Draft note/, {
+        timeout: 5_000,
+      });
       expect(draft).toContain("L2 → R1");
 
       await session.type("Mixed replacement feedback.");
@@ -624,8 +624,7 @@ describe("PTY notes", () => {
         timeout: 15_000,
       });
 
-      await session.press("c");
-      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await harness.pressAndWaitForText(session, "c", /Draft note/, { timeout: 5_000 });
 
       // 48 characters, 86 cells: past the wrap point of any reasonable
       // composer width, and long enough that a code-unit row estimate would
@@ -658,8 +657,7 @@ describe("PTY notes", () => {
     try {
       await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
 
-      await session.press("c");
-      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await harness.pressAndWaitForText(session, "c", /Draft note/, { timeout: 5_000 });
       await session.type("Save exactly one note.");
       await session.waitForText(/Save exactly one note\./, { timeout: 5_000 });
 
@@ -692,8 +690,7 @@ describe("PTY notes", () => {
     try {
       await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
 
-      await session.press("c");
-      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await harness.pressAndWaitForText(session, "c", /Draft note/, { timeout: 5_000 });
       await session.type("Fast sav");
       await session.waitForText(/Fast sav/, { timeout: 5_000 });
 
@@ -777,8 +774,7 @@ describe("PTY notes", () => {
       // Open an empty draft via the keyboard and immediately cancel it. The very first Escape must
       // close it — a regression once required two presses because the focus area had not yet
       // settled to the note when the first Escape arrived.
-      await session.press("c");
-      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await harness.pressAndWaitForText(session, "c", /Draft note/, { timeout: 5_000 });
 
       const cancelled = await harness.pressAndWaitForSnapshot(
         session,
@@ -823,8 +819,9 @@ describe("PTY notes", () => {
       await session.click(/\[\+\]/);
       await session.waitForText(/Draft note/, { timeout: 5_000 });
       await session.type("Save this shortcut draft.");
-      await session.press(["ctrl", "s"]);
-      const saved = await session.waitForText(/Your note/, { timeout: 5_000 });
+      const saved = await harness.pressAndWaitForText(session, ["ctrl", "s"], /Your note/, {
+        timeout: 5_000,
+      });
 
       expect(saved).toContain("Save this shortcut draft.");
     } finally {
@@ -851,8 +848,9 @@ describe("PTY notes", () => {
       await session.click(/\[\+\]/);
       await session.waitForText(/Draft note/, { timeout: 5_000 });
       await session.type("Save this unified draft.");
-      await session.press(["ctrl", "s"]);
-      const saved = await session.waitForText(/Your note/, { timeout: 5_000 });
+      const saved = await harness.pressAndWaitForText(session, ["ctrl", "s"], /Your note/, {
+        timeout: 5_000,
+      });
 
       expect(saved).toContain("Save this unified draft.");
     } finally {
@@ -879,8 +877,9 @@ describe("PTY notes", () => {
       await session.click(/\[\+\]/);
       await session.waitForText(/Draft note/, { timeout: 5_000 });
       await session.type("Save this deletion draft.");
-      await session.press(["ctrl", "s"]);
-      const saved = await session.waitForText(/Your note/, { timeout: 5_000 });
+      const saved = await harness.pressAndWaitForText(session, ["ctrl", "s"], /Your note/, {
+        timeout: 5_000,
+      });
 
       expect(saved).toContain("Save this deletion draft.");
     } finally {
@@ -917,8 +916,9 @@ describe("PTY notes", () => {
       expect(lineIndexOf(withDraft, "Draft note")).toBeGreaterThan(clickedRowBefore);
 
       await session.type("Save this context draft.");
-      await session.press(["ctrl", "s"]);
-      const saved = await session.waitForText(/Your note/, { timeout: 5_000 });
+      const saved = await harness.pressAndWaitForText(session, ["ctrl", "s"], /Your note/, {
+        timeout: 5_000,
+      });
 
       expect(saved).toContain("Save this context draft.");
     } finally {
@@ -940,8 +940,7 @@ describe("PTY notes", () => {
       });
       expect(initial).not.toContain("line60 = 6000");
 
-      await session.press("c");
-      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await harness.pressAndWaitForText(session, "c", /Draft note/, { timeout: 5_000 });
       await session.type("Keep focus here");
       const whileFocused = await harness.pressAndWaitForSnapshot(
         session,

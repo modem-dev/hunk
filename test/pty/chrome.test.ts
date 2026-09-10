@@ -97,8 +97,7 @@ describe("PTY chrome", () => {
 
     try {
       await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
-      await session.press("t");
-      await session.waitForText(/Theme selector/, { timeout: 5_000 });
+      await harness.pressAndWaitForText(session, "t", /Theme selector/, { timeout: 5_000 });
 
       // OS key repeat arrives as a rapid stream while React/OpenTUI drains each preview render.
       for (let index = 0; index < 100; index += 1) {
@@ -134,10 +133,10 @@ describe("PTY chrome", () => {
     try {
       await session.waitForText(/line60/, { timeout: 15_000 });
 
-      await session.press("t");
-      await session.waitForText(/Theme selector/, { timeout: 5_000 });
-      await session.press("down");
-      await session.waitForText(/›\s+github-dark-dimmed/, { timeout: 5_000 });
+      await harness.pressAndWaitForText(session, "t", /Theme selector/, { timeout: 5_000 });
+      await harness.pressAndWaitForText(session, "down", /›\s+github-dark-dimmed/, {
+        timeout: 5_000,
+      });
       await harness.pressAndWaitForSnapshot(
         session,
         "enter",
@@ -145,8 +144,9 @@ describe("PTY chrome", () => {
         5_000,
       );
 
-      await session.press("q");
-      const prompt = await session.waitForText(/Save view preferences\?/, { timeout: 5_000 });
+      const prompt = await harness.pressAndWaitForText(session, "q", /Save view preferences\?/, {
+        timeout: 5_000,
+      });
       expect(prompt).toContain('- theme = "github-dark-default"');
       expect(prompt).toContain('+ theme = "github-dark-dimmed"');
       expect(prompt).toContain("enter/s save");

@@ -140,8 +140,9 @@ describe("PTY current line", () => {
       }
 
       session.writeRaw(`\x1b[<0;31;${endRow + 1}m`);
-      await session.press("y");
-      await session.waitForText(/Copied selection to clipboard/, { timeout: 5_000 });
+      await harness.pressAndWaitForText(session, "y", /Copied selection to clipboard/, {
+        timeout: 5_000,
+      });
     } finally {
       session.close();
     }
@@ -180,8 +181,9 @@ describe("PTY current line", () => {
         5_000,
       );
 
-      await session.press("2");
-      await session.waitForText(/Current line · old above, new below/, { timeout: 5_000 });
+      await harness.pressAndWaitForText(session, "2", /Current line · old above, new below/, {
+        timeout: 5_000,
+      });
     } finally {
       session.close();
     }
@@ -282,8 +284,9 @@ describe("PTY current line", () => {
 
       await session.press("k");
       await session.waitIdle({ timeout: 200 });
-      await session.press("c");
-      const draft = await session.waitForText(/Draft note/, { timeout: 5_000 });
+      const draft = await harness.pressAndWaitForText(session, "c", /Draft note/, {
+        timeout: 5_000,
+      });
 
       expect(lineIndexOf(draft, "Draft note")).toBe(lineIndexOf(draft, "hiddenLine01") + 1);
     } finally {
@@ -302,8 +305,9 @@ describe("PTY current line", () => {
     try {
       await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
       await session.waitIdle({ timeout: 300 });
-      await session.press("c");
-      const beforeExpand = await session.waitForText(/Draft note/, { timeout: 5_000 });
+      const beforeExpand = await harness.pressAndWaitForText(session, "c", /Draft note/, {
+        timeout: 5_000,
+      });
       const startRow = /Draft note[^R]*R(\d+)/.exec(beforeExpand)?.[1];
       expect(startRow).toBeDefined();
       await harness.pressAndWaitForSnapshot(
@@ -320,8 +324,9 @@ describe("PTY current line", () => {
         5_000,
       );
       await session.waitIdle({ timeout: 500 });
-      await session.press("c");
-      const expanded = await session.waitForText(/Draft note/, { timeout: 5_000 });
+      const expanded = await harness.pressAndWaitForText(session, "c", /Draft note/, {
+        timeout: 5_000,
+      });
 
       expect(expanded).toContain("R1 ");
       expect(lineIndexOf(expanded, "Draft note")).toBe(lineIndexOf(expanded, "hiddenLine01") + 1);
@@ -339,8 +344,9 @@ describe("PTY current line", () => {
         5_000,
       );
       await session.waitIdle({ timeout: 500 });
-      await session.press("c");
-      const collapsed = await session.waitForText(/Draft note/, { timeout: 5_000 });
+      const collapsed = await harness.pressAndWaitForText(session, "c", /Draft note/, {
+        timeout: 5_000,
+      });
 
       expect(collapsed).toContain(`R${startRow} `);
     } finally {
@@ -389,8 +395,9 @@ describe("PTY current line", () => {
       const anchor = paged[12]?.trim() ?? "";
       expect(anchor.length).toBeGreaterThan(0);
 
-      await session.press("c");
-      const draft = await session.waitForText(/Draft note/, { timeout: 5_000 });
+      const draft = await harness.pressAndWaitForText(session, "c", /Draft note/, {
+        timeout: 5_000,
+      });
 
       expect(draft).toContain(anchor);
     } finally {
@@ -411,8 +418,9 @@ describe("PTY current line", () => {
       await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
       await session.waitIdle({ timeout: 300 });
 
-      await session.press("c");
-      const draftAtTop = await session.waitForText(/Draft note/, { timeout: 5_000 });
+      const draftAtTop = await harness.pressAndWaitForText(session, "c", /Draft note/, {
+        timeout: 5_000,
+      });
       const draftRowAtTop = lineIndexOf(draftAtTop, "Draft note");
       expect(draftRowAtTop).toBeGreaterThan(0);
 
@@ -428,8 +436,9 @@ describe("PTY current line", () => {
         await session.waitIdle({ timeout: 200 });
       }
 
-      await session.press("c");
-      const draftAtCursor = await session.waitForText(/Draft note/, { timeout: 5_000 });
+      const draftAtCursor = await harness.pressAndWaitForText(session, "c", /Draft note/, {
+        timeout: 5_000,
+      });
 
       expect(lineIndexOf(draftAtCursor, "Draft note")).toBeGreaterThan(draftRowAtTop);
     } finally {

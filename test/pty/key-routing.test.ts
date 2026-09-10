@@ -47,8 +47,7 @@ describe("PTY key routing", () => {
 
     try {
       await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
-      await session.press("f10");
-      await session.waitForText(/Reload/, { timeout: 5_000 });
+      await harness.pressAndWaitForText(session, "f10", /Reload/, { timeout: 5_000 });
       await session.press("escape");
       // Keep the menu's lone Escape separate from the next Escape-prefixed input.
       await harness.waitForSnapshot(session, (text) => !text.includes("Toggle files/filter focus"));
@@ -74,8 +73,7 @@ describe("PTY key routing", () => {
 
       // Open the help overlay first, then focus the filter and type into it
       // behind the overlay.
-      await session.press("?");
-      await session.waitForText(/Controls help/, { timeout: 5_000 });
+      await harness.pressAndWaitForText(session, "?", /Controls help/, { timeout: 5_000 });
 
       await harness.pressAndWaitForSnapshot(
         session,
@@ -132,8 +130,7 @@ describe("PTY key routing", () => {
       );
 
       // Open the menu bar and pick "Unified view" from the View menu with Enter.
-      await session.press("f10");
-      await session.waitForText(/Reload/, { timeout: 5_000 });
+      await harness.pressAndWaitForText(session, "f10", /Reload/, { timeout: 5_000 });
       await harness.pressAndWaitForSnapshot(
         session,
         "right",
@@ -168,8 +165,7 @@ describe("PTY key routing", () => {
     try {
       await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
 
-      await session.press("c");
-      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await harness.pressAndWaitForText(session, "c", /Draft note/, { timeout: 5_000 });
 
       // The note composer owns the keyboard; F10 must not pop the menu bar
       // over an in-progress draft.
@@ -278,8 +274,7 @@ describe("PTY key routing", () => {
       await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
       await session.waitIdle({ timeout: 300 });
 
-      await session.press("f10");
-      await session.waitForText(/Reload/, { timeout: 5_000 });
+      await harness.pressAndWaitForText(session, "f10", /Reload/, { timeout: 5_000 });
 
       // An open menu is deliberately not fully modal: keys the menu does not
       // use keep falling through to the command table.
@@ -309,8 +304,9 @@ describe("PTY key routing", () => {
       await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
       await session.waitIdle({ timeout: 300 });
 
-      await session.press("f10");
-      const menuOpen = await session.waitForText(/Reload/, { timeout: 5_000 });
+      const menuOpen = await harness.pressAndWaitForText(session, "f10", /Reload/, {
+        timeout: 5_000,
+      });
 
       const anchorRow = 20;
       const anchorText = menuOpen.split("\n")[anchorRow]?.trim() ?? "";
