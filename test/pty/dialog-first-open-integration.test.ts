@@ -4,6 +4,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+// Windows CI excludes the PTY test group, including this native screen parser.
+import { PersistentTerminal } from "ghostty-opentui";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const overlays = [
@@ -52,10 +54,6 @@ for (const overlay of overlays) {
     test.skipIf(process.platform === "win32")(
       `opens ${overlay.name} promptly ${idle ? "after two seconds idle" : "from the first frame"}`,
       async () => {
-        // Resolve the parser through tuistory, its owning dependency; import only on Unix.
-        const { PersistentTerminal } = await import(
-          Bun.resolveSync("ghostty-opentui", import.meta.resolve("tuistory"))
-        );
         const screen = new PersistentTerminal({ cols: 120, rows: 30 });
         const temporary = mkdtempSync(join(tmpdir(), "hunk-dialog-first-open-"));
         const fixture = join(temporary, "repo");
