@@ -282,11 +282,17 @@ describe("PTY file views", () => {
       let reachedRetainedPreview = false;
       for (let step = 0; step < 10 && !reachedRetainedPreview; step += 1) {
         await session.scrollDown(8);
+        const frame = await session.text({ immediate: true });
+        // The sidebar always names package.json once. Wait for its retained preview only after a
+        // second occurrence proves the main stream has mounted that file below the tall README.
+        if (harness.countMatches(frame, /package\.json/g) < 2) {
+          continue;
+        }
         try {
           await session.waitForText(/Package metadata hunk 1/, { timeout: 750 });
           reachedRetainedPreview = true;
         } catch {
-          // Continue through the intentionally tall raw README until the retained preview appears.
+          // The file header can enter first; keep scrolling until its retained preview is visible.
         }
       }
       expect(reachedRetainedPreview).toBe(true);
