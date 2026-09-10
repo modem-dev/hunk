@@ -1214,15 +1214,28 @@ end
    * test actually cares about — meaningful.
    */
   async function ensureKeyboardIsLive(session: Session) {
+    const closeHelp = async () => {
+      session.sendKey("escape");
+      await session.text({
+        timeout: 5_000,
+        waitFor: (text) => !text.includes("Controls help"),
+      });
+    };
+
     for (let attempt = 0; attempt < 5; attempt += 1) {
-      await session.press("?");
+      const before = await session.text({ immediate: true });
+      if (before.includes("Controls help")) {
+        await closeHelp();
+        return;
+      }
+
+      session.sendKey("?");
       try {
-        await waitForSnapshot(session, (text) => text.includes("Controls help"), 2_000);
-        await session.press("escape");
-        await waitForSnapshot(session, (text) => !text.includes("Controls help"), 5_000);
+        await session.waitForText(/Controls help/, { timeout: 2_000 });
+        await closeHelp();
         return;
       } catch {
-        // Dropped before the app was listening; the next press is the retry.
+        // Dropped before the app was listening; a delayed help frame is closed on the next pass.
       }
     }
 
