@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { createPtyHarness } from "./harness";
+import { createPtyHarness, pressKeyRepeat } from "./harness";
 
 const harness = createPtyHarness();
 
@@ -271,9 +271,7 @@ describe("PTY navigation", () => {
       expect(initial).toContain("first.ts");
       expect(initial).toContain("second.ts");
 
-      for (let index = 0; index < 16; index += 1) {
-        await session.press("down");
-      }
+      await pressKeyRepeat(session, "down", 16);
 
       const scrolled = await harness.waitForSnapshot(
         session,

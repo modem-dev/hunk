@@ -6,6 +6,7 @@ import {
   dragMouse,
   lineIndexOf,
   measureKeyScroll,
+  pressKeyRepeat,
   rowCellBackgrounds,
   sleep,
 } from "./harness";
@@ -431,9 +432,7 @@ describe("PTY current line", () => {
         5_000,
       );
 
-      for (let step = 0; step < 4; step += 1) {
-        await session.press("j");
-      }
+      await pressKeyRepeat(session, "j", 4);
 
       const draftAtCursor = await harness.pressAndWaitForText(session, "c", /Draft note/, {
         timeout: 5_000,

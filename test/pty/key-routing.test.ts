@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { createPtyHarness, lineIndexOf, sleep } from "./harness";
+import { createPtyHarness, lineIndexOf, pressKeyRepeat, sleep } from "./harness";
 
 const harness = createPtyHarness();
 
@@ -210,9 +210,7 @@ describe("PTY key routing", () => {
       const anchorText = menuOpen.split("\n")[anchorRow]?.trim() ?? "";
       expect(anchorText.length).toBeGreaterThan(0);
 
-      for (let press = 0; press < 3; press += 1) {
-        await session.press("down");
-      }
+      await pressKeyRepeat(session, "down", 3);
 
       const afterArrows = await session.text({ immediate: true });
       expect(lineIndexOf(afterArrows, anchorText)).toBe(anchorRow);

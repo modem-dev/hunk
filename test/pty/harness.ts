@@ -64,6 +64,11 @@ export function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Send a bounded burst that models repeated delivery from one held key. */
+export function pressKeyRepeat(session: Pick<Session, "press">, key: Key, count: number) {
+  return session.press(Array.from({ length: count }, () => key));
+}
+
 /**
  * Count how many rows one keypress moved the stream by following the text that
  * sat on a fixed screen row.
