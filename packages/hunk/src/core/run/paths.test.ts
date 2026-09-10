@@ -96,6 +96,94 @@ describe("paths", () => {
     }
   });
 
+  test("prefers a staged skill beside the binary over a generic one further up", () => {
+    const tempRoot = createTempRoot("hunk-skill-proximity-");
+
+    try {
+      // A source install stages its skills under `hunkdiff/` beside the executable, so a
+      // reviewer with their own `skills/` directory anywhere above the bin directory must
+      // not shadow it. Exhausting the generic shape to the filesystem root first did.
+      const installDir = join(tempRoot, ".local", "bin");
+      const installedSkill = join(installDir, "hunkdiff", "skills", "hunk-review", "SKILL.md");
+      const unrelatedSkill = join(tempRoot, "skills", "hunk-review", "SKILL.md");
+      const fakeBinary = join(installDir, "hunk");
+
+      mkdirSync(dirname(installedSkill), { recursive: true });
+      mkdirSync(dirname(unrelatedSkill), { recursive: true });
+      writeFileSync(installedSkill, "# installed\n");
+      writeFileSync(unrelatedSkill, "# unrelated\n");
+      writeFileSync(fakeBinary, "binary\n");
+
+      expect(resolveBundledSkillPath("hunk-review", [fakeBinary])).toBe(installedSkill);
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("prefers Hunk's staging tree over generic skills and a nested package", () => {
+    const tempRoot = createTempRoot("hunk-skill-specificity-");
+
+    try {
+      // All three shapes at one ancestor: the source install's namespaced copy wins.
+      const installedSkill = join(tempRoot, "hunkdiff", "skills", "hunk-review", "SKILL.md");
+      const staleGenericSkill = join(tempRoot, "skills", "hunk-review", "SKILL.md");
+      const staleNestedSkill = join(
+        tempRoot,
+        "node_modules",
+        "hunkdiff",
+        "skills",
+        "hunk-review",
+        "SKILL.md",
+      );
+      const fakeBinary = join(tempRoot, "hunk");
+
+      for (const skill of [installedSkill, staleGenericSkill, staleNestedSkill]) {
+        mkdirSync(dirname(skill), { recursive: true });
+      }
+      writeFileSync(installedSkill, "# installed\n");
+      writeFileSync(staleGenericSkill, "# stale generic\n");
+      writeFileSync(staleNestedSkill, "# stale nested\n");
+      writeFileSync(fakeBinary, "binary\n");
+
+      expect(resolveBundledSkillPath("hunk-review", [fakeBinary])).toBe(installedSkill);
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("prefers a prebuilt artifact's own skills over a stale nested package", () => {
+    const tempRoot = createTempRoot("hunk-skill-prebuilt-");
+
+    try {
+      // A prebuilt release artifact ships `skills/` beside the binary with no `hunkdiff/`
+      // wrapper (see `stagePrebuiltArtifact`), so the shape that protects it from a stale
+      // `node_modules/hunkdiff` is `skills` ranking above `node_modules/hunkdiff/skills`.
+      // Deliberately omits `hunkdiff/` so only that pair decides the result: the
+      // source-install case above passes either way and cannot pin this ordering.
+      const shippedSkill = join(tempRoot, "skills", "hunk-review", "SKILL.md");
+      const staleNestedSkill = join(
+        tempRoot,
+        "node_modules",
+        "hunkdiff",
+        "skills",
+        "hunk-review",
+        "SKILL.md",
+      );
+      const fakeBinary = join(tempRoot, "hunk");
+
+      for (const skill of [shippedSkill, staleNestedSkill]) {
+        mkdirSync(dirname(skill), { recursive: true });
+      }
+      writeFileSync(shippedSkill, "# shipped\n");
+      writeFileSync(staleNestedSkill, "# stale\n");
+      writeFileSync(fakeBinary, "binary\n");
+
+      expect(resolveBundledSkillPath("hunk-review", [fakeBinary])).toBe(shippedSkill);
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   test("canonicalizes two spellings of one directory to the same path", () => {
     // Canonicalize with the same resolver the code under test uses: plain
     // realpathSync leaves Windows 8.3 short names (RUNNER~1) in place, which

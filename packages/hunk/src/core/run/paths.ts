@@ -118,8 +118,14 @@ export function resolveInstalledExtensionsRoot(env: NodeJS.ProcessEnv = process.
   return extensionsDir ? join(extensionsDir, INSTALLED_EXTENSIONS_DIR_NAME) : undefined;
 }
 
-/** Search one path and its parents for one relative child path. */
-function findRelativePathFromAncestors(startPath: string, relativePath: string) {
+/**
+ * Search one path and its parents for the first of several relative child paths.
+ *
+ * Proximity wins over candidate order: every shape is tested at one ancestor before the
+ * walk moves up. Exhausting one shape to the filesystem root first would let a generic
+ * match far above the start path beat the specific match sitting right at it.
+ */
+function findRelativePathFromAncestors(startPath: string, relativePaths: readonly string[]) {
   let current = resolve(startPath);
 
   try {
@@ -131,9 +137,11 @@ function findRelativePathFromAncestors(startPath: string, relativePath: string) 
   }
 
   for (;;) {
-    const candidate = join(current, relativePath);
-    if (fs.existsSync(candidate)) {
-      return candidate;
+    for (const relativePath of relativePaths) {
+      const candidate = join(current, relativePath);
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
     }
 
     const parent = dirname(current);
@@ -148,8 +156,9 @@ function findRelativePathFromAncestors(startPath: string, relativePath: string) 
 /**
  * Resolve one bundled skill's path from source, npm, or prebuilt package layouts.
  *
- * Every shipped skill lives at `skills/<name>/SKILL.md` in all three layouts, so
- * the name is the only thing that varies and the search itself stays one walk.
+ * Every shipped skill lives at `skills/<name>/SKILL.md` in all three layouts, so the name is
+ * the only thing that varies and the search stays one walk. Within each directory, prefer
+ * Hunk's namespaced staging tree, then standalone skills, then a nested npm package.
  */
 export function resolveBundledSkillPath(
   name: BundledSkillName = DEFAULT_BUNDLED_SKILL_NAME,
@@ -157,18 +166,18 @@ export function resolveBundledSkillPath(
 ) {
   const roots = searchRoots ?? [import.meta.dir, process.execPath];
   const skillRelativePath = join("skills", name, "SKILL.md");
+  // Prefer the Hunk-specific staging tree over generic skills. Both shipped layouts outrank
+  // node_modules/hunkdiff, which may belong to another project and contain a stale copy.
   const relativeCandidates = [
-    skillRelativePath,
     join("hunkdiff", skillRelativePath),
+    skillRelativePath,
     join("node_modules", "hunkdiff", skillRelativePath),
   ];
 
   for (const root of roots) {
-    for (const relativePath of relativeCandidates) {
-      const resolvedPath = findRelativePathFromAncestors(root, relativePath);
-      if (resolvedPath) {
-        return resolvedPath;
-      }
+    const resolvedPath = findRelativePathFromAncestors(root, relativeCandidates);
+    if (resolvedPath) {
+      return resolvedPath;
     }
   }
 
