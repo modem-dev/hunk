@@ -118,7 +118,13 @@ test("narrow/short resize, edit refresh and sibling inspect/back preserve the si
     writeFileSync(join(cwd, "aaa-new.ts"), "export const newStatusFile = true;\n");
     await session.waitForText(/3 changed paths/, { timeout: 15_000 });
     session.resize({ cols: 42, rows: 10 });
-    const narrow = await session.waitForText(/beta.ts/, { timeout: 5000 });
+    // The path exists before resize; wait for the compact action and footer in the same paint.
+    const narrow = await harness.waitForSnapshot(
+      session,
+      (text) =>
+        text.includes("beta.ts") && text.includes("Unstaged") && text.includes("Other worktrees:"),
+      5000,
+    );
     expect(narrow).toContain("Other worktrees:");
     expect(narrow).not.toContain("Selected file");
     session.resize({ cols: 120, rows: 24 });
