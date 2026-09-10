@@ -277,9 +277,9 @@ describe("PTY notes", () => {
       );
 
       await session.type("Second line.");
-      await session.type("\x13");
-
-      const savedNote = await session.waitForText(/Your note/, { timeout: 5_000 });
+      const savedNote = await harness.pressAndWaitForText(session, ["ctrl", "s"], /Your note/, {
+        timeout: 5_000,
+      });
       expect(savedNote).toContain("Please cover this edge case.");
       expect(savedNote).toContain("Second line.");
     } finally {
@@ -311,9 +311,9 @@ describe("PTY notes", () => {
 
       await harness.pressAndWaitForText(session, "c", /Draft note/, { timeout: 5_000 });
       await session.type("Second keyboard note.");
-      await session.type("\x13");
-      const savedActive = await harness.waitForSnapshot(
+      const savedActive = await harness.pressAndWaitForSnapshot(
         session,
+        ["ctrl", "s"],
         (text) =>
           lineIndexOf(text, "Second keyboard note.") - lineIndexOf(text, "● Your note") === 2,
         5_000,
@@ -445,8 +445,12 @@ describe("PTY notes", () => {
       await harness.pressAndWaitForText(session, "c", /Draft note/, { timeout: 5_000 });
       await session.type("Root review note.");
       await session.waitForText(/Root review note\./, { timeout: 5_000 });
-      await session.type("\x13");
-      const root = await session.waitForText(/R reply E edit D delete/, { timeout: 5_000 });
+      const root = await harness.pressAndWaitForText(
+        session,
+        ["ctrl", "s"],
+        /R reply E edit D delete/,
+        { timeout: 5_000 },
+      );
       expect(root).toMatch(/before\.ts -> after\.ts [LR]1/);
 
       const selectNoteByBody = async (body: string, assertHoverOnly = false) => {
@@ -545,13 +549,20 @@ describe("PTY notes", () => {
       await harness.waitForSnapshot(session, (text) => !text.includes("╭─ Reply -"), 5_000);
 
       await session.press("j");
-      await session.type("E");
-      await session.waitForText(/╭─ Edit note -/, { timeout: 5_000 });
+      await harness.pressAndWaitForText(session, ["shift", "e"], /╭─ Edit note -/, {
+        timeout: 5_000,
+      });
       await session.click(/Esc cancel/);
       await harness.waitForSnapshot(session, (text) => !text.includes("╭─ Edit note -"), 5_000);
       await session.press("j");
-      await session.type("R");
-      const keyboardReply = await session.waitForText(/╭─ Reply -/, { timeout: 5_000 });
+      const keyboardReply = await harness.pressAndWaitForText(
+        session,
+        ["shift", "r"],
+        /╭─ Reply -/,
+        {
+          timeout: 5_000,
+        },
+      );
 
       const threadedTitles = keyboardReply
         .split("\n")
@@ -602,8 +613,9 @@ describe("PTY notes", () => {
       expect(draft).toContain("L2 → R1");
 
       await session.type("Mixed replacement feedback.");
-      await session.type("\x13");
-      const saved = await session.waitForText(/Your note/, { timeout: 5_000 });
+      const saved = await harness.pressAndWaitForText(session, ["ctrl", "s"], /Your note/, {
+        timeout: 5_000,
+      });
       expect(saved).toContain("L2 → R1");
       expect(saved).toContain("Mixed replacement feedback.");
     } finally {
@@ -637,8 +649,9 @@ describe("PTY notes", () => {
       expect(draft).toContain(body.slice(0, 10));
       expect(draft).toContain(body.slice(-6));
 
-      await session.type("\x13");
-      const savedNote = await session.waitForText(/Your note/, { timeout: 5_000 });
+      const savedNote = await harness.pressAndWaitForText(session, ["ctrl", "s"], /Your note/, {
+        timeout: 5_000,
+      });
       expect(savedNote).toContain(body.slice(0, 10));
       expect(savedNote).toContain(body.slice(-6));
     } finally {

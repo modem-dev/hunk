@@ -296,10 +296,12 @@ describe("interactive hunk log", () => {
 
       // Clicking outside the id selects the second row without opening it.
       session.writeRaw("\x1b[<0;50;5M\x1b[<0;50;5m");
-      await session.press("enter");
-      const rootReview = await session.waitForText(/historyValue = 'first'/, {
-        timeout: 15_000,
-      });
+      const rootReview = await harness.pressAndWaitForText(
+        session,
+        "enter",
+        /historyValue = 'first'/,
+        { timeout: 15_000 },
+      );
       expect(rootReview).toContain("history.ts");
       await returnToHistory(session);
 

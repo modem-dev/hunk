@@ -847,8 +847,9 @@ describe("PTY extensions", () => {
 
       await harness.pressAndWaitForText(session, "c", /Draft note/, { timeout: 5_000 });
       await session.type("Navigate to this exact note.");
-      await session.type("\x13");
-      await session.waitForText(/Your note/, { timeout: 5_000 });
+      await harness.pressAndWaitForText(session, ["ctrl", "s"], /Your note/, {
+        timeout: 5_000,
+      });
 
       await harness.pressAndWaitForSnapshot(
         session,
@@ -901,8 +902,9 @@ describe("PTY extensions", () => {
       await harness.ensureKeyboardIsLive(session);
       await harness.pressAndWaitForText(session, "c", /Draft note/, { timeout: 5_000 });
       await session.type("Publish this exact note.");
-      await session.type("\x13");
-      await session.waitForText(/Your note/, { timeout: 5_000 });
+      await harness.pressAndWaitForText(session, ["ctrl", "s"], /Your note/, {
+        timeout: 5_000,
+      });
 
       await harness.pressAndWaitForText(session, "f9", /Export review snapshot/, {
         timeout: 5_000,

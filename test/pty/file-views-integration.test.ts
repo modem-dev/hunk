@@ -315,8 +315,9 @@ describe("PTY file views", () => {
     try {
       await session.waitForText(/before\.ts/, { timeout: 20_000 });
       await harness.ensureKeyboardIsLive(session);
-      await session.press("f8");
-      let custom = await session.waitForText(/▶ Hunk 1/, { timeout: 20_000 });
+      let custom = await harness.pressAndWaitForText(session, "f8", /▶ Hunk 1/, {
+        timeout: 20_000,
+      });
       expect(custom).toContain("Hunk 2");
       expect(custom).toContain("row 0 · click for detail");
       expect(custom).not.toContain("invalid span");
@@ -416,10 +417,14 @@ describe("PTY file views", () => {
 
       // One press: `enterMode` selects the view for the file and takes the
       // keyboard together, so the editor opens without a second Ctrl-E.
-      await session.press(["ctrl", "e"]);
       // The view shows the new document alone, so the removed old-side line is
       // how the terminal reports that the presentation actually switched.
-      await harness.waitForSnapshot(session, (text) => !text.includes("alpha = 1"), 20_000);
+      await harness.pressAndWaitForSnapshot(
+        session,
+        ["ctrl", "e"],
+        (text) => !text.includes("alpha = 1"),
+        20_000,
+      );
       await session.waitForText(/EDITING — Esc exits · ctrl\+s writes/, { timeout: 20_000 });
       await session.waitForText(/inline-edit:inline-edit mode — Esc exits/, { timeout: 20_000 });
 
@@ -506,17 +511,21 @@ describe("PTY file views", () => {
       });
 
       await session.press("down");
-      await session.press("backspace");
-      const joined = await session.waitForText(/export const alpha = 2;export const add = true;/, {
-        timeout: 20_000,
-      });
+      const joined = await harness.pressAndWaitForText(
+        session,
+        "backspace",
+        /export const alpha = 2;export const add = true;/,
+        { timeout: 20_000 },
+      );
       expect(joined).toContain("EDITING — Esc exits");
       expect(joined).toContain("Keep this note visible.");
 
-      await session.press("z");
-      await session.waitForText(/export const alpha = 2;zexport const add = true;/, {
-        timeout: 20_000,
-      });
+      await harness.pressAndWaitForText(
+        session,
+        "z",
+        /export const alpha = 2;zexport const add = true;/,
+        { timeout: 20_000 },
+      );
       await session.press("escape");
     } finally {
       session.close();
