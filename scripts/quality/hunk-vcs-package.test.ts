@@ -77,6 +77,7 @@ describe("@hunk/vcs package boundary", () => {
       ].join("\n"),
     );
     const program = ts.createProgram([join(consumerRoot, "consumer.ts")], {
+      lib: ["lib.esnext.d.ts", "lib.dom.d.ts"],
       module: ts.ModuleKind.ESNext,
       moduleResolution: ts.ModuleResolutionKind.Bundler,
       noEmit: true,
