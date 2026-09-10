@@ -65,7 +65,7 @@ In a real app, derive `width` from your layout or `useTerminalDimensions()`.
 `HunkDiffView` renders one file and can own an OpenTUI `scrollbox`:
 
 ```tsx
-<HunkDiffView diff={file} width={88} layout="split" scrollable />
+<HunkDiffView diff={file} width={88} canonicalLayout="split" scrollable />
 ```
 
 Use it when you just want a drop-in diff viewer.
@@ -76,7 +76,7 @@ Use it when you just want a drop-in diff viewer.
 
 ```tsx
 <scrollbox width="100%" height="100%" scrollY>
-  <HunkDiffBody file={file} width={88} layout="stack" selectedHunkIndex={2} />
+  <HunkDiffBody file={file} width={88} canonicalLayout="unified" selectedHunkIndex={2} />
 </scrollbox>
 ```
 
@@ -190,9 +190,14 @@ If you need direct access to Pierre's parser, `parsePatchFiles(...)` is still re
 
 ## Common props
 
+Use `canonicalLayout` in new integrations. The legacy `layout` prop and `HunkDiffLayout` type keep
+their original `split | stack` shape so existing exhaustive TypeScript consumers continue to
+compile; when both props are present, `canonicalLayout` wins.
+
 | Prop                 | Type                                                                                                                                                       | Default      | Notes                                                                               |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ----------------------------------------------------------------------------------- |
-| `layout`             | `"split" \| "stack"`                                                                                                                                       | `"split"`    | Chooses side-by-side or stacked rendering.                                          |
+| `canonicalLayout`    | `"split" \| "unified"`                                                                                                                                     | `"split"`    | Chooses side-by-side or unified rendering in new integrations.                      |
+| `layout`             | `"split" \| "stack"`                                                                                                                                       | `undefined`  | Legacy source-compatible input; `stack` renders as unified.                         |
 | `width`              | `number`                                                                                                                                                   | —            | Required content width in terminal columns.                                         |
 | `theme`              | `"graphite" \| "midnight" \| "paper" \| "ember" \| "catppuccin-latte" \| "catppuccin-frappe" \| "catppuccin-macchiato" \| "catppuccin-mocha" \| "zenburn"` | `"graphite"` | Matches Hunk's built-in themes.                                                     |
 | `showLineNumbers`    | `boolean`                                                                                                                                                  | `true`       | Toggles line-number columns.                                                        |
@@ -217,6 +222,7 @@ If you need direct access to Pierre's parser, `parsePatchFiles(...)` is still re
 - `countHunkDiffStats`
 - `HUNK_DIFF_THEME_NAMES`
 - `HunkDiffThemeName`
+- `CanonicalHunkDiffLayout`
 - `HunkDiffLayout`
 - `HunkDiffFile`
 - `HunkDiffFileInput`

@@ -27,7 +27,7 @@ import { measureTextWidth } from "../lib/text";
 import { sanitizeTerminalLine } from "../../lib/terminalText";
 import { MIN_EMPHASIS_SEPARATION, TRANSPARENT_BACKGROUND, type AppTheme } from "../themes";
 import { expandDiffTabs } from "./codeColumns";
-import type { DiffRow, RenderSpan, SplitLineCell, StackLineCell } from "./diffRowModel";
+import type { DiffRow, RenderSpan, SplitLineCell, UnifiedLineCell } from "./diffRowModel";
 import {
   aliasContextHighlightLines,
   collectHastHighlightRuns,
@@ -104,7 +104,7 @@ export type {
   DiffRow,
   RenderSpan,
   SplitLineCell,
-  StackLineCell,
+  UnifiedLineCell,
 } from "./diffRowModel";
 
 /** Expand source tabs before terminal rendering so downstream geometry stays predictable. */
@@ -114,7 +114,7 @@ function tabify(text: string, tabWidth: number, initialColumn = 0) {
 
 // The expensive part after highlighting is walking Pierre's HAST line tree and flattening it
 // into terminal spans. The same highlighted line objects are reused when files remount or when
-// we build both split and stack rows, so memoize flattened spans by line node + theme/background.
+// we build both split and unified rows, so memoize flattened spans by line node + theme/background.
 const flattenedHighlightedLineCache = new WeakMap<HastNode, Map<string, RenderSpan[]>>();
 const WORD_DIFF_BLEND_STEP = 0.005;
 const WORD_DIFF_MAX_BLEND = 0.2;
@@ -368,9 +368,9 @@ function makeSplitCell(
   } satisfies SplitLineCell;
 }
 
-/** Build the normalized render model for one stack-view cell. */
-function makeStackCell(
-  kind: StackLineCell["kind"],
+/** Build the normalized render model for one unified-view cell. */
+function makeUnifiedCell(
+  kind: UnifiedLineCell["kind"],
   oldLineNumber: number | undefined,
   newLineNumber: number | undefined,
   rawLine: string | undefined,
@@ -413,7 +413,7 @@ function makeStackCell(
     newLineNumber,
     moveKind,
     spans,
-  } satisfies StackLineCell;
+  } satisfies UnifiedLineCell;
 }
 
 /** Describe one collapsed unchanged region in the diff stream. */
@@ -884,8 +884,8 @@ export function buildSplitRows(
   return rows;
 }
 
-/** Expand Pierre metadata into the flat stack-view row stream consumed by the renderer. */
-export function buildStackRows(
+/** Expand Pierre metadata into the flat unified-view row stream consumed by the renderer. */
+export function buildUnifiedRows(
   file: DiffFile,
   highlighted: HighlightedDiffCode | null,
   theme: AppTheme,
@@ -898,12 +898,12 @@ export function buildStackRows(
   for (const [hunkIndex, hunk] of file.metadata.hunks.entries()) {
     const leadingGap = reviewLeadingGap(file.metadata, hunkIndex);
     if (leadingGap) {
-      rows.push(collapsedGapRow(file, leadingGap, "stack:collapsed:"));
+      rows.push(collapsedGapRow(file, leadingGap, "unified:collapsed:"));
     }
 
     rows.push({
       type: "hunk-header",
-      key: `${file.id}:stack:header:${hunkIndex}`,
+      key: `${file.id}:unified:header:${hunkIndex}`,
       fileId: file.id,
       hunkIndex,
       text: formatHunkHeader(hunk),
@@ -918,11 +918,11 @@ export function buildStackRows(
       if (content.type === "context") {
         for (let offset = 0; offset < content.lines; offset += 1) {
           rows.push({
-            type: "stack-line",
-            key: `${file.id}:stack:${hunkIndex}:context:${deletionLineIndex + offset}:${additionLineIndex + offset}`,
+            type: "unified-line",
+            key: `${file.id}:unified:${hunkIndex}:context:${deletionLineIndex + offset}:${additionLineIndex + offset}`,
             fileId: file.id,
             hunkIndex,
-            cell: makeStackCell(
+            cell: makeUnifiedCell(
               "context",
               deletionLineNumber + offset,
               additionLineNumber + offset,
@@ -945,11 +945,11 @@ export function buildStackRows(
 
       for (let offset = 0; offset < content.deletions; offset += 1) {
         rows.push({
-          type: "stack-line",
-          key: `${file.id}:stack:${hunkIndex}:deletion:${deletionLineIndex + offset}`,
+          type: "unified-line",
+          key: `${file.id}:unified:${hunkIndex}:deletion:${deletionLineIndex + offset}`,
           fileId: file.id,
           hunkIndex,
-          cell: makeStackCell(
+          cell: makeUnifiedCell(
             "deletion",
             deletionLineNumber + offset,
             undefined,
@@ -965,11 +965,11 @@ export function buildStackRows(
 
       for (let offset = 0; offset < content.additions; offset += 1) {
         rows.push({
-          type: "stack-line",
-          key: `${file.id}:stack:${hunkIndex}:addition:${additionLineIndex + offset}`,
+          type: "unified-line",
+          key: `${file.id}:unified:${hunkIndex}:addition:${additionLineIndex + offset}`,
           fileId: file.id,
           hunkIndex,
-          cell: makeStackCell(
+          cell: makeUnifiedCell(
             "addition",
             undefined,
             additionLineNumber + offset,
@@ -992,7 +992,7 @@ export function buildStackRows(
 
   const trailingGap = reviewTrailingGap(file.metadata);
   if (trailingGap) {
-    rows.push(collapsedGapRow(file, trailingGap, "stack:collapsed:"));
+    rows.push(collapsedGapRow(file, trailingGap, "unified:collapsed:"));
   }
 
   return rows;

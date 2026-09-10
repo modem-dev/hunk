@@ -1,7 +1,11 @@
 import type { SessionCommandInput, SessionCommandOutput } from "../../core/run/commandInputs";
 import type { SessionLiveCommentSummary, SessionReviewNoteSummary } from "../types";
 import { NO_ACTIVE_SESSIONS_MESSAGE } from "./errors";
-import { isSessionBrokerHealthy, isLoopbackPortReachable } from "../broker/brokerLauncher";
+import {
+  describeSessionBrokerHealthProbeFailure,
+  isLoopbackPortReachable,
+  probeSessionBrokerHealth,
+} from "../broker/brokerLauncher";
 import { resolveSessionBrokerConfig } from "../broker/brokerConfig";
 import { normalizeSessionSelector } from "@hunk/session-broker-core";
 import { SessionBrokerClientAuthenticationError } from "@hunk/session-broker";
@@ -79,17 +83,29 @@ async function ensureRequiredAction(action: SessionDaemonAction, client = create
 
 async function resolveDaemonAvailability(action: SessionCommandInput["action"]) {
   const config = resolveSessionBrokerConfig();
-  const healthy = await isSessionBrokerHealthy(config);
-  if (healthy) {
+  const initialHealthProbe = await probeSessionBrokerHealth(config);
+  if (initialHealthProbe.kind === "healthy") {
     return true;
   }
 
   const portReachable = await isLoopbackPortReachable(config);
   if (portReachable) {
-    throw new Error(
-      `Hunk session daemon port ${config.host}:${config.port} is already in use by another process. ` +
-        `Stop the conflicting process or set HUNK_MCP_PORT to a different loopback port.`,
-    );
+    // Probe again so the diagnostic describes the listener that accepted the reachability check,
+    // rather than a daemon generation that may have stopped or recovered in the meantime.
+    const terminalHealthProbe = await probeSessionBrokerHealth(config);
+    if (terminalHealthProbe.kind === "healthy") {
+      return true;
+    }
+    // If the listener disappeared during the probes, preserve the ordinary no-daemon behavior.
+    // A remaining listener makes this the terminal probe evidence included in the CLI error.
+    if (await isLoopbackPortReachable(config)) {
+      const diagnostic = describeSessionBrokerHealthProbeFailure(terminalHealthProbe);
+      throw new Error(
+        `Hunk session daemon port ${config.host}:${config.port} is already in use, and the listener's ` +
+          `Hunk health probe ${diagnostic}. The listener may be a busy Hunk daemon or another process. ` +
+          `Retry, stop the conflicting process, or set HUNK_MCP_PORT to a different loopback port.`,
+      );
+    }
   }
 
   if (action === "list") {

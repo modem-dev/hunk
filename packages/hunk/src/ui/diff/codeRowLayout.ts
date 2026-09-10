@@ -3,15 +3,16 @@ import type { AppTheme } from "../themes/types";
 import {
   resolveSplitCellGeometry,
   resolveSplitPaneWidths,
-  resolveStackCellGeometry,
+  resolveUnifiedCellGeometry,
 } from "./codeColumns";
 import { CODE_ROW_ADD_NOTE_BADGE_WIDTH } from "./codeRowAffordance";
 import type { DiffRow, RenderSpan } from "./diffRowModel";
-import type { PlannedReviewRow } from "./reviewRenderPlan";
+import {
+  createPlannedDiffReviewRow,
+  type PlannedDiffReviewRow,
+  type PlannedReviewRow,
+} from "./reviewRenderPlan";
 import { measureWrappedSpansLineCount } from "./styledSpanLayout";
-
-/** Planned review row that carries one terminal diff row. */
-export type PlannedDiffReviewRow = Extract<PlannedReviewRow, { kind: "diff-row" }>;
 
 /** Concrete width and wrapping decisions for one rendered code cell. */
 export interface CodeCellLayoutPlan {
@@ -32,7 +33,7 @@ export interface CodeRowLayoutOptions {
   showAddNoteBadge?: boolean;
 }
 
-/** Concrete split or stack layout used to measure, copy, and paint one planned code row. */
+/** Concrete split or unified layout used to measure, copy, and paint one planned code row. */
 export type CodeRowLayoutPlan =
   | {
       kind: "split";
@@ -46,7 +47,7 @@ export type CodeRowLayoutPlan =
       wrappedLineCount: number;
     }
   | {
-      kind: "stack";
+      kind: "unified";
       cell: CodeCellLayoutPlan;
       noteGuideSide?: "old" | "new";
       trailingGuideWidth: number;
@@ -95,12 +96,13 @@ export function planCodeRowLayout(
   }
 
   const row = plannedRow.row;
-  if (row.type !== "split-line" && row.type !== "stack-line") {
+  if (row.type !== "split-line" && row.type !== "unified-line") {
     return null;
   }
 
   const prefixWidth = 1;
-  const trailingGuideWidth = plannedRow.noteGuideSide === "new" ? 1 : 0;
+  // Range guides render in the pane's external annotation gutter and never consume code width.
+  const trailingGuideWidth = 0;
   const addNoteBadgeWidth =
     showAddNoteBadge || (wrapLines && reserveAddNoteColumn) ? CODE_ROW_ADD_NOTE_BADGE_WIDTH : 0;
 
@@ -152,7 +154,7 @@ export function planCodeRowLayout(
   }
 
   const cellWidth = Math.max(0, width - trailingGuideWidth - addNoteBadgeWidth);
-  const cellGeometry = resolveStackCellGeometry(
+  const cellGeometry = resolveUnifiedCellGeometry(
     cellWidth,
     lineNumberDigits,
     showLineNumbers,
@@ -168,7 +170,7 @@ export function planCodeRowLayout(
 
   let measuredWrappedLineCount: number | undefined;
   return {
-    kind: "stack",
+    kind: "unified",
     cell,
     noteGuideSide: plannedRow.noteGuideSide,
     trailingGuideWidth,
@@ -181,21 +183,19 @@ export function planCodeRowLayout(
 }
 
 /** Adapt a raw diff row for surfaces that do not use the review render plan. */
-export function legacyPlannedDiffRow(
+export function plannedDiffRowFromRaw(
   row: DiffRow,
   anchorId?: string,
   noteGuideSide?: "old" | "new",
 ): PlannedDiffReviewRow {
-  return {
-    kind: "diff-row",
+  return createPlannedDiffReviewRow(row, {
     key: row.key,
     stableKey: row.key,
     fileId: row.fileId,
     hunkIndex: row.hunkIndex,
-    row,
     anchorId,
     noteGuideSide,
-  };
+  });
 }
 
 /** Measure how many terminal rows one complete planned diff row occupies. */
@@ -225,7 +225,7 @@ export function measureRenderedRowHeight(
   _theme: AppTheme,
   reserveAddNoteColumn = false,
 ) {
-  return measurePlannedRenderedRowHeight(legacyPlannedDiffRow(row), {
+  return measurePlannedRenderedRowHeight(plannedDiffRowFromRaw(row), {
     width,
     lineNumberDigits,
     showLineNumbers,

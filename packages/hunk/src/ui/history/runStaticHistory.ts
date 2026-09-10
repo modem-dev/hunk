@@ -133,7 +133,11 @@ export async function runStaticHistory(
       await pager?.close();
     } finally {
       deps.stdout.off?.("error", onOutputError);
-      await bootstrap.close();
+      try {
+        await bootstrap.close();
+      } finally {
+        await bootstrap.extensionSession.shutdown();
+      }
     }
   }
 }

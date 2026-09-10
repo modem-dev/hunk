@@ -23,6 +23,8 @@ export type ReviewAction =
       hunkIndex: number;
       /** Omitted by state reconciliation, which must not disturb the reviewer's viewport. */
       reveal?: ReviewRevealRequest;
+      /** Set only by exact-note navigation; every other selection clears explicit note focus. */
+      activeNoteId?: string;
     }
   | { type: "filter/set"; filter: string }
   | { type: "notes/set-visibility"; visible: boolean }

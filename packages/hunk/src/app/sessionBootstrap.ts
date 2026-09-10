@@ -3,11 +3,15 @@ import {
   restoreFileLanguageRegistrations,
   type FileLanguageRegistrationSnapshot,
 } from "../core/changeset/fileLanguage";
-import type { HunkConfigResolution } from "../core/run/config";
+import { persistedViewPreferencesFromOptions, type HunkConfigResolution } from "../core/run/config";
 import { isVcsReviewInput } from "../core/vcs";
 import type { VcsCatalog } from "../core/vcs/types";
 import { getBundledVcsCatalog } from "./vcsCatalog";
 import { collectSessionCustomThemes } from "../core/theme/customThemes";
+import {
+  createInteractiveSessionInitialization,
+  type InteractiveSessionInitialization,
+} from "../core/session/initialization";
 import { loadAppBootstrap } from "../core/changeset/loaders";
 import type { CliInput } from "../core/run/commandInputs";
 import type { AppBootstrap } from "./types";
@@ -40,6 +44,7 @@ export interface SessionBootstrapResult {
   /** Selector set to restore if a live reload fails before its commit gate. */
   previousFileLanguages: FileLanguageRegistrationSnapshot;
   input: CliInput;
+  initialization: InteractiveSessionInitialization;
   sessionThemes: ReturnType<typeof collectSessionCustomThemes>;
   sessionVcs: ReturnType<typeof resolveSessionVcsId>;
 }
@@ -94,11 +99,27 @@ export async function loadConfiguredSessionBootstrap({
     bootstrap.changeset = await applyExtensionChangesetTransforms(extensions, bootstrap.changeset);
     signal?.throwIfAborted();
     bootstrap.initialThemeMode = initialThemeMode ?? bootstrap.initialThemeMode;
+    const initialization = createInteractiveSessionInitialization({
+      theme: {
+        initialTheme: input.options.theme,
+        initialThemeMode: bootstrap.initialThemeMode,
+        customThemes: sessionThemes.themes,
+      },
+      viewPreferences: persistedViewPreferencesFromOptions(input.options),
+    });
     bootstrap.extensions = extensions;
     bootstrap.viewPreferencesConfigPath = configured.viewPreferencesConfigPath;
     bootstrap.keybindings = configured.keybindings;
 
-    return { applied, bootstrap, input, previousFileLanguages, sessionThemes, sessionVcs };
+    return {
+      applied,
+      bootstrap,
+      initialization,
+      input,
+      previousFileLanguages,
+      sessionThemes,
+      sessionVcs,
+    };
   } catch (error) {
     restoreFileLanguageRegistrations(previousFileLanguages);
     throw error;

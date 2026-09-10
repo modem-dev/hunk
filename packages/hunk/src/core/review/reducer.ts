@@ -6,6 +6,8 @@
  * Timestamps and ids never originate here — callers put them on the action.
  */
 import type { ReviewAction } from "./actions";
+import { resolveReviewNoteAnchor, reviewGapOwnerHunkIndex, reviewLineAnchor } from "./anchors";
+import { reviewLineCoveredByHunks, reviewRangeTargetCoverageIssue } from "./geometry";
 import { clamp } from "./navigation";
 import {
   isReviewNoteWithinClearScope,
@@ -15,6 +17,7 @@ import {
 import {
   applyReviewRevealRequest,
   reviewRevealIntentsEqual,
+  type ReviewDraftNote,
   type ReviewSourceStatus,
   type ReviewState,
   type ReviewStoredNote,
@@ -45,6 +48,75 @@ function withoutNote(notes: ReviewStoredNote[], noteId: string) {
   return next;
 }
 
+/** Preserve and re-resolve a draft only while its addressed content still exists. */
+function reconcileDraftNote(
+  state: ReviewState,
+  document: ReviewState["document"],
+): ReviewDraftNote | null {
+  const draft = state.draftNote;
+  if (!draft) return null;
+  const previousFile = state.document.files.find((file) => file.key === draft.fileKey);
+  const file = document.files.find((candidate) => candidate.key === draft.fileKey);
+  if (!previousFile || !file || previousFile.contentIdentity !== file.contentIdentity) return null;
+
+  const oldRange = draft.anchor?.oldRange;
+  const newRange = draft.anchor?.newRange;
+  const legacyRangeDraft =
+    draft.targetKind === undefined &&
+    ((oldRange !== undefined && newRange !== undefined) ||
+      (oldRange !== undefined && oldRange[0] !== oldRange[1]) ||
+      (newRange !== undefined && newRange[0] !== newRange[1]));
+  const isRangeDraft = draft.targetKind === "range" || legacyRangeDraft;
+
+  if (!isRangeDraft) {
+    const wasExpandedLine = !reviewLineCoveredByHunks(previousFile.hunks, draft.side, draft.line);
+    if (wasExpandedLine) {
+      const source = draft.expandedLineSource;
+      if (
+        !source ||
+        source.sourceIdentity !== file.sourceIdentity ||
+        source.sourceAttested !== (file.sourceAttested === true)
+      ) {
+        return null;
+      }
+    }
+    if (!file.hunks[draft.hunkIndex]) return null;
+    const fallbackOwnerHunkIndex = reviewGapOwnerHunkIndex(file.hunks, draft.side, draft.line);
+    if (fallbackOwnerHunkIndex === undefined) return null;
+    const anchor = reviewLineAnchor(file.hunks, {
+      hunkIndex: fallbackOwnerHunkIndex,
+      side: draft.side,
+      line: draft.line,
+    });
+    if (anchor.ownerHunkIndex === undefined) return null;
+    return { ...draft, targetKind: "line", hunkIndex: anchor.ownerHunkIndex, anchor };
+  }
+
+  const preferred = draft.anchor?.preferred ?? { side: draft.side, line: draft.line };
+  const target = {
+    ...(oldRange ? { oldRange } : {}),
+    ...(newRange ? { newRange } : {}),
+    preferred,
+  };
+  if (reviewRangeTargetCoverageIssue(file.hunks, target)) return null;
+
+  const anchor = resolveReviewNoteAnchor(file.hunks, {
+    ...(target.oldRange ? { oldRange: target.oldRange } : {}),
+    ...(target.newRange ? { newRange: target.newRange } : {}),
+    preferred: target.preferred,
+    fallbackOwnerHunkIndex: draft.hunkIndex,
+  });
+  if (anchor.ownerHunkIndex === undefined) return null;
+  return {
+    ...draft,
+    targetKind: "range",
+    hunkIndex: anchor.ownerHunkIndex,
+    side: target.preferred.side,
+    line: target.preferred.line,
+    anchor,
+  };
+}
+
 /** Apply one named semantic action without renderer or framework dependencies. */
 export function reduceReviewState(state: ReviewState, action: ReviewAction): ReviewState {
   switch (action.type) {
@@ -69,7 +141,14 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
           ([fileKey]) => !retired.has(fileKey) && attested.has(fileKey),
         ),
       );
-      return { ...state, document: action.document, expandedGaps, sourceStatusByFileKey };
+      const draftNote = reconcileDraftNote(state, action.document);
+      return {
+        ...state,
+        document: action.document,
+        draftNote,
+        expandedGaps,
+        sourceStatusByFileKey,
+      };
     }
     case "selection/select": {
       const file = selectReviewFileByKey(state, action.fileKey);
@@ -79,41 +158,85 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       const hunkIndex = clamp(action.hunkIndex, 0, Math.max(0, file.hunks.length - 1));
       const selectionChanged =
         file.key !== state.selection.fileKey || hunkIndex !== state.selection.hunkIndex;
+      const activeNoteId = action.activeNoteId ?? null;
+      const activeNoteChanged = activeNoteId !== state.activeNoteId;
       const reveal = action.reveal
         ? applyReviewRevealRequest(state.reveal, action.reveal)
         : state.reveal;
-      if (!selectionChanged && reviewRevealIntentsEqual(reveal, state.reveal)) {
+      if (
+        !selectionChanged &&
+        !activeNoteChanged &&
+        reviewRevealIntentsEqual(reveal, state.reveal)
+      ) {
         return state;
       }
-      return { ...state, selection: { fileKey: file.key, hunkIndex }, reveal };
+      return {
+        ...state,
+        selection: { fileKey: file.key, hunkIndex },
+        activeNoteId,
+        reveal,
+      };
     }
     case "filter/set":
       return action.filter === state.filter ? state : { ...state, filter: action.filter };
-    case "notes/set-visibility":
-      return action.visible === state.showAgentNotes
-        ? state
-        : { ...state, showAgentNotes: action.visible };
+    case "notes/set-visibility": {
+      if (action.visible === state.showAgentNotes) {
+        return state;
+      }
+      const activeNote = [...state.liveNotes, ...state.userNotes].find(
+        (entry) => entry.note.id === state.activeNoteId,
+      );
+      return {
+        ...state,
+        showAgentNotes: action.visible,
+        activeNoteId:
+          !action.visible && activeNote?.note.source !== "user" ? null : state.activeNoteId,
+      };
+    }
     case "notes/add-live":
       return action.notes.length === 0
         ? state
         : { ...state, liveNotes: [...state.liveNotes, ...action.notes] };
     case "notes/remove-live": {
       const liveNotes = withoutNote(state.liveNotes, action.noteId);
-      return liveNotes === state.liveNotes ? state : { ...state, liveNotes };
+      return liveNotes === state.liveNotes
+        ? state
+        : {
+            ...state,
+            liveNotes,
+            activeNoteId: state.activeNoteId === action.noteId ? null : state.activeNoteId,
+          };
     }
     case "notes/clear": {
       const keep = (entry: ReviewStoredNote) =>
         !isReviewNoteWithinClearScope(entry, action.fileKey);
       const liveNotes = state.liveNotes.filter(keep);
       const userNotes = action.includeUser ? state.userNotes.filter(keep) : state.userNotes;
-      return liveNotes.length === state.liveNotes.length &&
+      if (
+        liveNotes.length === state.liveNotes.length &&
         userNotes.length === state.userNotes.length
-        ? state
-        : { ...state, liveNotes, userNotes };
+      ) {
+        return state;
+      }
+      const activeStillExists = [...liveNotes, ...userNotes].some(
+        (entry) => entry.note.id === state.activeNoteId,
+      );
+      return {
+        ...state,
+        liveNotes,
+        userNotes,
+        activeNoteId: activeStillExists ? state.activeNoteId : null,
+      };
     }
     case "notes/remove-user": {
       const userNotes = withoutNote(state.userNotes, action.noteId);
-      return userNotes === state.userNotes ? state : { ...state, userNotes };
+      return userNotes === state.userNotes
+        ? state
+        : {
+            ...state,
+            userNotes,
+            activeNoteId: state.activeNoteId === action.noteId ? null : state.activeNoteId,
+          };
     }
     case "draft/start":
       return { ...state, draftNote: action.draft };
@@ -125,7 +248,12 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       return state.draftNote ? { ...state, draftNote: null } : state;
     case "draft/save":
       return state.draftNote
-        ? { ...state, draftNote: null, userNotes: [...state.userNotes, action.note] }
+        ? {
+            ...state,
+            draftNote: null,
+            userNotes: [...state.userNotes, action.note],
+            activeNoteId: action.note.note.id,
+          }
         : state;
     case "draft/save-edit": {
       if (!state.draftNote) {
@@ -137,7 +265,12 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       }
       const userNotes = [...state.userNotes];
       userNotes[index] = action.note;
-      return { ...state, draftNote: null, userNotes };
+      return {
+        ...state,
+        draftNote: null,
+        userNotes,
+        activeNoteId: action.note.note.id,
+      };
     }
     case "expansion/toggle": {
       const index = state.expandedGaps.findIndex(

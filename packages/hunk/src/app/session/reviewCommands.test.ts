@@ -42,6 +42,17 @@ function createTestProducer() {
   return { producer, publication, store, file: publication.document.files[0]! };
 }
 
+/** Attach one caller-supplied diff to a producer and semantic store. */
+function createProducerForFile(file: ReturnType<typeof createTestDiffFile>) {
+  const producer = new ReviewProducer(
+    { files: [file], sourceLabel: "/repo" },
+    { producerId: "test" },
+  );
+  const publication = producer.getPublication();
+  producer.attachStore(createReviewStore(publication.document));
+  return { producer, publication, file: publication.document.files[0]! };
+}
+
 function envelope(action: HunkReviewActionV1, generation: string, expectedStateRevision?: number) {
   return {
     protocolVersion: HUNK_REVIEW_PROTOCOL_VERSION,
@@ -121,6 +132,223 @@ describe("applySessionReviewAction", () => {
     expect(result).toMatchObject({ ok: false, code: "file-not-found" });
   });
 
+  test("accepts a proofless line target backed by a visible patch row", () => {
+    const { producer, publication, file } = createTestProducer();
+    const target = { side: "new" as const, line: file.hunks[0]!.additionStart };
+
+    expect(
+      applySessionReviewAction(
+        producer,
+        envelope(
+          { type: "notes/start-draft", fileKey: file.key, hunkIndex: 0, target },
+          publication.generation,
+        ),
+      ).ok,
+    ).toBe(true);
+  });
+
+  test("rejects proofless targets on zero-count hunk sides", () => {
+    for (const fixture of [
+      { before: "a\nb\nc\n", after: "a\nadded\nb\nc\n", side: "old" as const },
+      { before: "a\nremoved\nb\nc\n", after: "a\nb\nc\n", side: "new" as const },
+    ]) {
+      const current = createProducerForFile(
+        createTestDiffFile({
+          id: `zero-${fixture.side}`,
+          path: `zero-${fixture.side}.ts`,
+          before: fixture.before,
+          after: fixture.after,
+          context: 0,
+          sourceFetcher: {
+            cacheKey: `zero-${fixture.side}-source`,
+            getFullText: async () => (fixture.side === "old" ? fixture.before : fixture.after),
+          },
+        }),
+      );
+      const hunk = current.file.hunks.find((candidate) =>
+        fixture.side === "old" ? candidate.deletionCount === 0 : candidate.additionCount === 0,
+      )!;
+      const line = fixture.side === "old" ? hunk.deletionStart : hunk.additionStart;
+
+      expect(
+        applySessionReviewAction(
+          current.producer,
+          envelope(
+            {
+              type: "notes/start-draft",
+              fileKey: current.file.key,
+              hunkIndex: hunk.index,
+              target: { side: fixture.side, line },
+            },
+            current.publication.generation,
+          ),
+        ),
+      ).toMatchObject({ ok: false, code: "invalid-request" });
+      expect(current.producer.getReviewState()!.draftNote).toBeNull();
+
+      const gapId = reviewGapId("before", hunk.index);
+      expect(
+        applySessionReviewAction(
+          current.producer,
+          envelope(
+            {
+              type: "notes/start-draft",
+              fileKey: current.file.key,
+              hunkIndex: hunk.index,
+              target: { side: fixture.side, line },
+              expandedLineProof: {
+                gapId,
+                side: fixture.side,
+                line,
+                sourceIdentity: current.file.sourceIdentity!,
+              },
+            },
+            current.publication.generation,
+          ),
+        ).ok,
+      ).toBe(true);
+      expect(current.producer.getReviewState()!.draftNote?.expandedLineSource).toEqual({
+        sourceIdentity: current.file.sourceIdentity,
+        sourceAttested: true,
+      });
+    }
+  });
+
+  test("accepts only ranges fully covered by visible patch rows", () => {
+    const { producer, publication, file } = createTestProducer();
+    const visibleTarget = {
+      newRange: [1, 3] as const,
+      preferred: { side: "new" as const, line: 2 },
+    };
+
+    expect(
+      applySessionReviewAction(
+        producer,
+        envelope(
+          {
+            type: "notes/start-draft",
+            fileKey: file.key,
+            hunkIndex: 0,
+            target: visibleTarget,
+          },
+          publication.generation,
+        ),
+      ).ok,
+    ).toBe(true);
+    producer.applyIntent(
+      { type: "notes/create-user", consumeDraft: true },
+      {
+        noteId: "discard",
+        timestamp: "2026-01-01T00:00:00.000Z",
+      },
+    );
+
+    const collapsed = applySessionReviewAction(
+      producer,
+      envelope(
+        {
+          type: "notes/start-draft",
+          fileKey: file.key,
+          hunkIndex: 0,
+          target: { newRange: [3, 17], preferred: { side: "new", line: 3 } },
+        },
+        publication.generation,
+      ),
+    );
+    expect(collapsed).toMatchObject({ ok: false, code: "invalid-request" });
+  });
+
+  test("rejects a range start whose requested hunk differs from its resolved owner", () => {
+    const { producer, publication, file } = createTestProducer();
+
+    const result = applySessionReviewAction(
+      producer,
+      envelope(
+        {
+          type: "notes/start-draft",
+          fileKey: file.key,
+          hunkIndex: 0,
+          target: { newRange: [17, 19], preferred: { side: "new", line: 18 } },
+        },
+        publication.generation,
+      ),
+    );
+
+    expect(result).toMatchObject({ ok: false, code: "invalid-request" });
+    expect(producer.getReviewState()!.draftNote).toBeNull();
+  });
+
+  test("requires a save precondition to match the draft's exact range", () => {
+    const { producer, publication, store, file } = createTestProducer();
+    const target = { newRange: [1, 3] as const, preferred: { side: "new" as const, line: 2 } };
+    expect(
+      applySessionReviewAction(
+        producer,
+        envelope(
+          { type: "notes/start-draft", fileKey: file.key, hunkIndex: 0, target },
+          publication.generation,
+        ),
+      ).ok,
+    ).toBe(true);
+    store.dispatch({ type: "draft/update", body: "exact range" });
+
+    const competing = applySessionReviewAction(
+      producer,
+      envelope(
+        {
+          type: "notes/create-user",
+          consumeDraft: true,
+          fileKey: file.key,
+          hunkIndex: 0,
+          target: { newRange: [2, 3], preferred: { side: "new", line: 2 } },
+        },
+        publication.generation,
+      ),
+    );
+    expect(competing).toMatchObject({ ok: false, code: "draft-missing" });
+    expect(producer.getReviewState()!.draftNote).not.toBeNull();
+
+    const identitylessRange = applySessionReviewAction(
+      producer,
+      envelope({ type: "notes/create-user", consumeDraft: true, target }, publication.generation),
+    );
+    expect(identitylessRange).toMatchObject({ ok: false, code: "invalid-request" });
+    expect(producer.getReviewState()!.draftNote).not.toBeNull();
+
+    const wrongOwner = applySessionReviewAction(
+      producer,
+      envelope(
+        {
+          type: "notes/create-user",
+          consumeDraft: true,
+          fileKey: file.key,
+          hunkIndex: 1,
+          target,
+        },
+        publication.generation,
+      ),
+    );
+    expect(wrongOwner).toMatchObject({ ok: false, code: "draft-missing" });
+    expect(producer.getReviewState()!.draftNote).not.toBeNull();
+
+    expect(
+      applySessionReviewAction(
+        producer,
+        envelope(
+          {
+            type: "notes/create-user",
+            consumeDraft: true,
+            fileKey: file.key,
+            hunkIndex: 0,
+            target,
+          },
+          publication.generation,
+        ),
+      ).ok,
+    ).toBe(true);
+    expect(producer.getReviewState()!.userNotes.at(-1)!.note.anchor.newRange).toEqual([1, 3]);
+  });
+
   // Intent: B10 — a note on a line inside an expanded gap is expressible remotely, and the
   // hunk that ends up owning it is core's answer through the shared anchor path, never one
   // this tier recomputed (D3).
@@ -129,6 +357,21 @@ describe("applySessionReviewAction", () => {
     const gapId = reviewGapId("before", 1);
     const gap = producer.applyIntent({ type: "expansion/toggle", fileKey: file.key, gapId });
     const line = gap.newRange[0];
+
+    const prooflessStart = applySessionReviewAction(
+      producer,
+      envelope(
+        {
+          type: "notes/start-draft",
+          fileKey: file.key,
+          hunkIndex: 1,
+          target: { side: "new", line },
+        },
+        publication.generation,
+      ),
+    );
+    expect(prooflessStart).toMatchObject({ ok: false, code: "invalid-request" });
+    expect(producer.getReviewState()!.draftNote).toBeNull();
 
     const started = applySessionReviewAction(
       producer,
@@ -156,6 +399,10 @@ describe("applySessionReviewAction", () => {
       line,
       hunkIndex: 1,
     });
+    expect(draft.expandedLineSource).toEqual({
+      sourceIdentity: file.sourceIdentity,
+      sourceAttested: true,
+    });
 
     // Remote composition travels through the same semantic body-update intent as the terminal.
     expect(
@@ -167,6 +414,36 @@ describe("applySessionReviewAction", () => {
         ),
       ).ok,
     ).toBe(true);
+
+    const prooflessSave = applySessionReviewAction(
+      producer,
+      envelope(
+        {
+          type: "notes/create-user",
+          consumeDraft: true,
+          target: { side: "new", line },
+        },
+        publication.generation,
+      ),
+    );
+    expect(prooflessSave).toMatchObject({ ok: false, code: "invalid-request" });
+    expect(producer.getReviewState()!.draftNote).not.toBeNull();
+
+    const disguisedRangeSave = applySessionReviewAction(
+      producer,
+      envelope(
+        {
+          type: "notes/create-user",
+          consumeDraft: true,
+          fileKey: file.key,
+          hunkIndex: 1,
+          target: { newRange: [line, line], preferred: { side: "new", line } },
+        },
+        publication.generation,
+      ),
+    );
+    expect(disguisedRangeSave).toMatchObject({ ok: false, code: "draft-missing" });
+    expect(producer.getReviewState()!.draftNote).not.toBeNull();
 
     // Saving with the same target as a precondition persists the note; its owner hunk is
     // the fallback the anchor resolver chose, which is the hunk the reviewer was reading.
@@ -324,7 +601,13 @@ describe("applySessionReviewAction", () => {
     const result = applySessionReviewAction(
       producer,
       envelope(
-        { type: "notes/create-user", consumeDraft: true, target: { side: "new", line: 999 } },
+        {
+          type: "notes/create-user",
+          consumeDraft: true,
+          fileKey: file.key,
+          hunkIndex: 0,
+          target: { side: "new", line: 999 },
+        },
         publication.generation,
       ),
     );

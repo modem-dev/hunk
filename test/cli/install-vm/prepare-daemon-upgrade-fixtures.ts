@@ -309,7 +309,7 @@ async function buildVariant(
   rewriteDaemonUpgradeVariantSources(destination, packageVersion, daemonRevision);
   const compiler = createDaemonUpgradeCompilerEnvironment(destination);
   try {
-    const proc = Bun.spawn([process.execPath, "run", "./scripts/build-bin.ts"], {
+    const proc = Bun.spawn([process.execPath, "run", "./scripts/build/build-bin.ts"], {
       cwd: destination,
       env: compiler.env,
       stdin: "ignore",

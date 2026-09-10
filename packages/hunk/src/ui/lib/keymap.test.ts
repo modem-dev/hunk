@@ -15,6 +15,11 @@ const DEFAULTS: CommandKeyDefaults[] = [
     aliases: ["hunk.view.toggleSidebar"],
     defaultKeys: ["s"],
   },
+  {
+    id: "hunk.view.layoutUnified",
+    aliases: ["hunk.view.layoutStack"],
+    defaultKeys: ["2"],
+  },
   // A loaded extension's command, under that extension's own id.
   { id: "meta.toggle", defaultKeys: ["y"] },
 ];
@@ -52,6 +57,14 @@ describe("resolveCommandKeys", () => {
     expect(issues).toEqual([]);
     expect(keys.get("hunk.view.toggleFilesPane")).toEqual(["ctrl+b"]);
     expect(keys.get("hunk.view.toggleSidebar")).toEqual(["ctrl+b"]);
+  });
+
+  test("the deprecated layout alias remaps the canonical unified command", () => {
+    const { keys, issues } = resolve({ "hunk.view.layoutStack": "ctrl+2" });
+
+    expect(issues).toEqual([]);
+    expect(keys.get("hunk.view.layoutUnified")).toEqual(["ctrl+2"]);
+    expect(keys.get("hunk.view.layoutStack")).toEqual(["ctrl+2"]);
   });
 
   test("the first config entry wins when an alias and canonical id both appear", () => {
@@ -136,6 +149,21 @@ describe("resolveCommandKeys", () => {
     expect(issues).toHaveLength(1);
     expect(issues[0]?.message).toContain('unknown command "hunk.review.nextHnuk"');
     expect(issues[0]?.message).not.toContain("may not be loaded");
+  });
+
+  test("accepts known commands owned by another surface without claiming their chords", () => {
+    const { keys, issues } = resolveCommandKeys({
+      defaults: [{ id: "hunk.review.nextHunk", defaultKeys: ["]"] }],
+      inactiveCommandNames: new Set(["hunk.history.nextCommit"]),
+      userBindings: {
+        "hunk.review.nextHunk": "ctrl+n",
+        "hunk.history.nextCommit": "ctrl+n",
+      },
+    });
+
+    expect(issues).toEqual([]);
+    expect(keys.get("hunk.review.nextHunk")).toEqual(["ctrl+n"]);
+    expect(keys.has("hunk.history.nextCommit")).toBe(false);
   });
 
   test("duplicate ids in the command table keep the first entry's keys", () => {

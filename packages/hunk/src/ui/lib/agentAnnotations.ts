@@ -20,6 +20,12 @@ export interface VisibleAgentNote {
   anchor: ReviewRangeAnchorV1;
   source?: ReviewNoteSource | "draft";
   editable?: boolean;
+  /** Whether keyboard note actions currently address this semantic card. */
+  active?: boolean;
+  /** Resolved keyboard labels advertised while the card is active. */
+  actionKeyLabels?: { delete: string; edit: string; reply: string };
+  /** Make this semantic card the keyboard action target when its card is clicked. */
+  onActivate?: () => void;
   /** Shared semantic relationship metadata; static sidecars omit it. */
   thread?: {
     noteId: string;

@@ -30,7 +30,7 @@ export const VCS_LANDING_PAGES: VcsLandingPage[] = [
       "review git changes",
     ],
     answer:
-      "Hunk turns Git changes into one review-first terminal UI: a multi-file stream, file navigation, split or stack layouts, expandable context, watch mode, and inline agent notes. Run Hunk directly for a complete changeset, or connect it to Git as a pager or difftool.",
+      "Hunk turns Git changes into one review-first terminal UI: a multi-file stream, file navigation, split or unified layouts, expandable context, watch mode, and inline agent notes. Run Hunk directly for a complete changeset, or connect it to Git as a pager or difftool.",
     quickStart: ["hunk diff", "hunk diff --staged", "hunk show HEAD~1", "hunk stash show"],
     setup: {
       heading: "Use Hunk from Git commands",
@@ -117,7 +117,7 @@ export const VCS_LANDING_PAGES: VcsLandingPage[] = [
       "review sapling changes",
     ],
     answer:
-      "Hunk detects Sapling repositories and accepts Sapling's own revision syntax. It turns working-copy and committed changes into a multi-file terminal review with fast navigation, split or stack layouts, expandable context, and inline agent notes.",
+      "Hunk detects Sapling repositories and accepts Sapling's own revision syntax. It turns working-copy and committed changes into a multi-file terminal review with fast navigation, split or unified layouts, expandable context, and inline agent notes.",
     quickStart: ["hunk diff", "hunk diff .^", "hunk show ."],
     setup: {
       heading: "Use Hunk as the Sapling pager",

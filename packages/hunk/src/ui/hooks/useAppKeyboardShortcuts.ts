@@ -17,6 +17,7 @@ import type { ExtensionDialogRequest } from "../lib/extensionDialogs";
 import { toExtensionKeyEvent } from "../lib/extensionKeyEvent";
 import { isEscapeKey, isSaveDraftNoteKey } from "../lib/keyboard";
 import { routeKeyOwnership, type KeyOwner } from "../lib/keyRouting";
+import { handleViewPreferenceQuitPromptKey } from "../lib/viewPreferenceQuitKeys";
 
 type FocusArea = "files" | "filter" | "note";
 
@@ -35,6 +36,7 @@ export interface UseAppKeyboardShortcutsOptions {
    * order. Modal navigation stays in this hook; commands own the rest.
    */
   commands: readonly AppCommand[];
+  clearVisualSelection?: () => boolean;
   denyRepoExtensions: () => void;
   /** The extension dialog currently on screen, or `null` when none is. */
   extensionDialog: ExtensionDialogRequest | null;
@@ -68,7 +70,7 @@ export interface UseAppKeyboardShortcutsOptions {
   discardViewPreferencesAndQuit: () => void;
   neverAskToSaveViewPreferencesAndQuit: () => void;
   closeSaveConfigPrompt: () => void;
-  saveDraftNote: () => void;
+  saveDraftNote: (editorBody?: string) => void;
   showAgentSkill: boolean;
   showHelp: boolean;
   switchMenu: (delta: number) => void;
@@ -106,6 +108,7 @@ export function useAppKeyboardShortcuts({
   closeThemeSelector,
   closeExtensionTrustPrompt,
   commands,
+  clearVisualSelection,
   denyRepoExtensions,
   extensionDialog,
   acceptExtensionDialog,
@@ -138,6 +141,7 @@ export function useAppKeyboardShortcuts({
   const renderer = useRenderer();
   const activeMenuIdRef = useRef(activeMenuId);
   const commandsRef = useRef(commands);
+  const clearVisualSelectionRef = useRef(clearVisualSelection);
   const focusAreaRef = useRef(focusArea);
   const showAgentSkillRef = useRef(showAgentSkill);
   const showHelpRef = useRef(showHelp);
@@ -161,6 +165,7 @@ export function useAppKeyboardShortcuts({
 
   activeMenuIdRef.current = activeMenuId;
   commandsRef.current = commands;
+  clearVisualSelectionRef.current = clearVisualSelection;
   focusAreaRef.current = focusArea;
   showAgentSkillRef.current = showAgentSkill;
   showHelpRef.current = showHelp;
@@ -260,27 +265,12 @@ export function useAppKeyboardShortcuts({
       return "notMine";
     }
 
-    if (key.name === "return" || key.name === "enter" || key.name === "s" || key.sequence === "s") {
-      saveViewPreferencesAndQuit();
-      return "mine";
-    }
-
-    // "q" again quits and discards, so a double-tap of the quit key always exits.
-    if (key.name === "q" || key.sequence === "q") {
-      discardViewPreferencesAndQuit();
-      return "mine";
-    }
-
-    if (key.name === "n" || key.sequence === "n") {
-      neverAskToSaveViewPreferencesAndQuit();
-      return "mine";
-    }
-
-    if (isEscapeKey(key)) {
-      closeSaveConfigPrompt();
-      return "mine";
-    }
-
+    handleViewPreferenceQuitPromptKey(key, {
+      saveViewPreferencesAndQuit,
+      discardViewPreferencesAndQuit,
+      neverAskToSaveViewPreferencesAndQuit,
+      closeSaveConfigPrompt,
+    });
     return "mine";
   };
 
@@ -504,7 +494,7 @@ export function useAppKeyboardShortcuts({
     }
 
     if (isSaveDraftNoteKey(key)) {
-      saveDraftNote();
+      saveDraftNote(renderer.currentFocusedEditor?.plainText);
       return "mine";
     }
 
@@ -619,6 +609,12 @@ export function useAppKeyboardShortcuts({
     );
     if (reviewOwned) return;
 
+    // Clear only when a selection is active; otherwise Escape remains available to an
+    // extension command because Clear Selection no longer owns a global binding.
+    if (isEscapeKey(key) && clearVisualSelectionRef.current?.()) {
+      consumeKey(key);
+      return;
+    }
     dispatchCommandShortcut(key);
   });
 }

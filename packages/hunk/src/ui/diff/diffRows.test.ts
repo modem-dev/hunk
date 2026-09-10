@@ -4,7 +4,7 @@ import { createTwoFilesPatch } from "diff";
 import type { DiffFile } from "../../core/changeset/model";
 import {
   buildSplitRows,
-  buildStackRows,
+  buildUnifiedRows,
   HIGHLIGHT_WORKER_MIN_LINES,
   highlightedDiffLineCount,
   loadHighlightedDiff,
@@ -16,7 +16,7 @@ import {
 } from "./diffRows";
 import { resolveSplitPaneWidths } from "./codeColumns";
 import { renderCodeOnlyPlannedRowText, renderDecoratedPlannedRowText } from "./plannedRowText";
-import { stackCellPalette } from "./rowStyle";
+import { unifiedCellPalette } from "./rowStyle";
 import { buildReviewRenderPlan } from "./reviewRenderPlan";
 import { measureTextWidth } from "../lib/text";
 import { TRANSPARENT_BACKGROUND, resolveTheme } from "../themes";
@@ -285,8 +285,8 @@ describe("Pierre diff rows", () => {
     expect(highlighted.additionLines).toHaveLength(0);
 
     // Plain rows still carry the diff itself, so the file stays reviewable without color.
-    const rows = buildStackRows(file, highlighted, theme);
-    expect(rows.some((row) => row.type === "stack-line")).toBe(true);
+    const rows = buildUnifiedRows(file, highlighted, theme);
+    expect(rows.some((row) => row.type === "unified-line")).toBe(true);
 
     // A source file of ordinary size is unaffected.
     expect(shouldHighlightDiff(createDiffFile())).toBe(true);
@@ -353,7 +353,7 @@ describe("Pierre diff rows", () => {
 
     expect(offloaded.compact?.deletionLineMap).toHaveLength(file.metadata.deletionLines.length);
     expect(offloaded.compact?.additionLineMap).toHaveLength(file.metadata.additionLines.length);
-    expect(buildStackRows(file, offloaded, theme)).toEqual(buildStackRows(file, inline, theme));
+    expect(buildUnifiedRows(file, offloaded, theme)).toEqual(buildUnifiedRows(file, inline, theme));
   }, 30_000);
 
   test("falls back to plain spans for an out-of-range compact source mapping", () => {
@@ -435,17 +435,18 @@ describe("Pierre diff rows", () => {
     const file = createLargeSourceBackedDiffFile(6_000);
     const theme = resolveTheme("github-dark-default", null);
     const highlighted = await loadHighlightedDiff(file, theme);
-    const rows = buildStackRows(file, highlighted, theme);
+    const rows = buildUnifiedRows(file, highlighted, theme);
     const functionRow = rows.find(
       (row) =>
-        row.type === "stack-line" && row.cell.spans.some((span) => span.text.includes("def hello")),
+        row.type === "unified-line" &&
+        row.cell.spans.some((span) => span.text.includes("def hello")),
     );
 
     expect(shouldHighlightDiff(file)).toBe(true);
     expect(highlighted.deletionLines).toHaveLength(file.metadata.deletionLines.length);
     expect(highlighted.additionLines).toHaveLength(file.metadata.additionLines.length);
-    expect(functionRow?.type).toBe("stack-line");
-    expect(functionRow?.type === "stack-line" ? functionRow.cell.spans[0]?.fg : undefined).toBe(
+    expect(functionRow?.type).toBe("unified-line");
+    expect(functionRow?.type === "unified-line" ? functionRow.cell.spans[0]?.fg : undefined).toBe(
       "#A5D6FF",
     );
   });
@@ -469,25 +470,25 @@ describe("Pierre diff rows", () => {
     const file = createElixirHeredocDiffFile(sourceFetcher);
     const theme = resolveTheme("github-dark-default", null);
     const highlighted = await loadHighlightedDiff(file, theme);
-    const rows = buildStackRows(file, highlighted, theme);
+    const rows = buildUnifiedRows(file, highlighted, theme);
     const rowFor = (text: string) =>
       rows.find(
         (row) =>
-          row.type === "stack-line" && row.cell.spans.some((span) => span.text.includes(text)),
+          row.type === "unified-line" && row.cell.spans.some((span) => span.text.includes(text)),
       );
     const docRow = rowFor("Line two.");
     const functionRow = rowFor("def");
     const additionRow = rowFor("edited");
 
     expect(sourceFetcher.calls).toEqual(["old", "new"]);
-    expect(docRow?.type === "stack-line" ? docRow.cell.spans[0]?.fg : undefined).toBe("#8B949E");
+    expect(docRow?.type === "unified-line" ? docRow.cell.spans[0]?.fg : undefined).toBe("#8B949E");
     expect(
-      functionRow?.type === "stack-line"
+      functionRow?.type === "unified-line"
         ? functionRow.cell.spans.find((span) => span.text.includes("def"))?.fg
         : undefined,
     ).toBe("#FF7B72");
     expect(
-      additionRow?.type === "stack-line"
+      additionRow?.type === "unified-line"
         ? additionRow.cell.spans.find((span) => span.text.includes("edited"))?.bg
         : undefined,
     ).toBeDefined();
@@ -500,15 +501,16 @@ describe("Pierre diff rows", () => {
     const file = createElixirHeredocDiffFile(sourceFetcher);
     const theme = resolveTheme("github-dark-default", null);
     const highlighted = await loadHighlightedDiff(file, theme);
-    const rows = buildStackRows(file, highlighted, theme);
+    const rows = buildUnifiedRows(file, highlighted, theme);
     const functionRow = rows.find(
       (row) =>
-        row.type === "stack-line" && row.cell.spans.some((span) => span.text.includes("def hello")),
+        row.type === "unified-line" &&
+        row.cell.spans.some((span) => span.text.includes("def hello")),
     );
 
     expect(sourceFetcher.calls).toEqual(["old", "new"]);
-    expect(functionRow?.type).toBe("stack-line");
-    expect(functionRow?.type === "stack-line" ? functionRow.cell.spans[0]?.fg : undefined).toBe(
+    expect(functionRow?.type).toBe("unified-line");
+    expect(functionRow?.type === "unified-line" ? functionRow.cell.spans[0]?.fg : undefined).toBe(
       "#A5D6FF",
     );
   });
@@ -612,10 +614,10 @@ describe("Pierre diff rows", () => {
     const theme = resolveTheme("github-dark-default", null);
     const highlighted = await loadHighlightedDiff(file, theme);
     const addedText = (tabWidth: number) => {
-      const row = buildStackRows(file, highlighted, theme, tabWidth).find(
-        (candidate) => candidate.type === "stack-line" && candidate.cell.kind === "addition",
+      const row = buildUnifiedRows(file, highlighted, theme, tabWidth).find(
+        (candidate) => candidate.type === "unified-line" && candidate.cell.kind === "addition",
       );
-      if (!row || row.type !== "stack-line") {
+      if (!row || row.type !== "unified-line") {
         throw new Error("expected one highlighted addition row");
       }
       return row.cell.spans.map((span) => span.text).join("");
@@ -625,27 +627,27 @@ describe("Pierre diff rows", () => {
     expect(addedText(4)).toBe("let a   = 2;");
   });
 
-  test("builds stacked rows with separate deletion and addition lines", () => {
+  test("builds unified rows with separate deletion and addition lines", () => {
     const file = createDiffFile();
     const theme = resolveTheme("github-light-default", null);
-    const rows = buildStackRows(file, null, theme);
+    const rows = buildUnifiedRows(file, null, theme);
 
     const deletionRow = rows.find(
-      (row) => row.type === "stack-line" && row.cell.kind === "deletion",
+      (row) => row.type === "unified-line" && row.cell.kind === "deletion",
     );
     const additionRow = rows.find(
-      (row) => row.type === "stack-line" && row.cell.kind === "addition",
+      (row) => row.type === "unified-line" && row.cell.kind === "addition",
     );
 
     expect(deletionRow).toBeDefined();
     expect(additionRow).toBeDefined();
 
-    if (!deletionRow || deletionRow.type !== "stack-line") {
-      throw new Error("Expected a stacked deletion row");
+    if (!deletionRow || deletionRow.type !== "unified-line") {
+      throw new Error("Expected a unified deletion row");
     }
 
-    if (!additionRow || additionRow.type !== "stack-line") {
-      throw new Error("Expected a stacked addition row");
+    if (!additionRow || additionRow.type !== "unified-line") {
+      throw new Error("Expected a unified addition row");
     }
 
     expect(deletionRow.cell.oldLineNumber).toBe(1);
@@ -661,32 +663,32 @@ describe("Pierre diff rows", () => {
       additionLines: ["moved"],
     };
     const theme = resolveTheme("github-dark-default", null);
-    const rows = buildStackRows(file, null, theme);
+    const rows = buildUnifiedRows(file, null, theme);
     const movedDeletion = rows.find(
-      (row) => row.type === "stack-line" && row.cell.kind === "deletion",
+      (row) => row.type === "unified-line" && row.cell.kind === "deletion",
     );
     const movedAddition = rows.find(
-      (row) => row.type === "stack-line" && row.cell.kind === "addition",
+      (row) => row.type === "unified-line" && row.cell.kind === "addition",
     );
 
     expect(movedDeletion).toBeDefined();
     expect(movedAddition).toBeDefined();
 
-    if (!movedDeletion || movedDeletion.type !== "stack-line") {
+    if (!movedDeletion || movedDeletion.type !== "unified-line") {
       throw new Error("Expected a moved deletion row");
     }
 
-    if (!movedAddition || movedAddition.type !== "stack-line") {
+    if (!movedAddition || movedAddition.type !== "unified-line") {
       throw new Error("Expected a moved addition row");
     }
 
     expect(movedDeletion.cell.moveKind).toBe("moved");
     expect(movedAddition.cell.moveKind).toBe("moved");
     expect(
-      stackCellPalette(movedDeletion.cell.kind, theme, movedDeletion.cell.moveKind).contentBg,
+      unifiedCellPalette(movedDeletion.cell.kind, theme, movedDeletion.cell.moveKind).contentBg,
     ).toBe(theme.movedRemovedBg);
     expect(
-      stackCellPalette(movedAddition.cell.kind, theme, movedAddition.cell.moveKind).contentBg,
+      unifiedCellPalette(movedAddition.cell.kind, theme, movedAddition.cell.moveKind).contentBg,
     ).toBe(theme.movedAddedBg);
   });
 
@@ -780,10 +782,10 @@ describe("Pierre diff rows", () => {
     expect(measureTextWidth(line.slice(0, centerSeparatorIndex))).toBe(leftWidth);
   });
 
-  test("renders planned stack rows with horizontal copy offset", () => {
+  test("renders planned unified rows with horizontal copy offset", () => {
     const file = createDiffFile();
     const theme = resolveTheme("github-dark-default", null);
-    const rows = buildStackRows(file, null, theme);
+    const rows = buildUnifiedRows(file, null, theme);
     const plannedRows = buildReviewRenderPlan({
       fileId: file.id,
       rows,
@@ -792,13 +794,13 @@ describe("Pierre diff rows", () => {
     const additionRow = plannedRows.find(
       (row) =>
         row.kind === "diff-row" &&
-        row.row.type === "stack-line" &&
+        row.row.type === "unified-line" &&
         row.row.cell.kind === "addition",
     );
 
     expect(additionRow).toBeDefined();
     if (!additionRow || additionRow.kind !== "diff-row") {
-      throw new Error("Expected a planned stack addition row");
+      throw new Error("Expected a planned unified addition row");
     }
 
     const [line] = renderDecoratedPlannedRowText(additionRow, {
@@ -863,11 +865,11 @@ describe("Pierre diff rows", () => {
     const theme = resolveTheme("github-dark-default", null);
     const highlighted = await loadHighlightedDiff(file);
 
-    for (const buildRows of [buildSplitRows, buildStackRows]) {
+    for (const buildRows of [buildSplitRows, buildUnifiedRows]) {
       const rows = buildRows(file, highlighted, theme);
       const allSpans = rows.flatMap((row) => {
         if (row.type === "split-line") return [...row.left.spans, ...row.right.spans];
-        if (row.type === "stack-line") return row.cell.spans;
+        if (row.type === "unified-line") return row.cell.spans;
         return [];
       });
 
@@ -966,7 +968,7 @@ describe("Pierre diff rows", () => {
 
     const theme = resolveTheme("github-dark-default", null);
 
-    for (const buildRows of [buildSplitRows, buildStackRows]) {
+    for (const buildRows of [buildSplitRows, buildUnifiedRows]) {
       const rows = buildRows(file, null, theme);
       const collapsedRows = rows.filter(
         (row): row is Extract<DiffRow, { type: "collapsed" }> => row.type === "collapsed",
@@ -1064,10 +1066,10 @@ describe("Pierre diff rows", () => {
         }),
       );
       const highlighted = await loadHighlightedDiff(file, theme);
-      const spans = buildStackRows(file, highlighted, theme)
+      const spans = buildUnifiedRows(file, highlighted, theme)
         .filter(
-          (row): row is Extract<DiffRow, { type: "stack-line" }> =>
-            row.type === "stack-line" && row.cell.kind === "addition",
+          (row): row is Extract<DiffRow, { type: "unified-line" }> =>
+            row.type === "unified-line" && row.cell.kind === "addition",
         )
         .flatMap((row) => row.cell.spans);
 
@@ -1145,28 +1147,28 @@ describe("Pierre diff rows", () => {
         loadHighlightedDiff(file, nextCustomTheme),
         loadHighlightedDiff(file, variableTheme),
       ]);
-    const baseSpans = buildStackRows(file, baseHighlighted, baseTheme)
+    const baseSpans = buildUnifiedRows(file, baseHighlighted, baseTheme)
       .filter(
-        (row): row is Extract<DiffRow, { type: "stack-line" }> =>
-          row.type === "stack-line" && row.cell.kind === "addition",
+        (row): row is Extract<DiffRow, { type: "unified-line" }> =>
+          row.type === "unified-line" && row.cell.kind === "addition",
       )
       .flatMap((row) => row.cell.spans);
-    const customSpans = buildStackRows(file, customHighlighted, customTheme)
+    const customSpans = buildUnifiedRows(file, customHighlighted, customTheme)
       .filter(
-        (row): row is Extract<DiffRow, { type: "stack-line" }> =>
-          row.type === "stack-line" && row.cell.kind === "addition",
+        (row): row is Extract<DiffRow, { type: "unified-line" }> =>
+          row.type === "unified-line" && row.cell.kind === "addition",
       )
       .flatMap((row) => row.cell.spans);
-    const nextCustomSpans = buildStackRows(file, nextCustomHighlighted, nextCustomTheme)
+    const nextCustomSpans = buildUnifiedRows(file, nextCustomHighlighted, nextCustomTheme)
       .filter(
-        (row): row is Extract<DiffRow, { type: "stack-line" }> =>
-          row.type === "stack-line" && row.cell.kind === "addition",
+        (row): row is Extract<DiffRow, { type: "unified-line" }> =>
+          row.type === "unified-line" && row.cell.kind === "addition",
       )
       .flatMap((row) => row.cell.spans);
-    const variableSpans = buildStackRows(file, variableHighlighted, variableTheme)
+    const variableSpans = buildUnifiedRows(file, variableHighlighted, variableTheme)
       .filter(
-        (row): row is Extract<DiffRow, { type: "stack-line" }> =>
-          row.type === "stack-line" && row.cell.kind === "addition",
+        (row): row is Extract<DiffRow, { type: "unified-line" }> =>
+          row.type === "unified-line" && row.cell.kind === "addition",
       )
       .flatMap((row) => row.cell.spans);
 
@@ -1222,16 +1224,16 @@ describe("Pierre diff rows", () => {
       loadHighlightedDiff(file, baseTheme),
       loadHighlightedDiff(file, customTheme),
     ]);
-    const baseSpans = buildStackRows(file, baseHighlighted, baseTheme)
+    const baseSpans = buildUnifiedRows(file, baseHighlighted, baseTheme)
       .filter(
-        (row): row is Extract<DiffRow, { type: "stack-line" }> =>
-          row.type === "stack-line" && row.cell.kind === "addition",
+        (row): row is Extract<DiffRow, { type: "unified-line" }> =>
+          row.type === "unified-line" && row.cell.kind === "addition",
       )
       .flatMap((row) => row.cell.spans);
-    const customSpans = buildStackRows(file, customHighlighted, customTheme)
+    const customSpans = buildUnifiedRows(file, customHighlighted, customTheme)
       .filter(
-        (row): row is Extract<DiffRow, { type: "stack-line" }> =>
-          row.type === "stack-line" && row.cell.kind === "addition",
+        (row): row is Extract<DiffRow, { type: "unified-line" }> =>
+          row.type === "unified-line" && row.cell.kind === "addition",
       )
       .flatMap((row) => row.cell.spans);
 
@@ -1266,10 +1268,10 @@ describe("Pierre diff rows", () => {
     };
     const theme = resolveTheme("catppuccin-mocha", null);
     const highlighted = await loadHighlightedDiff(file, theme);
-    const spans = buildStackRows(file, highlighted, theme)
+    const spans = buildUnifiedRows(file, highlighted, theme)
       .filter(
-        (row): row is Extract<DiffRow, { type: "stack-line" }> =>
-          row.type === "stack-line" && row.cell.kind === "addition",
+        (row): row is Extract<DiffRow, { type: "unified-line" }> =>
+          row.type === "unified-line" && row.cell.kind === "addition",
       )
       .flatMap((row) => row.cell.spans);
 

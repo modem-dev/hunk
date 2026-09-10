@@ -122,7 +122,7 @@ function isHomebrewExecutablePath(executablePath: string) {
 /**
  * Resolve the directory `bun run install:bin` copies local builds into.
  *
- * Mirrors `scripts/install-bin.ts`: an explicit `HUNK_INSTALL_DIR` wins, Windows installs land in
+ * Mirrors `scripts/build/install-bin.ts`: an explicit `HUNK_INSTALL_DIR` wins, Windows installs land in
  * the per-user Programs directory, and everything else uses `~/.local/bin`.
  */
 export function resolveDevInstallDir(env: NodeJS.ProcessEnv, homeDir: string | undefined) {

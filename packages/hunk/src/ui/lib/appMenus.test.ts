@@ -17,7 +17,7 @@ import { resolveCommandKeys } from "./keymap";
 const MENU_STATE: Omit<BuildAppMenusOptions, "commands" | "extensionCommands"> = {
   copyDecorations: true,
   cursorLine: "row" as const,
-  layoutMode: "stack",
+  layoutMode: "unified",
   filesPaneVisible: false,
   showAgentNotes: true,
   showHelp: false,
@@ -44,6 +44,7 @@ function createTestCommands(overrides: Partial<BuildAppCommandsOptions> = {}) {
     applyFilePresentationToAllMatching: record("applyFilePresentationToAllMatching"),
     focusFilter: noop,
     moveSelection: record("moveSelection"),
+    moveNoteCursor: record("moveNoteCursor"),
     openAgentSkill: record("openAgentSkill"),
     openThemeSelector: noop,
     requestQuit: record("requestQuit"),
@@ -127,12 +128,14 @@ describe("buildAppMenus", () => {
       label: "Toggle files/filter focus",
       hint: "Tab",
     });
+    expect(entry(menus, "view", "Unified view").hint).toBe("1");
+    expect(entry(menus, "view", "Split view").hint).toBe("2");
     expect(
       items(menus.view)
         .filter((item) => item.checked)
         .map((item) => item.label),
     ).toEqual([
-      "Stacked view",
+      "Unified view",
       "Menu bar",
       "Agent notes",
       "Line numbers",
@@ -286,7 +289,8 @@ describe("the Extensions menu", () => {
     ]);
 
     expect(items(menus.extensions).map((item) => [item.label, item.hint])).toEqual([
-      ["Sync notes", "y"],
+      // Built-in Copy Selection owns y; extension commands remain menu-invocable when unbound.
+      ["Sync notes", undefined],
       ["Stash notes", undefined],
       ["Quiet mode", undefined],
     ]);

@@ -224,6 +224,7 @@ class HttpHunkSessionCliClient implements HunkSessionCliClient {
         filePath: input.filePath,
         side: input.side,
         line: input.line,
+        ...(input.replyTo !== undefined ? { replyTo: input.replyTo } : {}),
         summary: input.summary,
         rationale: input.rationale,
         markup: input.markup,

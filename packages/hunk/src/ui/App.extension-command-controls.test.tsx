@@ -14,7 +14,7 @@ function createBootstrap(extensions = createEmptyExtensionLoadResult("/repo")): 
     ...createTestVcsAppBootstrap({
       changesetId: "changeset:command-controls",
       files: [createTestDiffFile({ id: "alpha", path: "alpha.ts" })],
-      initialMode: "stack",
+      initialMode: "unified",
     }),
     extensions,
   };
@@ -36,7 +36,7 @@ describe("extension command control authority", () => {
     const initial = createBootstrap();
     initial.extensions!.registry.commands.push({
       extensionId: "probe",
-      command: { id: "capture", title: "Capture controls", key: "y" },
+      command: { id: "capture", title: "Capture controls", key: "Y" },
       handler(ctx) {
         capturedControls = ctx.commands;
         capturedWorkspace = ctx.workspace;
@@ -83,7 +83,7 @@ describe("extension command control authority", () => {
     try {
       await flush(setup);
       await act(async () => {
-        await setup.mockInput.typeText("y");
+        await setup.mockInput.typeText("Y");
       });
       await flush(setup);
       expect(capturedControls).not.toBeNull();

@@ -10,9 +10,13 @@
  * live-agent note lifecycle still resolve at their current owners.
  */
 import type { ReviewAction } from "./actions";
-import { reviewLineAnchor } from "./anchors";
+import { reviewLineAnchor, reviewRangeAnchor } from "./anchors";
 import { reviewExpansionSide, reviewGapAddress, reviewGapSourceForFile } from "./expansion";
-import { reviewDefaultHunkLineTarget } from "./geometry";
+import {
+  reviewDefaultHunkLineTarget,
+  reviewLineCoveredByHunks,
+  reviewRangeTargetCoverageIssue,
+} from "./geometry";
 import { reviewNoteWithinSizeLimit } from "./noteSize";
 import {
   EMPTY_REVIEW_ANNOTATION_INDEX,
@@ -27,6 +31,8 @@ import {
   isReviewNoteWithinClearScope,
   reviewNoteCurrentOwnerHunkIndex,
   reviewNoteHasDescendants,
+  selectActiveStoredReviewNote,
+  selectNavigableStoredReviewNotes,
   selectNormalizedSelection,
   selectReviewFileByKey,
   selectReviewNavigationFiles,
@@ -41,7 +47,14 @@ import {
   type ReviewStoredNote,
 } from "./state";
 import type { ReviewStore } from "./store";
-import type { ReviewFileV1, ReviewLineAddressV1, ReviewLineRange, ReviewSide } from "./types";
+import type {
+  ReviewFileV1,
+  ReviewLineAddressV1,
+  ReviewLineRange,
+  ReviewNoteTargetV1,
+  ReviewRangeTargetV1,
+  ReviewSide,
+} from "./types";
 
 /**
  * The facts core refuses to invent, supplied by whoever submits an intent.
@@ -75,7 +88,14 @@ export interface ReviewIntentFacts {
 
 export type ReviewIntent =
   /** Select one hunk outright, revealing it the way the caller asks. */
-  | { type: "selection/select"; fileKey: string; hunkIndex: number; reveal: ReviewRevealRequest }
+  | {
+      type: "selection/select";
+      fileKey: string;
+      hunkIndex: number;
+      reveal: ReviewRevealRequest;
+      /** Exact visible stored note to focus instead of the selected hunk's source line. */
+      activeNoteId?: string;
+    }
   /** Step the selection through one navigable scope; the scope decides wrap and reveal. */
   | { type: "selection/move"; scope: ReviewSelectionScope; delta: number }
   /** Jump to one file, landing on its first hunk. */
@@ -91,7 +111,7 @@ export type ReviewIntent =
       type: "notes/start-draft";
       fileKey: string;
       hunkIndex: number;
-      target?: ReviewLineAddressV1;
+      target?: ReviewNoteTargetV1;
       reveal?: ReviewRevealRequest;
     }
   /** Open an editable reviewer note in the shared composer. */
@@ -267,7 +287,8 @@ export type ReviewIntentPlanningErrorCode =
   | "invalid-note-parent"
   | "blank-note"
   | "note-too-large"
-  | "missing-fact";
+  | "missing-fact"
+  | "invalid-request";
 
 /** Typed semantic rejection raised before any review state is reduced or published. */
 export class ReviewIntentPlanningError extends Error {
@@ -332,9 +353,18 @@ function planSelection(
   fileKey: string,
   hunkIndex: number,
   reveal: ReviewRevealRequest,
+  activeNoteId?: string,
 ): ReviewIntentPlan {
   return {
-    actions: [{ type: "selection/select", fileKey, hunkIndex, reveal }],
+    actions: [
+      {
+        type: "selection/select",
+        fileKey,
+        hunkIndex,
+        reveal,
+        ...(activeNoteId ? { activeNoteId } : {}),
+      },
+    ],
     outcome: { type: "selection/changed", fileKey, hunkIndex },
   };
 }
@@ -363,13 +393,21 @@ function planSelectionMove(
     {
       files: selectReviewNavigationFiles(state),
       annotations: facts.annotations ?? EMPTY_REVIEW_ANNOTATION_INDEX,
+      notes: selectNavigableStoredReviewNotes(state).map((item) => ({
+        fileKey: item.fileKey,
+        hunkIndex: item.hunkIndex,
+        noteId: item.entry.note.id,
+      })),
+      activeNoteId: selectActiveStoredReviewNote(state)?.note.id,
     },
     selectNormalizedSelection(state),
     { scope: intent.scope, delta: intent.delta },
   );
   // A refused move publishes nothing at all: no selection change, and no reveal token
   // bump that would scroll a viewport for a key press that went nowhere.
-  return target ? planSelection(target.fileKey, target.hunkIndex, target.reveal) : { actions: [] };
+  return target
+    ? planSelection(target.fileKey, target.hunkIndex, target.reveal, target.activeNoteId)
+    : { actions: [] };
 }
 
 /**
@@ -394,18 +432,51 @@ function planDraftStart(
   requireHunk(file, intent.hunkIndex);
   const hunk = file.hunks[intent.hunkIndex]!;
   // Where a note about the whole hunk belongs is one shared answer; a caller that
-  // measured a specific line the reviewer put a cursor on overrides it.
+  // measured a specific line or range the reviewer selected overrides it.
   const target = intent.target ?? reviewDefaultHunkLineTarget(hunk);
   if (state.draftNote) {
     throw new ReviewIntentPlanningError("draft-active", "A review note draft is already active.");
   }
+  const rangeTarget = "preferred" in target ? (target as ReviewRangeTargetV1) : null;
+  const lineTarget = rangeTarget ? null : (target as ReviewLineAddressV1);
+  if (rangeTarget) {
+    const coverageIssue = reviewRangeTargetCoverageIssue(file.hunks, rangeTarget);
+    if (coverageIssue) {
+      throw new ReviewIntentPlanningError(
+        "invalid-request",
+        `Review range target is not covered by the current patch (${coverageIssue}).`,
+      );
+    }
+  }
+  const preferred = rangeTarget?.preferred ?? lineTarget!;
+  const anchor = rangeTarget
+    ? reviewRangeAnchor(file.hunks, { ...rangeTarget, hunkIndex: intent.hunkIndex })
+    : reviewLineAnchor(file.hunks, { ...lineTarget!, hunkIndex: intent.hunkIndex });
+  if (rangeTarget && anchor.ownerHunkIndex !== intent.hunkIndex) {
+    throw new ReviewIntentPlanningError(
+      "invalid-request",
+      `Review range resolves to hunk ${anchor.ownerHunkIndex ?? "none"}, not requested hunk ${intent.hunkIndex}.`,
+    );
+  }
+  const expandedLineTarget =
+    lineTarget !== null && !reviewLineCoveredByHunks(file.hunks, lineTarget.side, lineTarget.line);
   const draft: ReviewDraftNote = {
     kind: "create",
     id: requireFact(facts.draftId, "draftId"),
     fileKey: file.key,
-    hunkIndex: intent.hunkIndex,
-    side: target.side,
-    line: target.line,
+    hunkIndex: anchor.ownerHunkIndex ?? intent.hunkIndex,
+    side: preferred.side,
+    line: preferred.line,
+    targetKind: rangeTarget ? "range" : "line",
+    ...(expandedLineTarget
+      ? {
+          expandedLineSource: {
+            ...(file.sourceIdentity !== undefined ? { sourceIdentity: file.sourceIdentity } : {}),
+            sourceAttested: file.sourceAttested === true,
+          },
+        }
+      : {}),
+    anchor,
     body: "",
   };
   return {
@@ -432,13 +503,25 @@ function draftForStoredNote(
   const file = requireReviewFile(state, entry.note.fileKey);
   const hunkIndex = reviewNoteCurrentOwnerHunkIndex(entry.note, file);
   requireHunk(file, hunkIndex);
-  const target = entry.note.anchor.preferred ?? { side: "new" as const, line: 1 };
+  const anchor = entry.note.anchor;
+  const target = anchor.preferred ?? { side: "new" as const, line: 1 };
+  const oldRangeIsMultiline =
+    anchor.oldRange !== undefined && anchor.oldRange[0] !== anchor.oldRange[1];
+  const newRangeIsMultiline =
+    anchor.newRange !== undefined && anchor.newRange[0] !== anchor.newRange[1];
   const common = {
     id: requireFact(facts.draftId, "draftId"),
     fileKey: file.key,
     hunkIndex,
     side: target.side,
     line: target.line,
+    targetKind:
+      (anchor.oldRange !== undefined && anchor.newRange !== undefined) ||
+      oldRangeIsMultiline ||
+      newRangeIsMultiline
+        ? ("range" as const)
+        : ("line" as const),
+    anchor,
   };
   return mode === "edit"
     ? { ...common, kind: "edit", targetNoteId: entry.note.id, body: entry.note.summary }
@@ -546,6 +629,21 @@ function planExpansionToggle(
   };
 }
 
+/** Resolve an active or stale note that may parent a new reply. */
+export function requireReviewReplyParent(
+  state: Pick<ReviewState, "liveNotes" | "userNotes">,
+  parentId: string,
+): ReviewStoredNote {
+  const parent = selectStoredReviewNoteById(state, parentId);
+  if (!parent || parent.resolution === "orphaned") {
+    throw new ReviewIntentPlanningError(
+      "invalid-note-parent",
+      `Review note ${parentId} is no longer available as a reply parent.`,
+    );
+  }
+  return parent;
+}
+
 /** Plan persistence of an active create/reply draft as one user note. */
 function planUserNoteCreation(state: ReviewState, facts: ReviewIntentFacts): ReviewIntentPlan {
   const draft = state.draftNote;
@@ -573,13 +671,7 @@ function planUserNoteCreation(state: ReviewState, facts: ReviewIntentFacts): Rev
   }
 
   const parent =
-    draft.kind === "reply" ? selectStoredReviewNoteById(state, draft.parentId) : undefined;
-  if (draft.kind === "reply" && (!parent || parent.resolution === "orphaned")) {
-    throw new ReviewIntentPlanningError(
-      "invalid-note-parent",
-      `Review note ${draft.parentId} is no longer available as a reply parent.`,
-    );
-  }
+    draft.kind === "reply" ? requireReviewReplyParent(state, draft.parentId) : undefined;
   if (parent && parent.note.fileKey !== file.key) {
     throw new ReviewIntentPlanningError(
       "invalid-note-parent",
@@ -594,7 +686,7 @@ function planUserNoteCreation(state: ReviewState, facts: ReviewIntentFacts): Rev
       source: "user",
       originalSource: "user",
       fileKey: file.key,
-      anchor: parent ? parent.note.anchor : reviewLineAnchor(file.hunks, draft),
+      anchor: parent ? parent.note.anchor : (draft.anchor ?? reviewLineAnchor(file.hunks, draft)),
       summary: draft.body.trim(),
       author: "user",
       createdAt: requireFact(facts.timestamp, "timestamp"),
@@ -748,6 +840,17 @@ export function planReviewIntent(
       // Only the file is required: an out-of-range hunk clamps rather than rejecting, so
       // a stale index from a reloaded file still lands the reviewer somewhere real.
       const file = requireReviewFile(state, intent.fileKey);
+      if (intent.activeNoteId) {
+        const target = selectNavigableStoredReviewNotes(state).find(
+          (item) => item.entry.note.id === intent.activeNoteId,
+        );
+        if (!target || target.fileKey !== file.key || target.hunkIndex !== intent.hunkIndex) {
+          throw new ReviewIntentPlanningError(
+            "note-not-found",
+            `No visible review note matches id ${intent.activeNoteId} at the requested selection.`,
+          );
+        }
+      }
       return {
         actions: [
           {
@@ -755,6 +858,7 @@ export function planReviewIntent(
             fileKey: file.key,
             hunkIndex: intent.hunkIndex,
             reveal: intent.reveal,
+            ...(intent.activeNoteId ? { activeNoteId: intent.activeNoteId } : {}),
           },
         ],
       };
@@ -773,6 +877,13 @@ export function planReviewIntent(
     }
     case "selection/anchor": {
       const file = requireReviewFile(state, intent.fileKey);
+      const anchoredHunkIndex = Math.min(
+        Math.max(intent.hunkIndex, 0),
+        Math.max(0, file.hunks.length - 1),
+      );
+      const current = selectNormalizedSelection(state);
+      const preservesActiveNote =
+        current.fileKey === file.key && current.hunkIndex === anchoredHunkIndex;
       return {
         actions: [
           {
@@ -780,6 +891,9 @@ export function planReviewIntent(
             fileKey: file.key,
             hunkIndex: intent.hunkIndex,
             reveal: REVIEW_VIEWPORT_ANCHOR_REVEAL,
+            ...(preservesActiveNote && state.activeNoteId
+              ? { activeNoteId: state.activeNoteId }
+              : {}),
           },
         ],
       };

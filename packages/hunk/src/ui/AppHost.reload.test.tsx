@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
@@ -13,13 +13,14 @@ import type {
   HunkSessionServerMessage,
   HunkSessionSnapshot,
 } from "../session/types";
+import { ThemeController } from "./theme/controller";
 
 const { getBundledVcsCatalog } = await import("../app/vcsCatalog");
 const { loadAppBootstrap } = await import("../core/changeset/loaders");
-const { AppHost } = await import("./AppHost");
+const { TestAppHost: AppHost } = await import("../../../../test/helpers/app-host");
 
 /** Stand in for the session daemon so a test can send the commands agents send. */
-function createTestHostClient() {
+function createTestHostClient(options?: { replaceSessionError?: Error }) {
   type Bridge = Parameters<HunkSessionBrokerClient["setBridge"]>[0];
 
   let bridge: Bridge = null;
@@ -37,6 +38,7 @@ function createTestHostClient() {
     hostClient: {
       getRegistration: () => registration,
       replaceSession: (nextRegistration: HunkSessionRegistration) => {
+        if (options?.replaceSessionError) throw options.replaceSessionError;
         registration = nextRegistration;
       },
       setBridge: (nextBridge: Bridge) => {
@@ -106,6 +108,114 @@ async function settleHighlights(setup: Awaited<ReturnType<typeof testRender>>) {
   }
 }
 
+/** Create one repository whose config and diff can be reloaded by AppHost. */
+function createReloadThemeRepository() {
+  const dir = mkdtempSync(join(tmpdir(), "hunk-reload-themes-"));
+  const configDir = join(dir, ".hunk");
+  const configPath = join(configDir, "config.toml");
+  const file = join(dir, "test.txt");
+  mkdirSync(configDir);
+  writeFileSync(configPath, "");
+  writeFileSync(file, "original line\n");
+  execSync("git init && git config user.email test@test && git config user.name test", {
+    cwd: dir,
+    stdio: "ignore",
+  });
+  execSync("git add . && git commit -m init", { cwd: dir, stdio: "ignore" });
+  writeFileSync(file, "changed line\n");
+  return { configPath, dir };
+}
+
+describe("reload theme catalog", () => {
+  test("adopts reloaded custom themes without replacing the committed theme", async () => {
+    const { configPath, dir } = createReloadThemeRepository();
+
+    const bootstrap = await loadAppBootstrap(
+      { kind: "vcs", staged: false, options: { mode: "unified", excludeUntracked: true } },
+      { cwd: dir, vcsCatalog: getBundledVcsCatalog() },
+    );
+    const themeController = new ThemeController({
+      initialTheme: "dracula",
+      customThemes: [{ id: "original", accent: "#112233" }],
+    });
+    const setup = await testRender(
+      <AppHost bootstrap={bootstrap} themeController={themeController} />,
+      { width: 120, height: 20 },
+    );
+
+    try {
+      await flush(setup);
+      writeFileSync(configPath, '[themes.reloaded]\naccent = "#abcdef"\n');
+      await act(async () => setup.mockInput.typeText("r"));
+
+      for (let attempt = 0; attempt < 30; attempt++) {
+        await flush(setup);
+        if (themeController.getSnapshot().customThemes.some((theme) => theme.id === "reloaded")) {
+          break;
+        }
+        await Bun.sleep(50);
+      }
+
+      expect(themeController.getSnapshot()).toMatchObject({
+        themeId: "dracula",
+        customThemes: [{ id: "reloaded", accent: "#abcdef" }],
+      });
+    } finally {
+      await act(async () => setup.renderer.destroy());
+      await removeTestDirectory(dir);
+    }
+  });
+
+  test("keeps the current custom themes when reload publication fails", async () => {
+    const { configPath, dir } = createReloadThemeRepository();
+    const bootstrap = await loadAppBootstrap(
+      { kind: "vcs", staged: false, options: { mode: "unified", excludeUntracked: true } },
+      { cwd: dir, vcsCatalog: getBundledVcsCatalog() },
+    );
+    const themeController = new ThemeController({
+      initialTheme: "dracula",
+      customThemes: [{ id: "original", accent: "#112233" }],
+    });
+    const publicationError = new Error("publication failed");
+    const { dispatchCommand, hostClient } = createTestHostClient({
+      replaceSessionError: publicationError,
+    });
+    const setup = await testRender(
+      <AppHost bootstrap={bootstrap} hostClient={hostClient} themeController={themeController} />,
+      { width: 120, height: 20 },
+    );
+
+    try {
+      await flush(setup);
+      writeFileSync(configPath, '[themes.reloaded]\naccent = "#abcdef"\n');
+
+      await expect(
+        dispatchCommand({
+          type: "command",
+          requestId: "reload-theme-publication-failure",
+          command: "reload_session",
+          input: {
+            sessionId: "session-1",
+            nextInput: {
+              kind: "vcs",
+              staged: false,
+              options: { mode: "unified", excludeUntracked: true },
+            },
+          },
+        }),
+      ).rejects.toThrow(publicationError.message);
+
+      expect(themeController.getSnapshot()).toEqual({
+        themeId: "dracula",
+        customThemes: [{ id: "original", accent: "#112233" }],
+      });
+    } finally {
+      await act(async () => setup.renderer.destroy());
+      await removeTestDirectory(dir);
+    }
+  });
+});
+
 describe("reload watch runtime compatibility", () => {
   test("refuses a live reload that enables watch mode under an affected Bun runtime", async () => {
     const dir = mkdtempSync(join(tmpdir(), "hunk-reload-watch-runtime-"));
@@ -120,7 +230,7 @@ describe("reload watch runtime compatibility", () => {
     writeFileSync(file, "original line\nfirst change\n");
 
     const bootstrap = await loadAppBootstrap(
-      { kind: "vcs", staged: false, options: { mode: "stack", excludeUntracked: true } },
+      { kind: "vcs", staged: false, options: { mode: "unified", excludeUntracked: true } },
       { cwd: dir, vcsCatalog: getBundledVcsCatalog() },
     );
     const { dispatchCommand, hostClient } = createTestHostClient();
@@ -142,7 +252,7 @@ describe("reload watch runtime compatibility", () => {
             nextInput: {
               kind: "vcs",
               staged: false,
-              options: { mode: "stack", excludeUntracked: true, watch: true },
+              options: { mode: "unified", excludeUntracked: true, watch: true },
             },
           },
         }),
@@ -172,7 +282,7 @@ describe("reload stale highlight cache", () => {
       kind: "diff",
       left,
       right,
-      options: { mode: "stack" },
+      options: { mode: "unified" },
     });
 
     const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
@@ -227,7 +337,7 @@ describe("reload stale highlight cache", () => {
     writeFileSync(file, "original line\nfirst change\n");
 
     const bootstrap = await loadAppBootstrap(
-      { kind: "vcs", staged: false, options: { mode: "stack", excludeUntracked: true } },
+      { kind: "vcs", staged: false, options: { mode: "unified", excludeUntracked: true } },
       { cwd: dir, vcsCatalog: getBundledVcsCatalog() },
     );
 
@@ -282,7 +392,7 @@ describe("reload agent attention marks", () => {
       kind: "diff",
       left,
       right,
-      options: { mode: "stack" },
+      options: { mode: "unified" },
     });
     const { dispatchCommand, hostClient } = createTestHostClient();
     const setup = await testRender(<AppHost bootstrap={bootstrap} hostClient={hostClient} />, {
@@ -373,7 +483,7 @@ describe("reload agent attention marks", () => {
     writeFileSync(bravo, "export const bravo = 2;\n");
 
     const bootstrap = await loadAppBootstrap(
-      { kind: "vcs", staged: false, options: { mode: "stack", excludeUntracked: true } },
+      { kind: "vcs", staged: false, options: { mode: "unified", excludeUntracked: true } },
       { cwd: dir, vcsCatalog: getBundledVcsCatalog() },
     );
     const { dispatchCommand, hostClient } = createTestHostClient();

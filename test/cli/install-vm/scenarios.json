@@ -9,6 +9,41 @@
       "network": "local"
     },
     {
+      "id": "git-pager-output",
+      "description": "Preserve raw Git diff output through redirects, pipes, and direct packaged Hunk pagination.",
+      "profile": "node",
+      "script": "git-pager-output.sh",
+      "network": "live",
+      "requiredEvidence": {
+        "commands": [
+          "install-git",
+          "install-current",
+          "git-version",
+          "redirected-diff",
+          "piped-diff",
+          "packaged-pager-diff"
+        ],
+        "commandExpectations": {
+          "install-git": "exit 0",
+          "install-current": "exit 0",
+          "git-version": "exit 0",
+          "redirected-diff": "exit 0",
+          "piped-diff": "exit 0",
+          "packaged-pager-diff": "exit 0"
+        },
+        "assertions": [
+          "pager-config",
+          "redirected-raw-patch",
+          "redirected-no-controls",
+          "piped-raw-patch",
+          "piped-no-controls",
+          "packaged-pager-raw-patch",
+          "packaged-pager-no-controls"
+        ],
+        "observations": ["hunkVersion", "pagerCommand"]
+      }
+    },
+    {
       "id": "npm-global-upgrade",
       "description": "Upgrade between two registry versions through npm without introducing Bun.",
       "profile": "node",

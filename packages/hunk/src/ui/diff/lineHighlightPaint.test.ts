@@ -58,7 +58,7 @@ describe("buildLineHighlightPaintIndex", () => {
     const oldRanges = index?.get(lineHighlightPaintKey("old", 1));
     expect(newRanges).toEqual([{ startCol: 0, endCol: 6, tone: "match" }]);
     // The same physical line renders on both split halves; identity equality
-    // keeps stack view from double-counting the mirrored entry.
+    // keeps unified view from double-counting the mirrored entry.
     expect(oldRanges).toBe(newRanges!);
   });
 

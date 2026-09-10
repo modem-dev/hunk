@@ -27,6 +27,7 @@ import { resolveVisiblePlannedRowWindow, type VisibleBodyBounds } from "./rowWin
 import { diffMessage, fitText } from "./plannedRowText";
 import { DiffRowView } from "./DiffRowView";
 import { plannedRowMatchesCursor, type CursorHighlight } from "./cursorHighlight";
+import { resolveCodeRowNoteTarget } from "./codeRowAffordance";
 import { useHighlightedDiff } from "./useHighlightedDiff";
 import { useHighlightedSource } from "./useHighlightedSource";
 
@@ -39,39 +40,22 @@ export interface ActiveAddNoteAffordance {
   target?: UserNoteLineTarget;
 }
 
-type AddNoteTargetRow = Extract<DiffRow, { type: "split-line" | "stack-line" }>;
+type AddNoteTargetRow = Extract<DiffRow, { type: "split-line" | "unified-line" }>;
 
 /** Return whether a diff row can be used as an inline user-note target. */
 function isAddNoteTargetRow(row: DiffRow): row is AddNoteTargetRow {
-  return row.type === "split-line" || row.type === "stack-line";
+  return row.type === "split-line" || row.type === "unified-line";
 }
 
 /** Resolve the note insertion target represented by a visible add-note affordance. */
 function addNoteAffordanceForRow(row: AddNoteTargetRow): ActiveAddNoteAffordance {
-  if (row.type === "split-line") {
-    return {
-      hunkIndex: row.hunkIndex,
-      target:
-        row.right.lineNumber !== undefined
-          ? { side: "new", line: row.right.lineNumber }
-          : row.left.lineNumber !== undefined
-            ? { side: "old", line: row.left.lineNumber }
-            : undefined,
-    };
-  }
-
   return {
     hunkIndex: row.hunkIndex,
-    target:
-      row.cell.newLineNumber !== undefined
-        ? { side: "new", line: row.cell.newLineNumber }
-        : row.cell.oldLineNumber !== undefined
-          ? { side: "old", line: row.cell.oldLineNumber }
-          : undefined,
+    target: resolveCodeRowNoteTarget(row),
   };
 }
 
-/** Render a file diff in split or stack mode, with inline agent notes inserted between diff rows. */
+/** Render a file diff in split or unified mode, with inline agent notes inserted between diff rows. */
 export function DiffSectionBody({
   codeHorizontalOffset = 0,
   copySelectedRowRanges,
@@ -410,11 +394,15 @@ export function DiffSectionBody({
                 anchorSide={plannedRow.anchorSide}
                 draft={plannedRow.note.draft}
                 actions={plannedRow.note.actions}
+                active={plannedRow.note.active}
+                actionKeyLabels={plannedRow.note.actionKeyLabels}
+                onActivate={plannedRow.note.onActivate}
                 thread={plannedRow.note.thread}
                 file={file}
                 layout={layout}
                 noteCount={plannedRow.noteCount}
                 noteIndex={plannedRow.noteIndex}
+                rangeGuideConnection={plannedRow.rangeGuideConnection}
                 theme={theme}
                 width={width}
               />

@@ -368,16 +368,16 @@ describe("PTY pager", () => {
       expect(initial).toMatch(/▌.*▌/);
 
       await session.waitIdle({ timeout: 200 });
-      await session.press("2");
-      const stacked = await harness.waitForSnapshot(
+      await session.press("1");
+      const unified = await harness.waitForSnapshot(
         session,
         (text) => !/▌.*▌/.test(text) && text.includes("line01 = 1;"),
         5_000,
       );
 
-      expect(stacked).not.toMatch(/▌.*▌/);
+      expect(unified).not.toMatch(/▌.*▌/);
 
-      await session.press("1");
+      await session.press("2");
       const split = await harness.waitForSnapshot(session, (text) => /▌.*▌/.test(text), 5_000);
 
       expect(split).toMatch(/▌.*▌/);

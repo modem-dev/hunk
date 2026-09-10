@@ -210,19 +210,24 @@ describe("session reload filesystem bounds", () => {
     }
   });
 
-  test("rejects direct file reloads launched outside a repo", () => {
-    const dir = mkdtempSync(join(tmpdir(), "hunk-reload-bounds-files-"));
-    const left = join(dir, "before.ts");
-    const right = join(dir, "after.ts");
+  test("allows only the exact direct files when launched outside a repo", () => {
+    const launchDir = mkdtempSync(join(tmpdir(), "hunk-reload-bounds-launch-"));
+    const fileDir = mkdtempSync(join(tmpdir(), "hunk-reload-bounds-files-"));
+    const left = join(fileDir, "before.ts");
+    const right = join(fileDir, "after.ts");
+    const other = join(fileDir, "other.ts");
     writeFileSync(left, "before\n");
     writeFileSync(right, "after\n");
+    writeFileSync(other, "other\n");
 
     try {
       const bounds = createSessionReloadBounds(
         bootstrapFor({ kind: "diff", left, right, options: {} }, "file compare"),
-        { cwd: dir },
+        { cwd: launchDir },
       );
 
+      expect(bounds.roots).toEqual([]);
+      expect(bounds.exactFiles).toEqual([realPath(left), realPath(right)]);
       expect(() =>
         validateSessionReloadWithinBounds(bounds, {
           kind: "diff",
@@ -230,7 +235,22 @@ describe("session reload filesystem bounds", () => {
           right,
           options: {},
         }),
-      ).toThrow("rooted in a repository");
+      ).not.toThrow();
+      expect(() =>
+        validateSessionReloadWithinBounds(bounds, {
+          kind: "diff",
+          left,
+          right: other,
+          options: {},
+        }),
+      ).toThrow("right file outside the initial Hunk root");
+      expect(() =>
+        validateSessionReloadWithinBounds(bounds, {
+          kind: "vcs",
+          staged: false,
+          options: {},
+        }),
+      ).toThrow("repository-backed input");
       expect(() =>
         validateSessionReloadWithinBounds(
           bounds,
@@ -240,11 +260,12 @@ describe("session reload filesystem bounds", () => {
             right,
             options: {},
           },
-          { sourcePath: resolve(dir, "..") },
+          { sourcePath: fileDir },
         ),
-      ).toThrow("rooted in a repository");
+      ).toThrow("source path outside the initial Hunk root");
     } finally {
-      rmSync(dir, { force: true, recursive: true });
+      rmSync(launchDir, { force: true, recursive: true });
+      rmSync(fileDir, { force: true, recursive: true });
     }
   });
 

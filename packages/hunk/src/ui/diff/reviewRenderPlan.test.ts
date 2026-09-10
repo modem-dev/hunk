@@ -11,7 +11,7 @@ import {
 } from "./reviewRenderPlan";
 import { resolveTheme } from "../themes";
 
-const { buildSplitRows, buildStackRows } = await import("./diffRows");
+const { buildSplitRows, buildUnifiedRows } = await import("./diffRows");
 const { buildReviewRenderPlan } = await import("./reviewRenderPlan");
 
 function lines(...values: string[]) {
@@ -85,7 +85,7 @@ function guidedSplitLineNumbers(plannedRows: PlannedReviewRow[], side: "old" | "
 }
 
 describe("review render plan", () => {
-  test("inserts an inline note after the anchor row and starts the guide below the note", () => {
+  test("connects the full annotated range directly into its inline note", () => {
     const theme = resolveTheme("github-dark-default", null);
     const file = createDiffFile(
       "alpha",
@@ -117,6 +117,7 @@ describe("review render plan", () => {
       expect(note.anchorSide).toBe("new");
       expect(note.noteCount).toBe(1);
       expect(note.noteIndex).toBe(0);
+      expect(note.rangeGuideConnection).toBe("continue");
     }
 
     const anchoredRow = inlineNoteAnchorRow(plannedRows);
@@ -128,10 +129,75 @@ describe("review render plan", () => {
       }
     }
 
-    expect(guidedSplitLineNumbers(plannedRows, "new")).toEqual([3]);
+    expect(guidedSplitLineNumbers(plannedRows, "new")).toEqual([2, 3]);
   });
 
-  test("anchors deletion-only notes to old-side rows without a dangling guide above the note", () => {
+  test("keeps the aggregate rail connected through overlapping cards", () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const file = createDiffFile(
+      "overlap",
+      "overlap.ts",
+      "export const alpha = 1;\n",
+      "export const alpha = 2;\nexport const beta = 3;\nexport const gamma = 4;\n",
+    );
+    const rows = buildSplitRows(file, null, theme);
+    const notes = [
+      createVisibleAgentNote(file.metadata.hunks, {
+        id: "long",
+        annotation: { newRange: [2, 3], summary: "long range" },
+      }),
+      createVisibleAgentNote(file.metadata.hunks, {
+        id: "range-less",
+        annotation: { summary: "hunk note" },
+        target: { hunkIndex: 0, side: "new", line: 2 },
+      }),
+    ];
+    const plannedRows = buildReviewRenderPlan({
+      fileId: file.id,
+      rows,
+      showHunkHeaders: true,
+      visibleAgentNotes: notes,
+    });
+    const inlineNotes = plannedRows.filter((row) => row.kind === "inline-note");
+
+    expect(inlineNotes).toHaveLength(2);
+    expect(inlineNotes.map((row) => row.rangeGuideConnection)).toEqual(["continue", "continue"]);
+  });
+
+  test("connects only the root card of a reply thread to the external range rail", () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const file = createDiffFile(
+      "thread",
+      "thread.ts",
+      "export const alpha = 1;\n",
+      "export const alpha = 2;\nexport const beta = 3;\n",
+    );
+    const rows = buildSplitRows(file, null, theme);
+    const notes = [
+      createVisibleAgentNote(file.metadata.hunks, {
+        id: "root",
+        annotation: { newRange: [2, 2], summary: "Root note" },
+        thread: { noteId: "root", depth: 0, hasNextSibling: false },
+      }),
+      createVisibleAgentNote(file.metadata.hunks, {
+        id: "child",
+        annotation: { newRange: [2, 2], summary: "Child reply" },
+        thread: { noteId: "child", parentId: "root", depth: 1, hasNextSibling: false },
+      }),
+    ];
+    const plannedRows = buildReviewRenderPlan({
+      fileId: file.id,
+      rows,
+      showHunkHeaders: true,
+      visibleAgentNotes: notes,
+    });
+    const inlineNotes = plannedRows.filter((row) => row.kind === "inline-note");
+
+    expect(inlineNotes).toHaveLength(2);
+    expect(inlineNotes.map((row) => row.rangeGuideConnection)).toEqual(["terminate", undefined]);
+  });
+
+  test("connects a deletion-only anchor row directly into its inline note", () => {
     const theme = resolveTheme("github-dark-default", null);
     const file = createDiffFile(
       "deleted",
@@ -173,7 +239,7 @@ describe("review render plan", () => {
       }
     }
 
-    expect(guidedSplitLineNumbers(plannedRows, "old")).toEqual([]);
+    expect(guidedSplitLineNumbers(plannedRows, "old")).toEqual([1]);
   });
 
   test("assigns hunk anchor ids from the first visible row for every hunk when hunk headers are hidden", () => {
@@ -204,12 +270,12 @@ describe("review render plan", () => {
   test("anchors range-less notes to the shared default line without guide rows", () => {
     const theme = resolveTheme("github-dark-default", null);
     const file = createDiffFile(
-      "stack",
-      "stack.ts",
+      "unified",
+      "unified.ts",
       "export const value = 1;\n",
       "export const value = 2;\nexport const added = true;\n",
     );
-    const rows = buildStackRows(file, null, theme);
+    const rows = buildUnifiedRows(file, null, theme);
     const plannedRows = buildReviewRenderPlan({
       fileId: file.id,
       rows,
@@ -217,7 +283,7 @@ describe("review render plan", () => {
       showHunkHeaders: true,
       visibleAgentNotes: [
         createVisibleAgentNote(file.metadata.hunks, {
-          id: "annotation:stack:0:0",
+          id: "annotation:unified:0:0",
           annotation: {
             summary: "General hunk note",
             rationale: "No explicit line range is attached yet.",
@@ -240,8 +306,8 @@ describe("review render plan", () => {
     const anchoredRow = inlineNoteAnchorRow(plannedRows);
     expect(anchoredRow?.kind).toBe("diff-row");
     if (anchoredRow?.kind === "diff-row") {
-      expect(anchoredRow.row.type).toBe("stack-line");
-      if (anchoredRow.row.type === "stack-line") {
+      expect(anchoredRow.row.type).toBe("unified-line");
+      if (anchoredRow.row.type === "unified-line") {
         expect(anchoredRow.row.cell.newLineNumber).toBe(1);
       }
     }
@@ -403,11 +469,11 @@ describe("review render plan", () => {
 });
 
 describe("hunk-gap rows", () => {
-  test("inserts a spacer before each hunk after the first in split and stack plans", () => {
+  test("inserts a spacer before each hunk after the first in split and unified plans", () => {
     const theme = resolveTheme("github-dark-default", null);
     const file = createDiffFile("multi", "multi.ts", TWELVE_LINES_BEFORE, TWELVE_LINES_AFTER);
 
-    for (const rows of [buildSplitRows(file, null, theme), buildStackRows(file, null, theme)]) {
+    for (const rows of [buildSplitRows(file, null, theme), buildUnifiedRows(file, null, theme)]) {
       expect(
         buildReviewRenderPlan({ fileId: file.id, rows, showHunkHeaders: true }).some(
           (row) => row.kind === "hunk-gap",

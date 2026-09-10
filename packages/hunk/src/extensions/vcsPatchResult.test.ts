@@ -148,6 +148,32 @@ describe("published source readers", () => {
   });
 });
 
+describe("published review metadata", () => {
+  test("is validated, copied, and frozen at the adapter boundary", () => {
+    const review = {
+      kind: "commit" as const,
+      provider: "Demo VCS",
+      title: "Direct commit",
+      revision: "abc123",
+      displayRevision: "abc123",
+      author: "demo",
+      authoredAt: "2026-09-08T12:00:00Z",
+    };
+    const result = toInternalVcsPatchResult(baseResult({ review }));
+
+    expect(result.review).toEqual(review);
+    expect(result.review).not.toBe(review);
+    expect(Object.isFrozen(result.review)).toBe(true);
+    expect(() =>
+      toInternalVcsPatchResult(baseResult({ review: { ...review, title: "unsafe\nmetadata" } })),
+    ).toThrow("cannot contain control characters");
+  });
+
+  test("stays absent when an operation does not describe a commit review", () => {
+    expect(toInternalVcsPatchResult(baseResult()).review).toBeUndefined();
+  });
+});
+
 describe("published extra files", () => {
   test("build a diff file from a one-file patch, labeled with the declared path", () => {
     const result = toInternalVcsPatchResult(
@@ -285,6 +311,33 @@ describe("published user errors", () => {
     expect(() => operation.watchSignature!(input, { cwd: "/repo" })).toThrow(
       "No signature available.",
     );
+  });
+
+  test("normalizes rejected async watch signatures through the adapter boundary", async () => {
+    const adapter = toInternalVcsAdapter({
+      id: "demo",
+      name: "Demo VCS",
+      detect: () => null,
+      operations: {
+        "working-tree-diff": {
+          load: async () => ({
+            repoRoot: process.cwd(),
+            sourceLabel: "demo",
+            title: "demo",
+            patchText: "",
+          }),
+          watchSignature: async () => {
+            throw new HunkExtensionUserError("No signature available.");
+          },
+        },
+      },
+    });
+    await expect(
+      adapter.operations["working-tree-diff"]!.watchSignature!(
+        { kind: "vcs", staged: false, options: {} },
+        { cwd: process.cwd() },
+      ),
+    ).rejects.toBeInstanceOf(HunkUserError);
   });
 
   test("drop an operation whose load is not callable rather than crashing mid-review", () => {

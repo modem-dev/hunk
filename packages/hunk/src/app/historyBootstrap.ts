@@ -1,7 +1,18 @@
 import type { HistoryCommandInput } from "../core/run/commandInputs";
+import {
+  persistedViewPreferencesFromOptions,
+  type PersistedViewPreferences,
+  type UserKeyBinding,
+} from "../core/run/config";
 import { collectSessionCustomThemes } from "../core/theme/customThemes";
+import {
+  createInteractiveSessionInitialization,
+  type InteractiveSessionInitialization,
+} from "../core/session/initialization";
 import type {
   ExtensionVcsHistoryCommit,
+  ExtensionVcsHistoryRangeReviewAction,
+  ExtensionVcsHistoryRangeSelection,
   ExtensionVcsHistoryReviewAction,
   ExtensionVcsHistoryReviewOptions,
   NamedCustomThemeConfig,
@@ -13,12 +24,13 @@ import {
   getDefaultVcsAdapter,
   getVcsAdapter,
   openVcsHistory,
+  planVcsHistoryRangeReview,
   planVcsHistoryReview,
 } from "../core/vcs";
 import type { VcsCatalog, VcsHistorySource } from "../core/vcs/types";
 import { resolveExtensionVcsAdapters, resolveSessionVcsId } from "../extensions/apply";
-import { emitExtensionEvent, retireExtensionLoadResult } from "../extensions/events";
 import { mergeStartupNotices } from "../extensions/startup";
+import { createExtensionSession, type ExtensionSession } from "../extensions/session";
 import type { ExtensionLoadResult } from "../extensions/types";
 import { resolveConfiguredExtensions } from "./extensionBootstrap";
 
@@ -30,15 +42,28 @@ export interface HistoryBootstrap {
   providerName: string;
   startupCwd: string;
   repoRoot: string;
-  extensions: ExtensionLoadResult;
-  /** History-owned extension authority borrowed by embedded reviews. */
-  extensionSession: ExtensionLoadResult;
+  /** Command-owned extension authority borrowed by embedded reviews. */
+  extensionSession: ExtensionSession;
   notices: readonly string[];
+  /** Surface-neutral catalog used by static history rendering. */
   customThemes: readonly NamedCustomThemeConfig[];
+  initialization: InteractiveSessionInitialization;
+  /** User command overrides resolved by the active interactive surface. */
+  keybindings: Readonly<Record<string, UserKeyBinding>>;
+  /** Launch baseline retained so the owning history surface can persist theme changes on quit. */
+  initialViewPreferences: PersistedViewPreferences;
+  viewPreferencesConfigPath?: string;
+  promptSaveViewPreferences: boolean;
   planReview(
     commit: ExtensionVcsHistoryCommit,
     options?: ExtensionVcsHistoryReviewOptions,
+    signal?: AbortSignal,
   ): Promise<ExtensionVcsHistoryReviewAction>;
+  planRangeReview?(
+    selection: ExtensionVcsHistoryRangeSelection,
+    options?: ExtensionVcsHistoryReviewOptions,
+    signal?: AbortSignal,
+  ): Promise<ExtensionVcsHistoryRangeReviewAction>;
   reopenSource(signal?: AbortSignal): Promise<VcsHistorySource>;
   close(): Promise<void>;
 }
@@ -75,6 +100,7 @@ export async function loadHistoryBootstrap({
     baseVcsCatalog,
     previousLoad,
   });
+  const extensionSession = createExtensionSession(resolved.extensions, cwd);
   const extensionAdapters = resolveExtensionVcsAdapters(
     resolved.extensions.registry,
     baseVcsCatalog,
@@ -92,7 +118,7 @@ export async function loadHistoryBootstrap({
   try {
     adapter = getVcsAdapter(providerId, catalog);
   } catch (error) {
-    await retireExtensionLoadResult(resolved.extensions);
+    await extensionSession.shutdown();
     throw error;
   }
   let selectedDetection;
@@ -119,13 +145,16 @@ export async function loadHistoryBootstrap({
   let source: VcsHistorySource;
   try {
     source = await openSource();
-    emitExtensionEvent(resolved.extensions, "startup", { cwd });
+    extensionSession.startCurrent(cwd);
   } catch (error) {
-    await retireExtensionLoadResult(resolved.extensions);
+    await extensionSession.shutdown();
     throw error;
   }
 
   const resolvedTheme = resolved.configured.input.options.theme;
+  const initialViewPreferences = persistedViewPreferencesFromOptions(
+    resolved.configured.input.options,
+  );
   let closed = false;
   return {
     input: resolvedTheme ? { ...input, theme: resolvedTheme } : input,
@@ -134,9 +163,20 @@ export async function loadHistoryBootstrap({
     providerName: sanitizeTerminalLine(adapter.name),
     startupCwd: cwd,
     repoRoot,
-    extensions: resolved.extensions,
-    extensionSession: resolved.extensions,
+    extensionSession,
     customThemes: sessionThemes.themes,
+    initialization: createInteractiveSessionInitialization({
+      theme: {
+        initialTheme: resolved.configured.input.options.theme,
+        customThemes: sessionThemes.themes,
+      },
+      viewPreferences: initialViewPreferences,
+    }),
+    keybindings: resolved.configured.keybindings,
+    initialViewPreferences,
+    viewPreferencesConfigPath: resolved.configured.viewPreferencesConfigPath,
+    promptSaveViewPreferences:
+      resolved.configured.input.options.promptSaveViewPreferences !== false,
     notices: [
       ...(mergeStartupNotices(resolved.configured.startupNotices, resolved.extensions) ?? []).map(
         (notice) => sanitizeTerminalLine(notice.message),
@@ -149,9 +189,14 @@ export async function loadHistoryBootstrap({
           ]
         : []),
     ],
-    planReview(commit, options) {
-      return planVcsHistoryReview(adapter, commit, { cwd: repoRoot }, options);
+    planReview(commit, options, signal) {
+      return planVcsHistoryReview(adapter, commit, { cwd: repoRoot, signal }, options);
     },
+    ...(adapter.history?.planRangeReview && {
+      planRangeReview(selection, options, signal) {
+        return planVcsHistoryRangeReview(adapter, selection, { cwd: repoRoot, signal }, options);
+      },
+    }),
     async reopenSource(signal) {
       if (closed) throw new Error("History session is closed.");
       signal?.throwIfAborted();
@@ -169,11 +214,7 @@ export async function loadHistoryBootstrap({
     async close() {
       if (closed) return;
       closed = true;
-      try {
-        await source.close();
-      } finally {
-        await retireExtensionLoadResult(resolved.extensions);
-      }
+      await source.close();
     },
   };
 }

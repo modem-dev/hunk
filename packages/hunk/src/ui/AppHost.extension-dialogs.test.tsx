@@ -13,7 +13,7 @@ import { getBundledVcsCatalog } from "../app/vcsCatalog";
 import type { CliInput } from "../core/run/commandInputs";
 import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
 import { loadStartupExtensions } from "../extensions/startup";
-import { AppHost } from "./AppHost";
+import { TestAppHost as AppHost } from "../../../../test/helpers/app-host";
 
 /** Specialize the core loader result with extension state assigned by these tests. */
 function loadAppBootstrap(...args: Parameters<typeof loadCoreAppBootstrap>): Promise<AppBootstrap> {
@@ -101,7 +101,7 @@ async function flushUntil(
 /** Launch a bootstrap whose extensions come from one `--extension` fixture path. */
 async function launchWithExtension(repo: string, extPath: string): Promise<AppBootstrap> {
   const bootstrap = await loadAppBootstrap(
-    { kind: "vcs", staged: false, options: { mode: "stack", extensionPaths: [extPath] } },
+    { kind: "vcs", staged: false, options: { mode: "unified", extensionPaths: [extPath] } },
     { cwd: repo },
   );
   bootstrap.extensions = await loadStartupExtensions({
@@ -205,7 +205,7 @@ function writeDialogFixture(extPath: string, logPath: string, askSource: string)
     extPath,
     `import { appendFileSync } from "node:fs";\n` +
       `export default function (hunk) {\n` +
-      `  hunk.registerCommand({ id: "ask", title: "Ask", key: "y" }, async (ctx) => {\n` +
+      `  hunk.registerCommand({ id: "ask", title: "Ask", key: "Y" }, async (ctx) => {\n` +
       `    const answer = await ${askSource};\n` +
       `    appendFileSync(${JSON.stringify(logPath)}, "answer " + String(answer) + "\\n");\n` +
       `  });\n` +
@@ -235,7 +235,7 @@ describe("extension dialogs", () => {
       );
 
       await act(async () => {
-        await setup.mockInput.typeText("y");
+        await setup.mockInput.typeText("Y");
       });
       await flushUntil(
         setup,
@@ -291,7 +291,7 @@ describe("extension dialogs", () => {
       bootstrap,
       async (setup) => {
         await act(async () => {
-          await setup.mockInput.typeText("y");
+          await setup.mockInput.typeText("Y");
         });
         await flushUntil(
           setup,
@@ -325,7 +325,7 @@ describe("extension dialogs", () => {
       );
 
       await act(async () => {
-        await setup.mockInput.typeText("y");
+        await setup.mockInput.typeText("Y");
       });
       await flushUntil(
         setup,
@@ -364,7 +364,7 @@ describe("extension dialogs", () => {
       );
 
       await act(async () => {
-        await setup.mockInput.typeText("y");
+        await setup.mockInput.typeText("Y");
       });
       await flushUntil(
         setup,
@@ -404,7 +404,7 @@ describe("extension dialogs", () => {
     const bootstrap = await launchWithExtension(repo, extPath);
     await withAppHost(bootstrap, async (setup) => {
       await act(async () => {
-        await setup.mockInput.typeText("y");
+        await setup.mockInput.typeText("Y");
       });
       await flushUntil(
         setup,
@@ -445,7 +445,7 @@ describe("extension dialogs", () => {
       );
 
       await act(async () => {
-        await setup.mockInput.typeText("y");
+        await setup.mockInput.typeText("Y");
       });
       await flushUntil(
         setup,
@@ -497,7 +497,7 @@ describe("extension dialogs", () => {
         );
 
         await act(async () => {
-          await setup.mockInput.typeText("y");
+          await setup.mockInput.typeText("Y");
         });
         await flushUntil(
           setup,

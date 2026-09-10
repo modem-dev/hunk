@@ -11,7 +11,7 @@ import {
 import { HUNK_FILES_PANE_KEY } from "../extensions/extensionIds";
 import { createEmptyExtensionLoadResult } from "../extensions/types";
 
-const { AppHost } = await import("./AppHost");
+const { TestAppHost: AppHost } = await import("../../../../test/helpers/app-host");
 
 /** Wide enough for the responsive layout to show the sidebar on its own. */
 const WIDE = { width: 240, height: 24 };

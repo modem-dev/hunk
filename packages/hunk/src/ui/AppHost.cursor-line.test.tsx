@@ -4,7 +4,7 @@ import { act } from "react";
 import type { CursorLine } from "../core/run/commandInputs";
 import { createTestVcsAppBootstrap } from "../../../../test/helpers/app-bootstrap";
 import { createTestDiffFile, lines } from "../../../../test/helpers/diff-helpers";
-import { AppHost } from "./AppHost";
+import { TestAppHost as AppHost } from "../../../../test/helpers/app-host";
 
 const BEFORE = lines(
   "const alpha = 1;",
@@ -31,7 +31,7 @@ async function flush(setup: Awaited<ReturnType<typeof testRender>>) {
 
 function createCursorLineBootstrap(
   cursorLine: CursorLine,
-  initialMode: "split" | "stack" = "stack",
+  initialMode: "split" | "unified" = "unified",
 ) {
   return {
     ...createTestVcsAppBootstrap({
@@ -91,7 +91,7 @@ function gutterBackground(setup: Awaited<ReturnType<typeof testRender>>, needle:
 
 async function renderCursorLineApp(
   cursorLine: CursorLine,
-  initialMode: "split" | "stack" = "stack",
+  initialMode: "split" | "unified" = "unified",
 ) {
   const setup = await testRender(
     <AppHost bootstrap={createCursorLineBootstrap(cursorLine, initialMode) as never} />,

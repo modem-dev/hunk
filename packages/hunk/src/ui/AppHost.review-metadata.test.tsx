@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
@@ -7,6 +7,7 @@ import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
 import { SESSION_BROKER_REGISTRATION_VERSION } from "@hunk/session-broker-core";
 import { createWatchTestRuntime } from "../../../../test/helpers/watchTest";
+import { getBundledVcsCatalog } from "../app/vcsCatalog";
 import type { AppBootstrap } from "../core/bootstrap";
 import { loadAppBootstrap } from "../core/changeset/loaders";
 import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
@@ -15,7 +16,7 @@ import type {
   HunkSessionServerMessage,
   HunkSessionSnapshot,
 } from "../session/types";
-import { AppHost } from "./AppHost";
+import { TestAppHost as AppHost } from "../../../../test/helpers/app-host";
 
 /** Stand in for the daemon so a mounted AppHost can receive unrelated reloads. */
 function createTestHostClient() {
@@ -74,7 +75,7 @@ async function createTestBootstrap({ watch = false }: { watch?: boolean } = {}) 
   writeTestPatch(firstPatch, "first");
   writeTestPatch(secondPatch, "second");
   const bootstrap = await loadAppBootstrap(
-    { kind: "patch", file: firstPatch, options: { mode: "stack", watch } },
+    { kind: "patch", file: firstPatch, options: { mode: "unified", watch } },
     { cwd: directory },
   );
   bootstrap.review = Object.freeze({
@@ -91,24 +92,78 @@ async function createTestBootstrap({ watch = false }: { watch?: boolean } = {}) 
   return { bootstrap, directory, firstPatch, secondPatch };
 }
 
+/** Create a commit review launched below its repository root. */
+async function createHistoryCommitBootstrap() {
+  const directory = mkdtempSync(join(tmpdir(), "hunk-review-commit-host-"));
+  execFileSync("git", ["init", "-b", "main"], { cwd: directory, stdio: "ignore" });
+  const file = join(directory, "example.txt");
+  writeFileSync(file, "before\n");
+  execFileSync("git", ["add", "example.txt"], { cwd: directory, stdio: "ignore" });
+  execFileSync(
+    "git",
+    [
+      "-c",
+      "user.name=History Tester",
+      "-c",
+      "user.email=history@example.com",
+      "commit",
+      "-m",
+      "Before",
+    ],
+    { cwd: directory, stdio: "ignore" },
+  );
+  writeFileSync(file, "after\n");
+  execFileSync(
+    "git",
+    [
+      "-c",
+      "user.name=History Tester",
+      "-c",
+      "user.email=history@example.com",
+      "commit",
+      "-am",
+      "After",
+    ],
+    { cwd: directory, stdio: "ignore" },
+  );
+  const nested = join(directory, "nested");
+  mkdirSync(nested);
+  const bootstrap = await loadAppBootstrap(
+    { kind: "show", ref: "HEAD", options: { mode: "unified", vcs: "git" } },
+    { cwd: nested, vcsCatalog: getBundledVcsCatalog() },
+  );
+  bootstrap.review = Object.freeze({
+    kind: "commit",
+    provider: "Git",
+    title: "After",
+    revision: "abc1234",
+    displayRevision: "abc1234",
+    author: "history",
+    authoredAt: "2026-01-01T00:00:00Z",
+  });
+  bootstrap.reviewSource = "caller";
+  return { bootstrap, directory };
+}
+
 /** Settle mounted host work until a committed bootstrap observation arrives. */
 async function flushUntil(
   setup: Awaited<ReturnType<typeof testRender>>,
   predicate: () => boolean,
   description: string,
 ) {
-  for (let attempt = 0; attempt < 30 && !predicate(); attempt++) {
+  const deadline = Date.now() + 5_000;
+  while (!predicate() && Date.now() < deadline) {
     await act(async () => {
       await setup.renderOnce();
-      await Promise.resolve();
+      await Bun.sleep(10);
       await setup.renderOnce();
     });
   }
   if (!predicate()) throw new Error(`Timed out waiting for ${description}.`);
 }
 
-describe("delegated review metadata reloads", () => {
-  test("the bundled review pane occupies exactly three rows only for delegated change requests", async () => {
+describe("review metadata reloads", () => {
+  test("the bundled review pane occupies exactly three rows only for supported metadata", async () => {
     const delegated = await createTestBootstrap();
     const ordinary = await createTestBootstrap();
     delete ordinary.bootstrap.review;
@@ -178,7 +233,7 @@ describe("delegated review metadata reloads", () => {
             nextInput: {
               kind: "patch",
               file: fixture.secondPatch,
-              options: { mode: "stack" },
+              options: { mode: "unified" },
             },
           },
         });
@@ -198,7 +253,7 @@ describe("delegated review metadata reloads", () => {
             nextInput: {
               kind: "patch",
               file: fixture.firstPatch,
-              options: { mode: "stack" },
+              options: { mode: "unified" },
             },
           },
         });
@@ -208,6 +263,81 @@ describe("delegated review metadata reloads", () => {
     } finally {
       await act(async () => setup.renderer.destroy());
       rmSync(fixture.directory, { recursive: true, force: true });
+    }
+  });
+
+  test("manual refresh preserves history metadata when launched from a repository subdirectory", async () => {
+    const fixture = await createHistoryCommitBootstrap();
+    const committed: AppBootstrap[] = [];
+    const setup = await testRender(
+      <AppHost
+        bootstrap={fixture.bootstrap}
+        onActiveBootstrapChange={(bootstrap) => committed.push(bootstrap)}
+      />,
+      { width: 100, height: 12 },
+    );
+
+    try {
+      await flushUntil(setup, () => committed.length === 1, "the commit review to mount");
+      await act(async () => setup.mockInput.typeText("r"));
+      await flushUntil(setup, () => committed.length >= 2, "the commit refresh to commit");
+      expect(committed.at(-1)?.review).toBe(fixture.bootstrap.review);
+      expect(setup.captureCharFrame()).toContain("After");
+      expect(setup.captureCharFrame()).toContain("history ·");
+    } finally {
+      await act(async () => setup.renderer.destroy());
+      // Bun can retain the Git fixture as a child-process cwd past renderer teardown on Windows;
+      // the ephemeral CI/user temp directory owns cleanup there.
+      if (process.platform !== "win32") {
+        rmSync(fixture.directory, { recursive: true, force: true });
+      }
+    }
+  });
+
+  test("manual refresh recomputes direct provider metadata when a ref moves", async () => {
+    const fixture = await createHistoryCommitBootstrap();
+    const nested = join(fixture.directory, "nested");
+    const bootstrap = await loadAppBootstrap(
+      { kind: "show", ref: "HEAD", options: { mode: "unified", vcs: "git" } },
+      { cwd: nested, vcsCatalog: getBundledVcsCatalog() },
+    );
+    const initialReview = bootstrap.review;
+    const committed: AppBootstrap[] = [];
+    const setup = await testRender(
+      <AppHost bootstrap={bootstrap} onActiveBootstrapChange={(next) => committed.push(next)} />,
+      { width: 100, height: 12 },
+    );
+
+    try {
+      await flushUntil(setup, () => committed.length === 1, "the direct review to mount");
+      writeFileSync(join(fixture.directory, "example.txt"), "newest\n");
+      execFileSync(
+        "git",
+        [
+          "-c",
+          "user.name=History Tester",
+          "-c",
+          "user.email=history@example.com",
+          "commit",
+          "-am",
+          "Newest",
+        ],
+        { cwd: fixture.directory, stdio: "ignore" },
+      );
+      await act(async () => setup.mockInput.typeText("r"));
+      await flushUntil(setup, () => committed.length >= 2, "the moved ref refresh to commit");
+
+      expect(committed.at(-1)?.review).not.toBe(initialReview);
+      expect(committed.at(-1)?.review).toMatchObject({
+        kind: "commit",
+        provider: "Git",
+        title: "Newest",
+      });
+    } finally {
+      await act(async () => setup.renderer.destroy());
+      if (process.platform !== "win32") {
+        rmSync(fixture.directory, { recursive: true, force: true });
+      }
     }
   });
 

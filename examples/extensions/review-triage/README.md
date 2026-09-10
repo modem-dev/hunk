@@ -12,7 +12,7 @@ Or copy the directory to your Hunk extensions directory and keep its `package.js
 
 ## Use
 
-Open **Extensions → Toggle review triage** (`y`). The right pane lists each visible file's hunks; click a hunk to navigate the review stream. Use **Extensions → Mark selected hunk…** (`x`) to choose a status and enter an optional rationale. **Center current review line**, **Set review focus…**, and **Clear triage decisions** are menu-only commands.
+Open **Extensions → Toggle review triage** (`Y`). The right pane lists each visible file's hunks; click a hunk to navigate the review stream. Use **Extensions → Mark selected hunk…** (`x`) to choose a status and enter an optional rationale. **Center current review line**, **Set review focus…**, and **Clear triage decisions** are menu-only commands.
 
 The board intentionally keeps state only for the running Hunk session. Reloading reconciles decisions against the newly parsed hunks and drops entries that no longer match, rather than silently transferring a decision to changed code.
 

@@ -85,7 +85,7 @@ export interface AppCommand {
  */
 export function observeAppCommandDispatch(
   commands: readonly AppCommand[],
-  onDispatched: (commandId: string) => void,
+  onDispatched: (commandId: string, canonicalCommandId?: string) => void,
 ): AppCommand[] {
   return commands.map((command) => ({
     ...command,
@@ -93,7 +93,11 @@ export function observeAppCommandDispatch(
       command.run(key, count);
       // AppCommand is deliberately synchronous. Extension handlers may have
       // detached async work still running after terminal dispatch returns.
-      onDispatched(command.id);
+      if (command.id === "hunk.view.layoutUnified") {
+        onDispatched("hunk.view.layoutStack", command.id);
+      } else {
+        onDispatched(command.id);
+      }
     },
   }));
 }
@@ -110,16 +114,20 @@ interface BuiltinCommandHandler {
 export interface BuildAppCommandsOptions {
   canAlignCurrentLine: boolean;
   canApplyFilePresentationToAllMatching: boolean;
+  canDeleteActiveNote?: boolean;
   canEditActiveNote?: boolean;
   canReplyToActiveNote?: boolean;
   canRefreshCurrentInput: boolean;
   alignCurrentLine: (alignment: "top" | "center" | "bottom") => void;
   applyFilePresentationToAllMatching: () => void;
   focusFilter: () => void;
+  deleteActiveNote?: () => void;
   editActiveNote?: () => void;
   replyToActiveNote?: () => void;
-  /** Step the review selection through one scope, as the catalog entry declares it. */
+  /** Step shared semantic selection through one scope. */
   moveSelection: (scope: ReviewSelectionScope, delta: number) => void;
+  /** Step note selection through the active surface's measured card order. */
+  moveNoteCursor: (delta: number) => void;
   openAgentSkill: () => void;
   openThemeSelector: () => void;
   requestQuit: () => void;
@@ -130,6 +138,10 @@ export interface BuildAppCommandsOptions {
   stepDiffLine: (delta: number) => void;
   selectCursorLine: (style: CursorLine) => void;
   selectLayoutMode: (mode: LayoutMode) => void;
+  hasVisualSelection?: () => boolean;
+  startVisualSelection?: () => void;
+  copySelection?: () => void;
+  clearSelection?: () => void;
   startUserNote: () => void;
   toggleAgentNotes: () => void;
   toggleCopyDecorations: () => void;
@@ -182,6 +194,15 @@ function builtinCommandHandlers(
     "hunk.app.openAgentSkill": { run: () => options.openAgentSkill() },
     "hunk.app.toggleFocusArea": { run: () => options.toggleFocusArea() },
     "hunk.review.focusFilter": { run: () => options.focusFilter() },
+    "hunk.review.startVisualSelection": { run: () => options.startVisualSelection?.() },
+    "hunk.review.copySelection": {
+      isEnabled: () => options.hasVisualSelection?.() ?? false,
+      run: () => options.copySelection?.(),
+    },
+    "hunk.review.clearSelection": {
+      isEnabled: () => options.hasVisualSelection?.() ?? false,
+      run: () => options.clearSelection?.(),
+    },
     "hunk.review.startNote": { run: () => options.startUserNote() },
     "hunk.review.editActiveNote": {
       isEnabled: () => Boolean(options.canEditActiveNote),
@@ -190,6 +211,16 @@ function builtinCommandHandlers(
     "hunk.review.replyToActiveNote": {
       isEnabled: () => Boolean(options.canReplyToActiveNote),
       run: () => options.replyToActiveNote?.(),
+    },
+    "hunk.review.deleteActiveNote": {
+      isEnabled: () => Boolean(options.canDeleteActiveNote),
+      run: () => options.deleteActiveNote?.(),
+    },
+    "hunk.review.previousNote": {
+      run: (_key, count, entry) => options.moveNoteCursor((entry.verticalDirection ?? -1) * count),
+    },
+    "hunk.review.nextNote": {
+      run: (_key, count, entry) => options.moveNoteCursor((entry.verticalDirection ?? 1) * count),
     },
     "hunk.review.pageDown": { run: (_key, count) => options.scrollDiff(count, "viewport") },
     "hunk.review.pageUp": { run: (_key, count) => options.scrollDiff(-count, "viewport") },
@@ -225,7 +256,7 @@ function builtinCommandHandlers(
     "hunk.view.cursorLineNumber": { run: () => options.selectCursorLine("number") },
     "hunk.view.cursorLineOff": { run: () => options.selectCursorLine("off") },
     "hunk.view.layoutSplit": { run: () => options.selectLayoutMode("split") },
-    "hunk.view.layoutStack": { run: () => options.selectLayoutMode("stack") },
+    "hunk.view.layoutUnified": { run: () => options.selectLayoutMode("unified") },
     "hunk.view.layoutAuto": { run: () => options.selectLayoutMode("auto") },
     "hunk.view.applyFilePresentationToAllMatching": {
       isEnabled: () => options.canApplyFilePresentationToAllMatching,
@@ -327,6 +358,7 @@ const NOOP_COMMAND_OPTIONS: BuildAppCommandsOptions = (() => {
     applyFilePresentationToAllMatching: noop,
     focusFilter: noop,
     moveSelection: noop,
+    moveNoteCursor: noop,
     openAgentSkill: noop,
     openThemeSelector: noop,
     requestQuit: noop,
@@ -335,6 +367,10 @@ const NOOP_COMMAND_OPTIONS: BuildAppCommandsOptions = (() => {
     stepDiffLine: noop,
     selectCursorLine: noop,
     selectLayoutMode: noop,
+    hasVisualSelection: () => false,
+    startVisualSelection: noop,
+    copySelection: noop,
+    clearSelection: noop,
     startUserNote: noop,
     toggleAgentNotes: noop,
     toggleCopyDecorations: noop,

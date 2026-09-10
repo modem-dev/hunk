@@ -34,13 +34,15 @@ import type {
   CustomSyntaxScopesConfig,
   NamedCustomThemeConfig,
 } from "../../extension-api/types";
-import type {
-  CliInput,
-  CommonOptions,
-  CursorLine,
-  LayoutMode,
-  SidebarVisibility,
-  VcsMode,
+import {
+  isLayoutModeInput,
+  normalizeLayoutModeInput,
+  type CliInput,
+  type CommonOptions,
+  type CursorLine,
+  type LayoutMode,
+  type SidebarVisibility,
+  type VcsMode,
 } from "./commandInputs";
 
 /** Resolved `[extensions]` and `[extension.<id>]` configuration for one invocation. */
@@ -98,6 +100,23 @@ const DEFAULT_VIEW_PREFERENCES: PersistedViewPreferences = {
   copyDecorations: false,
   cursorLine: "row",
 };
+
+/** Project resolved launch options into the complete preference shape used by persistence. */
+export function persistedViewPreferencesFromOptions(
+  options: CommonOptions,
+): PersistedViewPreferences {
+  return {
+    mode: options.mode ?? DEFAULT_VIEW_PREFERENCES.mode,
+    ...(options.theme === undefined ? {} : { theme: options.theme }),
+    showLineNumbers: options.lineNumbers ?? DEFAULT_VIEW_PREFERENCES.showLineNumbers,
+    wrapLines: options.wrapLines ?? DEFAULT_VIEW_PREFERENCES.wrapLines,
+    showHunkHeaders: options.hunkHeaders ?? DEFAULT_VIEW_PREFERENCES.showHunkHeaders,
+    showMenuBar: options.menuBar ?? DEFAULT_VIEW_PREFERENCES.showMenuBar,
+    showAgentNotes: options.agentNotes ?? DEFAULT_VIEW_PREFERENCES.showAgentNotes,
+    copyDecorations: options.copyDecorations ?? DEFAULT_VIEW_PREFERENCES.copyDecorations,
+    cursorLine: options.cursorLine ?? DEFAULT_VIEW_PREFERENCES.cursorLine,
+  };
+}
 
 const VIEW_PREFERENCES_PROMPT_CONFIG_KEY = "prompt_save_view_preferences";
 const PERSISTED_VIEW_PREFERENCE_KEYS: Array<{
@@ -213,11 +232,6 @@ function upsertTopLevelTomlValue(source: string, key: string, value: string | bo
   return `${lines.join("\n").replace(/\n*$/, "")}\n`;
 }
 
-/** Accept only the layout names Hunk already supports. */
-function normalizeLayoutMode(value: unknown): LayoutMode | undefined {
-  return value === "auto" || value === "split" || value === "stack" ? value : undefined;
-}
-
 /** Accept only the current-line styles the review stream can draw. */
 function normalizeCursorLine(value: unknown): CursorLine | undefined {
   return value === "row" || value === "number" || value === "off" ? value : undefined;
@@ -308,9 +322,9 @@ export const CONFIG_REFERENCE_OPTIONS: readonly ConfigReferenceOption[] = [
     key: "mode",
     property: "mode",
     type: "string",
-    accepted: "`auto`, `split`, or `stack`",
+    accepted: "`auto`, `split`, `unified`, or deprecated alias `stack`",
     runtimeDefault: DEFAULT_VIEW_PREFERENCES.mode,
-    description: "Choose responsive, side-by-side, or stacked diff layout.",
+    description: "Choose responsive, side-by-side, or unified diff layout.",
   },
   {
     key: "cursor_line",
@@ -410,6 +424,14 @@ export const CONFIG_REFERENCE_OPTIONS: readonly ConfigReferenceOption[] = [
     accepted: "`true` or `false`",
     runtimeDefault: DEFAULT_VIEW_PREFERENCES.showMenuBar,
     description: "Show the top application menu bar.",
+  },
+  {
+    key: "animations",
+    property: "animations",
+    type: "boolean",
+    accepted: "`true` or `false`",
+    runtimeDefault: true,
+    description: "Animate panes as they open and close.",
   },
   {
     key: "sidebar",
@@ -951,7 +973,7 @@ function resolveExtensionsConfig(
 function normalizeConfigReferenceValue(property: keyof CommonOptions, value: unknown) {
   switch (property) {
     case "mode":
-      return normalizeLayoutMode(value);
+      return isLayoutModeInput(value) ? normalizeLayoutModeInput(value) : undefined;
     case "cursorLine":
       return normalizeCursorLine(value);
     case "vcs":
@@ -1027,6 +1049,7 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
     wrapLines: overrides.wrapLines ?? base.wrapLines,
     hunkHeaders: overrides.hunkHeaders ?? base.hunkHeaders,
     menuBar: overrides.menuBar ?? base.menuBar,
+    animations: overrides.animations ?? base.animations,
     sidebar: overrides.sidebar ?? base.sidebar,
     agentNotes: overrides.agentNotes ?? base.agentNotes,
     copyDecorations: overrides.copyDecorations ?? base.copyDecorations,
@@ -1303,6 +1326,7 @@ export function resolveConfiguredCliInput(
     wrapLines: resolvedOptions.wrapLines ?? DEFAULT_VIEW_PREFERENCES.wrapLines,
     hunkHeaders: resolvedOptions.hunkHeaders ?? DEFAULT_VIEW_PREFERENCES.showHunkHeaders,
     menuBar: resolvedOptions.menuBar ?? DEFAULT_VIEW_PREFERENCES.showMenuBar,
+    animations: resolvedOptions.animations ?? true,
     sidebar: resolvedOptions.sidebar ?? "auto",
     agentNotes: resolvedOptions.agentNotes ?? DEFAULT_VIEW_PREFERENCES.showAgentNotes,
     copyDecorations: resolvedOptions.copyDecorations ?? DEFAULT_VIEW_PREFERENCES.copyDecorations,

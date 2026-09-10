@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   EMPTY_REVIEW_ANNOTATION_INDEX,
+  planReviewNoteMove,
   planReviewSelectionMove,
   REVIEW_SELECTION_WRAP_POLICY,
   reviewAnnotatedCursors,
@@ -59,6 +60,7 @@ describe("review selection movement", () => {
     expect(REVIEW_SELECTION_WRAP_POLICY).toEqual({
       hunk: "clamp",
       file: "clamp",
+      note: "clamp",
       "annotated-hunk": "clamp",
       "annotated-file": "wrap",
     });
@@ -100,6 +102,34 @@ describe("review selection movement", () => {
     expect(move(model(), at("alpha", 0), "hunk", 1).reveal).toEqual({
       anchor: "hunk",
       scrollToNote: false,
+    });
+  });
+
+  test("moves exact notes in order and refuses to reselect at an edge", () => {
+    const notes = [
+      { noteId: "one", fileKey: "alpha", hunkIndex: 0 },
+      { noteId: "two", fileKey: "alpha", hunkIndex: 0 },
+      { noteId: "three", fileKey: "beta", hunkIndex: 1 },
+    ];
+
+    expect(planReviewNoteMove(FILES, notes, at("alpha", 0), "one", 1)).toEqual({
+      fileKey: "alpha",
+      hunkIndex: 0,
+      activeNoteId: "two",
+      reveal: { anchor: "hunk", scrollToNote: true },
+    });
+    expect(planReviewNoteMove(FILES, notes, at("alpha", 0), "two", 1)?.activeNoteId).toBe("three");
+    expect(planReviewNoteMove(FILES, notes, at("beta", 1), "three", 1)).toBeNull();
+    expect(planReviewNoteMove(FILES, notes, at("alpha", 0), "one", -1)).toBeNull();
+    expect(planReviewNoteMove(FILES, notes, at("beta", 0), undefined, 1)?.activeNoteId).toBe(
+      "three",
+    );
+    expect(planReviewNoteMove(FILES, notes, at("beta", 0), undefined, -1)?.activeNoteId).toBe(
+      "two",
+    );
+    expect(move({ ...model(), notes, activeNoteId: "two" }, at("alpha", 0), "note", 1)).toEqual({
+      at: "beta:1",
+      reveal: { anchor: "hunk", scrollToNote: true },
     });
   });
 

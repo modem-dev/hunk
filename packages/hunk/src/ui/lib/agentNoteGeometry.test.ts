@@ -2,10 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { agentNoteBoxLayout, agentNoteMarkupWidth } from "./agentNoteGeometry";
 
 describe("agentNoteBoxLayout", () => {
-  test("stack layout gives the note nearly the full pane", () => {
+  test("unified layout gives the note nearly the full pane", () => {
     const { boxWidth, contentWidth } = agentNoteBoxLayout({
       anchorSide: "new",
-      layout: "stack",
+      layout: "unified",
       width: 120,
     });
     expect(boxWidth).toBe(116);
@@ -35,7 +35,7 @@ describe("agentNoteBoxLayout", () => {
   test("never collapses below the minimum card width", () => {
     const { boxWidth, contentWidth } = agentNoteBoxLayout({
       anchorSide: "new",
-      layout: "stack",
+      layout: "unified",
       width: 20,
     });
     expect(boxWidth).toBeGreaterThanOrEqual(16);
@@ -43,7 +43,7 @@ describe("agentNoteBoxLayout", () => {
   });
 
   test("huge terminals grow the markup width with the pane", () => {
-    expect(agentNoteMarkupWidth({ anchorSide: "new", layout: "stack", width: 220 })).toBe(212);
+    expect(agentNoteMarkupWidth({ anchorSide: "new", layout: "unified", width: 220 })).toBe(212);
     expect(
       agentNoteMarkupWidth({ anchorSide: "new", layout: "split", width: 220 }),
     ).toBeGreaterThan(100);

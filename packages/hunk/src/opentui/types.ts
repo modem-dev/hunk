@@ -1,7 +1,12 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
 import type { HunkDiffThemeName } from "./themes";
 
-export type HunkDiffLayout = "split" | "stack";
+/** @deprecated Use the canonical `unified` layout. */
+export type LegacyHunkDiffLayout = "stack";
+/** Pre-unified layout vocabulary retained so existing consumer source remains exhaustive. */
+export type HunkDiffLayout = "split" | LegacyHunkDiffLayout;
+/** Canonical layout vocabulary for new OpenTUI integrations. */
+export type CanonicalHunkDiffLayout = "split" | "unified";
 
 /** Line stats shown by public Hunk OpenTUI primitives. */
 export interface HunkDiffStats {
@@ -37,7 +42,10 @@ export interface HunkDiffSelection {
 /** Public props shared by single-file diff body and view components. */
 export interface HunkDiffBodyProps {
   file?: HunkDiffFileInput;
+  /** Legacy layout vocabulary retained for source compatibility. */
   layout?: HunkDiffLayout;
+  /** Canonical layout vocabulary. Takes precedence over `layout` when both are supplied. */
+  canonicalLayout?: CanonicalHunkDiffLayout;
   width: number;
   theme?: HunkDiffThemeName;
   showLineNumbers?: boolean;
@@ -65,7 +73,10 @@ export interface HunkDiffFileHeaderProps {
 
 export interface HunkReviewStreamProps {
   files: HunkDiffFileInput[];
+  /** Legacy layout vocabulary retained for source compatibility. */
   layout?: HunkDiffLayout;
+  /** Canonical layout vocabulary. Takes precedence over `layout` when both are supplied. */
+  canonicalLayout?: CanonicalHunkDiffLayout;
   width: number;
   theme?: HunkDiffThemeName;
   selection?: HunkDiffSelection;

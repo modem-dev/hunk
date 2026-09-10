@@ -4,6 +4,8 @@ import { HunkUserError } from "../run/errors";
 import type {
   ExtensionVcsHistoryCommit,
   ExtensionVcsHistoryInput,
+  ExtensionVcsHistoryRangeReviewAction,
+  ExtensionVcsHistoryRangeSelection,
   ExtensionVcsHistoryReviewAction,
   ExtensionVcsHistoryReviewOptions,
 } from "../../extension-api/types";
@@ -191,6 +193,21 @@ export async function planVcsHistoryReview(
     ]);
   }
   return await adapter.history.planReview(commit, context, options);
+}
+
+/** Ask the selected provider how an inclusive history range should open in review. */
+export async function planVcsHistoryRangeReview(
+  adapter: VcsAdapter,
+  selection: ExtensionVcsHistoryRangeSelection,
+  context: VcsLoadContext,
+  options?: ExtensionVcsHistoryReviewOptions,
+): Promise<ExtensionVcsHistoryRangeReviewAction> {
+  if (!adapter.history?.planRangeReview) {
+    throw new HunkUserError(`Multi-commit history review is not supported by ${adapter.name}.`, [
+      "Use a VCS adapter that implements range history review.",
+    ]);
+  }
+  return await adapter.history.planRangeReview(selection, context, options);
 }
 
 /** Build an adapter event plan, falling back to signature polling. */

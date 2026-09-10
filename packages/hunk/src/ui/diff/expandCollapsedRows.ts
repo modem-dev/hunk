@@ -8,10 +8,10 @@ import type {
   DiffRow,
   RenderSpan,
   SplitLineCell,
-  StackLineCell,
+  UnifiedLineCell,
 } from "./diffRows";
 
-export type ExpansionLayout = "split" | "stack";
+export type ExpansionLayout = "split" | "unified";
 
 /** Per-file load status for the source text used to fill expanded gaps. */
 export type FileSourceStatus =
@@ -80,7 +80,7 @@ function buildSplitContextRow(
   };
 }
 
-function buildStackContextRow(
+function buildUnifiedContextRow(
   fileId: string,
   hunkIndex: number,
   position: CollapsedGapPosition,
@@ -88,8 +88,8 @@ function buildStackContextRow(
   oldLineNumber: number,
   newLineNumber: number,
   spans: RenderSpan[],
-): Extract<DiffRow, { type: "stack-line" }> {
-  const cell: StackLineCell = {
+): Extract<DiffRow, { type: "unified-line" }> {
+  const cell: UnifiedLineCell = {
     kind: "context",
     sign: " ",
     oldLineNumber,
@@ -98,7 +98,7 @@ function buildStackContextRow(
   };
 
   return {
-    type: "stack-line",
+    type: "unified-line",
     key: `${fileId}:expanded:${position}:${hunkIndex}:${index}`,
     fileId,
     hunkIndex,
@@ -209,7 +209,7 @@ export function expandCollapsedRows(
               newLineNumber,
               spans,
             )
-          : buildStackContextRow(
+          : buildUnifiedContextRow(
               row.fileId,
               row.hunkIndex,
               row.position,

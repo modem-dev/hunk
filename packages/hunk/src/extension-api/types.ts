@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 19;
+export const HUNK_EXTENSION_API_VERSION = 25;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -240,6 +240,8 @@ export interface ExtensionKeyEvent {
   /** The alt/option modifier. */
   option?: boolean;
   shift?: boolean;
+  /** The terminal protocol that decoded the key, when the host exposes it. */
+  source?: "raw" | "kitty";
 }
 
 /* -------------------------------------------------------------------------- */
@@ -472,7 +474,7 @@ export type ExtensionLineHighlightTone = "match" | "current" | "info" | "warning
  * One marked character range inside one diff line.
  *
  * Addressed by source coordinates — `(side, line, range)` — rather than by
- * rendered rows, so a mark survives split vs stack layout, line wrapping,
+ * rendered rows, so a mark survives split vs unified layout, line wrapping,
  * horizontal scrolling, and collapsed-context expansion without the extension
  * ever learning Hunk's row model.
  */
@@ -801,7 +803,15 @@ export interface ExtensionVcsHistorySource {
   close(): void | Promise<void>;
 }
 
-/** Optional provider-neutral selection facts for reviewing one history item. */
+/** The inclusive endpoint commits selected from one history page stream. */
+export interface ExtensionVcsHistoryRangeSelection {
+  /** Newer endpoint whose tree becomes the review's new side. */
+  newestCommit: ExtensionVcsHistoryCommit;
+  /** Older endpoint whose chosen parent becomes the review's old side. */
+  oldestCommit: ExtensionVcsHistoryCommit;
+}
+
+/** Optional provider-neutral selection facts for reviewing history items. */
 export interface ExtensionVcsHistoryReviewOptions {
   /** One ordered parent id returned on the commit, when the caller chooses a specific parent. */
   parentRevisionId?: string;
@@ -818,6 +828,12 @@ export type ExtensionVcsHistoryReviewAction =
       fromRevisionId: string;
       toRevisionId: string;
     };
+
+/** Provider-owned direct endpoint action for one inclusive history selection. */
+export type ExtensionVcsHistoryRangeReviewAction = Extract<
+  ExtensionVcsHistoryReviewAction,
+  { kind: "revision-range" }
+>;
 
 /** Optional read-only history capability implemented independently of review operations. */
 export interface ExtensionVcsHistoryCapability {
@@ -836,6 +852,17 @@ export interface ExtensionVcsHistoryCapability {
     context: ExtensionVcsLoadContext,
     options?: ExtensionVcsHistoryReviewOptions,
   ): ExtensionVcsHistoryReviewAction | Promise<ExtensionVcsHistoryReviewAction>;
+  /**
+   * Declare how to compare an inclusive contiguous history selection.
+   *
+   * Providers choose the oldest commit's root or parent baseline and verify
+   * that the endpoints form one ancestry range. Older providers may omit this.
+   */
+  planRangeReview?(
+    selection: ExtensionVcsHistoryRangeSelection,
+    context: ExtensionVcsLoadContext,
+    options?: ExtensionVcsHistoryReviewOptions,
+  ): ExtensionVcsHistoryRangeReviewAction | Promise<ExtensionVcsHistoryRangeReviewAction>;
 }
 
 /** Stash review request, as extension adapters receive it. */
@@ -967,6 +994,8 @@ export interface ExtensionVcsPatchResult {
   sourceLabel: string;
   title: string;
   patchText: string;
+  /** Commit or comparison context shown above revision-backed reviews. */
+  review?: ExtensionReviewDescriptor;
   /**
    * Untracked files to review beside the patch, as repo-root-relative paths.
    *
@@ -1048,8 +1077,11 @@ export interface ExtensionVcsWatchPlan {
 /** One review operation an adapter implements. */
 export interface ExtensionVcsOperation<Input> {
   load(input: Input, context: ExtensionVcsLoadContext): Promise<ExtensionVcsPatchResult>;
-  /** Optional cheap fingerprint of the reviewed state, for `--watch`. */
-  watchSignature?: (input: Input, context: ExtensionVcsLoadContext) => string;
+  /**
+   * Optional fingerprint for `--watch`; use async I/O and honor context.signal.
+   * Promise returns and watch cancellation require extension API version 25.
+   */
+  watchSignature?: (input: Input, context: ExtensionVcsLoadContext) => string | Promise<string>;
   /**
    * Optional filesystem targets `--watch` observes instead of polling.
    *
@@ -1117,6 +1149,14 @@ export interface ExtensionPaintTheme {
   border: string;
   accent: string;
   accentMuted: string;
+  /** Bright foreground for clickable copy affordances. */
+  copyAction: string;
+  /** Author identity used by commit-history metadata. */
+  historyAuthor?: string;
+  /** Punctuation between commit-history metadata fields. */
+  historySeparator?: string;
+  /** Relative timestamp used by commit-history metadata. */
+  historyRelativeTime?: string;
   text: string;
   muted: string;
   /** Background highlighting the selected row or hunk. */
@@ -1180,6 +1220,8 @@ export interface ExtensionReviewNavigation {
  * Actions stay valid for as long as the component is mounted.
  */
 export interface ExtensionPaneActions extends ExtensionReviewNavigation {
+  /** Copy text through the terminal clipboard integration, returning false when unavailable. */
+  copyText(text: string): boolean;
   /** Show one toast, attributed to the owning extension. */
   notify(message: string, type?: ExtensionNotifyType): void;
 }
@@ -1257,7 +1299,7 @@ export interface ExtensionCurrentLinePaint {
 /** Immutable state used to decide whether an open pane is meaningful this frame. */
 export interface ExtensionPaneAvailabilityContext {
   readonly placement: ExtensionPanePlacement;
-  /** Immutable delegated review metadata, or null for ordinary reviews. */
+  /** Immutable review-source metadata, or null for ordinary reviews. */
   readonly review: ExtensionReviewDescriptor | null;
   readonly files: readonly ExtensionDiffFile[];
   readonly selectedFileId: string | null;
@@ -1267,7 +1309,7 @@ export interface ExtensionPaneAvailabilityContext {
 
 /** Everything a custom pane component receives, refreshed as the app changes. */
 export interface ExtensionPaneProps {
-  /** Immutable delegated review metadata, or null for ordinary reviews. */
+  /** Immutable review-source metadata, or null for ordinary reviews. */
   readonly review: ExtensionReviewDescriptor | null;
   readonly files: readonly ExtensionDiffFile[];
   readonly selectedFileId: string | null;
@@ -1309,6 +1351,15 @@ interface ExtensionPaneBase {
   currentLine?: boolean;
   /** Synchronous frame-availability policy. */
   available?(context: ExtensionPaneAvailabilityContext): boolean;
+  /**
+   * Resolve the preferred width or height for the current frame.
+   *
+   * Hunk clamps the returned positive whole-cell target to the registered
+   * dimension bounds. A session-local divider drag still takes precedence.
+   */
+  preferredSize?(context: ExtensionPaneAvailabilityContext): number;
+  /** Set false to suppress divider resizing even when the dimension bounds differ. */
+  resizable?: boolean;
   /** Observes primary mouse presses inside the pane without consuming child interaction. */
   onActivate?(): void;
   component: ExtensionPaneComponent;
@@ -1423,9 +1474,23 @@ export interface ExtensionChangeRequestReviewDescriptor extends ExtensionReviewD
 /** Metadata for one reviewed commit. */
 export interface ExtensionCommitReviewDescriptor extends ExtensionReviewDescriptorBase {
   readonly kind: "commit";
-  /** Provider revision identifier. */
+  /** Full provider revision copied by the adjacent action. */
   readonly revision: string;
+  /** Provider-formatted short revision rendered in the review header. */
+  readonly displayRevision?: string;
   readonly author?: string;
+  /** Date-time string used for relative commit time when available. */
+  readonly authoredAt?: string;
+}
+
+/** Compact display metadata for one commit included in a comparison. */
+export interface ExtensionComparisonCommitDescriptor {
+  readonly title: string;
+  readonly author?: string;
+  readonly authoredAt?: string;
+  /** Full provider revision copied by the adjacent action. */
+  readonly revision: string;
+  readonly displayRevision: string;
 }
 
 /** Metadata for one comparison between two provider refs. */
@@ -1433,9 +1498,13 @@ export interface ExtensionComparisonReviewDescriptor extends ExtensionReviewDesc
   readonly kind: "comparison";
   readonly base: string;
   readonly head: string;
+  /** Total commits represented, including entries omitted from the bounded list. */
+  readonly commitCount?: number;
+  /** Newest-first commit summaries for compact review-info presentation. */
+  readonly commits?: readonly ExtensionComparisonCommitDescriptor[];
 }
 
-/** Bounded provider-neutral metadata attached to an extension-delegated patch review. */
+/** Bounded provider-neutral metadata describing a delegated or history-selected review. */
 export type ExtensionReviewDescriptor =
   | ExtensionChangeRequestReviewDescriptor
   | ExtensionCommitReviewDescriptor
@@ -2090,8 +2159,15 @@ export interface ExtensionEventContext extends ExtensionContext {
  */
 export type SessionReloadReason = "watch" | "daemon" | "extension" | "manual";
 
-/** Payload delivered with each lifecycle event, keyed by event name. */
-export type ExtensionLayoutMode = "auto" | "split" | "stack";
+/** @deprecated Use the canonical `unified` vocabulary in new integrations. */
+export type ExtensionLegacyLayout = "stack";
+/** Canonical layout mode vocabulary emitted to extensions. */
+export type ExtensionCanonicalLayoutMode = "auto" | "split" | "unified";
+/** Concrete canonical layout emitted to extensions. */
+export type ExtensionCanonicalResolvedLayout = Exclude<ExtensionCanonicalLayoutMode, "auto">;
+/** Pre-v23 layout vocabulary retained so existing extension source remains exhaustive. */
+export type ExtensionLayoutMode = "auto" | "split" | ExtensionLegacyLayout;
+/** Pre-v23 concrete layout vocabulary retained for source and event compatibility. */
 export type ExtensionResolvedLayout = Exclude<ExtensionLayoutMode, "auto">;
 
 /** A user-authored note as reported by note lifecycle events. */
@@ -2104,6 +2180,10 @@ export interface ExtensionReviewNote {
   hunkIndex: number;
   side: "old" | "new";
   line: number;
+  /** Inclusive one-based old-side source range, including singleton line anchors. */
+  oldRange?: readonly [number, number];
+  /** Inclusive one-based new-side source range, including singleton line anchors. */
+  newRange?: readonly [number, number];
   body: string;
   /** True while the note is still being composed rather than saved. */
   draft: boolean;
@@ -2116,7 +2196,12 @@ export interface ExtensionEventPayloads {
   startup: { cwd: string };
   changeset_loaded: { changeset: ExtensionChangeset };
   /** A named built-in or extension command was dispatched in this terminal host. */
-  command_executed: { commandId: string };
+  command_executed: {
+    /** Stable command identity, including deprecated ids preserved for existing handlers. */
+    commandId: string;
+    /** Canonical replacement when `commandId` is a deprecated compatibility identity. */
+    canonicalCommandId?: string;
+  };
   selection_changed: { fileId: string | null; hunkIndex: number | null };
   /** The review stream settled on a different file. */
   file_viewed: { file: ExtensionDiffFile; hunkIndex: number | null };
@@ -2131,8 +2216,20 @@ export interface ExtensionEventPayloads {
   filter_changed: { filter: string };
   /** The user committed a different active theme. Selector previews do not emit this event. */
   theme_changed: { themeId: string };
-  /** The configured layout mode or responsive resolved layout changed. */
-  layout_changed: { mode: ExtensionLayoutMode; layout: ExtensionResolvedLayout };
+  /**
+   * The configured layout mode or responsive resolved layout changed.
+   *
+   * `mode` and `layout` preserve the pre-v23 vocabulary for existing handlers.
+   * New integrations should consume the canonical fields.
+   */
+  layout_changed: {
+    /** @deprecated Use `canonicalMode`. */
+    mode: ExtensionLayoutMode;
+    /** @deprecated Use `canonicalLayout`. */
+    layout: ExtensionResolvedLayout;
+    canonicalMode?: ExtensionCanonicalLayoutMode;
+    canonicalLayout?: ExtensionCanonicalResolvedLayout;
+  };
   /** A watch source observed a change and is waiting to check/reload it. */
   watch_reload_pending: Record<string, never>;
   /** A user saved a new inline review note. */

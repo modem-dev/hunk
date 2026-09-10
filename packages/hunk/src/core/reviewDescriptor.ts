@@ -11,6 +11,8 @@ const REVIEW_DESCRIPTOR_FIELD_LIMITS = Object.freeze({
   base: 512,
   head: 512,
   revision: 512,
+  displayRevision: 64,
+  authoredAt: 128,
 });
 
 /** Measure a public descriptor string in transport bytes rather than UTF-16 code units. */
@@ -26,18 +28,18 @@ function validateDescriptorString(
 ): string | undefined {
   if (!Object.prototype.hasOwnProperty.call(candidate, field)) {
     if (!required) return undefined;
-    throw new Error(`delegate review ${field} must be a non-empty string`);
+    throw new Error(`review descriptor ${field} must be a non-empty string`);
   }
   const value = candidate[field];
   if (value === undefined && !required) return undefined;
   if (typeof value !== "string" || value.length === 0) {
-    throw new Error(`delegate review ${field} must be a non-empty string`);
+    throw new Error(`review descriptor ${field} must be a non-empty string`);
   }
   if (/[\u0000-\u001f\u007f-\u009f]/u.test(value)) {
-    throw new Error(`delegate review ${field} cannot contain control characters`);
+    throw new Error(`review descriptor ${field} cannot contain control characters`);
   }
   if (descriptorByteLength(value) > REVIEW_DESCRIPTOR_FIELD_LIMITS[field]) {
-    throw new Error(`delegate review ${field} exceeds its byte limit`);
+    throw new Error(`review descriptor ${field} exceeds its byte limit`);
   }
   return value;
 }
@@ -55,28 +57,63 @@ function copyOptionalDescriptorFields(
   return copied;
 }
 
+/** Copy a bounded newest-first commit list for comparison presentation. */
+function validateComparisonCommits(value: unknown) {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.length > 8) {
+    throw new Error("review descriptor comparison commits must contain at most 8 entries");
+  }
+  return Object.freeze(
+    value.map((entry) => {
+      if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+        throw new Error("review descriptor comparison commit must be an object");
+      }
+      const prototype = Object.getPrototypeOf(entry);
+      if (prototype !== Object.prototype && prototype !== null) {
+        throw new Error("review descriptor comparison commit must be a plain object");
+      }
+      const candidate = entry as Record<string, unknown>;
+      const allowed = new Set(["title", "author", "authoredAt", "revision", "displayRevision"]);
+      if (Reflect.ownKeys(candidate).some((key) => typeof key !== "string" || !allowed.has(key))) {
+        throw new Error("review descriptor comparison commit contains unknown fields");
+      }
+      const authoredAt = validateDescriptorString(candidate, "authoredAt", false);
+      if (authoredAt !== undefined && Number.isNaN(Date.parse(authoredAt))) {
+        throw new Error("review descriptor comparison commit authoredAt must be a valid timestamp");
+      }
+      return Object.freeze({
+        title: validateDescriptorString(candidate, "title", true)!,
+        ...copyOptionalDescriptorFields(candidate, ["author"]),
+        ...(authoredAt === undefined ? {} : { authoredAt }),
+        revision: validateDescriptorString(candidate, "revision", true)!,
+        displayRevision: validateDescriptorString(candidate, "displayRevision", true)!,
+      });
+    }),
+  );
+}
+
 /** Validate optional provider change-request state. */
 function validateChangeRequestState(value: unknown): "open" | "closed" | "merged" | undefined {
   if (value === undefined || value === "open" || value === "closed" || value === "merged") {
     return value;
   }
-  throw new Error('delegate review state must be "open", "closed", or "merged"');
+  throw new Error('review descriptor state must be "open", "closed", or "merged"');
 }
 
 /** Validate an optional boolean descriptor field. */
 function validateOptionalBoolean(value: unknown, field: string): boolean | undefined {
   if (value === undefined || typeof value === "boolean") return value;
-  throw new Error(`delegate review ${field} must be a boolean`);
+  throw new Error(`review descriptor ${field} must be a boolean`);
 }
 
-/** Validate, copy, and deeply freeze provider-neutral delegated review metadata. */
+/** Validate, copy, and deeply freeze provider-neutral review metadata. */
 export function validateExtensionReviewDescriptor(value: unknown): ExtensionReviewDescriptor {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Error("delegate review must be an object");
+    throw new Error("review descriptor must be an object");
   }
   const prototype = Object.getPrototypeOf(value);
   if (prototype !== Object.prototype && prototype !== null) {
-    throw new Error("delegate review must be a plain object");
+    throw new Error("review descriptor must be a plain object");
   }
   const candidate = value as Record<string, unknown>;
   const kind = candidate.kind;
@@ -84,7 +121,7 @@ export function validateExtensionReviewDescriptor(value: unknown): ExtensionRevi
     !Object.prototype.hasOwnProperty.call(candidate, "kind") ||
     (kind !== "change-request" && kind !== "commit" && kind !== "comparison")
   ) {
-    throw new Error('delegate review kind must be "change-request", "commit", or "comparison"');
+    throw new Error('review descriptor kind must be "change-request", "commit", or "comparison"');
   }
 
   const common = ["kind", "provider", "title", "url"];
@@ -92,12 +129,12 @@ export function validateExtensionReviewDescriptor(value: unknown): ExtensionRevi
     kind === "change-request"
       ? ["id", "repository", "author", "base", "head", "state", "draft"]
       : kind === "commit"
-        ? ["revision", "author"]
-        : ["base", "head"];
+        ? ["revision", "displayRevision", "author", "authoredAt"]
+        : ["base", "head", "commitCount", "commits"];
   const allowed = new Set([...common, ...kindFields]);
   const ownKeys = Reflect.ownKeys(value);
   if (ownKeys.some((key) => typeof key !== "string" || !allowed.has(key))) {
-    throw new Error("delegate review contains unknown fields");
+    throw new Error("review descriptor contains unknown fields");
   }
 
   const provider = validateDescriptorString(candidate, "provider", true)!;
@@ -108,10 +145,10 @@ export function validateExtensionReviewDescriptor(value: unknown): ExtensionRevi
     try {
       parsed = new URL(url);
     } catch {
-      throw new Error("delegate review url must be a valid HTTPS URL");
+      throw new Error("review descriptor url must be a valid HTTPS URL");
     }
     if (parsed.protocol !== "https:" || parsed.username || parsed.password) {
-      throw new Error("delegate review url must be a credential-free HTTPS URL");
+      throw new Error("review descriptor url must be a credential-free HTTPS URL");
     }
   }
 
@@ -130,15 +167,32 @@ export function validateExtensionReviewDescriptor(value: unknown): ExtensionRevi
       ...(draft === undefined ? {} : { draft }),
     };
   } else if (kind === "commit") {
+    const authoredAt = validateDescriptorString(candidate, "authoredAt", false);
+    const displayRevision = validateDescriptorString(candidate, "displayRevision", false);
+    if (authoredAt !== undefined && Number.isNaN(Date.parse(authoredAt))) {
+      throw new Error("review descriptor authoredAt must be a valid timestamp");
+    }
     descriptor = {
       kind,
       provider,
       title,
       ...(url === undefined ? {} : { url }),
       revision: validateDescriptorString(candidate, "revision", true)!,
+      ...(displayRevision === undefined ? {} : { displayRevision }),
       ...copyOptionalDescriptorFields(candidate, ["author"]),
+      ...(authoredAt === undefined ? {} : { authoredAt }),
     };
   } else {
+    const commits = validateComparisonCommits(candidate.commits);
+    const commitCount = candidate.commitCount;
+    if (
+      commitCount !== undefined &&
+      (!Number.isSafeInteger(commitCount) ||
+        (commitCount as number) < 0 ||
+        (commits !== undefined && (commitCount as number) < commits.length))
+    ) {
+      throw new Error("review descriptor comparison commitCount must cover the commit list");
+    }
     descriptor = {
       kind,
       provider,
@@ -146,12 +200,14 @@ export function validateExtensionReviewDescriptor(value: unknown): ExtensionRevi
       ...(url === undefined ? {} : { url }),
       base: validateDescriptorString(candidate, "base", true)!,
       head: validateDescriptorString(candidate, "head", true)!,
+      ...(commitCount === undefined ? {} : { commitCount: commitCount as number }),
+      ...(commits === undefined ? {} : { commits }),
     };
   }
 
   const totalBytes = descriptorByteLength(JSON.stringify(descriptor));
   if (totalBytes > REVIEW_DESCRIPTOR_TOTAL_BYTES) {
-    throw new Error("delegate review exceeds the total byte limit");
+    throw new Error("review descriptor exceeds the total byte limit");
   }
   return Object.freeze(descriptor);
 }

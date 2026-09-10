@@ -11,19 +11,20 @@ exists so you know which module owns what.
 Extensions come in two tiers running through the same per-extension API
 object and registry collection (`packages/hunk/src/extensions/runExtension.ts`):
 
-- **User extensions** load at interactive-app startup, before
-  `loadAppBootstrap` (`packages/hunk/src/extensions/startup.ts`, `packages/hunk/src/extensions/host.ts`).
-  Discovery groups and trust gating: `packages/hunk/src/extensions/discovery.ts`,
+- **User extensions** load during app bootstrap after initial config resolution and before final
+  session bootstrap (`packages/hunk/src/app/extensionBootstrap.ts`,
+  `packages/hunk/src/extensions/startup.ts`, `packages/hunk/src/extensions/host.ts`). Discovery
+  groups and trust gating live in `packages/hunk/src/extensions/discovery.ts` and
   `packages/hunk/src/extensions/trust.ts`.
-- **Bundled extensions** live in `packages/hunk/src/extensions/default/` and are compiled
-  into the binary. `default/vcs/{git,jujutsu,sapling}` is statically imported
-  by the app composition root (`app/vcsCatalog.ts`) and loaded synchronously
-  before config resolution, so backends exist without making core import the
-  extension host. `default/ui/index.ts` is deliberately not part of that list:
-  it synchronously loads the bundled files and delegated review-info panes through
-  `runExtensionFactory` only where the app resolves UI panes.
+- **Bundled extensions** are compiled into the binary. The private
+  `packages/hunk-{git,jj,sapling}` provider workspaces are statically imported by
+  `packages/hunk/src/extensions/default/vcs/index.ts`; the app composition root
+  (`app/vcsCatalog.ts`) loads them synchronously before config resolution, so backends exist
+  without making core import the extension host. `default/ui/index.ts` is deliberately not part of
+  that list: the UI pane planner loads its bundled files and delegated review-info registrations
+  through `runExtensionFactory`.
 
-Git, built-in file navigation, and delegated change-request identity use the public
+Git, built-in file navigation, and change-request or history-commit identity use the public
 `registerVcsAdapter` and `registerPane` paths. The external [Hunk Lens](https://github.com/modem-dev/hunk-lens)
 extension exercises current-line pane paint through that same public contract.
 
@@ -41,13 +42,16 @@ unsplittable), and the later of two sources claiming one id; each refusal is a
 load issue and costs only that extension. The rules themselves are stated in
 `packages/hunk/src/extensions/extensionIds.ts`.
 
-## One registry, one apply path
+## One registry model, separate composition paths
 
 Registrations (session behavior, themes, file languages, VCS adapters,
 changeset transforms, panes, interactive commands, top-level CLI commands,
-lifecycle/UI events, and inter-extension bus listeners) collect into one
-`ExtensionRegistry` (`packages/hunk/src/extensions/types.ts`) and are resolved/applied
-through `packages/hunk/src/extensions/apply.ts` on both startup and reload. File-language registrations stay as
+lifecycle/UI events, and inter-extension bus listeners) collect into an
+`ExtensionRegistry` (`packages/hunk/src/extensions/types.ts`). Bundled VCS, bundled UI, and user
+extensions use separate registry instances and lifecycle owners. `app/vcsCatalog.ts` composes
+bundled VCS registrations directly; `ui/lib/extensionPanes.ts` reads bundled UI pane registrations;
+and `extensions/apply.ts` applies user registrations during session bootstrap and reload.
+File-language registrations stay as
 declarative extension, filename, or glob selectors until `fileLanguageLookup.ts` resolves them;
 Hunk then pins that answer into Pierre's metadata so rendering cannot re-derive a conflicting
 language. A live reload replaces the compiled selector generation while preparing its changeset
@@ -55,9 +59,12 @@ and restores the previous generation if any pre-commit step fails. Staged extern
 retains the provisional candidate/config snapshot: a final pass that
 only appends repo candidates extends the same registry, while a changed prefix
 receives bounded `shutdown` before being rebuilt. Live registry replacement uses
-the same shutdown/startup lifecycle. A factory that throws is rolled back to its
-pre-run registration counts (`runExtension.ts`); failures cost a warning, not the
-session.
+the same shutdown/startup lifecycle. `src/extensions/session.ts` owns active, provisional, and
+retiring registries by identity; it synchronously closes authority at adoption/shutdown and drains
+all known bounded retirements. Surfaces borrow that session and cannot retire it independently.
+A user or bundled-VCS factory that throws is rolled back to its pre-run registration counts
+(`runExtension.ts`); failures cost a warning, not the session. Bundled UI registration instead
+requires every expected pane and throws if Hunk's own invariant fails.
 
 Generic CLI commands deliberately remain separate from the interactive named-command
 table. `parseCli` resolves known built-ins first, preserving static help/version and
@@ -99,9 +106,9 @@ the planner resolves it to an integer target before applying bounds and lets a
 session-local divider drag override that automatic size.
 
 `packages/hunk/src/ui/components/panes/ExtensionPane.tsx` mounts panes with guarded actions,
-immutable delegated review metadata, and failure containment. The fixed three-row
-`hunk:review-info` top pane uses one border row above two metadata rows and is available only for
-delegated change requests, so ordinary reviews spend no geometry on it. `DiffPane` exposes optional current-line paint — the row
+immutable review metadata, and failure containment. The fixed three-row `hunk:review-info` top
+pane uses one border row above two metadata rows and is available for delegated change requests or
+commits selected from interactive history, so ordinary reviews spend no geometry on it. `DiffPane` exposes optional current-line paint — the row
 painter plus the public `{ side, line }` address — without publishing Pierre
 rows, plans, cursor keys, or caches. Deprecated sidebar APIs
 normalize into this same registry and layout path.
@@ -270,7 +277,8 @@ same guarded live navigation commands use. They can also request a current-input
 the current-review controller registers the latest reloadable descriptor, then AppHost resolves
 that descriptor at queue execution and coalesces extension requests while serializing them with
 manual, watch, workspace, and daemon reloads. `App` installs these controls through the
-per-extension event-context provider, while `AppHost` publishes mounted
+per-extension event-context provider, while `AppHost` keeps the content/broker/React commit gate
+and asks the owning `ExtensionSession` to adopt only after those facts agree. `AppHost` publishes mounted
 lifecycle order (`startup`, then `changeset_loaded`; reloads add
 `session_reload`) only after the matching child commit. Headless or pre-mount delivery resolves
 dialogs to their cancel values and refuses navigation with a warning.
@@ -337,8 +345,10 @@ watch. Detection is uniform across tiers: nearest checkout wins, priority breaks
 equal-distance ties, and an explicit `vcs` id owned by the catalog wins.
 
 Provider implementations — command construction, spawning, error translation,
-and exact-source reading — live entirely under
-`packages/hunk/src/extensions/default/vcs/<provider>/`. `packages/hunk/src/extensions/vcsPatchResult.ts` is
+and exact-source reading — live entirely in the private `packages/hunk-{git,jj,sapling}`
+workspaces and import the public `hunkdiff/extension` contract plus only explicit
+provider-neutral `@hunk/vcs/*` implementation subpaths.
+`packages/hunk/src/extensions/vcsPatchResult.ts` is
 the one conversion boundary where a published `ExtensionVcsPatchResult`
 becomes Hunk's internal diff model, including structural `too-large` source
 results. `packages/hunk/src/core/process/projectRoot.ts` treats `.hunk` as a provider-independent
@@ -347,8 +357,10 @@ second root/config pass when a global, config-path, or CLI adapter recognizes a
 repository unavailable to the bundled catalog.
 
 `hunk log` follows the same boundary. Core/app and `src/ui/history/` own the built-in command,
-validated graph planning, presentation, themes, paging, terminal lifecycle, and child-process
-orchestration. The selected adapter's public `history` capability owns traversal, filtering,
+validated graph planning, presentation, themes, paging, and child-process orchestration. The shared
+`src/ui/session/` runner owns the process-level renderer/root lifetime, while its closed host routes
+retained history and fresh review surfaces without giving either surface terminal ownership. The
+selected adapter's public `history` capability owns traversal, filtering,
 immutable revision and parent identities, structured decorations, and the declarative review action
 for a selected item. The host treats those ids as opaque and never constructs provider revision
 syntax or decides root/merge comparison semantics. History pages remain child-before-parent across
@@ -360,7 +372,7 @@ ordering before core or UI consumes it.
 The authoring surface is the `hunkdiff/extension` export — a façade over
 internal types, declared in `packages/hunk/src/extension-api/types.ts`. That module must
 stay import-free: declaration emission ships every module the entry reaches,
-so an import there publishes Hunk internals (`scripts/check-pack.ts` fails
+so an import there publishes Hunk internals (`scripts/packaging/check-pack.ts` fails
 the pack when it does, and typechecks every `docs/extensions.md` example as
 a consumer). Shapes shared with internal code are declared there and
 re-exported inward.

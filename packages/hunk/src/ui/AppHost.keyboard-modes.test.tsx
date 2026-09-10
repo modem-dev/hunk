@@ -8,7 +8,7 @@ import { act } from "react";
 import { createTestVcsAppBootstrap } from "../../../../test/helpers/app-bootstrap";
 import { createTestDiffFile } from "../../../../test/helpers/diff-helpers";
 import { loadStartupExtensions } from "../extensions/startup";
-import { AppHost } from "./AppHost";
+import { TestAppHost as AppHost } from "../../../../test/helpers/app-host";
 
 const tempDirs: string[] = [];
 setDefaultTimeout(20_000);
@@ -99,8 +99,8 @@ async function renderWithExtension() {
   const bootstrap = createTestVcsAppBootstrap({
     changesetId: "keyboard-mode",
     files: [createTestDiffFile({ id: "alpha", path: "alpha.ts" })],
-    initialMode: "stack",
-    inputMode: "stack",
+    initialMode: "unified",
+    inputMode: "unified",
   });
   bootstrap.extensions = extensions;
   const setup = await testRender(<AppHost bootstrap={bootstrap} onQuit={() => {}} />, {

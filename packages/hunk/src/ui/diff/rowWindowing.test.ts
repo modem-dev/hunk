@@ -37,6 +37,7 @@ function createTestSectionGeometry(
     bodyHeight,
     hunkAnchorRows: new Map(),
     hunkBounds: new Map(),
+    hunkSpans: [],
     lineNumberDigits: 1,
     plannedRows,
     rowBounds: normalizedRowBounds,

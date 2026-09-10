@@ -4,7 +4,7 @@ import { formatCliError } from "./core/run/errors";
 import { pagePlainText } from "./core/process/pager";
 import { writeStdout } from "./core/process/stdout";
 import { prepareStartupPlan } from "./app/startup";
-import { sanitizeTerminalText } from "./lib/terminalText";
+import { sanitizeTerminalLine, sanitizeTerminalText } from "./lib/terminalText";
 import { serveSessionBrokerDaemon } from "./session/broker/brokerServer";
 import { runSessionCommand } from "./session/agent/commands";
 
@@ -123,24 +123,41 @@ async function main() {
     process.exit(0);
   }
 
+  if (startupPlan.kind === "static-diff") {
+    const [{ renderStaticDiff }, { retireExtensionLoadResult }] = await Promise.all([
+      import("./ui/staticDiffPager"),
+      import("./extensions/events"),
+    ]);
+    try {
+      for (const notice of startupPlan.bootstrap.startupNotices ?? []) {
+        process.stderr.write(`hunk: warning: ${sanitizeTerminalLine(notice.message)}\n`);
+      }
+      writeStdout(
+        await renderStaticDiff(
+          startupPlan.bootstrap.changeset,
+          startupPlan.bootstrap.input.options,
+          {
+            customThemes: startupPlan.bootstrap.customThemes,
+            color: false,
+            preserveFullLines: true,
+          },
+        ),
+      );
+    } finally {
+      await retireExtensionLoadResult(startupPlan.bootstrap.extensions);
+    }
+    process.exit(0);
+  }
+
   if (startupPlan.kind !== "app") {
     throw new Error("Unreachable startup plan.");
   }
 
   // OpenTUI stays behind the interactive plan so headless commands never materialize its embedded
-  // native library. The highlighting client starts the compiled worker only when an opted-in,
-  // eligible diff needs it, so normal sessions do not pay its startup cost. The interactive app
-  // owns that worker's disposal: this call returns once the app is mounted, not once it exits.
+  // native library. The shared interactive runner owns the highlighting worker and terminal until
+  // the mounted surface acknowledges graceful shutdown.
   const { runInteractiveApp } = await import("./ui/runInteractiveApp");
-  try {
-    await runInteractiveApp(startupPlan);
-  } catch (error) {
-    startupPlan.controllingTerminal?.close();
-    await (
-      await import("./extensions/events")
-    ).retireExtensionLoadResult(startupPlan.bootstrap.extensions);
-    throw error;
-  }
+  await runInteractiveApp(startupPlan);
 }
 
 await main().catch((error) => {

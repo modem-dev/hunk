@@ -18,8 +18,8 @@ function plannedFileViewRowHeight(
   return measureAgentInlineNoteHeight({
     annotation: row.annotation,
     anchorSide: row.anchorSide,
-    // Alternate presentations are one full-width stack even when raw code uses split columns.
-    layout: "stack",
+    // Alternate presentations are one full-width unified even when raw code uses split columns.
+    layout: "unified",
     width,
     actions: row.note.actions,
     threadDepth: row.note.thread?.depth,
@@ -104,6 +104,7 @@ export function measureFileViewGeometry({
     bodyHeight,
     hunkAnchorRows,
     hunkBounds,
+    hunkSpans: [],
     lineNumberDigits: 1,
     // Alternate rows are not Pierre rows, so raw copy selection intentionally remains unavailable.
     plannedRows: [],

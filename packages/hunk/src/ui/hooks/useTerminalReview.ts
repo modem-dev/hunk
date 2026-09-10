@@ -23,7 +23,6 @@ import {
   buildLiveComment,
   findDiffFileByPath,
   resolveCommentTarget,
-  type UserNoteLineTarget,
 } from "../../core/liveComments";
 import {
   builtinAppCommand,
@@ -34,6 +33,7 @@ import {
 import { SourceTextTooLargeError } from "../../core/changeset/fileSource";
 import {
   applyReviewIntent,
+  requireReviewReplyParent,
   ReviewIntentPlanningError,
   type ReviewIntent,
   type ReviewIntentFacts,
@@ -44,12 +44,20 @@ import { reviewHunkIndexForLine } from "../../core/review/geometry";
 import type { ReviewSelectionScope } from "../../core/review/navigation";
 import {
   reviewFileKeysWithRetiredContent,
+  selectActiveStoredReviewNote,
   selectExpandedGapIdsByFileKey,
+  selectNavigableStoredReviewNotes,
   selectNormalizedSelection,
   selectThreadedStoredReviewNotes,
   selectVisibleThreadedStoredReviewNotes,
 } from "../../core/review/selectors";
-import { REVIEW_VIEWPORT_ANCHOR_REVEAL, type ReviewRevealRequest } from "../../core/review/state";
+import {
+  REVIEW_VIEWPORT_ANCHOR_REVEAL,
+  reviewNoteAnchorLine,
+  reviewNoteOwnerHunkIndex,
+  type ReviewRevealRequest,
+} from "../../core/review/state";
+import type { ReviewNoteTargetV1 } from "../../core/review/types";
 import { createReviewStore, type ReviewStore } from "../../core/review/store";
 import { noDiffFileMatchesMessage } from "../../session/agent/errors";
 import type { DiffFile } from "../../core/changeset/model";
@@ -83,13 +91,18 @@ import type { LineRevealPlacement } from "../lib/hunkScroll";
 import {
   EMPTY_LINE_CURSORS,
   findLineCursorAt,
-  findNextLineCursor,
   firstLineCursorInHunk,
   hasLineCursor,
   lineCursorAt,
   resolveLineCursor,
   type LineCursor,
 } from "../lib/lineCursors";
+import {
+  EMPTY_REVIEW_VERTICAL_STOPS,
+  findNextReviewNoteStop,
+  findNextReviewVerticalStop,
+  type ReviewVerticalStop,
+} from "../lib/reviewVerticalStops";
 import { agentNoteMarkupWidth } from "../lib/agentNoteGeometry";
 import { reviewNoteSource } from "../lib/agentAnnotations";
 import { STML_REFERENCE_WIDTH, validateStmlMarkup } from "../lib/stml/layout";
@@ -158,6 +171,8 @@ interface SourceLoadRequest {
 export interface LineCursorRevealRequest {
   id: number;
   placement: LineRevealPlacement;
+  /** Explicit measured row used when the active vertical stop is a note rather than a line. */
+  target?: { fileId: string; stableKey: string };
 }
 
 /**
@@ -188,6 +203,8 @@ function revealRequestFor(options?: ReviewSelectionOptions): ReviewRevealRequest
 
 export interface TerminalReview {
   allFiles: DiffFile[];
+  /** Projected content and source identities keyed by runtime file id. */
+  semanticFileIdentityByFileId: ReadonlyMap<string, string>;
   /**
    * The semantic review store this controller owns.
    *
@@ -218,6 +235,10 @@ export interface TerminalReview {
   /** Adopt the hunk a viewport settled on, without asking any viewport to move. */
   anchorSelection: (fileId: string, hunkIndex: number) => void;
   moveLineCursor: (delta: number) => void;
+  /** Select a visible semantic note without moving the viewport. */
+  activateNote: (noteId: string) => void;
+  /** Step only between semantic note cards in their rendered order. */
+  moveNoteCursor: (delta: number) => void;
   /** Step the selection through one navigable scope; the scope owns wrap and reveal. */
   moveSelection: (scope: ReviewSelectionScope, delta: number) => void;
   revealLine: (fileId: string, side: "old" | "new", line: number) => RevealedLineResult;
@@ -273,11 +294,11 @@ export interface TerminalReview {
   startUserNote: (
     fileId?: string,
     hunkIndex?: number,
-    target?: UserNoteLineTarget,
+    target?: ReviewNoteTargetV1,
     options?: { preserveViewport?: boolean },
   ) => DraftReviewNote | null;
   setFilter: (value: string) => void;
-  updateDraftNote: (body: string) => void;
+  updateDraftNote: (body: string, expectedDraftId?: string) => boolean;
 }
 
 /** Live note-card geometry the app publishes for markup validation. */
@@ -292,6 +313,7 @@ export function useTerminalReview({
   files,
   initialShowAgentNotes = false,
   lineCursors = EMPTY_LINE_CURSORS,
+  reviewVerticalStops = EMPTY_REVIEW_VERTICAL_STOPS,
   noteGeometry,
   sourceLabel = "",
   stmlEnabled = false,
@@ -304,6 +326,8 @@ export function useTerminalReview({
    * Headless callers get none, which leaves `j` and `k` scrolling the viewport.
    */
   lineCursors?: LineCursor[];
+  /** Mixed rendered line and semantic-note stops used by vertical keyboard movement. */
+  reviewVerticalStops?: ReviewVerticalStop[];
   /**
    * Identity of the review's input as a whole.
    *
@@ -402,9 +426,23 @@ export function useTerminalReview({
   >(null);
   // Monotonic suffix that keeps `user:*` note ids unique within one millisecond.
   const userNoteSequenceRef = useRef(0);
+  const draftNoteSequenceRef = useRef(0);
 
   const keyByFileId = useMemo(
     () => new Map(document.files.map((file) => [file.runtimeId, file.key] as const)),
+    [document],
+  );
+  const semanticFileIdentityByFileId = useMemo(
+    () =>
+      new Map(
+        document.files.map(
+          (file) =>
+            [
+              file.runtimeId,
+              `${file.key}:${file.contentIdentity}:${file.sourceIdentity ?? ""}`,
+            ] as const,
+        ),
+      ),
     [document],
   );
   const fileByKey = useMemo(() => {
@@ -622,15 +660,28 @@ export function useTerminalReview({
   /** Move the current line to a row the reviewer just asked to see, and scroll to it. */
   const revealLineCursor = useCallback(
     (cursor: LineCursor, placement: LineRevealPlacement = "nearest") => {
+      const fileKey = keyByFileId.get(cursor.fileId);
+      if (!fileKey) return;
       applyLineCursor(cursor);
       setLineCursorRevealRequest((current) => ({ id: current.id + 1, placement }));
-      // The line cursor carries its own reveal request; the selection only follows it.
-      anchorSelection(cursor.fileId, cursor.hunkIndex);
+      // A source line and note card are mutually exclusive vertical stops. This viewport-preserving
+      // selection follows the line while clearing any exact semantic note focus.
+      runIntent({
+        type: "selection/select",
+        fileKey,
+        hunkIndex: cursor.hunkIndex,
+        reveal: REVIEW_VIEWPORT_ANCHOR_REVEAL,
+      });
     },
-    [anchorSelection, applyLineCursor],
+    [applyLineCursor, keyByFileId, runIntent],
   );
 
   const reconcileLineCursor = useCallback(() => {
+    if (selectActiveStoredReviewNote(store.getSnapshot())) {
+      applyLineCursor(null);
+      return;
+    }
+
     // Expansion remeasures before its source text loads, so a toggle records what it wants and
     // this waits for the list that actually carries the revealed rows. Each request survives until
     // it resolves or the next toggle replaces it.
@@ -675,7 +726,15 @@ export function useTerminalReview({
     }
 
     applyLineCursor(firstLineCursorInHunk(lineCursors, selectedFileId, selectedHunkIndex));
-  }, [applyLineCursor, lineCursors, revealLineCursor, selectedFileId, selectedHunkIndex]);
+  }, [
+    applyLineCursor,
+    lineCursors,
+    revealLineCursor,
+    selectedFileId,
+    selectedHunkIndex,
+    state.activeNoteId,
+    store,
+  ]);
 
   useEffect(() => {
     reconcileLineCursor();
@@ -684,23 +743,99 @@ export function useTerminalReview({
   /** Adopt a current line the viewport already settled on, without scrolling back to it. */
   const anchorLineCursor = useCallback(
     (cursor: LineCursor) => {
+      const fileKey = keyByFileId.get(cursor.fileId);
+      if (!fileKey) return;
       applyLineCursor(cursor);
-      anchorSelection(cursor.fileId, cursor.hunkIndex);
+      runIntent({
+        type: "selection/select",
+        fileKey,
+        hunkIndex: cursor.hunkIndex,
+        reveal: REVIEW_VIEWPORT_ANCHOR_REVEAL,
+      });
     },
-    [anchorSelection, applyLineCursor],
+    [applyLineCursor, keyByFileId, runIntent],
   );
 
-  /** Move the current line one row through the visible review stream. */
+  /** Read the exact rendered stop that currently owns keyboard focus. */
+  const currentReviewVerticalStop = useCallback((): ReviewVerticalStop | null => {
+    const activeNoteId = selectActiveStoredReviewNote(store.getSnapshot())?.note.id;
+    if (activeNoteId) {
+      return (
+        reviewVerticalStops.find((stop) => stop.kind === "note" && stop.noteId === activeNoteId) ??
+        null
+      );
+    }
+    return lineCursorRef.current ? { kind: "line", cursor: lineCursorRef.current } : null;
+  }, [reviewVerticalStops, store]);
+
+  /** Focus one measured note stop through its current semantic owner. */
+  const focusReviewNoteStop = useCallback(
+    (next: Extract<ReviewVerticalStop, { kind: "note" }>) => {
+      const snapshot = store.getSnapshot();
+      const target = selectNavigableStoredReviewNotes(snapshot).find(
+        (item) => item.entry.note.id === next.noteId,
+      );
+      if (!target || keyByFileId.get(next.fileId) !== target.fileKey) return;
+
+      applyLineCursor(null);
+      runIntent({
+        type: "selection/select",
+        fileKey: target.fileKey,
+        hunkIndex: target.hunkIndex,
+        activeNoteId: next.noteId,
+        reveal: REVIEW_VIEWPORT_ANCHOR_REVEAL,
+      });
+      setLineCursorRevealRequest((request) => ({
+        id: request.id + 1,
+        placement: "nearest",
+        target: { fileId: next.fileId, stableKey: next.stableKey },
+      }));
+    },
+    [applyLineCursor, keyByFileId, runIntent, store],
+  );
+
+  /** Select one visible semantic note as the keyboard action target without scrolling. */
+  const activateNote = useCallback(
+    (noteId: string) => {
+      const target = selectNavigableStoredReviewNotes(store.getSnapshot()).find(
+        (item) => item.entry.note.id === noteId,
+      );
+      if (!target) return;
+
+      applyLineCursor(null);
+      runIntent({
+        type: "selection/select",
+        fileKey: target.fileKey,
+        hunkIndex: target.hunkIndex,
+        activeNoteId: noteId,
+        reveal: REVIEW_VIEWPORT_ANCHOR_REVEAL,
+      });
+    },
+    [applyLineCursor, runIntent, store],
+  );
+
+  /** Move through source lines and semantic note cards in exact rendered order. */
   const moveLineCursor = useCallback(
     (delta: number) => {
-      const nextCursor = findNextLineCursor(lineCursors, lineCursorRef.current, delta);
-      if (!nextCursor) {
-        return;
-      }
-
-      revealLineCursor(nextCursor);
+      const next = findNextReviewVerticalStop(
+        reviewVerticalStops,
+        currentReviewVerticalStop(),
+        delta,
+      );
+      if (!next) return;
+      if (next.kind === "line") revealLineCursor(next.cursor);
+      else focusReviewNoteStop(next);
     },
-    [lineCursors, revealLineCursor],
+    [currentReviewVerticalStop, focusReviewNoteStop, reviewVerticalStops, revealLineCursor],
+  );
+
+  /** Move only through note cards, using the active presentation's visual order. */
+  const moveNoteCursor = useCallback(
+    (delta: number) => {
+      const next = findNextReviewNoteStop(reviewVerticalStops, currentReviewVerticalStop(), delta);
+      if (next) focusReviewNoteStop(next);
+    },
+    [currentReviewVerticalStop, focusReviewNoteStop, reviewVerticalStops],
   );
 
   // `revealLine` is handed to surfaces that hold it across commits — a memoized
@@ -1129,19 +1264,58 @@ export function useTerminalReview({
     [noteGeometry, stmlEnabled],
   );
 
-  /** Resolve one comment request against the review stream, rejecting unknown files. */
+  /** Resolve one root or reply comment against the review stream. */
   const resolveCommentRequest = useCallback(
     (input: CommentToolInput | CommentBatchItemInput) => {
+      if (input.replyTo !== undefined) {
+        if (
+          input.filePath !== undefined ||
+          input.hunkIndex !== undefined ||
+          input.side !== undefined ||
+          input.line !== undefined
+        ) {
+          throw new Error("A reply comment must not include an explicit file or target.");
+        }
+        const replyParent = requireReviewReplyParent(store.getSnapshot(), input.replyTo);
+        const file = fileByKey.get(replyParent.note.fileKey);
+        if (!file) {
+          throw new ReviewIntentPlanningError(
+            "invalid-note-parent",
+            `Review note ${input.replyTo} is no longer available as a reply parent.`,
+          );
+        }
+        const target = {
+          hunkIndex: reviewNoteOwnerHunkIndex(replyParent.note),
+          ...reviewNoteAnchorLine(replyParent.note),
+        };
+        return {
+          file,
+          fileKey: replyParent.note.fileKey,
+          target,
+          replyParent,
+          feedback: markupFeedback(input.markup, target.side),
+        };
+      }
+
+      if (!input.filePath) {
+        throw new Error("A root comment requires a file path.");
+      }
       const file = findDiffFileByPath(allFiles, input.filePath);
       const fileKey = file ? keyByFileId.get(file.id) : undefined;
       if (!file || !fileKey) {
         throw new Error(noDiffFileMatchesMessage(input.filePath));
       }
 
-      const target = resolveCommentTarget(file, input);
-      return { file, fileKey, target, feedback: markupFeedback(input.markup, target.side) };
+      const target = resolveCommentTarget(file, { ...input, filePath: input.filePath });
+      return {
+        file,
+        fileKey,
+        target,
+        replyParent: undefined,
+        feedback: markupFeedback(input.markup, target.side),
+      };
     },
-    [allFiles, keyByFileId, markupFeedback],
+    [allFiles, fileByKey, keyByFileId, markupFeedback, store],
   );
 
   /** Add one live comment, optionally revealing its hunk in the active review. */
@@ -1151,16 +1325,16 @@ export function useTerminalReview({
       commentId: string,
       options?: { reveal?: boolean },
     ): AppliedCommentResult => {
-      const { file, fileKey, target, feedback } = resolveCommentRequest(input);
+      const { file, fileKey, target, replyParent, feedback } = resolveCommentRequest(input);
       const liveComment = buildLiveComment(
-        { ...input, side: target.side, line: target.line },
+        { ...input, filePath: file.path, side: target.side, line: target.line },
         commentId,
         new Date().toISOString(),
         target.hunkIndex,
       );
       store.dispatch({
         type: "notes/add-live",
-        notes: [liveCommentToStoredNote(liveComment, fileKey, file.metadata.hunks)],
+        notes: [liveCommentToStoredNote(liveComment, fileKey, file.metadata.hunks, replyParent)],
       });
 
       if (options?.reveal ?? false) {
@@ -1193,7 +1367,12 @@ export function useTerminalReview({
         return {
           ...resolved,
           liveComment: buildLiveComment(
-            { ...input, side: resolved.target.side, line: resolved.target.line },
+            {
+              ...input,
+              filePath: resolved.file.path,
+              side: resolved.target.side,
+              line: resolved.target.line,
+            },
             `mcp:${requestId}:${index}`,
             createdAt,
             resolved.target.hunkIndex,
@@ -1205,7 +1384,12 @@ export function useTerminalReview({
         store.dispatch({
           type: "notes/add-live",
           notes: prepared.map((entry) =>
-            liveCommentToStoredNote(entry.liveComment, entry.fileKey, entry.file.metadata.hunks),
+            liveCommentToStoredNote(
+              entry.liveComment,
+              entry.fileKey,
+              entry.file.metadata.hunks,
+              entry.replyParent,
+            ),
           ),
         });
       }
@@ -1291,7 +1475,7 @@ export function useTerminalReview({
     (
       fileId = selectedFile?.id,
       hunkIndex = selectedHunkIndex,
-      requestedTarget?: UserNoteLineTarget,
+      requestedTarget?: ReviewNoteTargetV1,
       options?: { preserveViewport?: boolean },
     ): DraftReviewNote | null => {
       const file = allFiles.find((candidate) => candidate.id === fileId);
@@ -1318,7 +1502,9 @@ export function useTerminalReview({
           ...intent,
           ...(options?.preserveViewport ? { reveal: REVIEW_VIEWPORT_ANCHOR_REVEAL } : {}),
         },
-        { draftId: `draft:${file.id}:${hunkIndex}:${Date.now()}` },
+        {
+          draftId: `draft:${file.id}:${hunkIndex}:${Date.now()}-${++draftNoteSequenceRef.current}`,
+        },
       );
       applyLineCursor(
         lineCursorAt(lineCursors, file.id, hunkIndex, { side: draft.side, line: draft.line }),
@@ -1346,7 +1532,9 @@ export function useTerminalReview({
           noteId,
           ...(options?.preserveViewport ? { reveal: REVIEW_VIEWPORT_ANCHOR_REVEAL } : {}),
         },
-        { draftId: `draft:edit:${noteId}:${Date.now()}` },
+        {
+          draftId: `draft:edit:${noteId}:${Date.now()}-${++draftNoteSequenceRef.current}`,
+        },
       );
       const file = fileByKey.get(draft.fileKey);
       if (!file) {
@@ -1374,7 +1562,9 @@ export function useTerminalReview({
           noteId,
           ...(options?.preserveViewport ? { reveal: REVIEW_VIEWPORT_ANCHOR_REVEAL } : {}),
         },
-        { draftId: `draft:reply:${noteId}:${Date.now()}` },
+        {
+          draftId: `draft:reply:${noteId}:${Date.now()}-${++draftNoteSequenceRef.current}`,
+        },
       );
       const file = fileByKey.get(draft.fileKey);
       if (!file) {
@@ -1393,12 +1583,16 @@ export function useTerminalReview({
     [applyLineCursor, fileByKey, runIntent],
   );
 
-  /** Update the body of the active draft note through the shared intent path. */
+  /** Update the expected active draft through the shared intent path. */
   const updateDraftNote = useCallback(
-    (body: string) => {
+    (body: string, expectedDraftId?: string) => {
+      if (expectedDraftId !== undefined && store.getSnapshot().draftNote?.id !== expectedDraftId) {
+        return false;
+      }
       runIntent({ type: "notes/update-draft", body });
+      return true;
     },
-    [runIntent],
+    [runIntent, store],
   );
 
   /** Discard the active human note draft through the shared intent path. */
@@ -1433,8 +1627,13 @@ export function useTerminalReview({
               timestamp,
             },
           );
+    if (saved) {
+      // Saving transfers vertical focus to the note in the same synchronous input turn, before
+      // viewport settlement can re-anchor the source-line cursor that opened the composer.
+      applyLineCursor(null);
+    }
     return saved ? storedNoteToUserNote(saved.note.note, file.path) : null;
-  }, [fileByKey, runIntent, store]);
+  }, [applyLineCursor, fileByKey, runIntent, store]);
 
   /** Remove one in-memory user note by id. */
   const removeUserNote = useCallback(
@@ -1497,6 +1696,7 @@ export function useTerminalReview({
       allFiles.flatMap((file) =>
         (liveCommentsByFileId[file.id] ?? []).map((comment) => ({
           commentId: comment.id,
+          ...(comment.parentId ? { parentId: comment.parentId } : {}),
           filePath: file.path,
           hunkIndex: comment.hunkIndex,
           side: comment.side,
@@ -1512,6 +1712,7 @@ export function useTerminalReview({
 
   return {
     allFiles,
+    semanticFileIdentityByFileId,
     store,
     stateRevision: state.stateRevision,
     draftNote,
@@ -1544,6 +1745,7 @@ export function useTerminalReview({
     addLiveComment,
     addLiveCommentBatch,
     agentLineHighlightsByFileId,
+    activateNote,
     anchorLineCursor,
     anchorSelection,
     clearAgentLineHighlights,
@@ -1551,6 +1753,7 @@ export function useTerminalReview({
     cancelDraftNote,
     clearLiveComments,
     moveLineCursor,
+    moveNoteCursor,
     moveSelection,
     navigateToLocation,
     removeLiveComment,

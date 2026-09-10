@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, mock, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
-import { act, useState } from "react";
+import { act } from "react";
 import { SESSION_BROKER_REGISTRATION_VERSION } from "@hunk/session-broker-core";
 import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
 import type {
@@ -23,10 +23,11 @@ import {
 import { createEmptyExtensionLoadResult } from "../extensions/types";
 import { AGENT_SKILL_COMMAND, AGENT_SKILL_PROMPT } from "./components/chrome/AgentSkillDialog";
 import { App } from "./App";
+import { ThemeController } from "./theme/controller";
 import { availableThemes, resolveTheme } from "./themes";
 
 const { loadAppBootstrap } = await import("../core/changeset/loaders");
-const { AppHost } = await import("./AppHost");
+const { TestAppHost: AppHost } = await import("../../../../test/helpers/app-host");
 
 const TEST_KEY_PAGE_UP = "\x1B[5~";
 const TEST_KEY_PAGE_DOWN = "\x1B[6~";
@@ -155,6 +156,18 @@ function createBootstrap(initialMode: LayoutMode = "split", pager = false): AppB
     ],
     initialMode,
     pager,
+  });
+}
+
+/** Build nested files that exercise the wide sidebar's directory projection. */
+function createTreeSidebarBootstrap(): AppBootstrap {
+  return createTestVcsAppBootstrap({
+    changesetId: "changeset:tree-sidebar-interactions",
+    files: [
+      createTestDiffFile("alpha", "src/ui/alpha.ts", "a\n", "aa\n"),
+      createTestDiffFile("beta", "src/core/beta.ts", "b\n", "bb\n"),
+      createTestDiffFile("root", "README.md", "r\n", "rr\n"),
+    ],
   });
 }
 
@@ -362,8 +375,8 @@ function createRapidViewportLoopBootstrap(): AppBootstrap {
   return createTestVcsAppBootstrap({
     changesetId: "changeset:rapid-viewport",
     files,
-    vcsOptions: { mode: "stack", agentNotes: true },
-    initialMode: "stack",
+    vcsOptions: { mode: "unified", agentNotes: true },
+    initialMode: "unified",
     initialShowAgentNotes: true,
   });
 }
@@ -618,7 +631,7 @@ describe("App interactions", () => {
           },
         },
       ],
-      initialMode: "stack",
+      initialMode: "unified",
     });
 
     const setup = await testRender(<AppHost bootstrap={bootstrap} />, { width: 240, height: 24 });
@@ -664,7 +677,7 @@ describe("App interactions", () => {
       await flush(setup);
 
       // Regression coverage for issue #233 / PR #242. This intentionally combines the inputs
-      // that made the old React/OpenTUI feedback loop reproducible: stack layout, many hunks,
+      // that made the old React/OpenTUI feedback loop reproducible: unified layout, many hunks,
       // visible agent notes, repeated next-hunk jumps, and bursty wheel scrolling.
       for (let batch = 0; batch < 2; batch += 1) {
         await act(async () => {
@@ -1108,15 +1121,17 @@ describe("App interactions", () => {
     bootstrap.initialTheme = custom.id;
     bootstrap.customThemes = [custom];
     bootstrap.extensions = extensions;
+    const themeController = new ThemeController({
+      initialTheme: custom.id,
+      customThemes: [custom],
+    });
     let replaceCustomThemes!: (themes: AppBootstrap["customThemes"]) => void;
 
     function ThemeEventProbe() {
-      const [currentBootstrap, setCurrentBootstrap] = useState(bootstrap);
-      replaceCustomThemes = (themes) =>
-        setCurrentBootstrap((current) => ({ ...current, customThemes: themes }));
+      replaceCustomThemes = (themes) => themeController.replaceCustomThemes(themes ?? []);
       return (
         <App
-          bootstrap={currentBootstrap}
+          bootstrap={bootstrap}
           onRegisterWorkspaceRefreshRequest={() => () => {}}
           onReloadSession={async () => {
             throw new Error("Theme event test does not reload the session.");
@@ -1131,6 +1146,7 @@ describe("App interactions", () => {
             await write();
             return true;
           }}
+          themeController={themeController}
         />
       );
     }
@@ -1630,10 +1646,6 @@ describe("App interactions", () => {
       });
       await flush(setup);
       await act(async () => {
-        await setup.mockInput.pressArrow("down");
-      });
-      await flush(setup);
-      await act(async () => {
         await setup.mockInput.pressEnter();
       });
       await flush(setup);
@@ -1648,8 +1660,8 @@ describe("App interactions", () => {
     }
   });
 
-  test("reload shortcut reloads the current file diff from disk", async () => {
-    const dir = mkdtempSync(join(process.cwd(), ".hunk-reload-"));
+  test("reload shortcut refreshes direct files launched outside a repository", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "hunk-reload-"));
     const left = join(dir, "before.ts");
     const right = join(dir, "after.ts");
 
@@ -2279,7 +2291,7 @@ describe("App interactions", () => {
     }
   });
 
-  test("layout toggles preserve the current viewport anchor across split and stack", async () => {
+  test("layout toggles preserve the current viewport anchor across split and unified", async () => {
     const setup = await testRender(<AppHost bootstrap={createLineScrollBootstrap()} />, {
       width: 220,
       height: 12,
@@ -2309,7 +2321,7 @@ describe("App interactions", () => {
       expect(anchoredLineNumber).not.toBeNull();
 
       await act(async () => {
-        await setup.mockInput.typeText("2");
+        await setup.mockInput.typeText("1");
       });
       await flush(setup);
       await act(async () => {
@@ -2322,7 +2334,7 @@ describe("App interactions", () => {
       expect(firstVisibleSourceLineNumber(frame)).toBe(anchoredLineNumber);
 
       await act(async () => {
-        await setup.mockInput.typeText("1");
+        await setup.mockInput.typeText("2");
       });
       await flush(setup);
       await act(async () => {
@@ -2965,7 +2977,7 @@ describe("App interactions", () => {
 
   test("coalesced line movement opens a draft at the latest cursor without moving its row", async () => {
     const setup = await testRender(
-      <AppHost bootstrap={createLineScrollBootstrap(false, "stack")} />,
+      <AppHost bootstrap={createLineScrollBootstrap(false, "unified")} />,
       { width: 120, height: 26 },
     );
 
@@ -3651,6 +3663,51 @@ describe("App interactions", () => {
     }
   });
 
+  test("clicking a tree directory collapses and expands its file rows", async () => {
+    const setup = await testRender(<AppHost bootstrap={createTreeSidebarBootstrap()} />, {
+      width: 220,
+      height: 14,
+    });
+
+    try {
+      await flush(setup);
+
+      let frame = setup.captureCharFrame();
+      const directoryY = frame
+        .split("\n")
+        .findIndex((line) => line.split("│", 1)[0]?.includes("⌄ src/"));
+      expect(directoryY).toBeGreaterThan(0);
+      expect((frame.match(/alpha\.ts/g) ?? []).length).toBe(2);
+      expect((frame.match(/beta\.ts/g) ?? []).length).toBe(2);
+
+      await act(async () => {
+        await setup.mockMouse.click(5, directoryY);
+      });
+      await flush(setup);
+
+      frame = setup.captureCharFrame();
+      expect(frame.split("\n")[directoryY]).toContain("› src/");
+      expect(frame.split("\n")[directoryY]?.split("│", 1)[0]).toContain("2 files");
+      expect((frame.match(/alpha\.ts/g) ?? []).length).toBe(1);
+      expect((frame.match(/beta\.ts/g) ?? []).length).toBe(1);
+      expect((frame.match(/README\.md/g) ?? []).length).toBe(2);
+
+      await act(async () => {
+        await setup.mockMouse.click(5, directoryY);
+      });
+      await flush(setup);
+
+      frame = setup.captureCharFrame();
+      expect(frame.split("\n")[directoryY]).toContain("⌄ src/");
+      expect((frame.match(/alpha\.ts/g) ?? []).length).toBe(2);
+      expect((frame.match(/beta\.ts/g) ?? []).length).toBe(2);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("clicking a sidebar file makes that file own the top of the review pane", async () => {
     const setup = await testRender(<AppHost bootstrap={createTwoFileHunkBootstrap()} />, {
       width: 220,
@@ -3729,7 +3786,7 @@ describe("App interactions", () => {
       let frame = await waitForFrame(setup, (nextFrame) =>
         nextFrame.includes("Save view preferences?"),
       );
-      expect(frame).toContain("You changed 1 view setting during this review.");
+      expect(frame).toContain("You changed 1 view setting during this session.");
       expect(frame).toContain("q discard");
       expect(frame).toContain("n never ask");
       expect(frame).toContain('- theme = "github-dark-default"');

@@ -327,7 +327,8 @@ export const SESSION_AGENT_COMMANDS = {
     summary: "attach one live inline review note",
     positionals: [{ token: "[sessionId]" }],
     options: [
-      { ...diffFileOption, required: true },
+      diffFileOption,
+      { flag: "--reply-to <note-id>", description: "reply to an existing note at its anchor" },
       { flag: "--summary <text>", description: "short review note", required: true },
       repoOption,
       oldLineOption,
@@ -341,12 +342,12 @@ export const SESSION_AGENT_COMMANDS = {
       { flag: "--focus", description: "add the note and focus the viewport on it" },
       jsonOption,
     ],
-    constraints: [COMMENT_TARGET_CONSTRAINT],
     synopsis: [
-      `hunk session comment add ${SESSION_SELECTOR_SYNOPSIS} --file <path> ${constraintSynopsis(COMMENT_TARGET_CONSTRAINT)} --summary <text> [--rationale <text>] [--author <name>] [--markup <stml>] [--focus] [--json]`,
+      `hunk session comment add ${SESSION_SELECTOR_SYNOPSIS} (--reply-to <note-id> | --file <path> ${constraintSynopsis(COMMENT_TARGET_CONSTRAINT)}) --summary <text> [--rationale <text>] [--author <name>] [--markup <stml>] [--focus] [--json]`,
     ],
     examples: [
       'hunk session comment add --repo . --file README.md --new-line 103 --summary "Tighten this wording"',
+      'hunk session comment add --repo . --reply-to user:123 --summary "Addressed in the latest revision"',
     ],
   },
   "comment-apply": {
@@ -375,9 +376,14 @@ export const SESSION_AGENT_COMMANDS = {
       '        "summary": "Explain this hunk",',
       '        "rationale": "Optional detail",',
       '        "author": "Pi"',
+      "      },",
+      "      {",
+      '        "replyTo": "user:123",',
+      '        "summary": "Addressed in the latest revision"',
       "      }",
       "    ]",
       "  }",
+      "Each item is either a reply with `replyTo`, or a root with `filePath` and one target.",
     ],
   },
   "comment-list": {

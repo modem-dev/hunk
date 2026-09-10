@@ -1,5 +1,5 @@
 /**
- * Non-interactive `hunk pager` renderer for captured pager hosts.
+ * Non-interactive diff renderer for pipelines and captured pager hosts.
  *
  * Hunk's normal pager integration is a full-screen interactive TUI: Git pipes patch text on stdin,
  * and Hunk opens the controlling terminal for keyboard/mouse input. That works for `core.pager`,
@@ -7,7 +7,8 @@
  * constrained environment (notably `TERM=dumb`). Launching the TUI there either hangs, corrupts the
  * host panel with alternate-screen control sequences, or leaves no usable diff output.
  *
- * This module is the fallback output adapter for those contexts. It intentionally reuses Hunk's
+ * This module is the output adapter for those contexts and for ordinary commands whose stdout is
+ * captured. It intentionally reuses Hunk's
  * normal parse/highlight/render planning stack (`loadAppBootstrap`, Pierre metadata,
  * `loadHighlightedDiff`, and Pierre row builders) and only serializes the resulting rows to ANSI
  * text. Keep it as a thin adapter: do not introduce a second diff parser or a parallel review model
@@ -17,12 +18,12 @@
 import { loadAppBootstrap } from "../core/changeset/loaders";
 import { reviewEmptyDiffReason, type ReviewEmptyDiffReason } from "../core/review/document";
 import { DEFAULT_TAB_WIDTH } from "../core/run/tabWidth";
-import type { DiffFile } from "../core/changeset/model";
+import type { Changeset, DiffFile } from "../core/changeset/model";
 import type { CommonOptions } from "../core/run/commandInputs";
 import type { NamedCustomThemeConfig } from "../extension-api/types";
 import {
   buildSplitRows,
-  buildStackRows,
+  buildUnifiedRows,
   loadHighlightedDiff,
   type DiffRow,
   type RenderSpan,
@@ -36,11 +37,11 @@ import {
   splitGutterText,
   splitLeftRailColor,
   splitRightRailColor,
-  stackCellPalette,
-  stackGutterText,
-  stackRailColor,
+  unifiedCellPalette,
+  unifiedGutterText,
+  unifiedRailColor,
 } from "./diff/rowStyle";
-import { sliceTextByWidth } from "./lib/text";
+import { measureTextWidth, sliceTextByWidth } from "./lib/text";
 import {
   formatTerminalPath,
   sanitizeTerminalLine,
@@ -87,18 +88,25 @@ function serializeSpans(spans: RenderSpan[], rowBg: string) {
   return spans.map((span) => colorText(span.text, span.fg, span.bg ?? rowBg)).join("");
 }
 
-/** Serialize spans into one fixed-width pane so split rows keep both sides aligned. */
-function serializeSpansFixedWidth(spans: RenderSpan[], rowBg: string, width: number) {
+/** Serialize one split pane, clipping for terminal hosts but preserving redirected source lines. */
+function serializeSplitSpans(
+  spans: RenderSpan[],
+  rowBg: string,
+  width: number,
+  preserveFullLines: boolean,
+) {
   let remaining = Math.max(0, width);
   let usedWidth = 0;
   let output = "";
 
   for (const span of spans) {
-    if (remaining <= 0) {
+    if (!preserveFullLines && remaining <= 0) {
       break;
     }
 
-    const visible = sliceTextByWidth(span.text, 0, remaining);
+    const visible = preserveFullLines
+      ? { text: span.text, width: measureTextWidth(span.text) }
+      : sliceTextByWidth(span.text, 0, remaining);
     if (visible.text) {
       output += colorText(visible.text, span.fg, span.bg ?? rowBg);
       usedWidth += visible.width;
@@ -124,12 +132,12 @@ function fixedWidthText(text: string, width: number) {
   return `${visible.text}${" ".repeat(Math.max(0, width - visible.width))}`;
 }
 
-function staticStackGutterText(
-  cell: Extract<DiffRow, { type: "stack-line" }>["cell"],
+function staticUnifiedGutterText(
+  cell: Extract<DiffRow, { type: "unified-line" }>["cell"],
   lineNumberWidth: number,
   showLineNumbers: boolean,
 ) {
-  return stackGutterText(cell, lineNumberWidth, showLineNumbers).padEnd(
+  return unifiedGutterText(cell, lineNumberWidth, showLineNumbers).padEnd(
     showLineNumbers ? lineNumberWidth * 2 + 5 : 2,
   );
 }
@@ -144,8 +152,8 @@ function staticSplitGutterText(
   );
 }
 
-/** Render one non-interactive stacked diff row as ANSI text. */
-function renderStaticStackRow(
+/** Render one non-interactive unified diff row as ANSI text. */
+function renderStaticUnifiedRow(
   row: DiffRow,
   theme: AppTheme,
   lineNumberWidth: number,
@@ -161,14 +169,14 @@ function renderStaticStackRow(
       : renderHeaderLikeRow(row.text, theme.badgeNeutral, theme.panelAlt, theme);
   }
 
-  if (row.type !== "stack-line") {
+  if (row.type !== "unified-line") {
     return "";
   }
 
   const { cell } = row;
-  const palette = stackCellPalette(cell.kind, theme, cell.moveKind);
-  return `${colorText(marker(), stackRailColor(cell.kind, theme, true), theme.panel)}${colorText(
-    staticStackGutterText(cell, lineNumberWidth, options.lineNumbers !== false),
+  const palette = unifiedCellPalette(cell.kind, theme, cell.moveKind);
+  return `${colorText(marker(), unifiedRailColor(cell.kind, theme, true), theme.panel)}${colorText(
+    staticUnifiedGutterText(cell, lineNumberWidth, options.lineNumbers !== false),
     palette.numberColor,
     palette.gutterBg,
   )}${serializeSpans(cell.spans, palette.contentBg)}${fillRemainingLine(palette.contentBg)}`;
@@ -181,6 +189,7 @@ function renderStaticSplitCell(
   theme: AppTheme,
   lineNumberWidth: number,
   options: CommonOptions,
+  preserveFullLines: boolean,
 ) {
   const palette = splitCellPalette(cell.kind, theme, cell.moveKind);
   const { gutterWidth, contentWidth } = resolveSplitCellGeometry(
@@ -202,7 +211,7 @@ function renderStaticSplitCell(
     gutterText,
     palette.numberColor,
     palette.gutterBg,
-  )}${serializeSpansFixedWidth(cell.spans, palette.contentBg, contentWidth)}`;
+  )}${serializeSplitSpans(cell.spans, palette.contentBg, contentWidth, preserveFullLines)}`;
 }
 
 /** Render one non-interactive split diff row as ANSI text. */
@@ -212,6 +221,7 @@ function renderStaticSplitRow(
   lineNumberWidth: number,
   options: CommonOptions,
   width: number,
+  preserveFullLines: boolean,
 ) {
   if (row.type === "collapsed") {
     return renderHeaderLikeRow(`··· ${row.text} ···`, theme.muted, theme.panelAlt, theme);
@@ -235,13 +245,22 @@ function renderStaticSplitRow(
     theme,
     lineNumberWidth,
     options,
-  )}${renderStaticSplitCell(row.right, "right", rightWidth, theme, lineNumberWidth, options)}`;
+    preserveFullLines,
+  )}${renderStaticSplitCell(
+    row.right,
+    "right",
+    rightWidth,
+    theme,
+    lineNumberWidth,
+    options,
+    preserveFullLines,
+  )}`;
 }
 
 function maxLineNumberWidth(file: DiffFile, rows: DiffRow[]) {
   let max = 1;
   for (const row of rows) {
-    if (row.type === "stack-line") {
+    if (row.type === "unified-line") {
       max = Math.max(
         max,
         row.cell.oldLineNumber ? String(row.cell.oldLineNumber).length : 1,
@@ -341,9 +360,9 @@ function fileModeText(file: DiffFile) {
 }
 
 function resolveStaticLayout(options: CommonOptions) {
-  // Static pager output has historically defaulted to stack rows even on wide terminals.
+  // Static pager output has historically defaulted to unified rows even on wide terminals.
   // Honor only an explicit split request here so captured hosts avoid surprise layout changes.
-  return options.mode === "split" ? "split" : "stack";
+  return options.mode === "split" ? "split" : "unified";
 }
 
 /** Format one parsed diff file for static pager hosts like LazyGit's diff panel. */
@@ -352,6 +371,7 @@ async function renderStaticFile(
   theme: AppTheme,
   options: CommonOptions,
   width: number,
+  preserveFullLines: boolean,
 ) {
   const highlighted =
     file.isBinary || file.isTooLarge ? null : await loadHighlightedDiff(file, theme);
@@ -360,7 +380,7 @@ async function renderStaticFile(
   const rows =
     layout === "split"
       ? buildSplitRows(file, highlighted, theme, tabWidth)
-      : buildStackRows(file, highlighted, theme, tabWidth);
+      : buildUnifiedRows(file, highlighted, theme, tabWidth);
   const lineNumberWidth = maxLineNumberWidth(file, rows);
   const stats = `${colorText(`+${file.stats.additions}${file.statsTruncated ? "+" : ""}`, theme.badgeAdded)} ${colorText(`-${file.stats.deletions}`, theme.badgeRemoved)}`;
   const status = colorText(`${fileStatusLabel(file)}${fileModeText(file)}`, theme.muted);
@@ -375,8 +395,8 @@ async function renderStaticFile(
     ...rows
       .map((row) =>
         layout === "split"
-          ? renderStaticSplitRow(row, theme, lineNumberWidth, options, width)
-          : renderStaticStackRow(row, theme, lineNumberWidth, options),
+          ? renderStaticSplitRow(row, theme, lineNumberWidth, options, width, preserveFullLines)
+          : renderStaticUnifiedRow(row, theme, lineNumberWidth, options),
       )
       .filter(Boolean),
   ].join("\n");
@@ -394,6 +414,8 @@ export interface StaticDiffPagerDeps {
   customThemes?: readonly NamedCustomThemeConfig[];
   stderr?: Pick<NodeJS.WriteStream, "write">;
   terminalColumns?: number;
+  color?: boolean;
+  preserveFullLines?: boolean;
 }
 
 function resolveStaticWidth(deps: StaticDiffPagerDeps) {
@@ -407,6 +429,27 @@ function warnFallback(deps: StaticDiffPagerDeps, reason: string) {
   deps.stderr?.write(
     `hunk: static pager render failed; falling back to raw diff (${sanitizeTerminalLine(reason)}).\n`,
   );
+}
+
+/** Render one normalized changeset without taking over the terminal screen. */
+export async function renderStaticDiff(
+  changeset: Changeset,
+  options: CommonOptions = {},
+  deps: StaticDiffPagerDeps = {},
+) {
+  const resolvedTheme = resolveTheme(options.theme, null, deps.customThemes);
+  const theme = options.transparentBackground
+    ? withTransparentSurfaces(resolvedTheme)
+    : resolvedTheme;
+  const width = resolveStaticWidth(deps);
+  const rendered = await Promise.all(
+    changeset.files.map((file) =>
+      renderStaticFile(file, theme, options, width, deps.preserveFullLines === true),
+    ),
+  );
+  const output = rendered.length > 0 ? `${rendered.join("\n\n")}\n` : "";
+
+  return deps.color === false ? sanitizeTerminalText(output) : output;
 }
 
 /** Render diff-like pager stdin as colored static output, falling back to the original patch on failure. */
@@ -425,21 +468,12 @@ export async function renderStaticDiffPager(
         pager: true,
       },
     });
-    const resolvedTheme = resolveTheme(options.theme, null, deps.customThemes);
-    const theme = options.transparentBackground
-      ? withTransparentSurfaces(resolvedTheme)
-      : resolvedTheme;
-    const width = resolveStaticWidth(deps);
-    const rendered = await Promise.all(
-      bootstrap.changeset.files.map((file) => renderStaticFile(file, theme, options, width)),
-    );
-
-    if (rendered.length === 0) {
+    if (bootstrap.changeset.files.length === 0) {
       warnFallback(deps, "no files rendered");
       return sanitizeTerminalText(text);
     }
 
-    return `${rendered.join("\n\n")}\n`;
+    return await renderStaticDiff(bootstrap.changeset, options, deps);
   } catch (error) {
     warnFallback(deps, fallbackMessage(error));
     return sanitizeTerminalText(text);

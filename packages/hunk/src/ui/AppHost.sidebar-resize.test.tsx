@@ -9,7 +9,7 @@ import {
 } from "../../../../test/helpers/diff-helpers";
 import { createEmptyExtensionLoadResult } from "../extensions/types";
 
-const { AppHost } = await import("./AppHost");
+const { TestAppHost: AppHost } = await import("../../../../test/helpers/app-host");
 
 /** A wide terminal so the responsive layout always shows the resizable sidebar. */
 const WIDE = { width: 240, height: 24 };

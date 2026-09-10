@@ -8,7 +8,7 @@ import type { AppBootstrap } from "../core/bootstrap";
 import { createTestVcsAppBootstrap } from "../../../../test/helpers/app-bootstrap";
 import { createTestDiffFile, lines } from "../../../../test/helpers/diff-helpers";
 
-const { AppHost } = await import("./AppHost");
+const { TestAppHost: AppHost } = await import("../../../../test/helpers/app-host");
 
 const WIDE = { width: 200, height: 24 };
 
@@ -49,7 +49,7 @@ function mockSpawnSync(implementation: typeof Bun.spawnSync) {
 function createEditorBootstrap(sourceLabel: string): AppBootstrap {
   return createTestVcsAppBootstrap({
     changesetId: "changeset:edit-in-editor",
-    initialMode: "stack",
+    initialMode: "unified",
     sourceLabel,
     files: [
       createTestDiffFile({

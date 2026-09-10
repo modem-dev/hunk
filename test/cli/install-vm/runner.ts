@@ -82,12 +82,16 @@ interface HostCommandRunnerDependencies {
 /** Runs host commands asynchronously while forwarding interrupts and bounding shutdown. */
 export class InstallVmCommandRunner {
   private activeProcess: HostCommandProcess | undefined;
+  private activeTerminationGraceMs = TERMINATION_GRACE_MS;
   private interruptedExitCode: number | undefined;
   private terminationTimer: unknown;
   private readonly dependencies: HostCommandRunnerDependencies;
 
+  private readonly handleSighup = () => this.interrupt("SIGHUP", 129);
   private readonly handleSigint = () => this.interrupt("SIGINT", 130);
+  private readonly handleSigquit = () => this.interrupt("SIGQUIT", 131);
   private readonly handleSigterm = () => this.interrupt("SIGTERM", 143);
+  private readonly handleSigwinch = () => this.activeProcess?.kill("SIGWINCH");
 
   /** Create a runner with injectable process and timer operations for deterministic tests. */
   constructor(dependencies: Partial<HostCommandRunnerDependencies> = {}) {
@@ -101,14 +105,20 @@ export class InstallVmCommandRunner {
 
   /** Begin forwarding host interrupts to the active command. */
   start() {
+    process.once("SIGHUP", this.handleSighup);
     process.once("SIGINT", this.handleSigint);
+    process.once("SIGQUIT", this.handleSigquit);
     process.once("SIGTERM", this.handleSigterm);
+    process.on("SIGWINCH", this.handleSigwinch);
   }
 
   /** Stop forwarding interrupts and cancel any pending forced termination. */
   stop() {
+    process.off("SIGHUP", this.handleSighup);
     process.off("SIGINT", this.handleSigint);
+    process.off("SIGQUIT", this.handleSigquit);
     process.off("SIGTERM", this.handleSigterm);
+    process.off("SIGWINCH", this.handleSigwinch);
     if (this.terminationTimer !== undefined) this.dependencies.cancel(this.terminationTimer);
     this.terminationTimer = undefined;
   }
@@ -124,7 +134,7 @@ export class InstallVmCommandRunner {
       }
       this.terminationTimer = this.dependencies.schedule(
         () => this.activeProcess?.kill("SIGKILL"),
-        TERMINATION_GRACE_MS,
+        this.activeTerminationGraceMs,
       );
     }
   }
@@ -132,13 +142,20 @@ export class InstallVmCommandRunner {
   /** Throw the conventional exit code after an interrupt reaches the runner. */
   checkInterrupted() {
     if (this.interruptedExitCode !== undefined) {
-      throw new InstallVmCommandError("Install VM suite interrupted.", this.interruptedExitCode);
+      throw new InstallVmCommandError("Install VM command interrupted.", this.interruptedExitCode);
     }
   }
 
   /** Run one host command with inherited I/O and a bounded termination sequence. */
-  async run(command: string[], options: { cwd?: string; timeoutMs?: number } = {}) {
+  async run(
+    command: string[],
+    options: { cwd?: string; timeoutMs?: number | false; terminationGraceMs?: number } = {},
+  ) {
     this.checkInterrupted();
+    const terminationGraceMs = options.terminationGraceMs ?? TERMINATION_GRACE_MS;
+    if (!Number.isFinite(terminationGraceMs) || terminationGraceMs <= 0) {
+      throw new Error("Host command termination grace must be a positive finite duration.");
+    }
     const proc = this.dependencies.spawn(command, {
       cwd: options.cwd ?? repoRoot,
       env: process.env,
@@ -147,26 +164,31 @@ export class InstallVmCommandRunner {
       stderr: "inherit",
     });
     this.activeProcess = proc;
+    this.activeTerminationGraceMs = terminationGraceMs;
     let timedOut = false;
-    const timeout = this.dependencies.schedule(() => {
-      timedOut = true;
-      proc.kill("SIGTERM");
-      this.terminationTimer = this.dependencies.schedule(
-        () => proc.kill("SIGKILL"),
-        TERMINATION_GRACE_MS,
-      );
-    }, options.timeoutMs ?? COMMAND_TIMEOUT_MS);
+    const timeout =
+      options.timeoutMs === false
+        ? undefined
+        : this.dependencies.schedule(() => {
+            timedOut = true;
+            proc.kill("SIGTERM");
+            this.terminationTimer = this.dependencies.schedule(
+              () => proc.kill("SIGKILL"),
+              terminationGraceMs,
+            );
+          }, options.timeoutMs ?? COMMAND_TIMEOUT_MS);
 
     let exitCode: number;
     try {
       exitCode = await proc.exited;
     } finally {
-      this.dependencies.cancel(timeout);
+      if (timeout !== undefined) this.dependencies.cancel(timeout);
       if (this.terminationTimer !== undefined) {
         this.dependencies.cancel(this.terminationTimer);
       }
       this.terminationTimer = undefined;
       this.activeProcess = undefined;
+      this.activeTerminationGraceMs = TERMINATION_GRACE_MS;
     }
 
     this.checkInterrupted();
@@ -183,11 +205,13 @@ export class InstallVmCommandRunner {
 }
 
 /** Compute a stable local image tag from every checked-in controller input. */
-function controllerImageTag() {
+export function controllerImageTag() {
   const hash = createHash("sha256");
   const files = [
+    path.join(harnessRoot, ".dockerignore"),
     path.join(harnessRoot, "Dockerfile"),
     path.join(harnessRoot, "controller.sh"),
+    path.join(harnessRoot, "vm-shell-controller.sh"),
     path.join(harnessRoot, "pins.json"),
     path.join(harnessRoot, "scenarios.json"),
   ];

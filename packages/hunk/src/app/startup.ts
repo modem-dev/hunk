@@ -30,6 +30,7 @@ import { parseCli } from "./cli";
 import { resolveSessionSelectorBoundary } from "./sessionSelector";
 import type { VcsCatalog } from "../core/vcs/types";
 import type { ExtensionReviewDescriptor } from "../extension-api/types";
+import type { InteractiveSessionInitialization } from "../core/session/initialization";
 
 /**
  * Load the bundled VCS catalog, memoized per call to `prepareStartupPlan`.
@@ -80,6 +81,10 @@ export type StartupPlan =
       customThemes?: AppBootstrap["customThemes"];
     }
   | {
+      kind: "static-diff";
+      bootstrap: AppBootstrap;
+    }
+  | {
       kind: "markup-render";
       input: MarkupRenderCommandInput;
     }
@@ -103,6 +108,7 @@ export type StartupPlan =
       bootstrap: AppBootstrap;
       cliInput: CliInput;
       controllingTerminal: ControllingTerminal | null;
+      initialization: InteractiveSessionInitialization;
     };
 
 function isCapturedPagerHost(env: NodeJS.ProcessEnv) {
@@ -535,6 +541,11 @@ export async function prepareStartupPlan(
 
   if (cliInput.options.watch) {
     await whileStartupOwnsExtensions(() => {
+      if (!stdoutIsTTY) {
+        throw new HunkUserError("`--watch` requires an interactive output terminal.", [
+          "Remove `--watch` when redirecting or piping Hunk's output.",
+        ]);
+      }
       assertReliableWatchRuntime(bunVersion);
       if (!canReloadInput(cliInput)) {
         throw new HunkUserError(
@@ -627,9 +638,19 @@ export async function prepareStartupPlan(
     await retirePreloadedExtensions();
     throw error;
   }
-  const { applied, bootstrap, input: resolvedInput, sessionThemes, sessionVcs } = preparedSession;
+  const {
+    applied,
+    bootstrap,
+    input: resolvedInput,
+    sessionThemes,
+    sessionVcs,
+    initialization,
+  } = preparedSession;
   cliInput = resolvedInput;
-  if (delegatedReview) bootstrap.review = delegatedReview;
+  if (delegatedReview) {
+    bootstrap.review = delegatedReview;
+    bootstrap.reviewSource = "caller";
+  }
 
   // Built after adapter resolution so the notice names the backend the session really loads with.
   const unknownVcsNotices =
@@ -661,14 +682,23 @@ export async function prepareStartupPlan(
       : configured.startupNotices,
     extensionResult,
   );
-  controllingTerminal ??= usesPipedPatchInputImpl(cliInput) ? openControllingTerminalImpl() : null;
+  controllingTerminal ??=
+    stdoutIsTTY && usesPipedPatchInputImpl(cliInput) ? openControllingTerminalImpl() : null;
 
-  // The mounted app now owns the registry and performs its one eventual shutdown.
+  // The selected runner now owns the registry and performs its one eventual shutdown.
   preloadedExtensions = undefined;
+  if (!stdoutIsTTY) {
+    return {
+      kind: "static-diff",
+      bootstrap,
+    };
+  }
+
   return {
     kind: "app",
     bootstrap,
     cliInput,
     controllingTerminal,
+    initialization,
   };
 }

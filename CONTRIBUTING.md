@@ -85,6 +85,20 @@ bun run packages/hunk/src/main.tsx -- diff
 
 Nix users can run `nix develop` or use [direnv](https://direnv.net/) to enter the development shell.
 
+## Repository architecture
+
+`packages/hunk/` is the shipped application. Private VCS provider, VCS helper, session-broker, and
+terminal-video workspaces keep their implementation dependencies separate from Hunk internals.
+Start with:
+
+- [`docs/source-architecture.md`](docs/source-architecture.md) for package and source ownership;
+- [`docs/module-boundaries.md`](docs/module-boundaries.md) for legal import direction;
+- [`docs/extension-architecture.md`](docs/extension-architecture.md) for extension registries and lifecycle; and
+- [`test/README.md`](test/README.md) for test placement and command coverage.
+
+Run the checks for the area you changed; dedicated review-conformance, broker, PTY, and TTY suites
+are not all part of `bun run test`. The test layout lists their commands.
+
 ## Show UI changes
 
 For user-visible terminal changes, include visual evidence in the pull request.
@@ -95,7 +109,7 @@ For user-visible terminal changes, include visual evidence in the pull request.
 - Demonstrate keyboard and mouse behavior when the change affects an action that supports both.
 - Use the real Hunk TUI rather than a mockup or redirected stdout capture.
 
-The source checkout includes [`skills/launch-video/SKILL.md`](skills/launch-video/SKILL.md), which generates polished videos from real PTY-driven Hunk frames. If you use a coding agent, ask it to follow the skill's **single-feature recipe**. The pipeline is Unix-only and requires Chromium and ffmpeg; screenshots are fine when it is not practical to run.
+The source checkout includes [`skills/hunk-launch-video/SKILL.md`](skills/hunk-launch-video/SKILL.md), which generates polished videos from real PTY-driven Hunk frames. If you use a coding agent, ask it to follow the skill's **single-feature recipe**. The pipeline is Unix-only and requires Chromium and ffmpeg; screenshots are fine when it is not practical to run.
 
 Upload media to the pull request. Do not commit `.video-work/`, captured frames, or encoded videos.
 

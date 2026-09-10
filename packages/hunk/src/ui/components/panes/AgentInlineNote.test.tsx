@@ -26,6 +26,184 @@ describe("shortReviewNoteAge", () => {
   });
 });
 
+test("AgentInlineNote connects a ranged card to the external annotation rail", async () => {
+  const setup = await testRender(
+    <AgentInlineNote
+      annotation={{ source: "user", newRange: [2, 4], summary: "Connected range" }}
+      anchorSide="new"
+      layout="unified"
+      rangeGuideConnection="terminate"
+      theme={theme}
+      width={60}
+    />,
+    { width: 61, height: 5 },
+  );
+
+  try {
+    await act(async () => {
+      await setup.renderOnce();
+    });
+    const top = setup.captureCharFrame().split("\n")[0] ?? "";
+
+    expect(top).toContain("┬");
+    expect(top[60]).toBe("┘");
+  } finally {
+    await act(async () => {
+      setup.renderer.destroy();
+    });
+  }
+});
+
+test("AgentInlineNote persistently identifies the active note and resolved action keys", async () => {
+  const setup = await testRender(
+    <AgentInlineNote
+      annotation={{ source: "user", newRange: [2, 2], summary: "Keyboard target" }}
+      active={true}
+      actionKeyLabels={{ delete: "D", edit: "Alt+E", reply: "R" }}
+      actions={{ onDelete: () => {}, onEdit: () => {}, onReply: () => {} }}
+      anchorSide="new"
+      layout="unified"
+      theme={theme}
+      width={60}
+    />,
+    { width: 61, height: 5 },
+  );
+
+  try {
+    await act(async () => {
+      await setup.renderOnce();
+    });
+    const frame = setup.captureCharFrame();
+
+    expect(frame).toContain("●");
+    expect(frame).toContain("R reply");
+    expect(frame).toContain("Alt+E edit");
+    expect(frame).toContain("D delete");
+  } finally {
+    await act(async () => {
+      setup.renderer.destroy();
+    });
+  }
+});
+
+test("AgentInlineNote keeps hover actions pointer-only and activates when clicked", async () => {
+  function HoverHarness() {
+    const [active, setActive] = useState(false);
+    return (
+      <AgentInlineNote
+        annotation={{ source: "user", newRange: [2, 2], summary: "Hover target" }}
+        active={active}
+        actionKeyLabels={active ? { delete: "D", edit: "E", reply: "R" } : undefined}
+        actions={{ onDelete: () => {}, onEdit: () => {}, onReply: () => {} }}
+        onActivate={() => setActive(true)}
+        anchorSide="new"
+        layout="unified"
+        theme={theme}
+        width={60}
+      />
+    );
+  }
+
+  const setup = await testRender(<HoverHarness />, { width: 61, height: 5 });
+
+  try {
+    await act(async () => setup.renderOnce());
+    expect(setup.captureCharFrame()).not.toContain("●");
+
+    await act(async () => {
+      await setup.mockMouse.moveTo(20, 0);
+    });
+    await act(async () => {
+      await Bun.sleep(0);
+      await setup.renderOnce();
+    });
+    const hoveredFrame = setup.captureCharFrame();
+    expect(hoveredFrame).not.toContain("●");
+    expect(hoveredFrame).toContain("reply edit delete");
+    expect(hoveredFrame).not.toContain("R reply");
+
+    await act(async () => {
+      await setup.mockMouse.click(20, 2);
+    });
+    await act(async () => {
+      await Bun.sleep(0);
+      await setup.renderOnce();
+    });
+    const clickedFrame = setup.captureCharFrame();
+    expect(clickedFrame).toContain("●");
+    expect(clickedFrame).toContain("R reply E edit D delete");
+  } finally {
+    await act(async () => setup.renderer.destroy());
+  }
+});
+
+test("AgentInlineNote fits long remapped action keys inside a narrow active card", async () => {
+  const setup = await testRender(
+    <AgentInlineNote
+      annotation={{ source: "user", newRange: [2, 2], summary: "Narrow target" }}
+      active={true}
+      actionKeyLabels={{
+        delete: "Ctrl+Alt+Shift+D",
+        edit: "Ctrl+Alt+Shift+E",
+        reply: "Ctrl+Alt+Shift+R",
+      }}
+      actions={{ onDelete: () => {}, onEdit: () => {}, onReply: () => {} }}
+      anchorSide="new"
+      layout="unified"
+      theme={theme}
+      width={28}
+    />,
+    { width: 29, height: 5 },
+  );
+
+  try {
+    await act(async () => {
+      await setup.renderOnce();
+    });
+    const actionRow = setup
+      .captureCharFrame()
+      .split("\n")
+      .find((line) => line.includes("ft+R"));
+
+    expect(actionRow).toContain("ft+R");
+    expect(actionRow).toContain("ft+E");
+    expect(actionRow).toContain("ft+D");
+    expect(actionRow?.trimEnd().endsWith("╯")).toBe(true);
+  } finally {
+    await act(async () => {
+      setup.renderer.destroy();
+    });
+  }
+});
+
+test("AgentInlineNote continues an aggregate rail through the card", async () => {
+  const setup = await testRender(
+    <AgentInlineNote
+      annotation={{ source: "user", newRange: [2, 4], summary: "Continuing range" }}
+      anchorSide="new"
+      layout="unified"
+      rangeGuideConnection="continue"
+      theme={theme}
+      width={60}
+    />,
+    { width: 61, height: 5 },
+  );
+
+  try {
+    await act(async () => {
+      await setup.renderOnce();
+    });
+    const lines = setup.captureCharFrame().split("\n");
+
+    expect(lines[0]?.[60]).toBe("┤");
+    expect(lines.slice(1, 4).every((line) => line[60] === "│")).toBe(true);
+  } finally {
+    await act(async () => {
+      setup.renderer.destroy();
+    });
+  }
+});
+
 describe("draftVisualLineCount", () => {
   const cases: Array<[string, string, number, number]> = [
     // [label, text, width, expected rows]
@@ -165,7 +343,7 @@ function renderedCardRowCount(frame: string) {
   return bottom - top + 1;
 }
 
-function plannedCardHeight(body: string, width: number, layout: "split" | "stack" = "split") {
+function plannedCardHeight(body: string, width: number, layout: "split" | "unified" = "split") {
   return measureAgentInlineNoteHeight({
     annotation: draftAnnotation(body),
     anchorSide: "new",
@@ -245,7 +423,7 @@ describe("AgentInlineNote draft composer", () => {
       <AgentInlineNote
         annotation={draftAnnotation(body)}
         anchorSide="new"
-        layout="stack"
+        layout="unified"
         theme={theme}
         width={34}
         draft={{
@@ -264,7 +442,7 @@ describe("AgentInlineNote draft composer", () => {
       const frame = setup.captureCharFrame();
       expect(frame).toContain("HEAD-");
       expect(frame).toContain("TAIL");
-      expect(renderedCardRowCount(frame)).toBe(plannedCardHeight(body, 34, "stack"));
+      expect(renderedCardRowCount(frame)).toBe(plannedCardHeight(body, 34, "unified"));
     } finally {
       await act(async () => {
         setup.renderer.destroy();

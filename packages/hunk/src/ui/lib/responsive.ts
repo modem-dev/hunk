@@ -41,17 +41,17 @@ export function resolveResponsiveLayout(
     };
   }
 
-  if (requestedLayout === "stack") {
+  if (requestedLayout === "unified") {
     return {
       viewport,
-      layout: "stack",
+      layout: "unified",
       showSidebar: viewport !== "tight",
     };
   }
 
   return {
     viewport,
-    layout: viewportWidth >= AUTO_SPLIT_MIN_WIDTH ? "split" : "stack",
+    layout: viewportWidth >= AUTO_SPLIT_MIN_WIDTH ? "split" : "unified",
     showSidebar: viewport !== "tight",
   };
 }

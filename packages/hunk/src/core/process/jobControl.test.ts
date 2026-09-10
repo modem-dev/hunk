@@ -57,54 +57,6 @@ function createMockRenderer() {
   };
 }
 
-function createSignalHarness() {
-  const listeners = new Map<NodeJS.Signals, Set<() => void>>();
-  const onceWrappers = new Map<() => void, () => void>();
-  const removed: NodeJS.Signals[] = [];
-
-  return {
-    emit(signal: NodeJS.Signals) {
-      const signalListeners = listeners.get(signal);
-      if (!signalListeners) {
-        return;
-      }
-
-      const snapshot = Array.from(signalListeners);
-      for (const listener of snapshot) {
-        listener();
-      }
-    },
-    listenerCount(signal: NodeJS.Signals) {
-      return listeners.get(signal)?.size ?? 0;
-    },
-    off(signal: NodeJS.Signals, listener: () => void) {
-      removed.push(signal);
-      listeners.get(signal)?.delete(listener);
-      const wrapped = onceWrappers.get(listener);
-      if (wrapped) {
-        listeners.get(signal)?.delete(wrapped);
-        onceWrappers.delete(listener);
-      }
-    },
-    once(signal: NodeJS.Signals, listener: () => void) {
-      const wrapped = () => {
-        listeners.get(signal)?.delete(wrapped);
-        onceWrappers.delete(listener);
-        listener();
-      };
-      onceWrappers.set(listener, wrapped);
-
-      let signalListeners = listeners.get(signal);
-      if (!signalListeners) {
-        signalListeners = new Set();
-        listeners.set(signal, signalListeners);
-      }
-      signalListeners.add(wrapped);
-    },
-    removed,
-  };
-}
-
 describe("installJobControlInterruptSupport", () => {
   test("routes Ctrl-C through the provided shutdown callback", () => {
     const renderer = createMockRenderer();
@@ -185,45 +137,40 @@ describe("installJobControlSuspendSupport", () => {
     expect(sentSignals).toEqual([]);
   });
 
-  test("suspends the foreground process group on Ctrl-Z and resumes on SIGCONT", () => {
+  test("suspends the foreground process group on Ctrl-Z and resumes once the job continues", () => {
     const renderer = createMockRenderer();
-    const signals = createSignalHarness();
     const sentSignals: Array<{ pid: number; signal: NodeJS.Signals }> = [];
 
     installJobControlSuspendSupport(renderer, {
-      kill: (pid, signal) => sentSignals.push({ pid, signal }),
-      off: signals.off,
-      once: signals.once,
+      kill: (pid, signal) => {
+        // Stands in for the stopped process: the renderer stays suspended until kill returns.
+        sentSignals.push({ pid, signal });
+        expect(renderer.suspendCalls).toBe(1);
+        expect(renderer.resumeCalls).toBe(0);
+      },
       platform: "linux",
     });
 
     const ctrlZ = createTestKey({ ctrl: true, name: "z" });
     renderer.emitKeypress(ctrlZ);
+
     expect(ctrlZ.defaultPrevented).toBe(true);
     expect(ctrlZ.propagationStopped).toBe(true);
-    expect(renderer.suspendCalls).toBe(1);
-    expect(signals.listenerCount("SIGCONT")).toBe(1);
     expect(sentSignals).toEqual([{ pid: 0, signal: "SIGTSTP" }]);
-
-    signals.emit("SIGCONT");
     expect(renderer.resumeCalls).toBe(1);
-    expect(signals.listenerCount("SIGCONT")).toBe(0);
   });
 
-  test("does not resume a destroyed renderer after SIGCONT", () => {
+  test("does not resume a destroyed renderer", () => {
     const renderer = createMockRenderer();
-    const signals = createSignalHarness();
 
     installJobControlSuspendSupport(renderer, {
-      kill: () => undefined,
-      off: signals.off,
-      once: signals.once,
+      kill: () => {
+        renderer.isDestroyed = true;
+      },
       platform: "linux",
     });
 
     renderer.emitKeypress(createTestKey({ ctrl: true, name: "z" }));
-    renderer.isDestroyed = true;
-    signals.emit("SIGCONT");
 
     expect(renderer.suspendCalls).toBe(1);
     expect(renderer.resumeCalls).toBe(0);
@@ -231,31 +178,24 @@ describe("installJobControlSuspendSupport", () => {
 
   test("restores the renderer if SIGTSTP cannot be sent", () => {
     const renderer = createMockRenderer();
-    const signals = createSignalHarness();
 
     installJobControlSuspendSupport(renderer, {
       kill: () => {
         throw new Error("unsupported signal");
       },
-      off: signals.off,
-      once: signals.once,
       platform: "linux",
     });
 
     renderer.emitKeypress(createTestKey({ ctrl: true, name: "z" }));
     expect(renderer.suspendCalls).toBe(1);
     expect(renderer.resumeCalls).toBe(1);
-    expect(signals.listenerCount("SIGCONT")).toBe(0);
   });
 
-  test("dispose removes the keypress listener and pending SIGCONT listener", () => {
+  test("dispose removes the keypress listener", () => {
     const renderer = createMockRenderer();
-    const signals = createSignalHarness();
 
     const support = installJobControlSuspendSupport(renderer, {
       kill: () => undefined,
-      off: signals.off,
-      once: signals.once,
       platform: "linux",
     });
 
@@ -263,7 +203,6 @@ describe("installJobControlSuspendSupport", () => {
     support.dispose();
 
     expect(renderer.keypressListeners.size).toBe(0);
-    expect(signals.listenerCount("SIGCONT")).toBe(0);
 
     renderer.emitKeypress(createTestKey({ ctrl: true, name: "z" }));
     expect(renderer.suspendCalls).toBe(1);

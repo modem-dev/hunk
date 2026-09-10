@@ -25,30 +25,62 @@ const side = z.enum(["old", "new"]);
 const positive = z.int().positive();
 const nonnegative = z.int().nonnegative();
 const optionalString = z.string().min(1).max(4096).optional();
-const commentItem = z.strictObject({
-  filePath: z.string().min(1).max(4096),
-  hunkIndex: nonnegative.optional(),
-  side: side.optional(),
-  line: positive.optional(),
-  summary: z.string().min(1).max(4096),
-  rationale: optionalString,
-  markup: optionalString,
-  author: optionalString,
-});
 
-const commandInputs = {
-  comment: z.strictObject({
-    ...selectorFields,
-    filePath: z.string().min(1).max(4096),
+/** Require a brokered comment to name either one parent or one complete root anchor. */
+function hasValidCommentTarget(input: {
+  filePath?: string;
+  hunkIndex?: number;
+  side?: "old" | "new";
+  line?: number;
+  replyTo?: string;
+}) {
+  if (input.replyTo !== undefined) {
+    return (
+      input.filePath === undefined &&
+      input.hunkIndex === undefined &&
+      input.side === undefined &&
+      input.line === undefined
+    );
+  }
+  if (input.filePath === undefined) return false;
+  // Preserve the existing hunk-first resolution when callers also send line fields.
+  return input.hunkIndex !== undefined || (input.side !== undefined && input.line !== undefined);
+}
+
+const commentItem = z
+  .strictObject({
+    filePath: z.string().min(1).max(4096).optional(),
     hunkIndex: nonnegative.optional(),
     side: side.optional(),
     line: positive.optional(),
+    replyTo: z.string().min(1).max(128).optional(),
     summary: z.string().min(1).max(4096),
     rationale: optionalString,
     markup: optionalString,
     author: optionalString,
-    reveal: z.boolean().optional(),
-  }),
+  })
+  .refine(hasValidCommentTarget, {
+    message: "A comment must be either a reply or one explicitly anchored root note.",
+  });
+
+const commandInputs = {
+  comment: z
+    .strictObject({
+      ...selectorFields,
+      filePath: z.string().min(1).max(4096).optional(),
+      hunkIndex: nonnegative.optional(),
+      side: side.optional(),
+      line: positive.optional(),
+      replyTo: z.string().min(1).max(128).optional(),
+      summary: z.string().min(1).max(4096),
+      rationale: optionalString,
+      markup: optionalString,
+      author: optionalString,
+      reveal: z.boolean().optional(),
+    })
+    .refine(hasValidCommentTarget, {
+      message: "A comment must be either a reply or one explicitly anchored root note.",
+    }),
   comment_batch: z.strictObject({
     ...selectorFields,
     comments: z.array(commentItem),

@@ -59,7 +59,7 @@ jobs:
           if [ "$GITHUB_EVENT_NAME" = "push" ]; then
             current_latest="$(npm view hunkdiff dist-tags.latest)"
           fi
-          resolution="$(bun ./scripts/resolve-release-channel.ts \
+          resolution="$(bun ./scripts/release/resolve-release-channel.ts \
             --event "$GITHUB_EVENT_NAME" \
             --ref "$GITHUB_REF_NAME" \
             --requested-tag "$REQUESTED_NPM_TAG" \
@@ -94,7 +94,7 @@ jobs:
 
       - name: Verify tag matches package version
         if: github.event_name == 'push'
-        run: bun run ./scripts/check-release-version.ts "${{ github.ref_name }}"
+        run: bun run ./scripts/release/check-release-version.ts "${{ github.ref_name }}"
 
       - name: Compare release benchmark snapshot
         id: benchmark-gate
@@ -163,7 +163,7 @@ jobs:
       - name: Build host artifact
         run: |
           bun run build:bin
-          bun run ./scripts/build-prebuilt-artifact.ts --expect-package "${{ matrix.package_name }}"
+          bun run ./scripts/packaging/build-prebuilt-artifact.ts --expect-package "${{ matrix.package_name }}"
 
       # Bun's default x64 runtime is compiled for Haswell and raises SIGILL on older CPUs.
       # Run the real artifact under an emulated pre-AVX CPU so a dropped baseline target
@@ -207,7 +207,7 @@ jobs:
 
       - name: Verify tag matches package version
         if: github.event_name == 'push'
-        run: bun run ./scripts/check-release-version.ts "${{ github.ref_name }}"
+        run: bun run ./scripts/release/check-release-version.ts "${{ github.ref_name }}"
 
       - name: Download platform artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1

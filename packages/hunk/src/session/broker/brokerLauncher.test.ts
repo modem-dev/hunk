@@ -1,12 +1,16 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  describeSessionBrokerHealthProbeFailure,
   ensureSessionBrokerAvailable,
   isLoopbackPortReachable,
   parseSessionBrokerHealth,
+  probeSessionBrokerHealth,
+  readSessionBrokerHealth,
   readSessionBrokerLaunchFingerprint,
   resolveDaemonLaunchCommand,
   resolveSessionBrokerRuntimePaths,
@@ -20,6 +24,16 @@ const testConfig = {
   httpOrigin: "http://127.0.0.1:47657",
   wsOrigin: "ws://127.0.0.1:47657",
 };
+
+/** Create a broker config for one ephemeral test listener. */
+function createTestBrokerConfig(port: number) {
+  return {
+    host: "127.0.0.1",
+    port,
+    httpOrigin: `http://127.0.0.1:${port}`,
+    wsOrigin: `ws://127.0.0.1:${port}`,
+  };
+}
 
 /** Create manually settled foreign work for launcher commit-fence tests. */
 function createDeferredTest<T = void>() {
@@ -119,6 +133,171 @@ describe("session daemon launcher", () => {
       expect(parseSessionBrokerHealth(value)).toBeNull();
     }
   });
+
+  test("retains the health payload for a successful probe", async () => {
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () => Response.json({ ok: true, pid: 123, sessions: 1 }),
+    });
+    const config = createTestBrokerConfig(server.port!);
+
+    try {
+      await expect(probeSessionBrokerHealth(config)).resolves.toMatchObject({
+        kind: "healthy",
+        health: { ok: true, pid: 123, sessions: 1 },
+      });
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("retains HTTP status while nullable health readers stay compatible", async () => {
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () => new Response("unavailable", { status: 503 }),
+    });
+    const config = createTestBrokerConfig(server.port!);
+
+    try {
+      await expect(probeSessionBrokerHealth(config)).resolves.toMatchObject({
+        kind: "http-status",
+        status: 503,
+      });
+      await expect(readSessionBrokerHealth(config)).resolves.toBeNull();
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("distinguishes invalid JSON, incompatible payloads, and oversized bodies", async () => {
+    let response: "json" | "utf8" | "payload" | "large" = "json";
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () => {
+        if (response === "json") {
+          return new Response("not-json", { headers: { "content-type": "application/json" } });
+        }
+        if (response === "utf8") {
+          return new Response(
+            new Uint8Array([
+              ...new TextEncoder().encode('{"ok":true,"startedAt":"'),
+              0xff,
+              ...new TextEncoder().encode('"}'),
+            ]),
+          );
+        }
+        if (response === "payload") return Response.json({ ok: "yes" });
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new Uint8Array(32 * 1024));
+              controller.enqueue(new Uint8Array(32 * 1024 + 1));
+              controller.close();
+            },
+          }),
+        );
+      },
+    });
+    const config = createTestBrokerConfig(server.port!);
+
+    try {
+      await expect(probeSessionBrokerHealth(config)).resolves.toMatchObject({
+        kind: "invalid-json",
+      });
+      response = "utf8";
+      await expect(probeSessionBrokerHealth(config)).resolves.toMatchObject({
+        kind: "invalid-json",
+      });
+      response = "payload";
+      await expect(probeSessionBrokerHealth(config)).resolves.toMatchObject({
+        kind: "invalid-response",
+      });
+      response = "large";
+      await expect(probeSessionBrokerHealth(config)).resolves.toMatchObject({
+        kind: "response-too-large",
+        limitBytes: 64 * 1024,
+      });
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("classifies truncated response bodies as request errors", async () => {
+    const sockets = new Set<Socket>();
+    const server = createServer((socket) => {
+      sockets.add(socket);
+      socket.once("close", () => sockets.delete(socket));
+      socket.end("HTTP/1.1 200 OK\r\nContent-Length: 20\r\nConnection: close\r\n\r\n{");
+    });
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    const address = server.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+    const config = createTestBrokerConfig(port);
+
+    try {
+      await expect(probeSessionBrokerHealth(config)).resolves.toMatchObject({
+        kind: "request-error",
+      });
+    } finally {
+      const closed = new Promise<void>((resolve) => server.close(() => resolve()));
+      for (const socket of sockets) socket.destroy();
+      await closed;
+    }
+  });
+
+  test("enforces the timeout across response body consumption", async () => {
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            async pull(controller) {
+              await Bun.sleep(100);
+              controller.enqueue(new TextEncoder().encode('{"ok":true}'));
+              controller.close();
+            },
+          }),
+        ),
+    });
+    const config = createTestBrokerConfig(server.port!);
+
+    try {
+      const result = await probeSessionBrokerHealth(config, 10);
+      expect(result).toMatchObject({ kind: "timeout", timeoutMs: 10 });
+      if (result.kind !== "timeout") throw new Error("Expected a timeout health probe result.");
+      expect(result.elapsedMs).toBeGreaterThanOrEqual(10);
+      expect(describeSessionBrokerHealthProbeFailure(result)).toMatch(
+        /^timed out after 10ms \(probe elapsed \d+ms\)$/,
+      );
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("rejects health redirects instead of following a foreign listener", async () => {
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () => Response.redirect("https://example.com/health"),
+    });
+    const config = createTestBrokerConfig(server.port!);
+
+    try {
+      await expect(probeSessionBrokerHealth(config)).resolves.toMatchObject({
+        kind: "request-error",
+      });
+    } finally {
+      server.stop(true);
+    }
+  });
+
   test("reuses the current script entrypoint when Hunk is running from source or a JS wrapper", () => {
     expect(resolveDaemonLaunchCommand(["bun", "src/main.tsx", "diff"], "/usr/bin/bun")).toEqual({
       command: "/usr/bin/bun",

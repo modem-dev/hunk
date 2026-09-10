@@ -13,7 +13,7 @@ const review = {
   state: "open" as const,
 };
 
-describe("delegated review descriptor validation", () => {
+describe("review descriptor validation", () => {
   test("copies, freezes, and accepts every descriptor kind", () => {
     const parsed = validateExtensionReviewDescriptor(review);
     expect(parsed).toEqual(review);
@@ -24,8 +24,15 @@ describe("delegated review descriptor validation", () => {
         provider: "GitHub",
         title: "Commit",
         revision: "abc1234",
+        displayRevision: "abc1234",
+        authoredAt: "2026-01-01T00:00:00Z",
       }),
-    ).toMatchObject({ kind: "commit", revision: "abc1234" });
+    ).toMatchObject({
+      kind: "commit",
+      revision: "abc1234",
+      displayRevision: "abc1234",
+      authoredAt: "2026-01-01T00:00:00Z",
+    });
     expect(
       validateExtensionReviewDescriptor({
         kind: "comparison",
@@ -33,8 +40,28 @@ describe("delegated review descriptor validation", () => {
         title: "Comparison",
         base: "main",
         head: "feature",
+        commitCount: 1,
+        commits: [
+          {
+            title: "Commit",
+            author: "Ada",
+            authoredAt: "2026-01-01T00:00:00Z",
+            revision: "abc1234",
+            displayRevision: "abc1234",
+          },
+        ],
       }),
-    ).toMatchObject({ kind: "comparison", base: "main", head: "feature" });
+    ).toMatchObject({ kind: "comparison", base: "main", head: "feature", commitCount: 1 });
+    expect(
+      validateExtensionReviewDescriptor({
+        kind: "comparison",
+        provider: "Git",
+        title: "0 commits",
+        base: "main",
+        head: "main",
+        commitCount: 0,
+      }),
+    ).toMatchObject({ kind: "comparison", commitCount: 0 });
   });
 
   test("rejects unknown fields, controls, insecure URLs, and byte overflows", () => {
@@ -44,6 +71,14 @@ describe("delegated review descriptor validation", () => {
       { ...review, url: "http://github.com/modem-dev/hunk/pull/123" },
       { ...review, title: "é".repeat(1025) },
       { ...review, repository: "x".repeat(513) },
+      {
+        kind: "commit",
+        provider: "GitHub",
+        title: "Commit",
+        revision: "abc1234",
+        displayRevision: "abc1234",
+        authoredAt: "yesterday",
+      },
       {
         ...review,
         provider: "p".repeat(256),
@@ -56,5 +91,21 @@ describe("delegated review descriptor validation", () => {
     ]) {
       expect(parseExtensionReviewDescriptor(value)).toBeNull();
     }
+  });
+
+  test("keeps pre-v24 commit descriptors valid without a display revision", () => {
+    expect(
+      validateExtensionReviewDescriptor({
+        kind: "commit",
+        provider: "GitHub",
+        title: "Commit",
+        revision: "0123456789abcdef",
+      }),
+    ).toEqual({
+      kind: "commit",
+      provider: "GitHub",
+      title: "Commit",
+      revision: "0123456789abcdef",
+    });
   });
 });

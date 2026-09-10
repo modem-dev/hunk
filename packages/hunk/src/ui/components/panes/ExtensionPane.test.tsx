@@ -106,6 +106,7 @@ describe("ExtensionPaneHost actions", () => {
     const files = createTestFiles();
     const theme = resolveTheme("github-dark-default", null);
     const notifications: string[] = [];
+    const copied: string[] = [];
     const hunkSelections: Array<[string, number]> = [];
     let actions: ExtensionPaneActions | undefined;
 
@@ -127,6 +128,10 @@ describe("ExtensionPaneHost actions", () => {
         currentLine={null}
         keybindings={TEST_KEYBINDINGS}
         notify={(message) => notifications.push(message)}
+        onCopyText={(text) => {
+          copied.push(text);
+          return true;
+        }}
         onSelectFile={() => {}}
         onSelectHunk={(fileId, hunkIndex) => hunkSelections.push([fileId, hunkIndex])}
         onRevealLine={() => "line"}
@@ -135,6 +140,9 @@ describe("ExtensionPaneHost actions", () => {
         if (!actions) {
           throw new Error("The probe view never received its actions.");
         }
+
+        expect(actions.copyText("revision-a")).toBeTrue();
+        expect(copied).toEqual(["revision-a"]);
 
         // Selection state, reveal scrolling, and selection_changed all carry
         // the index, so a non-finite value must be refused outright...

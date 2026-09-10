@@ -18,7 +18,7 @@ afterEach(() => {
  * for the same reason: each combination reaches the palette through its own cell builder.
  */
 describe("PTY moved-line coloring", () => {
-  for (const layout of ["stack", "split"] as const) {
+  for (const layout of ["unified", "split"] as const) {
     for (const wrap of ["--wrap", "--no-wrap"] as const) {
       test(`tints moved rows apart from ordinary added rows in ${layout} with ${wrap}`, async () => {
         const fixture = harness.createMovedLinesRepoFixture();

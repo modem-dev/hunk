@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { HistoryCommandInput } from "../core/run/commandInputs";
@@ -21,6 +21,12 @@ describe("history bootstrap cursor ownership", () => {
   test("cancels refresh before opening and closes each active provider cursor once", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "hunk-history-bootstrap-"));
     const configHome = mkdtempSync(join(tmpdir(), "hunk-history-config-"));
+    const configPath = join(configHome, "hunk", "config.toml");
+    mkdirSync(join(configHome, "hunk"), { recursive: true });
+    writeFileSync(
+      configPath,
+      'theme = "github-dark-dimmed"\nline_numbers = false\nprompt_save_view_preferences = false\n\n[keybindings]\n"hunk.history.nextCommit" = "ctrl+n"\n',
+    );
     const closeCounts: number[] = [];
     let opens = 0;
     const makeSource = (): VcsHistorySource => {
@@ -62,6 +68,23 @@ describe("history bootstrap cursor ownership", () => {
         env: { ...process.env, XDG_CONFIG_HOME: configHome },
         baseVcsCatalog: catalog,
       });
+      expect(bootstrap.input.theme).toBe("github-dark-dimmed");
+      expect(bootstrap.customThemes).toEqual([]);
+      expect(bootstrap.initialization).toEqual({
+        theme: {
+          initialTheme: "github-dark-dimmed",
+          customThemes: [],
+        },
+        viewPreferences: bootstrap.initialViewPreferences,
+      });
+      expect(bootstrap.initialViewPreferences).toMatchObject({
+        theme: "github-dark-dimmed",
+        showLineNumbers: false,
+      });
+      expect(bootstrap.keybindings).toEqual({ "hunk.history.nextCommit": "ctrl+n" });
+      expect(bootstrap.viewPreferencesConfigPath).toBe(configPath);
+      expect(bootstrap.promptSaveViewPreferences).toBe(false);
+
       const cancelled = new AbortController();
       cancelled.abort();
       await expect(bootstrap.reopenSource(cancelled.signal)).rejects.toThrow();
@@ -73,6 +96,10 @@ describe("history bootstrap cursor ownership", () => {
       await bootstrap.close();
       await bootstrap.close();
       expect(closeCounts).toEqual([1, 1]);
+      expect(bootstrap.extensionSession.current.registry.eventBusPhase).toBe("ready");
+      await bootstrap.extensionSession.shutdown();
+      await bootstrap.extensionSession.shutdown();
+      expect(bootstrap.extensionSession.current.registry.eventBusPhase).toBe("closed");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
       rmSync(configHome, { recursive: true, force: true });

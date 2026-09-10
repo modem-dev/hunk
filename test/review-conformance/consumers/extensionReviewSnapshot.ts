@@ -19,6 +19,12 @@ export const extensionReviewSnapshotConsumer: ReviewSnapshotConsumer = {
         ...(note.parentId ? { parentId: note.parentId } : {}),
         fileKey: note.fileKey,
         resolution: note.resolution,
+        ...(note.anchor.oldRange
+          ? { oldRange: [...note.anchor.oldRange] as [number, number] }
+          : {}),
+        ...(note.anchor.newRange
+          ? { newRange: [...note.anchor.newRange] as [number, number] }
+          : {}),
         ...(note.anchor.preferred ? { preferred: { ...note.anchor.preferred } } : {}),
         intersectingHunkIndices: [...note.anchor.intersectingHunkIndices],
         ...(note.anchor.ownerHunkIndex !== undefined

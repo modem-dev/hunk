@@ -7,7 +7,7 @@ import { createTestDiffFile } from "../../../../test/helpers/diff-helpers";
 
 mock.restore();
 
-const { AppHost } = await import("./AppHost");
+const { TestAppHost: AppHost } = await import("../../../../test/helpers/app-host");
 
 function createScrollBootstrap(): AppBootstrap {
   const before = Array.from(

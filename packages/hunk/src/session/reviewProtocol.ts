@@ -22,9 +22,9 @@
  *
  * The module is browser-safe by construction and gated as such: it imports from
  * `packages/hunk/src/core/review/` and nothing else — no Node builtins, no broker package, no
- * transport. `scripts/source-boundaries.test.ts` enforces that, and the transport-side
+ * transport. `scripts/quality/source-boundaries.test.ts` enforces that, and the transport-side
  * couplings it deliberately does not import (frame sizes) are asserted against this
- * module's own bounds in `scripts/review-vocabulary.test.ts`.
+ * module's own bounds in `scripts/quality/review-vocabulary.test.ts`.
  */
 import type { ReviewExpandedLineClaim } from "../core/review/expansion";
 import {
@@ -53,7 +53,13 @@ import {
   type ReviewPublicationAddress,
 } from "../core/review/generationOrder";
 import type { ReviewRevealAnchor, ReviewRevealRequest } from "../core/review/state";
-import type { ReviewLineAddressV1, ReviewSide } from "../core/review/types";
+import type {
+  ReviewLineAddressV1,
+  ReviewLineRange,
+  ReviewNoteTargetV1,
+  ReviewRangeTargetV1,
+  ReviewSide,
+} from "../core/review/types";
 import {
   asRecord,
   hasExactKeys,
@@ -68,7 +74,7 @@ export const HUNK_REVIEW_PROTOCOL_VERSION = 1 as const;
  *
  * The protocol's own bound rather than a repetition of a frame size: a transport that
  * cannot carry this much is the transport's problem to declare, and
- * `scripts/review-vocabulary.test.ts` asserts the session transport's frame limit still
+ * `scripts/quality/review-vocabulary.test.ts` asserts the session transport's frame limit still
  * accommodates it. Keeping the import out is what lets this module stay browser-safe.
  */
 export const MAX_HUNK_REVIEW_ENVELOPE_BYTES = 4 * 1024 * 1024;
@@ -106,11 +112,13 @@ export const HUNK_REVIEW_ACTOR_KINDS: readonly HunkReviewActorKindV1[] = [
  * G2). The four parts of that finding split cleanly across phases, and only the first is
  * here: (1) actions carry an actor tag — this type; (2) selection is shared-with-follow
  * or per-client-with-follow — a product decision, Phase 5; (3) note authorship defaults
- * from the actor — Phase 5, where notes are composed remotely; (4) how a client obtains
- * its identity — Phase 4, with the capability the HTTP surface issues.
+ * from the actor — Phase 5, where notes are composed remotely; (4) the browser client
+ * mints its own tab-local identity in Phase 5. The Phase 4 capability authorizes a review,
+ * not one client.
  *
- * Until then the producer records the tag and applies no policy to it, so adding one
- * later changes behavior rather than the schema.
+ * Until then the wire parser validates the tag and the broker forwards it to the owning
+ * session, where the producer-side action handler drops it before semantic planning. Adding
+ * actor policy later changes behavior rather than the schema.
  */
 export interface HunkReviewActorV1 {
   /** Stable within one attached client; opaque to the producer. */
@@ -166,7 +174,10 @@ interface HunkReviewActionWireFields {
      * A precondition, not a relocation: the producer rejects the save when the draft has
      * moved, so two clients cannot silently save each other's drafts.
      */
-    target?: ReviewLineAddressV1;
+    target?: ReviewNoteTargetV1;
+    /** Stable file and owner-hunk identity; protocol-v1 clients may omit both. */
+    fileKey?: string;
+    hunkIndex?: number;
     expandedLineProof?: HunkReviewExpandedLineProofV1;
   };
 }
@@ -313,6 +324,45 @@ function parseLineAddress(value: unknown): ReviewLineAddressV1 | undefined {
     : undefined;
 }
 
+/** Parse one inclusive 1-based source line range. */
+function parseLineRange(value: unknown): ReviewLineRange | undefined {
+  return Array.isArray(value) &&
+    value.length === 2 &&
+    isLineNumber(value[0]) &&
+    isLineNumber(value[1]) &&
+    value[0] <= value[1]
+    ? ([value[0], value[1]] as const)
+    : undefined;
+}
+
+/** Parse a single-line or range note target without deriving its hunk ownership. */
+function parseNoteTarget(value: unknown): ReviewNoteTargetV1 | undefined {
+  const line = parseLineAddress(value);
+  if (line) return line;
+
+  const record = asRecord(value);
+  if (
+    !record ||
+    !hasExactKeys(
+      record,
+      keysWith(["preferred"], { oldRange: record.oldRange, newRange: record.newRange }),
+    )
+  ) {
+    return undefined;
+  }
+  const preferred = parseLineAddress(record.preferred);
+  const oldRange = record.oldRange === undefined ? undefined : parseLineRange(record.oldRange);
+  const newRange = record.newRange === undefined ? undefined : parseLineRange(record.newRange);
+  if (!preferred || (!oldRange && !newRange)) return undefined;
+  if (record.oldRange !== undefined && !oldRange) return undefined;
+  if (record.newRange !== undefined && !newRange) return undefined;
+  const preferredRange = preferred.side === "old" ? oldRange : newRange;
+  if (!preferredRange || preferred.line < preferredRange[0] || preferred.line > preferredRange[1]) {
+    return undefined;
+  }
+  return record as unknown as ReviewRangeTargetV1;
+}
+
 /** Parse one expanded-line proof. Its fields are exactly what core resolves it by. */
 export function parseHunkReviewExpandedLineProof(
   value: unknown,
@@ -356,9 +406,15 @@ const REVIEW_SELECTION_SCOPES = Object.keys(REVIEW_SELECTION_WRAP_POLICY) as Rev
  */
 const ACTION_PARSERS: Record<ReviewIntentType, (record: Record<string, unknown>) => boolean> = {
   "selection/select": (record) =>
-    hasExactKeys(record, ["type", "fileKey", "hunkIndex", "reveal"]) &&
+    hasExactKeys(
+      record,
+      keysWith(["type", "fileKey", "hunkIndex", "reveal"], {
+        activeNoteId: record.activeNoteId,
+      }),
+    ) &&
     isIdentifier(record.fileKey) &&
     isIndex(record.hunkIndex) &&
+    (record.activeNoteId === undefined || isIdentifier(record.activeNoteId)) &&
     parseReveal(record.reveal) !== undefined,
   "selection/move": (record) =>
     hasExactKeys(record, ["type", "scope", "delta"]) &&
@@ -389,12 +445,13 @@ const ACTION_PARSERS: Record<ReviewIntentType, (record: Record<string, unknown>)
     ) &&
     isIdentifier(record.fileKey) &&
     isIndex(record.hunkIndex) &&
-    (record.target === undefined || parseLineAddress(record.target) !== undefined) &&
+    (record.target === undefined || parseNoteTarget(record.target) !== undefined) &&
     (record.reveal === undefined || parseReveal(record.reveal) !== undefined) &&
     (record.expandedLineProof === undefined ||
       parseHunkReviewExpandedLineProof(record.expandedLineProof) !== undefined) &&
-    // A proof is evidence about a line, so it is meaningless without one to be about.
-    (record.expandedLineProof === undefined || record.target !== undefined),
+    // Expanded-line proofs remain line-specific; ranges spanning source gaps are not
+    // remotely writable until the protocol can attest every covered line.
+    (record.expandedLineProof === undefined || parseLineAddress(record.target) !== undefined),
   "notes/start-edit": (record) =>
     hasExactKeys(record, keysWith(["type", "noteId"], { reveal: record.reveal })) &&
     isIdentifier(record.noteId) &&
@@ -413,14 +470,22 @@ const ACTION_PARSERS: Record<ReviewIntentType, (record: Record<string, unknown>)
       record,
       keysWith(["type", "consumeDraft"], {
         target: record.target,
+        fileKey: record.fileKey,
+        hunkIndex: record.hunkIndex,
         expandedLineProof: record.expandedLineProof,
       }),
     ) &&
     record.consumeDraft === true &&
-    (record.target === undefined || parseLineAddress(record.target) !== undefined) &&
+    (record.target === undefined || parseNoteTarget(record.target) !== undefined) &&
+    (record.target === undefined
+      ? record.fileKey === undefined && record.hunkIndex === undefined
+      : (record.fileKey === undefined &&
+          record.hunkIndex === undefined &&
+          parseLineAddress(record.target) !== undefined) ||
+        (isIdentifier(record.fileKey) && isIndex(record.hunkIndex))) &&
     (record.expandedLineProof === undefined ||
       parseHunkReviewExpandedLineProof(record.expandedLineProof) !== undefined) &&
-    (record.expandedLineProof === undefined || record.target !== undefined),
+    (record.expandedLineProof === undefined || parseLineAddress(record.target) !== undefined),
   "notes/update-user": (record) =>
     hasExactKeys(record, ["type", "noteId", "consumeDraft"]) &&
     isIdentifier(record.noteId) &&
@@ -478,7 +543,13 @@ export function toReviewIntent(action: HunkReviewActionV1): ReviewIntent {
     return intent;
   }
   if (action.type === "notes/create-user") {
-    const { expandedLineProof: _proof, target: _target, ...intent } = action;
+    const {
+      expandedLineProof: _proof,
+      target: _target,
+      fileKey: _fileKey,
+      hunkIndex: _hunkIndex,
+      ...intent
+    } = action;
     return intent;
   }
   return action;

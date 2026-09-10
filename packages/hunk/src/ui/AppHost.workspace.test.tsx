@@ -20,7 +20,7 @@ import { getBundledVcsCatalog } from "../app/vcsCatalog";
 import type { CliInput } from "../core/run/commandInputs";
 import { loadStartupExtensions } from "../extensions/startup";
 import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
-import { AppHost } from "./AppHost";
+import { TestAppHost as AppHost } from "../../../../test/helpers/app-host";
 import type { WorkspaceFileWriter } from "./hooks/useExtensionWorkspaceControls";
 
 /** Specialize the core loader result with extension state assigned by these tests. */
@@ -142,7 +142,7 @@ function writeWorkspaceFixture(extPath: string, logPath: string) {
     extPath,
     `import { appendFileSync } from "node:fs";\n` +
       `export default function (hunk) {\n` +
-      `  hunk.registerCommand({ id: "rewrite", title: "Rewrite", key: "y" }, async (ctx) => {\n` +
+      `  hunk.registerCommand({ id: "rewrite", title: "Rewrite", key: "Y" }, async (ctx) => {\n` +
       `    const file = ctx.selection.file;\n` +
       `    if (!file) return;\n` +
       `    const log = (line) => appendFileSync(${JSON.stringify(logPath)}, line + "\\n");\n` +
@@ -163,7 +163,7 @@ function writeReadFixture(extPath: string, logPath: string) {
     extPath,
     `import { appendFileSync } from "node:fs";\n` +
       `export default function (hunk) {\n` +
-      `  hunk.registerCommand({ id: "read", title: "Read", key: "y" }, async (ctx) => {\n` +
+      `  hunk.registerCommand({ id: "read", title: "Read", key: "Y" }, async (ctx) => {\n` +
       `    const file = ctx.selection.file;\n` +
       `    if (!file) return;\n` +
       `    const log = (line) => appendFileSync(${JSON.stringify(logPath)}, line + "\\n");\n` +
@@ -185,7 +185,7 @@ function writeReadWriteFixture(extPath: string, logPath: string) {
     extPath,
     `import { appendFileSync } from "node:fs";\n` +
       `export default function (hunk) {\n` +
-      `  hunk.registerCommand({ id: "shout", title: "Shout", key: "y" }, async (ctx) => {\n` +
+      `  hunk.registerCommand({ id: "shout", title: "Shout", key: "Y" }, async (ctx) => {\n` +
       `    const file = ctx.selection.file;\n` +
       `    if (!file) return;\n` +
       `    const log = (line) => appendFileSync(${JSON.stringify(logPath)}, line + "\\n");\n` +
@@ -314,7 +314,7 @@ describe("extension workspace reads", () => {
       extPath,
       `import { appendFileSync } from "node:fs";\n` +
         `export default function (hunk) {\n` +
-        `  hunk.registerCommand({ id: "read", title: "Read", key: "y" }, async (ctx) => {\n` +
+        `  hunk.registerCommand({ id: "read", title: "Read", key: "Y" }, async (ctx) => {\n` +
         `    const file = ctx.selection.file;\n` +
         `    if (!file) return;\n` +
         `    const text = await ctx.workspace.readDocument(file.id, "new");\n` +
@@ -326,7 +326,7 @@ describe("extension workspace reads", () => {
     const bootstrap = await launchWithExtension(repo, extPath, {
       kind: "vcs",
       staged: false,
-      options: { mode: "stack", extensionPaths: [extPath] },
+      options: { mode: "unified", extensionPaths: [extPath] },
     });
     let markReadStarted!: () => void;
     const readStarted = new Promise<void>((resolve) => {
@@ -348,7 +348,7 @@ describe("extension workspace reads", () => {
     await withAppHost(
       bootstrap,
       async (setup) => {
-        await act(async () => setup.mockInput.typeText("y"));
+        await act(async () => setup.mockInput.typeText("Y"));
         await readStarted;
 
         let reloadFinished = false;
@@ -379,7 +379,7 @@ describe("extension workspace reads", () => {
     const bootstrap = await launchWithExtension(repo, extPath, {
       kind: "vcs",
       staged: false,
-      options: { mode: "stack", extensionPaths: [extPath] },
+      options: { mode: "unified", extensionPaths: [extPath] },
     });
     await withAppHost(bootstrap, async (setup) => {
       await flushUntil(
@@ -389,7 +389,7 @@ describe("extension workspace reads", () => {
       );
 
       await act(async () => {
-        await setup.mockInput.typeText("y");
+        await setup.mockInput.typeText("Y");
       });
       await flushUntil(
         setup,
@@ -417,7 +417,7 @@ describe("extension workspace reads", () => {
     const bootstrap = await launchWithExtension(repo, extPath, {
       kind: "show",
       ref: "HEAD",
-      options: { mode: "stack", extensionPaths: [extPath] },
+      options: { mode: "unified", extensionPaths: [extPath] },
     });
     await withAppHost(bootstrap, async (setup) => {
       await flushUntil(
@@ -427,7 +427,7 @@ describe("extension workspace reads", () => {
       );
 
       await act(async () => {
-        await setup.mockInput.typeText("y");
+        await setup.mockInput.typeText("Y");
       });
       await flushUntil(
         setup,
@@ -455,7 +455,7 @@ describe("extension workspace reads", () => {
     const bootstrap = await launchWithExtension(repo, extPath, {
       kind: "vcs",
       staged: false,
-      options: { mode: "stack", extensionPaths: [extPath] },
+      options: { mode: "unified", extensionPaths: [extPath] },
     });
     await withAppHost(bootstrap, async (setup) => {
       await flushUntil(
@@ -465,7 +465,7 @@ describe("extension workspace reads", () => {
       );
 
       await act(async () => {
-        await setup.mockInput.typeText("y");
+        await setup.mockInput.typeText("Y");
       });
       await flushUntil(
         setup,
@@ -488,7 +488,7 @@ describe("extension workspace reads", () => {
     const bootstrap = await launchWithExtension(repo, extPath, {
       kind: "vcs",
       staged: false,
-      options: { mode: "stack", extensionPaths: [extPath] },
+      options: { mode: "unified", extensionPaths: [extPath] },
     });
     await withAppHost(bootstrap, async (setup) => {
       await flushUntil(
@@ -498,7 +498,7 @@ describe("extension workspace reads", () => {
       );
 
       await act(async () => {
-        await setup.mockInput.typeText("y");
+        await setup.mockInput.typeText("Y");
       });
       await flushUntil(
         setup,
@@ -533,7 +533,7 @@ describe("extension workspace writes", () => {
     const bootstrap = await launchWithExtension(repo, extPath, {
       kind: "vcs",
       staged: false,
-      options: { mode: "stack", extensionPaths: [extPath] },
+      options: { mode: "unified", extensionPaths: [extPath] },
     });
     await withAppHost(bootstrap, async (setup) => {
       await flushUntil(
@@ -543,7 +543,7 @@ describe("extension workspace writes", () => {
       );
 
       await act(async () => {
-        await setup.mockInput.typeText("y");
+        await setup.mockInput.typeText("Y");
       });
       await flushUntil(
         setup,
@@ -590,7 +590,7 @@ describe("extension workspace writes", () => {
     const bootstrap = await launchWithExtension(repo, extPath, {
       kind: "vcs",
       staged: false,
-      options: { mode: "stack", extensionPaths: [extPath] },
+      options: { mode: "unified", extensionPaths: [extPath] },
     });
     const deferredWriter = createDeferredWorkspaceWriter();
     const broker = createTestBrokerClient();
@@ -598,7 +598,7 @@ describe("extension workspace writes", () => {
     await withAppHost(
       bootstrap,
       async (setup) => {
-        await act(async () => setup.mockInput.typeText("y"));
+        await act(async () => setup.mockInput.typeText("Y"));
         await flushUntil(
           setup,
           () => setup.captureCharFrame().includes("Write alpha.txt?"),
@@ -645,7 +645,7 @@ describe("extension workspace writes", () => {
     const bootstrap = await launchWithExtension(repo, extPath, {
       kind: "vcs",
       staged: false,
-      options: { mode: "stack", extensionPaths: [extPath] },
+      options: { mode: "unified", extensionPaths: [extPath] },
     });
     const deferredWriter = createDeferredWorkspaceWriter();
     const quitController = new AbortController();
@@ -654,7 +654,7 @@ describe("extension workspace writes", () => {
     await withAppHost(
       bootstrap,
       async (setup) => {
-        await act(async () => setup.mockInput.typeText("y"));
+        await act(async () => setup.mockInput.typeText("Y"));
         await flushUntil(
           setup,
           () => setup.captureCharFrame().includes("Write alpha.txt?"),
@@ -696,7 +696,7 @@ describe("extension workspace writes", () => {
     const bootstrap = await launchWithExtension(repo, extPath, {
       kind: "vcs",
       staged: false,
-      options: { mode: "stack", extensionPaths: [extPath] },
+      options: { mode: "unified", extensionPaths: [extPath] },
     });
     await withAppHost(bootstrap, async (setup) => {
       await flushUntil(
@@ -705,7 +705,7 @@ describe("extension workspace writes", () => {
         "the review to render",
       );
       await act(async () => {
-        await setup.mockInput.typeText("y");
+        await setup.mockInput.typeText("Y");
       });
       await flushUntil(
         setup,
@@ -744,7 +744,7 @@ describe("extension workspace writes", () => {
       const bootstrap = await launchWithExtension(repo, extPath, {
         kind: "vcs",
         staged: false,
-        options: { mode: "stack", extensionPaths: [extPath] },
+        options: { mode: "unified", extensionPaths: [extPath] },
       });
       await withAppHost(bootstrap, async (setup) => {
         await flushUntil(
@@ -753,7 +753,7 @@ describe("extension workspace writes", () => {
           "the review to render",
         );
         await act(async () => {
-          await setup.mockInput.typeText("y");
+          await setup.mockInput.typeText("Y");
         });
         await flushUntil(
           setup,
@@ -788,7 +788,7 @@ describe("extension workspace writes", () => {
     const bootstrap = await launchWithExtension(repo, extPath, {
       kind: "vcs",
       staged: false,
-      options: { mode: "stack", extensionPaths: [extPath] },
+      options: { mode: "unified", extensionPaths: [extPath] },
     });
     await withAppHost(bootstrap, async (setup) => {
       await flushUntil(
@@ -798,7 +798,7 @@ describe("extension workspace writes", () => {
       );
 
       await act(async () => {
-        await setup.mockInput.typeText("y");
+        await setup.mockInput.typeText("Y");
       });
       await flushUntil(
         setup,
@@ -832,7 +832,7 @@ describe("extension workspace writes", () => {
       const bootstrap = await launchWithExtension(repo, extPath, {
         kind: "vcs",
         staged: false,
-        options: { mode: "stack", extensionPaths: [extPath] },
+        options: { mode: "unified", extensionPaths: [extPath] },
       });
       await withAppHost(bootstrap, async (setup) => {
         await flushUntil(
@@ -842,7 +842,7 @@ describe("extension workspace writes", () => {
         );
 
         await act(async () => {
-          await setup.mockInput.typeText("y");
+          await setup.mockInput.typeText("Y");
         });
         await flushUntil(
           setup,
@@ -873,7 +873,7 @@ describe("extension workspace writes", () => {
     const bootstrap = await launchWithExtension(repo, extPath, {
       kind: "show",
       ref: "HEAD",
-      options: { mode: "stack", extensionPaths: [extPath] },
+      options: { mode: "unified", extensionPaths: [extPath] },
     });
     await withAppHost(bootstrap, async (setup) => {
       await flushUntil(
@@ -883,7 +883,7 @@ describe("extension workspace writes", () => {
       );
 
       await act(async () => {
-        await setup.mockInput.typeText("y");
+        await setup.mockInput.typeText("Y");
       });
       await flushUntil(
         setup,

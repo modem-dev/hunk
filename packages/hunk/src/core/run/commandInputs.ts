@@ -15,7 +15,19 @@ import type {
 } from "../../extension-api/types";
 import type { InstallSource } from "../install/installSource";
 
-export type LayoutMode = "auto" | "split" | "stack";
+export type LayoutMode = "auto" | "split" | "unified";
+export type LayoutModeInput = LayoutMode | "stack";
+
+/** Return whether an unknown value uses canonical or deprecated layout vocabulary. */
+export function isLayoutModeInput(value: unknown): value is LayoutModeInput {
+  return value === "auto" || value === "split" || value === "unified" || value === "stack";
+}
+
+/** Normalize canonical and deprecated layout inputs without widening runtime state. */
+export function normalizeLayoutModeInput(value: LayoutModeInput): LayoutMode {
+  return value === "stack" ? "unified" : value;
+}
+
 export type CursorLine = "row" | "number" | "off";
 export type SidebarVisibility = boolean | "auto";
 export type VcsMode = string;
@@ -42,6 +54,7 @@ export interface CommonOptions {
   wrapLines?: boolean;
   hunkHeaders?: boolean;
   menuBar?: boolean;
+  animations?: boolean;
   sidebar?: SidebarVisibility;
   agentNotes?: boolean;
   copyDecorations?: boolean;
@@ -204,31 +217,60 @@ export interface SessionReloadCommandInput {
   sourcePath?: string;
 }
 
-export interface SessionCommentAddCommandInput {
+interface SessionCommentBodyInput {
+  summary: string;
+  rationale?: string;
+  markup?: string;
+  author?: string;
+}
+
+export type SessionCommentAddTargetInput =
+  | {
+      filePath: string;
+      side: "old" | "new";
+      line: number;
+      replyTo?: never;
+    }
+  | {
+      filePath?: never;
+      side?: never;
+      line?: never;
+      replyTo: string;
+    };
+
+export type SessionCommentAddCommandInput = {
   kind: "session";
   action: "comment-add";
   output: SessionCommandOutput;
   selector: SessionSelectorInput;
-  filePath: string;
-  side: "old" | "new";
-  line: number;
-  summary: string;
-  rationale?: string;
-  markup?: string;
-  author?: string;
   reveal: boolean;
-}
+} & SessionCommentBodyInput &
+  SessionCommentAddTargetInput;
 
-export interface SessionCommentApplyItemInput {
-  filePath: string;
-  hunkNumber?: number;
-  side?: "old" | "new";
-  line?: number;
-  summary: string;
-  rationale?: string;
-  markup?: string;
-  author?: string;
-}
+export type SessionCommentApplyTargetInput =
+  | {
+      filePath: string;
+      hunkNumber: number;
+      side?: "old" | "new";
+      line?: number;
+      replyTo?: never;
+    }
+  | {
+      filePath: string;
+      hunkNumber?: never;
+      side: "old" | "new";
+      line: number;
+      replyTo?: never;
+    }
+  | {
+      filePath?: never;
+      hunkNumber?: never;
+      side?: never;
+      line?: never;
+      replyTo: string;
+    };
+
+export type SessionCommentApplyItemInput = SessionCommentBodyInput & SessionCommentApplyTargetInput;
 
 export interface SessionCommentApplyCommandInput {
   kind: "session";

@@ -10,7 +10,7 @@ import type { DiffRow } from "./diffRows";
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
 const EMPTY_ROW_KEYS = new Set<string>();
 
-type DiffLineRow = Extract<DiffRow, { type: "split-line" | "stack-line" }>;
+type DiffLineRow = Extract<DiffRow, { type: "split-line" | "unified-line" }>;
 
 interface InlineVisibleNotePlacement {
   anchorKey: string;
@@ -22,18 +22,26 @@ interface InlineVisibleNotePlacement {
   noteIndex: number;
 }
 
+interface PlannedDiffReviewRowFields {
+  kind: "diff-row";
+  key: string;
+  stableKey: string;
+  stableAliasKeys?: string[];
+  fileId: string;
+  hunkIndex: number;
+  anchorId?: string;
+  noteGuideSide?: "old" | "new";
+}
+
+/** Planned review row carrying one terminal diff row subtype. */
+export type PlannedDiffReviewRow<Row extends DiffRow = DiffRow> = Row extends DiffRow
+  ? PlannedDiffReviewRowFields & { row: Row }
+  : never;
+
+export type PlannedDiffReviewRowInput = Omit<PlannedDiffReviewRowFields, "kind">;
+
 export type PlannedReviewRow =
-  | {
-      kind: "diff-row";
-      key: string;
-      stableKey: string;
-      stableAliasKeys?: string[];
-      fileId: string;
-      hunkIndex: number;
-      row: DiffRow;
-      anchorId?: string;
-      noteGuideSide?: "old" | "new";
-    }
+  | PlannedDiffReviewRow
   | {
       kind: "inline-note";
       key: string;
@@ -46,6 +54,8 @@ export type PlannedReviewRow =
       anchorSide?: "old" | "new";
       noteCount: number;
       noteIndex: number;
+      /** Connect this ranged note to the external annotation rail. */
+      rangeGuideConnection?: "terminate" | "continue";
     }
   | {
       kind: "hunk-gap";
@@ -56,9 +66,56 @@ export type PlannedReviewRow =
       height: number;
     };
 
+/** Create a planned diff row while preserving its concrete row subtype. */
+export function createPlannedDiffReviewRow<Row extends DiffRow>(
+  row: Row,
+  fields: PlannedDiffReviewRowInput,
+): PlannedDiffReviewRow<Row>;
+export function createPlannedDiffReviewRow(
+  row: DiffRow,
+  fields: PlannedDiffReviewRowInput,
+): PlannedDiffReviewRow {
+  switch (row.type) {
+    case "collapsed":
+      return { kind: "diff-row", ...fields, row };
+    case "hunk-header":
+      return { kind: "diff-row", ...fields, row };
+    case "split-line":
+      return { kind: "diff-row", ...fields, row };
+    case "unified-line":
+      return { kind: "diff-row", ...fields, row };
+  }
+}
+
+/** Split or unified code row accepted by code-row rendering and interaction policy. */
+export type CodeDiffRow = Extract<DiffRow, { type: "split-line" | "unified-line" }>;
+
+/** Collapsed gap or hunk-header row accepted by metadata rendering. */
+export type DiffMetaRow = Extract<DiffRow, { type: "collapsed" | "hunk-header" }>;
+
+/** Planned review row carrying split or unified code cells. */
+export type PlannedCodeReviewRow = PlannedDiffReviewRow<CodeDiffRow>;
+
+/** Planned review row carrying metadata rather than code cells. */
+export type PlannedDiffMetaReviewRow = PlannedDiffReviewRow<DiffMetaRow>;
+
+/** Return whether a planned diff row carries renderable code cells. */
+export function isPlannedCodeReviewRow(
+  plannedRow: PlannedDiffReviewRow,
+): plannedRow is PlannedCodeReviewRow {
+  return plannedRow.row.type === "split-line" || plannedRow.row.type === "unified-line";
+}
+
+/** Return whether a planned diff row carries a gap or hunk header. */
+export function isPlannedDiffMetaReviewRow(
+  plannedRow: PlannedDiffReviewRow,
+): plannedRow is PlannedDiffMetaReviewRow {
+  return plannedRow.row.type === "collapsed" || plannedRow.row.type === "hunk-header";
+}
+
 function lineRows(rows: DiffRow[]) {
   return rows.filter(
-    (row): row is DiffLineRow => row.type === "split-line" || row.type === "stack-line",
+    (row): row is DiffLineRow => row.type === "split-line" || row.type === "unified-line",
   );
 }
 
@@ -159,7 +216,7 @@ export function contextLineStableKeySides(
   };
 }
 
-/** Resolve the stable anchor keys for one rendered diff row across split and stack layouts. */
+/** Resolve the stable anchor keys for one rendered diff row across split and unified layouts. */
 function diffRowStableKeys(row: DiffRow) {
   if (row.type === "collapsed") {
     return [`meta:collapsed:${row.position}:${row.hunkIndex}`];
@@ -184,7 +241,7 @@ function diffRowStableKeys(row: DiffRow) {
       ]);
     }
 
-    // Prefer the old-side line so split→stack toggles stay near the same vertical position even
+    // Prefer the old-side line so split→unified toggles stay near the same vertical position even
     // when one large change block expands into many deletions followed by many additions.
     return uniqueStableKeys([
       oldLineStableKey(row.hunkIndex, row.left.lineNumber),
@@ -284,8 +341,7 @@ function buildInlineVisibleNotePlacements(rows: DiffRow[], visibleAgentNotes: Vi
     }
 
     const anchorSide = note.anchor.preferred?.side;
-    const coveredRows = fileLineRows.filter((row) => rowOverlapsNoteRange(row, note.anchor));
-    const guideRows = coveredRows.filter((row) => row.key !== anchorRow.key);
+    const guideRows = fileLineRows.filter((row) => rowOverlapsNoteRange(row, note.anchor));
     const anchorPlacements = placementsByAnchor.get(anchorRow.key) ?? [];
 
     anchorPlacements.push({
@@ -333,6 +389,33 @@ function buildNoteGuideSideByRowKey(placementsByAnchor: Map<string, InlineVisibl
   return guideSideByRowKey;
 }
 
+/** Find rows where one aggregate range rail must continue through an inserted note card. */
+function rangeGuideContinuationRowKeys(
+  rows: DiffRow[],
+  placementsByAnchor: Map<string, InlineVisibleNotePlacement[]>,
+) {
+  const lineRowIndexByKey = new Map(lineRows(rows).map((row, index) => [row.key, index]));
+  const continuationRowKeys = new Set<string>();
+
+  for (const placements of placementsByAnchor.values()) {
+    for (const placement of placements) {
+      const guidedIndices = [...placement.guidedRowKeys].flatMap((key) => {
+        const index = lineRowIndexByKey.get(key);
+        return index === undefined ? [] : [index];
+      });
+      const lastGuidedIndex = Math.max(-1, ...guidedIndices);
+      for (const key of placement.guidedRowKeys) {
+        const index = lineRowIndexByKey.get(key);
+        if (index !== undefined && index < lastGuidedIndex) {
+          continuationRowKeys.add(key);
+        }
+      }
+    }
+  }
+
+  return continuationRowKeys;
+}
+
 function rowCanAnchorHunk(row: DiffRow, showHunkHeaders: boolean) {
   if (showHunkHeaders) {
     return row.type === "hunk-header";
@@ -370,6 +453,7 @@ export function buildReviewRenderPlan({
 }) {
   const placementsByAnchor = buildInlineVisibleNotePlacements(rows, visibleAgentNotes);
   const noteGuideSideByRowKey = buildNoteGuideSideByRowKey(placementsByAnchor);
+  const rangeGuideContinuationRows = rangeGuideContinuationRowKeys(rows, placementsByAnchor);
   const plannedRows: PlannedReviewRow[] = [];
   const anchoredHunks = new Set<number>();
 
@@ -396,20 +480,31 @@ export function buildReviewRenderPlan({
       anchoredHunks.add(row.hunkIndex);
     }
 
-    plannedRows.push({
-      kind: "diff-row",
-      key: `diff-row:${row.key}`,
-      stableKey: diffStableKey,
-      stableAliasKeys: diffStableAliasKeys,
-      fileId: row.fileId,
-      hunkIndex: row.hunkIndex,
-      row,
-      anchorId,
-      noteGuideSide: noteGuideSideByRowKey.get(row.key),
-    });
+    plannedRows.push(
+      createPlannedDiffReviewRow(row, {
+        key: `diff-row:${row.key}`,
+        stableKey: diffStableKey,
+        stableAliasKeys: diffStableAliasKeys,
+        fileId: row.fileId,
+        hunkIndex: row.hunkIndex,
+        anchorId,
+        noteGuideSide: noteGuideSideByRowKey.get(row.key),
+      }),
+    );
 
     const anchoredNotes = placementsByAnchor.get(row.key) ?? [];
+    let remainingRootNotes = anchoredNotes.reduce(
+      (count, placement) => count + ((placement.note.thread?.depth ?? 0) === 0 ? 1 : 0),
+      0,
+    );
+
     anchoredNotes.forEach((placement) => {
+      const isThreadReply = (placement.note.thread?.depth ?? 0) > 0;
+      if (!isThreadReply) {
+        remainingRootNotes -= 1;
+      }
+      const hasLaterRootNote = remainingRootNotes > 0;
+
       plannedRows.push({
         kind: "inline-note",
         key: `inline-note:${placement.note.id}:${row.key}:${placement.noteIndex}`,
@@ -422,6 +517,14 @@ export function buildReviewRenderPlan({
         anchorSide: placement.anchorSide,
         noteCount: placement.noteCount,
         noteIndex: placement.noteIndex,
+        // Replies already connect through the thread gutter on the left. Keep the
+        // external range rail on root cards so the thread has only one range connection.
+        rangeGuideConnection:
+          isThreadReply || !noteGuideSideByRowKey.has(row.key)
+            ? undefined
+            : hasLaterRootNote || rangeGuideContinuationRows.has(row.key)
+              ? "continue"
+              : "terminate",
       });
     });
   }

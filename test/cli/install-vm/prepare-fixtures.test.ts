@@ -24,6 +24,7 @@ import {
   deriveVerifiedDaemonUpgradeBinaryDigests,
   FIXTURE_VERSION_A,
   FIXTURE_VERSION_B,
+  rewriteCurlInstallerForVmServer,
   verifyInstallVmFixtures,
   type InstallVmFixtureManifest,
 } from "./prepare-fixtures";
@@ -166,6 +167,23 @@ describe("install VM package fixtures", () => {
         readFileSync(path.join(resolveHunkSkillPath(repoRoot, skill), "SKILL.md"), "utf8"),
       ).toContain("---");
     }
+  });
+
+  test("keeps curl release fallback inside the isolated VM server", () => {
+    const rewritten = rewriteCurlInstallerForVmServer(
+      [
+        'RELEASE_PROXY="https://updates.hunk.dev/v1/curl/latest"',
+        'RELEASES_API="https://api.github.com/repos/${REPO}/releases/latest"',
+        'DOWNLOAD_BASE="https://github.com/${REPO}/releases/download"',
+      ].join("\n"),
+    );
+
+    expect(rewritten).toContain(
+      'RELEASE_PROXY="http://172.16.0.1:18080/unavailable-release-proxy"',
+    );
+    expect(rewritten).toContain('RELEASES_API="http://172.16.0.1:18080/latest"');
+    expect(rewritten).toContain('DOWNLOAD_BASE="http://172.16.0.1:18080/download"');
+    expect(rewritten).not.toContain("https://");
   });
 
   test("derives trusted daemon binary digests from the actual platform tarballs", async () => {

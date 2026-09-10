@@ -1,6 +1,6 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
-import { act, StrictMode, useEffect, useRef, useState } from "react";
+import { act, StrictMode, useEffect, useMemo, useRef, useState } from "react";
 import { builtinAppCommand } from "../../core/run/commandCatalog";
 import { SourceTextTooLargeError } from "../../core/changeset/fileSource";
 import type { DiffFile } from "../../core/changeset/model";
@@ -12,7 +12,9 @@ import {
 } from "../../../../../test/helpers/diff-helpers";
 import { measureDiffSectionGeometry } from "../diff/diffSectionGeometry";
 import { buildLineCursors, type LineCursor } from "../lib/lineCursors";
+import type { ReviewVerticalStop } from "../lib/reviewVerticalStops";
 import { resolveTheme } from "../themes";
+import { createTestStoredNote } from "../../../../../test/helpers/review-store-helpers";
 import { useTerminalReview, type TerminalReview } from "./useTerminalReview";
 
 /** Build a DiffFile with real parsed hunks using the controller's preferred defaults. */
@@ -157,6 +159,7 @@ function TerminalReviewHarness({
   initialFiles,
   noteGeometry,
   publishLineCursors = true,
+  reviewVerticalStops,
   stmlEnabled,
   onController,
   onFirstController,
@@ -166,6 +169,7 @@ function TerminalReviewHarness({
   noteGeometry?: Parameters<typeof useTerminalReview>[0]["noteGeometry"];
   /** Publish measured stops, as the diff pane does unless the current-line marker is off. */
   publishLineCursors?: boolean;
+  reviewVerticalStops?: ReviewVerticalStop[];
   stmlEnabled?: boolean;
   onController: (controller: TerminalReview) => void;
   /** Receive the first render's controller, before any cursors were published. */
@@ -173,8 +177,20 @@ function TerminalReviewHarness({
   onSetFiles?: (setFiles: (nextFiles: DiffFile[]) => void) => void;
 }) {
   const [files, setFiles] = useState(initialFiles);
-  const [lineCursors, setLineCursors] = useState<LineCursor[]>([]);
-  const controller = useTerminalReview({ files, lineCursors, noteGeometry, stmlEnabled });
+  const [lineCursors, setLineCursors] = useState<LineCursor[]>(() =>
+    (reviewVerticalStops ?? []).flatMap((stop) => (stop.kind === "line" ? [stop.cursor] : [])),
+  );
+  const lineOnlyVerticalStops = useMemo(
+    () => lineCursors.map((cursor) => ({ kind: "line" as const, cursor })),
+    [lineCursors],
+  );
+  const controller = useTerminalReview({
+    files,
+    lineCursors,
+    reviewVerticalStops: reviewVerticalStops ?? lineOnlyVerticalStops,
+    noteGeometry,
+    stmlEnabled,
+  });
   // Capture during render, as a memoized consumer's closure would: the effects
   // below have not yet published measured cursors on the first pass.
   const firstControllerRef = useRef<TerminalReview | null>(null);
@@ -196,7 +212,7 @@ function TerminalReviewHarness({
         visibleFiles.map((file) =>
           measureDiffSectionGeometry(
             file,
-            "stack",
+            "unified",
             true,
             resolveTheme("github-dark-default", null),
             [],
@@ -229,12 +245,14 @@ async function renderTerminalReview(
     strictMode = false,
     noteGeometry,
     publishLineCursors,
+    reviewVerticalStops,
     stmlEnabled,
     onFirstController,
   }: {
     strictMode?: boolean;
     noteGeometry?: Parameters<typeof useTerminalReview>[0]["noteGeometry"];
     publishLineCursors?: boolean;
+    reviewVerticalStops?: ReviewVerticalStop[];
     stmlEnabled?: boolean;
     onFirstController?: (controller: TerminalReview) => void;
   } = {},
@@ -246,6 +264,7 @@ async function renderTerminalReview(
       initialFiles={initialFiles}
       noteGeometry={noteGeometry}
       publishLineCursors={publishLineCursors}
+      reviewVerticalStops={reviewVerticalStops}
       stmlEnabled={stmlEnabled}
       onFirstController={onFirstController}
       onController={(nextController) => {
@@ -537,8 +556,8 @@ describe("useTerminalReview", () => {
   });
 
   test("live comments validate markup at the published live width", async () => {
-    const noteGeometry: { current: { layout: "split" | "stack"; width: number } | null } = {
-      current: { layout: "stack", width: 120 },
+    const noteGeometry: { current: { layout: "split" | "unified"; width: number } | null } = {
+      current: { layout: "unified", width: 120 },
     };
     const { controllerRef, setup } = await renderTerminalReview(
       [
@@ -587,7 +606,7 @@ describe("useTerminalReview", () => {
         );
       });
 
-      // stack at width 120 → content width 112; split dock is roughly half.
+      // unified at width 120 → content width 112; split dock is roughly half.
       expect(results[0]!.markupWidth).toBe(112);
       expect(results[1]!.markupWidth).toBeLessThan(70);
     } finally {
@@ -855,6 +874,7 @@ describe("useTerminalReview", () => {
       await flush(setup);
 
       expect(savedNoteId).toStartWith("user:");
+      expect(expectValue(controllerRef.current).store.getSnapshot().activeNoteId).toBe(savedNoteId);
       expect(expectValue(controllerRef.current).userNotesByFileId.alpha).toHaveLength(1);
       expect(expectValue(controllerRef.current).reviewNoteSummaries).toMatchObject([
         {
@@ -937,6 +957,88 @@ describe("useTerminalReview", () => {
       expect(() => expectValue(controllerRef.current).removeUserNote(rootId)).toThrow(
         "cannot be removed while it has replies",
       );
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("live replies inherit semantic anchors and reject unavailable parents atomically", async () => {
+    const { controllerRef, setup } = await renderTerminalReview([
+      createAlphaFile(),
+      createDiffFile("beta", "beta.ts", "export const beta = 1;\n", "export const beta = 2;\n"),
+    ]);
+
+    try {
+      await flush(setup);
+      let parentId = "";
+      await act(async () => {
+        const controller = expectValue(controllerRef.current);
+        controller.startUserNote("beta", 0, { side: "new", line: 1 });
+        controller.updateDraftNote("Parent note");
+        parentId = controller.saveDraftNote()?.id ?? "";
+      });
+      await flush(setup);
+
+      const parent = expectValue(controllerRef.current)
+        .store.getSnapshot()
+        .userNotes.find((entry) => entry.note.id === parentId)!;
+      await act(async () => {
+        const result = expectValue(controllerRef.current).addLiveComment(
+          { replyTo: parentId, summary: "Agent reply" },
+          "comment-reply",
+        );
+        expect(result).toMatchObject({
+          commentId: "comment-reply",
+          filePath: "beta.ts",
+          hunkIndex: 0,
+          side: "new",
+          line: 1,
+        });
+      });
+      await flush(setup);
+
+      const reply = expectValue(controllerRef.current)
+        .store.getSnapshot()
+        .liveNotes.find((entry) => entry.note.id === "comment-reply")!;
+      expect(reply.note.parentId).toBe(parentId);
+      expect(reply.note.fileKey).toBe(parent.note.fileKey);
+      expect(reply.note.anchor).toEqual(parent.note.anchor);
+      expect(reply.note.editable).toBe(false);
+      expect(expectValue(controllerRef.current).liveCommentSummaries).toMatchObject([
+        { commentId: "comment-reply", parentId, filePath: "beta.ts", side: "new", line: 1 },
+      ]);
+      expect(expectValue(controllerRef.current).reviewNoteSummaries).toContainEqual(
+        expect.objectContaining({ noteId: "comment-reply", parentId, editable: false }),
+      );
+
+      const countBeforeInvalidBatch = expectValue(controllerRef.current).liveCommentCount;
+      expect(() =>
+        expectValue(controllerRef.current).addLiveCommentBatch(
+          [
+            { replyTo: parentId, summary: "Would otherwise be valid" },
+            { replyTo: "missing-parent", summary: "Invalid reply" },
+          ],
+          "reply-batch",
+        ),
+      ).toThrow("Review note missing-parent is no longer available as a reply parent.");
+      expect(expectValue(controllerRef.current).liveCommentCount).toBe(countBeforeInvalidBatch);
+
+      act(() => {
+        expectValue(controllerRef.current).store.dispatch({
+          type: "notes/add-live",
+          notes: [
+            { ...parent, note: { ...parent.note, id: "orphan-parent" }, resolution: "orphaned" },
+          ],
+        });
+      });
+      expect(() =>
+        expectValue(controllerRef.current).addLiveComment(
+          { replyTo: "orphan-parent", summary: "Invalid orphan reply" },
+          "orphan-reply",
+        ),
+      ).toThrow("Review note orphan-parent is no longer available as a reply parent.");
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -1041,6 +1143,39 @@ describe("useTerminalReview", () => {
       await act(async () => {
         setup.renderer.destroy();
       });
+    }
+  });
+
+  test("ignores delayed editor updates from saved and replaced drafts", async () => {
+    const { controllerRef, setup } = await renderTerminalReview([createAlphaFile()]);
+
+    try {
+      await flush(setup);
+      let savedDraftId = "";
+      await act(async () => {
+        const controller = expectValue(controllerRef.current);
+        const draft = controller.startUserNote();
+        savedDraftId = expectValue(draft).id;
+        expect(controller.updateDraftNote("Saved body", savedDraftId)).toBe(true);
+        controller.saveDraftNote();
+        expect(controller.updateDraftNote("Late saved body", savedDraftId)).toBe(false);
+      });
+      await flush(setup);
+
+      await act(async () => {
+        const controller = expectValue(controllerRef.current);
+        const replacement = expectValue(controller.startUserNote());
+        expect(controller.updateDraftNote("Stale replacement body", savedDraftId)).toBe(false);
+        expect(controller.store.getSnapshot().draftNote?.body).toBe("");
+        expect(controller.updateDraftNote("Current replacement body", replacement.id)).toBe(true);
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).store.getSnapshot().draftNote?.body).toBe(
+        "Current replacement body",
+      );
+    } finally {
+      await act(async () => setup.renderer.destroy());
     }
   });
 
@@ -1769,6 +1904,101 @@ describe("useTerminalReview", () => {
     }
   });
 
+  test("moves between lines, root notes, and replies without dual focus", async () => {
+    const file = createAlphaFile();
+    const cursors = buildLineCursors(
+      [file],
+      [
+        measureDiffSectionGeometry(
+          file,
+          "unified",
+          true,
+          resolveTheme("github-dark-default", null),
+        ),
+      ],
+    );
+    const first = expectValue(cursors[0]);
+    const second = expectValue(cursors[1]);
+    const reviewVerticalStops: ReviewVerticalStop[] = [
+      { kind: "line", cursor: first },
+      {
+        kind: "note",
+        fileId: file.id,
+        hunkIndex: first.hunkIndex,
+        noteId: "root",
+        stableKey: "inline-note:root-card",
+      },
+      {
+        kind: "note",
+        fileId: file.id,
+        hunkIndex: first.hunkIndex,
+        noteId: "reply",
+        stableKey: "inline-note:reply-card",
+      },
+      { kind: "line", cursor: second },
+    ];
+    const { controllerRef, setup } = await renderTerminalReview([file], {
+      publishLineCursors: false,
+      reviewVerticalStops,
+    });
+
+    try {
+      await flush(setup);
+      const controller = expectValue(controllerRef.current);
+      const fileKey = expectValue(controller.store.getSnapshot().document.files[0]).key;
+      await act(async () => {
+        controller.store.dispatch({
+          type: "notes/add-live",
+          notes: [
+            createTestStoredNote({ id: "root", fileKey, source: "user" }),
+            createTestStoredNote({ id: "reply", fileKey, parentId: "root", source: "user" }),
+          ],
+        });
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).lineCursor).toEqual(first);
+      expect(expectValue(controllerRef.current).store.getSnapshot().activeNoteId).toBeNull();
+
+      await act(async () => expectValue(controllerRef.current).moveLineCursor(1));
+      await flush(setup);
+      expect(expectValue(controllerRef.current).lineCursor).toBeNull();
+      expect(expectValue(controllerRef.current).store.getSnapshot().activeNoteId).toBe("root");
+      expect(expectValue(controllerRef.current).lineCursorRevealRequest.target).toEqual({
+        fileId: file.id,
+        stableKey: "inline-note:root-card",
+      });
+
+      await act(async () => expectValue(controllerRef.current).moveLineCursor(1));
+      await flush(setup);
+      expect(expectValue(controllerRef.current).lineCursor).toBeNull();
+      expect(expectValue(controllerRef.current).store.getSnapshot().activeNoteId).toBe("reply");
+
+      await act(async () => expectValue(controllerRef.current).moveLineCursor(1));
+      await flush(setup);
+      expect(expectValue(controllerRef.current).lineCursor).toEqual(second);
+      expect(expectValue(controllerRef.current).store.getSnapshot().activeNoteId).toBeNull();
+
+      await act(async () => expectValue(controllerRef.current).moveLineCursor(-1));
+      await flush(setup);
+      expect(expectValue(controllerRef.current).lineCursor).toBeNull();
+      expect(expectValue(controllerRef.current).store.getSnapshot().activeNoteId).toBe("reply");
+
+      await act(async () => expectValue(controllerRef.current).moveNoteCursor(-1));
+      await flush(setup);
+      expect(expectValue(controllerRef.current).store.getSnapshot().activeNoteId).toBe("root");
+
+      const revealRequest = expectValue(controllerRef.current).lineCursorRevealRequest;
+      await act(async () => expectValue(controllerRef.current).activateNote("reply"));
+      await flush(setup);
+      expect(expectValue(controllerRef.current).lineCursor).toBeNull();
+      expect(expectValue(controllerRef.current).store.getSnapshot().activeNoteId).toBe("reply");
+      expect(expectValue(controllerRef.current).lineCursorRevealRequest).toBe(revealRequest);
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
   test("requests a reveal every time the current line moves", async () => {
     const { controllerRef, setup } = await renderTerminalReview([createTwoHunkFile()]);
 
@@ -1799,7 +2029,7 @@ describe("useTerminalReview", () => {
       [
         measureDiffSectionGeometry(
           file,
-          "stack",
+          "unified",
           true,
           resolveTheme("github-dark-default", null),
           [],

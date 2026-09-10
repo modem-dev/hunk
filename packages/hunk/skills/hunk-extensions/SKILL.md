@@ -111,10 +111,15 @@ bad or duplicate id is skipped with a startup notice.
 | Reload after an external agent changes reviewed inputs   | `ctx.review.requestReload()` in an event     |
 | Read user-supplied settings                              | `hunk.config` (`[extension.<id>]` table)     |
 | Snapshot stable files and every saved review note        | `ctx.review.snapshot()` in a command         |
-| Branch on the API generation (currently `18`)            | `hunk.apiVersion`                            |
+| Branch on the API generation (currently `25`)            | `hunk.apiVersion`                            |
 
 Registration is only valid while the factory runs — Hunk seals the API object
 afterwards.
+
+Promise-returning VCS `watchSignature` hooks and watch cancellation require API
+version 25. Declare `{"hunk": {"apiVersion": 25}}` in the manifest, or branch on
+`hunk.apiVersion` and return signatures synchronously on older hosts. Use async
+I/O and honor `ctx.signal` on API 25; existing synchronous hooks remain supported.
 
 ### Generic CLI handlers
 
@@ -320,7 +325,7 @@ Only when the work is in the `hunk` repo rather than in a user extension:
   that is a real gap, not a reason for a private path. `default/vcs/` loads from
   VCS adapter resolution and must stay renderer-free.
 - `packages/hunk/src/extension-api/types.ts` must stay **import-free**; declaration emission
-  publishes whatever it reaches, and `scripts/check-pack.ts` fails the pack
+  publishes whatever it reaches, and `scripts/packaging/check-pack.ts` fails the pack
   otherwise. Shapes shared with internal code are declared there and re-exported
   inward.
 - New API surface means updating `docs/extensions.md` (its examples are

@@ -12,7 +12,7 @@ import {
   type VerticalScrollbarScheduler,
 } from "./VerticalScrollbar";
 
-const { AppHost } = await import("../../AppHost");
+const { TestAppHost: AppHost } = await import("../../../../../../test/helpers/app-host");
 
 function createDiffFile(id: string, path: string, before: string, after: string): DiffFile {
   const metadata = parseDiffFromFile(

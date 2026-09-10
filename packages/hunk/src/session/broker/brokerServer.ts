@@ -23,6 +23,8 @@ import type {
   AppliedHighlightResult,
   ClearedCommentsResult,
   ClearedHighlightsResult,
+  CommentBatchItemInput,
+  CommentToolInput,
   HunkSessionCommandResult,
   HunkSessionServerMessage,
   NavigateToHunkToolInput,
@@ -72,6 +74,57 @@ const SUPPORTED_SESSION_ACTIONS: SessionDaemonAction[] = [
   "highlight-add",
   "highlight-clear",
 ];
+
+type DaemonCommentAddRequest = Extract<SessionDaemonRequest, { action: "comment-add" }>;
+type DaemonCommentApplyItem = Extract<
+  SessionDaemonRequest,
+  { action: "comment-apply" }
+>["comments"][number];
+
+/** Lower one validated daemon comment request to the mutually exclusive session target type. */
+function toCommentToolInput(input: DaemonCommentAddRequest): CommentToolInput {
+  const body = {
+    ...input.selector,
+    summary: input.summary,
+    rationale: input.rationale,
+    markup: input.markup,
+    author: input.author,
+    reveal: input.reveal,
+  };
+  if (input.replyTo !== undefined) {
+    return { ...body, replyTo: input.replyTo };
+  }
+  if (input.filePath !== undefined && input.side !== undefined && input.line !== undefined) {
+    return { ...body, filePath: input.filePath, side: input.side, line: input.line };
+  }
+  throw new Error("Validated root comment is missing its line target.");
+}
+
+/** Lower one validated batch entry while preserving hunk-first root target behavior. */
+function toCommentBatchItem(input: DaemonCommentApplyItem): CommentBatchItemInput {
+  const body = {
+    summary: input.summary,
+    rationale: input.rationale,
+    markup: input.markup,
+    author: input.author,
+  };
+  if (input.replyTo !== undefined) {
+    return { ...body, replyTo: input.replyTo };
+  }
+  if (input.filePath !== undefined && input.hunkNumber !== undefined) {
+    return {
+      ...body,
+      filePath: input.filePath,
+      hunkIndex: input.hunkNumber - 1,
+      side: input.side,
+      line: input.line,
+    };
+  }
+  if (input.filePath !== undefined && input.side !== undefined && input.line !== undefined) {
+    return { ...body, filePath: input.filePath, side: input.side, line: input.line };
+  }
+  throw new Error("Validated root comment is missing its hunk or line target.");
+}
 
 export interface ServeSessionBrokerDaemonOptions {
   idleTimeoutMs?: number;
@@ -411,17 +464,7 @@ export async function handleSessionApiRequest(
           result: await state.dispatchCommand<AppliedCommentResult, "comment">({
             selector: input.selector,
             command: "comment",
-            input: {
-              ...input.selector,
-              filePath: input.filePath,
-              side: input.side,
-              line: input.line,
-              summary: input.summary,
-              rationale: input.rationale,
-              markup: input.markup,
-              author: input.author,
-              reveal: input.reveal,
-            },
+            input: toCommentToolInput(input),
             timeoutMessage: "Timed out waiting for the session to apply the comment.",
           }),
         };
@@ -433,16 +476,7 @@ export async function handleSessionApiRequest(
             command: "comment_batch",
             input: {
               ...input.selector,
-              comments: input.comments.map((comment) => ({
-                filePath: comment.filePath,
-                hunkIndex: comment.hunkNumber !== undefined ? comment.hunkNumber - 1 : undefined,
-                side: comment.side,
-                line: comment.line,
-                summary: comment.summary,
-                rationale: comment.rationale,
-                markup: comment.markup,
-                author: comment.author,
-              })),
+              comments: input.comments.map(toCommentBatchItem),
               revealMode: input.revealMode,
             },
             timeoutMessage: "Timed out waiting for the session to apply the comment batch.",

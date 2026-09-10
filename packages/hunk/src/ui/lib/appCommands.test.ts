@@ -13,6 +13,7 @@ import {
   type ResolvedCommandKeys,
 } from "./appCommands";
 import { APP_COMMAND_CATALOG } from "../../core/run/commandCatalog";
+import { HISTORY_COMMAND_CATALOG } from "../../core/run/historyCommandCatalog";
 import { buildAppMenus } from "./appMenus";
 import { buildHelpSections, HELP_COMMAND_IDS } from "./helpContent";
 import { resolveCommandKeys } from "./keymap";
@@ -50,6 +51,7 @@ function createTestCommands(resolvedKeys?: ResolvedCommandKeys) {
     applyFilePresentationToAllMatching: record("applyFilePresentationToAllMatching"),
     focusFilter: record("focusFilter"),
     moveSelection: record("moveSelection"),
+    moveNoteCursor: record("moveNoteCursor"),
     openAgentSkill: record("openAgentSkill"),
     openThemeSelector: record("openThemeSelector"),
     requestQuit: record("requestQuit"),
@@ -237,7 +239,7 @@ describe("built-in commands under user keybindings", () => {
 });
 
 describe("builtinCommandKeyDefaults", () => {
-  test("keeps the documented command-id table sorted and identical to the runtime catalog", () => {
+  test("keeps the documented command-id tables identical to the surface catalogs", () => {
     const markdown = readFileSync(
       resolve(import.meta.dir, "../../../../../docs/keybindings.md"),
       "utf8",
@@ -246,10 +248,13 @@ describe("builtinCommandKeyDefaults", () => {
       markdown.matchAll(/^\| `(hunk\.[^`]+)`\s+\|/gm),
       (match) => match[1],
     );
-    const { commands } = createTestCommands();
-    const sortedRuntimeIds = commands.map((command) => command.id).toSorted();
+    const catalogIds = new Set([
+      ...APP_COMMAND_CATALOG.map((command) => command.id),
+      ...HISTORY_COMMAND_CATALOG.map((command) => command.id),
+    ]);
 
-    expect(documentedIds).toEqual(sortedRuntimeIds);
+    expect(new Set(documentedIds).size).toBe(documentedIds.length);
+    expect(documentedIds.toSorted()).toEqual([...catalogIds].toSorted());
   });
 
   test("reports every built-in command with the chords it ships with", () => {
@@ -271,7 +276,13 @@ describe("builtinCommandKeyDefaults", () => {
       "u",
       "ctrl+u",
     ]);
-    // The menu-only commands ship unbound, and are reported so users can bind them.
+    expect(defaults.find((entry) => entry.id === "hunk.view.layoutUnified")?.defaultKeys).toEqual([
+      "1",
+    ]);
+    expect(defaults.find((entry) => entry.id === "hunk.view.layoutSplit")?.defaultKeys).toEqual([
+      "2",
+    ]);
+    // Commands with contextual or menu routing ship unbound and remain user-bindable.
     expect(
       defaults
         .filter((entry) => entry.defaultKeys.length === 0)
@@ -282,6 +293,7 @@ describe("builtinCommandKeyDefaults", () => {
       "hunk.review.alignCurrentLineBottom",
       "hunk.review.alignCurrentLineCenter",
       "hunk.review.alignCurrentLineTop",
+      "hunk.review.clearSelection",
       "hunk.review.nextAnnotatedFile",
       "hunk.review.previousAnnotatedFile",
       "hunk.view.applyFilePresentationToAllMatching",
@@ -331,11 +343,12 @@ describe("executeAppCommand", () => {
     expect(ran).toEqual(["requestQuit", "openAgentSkill"]);
   });
 
-  test("executes a compatibility alias through the canonical command", () => {
+  test("executes compatibility aliases through their canonical commands", () => {
     const { commands, ran } = createTestCommands();
 
     expect(executeAppCommand(commands, "hunk.view.toggleSidebar")).toBe(true);
-    expect(ran).toEqual(["toggleFilesPane"]);
+    expect(executeAppCommand(commands, "hunk.view.layoutStack")).toBe(true);
+    expect(ran).toEqual(["toggleFilesPane", "selectLayoutMode:unified"]);
   });
 
   test("uses shipped semantics rather than a remapped chord for programmatic execution", () => {
@@ -358,9 +371,15 @@ describe("executeAppCommand", () => {
     const { commands, ran } = createTestCommands();
 
     expect(executeAppCommand(commands, "hunk.review.nextHunk", { count: 3 })).toBe(true);
+    expect(executeAppCommand(commands, "hunk.review.previousNote", { count: 2 })).toBe(true);
     expect(executeAppCommand(commands, "hunk.review.stepUp", { count: 4 })).toBe(true);
     expect(executeAppCommand(commands, "hunk.review.pageDown", { count: 2 })).toBe(true);
-    expect(ran).toEqual(["moveSelection:hunk,3", "stepDiffLine:-4", "scrollDiff:2,viewport"]);
+    expect(ran).toEqual([
+      "moveSelection:hunk,3",
+      "moveNoteCursor:-2",
+      "stepDiffLine:-4",
+      "scrollDiff:2,viewport",
+    ]);
   });
 
   test("runs one-shot commands once regardless of count", () => {
@@ -383,14 +402,20 @@ describe("executeAppCommand", () => {
 });
 
 describe("observeAppCommandDispatch", () => {
-  test("observes successful terminal dispatch exactly once with the command id", () => {
+  test("observes successful terminal dispatch with stable and canonical command ids", () => {
     const { commands, ran } = createTestCommands();
-    const observed: string[] = [];
-    const wrapped = observeAppCommandDispatch(commands, (id) => observed.push(id));
+    const observed: Array<[string, string | undefined]> = [];
+    const wrapped = observeAppCommandDispatch(commands, (id, canonicalId) =>
+      observed.push([id, canonicalId]),
+    );
 
     expect(dispatchAppCommand(wrapped, keyEvent({ name: "q" }))?.id).toBe("hunk.app.quit");
-    expect(ran).toEqual(["requestQuit"]);
-    expect(observed).toEqual(["hunk.app.quit"]);
+    expect(executeAppCommand(wrapped, "hunk.view.layoutStack")).toBe(true);
+    expect(ran).toEqual(["requestQuit", "selectLayoutMode:unified"]);
+    expect(observed).toEqual([
+      ["hunk.app.quit", undefined],
+      ["hunk.view.layoutStack", "hunk.view.layoutUnified"],
+    ]);
   });
 
   test("does not observe disabled or throwing commands", () => {

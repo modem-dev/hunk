@@ -79,8 +79,10 @@ export function createExtensionPaneKeybindings(
 }
 
 export interface ResolveCommandKeysOptions {
-  /** Every command that can be bound, in dispatch order. */
+  /** Every command active on this surface, in dispatch order. */
   defaults: readonly CommandKeyDefaults[];
+  /** Known commands owned by another surface; accepted but inactive here. */
+  inactiveCommandNames?: ReadonlySet<string>;
   /** The user's `[keybindings]` table, in config order. */
   userBindings?: Readonly<Record<string, UserKeyBinding>>;
 }
@@ -164,6 +166,7 @@ function mirrorCommandAliases(
  */
 export function resolveCommandKeys({
   defaults,
+  inactiveCommandNames,
   userBindings,
 }: ResolveCommandKeysOptions): ResolvedKeymap {
   const issues: KeymapIssue[] = [];
@@ -214,6 +217,9 @@ export function resolveCommandKeys({
   for (const [commandId, binding] of Object.entries(userBindings)) {
     const canonicalId = canonicalByName.get(commandId);
     if (canonicalId === undefined) {
+      if (inactiveCommandNames?.has(commandId)) {
+        continue;
+      }
       issues.push({
         commandId,
         message: namesAnAbsentExtension(commandId, knownOwners)

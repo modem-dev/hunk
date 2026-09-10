@@ -72,9 +72,11 @@ What detection never overrides is an explicit choice: a `vcs = "<id>"` in Hunk c
 
 ## Watch support
 
+Promise-returning `watchSignature` hooks and watch cancellation require API version 25. Declare `"hunk": { "apiVersion": 25 }` in the extension manifest so older hosts refuse to load it, or branch on `hunk.apiVersion` and keep a synchronous hook on older hosts. Existing synchronous hooks remain supported.
+
 `--watch` works through extension adapters. Each operation may add:
 
-- `watchSignature(input, ctx)` — a cheap fingerprint of the reviewed state. Hunk polls it and reloads when it changes.
+- `watchSignature(input, ctx)` — a fingerprint of the reviewed state, returning `string | Promise<string>`. Hunk awaits it and reloads when it changes. Prefer async I/O and honor optional `ctx.signal`, which aborts when observation closes.
 - `watchPlan(input, ctx)` — the filesystem targets that cover that state, so Hunk reacts to events instead of polling on a timer.
 
 ```ts

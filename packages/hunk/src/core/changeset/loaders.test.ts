@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { replaceExtensionFileLanguages } from "./fileLanguage";
 import { SourceTextTooLargeError } from "./fileSource";
 import { getBundledVcsCatalog } from "../../app/vcsCatalog";
-import { createGitVcsAdapter } from "../../extensions/default/vcs/git";
+import { createGitVcsAdapter } from "@hunk/git";
 import { toInternalVcsAdapter } from "../../extensions/runExtension";
 import { createVcsCatalog } from "../vcs";
 import { loadAppBootstrap as loadCoreAppBootstrap, type LoadAppBootstrapOptions } from "./loaders";
@@ -241,6 +241,46 @@ describe("loadAppBootstrap", () => {
     expect(bootstrap.reloadContext.vcsCatalog?.adapters).toEqual([adapter]);
   });
 
+  test("carries provider review metadata into direct CLI review bootstraps", async () => {
+    const dir = createTempDir("hunk-adapter-review-info-");
+    const adapter: VcsAdapter = {
+      id: "demo",
+      name: "Demo VCS",
+      detect: () => null,
+      operations: {
+        "revision-show": {
+          load: async () => ({
+            repoRoot: dir,
+            sourceLabel: dir,
+            title: "demo show",
+            patchText: "",
+            review: {
+              kind: "commit",
+              provider: "Demo VCS",
+              title: "Direct commit",
+              revision: "abc123",
+              displayRevision: "abc123",
+            },
+          }),
+        },
+      },
+    };
+
+    const bootstrap = await loadAppBootstrap(
+      { kind: "show", ref: "tip", options: { vcs: "demo" } },
+      { cwd: dir, vcsCatalog: createVcsCatalog([adapter], "demo", []) },
+    );
+
+    expect(bootstrap.review).toEqual({
+      kind: "commit",
+      provider: "Demo VCS",
+      title: "Direct commit",
+      revision: "abc123",
+      displayRevision: "abc123",
+    });
+    expect(bootstrap.reviewSource).toBe("provider");
+  });
+
   test("captures a watched signature before content loading", async () => {
     const dir = createTempDir("hunk-watch-bootstrap-");
     const left = join(dir, "before.ts");
@@ -270,12 +310,42 @@ describe("loadAppBootstrap", () => {
 
       expect(bootstrap.reloadContext.cwd).toBe(dir);
       expect(bootstrap.reloadContext.initialWatchSignature).toBeDefined();
-      expect(computeWatchSignature(bootstrap.input, bootstrap.reloadContext)).not.toBe(
+      expect(await computeWatchSignature(bootstrap.input, bootstrap.reloadContext)).not.toBe(
         bootstrap.reloadContext.initialWatchSignature,
       );
     } finally {
       Bun.file = originalBunFile;
     }
+  });
+
+  test("awaits the initial provider signature before loading content", async () => {
+    const order: string[] = [];
+    const abort = new AbortController();
+    const adapter: VcsAdapter = {
+      id: "demo",
+      name: "Demo",
+      detect: () => null,
+      operations: {
+        "working-tree-diff": {
+          async watchSignature(_input, { signal }) {
+            expect(signal).toBe(abort.signal);
+            await Promise.resolve();
+            order.push("signature");
+            return "before-load";
+          },
+          async load() {
+            order.push("load");
+            return { repoRoot: process.cwd(), sourceLabel: "demo", title: "demo", patchText: "" };
+          },
+        },
+      },
+    };
+    const bootstrap = await loadAppBootstrap(
+      { kind: "vcs", staged: false, options: { watch: true, vcs: "demo" } },
+      { vcsCatalog: createVcsCatalog([adapter], "demo", []), signal: abort.signal },
+    );
+    expect(order).toEqual(["signature", "load"]);
+    expect(bootstrap.reloadContext.initialWatchSignature).toBe("vcs\n---\nbefore-load");
   });
 
   test("does not fail a valid initial load when best-effort watch signing fails", async () => {
@@ -377,7 +447,7 @@ describe("loadAppBootstrap", () => {
     );
     expect(bootstrap.changeset.files[0]?.path).toBe("example.ts");
     expect(bootstrap.changeset.files[0]?.agent?.annotations).toHaveLength(1);
-    expect(computeWatchSignature(bootstrap.input, bootstrap.reloadContext)).toBe(
+    expect(await computeWatchSignature(bootstrap.input, bootstrap.reloadContext)).toBe(
       bootstrap.reloadContext.initialWatchSignature!,
     );
   });

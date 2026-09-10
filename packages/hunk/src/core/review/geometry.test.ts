@@ -7,6 +7,9 @@ import {
   reviewHunkIndexForLine,
   reviewHunkRange,
   reviewHunkRanges,
+  reviewLineCoveredByHunks,
+  reviewRangeCoveredByHunks,
+  reviewRangeTargetCoverageIssue,
   reviewRangesOverlap,
 } from "./geometry";
 
@@ -56,6 +59,63 @@ describe("reviewHunkIndexForLine", () => {
   test("reports no hunk for a line between or beyond them", () => {
     expect(reviewHunkIndexForLine(hunks, "new", 10)).toBe(-1);
     expect(reviewHunkIndexForLine(hunks, "old", 99)).toBe(-1);
+  });
+});
+
+describe("reviewRangeCoveredByHunks", () => {
+  test("requires every line to be backed by real rows, across contiguous hunks", () => {
+    expect(reviewRangeCoveredByHunks([span(1, 3), span(4, 2)], "new", [2, 5])).toBe(true);
+    expect(reviewRangeCoveredByHunks([span(1, 3), span(5, 2)], "new", [2, 5])).toBe(false);
+  });
+
+  test("does not treat a zero-count side's synthetic position as visible coverage", () => {
+    const insertion = {
+      additionStart: 7,
+      additionCount: 1,
+      deletionStart: 6,
+      deletionCount: 0,
+    };
+    const deletion = {
+      additionStart: 6,
+      additionCount: 0,
+      deletionStart: 7,
+      deletionCount: 1,
+    };
+    expect(reviewRangeCoveredByHunks([insertion], "old", [6, 6])).toBe(false);
+    expect(reviewLineCoveredByHunks([insertion], "new", 7)).toBe(true);
+    expect(reviewLineCoveredByHunks([insertion], "old", 6)).toBe(false);
+    expect(reviewLineCoveredByHunks([deletion], "old", 7)).toBe(true);
+    expect(reviewLineCoveredByHunks([deletion], "new", 6)).toBe(false);
+    expect(reviewLineCoveredByHunks([span(1, 2), span(4, 2)], "new", 3)).toBe(false);
+  });
+});
+
+describe("reviewRangeTargetCoverageIssue", () => {
+  const hunks = [span(1, 3), span(4, 2)];
+
+  test("accepts dual ranges backed entirely by visible rows", () => {
+    expect(
+      reviewRangeTargetCoverageIssue(hunks, {
+        oldRange: [2, 4],
+        newRange: [2, 5],
+        preferred: { side: "new", line: 5 },
+      }),
+    ).toBeUndefined();
+  });
+
+  test("distinguishes unbacked sides and unrelated preferred lines", () => {
+    expect(
+      reviewRangeTargetCoverageIssue(hunks, {
+        newRange: [2, 6],
+        preferred: { side: "new", line: 6 },
+      }),
+    ).toBe("new");
+    expect(
+      reviewRangeTargetCoverageIssue(hunks, {
+        newRange: [2, 5],
+        preferred: { side: "old", line: 2 },
+      }),
+    ).toBe("preferred");
   });
 });
 

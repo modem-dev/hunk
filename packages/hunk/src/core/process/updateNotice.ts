@@ -18,10 +18,12 @@ import {
 
 const DISABLE_STARTUP_UPDATE_NOTICE_ENV = "HUNK_DISABLE_UPDATE_NOTICE";
 const STARTUP_STATE_VERSION = 1;
+const STARTUP_RELEASE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1_000;
 
 interface PersistedStartupState {
   version: number;
   lastSeenCliVersion?: string;
+  lastReleaseCheckAt?: string;
 }
 
 export type { InstallSource, UpdateChannel };
@@ -47,6 +49,7 @@ export interface UpdateNoticeDeps {
   resolveInstallSource?: () => InstallSource;
   resolveExecutablePath?: () => string;
   statePath?: string;
+  now?: () => number;
 }
 
 /** Return whether the install source manages its own upgrades and needs no update notice. */
@@ -141,6 +144,8 @@ function readPersistedStartupState(path: string): PersistedStartupState {
     version: typeof record.version === "number" ? record.version : STARTUP_STATE_VERSION,
     lastSeenCliVersion:
       typeof record.lastSeenCliVersion === "string" ? record.lastSeenCliVersion : undefined,
+    lastReleaseCheckAt:
+      typeof record.lastReleaseCheckAt === "string" ? record.lastReleaseCheckAt : undefined,
   };
 }
 
@@ -150,6 +155,30 @@ function writePersistedStartupState(path: string, installedVersion: string) {
     version: STARTUP_STATE_VERSION,
     lastSeenCliVersion: installedVersion,
   } satisfies PersistedStartupState);
+}
+
+/** Record an attempted check before fetching so later launches normally share its interval. */
+function claimStartupReleaseCheck(path: string, now: number) {
+  const lastReleaseCheckAt = readPersistedStartupState(path).lastReleaseCheckAt;
+  const lastReleaseCheckTime = lastReleaseCheckAt ? Date.parse(lastReleaseCheckAt) : Number.NaN;
+  const elapsed = now - lastReleaseCheckTime;
+  if (
+    Number.isFinite(lastReleaseCheckTime) &&
+    elapsed >= 0 &&
+    elapsed < STARTUP_RELEASE_CHECK_INTERVAL_MS
+  ) {
+    return false;
+  }
+
+  try {
+    updateAppStateRecord(path, {
+      version: STARTUP_STATE_VERSION,
+      lastReleaseCheckAt: new Date(now).toISOString(),
+    } satisfies PersistedStartupState);
+  } catch {
+    // A read-only state directory should not disable update discovery for the whole session.
+  }
+  return true;
 }
 
 /** Return whether the transient startup notice should stay disabled for deterministic sessions like CI. */
@@ -217,12 +246,20 @@ export async function resolveStartupUpdateNotice(
     return null;
   }
 
+  const statePath = deps.statePath ?? resolveAppStatePath(env);
+  if (statePath && !claimStartupReleaseCheck(statePath, (deps.now ?? Date.now)())) {
+    return null;
+  }
+
   // A Nix install cannot be updated from a registry, but nixpkgs tracks the npm release stream, so
   // the notice still announces upstream releases and leaves the update to the user's Nix config.
   const lookupSource = installSource === "nix" ? "npm" : installSource;
   const channelVersions = await fetchChannelVersions(lookupSource, {
     fetchImpl: deps.fetchImpl,
     fetchTimeoutMs: deps.fetchTimeoutMs,
+    env,
+    requestSource: "startup",
+    currentVersion: resolveInstalledVersion(),
   });
 
   return selectUpdateNotice(resolveInstalledVersion(), channelVersions, installSource);

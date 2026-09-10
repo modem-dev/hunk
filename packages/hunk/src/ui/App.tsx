@@ -15,6 +15,7 @@ import {
   useState,
 } from "react";
 import type { PersistedViewPreferences } from "../core/run/config";
+import { HISTORY_COMMAND_NAMES } from "../core/run/historyCommandCatalog";
 import type { ExtensionReviewReloadResult } from "../extension-api/types";
 import { experimentalFeatureEnabled, resolveExperimentalDiffFiles } from "../core/run/experimental";
 import { DEFAULT_FILE_GAP, DEFAULT_HUNK_GAP } from "../core/run/reviewGap";
@@ -23,7 +24,9 @@ import { isVcsReviewInput } from "../core/vcs";
 import type { AppBootstrap } from "../core/bootstrap";
 import {
   selectActiveEditableReviewNoteId,
+  selectActiveRemovableReviewNote,
   selectActiveReplyableReviewNoteId,
+  selectActiveStoredReviewNote,
 } from "../core/review/selectors";
 import type { CliInput, CursorLine, LayoutMode } from "../core/run/commandInputs";
 import { sanitizeTerminalLine } from "../lib/terminalText";
@@ -39,12 +42,17 @@ import type { ExtensionNotifyType, ExtensionLoadResult } from "../extensions/typ
 import type { ReviewProducer } from "../app/review/producer";
 import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
 import type { ReloadedSessionResult, ReloadSessionOptions } from "../session/types";
+// Keep lightweight interaction chrome synchronous: first-use lazy suspension otherwise
+// delays its visible commit behind React's Suspense fallback/retry throttle.
+import { HelpDialog } from "./components/chrome/HelpDialog";
+import { MenuDropdown } from "./components/chrome/MenuDropdown";
 import { MenuBar } from "./components/chrome/MenuBar";
 import { ConfirmDialog, confirmDialogHeight } from "./components/chrome/ConfirmDialog";
 import { ExtensionDialog } from "./components/chrome/ExtensionDialog";
+import { ViewPreferenceQuitDialog } from "./components/chrome/ViewPreferenceQuitDialog";
 import { ExtensionToast } from "./components/chrome/ExtensionToast";
 import { StatusBar } from "./components/chrome/StatusBar";
-import { DiffPane } from "./components/panes/DiffPane";
+import { DiffPane, type ReviewSelectionActionsHandle } from "./components/panes/DiffPane";
 import { ExtensionPaneHost } from "./components/panes/ExtensionPane";
 import { PaneDivider } from "./components/panes/PaneDivider";
 import {
@@ -73,6 +81,7 @@ import {
 } from "./hooks/useExtensionWorkspaceControls";
 import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
 import { useMenuController } from "./hooks/useMenuController";
+import { usePaneSlideAnimation } from "./hooks/usePaneSlideAnimation";
 import { useThemeSelectorController } from "./hooks/useThemeSelectorController";
 import { useTimedNotice } from "./hooks/useTimedNotice";
 import { useUserNoteComposer } from "./hooks/useUserNoteComposer";
@@ -84,6 +93,7 @@ import {
   buildAppCommands,
   builtinCommandKeyDefaults,
   builtinCommandMatchProbes,
+  findAppCommandById,
   observeAppCommandDispatch,
 } from "./lib/appCommands";
 import { buildAppMenus } from "./lib/appMenus";
@@ -91,6 +101,7 @@ import { buildExtensionAppCommands, extensionCommandKeyDefaults } from "./lib/ex
 import { createExtensionReviewReloadControls } from "./lib/extensionReviewReload";
 import type { CurrentLineAlignment } from "./lib/hunkScroll";
 import type { LineCursor } from "./lib/lineCursors";
+import type { ReviewVerticalStop } from "./lib/reviewVerticalStops";
 import { useFilePresentationController } from "./fileViews/useFilePresentationController";
 import { useFilePresentationRendering } from "./fileViews/useFilePresentationRendering";
 import { mergeLineHighlightMaps } from "./highlights/merge";
@@ -109,6 +120,7 @@ import { setMouseCapture } from "./lib/mouseCapture";
 import { openSelectedFileInEditor } from "./lib/openInEditor";
 import { resolveResponsiveLayout } from "./lib/responsive";
 import type { WorkspaceRefreshRequest } from "./currentReviewRefresh";
+import { ThemeController } from "./theme/controller";
 
 type FocusArea = "files" | "filter" | "note";
 
@@ -116,12 +128,6 @@ const FAST_CODE_HORIZONTAL_SCROLL_COLUMNS = 8;
 
 const LazyAgentSkillDialog = lazy(async () => ({
   default: (await import("./components/chrome/AgentSkillDialog")).AgentSkillDialog,
-}));
-const LazyHelpDialog = lazy(async () => ({
-  default: (await import("./components/chrome/HelpDialog")).HelpDialog,
-}));
-const LazyMenuDropdown = lazy(async () => ({
-  default: (await import("./components/chrome/MenuDropdown")).MenuDropdown,
 }));
 const LazyThemeSelectorDialog = lazy(async () => ({
   default: (await import("./components/chrome/ThemeSelectorDialog")).ThemeSelectorDialog,
@@ -140,12 +146,14 @@ export function App({
   noticeText,
   onQuit = () => process.exit(0),
   onFirstFrameReady,
+  onViewPreferencesChange,
   onRegisterWorkspaceRefreshRequest,
   onReloadSession,
   onRequestExtensionReviewReload,
   onWorkspaceWriteCompleted,
   reviewProducer,
   runWorkspaceWrite,
+  themeController,
   returnToHistory = process.env.HUNK_RETURN_TO_HISTORY === "1",
   watchRuntime,
   workspaceFileWriter,
@@ -158,6 +166,8 @@ export function App({
   onQuit?: () => void;
   /** Report once OpenTUI has committed the review's first requested frame. */
   onFirstFrameReady?: () => void;
+  /** Publish the complete live preference snapshot to a routed session owner. */
+  onViewPreferencesChange?: (preferences: PersistedViewPreferences) => void;
   /** Register the mounted review descriptor AppHost should reconcile after a completed write. */
   onRegisterWorkspaceRefreshRequest: (request: WorkspaceRefreshRequest) => () => void;
   onReloadSession: (
@@ -174,6 +184,8 @@ export function App({
   reviewProducer?: ReviewProducer;
   /** Start and track one irreversible write, or refuse it once graceful shutdown begins. */
   runWorkspaceWrite: WorkspaceWriteRunner;
+  /** Session-owned committed theme state shared across routed surfaces. */
+  themeController?: ThemeController;
   /** Present quit as returning to the owning history surface. */
   returnToHistory?: boolean;
   watchRuntime?: WatchedInputRuntime;
@@ -196,10 +208,12 @@ export function App({
   // the current values through a ref instead of a render-time parameter.
   const noteGeometryRef = useRef<AgentNoteGeometrySnapshot | null>(null);
   const [lineCursors, setLineCursors] = useState<LineCursor[]>([]);
+  const [reviewVerticalStops, setReviewVerticalStops] = useState<ReviewVerticalStop[]>([]);
   const review = useTerminalReview({
     files: reviewFiles,
     initialShowAgentNotes: bootstrap.initialShowAgentNotes ?? false,
     lineCursors,
+    reviewVerticalStops,
     noteGeometry: noteGeometryRef,
     sourceLabel: bootstrap.changeset.sourceLabel,
     stmlEnabled,
@@ -221,6 +235,7 @@ export function App({
   const wrapToggleScrollTopRef = useRef<number | null>(null);
   const layoutToggleScrollTopRef = useRef<number | null>(null);
   const cancelCopySelectionRef = useRef<(() => void) | null>(null);
+  const selectionActionsRef = useRef<ReviewSelectionActionsHandle | null>(null);
   const [layoutToggleRequestId, setLayoutToggleRequestId] = useState(0);
   const [scrollEdgeRequest, setScrollEdgeRequest] = useState<{
     id: number;
@@ -246,6 +261,15 @@ export function App({
   const extensions = bootstrap.extensions as ExtensionLoadResult | undefined;
   const pendingTrustRepoRoot = extensions?.pendingTrustRepoRoot;
   const extensionToast = useExtensionNotifications(extensions?.notifications);
+  const [ownedThemeController] = useState(
+    () =>
+      new ThemeController({
+        initialTheme: bootstrap.initialTheme,
+        initialThemeMode: bootstrap.initialThemeMode ?? renderer.themeMode,
+        customThemes: bootstrap.customThemes,
+      }),
+  );
+  const activeThemeController = themeController ?? ownedThemeController;
 
   const {
     activeTheme,
@@ -261,10 +285,8 @@ export function App({
     openThemeSelector,
     previewThemeSelectorItem,
   } = useThemeSelectorController({
-    customThemes: bootstrap.customThemes,
-    initialTheme: bootstrap.initialTheme,
-    initialThemeMode: bootstrap.initialThemeMode ?? renderer.themeMode,
     onTransientNotice: showTransientNotice,
+    themeController: activeThemeController,
     transparentBackground: bootstrap.input.options.transparentBackground ?? false,
   });
   const currentViewPreferences = useMemo<PersistedViewPreferences>(
@@ -291,7 +313,28 @@ export function App({
       wrapLines,
     ],
   );
+  const currentViewPreferencesRef = useRef(currentViewPreferences);
+  currentViewPreferencesRef.current = currentViewPreferences;
+  const publishViewPreferenceChanges = useCallback(
+    (changes: Partial<PersistedViewPreferences>) => {
+      const preferences = { ...currentViewPreferencesRef.current, ...changes };
+      currentViewPreferencesRef.current = preferences;
+      onViewPreferencesChange?.(preferences);
+    },
+    [onViewPreferencesChange],
+  );
+  useLayoutEffect(() => {
+    currentViewPreferencesRef.current = currentViewPreferences;
+    onViewPreferencesChange?.(currentViewPreferences);
+  }, [currentViewPreferences, onViewPreferencesChange]);
   const filteredFiles = review.visibleFiles;
+  const semanticFileIdentities = useMemo(
+    () =>
+      filteredFiles.map(
+        (file) => review.semanticFileIdentityByFileId.get(file.id) ?? `runtime:${file.id}`,
+      ),
+    [filteredFiles, review.semanticFileIdentityByFileId],
+  );
   const selectedFile = review.selectedFile;
   const selectedHunkIndex = review.selectedHunkIndex;
   const selectedFileId = selectedFile?.id ?? null;
@@ -350,25 +393,20 @@ export function App({
   );
 
   const openAgentNotes = useCallback(() => {
+    publishViewPreferenceChanges({ showAgentNotes: true });
     review.setShowAgentNotes(true);
-  }, [review.setShowAgentNotes]);
+  }, [publishViewPreferenceChanges, review.setShowAgentNotes]);
 
   /** Close the modal keyboard help overlay. */
   const closeHelp = useCallback(() => {
     setShowHelp(false);
   }, []);
-  const {
-    changedViewPreferences,
-    saveConfigPromptOpen,
-    viewPreferenceDiffLines,
-    viewPreferencesConfigLabel,
-    requestQuit,
-    saveViewPreferencesAndQuit,
-    discardViewPreferencesAndQuit,
-    neverAskToSaveViewPreferencesAndQuit,
-    closeSaveConfigPrompt,
-  } = useViewPreferenceQuitController({
+  const viewPreferenceQuit = useViewPreferenceQuitController({
     currentPreferences: currentViewPreferences,
+    initialPreferences: {
+      ...currentViewPreferences,
+      theme: activeThemeController.initialThemeId,
+    },
     configPath: bootstrap.viewPreferencesConfigPath,
     pagerMode,
     promptSaveViewPreferences:
@@ -380,6 +418,14 @@ export function App({
     closeHelp,
     homeDirectory: process.env.HOME,
   });
+  const {
+    saveConfigPromptOpen,
+    requestQuit,
+    saveViewPreferencesAndQuit,
+    discardViewPreferencesAndQuit,
+    neverAskToSaveViewPreferencesAndQuit,
+    closeSaveConfigPrompt,
+  } = viewPreferenceQuit;
   const notifyExtensionMode = useCallback(
     (message: string, type?: ExtensionNotifyType) => extensions?.context.notify(message, type),
     [extensions],
@@ -466,6 +512,7 @@ export function App({
     filesPaneVisible,
     onCurrentLinePaintChange,
     paneLayout,
+    paneLayoutSettled,
     reportPaneRenderFailure,
     renderSidebar,
     resizingPaneKey,
@@ -490,6 +537,15 @@ export function App({
     notifyWarning: showPaneWarning,
     pagerMode,
     responsiveShowsSidebar: responsiveLayout.showSidebar,
+  });
+
+  const { animating: paneLayoutAnimating, layout: presentedPaneLayout } = usePaneSlideAnimation({
+    bodyHeight,
+    bodyWidth,
+    enabled: bootstrap.input.options.animations !== false,
+    paneLayout,
+    paneLayoutSettled,
+    resizing: resizingPaneKey !== null,
   });
 
   useEffect(() => {
@@ -581,6 +637,7 @@ export function App({
           ...builtinCommandKeyDefaults(),
           ...extensionCommandKeyDefaults(registeredExtensionCommands),
         ],
+        inactiveCommandNames: HISTORY_COMMAND_NAMES,
         userBindings: bootstrap.keybindings,
       }),
     [bootstrap.keybindings, registeredExtensionCommands],
@@ -669,8 +726,10 @@ export function App({
       selectedHunkIndex,
       themeId,
     });
-  const diffPaneWidth = paneLayout.reviewBounds.width;
-  const diffPaneHeight = paneLayout.reviewBounds.height;
+  const diffPaneWidth = presentedPaneLayout.reviewBounds.width;
+  const diffPaneHeight = presentedPaneLayout.reviewBounds.height;
+  // Diff content leaves two outer columns: the first carries the annotation range rail and the
+  // second remains safety space beside the pane edge. Neither belongs to copy or wrap geometry.
   const diffContentWidth = Math.max(0, diffPaneWidth - 2);
   // Publish the live note geometry for daemon-driven markup validation; the
   // note markup width mirrors what AgentInlineNote lays STML out at.
@@ -813,7 +872,8 @@ export function App({
 
   /** Step one line: move the current line, or scroll the viewport when there is no marker. */
   const stepDiffLine = (delta: number) => {
-    if (!activeLineCursor) {
+    if (selectionActionsRef.current?.move(delta)) return;
+    if (cursorLine === "off") {
       scrollDiff(delta, "step");
       return;
     }
@@ -854,25 +914,44 @@ export function App({
   );
 
   /** Preserve the current review position before changing the active diff layout. */
-  const selectLayoutMode = useCallback((mode: LayoutMode) => {
-    layoutToggleScrollTopRef.current = diffScrollRef.current?.scrollTop ?? 0;
-    setLayoutToggleRequestId((current) => current + 1);
-    setLayoutMode(mode);
-  }, []);
+  const selectLayoutMode = useCallback(
+    (mode: LayoutMode) => {
+      layoutToggleScrollTopRef.current = diffScrollRef.current?.scrollTop ?? 0;
+      publishViewPreferenceChanges({ mode });
+      setLayoutToggleRequestId((current) => current + 1);
+      setLayoutMode(mode);
+    },
+    [publishViewPreferenceChanges],
+  );
+
+  /** Select one current-line presentation before coalesced quit input can unmount the review. */
+  const selectCursorLine = useCallback(
+    (nextCursorLine: CursorLine) => {
+      publishViewPreferenceChanges({ cursorLine: nextCursorLine });
+      setCursorLine(nextCursorLine);
+    },
+    [publishViewPreferenceChanges],
+  );
 
   /** Toggle the global agent note layer on or off. */
   const toggleAgentNotes = () => {
-    review.toggleAgentNotes();
+    const nextShowAgentNotes = !currentViewPreferencesRef.current.showAgentNotes;
+    publishViewPreferenceChanges({ showAgentNotes: nextShowAgentNotes });
+    review.setShowAgentNotes(nextShowAgentNotes);
   };
 
   /** Toggle line-number gutters without changing the diff content itself. */
   const toggleLineNumbers = () => {
-    setShowLineNumbers((current) => !current);
+    const nextShowLineNumbers = !currentViewPreferencesRef.current.showLineNumbers;
+    publishViewPreferenceChanges({ showLineNumbers: nextShowLineNumbers });
+    setShowLineNumbers(nextShowLineNumbers);
   };
 
   /** Toggle whether mouse selection copies review decorations or only file content. */
   const toggleCopyDecorations = () => {
-    setCopyDecorations((current) => !current);
+    const nextCopyDecorations = !currentViewPreferencesRef.current.copyDecorations;
+    publishViewPreferenceChanges({ copyDecorations: nextCopyDecorations });
+    setCopyDecorations(nextCopyDecorations);
   };
 
   /** Toggle whether diff code rows wrap instead of truncating to one terminal row. */
@@ -880,18 +959,24 @@ export function App({
     // Capture the pre-toggle viewport position synchronously so DiffPane can restore the same
     // top-most source row after wrapped row heights change.
     wrapToggleScrollTopRef.current = diffScrollRef.current?.scrollTop ?? 0;
+    const nextWrapLines = !currentViewPreferencesRef.current.wrapLines;
+    publishViewPreferenceChanges({ wrapLines: nextWrapLines });
     setCodeHorizontalOffset(0);
-    setWrapLines((current) => !current);
+    setWrapLines(nextWrapLines);
   };
 
   /** Toggle visibility of hunk metadata rows without changing the actual diff lines. */
   const toggleHunkHeaders = () => {
-    setShowHunkHeaders((current) => !current);
+    const nextShowHunkHeaders = !currentViewPreferencesRef.current.showHunkHeaders;
+    publishViewPreferenceChanges({ showHunkHeaders: nextShowHunkHeaders });
+    setShowHunkHeaders(nextShowHunkHeaders);
   };
 
   /** Toggle the top menu bar while keeping F10 menu navigation available. */
   const toggleMenuBar = () => {
-    setShowMenuBar((current) => !current);
+    const nextShowMenuBar = !currentViewPreferencesRef.current.showMenuBar;
+    publishViewPreferenceChanges({ showMenuBar: nextShowMenuBar });
+    setShowMenuBar(nextShowMenuBar);
   };
 
   const { canRefreshCurrentInput, refreshCurrentInput, triggerRefreshCurrentInput } =
@@ -1057,8 +1142,11 @@ export function App({
     publishEvent: publishNoteEvent,
   });
 
-  const activeEditableNoteId = selectActiveEditableReviewNoteId(review.store.getSnapshot());
-  const activeReplyableNoteId = selectActiveReplyableReviewNoteId(review.store.getSnapshot());
+  const reviewSnapshot = review.store.getSnapshot();
+  const activeNoteId = selectActiveStoredReviewNote(reviewSnapshot)?.note.id;
+  const activeEditableNoteId = selectActiveEditableReviewNoteId(reviewSnapshot);
+  const activeReplyableNoteId = selectActiveReplyableReviewNoteId(reviewSnapshot);
+  const activeRemovableNote = selectActiveRemovableReviewNote(reviewSnapshot);
 
   // One dispatch table for every app-level shortcut: the built-in commands
   // over App's live callbacks, then extension commands, so built-ins always
@@ -1068,12 +1156,21 @@ export function App({
       ...buildAppCommands({
         canAlignCurrentLine: cursorLine !== "off" && review.lineCursor !== null,
         canApplyFilePresentationToAllMatching: selectedFileViewBulkTarget !== null,
+        canDeleteActiveNote: activeRemovableNote !== undefined && review.draftNote === null,
         canEditActiveNote: activeEditableNoteId !== undefined && review.draftNote === null,
         canReplyToActiveNote: activeReplyableNoteId !== undefined && review.draftNote === null,
         canRefreshCurrentInput,
         alignCurrentLine,
         applyFilePresentationToAllMatching,
         focusFilter,
+        deleteActiveNote: () => {
+          if (!activeRemovableNote) return;
+          if (activeRemovableNote.source === "user") {
+            review.removeUserNote(activeRemovableNote.noteId);
+          } else {
+            review.removeLiveComment(activeRemovableNote.noteId);
+          }
+        },
         editActiveNote: () => {
           if (activeEditableNoteId) startUserNoteEdit(activeEditableNoteId);
         },
@@ -1081,6 +1178,7 @@ export function App({
           if (activeReplyableNoteId) startUserNoteReply(activeReplyableNoteId);
         },
         moveSelection: review.moveSelection,
+        moveNoteCursor: review.moveNoteCursor,
         openAgentSkill,
         openThemeSelector,
         requestQuit,
@@ -1088,9 +1186,15 @@ export function App({
         scrollCodeHorizontally,
         scrollDiff,
         stepDiffLine,
-        selectCursorLine: setCursorLine,
+        selectCursorLine,
         selectLayoutMode,
-        startUserNote: () => startUserNote(),
+        hasVisualSelection: () => selectionActionsRef.current?.hasSelection() ?? false,
+        startVisualSelection: () => selectionActionsRef.current?.beginKeyboardSelection(),
+        copySelection: () => selectionActionsRef.current?.copy(),
+        clearSelection: () => selectionActionsRef.current?.clear(),
+        startUserNote: () => {
+          if (!selectionActionsRef.current?.comment()) startUserNote();
+        },
         toggleAgentNotes,
         toggleCopyDecorations,
         toggleFocusArea,
@@ -1111,6 +1215,20 @@ export function App({
       ...extensionAppCommands.commands,
     ],
     publishCommandExecuted,
+  );
+  const selectionCommentKeyLabel = findAppCommandById(appCommands, "hunk.review.startNote")
+    ?.keyLabels[0];
+  const selectionCopyKeyLabel = findAppCommandById(appCommands, "hunk.review.copySelection")
+    ?.keyLabels[0];
+  const deleteNoteKeyLabel =
+    findAppCommandById(appCommands, "hunk.review.deleteActiveNote")?.keyLabels[0] ?? "";
+  const editNoteKeyLabel =
+    findAppCommandById(appCommands, "hunk.review.editActiveNote")?.keyLabels[0] ?? "";
+  const replyNoteKeyLabel =
+    findAppCommandById(appCommands, "hunk.review.replyToActiveNote")?.keyLabels[0] ?? "";
+  const noteActionKeyLabels = useMemo(
+    () => ({ delete: deleteNoteKeyLabel, edit: editNoteKeyLabel, reply: replyNoteKeyLabel }),
+    [deleteNoteKeyLabel, editNoteKeyLabel, replyNoteKeyLabel],
   );
   useExtensionRuntimeBindings({
     commands: appCommands,
@@ -1177,6 +1295,7 @@ export function App({
     closeThemeSelector,
     closeExtensionTrustPrompt,
     commands: appCommands,
+    clearVisualSelection: () => selectionActionsRef.current?.clear() ?? false,
     denyRepoExtensions,
     extensionDialog,
     acceptExtensionDialog,
@@ -1221,7 +1340,7 @@ export function App({
   const diffHeaderStatsWidth = maxFileHeaderStatsWidth(filteredFiles);
   const diffHeaderLabelWidth = Math.max(0, diffContentWidth - diffHeaderStatsWidth - 1);
   const diffSeparatorWidth = Math.max(0, diffContentWidth - 2);
-  const diffPaneScreenTop = (showMenuBar ? 1 : 0) + paneLayout.reviewBounds.y;
+  const diffPaneScreenTop = (showMenuBar ? 1 : 0) + presentedPaneLayout.reviewBounds.y;
 
   /** Render one pane from the exact accepted host rectangle. */
   const renderPane = (planned: PlannedPane) => {
@@ -1253,6 +1372,18 @@ export function App({
           showTopChrome={showMenuBar}
           keybindings={paneKeybindings}
           notify={(message, type) => extensions?.context.notify(message, type)}
+          onCopyText={(text) => {
+            if (
+              !renderer.isOsc52Supported?.() ||
+              typeof renderer.copyToClipboardOSC52 !== "function"
+            ) {
+              showTransientNotice("Clipboard is unavailable in this terminal.");
+              return false;
+            }
+            renderer.copyToClipboardOSC52(text);
+            showTransientNotice("Copied text to clipboard");
+            return true;
+          }}
           onSelectFile={(fileId) => {
             focusFiles();
             jumpToFile(fileId, { alignFileHeaderTop: true });
@@ -1284,7 +1415,7 @@ export function App({
   };
 
   const renderDivider = (planned: PlannedPane) =>
-    planned.divider ? (
+    planned.divider && !paneLayoutAnimating ? (
       <box
         key={`${planned.pane.key}:divider`}
         style={{
@@ -1353,27 +1484,38 @@ export function App({
           endPaneResize(event);
           closeMenu();
           cancelCopySelectionRef.current?.();
+          const reviewLeft = bodyPadding / 2 + presentedPaneLayout.reviewBounds.x;
+          const outsideReview =
+            event.x < reviewLeft ||
+            event.x >= reviewLeft + diffPaneWidth ||
+            event.y < diffPaneScreenTop ||
+            event.y >= diffPaneScreenTop + diffPaneHeight;
+          if (outsideReview) selectionActionsRef.current?.clear();
         }}
       >
-        {paneLayout.panes.map(renderPane)}
-        {paneLayout.panes.map(renderDivider)}
+        {presentedPaneLayout.panes.map(renderPane)}
+        {presentedPaneLayout.panes.map(renderDivider)}
         <box
           style={{
             position: "absolute",
-            left: bodyPadding / 2 + paneLayout.reviewBounds.x,
-            top: paneLayout.reviewBounds.y,
+            left: bodyPadding / 2 + presentedPaneLayout.reviewBounds.x,
+            top: presentedPaneLayout.reviewBounds.y,
             width: diffPaneWidth,
             height: diffPaneHeight,
           }}
         >
           <DiffPane
             cancelCopySelectionRef={cancelCopySelectionRef}
+            selectionActionsRef={selectionActionsRef}
+            selectionCommentKeyLabel={selectionCommentKeyLabel}
+            selectionCopyKeyLabel={selectionCopyKeyLabel}
             codeHorizontalOffset={codeHorizontalOffset}
             copyDecorations={copyDecorations}
             diffContentWidth={diffContentWidth}
             expandedGapsByFileId={review.expandedGapsByFileId}
             fileViews={fileViewLayouts}
             files={filteredFiles}
+            semanticFileIdentities={semanticFileIdentities}
             offloadLargeDiff={bootstrap.input.options.fast === true}
             lineHighlights={paintedLineHighlights}
             pagerMode={pagerMode}
@@ -1386,6 +1528,8 @@ export function App({
             scrollRef={diffScrollRef}
             selectedFileId={selectedFile?.id}
             selectedHunkIndex={selectedHunkIndex}
+            activeNoteId={activeNoteId}
+            noteActionKeyLabels={noteActionKeyLabels}
             scrollToNote={review.scrollToNote}
             draftNote={review.draftNote}
             draftNoteFocused={focusArea === "note"}
@@ -1412,6 +1556,7 @@ export function App({
             width={diffPaneWidth}
             height={diffPaneHeight}
             onActiveAddNoteAffordanceChange={onActiveAddNoteAffordanceChange}
+            onActivateNote={review.activateNote}
             onEditUserNote={startUserNoteEdit}
             onReplyToNote={startUserNoteReply}
             onRemoveLiveNote={review.removeLiveComment}
@@ -1433,6 +1578,7 @@ export function App({
               review.anchorSelection(fileId, hunkIndex)
             }
             onLineCursorsChange={setLineCursors}
+            onReviewVerticalStopsChange={setReviewVerticalStops}
             currentLinePaintRequested={currentLinePaintRequested}
             onCurrentLinePaintChange={onCurrentLinePaintChange}
             onViewportLineCursorChange={review.anchorLineCursor}
@@ -1466,24 +1612,22 @@ export function App({
       ) : null}
 
       {activeMenuId && activeMenuSpec ? (
-        <Suspense fallback={null}>
-          <LazyMenuDropdown
-            activeMenuId={activeMenuId}
-            activeMenuEntries={activeMenuEntries}
-            activeMenuItemIndex={activeMenuItemIndex}
-            activeMenuSpec={activeMenuSpec}
-            activeMenuWidth={activeMenuWidth}
-            top={showMenuBar ? 1 : 0}
-            terminalHeight={terminal.height}
-            terminalWidth={terminal.width}
-            theme={baseTheme}
-            onHoverItem={setActiveMenuItemIndex}
-            onSelectItem={(entry) => {
-              entry.action();
-              closeMenu();
-            }}
-          />
-        </Suspense>
+        <MenuDropdown
+          activeMenuId={activeMenuId}
+          activeMenuEntries={activeMenuEntries}
+          activeMenuItemIndex={activeMenuItemIndex}
+          activeMenuSpec={activeMenuSpec}
+          activeMenuWidth={activeMenuWidth}
+          top={showMenuBar ? 1 : 0}
+          terminalHeight={terminal.height}
+          terminalWidth={terminal.width}
+          theme={baseTheme}
+          onHoverItem={setActiveMenuItemIndex}
+          onSelectItem={(entry) => {
+            entry.action();
+            closeMenu();
+          }}
+        />
       ) : null}
 
       {showAgentSkill ? (
@@ -1500,15 +1644,13 @@ export function App({
       ) : null}
 
       {showHelp ? (
-        <Suspense fallback={null}>
-          <LazyHelpDialog
-            commands={appCommands}
-            terminalHeight={terminal.height}
-            terminalWidth={terminal.width}
-            theme={baseTheme}
-            onClose={closeHelp}
-          />
-        </Suspense>
+        <HelpDialog
+          commands={appCommands}
+          terminalHeight={terminal.height}
+          terminalWidth={terminal.width}
+          theme={baseTheme}
+          onClose={closeHelp}
+        />
       ) : null}
 
       {extensionDialog ? (
@@ -1527,45 +1669,12 @@ export function App({
       ) : null}
 
       {saveConfigPromptOpen ? (
-        <ConfirmDialog
-          actions={[
-            { keyLabel: "enter/s", label: "save", run: saveViewPreferencesAndQuit },
-            { keyLabel: "q", label: "discard", run: discardViewPreferencesAndQuit },
-            { keyLabel: "n", label: "never ask", run: neverAskToSaveViewPreferencesAndQuit },
-            { keyLabel: "esc", label: "cancel", run: closeSaveConfigPrompt },
-          ]}
-          height={confirmDialogHeight(4 + viewPreferenceDiffLines.length)}
+        <ViewPreferenceQuitDialog
+          controller={viewPreferenceQuit}
           terminalHeight={terminal.height}
           terminalWidth={terminal.width}
           theme={baseTheme}
-          title="Save view preferences?"
-          width={68}
-          onClose={closeSaveConfigPrompt}
-        >
-          <box style={{ width: "100%", height: 1 }}>
-            <text fg={baseTheme.muted}>
-              You changed {changedViewPreferences.length} view{" "}
-              {changedViewPreferences.length === 1 ? "setting" : "settings"} during this review.
-            </text>
-          </box>
-          <box style={{ width: "100%", height: 1 }}>
-            <text fg={baseTheme.muted}>
-              Save {changedViewPreferences.length === 1 ? "it" : "them"} to your config before
-              quitting?
-            </text>
-          </box>
-          <box style={{ width: "100%", height: 1 }} />
-          <box style={{ width: "100%", height: 1 }}>
-            <text fg={baseTheme.badgeNeutral}>{viewPreferencesConfigLabel}</text>
-          </box>
-          {viewPreferenceDiffLines.map((line) => (
-            <box key={line.text} style={{ width: "100%", height: 1 }}>
-              <text fg={line.removed ? baseTheme.badgeRemoved : baseTheme.badgeAdded}>
-                {line.text}
-              </text>
-            </box>
-          ))}
-        </ConfirmDialog>
+        />
       ) : null}
 
       {extensionTrustPromptOpen && extensionTrustPromptRoot ? (

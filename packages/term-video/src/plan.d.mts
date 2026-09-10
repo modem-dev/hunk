@@ -18,6 +18,32 @@ export interface Shot {
   capKey?: string;
   /** Animate the whole surface in (cards, first terminal shot). */
   enter?: boolean;
+  /** Source-relative camera center and zoom; omitted terminal shots use the full frame. */
+  camera?: CameraTarget;
+  /** Identity shared by captured frames whose camera coordinates are compatible. */
+  cameraKey?: string;
+  /** Source-relative rectangle outlined over the terminal frame. */
+  highlight?: HighlightTarget;
+  /** Identity shared by captured frames whose highlight coordinates are compatible. */
+  highlightKey?: string;
+  /** Seconds used to animate camera and highlight changes. */
+  motion?: number;
+}
+
+/** A camera target in normalized source coordinates. */
+export interface CameraTarget {
+  x: number;
+  y: number;
+  scale: number;
+}
+
+/** An outlined source region in normalized source coordinates. */
+export interface HighlightTarget {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  label?: string;
 }
 
 /** A renderable frame state handed to the stage's renderShot. */
@@ -27,6 +53,10 @@ export interface FrameState {
   img?: string;
   title?: string;
   caption?: string | null;
+  camera?: CameraTarget;
+  highlight?: HighlightTarget | null;
+  highlightT?: number;
+  highlightPulseT?: number;
   shotT: number;
   capT: number;
 }

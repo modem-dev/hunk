@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   createTestReviewDocument,
+  createTestReviewHunk,
   createTestReviewState,
   createTestStoredNote,
 } from "../../../../../test/helpers/review-store-helpers";
@@ -10,6 +11,38 @@ import type { ReviewState } from "./state";
 /** Apply several actions in order, as one dispatch batch would. */
 function reduceAll(state: ReviewState, ...actions: Parameters<typeof reduceReviewState>[1][]) {
   return actions.reduce(reduceReviewState, state);
+}
+
+/** Build a draft whose line is backed by full-source authority rather than a patch row. */
+function createExpandedLineDraftState() {
+  return reduceReviewState(
+    createTestReviewState([
+      { key: "alpha", sourceIdentity: "source:alpha", sourceAttested: true },
+      { key: "beta" },
+    ]),
+    {
+      type: "draft/start",
+      draft: {
+        id: "draft-gap",
+        fileKey: "alpha",
+        hunkIndex: 1,
+        side: "new",
+        line: 7,
+        targetKind: "line",
+        expandedLineSource: {
+          sourceIdentity: "source:alpha",
+          sourceAttested: true,
+        },
+        anchor: {
+          newRange: [7, 7],
+          preferred: { side: "new", line: 7 },
+          intersectingHunkIndices: [],
+          ownerHunkIndex: 1,
+        },
+        body: "gap feedback",
+      },
+    },
+  );
 }
 
 describe("selection", () => {
@@ -93,6 +126,25 @@ describe("selection", () => {
 
     expect(next.selection).toEqual({ fileKey: "beta", hunkIndex: 1 });
     expect(next.reveal).toEqual(state.reveal);
+  });
+
+  test("commits exact note focus with selection and clears it on ordinary selection", () => {
+    const noteSelected = reduceReviewState(createTestReviewState(), {
+      type: "selection/select",
+      fileKey: "beta",
+      hunkIndex: 1,
+      activeNoteId: "note-2",
+      reveal: { anchor: "hunk", scrollToNote: true },
+    });
+    expect(noteSelected.activeNoteId).toBe("note-2");
+    expect(noteSelected.selection).toEqual({ fileKey: "beta", hunkIndex: 1 });
+
+    const ordinarySelection = reduceReviewState(noteSelected, {
+      type: "selection/select",
+      fileKey: "beta",
+      hunkIndex: 0,
+    });
+    expect(ordinarySelection.activeNoteId).toBeNull();
   });
 
   test("retires a note-scroll request even when the selection is unchanged", () => {
@@ -185,6 +237,145 @@ describe("document reconciliation", () => {
     expect(next.expandedGaps).toEqual([]);
   });
 
+  test("preserves and re-resolves an unchanged expanded-gap line draft", () => {
+    const next = reduceReviewState(createExpandedLineDraftState(), {
+      type: "document/reconcile",
+      document: createTestReviewDocument([
+        { key: "alpha", sourceIdentity: "source:alpha", sourceAttested: true },
+        { key: "beta" },
+      ]),
+    });
+
+    expect(next.draftNote).toMatchObject({
+      id: "draft-gap",
+      hunkIndex: 1,
+      side: "new",
+      line: 7,
+      targetKind: "line",
+      expandedLineSource: {
+        sourceIdentity: "source:alpha",
+        sourceAttested: true,
+      },
+      body: "gap feedback",
+      anchor: {
+        newRange: [7, 7],
+        preferred: { side: "new", line: 7 },
+        intersectingHunkIndices: [],
+        ownerHunkIndex: 1,
+      },
+    });
+  });
+
+  test("retires an expanded-gap line draft when source identity or attestation changes", () => {
+    const changedIdentity = reduceReviewState(createExpandedLineDraftState(), {
+      type: "document/reconcile",
+      document: createTestReviewDocument([
+        { key: "alpha", sourceIdentity: "source:changed", sourceAttested: true },
+        { key: "beta" },
+      ]),
+    });
+    const changedAttestation = reduceReviewState(createExpandedLineDraftState(), {
+      type: "document/reconcile",
+      document: createTestReviewDocument([
+        { key: "alpha", sourceIdentity: "source:alpha", sourceAttested: false },
+        { key: "beta" },
+      ]),
+    });
+
+    expect(changedIdentity.draftNote).toBeNull();
+    expect(changedAttestation.draftNote).toBeNull();
+  });
+
+  test("retires a zero-count-side draft when its source authority changes", () => {
+    const state = createTestReviewState([
+      { key: "alpha", sourceIdentity: "source:one", sourceAttested: true },
+    ]);
+    const hunk = { ...createTestReviewHunk(0), deletionCount: 0, deletionLines: 0 };
+    state.document.files[0]!.hunks = [hunk];
+    const withDraft = reduceReviewState(state, {
+      type: "draft/start",
+      draft: {
+        id: "draft-zero-side",
+        fileKey: "alpha",
+        hunkIndex: 0,
+        side: "old",
+        line: hunk.deletionStart,
+        targetKind: "line",
+        expandedLineSource: { sourceIdentity: "source:one", sourceAttested: true },
+        body: "source-backed",
+      },
+    });
+    const replacement = createTestReviewDocument([
+      { key: "alpha", sourceIdentity: "source:two", sourceAttested: true },
+    ]);
+    replacement.files[0]!.hunks = [hunk];
+
+    expect(
+      reduceReviewState(withDraft, { type: "document/reconcile", document: replacement }).draftNote,
+    ).toBeNull();
+  });
+
+  test("keeps ordinary patch-line and range drafts when only source authority changes", () => {
+    const state = reduceReviewState(
+      createTestReviewState([
+        { key: "alpha", sourceIdentity: "source:one", sourceAttested: true },
+        { key: "beta" },
+      ]),
+      {
+        type: "draft/start",
+        draft: {
+          id: "draft-patch",
+          fileKey: "alpha",
+          hunkIndex: 0,
+          side: "new",
+          line: 2,
+          targetKind: "line",
+          body: "patch feedback",
+        },
+      },
+    );
+
+    const replacementDocument = createTestReviewDocument([
+      { key: "alpha", sourceIdentity: "source:two", sourceAttested: false },
+      { key: "beta" },
+    ]);
+    const next = reduceReviewState(state, {
+      type: "document/reconcile",
+      document: replacementDocument,
+    });
+    const rangeState = reduceReviewState(
+      createTestReviewState([
+        { key: "alpha", sourceIdentity: "source:one", sourceAttested: true },
+        { key: "beta" },
+      ]),
+      {
+        type: "draft/start",
+        draft: {
+          id: "draft-range",
+          fileKey: "alpha",
+          hunkIndex: 0,
+          side: "new",
+          line: 2,
+          targetKind: "range",
+          anchor: {
+            newRange: [1, 3],
+            preferred: { side: "new", line: 2 },
+            intersectingHunkIndices: [0],
+            ownerHunkIndex: 0,
+          },
+          body: "range feedback",
+        },
+      },
+    );
+    const rangeNext = reduceReviewState(rangeState, {
+      type: "document/reconcile",
+      document: replacementDocument,
+    });
+
+    expect(next.draftNote).toMatchObject({ id: "draft-patch", body: "patch feedback" });
+    expect(rangeNext.draftNote).toMatchObject({ id: "draft-range", body: "range feedback" });
+  });
+
   test("keeps notes and the active draft across a reload", () => {
     const state = reduceAll(
       createTestReviewState(),
@@ -196,7 +387,7 @@ describe("document reconciliation", () => {
           fileKey: "alpha",
           hunkIndex: 0,
           side: "new",
-          line: 4,
+          line: 2,
           body: "wip",
         },
       },
@@ -208,7 +399,16 @@ describe("document reconciliation", () => {
     });
 
     expect(next.liveNotes).toHaveLength(1);
-    expect(next.draftNote?.body).toBe("wip");
+    expect(next.draftNote).toMatchObject({
+      body: "wip",
+      targetKind: "line",
+      hunkIndex: 0,
+      anchor: {
+        newRange: [2, 2],
+        preferred: { side: "new", line: 2 },
+        ownerHunkIndex: 0,
+      },
+    });
   });
 });
 
@@ -316,6 +516,7 @@ describe("drafts", () => {
 
     expect(saved.draftNote).toBeNull();
     expect(saved.userNotes.map((entry) => entry.note.id)).toEqual(["user-1"]);
+    expect(saved.activeNoteId).toBe("user-1");
   });
 
   test("saving an edit replaces the note in place", () => {
@@ -336,6 +537,7 @@ describe("drafts", () => {
       ["user-1", "updated"],
       ["user-2", "note user-2"],
     ]);
+    expect(saved.activeNoteId).toBe("user-1");
   });
 });
 
@@ -403,6 +605,19 @@ describe("filter and note visibility", () => {
 
     expect(next.filter).toBe("alpha");
     expect(next.selection).toEqual(state.selection);
+  });
+
+  test("clears an active agent note when hiding the agent-note layer", () => {
+    const state = {
+      ...createTestReviewState([], { showAgentNotes: true }),
+      activeNoteId: "agent-1",
+      liveNotes: [createTestStoredNote({ id: "agent-1", fileKey: "alpha" })],
+    };
+
+    const next = reduceReviewState(state, { type: "notes/set-visibility", visible: false });
+
+    expect(next.showAgentNotes).toBe(false);
+    expect(next.activeNoteId).toBeNull();
   });
 
   test("ignores a repeated filter or visibility value", () => {

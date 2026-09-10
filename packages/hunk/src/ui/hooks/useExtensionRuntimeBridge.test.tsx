@@ -112,7 +112,7 @@ function createBootstrap(id: string): AppBootstrap {
   return createTestVcsAppBootstrap({
     changesetId: id,
     files: [createTestDiffFile({ id: "alpha", path: "alpha.ts" })],
-    initialMode: "stack",
+    initialMode: "unified",
   });
 }
 

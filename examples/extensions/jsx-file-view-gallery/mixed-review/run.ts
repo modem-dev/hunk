@@ -79,7 +79,7 @@ try {
       "--extension",
       galleryRoot,
       "--mode",
-      "stack",
+      "unified",
     ],
     { cwd: demoRepo, stdio: "inherit", env: process.env },
   );

@@ -20,14 +20,21 @@ export interface WatchEventSourceCallbacks {
   onEvent(): void;
   onError(error: unknown): void;
   onReady?(): void;
+  /**
+   * Report that startup is still advancing (for example one more directory registered) so a
+   * large tree keeps its watcher instead of timing out on total startup duration. Progress only
+   * matters while the source is still starting; readiness is still signalled once via onReady.
+   */
+  onProgress?(): void;
 }
 
 export const DEFAULT_WATCH_EVENT_SOURCE_STARTUP_TIMEOUT_MS = 2_000;
 export const WATCH_EVENT_SOURCE_STARTUP_TIMEOUT_CODE = "HUNK_WATCH_EVENT_SOURCE_STARTUP_TIMEOUT";
 
 export interface WatchControllerOptions {
-  initialSignature: string;
-  getSignature: () => string | Promise<string>;
+  /** Baseline captured before content loading; if absent, the first check must refresh. */
+  initialSignature?: string;
+  getSignature: (signal: AbortSignal) => string | Promise<string>;
   refresh: () => void | Promise<void>;
   /** A source event arrived and a debounced signature check is now pending. */
   onReloadPending?: () => void;
@@ -47,7 +54,7 @@ export interface WatchControllerState {
   phase: WatchControllerPhase;
   dirty: boolean;
   degraded: boolean;
-  appliedSignature: string;
+  appliedSignature: string | undefined;
 }
 
 export interface WatchController {
@@ -75,10 +82,15 @@ function getErrorKey(error: unknown) {
   return String(error);
 }
 
-/** Build the stable diagnostic reported when an event source cannot establish readiness. */
+/**
+ * Build the stable diagnostic reported when an event source stops making startup progress.
+ * The deadline measures the gap since the last progress report, not total startup duration.
+ */
 function createEventSourceStartupTimeoutError(timeoutMs: number) {
   return Object.assign(
-    new Error(`The watch event source did not become ready within ${timeoutMs} ms.`),
+    new Error(
+      `The watch event source made no startup progress for ${timeoutMs} ms and did not become ready.`,
+    ),
     {
       code: WATCH_EVENT_SOURCE_STARTUP_TIMEOUT_CODE,
       name: "WatchEventSourceStartupTimeoutError",
@@ -112,6 +124,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   let maximumDeadline: number | undefined;
   let safetyDeadline: number | undefined;
   const reportedAt = new Map<string, number>();
+  const signatureAbort = new AbortController();
 
   /** Report an error at most once per configured interval for the same error key. */
   const reportError = (error: unknown) => {
@@ -177,7 +190,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     schedule();
   };
 
-  /** Run one serialized signature check and refresh only when it changed. */
+  /** Run one serialized signature check and refresh changed or unverified content. */
   const beginCheck = async () => {
     if (state.phase === "closed" || state.phase === "checking" || state.phase === "refreshing") {
       return;
@@ -190,7 +203,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
 
     let signature: string;
     try {
-      signature = await options.getSignature();
+      signature = await options.getSignature(signatureAbort.signal);
     } catch (error) {
       if (isClosed()) return;
       reportError(error);
@@ -198,6 +211,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       return;
     }
     if (isClosed()) return;
+    // Without a pre-load baseline, readiness cannot attest that the loaded content is current.
     if (signature === state.appliedSignature) {
       finishCheck();
       return;
@@ -283,6 +297,17 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     void beginCheck();
   };
 
+  /**
+   * Extend the startup deadline while the source is still registering.
+   * Progress after readiness, closure, or degradation cannot revive a settled source, and it
+   * never substitutes for the single onReady signal that ends startup.
+   */
+  const onSourceProgress = () => {
+    if (state.phase === "closed" || sourceStatus !== "starting") return;
+    startupDeadline = clock.now() + startupTimeoutMs;
+    schedule();
+  };
+
   /** Degrade only for watcher resource exhaustion; other source errors stay nonfatal. */
   const onSourceError = (error: unknown) => {
     if (state.phase === "closed" || sourceStatus === "closed") return;
@@ -303,6 +328,8 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   safetyDeadline = clock.now() + safetyInterval();
   if (options.createEventSource && !options.pollOnly) {
     sourceStatus = "starting";
+    // The deadline bounds silence, not total startup: each onProgress report pushes it forward so
+    // a deep tree that keeps registering directories is never mistaken for a stalled watcher.
     startupDeadline = clock.now() + startupTimeoutMs;
     // This JS timer is a secondary guard: FSEvents lock contention can also delay timers, so
     // bounded native registration remains the primary macOS protection.
@@ -312,6 +339,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
         onEvent,
         onError: onSourceError,
         onReady: onSourceReady,
+        onProgress: onSourceProgress,
       });
       if (isSourceClosed()) createdSource.close();
       else eventSource = createdSource;
@@ -330,6 +358,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     close() {
       if (state.phase === "closed") return;
       state.phase = "closed";
+      signatureAbort.abort();
       state.dirty = false;
       quietDeadline = undefined;
       maximumDeadline = undefined;

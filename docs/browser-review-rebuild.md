@@ -1,11 +1,16 @@
 # Browser review rebuild plan
 
+> **Current status (2026-09-06; after Phase 4).** Shared review semantics, producer publication, the broker
+> mirror, bounded resources, capability-authenticated HTTP actions, and SSE have landed. No browser
+> client, served review page, browser assets, or browser CLI entrypoint exists yet. Phases 5 and 6
+> remain planned. Semantic deep-link grammar is deferred until its first browser/opener consumer.
+
 The synchronized browser-review feature (originally prototyped in one large branch) lands as a
 stack of small, independently reviewable PRs. Its Hunk-owned capability, resource, and semantic
 protocol remains separate from the generic per-application daemon contract in
 [`session-broker-sdk.md`](session-broker-sdk.md). Each phase has a hard gate and stands on the
 previous one. The seam contract — shared primitives stay renderer-free and platform-neutral —
-is enforced by `scripts/source-boundaries.test.ts`, whose debt lists may only shrink.
+is enforced by `scripts/quality/source-boundaries.test.ts`, whose debt lists may only shrink.
 
 Each phase lists the audit findings it repays (`browser-review-seam-audit.md`, ids A1–G5). A
 finding whose duplicate sites span phases is checked off when its **last** site converts; until
@@ -39,9 +44,10 @@ anchors / contentManifest / notes / expansion / reconcile / jsonStream` plus the
 3. **Navigation intents + command catalog**: `selection/move` / `selection/select-file` and
    the shared navigation/reveal/note selectors; the agent runtime's `navigateSession` deleted
    in favor of the shared walk; the command catalog split with semantic commands lowered to
-   intents; the semantic address grammar.
+   intents. A semantic address grammar landed here and was later removed because it had no
+   consumer; recreate it beside the first Phase 5 or 6 consumer.
 
-Repays: A1–A10 (PR 2); B1–B9, B11, F1–F3, G3 core grammar (PR 3); D2 core and terminal sites.
+Repays: A1–A10 (PR 2); B1–B9, B11, F1–F3 (PR 3); D2 core and terminal sites. G3's first grammar was later removed as unused.
 B-findings with browser sites stay open until Phase 5 consumes the selectors.
 Gate: ladder rungs 1–4 — tombstones appended for every deleted copy, terminal planner
 registered in the conformance harness, adversarial fixtures landed per repaid finding, and the
@@ -49,9 +55,11 @@ existing PTY suite passing untouched.
 
 ## Phase 2 — producer runtime
 
-`packages/hunk/src/app/reviewSessionRuntime.ts`: generations, snapshot serving, resource materialization,
-serving the existing `hunk session` surface only. Resource read failures map to distinct error
-codes (integrity failures are never collapsed into `unknown-resource`).
+`packages/hunk/src/app/review/producer.ts` owns generations, snapshot serving, and resource
+materialization. `packages/hunk/src/app/session/reviewRuntime.ts` mounts the producer and broker
+client for an interactive session. This phase serves the existing `hunk session` surface only.
+Resource read failures map to distinct error codes; integrity failures are never collapsed into
+`unknown-resource`.
 
 Repays: D1 and D4 producer/snapshot sites (helpers land in core beside the model; remaining
 sites convert in Phase 3); D5 producer sites.
@@ -214,7 +222,7 @@ allowlist design exists.
 Import gates prove code _may_ use a primitive, not that it _does_ — a consumer can silently
 re-derive. Every phase therefore passes the same five-rung ladder, and each rung is mechanical:
 
-1. **Boundary gates** (every phase, exists today): `scripts/source-boundaries.test.ts` —
+1. **Boundary gates** (every phase, exists today): `scripts/quality/source-boundaries.test.ts` —
    import containment, shrink-only debt lists, and the extracted-duplicate tombstone list.
    Repaying an audit finding means deleting the duplicate copies **and appending their paths to
    the tombstone list in the same PR**; a resurrected path fails CI forever after.

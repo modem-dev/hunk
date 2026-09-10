@@ -125,6 +125,18 @@ function ensureHighlightedDiffLoaded(
   return pending;
 }
 
+/** Wait until every highlight request started so far has finished. */
+export async function waitForHighlightedDiffIdle() {
+  while (SHARED_HIGHLIGHT_PROMISES.size > 0) {
+    await Promise.allSettled(SHARED_HIGHLIGHT_PROMISES.values());
+  }
+}
+
+/** Return whether syntax highlighting still has work in flight. */
+export function hasPendingHighlightedDiffs() {
+  return SHARED_HIGHLIGHT_PROMISES.size > 0;
+}
+
 /** Queue syntax highlighting for one file without mounting its diff rows first. */
 export function prefetchHighlightedDiff({
   file,

@@ -99,15 +99,13 @@ describe("CLI startup graph", () => {
     expect(eagerlyDeferred).toEqual([]);
   });
 
-  test("worker disposal stays with the interactive app rather than the entrypoint", () => {
-    // The entrypoint resolves once the app is mounted, so disposing from there would terminate the
-    // worker before the first large diff requested it.
-    const interactiveAppSource = readFileSync(
-      join(REPO_ROOT, "packages/hunk/src/ui/runInteractiveApp.tsx"),
+  test("worker disposal stays with the shared interactive session runner", () => {
+    const sessionRunnerSource = readFileSync(
+      join(REPO_ROOT, "packages/hunk/src/ui/session/runHunkSession.tsx"),
       "utf8",
     );
 
     expect(readModuleSource(ENTRYPOINT).includes("disposeHighlightWorker")).toBe(false);
-    expect(interactiveAppSource.includes("disposeHighlightWorker()")).toBe(true);
+    expect(sessionRunnerSource.includes("disposeHighlightWorker")).toBe(true);
   });
 });

@@ -1,7 +1,8 @@
+import { useRenderer } from "@opentui/react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { resolveConfiguredExtensions } from "../app/extensionBootstrap";
 import { ReviewProducer } from "../app/review/producer";
-import { reviewDescriptorAfterReload } from "../app/delegatedReview";
+import { reviewDescriptorAfterReload, reviewDescriptorResourceCwd } from "../app/delegatedReview";
 import { loadConfiguredSessionBootstrap } from "../app/sessionBootstrap";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";
 import { restoreFileLanguageRegistrations } from "../core/changeset/fileLanguage";
@@ -17,7 +18,8 @@ import {
   reportExtensionApplyIssues,
   resolveExtensionVcsAdapters,
 } from "../extensions/apply";
-import { emitExtensionEvent, retireExtensionLoadResult } from "../extensions/events";
+import { emitExtensionEvent } from "../extensions/events";
+import type { ExtensionSession } from "../extensions/session";
 import { extendVcsCatalog } from "../core/vcs";
 import {
   createInitialSessionSnapshot,
@@ -38,11 +40,8 @@ import type {
 } from "./hooks/useExtensionWorkspaceControls";
 import { assertReliableWatchRuntime } from "../core/watch/runtime";
 import type { WatchedInputRuntime } from "./hooks/useWatchedInput";
-
-/** A replacement registry prepared for adoption and optionally already retiring. */
-interface PendingExtensionReplacement {
-  result: ExtensionLoadResult;
-}
+import { ThemeController } from "./theme/controller";
+import type { PersistedViewPreferences } from "../core/run/config";
 
 /** Build the stable refusal returned once quit becomes terminal for reload coordination. */
 function reloadRefusedDuringShutdown() {
@@ -63,10 +62,14 @@ export function AppHost({
   onQuit = () => process.exit(0),
   onActiveBootstrapChange,
   onFirstFrameReady,
+  onViewPreferencesChange,
   returnToHistory = false,
-  extensionOwnership = "owned",
+  extensionSession,
+  extensionOwnership,
+  onRequestSessionShutdown,
   reviewProducer,
   startupNoticeResolver,
+  themeController,
   watchRuntime,
   workspaceFileWriter,
   bunVersion = Bun.version,
@@ -80,10 +83,16 @@ export function AppHost({
   onActiveBootstrapChange?: (bootstrap: AppBootstrap) => void;
   /** Report once the dynamically mounted review has committed its first requested frame. */
   onFirstFrameReady?: () => void;
+  /** Publish live preferences to the owner of a routed review surface. */
+  onViewPreferencesChange?: (preferences: PersistedViewPreferences) => void;
   /** Present quit as returning to an owning history surface. */
   returnToHistory?: boolean;
-  /** Whether this surface may retire and restart its initial extension authority. */
-  extensionOwnership?: "owned" | "borrowed";
+  /** Session authority shared by every routed surface in this process. */
+  extensionSession: ExtensionSession;
+  /** Whether this surface may ask the session to adopt a replacement registry. */
+  extensionOwnership: "owned" | "borrowed";
+  /** Ask the process owner to retire global extension authority before review teardown. */
+  onRequestSessionShutdown: () => Promise<void>;
   /**
    * The producer whose generations this host publishes. Supplied by the process that
    * built the initial registration from its first publication; a host mounted without one
@@ -91,11 +100,14 @@ export function AppHost({
    */
   reviewProducer?: ReviewProducer;
   startupNoticeResolver?: () => Promise<StartupNotice | null>;
+  /** Session-owned committed theme state shared across routed surfaces. */
+  themeController?: ThemeController;
   watchRuntime?: WatchedInputRuntime;
   workspaceFileWriter?: WorkspaceFileWriter;
   /** Runtime identity injection for reload compatibility tests. */
   bunVersion?: string;
 }) {
+  const renderer = useRenderer();
   const initialBootstrap = bootstrap.reloadContext.vcsCatalog
     ? bootstrap
     : {
@@ -105,11 +117,30 @@ export function AppHost({
           vcsCatalog: getBundledVcsCatalog(),
         },
       };
+  const [ownedThemeController] = useState(
+    () =>
+      new ThemeController({
+        initialTheme: initialBootstrap.initialTheme,
+        initialThemeMode: initialBootstrap.initialThemeMode ?? renderer.themeMode,
+        customThemes: initialBootstrap.customThemes,
+      }),
+  );
+  const activeThemeController = themeController ?? ownedThemeController;
+  const [activeExtensionSession] = useState(extensionSession);
+  // Direct renderer harnesses can mount extension-free bootstraps while still supplying an
+  // explicit empty owner. Production startup always attaches the owner's current result.
+  const extensionLifecycleEnabled = initialBootstrap.extensions !== undefined;
   const [activeBootstrap, setActiveBootstrap] = useState(initialBootstrap);
   const reviewIdentityRef = useRef({
     input: initialBootstrap.input,
-    cwd: initialBootstrap.reloadContext.cwd,
+    cwd: reviewDescriptorResourceCwd(
+      initialBootstrap.input,
+      initialBootstrap.reloadContext.cwd,
+      initialBootstrap.reloadContext.repoRoot,
+    ),
     review: initialBootstrap.review,
+    preserveReviewOnReload:
+      initialBootstrap.review !== undefined && initialBootstrap.reviewSource !== "provider",
   });
   const [producer] = useState(
     () =>
@@ -120,14 +151,6 @@ export function AppHost({
       }),
   );
   const [appVersion, setAppVersion] = useState(0);
-  // Extensions outlive App remounts. Standalone hosts own replacement and shutdown;
-  // embedded reviews borrow the history workspace's initial authority.
-  const extensionsRef = useRef(initialBootstrap.extensions as ExtensionLoadResult | undefined);
-  const borrowedExtensionRegistryRef = useRef(
-    extensionOwnership === "borrowed"
-      ? (initialBootstrap.extensions as ExtensionLoadResult | undefined)?.registry
-      : undefined,
-  );
   // Experimental capabilities are launch authority: remote/watch reloads may replace content,
   // but opting in or out requires starting a new Hunk process.
   const launchExperimental = initialBootstrap.input.options.experimental === true;
@@ -145,13 +168,6 @@ export function AppHost({
   const [sessionFileBounds] = useState(() =>
     createSessionReloadBounds(initialBootstrap, { cwd: initialBootstrap.reloadContext.cwd }),
   );
-  // Which working directory the current extension set was discovered for.
-  // Discovery is cwd-relative, so a reload that moves the session to another
-  // repository has to re-run it: that repo's extensions — and the trust
-  // question they raise — belong to it, not to the one Hunk launched in. Seeded
-  // from the bounds' cwd so it compares against the same resolved form reloads
-  // produce, and a same-directory reload is not mistaken for a move.
-  const extensionsCwdRef = useRef(sessionFileBounds.defaultCwd);
   const initialExtensionStartupPendingRef = useRef(true);
   const reloadTailRef = useRef<Promise<void>>(Promise.resolve());
   const pendingExtensionReloadRef = useRef<{
@@ -159,8 +175,6 @@ export function AppHost({
     promise: Promise<ExtensionReviewReloadResult>;
   } | null>(null);
   const quitRequestedRef = useRef(false);
-  const pendingExtensionReplacementRef = useRef<PendingExtensionReplacement | undefined>(undefined);
-  const pendingExtensionRetirementsRef = useRef<Set<Promise<void>>>(new Set());
   const pendingWorkspaceWritesRef = useRef<Set<Promise<void>>>(new Set());
   const workspaceRefreshRequestRef = useRef<WorkspaceRefreshRequest | undefined>(undefined);
   const pendingReloadLifecycleRef = useRef<{
@@ -186,14 +200,16 @@ export function AppHost({
     // leases are live here; passive UI events still wait until this order lands.
     if (initialExtensionStartupPendingRef.current) {
       initialExtensionStartupPendingRef.current = false;
-      if (extensionOwnership === "owned") {
-        emitExtensionEvent(extensionsRef.current, "startup", {
-          cwd: initialBootstrap.reloadContext.cwd,
-        });
+      if (extensionLifecycleEnabled && extensionOwnership === "owned") {
+        activeExtensionSession.startCurrent(initialBootstrap.reloadContext.cwd);
       }
-      emitExtensionEvent(extensionsRef.current, "changeset_loaded", {
-        changeset: initialBootstrap.changeset,
-      });
+      emitExtensionEvent(
+        extensionLifecycleEnabled ? activeExtensionSession.current : undefined,
+        "changeset_loaded",
+        {
+          changeset: initialBootstrap.changeset,
+        },
+      );
       return;
     }
 
@@ -203,7 +219,7 @@ export function AppHost({
     }
     pendingReloadLifecycleRef.current = null;
     if (pending.emitStartup) {
-      emitExtensionEvent(pending.extensions, "startup", { cwd: pending.cwd });
+      activeExtensionSession.startCurrent(pending.cwd);
     }
     emitExtensionEvent(pending.extensions, "changeset_loaded", {
       changeset: pending.changeset,
@@ -213,57 +229,13 @@ export function AppHost({
       reason: pending.reason,
     });
     pending.resolveMounted();
-  }, [activeBootstrap, extensionOwnership, initialBootstrap.reloadContext.cwd]);
-
-  /** Track one prepared registry until it is either adopted or fully retired. */
-  const trackPreparedExtensionReplacement = useCallback((result: ExtensionLoadResult) => {
-    pendingExtensionReplacementRef.current = { result };
-  }, []);
-
-  /** Track every registry retirement until its shared shutdown completion settles. */
-  const retireOwnedExtensionLoadResult = useCallback((result: ExtensionLoadResult | undefined) => {
-    if (result?.registry === borrowedExtensionRegistryRef.current) return Promise.resolve();
-    const retirement = retireExtensionLoadResult(result);
-    pendingExtensionRetirementsRef.current.add(retirement);
-    void retirement.then(
-      () => pendingExtensionRetirementsRef.current.delete(retirement),
-      () => pendingExtensionRetirementsRef.current.delete(retirement),
-    );
-    return retirement;
-  }, []);
-
-  /** Retire one prepared registry through a shared promise so quit and reload cleanup agree. */
-  const retirePreparedExtensionReplacement = useCallback(
-    (result: ExtensionLoadResult | undefined): Promise<void> => {
-      if (!result) return Promise.resolve();
-      const pending = pendingExtensionReplacementRef.current;
-      if (!pending || pending.result !== result) return retireOwnedExtensionLoadResult(result);
-      return retireOwnedExtensionLoadResult(result).finally(() => {
-        if (pendingExtensionReplacementRef.current === pending) {
-          pendingExtensionReplacementRef.current = undefined;
-        }
-      });
-    },
-    [retireOwnedExtensionLoadResult],
-  );
-
-  /** Own provisional loader authority immediately, including work exposed after quit. */
-  const ownProvisionalExtensionReplacement = useCallback(
-    (result: ExtensionLoadResult) => {
-      trackPreparedExtensionReplacement(result);
-      if (quitRequestedRef.current) {
-        void retirePreparedExtensionReplacement(result);
-      }
-    },
-    [retirePreparedExtensionReplacement, trackPreparedExtensionReplacement],
-  );
-
-  /** Clear prepared ownership only when this exact registry becomes the mounted authority. */
-  const adoptPreparedExtensionReplacement = useCallback((result: ExtensionLoadResult) => {
-    if (pendingExtensionReplacementRef.current?.result === result) {
-      pendingExtensionReplacementRef.current = undefined;
-    }
-  }, []);
+  }, [
+    activeBootstrap,
+    extensionLifecycleEnabled,
+    extensionOwnership,
+    activeExtensionSession,
+    initialBootstrap.reloadContext.cwd,
+  ]);
 
   /** Start one irreversible write atomically with host tracking, unless quit already won. */
   const runWorkspaceWrite = useCallback<WorkspaceWriteRunner>(async (write) => {
@@ -300,7 +272,9 @@ export function AppHost({
         sourcePath: options?.sourcePath,
       });
       const baseVcsCatalog = getBundledVcsCatalog();
-      const currentExtensions = extensionsRef.current;
+      const currentExtensions = extensionLifecycleEnabled
+        ? activeExtensionSession.current
+        : undefined;
       const currentAdapters = currentExtensions
         ? resolveExtensionVcsAdapters(currentExtensions.registry, baseVcsCatalog).adapters
         : [];
@@ -316,7 +290,7 @@ export function AppHost({
 
       if (
         extensionOwnership === "owned" &&
-        (options?.reloadExtensions || cwd !== extensionsCwdRef.current)
+        (options?.reloadExtensions || cwd !== activeExtensionSession.cwd)
       ) {
         try {
           const resolvedExtensions = await resolveConfiguredExtensions({
@@ -327,23 +301,23 @@ export function AppHost({
             discoveryCatalog,
             // Reuse the session hub so the mounted toast surface keeps receiving notifications.
             notifications: currentExtensions?.notifications,
-            onProvisionalLoad: ownProvisionalExtensionReplacement,
+            onProvisionalLoad: (result) => activeExtensionSession.trackPrepared(result),
             assertActive: () => {
               if (quitRequestedRef.current) throw reloadRefusedDuringShutdown();
             },
           });
           configured = resolvedExtensions.configured;
           replacementExtensions = resolvedExtensions.extensions;
-          trackPreparedExtensionReplacement(replacementExtensions);
+          activeExtensionSession.trackPrepared(replacementExtensions);
         } catch (error) {
           // The resolver may fail after publishing a provisional registry but
           // before returning it. Clear host ownership through the same shared
           // retirement used by quit and the ordinary reload failure paths.
-          await retirePreparedExtensionReplacement(pendingExtensionReplacementRef.current?.result);
+          await activeExtensionSession.retirePrepared();
           throw error;
         }
         if (quitRequestedRef.current) {
-          await retirePreparedExtensionReplacement(replacementExtensions);
+          await activeExtensionSession.retirePrepared(replacementExtensions);
           throw reloadRefusedDuringShutdown();
         }
       }
@@ -359,7 +333,7 @@ export function AppHost({
           baseVcsCatalog,
         });
       } catch (error) {
-        await retirePreparedExtensionReplacement(replacementExtensions);
+        await activeExtensionSession.retirePrepared(replacementExtensions);
         throw error;
       }
 
@@ -368,24 +342,35 @@ export function AppHost({
       // Quit therefore linearizes either wholly before or wholly after adoption.
       if (quitRequestedRef.current) {
         restoreFileLanguageRegistrations(loaded.previousFileLanguages);
-        await retirePreparedExtensionReplacement(replacementExtensions);
+        await activeExtensionSession.retirePrepared(replacementExtensions);
         throw reloadRefusedDuringShutdown();
       }
 
       let nextBootstrap!: AppBootstrap;
+      let nextReviewCwd!: string;
       let nextSnapshot!: ReturnType<typeof createInitialSessionSnapshot>;
       let sessionId = "local-session";
       try {
         const { applied, bootstrap, input: reloadInput, sessionVcs } = loaded;
         nextBootstrap = bootstrap;
-        const preservedReview = reviewDescriptorAfterReload(
-          reviewIdentityRef.current.input,
-          reviewIdentityRef.current.cwd,
-          reviewIdentityRef.current.review,
+        nextReviewCwd = reviewDescriptorResourceCwd(
           nextBootstrap.input,
           cwd,
+          nextBootstrap.reloadContext.repoRoot,
         );
-        if (preservedReview) nextBootstrap.review = preservedReview;
+        const preservedReview = reviewIdentityRef.current.preserveReviewOnReload
+          ? reviewDescriptorAfterReload(
+              reviewIdentityRef.current.input,
+              reviewIdentityRef.current.cwd,
+              reviewIdentityRef.current.review,
+              nextBootstrap.input,
+              nextReviewCwd,
+            )
+          : undefined;
+        if (preservedReview) {
+          nextBootstrap.review = preservedReview;
+          nextBootstrap.reviewSource = "caller";
+        }
         if (extensions) {
           reportExtensionApplyIssues(applied.issues, extensions.context);
         }
@@ -424,20 +409,15 @@ export function AppHost({
         }
       } catch (error) {
         restoreFileLanguageRegistrations(loaded.previousFileLanguages);
-        await retirePreparedExtensionReplacement(replacementExtensions);
+        await activeExtensionSession.retirePrepared(replacementExtensions);
         throw error;
       }
 
       let currentExtensionsRetired: Promise<void> | undefined;
       if (replacementExtensions) {
-        // Only retire the visible runtime after its replacement review is known-good.
-        // Revocation is synchronous so mounted controls and modes become inert
-        // before shutdown starts; React then tears them down on this state update.
-        // `retireExtensionLoadResult` revokes synchronously before its first await.
-        currentExtensionsRetired = retireOwnedExtensionLoadResult(currentExtensions);
-        extensionsRef.current = replacementExtensions;
-        extensionsCwdRef.current = cwd;
-        adoptPreparedExtensionReplacement(replacementExtensions);
+        // Adopt only after the review and broker publication are known-good. Adoption revokes
+        // the previous registry synchronously before exposing the replacement.
+        currentExtensionsRetired = activeExtensionSession.adoptPrepared(replacementExtensions, cwd);
       }
       const reloadMounted = extensions
         ? new Promise<void>((resolveMounted) => {
@@ -452,10 +432,13 @@ export function AppHost({
           })
         : undefined;
 
+      activeThemeController.replaceCustomThemes(loaded.initialization.theme.customThemes);
       reviewIdentityRef.current = {
         input: nextBootstrap.input,
-        cwd,
+        cwd: nextReviewCwd,
         review: nextBootstrap.review,
+        preserveReviewOnReload:
+          nextBootstrap.review !== undefined && nextBootstrap.reviewSource !== "provider",
       };
       setActiveBootstrap(nextBootstrap);
       if (options?.resetApp !== false) {
@@ -479,19 +462,17 @@ export function AppHost({
       };
     },
     [
-      adoptPreparedExtensionReplacement,
+      extensionLifecycleEnabled,
       extensionOwnership,
+      activeExtensionSession,
+      activeThemeController,
       hostClient,
       launchExperimental,
       launchFast,
       launchExtensionsEnabled,
       launchExtensionPaths,
-      ownProvisionalExtensionReplacement,
       producer,
-      retireOwnedExtensionLoadResult,
-      retirePreparedExtensionReplacement,
       sessionFileBounds,
-      trackPreparedExtensionReplacement,
     ],
   );
 
@@ -596,23 +577,12 @@ export function AppHost({
     if (quitRequestedRef.current) return;
     quitRequestedRef.current = true;
     queueMicrotask(() => {
-      const preparedReplacement = pendingExtensionReplacementRef.current?.result;
       const startedWrites = [...pendingWorkspaceWritesRef.current];
-      void retireOwnedExtensionLoadResult(extensionsRef.current);
-      void retirePreparedExtensionReplacement(preparedReplacement);
-
-      /** Drain known retirement work; cancelled loaders cannot create a later staged registry. */
-      const settleExtensionRetirements = async () => {
-        while (pendingExtensionRetirementsRef.current.size > 0) {
-          await Promise.allSettled(pendingExtensionRetirementsRef.current);
-        }
-      };
-
-      void Promise.all([settleExtensionRetirements(), Promise.allSettled(startedWrites)]).finally(
+      void Promise.all([onRequestSessionShutdown(), Promise.allSettled(startedWrites)]).finally(
         onQuit,
       );
     });
-  }, [onQuit, retireOwnedExtensionLoadResult, retirePreparedExtensionReplacement]);
+  }, [onQuit, onRequestSessionShutdown]);
 
   useEffect(() => {
     if (!externalQuitSignal) return;
@@ -636,6 +606,7 @@ export function AppHost({
       noticeText={startupNoticeText}
       onQuit={quitAfterShutdownEvent}
       onFirstFrameReady={onFirstFrameReady}
+      onViewPreferencesChange={onViewPreferencesChange}
       returnToHistory={returnToHistory}
       onRegisterWorkspaceRefreshRequest={registerWorkspaceRefreshRequest}
       onReloadSession={reloadSession}
@@ -643,6 +614,7 @@ export function AppHost({
       onWorkspaceWriteCompleted={reloadAfterWorkspaceWrite}
       reviewProducer={producer}
       runWorkspaceWrite={runWorkspaceWrite}
+      themeController={activeThemeController}
       watchRuntime={watchRuntime}
       workspaceFileWriter={workspaceFileWriter}
     />

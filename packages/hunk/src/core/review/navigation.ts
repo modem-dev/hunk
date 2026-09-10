@@ -25,7 +25,7 @@
  */
 import type { ReviewRevealRequest, ReviewSemanticSelection } from "./state";
 
-export type ReviewSelectionScope = "hunk" | "file" | "annotated-hunk" | "annotated-file";
+export type ReviewSelectionScope = "hunk" | "file" | "note" | "annotated-hunk" | "annotated-file";
 
 /** What a move does when it runs off the end of the stream it walks. */
 export type ReviewSelectionWrapPolicy = "clamp" | "wrap";
@@ -42,6 +42,7 @@ export const REVIEW_SELECTION_WRAP_POLICY: Readonly<
 > = Object.freeze({
   hunk: "clamp",
   file: "clamp",
+  note: "clamp",
   "annotated-hunk": "clamp",
   "annotated-file": "wrap",
 });
@@ -89,12 +90,23 @@ export interface ReviewSelectionMoveTarget {
   fileKey: string;
   hunkIndex: number;
   reveal: ReviewRevealRequest;
+  /** Stable stored-note identity set only by exact-note navigation. */
+  activeNoteId?: string;
+}
+
+/** One stored-note stop in the flattened review stream. */
+export interface ReviewNoteCursor extends ReviewHunkCursor {
+  noteId: string;
 }
 
 export interface ReviewNavigationModel {
   /** Navigable files in review order — the visible stream, not the whole document. */
   files: readonly ReviewNavigationFile[];
   annotations: ReviewAnnotationIndex;
+  /** Visible stored notes in exact rendered order; sidecar-only annotations stay excluded. */
+  notes?: readonly ReviewNoteCursor[];
+  /** Effective stored-note identity from which an exact-note move begins. */
+  activeNoteId?: string;
 }
 
 /**
@@ -287,6 +299,76 @@ function planFileMove(
   };
 }
 
+/** Plan a clamped move through exact stored notes in their rendered order. */
+export function planReviewNoteMove(
+  files: readonly ReviewNavigationFile[],
+  cursors: readonly ReviewNoteCursor[],
+  selection: ReviewSemanticSelection,
+  activeNoteId: string | undefined,
+  delta: number,
+): ReviewSelectionMoveTarget | null {
+  if (cursors.length === 0 || delta === 0) {
+    return null;
+  }
+
+  const activeIndex = activeNoteId
+    ? cursors.findIndex((cursor) => cursor.noteId === activeNoteId)
+    : -1;
+  let nextIndex: number;
+  if (activeIndex >= 0) {
+    nextIndex = clamp(activeIndex + delta, 0, cursors.length - 1);
+    if (nextIndex === activeIndex) {
+      return null;
+    }
+  } else {
+    const fileOrder = new Map(files.map((file, index) => [file.fileKey, index] as const));
+    const selectedFileOrder =
+      selection.fileKey === null
+        ? delta > 0
+          ? -1
+          : fileOrder.size
+        : fileOrder.get(selection.fileKey);
+    if (selectedFileOrder === undefined) {
+      nextIndex = delta > 0 ? 0 : cursors.length - 1;
+    } else if (delta > 0) {
+      const firstAfter = cursors.findIndex((cursor) => {
+        const order = fileOrder.get(cursor.fileKey) ?? -1;
+        return (
+          order > selectedFileOrder ||
+          (order === selectedFileOrder && cursor.hunkIndex >= selection.hunkIndex)
+        );
+      });
+      if (firstAfter < 0) return null;
+      nextIndex = Math.min(firstAfter + delta - 1, cursors.length - 1);
+    } else {
+      let firstBefore = -1;
+      for (let index = cursors.length - 1; index >= 0; index -= 1) {
+        const cursor = cursors[index]!;
+        const order = fileOrder.get(cursor.fileKey) ?? -1;
+        if (
+          order < selectedFileOrder ||
+          (order === selectedFileOrder && cursor.hunkIndex <= selection.hunkIndex)
+        ) {
+          firstBefore = index;
+          break;
+        }
+      }
+      if (firstBefore < 0) return null;
+      nextIndex = Math.max(0, firstBefore + delta + 1);
+    }
+  }
+
+  const target = cursors[nextIndex];
+  return target
+    ? {
+        fileKey: target.fileKey,
+        hunkIndex: target.hunkIndex,
+        activeNoteId: target.noteId,
+        reveal: { anchor: "hunk", scrollToNote: true },
+      }
+    : null;
+}
+
 /** Plan a move through only the hunks carrying notes. */
 function planAnnotatedHunkMove(
   model: ReviewNavigationModel,
@@ -350,6 +432,14 @@ export function planReviewSelectionMove(
       return planHunkMove(model, selection, move.delta);
     case "file":
       return planFileMove(model, selection, move.delta);
+    case "note":
+      return planReviewNoteMove(
+        model.files,
+        model.notes ?? [],
+        selection,
+        model.activeNoteId,
+        move.delta,
+      );
     case "annotated-hunk":
       return planAnnotatedHunkMove(model, selection, move.delta);
     case "annotated-file":

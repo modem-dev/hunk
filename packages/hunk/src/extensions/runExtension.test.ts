@@ -13,6 +13,10 @@ function bundledMetadata(id: string) {
 }
 
 describe("runExtensionFactory", () => {
+  test("advertises async watch signatures through extension API v25", () => {
+    expect(HUNK_EXTENSION_API_VERSION).toBe(25);
+  });
+
   test("applies a synchronous factory before returning, with nothing to await", () => {
     const registry = createEmptyExtensionRegistry();
     const issues: ExtensionLoadIssue[] = [];
@@ -220,6 +224,8 @@ describe("registerPane", () => {
       { id: "replacement", replaces: "", component: () => null },
       { id: "self", replaces: "bad-pane:self", component: () => null },
       { id: "availability", available: true, component: () => null },
+      { id: "preferred-size", preferredSize: 3, component: () => null },
+      { id: "resizable", resizable: "yes", component: () => null },
     ]) {
       const registry = createEmptyExtensionRegistry();
       const issues: ExtensionLoadIssue[] = [];
@@ -988,6 +994,46 @@ describe("toInternalVcsAdapter history boundary", () => {
         } as never,
       }),
     ).toThrow("history must provide open() and planReview() functions");
+    expect(() =>
+      toInternalVcsAdapter({
+        id: "invalid-range",
+        name: "Invalid range",
+        detect: () => null,
+        history: {
+          open: () => ({ read: async () => ({ commits: [], done: true }), close() {} }),
+          planReview: () => ({ kind: "revision-show", revisionId: "revision" }),
+          planRangeReview: true,
+        } as never,
+      }),
+    ).toThrow("history must provide open() and planReview() functions");
+  });
+
+  test("rejects a single-revision action from range planning", async () => {
+    const adapter = toInternalVcsAdapter({
+      id: "bad-range-plan",
+      name: "Bad range plan",
+      detect: () => null,
+      history: {
+        open: () => ({ read: async () => ({ commits: [], done: true }), close() {} }),
+        planReview: (commit) => ({ kind: "revision-show", revisionId: commit.revisionId }),
+        planRangeReview: (() => ({ kind: "revision-show", revisionId: "only-one" })) as never,
+      },
+    });
+    const commit = {
+      revisionId: "revision",
+      displayId: "revision",
+      parentRevisionIds: [],
+      subject: "Revision",
+      authorName: "Ada",
+      authoredAt: "2026-01-01T00:00:00Z",
+      decorations: [],
+    };
+    await expect(
+      adapter.history!.planRangeReview!(
+        { newestCommit: commit, oldestCommit: commit },
+        { cwd: "/repo" },
+      ),
+    ).rejects.toThrow("must return a revision-range action");
   });
 
   test("copies and sanitizes bounded history pages", async () => {
@@ -1217,6 +1263,12 @@ describe("toInternalVcsAdapter history boundary", () => {
               }
             : { kind: "revision-show", revisionId: `opaque:root-view/${selected.revisionId}` };
         },
+        planRangeReview: (selection, _context, options) => ({
+          kind: "revision-range",
+          fromRevisionId:
+            options?.parentRevisionId ?? `opaque:base-for/${selection.oldestCommit.revisionId}`,
+          toRevisionId: selection.newestCommit.revisionId,
+        }),
       },
     });
 
@@ -1240,6 +1292,24 @@ describe("toInternalVcsAdapter history boundary", () => {
       toRevisionId: child.revisionId,
     });
     expect(plannedParent).toBe(root.revisionId);
+    await expect(
+      adapter.history!.planRangeReview!(
+        { newestCommit: child, oldestCommit: child },
+        { cwd: "/repo" },
+        { parentRevisionId: root.revisionId },
+      ),
+    ).resolves.toEqual({
+      kind: "revision-range",
+      fromRevisionId: root.revisionId,
+      toRevisionId: child.revisionId,
+    });
+    await expect(
+      adapter.history!.planRangeReview!(
+        { newestCommit: child, oldestCommit: root },
+        { cwd: "/repo" },
+        { parentRevisionId: child.revisionId },
+      ),
+    ).rejects.toThrow("oldest commit's parents");
     await expect(adapter.history!.planReview(root, { cwd: "/repo" })).resolves.toEqual({
       kind: "revision-show",
       revisionId: `opaque:root-view/${root.revisionId}`,

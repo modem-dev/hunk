@@ -9,7 +9,7 @@ import {
   HunkFileNav,
   HunkReviewStream,
   createHunkDiffFilesFromPatch,
-  type HunkDiffLayout,
+  type CanonicalHunkDiffLayout,
 } from "../../packages/hunk/src/opentui";
 import { fitText, padText } from "../../packages/hunk/src/ui/lib/text";
 
@@ -108,7 +108,7 @@ function WindowFrame({
 function PrimitivesDemoApp({ onQuit }: { onQuit: () => void }) {
   const terminal = useTerminalDimensions();
   const files = useMemo(() => createHunkDiffFilesFromPatch(PATCH, "primitives-demo"), []);
-  const [layout, setLayout] = useState<HunkDiffLayout>("split");
+  const [layout, setLayout] = useState<CanonicalHunkDiffLayout>("split");
   const [selectedFileId, setSelectedFileId] = useState(files[0]?.id ?? "");
   const selectedFile = files.find((file) => file.id === selectedFileId) ?? files[0];
   const sidebarWidth = Math.min(34, Math.max(24, Math.floor(terminal.width * 0.28)));
@@ -127,12 +127,12 @@ function PrimitivesDemoApp({ onQuit }: { onQuit: () => void }) {
     }
 
     if (key.name === "1") {
-      setLayout("split");
+      setLayout("unified");
       return;
     }
 
     if (key.name === "2") {
-      setLayout("stack");
+      setLayout("split");
       return;
     }
 
@@ -159,7 +159,7 @@ function PrimitivesDemoApp({ onQuit }: { onQuit: () => void }) {
         <text fg="#eef4ff">
           {padText(
             fitText(
-              " Hunk primitives as app windows — q quit · Tab next file · 1 split · 2 stack ",
+              " Hunk primitives as app windows — q quit · Tab next file · 1 unified · 2 split ",
               Math.max(1, terminal.width - 2),
             ),
             Math.max(1, terminal.width - 2),
@@ -217,7 +217,7 @@ function PrimitivesDemoApp({ onQuit }: { onQuit: () => void }) {
             >
               <HunkDiffBody
                 file={selectedFile}
-                layout={layout}
+                canonicalLayout={layout}
                 width={Math.max(20, mainWidth - 4)}
                 theme="midnight"
               />
@@ -236,7 +236,7 @@ function PrimitivesDemoApp({ onQuit }: { onQuit: () => void }) {
             >
               <HunkReviewStream
                 files={files}
-                layout={layout}
+                canonicalLayout={layout}
                 width={Math.max(20, mainWidth - 4)}
                 theme="midnight"
                 selection={{ fileId: selectedFile?.id ?? "", hunkIndex: 0 }}

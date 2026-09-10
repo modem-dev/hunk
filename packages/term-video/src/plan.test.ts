@@ -70,6 +70,80 @@ describe("planFrames", () => {
     expect(frames[0]!.state.shotT).toBeLessThan(1);
   });
 
+  test("animates camera pans and source-aligned highlights before holding", () => {
+    const camera = { x: 0.25, y: 0.4, scale: 1.5 };
+    const highlight = { x: 0.1, y: 0.2, width: 0.7, height: 0.3, label: "history" };
+    const { frames } = planFrames([term({ camera, highlight, motion: 0.6 })], { fps: FPS });
+
+    expect(frames).toHaveLength(Math.round(0.6 * FPS) + 1);
+    expect(frames[0]!.state.camera!.scale).toBeGreaterThan(1);
+    expect(frames[0]!.state.camera!.scale).toBeLessThan(camera.scale);
+    expect(frames[0]!.state.highlight).toEqual(highlight);
+    expect(frames[0]!.state.highlightT).toBeGreaterThan(0);
+    expect(frames[0]!.state.highlightT).toBeLessThan(1);
+    expect(frames.at(-1)!.state).toMatchObject({ camera, highlight, highlightT: 1 });
+  });
+
+  test("does not carry a source-aligned highlight onto a different keyframe", () => {
+    const highlight = { x: 0.1, y: 0.2, width: 0.7, height: 0.3 };
+    const { frames } = planFrames(
+      [term({ highlight, motion: 0.3 }), term({ img: "frame-b", motion: 0.3 })],
+      { fps: FPS },
+    );
+
+    const clearingFrames = frames.filter((frame) => frame.state.img === "frame-b");
+    expect(clearingFrames).toHaveLength(1);
+    expect(clearingFrames[0]!.state).toMatchObject({ highlight: null, highlightT: 0 });
+  });
+
+  test("cuts to the target camera when a keyframe has incompatible source geometry", () => {
+    const firstCamera = { x: 0.25, y: 0.4, scale: 1.5 };
+    const targetCamera = { x: 0.5, y: 0.5, scale: 1 };
+    const { frames } = planFrames(
+      [term({ camera: firstCamera, dur: 0.5 }), term({ img: "frame-b", camera: targetCamera })],
+      { fps: FPS },
+    );
+
+    const secondFrames = frames.filter((frame) => frame.state.img === "frame-b");
+    expect(secondFrames).toHaveLength(1);
+    expect(secondFrames[0]!.state.camera).toEqual(targetCamera);
+  });
+
+  test("pans across keyframes that share a camera coordinate-space key", () => {
+    const firstCamera = { x: 0.25, y: 0.4, scale: 1.5 };
+    const targetCamera = { x: 0.5, y: 0.5, scale: 1 };
+    const { frames } = planFrames(
+      [
+        term({ camera: firstCamera, cameraKey: "history", dur: 0.5 }),
+        term({ img: "frame-b", camera: targetCamera, cameraKey: "history", motion: 0.3 }),
+      ],
+      { fps: FPS },
+    );
+
+    const secondFrames = frames.filter((frame) => frame.state.img === "frame-b");
+    expect(secondFrames.length).toBeGreaterThan(1);
+    expect(secondFrames[0]!.state.camera!.scale).toBeLessThan(firstCamera.scale);
+    expect(secondFrames[0]!.state.camera!.scale).toBeGreaterThan(targetCamera.scale);
+    expect(secondFrames.at(-1)!.state.camera).toEqual(targetCamera);
+  });
+
+  test("morphs highlights across keyframes that share a coordinate-space key", () => {
+    const first = { x: 0.1, y: 0.2, width: 0.7, height: 0.2 };
+    const second = { ...first, height: 0.5 };
+    const { frames } = planFrames(
+      [
+        term({ highlight: first, highlightKey: "history", motion: 0.3 }),
+        term({ img: "frame-b", highlight: second, highlightKey: "history", motion: 0.3 }),
+      ],
+      { fps: FPS },
+    );
+
+    const secondFrames = frames.filter((frame) => frame.state.img === "frame-b");
+    expect(secondFrames[0]!.state.highlight!.height).toBeGreaterThan(first.height);
+    expect(secondFrames[0]!.state.highlight!.height).toBeLessThan(second.height);
+    expect(secondFrames.at(-1)!.state.highlight).toEqual(second);
+  });
+
   test("every hold lasts at least one frame and totals match the shot list", () => {
     const shots = [
       term({ caption: "a", capKey: "a", dur: 1.5 }),

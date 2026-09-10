@@ -88,17 +88,21 @@ describe("session agent command surface", () => {
     const navigate: SessionCommandOptions<"navigate"> = { repo: ".", hunk: 2, json: true };
     // @ts-expect-error --hunk parses to a number, not a string
     const badHunk: SessionCommandOptions<"navigate"> = { hunk: "2" };
-    // @ts-expect-error comment add requires --file and --summary
+    // @ts-expect-error comment add always requires --summary
     const missingRequired: SessionCommandOptions<"comment-add"> = { newLine: 3 };
     const add: SessionCommandOptions<"comment-add"> = {
       file: "a.ts",
       summary: "note",
       newLine: 3,
     };
+    const reply: SessionCommandOptions<"comment-add"> = {
+      replyTo: "user:parent",
+      summary: "reply",
+    };
     // @ts-expect-error unknown flags are rejected
     const unknownFlag: SessionCommandOptions<"list"> = { repo: "." };
 
-    expect([navigate, badHunk, missingRequired, add, unknownFlag]).toBeTruthy();
+    expect([navigate, badHunk, missingRequired, add, reply, unknownFlag]).toBeTruthy();
   });
 
   test("marks navigation and comment targets with positive-int parsing", () => {

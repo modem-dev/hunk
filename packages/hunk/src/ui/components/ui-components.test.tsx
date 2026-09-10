@@ -1,6 +1,7 @@
 import { describe, expect, mock, spyOn, test } from "bun:test";
-import type { ScrollBoxRenderable } from "@opentui/core";
+import { MouseButton, type ScrollBoxRenderable } from "@opentui/core";
 import { MouseButtons } from "@opentui/core/testing";
+import { useKeyboard } from "@opentui/react";
 import { testRender } from "@opentui/react/test-utils";
 import { act, createRef, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { MenuId } from "./chrome/menu";
@@ -23,8 +24,9 @@ import { builtinCommandKeyDefaults, builtinCommandMatchProbes } from "../lib/app
 import { resolveCommandKeys } from "../lib/keymap";
 import type { CurrentLineAlignment, LineRevealPlacement } from "../lib/hunkScroll";
 import type { LineCursor } from "../lib/lineCursors";
+import type { ReviewSelectionActionsHandle } from "./panes/DiffPane";
 
-const { AppHost } = await import("../AppHost");
+const { TestAppHost: AppHost } = await import("../../../../../test/helpers/app-host");
 const { toReadOnlyFileViews } = await import("../../extensions/events");
 const { FlexFileSidebar } = await import("../../extensions/default/ui/sidebar");
 const { HelpDialog } = await import("./chrome/HelpDialog");
@@ -36,10 +38,12 @@ const { MenuBar } = await import("./chrome/MenuBar");
 const { MenuDropdown } = await import("./chrome/MenuDropdown");
 const { StatusBar } = await import("./chrome/StatusBar");
 const { DiffFileHeaderRow } = await import("./panes/DiffFileHeaderRow");
+const { FileDirectoryRow } = await import("./panes/FileListItem");
 const { DiffSectionBody } = await import("../diff/DiffSectionBody");
 const { measurePlannedRenderedRowHeight, measureRenderedRowHeight } =
   await import("../diff/codeRowLayout");
 const { DiffRowView } = await import("../diff/DiffRowView");
+const { RawDiffRowView } = await import("../diff/RawDiffRowView");
 
 function createTestDiffFile(
   id: string,
@@ -410,6 +414,63 @@ function renderedWordDiffBackgroundDistance(
 }
 
 describe("UI components", () => {
+  test("directory rows toggle only for the primary mouse button", () => {
+    const toggled: string[] = [];
+    const element = FileDirectoryRow({
+      collapsed: false,
+      entry: {
+        kind: "directory",
+        id: "directory:src",
+        path: "src",
+        label: "src/",
+        depth: 0,
+        descendantFileCount: 2,
+      },
+      onToggleDirectory: (path) => toggled.push(path),
+      textWidth: 32,
+      theme: resolveTheme("github-dark-default", null),
+    }) as unknown as { props: { onMouseUp: (event: { button: MouseButton }) => void } };
+
+    element.props.onMouseUp({ button: MouseButton.RIGHT });
+    expect(toggled).toEqual([]);
+
+    element.props.onMouseUp({ button: MouseButton.LEFT });
+    expect(toggled).toEqual(["src"]);
+  });
+
+  test("collapsed directory rows right-align singular and plural file counts", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const renderCollapsedCount = (descendantFileCount: number) =>
+      captureFrame(
+        <FileDirectoryRow
+          collapsed={true}
+          entry={{
+            kind: "directory",
+            id: `directory:components:${descendantFileCount}`,
+            path: "src/very-long-directory/components",
+            label: "very-long-directory-name/",
+            depth: 8,
+            descendantFileCount,
+          }}
+          onToggleDirectory={() => {}}
+          paddingLeft={0}
+          statsWidth={10}
+          textWidth={32}
+          theme={theme}
+        />,
+        36,
+        1,
+      );
+
+    const singular = (await renderCollapsedCount(1)).split("\n")[0]!;
+    const plural = (await renderCollapsedCount(12)).split("\n")[0]!;
+
+    expect(singular.slice(0, 32)).toEndWith("1 file");
+    expect(plural.slice(0, 32)).toEndWith("12 files");
+    expect(singular.slice(32).trim()).toBe("");
+    expect(plural.slice(32).trim()).toBe("");
+  });
+
   test("the bundled sidebar view renders grouped file rows from the public props", async () => {
     const theme = resolveTheme("github-dark-default", null);
     const files = [
@@ -471,6 +532,7 @@ describe("UI components", () => {
         width={30}
         keybindings={{ matches: () => false, getKeys: () => [] }}
         actions={{
+          copyText: () => false,
           selectFile: () => {},
           selectHunk: () => {},
           revealLine: () => {},
@@ -486,7 +548,7 @@ describe("UI components", () => {
     expect(frame).toContain("./");
     expect(frame).toContain(" zzz-root.ts");
     expect(frame.indexOf("src/ui/")).toBeLessThan(frame.indexOf("./"));
-    expect(frame).toContain(" App.tsx");
+    expect(frame).toContain("▌ M App.tsx");
     expect(frame).toContain(" MenuDropdown.tsx");
     expect(frame).toContain(" signature.ts");
     expect(frame).toContain("*1 +2 -1");
@@ -505,6 +567,7 @@ describe("UI components", () => {
     ]);
     const sharedProps = {
       actions: {
+        copyText: () => false,
         selectFile: () => {},
         selectHunk: () => {},
         revealLine: () => {},
@@ -527,11 +590,11 @@ describe("UI components", () => {
         ?.indexOf("src/ui/"),
     ).toBe(1);
     expect(treeFrame).not.toContain("src/ui/");
-    expect(treeFrame).toContain("src/");
-    expect(treeFrame).toContain("ui/");
+    expect(treeFrame).toContain("⌄ src/");
+    expect(treeFrame).toContain("⌄ ui/");
     const treeLines = treeFrame.split("\n");
-    expect(treeLines.find((line) => line.includes("src/"))?.indexOf("src/")).toBe(1);
-    expect(treeLines.find((line) => line.includes("ui/"))?.indexOf("ui/")).toBe(3);
+    expect(treeLines.find((line) => line.includes("src/"))?.indexOf("src/")).toBe(3);
+    expect(treeLines.find((line) => line.includes("ui/"))?.indexOf("ui/")).toBe(5);
     expect(treeFrame).toContain("alpha.ts");
     expect(treeFrame).toContain("beta.ts");
   });
@@ -600,9 +663,9 @@ describe("UI components", () => {
     const theme = resolveTheme("github-dark-default", null);
     const startUserNote = mock(() => undefined);
     const setup = await testRender(
-      <DiffRowView
+      <RawDiffRowView
         row={{
-          type: "stack-line",
+          type: "unified-line",
           key: "alpha:line:1",
           fileId: "alpha",
           hunkIndex: 0,
@@ -665,17 +728,24 @@ describe("UI components", () => {
     const copyText = mock((_text: string) => undefined);
     const selectLine = mock((_cursor: LineCursor) => undefined);
     const startUserNote = mock(() => undefined);
-    const setup = await testRender(
-      <DiffPane
-        {...createDiffPaneProps([file], theme, {
-          cursorLine: "row",
-          onCopySelectionText: copyText,
-          onStartUserNoteAtHunk: startUserNote,
-          onViewportLineCursorChange: selectLine,
-        })}
-      />,
-      { width: 80, height: 8 },
-    );
+    const SelectionDiffPane = () => {
+      const selectionActionsRef = useRef<ReviewSelectionActionsHandle | null>(null);
+      useKeyboard((key) => {
+        if (key.name === "y" || key.sequence === "y") selectionActionsRef.current?.copy();
+      });
+      return (
+        <DiffPane
+          {...createDiffPaneProps([file], theme, {
+            cursorLine: "row",
+            onCopySelectionText: copyText,
+            onStartUserNoteAtHunk: startUserNote,
+            onViewportLineCursorChange: selectLine,
+          })}
+          selectionActionsRef={selectionActionsRef}
+        />
+      );
+    };
+    const setup = await testRender(<SelectionDiffPane />, { width: 80, height: 8 });
 
     try {
       await settleDiffPane(setup);
@@ -725,8 +795,11 @@ describe("UI components", () => {
         selectLine.mockClear();
         await setup.mockMouse.drag(oldX, changedY, oldX + 4, changedY, MouseButtons.LEFT);
       });
-      expect(copyText).toHaveBeenCalled();
+      expect(copyText).not.toHaveBeenCalled();
       expect(selectLine).not.toHaveBeenCalled();
+
+      await act(async () => setup.mockInput.typeText("y"));
+      expect(copyText).toHaveBeenCalled();
 
       await act(async () => {
         await setup.mockMouse.moveTo(newX, changedY);
@@ -757,7 +830,7 @@ describe("UI components", () => {
   test("DiffRowView keeps wrapped text stable when showing the add-note affordance", async () => {
     const theme = resolveTheme("github-dark-default", null);
     const row = {
-      type: "stack-line" as const,
+      type: "unified-line" as const,
       key: "alpha:line:hover-wrap",
       fileId: "alpha",
       hunkIndex: 0,
@@ -770,7 +843,7 @@ describe("UI components", () => {
     };
     const renderRow = (showAddNoteBadge: boolean) =>
       captureFrame(
-        <DiffRowView
+        <RawDiffRowView
           row={row}
           width={24}
           lineNumberDigits={1}
@@ -802,9 +875,9 @@ describe("UI components", () => {
   test("DiffRowView fills the reserved wrapped add-note column with row background", async () => {
     const theme = resolveTheme("github-dark-default", null);
     const setup = await testRender(
-      <DiffRowView
+      <RawDiffRowView
         row={{
-          type: "stack-line",
+          type: "unified-line",
           key: "alpha:line:hover-wrap-bg",
           fileId: "alpha",
           hunkIndex: 0,
@@ -852,7 +925,7 @@ describe("UI components", () => {
   test("DiffRowView keeps metadata row background within the measured row width", async () => {
     const theme = resolveTheme("github-dark-default", null);
     const setup = await testRender(
-      <DiffRowView
+      <RawDiffRowView
         row={{
           type: "hunk-header",
           key: "alpha:hunk:0",
@@ -893,7 +966,7 @@ describe("UI components", () => {
   test("DiffRowView preserves zero-width combining spans in nowrap and wrapped rows", async () => {
     const theme = resolveTheme("github-dark-default", null);
     const row = {
-      type: "stack-line" as const,
+      type: "unified-line" as const,
       key: "alpha:line:combining",
       fileId: "alpha",
       hunkIndex: 0,
@@ -907,7 +980,7 @@ describe("UI components", () => {
 
     for (const wrapLines of [false, true]) {
       const setup = await testRender(
-        <DiffRowView
+        <RawDiffRowView
           row={row}
           width={40}
           lineNumberDigits={1}
@@ -938,7 +1011,7 @@ describe("UI components", () => {
   test("DiffRowView height matches geometry for repeated composing scalars", async () => {
     const theme = resolveTheme("github-dark-default", null);
     const row = {
-      type: "stack-line" as const,
+      type: "unified-line" as const,
       key: "alpha:line:repeated-composition",
       fileId: "alpha",
       hunkIndex: 0,
@@ -951,7 +1024,7 @@ describe("UI components", () => {
     };
     const measuredHeight = measureRenderedRowHeight(row, 4, 1, false, true, true, theme);
     const setup = await testRender(
-      <DiffRowView
+      <RawDiffRowView
         row={row}
         width={4}
         lineNumberDigits={1}
@@ -986,7 +1059,7 @@ describe("UI components", () => {
     }
   });
 
-  test("DiffRowView matches planned split and stack geometry at guide and add-note wrap boundaries", async () => {
+  test("DiffRowView matches planned split and unified geometry at guide and add-note wrap boundaries", async () => {
     const theme = resolveTheme("github-dark-default", null);
     const plannedRows = [
       {
@@ -1013,14 +1086,14 @@ describe("UI components", () => {
       },
       {
         kind: "diff-row" as const,
-        key: "alpha:stack:guide-boundary",
-        stableKey: "alpha:stack:guide-boundary",
+        key: "alpha:unified:guide-boundary",
+        stableKey: "alpha:unified:guide-boundary",
         fileId: "alpha",
         hunkIndex: 0,
         noteGuideSide: "new" as const,
         row: {
-          type: "stack-line" as const,
-          key: "alpha:stack:guide-boundary",
+          type: "unified-line" as const,
+          key: "alpha:unified:guide-boundary",
           fileId: "alpha",
           hunkIndex: 0,
           cell: {
@@ -1072,7 +1145,7 @@ describe("UI components", () => {
                   capturedTestColorToHex(span.bg)?.toLowerCase() === theme.addedBg.toLowerCase(),
               ),
             ).length;
-          expect(measuredHeight).toBe(reserveAddNoteColumn ? 3 : 2);
+          expect(measuredHeight).toBe(reserveAddNoteColumn ? 2 : 1);
           expect(renderedHeight).toBe(measuredHeight);
         } finally {
           await act(async () => {
@@ -1132,7 +1205,7 @@ describe("UI components", () => {
       { spans: [{ text: "日" }, { text: "áá" }], expectedHeight: 2 },
     ]) {
       const row = {
-        type: "stack-line" as const,
+        type: "unified-line" as const,
         key: "alpha:line:zero-before-wide",
         fileId: "alpha",
         hunkIndex: 0,
@@ -1145,7 +1218,7 @@ describe("UI components", () => {
       };
       const measuredHeight = measureRenderedRowHeight(row, 4, 1, false, true, true, theme);
       const setup = await testRender(
-        <DiffRowView
+        <RawDiffRowView
           row={row}
           width={4}
           lineNumberDigits={1}
@@ -1185,7 +1258,7 @@ describe("UI components", () => {
     const source = await Bun.file(new URL("./panes/DiffPane.tsx", import.meta.url)).text();
     const baseMemo = source.slice(
       source.indexOf("const baseSectionGeometry = useMemo"),
-      source.indexOf("const baseEstimatedBodyHeights = useMemo"),
+      source.indexOf("const sectionGeometry = useMemo"),
     );
     const noteAwareMemo = source.slice(
       source.indexOf("const sectionGeometry = useMemo"),
@@ -2777,7 +2850,7 @@ describe("UI components", () => {
     const measured = measureAgentInlineNoteHeight({
       annotation,
       anchorSide: "new",
-      layout: "stack",
+      layout: "unified",
       width: 60,
       actions,
       threadDepth: thread.depth,
@@ -2786,10 +2859,11 @@ describe("UI components", () => {
       <AgentInlineNote
         annotation={annotation}
         anchorSide="new"
-        layout="stack"
+        layout="unified"
         theme={theme}
         width={60}
         actions={actions}
+        actionKeyLabels={{ delete: "d", edit: "e", reply: "r" }}
         thread={thread}
       />,
       { width: 64, height: measured + 1 },
@@ -2883,7 +2957,7 @@ describe("UI components", () => {
     const measured = measureAgentInlineNoteHeight({
       annotation,
       anchorSide: "new",
-      layout: "stack",
+      layout: "unified",
       width: 60,
       threadDepth: thread.depth,
     });
@@ -2891,7 +2965,7 @@ describe("UI components", () => {
       <AgentInlineNote
         annotation={annotation}
         anchorSide="new"
-        layout="stack"
+        layout="unified"
         theme={theme}
         width={60}
         thread={thread}
@@ -2922,7 +2996,7 @@ describe("UI components", () => {
     const measured = measureAgentInlineNoteHeight({
       annotation,
       anchorSide: "new",
-      layout: "stack",
+      layout: "unified",
       width: 60,
     });
     const onSave = mock(() => {});
@@ -2931,7 +3005,7 @@ describe("UI components", () => {
       <AgentInlineNote
         annotation={annotation}
         anchorSide="new"
-        layout="stack"
+        layout="unified"
         theme={theme}
         width={60}
         draft={{
@@ -2990,14 +3064,14 @@ describe("UI components", () => {
     const measured = measureAgentInlineNoteHeight({
       annotation,
       anchorSide: "new",
-      layout: "stack",
+      layout: "unified",
       width: 60,
     });
     const frame = await captureFrame(
       <AgentInlineNote
         annotation={annotation}
         anchorSide="new"
-        layout="stack"
+        layout="unified"
         theme={theme}
         width={60}
         onClose={() => {}}
@@ -3031,7 +3105,7 @@ describe("UI components", () => {
       <AgentInlineNote
         annotation={annotation}
         anchorSide="new"
-        layout="stack"
+        layout="unified"
         theme={theme}
         width={60}
         onClose={() => {}}
@@ -3111,7 +3185,7 @@ describe("UI components", () => {
         }}
         file={file}
         anchorSide="new"
-        layout="stack"
+        layout="unified"
         theme={theme}
         width={48}
       />,
@@ -3145,7 +3219,7 @@ describe("UI components", () => {
         }}
         anchorSide="new"
         file={file}
-        layout="stack"
+        layout="unified"
         theme={theme}
         width={60}
         thread={{ noteId: "note", depth: 0 }}
@@ -3409,7 +3483,9 @@ describe("UI components", () => {
     );
 
     const lines = frame.split("\n");
-    const noteTopIndex = lines.findIndex((line) => line.includes("╭") && line.includes("╮"));
+    const noteTopIndex = lines.findIndex(
+      (line) => line.includes("╭") && (line.includes("╮") || line.includes("┬")),
+    );
     expect(noteTopIndex).toBeGreaterThan(0);
     expect(lines[noteTopIndex - 1]).toContain("export const add = true;");
     expect(lines[noteTopIndex - 1]?.trim()).not.toBe("│");
@@ -3542,8 +3618,8 @@ describe("UI components", () => {
       <MenuDropdown
         activeMenuId="view"
         activeMenuEntries={[
-          { kind: "item", label: "Split view", hint: "1", checked: true, action: () => {} },
-          { kind: "item", label: "Stacked view", hint: "2", checked: false, action: () => {} },
+          { kind: "item", label: "Unified view", hint: "1", checked: false, action: () => {} },
+          { kind: "item", label: "Split view", hint: "2", checked: true, action: () => {} },
           { kind: "item", label: "Line numbers", hint: "l", checked: true, action: () => {} },
           { kind: "item", label: "Line wrapping", hint: "w", checked: false, action: () => {} },
           { kind: "item", label: "Hunk metadata", hint: "m", checked: true, action: () => {} },
@@ -3561,7 +3637,7 @@ describe("UI components", () => {
     );
 
     expect(frame).toContain("[x] Split view");
-    expect(frame).toContain("[ ] Stacked view");
+    expect(frame).toContain("[ ] Unified view");
     expect(frame).toContain("[x] Line numbers");
     expect(frame).toContain("[ ] Line wrapping");
     expect(frame).toContain("[x] Hunk metadata");
@@ -3799,13 +3875,13 @@ describe("UI components", () => {
       "Controls help",
       "[Esc]",
       "Navigation",
-      "Up / Down                move line-by-line",
+      "Up / Down                move through lines and notes",
       "PageDown / Space / f     page down",
       "PageUp / b / Shift+Space page up",
       "d / u                    half page down / up",
       "[ / ]                    previous / next hunk",
       ", / .                    previous / next file",
-      "{ / }                    previous / next comment",
+      "{ / } / N / n            annotated hunk / exact note",
       "Left / Right             scroll code sideways (Shift = faster)",
       "g / Home                 jump to start",
       "G / End                  jump to end",
@@ -3813,7 +3889,7 @@ describe("UI components", () => {
       "Wheel                    scroll vertically",
       "Shift+Wheel              scroll code horizontally",
       "View",
-      "1 / 2 / 0                split / stack / auto",
+      "1 / 2 / 0                unified / split / auto",
       "s / t                    sidebar / theme selector",
       "a                        toggle AI notes",
       "z                        toggle unchanged context",
@@ -4048,13 +4124,13 @@ describe("UI components", () => {
     expect(frame).toContain("1 + export const alpha = 2;");
   });
 
-  test("DiffSectionBody renders stack-mode wrapped continuation rows", async () => {
+  test("DiffSectionBody renders unified-mode wrapped continuation rows", async () => {
     const file = createWrapBootstrap().changeset.files[0]!;
     const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <DiffSectionBody
         file={file}
-        layout="stack"
+        layout="unified"
         theme={theme}
         width={48}
         selectedHunkIndex={0}
@@ -4086,7 +4162,7 @@ describe("UI components", () => {
     const baseFrame = await captureFrame(
       <DiffSectionBody
         file={file}
-        layout="stack"
+        layout="unified"
         theme={theme}
         width={48}
         selectedHunkIndex={0}
@@ -4099,7 +4175,7 @@ describe("UI components", () => {
     const shiftedFrame = await captureFrame(
       <DiffSectionBody
         file={file}
-        layout="stack"
+        layout="unified"
         theme={theme}
         width={48}
         selectedHunkIndex={0}
@@ -4117,7 +4193,7 @@ describe("UI components", () => {
     expect(shiftedFrame).not.toContain("this is a very");
   });
 
-  test("split view wraps the same long diff line across more rows than stack view at the same width", async () => {
+  test("split view wraps the same long diff line across more rows than unified view at the same width", async () => {
     const file = createWrapBootstrap().changeset.files[0]!;
     const theme = resolveTheme("github-dark-default", null);
     const width = 64;
@@ -4135,10 +4211,10 @@ describe("UI components", () => {
       width + 4,
       18,
     );
-    const stackFrame = await captureFrame(
+    const unifiedFrame = await captureFrame(
       <DiffSectionBody
         file={file}
-        layout="stack"
+        layout="unified"
         theme={theme}
         width={width}
         selectedHunkIndex={0}
@@ -4150,11 +4226,13 @@ describe("UI components", () => {
     );
 
     const splitContinuationRows = splitFrame.split("\n").filter((line) => /^▌\s+▌\s+\S/.test(line));
-    const stackContinuationRows = stackFrame.split("\n").filter((line) => /^▌\s{6,}\S/.test(line));
+    const unifiedContinuationRows = unifiedFrame
+      .split("\n")
+      .filter((line) => /^▌\s{6,}\S/.test(line));
 
     expect(splitFrame).toContain("1 + export const message = 't");
-    expect(stackFrame).toContain("1 +  export const message = 'this is a very long wrapped line");
-    expect(splitContinuationRows.length).toBeGreaterThan(stackContinuationRows.length);
+    expect(unifiedFrame).toContain("1 +  export const message = 'this is a very long wrapped line");
+    expect(splitContinuationRows.length).toBeGreaterThan(unifiedContinuationRows.length);
   });
 
   test("DiffSectionBody anchors range-less notes to the first visible row when hunk headers are hidden", async () => {

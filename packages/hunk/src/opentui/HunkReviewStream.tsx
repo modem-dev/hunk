@@ -1,6 +1,7 @@
 import { DEFAULT_FILE_GAP, DEFAULT_HUNK_GAP } from "../core/run/reviewGap";
 import { resolveTheme } from "../ui/themes";
 import { HunkDiffBody } from "./HunkDiffBody";
+import { normalizeHunkDiffLayout } from "./layout";
 import { HunkDiffFileHeader } from "./HunkDiffFileHeader";
 import type { HunkDiffFileInput, HunkDiffSelection, HunkReviewStreamProps } from "./types";
 
@@ -18,6 +19,7 @@ function resolveSelection(files: HunkDiffFileInput[], selection: HunkDiffSelecti
 export function HunkReviewStream({
   files,
   layout = "split",
+  canonicalLayout,
   width,
   theme = "github-dark-default",
   selection,
@@ -33,6 +35,7 @@ export function HunkReviewStream({
   highlight = true,
   onSelectionChange,
 }: HunkReviewStreamProps) {
+  const resolvedLayout = canonicalLayout ?? normalizeHunkDiffLayout(layout);
   const resolvedTheme = resolveTheme(theme, null);
   const activeSelection = resolveSelection(files, selection);
 
@@ -83,7 +86,7 @@ export function HunkReviewStream({
             ) : null}
             <HunkDiffBody
               file={file}
-              layout={layout}
+              canonicalLayout={resolvedLayout}
               width={width}
               theme={theme}
               showLineNumbers={showLineNumbers}

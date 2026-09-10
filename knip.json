@@ -11,8 +11,8 @@
         "test/session-broker-node/*.ts",
         "test/session-broker-runtime/*.ts",
         "scripts/launch-video/*.{ts,mjs}",
-        "scripts/probe-terminal-theme.ts",
-        "scripts/test-large-untracked-render.tsx",
+        "scripts/dev/probe-terminal-theme.ts",
+        "scripts/dev/test-large-untracked-render.tsx",
         "examples/extensions/**/index.{ts,tsx}",
         "examples/extensions/**/run.ts",
         "examples/**/*.test.ts"
@@ -38,6 +38,22 @@
       "project": ["src/**/*.{ts,tsx}", "bin/**/*.cjs"],
       "ignoreExportsUsedInFile": true
     },
+    "packages/hunk-git": {
+      "entry": ["src/**/*.test.ts"],
+      "project": ["src/**/*.ts"]
+    },
+    "packages/hunk-jj": {
+      "entry": ["src/**/*.test.ts"],
+      "project": ["src/**/*.ts"]
+    },
+    "packages/hunk-sapling": {
+      "entry": ["src/**/*.test.ts"],
+      "project": ["src/**/*.ts"]
+    },
+    "packages/hunk-vcs": {
+      "entry": ["src/**/*.test.ts"],
+      "project": ["src/**/*.ts"]
+    },
     "packages/session-broker*": {
       "entry": ["src/**/*.test.ts"],
       "project": ["src/**/*.ts"]
@@ -55,7 +71,6 @@
     "packages/hunk/src/core/process/updateNotice.ts": ["exports", "types"],
     "packages/hunk/src/extensions/types.ts": ["exports", "types"],
     "packages/hunk/src/extensions/default/ui/sidebar/index.tsx": ["exports", "types"],
-    "packages/hunk/src/extensions/default/vcs/diffRange.ts": ["exports"],
     "packages/hunk/src/session/broker/appContract.ts": ["exports", "types"],
     "packages/hunk/src/ui/diff/worker/index.ts": ["exports", "types"]
   }

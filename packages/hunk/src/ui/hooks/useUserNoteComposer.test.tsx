@@ -68,7 +68,7 @@ function baseOptions(
     keyboardCursorEnabled: true,
     getLineCursor: () => null,
     startDraft: () => null,
-    updateDraft: () => {},
+    updateDraft: () => true,
     saveDraft: () => null,
     cancelDraft: () => {},
     focus: { draft: () => {}, review: () => {}, blurDraft: () => {} },
@@ -280,8 +280,8 @@ describe("useUserNoteComposer", () => {
     let reviewFocusCount = 0;
     const harness = await renderComposer(
       baseOptions({
-        draftNote,
-        saveDraft: () => (++saveCount === 1 ? savedNote : null),
+        draftNote: { ...draftNote, newRange: [41, 43] },
+        saveDraft: () => (++saveCount === 1 ? { ...savedNote, newRange: [41, 43] } : null),
         focus: {
           draft: () => {},
           review: () => {
@@ -312,6 +312,7 @@ describe("useUserNoteComposer", () => {
               hunkIndex: 1,
               side: "new",
               line: 42,
+              newRange: [41, 43],
               body: "saved body",
               draft: false,
             },
@@ -364,13 +365,76 @@ describe("useUserNoteComposer", () => {
     }
   });
 
+  test("flushes the editor's current body before saving", async () => {
+    const calls: string[] = [];
+    const events: Array<{ event: string; payload: unknown }> = [];
+    let semanticBody = draftNote.body;
+    const harness = await renderComposer(
+      baseOptions({
+        draftNote,
+        updateDraft: (body, expectedDraftId) => {
+          calls.push(`update:${expectedDraftId}`);
+          semanticBody = body;
+          return true;
+        },
+        saveDraft: () => {
+          calls.push("save");
+          return { ...savedNote, summary: semanticBody };
+        },
+        publishEvent: (event, payload) => events.push({ event, payload }),
+      }),
+    );
+
+    try {
+      await act(async () => harness.composer().saveDraftNote("complete editor body"));
+
+      expect(calls).toEqual([`update:${draftNote.id}`, "save"]);
+      expect(events[0]).toMatchObject({
+        event: "note_created",
+        payload: { note: { body: "complete editor body" } },
+      });
+    } finally {
+      await act(async () => harness.setup.renderer.destroy());
+    }
+  });
+
+  test("does not save when the editor belongs to a stale draft", async () => {
+    const updates: Array<[string, string | undefined]> = [];
+    let saveCount = 0;
+    const harness = await renderComposer(
+      baseOptions({
+        draftNote,
+        updateDraft: (body, expectedDraftId) => {
+          updates.push([body, expectedDraftId]);
+          return false;
+        },
+        saveDraft: () => {
+          saveCount += 1;
+          return savedNote;
+        },
+      }),
+    );
+
+    try {
+      await act(async () => harness.composer().saveDraftNote(draftNote.body));
+
+      expect(updates).toEqual([[draftNote.body, draftNote.id]]);
+      expect(saveCount).toBe(0);
+    } finally {
+      await act(async () => harness.setup.renderer.destroy());
+    }
+  });
+
   test("updates the semantic draft and publishes the editor's current body", async () => {
     const bodies: string[] = [];
     const events: Array<{ event: string; payload: unknown }> = [];
     const harness = await renderComposer(
       baseOptions({
-        draftNote,
-        updateDraft: (body) => bodies.push(body),
+        draftNote: { ...draftNote, newRange: [41, 43] },
+        updateDraft: (body) => {
+          bodies.push(body);
+          return true;
+        },
         publishEvent: (event, payload) => events.push({ event, payload }),
       }),
     );
@@ -390,12 +454,37 @@ describe("useUserNoteComposer", () => {
               hunkIndex: 1,
               side: "new",
               line: 42,
+              newRange: [41, 43],
               body: "current editor body",
               draft: true,
             },
           },
         },
       ]);
+    } finally {
+      await act(async () => harness.setup.renderer.destroy());
+    }
+  });
+
+  test("ignores an editor update rejected for a stale draft", async () => {
+    const events: Array<{ event: string; payload: unknown }> = [];
+    const updates: Array<[string, string | undefined]> = [];
+    const harness = await renderComposer(
+      baseOptions({
+        draftNote,
+        updateDraft: (body, expectedDraftId) => {
+          updates.push([body, expectedDraftId]);
+          return false;
+        },
+        publishEvent: (event, payload) => events.push({ event, payload }),
+      }),
+    );
+
+    try {
+      await act(async () => harness.composer().updateDraftNote("late editor body"));
+
+      expect(updates).toEqual([["late editor body", draftNote.id]]);
+      expect(events).toEqual([]);
     } finally {
       await act(async () => harness.setup.renderer.destroy());
     }
@@ -431,7 +520,10 @@ describe("useUserNoteComposer", () => {
           staleCalls.push("start");
           return draftNote;
         },
-        updateDraft: () => staleCalls.push("update"),
+        updateDraft: () => {
+          staleCalls.push("update");
+          return true;
+        },
         saveDraft: () => {
           staleCalls.push("save");
           return savedNote;
@@ -455,7 +547,10 @@ describe("useUserNoteComposer", () => {
               currentCalls.push("start");
               return replacementDraft;
             },
-            updateDraft: () => currentCalls.push("update"),
+            updateDraft: () => {
+              currentCalls.push("update");
+              return true;
+            },
             saveDraft: () => {
               currentCalls.push("save");
               return replacementSaved;
@@ -543,6 +638,9 @@ describe("projectExtensionReviewNote", () => {
       body: draftNote.body,
       draft: true,
     });
+    expect(
+      projectExtensionReviewNote({ ...draftNote, oldRange: [40, 42], newRange: [41, 43] }, true),
+    ).toMatchObject({ oldRange: [40, 42], newRange: [41, 43] });
     expect(
       projectExtensionReviewNote(
         { ...savedNote, parentId: "user:parent", fileId: "runtime-alpha" },

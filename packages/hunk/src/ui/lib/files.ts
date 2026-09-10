@@ -48,8 +48,10 @@ export interface FileGroupEntry {
 export interface FileDirectoryEntry {
   kind: "directory";
   id: string;
+  path: string;
   label: string;
   depth: number;
+  descendantFileCount: number;
 }
 
 export type FileSidebarMode = "flat" | "tree";
@@ -213,33 +215,115 @@ function sharedDirectoryDepth(previous: readonly string[], next: readonly string
   return depth;
 }
 
+/** Return the stable logical paths for every directory containing one review path. */
+export function sidebarDirectoryPaths(path: string): string[] {
+  const terminalPath = formatTerminalPath(normalizeDiffPath(path) ?? path);
+  const directories = sidebarDirectorySegments(dirname(terminalPath));
+  return directories.map((_, depth) => sidebarDirectoryPath(directories.slice(0, depth + 1)));
+}
+
 /** Build an expanded hierarchy without regrouping files away from review order. */
 export function buildTreeSidebarEntries(files: readonly SidebarFileSource[]): SidebarEntry[] {
   const entries: SidebarEntry[] = [];
   let activeDirectories: string[] = [];
+  let activeDirectoryEntries: FileDirectoryEntry[] = [];
 
   files.forEach((file, fileIndex) => {
     const path = formatTerminalPath(normalizeDiffPath(file.path) ?? file.path);
     const parent = dirname(path);
     const directories = sidebarDirectorySegments(parent);
     const sharedDepth = sharedDirectoryDepth(activeDirectories, directories);
+    activeDirectoryEntries = activeDirectoryEntries.slice(0, sharedDepth);
 
     for (let depth = sharedDepth; depth < directories.length; depth += 1) {
       const segment = directories[depth]!;
       const directoryPath = sidebarDirectoryPath(directories.slice(0, depth + 1));
-      entries.push({
+      const directoryEntry: FileDirectoryEntry = {
         kind: "directory",
         id: `directory:${fileIndex}:${depth}:${directoryPath}`,
+        path: directoryPath,
         label: sidebarDirectoryLabel(segment),
         depth,
-      });
+        descendantFileCount: 0,
+      };
+      entries.push(directoryEntry);
+      activeDirectoryEntries.push(directoryEntry);
     }
 
     entries.push(buildSidebarFileEntry(file, directories.length));
+    for (const directoryEntry of activeDirectoryEntries) {
+      directoryEntry.descendantFileCount += 1;
+    }
     activeDirectories = directories;
   });
 
   return entries;
+}
+
+/** Expand the named ancestors while preserving unrelated collapsed directory paths. */
+export function expandCollapsedDirectoryPaths(
+  current: ReadonlySet<string>,
+  paths: readonly string[],
+): ReadonlySet<string> {
+  const expandedPaths = paths.filter((path) => current.has(path));
+  if (expandedPaths.length === 0) {
+    return current;
+  }
+
+  const next = new Set(current);
+  for (const path of expandedPaths) {
+    next.delete(path);
+  }
+  return next;
+}
+
+/** Toggle one directory path without mutating the current collapsed-path set. */
+export function toggleCollapsedDirectoryPath(
+  current: ReadonlySet<string>,
+  path: string,
+): ReadonlySet<string> {
+  const next = new Set(current);
+  if (next.has(path)) {
+    next.delete(path);
+  } else {
+    next.add(path);
+  }
+  return next;
+}
+
+/** Hide descendants of collapsed directory rows without changing the remaining review order. */
+export function collapseTreeSidebarEntries(
+  entries: readonly SidebarEntry[],
+  collapsedDirectoryPaths: ReadonlySet<string>,
+): SidebarEntry[] {
+  if (collapsedDirectoryPaths.size === 0) {
+    return [...entries];
+  }
+
+  const visible: SidebarEntry[] = [];
+  let collapsedDepth: number | null = null;
+
+  for (const entry of entries) {
+    if (entry.kind === "group") {
+      collapsedDepth = null;
+      visible.push(entry);
+      continue;
+    }
+
+    if (collapsedDepth !== null) {
+      if (entry.depth > collapsedDepth) {
+        continue;
+      }
+      collapsedDepth = null;
+    }
+
+    visible.push(entry);
+    if (entry.kind === "directory" && collapsedDirectoryPaths.has(entry.path)) {
+      collapsedDepth = entry.depth;
+    }
+  }
+
+  return visible;
 }
 
 /** Build the canonical file label used across headers and note cards. */

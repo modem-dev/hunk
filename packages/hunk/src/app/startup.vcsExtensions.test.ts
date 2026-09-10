@@ -88,8 +88,8 @@ describe("external VCS startup bootstrap", () => {
       env: { HOME: createTempDir("hunk-external-vcs-home-") },
     });
 
-    expect(plan.kind).toBe("app");
-    if (plan.kind !== "app") {
+    expect(plan.kind).toBe("static-diff");
+    if (plan.kind !== "static-diff") {
       return;
     }
     expect(resolvedProjectRoots).toEqual([undefined, repo]);

@@ -7,11 +7,13 @@ export { HunkFileNav } from "./HunkFileNav";
 export { HunkReviewStream } from "./HunkReviewStream";
 export { countHunkDiffStats, createHunkDiffFile, createHunkDiffFilesFromPatch } from "./model";
 export type {
+  CanonicalHunkDiffLayout,
   HunkDiffBodyProps,
   HunkDiffFile,
   HunkDiffFileHeaderProps,
   HunkDiffFileInput,
   HunkDiffLayout,
+  LegacyHunkDiffLayout,
   HunkDiffSelection,
   HunkDiffStats,
   HunkDiffViewProps,

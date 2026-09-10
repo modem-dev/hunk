@@ -3,8 +3,11 @@ import { createTestDiffFile, lines } from "../../../../../test/helpers/diff-help
 import {
   buildFlatSidebarEntries,
   buildTreeSidebarEntries,
+  collapseTreeSidebarEntries,
+  expandCollapsedDirectoryPaths,
   fileLabelParts,
   resolveFileSidebarMode,
+  sidebarDirectoryPaths,
 } from "./files";
 
 describe("files helpers", () => {
@@ -187,6 +190,66 @@ describe("files helpers", () => {
     expect(entries.filter((entry) => entry.kind === "file").map((entry) => entry.id)).toEqual(
       files.map((file) => file.id),
     );
+    expect(
+      entries
+        .filter((entry) => entry.kind === "directory")
+        .map((entry) => [entry.path, entry.descendantFileCount]),
+    ).toEqual([
+      ["src", 2],
+      ["src/ui", 2],
+      ["src", 1],
+      ["src/core", 1],
+      ["test", 1],
+      ["src", 1],
+    ]);
+  });
+
+  test("collapseTreeSidebarEntries hides descendants without changing review order", () => {
+    const entries = buildTreeSidebarEntries([
+      createTestDiffFile({ id: "ui-a", path: "src/ui/a.ts" }),
+      createTestDiffFile({ id: "core-b", path: "src/core/b.ts" }),
+      createTestDiffFile({ id: "root", path: "README.md" }),
+      createTestDiffFile({ id: "test-c", path: "test/c.ts" }),
+      createTestDiffFile({ id: "ui-d", path: "src/ui/d.ts" }),
+    ]);
+
+    const visible = collapseTreeSidebarEntries(entries, new Set(["src"]));
+
+    expect(visible.map((entry) => (entry.kind === "file" ? entry.id : entry.label))).toEqual([
+      "src/",
+      "root",
+      "test/",
+      "test-c",
+      "src/",
+    ]);
+  });
+
+  test("collapseTreeSidebarEntries preserves nested collapse state", () => {
+    const entries = buildTreeSidebarEntries([
+      createTestDiffFile({ id: "ui-a", path: "src/ui/a.ts" }),
+      createTestDiffFile({ id: "core-b", path: "src/core/b.ts" }),
+    ]);
+
+    expect(
+      collapseTreeSidebarEntries(entries, new Set(["src/ui"])).map((entry) =>
+        entry.kind === "file" ? entry.id : entry.kind === "directory" ? entry.path : entry.label,
+      ),
+    ).toEqual(["src", "src/ui", "src/core", "core-b"]);
+    expect(
+      collapseTreeSidebarEntries(entries, new Set(["src", "src/ui"])).map((entry) =>
+        entry.kind === "file" ? entry.id : entry.kind === "directory" ? entry.path : entry.label,
+      ),
+    ).toEqual(["src"]);
+  });
+
+  test("selected-file ancestors expand without disturbing other collapsed folders", () => {
+    const current = new Set(["src", "src/ui", "test"]);
+
+    expect(sidebarDirectoryPaths("src/ui/alpha.ts")).toEqual(["src", "src/ui"]);
+    expect(
+      expandCollapsedDirectoryPaths(current, sidebarDirectoryPaths("src/ui/alpha.ts")),
+    ).toEqual(new Set(["test"]));
+    expect(expandCollapsedDirectoryPaths(current, ["missing"])).toBe(current);
   });
 
   test("buildTreeSidebarEntries gives repeated directory branches unique row ids", () => {

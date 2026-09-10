@@ -1,18 +1,20 @@
 import { existsSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { Command, Option } from "commander";
-import type {
-  CliInput,
-  CommonOptions,
-  CursorLine,
-  ExtensionManageCommandInput,
-  HelpCommandInput,
-  LayoutMode,
-  PagerCommandInput,
-  ParsedCliInput,
-  SelfUpdateCommandInput,
-  SessionCommentListType,
-  SessionCommentApplyItemInput,
+import {
+  isLayoutModeInput,
+  normalizeLayoutModeInput,
+  type CliInput,
+  type CommonOptions,
+  type CursorLine,
+  type ExtensionManageCommandInput,
+  type HelpCommandInput,
+  type LayoutMode,
+  type PagerCommandInput,
+  type ParsedCliInput,
+  type SelfUpdateCommandInput,
+  type SessionCommentListType,
+  type SessionCommentApplyItemInput,
 } from "../core/run/commandInputs";
 import {
   isBuiltInCliCommandName,
@@ -97,7 +99,7 @@ export interface CliReferenceCommand {
 
 /** Review flags registered on every full-screen review command. */
 export const COMMON_REVIEW_OPTIONS = [
-  { flag: "--mode <mode>", description: "layout mode: auto, split, stack", parse: "layout" },
+  { flag: "--mode <mode>", description: "layout mode: auto, split, unified", parse: "layout" },
   {
     flag: "--cursor-line <style>",
     description: "current-line marker: row, number, off",
@@ -365,8 +367,8 @@ export const CLI_REFERENCE_COMMANDS = {
 
 /** Validate one requested layout mode from CLI input. */
 function parseLayoutMode(value: string): LayoutMode {
-  if (value === "auto" || value === "split" || value === "stack") {
-    return value;
+  if (isLayoutModeInput(value)) {
+    return normalizeLayoutModeInput(value);
   }
 
   throw new Error(`Invalid layout mode: ${value}`);
@@ -597,7 +599,7 @@ function renderCliHelp() {
     "  --fast                                  review working tree with experimental fast highlighting",
     "",
     "Common review options:",
-    "  --mode <mode>                           layout mode: auto, split, stack",
+    "  --mode <mode>                           layout mode: auto, split, unified",
     "  --watch                                 auto-reload when the current diff input changes",
     "  --agent-context <path>                  JSON sidecar with agent rationale",
     "  --pager                                 use pager-style chrome",
@@ -711,9 +713,9 @@ function parseSessionCommentApplyPayload(raw: string): SessionCommentApplyItemIn
     }
 
     const item = comment as Record<string, unknown>;
-    const filePath = item.filePath;
-    if (typeof filePath !== "string" || filePath.length === 0) {
-      throw new Error(`Comment ${itemNumber} requires a non-empty \`filePath\`.`);
+    const replyTo = item.replyTo;
+    if (replyTo !== undefined && (typeof replyTo !== "string" || replyTo.length === 0)) {
+      throw new Error(`Comment ${itemNumber} field \`replyTo\` must be a non-empty string.`);
     }
 
     const summary = item.summary;
@@ -730,27 +732,52 @@ function parseSessionCommentApplyPayload(raw: string): SessionCommentApplyItemIn
     const oldLine = parsePositiveJsonInt(item.oldLine, { field: "oldLine", itemNumber });
     const newLine = parsePositiveJsonInt(item.newLine, { field: "newLine", itemNumber });
     const resolvedHunkNumber = hunk ?? hunkNumber;
+    const filePath = item.filePath;
+    const hasExplicitRootFields =
+      filePath !== undefined ||
+      resolvedHunkNumber !== undefined ||
+      oldLine !== undefined ||
+      newLine !== undefined;
 
-    const selectors = [
-      resolvedHunkNumber !== undefined,
-      oldLine !== undefined,
-      newLine !== undefined,
-    ].filter(Boolean);
-    if (selectors.length !== 1) {
+    if (replyTo !== undefined && hasExplicitRootFields) {
       throw new Error(
-        `Comment ${itemNumber} must specify exactly one of \`hunk\`, \`hunkNumber\`, \`oldLine\`, or \`newLine\`.`,
+        `Comment ${itemNumber} must not mix \`replyTo\` with \`filePath\` or an explicit target.`,
       );
     }
 
-    return {
-      filePath,
-      hunkNumber: resolvedHunkNumber,
-      side: oldLine !== undefined ? "old" : newLine !== undefined ? "new" : undefined,
-      line: oldLine ?? newLine,
+    if (replyTo === undefined) {
+      if (typeof filePath !== "string" || filePath.length === 0) {
+        throw new Error(`Comment ${itemNumber} requires a non-empty \`filePath\`.`);
+      }
+      const selectors = [
+        resolvedHunkNumber !== undefined,
+        oldLine !== undefined,
+        newLine !== undefined,
+      ].filter(Boolean);
+      if (selectors.length !== 1) {
+        throw new Error(
+          `Comment ${itemNumber} must specify exactly one of \`hunk\`, \`hunkNumber\`, \`oldLine\`, or \`newLine\`.`,
+        );
+      }
+    }
+
+    const body = {
       summary,
       rationale: typeof item.rationale === "string" ? item.rationale : undefined,
       markup: typeof item.markup === "string" && item.markup.length > 0 ? item.markup : undefined,
       author: typeof item.author === "string" ? item.author : undefined,
+    };
+    if (typeof replyTo === "string") {
+      return { ...body, replyTo };
+    }
+    if (resolvedHunkNumber !== undefined) {
+      return { ...body, filePath: filePath as string, hunkNumber: resolvedHunkNumber };
+    }
+    return {
+      ...body,
+      filePath: filePath as string,
+      side: oldLine !== undefined ? ("old" as const) : ("new" as const),
+      line: oldLine ?? newLine!,
     };
   });
 }
@@ -1467,7 +1494,6 @@ async function parseSessionCommentAddCommand(tokens: string[]): Promise<ParsedCl
   const command = buildSessionCommand(spec);
   let parsedSessionId: string | undefined;
   let parsedOptions: SessionCommandOptions<"comment-add"> = {
-    file: "",
     summary: "",
   };
 
@@ -1481,16 +1507,35 @@ async function parseSessionCommentAddCommand(tokens: string[]): Promise<ParsedCl
   }
 
   await parseStandaloneCommand(command, tokens);
-  enforceConstraint(COMMENT_TARGET_CONSTRAINT, parsedOptions);
+  const hasExplicitRootFields =
+    parsedOptions.file !== undefined ||
+    parsedOptions.oldLine !== undefined ||
+    parsedOptions.newLine !== undefined;
+  if (parsedOptions.replyTo !== undefined && parsedOptions.replyTo.length === 0) {
+    throw new Error("--reply-to requires a non-empty note id.");
+  }
+  if (parsedOptions.replyTo !== undefined && hasExplicitRootFields) {
+    throw new Error("Do not mix --reply-to with --file, --old-line, or --new-line.");
+  }
+  if (parsedOptions.replyTo === undefined) {
+    if (!parsedOptions.file) {
+      throw new Error("Root comments require --file <path>.");
+    }
+    enforceConstraint(COMMENT_TARGET_CONSTRAINT, parsedOptions);
+  }
 
   return {
     kind: "session",
     action: "comment-add",
     output: resolveJsonOutput(parsedOptions),
     selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
-    filePath: parsedOptions.file,
-    side: parsedOptions.oldLine !== undefined ? "old" : "new",
-    line: parsedOptions.oldLine ?? parsedOptions.newLine ?? 0,
+    ...(parsedOptions.replyTo !== undefined
+      ? { replyTo: parsedOptions.replyTo }
+      : {
+          filePath: parsedOptions.file!,
+          side: parsedOptions.oldLine !== undefined ? ("old" as const) : ("new" as const),
+          line: parsedOptions.oldLine ?? parsedOptions.newLine!,
+        }),
     summary: parsedOptions.summary,
     rationale: parsedOptions.rationale,
     markup: parsedOptions.markup,

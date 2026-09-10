@@ -8,13 +8,14 @@
  * `bun run deps:check` fails on any violation not in the baseline.
  */
 
-// UI files allowed to couple to packages/hunk/src/app and packages/hunk/src/session: the composition shell, the two
-// named session adapter hooks, and the session-navigation resolution helper those hooks
-// share. Everything else in packages/hunk/src/ui stays presentation-only.
+// UI files allowed to couple to packages/hunk/src/app and packages/hunk/src/session: App/AppHost,
+// HunkSessionHost, runInteractiveApp, the named session adapter hooks, and their shared navigation
+// helper. Everything else in packages/hunk/src/ui stays presentation-only.
 const UI_SESSION_ADAPTERS = [
   "^packages/hunk/src/ui/App\\.tsx$",
   "^packages/hunk/src/ui/AppHost\\.tsx$",
   "^packages/hunk/src/ui/runInteractiveApp\\.tsx$",
+  "^packages/hunk/src/ui/session/HunkSessionHost\\.tsx$",
   "^packages/hunk/src/ui/hooks/useHunkSessionBridge\\.ts$",
   "^packages/hunk/src/ui/hooks/useTerminalReview\\.ts$",
   "^packages/hunk/src/ui/lib/reviewState\\.ts$",
@@ -26,6 +27,9 @@ const UI_SESSION_ADAPTERS = [
 const PRODUCTION_ENTRY_POINTS = [
   "^packages/hunk/src/main\\.tsx$",
   "^packages/hunk/src/highlightWorkerEntry\\.ts$",
+  // Account for Pierre's shiki/wasm alias from untraversed node_modules and its ambient asset types.
+  "^packages/hunk/src/lib/shikiWasm\\.ts$",
+  "^packages/hunk/src/lib/shikiWasmAssets\\.d\\.ts$",
   "^packages/hunk/src/opentui/index\\.ts$",
   "^packages/hunk/src/extension-api/index\\.ts$",
   "^packages/hunk/src/hunk-review/skillDocument\\.ts$",
@@ -58,18 +62,62 @@ module.exports = {
     {
       name: "extension-api-is-import-free",
       comment:
-        "packages/hunk/src/extension-api is the published contract; declaration emission publishes whatever it reaches (scripts/check-pack.ts gates the pack, this gates the graph).",
+        "packages/hunk/src/extension-api is the published contract; declaration emission publishes whatever it reaches (scripts/packaging/check-pack.ts gates the pack, this gates the graph).",
       severity: "error",
       from: { path: "^packages/hunk/src/extension-api/" },
       to: { path: "^packages/", pathNot: "^packages/hunk/src/extension-api/" },
     },
     {
+      name: "hunk-vcs-stays-provider-neutral",
+      comment:
+        "@hunk/vcs owns dependency-bottom implementation helpers; it never imports Hunk, public contracts, or a provider implementation.",
+      severity: "error",
+      from: { path: "^packages/hunk-vcs/src/" },
+      to: { path: "^packages/", pathNot: "^packages/hunk-vcs/src/" },
+    },
+    {
+      name: "hunk-git-stays-on-vcs-contract",
+      comment:
+        "@hunk/git owns the Git provider and may reach only its local modules, the public extension contract, and explicit dependency-bottom @hunk/vcs leaves.",
+      severity: "error",
+      from: { path: "^packages/hunk-git/src/" },
+      to: {
+        path: "^packages/",
+        pathNot: "^packages/(hunk-git|hunk-vcs)/src/|^packages/hunk/src/extension-api/",
+      },
+    },
+    {
+      name: "hunk-jj-stays-on-vcs-contract",
+      comment:
+        "@hunk/jj owns the Jujutsu provider and may reach only its local modules, the public extension contract, and explicit dependency-bottom @hunk/vcs leaves.",
+      severity: "error",
+      from: { path: "^packages/hunk-jj/src/" },
+      to: {
+        path: "^packages/",
+        pathNot: "^packages/(hunk-jj|hunk-vcs)/src/|^packages/hunk/src/extension-api/",
+      },
+    },
+    {
+      name: "hunk-sapling-stays-on-vcs-contract",
+      comment:
+        "@hunk/sapling owns the Sapling provider and may reach only its local modules, the public extension contract, and explicit dependency-bottom @hunk/vcs leaves.",
+      severity: "error",
+      from: { path: "^packages/hunk-sapling/src/" },
+      to: {
+        path: "^packages/",
+        pathNot: "^packages/(hunk-sapling|hunk-vcs)/src/|^packages/hunk/src/extension-api/",
+      },
+    },
+    {
       name: "lib-is-a-leaf",
       comment:
-        "packages/hunk/src/lib holds dependency-free helpers usable from any tier; it may reach the import-free extension API contract and nothing else.",
+        "packages/hunk/src/lib holds leaf compatibility exports; it may reach the extension contract and dependency-bottom @hunk/vcs helpers only.",
       severity: "error",
       from: { path: "^packages/hunk/src/lib/" },
-      to: { path: "^packages/", pathNot: "^packages/hunk/src/(lib|extension-api)/" },
+      to: {
+        path: "^packages/",
+        pathNot: "^packages/(hunk/src/(lib|extension-api)/|hunk-vcs/src/)",
+      },
     },
     {
       name: "core-stays-domain",
@@ -166,9 +214,12 @@ module.exports = {
     {
       name: "packages-stay-standalone",
       comment:
-        "Workspace packages are standalone publishable units; they never import the app source tree.",
+        "Workspace packages are standalone units; bundled providers are governed by their narrower public-contract rules above, while other packages never import the app source tree.",
       severity: "error",
-      from: { path: "^packages/(?!hunk/)" },
+      from: {
+        path: "^packages/(?!hunk/)",
+        pathNot: "^packages/hunk-(git|jj|sapling)/",
+      },
       to: { path: "^packages/hunk/src/" },
     },
   ],

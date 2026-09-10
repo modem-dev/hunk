@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { historyReviewArgs } from "./runInteractiveHistory";
+import { historyReviewArgs } from "../../app/historyReview";
 
 describe("history review child arguments", () => {
   test("encodes provider-owned opaque actions without exposing ids to CLI option parsing", () => {

@@ -1,7 +1,10 @@
 import type {
+  ExtensionReviewDescriptor,
   ExtensionVcsHistoryCommit,
   ExtensionVcsHistoryInput,
   ExtensionVcsHistoryPage,
+  ExtensionVcsHistoryRangeReviewAction,
+  ExtensionVcsHistoryRangeSelection,
   ExtensionVcsHistoryReviewAction,
   ExtensionVcsHistoryReviewOptions,
   ExtensionVcsWatchPlan,
@@ -37,7 +40,7 @@ export type VcsReviewOperationKind = VcsReviewOperation["kind"];
 
 export interface VcsOperation<Input extends VcsReviewInput> {
   load(input: Input, context: VcsLoadContext): Promise<VcsPatchResult>;
-  watchSignature?: (input: Input, context: VcsLoadContext) => string;
+  watchSignature?: (input: Input, context: VcsLoadContext) => string | Promise<string>;
   watchPlan?: (input: Input, context: VcsLoadContext) => ExtensionVcsWatchPlan;
 }
 
@@ -61,6 +64,11 @@ export interface VcsHistoryCapability {
     context: VcsLoadContext,
     options?: ExtensionVcsHistoryReviewOptions,
   ): Promise<ExtensionVcsHistoryReviewAction>;
+  planRangeReview?(
+    selection: ExtensionVcsHistoryRangeSelection,
+    context: VcsLoadContext,
+    options?: ExtensionVcsHistoryReviewOptions,
+  ): Promise<ExtensionVcsHistoryRangeReviewAction>;
 }
 
 /**
@@ -76,6 +84,8 @@ export interface VcsPatchResult {
   sourceLabel: string;
   title: string;
   patchText: string;
+  /** Validated provider-neutral context for a revision-backed review. */
+  review?: ExtensionReviewDescriptor;
   /** Repo-root-relative untracked paths Hunk synthesizes into added-file diffs. */
   untrackedPaths?: string[];
   /** Exact old/new content lookups, built from the result's `readFileSource`. */

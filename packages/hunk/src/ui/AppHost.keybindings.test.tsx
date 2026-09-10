@@ -11,8 +11,9 @@ import { getBundledVcsCatalog } from "../app/vcsCatalog";
 import { loadAppBootstrap } from "../core/changeset/loaders";
 import type { AppBootstrap } from "../core/bootstrap";
 import { retireExtensionLoadResult } from "../extensions/events";
+import { createExtensionSession, type ExtensionSession } from "../extensions/session";
 import { createEmptyExtensionLoadResult } from "../extensions/types";
-import { AppHost } from "./AppHost";
+import { TestAppHost as AppHost } from "../../../../test/helpers/app-host";
 
 /**
  * User keybindings, end to end.
@@ -76,7 +77,7 @@ async function launchWithConfig(repo: string, configToml: string): Promise<AppBo
   const input = {
     kind: "vcs" as const,
     staged: false,
-    options: { mode: "stack" as const, promptSaveViewPreferences: false },
+    options: { mode: "unified" as const, promptSaveViewPreferences: false },
   };
   const vcsCatalog = getBundledVcsCatalog();
   const configured = resolveConfiguredCliInput(input, { cwd: repo, vcsCatalog });
@@ -99,6 +100,7 @@ async function withAppHost(
   body: (setup: Awaited<ReturnType<typeof testRender>>, quits: () => number) => Promise<void>,
   externalQuitSignal?: AbortSignal,
   extensionOwnership: "owned" | "borrowed" = "owned",
+  extensionSession?: ExtensionSession,
 ) {
   let quitCount = 0;
   const setup = await testRender(
@@ -107,6 +109,7 @@ async function withAppHost(
       externalQuitSignal={externalQuitSignal}
       onQuit={() => (quitCount += 1)}
       extensionOwnership={extensionOwnership}
+      {...(extensionSession ? { extensionSession } : {})}
     />,
     { width: 120, height: 24 },
   );
@@ -267,6 +270,33 @@ describe("user keybindings", () => {
     });
   });
 
+  test("preserves the deprecated layout command event id beside its canonical replacement", async () => {
+    const repo = createTestRepo("hunk-keybindings-layout-command-event-");
+    const bootstrap = await launchWithConfig(repo, "");
+    const extensions = createEmptyExtensionLoadResult(repo);
+    const seen: Array<{ commandId: string; canonicalCommandId?: string }> = [];
+    extensions.registry.eventHandlers.command_executed.push({
+      extensionId: "coach",
+      handler: (payload) => {
+        seen.push(payload);
+      },
+    });
+    bootstrap.extensions = extensions;
+
+    await withAppHost(bootstrap, async (setup) => {
+      await act(async () => {
+        await setup.mockInput.typeText("1");
+      });
+      await flush(setup);
+      expect(seen).toEqual([
+        {
+          commandId: "hunk.view.layoutStack",
+          canonicalCommandId: "hunk.view.layoutUnified",
+        },
+      ]);
+    });
+  });
+
   test("observes commands invoked through extension command controls exactly once", async () => {
     const repo = createTestRepo("hunk-keybindings-programmatic-command-event-");
     const bootstrap = await launchWithConfig(repo, "");
@@ -274,7 +304,7 @@ describe("user keybindings", () => {
     const seen: string[] = [];
     extensions.registry.commands.push({
       extensionId: "coach",
-      command: { id: "toggle-lines", title: "Toggle lines", key: "y" },
+      command: { id: "toggle-lines", title: "Toggle lines", key: "Y" },
       handler: (ctx) => {
         ctx.commands.execute("hunk.view.toggleLineNumbers");
       },
@@ -289,7 +319,7 @@ describe("user keybindings", () => {
 
     await withAppHost(bootstrap, async (setup) => {
       await act(async () => {
-        await setup.mockInput.typeText("y");
+        await setup.mockInput.typeText("Y");
       });
       await flush(setup);
       expect(seen).toEqual(["hunk.view.toggleLineNumbers", "coach.toggle-lines"]);
@@ -349,6 +379,7 @@ describe("user keybindings", () => {
       },
     });
     bootstrap.extensions = extensions;
+    const extensionSession = createExtensionSession(extensions, repo);
 
     for (let generation = 0; generation < 2; generation += 1) {
       await withAppHost(
@@ -360,6 +391,7 @@ describe("user keybindings", () => {
         },
         undefined,
         "borrowed",
+        extensionSession,
       );
     }
 

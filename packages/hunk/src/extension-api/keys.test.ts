@@ -131,6 +131,31 @@ describe("matchesKeyChord", () => {
     expect(matchesKeyChord(parsed("r"), keyEvent({ name: "r", ctrl: true }))).toBe(false);
   });
 
+  test("alt matches explicit option and legacy raw meta events", () => {
+    const alt = parsed("alt+n");
+    expect(matchesKeyChord(alt, keyEvent({ name: "n", option: true }))).toBe(true);
+    expect(
+      matchesKeyChord(alt, keyEvent({ name: "n", meta: true, option: true, source: "kitty" })),
+    ).toBe(true);
+    expect(matchesKeyChord(alt, keyEvent({ name: "n", meta: true, source: "raw" }))).toBe(true);
+    expect(matchesKeyChord(alt, keyEvent({ name: "n", meta: true }))).toBe(true);
+  });
+
+  test("kitty keeps alt and meta distinct", () => {
+    const kittyAlt = keyEvent({
+      name: "n",
+      meta: true,
+      option: true,
+      source: "kitty",
+    });
+    const kittyMeta = keyEvent({ name: "n", meta: true, source: "kitty" });
+
+    expect(matchesKeyChord(parsed("alt+n"), kittyAlt)).toBe(true);
+    expect(matchesKeyChord(parsed("alt+n"), kittyMeta)).toBe(false);
+    expect(matchesKeyChord(parsed("meta+n"), kittyAlt)).toBe(false);
+    expect(matchesKeyChord(parsed("meta+n"), kittyMeta)).toBe(true);
+  });
+
   test("symbols match by sequence and ignore the shift flag", () => {
     const chord = parsed("{");
     expect(matchesKeyChord(chord, keyEvent({ name: "[", sequence: "{", shift: true }))).toBe(true);

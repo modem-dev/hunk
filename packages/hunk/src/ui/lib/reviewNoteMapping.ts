@@ -88,14 +88,16 @@ export function liveCommentToStoredNote(
   comment: LiveComment,
   fileKey: string,
   hunks: readonly ReviewHunkSpan[],
+  replyParent?: ReviewStoredNote,
 ): ReviewStoredNote {
   return {
     note: {
       id: comment.id,
+      ...(replyParent ? { parentId: replyParent.note.id } : {}),
       source: reviewNoteSource(comment),
       originalSource: comment.source,
       fileKey,
-      anchor: reviewLineAnchor(hunks, comment),
+      anchor: replyParent ? replyParent.note.anchor : reviewLineAnchor(hunks, comment),
       summary: comment.summary,
       rationale: comment.rationale,
       markup: comment.markup,
@@ -107,7 +109,7 @@ export function liveCommentToStoredNote(
       tags: comment.tags,
       confidence: comment.confidence,
     },
-    resolution: "active",
+    resolution: replyParent?.resolution ?? "active",
   };
 }
 
@@ -172,7 +174,7 @@ export function storedNoteToUserNote(
 
 /** Render the semantic draft as the draft the diff pane places and edits. */
 export function storedDraftToDraftNote(draft: ReviewDraftNote, file: DiffFile): DraftReviewNote {
-  const anchor = reviewLineAnchor(file.metadata.hunks, draft);
+  const anchor = draft.anchor ?? reviewLineAnchor(file.metadata.hunks, draft);
   return {
     id: draft.id,
     kind: draft.kind ?? "create",

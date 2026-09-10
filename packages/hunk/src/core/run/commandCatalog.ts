@@ -29,18 +29,19 @@ import type { ReviewIntent } from "../review/intents";
 import type { ReviewSelectionScope } from "../review/navigation";
 import {
   selectActiveEditableReviewNoteId,
+  selectActiveRemovableReviewNote,
   selectActiveReplyableReviewNoteId,
   selectNormalizedSelection,
   selectReviewGapForSelection,
 } from "../review/selectors";
 import type { ReviewState } from "../review/state";
-import type { ReviewLineAddressV1 } from "../review/types";
+import type { ReviewNoteTargetV1 } from "../review/types";
 
 /** Where one command's effect resolves, and therefore who may invoke it. */
 export type AppCommandLocus = "semantic" | "client-local" | "host-only";
 
 /** The id group a command lives under, and the menu-level grouping users read. */
-export type AppCommandCategory = "app" | "review" | "view";
+export type AppCommandCategory = "app" | "history" | "review" | "view";
 
 /** The direction a command moves a vertically ordered surface. */
 export type VerticalCommandDirection = -1 | 1;
@@ -57,10 +58,12 @@ export type AppCommandReviewEffect =
   | { kind: "notes/toggle-visibility" }
   /** Open a draft at the current selection; the client may supply a measured line. */
   | { kind: "notes/start-draft" }
-  /** Edit the selected hunk's first editable reviewer note. */
+  /** Edit the active note when that same card is an editable reviewer note. */
   | { kind: "notes/start-edit-active" }
-  /** Reply to the selected hunk's first stored note. */
+  /** Reply to the active stored note. */
   | { kind: "notes/start-reply-active" }
+  /** Delete or dismiss the active stored leaf note. */
+  | { kind: "notes/remove-active" }
   /** Flip the gap the shared policy says this selection reaches. */
   | { kind: "expansion/toggle-selected-gap" };
 
@@ -159,6 +162,30 @@ const BUILTIN_COMMANDS = [
     publicToExtensions: true,
   },
   {
+    id: "hunk.review.startVisualSelection",
+    title: "Start visual selection",
+    category: "review",
+    defaultKeys: ["v"],
+    locus: "client-local",
+    publicToExtensions: true,
+  },
+  {
+    id: "hunk.review.copySelection",
+    title: "Copy selection",
+    category: "review",
+    defaultKeys: ["y"],
+    locus: "client-local",
+    publicToExtensions: true,
+  },
+  {
+    id: "hunk.review.clearSelection",
+    title: "Clear selection",
+    category: "review",
+    defaultKeys: [],
+    locus: "client-local",
+    publicToExtensions: true,
+  },
+  {
     id: "hunk.review.startNote",
     title: "Add a review note",
     category: "review",
@@ -185,6 +212,36 @@ const BUILTIN_COMMANDS = [
     defaultKeys: ["R"],
     locus: "semantic",
     review: { kind: "notes/start-reply-active" },
+    publicToExtensions: true,
+    closesMenu: true,
+  },
+  {
+    id: "hunk.review.deleteActiveNote",
+    title: "Delete active review note",
+    category: "review",
+    defaultKeys: ["D"],
+    locus: "semantic",
+    review: { kind: "notes/remove-active" },
+    publicToExtensions: true,
+    closesMenu: true,
+  },
+  {
+    id: "hunk.review.previousNote",
+    title: "Previous review note",
+    category: "review",
+    defaultKeys: ["N"],
+    locus: "client-local",
+    verticalDirection: -1,
+    publicToExtensions: true,
+    closesMenu: true,
+  },
+  {
+    id: "hunk.review.nextNote",
+    title: "Next review note",
+    category: "review",
+    defaultKeys: ["n"],
+    locus: "client-local",
+    verticalDirection: 1,
     publicToExtensions: true,
     closesMenu: true,
   },
@@ -226,7 +283,7 @@ const BUILTIN_COMMANDS = [
   },
   {
     id: "hunk.review.stepDown",
-    title: "Scroll down one row",
+    title: "Move down one line or note",
     category: "review",
     defaultKeys: ["down", "j"],
     locus: "client-local",
@@ -235,7 +292,7 @@ const BUILTIN_COMMANDS = [
   },
   {
     id: "hunk.review.stepUp",
-    title: "Scroll up one row",
+    title: "Move up one line or note",
     category: "review",
     defaultKeys: ["up", "k"],
     locus: "client-local",
@@ -315,16 +372,17 @@ const BUILTIN_COMMANDS = [
     id: "hunk.view.layoutSplit",
     title: "Split layout",
     category: "view",
-    defaultKeys: ["1"],
+    defaultKeys: ["2"],
     locus: "client-local",
     publicToExtensions: true,
     closesMenu: true,
   },
   {
-    id: "hunk.view.layoutStack",
-    title: "Stack layout",
+    id: "hunk.view.layoutUnified",
+    aliases: ["hunk.view.layoutStack"],
+    title: "Unified layout",
     category: "view",
-    defaultKeys: ["2"],
+    defaultKeys: ["1"],
     locus: "client-local",
     publicToExtensions: true,
     closesMenu: true,
@@ -549,6 +607,11 @@ export type AppCommandId = (typeof BUILTIN_COMMANDS)[number]["id"];
 
 export const APP_COMMAND_CATALOG: readonly AppCommandCatalogEntry[] = BUILTIN_COMMANDS;
 
+/** Canonical and compatibility names accepted for review-surface built-ins. */
+export const APP_COMMAND_NAMES: ReadonlySet<string> = new Set(
+  APP_COMMAND_CATALOG.flatMap((entry) => [entry.id, ...(entry.aliases ?? [])]),
+);
+
 /** Look one command up by its canonical id or a compatibility alias. */
 export function appCommandCatalogEntry(id: string): AppCommandCatalogEntry | undefined {
   return APP_COMMAND_CATALOG.find((entry) => entry.id === id || entry.aliases?.includes(id));
@@ -582,7 +645,7 @@ export interface AppCommandLoweringContext {
    * knows which line the reviewer's cursor was on. Omitted, the note lands on the shared
    * default for the whole hunk.
    */
-  noteTarget?: ReviewLineAddressV1;
+  noteTarget?: ReviewNoteTargetV1;
   /**
    * The file and hunk the invoking client's note affordance addressed.
    *
@@ -634,6 +697,13 @@ export function lowerAppCommandToReviewIntent(
     case "notes/start-reply-active": {
       const noteId = selectActiveReplyableReviewNoteId(state);
       return noteId ? { type: "notes/start-reply", noteId } : undefined;
+    }
+    case "notes/remove-active": {
+      const target = selectActiveRemovableReviewNote(state);
+      if (!target) return undefined;
+      return target.source === "user"
+        ? { type: "notes/remove-user", noteId: target.noteId }
+        : { type: "notes/remove-live", noteId: target.noteId };
     }
     case "expansion/toggle-selected-gap": {
       const target = selectReviewGapForSelection(state);
