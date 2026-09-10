@@ -247,7 +247,6 @@ describe("PTY key routing", () => {
 
       // The review's down key moves the selector and must not reach the focused scroll box.
       await session.press("j");
-      await session.waitIdle({ timeout: 400 });
 
       const selectedBefore = selectorOpen.split("\n").find((line) => line.includes("›"));
       const afterKey = await session.text({ immediate: true });
@@ -312,7 +311,6 @@ describe("PTY key routing", () => {
       expect(anchorText.length).toBeGreaterThan(0);
 
       await session.press("j");
-      await session.waitIdle({ timeout: 300 });
 
       const afterKey = await session.text({ immediate: true });
       expect(lineIndexOf(afterKey, anchorText)).toBe(anchorRow);

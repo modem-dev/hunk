@@ -120,7 +120,6 @@ describe("PTY navigation", () => {
       }
 
       await session.press("[");
-      await session.waitIdle({ timeout: 80 });
       const backward = await harness.pressAndWaitForSnapshot(
         session,
         "[",
