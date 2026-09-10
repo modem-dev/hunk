@@ -249,7 +249,7 @@ Open the public release in a browser and verify inline playback, final notes, an
 
 Only stable releases that advance `latest` should propagate to Homebrew and mise. Let Homebrew Autobump update `Homebrew/homebrew-core`; use `brew bump-formula-pr` only if maintainers request it or Autobump stalls.
 
-Treat Homebrew availability as a release-announcement gate, not as an immediate consequence of the tag workflow. The tag publishes GitHub and npm artifacts, while Homebrew detects the release on its own schedule and merges a separate formula PR. Before a broad announcement that names Homebrew or recommends `hunk update` without qualifying the install method, read the live formula API and require its stable version to match:
+Treat Homebrew availability as an announcement check only. Never delay or fail the tag, npm publication, GitHub release, changelog, release notes, video, or other release completion work because Homebrew is pending. Homebrew detects the published release on its own schedule and merges a separate formula PR. Immediately before an external promotional announcement that names Homebrew or recommends `hunk update` without qualifying the install method, read the live formula API and require its stable version to match:
 
 ```sh
 version=X.Y.Z
@@ -261,7 +261,7 @@ printf 'Homebrew formula: %s (release: %s)\n' "$formula_version" "$version"
 test "$formula_version" = "$version"
 ```
 
-If the gate fails, either hold the broad announcement or explicitly say that Homebrew is still propagating and offer npm or the install script meanwhile. Check for an open or merged Autobump PR:
+If the check fails, still mark the software release complete, but hold the external promotional announcement unless it explicitly says that Homebrew is still propagating and offers npm or the install script meanwhile. Check for an open or merged Autobump PR:
 
 ```sh
 gh api --method GET /search/issues \
