@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { open, stat, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { buildGitIgnoredDirectoryArgs, parseGitIgnoredDirectoryRoots } from "./commands";
+import { normalizePathForOS, resolveCanonicalPath } from "@hunk/vcs/path";
 import { runAbortableCommand } from "@hunk/vcs/async-process";
 import type {
   ExtensionVcsStatusCapability,
@@ -204,16 +205,29 @@ async function metadata(context: GitStatusContext) {
   const bare =
     (await query(["rev-parse", "--is-bare-repository"], context)).stdout.trim() === "true";
   if (bare) throw new Error("Status requires a worktree; this Git repository is bare.");
-  const path = await realpath(
-    outputPath((await query(["rev-parse", "--show-toplevel"], context)).stdout),
+  // Require readable metadata before canonicalization, whose missing-leaf fallback serves sibling rows.
+  const path = resolveCanonicalPath(
+    await realpath(
+      normalizePathForOS(
+        outputPath((await query(["rev-parse", "--show-toplevel"], context)).stdout),
+      ),
+    ),
   );
-  const gitDir = await realpath(
-    outputPath((await query(["rev-parse", "--absolute-git-dir"], context)).stdout),
+  const gitDir = resolveCanonicalPath(
+    await realpath(
+      normalizePathForOS(
+        outputPath((await query(["rev-parse", "--absolute-git-dir"], context)).stdout),
+      ),
+    ),
   );
-  const commonDir = await realpath(
-    resolve(
-      context.cwd,
-      outputPath((await query(["rev-parse", "--git-common-dir"], context)).stdout),
+  const commonDir = resolveCanonicalPath(
+    await realpath(
+      resolve(
+        context.cwd,
+        normalizePathForOS(
+          outputPath((await query(["rev-parse", "--git-common-dir"], context)).stdout),
+        ),
+      ),
     ),
   );
   context.signal?.throwIfAborted();
@@ -337,7 +351,7 @@ export function createGitStatusCapability(gitExecutable = "git"): ExtensionVcsSt
   const targetMetadata = async (targetPath: string | undefined, context: GitStatusContext) => {
     const origin = await metadata(context);
     const target =
-      targetPath && resolve(targetPath) !== origin.path
+      targetPath && resolveCanonicalPath(targetPath) !== origin.path
         ? await metadata({ ...context, cwd: targetPath })
         : origin;
     if (target.commonDir !== origin.commonDir)
@@ -408,7 +422,12 @@ export function createGitStatusCapability(gitExecutable = "git"): ExtensionVcsSt
       const records = parseGitStatusWorktrees(
         (await query(["worktree", "list", "--porcelain", "-z"], { ...options, cwd: target.path }))
           .stdout,
-      ).filter((record) => resolve(record.path) !== target.path);
+      )
+        .map((record) => ({
+          ...record,
+          path: resolveCanonicalPath(normalizePathForOS(record.path)),
+        }))
+        .filter((record) => record.path !== target.path);
       const selected = records.slice(0, MAX_WORKTREES);
       const results: ExtensionVcsStatusWorktreeSummary[] = [];
       let next = 0;
@@ -439,6 +458,7 @@ export function createGitStatusCapability(gitExecutable = "git"): ExtensionVcsSt
             } else {
               try {
                 const sibling = await capability.read({ targetPath: record.path }, context);
+                summary.worktree = sibling.worktree;
                 summary.inspectable = true;
                 summary.branch = sibling.head.kind === "detached" ? undefined : sibling.head.name;
                 summary.detached = sibling.head.kind === "detached";

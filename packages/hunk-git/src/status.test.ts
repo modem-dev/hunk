@@ -1,6 +1,15 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, utimesSync, statSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  rmSync,
+  writeFileSync,
+  utimesSync,
+  statSync,
+  symlinkSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
+import { resolveCanonicalPath } from "@hunk/vcs/path";
 import { join } from "node:path";
 import { createGitStatusCapability, parseGitStatus, parseGitStatusWorktrees } from "./status";
 
@@ -203,11 +212,47 @@ describe("Git workspace status reads", () => {
     writeFileSync(join(sibling, "ignored-build", "output.txt"), "ignored");
     writeFileSync(join(sibling, ".gitignore"), "ignored-build/\n");
     const watch = await capability.watchPlan!(target, { cwd });
-    expect(watch.targets.map((target) => target.directory)).toContain(gitDir);
-    expect(watch.targets.find((entry) => entry.directory === sibling)).toMatchObject({
-      ignoredRoots: [join(sibling, ".git"), join(sibling, "ignored-build")],
+    expect(watch.targets.map((target) => target.directory)).toContain(resolveCanonicalPath(gitDir));
+    expect(watch.targets.find((entry) => entry.directory === target.worktree.path)).toMatchObject({
+      ignoredRoots: [
+        join(target.worktree.path, ".git"),
+        join(target.worktree.path, "ignored-build"),
+      ],
     });
   });
+  test("uses one filesystem identity through aliased launches, reciprocal siblings and review plans", async () => {
+    const cwd = createTestRepo();
+    const root = mkdtempSync(join(tmpdir(), "hunk-status-alias-test-"));
+    dirs.push(root);
+    const alias = join(root, "origin-alias");
+    const sibling = join(root, "sibling");
+    const siblingAlias = join(root, "sibling-alias");
+    // Junctions exercise Windows aliases without requiring symlink privileges.
+    symlinkSync(cwd, alias, process.platform === "win32" ? "junction" : "dir");
+    testGit(alias, "worktree", "add", "-qb", "sibling", sibling);
+    symlinkSync(sibling, siblingAlias, process.platform === "win32" ? "junction" : "dir");
+    writeFileSync(join(sibling, "untracked.txt"), "change");
+    const snapshot = await capability.read({}, { cwd: alias });
+    expect(snapshot.worktree).toEqual((await capability.read({}, { cwd })).worktree);
+    const siblings = await capability.readSiblings(snapshot, { cwd: alias });
+    expect(siblings.worktrees).toHaveLength(1);
+    const target = await capability.read({ targetPath: siblingAlias }, { cwd: alias });
+    expect(siblings.worktrees[0]!.worktree).toEqual(target.worktree);
+    expect(target.worktree.path).toBe(resolveCanonicalPath(sibling));
+    const reciprocal = await capability.readSiblings(target, { cwd: alias });
+    expect(reciprocal.worktrees).toHaveLength(1);
+    expect(reciprocal.worktrees[0]!.worktree).toEqual(snapshot.worktree);
+    const roundTrip = await capability.read(
+      { targetPath: reciprocal.worktrees[0]!.worktree.path },
+      { cwd: siblingAlias },
+    );
+    expect(roundTrip.worktree).toEqual(snapshot.worktree);
+    expect(await capability.planReview(target, "unstaged", { cwd: alias })).toEqual({
+      cwd: target.worktree.path,
+      input: { kind: "vcs", staged: false, options: {} },
+    });
+  });
+
   test("limits concurrent sibling reads and contains an error to its row", async () => {
     const cwd = createTestRepo();
     const parent = mkdtempSync(join(tmpdir(), "hunk-status-siblings-test-"));

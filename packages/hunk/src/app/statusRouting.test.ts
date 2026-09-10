@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { resolveCanonicalPath } from "../core/run/paths";
 import { getBundledVcsCatalog } from "./vcsCatalog";
 import { loadStatusBootstrap } from "./statusBootstrap";
 import { createSessionRegistration } from "./session/registration";
@@ -29,6 +30,7 @@ test("sibling log/diff source facts reach real bootstraps and broker registratio
   const cwd = join(root, "origin");
   const sibling = join(root, "sibling");
   const config = join(root, "config");
+  const siblingAlias = join(root, "sibling-alias");
   mkdirSync(cwd);
   mkdirSync(join(config, "hunk"), { recursive: true });
   writeFileSync(
@@ -40,6 +42,8 @@ test("sibling log/diff source facts reach real bootstraps and broker registratio
   runStatusTestGit(cwd, ["add", "."]);
   runStatusTestGit(cwd, ["commit", "-qm", "Origin commit"]);
   runStatusTestGit(cwd, ["worktree", "add", "-qb", "sibling", sibling]);
+  symlinkSync(sibling, siblingAlias, process.platform === "win32" ? "junction" : "dir");
+  const sourceCwd = resolveCanonicalPath(sibling);
   writeFileSync(join(sibling, "alpha.ts"), "export const alpha = 2;\n");
   mkdirSync(join(sibling, ".hunk", "extensions"), { recursive: true });
   writeFileSync(
@@ -61,10 +65,15 @@ test("sibling log/diff source facts reach real bootstraps and broker registratio
   });
   try {
     const owner = runtime.extensionSession.current;
-    const snapshot = await runtime.load(sibling);
+    const snapshot = await runtime.load(siblingAlias);
+    const siblings = await runtime.loadSiblings(runtime.snapshot);
+    expect(siblings.siblings.state).toBe("ready");
+    if (siblings.siblings.state !== "ready") throw new Error("Sibling scan failed");
+    expect(siblings.siblings.value.worktrees[0]!.worktree).toEqual(snapshot.worktree);
     const action = await runtime.planReview(snapshot, "unstaged");
+    expect(action.cwd).toBe(sourceCwd);
     const bootstrap = await runtime.prepareReview(action.input, action.cwd);
-    expect(bootstrap.reloadContext.cwd).toBe(sibling);
+    expect(bootstrap.reloadContext.cwd).toBe(sourceCwd);
     expect(bootstrap.input.options).toMatchObject({
       experimental: true,
       fast: true,
@@ -83,16 +92,16 @@ test("sibling log/diff source facts reach real bootstraps and broker registratio
       producer.getPublication(),
       action.cwd,
     );
-    expect(registration.cwd).toBe(sibling);
-    expect(registration.repoRoot).toBe(sibling);
-    const history = await runtime.openHistory(sibling);
+    expect(registration.cwd).toBe(sourceCwd);
+    expect(registration.repoRoot).toBe(sourceCwd);
+    const history = await runtime.openHistory(siblingAlias);
     try {
       expect(history.extensionSession).toBe(runtime.extensionSession);
       const page = await history.source.read({ limit: 10 });
       expect(page.commits[0]!.subject).toBe("Origin commit");
       const planned = await history.planReview(page.commits[0]!);
       const review = await runtime.prepareHistoryReview(planned, history.repoRoot);
-      expect(review.reloadContext.cwd).toBe(sibling);
+      expect(review.reloadContext.cwd).toBe(sourceCwd);
       expect(review.extensions).toBe(owner);
       expect(review.input.options.experimental).toBe(true);
       expect(review.initialTheme).toBe("status-custom");
