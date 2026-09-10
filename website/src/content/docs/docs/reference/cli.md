@@ -183,6 +183,40 @@ print a bundled Hunk skill path
 hunk skill path [name]
 ```
 
+## `hunk skill show`
+
+print a bundled Hunk skill
+
+### Usage
+
+```bash
+hunk skill show [name]
+```
+
+Prints the full SKILL.md shipped with the installed Hunk version. Pointer skills written by `hunk skill install` run this command to load their instructions, so the text always matches the installed CLI.
+
+## `hunk skill install`
+
+install a pointer skill into a coding agent's skills directory
+
+### Usage
+
+```bash
+hunk skill install --agent <name> [name] [--project] [--force]
+```
+
+Writes a short SKILL.md that carries the bundled skill's name and description and tells the agent to run `hunk skill show` for the instructions. Nothing else is copied, so the installed skill never goes stale when Hunk upgrades.
+
+Agents: `claude` (Claude Code), `codex`, `opencode`, `cursor`, `amp`, `copilot` (GitHub Copilot), and `agents` for any tool that reads the shared `.agents/skills` convention.
+
+### Command-specific options
+
+| Option           | Description                                                       |
+| ---------------- | ----------------------------------------------------------------- |
+| `--agent <name>` | coding agent to install into; repeat for several                  |
+| `--project`      | install under the current directory instead of the home directory |
+| `--force`        | replace an existing SKILL.md Hunk did not generate                |
+
 ## `hunk extension install`
 
 install a shared extension from a git repository

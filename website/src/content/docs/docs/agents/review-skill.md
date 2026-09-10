@@ -5,13 +5,39 @@ description: Load the versioned machine guidance that teaches coding agents Hunk
 
 Hunk ships a generated `hunk-review` skill with every installation. It is the authoritative machine-facing workflow for session selection, efficient review inspection, navigation, reloads, and comments.
 
-## Locate the installed skill
+## Install it into your agent
 
 ```bash
-hunk skill path
+hunk skill install --agent claude
+hunk skill install --agent codex --agent cursor --project
 ```
 
-Load or symlink the returned file according to your coding agent's skill mechanism. Resolve the path again after upgrades so the guidance stays aligned with the installed CLI.
+| `--agent`  | Reads user skills from                     | Reads project skills from |
+| ---------- | ------------------------------------------ | ------------------------- |
+| `claude`   | `$CLAUDE_CONFIG_DIR` or `~/.claude/skills` | `.claude/skills`          |
+| `codex`    | `$CODEX_HOME` or `~/.codex/skills`         | `.agents/skills`          |
+| `opencode` | `~/.config/opencode/skills`                | `.opencode/skills`        |
+| `cursor`   | `~/.cursor/skills`                         | `.cursor/skills`          |
+| `amp`      | `~/.config/agents/skills`                  | `.agents/skills`          |
+| `copilot`  | `~/.copilot/skills`                        | `.github/skills`          |
+| `agents`   | `~/.agents/skills`                         | `.agents/skills`          |
+
+`~/.config` follows `$XDG_CONFIG_HOME` when it is set. `--project` writes under the current directory; the default writes under your home directory. Hunk rewrites a pointer it generated earlier, but refuses to replace a hand-written `SKILL.md` unless you pass `--force`.
+
+The installed file is deliberately light. It carries the skill's `name` and `description` so the agent knows when to use it, and its body tells the agent to run:
+
+```bash
+hunk skill show
+```
+
+That prints the full skill shipped with the installed Hunk version, so the agent always sees instructions that match the CLI on the machine, and upgrading Hunk never requires reinstalling the skill.
+
+## Locate or read the installed skill
+
+```bash
+hunk skill show   # print the full skill
+hunk skill path   # print its path, for agents that load or symlink files
+```
 
 For agents that need a stable web-readable URL, use the [generated Hunk review skill](/docs/hunk-review-skill.md). The published artifact and installed skill are rendered by the same function; neither is a handwritten copy.
 

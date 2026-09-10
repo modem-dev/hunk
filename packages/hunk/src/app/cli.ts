@@ -13,6 +13,7 @@ import {
   type PagerCommandInput,
   type ParsedCliInput,
   type SelfUpdateCommandInput,
+  type SkillInstallCommandInput,
   type SessionCommentListType,
   type SessionCommentApplyItemInput,
 } from "../core/run/commandInputs";
@@ -26,7 +27,14 @@ import {
   UPDATE_METHOD_VALUES,
 } from "../core/install/selfUpdate";
 import {
+  AGENT_SKILL_HOST_IDS,
+  listAgentSkillHostIds,
+  resolveAgentSkillHost,
+} from "../core/install/agentSkills";
+import {
   BUNDLED_SKILL_NAMES,
+  DEFAULT_BUNDLED_SKILL_NAME,
+  readBundledSkillDocument,
   resolveBundledSkillName,
   resolveBundledSkillPath,
   type BundledSkillName,
@@ -304,6 +312,35 @@ export const CLI_REFERENCE_COMMANDS = {
     summary: "print a bundled Hunk skill path",
     synopsis: ["hunk skill path [name]"],
   },
+  "skill-show": {
+    path: "skill show",
+    summary: "print a bundled Hunk skill",
+    synopsis: ["hunk skill show [name]"],
+    details: [
+      "Prints the full SKILL.md shipped with the installed Hunk version. Pointer skills written by `hunk skill install` run this command to load their instructions, so the text always matches the installed CLI.",
+    ],
+  },
+  "skill-install": {
+    path: "skill install",
+    summary: "install a pointer skill into a coding agent's skills directory",
+    synopsis: ["hunk skill install --agent <name> [name] [--project] [--force]"],
+    details: [
+      "Writes a short SKILL.md that carries the bundled skill's name and description and tells the agent to run `hunk skill show` for the instructions. Nothing else is copied, so the installed skill never goes stale when Hunk upgrades.",
+      "Agents: `claude` (Claude Code), `codex`, `opencode`, `cursor`, `amp`, `copilot` (GitHub Copilot), and `agents` for any tool that reads the shared `.agents/skills` convention.",
+    ],
+    options: [
+      {
+        flag: "--agent <name>",
+        description: "coding agent to install into; repeat for several",
+        parse: "collect",
+      },
+      {
+        flag: "--project",
+        description: "install under the current directory instead of the home directory",
+      },
+      { flag: "--force", description: "replace an existing SKILL.md Hunk did not generate" },
+    ],
+  },
   "extension-install": {
     path: "extension install",
     summary: "install a shared extension from a git repository",
@@ -554,14 +591,29 @@ function renderBundledSkillPath(name?: BundledSkillName) {
 /** Build the `hunk skill` help text. */
 function renderSkillHelp() {
   return [
-    "Usage: hunk skill path [name]",
+    "Usage:",
+    "  hunk skill install --agent <name> [skill] [--project] [--force]",
+    "  hunk skill show [skill]",
+    "  hunk skill path [skill]",
     "",
-    "Print a bundled Hunk skill path.",
-    "Load or symlink that file in your coding agent to keep it in sync across Hunk upgrades.",
+    "Teach a coding agent how to drive Hunk.",
+    "",
+    "install  write a pointer SKILL.md into the agent's skills directory. The pointer keeps",
+    "         only the skill's name and description and loads the rest with `hunk skill show`,",
+    "         so it stays current across Hunk upgrades. Repeat --agent to install into several.",
+    `         Agents: ${AGENT_SKILL_HOST_IDS.join(", ")}.`,
+    "         --project writes under the current directory instead of your home directory.",
+    "show     print the bundled skill for agents that load instructions on demand.",
+    "path     print the bundled skill's path for agents that load or symlink files.",
     "",
     "Skills:",
     `  hunk-review (default, "review")   review a live Hunk session with \`hunk session\` commands`,
     `  hunk-extensions ("extensions")    build extensions against the hunkdiff/extension API`,
+    "",
+    "Examples:",
+    "  hunk skill install --agent claude",
+    "  hunk skill install --agent codex --agent cursor --project",
+    "  hunk skill show hunk-extensions",
     "",
   ].join("\n");
 }
@@ -587,6 +639,8 @@ function renderCliHelp() {
     "  hunk session <subcommand>               inspect or control a live Hunk session",
     "  hunk markup render (<file> | -)         preview experimental STML note markup",
     "  hunk markup guide                       print the experimental STML authoring guide",
+    "  hunk skill install --agent <name>       teach a coding agent to drive Hunk",
+    "  hunk skill show [name]                  print a bundled Hunk skill",
     "  hunk skill path [name]                  print a bundled Hunk skill path",
     "  hunk extension <subcommand>             install and manage shared extensions",
     "  hunk update [version]                   update Hunk with the package manager that installed it",
@@ -1186,7 +1240,8 @@ function requireReloadableCliInput(input: ParsedCliInput): CliInput {
     input.kind === "extension-manage" ||
     input.kind === "extension-cli" ||
     input.kind === "history" ||
-    input.kind === "update"
+    input.kind === "update" ||
+    input.kind === "skill-install"
   ) {
     throw new Error(
       "Session reload requires a Hunk review command after --, such as `diff` or `show`.",
@@ -1917,8 +1972,81 @@ async function parseMarkupCommand(tokens: string[]): Promise<ParsedCliInput> {
   throw new Error("Supported markup subcommands are render and guide.");
 }
 
-/** Parse `hunk skill ...` for bundled skill discovery commands. */
-async function parseSkillCommand(tokens: string[]): Promise<HelpCommandInput> {
+/** Resolve the optional bundled skill name given to a `hunk skill` subcommand. */
+function resolveSkillCommandName(subcommand: string, rest: string[]) {
+  if (rest.length > 1) {
+    throw new Error(`\`hunk skill ${subcommand}\` accepts at most one skill name.`);
+  }
+
+  const [requestedName] = rest;
+  if (requestedName === undefined) {
+    return DEFAULT_BUNDLED_SKILL_NAME;
+  }
+
+  const name = resolveBundledSkillName(requestedName);
+  if (!name) {
+    throw new Error(
+      `Unknown skill "${requestedName}". Bundled skills are ${BUNDLED_SKILL_NAMES.join(" and ")}.`,
+    );
+  }
+  return name;
+}
+
+/** Parse `hunk skill install ...` into the agents, scope, and skill to write. */
+async function parseSkillInstallCommand(
+  tokens: string[],
+): Promise<SkillInstallCommandInput | HelpCommandInput> {
+  const command = createCliReferenceCommand("skill-install").argument(
+    "[skill]",
+    "bundled skill to install; hunk-review when omitted",
+  );
+
+  let parsedSkill: string | undefined;
+  let parsedOptions: { agent?: string[]; project?: boolean; force?: boolean } = {};
+  command.action(
+    (
+      skill: string | undefined,
+      options: { agent?: string[]; project?: boolean; force?: boolean },
+    ) => {
+      parsedSkill = skill;
+      parsedOptions = options;
+    },
+  );
+
+  if (tokens.includes("--help") || tokens.includes("-h")) {
+    return { kind: "help", text: renderSkillHelp() };
+  }
+
+  await parseStandaloneCommand(command, tokens);
+
+  const requestedAgents = parsedOptions.agent ?? [];
+  if (requestedAgents.length === 0) {
+    throw new Error(
+      `\`hunk skill install\` requires --agent <name>. Agents are ${listAgentSkillHostIds()}.`,
+    );
+  }
+
+  const agents = requestedAgents.map((value) => {
+    const host = resolveAgentSkillHost(value);
+    if (!host) {
+      throw new Error(`Unknown agent "${value}". Agents are ${listAgentSkillHostIds()}.`);
+    }
+    return host.id;
+  });
+
+  return {
+    kind: "skill-install",
+    skill: resolveSkillCommandName("install", parsedSkill === undefined ? [] : [parsedSkill]),
+    agents,
+    scope: parsedOptions.project ? "project" : "user",
+    force: parsedOptions.force ?? false,
+  };
+}
+
+/** Parse `hunk skill ...`: install a pointer skill, or print a bundled skill's text or path. */
+async function parseSkillCommand(
+  tokens: string[],
+): Promise<HelpCommandInput | SkillInstallCommandInput> {
   const [subcommand, ...rest] = tokens;
   if (!subcommand || subcommand === "--help" || subcommand === "-h") {
     return {
@@ -1927,8 +2055,12 @@ async function parseSkillCommand(tokens: string[]): Promise<HelpCommandInput> {
     };
   }
 
-  if (subcommand !== "path") {
-    throw new Error("Only `hunk skill path` is supported.");
+  if (subcommand === "install") {
+    return parseSkillInstallCommand(rest);
+  }
+
+  if (subcommand !== "path" && subcommand !== "show") {
+    throw new Error("Supported skill subcommands are install, show, and path.");
   }
 
   if (rest.includes("--help") || rest.includes("-h")) {
@@ -1938,25 +2070,10 @@ async function parseSkillCommand(tokens: string[]): Promise<HelpCommandInput> {
     };
   }
 
-  if (rest.length > 1) {
-    throw new Error("`hunk skill path` accepts at most one skill name.");
-  }
-
-  const [requestedName] = rest;
-  if (requestedName === undefined) {
-    return { kind: "help", text: renderBundledSkillPath() };
-  }
-
-  const name = resolveBundledSkillName(requestedName);
-  if (!name) {
-    throw new Error(
-      `Unknown skill "${requestedName}". Bundled skills are ${BUNDLED_SKILL_NAMES.join(" and ")}.`,
-    );
-  }
-
+  const name = resolveSkillCommandName(subcommand, rest);
   return {
     kind: "help",
-    text: renderBundledSkillPath(name),
+    text: subcommand === "show" ? readBundledSkillDocument(name) : renderBundledSkillPath(name),
   };
 }
 

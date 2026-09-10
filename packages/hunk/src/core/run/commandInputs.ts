@@ -13,7 +13,9 @@ import type {
   ExtensionVcsShowInput,
   ExtensionVcsStashShowInput,
 } from "../../extension-api/types";
+import type { AgentSkillHostId, AgentSkillScope } from "../install/agentSkills";
 import type { InstallSource } from "../install/installSource";
+import type { BundledSkillName } from "./paths";
 
 export type LayoutMode = "auto" | "split" | "unified";
 export type LayoutModeInput = LayoutMode | "stack";
@@ -399,6 +401,18 @@ export interface ExtensionCliInvocationInput {
   extensionsEnabled: boolean;
 }
 
+export interface SkillInstallCommandInput {
+  kind: "skill-install";
+  /** Bundled skill the installed pointer loads through `hunk skill show`. */
+  skill: BundledSkillName;
+  /** Coding agents to install into, as given to `--agent`; at least one. */
+  agents: AgentSkillHostId[];
+  /** `user` writes under the home directory; `project` writes under the current directory. */
+  scope: AgentSkillScope;
+  /** Replace an existing SKILL.md Hunk did not generate. */
+  force: boolean;
+}
+
 export interface SelfUpdateCommandInput {
   kind: "update";
   /** Version to install; the install channel's newest release when omitted. */
@@ -427,4 +441,5 @@ export type ParsedCliInput =
   | MarkupGuideCommandInput
   | ExtensionManageCommandInput
   | ExtensionCliInvocationInput
+  | SkillInstallCommandInput
   | SelfUpdateCommandInput;

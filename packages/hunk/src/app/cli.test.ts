@@ -9,6 +9,8 @@ import {
   parseCli,
   WATCH_OPTION,
 } from "./cli";
+import { AGENT_SKILL_HOST_IDS } from "../core/install/agentSkills";
+import { readBundledSkillDocument } from "../core/run/paths";
 import { resolveCliVersion } from "../core/run/version";
 
 const tempDirs: string[] = [];
@@ -653,20 +655,69 @@ describe("parseCli", () => {
   test("prints skill help for hunk skill --help", async () => {
     const parsed = await parseCli(["bun", "hunk", "skill", "--help"]);
 
-    expect(parsed).toEqual({
-      kind: "help",
-      text: [
-        "Usage: hunk skill path [name]",
-        "",
-        "Print a bundled Hunk skill path.",
-        "Load or symlink that file in your coding agent to keep it in sync across Hunk upgrades.",
-        "",
-        "Skills:",
-        `  hunk-review (default, "review")   review a live Hunk session with \`hunk session\` commands`,
-        `  hunk-extensions ("extensions")    build extensions against the hunkdiff/extension API`,
-        "",
-      ].join("\n"),
+    expect(parsed.kind).toBe("help");
+    if (parsed.kind !== "help") {
+      throw new Error("Expected skill help output.");
+    }
+    expect(parsed.text).toContain(
+      "hunk skill install --agent <name> [skill] [--project] [--force]",
+    );
+    expect(parsed.text).toContain("hunk skill show [skill]");
+    expect(parsed.text).toContain("hunk skill path [skill]");
+    expect(parsed.text).toContain(`Agents: ${AGENT_SKILL_HOST_IDS.join(", ")}.`);
+    expect(parsed.text).toContain(`  hunk-review (default, "review")`);
+  });
+
+  test("prints the bundled skill text for hunk skill show", async () => {
+    const parsed = await parseCli(["bun", "hunk", "skill", "show"]);
+    expect(parsed).toEqual({ kind: "help", text: readBundledSkillDocument("hunk-review") });
+
+    const named = await parseCli(["bun", "hunk", "skill", "show", "extensions"]);
+    expect(named).toEqual({ kind: "help", text: readBundledSkillDocument("hunk-extensions") });
+  });
+
+  test("parses hunk skill install into agents, scope, and skill", async () => {
+    expect(await parseCli(["bun", "hunk", "skill", "install", "--agent", "claude"])).toEqual({
+      kind: "skill-install",
+      skill: "hunk-review",
+      agents: ["claude"],
+      scope: "user",
+      force: false,
     });
+
+    expect(
+      await parseCli([
+        "bun",
+        "hunk",
+        "skill",
+        "install",
+        "--agent",
+        "Claude-Code",
+        "--agent",
+        "codex",
+        "--project",
+        "--force",
+        "extensions",
+      ]),
+    ).toEqual({
+      kind: "skill-install",
+      skill: "hunk-extensions",
+      agents: ["claude", "codex"],
+      scope: "project",
+      force: true,
+    });
+  });
+
+  test("rejects hunk skill install without a known agent", async () => {
+    await expect(parseCli(["bun", "hunk", "skill", "install"])).rejects.toThrow(
+      "`hunk skill install` requires --agent <name>.",
+    );
+    await expect(parseCli(["bun", "hunk", "skill", "install", "--agent", "aider"])).rejects.toThrow(
+      'Unknown agent "aider". Agents are `claude`, `codex`',
+    );
+    await expect(
+      parseCli(["bun", "hunk", "skill", "install", "--agent", "claude", "bogus"]),
+    ).rejects.toThrow('Unknown skill "bogus".');
   });
 
   test("parses the daemon serve command", async () => {
@@ -1906,8 +1957,10 @@ describe("parseCli command help text", () => {
 
   test("renders skill help for both `skill --help` and `skill path --help`", async () => {
     const bare = await expectHelp(["skill", "--help"]);
-    expect(bare).toContain("Usage: hunk skill path");
+    expect(bare).toContain("hunk skill path [skill]");
     expect(await expectHelp(["skill", "path", "--help"])).toBe(bare);
+    expect(await expectHelp(["skill", "show", "--help"])).toBe(bare);
+    expect(await expectHelp(["skill", "install", "--help"])).toBe(bare);
   });
 
   test("renders the comment overview and per-comment-subcommand help", async () => {
@@ -2057,7 +2110,7 @@ describe("parseCli argument validation", () => {
 
   test("rejects unknown skill, daemon, stash, and comment subcommands", async () => {
     await expect(parseCli(["bun", "hunk", "skill", "bogus"])).rejects.toThrow(
-      "Only `hunk skill path` is supported.",
+      "Supported skill subcommands are install, show, and path.",
     );
     await expect(parseCli(["bun", "hunk", "skill", "path", "bogus"])).rejects.toThrow(
       'Unknown skill "bogus". Bundled skills are hunk-review and hunk-extensions.',

@@ -8,13 +8,23 @@ Use Hunk with agents in two ways:
 ## Recommended workflow: steer a live Hunk window
 
 1. Open Hunk in one terminal with a normal review command such as `hunk diff` or `hunk show`.
-2. Load the Hunk review skill: [`packages/hunk/skills/hunk-review/SKILL.md`](../packages/hunk/skills/hunk-review/SKILL.md).
-3. Ask the agent to use the skill and review the current session.
+2. Install the Hunk review skill into your agent once:
 
-A good generic prompt is:
+   ```bash
+   hunk skill install --agent claude     # or codex, opencode, cursor, amp, copilot, agents
+   ```
+
+3. Ask the agent to review the current Hunk session.
+
+The installed file is a short pointer that carries the skill's name and description and loads the
+rest with `hunk skill show`, so it never goes stale when Hunk upgrades. Repeat `--agent` to install
+into several agents, or add `--project` to write it into the current repository instead of your
+home directory. Agents that load or symlink files directly can use `hunk skill path` instead.
+
+Without an installed skill, a good generic prompt is:
 
 ```text
-Load the Hunk skill and use it for this review. Run `hunk skill path` to get the skill path.
+Run `hunk skill show` and follow that skill to review the live Hunk session.
 ```
 
 That skill teaches the agent how to inspect a live Hunk session, navigate it, reload it, and leave inline comments.

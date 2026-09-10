@@ -49,4 +49,4 @@ Hunk reloads file- and Git-backed input while preserving the review experience. 
 
 ## Bring in an agent
 
-Keep Hunk open, then in another terminal ask your coding agent to run `hunk skill path` and use the returned review skill. Continue with [Review with an agent](/docs/agents/review-with-an-agent/).
+Keep Hunk open, install the review skill into your agent once with `hunk skill install --agent claude` (or `codex`, `opencode`, `cursor`, `amp`, `copilot`), then ask the agent to review the live session. Continue with [Review with an agent](/docs/agents/review-with-an-agent/).
