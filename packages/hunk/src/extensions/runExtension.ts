@@ -869,6 +869,17 @@ export function createExtensionApi(
       ) {
         throw new Error(`registerPane ${dimension}.fraction must be greater than 0 and at most 1.`);
       }
+      if (
+        size.maxFraction !== undefined &&
+        (typeof size.maxFraction !== "number" ||
+          !Number.isFinite(size.maxFraction) ||
+          size.maxFraction <= 0 ||
+          size.maxFraction > 1)
+      ) {
+        throw new Error(
+          `registerPane ${dimension}.maxFraction must be greater than 0 and at most 1.`,
+        );
+      }
       if (min > size.preferred || size.preferred > max) {
         throw new Error(`registerPane ${dimension} must satisfy min <= preferred <= max.`);
       }
@@ -899,6 +910,7 @@ export function createExtensionApi(
         min,
         max,
         ...(size.fraction === undefined ? {} : { fraction: size.fraction }),
+        ...(size.maxFraction === undefined ? {} : { maxFraction: size.maxFraction }),
       };
       registry.panes.push({
         extensionId: metadata.id,

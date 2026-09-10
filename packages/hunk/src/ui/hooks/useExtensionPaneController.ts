@@ -21,7 +21,7 @@ import type {
   ExtensionPaneControls,
 } from "../../extension-api/types";
 import { HUNK_FILES_PANE_KEY } from "../../extensions/extensionIds";
-import { extensionPaneSize } from "../../extensions/panes";
+import { extensionPaneMaximumSize, extensionPaneSize } from "../../extensions/panes";
 import type { ExtensionLoadResult, RegisteredPane } from "../../extensions/types";
 import type { ExtensionCapabilityLease } from "../lib/extensionCapabilityLease";
 import {
@@ -58,7 +58,6 @@ interface PaneResizeState {
   placement: SessionPane["placement"];
   origin: number;
   startSize: number;
-  maxSize: number;
   minSize: number;
 }
 
@@ -543,47 +542,33 @@ export function useExtensionPaneController({
   );
 
   // Start a drag only for the divider still owned by this exact pane registration.
-  const beginPaneResize = useCallback(
-    (planned: PlannedPane, event: TuiMouseEvent): boolean => {
-      if (event.button !== MouseButton.LEFT || !planned.divider) return false;
-      const committed = paneLayoutRef.current?.panes.find(
-        (entry) =>
-          entry.pane.key === planned.pane.key &&
-          entry.pane.registered === planned.pane.registered &&
-          entry.pane.placement === planned.pane.placement &&
-          entry.divider !== undefined,
-      );
-      if (!committed) return false;
-      const vertical = committed.pane.placement === "left" || committed.pane.placement === "right";
-      const spec = extensionPaneSize(committed.pane.registered.pane, committed.pane.placement);
-      const currentSize = vertical ? committed.bounds.width : committed.bounds.height;
-      const layout = paneLayoutRef.current!;
-      const resize: PaneResizeState = {
-        key: committed.pane.key,
-        registered: committed.pane.registered,
-        placement: committed.pane.placement,
-        origin: vertical ? event.x : event.y,
-        startSize: currentSize,
-        maxSize: Math.min(
-          spec.max ?? Number.MAX_SAFE_INTEGER,
-          currentSize +
-            Math.max(
-              0,
-              vertical
-                ? layout.reviewBounds.width - minReviewWidth
-                : layout.reviewBounds.height - minReviewHeight,
-            ),
-        ),
-        minSize: spec.min ?? 1,
-      };
-      paneResizeRef.current = resize;
-      setPaneResize(resize);
-      event.preventDefault();
-      event.stopPropagation();
-      return true;
-    },
-    [minReviewHeight, minReviewWidth],
-  );
+  const beginPaneResize = useCallback((planned: PlannedPane, event: TuiMouseEvent): boolean => {
+    if (event.button !== MouseButton.LEFT || !planned.divider) return false;
+    const committed = paneLayoutRef.current?.panes.find(
+      (entry) =>
+        entry.pane.key === planned.pane.key &&
+        entry.pane.registered === planned.pane.registered &&
+        entry.pane.placement === planned.pane.placement &&
+        entry.divider !== undefined,
+    );
+    if (!committed) return false;
+    const vertical = committed.pane.placement === "left" || committed.pane.placement === "right";
+    const spec = extensionPaneSize(committed.pane.registered.pane, committed.pane.placement);
+    const currentSize = vertical ? committed.bounds.width : committed.bounds.height;
+    const resize: PaneResizeState = {
+      key: committed.pane.key,
+      registered: committed.pane.registered,
+      placement: committed.pane.placement,
+      origin: vertical ? event.x : event.y,
+      startSize: currentSize,
+      minSize: spec.min ?? 1,
+    };
+    paneResizeRef.current = resize;
+    setPaneResize(resize);
+    event.preventDefault();
+    event.stopPropagation();
+    return true;
+  }, []);
 
   // Resize along the pane's axis while preserving the review's minimum bounds.
   const updatePaneResize = useCallback(
@@ -597,6 +582,8 @@ export function useExtensionPaneController({
         return;
       }
       const vertical = resize.placement === "left" || resize.placement === "right";
+      const spec = extensionPaneSize(resize.registered.pane, resize.placement);
+      const axisSize = vertical ? bodyWidth : bodyHeight;
       const currentSize = vertical ? planned.bounds.width : planned.bounds.height;
       const currentMax =
         currentSize +
@@ -614,14 +601,14 @@ export function useExtensionPaneController({
             position,
             resize.origin,
             resize.minSize,
-            Math.min(resize.maxSize, currentMax),
+            Math.min(extensionPaneMaximumSize(spec, axisSize), currentMax),
           )
         : resizeSidebarWidth(
             resize.startSize,
             resize.origin,
             position,
             resize.minSize,
-            Math.min(resize.maxSize, currentMax),
+            Math.min(extensionPaneMaximumSize(spec, axisSize), currentMax),
           );
       const axis: PaneResizeAxis = vertical ? "width" : "height";
       setPaneSizeOverrides((current) => {
@@ -633,7 +620,7 @@ export function useExtensionPaneController({
       event.preventDefault();
       event.stopPropagation();
     },
-    [cancelResize, minReviewHeight, minReviewWidth],
+    [bodyHeight, bodyWidth, cancelResize, minReviewHeight, minReviewWidth],
   );
 
   // End the active drag and release mouse event ownership.

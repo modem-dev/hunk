@@ -302,8 +302,9 @@ and retires the replaced instance at that explicit ownership boundary.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `25`). Branch on it if you want
-one file to support several Hunk versions. Version 25 adds Promise-returning watch signatures and
+The API generation this Hunk speaks (currently `26`). Branch on it if you want
+one file to support several Hunk versions. Version 26 adds proportional pane maximums;
+version 25 adds Promise-returning watch signatures and
 watch cancellation; version 24 adds review metadata to VCS patch results and
 short display revisions to commit descriptors; version 23 adds canonical unified-layout fields
 while preserving the previous event vocabulary; version 22 adds frame-derived pane preferred sizing,
@@ -890,7 +891,7 @@ export default function (hunk: HunkExtensionAPI) {
 ```
 
 `placement` defaults to `"left"`. Left/right panes use `width`; top/bottom panes
-use `height`. Both accept `{ preferred, min?, max?, fraction? }`; equal bounds
+use `height`. Both accept `{ preferred, min?, max?, fraction?, maxFraction? }`; equal bounds
 make a fixed pane. Defaults are `{ preferred: 34, min: 22 }` columns and
 `{ preferred: 8, min: 3 }` rows.
 
@@ -903,6 +904,13 @@ later terminal shrink may clamp it temporarily, and expanding restores it.
 Panes without `fraction` retain their fixed preferred startup size. Folder
 extensions that use `fraction` should declare `"hunk": { "apiVersion": 12 }` in
 their manifest.
+
+`maxFraction` caps both responsive startup sizing and divider dragging to a
+share of the host body axis. It follows the same greater-than-zero and
+at-most-one range as `fraction`; Hunk floors the result so the pane never exceeds
+the requested share. When both `max` and `maxFraction` are present, the tighter
+limit wins. Extensions that use `maxFraction` should declare
+`"hunk": { "apiVersion": 26 }` in their manifest.
 
 `preferredSize(context)` can derive that automatic cell target from current
 review facts. Hunk invokes it synchronously with the same context as

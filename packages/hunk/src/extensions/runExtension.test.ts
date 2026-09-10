@@ -13,8 +13,8 @@ function bundledMetadata(id: string) {
 }
 
 describe("runExtensionFactory", () => {
-  test("advertises async watch signatures through extension API v25", () => {
-    expect(HUNK_EXTENSION_API_VERSION).toBe(25);
+  test("advertises the current extension API version", () => {
+    expect(HUNK_EXTENSION_API_VERSION).toBe(26);
   });
 
   test("applies a synchronous factory before returning, with nothing to await", () => {
@@ -168,7 +168,13 @@ describe("registerPane", () => {
       registry,
       issues,
       factory: (hunk) => {
-        const size = { preferred: 3, min: 2, max: 4, fraction: 0.25 };
+        const size = {
+          preferred: 3,
+          min: 2,
+          max: 4,
+          fraction: 0.25,
+          maxFraction: 0.8,
+        };
         for (const placement of ["left", "right"] as const) {
           hunk.registerPane({ id: placement, placement, width: size, component: () => null });
         }
@@ -185,10 +191,10 @@ describe("registerPane", () => {
         pane.placement === "left" || pane.placement === "right" ? pane.width : pane.height,
       ]),
     ).toEqual([
-      ["left", "left", { preferred: 3, min: 2, max: 4, fraction: 0.25 }],
-      ["right", "right", { preferred: 3, min: 2, max: 4, fraction: 0.25 }],
-      ["top", "top", { preferred: 3, min: 2, max: 4, fraction: 0.25 }],
-      ["bottom", "bottom", { preferred: 3, min: 2, max: 4, fraction: 0.25 }],
+      ["left", "left", { preferred: 3, min: 2, max: 4, fraction: 0.25, maxFraction: 0.8 }],
+      ["right", "right", { preferred: 3, min: 2, max: 4, fraction: 0.25, maxFraction: 0.8 }],
+      ["top", "top", { preferred: 3, min: 2, max: 4, fraction: 0.25, maxFraction: 0.8 }],
+      ["bottom", "bottom", { preferred: 3, min: 2, max: 4, fraction: 0.25, maxFraction: 0.8 }],
     ]);
   });
 
@@ -260,6 +266,22 @@ describe("registerPane", () => {
       { id: "string-fraction", width: { preferred: 3, fraction: "0.2" }, component: () => null },
       { id: "boolean-fraction", width: { preferred: 3, fraction: true }, component: () => null },
       { id: "null-fraction", width: { preferred: 3, fraction: null }, component: () => null },
+      { id: "zero-max-fraction", width: { preferred: 3, maxFraction: 0 }, component: () => null },
+      {
+        id: "large-max-fraction",
+        width: { preferred: 3, maxFraction: 1.01 },
+        component: () => null,
+      },
+      {
+        id: "nan-max-fraction",
+        width: { preferred: 3, maxFraction: Number.NaN },
+        component: () => null,
+      },
+      {
+        id: "string-max-fraction",
+        width: { preferred: 3, maxFraction: "0.8" },
+        component: () => null,
+      },
       {
         id: "unsafe",
         width: { preferred: Number.MAX_SAFE_INTEGER + 1 },

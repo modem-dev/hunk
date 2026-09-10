@@ -6,7 +6,7 @@ import type {
   ExtensionPaneAvailabilityContext,
   ExtensionPanePlacement,
 } from "../../extension-api/types";
-import { extensionPaneSize } from "../../extensions/panes";
+import { extensionPaneMaximumSize, extensionPaneSize } from "../../extensions/panes";
 import type { ExtensionLoadResult, RegisteredPane } from "../../extensions/types";
 
 /** One cell reserved between each resizable pane and its neighbor. */
@@ -237,7 +237,6 @@ export function planExtensionPanes(options: PlanExtensionPanesOptions): Extensio
   const sizeSpec = (pane: SessionPane) => {
     const spec = extensionPaneSize(pane.registered.pane, pane.placement);
     const min = spec.min ?? 1;
-    const max = spec.max ?? Number.MAX_SAFE_INTEGER;
     const axisSize =
       pane.placement === "left" || pane.placement === "right"
         ? Math.max(0, options.bodyWidth)
@@ -248,8 +247,9 @@ export function planExtensionPanes(options: PlanExtensionPanesOptions): Extensio
       target:
         options.sizes[pane.key] ?? options.preferredSizes?.get(pane.registered) ?? automaticSize,
       min,
-      max,
-      fixed: pane.registered.pane.resizable === false || min === max,
+      max: extensionPaneMaximumSize(spec, axisSize),
+      fixed:
+        pane.registered.pane.resizable === false || min === (spec.max ?? Number.MAX_SAFE_INTEGER),
     };
   };
 
