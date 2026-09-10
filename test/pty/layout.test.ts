@@ -741,7 +741,6 @@ describe("PTY layout", () => {
       let anchored = initial;
       for (let index = 0; index < 24; index += 1) {
         await session.press("down");
-        await session.waitIdle({ timeout: 200 });
         anchored = await session.text({ immediate: true });
         if (anchored.includes("line08 = 108") && !anchored.includes("line01 = 101")) {
           break;
