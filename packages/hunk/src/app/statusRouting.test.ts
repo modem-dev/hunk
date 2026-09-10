@@ -93,7 +93,9 @@ test("sibling log/diff source facts reach real bootstraps and broker registratio
       action.cwd,
     );
     expect(registration.cwd).toBe(sourceCwd);
-    expect(registration.repoRoot).toBe(sourceCwd);
+    // Registration preserves the provider's source label; Git uses forward slashes on Windows.
+    expect(registration.repoRoot).toBe(bootstrap.changeset.sourceLabel);
+    expect(resolveCanonicalPath(registration.repoRoot!)).toBe(sourceCwd);
     const history = await runtime.openHistory(siblingAlias);
     try {
       expect(history.extensionSession).toBe(runtime.extensionSession);
