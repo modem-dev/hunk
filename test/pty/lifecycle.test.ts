@@ -57,32 +57,25 @@ async function waitForExitCode(path: string, timeoutMs = 2_000) {
   throw new Error(`Timed out waiting for an exit code in ${path}.`);
 }
 
-async function stopDaemonsUnder(runtimeDir: string) {
+/** Stop broker daemons already launched by an exited app in its isolated runtime. */
+function stopDaemonsUnder(runtimeDir: string) {
   const daemonDir = join(runtimeDir, "hunk-mcp");
-  const deadline = Date.now() + 2_000;
+  if (!existsSync(daemonDir)) return;
 
-  while (Date.now() < deadline) {
-    if (existsSync(daemonDir)) {
-      const metadataFiles = readdirSync(daemonDir).filter(
-        (entry) => entry.startsWith("daemon-") && entry.endsWith(".json"),
-      );
-      if (metadataFiles.length > 0) {
-        for (const entry of metadataFiles) {
-          try {
-            const { pid } = JSON.parse(readFileSync(join(daemonDir, entry), "utf8")) as {
-              pid?: number;
-            };
-            if (pid && pid > 0) {
-              process.kill(pid, "SIGTERM");
-            }
-          } catch {
-            // Partially written metadata, or a daemon that already exited.
-          }
-        }
-        return;
+  const metadataFiles = readdirSync(daemonDir).filter(
+    (entry) => entry.startsWith("daemon-") && entry.endsWith(".json"),
+  );
+  for (const entry of metadataFiles) {
+    try {
+      const { pid } = JSON.parse(readFileSync(join(daemonDir, entry), "utf8")) as {
+        pid?: number;
+      };
+      if (pid && pid > 0) {
+        process.kill(pid, "SIGTERM");
       }
+    } catch {
+      // Ignore partially written metadata, or a daemon that already exited.
     }
-    await Bun.sleep(25);
   }
 }
 
@@ -305,7 +298,7 @@ describe("PTY lifecycle", () => {
       } finally {
         closeMaster();
         await stopChild(child);
-        await stopDaemonsUnder(runtimeDir);
+        stopDaemonsUnder(runtimeDir);
       }
     });
   }
