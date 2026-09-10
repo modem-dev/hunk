@@ -37,12 +37,17 @@ describe("PTY chrome", () => {
       const initial = await session.waitForText(/Adds bonus export\./, { timeout: 15_000 });
       expect(initial).toContain("Highlights the follow-up addition for review.");
 
-      await session.click(/View/);
-      const viewMenu = await session.waitForText(/Themes…/, { timeout: 5_000 });
+      const viewMenu = await harness.clickAndWaitForText(session, /View/, /Themes…/, {
+        timeout: 5_000,
+      });
       expect(viewMenu).toContain("Themes…");
 
-      await session.click(/Themes…/);
-      const themeSelector = await session.waitForText(/github-light-default/, { timeout: 5_000 });
+      const themeSelector = await harness.clickAndWaitForText(
+        session,
+        /Themes…/,
+        /github-light-default/,
+        { timeout: 5_000 },
+      );
       expect(themeSelector).toContain("Theme selector");
 
       await session.click(/github-light-default/);
@@ -56,8 +61,10 @@ describe("PTY chrome", () => {
       );
       expect(themeSelected).toContain("Adds bonus export.");
 
-      await session.click(/Agent/, { first: true });
-      const agentMenu = await session.waitForText(/Next annotated file/, { timeout: 5_000 });
+      const agentMenu = await harness.clickAndWaitForText(session, /Agent/, /Next annotated file/, {
+        first: true,
+        timeout: 5_000,
+      });
       expect(agentMenu).toContain("Agent notes");
 
       await session.click(/Agent notes/);
@@ -67,15 +74,18 @@ describe("PTY chrome", () => {
         5_000,
       );
 
-      await session.click(/Agent/, { first: true });
-      await session.waitForText(/Agent notes/, { timeout: 5_000 });
-      await session.click(/Agent notes/);
-      await session.waitForText(/Adds bonus export\./, { timeout: 5_000 });
+      await harness.clickAndWaitForText(session, /Agent/, /Agent notes/, {
+        first: true,
+        timeout: 5_000,
+      });
+      await harness.clickAndWaitForText(session, /Agent notes/, /Adds bonus export\./, {
+        timeout: 5_000,
+      });
 
-      await session.click(/Help/);
-      await session.waitForText(/Controls help/, { timeout: 5_000 });
-      await session.click(/Controls help/);
-      const helpDialog = await session.waitForText(/Navigation/, { timeout: 5_000 });
+      await harness.clickAndWaitForText(session, /Help/, /Controls help/, { timeout: 5_000 });
+      const helpDialog = await harness.clickAndWaitForText(session, /Controls help/, /Navigation/, {
+        timeout: 5_000,
+      });
 
       // The key column is rendered from the commands' resolved chords.
       expect(helpDialog).toContain("g / Home");

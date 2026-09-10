@@ -1099,6 +1099,81 @@ end
     return waitForSnapshot(session, predicate, timeoutMs);
   }
 
+  /** Send one click without waiting when a destination predicate will own readiness. */
+  function sendClick(
+    session: Pick<Session, "getTerminalData" | "writeRaw">,
+    pattern: Parameters<Session["click"]>[0],
+    first = false,
+  ) {
+    const regex =
+      typeof pattern === "string"
+        ? new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")
+        : new RegExp(
+            pattern.source,
+            pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`,
+          );
+    const matches: { x: number; y: number }[] = [];
+
+    for (const [y, line] of session.getTerminalData().lines.entries()) {
+      const text = line.spans.map((span) => span.text).join("");
+      regex.lastIndex = 0;
+      let match: RegExpExecArray | null;
+      while ((match = regex.exec(text)) !== null) {
+        matches.push({ x: match.index, y });
+        if (match[0].length === 0) regex.lastIndex += 1;
+      }
+    }
+
+    if (matches.length === 0) {
+      throw new Error(`sendClick: ${String(pattern)} is not visible.`);
+    }
+    if (matches.length > 1 && !first) {
+      throw new Error(`sendClick: ${String(pattern)} has ${matches.length} visible matches.`);
+    }
+
+    const target = matches[0]!;
+    const x = target.x + 1;
+    const y = target.y + 1;
+    session.writeRaw(`\x1b[<0;${x};${y}M`);
+    session.writeRaw(`\x1b[<0;${x};${y}m`);
+  }
+
+  /** Click visible text and wait for destination text that was absent beforehand. */
+  async function clickAndWaitForText(
+    session: Pick<Session, "getTerminalData" | "text" | "waitForText" | "writeRaw">,
+    target: Parameters<Session["click"]>[0],
+    destination: Parameters<Session["waitForText"]>[0],
+    options: { first?: boolean; timeout?: number } = {},
+  ) {
+    const before = await session.text({ immediate: true });
+    const matchedBefore =
+      typeof destination === "string"
+        ? before.includes(destination)
+        : new RegExp(destination.source, destination.flags.replace(/[gy]/g, "")).test(before);
+    if (matchedBefore) {
+      throw new Error("clickAndWaitForText: destination was visible before the click.");
+    }
+
+    sendClick(session, target, options.first);
+    return session.waitForText(destination, { timeout: options.timeout });
+  }
+
+  /** Click visible text and wait for a unique destination snapshot. */
+  async function clickAndWaitForSnapshot(
+    session: Pick<Session, "getTerminalData" | "text" | "waitIdle" | "writeRaw">,
+    target: Parameters<Session["click"]>[0],
+    predicate: (text: string) => boolean,
+    options: { first?: boolean; timeout?: number } = {},
+  ) {
+    const before = await session.text({ immediate: true });
+    if (predicate(before)) {
+      throw new Error("clickAndWaitForSnapshot: destination was visible before the click.");
+    }
+
+    sendClick(session, target, options.first);
+    return waitForSnapshot(session, predicate, options.timeout);
+  }
+
   /** Send one key and wait for text that was absent before the transition. */
   async function pressAndWaitForText(
     session: Pick<Session, "sendKey" | "text" | "waitForText">,
@@ -1186,6 +1261,8 @@ end
     launchHunkWithFileBackedStdin,
     launchShellCommand,
     buildHunkCommand,
+    clickAndWaitForSnapshot,
+    clickAndWaitForText,
     shellQuote,
     pressAndWaitForSnapshot,
     pressAndWaitForText,

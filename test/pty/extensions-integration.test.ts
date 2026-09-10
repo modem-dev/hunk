@@ -593,8 +593,12 @@ describe("PTY extensions", () => {
       const menu = await session.waitForText(/Toggle fixture/, { timeout: 20_000 });
       expect(menu).toMatch(/Toggle fixture\s+Y/);
 
-      await session.click(/Toggle fixture/);
-      const opened = await session.waitForText(/EXTSIDEBAR 2 FILES/, { timeout: 20_000 });
+      const opened = await harness.clickAndWaitForText(
+        session,
+        /Toggle fixture/,
+        /EXTSIDEBAR 2 FILES/,
+        { timeout: 20_000 },
+      );
       expect(opened).toContain("alpha.ts");
     } finally {
       session.close();
@@ -715,8 +719,9 @@ describe("PTY extensions", () => {
       );
       expect(closed).toContain("alpha.ts");
 
-      await session.click(/View/);
-      const menu = await session.waitForText(/Files pane/, { timeout: 20_000 });
+      const menu = await harness.clickAndWaitForText(session, /View/, /Files pane/, {
+        timeout: 20_000,
+      });
       expect(menu).toContain("[ ] Files pane");
 
       await session.click(/Files pane/);

@@ -122,8 +122,11 @@ describe("PTY file views", () => {
 
     try {
       await session.waitForText(/before\.md/, { timeout: 20_000 });
-      await session.click(/View/);
-      const menu = await session.waitForText(/File presentation: Raw diff/);
+      const menu = await harness.clickAndWaitForText(
+        session,
+        /View/,
+        /File presentation: Raw diff/,
+      );
       expect(menu).not.toContain("File presentation: Rendered Markdown");
     } finally {
       session.close();
@@ -230,15 +233,16 @@ describe("PTY file views", () => {
       try {
         await session.waitForText(/before\.|package\.json/, { timeout: 20_000 });
         await harness.ensureKeyboardIsLive(session);
-        await session.click(/View/);
-        await session.waitForText(demo.view, { timeout: 20_000 });
+        await harness.clickAndWaitForText(session, /View/, demo.view, { timeout: 20_000 });
         await session.press("escape");
         await harness.pressAndWaitForText(session, "f8", demo.first, { timeout: 20_000 });
         await harness.pressAndWaitForText(session, "]", demo.second, { timeout: 20_000 });
-        await session.click(/View/);
-        await session.waitForText(/File presentation: Raw diff/, { timeout: 20_000 });
-        await session.click(/File presentation: Raw diff/);
-        await session.waitForText(demo.raw, { timeout: 20_000 });
+        await harness.clickAndWaitForText(session, /View/, /File presentation: Raw diff/, {
+          timeout: 20_000,
+        });
+        await harness.clickAndWaitForText(session, /File presentation: Raw diff/, demo.raw, {
+          timeout: 20_000,
+        });
       } finally {
         session.close();
       }
@@ -268,10 +272,14 @@ describe("PTY file views", () => {
       await session.press("f8");
       await session.waitForText(/--accent/, { timeout: 20_000 });
 
-      await session.click(/package\.json/, { first: true });
-      await session.waitForText(/@opentui\/core/, { timeout: 20_000 });
-      await session.click(/README\.md/, { first: true });
-      await session.waitForText(/understanding release changes/, { timeout: 20_000 });
+      await harness.clickAndWaitForText(session, /package\.json/, /@opentui\/core/, {
+        first: true,
+        timeout: 20_000,
+      });
+      await harness.clickAndWaitForText(session, /README\.md/, /understanding release changes/, {
+        first: true,
+        timeout: 20_000,
+      });
       let reachedRetainedPreview = false;
       for (let step = 0; step < 10 && !reachedRetainedPreview; step += 1) {
         await session.scrollDown(8);
@@ -334,11 +342,17 @@ describe("PTY file views", () => {
       const raw = await harness.pressAndWaitForText(session, "f8", /line60 = 6000/);
       expect(raw).not.toContain("Hunk 1");
 
-      await session.click(/Extensions/);
-      const menu = await session.waitForText(/Toggle JSX hunk cards \(POC\)/);
+      const menu = await harness.clickAndWaitForText(
+        session,
+        /Extensions/,
+        /Toggle JSX hunk cards \(POC\)/,
+      );
       expect(menu).toMatch(/Toggle JSX hunk cards \(POC\)\s+F8/);
-      await session.click(/Toggle JSX hunk cards \(POC\)/);
-      const menuDispatched = await session.waitForText(/▶ Hunk 2/);
+      const menuDispatched = await harness.clickAndWaitForText(
+        session,
+        /Toggle JSX hunk cards \(POC\)/,
+        /▶ Hunk 2/,
+      );
       expect(menuDispatched).toContain("Hunk 1");
     } finally {
       session.close();
@@ -589,8 +603,11 @@ describe("PTY file views", () => {
       const preview = await harness.pressAndWaitForText(session, "f8", /• new item/);
       expect(preview).toContain("Review the new item.");
       expect(preview).not.toContain("old item");
-      await session.click(/View/);
-      const menu = await session.waitForText(/\[x\] File presentation: Rendered Markdown/);
+      const menu = await harness.clickAndWaitForText(
+        session,
+        /View/,
+        /\[x\] File presentation: Rendered Markdown/,
+      );
       expect(menu).toContain("File presentation: Raw diff");
     } finally {
       session.close();
@@ -625,8 +642,11 @@ describe("PTY file views", () => {
       await session.press("f8");
       const raw = await session.waitForText(/old item/);
       expect(raw).not.toContain("• new item");
-      await session.click(/View/);
-      await session.waitForText(/\[x\] File presentation: Rendered Markdown/);
+      await harness.clickAndWaitForText(
+        session,
+        /View/,
+        /\[x\] File presentation: Rendered Markdown/,
+      );
       await session.press("escape");
 
       const restored = await harness.pressAndWaitForText(session, "a", /• new item/);
