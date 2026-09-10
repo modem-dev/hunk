@@ -101,9 +101,10 @@ commands never pay OpenTUI's native-library extraction).
 `packages/hunk/src/ui/lib/extensionPanes.ts` owns open state, availability, and one rectangle
 plan for panes, dividers, and review bounds. Left/right panes consume columns;
 top/bottom panes consume rows from the central review column, outside review
-stream coordinates. Pane registrations may opt into a body-axis `fraction`;
-the planner resolves it to an integer target before applying bounds and lets a
-session-local divider drag override that automatic size.
+stream coordinates. Pane registrations may opt into a body-axis `fraction` and
+cap layout and dragging with `maxFraction`; the planner resolves those body-axis shares to
+integer bounds before applying review constraints and lets a session-local
+divider drag override the automatic target.
 
 `packages/hunk/src/ui/components/panes/ExtensionPane.tsx` mounts panes with guarded actions,
 immutable review metadata, and failure containment. The fixed three-row `hunk:review-info` top

@@ -620,6 +620,56 @@ describe("useExtensionPaneController", () => {
     }
   });
 
+  test("caps bottom-pane dragging at maxFraction of the host height", async () => {
+    const bottom = registeredPane("meta", "bottom", {
+      placement: "bottom",
+      defaultOpen: true,
+      height: { preferred: 5, min: 3, maxFraction: 0.8 },
+    });
+    const harness = await renderController({
+      extensions: loadResultWith([bottom]),
+      initialSidebar: false,
+      initialHeight: 30,
+    });
+    try {
+      const planned = harness
+        .current()
+        .paneLayout.panes.find(({ pane }) => pane.key === "meta:bottom")!;
+      await act(async () => {
+        harness.current().beginPaneResize(planned, mouseEvent({ y: planned.divider!.y }).event);
+        harness.current().updatePaneResize(mouseEvent({ y: 0 }).event);
+      });
+      await harness.settle();
+      expect(
+        harness.current().paneLayout.panes.find(({ pane }) => pane.key === "meta:bottom")!.bounds
+          .height,
+      ).toBe(24);
+
+      await act(async () => harness.current().endPaneResize());
+      await act(async () => harness.setSize({ width: 100, height: 40 }));
+      await harness.settle();
+      expect(
+        harness.current().paneLayout.panes.find(({ pane }) => pane.key === "meta:bottom")!.bounds
+          .height,
+      ).toBe(24);
+
+      const expanded = harness
+        .current()
+        .paneLayout.panes.find(({ pane }) => pane.key === "meta:bottom")!;
+      await act(async () => {
+        harness.current().beginPaneResize(expanded, mouseEvent({ y: expanded.divider!.y }).event);
+        harness.current().updatePaneResize(mouseEvent({ y: -10 }).event);
+      });
+      await harness.settle();
+      expect(
+        harness.current().paneLayout.panes.find(({ pane }) => pane.key === "meta:bottom")!.bounds
+          .height,
+      ).toBe(32);
+    } finally {
+      await destroy(harness.setup);
+    }
+  });
+
   test("cancels an active drag when controls close its pane", async () => {
     const extra = registeredPane("meta", "extra", {
       defaultOpen: true,

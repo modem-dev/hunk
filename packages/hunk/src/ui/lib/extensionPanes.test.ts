@@ -573,6 +573,31 @@ describe("extension panes", () => {
     expect(plan.reviewBounds).toEqual({ x: 0, y: 8, width: 100, height: 12 });
   });
 
+  test("caps pane overrides at the tighter proportional, absolute, or review maximum", () => {
+    const registered = registeredPane("a", "bottom", {
+      placement: "bottom",
+      height: { preferred: 8, min: 3, max: 30, maxFraction: 0.8 },
+    });
+    const pane = buildSessionPanes(loadResultWith([registered])).find(
+      (candidate) => candidate.key === "a:bottom",
+    )!;
+    const height = (bodyHeight: number) =>
+      planExtensionPanes({
+        panes: [pane],
+        openKeys: [pane.key],
+        sizes: { [pane.key]: 100 },
+        bodyWidth: 100,
+        bodyHeight,
+        minReviewWidth: 40,
+        minReviewHeight: 5,
+      }).panes[0]?.bounds.height;
+
+    expect(height(40)).toBe(30);
+    expect(height(30)).toBe(24);
+    expect(height(31)).toBe(24);
+    expect(height(20)).toBe(14);
+  });
+
   test("omits later panes when minimum review bounds are exhausted", () => {
     const panes: SessionPane[] = ["one", "two", "three"].map((id) => ({
       key: `a:${id}`,

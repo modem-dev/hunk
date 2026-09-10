@@ -29,3 +29,13 @@ export function extensionPaneSize(
     defaultExtensionPaneSize(placement)
   );
 }
+
+/** Resolve one pane's absolute and proportional maximum against the host body axis. */
+export function extensionPaneMaximumSize(size: ExtensionPaneSize, axisSize: number): number {
+  const absolute = size.max ?? Number.MAX_SAFE_INTEGER;
+  const proportional =
+    size.maxFraction === undefined
+      ? Number.MAX_SAFE_INTEGER
+      : Math.floor(Math.max(0, axisSize) * size.maxFraction);
+  return Math.min(absolute, proportional);
+}

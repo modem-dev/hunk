@@ -202,7 +202,7 @@ export default function (hunk) {
       placement,
       defaultOpen: false,
       height: placement === "top"
-        ? { preferred: 2, min: 2, max: 5 }
+        ? { preferred: 2, min: 2, max: 20, maxFraction: 0.2 }
         : { preferred: 2, min: 2, max: 2 },
       component: (props) => createElement("text", {
         content: "PANE " + placement.toUpperCase() + " " + props.width + "x" + props.height,
@@ -762,6 +762,16 @@ describe("PTY extensions", () => {
       // enlarged horizontal hit area wins over review-stream text selection.
       await dragMouse(session, 70, 4, 70, 6);
       await session.waitForText(/PANE TOP 138x4/, { timeout: 5_000 });
+
+      // Further dragging cannot grow the pane beyond 20% of the host body.
+      await dragMouse(session, 70, 6, 70, 12);
+      const capped = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("PANE TOP 138x4"),
+        5_000,
+      );
+      expect(capped).toContain("PANE TOP 138x4");
+      expect(capped).not.toContain("PANE TOP 138x5");
 
       session.writeRaw("Y");
       await harness.waitForSnapshot(

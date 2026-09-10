@@ -118,7 +118,13 @@ export default function (hunk: HunkExtensionAPI) {
     hunk.log(props.currentLine ? props.currentLine.side + ":" + props.currentLine.line : "no line");
     return null;
   };
-  const paneSize: ExtensionPaneSize = { preferred: 3, min: 2, max: 4, fraction: 0.25 };
+  const paneSize: ExtensionPaneSize = {
+    preferred: 3,
+    min: 2,
+    max: 4,
+    fraction: 0.25,
+    maxFraction: 0.8,
+  };
   for (const placement of ["left", "right"] as const) {
     const verticalPane: ExtensionVerticalPane = {
       id: placement,

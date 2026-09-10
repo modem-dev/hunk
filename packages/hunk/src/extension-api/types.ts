@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 25;
+export const HUNK_EXTENSION_API_VERSION = 26;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -1271,6 +1271,13 @@ export interface ExtensionPaneSize {
    * required by the review to the chosen automatic or manual target.
    */
   fraction?: number;
+  /**
+   * Largest responsive share of the host body width or height.
+   *
+   * Hunk floors this fraction to a terminal cell and applies the tighter of
+   * `max`, `maxFraction`, and the space required by the review.
+   */
+  maxFraction?: number;
 }
 
 /**
