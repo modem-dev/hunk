@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { Session } from "tuistory";
 import { createPtyHarness, rightmostColumnOf } from "./harness";
 
 const harness = createPtyHarness();
@@ -33,6 +34,16 @@ function git(cwd: string, args: string[], env: NodeJS.ProcessEnv = {}) {
     },
   });
   if (proc.exitCode !== 0) throw new Error(proc.stderr?.toString() ?? "Git fixture failed.");
+}
+
+/** Return from review only after history-specific chrome replaces the shared commit title. */
+async function returnToHistory(session: Session) {
+  return harness.pressAndWaitForSnapshot(
+    session,
+    "q",
+    (text) => text.includes("Git history") && text.includes("Enter open"),
+    15_000,
+  );
 }
 
 /** Create two commits whose selected diff is visible in ordinary Hunk review. */
@@ -288,23 +299,20 @@ describe("interactive hunk log", () => {
         timeout: 15_000,
       });
       expect(rootReview).toContain("history.ts");
-      await session.press("q");
-      await session.waitForText(/First history commit/, { timeout: 15_000 });
+      await returnToHistory(session);
 
       // A command key closes an open menu and falls through to canonical dispatch.
       await session.press("f10");
       await session.waitForText(/Open selection/, { timeout: 5_000 });
       session.writeRaw("k\r");
       await session.waitForText(/historyValue = 'second'/, { timeout: 15_000 });
-      await session.press("q");
-      await session.waitForText(/Second history commit/, { timeout: 15_000 });
+      await returnToHistory(session);
 
       // Opening again without moving proves return restored the immutable-id selection. The
       // coalesced trailing q must be consumed by the log transition rather than closing the child.
       session.writeRaw("\rq");
       await session.waitForText(/historyValue = 'second'/, { timeout: 15_000 });
-      await session.press("q");
-      await session.waitForText(/Second history commit/, { timeout: 15_000 });
+      await returnToHistory(session);
       await session.press("q");
     } finally {
       session.close();
@@ -335,17 +343,19 @@ describe("interactive hunk log", () => {
       expect(remapped).not.toContain("v select");
       session.writeRaw("x");
       await session.waitForText(/1 commit selected/, { timeout: 5_000 });
-      await session.press("escape");
+      await harness.pressAndWaitForSnapshot(
+        session,
+        "escape",
+        (text) => !text.includes("commit selected"),
+      );
       await session.press("down");
       await session.press("enter");
       await session.waitForText(/historyValue = 'second'/, { timeout: 15_000 });
-      await session.press("q");
-      await session.waitForText(/Second history commit/, { timeout: 15_000 });
+      await returnToHistory(session);
       session.writeRaw("\x0e");
       await session.press("enter");
       await session.waitForText(/historyValue = 'first'/, { timeout: 15_000 });
-      await session.press("q");
-      await session.waitForText(/Second history commit/, { timeout: 15_000 });
+      await returnToHistory(session);
       await session.press("q");
     } finally {
       session.close();
@@ -407,8 +417,13 @@ describe("interactive hunk log", () => {
       const split = await session.waitForText(/historyValue = 'second'/, { timeout: 15_000 });
       expect(split).toMatch(/▌.*▌/);
 
+      // Preserve the coalesced layout-and-return input; only history chrome proves q committed.
       session.writeRaw("1q");
-      await session.waitForText(/Second history commit/, { timeout: 15_000 });
+      await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("Git history") && text.includes("Enter open"),
+        15_000,
+      );
 
       await session.press("enter");
       const retained = await harness.waitForSnapshot(
@@ -418,8 +433,7 @@ describe("interactive hunk log", () => {
       );
       expect(retained).not.toMatch(/▌.*▌/);
 
-      await session.press("q");
-      await session.waitForText(/Second history commit/, { timeout: 15_000 });
+      await returnToHistory(session);
       await session.press("q");
       const prompt = await session.waitForText(/Save view preferences\?/, { timeout: 5_000 });
       expect(prompt).toContain('- mode = "split"');
@@ -595,8 +609,7 @@ describe("interactive hunk log", () => {
       await session.press("enter");
       const review = await session.waitForText(/main\.ts/, { timeout: 15_000 });
       expect(review).not.toContain("side.ts");
-      await session.press("q");
-      await session.waitForText(/Merge side/, { timeout: 15_000 });
+      await returnToHistory(session);
       await session.press("q");
     } finally {
       session.close();

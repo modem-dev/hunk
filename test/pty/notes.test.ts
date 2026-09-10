@@ -294,8 +294,14 @@ describe("PTY notes", () => {
       await session.press("c");
       await session.waitForText(/Draft note/, { timeout: 5_000 });
       await session.type("First keyboard note.");
-      await session.type("\x13");
-      await session.waitForText(/First keyboard note\./, { timeout: 5_000 });
+      await harness.pressAndWaitForSnapshot(
+        session,
+        ["ctrl", "s"],
+        (text) =>
+          !text.includes("Draft note") &&
+          text.includes("Your note") &&
+          text.includes("First keyboard note."),
+      );
 
       await session.press("c");
       await session.waitForText(/Draft note/, { timeout: 5_000 });
@@ -387,8 +393,12 @@ describe("PTY notes", () => {
         await session.press("c");
         await session.waitForText(/Draft note/, { timeout: 5_000 });
         await session.type(body);
-        await session.type("\x13");
-        await session.waitForText(new RegExp(body.replaceAll(".", "\\.")), { timeout: 5_000 });
+        await harness.pressAndWaitForSnapshot(
+          session,
+          ["ctrl", "s"],
+          (text) =>
+            !text.includes("Draft note") && text.includes("Your note") && text.includes(body),
+        );
       }
 
       await session.type("N");
@@ -688,8 +698,11 @@ describe("PTY notes", () => {
       session.writeRaw("e.\x13");
       await session.waitIdle();
 
-      const saved = await session.waitForText(/Fast save\./, { timeout: 5_000 });
-      expect(saved).toContain("Your note");
+      const saved = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("Draft note") && text.includes("Your note"),
+      );
+      expect(saved).toContain("Fast save.");
       await sleep(250);
       expect(await session.text({ immediate: true })).not.toContain("Console (Focused)");
     } finally {

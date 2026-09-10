@@ -181,7 +181,9 @@ describe("PTY chrome", () => {
       expect(initial).toContain("add = true");
       expect(initial).toContain("betaValue");
 
-      await session.press("tab");
+      await harness.pressAndWaitForSnapshot(session, "tab", (text) =>
+        text.includes("filter: type to filter files"),
+      );
       await session.type("beta");
       const filtered = await harness.waitForSnapshot(
         session,
