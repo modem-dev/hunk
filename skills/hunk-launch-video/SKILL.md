@@ -146,8 +146,8 @@ checked-in demo coverage and belongs to the submitted change.
 ## Per-video editorial surface
 
 The capture machinery is reusable, but the storyboard is editorial content for
-one video. Rewrite it to match the video's scope. The checked-in reference is a
-single-feature Git-history video, not a frozen release artifact:
+one video. Rewrite it to match the video's scope. The checked-in reference is
+the Hunk 0.22 full-release video, not a frozen release artifact:
 
 - `compose.mjs`: the whole `SHOTS` table; opening, feature, and outro cards;
   every caption; camera targets; and callout rectangles. A `NEW` badge is a
@@ -297,6 +297,9 @@ Sandbox-specific bullets are marked; each cost real debugging time.
   `<span class="hl">` amber highlight, `<span class="dim">` muted. Cards use
   `badge` / `h1`/`h2` / `sub` / `cmds`+`cmd` / `foot` classes from
   `packages/term-video/src/stage.html`.
+- Use short, literal feature names for card titles, usually two to four words.
+  Avoid slogans, metaphors, and sentence-style setup; put benefits and workflow
+  explanations in subtitles or captions instead.
 - Target pacing: money shots hold 3–4s, context shots 2–3s, typing/walk frames
   0.2–0.6s; keep the total near 60s.
 
