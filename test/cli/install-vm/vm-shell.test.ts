@@ -29,6 +29,11 @@ import {
 const harnessRoot = import.meta.dir;
 const repoRoot = path.resolve(harnessRoot, "../../..");
 
+/** Create a small patch for tests that exercise staging rather than parser scale. */
+function createTestBenchmarkPatch() {
+  return "diff --git a/example.ts b/example.ts\n@@ -1 +1 @@\n-old\n+new\n";
+}
+
 /** Create the allowlisted example files expected by shell-input staging tests. */
 function writeTestVmShellExamples(repo: string) {
   for (const relativePath of VM_SHELL_EXAMPLE_FILES) {
@@ -120,7 +125,9 @@ describe("disposable VM shell", () => {
       mkdirSync(runtime, { recursive: true });
       symlinkSync(outside, path.join(repo, "examples", "2-mini-app-refactor", "not-staged"));
 
-      expect(stageVmShellInput(repo, staging, { withHunk: false })).toBe(staging);
+      expect(stageVmShellInput(repo, staging, { withHunk: false }, createTestBenchmarkPatch)).toBe(
+        staging,
+      );
       for (const relativePath of VM_SHELL_EXAMPLE_FILES) {
         expect(readFileSync(path.join(staging, "fixtures", "examples", relativePath), "utf8")).toBe(
           `example ${relativePath}\n`,
@@ -195,7 +202,14 @@ describe("disposable VM shell", () => {
         },
       };
 
-      await prepareVmShellInput(repo, staging, { withHunk: true }, runner, "/test/bun");
+      await prepareVmShellInput(
+        repo,
+        staging,
+        { withHunk: true },
+        runner,
+        "/test/bun",
+        createTestBenchmarkPatch,
+      );
       expect(command).toEqual(["/test/bun", "run", "build:bin"]);
       expect(cwd).toBe(repo);
       expect(readFileSync(path.join(staging, "hunk"), "utf8")).toBe("fresh build\n");

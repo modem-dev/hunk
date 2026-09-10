@@ -144,6 +144,7 @@ export function stageVmShellInput(
   repo: string,
   stagingDir: string,
   options: { withHunk: boolean },
+  createBenchmarkPatch: typeof createSyntheticPatch = createSyntheticPatch,
 ) {
   const safeStagingDir = assertSafeInstallVmRuntimePath(repo, stagingDir);
   const stagingParent = path.dirname(safeStagingDir);
@@ -176,7 +177,7 @@ export function stageVmShellInput(
     }
     for (const scenario of CHANGESET_PARSE_SCENARIOS) {
       const name = `${scenario.name.replaceAll("_", "-")}.patch`;
-      writeFileSync(path.join(stagedBenchmarks, name), createSyntheticPatch(scenario.options));
+      writeFileSync(path.join(stagedBenchmarks, name), createBenchmarkPatch(scenario.options));
     }
 
     if (options.withHunk) {
@@ -203,12 +204,13 @@ export async function prepareVmShellInput(
   options: { withHunk: boolean },
   commandRunner: Pick<InstallVmCommandRunner, "run">,
   bunExecutable = process.execPath,
+  createBenchmarkPatch: typeof createSyntheticPatch = createSyntheticPatch,
 ) {
   removeVmShellInput(repo, stagingDir);
   if (options.withHunk) {
     await commandRunner.run([bunExecutable, "run", "build:bin"], { cwd: repo });
   }
-  return stageVmShellInput(repo, stagingDir, options);
+  return stageVmShellInput(repo, stagingDir, options, createBenchmarkPatch);
 }
 
 /** Run one shell task while owning the shared VM lock and signal-forwarding lifecycle. */

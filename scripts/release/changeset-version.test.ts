@@ -21,35 +21,40 @@ function createTestWorkspace() {
 }
 
 describe("canonical changelog versioning", () => {
-  test("uses real Changesets output for the package manifest and canonical root changelog", () => {
-    const paths = createTestWorkspace();
-    mkdirSync(path.join(paths.repoRoot, ".changeset"), { recursive: true });
-    writeFileSync(
-      path.join(paths.repoRoot, "package.json"),
-      `${JSON.stringify({ private: true, workspaces: ["packages/*"] }, null, 2)}\n`,
-    );
-    writeFileSync(
-      path.join(paths.packageRoot, "package.json"),
-      `${JSON.stringify({ name: "hunkdiff", version: "1.0.0" }, null, 2)}\n`,
-    );
-    writeFileSync(
-      path.join(paths.repoRoot, ".changeset", "config.json"),
-      `${JSON.stringify({ changelog: "@changesets/cli/changelog", commit: false, access: "restricted", baseBranch: "main", updateInternalDependencies: "patch", ignore: [] }, null, 2)}\n`,
-    );
-    writeFileSync(
-      path.join(paths.repoRoot, ".changeset", "real-version.md"),
-      '---\n"hunkdiff": patch\n---\n\nVerify the real version output.\n',
-    );
+  // Linux covers the platform-neutral CLI integration without repeating bunx startup on Windows.
+  test.skipIf(process.platform === "win32")(
+    "uses real Changesets output for the package manifest and canonical root changelog",
+    () => {
+      const paths = createTestWorkspace();
+      mkdirSync(path.join(paths.repoRoot, ".changeset"), { recursive: true });
+      writeFileSync(
+        path.join(paths.repoRoot, "package.json"),
+        `${JSON.stringify({ private: true, workspaces: ["packages/*"] }, null, 2)}\n`,
+      );
+      writeFileSync(
+        path.join(paths.packageRoot, "package.json"),
+        `${JSON.stringify({ name: "hunkdiff", version: "1.0.0" }, null, 2)}\n`,
+      );
+      writeFileSync(
+        path.join(paths.repoRoot, ".changeset", "config.json"),
+        `${JSON.stringify({ changelog: "@changesets/cli/changelog", commit: false, access: "restricted", baseBranch: "main", updateInternalDependencies: "patch", ignore: [] }, null, 2)}\n`,
+      );
+      writeFileSync(
+        path.join(paths.repoRoot, ".changeset", "real-version.md"),
+        '---\n"hunkdiff": patch\n---\n\nVerify the real version output.\n',
+      );
 
-    versionPackages(paths);
+      versionPackages(paths);
 
-    expect(
-      JSON.parse(readFileSync(path.join(paths.packageRoot, "package.json"), "utf8")).version,
-    ).toBe("1.0.1");
-    expect(readFileSync(path.join(paths.repoRoot, "CHANGELOG.md"), "utf8")).toContain("## 1.0.1");
-    expect(existsSync(path.join(paths.packageRoot, "CHANGELOG.md"))).toBe(false);
-    expect(existsSync(path.join(paths.repoRoot, ".changeset", "real-version.md"))).toBe(false);
-  }, 30_000);
+      expect(
+        JSON.parse(readFileSync(path.join(paths.packageRoot, "package.json"), "utf8")).version,
+      ).toBe("1.0.1");
+      expect(readFileSync(path.join(paths.repoRoot, "CHANGELOG.md"), "utf8")).toContain("## 1.0.1");
+      expect(existsSync(path.join(paths.packageRoot, "CHANGELOG.md"))).toBe(false);
+      expect(existsSync(path.join(paths.repoRoot, ".changeset", "real-version.md"))).toBe(false);
+    },
+    30_000,
+  );
 
   test("stages root history for Changesets and returns its output to the root", () => {
     const paths = createTestWorkspace();
