@@ -1049,8 +1049,9 @@ end
     });
   }
 
+  /** Observe a concrete screen state; output idleness alone does not acknowledge input. */
   async function waitForSnapshot(
-    session: Session,
+    session: Pick<Session, "text" | "waitIdle">,
     predicate: (text: string) => boolean,
     timeoutMs = 5_000,
   ) {
@@ -1070,6 +1071,22 @@ end
     throw new Error(
       `Timed out after ${timeoutMs}ms waiting for snapshot. Last snapshot:\n${snapshot}`,
     );
+  }
+
+  /**
+   * Send one key and observe its committed screen state before another input can follow.
+   * The predicate must distinguish the destination from the screen before the key: text
+   * shared by a draft and saved note, or by history and review, cannot acknowledge a transition.
+   * Never resend input on timeout; a dropped key must remain a test failure.
+   */
+  async function pressAndWaitForSnapshot(
+    session: Pick<Session, "press" | "text" | "waitIdle">,
+    key: Key | Key[],
+    predicate: (text: string) => boolean,
+    timeoutMs = 5_000,
+  ) {
+    await session.press(key);
+    return waitForSnapshot(session, predicate, timeoutMs);
   }
 
   function countMatches(text: string, pattern: RegExp) {
@@ -1140,6 +1157,7 @@ end
     launchShellCommand,
     buildHunkCommand,
     shellQuote,
+    pressAndWaitForSnapshot,
     waitForSnapshot,
   };
 }
