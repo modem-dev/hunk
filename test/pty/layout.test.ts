@@ -11,6 +11,13 @@ afterEach(() => {
   harness.cleanup();
 });
 
+const horizontalRepeatBatchSize = 8;
+
+/** Build one bounded burst matching repeated horizontal input from a held key. */
+function horizontalKeyRepeat(key: "left" | "right") {
+  return Array.from({ length: horizontalRepeatBatchSize }, () => key);
+}
+
 /** Locate the left pane divider from a rendered terminal frame. */
 function sidebarDividerColumn(frame: string) {
   const columns = frame
@@ -792,10 +799,9 @@ describe("PTY layout", () => {
       expect(initial).not.toContain("ge';");
 
       let shifted = initial;
-      for (let index = 0; index < 96; index += 1) {
-        await session.press("right");
-        // press() already waits for idle, so read the settled frame immediately rather than
-        // paying another render round-trip per column; the loop retries if a frame lags.
+      for (let index = 0; index < 96; index += horizontalRepeatBatchSize) {
+        await session.press(horizontalKeyRepeat("right"));
+        // Held keys arrive in bursts. Settle each bounded burst and retry if its frame lags.
         shifted = await session.text({ immediate: true });
         if (shifted.includes("ge';")) {
           break;
@@ -806,8 +812,8 @@ describe("PTY layout", () => {
       expect(shifted).not.toContain("this is a very long");
 
       let restored = shifted;
-      for (let index = 0; index < 96; index += 1) {
-        await session.press("left");
+      for (let index = 0; index < 96; index += horizontalRepeatBatchSize) {
+        await session.press(horizontalKeyRepeat("left"));
         restored = await session.text({ immediate: true });
         if (restored.includes("this is a very long") && !restored.includes("ge';")) {
           break;
@@ -872,9 +878,8 @@ describe("PTY layout", () => {
       expect(initial).not.toContain("ge';");
 
       let shifted = initial;
-      for (let index = 0; index < 96; index += 1) {
-        await session.press("right");
-        // press() already waits for idle; read immediately to avoid a redundant settle per column.
+      for (let index = 0; index < 96; index += horizontalRepeatBatchSize) {
+        await session.press(horizontalKeyRepeat("right"));
         shifted = await session.text({ immediate: true });
         if (shifted.includes("ge';")) {
           break;
