@@ -92,16 +92,21 @@ export async function measureKeyScroll(session: Session, key: Key, anchorRow: nu
   return anchorRow - movedTo;
 }
 
+/** Send an SGR mouse motion event without imposing a readiness policy on its caller. */
+function sendMouseMove(session: Session, x: number, y: number) {
+  session.writeRaw(`\x1b[<35;${x + 1};${y + 1}M`);
+}
+
 /** Send an SGR mouse motion event at zero-based terminal coordinates. */
 export async function moveMouse(session: Session, x: number, y: number) {
-  session.writeRaw(`\x1b[<35;${x + 1};${y + 1}M`);
+  sendMouseMove(session, x, y);
   await session.waitIdle();
 }
 
 /** Reveal the hover-only add-note badge across fixture-specific row offsets. */
 export async function revealAddNoteAffordance(session: Session, x: number, yCandidates: number[]) {
   for (const y of yCandidates) {
-    await moveMouse(session, x, y);
+    sendMouseMove(session, x, y);
     try {
       return await session.waitForText(/\[\+\]/, { timeout: 1_000 });
     } catch {
@@ -172,7 +177,7 @@ export async function revealAddNoteNear(session: Session, row: number) {
     }
 
     for (const x of [8, 20, 60]) {
-      await moveMouse(session, x, y);
+      sendMouseMove(session, x, y);
       try {
         await session.waitForText(/\[\+\]/, { timeout: 200 });
         return;
@@ -188,7 +193,7 @@ export async function revealAddNoteNear(session: Session, row: number) {
 /** Reveal the add-note control without falling back to adjacent rows. */
 export async function revealAddNoteOnRow(session: Session, row: number) {
   for (const x of [8, 20, 60]) {
-    await moveMouse(session, x, row);
+    sendMouseMove(session, x, row);
     try {
       await session.waitForText(/\[\+\]/, { timeout: 200 });
       return;
