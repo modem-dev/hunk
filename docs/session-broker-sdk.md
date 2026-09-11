@@ -278,6 +278,21 @@ instances remain even across executable versions.
 Implementations should retain the prior broker revision for at least one minor compatibility window
 when safe. Removal requires golden migration tests and release notes.
 
+### Admin scope
+
+The daemon may expose a revision-tolerant admin scope (`packages/session-broker/src/admin.ts`) with
+exactly two actions: `status` (daemon app revision, app version, pid, start time, uptime, and
+attached sessions with the app revision each producer presented) and `stop` (graceful shutdown that
+first closes attached producers with `"Session daemon restarting."`). It uses the ordinary signed
+caller handshake and on-disk credentials against a second authenticator whose fixed contract is
+`SESSION_BROKER_ADMIN_SCOPE_VERSION` in place of the app revision, served on its own paths
+(`/session-admin/challenge`, `/session-admin/proof`, `/session-admin`). Caller sessions negotiated
+there are unknown to the main authenticator and cannot reach the session API. The response schema is
+frozen per scope version and is extended only by adding a new version. This is what lets a client
+from another app revision explain a refused hello and replace an old daemon without signalling a
+pid; a daemon that predates the scope refuses the admin hello, and callers fall back to launch
+metadata.
+
 ## Runtime validation
 
 Every external boundary receives `unknown`; TypeScript generics and schema IDs are not validators.
