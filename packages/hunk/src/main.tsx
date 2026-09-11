@@ -7,13 +7,24 @@ import { prepareStartupPlan } from "./app/startup";
 import { sanitizeTerminalLine, sanitizeTerminalText } from "./lib/terminalText";
 import { serveSessionBrokerDaemon } from "./session/broker/brokerServer";
 import { runSessionCommand } from "./session/agent/commands";
+import { sweepStaleTmpArtifacts } from "./core/tmpArtifactSweep";
 
 async function main() {
+  // Start the best-effort sweep of stale Bun-extracted tmp artifacts up front so
+  // even the shortest-lived commands can await it right before exiting.
+  const sweep = sweepStaleTmpArtifacts();
+
+  /** Await the best-effort tmp sweep before exiting, since process.exit drops pending work. */
+  async function exitAfterSweep(code: number): Promise<never> {
+    await sweep;
+    process.exit(code);
+  }
+
   const startupPlan = await prepareStartupPlan();
 
   if (startupPlan.kind === "help") {
     writeStdout(startupPlan.text);
-    process.exit(0);
+    await exitAfterSweep(0);
   }
 
   if (startupPlan.kind === "extension-cli-exit") {
@@ -29,7 +40,7 @@ async function main() {
 
   if (startupPlan.kind === "session-command") {
     writeStdout(await runSessionCommand(startupPlan.input));
-    process.exit(0);
+    await exitAfterSweep(0);
   }
 
   if (startupPlan.kind === "extension-manage") {
@@ -39,7 +50,7 @@ async function main() {
     ]);
     // A confirmation needs a real terminal on both sides; piped runs use --yes.
     const canConfirm = Boolean(process.stdin.isTTY) && Boolean(process.stdout.isTTY);
-    process.exit(
+    await exitAfterSweep(
       await runExtensionManageCommand(startupPlan.input, {
         stdout: (text) => writeStdout(text),
         stderr: (text) => process.stderr.write(text),
@@ -63,7 +74,7 @@ async function main() {
 
   if (startupPlan.kind === "self-update") {
     const { runSelfUpdateCommand } = await import("./core/install/selfUpdate");
-    process.exit(
+    await exitAfterSweep(
       await runSelfUpdateCommand(startupPlan.input, {
         stdout: (text) => writeStdout(text),
         stderr: (text) => process.stderr.write(text),
@@ -73,12 +84,12 @@ async function main() {
 
   if (startupPlan.kind === "markup-guide") {
     const { runMarkupGuideCommand } = await import("./ui/lib/stml/cli");
-    process.exit(runMarkupGuideCommand({ stdout: (text) => writeStdout(text) }));
+    await exitAfterSweep(runMarkupGuideCommand({ stdout: (text) => writeStdout(text) }));
   }
 
   if (startupPlan.kind === "markup-render") {
     const { runMarkupRenderCommand } = await import("./ui/lib/stml/cli");
-    process.exit(
+    await exitAfterSweep(
       await runMarkupRenderCommand(startupPlan.input, {
         stdout: (text) => writeStdout(text),
         stderr: (text) => process.stderr.write(text),
@@ -102,14 +113,14 @@ async function main() {
 
   if (startupPlan.kind === "plain-text-pager") {
     await pagePlainText(startupPlan.text);
-    process.exit(0);
+    await exitAfterSweep(0);
   }
 
   if (startupPlan.kind === "passthrough") {
     writeStdout(
       sanitizeTerminalText(startupPlan.text, { preserveAnsiStyle: startupPlan.preserveColor }),
     );
-    process.exit(0);
+    await exitAfterSweep(0);
   }
 
   if (startupPlan.kind === "static-diff-pager") {
@@ -120,7 +131,7 @@ async function main() {
         stderr: process.stderr,
       }),
     );
-    process.exit(0);
+    await exitAfterSweep(0);
   }
 
   if (startupPlan.kind === "static-diff") {
@@ -146,7 +157,7 @@ async function main() {
     } finally {
       await retireExtensionLoadResult(startupPlan.bootstrap.extensions);
     }
-    process.exit(0);
+    await exitAfterSweep(0);
   }
 
   if (startupPlan.kind !== "app") {
