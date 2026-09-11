@@ -53,11 +53,15 @@ async function reserveLoopbackPort() {
   return port;
 }
 
+/**
+ * Poll one condition. Each CLI-backed probe spawns a Bun process, so the ceiling is generous:
+ * the full suite saturates every core and a single probe can take seconds there.
+ */
 async function waitUntil<T>(
   label: string,
   fn: () => Promise<T | null> | T | null,
-  timeoutMs = 15_000,
-  intervalMs = 100,
+  timeoutMs = 40_000,
+  intervalMs = 250,
 ) {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
@@ -253,7 +257,7 @@ describe("hunk daemon restart", () => {
     } finally {
       stopSpawnedDaemon(environment);
     }
-  }, 60_000);
+  }, 120_000);
 
   test("refuses to restart without --yes when stdin is not a terminal", async () => {
     const runtimeDir = mkdtempSync(join(tmpdir(), "hunk-daemon-restart-"));
