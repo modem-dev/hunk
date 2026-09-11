@@ -1,11 +1,9 @@
-import { TextAttributes } from "@opentui/core";
 import { Component, memo, useMemo, type ReactNode } from "react";
 import type { DiffFile } from "../../../core/changeset/model";
 import type {
   ExtensionFileViewLayout,
   ExtensionFileViewRow,
   ExtensionFileViewRowComponentProps,
-  ExtensionFileViewSpan,
 } from "../../../extension-api/types";
 import type { AppTheme } from "../../themes";
 import type { DiffSectionGeometry } from "../../diff/diffSectionGeometry";
@@ -14,48 +12,11 @@ import { cursorLineHighlightBg } from "../../diff/rowStyle";
 import { resolveVisibleRowIndexWindow, type VisibleBodyBounds } from "../../diff/rowWindowing";
 import { reviewRowId } from "../../lib/ids";
 import { toExtensionPaintTheme } from "../../lib/extensionPaintTheme";
+import { symbolicTextAttributes, symbolicToneColor } from "../../lib/symbolicSpans";
 import type { PlannedFileViewRow } from "../../fileViews/renderPlan";
 import type { FileViewRowFailure } from "../../fileViews/types";
 import type { ResolvedFileViewLayout } from "../../fileViews/useFileViews";
 import { AgentInlineNote } from "./AgentInlineNote";
-
-type FileViewTone = ExtensionFileViewSpan["tone"];
-type FileViewTextAttribute = NonNullable<ExtensionFileViewSpan["attributes"]>[number];
-
-/** Resolve a generic file-view tone only at paint time, keeping layout theme-independent. */
-function fileViewToneColor(tone: FileViewTone, theme: AppTheme) {
-  switch (tone) {
-    case "muted":
-      return theme.muted;
-    case "accent":
-      return theme.accent;
-    case "accent-muted":
-      return theme.accentMuted;
-    case "syntax":
-      return theme.syntaxColors.default;
-    case "added":
-      return theme.fileNew;
-    case "removed":
-      return theme.fileDeleted;
-    default:
-      return theme.text;
-  }
-}
-
-const FILE_VIEW_ATTRIBUTE_BITS: Record<FileViewTextAttribute, number> = {
-  bold: TextAttributes.BOLD,
-  italic: TextAttributes.ITALIC,
-  underline: TextAttributes.UNDERLINE,
-  strikethrough: TextAttributes.STRIKETHROUGH,
-};
-
-/** Combine generic emphasis attributes into OpenTUI's terminal bitmask. */
-function fileViewTextAttributes(attributes: readonly FileViewTextAttribute[] | undefined) {
-  return (attributes ?? []).reduce(
-    (combined, attribute) => combined | FILE_VIEW_ATTRIBUTE_BITS[attribute],
-    TextAttributes.NONE,
-  );
-}
 
 /** Report whether one symbolic row belongs to the currently selected hunk. */
 export function isFileViewRowSelected(
@@ -74,8 +35,8 @@ function SymbolicFileViewRow({ row, theme }: { row: ExtensionFileViewRow; theme:
   return row.spans.map((span, spanIndex) => (
     <text
       key={`${row.id}:${spanIndex}`}
-      fg={fileViewToneColor(span.tone, theme)}
-      attributes={fileViewTextAttributes(span.attributes)}
+      fg={symbolicToneColor(span.tone, theme)}
+      attributes={symbolicTextAttributes(span.attributes)}
     >
       {span.text}
     </text>

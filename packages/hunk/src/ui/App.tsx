@@ -51,7 +51,6 @@ import { ConfirmDialog, confirmDialogHeight } from "./components/chrome/ConfirmD
 import { ExtensionDialog } from "./components/chrome/ExtensionDialog";
 import { ViewPreferenceQuitDialog } from "./components/chrome/ViewPreferenceQuitDialog";
 import { ExtensionToast } from "./components/chrome/ExtensionToast";
-import { StatusBar } from "./components/chrome/StatusBar";
 import { DiffPane, type ReviewSelectionActionsHandle } from "./components/panes/DiffPane";
 import { ExtensionPaneHost } from "./components/panes/ExtensionPane";
 import { PaneDivider } from "./components/panes/PaneDivider";
@@ -121,8 +120,17 @@ import { openSelectedFileInEditor } from "./lib/openInEditor";
 import { resolveResponsiveLayout } from "./lib/responsive";
 import type { WorkspaceRefreshRequest } from "./currentReviewRefresh";
 import { ThemeController } from "./theme/controller";
+import { StatusLine, statusLineHasContent } from "./statusLine/StatusLine";
+import type { StatusItem, StatusLineSnapshot } from "./statusLine/types";
+import { useStatusLine } from "./statusLine/useStatusLine";
 
+/**
+ * Who owns review keys: the file stream, the host filter prompt on the status line, or the
+ * inline note draft. The filter member is derived from the status-line prompt rather than
+ * stored, so focus and the visible input can never disagree.
+ */
 type FocusArea = "files" | "filter" | "note";
+type StoredFocusArea = Exclude<FocusArea, "filter">;
 
 const FAST_CODE_HORIZONTAL_SCROLL_COLUMNS = 8;
 
@@ -256,8 +264,17 @@ export function App({
   const [showMenuBar, setShowMenuBar] = useState(bootstrap.initialShowMenuBar ?? true);
   const [showHelp, setShowHelp] = useState(false);
   const [showAgentSkill, setShowAgentSkill] = useState(false);
-  const [focusArea, setFocusArea] = useState<FocusArea>("files");
+  const [storedFocusArea, setFocusArea] = useState<StoredFocusArea>("files");
   const { text: sessionNoticeText, show: showSessionNotice } = useTimedNotice(4_000);
+  const { store: statusLineStore, snapshot: statusLineState } = useStatusLine({
+    reviewGeneration: bootstrap,
+  });
+  // The host filter's own prompt, so focus changes can submit it and a repeat request is a no-op.
+  // Set synchronously with the store, so a render always sees both or neither.
+  const filterPromptIdRef = useRef<number | null>(null);
+  const filterPromptOpen =
+    statusLineState.prompt !== null && statusLineState.prompt.id === filterPromptIdRef.current;
+  const focusArea: FocusArea = filterPromptOpen ? "filter" : storedFocusArea;
   const extensions = bootstrap.extensions as ExtensionLoadResult | undefined;
   const pendingTrustRepoRoot = extensions?.pendingTrustRepoRoot;
   const extensionToast = useExtensionNotifications(extensions?.notifications);
@@ -485,16 +502,25 @@ export function App({
   const resolvedLayout = responsiveLayout.layout;
   const canForceShowSidebar =
     bodyWidth >= SIDEBAR_MIN_WIDTH + EXTENSION_PANE_DIVIDER_SIZE + DIFF_MIN_WIDTH;
-  const statusBarVisible =
-    focusArea === "filter" ||
-    Boolean(review.filter) ||
-    Boolean(
-      sessionNoticeText ??
-      transientNoticeText ??
-      noticeText ??
-      fileViewModeHint ??
-      keyboardModeHint,
-    );
+  // Host contributions to the status line: the residual filter and the one notice channel.
+  // Both are derived from state rather than pushed, so they can never go stale.
+  const statusNoticeText =
+    sessionNoticeText ?? transientNoticeText ?? noticeText ?? fileViewModeHint ?? null;
+  const statusLineSnapshot = useMemo<StatusLineSnapshot>(() => {
+    const hostItems: StatusItem[] = [];
+    if (review.filter.length > 0) {
+      hostItems.push({
+        id: "host:filter",
+        spans: [{ text: `filter=${review.filter}`, tone: "muted" }],
+        priority: 1,
+      });
+    }
+    if (statusNoticeText) {
+      hostItems.push({ id: "host:notice", spans: [{ text: statusNoticeText, tone: "muted" }] });
+    }
+    return { items: [...hostItems, ...statusLineState.items], prompt: statusLineState.prompt };
+  }, [review.filter, statusLineState, statusNoticeText]);
+  const statusBarVisible = statusLineHasContent(statusLineSnapshot, keyboardModeHint ?? null);
   const bodyHeight = Math.max(
     0,
     terminal.height - (showMenuBar ? 1 : 0) - (extensionToast ? 1 : 0) - (statusBarVisible ? 1 : 0),
@@ -1072,15 +1098,35 @@ export function App({
     setShowHelp((current) => !current);
   }, []);
 
-  /** Focus the file list/sidebar navigation area. */
+  /** Focus the file list/sidebar navigation area, submitting an open filter prompt. */
   const focusFiles = useCallback(() => {
+    const promptId = filterPromptIdRef.current;
+    if (promptId !== null) {
+      statusLineStore.submitPrompt(promptId);
+    }
     setFocusArea("files");
-  }, []);
+  }, [statusLineStore]);
 
-  /** Focus the file filter input in the status bar. */
+  /**
+   * Open the file filter as the host's own status-line prompt.
+   *
+   * The filter reacts while typing through `onChange`, and the prompt's answer — submitted,
+   * escaped, or cancelled by a reload — returns keyboard ownership to the review.
+   */
   const focusFilter = useCallback(() => {
-    setFocusArea("filter");
-  }, []);
+    if (filterPromptIdRef.current !== null) return;
+    const { id, answer } = statusLineStore.openPrompt({
+      prefix: "filter:",
+      placeholder: "type to filter files",
+      initial: review.filter,
+      onChange: review.setFilter,
+    });
+    if (id === null) return;
+    filterPromptIdRef.current = id;
+    void answer.then(() => {
+      if (filterPromptIdRef.current === id) filterPromptIdRef.current = null;
+    });
+  }, [review.filter, review.setFilter, statusLineStore]);
 
   const extensionNavigationBindings = useMemo(
     () => ({
@@ -1102,11 +1148,19 @@ export function App({
 
   /** Toggle keyboard focus between the file list and the file filter. */
   const toggleFocusArea = useCallback(() => {
-    setFocusArea((current) => (current === "files" ? "filter" : "files"));
-  }, []);
+    if (filterPromptIdRef.current !== null) {
+      focusFiles();
+    } else {
+      focusFilter();
+    }
+  }, [focusFiles, focusFilter]);
 
-  /** Move keyboard ownership into the draft note editor. */
-  const focusDraftNoteEditor = useCallback(() => setFocusArea("note"), []);
+  /** Move keyboard ownership into the draft note editor, closing an open filter prompt first. */
+  const focusDraftNoteEditor = useCallback(() => {
+    const promptId = filterPromptIdRef.current;
+    if (promptId !== null) statusLineStore.submitPrompt(promptId);
+    setFocusArea("note");
+  }, [statusLineStore]);
   /** Return keyboard ownership from note composition to review navigation. */
   const focusReviewAfterDraft = useCallback(() => setFocusArea("files"), []);
   /** Leave note focus only when the draft editor still owns it. */
@@ -1310,6 +1364,7 @@ export function App({
     exitKeyboardMode,
     sendKeyboardModeKey,
     focusArea,
+    promptActive: statusLineState.prompt !== null,
     moveMenuItem,
     moveThemeSelector,
     openMenu,
@@ -1595,19 +1650,16 @@ export function App({
       ) : null}
 
       {statusBarVisible ? (
-        <StatusBar
-          filter={review.filter}
-          filterFocused={focusArea === "filter"}
-          modeText={keyboardModeHint ?? undefined}
-          noticeText={
-            sessionNoticeText ?? transientNoticeText ?? noticeText ?? fileViewModeHint ?? undefined
-          }
+        <StatusLine
+          badge={keyboardModeHint ?? null}
+          snapshot={statusLineSnapshot}
           terminalWidth={terminal.width}
           theme={activeTheme}
           onCloseMenu={closeMenu}
-          onFilterInput={review.setFilter}
-          onFilterSubmit={focusFiles}
           onExitMode={exitKeyboardMode}
+          onPromptCancel={statusLineStore.cancelPrompt}
+          onPromptInput={statusLineStore.updatePromptValue}
+          onPromptSubmit={statusLineStore.submitPrompt}
         />
       ) : null}
 

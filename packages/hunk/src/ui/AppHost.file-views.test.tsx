@@ -422,12 +422,13 @@ describe("AppHost file views", () => {
 
     try {
       await waitForFrame(setup, (frame) => frame.includes("alpha.ts"));
-      await act(async () => {
-        await setup.mockInput.pressTab();
-        await setup.mockInput.typeText("alpha");
-        await setup.mockInput.pressTab();
-        await setup.mockInput.pressKey("F8");
-      });
+      await act(async () => setup.mockInput.pressTab());
+      await waitForFrame(setup, (frame) => frame.includes("filter: type to filter files"));
+      await act(async () => setup.mockInput.typeText("alpha"));
+      await waitForFrame(setup, (frame) => frame.includes("filter: alpha"));
+      await act(async () => setup.mockInput.pressTab());
+      await waitForFrame(setup, (frame) => frame.includes("filter=alpha"));
+      await act(async () => setup.mockInput.pressKey("F8"));
       await waitForFrame(setup, (frame) => frame.includes("PREVIEW alpha.ts"));
 
       await act(async () => setup.mockInput.pressKey("F10"));
@@ -447,11 +448,13 @@ describe("AppHost file views", () => {
       const targetX = lines[targetY]!.indexOf("Apply “Bulk preview”");
       await act(async () => setup.mockMouse.click(targetX, targetY));
 
-      await act(async () => {
-        await setup.mockInput.pressTab();
-        await setup.mockInput.pressEscape();
-        await setup.mockInput.pressTab();
-      });
+      // Separate act scopes: an Escape and a Tab in one input chunk parse as one alt-chord,
+      // and the filter prompt only receives keys once its input has committed.
+      await act(async () => setup.mockInput.pressTab());
+      await waitForFrame(setup, (frame) => frame.includes("filter: alpha"));
+      await act(async () => setup.mockInput.pressEscape());
+      await waitForFrame(setup, (frame) => frame.includes("filter: type to filter files"));
+      await act(async () => setup.mockInput.pressTab());
       const expanded = await waitForFrame(
         setup,
         (frame) => frame.includes("PREVIEW alpha.ts") && frame.includes("PREVIEW beta.ts"),

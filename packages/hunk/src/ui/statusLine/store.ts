@@ -38,6 +38,17 @@ export interface StatusLineStore {
   clearItem(id: string): void;
   /** Remove every item whose id the predicate accepts. */
   clearItems(predicate: (id: string) => boolean): void;
+  /**
+   * Queue one prompt and return its id alongside its answer.
+   *
+   * `id` is `null` when the request was refused outright (store shut down, owner dead), in which
+   * case `answer` is already `null`. Hosts use the id to submit or cancel their own prompt from
+   * focus changes; extensions only ever see `requestPrompt`.
+   */
+  openPrompt(
+    options: StatusPromptOptions,
+    requestOptions?: StatusPromptRequestOptions,
+  ): { id: number | null; answer: Promise<string | null> };
   /** Queue one prompt; resolves the submitted text, or `null` on cancel, reload, or shutdown. */
   requestPrompt(
     options: StatusPromptOptions,
@@ -124,21 +135,20 @@ export function createStatusLineStore(): StatusLineStore {
       for (const id of removed) items.delete(id);
       if (removed.length > 0) publish();
     },
-    requestPrompt(options, requestOptions = {}) {
-      return new Promise<string | null>((resolve) => {
-        const isLive = requestOptions.isLive ?? (() => true);
-        if (closed || !isLive()) {
-          resolve(null);
-          return;
-        }
-        const request: StatusPromptRequest = {
-          id: nextId,
-          prefix: cleanText(options.prefix),
-          placeholder: cleanText(options.placeholder),
-          value: cleanText(options.initial),
-          attribution: requestOptions.attribution ? cleanText(requestOptions.attribution) : null,
-        };
-        nextId += 1;
+    openPrompt(options, requestOptions = {}) {
+      const isLive = requestOptions.isLive ?? (() => true);
+      if (closed || !isLive()) {
+        return { id: null, answer: Promise.resolve(null) };
+      }
+      const request: StatusPromptRequest = {
+        id: nextId,
+        prefix: cleanText(options.prefix),
+        placeholder: cleanText(options.placeholder),
+        value: cleanText(options.initial),
+        attribution: requestOptions.attribution ? cleanText(requestOptions.attribution) : null,
+      };
+      nextId += 1;
+      const answer = new Promise<string | null>((resolve) => {
         const wasIdle = pending.length === 0;
         pending.push({
           request,
@@ -151,6 +161,10 @@ export function createStatusLineStore(): StatusLineStore {
         // Queueing behind an open prompt does not change what is on screen.
         if (wasIdle) publish();
       });
+      return { id: request.id, answer };
+    },
+    requestPrompt(options, requestOptions) {
+      return this.openPrompt(options, requestOptions).answer;
     },
     updatePromptValue(id, value) {
       const active = current(id);
