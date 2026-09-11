@@ -401,37 +401,37 @@ export function createGitVcsAdapter({
             : range
               ? `${repoName} ${range}`
               : `${repoName} working tree`;
-          // Ask for stats before the patch so files too large to render can be
-          // excluded from the diff instead of generating output nobody reads.
-          const numstat = await runGitTextAsync({
-            input,
-            args: buildGitDiffNumstatArgs(patchInput),
-            cwd,
-            gitExecutable,
-            signal,
-          });
-          const colorMoved = await resolveGitColorMovedOptionsAsync(input, {
-            cwd,
-            gitExecutable,
-            signal,
-          });
-          const sourceCapability = comparison
-            ? await createGitSourceCapabilityAsync(
-                input,
-                repoRoot,
-                {
-                  old: { kind: "git-ref", ref: comparison.endpoints.base },
-                  new: { kind: "git-ref", ref: comparison.endpoints.head },
-                },
-                gitExecutable,
-                signal,
-              )
-            : await createGitDiffSourceCapabilityAsync(input, repoRoot, cwd, gitExecutable, signal);
-          const untrackedPaths = await listGitUntrackedFilesAsync(input, {
-            cwd,
-            repoRoot,
-            gitExecutable,
-            signal,
+          // These reads share resolved endpoints but do not depend on one another. Keep
+          // stats ahead of patch output so oversized files still get excluded before diffing.
+          const pendingReads = [
+            runGitTextAsync({
+              input,
+              args: buildGitDiffNumstatArgs(patchInput),
+              cwd,
+              gitExecutable,
+              signal,
+            }),
+            resolveGitColorMovedOptionsAsync(input, { cwd, gitExecutable, signal }),
+            comparison
+              ? createGitSourceCapabilityAsync(
+                  input,
+                  repoRoot,
+                  {
+                    old: { kind: "git-ref", ref: comparison.endpoints.base },
+                    new: { kind: "git-ref", ref: comparison.endpoints.head },
+                  },
+                  gitExecutable,
+                  signal,
+                )
+              : createGitDiffSourceCapabilityAsync(input, repoRoot, cwd, gitExecutable, signal),
+            listGitUntrackedFilesAsync(input, { cwd, repoRoot, gitExecutable, signal }),
+          ] as const;
+          const [numstat, colorMoved, sourceCapability, untrackedPaths] = await Promise.all(
+            pendingReads,
+          ).catch(async (error: unknown) => {
+            // Failed or cancelled loads must reap every started read before ownership returns.
+            await Promise.allSettled(pendingReads);
+            throw error;
           });
           const largeTrackedFiles = parseGitNumstat(numstat).filter((file) =>
             shouldSkipLargeTrackedDiff(file, repoRoot),
