@@ -192,12 +192,15 @@ run without installing anything.
 ## Bundled extensions
 
 Every VCS backend Hunk ships — **Git, Jujutsu, and Sapling** — is an extension,
-and so is the **built-in file-navigation pane**. Provider implementations live in the private
+and so are the **built-in file-navigation pane**, the commit and change-request info panes, and
+the **`/` content search** (`hunk.search.find` / `next` / `previous`, with its match marks and
+status-row report). Provider implementations live in the private
 `packages/hunk-{git,jj,sapling}` workspaces and are statically imported by
 `packages/hunk/src/extensions/default/vcs/index.ts`. Bundled UI registrations live under
 `packages/hunk/src/extensions/default/ui/`. All register through the same
-`hunk.registerVcsAdapter` and `hunk.registerPane` contract documented here; there is no private
-registration path.
+`hunk.registerVcsAdapter`, `hunk.registerPane`, `hunk.registerCommand`, and
+`hunk.registerLineHighlighter` contract documented here, and their commands, highlighters, and
+panes are composed ahead of yours; there is no private registration path.
 
 Git exercises exact file sources, skipped-too-large placeholders, untracked files, watch plans,
 and structured failures through the public adapter contract. Its package and boundary tests keep
@@ -217,7 +220,9 @@ being Hunk's own code:
 A bundled VCS factory failure becomes a load issue rather than crashing the session. Bundled UI
 panes are required host code, so failure to register the expected panes aborts startup. The ids
 `git`, `jj`, and `sl` are reserved as a result — see `registerVcsAdapter` below — and so is `hunk`,
-the id the bundled files pane and every built-in command are named under.
+the id the bundled files pane, the bundled search, and every built-in command are named under.
+Because bundled factories run once per process with no config, a bundled command derives its
+session state from its context (`ctx.selection.files`) rather than closing over a review.
 
 ## Trust
 

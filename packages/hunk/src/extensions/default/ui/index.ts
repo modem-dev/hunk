@@ -7,6 +7,7 @@ import {
   type ExtensionRegistry,
 } from "../../types";
 import registerBundledReviewInfo, { registerBundledComparisonReviewInfo } from "./reviewInfo";
+import registerBundledSearch from "./search";
 import registerBundledSidebar from "./sidebar";
 
 /** One bundled UI factory and the pane ids it must register, if any. */
@@ -24,6 +25,7 @@ const factories: readonly BundledUIFactory[] = [
     factory: registerBundledComparisonReviewInfo,
     paneIds: ["comparison-review-info"],
   },
+  { id: "search", factory: registerBundledSearch, paneIds: [] },
 ];
 let cachedRegistry: ExtensionRegistry | undefined;
 

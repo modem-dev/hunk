@@ -21,8 +21,8 @@ object and registry collection (`packages/hunk/src/extensions/runExtension.ts`):
   `packages/hunk/src/extensions/default/vcs/index.ts`; the app composition root
   (`app/vcsCatalog.ts`) loads them synchronously before config resolution, so backends exist
   without making core import the extension host. `default/ui/index.ts` is deliberately not part of
-  that list: the UI pane planner loads its bundled files and delegated review-info registrations
-  through `runExtensionFactory`.
+  that list: the UI loads its bundled files pane, delegated review-info panes, and content search
+  registrations through `runExtensionFactory`, once per process.
 
 Git, built-in file navigation, and change-request or history-commit identity use the public
 `registerVcsAdapter` and `registerPane` paths. The external [Hunk Lens](https://github.com/modem-dev/hunk-lens)
@@ -49,8 +49,10 @@ changeset transforms, panes, interactive commands, top-level CLI commands,
 lifecycle/UI events, and inter-extension bus listeners) collect into an
 `ExtensionRegistry` (`packages/hunk/src/extensions/types.ts`). Bundled VCS, bundled UI, and user
 extensions use separate registry instances and lifecycle owners. `app/vcsCatalog.ts` composes
-bundled VCS registrations directly; `ui/lib/extensionPanes.ts` reads bundled UI pane registrations;
-and `extensions/apply.ts` applies user registrations during session bootstrap and reload.
+bundled VCS registrations directly; `ui/lib/extensionPanes.ts` reads bundled UI pane registrations
+and `ui/lib/sessionRegistrations.ts` composes bundled UI commands and line highlighters ahead of
+the user registry's (so the bundled `/` search stays active under `--no-extensions`); and
+`extensions/apply.ts` applies user registrations during session bootstrap and reload.
 File-language registrations stay as
 declarative extension, filename, or glob selectors until `fileLanguageLookup.ts` resolves them;
 Hunk then pins that answer into Pierre's metadata so rendering cannot re-derive a conflicting
@@ -64,7 +66,7 @@ retiring registries by identity; it synchronously closes authority at adoption/s
 all known bounded retirements. Surfaces borrow that session and cannot retire it independently.
 A user or bundled-VCS factory that throws is rolled back to its pre-run registration counts
 (`runExtension.ts`); failures cost a warning, not the session. Bundled UI registration instead
-requires every expected pane and throws if Hunk's own invariant fails.
+requires every pane its factories declare and throws if Hunk's own invariant fails.
 
 Generic CLI commands deliberately remain separate from the interactive named-command
 table. `parseCli` resolves known built-ins first, preserving static help/version and

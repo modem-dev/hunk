@@ -14,6 +14,7 @@ import {
 } from "./appCommands";
 import { APP_COMMAND_CATALOG } from "../../core/run/commandCatalog";
 import { HISTORY_COMMAND_CATALOG } from "../../core/run/historyCommandCatalog";
+import { getBundledUIRegistry } from "../../extensions/default/ui";
 import { buildAppMenus } from "./appMenus";
 import { buildHelpSections, HELP_COMMAND_IDS } from "./helpContent";
 import { resolveCommandKeys } from "./keymap";
@@ -248,9 +249,14 @@ describe("builtinCommandKeyDefaults", () => {
       markdown.matchAll(/^\| `(hunk\.[^`]+)`\s+\|/gm),
       (match) => match[1],
     );
+    // Bundled UI commands are remappable under the same `hunk.` owner, so the
+    // documented table lists them beside the catalogs.
     const catalogIds = new Set([
       ...APP_COMMAND_CATALOG.map((command) => command.id),
       ...HISTORY_COMMAND_CATALOG.map((command) => command.id),
+      ...getBundledUIRegistry().commands.map(
+        (registered) => `${registered.extensionId}.${registered.command.id}`,
+      ),
     ]);
 
     expect(new Set(documentedIds).size).toBe(documentedIds.length);
@@ -475,9 +481,14 @@ describe("command catalog parity", () => {
     }
   });
 
-  test("menus and help only name catalogued commands", () => {
+  test("menus and help only name catalogued or bundled commands", () => {
     const { commands } = createTestCommands();
-    const catalogued = new Set(APP_COMMAND_CATALOG.map((entry) => entry.id));
+    const catalogued = new Set([
+      ...APP_COMMAND_CATALOG.map((entry) => entry.id),
+      ...getBundledUIRegistry().commands.map(
+        (registered) => `${registered.extensionId}.${registered.command.id}`,
+      ),
+    ]);
     const menus = buildAppMenus({
       commands,
       copyDecorations: false,

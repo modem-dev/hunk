@@ -62,6 +62,11 @@ const HELP_SECTIONS: readonly HelpSectionSpec[] = [
         commandIds: ["hunk.review.previousAnnotatedHunk", "hunk.review.nextAnnotatedHunk"],
         description: "annotated hunk / exact note",
       },
+      { commandIds: ["hunk.search.find"], description: "search diff content" },
+      {
+        commandIds: ["hunk.search.next", "hunk.search.previous"],
+        description: "next / previous search match",
+      },
       {
         commandIds: ["hunk.review.scrollCodeLeft", "hunk.review.scrollCodeRight"],
         description: "scroll code sideways (Shift = faster)",
