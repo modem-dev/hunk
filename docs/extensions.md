@@ -302,8 +302,9 @@ and retires the replaced instance at that explicit ownership boundary.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `26`). Branch on it if you want
-one file to support several Hunk versions. Version 26 adds the status line (`ctx.statusLine`
+The API generation this Hunk speaks (currently `27`). Branch on it if you want
+one file to support several Hunk versions. Version 27 adds `ctx.selection.files`, the visible
+files in review order; version 26 adds the status line (`ctx.statusLine`
 items and `ctx.prompts.line()` inline prompts); version 25 adds Promise-returning watch
 signatures and watch cancellation; version 24 adds review metadata to VCS patch results and
 short display revisions to commit descriptors; version 23 adds canonical unified-layout fields
@@ -1750,9 +1751,14 @@ is — or when the file has no hunks to select. `selection.currentLine` is the
 one-based `{ side, line }` source address carrying the current-line marker, or
 `null` when the marker is off or the review has not settled on a rendered line.
 It belongs to this file and hunk, uses Hunk's canonical new-side address for a
-context row, and can be passed directly to `navigation.revealLine`. The values
-are captured when the command fires: a handler that awaits still sees the
-selection it was run from, not wherever the user navigated to meanwhile.
+context row, and can be passed directly to `navigation.revealLine`.
+`selection.files` is every visible file in review order — the same frozen
+views a pane's `files` prop carries — so a command that works across the whole
+review (a content search, a bulk action) reads its corpus here instead of
+shadow-tracking `changeset_loaded`; `selection.file` is one of its entries or
+`null`. The values are captured when the command fires: a handler that awaits
+still sees the selection it was run from, not wherever the user navigated to
+meanwhile.
 
 `ctx.commands` invokes Hunk's documented semantic commands through the exact same live command
 table used by the keyboard, menus, and help:

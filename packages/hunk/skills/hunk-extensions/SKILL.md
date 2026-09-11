@@ -113,7 +113,7 @@ bad or duplicate id is skipped with a startup notice.
 | Reload after an external agent changes reviewed inputs   | `ctx.review.requestReload()` in an event     |
 | Read user-supplied settings                              | `hunk.config` (`[extension.<id>]` table)     |
 | Snapshot stable files and every saved review note        | `ctx.review.snapshot()` in a command         |
-| Branch on the API generation (currently `26`)            | `hunk.apiVersion`                            |
+| Branch on the API generation (currently `27`)            | `hunk.apiVersion`                            |
 
 Registration is only valid while the factory runs — Hunk seals the API object
 afterwards.
@@ -164,7 +164,8 @@ transform — gets `ctx.cwd` and `ctx.notify(message, type?)`. A file view's
 - **Command handlers** get `ctx.panes`, `ctx.fileViews` (select/toggle/isActive/
   refresh/enterMode/exitMode), `ctx.highlights` (refresh prepared line marks,
   whole or `{ fileId }`-scoped), `ctx.selection` (a snapshot of file, hunk index,
-  and nullable current `{ side, line }` source address), `ctx.navigation` (live,
+  nullable current `{ side, line }` source address, and `files`, the visible files
+  in review order), `ctx.navigation` (live,
   guarded `selectFile`/`selectHunk`/`revealLine`, the
   last landing one exact `(side, line)` near the viewport top), `ctx.commands`
   (`isEnabled`/`execute` for public semantic `hunk.*` commands),

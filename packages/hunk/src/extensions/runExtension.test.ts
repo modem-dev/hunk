@@ -13,8 +13,8 @@ function bundledMetadata(id: string) {
 }
 
 describe("runExtensionFactory", () => {
-  test("advertises the status line and inline prompts through extension API v26", () => {
-    expect(HUNK_EXTENSION_API_VERSION).toBe(26);
+  test("advertises the visible files on the command selection through extension API v27", () => {
+    expect(HUNK_EXTENSION_API_VERSION).toBe(27);
   });
 
   test("applies a synchronous factory before returning, with nothing to await", () => {

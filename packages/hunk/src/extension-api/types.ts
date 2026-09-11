@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 26;
+export const HUNK_EXTENSION_API_VERSION = 27;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -1743,6 +1743,13 @@ export interface ExtensionReviewSelection {
     readonly side: ExtensionFileSide;
     readonly line: number;
   } | null;
+  /**
+   * The currently visible files in review order: the same frozen views a
+   * pane's `files` prop carries, so a command can act on the whole review the
+   * user sees without shadow-tracking `changeset_loaded`. `file` is one of
+   * these entries or `null`.
+   */
+  readonly files: readonly ExtensionDiffFile[];
 }
 
 /** One stable reviewed file in an authoritative extension snapshot. */

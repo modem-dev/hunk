@@ -34,6 +34,7 @@ const selection = Object.freeze({
   file: null,
   hunkIndex: null,
   currentLine: null,
+  files: [],
 }) as ExtensionReviewSelection;
 
 /** Mount the command runner and expose its stable invocation callback. */

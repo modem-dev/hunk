@@ -35,6 +35,9 @@ export interface BuildExtensionReviewSelectionOptions {
  * into the file's real hunk range — a reload can shrink a file under a
  * selection that has not caught up yet — and is `null` for a file with no hunks
  * at all, matching the same clamp the sidebar's `selectHunk` action applies.
+ * `files` is the visible list itself, in review order, so a whole-review
+ * command searches exactly what the user can see and the selected `file` is
+ * always one of its entries.
  */
 export function buildExtensionReviewSelection({
   files,
@@ -48,7 +51,7 @@ export function buildExtensionReviewSelection({
       : files.find((candidate) => candidate.id === selectedFileId);
 
   if (!file) {
-    return Object.freeze({ file: null, hunkIndex: null, currentLine: null });
+    return Object.freeze({ file: null, hunkIndex: null, currentLine: null, files });
   }
 
   const hunkIndex = resolveHunkIndex(file, selectedHunkIndex);
@@ -56,6 +59,7 @@ export function buildExtensionReviewSelection({
     file,
     hunkIndex,
     currentLine: selectedLineCursor(file.id, hunkIndex, lineCursor),
+    files,
   });
 }
 
