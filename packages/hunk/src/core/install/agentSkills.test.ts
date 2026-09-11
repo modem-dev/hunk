@@ -5,12 +5,14 @@ import {
   AGENT_SKILL_HOST_IDS,
   AGENT_SKILL_HOSTS,
   AGENT_SKILL_STUB_MARKER,
+  isHunkGeneratedSkill,
   parseSkillFrontmatter,
   planAgentSkillTargets,
   renderAgentSkillStub,
   resolveAgentSkillHost,
   runAgentSkillInstallCommand,
   type AgentSkillInstallInput,
+  type PathKind,
 } from "./agentSkills";
 
 const HOME = join("/", "home", "reviewer");
@@ -28,7 +30,11 @@ const REVIEW_SKILL = [
 /** Run one install against an in-memory tree, returning output and every file written. */
 async function runInstall(
   input: Partial<AgentSkillInstallInput>,
-  options: { existing?: Record<string, string>; env?: NodeJS.ProcessEnv } = {},
+  options: {
+    existing?: Record<string, string>;
+    env?: NodeJS.ProcessEnv;
+    pathKinds?: Record<string, PathKind>;
+  } = {},
 ) {
   const stdout: string[] = [];
   const files = new Map(Object.entries(options.existing ?? {}));
@@ -44,6 +50,7 @@ async function runInstall(
         cwd: CWD,
         readBundledSkill: () => REVIEW_SKILL,
         readFile: (path) => files.get(path),
+        inspectPath: (path) => options.pathKinds?.[path] ?? (files.has(path) ? "file" : "missing"),
         writeFile: (path, text) => {
           files.set(path, text);
           written.push(path);
@@ -144,6 +151,17 @@ describe("pointer skill rendering", () => {
     expect(stub).not.toContain("Full instructions that must never be copied");
   });
 
+  test("recognizes only the exact generated shape as Hunk's own file", () => {
+    const stub = renderAgentSkillStub(parseSkillFrontmatter(REVIEW_SKILL));
+    expect(isHunkGeneratedSkill(stub)).toBe(true);
+    expect(isHunkGeneratedSkill(stub.replaceAll("\n", "\r\n"))).toBe(true);
+    // A hand-written skill that quotes the marker in its body is not Hunk's to overwrite.
+    expect(
+      isHunkGeneratedSkill(`---\nname: mine\n---\n\n# Mine\n\nSee ${AGENT_SKILL_STUB_MARKER}`),
+    ).toBe(false);
+    expect(isHunkGeneratedSkill(`${AGENT_SKILL_STUB_MARKER}\n# no frontmatter`)).toBe(false);
+  });
+
   test("parses the real bundled skills so the pointer never ships blank triggers", () => {
     for (const name of ["hunk-review", "hunk-extensions"] as const) {
       const frontmatter = parseSkillFrontmatter(readBundledSkillDocument(name));
@@ -176,7 +194,11 @@ describe("runAgentSkillInstallCommand", () => {
     const path = join(HOME, ".claude", "skills", "hunk-review", "SKILL.md");
     const { exitCode, written } = await runInstall(
       {},
-      { existing: { [path]: `---\nname: hunk-review\n---\n${AGENT_SKILL_STUB_MARKER}\nold body` } },
+      {
+        existing: {
+          [path]: `---\nname: hunk-review\n---\n\n${AGENT_SKILL_STUB_MARKER}\n\nold body`,
+        },
+      },
     );
 
     expect(exitCode).toBe(0);
@@ -196,6 +218,40 @@ describe("runAgentSkillInstallCommand", () => {
     const forced = await runInstall({ agents: ["claude", "cursor"], force: true }, { existing });
     expect(forced.exitCode).toBe(0);
     expect(forced.written).toEqual([claudePath, cursorPath]);
+  });
+
+  test("refuses project installs that would follow a symlink inside the checkout", async () => {
+    const skillsDir = join(CWD, ".claude", "skills");
+    const linked = await runInstall(
+      { scope: "project" },
+      { pathKinds: { [join(CWD, ".claude")]: "directory", [skillsDir]: "symlink" } },
+    );
+    expect(String(linked.error)).toContain(`${skillsDir} is a symlink`);
+    expect(linked.written).toEqual([]);
+
+    const linkedFile = join(skillsDir, "hunk-review", "SKILL.md");
+    const linkedLeaf = await runInstall(
+      { scope: "project" },
+      {
+        pathKinds: {
+          [join(CWD, ".claude")]: "directory",
+          [skillsDir]: "directory",
+          [join(skillsDir, "hunk-review")]: "directory",
+          [linkedFile]: "symlink",
+        },
+      },
+    );
+    expect(String(linkedLeaf.error)).toContain(`${linkedFile} is a symlink`);
+    expect(linkedLeaf.written).toEqual([]);
+
+    // Real directories all the way down install normally, and a user-scoped install never walks.
+    const plain = await runInstall(
+      { scope: "project" },
+      { pathKinds: { [join(CWD, ".claude")]: "directory", [skillsDir]: "directory" } },
+    );
+    expect(plain.written).toEqual([linkedFile]);
+    const user = await runInstall({}, { pathKinds: { [join(HOME, ".claude")]: "symlink" } });
+    expect(user.written).toEqual([join(HOME, ".claude", "skills", "hunk-review", "SKILL.md")]);
   });
 
   test("rejects unknown agents by name", async () => {
