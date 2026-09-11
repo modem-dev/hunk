@@ -164,7 +164,36 @@ export function createExtensionLoadNotices(issues: readonly ExtensionLoadIssue[]
 }
 
 /**
- * Combine config-sourced notices with extension load failures.
+ * User extensions whose feature Hunk now bundles, keyed by the id they load under.
+ *
+ * A stale install keeps loading and keeps its keys where they do not collide (bundled commands
+ * win a chord conflict), so the only cost is a duplicate; the notice points at the removal.
+ */
+const SUPERSEDED_EXTENSIONS: ReadonlyMap<string, string> = new Map([
+  ["hunk-less-search", "`/` content search is built in"],
+]);
+
+/** Notice once per superseded extension that is still installed and loaded. */
+export function createSupersededExtensionNotices(
+  extensionResult: Pick<ExtensionLoadResult, "registry">,
+): StartupNotice[] {
+  const notices: StartupNotice[] = [];
+  for (const metadata of extensionResult.registry.extensions) {
+    const reason = SUPERSEDED_EXTENSIONS.get(metadata.id);
+    if (reason === undefined || metadata.origin === "bundled") {
+      continue;
+    }
+
+    notices.push({
+      key: `extension-superseded:${metadata.id}`,
+      message: `${reason} • hunk extension remove ${metadata.id}`,
+    });
+  }
+  return notices;
+}
+
+/**
+ * Combine config-sourced notices with extension load failures and superseded installs.
  *
  * Returns the original array identity when there is nothing to add, so
  * unchanged reloads do not restart the notice queue.
@@ -173,7 +202,10 @@ export function mergeStartupNotices(
   notices: readonly StartupNotice[] | undefined,
   extensionResult: ExtensionLoadResult,
 ): readonly StartupNotice[] | undefined {
-  const extensionNotices = createExtensionLoadNotices(extensionResult.issues);
+  const extensionNotices = [
+    ...createExtensionLoadNotices(extensionResult.issues),
+    ...createSupersededExtensionNotices(extensionResult),
+  ];
   if (extensionNotices.length === 0) {
     return notices;
   }
