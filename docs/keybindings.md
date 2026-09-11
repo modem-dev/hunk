@@ -62,7 +62,7 @@ extend a contiguous commit selection with those same keys. `Shift+Up`/`Shift+Dow
 directly, and `Escape` collapses the selection. `PageUp`/`PageDown`, `b`/`f`, or `Shift+Space`/`Space` page
 through history; `u`/`d` or `Ctrl-U`/`Ctrl-D` move by half a page; `g`/`G` or `Home`/`End` jump,
 `/` to search, `n`/`N` for matches, `t` to choose a theme, `r` to refresh, `y` to copy the focused commit's full id,
-`Enter` to open the selection in normal Hunk review, and `q` or `Ctrl-C` to quit. With a mouse, Shift-click a row to extend the
+`Y` to copy a GitHub pull request URL when history can derive one, `Enter` to open the selection in normal Hunk review, and `q` or `Ctrl-C` to quit. With a mouse, Shift-click a row to extend the
 selection when the terminal forwards modifiers, click a commit id to open it immediately, click the adjacent copy
 icon to copy its full immutable id, click elsewhere on a row to select it, or double-click a row to open it.
 Range selection is unavailable with `--all` or author, message, date, and path filters because those traversals
@@ -76,6 +76,7 @@ History-specific commands:
 | ----------------------------------- | ---------------------------- | ---------------------------- |
 | `hunk.history.openSelection`        | Open the selected commit(s)  | `enter`                      |
 | `hunk.history.copyRevision`         | Copy the focused commit id   | `y`                          |
+| `hunk.history.copyPullRequest`      | Copy the pull request URL    | `Y`                          |
 | `hunk.history.refresh`              | Refresh repository history   | `r`                          |
 | `hunk.history.previousCommit`       | Move to the previous commit  | `up`, `k`                    |
 | `hunk.history.nextCommit`           | Move to the next commit      | `down`, `j`                  |
