@@ -122,6 +122,19 @@ describe("layoutStatusLine", () => {
     ]);
   });
 
+  test("overflow drops by priority across both alignments", () => {
+    const result = layout({
+      items: [
+        item("left", "left status", { priority: 1 }),
+        item("hint", "a long right-aligned hint", { alignment: "right", priority: 0 }),
+      ],
+      width: 2 + 11 + 2 + 5,
+    });
+
+    expect(placedText(result.left)).toEqual(["left status"]);
+    expect(result.right).toEqual([]);
+  });
+
   test("the badge is never dropped and is capped at half the row", () => {
     const result = layout({
       items: [item("a", "status text")],

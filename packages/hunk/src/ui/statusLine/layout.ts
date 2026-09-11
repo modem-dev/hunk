@@ -93,19 +93,35 @@ function itemsWidth(items: readonly PlacedStatusItem[]) {
   return items.reduce((sum, item) => sum + item.width, 0) + ITEM_GAP * (items.length - 1);
 }
 
+interface ItemCandidate {
+  item: PlacedStatusItem;
+  right: boolean;
+  priority: number;
+  order: number;
+}
+
+/** Width the left and right runs occupy together, including the gap that separates them. */
+function candidatesWidth(candidates: readonly ItemCandidate[]) {
+  const left = candidates.filter((entry) => !entry.right).map((entry) => entry.item);
+  const right = candidates.filter((entry) => entry.right).map((entry) => entry.item);
+  const gap = left.length > 0 && right.length > 0 ? ITEM_GAP : 0;
+  return itemsWidth(left) + gap + itemsWidth(right);
+}
+
 /**
  * Drop and truncate items until they fit `available` cells.
  *
- * Candidates keep their display order; the drop order is ascending priority, newest first among
- * equal priorities, so the item a consumer set most recently is the first casualty of its tier.
+ * Candidates keep their display order; the drop order is ascending priority across both
+ * alignments, newest first among equal priorities, so the item a consumer set most recently is
+ * the first casualty of its tier. The last survivor is truncated unless `truncate` is off.
  */
 function fitItems(
-  candidates: readonly { item: PlacedStatusItem; priority: number; order: number }[],
+  candidates: readonly ItemCandidate[],
   available: number,
   options: { truncate: boolean } = { truncate: true },
-) {
+): { left: PlacedStatusItem[]; right: PlacedStatusItem[] } {
   let surviving = [...candidates];
-  while (surviving.length > 1 && itemsWidth(surviving.map((entry) => entry.item)) > available) {
+  while (surviving.length > 1 && candidatesWidth(surviving) > available) {
     let victim = 0;
     for (let index = 1; index < surviving.length; index += 1) {
       const candidate = surviving[index]!;
@@ -119,12 +135,14 @@ function fitItems(
     }
     surviving = surviving.filter((_, index) => index !== victim);
   }
-  const placed = surviving.map((entry) => entry.item);
-  if (placed.length === 1 && placed[0]!.width > available) {
-    const truncated = options.truncate ? truncateItem(placed[0]!, available) : null;
-    return truncated ? [truncated] : [];
+  if (surviving.length === 1 && surviving[0]!.item.width > available) {
+    const truncated = options.truncate ? truncateItem(surviving[0]!.item, available) : null;
+    surviving = truncated ? [{ ...surviving[0]!, item: truncated }] : [];
   }
-  return placed;
+  return {
+    left: surviving.filter((entry) => !entry.right).map((entry) => entry.item),
+    right: surviving.filter((entry) => entry.right).map((entry) => entry.item),
+  };
 }
 
 /** Fit every status contribution into one row of `width` cells. */
@@ -144,13 +162,16 @@ export function layoutStatusLine(input: StatusLineLayoutInput): StatusLineLayout
       : null;
   let available = rowWidth - (badge ? badge.width + BADGE_GAP : 0);
 
-  const leftCandidates: { item: PlacedStatusItem; priority: number; order: number }[] = [];
-  const rightCandidates: { item: PlacedStatusItem; priority: number; order: number }[] = [];
+  const candidates: ItemCandidate[] = [];
   input.items.forEach((item, order) => {
     const placed = placeItem(item);
     if (!placed) return;
-    const entry = { item: placed, priority: item.priority ?? 0, order };
-    (item.alignment === "right" ? rightCandidates : leftCandidates).push(entry);
+    candidates.push({
+      item: placed,
+      right: item.alignment === "right",
+      priority: item.priority ?? 0,
+      order,
+    });
   });
 
   if (input.prompt) {
@@ -165,15 +186,18 @@ export function layoutStatusLine(input: StatusLineLayoutInput): StatusLineLayout
     // clipped status fragment beside a prompt reads as noise rather than information.
     const rightBudget = available - leadWidth - MIN_PROMPT_INPUT_WIDTH - ITEM_GAP;
     const right =
-      rightBudget > 0 ? fitItems(rightCandidates, rightBudget, { truncate: false }) : [];
+      rightBudget > 0
+        ? fitItems(
+            candidates.filter((entry) => entry.right),
+            rightBudget,
+            { truncate: false },
+          ).right
+        : [];
     const rightWidth = right.length > 0 ? itemsWidth(right) + ITEM_GAP : 0;
     const inputWidth = Math.max(MIN_PROMPT_INPUT_WIDTH, available - leadWidth - rightWidth);
     return { left: [], prompt: { prefix, attribution, inputWidth }, right, badge };
   }
 
-  // Right items are persistent status; they are fitted first and the left region takes the rest.
-  const right = fitItems(rightCandidates, available);
-  if (right.length > 0) available -= itemsWidth(right) + ITEM_GAP;
-  const left = available > 0 ? fitItems(leftCandidates, available) : [];
+  const { left, right } = fitItems(candidates, available);
   return { left, prompt: null, right, badge };
 }
