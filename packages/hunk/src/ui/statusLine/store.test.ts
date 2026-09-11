@@ -104,12 +104,12 @@ describe("status line store prompts", () => {
           throw new Error("boom");
         },
       },
-      { warn: (message) => warnings.push(message) },
+      { onChangeFailed: (detail) => warnings.push(detail) },
     );
     store.updatePromptValue(1, "a");
     store.updatePromptValue(1, "ab");
 
-    expect(warnings).toEqual(["Prompt onChange failed • boom"]);
+    expect(warnings).toEqual(["boom"]);
     expect(store.getSnapshot().prompt?.value).toBe("ab");
   });
 

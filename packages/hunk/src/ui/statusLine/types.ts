@@ -4,32 +4,23 @@
  *
  * Items are declarative text in symbolic colors so the host can measure and truncate them without
  * a theme and paint them with the active one. The prompt is a real focused input the host draws;
- * consumers only describe it and await its answer.
+ * consumers only describe it and await its answer. The public shapes live in
+ * `extension-api/types.ts`; host code consumes them through these aliases.
  */
-import type { ExtensionFileViewSpan } from "../../extension-api/types";
+import type {
+  ExtensionPromptLineOptions,
+  ExtensionStatusItem,
+  ExtensionStatusSpan,
+} from "../../extension-api/types";
 
 /** One symbolic run of status text; the same span vocabulary file views use. */
-export type StatusSpan = ExtensionFileViewSpan;
+export type StatusSpan = ExtensionStatusSpan;
 
 /** One persistent status contribution, keyed by a globally unique id. */
-export interface StatusItem {
-  readonly id: string;
-  readonly spans: readonly StatusSpan[];
-  /** Defaults to "left". Right items sit beside the host badge. */
-  readonly alignment?: "left" | "right";
-  /** Higher survives longer when the row overflows. Defaults to 0. */
-  readonly priority?: number;
-}
+export type StatusItem = ExtensionStatusItem;
 
-/** What a consumer asks of the inline prompt. */
-export interface StatusPromptOptions {
-  /** Painted before the input and not part of the value, e.g. `/` or `filter:`. */
-  prefix?: string;
-  placeholder?: string;
-  initial?: string;
-  /** Called on every edit, for consumers that react while the user types. */
-  onChange?(value: string): void;
-}
+/** What a consumer asks of the inline prompt; host and extensions share the shape. */
+export type StatusPromptOptions = ExtensionPromptLineOptions;
 
 /** One prompt the host should draw, normalized from what a consumer asked for. */
 export interface StatusPromptRequest {

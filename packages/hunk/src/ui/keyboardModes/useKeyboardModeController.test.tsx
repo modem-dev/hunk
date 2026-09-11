@@ -60,6 +60,7 @@ async function renderController(initial: HarnessState) {
     controller = useKeyboardModeController({
       commands,
       createHighlightControls: () => ({ refresh: () => {} }),
+      createStatusLineControls: () => ({ set: () => {}, clear: () => {} }),
       cwd: "/repo",
       modes: state.modes,
       notify: (message) => notices.push(message),

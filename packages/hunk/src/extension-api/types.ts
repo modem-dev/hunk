@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 25;
+export const HUNK_EXTENSION_API_VERSION = 26;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -257,6 +257,8 @@ export interface ExtensionKeyboardModeContext extends ExtensionContext {
   readonly commands: ExtensionCommandControls;
   /** Invalidate prepared line highlights, e.g. after a prompt submit changes them. */
   readonly highlights: ExtensionLineHighlightControls;
+  /** This extension's items on the status line, e.g. a mode's live buffer or count. */
+  readonly statusLine: ExtensionStatusLineControls;
   /**
    * Controls scoped to this extension and activation.
    *
@@ -1914,6 +1916,71 @@ export interface ExtensionDialogs {
   input(options: ExtensionInputOptions): Promise<string | null>;
 }
 
+/* -------------------------------------------------------------------------- */
+/* Status line                                                                 */
+/* -------------------------------------------------------------------------- */
+
+/** One symbolic run in a host-painted status item. */
+export type ExtensionStatusSpan = ExtensionFileViewSpan;
+
+/**
+ * One persistent, text-only contribution to the bottom status row.
+ *
+ * Items are declarative: the host measures them without a theme, paints them with the active
+ * one, and decides what survives a narrow terminal. Setting an item keeps the row on screen,
+ * exactly like a non-empty file filter does, so clear items that should not cost a row while
+ * idle.
+ */
+export interface ExtensionStatusItem {
+  /** Identifies the item within its extension; `<extensionId>:<id>` globally. */
+  id: string;
+  spans: readonly ExtensionStatusSpan[];
+  /** Defaults to "left". Right items sit beside the host's keyboard-mode badge. */
+  alignment?: "left" | "right";
+  /** Higher survives longer when the row overflows. Defaults to 0. */
+  priority?: number;
+}
+
+/**
+ * Write to, or clear, this extension's items on the status line.
+ *
+ * Items persist across ordinary content reloads and clear when the extension registry is
+ * replaced or the review unmounts. A malformed item — a blank `id`, a non-array `spans`, a
+ * span without string `text` — is a programming error and throws, like malformed dialog
+ * options.
+ */
+export interface ExtensionStatusLineControls {
+  /** Set or replace one item. Empty `spans` hides it without forgetting its slot. */
+  set(item: ExtensionStatusItem): void;
+  clear(id: string): void;
+}
+
+export interface ExtensionPromptLineOptions {
+  /** Painted before the input, e.g. "/" or "filter:". Not part of the value. */
+  prefix?: string;
+  placeholder?: string;
+  initial?: string;
+  /** Called on every edit, for consumers that react while the user types. */
+  onChange?(value: string): void;
+}
+
+/**
+ * Ask the user for one line of text inline on the status row.
+ *
+ * The prompt is a real focused input drawn by Hunk with a cursor: Enter resolves the text,
+ * Escape clears a non-empty buffer first and cancels with `null` second. It sits with the
+ * file filter in key routing — after dialogs and menus, before session keyboard modes and the
+ * command table — so a prompt-shaped interaction needs no keyboard mode. One prompt is open
+ * at a time; a second request queues behind the first. A session reload cancels open and
+ * queued prompts, and a request during teardown resolves `null` immediately. Prompts from
+ * installed extensions carry the same `ext` marker toasts and dialogs use. A throwing
+ * `onChange` is reported once and the prompt continues.
+ */
+export interface ExtensionPromptControls {
+  /** Resolves the submitted text, or null on Escape / reload / teardown. */
+  line(options: ExtensionPromptLineOptions): Promise<string | null>;
+}
+
 /** One whole-document replacement an extension asks the host to write. */
 export interface ExtensionWorkspaceWriteRequest {
   /** The reviewed file to write, by its `ExtensionDiffFile.id`. */
@@ -2096,6 +2163,15 @@ export interface ExtensionCommandContext extends ExtensionContext {
    * between. A reload expires retained controls and returns cancel values.
    */
   readonly dialogs: ExtensionDialogs;
+  /** This extension's persistent items on the status line. */
+  readonly statusLine: ExtensionStatusLineControls;
+  /**
+   * Ask for one line of text inline on the status row and await it.
+   *
+   * Scoped like `dialogs`: valid while this review generation remains current, cancelled by
+   * a reload.
+   */
+  readonly prompts: ExtensionPromptControls;
   /**
    * Read reviewed files, and write them back to the working tree with the
    * user's consent.
@@ -2141,6 +2217,8 @@ export interface ExtensionEventContext extends ExtensionContext {
   readonly navigation: ExtensionReviewNavigation;
   /** Ask attributed, FIFO-queued questions from lifecycle and bus handlers. */
   readonly dialogs: ExtensionDialogs;
+  /** This extension's persistent items on the status line, e.g. a count kept on `file_viewed`. */
+  readonly statusLine: ExtensionStatusLineControls;
   /** Request a host-owned reload after an external service changes the reviewed inputs. */
   readonly review: ExtensionReviewReloadControls;
   events: Pick<ExtensionEventBus, "emit">;

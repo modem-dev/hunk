@@ -120,6 +120,11 @@ import { openSelectedFileInEditor } from "./lib/openInEditor";
 import { resolveResponsiveLayout } from "./lib/responsive";
 import type { WorkspaceRefreshRequest } from "./currentReviewRefresh";
 import { ThemeController } from "./theme/controller";
+import {
+  createExtensionPromptControls,
+  createExtensionStatusLineControls,
+  isExtensionStatusItemId,
+} from "./statusLine/extensionControls";
 import { StatusLine, statusLineHasContent } from "./statusLine/StatusLine";
 import type { StatusItem, StatusLineSnapshot } from "./statusLine/types";
 import { useStatusLine } from "./statusLine/useStatusLine";
@@ -463,6 +468,8 @@ export function App({
   } = useKeyboardModeController({
     commands: extensionCommandControls,
     createHighlightControls: createLineHighlightControls,
+    createStatusLineControls: (extensionId) =>
+      createExtensionStatusLineControls(statusLineStore, extensionId),
     cwd: extensions?.context.cwd ?? process.cwd(),
     modes: sessionKeyboardModes,
     notify: notifyExtensionMode,
@@ -592,20 +599,56 @@ export function App({
     updateInput: setExtensionDialogInputValue,
   } = useExtensionDialogController({ reviewGeneration: bootstrap });
 
+  /** Report whether an extension id names Hunk's own bundled tier, which needs no attribution. */
+  const isBundledExtension = useCallback(
+    (extensionId: string) =>
+      Boolean(
+        extensions?.registry.extensions.some(
+          (metadata) => metadata.id === extensionId && metadata.origin === "bundled",
+        ),
+      ),
+    [extensions],
+  );
+
   /** Keep third-party dialog attribution while presenting bundled extensions as native Hunk UI. */
   const createExtensionDialogs = useCallback(
     (extensionId: string) => {
       const lease = createReviewCapabilityLease();
-      const bundled = extensions?.registry.extensions.some(
-        (metadata) => metadata.id === extensionId && metadata.origin === "bundled",
-      );
       return createQueuedExtensionDialogs(extensionId, {
         isLive: lease.isLive,
-        showAttribution: !bundled,
+        showAttribution: !isBundledExtension(extensionId),
       });
     },
-    [createQueuedExtensionDialogs, createReviewCapabilityLease, extensions],
+    [createQueuedExtensionDialogs, createReviewCapabilityLease, isBundledExtension],
   );
+
+  /** Status-line items scoped to one extension while this review generation holds authority. */
+  const createExtensionStatusLine = useCallback(
+    (extensionId: string) => {
+      const lease = createReviewCapabilityLease();
+      return createExtensionStatusLineControls(statusLineStore, extensionId, lease.isLive);
+    },
+    [createReviewCapabilityLease, statusLineStore],
+  );
+
+  /** Inline prompts scoped and attributed exactly like dialogs. */
+  const createExtensionPrompts = useCallback(
+    (extensionId: string) => {
+      const lease = createReviewCapabilityLease();
+      return createExtensionPromptControls(statusLineStore, extensionId, {
+        isLive: lease.isLive,
+        showAttribution: !isBundledExtension(extensionId),
+        warn: (message) => extensions?.context.notify(message, "warning"),
+      });
+    },
+    [createReviewCapabilityLease, extensions, isBundledExtension, statusLineStore],
+  );
+
+  // Extension items belong to the registry that set them: a replacement (extension reload,
+  // trust grant) clears them, while ordinary content reloads keep the same registry and items.
+  useLayoutEffect(() => {
+    return () => statusLineStore.clearItems(isExtensionStatusItemId);
+  }, [extensions?.registry, statusLineStore]);
 
   const extensionWorkspaceController = useExtensionWorkspaceControls({
     createExtensionDialogs,
@@ -631,6 +674,7 @@ export function App({
     createNavigation: createExtensionNavigation,
     createPaneControls,
     createReviewReloadControls: createEventReviewReloadControls,
+    createStatusLineControls: createExtensionStatusLine,
     extensions,
   });
 
@@ -642,7 +686,9 @@ export function App({
     createLineHighlightControls,
     createNavigation: createExtensionNavigation,
     createPaneControls,
+    createPromptControls: createExtensionPrompts,
     createReviewControls: createExtensionReviewControls,
+    createStatusLineControls: createExtensionStatusLine,
     createWorkspaceControls: extensionWorkspaceController.createWorkspaceControls,
     extensions,
     getSelection: getExtensionSelection,

@@ -9,7 +9,9 @@ import type {
   ExtensionKeyboardModeControls,
   ExtensionLineHighlightControls,
   ExtensionPaneControls,
+  ExtensionPromptControls,
   ExtensionReviewControls,
+  ExtensionStatusLineControls,
   ExtensionReviewNavigation,
   ExtensionReviewSelection,
   ExtensionWorkspace,
@@ -26,6 +28,8 @@ const navigation = {} as ExtensionReviewNavigation;
 const panes = {} as ExtensionPaneControls;
 const review = {} as ExtensionReviewControls;
 const workspace = {} as ExtensionWorkspace;
+const statusLine = {} as ExtensionStatusLineControls;
+const prompts = {} as ExtensionPromptControls;
 const selection = Object.freeze({
   file: null,
   hunkIndex: null,
@@ -51,7 +55,9 @@ async function renderRunner({
       createLineHighlightControls: () => highlights,
       createNavigation: () => navigation,
       createPaneControls: createPanes,
+      createPromptControls: () => prompts,
       createReviewControls: () => review,
+      createStatusLineControls: () => statusLine,
       createWorkspaceControls: () => workspace,
       extensions,
       getSelection: () => selection,

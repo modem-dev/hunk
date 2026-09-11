@@ -222,6 +222,7 @@ describe("extension event dispatch", () => {
           select: async () => null,
           input: async () => null,
         },
+        statusLine: { set: () => {}, clear: () => {} },
         review: { requestReload: async () => ({ ok: true }) },
         events: { emit: () => {} },
       };

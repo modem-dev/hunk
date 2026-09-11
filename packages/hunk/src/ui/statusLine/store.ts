@@ -26,8 +26,8 @@ export interface StatusPromptRequestOptions {
   isLive?: () => boolean;
   /** Third-party marker painted before the prefix; omitted for host and bundled prompts. */
   attribution?: string | null;
-  /** Where a failing `onChange` is reported, once per prompt. */
-  warn?: (message: string) => void;
+  /** Receives the failure detail of a throwing `onChange`, once per prompt. */
+  onChangeFailed?: (detail: string) => void;
 }
 
 export interface StatusLineStore {
@@ -71,7 +71,7 @@ interface PendingPrompt {
   settle: (value: string | null) => void;
   isLive: () => boolean;
   onChange?: (value: string) => void;
-  warn?: (message: string) => void;
+  onChangeFailed?: (detail: string) => void;
   /** Whether a failing `onChange` has already been reported for this prompt. */
   warned: boolean;
 }
@@ -155,7 +155,7 @@ export function createStatusLineStore(): StatusLineStore {
           settle: resolve,
           isLive,
           onChange: typeof options.onChange === "function" ? options.onChange : undefined,
-          warn: requestOptions.warn,
+          onChangeFailed: requestOptions.onChangeFailed,
           warned: false,
         });
         // Queueing behind an open prompt does not change what is on screen.
@@ -177,8 +177,9 @@ export function createStatusLineStore(): StatusLineStore {
       } catch (error) {
         if (active.warned) return;
         active.warned = true;
-        const detail = error instanceof Error ? error.message || error.name : String(error);
-        active.warn?.(`Prompt onChange failed • ${detail}`);
+        active.onChangeFailed?.(
+          error instanceof Error ? error.message || error.name : String(error),
+        );
       }
     },
     submitPrompt(id) {
