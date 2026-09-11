@@ -1163,29 +1163,46 @@ The bottom status row — where Hunk shows the file filter, notices, and the
 keyboard-mode badge — is a host-owned surface extensions write to through two
 small capabilities: persistent **items** and one inline **prompt**.
 
+This example counts literal, non-overlapping matches in the selected file's
+patch text (including patch headers), not its whole source document. The right
+item counts `file_viewed` events, including revisits and reloads, rather than
+unique files.
+
 ```ts
-hunk.registerCommand({ id: "find", title: "Search diff content", key: "ctrl+f" }, async (ctx) => {
-  const query = await ctx.prompts.line({ prefix: "/", placeholder: "pattern" });
-  if (query === null) return;
+import type { ExtensionDiffFile, HunkExtensionAPI } from "hunkdiff/extension";
 
-  const hits = countMatches(query, ctx.selection.file);
-  ctx.statusLine.set({
-    id: "status",
-    spans: [
-      { text: `[${hits}] `, tone: "accent" },
-      { text: query, tone: "muted" },
-    ],
-  });
-});
+/** Count literal, non-overlapping occurrences in the selected patch. */
+function countMatches(query: string, file: ExtensionDiffFile | null): number {
+  if (!query || !file) return 0;
+  return file.patch.split(query).length - 1;
+}
 
-hunk.on("file_viewed", (_payload, ctx) => {
-  viewed += 1;
-  ctx.statusLine.set({
-    id: "viewed",
-    spans: [{ text: `${viewed} viewed` }],
-    alignment: "right",
+export default function (hunk: HunkExtensionAPI) {
+  let viewed = 0;
+
+  hunk.registerCommand({ id: "find", title: "Search diff content", key: "ctrl+f" }, async (ctx) => {
+    const query = await ctx.prompts.line({ prefix: "/", placeholder: "literal text" });
+    if (query === null) return;
+
+    const hits = countMatches(query, ctx.selection.file);
+    ctx.statusLine.set({
+      id: "status",
+      spans: [
+        { text: `[${hits}] `, tone: "accent" },
+        { text: query, tone: "muted" },
+      ],
+    });
   });
-});
+
+  hunk.on("file_viewed", (_payload, ctx) => {
+    viewed += 1;
+    ctx.statusLine.set({
+      id: "viewed",
+      spans: [{ text: `${viewed} viewed` }],
+      alignment: "right",
+    });
+  });
+}
 ```
 
 **Items** are declarative text, not components. `ctx.statusLine.set(item)`
