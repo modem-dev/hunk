@@ -159,6 +159,8 @@ export class SessionBrokerClient {
   private credentials: HunkSessionBrokerCredentials | null = null;
   private waitingForIncumbentExit = false;
   private incumbentLaunchFingerprint: string | null = null;
+  /** Whether the current incumbent has given a definitive answer about its build. */
+  private incumbentBuildKnown = false;
   private connectionState: HunkDaemonConnectionState = { status: "connected" };
   private readonly noticeListeners = new Set<(notice: string | null) => void>();
   private readonly lifecycleClock: SessionBrokerLifecycleClock;
@@ -255,11 +257,14 @@ export class SessionBrokerClient {
     void probe(config).then(
       (result) => {
         if (!isCurrent() || !this.waitingForIncumbentExit) return;
+        // "Unavailable" is the one answer worth asking again for: it means the probe itself did
+        // not land. A daemon that refuses the admin scope has answered definitively.
+        this.incumbentBuildKnown = result.kind !== "unavailable";
         const { direction, notice } = daemonSkewNotice(result);
         this.setConnectionState({ status: "disconnected", notice, direction });
       },
       () => {
-        // The generic notice already stands; a failed probe adds nothing.
+        // The generic notice already stands; retry against this incumbent on the next refusal.
       },
     );
   }
@@ -428,11 +433,17 @@ export class SessionBrokerClient {
           this.waitingForIncumbentExit = true;
           this.incumbentLaunchFingerprint = fingerprint;
           if (!sameIncumbent) {
+            this.incumbentBuildKnown = false;
             this.setConnectionState({
               status: "disconnected",
               notice: HUNK_DAEMON_UPGRADE_WAIT_MESSAGE,
               direction: "unknown",
             });
+            this.refineRefusalNotice(config, () => isConnectionCurrent(brokerGeneration));
+          } else if (!this.incumbentBuildKnown) {
+            // A probe that never landed would otherwise leave this window on the generic notice
+            // for the incumbent's whole life — including when the daemon is the newer build and
+            // closing older windows cannot help. Retry without disturbing the notice on screen.
             this.refineRefusalNotice(config, () => isConnectionCurrent(brokerGeneration));
           }
         } else if (isRegistrationRejection(event)) {
@@ -450,6 +461,7 @@ export class SessionBrokerClient {
         if (!isConnectionCurrent(brokerGeneration)) return;
         this.waitingForIncumbentExit = false;
         this.incumbentLaunchFingerprint = null;
+        this.incumbentBuildKnown = false;
         this.lastConnectionWarning = null;
         this.setConnectionState({ status: "connected" });
       },

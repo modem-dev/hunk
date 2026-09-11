@@ -203,12 +203,14 @@ describe("PTY daemon version skew", () => {
     const session = await launchWindow(fixture, port, configHome);
 
     await harness.waitForSnapshot(session, (text) => text.includes("value = 2"), 30_000);
+    // Wait on text only the refined, direction-aware notice carries; the generic wait notice
+    // also names the restart command.
     const refused = await harness.waitForSnapshot(
       session,
-      (text) => text.includes("Run `hunk daemon restart`."),
+      (text) => text.includes("Not connected to the session daemon"),
       30_000,
     );
-    expect(refused).toContain("Not connected to the session daemon");
+    expect(refused).toContain("Run `hunk daemon restart`.");
     expect(refused).toContain(`revision ${HUNK_SESSION_DAEMON_VERSION - 1}`);
     expect(refused).toContain(`this window`);
 
