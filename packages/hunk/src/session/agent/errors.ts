@@ -6,6 +6,7 @@
  * throws. Throw sites import these builders instead of repeating string literals.
  */
 
+import { HunkUserError } from "../../core/run/errors";
 import type { AgentCommandConstraint } from "./surface";
 
 /** Format flag choices as a human list: `--a, --b, or --c` for three, `--a or --b` for two. */
@@ -55,6 +56,91 @@ export function noDiffFileMatchesMessage(filePath: string) {
  */
 export function reviewResourceUnavailableMessage(filePath: string) {
   return `Could not read the raw diff for ${filePath} from the live session.`;
+}
+
+/** One build as the mismatch error describes it: the hello revision and the package version. */
+export interface DaemonBuildMismatchBuild {
+  daemonVersion: number;
+  appVersion: string;
+}
+
+/** One attached window as reported by the daemon's admin scope. */
+export interface DaemonBuildMismatchSession {
+  sessionId: string;
+  title: string;
+  cwd: string;
+  pid: number;
+}
+
+/**
+ * Structured facts behind `daemon-build-mismatch`, returned verbatim under `--json` so an agent
+ * can decide (and ask) before restarting anything.
+ */
+export interface DaemonBuildMismatchDetails {
+  kind: "daemon-build-mismatch";
+  /** The running daemon's build, or null when it predates the admin scope and cannot say. */
+  daemon: DaemonBuildMismatchBuild | null;
+  cli: DaemonBuildMismatchBuild;
+  /** Attached windows when the admin scope answered; null when the daemon could not report them. */
+  attachedSessions: { count: number; sessions: DaemonBuildMismatchSession[] } | null;
+  /** What the daemon launch metadata says when the daemon itself could not be asked. */
+  launch?: { pid: number; command: string; launchedAt: string };
+  recommendedAction: "restart-daemon" | "use-newer-hunk";
+}
+
+/** Prefix shared by every mismatch message so the skill can quote one line for both directions. */
+export const DAEMON_BUILD_MISMATCH_PREFIX = "The Hunk session daemon is from";
+
+/** Describe one build for a message, disambiguating equal package versions by revision. */
+function describeMismatchBuild(build: DaemonBuildMismatchBuild, other: DaemonBuildMismatchBuild) {
+  return build.appVersion === other.appVersion
+    ? `${build.appVersion} (revision ${build.daemonVersion})`
+    : build.appVersion;
+}
+
+/** The headline message for one mismatch. */
+export function daemonBuildMismatchMessage(details: DaemonBuildMismatchDetails) {
+  if (!details.daemon) {
+    const launch = details.launch
+      ? ` (pid ${details.launch.pid}, started ${details.launch.launchedAt} from ${details.launch.command})`
+      : "";
+    return `${DAEMON_BUILD_MISMATCH_PREFIX} an older build that predates \`hunk daemon status\` and refuses this CLI${launch}.`;
+  }
+  const relation = details.recommendedAction === "restart-daemon" ? "an older" : "a newer";
+  return (
+    `${DAEMON_BUILD_MISMATCH_PREFIX} ${relation} build (daemon ` +
+    `${describeMismatchBuild(details.daemon, details.cli)}, this CLI ` +
+    `${describeMismatchBuild(details.cli, details.daemon)}) and refuses this CLI.`
+  );
+}
+
+/** The remedy lines that follow the headline in text output. */
+export function daemonBuildMismatchSuggestions(details: DaemonBuildMismatchDetails) {
+  const attached = details.attachedSessions
+    ? `${details.attachedSessions.count} attached window${details.attachedSessions.count === 1 ? "" : "s"}`
+    : "an unknown number of attached windows";
+  if (details.recommendedAction === "use-newer-hunk") {
+    return [
+      `Drive sessions with the newer Hunk build the daemon was started from, or run \`hunk daemon restart\` from this build (${attached} would be disconnected and could not reconnect).`,
+    ];
+  }
+  return [
+    `Run \`hunk daemon restart\` to replace it, then re-run \`hunk session list\`; windows that could not register attach automatically.`,
+    `Restarting disconnects ${attached}; windows on the old build cannot reconnect and must be relaunched (their in-window notes are lost).`,
+  ];
+}
+
+/** Thrown by every `hunk session *` command when the daemon and this CLI disagree on the build. */
+export class DaemonBuildMismatchError extends HunkUserError {
+  constructor(readonly details: DaemonBuildMismatchDetails) {
+    super(daemonBuildMismatchMessage(details), daemonBuildMismatchSuggestions(details));
+    this.name = "DaemonBuildMismatchError";
+  }
+
+  /** The `--json` error body: the message plus every structured fact. */
+  toJSON() {
+    return { message: this.message, ...this.details };
+  }
 }
 
 /** One skill-documented error: the quoted message (or prefix) plus the remedy agents should try. */
@@ -119,6 +205,11 @@ export const AGENT_ERROR_DOCS: AgentErrorDoc[] = [
   {
     quote: "Specify either --next-comment or --prev-comment, not both.",
     remedy: "choose one comment-navigation direction.",
+  },
+  {
+    quote: `${DAEMON_BUILD_MISMATCH_PREFIX} ...`,
+    remedy:
+      "a `daemon-build-mismatch` (the `--json` error carries `daemon`, `cli`, `attachedSessions`, and `recommendedAction`). Tell the user both builds and how many windows are attached, then **ask** before running `hunk daemon restart --yes`; never restart unprompted. After the restart, windows that failed to register attach on their own, so re-run `hunk session list` instead of relaunching anything. When `recommendedAction` is `use-newer-hunk`, the daemon is the newer build: use that Hunk instead.",
   },
   {
     quote: "Could not read the raw diff for ...",

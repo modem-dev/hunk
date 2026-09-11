@@ -4,6 +4,7 @@ import {
   AGENT_ERROR_DOCS,
   agentErrorQuotePrefix,
   COMMENT_APPLY_STDIN_MESSAGE,
+  DaemonBuildMismatchError,
   constraintViolationMessage,
   HIGHLIGHT_RANGE_MESSAGE,
   NO_ACTIVE_SESSIONS_MESSAGE,
@@ -71,6 +72,13 @@ describe("agent error messages", () => {
       constraintViolationMessage(HIGHLIGHT_TARGET_CONSTRAINT),
       HIGHLIGHT_RANGE_MESSAGE,
       constraintViolationMessage(COMMENT_DIRECTION_CONSTRAINT),
+      new DaemonBuildMismatchError({
+        kind: "daemon-build-mismatch",
+        daemon: { daemonVersion: 12, appVersion: "0.21.1" },
+        cli: { daemonVersion: 15, appVersion: "0.22.0" },
+        attachedSessions: { count: 0, sessions: [] },
+        recommendedAction: "restart-daemon",
+      }).message,
       reviewResourceUnavailableMessage("src/App.tsx"),
     ];
 

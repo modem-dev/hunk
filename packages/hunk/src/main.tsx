@@ -7,6 +7,8 @@ import { prepareStartupPlan } from "./app/startup";
 import { sanitizeTerminalLine, sanitizeTerminalText } from "./lib/terminalText";
 import { serveSessionBrokerDaemon } from "./session/broker/brokerServer";
 import { runSessionCommand } from "./session/agent/commands";
+import { DaemonBuildMismatchError } from "./session/agent/errors";
+import { stringifyJson } from "./session/agent/cliClient";
 
 async function main() {
   const startupPlan = await prepareStartupPlan();
@@ -28,7 +30,17 @@ async function main() {
   }
 
   if (startupPlan.kind === "session-command") {
-    writeStdout(await runSessionCommand(startupPlan.input));
+    try {
+      writeStdout(await runSessionCommand(startupPlan.input));
+    } catch (error) {
+      // Agents parse `--json` output; a build mismatch is a decision point for them, so it is
+      // returned in-band as a structured error rather than only as text on stderr.
+      if (startupPlan.input.output === "json" && error instanceof DaemonBuildMismatchError) {
+        writeStdout(stringifyJson({ error }));
+        process.exit(1);
+      }
+      throw error;
+    }
     process.exit(0);
   }
 

@@ -39,7 +39,7 @@ interface SessionBrokerLaunchLockFile {
   acquiredAt: string;
 }
 
-interface SessionBrokerLaunchMetadata {
+export interface SessionBrokerLaunchMetadata {
   pid: number;
   host: string;
   port: number;
@@ -524,11 +524,16 @@ export function parseSessionBrokerHealth(value: unknown): SessionBrokerHealth | 
   }
 }
 
-/** Read a bounded exact metadata fingerprint as a reconnect hint, never process authority. */
-export function readSessionBrokerLaunchFingerprint(
+/**
+ * Read the bounded exact launch metadata the launching process wrote beside the lock.
+ *
+ * This is a hint about which generation launched the daemon (its pid, command, and time), never
+ * process authority: the signed hello remains the only compatibility and identity check.
+ */
+export function readSessionBrokerLaunchMetadata(
   config: Pick<ResolvedSessionBrokerConfig, "host" | "port"> = resolveSessionBrokerConfig(),
   env: NodeJS.ProcessEnv = process.env,
-) {
+): SessionBrokerLaunchMetadata | null {
   const { metadataPath } = resolveSessionBrokerRuntimePaths(config, env);
   try {
     const stat = statSync(metadataPath);
@@ -538,11 +543,19 @@ export function readSessionBrokerLaunchFingerprint(
     if (bytes.byteLength !== stat.size || bytes.byteLength > MAX_DAEMON_LAUNCH_METADATA_BYTES) {
       return null;
     }
-    const metadata = parseSessionBrokerLaunchMetadata(JSON.parse(bytes.toString("utf8")));
-    return metadata ? JSON.stringify(metadata) : null;
+    return parseSessionBrokerLaunchMetadata(JSON.parse(bytes.toString("utf8")));
   } catch {
     return null;
   }
+}
+
+/** Read a bounded exact metadata fingerprint as a reconnect hint, never process authority. */
+export function readSessionBrokerLaunchFingerprint(
+  config: Pick<ResolvedSessionBrokerConfig, "host" | "port"> = resolveSessionBrokerConfig(),
+  env: NodeJS.ProcessEnv = process.env,
+) {
+  const metadata = readSessionBrokerLaunchMetadata(config, env);
+  return metadata ? JSON.stringify(metadata) : null;
 }
 
 /** Probe daemon health while retaining bounded failure evidence for a terminal CLI error. */
