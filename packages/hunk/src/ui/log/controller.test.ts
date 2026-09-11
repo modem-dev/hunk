@@ -90,15 +90,14 @@ describe("LogController", () => {
     ]);
     controller.move(1, 1);
     expect(controller.getSnapshot().selected).toBe(1);
-    controller.setSearch("");
-    controller.appendSearch("th");
-    controller.appendSearch("ird");
+    await controller.search("third");
     expect(controller.getSnapshot().search).toBe("third");
-    controller.backspaceSearch();
-    controller.appendSearch("d");
-    await controller.findMatch(1);
     expect(controller.getSnapshot().rows).toHaveLength(3);
     expect(controller.getSnapshot().selected).toBe(2);
+    // The query stays repeatable after the prompt closes.
+    await controller.findMatch(1);
+    expect(controller.getSnapshot().selected).toBe(2);
+    expect(controller.getSnapshot().notice).toBe("");
     await controller.close();
   });
 

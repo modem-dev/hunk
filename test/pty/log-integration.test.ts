@@ -319,6 +319,61 @@ describe("interactive hunk log", () => {
     }
   });
 
+  test("searches commits through the status-line prompt and repeats the query", async () => {
+    const cwd = createHistoryRepo();
+    const session = await harness.launchHunk({
+      args: ["log", "--color", "never", "--no-extensions"],
+      cwd,
+      cols: 100,
+      rows: 20,
+    });
+
+    try {
+      await session.waitForText(/Second history commit/, { timeout: 15_000 });
+      await session.waitForText(/Git · 2 commits/, { timeout: 5_000 });
+
+      // `/` opens a real inline input with a placeholder; typing paints in place.
+      session.writeRaw("/");
+      await harness.waitForSnapshot(session, (text) => text.includes("/ search commits"), 5_000);
+      await session.type("first");
+      await harness.waitForSnapshot(session, (text) => text.includes("/ first"), 5_000);
+
+      // While the prompt is open, a bound key is text rather than a command.
+      await session.type("q");
+      await harness.waitForSnapshot(session, (text) => text.includes("/ firstq"), 5_000);
+      await session.press("backspace");
+
+      // Enter selects the match, closes the prompt, and leaves the query on the row.
+      await session.press("enter");
+      const found = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("/ first") && text.includes("/first"),
+        5_000,
+      );
+      expect(found).toContain("Git · 2 commits");
+      await session.press("enter");
+      const review = await session.waitForText(/historyValue = 'first'/, { timeout: 15_000 });
+      expect(review).toContain("First history commit");
+      await returnToHistory(session);
+
+      // Reopening starts from the retained query; Escape clears a non-empty buffer first, then
+      // leaves the prompt on the second press without touching the retained query.
+      session.writeRaw("/");
+      await harness.waitForSnapshot(session, (text) => text.includes("/ first"), 5_000);
+      await session.press("escape");
+      await harness.waitForSnapshot(session, (text) => text.includes("/ search commits"), 5_000);
+      await session.press("escape");
+      const closed = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("/ search commits"),
+        5_000,
+      );
+      expect(closed).toContain("/first");
+    } finally {
+      session.close();
+    }
+  });
+
   test("resolves canonical history command remaps from user keybindings", async () => {
     const cwd = createHistoryRepo();
     const configHome = mkdtempSync(join(tmpdir(), "hunk-log-keybindings-"));
