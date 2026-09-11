@@ -944,7 +944,10 @@ export class SessionBrokerDaemon<
       }
       const inactive = this.rejectInactiveRequest(authenticated);
       if (inactive) return inactive;
-      this.noteActivity();
+      // Deliberately not activity. `status` is a read-only diagnostic, and the client that needs
+      // it most is a newer window waiting for an incompatible incumbent to go quiescent. Counting
+      // it would keep that incumbent alive for as long as the window keeps asking, which is the
+      // opposite of what the window is waiting for. `stop` shuts the daemon down anyway.
       if (input.action === "status") {
         return this.authenticatedResponse(authenticated, this.adminStatus() as never, 200);
       }

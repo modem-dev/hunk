@@ -1640,6 +1640,68 @@ describe("session broker daemon", () => {
     expect(producer.closed).toEqual({ code: 1001, reason: SESSION_BROKER_ADMIN_STOP_CLOSE_REASON });
   });
 
+  // Intent: a newer window waits for an incompatible incumbent to go quiescent while polling it
+  // for its build. If that read counted as activity, the incumbent would never idle out and the
+  // window's "close older Hunk windows and this one reconnects" promise would be false.
+  test("admin status does not postpone quiescent idle shutdown", async () => {
+    let statusCalls = 0;
+    const daemon = createSessionBrokerDaemon({
+      broker: createBroker(),
+      ...authenticatedHttpApi,
+      exposeHttpApi: true,
+      idleTimeoutMs: 60,
+      staleSessionSweepIntervalMs: 20,
+      admin: {
+        appVersion: "9.9.9",
+        describeSession: (session) => ({
+          sessionId: session.sessionId,
+          title: session.registration.info.title,
+          cwd: session.cwd,
+          pid: session.registration.pid,
+        }),
+        authenticator: {
+          async issueChallenge() {
+            return { challengeId: "admin-challenge" } as SessionBrokerHelloChallenge;
+          },
+          async completeCallerHello() {
+            throw new Error("not used");
+          },
+          async completeProducerHello() {
+            throw new Error("not used");
+          },
+          authenticate: async () =>
+            authenticatedRequest({
+              kind: "caller" as const,
+              appId: "session-broker",
+              principalId: "test-caller",
+              keyId: "test-key",
+              grantId: "test-grant",
+              operations: ["diagnostics"] as const,
+              commands: [],
+            }),
+        },
+      },
+    });
+    const poll = setInterval(() => {
+      statusCalls += 1;
+      void daemon.handleRequest(
+        new Request("http://broker.test/session-admin", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "status" }),
+        }),
+      );
+    }, 10);
+
+    try {
+      await expect(daemon.stopped).resolves.toBeUndefined();
+      expect(statusCalls).toBeGreaterThan(1);
+    } finally {
+      clearInterval(poll);
+      daemon.shutdown();
+    }
+  });
+
   test("does not expose the admin scope unless it is configured", async () => {
     const daemon = createSessionBrokerDaemon({
       broker: createBroker(),

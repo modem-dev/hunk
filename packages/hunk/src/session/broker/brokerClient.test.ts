@@ -395,6 +395,58 @@ describe("Hunk session daemon client", () => {
     });
   }
 
+  // Intent: the refined notice must survive the reconnect loop, and one incumbent must be asked
+  // for its build exactly once — repeated reads churn caller sessions on the daemon the window is
+  // waiting out.
+  test("probes one incumbent once and keeps the refined notice across reconnects", async () => {
+    const clock = new DeterministicLifecycleClockTest();
+    const webSockets = installWebSocketObserverTest();
+    let probes = 0;
+    const client = new SessionBrokerClient(createRegistration(), createSnapshot(), {
+      reconnectDelayMs: 10,
+      lifecycleClock: clock,
+      probeDaemonStatus: async () => {
+        probes += 1;
+        return statusProbeTest(HUNK_SESSION_DAEMON_VERSION - 1);
+      },
+    });
+    const notices: Array<string | null> = [];
+    client.subscribeConnectionNotice((notice) => notices.push(notice));
+    const config = prepareDirectConnectTest(client);
+
+    try {
+      clientTestAccess(client).connect(config);
+      const refuse = () => {
+        const connection = clientTestAccess(client).connection;
+        if (!connection?.options?.resolveClose) throw new Error("Expected a live connection.");
+        connection.options.resolveClose({
+          code: 1008,
+          reason: "Session broker authentication required; upgrade Hunk.",
+          authenticated: false,
+        });
+      };
+
+      refuse();
+      await clock.flushMicrotasksTest();
+      expect(probes).toBe(1);
+      expect(notices.at(-1)).toContain("Run `hunk daemon restart`.");
+
+      // Three more refusals from the same incumbent: no re-probe, and the refined notice stands.
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        refuse();
+        await clock.flushMicrotasksTest();
+      }
+      expect(probes).toBe(1);
+      expect(notices.at(-1)).toContain("Run `hunk daemon restart`.");
+      expect(notices.filter((notice) => notice === HUNK_DAEMON_UPGRADE_WAIT_MESSAGE)).toHaveLength(
+        1,
+      );
+    } finally {
+      client.stop();
+      webSockets.restoreTest();
+    }
+  });
+
   test("clears the sticky notice once the connection reaches connected", () => {
     const webSockets = installWebSocketObserverTest();
     const client = new SessionBrokerClient(createRegistration(), createSnapshot(), {

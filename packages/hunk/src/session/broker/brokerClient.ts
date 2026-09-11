@@ -419,14 +419,22 @@ export class SessionBrokerClient {
         if (!isConnectionCurrent(brokerGeneration)) return { reconnect: false };
         const preAuthenticationRefusal = isQuiescentUpgradeRefusal(event);
         if (preAuthenticationRefusal) {
+          const fingerprint = readSessionBrokerLaunchFingerprint(config);
+          // One incumbent, one probe: a running daemon's build cannot change, so re-asking on
+          // every reconnect would only churn caller sessions and overwrite the refined notice
+          // with the generic one. A different launch fingerprint means a different daemon.
+          const sameIncumbent =
+            this.waitingForIncumbentExit && this.incumbentLaunchFingerprint === fingerprint;
           this.waitingForIncumbentExit = true;
-          this.incumbentLaunchFingerprint = readSessionBrokerLaunchFingerprint(config);
-          this.setConnectionState({
-            status: "disconnected",
-            notice: HUNK_DAEMON_UPGRADE_WAIT_MESSAGE,
-            direction: "unknown",
-          });
-          this.refineRefusalNotice(config, () => isConnectionCurrent(brokerGeneration));
+          this.incumbentLaunchFingerprint = fingerprint;
+          if (!sameIncumbent) {
+            this.setConnectionState({
+              status: "disconnected",
+              notice: HUNK_DAEMON_UPGRADE_WAIT_MESSAGE,
+              direction: "unknown",
+            });
+            this.refineRefusalNotice(config, () => isConnectionCurrent(brokerGeneration));
+          }
         } else if (isRegistrationRejection(event)) {
           this.setConnectionState({
             status: "disconnected",
