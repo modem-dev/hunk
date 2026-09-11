@@ -150,7 +150,8 @@ describe("buildAppMenus", () => {
       "Next annotated file",
       "Previous annotated file",
     ]);
-    expect(items(menus.navigate).map((item) => item.hint)).toEqual(["[", "]", "{", "}", "/"]);
+    // The filter ships unbound, so its Navigate entry carries no hint.
+    expect(items(menus.navigate).map((item) => item.hint)).toEqual(["[", "]", "{", "}", undefined]);
   });
 
   test("every item carries the id of the command it runs", () => {
@@ -294,6 +295,35 @@ describe("the Extensions menu", () => {
       ["Stash notes", undefined],
       ["Quiet mode", undefined],
     ]);
+  });
+
+  test("bundled commands sit in the menus that name them, not under Extensions", () => {
+    const menus = menusWithExtensions([
+      registeredCommand("hunk", "search.find", "Search diff content", "/"),
+      registeredCommand("hunk", "search.next", "Next search match", "n"),
+      registeredCommand("hunk", "search.previous", "Previous search match", "N"),
+      registeredCommand("notes", "sync", "Sync notes", "y"),
+    ]);
+
+    expect(items(menus.extensions).map((item) => item.label)).toEqual(["Sync notes"]);
+    expect(items(menus.navigate).map((item) => [item.label, item.hint])).toEqual([
+      ["Previous hunk", "["],
+      ["Next hunk", "]"],
+      ["Previous comment", "{"],
+      ["Next comment", "}"],
+      ["Search diff content…", "/"],
+      ["Next match", "n"],
+      ["Previous match", "N"],
+      ["Focus filter", undefined],
+    ]);
+  });
+
+  test("bundled commands alone leave the Extensions menu absent", () => {
+    const menus = menusWithExtensions([
+      registeredCommand("hunk", "search.find", "Search diff content", "/"),
+    ]);
+
+    expect(menus.extensions).toBeUndefined();
   });
 
   test("separates one extension's commands from the next", () => {

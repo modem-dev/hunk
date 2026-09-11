@@ -804,6 +804,29 @@ end
     ]);
   }
 
+  /**
+   * Build a repo for content search: `readConfig` appears in two hunks of a tall first file
+   * (the second well below the fold of a short terminal) and once in a second file.
+   */
+  function createSearchRepoFixture() {
+    const filler = Array.from(
+      { length: 60 },
+      (_, index) => `const filler${index} = ${index};`,
+    ).join("\n");
+    return createGitRepoFixture([
+      {
+        path: "alpha.ts",
+        before: `const top = 1;\n${filler}\nconst bottom = 2;\n`,
+        after: `const top = readConfig("first");\n${filler}\nconst bottom = readConfig("second");\n`,
+      },
+      {
+        path: "beta.ts",
+        before: "const other = 1;\n",
+        after: 'const other = readConfig("third");\n',
+      },
+    ]);
+  }
+
   function createSidebarJumpRepoFixture() {
     return createGitRepoFixture([
       {
@@ -1145,6 +1168,7 @@ end
     createPinnedHeaderRepoFixture,
     createRapidThemePreviewTestRepoFixture,
     createScrollableFilePair,
+    createSearchRepoFixture,
     createSidebarJumpRepoFixture,
     createTabbedFilePair,
     createTwoFileRepoFixture,

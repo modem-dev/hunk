@@ -192,12 +192,15 @@ run without installing anything.
 ## Bundled extensions
 
 Every VCS backend Hunk ships — **Git, Jujutsu, and Sapling** — is an extension,
-and so is the **built-in file-navigation pane**. Provider implementations live in the private
+and so are the **built-in file-navigation pane**, the commit and change-request info panes, and
+the **`/` content search** (`hunk.search.find` / `next` / `previous`, with its match marks and
+status-row report). Provider implementations live in the private
 `packages/hunk-{git,jj,sapling}` workspaces and are statically imported by
 `packages/hunk/src/extensions/default/vcs/index.ts`. Bundled UI registrations live under
 `packages/hunk/src/extensions/default/ui/`. All register through the same
-`hunk.registerVcsAdapter` and `hunk.registerPane` contract documented here; there is no private
-registration path.
+`hunk.registerVcsAdapter`, `hunk.registerPane`, `hunk.registerCommand`, and
+`hunk.registerLineHighlighter` contract documented here, and their commands, highlighters, and
+panes are composed ahead of yours; there is no private registration path.
 
 Git exercises exact file sources, skipped-too-large placeholders, untracked files, watch plans,
 and structured failures through the public adapter contract. Its package and boundary tests keep
@@ -217,7 +220,9 @@ being Hunk's own code:
 A bundled VCS factory failure becomes a load issue rather than crashing the session. Bundled UI
 panes are required host code, so failure to register the expected panes aborts startup. The ids
 `git`, `jj`, and `sl` are reserved as a result — see `registerVcsAdapter` below — and so is `hunk`,
-the id the bundled files pane and every built-in command are named under.
+the id the bundled files pane, the bundled search, and every built-in command are named under.
+Because bundled factories run once per process with no config, a bundled command derives its
+session state from its context (`ctx.selection.files`) rather than closing over a review.
 
 ## Trust
 
@@ -302,9 +307,11 @@ and retires the replaced instance at that explicit ownership boundary.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `25`). Branch on it if you want
-one file to support several Hunk versions. Version 25 adds Promise-returning watch signatures and
-watch cancellation; version 24 adds review metadata to VCS patch results and
+The API generation this Hunk speaks (currently `27`). Branch on it if you want
+one file to support several Hunk versions. Version 27 adds `ctx.selection.files`, the visible
+files in review order; version 26 adds the status line (`ctx.statusLine`
+items and `ctx.prompts.line()` inline prompts); version 25 adds Promise-returning watch
+signatures and watch cancellation; version 24 adds review metadata to VCS patch results and
 short display revisions to commit descriptors; version 23 adds canonical unified-layout fields
 while preserving the previous event vocabulary; version 22 adds frame-derived pane preferred sizing,
 non-resizable dynamic panes, and commit-history paint tokens; version 21 adds optional inclusive history-range review
@@ -1156,6 +1163,91 @@ Snapshots must be immutable — replace the set instead of mutating it, so
 `useSyncExternalStore` can compare references. Storing state in a hook inside
 the component instead would lose it every time the pane closes and unmounts.
 
+### Status line
+
+The bottom status row — where Hunk shows the file filter, notices, and the
+keyboard-mode badge — is a host-owned surface extensions write to through two
+small capabilities: persistent **items** and one inline **prompt**.
+
+This example counts literal, non-overlapping matches in the selected file's
+patch text (including patch headers), not its whole source document. The right
+item counts `file_viewed` events, including revisits and reloads, rather than
+unique files.
+
+```ts
+import type { ExtensionDiffFile, HunkExtensionAPI } from "hunkdiff/extension";
+
+/** Count literal, non-overlapping occurrences in the selected patch. */
+function countMatches(query: string, file: ExtensionDiffFile | null): number {
+  if (!query || !file) return 0;
+  return file.patch.split(query).length - 1;
+}
+
+export default function (hunk: HunkExtensionAPI) {
+  let viewed = 0;
+
+  hunk.registerCommand({ id: "find", title: "Search diff content", key: "ctrl+f" }, async (ctx) => {
+    const query = await ctx.prompts.line({ prefix: "/", placeholder: "literal text" });
+    if (query === null) return;
+
+    const hits = countMatches(query, ctx.selection.file);
+    ctx.statusLine.set({
+      id: "status",
+      spans: [
+        { text: `[${hits}] `, tone: "accent" },
+        { text: query, tone: "muted" },
+      ],
+    });
+  });
+
+  hunk.on("file_viewed", (_payload, ctx) => {
+    viewed += 1;
+    ctx.statusLine.set({
+      id: "viewed",
+      spans: [{ text: `${viewed} viewed` }],
+      alignment: "right",
+    });
+  });
+}
+```
+
+**Items** are declarative text, not components. `ctx.statusLine.set(item)`
+sets or replaces one item and `clear(id)` removes it; ids are scoped to your
+extension. `spans` use the same symbolic vocabulary as host-rendered file-view
+rows — `text`, an optional `tone` (`muted`, `accent`, `accent-muted`, `syntax`,
+`added`, `removed`), and optional `attributes` (`bold`, `italic`, `underline`,
+`strikethrough`) — so Hunk measures them without a theme and paints them with
+the active one. `alignment` defaults to `"left"`; right items sit beside the
+host badge. When the row overflows, the lowest-`priority` items (default `0`)
+are dropped whole, newest first among equals, and the last survivor is
+truncated with an ellipsis; the badge is never dropped. A set item keeps the
+row on screen, exactly like a non-empty filter does, so clear items that
+should not cost a row while idle. Items persist across ordinary content reloads
+and clear when the extension registry is replaced or the review unmounts.
+
+**Prompts** are promise-shaped. `ctx.prompts.line({ prefix?, placeholder?,
+initial?, onChange? })` draws a real input with a cursor on the status row and
+resolves the submitted text, or `null` on cancel. `prefix` is painted before
+the input and is not part of the value; `initial` is where the field starts
+(use it to reopen with the last query); `onChange` is called on every edit for
+consumers that react while the user types. Enter resolves; Escape clears a
+non-empty buffer first and cancels second — the same two-step Escape the file
+filter has. While a prompt is open it owns typing the way the filter does:
+after dialogs and menus, before file-view and session keyboard modes and the
+command table, so a bound key is text rather than a command. One prompt is
+open at a time; a second request queues behind the first, across extensions
+too. A session reload cancels open and queued prompts, and a request during
+teardown resolves `null` immediately. Prompts from installed extensions carry
+the `ext <your-id>` marker before the prefix, like toasts and dialogs.
+
+Where the controls appear: command handlers get `ctx.statusLine` and
+`ctx.prompts`; event, bus, and keyboard-mode handlers get `ctx.statusLine`
+only. The factory object gets neither, so every write belongs to a handler
+whose lifetime Hunk can scope. A malformed item (blank `id`, non-array `spans`,
+a span without string `text`, an unknown tone) throws from `set`; malformed
+prompt options reject the promise; a throwing `onChange` is reported once and
+the prompt continues.
+
 ### `hunk.registerFileView(view)` (experimental)
 
 A file view is an alternate **host-rendered** presentation of one file in the
@@ -1544,8 +1636,11 @@ keyboard mode runs at a time.
 - `"exit"` consumes the key and leaves the mode.
 
 The context is intentionally small: `cwd`, `notify`, live public `commands`,
-activation-scoped `keyboardModes`, and `highlights` (so a prompt's submit can
-refresh line marks directly). Keys are frozen plain snapshots, not OpenTUI
+activation-scoped `keyboardModes`, `highlights` (so a mode can refresh line
+marks directly), and `statusLine` (so a mode can show its live buffer or count
+on the status row). A mode never needs a prompt: a prompt-shaped interaction is
+a command plus `ctx.prompts.line()`, described under
+[Status line](#status-line). Keys are frozen plain snapshots, not OpenTUI
 events. Async/throwing callbacks are contained and exit safely. When the session
 mode is the highest-priority active input owner, host-owned Escape exits without
 reaching `onKey`; the status badge and a host-owned **Extensions** menu item are
@@ -1565,7 +1660,7 @@ then call `ctx.commands.execute(id, { count })` once so the host applies movemen
 atomically. See the dependency-free
 [`vim-navigation`](../examples/extensions/vim-navigation/) example for `j`/`k`,
 `gg`/`G`, hunk movement, alignment, capped counts, Ctrl chords, and a focused
-`:` command line composed from a registered command plus `ctx.dialogs.input()`.
+`:` command line composed from a registered command plus `ctx.prompts.line()`.
 
 ### `hunk.registerCommand(command, handler)`
 
@@ -1661,9 +1756,14 @@ is — or when the file has no hunks to select. `selection.currentLine` is the
 one-based `{ side, line }` source address carrying the current-line marker, or
 `null` when the marker is off or the review has not settled on a rendered line.
 It belongs to this file and hunk, uses Hunk's canonical new-side address for a
-context row, and can be passed directly to `navigation.revealLine`. The values
-are captured when the command fires: a handler that awaits still sees the
-selection it was run from, not wherever the user navigated to meanwhile.
+context row, and can be passed directly to `navigation.revealLine`.
+`selection.files` is every visible file in review order — the same frozen
+views a pane's `files` prop carries — so a command that works across the whole
+review (a content search, a bulk action) reads its corpus here instead of
+shadow-tracking `changeset_loaded`; `selection.file` is one of its entries or
+`null`. The values are captured when the command fires: a handler that awaits
+still sees the selection it was run from, not wherever the user navigated to
+meanwhile.
 
 `ctx.commands` invokes Hunk's documented semantic commands through the exact same live command
 table used by the keyboard, menus, and help:

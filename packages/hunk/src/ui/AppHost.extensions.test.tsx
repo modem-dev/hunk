@@ -299,6 +299,7 @@ function createTestBrokerClient(options: { replaceSessionError?: Error } = {}) {
   let replacementCount = 0;
 
   const client = {
+    subscribeConnectionNotice: () => () => undefined,
     setBridge(next: typeof bridge) {
       bridge = next;
     },

@@ -1,12 +1,23 @@
 import type { SessionCommandInput, SessionCommandOutput } from "../../core/run/commandInputs";
 import type { SessionLiveCommentSummary, SessionReviewNoteSummary } from "../types";
-import { NO_ACTIVE_SESSIONS_MESSAGE } from "./errors";
+import {
+  DaemonBuildMismatchError,
+  NO_ACTIVE_SESSIONS_MESSAGE,
+  type DaemonBuildMismatchDetails,
+} from "./errors";
 import {
   describeSessionBrokerHealthProbeFailure,
   isLoopbackPortReachable,
   probeSessionBrokerHealth,
+  readSessionBrokerLaunchMetadata,
+  type SessionBrokerLaunchMetadata,
 } from "../broker/brokerLauncher";
 import { resolveSessionBrokerConfig } from "../broker/brokerConfig";
+import {
+  probeHunkSessionDaemonAdminStatus,
+  type HunkDaemonAdminProbe,
+} from "../client/daemonAdmin";
+import { compareDaemonBuild, currentDaemonBuild } from "../client/daemonSkew";
 import { normalizeSessionSelector } from "@hunk/session-broker-core";
 import { SessionBrokerClientAuthenticationError } from "@hunk/session-broker";
 import {
@@ -51,6 +62,11 @@ export type HunkDaemonCliClient = HunkSessionCliClient;
 interface SessionCommandTestHooks {
   createClient?: () => HunkSessionCliClient;
   resolveDaemonAvailability?: (action: SessionCommandInput["action"]) => Promise<boolean>;
+  probeDaemonAdminStatus?: () => Promise<HunkDaemonAdminProbe>;
+  readLaunchMetadata?: () => Pick<
+    SessionBrokerLaunchMetadata,
+    "pid" | "command" | "args" | "launchedAt"
+  > | null;
 }
 
 let sessionCommandTestHooks: SessionCommandTestHooks | null = null;
@@ -61,6 +77,61 @@ export function setSessionCommandTestHooks(hooks: SessionCommandTestHooks | null
 
 function createDaemonCliClient() {
   return sessionCommandTestHooks?.createClient?.() ?? createHttpHunkSessionCliClient();
+}
+
+/**
+ * Explain a daemon that refused this CLI, or one that speaks the revision but lacks the action.
+ *
+ * The admin scope answers regardless of revision, so the error can name both builds and count
+ * the windows a restart would disconnect. A daemon from before the scope existed cannot be asked;
+ * the launch metadata stands in, and the recommendation is still a restart because such a daemon
+ * is necessarily older than this CLI.
+ */
+async function describeDaemonBuildMismatch(): Promise<DaemonBuildMismatchDetails> {
+  const cli = currentDaemonBuild();
+  const probe = await (sessionCommandTestHooks?.probeDaemonAdminStatus?.() ??
+    probeHunkSessionDaemonAdminStatus());
+  if (probe.kind === "status") {
+    const { status } = probe;
+    return {
+      kind: "daemon-build-mismatch",
+      daemon: { daemonVersion: status.daemonVersion, appVersion: status.appVersion },
+      cli,
+      attachedSessions: {
+        count: status.sessions.length,
+        sessions: status.sessions.map(({ sessionId, title, cwd, pid }) => ({
+          sessionId,
+          title,
+          cwd,
+          pid,
+        })),
+      },
+      recommendedAction:
+        compareDaemonBuild(status.daemonVersion, cli.daemonVersion) === "client-older"
+          ? "use-newer-hunk"
+          : "restart-daemon",
+    };
+  }
+  const launch =
+    sessionCommandTestHooks?.readLaunchMetadata !== undefined
+      ? sessionCommandTestHooks.readLaunchMetadata()
+      : readSessionBrokerLaunchMetadata();
+  return {
+    kind: "daemon-build-mismatch",
+    daemon: null,
+    cli,
+    attachedSessions: null,
+    ...(launch
+      ? {
+          launch: {
+            pid: launch.pid,
+            command: [launch.command, ...launch.args].join(" "),
+            launchedAt: launch.launchedAt,
+          },
+        }
+      : {}),
+    recommendedAction: "restart-daemon",
+  };
 }
 
 async function ensureRequiredAction(action: SessionDaemonAction, client = createDaemonCliClient()) {
@@ -75,10 +146,7 @@ async function ensureRequiredAction(action: SessionDaemonAction, client = create
     return;
   }
 
-  throw new Error(
-    `The running Hunk session daemon is incompatible or missing required support for ${action}. ` +
-      "Close older Hunk windows, wait for the daemon to become idle, then retry this command.",
-  );
+  throw new DaemonBuildMismatchError(await describeDaemonBuildMismatch());
 }
 
 async function resolveDaemonAvailability(action: SessionCommandInput["action"]) {

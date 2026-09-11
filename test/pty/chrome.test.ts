@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { availableThemes } from "../../packages/hunk/src/ui/themes";
@@ -201,13 +201,21 @@ describe("PTY chrome", () => {
     }
   });
 
-  test("slash focuses the filter and narrows the visible review stream", async () => {
+  test("a remapped slash focuses the filter and narrows the visible review stream", async () => {
+    // `/` ships on content search; the documented one-liner hands it back to the filter.
+    const configHome = harness.createIsolatedConfigHome();
+    mkdirSync(join(configHome, "hunk"), { recursive: true });
+    writeFileSync(
+      join(configHome, "hunk", "config.toml"),
+      '[keybindings]\n"hunk.review.focusFilter" = "/"\n',
+    );
     const fixture = harness.createSidebarJumpRepoFixture();
     const session = await harness.launchHunk({
       args: ["diff", "--mode", "split"],
       cwd: fixture.dir,
       cols: 220,
       rows: 12,
+      env: { XDG_CONFIG_HOME: configHome },
     });
 
     try {

@@ -30,6 +30,7 @@ function activeFor(mode: ExtensionKeyboardMode): ActiveSessionKeyboardMode {
       commands: {} as ExtensionKeyboardModeContext["commands"],
       keyboardModes: {} as ExtensionKeyboardModeContext["keyboardModes"],
       highlights: {} as ExtensionKeyboardModeContext["highlights"],
+      statusLine: {} as ExtensionKeyboardModeContext["statusLine"],
     },
   };
 }

@@ -31,10 +31,8 @@ import {
 import type { CliInput, CursorLine, LayoutMode } from "../core/run/commandInputs";
 import { sanitizeTerminalLine } from "../lib/terminalText";
 import {
-  resolveExtensionCommands,
   resolveExtensionFileViews,
   resolveExtensionKeyboardModes,
-  resolveExtensionLineHighlighters,
   resolveExtensionSessionOptions,
 } from "../extensions/apply";
 import { projectExtensionReviewNotes } from "../extensions/reviewSnapshot";
@@ -51,7 +49,6 @@ import { ConfirmDialog, confirmDialogHeight } from "./components/chrome/ConfirmD
 import { ExtensionDialog } from "./components/chrome/ExtensionDialog";
 import { ViewPreferenceQuitDialog } from "./components/chrome/ViewPreferenceQuitDialog";
 import { ExtensionToast } from "./components/chrome/ExtensionToast";
-import { StatusBar } from "./components/chrome/StatusBar";
 import { DiffPane, type ReviewSelectionActionsHandle } from "./components/panes/DiffPane";
 import { ExtensionPaneHost } from "./components/panes/ExtensionPane";
 import { PaneDivider } from "./components/panes/PaneDivider";
@@ -99,6 +96,11 @@ import {
 import { buildAppMenus } from "./lib/appMenus";
 import { buildExtensionAppCommands, extensionCommandKeyDefaults } from "./lib/extensionCommands";
 import { createExtensionReviewReloadControls } from "./lib/extensionReviewReload";
+import {
+  buildSessionCommands,
+  buildSessionLineHighlighters,
+  isBundledExtensionId,
+} from "./lib/sessionRegistrations";
 import type { CurrentLineAlignment } from "./lib/hunkScroll";
 import type { LineCursor } from "./lib/lineCursors";
 import type { ReviewVerticalStop } from "./lib/reviewVerticalStops";
@@ -121,8 +123,22 @@ import { openSelectedFileInEditor } from "./lib/openInEditor";
 import { resolveResponsiveLayout } from "./lib/responsive";
 import type { WorkspaceRefreshRequest } from "./currentReviewRefresh";
 import { ThemeController } from "./theme/controller";
+import {
+  createExtensionPromptControls,
+  createExtensionStatusLineControls,
+  isExtensionStatusItemId,
+} from "./statusLine/extensionControls";
+import { StatusLine, statusLineHasContent } from "./statusLine/StatusLine";
+import type { StatusItem, StatusLineSnapshot } from "./statusLine/types";
+import { useStatusLine } from "./statusLine/useStatusLine";
 
+/**
+ * Who owns review keys: the file stream, the host filter prompt on the status line, or the
+ * inline note draft. The filter member is derived from the status-line prompt rather than
+ * stored, so focus and the visible input can never disagree.
+ */
 type FocusArea = "files" | "filter" | "note";
+type StoredFocusArea = Exclude<FocusArea, "filter">;
 
 const FAST_CODE_HORIZONTAL_SCROLL_COLUMNS = 8;
 
@@ -256,8 +272,19 @@ export function App({
   const [showMenuBar, setShowMenuBar] = useState(bootstrap.initialShowMenuBar ?? true);
   const [showHelp, setShowHelp] = useState(false);
   const [showAgentSkill, setShowAgentSkill] = useState(false);
-  const [focusArea, setFocusArea] = useState<FocusArea>("files");
+  const [storedFocusArea, setFocusArea] = useState<StoredFocusArea>("files");
   const { text: sessionNoticeText, show: showSessionNotice } = useTimedNotice(4_000);
+  // Keep an incompatible-daemon notice until the broker reconnects; timed notices must not clear it.
+  const [daemonNoticeText, setDaemonNoticeText] = useState<string | null>(null);
+  const { store: statusLineStore, snapshot: statusLineState } = useStatusLine({
+    reviewGeneration: bootstrap,
+  });
+  // The host filter's own prompt, so focus changes can submit it and a repeat request is a no-op.
+  // Set synchronously with the store, so a render always sees both or neither.
+  const filterPromptIdRef = useRef<number | null>(null);
+  const filterPromptOpen =
+    statusLineState.prompt !== null && statusLineState.prompt.id === filterPromptIdRef.current;
+  const focusArea: FocusArea = filterPromptOpen ? "filter" : storedFocusArea;
   const extensions = bootstrap.extensions as ExtensionLoadResult | undefined;
   const pendingTrustRepoRoot = extensions?.pendingTrustRepoRoot;
   const extensionToast = useExtensionNotifications(extensions?.notifications);
@@ -351,8 +378,10 @@ export function App({
     () => (extensions ? resolveExtensionKeyboardModes(extensions.registry).modes : []),
     [extensions],
   );
+  // Bundled highlighters and commands compose ahead of the user registry's, so
+  // Hunk's own search marks and keys are present under `--no-extensions` too.
   const sessionLineHighlighters = useMemo(
-    () => (extensions ? resolveExtensionLineHighlighters(extensions.registry).highlighters : []),
+    () => buildSessionLineHighlighters(extensions?.registry),
     [extensions],
   );
   const extensionSessionOptions = useMemo(
@@ -446,6 +475,8 @@ export function App({
   } = useKeyboardModeController({
     commands: extensionCommandControls,
     createHighlightControls: createLineHighlightControls,
+    createStatusLineControls: (extensionId) =>
+      createExtensionStatusLineControls(statusLineStore, extensionId),
     cwd: extensions?.context.cwd ?? process.cwd(),
     modes: sessionKeyboardModes,
     notify: notifyExtensionMode,
@@ -485,16 +516,32 @@ export function App({
   const resolvedLayout = responsiveLayout.layout;
   const canForceShowSidebar =
     bodyWidth >= SIDEBAR_MIN_WIDTH + EXTENSION_PANE_DIVIDER_SIZE + DIFF_MIN_WIDTH;
-  const statusBarVisible =
-    focusArea === "filter" ||
-    Boolean(review.filter) ||
-    Boolean(
-      sessionNoticeText ??
-      transientNoticeText ??
-      noticeText ??
-      fileViewModeHint ??
-      keyboardModeHint,
-    );
+  // Derive host contributions from current state so filters and notices cannot go stale.
+  const statusNoticeText =
+    sessionNoticeText ?? transientNoticeText ?? noticeText ?? fileViewModeHint ?? null;
+  const statusLineSnapshot = useMemo<StatusLineSnapshot>(() => {
+    const hostItems: StatusItem[] = [];
+    if (review.filter.length > 0) {
+      hostItems.push({
+        id: "host:filter",
+        spans: [{ text: `filter=${review.filter}`, tone: "muted" }],
+        priority: 1,
+      });
+    }
+    if (statusNoticeText) {
+      hostItems.push({ id: "host:notice", spans: [{ text: statusNoticeText, tone: "muted" }] });
+    }
+    if (daemonNoticeText) {
+      // Preserve the persistent connection warning ahead of transient notices when the row overflows.
+      hostItems.push({
+        id: "host:daemon",
+        spans: [{ text: daemonNoticeText, tone: "muted" }],
+        priority: 2,
+      });
+    }
+    return { items: [...hostItems, ...statusLineState.items], prompt: statusLineState.prompt };
+  }, [daemonNoticeText, review.filter, statusLineState, statusNoticeText]);
+  const statusBarVisible = statusLineHasContent(statusLineSnapshot, keyboardModeHint ?? null);
   const bodyHeight = Math.max(
     0,
     terminal.height - (showMenuBar ? 1 : 0) - (extensionToast ? 1 : 0) - (statusBarVisible ? 1 : 0),
@@ -566,20 +613,51 @@ export function App({
     updateInput: setExtensionDialogInputValue,
   } = useExtensionDialogController({ reviewGeneration: bootstrap });
 
+  /** Report whether an extension id names Hunk's own bundled tier, which needs no attribution. */
+  const isBundledExtension = useCallback(
+    (extensionId: string) => isBundledExtensionId(extensionId, extensions?.registry),
+    [extensions],
+  );
+
   /** Keep third-party dialog attribution while presenting bundled extensions as native Hunk UI. */
   const createExtensionDialogs = useCallback(
     (extensionId: string) => {
       const lease = createReviewCapabilityLease();
-      const bundled = extensions?.registry.extensions.some(
-        (metadata) => metadata.id === extensionId && metadata.origin === "bundled",
-      );
       return createQueuedExtensionDialogs(extensionId, {
         isLive: lease.isLive,
-        showAttribution: !bundled,
+        showAttribution: !isBundledExtension(extensionId),
       });
     },
-    [createQueuedExtensionDialogs, createReviewCapabilityLease, extensions],
+    [createQueuedExtensionDialogs, createReviewCapabilityLease, isBundledExtension],
   );
+
+  /** Status-line items scoped to one extension while this review generation holds authority. */
+  const createExtensionStatusLine = useCallback(
+    (extensionId: string) => {
+      const lease = createReviewCapabilityLease();
+      return createExtensionStatusLineControls(statusLineStore, extensionId, lease.isLive);
+    },
+    [createReviewCapabilityLease, statusLineStore],
+  );
+
+  /** Inline prompts scoped and attributed exactly like dialogs. */
+  const createExtensionPrompts = useCallback(
+    (extensionId: string) => {
+      const lease = createReviewCapabilityLease();
+      return createExtensionPromptControls(statusLineStore, extensionId, {
+        isLive: lease.isLive,
+        showAttribution: !isBundledExtension(extensionId),
+        warn: (message) => extensions?.context.notify(message, "warning"),
+      });
+    },
+    [createReviewCapabilityLease, extensions, isBundledExtension, statusLineStore],
+  );
+
+  // Extension items belong to the registry that set them: a replacement (extension reload,
+  // trust grant) clears them, while ordinary content reloads keep the same registry and items.
+  useLayoutEffect(() => {
+    return () => statusLineStore.clearItems(isExtensionStatusItemId);
+  }, [extensions?.registry, statusLineStore]);
 
   const extensionWorkspaceController = useExtensionWorkspaceControls({
     createExtensionDialogs,
@@ -605,6 +683,7 @@ export function App({
     createNavigation: createExtensionNavigation,
     createPaneControls,
     createReviewReloadControls: createEventReviewReloadControls,
+    createStatusLineControls: createExtensionStatusLine,
     extensions,
   });
 
@@ -616,14 +695,16 @@ export function App({
     createLineHighlightControls,
     createNavigation: createExtensionNavigation,
     createPaneControls,
+    createPromptControls: createExtensionPrompts,
     createReviewControls: createExtensionReviewControls,
+    createStatusLineControls: createExtensionStatusLine,
     createWorkspaceControls: extensionWorkspaceController.createWorkspaceControls,
     extensions,
     getSelection: getExtensionSelection,
   });
 
   const registeredExtensionCommands = useMemo(
-    () => (extensions ? resolveExtensionCommands(extensions.registry).commands : []),
+    () => buildSessionCommands(extensions?.registry),
     [extensions],
   );
   // The session keymap: every bindable command's defaults folded against the
@@ -769,6 +850,7 @@ export function App({
   );
 
   useHunkSessionBridge({
+    onConnectionNotice: setDaemonNoticeText,
     addAgentLineHighlight: review.addAgentLineHighlight,
     addLiveComment: review.addLiveComment,
     addLiveCommentBatch: review.addLiveCommentBatch,
@@ -1072,15 +1154,38 @@ export function App({
     setShowHelp((current) => !current);
   }, []);
 
-  /** Focus the file list/sidebar navigation area. */
+  /** Focus the file list/sidebar navigation area, submitting an open filter prompt. */
   const focusFiles = useCallback(() => {
+    const promptId = filterPromptIdRef.current;
+    if (promptId !== null) {
+      statusLineStore.submitPrompt(promptId);
+    }
     setFocusArea("files");
-  }, []);
+  }, [statusLineStore]);
 
-  /** Focus the file filter input in the status bar. */
+  /**
+   * Open the file filter as the host's own status-line prompt.
+   *
+   * The filter reacts while typing through `onChange` and keeps its value and focus across
+   * content reloads. Submitting or escaping returns keyboard ownership to the review.
+   */
   const focusFilter = useCallback(() => {
-    setFocusArea("filter");
-  }, []);
+    if (filterPromptIdRef.current !== null) return;
+    const { id, answer } = statusLineStore.openPrompt(
+      {
+        prefix: "filter:",
+        placeholder: "type to filter files",
+        initial: review.filter,
+        onChange: review.setFilter,
+      },
+      { surviveReload: true },
+    );
+    if (id === null) return;
+    filterPromptIdRef.current = id;
+    void answer.then(() => {
+      if (filterPromptIdRef.current === id) filterPromptIdRef.current = null;
+    });
+  }, [review.filter, review.setFilter, statusLineStore]);
 
   const extensionNavigationBindings = useMemo(
     () => ({
@@ -1102,11 +1207,19 @@ export function App({
 
   /** Toggle keyboard focus between the file list and the file filter. */
   const toggleFocusArea = useCallback(() => {
-    setFocusArea((current) => (current === "files" ? "filter" : "files"));
-  }, []);
+    if (filterPromptIdRef.current !== null) {
+      focusFiles();
+    } else {
+      focusFilter();
+    }
+  }, [focusFiles, focusFilter]);
 
-  /** Move keyboard ownership into the draft note editor. */
-  const focusDraftNoteEditor = useCallback(() => setFocusArea("note"), []);
+  /** Move keyboard ownership into the draft note editor, closing an open filter prompt first. */
+  const focusDraftNoteEditor = useCallback(() => {
+    const promptId = filterPromptIdRef.current;
+    if (promptId !== null) statusLineStore.submitPrompt(promptId);
+    setFocusArea("note");
+  }, [statusLineStore]);
   /** Return keyboard ownership from note composition to review navigation. */
   const focusReviewAfterDraft = useCallback(() => setFocusArea("files"), []);
   /** Leave note focus only when the draft editor still owns it. */
@@ -1310,6 +1423,7 @@ export function App({
     exitKeyboardMode,
     sendKeyboardModeKey,
     focusArea,
+    promptActive: statusLineState.prompt !== null,
     moveMenuItem,
     moveThemeSelector,
     openMenu,
@@ -1595,19 +1709,16 @@ export function App({
       ) : null}
 
       {statusBarVisible ? (
-        <StatusBar
-          filter={review.filter}
-          filterFocused={focusArea === "filter"}
-          modeText={keyboardModeHint ?? undefined}
-          noticeText={
-            sessionNoticeText ?? transientNoticeText ?? noticeText ?? fileViewModeHint ?? undefined
-          }
+        <StatusLine
+          badge={keyboardModeHint ?? null}
+          snapshot={statusLineSnapshot}
           terminalWidth={terminal.width}
           theme={activeTheme}
           onCloseMenu={closeMenu}
-          onFilterInput={review.setFilter}
-          onFilterSubmit={focusFiles}
           onExitMode={exitKeyboardMode}
+          onPromptCancel={statusLineStore.cancelPrompt}
+          onPromptInput={statusLineStore.updatePromptValue}
+          onPromptSubmit={statusLineStore.submitPrompt}
         />
       ) : null}
 

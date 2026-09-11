@@ -52,3 +52,7 @@ Advanced reloads can target the live window by `--session-path` and load from a 
 ## Diagnose local access
 
 If a visible Hunk window does not appear in `session list`, an agent sandbox may block loopback access. Hunk's daemon is intentionally local-only; retry with the agent's network/sandbox permission rather than exposing it remotely. `hunk daemon serve` is available for manual startup or daemon debugging.
+
+## Daemon build mismatches
+
+After a Hunk upgrade, a daemon from the previous build keeps running while any older window holds it open. A window from the new build shows a status-bar notice naming both builds, and every `hunk session` command fails with a `daemon-build-mismatch` error (in-band under `--json`) that names both builds, counts the attached windows, and recommends `restart-daemon` or `use-newer-hunk`. Run `hunk daemon status` to see the daemon's build and attached windows, and `hunk daemon restart` to replace it with one from this build after confirming; windows that could not attach register on their own afterwards, while windows from the old build must be relaunched. Agents should report the mismatch and ask before restarting.

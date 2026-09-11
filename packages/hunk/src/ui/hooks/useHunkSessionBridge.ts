@@ -13,7 +13,14 @@ import type {
 } from "../../session/types";
 import type { TerminalReview } from "./useTerminalReview";
 
-/** Bridge one live Hunk review session to the local session daemon. */
+/**
+ * Bridge one live Hunk review session to the local session daemon.
+ *
+ * Publishes the session's registration and snapshots, receives agent commands through the
+ * bridge, and relays the daemon link's sticky notice (a refused hello, a rejected registration)
+ * to the status bar. The notice text and its direction are decided by the broker client; the UI
+ * only shows or clears it.
+ */
 export function useHunkSessionBridge({
   addAgentLineHighlight,
   addLiveComment,
@@ -25,6 +32,7 @@ export function useHunkSessionBridge({
   liveCommentSummaries,
   navigateToLocation,
   noteMarkupWidth,
+  onConnectionNotice,
   openAgentNotes,
   reloadSession,
   removeLiveComment,
@@ -43,6 +51,8 @@ export function useHunkSessionBridge({
   clearAgentLineHighlights: TerminalReview["clearAgentLineHighlights"];
   clearLiveComments: TerminalReview["clearLiveComments"];
   hostClient?: HunkSessionBrokerClient;
+  /** Receive the daemon link notice, or `null` once the link is connected again. */
+  onConnectionNotice?: (notice: string | null) => void;
   liveCommentCount: number;
   liveCommentSummaries: SessionLiveCommentSummary[];
   navigateToLocation: TerminalReview["navigateToLocation"];
@@ -104,6 +114,13 @@ export function useHunkSessionBridge({
       hostClient.setBridge(null);
     };
   }, [bridge, hostClient]);
+
+  useEffect(() => {
+    if (!hostClient || !onConnectionNotice) {
+      return;
+    }
+    return hostClient.subscribeConnectionNotice(onConnectionNotice);
+  }, [hostClient, onConnectionNotice]);
 
   // The generation is a property of the producer's publication, not of this render; the
   // revision beside it is the store's own counter. Read as a string rather than as the

@@ -246,6 +246,17 @@ test("Node authenticates, registers, and naturally exits with every production t
   ) {
     throw new Error(formatFixtureFailure("real", real.exitCode, real.stdout, real.stderr));
   }
+  const admin = await runConnectionFixture("admin-scope");
+  if (
+    admin.exitCode !== 0 ||
+    admin.signal !== null ||
+    admin.stdout !== "admin-scope-observed\n" ||
+    admin.stderr !== ""
+  ) {
+    throw new Error(
+      formatFixtureFailure("admin-scope", admin.exitCode, admin.stdout, admin.stderr),
+    );
+  }
 
   for (const mode of [
     "pending-handshake",

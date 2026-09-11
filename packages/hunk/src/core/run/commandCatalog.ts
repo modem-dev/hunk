@@ -155,7 +155,9 @@ const BUILTIN_COMMANDS = [
     id: "hunk.review.focusFilter",
     title: "Focus the file filter",
     category: "review",
-    defaultKeys: ["/"],
+    // Ships unbound: `/` belongs to content search. Tab (`hunk.app.toggleFocusArea`) and the
+    // menu still reach the filter, and `[keybindings] "hunk.review.focusFilter" = "/"` restores it.
+    defaultKeys: [],
     // Moving keyboard focus is this client's business; the filter value it edits is
     // shared review state, changed through `filter/set` rather than by this command.
     locus: "client-local",
@@ -229,7 +231,8 @@ const BUILTIN_COMMANDS = [
     id: "hunk.review.previousNote",
     title: "Previous review note",
     category: "review",
-    defaultKeys: ["N"],
+    // Ships unbound: `N` belongs to content search; `{` still reaches annotated hunks.
+    defaultKeys: [],
     locus: "client-local",
     verticalDirection: -1,
     publicToExtensions: true,
@@ -239,7 +242,8 @@ const BUILTIN_COMMANDS = [
     id: "hunk.review.nextNote",
     title: "Next review note",
     category: "review",
-    defaultKeys: ["n"],
+    // Ships unbound: `n` belongs to content search; `}` still reaches annotated hunks.
+    defaultKeys: [],
     locus: "client-local",
     verticalDirection: 1,
     publicToExtensions: true,

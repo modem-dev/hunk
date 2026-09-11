@@ -62,6 +62,8 @@ export interface UseAppKeyboardShortcutsOptions {
   /** Offer one key to the active session keyboard mode. */
   sendKeyboardModeKey: (key: ExtensionKeyEvent) => ExtensionKeyboardModeKeyResult;
   focusArea: FocusArea;
+  /** Whether a status-line prompt (the host filter or an extension's) currently owns typing. */
+  promptActive: boolean;
   moveMenuItem: (delta: number) => void;
   moveThemeSelector: (delta: number) => void;
   openMenu: (menuId: MenuId) => void;
@@ -123,6 +125,7 @@ export function useAppKeyboardShortcuts({
   exitKeyboardMode,
   sendKeyboardModeKey,
   focusArea,
+  promptActive,
   moveMenuItem,
   moveThemeSelector,
   openMenu,
@@ -143,6 +146,7 @@ export function useAppKeyboardShortcuts({
   const commandsRef = useRef(commands);
   const clearVisualSelectionRef = useRef(clearVisualSelection);
   const focusAreaRef = useRef(focusArea);
+  const promptActiveRef = useRef(promptActive);
   const showAgentSkillRef = useRef(showAgentSkill);
   const showHelpRef = useRef(showHelp);
   const saveConfigPromptOpenRef = useRef(saveConfigPromptOpen);
@@ -167,6 +171,7 @@ export function useAppKeyboardShortcuts({
   commandsRef.current = commands;
   clearVisualSelectionRef.current = clearVisualSelection;
   focusAreaRef.current = focusArea;
+  promptActiveRef.current = promptActive;
   showAgentSkillRef.current = showAgentSkill;
   showHelpRef.current = showHelp;
   saveConfigPromptOpenRef.current = saveConfigPromptOpen;
@@ -455,13 +460,14 @@ export function useAppKeyboardShortcuts({
   };
 
   /**
-   * Route keys around the focused text inputs (the file filter and the inline
-   * note draft).
+   * Route keys around the focused text inputs (the status-line prompt and the
+   * inline note draft).
    *
    * Both inputs receive their characters through OpenTUI's renderable path,
    * which consuming would cut off — so plain typing is `"focused"`, and only
    * the inputs' explicit escape hatches (Tab out of the filter, Escape/Ctrl-S
-   * on a draft) are acted on here and owned as `"mine"`.
+   * on a draft) are acted on here and owned as `"mine"`. The prompt's own
+   * Escape handling lives on the input, which clears first and closes second.
    */
   const handleFocusedInputShortcut = (key: KeyEvent): KeyOwner => {
     if (focusAreaRef.current === "filter") {
@@ -476,8 +482,12 @@ export function useAppKeyboardShortcuts({
         return "mine";
       }
 
-      // Everything else is the filter's text (its own Escape handling lives on
-      // the input, which clears first and closes second).
+      // Everything else is the filter's text.
+      return "focused";
+    }
+
+    if (promptActiveRef.current) {
+      // An extension prompt has no host escape hatch: every key is its text.
       return "focused";
     }
 

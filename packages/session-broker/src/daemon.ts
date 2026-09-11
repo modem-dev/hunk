@@ -38,6 +38,16 @@ import {
   type SessionBrokerProtocolParsers,
 } from "./protocolParsers";
 import {
+  DEFAULT_SESSION_BROKER_ADMIN_PATHS,
+  SESSION_BROKER_ADMIN_SCOPE_VERSION,
+  SESSION_BROKER_ADMIN_STOP_CLOSE_REASON,
+  parseSessionBrokerAdminRequest,
+  type SessionBrokerAdminPaths,
+  type SessionBrokerAdminSessionV1,
+  type SessionBrokerAdminStatusV1,
+  type SessionBrokerAdminStopResultV1,
+} from "./admin";
+import {
   DEFAULT_SESSION_BROKER_API_PATH,
   DEFAULT_SESSION_BROKER_CAPABILITIES_PATH,
   DEFAULT_SESSION_BROKER_HEALTH_PATH,
@@ -82,6 +92,24 @@ export interface SessionBrokerAuthenticatedControlResult {
   readonly status?: number;
 }
 
+/**
+ * Configure the revision-tolerant admin scope (`status` and `stop`).
+ *
+ * The authenticator is a second instance built with the admin scope version in place of the app
+ * revision, sharing the daemon identity and on-disk credentials; its caller sessions are unknown
+ * to the main authenticator, so an admin caller can never reach the session API. The app maps its
+ * own session view to the frozen v1 session entry.
+ */
+export interface SessionBrokerDaemonAdminOptions<SessionView = unknown> {
+  authenticator: SessionBrokerHelloAuthenticator & CallerRequestAuthenticator;
+  paths?: Partial<SessionBrokerAdminPaths>;
+  /** Human-readable app build version reported beside the app revision. */
+  appVersion: string;
+  // Method syntax keeps the daemon assignable across session view types, as the other
+  // controller callbacks are.
+  describeSession(session: SessionView): Omit<SessionBrokerAdminSessionV1, "clientDaemonVersion">;
+}
+
 export interface SessionBrokerDaemonOptions<
   SessionView = unknown,
   ServerMessage extends SessionServerMessage = SessionServerMessage,
@@ -89,6 +117,7 @@ export interface SessionBrokerDaemonOptions<
 > {
   broker: SessionBrokerController<SessionView, ServerMessage, CommandResult>;
   capabilities?: SessionBrokerCapabilities;
+  admin?: SessionBrokerDaemonAdminOptions<SessionView>;
   paths?: Partial<SessionBrokerHttpPaths>;
   exposeHttpApi?: boolean;
   callerAuthenticator?: CallerRequestAuthenticator;
@@ -156,12 +185,15 @@ interface ProducerAuthenticationState {
   sessionId?: string;
   assertActive?: () => void;
   brokerPeer?: SessionBrokerPeer;
+  /** The app revision acknowledged in this producer's hello. */
+  appRevision?: number;
 }
 
 interface ProducerOwner {
   connection: SessionBrokerPeer;
   brokerPeer: SessionBrokerPeer;
   principal: ProducerPrincipal;
+  appRevision?: number;
 }
 
 /** Parse one exact producer handshake wrapper before forwarding its opaque payload. */
@@ -213,6 +245,9 @@ export class SessionBrokerDaemon<
   private readonly helloAuthenticator?: SessionBrokerHelloAuthenticator;
   private readonly producerEndpoint?: string;
   private readonly authorizer?: SessionBrokerAuthorizer;
+  private readonly admin?: SessionBrokerDaemonAdminOptions<SessionView> & {
+    readonly paths: SessionBrokerAdminPaths;
+  };
   private readonly producerAuthentication = new WeakMap<
     SessionBrokerPeer,
     ProducerAuthenticationState
@@ -290,6 +325,15 @@ export class SessionBrokerDaemon<
       throw new TypeError("Authenticated producer transport requires a hello authenticator.");
     }
     this.authorizer = options.authorizer;
+    if (options.admin) {
+      if (!this.authorizer) {
+        throw new TypeError("The session broker admin scope requires an authorizer.");
+      }
+      this.admin = {
+        ...options.admin,
+        paths: { ...DEFAULT_SESSION_BROKER_ADMIN_PATHS, ...options.admin.paths },
+      };
+    }
     this.audit = options.audit;
     this.idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
     this.staleSessionTtlMs = options.staleSessionTtlMs ?? DEFAULT_STALE_SESSION_TTL_MS;
@@ -401,6 +445,11 @@ export class SessionBrokerDaemon<
       });
     }
 
+    if (this.admin) {
+      const adminResponse = await this.handleAdminRequest(request, url.pathname);
+      if (adminResponse) return adminResponse;
+    }
+
     if (url.pathname === this.paths.health) {
       // Treat health checks as a cheap maintenance pulse so stale sessions disappear even when the
       // daemon is mostly idle and no websocket traffic is flowing.
@@ -508,6 +557,7 @@ export class SessionBrokerDaemon<
         principal: authority.ack.principal,
         assertActive: authority.assertActive,
         brokerPeer,
+        appRevision: authority.ack.appRevision,
       });
       connection.send(JSON.stringify({ type: "hello-ack", ack: authority.ack }));
     } catch {
@@ -596,6 +646,9 @@ export class SessionBrokerDaemon<
             connection,
             brokerPeer,
             principal: producerAuthentication.principal,
+            ...(producerAuthentication.appRevision === undefined
+              ? {}
+              : { appRevision: producerAuthentication.appRevision }),
           });
           this.producerReconnects.delete(sessionId);
         }
@@ -743,7 +796,14 @@ export class SessionBrokerDaemon<
     }
   }
 
-  shutdown(error = new Error("The session broker daemon shut down.")) {
+  /**
+   * Begin graceful shutdown. When a close reason is given, attached producers are closed with it
+   * before broker state is torn down so their windows can tell a restart from a crash.
+   */
+  shutdown(
+    error = new Error("The session broker daemon shut down."),
+    producerCloseReason?: string,
+  ) {
     if (this.shuttingDown) {
       return;
     }
@@ -757,6 +817,16 @@ export class SessionBrokerDaemon<
     if (this.idleTimer) {
       clearTimeout(this.idleTimer);
       this.idleTimer = null;
+    }
+
+    if (producerCloseReason !== undefined) {
+      for (const owner of this.producerOwners.values()) {
+        try {
+          owner.connection.close?.(1001, producerCloseReason);
+        } catch {
+          // A transport that already failed cannot block shutdown.
+        }
+      }
     }
 
     this.broker.shutdown(error);
@@ -822,6 +892,103 @@ export class SessionBrokerDaemon<
 
       this.shutdown();
     }, remainingMs);
+  }
+
+  /** Route the admin hello and control paths; return null for every other path. */
+  private async handleAdminRequest(request: Request, pathname: string): Promise<Response | null> {
+    const admin = this.admin!;
+    if (pathname === admin.paths.challenge || pathname === admin.paths.proof) {
+      if (request.method !== "POST" || !hasJsonContentType(request)) {
+        return jsonError("Session broker admin authentication requires a JSON POST.", 401);
+      }
+      return this.handleBoundedControl(request, async (body) => {
+        try {
+          const input = parseSessionBrokerJsonBytes(body);
+          const result =
+            pathname === admin.paths.challenge
+              ? await admin.authenticator.issueChallenge(input, request.url)
+              : await admin.authenticator.completeCallerHello(input);
+          return Response.json(result);
+        } catch (error) {
+          const code =
+            error instanceof SessionBrokerAuthenticationError
+              ? error.code
+              : "authentication-required";
+          return Response.json({ error: code }, { status: 401 });
+        }
+      });
+    }
+    if (pathname !== admin.paths.control) return null;
+    if (request.method !== "POST") return jsonError("Admin requests must use POST.", 405);
+    if (!hasJsonContentType(request)) {
+      return jsonError("Expected Content-Type application/json.", 415);
+    }
+    return this.handleBoundedControl(request, async (body) => {
+      const authenticated = await this.authenticateRequest(
+        request,
+        body,
+        "diagnostics",
+        admin.authenticator,
+      );
+      if (authenticated instanceof Response) return authenticated;
+      let input;
+      try {
+        input = parseSessionBrokerAdminRequest(parseSessionBrokerJsonBytes(body));
+      } catch (error) {
+        return this.authenticatedResponse(authenticated, protocolError(error), 400);
+      }
+      // Both actions are authorized as diagnostics: the scope exists so an operator's existing
+      // caller credential can inspect and retire a daemon it cannot otherwise talk to.
+      if (!(await this.authorize(request, authenticated, { operation: "diagnostics" }))) {
+        return this.authenticatedResponse(authenticated, { error: "authorization-denied" }, 403);
+      }
+      const inactive = this.rejectInactiveRequest(authenticated);
+      if (inactive) return inactive;
+      // Deliberately not activity. `status` is a read-only diagnostic, and the client that needs
+      // it most is a newer window waiting for an incompatible incumbent to go quiescent. Counting
+      // it would keep that incumbent alive for as long as the window keeps asking, which is the
+      // opposite of what the window is waiting for. `stop` shuts the daemon down anyway.
+      if (input.action === "status") {
+        return this.authenticatedResponse(authenticated, this.adminStatus() as never, 200);
+      }
+      const result: SessionBrokerAdminStopResultV1 = {
+        adminScopeVersion: SESSION_BROKER_ADMIN_SCOPE_VERSION,
+        stopping: true,
+      };
+      const response = await this.authenticatedResponse(authenticated, result as never, 200);
+      // Let the signed acknowledgement leave before producers are closed and the listener stops.
+      setTimeout(() => {
+        this.shutdown(
+          new Error("The session broker daemon is restarting."),
+          SESSION_BROKER_ADMIN_STOP_CLOSE_REASON,
+        );
+      }, 0);
+      return response;
+    });
+  }
+
+  /** Build the frozen v1 admin status body from daemon facts and the app's session view. */
+  private adminStatus(): SessionBrokerAdminStatusV1 {
+    const admin = this.admin!;
+    return {
+      adminScopeVersion: SESSION_BROKER_ADMIN_SCOPE_VERSION,
+      daemonVersion: this.appRevision ?? this.protocolParsers.appRevision,
+      appVersion: admin.appVersion,
+      pid: process.pid,
+      startedAt: new Date(this.startedAt).toISOString(),
+      uptimeMs: Date.now() - this.startedAt,
+      sessions: this.broker.listSessions().map((session) => {
+        const described = admin.describeSession(session);
+        // A session that registered necessarily matched the daemon's revision in its hello; the
+        // recorded value is preferred, and the daemon's own revision stands in for a retained
+        // session whose transport has since disconnected.
+        const clientDaemonVersion =
+          this.producerOwners.get(described.sessionId)?.appRevision ??
+          this.appRevision ??
+          this.protocolParsers.appRevision;
+        return { ...described, clientDaemonVersion };
+      }),
+    };
   }
 
   /** Authenticate, authorize, execute, and sign one app-owned finite JSON control. */
@@ -896,13 +1063,14 @@ export class SessionBrokerDaemon<
     request: Request,
     body: Uint8Array,
     operation: CallerOperation | "unknown",
+    authenticator: CallerRequestAuthenticator | undefined = this.callerAuthenticator,
   ): Promise<AuthenticatedCallerRequest | Response> {
     const requestId = request.headers.get("x-session-broker-request-id") ?? undefined;
     try {
-      if (!this.callerAuthenticator || !this.authorizer) {
+      if (!authenticator || !this.authorizer) {
         return jsonError("Broker control is unavailable.", 404);
       }
-      const authenticated = await this.callerAuthenticator.authenticate({
+      const authenticated = await authenticator.authenticate({
         request,
         body,
       });

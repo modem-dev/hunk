@@ -936,7 +936,7 @@ describe("extension sidebar views", () => {
       );
 
       await act(async () => {
-        await setup.mockInput.typeText("/");
+        await setup.mockInput.pressTab();
       });
       await flush(setup);
       await act(async () => {

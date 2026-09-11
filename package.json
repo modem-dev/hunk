@@ -15,6 +15,7 @@
     "stage:prebuilt:release": "bun run build:npm && bun run ./scripts/packaging/stage-prebuilt-npm.ts --artifact-root ./dist/release/artifacts",
     "install:bin": "bun run ./scripts/build/install-bin.ts",
     "generate:skill": "bun run ./scripts/generate/generate-skill.ts",
+    "generate:session-wire": "bun run ./scripts/generate/generate-session-wire.ts",
     "generate:theme-colors": "bun run ./scripts/generate/generate-theme-diff-colors.ts",
     "generate:docs": "bun run ./scripts/generate/generate-docs.ts",
     "generate:changelog": "bun run ./scripts/generate/generate-changelog.ts",

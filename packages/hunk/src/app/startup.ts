@@ -16,6 +16,7 @@ import {
 import type { AppBootstrap } from "./types";
 import type {
   CliInput,
+  DaemonControlCommandInput,
   ExtensionCliInvocationInput,
   ExtensionManageCommandInput,
   HistoryCommandInput,
@@ -56,6 +57,10 @@ export type StartupPlan =
     }
   | {
       kind: "daemon-serve";
+    }
+  | {
+      kind: "daemon-control";
+      input: DaemonControlCommandInput;
     }
   | {
       kind: "session-command";
@@ -375,6 +380,10 @@ export async function prepareStartupPlan(
     return await finishHeadlessPlan({
       kind: "daemon-serve",
     });
+  }
+
+  if (parsedCliInput.kind === "daemon-status" || parsedCliInput.kind === "daemon-restart") {
+    return await finishHeadlessPlan({ kind: "daemon-control", input: parsedCliInput });
   }
 
   if (parsedCliInput.kind === "session") {

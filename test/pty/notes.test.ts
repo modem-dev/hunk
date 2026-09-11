@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   createPtyHarness,
   dragMouse,
@@ -371,6 +373,14 @@ describe("PTY notes", () => {
   });
 
   test("next and previous note work when the current-line marker is off", async () => {
+    // Note stepping ships unbound (`n` / `N` belong to content search); bind it
+    // the documented way, which takes the chords back from search.
+    const configHome = harness.createIsolatedConfigHome();
+    mkdirSync(join(configHome, "hunk"), { recursive: true });
+    writeFileSync(
+      join(configHome, "hunk", "config.toml"),
+      '[keybindings]\n"hunk.review.nextNote" = "n"\n"hunk.review.previousNote" = "N"\n',
+    );
     const fixture = harness.createLongWrapFilePair();
     const session = await harness.launchHunk({
       args: [
@@ -385,6 +395,7 @@ describe("PTY notes", () => {
       ],
       cols: 100,
       rows: 30,
+      env: { XDG_CONFIG_HOME: configHome },
     });
 
     try {

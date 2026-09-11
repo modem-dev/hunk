@@ -20,7 +20,11 @@ import { resolveHunkProtocolPath } from "./repo-layout";
 export const DAEMON_UPGRADE_VERSION_A = "899.0.0";
 export const DAEMON_UPGRADE_VERSION_B = "899.0.1";
 
-const DAEMON_REVISION_PATTERN = /export const HUNK_SESSION_DAEMON_VERSION = ([1-9][0-9]*);/g;
+// The built revision is declared as `const BUILT_SESSION_DAEMON_VERSION = N;` (a test-only
+// environment override derives the exported value from it); older sources exported the literal
+// directly. Both spellings are recognized so fixture checkouts from either era can be rewritten.
+const DAEMON_REVISION_PATTERN =
+  /(const (?:BUILT_SESSION_DAEMON_VERSION|HUNK_SESSION_DAEMON_VERSION) = )([1-9][0-9]*);/g;
 
 /** Read the one numeric Hunk daemon revision declaration used by authenticated app negotiation. */
 export function readDaemonRevision(source: string) {
@@ -28,7 +32,7 @@ export function readDaemonRevision(source: string) {
   if (matches.length !== 1) {
     throw new Error("Daemon upgrade fixtures require exactly one HUNK_SESSION_DAEMON_VERSION.");
   }
-  const revision = Number(matches[0]![1]);
+  const revision = Number(matches[0]![2]);
   if (!Number.isSafeInteger(revision) || revision < 2) {
     throw new Error("Daemon upgrade fixtures require a daemon revision of at least 2.");
   }
@@ -41,10 +45,7 @@ export function replaceDaemonRevision(source: string, revision: number) {
   if (!Number.isSafeInteger(revision) || revision < 1) {
     throw new Error("Daemon fixture revision must be a positive safe integer.");
   }
-  return source.replace(
-    DAEMON_REVISION_PATTERN,
-    `export const HUNK_SESSION_DAEMON_VERSION = ${revision};`,
-  );
+  return source.replace(DAEMON_REVISION_PATTERN, `$1${revision};`);
 }
 
 /** Enumerate tracked and non-ignored checkout files without consulting committed-only bytes. */

@@ -4,6 +4,7 @@
   "hunk": {
     "extensions": [
       "./index.ts"
-    ]
+    ],
+    "apiVersion": 26
   }
 }

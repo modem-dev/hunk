@@ -1,3 +1,4 @@
+import { HUNK_DAEMON_UPGRADE_WAIT_MESSAGE } from "../../../packages/hunk/src/session/client/capabilities";
 import { describe, expect, test } from "bun:test";
 import {
   mkdirSync,
@@ -87,8 +88,7 @@ function writeDaemonReleaseEvidence(output: string) {
     "old-session-list.json": '{"sessions":[{"pid":101}]}',
     "first-recovered-session-list.json": '{"sessions":[{"pid":201}]}',
     "recovered-session-list.json": '{"sessions":[{"pid":201},{"pid":202}]}',
-    "incompatible-warning.log":
-      "Close older Hunk windows; this window will reconnect automatically.\n",
+    "incompatible-warning.log": `${HUNK_DAEMON_UPGRADE_WAIT_MESSAGE}\n`,
     "old-executable.txt": `pid=100\nstartToken=1000\nlocation=/fixture/a\ndigest=${"a".repeat(64)}\n`,
     "new-executable.txt": `pid=200\nstartToken=2000\nlocation=/fixture/b\ndigest=${"b".repeat(64)}\n`,
     "daemon-fixture-manifest.json": JSON.stringify({

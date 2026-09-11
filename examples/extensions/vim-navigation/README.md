@@ -35,7 +35,7 @@ cp -R examples/extensions/vim-navigation ~/.config/hunk/extensions/
 
 Counts are parsed by the extension and capped at 10,000. Once a normal-mode sequence resolves, the extension calls `ctx.commands.execute(id, { count })` exactly once, so Hunk applies movement atomically. A bare `0` passes to Hunk's normal layout shortcut; `0` can extend a count that already began with `1`–`9`.
 
-Pressing `:` passes the key to the example's registered command, which opens `ctx.dialogs.input()`. That focused host dialog captures typed keys ahead of the still-active session mode until Enter submits or Escape cancels. The deliberately small Ex-style command set is:
+Pressing `:` passes the key to the example's registered command, which opens `ctx.prompts.line()` on the status row with a `:` prefix. That focused host input captures typed keys ahead of the still-active session mode until Enter submits, or Escape clears the buffer and a second Escape cancels. The deliberately small Ex-style command set is:
 
 | Command   | Action                          |
 | --------- | ------------------------------- |

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createTestDiffFile } from "../../../../../test/helpers/diff-helpers";
 import { toReadOnlyFileViews } from "../../extensions/events";
+import type { ExtensionDiffFile } from "../../extension-api/types";
 import { buildExtensionReviewSelection } from "./extensionSelection";
 
 /** The frozen views the sidebar panes render from, for two visible files. */
@@ -23,6 +24,24 @@ describe("buildExtensionReviewSelection", () => {
     expect(selection.file?.path).toBe("beta.ts");
     expect(selection.hunkIndex).toBe(0);
     expect(selection.currentLine).toBeNull();
+    expect(selection.files).toBe(files);
+    expect(selection.files[1]).toBe(selection.file as ExtensionDiffFile);
+  });
+
+  test("carries the visible files in review order even with no selection", () => {
+    // A content search or any whole-review command needs the corpus the user
+    // can see, not the one file under the cursor, and it needs it even when the
+    // filter hides the selection.
+    const files = createTestFileViews();
+    const selection = buildExtensionReviewSelection({
+      files,
+      selectedFileId: "gamma",
+      selectedHunkIndex: 0,
+    });
+
+    expect(selection.file).toBeNull();
+    expect(selection.files.map((file) => file.path)).toEqual(["alpha.ts", "beta.ts"]);
+    expect(Object.isFrozen(selection)).toBe(true);
   });
 
   test("reports no selection when nothing is selected", () => {
@@ -32,7 +51,13 @@ describe("buildExtensionReviewSelection", () => {
       selectedHunkIndex: 3,
     });
 
-    expect(selection).toEqual({ file: null, hunkIndex: null, currentLine: null });
+    expect(selection).toEqual({
+      file: null,
+      hunkIndex: null,
+      currentLine: null,
+      files: selection.files,
+    });
+    expect(selection.files).toHaveLength(2);
   });
 
   test("reports no selection for a file the filter hides", () => {
@@ -45,7 +70,9 @@ describe("buildExtensionReviewSelection", () => {
       selectedHunkIndex: 0,
     });
 
-    expect(selection).toEqual({ file: null, hunkIndex: null, currentLine: null });
+    expect(selection.file).toBeNull();
+    expect(selection.hunkIndex).toBeNull();
+    expect(selection.currentLine).toBeNull();
   });
 
   test("copies the matching current line into the frozen snapshot", () => {

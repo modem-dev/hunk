@@ -30,8 +30,8 @@ export interface LogSnapshot {
   selectionAnchor: number | null;
   visualSelectionActive: boolean;
   top: number;
+  /** The last submitted search query, repeated by next/previous match. */
   search: string;
-  searchEditing: boolean;
   historyDone: boolean;
   loading: boolean;
   notice: string;
@@ -67,7 +67,6 @@ export class LogController {
       visualSelectionActive: false,
       top: 0,
       search: "",
-      searchEditing: false,
       historyDone: false,
       loading: false,
       notice: startupNotices.join(" • "),
@@ -278,30 +277,15 @@ export class LogController {
     await this.select(this.snapshot.rows.length - 1, viewportBodyHeight);
   }
 
-  /** Enter or update the focused search editor without filtering topology. */
-  setSearch(search: string, editing = this.snapshot.searchEditing) {
-    this.publish({ search, searchEditing: editing });
-  }
-
-  appendSearch(text: string) {
-    this.publish({ search: this.snapshot.search + text });
-  }
-
-  backspaceSearch() {
-    this.publish({ search: Array.from(this.snapshot.search).slice(0, -1).join("") });
-  }
-
-  beginSearch() {
+  /** Replace the repeatable query without filtering topology; the host prompt owns editing. */
+  setSearch(search: string) {
     this.clearNotice();
-    this.publish({ searchEditing: true });
+    this.publish({ search });
   }
 
-  cancelSearch() {
-    this.publish({ searchEditing: false });
-  }
-
-  async finishSearch(direction: 1 | -1 = 1, viewportHeight = this.viewportBodyHeight) {
-    this.publish({ searchEditing: false });
+  /** Select the next match of one submitted query, in `direction`. */
+  async search(query: string, direction: 1 | -1 = 1, viewportHeight = this.viewportBodyHeight) {
+    this.setSearch(query);
     await this.findMatch(direction, viewportHeight);
   }
 

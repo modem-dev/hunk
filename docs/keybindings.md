@@ -7,7 +7,7 @@ command ids to the keys you want them on:
 [keybindings]
 "hunk.app.quit" = "ctrl+x"               # one chord
 "hunk.review.nextHunk" = ["]", "ctrl+n"] # several chords for one command
-"hunk.review.focusFilter" = "f"          # takes "f" away from page-down
+"hunk.review.focusFilter" = "/"          # takes "/" back from content search
 "hunk.view.toggleMenuBar" = false        # unbind it entirely
 "myext.toggle" = "ctrl+g"                # extension commands too
 ```
@@ -23,9 +23,13 @@ Rules worth knowing:
 - **User bindings replace defaults.** Listing chords for a command is the
   complete set of keys it answers to, not an addition to the shipped ones.
 - **A key you bind is yours.** Any command that held the same chord only as a
-  default gives it up, keeping its other keys. Above, page-down still answers to
-  `PageDown` and `Space` after `f` moves to the filter.
+  default gives it up, keeping its other keys. Above, `hunk.search.find` hands
+  `/` to the filter while `n` / `N` still step search matches.
 - **`false` (or `[]`) unbinds a command**, leaving its keys doing nothing.
+- **Unbound commands are one line away.** The file filter ships without a key
+  (Tab and the File menu reach it), as do `hunk.review.nextNote` /
+  `previousNote` (`}` / `{` step through annotated hunks); one `[keybindings]`
+  line gives any of them a chord.
 - Two entries claiming one chord is a conflict: the first in the file wins and
   the session reports the other. Unknown command ids and unusable chords are
   reported the same way, and the rest of the table still applies.
@@ -118,7 +122,7 @@ Review and shared commands:
 | `hunk.review.deleteActiveNote`                 | Delete active review note                      | `D`                          |
 | `hunk.review.editActiveNote`                   | Edit active review note                        | `E`                          |
 | `hunk.review.editSelectedFile`                 | Open the selected file in your editor          | `e`                          |
-| `hunk.review.focusFilter`                      | Focus the file filter                          | `/`                          |
+| `hunk.review.focusFilter`                      | Focus the file filter                          | _(none)_                     |
 | `hunk.review.halfPageDown`                     | Scroll down half a page                        | `d`, `ctrl+d`                |
 | `hunk.review.halfPageUp`                       | Scroll up half a page                          | `u`, `ctrl+u`                |
 | `hunk.review.jumpToBottom`                     | Jump to end                                    | `G`, `end`                   |
@@ -127,14 +131,14 @@ Review and shared commands:
 | `hunk.review.nextAnnotatedHunk`                | Next annotated hunk                            | `}`                          |
 | `hunk.review.nextFile`                         | Next file                                      | `.`                          |
 | `hunk.review.nextHunk`                         | Next hunk                                      | `]`                          |
-| `hunk.review.nextNote`                         | Next review note                               | `n`                          |
+| `hunk.review.nextNote`                         | Next review note                               | _(none)_                     |
 | `hunk.review.pageDown`                         | Scroll down one page                           | `pagedown`, `space`, `f`     |
 | `hunk.review.pageUp`                           | Scroll up one page                             | `pageup`, `b`, `shift+space` |
 | `hunk.review.previousAnnotatedFile`            | Previous annotated file                        | _(none)_                     |
 | `hunk.review.previousAnnotatedHunk`            | Previous annotated hunk                        | `{`                          |
 | `hunk.review.previousFile`                     | Previous file                                  | `,`                          |
 | `hunk.review.previousHunk`                     | Previous hunk                                  | `[`                          |
-| `hunk.review.previousNote`                     | Previous review note                           | `N`                          |
+| `hunk.review.previousNote`                     | Previous review note                           | _(none)_                     |
 | `hunk.review.replyToActiveNote`                | Reply to active review note                    | `R`                          |
 | `hunk.review.scrollCodeLeft`                   | Scroll code left (shifted scrolls fast)        | `left`, `shift+left`         |
 | `hunk.review.scrollCodeRight`                  | Scroll code right (shifted scrolls fast)       | `right`, `shift+right`       |
@@ -143,6 +147,9 @@ Review and shared commands:
 | `hunk.review.stepDown`                         | Move down one line or note                     | `down`, `j`                  |
 | `hunk.review.stepUp`                           | Move up one line or note                       | `up`, `k`                    |
 | `hunk.review.toggleHunkGap`                    | Expand or collapse the selected context        | `z`                          |
+| `hunk.search.find`                             | Search diff content                            | `/`                          |
+| `hunk.search.next`                             | Next search match                              | `n`                          |
+| `hunk.search.previous`                         | Previous search match                          | `N`                          |
 | `hunk.view.applyFilePresentationToAllMatching` | Apply current file presentation to all matches | _(none)_                     |
 | `hunk.view.cursorLineNumber`                   | Mark the current line number                   | _(none)_                     |
 | `hunk.view.cursorLineOff`                      | Hide the current-line marker                   | _(none)_                     |

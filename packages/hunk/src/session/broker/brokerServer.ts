@@ -1,4 +1,5 @@
 import {
+  SESSION_BROKER_ADMIN_SCOPE_VERSION,
   SessionBrokerAuthenticator,
   createSessionBrokerDaemon,
   type SessionBrokerAuthenticatedControlFacts,
@@ -54,6 +55,7 @@ import { parseSessionDaemonRequest } from "../protocolSchemas";
 import { hunkSessionProtocolParsers } from "./protocolParsers";
 import { loadOrCreateHunkSessionBrokerCredentials } from "./credentials";
 import { HUNK_SESSION_BROKER_APP_ID, HUNK_SESSION_BROKER_APP_REVISION } from "./appContract";
+import { resolveCliVersion } from "../../core/run/version";
 
 const DEFAULT_STALE_SESSION_TTL_MS = 45_000;
 const DEFAULT_STALE_SESSION_SWEEP_INTERVAL_MS = 15_000;
@@ -630,6 +632,17 @@ export async function serveSessionBrokerDaemon(
     // session quickly so repeated short-lived commands cannot fill the generic retained-session cap.
     callerSessionTtlMs: 30_000,
   });
+  // The admin scope (`hunk daemon status` / `restart`) must work from a Hunk build on a different
+  // revision, so it authenticates against the frozen scope version with the same credentials.
+  // Its caller sessions live only here and can never satisfy the session API's authenticator.
+  const adminAuthenticator = new SessionBrokerAuthenticator({
+    appId: HUNK_SESSION_BROKER_APP_ID,
+    appRevision: SESSION_BROKER_ADMIN_SCOPE_VERSION,
+    generation,
+    daemonIdentity: credentials.daemonIdentity,
+    credentials: [credentials.caller],
+    callerSessionTtlMs: 30_000,
+  });
   const daemon = createSessionBrokerDaemon({
     broker: createHunkBrokerController(state),
     capabilities: {
@@ -646,6 +659,16 @@ export async function serveSessionBrokerDaemon(
     helloAuthenticator: authenticator,
     producerEndpoint: `${config.wsOrigin}${SESSION_BROKER_SOCKET_PATH}`,
     authorizer: () => true,
+    admin: {
+      authenticator: adminAuthenticator,
+      appVersion: resolveCliVersion(),
+      describeSession: (session) => ({
+        sessionId: session.sessionId,
+        title: session.title,
+        cwd: session.cwd,
+        pid: session.pid,
+      }),
+    },
     // Hunk currently keeps audit decisions in-process; the generic hook guarantees only redacted
     // principal/operation metadata can be wired to a future diagnostic sink.
     audit: () => undefined,
@@ -753,6 +776,8 @@ export async function serveSessionBrokerDaemon(
 
   process.once("SIGINT", shutdown);
   process.once("SIGTERM", shutdown);
+  // An admin `stop` retires the daemon engine first; the review streams and listener follow.
+  void daemon.stopped.then(() => browserReview.close());
   void server.stopped.finally(() => {
     process.off("SIGINT", shutdown);
     process.off("SIGTERM", shutdown);

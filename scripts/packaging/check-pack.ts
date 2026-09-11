@@ -78,6 +78,7 @@ export default function (hunk: HunkExtensionAPI) {
   const sessionOptions: ExtensionSessionOptions = { viewPreferences: "transient" };
   hunk.configureSession(sessionOptions);
   const noSelection: ExtensionReviewSelection = {
+    files: [],
     file: null,
     hunkIndex: null,
     currentLine: null,

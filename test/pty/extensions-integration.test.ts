@@ -331,6 +331,28 @@ const DIALOG_EXTENSION_SOURCE = `export default function (hunk) {
 }
 `;
 
+/**
+ * A repo-local extension driving the status line: `ctrl+g` asks for a line on the prompt row
+ * and reports the answer as a persistent item; `ctrl+t` fills the row with items of different
+ * priorities so overflow is visible.
+ */
+const STATUS_LINE_EXTENSION_SOURCE = `export default function (hunk) {
+  hunk.registerCommand({ id: "ask", title: "Ask", key: "ctrl+g" }, async (ctx) => {
+    const answer = await ctx.prompts.line({ prefix: ">", placeholder: "say something" });
+    ctx.statusLine.set({
+      id: "answer",
+      spans: [{ text: "answer=" + String(answer), tone: "accent" }],
+      priority: 1,
+    });
+  });
+  hunk.registerCommand({ id: "fill", title: "Fill", key: "ctrl+t" }, (ctx) => {
+    ctx.statusLine.set({ id: "keep", spans: [{ text: "KEEP-ME" }], priority: 5 });
+    ctx.statusLine.set({ id: "drop", spans: [{ text: "DROP-ME-FIRST-" + "x".repeat(70) }], priority: 0 });
+    ctx.statusLine.set({ id: "right", spans: [{ text: "RIGHT" }], alignment: "right", priority: 3 });
+  });
+}
+`;
+
 describe("PTY extensions", () => {
   test("an extension event reloads agent changes without watch mode", async () => {
     const configHome = harness.createIsolatedConfigHome();
@@ -1039,20 +1061,24 @@ describe("PTY extensions", () => {
       const centered = await session.text({ immediate: true });
       expect(lineIndexOf(centered, "export const line11 = 11;")).toBeGreaterThan(topAlignedRow);
 
-      // `:` passes into the registered command, whose focused host dialog owns even mode keys.
+      // `:` passes into the registered command, whose focused status-line prompt owns even
+      // mode keys. Escape clears the typed buffer first and closes the prompt second, leaving
+      // the mode itself running.
       await session.press(":");
-      await session.waitForText(/Vim command \(:\)/, { timeout: 20_000 });
+      await session.waitForText(/ext vim-navigation : top or bottom/, { timeout: 20_000 });
       await session.type("j-owned");
-      await session.waitForText(/j-owned/, { timeout: 20_000 });
+      await session.waitForText(/: j-owned/, { timeout: 20_000 });
+      await session.press("escape");
+      await session.waitForText(/ext vim-navigation : top or bottom/, { timeout: 20_000 });
       await session.press("escape");
       await harness.waitForSnapshot(
         session,
-        (text) => !text.includes("Vim command (:)") && /Vim navigation.*Esc exits/.test(text),
+        (text) => !text.includes("top or bottom") && /Vim navigation.*Esc exits/.test(text),
         20_000,
       );
 
       await session.press(":");
-      await session.waitForText(/Vim command \(:\)/, { timeout: 20_000 });
+      await session.waitForText(/ext vim-navigation : top or bottom/, { timeout: 20_000 });
       await session.type("bottom");
       await session.press("enter");
       const commandBottom = await harness.waitForSnapshot(
@@ -1063,7 +1089,7 @@ describe("PTY extensions", () => {
       expect(commandBottom).toContain("second.ts");
 
       await session.press(":");
-      await session.waitForText(/Vim command \(:\)/, { timeout: 20_000 });
+      await session.waitForText(/ext vim-navigation : top or bottom/, { timeout: 20_000 });
       await session.type("top");
       await session.press("enter");
       const commandTop = await harness.waitForSnapshot(
@@ -1260,6 +1286,113 @@ describe("PTY extensions", () => {
       const row = lineIndexOf(revealed, REVEAL_LINE_TOKEN);
       expect(row).toBeGreaterThan(0);
       expect(row).toBeLessThan(12);
+    } finally {
+      session.close();
+    }
+  });
+
+  test("a narrow extension prompt keeps typed input visible beside the mode badge", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const extensionPath = join(configHome, "long-attributed-prompt-fixture.ts");
+    writeFileSync(
+      extensionPath,
+      `export default function (hunk) {
+      hunk.registerKeyboardMode({ id: "mode", title: "Mode", onKey: () => "pass" });
+      hunk.registerCommand({ id: "ask", title: "Ask", key: "ctrl+g" }, async (ctx) => {
+        ctx.keyboardModes.enterMode("mode");
+        const answer = await ctx.prompts.line({ prefix: "a very long prefix that cannot fit:" });
+        ctx.statusLine.set({ id: "answer", spans: [{ text: "answer=" + answer }] });
+      });
+    }`,
+    );
+    const fixture = harness.createTwoFileRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "unified", "--extension", extensionPath],
+      cwd: fixture.dir,
+      cols: 50,
+      rows: 20,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+    try {
+      await session.waitForText(/alpha\.ts/, { timeout: 20_000 });
+      await harness.ensureKeyboardIsLive(session);
+      await session.press(["ctrl", "g"]);
+      await session.waitForText(/Mode — ext/, { timeout: 5_000 });
+      await session.type("xyz");
+      // The four-cell input scrolls to keep its cursor margin; the typed suffix stays visible.
+      const frame = await harness.waitForSnapshot(session, (text) => text.includes("… yz"), 5_000);
+      const row = frame.trimEnd().split("\n").at(-1)!;
+      expect(row).toContain("ext ");
+      expect(row).toContain("… yz");
+      expect(row).toContain("Mode — ext");
+      await session.press("enter");
+      await session.waitForText(/answer=xyz/, { timeout: 5_000 });
+    } finally {
+      session.close();
+    }
+  });
+
+  test("an extension prompt types, submits, cancels, and its items overflow by priority", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    // Loaded through the dev flag from outside the repo, so it is trusted without a prompt and
+    // the review's startup notices stay quiet.
+    const extensionPath = join(configHome, "status-line-fixture.ts");
+    writeFileSync(extensionPath, STATUS_LINE_EXTENSION_SOURCE);
+    const fixture = harness.createTwoFileRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "unified", "--extension", extensionPath],
+      cwd: fixture.dir,
+      cols: 100,
+      rows: 20,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      const initial = await session.waitForText(/alpha\.ts/, { timeout: 20_000 });
+      const initialRows = initial.trimEnd().split("\n").length;
+
+      // Opening the prompt takes one row from the review and shows the attributed prefix.
+      await session.press(["ctrl", "g"]);
+      const prompt = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("ext status-line-fixture > say something"),
+        10_000,
+      );
+      expect(prompt.trimEnd().split("\n").length).toBeGreaterThanOrEqual(initialRows);
+
+      // A bound key is text: `q` lands in the input instead of quitting.
+      await session.type("q then hello");
+      await harness.waitForSnapshot(session, (text) => text.includes("> q then hello"), 5_000);
+      await session.press("enter");
+      const answered = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("answer=q then hello"),
+        5_000,
+      );
+      expect(answered).not.toContain("say something");
+
+      // Escape: the first press clears a non-empty buffer, the second cancels with null.
+      await session.press(["ctrl", "g"]);
+      await harness.waitForSnapshot(session, (text) => text.includes("> say something"), 5_000);
+      await session.type("abc");
+      await harness.waitForSnapshot(session, (text) => text.includes("> abc"), 5_000);
+      await session.press("escape");
+      await harness.waitForSnapshot(session, (text) => text.includes("> say something"), 5_000);
+      await session.press("escape");
+      await harness.waitForSnapshot(session, (text) => text.includes("answer=null"), 5_000);
+
+      // Overflow: the lowest-priority item is dropped whole, the rest keep their placement.
+      await session.press(["ctrl", "t"]);
+      const filled = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("KEEP-ME") && text.includes("RIGHT"),
+        5_000,
+      );
+      const row = filled.trimEnd().split("\n").at(-1) ?? "";
+      expect(row).toContain("KEEP-ME");
+      expect(row.trimEnd().endsWith("RIGHT")).toBe(true);
+      expect(row).not.toContain("DROP-ME");
+      expect(row).toContain("answer=null");
     } finally {
       session.close();
     }

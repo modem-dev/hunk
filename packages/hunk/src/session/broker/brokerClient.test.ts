@@ -17,7 +17,11 @@ import {
 } from "@hunk/session-broker";
 import { serveSessionBrokerDaemon as serveBunSessionBrokerDaemon } from "@hunk/session-broker-bun";
 import { hunkSessionProtocolParsers } from "./protocolParsers";
-import { isQuiescentUpgradeRefusal, SessionBrokerClient } from "./brokerClient";
+import {
+  isQuiescentUpgradeRefusal,
+  isRegistrationRejection,
+  SessionBrokerClient,
+} from "./brokerClient";
 import type { ResolvedSessionBrokerConfig } from "./brokerConfig";
 import {
   loadOrCreateHunkSessionBrokerCredentials,
@@ -25,7 +29,15 @@ import {
 } from "./credentials";
 import { serveSessionBrokerDaemon as serveHunkSessionBrokerDaemon } from "./brokerServer";
 import { createHttpHunkSessionCliClient } from "../agent/cliClient";
-import { HUNK_DAEMON_UPGRADE_WAIT_MESSAGE } from "../client/capabilities";
+import {
+  HUNK_DAEMON_REGISTRATION_REJECTED_MESSAGE,
+  HUNK_DAEMON_UPGRADE_WAIT_MESSAGE,
+} from "../client/capabilities";
+import {
+  HUNK_DAEMON_CLIENT_NEWER_MESSAGE,
+  HUNK_DAEMON_CLIENT_OLDER_MESSAGE,
+} from "../client/daemonSkew";
+import type { HunkDaemonAdminProbe } from "../client/daemonAdmin";
 import { resolveSessionBrokerRuntimePaths } from "./brokerLauncher";
 import { DeterministicLifecycleClockTest } from "../../../../../test/helpers/lifecycleClockTest";
 
@@ -43,7 +55,8 @@ type DeepPartialTest<T> = T extends object ? { [Key in keyof T]?: DeepPartialTes
 
 interface SessionBrokerConnectionTestDouble {
   options: {
-    resolveClose?: (...args: unknown[]) => { reconnect?: boolean };
+    resolveClose?: (...args: unknown[]) => { reconnect?: boolean; warning?: string };
+    onConnected?: (...args: unknown[]) => void;
   };
   start(): void;
   stop(): void;
@@ -287,6 +300,274 @@ describe("Hunk session daemon client", () => {
     ).toBe(false);
   });
 
+  test("only treats exact post-hello payload refusals as registration rejections", () => {
+    const registration = "Incompatible session registration.";
+    const snapshot = "Incompatible session snapshot.";
+    expect(isRegistrationRejection({ code: 1008, reason: registration, authenticated: true })).toBe(
+      true,
+    );
+    expect(isRegistrationRejection({ code: 1008, reason: snapshot, authenticated: true })).toBe(
+      true,
+    );
+    expect(
+      isRegistrationRejection({ code: 1008, reason: registration, authenticated: false }),
+    ).toBe(false);
+    expect(isRegistrationRejection({ code: 1006, reason: registration, authenticated: true })).toBe(
+      false,
+    );
+    expect(
+      isRegistrationRejection({
+        code: 1008,
+        reason: "Session producer scope rejected.",
+        authenticated: true,
+      }),
+    ).toBe(false);
+  });
+
+  /** Build one admin status probe for a daemon at the given revision. */
+  function statusProbeTest(daemonVersion: number): HunkDaemonAdminProbe {
+    return {
+      kind: "status",
+      status: {
+        adminScopeVersion: 1,
+        daemonVersion,
+        appVersion: "9.9.9",
+        pid: 4242,
+        startedAt: "2026-01-01T00:00:00.000Z",
+        uptimeMs: 1,
+        sessions: [],
+      },
+    };
+  }
+
+  // Intent: a refused hello first shows the generic wait notice, then the admin status probe
+  // refines it by direction; a daemon the client can never join slows the poll instead of
+  // hammering it. Neither notice reaches the console when a subscriber owns the status bar.
+  for (const direction of ["client-newer", "client-older", "unsupported"] as const) {
+    test(`refines the refused-hello notice for ${direction}`, async () => {
+      const clock = new DeterministicLifecycleClockTest();
+      const webSockets = installWebSocketObserverTest();
+      const messages = captureBrokerWarningsTest();
+      const probe = createDeferredTest<HunkDaemonAdminProbe>();
+      const client = new SessionBrokerClient(createRegistration(), createSnapshot(), {
+        reconnectDelayMs: 10,
+        stalePollDelayMs: 1_000,
+        lifecycleClock: clock,
+        probeDaemonStatus: () => probe.promise,
+      });
+      const notices: Array<string | null> = [];
+      const unsubscribe = client.subscribeConnectionNotice((notice) => notices.push(notice));
+      const config = prepareDirectConnectTest(client);
+
+      try {
+        expect(notices).toEqual([null]);
+        clientTestAccess(client).connect(config);
+        webSockets.sockets[0]!.emitClose(
+          1008,
+          "Session broker authentication required; upgrade Hunk.",
+        );
+        expect(notices.at(-1)).toBe(HUNK_DAEMON_UPGRADE_WAIT_MESSAGE);
+
+        probe.resolve(
+          direction === "unsupported"
+            ? { kind: "unsupported" }
+            : statusProbeTest(
+                direction === "client-newer"
+                  ? HUNK_SESSION_DAEMON_VERSION - 1
+                  : HUNK_SESSION_DAEMON_VERSION + 1,
+              ),
+        );
+        await clock.flushMicrotasksTest();
+
+        if (direction === "client-newer") {
+          expect(notices.at(-1)).toBe(HUNK_DAEMON_CLIENT_NEWER_MESSAGE);
+          expect(client.getConnectionState()).toMatchObject({ direction: "client-newer" });
+        } else if (direction === "client-older") {
+          expect(notices.at(-1)).toBe(HUNK_DAEMON_CLIENT_OLDER_MESSAGE);
+          expect(client.getConnectionState()).toMatchObject({ direction: "client-older" });
+        } else {
+          expect(notices.at(-1)).toBe(HUNK_DAEMON_UPGRADE_WAIT_MESSAGE);
+          expect(client.getConnectionState()).toMatchObject({ direction: "unknown" });
+        }
+        expect(messages).toEqual([]);
+      } finally {
+        unsubscribe();
+        client.stop();
+        webSockets.restoreTest();
+      }
+    });
+  }
+
+  // Intent: the refined notice must survive the reconnect loop, and one incumbent must be asked
+  // for its build exactly once — repeated reads churn caller sessions on the daemon the window is
+  // waiting out.
+  test("probes one incumbent once and keeps the refined notice across reconnects", async () => {
+    const clock = new DeterministicLifecycleClockTest();
+    const webSockets = installWebSocketObserverTest();
+    let probes = 0;
+    const client = new SessionBrokerClient(createRegistration(), createSnapshot(), {
+      reconnectDelayMs: 10,
+      lifecycleClock: clock,
+      probeDaemonStatus: async () => {
+        probes += 1;
+        return statusProbeTest(HUNK_SESSION_DAEMON_VERSION - 1);
+      },
+    });
+    const notices: Array<string | null> = [];
+    client.subscribeConnectionNotice((notice) => notices.push(notice));
+    const config = prepareDirectConnectTest(client);
+
+    try {
+      clientTestAccess(client).connect(config);
+      const refuse = () => {
+        const connection = clientTestAccess(client).connection;
+        if (!connection?.options?.resolveClose) throw new Error("Expected a live connection.");
+        connection.options.resolveClose({
+          code: 1008,
+          reason: "Session broker authentication required; upgrade Hunk.",
+          authenticated: false,
+        });
+      };
+
+      refuse();
+      await clock.flushMicrotasksTest();
+      expect(probes).toBe(1);
+      expect(notices.at(-1)).toBe(HUNK_DAEMON_CLIENT_NEWER_MESSAGE);
+
+      // Three more refusals from the same incumbent: no re-probe, and the refined notice stands.
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        refuse();
+        await clock.flushMicrotasksTest();
+      }
+      expect(probes).toBe(1);
+      expect(notices.at(-1)).toBe(HUNK_DAEMON_CLIENT_NEWER_MESSAGE);
+      expect(notices.filter((notice) => notice === HUNK_DAEMON_UPGRADE_WAIT_MESSAGE)).toHaveLength(
+        1,
+      );
+    } finally {
+      client.stop();
+      webSockets.restoreTest();
+    }
+  });
+
+  // Intent: a probe that never landed must not strand the window on the generic notice for the
+  // incumbent's whole life; a daemon that answered (even to say it has no admin scope) must not
+  // be asked again on every reconnect.
+  for (const [label, first, retries] of [
+    ["a transient failure", { kind: "unavailable" } as HunkDaemonAdminProbe, 1],
+    ["a definitive refusal", { kind: "unsupported" } as HunkDaemonAdminProbe, 0],
+  ] as const) {
+    test(`re-probes the same incumbent after ${label}`, async () => {
+      const clock = new DeterministicLifecycleClockTest();
+      const webSockets = installWebSocketObserverTest();
+      const answers: HunkDaemonAdminProbe[] = [
+        first,
+        statusProbeTest(HUNK_SESSION_DAEMON_VERSION - 1),
+      ];
+      let probes = 0;
+      const client = new SessionBrokerClient(createRegistration(), createSnapshot(), {
+        reconnectDelayMs: 10,
+        lifecycleClock: clock,
+        probeDaemonStatus: async () => answers[Math.min(probes++, answers.length - 1)]!,
+      });
+      const notices: Array<string | null> = [];
+      client.subscribeConnectionNotice((notice) => notices.push(notice));
+      const config = prepareDirectConnectTest(client);
+
+      try {
+        clientTestAccess(client).connect(config);
+        const refuse = () => {
+          const connection = clientTestAccess(client).connection;
+          if (!connection?.options?.resolveClose) throw new Error("Expected a live connection.");
+          connection.options.resolveClose({
+            code: 1008,
+            reason: "Session broker authentication required; upgrade Hunk.",
+            authenticated: false,
+          });
+        };
+
+        refuse();
+        await clock.flushMicrotasksTest();
+        expect(probes).toBe(1);
+        expect(notices.at(-1)).toBe(HUNK_DAEMON_UPGRADE_WAIT_MESSAGE);
+
+        refuse();
+        await clock.flushMicrotasksTest();
+        expect(probes).toBe(1 + retries);
+        expect(notices.at(-1)).toBe(
+          retries === 0 ? HUNK_DAEMON_UPGRADE_WAIT_MESSAGE : HUNK_DAEMON_CLIENT_NEWER_MESSAGE,
+        );
+      } finally {
+        client.stop();
+        webSockets.restoreTest();
+      }
+    });
+  }
+
+  test("clears the sticky notice once the connection reaches connected", () => {
+    const webSockets = installWebSocketObserverTest();
+    const client = new SessionBrokerClient(createRegistration(), createSnapshot(), {
+      probeDaemonStatus: () => new Promise(() => undefined),
+    });
+    const notices: Array<string | null> = [];
+    client.subscribeConnectionNotice((notice) => notices.push(notice));
+    const config = prepareDirectConnectTest(client);
+
+    try {
+      clientTestAccess(client).connect(config);
+      const connection = clientTestAccess(client).connection;
+      if (!connection?.options?.resolveClose || !connection.options.onConnected) {
+        throw new Error("Expected a live connection.");
+      }
+      connection.options.resolveClose({
+        code: 1008,
+        reason: "Incompatible session registration.",
+        authenticated: true,
+      });
+      expect(notices.at(-1)).toBe(HUNK_DAEMON_REGISTRATION_REJECTED_MESSAGE);
+      expect(client.getConnectionState()).toMatchObject({ status: "disconnected" });
+      connection.options.onConnected();
+      expect(notices.at(-1)).toBeNull();
+      expect(client.getConnectionState()).toEqual({ status: "connected" });
+    } finally {
+      client.stop();
+      webSockets.restoreTest();
+    }
+  });
+
+  // Intent: a daemon that accepted the hello but refused the registration one parser deeper is
+  // a version skew the user must hear about; today that close is silent. The client keeps
+  // reconnecting so a daemon restart recovers the window without relaunching it.
+  test("warns and keeps reconnecting when the daemon rejects the registration after the hello", () => {
+    const webSockets = installWebSocketObserverTest();
+    const messages = captureBrokerWarningsTest();
+    const client = new SessionBrokerClient(createRegistration(), createSnapshot());
+    const config = prepareDirectConnectTest(client);
+
+    try {
+      clientTestAccess(client).connect(config);
+      const connection = clientTestAccess(client).connection;
+      if (!connection?.options?.resolveClose) throw new Error("Expected a live connection.");
+      const directive = connection.options.resolveClose({
+        code: 1008,
+        reason: "Incompatible session registration.",
+        authenticated: true,
+      });
+      expect(directive).toEqual({ reconnect: true });
+      expect(clientTestAccess(client).waitingForIncumbentExit).toBe(false);
+      expect(client.getConnectionState()).toEqual({
+        status: "disconnected",
+        notice: HUNK_DAEMON_REGISTRATION_REJECTED_MESSAGE,
+        direction: "unknown",
+      });
+      // Without a status-bar subscriber the notice falls back to the console.
+      expect(messages).toEqual([`[session:broker] ${HUNK_DAEMON_REGISTRATION_REJECTED_MESSAGE}`]);
+    } finally {
+      client.stop();
+      webSockets.restoreTest();
+    }
+  });
+
   test("keeps its previous registration when the live connection rejects replacement", () => {
     const registration = createRegistration();
     const client = new SessionBrokerClient(registration, createSnapshot());
@@ -437,7 +718,11 @@ describe("Hunk session daemon client", () => {
       clientTestAccess(skewedClient).credentials = credentials;
       clientTestAccess(skewedClient).connect(config);
       await waitUntil("both incompatible session warnings", () => messages.length === 2);
-      expect(messages.every((message) => message.includes("Close older Hunk windows"))).toBe(true);
+      expect(
+        messages.every(
+          (message) => message === `[session:broker] ${HUNK_DAEMON_UPGRADE_WAIT_MESSAGE}`,
+        ),
+      ).toBe(true);
       await Bun.sleep(60);
       expect(websocketOpens).toBe(2);
       expect(clientTestAccess(client).waitingForIncumbentExit).toBe(true);
