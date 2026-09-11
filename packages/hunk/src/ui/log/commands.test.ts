@@ -82,6 +82,8 @@ describe("history command authority", () => {
     expect(matchCommand(key("up", "", false, true))).toBe("hunk.history.extendPrevious");
     expect(matchCommand(key("x", "K"))).toBe("hunk.history.extendPrevious");
     expect(matchCommand(key("x", "j"))).toBe("hunk.history.nextCommit");
+    expect(matchCommand(key("x", "y"))).toBe("hunk.history.copyRevision");
+    expect(matchCommand(key("x", "Y"))).toBe("hunk.history.copyPullRequest");
     expect(matchCommand(key("x", "v"))).toBe("hunk.history.startVisualSelection");
     expect(
       matchCommand(key("escape", ""), undefined, {
@@ -123,6 +125,7 @@ describe("history command authority", () => {
       description: "extend selection up",
     });
     expect(helpRows).toContainEqual({ keys: "t", description: "choose theme" });
+    expect(helpRows).toContainEqual({ keys: "Y", description: "copy pull request url" });
   });
 
   test("remaps and unbinds history independently through the shared keymap", () => {

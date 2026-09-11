@@ -769,6 +769,13 @@ export interface ExtensionVcsHistoryCommit {
    * continues to key graph and review operations by the immutable `revisionId`.
    */
   logicalId?: string;
+  /**
+   * Optional web URL of a pull request or merge request associated with this commit.
+   *
+   * Providers may omit this when local history facts cannot name one. Hunk copies
+   * the value after https URL validation.
+   */
+  pullRequestUrl?: string;
 }
 
 /** Provider-neutral history traversal accepted by `hunk log`. */

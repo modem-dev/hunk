@@ -11,6 +11,11 @@ import {
   type ExtensionVcsHistoryReviewOptions,
   type ExtensionVcsHistorySource,
 } from "hunkdiff/extension";
+import {
+  gitHistoryPullRequestUrl,
+  parseGitHubRemoteRepository,
+  type GitHubRepository,
+} from "./pullRequest";
 
 const HISTORY_FIELDS_PER_COMMIT = 8;
 const FULL_OBJECT_ID_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
@@ -142,6 +147,12 @@ function hasHead(options: GitHistoryOptions) {
   return runGit(["rev-parse", "--verify", "--quiet", "HEAD"], options, [0, 1]).trim().length > 0;
 }
 
+/** Read origin when it names a github.com repository; missing remotes stay silent. */
+function readGitHubRepository(options: GitHistoryOptions) {
+  const origin = runGit(["remote", "get-url", "origin"], options, [0, 2, 128]).trim();
+  return parseGitHubRemoteRepository(origin);
+}
+
 /** Refuse a positional revision that Git could reinterpret as an option. */
 function requireRevision(value: string) {
   if (!value || value.startsWith("-")) {
@@ -250,6 +261,7 @@ export function parseGitHistory(
   decorations: ReadonlyMap<string, ExtensionVcsHistoryDecoration[]> = new Map(),
   firstParent = false,
   omitGraphParents = false,
+  githubRepository?: GitHubRepository | null,
 ): ExtensionVcsHistoryCommit[] {
   if (!text) return [];
   const fields = text.split("\0");
@@ -280,17 +292,20 @@ export function parseGitHistory(
     ) {
       throw new Error("Git returned an invalid history object id.");
     }
+    const resolvedSubject = subject || "(no commit message)";
+    const pullRequestUrl = gitHistoryPullRequestUrl({ subject: resolvedSubject }, githubRepository);
     commits.push({
       revisionId,
       displayId,
       parentRevisionIds,
       ...(omitGraphParents ? { graphParentRevisionIds: [] } : {}),
-      subject: subject || "(no commit message)",
+      subject: resolvedSubject,
       ...(body ? { body } : {}),
       authorName: authorName || "Unknown author",
       ...(authorEmail ? { authorEmail } : {}),
       authoredAt,
       decorations: [...(decorations.get(revisionId) ?? [])],
+      ...(pullRequestUrl ? { pullRequestUrl } : {}),
     });
   }
   return commits;
@@ -353,6 +368,7 @@ export function openGitHistory(
 
   const decorations = readDecorations(queryOptions);
   const omitGraphParents = gitHistoryUsesBoundaryTopology(input);
+  const githubRepository = readGitHubRepository(queryOptions);
 
   let child: ReturnType<typeof spawn>;
   try {
@@ -396,6 +412,7 @@ export function openGitHistory(
             decorations,
             input.firstParent,
             omitGraphParents,
+            githubRepository,
           ),
         );
         fields.length = 0;

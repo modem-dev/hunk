@@ -2,6 +2,10 @@ import type { KeyEvent, MouseEvent as TuiMouseEvent } from "@opentui/core";
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
 import { basename } from "node:path";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import {
+  historyPullRequestCopyNotice,
+  resolveHistoryPullRequestUrl,
+} from "../../core/history/pullRequestUrl";
 import { APP_COMMAND_NAMES } from "../../core/run/commandCatalog";
 import type { PersistedViewPreferences } from "../../core/run/config";
 import type {
@@ -154,15 +158,28 @@ export function LogApp({
     quitScheduler,
   });
 
+  const copyToClipboard = (text: string, copiedNotice: string) => {
+    if (renderer.isOsc52Supported?.() && typeof renderer.copyToClipboardOSC52 === "function") {
+      renderer.copyToClipboardOSC52(text);
+      setTransientNotice(copiedNotice);
+      return;
+    }
+    setTransientNotice("Clipboard is unavailable in this terminal.");
+  };
   const copySelected = (row = controller.getSelectedRow()) => {
     const currentRow = row;
     if (!currentRow) return;
-    if (renderer.isOsc52Supported?.() && typeof renderer.copyToClipboardOSC52 === "function") {
-      renderer.copyToClipboardOSC52(currentRow.commit.revisionId);
-      setTransientNotice(`Copied ${currentRow.commit.displayId}`);
-    } else {
-      setTransientNotice("Clipboard is unavailable in this terminal.");
+    copyToClipboard(currentRow.commit.revisionId, `Copied ${currentRow.commit.displayId}`);
+  };
+  const copySelectedPullRequest = (row = controller.getSelectedRow()) => {
+    const currentRow = row;
+    if (!currentRow) return;
+    const url = resolveHistoryPullRequestUrl(currentRow.commit);
+    if (!url) {
+      setTransientNotice("No GitHub pull request found for this commit.");
+      return;
     }
+    copyToClipboard(url, historyPullRequestCopyNotice(url));
   };
   const openSelected = async (parentRevisionId?: string, pending = false) => {
     if (reviewPending.current && !pending) return;
@@ -277,6 +294,7 @@ export function LogApp({
   const commandHandlers: HistoryCommandHandlers = {
     "hunk.history.openSelection": () => void requestOpenSelected(),
     "hunk.history.copyRevision": () => copySelected(),
+    "hunk.history.copyPullRequest": () => copySelectedPullRequest(),
     "hunk.history.refresh": () => void controller.refresh(),
     "hunk.app.quit": (key) => requestLogQuit(key.ctrl && key.name === "c" ? 130 : undefined),
     "hunk.view.openThemeSelector": () => themeSelector.openThemeSelector(),
@@ -359,6 +377,7 @@ export function LogApp({
     file: [
       commandItem("hunk.history.openSelection"),
       commandItem("hunk.history.copyRevision"),
+      commandItem("hunk.history.copyPullRequest"),
       commandItem("hunk.history.refresh"),
       { kind: "separator" },
       commandItem("hunk.app.quit"),
@@ -395,6 +414,7 @@ export function LogApp({
     commit: [
       commandItem("hunk.history.openSelection"),
       commandItem("hunk.history.copyRevision"),
+      commandItem("hunk.history.copyPullRequest"),
       { kind: "separator" },
       commandItem("hunk.history.openFirstParent"),
       commandItem("hunk.history.openParent"),
