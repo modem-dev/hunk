@@ -325,6 +325,41 @@ describe("bundled content search", () => {
     });
   });
 
+  test("the prompt preserves trailing whitespace when searching and reopening", async () => {
+    const bootstrap = await launchWithoutExtensions(createTestRepo("hunk-search-spaces-"));
+    await withAppHost(bootstrap, async (setup) => {
+      await openEmptyPrompt(setup);
+      await type(setup, "readConfig ");
+      await submit(setup);
+      await flushUntil(
+        setup,
+        () => statusRow(setup).includes('No match for "readConfig "'),
+        "the search to require the trailing space",
+      );
+      expect(hasCurrentMarkOn(setup, "readConfig")).toBe(false);
+
+      // Appending after reopening proves the space survived in the prompt's buffer.
+      await openPrompt(setup);
+      await type(setup, "(");
+      await submit(setup);
+      await flushUntil(
+        setup,
+        () => statusRow(setup).includes('No match for "readConfig ("'),
+        "the reopened query to retain its space before appended text",
+      );
+
+      await openEmptyPrompt(setup);
+      await type(setup, "   ");
+      await submit(setup);
+      await type(setup, "n");
+      await flushUntil(
+        setup,
+        () => statusRow(setup).includes("No search yet"),
+        "a whitespace-only submit to clear the search",
+      );
+    });
+  });
+
   test("escape twice leaves the search in place and a reload keeps the query", async () => {
     const bootstrap = await launchWithoutExtensions(createTestRepo("hunk-search-keep-"));
     await withAppHost(bootstrap, async (setup) => {

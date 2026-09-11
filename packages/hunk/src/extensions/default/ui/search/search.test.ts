@@ -106,6 +106,22 @@ describe("compileQuery", () => {
     expect(compiled.locate("")).toEqual([[0, 1]]);
   });
 
+  test.each(["literal", "regex"] as const)(
+    "%s preserves surrounding whitespace and smart case",
+    (mode) => {
+      const compiled = compileQuery(" foo ", mode);
+      const upper = compileQuery(" Foo ", mode);
+      if (!compiled.ok || !upper.ok) throw new Error("query should compile");
+
+      expect(compiled.locate("foo")).toEqual([]);
+      expect(compiled.locate("foo ")).toEqual([]);
+      expect(compiled.locate(" foo")).toEqual([]);
+      expect(compiled.locate(" Foo ")).toEqual([[0, 5]]);
+      expect(upper.locate(" foo ")).toEqual([]);
+      expect(upper.locate(" Foo ")).toEqual([[0, 5]]);
+    },
+  );
+
   test("an empty query is refused", () => {
     expect(compileQuery("   ", "literal").ok).toBe(false);
   });

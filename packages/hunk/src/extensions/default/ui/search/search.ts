@@ -77,16 +77,15 @@ interface PatchLine {
  * `less -I`, vim, and ripgrep users already have in their fingers.
  */
 export function compileQuery(query: string, mode: SearchMode): CompiledQuery {
-  const trimmed = query.trim();
-  if (trimmed.length === 0) {
+  if (query.trim().length === 0) {
     return { ok: false, error: "empty search" };
   }
 
-  const caseSensitive = trimmed !== trimmed.toLowerCase();
+  const caseSensitive = query !== query.toLowerCase();
 
   if (mode === "regex") {
     try {
-      const pattern = new RegExp(trimmed, caseSensitive ? "g" : "gi");
+      const pattern = new RegExp(query, caseSensitive ? "g" : "gi");
       return {
         ok: true,
         locate: (line) => {
@@ -108,7 +107,7 @@ export function compileQuery(query: string, mode: SearchMode): CompiledQuery {
     }
   }
 
-  const needle = caseSensitive ? trimmed : trimmed.toLowerCase();
+  const needle = caseSensitive ? query : query.toLowerCase();
   return {
     ok: true,
     locate: (line) => {

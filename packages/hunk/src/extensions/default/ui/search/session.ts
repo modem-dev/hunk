@@ -132,7 +132,7 @@ export function createSearchSession(options: SearchSessionOptions): SearchSessio
         return { kind: "invalid-query", query: raw, error: compiled.error };
       }
 
-      query = raw.trim();
+      query = raw;
       corpus = files;
       fileOrder = buildFileOrder(files);
       targets = findTargets(files, compiled.locate);

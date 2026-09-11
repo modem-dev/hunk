@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  createTestSearchFile,
   searchTestAlpha as alpha,
   searchTestBeta as beta,
   searchTestRepeated as repeated,
@@ -63,6 +64,27 @@ describe("search session", () => {
       wrapped: true,
     });
   });
+
+  test.each(["literal", "regex"] as const)(
+    "%s keeps trailing whitespace for prompt prefill, marks, and corpus rebuilds",
+    (mode) => {
+      const session = createSearchSession({ mode });
+      const file = createTestSearchFile("whitespace", "spaces.ts", "@@ -0,0 +1 @@\n+foo fooX");
+      const replacement = createTestSearchFile("whitespace", "spaces.ts", "@@ -0,0 +1 @@\n+fooX");
+
+      expect(session.search("foo ", [file], nowhere)).toMatchObject({ kind: "moved", total: 1 });
+      expect(session.query).toBe("foo ");
+      expect(session.marksFor(file)).toEqual([
+        { side: "new", line: 1, range: [0, 4], tone: "current" },
+      ]);
+      expect(session.repeat("forward", [replacement], nowhere)).toEqual({
+        kind: "no-matches",
+        query: "foo ",
+      });
+      expect(session.query).toBe("foo ");
+      expect(session.marksFor(replacement)).toEqual([]);
+    },
+  );
 
   test("a query with no matches reports itself instead of moving", () => {
     const session = createSearchSession({ mode: "literal" });
