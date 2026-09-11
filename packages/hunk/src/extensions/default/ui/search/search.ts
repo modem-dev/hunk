@@ -50,14 +50,14 @@ export interface SearchTarget {
 }
 
 /**
- * A compiled query, or the reason it could not be compiled.
+ * Locate every non-overlapping match on a line, or report why compilation failed.
  *
- * `locate` rather than a boolean `test`: the diff marks the matched
- * characters, so where the match sits has to survive out of the search and is
- * cheaper to keep than to recompute against a line the query already scanned.
+ * `locate` returns ranges in text order, or an empty array for a non-matching line.
+ * The diff marks every range; hunk-granular targets keep only the first range of
+ * their first matching line. Zero-width regex matches mark one character.
  */
 export type CompiledQuery =
-  | { ok: true; locate: (line: string) => MatchRange | null }
+  | { ok: true; locate: (line: string) => MatchRange[] }
   | { ok: false; error: string };
 
 /** One parsed patch line, tagged with the hunk it belongs to. */
@@ -70,7 +70,7 @@ interface PatchLine {
 }
 
 /**
- * Compile a user query into a line predicate.
+ * Compile a user query into a line match locator.
  *
  * Smart case in both modes: an all-lowercase query is case-insensitive, and any
  * uppercase character makes the whole query case-sensitive — the convention
@@ -86,15 +86,21 @@ export function compileQuery(query: string, mode: SearchMode): CompiledQuery {
 
   if (mode === "regex") {
     try {
-      const pattern = new RegExp(trimmed, caseSensitive ? "" : "i");
+      const pattern = new RegExp(trimmed, caseSensitive ? "g" : "gi");
       return {
         ok: true,
-        // `g`/`y` are never set, so `lastIndex` never carries between lines.
         locate: (line) => {
-          const found = pattern.exec(line);
-          // A zero-width match (`^`, `\b`) still marks a position; giving it one
-          // character keeps the highlight visible instead of empty.
-          return found === null ? null : [found.index, found.index + Math.max(found[0].length, 1)];
+          const ranges: MatchRange[] = [];
+          pattern.lastIndex = 0;
+          let found: RegExpExecArray | null;
+          while ((found = pattern.exec(line)) !== null) {
+            // Give zero-width matches a visible character and advance past it
+            // so the next match cannot overlap or loop at the same position.
+            const end = found.index + Math.max(found[0].length, 1);
+            ranges.push([found.index, end]);
+            pattern.lastIndex = end;
+          }
+          return ranges;
         },
       };
     } catch (error) {
@@ -106,8 +112,15 @@ export function compileQuery(query: string, mode: SearchMode): CompiledQuery {
   return {
     ok: true,
     locate: (line) => {
-      const index = (caseSensitive ? line : line.toLowerCase()).indexOf(needle);
-      return index === -1 ? null : [index, index + needle.length];
+      const text = caseSensitive ? line : line.toLowerCase();
+      const ranges: MatchRange[] = [];
+      let index = text.indexOf(needle);
+      while (index !== -1) {
+        const end = index + needle.length;
+        ranges.push([index, end]);
+        index = text.indexOf(needle, end);
+      }
+      return ranges;
     },
   };
 }
@@ -182,7 +195,7 @@ function readHunkStarts(header: string): { oldStart: number | null; newStart: nu
  */
 export function findTargets(
   files: readonly ExtensionDiffFile[],
-  locate: (line: string) => MatchRange | null,
+  locate: (line: string) => MatchRange[],
 ): SearchTarget[] {
   const targets: SearchTarget[] = [];
 
@@ -193,8 +206,8 @@ export function findTargets(
 
     let current: SearchTarget | undefined;
     for (const line of parsePatchLines(file.patch)) {
-      const matchRange = locate(line.text);
-      if (matchRange === null) {
+      const matchRange = locate(line.text)[0];
+      if (matchRange === undefined) {
         continue;
       }
 
@@ -226,16 +239,13 @@ export function findTargets(
 /**
  * Build the diff marks for one file's matches, in source coordinates.
  *
- * This is what the registered line highlighter returns: every matching line
- * gets its first match marked, and the one line the review just jumped to —
- * the active target's quoted line — is the single `"current"` mark. That
- * one-current policy is deliberate: stepping is hunk-granular, and the reveal
- * puts the marker on that line, so the eye should land on the exact characters
- * the toast quotes.
+ * Mark every occurrence, but give only the first range of the active target's
+ * quoted line the `"current"` tone. Stepping stays hunk-granular, so later ranges
+ * on the landed line keep the ordinary `"match"` tone.
  */
 export function collectFileMatchMarks(
   file: ExtensionDiffFile,
-  locate: (line: string) => MatchRange | null,
+  locate: (line: string) => MatchRange[],
   currentTarget: { fileId: string; hunkIndex: number; lineOffset: number } | null,
 ): ExtensionLineHighlight[] {
   if (typeof file.patch !== "string" || file.patch.length === 0) {
@@ -249,22 +259,20 @@ export function collectFileMatchMarks(
     if (line.lineNumber === null) {
       continue;
     }
-    const matchRange = locate(line.text);
-    if (matchRange === null) {
-      continue;
-    }
-
+    const ranges = locate(line.text);
     const isCurrent =
       currentTarget !== null &&
       currentTarget.fileId === file.id &&
       currentTarget.hunkIndex === line.hunkIndex &&
       currentTarget.lineOffset === line.offset;
-    marks.push({
-      side: line.side,
-      line: line.lineNumber,
-      range: matchRange,
-      tone: isCurrent ? "current" : "match",
-    });
+    for (const [index, range] of ranges.entries()) {
+      marks.push({
+        side: line.side,
+        line: line.lineNumber,
+        range,
+        tone: isCurrent && index === 0 ? "current" : "match",
+      });
+    }
   }
 
   return marks;

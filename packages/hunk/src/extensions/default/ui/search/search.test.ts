@@ -3,6 +3,7 @@ import {
   createTestSearchFile,
   searchTestAlpha as alpha,
   searchTestBeta as beta,
+  searchTestRepeated as repeated,
 } from "../../../../../../../test/helpers/search-fixtures";
 import {
   buildFileOrder,
@@ -48,19 +49,19 @@ describe("compileQuery", () => {
     const lower = compileQuery("readconfig", "literal");
     const upper = compileQuery("ReadConfig", "literal");
 
-    expect(lower.ok && lower.locate("const x = ReadConfig();")).toEqual([10, 20]);
-    expect(upper.ok && upper.locate("const x = readconfig();")).toBeNull();
+    expect(lower.ok && lower.locate("const x = ReadConfig();")).toEqual([[10, 20]]);
+    expect(upper.ok && upper.locate("const x = readconfig();")).toEqual([]);
   });
 
   test("literal mode does not interpret regex metacharacters", () => {
     const compiled = compileQuery("readConfig(", "literal");
 
-    expect(compiled.ok && compiled.locate("readConfig();")).toEqual([0, 11]);
+    expect(compiled.ok && compiled.locate("readConfig();")).toEqual([[0, 11]]);
   });
 
   test("regex mode compiles patterns and reports bad ones", () => {
     const compiled = compileQuery("read(Config|Value)", "regex");
-    expect(compiled.ok && compiled.locate("a readValue()")).toEqual([2, 11]);
+    expect(compiled.ok && compiled.locate("a readValue()")).toEqual([[2, 11]]);
 
     const broken = compileQuery("read(", "regex");
     expect(broken.ok).toBe(false);
@@ -69,7 +70,40 @@ describe("compileQuery", () => {
   test("a zero-width regex match still marks a visible position", () => {
     const compiled = compileQuery("^", "regex");
 
-    expect(compiled.ok && compiled.locate("anything")).toEqual([0, 1]);
+    expect(compiled.ok && compiled.locate("anything")).toEqual([[0, 1]]);
+  });
+
+  test.each(["literal", "regex"] as const)("%s returns non-overlapping ranges", (mode) => {
+    const compiled = compileQuery("aa", mode);
+    if (!compiled.ok) throw new Error("query should compile");
+
+    expect(compiled.locate("aaaaa")).toEqual([
+      [0, 2],
+      [2, 4],
+    ]);
+    expect(compiled.locate("AAaa")).toEqual([
+      [0, 2],
+      [2, 4],
+    ]);
+    expect(compiled.locate("none")).toEqual([]);
+    expect(compiled.locate("aa")).toEqual([[0, 2]]);
+  });
+
+  test("zero-width regex matches advance and reset between lines, including at the end", () => {
+    const compiled = compileQuery("(?=a)|$", "regex");
+    if (!compiled.ok) throw new Error("query should compile");
+
+    expect(compiled.locate("aa")).toEqual([
+      [0, 1],
+      [1, 2],
+      [2, 3],
+    ]);
+    expect(compiled.locate("aa")).toEqual([
+      [0, 1],
+      [1, 2],
+      [2, 3],
+    ]);
+    expect(compiled.locate("")).toEqual([[0, 1]]);
   });
 
   test("an empty query is refused", () => {
@@ -165,6 +199,30 @@ describe("stepToTarget", () => {
 describe("collectFileMatchMarks", () => {
   const compiled = compileQuery("readConfig", "literal");
   if (!compiled.ok) throw new Error("query should compile");
+
+  test.each(["literal", "regex"] as const)(
+    "%s marks every occurrence but keeps only the first landed range current",
+    (mode) => {
+      const query = compileQuery("readConfig", mode);
+      if (!query.ok) throw new Error("query should compile");
+
+      expect(
+        collectFileMatchMarks(repeated, query.locate, {
+          fileId: repeated.id,
+          hunkIndex: 0,
+          lineOffset: 0,
+        }),
+      ).toEqual([
+        { side: "old", line: 1, range: [0, 10], tone: "current" },
+        { side: "old", line: 1, range: [14, 24], tone: "match" },
+        { side: "new", line: 1, range: [0, 10], tone: "match" },
+        { side: "new", line: 1, range: [14, 24], tone: "match" },
+      ]);
+      expect(findTargets([repeated], query.locate)).toMatchObject([
+        { count: 2, line: { matchRange: [0, 10], text: "readConfig(); readConfig();" } },
+      ]);
+    },
+  );
 
   test("marks every matching line on its own side with the matched extent", () => {
     const marks = collectFileMatchMarks(alpha, compiled.locate, null);

@@ -31,6 +31,13 @@ export const searchTestAlpha = createTestSearchFile(
   ].join("\n"),
 );
 
+/** One hunk with two occurrences per line on both sides. */
+export const searchTestRepeated = createTestSearchFile(
+  "file-repeated",
+  "src/repeated.ts",
+  ["@@ -1 +1 @@", "-readConfig(); readConfig();", "+readConfig(); readConfig();"].join("\n"),
+);
+
 /** One hunk with a single `readConfig` match. */
 export const searchTestBeta = createTestSearchFile(
   "file-1",

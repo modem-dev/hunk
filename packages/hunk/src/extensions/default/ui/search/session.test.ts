@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   searchTestAlpha as alpha,
   searchTestBeta as beta,
+  searchTestRepeated as repeated,
 } from "../../../../../../../test/helpers/search-fixtures";
 import { createSearchSession, formatOutcomeSpans } from "./session";
 
@@ -144,6 +145,27 @@ describe("session marks", () => {
     expect(alphaMarks?.map((mark) => mark.tone)).toEqual(["current", "match", "match"]);
     expect(session.marksFor(beta)?.map((mark) => mark.tone)).toEqual(["match"]);
   });
+
+  test.each(["literal", "regex"] as const)(
+    "%s marks every occurrence while quoting the landed line once",
+    (mode) => {
+      const session = createSearchSession({ mode });
+      const outcome = session.search("readConfig", [repeated], nowhere);
+
+      expect(session.total).toBe(1);
+      expect(session.marksFor(repeated)).toEqual([
+        { side: "old", line: 1, range: [0, 10], tone: "current" },
+        { side: "old", line: 1, range: [14, 24], tone: "match" },
+        { side: "new", line: 1, range: [0, 10], tone: "match" },
+        { side: "new", line: 1, range: [14, 24], tone: "match" },
+      ]);
+      expect(formatOutcomeSpans(outcome)).toEqual([
+        { text: "[1/1] ", tone: "accent" },
+        { text: "src/repeated.ts:1 (+1 in hunk)", tone: "muted" },
+        { text: " — readConfig(); readConfig();" },
+      ]);
+    },
+  );
 
   test("the current mark follows n across files", () => {
     const session = createSearchSession({ mode: "literal" });

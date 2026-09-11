@@ -135,6 +135,47 @@ describe("PTY content search", () => {
     }
   });
 
+  test("repeated occurrences on the landed line each carry a mark", async () => {
+    const fixture = harness.createSearchRepoFixture();
+    writeFileSync(
+      join(fixture.dir, "beta.ts"),
+      'const pair = needle("first") + needle("second");\n',
+    );
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "unified"],
+      cwd: fixture.dir,
+      cols: 120,
+      rows: 14,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+      await harness.ensureKeyboardIsLive(session);
+      await session.type("/");
+      await harness.waitForSnapshot(session, (text) => text.includes("/ search diff"), 5_000);
+      await session.type("needle");
+      await session.press("enter");
+      await harness.waitForSnapshot(
+        session,
+        (text) => statusRow(text).includes("[1/1] beta.ts:1"),
+        5_000,
+      );
+
+      const theme = resolveTheme("auto", "dark");
+      await harness.waitForSnapshot(
+        session,
+        () => backgroundUnder(session, 'needle("first")') === theme.text.toLowerCase(),
+        5_000,
+      );
+      const laterBackground = backgroundUnder(session, 'needle("second")');
+      expect(laterBackground).toBeDefined();
+      expect(laterBackground).not.toBe(theme.text.toLowerCase());
+      expect(laterBackground).not.toBe(backgroundUnder(session, "pair ="));
+    } finally {
+      session.close();
+    }
+  });
+
   test("an empty query is refused, escape keeps the search, and the emptied prompt clears it", async () => {
     const fixture = harness.createSearchRepoFixture();
     const session = await harness.launchHunk({
