@@ -138,6 +138,24 @@ describe("status line store prompts", () => {
     expect(store.getSnapshot().prompt?.prefix).toBe("again");
   });
 
+  test("reload preserves opted-in host prompts and cancels other open and queued prompts", async () => {
+    const store = createStatusLineStore();
+    const extension = store.requestPrompt({});
+    const host = store.openPrompt({ prefix: "filter:" }, { surviveReload: true });
+    const queued = store.requestPrompt({});
+    store.cancelReloadPrompts();
+
+    expect(await extension).toBeNull();
+    expect(await queued).toBeNull();
+    expect(store.getSnapshot().prompt?.id).toBe(host.id!);
+    store.updatePromptValue(host.id!, "after");
+    const prompt = store.getSnapshot().prompt;
+    store.cancelReloadPrompts();
+    expect(store.getSnapshot().prompt).toBe(prompt);
+    store.shutdown();
+    expect(await host.answer).toBeNull();
+  });
+
   test("shutdown settles pending prompts and refuses later ones immediately", async () => {
     const store = createStatusLineStore();
     const first = store.requestPrompt({});

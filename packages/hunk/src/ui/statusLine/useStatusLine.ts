@@ -1,8 +1,8 @@
 /**
  * Owns one surface's status-line store for the life of its mount.
  *
- * Reload cancels open and queued prompts the way `useExtensionDialogController` drains dialogs:
- * the review a prompt was asked about is being replaced, and this child layout effect runs
+ * Watch and manual content reloads cancel extension prompts but preserve opted-in host inputs,
+ * including the focused file filter. This child layout effect settles reload-scoped requests
  * before the parent publishes lifecycle events for the new generation. Unmount shuts the store
  * down so every awaiting consumer settles.
  */
@@ -23,7 +23,7 @@ export function useStatusLine({
   useLayoutEffect(() => {
     if (previousGenerationRef.current !== reviewGeneration) {
       previousGenerationRef.current = reviewGeneration;
-      store.cancelAllPrompts();
+      store.cancelReloadPrompts();
     }
   }, [reviewGeneration, store]);
 

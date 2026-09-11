@@ -627,6 +627,49 @@ describe("extension prompts", () => {
     );
   });
 
+  test("a content reload preserves the host filter's value and keyboard focus", async () => {
+    const repo = createTestRepo("hunk-filter-reload-");
+    const extDir = createTempDir("hunk-filter-reload-ext-");
+    const extPath = join(extDir, "ext.ts");
+    writeFileSync(extPath, "export default function (hunk) {}\n");
+    const broker = createTestBrokerClient();
+    const bootstrap = await launchWithExtension(repo, extPath);
+    await withAppHost(
+      bootstrap,
+      async (setup) => {
+        await openReview(setup);
+        await act(async () => {
+          await setup.mockInput.pressTab();
+          await setup.mockInput.typeText("beta");
+        });
+        await flushUntil(
+          setup,
+          () => statusRow(setup.captureCharFrame()).includes("filter: beta"),
+          "the filter to open",
+        );
+        writeFileSync(join(repo, "beta.txt"), "one\ntwo\nreloaded\n");
+        const reload = broker.reload({ kind: "vcs", staged: false, options: {} });
+        await flushUntil(
+          setup,
+          () => setup.captureCharFrame().includes("reloaded"),
+          "the replacement content to render",
+        );
+        await reload;
+        expect(statusRow(setup.captureCharFrame())).toContain("filter: beta");
+        await act(async () => {
+          await setup.mockInput.typeText(".txt");
+        });
+        await flushUntil(
+          setup,
+          () => statusRow(setup.captureCharFrame()).includes("filter: beta.txt"),
+          "typing to remain in the filter",
+        );
+        expect(setup.captureCharFrame()).not.toContain("alpha.txt");
+      },
+      broker.client,
+    );
+  });
+
   test("the host filter still works beside an extension prompt", async () => {
     const repo = createTestRepo("hunk-prompt-filter-");
     const extDir = createTempDir("hunk-prompt-filter-ext-");

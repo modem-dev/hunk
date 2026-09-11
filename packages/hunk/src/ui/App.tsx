@@ -1156,17 +1156,20 @@ export function App({
   /**
    * Open the file filter as the host's own status-line prompt.
    *
-   * The filter reacts while typing through `onChange`, and the prompt's answer — submitted,
-   * escaped, or cancelled by a reload — returns keyboard ownership to the review.
+   * The filter reacts while typing through `onChange` and keeps its value and focus across
+   * content reloads. Submitting or escaping returns keyboard ownership to the review.
    */
   const focusFilter = useCallback(() => {
     if (filterPromptIdRef.current !== null) return;
-    const { id, answer } = statusLineStore.openPrompt({
-      prefix: "filter:",
-      placeholder: "type to filter files",
-      initial: review.filter,
-      onChange: review.setFilter,
-    });
+    const { id, answer } = statusLineStore.openPrompt(
+      {
+        prefix: "filter:",
+        placeholder: "type to filter files",
+        initial: review.filter,
+        onChange: review.setFilter,
+      },
+      { surviveReload: true },
+    );
     if (id === null) return;
     filterPromptIdRef.current = id;
     void answer.then(() => {

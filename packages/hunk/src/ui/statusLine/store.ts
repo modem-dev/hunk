@@ -9,8 +9,8 @@
  * availability has with extension-held state.
  *
  * Prompt lifetimes mirror `ctx.dialogs`: one on screen at a time, later requests queue in call
- * order, a reload cancels everything pending while keeping the store open, and shutdown settles
- * everything and refuses later requests immediately so no handler is left awaiting.
+ * order, a reload cancels pending prompts except host requests explicitly retained across content
+ * changes, and shutdown settles everything and refuses later requests so no handler is left awaiting.
  */
 import { sanitizeTerminalLine } from "../../lib/terminalText";
 import type {
@@ -22,6 +22,8 @@ import type {
 
 /** How the host scopes and attributes one prompt request. */
 export interface StatusPromptRequestOptions {
+  /** Keep a host input across content reloads; extension requests never opt into this lifetime. */
+  surviveReload?: boolean;
   /** Whether the requester still holds authority; a dead owner cancels rather than asks. */
   isLive?: () => boolean;
   /** Third-party marker painted before the prefix; omitted for host and bundled prompts. */
@@ -60,6 +62,8 @@ export interface StatusLineStore {
   submitPrompt(id: number): void;
   /** Resolve the current prompt with `null`; ignored for a non-current id. */
   cancelPrompt(id: number): void;
+  /** Cancel reload-scoped prompts while retaining opted-in host inputs and their queue order. */
+  cancelReloadPrompts(): void;
   /** Cancel the visible prompt and everything queued, keeping the store open. */
   cancelAllPrompts(): void;
   /** Cancel everything and refuse further prompts. */
@@ -67,6 +71,7 @@ export interface StatusLineStore {
 }
 
 interface PendingPrompt {
+  surviveReload: boolean;
   request: StatusPromptRequest;
   settle: (value: string | null) => void;
   isLive: () => boolean;
@@ -152,6 +157,7 @@ export function createStatusLineStore(): StatusLineStore {
         const wasIdle = pending.length === 0;
         pending.push({
           request,
+          surviveReload: requestOptions.surviveReload === true,
           settle: resolve,
           isLive,
           onChange: typeof options.onChange === "function" ? options.onChange : undefined,
@@ -189,6 +195,14 @@ export function createStatusLineStore(): StatusLineStore {
     },
     cancelPrompt(id) {
       if (current(id)) settleCurrent(null);
+    },
+    cancelReloadPrompts() {
+      const cancelled = pending.filter((entry) => !entry.surviveReload);
+      if (cancelled.length === 0) return;
+      const retained = pending.filter((entry) => entry.surviveReload);
+      pending.splice(0, pending.length, ...retained);
+      for (const entry of cancelled) entry.settle(null);
+      publish();
     },
     cancelAllPrompts: drainPending,
     shutdown() {
