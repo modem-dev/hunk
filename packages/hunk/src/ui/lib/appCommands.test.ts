@@ -283,6 +283,7 @@ describe("builtinCommandKeyDefaults", () => {
       "2",
     ]);
     // Commands with contextual or menu routing ship unbound and remain user-bindable.
+    // The filter and note stepping gave `/`, `n`, and `N` to content search.
     expect(
       defaults
         .filter((entry) => entry.defaultKeys.length === 0)
@@ -294,8 +295,11 @@ describe("builtinCommandKeyDefaults", () => {
       "hunk.review.alignCurrentLineCenter",
       "hunk.review.alignCurrentLineTop",
       "hunk.review.clearSelection",
+      "hunk.review.focusFilter",
       "hunk.review.nextAnnotatedFile",
+      "hunk.review.nextNote",
       "hunk.review.previousAnnotatedFile",
+      "hunk.review.previousNote",
       "hunk.view.applyFilePresentationToAllMatching",
       "hunk.view.cursorLineNumber",
       "hunk.view.cursorLineOff",

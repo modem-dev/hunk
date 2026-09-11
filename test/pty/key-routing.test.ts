@@ -77,7 +77,7 @@ describe("PTY key routing", () => {
       await session.press("?");
       await session.waitForText(/Controls help/, { timeout: 5_000 });
 
-      await session.press("/");
+      await session.press("tab");
       await harness.waitForSnapshot(
         session,
         (text) => text.includes("filter: type to filter files"),
@@ -118,7 +118,7 @@ describe("PTY key routing", () => {
       expect(initial).toMatch(/▌.*▌/);
 
       // Focus the filter and narrow to one file so the filter is visibly live.
-      await session.press("/");
+      await session.press("tab");
       await harness.waitForSnapshot(
         session,
         (text) => text.includes("filter: type to filter files"),

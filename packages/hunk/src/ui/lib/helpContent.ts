@@ -59,12 +59,7 @@ const HELP_SECTIONS: readonly HelpSectionSpec[] = [
         description: "previous / next file",
       },
       {
-        commandIds: [
-          "hunk.review.previousAnnotatedHunk",
-          "hunk.review.nextAnnotatedHunk",
-          "hunk.review.previousNote",
-          "hunk.review.nextNote",
-        ],
+        commandIds: ["hunk.review.previousAnnotatedHunk", "hunk.review.nextAnnotatedHunk"],
         description: "annotated hunk / exact note",
       },
       {

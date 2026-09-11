@@ -26,6 +26,11 @@ Rules worth knowing:
   default gives it up, keeping its other keys. Above, page-down still answers to
   `PageDown` and `Space` after `f` moves to the filter.
 - **`false` (or `[]`) unbinds a command**, leaving its keys doing nothing.
+- **Unbound commands are one line away.** The file filter ships without a key
+  (Tab and the File menu reach it) and `/` searches diff content; to put the
+  filter back on `/`, write `"hunk.review.focusFilter" = "/"` and search gives
+  the chord up. `hunk.review.nextNote` / `previousNote` likewise ship unbound
+  while `}` / `{` step through annotated hunks.
 - Two entries claiming one chord is a conflict: the first in the file wins and
   the session reports the other. Unknown command ids and unusable chords are
   reported the same way, and the rest of the table still applies.
@@ -118,7 +123,7 @@ Review and shared commands:
 | `hunk.review.deleteActiveNote`                 | Delete active review note                      | `D`                          |
 | `hunk.review.editActiveNote`                   | Edit active review note                        | `E`                          |
 | `hunk.review.editSelectedFile`                 | Open the selected file in your editor          | `e`                          |
-| `hunk.review.focusFilter`                      | Focus the file filter                          | `/`                          |
+| `hunk.review.focusFilter`                      | Focus the file filter                          | _(none)_                     |
 | `hunk.review.halfPageDown`                     | Scroll down half a page                        | `d`, `ctrl+d`                |
 | `hunk.review.halfPageUp`                       | Scroll up half a page                          | `u`, `ctrl+u`                |
 | `hunk.review.jumpToBottom`                     | Jump to end                                    | `G`, `end`                   |
@@ -127,14 +132,14 @@ Review and shared commands:
 | `hunk.review.nextAnnotatedHunk`                | Next annotated hunk                            | `}`                          |
 | `hunk.review.nextFile`                         | Next file                                      | `.`                          |
 | `hunk.review.nextHunk`                         | Next hunk                                      | `]`                          |
-| `hunk.review.nextNote`                         | Next review note                               | `n`                          |
+| `hunk.review.nextNote`                         | Next review note                               | _(none)_                     |
 | `hunk.review.pageDown`                         | Scroll down one page                           | `pagedown`, `space`, `f`     |
 | `hunk.review.pageUp`                           | Scroll up one page                             | `pageup`, `b`, `shift+space` |
 | `hunk.review.previousAnnotatedFile`            | Previous annotated file                        | _(none)_                     |
 | `hunk.review.previousAnnotatedHunk`            | Previous annotated hunk                        | `{`                          |
 | `hunk.review.previousFile`                     | Previous file                                  | `,`                          |
 | `hunk.review.previousHunk`                     | Previous hunk                                  | `[`                          |
-| `hunk.review.previousNote`                     | Previous review note                           | `N`                          |
+| `hunk.review.previousNote`                     | Previous review note                           | _(none)_                     |
 | `hunk.review.replyToActiveNote`                | Reply to active review note                    | `R`                          |
 | `hunk.review.scrollCodeLeft`                   | Scroll code left (shifted scrolls fast)        | `left`, `shift+left`         |
 | `hunk.review.scrollCodeRight`                  | Scroll code right (shifted scrolls fast)       | `right`, `shift+right`       |

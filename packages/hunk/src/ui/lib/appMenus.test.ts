@@ -150,7 +150,8 @@ describe("buildAppMenus", () => {
       "Next annotated file",
       "Previous annotated file",
     ]);
-    expect(items(menus.navigate).map((item) => item.hint)).toEqual(["[", "]", "{", "}", "/"]);
+    // The filter ships unbound, so its Navigate entry carries no hint.
+    expect(items(menus.navigate).map((item) => item.hint)).toEqual(["[", "]", "{", "}", undefined]);
   });
 
   test("every item carries the id of the command it runs", () => {
