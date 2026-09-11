@@ -272,6 +272,19 @@ extension text is wrapped or windowed, so measurement and rendering use the
 same terminal width; body/options yield rows to a pinned mouse-clickable action
 footer on short terminals.
 
+The bottom status row is the same kind of host-owned surface with the same
+lifetimes. `packages/hunk/src/ui/statusLine/` holds a renderer-free store
+(`store.ts`: insertion-ordered items plus a FIFO prompt queue that settles like
+the dialog queue), a deterministic width/priority layout (`layout.ts`), one
+`StatusLine` component that owns the focused input and the badge's
+click-to-exit, and `extensionControls.ts`, which mints the per-extension
+`statusLine` and `prompts` objects, namespaces item ids under the extension, and
+validates extension-authored items and options. `App` and `LogApp` each mount
+one store: the file filter and `hunk log` search are its first consumers, so the
+host and extensions share one prompt path and one overflow policy. A prompt is a
+host focused input and routes with the filter, ahead of file-view and session
+modes; items survive content reloads and clear with the registry.
+
 Lifecycle and bus handlers receive that same attributed dialog queue plus the
 same guarded live navigation commands use. They can also request a current-input soft reload;
 the current-review controller registers the latest reloadable descriptor, then AppHost resolves

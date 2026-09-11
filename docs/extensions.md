@@ -302,9 +302,10 @@ and retires the replaced instance at that explicit ownership boundary.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `25`). Branch on it if you want
-one file to support several Hunk versions. Version 25 adds Promise-returning watch signatures and
-watch cancellation; version 24 adds review metadata to VCS patch results and
+The API generation this Hunk speaks (currently `26`). Branch on it if you want
+one file to support several Hunk versions. Version 26 adds the status line (`ctx.statusLine`
+items and `ctx.prompts.line()` inline prompts); version 25 adds Promise-returning watch
+signatures and watch cancellation; version 24 adds review metadata to VCS patch results and
 short display revisions to commit descriptors; version 23 adds canonical unified-layout fields
 while preserving the previous event vocabulary; version 22 adds frame-derived pane preferred sizing,
 non-resizable dynamic panes, and commit-history paint tokens; version 21 adds optional inclusive history-range review
@@ -1156,6 +1157,74 @@ Snapshots must be immutable — replace the set instead of mutating it, so
 `useSyncExternalStore` can compare references. Storing state in a hook inside
 the component instead would lose it every time the pane closes and unmounts.
 
+### Status line
+
+The bottom status row — where Hunk shows the file filter, notices, and the
+keyboard-mode badge — is a host-owned surface extensions write to through two
+small capabilities: persistent **items** and one inline **prompt**.
+
+```ts
+hunk.registerCommand({ id: "find", title: "Search diff content", key: "ctrl+f" }, async (ctx) => {
+  const query = await ctx.prompts.line({ prefix: "/", placeholder: "pattern" });
+  if (query === null) return;
+
+  const hits = countMatches(query, ctx.selection.file);
+  ctx.statusLine.set({
+    id: "status",
+    spans: [
+      { text: `[${hits}] `, tone: "accent" },
+      { text: query, tone: "muted" },
+    ],
+  });
+});
+
+hunk.on("file_viewed", (_payload, ctx) => {
+  viewed += 1;
+  ctx.statusLine.set({
+    id: "viewed",
+    spans: [{ text: `${viewed} viewed` }],
+    alignment: "right",
+  });
+});
+```
+
+**Items** are declarative text, not components. `ctx.statusLine.set(item)`
+sets or replaces one item and `clear(id)` removes it; ids are scoped to your
+extension. `spans` use the same symbolic vocabulary as host-rendered file-view
+rows — `text`, an optional `tone` (`muted`, `accent`, `accent-muted`, `syntax`,
+`added`, `removed`), and optional `attributes` (`bold`, `italic`, `underline`,
+`strikethrough`) — so Hunk measures them without a theme and paints them with
+the active one. `alignment` defaults to `"left"`; right items sit beside the
+host badge. When the row overflows, the lowest-`priority` items (default `0`)
+are dropped whole, newest first among equals, and the last survivor is
+truncated with an ellipsis; the badge is never dropped. A set item keeps the
+row on screen, exactly like a non-empty filter does, so clear items that
+should not cost a row while idle. Items persist across ordinary content reloads
+and clear when the extension registry is replaced or the review unmounts.
+
+**Prompts** are promise-shaped. `ctx.prompts.line({ prefix?, placeholder?,
+initial?, onChange? })` draws a real input with a cursor on the status row and
+resolves the submitted text, or `null` on cancel. `prefix` is painted before
+the input and is not part of the value; `initial` is where the field starts
+(use it to reopen with the last query); `onChange` is called on every edit for
+consumers that react while the user types. Enter resolves; Escape clears a
+non-empty buffer first and cancels second — the same two-step Escape the file
+filter has. While a prompt is open it owns typing the way the filter does:
+after dialogs and menus, before file-view and session keyboard modes and the
+command table, so a bound key is text rather than a command. One prompt is
+open at a time; a second request queues behind the first, across extensions
+too. A session reload cancels open and queued prompts, and a request during
+teardown resolves `null` immediately. Prompts from installed extensions carry
+the `ext <your-id>` marker before the prefix, like toasts and dialogs.
+
+Where the controls appear: command handlers get `ctx.statusLine` and
+`ctx.prompts`; event, bus, and keyboard-mode handlers get `ctx.statusLine`
+only. The factory object gets neither, so every write belongs to a handler
+whose lifetime Hunk can scope. A malformed item (blank `id`, non-array `spans`,
+a span without string `text`, an unknown tone) throws from `set`; malformed
+prompt options reject the promise; a throwing `onChange` is reported once and
+the prompt continues.
+
 ### `hunk.registerFileView(view)` (experimental)
 
 A file view is an alternate **host-rendered** presentation of one file in the
@@ -1544,8 +1613,11 @@ keyboard mode runs at a time.
 - `"exit"` consumes the key and leaves the mode.
 
 The context is intentionally small: `cwd`, `notify`, live public `commands`,
-activation-scoped `keyboardModes`, and `highlights` (so a prompt's submit can
-refresh line marks directly). Keys are frozen plain snapshots, not OpenTUI
+activation-scoped `keyboardModes`, `highlights` (so a mode can refresh line
+marks directly), and `statusLine` (so a mode can show its live buffer or count
+on the status row). A mode never needs a prompt: a prompt-shaped interaction is
+a command plus `ctx.prompts.line()`, described under
+[Status line](#status-line). Keys are frozen plain snapshots, not OpenTUI
 events. Async/throwing callbacks are contained and exit safely. When the session
 mode is the highest-priority active input owner, host-owned Escape exits without
 reaching `onKey`; the status badge and a host-owned **Extensions** menu item are
@@ -1565,7 +1637,7 @@ then call `ctx.commands.execute(id, { count })` once so the host applies movemen
 atomically. See the dependency-free
 [`vim-navigation`](../examples/extensions/vim-navigation/) example for `j`/`k`,
 `gg`/`G`, hunk movement, alignment, capped counts, Ctrl chords, and a focused
-`:` command line composed from a registered command plus `ctx.dialogs.input()`.
+`:` command line composed from a registered command plus `ctx.prompts.line()`.
 
 ### `hunk.registerCommand(command, handler)`
 

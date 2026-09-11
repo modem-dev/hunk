@@ -105,13 +105,15 @@ bad or duplicate id is skipped with a startup notice.
 | Interpret review keys as a temporary global mode         | `hunk.registerKeyboardMode(mode)`            |
 | Add a generic top-level CLI command tree                 | `hunk.registerCliCommand(command, handler)`  |
 | Bind a key / add an Extensions-menu entry                | `hunk.registerCommand(command, handler)`     |
+| Show persistent text on the bottom status row            | `ctx.statusLine.set(item)` in a handler      |
+| Ask for one line of text inline, `less`-style            | `ctx.prompts.line(options)` in a command     |
 | Hide, reorder, retitle files before review               | `hunk.transformChangeset(fn)`                |
 | React to loads, selection, view movement, notes, reloads | `hunk.on(event, handler)`                    |
 | Coordinate with another loaded extension                 | `hunk.events.emit` / `hunk.events.on`        |
 | Reload after an external agent changes reviewed inputs   | `ctx.review.requestReload()` in an event     |
 | Read user-supplied settings                              | `hunk.config` (`[extension.<id>]` table)     |
 | Snapshot stable files and every saved review note        | `ctx.review.snapshot()` in a command         |
-| Branch on the API generation (currently `25`)            | `hunk.apiVersion`                            |
+| Branch on the API generation (currently `26`)            | `hunk.apiVersion`                            |
 
 Registration is only valid while the factory runs — Hunk seals the API object
 afterwards.
@@ -155,7 +157,8 @@ transform — gets `ctx.cwd` and `ctx.notify(message, type?)`. A file view's
 `matches` and `layout` get no context at all. Beyond that:
 
 - **Event and bus handlers** also get `ctx.panes` (open/close/toggle/isOpen on
-  any pane), live `ctx.navigation`, attributed `ctx.dialogs`, review reloads through
+  any pane), live `ctx.navigation`, attributed `ctx.dialogs`, `ctx.statusLine`
+  (set/clear this extension's status-row items), review reloads through
   `ctx.review.requestReload()`, and
   `ctx.events.emit`. `ctx.sidebars` is a deprecated alias for `ctx.panes`.
 - **Command handlers** get `ctx.panes`, `ctx.fileViews` (select/toggle/isActive/
@@ -167,7 +170,10 @@ transform — gets `ctx.cwd` and `ctx.notify(message, type?)`. A file view's
   (`isEnabled`/`execute` for public semantic `hunk.*` commands),
   `ctx.keyboardModes` (enter/exit/probe this extension's session modes), `ctx.review`
   (deeply immutable snapshots of stable files and complete saved store notes),
-  `ctx.dialogs` (`confirm`/`select`/`input`, queued and attributed), and
+  `ctx.dialogs` (`confirm`/`select`/`input`, queued and attributed),
+  `ctx.statusLine` (set/clear persistent status-row items), `ctx.prompts`
+  (`line`: an inline status-row input resolving the text or `null`, queued and
+  attributed like dialogs), and
   `ctx.workspace` (`readDocument`, `canWriteDocument`, `writeDocument` with consent).
 - **Pane components** get frozen `files`, selection, placement, exact dimensions,
   nullable immutable delegated-source `review` metadata, optional `currentLine` paint
@@ -182,8 +188,10 @@ transform — gets `ctx.cwd` and `ctx.notify(message, type?)`. A file view's
   and report it later through `notify` or `refresh`. A passed key reaches any
   active session keyboard mode before ordinary Hunk routing. Escape is host-owned
   and never reaches `onKey`.
-- **Session keyboard-mode handlers** get only `ctx.commands` and activation-scoped
-  `ctx.keyboardModes` beyond the standard context. Those controls become inert on
+- **Session keyboard-mode handlers** get only `ctx.commands`, `ctx.highlights`,
+  `ctx.statusLine`, and activation-scoped `ctx.keyboardModes` beyond the standard
+  context. A prompt-shaped interaction is a command plus `ctx.prompts.line()`,
+  not a mode. Those controls become inert on
   exit, and lifecycle callbacks cannot change keyboard ownership. Keys are frozen
   snapshots; dialogs, focused inputs, and file-view modes outrank them. When the
   session mode owns input, Escape exits it; the status badge and Extensions menu
