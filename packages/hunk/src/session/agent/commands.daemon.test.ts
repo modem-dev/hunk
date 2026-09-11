@@ -207,11 +207,11 @@ describe("daemon build mismatch errors", () => {
       },
       recommendedAction: "restart-daemon",
     });
-    expect(error.message).toBe(
-      `The Hunk session daemon is from an older build (daemon 0.21.1, this CLI ${cliBuild.appVersion}) and refuses this CLI.`,
-    );
-    expect(error.suggestions.join("\n")).toContain("Run `hunk daemon restart`");
-    expect(error.suggestions.join("\n")).toContain("Restarting disconnects 2 attached windows");
+    expect(error.message).toBe("The session daemon is an older Hunk build and refuses this CLI.");
+    expect(error.suggestions).toEqual([
+      "Run `hunk daemon restart` to replace it, then re-run `hunk session list`; windows that could not register attach automatically.",
+      "Restarting disconnects 2 attached windows; they must be relaunched, losing their notes. Closing them instead lets the daemon exit on its own after about a minute.",
+    ]);
     expect(JSON.parse(JSON.stringify(error))).toMatchObject({
       message: error.message,
       kind: "daemon-build-mismatch",
@@ -232,8 +232,10 @@ describe("daemon build mismatch errors", () => {
       attachedSessions: { count: 2 },
       recommendedAction: "use-newer-hunk",
     });
-    expect(error.message).toContain("is from a newer build (daemon 0.23.0");
-    expect(error.suggestions.join("\n")).toContain("newer Hunk build");
+    expect(error.message).toBe("The session daemon is a newer Hunk build and refuses this CLI.");
+    expect(error.suggestions).toEqual([
+      "Use the newer Hunk build the daemon was started from, or run `hunk daemon restart` from this build (2 attached windows would be disconnected and could not reconnect).",
+    ]);
   });
 
   // Intent: the daemon being upgraded away from does not speak the admin scope, so the only
@@ -264,9 +266,12 @@ describe("daemon build mismatch errors", () => {
       },
       recommendedAction: "restart-daemon",
     });
-    expect(error.message).toContain("predates `hunk daemon status`");
-    expect(error.message).toContain("pid 777");
-    expect(error.suggestions.join("\n")).toContain("an unknown number of attached windows");
+    expect(error.message).toBe(
+      "The session daemon is an older Hunk build that predates `hunk daemon status` and refuses this CLI (pid 777, started 2026-09-08T09:42:00.000Z, command /usr/local/bin/hunk daemon serve).",
+    );
+    expect(error.suggestions[1]).toBe(
+      "Restarting disconnects an unknown number of attached windows; they must be relaunched, losing their notes. Closing them instead lets the daemon exit on its own after about a minute.",
+    );
   });
 
   test("reports a same-revision daemon that still lacks the action as a mismatch", async () => {
@@ -289,7 +294,7 @@ describe("daemon build mismatch errors", () => {
       daemon: { daemonVersion: HUNK_SESSION_DAEMON_VERSION },
       recommendedAction: "restart-daemon",
     });
-    expect(error.message).toContain(`revision ${HUNK_SESSION_DAEMON_VERSION}`);
+    expect(error.message).toBe("The session daemon is an older Hunk build and refuses this CLI.");
   });
 });
 

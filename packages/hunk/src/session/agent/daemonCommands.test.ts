@@ -130,7 +130,7 @@ describe("hunk daemon status", () => {
     );
     expect(out.join("")).toBe(
       [
-        "Session daemon 0.22.0 (revision 15), pid 4242, up 3h 12m (started 2026-09-08T09:42:00.000Z).",
+        "Session daemon 0.22.0, pid 4242, up 3h 12m (started 2026-09-08T09:42:00.000Z).",
         "Attached windows (2):",
         "  session-  review 1  /repo/1",
         "  session-  review 2  /repo/2",
@@ -139,19 +139,47 @@ describe("hunk daemon status", () => {
     );
   });
 
-  // Intent: every attached window speaks the daemon's revision, so when the CLI is newer, all of
-  // them are the ones a restart strands — the marker is relative to this CLI, not the daemon.
-  test("marks attached windows as older builds when the daemon is older than this CLI", async () => {
-    const { deps } = createFakeDaemon({ probes: [adminStatus(12, "0.21.1")] });
-    const lines = formatDaemonStatusReport(
-      { kind: "status", status: adminStatus(12, "0.21.1").status, direction: "client-newer" },
-      deps.clientBuild,
-    );
-    expect(lines[0]).toBe(
+  // Every attached window matches the daemon; state the restart cost once, in either direction.
+  test.each([
+    [12, "client-newer", "a newer Hunk build"],
+    [16, "client-older", "an older Hunk build"],
+  ] as const)(
+    "reports skew at revision %i without per-window markers",
+    (revision, direction, relation) => {
+      const lines = formatDaemonStatusReport({
+        kind: "status",
+        status: adminStatus(revision, "0.22.0").status,
+        direction,
+      });
+      expect(lines).toEqual([
+        "Session daemon 0.22.0, pid 4242, up 3h 12m (started 2026-09-08T09:42:00.000Z).",
+        `This CLI is ${relation}, so the daemon refuses it.`,
+        "Attached windows (2). A restart disconnects them; they must be relaunched, losing their notes.",
+        "  session-  review 1  /repo/1",
+        "  session-  review 2  /repo/2",
+      ]);
+    },
+  );
+
+  test("reports no attached windows without a restart warning", () => {
+    expect(
+      formatDaemonStatusReport({
+        kind: "status",
+        status: adminStatus(12, "0.21.1", 0).status,
+        direction: "client-newer",
+      }),
+    ).toEqual([
       "Session daemon 0.21.1, pid 4242, up 3h 12m (started 2026-09-08T09:42:00.000Z).",
-    );
-    expect(lines[1]).toBe("This CLI: 0.22.0 — the daemon is from an older build.");
-    expect(lines[3]).toBe("  session-  review 1  /repo/1  (older build)");
+      "This CLI is a newer Hunk build, so the daemon refuses it.",
+      "No windows are attached.",
+    ]);
+  });
+
+  test("reports missing launch metadata without inventing a build number", () => {
+    expect(formatDaemonStatusReport({ kind: "pre-admin", launch: null })).toEqual([
+      "A session daemon is running, but it is from a build that predates `hunk daemon status` and cannot report itself; no launch metadata was found.",
+      "This CLI is a newer Hunk build.",
+    ]);
   });
 
   test("reports the launch metadata for a daemon that predates the admin scope", async () => {
@@ -159,10 +187,9 @@ describe("hunk daemon status", () => {
     const { io, out } = createIo();
 
     await runDaemonStatusCommand({ kind: "daemon-status", output: "text" }, io, deps);
-    expect(out.join("")).toContain(
-      "A session daemon is running (pid 777, started 2026-09-08T09:42:00.000Z, command /usr/local/bin/hunk daemon serve), but it predates `hunk daemon status`",
+    expect(out.join("")).toBe(
+      "A session daemon is running (pid 777, started 2026-09-08T09:42:00.000Z, command /usr/local/bin/hunk daemon serve), but it is from a build that predates `hunk daemon status` and cannot report itself.\nThis CLI is a newer Hunk build.\n",
     );
-    expect(out.join("")).toContain("This CLI: 0.22.0 (revision 15).");
   });
 
   test("says so when no daemon is running, with exit 0", async () => {
@@ -222,10 +249,19 @@ describe("hunk daemon restart", () => {
       ),
     ).toBe(0);
     expect(questions).toEqual([
-      "Restarting will disconnect 2 attached windows. Windows on an older build cannot reconnect; their in-window notes are lost if they are relaunched. Continue? [y/N] ",
+      "Restarting disconnects 2 attached windows. They must be relaunched, losing their notes. Continue? [y/N] ",
     ]);
     expect(journal).toEqual(["lock", "stop", "wait:down", "launch", "wait:up", "unlock"]);
-    expect(out.join("")).toContain("Started session daemon 0.22.0 (revision 15), pid 4242.");
+    expect(out.join("")).toContain("Started session daemon 0.22.0, pid 4242.");
+  });
+
+  test("uses singular window wording when only one is attached", async () => {
+    const { deps } = createFakeDaemon({ probes: [adminStatus(12, "0.21.1", 1)] });
+    const { io, questions } = createIo([false]);
+    await runDaemonRestartCommand({ kind: "daemon-restart", output: "text", yes: false }, io, deps);
+    expect(questions).toEqual([
+      "Restarting disconnects 1 attached window. They must be relaunched, losing their notes. Continue? [y/N] ",
+    ]);
   });
 
   test("cancels without touching the daemon when the user declines", async () => {
@@ -286,9 +322,11 @@ describe("hunk daemon restart", () => {
         deps,
       ),
     ).toBe(0);
-    expect(questions[0]).toContain("an unknown number of attached windows");
+    expect(questions[0]).toBe(
+      "Restarting disconnects an unknown number of attached windows. They must be relaunched, losing their notes. Continue? [y/N] ",
+    );
     expect(questions[1]).toBe(
-      "This daemon predates the restart protocol. Send SIGTERM to pid 777 (/usr/local/bin/hunk daemon serve)? [y/N] ",
+      "This daemon predates `hunk daemon restart`. Send SIGTERM to pid 777 (/usr/local/bin/hunk daemon serve)? [y/N] ",
     );
     expect(journal).toEqual([
       "lock",

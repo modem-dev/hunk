@@ -1,8 +1,17 @@
 import type { SessionBrokerAdminStatusV1 } from "@hunk/session-broker";
 import { resolveCliVersion } from "../../core/run/version";
 import { HUNK_SESSION_DAEMON_VERSION } from "../protocol";
-import { HUNK_DAEMON_UPGRADE_WAIT_MESSAGE } from "./capabilities";
+import {
+  HUNK_DAEMON_CLIENT_NEWER_MESSAGE,
+  HUNK_DAEMON_CLIENT_OLDER_MESSAGE,
+  HUNK_DAEMON_UPGRADE_WAIT_MESSAGE,
+} from "./daemonMessages";
 import type { HunkDaemonAdminProbe } from "./daemonAdmin";
+
+export {
+  HUNK_DAEMON_CLIENT_NEWER_MESSAGE,
+  HUNK_DAEMON_CLIENT_OLDER_MESSAGE,
+} from "./daemonMessages";
 
 /**
  * Turns a daemon's admin status into the direction of a version skew and the notice a window or
@@ -19,10 +28,6 @@ export interface DaemonBuild {
   appVersion: string;
 }
 
-/** Notice for a window whose build predates the daemon; nothing but a relaunch reconnects it. */
-export const HUNK_DAEMON_CLIENT_OLDER_MESSAGE =
-  "This window is on an older Hunk build than the session daemon. Relaunch it to reconnect (notes in this window will be lost).";
-
 /** The build this process speaks. */
 export function currentDaemonBuild(): DaemonBuild {
   return { daemonVersion: HUNK_SESSION_DAEMON_VERSION, appVersion: resolveCliVersion() };
@@ -35,21 +40,6 @@ export function compareDaemonBuild(
 ): DaemonSkewDirection {
   if (daemonVersion === clientVersion) return "matched";
   return daemonVersion < clientVersion ? "client-newer" : "client-older";
-}
-
-/** Render one build as its app version, adding the revision when versions alone would not differ. */
-function describeBuild(build: DaemonBuild, other: DaemonBuild) {
-  return build.appVersion === other.appVersion
-    ? `${build.appVersion} (revision ${build.daemonVersion})`
-    : build.appVersion;
-}
-
-/** Notice for a window refused by a daemon from an older build. */
-export function daemonOlderThanClientNotice(daemon: DaemonBuild, client = currentDaemonBuild()) {
-  return (
-    `Not connected to the session daemon (daemon build ${describeBuild(daemon, client)}, ` +
-    `this window ${describeBuild(client, daemon)}). Run \`hunk daemon restart\`.`
-  );
 }
 
 /**
@@ -66,7 +56,7 @@ export function daemonSkewNotice(
   const direction = compareDaemonBuild(probe.status.daemonVersion, client.daemonVersion);
   switch (direction) {
     case "client-newer":
-      return { direction, notice: daemonOlderThanClientNotice(probe.status, client) };
+      return { direction, notice: HUNK_DAEMON_CLIENT_NEWER_MESSAGE };
     case "client-older":
       return { direction, notice: HUNK_DAEMON_CLIENT_OLDER_MESSAGE };
     case "matched":

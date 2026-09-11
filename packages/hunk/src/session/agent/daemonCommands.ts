@@ -27,6 +27,12 @@ import {
   type DaemonBuild,
   type DaemonSkewDirection,
 } from "../client/daemonSkew";
+import {
+  HUNK_BUILD_RELATION,
+  HUNK_DAEMON_RESTART_COMMAND,
+  HUNK_WINDOW_RELAUNCH_CLAUSE,
+  daemonRestartDisconnects,
+} from "../client/daemonMessages";
 import { stringifyJson } from "./cliClient";
 
 /**
@@ -126,48 +132,41 @@ function formatUptime(uptimeMs: number) {
   return `${Math.floor(uptimeMs / 1_000)}s`;
 }
 
-/** Describe one build, adding the revision when package versions alone would not differ. */
-function describeBuild(build: DaemonBuild, other: DaemonBuild) {
-  return build.appVersion === other.appVersion
-    ? `${build.appVersion} (revision ${build.daemonVersion})`
-    : build.appVersion;
-}
-
 /** The launch metadata line shared by the pre-admin summary and the bootstrap prompt. */
 function describeLaunch(launch: SessionBrokerLaunchMetadata) {
   return `pid ${launch.pid}, started ${launch.launchedAt}, command ${[launch.command, ...launch.args].join(" ")}`;
 }
 
 /** Render the status summary lines shown by both commands. */
-export function formatDaemonStatusReport(report: DaemonStatusReport, clientBuild: DaemonBuild) {
+export function formatDaemonStatusReport(report: DaemonStatusReport) {
   if (report.kind === "none") return ["No session daemon is running."];
   if (report.kind === "pre-admin") {
     return [
       report.launch
-        ? `A session daemon is running (${describeLaunch(report.launch)}), but it predates \`hunk daemon status\` and cannot report its build or attached windows.`
-        : "A session daemon is running, but it predates `hunk daemon status` and cannot report its build or attached windows; no launch metadata was found.",
-      `This CLI: ${clientBuild.appVersion} (revision ${clientBuild.daemonVersion}).`,
+        ? `A session daemon is running (${describeLaunch(report.launch)}), but it is from a build that predates \`hunk daemon status\` and cannot report itself.`
+        : "A session daemon is running, but it is from a build that predates `hunk daemon status` and cannot report itself; no launch metadata was found.",
+      `This CLI is ${HUNK_BUILD_RELATION.newer}.`,
     ];
   }
   const { status, direction } = report;
   const lines = [
-    `Session daemon ${describeBuild(status, clientBuild)}, pid ${status.pid}, up ${formatUptime(status.uptimeMs)} (started ${status.startedAt}).`,
+    `Session daemon ${status.appVersion}, pid ${status.pid}, up ${formatUptime(status.uptimeMs)} (started ${status.startedAt}).`,
   ];
   if (direction !== "matched") {
     lines.push(
-      `This CLI: ${describeBuild(clientBuild, status)} — the daemon is from ${direction === "client-newer" ? "an older" : "a newer"} build.`,
+      `This CLI is ${HUNK_BUILD_RELATION[direction === "client-newer" ? "newer" : "older"]}, so the daemon refuses it.`,
     );
   }
   if (status.sessions.length === 0) {
     lines.push("No windows are attached.");
   } else {
-    lines.push(`Attached windows (${status.sessions.length}):`);
+    lines.push(
+      direction === "matched"
+        ? `Attached windows (${status.sessions.length}):`
+        : `Attached windows (${status.sessions.length}). A restart disconnects them; they ${HUNK_WINDOW_RELAUNCH_CLAUSE}`,
+    );
     for (const session of status.sessions) {
-      const marker =
-        compareDaemonBuild(session.clientDaemonVersion, clientBuild.daemonVersion) === "matched"
-          ? ""
-          : "  (older build)";
-      lines.push(`  ${session.sessionId.slice(0, 8)}  ${session.title}  ${session.cwd}${marker}`);
+      lines.push(`  ${session.sessionId.slice(0, 8)}  ${session.title}  ${session.cwd}`);
     }
   }
   return lines;
@@ -220,7 +219,7 @@ export async function runDaemonStatusCommand(
   if (input.output === "json") {
     io.stdout(stringifyJson(statusReportJson(report, deps.clientBuild)));
   } else {
-    io.stdout(`${formatDaemonStatusReport(report, deps.clientBuild).join("\n")}\n`);
+    io.stdout(`${formatDaemonStatusReport(report).join("\n")}\n`);
   }
   return 0;
 }
@@ -228,11 +227,7 @@ export async function runDaemonStatusCommand(
 /** The confirmation shown before any restart; names the cost in windows. */
 function restartQuestion(report: DaemonStatusReport) {
   const count = report.kind === "status" ? report.status.sessions.length : null;
-  const attached =
-    count === null
-      ? "an unknown number of attached windows"
-      : `${count} attached window${count === 1 ? "" : "s"}`;
-  return `Restarting will disconnect ${attached}. Windows on an older build cannot reconnect; their in-window notes are lost if they are relaunched. Continue? [y/N] `;
+  return `${daemonRestartDisconnects(count)}. They ${HUNK_WINDOW_RELAUNCH_CLAUSE} Continue? [y/N] `;
 }
 
 /** Ask one question, honoring `--yes` and refusing to guess without a terminal. */
@@ -259,7 +254,7 @@ export async function runDaemonRestartCommand(
   deps: DaemonCommandDependencies = createDaemonCommandDependencies(),
 ) {
   const before = await readDaemonStatusReport(deps);
-  const summary = formatDaemonStatusReport(before, deps.clientBuild);
+  const summary = formatDaemonStatusReport(before);
   const log = (line: string) => {
     if (input.output !== "json") io.stdout(`${line}\n`);
   };
@@ -291,11 +286,11 @@ export async function runDaemonRestartCommand(
       const pid = before.launch?.pid;
       if (!pid) {
         throw new HunkUserError(
-          "This daemon predates the restart protocol and its launch metadata is missing, so it cannot be stopped safely.",
+          `This daemon predates ${HUNK_DAEMON_RESTART_COMMAND} and its launch metadata is missing, so it cannot be stopped safely.`,
           ["Stop it by hand, then run `hunk daemon restart` again."],
         );
       }
-      const question = `This daemon predates the restart protocol. Send SIGTERM to pid ${pid} (${[before.launch!.command, ...before.launch!.args].join(" ")})? [y/N] `;
+      const question = `This daemon predates ${HUNK_DAEMON_RESTART_COMMAND}. Send SIGTERM to pid ${pid} (${[before.launch!.command, ...before.launch!.args].join(" ")})? [y/N] `;
       if (!(await confirmOrFail(question, input, io, deps))) {
         log("Restart cancelled.");
         return 1;
@@ -335,9 +330,7 @@ export async function runDaemonRestartCommand(
       }),
     );
   } else if (after.kind === "status") {
-    log(
-      `Started session daemon ${describeBuild(after.status, deps.clientBuild)}, pid ${after.status.pid}.`,
-    );
+    log(`Started session daemon ${after.status.appVersion}, pid ${after.status.pid}.`);
   } else {
     log("Started a replacement session daemon.");
   }

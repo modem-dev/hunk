@@ -10,6 +10,10 @@ import {
 } from "../../packages/hunk/src/session/agent/daemonCommands";
 import { resolveSessionBrokerConfig } from "../../packages/hunk/src/session/broker/brokerConfig";
 import { launchSessionBrokerDaemonAndRecord } from "../../packages/hunk/src/session/broker/brokerLauncher";
+import {
+  HUNK_DAEMON_CLIENT_NEWER_MESSAGE,
+  HUNK_DAEMON_CLIENT_OLDER_MESSAGE,
+} from "../../packages/hunk/src/session/client/daemonSkew";
 import { HUNK_SESSION_DAEMON_VERSION } from "../../packages/hunk/src/session/protocol";
 import { createPtyHarness } from "./harness";
 
@@ -179,7 +183,7 @@ function launchWindow(
   return harness.launchHunk({
     args: ["diff", "--files", fixture.before, fixture.after, "--mode", "unified"],
     cwd: fixture.dir,
-    cols: 160,
+    cols: 80,
     rows: 24,
     env: {
       XDG_CONFIG_HOME: configHome,
@@ -207,12 +211,11 @@ describe("PTY daemon version skew", () => {
     // also names the restart command.
     const refused = await harness.waitForSnapshot(
       session,
-      (text) => text.includes("Not connected to the session daemon"),
+      (text) => text.includes(HUNK_DAEMON_CLIENT_NEWER_MESSAGE),
       30_000,
     );
     expect(refused).toContain("Run `hunk daemon restart`.");
-    expect(refused).toContain(`revision ${HUNK_SESSION_DAEMON_VERSION - 1}`);
-    expect(refused).toContain(`this window`);
+    expect(refused).toContain(HUNK_DAEMON_CLIENT_NEWER_MESSAGE);
 
     // The command the notice names replaces the daemon; the window's own reconnect loop then
     // registers with the replacement and the sticky notice goes away.
@@ -228,7 +231,7 @@ describe("PTY daemon version skew", () => {
 
     await harness.waitForSnapshot(
       session,
-      (text) => !text.includes("Not connected to the session daemon"),
+      (text) => !text.includes(HUNK_DAEMON_CLIENT_NEWER_MESSAGE),
       30_000,
     );
     await waitUntil("window registered with the replacement daemon", () => {
@@ -248,10 +251,9 @@ describe("PTY daemon version skew", () => {
 
     const refused = await harness.waitForSnapshot(
       session,
-      (text) => text.includes("older Hunk build"),
+      (text) => text.includes(HUNK_DAEMON_CLIENT_OLDER_MESSAGE),
       30_000,
     );
-    expect(refused).toContain("This window is on an older Hunk build than the session daemon.");
-    expect(refused).toContain("Relaunch it to reconnect");
+    expect(refused).toContain(HUNK_DAEMON_CLIENT_OLDER_MESSAGE);
   });
 });

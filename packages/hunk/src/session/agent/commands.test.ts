@@ -170,7 +170,7 @@ describe("session command compatibility checks", () => {
         selector: { sessionId: "session-1" },
         output: "json",
       } satisfies SessionCommandInput),
-    ).rejects.toThrow("The Hunk session daemon is from");
+    ).rejects.toThrow("The session daemon is");
     expect(contextCalls).toBe(0);
   });
 
@@ -189,7 +189,7 @@ describe("session command compatibility checks", () => {
 
     await expect(
       runSessionCommand({ kind: "session", action: "list", output: "json" }),
-    ).rejects.toThrow("The Hunk session daemon is from");
+    ).rejects.toThrow("The session daemon is");
   });
 
   test("preserves local credential-store failures", async () => {
@@ -232,7 +232,7 @@ describe("session command compatibility checks", () => {
 
     await expect(
       runSessionCommand({ kind: "session", action: "list", output: "json" }),
-    ).rejects.toThrow("The Hunk session daemon is from");
+    ).rejects.toThrow("The session daemon is");
     expect(listCalls).toBe(0);
   });
 

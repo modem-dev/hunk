@@ -7,6 +7,13 @@
  */
 
 import { HunkUserError } from "../../core/run/errors";
+import {
+  HUNK_BUILD_RELATION,
+  HUNK_DAEMON_RESTART_COMMAND,
+  HUNK_WINDOW_RELAUNCH_CLAUSE,
+  daemonRestartDisconnects,
+  describeAttachedWindows,
+} from "../client/daemonMessages";
 import type { AgentCommandConstraint } from "./surface";
 
 /** Format flag choices as a human list: `--a, --b, or --c` for three, `--a or --b` for two. */
@@ -89,44 +96,32 @@ export interface DaemonBuildMismatchDetails {
 }
 
 /** Prefix shared by every mismatch message so the skill can quote one line for both directions. */
-export const DAEMON_BUILD_MISMATCH_PREFIX = "The Hunk session daemon is from";
-
-/** Describe one build for a message, disambiguating equal package versions by revision. */
-function describeMismatchBuild(build: DaemonBuildMismatchBuild, other: DaemonBuildMismatchBuild) {
-  return build.appVersion === other.appVersion
-    ? `${build.appVersion} (revision ${build.daemonVersion})`
-    : build.appVersion;
-}
+export const DAEMON_BUILD_MISMATCH_PREFIX = "The session daemon is";
 
 /** The headline message for one mismatch. */
 export function daemonBuildMismatchMessage(details: DaemonBuildMismatchDetails) {
   if (!details.daemon) {
     const launch = details.launch
-      ? ` (pid ${details.launch.pid}, started ${details.launch.launchedAt} from ${details.launch.command})`
+      ? ` (pid ${details.launch.pid}, started ${details.launch.launchedAt}, command ${details.launch.command})`
       : "";
-    return `${DAEMON_BUILD_MISMATCH_PREFIX} an older build that predates \`hunk daemon status\` and refuses this CLI${launch}.`;
+    return `${DAEMON_BUILD_MISMATCH_PREFIX} ${HUNK_BUILD_RELATION.older} that predates \`hunk daemon status\` and refuses this CLI${launch}.`;
   }
-  const relation = details.recommendedAction === "restart-daemon" ? "an older" : "a newer";
-  return (
-    `${DAEMON_BUILD_MISMATCH_PREFIX} ${relation} build (daemon ` +
-    `${describeMismatchBuild(details.daemon, details.cli)}, this CLI ` +
-    `${describeMismatchBuild(details.cli, details.daemon)}) and refuses this CLI.`
-  );
+  const relation =
+    HUNK_BUILD_RELATION[details.recommendedAction === "restart-daemon" ? "older" : "newer"];
+  return `${DAEMON_BUILD_MISMATCH_PREFIX} ${relation} and refuses this CLI.`;
 }
 
 /** The remedy lines that follow the headline in text output. */
 export function daemonBuildMismatchSuggestions(details: DaemonBuildMismatchDetails) {
-  const attached = details.attachedSessions
-    ? `${details.attachedSessions.count} attached window${details.attachedSessions.count === 1 ? "" : "s"}`
-    : "an unknown number of attached windows";
+  const count = details.attachedSessions?.count ?? null;
   if (details.recommendedAction === "use-newer-hunk") {
     return [
-      `Drive sessions with the newer Hunk build the daemon was started from, or run \`hunk daemon restart\` from this build (${attached} would be disconnected and could not reconnect).`,
+      `Use the newer Hunk build the daemon was started from, or run ${HUNK_DAEMON_RESTART_COMMAND} from this build (${describeAttachedWindows(count)} would be disconnected and could not reconnect).`,
     ];
   }
   return [
-    `Run \`hunk daemon restart\` to replace it, then re-run \`hunk session list\`; windows that could not register attach automatically.`,
-    `Restarting disconnects ${attached}; windows on the old build cannot reconnect and must be relaunched (their in-window notes are lost).`,
+    `Run ${HUNK_DAEMON_RESTART_COMMAND} to replace it, then re-run \`hunk session list\`; windows that could not register attach automatically.`,
+    `${daemonRestartDisconnects(count)}; they ${HUNK_WINDOW_RELAUNCH_CLAUSE} Closing them instead lets the daemon exit on its own after about a minute.`,
   ];
 }
 
@@ -209,7 +204,7 @@ export const AGENT_ERROR_DOCS: AgentErrorDoc[] = [
   {
     quote: `${DAEMON_BUILD_MISMATCH_PREFIX} ...`,
     remedy:
-      "a `daemon-build-mismatch` (the `--json` error carries `daemon`, `cli`, `attachedSessions`, and `recommendedAction`). Tell the user both builds and how many windows are attached, then **ask** before running `hunk daemon restart --yes`; never restart unprompted. After the restart, windows that failed to register attach on their own, so re-run `hunk session list` instead of relaunching anything. When `recommendedAction` is `use-newer-hunk`, the daemon is the newer build: use that Hunk instead.",
+      "a `daemon-build-mismatch` (the `--json` error carries `daemon`, `cli`, `attachedSessions`, and `recommendedAction`). Tell the user which build is newer and how many windows are attached, then **ask** before running `hunk daemon restart --yes`; never restart unprompted. After the restart, windows that failed to register attach on their own, so re-run `hunk session list` instead of relaunching anything. When `recommendedAction` is `use-newer-hunk`, the daemon is the newer build: use that Hunk instead.",
   },
   {
     quote: "Could not read the raw diff for ...",

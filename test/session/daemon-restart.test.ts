@@ -5,7 +5,10 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HUNK_SESSION_DAEMON_VERSION } from "../../packages/hunk/src/session/protocol";
-import { HUNK_DAEMON_CLIENT_OLDER_MESSAGE } from "../../packages/hunk/src/session/client/daemonSkew";
+import {
+  HUNK_DAEMON_CLIENT_NEWER_MESSAGE,
+  HUNK_DAEMON_CLIENT_OLDER_MESSAGE,
+} from "../../packages/hunk/src/session/client/daemonSkew";
 import {
   createDaemonCommandDependencies,
   runDaemonRestartCommand,
@@ -241,9 +244,7 @@ describe("hunk daemon restart", () => {
       listSessionIds(environment, OLD_REVISION)?.includes("old-window") ? true : null,
     );
     await waitUntil("new window refused", () =>
-      newWindow.notices.some((notice) => notice?.includes("Run `hunk daemon restart`."))
-        ? true
-        : null,
+      newWindow.notices.includes(HUNK_DAEMON_CLIENT_NEWER_MESSAGE) ? true : null,
     );
 
     // This CLI, at the built revision, cannot drive sessions on the old daemon...
@@ -252,6 +253,7 @@ describe("hunk daemon restart", () => {
     expect(JSON.parse(mismatch.stdout)).toMatchObject({
       error: {
         kind: "daemon-build-mismatch",
+        message: "The session daemon is an older Hunk build and refuses this CLI.",
         daemon: { daemonVersion: OLD_REVISION },
         cli: { daemonVersion: HUNK_SESSION_DAEMON_VERSION },
         attachedSessions: { count: 1, sessions: [{ sessionId: "old-window" }] },

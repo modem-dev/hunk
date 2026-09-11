@@ -6,24 +6,10 @@ import { HUNK_SESSION_CAPABILITIES_PATH, type SessionDaemonCapabilities } from "
 import { parseSessionDaemonCapabilities } from "../protocolSchemas";
 import { HUNK_SESSION_DAEMON_HTTP_TIMEOUT_MS, requestSessionDaemonHttp } from "./daemonHttp";
 
-/**
- * Shown while the daemon refuses this window and its build is not yet known (a daemon that
- * predates the admin scope, or a probe that has not answered).
- *
- * Both routes it names are real: `hunk daemon restart` replaces the daemon now, and closing the
- * older windows lets the incumbent reach its idle timeout and exit on its own, after which this
- * window's reconnect spawns the replacement itself. The wait is mentioned because it is about a
- * minute, not instant.
- */
-export const HUNK_DAEMON_UPGRADE_WAIT_MESSAGE =
-  "An older or incompatible Hunk session daemon is running. Run `hunk daemon restart` to replace it now, or close older Hunk windows and this one reconnects once that daemon goes idle.";
-
-/**
- * The daemon accepted this window's hello but refused its registration or snapshot one parser
- * deeper: the two builds share a revision number and disagree on the payload shape.
- */
-export const HUNK_DAEMON_REGISTRATION_REJECTED_MESSAGE =
-  "The session daemon rejected this window's registration; run `hunk daemon restart`.";
+export {
+  HUNK_DAEMON_UPGRADE_WAIT_MESSAGE,
+  HUNK_DAEMON_REGISTRATION_REJECTED_MESSAGE,
+} from "./daemonMessages";
 
 /**
  * Read the live daemon's advertised compatibility, returning null when the daemon is too old for

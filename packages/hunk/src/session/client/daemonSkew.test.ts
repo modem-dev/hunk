@@ -1,15 +1,19 @@
 import { describe, expect, test } from "bun:test";
-import { HUNK_DAEMON_UPGRADE_WAIT_MESSAGE } from "./capabilities";
 import {
+  HUNK_DAEMON_REGISTRATION_REJECTED_MESSAGE,
+  HUNK_DAEMON_UPGRADE_WAIT_MESSAGE,
+} from "./capabilities";
+import {
+  HUNK_DAEMON_CLIENT_NEWER_MESSAGE,
   HUNK_DAEMON_CLIENT_OLDER_MESSAGE,
   compareDaemonBuild,
-  daemonOlderThanClientNotice,
   daemonSkewNotice,
 } from "./daemonSkew";
 
 const client = { daemonVersion: 15, appVersion: "0.22.0" };
 
-function statusProbe(daemonVersion: number, appVersion: string) {
+/** Builds an admin response with independently chosen package and compatibility versions. */
+function createTestStatusProbe(daemonVersion: number, appVersion: string) {
   return {
     kind: "status" as const,
     status: {
@@ -31,24 +35,49 @@ describe("daemon skew notices", () => {
     expect(compareDaemonBuild(15, 15)).toBe("matched");
   });
 
-  test("names both builds and the restart command when the daemon is older", () => {
-    expect(daemonSkewNotice(statusProbe(12, "0.21.1"), client)).toEqual({
+  test("names the remedy without versions when the daemon is older", () => {
+    expect(daemonSkewNotice(createTestStatusProbe(12, "0.21.1"), client)).toEqual({
       direction: "client-newer",
-      notice:
-        "Not connected to the session daemon (daemon build 0.21.1, this window 0.22.0). Run `hunk daemon restart`.",
+      notice: "Session daemon is an older Hunk build. Run `hunk daemon restart`.",
     });
   });
 
-  // Intent: the incident daemon reported the same package version as the client (an unreleased
-  // main build), so the version alone would have read as "0.22.0 vs 0.22.0".
-  test("adds the revision when both builds report the same app version", () => {
-    expect(daemonOlderThanClientNotice({ daemonVersion: 14, appVersion: "0.22.0" }, client)).toBe(
-      "Not connected to the session daemon (daemon build 0.22.0 (revision 14), this window 0.22.0 (revision 15)). Run `hunk daemon restart`.",
+  test("keeps the same wording when package versions match but revisions differ", () => {
+    expect(daemonSkewNotice(createTestStatusProbe(14, "0.22.0"), client).notice).toBe(
+      HUNK_DAEMON_CLIENT_NEWER_MESSAGE,
+    );
+    expect(daemonSkewNotice(createTestStatusProbe(16, "0.22.0"), client).notice).toBe(
+      HUNK_DAEMON_CLIENT_OLDER_MESSAGE,
     );
   });
 
+  test.each([
+    [
+      HUNK_DAEMON_UPGRADE_WAIT_MESSAGE,
+      "Session daemon is a different Hunk build. Run `hunk daemon restart`.",
+    ],
+    [
+      HUNK_DAEMON_CLIENT_NEWER_MESSAGE,
+      "Session daemon is an older Hunk build. Run `hunk daemon restart`.",
+    ],
+    [
+      HUNK_DAEMON_CLIENT_OLDER_MESSAGE,
+      "Session daemon is newer; relaunch this window (notes are lost).",
+    ],
+    [
+      HUNK_DAEMON_REGISTRATION_REJECTED_MESSAGE,
+      "Session daemon rejected this window. Run `hunk daemon restart`.",
+    ],
+  ] as const)(
+    "fits the complete sticky notice into an 80-column status line: %s",
+    (notice, expected) => {
+      expect(notice).toBe(expected);
+      expect(notice.length).toBeLessThanOrEqual(78);
+    },
+  );
+
   test("tells an older window to relaunch", () => {
-    expect(daemonSkewNotice(statusProbe(16, "0.23.0"), client)).toEqual({
+    expect(daemonSkewNotice(createTestStatusProbe(16, "0.23.0"), client)).toEqual({
       direction: "client-older",
       notice: HUNK_DAEMON_CLIENT_OLDER_MESSAGE,
     });
@@ -62,7 +91,7 @@ describe("daemon skew notices", () => {
     expect(daemonSkewNotice({ kind: "unavailable" }, client).notice).toBe(
       HUNK_DAEMON_UPGRADE_WAIT_MESSAGE,
     );
-    expect(daemonSkewNotice(statusProbe(15, "0.22.0"), client).notice).toBe(
+    expect(daemonSkewNotice(createTestStatusProbe(15, "0.22.0"), client).notice).toBe(
       HUNK_DAEMON_UPGRADE_WAIT_MESSAGE,
     );
   });

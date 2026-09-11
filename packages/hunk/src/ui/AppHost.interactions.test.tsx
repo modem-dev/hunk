@@ -6,6 +6,7 @@ import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
 import { SESSION_BROKER_REGISTRATION_VERSION } from "@hunk/session-broker-core";
 import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
+import { HUNK_DAEMON_CLIENT_NEWER_MESSAGE } from "../session/client/daemonSkew";
 import type {
   HunkSessionRegistration,
   HunkSessionServerMessage,
@@ -4204,7 +4205,7 @@ describe("App interactions", () => {
   });
 
   // Keep the daemon warning independent of timed notices, including when the status row overflows.
-  test.each([120, 220])(
+  test.each([80, 120, 220])(
     "keeps the daemon link notice on the %i-column status line until reconnect",
     async (width) => {
       const { hostClient, publishConnectionNotice } = createMockHostClient();
@@ -4214,12 +4215,11 @@ describe("App interactions", () => {
         width,
         height: 20,
       });
-      const notice =
-        "Not connected to the session daemon (daemon build 0.21.1, this window 0.22.0). Run `hunk daemon restart`.";
+      const notice = HUNK_DAEMON_CLIENT_NEWER_MESSAGE;
 
       try {
         await flush(setup);
-        expect(setup.captureCharFrame()).not.toContain("Not connected to the session daemon");
+        expect(setup.captureCharFrame()).not.toContain(notice);
         expect(setup.captureCharFrame()).toContain(
           'Keybinding for unknown command "hunk.app.quti" ignored',
         );
@@ -4241,7 +4241,7 @@ describe("App interactions", () => {
 
         await act(async () => publishConnectionNotice(null));
         await flush(setup);
-        expect(setup.captureCharFrame()).not.toContain("Not connected to the session daemon");
+        expect(setup.captureCharFrame()).not.toContain(notice);
       } finally {
         await act(async () => {
           setup.renderer.destroy();

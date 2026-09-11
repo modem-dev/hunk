@@ -33,7 +33,10 @@ import {
   HUNK_DAEMON_REGISTRATION_REJECTED_MESSAGE,
   HUNK_DAEMON_UPGRADE_WAIT_MESSAGE,
 } from "../client/capabilities";
-import { HUNK_DAEMON_CLIENT_OLDER_MESSAGE } from "../client/daemonSkew";
+import {
+  HUNK_DAEMON_CLIENT_NEWER_MESSAGE,
+  HUNK_DAEMON_CLIENT_OLDER_MESSAGE,
+} from "../client/daemonSkew";
 import type { HunkDaemonAdminProbe } from "../client/daemonAdmin";
 import { resolveSessionBrokerRuntimePaths } from "./brokerLauncher";
 import { DeterministicLifecycleClockTest } from "../../../../../test/helpers/lifecycleClockTest";
@@ -377,7 +380,7 @@ describe("Hunk session daemon client", () => {
         await clock.flushMicrotasksTest();
 
         if (direction === "client-newer") {
-          expect(notices.at(-1)).toContain("Run `hunk daemon restart`.");
+          expect(notices.at(-1)).toBe(HUNK_DAEMON_CLIENT_NEWER_MESSAGE);
           expect(client.getConnectionState()).toMatchObject({ direction: "client-newer" });
         } else if (direction === "client-older") {
           expect(notices.at(-1)).toBe(HUNK_DAEMON_CLIENT_OLDER_MESSAGE);
@@ -429,7 +432,7 @@ describe("Hunk session daemon client", () => {
       refuse();
       await clock.flushMicrotasksTest();
       expect(probes).toBe(1);
-      expect(notices.at(-1)).toContain("Run `hunk daemon restart`.");
+      expect(notices.at(-1)).toBe(HUNK_DAEMON_CLIENT_NEWER_MESSAGE);
 
       // Three more refusals from the same incumbent: no re-probe, and the refined notice stands.
       for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -437,7 +440,7 @@ describe("Hunk session daemon client", () => {
         await clock.flushMicrotasksTest();
       }
       expect(probes).toBe(1);
-      expect(notices.at(-1)).toContain("Run `hunk daemon restart`.");
+      expect(notices.at(-1)).toBe(HUNK_DAEMON_CLIENT_NEWER_MESSAGE);
       expect(notices.filter((notice) => notice === HUNK_DAEMON_UPGRADE_WAIT_MESSAGE)).toHaveLength(
         1,
       );
@@ -492,13 +495,8 @@ describe("Hunk session daemon client", () => {
         await clock.flushMicrotasksTest();
         expect(probes).toBe(1 + retries);
         expect(notices.at(-1)).toBe(
-          retries === 0
-            ? HUNK_DAEMON_UPGRADE_WAIT_MESSAGE
-            : notices.at(-1)!.includes("Run `hunk daemon restart`.")
-              ? notices.at(-1)!
-              : HUNK_DAEMON_UPGRADE_WAIT_MESSAGE,
+          retries === 0 ? HUNK_DAEMON_UPGRADE_WAIT_MESSAGE : HUNK_DAEMON_CLIENT_NEWER_MESSAGE,
         );
-        if (retries > 0) expect(notices.at(-1)).toContain("Run `hunk daemon restart`.");
       } finally {
         client.stop();
         webSockets.restoreTest();
