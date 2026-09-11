@@ -9,7 +9,7 @@ import type {
   ExtensionVcsHistoryRangeSelection,
 } from "../../extension-api/types";
 import { sanitizeTerminalLine } from "../../lib/terminalText";
-import { resolveExtensionCommands, resolveExtensionSessionOptions } from "../../extensions/apply";
+import { resolveExtensionSessionOptions } from "../../extensions/apply";
 import { HelpDialog } from "../components/chrome/HelpDialog";
 import { MenuBar } from "../components/chrome/MenuBar";
 import { MenuDropdown } from "../components/chrome/MenuDropdown";
@@ -34,6 +34,7 @@ import type { InteractiveHistoryRuntime } from "../history/types";
 import type { LogController } from "./controller";
 import { dispatchAppCommand, executeAppCommand, findAppCommandById } from "../lib/appCommands";
 import { resolveCommandKeys } from "../lib/keymap";
+import { buildSessionCommands } from "../lib/sessionRegistrations";
 import {
   buildHistoryCommands,
   buildHistoryHelpSections,
@@ -263,8 +264,7 @@ export function LogApp({
   };
   const inactiveHistoryCommandNames = useMemo(() => {
     const names = new Set(APP_COMMAND_NAMES);
-    for (const registered of resolveExtensionCommands(runtime.extensionSession.current.registry)
-      .commands) {
+    for (const registered of buildSessionCommands(runtime.extensionSession.current.registry)) {
       names.add(`${registered.extensionId}.${registered.command.id}`);
     }
     return names;

@@ -31,10 +31,8 @@ import {
 import type { CliInput, CursorLine, LayoutMode } from "../core/run/commandInputs";
 import { sanitizeTerminalLine } from "../lib/terminalText";
 import {
-  resolveExtensionCommands,
   resolveExtensionFileViews,
   resolveExtensionKeyboardModes,
-  resolveExtensionLineHighlighters,
   resolveExtensionSessionOptions,
 } from "../extensions/apply";
 import { projectExtensionReviewNotes } from "../extensions/reviewSnapshot";
@@ -98,6 +96,11 @@ import {
 import { buildAppMenus } from "./lib/appMenus";
 import { buildExtensionAppCommands, extensionCommandKeyDefaults } from "./lib/extensionCommands";
 import { createExtensionReviewReloadControls } from "./lib/extensionReviewReload";
+import {
+  buildSessionCommands,
+  buildSessionLineHighlighters,
+  isBundledExtensionId,
+} from "./lib/sessionRegistrations";
 import type { CurrentLineAlignment } from "./lib/hunkScroll";
 import type { LineCursor } from "./lib/lineCursors";
 import type { ReviewVerticalStop } from "./lib/reviewVerticalStops";
@@ -373,8 +376,10 @@ export function App({
     () => (extensions ? resolveExtensionKeyboardModes(extensions.registry).modes : []),
     [extensions],
   );
+  // Bundled highlighters and commands compose ahead of the user registry's, so
+  // Hunk's own search marks and keys are present under `--no-extensions` too.
   const sessionLineHighlighters = useMemo(
-    () => (extensions ? resolveExtensionLineHighlighters(extensions.registry).highlighters : []),
+    () => buildSessionLineHighlighters(extensions?.registry),
     [extensions],
   );
   const extensionSessionOptions = useMemo(
@@ -601,12 +606,7 @@ export function App({
 
   /** Report whether an extension id names Hunk's own bundled tier, which needs no attribution. */
   const isBundledExtension = useCallback(
-    (extensionId: string) =>
-      Boolean(
-        extensions?.registry.extensions.some(
-          (metadata) => metadata.id === extensionId && metadata.origin === "bundled",
-        ),
-      ),
+    (extensionId: string) => isBundledExtensionId(extensionId, extensions?.registry),
     [extensions],
   );
 
@@ -695,7 +695,7 @@ export function App({
   });
 
   const registeredExtensionCommands = useMemo(
-    () => (extensions ? resolveExtensionCommands(extensions.registry).commands : []),
+    () => buildSessionCommands(extensions?.registry),
     [extensions],
   );
   // The session keymap: every bindable command's defaults folded against the
