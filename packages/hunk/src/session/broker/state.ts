@@ -37,6 +37,7 @@ import type {
 } from "../types";
 import { hunkSessionProtocolParsers } from "./protocolParsers";
 import { parseSessionRegistration, parseSessionSnapshot } from "./wire";
+import { reportSessionWireRejection } from "./wireDiagnostics";
 import {
   ReviewMirror,
   readRegistrationReviewCatalog,
@@ -210,6 +211,14 @@ export class HunkSessionBrokerState extends SessionBrokerState<
   ) {
     const registered = super.registerSession(socket, registrationInput, snapshotInput, options);
     this.reconcileMirroredSessions();
+    if (registered === "invalid") {
+      // The socket is about to close with a fixed reason; the debug log is the only place the
+      // rejecting parser is named, so an upgrade skew stays diagnosable.
+      reportSessionWireRejection("registration", registrationInput);
+      if (parseSessionRegistration(registrationInput)) {
+        reportSessionWireRejection("snapshot", snapshotInput);
+      }
+    }
     if (registered !== "registered") {
       return registered;
     }
@@ -233,6 +242,9 @@ export class HunkSessionBrokerState extends SessionBrokerState<
 
   override updateSnapshot(socket: HunkBrokerConnection, sessionId: string, snapshotInput: unknown) {
     const result = super.updateSnapshot(socket, sessionId, snapshotInput);
+    if (result === "invalid") {
+      reportSessionWireRejection("snapshot", snapshotInput, undefined, sessionId);
+    }
     if (result === "updated") {
       // A snapshot carries no catalog, so only a further revision of the generation
       // already mirrored can be adopted from one; a generation change waits for the
