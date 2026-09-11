@@ -19,11 +19,6 @@ const FIXTURE_NAME = `session-wire.v${HUNK_SESSION_DAEMON_VERSION}.json`;
 const FIXTURE_PATH = join(FIXTURE_DIR, FIXTURE_NAME);
 const REGENERATE_COMMAND = "bun run generate:session-wire";
 
-/** Normalize checkout line endings so the comparison stays portable on Windows. */
-function normalizeNewlines(text: string) {
-  return text.replaceAll("\r\n", "\n");
-}
-
 describe("session wire snapshot", () => {
   const corpus = buildTestSessionWireCorpus();
 
@@ -37,7 +32,8 @@ describe("session wire snapshot", () => {
   });
 
   test(`the wire corpus matches ${FIXTURE_NAME}`, () => {
-    const rendered = serializeTestSessionWireCorpus(corpus);
+    // Compare JSON values rather than text so formatter reflow of the fixture is not a change.
+    const rendered = JSON.parse(serializeTestSessionWireCorpus(corpus));
     if (!existsSync(FIXTURE_PATH)) {
       const stale = existsSync(FIXTURE_DIR)
         ? readdirSync(FIXTURE_DIR).filter((name) => /^session-wire\.v\d+\.json$/.test(name))
@@ -50,8 +46,8 @@ describe("session wire snapshot", () => {
         ].join(" "),
       );
     }
-    const checkedIn = normalizeNewlines(readFileSync(FIXTURE_PATH, "utf8"));
-    if (checkedIn !== rendered) {
+    const checkedIn = JSON.parse(readFileSync(FIXTURE_PATH, "utf8"));
+    if (!Bun.deepEquals(checkedIn, rendered, true)) {
       throw new Error(
         [
           `The session wire payload changed but HUNK_SESSION_DAEMON_VERSION is still ` +
@@ -63,7 +59,7 @@ describe("session wire snapshot", () => {
         ].join("\n"),
       );
     }
-    expect(checkedIn).toBe(rendered);
+    expect(checkedIn).toEqual(rendered);
   });
 
   test("exactly one wire fixture is checked in, for the current revision", () => {
