@@ -6,6 +6,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HUNK_SESSION_DAEMON_VERSION } from "../../packages/hunk/src/session/protocol";
 import { HUNK_DAEMON_CLIENT_OLDER_MESSAGE } from "../../packages/hunk/src/session/client/daemonSkew";
+import {
+  createDaemonCommandDependencies,
+  runDaemonRestartCommand,
+} from "../../packages/hunk/src/session/agent/daemonCommands";
+import { resolveSessionBrokerConfig } from "../../packages/hunk/src/session/broker/brokerConfig";
+import { launchSessionBrokerDaemonAndRecord } from "../../packages/hunk/src/session/broker/brokerLauncher";
 import { cleanupTestConfigHomes, createTestConfigHome } from "../helpers/config-home";
 
 /**
@@ -13,6 +19,12 @@ import { cleanupTestConfigHomes, createTestConfigHome } from "../helpers/config-
  * that build and one refused window from this build: the daemon is replaced by one at this
  * CLI's revision, the refused window attaches on its own, and the old window is told to
  * relaunch instead of being reattached.
+ *
+ * The restart itself runs in this process through the same command implementation the CLI
+ * calls, because `bun test --no-orphans` kills a spawned process's descendants the moment it
+ * exits: a replacement daemon started by a short-lived spawned CLI would not survive. The
+ * CLI-level contract (parsing, help, non-TTY refusal) is covered by spawned runs that need no
+ * daemon to outlive them.
  */
 const repoRoot = process.cwd();
 const sourceEntrypoint = join(repoRoot, "packages/hunk/src/main.tsx");
@@ -160,7 +172,39 @@ function runCli(args: string[], environment: Environment, revision?: number) {
   };
 }
 
-/** Stop a daemon the CLI under test spawned detached, so it does not outlive the test. */
+/**
+ * Run the restart command in-process against the test daemon port, spawning the replacement
+ * from Hunk's real entrypoint the way the CLI does.
+ */
+async function restartDaemonInProcess(environment: Environment) {
+  const previous = { ...process.env };
+  Object.assign(process.env, processEnv(environment));
+  try {
+    const config = resolveSessionBrokerConfig();
+    const out: string[] = [];
+    const exitCode = await runDaemonRestartCommand(
+      { kind: "daemon-restart", output: "json", yes: true },
+      { stdout: (text) => out.push(text), stderr: (text) => out.push(`[stderr] ${text}`) },
+      {
+        ...createDaemonCommandDependencies(config),
+        launchDaemon: () =>
+          launchSessionBrokerDaemonAndRecord({
+            config,
+            cwd: repoRoot,
+            argv: [process.execPath, sourceEntrypoint],
+          }),
+      },
+    );
+    return { exitCode, stdout: out.join("") };
+  } finally {
+    for (const key of Object.keys(process.env)) {
+      if (!(key in previous)) delete process.env[key];
+    }
+    Object.assign(process.env, previous);
+  }
+}
+
+/** Stop a daemon the restart spawned detached, so it does not outlive the test. */
 function stopSpawnedDaemon(environment: Environment) {
   const status = runCli(["daemon", "status", "--json"], environment);
   if (status.exitCode !== 0) return;
@@ -224,8 +268,8 @@ describe("hunk daemon restart", () => {
       attachedSessions: [{ sessionId: "old-window", olderBuild: true }],
     });
 
-    const restart = runCli(["daemon", "restart", "--yes", "--json"], environment);
-    expect(restart.stderr).toBe("");
+    const restart = await restartDaemonInProcess(environment);
+    expect(restart.stdout).not.toContain("[stderr]");
     expect(restart.exitCode).toBe(0);
     const result = JSON.parse(restart.stdout) as {
       restarted: boolean;

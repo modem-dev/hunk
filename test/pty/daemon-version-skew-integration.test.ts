@@ -4,6 +4,12 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  createDaemonCommandDependencies,
+  runDaemonRestartCommand,
+} from "../../packages/hunk/src/session/agent/daemonCommands";
+import { resolveSessionBrokerConfig } from "../../packages/hunk/src/session/broker/brokerConfig";
+import { launchSessionBrokerDaemonAndRecord } from "../../packages/hunk/src/session/broker/brokerLauncher";
 import { HUNK_SESSION_DAEMON_VERSION } from "../../packages/hunk/src/session/protocol";
 import { createPtyHarness } from "./harness";
 
@@ -11,6 +17,10 @@ import { createPtyHarness } from "./harness";
  * A window meeting a daemon from another build: the status bar must say which side is old and
  * what to do, and the window must attach by itself once a matching daemon replaces the old one.
  * The daemon impersonates another revision through the internal test override.
+ *
+ * The restart runs in this process through the command implementation the CLI calls: under
+ * `bun test --no-orphans` a replacement daemon started by a short-lived spawned CLI would be
+ * killed as soon as that CLI exited.
  */
 const harness = createPtyHarness();
 const repoRoot = process.cwd();
@@ -131,6 +141,36 @@ function runCli(args: string[], port: number, configHome: string) {
   };
 }
 
+/** Run `hunk daemon restart --yes` in-process against the test port. */
+async function restartDaemonInProcess(port: number, configHome: string) {
+  const previous = { ...process.env };
+  Object.assign(process.env, { XDG_CONFIG_HOME: configHome, HUNK_MCP_PORT: String(port) });
+  delete process.env.HUNK_INTERNAL_SESSION_DAEMON_VERSION;
+  try {
+    const config = resolveSessionBrokerConfig();
+    const out: string[] = [];
+    const exitCode = await runDaemonRestartCommand(
+      { kind: "daemon-restart", output: "json", yes: true },
+      { stdout: (text) => out.push(text), stderr: (text) => out.push(`[stderr] ${text}`) },
+      {
+        ...createDaemonCommandDependencies(config),
+        launchDaemon: () =>
+          launchSessionBrokerDaemonAndRecord({
+            config,
+            cwd: repoRoot,
+            argv: [process.execPath, join(repoRoot, "packages/hunk/src/main.tsx")],
+          }),
+      },
+    );
+    return { exitCode, stdout: out.join("") };
+  } finally {
+    for (const key of Object.keys(process.env)) {
+      if (!(key in previous)) delete process.env[key];
+    }
+    Object.assign(process.env, previous);
+  }
+}
+
 function launchWindow(
   fixture: ReturnType<typeof createFilePair>,
   port: number,
@@ -174,8 +214,8 @@ describe("PTY daemon version skew", () => {
 
     // The command the notice names replaces the daemon; the window's own reconnect loop then
     // registers with the replacement and the sticky notice goes away.
-    const restart = runCli(["daemon", "restart", "--yes", "--json"], port, configHome);
-    expect(restart.stderr).toBe("");
+    const restart = await restartDaemonInProcess(port, configHome);
+    expect(restart.stdout).not.toContain("[stderr]");
     expect(restart.exitCode).toBe(0);
     const result = JSON.parse(restart.stdout) as {
       after: { daemon: { daemonVersion: number; pid: number } };
