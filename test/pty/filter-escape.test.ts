@@ -34,9 +34,9 @@ describe("filter escape clearing (PTY)", () => {
       await harness.waitForSnapshot(session, (t) => t.includes("No files match"), 5_000);
 
       // First Escape clears the text (keeps the input focused / placeholder shown).
-      await session.press("escape");
-      await harness.waitForSnapshot(
+      await harness.pressAndWaitForSnapshot(
         session,
+        "escape",
         (t) => t.includes("filter: type to filter files"),
         5_000,
       );
@@ -46,9 +46,9 @@ describe("filter escape clearing (PTY)", () => {
       await harness.waitForSnapshot(session, (t) => t.includes("No files match"), 5_000);
 
       // Second Escape must clear again, just like the first.
-      await session.press("escape");
-      const cleared = await harness.waitForSnapshot(
+      const cleared = await harness.pressAndWaitForSnapshot(
         session,
+        "escape",
         (t) => t.includes("filter: type to filter files") && t.includes("alphaOnly = true"),
         5_000,
       );

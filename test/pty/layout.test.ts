@@ -11,6 +11,13 @@ afterEach(() => {
   harness.cleanup();
 });
 
+const horizontalRepeatBatchSize = 8;
+
+/** Build one bounded burst matching repeated horizontal input from a held key. */
+function horizontalKeyRepeat(key: "left" | "right") {
+  return Array.from({ length: horizontalRepeatBatchSize }, () => key);
+}
+
 /** Locate the left pane divider from a rendered terminal frame. */
 function sidebarDividerColumn(frame: string) {
   const columns = frame
@@ -289,18 +296,18 @@ describe("PTY layout", () => {
       expect(initial).toContain("this is a very long");
       expect(initial).not.toContain("ge';");
 
-      await session.press("w");
-      const wrapped = await harness.waitForSnapshot(
+      const wrapped = await harness.pressAndWaitForSnapshot(
         session,
+        "w",
         (text) => text.includes("ge';"),
         5_000,
       );
 
       expect(wrapped).toContain("ge';");
 
-      await session.press("w");
-      const unwrapped = await harness.waitForSnapshot(
+      const unwrapped = await harness.pressAndWaitForSnapshot(
         session,
+        "w",
         (text) => !text.includes("ge';"),
         5_000,
       );
@@ -327,18 +334,18 @@ describe("PTY layout", () => {
       expect(initial).toContain("▾ 1 unchanged line");
       expect(initial).not.toContain("hiddenLine01");
 
-      await session.press("z");
-      const expanded = await harness.waitForSnapshot(
+      const expanded = await harness.pressAndWaitForSnapshot(
         session,
+        "z",
         (text) => text.includes("Hide 1 unchanged line") && text.includes("hiddenLine01"),
         5_000,
       );
 
       expect(expanded).toContain("hiddenLine01");
 
-      await session.press("z");
-      const collapsed = await harness.waitForSnapshot(
+      const collapsed = await harness.pressAndWaitForSnapshot(
         session,
+        "z",
         (text) => text.includes("▾ 1 unchanged line") && !text.includes("hiddenLine01"),
         5_000,
       );
@@ -690,18 +697,18 @@ describe("PTY layout", () => {
       expect(initial).not.toMatch(/▌.*▌/);
       expect(initial).toContain("1   -  export const alpha = 1;");
 
-      await session.press("2");
-      const split = await harness.waitForSnapshot(
+      const split = await harness.pressAndWaitForSnapshot(
         session,
+        "2",
         (text) => /▌.*▌/.test(text) && harness.countMatches(text, /alpha\.ts/g) >= 2,
         5_000,
       );
 
       expect(split).toMatch(/▌.*▌/);
 
-      await session.press("1");
-      const unified = await harness.waitForSnapshot(
+      const unified = await harness.pressAndWaitForSnapshot(
         session,
+        "1",
         (text) => !/▌.*▌/.test(text) && text.includes("1   -  export const alpha = 1;"),
         5_000,
       );
@@ -709,9 +716,9 @@ describe("PTY layout", () => {
       expect(unified).not.toMatch(/▌.*▌/);
       expect(unified).toContain("1   -  export const alpha = 1;");
 
-      await session.press("0");
-      const auto = await harness.waitForSnapshot(
+      const auto = await harness.pressAndWaitForSnapshot(
         session,
+        "0",
         (text) => /▌.*▌/.test(text) && harness.countMatches(text, /alpha\.ts/g) >= 2,
         5_000,
       );
@@ -741,7 +748,6 @@ describe("PTY layout", () => {
       let anchored = initial;
       for (let index = 0; index < 24; index += 1) {
         await session.press("down");
-        await session.waitIdle({ timeout: 200 });
         anchored = await session.text({ immediate: true });
         if (anchored.includes("line08 = 108") && !anchored.includes("line01 = 101")) {
           break;
@@ -754,18 +760,18 @@ describe("PTY layout", () => {
       expect(anchored).not.toContain("line01 = 101");
       expect(anchoredLineNumber).toBeDefined();
 
-      await session.press("1");
-      const unified = await harness.waitForSnapshot(
+      const unified = await harness.pressAndWaitForSnapshot(
         session,
+        "1",
         (text) => !/▌.*▌/.test(text) && text.includes(`line${anchoredLineNumber} =`),
         5_000,
       );
 
       expect(unified).toContain(`line${anchoredLineNumber} =`);
 
-      await session.press("2");
-      const split = await harness.waitForSnapshot(
+      const split = await harness.pressAndWaitForSnapshot(
         session,
+        "2",
         (text) => /▌.*▌/.test(text) && text.includes(`line${anchoredLineNumber} =`),
         5_000,
       );
@@ -793,10 +799,9 @@ describe("PTY layout", () => {
       expect(initial).not.toContain("ge';");
 
       let shifted = initial;
-      for (let index = 0; index < 96; index += 1) {
-        await session.press("right");
-        // press() already waits for idle, so read the settled frame immediately rather than
-        // paying another render round-trip per column; the loop retries if a frame lags.
+      for (let index = 0; index < 96; index += horizontalRepeatBatchSize) {
+        await session.press(horizontalKeyRepeat("right"));
+        // Held keys arrive in bursts. Settle each bounded burst and retry if its frame lags.
         shifted = await session.text({ immediate: true });
         if (shifted.includes("ge';")) {
           break;
@@ -807,8 +812,8 @@ describe("PTY layout", () => {
       expect(shifted).not.toContain("this is a very long");
 
       let restored = shifted;
-      for (let index = 0; index < 96; index += 1) {
-        await session.press("left");
+      for (let index = 0; index < 96; index += horizontalRepeatBatchSize) {
+        await session.press(horizontalKeyRepeat("left"));
         restored = await session.text({ immediate: true });
         if (restored.includes("this is a very long") && !restored.includes("ge';")) {
           break;
@@ -839,9 +844,10 @@ describe("PTY layout", () => {
       expect(initial).not.toContain("ge';");
 
       let shifted = initial;
-      for (let index = 0; index < 96; index += 1) {
-        // SGR button 69 is a wheel-down event with the Shift modifier.
-        session.writeRaw("\x1b[<69;61;11M");
+      for (let index = 0; index < 96; index += horizontalRepeatBatchSize) {
+        // SGR button 69 is a wheel-down event with the Shift modifier. Real wheel input arrives
+        // in bursts, so settle the same bounded batch used for held horizontal arrow keys.
+        session.writeRaw("\x1b[<69;61;11M".repeat(horizontalRepeatBatchSize));
         await session.waitIdle();
         shifted = await session.text({ immediate: true });
         if (shifted.includes("ge';")) {
@@ -873,9 +879,8 @@ describe("PTY layout", () => {
       expect(initial).not.toContain("ge';");
 
       let shifted = initial;
-      for (let index = 0; index < 96; index += 1) {
-        await session.press("right");
-        // press() already waits for idle; read immediately to avoid a redundant settle per column.
+      for (let index = 0; index < 96; index += horizontalRepeatBatchSize) {
+        await session.press(horizontalKeyRepeat("right"));
         shifted = await session.text({ immediate: true });
         if (shifted.includes("ge';")) {
           break;
@@ -896,9 +901,9 @@ describe("PTY layout", () => {
       expect(wrapped).toContain("wrapped line");
       expect(wrapped).toContain("ge';");
 
-      await session.press("w");
-      const reset = await harness.waitForSnapshot(
+      const reset = await harness.pressAndWaitForSnapshot(
         session,
+        "w",
         (text) => text.includes("this is a very long") && !text.includes("ge';"),
         5_000,
       );

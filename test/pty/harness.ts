@@ -64,6 +64,11 @@ export function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Send a bounded burst that models repeated delivery from one held key. */
+export function pressKeyRepeat(session: Pick<Session, "press">, key: Key, count: number) {
+  return session.press(Array.from({ length: count }, () => key));
+}
+
 /**
  * Count how many rows one keypress moved the stream by following the text that
  * sat on a fixed screen row.
@@ -92,16 +97,21 @@ export async function measureKeyScroll(session: Session, key: Key, anchorRow: nu
   return anchorRow - movedTo;
 }
 
+/** Send an SGR mouse motion event without imposing a readiness policy on its caller. */
+function sendMouseMove(session: Session, x: number, y: number) {
+  session.writeRaw(`\x1b[<35;${x + 1};${y + 1}M`);
+}
+
 /** Send an SGR mouse motion event at zero-based terminal coordinates. */
 export async function moveMouse(session: Session, x: number, y: number) {
-  session.writeRaw(`\x1b[<35;${x + 1};${y + 1}M`);
+  sendMouseMove(session, x, y);
   await session.waitIdle();
 }
 
 /** Reveal the hover-only add-note badge across fixture-specific row offsets. */
 export async function revealAddNoteAffordance(session: Session, x: number, yCandidates: number[]) {
   for (const y of yCandidates) {
-    await moveMouse(session, x, y);
+    sendMouseMove(session, x, y);
     try {
       return await session.waitForText(/\[\+\]/, { timeout: 1_000 });
     } catch {
@@ -172,7 +182,7 @@ export async function revealAddNoteNear(session: Session, row: number) {
     }
 
     for (const x of [8, 20, 60]) {
-      await moveMouse(session, x, y);
+      sendMouseMove(session, x, y);
       try {
         await session.waitForText(/\[\+\]/, { timeout: 200 });
         return;
@@ -188,7 +198,7 @@ export async function revealAddNoteNear(session: Session, row: number) {
 /** Reveal the add-note control without falling back to adjacent rows. */
 export async function revealAddNoteOnRow(session: Session, row: number) {
   for (const x of [8, 20, 60]) {
-    await moveMouse(session, x, row);
+    sendMouseMove(session, x, row);
     try {
       await session.waitForText(/\[\+\]/, { timeout: 200 });
       return;
@@ -1080,13 +1090,113 @@ end
    * Never resend input on timeout; a dropped key must remain a test failure.
    */
   async function pressAndWaitForSnapshot(
-    session: Pick<Session, "press" | "text" | "waitIdle">,
+    session: Pick<Session, "sendKey" | "text" | "waitIdle">,
     key: Key | Key[],
     predicate: (text: string) => boolean,
     timeoutMs = 5_000,
   ) {
-    await session.press(key);
+    const before = await session.text({ immediate: true });
+    if (predicate(before)) {
+      throw new Error("pressAndWaitForSnapshot: destination was visible before the keypress.");
+    }
+
+    session.sendKey(key);
     return waitForSnapshot(session, predicate, timeoutMs);
+  }
+
+  /** Send one click without waiting when a destination predicate will own readiness. */
+  function sendClick(
+    session: Pick<Session, "getTerminalData" | "writeRaw">,
+    pattern: Parameters<Session["click"]>[0],
+    first = false,
+  ) {
+    const regex =
+      typeof pattern === "string"
+        ? new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")
+        : new RegExp(
+            pattern.source,
+            pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`,
+          );
+    const matches: { x: number; y: number }[] = [];
+
+    for (const [y, line] of session.getTerminalData().lines.entries()) {
+      const text = line.spans.map((span) => span.text).join("");
+      regex.lastIndex = 0;
+      let match: RegExpExecArray | null;
+      while ((match = regex.exec(text)) !== null) {
+        matches.push({ x: match.index, y });
+        if (match[0].length === 0) regex.lastIndex += 1;
+      }
+    }
+
+    if (matches.length === 0) {
+      throw new Error(`sendClick: ${String(pattern)} is not visible.`);
+    }
+    if (matches.length > 1 && !first) {
+      throw new Error(`sendClick: ${String(pattern)} has ${matches.length} visible matches.`);
+    }
+
+    const target = matches[0]!;
+    const x = target.x + 1;
+    const y = target.y + 1;
+    session.writeRaw(`\x1b[<0;${x};${y}M`);
+    session.writeRaw(`\x1b[<0;${x};${y}m`);
+  }
+
+  /** Click visible text and wait for destination text that was absent beforehand. */
+  async function clickAndWaitForText(
+    session: Pick<Session, "getTerminalData" | "text" | "waitForText" | "writeRaw">,
+    target: Parameters<Session["click"]>[0],
+    destination: Parameters<Session["waitForText"]>[0],
+    options: { first?: boolean; timeout?: number } = {},
+  ) {
+    const before = await session.text({ immediate: true });
+    const matchedBefore =
+      typeof destination === "string"
+        ? before.includes(destination)
+        : new RegExp(destination.source, destination.flags.replace(/[gy]/g, "")).test(before);
+    if (matchedBefore) {
+      throw new Error("clickAndWaitForText: destination was visible before the click.");
+    }
+
+    sendClick(session, target, options.first);
+    return session.waitForText(destination, { timeout: options.timeout });
+  }
+
+  /** Click visible text and wait for a unique destination snapshot. */
+  async function clickAndWaitForSnapshot(
+    session: Pick<Session, "getTerminalData" | "text" | "waitIdle" | "writeRaw">,
+    target: Parameters<Session["click"]>[0],
+    predicate: (text: string) => boolean,
+    options: { first?: boolean; timeout?: number } = {},
+  ) {
+    const before = await session.text({ immediate: true });
+    if (predicate(before)) {
+      throw new Error("clickAndWaitForSnapshot: destination was visible before the click.");
+    }
+
+    sendClick(session, target, options.first);
+    return waitForSnapshot(session, predicate, options.timeout);
+  }
+
+  /** Send one key and wait for text that was absent before the transition. */
+  async function pressAndWaitForText(
+    session: Pick<Session, "sendKey" | "text" | "waitForText">,
+    key: Key | Key[],
+    pattern: Parameters<Session["waitForText"]>[0],
+    options?: Parameters<Session["waitForText"]>[1],
+  ) {
+    const before = await session.text({ immediate: true });
+    const matchedBefore =
+      typeof pattern === "string"
+        ? before.includes(pattern)
+        : new RegExp(pattern.source, pattern.flags.replace(/[gy]/g, "")).test(before);
+    if (matchedBefore) {
+      throw new Error("pressAndWaitForText: destination was visible before the keypress.");
+    }
+
+    session.sendKey(key);
+    return session.waitForText(pattern, options);
   }
 
   function countMatches(text: string, pattern: RegExp) {
@@ -1104,15 +1214,28 @@ end
    * test actually cares about — meaningful.
    */
   async function ensureKeyboardIsLive(session: Session) {
+    const closeHelp = async () => {
+      session.sendKey("escape");
+      await session.text({
+        timeout: 5_000,
+        waitFor: (text) => !text.includes("Controls help"),
+      });
+    };
+
     for (let attempt = 0; attempt < 5; attempt += 1) {
-      await session.press("?");
+      const before = await session.text({ immediate: true });
+      if (before.includes("Controls help")) {
+        await closeHelp();
+        return;
+      }
+
+      session.sendKey("?");
       try {
-        await waitForSnapshot(session, (text) => text.includes("Controls help"), 2_000);
-        await session.press("escape");
-        await waitForSnapshot(session, (text) => !text.includes("Controls help"), 5_000);
+        await session.waitForText(/Controls help/, { timeout: 2_000 });
+        await closeHelp();
         return;
       } catch {
-        // Dropped before the app was listening; the next press is the retry.
+        // Dropped before the app was listening; a delayed help frame is closed on the next pass.
       }
     }
 
@@ -1156,8 +1279,11 @@ end
     launchHunkWithFileBackedStdin,
     launchShellCommand,
     buildHunkCommand,
+    clickAndWaitForSnapshot,
+    clickAndWaitForText,
     shellQuote,
     pressAndWaitForSnapshot,
+    pressAndWaitForText,
     waitForSnapshot,
   };
 }

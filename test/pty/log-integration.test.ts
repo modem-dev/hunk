@@ -164,8 +164,7 @@ describe("interactive hunk log", () => {
 
     try {
       await session.waitForText(/Second history commit/, { timeout: 15_000 });
-      await session.press("enter");
-      await session.waitForText(/Preparing review/, { timeout: 5_000 });
+      await harness.pressAndWaitForText(session, "enter", /Preparing review/, { timeout: 5_000 });
       const cancelledAt = Date.now();
       session.writeRaw("\x03");
       while (
@@ -200,18 +199,22 @@ describe("interactive hunk log", () => {
       await session.waitForText(/1 commit selected/, { timeout: 5_000 });
       session.writeRaw("j");
       await session.waitForText(/2 commits selected/, { timeout: 5_000 });
-      await session.press("enter");
-      const review = await session.waitForText(/rootOnly = true/, { timeout: 15_000 });
+      const review = await harness.pressAndWaitForText(session, "enter", /rootOnly = true/, {
+        timeout: 15_000,
+      });
       expect(review).toContain("historyValue = 'second'");
       expect(review).toContain("Second history commit");
       expect(review).toContain("First history commit");
       expect(review).toMatch(/history · .* ago\s+[0-9a-f]{8} ⧉/);
-      await session.press("q");
-      await session.waitForText(/2 commits selected/, { timeout: 15_000 });
+      await harness.pressAndWaitForText(session, "q", /2 commits selected/, { timeout: 15_000 });
 
       // Escape collapses visual mode before direct Shift selection starts another range.
-      await session.press("escape");
-      await harness.waitForSnapshot(session, (text) => !text.includes("commits selected"), 5_000);
+      await harness.pressAndWaitForSnapshot(
+        session,
+        "escape",
+        (text) => !text.includes("commits selected"),
+        5_000,
+      );
       session.writeRaw("k");
 
       // SGR mouse modifier bit 4 forwards Shift+click through capable terminals.
@@ -244,11 +247,11 @@ describe("interactive hunk log", () => {
       session.writeRaw("\x1b[<0;2;1M\x1b[<0;2;1m");
       await session.waitForText(/Open selection/, { timeout: 5_000 });
       await session.press("right");
-      await session.press("enter");
-      await session.waitForText(/Theme selector/, { timeout: 5_000 });
+      await harness.pressAndWaitForText(session, "enter", /Theme selector/, { timeout: 5_000 });
       await session.press("down");
-      await session.press("enter");
-      await session.waitForText(/Second history commit/, { timeout: 5_000 });
+      await harness.pressAndWaitForText(session, "enter", /Second history commit/, {
+        timeout: 5_000,
+      });
 
       // The first row's right-aligned commit id opens immediately without a double-click.
       const firstRowIndex = history
@@ -271,9 +274,9 @@ describe("interactive hunk log", () => {
       expect(session.getRawOutput().slice(transitionOutputStart)).not.toContain("\x1b[?1049l");
 
       const returnOutputStart = session.getRawOutput().length;
-      await session.press("q");
-      const returned = await harness.waitForSnapshot(
+      const returned = await harness.pressAndWaitForSnapshot(
         session,
+        "q",
         (text) => text.includes("Second history commit") && text.includes("Enter open"),
         15_000,
       );
@@ -287,23 +290,23 @@ describe("interactive hunk log", () => {
       await session.waitForText(/Copied [0-9a-f]{8}/, { timeout: 5_000 });
 
       // Scrolling the history body dismisses an open dropdown before moving selection.
-      await session.press("f10");
-      await session.waitForText(/Open selection/, { timeout: 5_000 });
+      await harness.pressAndWaitForText(session, "f10", /Open selection/, { timeout: 5_000 });
       session.writeRaw("\x1b[<65;50;5M");
       await harness.waitForSnapshot(session, (text) => !text.includes("Open selection"), 5_000);
 
       // Clicking outside the id selects the second row without opening it.
       session.writeRaw("\x1b[<0;50;5M\x1b[<0;50;5m");
-      await session.press("enter");
-      const rootReview = await session.waitForText(/historyValue = 'first'/, {
-        timeout: 15_000,
-      });
+      const rootReview = await harness.pressAndWaitForText(
+        session,
+        "enter",
+        /historyValue = 'first'/,
+        { timeout: 15_000 },
+      );
       expect(rootReview).toContain("history.ts");
       await returnToHistory(session);
 
       // A command key closes an open menu and falls through to canonical dispatch.
-      await session.press("f10");
-      await session.waitForText(/Open selection/, { timeout: 5_000 });
+      await harness.pressAndWaitForText(session, "f10", /Open selection/, { timeout: 5_000 });
       session.writeRaw("k\r");
       await session.waitForText(/historyValue = 'second'/, { timeout: 15_000 });
       await returnToHistory(session);
@@ -349,12 +352,14 @@ describe("interactive hunk log", () => {
         (text) => !text.includes("commit selected"),
       );
       await session.press("down");
-      await session.press("enter");
-      await session.waitForText(/historyValue = 'second'/, { timeout: 15_000 });
+      await harness.pressAndWaitForText(session, "enter", /historyValue = 'second'/, {
+        timeout: 15_000,
+      });
       await returnToHistory(session);
       session.writeRaw("\x0e");
-      await session.press("enter");
-      await session.waitForText(/historyValue = 'first'/, { timeout: 15_000 });
+      await harness.pressAndWaitForText(session, "enter", /historyValue = 'first'/, {
+        timeout: 15_000,
+      });
       await returnToHistory(session);
       await session.press("q");
     } finally {
@@ -376,12 +381,12 @@ describe("interactive hunk log", () => {
 
     try {
       await session.waitForText(/Second history commit/, { timeout: 15_000 });
-      await session.press("t");
-      await session.waitForText(/Theme selector/, { timeout: 5_000 });
+      await harness.pressAndWaitForText(session, "t", /Theme selector/, { timeout: 5_000 });
       await session.press("down");
       await session.press("enter");
-      await session.press("q");
-      const prompt = await session.waitForText(/Save view preferences\?/, { timeout: 5_000 });
+      const prompt = await harness.pressAndWaitForText(session, "q", /Save view preferences\?/, {
+        timeout: 5_000,
+      });
       expect(prompt).toContain('- theme = "github-dark-default"');
       expect(prompt).toContain('+ theme = "github-dark-dimmed"');
 
@@ -413,8 +418,9 @@ describe("interactive hunk log", () => {
 
     try {
       await session.waitForText(/Second history commit/, { timeout: 15_000 });
-      await session.press("enter");
-      const split = await session.waitForText(/historyValue = 'second'/, { timeout: 15_000 });
+      const split = await harness.pressAndWaitForText(session, "enter", /historyValue = 'second'/, {
+        timeout: 15_000,
+      });
       expect(split).toMatch(/▌.*▌/);
 
       // Preserve the coalesced layout-and-return input; only history chrome proves q committed.
@@ -425,17 +431,18 @@ describe("interactive hunk log", () => {
         15_000,
       );
 
-      await session.press("enter");
-      const retained = await harness.waitForSnapshot(
+      const retained = await harness.pressAndWaitForSnapshot(
         session,
+        "enter",
         (text) => !/▌.*▌/.test(text) && text.includes("historyValue = 'second'"),
         15_000,
       );
       expect(retained).not.toMatch(/▌.*▌/);
 
       await returnToHistory(session);
-      await session.press("q");
-      const prompt = await session.waitForText(/Save view preferences\?/, { timeout: 5_000 });
+      const prompt = await harness.pressAndWaitForText(session, "q", /Save view preferences\?/, {
+        timeout: 5_000,
+      });
       expect(prompt).toContain('- mode = "split"');
       expect(prompt).toContain('+ mode = "unified"');
 
@@ -471,8 +478,9 @@ describe("interactive hunk log", () => {
 
       session.writeRaw("t");
       await session.waitForText(/Theme selector/, { timeout: 5_000 });
-      await session.press("escape");
-      await session.waitForText(/Commits on Sep 6, 2026/, { timeout: 5_000 });
+      await harness.pressAndWaitForText(session, "escape", /Commits on Sep 6, 2026/, {
+        timeout: 5_000,
+      });
 
       session.resize({ cols: 70, rows: 20 });
       await harness.waitForSnapshot(
@@ -543,9 +551,9 @@ describe("interactive hunk log", () => {
       await session.press("f10");
       await session.press("right");
       await session.press("down");
-      await session.press("enter");
-      const graph = await harness.waitForSnapshot(
+      const graph = await harness.pressAndWaitForSnapshot(
         session,
+        "enter",
         (text) => text.includes("*") && !text.includes("Commits on Sep 6, 2026"),
         5_000,
       );
@@ -568,8 +576,9 @@ describe("interactive hunk log", () => {
       await session.waitForText(/Second history commit/, { timeout: 15_000 });
       writeFileSync(join(cwd, "history.ts"), "export const historyValue = 'third';\n");
       git(cwd, ["commit", "-qam", "Third history commit"]);
-      await session.press("r");
-      const refreshed = await session.waitForText(/Third history commit/, { timeout: 15_000 });
+      const refreshed = await harness.pressAndWaitForText(session, "r", /Third history commit/, {
+        timeout: 15_000,
+      });
       expect(refreshed).toContain("History refreshed");
       await session.press("q");
     } finally {
@@ -590,15 +599,15 @@ describe("interactive hunk log", () => {
       await session.press("f10");
       await session.press("right");
       await session.press("down");
-      await session.press("enter");
-      const graph = await session.waitForText(/╯/, { timeout: 5_000 });
+      const graph = await harness.pressAndWaitForText(session, "enter", /╯/, { timeout: 5_000 });
       expect(graph).not.toContain("Commits on");
 
       await session.press("f10");
       await session.press("right");
       await session.press("right");
-      await session.press("right");
-      await session.waitForText(/Compare with parent/, { timeout: 5_000 });
+      await harness.pressAndWaitForText(session, "right", /Compare with parent/, {
+        timeout: 5_000,
+      });
       await session.press("down");
       await session.press("down");
       await session.press("down");
@@ -606,8 +615,9 @@ describe("interactive hunk log", () => {
       await session.waitForText(/Compare with parent/, { timeout: 5_000 });
       session.writeRaw("\x1b[<65;50;10M");
       await session.waitIdle();
-      await session.press("enter");
-      const review = await session.waitForText(/main\.ts/, { timeout: 15_000 });
+      const review = await harness.pressAndWaitForText(session, "enter", /main\.ts/, {
+        timeout: 15_000,
+      });
       expect(review).not.toContain("side.ts");
       await returnToHistory(session);
       await session.press("q");
