@@ -17,7 +17,11 @@ import {
 } from "@hunk/session-broker";
 import { serveSessionBrokerDaemon as serveBunSessionBrokerDaemon } from "@hunk/session-broker-bun";
 import { hunkSessionProtocolParsers } from "./protocolParsers";
-import { isQuiescentUpgradeRefusal, SessionBrokerClient } from "./brokerClient";
+import {
+  isQuiescentUpgradeRefusal,
+  isRegistrationRejection,
+  SessionBrokerClient,
+} from "./brokerClient";
 import type { ResolvedSessionBrokerConfig } from "./brokerConfig";
 import {
   loadOrCreateHunkSessionBrokerCredentials,
@@ -25,7 +29,10 @@ import {
 } from "./credentials";
 import { serveSessionBrokerDaemon as serveHunkSessionBrokerDaemon } from "./brokerServer";
 import { createHttpHunkSessionCliClient } from "../agent/cliClient";
-import { HUNK_DAEMON_UPGRADE_WAIT_MESSAGE } from "../client/capabilities";
+import {
+  HUNK_DAEMON_REGISTRATION_REJECTED_MESSAGE,
+  HUNK_DAEMON_UPGRADE_WAIT_MESSAGE,
+} from "../client/capabilities";
 import { resolveSessionBrokerRuntimePaths } from "./brokerLauncher";
 import { DeterministicLifecycleClockTest } from "../../../../../test/helpers/lifecycleClockTest";
 
@@ -43,7 +50,7 @@ type DeepPartialTest<T> = T extends object ? { [Key in keyof T]?: DeepPartialTes
 
 interface SessionBrokerConnectionTestDouble {
   options: {
-    resolveClose?: (...args: unknown[]) => { reconnect?: boolean };
+    resolveClose?: (...args: unknown[]) => { reconnect?: boolean; warning?: string };
   };
   start(): void;
   stop(): void;
@@ -285,6 +292,60 @@ describe("Hunk session daemon client", () => {
         authenticated: false,
       }),
     ).toBe(false);
+  });
+
+  test("only treats exact post-hello payload refusals as registration rejections", () => {
+    const registration = "Incompatible session registration.";
+    const snapshot = "Incompatible session snapshot.";
+    expect(isRegistrationRejection({ code: 1008, reason: registration, authenticated: true })).toBe(
+      true,
+    );
+    expect(isRegistrationRejection({ code: 1008, reason: snapshot, authenticated: true })).toBe(
+      true,
+    );
+    expect(
+      isRegistrationRejection({ code: 1008, reason: registration, authenticated: false }),
+    ).toBe(false);
+    expect(isRegistrationRejection({ code: 1006, reason: registration, authenticated: true })).toBe(
+      false,
+    );
+    expect(
+      isRegistrationRejection({
+        code: 1008,
+        reason: "Session producer scope rejected.",
+        authenticated: true,
+      }),
+    ).toBe(false);
+  });
+
+  // Intent: a daemon that accepted the hello but refused the registration one parser deeper is
+  // a version skew the user must hear about; today that close is silent. The client keeps
+  // reconnecting so a daemon restart recovers the window without relaunching it.
+  test("warns and keeps reconnecting when the daemon rejects the registration after the hello", () => {
+    const webSockets = installWebSocketObserverTest();
+    const messages = captureBrokerWarningsTest();
+    const client = new SessionBrokerClient(createRegistration(), createSnapshot());
+    const config = prepareDirectConnectTest(client);
+
+    try {
+      clientTestAccess(client).connect(config);
+      const connection = clientTestAccess(client).connection;
+      if (!connection?.options?.resolveClose) throw new Error("Expected a live connection.");
+      const directive = connection.options.resolveClose({
+        code: 1008,
+        reason: "Incompatible session registration.",
+        authenticated: true,
+      });
+      expect(directive).toEqual({
+        reconnect: true,
+        warning: HUNK_DAEMON_REGISTRATION_REJECTED_MESSAGE,
+      });
+      expect(clientTestAccess(client).waitingForIncumbentExit).toBe(false);
+      expect(messages).toEqual([]);
+    } finally {
+      client.stop();
+      webSockets.restoreTest();
+    }
   });
 
   test("keeps its previous registration when the live connection rejects replacement", () => {

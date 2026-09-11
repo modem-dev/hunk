@@ -10,6 +10,13 @@ export const HUNK_DAEMON_UPGRADE_WAIT_MESSAGE =
   "An older or incompatible Hunk session daemon is running. Close older Hunk windows; this window will reconnect automatically.";
 
 /**
+ * The daemon accepted this window's hello but refused its registration or snapshot one parser
+ * deeper: the two builds share a revision number and disagree on the payload shape.
+ */
+export const HUNK_DAEMON_REGISTRATION_REJECTED_MESSAGE =
+  "The session daemon rejected this window's registration; run `hunk daemon restart`.";
+
+/**
  * Read the live daemon's advertised compatibility, returning null when the daemon is too old for
  * this Hunk build even if it still answers the same HTTP action list.
  */

@@ -24,7 +24,10 @@ import {
   type HunkSessionBrokerCredentials,
 } from "./credentials";
 import { HUNK_SESSION_BROKER_APP_ID, HUNK_SESSION_BROKER_APP_REVISION } from "./appContract";
-import { HUNK_DAEMON_UPGRADE_WAIT_MESSAGE } from "../client/capabilities";
+import {
+  HUNK_DAEMON_REGISTRATION_REJECTED_MESSAGE,
+  HUNK_DAEMON_UPGRADE_WAIT_MESSAGE,
+} from "../client/capabilities";
 import type {
   HunkSessionCommandResult,
   HunkSessionInfo,
@@ -39,6 +42,10 @@ const INCOMPATIBLE_SESSION_CLOSE_CODE = 1008;
 const QUIESCENT_REFUSAL_REASONS = new Set([
   "Session broker authentication required; upgrade Hunk.",
   "Malformed session broker protocol.",
+]);
+const REGISTRATION_REJECTION_REASONS = new Set([
+  "Incompatible session registration.",
+  "Incompatible session snapshot.",
 ]);
 
 type SessionAppBridge = SessionBrokerConnectionBridge<
@@ -92,6 +99,24 @@ export function isQuiescentUpgradeRefusal(event: {
     event.authenticated === false &&
     event.code === INCOMPATIBLE_SESSION_CLOSE_CODE &&
     QUIESCENT_REFUSAL_REASONS.has(event.reason)
+  );
+}
+
+/**
+ * Identify a daemon that completed the hello and then refused this window's payload.
+ *
+ * The revision matched, so the reconnect loop must keep running (a replacement daemon can accept
+ * the same payload), but the user has to be told: nothing else about this close is visible.
+ */
+export function isRegistrationRejection(event: {
+  code: number;
+  reason: string;
+  authenticated?: boolean;
+}) {
+  return (
+    event.authenticated === true &&
+    event.code === INCOMPATIBLE_SESSION_CLOSE_CODE &&
+    REGISTRATION_REJECTION_REASONS.has(event.reason)
   );
 }
 
@@ -320,10 +345,12 @@ export class SessionBrokerClient {
           this.waitingForIncumbentExit = true;
           this.incumbentLaunchFingerprint = readSessionBrokerLaunchFingerprint(config);
         }
-        return {
-          reconnect: true,
-          ...(preAuthenticationRefusal ? { warning: HUNK_DAEMON_UPGRADE_WAIT_MESSAGE } : {}),
-        };
+        const warning = preAuthenticationRefusal
+          ? HUNK_DAEMON_UPGRADE_WAIT_MESSAGE
+          : isRegistrationRejection(event)
+            ? HUNK_DAEMON_REGISTRATION_REJECTED_MESSAGE
+            : undefined;
+        return { reconnect: true, ...(warning ? { warning } : {}) };
       },
       onConnected: (brokerGeneration) => {
         if (!isConnectionCurrent(brokerGeneration)) return;
