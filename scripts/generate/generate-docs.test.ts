@@ -37,7 +37,10 @@ describe("generated website references", () => {
     expect(reference).toContain("--no-transparent-bg");
     expect(reference).toContain("hunk markup render");
     expect(reference).not.toContain("## `hunk log`");
-    expect(reference).not.toContain("`--vcs <id>`");
+    const statusSection = reference.split("## `hunk status`")[1]!.split("\n## ")[0]!;
+    expect(statusSection).toContain("`--vcs <id>`");
+    expect(statusSection).toContain("Q returns or quits");
+    expect(reference.split("## `hunk status`")[0]).not.toContain("`--vcs <id>`");
     expect(reference).toMatch(
       new RegExp(
         `\\| \\x60${SESSION_BROKER_HOST_ENV}\\x60\\s+\\| Bind host; defaults to loopback \\x60${DEFAULT_SESSION_BROKER_HOST}\\x60\\.`,

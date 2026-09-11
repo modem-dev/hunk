@@ -27,6 +27,7 @@ import {
   openGitHistory,
   planGitHistoryRangeReview,
 } from "./history";
+import { createGitStatusCapability } from "./status";
 import { gitEndpointSourceSpec, readGitFileSource } from "./source";
 import { commitReviewInfo, comparisonReviewInfo } from "@hunk/vcs/review-info";
 import {
@@ -352,6 +353,7 @@ export function createGitVcsAdapter({
     name: "Git",
     detect: detectGitRepo,
     detectionPriority: HUNK_VCS_DETECTION_BASELINE_PRIORITY,
+    status: createGitStatusCapability(gitExecutable),
     history: {
       open(input, { cwd }) {
         return openGitHistory(input, { cwd, gitExecutable });

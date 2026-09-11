@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { resolveTheme } from "../themes";
+import { resolveTheme, withTransparentSurfaces } from "../themes";
 import {
   interactiveLogUsesColor,
   monochromeLogTheme,
@@ -51,4 +51,11 @@ describe("interactive log color policy", () => {
     expect(new Set(Object.values(neutral.syntaxColors))).toEqual(new Set(["#ffffff"]));
     expect(neutral.syntaxScopeOverrides).toBeUndefined();
   });
+});
+
+test("monochrome status/history retain the shared transparent surface derivation", () => {
+  const neutral = monochromeLogTheme(withTransparentSurfaces(resolveTheme("nord", null)), "dark");
+  expect(neutral.background).toBe("transparent");
+  expect(neutral.panel).toBe("transparent");
+  expect(neutral.text).toBe("#ffffff");
 });

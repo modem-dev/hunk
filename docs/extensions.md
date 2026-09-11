@@ -302,8 +302,9 @@ and retires the replaced instance at that explicit ownership boundary.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `25`). Branch on it if you want
-one file to support several Hunk versions. Version 25 adds Promise-returning watch signatures and
+The API generation this Hunk speaks (currently `26`). Branch on it if you want
+one file to support several Hunk versions. Version 26 adds optional read-only workspace status,
+sibling inspection and status review planning; version 25 adds Promise-returning watch signatures and
 watch cancellation; version 24 adds review metadata to VCS patch results and
 short display revisions to commit descriptors; version 23 adds canonical unified-layout fields
 while preserving the previous event vocabulary; version 22 adds frame-derived pane preferred sizing,
@@ -497,6 +498,49 @@ those two reserved extensions are skipped with a notice.
 
 This API selects a language already available to Pierre/Shiki. It does not load a new syntax
 grammar; an unknown language remains plain text.
+
+### Workspace status capability
+
+API version 26 adds optional `ExtensionVcsAdapter.status`, independent of `history` and
+review operations. Providers without it report unsupported for `hunk status`; detection never
+falls back from a native JJ/Sapling workspace to Git status semantics. The bundled Git provider
+implements the capability in `packages/hunk-git/src/status.ts`.
+
+- `read({ targetPath? }, context)` returns an `ExtensionVcsStatusSnapshot` with `schemaVersion: 1`.
+  `context.cwd` is the launch repository authority; a target may inspect only that repository's
+  worktrees. A missing repository/worktree rejects. No process-wide cwd change, extension loading,
+  fetch, checkout, staging or other mutation belongs in this capability.
+- `readSiblings(snapshot, context)` returns bounded same-repository summaries. Return an
+  unavailable/error row, not zero changes, when a sibling cannot be read. The initial snapshot
+  can publish `siblings: { state: "loading" }` before this slower scan completes.
+- `planReview(snapshot, actionId, context)` revalidates source/target identity and the opaque
+  snapshot token, then returns `{ cwd, input }` for the existing full working-tree comparison.
+  The UI passes only a provider-offered action id; it does not construct revision expressions or
+  narrow the comparison to a selected file. A live working tree can still change after planning;
+  the token is not content attestation.
+- Optional async `watchPlan(snapshot, context)` uses the existing watch-plan vocabulary for
+  worktree and shared/per-worktree metadata. Hosts keep periodic polling for missed events,
+  serialize/coalesce refreshes, cancel superseded reads and reject late generations.
+
+Every asynchronous operation receives `context.signal` and must honor cancellation, bound its
+I/O, and reap subprocesses. Status results allow at most 20,000 unique changed paths, 100 sibling
+rows and 32 review actions. Oversized current status fails explicitly; bounded sibling lists set
+`truncated`. Fields marked unknown/error must not become clean, aligned, or zero-count results.
+The extension boundary validates and copies snapshots before publishing them. Paths retain
+literal Unicode, tabs and newlines for navigation/JSON; renderers escape control characters.
+Providers without an index omit `paths[].index` rather than inventing Git staging states.
+
+`changedPathCount` counts unique destination paths, including rename destinations and untracked
+files. A partially staged path appears once with independent index/worktree states. Submodule
+commit/tracked/untracked changes and conflicts stay explicit. No summed numstat is presented as
+a net change; detailed comparisons belong in the existing diff view.
+
+Fetch timestamps are optional facts with provenance, not observation timestamps. Git retains the
+inspected worktree's local `FETCH_HEAD` mtime with `local-fetch-head-mtime` provenance in structured
+facts: it is not authoritative for the named upstream and may describe a different remote or a
+manually modified file. Human output therefore omits age; `(last fetched 18m ago)` may appear only
+when provenance supports that claim. Hunk never fetches to populate it. Missing/unreadable metadata
+remains unknown/error. See [workspace status](status.md) for command and scan policy.
 
 ### `hunk.registerVcsAdapter(adapter)`
 

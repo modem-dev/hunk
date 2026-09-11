@@ -93,25 +93,26 @@ bad or duplicate id is skipped with a startup notice.
 
 ## Pick the touchpoint
 
-| To do this                                               | Call                                         |
-| -------------------------------------------------------- | -------------------------------------------- |
-| Keep demo/training view settings temporary               | `hunk.configureSession(options)`             |
-| Add a selectable color theme                             | `hunk.registerTheme(theme)`                  |
-| Highlight an extension, exact filename, or filename glob | `hunk.registerFileLanguage(matcher, lang)`   |
-| Support another VCS (`git`/`jj`/`sl` are reserved)       | `hunk.registerVcsAdapter(adapter)`           |
-| Add a navigation/list/status pane beside the review      | `hunk.registerPane(pane)`                    |
-| Present a file as something other than a raw diff        | `hunk.registerFileView(view)` (experimental) |
-| Mark character ranges inside diff lines                  | `hunk.registerLineHighlighter(highlighter)`  |
-| Interpret review keys as a temporary global mode         | `hunk.registerKeyboardMode(mode)`            |
-| Add a generic top-level CLI command tree                 | `hunk.registerCliCommand(command, handler)`  |
-| Bind a key / add an Extensions-menu entry                | `hunk.registerCommand(command, handler)`     |
-| Hide, reorder, retitle files before review               | `hunk.transformChangeset(fn)`                |
-| React to loads, selection, view movement, notes, reloads | `hunk.on(event, handler)`                    |
-| Coordinate with another loaded extension                 | `hunk.events.emit` / `hunk.events.on`        |
-| Reload after an external agent changes reviewed inputs   | `ctx.review.requestReload()` in an event     |
-| Read user-supplied settings                              | `hunk.config` (`[extension.<id>]` table)     |
-| Snapshot stable files and every saved review note        | `ctx.review.snapshot()` in a command         |
-| Branch on the API generation (currently `25`)            | `hunk.apiVersion`                            |
+| To do this                                               | Call                                                          |
+| -------------------------------------------------------- | ------------------------------------------------------------- |
+| Keep demo/training view settings temporary               | `hunk.configureSession(options)`                              |
+| Add a selectable color theme                             | `hunk.registerTheme(theme)`                                   |
+| Highlight an extension, exact filename, or filename glob | `hunk.registerFileLanguage(matcher, lang)`                    |
+| Support another VCS (`git`/`jj`/`sl` are reserved)       | `hunk.registerVcsAdapter(adapter)`                            |
+| Report read-only workspace and sibling status            | Optional `registerVcsAdapter({ status })` capability (API 26) |
+| Add a navigation/list/status pane beside the review      | `hunk.registerPane(pane)`                                     |
+| Present a file as something other than a raw diff        | `hunk.registerFileView(view)` (experimental)                  |
+| Mark character ranges inside diff lines                  | `hunk.registerLineHighlighter(highlighter)`                   |
+| Interpret review keys as a temporary global mode         | `hunk.registerKeyboardMode(mode)`                             |
+| Add a generic top-level CLI command tree                 | `hunk.registerCliCommand(command, handler)`                   |
+| Bind a key / add an Extensions-menu entry                | `hunk.registerCommand(command, handler)`                      |
+| Hide, reorder, retitle files before review               | `hunk.transformChangeset(fn)`                                 |
+| React to loads, selection, view movement, notes, reloads | `hunk.on(event, handler)`                                     |
+| Coordinate with another loaded extension                 | `hunk.events.emit` / `hunk.events.on`                         |
+| Reload after an external agent changes reviewed inputs   | `ctx.review.requestReload()` in an event                      |
+| Read user-supplied settings                              | `hunk.config` (`[extension.<id>]` table)                      |
+| Snapshot stable files and every saved review note        | `ctx.review.snapshot()` in a command                          |
+| Branch on the API generation (currently `26`)            | `hunk.apiVersion`                                             |
 
 Registration is only valid while the factory runs — Hunk seals the API object
 afterwards.

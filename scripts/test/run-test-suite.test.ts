@@ -75,6 +75,12 @@ describe("test suite sharding", () => {
     );
   });
 
+  test("includes status controllers and projections in focused Windows coverage", () => {
+    expect(resolveTestInvocation(["--group=windows-ui"]).patterns).toContain(
+      "./packages/hunk/src/ui/status",
+    );
+  });
+
   test("keeps filtered and file-output invocations serial", () => {
     expect(requiresSerialTestExecution([])).toBe(false);
     expect(requiresSerialTestExecution(["--rerun-each=2"])).toBe(false);

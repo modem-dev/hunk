@@ -2517,3 +2517,45 @@ describe("parseCli extension management commands", () => {
     ).rejects.toThrow(/review command/);
   });
 });
+
+describe("status command parsing", () => {
+  test("accepts static/JSON and preserves shared launch preferences", async () => {
+    expect(
+      await parseCli([
+        "bun",
+        "hunk",
+        "--experimental",
+        "--no-extensions",
+        "status",
+        "--json",
+        "--theme",
+        "nord",
+        "--no-line-numbers",
+      ]),
+    ).toMatchObject({
+      kind: "status",
+      json: true,
+      static: false,
+      color: "auto",
+      options: { experimental: true, extensions: false, theme: "nord", lineNumbers: false },
+    });
+    expect(await parseCli(["bun", "hunk", "status", "--static"])).toMatchObject({
+      kind: "status",
+      static: true,
+      json: false,
+    });
+  });
+  test("rejects revisions, bad color modes and nested session reload", async () => {
+    await expect(parseCli(["bun", "hunk", "status", "HEAD"])).rejects.toThrow();
+    await expect(parseCli(["bun", "hunk", "status", "--color", "rainbow"])).rejects.toThrow(
+      "Invalid color",
+    );
+    await expect(
+      parseCli(["bun", "hunk", "session", "reload", "session-test", "--", "status"]),
+    ).rejects.toThrow("review command");
+    expect(await parseCli(["bun", "hunk", "status", "--help"])).toMatchObject({
+      kind: "help",
+      text: expect.stringContaining("--json"),
+    });
+  });
+});

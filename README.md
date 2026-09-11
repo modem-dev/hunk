@@ -89,7 +89,13 @@ hunk show                      # review the latest commit
 hunk show HEAD~1               # review an earlier commit
 hunk log                       # browse history on a terminal; print when redirected
 hunk log --static              # force static output, paging when needed
+hunk status                    # live workspace compass and sibling worktrees (Git)
+hunk status --static           # print one read-only workspace snapshot
+hunk status --json             # emit one versioned workspace snapshot
 ```
+
+`hunk status` uses provider-owned read-only workspace facts; no fetch or repository mutation is performed.
+See [workspace status](docs/status.md) for navigation, live refresh, JSON and fetch-age provenance.
 
 `hunk log` is one auto-responsive, read-only history surface, not a repository manager. On a
 terminal it opens the desktop history browser; pipes and redirects receive shell-native static

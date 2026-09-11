@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 25;
+export const HUNK_EXTENSION_API_VERSION = 26;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -865,6 +865,136 @@ export interface ExtensionVcsHistoryCapability {
   ): ExtensionVcsHistoryRangeReviewAction | Promise<ExtensionVcsHistoryRangeReviewAction>;
 }
 
+/** Describe an observed fact without turning unavailable metadata into a clean result. */
+export type ExtensionVcsStatusFact<T> =
+  | { state: "ready"; value: T }
+  | { state: "unknown"; reason: string }
+  | { state: "error"; message: string };
+
+export type ExtensionVcsStatusPathState =
+  | "unchanged"
+  | "modified"
+  | "added"
+  | "deleted"
+  | "renamed"
+  | "copied"
+  | "type-changed"
+  | "unmerged"
+  | "untracked";
+
+/** Keep index and working-copy changes independent; providers without an index omit it. */
+export interface ExtensionVcsStatusPath {
+  path: string;
+  previousPath?: string;
+  index?: ExtensionVcsStatusPathState;
+  worktree: ExtensionVcsStatusPathState;
+  conflict: boolean;
+  submodule?: { commitChanged: boolean; trackedChanges: boolean; untrackedChanges: boolean };
+}
+
+export type ExtensionVcsStatusHead =
+  | { kind: "branch"; name: string; revisionId: string }
+  | { kind: "detached"; revisionId: string }
+  | { kind: "unborn"; name: string };
+
+/** Report only locally observable fetch metadata, never the status observation time. */
+export type ExtensionVcsStatusFetch = ExtensionVcsStatusFact<{
+  timestamp: string;
+  provenance: "local-fetch-head-mtime";
+}>;
+
+export type ExtensionVcsStatusUpstream =
+  | { kind: "none" | "detached" | "unborn" }
+  | { kind: "missing"; name: string }
+  | {
+      kind: "tracked";
+      name: string;
+      ahead: number;
+      behind: number;
+      fetch: ExtensionVcsStatusFetch;
+    };
+
+export type ExtensionVcsStatusOperation = "merge" | "rebase" | "cherry-pick" | "revert" | "bisect";
+
+/** Identify one worktree without changing the process cwd or launch extension authority. */
+export interface ExtensionVcsStatusWorktree {
+  id: string;
+  path: string;
+  /** Opaque same-repository identity shared by linked worktrees. */
+  repositoryId: string;
+}
+
+/** Contain a sibling failure to its own row; absent counts never mean clean. */
+export interface ExtensionVcsStatusWorktreeSummary {
+  worktree: ExtensionVcsStatusWorktree;
+  branch?: string;
+  detached: boolean;
+  bare: boolean;
+  locked?: string;
+  prunable?: string;
+  inspectable: boolean;
+  status:
+    | {
+        state: "ready";
+        observedAt: string;
+        changedPathCount: number;
+        conflictCount: number;
+        operations: ExtensionVcsStatusFact<ExtensionVcsStatusOperation[]>;
+      }
+    | { state: "unavailable" | "error"; message: string };
+}
+
+export interface ExtensionVcsStatusSiblings {
+  worktrees: ExtensionVcsStatusWorktreeSummary[];
+  /** More worktrees exist than the bounded scan returned. */
+  truncated: boolean;
+}
+
+/** Publish a bounded, JSON-safe current-worktree observation before optional sibling reads. */
+export interface ExtensionVcsStatusSnapshot {
+  schemaVersion: 1;
+  observedAt: string;
+  worktree: ExtensionVcsStatusWorktree;
+  /** Opaque source/target validation token, not a content attestation for a future live diff. */
+  token: string;
+  head: ExtensionVcsStatusHead;
+  upstream: ExtensionVcsStatusFact<ExtensionVcsStatusUpstream>;
+  operations: ExtensionVcsStatusFact<ExtensionVcsStatusOperation[]>;
+  paths: ExtensionVcsStatusPath[];
+  /** Unique destination paths, not overlapping index/worktree group totals. */
+  changedPathCount: number;
+  reviewActions: { id: string; label: string }[];
+  siblings: ExtensionVcsStatusFact<ExtensionVcsStatusSiblings> | { state: "loading" };
+}
+
+/** Offer read-only status independently of history or any provider's index semantics. */
+export interface ExtensionVcsStatusCapability {
+  /** Reject outside-repository/no-worktree reads; never silently select a different provider. */
+  read(
+    input: { targetPath?: string },
+    context: ExtensionVcsLoadContext,
+  ): Promise<ExtensionVcsStatusSnapshot>;
+  /** Bound concurrency and return partial failures. The caller owns cancellation/generations. */
+  readSiblings(
+    snapshot: ExtensionVcsStatusSnapshot,
+    context: ExtensionVcsLoadContext,
+  ): Promise<ExtensionVcsStatusSiblings>;
+  /** Revalidate the target and token, then return the existing full-comparison review input. */
+  planReview(
+    snapshot: ExtensionVcsStatusSnapshot,
+    actionId: string,
+    context: ExtensionVcsLoadContext,
+  ): Promise<{
+    cwd: string;
+    input: ExtensionVcsDiffInput;
+  }>;
+  /** Cover working-copy and shared/per-worktree metadata; hosts retain periodic polling. */
+  watchPlan?(
+    snapshot: ExtensionVcsStatusSnapshot,
+    context: ExtensionVcsLoadContext,
+  ): Promise<ExtensionVcsWatchPlan>;
+}
+
 /** Stash review request, as extension adapters receive it. */
 export interface ExtensionVcsStashShowInput {
   kind: "stash-show";
@@ -1117,6 +1247,8 @@ export interface ExtensionVcsAdapter {
   operations?: ExtensionVcsOperations;
   /** Optional static/interactive history enumeration capability. */
   history?: ExtensionVcsHistoryCapability;
+  /** Optional read-only workspace status and sibling inspection capability. */
+  status?: ExtensionVcsStatusCapability;
   /**
    * Where this adapter sits in detection order; higher is consulted first.
    *

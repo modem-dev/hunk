@@ -149,6 +149,15 @@ export interface HistoryCommandInput {
   extensionPaths: string[];
 }
 
+/** Read-only workspace status; launch preferences seed all subsequently routed surfaces. */
+export interface StatusCommandInput {
+  kind: "status";
+  static: boolean;
+  json: boolean;
+  color: HistoryColorMode;
+  options: CommonOptions;
+}
+
 export interface HelpCommandInput {
   kind: "help";
   text: string;
@@ -419,6 +428,7 @@ export type ExtensionManageCommandInput =
 export type ParsedCliInput =
   | CliInput
   | HistoryCommandInput
+  | StatusCommandInput
   | HelpCommandInput
   | PagerCommandInput
   | DaemonServeCommandInput

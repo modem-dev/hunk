@@ -205,6 +205,34 @@ export const CLI_REFERENCE_COMMANDS = {
     commonReviewOptions: true,
     watch: true,
   },
+  status: {
+    path: "status",
+    summary: "inspect the current workspace and sibling worktrees",
+    synopsis: ["hunk status [--static | --json]"],
+    details: [
+      "Terminals open live workspace status; redirects receive one static snapshot.",
+      "Enter inspects a row; S/U review staged/working-tree changes; L opens Log; Q returns or quits.",
+      "F10 opens menus, T chooses a theme, R refreshes, and W expands other worktrees.",
+      "--json emits the versioned status snapshot without paging or terminal color.",
+      "Status never fetches or modifies the repository; providers without status report unsupported.",
+    ],
+    options: [
+      ...COMMON_REVIEW_OPTIONS.filter(
+        (option) =>
+          option.flag !== "--pager" &&
+          option.flag !== AUXILIARY_AGENT_OPTIONS.agentContext.flag &&
+          option.flag !== "--vcs <id>",
+      ),
+      { flag: "--vcs <id>", description: "select a VCS status provider" },
+      { flag: "--static", description: "print one snapshot, paging when needed" },
+      { flag: "--json", description: "emit a version 1 JSON snapshot" },
+      {
+        flag: "--color <mode>",
+        description: "color output: auto, always, never",
+        commanderDefault: "auto",
+      },
+    ],
+  },
   log: {
     path: "log",
     // Release preparation enables this when an installable build contains history browsing.
@@ -579,6 +607,7 @@ function renderCliHelp() {
     "  hunk diff --staged [-- <pathspec...>]   review staged changes",
     "  hunk diff --files <left> <right>        compare two concrete files",
     "  hunk show [target] [-- <pathspec...>]   review the last commit or a given target",
+    "  hunk status [--static | --json]          inspect this workspace and sibling worktrees",
     "  hunk log [target] [-- <pathspec...>]    browse an attractive repository history",
     "  hunk stash show [ref]                   review a stash entry (git only)",
     "  hunk patch [file]                       review a patch file or stdin",
@@ -1091,6 +1120,29 @@ async function parseHistoryCommand(
   };
 }
 
+/** Parse status through the shared launch-option grammar without accepting revision inputs. */
+async function parseStatusCommand(tokens: string[], argv: string[]): Promise<ParsedCliInput> {
+  const command = createCliReferenceCommand("status");
+  let options: Record<string, unknown> = {};
+  command.action((parsed: Record<string, unknown>) => {
+    options = parsed;
+  });
+  if (tokens.includes("--help") || tokens.includes("-h")) {
+    return { kind: "help", text: `${command.helpInformation().trimEnd()}\n` };
+  }
+  await parseStandaloneCommand(command, tokens);
+  if (options.color !== "auto" && options.color !== "always" && options.color !== "never") {
+    throw new Error(`Invalid color mode: ${String(options.color)}`);
+  }
+  return {
+    kind: "status",
+    static: Boolean(options.static),
+    json: Boolean(options.json),
+    color: options.color,
+    options: buildCommonOptions(options, argv),
+  };
+}
+
 /** Parse the patch-file / stdin patch entrypoint. */
 async function parsePatchCommand(tokens: string[], argv: string[]): Promise<ParsedCliInput> {
   const command = createCliReferenceCommand("patch").argument("[file]");
@@ -1186,6 +1238,7 @@ function requireReloadableCliInput(input: ParsedCliInput): CliInput {
     input.kind === "extension-manage" ||
     input.kind === "extension-cli" ||
     input.kind === "history" ||
+    input.kind === "status" ||
     input.kind === "update"
   ) {
     throw new Error(
@@ -2207,7 +2260,7 @@ async function parseStashCommand(
 }
 
 const REVIEW_COMMAND_NAMES = new Set(["diff", "show", "patch", "pager", "difftool", "stash"]);
-const EXTENSION_AWARE_COMMAND_NAMES = new Set([...REVIEW_COMMAND_NAMES, "log"]);
+const EXTENSION_AWARE_COMMAND_NAMES = new Set([...REVIEW_COMMAND_NAMES, "log", "status"]);
 
 interface LeadingCliFlags {
   args: string[];
@@ -2312,7 +2365,11 @@ export async function parseCli(argv: string[]): Promise<ParsedCliInput> {
     return parseDiffCommand([...extensionFlagTokens, ...args], argv);
   }
 
-  if (prefixedReviewFlags.length > 0 && !REVIEW_COMMAND_NAMES.has(commandName)) {
+  if (
+    prefixedReviewFlags.length > 0 &&
+    !REVIEW_COMMAND_NAMES.has(commandName) &&
+    commandName !== "status"
+  ) {
     throw new Error(`\`${prefixedReviewFlags[0]}\` must be used with a Hunk review command.`);
   }
 
@@ -2337,6 +2394,8 @@ export async function parseCli(argv: string[]): Promise<ParsedCliInput> {
       return parseDiffCommand(reviewRest, argv);
     case "show":
       return parseShowCommand(reviewRest, argv);
+    case "status":
+      return parseStatusCommand(reviewRest, argv);
     case "log":
       return parseHistoryCommand(reviewRest, extensionsEnabled);
     case "patch":

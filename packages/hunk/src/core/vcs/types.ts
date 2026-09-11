@@ -1,5 +1,6 @@
 import type {
   ExtensionReviewDescriptor,
+  ExtensionVcsStatusCapability,
   ExtensionVcsHistoryCommit,
   ExtensionVcsHistoryInput,
   ExtensionVcsHistoryPage,
@@ -108,6 +109,7 @@ export interface VcsAdapter {
   detect(cwd: string): VcsDetection | null;
   operations: VcsOperations;
   history?: VcsHistoryCapability;
+  status?: ExtensionVcsStatusCapability;
   /** Detection order weight; higher is consulted first. See the public contract. */
   detectionPriority?: number;
 }

@@ -25,6 +25,8 @@ import {
 import type { ExtensionLoadResult } from "../extensions/types";
 
 export interface SessionBootstrapOptions {
+  /** Retain a routed session's launch-owned palette while loading another source target. */
+  sessionCustomThemes?: AppBootstrap["customThemes"];
   configured: HunkConfigResolution;
   cwd: string;
   extensions?: ExtensionLoadResult;
@@ -65,15 +67,15 @@ export async function loadConfiguredSessionBootstrap({
   loadAppBootstrapImpl = loadAppBootstrap,
   baseVcsCatalog = getBundledVcsCatalog(),
   signal,
+  sessionCustomThemes,
 }: SessionBootstrapOptions): Promise<SessionBootstrapResult> {
   signal?.throwIfAborted();
   const previousFileLanguages = fileLanguageRegistrationSnapshot();
 
   try {
-    const sessionThemes = collectSessionCustomThemes(
-      configured.customThemes,
-      extensions?.registry.themes,
-    );
+    const sessionThemes = sessionCustomThemes
+      ? { themes: [...sessionCustomThemes], notices: [] }
+      : collectSessionCustomThemes(configured.customThemes, extensions?.registry.themes);
     const applied = applyExtensionRegistrations(extensions, baseVcsCatalog);
     const sessionVcs = resolveSessionVcsId(configured.input.options.vcs, cwd, applied.vcsCatalog);
     let input = configured.input;

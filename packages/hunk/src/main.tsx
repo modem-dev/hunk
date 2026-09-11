@@ -88,6 +88,18 @@ async function main() {
     );
   }
 
+  if (startupPlan.kind === "status-static") {
+    const { runStaticStatus } = await import("./ui/status/runStaticStatus");
+    await runStaticStatus(startupPlan.bootstrap);
+    return;
+  }
+
+  if (startupPlan.kind === "status-interactive") {
+    const { runInteractiveStatus } = await import("./ui/status/runInteractiveStatus");
+    await runInteractiveStatus(startupPlan.bootstrap);
+    return;
+  }
+
   if (startupPlan.kind === "history-static") {
     const { runStaticHistory } = await import("./ui/history/runStaticHistory");
     await runStaticHistory(startupPlan.bootstrap);

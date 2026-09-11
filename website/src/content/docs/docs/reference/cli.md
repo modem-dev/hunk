@@ -90,6 +90,57 @@ Also accepts `--watch`: auto-reload when the current diff input changes.
 
 Also accepts every [common review option](#common-review-options).
 
+## `hunk status`
+
+inspect the current workspace and sibling worktrees
+
+### Usage
+
+```bash
+hunk status [--static | --json]
+```
+
+Terminals open live workspace status; redirects receive one static snapshot.
+
+Enter inspects a row; S/U review staged/working-tree changes; L opens Log; Q returns or quits.
+
+F10 opens menus, T chooses a theme, R refreshes, and W expands other worktrees.
+
+--json emits the versioned status snapshot without paging or terminal color.
+
+Status never fetches or modifies the repository; providers without status report unsupported.
+
+### Command-specific options
+
+| Option                      | Description                                                     |
+| --------------------------- | --------------------------------------------------------------- |
+| `--mode <mode>`             | layout mode: auto, split, unified                               |
+| `--cursor-line <style>`     | current-line marker: row, number, off                           |
+| `--theme <theme>`           | named theme override                                            |
+| `--experimental`            | enable experimental features (currently STML agent-note markup) |
+| `--fast`                    | experimentally offload eligible syntax highlighting             |
+| `--line-numbers`            | show line numbers                                               |
+| `--no-line-numbers`         | hide line numbers                                               |
+| `-x, --tab-width <columns>` | tab stop width: 1-16 Default: 4.                                |
+| `--file-gap <rows>`         | file separator rows, including the ─ rule: 0-8 Default: 1.      |
+| `--hunk-gap <rows>`         | blank rows before each later hunk: 0-8 Default: 0.              |
+| `--wrap`                    | wrap long diff lines                                            |
+| `--no-wrap`                 | truncate long diff lines to one row                             |
+| `--hunk-headers`            | show hunk metadata rows                                         |
+| `--no-hunk-headers`         | hide hunk metadata rows                                         |
+| `--sidebar`                 | show files pane                                                 |
+| `--no-sidebar`              | hide files pane                                                 |
+| `--agent-notes`             | show agent notes by default                                     |
+| `--no-agent-notes`          | hide agent notes by default                                     |
+| `--transparent-bg`          | let terminal background show through Hunk surfaces              |
+| `--no-transparent-bg`       | paint Hunk surfaces with the active theme                       |
+| `--extension <path>`        | load an extension entry file or directory (repeatable)          |
+| `--no-extensions`           | disable user extensions for this run                            |
+| `--vcs <id>`                | select a VCS status provider                                    |
+| `--static`                  | print one snapshot, paging when needed                          |
+| `--json`                    | emit a version 1 JSON snapshot                                  |
+| `--color <mode>`            | color output: auto, always, never                               |
+
 ## `hunk stash show`
 
 review a stash entry as a full Hunk changeset
