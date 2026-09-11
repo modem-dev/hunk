@@ -13,7 +13,12 @@ import { resolveExtensionCommands, resolveExtensionSessionOptions } from "../../
 import { HelpDialog } from "../components/chrome/HelpDialog";
 import { MenuBar } from "../components/chrome/MenuBar";
 import { MenuDropdown } from "../components/chrome/MenuDropdown";
-import type { AppMenus, MenuEntry } from "../components/chrome/menu";
+import {
+  responsiveActiveMenuSpec,
+  responsiveMenuSpecs,
+  type AppMenus,
+  type MenuEntry,
+} from "../components/chrome/menu";
 import { ThemeSelectorDialog } from "../components/chrome/ThemeSelectorDialog";
 import { CommitMetadataText } from "../components/CommitMetadataText";
 import { RevisionIdControl } from "../components/RevisionIdControl";
@@ -572,6 +577,11 @@ export function LogApp({
     1,
     terminal.width - measureTextWidth(statusHint) - (statusHint ? 3 : 2),
   );
+  const topTitle = `${sanitizeTerminalLine(basename(runtime.repoRoot))} · ${sanitizeTerminalLine(runtime.providerName)} history`;
+  const responsiveMenuLayout = responsiveMenuSpecs(menu.menuSpecs, terminal.width, topTitle);
+  const activeMenuSpec = menu.activeMenuId
+    ? responsiveActiveMenuSpec(responsiveMenuLayout, menu.activeMenuId)
+    : undefined;
   return (
     <box
       style={{
@@ -586,7 +596,7 @@ export function LogApp({
         menuSpecs={menu.menuSpecs}
         terminalWidth={terminal.width}
         theme={theme}
-        topTitle={`${sanitizeTerminalLine(basename(runtime.repoRoot))} · ${sanitizeTerminalLine(runtime.providerName)} history`}
+        topTitle={topTitle}
         onHoverMenu={(id) => {
           if (menu.activeMenuId) menu.openMenu(id);
         }}
@@ -812,12 +822,12 @@ export function LogApp({
         </text>
         {statusHint ? <text fg={theme.muted}>{statusHint}</text> : null}
       </box>
-      {menu.activeMenuId && menu.activeMenuSpec ? (
+      {menu.activeMenuId && activeMenuSpec ? (
         <MenuDropdown
           activeMenuId={menu.activeMenuId}
           activeMenuEntries={menu.activeMenuEntries}
           activeMenuItemIndex={menu.activeMenuItemIndex}
-          activeMenuSpec={menu.activeMenuSpec}
+          activeMenuSpec={activeMenuSpec}
           activeMenuWidth={menu.activeMenuWidth}
           terminalHeight={terminal.height}
           terminalWidth={terminal.width}

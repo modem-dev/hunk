@@ -773,12 +773,12 @@ describe("session broker end-to-end", () => {
         "rendered session after probing a conflicting broker listener",
         (current) =>
           conflictingRequestCount > 0 &&
-          current.includes("View  Navigate  Agent  Help") &&
+          current.includes("View  Nav  Agent  ?") &&
           current.includes(fixture.afterName) &&
           current.includes("export const gamma = true;"),
       );
       expect(conflictingRequestCount).toBeGreaterThan(0);
-      expect(transcript).toContain("View  Navigate  Agent  Help");
+      expect(transcript).toContain("View  Nav  Agent  ?");
       expect(transcript).toContain(`${fixture.afterName}`);
       expect(transcript).toContain("export const gamma = true;");
       expect(await quitHunkSession(hunkProc, fixture)).toBe(0);

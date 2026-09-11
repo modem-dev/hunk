@@ -139,6 +139,14 @@ describe("responsive app", () => {
     expect(frame).not.toContain("packages/visual-studio-code-.");
   });
 
+  test("the menu bar compacts labels before truncating the review title", async () => {
+    const frame = await captureFrameForBootstrap(createBootstrap(), 70, 12);
+
+    expect(frame).toContain("File  View  Nav  Agent  ?");
+    expect(frame).toContain("repo working tree  2 files  +3  -2");
+    expect(frame).not.toContain("Navigate");
+  });
+
   test("View menu sidebar checkmark follows actual medium-viewport visibility", async () => {
     const setup = await testRender(<AppHost bootstrap={createBootstrap("auto")} />, {
       width: 180,

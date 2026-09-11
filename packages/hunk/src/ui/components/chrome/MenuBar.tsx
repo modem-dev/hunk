@@ -20,7 +20,7 @@ export function MenuBar({
   onHoverMenu: (menuId: MenuId) => void;
   onToggleMenu: (menuId: MenuId) => void;
 }) {
-  const responsive = responsiveMenuSpecs(menuSpecs, terminalWidth);
+  const responsive = responsiveMenuSpecs(menuSpecs, terminalWidth, topTitle);
   const visibleMenuSpecs = responsive.visible;
   const hiddenMenuIds = new Set(responsive.hidden.map((menu) => menu.id));
   const activeHiddenIndex = responsive.hidden.findIndex((menu) => menu.id === activeMenuId);

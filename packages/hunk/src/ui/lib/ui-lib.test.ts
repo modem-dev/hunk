@@ -9,6 +9,7 @@ import {
   menuBoxHeight,
   menuWidth,
   nextMenuItemIndex,
+  responsiveActiveMenuSpec,
   responsiveMenuSpecs,
   type MenuEntry,
 } from "../components/chrome/menu";
@@ -185,6 +186,64 @@ describe("ui helpers", () => {
     expect(layout.visible.map((spec) => spec.id)).toEqual(["file", "view"]);
     expect(layout.hidden.map((spec) => spec.id)).toEqual(["navigate", "commit", "help"]);
     expect(layout.overflowLeft).toBe(13);
+  });
+
+  test("responsive menus compact labels before truncating the changeset title", () => {
+    const item: MenuEntry = { kind: "item", label: "One", action: () => {} };
+    const specs = buildMenuSpecs({
+      file: [item],
+      view: [item],
+      navigate: [item],
+      agent: [item],
+      extensions: [item],
+      help: [item],
+    });
+    const title = "repo working tree  2 files  +3  -2";
+
+    const compact = responsiveMenuSpecs(specs, 80, title);
+    expect(compact.visible.map(({ label }) => label)).toEqual([
+      "File",
+      "View",
+      "Nav",
+      "Agent",
+      "Ext",
+      "?",
+    ]);
+    expect(compact.hidden).toEqual([]);
+    expect(menuBarTitleWidth(compact.visible, 80)).toBeGreaterThanOrEqual(measureTextWidth(title));
+
+    const full = responsiveMenuSpecs(specs, 100, title);
+    expect(full.visible.map(({ label }) => label)).toEqual([
+      "File",
+      "View",
+      "Navigate",
+      "Agent",
+      "Extensions",
+      "Help",
+    ]);
+  });
+
+  test("responsive dropdowns follow compact labels and hidden-menu overflow", () => {
+    const item: MenuEntry = { kind: "item", label: "One", action: () => {} };
+    const specs = buildMenuSpecs({
+      file: [item],
+      view: [item],
+      navigate: [item],
+      commit: [item],
+      help: [item],
+    });
+
+    const compact = responsiveMenuSpecs(specs, 36, "history");
+    expect(responsiveActiveMenuSpec(compact, "navigate")).toMatchObject({
+      label: "Nav",
+      left: 13,
+    });
+
+    const overflow = responsiveMenuSpecs(specs, 20, "history");
+    expect(responsiveActiveMenuSpec(overflow, "commit")).toMatchObject({
+      left: overflow.overflowLeft,
+      width: 3,
+    });
   });
 
   test("menuBarTitleWidth cedes title space to the menus the bar shows", () => {

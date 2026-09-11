@@ -47,6 +47,7 @@ import type { ReloadedSessionResult, ReloadSessionOptions } from "../session/typ
 import { HelpDialog } from "./components/chrome/HelpDialog";
 import { MenuDropdown } from "./components/chrome/MenuDropdown";
 import { MenuBar } from "./components/chrome/MenuBar";
+import { responsiveActiveMenuSpec, responsiveMenuSpecs } from "./components/chrome/menu";
 import { ConfirmDialog, confirmDialogHeight } from "./components/chrome/ConfirmDialog";
 import { ExtensionDialog } from "./components/chrome/ExtensionDialog";
 import { ViewPreferenceQuitDialog } from "./components/chrome/ViewPreferenceQuitDialog";
@@ -1272,7 +1273,6 @@ export function App({
     activeMenuEntries,
     activeMenuId,
     activeMenuItemIndex,
-    activeMenuSpec,
     activeMenuWidth,
     activateCurrentMenuItem,
     closeMenu,
@@ -1337,6 +1337,10 @@ export function App({
     0,
   );
   const topTitle = `${bootstrap.changeset.title}  ${changedFileCount} ${changedFileLabel}  +${totalAdditions}  -${totalDeletions}`;
+  const responsiveMenuLayout = responsiveMenuSpecs(menuSpecs, terminal.width, topTitle);
+  const activeMenuSpec = activeMenuId
+    ? responsiveActiveMenuSpec(responsiveMenuLayout, activeMenuId)
+    : undefined;
   const diffHeaderStatsWidth = maxFileHeaderStatsWidth(filteredFiles);
   const diffHeaderLabelWidth = Math.max(0, diffContentWidth - diffHeaderStatsWidth - 1);
   const diffSeparatorWidth = Math.max(0, diffContentWidth - 2);
