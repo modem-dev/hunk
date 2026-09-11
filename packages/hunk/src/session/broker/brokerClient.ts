@@ -28,6 +28,11 @@ import {
   HUNK_DAEMON_REGISTRATION_REJECTED_MESSAGE,
   HUNK_DAEMON_UPGRADE_WAIT_MESSAGE,
 } from "../client/capabilities";
+import {
+  probeHunkSessionDaemonAdminStatus,
+  type HunkDaemonAdminProbe,
+} from "../client/daemonAdmin";
+import { daemonSkewNotice, type DaemonSkewDirection } from "../client/daemonSkew";
 import type {
   HunkSessionCommandResult,
   HunkSessionInfo,
@@ -37,6 +42,9 @@ import type {
 
 const DAEMON_STARTUP_TIMEOUT_MS = 3_000;
 const RECONNECT_DELAY_MS = 3_000;
+// A window older than the daemon can never be accepted by it; poll slowly rather than never, so
+// a later daemon replacement is still noticed without hammering the incumbent.
+const STALE_CLIENT_POLL_DELAY_MS = 30_000;
 const HEARTBEAT_INTERVAL_MS = 10_000;
 const INCOMPATIBLE_SESSION_CLOSE_CODE = 1008;
 const QUIESCENT_REFUSAL_REASONS = new Set([
@@ -56,10 +64,22 @@ type SessionAppBridge = SessionBrokerConnectionBridge<
 export interface SessionBrokerClientOptions {
   daemonStartupTimeoutMs?: number;
   reconnectDelayMs?: number;
+  /** Reconnect spacing once the daemon is known to be newer than this window. */
+  stalePollDelayMs?: number;
   lifecycleClock?: SessionBrokerLifecycleClock;
   /** Observe a terminal connection lifecycle defect through the broker's fixed message. */
   onDefect?: (message: string) => void;
+  /** Read the daemon's admin status after a refused hello; injectable for tests. */
+  probeDaemonStatus?: (config: ResolvedSessionBrokerConfig) => Promise<HunkDaemonAdminProbe>;
 }
+
+/**
+ * What the UI needs to know about the daemon link: connected, or disconnected with the notice to
+ * keep on screen and, once the admin probe has answered, which side of the skew this window is on.
+ */
+export type HunkDaemonConnectionState =
+  | { status: "connected" }
+  | { status: "disconnected"; notice: string; direction: DaemonSkewDirection | "unknown" };
 
 interface ScheduledStartupRetry {
   dispose: () => void;
@@ -139,6 +159,8 @@ export class SessionBrokerClient {
   private credentials: HunkSessionBrokerCredentials | null = null;
   private waitingForIncumbentExit = false;
   private incumbentLaunchFingerprint: string | null = null;
+  private connectionState: HunkDaemonConnectionState = { status: "connected" };
+  private readonly noticeListeners = new Set<(notice: string | null) => void>();
   private readonly lifecycleClock: SessionBrokerLifecycleClock;
 
   constructor(
@@ -194,6 +216,52 @@ export class SessionBrokerClient {
 
   getRegistration() {
     return this.registration;
+  }
+
+  /** The current daemon link state, for surfaces that render it. */
+  getConnectionState(): HunkDaemonConnectionState {
+    return this.connectionState;
+  }
+
+  /**
+   * Subscribe to the sticky connection notice. The listener receives the current value at once
+   * and `null` whenever the link reaches connected; the UI keeps the last non-null text on screen.
+   */
+  subscribeConnectionNotice(listener: (notice: string | null) => void) {
+    this.noticeListeners.add(listener);
+    listener(this.connectionState.status === "connected" ? null : this.connectionState.notice);
+    return () => {
+      this.noticeListeners.delete(listener);
+    };
+  }
+
+  /** Publish one link state and its notice to subscribers, or to the console when none listen. */
+  private setConnectionState(state: HunkDaemonConnectionState) {
+    const previousNotice =
+      this.connectionState.status === "connected" ? null : this.connectionState.notice;
+    this.connectionState = state;
+    const notice = state.status === "connected" ? null : state.notice;
+    if (notice === previousNotice) return;
+    if (this.noticeListeners.size === 0) {
+      if (notice !== null) this.warnUnavailable(notice);
+      return;
+    }
+    for (const listener of this.noticeListeners) listener(notice);
+  }
+
+  /** Ask the daemon which build it is and refine the refused-hello notice by direction. */
+  private refineRefusalNotice(config: ResolvedSessionBrokerConfig, isCurrent: () => boolean) {
+    const probe = this.timing.probeDaemonStatus ?? probeHunkSessionDaemonAdminStatus;
+    void probe(config).then(
+      (result) => {
+        if (!isCurrent() || !this.waitingForIncumbentExit) return;
+        const { direction, notice } = daemonSkewNotice(result);
+        this.setConnectionState({ status: "disconnected", notice, direction });
+      },
+      () => {
+        // The generic notice already stands; a failed probe adds nothing.
+      },
+    );
   }
 
   replaceSession(
@@ -319,6 +387,15 @@ export class SessionBrokerClient {
       prepareReconnect: async (brokerGeneration) => {
         const isCommitAuthorized = () => isConnectionCurrent(brokerGeneration);
         if (!isCommitAuthorized()) return;
+        if (
+          this.connectionState.status === "disconnected" &&
+          this.connectionState.direction === "client-older"
+        ) {
+          await this.lifecycleClock.delay(
+            this.timing.stalePollDelayMs ?? STALE_CLIENT_POLL_DELAY_MS,
+          );
+          if (!isCommitAuthorized()) return;
+        }
         if (this.waitingForIncumbentExit) {
           const healthy = await isSessionBrokerHealthy(config);
           if (!isCommitAuthorized()) return;
@@ -344,19 +421,29 @@ export class SessionBrokerClient {
         if (preAuthenticationRefusal) {
           this.waitingForIncumbentExit = true;
           this.incumbentLaunchFingerprint = readSessionBrokerLaunchFingerprint(config);
+          this.setConnectionState({
+            status: "disconnected",
+            notice: HUNK_DAEMON_UPGRADE_WAIT_MESSAGE,
+            direction: "unknown",
+          });
+          this.refineRefusalNotice(config, () => isConnectionCurrent(brokerGeneration));
+        } else if (isRegistrationRejection(event)) {
+          this.setConnectionState({
+            status: "disconnected",
+            notice: HUNK_DAEMON_REGISTRATION_REJECTED_MESSAGE,
+            direction: "unknown",
+          });
         }
-        const warning = preAuthenticationRefusal
-          ? HUNK_DAEMON_UPGRADE_WAIT_MESSAGE
-          : isRegistrationRejection(event)
-            ? HUNK_DAEMON_REGISTRATION_REJECTED_MESSAGE
-            : undefined;
-        return { reconnect: true, ...(warning ? { warning } : {}) };
+        // Notices reach subscribers through the link state; the generic warning channel stays
+        // for the console fallback only.
+        return { reconnect: true };
       },
       onConnected: (brokerGeneration) => {
         if (!isConnectionCurrent(brokerGeneration)) return;
         this.waitingForIncumbentExit = false;
         this.incumbentLaunchFingerprint = null;
         this.lastConnectionWarning = null;
+        this.setConnectionState({ status: "connected" });
       },
       onWarning: (message, brokerGeneration) => {
         if (isConnectionCurrent(brokerGeneration)) this.warnUnavailable(message);
@@ -494,6 +581,16 @@ export class SessionBrokerClient {
           ? error
           : "Unknown session broker connection error.";
     if (message === this.lastConnectionWarning) {
+      return;
+    }
+
+    // The incumbent-wait message recurs on every poll while a subscriber already shows the sticky
+    // notice for it; only genuine faults (spawn failure, port conflict) belong in the console.
+    if (
+      message === HUNK_DAEMON_UPGRADE_WAIT_MESSAGE &&
+      this.noticeListeners.size > 0 &&
+      this.connectionState.status === "disconnected"
+    ) {
       return;
     }
 

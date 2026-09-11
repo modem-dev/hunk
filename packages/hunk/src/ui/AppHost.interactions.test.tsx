@@ -81,6 +81,7 @@ function createMockHostClient({
   type Bridge = Parameters<HunkSessionBrokerClient["setBridge"]>[0];
 
   let bridge: Bridge = null;
+  let noticeListener: ((notice: string | null) => void) | null = null;
   let latestSnapshot: HunkSessionSnapshot["state"] | null = null;
   let registration: HunkSessionRegistration = {
     registrationVersion: SESSION_BROKER_REGISTRATION_VERSION,
@@ -102,6 +103,13 @@ function createMockHostClient({
       replaceSession: (nextRegistration: HunkSessionRegistration) => {
         registration = nextRegistration;
       },
+      subscribeConnectionNotice: (listener: (notice: string | null) => void) => {
+        noticeListener = listener;
+        listener(null);
+        return () => {
+          if (noticeListener === listener) noticeListener = null;
+        };
+      },
       setBridge: (nextBridge: Bridge) => {
         bridge = nextBridge;
       },
@@ -109,6 +117,11 @@ function createMockHostClient({
         latestSnapshot = snapshot.state;
       },
     } as unknown as HunkSessionBrokerClient,
+    /** Emit one daemon link notice the way the broker client does after a refused hello. */
+    publishConnectionNotice: (notice: string | null) => {
+      if (!noticeListener) throw new Error("Expected App to subscribe to the daemon link notice.");
+      noticeListener(notice);
+    },
     dispatchCommand: async (message: HunkSessionServerMessage) => {
       if (!bridge) {
         throw new Error("Expected App to register a bridge before running the test command.");
@@ -4186,6 +4199,41 @@ describe("App interactions", () => {
     } finally {
       await act(async () => {
         pagerSetup.renderer.destroy();
+      });
+    }
+  });
+
+  // Intent: a daemon the window cannot join is a persistent condition, so its notice stays in
+  // the status bar (unlike the timed session notices) until the broker client reports the link
+  // connected again.
+  test("keeps the daemon link notice in the status bar until the link reconnects", async () => {
+    const { hostClient, publishConnectionNotice } = createMockHostClient();
+    const setup = await testRender(
+      <AppHost bootstrap={createBootstrap()} hostClient={hostClient} />,
+      { width: 200, height: 20 },
+    );
+    const notice =
+      "Not connected to the session daemon (daemon build 0.21.1, this window 0.22.0). Run `hunk daemon restart`.";
+
+    try {
+      await flush(setup);
+      expect(setup.captureCharFrame()).not.toContain("Not connected to the session daemon");
+
+      await act(async () => publishConnectionNotice(notice));
+      await flush(setup);
+      expect(setup.captureCharFrame()).toContain(notice);
+
+      // Still there after further renders: nothing times it out.
+      await flush(setup);
+      await flush(setup);
+      expect(setup.captureCharFrame()).toContain(notice);
+
+      await act(async () => publishConnectionNotice(null));
+      await flush(setup);
+      expect(setup.captureCharFrame()).not.toContain("Not connected to the session daemon");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
       });
     }
   });

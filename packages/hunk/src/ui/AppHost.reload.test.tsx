@@ -41,6 +41,7 @@ function createTestHostClient(options?: { replaceSessionError?: Error }) {
         if (options?.replaceSessionError) throw options.replaceSessionError;
         registration = nextRegistration;
       },
+      subscribeConnectionNotice: () => () => undefined,
       setBridge: (nextBridge: Bridge) => {
         bridge = nextBridge;
       },

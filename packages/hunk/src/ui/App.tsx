@@ -274,6 +274,8 @@ export function App({
   const [showAgentSkill, setShowAgentSkill] = useState(false);
   const [storedFocusArea, setFocusArea] = useState<StoredFocusArea>("files");
   const { text: sessionNoticeText, show: showSessionNotice } = useTimedNotice(4_000);
+  // Keep an incompatible-daemon notice until the broker reconnects; timed notices must not clear it.
+  const [daemonNoticeText, setDaemonNoticeText] = useState<string | null>(null);
   const { store: statusLineStore, snapshot: statusLineState } = useStatusLine({
     reviewGeneration: bootstrap,
   });
@@ -514,8 +516,7 @@ export function App({
   const resolvedLayout = responsiveLayout.layout;
   const canForceShowSidebar =
     bodyWidth >= SIDEBAR_MIN_WIDTH + EXTENSION_PANE_DIVIDER_SIZE + DIFF_MIN_WIDTH;
-  // Host contributions to the status line: the residual filter and the one notice channel.
-  // Both are derived from state rather than pushed, so they can never go stale.
+  // Derive host contributions from current state so filters and notices cannot go stale.
   const statusNoticeText =
     sessionNoticeText ?? transientNoticeText ?? noticeText ?? fileViewModeHint ?? null;
   const statusLineSnapshot = useMemo<StatusLineSnapshot>(() => {
@@ -530,8 +531,16 @@ export function App({
     if (statusNoticeText) {
       hostItems.push({ id: "host:notice", spans: [{ text: statusNoticeText, tone: "muted" }] });
     }
+    if (daemonNoticeText) {
+      // Preserve the persistent connection warning ahead of transient notices when the row overflows.
+      hostItems.push({
+        id: "host:daemon",
+        spans: [{ text: daemonNoticeText, tone: "muted" }],
+        priority: 2,
+      });
+    }
     return { items: [...hostItems, ...statusLineState.items], prompt: statusLineState.prompt };
-  }, [review.filter, statusLineState, statusNoticeText]);
+  }, [daemonNoticeText, review.filter, statusLineState, statusNoticeText]);
   const statusBarVisible = statusLineHasContent(statusLineSnapshot, keyboardModeHint ?? null);
   const bodyHeight = Math.max(
     0,
@@ -841,6 +850,7 @@ export function App({
   );
 
   useHunkSessionBridge({
+    onConnectionNotice: setDaemonNoticeText,
     addAgentLineHighlight: review.addAgentLineHighlight,
     addLiveComment: review.addLiveComment,
     addLiveCommentBatch: review.addLiveCommentBatch,
