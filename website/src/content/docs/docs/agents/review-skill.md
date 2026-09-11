@@ -32,6 +32,17 @@ hunk skill show
 
 That prints the full skill shipped with the installed Hunk version, so the agent always sees instructions that match the CLI on the machine, and upgrading Hunk never requires reinstalling the skill.
 
+## Or install with the skills CLI
+
+The repository also publishes the same pointer skills for the [skills CLI](https://github.com/vercel-labs/skills), which knows the skill directories of many more agents:
+
+```bash
+npx skills add modem-dev/hunk -g                       # every detected agent
+npx skills add modem-dev/hunk --skill hunk-review -g   # one skill
+```
+
+It installs the identical pointer, so `hunk skill install` and `npx skills add` can be mixed freely and both defer to the installed CLI for instructions.
+
 ## Locate or read the installed skill
 
 ```bash

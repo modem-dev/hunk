@@ -20,6 +20,8 @@ The installed file is a short pointer that carries the skill's name and descript
 rest with `hunk skill show`, so it never goes stale when Hunk upgrades. Repeat `--agent` to install
 into several agents, or add `--project` to write it into the current repository instead of your
 home directory. Agents that load or symlink files directly can use `hunk skill path` instead.
+With Node available, `npx skills add modem-dev/hunk -g` installs the same pointer through the
+[skills CLI](https://github.com/vercel-labs/skills); the repository publishes it under `.agents/skills/`.
 
 Without an installed skill, a good generic prompt is:
 

@@ -1,6 +1,8 @@
 ---
 name: hunk-release
 description: Prepares, publishes, verifies, and curates Hunk releases. Use for release metadata, benchmarks, tags, publishing, release videos, backports, or recovery.
+metadata:
+  internal: true
 ---
 
 # Hunk release workflow

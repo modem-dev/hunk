@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { readBundledSkillDocument } from "../run/paths";
+import { BUNDLED_SKILL_NAMES, readBundledSkillDocument } from "../run/paths";
 import {
   AGENT_SKILL_HOST_IDS,
   AGENT_SKILL_HOSTS,
@@ -163,10 +164,25 @@ describe("pointer skill rendering", () => {
   });
 
   test("parses the real bundled skills so the pointer never ships blank triggers", () => {
-    for (const name of ["hunk-review", "hunk-extensions"] as const) {
+    for (const name of BUNDLED_SKILL_NAMES) {
       const frontmatter = parseSkillFrontmatter(readBundledSkillDocument(name));
       expect(frontmatter.name).toBe(name);
       expect(frontmatter.description.length).toBeGreaterThan(20);
+    }
+  });
+
+  test("checked-in .agents/skills pointers match the generated stub", () => {
+    // `npx skills add modem-dev/hunk` installs these files, so they must be the same pointer
+    // `hunk skill install` writes. Regenerate with `bun run generate:skill`.
+    const repoRoot = join(import.meta.dir, "..", "..", "..", "..", "..");
+    for (const name of BUNDLED_SKILL_NAMES) {
+      const checkedIn = readFileSync(join(repoRoot, ".agents", "skills", name, "SKILL.md"), "utf8");
+      const expected = renderAgentSkillStub(parseSkillFrontmatter(readBundledSkillDocument(name)));
+      if (checkedIn.replaceAll("\r\n", "\n") !== expected) {
+        throw new Error(
+          `.agents/skills/${name}/SKILL.md is out of date. Run \`bun run generate:skill\` and commit the result.`,
+        );
+      }
     }
   });
 });
