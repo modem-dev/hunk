@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { measureTextWidth } from "../lib/text";
 import { layoutStatusLine, type StatusLineLayoutInput } from "./layout";
 import type { StatusItem } from "./types";
 
@@ -73,10 +74,35 @@ describe("layoutStatusLine", () => {
     expect(result.prompt?.inputWidth).toBe(10);
   });
 
-  test("the input never shrinks below four cells", () => {
+  test.each([
+    { prefix: "a very long prompt prefix:", attribution: null },
+    { prefix: "検索:", attribution: "ext 非常に長い拡張機能" },
+  ])("truncates a long prompt lead-in before starving the input beside a badge: %j", (prompt) => {
+    const result = layout({ prompt, badge: "Mode", width: 20 });
+    const lead = [result.prompt?.attribution, result.prompt?.prefix].filter(Boolean).join(" ");
+    expect(lead).toEndWith("…");
+    expect(result.prompt?.inputWidth).toBeGreaterThanOrEqual(4);
+    expect(result.badge).toEqual({ text: "Mode", width: 6 });
+    expect(
+      2 + measureTextWidth(lead) + 1 + result.prompt!.inputWidth + 1 + result.badge!.width,
+    ).toBeLessThanOrEqual(20);
+    expect(layout({ prompt, badge: "Mode", width: 20 })).toEqual(result);
+  });
+
+  test("an impossibly narrow row uses only the input cells actually available beside the badge", () => {
+    const result = layout({
+      prompt: { prefix: "filter:", attribution: null },
+      badge: "Mode",
+      width: 10,
+    });
+    expect(result.prompt).toEqual({ prefix: "", attribution: null, inputWidth: 1 });
+    expect(result.badge).toEqual({ text: "Mode", width: 6 });
+  });
+
+  test("a short row truncates the prefix to reserve four input cells", () => {
     const result = layout({ prompt: { prefix: "filter:", attribution: null }, width: 8 });
 
-    expect(result.prompt?.inputWidth).toBe(4);
+    expect(result.prompt).toEqual({ prefix: "…", attribution: null, inputWidth: 4 });
   });
 
   test("overflow drops the lowest-priority item whole, newest first among equals", () => {

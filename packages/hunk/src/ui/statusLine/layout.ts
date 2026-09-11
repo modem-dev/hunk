@@ -6,7 +6,7 @@
  * While a prompt is active it takes the whole left region; otherwise left items paint in set
  * order and right items sit beside the badge. On overflow the lowest-priority item is dropped
  * whole (newest first among equals) until the rest fit, and the last survivor is truncated with
- * an ellipsis.
+ * an ellipsis. Prompt lead-ins truncate before consuming the input's minimum visible space.
  */
 import { sanitizeTerminalLine } from "../../lib/terminalText";
 import { measureTextWidth, sliceTextByWidth } from "../lib/text";
@@ -17,7 +17,7 @@ export const STATUS_LINE_PADDING = 1;
 /** Cells separating two adjacent items, or an item from the badge. */
 const ITEM_GAP = 2;
 const BADGE_GAP = 1;
-/** Smallest input the prompt is ever given, so typing stays visible on narrow terminals. */
+/** Reserve this many input cells whenever the row and non-droppable badge leave enough room. */
 const MIN_PROMPT_INPUT_WIDTH = 4;
 const ELLIPSIS = "…";
 
@@ -160,7 +160,7 @@ export function layoutStatusLine(input: StatusLineLayoutInput): StatusLineLayout
           ),
         }
       : null;
-  let available = rowWidth - (badge ? badge.width + BADGE_GAP : 0);
+  const available = Math.max(0, rowWidth - (badge ? badge.width + BADGE_GAP : 0));
 
   const candidates: ItemCandidate[] = [];
   input.items.forEach((item, order) => {
@@ -175,13 +175,28 @@ export function layoutStatusLine(input: StatusLineLayoutInput): StatusLineLayout
   });
 
   if (input.prompt) {
-    const attribution = input.prompt.attribution
+    let attribution = input.prompt.attribution
       ? sanitizeTerminalLine(input.prompt.attribution)
       : null;
-    const prefix = sanitizeTerminalLine(input.prompt.prefix);
-    const leadWidth =
+    let prefix = sanitizeTerminalLine(input.prompt.prefix);
+    let leadWidth =
       (attribution ? measureTextWidth(attribution) + 1 : 0) +
       (prefix.length > 0 ? measureTextWidth(prefix) + 1 : 0);
+    const leadBudget = Math.max(0, available - MIN_PROMPT_INPUT_WIDTH);
+    if (leadWidth > leadBudget) {
+      // Treat attribution and prefix as one lead-in, retaining the third-party marker first.
+      // Its trailing space and ellipsis also consume cells; omit it if neither can fit.
+      const lead = [attribution, prefix].filter(Boolean).join(" ");
+      const truncated =
+        leadBudget >= 2 ? `${sliceTextByWidth(lead, 0, leadBudget - 2).text}${ELLIPSIS}` : "";
+      if (attribution) {
+        attribution = truncated || null;
+        prefix = "";
+      } else {
+        prefix = truncated;
+      }
+      leadWidth = truncated ? measureTextWidth(truncated) + 1 : 0;
+    }
     // Right items keep their place only whole, and only while the input keeps its minimum: a
     // clipped status fragment beside a prompt reads as noise rather than information.
     const rightBudget = available - leadWidth - MIN_PROMPT_INPUT_WIDTH - ITEM_GAP;
@@ -194,7 +209,7 @@ export function layoutStatusLine(input: StatusLineLayoutInput): StatusLineLayout
           ).right
         : [];
     const rightWidth = right.length > 0 ? itemsWidth(right) + ITEM_GAP : 0;
-    const inputWidth = Math.max(MIN_PROMPT_INPUT_WIDTH, available - leadWidth - rightWidth);
+    const inputWidth = Math.max(0, available - leadWidth - rightWidth);
     return { left: [], prompt: { prefix, attribution, inputWidth }, right, badge };
   }
 

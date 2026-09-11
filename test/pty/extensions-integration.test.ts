@@ -1291,6 +1291,47 @@ describe("PTY extensions", () => {
     }
   });
 
+  test("a narrow extension prompt keeps typed input visible beside the mode badge", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const extensionPath = join(configHome, "long-attributed-prompt-fixture.ts");
+    writeFileSync(
+      extensionPath,
+      `export default function (hunk) {
+      hunk.registerKeyboardMode({ id: "mode", title: "Mode", onKey: () => "pass" });
+      hunk.registerCommand({ id: "ask", title: "Ask", key: "ctrl+g" }, async (ctx) => {
+        ctx.keyboardModes.enterMode("mode");
+        const answer = await ctx.prompts.line({ prefix: "a very long prefix that cannot fit:" });
+        ctx.statusLine.set({ id: "answer", spans: [{ text: "answer=" + answer }] });
+      });
+    }`,
+    );
+    const fixture = harness.createTwoFileRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "unified", "--extension", extensionPath],
+      cwd: fixture.dir,
+      cols: 50,
+      rows: 20,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+    try {
+      await session.waitForText(/alpha\.ts/, { timeout: 20_000 });
+      await harness.ensureKeyboardIsLive(session);
+      await session.press(["ctrl", "g"]);
+      await session.waitForText(/Mode — ext/, { timeout: 5_000 });
+      await session.type("xyz");
+      // The four-cell input scrolls to keep its cursor margin; the typed suffix stays visible.
+      const frame = await harness.waitForSnapshot(session, (text) => text.includes("… yz"), 5_000);
+      const row = frame.trimEnd().split("\n").at(-1)!;
+      expect(row).toContain("ext ");
+      expect(row).toContain("… yz");
+      expect(row).toContain("Mode — ext");
+      await session.press("enter");
+      await session.waitForText(/answer=xyz/, { timeout: 5_000 });
+    } finally {
+      session.close();
+    }
+  });
+
   test("an extension prompt types, submits, cancels, and its items overflow by priority", async () => {
     const configHome = harness.createIsolatedConfigHome();
     // Loaded through the dev flag from outside the repo, so it is trusted without a prompt and
