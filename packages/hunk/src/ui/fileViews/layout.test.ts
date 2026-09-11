@@ -22,6 +22,278 @@ describe("file-view layout validation", () => {
     if (result.valid) expect(result.value.rowHeights).toEqual([3, 2]);
   });
 
+  test("snapshots one terminal-safe span representation for geometry and paint", () => {
+    const result = validateFileViewLayout(
+      {
+        rows: [
+          {
+            id: "unsafe",
+            spans: [
+              { text: "left\u001b]8;;https://example.com\u0007link\u001b]8;;\u0007" },
+              { text: "\u0000\u0085\t界e\u0301🙂" },
+            ],
+          },
+        ],
+        hunkRows: [{ startRow: 0, endRow: 0 }],
+      },
+      1,
+      8,
+    );
+
+    expect(result).toMatchObject({ valid: true });
+    if (!result.valid) return;
+    expect(result.value.layout.rows[0]?.spans.map((span) => span.text)).toEqual([
+      "leftlink",
+      "\t界e\u0301🙂",
+    ]);
+    expect(result.value.rowHeights).toEqual([2]);
+  });
+
+  test("validates and snapshots code documents with exact UTF-16 span references", () => {
+    const range = [1, 3];
+    const syntax = { documentId: "new", line: 2, range };
+    const document = {
+      id: "new",
+      text: "const value = 1;\r\na🙂b\u001b[31m\r\n",
+      language: "typescript",
+    };
+    const source = {
+      codeDocuments: [document],
+      rows: [
+        {
+          id: "heading",
+          spans: [{ text: "generated", tone: "muted" as const }],
+        },
+        {
+          id: "code",
+          spans: [
+            { text: "2 ", tone: "muted" as const },
+            { text: "🙂", syntax },
+          ],
+        },
+      ],
+      hunkRows: [{ startRow: 0, endRow: 0 }],
+    };
+
+    const result = validateFileViewLayout(source, 1, 80);
+    expect(result).toMatchObject({ valid: true });
+    if (!result.valid) return;
+
+    document.id = "mutated";
+    document.text = "changed";
+    document.language = "text";
+    range[0] = 0;
+    syntax.line = 1;
+    source.codeDocuments.length = 0;
+
+    expect(result.value.layout.codeDocuments).toEqual([
+      { id: "new", text: "const value = 1;\na🙂b\n", language: "typescript" },
+    ]);
+    expect(result.value.layout.rows[1]?.spans[1]).toEqual({
+      text: "🙂",
+      syntax: { documentId: "new", line: 2, range: [1, 3] },
+    });
+    expect(
+      [
+        result.value.layout.codeDocuments,
+        result.value.layout.codeDocuments?.[0],
+        result.value.layout.rows[1]?.spans[1]?.syntax,
+        result.value.layout.rows[1]?.spans[1]?.syntax?.range,
+      ].every(Object.isFrozen),
+    ).toBe(true);
+  });
+
+  test("keeps syntax metadata independent from hunk and source-range ownership", () => {
+    const result = validateFileViewLayout(
+      {
+        codeDocuments: [{ id: "snippet", text: "before\nafter", language: "typescript" }],
+        rows: [
+          {
+            id: "hunk",
+            spans: [{ text: "before", syntax: { documentId: "snippet", line: 1 } }],
+          },
+          {
+            id: "outside",
+            spans: [{ text: "after", syntax: { documentId: "snippet", line: 2 } }],
+          },
+        ],
+        hunkRows: [{ startRow: 0, endRow: 0 }],
+      },
+      1,
+      80,
+    );
+
+    expect(result).toMatchObject({ valid: true });
+  });
+
+  test("rejects malformed code documents and syntax references", () => {
+    const validate = (overrides: Record<string, unknown>) =>
+      validateFileViewLayout(
+        {
+          codeDocuments: [{ id: "code", text: "a🙂b\n" }],
+          rows: [{ id: "row", spans: [{ text: "a🙂b", syntax: { documentId: "code", line: 1 } }] }],
+          hunkRows: [],
+          ...overrides,
+        },
+        0,
+        80,
+      );
+
+    expect(validate({ codeDocuments: "nope" })).toEqual({
+      valid: false,
+      issue: "layout.codeDocuments is not an array",
+    });
+    expect(
+      validate({
+        codeDocuments: [
+          { id: "same", text: "a" },
+          { id: "same", text: "b" },
+        ],
+      }),
+    ).toEqual({ valid: false, issue: 'codeDocuments[1] repeats id "same"' });
+    expect(
+      validate({ codeDocuments: [{ id: "code", text: "a", language: "type script" }] }),
+    ).toEqual({
+      valid: false,
+      issue: "codeDocuments[0].language is not a bounded language id",
+    });
+    expect(validate({ codeDocuments: [{ id: "unsafe\u001b]0;title\u0007", text: "a" }] })).toEqual({
+      valid: false,
+      issue: "codeDocuments[0] has no bounded non-empty id",
+    });
+
+    for (const [syntax, issue] of [
+      [{ documentId: "missing", line: 1 }, 'rows[0] references missing code document "missing"'],
+      [
+        { documentId: "unsafe\u001b]0;title\u0007", line: 1 },
+        "rows[0] contains a syntax reference without a bounded terminal-safe document id",
+      ],
+      [
+        { documentId: "x".repeat(257), line: 1 },
+        "rows[0] contains a syntax reference without a bounded terminal-safe document id",
+      ],
+      [
+        { documentId: "code", line: 0 },
+        "rows[0] contains a syntax reference with an invalid one-based line",
+      ],
+      [{ documentId: "code", line: 2 }, 'rows[0] references a line outside code document "code"'],
+      [
+        { documentId: "code", line: 1, range: [1, 5] },
+        "rows[0] contains a syntax reference with an invalid UTF-16 range",
+      ],
+      [
+        { documentId: "code", line: 1, range: [1, 2] },
+        'rows[0] syntax span text does not match code document "code"',
+      ],
+    ] as const) {
+      expect(
+        validate({
+          rows: [{ id: "row", spans: [{ text: "a🙂b", syntax }] }],
+        }),
+      ).toEqual({ valid: false, issue });
+    }
+
+    expect(
+      validate({
+        rows: [
+          {
+            id: "row",
+            spans: [{ text: "🙂", syntax: { documentId: "code", line: 1, range: [1, 3] } }],
+          },
+        ],
+      }),
+    ).toMatchObject({ valid: true });
+    expect(
+      validate({
+        codeDocuments: [{ id: "empty", text: "" }],
+        rows: [{ id: "row", spans: [{ text: "", syntax: { documentId: "empty", line: 1 } }] }],
+      }),
+    ).toEqual({
+      valid: false,
+      issue: 'rows[0] references a line outside code document "empty"',
+    });
+  });
+
+  test("bounds aggregate code-document resources", () => {
+    expect(
+      validateFileViewLayout(
+        {
+          codeDocuments: Array.from({ length: 65 }, (_, index) => ({
+            id: `document-${index}`,
+            text: "",
+          })),
+          rows: [],
+          hunkRows: [],
+        },
+        0,
+        80,
+      ),
+    ).toEqual({ valid: false, issue: "layout has more than 64 code documents" });
+    expect(
+      validateFileViewLayout(
+        {
+          codeDocuments: [{ id: "large", text: "x".repeat(1_000_001) }],
+          rows: [],
+          hunkRows: [],
+        },
+        0,
+        80,
+      ),
+    ).toEqual({
+      valid: false,
+      issue: "code document text exceeds 1000000 characters",
+    });
+    expect(
+      validateFileViewLayout(
+        {
+          codeDocuments: [{ id: "many-lines", text: "x\n".repeat(10_001) }],
+          rows: [],
+          hunkRows: [],
+        },
+        0,
+        80,
+      ),
+    ).toEqual({
+      valid: false,
+      issue: "code documents have more than 10000 lines",
+    });
+    expect(
+      validateFileViewLayout(
+        {
+          codeDocuments: [{ id: "newline-flood", text: "\n".repeat(500_000) }],
+          rows: [],
+          hunkRows: [],
+        },
+        0,
+        80,
+      ),
+    ).toEqual({
+      valid: false,
+      issue: "code documents have more than 10000 lines",
+    });
+  });
+
+  test("bounds authored span text before scanning or sanitizing its contents", () => {
+    expect(
+      validateFileViewLayout(
+        {
+          rows: [
+            {
+              id: "large",
+              spans: [{ text: `${"x".repeat(1_000_001)}\n\u001b]0;title\u0007` }],
+            },
+          ],
+          hunkRows: [],
+        },
+        0,
+        80,
+      ),
+    ).toEqual({
+      valid: false,
+      issue: "layout text exceeds 1000000 characters",
+    });
+  });
+
   test("returns a deeply immutable host snapshot detached from extension mutation", () => {
     const firstRender = () => "first";
     const secondRender = () => "second";

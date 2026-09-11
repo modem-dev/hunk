@@ -1,5 +1,8 @@
 import { collectHastHighlightRuns, type HastNode } from "./highlightHast";
 
+/** Matches the CSS hex forms OpenTUI's `parseColor` accepts for syntax token paint. */
+const COMPACT_PALETTE_COLOR_PATTERN = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+
 /** HAST lines for one diff side; `undefined` marks lines the highlighter skipped. */
 export type HighlightedHastLines = Array<HastNode | undefined>;
 
@@ -9,7 +12,7 @@ export const COMPACT_HIGHLIGHT_PROTOCOL_VERSION = 1;
 /** Marks one run whose background comes from the receiving row's word-diff policy. */
 export const COMPACT_HIGHLIGHT_FLAG_WORD_DIFF = 1;
 
-/** Holds all numeric syntax runs for one diff side. */
+/** Holds all numeric syntax runs for one document or diff side. */
 export interface CompactHighlightSide {
   /** Maps each line index to its half-open run range in the three run arrays. */
   lineOffsets: Uint32Array;
@@ -23,6 +26,15 @@ export interface CompactHighlightSide {
   flags: Uint8Array;
 }
 
+/** Carries a text-free, transferable projection of one highlighted document. */
+export interface CompactHighlightedDocument {
+  version: typeof COMPACT_HIGHLIGHT_PROTOCOL_VERSION;
+  /** Deduplicated resolved syntax foreground colors. */
+  foregroundPalette: string[];
+  /** Numeric UTF-16 runs grouped by zero-based source line. */
+  document: CompactHighlightSide;
+}
+
 /** Carries a text-free, transferable projection of Pierre's highlighted diff output. */
 export interface CompactHighlightedDiff {
   version: typeof COMPACT_HIGHLIGHT_PROTOCOL_VERSION;
@@ -32,11 +44,15 @@ export interface CompactHighlightedDiff {
   addition: CompactHighlightSide;
 }
 
-/** Exposes one decoded range without reconstructing a HAST node or text string. */
-export interface CompactHighlightRun {
+/** Exposes one decoded syntax range without reconstructing a HAST node or text string. */
+export interface CompactDocumentHighlightRun {
   start: number;
   end: number;
   fg?: string;
+}
+
+/** Exposes one decoded diff range, including the diff-only word emphasis policy. */
+export interface CompactHighlightRun extends CompactDocumentHighlightRun {
   wordDiff: boolean;
 }
 
@@ -68,8 +84,12 @@ function compactPaletteId(
   if (!foreground) {
     return 0;
   }
+  if (!COMPACT_PALETTE_COLOR_PATTERN.test(foreground)) {
+    throw new Error("Compact syntax palette contains an invalid color.");
+  }
+  const normalizedForeground = foreground.toLowerCase();
 
-  const existingId = paletteIds.get(foreground);
+  const existingId = paletteIds.get(normalizedForeground);
   if (existingId !== undefined) {
     return existingId;
   }
@@ -79,7 +99,7 @@ function compactPaletteId(
 
   foregroundPalette.push(foreground);
   const styleId = foregroundPalette.length;
-  paletteIds.set(foreground, styleId);
+  paletteIds.set(normalizedForeground, styleId);
   return styleId;
 }
 
@@ -89,11 +109,13 @@ function encodeSide({
   appearance,
   foregroundPalette,
   paletteIds,
+  preserveWordDiff,
 }: {
   lines: HighlightedHastLines;
   appearance: "dark" | "light";
   foregroundPalette: string[];
   paletteIds: Map<string, number>;
+  preserveWordDiff: boolean;
 }) {
   const side = createMutableSide();
 
@@ -112,7 +134,7 @@ function encodeSide({
       side.starts.push(start);
       side.ends.push(end);
       side.styleIds.push(styleId);
-      side.flags.push(run.wordDiff ? COMPACT_HIGHLIGHT_FLAG_WORD_DIFF : 0);
+      side.flags.push(preserveWordDiff && run.wordDiff ? COMPACT_HIGHLIGHT_FLAG_WORD_DIFF : 0);
     }
     side.lineOffsets.push(side.starts.length);
   }
@@ -126,6 +148,25 @@ function encodeSide({
   } satisfies CompactHighlightSide;
 }
 
+/** Convert one document's HAST lines into a text-free compact artifact. */
+export function encodeCompactHighlightedDocument(
+  lines: HighlightedHastLines,
+  appearance: "dark" | "light",
+): CompactHighlightedDocument {
+  const foregroundPalette: string[] = [];
+  return {
+    version: COMPACT_HIGHLIGHT_PROTOCOL_VERSION,
+    foregroundPalette,
+    document: encodeSide({
+      lines,
+      appearance,
+      foregroundPalette,
+      paletteIds: new Map(),
+      preserveWordDiff: false,
+    }),
+  };
+}
+
 /**
  * Converts Pierre HAST into a text-free worker response.
  *
@@ -134,7 +175,10 @@ function encodeSide({
  * semantic flag so each row can apply its existing theme policy.
  */
 export function encodeCompactHighlightedDiff(
-  code: { deletionLines: HighlightedHastLines; additionLines: HighlightedHastLines },
+  code: {
+    deletionLines: HighlightedHastLines;
+    additionLines: HighlightedHastLines;
+  },
   appearance: "dark" | "light",
 ): CompactHighlightedDiff {
   const foregroundPalette: string[] = [];
@@ -148,17 +192,19 @@ export function encodeCompactHighlightedDiff(
       appearance,
       foregroundPalette,
       paletteIds,
+      preserveWordDiff: true,
     }),
     addition: encodeSide({
       lines: code.additionLines,
       appearance,
       foregroundPalette,
       paletteIds,
+      preserveWordDiff: true,
     }),
   };
 }
 
-/** Return one side's typed-array buffers for a zero-copy worker response transfer. */
+/** Return one document's typed-array buffers for a zero-copy worker response transfer. */
 function sideTransferList(side: CompactHighlightSide) {
   return [
     side.lineOffsets.buffer,
@@ -169,23 +215,42 @@ function sideTransferList(side: CompactHighlightSide) {
   ];
 }
 
+/** Return the transferable buffers that contain one document's compact numeric fields. */
+export function compactHighlightedDocumentTransferList(payload: CompactHighlightedDocument) {
+  return sideTransferList(payload.document);
+}
+
 /** Return the transferable buffers that contain every numeric compact response field. */
 export function compactHighlightTransferList(payload: CompactHighlightedDiff) {
   return [...sideTransferList(payload.deletion), ...sideTransferList(payload.addition)];
 }
 
-/** Clone one payload before transferring it so a worker-owned cache keeps its buffers. */
-export function cloneCompactHighlightedDiff(
-  payload: CompactHighlightedDiff,
-): CompactHighlightedDiff {
-  const cloneSide = (side: CompactHighlightSide): CompactHighlightSide => ({
+/** Clone numeric runs so transferring a result cannot detach a cached artifact. */
+function cloneSide(side: CompactHighlightSide): CompactHighlightSide {
+  return {
     lineOffsets: side.lineOffsets.slice(),
     starts: side.starts.slice(),
     ends: side.ends.slice(),
     styleIds: side.styleIds.slice(),
     flags: side.flags.slice(),
-  });
+  };
+}
 
+/** Clone one document before transferring it so a worker-owned cache keeps its buffers. */
+export function cloneCompactHighlightedDocument(
+  payload: CompactHighlightedDocument,
+): CompactHighlightedDocument {
+  return {
+    version: payload.version,
+    foregroundPalette: [...payload.foregroundPalette],
+    document: cloneSide(payload.document),
+  };
+}
+
+/** Clone one diff payload before transferring it so a worker-owned cache keeps its buffers. */
+export function cloneCompactHighlightedDiff(
+  payload: CompactHighlightedDiff,
+): CompactHighlightedDiff {
   return {
     version: payload.version,
     foregroundPalette: [...payload.foregroundPalette],
@@ -194,16 +259,27 @@ export function cloneCompactHighlightedDiff(
   };
 }
 
-/** Estimate the retained wire size, including the small cloned color palette. */
+/** Count the encoded bytes retained by a compact color palette. */
+function paletteByteLength(foregroundPalette: readonly string[]) {
+  return new TextEncoder().encode(JSON.stringify(foregroundPalette)).byteLength;
+}
+
+/** Estimate one document's retained wire size, including its cloned color palette. */
+export function compactHighlightedDocumentByteLength(payload: CompactHighlightedDocument) {
+  const numericBytes = compactHighlightedDocumentTransferList(payload).reduce(
+    (total, buffer) => total + buffer.byteLength,
+    0,
+  );
+  return numericBytes + paletteByteLength(payload.foregroundPalette);
+}
+
+/** Estimate the retained diff wire size, including the small cloned color palette. */
 export function compactHighlightedDiffByteLength(payload: CompactHighlightedDiff) {
   const numericBytes = compactHighlightTransferList(payload).reduce(
     (total, buffer) => total + buffer.byteLength,
     0,
   );
-  const paletteBytes = new TextEncoder().encode(
-    JSON.stringify(payload.foregroundPalette),
-  ).byteLength;
-  return numericBytes + paletteBytes;
+  return numericBytes + paletteByteLength(payload.foregroundPalette);
 }
 
 /** Validate one compact side before it enters a cache or renderer. */
@@ -212,13 +288,17 @@ function validateSide({
   paletteLength,
   lineLengths,
   name,
+  allowWordDiff,
 }: {
   side: CompactHighlightSide;
   paletteLength: number;
   lineLengths?: readonly number[];
   name: string;
+  allowWordDiff: boolean;
 }) {
   if (
+    !side ||
+    typeof side !== "object" ||
     !(side.lineOffsets instanceof Uint32Array) ||
     !(side.starts instanceof Uint32Array) ||
     !(side.ends instanceof Uint32Array) ||
@@ -239,6 +319,10 @@ function validateSide({
   }
   if (lineLengths && lineLengths.length !== side.lineOffsets.length - 1) {
     throw new Error(`Compact ${name} highlight line count does not match its source.`);
+  }
+
+  if (side.lineOffsets[0] !== 0) {
+    throw new Error(`Compact ${name} highlight offsets must start at zero.`);
   }
 
   let previousOffset = 0;
@@ -270,7 +354,7 @@ function validateSide({
       if (styleId > paletteLength) {
         throw new Error(`Compact ${name} highlight style ID is outside its palette.`);
       }
-      if ((flags & ~COMPACT_HIGHLIGHT_FLAG_WORD_DIFF) !== 0) {
+      if ((flags & ~COMPACT_HIGHLIGHT_FLAG_WORD_DIFF) !== 0 || (!allowWordDiff && flags !== 0)) {
         throw new Error(`Compact ${name} highlight contains unsupported flags.`);
       }
       previousEnd = end;
@@ -282,7 +366,43 @@ function validateSide({
   }
 }
 
-/** Validate a received compact payload before it is cached or decoded. */
+/** Validate the shared compact envelope fields before inspecting numeric runs. */
+function validatePayloadEnvelope(
+  payload: Pick<CompactHighlightedDocument, "version" | "foregroundPalette">,
+) {
+  if (!payload || typeof payload !== "object") {
+    throw new Error("Compact highlight payload must be an object.");
+  }
+  if (payload.version !== COMPACT_HIGHLIGHT_PROTOCOL_VERSION) {
+    throw new Error(`Unsupported compact highlight protocol version: ${String(payload.version)}`);
+  }
+  if (
+    !Array.isArray(payload.foregroundPalette) ||
+    payload.foregroundPalette.length > 0xffff ||
+    payload.foregroundPalette.some(
+      (color) => typeof color !== "string" || !COMPACT_PALETTE_COLOR_PATTERN.test(color),
+    )
+  ) {
+    throw new Error("Compact syntax palette contains an invalid color.");
+  }
+}
+
+/** Validate one received document before it enters a cache or renderer. */
+export function validateCompactHighlightedDocument(
+  payload: CompactHighlightedDocument,
+  lineLengths?: readonly number[],
+) {
+  validatePayloadEnvelope(payload);
+  validateSide({
+    side: payload.document,
+    paletteLength: payload.foregroundPalette.length,
+    lineLengths,
+    name: "document",
+    allowWordDiff: false,
+  });
+}
+
+/** Validate a received compact diff before it enters a cache or renderer. */
 export function validateCompactHighlightedDiff(
   payload: CompactHighlightedDiff,
   lineLengths?: {
@@ -290,39 +410,33 @@ export function validateCompactHighlightedDiff(
     addition: readonly number[];
   },
 ) {
-  if (payload.version !== COMPACT_HIGHLIGHT_PROTOCOL_VERSION) {
-    throw new Error(`Unsupported compact highlight protocol version: ${String(payload.version)}`);
-  }
-  if (
-    !Array.isArray(payload.foregroundPalette) ||
-    payload.foregroundPalette.some((color) => typeof color !== "string" || color.length === 0)
-  ) {
-    throw new Error("Compact syntax palette contains an invalid color.");
-  }
+  validatePayloadEnvelope(payload);
 
   validateSide({
     side: payload.deletion,
     paletteLength: payload.foregroundPalette.length,
     lineLengths: lineLengths?.deletion,
     name: "deletion",
+    allowWordDiff: true,
   });
   validateSide({
     side: payload.addition,
     paletteLength: payload.foregroundPalette.length,
     lineLengths: lineLengths?.addition,
     name: "addition",
+    allowWordDiff: true,
   });
 }
 
-/** Read one compact line's styles without rebuilding HAST nodes or token text. */
-export function compactHighlightRunsForLine(
-  payload: CompactHighlightedDiff,
-  sideName: "deletion" | "addition",
+/** Decode one numeric line without rebuilding HAST nodes or token text. */
+function runsForSide(
+  side: CompactHighlightSide,
+  foregroundPalette: readonly string[],
   lineIndex: number,
+  name: string,
 ): CompactHighlightRun[] {
-  const side = payload[sideName];
   if (!Number.isInteger(lineIndex) || lineIndex < 0 || lineIndex >= side.lineOffsets.length - 1) {
-    throw new Error(`Compact ${sideName} highlight line index is outside its payload.`);
+    throw new Error(`Compact ${name} highlight line index is outside its payload.`);
   }
 
   const startOffset = side.lineOffsets[lineIndex]!;
@@ -333,9 +447,28 @@ export function compactHighlightRunsForLine(
     runs.push({
       start: side.starts[runIndex]!,
       end: side.ends[runIndex]!,
-      fg: styleId === 0 ? undefined : payload.foregroundPalette[styleId - 1],
+      fg: styleId === 0 ? undefined : foregroundPalette[styleId - 1],
       wordDiff: (side.flags[runIndex]! & COMPACT_HIGHLIGHT_FLAG_WORD_DIFF) !== 0,
     });
   }
   return runs;
+}
+
+/** Read one compact document line's syntax styles without exposing diff-only emphasis flags. */
+export function compactHighlightedDocumentRunsForLine(
+  payload: CompactHighlightedDocument,
+  lineIndex: number,
+): CompactDocumentHighlightRun[] {
+  return runsForSide(payload.document, payload.foregroundPalette, lineIndex, "document").map(
+    ({ start, end, fg }) => ({ start, end, fg }),
+  );
+}
+
+/** Read one compact diff line's styles without rebuilding HAST nodes or token text. */
+export function compactHighlightRunsForLine(
+  payload: CompactHighlightedDiff,
+  sideName: "deletion" | "addition",
+  lineIndex: number,
+): CompactHighlightRun[] {
+  return runsForSide(payload[sideName], payload.foregroundPalette, lineIndex, sideName);
 }

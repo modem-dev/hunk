@@ -1,4 +1,4 @@
-import { TextAttributes } from "@opentui/core";
+import { parseColor, StyledText, TextAttributes, type TextChunk } from "@opentui/core";
 import { Component, memo, useMemo, type ReactNode } from "react";
 import type { DiffFile } from "../../../core/changeset/model";
 import type {
@@ -15,7 +15,13 @@ import { resolveVisibleRowIndexWindow, type VisibleBodyBounds } from "../../diff
 import { reviewRowId } from "../../lib/ids";
 import { toExtensionPaintTheme } from "../../lib/extensionPaintTheme";
 import type { PlannedFileViewRow } from "../../fileViews/renderPlan";
+import { preserveCrossSpanGraphemes } from "../../diff/styledSpanLayout";
+import {
+  createFileViewSyntaxProjector,
+  type FileViewSyntaxProjector,
+} from "../../fileViews/syntaxPaint";
 import type { FileViewRowFailure } from "../../fileViews/types";
+import { useFileViewSyntaxHighlight } from "../../fileViews/useFileViewSyntaxHighlight";
 import type { ResolvedFileViewLayout } from "../../fileViews/useFileViews";
 import { AgentInlineNote } from "./AgentInlineNote";
 
@@ -69,22 +75,63 @@ export function isFileViewRowSelected(
   );
 }
 
-/** Paint one row through the original symbolic host-rendered path. */
-function SymbolicFileViewRow({ row, theme }: { row: ExtensionFileViewRow; theme: AppTheme }) {
-  return row.spans.map((span, spanIndex) => (
-    <text
-      key={`${row.id}:${spanIndex}`}
-      fg={fileViewToneColor(span.tone, theme)}
-      attributes={fileViewTextAttributes(span.attributes)}
-    >
-      {span.text}
-    </text>
-  ));
+const fileViewPaintColorCache = new Map<string, ReturnType<typeof parseColor>>();
+
+/** Parse one host-owned paint color while reusing immutable terminal color values. */
+function fileViewPaintColor(value: string) {
+  let parsed = fileViewPaintColorCache.get(value);
+  if (!parsed) {
+    parsed = parseColor(value);
+    fileViewPaintColorCache.set(value, parsed);
+  }
+  return parsed;
+}
+
+/** Paint one row through the symbolic host-rendered path, adding syntax foregrounds only. */
+function SymbolicFileViewRow({
+  projector,
+  row,
+  theme,
+}: {
+  projector: FileViewSyntaxProjector;
+  row: ExtensionFileViewRow;
+  theme: AppTheme;
+}) {
+  const content = useMemo(() => {
+    const paintRuns: Array<{ text: string; fg: string; attributes: number }> = [];
+    for (const span of row.spans) {
+      const fallbackForeground = fileViewToneColor(span.tone, theme);
+      const attributes = fileViewTextAttributes(span.attributes);
+      const syntaxRuns = projector.projectSpan(span);
+      for (const run of syntaxRuns ?? [{ text: span.text }]) {
+        paintRuns.push({
+          text: run.text,
+          fg: run.fg ?? fallbackForeground,
+          attributes,
+        });
+      }
+    }
+    // Resolve graphemes once across the complete authored row. Retained tabs pass through so
+    // OpenTUI paints each at the same fixed two-cell width used by geometry measurement.
+    const displayRuns = preserveCrossSpanGraphemes(paintRuns);
+    const chunks: TextChunk[] = displayRuns.map((run) => ({
+      __isChunk: true,
+      text: run.text,
+      fg: fileViewPaintColor(run.fg),
+      attributes: run.attributes,
+    }));
+    return new StyledText(chunks);
+  }, [projector, row.spans, theme]);
+  return <text content={content} wrapMode="word" />;
 }
 
 /** Contain synchronous render/lifecycle failures to one row and attribute them to the host. */
 class FileViewRowErrorBoundary extends Component<
-  { children: ReactNode; fallback: ReactNode; onError: (error: unknown) => void },
+  {
+    children: ReactNode;
+    fallback: ReactNode;
+    onError: (error: unknown) => void;
+  },
   { failed: boolean }
 > {
   override state = { failed: false };
@@ -108,7 +155,9 @@ function FileViewComponent({
   fileView,
   geometry,
   cursorHighlight,
+  offloadLargeDiff = false,
   selectedHunkIndex,
+  shouldLoadHighlight = false,
   theme,
   visibleBodyBounds,
   width,
@@ -119,7 +168,9 @@ function FileViewComponent({
   geometry: DiffSectionGeometry;
   /** The current line within this file, when the review-stream cursor rests in it. */
   cursorHighlight?: CursorHighlight;
+  offloadLargeDiff?: boolean;
   selectedHunkIndex: number;
+  shouldLoadHighlight?: boolean;
   theme: AppTheme;
   visibleBodyBounds?: VisibleBodyBounds;
   width: number;
@@ -127,15 +178,18 @@ function FileViewComponent({
 }) {
   const { layout } = fileView;
   const publicTheme = useMemo(() => toExtensionPaintTheme(theme), [theme]);
-  const plannedRows: readonly PlannedFileViewRow[] =
-    geometry.fileViewRows ??
-    layout.rows.map((row, rowIndex) => ({
-      kind: "file-view-row" as const,
-      key: `file-view:${row.id}`,
-      stableKey: `file-view:${row.id}`,
-      row,
-      rowIndex,
-    }));
+  const plannedRows: readonly PlannedFileViewRow[] = useMemo(
+    () =>
+      geometry.fileViewRows ??
+      layout.rows.map((row, rowIndex) => ({
+        kind: "file-view-row" as const,
+        key: `file-view:${row.id}`,
+        stableKey: `file-view:${row.id}`,
+        row,
+        rowIndex,
+      })),
+    [geometry.fileViewRows, layout.rows],
+  );
   const rowWindow = useMemo(() => {
     if (!visibleBodyBounds) {
       return {
@@ -152,7 +206,23 @@ function FileViewComponent({
     });
   }, [geometry.bodyHeight, geometry.rowBounds, plannedRows.length, visibleBodyBounds]);
 
-  const mountedRows = plannedRows.slice(rowWindow.startIndex, rowWindow.endIndex);
+  const mountedRows = useMemo(
+    () => plannedRows.slice(rowWindow.startIndex, rowWindow.endIndex),
+    [plannedRows, rowWindow.endIndex, rowWindow.startIndex],
+  );
+  // Demand follows the host row window so inserted notes and offscreen extension rows add no work.
+  const syntaxHighlights = useFileViewSyntaxHighlight({
+    file,
+    fileView,
+    mountedRows,
+    offloadLargeDiff,
+    shouldLoadHighlight,
+    theme,
+  });
+  const syntaxProjector = useMemo(
+    () => createFileViewSyntaxProjector(syntaxHighlights),
+    [syntaxHighlights],
+  );
   return (
     <box style={{ width: "100%", flexDirection: "column" }}>
       {rowWindow.topSpacerHeight > 0 ? (
@@ -195,7 +265,9 @@ function FileViewComponent({
         const View = row.component?.render as
           | ((props: ExtensionFileViewRowComponentProps) => ReactNode)
           | undefined;
-        const fallback = <SymbolicFileViewRow row={row} theme={theme} />;
+        const fallback = (
+          <SymbolicFileViewRow projector={syntaxProjector} row={row} theme={theme} />
+        );
         // Selection is deliberately absent: hook state survives ordinary selected-prop updates.
         // Window unmount or any accepted layout/registration generation creates a fresh identity.
         const paintIdentity = `${file.id}:${fileView.registrationIdentity}:${fileView.layoutGeneration}:${row.id}`;

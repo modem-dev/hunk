@@ -7,7 +7,7 @@ description: Add opt-in file presentations that keep Hunk's review navigation, s
 
 A preview is still part of Hunk's normal review stream. Hunk keeps control of file ordering, measurement, scrolling, windowing, hunk navigation, selection, and inline notes. The extension describes deterministic rows; it does not replace the review pane.
 
-The file-view API is experimental and requires extension API version 2.
+The base file-view API is experimental and requires extension API version 2. Host-owned syntax paint for file-view code documents requires API version 24.
 
 ## What users see
 
@@ -118,6 +118,57 @@ Tones are `muted`, `accent`, `accent-muted`, `syntax`, `added`, and `removed`. A
 
 `hunkRows` has one entry for every item in `input.file.hunks`, in the same order. Each entry is an inclusive, zero-based extent into `rows`. Hunk uses these extents for `[`/`]` navigation and selected-hunk highlighting even when several preview rows represent one source hunk.
 
+## Ask Hunk to syntax-highlight code
+
+API version 24 adds declarative, host-owned syntax paint. The extension supplies complete code and exact span references; Hunk owns language resolution, Shiki/Pierre tokenization, the active theme, worker scheduling, caches, terminal safety, and plain fallback. Extensions never supply colors, HAST, or tokens.
+
+```ts
+const oldText = await input.readDocument("old");
+const newText = await input.readDocument("new");
+if (oldText === null || newText === null) return null;
+const firstLine = (text: string) => text.replace(/\r\n?|\n/g, "\n").split("\n")[0] ?? "";
+const oldLine = firstLine(oldText);
+const newLine = firstLine(newText);
+const newPrefix = Math.min(newLine.length, /^\s*/.exec(newLine)?.[0].length ?? 0);
+
+return {
+  codeDocuments: [
+    { id: "old", text: oldText }, // language defaults to host detection for input.file
+    { id: "new", text: newText, language: "typescript" },
+  ],
+  rows: [
+    {
+      id: "split:1",
+      spans: [
+        { text: "OLD 1 │ ", tone: "muted" },
+        { text: oldLine, syntax: { documentId: "old", line: 1 } },
+        { text: "   NEW 1 │ ", tone: "muted" },
+        { text: newLine.slice(0, newPrefix) },
+        {
+          text: newLine.slice(newPrefix),
+          syntax: { documentId: "new", line: 1, range: [newPrefix, newLine.length] },
+        },
+      ],
+    },
+  ],
+  hunkRows: [{ startRow: 0, endRow: 0 }],
+};
+```
+
+Each `ExtensionFileViewCodeDocument` has a layout-local `id`, complete `text`, and optional `language`. Hunk tokenizes the whole document for correct multiline comments, strings, templates, embedded languages, and Markdown fences, but starts work only when a visible or nearby row references it. An explicit language is host-resolved; an unsupported language stays plain.
+
+A span's `syntax` uses a `documentId`, one-based `line`, and optional zero-based, half-open UTF-16 `range`. Omit the range for a complete line. A split row can reference different old/new or generated/transformed documents. Keep gutters, blame columns, markers, separators, ellipses, and padding in ordinary spans.
+
+Hunk normalizes CRLF and lone CR to LF, preserves final-newline semantics, and strips terminal controls line by line. The retained safe span text must exactly equal the referenced line or slice. Coordinates are UTF-16 before terminal-cell conversion: tabs count as one UTF-16 unit and OpenTUI paints each at its fixed two-cell width. A mismatch rejects the layout rather than guessing.
+
+Syntax foregrounds override the span tone where tokens exist; gaps keep the tone, authored attributes survive, and selected/current-row backgrounds remain Hunk-owned. Highlight arrival is async and paint-only: it never changes text, wrapping, row height, geometry, notes, navigation, layout generation, or scrolling. Unsupported/oversized work, cancellation, queue pressure, stale replies, and highlighter failures retain symbolic FileView spans. Invalid layouts or unavailable native text measurement fall back to raw diff because exact geometry cannot be guaranteed.
+
+Syntax input uses the UTF-16 code-unit and aggregate normalized-line limits below. Every tokenized line must stay below 1,000 UTF-16 code units; an overlong line keeps the document plain so it cannot corrupt later multiline lexical state. Hunk bounds compact output and completed caches by bytes and entries, and admits at most 16 unique outstanding document jobs. Identical requests share one job; that job's subscribers have no separate numeric ceiling.
+
+Syntax references do not replace `sourceRanges`. `syntax` controls paint only and can appear outside hunks; `sourceRanges` alone bind note placement and navigation. Custom components do not receive tokens or syntax colors, though their symbolic fallback spans may request syntax paint.
+
+Declare `"hunk": { "apiVersion": 26 }` in a folder extension that uses `codeDocuments` or `syntax`. See the checked-in [code-document file view](https://github.com/modem-dev/hunk/tree/main/examples/extensions/code-document-file-view) example for full old/new documents, gutters, and complete/partial references.
+
 ## Keep inline notes attached to source
 
 A row may declare the exact old/new source lines it presents:
@@ -132,7 +183,7 @@ A row may declare the exact old/new source lines it presents:
 
 Source ranges are inclusive and one-based. Hunk verifies that they exist in the exact source document, do not overlap ranges owned by other rows on the same side, and belong to one hunk extent.
 
-When agent notes are visible, Hunk uses these bindings to insert its own note cards before the matching preview row. The extension never receives note contents and never measures note UI.
+When agent notes are visible, Hunk renders the matching preview row first and inserts its own note cards afterward. The extension never receives note contents and never measures note UI.
 
 Note placement is all-or-raw for each file. If any visible note has no unique bound row, Hunk temporarily shows the complete raw diff rather than hiding the note or guessing where it belongs. The selected preview returns when notes are hidden or all bindings become resolvable. Draft note editing also remains on raw diff.
 
@@ -197,15 +248,18 @@ Modes also exit when their file, presentation, extension, or review session chan
 
 Hunk validates every returned layout before using it. Current request limits are:
 
-| Limit             |               Maximum |
-| ----------------- | --------------------: |
-| Rows              |                10,000 |
-| Spans             |                40,000 |
-| Source bindings   |                40,000 |
-| Symbolic text     |  1,000,000 characters |
-| One component row |     256 terminal rows |
-| Complete layout   | 100,000 terminal rows |
-| Layout request    |           1.5 seconds |
+| Limit             |                Maximum |
+| ----------------- | ---------------------: |
+| Rows              |                 10,000 |
+| Spans             |                 40,000 |
+| Source bindings   |                 40,000 |
+| Code documents    |                     64 |
+| Code text         | 1,000,000 UTF-16 units |
+| Code lines        |                 10,000 |
+| Symbolic text     |   1,000,000 characters |
+| One component row |      256 terminal rows |
+| Complete layout   |  100,000 terminal rows |
+| Layout request    |            1.5 seconds |
 
 Layout work runs with bounded concurrency and cached results. Hunk discards layouts prepared for an old width, file snapshot, registration, or cancelled request.
 
@@ -216,6 +270,7 @@ A `null`, invalid, oversized, cancelled, timed-out, or throwing layout produces 
 - [Rendered Markdown](https://github.com/modem-dev/hunk/tree/main/examples/extensions/rendered-markdown) is an installable symbolic-row preview with exact-source bindings and inline notes.
 - [JSX file view](https://github.com/modem-dev/hunk/tree/main/examples/extensions/jsx-file-view) demonstrates fixed-height React/OpenTUI rows.
 - [JSX file-view gallery](https://github.com/modem-dev/hunk/tree/main/examples/extensions/jsx-file-view-gallery) includes TypeScript, CSS color, package dependency, and mixed raw/custom review examples.
+- [Code-document file view](https://github.com/modem-dev/hunk/tree/main/examples/extensions/code-document-file-view) demonstrates API-v26 host-owned syntax paint with complete old/new documents, semantic gutters, and full/partial references.
 
 The examples are not bundled or loaded by default. Run one directly while developing:
 
