@@ -4204,34 +4204,40 @@ describe("App interactions", () => {
     }
   });
 
-  // Intent: a daemon the window cannot join is a persistent condition, so its notice stays on the
-  // status row until the link reconnects, and it must survive the narrowest common terminal
-  // instead of being truncated past its own remedy.
+  // Keep the daemon warning independent of timed notices, including when the status row overflows.
   test.each([80, 120, 220])(
     "keeps the daemon link notice on the %i-column status line until reconnect",
     async (width) => {
       const { hostClient, publishConnectionNotice } = createMockHostClient();
-      const setup = await testRender(
-        <AppHost bootstrap={createBootstrap()} hostClient={hostClient} />,
-        { width, height: 20 },
-      );
+      const bootstrap = createBootstrap();
+      bootstrap.keybindings = { "hunk.app.quti": "ctrl+x" };
+      const setup = await testRender(<AppHost bootstrap={bootstrap} hostClient={hostClient} />, {
+        width,
+        height: 20,
+      });
       const notice = HUNK_DAEMON_CLIENT_NEWER_MESSAGE;
 
       try {
         await flush(setup);
         expect(setup.captureCharFrame()).not.toContain(notice);
+        expect(setup.captureCharFrame()).toContain(
+          'Keybinding for unknown command "hunk.app.quti" ignored',
+        );
 
         await act(async () => publishConnectionNotice(notice));
         await flush(setup);
-        // The whole notice, remedy included, survives the row rather than being cut short.
-        expect(setup.captureCharFrame().trimEnd().split("\n").at(-1) ?? "").toContain(notice);
+        const statusRow = setup.captureCharFrame().trimEnd().split("\n").at(-1) ?? "";
+        expect(statusRow).toContain(notice);
+        if (width === 220) expect(statusRow).toContain("Keybinding for unknown command");
+        else expect(statusRow).not.toContain("Keybinding for unknown command");
 
-        // Nothing times it out.
+        // Expiring the ordinary notice must not clear the daemon's persistent condition.
         await act(async () => {
           await Bun.sleep(4_100);
         });
         await flush(setup);
-        expect(setup.captureCharFrame().trimEnd().split("\n").at(-1) ?? "").toContain(notice);
+        expect(setup.captureCharFrame()).not.toContain("Keybinding for unknown command");
+        expect(setup.captureCharFrame().trimEnd().split("\n").at(-1)).toContain(notice);
 
         await act(async () => publishConnectionNotice(null));
         await flush(setup);
