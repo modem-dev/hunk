@@ -124,13 +124,13 @@ Watch mode remains continuous. Direct-file and Git-backed reviews normally use f
 ### Working with agents
 
 1. Open Hunk in another terminal with `hunk diff` or `hunk show`.
-2. Tell your agent to add the skill file returned by `hunk skill path`.
-3. Ask your agent to use the skill against the live Hunk session.
+2. Install the review skill into your agent once: `hunk skill install --agent claude` (also `codex`, `opencode`, `cursor`, `amp`, `copilot`, or `agents`). With Node available, `npx skills add modem-dev/hunk -g` installs the same skill into every agent the [skills CLI](https://github.com/vercel-labs/skills) supports.
+3. Ask your agent to review the live Hunk session.
 
-A good generic prompt is:
+The installed skill is a short pointer that loads its instructions from `hunk skill show`, so it stays current across Hunk upgrades. Without an installed skill, a good generic prompt is:
 
 ```text
-Load the Hunk skill and use it for this review. Run `hunk skill path` to get the skill path.
+Run `hunk skill show` and follow that skill to review the live Hunk session.
 ```
 
 For the full live-session and `--agent-context` workflow guide, see [the agent workflow guide](https://github.com/modem-dev/hunk/blob/main/docs/agent-workflows.md). Experimental rich STML note bodies require starting the review with `--experimental`; plain agent notes remain the default.

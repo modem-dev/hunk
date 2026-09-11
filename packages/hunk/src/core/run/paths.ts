@@ -174,3 +174,11 @@ export function resolveBundledSkillPath(
 
   throw new Error(`Could not locate the bundled Hunk ${name} skill.`);
 }
+
+/** Read one bundled skill's full SKILL.md text, the document `hunk skill show` prints. */
+export function readBundledSkillDocument(
+  name: BundledSkillName = DEFAULT_BUNDLED_SKILL_NAME,
+  searchRoots?: string[],
+) {
+  return fs.readFileSync(resolveBundledSkillPath(name, searchRoots), "utf8");
+}

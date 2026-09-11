@@ -15,16 +15,20 @@ Keep that window open. Normal Hunk sessions register with a local loopback daemo
 
 ## Give the agent the skill
 
-In the agent's shell, locate the skill bundled with the installed Hunk version:
+Install the bundled review skill into your agent once:
 
 ```bash
-hunk skill path
+hunk skill install --agent claude
 ```
 
-Ask the agent to load that file and use it for the review. A portable prompt is:
+`--agent` accepts `claude`, `codex`, `opencode`, `cursor`, `amp`, `copilot`, and `agents` for any tool that reads the shared `.agents/skills` convention. Repeat it to install into several agents at once, or add `--project` to write the skill into the current repository instead of your home directory.
+
+The installed file is a short pointer, not a copy. It keeps the skill's name and description so the agent knows when to use it, and loads the instructions with `hunk skill show`, so upgrading Hunk never leaves a stale skill behind. See [Hunk review skill](/docs/agents/review-skill/) for the details.
+
+Then ask the agent to review the session. Without an installed skill, a portable prompt is:
 
 ```text
-Load the Hunk skill and use it for this review. Run `hunk skill path` to get the skill path.
+Run `hunk skill show` and follow that skill to review the live Hunk session.
 ```
 
 The skill tells agents not to launch the interactive TUI themselves. It teaches them to use the session surface instead.

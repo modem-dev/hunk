@@ -94,6 +94,15 @@ async function main() {
     );
   }
 
+  if (startupPlan.kind === "skill-install") {
+    const { runAgentSkillInstallCommand } = await import("./core/install/agentSkills");
+    process.exit(
+      await runAgentSkillInstallCommand(startupPlan.input, {
+        stdout: (text) => writeStdout(text),
+      }),
+    );
+  }
+
   if (startupPlan.kind === "markup-guide") {
     const { runMarkupGuideCommand } = await import("./ui/lib/stml/cli");
     process.exit(runMarkupGuideCommand({ stdout: (text) => writeStdout(text) }));

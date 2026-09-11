@@ -28,6 +28,9 @@ const DOCUMENTED_AGENT_FLAGS = new Set([
 /** Flags of non-hunk shell tools that appear inside doc examples (e.g. curl). */
 const NON_HUNK_SHELL_FLAGS = new Set(["--data"]);
 
+/** Flags of `hunk skill install`, which the workflow doc uses to hand agents the skill. */
+const SKILL_INSTALL_FLAGS = new Set(["--agent", "--project", "--force"]);
+
 /** Normalize checkout line endings so the comparison stays portable on Windows. */
 function normalizeNewlines(text: string) {
   return text.replaceAll("\r\n", "\n");
@@ -61,7 +64,7 @@ describe("hunk-review skill document", () => {
 
     expect(mentioned.length).toBeGreaterThan(0);
     for (const flag of mentioned) {
-      if (NON_HUNK_SHELL_FLAGS.has(flag)) {
+      if (NON_HUNK_SHELL_FLAGS.has(flag) || SKILL_INSTALL_FLAGS.has(flag)) {
         continue;
       }
       expect(DOCUMENTED_AGENT_FLAGS).toContain(flag);

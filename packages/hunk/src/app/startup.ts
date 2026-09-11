@@ -24,6 +24,7 @@ import type {
   ParsedCliInput,
   SelfUpdateCommandInput,
   SessionCommandInput,
+  SkillInstallCommandInput,
 } from "../core/run/commandInputs";
 import { canReloadInput } from "../core/run/inputReload";
 import { assertReliableWatchRuntime } from "../core/watch/runtime";
@@ -103,6 +104,10 @@ export type StartupPlan =
   | {
       kind: "self-update";
       input: SelfUpdateCommandInput;
+    }
+  | {
+      kind: "skill-install";
+      input: SkillInstallCommandInput;
     }
   | {
       kind: "extension-cli-exit";
@@ -421,6 +426,13 @@ export async function prepareStartupPlan(
   if (parsedCliInput.kind === "update") {
     return await finishHeadlessPlan({
       kind: "self-update",
+      input: parsedCliInput,
+    });
+  }
+
+  if (parsedCliInput.kind === "skill-install") {
+    return await finishHeadlessPlan({
+      kind: "skill-install",
       input: parsedCliInput,
     });
   }

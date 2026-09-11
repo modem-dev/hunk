@@ -20,7 +20,7 @@ export default function (hunk: HunkExtensionAPI) {
 
 What an extension can register is covered by the companion pages: the [extension API](/docs/extend/extension-api/), [file previews](/docs/extend/file-previews/), [VCS adapters](/docs/extend/vcs-adapters/), and [custom panes](/docs/extend/custom-sidebars/).
 
-Writing one with a coding agent? `hunk skill path hunk-extensions` prints a bundled skill that maps these touchpoints for agents, the way `hunk skill path` does for reviewing.
+Writing one with a coding agent? `hunk skill install --agent <name> hunk-extensions` installs a bundled skill that maps these touchpoints for agents, the way the default `hunk skill install` does for reviewing.
 
 ## Where Hunk looks
 

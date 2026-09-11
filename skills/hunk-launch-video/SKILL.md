@@ -1,6 +1,8 @@
 ---
 name: hunk-launch-video
 description: Produces Hunk videos by driving the real TUI headlessly in a PTY, compositing captioned 1080p frames in Chromium, and encoding with ffmpeg. Use for feature demos, workflow explainers, announcements, launch videos, and full-release roundups.
+metadata:
+  internal: true
 ---
 
 # Hunk video pipeline
