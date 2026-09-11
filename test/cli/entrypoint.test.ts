@@ -86,9 +86,31 @@ describe("CLI entrypoint contracts", () => {
 
     expect(proc.exitCode).toBe(0);
     expect(stderr).toBe("");
-    expect(stdout).toContain("Usage: hunk daemon serve");
+    expect(stdout).toContain("Usage: hunk daemon <subcommand>");
+    expect(stdout).toContain("hunk daemon serve");
+    expect(stdout).toContain("hunk daemon status [--json]");
+    expect(stdout).toContain("hunk daemon restart [--yes]");
     expect(stdout).toContain("HUNK_MCP_PORT");
     expect(stdout).not.toContain("\u001b[?1049h");
+  });
+
+  test("prints daemon status and restart help without terminal takeover sequences", () => {
+    for (const [subcommand, usage] of [
+      ["status", "Usage: hunk daemon status [--json]"],
+      ["restart", "Usage: hunk daemon restart [--yes] [--json]"],
+    ] as const) {
+      const proc = Bun.spawnSync(
+        ["bun", "run", "packages/hunk/src/main.tsx", "daemon", subcommand, "--help"],
+        { cwd: process.cwd(), stdin: "ignore", stdout: "pipe", stderr: "pipe" },
+      );
+      const stdout = Buffer.from(proc.stdout).toString("utf8");
+
+      expect(proc.exitCode).toBe(0);
+      expect(Buffer.from(proc.stderr).toString("utf8")).toBe("");
+      expect(stdout).toContain(usage);
+      expect(stdout).toContain("--json");
+      expect(stdout).not.toContain("\u001b[?1049h");
+    }
   });
 
   test("prints session help with the review command without terminal takeover sequences", () => {

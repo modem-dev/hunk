@@ -1868,11 +1868,46 @@ describe("parseCli command help text", () => {
     );
   });
 
+  test("parses the daemon status and restart commands", async () => {
+    await expect(parseCli(["bun", "hunk", "daemon", "status"])).resolves.toEqual({
+      kind: "daemon-status",
+      output: "text",
+    });
+    await expect(parseCli(["bun", "hunk", "daemon", "status", "--json"])).resolves.toEqual({
+      kind: "daemon-status",
+      output: "json",
+    });
+    await expect(parseCli(["bun", "hunk", "daemon", "restart"])).resolves.toEqual({
+      kind: "daemon-restart",
+      output: "text",
+      yes: false,
+    });
+    await expect(
+      parseCli(["bun", "hunk", "daemon", "restart", "--yes", "--json"]),
+    ).resolves.toEqual({ kind: "daemon-restart", output: "json", yes: true });
+    await expect(parseCli(["bun", "hunk", "daemon", "status", "--yes"])).rejects.toThrow(
+      "Unknown option for `hunk daemon status`: --yes",
+    );
+    await expect(parseCli(["bun", "hunk", "daemon", "stop"])).rejects.toThrow(
+      "Only `hunk daemon serve`, `hunk daemon status`, and `hunk daemon restart` are supported.",
+    );
+  });
+
   test("renders the daemon overview and the daemon serve command help", async () => {
     const overview = await expectHelp(["daemon"]);
-    expect(overview).toContain("Usage: hunk daemon serve");
+    expect(overview).toContain("Usage: hunk daemon <subcommand>");
+    expect(overview).toContain("hunk daemon serve");
+    expect(overview).toContain("hunk daemon status [--json]");
+    expect(overview).toContain("hunk daemon restart [--yes]");
     expect(overview).toContain("HUNK_MCP_PORT");
     expect(overview).toBe(await expectHelp(["daemon", "--help"]));
+
+    expect(await expectHelp(["daemon", "status", "--help"])).toContain(
+      "Usage: hunk daemon status [--json]",
+    );
+    const restartHelp = await expectHelp(["daemon", "restart", "--help"]);
+    expect(restartHelp).toContain("Usage: hunk daemon restart [--yes] [--json]");
+    expect(restartHelp).toContain("--yes");
 
     expect(await expectHelp(["daemon", "serve", "--help"])).toContain(
       "Run the local Hunk session daemon and websocket session broker.",
@@ -2070,7 +2105,7 @@ describe("parseCli argument validation", () => {
       parseCli(["bun", "hunk", "skill", "path", "hunk-review", "extra"]),
     ).rejects.toThrow("`hunk skill path` accepts at most one skill name.");
     await expect(parseCli(["bun", "hunk", "daemon", "bogus"])).rejects.toThrow(
-      "Only `hunk daemon serve` is supported.",
+      "Only `hunk daemon serve`, `hunk daemon status`, and `hunk daemon restart` are supported.",
     );
     await expect(parseCli(["bun", "hunk", "stash", "bogus"])).rejects.toThrow(
       "Only `hunk stash show` is supported.",

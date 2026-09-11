@@ -10,6 +10,24 @@ import { runSessionCommand } from "./session/agent/commands";
 import { DaemonBuildMismatchError } from "./session/agent/errors";
 import { stringifyJson } from "./session/agent/cliClient";
 
+/**
+ * Build a yes/no prompt for commands that must confirm destructive work. A confirmation needs a
+ * real terminal on both sides; piped runs pass `--yes` instead and get no prompt function.
+ */
+async function createTerminalConfirm() {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) return undefined;
+  const readline = await import("node:readline/promises");
+  return async (question: string) => {
+    const prompt = readline.createInterface({ input: process.stdin, output: process.stdout });
+    try {
+      const answer = await prompt.question(question);
+      return ["y", "yes"].includes(answer.trim().toLowerCase());
+    } finally {
+      prompt.close();
+    }
+  };
+}
+
 async function main() {
   const startupPlan = await prepareStartupPlan();
 
@@ -29,6 +47,17 @@ async function main() {
     return;
   }
 
+  if (startupPlan.kind === "daemon-control") {
+    const { runDaemonControlCommand } = await import("./session/agent/daemonCommands");
+    process.exit(
+      await runDaemonControlCommand(startupPlan.input, {
+        stdout: (text) => writeStdout(text),
+        stderr: (text) => process.stderr.write(text),
+        confirm: await createTerminalConfirm(),
+      }),
+    );
+  }
+
   if (startupPlan.kind === "session-command") {
     try {
       writeStdout(await runSessionCommand(startupPlan.input));
@@ -45,30 +74,12 @@ async function main() {
   }
 
   if (startupPlan.kind === "extension-manage") {
-    const [{ runExtensionManageCommand }, readline] = await Promise.all([
-      import("./extensions/manage/cli"),
-      import("node:readline/promises"),
-    ]);
-    // A confirmation needs a real terminal on both sides; piped runs use --yes.
-    const canConfirm = Boolean(process.stdin.isTTY) && Boolean(process.stdout.isTTY);
+    const { runExtensionManageCommand } = await import("./extensions/manage/cli");
     process.exit(
       await runExtensionManageCommand(startupPlan.input, {
         stdout: (text) => writeStdout(text),
         stderr: (text) => process.stderr.write(text),
-        confirm: canConfirm
-          ? async (question) => {
-              const prompt = readline.createInterface({
-                input: process.stdin,
-                output: process.stdout,
-              });
-              try {
-                const answer = await prompt.question(question);
-                return ["y", "yes"].includes(answer.trim().toLowerCase());
-              } finally {
-                prompt.close();
-              }
-            }
-          : undefined,
+        confirm: await createTerminalConfirm(),
       }),
     );
   }

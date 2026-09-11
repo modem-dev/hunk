@@ -19,9 +19,18 @@ setDefaultTimeout(60_000);
 
 const tempDirs: string[] = [];
 const daemons: Subprocess[] = [];
+/** Daemons `hunk daemon restart` spawned detached; stopped so they do not outlive the test. */
+const replacementPids: number[] = [];
 
 afterEach(async () => {
   harness.cleanup();
+  for (const pid of replacementPids.splice(0)) {
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {
+      // Already gone.
+    }
+  }
   await Promise.allSettled(
     daemons.splice(0).map(async (daemon) => {
       try {
@@ -106,9 +115,9 @@ async function startDaemonAtRevision(port: number, configHome: string, revision:
   return daemon;
 }
 
-/** Run one `hunk session ...` CLI invocation against the test daemon port. */
-function runSessionCli(args: string[], port: number, configHome: string) {
-  const proc = Bun.spawnSync(["bun", "run", "packages/hunk/src/main.tsx", "session", ...args], {
+/** Run one Hunk CLI invocation against the test daemon port at the built revision. */
+function runCli(args: string[], port: number, configHome: string) {
+  const proc = Bun.spawnSync(["bun", "run", "packages/hunk/src/main.tsx", ...args], {
     cwd: repoRoot,
     stdin: "ignore",
     stdout: "pipe",
@@ -163,17 +172,25 @@ describe("PTY daemon version skew", () => {
     expect(refused).toContain(`revision ${HUNK_SESSION_DAEMON_VERSION - 1}`);
     expect(refused).toContain(`this window`);
 
-    // Replacing the daemon is enough: the window's own reconnect loop spawns a matching daemon
-    // and registers with it, and the sticky notice goes away.
-    oldDaemon.kill("SIGTERM");
+    // The command the notice names replaces the daemon; the window's own reconnect loop then
+    // registers with the replacement and the sticky notice goes away.
+    const restart = runCli(["daemon", "restart", "--yes", "--json"], port, configHome);
+    expect(restart.stderr).toBe("");
+    expect(restart.exitCode).toBe(0);
+    const result = JSON.parse(restart.stdout) as {
+      after: { daemon: { daemonVersion: number; pid: number } };
+    };
+    expect(result.after.daemon.daemonVersion).toBe(HUNK_SESSION_DAEMON_VERSION);
+    replacementPids.push(result.after.daemon.pid);
     await oldDaemon.exited;
+
     await harness.waitForSnapshot(
       session,
       (text) => !text.includes("Not connected to the session daemon"),
       30_000,
     );
     await waitUntil("window registered with the replacement daemon", () => {
-      const listed = runSessionCli(["list", "--json"], port, configHome);
+      const listed = runCli(["session", "list", "--json"], port, configHome);
       if (listed.exitCode !== 0) return null;
       const parsed = JSON.parse(listed.stdout) as { sessions: Array<{ sessionId: string }> };
       return parsed.sessions[0]?.sessionId ?? null;

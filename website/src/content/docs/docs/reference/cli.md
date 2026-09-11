@@ -278,6 +278,47 @@ hunk daemon serve
 | `HUNK_MCP_PORT`                | Bind port; defaults to `47657`.                  |
 | `HUNK_MCP_UNSAFE_ALLOW_REMOTE` | Set to `1` to allow unsafe non-loopback binding. |
 
+## `hunk daemon status`
+
+report the running session daemon's build, uptime, and attached windows
+
+### Usage
+
+```bash
+hunk daemon status [--json]
+```
+
+After a Hunk upgrade, a daemon from the previous build keeps running while any window holds it open, and windows or `hunk session` commands from the new build cannot attach to it. `status` shows which build the daemon is, how it compares to this CLI, and which windows are attached; attached windows are marked `(older build)` when they could not reconnect to a daemon started from this CLI.
+
+A daemon from a Hunk release before this command cannot report its build; `status` then shows what its launch metadata recorded.
+
+### Command-specific options
+
+| Option   | Description              |
+| -------- | ------------------------ |
+| `--json` | print the status as JSON |
+
+## `hunk daemon restart`
+
+stop the running session daemon and start one from this Hunk build
+
+### Usage
+
+```bash
+hunk daemon restart [--yes] [--json]
+```
+
+Prints the same summary as `status`, asks for confirmation, stops the daemon, and starts a replacement from this CLI's binary. Windows from this build that could not attach register with the replacement on their own; windows from the old build are disconnected and must be relaunched, which loses their in-window notes. The daemon is never replaced automatically.
+
+A daemon from a Hunk release before this command cannot be asked to stop; `restart` then asks separately before sending SIGTERM to the pid its launch metadata recorded.
+
+### Command-specific options
+
+| Option   | Description                                                           |
+| -------- | --------------------------------------------------------------------- |
+| `--yes`  | skip the confirmation prompts (required when stdin is not a terminal) |
+| `--json` | print the result as JSON                                              |
+
 ## `hunk session`
 
 Inspect and control live Hunk review sessions through the loopback daemon. Select a session by id or with `--repo <path>` where shown.

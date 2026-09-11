@@ -163,6 +163,22 @@ export interface DaemonServeCommandInput {
   kind: "daemon-serve";
 }
 
+/** `hunk daemon status`: report the running daemon's build and attached windows. */
+export interface DaemonStatusCommandInput {
+  kind: "daemon-status";
+  output: SessionCommandOutput;
+}
+
+/** `hunk daemon restart`: stop the running daemon and start one from this CLI's build. */
+export interface DaemonRestartCommandInput {
+  kind: "daemon-restart";
+  output: SessionCommandOutput;
+  /** Skip every confirmation prompt. Required when stdin is not a terminal. */
+  yes: boolean;
+}
+
+export type DaemonControlCommandInput = DaemonStatusCommandInput | DaemonRestartCommandInput;
+
 export type SessionCommandOutput = "text" | "json";
 
 export interface SessionSelectorInput {
@@ -422,6 +438,7 @@ export type ParsedCliInput =
   | HelpCommandInput
   | PagerCommandInput
   | DaemonServeCommandInput
+  | DaemonControlCommandInput
   | SessionCommandInput
   | MarkupRenderCommandInput
   | MarkupGuideCommandInput

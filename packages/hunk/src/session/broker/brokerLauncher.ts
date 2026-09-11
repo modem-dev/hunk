@@ -50,7 +50,7 @@ export interface SessionBrokerLaunchMetadata {
   launchCwd: string;
 }
 
-interface SessionBrokerLaunchLock {
+export interface SessionBrokerLaunchLock {
   release: () => void;
 }
 
@@ -167,17 +167,23 @@ function cleanStaleDaemonMetadata(paths: SessionBrokerRuntimePaths) {
   }
 }
 
-function tryAcquireDaemonLaunchLock({
-  config,
-  env,
-  staleAfterMs,
-  lifecycleClock,
+/**
+ * Acquire the per-host/port daemon launch lock, or return null while another live process holds
+ * it. The lock serializes who may spawn a daemon: every window's reconnect loop and
+ * `hunk daemon restart` go through it, which is what stops an old window from respawning the
+ * old binary while a restart is replacing it.
+ */
+export function tryAcquireDaemonLaunchLock({
+  config = resolveSessionBrokerConfig(),
+  env = process.env,
+  staleAfterMs = DEFAULT_DAEMON_LOCK_STALE_MS,
+  lifecycleClock = createNativeSessionBrokerLifecycleClock(),
 }: {
-  config: ResolvedSessionBrokerConfig;
-  env: NodeJS.ProcessEnv;
-  staleAfterMs: number;
-  lifecycleClock: SessionBrokerLifecycleClock;
-}): SessionBrokerLaunchLock | null {
+  config?: ResolvedSessionBrokerConfig;
+  env?: NodeJS.ProcessEnv;
+  staleAfterMs?: number;
+  lifecycleClock?: SessionBrokerLifecycleClock;
+} = {}): SessionBrokerLaunchLock | null {
   const paths = resolveSessionBrokerRuntimePaths(config, env);
   mkdirSync(paths.runtimeDir, { recursive: true, mode: 0o700 });
 
@@ -702,6 +708,76 @@ export function launchSessionBrokerDaemon({
   return child;
 }
 
+/**
+ * Spawn the daemon and record its launch metadata beside the lock. The caller must hold the
+ * launch lock. Returns null only when commit authority was revoked before the metadata write.
+ */
+export function launchSessionBrokerDaemonAndRecord({
+  config = resolveSessionBrokerConfig(),
+  cwd = process.cwd(),
+  env = process.env,
+  argv = process.argv,
+  execPath = process.execPath,
+  launchDaemon = launchSessionBrokerDaemon,
+  isCommitAuthorized = () => true,
+}: {
+  config?: ResolvedSessionBrokerConfig;
+  cwd?: string;
+  env?: NodeJS.ProcessEnv;
+  argv?: string[];
+  execPath?: string;
+  launchDaemon?: EnsureSessionBrokerAvailableOptions["launchDaemon"];
+  isCommitAuthorized?: () => boolean;
+} = {}): SessionBrokerLaunchMetadata | null {
+  const paths = resolveSessionBrokerRuntimePaths(config, env);
+  const launchCommand = resolveDaemonLaunchCommand(argv, execPath);
+  const launched = settleForeignCall(
+    () => launchDaemon({ cwd, env, argv, execPath }),
+    isCommitAuthorized,
+  );
+  if (!launched.current) return null;
+  const metadata: SessionBrokerLaunchMetadata = {
+    pid: launched.value.pid ?? 0,
+    host: config.host,
+    port: config.port,
+    command: launchCommand.command,
+    args: launchCommand.args,
+    launchedAt: new Date().toISOString(),
+    launchedByPid: process.pid,
+    launchCwd: cwd,
+  };
+  writeDaemonLaunchMetadata(paths, metadata);
+  return metadata;
+}
+
+/** Poll until the daemon answers health, or the timeout passes. */
+export async function waitForSessionBrokerHealth({
+  config = resolveSessionBrokerConfig(),
+  timeoutMs = DEFAULT_DAEMON_STARTUP_TIMEOUT_MS,
+  intervalMs = DEFAULT_DAEMON_HEALTH_POLL_INTERVAL_MS,
+  lifecycleClock = createNativeSessionBrokerLifecycleClock(),
+  isHealthy = (resolvedConfig) => isSessionBrokerHealthy(resolvedConfig),
+  expected = true,
+}: {
+  config?: ResolvedSessionBrokerConfig;
+  timeoutMs?: number;
+  intervalMs?: number;
+  lifecycleClock?: SessionBrokerLifecycleClock;
+  isHealthy?: (config: ResolvedSessionBrokerConfig) => Promise<boolean>;
+  /** Wait for health to appear (true) or disappear (false). */
+  expected?: boolean;
+} = {}): Promise<"ready" | "timeout"> {
+  const result = await waitForDaemonHealthWithCheck({
+    config,
+    timeoutMs,
+    intervalMs,
+    lifecycleClock,
+    isHealthy: async (resolvedConfig) => (await isHealthy(resolvedConfig)) === expected,
+    isCommitAuthorized: () => true,
+  });
+  return result === "ready" ? "ready" : "timeout";
+}
+
 /** Ensure one healthy local session broker daemon exists, coordinating launch attempts across processes. */
 export async function ensureSessionBrokerAvailable({
   config = resolveSessionBrokerConfig(),
@@ -747,24 +823,18 @@ export async function ensureSessionBrokerAvailable({
         if (!protectedHealth.current || protectedHealth.value) return;
 
         if (!isCommitAuthorized()) return;
-        const launchCommand = resolveDaemonLaunchCommand(argv, execPath);
-        const launched = settleForeignCall(
-          () => launchDaemon({ cwd, env, argv, execPath }),
+        const launched = launchSessionBrokerDaemonAndRecord({
+          config,
+          cwd,
+          env,
+          argv,
+          execPath,
+          launchDaemon,
           isCommitAuthorized,
-        );
+        });
         // A callback may have already spawned a detached child before revoking authority. That
         // process cannot be recalled; fencing suppresses only metadata and later lifecycle commits.
-        if (!launched.current) return;
-        writeDaemonLaunchMetadata(paths, {
-          pid: launched.value.pid ?? 0,
-          host: config.host,
-          port: config.port,
-          command: launchCommand.command,
-          args: launchCommand.args,
-          launchedAt: new Date().toISOString(),
-          launchedByPid: process.pid,
-          launchCwd: cwd,
-        });
+        if (!launched) return;
 
         const ready = await waitForDaemonHealthWithCheck({
           config,
