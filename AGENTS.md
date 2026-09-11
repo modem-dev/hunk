@@ -84,6 +84,14 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
   `--no-extensions`. See `docs/extension-architecture.md`, `docs/extensions.md`, and
   `packages/hunk/skills/hunk-extensions/SKILL.md`.
 - Sidecar file order is intentional sidebar and review-stream order.
+- **Session wire:** the daemon and every window exchange `HUNK_SESSION_DAEMON_VERSION`
+  (`packages/hunk/src/session/protocol.ts`) in the signed hello and require an exact match. Any
+  change to what a session registers or snapshots — under `packages/hunk/src/session/**`,
+  `packages/hunk/src/core/reviewDescriptor.ts`, `packages/hunk/src/app/session/registration.ts`, or
+  anything else that appears in `packages/hunk/src/session/broker/fixtures/session-wire.v<N>.json`
+  — requires a bump. `wire.snapshot.test.ts` enforces it; bump, run
+  `bun run generate:session-wire`, and delete the previous fixture in the same change. The
+  cross-revision admin scope (`status`/`stop`) is frozen separately and never grows in place.
 - Derive shared rendering, navigation, scrolling, and note behavior from one planning layer. Make
   shared geometry explicit, and remove obsolete paths instead of retaining parallel implementations.
 
