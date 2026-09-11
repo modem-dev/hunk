@@ -4203,38 +4203,50 @@ describe("App interactions", () => {
     }
   });
 
-  // Intent: a daemon the window cannot join is a persistent condition, so its notice stays in
-  // the status bar (unlike the timed session notices) until the broker client reports the link
-  // connected again.
-  test("keeps the daemon link notice in the status bar until the link reconnects", async () => {
-    const { hostClient, publishConnectionNotice } = createMockHostClient();
-    const setup = await testRender(
-      <AppHost bootstrap={createBootstrap()} hostClient={hostClient} />,
-      { width: 200, height: 20 },
-    );
-    const notice =
-      "Not connected to the session daemon (daemon build 0.21.1, this window 0.22.0). Run `hunk daemon restart`.";
-
-    try {
-      await flush(setup);
-      expect(setup.captureCharFrame()).not.toContain("Not connected to the session daemon");
-
-      await act(async () => publishConnectionNotice(notice));
-      await flush(setup);
-      expect(setup.captureCharFrame()).toContain(notice);
-
-      // Still there after further renders: nothing times it out.
-      await flush(setup);
-      await flush(setup);
-      expect(setup.captureCharFrame()).toContain(notice);
-
-      await act(async () => publishConnectionNotice(null));
-      await flush(setup);
-      expect(setup.captureCharFrame()).not.toContain("Not connected to the session daemon");
-    } finally {
-      await act(async () => {
-        setup.renderer.destroy();
+  // Keep the daemon warning independent of timed notices, including when the status row overflows.
+  test.each([120, 220])(
+    "keeps the daemon link notice on the %i-column status line until reconnect",
+    async (width) => {
+      const { hostClient, publishConnectionNotice } = createMockHostClient();
+      const bootstrap = createBootstrap();
+      bootstrap.keybindings = { "hunk.app.quti": "ctrl+x" };
+      const setup = await testRender(<AppHost bootstrap={bootstrap} hostClient={hostClient} />, {
+        width,
+        height: 20,
       });
-    }
-  });
+      const notice =
+        "Not connected to the session daemon (daemon build 0.21.1, this window 0.22.0). Run `hunk daemon restart`.";
+
+      try {
+        await flush(setup);
+        expect(setup.captureCharFrame()).not.toContain("Not connected to the session daemon");
+        expect(setup.captureCharFrame()).toContain(
+          'Keybinding for unknown command "hunk.app.quti" ignored',
+        );
+
+        await act(async () => publishConnectionNotice(notice));
+        await flush(setup);
+        const statusRow = setup.captureCharFrame().trimEnd().split("\n").at(-1) ?? "";
+        expect(statusRow).toContain(notice);
+        if (width === 220) expect(statusRow).toContain("Keybinding for unknown command");
+        else expect(statusRow).not.toContain("Keybinding for unknown command");
+
+        // Expiring the ordinary notice must not clear the daemon's persistent condition.
+        await act(async () => {
+          await Bun.sleep(4_100);
+        });
+        await flush(setup);
+        expect(setup.captureCharFrame()).not.toContain("Keybinding for unknown command");
+        expect(setup.captureCharFrame().trimEnd().split("\n").at(-1)).toContain(notice);
+
+        await act(async () => publishConnectionNotice(null));
+        await flush(setup);
+        expect(setup.captureCharFrame()).not.toContain("Not connected to the session daemon");
+      } finally {
+        await act(async () => {
+          setup.renderer.destroy();
+        });
+      }
+    },
+  );
 });

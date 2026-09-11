@@ -121,6 +121,7 @@ function createTestBrokerClient() {
     getRegistration() {
       return { sessionId: "test-session" };
     },
+    subscribeConnectionNotice: () => () => undefined,
     replaceSession() {},
     updateSnapshot() {},
     updateRegistration() {},
