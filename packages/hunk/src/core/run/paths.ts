@@ -86,6 +86,16 @@ export function resolveUserConfigDir(env: NodeJS.ProcessEnv = process.env) {
   return undefined;
 }
 
+/** Resolve the base state directory Hunk should use for user-scoped files. */
+export function resolveUserStateDir(env: NodeJS.ProcessEnv = process.env) {
+  if (env.XDG_STATE_HOME) {
+    return env.XDG_STATE_HOME;
+  }
+
+  const home = env.HOME || env.USERPROFILE;
+  return home ? join(home, ".local", "state") : undefined;
+}
+
 /** Resolve the global Hunk config file path from the current environment. */
 export function resolveGlobalConfigPath(env: NodeJS.ProcessEnv = process.env) {
   const configDir = resolveUserConfigDir(env);
@@ -94,14 +104,14 @@ export function resolveGlobalConfigPath(env: NodeJS.ProcessEnv = process.env) {
 
 /** Resolve the persisted Hunk state file path from the current environment. */
 export function resolveAppStatePath(env: NodeJS.ProcessEnv = process.env) {
-  const configDir = resolveUserConfigDir(env);
-  return configDir ? join(configDir, "hunk", "state.json") : undefined;
+  const stateDir = resolveUserStateDir(env);
+  return stateDir ? join(stateDir, "hunk", "state.json") : undefined;
 }
 
 /** Resolve the user-scoped directory Hunk scans for globally installed extensions. */
 export function resolveGlobalExtensionsDir(env: NodeJS.ProcessEnv = process.env) {
-  const configDir = resolveUserConfigDir(env);
-  return configDir ? join(configDir, "hunk", "extensions") : undefined;
+  const stateDir = resolveUserStateDir(env);
+  return stateDir ? join(stateDir, "hunk", "extensions") : undefined;
 }
 
 /**
