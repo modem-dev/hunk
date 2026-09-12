@@ -754,6 +754,20 @@ end
     );
   }
 
+  /** Build a repo with enough one-line files that the sidebar list overflows a short terminal. */
+  function createManyFileSidebarRepoFixture(count = 40) {
+    return createGitRepoFixture(
+      Array.from({ length: count }, (_, index) => {
+        const name = `file-${String(index).padStart(2, "0")}`;
+        return {
+          path: `src/${name}.ts`,
+          before: `export const ${name.replace("-", "")} = ${index};\n`,
+          after: `export const ${name.replace("-", "")} = ${index + 100};\n`,
+        };
+      }),
+    );
+  }
+
   function createPinnedHeaderRepoFixture() {
     return createGitRepoFixture([
       {
@@ -1165,6 +1179,7 @@ end
     createNarrowHeaderTestRepoFixture,
     createPagerPatchFixture,
     createManyShortFileRepoFixture,
+    createManyFileSidebarRepoFixture,
     createPinnedHeaderRepoFixture,
     createRapidThemePreviewTestRepoFixture,
     createScrollableFilePair,

@@ -22,7 +22,7 @@ import { FlexFileSidebar } from "./FileSidebars";
 export const BUNDLED_SIDEBAR_EXTENSION_ID = HUNK_VENDOR_EXTENSION_ID;
 export const BUNDLED_SIDEBAR_VIEW_ID = "files";
 
-export { FlatFileSidebar, FlexFileSidebar, TreeFileSidebar } from "./FileSidebars";
+export { FlexFileSidebar } from "./FileSidebars";
 
 /** Register the responsive built-in file navigation pane. */
 const registerBundledSidebar: ExtensionFactory = (hunk) => {

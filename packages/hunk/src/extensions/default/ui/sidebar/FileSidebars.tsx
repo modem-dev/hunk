@@ -1,6 +1,6 @@
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/react";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ExtensionPaneProps } from "../../../../extension-api/types";
 import {
   buildFlatSidebarEntries,
@@ -13,8 +13,10 @@ import {
   toggleCollapsedDirectoryPath,
   type SidebarEntry,
 } from "../../../../ui/lib/files";
-import { fileRowId } from "../../../../ui/lib/ids";
-import { buildSidebarRenderWindow } from "../../../../ui/lib/sidebarRenderWindow";
+import {
+  buildSidebarRenderWindow,
+  planSidebarRowReveal,
+} from "../../../../ui/lib/sidebarRenderWindow";
 import {
   FileDirectoryRow,
   FileGroupHeader,
@@ -27,24 +29,21 @@ export type BuiltInSidebarProps = Omit<
 > &
   Partial<Pick<ExtensionPaneProps, "placement" | "height" | "currentLine" | "review">>;
 
-type FileSidebarVariantProps = Pick<
-  BuiltInSidebarProps,
-  "actions" | "files" | "selectedFileId" | "theme"
-> & {
-  estimatedViewportRows: number;
-  scrollTop: number;
-  textWidth: number;
-  viewportHeight: number;
-};
-
 /** Ignore directory toggles for projections that cannot contain directory rows. */
 function ignoreDirectoryToggle() {}
 
-interface VirtualizedFileSidebarRowsProps extends Omit<FileSidebarVariantProps, "files"> {
+interface VirtualizedFileSidebarRowsProps extends Pick<
+  BuiltInSidebarProps,
+  "actions" | "selectedFileId" | "theme"
+> {
   collapsedDirectoryPaths?: ReadonlySet<string>;
   entries: SidebarEntry[];
+  estimatedViewportRows: number;
   onToggleDirectory?: (path: string) => void;
   paddingLeft?: number;
+  scrollTop: number;
+  textWidth: number;
+  viewportHeight: number;
 }
 
 /** Render one windowed sidebar projection with shared file selection and stats lanes. */
@@ -132,43 +131,15 @@ export function VirtualizedFileSidebarRows({
   );
 }
 
-/** Render the compact directory-group projection for a narrow file sidebar. */
-export function FlatFileSidebar({ files, ...props }: FileSidebarVariantProps): ReactNode {
-  const entries = useMemo(() => buildFlatSidebarEntries(files), [files]);
-  return <VirtualizedFileSidebarRows {...props} entries={entries} />;
-}
-
-/** Render the ordered hierarchy after applying the sidebar's collapsed directory paths. */
-export function TreeFileSidebar({
-  collapsedDirectoryPaths,
-  files,
-  onToggleDirectory,
-  ...props
-}: FileSidebarVariantProps & {
-  collapsedDirectoryPaths: ReadonlySet<string>;
-  onToggleDirectory: (path: string) => void;
-}): ReactNode {
-  const entries = useMemo(
-    () => collapseTreeSidebarEntries(buildTreeSidebarEntries(files), collapsedDirectoryPaths),
-    [collapsedDirectoryPaths, files],
-  );
-  return (
-    <VirtualizedFileSidebarRows
-      {...props}
-      collapsedDirectoryPaths={collapsedDirectoryPaths}
-      entries={entries}
-      onToggleDirectory={onToggleDirectory}
-      paddingLeft={0}
-    />
-  );
-}
-
 /**
- * Adapt the built-in file sidebar between compact and hierarchical projections.
+ * Render the built-in file sidebar, switching between the compact directory-group
+ * projection and the collapsible tree as the pane width changes.
  *
- * Resizing only replaces the rows inside one stable scrollbox. The sidebar keeps
- * file navigation and selected-row reveal shared so both projections preserve
- * the same review-stream behavior.
+ * Resizing only replaces the rows inside one stable scrollbox. File navigation, a
+ * projection change, and a reload all reveal the selected row through the same
+ * fixed-row geometry the render window uses, so the reveal never depends on a row
+ * having been laid out: rows mounted since the last frame carry no position yet, and
+ * held-down navigation lands several commits between frames.
  */
 export function FlexFileSidebar({
   files,
@@ -180,6 +151,10 @@ export function FlexFileSidebar({
   const scrollRef = useRef<ScrollBoxRenderable | null>(null);
   const previousSelectedFileIdRef = useRef(selectedFileId);
   const skipSelectedFileRevealRef = useRef(false);
+  // The file whose row still has to be brought on screen. It stays set until a measured
+  // viewport confirms the row is visible, so a reveal that ran before the first layout or
+  // against a content height the next layout will grow retries once geometry settles.
+  const pendingRevealFileIdRef = useRef<string | null>(null);
   const [collapsedDirectoryPaths, setCollapsedDirectoryPaths] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
@@ -188,22 +163,67 @@ export function FlexFileSidebar({
   // Mirrors the host layout: one column of row highlight plus row padding.
   const textWidth = Math.max(8, width - 2);
   const mode = resolveFileSidebarMode(textWidth);
-  const variantProps: FileSidebarVariantProps = {
-    actions,
-    estimatedViewportRows: terminal.height,
-    files,
-    scrollTop: scrollViewport.top,
-    selectedFileId,
-    textWidth,
-    theme,
-    viewportHeight: scrollViewport.height,
-  };
+  const entries = useMemo(
+    () =>
+      mode === "tree"
+        ? collapseTreeSidebarEntries(buildTreeSidebarEntries(files), collapsedDirectoryPaths)
+        : buildFlatSidebarEntries(files),
+    [collapsedDirectoryPaths, files, mode],
+  );
 
   /** Toggle one logical directory everywhere it appears in the ordered tree projection. */
   const toggleDirectory = (path: string) => {
     skipSelectedFileRevealRef.current = true;
     setCollapsedDirectoryPaths((current) => toggleCollapsedDirectoryPath(current, path));
   };
+
+  /**
+   * Scroll the pending file's row into the viewport and clear the request once it is visible.
+   *
+   * Works from the row's entry index rather than its rendered position, so it is correct
+   * for rows the render window mounted in this very commit. A viewport that has not been
+   * measured yet, or a scroll the scrollbox clamped against a stale content height, leaves
+   * the request pending for the next viewport event.
+   */
+  const revealPendingRow = useCallback(() => {
+    const scrollBox = scrollRef.current;
+    const fileId = pendingRevealFileIdRef.current;
+    if (!scrollBox || !fileId) {
+      return;
+    }
+
+    const entryIndex = entries.findIndex((entry) => entry.kind === "file" && entry.id === fileId);
+    if (entryIndex < 0) {
+      pendingRevealFileIdRef.current = null;
+      return;
+    }
+
+    const viewportHeight = scrollBox.viewport.height ?? 0;
+    if (viewportHeight <= 0) {
+      return;
+    }
+
+    const target = planSidebarRowReveal({
+      entryIndex,
+      scrollTop: scrollBox.scrollTop ?? 0,
+      viewportHeight,
+    });
+    if (target !== null) {
+      scrollBox.scrollTo(target);
+    }
+
+    const stillHidden =
+      planSidebarRowReveal({
+        entryIndex,
+        scrollTop: scrollBox.scrollTop ?? 0,
+        viewportHeight,
+      }) !== null;
+    if (!stillHidden) {
+      pendingRevealFileIdRef.current = null;
+    }
+  }, [entries]);
+  const revealPendingRowRef = useRef(revealPendingRow);
+  revealPendingRowRef.current = revealPendingRow;
 
   useEffect(() => {
     const previousSelectedFileId = previousSelectedFileIdRef.current;
@@ -241,6 +261,8 @@ export function FlexFileSidebar({
       );
     };
 
+    // OpenTUI emits these from its own layout and slider work; one microtask per burst
+    // reads the settled geometry and gives a pending reveal its retry.
     const handleViewportChange = () => {
       if (scheduled) {
         return;
@@ -254,6 +276,7 @@ export function FlexFileSidebar({
 
         try {
           readViewport();
+          revealPendingRowRef.current();
         } finally {
           scheduled = false;
         }
@@ -262,19 +285,19 @@ export function FlexFileSidebar({
 
     readViewport();
     scrollBox.verticalScrollBar.on("change", handleViewportChange);
-    scrollBox.viewport.on("layout-changed", handleViewportChange);
-    scrollBox.viewport.on("resized", handleViewportChange);
+    scrollBox.viewport.on("resize", handleViewportChange);
+    scrollBox.content.on("resize", handleViewportChange);
 
     return () => {
       cancelled = true;
       scrollBox.verticalScrollBar.off("change", handleViewportChange);
-      scrollBox.viewport.off("layout-changed", handleViewportChange);
-      scrollBox.viewport.off("resized", handleViewportChange);
+      scrollBox.viewport.off("resize", handleViewportChange);
+      scrollBox.content.off("resize", handleViewportChange);
     };
   }, [files, mode]);
 
-  // Selection and projection changes can both move the target row, so follow
-  // the stable file id after either event instead of only after navigation.
+  // Selection and projection changes can both move the target row, so follow the stable
+  // file id after either event instead of only after navigation.
   useEffect(() => {
     if (skipSelectedFileRevealRef.current) {
       skipSelectedFileRevealRef.current = false;
@@ -284,8 +307,9 @@ export function FlexFileSidebar({
       return;
     }
 
-    scrollRef.current?.scrollChildIntoView(fileRowId(selectedFileId));
-  }, [collapsedDirectoryPaths, files, mode, selectedFileId]);
+    pendingRevealFileIdRef.current = selectedFileId;
+    revealPendingRow();
+  }, [revealPendingRow, selectedFileId]);
 
   return (
     <scrollbox
@@ -302,15 +326,19 @@ export function FlexFileSidebar({
       verticalScrollbarOptions={{ visible: false }}
       horizontalScrollbarOptions={{ visible: false }}
     >
-      {mode === "tree" ? (
-        <TreeFileSidebar
-          {...variantProps}
-          collapsedDirectoryPaths={collapsedDirectoryPaths}
-          onToggleDirectory={toggleDirectory}
-        />
-      ) : (
-        <FlatFileSidebar {...variantProps} />
-      )}
+      <VirtualizedFileSidebarRows
+        actions={actions}
+        collapsedDirectoryPaths={mode === "tree" ? collapsedDirectoryPaths : undefined}
+        entries={entries}
+        estimatedViewportRows={terminal.height}
+        onToggleDirectory={mode === "tree" ? toggleDirectory : undefined}
+        paddingLeft={mode === "tree" ? 0 : 1}
+        scrollTop={scrollViewport.top}
+        selectedFileId={selectedFileId}
+        textWidth={textWidth}
+        theme={theme}
+        viewportHeight={scrollViewport.height}
+      />
     </scrollbox>
   );
 }
