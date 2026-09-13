@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { createPtyHarness } from "./harness";
+import { createPtyHarness, pressKeyRepeat } from "./harness";
 
 const harness = createPtyHarness();
 
@@ -26,21 +26,25 @@ describe("PTY navigation", () => {
       });
       expect(initial).not.toContain("Maximum update depth exceeded");
 
-      await session.press("}");
-      const alphaNote = await harness.waitForSnapshot(
+      const alphaNote = await harness.pressAndWaitForSnapshot(
         session,
+        "}",
         (text) => text.includes("Alpha note for navigation."),
         5_000,
       );
       expect(alphaNote).toContain("Alpha note for navigation.");
       expect(alphaNote).not.toContain("Maximum update depth exceeded");
 
-      await session.press(".");
-      await harness.waitForSnapshot(session, (text) => text.includes("line101 = 10100"), 5_000);
-
-      await session.press("}");
-      const gammaNote = await harness.waitForSnapshot(
+      await harness.pressAndWaitForSnapshot(
         session,
+        ".",
+        (text) => text.includes("line101 = 10100"),
+        5_000,
+      );
+
+      const gammaNote = await harness.pressAndWaitForSnapshot(
+        session,
+        "}",
         (text) => text.includes("Gamma note for navigation."),
         5_000,
       );
@@ -69,9 +73,9 @@ describe("PTY navigation", () => {
       expect(initial).toContain("line1 = 100");
       expect(initial).not.toContain("line60 = 6000");
 
-      await session.press("]");
-      const secondHunk = await harness.waitForSnapshot(
+      const secondHunk = await harness.pressAndWaitForSnapshot(
         session,
+        "]",
         (text) => text.includes("line60 = 6000"),
         5_000,
       );
@@ -116,10 +120,9 @@ describe("PTY navigation", () => {
       }
 
       await session.press("[");
-      await session.waitIdle({ timeout: 80 });
-      await session.press("[");
-      const backward = await harness.waitForSnapshot(
+      const backward = await harness.pressAndWaitForSnapshot(
         session,
+        "[",
         (text) => text.includes("line 341 changed") || text.includes("line 002 changed"),
         5_000,
       );
@@ -147,9 +150,9 @@ describe("PTY navigation", () => {
       expect(initial).toContain("line1 = 100");
       expect(initial).not.toContain("line60 = 6000");
 
-      await session.press("]");
-      const secondHunk = await harness.waitForSnapshot(
+      const secondHunk = await harness.pressAndWaitForSnapshot(
         session,
+        "]",
         (text) => text.includes("line60 = 6000") && !text.includes("line1 = 100"),
         5_000,
       );
@@ -157,9 +160,9 @@ describe("PTY navigation", () => {
       expect(secondHunk).toContain("line60 = 6000");
       expect(secondHunk).not.toContain("line1 = 100");
 
-      await session.press("[");
-      const firstHunk = await harness.waitForSnapshot(
+      const firstHunk = await harness.pressAndWaitForSnapshot(
         session,
+        "[",
         (text) => text.includes("line1 = 100") && !text.includes("line60 = 6000"),
         5_000,
       );
@@ -199,9 +202,9 @@ describe("PTY navigation", () => {
       expect(collapsed).toContain("› src/");
       expect(collapsed).toContain("2 files");
 
-      await session.press(".");
-      const expanded = await harness.waitForSnapshot(
+      const expanded = await harness.pressAndWaitForSnapshot(
         session,
+        ".",
         (text) =>
           text.includes("⌄ src/") &&
           harness.countMatches(text, /alpha\.ts/g) === initialAlphaCount &&
@@ -268,9 +271,7 @@ describe("PTY navigation", () => {
       expect(initial).toContain("first.ts");
       expect(initial).toContain("second.ts");
 
-      for (let index = 0; index < 16; index += 1) {
-        await session.press("down");
-      }
+      await pressKeyRepeat(session, "down", 16);
 
       const scrolled = await harness.waitForSnapshot(
         session,
