@@ -352,6 +352,36 @@ describe("registerVcsAdapter with junk", () => {
     expect(registry.vcsAdapters[0]?.adapter.operations).toEqual({});
   });
 
+  test("an operation with a non-callable watch hook is dropped, not wrapped", () => {
+    const { registry, issues } = loadFactory(
+      (hunk: { registerVcsAdapter: (adapter: unknown) => void }) => {
+        hunk.registerVcsAdapter({
+          id: "hg",
+          name: "Mercurial",
+          detect: (cwd: string) => ({ id: "hg", repoRoot: cwd }),
+          operations: {
+            "working-tree-diff": {
+              load: async () => ({ files: [] }),
+              watchSignature: "not-a-function",
+            },
+            "revision-show": {
+              load: async () => ({ files: [] }),
+              watchPlan: 42,
+            },
+            "stash-show": { load: async () => ({ files: [] }) },
+          },
+        });
+      },
+    );
+
+    expect(issues).toEqual([]);
+    // Truthy-but-uncallable hooks would otherwise pass the `watchSignature &&`
+    // guard in toInternalVcsOperation and fail with a TypeError only once
+    // watch planning invokes them, well after registration.
+    const operations = registry.vcsAdapters[0]?.adapter.operations ?? {};
+    expect(Object.keys(operations)).toEqual(["stash-show"]);
+  });
+
   test("built-in ids stay reserved however an extension asks for them", () => {
     const { registry } = loadFactory((hunk: { registerVcsAdapter: (a: unknown) => void }) => {
       for (const id of ["git", "jj", "sl"]) {
