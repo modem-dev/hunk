@@ -1970,8 +1970,8 @@ export interface ExtensionDialogs {
 /* Status line                                                                 */
 /* -------------------------------------------------------------------------- */
 
-/** One symbolic run in a host-painted status item. */
-export type ExtensionStatusSpan = ExtensionFileViewSpan;
+/** One symbolic text run in a host-painted status item. */
+export type ExtensionStatusSpan = Pick<ExtensionFileViewSpan, "text" | "tone" | "attributes">;
 
 /**
  * One persistent, text-only contribution to the bottom status row.

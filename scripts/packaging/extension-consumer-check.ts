@@ -41,6 +41,7 @@ import type {
   ExtensionFileViewLayout,
   ExtensionFileViewSpan,
   ExtensionFileViewSyntaxReference,
+  ExtensionStatusSpan,
 } from "hunkdiff/extension";
 
 const apiVersion: 28 = HUNK_EXTENSION_API_VERSION;
@@ -60,12 +61,18 @@ const spans = [
   { text: "const answer = 42;", syntax: fullLine },
   { text: "answer", attributes: ["bold"], syntax: partial },
 ] satisfies readonly ExtensionFileViewSpan[];
+const statusSpan = {
+  text: "ready",
+  // @ts-expect-error Status items have no code-document context for syntax references.
+  syntax: fullLine,
+} satisfies ExtensionStatusSpan;
 export const layout = {
   codeDocuments: [document],
   rows: [{ id: "generated:1", spans }],
   hunkRows: [{ startRow: 0, endRow: 0 }],
 } satisfies ExtensionFileViewLayout;
 void apiVersion;
+void statusSpan;
 `,
 };
 
