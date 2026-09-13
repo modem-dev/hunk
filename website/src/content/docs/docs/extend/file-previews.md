@@ -7,7 +7,7 @@ description: Add opt-in file presentations that keep Hunk's review navigation, s
 
 A preview is still part of Hunk's normal review stream. Hunk keeps control of file ordering, measurement, scrolling, windowing, hunk navigation, selection, and inline notes. The extension describes deterministic rows; it does not replace the review pane.
 
-The base file-view API is experimental and requires extension API version 2. Host-owned syntax paint for file-view code documents requires API version 24.
+The base file-view API is experimental and requires extension API version 2. Host-owned syntax paint for file-view code documents requires API version 28.
 
 ## What users see
 
@@ -120,7 +120,7 @@ Tones are `muted`, `accent`, `accent-muted`, `syntax`, `added`, and `removed`. A
 
 ## Ask Hunk to syntax-highlight code
 
-API version 24 adds declarative, host-owned syntax paint. The extension supplies complete code and exact span references; Hunk owns language resolution, Shiki/Pierre tokenization, the active theme, worker scheduling, caches, terminal safety, and plain fallback. Extensions never supply colors, HAST, or tokens.
+API version 28 adds declarative, host-owned syntax paint. The extension supplies complete code and exact span references; Hunk owns language resolution, Shiki/Pierre tokenization, the active theme, worker scheduling, caches, terminal safety, and plain fallback. Extensions never supply colors, HAST, or tokens.
 
 ```ts
 const oldText = await input.readDocument("old");
