@@ -59,8 +59,12 @@ const workerDecodeTestPreload = `
 /** Drive the production worker from a fresh process and report its worker-local decode counters. */
 function workerHighlightTestProgram(preload: string) {
   const entry = pathToFileURL(join(REPO_ROOT, "packages/hunk/src/highlightWorkerEntry.ts"));
+  const protocol = pathToFileURL(
+    join(REPO_ROOT, "packages/hunk/src/ui/diff/worker/highlightWorkerProtocol.ts"),
+  );
   return `
     import { parseDiffFromFile } from "@pierre/diffs";
+    import { HIGHLIGHT_WORKER_PROTOCOL_VERSION } from ${JSON.stringify(protocol.href)};
     const worker = new Worker(${JSON.stringify(entry.href)}, { preload: [${JSON.stringify(preload)}] });
     try {
       const result = await new Promise((resolve, reject) => {
@@ -68,9 +72,9 @@ function workerHighlightTestProgram(preload: string) {
         worker.onerror = (event) => { clearTimeout(timeout); reject(new Error(event.message)); };
         worker.onmessage = ({ data }) => { clearTimeout(timeout); resolve(data); };
         worker.postMessage({
-          version: 3, id: 1, aliasContext: false, appearance: "dark",
-          language: "typescript", theme: "github-dark-default",
-          metadata: parseDiffFromFile(
+          version: HIGHLIGHT_WORKER_PROTOCOL_VERSION, id: 1, kind: "diff",
+          aliasContext: false, appearance: "dark", language: "typescript",
+          theme: "github-dark-default", metadata: parseDiffFromFile(
             { name: "example.ts", contents: "" },
             { name: "example.ts", contents: "export const answer = 42;\\n" },
             { context: 3 }, true,
