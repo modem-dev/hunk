@@ -56,6 +56,16 @@ const HISTORY_COMMANDS = [
     helpSection: "Commit",
   },
   {
+    id: "hunk.history.copyPullRequest",
+    title: "Copy pull request URL",
+    category: "history",
+    defaultKeys: ["Y"],
+    locus: "client-local",
+    publicToExtensions: false,
+    group: "file",
+    helpSection: "Commit",
+  },
+  {
     id: "hunk.history.refresh",
     title: "Refresh history",
     category: "history",

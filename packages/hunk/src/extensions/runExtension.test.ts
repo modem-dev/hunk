@@ -1143,6 +1143,56 @@ describe("toInternalVcsAdapter history boundary", () => {
     );
   });
 
+  test("copies https pull-request URLs and rejects unsafe values", async () => {
+    const validCommit = {
+      revisionId: "a".repeat(40),
+      displayId: "aaaaaaaa",
+      parentRevisionIds: [] as string[],
+      subject: "Safe subject",
+      authorName: "Ada",
+      authoredAt: "2026-01-01T00:00:00Z",
+      decorations: [],
+    };
+    const readCommit = async (commit: typeof validCommit & { pullRequestUrl?: string }) => {
+      const adapter = toInternalVcsAdapter({
+        id: "demo",
+        name: "Demo",
+        detect: () => null,
+        history: {
+          open: () => ({
+            read: async () => ({ commits: [commit], done: true }),
+            close() {},
+          }),
+          planReview: (selected) => ({
+            kind: "revision-show",
+            revisionId: selected.revisionId,
+          }),
+        },
+      });
+      return adapter
+        .history!.open({}, { cwd: "/repo" })
+        .then((source) => source.read({ limit: 1 }));
+    };
+
+    const page = await readCommit({
+      ...validCommit,
+      pullRequestUrl: "https://github.com/modem-dev/hunk/pull/42",
+    });
+    expect(page.commits[0]?.pullRequestUrl).toBe("https://github.com/modem-dev/hunk/pull/42");
+
+    for (const pullRequestUrl of [
+      "http://github.com/modem-dev/hunk/pull/42",
+      "https://user@github.com/modem-dev/hunk/pull/42",
+      "https://github.com/modem-dev/hunk/pull/42?foo=1",
+      "javascript:alert(1)",
+      "https://github.com/modem-dev/hunk/pull/42\x1b]52;c;cHdu\x07",
+    ]) {
+      await expect(readCommit({ ...validCommit, pullRequestUrl })).rejects.toThrow(
+        "pullRequestUrl",
+      );
+    }
+  });
+
   test("snapshots source, page, commit, and decoration accessors exactly once", async () => {
     const reads = { sourceRead: 0, commits: 0, subject: 0, label: 0 };
     const commit = {
