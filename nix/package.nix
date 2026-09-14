@@ -35,7 +35,7 @@
     sourceRoot = "package";
     dontBuild = true;
     dontStrip = true;
-    nativeBuildInputs = lib.optionals stdenv.isLinux [autoPatchelfHook];
+    nativeBuildInputs = lib.optionals stdenv.hostPlatform.isLinux [autoPatchelfHook];
     installPhase = ''
       mkdir -p $out/bin
       cp -p bin/bun $out/bin/bun
