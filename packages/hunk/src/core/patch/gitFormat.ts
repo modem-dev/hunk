@@ -25,6 +25,166 @@ export interface SanitizedGitPatch {
   filePaths: Array<SanitizedGitPatchFilePaths | undefined>;
 }
 
+/** Return the pathname token from a unified diff file header. */
+function unifiedFilePath(line: string, marker: "--- " | "+++ ") {
+  const value = line.slice(marker.length).trimEnd();
+  if (value.startsWith('"')) {
+    const quoted = value.match(/^"(?:\\.|[^"\\])*"/)?.[0];
+    if (quoted) {
+      return quoted;
+    }
+  }
+
+  return value.split("\t", 1)[0] ?? "";
+}
+
+/** Move a unified-diff pathname onto the requested Git side prefix. */
+function gitSidePath(path: string, side: "a" | "b") {
+  if (path === "/dev/null") {
+    return path;
+  }
+
+  const quoted = path.match(/^"((?:\\.|[^"\\])*)"(.*)$/);
+  const pathText = quoted?.[1] ?? path;
+  const suffix = quoted?.[2] ?? "";
+  const unprefixed = pathText.replace(/^[ab]\//, "");
+  const prefixed = `${side}/${unprefixed}`;
+  return quoted ? `"${prefixed}"${suffix}` : prefixed;
+}
+
+/** Rewrite one combined-diff file header into a conventional two-sided Git header. */
+function rewriteCombinedFileHeader(
+  line: string,
+  fallbackPath: string,
+  oldPath: string | undefined,
+  newPath: string | undefined,
+) {
+  const fallback = line.slice(line.indexOf(" ") + 1).trimEnd();
+  const left = (oldPath ?? fallbackPath) || fallback;
+  const right = (newPath ?? fallbackPath) || fallback;
+  const leftPath = left === "/dev/null" ? right : left;
+  const rightPath = right === "/dev/null" ? left : right;
+
+  return `diff --git ${gitSidePath(leftPath, "a")} ${gitSidePath(rightPath, "b")}`;
+}
+
+/** Convert a combined hunk header to the first-parent unified hunk it contains. */
+function rewriteCombinedHunkHeader(line: string) {
+  const match = line.match(/^(@@@+)\s+(.+?)\s+(@@@+)(.*)$/);
+  if (!match || match[1] !== match[3]) {
+    return null;
+  }
+
+  const openingMarker = match[1]!;
+  const parentCount = openingMarker.length - 1;
+  const ranges = match[2]!.trim().split(/\s+/);
+  if (
+    parentCount < 2 ||
+    ranges.length !== parentCount + 1 ||
+    ranges.slice(0, parentCount).some((range) => !range.startsWith("-")) ||
+    !ranges[parentCount]?.startsWith("+")
+  ) {
+    return null;
+  }
+
+  return {
+    line: `@@ ${ranges[0]} ${ranges[parentCount]} @@${match[4]}`,
+    parentCount,
+  };
+}
+
+/** Convert Git combined conflict patches into first-parent unified patches Pierre can render. */
+export function normalizeCombinedGitPatch(patchText: string) {
+  const lines = patchText.split("\n");
+  const normalizedLines: string[] = [];
+  let combinedHeaderIndex: number | undefined;
+  let combinedFallbackPath = "";
+  let combinedOldPath: string | undefined;
+  let combinedNewPath: string | undefined;
+  let combinedParentCount: number | undefined;
+
+  const resetCombinedState = () => {
+    combinedHeaderIndex = undefined;
+    combinedFallbackPath = "";
+    combinedOldPath = undefined;
+    combinedNewPath = undefined;
+    combinedParentCount = undefined;
+  };
+
+  for (const line of lines) {
+    const combinedHeader = line.match(/^diff --(cc|combined) (.*)$/);
+    if (combinedHeader) {
+      resetCombinedState();
+      combinedHeaderIndex = normalizedLines.length;
+      combinedFallbackPath = combinedHeader[2] ?? "";
+      // Rewrite immediately so binary combined entries, which have no unified file headers,
+      // still reach the normal Git patch parser.
+      normalizedLines.push(
+        rewriteCombinedFileHeader(line, combinedFallbackPath, undefined, undefined),
+      );
+      continue;
+    }
+
+    if (line.startsWith("diff --git ")) {
+      resetCombinedState();
+      normalizedLines.push(line);
+      continue;
+    }
+
+    if (combinedHeaderIndex === undefined) {
+      normalizedLines.push(line);
+      continue;
+    }
+
+    if (combinedParentCount === undefined && line.startsWith("--- ")) {
+      // `--combined-all-paths` emits one old-file header per parent. The first parent is the
+      // projection used below; discard the remaining parent headers before parsing.
+      if (combinedOldPath === undefined) {
+        combinedOldPath = unifiedFilePath(line, "--- ");
+        normalizedLines.push(line);
+      }
+      continue;
+    }
+
+    if (combinedParentCount === undefined && line.startsWith("+++ ")) {
+      combinedNewPath = unifiedFilePath(line, "+++ ");
+      normalizedLines[combinedHeaderIndex] = rewriteCombinedFileHeader(
+        normalizedLines[combinedHeaderIndex]!,
+        combinedFallbackPath,
+        combinedOldPath,
+        combinedNewPath,
+      );
+      normalizedLines.push(line);
+      continue;
+    }
+
+    const combinedHunk = rewriteCombinedHunkHeader(line);
+    if (combinedHunk) {
+      combinedParentCount = combinedHunk.parentCount;
+      normalizedLines.push(combinedHunk.line);
+      continue;
+    }
+
+    if (combinedParentCount !== undefined && line.length >= combinedParentCount) {
+      const prefix = line.slice(0, combinedParentCount);
+      const firstParentMarker = prefix[0];
+      if (firstParentMarker && /^[ +-]+$/.test(prefix)) {
+        // A parent-only deletion has no representation in the first-parent/result diff. In a
+        // combined row, that shape is a context marker for the first parent plus `-` elsewhere.
+        if (firstParentMarker === " " && prefix.slice(1).includes("-")) {
+          continue;
+        }
+        normalizedLines.push(`${firstParentMarker}${line.slice(combinedParentCount)}`);
+        continue;
+      }
+    }
+
+    normalizedLines.push(line);
+  }
+
+  return normalizedLines.join("\n");
+}
+
 const gitQuotedUtf8Decoder = new TextDecoder("utf-8", { fatal: true });
 const gitQuotedUtf8Encoder = new TextEncoder();
 const gitUnsafeDecodedHeaderCharacter = /[\x00-\x1f\x7f-\x9f]/;
@@ -139,11 +299,12 @@ function decodeGitQuotedPath(path: string) {
 
 /** Normalize Git patch syntax and retain exact decoded paths separately from parser-safe text. */
 export function sanitizeGitPatch(patchText: string): SanitizedGitPatch {
-  if (!patchText.includes("diff --git ")) {
-    return { text: patchText, filePaths: [] };
+  const normalizedPatch = normalizeCombinedGitPatch(patchText);
+  if (!normalizedPatch.includes("diff --git ")) {
+    return { text: normalizedPatch, filePaths: [] };
   }
 
-  const lines = patchText.split("\n");
+  const lines = normalizedPatch.split("\n");
   const normalizedLines: string[] = [];
   const filePaths: Array<SanitizedGitPatchFilePaths | undefined> = [];
   let blockLines: string[] = [];
