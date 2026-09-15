@@ -42,4 +42,5 @@ export {
   type CompactHighlightRun,
 } from "./highlightCompact";
 export { aliasContextHighlightLines } from "./highlightContext";
+export { HIGHLIGHT_WORKER_PROTOCOL_VERSION } from "./highlightWorkerProtocol";
 export { collectHastHighlightRuns, type HastNode } from "./highlightHast";

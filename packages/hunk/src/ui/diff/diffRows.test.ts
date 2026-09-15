@@ -21,7 +21,11 @@ import { measureTextWidth } from "../lib/text";
 import { TRANSPARENT_BACKGROUND, resolveTheme } from "../themes";
 import { createTestSourceFetcher } from "../../../../../test/helpers/diff-helpers";
 import { createTestCustomThemes } from "../../../../../test/helpers/theme-helpers";
-import { disposeHighlightWorker, registerHighlightWorker } from "./worker";
+import {
+  disposeHighlightWorker,
+  HIGHLIGHT_WORKER_PROTOCOL_VERSION,
+  registerHighlightWorker,
+} from "./worker";
 import { sanitizeTerminalLine } from "../../lib/terminalText";
 
 function createDiffFile(): DiffFile {
@@ -455,6 +459,46 @@ describe("Pierre diff rows", () => {
       additionLines: [],
       retryable: true,
     });
+  });
+
+  test("renders permanently refused worker requests inline so the result is cached", async () => {
+    let workerCalls = 0;
+    const worker = {
+      onmessage: null as ((event: MessageEvent) => void) | null,
+      onerror: null as ((event: ErrorEvent) => void) | null,
+      postMessage(request: { id: number; kind: string }) {
+        workerCalls += 1;
+        queueMicrotask(() =>
+          this.onmessage?.({
+            data: {
+              version: HIGHLIGHT_WORKER_PROTOCOL_VERSION,
+              id: request.id,
+              kind: request.kind,
+              ok: false,
+              code: "unsupported-language",
+              retryable: false,
+              message: "unsupported",
+            },
+          } as MessageEvent),
+        );
+      },
+      terminate() {
+        return Promise.resolve(0);
+      },
+      unref() {},
+    };
+    registerHighlightWorker(worker as unknown as Worker);
+    const file = { ...createWorkerEligibleDiffFile(), language: "not-a-grammar" };
+    const theme = resolveTheme("github-dark-default", null);
+
+    try {
+      const highlighted = await loadHighlightedDiff(file, theme, { offload: true });
+      expect(workerCalls).toBe(1);
+      expect(highlighted.retryable).toBeUndefined();
+      expect(highlighted.additionLines.length).toBe(file.metadata.additionLines.length);
+    } finally {
+      disposeHighlightWorker();
+    }
   });
 
   test("uses full source to keep partial Elixir hunks inside the correct heredoc state", async () => {

@@ -25,6 +25,7 @@ import {
   collectHastHighlightRuns,
   compactHighlightRunsForLine,
   highlightDiffInWorker,
+  HighlightWorkerClientError,
   supportsHighlightWorkerOffload,
   validateCompactHighlightedDiff,
   type CompactHighlightedDiff,
@@ -574,10 +575,12 @@ export async function loadHighlightedDiff(
   if (typeof theme !== "string" && shouldOffloadHighlight(metadata, theme, options)) {
     try {
       return await loadWorkerHighlightedDiff(file, metadata, theme, highlightSourcePlan);
-    } catch {
-      // Do not repeat a multi-second highlight on the event loop after a worker failure. Render
-      // plain rows now, but leave a later file visit free to retry a recreated worker.
-      return { deletionLines: [], additionLines: [], retryable: true };
+    } catch (error) {
+      // A permanent refusal (unsupported grammar or theme) falls through to the inline path,
+      // whose plain-text result is cached; anything else may recover on a recreated worker.
+      if (!(error instanceof HighlightWorkerClientError) || error.retryable) {
+        return { deletionLines: [], additionLines: [], retryable: true };
+      }
     }
   }
 
