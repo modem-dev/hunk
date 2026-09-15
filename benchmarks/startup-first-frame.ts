@@ -2,6 +2,7 @@
 // CLI and config resolution, git bootstrap, and the OpenTUI import, by launching `hunk diff`
 // inside a real PTY. In-process first-frame benchmarks start their timers after the renderer
 // is already imported, so this is the only metric that sees renderer module evaluation.
+// The same launch times the first syntax color and a page-down burst sent from first paint.
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -16,6 +17,19 @@ const FIRST_FRAME_TIMEOUT_MS = 30_000;
 const EXIT_TIMEOUT_MS = 5_000;
 const OSC_11_QUERY = /\x1b\]11;\?(?:\x07|\x1b\\)/;
 const OSC_11_REPLY = "\x1b]11;rgb:1e1e/1e1e/1e1e\x1b\\";
+// github-dark-default paints TypeScript keywords #ff7b72; its truecolor SGR marks first color.
+const KEYWORD_COLOR_SGR = "38;2;255;123;114";
+const PAGE_DOWN = "\x1b[6~";
+// The burst covers the post-paint highlight window without scrolling past the last page.
+const KEY_BURST_WINDOW_MS = 400;
+const KEY_BURST_MAX_KEYS = 8;
+const VALUE_TOKEN = /value\d+_\d+/g;
+
+interface LaunchTiming {
+  firstFrameMs: number;
+  firstColorMs: number;
+  keyAnswersMs: number[];
+}
 
 const repoRoot = resolve(import.meta.dir, "..");
 const sourceEntrypoint = join(repoRoot, "packages/hunk/src/main.tsx");
@@ -60,8 +74,8 @@ function createWorkingTreeRepo() {
   return dir;
 }
 
-/** Launch one review in a PTY and return the time from spawn until the first file renders. */
-async function measureLaunch(cwd: string, configHome: string) {
+/** Launch one review in a PTY and time its first frame, first color, and first key answer. */
+async function measureLaunch(cwd: string, configHome: string): Promise<LaunchTiming> {
   const command = explicitExecutable ?? process.execPath;
   const args = explicitExecutable ? ["diff"] : ["run", sourceEntrypoint, "--", "diff"];
   let output = "";
@@ -89,10 +103,38 @@ async function measureLaunch(cwd: string, configHome: string) {
     });
   });
 
-  const firstFrame = new Promise<number>((resolveFrame, rejectFrame) => {
+  const timing = new Promise<LaunchTiming>((resolveTiming, rejectTiming) => {
     const timer = setTimeout(() => {
-      rejectFrame(new Error(`No review frame within ${FIRST_FRAME_TIMEOUT_MS}ms:\n${output}`));
+      rejectTiming(new Error(`No review frame within ${FIRST_FRAME_TIMEOUT_MS}ms:\n${output}`));
     }, FIRST_FRAME_TIMEOUT_MS);
+    let firstFrameMs: number | undefined;
+    let firstColorMs: number | undefined;
+    const keyAnswersMs: number[] = [];
+    // A key counts as answered only when an unseen value token appears, never on a repaint.
+    const seenTokens = new Set<string>();
+    let keySentAt: number | undefined;
+    let burstDone = false;
+
+    const noteTokens = () => {
+      let revealed = false;
+      for (const match of output.matchAll(VALUE_TOKEN)) {
+        if (!seenTokens.has(match[0])) {
+          seenTokens.add(match[0]);
+          revealed = true;
+        }
+      }
+      return revealed;
+    };
+    const sendPageDown = () => {
+      keySentAt = performance.now();
+      pty.write(PAGE_DOWN);
+    };
+    const finishIfComplete = () => {
+      if (firstFrameMs === undefined || firstColorMs === undefined || !burstDone) return;
+      clearTimeout(timer);
+      resolveTiming({ firstFrameMs, firstColorMs, keyAnswersMs });
+    };
+
     pty.onData((data) => {
       output += data;
       // Answer the auto-theme background probe the way a real terminal would so the launch
@@ -100,19 +142,39 @@ async function measureLaunch(cwd: string, configHome: string) {
       if (OSC_11_QUERY.test(data)) {
         pty.write(OSC_11_REPLY);
       }
-      if (output.includes("file1.ts") && output.includes("value1_10")) {
-        clearTimeout(timer);
-        resolveFrame(performance.now() - start);
+      const revealed = noteTokens();
+      if (
+        firstFrameMs === undefined &&
+        output.includes("file1.ts") &&
+        output.includes("value1_10")
+      ) {
+        firstFrameMs = performance.now() - start;
+        sendPageDown();
+      } else if (keySentAt !== undefined && revealed) {
+        keyAnswersMs.push(performance.now() - keySentAt);
+        keySentAt = undefined;
+        if (
+          keyAnswersMs.length < KEY_BURST_MAX_KEYS &&
+          performance.now() - start - firstFrameMs! < KEY_BURST_WINDOW_MS
+        ) {
+          sendPageDown();
+        } else {
+          burstDone = true;
+        }
       }
+      if (firstColorMs === undefined && output.includes(KEYWORD_COLOR_SGR)) {
+        firstColorMs = performance.now() - start;
+      }
+      finishIfComplete();
     });
     void exitInfo.then((info) => {
       clearTimeout(timer);
-      rejectFrame(new Error(`Hunk exited with code ${info.exitCode} before painting:\n${output}`));
+      rejectTiming(new Error(`Hunk exited with code ${info.exitCode} before painting:\n${output}`));
     });
   });
 
   try {
-    return await firstFrame;
+    return await timing;
   } finally {
     pty.write("q");
     const exitTimer = setTimeout(() => {
@@ -136,13 +198,20 @@ try {
   for (let launch = 0; launch < WARMUP_LAUNCHES; launch += 1) {
     await measureLaunch(repoDir, configHome);
   }
-  const samples: number[] = [];
+  const samples: LaunchTiming[] = [];
   for (let launch = 0; launch < MEASURED_LAUNCHES; launch += 1) {
     samples.push(await measureLaunch(repoDir, configHome));
   }
+  const firstFrames = samples.map((sample) => sample.firstFrameMs);
+  const firstColors = samples.map((sample) => sample.firstColorMs);
+  const slowestKeys = samples.map((sample) => Math.max(...sample.keyAnswersMs));
+  const keyCounts = samples.map((sample) => sample.keyAnswersMs.length);
 
-  console.log(`METRIC startup_first_frame_ms=${median(samples).toFixed(2)}`);
-  console.log(`METRIC startup_first_frame_min_ms=${Math.min(...samples).toFixed(2)}`);
+  console.log(`METRIC startup_first_frame_ms=${median(firstFrames).toFixed(2)}`);
+  console.log(`METRIC startup_first_frame_min_ms=${Math.min(...firstFrames).toFixed(2)}`);
+  console.log(`METRIC startup_first_color_ms=${median(firstColors).toFixed(2)}`);
+  console.log(`METRIC startup_post_paint_key_max_ms=${median(slowestKeys).toFixed(2)}`);
+  console.log(`METRIC startup_post_paint_keys=${median(keyCounts).toFixed(0)}`);
   console.log(`METRIC startup_launches=${samples.length}`);
   console.log(`METRIC files=${FILE_COUNT}`);
 } finally {
