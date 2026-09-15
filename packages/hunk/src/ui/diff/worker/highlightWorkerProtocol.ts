@@ -3,7 +3,7 @@ import { DOCUMENT_HIGHLIGHT_MAX_LINE_LENGTH } from "../highlightRenderOptions";
 import type { CompactHighlightedDiff, CompactHighlightedDocument } from "./highlightCompact";
 
 /** Identifies the private main-thread/worker message contract. */
-export const HIGHLIGHT_WORKER_PROTOCOL_VERSION = 4;
+export const HIGHLIGHT_WORKER_PROTOCOL_VERSION = 5;
 
 /** Bounds one complete document before it enters the worker queue. */
 export const MAX_WORKER_DOCUMENT_TEXT_LENGTH = 1_000_000;
@@ -14,26 +14,40 @@ export const WORKER_DOCUMENT_TOKENIZE_MAX_LINE_LENGTH = DOCUMENT_HIGHLIGHT_MAX_L
 interface HighlightWorkerRequestBase {
   version: typeof HIGHLIGHT_WORKER_PROTOCOL_VERSION;
   id: number;
+}
+
+interface HighlightWorkerRenderRequestBase extends HighlightWorkerRequestBase {
   appearance: "dark" | "light";
   language: string;
   theme: string;
 }
 
 /** Requests Pierre diff rendering with optional complete-source context aliases. */
-export interface HighlightWorkerDiffRequest extends HighlightWorkerRequestBase {
+export interface HighlightWorkerDiffRequest extends HighlightWorkerRenderRequestBase {
   kind: "diff";
   aliasContext: boolean;
   metadata: FileDiffMetadata;
 }
 
 /** Requests complete-document rendering so TextMate lexical state spans every line. */
-export interface HighlightWorkerDocumentRequest extends HighlightWorkerRequestBase {
+export interface HighlightWorkerDocumentRequest extends HighlightWorkerRenderRequestBase {
   kind: "document";
   path: string;
   text: string;
 }
 
-export type HighlightWorkerRequest = HighlightWorkerDiffRequest | HighlightWorkerDocumentRequest;
+/** Asks the worker to load one theme and grammar ahead of the first render request. */
+export interface HighlightWorkerPreloadRequest extends HighlightWorkerRequestBase {
+  kind: "preload";
+  theme: string;
+  language: string;
+}
+
+export type HighlightWorkerRenderRequest =
+  | HighlightWorkerDiffRequest
+  | HighlightWorkerDocumentRequest;
+
+export type HighlightWorkerRequest = HighlightWorkerRenderRequest | HighlightWorkerPreloadRequest;
 
 interface HighlightWorkerResponseBase {
   version: typeof HIGHLIGHT_WORKER_PROTOCOL_VERSION;
@@ -52,7 +66,15 @@ export interface HighlightWorkerDocumentSuccess extends HighlightWorkerResponseB
   code: CompactHighlightedDocument;
 }
 
-export type HighlightWorkerSuccess = HighlightWorkerDiffSuccess | HighlightWorkerDocumentSuccess;
+export interface HighlightWorkerPreloadSuccess extends HighlightWorkerResponseBase {
+  kind: "preload";
+  ok: true;
+}
+
+export type HighlightWorkerSuccess =
+  | HighlightWorkerDiffSuccess
+  | HighlightWorkerDocumentSuccess
+  | HighlightWorkerPreloadSuccess;
 
 /** Classifies worker-side failures without making callers parse human-readable messages. */
 export type HighlightWorkerFailureCode =
@@ -90,6 +112,33 @@ export interface HighlightWorkerFailure extends HighlightWorkerResponseBase {
 }
 
 export type HighlightWorkerResponse = HighlightWorkerSuccess | HighlightWorkerFailure;
+
+const HIGHLIGHT_WORKER_REQUEST_KINDS = new Set<HighlightWorkerRequest["kind"]>([
+  "diff",
+  "document",
+  "preload",
+]);
+
+/** Return whether an unknown value names one protocol request kind. */
+export function isHighlightWorkerRequestKind(
+  value: unknown,
+): value is HighlightWorkerRequest["kind"] {
+  return typeof value === "string" && HIGHLIGHT_WORKER_REQUEST_KINDS.has(value as never);
+}
+
+/** Explain why one preload request cannot enter the worker, or return undefined. */
+export function describeHighlightWorkerPreloadIssue({
+  language,
+  theme,
+}: Pick<HighlightWorkerPreloadRequest, "language" | "theme">) {
+  if (typeof language !== "string" || language.length === 0 || language.length > 100) {
+    return "Preload language must be a bounded non-empty string.";
+  }
+  if (typeof theme !== "string" || theme.length === 0 || theme.length > 256) {
+    return "Preload theme must be a bounded non-empty string.";
+  }
+  return undefined;
+}
 
 /** Return logical UTF-16 line lengths without adding a line after a terminating newline. */
 export function highlightWorkerDocumentLineLengths(text: string) {
