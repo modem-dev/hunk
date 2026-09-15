@@ -117,7 +117,6 @@ function FileViewComponent({
   fileView,
   geometry,
   cursorHighlight,
-  offloadLargeDiff = false,
   selectedHunkIndex,
   shouldLoadHighlight = false,
   theme,
@@ -130,7 +129,6 @@ function FileViewComponent({
   geometry: DiffSectionGeometry;
   /** The current line within this file, when the review-stream cursor rests in it. */
   cursorHighlight?: CursorHighlight;
-  offloadLargeDiff?: boolean;
   selectedHunkIndex: number;
   shouldLoadHighlight?: boolean;
   theme: AppTheme;
@@ -177,7 +175,6 @@ function FileViewComponent({
     file,
     fileView,
     mountedRows,
-    offloadLargeDiff,
     shouldLoadHighlight,
     theme,
   });

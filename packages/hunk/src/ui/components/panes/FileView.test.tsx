@@ -160,7 +160,6 @@ describe("FileView custom rows", () => {
       path: file.path,
       language: "typescript",
       theme,
-      offloadLargeDiff: false,
     });
     const syntaxForeground = documentHighlightRunsForLine(highlighted, 0).find((run) => run.fg)?.fg;
     expect(syntaxForeground).toBeDefined();
@@ -275,7 +274,6 @@ describe("FileView custom rows", () => {
       path: file.path,
       language: "typescript",
       theme,
-      offloadLargeDiff: false,
     });
 
     for (const syntax of [false, true]) {
@@ -455,7 +453,6 @@ describe("FileView custom rows", () => {
           path: file.path,
           language: "typescript",
           theme,
-          offloadLargeDiff: false,
         }),
       ),
     );
@@ -538,14 +535,12 @@ describe("FileView custom rows", () => {
         path: file.path,
         language: "typescript",
         theme,
-        offloadLargeDiff: false,
       }),
       loadDocumentHighlight({
         text: rightText,
         path: file.path,
         language: "typescript",
         theme,
-        offloadLargeDiff: false,
       }),
     ]);
     const leftColor = documentHighlightRunsForLine(leftResult, 0).find(
@@ -1083,7 +1078,6 @@ describe("FileView custom rows", () => {
       path: file.path,
       language: "typescript",
       theme,
-      offloadLargeDiff: false,
     });
     const syntaxForeground = documentHighlightRunsForLine(highlighted, 0).find((run) => run.fg)?.fg;
     expect(syntaxForeground).toBeDefined();
