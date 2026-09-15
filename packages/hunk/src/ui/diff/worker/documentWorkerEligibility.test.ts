@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import { THEMES } from "../../themes";
-import { HIGHLIGHT_WORKER_MIN_LINES } from "../highlightRenderOptions";
 import { documentWorkerEligibility } from "./documentWorkerEligibility";
 
 const theme = THEMES.find((candidate) => candidate.id === "github-dark-default")!;
@@ -9,7 +8,7 @@ const lines = (count: number) =>
 const base = {
   language: "typescript",
   path: "example.ts",
-  text: lines(HIGHLIGHT_WORKER_MIN_LINES),
+  text: lines(40),
   theme,
 };
 
@@ -26,24 +25,17 @@ describe("document worker eligibility", () => {
         appearance: "dark",
         language: "typescript",
         path: "example.ts",
-        text: lines(HIGHLIGHT_WORKER_MIN_LINES),
+        text: lines(40),
         theme: "github-dark-default",
       },
     });
   });
 
-  test("keeps documents below the 40-line offload threshold inline", () => {
+  test("offloads documents of any size so no grammar compiles on the main thread", () => {
     expect(
       documentWorkerEligibility({
         ...base,
-        text: lines(HIGHLIGHT_WORKER_MIN_LINES - 1),
-        runtime: { platform: "linux", execPath: "/opt/hunk/bin/hunk" },
-      }),
-    ).toMatchObject({ eligible: false, reason: "small-document" });
-    expect(
-      documentWorkerEligibility({
-        ...base,
-        text: lines(HIGHLIGHT_WORKER_MIN_LINES),
+        text: lines(1),
         runtime: { platform: "linux", execPath: "/opt/hunk/bin/hunk" },
       }),
     ).toMatchObject({ eligible: true });

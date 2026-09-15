@@ -7,6 +7,7 @@ import {
   HighlightWorkerClientError,
   highlightDiffInWorker,
   highlightDocumentInWorker,
+  preloadHighlightWorker,
   registerHighlightWorker,
 } from "./highlightWorkerClient";
 import {
@@ -189,6 +190,50 @@ describe("highlight worker client", () => {
       code: compactDocumentResponseForText("const answer = 42;\n"),
     });
     await expect(second).resolves.toEqual(compactDocumentResponseForText("const answer = 42;\n"));
+  });
+
+  test("queues render requests ahead of waiting preloads and resolves preload replies", async () => {
+    const control = createTestHighlightWorker();
+    registerHighlightWorker(control.worker);
+
+    const typescript = preloadHighlightWorker({ language: "typescript", theme: "pierre-dark" });
+    const markdown = preloadHighlightWorker({ language: "markdown", theme: "pierre-dark" });
+    const diff = requestDiff();
+    expect(control.state.messages).toHaveLength(1);
+    expect(control.state.messages[0]).toMatchObject({ kind: "preload", language: "typescript" });
+
+    control.reply({
+      version: HIGHLIGHT_WORKER_PROTOCOL_VERSION,
+      id: control.state.messages[0]?.id,
+      kind: "preload",
+      ok: true,
+    });
+    await expect(typescript).resolves.toBeUndefined();
+    expect(control.state.messages[1]).toMatchObject({ kind: "diff" });
+
+    control.reply({
+      version: HIGHLIGHT_WORKER_PROTOCOL_VERSION,
+      id: control.state.messages[1]?.id,
+      kind: "diff",
+      ok: true,
+      code: emptyCompactDiffResponse(),
+    });
+    await expect(diff).resolves.toEqual(emptyCompactDiffResponse());
+    expect(control.state.messages[2]).toMatchObject({ kind: "preload", language: "markdown" });
+
+    control.reply({
+      version: HIGHLIGHT_WORKER_PROTOCOL_VERSION,
+      id: control.state.messages[2]?.id,
+      kind: "preload",
+      ok: false,
+      code: "unsupported-theme",
+      retryable: false,
+      message: "unsupported",
+    });
+    await expect(markdown).rejects.toMatchObject({ code: "unsupported-theme" });
+    await expect(
+      preloadHighlightWorker({ language: "", theme: "pierre-dark" }),
+    ).rejects.toMatchObject({ code: "invalid-request" });
   });
 
   test("rejects matching replies with a wrong version, kind, or malformed payload", async () => {

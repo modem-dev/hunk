@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act, StrictMode, useState, type ReactNode } from "react";
 import { createTestDiffFile } from "../../../../../test/helpers/diff-helpers";
+import { inlineOnlyTestWorkerEligibility } from "../../../../../test/helpers/highlight-helpers";
 import type { DiffFile } from "../../core/changeset/model";
 import type {
   ExtensionFileViewCodeDocument,
@@ -28,7 +29,6 @@ interface HookProps {
   file: DiffFile;
   fileView: ResolvedFileViewLayout;
   mountedRows: readonly PlannedFileViewRow[];
-  offloadLargeDiff: boolean;
   shouldLoadHighlight: boolean;
   theme: AppTheme;
 }
@@ -202,7 +202,6 @@ describe("file-view syntax demand", () => {
         file,
         fileView,
         mountedRows: plannedRows(fileView),
-        offloadLargeDiff: false,
         shouldLoadHighlight: true,
         theme,
       },
@@ -233,7 +232,6 @@ describe("file-view syntax demand", () => {
         file,
         fileView,
         mountedRows: [plan[1]!],
-        offloadLargeDiff: false,
         shouldLoadHighlight: true,
         theme,
       },
@@ -247,7 +245,6 @@ describe("file-view syntax demand", () => {
           file,
           fileView,
           mountedRows: [plan[0]!],
-          offloadLargeDiff: false,
           shouldLoadHighlight: false,
           theme,
         }),
@@ -273,7 +270,6 @@ describe("file-view syntax demand", () => {
         file,
         fileView,
         mountedRows: [plan[0]!],
-        offloadLargeDiff: false,
         shouldLoadHighlight: true,
         theme,
       },
@@ -290,7 +286,6 @@ describe("file-view syntax demand", () => {
           file,
           fileView,
           mountedRows: [plan[0]!, plan[2]!],
-          offloadLargeDiff: false,
           shouldLoadHighlight: true,
           theme,
         }),
@@ -304,7 +299,6 @@ describe("file-view syntax demand", () => {
           file,
           fileView,
           mountedRows: [plan[2]!],
-          offloadLargeDiff: false,
           shouldLoadHighlight: true,
           theme,
         }),
@@ -315,7 +309,6 @@ describe("file-view syntax demand", () => {
           file,
           fileView,
           mountedRows: [plan[0]!],
-          offloadLargeDiff: false,
           shouldLoadHighlight: true,
           theme,
         }),
@@ -349,7 +342,6 @@ describe("file-view syntax demand", () => {
           file: { ...file },
           fileView: reconstructed,
           mountedRows: plannedRows(reconstructed).slice(0, 1),
-          offloadLargeDiff: false,
           shouldLoadHighlight: true,
           theme: { ...theme, syntaxColors: { ...theme.syntaxColors } },
         },
@@ -409,7 +401,6 @@ describe("file-view syntax demand", () => {
         file,
         fileView: firstView,
         mountedRows: plannedRows(firstView),
-        offloadLargeDiff: false,
         shouldLoadHighlight: true,
         theme,
       },
@@ -429,7 +420,6 @@ describe("file-view syntax demand", () => {
           },
           fileView: nextView,
           mountedRows: plannedRows(nextView),
-          offloadLargeDiff: true,
           shouldLoadHighlight: true,
           theme: nextTheme,
         }),
@@ -451,7 +441,7 @@ describe("file-view syntax demand", () => {
     }
   });
 
-  test("threads host language, offload policy, and custom syntax theme inputs", async () => {
+  test("threads host language and custom syntax theme inputs", async () => {
     const calls: DocumentHighlightInput[] = [];
     const customTheme: AppTheme = {
       ...theme,
@@ -468,7 +458,6 @@ describe("file-view syntax demand", () => {
         file,
         fileView,
         mountedRows: plannedRows(fileView),
-        offloadLargeDiff: true,
         shouldLoadHighlight: true,
         theme: customTheme,
       },
@@ -479,7 +468,6 @@ describe("file-view syntax demand", () => {
       expect(calls).toHaveLength(1);
       expect(calls[0]).toMatchObject({
         language: "typescript",
-        offloadLargeDiff: true,
         path: "src/file.ts",
       });
       expect(calls[0]?.theme.syntaxScopeOverrides).toEqual({
@@ -503,7 +491,6 @@ describe("file-view syntax demand", () => {
         file,
         fileView,
         mountedRows: plannedRows(fileView),
-        offloadLargeDiff: false,
         shouldLoadHighlight: true,
         theme,
       },
@@ -520,6 +507,7 @@ describe("file-view syntax demand", () => {
   test("retries an exhausted busy result after demand is removed and restored", async () => {
     let calls = 0;
     const recoveryService = createDocumentHighlightService({
+      workerEligibility: inlineOnlyTestWorkerEligibility,
       inlineHighlight: async ({ text }) => compactHighlight(text),
     });
     const fileView = resolveTestLayout([documents[0]!], [rows[0]!]);
@@ -529,7 +517,6 @@ describe("file-view syntax demand", () => {
         file,
         fileView,
         mountedRows: demandedRows,
-        offloadLargeDiff: false,
         shouldLoadHighlight: true,
         theme,
       },
@@ -556,7 +543,6 @@ describe("file-view syntax demand", () => {
           file,
           fileView,
           mountedRows: [],
-          offloadLargeDiff: false,
           shouldLoadHighlight: true,
           theme,
         }),
@@ -569,7 +555,6 @@ describe("file-view syntax demand", () => {
           file,
           fileView,
           mountedRows: demandedRows,
-          offloadLargeDiff: false,
           shouldLoadHighlight: true,
           theme,
         }),
@@ -606,6 +591,7 @@ describe("file-view syntax demand", () => {
     }> = [];
     let capacityReleased = false;
     const service = createDocumentHighlightService({
+      workerEligibility: inlineOnlyTestWorkerEligibility,
       maxInFlightEntries: 16,
       inlineHighlight: ({ text }) => {
         if (capacityReleased) return Promise.resolve(compactHighlight(text));
@@ -621,7 +607,6 @@ describe("file-view syntax demand", () => {
         file,
         fileView,
         mountedRows: allRows,
-        offloadLargeDiff: false,
         shouldLoadHighlight: true,
         theme,
       },
@@ -647,7 +632,6 @@ describe("file-view syntax demand", () => {
           file,
           fileView,
           mountedRows: [],
-          offloadLargeDiff: false,
           shouldLoadHighlight: true,
           theme,
         }),
@@ -671,7 +655,6 @@ describe("file-view syntax demand", () => {
           file,
           fileView,
           mountedRows: previouslyBusyRows,
-          offloadLargeDiff: false,
           shouldLoadHighlight: true,
           theme,
         }),
@@ -699,7 +682,6 @@ describe("file-view syntax demand", () => {
         file,
         fileView,
         mountedRows: plannedRows(fileView),
-        offloadLargeDiff: false,
         shouldLoadHighlight: true,
         theme,
       },
@@ -717,7 +699,6 @@ describe("file-view syntax demand", () => {
           file,
           fileView,
           mountedRows: [],
-          offloadLargeDiff: false,
           shouldLoadHighlight: true,
           theme,
         }),
@@ -745,7 +726,6 @@ describe("file-view syntax demand", () => {
         file,
         fileView,
         mountedRows: plannedRows(fileView),
-        offloadLargeDiff: false,
         shouldLoadHighlight: true,
         theme,
       },
@@ -758,7 +738,6 @@ describe("file-view syntax demand", () => {
         file,
         fileView,
         mountedRows: [],
-        offloadLargeDiff: false,
         shouldLoadHighlight: true,
         theme,
       }),
@@ -772,7 +751,6 @@ describe("file-view syntax demand", () => {
         file,
         fileView,
         mountedRows: plannedRows(fileView),
-        offloadLargeDiff: false,
         shouldLoadHighlight: true,
         theme,
       }),
@@ -788,6 +766,7 @@ describe("file-view syntax demand", () => {
     let underlyingSignal: AbortSignal | undefined;
     let inlineCalls = 0;
     const service = createDocumentHighlightService({
+      workerEligibility: inlineOnlyTestWorkerEligibility,
       inlineHighlight: async ({ signal }) => {
         inlineCalls += 1;
         underlyingSignal = signal;
@@ -805,7 +784,6 @@ describe("file-view syntax demand", () => {
             file,
             fileView,
             mountedRows: plannedRows(fileView),
-            offloadLargeDiff: false,
             shouldLoadHighlight: true,
             theme,
           },

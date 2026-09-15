@@ -111,11 +111,11 @@ function decodeAllCompactLines(payload: ReturnType<typeof encodeCompactHighlight
 async function measureHighlightOperation({
   file,
   theme,
-  offloadLargeDiff,
+  offload,
 }: {
   file: DiffFile;
   theme: ReturnType<typeof resolveTheme>;
-  offloadLargeDiff: boolean;
+  offload: boolean;
 }) {
   const wall: number[] = [];
   const stalls: number[] = [];
@@ -129,7 +129,7 @@ async function measureHighlightOperation({
       const highlighted = await loadHighlightedDiff(
         file,
         theme,
-        offloadLargeDiff ? { offloadLargeDiff: true } : undefined,
+        offload ? { offload: true } : undefined,
       );
       buildSplitRows(file, highlighted, theme);
       wall.push(performance.now() - started);
@@ -155,7 +155,7 @@ const lineLengths = compactLineLengths(file);
 
 // Warm Shiki/Pierre and the reusable worker before timing response handling or operations.
 const warmResult = await loadHighlightedDiff(file, theme);
-await loadHighlightedDiff(file, theme, { offloadLargeDiff: true });
+await loadHighlightedDiff(file, theme, { offload: true });
 const rawHastBytes = jsonByteLength(warmResult);
 const rawCloneMs: number[] = [];
 const compactEncodeMs: number[] = [];
@@ -200,11 +200,11 @@ metric("compact_decode_all_ms_median", median(compactDecodeMs));
 metric("compact_decode_all_ms_p95", percentile(compactDecodeMs, 0.95));
 metric("compact_response_byte_ratio", median(compactBytes) / rawHastBytes);
 
-const inlineOperation = await measureHighlightOperation({ file, theme, offloadLargeDiff: false });
+const inlineOperation = await measureHighlightOperation({ file, theme, offload: false });
 const compactWorkerOperation = await measureHighlightOperation({
   file,
   theme,
-  offloadLargeDiff: true,
+  offload: true,
 });
 metric("inline_operation_wall_ms_median", inlineOperation.wallMedian);
 metric("inline_operation_wall_ms_p95", inlineOperation.wallP95);

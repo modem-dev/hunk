@@ -19,7 +19,7 @@ declare const self: Worker;
 
 /** Return the numeric buffers owned by one successful response. */
 function responseTransferList(response: HighlightWorkerResponse) {
-  if (!response.ok) return [];
+  if (!response.ok || response.kind === "preload") return [];
   return response.kind === "document"
     ? compactHighlightedDocumentTransferList(response.code)
     : compactHighlightTransferList(response.code);

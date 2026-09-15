@@ -154,7 +154,6 @@ export function AppHost({
   // Experimental capabilities are launch authority: remote/watch reloads may replace content,
   // but opting in or out requires starting a new Hunk process.
   const launchExperimental = initialBootstrap.input.options.experimental === true;
-  const launchFast = initialBootstrap.input.options.fast === true;
   // Extension authority is launch authority for the same reason. A reload command
   // names *content* to reopen — `hunk session reload <id> -- diff` — and is parsed
   // fresh, so it carries none of the extension flags the session was launched
@@ -263,7 +262,6 @@ export function AppHost({
         options: {
           ...nextInput.options,
           experimental: launchExperimental,
-          fast: launchFast,
           extensions: launchExtensionsEnabled,
           extensionPaths: launchExtensionPaths,
         },
@@ -468,7 +466,6 @@ export function AppHost({
       activeThemeController,
       hostClient,
       launchExperimental,
-      launchFast,
       launchExtensionsEnabled,
       launchExtensionPaths,
       producer,

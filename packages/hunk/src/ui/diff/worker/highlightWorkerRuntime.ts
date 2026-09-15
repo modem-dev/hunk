@@ -32,14 +32,31 @@ import {
 } from "./highlightWorkerIdentity";
 import {
   describeHighlightWorkerDocumentIssue,
+  describeHighlightWorkerPreloadIssue,
   highlightWorkerDocumentLineLengths,
   HIGHLIGHT_WORKER_PROTOCOL_VERSION,
   isHighlightWorkerFailureRetryable,
+  isHighlightWorkerRequestKind,
   type HighlightWorkerFailure,
   type HighlightWorkerFailureCode,
+  type HighlightWorkerPreloadRequest,
+  type HighlightWorkerRenderRequest,
   type HighlightWorkerRequest,
   type HighlightWorkerResponse,
 } from "./highlightWorkerProtocol";
+
+/** Tokenized during preload so each grammar compiles its root, comment, and string rules. */
+const PRELOAD_SAMPLE = [
+  "// comment",
+  "/* block */",
+  "# comment",
+  'import { name } from "module";',
+  "export function sample(value: number): string {",
+  "  const text = `template ${value}`;",
+  "  return value > 1 ? 'one' : \"two\";",
+  "}",
+  "",
+].join("\n");
 
 class HighlightWorkerRuntimeFailure extends Error {
   readonly retryable: boolean;
@@ -81,7 +98,8 @@ function failureResponse(
   return {
     version: HIGHLIGHT_WORKER_PROTOCOL_VERSION,
     id: "id" in envelope && typeof envelope.id === "number" ? envelope.id : -1,
-    kind: "kind" in envelope && envelope.kind === "document" ? "document" : "diff",
+    kind:
+      "kind" in envelope && isHighlightWorkerRequestKind(envelope.kind) ? envelope.kind : "diff",
     ok: false,
     code: error.code,
     retryable: error.retryable,
@@ -106,8 +124,16 @@ function validateRequest(request: unknown): asserts request is HighlightWorkerRe
   if (!Number.isSafeInteger(candidate.id) || (candidate.id as number) < 0) {
     invalidRequest("Highlight worker request has an invalid id.");
   }
-  if (candidate.kind !== "diff" && candidate.kind !== "document") {
+  if (!isHighlightWorkerRequestKind(candidate.kind)) {
     invalidRequest("Highlight worker request has an invalid kind.");
+  }
+  if (candidate.kind === "preload") {
+    const issue = describeHighlightWorkerPreloadIssue({
+      language: candidate.language as string,
+      theme: candidate.theme as string,
+    });
+    if (issue) invalidRequest(issue);
+    return;
   }
   if (candidate.appearance !== "dark" && candidate.appearance !== "light") {
     invalidRequest("Highlight worker request has an invalid appearance.");
@@ -143,42 +169,72 @@ function validateRequest(request: unknown): asserts request is HighlightWorkerRe
 /** Return whether a cache payload matches its request's response kind. */
 function payloadMatchesKind(
   payload: HighlightWorkerCachePayload,
-  kind: HighlightWorkerRequest["kind"],
+  kind: HighlightWorkerRenderRequest["kind"],
 ) {
   return kind === "document" ? "document" in payload : "deletion" in payload;
 }
 
-/** Resolve grammar and theme separately so unsupported inputs get permanent error codes. */
-async function resolveWorkerSyntaxInputs(request: HighlightWorkerRequest) {
-  if (request.language !== "text" && request.language !== "ansi") {
-    try {
-      await getResolvedOrResolveLanguage(request.language as never);
-    } catch (error) {
-      throw new HighlightWorkerRuntimeFailure(
-        "unsupported-language",
-        `Unsupported syntax language "${request.language}": ${errorMessage(error)}`,
-      );
-    }
-  }
+/** Return whether a language name bypasses grammar loading entirely. */
+function isPlainLanguage(language: string) {
+  return language === "text" || language === "ansi";
+}
+
+/** Resolve one grammar, classifying failure as permanent for that language. */
+async function resolveWorkerLanguage(language: string) {
+  if (isPlainLanguage(language)) return;
   try {
-    await getResolvedOrResolveTheme(request.theme as never);
+    await getResolvedOrResolveLanguage(language as never);
   } catch (error) {
     throw new HighlightWorkerRuntimeFailure(
-      "unsupported-theme",
-      `Unsupported syntax theme "${request.theme}": ${errorMessage(error)}`,
+      "unsupported-language",
+      `Unsupported syntax language "${language}": ${errorMessage(error)}`,
     );
   }
 }
 
-/** Render one cache miss into a validated compact payload. */
-async function renderRequest(request: HighlightWorkerRequest, cacheKey: string) {
-  await resolveWorkerSyntaxInputs(request);
-  const highlighter = await getSharedHighlighter({
-    ...getHighlighterOptions(request.language, {
-      theme: request.theme as never,
-    }),
+/** Resolve one theme, classifying failure as permanent for that theme. */
+async function resolveWorkerTheme(theme: string) {
+  try {
+    await getResolvedOrResolveTheme(theme as never);
+  } catch (error) {
+    throw new HighlightWorkerRuntimeFailure(
+      "unsupported-theme",
+      `Unsupported syntax theme "${theme}": ${errorMessage(error)}`,
+    );
+  }
+}
+
+/** Return the shared WASM highlighter with one language and theme attached. */
+function workerHighlighter(language: string, theme: string) {
+  return getSharedHighlighter({
+    ...getHighlighterOptions(language, { theme: theme as never }),
     preferredHighlighter: "shiki-wasm",
   });
+}
+
+/** Load one theme and grammar, then tokenize a sample so the grammar's rules compile now. */
+async function preloadRequest(request: HighlightWorkerPreloadRequest) {
+  await resolveWorkerTheme(request.theme);
+  if (isPlainLanguage(request.language)) return;
+  await resolveWorkerLanguage(request.language);
+  const highlighter = await workerHighlighter(request.language, request.theme);
+  renderFileWithHighlighter(
+    {
+      name: `preload.${request.language}`,
+      contents: PRELOAD_SAMPLE,
+      lang: request.language as never,
+      cacheKey: `preload:${request.theme}:${request.language}`,
+    },
+    highlighter,
+    pierreHighlightRenderOptions(request.theme),
+  );
+}
+
+/** Render one cache miss into a validated compact payload. */
+async function renderRequest(request: HighlightWorkerRenderRequest, cacheKey: string) {
+  await resolveWorkerLanguage(request.language);
+  await resolveWorkerTheme(request.theme);
+  const highlighter = await workerHighlighter(request.language, request.theme);
 
   if (request.kind === "diff") {
     const result = renderDiffWithHighlighter(
@@ -226,6 +282,15 @@ export async function processHighlightWorkerRequest(
   try {
     validateRequest(value);
     const request = value;
+    if (request.kind === "preload") {
+      await preloadRequest(request);
+      return {
+        version: HIGHLIGHT_WORKER_PROTOCOL_VERSION,
+        id: request.id,
+        kind: "preload",
+        ok: true,
+      };
+    }
     const { id, version: _version, ...identity } = request;
     const cacheKey = highlightWorkerCacheKey(identity as HighlightWorkerCacheIdentity);
 

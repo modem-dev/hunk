@@ -73,7 +73,7 @@ describe("parseCli", () => {
     expect(parsed.text).toContain("auto-reload when the current diff input changes");
     expect(parsed.text).toContain("--experimental");
     expect(parsed.text).toContain("experimental STML");
-    expect(parsed.text).toContain("--fast");
+    expect(parsed.text).not.toContain("--fast");
     expect(parsed.text).toContain("Git diff options:");
     expect(parsed.text).toContain("Notes:");
     expect(parsed.text).toContain(

@@ -741,6 +741,39 @@ end
     ]);
   }
 
+  /**
+   * Build a small review spanning three grammars whose second TypeScript hunk sits below the
+   * first screen, so a hunk-navigation key has a visible effect to time.
+   */
+  function createSmallMultiLanguageRepoFixture() {
+    const tsLines = Array.from({ length: 400 }, (_, index) => {
+      const line = index + 1;
+      return `export function service${line}(input: number): number {\n  return input + ${line};\n}`;
+    });
+    const tsAfter = [...tsLines];
+    tsAfter[4] = tsAfter[4]!.replace("input +", "input * 2 +");
+    tsAfter[140] = tsAfter[140]!.replace("input +", "input - ");
+    const mdLines = Array.from({ length: 40 }, (_, index) => `- Release note item ${index + 1}`);
+    const mdAfter = [...mdLines];
+    mdAfter[3] = "- Release note item 4 (revised)";
+    const tsxLines = Array.from(
+      { length: 300 },
+      (_, index) => `export const Row${index + 1} = () => <div className="row">${index + 1}</div>;`,
+    );
+    const tsxAfter = [...tsxLines];
+    tsxAfter[9] = 'export const Row10 = () => <div className="row wide">10</div>;';
+
+    return {
+      ...createGitRepoFixture([
+        { path: "notes.md", before: `${mdLines.join("\n")}\n`, after: `${mdAfter.join("\n")}\n` },
+        { path: "service.ts", before: `${tsLines.join("\n")}\n`, after: `${tsAfter.join("\n")}\n` },
+        { path: "View.tsx", before: `${tsxLines.join("\n")}\n`, after: `${tsxAfter.join("\n")}\n` },
+      ]),
+      firstPaintText: 'className="row wide"',
+      belowFoldText: "return input + 140;",
+    };
+  }
+
   function createTwoFileRepoFixture() {
     return createGitRepoFixture([
       {
@@ -1199,6 +1232,7 @@ end
     createScrollableFilePair,
     createSearchRepoFixture,
     createSidebarJumpRepoFixture,
+    createSmallMultiLanguageRepoFixture,
     createTabbedFilePair,
     createTwoFileRepoFixture,
     createUnicodePathRepoFixture,

@@ -11,6 +11,7 @@ import {
   DocumentHighlightAbortedError,
   type DocumentHighlightInput,
 } from "./documentHighlightService";
+import { inlineOnlyTestWorkerEligibility as inline } from "../../../../../test/helpers/highlight-helpers";
 import {
   disposeHighlightWorker,
   HighlightWorkerClientError,
@@ -24,7 +25,6 @@ const base: Omit<DocumentHighlightInput, "signal"> = {
   path: "example.ts",
   language: "typescript",
   theme,
-  offloadLargeDiff: false,
 };
 
 /** Build one valid compact document with configurable retained bytes. */
@@ -63,7 +63,7 @@ function eligible(input: {
 
 describe("document highlight service", () => {
   test("keeps complete-document lexical state for identical lines", async () => {
-    const service = createDocumentHighlightService();
+    const service = createDocumentHighlightService({ workerEligibility: inline });
     const commentText = "/* open\nconst answer = 42;\n*/";
     const codeText = "const other = 1;\nconst answer = 42;\n";
 
@@ -107,6 +107,7 @@ describe("document highlight service", () => {
     let calls = 0;
     let renderedText = "";
     const service = createDocumentHighlightService({
+      workerEligibility: inline,
       inlineHighlight: async ({ text }) => {
         calls += 1;
         renderedText = text;
@@ -122,7 +123,7 @@ describe("document highlight service", () => {
   });
 
   test("does not project an invented logical line after a normalized final newline", async () => {
-    const service = createDocumentHighlightService();
+    const service = createDocumentHighlightService({ workerEligibility: inline });
     const result = await service.highlight({
       ...base,
       text: "const one = '😀';\r\nconst two = 2;\r\n",
@@ -141,6 +142,7 @@ describe("document highlight service", () => {
       release = resolve;
     });
     const service = createDocumentHighlightService({
+      workerEligibility: inline,
       inlineHighlight: async () => {
         calls += 1;
         return pending;
@@ -165,6 +167,7 @@ describe("document highlight service", () => {
       release = resolve;
     });
     const service = createDocumentHighlightService({
+      workerEligibility: inline,
       inlineHighlight: async () => pending,
     });
     const firstController = new AbortController();
@@ -188,6 +191,7 @@ describe("document highlight service", () => {
   test("cancels underlying work when every subscriber aborts", async () => {
     let underlyingAborted = false;
     const service = createDocumentHighlightService({
+      workerEligibility: inline,
       inlineHighlight: ({ signal }) =>
         new Promise((_, reject) => {
           signal.addEventListener(
@@ -214,11 +218,11 @@ describe("document highlight service", () => {
     expect(service.stats()).toMatchObject({ completedEntries: 0, inFlight: 0 });
   });
 
-  test("obeys offload policy and centralized eligibility", async () => {
+  test("routes every eligible document to the worker and the rest inline", async () => {
     let workerCalls = 0;
     let inlineCalls = 0;
     const service = createDocumentHighlightService({
-      workerEligibility: eligible,
+      workerEligibility: (input) => (input.path === "inline.ts" ? inline(input) : eligible(input)),
       workerHighlight: async () => {
         workerCalls += 1;
         return compact(base.text.length);
@@ -229,16 +233,8 @@ describe("document highlight service", () => {
       },
     });
 
-    await service.highlight({
-      ...base,
-      path: "inline.ts",
-      offloadLargeDiff: false,
-    });
-    await service.highlight({
-      ...base,
-      path: "worker.ts",
-      offloadLargeDiff: true,
-    });
+    await service.highlight({ ...base, path: "inline.ts" });
+    await service.highlight({ ...base, path: "worker.ts" });
     expect({ inlineCalls, workerCalls }).toEqual({
       inlineCalls: 1,
       workerCalls: 1,
@@ -257,22 +253,14 @@ describe("document highlight service", () => {
         return compact(base.text.length);
       },
     });
-    const inlineService = createDocumentHighlightService();
-    const [requestedOffload, inline] = await Promise.all([
-      offloadedService.highlight({
-        ...base,
-        theme: customTheme,
-        offloadLargeDiff: true,
-      }),
-      inlineService.highlight({
-        ...base,
-        theme: customTheme,
-        offloadLargeDiff: false,
-      }),
+    const inlineService = createDocumentHighlightService({ workerEligibility: inline });
+    const [requestedOffload, inlineResult] = await Promise.all([
+      offloadedService.highlight({ ...base, theme: customTheme }),
+      inlineService.highlight({ ...base, theme: customTheme }),
     ]);
 
     expect(workerCalls).toBe(0);
-    expect(requestedOffload).toEqual(inline);
+    expect(requestedOffload).toEqual(inlineResult);
   });
 
   test("caches permanent fallback but retries transient worker failure", async () => {
@@ -284,7 +272,7 @@ describe("document highlight service", () => {
         throw new HighlightWorkerClientError("unsupported-language", false, "unsupported");
       },
     });
-    const permanentInput = { ...base, offloadLargeDiff: true };
+    const permanentInput = { ...base };
     expect(await permanent.highlight(permanentInput)).toMatchObject({
       status: "fallback",
       retryable: false,
@@ -310,7 +298,7 @@ describe("document highlight service", () => {
   });
 
   test("returns plain permanent fallback for unknown and unbounded documents", async () => {
-    const service = createDocumentHighlightService();
+    const service = createDocumentHighlightService({ workerEligibility: inline });
     expect(await service.highlight({ ...base, language: "not-a-real-grammar" })).toMatchObject({
       status: "fallback",
       retryable: false,
@@ -331,6 +319,7 @@ describe("document highlight service", () => {
     const releases = new Map<string, (value: CompactHighlightedDocument) => void>();
     let calls = 0;
     const service = createDocumentHighlightService({
+      workerEligibility: inline,
       maxInFlightEntries: 2,
       inlineHighlight: ({ path }) => {
         calls += 1;
@@ -368,6 +357,7 @@ describe("document highlight service", () => {
   test("keeps aborted underlying work charged until it settles", async () => {
     const releases: Array<(value: CompactHighlightedDocument) => void> = [];
     const service = createDocumentHighlightService({
+      workerEligibility: inline,
       maxInFlightEntries: 2,
       inlineHighlight: () =>
         new Promise<CompactHighlightedDocument>((resolve) => {
@@ -422,7 +412,7 @@ describe("document highlight service", () => {
       | undefined;
     let workerCalls = 0;
     const service = createDocumentHighlightService({
-      workerEligibility: eligible,
+      workerEligibility: inline,
       workerHighlight: async () => {
         workerCalls += 1;
         return compact(base.text.length);
@@ -446,7 +436,6 @@ describe("document highlight service", () => {
     mutableInput.text = "mutated";
     mutableInput.path = "mutated.ts";
     mutableInput.language = "javascript";
-    mutableInput.offloadLargeDiff = true;
     mutableTheme.appearance = "light";
     mutableTheme.syntaxTheme = "github-light-default";
     mutableTheme.syntaxScopeOverrides!.keyword = "#ffffff";
@@ -469,6 +458,7 @@ describe("document highlight service", () => {
   test("caches typed unsupported inline resources but retries unexpected inline failures", async () => {
     let permanentCalls = 0;
     const permanent = createDocumentHighlightService({
+      workerEligibility: inline,
       inlineHighlight: async () => {
         permanentCalls += 1;
         throw new DocumentHighlighterConfigurationError("unsupported");
@@ -484,6 +474,7 @@ describe("document highlight service", () => {
 
     let retryCalls = 0;
     const retryable = createDocumentHighlightService({
+      workerEligibility: inline,
       inlineHighlight: async () => {
         retryCalls += 1;
         if (retryCalls === 1) throw new Error("transient initialization failure");
@@ -507,7 +498,7 @@ describe("document highlight service", () => {
     const blocker = queueDocumentHighlightWork(() => blocked);
     await new Promise((resolve) => setTimeout(resolve, 5));
 
-    const service = createDocumentHighlightService();
+    const service = createDocumentHighlightService({ workerEligibility: inline });
     const controller = new AbortController();
     const pending = service.highlight({
       ...base,
@@ -535,7 +526,7 @@ describe("document highlight service", () => {
         throw new HighlightWorkerClientError("unsupported-language", false, "unsupported");
       },
     });
-    const workerBase = { ...base, offloadLargeDiff: true };
+    const workerBase = { ...base };
     await entryBound.highlight({ ...workerBase, path: "one.ts" });
     await entryBound.highlight({ ...workerBase, path: "two.ts" });
     await entryBound.highlight({ ...workerBase, path: "one.ts" });
@@ -544,6 +535,7 @@ describe("document highlight service", () => {
 
     let byteCalls = 0;
     const byteBound = createDocumentHighlightService({
+      workerEligibility: inline,
       maxCacheBytes: 600,
       maxCacheEntries: 10,
       inlineHighlight: async () => {
@@ -569,6 +561,7 @@ describe("document highlight service", () => {
       release = resolve;
     });
     const service = createDocumentHighlightService({
+      workerEligibility: inline,
       inlineHighlight: async () => {
         calls += 1;
         return pending;
@@ -602,7 +595,7 @@ describe("document highlight service", () => {
     try {
       for (const themeId of ["github-dark-default", "ayu-dark"]) {
         const parityTheme = THEMES.find((candidate) => candidate.id === themeId)!;
-        const inline = createDocumentHighlightService();
+        const inlineService = createDocumentHighlightService({ workerEligibility: inline });
         const offloaded = createDocumentHighlightService({ workerEligibility: eligible });
         const input = {
           ...base,
@@ -610,8 +603,8 @@ describe("document highlight service", () => {
           theme: parityTheme,
         };
         const [inlineResult, workerResult] = await Promise.all([
-          inline.highlight({ ...input, offloadLargeDiff: false }),
-          offloaded.highlight({ ...input, offloadLargeDiff: true }),
+          inlineService.highlight(input),
+          offloaded.highlight(input),
         ]);
 
         expect(workerResult.status).toBe("highlighted");

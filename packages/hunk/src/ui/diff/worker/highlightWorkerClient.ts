@@ -1,8 +1,9 @@
 /**
  * Brokers terminal syntax-highlighting jobs through Bun's compiled-entrypoint worker support.
  *
- * Diff and complete-document requests share one serialized queue. The client validates every
- * matching response before handing compact token ranges to UI callers.
+ * Diff, document, and preload requests share one serialized queue; render requests queue ahead
+ * of waiting preloads. The client validates every matching response before handing compact
+ * token ranges to UI callers.
  */
 import type { FileDiffMetadata } from "@pierre/diffs";
 import { createHighlightWorker } from "../../../highlightWorkerClient";
@@ -14,6 +15,7 @@ import {
 } from "./highlightCompact";
 import {
   describeHighlightWorkerDocumentIssue,
+  describeHighlightWorkerPreloadIssue,
   highlightWorkerDocumentLineLengths,
   HIGHLIGHT_WORKER_PROTOCOL_VERSION,
   isHighlightWorkerFailureCode,
@@ -21,6 +23,7 @@ import {
   type HighlightWorkerDiffRequest,
   type HighlightWorkerDocumentRequest,
   type HighlightWorkerFailureCode,
+  type HighlightWorkerPreloadRequest,
   type HighlightWorkerRequest,
   type HighlightWorkerResponse,
 } from "./highlightWorkerProtocol";
@@ -29,6 +32,7 @@ export type WorkerHighlightedDiffCode = CompactHighlightedDiff;
 export type WorkerHighlightedDocumentCode = CompactHighlightedDocument;
 
 type WorkerHighlightedCode = WorkerHighlightedDiffCode | WorkerHighlightedDocumentCode;
+type WorkerRequestResult = WorkerHighlightedCode | undefined;
 
 /** Classifies worker-client failures for retry and fallback policy. */
 export type HighlightWorkerClientErrorCode =
@@ -53,7 +57,7 @@ export class HighlightWorkerClientError extends Error {
 
 interface PendingHighlightRequest {
   request: HighlightWorkerRequest;
-  resolve: (code: WorkerHighlightedCode) => void;
+  resolve: (result: WorkerRequestResult) => void;
   reject: (error: Error) => void;
   signal?: AbortSignal;
   abortHandler?: () => void;
@@ -169,6 +173,9 @@ function validatedResponse(value: unknown, request: HighlightWorkerRequest) {
     return response as unknown as Extract<HighlightWorkerResponse, { ok: false }>;
   }
 
+  if (response.kind === "preload") {
+    return response as unknown as HighlightWorkerResponse;
+  }
   if (!("code" in response)) {
     throw clientError(
       "protocol-error",
@@ -228,7 +235,7 @@ function handleWorkerMessage(sourceWorker: Worker, event: MessageEvent<unknown>)
   }
 
   if (response.ok) {
-    settleActiveRequest((active) => active.resolve(response.code));
+    settleActiveRequest((active) => active.resolve("code" in response ? response.code : undefined));
     return;
   }
 
@@ -288,7 +295,7 @@ function runNextRequest() {
 }
 
 /** Queue one typed job behind any active worker request with request-scoped cancellation. */
-function enqueueHighlightRequest<T extends WorkerHighlightedCode>(
+function enqueueHighlightRequest<T extends WorkerRequestResult>(
   request: HighlightWorkerRequest,
   signal?: AbortSignal,
 ) {
@@ -300,7 +307,7 @@ function enqueueHighlightRequest<T extends WorkerHighlightedCode>(
 
     const pending: PendingHighlightRequest = {
       request,
-      resolve: resolve as (code: WorkerHighlightedCode) => void,
+      resolve: resolve as (result: WorkerRequestResult) => void,
       reject,
       signal,
       aborted: false,
@@ -320,9 +327,34 @@ function enqueueHighlightRequest<T extends WorkerHighlightedCode>(
       signal.addEventListener("abort", pending.abortHandler, { once: true });
     }
 
-    queuedRequests.push(pending);
+    // Render requests queue ahead of every waiting preload so warm-up never delays visible color.
+    const firstPreload =
+      request.kind === "preload"
+        ? -1
+        : queuedRequests.findIndex((queued) => queued.request.kind === "preload");
+    if (firstPreload >= 0) {
+      queuedRequests.splice(firstPreload, 0, pending);
+    } else {
+      queuedRequests.push(pending);
+    }
     runNextRequest();
   });
+}
+
+/** Warm one theme and grammar in the worker before a render request needs them. */
+export function preloadHighlightWorker({ language, theme }: { language: string; theme: string }) {
+  const request: HighlightWorkerPreloadRequest = {
+    version: HIGHLIGHT_WORKER_PROTOCOL_VERSION,
+    id: nextRequestId++,
+    kind: "preload",
+    theme,
+    language,
+  };
+  const issue = describeHighlightWorkerPreloadIssue(request);
+  if (issue) {
+    return Promise.reject(clientError("invalid-request", false, issue));
+  }
+  return enqueueHighlightRequest<undefined>(request).then(() => undefined);
 }
 
 /** Highlight one diff in the Bun worker after earlier requests finish. */

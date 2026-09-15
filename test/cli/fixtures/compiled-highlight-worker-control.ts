@@ -29,7 +29,7 @@ if (!supportsHighlightWorkerOffload()) {
     };
     // Keep this compiled-fixture assertion explicit because importing the private UI worker
     // protocol here would cross the CLI fixture's packaging boundary.
-    if (response.version !== 4 || response.id !== 1 || response.ok !== false) {
+    if (response.version !== 5 || response.id !== 1 || response.ok !== false) {
       process.stderr.write(
         `Unexpected compiled highlight worker response: ${JSON.stringify(response)}\n`,
       );

@@ -124,7 +124,9 @@ export const COMMON_REVIEW_OPTIONS = [
   AUXILIARY_AGENT_OPTIONS.experimental,
   {
     flag: "--fast",
-    description: "experimentally offload eligible syntax highlighting",
+    description: "deprecated no-op; worker highlighting is now the default",
+    hidden: true,
+    publicDocs: false,
   },
   { flag: "--line-numbers", description: "show line numbers" },
   { flag: "--no-line-numbers", description: "hide line numbers" },
@@ -641,7 +643,6 @@ function renderCliHelp() {
     "  -h, --help                              show help",
     "  -v, --version                           show version",
     "  --experimental                          enable experimental review features (currently STML)",
-    "  --fast                                  review working tree with experimental fast highlighting",
     "",
     "Common review options:",
     "  --mode <mode>                           layout mode: auto, split, unified",
