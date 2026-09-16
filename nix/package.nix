@@ -82,6 +82,11 @@ in
       runHook preInstall
       mkdir -p $out/bin
       cp -p ./hunk-bin $out/bin/hunk
+      # `hunk patch` (and friends) respawn the TUI through a `hunkdiff`
+      # lookup, mirroring the npm package's dual `hunk`/`hunkdiff` bins.
+      # Without this alias the review flow fails with
+      # "unable to execute '…/bin/hunkdiff'".
+      ln -s hunk $out/bin/hunkdiff
       cp -r ./packages/hunk/skills $out/
       wrapProgram $out/bin/hunk --set HUNK_INSTALL_SOURCE nix
       runHook postInstall
