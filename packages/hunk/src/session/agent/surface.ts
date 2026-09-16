@@ -394,8 +394,8 @@ export const SESSION_AGENT_COMMANDS = {
       repoOption,
       { flag: "--file <path>", description: "filter comments to one diff file" },
       { flag: "--type <type>", description: "filter to live, all, ai, agent, or user comments" },
-      { flag: "--author <name>", description: "filter comments to one author" },
-      { flag: "--no-author", description: "filter to comments that have no author" },
+      { flag: "--author <name>", description: "only comments tagged with this author" },
+      { flag: "--no-author", description: "only comments with no author tag" },
       jsonOption,
     ],
     synopsis: [
