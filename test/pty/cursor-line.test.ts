@@ -57,6 +57,40 @@ describe("PTY current line", () => {
     }
   });
 
+  test("scroll-off starts scrolling before the current line reaches the viewport edge", async () => {
+    const fixture = harness.createPinnedHeaderRepoFixture();
+
+    /** Step down until the viewport starts moving and report how many steps that took. */
+    async function stepsBeforeScrolling(scrollOffArgs: string[]) {
+      const session = await harness.launchHunk({
+        args: ["show", "HEAD", "--mode", "unified", ...scrollOffArgs],
+        cwd: fixture.dir,
+        cols: 120,
+        rows: 24,
+      });
+
+      try {
+        await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+        await session.waitIdle({ timeout: 300 });
+
+        let steps = 0;
+        let scrolled = 0;
+        for (let step = 0; step < 40 && scrolled === 0; step += 1) {
+          scrolled = await measureKeyScroll(session, "j", 12);
+          steps += 1;
+        }
+        return steps;
+      } finally {
+        session.close();
+      }
+    }
+
+    const baselineSteps = await stepsBeforeScrolling([]);
+    const marginSteps = await stepsBeforeScrolling(["--scroll-off", "5"]);
+
+    expect(baselineSteps - marginSteps).toBe(5);
+  });
+
   test("one-cell mouse jitter still selects the exact clicked line", async () => {
     const fixture = harness.createScrollableFilePair();
     const session = await harness.launchHunk({

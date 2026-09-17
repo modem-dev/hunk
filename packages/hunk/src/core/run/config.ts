@@ -25,6 +25,7 @@ import {
   MIN_REVIEW_GAP,
   validateReviewGap,
 } from "./reviewGap";
+import { DEFAULT_SCROLL_OFF, MAX_SCROLL_OFF, MIN_SCROLL_OFF, validateScrollOff } from "./scrollOff";
 import { DEFAULT_TAB_WIDTH, validateTabWidth } from "./tabWidth";
 import { DEFAULT_WHEEL_SCROLL_LINES, validateWheelScrollLines } from "./wheelScrollLines";
 import { findProjectRootCandidate } from "../process/projectRoot";
@@ -298,6 +299,21 @@ function normalizeReviewGap(value: unknown, key: "file_gap" | "hunk_gap") {
   return validateReviewGap(value, key);
 }
 
+/** Accept a bounded integer scrolloff margin from TOML configuration. */
+function normalizeScrollOff(value: unknown) {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    throw new Error(
+      `Expected scroll_off to be an integer from ${MIN_SCROLL_OFF} to ${MAX_SCROLL_OFF}.`,
+    );
+  }
+
+  return validateScrollOff(value, "scroll_off");
+}
+
 /** Accept `auto` or a bounded integer wheel step from TOML configuration. */
 function normalizeWheelScrollLines(value: unknown) {
   if (value === undefined || value === DEFAULT_WHEEL_SCROLL_LINES) {
@@ -416,6 +432,15 @@ export const CONFIG_REFERENCE_OPTIONS: readonly ConfigReferenceOption[] = [
     accepted: `${MIN_REVIEW_GAP} through ${MAX_REVIEW_GAP}`,
     runtimeDefault: DEFAULT_HUNK_GAP,
     description: "Blank rows before each hunk after the first in a file.",
+  },
+  {
+    key: "scroll_off",
+    property: "scrollOff",
+    type: "integer",
+    accepted: `${MIN_SCROLL_OFF} through ${MAX_SCROLL_OFF}`,
+    runtimeDefault: DEFAULT_SCROLL_OFF,
+    description:
+      "Keep the current line at least this many rows clear of the viewport top/bottom edge while stepping through a diff, like Vim's `scrolloff`.",
   },
   {
     key: "wheel_scroll_lines",
@@ -1012,6 +1037,8 @@ function normalizeConfigReferenceValue(property: keyof CommonOptions, value: unk
       return normalizeReviewGap(value, "file_gap");
     case "hunkGap":
       return normalizeReviewGap(value, "hunk_gap");
+    case "scrollOff":
+      return normalizeScrollOff(value);
     case "wheelScrollLines":
       return normalizeWheelScrollLines(value);
     case "sidebar":
@@ -1081,6 +1108,7 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
     tabWidth: overrides.tabWidth ?? base.tabWidth,
     fileGap: overrides.fileGap ?? base.fileGap,
     hunkGap: overrides.hunkGap ?? base.hunkGap,
+    scrollOff: overrides.scrollOff ?? base.scrollOff,
     wheelScrollLines: overrides.wheelScrollLines ?? base.wheelScrollLines,
     wrapLines: overrides.wrapLines ?? base.wrapLines,
     hunkHeaders: overrides.hunkHeaders ?? base.hunkHeaders,
@@ -1363,6 +1391,7 @@ export function resolveConfiguredCliInput(
     tabWidth: resolvedOptions.tabWidth ?? DEFAULT_TAB_WIDTH,
     fileGap: resolvedOptions.fileGap ?? DEFAULT_FILE_GAP,
     hunkGap: resolvedOptions.hunkGap ?? DEFAULT_HUNK_GAP,
+    scrollOff: resolvedOptions.scrollOff ?? DEFAULT_SCROLL_OFF,
     wheelScrollLines: resolvedOptions.wheelScrollLines ?? DEFAULT_WHEEL_SCROLL_LINES,
     wrapLines: resolvedOptions.wrapLines ?? DEFAULT_VIEW_PREFERENCES.wrapLines,
     hunkHeaders: resolvedOptions.hunkHeaders ?? DEFAULT_VIEW_PREFERENCES.showHunkHeaders,

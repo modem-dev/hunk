@@ -1655,6 +1655,7 @@ export function App({
             tabWidth={tabWidth}
             fileGap={fileGap}
             hunkGap={hunkGap}
+            scrollOff={bootstrap.initialScrollOff}
             wheelScrollLines={bootstrap.initialWheelScrollLines}
             wrapLines={wrapLines}
             wrapToggleScrollTop={wrapToggleScrollTopRef.current}

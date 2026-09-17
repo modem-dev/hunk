@@ -72,30 +72,43 @@ export type LineRevealPlacement = "nearest" | "reveal";
  *
  * This runs on every step key, so it moves the minimum distance and stays put while the line is
  * already on screen; hunk reveal's top bias would yank the viewport on each keystroke.
+ *
+ * `scrollOff` is a Vim-style margin: the line stays at least that many rows clear of the viewport
+ * edge once the view does move, instead of only reacting once the line reaches the edge itself. A
+ * margin that would leave no room for the line is clamped to half the viewport, the way Vim clamps
+ * `scrolloff` against the window height, so it can never make the target unreachable.
  */
 export function computeLineRevealScrollTop({
   lineTop,
   lineHeight,
   scrollTop,
   viewportHeight,
+  scrollOff = 0,
 }: {
   lineTop: number;
   lineHeight: number;
   scrollTop: number;
   viewportHeight: number;
+  scrollOff?: number;
 }) {
   const clampedTop = Math.max(0, lineTop);
   const clampedHeight = Math.max(1, lineHeight);
   const clampedViewportHeight = Math.max(0, viewportHeight);
+  const clampedScrollOff = Math.max(
+    0,
+    Math.min(scrollOff, Math.floor((clampedViewportHeight - clampedHeight) / 2)),
+  );
 
-  if (clampedTop < scrollTop) {
-    return clampedTop;
+  const topMargin = clampedTop - clampedScrollOff;
+  if (topMargin < scrollTop) {
+    return Math.max(0, topMargin);
   }
 
   const lineBottom = clampedTop + clampedHeight;
+  const bottomMargin = lineBottom + clampedScrollOff;
   const viewportBottom = scrollTop + clampedViewportHeight;
-  if (lineBottom > viewportBottom) {
-    return Math.max(0, lineBottom - clampedViewportHeight);
+  if (bottomMargin > viewportBottom) {
+    return Math.max(0, bottomMargin - clampedViewportHeight);
   }
 
   return scrollTop;

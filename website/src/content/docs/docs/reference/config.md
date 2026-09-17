@@ -120,6 +120,16 @@ Blank rows before each hunk after the first in a file.
 
 ---
 
+**`scroll_off`**
+
+Keep the current line at least this many rows clear of the viewport top/bottom edge while stepping through a diff, like Vim's `scrolloff`.
+
+- **Type:** integer
+- **Accepted:** 0 through 40
+- **Built-in default:** `0`
+
+---
+
 **`wheel_scroll_lines`**
 
 Set review rows per vertical wheel event. `auto` keeps cadence-based acceleration from one to three rows.
