@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 3,
+  "label": "treatment",
+  "markerSha256": "1658598e333ed7a41438c02ada9266b86396b930252b0adf91de68d32b3efdbe",
+  "exercised": "resolveClose callback defect during reconnect close policy",
+  "fixedTreatmentMessage": "Session broker lifecycle failed unexpectedly.",
+  "defectCallbackMessages": [
+    "Session broker lifecycle failed unexpectedly."
+  ],
+  "outputMessages": [],
+  "synchronousEscapeCharacterized": false,
+  "controlLimitation": null,
+  "treatmentAssertionsApplied": true
+}
