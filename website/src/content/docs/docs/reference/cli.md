@@ -530,15 +530,17 @@ Each item is either a reply with `replyTo`, or a root with `filePath` and one ta
 list live inline review notes
 
 ```bash
-hunk session comment list (<session-id> | --repo <path>) [--file <path>] [--type <live|all|ai|agent|user>] [--json]
+hunk session comment list (<session-id> | --repo <path>) [--file <path>] [--type <live|all|ai|agent|user>] [--author <name> | --no-author] [--json]
 ```
 
-| Option          | Description                                               |
-| --------------- | --------------------------------------------------------- |
-| `--repo <path>` | target the live session whose repo root matches this path |
-| `--file <path>` | filter comments to one diff file                          |
-| `--type <type>` | filter to live, all, ai, agent, or user comments          |
-| `--json`        | emit structured JSON                                      |
+| Option            | Description                                               |
+| ----------------- | --------------------------------------------------------- |
+| `--repo <path>`   | target the live session whose repo root matches this path |
+| `--file <path>`   | filter comments to one diff file                          |
+| `--type <type>`   | filter to live, all, ai, agent, or user comments          |
+| `--author <name>` | only comments tagged with this author                     |
+| `--no-author`     | only comments with no author tag                          |
+| `--json`          | emit structured JSON                                      |
 
 **Positionals:** `[sessionId]`.
 
