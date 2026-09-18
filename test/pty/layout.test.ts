@@ -91,6 +91,33 @@ describe("PTY layout", () => {
     }
   });
 
+  test("a review with many mounted files does not print a max-listener warning", async () => {
+    const fixture = harness.createManyShortFileRepoFixture(14);
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "unified", "--no-sidebar"],
+      cwd: fixture.dir,
+      cols: 100,
+      rows: 120,
+    });
+    let output = "";
+    const unsubscribe = session.subscribe((data) => {
+      output += data;
+    });
+
+    try {
+      await harness.waitForSnapshot(session, (text) => text.includes("short-13.ts"), 15_000);
+      session.resize({ cols: 90, rows: 120 });
+      await harness.waitForSnapshot(session, (text) => text.includes("short-13.ts"), 5_000);
+      await sleep(300);
+
+      expect(output).toContain("short-0.ts");
+      expect(output).not.toContain("MaxListenersExceededWarning");
+    } finally {
+      unsubscribe();
+      session.close();
+    }
+  });
+
   test("the deprecated stack CLI value renders the canonical unified layout", async () => {
     const fixture = harness.createTwoFileRepoFixture();
     const session = await harness.launchHunk({

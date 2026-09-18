@@ -1332,6 +1332,59 @@ describe("UI components", () => {
     }
   });
 
+  test("DiffPane registers one renderer blur listener however many files are mounted", async () => {
+    const files = createWindowingFiles(14);
+    const props = createDiffPaneProps(files, resolveTheme("github-dark-default", null), {
+      onStartUserNoteAtHunk: () => {},
+    });
+    const setup = await testRender(<DiffPane {...props} />, { width: 80, height: 120 });
+
+    try {
+      await settleDiffPane(setup);
+      const frame = setup.captureCharFrame();
+      expect(frame).toContain("window-1.ts");
+      expect(frame).toContain("window-14.ts");
+      expect(setup.renderer.listenerCount("blur")).toBe(1);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("DiffPane hides the add-note affordance when the terminal loses focus", async () => {
+    const files = createWindowingFiles(6);
+    const props = createDiffPaneProps(files, resolveTheme("github-dark-default", null), {
+      diffContentWidth: 88,
+      onStartUserNoteAtHunk: () => {},
+      separatorWidth: 84,
+      width: 92,
+      wrapLines: true,
+    });
+    const setup = await testRender(<DiffPane {...props} />, { width: 96, height: 12 });
+
+    try {
+      await act(async () => {
+        await setup.renderOnce();
+        await setup.mockMouse.moveTo(32, 4);
+        await setup.renderOnce();
+      });
+      let frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("[+]"), 12);
+      expect(frame).toContain("[+]");
+
+      await act(async () => {
+        setup.renderer.emit("blur");
+        await setup.renderOnce();
+      });
+      frame = await waitForFrame(setup, (nextFrame) => !nextFrame.includes("[+]"), 12);
+      expect(frame).not.toContain("[+]");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("DiffPane add-note clicks keep targeting the current hunk after navigation", async () => {
     const file = createWideTwoHunkDiffFile("target", "target.ts");
     const files = [file];

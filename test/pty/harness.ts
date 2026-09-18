@@ -773,9 +773,9 @@ end
   }
 
   /** Build many short files so a tall first paint must mount past the first-file overscan neighbor. */
-  function createManyShortFileRepoFixture() {
+  function createManyShortFileRepoFixture(count = 8) {
     return createGitRepoFixture(
-      Array.from({ length: 8 }, (_, index) => ({
+      Array.from({ length: count }, (_, index) => ({
         path: `short-${index}.ts`,
         before: `export const short${index} = ${index};\n`,
         after: `export const short${index} = ${index + 10};\n`,
