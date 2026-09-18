@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ThemeSelectorItem } from "../components/chrome/ThemeSelectorDialog";
-import type { ThemeController } from "../theme/controller";
+import { resolveThemeSelectionId, type ThemeController } from "../theme/controller";
 import { availableThemes, resolveTheme, withTransparentSurfaces } from "../themes";
 
 interface ThemeSelectorControllerState {
@@ -21,7 +21,7 @@ export function useThemeSelectorController({
   themeController,
   transparentBackground,
 }: UseThemeSelectorControllerOptions) {
-  const { themeId: committedThemeId, customThemes } = useSyncExternalStore(
+  const { themeSelection: committedThemeSelection, customThemes } = useSyncExternalStore(
     themeController.subscribe,
     themeController.getSnapshot,
   );
@@ -33,8 +33,12 @@ export function useThemeSelectorController({
 
   const themeOptions = useMemo(() => availableThemes(customThemes), [customThemes]);
   const committedTheme = useMemo(
-    () => resolveTheme(committedThemeId, themeController.themeMode ?? null, customThemes),
-    [committedThemeId, customThemes, themeController.themeMode],
+    () => resolveTheme(committedThemeSelection, themeController.themeMode ?? null, customThemes),
+    [committedThemeSelection, customThemes, themeController.themeMode],
+  );
+  const committedThemeId = useMemo(
+    () => resolveThemeSelectionId(committedThemeSelection, themeController.themeMode, customThemes),
+    [committedThemeSelection, customThemes, themeController.themeMode],
   );
   const committedIndex = themeOptions.findIndex((theme) => theme.id === committedTheme.id);
   const storedSelectedIndex = themeOptions.findIndex((theme) => theme.id === state.selectedThemeId);
@@ -195,6 +199,7 @@ export function useThemeSelectorController({
     activeTheme,
     baseTheme,
     themeId: committedThemeId,
+    themeSelection: committedThemeSelection,
     themeSelectorItems: items,
     themeSelectorOpen: state.open,
     themeSelectorSelectedIndex: selectedIndex,

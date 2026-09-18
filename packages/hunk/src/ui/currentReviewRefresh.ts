@@ -12,12 +12,13 @@
 import type { SessionReloadReason } from "../extension-api/types";
 import type { CliInput, LayoutMode } from "../core/run/commandInputs";
 import { canReloadInput } from "../core/run/inputReload";
+import type { ThemeSelection } from "../core/theme/selection";
 import { isVcsReviewInput } from "../core/vcs";
 
 /** Live view settings that must survive an in-session review refresh. */
 export interface CurrentReviewViewOptions {
   layoutMode: LayoutMode;
-  themeId: string;
+  themeSelection: ThemeSelection;
   showAgentNotes: boolean;
   showHunkHeaders: boolean;
   showLineNumbers: boolean;
@@ -53,7 +54,7 @@ export function withCurrentReviewViewOptions(
     options: {
       ...input.options,
       mode: view.layoutMode,
-      theme: view.themeId,
+      theme: view.themeSelection,
       agentNotes: view.showAgentNotes,
       hunkHeaders: view.showHunkHeaders,
       lineNumbers: view.showLineNumbers,

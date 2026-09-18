@@ -12,13 +12,15 @@ describe("ThemeController", () => {
       publications += 1;
     });
 
-    expect(controller.initialThemeId).toBe("github-light-default");
-    expect(controller.getSnapshot().themeId).toBe("github-light-default");
+    expect(controller.initialThemeSelection).toBe("auto");
+    expect(controller.getSnapshot().themeSelection).toBe("auto");
+    expect(controller.themeId()).toBe("github-light-default");
     expect(controller.themeMode).toBe("light");
 
     controller.commitTheme("dracula");
     controller.commitTheme("dracula");
-    expect(controller.getSnapshot().themeId).toBe("dracula");
+    expect(controller.getSnapshot().themeSelection).toBe("dracula");
+    expect(controller.themeId()).toBe("dracula");
     expect(publications).toBe(1);
 
     unsubscribe();
@@ -42,9 +44,28 @@ describe("ThemeController", () => {
     controller.replaceCustomThemes(replacementThemes);
 
     expect(controller.getSnapshot()).toEqual({
-      themeId: "team",
+      themeSelection: "team",
       customThemes: replacementThemes,
     });
+    expect(publications).toBe(1);
+  });
+
+  test("keeps an adaptive pair committed and names the side the terminal chose", () => {
+    const pair = { dark: "vitesse-dark", light: "one-light" };
+    const controller = new ThemeController({ initialTheme: pair, initialThemeMode: "light" });
+    let publications = 0;
+    controller.subscribe(() => {
+      publications += 1;
+    });
+
+    expect(controller.getSnapshot().themeSelection).toEqual(pair);
+    expect(controller.themeId()).toBe("one-light");
+
+    controller.commitTheme({ ...pair });
+    expect(publications).toBe(0);
+
+    controller.commitTheme("dracula");
+    expect(controller.getSnapshot().themeSelection).toBe("dracula");
     expect(publications).toBe(1);
   });
 });

@@ -66,7 +66,9 @@ export async function runStaticHistory(
   const stdoutIsTTY = Boolean(deps.stdout.isTTY);
   const ascii = input.ascii || deps.env.TERM === "dumb";
   const color = resolveHistoryColor({ mode: input.color, stdoutIsTTY, env: deps.env });
-  const theme = resolveHistoryTheme(input.theme, bootstrap.customThemes);
+  // Static output never probes the terminal, so a configured pair falls through to its
+  // fallback side.
+  const theme = resolveHistoryTheme(bootstrap.initialViewPreferences.theme, bootstrap.customThemes);
   const terminalColumns = deps.stdout.columns;
   const width = stdoutIsTTY
     ? terminalColumns && terminalColumns > 0

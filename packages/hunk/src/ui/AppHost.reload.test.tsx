@@ -158,7 +158,7 @@ describe("reload theme catalog", () => {
       }
 
       expect(themeController.getSnapshot()).toMatchObject({
-        themeId: "dracula",
+        themeSelection: "dracula",
         customThemes: [{ id: "reloaded", accent: "#abcdef" }],
       });
     } finally {
@@ -207,7 +207,7 @@ describe("reload theme catalog", () => {
       ).rejects.toThrow(publicationError.message);
 
       expect(themeController.getSnapshot()).toEqual({
-        themeId: "dracula",
+        themeSelection: "dracula",
         customThemes: [{ id: "original", accent: "#112233" }],
       });
     } finally {

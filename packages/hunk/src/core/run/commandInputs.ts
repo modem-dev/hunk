@@ -14,6 +14,7 @@ import type {
   ExtensionVcsStashShowInput,
 } from "../../extension-api/types";
 import type { InstallSource } from "../install/installSource";
+import type { ThemeSelection } from "../theme/selection";
 import type { WheelScrollLines } from "./wheelScrollLines";
 
 export type LayoutMode = "auto" | "split" | "unified";
@@ -37,7 +38,7 @@ export interface CommonOptions {
   mode?: LayoutMode;
   cursorLine?: CursorLine;
   vcs?: VcsMode;
-  theme?: string;
+  theme?: ThemeSelection;
   agentContext?: string;
   pager?: boolean;
   watch?: boolean;

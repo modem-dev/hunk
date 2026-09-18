@@ -109,6 +109,7 @@ export async function loadConfiguredSessionBootstrap({
     });
     bootstrap.extensions = extensions;
     bootstrap.viewPreferencesConfigPath = configured.viewPreferencesConfigPath;
+    bootstrap.viewPreferenceScope = configured.viewPreferenceScope;
     bootstrap.keybindings = configured.keybindings;
 
     return {
