@@ -65,4 +65,37 @@ describe("pager output through a pipe", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   }, 30_000);
+
+  test("delivers the whole plain-text fallback document to a piped consumer", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "hunk-plain-pager-pipe-"));
+    const document = createGitLogDocument(6_000);
+    expect(document.length).toBeGreaterThan(PIPE_BUFFER_BYTES * 3);
+
+    const proc = Bun.spawn(["bun", "run", "packages/hunk/src/main.tsx", "--", "pager"], {
+      cwd: process.cwd(),
+      stdin: new TextEncoder().encode(document),
+      stdout: "pipe",
+      stderr: "pipe",
+      env: {
+        ...process.env,
+        // A normal terminal type selects Hunk's plain-text pager fallback for non-diff input,
+        // while stdout remains a pipe so the exit/backpressure contract is observable.
+        TERM: "xterm-256color",
+        GIT_PAGER: "hunk pager",
+        HUNK_MCP_DISABLE: "1",
+        HUNK_DISABLE_UPDATE_NOTICE: "1",
+        XDG_CONFIG_HOME: dir,
+      },
+    });
+
+    try {
+      const [output, exitCode] = await Promise.all([readAll(proc.stdout), proc.exited]);
+
+      expect(exitCode).toBe(0);
+      expect(output.length).toBeGreaterThan(PIPE_BUFFER_BYTES);
+      expect(output).toBe(document);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
 });
