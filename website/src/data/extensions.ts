@@ -92,6 +92,15 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     apiVersion: 4,
   },
   {
+    repo: "Alexs7zzh/hunk-extensions",
+    name: "hunk-extensions",
+    summary:
+      "Adds Plastic SCM support to Hunk, so a Plastic working copy reviews the way a Git one does.",
+    categories: ["VCS backend"],
+    version: "0.1.0",
+    apiVersion: 16,
+  },
+  {
     repo: "astwys/hunk-adaptive-theme",
     name: "hunk-adaptive-theme",
     summary: "Picks a Hunk theme to match your terminal background at startup.",
