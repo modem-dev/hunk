@@ -252,8 +252,12 @@ export const ExtensionPaneHost = memo(
   (previous, next) =>
     previous.registered === next.registered &&
     previous.review === next.review &&
+    previous.reviewGeneration === next.reviewGeneration &&
     previous.files.length === next.files.length &&
     previous.files.every((file, index) => file === next.files[index]) &&
+    previous.fileViews.length === next.fileViews.length &&
+    previous.fileViews.every((fileView, index) => fileView === next.fileViews[index]) &&
+    previous.presentation === next.presentation &&
     previous.selectedFileId === next.selectedFileId &&
     previous.selectedHunkIndex === next.selectedHunkIndex &&
     previous.placement === next.placement &&

@@ -107,6 +107,35 @@ describe("extension presentation scopes", () => {
     expect(store.get()).toEqual(active);
   });
 
+  test("rejects malformed scope objects without throwing, mutating, or notifying", () => {
+    const { store, changes } = createStore();
+    const active = { generation: "generation:1", files: [{ fileId: "alpha", hunkIndexes: [0] }] };
+    expect(store.set("guide", active)).toBe(true);
+    const changesAfterActive = changes();
+    const malformedScopes: unknown[] = [
+      undefined,
+      null,
+      {},
+      { generation: "generation:1" },
+      { generation: "generation:1", files: undefined },
+      { generation: "generation:1", files: {} },
+      { generation: "generation:1", files: [undefined] },
+      { generation: "generation:1", files: [null] },
+      { generation: "generation:1", files: [{}] },
+    ];
+
+    for (const malformed of malformedScopes) {
+      let result: boolean | undefined;
+      expect(() => {
+        result = store.set("guide", malformed as never);
+      }).not.toThrow();
+      expect(result).toBe(false);
+    }
+
+    expect(changes()).toBe(changesAfterActive);
+    expect(store.get()).toEqual(active);
+  });
+
   test("clears scopes when the extension registry is retired", () => {
     const { store, changes } = createStore();
     store.set("guide", {

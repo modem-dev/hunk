@@ -30,14 +30,17 @@ interface ExtensionPresentationScopeStoreOptions {
 
 /** Validate one scope entry against the currently mounted runtime diff files. */
 function normalizeScopeFile(
-  entry: ExtensionReviewPresentationScopeFile,
+  entry: unknown,
   filesById: ReadonlyMap<string, DiffFile>,
 ): ExtensionReviewPresentationScopeFile | null {
-  if (typeof entry.fileId !== "string" || entry.fileId.length === 0) return null;
-  const file = filesById.get(entry.fileId);
-  if (!file || !Array.isArray(entry.hunkIndexes) || entry.hunkIndexes.length === 0) return null;
+  if (!entry || typeof entry !== "object") return null;
+  const candidate = entry as Partial<ExtensionReviewPresentationScopeFile>;
+  if (typeof candidate.fileId !== "string" || candidate.fileId.length === 0) return null;
+  const file = filesById.get(candidate.fileId);
+  if (!file || !Array.isArray(candidate.hunkIndexes) || candidate.hunkIndexes.length === 0)
+    return null;
 
-  const hunkIndexes = [...new Set(entry.hunkIndexes)];
+  const hunkIndexes = [...new Set(candidate.hunkIndexes)];
   if (
     hunkIndexes.some(
       (index) => !Number.isSafeInteger(index) || index < 0 || index >= file.metadata.hunks.length,
@@ -46,7 +49,7 @@ function normalizeScopeFile(
     return null;
   }
   hunkIndexes.sort((left, right) => left - right);
-  return Object.freeze({ fileId: entry.fileId, hunkIndexes: Object.freeze(hunkIndexes) });
+  return Object.freeze({ fileId: candidate.fileId, hunkIndexes: Object.freeze(hunkIndexes) });
 }
 
 /** Compare normalized scope entries without treating recreated arrays as changes. */
@@ -134,7 +137,16 @@ export function createExtensionPresentationScopeStore(
   return {
     set(extensionId, scope) {
       const generation = options.getGeneration();
-      if (!generation || scope.generation !== generation) return false;
+      if (
+        !generation ||
+        !scope ||
+        typeof scope !== "object" ||
+        typeof scope.generation !== "string" ||
+        scope.generation !== generation ||
+        !Array.isArray(scope.files)
+      ) {
+        return false;
+      }
       const filesById = new Map(options.getFiles().map((file) => [file.id, file]));
       const files = scope.files.map((entry) => normalizeScopeFile(entry, filesById));
       if (files.length === 0 || files.some((entry) => entry === null)) return false;

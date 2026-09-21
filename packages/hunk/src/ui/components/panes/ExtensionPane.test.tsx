@@ -107,21 +107,86 @@ describe("ExtensionPaneHost props", () => {
 });
 
 describe("ExtensionPaneHost actions", () => {
+  test("rerenders for generation and presentation-control changes but memoizes equivalent props", async () => {
+    const files = createTestFiles();
+    const fileViews = toReadOnlyFileViews(files);
+    const theme = resolveTheme("github-dark-default", null);
+    const presentationA = {
+      setPresentationScope: () => true,
+      clearPresentationScope: () => {},
+    };
+    const presentationB = {
+      setPresentationScope: () => true,
+      clearPresentationScope: () => {},
+    };
+    let setGeneration!: (generation: string) => void;
+    let setPresentation!: (presentation: typeof presentationA) => void;
+    let forceParentRender!: () => void;
+    let renders = 0;
+    const registered = registeredView(() => {
+      renders += 1;
+      return <text content="probe" />;
+    });
+
+    function Harness() {
+      const [generation, updateGeneration] = useState("generation-a");
+      const [presentation, updatePresentation] = useState(presentationA);
+      const [, setRevision] = useState(0);
+      setGeneration = updateGeneration;
+      setPresentation = updatePresentation;
+      forceParentRender = () => setRevision((revision) => revision + 1);
+      return (
+        <ExtensionPaneHost
+          registered={registered}
+          reviewGeneration={generation}
+          files={files}
+          fileViews={fileViews}
+          selectedFileId={null}
+          selectedHunkIndex={null}
+          theme={theme}
+          width={30}
+          height={20}
+          placement="left"
+          currentLine={null}
+          keybindings={TEST_KEYBINDINGS}
+          notify={() => {}}
+          onSelectFile={() => {}}
+          onSelectHunk={() => {}}
+          onRevealLine={() => "line"}
+          presentation={presentation}
+        />
+      );
+    }
+
+    await withPane(<Harness />, async () => {
+      expect(renders).toBe(1);
+      await act(async () => forceParentRender());
+      expect(renders).toBe(1);
+      await act(async () => setGeneration("generation-b"));
+      expect(renders).toBe(2);
+      await act(async () => setPresentation(presentationB));
+      expect(renders).toBe(3);
+    });
+  });
+
   test("keeps action identity stable when presentation changes visible files", async () => {
     const allFiles = createTestFiles();
     const theme = resolveTheme("github-dark-default", null);
     let setVisibleFiles!: (files: typeof allFiles) => void;
     const actions: ExtensionPaneActions[] = [];
+    let renders = 0;
+    const registered = registeredView((props) => {
+      renders += 1;
+      actions.push(props.actions);
+      return <text content="probe" />;
+    });
 
     function Harness() {
       const [visibleFiles, setFiles] = useState(allFiles);
       setVisibleFiles = setFiles;
       return (
         <ExtensionPaneHost
-          registered={registeredView((props) => {
-            actions.push(props.actions);
-            return <text content="probe" />;
-          })}
+          registered={registered}
           files={visibleFiles}
           fileViews={toReadOnlyFileViews(visibleFiles)}
           selectedFileId={visibleFiles[0]?.id ?? null}
@@ -143,7 +208,9 @@ describe("ExtensionPaneHost actions", () => {
 
     await withPane(<Harness />, async () => {
       const firstActions = actions.at(-1);
+      expect(renders).toBe(1);
       await act(async () => setVisibleFiles([allFiles[1]!]));
+      expect(renders).toBe(2);
       expect(actions.at(-1)).toBe(firstActions);
     });
   });
