@@ -535,6 +535,8 @@ describe("UI components", () => {
           selectFile: () => {},
           selectHunk: () => {},
           revealLine: () => {},
+          setPresentationScope: () => false,
+          clearPresentationScope: () => {},
           notify: () => {},
         }}
       />,
@@ -570,6 +572,8 @@ describe("UI components", () => {
         selectFile: () => {},
         selectHunk: () => {},
         revealLine: () => {},
+        setPresentationScope: () => false,
+        clearPresentationScope: () => {},
         notify: () => {},
       },
       files,

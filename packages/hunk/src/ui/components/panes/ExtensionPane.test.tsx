@@ -7,6 +7,7 @@ import type {
   ExtensionPaneActions,
   ExtensionPaneKeybindings,
   ExtensionPaneProps,
+  ExtensionReviewPresentationScope,
 } from "../../../extension-api/types";
 import { toReadOnlyFileViews } from "../../../extensions/events";
 import type { RegisteredPane } from "../../../extensions/types";
@@ -108,8 +109,9 @@ describe("ExtensionPaneHost actions", () => {
     const notifications: string[] = [];
     const copied: string[] = [];
     const hunkSelections: Array<[string, number]> = [];
+    const presentationScopes: ExtensionReviewPresentationScope[] = [];
+    let presentationClears = 0;
     let actions: ExtensionPaneActions | undefined;
-
     await withPane(
       <ExtensionPaneHost
         registered={registeredView((props) => {
@@ -135,6 +137,15 @@ describe("ExtensionPaneHost actions", () => {
         onSelectFile={() => {}}
         onSelectHunk={(fileId, hunkIndex) => hunkSelections.push([fileId, hunkIndex])}
         onRevealLine={() => "line"}
+        presentation={{
+          setPresentationScope: (scope) => {
+            presentationScopes.push(scope);
+            return true;
+          },
+          clearPresentationScope: () => {
+            presentationClears += 1;
+          },
+        }}
       />,
       async () => {
         if (!actions) {
@@ -143,6 +154,14 @@ describe("ExtensionPaneHost actions", () => {
 
         expect(actions.copyText("revision-a")).toBeTrue();
         expect(copied).toEqual(["revision-a"]);
+        const scope: ExtensionReviewPresentationScope = {
+          generation: "generation-a",
+          files: [{ fileId: "alpha", hunkIndexes: [0] }],
+        };
+        expect(actions.setPresentationScope(scope)).toBeTrue();
+        actions.clearPresentationScope();
+        expect(presentationScopes).toEqual([scope]);
+        expect(presentationClears).toBe(1);
 
         // Selection state, reveal scrolling, and selection_changed all carry
         // the index, so a non-finite value must be refused outright...

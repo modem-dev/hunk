@@ -62,6 +62,7 @@ import { createReviewStore, type ReviewStore } from "../../core/review/store";
 import { noDiffFileMatchesMessage } from "../../session/agent/errors";
 import type { DiffFile } from "../../core/changeset/model";
 import type { LayoutMode } from "../../core/run/commandInputs";
+import type { ExtensionReviewPresentationScope } from "../../extension-api/types";
 import type {
   AppliedCommentBatchResult,
   AppliedCommentResult,
@@ -123,6 +124,7 @@ import {
   planTerminalSelectionReconciliation,
   resolveReviewNavigationTarget,
 } from "../lib/reviewState";
+import { filterFilesByExtensionPresentationScope } from "../lib/extensionPresentationScope";
 
 const EMPTY_AGENT_LINE_HIGHLIGHTS: ReadonlyMap<string, readonly ValidatedLineHighlight[]> =
   new Map();
@@ -253,6 +255,8 @@ export interface TerminalReview {
   toggleGap: (fileId: string, gapKey: string) => void;
   toggleSelectedHunkGap: () => void;
   visibleFiles: DiffFile[];
+  /** Hunk indexes retained by the active extension presentation scope, keyed by runtime file id. */
+  visibleHunkIndexesByFileId: ReadonlyMap<string, ReadonlySet<number>> | null;
   addLiveComment: (
     input: CommentToolInput,
     commentId: string,
@@ -315,6 +319,7 @@ export function useTerminalReview({
   lineCursors = EMPTY_LINE_CURSORS,
   reviewVerticalStops = EMPTY_REVIEW_VERTICAL_STOPS,
   noteGeometry,
+  presentationScope = null,
   sourceLabel = "",
   stmlEnabled = false,
 }: {
@@ -339,6 +344,8 @@ export function useTerminalReview({
   sourceLabel?: string;
   /** Allow STML bodies for live comments in this explicitly opted-in session. */
   stmlEnabled?: boolean;
+  /** Host-owned extension projection applied after the user's canonical file filter. */
+  presentationScope?: ExtensionReviewPresentationScope | null;
   /**
    * Mutable ref the app keeps pointed at the current layout and pane width.
    * A ref (not a value) because App computes geometry after this hook runs;
@@ -523,7 +530,7 @@ export function useTerminalReview({
   }, [fileByKey, state.sourceStatusByFileKey]);
 
   const deferredFilter = useDeferredValue(filter);
-  const { allFiles, visibleFiles } = useMemo(
+  const { allFiles, visibleFiles: userVisibleFiles } = useMemo(
     () =>
       buildReviewStreamState({
         files,
@@ -531,6 +538,16 @@ export function useTerminalReview({
         filterQuery: deferredFilter,
       }),
     [deferredFilter, files, storedNotesByFileId],
+  );
+  const visibleHunkIndexesByFileId = useMemo(() => {
+    if (!presentationScope) return null;
+    return new Map(
+      presentationScope.files.map((entry) => [entry.fileId, new Set(entry.hunkIndexes)] as const),
+    );
+  }, [presentationScope]);
+  const visibleFiles = useMemo(
+    () => filterFilesByExtensionPresentationScope(userVisibleFiles, presentationScope),
+    [presentationScope, userVisibleFiles],
   );
   // Which files and hunks carry notes, for the shared annotated-navigation planner. Built
   // from the merged stream, so a live comment that just arrived is navigable immediately.
@@ -1741,6 +1758,7 @@ export function useTerminalReview({
     toggleGap,
     toggleSelectedHunkGap,
     visibleFiles,
+    visibleHunkIndexesByFileId,
     addAgentLineHighlight,
     addLiveComment,
     addLiveCommentBatch,

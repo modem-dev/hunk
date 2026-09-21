@@ -33,6 +33,8 @@ export interface BuildDiffSectionRowPlanOptions {
   sourceStatus?: FileSourceStatus | undefined;
   tabWidth?: number;
   hunkGap?: number;
+  /** Restrict rendering to these original hunk indexes without rewriting the file model. */
+  visibleHunkIndexes?: ReadonlySet<number>;
   theme: AppTheme;
   visibleAgentNotes?: VisibleAgentNote[];
 }
@@ -44,10 +46,11 @@ function buildBaseRows(
   highlightedDiff: HighlightedDiffCode | null | undefined,
   theme: AppTheme,
   tabWidth: number,
+  visibleHunkIndexes: ReadonlySet<number> | undefined,
 ) {
   return layout === "split"
-    ? buildSplitRows(file, highlightedDiff ?? null, theme, tabWidth)
-    : buildUnifiedRows(file, highlightedDiff ?? null, theme, tabWidth);
+    ? buildSplitRows(file, highlightedDiff ?? null, theme, tabWidth, visibleHunkIndexes)
+    : buildUnifiedRows(file, highlightedDiff ?? null, theme, tabWidth, visibleHunkIndexes);
 }
 
 /** Build the shared file-level diff plan consumed by rendering and geometry measurement. */
@@ -62,6 +65,7 @@ export function buildDiffSectionRowPlan({
   tabWidth = DEFAULT_TAB_WIDTH,
   hunkGap = DEFAULT_HUNK_GAP,
   theme,
+  visibleHunkIndexes,
   visibleAgentNotes = EMPTY_VISIBLE_AGENT_NOTES,
 }: BuildDiffSectionRowPlanOptions): DiffSectionRowPlan {
   if (!file) {
@@ -71,7 +75,14 @@ export function buildDiffSectionRowPlan({
     };
   }
 
-  const baseRows = buildBaseRows(file, layout, highlightedDiff, theme, tabWidth);
+  const baseRows = buildBaseRows(
+    file,
+    layout,
+    highlightedDiff,
+    theme,
+    tabWidth,
+    visibleHunkIndexes,
+  );
   const rows = expandCollapsedRows(baseRows, {
     layout,
     expandedKeys,

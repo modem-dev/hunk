@@ -307,9 +307,10 @@ and retires the replaced instance at that explicit ownership boundary.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `28`). Branch on it if you want
-one file to support several Hunk versions. Version 28 adds host-owned syntax highlighting for
-file-view code documents; version 27 adds `ctx.selection.files`, the visible files in review order;
+The API generation this Hunk speaks (currently `29`). Branch on it if you want
+one file to support several Hunk versions. Version 29 adds generation-scoped extension review
+presentation scopes; version 28 adds host-owned syntax highlighting for file-view code documents;
+version 27 adds `ctx.selection.files`, the visible files in review order;
 version 26 adds the status line (`ctx.statusLine` items and `ctx.prompts.line()` inline prompts);
 version 25 adds Promise-returning watch signatures and watch cancellation; version 24 adds review
 metadata to VCS patch results and short display revisions to commit descriptors; version 23 adds
@@ -1902,8 +1903,25 @@ session keyboard modes. See [Session keyboard modes](#session-keyboard-modes).
 #### Reading the authoritative review
 
 `ctx.review.snapshot()` returns a deeply immutable projection of the shared
-ReviewStore, or `null` after this command's review generation has been retired.
-It contains the opaque producer `generation`, the store's `stateRevision`, every
+ReviewStore, or `null` after this command's review generation has been retired. The same
+`ctx.review` object can set or clear a transient presentation scope for the current generation;
+the host intersects scopes from active extensions and applies the result after the user's file
+filter without changing canonical review state. Each scope names files by `fileId` and the
+zero-based `hunkIndexes` to retain:
+
+```ts
+const review = ctx.review.snapshot();
+if (review) {
+  ctx.review.setPresentationScope({
+    generation: review.generation,
+    files: [{ fileId: review.files[0].runtimeId, hunkIndexes: [0] }],
+  });
+}
+```
+
+The scope is rejected when its generation, file ids, or hunk indexes are stale. Clear it with
+`ctx.review.clearPresentationScope()`; reloads, extension retirement, and failed commands clear
+owned scopes automatically. It contains the opaque producer `generation`, the store's `stateRevision`, every
 file in authoritative review/sidebar order, and every saved live or reviewer
 note. Files carry their stable `fileKey`, transient `runtimeId`, content identity,
 paths, stats, and flags; notes carry their complete resolved old/new anchor,

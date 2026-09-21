@@ -31,7 +31,7 @@ export interface CheckExtensionConsumerOptions {
   moduleResolutions?: readonly ("nodenext" | "bundler")[];
 }
 
-/** Compile the API-v28 file-view syntax surface as an isolated published-package consumer. */
+/** Compile the API-v29 file-view syntax surface as an isolated published-package consumer. */
 export const FILE_VIEW_SYNTAX_CONSUMER_SOURCE: ExtensionConsumerSource = {
   name: "file-view-syntax-consumer.ts",
   text: `
@@ -44,7 +44,7 @@ import type {
   ExtensionStatusSpan,
 } from "hunkdiff/extension";
 
-const apiVersion: 28 = HUNK_EXTENSION_API_VERSION;
+const apiVersion: 29 = HUNK_EXTENSION_API_VERSION;
 const document = {
   id: "generated",
   text: "const answer = 42;",

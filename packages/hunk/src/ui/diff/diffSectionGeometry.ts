@@ -165,6 +165,7 @@ function createLazyPlannedRowsResolver({
   hunkGap,
   theme,
   visibleAgentNotes,
+  visibleHunkIndexes,
 }: {
   expandedKeys: ReadonlySet<string>;
   file: DiffFile;
@@ -175,6 +176,7 @@ function createLazyPlannedRowsResolver({
   hunkGap: number;
   theme: AppTheme;
   visibleAgentNotes: VisibleAgentNote[];
+  visibleHunkIndexes?: ReadonlySet<number>;
 }) {
   let plannedRows: PlannedReviewRow[] | null = null;
   // Geometry bounds and deferred rows must describe the same immutable input snapshot. Callers
@@ -189,6 +191,7 @@ function createLazyPlannedRowsResolver({
     tabWidth,
     hunkGap,
     theme,
+    visibleHunkIndexes,
     visibleAgentNotes:
       visibleAgentNotes.length === 0
         ? EMPTY_VISIBLE_AGENT_NOTES
@@ -291,6 +294,7 @@ export function measureDiffSectionGeometry(
   reserveAddNoteColumn = false,
   tabWidth = DEFAULT_TAB_WIDTH,
   hunkGap = DEFAULT_HUNK_GAP,
+  visibleHunkIndexes?: ReadonlySet<number>,
 ): DiffSectionGeometry {
   if (file.metadata.hunks.length === 0) {
     return {
@@ -320,7 +324,10 @@ export function measureDiffSectionGeometry(
     theme.lineNumberBg,
     theme.lineNumberFg,
   ].join(":");
-  const cacheKey = `${file.id}:${layout}:${showHunkHeaders ? 1 : 0}:${themeCacheKey}:${width}:${showLineNumbers ? 1 : 0}:${wrapLines ? 1 : 0}:${reserveAddNoteColumn ? 1 : 0}:tabs:${tabWidth}:hunkGap:${hunkGap}${expansionCacheKey(expandedKeys, sourceStatus)}${notesCacheKey(visibleAgentNotes)}`;
+  const scopeCacheKey = visibleHunkIndexes
+    ? `:scope:${[...visibleHunkIndexes].sort((a, b) => a - b).join(",")}`
+    : "";
+  const cacheKey = `${file.id}:${layout}:${showHunkHeaders ? 1 : 0}:${themeCacheKey}:${width}:${showLineNumbers ? 1 : 0}:${wrapLines ? 1 : 0}:${reserveAddNoteColumn ? 1 : 0}:tabs:${tabWidth}:hunkGap:${hunkGap}${scopeCacheKey}${expansionCacheKey(expandedKeys, sourceStatus)}${notesCacheKey(visibleAgentNotes)}`;
   const cacheSlot = sectionGeometryCacheSlot(visibleAgentNotes);
   const cached = getCachedSectionGeometry(file, cacheSlot, cacheKey);
   if (cached) {
@@ -337,6 +344,7 @@ export function measureDiffSectionGeometry(
     hunkGap,
     theme,
     visibleAgentNotes,
+    visibleHunkIndexes,
   });
   const { plannedRows } = sectionRowPlan;
   const hunkAnchorRows = new Map<number, number>();
@@ -417,6 +425,7 @@ export function measureDiffSectionGeometry(
     hunkGap,
     theme,
     visibleAgentNotes,
+    visibleHunkIndexes,
   });
   const geometry: DiffSectionGeometry = {
     bodyHeight,

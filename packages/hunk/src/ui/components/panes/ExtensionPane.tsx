@@ -5,6 +5,8 @@ import type {
   ExtensionNotifyType,
   ExtensionPaneActions,
   ExtensionPaneKeybindings,
+  ExtensionReviewPresentationControls,
+  ExtensionReviewPresentationScope,
   ExtensionPaneProps,
   ExtensionCurrentLinePaint,
 } from "../../../extension-api/types";
@@ -75,6 +77,11 @@ class ExtensionPaneErrorBoundary extends Component<
   }
 }
 
+const EMPTY_PRESENTATION_CONTROLS: ExtensionReviewPresentationControls = {
+  setPresentationScope: () => false,
+  clearPresentationScope: () => undefined,
+};
+
 export interface ExtensionPaneHostProps {
   registered: RegisteredPane;
   review?: ExtensionPaneProps["review"];
@@ -94,6 +101,7 @@ export interface ExtensionPaneHostProps {
   onSelectFile: (fileId: string) => void;
   onSelectHunk: (fileId: string, hunkIndex: number) => void;
   onRevealLine: (fileId: string, side: "old" | "new", line: number) => "line" | "hunk" | "none";
+  presentation?: ExtensionReviewPresentationControls;
   onRenderFailure?: () => void;
 }
 
@@ -117,6 +125,7 @@ function ExtensionPaneHostView({
   onSelectFile,
   onSelectHunk,
   onRevealLine,
+  presentation = EMPTY_PRESENTATION_CONTROLS,
   onRenderFailure,
 }: ExtensionPaneHostProps) {
   const { extensionId } = registered;
@@ -124,8 +133,22 @@ function ExtensionPaneHostView({
   // Selection rerenders the pane host, but it does not replace the capabilities these callbacks
   // represent. Keep the public actions stable so memoized extension rows do not all repaint when
   // only the selected file changed; ref indirection still invokes the latest host generation.
-  const actionTargetsRef = useRef({ notify, onCopyText, onSelectFile, onSelectHunk, onRevealLine });
-  actionTargetsRef.current = { notify, onCopyText, onSelectFile, onSelectHunk, onRevealLine };
+  const actionTargetsRef = useRef({
+    notify,
+    onCopyText,
+    onSelectFile,
+    onSelectHunk,
+    onRevealLine,
+    presentation,
+  });
+  actionTargetsRef.current = {
+    notify,
+    onCopyText,
+    onSelectFile,
+    onSelectHunk,
+    onRevealLine,
+    presentation,
+  };
   const actions = useMemo<ExtensionPaneActions>(
     () =>
       Object.freeze({
@@ -144,6 +167,12 @@ function ExtensionPaneHostView({
         },
         notify(message: string, type: ExtensionNotifyType = "info") {
           actionTargetsRef.current.notify(`${extensionId}: ${message}`, type);
+        },
+        setPresentationScope(scope: ExtensionReviewPresentationScope) {
+          return actionTargetsRef.current.presentation.setPresentationScope(scope);
+        },
+        clearPresentationScope() {
+          actionTargetsRef.current.presentation.clearPresentationScope();
         },
       }),
     [extensionId, files],
