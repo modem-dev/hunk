@@ -107,6 +107,47 @@ describe("ExtensionPaneHost props", () => {
 });
 
 describe("ExtensionPaneHost actions", () => {
+  test("keeps action identity stable when presentation changes visible files", async () => {
+    const allFiles = createTestFiles();
+    const theme = resolveTheme("github-dark-default", null);
+    let setVisibleFiles!: (files: typeof allFiles) => void;
+    const actions: ExtensionPaneActions[] = [];
+
+    function Harness() {
+      const [visibleFiles, setFiles] = useState(allFiles);
+      setVisibleFiles = setFiles;
+      return (
+        <ExtensionPaneHost
+          registered={registeredView((props) => {
+            actions.push(props.actions);
+            return <text content="probe" />;
+          })}
+          files={visibleFiles}
+          fileViews={toReadOnlyFileViews(visibleFiles)}
+          selectedFileId={visibleFiles[0]?.id ?? null}
+          selectedHunkIndex={0}
+          reviewGeneration="generation-a"
+          theme={theme}
+          width={30}
+          height={20}
+          placement="left"
+          currentLine={null}
+          keybindings={TEST_KEYBINDINGS}
+          notify={() => {}}
+          onSelectFile={() => {}}
+          onSelectHunk={() => {}}
+          onRevealLine={() => "line"}
+        />
+      );
+    }
+
+    await withPane(<Harness />, async () => {
+      const firstActions = actions.at(-1);
+      await act(async () => setVisibleFiles([allFiles[1]!]));
+      expect(actions.at(-1)).toBe(firstActions);
+    });
+  });
+
   test("refuses garbage hunk indices and clamps the rest into the file's range", async () => {
     const files = createTestFiles();
     const theme = resolveTheme("github-dark-default", null);

@@ -136,6 +136,7 @@ function ExtensionPaneHostView({
   // represent. Keep the public actions stable so memoized extension rows do not all repaint when
   // only the selected file changed; ref indirection still invokes the latest host generation.
   const actionTargetsRef = useRef({
+    files,
     notify,
     onCopyText,
     onSelectFile,
@@ -144,6 +145,7 @@ function ExtensionPaneHostView({
     presentation,
   });
   actionTargetsRef.current = {
+    files,
     notify,
     onCopyText,
     onSelectFile,
@@ -156,7 +158,7 @@ function ExtensionPaneHostView({
       Object.freeze({
         ...createGuardedReviewNavigation({
           extensionId,
-          getFiles: () => files,
+          getFiles: () => actionTargetsRef.current.files,
           notify: (message, type) => actionTargetsRef.current.notify(message, type),
           onSelectFile: (fileId) => actionTargetsRef.current.onSelectFile(fileId),
           onSelectHunk: (fileId, hunkIndex) =>
@@ -177,7 +179,7 @@ function ExtensionPaneHostView({
           actionTargetsRef.current.presentation.clearPresentationScope();
         },
       }),
-    [extensionId, files],
+    [extensionId],
   );
   const View = registered.pane.component as (props: ExtensionPaneProps) => ReactNode;
   const viewProps: ExtensionPaneProps = {
