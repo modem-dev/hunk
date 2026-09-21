@@ -312,6 +312,23 @@ describe("folder extension manifests", () => {
     expect(candidates).toEqual([{ id: "published-name", path: entry, origin: "config" }]);
   });
 
+  test("applies an explicit id to an index fallback when entries are omitted", () => {
+    const root = createTempDir("hunk-ext-manifest-id-index-");
+    const folder = join(root, "worktree-name");
+    const index = writeExtensionFile(folder, "index.ts");
+    writeExtensionManifest(folder, `{"hunk": {"id": "published-name"}}`);
+
+    const candidates = discoverExtensions({
+      cwd: root,
+      repoRoot: undefined,
+      globalExtensionsDir: undefined,
+      flagPaths: [folder],
+      env: {},
+    });
+
+    expect(candidates).toEqual([{ id: "published-name", path: index, origin: "flag" }]);
+  });
+
   test("keeps the folder-name fallback when a manifest omits its id", () => {
     const root = createTempDir("hunk-ext-manifest-id-fallback-");
     const folder = join(root, "folder-name");

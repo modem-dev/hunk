@@ -101,8 +101,10 @@ interface ExtensionManifest {
  * instead of failing partway through the factory.
  *
  * Anything that goes wrong — no `package.json`, an unreadable one, malformed
- * JSON, or a field of the wrong shape — means "no manifest", so a folder that
- * merely happens to ship a `package.json` still falls back to its index entry.
+ * JSON, or a required field of the wrong shape — means "no manifest", so a
+ * folder that merely happens to ship a `package.json` still falls back to its
+ * index entry. An invalid string id is retained for the host's central id
+ * validation so its load issue names the bad namespace.
  */
 function readExtensionManifest(dir: string): ExtensionManifest | undefined {
   let manifest: unknown;
@@ -130,8 +132,8 @@ function readExtensionManifest(dir: string): ExtensionManifest | undefined {
         .map((entry) => resolve(dir, entry))
     : undefined;
 
-  // A malformed id is ignored rather than fatal, matching the "no manifest"
-  // posture for every other malformed field. A malformed string still reaches
+  // A non-string id is ignored rather than fatal, matching the "no manifest"
+  // posture for malformed optional fields. A malformed string still reaches
   // host id validation, so users get the same actionable namespace error.
   const declaredId = (section as Record<string, unknown>).id;
   const id = typeof declaredId === "string" ? declaredId : undefined;
@@ -219,7 +221,9 @@ function resolveFolderExtensionEntries(dir: string): DiscoveredExtensionEntry[] 
   // The apiVersion requirement still applies to the index fallback: a manifest
   // may state compatibility without redeclaring the entry file.
   const folderIndex = findFolderExtensionIndex(dir);
-  return folderIndex ? [withApiVersion(toStandaloneEntry(folderIndex))] : [];
+  if (!folderIndex) return [];
+  const fallback = toStandaloneEntry(folderIndex);
+  return [withApiVersion(manifest?.id === undefined ? fallback : { ...fallback, id: manifest.id })];
 }
 
 /**
