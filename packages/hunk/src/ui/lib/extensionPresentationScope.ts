@@ -49,6 +49,24 @@ function normalizeScopeFile(
   return Object.freeze({ fileId: entry.fileId, hunkIndexes: Object.freeze(hunkIndexes) });
 }
 
+/** Compare normalized scope entries without treating recreated arrays as changes. */
+function sameScopeFiles(
+  left: readonly ExtensionReviewPresentationScopeFile[],
+  right: readonly ExtensionReviewPresentationScopeFile[],
+) {
+  return (
+    left.length === right.length &&
+    left.every(
+      (entry, index) =>
+        entry.fileId === right[index]?.fileId &&
+        entry.hunkIndexes.length === right[index]?.hunkIndexes.length &&
+        entry.hunkIndexes.every(
+          (hunkIndex, hunkPosition) => hunkIndex === right[index]?.hunkIndexes[hunkPosition],
+        ),
+    )
+  );
+}
+
 /** Build a scope store that rejects stale or malformed extension presentation requests. */
 export function createExtensionPresentationScopeStore(
   options: ExtensionPresentationScopeStoreOptions,
@@ -104,11 +122,16 @@ export function createExtensionPresentationScopeStore(
       const filesById = new Map(options.getFiles().map((file) => [file.id, file]));
       const files = scope.files.map((entry) => normalizeScopeFile(entry, filesById));
       if (files.length === 0 || files.some((entry) => entry === null)) return false;
+      const normalizedFiles = files as ExtensionReviewPresentationScopeFile[];
+      const previous = scopes.get(extensionId);
+      if (previous?.generation === generation && sameScopeFiles(previous.files, normalizedFiles)) {
+        return true;
+      }
       scopes.set(
         extensionId,
         Object.freeze({
           generation,
-          files: Object.freeze(files as ExtensionReviewPresentationScopeFile[]),
+          files: Object.freeze(normalizedFiles),
         }),
       );
       notify();
