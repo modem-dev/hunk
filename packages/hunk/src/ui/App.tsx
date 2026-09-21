@@ -429,9 +429,9 @@ export function App({
   } = extensionRuntime;
   const jumpToFile = useCallback(
     (fileId: string, options?: { alignFileHeaderTop?: boolean }) => {
-      review.selectFile(fileId, { alignFileHeaderTop: options?.alignFileHeaderTop });
+      review.selectVisibleFile(fileId, { alignFileHeaderTop: options?.alignFileHeaderTop });
     },
-    [review.selectFile],
+    [review.selectVisibleFile],
   );
 
   const openAgentNotes = useCallback(() => {
@@ -1209,14 +1209,14 @@ export function App({
       },
       onSelectHunk: (fileId: string, hunkIndex: number) => {
         focusFiles();
-        review.selectHunk(fileId, hunkIndex);
+        review.selectVisibleHunk(fileId, hunkIndex);
       },
       onRevealLine: (fileId: string, side: "old" | "new", line: number) => {
         focusFiles();
         return review.revealLine(fileId, side, line);
       },
     }),
-    [focusFiles, jumpToFile, review.revealLine, review.selectHunk],
+    [focusFiles, jumpToFile, review.revealLine, review.selectVisibleHunk],
   );
 
   /** Toggle keyboard focus between the file list and the file filter. */
@@ -1520,7 +1520,7 @@ export function App({
           }}
           onSelectHunk={(fileId, hunkIndex) => {
             focusFiles();
-            review.selectHunk(fileId, hunkIndex);
+            review.selectVisibleHunk(fileId, hunkIndex);
           }}
           onRevealLine={(fileId, side, line) => {
             focusFiles();

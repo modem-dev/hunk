@@ -37,11 +37,16 @@ import {
   ReviewIntentPlanningError,
   type ReviewIntent,
   type ReviewIntentFacts,
+  type ReviewSelectionChangedOutcome,
 } from "../../core/review/intents";
 import { projectReviewDocument } from "../../core/review/document";
 import { reviewExpansionSide } from "../../core/review/expansion";
 import { reviewHunkIndexForLine } from "../../core/review/geometry";
-import type { ReviewSelectionScope } from "../../core/review/navigation";
+import {
+  planReviewSelectionMove,
+  type ReviewSelectionScope,
+  type ReviewNavigationFile,
+} from "../../core/review/navigation";
 import {
   reviewFileKeysWithRetiredContent,
   selectActiveStoredReviewNote,
@@ -242,7 +247,11 @@ export interface TerminalReview {
   /** Step only between semantic note cards in their rendered order. */
   moveNoteCursor: (delta: number) => void;
   /** Step the selection through one navigable scope; the scope owns wrap and reveal. */
-  moveSelection: (scope: ReviewSelectionScope, delta: number) => void;
+  moveSelection: (
+    scope: ReviewSelectionScope,
+    delta: number,
+    options?: { projection?: "visible" | "canonical" },
+  ) => ReviewSelectionChangedOutcome | undefined;
   revealLine: (fileId: string, side: "old" | "new", line: number) => RevealedLineResult;
   scrollToNote: boolean;
   selectedFile: DiffFile | undefined;
@@ -284,6 +293,10 @@ export interface TerminalReview {
   /** Jump to one file; the shared file-jump rule decides which hunk it lands on. */
   selectFile: (fileId: string, options?: ReviewSelectionOptions) => void;
   selectHunk: (fileId: string, hunkIndex: number, options?: ReviewSelectionOptions) => void;
+  /** Select only a file currently exposed by the terminal presentation projection. */
+  selectVisibleFile: (fileId: string, options?: ReviewSelectionOptions) => void;
+  /** Select only a hunk currently exposed by the terminal presentation projection. */
+  selectVisibleHunk: (fileId: string, hunkIndex: number, options?: ReviewSelectionOptions) => void;
   setShowAgentNotes: (visible: boolean) => void;
   /** Flip the note layer the way the catalogued toggle command declares it. */
   toggleAgentNotes: () => void;
@@ -555,6 +568,49 @@ export function useTerminalReview({
     () => buildReviewAnnotationIndex(allFiles, keyByFileId),
     [allFiles, keyByFileId],
   );
+  const projectedNavigationFiles = useMemo<ReviewNavigationFile[]>(
+    () =>
+      visibleFiles.flatMap((file) => {
+        const fileKey = keyByFileId.get(file.id);
+        if (!fileKey) return [];
+        const hunkIndexes = visibleHunkIndexesByFileId?.get(file.id);
+        const indexes = hunkIndexes
+          ? [...hunkIndexes].sort((left, right) => left - right)
+          : file.metadata.hunks.map((_hunk, index) => index);
+        return indexes.length > 0
+          ? [{ fileKey, hunkCount: indexes.length, hunkIndexes: indexes }]
+          : [];
+      }),
+    [keyByFileId, visibleFiles, visibleHunkIndexesByFileId],
+  );
+  const projectedNavigation = useMemo(() => {
+    const visibleFilesByKey = new Map(
+      projectedNavigationFiles.map((file) => [file.fileKey, new Set(file.hunkIndexes ?? [])]),
+    );
+    const annotatedHunkIndicesByFileKey = new Map<string, ReadonlySet<number>>();
+    for (const [fileKey, indexes] of annotations.annotatedHunkIndicesByFileKey) {
+      const visibleIndexes = visibleFilesByKey.get(fileKey);
+      if (!visibleIndexes) continue;
+      const projectedIndexes = new Set([...indexes].filter((index) => visibleIndexes.has(index)));
+      if (projectedIndexes.size > 0) annotatedHunkIndicesByFileKey.set(fileKey, projectedIndexes);
+    }
+    const annotatedFileKeys = new Set(
+      [...annotations.annotatedFileKeys].filter((fileKey) => visibleFilesByKey.has(fileKey)),
+    );
+    const notes = selectNavigableStoredReviewNotes(state)
+      .filter((item) => visibleFilesByKey.get(item.fileKey)?.has(item.hunkIndex))
+      .map((item) => ({
+        fileKey: item.fileKey,
+        hunkIndex: item.hunkIndex,
+        noteId: item.entry.note.id,
+      }));
+    return {
+      files: projectedNavigationFiles,
+      annotations: { annotatedHunkIndicesByFileKey, annotatedFileKeys },
+      notes,
+      activeNoteId: selectActiveStoredReviewNote(state)?.note.id,
+    };
+  }, [annotations, projectedNavigationFiles, state]);
   // The shared normalization rule, not a terminal copy: a selected file the filter hides
   // is still the selection, and only a file the document lost falls back to the first
   // visible one.
@@ -650,6 +706,28 @@ export function useTerminalReview({
     [keyByFileId, runIntent],
   );
 
+  const selectVisibleFile = useCallback(
+    (fileId: string, options?: ReviewSelectionOptions) => {
+      if (!projectedNavigationFiles.some((file) => file.fileKey === keyByFileId.get(fileId))) {
+        return;
+      }
+      selectFile(fileId, options);
+    },
+    [keyByFileId, projectedNavigationFiles, selectFile],
+  );
+
+  const selectVisibleHunk = useCallback(
+    (fileId: string, hunkIndex: number, options?: ReviewSelectionOptions) => {
+      const fileKey = keyByFileId.get(fileId);
+      const file = projectedNavigationFiles.find((entry) => entry.fileKey === fileKey);
+      if (!file || !(file.hunkIndexes ?? []).includes(hunkIndex)) {
+        return;
+      }
+      selectHunk(fileId, hunkIndex, options);
+    },
+    [keyByFileId, projectedNavigationFiles, selectHunk],
+  );
+
   /** Reconcile only a stale document selection; filtering preserves the reviewer's place. */
   const reconcileSelection = useCallback(() => {
     const action = planTerminalSelectionReconciliation(store.getSnapshot());
@@ -662,6 +740,23 @@ export function useTerminalReview({
     reconcileSelection();
     // The store's own state is what needs reconciling, so re-run when it moves.
   }, [reconcileSelection, state.document, state.filter, state.selection]);
+
+  const previousPresentationScopeRef = useRef<ExtensionReviewPresentationScope | null>(null);
+  useEffect(() => {
+    const previous = previousPresentationScopeRef.current;
+    previousPresentationScopeRef.current = presentationScope;
+    if (previous === presentationScope || !presentationScope) return;
+
+    const selection = selectNormalizedSelection(store.getSnapshot());
+    const selectedFile = projectedNavigationFiles.find(
+      (file) => file.fileKey === selection.fileKey,
+    );
+    if (selectedFile?.hunkIndexes?.includes(selection.hunkIndex)) return;
+    const first = projectedNavigationFiles[0];
+    const hunkIndex = first?.hunkIndexes?.[0];
+    if (!first || hunkIndex === undefined) return;
+    store.dispatch({ type: "selection/select", fileKey: first.fileKey, hunkIndex });
+  }, [presentationScope, projectedNavigationFiles, store]);
 
   /**
    * Keep the current line on a row the review stream still renders.
@@ -870,14 +965,40 @@ export function useTerminalReview({
   /**
    * Step the selection through one navigable scope.
    *
-   * The walk itself — which hunk or file is next, whether the scope wraps, and what the
-   * landing asks the viewport to reveal — lives in the shared planner, so the keyboard,
-   * the session's comment navigation, and later a browser client all move identically.
+   * The walk itself — which projected hunk or file is next, whether the scope wraps, and what
+   * the landing asks the viewport to reveal — lives in the shared planner. Agent/session
+   * addressing opts into the canonical document walk explicitly.
    */
   const moveSelection = useCallback(
-    (scope: ReviewSelectionScope, delta: number) =>
-      runIntent({ type: "selection/move", scope, delta }, { annotations }),
-    [annotations, runIntent],
+    (
+      scope: ReviewSelectionScope,
+      delta: number,
+      options?: { projection?: "visible" | "canonical" },
+    ) => {
+      if (options?.projection === "canonical") {
+        return runIntent({ type: "selection/move", scope, delta }, { annotations });
+      }
+      const stateSnapshot = store.getSnapshot();
+      const target = planReviewSelectionMove(
+        projectedNavigation,
+        selectNormalizedSelection(stateSnapshot),
+        { scope, delta },
+      );
+      if (!target) return;
+      runIntent({
+        type: "selection/select",
+        fileKey: target.fileKey,
+        hunkIndex: target.hunkIndex,
+        reveal: target.reveal,
+        ...(target.activeNoteId ? { activeNoteId: target.activeNoteId } : {}),
+      });
+      return {
+        type: "selection/changed" as const,
+        fileKey: target.fileKey,
+        hunkIndex: target.hunkIndex,
+      };
+    },
+    [annotations, planReviewSelectionMove, projectedNavigation, runIntent, store],
   );
 
   /**
@@ -1091,7 +1212,9 @@ export function useTerminalReview({
   const navigateToLocation = useCallback(
     (input: NavigateToHunkToolInput): NavigatedSelectionResult => {
       if (input.commentDirection) {
-        const moved = moveSelection("annotated-hunk", input.commentDirection === "next" ? 1 : -1);
+        const moved = moveSelection("annotated-hunk", input.commentDirection === "next" ? 1 : -1, {
+          projection: "canonical",
+        });
         if (!moved) {
           throw new Error("No annotated hunks found in the current review.");
         }
@@ -1780,6 +1903,8 @@ export function useTerminalReview({
     saveDraftNote,
     selectFile,
     selectHunk,
+    selectVisibleFile,
+    selectVisibleHunk,
     setShowAgentNotes,
     toggleAgentNotes,
     startUserNote,

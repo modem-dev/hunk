@@ -4,6 +4,7 @@ import { act, StrictMode, useEffect, useMemo, useRef, useState } from "react";
 import { builtinAppCommand } from "../../core/run/commandCatalog";
 import { SourceTextTooLargeError } from "../../core/changeset/fileSource";
 import type { DiffFile } from "../../core/changeset/model";
+import type { ExtensionReviewPresentationScope } from "../../extension-api/types";
 import {
   createTestDeferred,
   createTestDiffFile,
@@ -39,7 +40,7 @@ function createDiffFile(
 }
 
 /** Build one file with two hunks so selection clamping can be verified across reload-like updates. */
-function createTwoHunkFile() {
+function createTwoHunkFile(id = "alpha", path = "alpha.ts") {
   const beforeLines = Array.from(
     { length: 12 },
     (_, index) => `export const line${index + 1} = ${index + 1};`,
@@ -48,7 +49,7 @@ function createTwoHunkFile() {
   afterLines[0] = "export const line1 = 100;";
   afterLines[11] = "export const line12 = 1200;";
 
-  return createDiffFile("alpha", "alpha.ts", lines(...beforeLines), lines(...afterLines));
+  return createDiffFile(id, path, lines(...beforeLines), lines(...afterLines));
 }
 
 /** Build one file with three separated hunks for counted navigation coverage. */
@@ -164,6 +165,7 @@ function TerminalReviewHarness({
   onController,
   onFirstController,
   onSetFiles,
+  presentationScope,
 }: {
   initialFiles: DiffFile[];
   noteGeometry?: Parameters<typeof useTerminalReview>[0]["noteGeometry"];
@@ -175,6 +177,7 @@ function TerminalReviewHarness({
   /** Receive the first render's controller, before any cursors were published. */
   onFirstController?: (controller: TerminalReview) => void;
   onSetFiles?: (setFiles: (nextFiles: DiffFile[]) => void) => void;
+  presentationScope?: ExtensionReviewPresentationScope | null;
 }) {
   const [files, setFiles] = useState(initialFiles);
   const [lineCursors, setLineCursors] = useState<LineCursor[]>(() =>
@@ -190,6 +193,7 @@ function TerminalReviewHarness({
     reviewVerticalStops: reviewVerticalStops ?? lineOnlyVerticalStops,
     noteGeometry,
     stmlEnabled,
+    presentationScope,
   });
   // Capture during render, as a memoized consumer's closure would: the effects
   // below have not yet published measured cursors on the first pass.
@@ -248,6 +252,7 @@ async function renderTerminalReview(
     reviewVerticalStops,
     stmlEnabled,
     onFirstController,
+    presentationScope,
   }: {
     strictMode?: boolean;
     noteGeometry?: Parameters<typeof useTerminalReview>[0]["noteGeometry"];
@@ -255,6 +260,7 @@ async function renderTerminalReview(
     reviewVerticalStops?: ReviewVerticalStop[];
     stmlEnabled?: boolean;
     onFirstController?: (controller: TerminalReview) => void;
+    presentationScope?: ExtensionReviewPresentationScope | null;
   } = {},
 ) {
   const controllerRef: { current: TerminalReview | null } = { current: null };
@@ -266,6 +272,7 @@ async function renderTerminalReview(
       publishLineCursors={publishLineCursors}
       reviewVerticalStops={reviewVerticalStops}
       stmlEnabled={stmlEnabled}
+      presentationScope={presentationScope}
       onFirstController={onFirstController}
       onController={(nextController) => {
         controllerRef.current = nextController;
@@ -284,6 +291,63 @@ async function renderTerminalReview(
 }
 
 describe("useTerminalReview", () => {
+  test("navigates only projected files and sparse hunks", async () => {
+    const { controllerRef, setup } = await renderTerminalReview(
+      [createTwoHunkFile(), createTwoHunkFile("beta", "beta.ts")],
+      {
+        presentationScope: {
+          generation: "generation-1",
+          files: [
+            { fileId: "alpha", hunkIndexes: [1] },
+            { fileId: "beta", hunkIndexes: [1] },
+          ],
+        },
+      },
+    );
+
+    try {
+      await flush(setup);
+      const controller = expectValue(controllerRef.current);
+      expect(controller.visibleFiles.map((file) => file.id)).toEqual(["alpha", "beta"]);
+      expect(controller.selectedHunkIndex).toBe(1);
+
+      await act(async () => controller.moveSelection("file", 1));
+      await flush(setup);
+      expect(expectValue(controllerRef.current).selectedFileId).toBe("beta");
+      expect(expectValue(controllerRef.current).selectedHunkIndex).toBe(1);
+
+      await act(async () => controller.moveSelection("hunk", -1));
+      await flush(setup);
+      expect(expectValue(controllerRef.current).selectedFileId).toBe("alpha");
+      expect(expectValue(controllerRef.current).selectedHunkIndex).toBe(1);
+
+      await act(async () => controller.selectVisibleHunk("alpha", 0));
+      await flush(setup);
+      expect(expectValue(controllerRef.current).selectedHunkIndex).toBe(1);
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("keeps an empty intersected projection as an empty review and refuses navigation", async () => {
+    const { controllerRef, setup } = await renderTerminalReview([createAlphaFile()], {
+      presentationScope: {
+        generation: "generation-1",
+        files: [{ fileId: "missing", hunkIndexes: [0] }],
+      },
+    });
+    try {
+      await flush(setup);
+      const controller = expectValue(controllerRef.current);
+      expect(controller.visibleFiles).toEqual([]);
+      await act(async () => controller.moveSelection("hunk", 1));
+      await flush(setup);
+      expect(expectValue(controllerRef.current).visibleFiles).toEqual([]);
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
   test("preserves a filtered-out selection until the reviewer clears the filter", async () => {
     const { controllerRef, setup } = await renderTerminalReview([
       createDiffFile("alpha", "alpha.ts", "export const alpha = 1;\n", "export const alpha = 2;\n"),
