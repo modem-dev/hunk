@@ -56,6 +56,26 @@ describe("extension presentation scopes", () => {
     ).toEqual([files[0]!]);
   });
 
+  test("reuses the aggregate snapshot until an effective mutation", () => {
+    const { store } = createStore();
+    expect(store.get()).toBeNull();
+    expect(store.get()).toBeNull();
+
+    const scope = { generation: "generation:1", files: [{ fileId: "alpha", hunkIndexes: [0] }] };
+    expect(store.set("guide", scope)).toBe(true);
+    const first = store.get();
+    expect(first).not.toBeNull();
+    expect(store.get()).toBe(first);
+    expect(
+      store.set("guide", { ...scope, files: [{ ...scope.files[0]!, hunkIndexes: [0] }] }),
+    ).toBe(true);
+    expect(store.get()).toBe(first);
+
+    store.clear("guide");
+    expect(store.get()).toBeNull();
+    expect(store.get()).toBeNull();
+  });
+
   test("clears only the owning extension scope", () => {
     const { store } = createStore();
     const scope = { generation: "generation:1", files: [{ fileId: "alpha", hunkIndexes: [0] }] };

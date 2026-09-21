@@ -72,13 +72,28 @@ export function createExtensionPresentationScopeStore(
   options: ExtensionPresentationScopeStoreOptions,
 ): ExtensionPresentationScopeStore {
   const scopes = new Map<string, ExtensionReviewPresentationScope>();
+  let mutationRevision = 0;
+  let cachedGeneration: string | null | undefined;
+  let cachedRevision = -1;
+  let cachedScope: ExtensionReviewPresentationScope | null = null;
 
   const notify = () => options.onChange();
   const current = (): ExtensionReviewPresentationScope | null => {
     const generation = options.getGeneration();
-    if (!generation) return null;
+    if (cachedRevision === mutationRevision && cachedGeneration === generation) {
+      return cachedScope;
+    }
+    cachedGeneration = generation;
+    cachedRevision = mutationRevision;
+    if (!generation) {
+      cachedScope = null;
+      return cachedScope;
+    }
     const entries = [...scopes.values()].filter((scope) => scope.generation === generation);
-    if (entries.length === 0) return null;
+    if (entries.length === 0) {
+      cachedScope = null;
+      return cachedScope;
+    }
 
     let files = entries[0]!.files.map((entry) => ({
       fileId: entry.fileId,
@@ -98,7 +113,7 @@ export function createExtensionPresentationScopeStore(
       });
     }
 
-    return Object.freeze({
+    cachedScope = Object.freeze({
       generation,
       files: Object.freeze(
         files
@@ -113,6 +128,7 @@ export function createExtensionPresentationScopeStore(
           ),
       ),
     });
+    return cachedScope;
   };
 
   return {
@@ -134,15 +150,19 @@ export function createExtensionPresentationScopeStore(
           files: Object.freeze(normalizedFiles),
         }),
       );
+      mutationRevision += 1;
       notify();
       return true;
     },
     clear(extensionId) {
-      if (scopes.delete(extensionId)) notify();
+      if (!scopes.delete(extensionId)) return;
+      mutationRevision += 1;
+      notify();
     },
     clearAll() {
       if (scopes.size === 0) return;
       scopes.clear();
+      mutationRevision += 1;
       notify();
     },
     get: current,
