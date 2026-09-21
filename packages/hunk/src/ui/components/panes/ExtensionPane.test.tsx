@@ -73,13 +73,16 @@ describe("ExtensionPaneHost props", () => {
       id: "#1",
     });
     let received: ExtensionPaneProps["review"] | undefined;
+    let receivedGeneration: string | null | undefined;
     await withPane(
       <ExtensionPaneHost
         registered={registeredView((props) => {
           received = props.review;
+          receivedGeneration = props.reviewGeneration;
           return <text content="probe" />;
         })}
         review={review}
+        reviewGeneration="generation-a"
         files={files}
         fileViews={toReadOnlyFileViews(files)}
         selectedFileId={null}
@@ -97,6 +100,7 @@ describe("ExtensionPaneHost props", () => {
       />,
       async () => {
         expect(received).toBe(review);
+        expect(receivedGeneration).toBe("generation-a");
       },
     );
   });

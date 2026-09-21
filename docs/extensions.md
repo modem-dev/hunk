@@ -307,9 +307,10 @@ and retires the replaced instance at that explicit ownership boundary.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `29`). Branch on it if you want
-one file to support several Hunk versions. Version 29 adds generation-scoped extension review
-presentation scopes; version 28 adds host-owned syntax highlighting for file-view code documents;
+The API generation this Hunk speaks (currently `30`). Branch on it if you want
+one file to support several Hunk versions. Version 30 adds the opaque current review generation
+in pane props; version 29 adds generation-scoped extension review presentation scopes; version 28
+adds host-owned syntax highlighting for file-view code documents;
 version 27 adds `ctx.selection.files`, the visible files in review order;
 version 26 adds the status line (`ctx.statusLine` items and `ctx.prompts.line()` inline prompts);
 version 25 adds Promise-returning watch signatures and watch cancellation; version 24 adds review
@@ -968,6 +969,7 @@ The component receives fresh props as the app changes:
 | Prop                | What it is                                                                                                                                                                |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `review`            | immutable review-source metadata (`change-request`, `commit`, or `comparison`), or `null` for ordinary reviews                                                            |
+| `reviewGeneration`  | opaque current generation string for `actions.setPresentationScope`, or `null` before the review settles                                                                  |
 | `files`             | the visible reviewed files, review-stream order, filtered, frozen views (each carries `changeType`, `statsTruncated`, and `hunks` summaries beside the usual file fields) |
 | `selectedFileId`    | the selected file, or `null`                                                                                                                                              |
 | `selectedHunkIndex` | the selected hunk within that file, or `null`                                                                                                                             |
@@ -989,7 +991,19 @@ stream scrolls, selection updates, and the `selection_changed` event fires
 exactly as if the user had clicked a built-in row. `actions.copyText(text)` uses the terminal's
 OSC 52 clipboard integration and returns `false` when unavailable. Extensions that call it or read
 `theme.copyAction` should declare `"hunk": { "apiVersion": 20 }` in their manifest. `actions.notify(message,
-type?)` shows a toast attributed to your extension. An action given a file id
+type?)` shows a toast attributed to your extension. To scope from a pane mouse
+handler, use `props.reviewGeneration` as the scope's `generation` and the
+visible file `id` plus hunk indexes as its targets:
+
+```ts
+props.actions.setPresentationScope({
+  generation: props.reviewGeneration!,
+  files: [{ fileId: file.id, hunkIndexes: [hunk.index] }],
+});
+```
+
+Guard the call when `reviewGeneration` is `null`; the host rejects stale or malformed
+requests. An action given a file id
 that is not currently visible is refused with a warning rather than corrupting
 the selection. A pane's `actions` carry the same navigation methods a command
 handler's [`ctx.navigation`](#navigating-the-review) does, with the same

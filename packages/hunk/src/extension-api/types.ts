@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 29;
+export const HUNK_EXTENSION_API_VERSION = 30;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -1357,6 +1357,8 @@ export interface ExtensionPaneAvailabilityContext {
 export interface ExtensionPaneProps {
   /** Immutable review-source metadata, or null for ordinary reviews. */
   readonly review: ExtensionReviewDescriptor | null;
+  /** Opaque current review generation for generation-scoped presentation requests. */
+  readonly reviewGeneration: string | null;
   readonly files: readonly ExtensionDiffFile[];
   readonly selectedFileId: string | null;
   readonly selectedHunkIndex: number | null;

@@ -527,6 +527,7 @@ describe("UI components", () => {
         files={toReadOnlyFileViews(files)}
         selectedFileId="app"
         selectedHunkIndex={0}
+        reviewGeneration={null}
         theme={theme}
         width={30}
         keybindings={{ matches: () => false, getKeys: () => [] }}
@@ -580,6 +581,7 @@ describe("UI components", () => {
       keybindings: { matches: () => false, getKeys: () => [] },
       selectedFileId: "alpha",
       selectedHunkIndex: 0,
+      reviewGeneration: null,
       theme,
     };
     const flatFrame = await captureFrame(<FlexFileSidebar {...sharedProps} width={33} />, 36, 8);

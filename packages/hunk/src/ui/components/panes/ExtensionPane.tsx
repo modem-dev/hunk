@@ -85,6 +85,7 @@ const EMPTY_PRESENTATION_CONTROLS: ExtensionReviewPresentationControls = {
 export interface ExtensionPaneHostProps {
   registered: RegisteredPane;
   review?: ExtensionPaneProps["review"];
+  reviewGeneration?: ExtensionPaneProps["reviewGeneration"];
   files: DiffFile[];
   fileViews: ExtensionDiffFile[];
   selectedFileId: string | null;
@@ -109,6 +110,7 @@ export interface ExtensionPaneHostProps {
 function ExtensionPaneHostView({
   registered,
   review = null,
+  reviewGeneration = null,
   files,
   fileViews,
   selectedFileId,
@@ -180,6 +182,7 @@ function ExtensionPaneHostView({
   const View = registered.pane.component as (props: ExtensionPaneProps) => ReactNode;
   const viewProps: ExtensionPaneProps = {
     review,
+    reviewGeneration,
     files: fileViews,
     selectedFileId,
     selectedHunkIndex,
