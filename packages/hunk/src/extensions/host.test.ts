@@ -459,8 +459,8 @@ export default function (hunk: { registerSidebarView: (view: unknown) => void })
 
   test("refuses a manifest folder whose declared id breaks the same rules", async () => {
     const root = createTempDir("hunk-host-manifest-id-");
-    const folder = join(root, "my.ext");
-    writeTestFile(folder, "package.json", `{"hunk":{"extensions":["./entry.ts"]}}`);
+    const folder = join(root, "valid-folder-name");
+    writeTestFile(folder, "package.json", `{"hunk":{"id":"my.ext","extensions":["./entry.ts"]}}`);
     writeTestFile(folder, "entry.ts", `export default function () {}\n`);
 
     // A single-entry manifest is named by its folder, so manifest ids reach the
@@ -477,6 +477,26 @@ export default function (hunk: { registerSidebarView: (view: unknown) => void })
     expect(candidates.map((candidate) => candidate.id)).toEqual(["my.ext"]);
     expect(result.loaded).toEqual([]);
     expect(result.issues[0]?.message).toContain("not a usable extension id");
+  });
+
+  test("refuses a manifest folder whose declared id is reserved", async () => {
+    const root = createTempDir("hunk-host-manifest-reserved-id-");
+    const folder = join(root, "managed-copy");
+    writeTestFile(folder, "package.json", `{"hunk":{"id":"hunk","extensions":["./entry.ts"]}}`);
+    writeTestFile(folder, "entry.ts", `export default function () {}\n`);
+
+    const candidates = discoverExtensions({
+      cwd: root,
+      repoRoot: undefined,
+      globalExtensionsDir: undefined,
+      flagPaths: [folder],
+      env: {},
+    });
+    const result = await loadExtensions({ candidates, cwd: root });
+
+    expect(result.loaded).toEqual([]);
+    expect(result.issues[0]?.extensionId).toBe("hunk");
+    expect(result.issues[0]?.message).toContain("reserved by Hunk");
   });
 
   test("keeps the first extension claiming an id when two sources collide", async () => {
@@ -511,6 +531,56 @@ export default function (hunk: { registerSidebarView: (view: unknown) => void })
     expect(result.issues[0]?.origin).toBe("global");
     expect(result.issues[0]?.message).toContain('another extension already loaded as "notes"');
     expect(result.issues[0]?.message).toContain(winner.path);
+  });
+
+  test("explicit local extension ids win over managed installs with the same id", async () => {
+    const globalRoot = createTempDir("hunk-host-managed-duplicate-");
+    const localRoot = createTempDir("hunk-host-local-checkout-");
+    const managedFolder = join(globalRoot, "installed", "managed-folder");
+    const localEntry = writeTestFile(
+      localRoot,
+      "src/index.ts",
+      `export default function (hunk: { log: (message: string) => void }) {
+  hunk.log("local");
+}
+`,
+    );
+    writeTestFile(
+      localRoot,
+      "package.json",
+      `{"hunk":{"id":"stable-guide","extensions":["./src/index.ts"]}}`,
+    );
+    writeTestFile(
+      managedFolder,
+      "index.ts",
+      `export default function (hunk: { log: (message: string) => void }) {
+  hunk.log("managed");
+}
+`,
+    );
+    writeTestFile(
+      managedFolder,
+      "package.json",
+      `{"hunk":{"id":"stable-guide","extensions":["./index.ts"]}}`,
+    );
+
+    const candidates = discoverExtensions({
+      cwd: localRoot,
+      repoRoot: undefined,
+      globalExtensionsDir: globalRoot,
+      flagPaths: [localRoot],
+      env: {},
+    });
+    const result = await loadExtensions({ candidates, cwd: localRoot });
+
+    expect(candidates.map((candidate) => [candidate.id, candidate.origin])).toEqual([
+      ["stable-guide", "flag"],
+      ["stable-guide", "global"],
+    ]);
+    expect(result.loaded).toEqual([{ id: "stable-guide", sourcePath: localEntry, origin: "flag" }]);
+    expect(result.registry.logs).toEqual([{ extensionId: "stable-guide", message: "local" }]);
+    expect(result.issues[0]?.origin).toBe("global");
+    expect(result.issues[0]?.message).toContain("another extension already loaded");
   });
 
   test("rejects registration attempted after the load pass finished", async () => {

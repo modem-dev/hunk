@@ -83,6 +83,8 @@ function findFolderExtensionIndex(dir: string) {
 interface ExtensionManifest {
   /** Absolute entry paths from `hunk.extensions`, or nothing when undeclared. */
   entryPaths?: string[];
+  /** Explicit id for a single-entry folder extension, or nothing when undeclared. */
+  id?: string;
   /** Minimum extension API version from `hunk.apiVersion`, or nothing when undeclared. */
   requiresApiVersion?: number;
 }
@@ -128,6 +130,12 @@ function readExtensionManifest(dir: string): ExtensionManifest | undefined {
         .map((entry) => resolve(dir, entry))
     : undefined;
 
+  // A malformed id is ignored rather than fatal, matching the "no manifest"
+  // posture for every other malformed field. A malformed string still reaches
+  // host id validation, so users get the same actionable namespace error.
+  const declaredId = (section as Record<string, unknown>).id;
+  const id = typeof declaredId === "string" ? declaredId : undefined;
+
   // A malformed apiVersion is ignored rather than fatal, matching the "no
   // manifest" posture for every other malformed field.
   const declaredApiVersion = (section as Record<string, unknown>).apiVersion;
@@ -138,7 +146,7 @@ function readExtensionManifest(dir: string): ExtensionManifest | undefined {
       ? declaredApiVersion
       : undefined;
 
-  return { entryPaths, requiresApiVersion };
+  return { entryPaths, id, requiresApiVersion };
 }
 
 /** Assign deterministic, distinct ids to every entry in one manifest. */
@@ -174,10 +182,11 @@ function deriveManifestEntryIds(paths: readonly string[]) {
  * as no manifest at all, so such a folder still loads its index if it has one.
  *
  * A single-entry manifest keeps the folder's name as the extension id — the
- * same id the index fallback would produce — so `[extension.<id>]` config tables
- * stay keyed by the folder the user installed, whatever the entry file is
- * called. Multiple entries are named by file stem, with a numeric suffix when
- * stems collide so configuration and registry ownership remain unambiguous.
+ * same id the index fallback would produce — unless `hunk.id` explicitly names
+ * it. This keeps `[extension.<id>]` config tables stable while allowing a
+ * checkout's basename to differ from its published identity. Multiple entries
+ * are named by file stem, with a numeric suffix when stems collide so
+ * configuration and registry ownership remain unambiguous.
  *
  * Returns an empty list when the folder is not an extension at all.
  */
@@ -196,9 +205,11 @@ function resolveFolderExtensionEntries(dir: string): DiscoveredExtensionEntry[] 
     return manifestPaths.map((path, index) =>
       withApiVersion({
         id:
-          manifestPaths.length === 1 && folderName.length > 0
-            ? folderName
-            : (manifestIds[index] ?? deriveExtensionId(path)),
+          manifestPaths.length === 1 && manifest?.id !== undefined
+            ? manifest.id
+            : manifestPaths.length === 1 && folderName.length > 0
+              ? folderName
+              : (manifestIds[index] ?? deriveExtensionId(path)),
         path,
         sortKey: dir,
       }),

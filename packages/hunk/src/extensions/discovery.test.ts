@@ -292,9 +292,29 @@ describe("folder extension manifests", () => {
     expect(candidates).toEqual([{ id: "manifest-ext", path: entry, origin: "global" }]);
   });
 
-  test("resolves a manifest for an explicit folder path", () => {
-    const root = createTempDir("hunk-ext-manifest-explicit-");
-    const folder = join(root, "manifest-ext");
+  test("resolves an explicit manifest id for a single-entry folder", () => {
+    const root = createTempDir("hunk-ext-manifest-explicit-id-");
+    const folder = join(root, "worktree-name");
+    const entry = writeExtensionFile(folder, "src", "main.ts");
+    writeExtensionManifest(
+      folder,
+      `{"hunk": {"id": "published-name", "extensions": ["./src/main.ts"]}}`,
+    );
+
+    const candidates = discoverExtensions({
+      cwd: root,
+      repoRoot: undefined,
+      globalExtensionsDir: undefined,
+      configPaths: ["worktree-name"],
+      env: {},
+    });
+
+    expect(candidates).toEqual([{ id: "published-name", path: entry, origin: "config" }]);
+  });
+
+  test("keeps the folder-name fallback when a manifest omits its id", () => {
+    const root = createTempDir("hunk-ext-manifest-id-fallback-");
+    const folder = join(root, "folder-name");
     const entry = writeExtensionFile(folder, "src", "main.ts");
     writeExtensionManifest(folder, `{"hunk": {"extensions": ["./src/main.ts"]}}`);
 
@@ -302,11 +322,11 @@ describe("folder extension manifests", () => {
       cwd: root,
       repoRoot: undefined,
       globalExtensionsDir: undefined,
-      configPaths: ["manifest-ext"],
+      flagPaths: [folder],
       env: {},
     });
 
-    expect(candidates).toEqual([{ id: "manifest-ext", path: entry, origin: "config" }]);
+    expect(candidates).toEqual([{ id: "folder-name", path: entry, origin: "flag" }]);
   });
 
   test("keeps manifest order and per-file ids when a manifest declares several entries", () => {
