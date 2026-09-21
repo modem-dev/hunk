@@ -232,6 +232,8 @@ export const sessionDaemonRequestSchema = z.discriminatedUnion("action", [
     selector: selectorSchema,
     filePath: z.string().optional(),
     type: z.enum(["live", "all", "ai", "agent", "user"]).optional(),
+    author: z.string().optional(),
+    noAuthor: z.boolean().optional(),
   }),
   z.strictObject({
     action: z.literal("comment-rm"),

@@ -1655,6 +1655,9 @@ async function parseSessionCommentListCommand(tokens: string[]): Promise<ParsedC
     throw new Error("Comment type must be one of live, all, ai, agent, or user.");
   }
 
+  // Commander folds `--no-author` into `author: false` rather than a separate `noAuthor` key.
+  const author = parsedOptions.author as string | false | undefined;
+
   return {
     kind: "session",
     action: "comment-list",
@@ -1662,6 +1665,8 @@ async function parseSessionCommentListCommand(tokens: string[]): Promise<ParsedC
     selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
     filePath: parsedOptions.file,
     ...(parsedOptions.type ? { type: parsedOptions.type as SessionCommentListType } : {}),
+    ...(typeof author === "string" ? { author } : {}),
+    ...(author === false ? { noAuthor: true } : {}),
   };
 }
 

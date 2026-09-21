@@ -114,10 +114,14 @@ For comment cleanup and inspection, use:
 
 ```bash
 hunk session comment list --repo .
+hunk session comment list --repo . --author pi --json # only comments authored by "pi"
+hunk session comment list --repo . --no-author --json # only comments with no author tag
 hunk session comment rm --repo . <comment-id>
 hunk session comment clear --repo . --file README.md --yes
 hunk session comment clear --repo . --all --yes # also clears human `c` notes
 ```
+
+`--type` filters by writer category; `--author <name>` filters by the optional author tag within it. Human `c` notes are tagged `user`, so `--author user` matches them; `--no-author` returns only comments with no author tag.
 
 Agents can remove or bulk-clear human notes for cleanup, but cannot create or edit them through the session CLI.
 
