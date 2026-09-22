@@ -316,8 +316,11 @@ describe("install VM contract", () => {
       writeFileSync(path.join(outside, "loot"), "do not touch\n");
       symlinkSync(outside, path.join(runtime, "linked"));
 
-      // Resolving the target through symlinks would make this read as owned; it is not.
-      expect(() => assertSafeCleanTarget(repo, path.join(runtime, "linked", "loot"))).toThrow();
+      // Resolving the target through symlinks would make this read as owned; it is not. Assert
+      // which guard fires, so a change that swaps one rejection for another is visible here.
+      expect(() => assertSafeCleanTarget(repo, path.join(runtime, "linked", "loot"))).toThrow(
+        "symlink ancestor",
+      );
       expect(() =>
         assertSafeInstallVmRuntimePath(repo, path.join(runtime, "..", "..", "etc")),
       ).toThrow("outside");
@@ -326,6 +329,36 @@ describe("install VM contract", () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
       rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects a symlink inside the tree even when the full path exists", () => {
+    // A symlink that redirects within `tmp/install-vm` still has to be refused: canonicalizing
+    // the target would resolve it away, the symlink-ancestor walk would never see it, and a
+    // caller acting on the returned path would traverse it.
+    const repo = mkdtempSync(path.join(tmpdir(), "hunk-install-vm-inner-link-"));
+    try {
+      const runtime = path.join(repo, "tmp", "install-vm");
+      mkdirSync(path.join(runtime, "real", "sub"), { recursive: true });
+      symlinkSync(path.join(runtime, "real"), path.join(runtime, "alias"));
+
+      // Every shape has to be rejected, including the one where each segment already exists.
+      expect(() => assertSafeInstallVmRuntimePath(repo, path.join(runtime, "alias"))).toThrow(
+        "symlink ancestor",
+      );
+      expect(() =>
+        assertSafeInstallVmRuntimePath(repo, path.join(runtime, "alias", "sub")),
+      ).toThrow("symlink ancestor");
+      expect(() =>
+        assertSafeInstallVmRuntimePath(repo, path.join(runtime, "alias", "not-created-yet")),
+      ).toThrow("symlink ancestor");
+
+      // The same paths spelled without the symlink stay acceptable.
+      expect(assertSafeInstallVmRuntimePath(repo, path.join(runtime, "real", "sub"))).toBe(
+        path.join(runtime, "real", "sub"),
+      );
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
     }
   });
 

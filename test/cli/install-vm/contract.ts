@@ -393,40 +393,24 @@ export function buildInstallVmJunit(result: InstallVmRunResult) {
 }
 
 /**
- * Canonicalize one path through its nearest existing ancestor.
+ * Rewrite one absolute path onto the repo's physical prefix without resolving anything below it.
  *
- * Containment checks have to compare like with like: `realpathSync` throws on a leaf that does
- * not exist yet, and plain `resolve` preserves a symlinked ancestor's spelling, so comparing one
- * against the other makes a path look foreign when only its prefix is spelled differently. This
- * resolves the part that exists and re-joins the missing tail verbatim, leaving any symlink at or
- * below the nearest existing ancestor intact for the caller to inspect.
+ * Containment compares the target against a `realpathSync`-resolved repo root, so the two have to
+ * be spelled the same way or a symlinked ancestor of the repo itself — `/var/folders` on macOS, a
+ * symlinked `$HOME` on Linux — makes every harness-owned path read as foreign. Only the prefix is
+ * canonicalized: each segment below the repo root is left verbatim so a symlink *inside* the tree
+ * survives into the string the caller's symlink walk inspects. Resolving those away would silently
+ * disarm that guard, and a path whose leaf does not exist yet must still be rewritable.
  */
-function canonicalizeThroughExistingAncestor(target: string) {
+function rebaseOnPhysicalRepoRoot(physicalRepoRoot: string, repoRoot: string, target: string) {
   const absolute = path.resolve(target);
-  const missingSegments: string[] = [];
-  let current = absolute;
-
-  for (;;) {
-    try {
-      // lstat, not realpath: a symlinked leaf must keep its own spelling so the walk below
-      // still sees it as a symlink rather than silently following it.
-      if (lstatSync(current).isSymbolicLink()) {
-        return path.join(
-          realpathSync(path.dirname(current)),
-          path.basename(current),
-          ...missingSegments,
-        );
-      }
-      return path.join(realpathSync(current), ...missingSegments);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  for (const root of [repoRoot, physicalRepoRoot]) {
+    const relative = path.relative(path.resolve(root), absolute);
+    if (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)) {
+      return path.join(physicalRepoRoot, relative);
     }
-
-    const parent = path.dirname(current);
-    if (parent === current) return absolute;
-    missingSegments.unshift(path.basename(current));
-    current = parent;
   }
+  return absolute;
 }
 
 /** Resolve one runtime path without following a symlink outside the harness-owned tmp tree. */
@@ -444,10 +428,11 @@ export function assertSafeInstallVmRuntimePath(
   const physicalRepoRoot = realpathSync(repoRoot);
   const allowedRoot = path.join(physicalRepoRoot, "tmp", "install-vm");
   const resolved = path.resolve(target);
-  // Compare and walk the physical spelling so a symlinked ancestor of the repo itself — `/tmp`
-  // and `/var/folders` on macOS, a symlinked home on Linux — cannot make an owned path read as
-  // foreign. Only the return value keeps the caller's spelling.
-  const physicalResolved = canonicalizeThroughExistingAncestor(resolved);
+  // Restate the target on the repo's physical prefix so a symlinked ancestor of the repo cannot
+  // make an owned path read as foreign. Segments below the repo root keep their own spelling, so
+  // the walk further down still sees any symlink inside the tree. Only the return value keeps the
+  // caller's original prefix.
+  const physicalResolved = rebaseOnPhysicalRepoRoot(physicalRepoRoot, repoRoot, resolved);
   const relative = path.relative(allowedRoot, physicalResolved);
   if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
     throw new Error(`Refusing install VM path outside ${allowedRoot}: ${resolved}`);
