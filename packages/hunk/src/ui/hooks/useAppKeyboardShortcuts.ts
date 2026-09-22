@@ -506,38 +506,25 @@ export function useAppKeyboardShortcuts({
       return "focused";
     }
 
+    // React may commit note focus before the windowed editor mounts. Until a
+    // real editor is focused, this transition owns keys in either focus state.
+    if (isDraftFocusPendingRef.current() && !renderer.currentFocusedEditor) {
+      if (isEscapeKey(key)) {
+        cancelDraftNote();
+        return "mine";
+      }
+      if (isSaveDraftNoteKey(key)) {
+        saveDraftNote();
+        return "mine";
+      }
+      const text = printableKeyText(key);
+      if (text !== undefined) queueDraftInputRef.current(text);
+      return "mine";
+    }
+
     if (focusAreaRef.current !== "note") {
-      // Extension panes can mount the same OpenTUI editors Hunk uses. The
-      // renderer is the live focus authority for those inputs, which do not
-      // participate in App's host-only focus-area state.
-      if (renderer.currentFocusedEditor) {
-        return "focused";
-      }
-
-      // A draft editor mounts after the key that opened it, while one input
-      // chunk's keys are already being routed. Printable input that arrives in
-      // that window belongs to the note being written: hold it for the editor
-      // instead of letting it dispatch as global commands, which would both run
-      // unrelated actions and drop the character.
-      if (isDraftFocusPendingRef.current()) {
-        if (isEscapeKey(key)) {
-          cancelDraftNote();
-          return "mine";
-        }
-
-        if (isSaveDraftNoteKey(key)) {
-          saveDraftNote();
-          return "mine";
-        }
-
-        const text = printableKeyText(key);
-        if (text !== undefined) {
-          queueDraftInputRef.current(text);
-          return "mine";
-        }
-      }
-
-      return "notMine";
+      // Extension panes also own editors outside the host focus-area state.
+      return renderer.currentFocusedEditor ? "focused" : "notMine";
     }
 
     // The draft editor owns the keyboard now, so input held for it during the

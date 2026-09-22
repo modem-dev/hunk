@@ -105,9 +105,11 @@ export function useUserNoteComposer({
    */
   const pendingInputRef = useRef("");
   const awaitingDraftFocusRef = useRef(false);
+  const mountingDraftRef = useRef<DraftReviewNote | null>(null);
 
   /** Arm the transition buffer for a draft whose editor has not mounted yet. */
-  const beginDraftFocusTransition = useCallback(() => {
+  const beginDraftFocusTransition = useCallback((draft: DraftReviewNote) => {
+    mountingDraftRef.current = draft;
     awaitingDraftFocusRef.current = true;
     pendingInputRef.current = "";
   }, []);
@@ -125,6 +127,7 @@ export function useUserNoteComposer({
   /** Take the held input once the mounted editor owns the keyboard. */
   const takePendingDraftInput = useCallback(() => {
     awaitingDraftFocusRef.current = false;
+    mountingDraftRef.current = null;
     const pending = pendingInputRef.current;
     pendingInputRef.current = "";
     return pending;
@@ -133,6 +136,7 @@ export function useUserNoteComposer({
   /** Drop held input along with a cancelled draft. */
   const discardPendingDraftInput = useCallback(() => {
     awaitingDraftFocusRef.current = false;
+    mountingDraftRef.current = null;
     pendingInputRef.current = "";
   }, []);
 
@@ -154,7 +158,7 @@ export function useUserNoteComposer({
       );
       if (draft) {
         setActiveAddNoteTarget(null);
-        beginDraftFocusTransition();
+        beginDraftFocusTransition(draft);
         focusDraft();
       }
       return draft;
@@ -175,7 +179,7 @@ export function useUserNoteComposer({
       const draft = startEdit(noteId, options);
       if (draft) {
         setActiveAddNoteTarget(null);
-        beginDraftFocusTransition();
+        beginDraftFocusTransition(draft);
         focusDraft();
       }
       return draft;
@@ -189,7 +193,7 @@ export function useUserNoteComposer({
       const draft = startReply(noteId, options);
       if (draft) {
         setActiveAddNoteTarget(null);
-        beginDraftFocusTransition();
+        beginDraftFocusTransition(draft);
         focusDraft();
       }
       return draft;
@@ -215,10 +219,13 @@ export function useUserNoteComposer({
     (editorBody?: string) => {
       // `saveDraft` consumes the semantic draft synchronously. Retain its runtime file id
       // first because the saved terminal projection is keyed by path rather than runtime id.
-      const priorDraft = draftNote;
-      // A save before the editor mounted has no editor body; the held input is the body.
+      // Opening and saving can share an input chunk before React commits the draft prop.
+      const priorDraft = mountingDraftRef.current ?? draftNote;
       const pendingInput = takePendingDraftInput();
-      const body = editorBody ?? (pendingInput.length > 0 ? pendingInput : undefined);
+      // OpenTUI initializes a new textarea at the beginning of its initial body.
+      const body =
+        editorBody ??
+        (pendingInput.length > 0 ? pendingInput + (priorDraft?.body ?? "") : undefined);
       if (priorDraft && body !== undefined && !updateDraft(body, priorDraft.id)) {
         return;
       }
