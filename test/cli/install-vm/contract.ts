@@ -392,6 +392,43 @@ export function buildInstallVmJunit(result: InstallVmRunResult) {
   return `<?xml version="1.0" encoding="UTF-8"?>\n<testsuite name="install-vm" tests="${scenarios.length}" failures="${failures}" skipped="${skipped}" time="${time.toFixed(3)}">\n${cases}\n</testsuite>\n`;
 }
 
+/**
+ * Canonicalize one path through its nearest existing ancestor.
+ *
+ * Containment checks have to compare like with like: `realpathSync` throws on a leaf that does
+ * not exist yet, and plain `resolve` preserves a symlinked ancestor's spelling, so comparing one
+ * against the other makes a path look foreign when only its prefix is spelled differently. This
+ * resolves the part that exists and re-joins the missing tail verbatim, leaving any symlink at or
+ * below the nearest existing ancestor intact for the caller to inspect.
+ */
+function canonicalizeThroughExistingAncestor(target: string) {
+  const absolute = path.resolve(target);
+  const missingSegments: string[] = [];
+  let current = absolute;
+
+  for (;;) {
+    try {
+      // lstat, not realpath: a symlinked leaf must keep its own spelling so the walk below
+      // still sees it as a symlink rather than silently following it.
+      if (lstatSync(current).isSymbolicLink()) {
+        return path.join(
+          realpathSync(path.dirname(current)),
+          path.basename(current),
+          ...missingSegments,
+        );
+      }
+      return path.join(realpathSync(current), ...missingSegments);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+
+    const parent = path.dirname(current);
+    if (parent === current) return absolute;
+    missingSegments.unshift(path.basename(current));
+    current = parent;
+  }
+}
+
 /** Resolve one runtime path without following a symlink outside the harness-owned tmp tree. */
 export function assertSafeInstallVmRuntimePath(
   repoRoot: string,
@@ -407,7 +444,11 @@ export function assertSafeInstallVmRuntimePath(
   const physicalRepoRoot = realpathSync(repoRoot);
   const allowedRoot = path.join(physicalRepoRoot, "tmp", "install-vm");
   const resolved = path.resolve(target);
-  const relative = path.relative(allowedRoot, resolved);
+  // Compare and walk the physical spelling so a symlinked ancestor of the repo itself — `/tmp`
+  // and `/var/folders` on macOS, a symlinked home on Linux — cannot make an owned path read as
+  // foreign. Only the return value keeps the caller's spelling.
+  const physicalResolved = canonicalizeThroughExistingAncestor(resolved);
+  const relative = path.relative(allowedRoot, physicalResolved);
   if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
     throw new Error(`Refusing install VM path outside ${allowedRoot}: ${resolved}`);
   }
@@ -416,7 +457,7 @@ export function assertSafeInstallVmRuntimePath(
   }
 
   let cursor = physicalRepoRoot;
-  for (const segment of path.relative(physicalRepoRoot, resolved).split(path.sep)) {
+  for (const segment of path.relative(physicalRepoRoot, physicalResolved).split(path.sep)) {
     if (!segment) continue;
     cursor = path.join(cursor, segment);
     try {
