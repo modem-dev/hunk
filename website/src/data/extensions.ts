@@ -125,6 +125,15 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     apiVersion: 6,
   },
   {
+    repo: "brettinternet/hunk-guide",
+    name: "hunk-guide",
+    summary:
+      "Groups changed hunks into ordered, guided walkthroughs with section navigation and review-progress tracking, instead of reviewing files in filesystem order.",
+    categories: ["Pane", "Command"],
+    version: "0.1.0",
+    apiVersion: 30,
+  },
+  {
     repo: "evantravers/hunk-mark-as-reviewed",
     name: "hunk-mark-as-reviewed",
     summary:
@@ -157,6 +166,15 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     categories: ["Pane", "File view", "Command", "Keyboard mode"],
     version: "0.1.0",
     apiVersion: 16,
+  },
+  {
+    repo: "JoseanAyala/hunk-glab-review",
+    name: "hunk-glab-review",
+    summary:
+      "Turns Hunk into a GitLab review client: browse merge request threads, leave notes, then submit them as a Comment or Approve review.",
+    categories: ["Pane", "Command"],
+    version: "0.1.0",
+    apiVersion: 6,
   },
   {
     repo: "joshedler/hunk-git-lite",
