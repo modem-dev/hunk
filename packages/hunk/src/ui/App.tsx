@@ -1630,7 +1630,6 @@ export function App({
             fileViews={fileViewLayouts}
             files={filteredFiles}
             semanticFileIdentities={semanticFileIdentities}
-            offloadLargeDiff={bootstrap.input.options.fast === true}
             lineHighlights={paintedLineHighlights}
             pagerMode={pagerMode}
             screenTop={diffPaneScreenTop}

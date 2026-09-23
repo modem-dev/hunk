@@ -414,7 +414,6 @@ describe("AppHost file views", () => {
           path: "syntax-apphost.ts",
           language: "typescript",
           theme: resolveTheme(themeId, null),
-          offloadLargeDiff: false,
         }),
       ),
     );
@@ -624,14 +623,12 @@ describe("AppHost file views", () => {
         path: "alpha.ts",
         language: "typescript",
         theme: resolveTheme("github-dark-default", null),
-        offloadLargeDiff: false,
       }),
       loadDocumentHighlight({
         text: "const betaSyntax = 1;",
         path: "beta.ts",
         language: "typescript",
         theme: resolveTheme("github-dark-dimmed", null),
-        offloadLargeDiff: false,
       }),
     ]);
     const alphaColor = documentHighlightRunsForLine(alphaResult, 0)

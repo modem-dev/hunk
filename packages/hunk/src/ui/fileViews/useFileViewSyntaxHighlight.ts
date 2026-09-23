@@ -95,14 +95,12 @@ export function useFileViewSyntaxHighlight(
     file,
     fileView,
     mountedRows,
-    offloadLargeDiff,
     shouldLoadHighlight,
     theme,
   }: {
     file: DiffFile;
     fileView: ResolvedFileViewLayout;
     mountedRows: readonly PlannedFileViewRow[];
-    offloadLargeDiff: boolean;
     shouldLoadHighlight: boolean;
     theme: AppTheme;
   },
@@ -133,8 +131,8 @@ export function useFileViewSyntaxHighlight(
   const activeRef = useRef(new Map<string, ActiveFileViewHighlightRequest>());
   const retainedRef = useRef(new Map<string, DocumentHighlightResult>());
   const contextRef = useRef(contextIdentity);
-  const requestRef = useRef({ offloadLargeDiff, requests, theme });
-  requestRef.current = { offloadLargeDiff, requests, theme };
+  const requestRef = useRef({ requests, theme });
+  requestRef.current = { requests, theme };
   const loadRef = useRef(dependencies.load ?? fileViewSyntaxHighlightLoader);
   loadRef.current = dependencies.load ?? fileViewSyntaxHighlightLoader;
   const maxRetries = Math.max(
@@ -191,7 +189,6 @@ export function useFileViewSyntaxHighlight(
           try {
             result = await loadRef.current({
               language: request.language,
-              offloadLargeDiff: requestRef.current.offloadLargeDiff,
               path: file.path,
               signal: controller.signal,
               text: request.document.text,

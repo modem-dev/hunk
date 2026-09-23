@@ -9,6 +9,23 @@ const harness = createPtyHarness();
 /** Give source loading and asynchronous Shiki highlighting enough headroom in CI. */
 setDefaultTimeout(20_000);
 
+/** Send one key and return how long the screen took to show `expected`, polling tightly. */
+async function timeKeyAnswer(
+  session: Awaited<ReturnType<ReturnType<typeof createPtyHarness>["launchHunk"]>>,
+  key: "pagedown" | "pageup",
+  expected: string,
+) {
+  const sent = performance.now();
+  session.sendKey(key);
+  while (performance.now() - sent < 2_000) {
+    if ((await session.text({ immediate: true })).includes(expected)) {
+      return performance.now() - sent;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  throw new Error(`The ${key} key was not answered with ${JSON.stringify(expected)} in time.`);
+}
+
 afterEach(() => {
   harness.cleanup();
 });
@@ -56,10 +73,41 @@ describe("PTY syntax highlighting", () => {
     }
   });
 
+  test("answers a key sent at first paint on a small multi-language review", async () => {
+    const fixture = harness.createSmallMultiLanguageRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "unified"],
+      cwd: fixture.dir,
+      cols: 120,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(fixture.firstPaintText, { timeout: 15_000 });
+      // Highlighting starts from an effect after the first paint; let it begin before the key.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      const atFirstPaint = await timeKeyAnswer(session, "pagedown", fixture.belowFoldText);
+
+      let keywords = "";
+      for (let iteration = 0; iteration < 200; iteration += 1) {
+        await session.waitIdle({ timeout: 50 });
+        keywords = await session.text({ immediate: true, only: { foreground: "#ff7b72" } });
+        if (keywords.includes("return")) break;
+      }
+      expect(keywords).toContain("return");
+
+      // The settled answer calibrates the budget; inline compilation held the first 4-15x longer.
+      const settled = await timeKeyAnswer(session, "pageup", fixture.firstPaintText);
+      expect(atFirstPaint).toBeLessThan(Math.max(60, 4 * settled));
+    } finally {
+      session.close();
+    }
+  });
+
   test("keeps key input responsive while a large added file highlights", async () => {
     const fixture = createHighlightTestFiles(8_000);
     const session = await harness.launchHunk({
-      args: ["diff", "--files", fixture.before, fixture.after, "--fast", "--mode", "unified"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "unified"],
       cwd: fixture.dir,
       cols: 120,
       rows: 24,

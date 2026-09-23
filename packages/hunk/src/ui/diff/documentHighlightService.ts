@@ -29,7 +29,6 @@ export interface DocumentHighlightInput {
   path: string;
   language: string;
   theme: AppTheme;
-  offloadLargeDiff: boolean;
   signal?: AbortSignal;
 }
 
@@ -157,7 +156,6 @@ function snapshotInput(input: DocumentHighlightInput): Omit<DocumentHighlightInp
     path: input.path,
     language: input.language,
     theme,
-    offloadLargeDiff: input.offloadLargeDiff === true,
   });
 }
 
@@ -167,7 +165,7 @@ function normalizedDocumentHighlightCacheKey({
   path,
   text,
   theme,
-}: Omit<DocumentHighlightInput, "offloadLargeDiff" | "signal">) {
+}: Omit<DocumentHighlightInput, "signal">) {
   const fields = [
     String(DOCUMENT_HIGHLIGHT_RENDER_OPTIONS_REVISION),
     theme.appearance,
@@ -184,9 +182,7 @@ function normalizedDocumentHighlightCacheKey({
 }
 
 /** Hash every render-affecting input after applying the service's newline normalization. */
-export function documentHighlightCacheKey(
-  input: Omit<DocumentHighlightInput, "offloadLargeDiff" | "signal">,
-) {
+export function documentHighlightCacheKey(input: Omit<DocumentHighlightInput, "signal">) {
   return normalizedDocumentHighlightCacheKey({
     ...input,
     text: normalizeDocumentText(input.text),
@@ -298,7 +294,7 @@ export function createDocumentHighlightService(options: DocumentHighlightService
       return fallbackResult("invalid-document", false);
     }
 
-    if (input.offloadLargeDiff && workerDecision.eligible) {
+    if (workerDecision.eligible) {
       try {
         const compact = await workerHighlight({
           ...workerDecision.input,

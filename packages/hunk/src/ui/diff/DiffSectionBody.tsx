@@ -84,7 +84,6 @@ export function DiffSectionBody({
   selectedHunkIndex,
   sectionGeometry,
   shouldLoadHighlight = true,
-  offloadLargeDiff = false,
   scrollable = true,
   visibleBodyBounds,
 }: {
@@ -117,7 +116,6 @@ export function DiffSectionBody({
   selectedHunkIndex: number;
   sectionGeometry?: DiffSectionGeometry;
   shouldLoadHighlight?: boolean;
-  offloadLargeDiff?: boolean;
   scrollable?: boolean;
   visibleBodyBounds?: VisibleBodyBounds;
 }) {
@@ -192,7 +190,6 @@ export function DiffSectionBody({
 
   const resolvedHighlighted = useHighlightedDiff({
     file,
-    offloadLargeDiff,
     theme,
     shouldLoadHighlight,
   });
@@ -200,7 +197,6 @@ export function DiffSectionBody({
     sourceStatus?.kind === "loaded" && expandedGapKeys.size > 0 ? sourceStatus.text : undefined;
   const resolvedHighlightedSource = useHighlightedSource({
     file,
-    offloadLargeDiff,
     text: sourceTextForHighlight,
     theme,
     shouldLoadHighlight: shouldLoadHighlight && expandedGapKeys.size > 0,

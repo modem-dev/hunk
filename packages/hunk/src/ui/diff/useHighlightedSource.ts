@@ -56,13 +56,11 @@ function waitForRetry(delayMs: number, signal: AbortSignal) {
 export function useHighlightedSource(
   {
     file,
-    offloadLargeDiff = false,
     text,
     theme,
     shouldLoadHighlight,
   }: {
     file: DiffFile | undefined;
-    offloadLargeDiff?: boolean;
     text: string | undefined;
     theme: AppTheme;
     shouldLoadHighlight?: boolean;
@@ -86,8 +84,8 @@ export function useHighlightedSource(
   // The effect is keyed by the service's semantic identity rather than caller object identity.
   // Keep the latest equivalent snapshots available without restarting work when parents recreate
   // `file` or `theme` objects during unrelated renders.
-  const requestRef = useRef({ file, offloadLargeDiff, text, theme });
-  requestRef.current = { file, offloadLargeDiff, text, theme };
+  const requestRef = useRef({ file, text, theme });
+  requestRef.current = { file, text, theme };
 
   useLayoutEffect(() => {
     const request = requestRef.current;
@@ -108,7 +106,6 @@ export function useHighlightedSource(
         try {
           highlighted = await load({
             file: requestFile,
-            offloadLargeDiff: request.offloadLargeDiff,
             signal: controller.signal,
             text: requestText,
             theme: request.theme,
@@ -138,7 +135,7 @@ export function useHighlightedSource(
       active = false;
       controller.abort();
     };
-  }, [cacheKey, load, maxRetries, offloadLargeDiff, retryDelayMs, shouldLoadHighlight]);
+  }, [cacheKey, load, maxRetries, retryDelayMs, shouldLoadHighlight]);
 
   return state?.cacheKey === cacheKey ? state.highlighted : null;
 }

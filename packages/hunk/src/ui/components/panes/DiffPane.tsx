@@ -321,7 +321,6 @@ export function DiffPane({
   fileViews = EMPTY_FILE_VIEWS,
   files,
   semanticFileIdentities,
-  offloadLargeDiff = false,
   lineHighlights = EMPTY_LINE_HIGHLIGHTS,
   headerLabelWidth,
   headerStatsWidth,
@@ -399,8 +398,6 @@ export function DiffPane({
   files: DiffFile[];
   /** Already-projected semantic identities for selection invalidation. */
   semanticFileIdentities?: readonly string[];
-  /** Offload eligible syntax highlighting for this launch. */
-  offloadLargeDiff?: boolean;
   /** Validated extension line marks, keyed by file id. */
   lineHighlights?: ReadonlyMap<string, readonly ValidatedLineHighlight[]>;
   headerLabelWidth: number;
@@ -1576,20 +1573,9 @@ export function DiffPane({
         continue;
       }
 
-      void prefetchHighlightedDiff({
-        file,
-        offloadLargeDiff,
-        theme,
-      });
+      void prefetchHighlightedDiff({ file, theme });
     }
-  }, [
-    files,
-    highlightPrefetchFileIds,
-    initialWrappedRenderWindowWarmed,
-    offloadLargeDiff,
-    theme,
-    wrapLines,
-  ]);
+  }, [files, highlightPrefetchFileIds, initialWrappedRenderWindowWarmed, theme, wrapLines]);
 
   // Keep the selected file/hunk derived from the visible viewport for actual scroll-driven
   // movement, while leaving the initial mount and non-scroll relayouts alone.
@@ -2606,7 +2592,6 @@ export function DiffPane({
                         extensionLineHighlights={lineHighlights.get(file.id)}
                         file={file}
                         fileView={fileViewRenderPlans.get(file.id)?.fileView}
-                        offloadLargeDiff={offloadLargeDiff}
                         headerLabelWidth={headerLabelWidth}
                         headerStatsWidth={headerStatsWidth}
                         layout={layout}

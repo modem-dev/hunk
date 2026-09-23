@@ -55,6 +55,11 @@ export function syntaxHighlightThemeName(theme: AppTheme | AppTheme["appearance"
     : baseThemeName;
 }
 
+/** Return whether the worker can resolve this theme without main-thread scope registration. */
+export function themeSupportsHighlightWorker(theme: AppTheme) {
+  return Object.keys(theme.syntaxScopeOverrides ?? {}).length === 0;
+}
+
 /** Register a derived scope theme before Pierre asks its shared highlighter to resolve it. */
 export function ensureSyntaxHighlightThemeRegistered(theme: AppTheme | AppTheme["appearance"]) {
   const themeName = syntaxHighlightThemeName(theme);

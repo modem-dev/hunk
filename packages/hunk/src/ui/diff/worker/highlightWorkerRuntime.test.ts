@@ -126,6 +126,36 @@ describe("highlight worker runtime", () => {
     expect(response.message).toContain("shorter than 1000");
   });
 
+  test("preloads a grammar so the first render request skips grammar compilation", async () => {
+    const cache = new HighlightWorkerCache();
+    const preload = {
+      version: HIGHLIGHT_WORKER_PROTOCOL_VERSION,
+      id: 7,
+      kind: "preload" as const,
+      language: "typescript",
+      theme: "pierre-dark",
+    };
+    expect(await processHighlightWorkerRequest(preload, cache)).toEqual({
+      version: HIGHLIGHT_WORKER_PROTOCOL_VERSION,
+      id: 7,
+      kind: "preload",
+      ok: true,
+    });
+    expect(cache.getEntryCount()).toBe(0);
+    expect(
+      await processHighlightWorkerRequest({ ...preload, id: 8, language: "text" }, cache),
+    ).toMatchObject({ id: 8, kind: "preload", ok: true });
+    expect(
+      await processHighlightWorkerRequest({ ...preload, id: 9, language: "not-a-grammar" }, cache),
+    ).toMatchObject({ id: 9, kind: "preload", ok: false, code: "unsupported-language" });
+    expect(
+      await processHighlightWorkerRequest({ ...preload, id: 10, language: "" }, cache),
+    ).toMatchObject({ id: 10, kind: "preload", ok: false, code: "invalid-request" });
+
+    const rendered = await processHighlightWorkerRequest(documentRequest({ id: 11 }), cache);
+    expect(rendered).toMatchObject({ id: 11, kind: "document", ok: true });
+  });
+
   test("returns protocol failures for wrong versions and malformed jobs", async () => {
     const cache = new HighlightWorkerCache();
     const wrongVersion = await processHighlightWorkerRequest(

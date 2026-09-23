@@ -41,7 +41,7 @@ function createFile(index: number): DiffFile {
 /** Measures production prefetch orchestration for one large diff. */
 async function timeHighlight(file: DiffFile) {
   const start = performance.now();
-  await prefetchHighlightedDiff({ file, offloadLargeDiff: true, theme });
+  await prefetchHighlightedDiff({ file, theme });
   return performance.now() - start;
 }
 

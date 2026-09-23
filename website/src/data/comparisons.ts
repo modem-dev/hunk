@@ -277,7 +277,7 @@ export const COMPARISONS: Comparison[] = [
       {
         question: "Which is faster, Hunk or delta?",
         answer:
-          "delta starts faster, and that is structural: it is a Rust stream filter doing one pass over text. Hunk builds a review model and mounts a terminal UI, which costs more up front and buys navigation, state, and annotations. The experimental `hunk --fast` offloads eligible syntax highlighting to cut that cost.",
+          "delta starts faster, and that is structural: it is a Rust stream filter doing one pass over text. Hunk builds a review model and mounts a terminal UI, which costs more up front and buys navigation, state, and annotations. Syntax highlighting runs in a worker so it never blocks input.",
       },
       {
         question: "Does Hunk need configuration to be useful?",
@@ -463,7 +463,7 @@ export const COMPARISONS: Comparison[] = [
       {
         question: "Is difftastic slower than Hunk?",
         answer:
-          "Hard to compare directly, since one is a diff algorithm and the other is a UI. What is documented is that difftastic's tree diffing gets expensive on files with many changes. Hunk's cost scales with rendering the changeset instead, and the experimental `hunk --fast` offloads eligible syntax highlighting.",
+          "Hard to compare directly, since one is a diff algorithm and the other is a UI. What is documented is that difftastic's tree diffing gets expensive on files with many changes. Hunk's cost scales with rendering the changeset instead, with syntax highlighting offloaded to a worker.",
       },
     ],
     sources: [

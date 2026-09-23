@@ -176,6 +176,13 @@ async function main() {
     throw new Error("Unreachable startup plan.");
   }
 
+  // Grammar compilation starts in the worker now so it overlaps the OpenTUI load below.
+  const { warmHighlightWorkerForLaunch } = await import("./ui/diff/worker/highlightWorkerWarmup");
+  warmHighlightWorkerForLaunch(
+    startupPlan.bootstrap.changeset.files,
+    startupPlan.initialization.theme,
+  );
+
   // OpenTUI stays behind the interactive plan so headless commands never materialize its embedded
   // native library. The shared interactive runner owns the highlighting worker and terminal until
   // the mounted surface acknowledges graceful shutdown.
