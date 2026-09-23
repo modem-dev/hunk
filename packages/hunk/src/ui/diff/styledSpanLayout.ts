@@ -54,9 +54,23 @@ function spansMaySplitGrapheme(spans: RenderSpan[]) {
   return false;
 }
 
-/** Merge indivisible graphemes while preserving the style where each cluster starts. */
-function mergeCrossSpanGraphemes(spans: RenderSpan[]) {
-  const normalized: RenderSpan[] = [];
+/** Return whether two generic span objects carry the same non-text paint properties. */
+function sameSpanStyle<T extends RenderSpan>(left: T, right: T) {
+  const leftKeys = Object.keys(left).filter((key) => key !== "text");
+  const rightKeys = Object.keys(right).filter((key) => key !== "text");
+  return (
+    leftKeys.length === rightKeys.length &&
+    leftKeys.every(
+      (key) =>
+        (left as unknown as Record<string, unknown>)[key] ===
+        (right as unknown as Record<string, unknown>)[key],
+    )
+  );
+}
+
+/** Merge indivisible graphemes while preserving every property of the style where each starts. */
+function mergeCrossSpanGraphemes<T extends RenderSpan>(spans: T[]) {
+  const normalized: T[] = [];
   const text = spans.map((span) => span.text).join("");
   let sourceIndex = 0;
   let sourceEnd = spans[0]?.text.length ?? 0;
@@ -69,7 +83,12 @@ function mergeCrossSpanGraphemes(spans: RenderSpan[]) {
     }
     const source = spans[sourceIndex];
     if (source) {
-      appendRenderSpan(normalized, { ...source, text: cluster });
+      const previous = normalized.at(-1);
+      if (previous && sameSpanStyle(previous, source)) {
+        previous.text += cluster;
+      } else {
+        normalized.push({ ...source, text: cluster });
+      }
     }
     cursor += cluster.length;
   }
@@ -77,7 +96,7 @@ function mergeCrossSpanGraphemes(spans: RenderSpan[]) {
 }
 
 /** Merge only indivisible graphemes that may cross styled-span boundaries. */
-function preserveCrossSpanGraphemes(spans: RenderSpan[]) {
+export function preserveCrossSpanGraphemes<T extends RenderSpan>(spans: T[]) {
   return spansMaySplitGrapheme(spans) ? mergeCrossSpanGraphemes(spans) : spans;
 }
 

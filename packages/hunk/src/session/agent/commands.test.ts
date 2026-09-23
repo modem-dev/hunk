@@ -159,6 +159,8 @@ describe("session command compatibility checks", () => {
           },
         }),
       resolveDaemonAvailability: async () => true,
+      probeDaemonAdminStatus: async () => ({ kind: "unsupported" }),
+      readLaunchMetadata: () => null,
     });
 
     await expect(
@@ -168,9 +170,7 @@ describe("session command compatibility checks", () => {
         selector: { sessionId: "session-1" },
         output: "json",
       } satisfies SessionCommandInput),
-    ).rejects.toThrow(
-      "Close older Hunk windows, wait for the daemon to become idle, then retry this command.",
-    );
+    ).rejects.toThrow("The session daemon is");
     expect(contextCalls).toBe(0);
   });
 
@@ -183,11 +183,13 @@ describe("session command compatibility checks", () => {
           },
         }),
       resolveDaemonAvailability: async () => true,
+      probeDaemonAdminStatus: async () => ({ kind: "unsupported" }),
+      readLaunchMetadata: () => null,
     });
 
     await expect(
       runSessionCommand({ kind: "session", action: "list", output: "json" }),
-    ).rejects.toThrow("Close older Hunk windows");
+    ).rejects.toThrow("The session daemon is");
   });
 
   test("preserves local credential-store failures", async () => {
@@ -199,6 +201,8 @@ describe("session command compatibility checks", () => {
           },
         }),
       resolveDaemonAvailability: async () => true,
+      probeDaemonAdminStatus: async () => ({ kind: "unsupported" }),
+      readLaunchMetadata: () => null,
     });
 
     await expect(
@@ -222,11 +226,13 @@ describe("session command compatibility checks", () => {
           },
         }),
       resolveDaemonAvailability: async () => true,
+      probeDaemonAdminStatus: async () => ({ kind: "unsupported" }),
+      readLaunchMetadata: () => null,
     });
 
     await expect(
       runSessionCommand({ kind: "session", action: "list", output: "json" }),
-    ).rejects.toThrow("missing required support for list");
+    ).rejects.toThrow("The session daemon is");
     expect(listCalls).toBe(0);
   });
 
@@ -289,6 +295,8 @@ describe("session command compatibility checks", () => {
           },
         }),
       resolveDaemonAvailability: async () => true,
+      probeDaemonAdminStatus: async () => ({ kind: "unsupported" }),
+      readLaunchMetadata: () => null,
     });
 
     const output = await runSessionCommand({
@@ -412,6 +420,8 @@ describe("session command compatibility checks", () => {
           },
         }),
       resolveDaemonAvailability: async () => true,
+      probeDaemonAdminStatus: async () => ({ kind: "unsupported" }),
+      readLaunchMetadata: () => null,
     });
 
     const output = await runSessionCommand({
@@ -503,6 +513,8 @@ describe("session command compatibility checks", () => {
           },
         }),
       resolveDaemonAvailability: async () => true,
+      probeDaemonAdminStatus: async () => ({ kind: "unsupported" }),
+      readLaunchMetadata: () => null,
     });
 
     const output = await runSessionCommand({
@@ -545,6 +557,8 @@ describe("session command compatibility checks", () => {
           },
         }),
       resolveDaemonAvailability: async () => true,
+      probeDaemonAdminStatus: async () => ({ kind: "unsupported" }),
+      readLaunchMetadata: () => null,
     });
 
     const output = await runSessionCommand({
@@ -584,6 +598,8 @@ describe("session command compatibility checks", () => {
           },
         }),
       resolveDaemonAvailability: async () => true,
+      probeDaemonAdminStatus: async () => ({ kind: "unsupported" }),
+      readLaunchMetadata: () => null,
     });
 
     const output = await runSessionCommand({
@@ -640,6 +656,8 @@ describe("session command compatibility checks", () => {
           },
         }),
       resolveDaemonAvailability: async () => true,
+      probeDaemonAdminStatus: async () => ({ kind: "unsupported" }),
+      readLaunchMetadata: () => null,
     });
 
     const output = await runSessionCommand({
@@ -699,6 +717,8 @@ describe("session command compatibility checks", () => {
           },
         }),
       resolveDaemonAvailability: async () => true,
+      probeDaemonAdminStatus: async () => ({ kind: "unsupported" }),
+      readLaunchMetadata: () => null,
     });
 
     const output = await runSessionCommand({
@@ -744,6 +764,8 @@ describe("session command compatibility checks", () => {
           }),
         }),
       resolveDaemonAvailability: async () => true,
+      probeDaemonAdminStatus: async () => ({ kind: "unsupported" }),
+      readLaunchMetadata: () => null,
     });
 
     const output = await runSessionCommand({
@@ -779,6 +801,8 @@ describe("session command compatibility checks", () => {
           },
         }),
       resolveDaemonAvailability: async () => true,
+      probeDaemonAdminStatus: async () => ({ kind: "unsupported" }),
+      readLaunchMetadata: () => null,
     });
 
     const output = await runSessionCommand({
@@ -871,6 +895,8 @@ describe("session command compatibility checks", () => {
           },
         }),
       resolveDaemonAvailability: async () => true,
+      probeDaemonAdminStatus: async () => ({ kind: "unsupported" }),
+      readLaunchMetadata: () => null,
     });
 
     expect(
@@ -955,6 +981,8 @@ describe("session command compatibility checks", () => {
           },
         }),
       resolveDaemonAvailability: async () => true,
+      probeDaemonAdminStatus: async () => ({ kind: "unsupported" }),
+      readLaunchMetadata: () => null,
     });
 
     expect(

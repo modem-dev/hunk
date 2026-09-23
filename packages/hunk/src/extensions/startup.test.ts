@@ -3,8 +3,13 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionsConfig } from "../core/run/config";
-import { createExtensionLoadNotices, loadStartupExtensions, mergeStartupNotices } from "./startup";
-import { createEmptyExtensionLoadResult } from "./types";
+import {
+  createExtensionLoadNotices,
+  createSupersededExtensionNotices,
+  loadStartupExtensions,
+  mergeStartupNotices,
+} from "./startup";
+import { createEmptyExtensionLoadResult, createEmptyExtensionRegistry } from "./types";
 
 const tempDirs: string[] = [];
 
@@ -195,6 +200,23 @@ export default function (hunk) {
     expect(createExtensionLoadNotices(issues)[0]?.message).toBe(
       "Extension broken failed to load • Cannot find module './evil.ts'",
     );
+  });
+
+  test("notices a still-installed extension whose feature Hunk now bundles", () => {
+    const registry = createEmptyExtensionRegistry();
+    registry.extensions.push(
+      { id: "hunk-less-search", sourcePath: "/home/.config/hunk/extensions/x", origin: "global" },
+      { id: "acme", sourcePath: "/repo/acme.ts", origin: "repo" },
+    );
+    const loaded = { ...createEmptyExtensionLoadResult(), registry };
+
+    expect(createSupersededExtensionNotices(loaded)).toEqual([
+      {
+        key: "extension-superseded:hunk-less-search",
+        message: "`/` content search is built in • hunk extension remove hunk-less-search",
+      },
+    ]);
+    expect(mergeStartupNotices(undefined, loaded)).toHaveLength(1);
   });
 
   test("keeps the original notice identity when nothing failed to load", () => {

@@ -7,6 +7,26 @@ import { prepareStartupPlan } from "./app/startup";
 import { sanitizeTerminalLine, sanitizeTerminalText } from "./lib/terminalText";
 import { serveSessionBrokerDaemon } from "./session/broker/brokerServer";
 import { runSessionCommand } from "./session/agent/commands";
+import { DaemonBuildMismatchError } from "./session/agent/errors";
+import { stringifyJson } from "./session/agent/cliClient";
+
+/**
+ * Build a yes/no prompt for commands that must confirm destructive work. A confirmation needs a
+ * real terminal on both sides; piped runs pass `--yes` instead and get no prompt function.
+ */
+async function createTerminalConfirm() {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) return undefined;
+  const readline = await import("node:readline/promises");
+  return async (question: string) => {
+    const prompt = readline.createInterface({ input: process.stdin, output: process.stdout });
+    try {
+      const answer = await prompt.question(question);
+      return ["y", "yes"].includes(answer.trim().toLowerCase());
+    } finally {
+      prompt.close();
+    }
+  };
+}
 
 async function main() {
   const startupPlan = await prepareStartupPlan();
@@ -27,36 +47,39 @@ async function main() {
     return;
   }
 
+  if (startupPlan.kind === "daemon-control") {
+    const { runDaemonControlCommand } = await import("./session/agent/daemonCommands");
+    process.exit(
+      await runDaemonControlCommand(startupPlan.input, {
+        stdout: (text) => writeStdout(text),
+        stderr: (text) => process.stderr.write(text),
+        confirm: await createTerminalConfirm(),
+      }),
+    );
+  }
+
   if (startupPlan.kind === "session-command") {
-    writeStdout(await runSessionCommand(startupPlan.input));
+    try {
+      writeStdout(await runSessionCommand(startupPlan.input));
+    } catch (error) {
+      // Agents parse `--json` output; a build mismatch is a decision point for them, so it is
+      // returned in-band as a structured error rather than only as text on stderr.
+      if (startupPlan.input.output === "json" && error instanceof DaemonBuildMismatchError) {
+        writeStdout(stringifyJson({ error }));
+        process.exit(1);
+      }
+      throw error;
+    }
     process.exit(0);
   }
 
   if (startupPlan.kind === "extension-manage") {
-    const [{ runExtensionManageCommand }, readline] = await Promise.all([
-      import("./extensions/manage/cli"),
-      import("node:readline/promises"),
-    ]);
-    // A confirmation needs a real terminal on both sides; piped runs use --yes.
-    const canConfirm = Boolean(process.stdin.isTTY) && Boolean(process.stdout.isTTY);
+    const { runExtensionManageCommand } = await import("./extensions/manage/cli");
     process.exit(
       await runExtensionManageCommand(startupPlan.input, {
         stdout: (text) => writeStdout(text),
         stderr: (text) => process.stderr.write(text),
-        confirm: canConfirm
-          ? async (question) => {
-              const prompt = readline.createInterface({
-                input: process.stdin,
-                output: process.stdout,
-              });
-              try {
-                const answer = await prompt.question(question);
-                return ["y", "yes"].includes(answer.trim().toLowerCase());
-              } finally {
-                prompt.close();
-              }
-            }
-          : undefined,
+        confirm: await createTerminalConfirm(),
       }),
     );
   }

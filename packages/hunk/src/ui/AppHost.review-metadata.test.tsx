@@ -38,6 +38,7 @@ function createTestHostClient() {
       replaceSession: (nextRegistration: HunkSessionRegistration) => {
         registration = nextRegistration;
       },
+      subscribeConnectionNotice: () => () => undefined,
       setBridge: (nextBridge: Bridge) => {
         bridge = nextBridge;
       },

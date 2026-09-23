@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import {
   chmodSync,
+  appendFileSync,
   mkdirSync,
   mkdtempSync,
   realpathSync,
@@ -118,13 +119,15 @@ function sl(cwd: string, ...cmd: string[]) {
   return Buffer.from(proc.stdout).toString("utf8");
 }
 
+/** Create a Git fixture without paying for separate config subprocesses. */
 function createTempRepo(prefix: string) {
   const dir = createTempDir(prefix);
 
   git(dir, "init", "--initial-branch", "master");
-  git(dir, "config", "user.name", "Test User");
-  git(dir, "config", "user.email", "test@example.com");
-  git(dir, "config", "commit.gpgsign", "false");
+  appendFileSync(
+    join(dir, ".git", "config"),
+    "\n[user]\n\tname = Test User\n\temail = test@example.com\n[commit]\n\tgpgsign = false\n",
+  );
 
   return dir;
 }

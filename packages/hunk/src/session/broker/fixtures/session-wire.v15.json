@@ -1,0 +1,2286 @@
+[
+  {
+    "name": "diff:initial",
+    "registration": {
+      "registrationVersion": 2,
+      "sessionId": "00000000-0000-4000-8000-000000000000",
+      "pid": 4242,
+      "cwd": "/repo",
+      "repoRoot": "/repo",
+      "launchedAt": "2026-01-01T00:00:00.000Z",
+      "terminal": {
+        "program": "tmux",
+        "locations": [
+          {
+            "source": "tmux",
+            "tty": "/dev/ttys000",
+            "windowId": "@1",
+            "tabId": "tab-1",
+            "paneId": "%1",
+            "terminalId": "terminal-1",
+            "sessionId": "$1"
+          }
+        ]
+      },
+      "info": {
+        "inputKind": "vcs",
+        "title": "wire corpus",
+        "sourceLabel": "/repo",
+        "experimentalFeatures": ["stml"],
+        "review": {
+          "kind": "change-request",
+          "provider": "GitHub",
+          "title": "Improve session wire coverage",
+          "url": "https://example.com/owner/repo/pull/123",
+          "id": "#123",
+          "repository": "owner/repo",
+          "author": "octocat",
+          "base": "main",
+          "head": "feature/wire",
+          "state": "open",
+          "draft": true
+        },
+        "files": [
+          {
+            "id": "file-renamed",
+            "path": "src/renamed.ts",
+            "previousPath": "src/original.ts",
+            "additions": 1,
+            "deletions": 1,
+            "hunkCount": 1,
+            "hunks": [
+              {
+                "index": 0,
+                "header": "@@ -1,1 +1,1 @@",
+                "oldRange": [1, 1],
+                "newRange": [1, 1]
+              }
+            ],
+            "patch": "@@ -1,2 +1,2 @@\n-export const value = 1;\n+export const value = 2;\n"
+          },
+          {
+            "id": "file-added",
+            "path": "src/added.ts",
+            "additions": 1,
+            "deletions": 0,
+            "hunkCount": 1,
+            "hunks": [
+              {
+                "index": 0,
+                "header": "@@ -0,0 +1,1 @@",
+                "oldRange": [0, 0],
+                "newRange": [1, 1]
+              }
+            ]
+          }
+        ],
+        "reviewCatalog": {
+          "generation": "generation:wire-corpus:1",
+          "fileKeysByRuntimeId": {
+            "file-renamed": "file:aba8966e038ae25ca19f037a04c2fd34",
+            "file-added": "file:17e9b4cb20cde11fc8d26a7b8be3d44b"
+          },
+          "resources": [
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:aba8966e038ae25ca19f037a04c2fd34",
+              "id": "resource:canonical-file:file:aba8966e038ae25ca19f037a04c2fd34",
+              "kind": "canonical-file",
+              "contentType": "application/vnd.hunk.review-file+json; charset=utf-8"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:aba8966e038ae25ca19f037a04c2fd34",
+              "id": "resource:patch:file:aba8966e038ae25ca19f037a04c2fd34",
+              "kind": "patch",
+              "contentType": "text/x-diff; charset=utf-8"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:aba8966e038ae25ca19f037a04c2fd34",
+              "id": "resource:source:new:file:aba8966e038ae25ca19f037a04c2fd34",
+              "kind": "source",
+              "contentType": "text/plain; charset=utf-8",
+              "side": "new",
+              "sourceIdentity": "source:aaa152c6ceac7aaefbeb548e96548102"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "id": "resource:canonical-file:file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "kind": "canonical-file",
+              "contentType": "application/vnd.hunk.review-file+json; charset=utf-8"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "id": "resource:patch:file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "kind": "patch",
+              "contentType": "text/x-diff; charset=utf-8"
+            }
+          ]
+        },
+        "reviewCapabilityDigest": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    "snapshot": {
+      "updatedAt": "2026-01-01T00:00:00.000Z",
+      "state": {
+        "selectedFileId": "file-renamed",
+        "selectedFilePath": "src/renamed.ts",
+        "selectedHunkIndex": 0,
+        "selectedHunkOldRange": [1, 1],
+        "selectedHunkNewRange": [1, 1],
+        "showAgentNotes": true,
+        "liveCommentCount": 0,
+        "liveComments": [],
+        "reviewNoteCount": 0,
+        "reviewNotes": [],
+        "reviewPublication": {
+          "generation": "generation:wire-corpus:1",
+          "stateRevision": 0
+        }
+      }
+    }
+  },
+  {
+    "name": "diff:live",
+    "registration": {
+      "registrationVersion": 2,
+      "sessionId": "00000000-0000-4000-8000-000000000000",
+      "pid": 4242,
+      "cwd": "/repo",
+      "repoRoot": "/repo",
+      "launchedAt": "2026-01-01T00:00:00.000Z",
+      "terminal": {
+        "program": "tmux",
+        "locations": [
+          {
+            "source": "tmux",
+            "tty": "/dev/ttys000",
+            "windowId": "@1",
+            "tabId": "tab-1",
+            "paneId": "%1",
+            "terminalId": "terminal-1",
+            "sessionId": "$1"
+          }
+        ]
+      },
+      "info": {
+        "inputKind": "vcs",
+        "title": "wire corpus",
+        "sourceLabel": "/repo",
+        "experimentalFeatures": ["stml"],
+        "review": {
+          "kind": "change-request",
+          "provider": "GitHub",
+          "title": "Improve session wire coverage",
+          "url": "https://example.com/owner/repo/pull/123",
+          "id": "#123",
+          "repository": "owner/repo",
+          "author": "octocat",
+          "base": "main",
+          "head": "feature/wire",
+          "state": "open",
+          "draft": true
+        },
+        "files": [
+          {
+            "id": "file-renamed",
+            "path": "src/renamed.ts",
+            "previousPath": "src/original.ts",
+            "additions": 1,
+            "deletions": 1,
+            "hunkCount": 1,
+            "hunks": [
+              {
+                "index": 0,
+                "header": "@@ -1,1 +1,1 @@",
+                "oldRange": [1, 1],
+                "newRange": [1, 1]
+              }
+            ],
+            "patch": "@@ -1,2 +1,2 @@\n-export const value = 1;\n+export const value = 2;\n"
+          },
+          {
+            "id": "file-added",
+            "path": "src/added.ts",
+            "additions": 1,
+            "deletions": 0,
+            "hunkCount": 1,
+            "hunks": [
+              {
+                "index": 0,
+                "header": "@@ -0,0 +1,1 @@",
+                "oldRange": [0, 0],
+                "newRange": [1, 1]
+              }
+            ]
+          }
+        ],
+        "reviewCatalog": {
+          "generation": "generation:wire-corpus:1",
+          "fileKeysByRuntimeId": {
+            "file-renamed": "file:aba8966e038ae25ca19f037a04c2fd34",
+            "file-added": "file:17e9b4cb20cde11fc8d26a7b8be3d44b"
+          },
+          "resources": [
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:aba8966e038ae25ca19f037a04c2fd34",
+              "id": "resource:canonical-file:file:aba8966e038ae25ca19f037a04c2fd34",
+              "kind": "canonical-file",
+              "contentType": "application/vnd.hunk.review-file+json; charset=utf-8"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:aba8966e038ae25ca19f037a04c2fd34",
+              "id": "resource:patch:file:aba8966e038ae25ca19f037a04c2fd34",
+              "kind": "patch",
+              "contentType": "text/x-diff; charset=utf-8"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:aba8966e038ae25ca19f037a04c2fd34",
+              "id": "resource:source:new:file:aba8966e038ae25ca19f037a04c2fd34",
+              "kind": "source",
+              "contentType": "text/plain; charset=utf-8",
+              "side": "new",
+              "sourceIdentity": "source:aaa152c6ceac7aaefbeb548e96548102"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "id": "resource:canonical-file:file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "kind": "canonical-file",
+              "contentType": "application/vnd.hunk.review-file+json; charset=utf-8"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "id": "resource:patch:file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "kind": "patch",
+              "contentType": "text/x-diff; charset=utf-8"
+            }
+          ]
+        },
+        "reviewCapabilityDigest": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    "snapshot": {
+      "updatedAt": "2026-01-01T00:00:00.000Z",
+      "state": {
+        "selectedFileId": "file-renamed",
+        "selectedFilePath": "src/renamed.ts",
+        "selectedHunkIndex": 0,
+        "selectedHunkOldRange": [1, 1],
+        "selectedHunkNewRange": [1, 1],
+        "showAgentNotes": true,
+        "noteMarkupWidth": 72,
+        "liveCommentCount": 2,
+        "liveComments": [
+          {
+            "commentId": "comment-1",
+            "filePath": "src/renamed.ts",
+            "hunkIndex": 0,
+            "side": "new",
+            "line": 1,
+            "summary": "Root live comment",
+            "rationale": "Explains the change",
+            "author": "agent",
+            "createdAt": "2026-01-01T00:00:00.000Z"
+          },
+          {
+            "commentId": "comment-2",
+            "filePath": "src/renamed.ts",
+            "hunkIndex": 0,
+            "side": "new",
+            "line": 1,
+            "summary": "Reply live comment",
+            "rationale": "Explains the change",
+            "author": "agent",
+            "createdAt": "2026-01-01T00:00:00.000Z",
+            "parentId": "comment-1"
+          }
+        ],
+        "reviewNoteCount": 2,
+        "reviewNotes": [
+          {
+            "noteId": "note-1",
+            "source": "user",
+            "filePath": "src/renamed.ts",
+            "hunkIndex": 0,
+            "oldRange": [1, 1],
+            "newRange": [1, 1],
+            "body": "A user note",
+            "title": "Note title",
+            "author": "reviewer",
+            "createdAt": "2026-01-01T00:00:00.000Z",
+            "updatedAt": "2026-01-01T00:00:00.000Z",
+            "editable": true
+          },
+          {
+            "noteId": "note-2",
+            "source": "agent",
+            "filePath": "src/renamed.ts",
+            "hunkIndex": 0,
+            "oldRange": [1, 1],
+            "newRange": [1, 1],
+            "body": "A user note",
+            "title": "Note title",
+            "author": "reviewer",
+            "createdAt": "2026-01-01T00:00:00.000Z",
+            "updatedAt": "2026-01-01T00:00:00.000Z",
+            "editable": false,
+            "parentId": "note-1"
+          }
+        ],
+        "reviewPublication": {
+          "generation": "generation:wire-corpus:1",
+          "stateRevision": 3
+        }
+      }
+    }
+  },
+  {
+    "name": "show:initial",
+    "registration": {
+      "registrationVersion": 2,
+      "sessionId": "00000000-0000-4000-8000-000000000000",
+      "pid": 4242,
+      "cwd": "/repo",
+      "repoRoot": "/repo",
+      "launchedAt": "2026-01-01T00:00:00.000Z",
+      "terminal": {
+        "program": "tmux",
+        "locations": [
+          {
+            "source": "tmux",
+            "tty": "/dev/ttys000",
+            "windowId": "@1",
+            "tabId": "tab-1",
+            "paneId": "%1",
+            "terminalId": "terminal-1",
+            "sessionId": "$1"
+          }
+        ]
+      },
+      "info": {
+        "inputKind": "show",
+        "title": "wire corpus",
+        "sourceLabel": "/repo",
+        "experimentalFeatures": ["stml"],
+        "review": {
+          "kind": "commit",
+          "provider": "git",
+          "title": "feat: add wire corpus",
+          "url": "https://example.com/owner/repo/commit/0123456789abcdef",
+          "revision": "0123456789abcdef0123456789abcdef01234567",
+          "displayRevision": "0123456",
+          "author": "Ada Lovelace",
+          "authoredAt": "2026-01-01T00:00:00.000Z"
+        },
+        "files": [
+          {
+            "id": "file-renamed",
+            "path": "src/renamed.ts",
+            "previousPath": "src/original.ts",
+            "additions": 1,
+            "deletions": 1,
+            "hunkCount": 1,
+            "hunks": [
+              {
+                "index": 0,
+                "header": "@@ -1,1 +1,1 @@",
+                "oldRange": [1, 1],
+                "newRange": [1, 1]
+              }
+            ],
+            "patch": "@@ -1,2 +1,2 @@\n-export const value = 1;\n+export const value = 2;\n"
+          },
+          {
+            "id": "file-added",
+            "path": "src/added.ts",
+            "additions": 1,
+            "deletions": 0,
+            "hunkCount": 1,
+            "hunks": [
+              {
+                "index": 0,
+                "header": "@@ -0,0 +1,1 @@",
+                "oldRange": [0, 0],
+                "newRange": [1, 1]
+              }
+            ]
+          }
+        ],
+        "reviewCatalog": {
+          "generation": "generation:wire-corpus:1",
+          "fileKeysByRuntimeId": {
+            "file-renamed": "file:aba8966e038ae25ca19f037a04c2fd34",
+            "file-added": "file:17e9b4cb20cde11fc8d26a7b8be3d44b"
+          },
+          "resources": [
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:aba8966e038ae25ca19f037a04c2fd34",
+              "id": "resource:canonical-file:file:aba8966e038ae25ca19f037a04c2fd34",
+              "kind": "canonical-file",
+              "contentType": "application/vnd.hunk.review-file+json; charset=utf-8"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:aba8966e038ae25ca19f037a04c2fd34",
+              "id": "resource:patch:file:aba8966e038ae25ca19f037a04c2fd34",
+              "kind": "patch",
+              "contentType": "text/x-diff; charset=utf-8"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:aba8966e038ae25ca19f037a04c2fd34",
+              "id": "resource:source:new:file:aba8966e038ae25ca19f037a04c2fd34",
+              "kind": "source",
+              "contentType": "text/plain; charset=utf-8",
+              "side": "new",
+              "sourceIdentity": "source:aaa152c6ceac7aaefbeb548e96548102"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "id": "resource:canonical-file:file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "kind": "canonical-file",
+              "contentType": "application/vnd.hunk.review-file+json; charset=utf-8"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "id": "resource:patch:file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "kind": "patch",
+              "contentType": "text/x-diff; charset=utf-8"
+            }
+          ]
+        },
+        "reviewCapabilityDigest": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    "snapshot": {
+      "updatedAt": "2026-01-01T00:00:00.000Z",
+      "state": {
+        "selectedFileId": "file-renamed",
+        "selectedFilePath": "src/renamed.ts",
+        "selectedHunkIndex": 0,
+        "selectedHunkOldRange": [1, 1],
+        "selectedHunkNewRange": [1, 1],
+        "showAgentNotes": true,
+        "liveCommentCount": 0,
+        "liveComments": [],
+        "reviewNoteCount": 0,
+        "reviewNotes": [],
+        "reviewPublication": {
+          "generation": "generation:wire-corpus:1",
+          "stateRevision": 0
+        }
+      }
+    }
+  },
+  {
+    "name": "show:live",
+    "registration": {
+      "registrationVersion": 2,
+      "sessionId": "00000000-0000-4000-8000-000000000000",
+      "pid": 4242,
+      "cwd": "/repo",
+      "repoRoot": "/repo",
+      "launchedAt": "2026-01-01T00:00:00.000Z",
+      "terminal": {
+        "program": "tmux",
+        "locations": [
+          {
+            "source": "tmux",
+            "tty": "/dev/ttys000",
+            "windowId": "@1",
+            "tabId": "tab-1",
+            "paneId": "%1",
+            "terminalId": "terminal-1",
+            "sessionId": "$1"
+          }
+        ]
+      },
+      "info": {
+        "inputKind": "show",
+        "title": "wire corpus",
+        "sourceLabel": "/repo",
+        "experimentalFeatures": ["stml"],
+        "review": {
+          "kind": "commit",
+          "provider": "git",
+          "title": "feat: add wire corpus",
+          "url": "https://example.com/owner/repo/commit/0123456789abcdef",
+          "revision": "0123456789abcdef0123456789abcdef01234567",
+          "displayRevision": "0123456",
+          "author": "Ada Lovelace",
+          "authoredAt": "2026-01-01T00:00:00.000Z"
+        },
+        "files": [
+          {
+            "id": "file-renamed",
+            "path": "src/renamed.ts",
+            "previousPath": "src/original.ts",
+            "additions": 1,
+            "deletions": 1,
+            "hunkCount": 1,
+            "hunks": [
+              {
+                "index": 0,
+                "header": "@@ -1,1 +1,1 @@",
+                "oldRange": [1, 1],
+                "newRange": [1, 1]
+              }
+            ],
+            "patch": "@@ -1,2 +1,2 @@\n-export const value = 1;\n+export const value = 2;\n"
+          },
+          {
+            "id": "file-added",
+            "path": "src/added.ts",
+            "additions": 1,
+            "deletions": 0,
+            "hunkCount": 1,
+            "hunks": [
+              {
+                "index": 0,
+                "header": "@@ -0,0 +1,1 @@",
+                "oldRange": [0, 0],
+                "newRange": [1, 1]
+              }
+            ]
+          }
+        ],
+        "reviewCatalog": {
+          "generation": "generation:wire-corpus:1",
+          "fileKeysByRuntimeId": {
+            "file-renamed": "file:aba8966e038ae25ca19f037a04c2fd34",
+            "file-added": "file:17e9b4cb20cde11fc8d26a7b8be3d44b"
+          },
+          "resources": [
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:aba8966e038ae25ca19f037a04c2fd34",
+              "id": "resource:canonical-file:file:aba8966e038ae25ca19f037a04c2fd34",
+              "kind": "canonical-file",
+              "contentType": "application/vnd.hunk.review-file+json; charset=utf-8"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:aba8966e038ae25ca19f037a04c2fd34",
+              "id": "resource:patch:file:aba8966e038ae25ca19f037a04c2fd34",
+              "kind": "patch",
+              "contentType": "text/x-diff; charset=utf-8"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:aba8966e038ae25ca19f037a04c2fd34",
+              "id": "resource:source:new:file:aba8966e038ae25ca19f037a04c2fd34",
+              "kind": "source",
+              "contentType": "text/plain; charset=utf-8",
+              "side": "new",
+              "sourceIdentity": "source:aaa152c6ceac7aaefbeb548e96548102"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "id": "resource:canonical-file:file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "kind": "canonical-file",
+              "contentType": "application/vnd.hunk.review-file+json; charset=utf-8"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "id": "resource:patch:file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "kind": "patch",
+              "contentType": "text/x-diff; charset=utf-8"
+            }
+          ]
+        },
+        "reviewCapabilityDigest": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    "snapshot": {
+      "updatedAt": "2026-01-01T00:00:00.000Z",
+      "state": {
+        "selectedFileId": "file-renamed",
+        "selectedFilePath": "src/renamed.ts",
+        "selectedHunkIndex": 0,
+        "selectedHunkOldRange": [1, 1],
+        "selectedHunkNewRange": [1, 1],
+        "showAgentNotes": true,
+        "noteMarkupWidth": 72,
+        "liveCommentCount": 2,
+        "liveComments": [
+          {
+            "commentId": "comment-1",
+            "filePath": "src/renamed.ts",
+            "hunkIndex": 0,
+            "side": "new",
+            "line": 1,
+            "summary": "Root live comment",
+            "rationale": "Explains the change",
+            "author": "agent",
+            "createdAt": "2026-01-01T00:00:00.000Z"
+          },
+          {
+            "commentId": "comment-2",
+            "filePath": "src/renamed.ts",
+            "hunkIndex": 0,
+            "side": "new",
+            "line": 1,
+            "summary": "Reply live comment",
+            "rationale": "Explains the change",
+            "author": "agent",
+            "createdAt": "2026-01-01T00:00:00.000Z",
+            "parentId": "comment-1"
+          }
+        ],
+        "reviewNoteCount": 2,
+        "reviewNotes": [
+          {
+            "noteId": "note-1",
+            "source": "user",
+            "filePath": "src/renamed.ts",
+            "hunkIndex": 0,
+            "oldRange": [1, 1],
+            "newRange": [1, 1],
+            "body": "A user note",
+            "title": "Note title",
+            "author": "reviewer",
+            "createdAt": "2026-01-01T00:00:00.000Z",
+            "updatedAt": "2026-01-01T00:00:00.000Z",
+            "editable": true
+          },
+          {
+            "noteId": "note-2",
+            "source": "agent",
+            "filePath": "src/renamed.ts",
+            "hunkIndex": 0,
+            "oldRange": [1, 1],
+            "newRange": [1, 1],
+            "body": "A user note",
+            "title": "Note title",
+            "author": "reviewer",
+            "createdAt": "2026-01-01T00:00:00.000Z",
+            "updatedAt": "2026-01-01T00:00:00.000Z",
+            "editable": false,
+            "parentId": "note-1"
+          }
+        ],
+        "reviewPublication": {
+          "generation": "generation:wire-corpus:1",
+          "stateRevision": 3
+        }
+      }
+    }
+  },
+  {
+    "name": "stash-show:initial",
+    "registration": {
+      "registrationVersion": 2,
+      "sessionId": "00000000-0000-4000-8000-000000000000",
+      "pid": 4242,
+      "cwd": "/repo",
+      "repoRoot": "/repo",
+      "launchedAt": "2026-01-01T00:00:00.000Z",
+      "terminal": {
+        "program": "tmux",
+        "locations": [
+          {
+            "source": "tmux",
+            "tty": "/dev/ttys000",
+            "windowId": "@1",
+            "tabId": "tab-1",
+            "paneId": "%1",
+            "terminalId": "terminal-1",
+            "sessionId": "$1"
+          }
+        ]
+      },
+      "info": {
+        "inputKind": "stash-show",
+        "title": "wire corpus",
+        "sourceLabel": "/repo",
+        "experimentalFeatures": ["stml"],
+        "review": {
+          "kind": "commit",
+          "provider": "git",
+          "title": "feat: add wire corpus",
+          "url": "https://example.com/owner/repo/commit/0123456789abcdef",
+          "revision": "0123456789abcdef0123456789abcdef01234567",
+          "displayRevision": "0123456",
+          "author": "Ada Lovelace",
+          "authoredAt": "2026-01-01T00:00:00.000Z"
+        },
+        "files": [
+          {
+            "id": "file-renamed",
+            "path": "src/renamed.ts",
+            "previousPath": "src/original.ts",
+            "additions": 1,
+            "deletions": 1,
+            "hunkCount": 1,
+            "hunks": [
+              {
+                "index": 0,
+                "header": "@@ -1,1 +1,1 @@",
+                "oldRange": [1, 1],
+                "newRange": [1, 1]
+              }
+            ],
+            "patch": "@@ -1,2 +1,2 @@\n-export const value = 1;\n+export const value = 2;\n"
+          },
+          {
+            "id": "file-added",
+            "path": "src/added.ts",
+            "additions": 1,
+            "deletions": 0,
+            "hunkCount": 1,
+            "hunks": [
+              {
+                "index": 0,
+                "header": "@@ -0,0 +1,1 @@",
+                "oldRange": [0, 0],
+                "newRange": [1, 1]
+              }
+            ]
+          }
+        ],
+        "reviewCatalog": {
+          "generation": "generation:wire-corpus:1",
+          "fileKeysByRuntimeId": {
+            "file-renamed": "file:aba8966e038ae25ca19f037a04c2fd34",
+            "file-added": "file:17e9b4cb20cde11fc8d26a7b8be3d44b"
+          },
+          "resources": [
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:aba8966e038ae25ca19f037a04c2fd34",
+              "id": "resource:canonical-file:file:aba8966e038ae25ca19f037a04c2fd34",
+              "kind": "canonical-file",
+              "contentType": "application/vnd.hunk.review-file+json; charset=utf-8"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:aba8966e038ae25ca19f037a04c2fd34",
+              "id": "resource:patch:file:aba8966e038ae25ca19f037a04c2fd34",
+              "kind": "patch",
+              "contentType": "text/x-diff; charset=utf-8"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:aba8966e038ae25ca19f037a04c2fd34",
+              "id": "resource:source:new:file:aba8966e038ae25ca19f037a04c2fd34",
+              "kind": "source",
+              "contentType": "text/plain; charset=utf-8",
+              "side": "new",
+              "sourceIdentity": "source:aaa152c6ceac7aaefbeb548e96548102"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "id": "resource:canonical-file:file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "kind": "canonical-file",
+              "contentType": "application/vnd.hunk.review-file+json; charset=utf-8"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "id": "resource:patch:file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "kind": "patch",
+              "contentType": "text/x-diff; charset=utf-8"
+            }
+          ]
+        },
+        "reviewCapabilityDigest": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    "snapshot": {
+      "updatedAt": "2026-01-01T00:00:00.000Z",
+      "state": {
+        "selectedFileId": "file-renamed",
+        "selectedFilePath": "src/renamed.ts",
+        "selectedHunkIndex": 0,
+        "selectedHunkOldRange": [1, 1],
+        "selectedHunkNewRange": [1, 1],
+        "showAgentNotes": true,
+        "liveCommentCount": 0,
+        "liveComments": [],
+        "reviewNoteCount": 0,
+        "reviewNotes": [],
+        "reviewPublication": {
+          "generation": "generation:wire-corpus:1",
+          "stateRevision": 0
+        }
+      }
+    }
+  },
+  {
+    "name": "stash-show:live",
+    "registration": {
+      "registrationVersion": 2,
+      "sessionId": "00000000-0000-4000-8000-000000000000",
+      "pid": 4242,
+      "cwd": "/repo",
+      "repoRoot": "/repo",
+      "launchedAt": "2026-01-01T00:00:00.000Z",
+      "terminal": {
+        "program": "tmux",
+        "locations": [
+          {
+            "source": "tmux",
+            "tty": "/dev/ttys000",
+            "windowId": "@1",
+            "tabId": "tab-1",
+            "paneId": "%1",
+            "terminalId": "terminal-1",
+            "sessionId": "$1"
+          }
+        ]
+      },
+      "info": {
+        "inputKind": "stash-show",
+        "title": "wire corpus",
+        "sourceLabel": "/repo",
+        "experimentalFeatures": ["stml"],
+        "review": {
+          "kind": "commit",
+          "provider": "git",
+          "title": "feat: add wire corpus",
+          "url": "https://example.com/owner/repo/commit/0123456789abcdef",
+          "revision": "0123456789abcdef0123456789abcdef01234567",
+          "displayRevision": "0123456",
+          "author": "Ada Lovelace",
+          "authoredAt": "2026-01-01T00:00:00.000Z"
+        },
+        "files": [
+          {
+            "id": "file-renamed",
+            "path": "src/renamed.ts",
+            "previousPath": "src/original.ts",
+            "additions": 1,
+            "deletions": 1,
+            "hunkCount": 1,
+            "hunks": [
+              {
+                "index": 0,
+                "header": "@@ -1,1 +1,1 @@",
+                "oldRange": [1, 1],
+                "newRange": [1, 1]
+              }
+            ],
+            "patch": "@@ -1,2 +1,2 @@\n-export const value = 1;\n+export const value = 2;\n"
+          },
+          {
+            "id": "file-added",
+            "path": "src/added.ts",
+            "additions": 1,
+            "deletions": 0,
+            "hunkCount": 1,
+            "hunks": [
+              {
+                "index": 0,
+                "header": "@@ -0,0 +1,1 @@",
+                "oldRange": [0, 0],
+                "newRange": [1, 1]
+              }
+            ]
+          }
+        ],
+        "reviewCatalog": {
+          "generation": "generation:wire-corpus:1",
+          "fileKeysByRuntimeId": {
+            "file-renamed": "file:aba8966e038ae25ca19f037a04c2fd34",
+            "file-added": "file:17e9b4cb20cde11fc8d26a7b8be3d44b"
+          },
+          "resources": [
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:aba8966e038ae25ca19f037a04c2fd34",
+              "id": "resource:canonical-file:file:aba8966e038ae25ca19f037a04c2fd34",
+              "kind": "canonical-file",
+              "contentType": "application/vnd.hunk.review-file+json; charset=utf-8"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:aba8966e038ae25ca19f037a04c2fd34",
+              "id": "resource:patch:file:aba8966e038ae25ca19f037a04c2fd34",
+              "kind": "patch",
+              "contentType": "text/x-diff; charset=utf-8"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:aba8966e038ae25ca19f037a04c2fd34",
+              "id": "resource:source:new:file:aba8966e038ae25ca19f037a04c2fd34",
+              "kind": "source",
+              "contentType": "text/plain; charset=utf-8",
+              "side": "new",
+              "sourceIdentity": "source:aaa152c6ceac7aaefbeb548e96548102"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "id": "resource:canonical-file:file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "kind": "canonical-file",
+              "contentType": "application/vnd.hunk.review-file+json; charset=utf-8"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "id": "resource:patch:file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "kind": "patch",
+              "contentType": "text/x-diff; charset=utf-8"
+            }
+          ]
+        },
+        "reviewCapabilityDigest": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    "snapshot": {
+      "updatedAt": "2026-01-01T00:00:00.000Z",
+      "state": {
+        "selectedFileId": "file-renamed",
+        "selectedFilePath": "src/renamed.ts",
+        "selectedHunkIndex": 0,
+        "selectedHunkOldRange": [1, 1],
+        "selectedHunkNewRange": [1, 1],
+        "showAgentNotes": true,
+        "noteMarkupWidth": 72,
+        "liveCommentCount": 2,
+        "liveComments": [
+          {
+            "commentId": "comment-1",
+            "filePath": "src/renamed.ts",
+            "hunkIndex": 0,
+            "side": "new",
+            "line": 1,
+            "summary": "Root live comment",
+            "rationale": "Explains the change",
+            "author": "agent",
+            "createdAt": "2026-01-01T00:00:00.000Z"
+          },
+          {
+            "commentId": "comment-2",
+            "filePath": "src/renamed.ts",
+            "hunkIndex": 0,
+            "side": "new",
+            "line": 1,
+            "summary": "Reply live comment",
+            "rationale": "Explains the change",
+            "author": "agent",
+            "createdAt": "2026-01-01T00:00:00.000Z",
+            "parentId": "comment-1"
+          }
+        ],
+        "reviewNoteCount": 2,
+        "reviewNotes": [
+          {
+            "noteId": "note-1",
+            "source": "user",
+            "filePath": "src/renamed.ts",
+            "hunkIndex": 0,
+            "oldRange": [1, 1],
+            "newRange": [1, 1],
+            "body": "A user note",
+            "title": "Note title",
+            "author": "reviewer",
+            "createdAt": "2026-01-01T00:00:00.000Z",
+            "updatedAt": "2026-01-01T00:00:00.000Z",
+            "editable": true
+          },
+          {
+            "noteId": "note-2",
+            "source": "agent",
+            "filePath": "src/renamed.ts",
+            "hunkIndex": 0,
+            "oldRange": [1, 1],
+            "newRange": [1, 1],
+            "body": "A user note",
+            "title": "Note title",
+            "author": "reviewer",
+            "createdAt": "2026-01-01T00:00:00.000Z",
+            "updatedAt": "2026-01-01T00:00:00.000Z",
+            "editable": false,
+            "parentId": "note-1"
+          }
+        ],
+        "reviewPublication": {
+          "generation": "generation:wire-corpus:1",
+          "stateRevision": 3
+        }
+      }
+    }
+  },
+  {
+    "name": "patch:initial",
+    "registration": {
+      "registrationVersion": 2,
+      "sessionId": "00000000-0000-4000-8000-000000000000",
+      "pid": 4242,
+      "cwd": "/repo",
+      "launchedAt": "2026-01-01T00:00:00.000Z",
+      "terminal": {
+        "program": "tmux",
+        "locations": [
+          {
+            "source": "tmux",
+            "tty": "/dev/ttys000",
+            "windowId": "@1",
+            "tabId": "tab-1",
+            "paneId": "%1",
+            "terminalId": "terminal-1",
+            "sessionId": "$1"
+          }
+        ]
+      },
+      "info": {
+        "inputKind": "patch",
+        "title": "wire corpus",
+        "sourceLabel": "/repo",
+        "experimentalFeatures": ["stml"],
+        "review": {
+          "kind": "comparison",
+          "provider": "git",
+          "title": "main...feature/wire",
+          "url": "https://example.com/owner/repo/compare/main...feature",
+          "base": "main",
+          "head": "feature/wire",
+          "commitCount": 2,
+          "commits": [
+            {
+              "title": "feat: first commit",
+              "author": "Ada Lovelace",
+              "authoredAt": "2026-01-01T00:00:00.000Z",
+              "revision": "89abcdef0123456789abcdef0123456789abcdef",
+              "displayRevision": "89abcde"
+            },
+            {
+              "title": "feat: second commit",
+              "author": "Ada Lovelace",
+              "authoredAt": "2026-01-01T00:00:00.000Z",
+              "revision": "89abcdef0123456789abcdef0123456789abcdef",
+              "displayRevision": "89abcde"
+            }
+          ]
+        },
+        "files": [
+          {
+            "id": "file-renamed",
+            "path": "src/renamed.ts",
+            "previousPath": "src/original.ts",
+            "additions": 1,
+            "deletions": 1,
+            "hunkCount": 1,
+            "hunks": [
+              {
+                "index": 0,
+                "header": "@@ -1,1 +1,1 @@",
+                "oldRange": [1, 1],
+                "newRange": [1, 1]
+              }
+            ],
+            "patch": "@@ -1,2 +1,2 @@\n-export const value = 1;\n+export const value = 2;\n"
+          },
+          {
+            "id": "file-added",
+            "path": "src/added.ts",
+            "additions": 1,
+            "deletions": 0,
+            "hunkCount": 1,
+            "hunks": [
+              {
+                "index": 0,
+                "header": "@@ -0,0 +1,1 @@",
+                "oldRange": [0, 0],
+                "newRange": [1, 1]
+              }
+            ]
+          }
+        ],
+        "reviewCatalog": {
+          "generation": "generation:wire-corpus:1",
+          "fileKeysByRuntimeId": {
+            "file-renamed": "file:aba8966e038ae25ca19f037a04c2fd34",
+            "file-added": "file:17e9b4cb20cde11fc8d26a7b8be3d44b"
+          },
+          "resources": [
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:aba8966e038ae25ca19f037a04c2fd34",
+              "id": "resource:canonical-file:file:aba8966e038ae25ca19f037a04c2fd34",
+              "kind": "canonical-file",
+              "contentType": "application/vnd.hunk.review-file+json; charset=utf-8"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:aba8966e038ae25ca19f037a04c2fd34",
+              "id": "resource:patch:file:aba8966e038ae25ca19f037a04c2fd34",
+              "kind": "patch",
+              "contentType": "text/x-diff; charset=utf-8"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:aba8966e038ae25ca19f037a04c2fd34",
+              "id": "resource:source:new:file:aba8966e038ae25ca19f037a04c2fd34",
+              "kind": "source",
+              "contentType": "text/plain; charset=utf-8",
+              "side": "new",
+              "sourceIdentity": "source:aaa152c6ceac7aaefbeb548e96548102"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "id": "resource:canonical-file:file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "kind": "canonical-file",
+              "contentType": "application/vnd.hunk.review-file+json; charset=utf-8"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "id": "resource:patch:file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "kind": "patch",
+              "contentType": "text/x-diff; charset=utf-8"
+            }
+          ]
+        },
+        "reviewCapabilityDigest": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    "snapshot": {
+      "updatedAt": "2026-01-01T00:00:00.000Z",
+      "state": {
+        "selectedFileId": "file-renamed",
+        "selectedFilePath": "src/renamed.ts",
+        "selectedHunkIndex": 0,
+        "selectedHunkOldRange": [1, 1],
+        "selectedHunkNewRange": [1, 1],
+        "showAgentNotes": true,
+        "liveCommentCount": 0,
+        "liveComments": [],
+        "reviewNoteCount": 0,
+        "reviewNotes": [],
+        "reviewPublication": {
+          "generation": "generation:wire-corpus:1",
+          "stateRevision": 0
+        }
+      }
+    }
+  },
+  {
+    "name": "patch:live",
+    "registration": {
+      "registrationVersion": 2,
+      "sessionId": "00000000-0000-4000-8000-000000000000",
+      "pid": 4242,
+      "cwd": "/repo",
+      "launchedAt": "2026-01-01T00:00:00.000Z",
+      "terminal": {
+        "program": "tmux",
+        "locations": [
+          {
+            "source": "tmux",
+            "tty": "/dev/ttys000",
+            "windowId": "@1",
+            "tabId": "tab-1",
+            "paneId": "%1",
+            "terminalId": "terminal-1",
+            "sessionId": "$1"
+          }
+        ]
+      },
+      "info": {
+        "inputKind": "patch",
+        "title": "wire corpus",
+        "sourceLabel": "/repo",
+        "experimentalFeatures": ["stml"],
+        "review": {
+          "kind": "comparison",
+          "provider": "git",
+          "title": "main...feature/wire",
+          "url": "https://example.com/owner/repo/compare/main...feature",
+          "base": "main",
+          "head": "feature/wire",
+          "commitCount": 2,
+          "commits": [
+            {
+              "title": "feat: first commit",
+              "author": "Ada Lovelace",
+              "authoredAt": "2026-01-01T00:00:00.000Z",
+              "revision": "89abcdef0123456789abcdef0123456789abcdef",
+              "displayRevision": "89abcde"
+            },
+            {
+              "title": "feat: second commit",
+              "author": "Ada Lovelace",
+              "authoredAt": "2026-01-01T00:00:00.000Z",
+              "revision": "89abcdef0123456789abcdef0123456789abcdef",
+              "displayRevision": "89abcde"
+            }
+          ]
+        },
+        "files": [
+          {
+            "id": "file-renamed",
+            "path": "src/renamed.ts",
+            "previousPath": "src/original.ts",
+            "additions": 1,
+            "deletions": 1,
+            "hunkCount": 1,
+            "hunks": [
+              {
+                "index": 0,
+                "header": "@@ -1,1 +1,1 @@",
+                "oldRange": [1, 1],
+                "newRange": [1, 1]
+              }
+            ],
+            "patch": "@@ -1,2 +1,2 @@\n-export const value = 1;\n+export const value = 2;\n"
+          },
+          {
+            "id": "file-added",
+            "path": "src/added.ts",
+            "additions": 1,
+            "deletions": 0,
+            "hunkCount": 1,
+            "hunks": [
+              {
+                "index": 0,
+                "header": "@@ -0,0 +1,1 @@",
+                "oldRange": [0, 0],
+                "newRange": [1, 1]
+              }
+            ]
+          }
+        ],
+        "reviewCatalog": {
+          "generation": "generation:wire-corpus:1",
+          "fileKeysByRuntimeId": {
+            "file-renamed": "file:aba8966e038ae25ca19f037a04c2fd34",
+            "file-added": "file:17e9b4cb20cde11fc8d26a7b8be3d44b"
+          },
+          "resources": [
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:aba8966e038ae25ca19f037a04c2fd34",
+              "id": "resource:canonical-file:file:aba8966e038ae25ca19f037a04c2fd34",
+              "kind": "canonical-file",
+              "contentType": "application/vnd.hunk.review-file+json; charset=utf-8"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:aba8966e038ae25ca19f037a04c2fd34",
+              "id": "resource:patch:file:aba8966e038ae25ca19f037a04c2fd34",
+              "kind": "patch",
+              "contentType": "text/x-diff; charset=utf-8"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:aba8966e038ae25ca19f037a04c2fd34",
+              "id": "resource:source:new:file:aba8966e038ae25ca19f037a04c2fd34",
+              "kind": "source",
+              "contentType": "text/plain; charset=utf-8",
+              "side": "new",
+              "sourceIdentity": "source:aaa152c6ceac7aaefbeb548e96548102"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "id": "resource:canonical-file:file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "kind": "canonical-file",
+              "contentType": "application/vnd.hunk.review-file+json; charset=utf-8"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "id": "resource:patch:file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "kind": "patch",
+              "contentType": "text/x-diff; charset=utf-8"
+            }
+          ]
+        },
+        "reviewCapabilityDigest": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    "snapshot": {
+      "updatedAt": "2026-01-01T00:00:00.000Z",
+      "state": {
+        "selectedFileId": "file-renamed",
+        "selectedFilePath": "src/renamed.ts",
+        "selectedHunkIndex": 0,
+        "selectedHunkOldRange": [1, 1],
+        "selectedHunkNewRange": [1, 1],
+        "showAgentNotes": true,
+        "noteMarkupWidth": 72,
+        "liveCommentCount": 2,
+        "liveComments": [
+          {
+            "commentId": "comment-1",
+            "filePath": "src/renamed.ts",
+            "hunkIndex": 0,
+            "side": "new",
+            "line": 1,
+            "summary": "Root live comment",
+            "rationale": "Explains the change",
+            "author": "agent",
+            "createdAt": "2026-01-01T00:00:00.000Z"
+          },
+          {
+            "commentId": "comment-2",
+            "filePath": "src/renamed.ts",
+            "hunkIndex": 0,
+            "side": "new",
+            "line": 1,
+            "summary": "Reply live comment",
+            "rationale": "Explains the change",
+            "author": "agent",
+            "createdAt": "2026-01-01T00:00:00.000Z",
+            "parentId": "comment-1"
+          }
+        ],
+        "reviewNoteCount": 2,
+        "reviewNotes": [
+          {
+            "noteId": "note-1",
+            "source": "user",
+            "filePath": "src/renamed.ts",
+            "hunkIndex": 0,
+            "oldRange": [1, 1],
+            "newRange": [1, 1],
+            "body": "A user note",
+            "title": "Note title",
+            "author": "reviewer",
+            "createdAt": "2026-01-01T00:00:00.000Z",
+            "updatedAt": "2026-01-01T00:00:00.000Z",
+            "editable": true
+          },
+          {
+            "noteId": "note-2",
+            "source": "agent",
+            "filePath": "src/renamed.ts",
+            "hunkIndex": 0,
+            "oldRange": [1, 1],
+            "newRange": [1, 1],
+            "body": "A user note",
+            "title": "Note title",
+            "author": "reviewer",
+            "createdAt": "2026-01-01T00:00:00.000Z",
+            "updatedAt": "2026-01-01T00:00:00.000Z",
+            "editable": false,
+            "parentId": "note-1"
+          }
+        ],
+        "reviewPublication": {
+          "generation": "generation:wire-corpus:1",
+          "stateRevision": 3
+        }
+      }
+    }
+  },
+  {
+    "name": "difftool:initial",
+    "registration": {
+      "registrationVersion": 2,
+      "sessionId": "00000000-0000-4000-8000-000000000000",
+      "pid": 4242,
+      "cwd": "/repo",
+      "launchedAt": "2026-01-01T00:00:00.000Z",
+      "terminal": {
+        "program": "tmux",
+        "locations": [
+          {
+            "source": "tmux",
+            "tty": "/dev/ttys000",
+            "windowId": "@1",
+            "tabId": "tab-1",
+            "paneId": "%1",
+            "terminalId": "terminal-1",
+            "sessionId": "$1"
+          }
+        ]
+      },
+      "info": {
+        "inputKind": "difftool",
+        "title": "wire corpus",
+        "sourceLabel": "/repo",
+        "experimentalFeatures": ["stml"],
+        "review": {
+          "kind": "comparison",
+          "provider": "git",
+          "title": "main...feature/wire",
+          "url": "https://example.com/owner/repo/compare/main...feature",
+          "base": "main",
+          "head": "feature/wire",
+          "commitCount": 2,
+          "commits": [
+            {
+              "title": "feat: first commit",
+              "author": "Ada Lovelace",
+              "authoredAt": "2026-01-01T00:00:00.000Z",
+              "revision": "89abcdef0123456789abcdef0123456789abcdef",
+              "displayRevision": "89abcde"
+            },
+            {
+              "title": "feat: second commit",
+              "author": "Ada Lovelace",
+              "authoredAt": "2026-01-01T00:00:00.000Z",
+              "revision": "89abcdef0123456789abcdef0123456789abcdef",
+              "displayRevision": "89abcde"
+            }
+          ]
+        },
+        "files": [
+          {
+            "id": "file-renamed",
+            "path": "src/renamed.ts",
+            "previousPath": "src/original.ts",
+            "additions": 1,
+            "deletions": 1,
+            "hunkCount": 1,
+            "hunks": [
+              {
+                "index": 0,
+                "header": "@@ -1,1 +1,1 @@",
+                "oldRange": [1, 1],
+                "newRange": [1, 1]
+              }
+            ],
+            "patch": "@@ -1,2 +1,2 @@\n-export const value = 1;\n+export const value = 2;\n"
+          },
+          {
+            "id": "file-added",
+            "path": "src/added.ts",
+            "additions": 1,
+            "deletions": 0,
+            "hunkCount": 1,
+            "hunks": [
+              {
+                "index": 0,
+                "header": "@@ -0,0 +1,1 @@",
+                "oldRange": [0, 0],
+                "newRange": [1, 1]
+              }
+            ]
+          }
+        ],
+        "reviewCatalog": {
+          "generation": "generation:wire-corpus:1",
+          "fileKeysByRuntimeId": {
+            "file-renamed": "file:aba8966e038ae25ca19f037a04c2fd34",
+            "file-added": "file:17e9b4cb20cde11fc8d26a7b8be3d44b"
+          },
+          "resources": [
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:aba8966e038ae25ca19f037a04c2fd34",
+              "id": "resource:canonical-file:file:aba8966e038ae25ca19f037a04c2fd34",
+              "kind": "canonical-file",
+              "contentType": "application/vnd.hunk.review-file+json; charset=utf-8"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:aba8966e038ae25ca19f037a04c2fd34",
+              "id": "resource:patch:file:aba8966e038ae25ca19f037a04c2fd34",
+              "kind": "patch",
+              "contentType": "text/x-diff; charset=utf-8"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:aba8966e038ae25ca19f037a04c2fd34",
+              "id": "resource:source:new:file:aba8966e038ae25ca19f037a04c2fd34",
+              "kind": "source",
+              "contentType": "text/plain; charset=utf-8",
+              "side": "new",
+              "sourceIdentity": "source:aaa152c6ceac7aaefbeb548e96548102"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "id": "resource:canonical-file:file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "kind": "canonical-file",
+              "contentType": "application/vnd.hunk.review-file+json; charset=utf-8"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "id": "resource:patch:file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "kind": "patch",
+              "contentType": "text/x-diff; charset=utf-8"
+            }
+          ]
+        },
+        "reviewCapabilityDigest": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    "snapshot": {
+      "updatedAt": "2026-01-01T00:00:00.000Z",
+      "state": {
+        "selectedFileId": "file-renamed",
+        "selectedFilePath": "src/renamed.ts",
+        "selectedHunkIndex": 0,
+        "selectedHunkOldRange": [1, 1],
+        "selectedHunkNewRange": [1, 1],
+        "showAgentNotes": true,
+        "liveCommentCount": 0,
+        "liveComments": [],
+        "reviewNoteCount": 0,
+        "reviewNotes": [],
+        "reviewPublication": {
+          "generation": "generation:wire-corpus:1",
+          "stateRevision": 0
+        }
+      }
+    }
+  },
+  {
+    "name": "difftool:live",
+    "registration": {
+      "registrationVersion": 2,
+      "sessionId": "00000000-0000-4000-8000-000000000000",
+      "pid": 4242,
+      "cwd": "/repo",
+      "launchedAt": "2026-01-01T00:00:00.000Z",
+      "terminal": {
+        "program": "tmux",
+        "locations": [
+          {
+            "source": "tmux",
+            "tty": "/dev/ttys000",
+            "windowId": "@1",
+            "tabId": "tab-1",
+            "paneId": "%1",
+            "terminalId": "terminal-1",
+            "sessionId": "$1"
+          }
+        ]
+      },
+      "info": {
+        "inputKind": "difftool",
+        "title": "wire corpus",
+        "sourceLabel": "/repo",
+        "experimentalFeatures": ["stml"],
+        "review": {
+          "kind": "comparison",
+          "provider": "git",
+          "title": "main...feature/wire",
+          "url": "https://example.com/owner/repo/compare/main...feature",
+          "base": "main",
+          "head": "feature/wire",
+          "commitCount": 2,
+          "commits": [
+            {
+              "title": "feat: first commit",
+              "author": "Ada Lovelace",
+              "authoredAt": "2026-01-01T00:00:00.000Z",
+              "revision": "89abcdef0123456789abcdef0123456789abcdef",
+              "displayRevision": "89abcde"
+            },
+            {
+              "title": "feat: second commit",
+              "author": "Ada Lovelace",
+              "authoredAt": "2026-01-01T00:00:00.000Z",
+              "revision": "89abcdef0123456789abcdef0123456789abcdef",
+              "displayRevision": "89abcde"
+            }
+          ]
+        },
+        "files": [
+          {
+            "id": "file-renamed",
+            "path": "src/renamed.ts",
+            "previousPath": "src/original.ts",
+            "additions": 1,
+            "deletions": 1,
+            "hunkCount": 1,
+            "hunks": [
+              {
+                "index": 0,
+                "header": "@@ -1,1 +1,1 @@",
+                "oldRange": [1, 1],
+                "newRange": [1, 1]
+              }
+            ],
+            "patch": "@@ -1,2 +1,2 @@\n-export const value = 1;\n+export const value = 2;\n"
+          },
+          {
+            "id": "file-added",
+            "path": "src/added.ts",
+            "additions": 1,
+            "deletions": 0,
+            "hunkCount": 1,
+            "hunks": [
+              {
+                "index": 0,
+                "header": "@@ -0,0 +1,1 @@",
+                "oldRange": [0, 0],
+                "newRange": [1, 1]
+              }
+            ]
+          }
+        ],
+        "reviewCatalog": {
+          "generation": "generation:wire-corpus:1",
+          "fileKeysByRuntimeId": {
+            "file-renamed": "file:aba8966e038ae25ca19f037a04c2fd34",
+            "file-added": "file:17e9b4cb20cde11fc8d26a7b8be3d44b"
+          },
+          "resources": [
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:aba8966e038ae25ca19f037a04c2fd34",
+              "id": "resource:canonical-file:file:aba8966e038ae25ca19f037a04c2fd34",
+              "kind": "canonical-file",
+              "contentType": "application/vnd.hunk.review-file+json; charset=utf-8"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:aba8966e038ae25ca19f037a04c2fd34",
+              "id": "resource:patch:file:aba8966e038ae25ca19f037a04c2fd34",
+              "kind": "patch",
+              "contentType": "text/x-diff; charset=utf-8"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:aba8966e038ae25ca19f037a04c2fd34",
+              "id": "resource:source:new:file:aba8966e038ae25ca19f037a04c2fd34",
+              "kind": "source",
+              "contentType": "text/plain; charset=utf-8",
+              "side": "new",
+              "sourceIdentity": "source:aaa152c6ceac7aaefbeb548e96548102"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "id": "resource:canonical-file:file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "kind": "canonical-file",
+              "contentType": "application/vnd.hunk.review-file+json; charset=utf-8"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "id": "resource:patch:file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "kind": "patch",
+              "contentType": "text/x-diff; charset=utf-8"
+            }
+          ]
+        },
+        "reviewCapabilityDigest": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    "snapshot": {
+      "updatedAt": "2026-01-01T00:00:00.000Z",
+      "state": {
+        "selectedFileId": "file-renamed",
+        "selectedFilePath": "src/renamed.ts",
+        "selectedHunkIndex": 0,
+        "selectedHunkOldRange": [1, 1],
+        "selectedHunkNewRange": [1, 1],
+        "showAgentNotes": true,
+        "noteMarkupWidth": 72,
+        "liveCommentCount": 2,
+        "liveComments": [
+          {
+            "commentId": "comment-1",
+            "filePath": "src/renamed.ts",
+            "hunkIndex": 0,
+            "side": "new",
+            "line": 1,
+            "summary": "Root live comment",
+            "rationale": "Explains the change",
+            "author": "agent",
+            "createdAt": "2026-01-01T00:00:00.000Z"
+          },
+          {
+            "commentId": "comment-2",
+            "filePath": "src/renamed.ts",
+            "hunkIndex": 0,
+            "side": "new",
+            "line": 1,
+            "summary": "Reply live comment",
+            "rationale": "Explains the change",
+            "author": "agent",
+            "createdAt": "2026-01-01T00:00:00.000Z",
+            "parentId": "comment-1"
+          }
+        ],
+        "reviewNoteCount": 2,
+        "reviewNotes": [
+          {
+            "noteId": "note-1",
+            "source": "user",
+            "filePath": "src/renamed.ts",
+            "hunkIndex": 0,
+            "oldRange": [1, 1],
+            "newRange": [1, 1],
+            "body": "A user note",
+            "title": "Note title",
+            "author": "reviewer",
+            "createdAt": "2026-01-01T00:00:00.000Z",
+            "updatedAt": "2026-01-01T00:00:00.000Z",
+            "editable": true
+          },
+          {
+            "noteId": "note-2",
+            "source": "agent",
+            "filePath": "src/renamed.ts",
+            "hunkIndex": 0,
+            "oldRange": [1, 1],
+            "newRange": [1, 1],
+            "body": "A user note",
+            "title": "Note title",
+            "author": "reviewer",
+            "createdAt": "2026-01-01T00:00:00.000Z",
+            "updatedAt": "2026-01-01T00:00:00.000Z",
+            "editable": false,
+            "parentId": "note-1"
+          }
+        ],
+        "reviewPublication": {
+          "generation": "generation:wire-corpus:1",
+          "stateRevision": 3
+        }
+      }
+    }
+  },
+  {
+    "name": "file-diff:initial",
+    "registration": {
+      "registrationVersion": 2,
+      "sessionId": "00000000-0000-4000-8000-000000000000",
+      "pid": 4242,
+      "cwd": "/repo",
+      "launchedAt": "2026-01-01T00:00:00.000Z",
+      "terminal": {
+        "program": "tmux",
+        "locations": [
+          {
+            "source": "tmux",
+            "tty": "/dev/ttys000",
+            "windowId": "@1",
+            "tabId": "tab-1",
+            "paneId": "%1",
+            "terminalId": "terminal-1",
+            "sessionId": "$1"
+          }
+        ]
+      },
+      "info": {
+        "inputKind": "diff",
+        "title": "wire corpus",
+        "sourceLabel": "/repo",
+        "experimentalFeatures": ["stml"],
+        "review": {
+          "kind": "change-request",
+          "provider": "GitHub",
+          "title": "Improve session wire coverage",
+          "url": "https://example.com/owner/repo/pull/123",
+          "id": "#123",
+          "repository": "owner/repo",
+          "author": "octocat",
+          "base": "main",
+          "head": "feature/wire",
+          "state": "open",
+          "draft": true
+        },
+        "files": [
+          {
+            "id": "file-renamed",
+            "path": "src/renamed.ts",
+            "previousPath": "src/original.ts",
+            "additions": 1,
+            "deletions": 1,
+            "hunkCount": 1,
+            "hunks": [
+              {
+                "index": 0,
+                "header": "@@ -1,1 +1,1 @@",
+                "oldRange": [1, 1],
+                "newRange": [1, 1]
+              }
+            ],
+            "patch": "@@ -1,2 +1,2 @@\n-export const value = 1;\n+export const value = 2;\n"
+          },
+          {
+            "id": "file-added",
+            "path": "src/added.ts",
+            "additions": 1,
+            "deletions": 0,
+            "hunkCount": 1,
+            "hunks": [
+              {
+                "index": 0,
+                "header": "@@ -0,0 +1,1 @@",
+                "oldRange": [0, 0],
+                "newRange": [1, 1]
+              }
+            ]
+          }
+        ],
+        "reviewCatalog": {
+          "generation": "generation:wire-corpus:1",
+          "fileKeysByRuntimeId": {
+            "file-renamed": "file:aba8966e038ae25ca19f037a04c2fd34",
+            "file-added": "file:17e9b4cb20cde11fc8d26a7b8be3d44b"
+          },
+          "resources": [
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:aba8966e038ae25ca19f037a04c2fd34",
+              "id": "resource:canonical-file:file:aba8966e038ae25ca19f037a04c2fd34",
+              "kind": "canonical-file",
+              "contentType": "application/vnd.hunk.review-file+json; charset=utf-8"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:aba8966e038ae25ca19f037a04c2fd34",
+              "id": "resource:patch:file:aba8966e038ae25ca19f037a04c2fd34",
+              "kind": "patch",
+              "contentType": "text/x-diff; charset=utf-8"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:aba8966e038ae25ca19f037a04c2fd34",
+              "id": "resource:source:new:file:aba8966e038ae25ca19f037a04c2fd34",
+              "kind": "source",
+              "contentType": "text/plain; charset=utf-8",
+              "side": "new",
+              "sourceIdentity": "source:aaa152c6ceac7aaefbeb548e96548102"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "id": "resource:canonical-file:file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "kind": "canonical-file",
+              "contentType": "application/vnd.hunk.review-file+json; charset=utf-8"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "id": "resource:patch:file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "kind": "patch",
+              "contentType": "text/x-diff; charset=utf-8"
+            }
+          ]
+        },
+        "reviewCapabilityDigest": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    "snapshot": {
+      "updatedAt": "2026-01-01T00:00:00.000Z",
+      "state": {
+        "selectedFileId": "file-renamed",
+        "selectedFilePath": "src/renamed.ts",
+        "selectedHunkIndex": 0,
+        "selectedHunkOldRange": [1, 1],
+        "selectedHunkNewRange": [1, 1],
+        "showAgentNotes": true,
+        "liveCommentCount": 0,
+        "liveComments": [],
+        "reviewNoteCount": 0,
+        "reviewNotes": [],
+        "reviewPublication": {
+          "generation": "generation:wire-corpus:1",
+          "stateRevision": 0
+        }
+      }
+    }
+  },
+  {
+    "name": "file-diff:live",
+    "registration": {
+      "registrationVersion": 2,
+      "sessionId": "00000000-0000-4000-8000-000000000000",
+      "pid": 4242,
+      "cwd": "/repo",
+      "launchedAt": "2026-01-01T00:00:00.000Z",
+      "terminal": {
+        "program": "tmux",
+        "locations": [
+          {
+            "source": "tmux",
+            "tty": "/dev/ttys000",
+            "windowId": "@1",
+            "tabId": "tab-1",
+            "paneId": "%1",
+            "terminalId": "terminal-1",
+            "sessionId": "$1"
+          }
+        ]
+      },
+      "info": {
+        "inputKind": "diff",
+        "title": "wire corpus",
+        "sourceLabel": "/repo",
+        "experimentalFeatures": ["stml"],
+        "review": {
+          "kind": "change-request",
+          "provider": "GitHub",
+          "title": "Improve session wire coverage",
+          "url": "https://example.com/owner/repo/pull/123",
+          "id": "#123",
+          "repository": "owner/repo",
+          "author": "octocat",
+          "base": "main",
+          "head": "feature/wire",
+          "state": "open",
+          "draft": true
+        },
+        "files": [
+          {
+            "id": "file-renamed",
+            "path": "src/renamed.ts",
+            "previousPath": "src/original.ts",
+            "additions": 1,
+            "deletions": 1,
+            "hunkCount": 1,
+            "hunks": [
+              {
+                "index": 0,
+                "header": "@@ -1,1 +1,1 @@",
+                "oldRange": [1, 1],
+                "newRange": [1, 1]
+              }
+            ],
+            "patch": "@@ -1,2 +1,2 @@\n-export const value = 1;\n+export const value = 2;\n"
+          },
+          {
+            "id": "file-added",
+            "path": "src/added.ts",
+            "additions": 1,
+            "deletions": 0,
+            "hunkCount": 1,
+            "hunks": [
+              {
+                "index": 0,
+                "header": "@@ -0,0 +1,1 @@",
+                "oldRange": [0, 0],
+                "newRange": [1, 1]
+              }
+            ]
+          }
+        ],
+        "reviewCatalog": {
+          "generation": "generation:wire-corpus:1",
+          "fileKeysByRuntimeId": {
+            "file-renamed": "file:aba8966e038ae25ca19f037a04c2fd34",
+            "file-added": "file:17e9b4cb20cde11fc8d26a7b8be3d44b"
+          },
+          "resources": [
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:aba8966e038ae25ca19f037a04c2fd34",
+              "id": "resource:canonical-file:file:aba8966e038ae25ca19f037a04c2fd34",
+              "kind": "canonical-file",
+              "contentType": "application/vnd.hunk.review-file+json; charset=utf-8"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:aba8966e038ae25ca19f037a04c2fd34",
+              "id": "resource:patch:file:aba8966e038ae25ca19f037a04c2fd34",
+              "kind": "patch",
+              "contentType": "text/x-diff; charset=utf-8"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:aba8966e038ae25ca19f037a04c2fd34",
+              "id": "resource:source:new:file:aba8966e038ae25ca19f037a04c2fd34",
+              "kind": "source",
+              "contentType": "text/plain; charset=utf-8",
+              "side": "new",
+              "sourceIdentity": "source:aaa152c6ceac7aaefbeb548e96548102"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "id": "resource:canonical-file:file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "kind": "canonical-file",
+              "contentType": "application/vnd.hunk.review-file+json; charset=utf-8"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "id": "resource:patch:file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "kind": "patch",
+              "contentType": "text/x-diff; charset=utf-8"
+            }
+          ]
+        },
+        "reviewCapabilityDigest": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    "snapshot": {
+      "updatedAt": "2026-01-01T00:00:00.000Z",
+      "state": {
+        "selectedFileId": "file-renamed",
+        "selectedFilePath": "src/renamed.ts",
+        "selectedHunkIndex": 0,
+        "selectedHunkOldRange": [1, 1],
+        "selectedHunkNewRange": [1, 1],
+        "showAgentNotes": true,
+        "noteMarkupWidth": 72,
+        "liveCommentCount": 2,
+        "liveComments": [
+          {
+            "commentId": "comment-1",
+            "filePath": "src/renamed.ts",
+            "hunkIndex": 0,
+            "side": "new",
+            "line": 1,
+            "summary": "Root live comment",
+            "rationale": "Explains the change",
+            "author": "agent",
+            "createdAt": "2026-01-01T00:00:00.000Z"
+          },
+          {
+            "commentId": "comment-2",
+            "filePath": "src/renamed.ts",
+            "hunkIndex": 0,
+            "side": "new",
+            "line": 1,
+            "summary": "Reply live comment",
+            "rationale": "Explains the change",
+            "author": "agent",
+            "createdAt": "2026-01-01T00:00:00.000Z",
+            "parentId": "comment-1"
+          }
+        ],
+        "reviewNoteCount": 2,
+        "reviewNotes": [
+          {
+            "noteId": "note-1",
+            "source": "user",
+            "filePath": "src/renamed.ts",
+            "hunkIndex": 0,
+            "oldRange": [1, 1],
+            "newRange": [1, 1],
+            "body": "A user note",
+            "title": "Note title",
+            "author": "reviewer",
+            "createdAt": "2026-01-01T00:00:00.000Z",
+            "updatedAt": "2026-01-01T00:00:00.000Z",
+            "editable": true
+          },
+          {
+            "noteId": "note-2",
+            "source": "agent",
+            "filePath": "src/renamed.ts",
+            "hunkIndex": 0,
+            "oldRange": [1, 1],
+            "newRange": [1, 1],
+            "body": "A user note",
+            "title": "Note title",
+            "author": "reviewer",
+            "createdAt": "2026-01-01T00:00:00.000Z",
+            "updatedAt": "2026-01-01T00:00:00.000Z",
+            "editable": false,
+            "parentId": "note-1"
+          }
+        ],
+        "reviewPublication": {
+          "generation": "generation:wire-corpus:1",
+          "stateRevision": 3
+        }
+      }
+    }
+  },
+  {
+    "name": "reload:diff->show",
+    "registration": {
+      "registrationVersion": 2,
+      "sessionId": "00000000-0000-4000-8000-000000000000",
+      "pid": 4242,
+      "cwd": "/repo",
+      "repoRoot": "/repo",
+      "launchedAt": "2026-01-01T00:00:00.000Z",
+      "terminal": {
+        "program": "tmux",
+        "locations": [
+          {
+            "source": "tmux",
+            "tty": "/dev/ttys000",
+            "windowId": "@1",
+            "tabId": "tab-1",
+            "paneId": "%1",
+            "terminalId": "terminal-1",
+            "sessionId": "$1"
+          }
+        ]
+      },
+      "info": {
+        "inputKind": "show",
+        "title": "wire corpus",
+        "sourceLabel": "/repo",
+        "experimentalFeatures": ["stml"],
+        "review": {
+          "kind": "commit",
+          "provider": "git",
+          "title": "feat: add wire corpus",
+          "url": "https://example.com/owner/repo/commit/0123456789abcdef",
+          "revision": "0123456789abcdef0123456789abcdef01234567",
+          "displayRevision": "0123456",
+          "author": "Ada Lovelace",
+          "authoredAt": "2026-01-01T00:00:00.000Z"
+        },
+        "files": [
+          {
+            "id": "file-renamed",
+            "path": "src/renamed.ts",
+            "previousPath": "src/original.ts",
+            "additions": 1,
+            "deletions": 1,
+            "hunkCount": 1,
+            "hunks": [
+              {
+                "index": 0,
+                "header": "@@ -1,1 +1,1 @@",
+                "oldRange": [1, 1],
+                "newRange": [1, 1]
+              }
+            ],
+            "patch": "@@ -1,2 +1,2 @@\n-export const value = 1;\n+export const value = 2;\n"
+          },
+          {
+            "id": "file-added",
+            "path": "src/added.ts",
+            "additions": 1,
+            "deletions": 0,
+            "hunkCount": 1,
+            "hunks": [
+              {
+                "index": 0,
+                "header": "@@ -0,0 +1,1 @@",
+                "oldRange": [0, 0],
+                "newRange": [1, 1]
+              }
+            ]
+          }
+        ],
+        "reviewCatalog": {
+          "generation": "generation:wire-corpus:1",
+          "fileKeysByRuntimeId": {
+            "file-renamed": "file:aba8966e038ae25ca19f037a04c2fd34",
+            "file-added": "file:17e9b4cb20cde11fc8d26a7b8be3d44b"
+          },
+          "resources": [
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:aba8966e038ae25ca19f037a04c2fd34",
+              "id": "resource:canonical-file:file:aba8966e038ae25ca19f037a04c2fd34",
+              "kind": "canonical-file",
+              "contentType": "application/vnd.hunk.review-file+json; charset=utf-8"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:aba8966e038ae25ca19f037a04c2fd34",
+              "id": "resource:patch:file:aba8966e038ae25ca19f037a04c2fd34",
+              "kind": "patch",
+              "contentType": "text/x-diff; charset=utf-8"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:aba8966e038ae25ca19f037a04c2fd34",
+              "id": "resource:source:new:file:aba8966e038ae25ca19f037a04c2fd34",
+              "kind": "source",
+              "contentType": "text/plain; charset=utf-8",
+              "side": "new",
+              "sourceIdentity": "source:aaa152c6ceac7aaefbeb548e96548102"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "id": "resource:canonical-file:file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "kind": "canonical-file",
+              "contentType": "application/vnd.hunk.review-file+json; charset=utf-8"
+            },
+            {
+              "generation": "generation:wire-corpus:1",
+              "fileKey": "file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "id": "resource:patch:file:17e9b4cb20cde11fc8d26a7b8be3d44b",
+              "kind": "patch",
+              "contentType": "text/x-diff; charset=utf-8"
+            }
+          ]
+        },
+        "reviewCapabilityDigest": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    "snapshot": {
+      "updatedAt": "2026-01-01T00:00:00.000Z",
+      "state": {
+        "selectedFileId": "file-renamed",
+        "selectedFilePath": "src/renamed.ts",
+        "selectedHunkIndex": 0,
+        "selectedHunkOldRange": [1, 1],
+        "selectedHunkNewRange": [1, 1],
+        "showAgentNotes": true,
+        "noteMarkupWidth": 72,
+        "liveCommentCount": 2,
+        "liveComments": [
+          {
+            "commentId": "comment-1",
+            "filePath": "src/renamed.ts",
+            "hunkIndex": 0,
+            "side": "new",
+            "line": 1,
+            "summary": "Root live comment",
+            "rationale": "Explains the change",
+            "author": "agent",
+            "createdAt": "2026-01-01T00:00:00.000Z"
+          },
+          {
+            "commentId": "comment-2",
+            "filePath": "src/renamed.ts",
+            "hunkIndex": 0,
+            "side": "new",
+            "line": 1,
+            "summary": "Reply live comment",
+            "rationale": "Explains the change",
+            "author": "agent",
+            "createdAt": "2026-01-01T00:00:00.000Z",
+            "parentId": "comment-1"
+          }
+        ],
+        "reviewNoteCount": 2,
+        "reviewNotes": [
+          {
+            "noteId": "note-1",
+            "source": "user",
+            "filePath": "src/renamed.ts",
+            "hunkIndex": 0,
+            "oldRange": [1, 1],
+            "newRange": [1, 1],
+            "body": "A user note",
+            "title": "Note title",
+            "author": "reviewer",
+            "createdAt": "2026-01-01T00:00:00.000Z",
+            "updatedAt": "2026-01-01T00:00:00.000Z",
+            "editable": true
+          },
+          {
+            "noteId": "note-2",
+            "source": "agent",
+            "filePath": "src/renamed.ts",
+            "hunkIndex": 0,
+            "oldRange": [1, 1],
+            "newRange": [1, 1],
+            "body": "A user note",
+            "title": "Note title",
+            "author": "reviewer",
+            "createdAt": "2026-01-01T00:00:00.000Z",
+            "updatedAt": "2026-01-01T00:00:00.000Z",
+            "editable": false,
+            "parentId": "note-1"
+          }
+        ],
+        "reviewPublication": {
+          "generation": "generation:wire-corpus:1",
+          "stateRevision": 3
+        }
+      }
+    }
+  }
+]

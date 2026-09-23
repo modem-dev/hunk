@@ -1,4 +1,5 @@
 import type { CursorLine, LayoutMode } from "../../core/run/commandInputs";
+import { HUNK_VENDOR_EXTENSION_ID } from "../../extensions/extensionIds";
 import type { AppMenus, MenuEntry, MenuId } from "../components/chrome/menu";
 import { executeAppCommand, isCommandEnabled, type AppCommand } from "./appCommands";
 
@@ -108,6 +109,11 @@ function toExtensionMenuEntries(
     // refuses extension ids containing dots at load, so the first dot always
     // splits off the owning extension exactly — whatever the command half holds.
     const owner = command.id.slice(0, command.id.indexOf("."));
+    // Bundled commands are Hunk's own: they live in the menus that name them
+    // (search under Navigate), not in a menu about third-party extensions.
+    if (owner === HUNK_VENDOR_EXTENSION_ID) {
+      continue;
+    }
     if (previousOwner !== undefined && owner !== previousOwner) {
       specs.push(SEPARATOR);
     }
@@ -195,6 +201,10 @@ export function buildAppMenus({
       SEPARATOR,
       { commandId: "hunk.review.previousAnnotatedHunk", label: "Previous comment" },
       { commandId: "hunk.review.nextAnnotatedHunk", label: "Next comment" },
+      SEPARATOR,
+      { commandId: "hunk.search.find", label: "Search diff content…" },
+      { commandId: "hunk.search.next", label: "Next match" },
+      { commandId: "hunk.search.previous", label: "Previous match" },
       SEPARATOR,
       { commandId: "hunk.review.focusFilter", label: "Focus filter" },
     ],

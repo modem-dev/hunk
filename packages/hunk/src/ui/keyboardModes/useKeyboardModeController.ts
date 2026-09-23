@@ -8,6 +8,7 @@ import type {
   ExtensionKeyEvent,
   ExtensionLineHighlightControls,
   ExtensionNotifyType,
+  ExtensionStatusLineControls,
 } from "../../extension-api/types";
 import type { ExtensionRegistry, RegisteredKeyboardMode } from "../../extensions/types";
 import {
@@ -44,6 +45,7 @@ export interface KeyboardModeController {
 export function useKeyboardModeController({
   commands,
   createHighlightControls,
+  createStatusLineControls,
   cwd,
   modes,
   notify,
@@ -53,6 +55,8 @@ export function useKeyboardModeController({
   commands: ExtensionCommandControls;
   /** Build live host-owned line-highlight controls for one extension. */
   createHighlightControls: (extensionId: string) => ExtensionLineHighlightControls;
+  /** Build status-line item controls for one extension. */
+  createStatusLineControls: (extensionId: string) => ExtensionStatusLineControls;
   cwd: string;
   modes: readonly RegisteredKeyboardMode[];
   notify: ExtensionContext["notify"];
@@ -63,6 +67,8 @@ export function useKeyboardModeController({
   modesRef.current = modes;
   const createHighlightControlsRef = useRef(createHighlightControls);
   createHighlightControlsRef.current = createHighlightControls;
+  const createStatusLineControlsRef = useRef(createStatusLineControls);
+  createStatusLineControlsRef.current = createStatusLineControls;
   const registryRef = useRef(registry);
   registryRef.current = registry;
   const cwdRef = useRef(cwd);
@@ -149,6 +155,7 @@ export function useKeyboardModeController({
         commands: commandsRef.current,
         keyboardModes,
         highlights: createHighlightControlsRef.current(extensionId),
+        statusLine: createStatusLineControlsRef.current(extensionId),
       });
       const active: ActiveSessionKeyboardMode = {
         ctx,

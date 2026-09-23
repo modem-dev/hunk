@@ -13,13 +13,13 @@ afterEach(() => {
   harness.cleanup();
 });
 
-/** Create a contiguous added TypeScript file large enough to use the highlight worker. */
-function createLargeHighlightTestFiles() {
+/** Create contiguous added TypeScript lines for main-thread or worker highlighting. */
+function createHighlightTestFiles(lineCount: number) {
   const dir = mkdtempSync(join(tmpdir(), "hunk-highlight-worker-"));
   const before = join(dir, "before.ts");
   const after = join(dir, "after.ts");
   const contents = Array.from(
-    { length: 8_000 },
+    { length: lineCount },
     (_, index) => `export const workerLine${index} = ${index};`,
   ).join("\n");
   writeFileSync(before, "");
@@ -33,8 +33,31 @@ function visibleWorkerLineIndexes(snapshot: string) {
 }
 
 describe("PTY syntax highlighting", () => {
+  test("highlights a small diff using the main-thread WASM engine", async () => {
+    const fixture = createHighlightTestFiles(2);
+    try {
+      const session = await harness.launchHunk({
+        args: ["diff", "--files", fixture.before, fixture.after, "--mode", "unified"],
+        cwd: fixture.dir,
+        cols: 100,
+        rows: 24,
+      });
+      await session.waitForText("export const workerLine0 = 0;");
+      let keywords = "";
+      for (let iteration = 0; iteration < 200; iteration += 1) {
+        await session.waitIdle({ timeout: 50 });
+        keywords = await session.text({ immediate: true, only: { foreground: "#ff7b72" } });
+        if (keywords.includes("export")) break;
+      }
+      expect(keywords).toContain("export");
+      session.close();
+    } finally {
+      rmSync(fixture.dir, { recursive: true, force: true });
+    }
+  });
+
   test("keeps key input responsive while a large added file highlights", async () => {
-    const fixture = createLargeHighlightTestFiles();
+    const fixture = createHighlightTestFiles(8_000);
     const session = await harness.launchHunk({
       args: ["diff", "--files", fixture.before, fixture.after, "--fast", "--mode", "unified"],
       cwd: fixture.dir,

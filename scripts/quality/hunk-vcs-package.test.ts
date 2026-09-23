@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import * as ts from "typescript";
 
 const REPO_ROOT = resolve(import.meta.dir, "../..");
 const PACKAGE_ROOT = join(REPO_ROOT, "packages", "hunk-vcs");
@@ -75,33 +76,18 @@ describe("@hunk/vcs package boundary", () => {
         "void description;",
       ].join("\n"),
     );
-    writeFileSync(
-      join(consumerRoot, "tsconfig.json"),
-      JSON.stringify({
-        compilerOptions: {
-          target: "ESNext",
-          module: "ESNext",
-          moduleResolution: "bundler",
-          strict: true,
-          noEmit: true,
-          lib: ["ESNext", "DOM"],
-          types: [],
-        },
-        files: ["consumer.ts"],
-      }),
-    );
-
-    const result = Bun.spawnSync(
-      [
-        process.execPath,
-        join(REPO_ROOT, "node_modules", "typescript", "bin", "tsc"),
-        "-p",
-        join(consumerRoot, "tsconfig.json"),
-      ],
-      { cwd: consumerRoot, stdout: "pipe", stderr: "pipe" },
-    );
-    expect(new TextDecoder().decode(result.stderr)).toBe("");
-    expect(new TextDecoder().decode(result.stdout)).toBe("");
-    expect(result.exitCode).toBe(0);
+    const program = ts.createProgram([join(consumerRoot, "consumer.ts")], {
+      lib: ["lib.esnext.d.ts", "lib.dom.d.ts"],
+      module: ts.ModuleKind.ESNext,
+      moduleResolution: ts.ModuleResolutionKind.Bundler,
+      noEmit: true,
+      strict: true,
+      target: ts.ScriptTarget.ESNext,
+      types: [],
+    });
+    const diagnostics = ts
+      .getPreEmitDiagnostics(program)
+      .map((diagnostic) => ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n"));
+    expect(diagnostics).toEqual([]);
   });
 });

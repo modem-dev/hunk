@@ -240,6 +240,7 @@ function createTestBrokerClient() {
   let bridge: { dispatchCommand: (message: unknown) => Promise<unknown> } | null = null;
   let replacementCount = 0;
   const client = {
+    subscribeConnectionNotice: () => () => undefined,
     setBridge(next: typeof bridge) {
       bridge = next;
     },

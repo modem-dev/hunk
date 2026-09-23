@@ -11,6 +11,10 @@ import {
 } from "react";
 import { DEFAULT_FILE_GAP, DEFAULT_HUNK_GAP } from "../../../core/run/reviewGap";
 import { DEFAULT_TAB_WIDTH } from "../../../core/run/tabWidth";
+import {
+  DEFAULT_WHEEL_SCROLL_LINES,
+  type WheelScrollLines,
+} from "../../../core/run/wheelScrollLines";
 import type { DiffFile } from "../../../core/changeset/model";
 import type { CursorLine, LayoutMode } from "../../../core/run/commandInputs";
 import type { ReviewNoteTargetV1 } from "../../../core/review/types";
@@ -347,6 +351,7 @@ export function DiffPane({
   tabWidth = DEFAULT_TAB_WIDTH,
   fileGap = DEFAULT_FILE_GAP,
   hunkGap = DEFAULT_HUNK_GAP,
+  wheelScrollLines = DEFAULT_WHEEL_SCROLL_LINES,
   wrapLines,
   wrapToggleScrollTop,
   layoutToggleScrollTop = null,
@@ -431,6 +436,7 @@ export function DiffPane({
   tabWidth?: number;
   fileGap?: number;
   hunkGap?: number;
+  wheelScrollLines?: WheelScrollLines;
   wrapLines: boolean;
   wrapToggleScrollTop: number | null;
   layoutToggleScrollTop?: number | null;
@@ -477,8 +483,8 @@ export function DiffPane({
   const renderTopChrome = showTopChrome ?? !pagerMode;
   const renderer = useRenderer();
   const mouseWheelScrollAcceleration = useMemo(
-    () => createReviewMouseWheelScrollAcceleration(),
-    [],
+    () => createReviewMouseWheelScrollAcceleration(wheelScrollLines),
+    [wheelScrollLines],
   );
   const [currentLineRowPlan, setCurrentLineRowPlan] = useState<{
     source: { file: DiffFile; theme: AppTheme; tabWidth: number };

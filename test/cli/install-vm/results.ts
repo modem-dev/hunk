@@ -1,3 +1,4 @@
+import { HUNK_DAEMON_UPGRADE_WAIT_MESSAGE } from "../../../packages/hunk/src/session/client/capabilities";
 import {
   existsSync,
   lstatSync,
@@ -194,7 +195,9 @@ function validateRequiredEvidence(
 }
 
 const DAEMON_UPGRADE_SCENARIO_ID = "authenticated-daemon-upgrade";
-const DAEMON_UPGRADE_WARNING = "Close older Hunk windows";
+// Bound to the real message rather than copied, so a reworded notice cannot silently stop
+// matching the warning this scenario exists to prove.
+const DAEMON_UPGRADE_WARNING = HUNK_DAEMON_UPGRADE_WAIT_MESSAGE;
 const MAX_DAEMON_RECONNECT_DURATION_MS = 120_000;
 
 /** Parse one required positive integer observation. */

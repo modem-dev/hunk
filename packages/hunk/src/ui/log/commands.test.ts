@@ -40,7 +40,6 @@ const snapshot = (parents: string[] = []): LogSnapshot => ({
   visualSelectionActive: false,
   top: 0,
   search: "",
-  searchEditing: false,
   historyDone: true,
   loading: false,
   notice: "",

@@ -5,6 +5,7 @@ import type {
   ExtensionDialogs,
   ExtensionPaneControls,
   ExtensionReviewReloadControls,
+  ExtensionStatusLineControls,
   ExtensionReviewNavigation,
 } from "../../extension-api/types";
 import { createEmptyExtensionLoadResult } from "../../extensions/types";
@@ -14,10 +15,12 @@ const dialogs = {} as ExtensionDialogs;
 const navigation = {} as ExtensionReviewNavigation;
 const panes = {} as ExtensionPaneControls;
 const review = {} as ExtensionReviewReloadControls;
+const statusLine = {} as ExtensionStatusLineControls;
 const createDialogs = () => dialogs;
 const createNavigation = () => navigation;
 const createPaneControls = () => panes;
 const createReviewReloadControls = () => review;
+const createStatusLineControls = () => statusLine;
 
 /** Flush layout and passive work in an OpenTUI hook harness. */
 async function settle(setup: Awaited<ReturnType<typeof testRender>>) {
@@ -39,6 +42,7 @@ describe("useExtensionEventContextProvider", () => {
         createNavigation,
         createPaneControls,
         createReviewReloadControls,
+        createStatusLineControls,
         extensions,
       });
       useLayoutEffect(() => {
@@ -83,6 +87,7 @@ describe("useExtensionEventContextProvider", () => {
         createNavigation,
         createPaneControls,
         createReviewReloadControls,
+        createStatusLineControls,
         extensions,
       });
       return <text>{extensions.context.cwd}</text>;
@@ -111,6 +116,7 @@ describe("useExtensionEventContextProvider", () => {
         createNavigation,
         createPaneControls,
         createReviewReloadControls,
+        createStatusLineControls,
         extensions,
       });
       return <text>{marker}</text>;

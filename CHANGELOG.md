@@ -1,5 +1,96 @@
 # Changelog
 
+## 0.22.0
+
+### Minor Changes
+
+- [#1044](https://github.com/modem-dev/hunk/pull/1044) [`2124066`](https://github.com/modem-dev/hunk/commit/21240662080433a987fe9dc98f5e2ff865b3b813) - Add visible keyboard selection for review notes. Line-by-line movement now stops on every comment and reply in rendered order; saving or clicking a note makes it active, with next/previous note navigation and persistent edit, reply, and delete shortcuts on the active note.
+
+- [#1012](https://github.com/modem-dev/hunk/pull/1012) [`a83da6d`](https://github.com/modem-dev/hunk/commit/a83da6d7d11a873da80c824e26497b046201e9c7) - Add session CLI support for replying to existing inline review notes with inherited code anchors.
+
+- [#931](https://github.com/modem-dev/hunk/pull/931) [`d0bf162`](https://github.com/modem-dev/hunk/commit/d0bf162dda6d5de828f64fd432ba9e6660489ef7) - Add persistent mouse and keyboard diff selections with explicit Comment, Copy, and Clear actions, including multiline review-note anchors.
+
+- [#986](https://github.com/modem-dev/hunk/pull/986) [`7d27181`](https://github.com/modem-dev/hunk/commit/7d2718133b381aacde5362cd1807a3372ae1bc0d) - Let extension CLI commands attach validated provider-neutral review metadata when they delegate a patch into Hunk, expose it to extension panes and live-session snapshots, and show delegated change-request identity in a concise built-in top pane.
+
+- [#1039](https://github.com/modem-dev/hunk/pull/1039) [`93250a8`](https://github.com/modem-dev/hunk/commit/93250a8128f183939bb00fc84ca27c48d1eb7a22) - Add configurable `hunk.history.*` command keybindings to the interactive history view.
+
+- [#1009](https://github.com/modem-dev/hunk/pull/1009) [`e1001ae`](https://github.com/modem-dev/hunk/commit/e1001ae8493806aab2c120ac4f9edd1dfb79f7cf) - Allow folders in the wide sidebar tree to be collapsed and expanded with the mouse while file navigation reveals destinations hidden inside collapsed folders.
+
+- [#1016](https://github.com/modem-dev/hunk/pull/1016) [`07c5892`](https://github.com/modem-dev/hunk/commit/07c58927fe13395cb5e7c10d498d78dcefbd3725) - Show history-style commit metadata in the review-info panel when opening a commit from interactive `hunk log`, with a copyable right-aligned revision and public pane clipboard/theme support.
+
+- [#1064](https://github.com/modem-dev/hunk/pull/1064) [`661534f`](https://github.com/modem-dev/hunk/commit/661534f40a4c258f756679797c7e6738b72051da) - Show commit and comparison information, including short revision IDs, above direct CLI revision
+  reviews for Git, Jujutsu, and Sapling.
+
+- [#1031](https://github.com/modem-dev/hunk/pull/1031) [`e3e4a6a`](https://github.com/modem-dev/hunk/commit/e3e4a6ab82272b44c08c9cc651fbe61a1a5e11ad) - Add cancellable contiguous multi-commit selection to unfiltered interactive history with Shift+Arrow, J/K, and Shift-click controls, opening the inclusive cumulative change in one review.
+
+- [#1011](https://github.com/modem-dev/hunk/pull/1011) [`bf3c2a7`](https://github.com/modem-dev/hunk/commit/bf3c2a7aad763079232cb2da8b4b7b3723537922) - Redesign interactive `hunk log` with themed GitHub-style day groups, account-like author handles, relative timestamps, and an optional commit graph view.
+
+- [#1038](https://github.com/modem-dev/hunk/pull/1038) [`9919017`](https://github.com/modem-dev/hunk/commit/99190170947c8392944f1f6c65bb79bb1d1270f9) - Add `v` visual range selection plus shared full-page and half-page movement keys to interactive history.
+
+- [#979](https://github.com/modem-dev/hunk/pull/979) [`9219562`](https://github.com/modem-dev/hunk/commit/921956215557de8792a953758358b07c23d1c33c) - Add themed, static-first Git and Jujutsu history with compact output and an interactive browser that opens selected commits in Hunk.
+
+- [#988](https://github.com/modem-dev/hunk/pull/988) [`622c0a3`](https://github.com/modem-dev/hunk/commit/622c0a363724ec20eeec6c392cc3058e3aacec52) - Let extension lifecycle and custom-event handlers request a coalesced host review reload after external agents change reviewed files.
+
+- [#987](https://github.com/modem-dev/hunk/pull/987) [`1598b0d`](https://github.com/modem-dev/hunk/commit/1598b0d4f1acb3784a6aa7c5da3937586f7f134a) - Open `hunk log` as an auto-responsive terminal browser with GitHub-inspired rows, right-aligned commit links and copy actions, while preserving static output for pipes and `--static`.
+
+- [#983](https://github.com/modem-dev/hunk/pull/983) [`b4d4f6b`](https://github.com/modem-dev/hunk/commit/b4d4f6b588b6a04cc3d71db4bd74f058c895369f) - Add Hunk's desktop menu chrome, live theme picker, and provider-owned merge-parent selection to the interactive repository history browser.
+
+- [#941](https://github.com/modem-dev/hunk/pull/941) [`f55894d`](https://github.com/modem-dev/hunk/commit/f55894dcd3774f21c77b73d4eb19a2a56102858d) - Animate docked panes as they open and close, moving the review pane alongside them.
+
+- [#945](https://github.com/modem-dev/hunk/pull/945) [`a4e3d7a`](https://github.com/modem-dev/hunk/commit/a4e3d7a705f30602baf368fce961e120f3b3e67f) - Rename the single-column diff layout to unified, add canonical OpenTUI and extension API v23 fields, and retain deprecated stack compatibility across existing CLI, config, command, OpenTUI, and extension integrations.
+
+### Patch Changes
+
+- [#1075](https://github.com/modem-dev/hunk/pull/1075) [`0d68a61`](https://github.com/modem-dev/hunk/commit/0d68a6107f3b1b9512d1970feea8aaa04074297f) - Watch mode no longer freezes the review while checking Git for changes, and extension API generation 25 adds Promise-returning, cancellable `watchSignature` hooks.
+
+- [#1045](https://github.com/modem-dev/hunk/pull/1045) [`e2beb21`](https://github.com/modem-dev/hunk/commit/e2beb21e72924ecea66acb0811b4e7a3f342fca3) - Keep diff view preferences active when moving between history and commit reviews in the same session.
+
+- [#990](https://github.com/modem-dev/hunk/pull/990) [`f41a03d`](https://github.com/modem-dev/hunk/commit/f41a03d6378c6bcf10a6d2f742558dc6e63f399a) - Upgrade the bundled Bun runtime to 1.4.2 for lower memory use and runtime fixes.
+
+- [#1032](https://github.com/modem-dev/hunk/pull/1032) [`5ecc4dd`](https://github.com/modem-dev/hunk/commit/5ecc4dda1c131d6a8ea503ea6bbc83f7418fd1a2) - Show multi-commit history metadata as compact responsive rows with reusable click-to-copy revision actions, and let extension panes derive a preferred size from current review facts.
+
+- [#1050](https://github.com/modem-dev/hunk/pull/1050) [`4f95ca5`](https://github.com/modem-dev/hunk/commit/4f95ca52095e327d92ec435545a4f049a3e044f2) - Prevent delayed editor updates from crashing a review after a note is saved.
+
+- [#1036](https://github.com/modem-dev/hunk/pull/1036) [`7947ca9`](https://github.com/modem-dev/hunk/commit/7947ca935f8a6ed2307248ce267e6914f109fb57) - Cap pane animation rendering at 30 FPS to avoid unnecessary CPU usage, and add an `animations = false` config setting for immediate pane transitions.
+
+- [#1069](https://github.com/modem-dev/hunk/pull/1069) [`f5b8b24`](https://github.com/modem-dev/hunk/commit/f5b8b247f2d9a20ff96fc1e53be8377b2b2397f4) - Route curl-install release checks through globally refreshed metadata by default while retaining direct GitHub fallback and analytics opt-outs.
+
+- [#992](https://github.com/modem-dev/hunk/pull/992) [`554cfc0`](https://github.com/modem-dev/hunk/commit/554cfc04c613f014d5e3044febc9079e534499d4) - Keep commit reviews responsive while bundled VCS commands run, and share one correctly owned extension lifecycle across retained history and embedded reviews.
+
+- [#1043](https://github.com/modem-dev/hunk/pull/1043) [`f143e8e`](https://github.com/modem-dev/hunk/commit/f143e8ee1bb8544a590fcdc5e041d5743541098e) - Restore fast first-frame rendering for long wrapped split-view lines while preserving multiline copy selections and note range guides.
+
+- [#989](https://github.com/modem-dev/hunk/pull/989) [`e884bca`](https://github.com/modem-dev/hunk/commit/e884bca4c8d9c9c38e54adfee5bc03a8162bed6b) - Keep the themed history loading screen visible until a selected commit review is ready to claim the terminal.
+
+- [#1040](https://github.com/modem-dev/hunk/pull/1040) [`f9ef7ce`](https://github.com/modem-dev/hunk/commit/f9ef7ceff546575b35cf1ac9b95abefe7fc039cd) - Keep theme changes active when moving between history and review surfaces in the same session.
+
+- [#969](https://github.com/modem-dev/hunk/pull/969) [`0aa24d3`](https://github.com/modem-dev/hunk/commit/0aa24d38f63f7460bc4adf0e6148f8a525f2607d) - Add an opt-in, privacy-preserving cached endpoint for curl-install release checks, rate-limit automatic checks, and retain direct GitHub fallback and analytics opt-outs.
+
+- [#1054](https://github.com/modem-dev/hunk/pull/1054) [`c5bb30d`](https://github.com/modem-dev/hunk/commit/c5bb30d470ab55003f24f281ce419eab4854d699) - Restore automatic and manual reloads for direct-file comparisons launched outside repositories.
+
+- [#991](https://github.com/modem-dev/hunk/pull/991) [`6d4440a`](https://github.com/modem-dev/hunk/commit/6d4440a5021ad72493c914e35e5561a319d7161a) - Make `alt` and `option` keybindings work with both legacy terminal and Kitty keyboard encodings while preserving distinct Meta bindings when the terminal reports them.
+
+- [#992](https://github.com/modem-dev/hunk/pull/992) [`554cfc0`](https://github.com/modem-dev/hunk/commit/554cfc04c613f014d5e3044febc9079e534499d4) - Keep `hunk log` and opened commit reviews in one terminal renderer so returning never exposes previous terminal output.
+
+- [#927](https://github.com/modem-dev/hunk/pull/927) [`dee21c4`](https://github.com/modem-dev/hunk/commit/dee21c497c139b4ab441fa1f4d0d180c489af3b3) - Report the underlying health-probe failure when a reachable session daemon port cannot be verified.
+
+- [#1015](https://github.com/modem-dev/hunk/pull/1015) [`cbf77de`](https://github.com/modem-dev/hunk/commit/cbf77de94abe164a5b02c86dc4bb6401ea8d4bb0) - Prompt to save theme changes when quitting an interactive `hunk log` session, matching other review commands.
+
+- [#1046](https://github.com/modem-dev/hunk/pull/1046) [`923ce03`](https://github.com/modem-dev/hunk/commit/923ce0352707468f60676dc4820d3d54fc933b69) - Stop drawing duplicate right-side range connectors on threaded reply cards.
+
+- [#1076](https://github.com/modem-dev/hunk/pull/1076) [`0a2d52f`](https://github.com/modem-dev/hunk/commit/0a2d52f255a8f4d18ab734f56c908bee4267d90c) - Keep automatic refresh working on Linux after deleting and recreating nested directories.
+
+- [#1076](https://github.com/modem-dev/hunk/pull/1076) [`0a2d52f`](https://github.com/modem-dev/hunk/commit/0a2d52f255a8f4d18ab734f56c908bee4267d90c) - Watch mode registers directory watchers in small batches so large repositories stay responsive during the first interaction on Linux.
+
+- [#1035](https://github.com/modem-dev/hunk/pull/1035) [`09f06a2`](https://github.com/modem-dev/hunk/commit/09f06a247283d754464b9c36977dcc94f7018533) - Shorten full Git commit IDs to seven characters in comparison titles so the title bar stays compact.
+
+- [#1068](https://github.com/modem-dev/hunk/pull/1068) [`795d835`](https://github.com/modem-dev/hunk/commit/795d83501e3d42535d63c237f3e04ab9401c4715) - Use `1` for unified diffs and `2` for split diffs by default.
+
+- [#1029](https://github.com/modem-dev/hunk/pull/1029) [`367dbbe`](https://github.com/modem-dev/hunk/commit/367dbbe5c1d9eb5337999ef79fd878ccadf947e9) - Print reviews as static plain text instead of launching the interactive TUI when stdout is not a terminal.
+
+- [#996](https://github.com/modem-dev/hunk/pull/996) [`c6d15c0`](https://github.com/modem-dev/hunk/commit/c6d15c06b13e5ec920290c7a4a19c155b7c4c4de) - Keep suspended Hunk jobs alive so `fg` restores the TUI and its in-progress state.
+
+- [#1051](https://github.com/modem-dev/hunk/pull/1051) [`64c0abd`](https://github.com/modem-dev/hunk/commit/64c0abd7a6a89570d0b7a53c85951182c8668505) - Keep wrapped diff rows responsive by sharing one hover target across their visual lines.
+
 ## 0.22.0-beta.1
 
 ### Minor Changes

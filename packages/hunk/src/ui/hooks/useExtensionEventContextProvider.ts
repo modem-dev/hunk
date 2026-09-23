@@ -14,6 +14,7 @@ import type {
   ExtensionPaneControls,
   ExtensionReviewReloadControls,
   ExtensionReviewNavigation,
+  ExtensionStatusLineControls,
 } from "../../extension-api/types";
 import { emitExtensionCustomEvent } from "../../extensions/events";
 import type { ExtensionLoadResult } from "../../extensions/types";
@@ -24,12 +25,14 @@ export function useExtensionEventContextProvider({
   createNavigation,
   createPaneControls,
   createReviewReloadControls,
+  createStatusLineControls,
   extensions,
 }: {
   createDialogs: (extensionId: string) => ExtensionDialogs;
   createNavigation: (extensionId: string) => ExtensionReviewNavigation;
   createPaneControls: (extensionId: string) => ExtensionPaneControls;
   createReviewReloadControls: () => ExtensionReviewReloadControls;
+  createStatusLineControls: (extensionId: string) => ExtensionStatusLineControls;
   extensions?: ExtensionLoadResult;
 }) {
   useLayoutEffect(() => {
@@ -44,6 +47,7 @@ export function useExtensionEventContextProvider({
         sidebars: panes,
         navigation: createNavigation(extensionId),
         dialogs: createDialogs(extensionId),
+        statusLine: createStatusLineControls(extensionId),
         review: createReviewReloadControls(),
         events: {
           emit(event, payload) {
@@ -61,5 +65,12 @@ export function useExtensionEventContextProvider({
         delete extensions.eventContextProvider;
       }
     };
-  }, [createDialogs, createNavigation, createPaneControls, createReviewReloadControls, extensions]);
+  }, [
+    createDialogs,
+    createNavigation,
+    createPaneControls,
+    createReviewReloadControls,
+    createStatusLineControls,
+    extensions,
+  ]);
 }

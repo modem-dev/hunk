@@ -9,7 +9,7 @@ Every keyboard shortcut is a named command. A `[keybindings]` table in your user
 [keybindings]
 "hunk.app.quit" = "ctrl+x"               # one chord
 "hunk.review.nextHunk" = ["]", "ctrl+n"] # several chords for one command
-"hunk.review.focusFilter" = "f"          # takes "f" away from page-down
+"hunk.review.focusFilter" = "/"          # takes "/" back from content search
 "hunk.history.nextCommit" = "ctrl+n"     # history has its own command ids
 "hunk.view.toggleMenuBar" = false        # unbind it entirely
 "myext.toggle" = "ctrl+g"                # extension commands too
@@ -20,7 +20,7 @@ Every id starts with the name of whoever owns the command: Hunk's own commands l
 ## Rules
 
 - **User bindings replace defaults.** The chords you list are the complete set of keys that command answers to.
-- **A key you bind is yours.** Any command holding the same chord only as a default gives it up and keeps its other keys.
+- **A key you bind is yours.** Any command holding the same chord only as a default gives it up and keeps its other keys. Above, `hunk.search.find` loses `/` and the filter — which ships unbound — takes it.
 - **`false` (or `[]`) unbinds a command**, leaving its keys doing nothing.
 - Two entries claiming one chord is a conflict: the first in the file wins and the session reports the other. Unknown ids and unusable chords are reported the same way, and the rest of the table still applies.
 

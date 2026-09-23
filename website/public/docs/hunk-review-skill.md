@@ -219,4 +219,5 @@ Guidelines:
 - **"Specify exactly one highlight target"** -- pass `highlight add` one of `--old-line` or `--new-line`.
 - **"Highlight --end must be greater than --start"** -- offsets are `[start, end)` UTF-16 code units into the line text; end is exclusive.
 - **"Specify either --next-comment or --prev-comment, not both."** -- choose one comment-navigation direction.
+- **"The session daemon is ..."** -- a `daemon-build-mismatch` (the `--json` error carries `daemon`, `cli`, `attachedSessions`, and `recommendedAction`). Tell the user which build is newer and how many windows are attached, then **ask** before running `hunk daemon restart --yes`; never restart unprompted. After the restart, windows that failed to register attach on their own, so re-run `hunk session list` instead of relaunching anything. When `recommendedAction` is `use-newer-hunk`, the daemon is the newer build: use that Hunk instead.
 - **"Could not read the raw diff for ..."** -- the session reloaded or closed while `--include-patch` was reading it. Re-run `review`; drop `--include-patch` if you only need file and hunk structure.

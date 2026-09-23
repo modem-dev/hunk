@@ -270,6 +270,98 @@ describe("install VM contract", () => {
     }
   });
 
+  test("accepts owned paths when the repo sits under a symlinked ancestor", () => {
+    // macOS hands out `/var/folders/...` from tmpdir(), where `/var` is a symlink to
+    // `/private/var`; a symlinked `$HOME` does the same on Linux. The repo root and the target
+    // must be compared in one spelling, or every harness-owned path reads as foreign.
+    const physical = mkdtempSync(path.join(tmpdir(), "hunk-install-vm-physical-"));
+    const linkParent = mkdtempSync(path.join(tmpdir(), "hunk-install-vm-link-"));
+    try {
+      const repoName = "repo";
+      const repo = path.join(physical, repoName);
+      const runtime = path.join(repo, "tmp", "install-vm");
+      mkdirSync(runtime, { recursive: true });
+
+      // Reach the same repo through a symlinked ancestor rather than its physical path.
+      const linkedRoot = path.join(linkParent, "linked-root");
+      symlinkSync(physical, linkedRoot);
+      const linkedRepo = path.join(linkedRoot, repoName);
+      const linkedRuntime = path.join(linkedRepo, "tmp", "install-vm");
+
+      // An existing leaf, and one that does not exist yet, must both be accepted and must both
+      // come back in the caller's spelling rather than the physical one.
+      const existing = path.join(linkedRuntime, "cache");
+      mkdirSync(existing, { recursive: true });
+      expect(assertSafeCleanTarget(linkedRepo, existing)).toBe(existing);
+
+      const missing = path.join(linkedRuntime, "not-created-yet", "nested");
+      expect(assertSafeInstallVmRuntimePath(linkedRepo, missing)).toBe(missing);
+
+      // Containment is still enforced when the repo is reached through the symlink.
+      expect(() =>
+        assertSafeInstallVmRuntimePath(linkedRepo, path.join(linkedRepo, "src")),
+      ).toThrow("outside");
+    } finally {
+      rmSync(physical, { recursive: true, force: true });
+      rmSync(linkParent, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects a target reached through a symlink that escapes the harness tree", () => {
+    const repo = mkdtempSync(path.join(tmpdir(), "hunk-install-vm-escape-"));
+    const outside = mkdtempSync(path.join(tmpdir(), "hunk-install-vm-escapee-"));
+    try {
+      const runtime = path.join(repo, "tmp", "install-vm");
+      mkdirSync(runtime, { recursive: true });
+      writeFileSync(path.join(outside, "loot"), "do not touch\n");
+      symlinkSync(outside, path.join(runtime, "linked"));
+
+      // Resolving the target through symlinks would make this read as owned; it is not. Assert
+      // which guard fires, so a change that swaps one rejection for another is visible here.
+      expect(() => assertSafeCleanTarget(repo, path.join(runtime, "linked", "loot"))).toThrow(
+        "symlink ancestor",
+      );
+      expect(() =>
+        assertSafeInstallVmRuntimePath(repo, path.join(runtime, "..", "..", "etc")),
+      ).toThrow("outside");
+      expect(() => assertSafeInstallVmRuntimePath(repo, outside)).toThrow("outside");
+      expect(Bun.file(path.join(outside, "loot")).size).toBeGreaterThan(0);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects a symlink inside the tree even when the full path exists", () => {
+    // A symlink that redirects within `tmp/install-vm` still has to be refused: canonicalizing
+    // the target would resolve it away, the symlink-ancestor walk would never see it, and a
+    // caller acting on the returned path would traverse it.
+    const repo = mkdtempSync(path.join(tmpdir(), "hunk-install-vm-inner-link-"));
+    try {
+      const runtime = path.join(repo, "tmp", "install-vm");
+      mkdirSync(path.join(runtime, "real", "sub"), { recursive: true });
+      symlinkSync(path.join(runtime, "real"), path.join(runtime, "alias"));
+
+      // Every shape has to be rejected, including the one where each segment already exists.
+      expect(() => assertSafeInstallVmRuntimePath(repo, path.join(runtime, "alias"))).toThrow(
+        "symlink ancestor",
+      );
+      expect(() =>
+        assertSafeInstallVmRuntimePath(repo, path.join(runtime, "alias", "sub")),
+      ).toThrow("symlink ancestor");
+      expect(() =>
+        assertSafeInstallVmRuntimePath(repo, path.join(runtime, "alias", "not-created-yet")),
+      ).toThrow("symlink ancestor");
+
+      // The same paths spelled without the symlink stay acceptable.
+      expect(assertSafeInstallVmRuntimePath(repo, path.join(runtime, "real", "sub"))).toBe(
+        path.join(runtime, "real", "sub"),
+      );
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
   test("acquires one runtime lock and refuses to reclaim stale or invalid owners", () => {
     const root = mkdtempSync(path.join(tmpdir(), "hunk-install-vm-lock-"));
     const lock = path.join(root, ".lock");

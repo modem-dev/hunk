@@ -6,6 +6,7 @@ import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
 import { SESSION_BROKER_REGISTRATION_VERSION } from "@hunk/session-broker-core";
 import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
+import { HUNK_DAEMON_CLIENT_NEWER_MESSAGE } from "../session/client/daemonSkew";
 import type {
   HunkSessionRegistration,
   HunkSessionServerMessage,
@@ -81,6 +82,7 @@ function createMockHostClient({
   type Bridge = Parameters<HunkSessionBrokerClient["setBridge"]>[0];
 
   let bridge: Bridge = null;
+  let noticeListener: ((notice: string | null) => void) | null = null;
   let latestSnapshot: HunkSessionSnapshot["state"] | null = null;
   let registration: HunkSessionRegistration = {
     registrationVersion: SESSION_BROKER_REGISTRATION_VERSION,
@@ -102,6 +104,13 @@ function createMockHostClient({
       replaceSession: (nextRegistration: HunkSessionRegistration) => {
         registration = nextRegistration;
       },
+      subscribeConnectionNotice: (listener: (notice: string | null) => void) => {
+        noticeListener = listener;
+        listener(null);
+        return () => {
+          if (noticeListener === listener) noticeListener = null;
+        };
+      },
       setBridge: (nextBridge: Bridge) => {
         bridge = nextBridge;
       },
@@ -109,6 +118,11 @@ function createMockHostClient({
         latestSnapshot = snapshot.state;
       },
     } as unknown as HunkSessionBrokerClient,
+    /** Emit one daemon link notice the way the broker client does after a refused hello. */
+    publishConnectionNotice: (notice: string | null) => {
+      if (!noticeListener) throw new Error("Expected App to subscribe to the daemon link notice.");
+      noticeListener(notice);
+    },
     dispatchCommand: async (message: HunkSessionServerMessage) => {
       if (!bridge) {
         throw new Error("Expected App to register a bridge before running the test command.");
@@ -4189,4 +4203,50 @@ describe("App interactions", () => {
       });
     }
   });
+
+  // Keep the daemon warning independent of timed notices, including when the status row overflows.
+  test.each([80, 120, 220])(
+    "keeps the daemon link notice on the %i-column status line until reconnect",
+    async (width) => {
+      const { hostClient, publishConnectionNotice } = createMockHostClient();
+      const bootstrap = createBootstrap();
+      bootstrap.keybindings = { "hunk.app.quti": "ctrl+x" };
+      const setup = await testRender(<AppHost bootstrap={bootstrap} hostClient={hostClient} />, {
+        width,
+        height: 20,
+      });
+      const notice = HUNK_DAEMON_CLIENT_NEWER_MESSAGE;
+
+      try {
+        await flush(setup);
+        expect(setup.captureCharFrame()).not.toContain(notice);
+        expect(setup.captureCharFrame()).toContain(
+          'Keybinding for unknown command "hunk.app.quti" ignored',
+        );
+
+        await act(async () => publishConnectionNotice(notice));
+        await flush(setup);
+        const statusRow = setup.captureCharFrame().trimEnd().split("\n").at(-1) ?? "";
+        expect(statusRow).toContain(notice);
+        if (width === 220) expect(statusRow).toContain("Keybinding for unknown command");
+        else expect(statusRow).not.toContain("Keybinding for unknown command");
+
+        // Expiring the ordinary notice must not clear the daemon's persistent condition.
+        await act(async () => {
+          await Bun.sleep(4_100);
+        });
+        await flush(setup);
+        expect(setup.captureCharFrame()).not.toContain("Keybinding for unknown command");
+        expect(setup.captureCharFrame().trimEnd().split("\n").at(-1)).toContain(notice);
+
+        await act(async () => publishConnectionNotice(null));
+        await flush(setup);
+        expect(setup.captureCharFrame()).not.toContain(notice);
+      } finally {
+        await act(async () => {
+          setup.renderer.destroy();
+        });
+      }
+    },
+  );
 });
