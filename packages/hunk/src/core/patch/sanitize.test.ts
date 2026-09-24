@@ -70,4 +70,42 @@ describe("sanitizePatchText", () => {
     ].join("\n");
     expect(sanitizePatchText(log)).toBe("diff --git a/f b/f\n--- a/f\n+++ b/f\n");
   });
+
+  test("normalizes combined diffs after stripping merge-commit metadata", () => {
+    const log = [
+      "commit cd165911d55e0e50133529655d9610e8ada0dcba",
+      "Merge: 6fd5054 3c5ae8b",
+      "Author: A <a@b>",
+      "Date:   now",
+      "",
+      "    merge resolved",
+      "",
+      "diff --cc notes.txt",
+      "index 78d91e5,dd9e8f8..4778d9e",
+      "--- a/notes.txt",
+      "+++ b/notes.txt",
+      "@@@ -1,3 -1,3 +1,3 @@@",
+      "  common",
+      "- main-line",
+      " -topic-line",
+      "++merged-line",
+      "  tail",
+      "",
+    ].join("\n");
+
+    expect(sanitizePatchText(log)).toBe(
+      [
+        "diff --git a/notes.txt b/notes.txt",
+        "index 78d91e5,dd9e8f8..4778d9e",
+        "--- a/notes.txt",
+        "+++ b/notes.txt",
+        "@@ -1,3 +1,3 @@",
+        " common",
+        "-main-line",
+        "+merged-line",
+        " tail",
+        "",
+      ].join("\n"),
+    );
+  });
 });
