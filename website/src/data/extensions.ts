@@ -29,7 +29,8 @@ export type ExtensionCategory =
   | "Line highlighter"
   | "File view"
   | "VCS backend"
-  | "Changeset transform";
+  | "Changeset transform"
+  | "Language";
 
 /** One directory listing, before build-time repository metadata is merged in. */
 export interface ExtensionListing {
@@ -148,6 +149,14 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     categories: ["Pane", "Command"],
     version: "0.1.0",
     apiVersion: 6,
+  },
+  {
+    repo: "HackAttack/hunk-starlark",
+    name: "hunk-starlark",
+    summary: "Highlights Bazel, Buck2, and other Starlark files as Python.",
+    categories: ["Language"],
+    version: "1.0.0",
+    apiVersion: 9,
   },
   {
     repo: "jacegodk/hunk-viewed",
