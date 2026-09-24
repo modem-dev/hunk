@@ -120,4 +120,64 @@ describe("computeLineRevealScrollTop", () => {
       computeLineRevealScrollTop({ lineTop: 0, lineHeight: 40, scrollTop: 5, viewportHeight: 20 }),
     ).toBe(0);
   });
+
+  test("keeps a margin clear of the top edge once the line crosses it", () => {
+    expect(
+      computeLineRevealScrollTop({
+        lineTop: 12,
+        lineHeight: 1,
+        scrollTop: 10,
+        viewportHeight: 20,
+        scrollOff: 5,
+      }),
+    ).toBe(7);
+  });
+
+  test("keeps a margin clear of the bottom edge once the line crosses it", () => {
+    expect(
+      computeLineRevealScrollTop({
+        lineTop: 25,
+        lineHeight: 1,
+        scrollTop: 10,
+        viewportHeight: 20,
+        scrollOff: 5,
+      }),
+    ).toBe(11);
+  });
+
+  test("leaves the viewport alone while the margin is already satisfied", () => {
+    expect(
+      computeLineRevealScrollTop({
+        lineTop: 15,
+        lineHeight: 1,
+        scrollTop: 10,
+        viewportHeight: 20,
+        scrollOff: 5,
+      }),
+    ).toBe(10);
+  });
+
+  test("clamps an oversized margin to half the viewport instead of fighting itself", () => {
+    expect(
+      computeLineRevealScrollTop({
+        lineTop: 12,
+        lineHeight: 1,
+        scrollTop: 10,
+        viewportHeight: 20,
+        scrollOff: 999,
+      }),
+    ).toBe(3);
+  });
+
+  test("never scrolls above the top of the stream with a margin set", () => {
+    expect(
+      computeLineRevealScrollTop({
+        lineTop: 0,
+        lineHeight: 1,
+        scrollTop: 5,
+        viewportHeight: 20,
+        scrollOff: 5,
+      }),
+    ).toBe(0);
+  });
 });

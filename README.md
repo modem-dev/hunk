@@ -173,6 +173,7 @@ tab_width = 4        # tab stops, 1-16
 file_gap = 1         # rows between files, including the ─ rule; 0 hides it
 hunk_gap = 0         # blank rows before later hunks
 wheel_scroll_lines = "auto" # auto acceleration, or a fixed 1-10 rows per event
+scroll_off = 0       # rows the current line keeps clear of the viewport edge while stepping: 0-40
 wrap_lines = false
 menu_bar = true
 animations = true
@@ -190,6 +191,8 @@ syntax scopes, and legacy syntax-table migration.
 `tab_width` controls source-code tab stops and can be overridden with `-x4` or `--tab-width 4`.
 `file_gap` is separator height between files, including the `─` rule; `hunk_gap` is blank rows before later hunks.
 `wheel_scroll_lines` is a user-only preference and can be overridden with `--wheel-scroll-lines 3`.
+`scroll_off` mirrors Vim's `scrolloff`: it keeps the current line clear of the viewport edge
+while stepping through a diff, and can be overridden with `--scroll-off 5`.
 Set `animations = false` to make panes open and close immediately.
 `prompt_save_view_preferences = false` disables the quit prompt for saving changed view preferences.
 `transparent_background` can also be written as `transparentBackground`.
