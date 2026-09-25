@@ -15,7 +15,7 @@ import {
 } from "../lib/appCommands";
 import type { ExtensionDialogRequest } from "../lib/extensionDialogs";
 import { toExtensionKeyEvent } from "../lib/extensionKeyEvent";
-import { isEscapeKey, isSaveDraftNoteKey } from "../lib/keyboard";
+import { isEscapeKey, isSaveDraftNoteKey, printableKeyText } from "../lib/keyboard";
 import { routeKeyOwnership, type KeyOwner } from "../lib/keyRouting";
 import { handleViewPreferenceQuitPromptKey } from "../lib/viewPreferenceQuitKeys";
 
@@ -57,6 +57,12 @@ export interface UseAppKeyboardShortcutsOptions {
   sendFileViewModeKey: (key: ExtensionKeyEvent) => ExtensionFileViewModeKeyResult;
   /** Whether a session-scoped extension keyboard mode currently owns review keys. */
   isKeyboardModeActive: () => boolean;
+  /** Whether a draft note editor is still mounting and has not taken focus yet. */
+  isDraftFocusPending: () => boolean;
+  /** Hold printable input for that draft instead of dispatching it as commands. */
+  queueDraftInput: (text: string) => void;
+  /** Deliver held input once the mounted draft editor owns the keyboard. */
+  flushDraftInput: () => void;
   /** Leave the active session keyboard mode. */
   exitKeyboardMode: () => void;
   /** Offer one key to the active session keyboard mode. */
@@ -122,6 +128,9 @@ export function useAppKeyboardShortcuts({
   exitFileViewMode,
   sendFileViewModeKey,
   isKeyboardModeActive,
+  isDraftFocusPending,
+  queueDraftInput,
+  flushDraftInput,
   exitKeyboardMode,
   sendKeyboardModeKey,
   focusArea,
@@ -159,6 +168,9 @@ export function useAppKeyboardShortcuts({
   const exitFileViewModeRef = useRef(exitFileViewMode);
   const sendFileViewModeKeyRef = useRef(sendFileViewModeKey);
   const isKeyboardModeActiveRef = useRef(isKeyboardModeActive);
+  const isDraftFocusPendingRef = useRef(isDraftFocusPending);
+  const queueDraftInputRef = useRef(queueDraftInput);
+  const flushDraftInputRef = useRef(flushDraftInput);
   const exitKeyboardModeRef = useRef(exitKeyboardMode);
   const sendKeyboardModeKeyRef = useRef(sendKeyboardModeKey);
   // These three close over live dialog state (the highlighted option, the typed
@@ -182,6 +194,9 @@ export function useAppKeyboardShortcuts({
   exitFileViewModeRef.current = exitFileViewMode;
   sendFileViewModeKeyRef.current = sendFileViewModeKey;
   isKeyboardModeActiveRef.current = isKeyboardModeActive;
+  isDraftFocusPendingRef.current = isDraftFocusPending;
+  queueDraftInputRef.current = queueDraftInput;
+  flushDraftInputRef.current = flushDraftInput;
   exitKeyboardModeRef.current = exitKeyboardMode;
   sendKeyboardModeKeyRef.current = sendKeyboardModeKey;
   acceptExtensionDialogRef.current = acceptExtensionDialog;
@@ -491,11 +506,33 @@ export function useAppKeyboardShortcuts({
       return "focused";
     }
 
+    // React may commit note focus before the windowed editor mounts. Until a
+    // real editor is focused, this transition owns keys in either focus state.
+    if (isDraftFocusPendingRef.current() && !renderer.currentFocusedEditor) {
+      if (isEscapeKey(key)) {
+        cancelDraftNote();
+        return "mine";
+      }
+      if (isSaveDraftNoteKey(key)) {
+        saveDraftNote();
+        return "mine";
+      }
+      const text = printableKeyText(key);
+      if (text !== undefined) queueDraftInputRef.current(text);
+      return "mine";
+    }
+
     if (focusAreaRef.current !== "note") {
-      // Extension panes can mount the same OpenTUI editors Hunk uses. The
-      // renderer is the live focus authority for those inputs, which do not
-      // participate in App's host-only focus-area state.
+      // Extension panes also own editors outside the host focus-area state.
       return renderer.currentFocusedEditor ? "focused" : "notMine";
+    }
+
+    // The draft editor owns the keyboard now, so input held for it during the
+    // transition is delivered first and this key lands after it. One input
+    // chunk's keys are routed before any render answers, which is why the
+    // delivery also happens here rather than only after a commit.
+    if (isDraftFocusPendingRef.current()) {
+      flushDraftInputRef.current();
     }
 
     if (isEscapeKey(key)) {

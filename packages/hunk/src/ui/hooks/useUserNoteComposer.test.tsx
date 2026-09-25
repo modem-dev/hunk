@@ -78,6 +78,51 @@ function baseOptions(
 }
 
 describe("useUserNoteComposer", () => {
+  for (const kind of ["create", "edit", "reply"] as const) {
+    test(`saves buffered ${kind} input before the opening render commits`, async () => {
+      const openedDraft: DraftReviewNote = {
+        ...draftNote,
+        body: kind === "edit" ? "existing " : "",
+        ...(kind === "edit" ? { kind: "edit", targetNoteId: savedNote.id } : {}),
+        ...(kind === "reply" ? { parentId: savedNote.id } : {}),
+      };
+      let body = openedDraft.body;
+      const events: Array<{ event: string; payload: unknown }> = [];
+      const harness = await renderComposer(
+        baseOptions({
+          startDraft: () => openedDraft,
+          startEdit: () => openedDraft,
+          startReply: () => openedDraft,
+          updateDraft: (nextBody, id) => {
+            expect(id).toBe(openedDraft.id);
+            body = nextBody;
+            return true;
+          },
+          saveDraft: () => (body ? { ...savedNote, summary: body } : null),
+          publishEvent: (event, payload) => events.push({ event, payload }),
+        }),
+      );
+      try {
+        await act(async () => {
+          const composer = harness.composer();
+          if (kind === "edit") composer.startUserNoteEdit(savedNote.id);
+          else if (kind === "reply") composer.startUserNoteReply(savedNote.id);
+          else composer.startUserNote();
+          composer.queueDraftInput("beta");
+          composer.saveDraftNote();
+        });
+        expect(body).toBe(kind === "edit" ? "betaexisting " : "beta");
+        expect(events).toHaveLength(1);
+        expect(events[0]).toMatchObject({
+          event: kind === "edit" ? "note_edited" : "note_created",
+          payload: { note: { body, draft: false, fileId: openedDraft.fileId } },
+        });
+      } finally {
+        await act(async () => harness.setup.renderer.destroy());
+      }
+    });
+  }
+
   test("prefers explicit targets, then hover, then the enabled keyboard cursor", async () => {
     const starts: Parameters<UseUserNoteComposerOptions["startDraft"]>[] = [];
     let cursorReads = 0;

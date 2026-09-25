@@ -1069,6 +1069,148 @@ describe("PTY notes", () => {
     }
   });
 
+  test("keystrokes that arrive with the draft-opening key land in the note", async () => {
+    const fixture = harness.createScrollableFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "unified"],
+      cols: 120,
+      rows: 26,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+      await harness.ensureKeyboardIsLive(session);
+      await session.press("down");
+
+      // One PTY write: the draft-opening key and the body arrive as a single
+      // chunk, so the characters are routed before the editor can mount.
+      session.writeRaw("cbeta");
+      const snapshot = await session.waitForText("beta");
+
+      expect(snapshot).toContain("Draft note");
+      expect(snapshot).toContain("beta");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("input held for a mounting draft survives an immediate save", async () => {
+    const fixture = harness.createScrollableFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "unified"],
+      cols: 120,
+      rows: 26,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+      await harness.ensureKeyboardIsLive(session);
+      await session.press("down");
+
+      session.writeRaw("cbeta\u0013");
+      const snapshot = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("beta") && !text.includes("Draft note"),
+      );
+
+      expect(snapshot).not.toContain("Draft note");
+      expect(snapshot).toContain("beta");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("a command key in the same chunk as the draft key keeps the note focused", async () => {
+    const fixture = harness.createScrollableFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "unified"],
+      cols: 120,
+      rows: 26,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+      await harness.ensureKeyboardIsLive(session);
+      await session.press("down");
+      await session.waitIdle({ timeout: 500 });
+
+      // 's' is a global command (toggle sidebar). In the same chunk as the draft
+      // key it must not run, and it must not leave the draft open without the
+      // keyboard: that state swallows every later keystroke and cannot be left
+      // with Escape.
+      session.writeRaw("cs");
+      await session.waitForText("Draft note");
+      session.writeRaw("check");
+      await session.waitForText("scheck");
+      const saved = await harness.pressAndWaitForSnapshot(
+        session,
+        ["ctrl", "s"],
+        (text) => text.includes("scheck") && !text.includes("Draft note"),
+      );
+      expect(saved).not.toContain("Draft note");
+      expect(saved).toContain("scheck");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("mouse-opened drafts retain typing from the same input chunk", async () => {
+    const fixture = harness.createDeletionOnlyFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "unified"],
+      cols: 120,
+      rows: 26,
+    });
+    try {
+      await session.waitForText("keep = true");
+      await harness.ensureKeyboardIsLive(session);
+      const initial = await session.text({ immediate: true });
+      await revealAddNoteOnRow(session, lineIndexOf(initial, "keep = true"));
+      const rows = session
+        .getTerminalData()
+        .lines.map((line) => line.spans.map((span) => span.text).join(""));
+      const y = rows.findIndex((row) => row.includes("[+]"));
+      expect(y).toBeGreaterThanOrEqual(0);
+      const x = rows[y]!.indexOf("[+]") + 1;
+      // Mouse down, mouse up, and typing share one write with no mount delay.
+      session.writeRaw(`\u001b[<0;${x + 1};${y + 1}M\u001b[<0;${x + 1};${y + 1}msmouse`);
+      const draft = await session.waitForText("smouse");
+      expect(draft).toContain("Draft note");
+      await harness.pressAndWaitForSnapshot(
+        session,
+        ["ctrl", "s"],
+        (text) => text.includes("smouse") && !text.includes("Draft note"),
+      );
+    } finally {
+      session.close();
+    }
+  });
+
+  test("cancelling a mounting draft discards its buffered text", async () => {
+    const fixture = harness.createScrollableFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "unified"],
+      cols: 120,
+      rows: 26,
+    });
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/);
+      await harness.ensureKeyboardIsLive(session);
+      await session.press("down");
+      // CSI-u Escape avoids ambiguity with legacy Alt-prefixed typing.
+      session.writeRaw("cdiscarded\u001b[27u");
+      await session.waitIdle({ timeout: 500 });
+      session.writeRaw("ckept\u0013");
+      const saved = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("kept") && !text.includes("Draft note"),
+      );
+      expect(saved).not.toContain("discarded");
+    } finally {
+      session.close();
+    }
+  });
+
   test("clicking diff add-note affordances can cancel and save draft notes", async () => {
     const fixture = harness.createLongWrapFilePair();
     const session = await harness.launchHunk({
