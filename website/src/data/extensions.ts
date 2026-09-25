@@ -126,6 +126,15 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     apiVersion: 6,
   },
   {
+    repo: "brettinternet/hunk-guide",
+    name: "hunk-guide",
+    summary:
+      "Turns a changeset into a guided, section-by-section tour, with progress tracking and checkpoints alongside the review.",
+    categories: ["Pane", "Command"],
+    version: "0.1.0",
+    apiVersion: 30,
+  },
+  {
     repo: "evantravers/hunk-mark-as-reviewed",
     name: "hunk-mark-as-reviewed",
     summary:
