@@ -56,7 +56,7 @@ everywhere). The manifest field is `hunk`:
 
 ```text
 ~/.config/hunk/extensions/my-ext/
-  package.json          # {"hunk": {"extensions": ["./src/index.ts"]}}
+  package.json          # {"hunk": {"id": "my-ext", "extensions": ["./src/index.ts"]}}
   node_modules/         # bun install / npm install, right here
   src/
     index.ts            # the declared entry
@@ -102,10 +102,13 @@ treated as a directory _of_ extensions and scanned with the patterns above.
 
 An extension's **id** is its file stem, or its folder name for
 `<name>/index.ts`. A manifest that declares a single entry also keeps the
-folder's name, whatever the entry file is called. The id is what
-`[extension.<id>]` config tables key off, so moving a single-file extension into
-a folder of the same name — or later giving that folder a manifest — keeps its
-config working.
+folder's name, whatever the entry file is called, unless it declares an explicit
+`hunk.id`. Use that field when a checkout or Worktrunk folder name differs from
+the extension's stable published identity. The id is what `[extension.<id>]`
+config tables key off, so moving a single-file extension into a folder of the
+same name — or later giving that folder a manifest — keeps its config working.
+For multi-entry manifests, `hunk.id` is ignored and entries retain their
+per-file ids.
 
 The id is also the namespace your extension owns: its commands are
 `<id>.<commandId>` and its panes `<id>:<viewId>`. So the id has to be
@@ -115,7 +118,9 @@ spelled like a name — starting with a letter or digit, then letters, digits,
 whose id breaks a rule is skipped with a startup notice naming the file; rename
 it and it loads. If two discovery sources offer the same id, the first in
 [source order](#where-hunk-looks-for-extensions) loads and the other is skipped the
-same way, since one id cannot own two config tables.
+same way, since one id cannot own two config tables. In particular, an explicit
+`--extension` flag is considered before managed global installs, so a local
+checkout declaring the managed extension's id wins.
 
 `--no-extensions` disables user extensions for one run — nothing on disk is
 read, let alone executed. Use it when triaging a bug.
