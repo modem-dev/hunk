@@ -157,6 +157,31 @@ describe("plain text pager fallback", () => {
     expect(spawnCalled).toBe(false);
   });
 
+  test("uses the explicit direct writer for production-style piped output", async () => {
+    let directOutput = "";
+    let streamWrites = 0;
+
+    await pagePlainText(
+      "plain text output",
+      {},
+      createPagerDeps({
+        stdout: {
+          isTTY: false,
+          write() {
+            streamWrites += 1;
+            return true;
+          },
+        },
+        writeStdoutImpl(text) {
+          directOutput += text;
+        },
+      }),
+    );
+
+    expect(directOutput).toBe("plain text output");
+    expect(streamWrites).toBe(0);
+  });
+
   test("sanitizes terminal controls before writing plain text directly", async () => {
     let written = "";
 

@@ -139,6 +139,8 @@ export function resolveTextPagerCommand(env: NodeJS.ProcessEnv = process.env): s
 /** Minimal dependencies for testing pager behavior without spawning a real subprocess. */
 export interface PlainTextPagerDeps {
   stdout: Pick<NodeJS.WriteStream, "isTTY" | "write">;
+  /** Write sanitized output directly through stdout's descriptor. */
+  writeStdoutImpl?: (text: string) => void;
   spawnImpl: (command: string, args: string[], options: SpawnOptions) => ChildProcess;
 }
 
@@ -148,26 +150,35 @@ export interface PlainTextPagerWriter {
   close(): Promise<void>;
 }
 
+/** Write plain text directly, using the descriptor writer when the caller exits immediately. */
+function writePlainTextDirect(text: string, deps: PlainTextPagerDeps) {
+  const safeText = sanitizeTerminalText(text);
+  if (deps.writeStdoutImpl) {
+    deps.writeStdoutImpl(safeText);
+    return;
+  }
+
+  deps.stdout.write(safeText);
+}
+
+/** Build production pager dependencies with blocking direct output for piped stdout. */
+function createDefaultPlainTextPagerDeps(): PlainTextPagerDeps {
+  return {
+    stdout: process.stdout,
+    writeStdoutImpl: writeStdout,
+    spawnImpl: spawn,
+  };
+}
+
 /** Open one pager writer so callers can stream bounded chunks after deciding output will overflow. */
 export function openPlainTextPager(
   env: NodeJS.ProcessEnv = process.env,
-  deps: PlainTextPagerDeps = {
-    // Write through the descriptor rather than `process.stdout`: a piped consumer takes one
-    // buffer at a time, and the caller exits as soon as this returns.
-    stdout: {
-      isTTY: process.stdout.isTTY,
-      write: (chunk) => {
-        writeStdout(String(chunk));
-        return true;
-      },
-    },
-    spawnImpl: spawn,
-  },
+  deps: PlainTextPagerDeps = createDefaultPlainTextPagerDeps(),
 ): PlainTextPagerWriter {
   if (!deps.stdout.isTTY) {
     return {
       async write(text) {
-        deps.stdout.write(sanitizeTerminalText(text));
+        writePlainTextDirect(text, deps);
       },
       async close() {},
     };
@@ -245,10 +256,12 @@ export function openPlainTextPager(
 export async function pagePlainText(
   text: string,
   env: NodeJS.ProcessEnv = process.env,
-  deps: PlainTextPagerDeps = { stdout: process.stdout, spawnImpl: spawn },
+  deps: PlainTextPagerDeps = createDefaultPlainTextPagerDeps(),
 ) {
   if (!deps.stdout.isTTY) {
-    deps.stdout.write(sanitizeTerminalText(text));
+    // Headless callers exit immediately after this function resolves. The production direct
+    // writer waits for each pipe buffer and tolerates a consumer that closes early.
+    writePlainTextDirect(text, deps);
     return;
   }
   const pager = openPlainTextPager(env, deps);
