@@ -51,6 +51,8 @@ export const REVIEW_SELECTION_WRAP_POLICY: Readonly<
 export interface ReviewNavigationFile {
   fileKey: string;
   hunkCount: number;
+  /** Optional sparse hunk positions for a terminal presentation projection. */
+  hunkIndexes?: readonly number[];
 }
 
 /**
@@ -136,10 +138,9 @@ function cursorMatches(cursor: ReviewHunkCursor, selection: ReviewSemanticSelect
 /** Flatten every hunk of every navigable file into one top-to-bottom cursor list. */
 export function reviewStreamCursors(files: readonly ReviewNavigationFile[]): ReviewHunkCursor[] {
   return files.flatMap((file) =>
-    Array.from({ length: file.hunkCount }, (_unused, hunkIndex) => ({
-      fileKey: file.fileKey,
-      hunkIndex,
-    })),
+    (
+      file.hunkIndexes ?? Array.from({ length: file.hunkCount }, (_unused, hunkIndex) => hunkIndex)
+    ).map((hunkIndex) => ({ fileKey: file.fileKey, hunkIndex })),
   );
 }
 
@@ -153,10 +154,11 @@ export function reviewAnnotatedCursors(
     if (!annotated || annotated.size === 0) {
       return [];
     }
-    return Array.from({ length: file.hunkCount }, (_unused, hunkIndex) => ({
-      fileKey: file.fileKey,
-      hunkIndex,
-    })).filter((cursor) => annotated.has(cursor.hunkIndex));
+    return (
+      file.hunkIndexes ?? Array.from({ length: file.hunkCount }, (_unused, hunkIndex) => hunkIndex)
+    )
+      .map((hunkIndex) => ({ fileKey: file.fileKey, hunkIndex }))
+      .filter((cursor) => annotated.has(cursor.hunkIndex));
   });
 }
 
@@ -294,7 +296,7 @@ function planFileMove(
 
   return {
     fileKey: nextFile.fileKey,
-    hunkIndex: REVIEW_FILE_JUMP_HUNK_INDEX,
+    hunkIndex: nextFile.hunkIndexes?.[0] ?? REVIEW_FILE_JUMP_HUNK_INDEX,
     reveal: REVIEW_FILE_JUMP_REVEAL,
   };
 }
@@ -410,7 +412,7 @@ function planAnnotatedFileMove(
   // content, and starting each file at its header would push that content down the page.
   return {
     fileKey: nextFile.fileKey,
-    hunkIndex: REVIEW_FILE_JUMP_HUNK_INDEX,
+    hunkIndex: nextFile.hunkIndexes?.[0] ?? REVIEW_FILE_JUMP_HUNK_INDEX,
     reveal: { anchor: "hunk", scrollToNote: false },
   };
 }

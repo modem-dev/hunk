@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 28;
+export const HUNK_EXTENSION_API_VERSION = 30;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -1264,7 +1264,8 @@ export interface ExtensionReviewNavigation {
  *
  * Actions stay valid for as long as the component is mounted.
  */
-export interface ExtensionPaneActions extends ExtensionReviewNavigation {
+export interface ExtensionPaneActions
+  extends ExtensionReviewNavigation, ExtensionReviewPresentationControls {
   /** Copy text through the terminal clipboard integration, returning false when unavailable. */
   copyText(text: string): boolean;
   /** Show one toast, attributed to the owning extension. */
@@ -1356,6 +1357,8 @@ export interface ExtensionPaneAvailabilityContext {
 export interface ExtensionPaneProps {
   /** Immutable review-source metadata, or null for ordinary reviews. */
   readonly review: ExtensionReviewDescriptor | null;
+  /** Opaque current review generation for generation-scoped presentation requests. */
+  readonly reviewGeneration: string | null;
   readonly files: readonly ExtensionDiffFile[];
   readonly selectedFileId: string | null;
   readonly selectedHunkIndex: number | null;
@@ -1873,8 +1876,32 @@ export interface ExtensionReviewSnapshot {
   readonly notes: readonly ExtensionReviewSnapshotNote[];
 }
 
+/** Runtime file and hunk targets retained by one transient extension presentation. */
+export interface ExtensionReviewPresentationScopeFile {
+  /** Runtime file identity valid only for `generation`. */
+  readonly fileId: string;
+  /** Hunk indexes in the file's canonical render order. */
+  readonly hunkIndexes: readonly number[];
+}
+
+/** One extension-owned, transient projection of the current review generation. */
+export interface ExtensionReviewPresentationScope {
+  /** Generation returned by `review.snapshot()`. */
+  readonly generation: string;
+  /** Files and hunks to retain in the host review presentation. */
+  readonly files: readonly ExtensionReviewPresentationScopeFile[];
+}
+
+/** Controls for one extension's generation-scoped presentation projection. */
+export interface ExtensionReviewPresentationControls {
+  /** Replace this extension's scope; returns false for stale or invalid targets. */
+  setPresentationScope(scope: ExtensionReviewPresentationScope): boolean;
+  /** Clear only this extension's owned scope. */
+  clearPresentationScope(): void;
+}
+
 /** Read the authoritative review while one extension command retains authority. */
-export interface ExtensionReviewControls {
+export interface ExtensionReviewControls extends ExtensionReviewPresentationControls {
   /**
    * Capture the current immutable review state, or return null after a reload or host teardown.
    * Call again before irreversible asynchronous work and compare generation plus stateRevision.

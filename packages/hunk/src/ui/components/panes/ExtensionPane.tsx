@@ -5,6 +5,8 @@ import type {
   ExtensionNotifyType,
   ExtensionPaneActions,
   ExtensionPaneKeybindings,
+  ExtensionReviewPresentationControls,
+  ExtensionReviewPresentationScope,
   ExtensionPaneProps,
   ExtensionCurrentLinePaint,
 } from "../../../extension-api/types";
@@ -75,9 +77,15 @@ class ExtensionPaneErrorBoundary extends Component<
   }
 }
 
+const EMPTY_PRESENTATION_CONTROLS: ExtensionReviewPresentationControls = {
+  setPresentationScope: () => false,
+  clearPresentationScope: () => undefined,
+};
+
 export interface ExtensionPaneHostProps {
   registered: RegisteredPane;
   review?: ExtensionPaneProps["review"];
+  reviewGeneration?: ExtensionPaneProps["reviewGeneration"];
   files: DiffFile[];
   fileViews: ExtensionDiffFile[];
   selectedFileId: string | null;
@@ -94,6 +102,7 @@ export interface ExtensionPaneHostProps {
   onSelectFile: (fileId: string) => void;
   onSelectHunk: (fileId: string, hunkIndex: number) => void;
   onRevealLine: (fileId: string, side: "old" | "new", line: number) => "line" | "hunk" | "none";
+  presentation?: ExtensionReviewPresentationControls;
   onRenderFailure?: () => void;
 }
 
@@ -101,6 +110,7 @@ export interface ExtensionPaneHostProps {
 function ExtensionPaneHostView({
   registered,
   review = null,
+  reviewGeneration = null,
   files,
   fileViews,
   selectedFileId,
@@ -117,6 +127,7 @@ function ExtensionPaneHostView({
   onSelectFile,
   onSelectHunk,
   onRevealLine,
+  presentation = EMPTY_PRESENTATION_CONTROLS,
   onRenderFailure,
 }: ExtensionPaneHostProps) {
   const { extensionId } = registered;
@@ -124,14 +135,30 @@ function ExtensionPaneHostView({
   // Selection rerenders the pane host, but it does not replace the capabilities these callbacks
   // represent. Keep the public actions stable so memoized extension rows do not all repaint when
   // only the selected file changed; ref indirection still invokes the latest host generation.
-  const actionTargetsRef = useRef({ notify, onCopyText, onSelectFile, onSelectHunk, onRevealLine });
-  actionTargetsRef.current = { notify, onCopyText, onSelectFile, onSelectHunk, onRevealLine };
+  const actionTargetsRef = useRef({
+    files,
+    notify,
+    onCopyText,
+    onSelectFile,
+    onSelectHunk,
+    onRevealLine,
+    presentation,
+  });
+  actionTargetsRef.current = {
+    files,
+    notify,
+    onCopyText,
+    onSelectFile,
+    onSelectHunk,
+    onRevealLine,
+    presentation,
+  };
   const actions = useMemo<ExtensionPaneActions>(
     () =>
       Object.freeze({
         ...createGuardedReviewNavigation({
           extensionId,
-          getFiles: () => files,
+          getFiles: () => actionTargetsRef.current.files,
           notify: (message, type) => actionTargetsRef.current.notify(message, type),
           onSelectFile: (fileId) => actionTargetsRef.current.onSelectFile(fileId),
           onSelectHunk: (fileId, hunkIndex) =>
@@ -145,12 +172,19 @@ function ExtensionPaneHostView({
         notify(message: string, type: ExtensionNotifyType = "info") {
           actionTargetsRef.current.notify(`${extensionId}: ${message}`, type);
         },
+        setPresentationScope(scope: ExtensionReviewPresentationScope) {
+          return actionTargetsRef.current.presentation.setPresentationScope(scope);
+        },
+        clearPresentationScope() {
+          actionTargetsRef.current.presentation.clearPresentationScope();
+        },
       }),
-    [extensionId, files],
+    [extensionId],
   );
   const View = registered.pane.component as (props: ExtensionPaneProps) => ReactNode;
   const viewProps: ExtensionPaneProps = {
     review,
+    reviewGeneration,
     files: fileViews,
     selectedFileId,
     selectedHunkIndex,
@@ -218,8 +252,12 @@ export const ExtensionPaneHost = memo(
   (previous, next) =>
     previous.registered === next.registered &&
     previous.review === next.review &&
+    previous.reviewGeneration === next.reviewGeneration &&
     previous.files.length === next.files.length &&
     previous.files.every((file, index) => file === next.files[index]) &&
+    previous.fileViews.length === next.fileViews.length &&
+    previous.fileViews.every((fileView, index) => fileView === next.fileViews[index]) &&
+    previous.presentation === next.presentation &&
     previous.selectedFileId === next.selectedFileId &&
     previous.selectedHunkIndex === next.selectedHunkIndex &&
     previous.placement === next.placement &&

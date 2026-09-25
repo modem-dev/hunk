@@ -74,6 +74,7 @@ export function DiffSectionBody({
   sourceStatus,
   tabWidth = DEFAULT_TAB_WIDTH,
   hunkGap = DEFAULT_HUNK_GAP,
+  visibleHunkIndexes,
   wrapLines = false,
   theme,
   visibleAgentNotes = EMPTY_VISIBLE_AGENT_NOTES,
@@ -107,6 +108,7 @@ export function DiffSectionBody({
   sourceStatus?: FileSourceStatus | undefined;
   tabWidth?: number;
   hunkGap?: number;
+  visibleHunkIndexes?: ReadonlySet<number>;
   wrapLines?: boolean;
   theme: AppTheme;
   visibleAgentNotes?: VisibleAgentNote[];
@@ -215,6 +217,7 @@ export function DiffSectionBody({
         hunkGap,
         theme,
         visibleAgentNotes,
+        visibleHunkIndexes,
       }),
     [
       expandedGapKeys,
@@ -228,6 +231,7 @@ export function DiffSectionBody({
       hunkGap,
       theme,
       visibleAgentNotes,
+      visibleHunkIndexes,
     ],
   );
   const rowPlanHighlighted =

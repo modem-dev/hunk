@@ -1065,6 +1065,10 @@ describe("Pierre diff rows", () => {
     expect(between).toBeDefined();
     expect(between?.oldRange).toEqual([9, 21]);
     expect(between?.newRange).toEqual([9, 21]);
+
+    const scopedRows = buildSplitRows(file, null, theme, undefined, new Set([1]));
+    expect(scopedRows.every((row) => row.hunkIndex === 1)).toBe(true);
+    expect(scopedRows.some((row) => row.type === "collapsed")).toBe(false);
   });
 
   test("passes exact Shiki scope colors through in dark and light", async () => {

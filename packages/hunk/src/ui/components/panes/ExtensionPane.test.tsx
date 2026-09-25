@@ -7,6 +7,7 @@ import type {
   ExtensionPaneActions,
   ExtensionPaneKeybindings,
   ExtensionPaneProps,
+  ExtensionReviewPresentationScope,
 } from "../../../extension-api/types";
 import { toReadOnlyFileViews } from "../../../extensions/events";
 import type { RegisteredPane } from "../../../extensions/types";
@@ -72,13 +73,16 @@ describe("ExtensionPaneHost props", () => {
       id: "#1",
     });
     let received: ExtensionPaneProps["review"] | undefined;
+    let receivedGeneration: string | null | undefined;
     await withPane(
       <ExtensionPaneHost
         registered={registeredView((props) => {
           received = props.review;
+          receivedGeneration = props.reviewGeneration;
           return <text content="probe" />;
         })}
         review={review}
+        reviewGeneration="generation-a"
         files={files}
         fileViews={toReadOnlyFileViews(files)}
         selectedFileId={null}
@@ -96,20 +100,130 @@ describe("ExtensionPaneHost props", () => {
       />,
       async () => {
         expect(received).toBe(review);
+        expect(receivedGeneration).toBe("generation-a");
       },
     );
   });
 });
 
 describe("ExtensionPaneHost actions", () => {
+  test("rerenders for generation and presentation-control changes but memoizes equivalent props", async () => {
+    const files = createTestFiles();
+    const fileViews = toReadOnlyFileViews(files);
+    const theme = resolveTheme("github-dark-default", null);
+    const presentationA = {
+      setPresentationScope: () => true,
+      clearPresentationScope: () => {},
+    };
+    const presentationB = {
+      setPresentationScope: () => true,
+      clearPresentationScope: () => {},
+    };
+    let setGeneration!: (generation: string) => void;
+    let setPresentation!: (presentation: typeof presentationA) => void;
+    let forceParentRender!: () => void;
+    let renders = 0;
+    const registered = registeredView(() => {
+      renders += 1;
+      return <text content="probe" />;
+    });
+
+    function Harness() {
+      const [generation, updateGeneration] = useState("generation-a");
+      const [presentation, updatePresentation] = useState(presentationA);
+      const [, setRevision] = useState(0);
+      setGeneration = updateGeneration;
+      setPresentation = updatePresentation;
+      forceParentRender = () => setRevision((revision) => revision + 1);
+      return (
+        <ExtensionPaneHost
+          registered={registered}
+          reviewGeneration={generation}
+          files={files}
+          fileViews={fileViews}
+          selectedFileId={null}
+          selectedHunkIndex={null}
+          theme={theme}
+          width={30}
+          height={20}
+          placement="left"
+          currentLine={null}
+          keybindings={TEST_KEYBINDINGS}
+          notify={() => {}}
+          onSelectFile={() => {}}
+          onSelectHunk={() => {}}
+          onRevealLine={() => "line"}
+          presentation={presentation}
+        />
+      );
+    }
+
+    await withPane(<Harness />, async () => {
+      expect(renders).toBe(1);
+      await act(async () => forceParentRender());
+      expect(renders).toBe(1);
+      await act(async () => setGeneration("generation-b"));
+      expect(renders).toBe(2);
+      await act(async () => setPresentation(presentationB));
+      expect(renders).toBe(3);
+    });
+  });
+
+  test("keeps action identity stable when presentation changes visible files", async () => {
+    const allFiles = createTestFiles();
+    const theme = resolveTheme("github-dark-default", null);
+    let setVisibleFiles!: (files: typeof allFiles) => void;
+    const actions: ExtensionPaneActions[] = [];
+    let renders = 0;
+    const registered = registeredView((props) => {
+      renders += 1;
+      actions.push(props.actions);
+      return <text content="probe" />;
+    });
+
+    function Harness() {
+      const [visibleFiles, setFiles] = useState(allFiles);
+      setVisibleFiles = setFiles;
+      return (
+        <ExtensionPaneHost
+          registered={registered}
+          files={visibleFiles}
+          fileViews={toReadOnlyFileViews(visibleFiles)}
+          selectedFileId={visibleFiles[0]?.id ?? null}
+          selectedHunkIndex={0}
+          reviewGeneration="generation-a"
+          theme={theme}
+          width={30}
+          height={20}
+          placement="left"
+          currentLine={null}
+          keybindings={TEST_KEYBINDINGS}
+          notify={() => {}}
+          onSelectFile={() => {}}
+          onSelectHunk={() => {}}
+          onRevealLine={() => "line"}
+        />
+      );
+    }
+
+    await withPane(<Harness />, async () => {
+      const firstActions = actions.at(-1);
+      expect(renders).toBe(1);
+      await act(async () => setVisibleFiles([allFiles[1]!]));
+      expect(renders).toBe(2);
+      expect(actions.at(-1)).toBe(firstActions);
+    });
+  });
+
   test("refuses garbage hunk indices and clamps the rest into the file's range", async () => {
     const files = createTestFiles();
     const theme = resolveTheme("github-dark-default", null);
     const notifications: string[] = [];
     const copied: string[] = [];
     const hunkSelections: Array<[string, number]> = [];
+    const presentationScopes: ExtensionReviewPresentationScope[] = [];
+    let presentationClears = 0;
     let actions: ExtensionPaneActions | undefined;
-
     await withPane(
       <ExtensionPaneHost
         registered={registeredView((props) => {
@@ -135,6 +249,15 @@ describe("ExtensionPaneHost actions", () => {
         onSelectFile={() => {}}
         onSelectHunk={(fileId, hunkIndex) => hunkSelections.push([fileId, hunkIndex])}
         onRevealLine={() => "line"}
+        presentation={{
+          setPresentationScope: (scope) => {
+            presentationScopes.push(scope);
+            return true;
+          },
+          clearPresentationScope: () => {
+            presentationClears += 1;
+          },
+        }}
       />,
       async () => {
         if (!actions) {
@@ -143,6 +266,14 @@ describe("ExtensionPaneHost actions", () => {
 
         expect(actions.copyText("revision-a")).toBeTrue();
         expect(copied).toEqual(["revision-a"]);
+        const scope: ExtensionReviewPresentationScope = {
+          generation: "generation-a",
+          files: [{ fileId: "alpha", hunkIndexes: [0] }],
+        };
+        expect(actions.setPresentationScope(scope)).toBeTrue();
+        actions.clearPresentationScope();
+        expect(presentationScopes).toEqual([scope]);
+        expect(presentationClears).toBe(1);
 
         // Selection state, reveal scrolling, and selection_changed all carry
         // the index, so a non-finite value must be refused outright...

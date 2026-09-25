@@ -688,13 +688,18 @@ export function buildSplitRows(
   highlighted: HighlightedDiffCode | null,
   theme: AppTheme,
   tabWidth = DEFAULT_TAB_WIDTH,
+  visibleHunkIndexes?: ReadonlySet<number>,
 ): DiffRow[] {
   const rows: DiffRow[] = [];
   const deletionLines = highlighted?.deletionLines ?? [];
   const additionLines = highlighted?.additionLines ?? [];
+  const splitVisibleHunkIndexes = visibleHunkIndexes;
 
   for (const [hunkIndex, hunk] of file.metadata.hunks.entries()) {
-    const leadingGap = reviewLeadingGap(file.metadata, hunkIndex);
+    if (splitVisibleHunkIndexes && !splitVisibleHunkIndexes.has(hunkIndex)) continue;
+    const leadingGap = splitVisibleHunkIndexes
+      ? undefined
+      : reviewLeadingGap(file.metadata, hunkIndex);
     if (leadingGap) {
       rows.push(collapsedGapRow(file, leadingGap, "collapsed:"));
     }
@@ -795,7 +800,7 @@ export function buildSplitRows(
     }
   }
 
-  const trailingGap = reviewTrailingGap(file.metadata);
+  const trailingGap = splitVisibleHunkIndexes ? undefined : reviewTrailingGap(file.metadata);
   if (trailingGap) {
     rows.push(collapsedGapRow(file, trailingGap, "collapsed:"));
   }
@@ -809,13 +814,18 @@ export function buildUnifiedRows(
   highlighted: HighlightedDiffCode | null,
   theme: AppTheme,
   tabWidth = DEFAULT_TAB_WIDTH,
+  visibleHunkIndexes?: ReadonlySet<number>,
 ): DiffRow[] {
   const rows: DiffRow[] = [];
   const deletionLines = highlighted?.deletionLines ?? [];
   const additionLines = highlighted?.additionLines ?? [];
+  const unifiedVisibleHunkIndexes = visibleHunkIndexes;
 
   for (const [hunkIndex, hunk] of file.metadata.hunks.entries()) {
-    const leadingGap = reviewLeadingGap(file.metadata, hunkIndex);
+    if (unifiedVisibleHunkIndexes && !unifiedVisibleHunkIndexes.has(hunkIndex)) continue;
+    const leadingGap = unifiedVisibleHunkIndexes
+      ? undefined
+      : reviewLeadingGap(file.metadata, hunkIndex);
     if (leadingGap) {
       rows.push(collapsedGapRow(file, leadingGap, "unified:collapsed:"));
     }
@@ -909,7 +919,7 @@ export function buildUnifiedRows(
     }
   }
 
-  const trailingGap = reviewTrailingGap(file.metadata);
+  const trailingGap = unifiedVisibleHunkIndexes ? undefined : reviewTrailingGap(file.metadata);
   if (trailingGap) {
     rows.push(collapsedGapRow(file, trailingGap, "unified:collapsed:"));
   }

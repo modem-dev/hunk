@@ -307,9 +307,11 @@ and retires the replaced instance at that explicit ownership boundary.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `28`). Branch on it if you want
-one file to support several Hunk versions. Version 28 adds host-owned syntax highlighting for
-file-view code documents; version 27 adds `ctx.selection.files`, the visible files in review order;
+The API generation this Hunk speaks (currently `30`). Branch on it if you want
+one file to support several Hunk versions. Version 30 adds the opaque current review generation
+in pane props; version 29 adds generation-scoped extension review presentation scopes; version 28
+adds host-owned syntax highlighting for file-view code documents;
+version 27 adds `ctx.selection.files`, the visible files in review order;
 version 26 adds the status line (`ctx.statusLine` items and `ctx.prompts.line()` inline prompts);
 version 25 adds Promise-returning watch signatures and watch cancellation; version 24 adds review
 metadata to VCS patch results and short display revisions to commit descriptors; version 23 adds
@@ -967,6 +969,7 @@ The component receives fresh props as the app changes:
 | Prop                | What it is                                                                                                                                                                |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `review`            | immutable review-source metadata (`change-request`, `commit`, or `comparison`), or `null` for ordinary reviews                                                            |
+| `reviewGeneration`  | opaque current generation string for `actions.setPresentationScope`, or `null` before the review settles                                                                  |
 | `files`             | the visible reviewed files, review-stream order, filtered, frozen views (each carries `changeType`, `statsTruncated`, and `hunks` summaries beside the usual file fields) |
 | `selectedFileId`    | the selected file, or `null`                                                                                                                                              |
 | `selectedHunkIndex` | the selected hunk within that file, or `null`                                                                                                                             |
@@ -988,7 +991,19 @@ stream scrolls, selection updates, and the `selection_changed` event fires
 exactly as if the user had clicked a built-in row. `actions.copyText(text)` uses the terminal's
 OSC 52 clipboard integration and returns `false` when unavailable. Extensions that call it or read
 `theme.copyAction` should declare `"hunk": { "apiVersion": 20 }` in their manifest. `actions.notify(message,
-type?)` shows a toast attributed to your extension. An action given a file id
+type?)` shows a toast attributed to your extension. To scope from a pane mouse
+handler, use `props.reviewGeneration` as the scope's `generation` and the
+visible file `id` plus hunk indexes as its targets:
+
+```ts
+props.actions.setPresentationScope({
+  generation: props.reviewGeneration!,
+  files: [{ fileId: file.id, hunkIndexes: [hunk.index] }],
+});
+```
+
+Guard the call when `reviewGeneration` is `null`; the host rejects stale or malformed
+requests. An action given a file id
 that is not currently visible is refused with a warning rather than corrupting
 the selection. A pane's `actions` carry the same navigation methods a command
 handler's [`ctx.navigation`](#navigating-the-review) does, with the same
@@ -1902,8 +1917,25 @@ session keyboard modes. See [Session keyboard modes](#session-keyboard-modes).
 #### Reading the authoritative review
 
 `ctx.review.snapshot()` returns a deeply immutable projection of the shared
-ReviewStore, or `null` after this command's review generation has been retired.
-It contains the opaque producer `generation`, the store's `stateRevision`, every
+ReviewStore, or `null` after this command's review generation has been retired. The same
+`ctx.review` object can set or clear a transient presentation scope for the current generation;
+the host intersects scopes from active extensions and applies the result after the user's file
+filter without changing canonical review state. Each scope names files by `fileId` and the
+zero-based `hunkIndexes` to retain:
+
+```ts
+const review = ctx.review.snapshot();
+if (review) {
+  ctx.review.setPresentationScope({
+    generation: review.generation,
+    files: [{ fileId: review.files[0].runtimeId, hunkIndexes: [0] }],
+  });
+}
+```
+
+The scope is rejected when its generation, file ids, or hunk indexes are stale. Clear it with
+`ctx.review.clearPresentationScope()`; reloads, extension retirement, and failed commands clear
+owned scopes automatically. It contains the opaque producer `generation`, the store's `stateRevision`, every
 file in authoritative review/sidebar order, and every saved live or reviewer
 note. Files carry their stable `fileKey`, transient `runtimeId`, content identity,
 paths, stats, and flags; notes carry their complete resolved old/new anchor,
