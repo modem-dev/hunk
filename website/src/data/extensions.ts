@@ -168,6 +168,15 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     apiVersion: 16,
   },
   {
+    repo: "JoseanAyala/hunk-glab-review",
+    name: "hunk-glab-review",
+    summary:
+      "Turns Hunk into a GitLab review client: browse merge request threads, leave notes, then submit them as a Comment or Approve review.",
+    categories: ["Pane", "Command"],
+    version: "0.1.0",
+    apiVersion: 6,
+  },
+  {
     repo: "joshedler/hunk-git-lite",
     name: "hunk-git-lite",
     summary:
