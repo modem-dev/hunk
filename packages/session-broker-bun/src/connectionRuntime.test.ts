@@ -267,6 +267,8 @@ test("Bun authenticates, registers, and naturally exits with every production ti
     }
     const real = await runFixture(bundle, "real", ["real"]);
     expectFixtureSuccess("real", real, "signed-producer-register-observed\n");
+    const admin = await runFixture(bundle, "admin-scope", ["admin-scope"]);
+    expectFixtureSuccess("admin-scope", admin, "admin-scope-observed\n");
 
     for (const mode of pendingModes) {
       const result = await runFixture(bundle, mode, [mode]);

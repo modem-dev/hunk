@@ -313,6 +313,33 @@ describe("published user errors", () => {
     );
   });
 
+  test("normalizes rejected async watch signatures through the adapter boundary", async () => {
+    const adapter = toInternalVcsAdapter({
+      id: "demo",
+      name: "Demo VCS",
+      detect: () => null,
+      operations: {
+        "working-tree-diff": {
+          load: async () => ({
+            repoRoot: process.cwd(),
+            sourceLabel: "demo",
+            title: "demo",
+            patchText: "",
+          }),
+          watchSignature: async () => {
+            throw new HunkExtensionUserError("No signature available.");
+          },
+        },
+      },
+    });
+    await expect(
+      adapter.operations["working-tree-diff"]!.watchSignature!(
+        { kind: "vcs", staged: false, options: {} },
+        { cwd: process.cwd() },
+      ),
+    ).rejects.toBeInstanceOf(HunkUserError);
+  });
+
   test("drop an operation whose load is not callable rather than crashing mid-review", () => {
     const adapter = toInternalVcsAdapter({
       id: "bare",

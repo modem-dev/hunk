@@ -16,10 +16,21 @@ import { availableParallelism } from "node:os";
 export const TEST_PATTERN_GROUPS = {
   default: ["./packages", "./scripts", "./examples", "./test/cli", "./test/session"],
   integration: ["./test/pty"],
+  windows: ["./packages", "./scripts", "./examples", "./test/cli", "./test/session"],
+  "windows-ui": [
+    "./packages/hunk/src/ui/diff/worker/highlightWorkerClient.test.ts",
+    "./packages/hunk/src/ui/lib/openInEditor.test.ts",
+    "./packages/hunk/src/ui/lib/workspaceWriteGuard.test.ts",
+  ],
 } as const;
 
 export const DEFAULT_TEST_PATTERNS = TEST_PATTERN_GROUPS.default;
 export type TestPatternGroup = keyof typeof TEST_PATTERN_GROUPS;
+
+const TEST_GROUP_RUNNER_ARGS: Partial<Record<TestPatternGroup, readonly string[]>> = {
+  // Linux covers terminal UI semantics; Windows runs its focused UI boundaries separately.
+  windows: ["--path-ignore-patterns=**/packages/hunk/src/ui/**"],
+};
 
 const MAX_AUTOMATIC_TEST_SHARDS = 2;
 const MAX_EXPLICIT_TEST_SHARDS = 64;
@@ -74,7 +85,10 @@ export function resolveTestInvocation(args: string[]) {
   }
 
   return {
-    forwardedArgs: args.filter((arg) => !arg.startsWith("--group=")),
+    forwardedArgs: [
+      ...(TEST_GROUP_RUNNER_ARGS[group] ?? []),
+      ...args.filter((arg) => !arg.startsWith("--group=")),
+    ],
     group,
     patterns: TEST_PATTERN_GROUPS[group],
   };

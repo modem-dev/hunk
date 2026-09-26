@@ -14,8 +14,8 @@ inspectable PNG before anything is encoded.
   `createKeyframer`, `launchApp`, `launchShell`, `createCommandWrapper`,
   `typeCommand`, `ensureKeyboardIsLive`, `makeSceneFilter`.
 - `@hunk/term-video/plan` (Bun or Node) — pure storyboard→frame-plan
-  expansion: `planFrames`, `requiredKeyframes`. Unit-tested; owns the caption
-  carry-forward and animation-window semantics.
+  expansion: `planFrames`, `requiredKeyframes`. Unit-tested; owns caption
+  carry-forward plus camera-pan, zoom, and source-aligned highlight animation.
 - `@hunk/term-video/compose` (Node ≥ 22) — `composeStoryboard` renders the
   plan in headless Chromium against `src/stage.html` (or a custom stage) and
   writes PNG frames plus an ffmpeg concat list. `playwright-core` is resolved

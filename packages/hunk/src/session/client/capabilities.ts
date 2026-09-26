@@ -6,8 +6,10 @@ import { HUNK_SESSION_CAPABILITIES_PATH, type SessionDaemonCapabilities } from "
 import { parseSessionDaemonCapabilities } from "../protocolSchemas";
 import { HUNK_SESSION_DAEMON_HTTP_TIMEOUT_MS, requestSessionDaemonHttp } from "./daemonHttp";
 
-export const HUNK_DAEMON_UPGRADE_WAIT_MESSAGE =
-  "An older or incompatible Hunk session daemon is running. Close older Hunk windows; this window will reconnect automatically.";
+export {
+  HUNK_DAEMON_UPGRADE_WAIT_MESSAGE,
+  HUNK_DAEMON_REGISTRATION_REJECTED_MESSAGE,
+} from "./daemonMessages";
 
 /**
  * Read the live daemon's advertised compatibility, returning null when the daemon is too old for

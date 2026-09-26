@@ -5,6 +5,7 @@ import { highlightWorkerCacheKey } from "./highlightWorkerIdentity";
 /** Build worker inputs from actual Pierre metadata rather than an incomplete test shape. */
 function createTestIdentity({ after = "const answer = 42;\n", name = "example.ts" } = {}) {
   return {
+    kind: "diff" as const,
     aliasContext: true,
     appearance: "dark" as const,
     language: "typescript",
@@ -42,5 +43,28 @@ describe("highlight worker cache identity", () => {
     expect(highlightWorkerCacheKey(createTestIdentity({ name: "example.js" }))).not.toBe(
       highlightWorkerCacheKey(base),
     );
+  });
+
+  test("uses complete document content and every rendering input", () => {
+    const base = {
+      kind: "document" as const,
+      appearance: "dark" as const,
+      language: "typescript",
+      path: "example.ts",
+      text: "const answer = 42;\n",
+      theme: "pierre-dark",
+    };
+
+    expect(highlightWorkerCacheKey(base)).toBe(highlightWorkerCacheKey({ ...base }));
+    for (const changed of [
+      { ...base, text: "const answer = 24;\n" },
+      { ...base, path: "example.js" },
+      { ...base, language: "javascript" },
+      { ...base, appearance: "light" as const },
+      { ...base, theme: "pierre-light" },
+    ]) {
+      expect(highlightWorkerCacheKey(changed)).not.toBe(highlightWorkerCacheKey(base));
+    }
+    expect(highlightWorkerCacheKey(base)).not.toBe(highlightWorkerCacheKey(createTestIdentity()));
   });
 });

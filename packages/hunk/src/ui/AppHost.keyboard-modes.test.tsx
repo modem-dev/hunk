@@ -165,8 +165,8 @@ describe("AppHost session keyboard modes", () => {
       await waitForFrame(setup, (frame) => !frame.includes("Reload"));
       expect(setup.captureCharFrame()).toContain("Probe normal");
 
-      // The mode passes `/`; once the filter owns focus, its text never reaches the mode.
-      await act(async () => setup.mockInput.typeText("/"));
+      // The mode passes Tab; once the filter owns focus, its text never reaches the mode.
+      await act(async () => setup.mockInput.pressTab());
       await waitForFrame(setup, (frame) => frame.includes("filter:"));
       const jCount = notices.filter((notice) => notice === "SESSION KEY j").length;
       await act(async () => setup.mockInput.typeText("j"));

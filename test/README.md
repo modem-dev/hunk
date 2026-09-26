@@ -36,6 +36,7 @@ test/
 | Command                              | Coverage                                                                                                               |
 | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
 | `bun run test`                       | `packages/`, `scripts/`, `examples/`, `test/cli/`, and `test/session/`, as defined by `scripts/test/run-test-suite.ts` |
+| `bun run test:windows`               | Windows platform, process, VCS, CLI, and packaging coverage; Linux owns the terminal UI semantic suite                 |
 | `bun test ./test/review-conformance` | Shared review fixtures and registered consumer projections                                                             |
 | `bun run test:session-broker-node`   | Real Node listener/adapter conformance using the checked-in cross-runtime fixtures                                     |
 | `bun run test:integration`           | PTY-backed tests under `test/pty/`                                                                                     |
@@ -46,3 +47,7 @@ test/
 The dedicated trees are not selected directly by `bun run test`, though package tests import some
 shared runtime fixtures. Run the commands that match the changed behavior; omission from the default
 suite does not mean another command covers it.
+
+The Windows suite omits the platform-neutral terminal UI semantic tree, which the Linux suite covers,
+then runs the focused UI tests for worker startup, editor commands, and workspace path safety. Add new
+UI tests to the `windows-ui` group when their behavior depends on Windows platform boundaries.

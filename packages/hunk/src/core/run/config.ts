@@ -26,6 +26,7 @@ import {
   validateReviewGap,
 } from "./reviewGap";
 import { DEFAULT_TAB_WIDTH, validateTabWidth } from "./tabWidth";
+import { DEFAULT_WHEEL_SCROLL_LINES, validateWheelScrollLines } from "./wheelScrollLines";
 import { findProjectRootCandidate } from "../process/projectRoot";
 import { createVcsCatalog, detectVcs } from "../vcs";
 import type { VcsCatalog } from "../vcs/types";
@@ -297,6 +298,19 @@ function normalizeReviewGap(value: unknown, key: "file_gap" | "hunk_gap") {
   return validateReviewGap(value, key);
 }
 
+/** Accept `auto` or a bounded integer wheel step from TOML configuration. */
+function normalizeWheelScrollLines(value: unknown) {
+  if (value === undefined || value === DEFAULT_WHEEL_SCROLL_LINES) {
+    return value;
+  }
+
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    throw new Error("Expected wheel_scroll_lines to be auto or an integer from 1 to 10.");
+  }
+
+  return validateWheelScrollLines(value, "wheel_scroll_lines");
+}
+
 /** One top-level configuration key shared by runtime parsing and generated reference docs. */
 export interface ConfigReferenceOption {
   readonly key: string;
@@ -311,6 +325,8 @@ export interface ConfigReferenceOption {
   readonly aliases?: readonly { key: string; deprecated?: boolean }[];
   /** Ordered source keys preserve compatibility precedence where an old alias historically won. */
   readonly runtimeKeys?: readonly string[];
+  /** Machine-local input preferences do not resolve from repository config. */
+  readonly userOnly?: boolean;
 }
 
 /**
@@ -400,6 +416,16 @@ export const CONFIG_REFERENCE_OPTIONS: readonly ConfigReferenceOption[] = [
     accepted: `${MIN_REVIEW_GAP} through ${MAX_REVIEW_GAP}`,
     runtimeDefault: DEFAULT_HUNK_GAP,
     description: "Blank rows before each hunk after the first in a file.",
+  },
+  {
+    key: "wheel_scroll_lines",
+    property: "wheelScrollLines",
+    type: "string or integer",
+    accepted: "`auto` or 1 through 10",
+    runtimeDefault: DEFAULT_WHEEL_SCROLL_LINES,
+    description:
+      "Set review rows per vertical wheel event. `auto` keeps cadence-based acceleration from one to three rows.",
+    userOnly: true,
   },
   {
     key: "wrap_lines",
@@ -986,6 +1012,8 @@ function normalizeConfigReferenceValue(property: keyof CommonOptions, value: unk
       return normalizeReviewGap(value, "file_gap");
     case "hunkGap":
       return normalizeReviewGap(value, "hunk_gap");
+    case "wheelScrollLines":
+      return normalizeWheelScrollLines(value);
     case "sidebar":
       return normalizeSidebarVisibility(value);
     default:
@@ -994,11 +1022,18 @@ function normalizeConfigReferenceValue(property: keyof CommonOptions, value: unk
 }
 
 /** Read the view preferences stored at one TOML object level. */
-function readConfigPreferences(source: Record<string, unknown>): CommonOptions {
+function readConfigPreferences(
+  source: Record<string, unknown>,
+  { includeUserOnly = true }: { includeUserOnly?: boolean } = {},
+): CommonOptions {
   const preferences: CommonOptions = {};
   const mutable = preferences as Record<string, unknown>;
 
   for (const option of CONFIG_REFERENCE_OPTIONS) {
+    if (option.userOnly && !includeUserOnly) {
+      continue;
+    }
+
     const runtimeKeys = option.runtimeKeys ?? [
       option.key,
       ...(option.aliases?.map(({ key }) => key) ?? []),
@@ -1046,6 +1081,7 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
     tabWidth: overrides.tabWidth ?? base.tabWidth,
     fileGap: overrides.fileGap ?? base.fileGap,
     hunkGap: overrides.hunkGap ?? base.hunkGap,
+    wheelScrollLines: overrides.wheelScrollLines ?? base.wheelScrollLines,
     wrapLines: overrides.wrapLines ?? base.wrapLines,
     hunkHeaders: overrides.hunkHeaders ?? base.hunkHeaders,
     menuBar: overrides.menuBar ?? base.menuBar,
@@ -1063,17 +1099,21 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
 }
 
 /** Apply one parsed config object, including command/pager sections, to the current invocation. */
-function resolveConfigLayer(source: Record<string, unknown>, input: CliInput): CommonOptions {
-  let resolved = readConfigPreferences(source);
+function resolveConfigLayer(
+  source: Record<string, unknown>,
+  input: CliInput,
+  { includeUserOnly = true }: { includeUserOnly?: boolean } = {},
+): CommonOptions {
+  let resolved = readConfigPreferences(source, { includeUserOnly });
 
   const commandSection = CONFIG_COMMAND_SECTIONS[input.kind] ? source[input.kind] : undefined;
   if (isRecord(commandSection)) {
-    resolved = mergeOptions(resolved, readConfigPreferences(commandSection));
+    resolved = mergeOptions(resolved, readConfigPreferences(commandSection, { includeUserOnly }));
   }
 
   const pagerSection = source.pager;
   if (input.options.pager && isRecord(pagerSection)) {
-    resolved = mergeOptions(resolved, readConfigPreferences(pagerSection));
+    resolved = mergeOptions(resolved, readConfigPreferences(pagerSection, { includeUserOnly }));
   }
 
   return resolved;
@@ -1299,7 +1339,7 @@ export function resolveConfiguredCliInput(
 
   if (repoConfigPath && sources.repoConfig) {
     const repoConfig = sources.repoConfig;
-    const repoLayer = resolveConfigLayer(repoConfig, input);
+    const repoLayer = resolveConfigLayer(repoConfig, input, { includeUserOnly: false });
     explicitVcsId = repoLayer.vcs ?? explicitVcsId;
     resolvedOptions = mergeOptions(resolvedOptions, repoLayer);
     applyCustomThemeLayer(readCustomThemes(repoConfig));
@@ -1323,6 +1363,7 @@ export function resolveConfiguredCliInput(
     tabWidth: resolvedOptions.tabWidth ?? DEFAULT_TAB_WIDTH,
     fileGap: resolvedOptions.fileGap ?? DEFAULT_FILE_GAP,
     hunkGap: resolvedOptions.hunkGap ?? DEFAULT_HUNK_GAP,
+    wheelScrollLines: resolvedOptions.wheelScrollLines ?? DEFAULT_WHEEL_SCROLL_LINES,
     wrapLines: resolvedOptions.wrapLines ?? DEFAULT_VIEW_PREFERENCES.wrapLines,
     hunkHeaders: resolvedOptions.hunkHeaders ?? DEFAULT_VIEW_PREFERENCES.showHunkHeaders,
     menuBar: resolvedOptions.menuBar ?? DEFAULT_VIEW_PREFERENCES.showMenuBar,

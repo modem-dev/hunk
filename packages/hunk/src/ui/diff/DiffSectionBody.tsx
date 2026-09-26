@@ -4,7 +4,6 @@
  * `DiffSection` owns the file header and picks a body; this is the diff-row body it picks
  * for a normal review, beside `FileView` for the alternate file views.
  */
-import { useRenderer } from "@opentui/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_HUNK_GAP } from "../../core/run/reviewGap";
 import { DEFAULT_TAB_WIDTH } from "../../core/run/tabWidth";
@@ -121,7 +120,6 @@ export function DiffSectionBody({
   scrollable?: boolean;
   visibleBodyBounds?: VisibleBodyBounds;
 }) {
-  const renderer = useRenderer();
   const [hoveredRowKey, setHoveredRowKey] = useState<string | null>(null);
   const hoverIdleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previousHoverClearSignalRef = useRef(hoverClearSignal);
@@ -180,14 +178,6 @@ export function DiffSectionBody({
     clearHoveredRow();
   }, [clearHoveredRow, hoverClearSignal]);
 
-  useEffect(() => {
-    /** Hide hover-only affordances when terminal focus leaves Hunk. */
-    renderer.on("blur", clearHoveredRow);
-    return () => {
-      renderer.off("blur", clearHoveredRow);
-    };
-  }, [clearHoveredRow, renderer]);
-
   useEffect(() => clearHoverIdleTimeout, [clearHoverIdleTimeout]);
 
   const resolvedHighlighted = useHighlightedDiff({
@@ -200,19 +190,15 @@ export function DiffSectionBody({
     sourceStatus?.kind === "loaded" && expandedGapKeys.size > 0 ? sourceStatus.text : undefined;
   const resolvedHighlightedSource = useHighlightedSource({
     file,
+    offloadLargeDiff,
     text: sourceTextForHighlight,
     theme,
     shouldLoadHighlight: shouldLoadHighlight && expandedGapKeys.size > 0,
   });
   const sourceLineSpans = useCallback(
     (line: string | undefined, sourceLineNumber: number) =>
-      spansForHighlightedSourceLine(
-        line,
-        resolvedHighlightedSource?.lines[sourceLineNumber],
-        theme,
-        tabWidth,
-      ),
-    [resolvedHighlightedSource, tabWidth, theme],
+      spansForHighlightedSourceLine(line, resolvedHighlightedSource, tabWidth, sourceLineNumber),
+    [resolvedHighlightedSource, tabWidth],
   );
 
   const sectionRowPlan = useMemo(
@@ -348,7 +334,14 @@ export function DiffSectionBody({
 
   if (file.metadata.hunks.length === 0) {
     return (
-      <box style={{ width: "100%", paddingLeft: 1, paddingRight: 1, paddingBottom: 1 }}>
+      <box
+        style={{
+          width: "100%",
+          paddingLeft: 1,
+          paddingRight: 1,
+          paddingBottom: 1,
+        }}
+      >
         <text fg={theme.muted}>{fitText(diffMessage(file), Math.max(1, width - 2))}</text>
       </box>
     );

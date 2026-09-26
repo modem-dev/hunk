@@ -16,9 +16,11 @@ import type {
   ExtensionKeyboardModeControls,
   ExtensionLineHighlightControls,
   ExtensionPaneControls,
+  ExtensionPromptControls,
   ExtensionReviewControls,
   ExtensionReviewNavigation,
   ExtensionReviewSelection,
+  ExtensionStatusLineControls,
   ExtensionWorkspace,
 } from "../../extension-api/types";
 import type { ExtensionLoadResult, RegisteredCommand } from "../../extensions/types";
@@ -40,7 +42,9 @@ export function useExtensionCommandRunner({
   createLineHighlightControls,
   createNavigation,
   createPaneControls,
+  createPromptControls,
   createReviewControls,
+  createStatusLineControls,
   createWorkspaceControls,
   extensions,
   getSelection,
@@ -55,7 +59,9 @@ export function useExtensionCommandRunner({
   createLineHighlightControls: (extensionId: string) => ExtensionLineHighlightControls;
   createNavigation: (extensionId: string) => ExtensionReviewNavigation;
   createPaneControls: (extensionId: string) => ExtensionPaneControls;
+  createPromptControls: (extensionId: string) => ExtensionPromptControls;
   createReviewControls: () => ExtensionReviewControls;
+  createStatusLineControls: (extensionId: string) => ExtensionStatusLineControls;
   createWorkspaceControls: (extensionId: string) => ExtensionWorkspace;
   extensions?: ExtensionLoadResult;
   getSelection: () => ExtensionReviewSelection;
@@ -81,6 +87,8 @@ export function useExtensionCommandRunner({
           review: createReviewControls(),
           selection: getSelection(),
           dialogs: createDialogs(registered.extensionId),
+          statusLine: createStatusLineControls(registered.extensionId),
+          prompts: createPromptControls(registered.extensionId),
           workspace: createWorkspaceControls(registered.extensionId),
           navigation: createNavigation(registered.extensionId),
         };
@@ -102,7 +110,9 @@ export function useExtensionCommandRunner({
       createLineHighlightControls,
       createNavigation,
       createPaneControls,
+      createPromptControls,
       createReviewControls,
+      createStatusLineControls,
       createWorkspaceControls,
       extensions,
       getSelection,

@@ -39,6 +39,40 @@ const REVIEW_INPUT_KINDS = new Set<CliInput["kind"]>([
 ]);
 const EXPERIMENTAL_FEATURE_SET = new Set<string>(EXPERIMENTAL_FEATURES);
 
+/** Where one wire parse rejected a payload: the parser name and the top-level key path only. */
+export interface SessionWireRejection {
+  parser: string;
+  path: string;
+}
+
+/**
+ * Threads the key path through nested parsers and records the innermost rejection.
+ *
+ * Parsers reject either by returning null or by throwing a `BrokerProtocolError` from an exact
+ * record read; both routes land in `reject`, and the first (innermost) record wins so a later
+ * outer null cannot overwrite the useful location.
+ */
+interface WireParseContext {
+  path: string;
+  slot: { rejection: SessionWireRejection | null };
+}
+
+/** Create a fresh root context for one top-level parse. */
+function rootContext(): WireParseContext {
+  return { path: "", slot: { rejection: null } };
+}
+
+/** Derive the context for one nested key while sharing the rejection slot. */
+function child(context: WireParseContext, key: string): WireParseContext {
+  return { path: context.path ? `${context.path}.${key}` : key, slot: context.slot };
+}
+
+/** Record the innermost rejection for a parser and return the null it reports. */
+function reject(context: WireParseContext, parser: string): null {
+  context.slot.rejection ??= { parser, path: context.path };
+  return null;
+}
+
 /** Parse unique recognized experimental feature ids without silently dropping malformed entries. */
 function parseExperimentalFeatures(value: unknown): ExperimentalFeature[] {
   if (value === undefined) return [];
@@ -51,13 +85,20 @@ function parseExperimentalFeatures(value: unknown): ExperimentalFeature[] {
   return [...new Set(value)] as ExperimentalFeature[];
 }
 
-/** Read one app-owned object with an exact field set. */
+/** Read one app-owned object with an exact field set, recording the parser when it throws. */
 function exactRecord(
+  context: WireParseContext,
+  parser: string,
   value: unknown,
   required: readonly string[],
   optional: readonly string[] = [],
 ) {
-  return parseExactBrokerRecord(value, required, optional);
+  try {
+    return parseExactBrokerRecord(value, required, optional);
+  } catch (error) {
+    reject(context, parser);
+    throw error;
+  }
 }
 
 /** Parse one optional diff-side line range tuple when the payload shape matches. */
@@ -73,13 +114,17 @@ function parseOptionalRange(value: unknown): [number, number] | undefined {
 }
 
 /** Parse one registered review hunk from the app-owned session payload. */
-function parseSessionReviewHunk(value: unknown): SessionReviewHunk | null {
-  const record = exactRecord(value, ["index", "header"], ["oldRange", "newRange"]);
+function parseSessionReviewHunk(
+  value: unknown,
+  context: WireParseContext,
+): SessionReviewHunk | null {
+  const parser = "parseSessionReviewHunk";
+  const record = exactRecord(context, parser, value, ["index", "header"], ["oldRange", "newRange"]);
 
   const index = brokerWireParsers.parseNonNegativeInt(record.index);
   const header = brokerWireParsers.parseRequiredString(record.header);
   if (index === null || header === null) {
-    return null;
+    return reject(context, parser);
   }
 
   return {
@@ -91,8 +136,14 @@ function parseSessionReviewHunk(value: unknown): SessionReviewHunk | null {
 }
 
 /** Parse one registered review file from the app-owned session payload. */
-function parseSessionReviewFile(value: unknown): SessionReviewFile | null {
+function parseSessionReviewFile(
+  value: unknown,
+  context: WireParseContext,
+): SessionReviewFile | null {
+  const parser = "parseSessionReviewFile";
   const record = exactRecord(
+    context,
+    parser,
     value,
     ["id", "path", "additions", "deletions", "hunks"],
     ["previousPath", "patch", "hunkCount"],
@@ -103,11 +154,11 @@ function parseSessionReviewFile(value: unknown): SessionReviewFile | null {
   const additions = brokerWireParsers.parseNonNegativeInt(record.additions);
   const deletions = brokerWireParsers.parseNonNegativeInt(record.deletions);
   if (id === null || path === null || additions === null || deletions === null) {
-    return null;
+    return reject(context, parser);
   }
 
   if (!Array.isArray(record.hunks) || record.hunks.length > MAX_REGISTRATION_HUNKS_PER_FILE) {
-    return null;
+    return reject(context, parser);
   }
   const assertedHunkCount =
     record.hunkCount === undefined
@@ -117,12 +168,14 @@ function parseSessionReviewFile(value: unknown): SessionReviewFile | null {
     record.hunkCount !== undefined &&
     (assertedHunkCount === null || assertedHunkCount !== record.hunks.length)
   ) {
-    return null;
+    return reject(context, parser);
   }
 
-  const hunks = record.hunks.map(parseSessionReviewHunk);
+  const hunks = record.hunks.map((hunk, index) =>
+    parseSessionReviewHunk(hunk, child(context, `hunks[${index}]`)),
+  );
   if (hunks.some((hunk) => hunk === null)) {
-    return null;
+    return reject(context, parser);
   }
 
   // Reject files whose patch text alone would blow the per-file memory budget instead of
@@ -156,8 +209,14 @@ function parseReviewInputKind(value: unknown): CliInput["kind"] | null {
 }
 
 /** Parse one live comment summary from the app-owned snapshot payload. */
-function parseSessionLiveCommentSummary(value: unknown): SessionLiveCommentSummary | null {
+function parseSessionLiveCommentSummary(
+  value: unknown,
+  context: WireParseContext,
+): SessionLiveCommentSummary | null {
+  const parser = "parseSessionLiveCommentSummary";
   const record = exactRecord(
+    context,
+    parser,
     value,
     ["commentId", "filePath", "hunkIndex", "summary", "createdAt", "line", "side"],
     ["parentId", "rationale", "author"],
@@ -179,7 +238,7 @@ function parseSessionLiveCommentSummary(value: unknown): SessionLiveCommentSumma
     line === null ||
     side === null
   ) {
-    return null;
+    return reject(context, parser);
   }
 
   return {
@@ -197,8 +256,14 @@ function parseSessionLiveCommentSummary(value: unknown): SessionLiveCommentSumma
 }
 
 /** Parse one review note summary from the app-owned snapshot payload. */
-function parseSessionReviewNoteSummary(value: unknown): SessionReviewNoteSummary | null {
+function parseSessionReviewNoteSummary(
+  value: unknown,
+  context: WireParseContext,
+): SessionReviewNoteSummary | null {
+  const parser = "parseSessionReviewNoteSummary";
   const record = exactRecord(
+    context,
+    parser,
     value,
     ["noteId", "source", "filePath", "body", "createdAt"],
     ["parentId", "hunkIndex", "oldRange", "newRange", "title", "author", "updatedAt", "editable"],
@@ -219,15 +284,17 @@ function parseSessionReviewNoteSummary(value: unknown): SessionReviewNoteSummary
     createdAt === null ||
     source === null
   ) {
-    return null;
+    return reject(context, parser);
   }
 
   const hunkIndex =
     record.hunkIndex === undefined
       ? undefined
       : brokerWireParsers.parseNonNegativeInt(record.hunkIndex);
-  if (record.hunkIndex !== undefined && hunkIndex === null) return null;
-  if (record.editable !== undefined && typeof record.editable !== "boolean") return null;
+  if (record.hunkIndex !== undefined && hunkIndex === null) return reject(context, parser);
+  if (record.editable !== undefined && typeof record.editable !== "boolean") {
+    return reject(context, parser);
+  }
 
   return {
     noteId,
@@ -247,24 +314,31 @@ function parseSessionReviewNoteSummary(value: unknown): SessionReviewNoteSummary
 }
 
 /** Parse the app-owned registration info embedded inside one broker registration envelope. */
-function parseHunkSessionInfo(value: unknown): HunkSessionInfo | null {
+function parseHunkSessionInfo(value: unknown, context: WireParseContext): HunkSessionInfo | null {
+  const parser = "parseHunkSessionInfo";
   const record = exactRecord(
+    context,
+    parser,
     value,
     ["inputKind", "title", "sourceLabel", "files"],
     ["experimentalFeatures", "review", "reviewCatalog", "reviewCapabilityDigest"],
   );
-  if (!Array.isArray(record.files) || record.files.length > MAX_REGISTRATION_FILES) return null;
+  if (!Array.isArray(record.files) || record.files.length > MAX_REGISTRATION_FILES) {
+    return reject(context, parser);
+  }
 
   const inputKind = parseReviewInputKind(record.inputKind);
   const title = brokerWireParsers.parseRequiredString(record.title);
   const sourceLabel = brokerWireParsers.parseRequiredString(record.sourceLabel);
   if (inputKind === null || title === null || sourceLabel === null) {
-    return null;
+    return reject(context, parser);
   }
 
-  const files = record.files.map(parseSessionReviewFile);
+  const files = record.files.map((file, index) =>
+    parseSessionReviewFile(file, child(context, `files[${index}]`)),
+  );
   if (files.some((file) => file === null)) {
-    return null;
+    return reject(context, parser);
   }
 
   // The review catalog is parsed by the wire protocol itself, so the broker never grows a
@@ -276,7 +350,7 @@ function parseHunkSessionInfo(value: unknown): HunkSessionInfo | null {
       ? undefined
       : parseHunkReviewResourceCatalog(record.reviewCatalog);
   if (record.reviewCatalog !== undefined && reviewCatalog === undefined) {
-    return null;
+    return reject(child(context, "reviewCatalog"), "parseHunkReviewResourceCatalog");
   }
 
   // The capability verifier is a digest and nothing else, checked with the shared
@@ -285,17 +359,27 @@ function parseHunkSessionInfo(value: unknown): HunkSessionInfo | null {
   // unverifiable credential attached.
   const reviewCapabilityDigest = record.reviewCapabilityDigest;
   if (reviewCapabilityDigest !== undefined && !isReviewSha256Digest(reviewCapabilityDigest)) {
-    return null;
+    return reject(child(context, "reviewCapabilityDigest"), "isReviewSha256Digest");
   }
   const review =
     record.review === undefined ? undefined : parseExtensionReviewDescriptor(record.review);
-  if (record.review !== undefined && review === null) return null;
+  if (record.review !== undefined && review === null) {
+    return reject(child(context, "review"), "parseExtensionReviewDescriptor");
+  }
+
+  let experimentalFeatures: ExperimentalFeature[];
+  try {
+    experimentalFeatures = parseExperimentalFeatures(record.experimentalFeatures);
+  } catch (error) {
+    reject(child(context, "experimentalFeatures"), "parseExperimentalFeatures");
+    throw error;
+  }
 
   return {
     inputKind,
     title,
     sourceLabel,
-    experimentalFeatures: parseExperimentalFeatures(record.experimentalFeatures),
+    experimentalFeatures,
     ...(review ? { review } : {}),
     files: files as SessionReviewFile[],
     ...(reviewCatalog ? { reviewCatalog } : {}),
@@ -304,8 +388,11 @@ function parseHunkSessionInfo(value: unknown): HunkSessionInfo | null {
 }
 
 /** Parse the app-owned snapshot state embedded inside one broker snapshot envelope. */
-function parseHunkSessionState(value: unknown): HunkSessionState | null {
+function parseHunkSessionState(value: unknown, context: WireParseContext): HunkSessionState | null {
+  const parser = "parseHunkSessionState";
   const record = exactRecord(
+    context,
+    parser,
     value,
     ["liveComments", "selectedHunkIndex", "showAgentNotes"],
     [
@@ -325,13 +412,13 @@ function parseHunkSessionState(value: unknown): HunkSessionState | null {
     record.liveComments.length > MAX_SNAPSHOT_LIVE_COMMENTS ||
     (Array.isArray(record.reviewNotes) && record.reviewNotes.length > MAX_SNAPSHOT_REVIEW_NOTES)
   ) {
-    return null;
+    return reject(context, parser);
   }
 
   const selectedHunkIndex = brokerWireParsers.parseNonNegativeInt(record.selectedHunkIndex);
   const showAgentNotes = typeof record.showAgentNotes === "boolean" ? record.showAgentNotes : null;
   if (selectedHunkIndex === null || showAgentNotes === null) {
-    return null;
+    return reject(context, parser);
   }
 
   // Where the review sits is the one fact the mirror orders on, so it is parsed as the
@@ -341,10 +428,12 @@ function parseHunkSessionState(value: unknown): HunkSessionState | null {
       ? undefined
       : parseHunkReviewPublicationAddress(record.reviewPublication);
   if (record.reviewPublication !== undefined && reviewPublication === undefined) {
-    return null;
+    return reject(child(context, "reviewPublication"), "parseHunkReviewPublicationAddress");
   }
 
-  if (record.reviewNotes !== undefined && !Array.isArray(record.reviewNotes)) return null;
+  if (record.reviewNotes !== undefined && !Array.isArray(record.reviewNotes)) {
+    return reject(context, parser);
+  }
   const assertedLiveCommentCount =
     record.liveCommentCount === undefined
       ? undefined
@@ -357,23 +446,29 @@ function parseHunkSessionState(value: unknown): HunkSessionState | null {
     (record.liveCommentCount !== undefined && assertedLiveCommentCount === null) ||
     (record.reviewNoteCount !== undefined && assertedReviewNoteCount === null)
   ) {
-    return null;
+    return reject(context, parser);
   }
-  const liveComments = record.liveComments.map(parseSessionLiveCommentSummary);
-  const reviewNotes = (record.reviewNotes ?? []).map(parseSessionReviewNoteSummary);
+  const liveComments = record.liveComments.map((comment, index) =>
+    parseSessionLiveCommentSummary(comment, child(context, `liveComments[${index}]`)),
+  );
+  const reviewNotes = (record.reviewNotes ?? []).map((note, index) =>
+    parseSessionReviewNoteSummary(note, child(context, `reviewNotes[${index}]`)),
+  );
   if (
     liveComments.some((comment) => comment === null) ||
     reviewNotes.some((note) => note === null) ||
     (assertedLiveCommentCount !== undefined && assertedLiveCommentCount !== liveComments.length) ||
     (assertedReviewNoteCount !== undefined && assertedReviewNoteCount !== reviewNotes.length)
   ) {
-    return null;
+    return reject(context, parser);
   }
   const noteMarkupWidth =
     record.noteMarkupWidth === undefined
       ? undefined
       : brokerWireParsers.parseNonNegativeInt(record.noteMarkupWidth);
-  if (record.noteMarkupWidth !== undefined && noteMarkupWidth === null) return null;
+  if (record.noteMarkupWidth !== undefined && noteMarkupWidth === null) {
+    return reject(context, parser);
+  }
 
   return {
     selectedFileId: brokerWireParsers.parseOptionalString(record.selectedFileId),
@@ -391,12 +486,47 @@ function parseHunkSessionState(value: unknown): HunkSessionState | null {
   };
 }
 
+/** Parse one registration with a shared context so the rejection location can be read back. */
+function parseSessionRegistrationWith(value: unknown, context: WireParseContext) {
+  const parsed = parseSessionRegistrationEnvelope(value, (info) =>
+    parseHunkSessionInfo(info, child(context, "info")),
+  );
+  if (parsed === null) reject(context, "parseSessionRegistrationEnvelope");
+  return parsed;
+}
+
+/** Parse one snapshot with a shared context so the rejection location can be read back. */
+function parseSessionSnapshotWith(value: unknown, context: WireParseContext) {
+  const parsed = parseSessionSnapshotEnvelope(value, (state) =>
+    parseHunkSessionState(state, child(context, "state")),
+  );
+  if (parsed === null) reject(context, "parseSessionSnapshotEnvelope");
+  return parsed;
+}
+
 /** Parse one Hunk session registration payload from the websocket wire format. */
 export function parseSessionRegistration(value: unknown): HunkSessionRegistration | null {
-  return parseSessionRegistrationEnvelope(value, parseHunkSessionInfo);
+  return parseSessionRegistrationWith(value, rootContext());
 }
 
 /** Parse one Hunk session snapshot payload from the websocket wire format. */
 export function parseSessionSnapshot(value: unknown): HunkSessionSnapshot | null {
-  return parseSessionSnapshotEnvelope(value, parseHunkSessionState);
+  return parseSessionSnapshotWith(value, rootContext());
+}
+
+/**
+ * Explain why one registration payload is rejected, or return null when it parses.
+ *
+ * Meant for the daemon's debug log after a rejected registration: the result names the parser
+ * and the key path, never the payload, so a version skew is a one-line diagnosis.
+ */
+export function diagnoseSessionRegistration(value: unknown): SessionWireRejection | null {
+  const context = rootContext();
+  return parseSessionRegistrationWith(value, context) === null ? context.slot.rejection : null;
+}
+
+/** Explain why one snapshot payload is rejected, or return null when it parses. */
+export function diagnoseSessionSnapshot(value: unknown): SessionWireRejection | null {
+  const context = rootContext();
+  return parseSessionSnapshotWith(value, context) === null ? context.slot.rejection : null;
 }

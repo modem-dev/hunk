@@ -18,6 +18,12 @@ import {
 } from "@hunk/session-broker";
 import { HUNK_SESSION_API_VERSION, HUNK_SESSION_DAEMON_VERSION } from "../protocol";
 import { serveSessionBrokerDaemon } from "./brokerServer";
+import {
+  probeHunkSessionDaemonAdminStatus,
+  requestHunkSessionDaemonStop,
+} from "../client/daemonAdmin";
+import { resolveSessionBrokerConfig } from "./brokerConfig";
+import { resolveCliVersion } from "../../core/run/version";
 import { loadOrCreateHunkSessionBrokerCredentials } from "./credentials";
 import { HUNK_SESSION_BROKER_APP_ID, HUNK_SESSION_BROKER_APP_REVISION } from "./appContract";
 
@@ -676,6 +682,57 @@ describe("Hunk session daemon server", () => {
     try {
       await Bun.sleep(150);
       await expect(waitForHealth(port)).resolves.toEqual({ ok: true });
+    } finally {
+      socket.close();
+      server.stop(true);
+    }
+  });
+
+  // Intent: `hunk daemon status` / `restart` and the TUI's skew notice all read the daemon
+  // through the admin scope, which must answer with the same credential regardless of app
+  // revision and must retire attached windows with the restart reason on stop.
+  test("serves admin status and stop for the on-disk caller credential", async () => {
+    const port = await reserveLoopbackPort();
+    process.env.HUNK_MCP_HOST = "127.0.0.1";
+    process.env.HUNK_MCP_PORT = String(port);
+    const config = resolveSessionBrokerConfig();
+
+    const server = await serveSessionBrokerDaemon({
+      idleTimeoutMs: 250,
+      staleSessionTtlMs: 500,
+      staleSessionSweepIntervalMs: 25,
+    });
+    const socket = await openRegisteredSession(port, "session-admin");
+    const closeReason = new Promise<string>((resolve) => {
+      socket.addEventListener("close", (event) => resolve(event.reason));
+    });
+
+    try {
+      const probe = await probeHunkSessionDaemonAdminStatus(config);
+      expect(probe).toMatchObject({
+        kind: "status",
+        status: {
+          adminScopeVersion: 1,
+          daemonVersion: HUNK_SESSION_DAEMON_VERSION,
+          appVersion: resolveCliVersion(),
+          sessions: [
+            {
+              sessionId: "session-admin",
+              pid: expect.any(Number),
+              cwd: expect.any(String),
+              title: expect.any(String),
+              clientDaemonVersion: HUNK_SESSION_DAEMON_VERSION,
+            },
+          ],
+        },
+      });
+
+      await expect(requestHunkSessionDaemonStop(config)).resolves.toBe("stopping");
+      await expect(closeReason).resolves.toBe("Session daemon restarting.");
+      await waitForShutdown(port, 1_500);
+      await expect(probeHunkSessionDaemonAdminStatus(config)).resolves.toEqual({
+        kind: "unavailable",
+      });
     } finally {
       socket.close();
       server.stop(true);

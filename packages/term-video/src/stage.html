@@ -90,6 +90,37 @@
         width: 100%;
         display: block;
       }
+      #term-visual {
+        position: absolute;
+        inset: 0;
+        transform-origin: 0 0;
+        will-change: transform;
+      }
+      #term-highlight {
+        position: absolute;
+        display: none;
+        border: 4px solid #e0af68;
+        border-radius: 12px;
+        box-shadow:
+          0 0 0 2px rgba(12, 16, 28, 0.82),
+          0 0 28px rgba(224, 175, 104, 0.72),
+          inset 0 0 22px rgba(224, 175, 104, 0.08);
+        pointer-events: none;
+        will-change: left, top, width, height, opacity, transform;
+      }
+      #term-highlight-label {
+        position: absolute;
+        left: 14px;
+        top: -22px;
+        padding: 7px 13px;
+        border-radius: 8px 8px 8px 0;
+        background: #e0af68;
+        color: #171003;
+        font-size: 18px;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+        white-space: nowrap;
+      }
 
       /* ---- caption band ---- */
       #caption {
@@ -199,11 +230,18 @@
         <div class="lights"><i></i><i></i><i></i></div>
         <div id="term-title"></div>
       </div>
-      <div id="term-content"><img id="term-img" alt="" /></div>
+      <div id="term-content">
+        <div id="term-visual"><img id="term-img" alt="" /></div>
+        <div id="term-highlight"><span id="term-highlight-label"></span></div>
+      </div>
     </div>
     <div id="caption"></div>
     <div id="card" style="display: none"></div>
 
+    <script type="module">
+      import { projectTerminalFocus } from "STAGE_GEOMETRY_URL";
+      window.projectTerminalFocus = projectTerminalFocus;
+    </script>
     <script>
       const $ = (id) => document.getElementById(id);
       const easeOut = (t) => 1 - Math.pow(1 - Math.min(Math.max(t, 0), 1), 4);
@@ -236,6 +274,46 @@
         el.style.transform = `translateY(${(1 - t) * 26}px)`;
       }
 
+      /** Project normalized capture geometry through the active camera and paint its callout. */
+      function renderTerminalFocus(camera, highlight, highlightT, pulseT) {
+        const content = $("term-content");
+        const visual = $("term-visual");
+        const img = $("term-img");
+        const projection = window.projectTerminalFocus({
+          camera,
+          highlight,
+          sourceHeight: img.clientHeight,
+          sourceWidth: img.clientWidth,
+          viewportHeight: content.clientHeight,
+          viewportWidth: content.clientWidth,
+        });
+        visual.style.transform = `translate(${projection.translateX}px, ${projection.translateY}px) scale(${projection.scale})`;
+
+        const outline = $("term-highlight");
+        if (!highlight || highlightT <= 0) {
+          outline.style.display = "none";
+          return;
+        }
+        const projectedHighlight = projection.highlight;
+        if (!projectedHighlight) {
+          outline.style.display = "none";
+          return;
+        }
+        const t = easeOut(highlightT);
+        const pulse = Math.sin(Math.min(Math.max(pulseT, 0), 1) * Math.PI);
+        outline.style.display = "block";
+        outline.style.left = `${projectedHighlight.x}px`;
+        outline.style.top = `${projectedHighlight.y}px`;
+        outline.style.width = `${projectedHighlight.width}px`;
+        outline.style.height = `${projectedHighlight.height}px`;
+        outline.style.opacity = String(t);
+        outline.style.transform = `scale(${0.97 + 0.03 * t})`;
+        outline.style.boxShadow = `0 0 0 2px rgba(12, 16, 28, 0.82), 0 0 ${28 + pulse * 26}px rgba(224, 175, 104, ${0.72 + pulse * 0.2}), inset 0 0 22px rgba(224, 175, 104, 0.08)`;
+        const label = $("term-highlight-label");
+        label.textContent = highlight.label ?? "";
+        label.style.display = highlight.label ? "block" : "none";
+      }
+
       // Called by the compositor for every frame. Returns a promise that resolves
       // once the frame's image (if any) is decoded and painted.
       window.renderShot = async function renderShot(state) {
@@ -250,6 +328,7 @@
           card.style.opacity = String(t);
           card.style.transform = `scale(${0.965 + 0.035 * t})`;
           renderCaption(null, 0);
+          renderTerminalFocus(null, null, 0, 0);
         } else {
           card.style.display = "none";
           term.style.display = "block";
@@ -263,6 +342,12 @@
           const t = easeOut(state.shotT ?? 1);
           term.style.opacity = String(t);
           term.style.transform = `translateX(-50%) scale(${0.975 + 0.025 * t})`;
+          renderTerminalFocus(
+            state.camera,
+            state.highlight,
+            state.highlightT ?? 0,
+            state.highlightPulseT ?? 1,
+          );
           renderCaption(state.caption ?? null, state.capT ?? 1);
         }
 

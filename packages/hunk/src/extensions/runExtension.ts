@@ -159,7 +159,12 @@ function toInternalVcsOperation(
     ...(watchSignature && {
       watchSignature(input, context) {
         try {
-          return watchSignature(input, context);
+          const signature = watchSignature(input, context);
+          return typeof signature === "string"
+            ? signature
+            : signature.catch((error) => {
+                throw toUserFacingError(error);
+              });
         } catch (error) {
           throw toUserFacingError(error);
         }

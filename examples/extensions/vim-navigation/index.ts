@@ -28,10 +28,7 @@ export default function (hunk: HunkExtensionAPI) {
         return;
       }
 
-      const input = await ctx.dialogs.input({
-        title: "Vim command (:)",
-        placeholder: "top or bottom",
-      });
+      const input = await ctx.prompts.line({ prefix: ":", placeholder: "top or bottom" });
       if (input === null || !ctx.keyboardModes.isActive("normal")) return;
 
       const result = executeVimCommand(input, ctx.commands);

@@ -11,6 +11,7 @@ import {
   type SessionSnapshot,
 } from "@hunk/session-broker-core";
 import { SessionBroker } from "./broker";
+import { SESSION_BROKER_ADMIN_STOP_CLOSE_REASON } from "./admin";
 import { createSessionBrokerDaemon } from "./daemon";
 import { createSessionBrokerProtocolParsers } from "./protocolParsers";
 import type {
@@ -1483,5 +1484,243 @@ describe("session broker daemon", () => {
     });
 
     await expect(daemon.stopped).resolves.toBeUndefined();
+  });
+
+  test("serves the admin scope through its own authenticator and closes producers on stop", async () => {
+    const broker = createBroker();
+    const adminAuthenticated: string[] = [];
+    const daemon = createSessionBrokerDaemon({
+      broker,
+      ...authenticatedHttpApi,
+      exposeHttpApi: true,
+      producerEndpoint: "ws://broker.test/session",
+      helloAuthenticator: {
+        async issueChallenge() {
+          return { challengeId: "challenge-1" } as SessionBrokerHelloChallenge;
+        },
+        async completeCallerHello() {
+          throw new Error("not used");
+        },
+        async completeProducerHello(_proof, connectionId) {
+          return {
+            ack: {
+              principal: {
+                kind: "producer" as const,
+                appId: "session-broker",
+                principalId: "producer-1",
+                keyId: "producer-key-1",
+                grantId: "producer-grant-1",
+                scopes: ["register"] as const,
+              },
+              connectionId: String(connectionId),
+              brokerRevision: 1,
+              appRevision: 1,
+              features: [],
+              helloTranscriptHash: "transcript-1",
+              daemonKeyId: "daemon-key-1",
+              daemonSignature: "signature-1",
+            },
+            assertActive() {},
+          } satisfies AuthenticatedProducerHello;
+        },
+      },
+      admin: {
+        appVersion: "9.9.9",
+        describeSession: (session) => ({
+          sessionId: session.sessionId,
+          title: session.registration.info.title,
+          cwd: session.cwd,
+          pid: session.registration.pid,
+        }),
+        authenticator: {
+          async issueChallenge() {
+            adminAuthenticated.push("challenge");
+            return { challengeId: "admin-challenge" } as SessionBrokerHelloChallenge;
+          },
+          async completeCallerHello() {
+            adminAuthenticated.push("proof");
+            throw new Error("not used");
+          },
+          async completeProducerHello() {
+            throw new Error("not used");
+          },
+          authenticate: async () => {
+            adminAuthenticated.push("request");
+            return authenticatedRequest({
+              kind: "caller" as const,
+              appId: "session-broker",
+              principalId: "test-caller",
+              keyId: "test-key",
+              grantId: "test-grant",
+              operations: ["diagnostics"] as const,
+              commands: [],
+            });
+          },
+        },
+      },
+    });
+    const producer = createConnection();
+    daemon.handleConnectionMessage(
+      producer.connection,
+      JSON.stringify({ type: "hello-init", hello: {} }),
+    );
+    await Bun.sleep(0);
+    daemon.handleConnectionMessage(
+      producer.connection,
+      JSON.stringify({ type: "hello-proof", proof: {} }),
+    );
+    await Bun.sleep(0);
+    daemon.handleConnectionMessage(
+      producer.connection,
+      JSON.stringify({
+        type: "register",
+        registration: createRegistration(),
+        snapshot: createSnapshot(),
+      }),
+    );
+    expect(producer.authenticated).toBe(true);
+
+    const challenge = await daemon.handleRequest(
+      new Request("http://broker.test/session-admin/challenge", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ role: "caller" }),
+      }),
+    );
+    expect(challenge?.status).toBe(200);
+    expect(adminAuthenticated).toEqual(["challenge"]);
+
+    const status = await daemon.handleRequest(
+      new Request("http://broker.test/session-admin", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "status" }),
+      }),
+    );
+    expect(status?.status).toBe(200);
+    expect(await authenticatedBody(status)).toEqual({
+      adminScopeVersion: 1,
+      daemonVersion: 1,
+      appVersion: "9.9.9",
+      pid: process.pid,
+      startedAt: expect.any(String),
+      uptimeMs: expect.any(Number),
+      sessions: [
+        {
+          sessionId: "session-1",
+          title: "repo working tree",
+          cwd: "/repo",
+          pid: 123,
+          clientDaemonVersion: 1,
+        },
+      ],
+    });
+
+    const unknown = await daemon.handleRequest(
+      new Request("http://broker.test/session-admin", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "list" }),
+      }),
+    );
+    expect(unknown?.status).toBe(400);
+
+    const stop = await daemon.handleRequest(
+      new Request("http://broker.test/session-admin", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "stop" }),
+      }),
+    );
+    expect(stop?.status).toBe(200);
+    expect(await authenticatedBody(stop)).toEqual({ adminScopeVersion: 1, stopping: true });
+    // The acknowledgement is written before shutdown begins so the caller can verify it.
+    expect(producer.closed).toBeNull();
+    await expect(daemon.stopped).resolves.toBeUndefined();
+    expect(producer.closed).toEqual({ code: 1001, reason: SESSION_BROKER_ADMIN_STOP_CLOSE_REASON });
+  });
+
+  // Intent: a newer window waits for an incompatible incumbent to go quiescent while polling it
+  // for its build. If that read counted as activity, the incumbent would never idle out and the
+  // window's "close older Hunk windows and this one reconnects" promise would be false.
+  test("admin status does not postpone quiescent idle shutdown", async () => {
+    let statusCalls = 0;
+    const daemon = createSessionBrokerDaemon({
+      broker: createBroker(),
+      ...authenticatedHttpApi,
+      exposeHttpApi: true,
+      idleTimeoutMs: 60,
+      staleSessionSweepIntervalMs: 20,
+      admin: {
+        appVersion: "9.9.9",
+        describeSession: (session) => ({
+          sessionId: session.sessionId,
+          title: session.registration.info.title,
+          cwd: session.cwd,
+          pid: session.registration.pid,
+        }),
+        authenticator: {
+          async issueChallenge() {
+            return { challengeId: "admin-challenge" } as SessionBrokerHelloChallenge;
+          },
+          async completeCallerHello() {
+            throw new Error("not used");
+          },
+          async completeProducerHello() {
+            throw new Error("not used");
+          },
+          authenticate: async () =>
+            authenticatedRequest({
+              kind: "caller" as const,
+              appId: "session-broker",
+              principalId: "test-caller",
+              keyId: "test-key",
+              grantId: "test-grant",
+              operations: ["diagnostics"] as const,
+              commands: [],
+            }),
+        },
+      },
+    });
+    const poll = setInterval(() => {
+      statusCalls += 1;
+      void daemon.handleRequest(
+        new Request("http://broker.test/session-admin", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "status" }),
+        }),
+      );
+    }, 10);
+
+    try {
+      await expect(daemon.stopped).resolves.toBeUndefined();
+      expect(statusCalls).toBeGreaterThan(1);
+    } finally {
+      clearInterval(poll);
+      daemon.shutdown();
+    }
+  });
+
+  test("does not expose the admin scope unless it is configured", async () => {
+    const daemon = createSessionBrokerDaemon({
+      broker: createBroker(),
+      ...authenticatedHttpApi,
+      exposeHttpApi: true,
+    });
+    try {
+      for (const path of ["/session-admin/challenge", "/session-admin/proof", "/session-admin"]) {
+        const response = await daemon.handleRequest(
+          new Request(`http://broker.test${path}`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: "{}",
+          }),
+        );
+        expect(response).toBeNull();
+      }
+    } finally {
+      daemon.shutdown();
+    }
   });
 });

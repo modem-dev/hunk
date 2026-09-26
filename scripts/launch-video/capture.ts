@@ -8,7 +8,7 @@
 // this run only — compose.mjs resolves frames by name from its SHOTS table and
 // ignores it, and after a SCENES= run the manifest is partial while frames/
 // stays cumulative.
-import { cpSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -55,6 +55,7 @@ const hunkEnv = {
   XDG_CONFIG_HOME: configHome,
   HUNK_MCP_DISABLE: "1",
   HUNK_DISABLE_UPDATE_NOTICE: "1",
+  TZ: "UTC",
 };
 
 // Hunk's help overlay is the cheap, unmistakable probe surface.
@@ -64,8 +65,12 @@ const HUNK_KEYBOARD_PROBE: KeyboardProbe = {
   dismissKey: "escape",
 };
 
-function runGit(args: string[], cwd: string) {
-  const proc = spawnSync("git", args, { cwd, encoding: "utf8" });
+function runGit(args: string[], cwd: string, env: NodeJS.ProcessEnv = {}) {
+  const proc = spawnSync("git", args, {
+    cwd,
+    encoding: "utf8",
+    env: { ...process.env, ...env },
+  });
   if (proc.status !== 0) {
     throw new Error(proc.stderr.trim() || `git ${args.join(" ")} failed`);
   }
@@ -107,6 +112,99 @@ function createDemoRepo() {
   runGit(["commit", "-m", "before"], repoDir);
   cpSync(join(repoRoot, "examples/2-mini-app-refactor/after"), repoDir, { recursive: true });
   return repoDir;
+}
+
+/** Build a deterministic Git history with enough depth and dates for the history browser. */
+function createHistoryDemoRepo() {
+  const repoDir = join(makeTempDir("hunk-video-history-"), "hunk-history-demo");
+  mkdirSync(repoDir);
+  runGit(["init", "-q", "-b", "main"], repoDir);
+  runGit(["config", "user.name", "Hunk Team"], repoDir);
+  runGit(["config", "user.email", "hello@hunk.dev"], repoDir);
+
+  const utcBaseDate = new Date();
+  utcBaseDate.setUTCHours(0, 0, 0, 0);
+  /** Keep fixture ages current while preserving stable UTC day groups. */
+  function utcDate(daysAgo: number, hour: number, minute: number) {
+    const date = new Date(utcBaseDate);
+    date.setUTCHours(hour, minute, 0, 0);
+    date.setUTCDate(date.getUTCDate() - daysAgo);
+    return date.toISOString();
+  }
+  const commits = [
+    ["Start terminal review workspace", utcDate(5, 10, 0)],
+    ["Render unified diff rows", utcDate(4, 9, 15)],
+    ["Add keyboard review navigation", utcDate(4, 14, 40)],
+    ["Show inline review notes", utcDate(3, 11, 20)],
+    ["Add multiline review comments", utcDate(2, 8, 30)],
+    ["Make history range-selectable", utcDate(2, 15, 10)],
+    ["Preserve routed view preferences", utcDate(1, 12, 25)],
+    ["Polish interactive Git history", utcDate(1, 17, 45)],
+  ] as const;
+
+  for (const [index, [subject, date]] of commits.entries()) {
+    const exports = commits
+      .slice(0, index + 1)
+      .map(
+        ([commitSubject], exportIndex) =>
+          `export const feature${exportIndex + 1} = ${JSON.stringify(commitSubject)};`,
+      )
+      .join("\n");
+    writeFileSync(join(repoDir, "history.ts"), `${exports}\n`);
+    writeFileSync(
+      join(repoDir, "README.md"),
+      `# Hunk history demo\n\nCurrent milestone: ${subject}.\n`,
+    );
+    runGit(["add", "history.ts", "README.md"], repoDir);
+    runGit(["commit", "-qm", subject], repoDir, {
+      GIT_AUTHOR_DATE: date,
+      GIT_COMMITTER_DATE: date,
+    });
+  }
+
+  return repoDir;
+}
+
+// ---------------------------------------------------------------------------
+// Scene: interactive Git history, visual range selection, and comparison review.
+// ---------------------------------------------------------------------------
+async function captureHistoryScene() {
+  console.log("scene: history");
+  const repoDir = createHistoryDemoRepo();
+  const session = await launchHunk(["log", "--max-count", "10", "--no-extensions"], {
+    cwd: repoDir,
+  });
+  try {
+    await session.waitForText(/Polish interactive Git history/, { timeout: 60_000 });
+    await ensureKeyboardIsLive(session, HUNK_KEYBOARD_PROBE);
+    await sleep(600);
+    await snap(session, "history-overview");
+
+    for (let step = 0; step < 3; step += 1) {
+      await session.press("j");
+      await sleep(180);
+      await snap(session, `history-walk-${step + 1}`);
+    }
+
+    await session.press("v");
+    await session.waitForText(/1 commit selected/, { timeout: 10_000 });
+    await sleep(250);
+    await snap(session, "history-range-1");
+
+    for (let selected = 2; selected <= 4; selected += 1) {
+      await session.press("j");
+      await session.waitForText(new RegExp(`${selected} commits selected`), { timeout: 10_000 });
+      await sleep(180);
+      await snap(session, `history-range-${selected}`);
+    }
+
+    await session.press("enter");
+    await session.waitForText(/history\.ts/, { timeout: 60_000 });
+    await sleep(800);
+    await snap(session, "history-comparison");
+  } finally {
+    session.close();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -358,12 +456,13 @@ async function captureFileViewScene(
   }
 }
 
-// Optional comma-separated scene filter for fast iteration, e.g.
-// SCENES=review bun run scripts/launch-video/capture.ts
-const wants = makeSceneFilter(process.env.SCENES);
+// The current storyboard uses history; opt into reusable legacy scenes with a
+// comma-separated override, e.g. SCENES=review,pager.
+const wants = makeSceneFilter(process.env.SCENES ?? "history");
 
 async function main() {
   try {
+    if (wants("history")) await captureHistoryScene();
     if (wants("review")) await captureReviewScene();
     if (wants("stml")) await captureStmlScene();
     if (wants("cli")) await captureMarkupCliScene();

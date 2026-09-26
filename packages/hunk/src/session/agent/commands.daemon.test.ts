@@ -9,6 +9,9 @@ import {
   type HunkDaemonCliClient,
 } from "./commands";
 import { HUNK_SESSION_API_VERSION, HUNK_SESSION_DAEMON_VERSION } from "../protocol";
+import { SessionBrokerClientAuthenticationError } from "@hunk/session-broker";
+import { DaemonBuildMismatchError } from "./errors";
+import { resolveCliVersion } from "../../core/run/version";
 
 // These tests exercise the REAL resolveDaemonAvailability path (which the hook-based suite in
 // commands.test.ts deliberately bypasses) by pointing the broker config at a known-free loopback
@@ -128,6 +131,170 @@ describe("resolveDaemonAvailability with a foreign process on the port", () => {
     } finally {
       server.stop(true);
     }
+  });
+});
+
+describe("daemon build mismatch errors", () => {
+  /** A client whose hello the daemon refuses, the way a revision mismatch presents. */
+  function refusedClient(): HunkDaemonCliClient {
+    return {
+      getCapabilities: async () => {
+        throw new SessionBrokerClientAuthenticationError();
+      },
+    } as unknown as HunkDaemonCliClient;
+  }
+
+  function adminStatus(daemonVersion: number, appVersion: string) {
+    return {
+      kind: "status" as const,
+      status: {
+        adminScopeVersion: 1 as const,
+        daemonVersion,
+        appVersion,
+        pid: 4242,
+        startedAt: "2026-01-01T00:00:00.000Z",
+        uptimeMs: 1_000,
+        sessions: [
+          {
+            sessionId: "abcdef12-0000",
+            title: "repo working tree",
+            cwd: "/repo",
+            pid: 100,
+            clientDaemonVersion: daemonVersion,
+          },
+          {
+            sessionId: "12345678-0000",
+            title: "repo show HEAD",
+            cwd: "/repo",
+            pid: 101,
+            clientDaemonVersion: daemonVersion,
+          },
+        ],
+      },
+    };
+  }
+
+  const cliBuild = { daemonVersion: HUNK_SESSION_DAEMON_VERSION, appVersion: resolveCliVersion() };
+
+  async function runListExpectingMismatch() {
+    try {
+      await runSessionCommand({ kind: "session", action: "list", output: "json" });
+    } catch (error) {
+      if (error instanceof DaemonBuildMismatchError) return error;
+      throw error;
+    }
+    throw new Error("Expected a daemon build mismatch error.");
+  }
+
+  test("recommends a restart with the attached windows when the daemon is older", async () => {
+    setSessionCommandTestHooks({
+      createClient: refusedClient,
+      resolveDaemonAvailability: async () => true,
+      probeDaemonAdminStatus: async () => adminStatus(HUNK_SESSION_DAEMON_VERSION - 1, "0.21.1"),
+    });
+
+    const error = await runListExpectingMismatch();
+    expect(error.details).toEqual({
+      kind: "daemon-build-mismatch",
+      daemon: { daemonVersion: HUNK_SESSION_DAEMON_VERSION - 1, appVersion: "0.21.1" },
+      cli: cliBuild,
+      attachedSessions: {
+        count: 2,
+        sessions: [
+          { sessionId: "abcdef12-0000", title: "repo working tree", cwd: "/repo", pid: 100 },
+          { sessionId: "12345678-0000", title: "repo show HEAD", cwd: "/repo", pid: 101 },
+        ],
+      },
+      recommendedAction: "restart-daemon",
+    });
+    expect(error.message).toBe("The session daemon is an older Hunk build and refuses this CLI.");
+    expect(error.suggestions).toEqual([
+      "Run `hunk daemon restart` to replace it, then re-run `hunk session list`; windows that could not register attach automatically.",
+      "Restarting disconnects 2 attached windows; they must be relaunched, losing their notes. Closing them instead lets the daemon exit on its own after about a minute.",
+    ]);
+    expect(JSON.parse(JSON.stringify(error))).toMatchObject({
+      message: error.message,
+      kind: "daemon-build-mismatch",
+      recommendedAction: "restart-daemon",
+    });
+  });
+
+  test("recommends the newer Hunk build when the daemon is newer", async () => {
+    setSessionCommandTestHooks({
+      createClient: refusedClient,
+      resolveDaemonAvailability: async () => true,
+      probeDaemonAdminStatus: async () => adminStatus(HUNK_SESSION_DAEMON_VERSION + 1, "0.23.0"),
+    });
+
+    const error = await runListExpectingMismatch();
+    expect(error.details).toMatchObject({
+      daemon: { daemonVersion: HUNK_SESSION_DAEMON_VERSION + 1, appVersion: "0.23.0" },
+      attachedSessions: { count: 2 },
+      recommendedAction: "use-newer-hunk",
+    });
+    expect(error.message).toBe("The session daemon is a newer Hunk build and refuses this CLI.");
+    expect(error.suggestions).toEqual([
+      "Use the newer Hunk build the daemon was started from, or run `hunk daemon restart` from this build (2 attached windows would be disconnected and could not reconnect).",
+    ]);
+  });
+
+  // Intent: the daemon being upgraded away from does not speak the admin scope, so the only
+  // facts available are the launch metadata's; the recommendation is still a restart.
+  test("falls back to launch metadata when the daemon predates the admin scope", async () => {
+    setSessionCommandTestHooks({
+      createClient: refusedClient,
+      resolveDaemonAvailability: async () => true,
+      probeDaemonAdminStatus: async () => ({ kind: "unsupported" }),
+      readLaunchMetadata: () => ({
+        pid: 777,
+        command: "/usr/local/bin/hunk",
+        args: ["daemon", "serve"],
+        launchedAt: "2026-09-08T09:42:00.000Z",
+      }),
+    });
+
+    const error = await runListExpectingMismatch();
+    expect(error.details).toEqual({
+      kind: "daemon-build-mismatch",
+      daemon: null,
+      cli: cliBuild,
+      attachedSessions: null,
+      launch: {
+        pid: 777,
+        command: "/usr/local/bin/hunk daemon serve",
+        launchedAt: "2026-09-08T09:42:00.000Z",
+      },
+      recommendedAction: "restart-daemon",
+    });
+    expect(error.message).toBe(
+      "The session daemon is an older Hunk build that predates `hunk daemon status` and refuses this CLI (pid 777, started 2026-09-08T09:42:00.000Z, command /usr/local/bin/hunk daemon serve).",
+    );
+    expect(error.suggestions[1]).toBe(
+      "Restarting disconnects an unknown number of attached windows; they must be relaunched, losing their notes. Closing them instead lets the daemon exit on its own after about a minute.",
+    );
+  });
+
+  test("reports a same-revision daemon that still lacks the action as a mismatch", async () => {
+    setSessionCommandTestHooks({
+      createClient: () =>
+        ({
+          getCapabilities: async () => ({
+            version: HUNK_SESSION_API_VERSION,
+            daemonVersion: HUNK_SESSION_DAEMON_VERSION,
+            actions: ["get"],
+          }),
+        }) as unknown as HunkDaemonCliClient,
+      resolveDaemonAvailability: async () => true,
+      probeDaemonAdminStatus: async () =>
+        adminStatus(HUNK_SESSION_DAEMON_VERSION, cliBuild.appVersion),
+    });
+
+    const error = await runListExpectingMismatch();
+    expect(error.details).toMatchObject({
+      daemon: { daemonVersion: HUNK_SESSION_DAEMON_VERSION },
+      recommendedAction: "restart-daemon",
+    });
+    expect(error.message).toBe("The session daemon is an older Hunk build and refuses this CLI.");
   });
 });
 

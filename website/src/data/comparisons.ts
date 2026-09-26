@@ -232,7 +232,7 @@ export const COMPARISONS: Comparison[] = [
         heading: "What Hunk does differently",
         body: [
           "Hunk parses the changeset into a document, then draws a UI over it. Every visible file becomes one continuous review stream, and the sidebar indexes that stream instead of hiding the rest of the change. `[` and `]` walk hunks across the whole changeset, `,` and `.` walk files, and the selection is real state that the sidebar, note cards, and context expansion all follow.",
-          "Holding the model in memory makes things easy that a pager cannot do at all. Press `z` to expand unchanged context around a hunk without re-running the diff. Press `1`, `2`, or `0` for split, unified, or responsive layout. Press `w` for wrapping or `t` for another theme, mid-review. `hunk diff --watch` reloads as you keep editing.",
+          "Holding the model in memory makes things easy that a pager cannot do at all. Press `z` to expand unchanged context around a hunk without re-running the diff. Press `1`, `2`, or `0` for unified, split, or responsive layout. Press `w` for wrapping or `t` for another theme, mid-review. `hunk diff --watch` reloads as you keep editing.",
           "The part with no delta equivalent is agent context. An agent that wrote the change can attach its reasoning to specific hunks through `hunk session`, and Hunk renders those notes inline, next to the code, instead of in a pane you correlate by hand.",
         ],
       },
@@ -272,7 +272,7 @@ export const COMPARISONS: Comparison[] = [
       {
         question: "Does Hunk support side-by-side diffs like `delta --side-by-side`?",
         answer:
-          "Yes, and it is the default on wide terminals. Hunk's `auto` layout picks split on wide terminals and unified on narrow ones. `1` forces split and `2` forces unified, at any point in the review.",
+          "Yes, and it is the default on wide terminals. Hunk's `auto` layout picks split on wide terminals and unified on narrow ones. `2` forces split and `1` forces unified, at any point in the review.",
       },
       {
         question: "Which is faster, Hunk or delta?",
@@ -776,7 +776,7 @@ export const COMPARISONS: Comparison[] = [
       {
         question: "How do I get a side-by-side git diff in the terminal?",
         answer:
-          "`git diff` has no side-by-side mode. Run `hunk diff` instead, where split view is the default on wide terminals, or configure a difftool. Press `1` for split, `2` for unified, and `0` for the responsive layout at any point.",
+          "`git diff` has no side-by-side mode. Run `hunk diff` instead, where split view is the default on wide terminals, or configure a difftool. Press `2` for split, `1` for unified, and `0` for the responsive layout at any point.",
       },
       {
         question: "Can I make `git diff` itself open Hunk?",

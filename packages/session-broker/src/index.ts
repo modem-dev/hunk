@@ -8,3 +8,5 @@ export * from "./crypto";
 export * from "./authentication";
 export * from "./clientAuthentication";
 export * from "./protocolParsers";
+export * from "./admin";
+export * from "./adminClient";

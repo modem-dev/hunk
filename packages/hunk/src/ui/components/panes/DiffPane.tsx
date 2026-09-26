@@ -11,6 +11,10 @@ import {
 } from "react";
 import { DEFAULT_FILE_GAP, DEFAULT_HUNK_GAP } from "../../../core/run/reviewGap";
 import { DEFAULT_TAB_WIDTH } from "../../../core/run/tabWidth";
+import {
+  DEFAULT_WHEEL_SCROLL_LINES,
+  type WheelScrollLines,
+} from "../../../core/run/wheelScrollLines";
 import type { DiffFile } from "../../../core/changeset/model";
 import type { CursorLine, LayoutMode } from "../../../core/run/commandInputs";
 import type { ReviewNoteTargetV1 } from "../../../core/review/types";
@@ -347,6 +351,7 @@ export function DiffPane({
   tabWidth = DEFAULT_TAB_WIDTH,
   fileGap = DEFAULT_FILE_GAP,
   hunkGap = DEFAULT_HUNK_GAP,
+  wheelScrollLines = DEFAULT_WHEEL_SCROLL_LINES,
   wrapLines,
   wrapToggleScrollTop,
   layoutToggleScrollTop = null,
@@ -431,6 +436,7 @@ export function DiffPane({
   tabWidth?: number;
   fileGap?: number;
   hunkGap?: number;
+  wheelScrollLines?: WheelScrollLines;
   wrapLines: boolean;
   wrapToggleScrollTop: number | null;
   layoutToggleScrollTop?: number | null;
@@ -477,8 +483,8 @@ export function DiffPane({
   const renderTopChrome = showTopChrome ?? !pagerMode;
   const renderer = useRenderer();
   const mouseWheelScrollAcceleration = useMemo(
-    () => createReviewMouseWheelScrollAcceleration(),
-    [],
+    () => createReviewMouseWheelScrollAcceleration(wheelScrollLines),
+    [wheelScrollLines],
   );
   const [currentLineRowPlan, setCurrentLineRowPlan] = useState<{
     source: { file: DiffFile; theme: AppTheme; tabWidth: number };
@@ -491,8 +497,8 @@ export function DiffPane({
   const onActiveAddNoteAffordanceChangeRef = useRef(onActiveAddNoteAffordanceChange);
   onActiveAddNoteAffordanceChangeRef.current = onActiveAddNoteAffordanceChange;
 
-  /** Hide hover-only row controls when content scrolls under a stationary mouse pointer. */
-  const clearAddNoteHoverForScroll = useCallback(() => {
+  /** Hide hover-only row controls when content scrolls or terminal focus leaves Hunk. */
+  const clearAddNoteHover = useCallback(() => {
     const hoveredFileId = hoveredFileIdRef.current;
     if (!hoveredFileId) {
       return;
@@ -504,6 +510,13 @@ export function DiffPane({
     hoveredFileIdRef.current = null;
     onActiveAddNoteAffordanceChangeRef.current?.(null);
   }, []);
+
+  useEffect(() => {
+    renderer.on("blur", clearAddNoteHover);
+    return () => {
+      renderer.off("blur", clearAddNoteHover);
+    };
+  }, [clearAddNoteHover, renderer]);
 
   const adjacentPrefetchFileIds = useMemo(
     () => buildAdjacentPrefetchFileIds(files, selectedFileId),
@@ -565,7 +578,7 @@ export function DiffPane({
         return;
       }
 
-      clearAddNoteHoverForScroll();
+      clearAddNoteHover();
 
       if (!scrollBox || wrapLines) {
         return;
@@ -609,7 +622,7 @@ export function DiffPane({
       event.preventDefault();
       event.stopPropagation();
     },
-    [clearAddNoteHoverForScroll, onScrollCodeHorizontally, scrollRef, wrapLines],
+    [clearAddNoteHover, onScrollCodeHorizontally, scrollRef, wrapLines],
   );
 
   const allAgentNotesByFile = useMemo(() => {
@@ -988,7 +1001,7 @@ export function DiffPane({
         // now sit over a different row, but only an actual mouse move should reveal row actions.
         const previousTop = prevScrollTopRef.current;
         scrollbarRef.current?.show();
-        clearAddNoteHoverForScroll();
+        clearAddNoteHover();
         const rapidOverscanRows = computeRapidScrollOverscanRows({
           deltaRows: nextTop - previousTop,
           viewportHeight: nextHeight,
@@ -1076,14 +1089,7 @@ export function DiffPane({
       scrollBox.verticalScrollBar.off("change", handleViewportChange);
       scrollBox.viewport.off("resize", handleViewportResize);
     };
-  }, [
-    activateRapidScrollOverscan,
-    clearAddNoteHoverForScroll,
-    files.length,
-    height,
-    scrollRef,
-    wrapLines,
-  ]);
+  }, [activateRapidScrollOverscan, clearAddNoteHover, files.length, height, scrollRef, wrapLines]);
 
   const sectionHeaderHeights = useMemo(() => buildInStreamFileHeaderHeights(files), [files]);
   const reserveAddNoteColumn = Boolean(onStartUserNoteAtHunk);
@@ -2635,7 +2641,7 @@ export function DiffPane({
                         }
                         visibleBodyBounds={visibleBodyBoundsByFile.get(file.id)}
                         onHover={() => setHoveredFileForRowActions(file.id)}
-                        onMouseScroll={clearAddNoteHoverForScroll}
+                        onMouseScroll={clearAddNoteHover}
                         onFileViewRowFailure={onFileViewRowFailure}
                         onActiveAddNoteAffordanceChange={
                           onActiveAddNoteAffordanceChange

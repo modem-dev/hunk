@@ -220,7 +220,7 @@ export interface ResolvedExtensionLineHighlighters {
 
 /** Resolve line-highlighter identities while retaining registration order as the priority rule. */
 export function resolveExtensionLineHighlighters(
-  registry: ExtensionRegistry,
+  registry: Pick<ExtensionRegistry, "lineHighlighters">,
 ): ResolvedExtensionLineHighlighters {
   const highlighters: RegisteredLineHighlighter[] = [];
   const issues: ExtensionApplyIssue[] = [];
@@ -294,7 +294,9 @@ export interface ResolvedExtensionCommands {
  * command table, which is the UI's to build, so the dispatch layer decides
  * them and warns.
  */
-export function resolveExtensionCommands(registry: ExtensionRegistry): ResolvedExtensionCommands {
+export function resolveExtensionCommands(
+  registry: Pick<ExtensionRegistry, "commands">,
+): ResolvedExtensionCommands {
   const commands: RegisteredCommand[] = [];
   const issues: ExtensionApplyIssue[] = [];
   const claimed = new Set<string>();

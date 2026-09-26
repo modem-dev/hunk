@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import {
   chmodSync,
+  appendFileSync,
   mkdirSync,
   mkdtempSync,
   realpathSync,
@@ -118,13 +119,15 @@ function sl(cwd: string, ...cmd: string[]) {
   return Buffer.from(proc.stdout).toString("utf8");
 }
 
+/** Create a Git fixture without paying for separate config subprocesses. */
 function createTempRepo(prefix: string) {
   const dir = createTempDir(prefix);
 
   git(dir, "init", "--initial-branch", "master");
-  git(dir, "config", "user.name", "Test User");
-  git(dir, "config", "user.email", "test@example.com");
-  git(dir, "config", "commit.gpgsign", "false");
+  appendFileSync(
+    join(dir, ".git", "config"),
+    "\n[user]\n\tname = Test User\n\temail = test@example.com\n[commit]\n\tgpgsign = false\n",
+  );
 
   return dir;
 }
@@ -310,12 +313,42 @@ describe("loadAppBootstrap", () => {
 
       expect(bootstrap.reloadContext.cwd).toBe(dir);
       expect(bootstrap.reloadContext.initialWatchSignature).toBeDefined();
-      expect(computeWatchSignature(bootstrap.input, bootstrap.reloadContext)).not.toBe(
+      expect(await computeWatchSignature(bootstrap.input, bootstrap.reloadContext)).not.toBe(
         bootstrap.reloadContext.initialWatchSignature,
       );
     } finally {
       Bun.file = originalBunFile;
     }
+  });
+
+  test("awaits the initial provider signature before loading content", async () => {
+    const order: string[] = [];
+    const abort = new AbortController();
+    const adapter: VcsAdapter = {
+      id: "demo",
+      name: "Demo",
+      detect: () => null,
+      operations: {
+        "working-tree-diff": {
+          async watchSignature(_input, { signal }) {
+            expect(signal).toBe(abort.signal);
+            await Promise.resolve();
+            order.push("signature");
+            return "before-load";
+          },
+          async load() {
+            order.push("load");
+            return { repoRoot: process.cwd(), sourceLabel: "demo", title: "demo", patchText: "" };
+          },
+        },
+      },
+    };
+    const bootstrap = await loadAppBootstrap(
+      { kind: "vcs", staged: false, options: { watch: true, vcs: "demo" } },
+      { vcsCatalog: createVcsCatalog([adapter], "demo", []), signal: abort.signal },
+    );
+    expect(order).toEqual(["signature", "load"]);
+    expect(bootstrap.reloadContext.initialWatchSignature).toBe("vcs\n---\nbefore-load");
   });
 
   test("does not fail a valid initial load when best-effort watch signing fails", async () => {
@@ -417,7 +450,7 @@ describe("loadAppBootstrap", () => {
     );
     expect(bootstrap.changeset.files[0]?.path).toBe("example.ts");
     expect(bootstrap.changeset.files[0]?.agent?.annotations).toHaveLength(1);
-    expect(computeWatchSignature(bootstrap.input, bootstrap.reloadContext)).toBe(
+    expect(await computeWatchSignature(bootstrap.input, bootstrap.reloadContext)).toBe(
       bootstrap.reloadContext.initialWatchSignature!,
     );
   });

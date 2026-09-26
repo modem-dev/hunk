@@ -51,9 +51,9 @@ timeout (or in the background); each logs per-snap / per-shot progress.
 # 0. dependencies (tuistory is a devDependency; ghostty-opentui arrives transitively)
 bun install    # if a postinstall hook fails in a sandbox, retry with --ignore-scripts
 
-# 1. capture keyframes. Output defaults to <repo>/.video-work/ regardless of
-#    cwd (pass a path argument to override), but the PROCESS must run from the
-#    repo root — see gotchas.
+# 1. capture the current storyboard's default scenes. Output defaults to
+#    <repo>/.video-work/ regardless of cwd (pass a path argument to override),
+#    but the PROCESS must run from the repo root — see gotchas.
 bun run scripts/launch-video/capture.ts
 
 # 2. one-time portable compositor setup. Playwright installs a Chromium build
@@ -70,22 +70,23 @@ node scripts/launch-video/compose.mjs .video-work
 
 # 4. encode
 cd .video-work
-ffmpeg -y -f concat -safe 0 -i concat.txt -vf "fps=30,format=yuv420p" \
+ffmpeg -y -f concat -safe 0 -i concat.txt -vf "format=yuv420p" -r 30 \
   -c:v libx264 -preset slow -crf 18 -movflags +faststart launch.mp4
-ffmpeg -y -f concat -safe 0 -i concat.txt -vf "fps=30,format=yuv420p" \
+ffmpeg -y -f concat -safe 0 -i concat.txt -vf "format=yuv420p" -r 30 \
   -c:v libvpx-vp9 -b:v 0 -crf 32 -row-mt 1 launch.webm
 ```
 
-Iterate on one scene without re-capturing the rest:
+Override the default scene set to iterate on one or more scenes:
 
 ```sh
 SCENES=review bun run scripts/launch-video/capture.ts   # comma-separated scene names
 ```
 
-Scene names are the `wants("...")` guards in `capture.ts`'s `main()`. Note
-`SCENES=` only narrows _capture_; `compose.mjs` preflights that every frame its
-`SHOTS` table references exists in `frames/` and fails fast listing any missing
-ones, so a full composite still needs every scene captured at least once.
+Scene names are the `wants("...")` guards in `capture.ts`'s `main()`. `SCENES=`
+replaces the canonical default scene set; `compose.mjs` preflights that every
+frame its `SHOTS` table references exists in `frames/` and fails fast listing
+any missing ones, so a full composite still needs every referenced scene
+captured at least once.
 
 ## Single-feature recipe
 
@@ -116,9 +117,9 @@ the scene for that feature:
    ```sh
    node scripts/launch-video/compose-one-feature.mjs .video-work
    cd .video-work
-   ffmpeg -y -f concat -safe 0 -i concat.txt -vf "fps=30,format=yuv420p" \
+   ffmpeg -y -f concat -safe 0 -i concat.txt -vf "format=yuv420p" -r 30 \
      -c:v libx264 -preset slow -crf 18 -movflags +faststart hunk-feature-demo.mp4
-   ffmpeg -y -f concat -safe 0 -i concat.txt -vf "fps=30,format=yuv420p" \
+   ffmpeg -y -f concat -safe 0 -i concat.txt -vf "format=yuv420p" -r 30 \
      -c:v libvpx-vp9 -b:v 0 -crf 32 -row-mt 1 hunk-feature-demo.webm
    cd ..
    rm scripts/launch-video/compose-one-feature.mjs
@@ -138,23 +139,24 @@ checked-in demo coverage and belongs to the submitted change.
    confirm the shortlist with the user before capturing.
 2. Rewrite the canonical storyboard's editorial surface (next section), adding
    or adjusting capture scenes as needed (see "Authoring scenes").
-3. Capture every scene referenced by the full storyboard, composite it, and
-   encode both formats using the main workflow above.
+3. Set `SCENES` to every scene referenced by the full storyboard, capture and
+   composite it, then encode both formats using the main workflow above.
 4. Verify the complete cut (see "Verification") and deliver both files. When `hunk-release` invoked this workflow, return the approved MP4 and WebM to that skill for versioned naming and GitHub user-attachment embedding; do not upload or edit the public release without its confirmation gate.
 
 ## Per-video editorial surface
 
 The capture machinery is reusable, but the storyboard is editorial content for
-one video. Rewrite it to match the video's scope. As of this writing, the
-checked-in reference storyboard is the full 0.18.0 release video:
+one video. Rewrite it to match the video's scope. The checked-in reference is a
+single-feature Git-history video, not a frozen release artifact:
 
-- `compose.mjs`: the whole `SHOTS` table; `OPEN_CARD` (version badge);
-  `OUTRO_CARD` (headline, install commands, footer); `EXTENSIONS_CARD`; every
-  `<span class="badge">NEW</span>` in captions — a NEW badge is a claim about
-  _this_ release, so drop or move them as features age.
-- `capture.ts`: the scene functions and the `wants()` guards in `main()` are
-  the current storyboard's scene list, plus hunk-side glue (`launchHunk`,
-  `launchHunkShell`, `createDemoRepo`, the keyboard probe).
+- `compose.mjs`: the whole `SHOTS` table; opening, feature, and outro cards;
+  every caption; camera targets; and callout rectangles. A `NEW` badge is a
+  claim about the video at hand, so drop or move it as features age.
+- `capture.ts`: `SCENES` selects from a reusable scene library. With no
+  override it captures only the current storyboard's default scene; update
+  that default whenever the canonical storyboard changes. Hunk-side glue
+  (`launchHunk`, `launchHunkShell`, demo repositories, and the keyboard probe)
+  remains reusable.
 
 Reusable machinery lives in `@hunk/term-video` (`packages/term-video/`) —
 extend it there, don't fork it into the scripts: `createKeyframer`,
@@ -210,6 +212,9 @@ Sandbox-specific bullets are marked; each cost real debugging time.
 
   `compose.mjs` picks its browser as `$CHROMIUM_PATH`, then
   `/opt/pw-browsers/chromium` when present, then Playwright's managed browser.
+  If a dependency update leaves Playwright asking for an uninstalled browser
+  revision, either rerun `bunx playwright install chromium` in `.video-work/`
+  or set `CHROMIUM_PATH` to a known system browser such as `/usr/bin/chromium`.
 
 - **Give `.video-work/` its own `package.json` before `bun add`.** Without
   one, bun walks up and installs into the repo's `package.json` — revert with
@@ -234,6 +239,10 @@ Sandbox-specific bullets are marked; each cost real debugging time.
 
 - Shared geometry is 140x32 cells rendered at fontSize 16 / dpr 2 → 2688x1536
   PNGs. Keep every scene at this size so all frames fit one window.
+- Keep time-sensitive fixtures recent and timezone-stable. The canonical
+  history scene derives commit dates from the current UTC day and launches
+  Hunk with `TZ=UTC`, so day groups and relative-age labels remain useful on
+  future runs. Preserve that policy in custom history scenes.
 - Helpers: `createDemoRepo()` and `launchHunkShell()` are hunk-side glue in
   the script (git repo built from `examples/2-mini-app-refactor`; interactive
   bash with a real `hunk` command on PATH and a clean `❯` prompt); `snap`,
@@ -269,18 +278,56 @@ Sandbox-specific bullets are marked; each cost real debugging time.
   changes, and continuation shots that share a `capKey` without restating
   `caption` keep the previous caption on screen. Sequences (walks, typing) are
   generated with `Array.from` spreads.
-- **Sequence lengths must match capture loop bounds**: `walk("j", 10)` in
-  `capture.ts` produces `review-walk-00..09`, consumed by
-  `Array.from({length: 9})` (+ the opening frame) in `SHOTS`. Change one side
-  and the other breaks — the preflight check names any frame that's missing.
+- **Sequence lengths must match capture loop bounds**: the history capture's
+  `selected = 2..4` loop produces `history-range-2..4`, consumed by a
+  three-entry `Array.from` spread in `SHOTS`. Change one side and the other
+  breaks — the preflight check names any frame that's missing.
 - `enter: true` fades/scales the surface in — use it for cards and the first
   terminal shot only.
+- Terminal shots may set normalized `camera: { x, y, scale }` targets and
+  `highlight: { x, y, width, height, label? }` rectangles. `motion` controls
+  the transition length in seconds. The planner interpolates camera changes
+  and outline geometry, while the stage keeps the camera inside the captured
+  image and paints an animated glow around the source-aligned region. Set the
+  same `cameraKey` or `highlightKey` on related keyframes when their normalized
+  coordinates share one capture geometry. Cross-image camera changes cut to
+  their target unless `cameraKey` explicitly permits a pan, and outlines never
+  leak across unrelated images.
 - Caption HTML vocabulary: `<span class="badge">NEW</span>` amber pill,
   `<span class="hl">` amber highlight, `<span class="dim">` muted. Cards use
   `badge` / `h1`/`h2` / `sub` / `cmds`+`cmd` / `foot` classes from
   `packages/term-video/src/stage.html`.
 - Target pacing: money shots hold 3–4s, context shots 2–3s, typing/walk frames
   0.2–0.6s; keep the total near 60s.
+
+## Camera and callout composition
+
+Treat `camera` and `highlight` as one composition. Both use normalized source
+coordinates, but the stage projects highlights through the active camera. A
+rectangle that fits within the source can still lose an edge after zooming.
+
+Use this framing process:
+
+1. Start with a full-frame establishing shot, then pan or zoom to one readable
+   subject. Use `motion` around 0.7–0.9s for a deliberate move rather than a
+   cut disguised as animation.
+2. Fit the target plus its outline inside the camera viewport. Leave about 1%
+   of the visible width on each side and at least one terminal row above and
+   below the meaningful content. If that does not fit, reduce `camera.scale`.
+3. Put outline edges in actual blank rows. Mathematical padding can move a
+   border onto a neighboring date heading, status row, or metadata line.
+4. Check both sides of the capture. A zoom that preserves left-aligned subjects
+   can still crop hashes, authors, or status text aligned to the right.
+5. Give irregular states explicit rectangles. A growing commit range that
+   crosses day separators should use measured per-keyframe heights instead of
+   assuming every added item occupies the same vertical distance.
+6. Share `cameraKey` or `highlightKey` only when captures use the same source
+   geometry. This allows pans and outline morphs across related captures;
+   unrelated keyframes cut or fade separately.
+
+The outline should direct attention, not become the subject. Use one callout at
+a time, keep labels short, and remove the outline once the viewer has enough
+context to follow the interaction unaided.
 
 ## Command and output legibility
 
@@ -335,16 +382,28 @@ be read when the 1920x1080 video is displayed at 50% size, revise the shot.
 - Inspect every command scene at 50% display size. Confirm the exact command is
   shown in large type and the meaningful real output is zoomed tightly enough
   to read; a readable caption does not compensate for unreadable terminal text.
+- Composite and encode the MP4 first. Inspect it before spending time on the
+  slower VP9/WebM encode; produce both final formats only after the visual pass.
 - After encoding, return to the repository root, set `VIDEO` to the produced
-  MP4, and inspect a mid-animation point, each new scene, and the outro:
+  MP4, and inspect a settled frame for each callout, a mid-animation point,
+  each new scene, and the outro:
 
   ```sh
   VIDEO=.video-work/hunk-feature-demo.mp4 # or .video-work/launch.mp4
-  ffmpeg -y -ss 2 -i "$VIDEO" -frames:v 1 .video-work/check.png
-  ffprobe -show_entries format=duration "$VIDEO"
+  ffmpeg -y -ss 2 -i "$VIDEO" -frames:v 1 -update 1 .video-work/check.png
+  ffprobe -v error -show_entries format=duration,size \
+    -show_entries stream=codec_name,width,height,r_frame_rate \
+    -of default=noprint_wrappers=1 "$VIDEO"
   ```
 
-  Captions must persist through the extracted animation frames.
+  Captions must persist through extracted animation frames. Every callout must
+  show all four borders, keep its label clear of terminal text, leave visible
+  padding around its subject, and avoid clipping right-aligned metadata.
+
+- Compare the storyboard planner's reported duration with `ffprobe`; they
+  should agree within one frame. The concat manifest declares the PNG input
+  rate so 30 fps animation timestamps stay exact. Investigate larger drift
+  before delivery.
 
 - Outputs stay under `.video-work/`: the full-release recipe creates
   `launch.mp4`/`launch.webm`, while the single-feature recipe above creates

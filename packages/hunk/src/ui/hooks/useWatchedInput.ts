@@ -12,7 +12,10 @@ import type { CliInput } from "../../core/run/commandInputs";
 
 export interface WatchedInputRuntime {
   clock?: WatchControllerClock;
-  getSignature?: (input: CliInput, context: ReloadContext) => string;
+  getSignature?: (
+    input: CliInput,
+    context: ReloadContext & { signal?: AbortSignal },
+  ) => string | Promise<string>;
   resolvePlan?: (input: CliInput, context: ReloadContext) => WatchPlan | null;
   createEventSource?: (plan: WatchPlan, callbacks: WatchEventSourceCallbacks) => { close(): void };
 }
@@ -53,14 +56,9 @@ export function useWatchedInput({
 
     const getSignature = runtime.getSignature ?? computeWatchSignature;
     let plan: WatchPlan | null;
-    let initialSignature: string;
     try {
       plan = (runtime.resolvePlan ?? resolveWatchPlan)(input, reloadContext);
       if (!plan) return;
-      initialSignature =
-        runtime.getSignature === undefined && reloadContext.initialWatchSignature !== undefined
-          ? reloadContext.initialWatchSignature
-          : getSignature(input, reloadContext);
     } catch (error) {
       console.error("Failed to initialize watch mode.", error);
       return;
@@ -72,9 +70,9 @@ export function useWatchedInput({
     const controller = createWatchController({
       clock: runtime.clock,
       createEventSource: eventSourceFactory,
-      getSignature: () => getSignature(input, reloadContext),
+      getSignature: (signal) => getSignature(input, { ...reloadContext, signal }),
       healthyCheckMs: hasDirectFileContent(plan) ? DIRECT_FILE_WATCH_SAFETY_CHECK_MS : undefined,
-      initialSignature,
+      initialSignature: reloadContext.initialWatchSignature,
       onReloadPending: () => pendingRef.current?.(),
       pollOnly: plan.coverage === "poll-only",
       refresh: () => refreshRef.current(),

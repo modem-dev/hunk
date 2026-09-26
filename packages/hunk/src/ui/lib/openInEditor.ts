@@ -131,6 +131,10 @@ export function buildEditorCommand({
     return { command, args: [...editorArgs, `${filePath}:${line}`] };
   }
 
+  if (program === "zed" || program === "zeditor") {
+    return { command, args: [...editorArgs, `${filePath}:${line}`] };
+  }
+
   return { command, args: [...editorArgs, filePath] };
 }
 

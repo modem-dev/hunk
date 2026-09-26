@@ -95,16 +95,39 @@ describe("open in editor helpers", () => {
     });
   });
 
+  test("builds path:line targets for zed and zeditor", () => {
+    expect(
+      buildEditorCommand({
+        editor: "zed --wait",
+        filePath: "/tmp/project/file.ts",
+        line: 123,
+      }),
+    ).toEqual({
+      command: "zed",
+      args: ["--wait", "/tmp/project/file.ts:123"],
+    });
+    expect(
+      buildEditorCommand({
+        editor: "zeditor",
+        filePath: "/tmp/project/file.ts",
+        line: 123,
+      }),
+    ).toEqual({
+      command: "zeditor",
+      args: ["/tmp/project/file.ts:123"],
+    });
+  });
+
   test("defaults unknown editors to opening the file path only", () => {
     expect(
       buildEditorCommand({
-        editor: "zed --new-window",
+        editor: "unknown-editor --flag",
         filePath: "/tmp/project/example.ts",
         line: 4,
       }),
     ).toEqual({
-      command: "zed",
-      args: ["--new-window", "/tmp/project/example.ts"],
+      command: "unknown-editor",
+      args: ["--flag", "/tmp/project/example.ts"],
     });
   });
 

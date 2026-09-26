@@ -14,7 +14,7 @@ import {
   spansForHighlightedSourceLine,
   type DiffRow,
 } from "./diffRows";
-import { resolveSplitPaneWidths } from "./codeColumns";
+import { expandDiffTabs, resolveSplitPaneWidths } from "./codeColumns";
 import { renderCodeOnlyPlannedRowText, renderDecoratedPlannedRowText } from "./plannedRowText";
 import { unifiedCellPalette } from "./rowStyle";
 import { buildReviewRenderPlan } from "./reviewRenderPlan";
@@ -23,6 +23,7 @@ import { TRANSPARENT_BACKGROUND, resolveTheme } from "../themes";
 import { createTestSourceFetcher } from "../../../../../test/helpers/diff-helpers";
 import { createTestCustomThemes } from "../../../../../test/helpers/theme-helpers";
 import { registerHighlightWorker } from "./worker";
+import { sanitizeTerminalLine } from "../../lib/terminalText";
 
 function createDiffFile(): DiffFile {
   const metadata = parseDiffFromFile(
@@ -307,13 +308,21 @@ describe("Pierre diff rows", () => {
         belowThreshold.metadata.additionLines.length,
       ),
     ).toBe(39);
-    expect(shouldOffloadHighlight(eligible.metadata, theme, { offloadLargeDiff: true })).toBe(true);
-    expect(shouldOffloadHighlight(belowThreshold.metadata, theme, { offloadLargeDiff: true })).toBe(
-      false,
-    );
-    expect(shouldOffloadHighlight(eligible.metadata, theme, { offloadLargeDiff: false })).toBe(
-      false,
-    );
+    expect(
+      shouldOffloadHighlight(eligible.metadata, theme, {
+        offloadLargeDiff: true,
+      }),
+    ).toBe(true);
+    expect(
+      shouldOffloadHighlight(belowThreshold.metadata, theme, {
+        offloadLargeDiff: true,
+      }),
+    ).toBe(false);
+    expect(
+      shouldOffloadHighlight(eligible.metadata, theme, {
+        offloadLargeDiff: false,
+      }),
+    ).toBe(false);
   });
 
   test("matches inline spans when an eligible bundled-theme diff uses the worker", async () => {
@@ -749,7 +758,11 @@ describe("Pierre diff rows", () => {
     };
     const theme = resolveTheme("github-dark-default", null);
     const rows = buildSplitRows(file, null, theme);
-    const plannedRows = buildReviewRenderPlan({ fileId: file.id, rows, showHunkHeaders: true });
+    const plannedRows = buildReviewRenderPlan({
+      fileId: file.id,
+      rows,
+      showHunkHeaders: true,
+    });
     const changedRow = plannedRows.find(
       (row) =>
         row.kind === "diff-row" &&
@@ -886,15 +899,54 @@ describe("Pierre diff rows", () => {
       text,
       theme,
     });
-    const spans = spansForHighlightedSourceLine(
-      "export const hiddenMarker = true;",
-      highlighted.lines[0],
-      theme,
-    );
+    const spans = spansForHighlightedSourceLine("export const hiddenMarker = true;", highlighted);
 
     expect(spans.map((span) => span.text).join("")).toBe("export const hiddenMarker = true;");
     expect(spans.some((span) => span.text.includes("export") && typeof span.fg === "string")).toBe(
       true,
+    );
+  });
+
+  test("keeps expanded-source line ownership stable for lone carriage returns", async () => {
+    const file = createDiffFile();
+    const theme = resolveTheme("github-dark-default", null);
+    const highlighted = await loadHighlightedSourceLines({
+      file,
+      text: "const first = 1;\rconst second = 2;\n",
+      theme,
+    });
+
+    expect(highlighted).toEqual({
+      status: "fallback",
+      reason: "invalid-document",
+      retryable: false,
+    });
+    expect(
+      spansForHighlightedSourceLine("const first = 1;\rconst second = 2;", highlighted)
+        .map((span) => span.text)
+        .join(""),
+    ).toBe("const first = 1;const second = 2;");
+  });
+
+  test("projects expanded-source offsets before sanitizing and expanding tabs", async () => {
+    const file = createDiffFile();
+    const theme = resolveTheme("github-dark-default", null);
+    const rawLine = 'const\tlabel = "😀é界\u001b[31mred\u001b[0m";';
+    const highlighted = await loadHighlightedSourceLines({
+      file,
+      text: `${rawLine}\n`,
+      theme,
+    });
+    const spans = spansForHighlightedSourceLine(rawLine, highlighted, 4);
+    const expected = expandDiffTabs(sanitizeTerminalLine(rawLine), 4);
+
+    expect(spans.map((span) => span.text).join("")).toBe(expected);
+    expect(spans.some((span) => typeof span.fg === "string")).toBe(true);
+    expect(spans.every((span) => !span.text.includes("\u001b") && !span.text.includes("\t"))).toBe(
+      true,
+    );
+    expect(measureTextWidth(spans.map((span) => span.text).join(""))).toBe(
+      measureTextWidth(expected),
     );
   });
 
@@ -927,16 +979,8 @@ describe("Pierre diff rows", () => {
       loadHighlightedSourceLines({ file, text, theme: firstTheme }),
       loadHighlightedSourceLines({ file, text, theme: secondTheme }),
     ]);
-    const firstSpans = spansForHighlightedSourceLine(
-      "// expanded comment",
-      firstHighlighted.lines[0],
-      firstTheme,
-    );
-    const secondSpans = spansForHighlightedSourceLine(
-      "// expanded comment",
-      secondHighlighted.lines[0],
-      secondTheme,
-    );
+    const firstSpans = spansForHighlightedSourceLine("// expanded comment", firstHighlighted);
+    const secondSpans = spansForHighlightedSourceLine("// expanded comment", secondHighlighted);
 
     expect(firstSpans[0]?.fg?.toLowerCase()).toBe("#abcdef");
     expect(secondSpans[0]?.fg?.toLowerCase()).toBe("#fedcba");
@@ -1090,7 +1134,11 @@ describe("Pierre diff rows", () => {
 
   test("preserves base Shiki colors outside partial custom syntax overrides", async () => {
     const metadata = parseDiffFromFile(
-      { name: "partial.ts", contents: "const stable = 1;\n", cacheKey: "partial-before" },
+      {
+        name: "partial.ts",
+        contents: "const stable = 1;\n",
+        cacheKey: "partial-before",
+      },
       {
         name: "partial.ts",
         contents:
@@ -1247,7 +1295,11 @@ describe("Pierre diff rows", () => {
 
   test("uses Shiki's bundled Catppuccin theme for Catppuccin syntax", async () => {
     const metadata = parseDiffFromFile(
-      { name: "syntax.ts", contents: "const a = 1;\n", cacheKey: "catppuccin-before" },
+      {
+        name: "syntax.ts",
+        contents: "const a = 1;\n",
+        cacheKey: "catppuccin-before",
+      },
       {
         name: "syntax.ts",
         contents:

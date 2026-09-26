@@ -15,6 +15,7 @@ const packageDir = dirname(fileURLToPath(import.meta.url));
 
 /** Default stage template shipped with the package. */
 export const DEFAULT_STAGE_PATH = join(packageDir, "stage.html");
+export const DEFAULT_STAGE_GEOMETRY_PATH = join(packageDir, "stageGeometry.mjs");
 
 /**
  * Locate the JetBrains Mono ttf that ships inside ghostty-opentui, whose
@@ -55,6 +56,7 @@ export function resolveChromium(explicitPath) {
  *   rootDir: string,
  *   framesDir?: string,
  *   stagePath?: string,
+ *   stageGeometryPath?: string,
  *   fontPath?: string,
  *   chromiumPath?: string,
  *   fps?: number,
@@ -70,6 +72,7 @@ export async function composeStoryboard(options) {
     rootDir,
     framesDir = join(workDir, "frames"),
     stagePath = DEFAULT_STAGE_PATH,
+    stageGeometryPath = DEFAULT_STAGE_GEOMETRY_PATH,
     fps = 30,
     captionAnimSeconds = 0.45,
     viewport = { width: 1920, height: 1080 },
@@ -97,7 +100,12 @@ export async function composeStoryboard(options) {
   const fontPath = options.fontPath ?? findCaptionFont(rootDir);
   const stageSource = readFileSync(stagePath, "utf8");
   const builtStagePath = join(workDir, "stage-built.html");
-  writeFileSync(builtStagePath, stageSource.replace("FONT_URL", pathToFileURL(fontPath).href));
+  writeFileSync(
+    builtStagePath,
+    stageSource
+      .replace("FONT_URL", pathToFileURL(fontPath).href)
+      .replace("STAGE_GEOMETRY_URL", pathToFileURL(stageGeometryPath).href),
+  );
 
   const browser = await chromium.launch({
     executablePath: resolveChromium(options.chromiumPath),
@@ -118,7 +126,7 @@ export async function composeStoryboard(options) {
     await page.evaluate((s) => window.renderShot(s), state);
     const file = `f${String(index).padStart(4, "0")}.png`;
     await page.screenshot({ path: join(outDir, file) });
-    entries.push({ file, duration: frame.duration });
+    entries.push({ file: join(outDir, file), duration: frame.duration });
     if (index % 25 === 0 || index === frames.length - 1) {
       log(`frame ${index + 1}/${frames.length}`);
     }
@@ -126,15 +134,24 @@ export async function composeStoryboard(options) {
 
   await browser.close();
 
-  // ffmpeg concat demuxer input; the last file is repeated per the format spec.
-  const lines = ["ffconcat version 1.0"];
-  for (const entry of entries) {
-    lines.push(`file '${join(outDir, entry.file)}'`);
-    lines.push(`duration ${entry.duration.toFixed(5)}`);
-  }
-  lines.push(`file '${join(outDir, entries[entries.length - 1].file)}'`);
   const concatPath = join(workDir, "concat.txt");
-  writeFileSync(concatPath, `${lines.join("\n")}\n`);
+  writeFileSync(concatPath, buildConcatManifest(entries, fps));
 
   return { uniqueFrames: entries.length, totalSeconds, concatPath, outDir };
+}
+
+/** Build ffmpeg concat input with an explicit source time base for every frame. */
+export function buildConcatManifest(entries, fps) {
+  // The last file is repeated per the concat demuxer format spec.
+  const lines = ["ffconcat version 1.0"];
+  for (const entry of entries) {
+    lines.push(`file '${entry.file}'`);
+    // PNGs otherwise default to a 25 fps time base, which rounds 30 fps
+    // animation timestamps and makes the encoded video longer than the plan.
+    lines.push(`option framerate ${fps}`);
+    lines.push(`duration ${entry.duration.toFixed(5)}`);
+  }
+  lines.push(`file '${entries[entries.length - 1].file}'`);
+  lines.push(`option framerate ${fps}`);
+  return `${lines.join("\n")}\n`;
 }

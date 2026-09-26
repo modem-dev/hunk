@@ -28,19 +28,36 @@ is_docs_only_path() {
   esac
 }
 
+is_nix_lock_input_path() {
+  local path="$1"
+
+  case "$path" in
+    bun.lock | bunfig.toml | package.json | packages/*/package.json | flake.nix | flake.lock | nix/*)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 code_changed=false
+nix_lock_changed=false
 while IFS= read -r path; do
   [[ -z "$path" ]] && continue
 
   if ! is_docs_only_path "$path"; then
     code_changed=true
-    break
+  fi
+  if is_nix_lock_input_path "$path"; then
+    nix_lock_changed=true
   fi
 # Disable rename detection so code-to-docs renames still expose the removed code path.
 done < <(git diff --name-only --no-renames "$base_sha" "$head_sha")
 
 if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
   echo "code_changed=$code_changed" >> "$GITHUB_OUTPUT"
+  echo "nix_lock_changed=$nix_lock_changed" >> "$GITHUB_OUTPUT"
 fi
 
 if [[ "$code_changed" == "true" ]]; then

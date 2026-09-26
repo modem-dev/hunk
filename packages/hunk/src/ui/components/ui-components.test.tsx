@@ -36,7 +36,6 @@ const { AgentInlineNote, measureAgentInlineNoteHeight } = await import("./panes/
 const { DiffPane, storedReviewNoteActions } = await import("./panes/DiffPane");
 const { MenuBar } = await import("./chrome/MenuBar");
 const { MenuDropdown } = await import("./chrome/MenuDropdown");
-const { StatusBar } = await import("./chrome/StatusBar");
 const { DiffFileHeaderRow } = await import("./panes/DiffFileHeaderRow");
 const { FileDirectoryRow } = await import("./panes/FileListItem");
 const { DiffSectionBody } = await import("../diff/DiffSectionBody");
@@ -1322,6 +1321,59 @@ describe("UI components", () => {
       await act(async () => {
         scrollRef.current?.scrollTo({ x: 0, y: 2 });
         await Bun.sleep(0);
+        await setup.renderOnce();
+      });
+      frame = await waitForFrame(setup, (nextFrame) => !nextFrame.includes("[+]"), 12);
+      expect(frame).not.toContain("[+]");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("DiffPane registers one renderer blur listener however many files are mounted", async () => {
+    const files = createWindowingFiles(14);
+    const props = createDiffPaneProps(files, resolveTheme("github-dark-default", null), {
+      onStartUserNoteAtHunk: () => {},
+    });
+    const setup = await testRender(<DiffPane {...props} />, { width: 80, height: 120 });
+
+    try {
+      await settleDiffPane(setup);
+      const frame = setup.captureCharFrame();
+      expect(frame).toContain("window-1.ts");
+      expect(frame).toContain("window-14.ts");
+      expect(setup.renderer.listenerCount("blur")).toBe(1);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("DiffPane hides the add-note affordance when the terminal loses focus", async () => {
+    const files = createWindowingFiles(6);
+    const props = createDiffPaneProps(files, resolveTheme("github-dark-default", null), {
+      diffContentWidth: 88,
+      onStartUserNoteAtHunk: () => {},
+      separatorWidth: 84,
+      width: 92,
+      wrapLines: true,
+    });
+    const setup = await testRender(<DiffPane {...props} />, { width: 96, height: 12 });
+
+    try {
+      await act(async () => {
+        await setup.renderOnce();
+        await setup.mockMouse.moveTo(32, 4);
+        await setup.renderOnce();
+      });
+      let frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("[+]"), 12);
+      expect(frame).toContain("[+]");
+
+      await act(async () => {
+        setup.renderer.emit("blur");
         await setup.renderOnce();
       });
       frame = await waitForFrame(setup, (nextFrame) => !nextFrame.includes("[+]"), 12);
@@ -3618,8 +3670,8 @@ describe("UI components", () => {
       <MenuDropdown
         activeMenuId="view"
         activeMenuEntries={[
-          { kind: "item", label: "Split view", hint: "1", checked: true, action: () => {} },
-          { kind: "item", label: "Unified view", hint: "2", checked: false, action: () => {} },
+          { kind: "item", label: "Unified view", hint: "1", checked: false, action: () => {} },
+          { kind: "item", label: "Split view", hint: "2", checked: true, action: () => {} },
           { kind: "item", label: "Line numbers", hint: "l", checked: true, action: () => {} },
           { kind: "item", label: "Line wrapping", hint: "w", checked: false, action: () => {} },
           { kind: "item", label: "Hunk metadata", hint: "m", checked: true, action: () => {} },
@@ -3702,161 +3754,6 @@ describe("UI components", () => {
     expect(frame.split("\n").every((line) => line.length <= 16)).toBe(true);
   });
 
-  test("StatusBar renders filter mode affordance", async () => {
-    const theme = resolveTheme("github-dark-default", null);
-    const frame = await captureFrame(
-      <StatusBar
-        filter="beta"
-        filterFocused={true}
-        terminalWidth={60}
-        theme={theme}
-        onCloseMenu={() => {}}
-        onFilterInput={() => {}}
-        onFilterSubmit={() => {}}
-      />,
-      60,
-      3,
-    );
-
-    expect(frame).toContain("filter:");
-    expect(frame).toContain("beta");
-  });
-
-  test("StatusBar renders a notice when no filter is active", async () => {
-    const theme = resolveTheme("github-dark-default", null);
-    const frame = await captureFrame(
-      <StatusBar
-        filter=""
-        filterFocused={false}
-        noticeText="Update available: 9.9.9 • npm i -g hunkdiff"
-        terminalWidth={60}
-        theme={theme}
-        onCloseMenu={() => {}}
-        onFilterInput={() => {}}
-        onFilterSubmit={() => {}}
-      />,
-      60,
-      3,
-    );
-
-    expect(frame).toContain("Update available: 9.9.9");
-  });
-
-  test("StatusBar keeps the keyboard-mode badge visible beside notices and filter input", async () => {
-    const theme = resolveTheme("github-dark-default", null);
-    const noticeFrame = await captureFrame(
-      <StatusBar
-        filter=""
-        filterFocused={false}
-        modeText="Vim navigation — ext vim:normal — Esc exits"
-        noticeText="Update available"
-        terminalWidth={80}
-        theme={theme}
-        onCloseMenu={() => {}}
-        onFilterInput={() => {}}
-        onFilterSubmit={() => {}}
-        onExitMode={() => {}}
-      />,
-      80,
-      3,
-    );
-    const filterFrame = await captureFrame(
-      <StatusBar
-        filter="beta"
-        filterFocused={true}
-        modeText="Vim navigation — ext vim:normal — Esc exits"
-        terminalWidth={80}
-        theme={theme}
-        onCloseMenu={() => {}}
-        onFilterInput={() => {}}
-        onFilterSubmit={() => {}}
-        onExitMode={() => {}}
-      />,
-      80,
-      3,
-    );
-
-    expect(noticeFrame).toContain("Update available");
-    expect(noticeFrame).toContain("Vim navigation");
-    expect(filterFrame).toContain("filter:");
-    expect(filterFrame).toContain("beta");
-    expect(filterFrame).toContain("Vim navigation");
-  });
-
-  test("StatusBar mode badge uses the host exit callback and stops the outer click", () => {
-    const theme = resolveTheme("github-dark-default", null);
-    let exits = 0;
-    let stopped = 0;
-    const element = StatusBar({
-      filter: "",
-      filterFocused: false,
-      modeText: "Vim navigation",
-      terminalWidth: 80,
-      theme,
-      onCloseMenu: () => {},
-      onFilterInput: () => {},
-      onFilterSubmit: () => {},
-      onExitMode: () => {
-        exits += 1;
-      },
-    }) as unknown as {
-      props: {
-        children: readonly [unknown, { props: { onMouseUp: (event: unknown) => void } }];
-      };
-    };
-
-    element.props.children[1].props.onMouseUp({
-      stopPropagation() {
-        stopped += 1;
-      },
-    });
-    expect(exits).toBe(1);
-    expect(stopped).toBe(1);
-  });
-
-  test("StatusBar keeps filter input precedence over a notice", async () => {
-    const theme = resolveTheme("github-dark-default", null);
-    const frame = await captureFrame(
-      <StatusBar
-        filter="beta"
-        filterFocused={true}
-        noticeText="Update available: 9.9.9 • npm i -g hunkdiff"
-        terminalWidth={60}
-        theme={theme}
-        onCloseMenu={() => {}}
-        onFilterInput={() => {}}
-        onFilterSubmit={() => {}}
-      />,
-      60,
-      3,
-    );
-
-    expect(frame).toContain("filter:");
-    expect(frame).toContain("beta");
-    expect(frame).not.toContain("Update available:");
-  });
-
-  test("StatusBar keeps filter summary precedence over a notice", async () => {
-    const theme = resolveTheme("github-dark-default", null);
-    const frame = await captureFrame(
-      <StatusBar
-        filter="beta"
-        filterFocused={false}
-        noticeText="Update available: 9.9.9 • npm i -g hunkdiff"
-        terminalWidth={60}
-        theme={theme}
-        onCloseMenu={() => {}}
-        onFilterInput={() => {}}
-        onFilterSubmit={() => {}}
-      />,
-      60,
-      3,
-    );
-
-    expect(frame).toContain("filter=beta");
-    expect(frame).not.toContain("Update available:");
-  });
-
   test("HelpDialog renders every documented control row without overlap", async () => {
     const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
@@ -3881,7 +3778,7 @@ describe("UI components", () => {
       "d / u                    half page down / up",
       "[ / ]                    previous / next hunk",
       ", / .                    previous / next file",
-      "{ / } / N / n            annotated hunk / exact note",
+      "{ / }                    annotated hunk / exact note",
       "Left / Right             scroll code sideways (Shift = faster)",
       "g / Home                 jump to start",
       "G / End                  jump to end",
@@ -3889,14 +3786,13 @@ describe("UI components", () => {
       "Wheel                    scroll vertically",
       "Shift+Wheel              scroll code horizontally",
       "View",
-      "1 / 2 / 0                split / unified / auto",
+      "1 / 2 / 0                unified / split / auto",
       "s / t                    sidebar / theme selector",
       "a                        toggle AI notes",
       "z                        toggle unchanged context",
       "l / w / m / M            lines / wrap / metadata / menu",
       "e                        open file in $EDITOR",
       "Review",
-      "/                        focus file filter",
       "c                        create review note",
       "Tab                      toggle files/filter focus",
       "F10                      open menus",

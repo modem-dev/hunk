@@ -59,13 +59,13 @@ const HELP_SECTIONS: readonly HelpSectionSpec[] = [
         description: "previous / next file",
       },
       {
-        commandIds: [
-          "hunk.review.previousAnnotatedHunk",
-          "hunk.review.nextAnnotatedHunk",
-          "hunk.review.previousNote",
-          "hunk.review.nextNote",
-        ],
+        commandIds: ["hunk.review.previousAnnotatedHunk", "hunk.review.nextAnnotatedHunk"],
         description: "annotated hunk / exact note",
+      },
+      { commandIds: ["hunk.search.find"], description: "search diff content" },
+      {
+        commandIds: ["hunk.search.next", "hunk.search.previous"],
+        description: "next / previous search match",
       },
       {
         commandIds: ["hunk.review.scrollCodeLeft", "hunk.review.scrollCodeRight"],
@@ -86,8 +86,8 @@ const HELP_SECTIONS: readonly HelpSectionSpec[] = [
     title: "View",
     entries: [
       {
-        commandIds: ["hunk.view.layoutSplit", "hunk.view.layoutUnified", "hunk.view.layoutAuto"],
-        description: "split / unified / auto",
+        commandIds: ["hunk.view.layoutUnified", "hunk.view.layoutSplit", "hunk.view.layoutAuto"],
+        description: "unified / split / auto",
       },
       {
         commandIds: ["hunk.view.toggleFilesPane", "hunk.view.openThemeSelector"],

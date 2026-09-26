@@ -15,6 +15,7 @@ import type { ExtensionReviewDescriptor, NamedCustomThemeConfig } from "../exten
 import type { Changeset } from "./changeset/model";
 import type { CliInput, CursorLine, LayoutMode, SidebarVisibility } from "./run/commandInputs";
 import type { UserKeyBinding } from "./run/config";
+import type { WheelScrollLines } from "./run/wheelScrollLines";
 import type { StartupNotice } from "./process/startupNotice";
 import type { TerminalThemeMode } from "./theme/detection";
 import type { VcsCatalog } from "./vcs/types";
@@ -47,6 +48,7 @@ export interface AppBootstrap<ExtensionState = unknown> {
   initialTabWidth?: number;
   initialFileGap?: number;
   initialHunkGap?: number;
+  initialWheelScrollLines?: WheelScrollLines;
   initialWrapLines?: boolean;
   initialShowHunkHeaders?: boolean;
   initialShowMenuBar?: boolean;

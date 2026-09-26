@@ -392,6 +392,27 @@ export function buildInstallVmJunit(result: InstallVmRunResult) {
   return `<?xml version="1.0" encoding="UTF-8"?>\n<testsuite name="install-vm" tests="${scenarios.length}" failures="${failures}" skipped="${skipped}" time="${time.toFixed(3)}">\n${cases}\n</testsuite>\n`;
 }
 
+/**
+ * Rewrite one absolute path onto the repo's physical prefix without resolving anything below it.
+ *
+ * Containment compares the target against a `realpathSync`-resolved repo root, so the two have to
+ * be spelled the same way or a symlinked ancestor of the repo itself — `/var/folders` on macOS, a
+ * symlinked `$HOME` on Linux — makes every harness-owned path read as foreign. Only the prefix is
+ * canonicalized: each segment below the repo root is left verbatim so a symlink *inside* the tree
+ * survives into the string the caller's symlink walk inspects. Resolving those away would silently
+ * disarm that guard, and a path whose leaf does not exist yet must still be rewritable.
+ */
+function rebaseOnPhysicalRepoRoot(physicalRepoRoot: string, repoRoot: string, target: string) {
+  const absolute = path.resolve(target);
+  for (const root of [repoRoot, physicalRepoRoot]) {
+    const relative = path.relative(path.resolve(root), absolute);
+    if (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)) {
+      return path.join(physicalRepoRoot, relative);
+    }
+  }
+  return absolute;
+}
+
 /** Resolve one runtime path without following a symlink outside the harness-owned tmp tree. */
 export function assertSafeInstallVmRuntimePath(
   repoRoot: string,
@@ -407,7 +428,12 @@ export function assertSafeInstallVmRuntimePath(
   const physicalRepoRoot = realpathSync(repoRoot);
   const allowedRoot = path.join(physicalRepoRoot, "tmp", "install-vm");
   const resolved = path.resolve(target);
-  const relative = path.relative(allowedRoot, resolved);
+  // Restate the target on the repo's physical prefix so a symlinked ancestor of the repo cannot
+  // make an owned path read as foreign. Segments below the repo root keep their own spelling, so
+  // the walk further down still sees any symlink inside the tree. Only the return value keeps the
+  // caller's original prefix.
+  const physicalResolved = rebaseOnPhysicalRepoRoot(physicalRepoRoot, repoRoot, resolved);
+  const relative = path.relative(allowedRoot, physicalResolved);
   if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
     throw new Error(`Refusing install VM path outside ${allowedRoot}: ${resolved}`);
   }
@@ -416,7 +442,7 @@ export function assertSafeInstallVmRuntimePath(
   }
 
   let cursor = physicalRepoRoot;
-  for (const segment of path.relative(physicalRepoRoot, resolved).split(path.sep)) {
+  for (const segment of path.relative(physicalRepoRoot, physicalResolved).split(path.sep)) {
     if (!segment) continue;
     cursor = path.join(cursor, segment);
     try {

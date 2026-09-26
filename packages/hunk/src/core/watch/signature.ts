@@ -24,17 +24,22 @@ function vcsPatchSignature(
   }
   const adapter = getConfiguredVcsAdapter(input.options.vcs, context.vcsCatalog);
   const operation = operationFromInput(input);
-  return createVcsWatchSignature(adapter, operation, { cwd: context.cwd }, context.vcsCatalog);
+  return createVcsWatchSignature(adapter, operation, context, context.vcsCatalog);
 }
 
 export interface WatchSignatureContext {
   cwd: string;
+  signal?: AbortSignal;
   /** Complete catalog retained from the review load. */
   vcsCatalog?: VcsCatalog;
 }
 
 /** Compute a change-detection signature relative to the source's stable load context. */
-export function computeWatchSignature(input: CliInput, context: WatchSignatureContext) {
+export async function computeWatchSignature(
+  input: CliInput,
+  context: WatchSignatureContext,
+): Promise<string> {
+  context.signal?.throwIfAborted();
   const parts: string[] = [input.kind];
   const resolveInputPath = (path: string) => resolve(context.cwd, path);
 
@@ -42,7 +47,7 @@ export function computeWatchSignature(input: CliInput, context: WatchSignatureCo
     case "vcs":
     case "show":
     case "stash-show":
-      parts.push(vcsPatchSignature(input, context));
+      parts.push(await vcsPatchSignature(input, context));
       break;
     case "diff":
     case "difftool":

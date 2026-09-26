@@ -57,32 +57,25 @@ async function waitForExitCode(path: string, timeoutMs = 2_000) {
   throw new Error(`Timed out waiting for an exit code in ${path}.`);
 }
 
-async function stopDaemonsUnder(runtimeDir: string) {
+/** Stop broker daemons already launched by an exited app in its isolated runtime. */
+function stopDaemonsUnder(runtimeDir: string) {
   const daemonDir = join(runtimeDir, "hunk-mcp");
-  const deadline = Date.now() + 2_000;
+  if (!existsSync(daemonDir)) return;
 
-  while (Date.now() < deadline) {
-    if (existsSync(daemonDir)) {
-      const metadataFiles = readdirSync(daemonDir).filter(
-        (entry) => entry.startsWith("daemon-") && entry.endsWith(".json"),
-      );
-      if (metadataFiles.length > 0) {
-        for (const entry of metadataFiles) {
-          try {
-            const { pid } = JSON.parse(readFileSync(join(daemonDir, entry), "utf8")) as {
-              pid?: number;
-            };
-            if (pid && pid > 0) {
-              process.kill(pid, "SIGTERM");
-            }
-          } catch {
-            // Partially written metadata, or a daemon that already exited.
-          }
-        }
-        return;
+  const metadataFiles = readdirSync(daemonDir).filter(
+    (entry) => entry.startsWith("daemon-") && entry.endsWith(".json"),
+  );
+  for (const entry of metadataFiles) {
+    try {
+      const { pid } = JSON.parse(readFileSync(join(daemonDir, entry), "utf8")) as {
+        pid?: number;
+      };
+      if (pid && pid > 0) {
+        process.kill(pid, "SIGTERM");
       }
+    } catch {
+      // Ignore partially written metadata, or a daemon that already exited.
     }
-    await Bun.sleep(25);
   }
 }
 
@@ -227,8 +220,7 @@ describe("PTY lifecycle", () => {
         session.writeRaw(`${hunkCommand}\r`);
         await session.waitForText(/before\.txt.*after\.txt/, { timeout: 15_000 });
         await harness.ensureKeyboardIsLive(session);
-        await session.press("c");
-        await session.waitForText(/Draft note/, { timeout: 5_000 });
+        await harness.pressAndWaitForText(session, "c", /Draft note/, { timeout: 5_000 });
         await session.type("Keep this note after resume.");
         await session.press(["ctrl", "s"]);
         await session.waitForText(/Keep this note after resume\./, { timeout: 5_000 });
@@ -306,7 +298,7 @@ describe("PTY lifecycle", () => {
       } finally {
         closeMaster();
         await stopChild(child);
-        await stopDaemonsUnder(runtimeDir);
+        stopDaemonsUnder(runtimeDir);
       }
     });
   }

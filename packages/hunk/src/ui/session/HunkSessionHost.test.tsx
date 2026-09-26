@@ -236,7 +236,7 @@ test("retains review view preferences across repeated history reviews", async ()
     await settle(setup);
     expect(setup.captureCharFrame()).toMatch(/▌.*▌/);
 
-    await act(async () => setup.mockInput.typeText("2q"));
+    await act(async () => setup.mockInput.typeText("1q"));
     await settle(setup);
     expect(setup.captureCharFrame()).toContain("Test history");
     expect(setup.captureCharFrame()).not.toContain("Save view preferences?");

@@ -207,7 +207,6 @@ describe("hunk update", () => {
       env: {
         PATH: "/usr/bin",
         HOME: "/home/reviewer",
-        HUNK_ENABLE_RELEASE_PROXY: "1",
       },
     });
 
@@ -219,7 +218,6 @@ describe("hunk update", () => {
       {
         PATH: "/usr/bin",
         HOME: "/home/reviewer",
-        HUNK_ENABLE_RELEASE_PROXY: "1",
         HUNK_VERSION: "1.1.0",
       },
     ]);
@@ -244,7 +242,7 @@ describe("hunk update", () => {
     const result = await runUpdate({
       installSource: "curl",
       input: { check: true },
-      env: { HUNK_ENABLE_RELEASE_PROXY: "1" },
+      env: {},
     });
 
     expect(result.exitCode).toBe(0);

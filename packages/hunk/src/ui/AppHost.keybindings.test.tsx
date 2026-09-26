@@ -285,7 +285,7 @@ describe("user keybindings", () => {
 
     await withAppHost(bootstrap, async (setup) => {
       await act(async () => {
-        await setup.mockInput.typeText("2");
+        await setup.mockInput.typeText("1");
       });
       await flush(setup);
       expect(seen).toEqual([

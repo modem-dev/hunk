@@ -34,9 +34,31 @@ export const HUNK_SESSION_API_VERSION = 1;
 /**
  * Version daemon/session compatibility separately from the HTTP action surface so newer Hunk
  * builds can refresh an older daemon even when it still exposes the same API endpoints. Bump this
- * when daemon-forwarded payloads change, even if the supported action names stay stable.
+ * when daemon-forwarded payloads change, even if the supported action names stay stable; the
+ * colocated `wire.snapshot.test.ts` fails when a payload changes without a bump.
  */
-export const HUNK_SESSION_DAEMON_VERSION = 15;
+const BUILT_SESSION_DAEMON_VERSION = 15;
+
+/**
+ * Test-only override so a spawned daemon or window can impersonate another build's revision.
+ *
+ * Cross-process skew coverage (a window refused by an older daemon, `hunk daemon restart`
+ * replacing it) needs two processes that disagree on the revision; building a second binary for
+ * that is not practical. The override is internal, undocumented, and validated like the real value.
+ */
+export const HUNK_INTERNAL_SESSION_DAEMON_VERSION_ENV = "HUNK_INTERNAL_SESSION_DAEMON_VERSION";
+
+/** Resolve the effective revision, honoring only a well-formed positive integer override. */
+function resolveSessionDaemonVersion(env: NodeJS.ProcessEnv = process.env) {
+  const override = env[HUNK_INTERNAL_SESSION_DAEMON_VERSION_ENV];
+  if (override === undefined || !/^[1-9][0-9]*$/.test(override)) {
+    return BUILT_SESSION_DAEMON_VERSION;
+  }
+  const value = Number(override);
+  return Number.isSafeInteger(value) ? value : BUILT_SESSION_DAEMON_VERSION;
+}
+
+export const HUNK_SESSION_DAEMON_VERSION = resolveSessionDaemonVersion();
 
 export type SessionDaemonAction =
   | "list"
