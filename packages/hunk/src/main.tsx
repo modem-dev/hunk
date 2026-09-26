@@ -60,7 +60,7 @@ async function main() {
 
   if (startupPlan.kind === "daemon-control") {
     const { runDaemonControlCommand } = await import("./session/agent/daemonCommands");
-    process.exit(
+    await exitAfterSweep(
       await runDaemonControlCommand(startupPlan.input, {
         stdout: (text) => writeStdout(text),
         stderr: (text) => process.stderr.write(text),
