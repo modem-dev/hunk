@@ -10,7 +10,7 @@ factory**. Hunk imports it at startup and hands it an API object. No build step,
 no manifest required.
 
 ```ts
-// ~/.config/hunk/extensions/hello.ts
+// ~/.local/state/hunk/extensions/hello.ts
 import type { HunkExtensionAPI } from "hunkdiff/extension";
 
 export default function (hunk: HunkExtensionAPI) {
@@ -52,12 +52,15 @@ The examples, by what they demonstrate:
 
 ## Where extensions live
 
-| Source                                     | Trust            |
-| ------------------------------------------ | ---------------- |
-| `--extension <path>` (repeatable)          | runs immediately |
-| `[extensions] paths` in user config        | runs immediately |
-| `~/.config/hunk/extensions/` (XDG-aware)   | runs immediately |
-| `.hunk/extensions/` or repo-config `paths` | **trust prompt** |
+| Source                                        | Trust            |
+| --------------------------------------------- | ---------------- |
+| `--extension <path>` (repeatable)             | runs immediately |
+| `[extensions] paths` in user config           | runs immediately |
+| `~/.local/state/hunk/extensions/` (XDG-aware) | runs immediately |
+| `.hunk/extensions/` or repo-config `paths`    | **trust prompt** |
+
+The global source uses `$XDG_STATE_HOME` when it is set, and otherwise falls
+back to `~/.local/state` (or the platform home directory equivalent).
 
 Only the repo-local group is gated. Everything else — including `--extension`,
 even when its path points inside the repository under review — is read as
@@ -75,7 +78,7 @@ every machine that loads it — keep a repo-shared extension dependency-free.
 
 Shared extensions install from git with `hunk extension install <source>`
 (`owner/repo[@ref]`, `git:host/path[@ref]`, a git URL, or a local path) into
-`~/.config/hunk/extensions/installed/<repo-name>/`, where they load with global
+`~/.local/state/hunk/extensions/installed/<repo-name>/`, where they load with global
 origin; `list`, `update`, and `remove` manage them. Declared `dependencies` are
 `bun install`ed at install time. The manifest may state
 `{"hunk": {"apiVersion": N}}` — the minimum extension API version — and an older

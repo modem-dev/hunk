@@ -6,7 +6,7 @@ description: Render React panes around Hunk's review stream.
 `hunk.registerPane(pane)` renders a React component on the left, right, top, or bottom of the review. Pair it with [`registerCommand`](/docs/extend/extension-api/#hunkregistercommandcommand-handler) so a key opens it:
 
 ```tsx
-// ~/.config/hunk/extensions/flat-sidebar.tsx
+// ~/.local/state/hunk/extensions/flat-sidebar.tsx
 import { useMemo } from "react";
 import type { ExtensionPaneProps, HunkExtensionAPI } from "hunkdiff/extension";
 

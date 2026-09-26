@@ -302,11 +302,24 @@ export function createPtyHarness() {
   }
 
   // Isolate every launch from the developer's ambient user config/state so PTY snapshots assert
-  // against built-in defaults instead of whatever ~/.config/hunk/config.toml happens to set.
+  // against built-in defaults instead of whatever the user's Hunk files happen to set.
   let isolatedConfigHome: string | undefined;
   function configHome() {
     isolatedConfigHome ??= makeTempDir("hunk-tuistory-config-");
     return isolatedConfigHome;
+  }
+
+  function launchEnvironment(optionsEnv?: Record<string, string | undefined>) {
+    const isolatedConfig = optionsEnv?.XDG_CONFIG_HOME ?? configHome();
+    const isolatedState = optionsEnv?.XDG_STATE_HOME ?? isolatedConfig;
+    return {
+      ...process.env,
+      XDG_CONFIG_HOME: isolatedConfig,
+      XDG_STATE_HOME: isolatedState,
+      HUNK_MCP_DISABLE: "1",
+      HUNK_DISABLE_UPDATE_NOTICE: "1",
+      ...optionsEnv,
+    };
   }
 
   function cleanup() {
@@ -1071,13 +1084,7 @@ end
       cwd: options.cwd ?? repoRoot,
       cols: options.cols ?? 140,
       rows: options.rows ?? 24,
-      env: {
-        ...process.env,
-        XDG_CONFIG_HOME: configHome(),
-        HUNK_MCP_DISABLE: "1",
-        HUNK_DISABLE_UPDATE_NOTICE: "1",
-        ...options.env,
-      },
+      env: launchEnvironment(options.env),
     });
   }
 
@@ -1098,13 +1105,7 @@ end
       cwd: options.cwd ?? repoRoot,
       cols: options.cols ?? 140,
       rows: options.rows ?? 24,
-      env: {
-        ...process.env,
-        XDG_CONFIG_HOME: configHome(),
-        HUNK_MCP_DISABLE: "1",
-        HUNK_DISABLE_UPDATE_NOTICE: "1",
-        ...options.env,
-      },
+      env: launchEnvironment(options.env),
     });
   }
 

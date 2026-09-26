@@ -252,8 +252,9 @@ The extension API is experimental and may change in breaking ways between
 minor releases while it stabilizes; breaking changes are called out in
 release notes.
 
-Hunk loads plain TypeScript extensions from `~/.config/hunk/extensions/`, from a
-repository's `.hunk/extensions/` (after you explicitly trust that repository),
+Hunk loads plain TypeScript extensions from `$XDG_STATE_HOME/hunk/extensions/`
+(defaulting to `~/.local/state/hunk/extensions/`), from a repository's
+`.hunk/extensions/` (after you explicitly trust that repository),
 and from `--extension <path>` for development. `--no-extensions` turns those off
 for one run; Hunk's own bundled backends (Git, Jujutsu, and Sapling) stay loaded.
 
@@ -264,7 +265,7 @@ the file-navigation sidebar with its own React component, react to lifecycle
 events, and show transient messages:
 
 ```ts
-// ~/.config/hunk/extensions/collapse-lockfiles.ts
+// ~/.local/state/hunk/extensions/collapse-lockfiles.ts
 import type { HunkExtensionAPI } from "hunkdiff/extension";
 
 export default function (hunk: HunkExtensionAPI) {

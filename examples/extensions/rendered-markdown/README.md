@@ -19,9 +19,9 @@ bun run packages/hunk/src/main.tsx -- diff \
 Copy the whole folder, then install its local dependency:
 
 ```bash
-mkdir -p ~/.config/hunk/extensions
-cp -R examples/extensions/rendered-markdown ~/.config/hunk/extensions/
-cd ~/.config/hunk/extensions/rendered-markdown
+mkdir -p ~/.local/state/hunk/extensions
+cp -R examples/extensions/rendered-markdown ~/.local/state/hunk/extensions/
+cd ~/.local/state/hunk/extensions/rendered-markdown
 bun install
 ```
 

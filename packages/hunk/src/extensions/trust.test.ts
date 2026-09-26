@@ -145,7 +145,7 @@ describe("extension trust", () => {
     expect(readExtensionTrust({ env: {} })).toEqual({});
     expect(resolveRepoTrust("/repo", { env: {} })).toBe("unknown");
     expect(() => writeExtensionTrust("/repo", "trusted", { env: {} })).toThrow(
-      "HOME/XDG_CONFIG_HOME",
+      "HOME/XDG_STATE_HOME",
     );
   });
 

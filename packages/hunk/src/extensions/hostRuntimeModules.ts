@@ -5,7 +5,7 @@ import { resolveCanonicalPath } from "../core/run/paths";
  * Host-owned modules served to dynamically imported extension files.
  *
  * User extensions live outside the app bundle — a file in
- * `~/.config/hunk/extensions/` has no `node_modules` that reaches the React
+ * `~/.local/state/hunk/extensions/` has no `node_modules` that reaches the React
  * compiled into the Hunk binary, and an adjacent `node_modules/react` (a
  * repo-local extension inside a JavaScript project) would resolve to a *second*
  * React whose hooks dispatcher is not the one Hunk renders with. That identity

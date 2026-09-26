@@ -422,17 +422,23 @@ describe("CLI entrypoint contracts", () => {
     const root = mkdtempSync(join(tmpdir(), "hunk-github-pr-global-"));
     const sourceEntrypoint = join(process.cwd(), "packages/hunk/src/main.tsx");
     const extensionPath = join(process.cwd(), "examples/extensions/github-pr");
-    const installedPath = join(root, "config", "hunk", "extensions", "github-pr");
+    const stateHome = join(root, "state");
+    const installedPath = join(stateHome, "hunk", "extensions", "github-pr");
 
     try {
-      mkdirSync(join(root, "config", "hunk", "extensions"), { recursive: true });
+      mkdirSync(join(stateHome, "hunk", "extensions"), { recursive: true });
       cpSync(extensionPath, installedPath, { recursive: true });
       const proc = Bun.spawnSync(["bun", "run", sourceEntrypoint, "gh", "--help"], {
         cwd: root,
         stdin: "ignore",
         stdout: "pipe",
         stderr: "pipe",
-        env: { ...process.env, HOME: root, XDG_CONFIG_HOME: join(root, "config") },
+        env: {
+          ...process.env,
+          HOME: root,
+          XDG_CONFIG_HOME: join(root, "config"),
+          XDG_STATE_HOME: stateHome,
+        },
       });
 
       expect(proc.exitCode).toBe(0);

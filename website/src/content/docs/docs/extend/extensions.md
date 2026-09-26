@@ -6,7 +6,7 @@ description: Load plain TypeScript extensions, understand discovery and trust, a
 A Hunk extension is one TypeScript (or JavaScript) file that default-exports a function. Hunk imports it at startup and hands it an API object. No build step is required.
 
 ```ts
-// ~/.config/hunk/extensions/hello.ts
+// ~/.local/state/hunk/extensions/hello.ts
 import type { HunkExtensionAPI } from "hunkdiff/extension";
 
 export default function (hunk: HunkExtensionAPI) {
@@ -28,10 +28,11 @@ Writing one with a coding agent? `hunk skill path hunk-extensions` prints a bund
 | ----- | ---------------------------------------------------- | --------------------- |
 | 1     | `--extension <path>` (repeatable)                    | immediately           |
 | 2     | `[extensions] paths` in your user config             | immediately           |
-| 3     | `~/.config/hunk/extensions/`                         | immediately           |
+| 3     | `~/.local/state/hunk/extensions/`                    | immediately           |
 | 4     | `.hunk/extensions/` in the repo under review         | after [trust](#trust) |
 | 4     | `[extensions] paths` in the repo `.hunk/config.toml` | after [trust](#trust) |
 
+- The global source uses `$XDG_STATE_HOME` when it is set, and otherwise falls back to `~/.local/state` (or the platform home directory equivalent).
 - Groups load in order; within a group, entries sort alphabetically by resolved path. The first occurrence of a path wins.
 - The two repo-local sources are one group: one trust decision, one sort order.
 - A directory source matches `*.ts`, `*.tsx`, `*.js`, `*.jsx`, `*.mjs` directly inside it, plus one level of folder extensions.
@@ -43,7 +44,7 @@ Writing one with a coding agent? `hunk skill path hunk-extensions` prints a bund
 A folder is an extension if its `package.json` declares entries under the `hunk` field, or failing that if it has an `index.{ts,tsx,js,jsx,mjs}` (in that preference order):
 
 ```text
-~/.config/hunk/extensions/my-ext/
+~/.local/state/hunk/extensions/my-ext/
   package.json          # {"hunk": {"extensions": ["./src/index.ts"]}}
   node_modules/         # bun install / npm install, right here
   src/
@@ -68,7 +69,7 @@ Ids start with a letter or digit, then letters, digits, `-`, or `_`. `hunk`, `gi
 
 ## Installing shared extensions
 
-Extensions are shared as plain git repositories. `hunk extension install` clones one into a managed directory under `~/.config/hunk/extensions/installed/`, verifies it contains an extension, installs its npm dependencies when it declares any, and records the source and commit:
+Extensions are shared as plain git repositories. `hunk extension install` clones one into a managed directory under `~/.local/state/hunk/extensions/installed/`, verifies it contains an extension, installs its npm dependencies when it declares any, and records the source and commit:
 
 ```bash
 hunk extension install acme/hunk-word-diff          # GitHub shorthand
@@ -79,7 +80,7 @@ hunk extension install ~/dev/hunk-word-diff         # a local checkout, for test
 
 - `hunk extension list` shows every managed install with its version, commit, and source.
 - `hunk extension update [name]` re-clones one install (or all of them) from its recorded source; an `@ref` pin stays put until you re-install with a different one.
-- `hunk extension remove <name>` deletes the install and its record. Hand-copied extensions in `~/.config/hunk/extensions/` are never touched.
+- `hunk extension remove <name>` deletes the install and its record. Hand-copied extensions in `~/.local/state/hunk/extensions/` are never touched.
 
 Installing is the consent step: extensions run with your full user permissions, so a fresh install asks for confirmation (or takes `--yes`) after naming the repository. Only install repositories you trust. Managed installs then load through the global group above — same precedence, no further prompts.
 
@@ -155,7 +156,7 @@ some_key = "some value"
 Collapse lockfiles and generated output out of every review, and say how many files were hidden.
 
 ```ts
-// ~/.config/hunk/extensions/collapse-generated.ts
+// ~/.local/state/hunk/extensions/collapse-generated.ts
 import type { HunkExtensionAPI } from "hunkdiff/extension";
 
 /** Match one path against a `*`-only glob, anchored at both ends. */

@@ -95,7 +95,7 @@ export function writeExtensionTrust(
 ) {
   const statePath = resolveStatePath(options);
   if (!statePath) {
-    throw new Error("Could not resolve the Hunk state path because HOME/XDG_CONFIG_HOME is unset.");
+    throw new Error("Could not resolve the Hunk state path because HOME/XDG_STATE_HOME is unset.");
   }
 
   updateAppStateRecord(statePath, {

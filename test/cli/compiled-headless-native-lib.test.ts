@@ -102,15 +102,17 @@ function createTestEnvironment(port?: number) {
   const home = resolve(root, "home");
   const cache = resolve(root, "cache");
   const config = resolve(root, "config");
+  const state = resolve(root, "state");
   const runtime = resolve(root, "runtime");
   const temp = resolve(root, "tmp");
-  for (const dir of [home, cache, config, runtime, temp]) {
+  for (const dir of [home, cache, config, state, runtime, temp]) {
     mkdirSync(dir, { recursive: true });
   }
 
   return {
     config,
     home,
+    state,
     temp,
     env: {
       ...process.env,
@@ -118,6 +120,7 @@ function createTestEnvironment(port?: number) {
       USERPROFILE: home,
       XDG_CACHE_HOME: cache,
       XDG_CONFIG_HOME: config,
+      XDG_STATE_HOME: state,
       XDG_RUNTIME_DIR: runtime,
       TMPDIR: temp,
       BUN_TMPDIR: temp,
@@ -261,9 +264,9 @@ describe("compiled headless native-library loading", () => {
   });
 
   compiledTest("discovers the installed-shape GitHub extension for literal hunk gh", () => {
-    const { config, env, temp } = createTestEnvironment();
-    const installedPath = resolve(config, "hunk", "extensions", "github-pr");
-    mkdirSync(resolve(config, "hunk", "extensions"), { recursive: true });
+    const { state, env, temp } = createTestEnvironment();
+    const installedPath = resolve(state, "hunk", "extensions", "github-pr");
+    mkdirSync(resolve(state, "hunk", "extensions"), { recursive: true });
     cpSync(resolve(import.meta.dir, "../../examples/extensions/github-pr"), installedPath, {
       recursive: true,
     });
