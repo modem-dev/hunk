@@ -1,8 +1,9 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act, useState } from "react";
 import type { NamedCustomThemeConfig } from "../../extension-api/types";
 import type { TerminalThemeMode } from "../../core/theme/detection";
+import { setDetectedTerminalColors } from "../../core/theme/terminalColors";
 import { ThemeController } from "../theme/controller";
 import { availableThemes, TRANSPARENT_BACKGROUND } from "../themes";
 import {
@@ -55,6 +56,7 @@ async function renderThemeSelectorController(initial: ThemeSelectorHarnessOption
     get controller() {
       return controller;
     },
+    themeController,
     replaceOptions,
     setup,
   };
@@ -80,6 +82,8 @@ function customTheme(
 const noNotice = () => {};
 
 describe("useThemeSelectorController", () => {
+  afterEach(() => setDetectedTerminalColors(undefined));
+
   test("resolves auto initialization from the detected light or dark terminal mode", async () => {
     const light = await renderThemeSelectorController({
       initialTheme: "auto",
@@ -314,7 +318,7 @@ describe("useThemeSelectorController", () => {
         }),
       );
       expect(harness.controller.themeId).toBe(alpha.id);
-      expect(harness.controller.baseTheme.id).toBe("github-dark-default");
+      expect(harness.controller.baseTheme.id).toBe("terminal");
       expect(harness.controller.themeSelectorSelectedIndex).toBeGreaterThanOrEqual(0);
       expect(harness.controller.themeSelectorSelectedIndex).toBeLessThan(
         harness.controller.themeSelectorItems.length,
@@ -370,6 +374,74 @@ describe("useThemeSelectorController", () => {
       );
       expect(harness.controller.themeId).toBe("dracula");
       expect(harness.controller.baseTheme.id).toBe("dracula");
+    } finally {
+      await destroyController(harness.setup);
+    }
+  });
+
+  test("refreshes a terminal theme preview when the terminal switches palettes", async () => {
+    setDetectedTerminalColors({ foreground: "#c0caf5", background: "#1a1b26", palette: [] });
+    const harness = await renderThemeSelectorController({
+      initialTheme: "dracula",
+      initialThemeMode: "dark",
+      onTransientNotice: noNotice,
+      transparentBackground: false,
+    });
+    try {
+      const terminalIndex = harness.controller.themeSelectorItems.findIndex(
+        (item) => item.id === "terminal",
+      );
+      await act(async () => harness.controller.previewThemeSelectorItem(terminalIndex));
+      expect(harness.controller.baseTheme).toMatchObject({
+        id: "terminal",
+        background: "#1a1b26",
+      });
+
+      // Dark to dark: the committed theme and light/dark mode both stay the same.
+      await act(async () =>
+        harness.themeController.updateTerminalColors({
+          foreground: "#ebdbb2",
+          background: "#282828",
+          palette: [],
+        }),
+      );
+
+      expect(harness.controller.baseTheme).toMatchObject({
+        id: "terminal",
+        background: "#282828",
+      });
+    } finally {
+      await destroyController(harness.setup);
+    }
+  });
+
+  test("repaints the terminal theme when the terminal switches colors mid-session", async () => {
+    setDetectedTerminalColors({ foreground: "#c0caf5", background: "#1a1b26", palette: [] });
+    const harness = await renderThemeSelectorController({
+      initialTheme: "terminal",
+      initialThemeMode: "dark",
+      onTransientNotice: noNotice,
+      transparentBackground: false,
+    });
+    try {
+      expect(harness.controller.activeTheme).toMatchObject({
+        id: "terminal",
+        background: "#1a1b26",
+      });
+
+      await act(async () =>
+        harness.themeController.updateTerminalColors({
+          foreground: "#4c4f69",
+          background: "#eff1f5",
+          palette: [],
+        }),
+      );
+
+      expect(harness.controller.activeTheme).toMatchObject({
+        id: "terminal",
+        appearance: "light",
+        background: "#eff1f5",
+      });
     } finally {
       await destroyController(harness.setup);
     }

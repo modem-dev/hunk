@@ -857,7 +857,7 @@ describe("config resolution", () => {
     expect(configured.input.options.transparentBackground).toBe(true);
   });
 
-  test("defaults unspecified themes to github-dark-default, including piped pager-style patch input", () => {
+  test("defaults unspecified themes to terminal, including piped pager-style patch input", () => {
     const home = createTempDir("hunk-config-home-");
     const cwd = createTempDir("hunk-config-cwd-");
 
@@ -868,7 +868,7 @@ describe("config resolution", () => {
 
     expect(resolved.repoConfigPath).toBeUndefined();
     expect(resolved.viewPreferencesConfigPath).toBe(join(home, ".config", "hunk", "config.toml"));
-    expect(resolved.input.options.theme).toBe("github-dark-default");
+    expect(resolved.input.options.theme).toBe("terminal");
   });
 
   test("command-specific config sections also apply to show mode", () => {
@@ -1223,7 +1223,7 @@ describe("config resolution", () => {
     ]);
   });
 
-  test("loadAppBootstrap exposes github-dark-default when no theme is configured", async () => {
+  test("loadAppBootstrap exposes terminal when no theme is configured", async () => {
     const home = createTempDir("hunk-config-home-");
     const repo = createTempDir("hunk-config-repo-");
     createRepo(repo);
@@ -1244,7 +1244,7 @@ describe("config resolution", () => {
     );
     const bootstrap = await loadAppBootstrap(resolved.input);
 
-    expect(bootstrap.initialTheme).toBe("github-dark-default");
+    expect(bootstrap.initialTheme).toBe("terminal");
   });
 });
 

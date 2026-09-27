@@ -13,7 +13,7 @@ Repository settings override user settings. Command sections then override their
 ## Start with useful defaults
 
 ```toml
-theme = "github-dark-default"
+theme = "terminal"
 mode = "auto"
 vcs = "git"
 watch = false

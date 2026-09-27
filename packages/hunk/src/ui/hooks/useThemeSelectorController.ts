@@ -21,20 +21,27 @@ export function useThemeSelectorController({
   themeController,
   transparentBackground,
 }: UseThemeSelectorControllerOptions) {
-  const { themeId: committedThemeId, customThemes } = useSyncExternalStore(
-    themeController.subscribe,
-    themeController.getSnapshot,
-  );
+  const {
+    themeId: committedThemeId,
+    customThemes,
+    themeMode,
+    terminalColors,
+  } = useSyncExternalStore(themeController.subscribe, themeController.getSnapshot);
   const [state, setState] = useState<ThemeSelectorControllerState>(() => ({
     open: false,
     previewThemeId: null,
     selectedThemeId: null,
   }));
 
-  const themeOptions = useMemo(() => availableThemes(customThemes), [customThemes]);
+  // `terminalColors` is not passed along: the `terminal` theme reads the probed colors itself,
+  // and listing it as a dependency re-derives every theme after the terminal switches schemes.
+  const themeOptions = useMemo(
+    () => availableThemes(customThemes, themeMode ?? null),
+    [customThemes, themeMode, terminalColors],
+  );
   const committedTheme = useMemo(
-    () => resolveTheme(committedThemeId, themeController.themeMode ?? null, customThemes),
-    [committedThemeId, customThemes, themeController.themeMode],
+    () => resolveTheme(committedThemeId, themeMode ?? null, customThemes),
+    [committedThemeId, customThemes, themeMode, terminalColors],
   );
   const committedIndex = themeOptions.findIndex((theme) => theme.id === committedTheme.id);
   const storedSelectedIndex = themeOptions.findIndex((theme) => theme.id === state.selectedThemeId);
@@ -50,9 +57,9 @@ export function useThemeSelectorController({
   const baseTheme = useMemo(
     () =>
       previewThemeId
-        ? resolveTheme(previewThemeId, themeController.themeMode ?? null, customThemes)
+        ? resolveTheme(previewThemeId, themeMode ?? null, customThemes)
         : committedTheme,
-    [committedTheme, customThemes, previewThemeId, themeController.themeMode],
+    [committedTheme, customThemes, previewThemeId, themeMode, terminalColors],
   );
   const activeTheme = useMemo(
     () => (transparentBackground ? withTransparentSurfaces(baseTheme) : baseTheme),

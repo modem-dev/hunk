@@ -31,7 +31,7 @@ Use the repository root that the live review loaded. If an agent sandbox blocks 
 
 ## Theme detection looks wrong
 
-Some terminals do not answer background-color queries. `theme = "auto"` then falls back to `github-dark-default`; choose a theme explicitly if needed. Disable transparency if terminal compositing makes contrast unpredictable.
+Some terminals do not answer color queries. The default `terminal` theme then falls back to a standard xterm-style palette and `theme = "auto"` falls back to `github-dark-default`; choose a theme explicitly if needed. Disable transparency if terminal compositing makes contrast unpredictable.
 
 ## Layout or text is hard to read
 

@@ -254,7 +254,15 @@ describe("PTY file views", () => {
       flag: "a",
     });
     const session = await harness.launchHunk({
-      args: ["diff", "--extension", syntaxFixture.extension, "--mode", "unified"],
+      args: [
+        "diff",
+        "--theme",
+        "github-dark-default",
+        "--extension",
+        syntaxFixture.extension,
+        "--mode",
+        "unified",
+      ],
       cwd: repo.dir,
       cols: 120,
       rows: 24,

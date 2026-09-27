@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { createTestCustomThemes } from "../../../../test/helpers/theme-helpers";
 import { blendHex, contrastRatio, hexColorDistance } from "./lib/color";
 import {
@@ -6,6 +6,7 @@ import {
   getBundledShikiThemeBackground,
   getBundledShikiThemeDiffColors,
 } from "../core/theme/catalog";
+import { setDetectedTerminalColors, TERMINAL_THEME_ID } from "../core/theme/terminalColors";
 import { resolveWordDiffHighlightBg } from "./diff/diffRows";
 import {
   availableThemeIds,
@@ -91,11 +92,62 @@ function themeContrastFailures(
 }
 
 describe("themes", () => {
-  test("defaults to GitHub's dark theme and auto chooses GitHub light/dark", () => {
-    expect(resolveTheme(undefined, null).id).toBe(DEFAULT_DARK_THEME_ID);
-    expect(resolveTheme("missing", null).id).toBe(DEFAULT_DARK_THEME_ID);
+  afterEach(() => setDetectedTerminalColors(undefined));
+
+  test("defaults to the terminal theme and auto chooses GitHub light/dark", () => {
+    expect(resolveTheme(undefined, null).id).toBe(TERMINAL_THEME_ID);
+    expect(resolveTheme("missing", null).id).toBe(TERMINAL_THEME_ID);
     expect(resolveTheme("auto", "dark").id).toBe(DEFAULT_DARK_THEME_ID);
     expect(resolveTheme("auto", "light").id).toBe(DEFAULT_LIGHT_THEME_ID);
+  });
+
+  test("derives the terminal theme from the probed terminal palette", () => {
+    const palette = [
+      "#15161e",
+      "#f7768e",
+      "#9ece6a",
+      "#e0af68",
+      "#7aa2f7",
+      "#bb9af7",
+      "#7dcfff",
+      "#a9b1d6",
+      "#414868",
+    ];
+    setDetectedTerminalColors({ foreground: "#c0caf5", background: "#1a1b26", palette });
+
+    const theme = resolveTheme(TERMINAL_THEME_ID, "light");
+    expect(theme).toMatchObject({
+      id: TERMINAL_THEME_ID,
+      appearance: "dark",
+      background: "#1a1b26",
+      text: "#c0caf5",
+      addedSignColor: "#9ece6a",
+      removedSignColor: "#f7768e",
+      accent: "#7aa2f7",
+      syntaxScopesReplaceBase: true,
+    });
+    expect(theme.syntaxScopeOverrides).toMatchObject({
+      source: "#c0caf5",
+      comment: "#414868",
+      keyword: "#bb9af7",
+      string: "#9ece6a",
+      "constant.numeric": "#7dcfff",
+      "entity.name.function": "#7aa2f7",
+      "entity.name.type": "#e0af68",
+    });
+    // Repeated resolution returns the same object so theme-keyed memoization stays stable.
+    expect(resolveTheme(undefined, null)).toBe(theme);
+  });
+
+  test("falls back to a stand-in ANSI palette when the terminal was never probed", () => {
+    expect(resolveTheme(TERMINAL_THEME_ID, "light")).toMatchObject({
+      appearance: "light",
+      background: "#ffffff",
+    });
+    expect(resolveTheme(TERMINAL_THEME_ID, "dark")).toMatchObject({
+      appearance: "dark",
+      background: "#000000",
+    });
   });
 
   test("maps removed theme ids to compatible built-in themes", () => {
@@ -106,9 +158,9 @@ describe("themes", () => {
     expect(resolveTheme("zenburn", null).id).toBe("everforest-dark");
   });
 
-  test("exposes every bundled theme as a selectable theme", () => {
-    expect(availableThemeIds()).toEqual([...BUNDLED_SHIKI_THEME_IDS]);
-    expect(availableThemes().map((theme) => theme.id)).toEqual([...BUNDLED_SHIKI_THEME_IDS]);
+  test("exposes the terminal theme and every bundled theme as selectable themes", () => {
+    expect(availableThemeIds()).toEqual([TERMINAL_THEME_ID, ...BUNDLED_SHIKI_THEME_IDS]);
+    expect(availableThemes().map((theme) => theme.id)).toEqual(availableThemeIds());
 
     for (const themeId of BUNDLED_SHIKI_THEME_IDS) {
       const theme = resolveTheme(themeId, null);
@@ -414,12 +466,14 @@ describe("themes", () => {
     ];
 
     expect(availableThemeIds(customThemes)).toEqual([
+      TERMINAL_THEME_ID,
       ...BUNDLED_SHIKI_THEME_IDS,
       "custom",
       "ocean",
       "sunset",
     ]);
     expect(availableThemes(customThemes).map((theme) => [theme.id, theme.label])).toEqual([
+      [TERMINAL_THEME_ID, TERMINAL_THEME_ID],
       ...BUNDLED_SHIKI_THEME_IDS.map((themeId) => [themeId, themeId]),
       // Named themes label themselves by id; the original single-slot theme keeps "Custom".
       ["custom", "Custom"],
@@ -440,7 +494,7 @@ describe("themes", () => {
     );
     expect(resolveTheme("sunset", null, customThemes).accent).toBe("#654321");
     // Unknown ids stay on the built-in fallback instead of picking an unrelated custom theme.
-    expect(resolveTheme("missing", null, customThemes).id).toBe(DEFAULT_DARK_THEME_ID);
+    expect(resolveTheme("missing", null, customThemes).id).toBe(TERMINAL_THEME_ID);
     expect(resolveTheme("auto", "light", customThemes).id).toBe(DEFAULT_LIGHT_THEME_ID);
   });
 

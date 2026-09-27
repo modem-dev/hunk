@@ -2,6 +2,7 @@ import fs from "node:fs";
 import { dirname, join } from "node:path";
 import { sanitizeTerminalLine } from "../../lib/terminalText";
 import { BUNDLED_SHIKI_THEME_IDS, LEGACY_THEME_ID_ALIASES } from "../theme/catalog";
+import { TERMINAL_THEME_ID } from "../theme/terminalColors";
 import {
   createInvalidThemeIdNotice,
   createThemeCollisionNotice,
@@ -90,7 +91,8 @@ export interface PersistedViewPreferences {
 export const BUILT_IN_THEME_IDS = BUNDLED_SHIKI_THEME_IDS;
 // Widen the large literal tuple before formatting it, avoiding TypeScript's deep tuple inference.
 const BUILT_IN_THEME_IDS_FOR_MESSAGES: readonly string[] = BUILT_IN_THEME_IDS;
-const DEFAULT_THEME_ID = "github-dark-default";
+const DEFAULT_THEME_ID = TERMINAL_THEME_ID;
+const DEFAULT_CUSTOM_THEME_BASE_ID = "github-dark-default";
 const DEFAULT_VIEW_PREFERENCES: PersistedViewPreferences = {
   mode: "auto",
   showLineNumbers: true,
@@ -364,7 +366,7 @@ export const CONFIG_REFERENCE_OPTIONS: readonly ConfigReferenceOption[] = [
     key: "theme",
     property: "theme",
     type: "string",
-    accepted: "a built-in theme id or `custom`",
+    accepted: "`terminal`, `auto`, a built-in theme id, or a custom theme id",
     runtimeDefault: DEFAULT_THEME_ID,
     description: "Select the active color theme.",
   },
@@ -525,7 +527,7 @@ export const CONFIG_COMMAND_SECTIONS = {
 export const CONFIG_REFERENCE_CUSTOM_THEME = {
   table: "custom_theme",
   baseValues: BUILT_IN_THEME_IDS,
-  defaultBase: DEFAULT_THEME_ID,
+  defaultBase: DEFAULT_CUSTOM_THEME_BASE_ID,
   legacyBaseAliases: LEGACY_THEME_ID_ALIASES,
   colorKeys: CUSTOM_THEME_COLOR_KEYS,
   legacySyntaxColorKeys: LEGACY_CUSTOM_SYNTAX_COLOR_KEYS,
@@ -773,7 +775,7 @@ function mergeCustomTheme(
     ...base,
     ...overrides,
     id: base.id,
-    base: overrides.base ?? base.base ?? DEFAULT_THEME_ID,
+    base: overrides.base ?? base.base ?? DEFAULT_CUSTOM_THEME_BASE_ID,
     label: overrides.label ?? base.label,
     syntaxScopes:
       base.syntaxScopes || overrides.syntaxScopes

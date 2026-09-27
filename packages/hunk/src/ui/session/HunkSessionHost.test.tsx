@@ -309,11 +309,12 @@ test("shares committed themes across history and repeated review surfaces", asyn
 
     await act(async () => setup.mockInput.pressEnter());
     await settle(setup);
-    expect(requests[0]?.themeId).toBe("github-dark-dimmed");
+    // The default `terminal` theme leads the list, so one step down lands on the first bundled id.
+    expect(requests[0]?.themeId).toBe("andromeeda");
 
     await act(async () => setup.mockInput.typeText("t"));
     await setup.renderOnce();
-    await previewTrailingCustomTheme(setup, "github-dark-dimmed");
+    await previewTrailingCustomTheme(setup, "andromeeda");
     expect(setup.captureCharFrame()).toContain("Review only");
     expect(setup.captureCharFrame()).not.toContain("History only");
     await act(async () => setup.mockInput.pressEnter());
@@ -726,7 +727,7 @@ test("blocks reopening until dirty-quit cancellation settles", async () => {
     expect(setup.captureCharFrame()).toContain("Theme selector");
     await act(async () => setup.mockInput.pressArrow("down"));
     await setup.renderOnce();
-    expect(setup.captureCharFrame()).toContain("›  github-dark-dimmed");
+    expect(setup.captureCharFrame()).toContain("›  andromeeda");
     await act(async () => setup.mockInput.pressEnter());
     await setup.renderOnce();
     await act(async () => setup.mockInput.pressEnter());

@@ -3,9 +3,8 @@
 import fs from "node:fs";
 import tty from "node:tty";
 import {
-  detectTerminalThemeModeFromBackground,
-  parseOsc11BackgroundColor,
-  themeModeForBackgroundColor,
+  detectTerminalColors,
+  themeModeForTerminalColors,
 } from "../../packages/hunk/src/core/theme/detection";
 
 const inputFd = fs.openSync("/dev/tty", "r");
@@ -20,16 +19,14 @@ input.on("data", (chunk) => {
 });
 
 try {
-  const mode = await detectTerminalThemeModeFromBackground({ input, output, timeoutMs: 500 });
-  const color = parseOsc11BackgroundColor(raw);
-  const classified = color ? themeModeForBackgroundColor(color) : null;
+  const colors = await detectTerminalColors({ input, output, timeoutMs: 500 });
+  const mode = themeModeForTerminalColors(colors) ?? null;
 
   process.stderr.write(
     JSON.stringify(
       {
         mode,
-        color,
-        classified,
+        colors,
         raw: raw.replaceAll("\x1b", "\\e"),
         stdoutIsTTY: Boolean(process.stdout.isTTY),
         stdinIsTTY: Boolean(process.stdin.isTTY),

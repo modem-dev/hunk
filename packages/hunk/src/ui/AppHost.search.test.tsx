@@ -148,7 +148,7 @@ function rowIndexOf(setup: Awaited<ReturnType<typeof testRender>>, needle: strin
 
 /** Whether the frame paints `needle` with the inverted "current" mark background. */
 function hasCurrentMarkOn(setup: Awaited<ReturnType<typeof testRender>>, needle: string) {
-  const text = resolveTheme("github-dark-default", null).text.toLowerCase();
+  const text = resolveTheme(undefined, null).text.toLowerCase();
   return setup
     .captureSpans()
     .lines.some((line) =>

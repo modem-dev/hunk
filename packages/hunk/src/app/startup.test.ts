@@ -3,6 +3,7 @@ import { createEmptyExtensionLoadResult } from "../extensions/types";
 import { resolveExtensionCliCommands } from "../extensions/cliCommands";
 import type { HunkConfigResolution } from "../core/run/config";
 import { HunkUserError } from "../core/run/errors";
+import { getDetectedTerminalColors, setDetectedTerminalColors } from "../core/theme/terminalColors";
 import { prepareStartupPlan, shouldUseInteractiveHistory } from "./startup";
 import type { AppBootstrap } from "../core/bootstrap";
 import type { CliInput, ParsedCliInput } from "../core/run/commandInputs";
@@ -765,9 +766,9 @@ describe("startup planning", () => {
         opened += 1;
         return controllingTerminal;
       },
-      detectTerminalThemeModeFromBackgroundImpl: async ({ input }) => {
+      detectTerminalColorsImpl: async ({ input }) => {
         expect(input).toBe(controllingTerminal.stdin);
-        return "dark";
+        return { background: "#101010", palette: [] };
       },
       stdinIsTTY: false,
       stdoutIsTTY: true,
@@ -780,7 +781,9 @@ describe("startup planning", () => {
       bootstrap: { initialThemeMode: "dark" },
       initialization: { theme: { initialThemeMode: "dark" } },
     });
+    expect(getDetectedTerminalColors()).toEqual({ background: "#101010", palette: [] });
     expect(opened).toBe(1);
+    setDetectedTerminalColors(undefined);
   });
 
   test("inherits an embedded renderer theme mode without querying the shared terminal", async () => {
@@ -796,9 +799,9 @@ describe("startup planning", () => {
       resolveRuntimeCliInputImpl: (input) => input,
       resolveConfiguredCliInputImpl: (input) => createTestConfigResolution(input),
       loadAppBootstrapImpl: async (input) => createBootstrap(input),
-      detectTerminalThemeModeFromBackgroundImpl: async () => {
+      detectTerminalColorsImpl: async () => {
         detected += 1;
-        return "light";
+        return { background: "#ffffff", palette: [] };
       },
       stdinIsTTY: true,
       stdoutIsTTY: true,
@@ -842,6 +845,7 @@ describe("startup planning", () => {
         opened += 1;
         return controllingTerminal;
       },
+      detectTerminalColorsImpl: async () => null,
       stdoutIsTTY: true,
     });
 

@@ -55,8 +55,8 @@ Select the version-control adapter explicitly. An explicit id outranks detection
 Select the active color theme.
 
 - **Type:** string
-- **Accepted:** a built-in theme id or `custom`
-- **Built-in default:** `github-dark-default`
+- **Accepted:** `terminal`, `auto`, a built-in theme id, or a custom theme id
+- **Built-in default:** `terminal`
 
 ---
 

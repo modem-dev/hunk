@@ -442,14 +442,14 @@ describe("interactive hunk log", () => {
       const prompt = await harness.pressAndWaitForText(session, "q", /Save view preferences\?/, {
         timeout: 5_000,
       });
-      expect(prompt).toContain('- theme = "github-dark-default"');
-      expect(prompt).toContain('+ theme = "github-dark-dimmed"');
+      expect(prompt).toContain('- theme = "terminal"');
+      expect(prompt).toContain('+ theme = "andromeeda"');
 
       await session.press("s");
       const configPath = join(configHome, "hunk", "config.toml");
       const deadline = Date.now() + 5_000;
       while (Date.now() < deadline && !existsSync(configPath)) await Bun.sleep(50);
-      expect(readFileSync(configPath, "utf8")).toContain('theme = "github-dark-dimmed"');
+      expect(readFileSync(configPath, "utf8")).toContain('theme = "andromeeda"');
     } finally {
       session.close();
     }

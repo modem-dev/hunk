@@ -23,7 +23,7 @@ describe("PTY moved-line coloring", () => {
       test(`tints moved rows apart from ordinary added rows in ${layout} with ${wrap}`, async () => {
         const fixture = harness.createMovedLinesRepoFixture();
         const session = await harness.launchHunk({
-          args: ["diff", "--mode", layout, wrap],
+          args: ["diff", "--theme", DEFAULT_DARK_THEME_ID, "--mode", layout, wrap],
           cwd: fixture.dir,
           cols: 160,
           rows: 40,

@@ -9,8 +9,17 @@ import {
   getBundledShikiThemeBackground,
   getBundledShikiThemeDiffColors,
   getBundledShikiThemeForeground,
+  type BundledShikiThemeDiffColors,
   type BundledShikiThemeId,
 } from "../core/theme/catalog";
+import { themeModeForTerminalColors } from "../core/theme/detection";
+import {
+  ANSI_COLOR_INDEX,
+  FALLBACK_TERMINAL_COLORS,
+  getDetectedTerminalColors,
+  TERMINAL_THEME_ID,
+  type TerminalColors,
+} from "../core/theme/terminalColors";
 import type { AppTheme, SyntaxColors, ThemeBase } from "./themes/types";
 
 export type { AppTheme } from "./themes/types";
@@ -155,11 +164,28 @@ function readableChromeColor(preferred: string, panel: string, panelAlt: string)
   return anchor;
 }
 
-/** Derive one complete Hunk theme from one bundled Shiki editor theme. */
-function buildShikiTheme(themeId: BundledShikiThemeId): AppTheme {
-  const editorBackground = getBundledShikiThemeBackground(themeId) ?? "#0d1117";
-  const editorForeground = getBundledShikiThemeForeground(themeId);
-  const diffColors = getBundledShikiThemeDiffColors(themeId);
+interface DerivedThemeSource {
+  id: string;
+  label: string;
+  editorBackground: string;
+  editorForeground?: string;
+  diffColors?: BundledShikiThemeDiffColors;
+  syntaxTheme?: string;
+  syntaxScopeOverrides?: Record<string, string>;
+  syntaxScopesReplaceBase?: boolean;
+}
+
+/** Derive one complete Hunk theme from an editor surface, foreground, and diff accents. */
+function buildDerivedTheme({
+  id,
+  label,
+  editorBackground,
+  editorForeground,
+  diffColors,
+  syntaxTheme,
+  syntaxScopeOverrides,
+  syntaxScopesReplaceBase,
+}: DerivedThemeSource): AppTheme {
   const isLightSurface = relativeLuminance(editorBackground) > 0.45;
   const fallbackDiffColors = FALLBACK_DIFF_COLORS[isLightSurface ? "light" : "dark"];
   const rowTint = isLightSurface ? 0.12 : 0.2;
@@ -233,8 +259,8 @@ function buildShikiTheme(themeId: BundledShikiThemeId): AppTheme {
   const badgeRemoved = readableChromeColor(removedSignColor, neutralPanel, neutralPanelAlt);
   const badgeModified = readableChromeColor(modifiedColor, neutralPanel, neutralPanelAlt);
   const themeBase: ThemeBase = {
-    id: themeId,
-    label: themeId,
+    id,
+    label,
     appearance: isLightSurface ? "light" : "dark",
     background: editorBackground,
     panel: neutralPanel,
@@ -270,10 +296,116 @@ function buildShikiTheme(themeId: BundledShikiThemeId): AppTheme {
     fileRenamed: badgeModified,
     fileModified: badgeModified,
     fileUntracked: badgeAdded,
-    syntaxTheme: themeId,
+    syntaxTheme,
+    ...(syntaxScopeOverrides ? { syntaxScopeOverrides } : {}),
+    ...(syntaxScopesReplaceBase ? { syntaxScopesReplaceBase } : {}),
   };
 
   return { ...themeBase, syntaxColors };
+}
+
+/** Derive one complete Hunk theme from one bundled Shiki editor theme. */
+function buildShikiTheme(themeId: BundledShikiThemeId): AppTheme {
+  return buildDerivedTheme({
+    id: themeId,
+    label: themeId,
+    editorBackground: getBundledShikiThemeBackground(themeId) ?? "#0d1117",
+    editorForeground: getBundledShikiThemeForeground(themeId),
+    diffColors: getBundledShikiThemeDiffColors(themeId),
+    syntaxTheme: themeId,
+  });
+}
+
+/** Return one ANSI palette slot, falling back to the stand-in palette the terminal resembles. */
+function terminalPaletteColor(
+  colors: TerminalColors | undefined,
+  fallback: (typeof FALLBACK_TERMINAL_COLORS)[keyof typeof FALLBACK_TERMINAL_COLORS],
+  slot: keyof typeof ANSI_COLOR_INDEX,
+) {
+  const index = ANSI_COLOR_INDEX[slot];
+  return colors?.palette[index] ?? fallback.palette[index];
+}
+
+/**
+ * Map TextMate scopes onto ANSI palette slots the way terminal editors and pagers
+ * conventionally color code, so highlighting matches the rest of the user's terminal.
+ */
+const TERMINAL_SYNTAX_SCOPES: [readonly string[], keyof typeof ANSI_COLOR_INDEX][] = [
+  [["comment", "punctuation.definition.comment", "string.comment"], "brightBlack"],
+  [["keyword", "storage", "keyword.control", "storage.type", "storage.modifier"], "magenta"],
+  [["keyword.operator.new", "keyword.operator.expression", "keyword.operator.logical"], "magenta"],
+  [["string", "punctuation.definition.string", "string.template", "markup.inline.raw"], "green"],
+  [["string.regexp", "constant.character.escape"], "cyan"],
+  [["constant.numeric", "constant.language", "constant.character", "support.constant"], "cyan"],
+  [
+    [
+      "entity.name.function",
+      "support.function",
+      "variable.function",
+      "meta.function-call entity.name.function",
+      "markup.heading",
+    ],
+    "blue",
+  ],
+  [
+    [
+      "entity.name.type",
+      "entity.name.class",
+      "entity.name.namespace",
+      "entity.other.inherited-class",
+      "support.type",
+      "support.class",
+      "entity.other.attribute-name",
+    ],
+    "yellow",
+  ],
+  [["entity.name.tag", "variable.language", "markup.deleted", "invalid"], "red"],
+  [["markup.inserted"], "green"],
+];
+
+const terminalThemeCache = new Map<
+  "light" | "dark",
+  { colors: TerminalColors | undefined; theme: AppTheme }
+>();
+
+/**
+ * Derive the `terminal` theme from the terminal's own default colors and ANSI palette, so Hunk
+ * looks like part of the user's terminal instead of a separate editor color scheme.
+ */
+function buildTerminalTheme(themeMode?: ThemeMode | null): AppTheme {
+  const colors = getDetectedTerminalColors();
+  const mode = themeModeForTerminalColors(colors) ?? (themeMode === "light" ? "light" : "dark");
+  // Theme consumers memoize on identity, so hand back the same object for the same inputs.
+  const cached = terminalThemeCache.get(mode);
+  if (cached && cached.colors === colors) {
+    return cached.theme;
+  }
+
+  const fallback = FALLBACK_TERMINAL_COLORS[mode];
+  const foreground = colors?.foreground ?? fallback.foreground;
+  const color = (slot: keyof typeof ANSI_COLOR_INDEX) =>
+    terminalPaletteColor(colors, fallback, slot);
+
+  // Rules replace the base syntax theme's own, so every unmatched token falls back to the
+  // terminal foreground instead of leaking a bundled editor palette.
+  const syntaxScopeOverrides: Record<string, string> = { source: foreground };
+  for (const [scopes, slot] of TERMINAL_SYNTAX_SCOPES) {
+    for (const scope of scopes) {
+      syntaxScopeOverrides[scope] = color(slot);
+    }
+  }
+
+  const theme = buildDerivedTheme({
+    id: TERMINAL_THEME_ID,
+    label: TERMINAL_THEME_ID,
+    editorBackground: colors?.background ?? fallback.background,
+    editorForeground: foreground,
+    diffColors: { added: color("green"), removed: color("red"), modified: color("blue") },
+    syntaxScopeOverrides,
+    syntaxScopesReplaceBase: true,
+  });
+  terminalThemeCache.set(mode, { colors, theme });
+  return theme;
 }
 
 export const THEMES: AppTheme[] = BUNDLED_SHIKI_THEME_IDS.map((themeId) =>
@@ -286,15 +418,15 @@ function builtInThemeById(themeId: string | undefined) {
   return THEMES.find((theme) => theme.id === resolvedThemeId);
 }
 
-/** Return the explicit built-in fallback theme used across startup and missing ids. */
-function fallbackTheme(themeMode?: ThemeMode | null) {
-  const fallbackId = themeMode === "light" ? DEFAULT_LIGHT_THEME_ID : DEFAULT_DARK_THEME_ID;
-  return builtInThemeById(fallbackId) ?? THEMES[0]!;
+/** Return the GitHub light or dark theme that matches the terminal background. */
+function autoTheme(themeMode?: ThemeMode | null) {
+  const autoId = themeMode === "light" ? DEFAULT_LIGHT_THEME_ID : DEFAULT_DARK_THEME_ID;
+  return builtInThemeById(autoId) ?? THEMES[0]!;
 }
 
 /** Build one named custom theme by inheriting from a Shiki-backed base palette. */
 function buildCustomTheme(customTheme: NamedCustomThemeConfig) {
-  const baseTheme = builtInThemeById(customTheme.base) ?? fallbackTheme();
+  const baseTheme = builtInThemeById(customTheme.base) ?? autoTheme();
   const themeBase: ThemeBase = {
     ...baseTheme,
     id: customTheme.id,
@@ -351,7 +483,11 @@ function buildCustomTheme(customTheme: NamedCustomThemeConfig) {
  * the order the session resolved them.
  */
 export function availableThemeIds(customThemes: readonly NamedCustomThemeConfig[] = []): string[] {
-  return [...THEMES.map((theme) => theme.id), ...customThemes.map((theme) => theme.id)];
+  return [
+    TERMINAL_THEME_ID,
+    ...THEMES.map((theme) => theme.id),
+    ...customThemes.map((theme) => theme.id),
+  ];
 }
 
 /**
@@ -360,17 +496,23 @@ export function availableThemeIds(customThemes: readonly NamedCustomThemeConfig[
  * The custom themes are expected to be one already-merged list (config themes
  * before extension themes, ids deduped) so this stays a pure projection.
  */
-export function availableThemes(customThemes: readonly NamedCustomThemeConfig[] = []): AppTheme[] {
-  return customThemes.length > 0
-    ? [...THEMES, ...customThemes.map((customTheme) => buildCustomTheme(customTheme))]
-    : THEMES;
+export function availableThemes(
+  customThemes: readonly NamedCustomThemeConfig[] = [],
+  themeMode?: ThemeMode | null,
+): AppTheme[] {
+  return [
+    buildTerminalTheme(themeMode),
+    ...THEMES,
+    ...customThemes.map((customTheme) => buildCustomTheme(customTheme)),
+  ];
 }
 
 /**
  * Resolve a named theme, including terminal-background auto mode and custom themes.
  *
  * Custom themes are matched before bundled ids so a custom theme that reuses a
- * deprecated built-in alias still resolves to what the user actually defined.
+ * deprecated built-in alias still resolves to what the user actually defined. No id, or
+ * an id nothing defines, resolves to the `terminal` theme.
  */
 export function resolveTheme(
   requested: string | undefined,
@@ -378,7 +520,7 @@ export function resolveTheme(
   customThemes: readonly NamedCustomThemeConfig[] = [],
 ) {
   if (requested === "auto") {
-    return fallbackTheme(themeMode);
+    return autoTheme(themeMode);
   }
 
   const customTheme = requested ? customThemes.find((theme) => theme.id === requested) : undefined;
@@ -391,7 +533,7 @@ export function resolveTheme(
     return exact;
   }
 
-  return fallbackTheme(themeMode);
+  return buildTerminalTheme(themeMode);
 }
 
 /**

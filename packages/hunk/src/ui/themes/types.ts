@@ -41,6 +41,8 @@ export interface AppTheme {
   syntaxTheme?: string;
   /** Exact Shiki/TextMate scope colors layered onto the base syntax theme. */
   syntaxScopeOverrides?: Record<string, string>;
+  /** Drop the base syntax theme's own scope rules so only the overrides color code. */
+  syntaxScopesReplaceBase?: boolean;
   syntaxColors: SyntaxColors;
 }
 

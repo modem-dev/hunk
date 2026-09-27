@@ -2,6 +2,7 @@ import type { StartupNotice } from "../process/startupNotice";
 import type { NamedCustomThemeConfig } from "../../extension-api/types";
 import { BUNDLED_SHIKI_THEME_IDS, resolveBundledShikiThemeId } from "./catalog";
 import { LEGACY_CUSTOM_SYNTAX_COLOR_KEYS } from "./legacySyntaxScopes";
+import { TERMINAL_THEME_ID } from "./terminalColors";
 
 /** Provider-neutral shape accepted from any custom-theme registration source. */
 export interface RegisteredCustomTheme {
@@ -15,11 +16,12 @@ export const LEGACY_CUSTOM_THEME_ID = "custom";
 /**
  * Ids a custom theme may not claim.
  *
- * Bundled Shiki ids are taken by built-in themes, and `auto` is the reserved
- * request that means "follow the terminal background".
+ * Bundled Shiki ids and `terminal` are taken by built-in themes, and `auto` is the
+ * reserved request that means "follow the terminal background".
  */
 const RESERVED_THEME_IDS: ReadonlySet<string> = new Set<string>([
   "auto",
+  TERMINAL_THEME_ID,
   ...BUNDLED_SHIKI_THEME_IDS,
 ]);
 

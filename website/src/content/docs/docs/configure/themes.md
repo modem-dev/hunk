@@ -3,7 +3,9 @@ title: Themes
 description: Choose a built-in Shiki-backed theme, detect terminal background, or define precise color overrides.
 ---
 
-Press `t` in Hunk or choose **View → Themes…** to preview and select a theme. Persist it in TOML:
+By default Hunk uses the `terminal` theme, which follows your terminal's own colors: at startup Hunk reads the terminal's foreground, background, and 16-color ANSI palette, and draws diffs, chrome, and syntax highlighting from them. Hunk keeps following the terminal while it runs: when the terminal reports a color-scheme change (mode 2031, sent by Ghostty, kitty, herdr, and others) or Hunk receives `SIGWINCH` (what tmux-aware theme tools send after rewriting a pane's colors), it probes the palette again and repaints. Terminals that do not answer palette queries get a standard xterm-style palette for their light or dark background.
+
+Press `t` in Hunk or choose **View → Themes…** to preview and select a different theme. Persist it in TOML:
 
 ```toml
 theme = "github-dark-default"

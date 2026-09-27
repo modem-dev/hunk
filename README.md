@@ -163,7 +163,7 @@ You can persist preferences to a config file:
 Example:
 
 ```toml
-theme = "github-dark-default" # any built-in theme id, auto, or custom
+theme = "terminal"   # terminal, auto, any built-in theme id, or custom
 mode = "auto"        # auto, split, unified
 vcs = "git"          # git, jj, sl
 watch = false

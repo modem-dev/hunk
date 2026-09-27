@@ -20,6 +20,8 @@ describe("PTY chrome", () => {
     const session = await harness.launchHunk({
       args: [
         "diff",
+        "--theme",
+        "github-dark-default",
         "--files",
         fixture.before,
         fixture.after,
@@ -144,7 +146,7 @@ describe("PTY chrome", () => {
       await session.waitForText(/line60/, { timeout: 15_000 });
 
       await harness.pressAndWaitForText(session, "t", /Theme selector/, { timeout: 5_000 });
-      await harness.pressAndWaitForText(session, "down", /›\s+github-dark-dimmed/, {
+      await harness.pressAndWaitForText(session, "down", /›\s+andromeeda/, {
         timeout: 5_000,
       });
       await harness.pressAndWaitForSnapshot(
@@ -157,8 +159,8 @@ describe("PTY chrome", () => {
       const prompt = await harness.pressAndWaitForText(session, "q", /Save view preferences\?/, {
         timeout: 5_000,
       });
-      expect(prompt).toContain('- theme = "github-dark-default"');
-      expect(prompt).toContain('+ theme = "github-dark-dimmed"');
+      expect(prompt).toContain('- theme = "terminal"');
+      expect(prompt).toContain('+ theme = "andromeeda"');
       expect(prompt).toContain("enter/s save");
 
       await session.click(/enter\/s save/);
@@ -171,7 +173,7 @@ describe("PTY chrome", () => {
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
 
-      expect(readFileSync(configPath, "utf8")).toContain('theme = "github-dark-dimmed"');
+      expect(readFileSync(configPath, "utf8")).toContain('theme = "andromeeda"');
     } finally {
       session.close();
       rmSync(configHome, { recursive: true, force: true });

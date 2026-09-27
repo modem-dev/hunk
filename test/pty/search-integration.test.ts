@@ -43,7 +43,7 @@ describe("PTY content search", () => {
   test("/ searches, Enter reveals the match, and n / N step through the review", async () => {
     const fixture = harness.createSearchRepoFixture();
     const session = await harness.launchHunk({
-      args: ["diff", "--mode", "unified"],
+      args: ["diff", "--theme", "github-dark-default", "--mode", "unified"],
       cwd: fixture.dir,
       cols: 120,
       rows: 14,
@@ -142,7 +142,7 @@ describe("PTY content search", () => {
       'const pair = needle("first") + needle("second");\n',
     );
     const session = await harness.launchHunk({
-      args: ["diff", "--mode", "unified"],
+      args: ["diff", "--theme", "github-dark-default", "--mode", "unified"],
       cwd: fixture.dir,
       cols: 120,
       rows: 14,
@@ -179,7 +179,7 @@ describe("PTY content search", () => {
   test("an empty query is refused, escape keeps the search, and the emptied prompt clears it", async () => {
     const fixture = harness.createSearchRepoFixture();
     const session = await harness.launchHunk({
-      args: ["diff", "--mode", "unified"],
+      args: ["diff", "--theme", "github-dark-default", "--mode", "unified"],
       cwd: fixture.dir,
       cols: 120,
       rows: 14,
@@ -250,7 +250,7 @@ describe("PTY content search", () => {
     );
     const fixture = harness.createSearchRepoFixture();
     const session = await harness.launchHunk({
-      args: ["diff", "--mode", "unified"],
+      args: ["diff", "--theme", "github-dark-default", "--mode", "unified"],
       cwd: fixture.dir,
       cols: 120,
       rows: 14,

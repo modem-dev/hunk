@@ -18,11 +18,15 @@ function syntaxThemeFingerprint(value: string) {
   return createHash("sha256").update(value).digest("hex").slice(0, 16);
 }
 
-/** Derive a Shiki theme by appending user-authored TextMate scope colors unchanged. */
+/**
+ * Derive a Shiki theme by appending TextMate scope colors unchanged, or, when the theme asks to
+ * replace its base, by keeping only those colors and making `source` the default foreground.
+ */
 async function buildCustomSyntaxTheme(
   name: string,
   baseThemeName: string,
   scopeOverrides: Record<string, string>,
+  replaceBase: boolean,
 ) {
   const baseTheme = await resolvePierreTheme(baseThemeName);
   const scopeSettings = Object.entries(scopeOverrides).map(([scope, foreground]) => ({
@@ -30,10 +34,21 @@ async function buildCustomSyntaxTheme(
     settings: { foreground },
   }));
 
+  if (!replaceBase) {
+    return {
+      ...baseTheme,
+      name,
+      settings: [...(baseTheme.settings ?? []), ...scopeSettings],
+    } satisfies ThemeRegistrationResolved;
+  }
+
+  const foreground = scopeOverrides.source ?? baseTheme.fg;
   return {
     ...baseTheme,
     name,
-    settings: [...(baseTheme.settings ?? []), ...scopeSettings],
+    fg: foreground,
+    colors: { ...baseTheme.colors, "editor.foreground": foreground },
+    settings: [{ settings: { foreground } }, ...scopeSettings],
   } satisfies ThemeRegistrationResolved;
 }
 
@@ -48,7 +63,11 @@ export function syntaxHighlightThemeName(theme: AppTheme | AppTheme["appearance"
   const orderedOverrides = Object.entries(theme.syntaxScopeOverrides ?? {}).map(
     ([scope, color]) => [scope, color.toLowerCase()],
   );
-  const fingerprintInput = JSON.stringify({ baseThemeName, orderedOverrides });
+  const fingerprintInput = JSON.stringify({
+    baseThemeName,
+    orderedOverrides,
+    ...(theme.syntaxScopesReplaceBase ? { replaceBase: true } : {}),
+  });
 
   return orderedOverrides.length > 0
     ? `hunk-custom-${syntaxThemeFingerprint(fingerprintInput)}`
@@ -69,8 +88,9 @@ export function ensureSyntaxHighlightThemeRegistered(theme: AppTheme | AppTheme[
 
   if (!registeredSyntaxThemes.has(themeName)) {
     const capturedOverrides = { ...theme.syntaxScopeOverrides };
+    const replaceBase = theme.syntaxScopesReplaceBase === true;
     registerCustomTheme(themeName, () =>
-      buildCustomSyntaxTheme(themeName, baseThemeName, capturedOverrides),
+      buildCustomSyntaxTheme(themeName, baseThemeName, capturedOverrides, replaceBase),
     );
     registeredSyntaxThemes.add(themeName);
   }
