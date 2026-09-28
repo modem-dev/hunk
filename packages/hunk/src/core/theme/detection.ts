@@ -37,10 +37,26 @@ const OSC_COLOR_REPLY_PATTERN = new RegExp(
   `\\x1b\\](?:4;(\\d+)|(10)|(11));${OSC_COLOR_SPEC}${OSC_TERMINATOR}`,
   "gi",
 );
-// Terminals answer queries in order, so the primary device attributes reply marks the point where
-// every color reply the terminal was ever going to send has already arrived.
-const DEVICE_ATTRIBUTES_QUERY = "\x1b[c";
-const DEVICE_ATTRIBUTES_REPLY_PATTERN = /\x1b\[\?[\d;]*c/;
+const DEVICE_ATTRIBUTES_REPLY_SOURCE = "\\x1b\\[\\?[\\d;]*c";
+const DEVICE_ATTRIBUTES_REPLY_PATTERN = new RegExp(DEVICE_ATTRIBUTES_REPLY_SOURCE);
+const DEVICE_ATTRIBUTES_REPLY_SEQUENCE_PATTERN = new RegExp(`^${DEVICE_ATTRIBUTES_REPLY_SOURCE}$`);
+
+/**
+ * Primary device attributes (DA1) query. Terminals answer queries in order, so writing it after
+ * color queries makes its reply mark the point where every color reply the terminal was ever
+ * going to send has already arrived.
+ */
+export const DEVICE_ATTRIBUTES_QUERY = "\x1b[c";
+
+/** OSC 10 (foreground), OSC 11 (background), and OSC 4 (16-color palette) queries, ST-terminated. */
+export const TERMINAL_COLOR_QUERY =
+  "\x1b]10;?\x1b\\\x1b]11;?\x1b\\" +
+  Array.from({ length: ANSI_PALETTE_SIZE }, (_, index) => `\x1b]4;${index};?\x1b\\`).join("");
+
+/** Return whether one parsed terminal input sequence is a DA1 reply such as `ESC [ ? 62 ; 22 c`. */
+export function isDeviceAttributesReply(sequence: string) {
+  return DEVICE_ATTRIBUTES_REPLY_SEQUENCE_PATTERN.test(sequence);
+}
 
 /** Convert xterm-style OSC color channels into 8-bit RGB. */
 function parseHexChannel(channel: string) {
@@ -121,7 +137,7 @@ export function themeModeForTerminalColors(colors: TerminalColors | null | undef
 }
 
 /** Return whether a probe learned anything at all about the terminal's colors. */
-function hasTerminalColors(colors: TerminalColors) {
+export function hasTerminalColors(colors: TerminalColors) {
   return (
     colors.foreground !== undefined ||
     colors.background !== undefined ||
@@ -171,10 +187,6 @@ export async function detectTerminalColors({
     input.resume?.();
     input.on("data", onData);
 
-    const paletteQueries = Array.from(
-      { length: ANSI_PALETTE_SIZE },
-      (_, index) => `\x1b]4;${index};?\x1b\\`,
-    ).join("");
-    output.write(`\x1b]10;?\x1b\\\x1b]11;?\x1b\\${paletteQueries}${DEVICE_ATTRIBUTES_QUERY}`);
+    output.write(`${TERMINAL_COLOR_QUERY}${DEVICE_ATTRIBUTES_QUERY}`);
   });
 }
