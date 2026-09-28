@@ -1059,10 +1059,11 @@ end
     cols?: number;
     rows?: number;
     env?: Record<string, string | undefined>;
+    /** Answer terminal queries before launch readiness so startup probes can be tested end to end. */
+    testTerminalResponder?: (data: string, session: Session) => void;
   }) {
-    const { launchTerminal } = await loadTuistory();
-
-    return launchTerminal({
+    const tuistory = await loadTuistory();
+    const launchOptions = {
       command: explicitHunkExecutable ?? bunExecutable,
       idleDelayMs: tuistoryIdleDelayMs,
       args: explicitHunkExecutable
@@ -1078,7 +1079,17 @@ end
         HUNK_DISABLE_UPDATE_NOTICE: "1",
         ...options.env,
       },
-    });
+    };
+
+    if (!options.testTerminalResponder) {
+      return tuistory.launchTerminal(launchOptions);
+    }
+
+    const session = new tuistory.Session(launchOptions);
+    session.subscribe((data) => options.testTerminalResponder?.(data, session));
+    await session.waitForData({ timeout: 5_000 });
+    await session.waitIdle();
+    return session;
   }
 
   /** Launch an arbitrary shell command inside the PTY for pipeline-style integration tests. */
