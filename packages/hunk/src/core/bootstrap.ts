@@ -49,6 +49,7 @@ export interface AppBootstrap<ExtensionState = unknown> {
   initialFileGap?: number;
   initialHunkGap?: number;
   initialWheelScrollLines?: WheelScrollLines;
+  initialScrollOff?: number;
   initialWrapLines?: boolean;
   initialShowHunkHeaders?: boolean;
   initialShowMenuBar?: boolean;

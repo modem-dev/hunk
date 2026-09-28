@@ -56,6 +56,7 @@ import {
   RELOAD_SEPARATOR_MESSAGE,
 } from "../session/agent/errors";
 import { DEFAULT_FILE_GAP, DEFAULT_HUNK_GAP, parseReviewGap } from "../core/run/reviewGap";
+import { DEFAULT_SCROLL_OFF, parseScrollOff } from "../core/run/scrollOff";
 import { DEFAULT_TAB_WIDTH, parseTabWidth } from "../core/run/tabWidth";
 import { resolveCliVersion } from "../core/run/version";
 import {
@@ -78,6 +79,7 @@ export interface CliReferenceOption {
     | "fileGap"
     | "hunkGap"
     | "wheelScrollLines"
+    | "scrollOff"
     | "collect";
   readonly defaultValue?: string;
   /** Default applied directly by Commander (as opposed to a config-resolved default). */
@@ -151,6 +153,12 @@ export const COMMON_REVIEW_OPTIONS = [
     description: "rows per wheel event: auto or 1-10",
     parse: "wheelScrollLines",
     defaultValue: DEFAULT_WHEEL_SCROLL_LINES,
+  },
+  {
+    flag: "--scroll-off <rows>",
+    description: "rows the current line keeps clear of the viewport edge: 0-40",
+    parse: "scrollOff",
+    defaultValue: String(DEFAULT_SCROLL_OFF),
   },
   { flag: "--wrap", description: "wrap long diff lines" },
   { flag: "--no-wrap", description: "truncate long diff lines to one row" },
@@ -492,6 +500,7 @@ function buildCommonOptions(
     fileGap?: number;
     hunkGap?: number;
     wheelScrollLines?: WheelScrollLines;
+    scrollOff?: number;
     extension?: string[];
   },
   argv: string[],
@@ -519,6 +528,7 @@ function buildCommonOptions(
     fileGap: options.fileGap,
     hunkGap: options.hunkGap,
     wheelScrollLines: options.wheelScrollLines,
+    scrollOff: options.scrollOff,
     wrapLines: resolveBooleanFlag(argv, "--wrap", "--no-wrap"),
     hunkHeaders: resolveBooleanFlag(argv, "--hunk-headers", "--no-hunk-headers"),
     sidebar: resolveBooleanFlag(argv, "--sidebar", "--no-sidebar"),
@@ -551,6 +561,8 @@ function applyReferenceOption(command: Command, option: CliReferenceOption) {
     commanderOption.argParser((value: string) => parseReviewGap(value, "hunk gap"));
   } else if (option.parse === "wheelScrollLines") {
     commanderOption.argParser(parseWheelScrollLines);
+  } else if (option.parse === "scrollOff") {
+    commanderOption.argParser(parseScrollOff);
   } else if (option.parse === "collect") {
     commanderOption.argParser(collectRepeatedValue);
   }

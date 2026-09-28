@@ -2039,6 +2039,22 @@ describe("parseCli argument validation", () => {
     );
   });
 
+  test("parses scroll off and rejects values outside 0-40", async () => {
+    const parsed = await parseCli(["bun", "hunk", "diff", "--scroll-off", "5"]);
+
+    expect(parsed).toMatchObject({
+      kind: "vcs",
+      options: { scrollOff: 5 },
+    });
+
+    await expect(parseCli(["bun", "hunk", "diff", "--scroll-off", "41"])).rejects.toThrow(
+      "Invalid scroll off",
+    );
+    await expect(parseCli(["bun", "hunk", "diff", "--scroll-off", "abc"])).rejects.toThrow(
+      "Invalid scroll off",
+    );
+  });
+
   test("rejects an invalid layout mode and rethrows the parser error", async () => {
     await expect(parseCli(["bun", "hunk", "diff", "--mode", "bogus"])).rejects.toThrow(
       "Invalid layout mode: bogus",

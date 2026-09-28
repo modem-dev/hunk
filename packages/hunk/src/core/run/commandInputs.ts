@@ -54,6 +54,8 @@ export interface CommonOptions {
   hunkGap?: number;
   /** Review rows to move per vertical mouse-wheel event. */
   wheelScrollLines?: WheelScrollLines;
+  /** Rows the current line keeps clear of the viewport top/bottom edge while stepping. */
+  scrollOff?: number;
   wrapLines?: boolean;
   hunkHeaders?: boolean;
   menuBar?: boolean;
