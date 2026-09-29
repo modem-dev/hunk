@@ -319,11 +319,13 @@ describe("PTY file views", () => {
       });
       const resizeAnchor = firstVisibleSyntaxRow(await session.text({ immediate: true }));
       session.resize({ cols: 92, rows: 20 });
-      await session.waitForText(/FILE alpha\.ts GEN 000 ROW 001/, {
+      // Resizing invalidates the old-width layout. Observe raw fallback first, then wait for the
+      // debounced preparation at the new width rather than matching a stale pre-resize frame.
+      await session.waitForText(/export const alpha = 2;/, { timeout: 5_000 });
+      const resized = await session.waitForText(/FILE alpha\.ts GEN 000 ROW 001/, {
         timeout: 5_000,
       });
-      await session.waitIdle();
-      expect(firstVisibleSyntaxRow(await session.text({ immediate: true }))).toBe(resizeAnchor);
+      expect(firstVisibleSyntaxRow(resized)).toBe(resizeAnchor);
 
       // Generation 1 proves it entered layout and remains blocked while generation 2 commits.
       await session.press("f9");
