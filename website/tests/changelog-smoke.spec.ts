@@ -90,7 +90,16 @@ test("the index lists every series newest first and links each one", async ({ pa
   const seriesLinks = page.getByRole("heading", { level: 2 }).getByRole("link");
   const labels = await seriesLinks.allTextContents();
   expect(labels.length).toBeGreaterThan(5);
-  expect(labels[0]).toBe("Hunk 0.22");
+  const versions = labels.map((label) => {
+    const match = /^Hunk (\d+)\.(\d+)$/.exec(label);
+    expect(match, label).not.toBeNull();
+    return [Number(match![1]), Number(match![2])] as const;
+  });
+  for (let index = 1; index < versions.length; index += 1) {
+    const [major, minor] = versions[index - 1]!;
+    const [nextMajor, nextMinor] = versions[index]!;
+    expect(major > nextMajor || (major === nextMajor && minor > nextMinor)).toBe(true);
+  }
 
   await expect(page.getByText(/^Prerelease ·/)).toHaveCount(0);
   await expect(page.getByText(/^Latest ·/)).toHaveCount(1);
