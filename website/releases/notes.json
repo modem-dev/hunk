@@ -1,4 +1,14 @@
 {
+  "0.23": {
+    "summary": "Hunk 0.23 brings diff search, bundled GitHub review, an inline status line, and a default theme that follows your terminal, while making daemon version mismatches easier to resolve.",
+    "tagline": "Search diffs, review GitHub, follow your terminal",
+    "links": [
+      { "label": "Keyboard and mouse", "href": "/docs/start/keyboard-and-mouse/" },
+      { "label": "Extensions", "href": "/docs/extend/extensions/" },
+      { "label": "Themes", "href": "/docs/configure/themes/" },
+      { "label": "Live session control", "href": "/docs/agents/live-session-control/" }
+    ]
+  },
   "0.22": {
     "summary": "Hunk 0.22 turns repository history into a responsive review workspace with commit-range browsing, persistent multiline selections, keyboard-driven threaded notes, and richer extension context.",
     "tagline": "History browsing, range reviews, precise comments",

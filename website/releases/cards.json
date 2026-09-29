@@ -8,6 +8,13 @@
     "alt": "Hunk changelog — 22 release series · March 2026 – September 2026"
   },
   {
+    "slug": "0.23",
+    "title": "Hunk 0.23",
+    "tagline": "Hunk 0.23 brings diff search, bundled GitHub review, an inline status line, and a default theme that follows your terminal, while making…",
+    "meta": "Unreleased · 1 release · 18 changes",
+    "alt": "Hunk 0.23 release notes — Unreleased · 1 release · 18 changes"
+  },
+  {
     "slug": "0.22",
     "title": "Hunk 0.22",
     "tagline": "Hunk 0.22 turns repository history into a responsive review workspace with commit-range browsing, persistent multiline selections…",

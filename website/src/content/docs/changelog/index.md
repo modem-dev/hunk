@@ -22,6 +22,12 @@ head:
 
 [RSS](https://hunk.dev/changelog/rss.xml) · [CHANGELOG.md](https://github.com/modem-dev/hunk/blob/main/CHANGELOG.md)
 
+## [Hunk 0.23](/changelog/0.23/)
+
+Unreleased · 1 release · 18 changes
+
+Hunk 0.23 brings diff search, bundled GitHub review, an inline status line, and a default theme that follows your terminal, while making daemon version mismatches easier to resolve.
+
 ## [Hunk 0.22](/changelog/0.22/)
 
 Latest · September 8, 2026 – September 10, 2026 · 3 releases · 81 changes

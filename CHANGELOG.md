@@ -1,5 +1,61 @@
 # Changelog
 
+## 0.23.0
+
+### Minor Changes
+
+- [#1129](https://github.com/modem-dev/hunk/pull/1129) [`0a67560`](https://github.com/modem-dev/hunk/commit/0a67560cfd4f4ad2a01251018c4caa538a1f107a) - Bundle `hunk gh` for reviewing GitHub pull requests, commits, and comparisons without a separate extension or the GitHub CLI, with exact-id controls through `[extensions] disabled`, `--disable-extension`, and `--enable-extension`.
+
+- [#1096](https://github.com/modem-dev/hunk/pull/1096) [`0a41a76`](https://github.com/modem-dev/hunk/commit/0a41a7613e5d017f466b8e4a18851d261da48288) - `/` now searches diff content from a `less`-style prompt on the status row and `n` / `N` step through matches with in-diff marks; the file filter stays on Tab and in the menu (`"hunk.review.focusFilter" = "/"` restores it), note stepping ships unbound, and extension API 27 adds `ctx.selection.files`.
+
+- [#1099](https://github.com/modem-dev/hunk/pull/1099) [`392cb7f`](https://github.com/modem-dev/hunk/commit/392cb7f99661270ff77df1f6c6bae9d9f5a0f156) - Make a session daemon left over from a previous Hunk build visible and replaceable.
+
+  A window the daemon refuses now shows a sticky status-bar notice naming which side is older and
+  what to do: run `hunk daemon restart` when the daemon is the older build, or relaunch the window
+  when it is the newer one. A window whose registration the daemon rejects after the handshake gets
+  its own notice instead of silently reconnecting.
+
+  `hunk session` commands fail with a structured `daemon-build-mismatch` error that says which side
+  is older, counts the attached windows, and recommends an action; under `--json` it is returned
+  in-band with the build details.
+
+  New `hunk daemon status` reports the daemon's version, uptime, and attached windows, and new
+  `hunk daemon restart` replaces the daemon with one from the current build after confirming how
+  many windows that disconnects. Under `HUNK_DEBUG=1` the daemon logs which parser rejected a
+  registration.
+
+- [#1053](https://github.com/modem-dev/hunk/pull/1053) [`ee556ac`](https://github.com/modem-dev/hunk/commit/ee556ac841c1b5a872b80f247816a71e8104605f) - Let file-view extensions declare complete code documents and map symbolic spans into them for host-owned, theme-aware syntax highlighting with bounded worker, cache, and plain-fallback behavior.
+
+- [#1095](https://github.com/modem-dev/hunk/pull/1095) [`515188e`](https://github.com/modem-dev/hunk/commit/515188eaf688751fd01e48f9b8528443cdb4a8e1) - The bottom status row is now a host-owned status line with real inline inputs for the file filter and `hunk log` search, and extension API 26 lets extensions set status items (`ctx.statusLine`) and ask for a line of text inline (`ctx.prompts.line()`).
+
+- [#1128](https://github.com/modem-dev/hunk/pull/1128) [`6c95708`](https://github.com/modem-dev/hunk/commit/6c9570858e644f59cd6ffb070a0dfb5a7040690a) - Add a `terminal` theme that follows the terminal's own foreground, background, and ANSI palette for diffs, chrome, and syntax highlighting, and make it the default theme. Hunk re-reads the terminal's colors and repaints when the terminal reports a color-scheme change or on `SIGWINCH`, so switching terminal themes restyles a running Hunk.
+
+### Patch Changes
+
+- [#853](https://github.com/modem-dev/hunk/pull/853) [`dc17b5d`](https://github.com/modem-dev/hunk/commit/dc17b5d19c73a0d5cbb761263b3d43c80c6a898a) - Let reviewers configure a fixed number of rows per mouse-wheel event for faster large-diff scrolling.
+
+- [#1095](https://github.com/modem-dev/hunk/pull/1095) [`515188e`](https://github.com/modem-dev/hunk/commit/515188eaf688751fd01e48f9b8528443cdb4a8e1) - Keep the focused file filter and its current text open across content reloads.
+
+- [#1099](https://github.com/modem-dev/hunk/pull/1099) [`392cb7f`](https://github.com/modem-dev/hunk/commit/392cb7f99661270ff77df1f6c6bae9d9f5a0f156) - npm installs now fall back to the bundled JavaScript runtime when the prebuilt binary cannot run on the machine, report signal exits as 128 + signal, and pick the native arm64 build under Rosetta.
+
+- [#1108](https://github.com/modem-dev/hunk/pull/1108) [`b72696a`](https://github.com/modem-dev/hunk/commit/b72696a7b1c0d5ea1e3e0dbb2faf1fdbe697d8a5) - Fix `hunk patch` (and other review flows) under the Nix flake package by installing the `hunkdiff` alias next to `hunk`, mirroring the npm package's dual binaries. Without it the review flow fails with "unable to execute '…/bin/hunkdiff'".
+
+- [#1095](https://github.com/modem-dev/hunk/pull/1095) [`515188e`](https://github.com/modem-dev/hunk/commit/515188eaf688751fd01e48f9b8528443cdb4a8e1) - Truncate long status prompt lead-ins so typed input stays visible beside the keyboard-mode badge on narrow terminals.
+
+- [#1079](https://github.com/modem-dev/hunk/pull/1079) [`33eb12f`](https://github.com/modem-dev/hunk/commit/33eb12f92cff9dd2539814e7a564dd4d40b4ee41) - Opening the help dialog or menu for the first time no longer waits ~300 ms.
+
+- [#1111](https://github.com/modem-dev/hunk/pull/1111) [`5e802c2`](https://github.com/modem-dev/hunk/commit/5e802c2fe1f8f3f474f39e4208f7f9063107f0dc) - Large reviews no longer print a `MaxListenersExceededWarning` over the terminal UI when more than ten files are on screen.
+
+- [#1096](https://github.com/modem-dev/hunk/pull/1096) [`0a41a76`](https://github.com/modem-dev/hunk/commit/0a41a7613e5d017f466b8e4a18851d261da48288) - Preserve surrounding whitespace in content search queries when matching, repeating, and reopening the prompt.
+
+- [#1096](https://github.com/modem-dev/hunk/pull/1096) [`0a41a76`](https://github.com/modem-dev/hunk/commit/0a41a7613e5d017f466b8e4a18851d261da48288) - Highlight every non-overlapping search occurrence on a matching line while keeping only the first landed match current.
+
+- [#1116](https://github.com/modem-dev/hunk/pull/1116) [`a7ba8bc`](https://github.com/modem-dev/hunk/commit/a7ba8bc0e2a75e0e12ec416d7bd401ef88bd6367) - Resolve bundled skills from the nearest matching directory, preferring `hunkdiff/skills`, then `skills`, then `node_modules/hunkdiff/skills` within that directory to avoid unrelated ancestor and nested-package copies.
+
+- [#1078](https://github.com/modem-dev/hunk/pull/1078) [`f86a04e`](https://github.com/modem-dev/hunk/commit/f86a04ed0325e641d7d96067992f14849016ec8b) - Reduce startup input stalls by loading syntax-highlighting WASM without synchronous base64 decoding.
+
+- [#1073](https://github.com/modem-dev/hunk/pull/1073) [`9b95a71`](https://github.com/modem-dev/hunk/commit/9b95a71b76c472bad21ffa5cc6b01b204e2f6f7a) - Pass the selected line to Zed (`zed` and `zeditor`) when opening a file with `e`, matching the existing Helix support.
+
 ## 0.22.0
 
 ### Minor Changes
