@@ -1,6 +1,6 @@
 {
-  "version": "0.22.0",
-  "minor": "0.22",
-  "date": "2026-09-10",
-  "summary": "History browsing, range reviews, precise comments"
+  "version": "0.23.0",
+  "minor": "0.23",
+  "date": "2026-09-30",
+  "summary": "Search diffs, review GitHub, follow your terminal"
 }

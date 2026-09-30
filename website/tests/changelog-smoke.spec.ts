@@ -59,7 +59,7 @@ test("a release page carries its versions, dates, and install command", async ({
   await expect(page.locator("#v0-18-0-beta-0")).toHaveCount(1);
 });
 
-test("the latest promoted prerelease series publishes stable install guidance", async ({
+test("the previous stable series keeps its prerelease anchors and pinned install command", async ({
   page,
 }) => {
   await page.goto("/changelog/0.22/");
@@ -68,7 +68,16 @@ test("the latest promoted prerelease series publishes stable install guidance", 
   }
   await expect(page.locator("#v0-22-0")).toHaveCount(1);
   await expect(page.locator("#v0-22-0-beta-0")).toHaveCount(1);
+  await expect(
+    page.locator(".sl-markdown-content pre").filter({ hasText: "npm i -g hunkdiff@0.22.0" }),
+  ).toHaveCount(1);
+});
 
+test("the current stable series publishes default install and update guidance", async ({
+  page,
+}) => {
+  await page.goto("/changelog/0.23/");
+  await expect(page.getByRole("heading", { level: 3, name: "0.23.0", exact: true })).toBeVisible();
   const installBlocks = page.locator(".sl-markdown-content pre");
   await expect(installBlocks.filter({ hasText: "curl -fsSL" })).toHaveCount(1);
   await expect(installBlocks.filter({ hasText: "hunk update" })).toHaveCount(1);
@@ -113,7 +122,8 @@ test("the changelog feed and Markdown twins are served", async ({ request }) => 
   expect(feedBody).toContain("https://hunk.dev/changelog/0.19/");
   expect(feedBody).toContain("https://hunk.dev/changelog/0.21/");
   expect(feedBody).toContain("https://hunk.dev/changelog/0.22/#v0-22-0");
-  expect(feedBody).toContain("Thu, 10 Sep 2026 00:00:00 GMT");
+  expect(feedBody).toContain("https://hunk.dev/changelog/0.23/");
+  expect(feedBody).toContain("Wed, 30 Sep 2026 00:00:00 GMT");
 
   const markdown = await request.get("/changelog/0.18.md");
   expect(markdown.ok()).toBe(true);
@@ -133,18 +143,18 @@ test("release notes reach the full agent corpus but not the abridged one", async
 });
 
 test("each changelog page carries its own social card", async ({ page, request }) => {
-  await page.goto("/changelog/0.22/");
+  await page.goto("/changelog/0.23/");
   const image = page.locator('meta[property="og:image"]');
   // Exactly one: the page's card must replace the site-wide image, not sit beside it.
   await expect(image).toHaveCount(1);
-  await expect(image).toHaveAttribute("content", "https://hunk.dev/changelog/og/0.22.png");
+  await expect(image).toHaveAttribute("content", "https://hunk.dev/changelog/og/0.23.png");
   await expect(page.locator('meta[name="twitter:image"]')).toHaveAttribute(
     "content",
-    "https://hunk.dev/changelog/og/0.22.png",
+    "https://hunk.dev/changelog/og/0.23.png",
   );
   await expect(page.locator('meta[property="og:image:alt"]')).toHaveAttribute(
     "content",
-    /^Hunk 0\.22 release notes/,
+    /^Hunk 0\.23 release notes/,
   );
 
   // The index gets its own card too, and both images are actually served.
@@ -153,7 +163,7 @@ test("each changelog page carries its own social card", async ({ page, request }
     "content",
     "https://hunk.dev/changelog/og/index.png",
   );
-  for (const path of ["/changelog/og/0.22.png", "/changelog/og/index.png"]) {
+  for (const path of ["/changelog/og/0.23.png", "/changelog/og/index.png"]) {
     const response = await request.get(path);
     expect(response.ok(), path).toBe(true);
     expect(response.headers()["content-type"]).toContain("image/png");

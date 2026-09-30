@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://hunk.dev/changelog/rss.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Hunk 0.23</title>
+      <link>https://hunk.dev/changelog/0.23/</link>
+      <guid isPermaLink="true">https://hunk.dev/changelog/0.23/</guid>
+      <pubDate>Wed, 30 Sep 2026 00:00:00 GMT</pubDate>
+      <description>Hunk 0.23 brings diff search, bundled GitHub review, an inline status line, and a default theme that follows your terminal, while making daemon version mismatches easier to resolve.</description>
+    </item>
+    <item>
       <title>Hunk 0.22</title>
       <link>https://hunk.dev/changelog/0.22/#v0-22-0</link>
       <guid isPermaLink="true">https://hunk.dev/changelog/0.22/#v0-22-0</guid>
