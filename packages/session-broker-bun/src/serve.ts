@@ -91,6 +91,7 @@ export function serveSessionBrokerDaemon<
   const bufferedReservations = new Map<object, BudgetReservation>();
   const activeAdmissions = new Set<BudgetReservation>();
   const peers = new WeakMap<object, SessionBrokerPeer>();
+  const closedSockets = new WeakSet<object>();
   let transportStopStarted = false;
   let transportStopSettled = false;
   let activeHttpHandlers = 0;
@@ -159,6 +160,7 @@ export function serveSessionBrokerDaemon<
         }
       },
       close: (code, reason) => socket.close(code, reason),
+      isOpen: () => !closedSockets.has(key),
       markAuthenticated() {
         const data = (socket as typeof socket & { data?: BrokerWebSocketData }).data;
         if (!data) return;
@@ -308,6 +310,7 @@ export function serveSessionBrokerDaemon<
         },
         close: (socket) => {
           const key = socket as object;
+          closedSockets.add(key);
           if (socket.data.handshakeTimer) clearTimeout(socket.data.handshakeTimer);
           bufferedReservations.get(key)?.release();
           bufferedReservations.delete(key);

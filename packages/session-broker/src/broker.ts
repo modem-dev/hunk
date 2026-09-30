@@ -20,6 +20,11 @@ export interface SessionBrokerPeer {
   send(data: string): unknown;
   close?(code?: number, reason?: string): unknown;
   markAuthenticated?(): void;
+  /**
+   * Report whether the transport is still open; lets stale pruning forgive a producer that
+   * cannot heartbeat while SIGSTOPped.
+   */
+  isOpen?(): boolean;
 }
 
 /** One raw live session record with the original registration and snapshot payloads intact. */
