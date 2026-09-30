@@ -365,8 +365,8 @@ if timeout 5 node -e '
     error.attachedSessions?.count === 1 &&
     error.recommendedAction === "restart-daemon" ? 0 : 1);
 ' "$command_dir/incompatible-daemon-b.log" "$daemon_revision_a" "$daemon_revision_b" "$daemon_version_a" "$daemon_version_b" && \
-  grep -Fq 'Session daemon is a different Hunk build. Run `hunk daemon restart`.' "$new_first_transcript" && \
-  grep -Fq 'Session daemon is a different Hunk build. Run `hunk daemon restart`.' "$new_second_transcript" && \
+  wait_for 12 grep -Fq 'Session daemon is a different Hunk build. Run `hunk daemon restart`.' "$new_first_transcript" && \
+  wait_for 12 grep -Fq 'Session daemon is a different Hunk build. Run `hunk daemon restart`.' "$new_second_transcript" && \
   wrapper_alive "$new_first_wrapper" "$new_first_wrapper_token" && \
   wrapper_alive "$new_second_wrapper" "$new_second_wrapper_token" && \
   process_identity_is "$new_first_client" "$new_first_client_token" && \
