@@ -426,6 +426,39 @@ function validateAuthenticatedDaemonUpgradeEvidence(
   ) {
     throw new Error("Authenticated daemon upgrade warning evidence is missing required guidance.");
   }
+  const mismatchCommand = (scenario.commands as InstallVmCommandResult[]).find(
+    (command) => command.id === "incompatible-daemon-b",
+  );
+  if (!mismatchCommand) {
+    throw new Error("Authenticated daemon upgrade is missing the incompatible CLI command.");
+  }
+  let mismatch: unknown;
+  try {
+    mismatch = JSON.parse(
+      readScenarioArtifact(resultDirectory, DAEMON_UPGRADE_SCENARIO_ID, mismatchCommand.logPath),
+    );
+  } catch {
+    throw new Error("Authenticated daemon upgrade CLI mismatch evidence is not JSON.");
+  }
+  const error = isRecord(mismatch) ? mismatch.error : undefined;
+  const daemon = isRecord(error) ? error.daemon : undefined;
+  const cli = isRecord(error) ? error.cli : undefined;
+  const attached = isRecord(error) ? error.attachedSessions : undefined;
+  if (
+    !isRecord(error) ||
+    error.kind !== "daemon-build-mismatch" ||
+    error.recommendedAction !== "restart-daemon" ||
+    !isRecord(daemon) ||
+    daemon.daemonVersion !== revisionA ||
+    daemon.appVersion !== DAEMON_UPGRADE_VERSION_A ||
+    !isRecord(cli) ||
+    cli.daemonVersion !== revisionB ||
+    cli.appVersion !== DAEMON_UPGRADE_VERSION_B ||
+    !isRecord(attached) ||
+    attached.count !== 1
+  ) {
+    throw new Error("Authenticated daemon upgrade CLI mismatch evidence has wrong guidance.");
+  }
 }
 
 /** Validate that release evidence is complete, consistent, and matches this checkout. */

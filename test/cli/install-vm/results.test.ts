@@ -36,8 +36,11 @@ const daemonScenario = {
   script: "authenticated-daemon-upgrade.sh",
   network: "local" as const,
   requiredEvidence: {
-    commands: ["upgrade-daemon-b"],
-    commandExpectations: { "upgrade-daemon-b": "exit 0" },
+    commands: ["upgrade-daemon-b", "incompatible-daemon-b"],
+    commandExpectations: {
+      "upgrade-daemon-b": "exit 0",
+      "incompatible-daemon-b": "nonzero exit",
+    },
   },
 };
 
@@ -78,7 +81,7 @@ function writeDaemonReleaseEvidence(output: string) {
     oldSessionListPath: "old-session-list.json",
     firstRecoveredSessionListPath: "first-recovered-session-list.json",
     recoveredSessionListPath: "recovered-session-list.json",
-    incompatibleWarningPath: "incompatible-warning.log",
+    incompatibleWarningPath: "new-first-transcript.log",
   };
   const files: Record<string, string> = {
     "overlap-health.json": '{"ok":true}',
@@ -88,7 +91,16 @@ function writeDaemonReleaseEvidence(output: string) {
     "old-session-list.json": '{"sessions":[{"pid":101}]}',
     "first-recovered-session-list.json": '{"sessions":[{"pid":201}]}',
     "recovered-session-list.json": '{"sessions":[{"pid":201},{"pid":202}]}',
-    "incompatible-warning.log": `${HUNK_DAEMON_UPGRADE_WAIT_MESSAGE}\n`,
+    "new-first-transcript.log": `${HUNK_DAEMON_UPGRADE_WAIT_MESSAGE}\n`,
+    "commands/incompatible-daemon-b.log": JSON.stringify({
+      error: {
+        kind: "daemon-build-mismatch",
+        daemon: { daemonVersion: 10, appVersion: "899.0.0" },
+        cli: { daemonVersion: 11, appVersion: "899.0.1" },
+        attachedSessions: { count: 1 },
+        recommendedAction: "restart-daemon",
+      },
+    }),
     "old-executable.txt": `pid=100\nstartToken=1000\nlocation=/fixture/a\ndigest=${"a".repeat(64)}\n`,
     "new-executable.txt": `pid=200\nstartToken=2000\nlocation=/fixture/b\ndigest=${"b".repeat(64)}\n`,
     "daemon-fixture-manifest.json": JSON.stringify({
@@ -105,6 +117,7 @@ function writeDaemonReleaseEvidence(output: string) {
       },
     }),
   };
+  mkdirSync(path.join(directory, "commands"));
   for (const [relativePath, contents] of Object.entries(files)) {
     writeFileSync(path.join(directory, relativePath), contents);
   }
@@ -142,7 +155,14 @@ function writeDaemonReleaseEvidence(output: string) {
             status: "passed" as const,
             expectation: "exit 0",
             exitCode: 0,
-            logPath: "incompatible-warning.log",
+            logPath: "new-first-transcript.log",
+          },
+          {
+            id: "incompatible-daemon-b",
+            status: "passed" as const,
+            expectation: "nonzero exit",
+            exitCode: 1,
+            logPath: "commands/incompatible-daemon-b.log",
           },
         ],
         observations,
@@ -363,6 +383,13 @@ describe("install VM results", () => {
         },
       };
       expect(validateInstallVmReleaseResult(result, expected)).toBe(result);
+      const mismatchLog = path.join(directory, "commands", "incompatible-daemon-b.log");
+      const validMismatch = readFileSync(mismatchLog, "utf8");
+      writeFileSync(mismatchLog, '{"error":{"kind":"daemon-build-mismatch"}}');
+      expect(() => validateInstallVmReleaseResult(result, expected)).toThrow(
+        "CLI mismatch evidence has wrong guidance",
+      );
+      writeFileSync(mismatchLog, validMismatch);
       const mutate = (update: (copy: typeof result) => void) => {
         const copy = structuredClone(result);
         update(copy);

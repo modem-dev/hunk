@@ -350,12 +350,23 @@ record_observation newSecondClientStartToken "$new_second_client_token"
 record_observation newFirstTranscriptPath new-first-transcript.log
 record_observation newSecondTranscriptPath new-second-transcript.log
 
-# The TUI renderer owns its terminal; retain stable one-shot warning evidence while both original
-# interactive B processes remain in pre-authentication quiescent wait.
+# The CLI reports a structured mismatch while the TUI owns its terminal notice. Retain the
+# original transcript as warning evidence and verify both surfaces before either B client recovers.
 run_expect_nonzero incompatible-daemon-b timeout 12 "$new_binary" session list --json
-cp "$command_dir/incompatible-daemon-b.log" "$artifact_dir/incompatible-warning.log"
-record_observation incompatibleWarningPath incompatible-warning.log
-if grep -Fq 'Close older Hunk windows' "$artifact_dir/incompatible-warning.log" && \
+record_observation incompatibleWarningPath new-first-transcript.log
+if timeout 5 node -e '
+  const fs = require("fs");
+  const error = JSON.parse(fs.readFileSync(process.argv[1], "utf8")).error;
+  process.exit(error?.kind === "daemon-build-mismatch" &&
+    error.daemon?.daemonVersion === Number(process.argv[2]) &&
+    error.cli?.daemonVersion === Number(process.argv[3]) &&
+    error.daemon?.appVersion === process.argv[4] &&
+    error.cli?.appVersion === process.argv[5] &&
+    error.attachedSessions?.count === 1 &&
+    error.recommendedAction === "restart-daemon" ? 0 : 1);
+' "$command_dir/incompatible-daemon-b.log" "$daemon_revision_a" "$daemon_revision_b" "$daemon_version_a" "$daemon_version_b" && \
+  grep -Fq 'Session daemon is a different Hunk build. Run `hunk daemon restart`.' "$new_first_transcript" && \
+  grep -Fq 'Session daemon is a different Hunk build. Run `hunk daemon restart`.' "$new_second_transcript" && \
   wrapper_alive "$new_first_wrapper" "$new_first_wrapper_token" && \
   wrapper_alive "$new_second_wrapper" "$new_second_wrapper_token" && \
   process_identity_is "$new_first_client" "$new_first_client_token" && \
