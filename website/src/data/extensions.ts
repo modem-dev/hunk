@@ -177,6 +177,15 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     apiVersion: 6,
   },
   {
+    repo: "LandonSchropp/hunk-backup",
+    name: "hunk-backup",
+    summary:
+      "Saves every review's comments as you write them, so closing Hunk never loses them, and lists and shows the backups with `hunk backup`.",
+    categories: ["Command"],
+    version: "0.1.0",
+    apiVersion: 25,
+  },
+  {
     repo: "LandonSchropp/hunk-verdict",
     name: "hunk-verdict",
     summary:
