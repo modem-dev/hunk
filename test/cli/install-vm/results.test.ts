@@ -81,6 +81,8 @@ function writeDaemonReleaseEvidence(output: string) {
     oldSessionListPath: "old-session-list.json",
     firstRecoveredSessionListPath: "first-recovered-session-list.json",
     recoveredSessionListPath: "recovered-session-list.json",
+    newFirstTranscriptPath: "new-first-transcript.log",
+    newSecondTranscriptPath: "new-second-transcript.log",
     incompatibleWarningPath: "new-first-transcript.log",
   };
   const files: Record<string, string> = {
@@ -92,6 +94,7 @@ function writeDaemonReleaseEvidence(output: string) {
     "first-recovered-session-list.json": '{"sessions":[{"pid":201}]}',
     "recovered-session-list.json": '{"sessions":[{"pid":201},{"pid":202}]}',
     "new-first-transcript.log": `${HUNK_DAEMON_UPGRADE_WAIT_MESSAGE}\n`,
+    "new-second-transcript.log": `${HUNK_DAEMON_UPGRADE_WAIT_MESSAGE}\n`,
     "commands/incompatible-daemon-b.log": JSON.stringify({
       error: {
         kind: "daemon-build-mismatch",
@@ -383,6 +386,18 @@ describe("install VM results", () => {
         },
       };
       expect(validateInstallVmReleaseResult(result, expected)).toBe(result);
+      const secondTranscript = path.join(directory, "new-second-transcript.log");
+      writeFileSync(secondTranscript, "no daemon notice\n");
+      expect(() => validateInstallVmReleaseResult(result, expected)).toThrow(
+        "second TUI warning is missing guidance",
+      );
+      writeFileSync(secondTranscript, `${HUNK_DAEMON_UPGRADE_WAIT_MESSAGE}\n`);
+      const wrongWarningPath = structuredClone(result);
+      wrongWarningPath.scenarios[0]!.observations.incompatibleWarningPath =
+        "new-second-transcript.log";
+      expect(() => validateInstallVmReleaseResult(wrongWarningPath, expected)).toThrow(
+        "warning must reference the first TUI transcript",
+      );
       const mismatchLog = path.join(directory, "commands", "incompatible-daemon-b.log");
       const validMismatch = readFileSync(mismatchLog, "utf8");
       writeFileSync(mismatchLog, '{"error":{"kind":"daemon-build-mismatch"}}');

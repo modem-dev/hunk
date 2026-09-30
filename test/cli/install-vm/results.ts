@@ -417,14 +417,23 @@ function validateAuthenticatedDaemonUpgradeEvidence(
       "Authenticated daemon upgrade recovered session PIDs are not the original clients.",
     );
   }
-  if (
-    !readScenarioArtifact(
-      resultDirectory,
-      DAEMON_UPGRADE_SCENARIO_ID,
-      observations.incompatibleWarningPath!,
-    ).includes(DAEMON_UPGRADE_WARNING)
-  ) {
-    throw new Error("Authenticated daemon upgrade warning evidence is missing required guidance.");
+  if (observations.incompatibleWarningPath !== observations.newFirstTranscriptPath) {
+    throw new Error(
+      "Authenticated daemon upgrade warning must reference the first TUI transcript.",
+    );
+  }
+  for (const [label, transcriptPath] of [
+    ["first", observations.newFirstTranscriptPath],
+    ["second", observations.newSecondTranscriptPath],
+  ] as const) {
+    if (
+      !transcriptPath ||
+      !readScenarioArtifact(resultDirectory, DAEMON_UPGRADE_SCENARIO_ID, transcriptPath).includes(
+        DAEMON_UPGRADE_WARNING,
+      )
+    ) {
+      throw new Error(`Authenticated daemon upgrade ${label} TUI warning is missing guidance.`);
+    }
   }
   const mismatchCommand = (scenario.commands as InstallVmCommandResult[]).find(
     (command) => command.id === "incompatible-daemon-b",
