@@ -143,27 +143,31 @@ test("release notes reach the full agent corpus but not the abridged one", async
 });
 
 test("each changelog page carries its own social card", async ({ page, request }) => {
-  await page.goto("/changelog/0.23/");
-  const image = page.locator('meta[property="og:image"]');
-  // Exactly one: the page's card must replace the site-wide image, not sit beside it.
-  await expect(image).toHaveCount(1);
-  await expect(image).toHaveAttribute("content", "https://hunk.dev/changelog/og/0.23.png");
-  await expect(page.locator('meta[name="twitter:image"]')).toHaveAttribute(
-    "content",
-    "https://hunk.dev/changelog/og/0.23.png",
-  );
-  await expect(page.locator('meta[property="og:image:alt"]')).toHaveAttribute(
-    "content",
-    /^Hunk 0\.23 release notes/,
-  );
+  for (const minor of ["0.22", "0.23"]) {
+    await page.goto(`/changelog/${minor}/`);
+    const cardUrl = `https://hunk.dev/changelog/og/${minor}.png`;
+    const image = page.locator('meta[property="og:image"]');
+    // Exactly one: the page's card must replace the site-wide image, not sit beside it.
+    await expect(image).toHaveCount(1);
+    await expect(image).toHaveAttribute("content", cardUrl);
+    await expect(page.locator('meta[name="twitter:image"]')).toHaveAttribute("content", cardUrl);
+    await expect(page.locator('meta[property="og:image:alt"]')).toHaveAttribute(
+      "content",
+      new RegExp(`^Hunk ${minor.replace(".", "\\.")} release notes`),
+    );
+  }
 
-  // The index gets its own card too, and both images are actually served.
+  // The index gets its own card too, and all three images are actually served.
   await page.goto("/changelog/");
   await expect(page.locator('meta[property="og:image"]')).toHaveAttribute(
     "content",
     "https://hunk.dev/changelog/og/index.png",
   );
-  for (const path of ["/changelog/og/0.23.png", "/changelog/og/index.png"]) {
+  for (const path of [
+    "/changelog/og/0.22.png",
+    "/changelog/og/0.23.png",
+    "/changelog/og/index.png",
+  ]) {
     const response = await request.get(path);
     expect(response.ok(), path).toBe(true);
     expect(response.headers()["content-type"]).toContain("image/png");
