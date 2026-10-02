@@ -56,8 +56,10 @@ curl --fail https://hunk.dev/sitemap.xml
 curl --fail https://hunk.dev/pagefind/pagefind.js
 curl --fail https://hunk.dev/docs/hunk-review-skill.md
 curl --fail https://hunk.dev/og.png
-curl --fail --location https://hunk.dev/api/release/latest
+curl --fail --location --silent --show-error --dump-header - https://hunk.dev/api/release/latest | grep --extended-regexp '^cache-control: no-store|"version"'
 ```
+
+The last check must print both the `no-store` header and a `"version"` line; an HTML page or a cached response means the release rewrite is misrouted.
 
 In a browser, confirm the landing page links to the docs, theme previews switch, the install command copies, documentation search returns results, theme selection persists across docs navigation, and a GitHub edit link opens the matching source file.
 

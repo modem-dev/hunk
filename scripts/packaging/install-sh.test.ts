@@ -283,6 +283,33 @@ describe("hunk.dev install script", () => {
     expect(INSTALL_SCRIPT).toContain('current_header="X-Hunk-Current-Version: $1"');
   });
 
+  test("resolves releases through the apex-domain rewrite that reaches the Worker route", () => {
+    // The installer, the in-app updater, the Vercel rewrite, and the Worker route must agree, or
+    // release discovery silently falls back to GitHub. The client side must stay on hunk.dev: macOS
+    // blocks browser-pasted commands whose sandbox run contacts the Worker's own hostname.
+    const vercelConfig = JSON.parse(readFileSync(join(REPO_ROOT, "vercel.json"), "utf8")) as {
+      rewrites: Array<{ source: string; destination: string }>;
+    };
+    const workerSource = readFileSync(
+      join(REPO_ROOT, "workers/release-proxy/src/index.ts"),
+      "utf8",
+    );
+    const workerRoute = workerSource.match(/const RELEASE_ROUTE = "([^"]+)"/)?.[1];
+    const updaterSource = readFileSync(
+      join(REPO_ROOT, "packages/hunk/src/core/install/latestRelease.ts"),
+      "utf8",
+    );
+
+    const releaseProxy = INSTALL_SCRIPT.match(/^RELEASE_PROXY="([^"]+)"$/m)?.[1];
+    expect(releaseProxy).toBe("https://hunk.dev/api/release/latest");
+    expect(updaterSource).toContain(`const HUNK_CURL_RELEASE_URL = "${releaseProxy}";`);
+
+    const rewrite = vercelConfig.rewrites.find(
+      (candidate) => candidate.source === new URL(releaseProxy ?? "").pathname,
+    );
+    expect(rewrite?.destination).toBe(`https://updates.hunk.dev${workerRoute}`);
+  });
+
   test("installs beside the bundled skills so skill resolution still finds them", () => {
     // `resolveBundledSkillPath` walks up from the binary looking for `skills/<name>/SKILL.md`,
     // so the payload directory must be the binary's directory or one of its ancestors.
