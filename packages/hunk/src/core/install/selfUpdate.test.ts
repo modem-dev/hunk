@@ -249,7 +249,7 @@ describe("hunk update", () => {
     expect(result.commands).toEqual([]);
     expect(result.stdout).toContain("hunk 1.0.0 (installed with the install script)");
     expect(result.stdout).toContain("latest 1.1.0");
-    expect(result.releaseRequests[0]?.url).toBe("https://updates.hunk.dev/v1/curl/latest");
+    expect(result.releaseRequests[0]?.url).toBe("https://hunk.dev/api/release/latest");
     expect(result.releaseRequests[0]?.headers.get("x-hunk-request-source")).toBe("update-check");
     expect(result.releaseRequests[0]?.headers.get("x-hunk-current-version")).toBe("1.0.0");
   });

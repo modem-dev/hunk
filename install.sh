@@ -33,7 +33,11 @@
 set -eu
 
 REPO="modem-dev/hunk"
-RELEASE_PROXY="https://updates.hunk.dev/v1/curl/latest"
+# Release discovery stays on the apex domain. macOS 26.4+ executes browser-pasted Terminal commands
+# in an XProtect sandbox and blocks the paste when the script contacts a host Apple's website
+# reputation service distrusts; the Worker's own hostname tripped that, so Vercel proxies this path
+# to it instead (see vercel.json).
+RELEASE_PROXY="https://hunk.dev/api/release/latest"
 RELEASES_API="https://api.github.com/repos/${REPO}/releases/latest"
 DOWNLOAD_BASE="https://github.com/${REPO}/releases/download"
 

@@ -147,7 +147,7 @@ describe("startup update notice", () => {
         key: "latest:0.7.1",
         message: "Update available: 0.7.1 (latest) • run `hunk update`",
       });
-      expect(requested).toEqual(["https://updates.hunk.dev/v1/curl/latest"]);
+      expect(requested).toEqual(["https://hunk.dev/api/release/latest"]);
       expect(headers[0]?.get("x-hunk-request-source")).toBe("startup");
       expect(headers[0]?.get("x-hunk-current-version")).toBe("0.7.0");
     });

@@ -1,7 +1,11 @@
 # Hunk release proxy
 
-This Cloudflare Worker serves `GET /v1/curl/latest`. It normalizes GitHub's latest stable Hunk
-release to:
+This Cloudflare Worker serves `GET /v1/curl/latest`. Clients reach it as
+`https://hunk.dev/api/release/latest`: the repository-level `vercel.json` rewrites that path to the
+Worker's `updates.hunk.dev` custom domain so the installer and `hunk update` only ever contact the
+apex domain. macOS 26.4+ runs browser-pasted Terminal commands in an XProtect sandbox and blocks
+the paste when the command reaches a host Apple's website reputation service distrusts, which the
+Worker hostname tripped. It normalizes GitHub's latest stable Hunk release to:
 
 ```json
 { "version": "0.20.1" }
@@ -48,7 +52,11 @@ npm test
 npm run typecheck
 npm run deploy
 curl -fsS https://updates.hunk.dev/v1/curl/latest
+curl -fsSL https://hunk.dev/api/release/latest
 ```
+
+The second check covers the Vercel rewrite. Keep the `updates.hunk.dev` custom domain while
+releases that call it directly remain installed; they fall back to GitHub when it is unavailable.
 
 The client and installer fall back directly to GitHub, so their rollout does not depend on
 deployment ordering. Verify the endpoint and its bounded structured logs after each deployment.

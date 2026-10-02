@@ -13,7 +13,9 @@ import { isPrereleaseVersion, isStableVersion } from "../run/version";
 
 const NPM_DIST_TAGS_URL = "https://registry.npmjs.org/-/package/hunkdiff/dist-tags";
 const HOMEBREW_FORMULA_URL = "https://formulae.brew.sh/api/formula/hunk.json";
-const HUNK_CURL_RELEASE_URL = "https://updates.hunk.dev/v1/curl/latest";
+// Served by Vercel as a rewrite to the release-proxy Worker so clients only contact the apex
+// domain; the Worker's own hostname is distrusted by macOS's paste-time reputation check.
+const HUNK_CURL_RELEASE_URL = "https://hunk.dev/api/release/latest";
 const GITHUB_LATEST_RELEASE_URL = "https://api.github.com/repos/modem-dev/hunk/releases/latest";
 const DEFAULT_RELEASE_FETCH_TIMEOUT_MS = 5_000;
 const DISABLE_ANALYTICS_ENV = "HUNK_DISABLE_ANALYTICS";

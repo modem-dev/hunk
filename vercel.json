@@ -5,7 +5,10 @@
   "installCommand": "SKIP_INSTALL_SIMPLE_GIT_HOOKS=1 bun install --frozen-lockfile && bun install --cwd website --frozen-lockfile",
   "buildCommand": "bun run website:build",
   "outputDirectory": "website/dist",
-  "rewrites": [{ "source": "/install", "destination": "/install.sh" }],
+  "rewrites": [
+    { "source": "/install", "destination": "/install.sh" },
+    { "source": "/api/release/latest", "destination": "https://updates.hunk.dev/v1/curl/latest" }
+  ],
   "headers": [
     {
       "source": "/install(\\.sh)?",

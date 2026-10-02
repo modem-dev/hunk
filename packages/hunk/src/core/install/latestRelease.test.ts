@@ -54,7 +54,7 @@ describe("release channel lookups", () => {
         },
       }),
     ).resolves.toEqual({ latest: "1.4.0" });
-    expect(requested).toEqual(["https://updates.hunk.dev/v1/curl/latest"]);
+    expect(requested).toEqual(["https://hunk.dev/api/release/latest"]);
     expect(headers[0]?.get("x-hunk-request-source")).toBe("startup");
     expect(headers[0]?.get("x-hunk-current-version")).toBe("1.3.0");
   });
@@ -76,7 +76,7 @@ describe("release channel lookups", () => {
         }),
       ).resolves.toEqual({ latest: "1.4.0" });
       expect(requested).toEqual([
-        "https://updates.hunk.dev/v1/curl/latest",
+        "https://hunk.dev/api/release/latest",
         "https://api.github.com/repos/modem-dev/hunk/releases/latest",
       ]);
       expect(accepts).toEqual([null, "application/vnd.github+json"]);
@@ -104,7 +104,7 @@ describe("release channel lookups", () => {
       fetchChannelVersions("curl", {
         env: {},
         fetchImpl: async (input) =>
-          String(input).includes("updates.hunk.dev")
+          String(input).includes("hunk.dev/api/release")
             ? jsonResponse({ version: "1.4.0-beta.1" })
             : jsonResponse({ tag_name: "v1.4.0-beta.1" }),
       }),

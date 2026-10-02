@@ -578,7 +578,7 @@ async function stageSyntheticCurlArchive(
 export function rewriteCurlInstallerForVmServer(installer: string) {
   const replacements = [
     [
-      'RELEASE_PROXY="https://updates.hunk.dev/v1/curl/latest"',
+      'RELEASE_PROXY="https://hunk.dev/api/release/latest"',
       'RELEASE_PROXY="http://172.16.0.1:18080/unavailable-release-proxy"',
     ],
     [

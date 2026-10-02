@@ -172,7 +172,7 @@ describe("install VM package fixtures", () => {
   test("keeps curl release fallback inside the isolated VM server", () => {
     const rewritten = rewriteCurlInstallerForVmServer(
       [
-        'RELEASE_PROXY="https://updates.hunk.dev/v1/curl/latest"',
+        'RELEASE_PROXY="https://hunk.dev/api/release/latest"',
         'RELEASES_API="https://api.github.com/repos/${REPO}/releases/latest"',
         'DOWNLOAD_BASE="https://github.com/${REPO}/releases/download"',
       ].join("\n"),

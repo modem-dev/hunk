@@ -148,7 +148,7 @@ function runReleaseResolution(
       'for argument in "$@"; do url="$argument"; done',
       'printf "%s\\n" "$url" >>"$CURL_LOG"',
       'case "$url" in',
-      '  https://updates.hunk.dev/*) [ "${PROXY_FAILS:-0}" = "1" ] && exit 22; printf \'%s\\n\' \'{"version":"1.2.3"}\' ;;',
+      '  https://hunk.dev/api/release/*) [ "${PROXY_FAILS:-0}" = "1" ] && exit 22; printf \'%s\\n\' \'{"version":"1.2.3"}\' ;;',
       "  https://api.github.com/*) printf '%s\\n' '{\"tag_name\":\"v1.2.3\"}' ;;",
       "  *) exit 22 ;;",
       "esac",
@@ -253,13 +253,13 @@ describe("hunk.dev install script", () => {
     () => {
       const proxied = runReleaseResolution();
       expect(proxied.exitCode).toBe(0);
-      expect(proxied.requests).toEqual(["https://updates.hunk.dev/v1/curl/latest"]);
+      expect(proxied.requests).toEqual(["https://hunk.dev/api/release/latest"]);
       expect(proxied.stdout).toContain("hunk 1.2.3 is already installed.");
 
       const fallback = runReleaseResolution({ proxyFails: true });
       expect(fallback.exitCode).toBe(0);
       expect(fallback.requests).toEqual([
-        "https://updates.hunk.dev/v1/curl/latest",
+        "https://hunk.dev/api/release/latest",
         "https://api.github.com/repos/modem-dev/hunk/releases/latest",
       ]);
     },
