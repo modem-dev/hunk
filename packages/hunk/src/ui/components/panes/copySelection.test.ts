@@ -996,14 +996,31 @@ describe("copySelectionDragIsClick", () => {
     visualRow,
   });
 
-  test("accepts one-cell mouse jitter around a click", () => {
+  test("accepts one-cell mouse jitter within the clicked row", () => {
+    expect(
+      copySelectionDragIsClick({
+        anchor: point(20, 8),
+        focus: point(21, 8),
+        moved: true,
+      }),
+    ).toBe(true);
+  });
+
+  test("treats a drag onto a second visual row as a selection, not a jittered click", () => {
     expect(
       copySelectionDragIsClick({
         anchor: point(20, 8),
         focus: point(21, 9),
         moved: true,
       }),
-    ).toBe(true);
+    ).toBe(false);
+    expect(
+      copySelectionDragIsClick({
+        anchor: point(20, 8),
+        focus: point(20, 9),
+        moved: true,
+      }),
+    ).toBe(false);
   });
 
   test("rejects deliberate drags and double-click expansion", () => {

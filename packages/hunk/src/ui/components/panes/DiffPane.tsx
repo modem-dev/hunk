@@ -884,6 +884,12 @@ export function DiffPane({
   // Initialized to null so the first render never fires a selection change; a real scroll
   // is required before passive viewport-follow selection can trigger.
   const lastViewportSelectionTopRef = useRef<number | null>(null);
+  // Stops that successive clamps moved the current line away from, innermost last, so a
+  // multi-hop wheel roundtrip can unwind back to the pre-clamp stop.
+  const lineCursorBeforeClampRef = useRef<LineCursor[]>([]);
+  // The cursor this effect last acted on, so deliberate cursor moves outside a clamp reset
+  // the unwind memory above instead of leaving a displaced stop behind.
+  const lastClampCursorRef = useRef<LineCursor | null>(null);
   const lastViewportRowAnchorRef = useRef<ViewportRowAnchor | null>(null);
   // Track the previous selected anchor to detect actual selection changes.
   const prevSelectedAnchorIdRef = useRef<string | null>(null);
@@ -1618,15 +1624,33 @@ export function DiffPane({
       return;
     }
 
+    // A deliberate cursor move (a click, a step) ends any clamp unwind: the reviewer chose
+    // a new stop, so a later scroll must not restore the displaced one.
+    if (lineCursor !== lastClampCursorRef.current) {
+      lineCursorBeforeClampRef.current = [];
+      lastClampCursorRef.current = lineCursor;
+    }
+
     if (lineCursors.length > 0) {
+      // Each clamp away from the current stop pushes where it came from, and each restore
+      // pops it back, so a multi-hop wheel roundtrip unwinds to the pre-clamp stop instead
+      // of parking on an edge the scroll crossed.
+      const clampedFrom = lineCursorBeforeClampRef.current.at(-1) ?? null;
       const clampedCursor = clampLineCursorToViewport({
         boundsOf: lineCursorBoundsOf,
         current: lineCursor,
+        clampedFrom,
         cursors: lineCursors,
         scrollTop: scrollViewport.top,
         viewportHeight: scrollViewport.height,
       });
       if (clampedCursor && clampedCursor !== lineCursor) {
+        if (clampedCursor === clampedFrom) {
+          lineCursorBeforeClampRef.current.pop();
+        } else if (lineCursor) {
+          lineCursorBeforeClampRef.current.push(lineCursor);
+        }
+        lastClampCursorRef.current = clampedCursor;
         onViewportLineCursorChange?.(clampedCursor);
       }
       return;

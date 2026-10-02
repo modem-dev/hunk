@@ -491,4 +491,30 @@ describe("clampLineCursorToViewport", () => {
       }),
     ).toEqual(cursors[0]!);
   });
+
+  test("restores the remembered stop once the viewport returns to it", () => {
+    expect(
+      clampLineCursorToViewport({
+        boundsOf,
+        current: cursors[2]!,
+        clampedFrom: cursors[0]!,
+        cursors,
+        scrollTop: 0,
+        viewportHeight: 3,
+      }),
+    ).toEqual(cursors[0]!);
+  });
+
+  test("keeps the clamped stop while the remembered one is still off-screen", () => {
+    expect(
+      clampLineCursorToViewport({
+        boundsOf,
+        current: cursors[2]!,
+        clampedFrom: cursors[0]!,
+        cursors,
+        scrollTop: 2,
+        viewportHeight: 2,
+      }),
+    ).toEqual(cursors[2]!);
+  });
 });

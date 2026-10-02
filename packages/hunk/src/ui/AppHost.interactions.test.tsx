@@ -3039,6 +3039,64 @@ describe("App interactions", () => {
     }
   });
 
+  test("stepping the cursor retires a stale hover before the next draft opens", async () => {
+    const setup = await testRender(
+      <AppHost bootstrap={createLineScrollBootstrap(false, "unified")} />,
+      {
+        width: 120,
+        height: 26,
+      },
+    );
+
+    try {
+      await flush(setup);
+      await act(async () => {
+        await Bun.sleep(60);
+        await setup.renderOnce();
+      });
+
+      // Hover the row showing line02 so its add-note affordance arms.
+      const frame = setup.captureCharFrame();
+      const hover = frame
+        .split("\n")
+        .map((line, index) => [index, line] as const)
+        .find(([, line]) => line.includes("export const line02 = 2;"));
+      expect(hover).toBeDefined();
+      await act(async () => {
+        await setup.mockMouse.moveTo(10, hover![0]);
+        await setup.renderOnce();
+      });
+      await waitForFrame(setup, (next) => next.includes("[+]"));
+
+      // Step the cursor down several lines; the pointer stays where it was.
+      await act(async () => {
+        await setup.mockInput.pressKeys(["\x1b[B", "\x1b[B", "\x1b[B"]);
+      });
+      await flush(setup);
+      await act(async () => {
+        await Bun.sleep(60);
+        await setup.renderOnce();
+      });
+
+      // The draft must anchor at the stepped cursor, not the stale hover row.
+      await act(async () => {
+        await setup.mockInput.pressKey("c");
+      });
+      await flush(setup);
+      await act(async () => {
+        await Bun.sleep(60);
+        await setup.renderOnce();
+      });
+
+      const withDraft = setup.captureCharFrame();
+      expect(withDraft).toMatch(/Draft note.*L4/);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("draft note focus suppresses app shortcuts while accepting typed shortcut keys", async () => {
     const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
       width: 240,

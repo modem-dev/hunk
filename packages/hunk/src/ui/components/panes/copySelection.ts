@@ -169,7 +169,13 @@ export function findLineCursorForClick({
 
 const COPY_SELECTION_CLICK_SLOP_CELLS = 1;
 
-/** Treat one-cell pointer jitter as a click while preserving deliberate and expanded drags. */
+/**
+ * Treat pointer jitter around a click as a click while preserving deliberate drags.
+ *
+ * Jitter slop is horizontal only: a drag that reaches a different visual row is a
+ * deliberate selection, so a two-row range commits instead of being swallowed as a
+ * jittered click. Double-click expansion always copies.
+ */
 export function copySelectionDragIsClick(drag: CopySelectionDrag) {
   if (drag.expanded) {
     return false;
@@ -197,7 +203,7 @@ export function copySelectionDragIsClick(drag: CopySelectionDrag) {
   return (
     drag.anchor.kind === "review-row" &&
     drag.focus.kind === "review-row" &&
-    Math.abs(drag.anchor.visualRow - drag.focus.visualRow) <= COPY_SELECTION_CLICK_SLOP_CELLS
+    drag.anchor.visualRow === drag.focus.visualRow
   );
 }
 
