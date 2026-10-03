@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act, StrictMode, useState } from "react";
 import { createTestDiffFile } from "../../../../../test/helpers/diff-helpers";
@@ -10,12 +10,18 @@ import {
   createDocumentHighlightService,
   type DocumentHighlightResult,
 } from "./documentHighlightService";
-import { encodeCompactHighlightedDocument, registerHighlightWorker, type HastNode } from "./worker";
+import {
+  disposeHighlightWorker,
+  encodeCompactHighlightedDocument,
+  registerHighlightWorker,
+  type HastNode,
+} from "./worker";
+import { inlineOnlyTestWorkerEligibility as inlineEligibility } from "../../../../../test/helpers/highlight-helpers";
+import { HIGHLIGHT_WORKER_PROTOCOL_VERSION } from "./worker/highlightWorkerProtocol";
 import { useHighlightedSource } from "./useHighlightedSource";
 
 interface HookProps {
   file: DiffFile | undefined;
-  offloadLargeDiff?: boolean;
   shouldLoadHighlight?: boolean;
   text: string | undefined;
   theme: AppTheme;
@@ -77,16 +83,19 @@ function deferred<T>() {
 
 /** Adapt one isolated service into the source loader used by the hook. */
 function serviceLoader(service: ReturnType<typeof createDocumentHighlightService>): SourceLoader {
-  return async ({ file, offloadLargeDiff = false, signal, text, theme }) =>
+  return async ({ file, signal, text, theme }) =>
     await service.highlight({
       language: file.language ?? "text",
-      offloadLargeDiff,
       path: file.path,
       signal,
       text,
       theme,
     });
 }
+
+afterAll(() => {
+  disposeHighlightWorker();
+});
 
 describe("useHighlightedSource", () => {
   const file = createTestDiffFile({ id: "source", path: "source.ts" });
@@ -141,8 +150,8 @@ describe("useHighlightedSource", () => {
     }
   });
 
-  test("threads offload policy and aborts work when demand is disabled", async () => {
-    const calls: Array<{ offloadLargeDiff?: boolean; signal?: AbortSignal }> = [];
+  test("aborts work when demand is disabled", async () => {
+    const calls: Array<{ signal?: AbortSignal }> = [];
     const pending = deferred<DocumentHighlightResult>();
     const load: SourceLoader = (input) => {
       calls.push(input);
@@ -151,7 +160,6 @@ describe("useHighlightedSource", () => {
     const harness = await renderHookHarness(
       {
         file,
-        offloadLargeDiff: true,
         shouldLoadHighlight: true,
         text: "const value = 1;\n",
         theme,
@@ -162,13 +170,11 @@ describe("useHighlightedSource", () => {
     try {
       await flush(harness.setup);
       expect(calls).toHaveLength(1);
-      expect(calls[0]?.offloadLargeDiff).toBe(true);
       expect(calls[0]?.signal?.aborted).toBe(false);
 
       await act(async () =>
         harness.setProps({
           file,
-          offloadLargeDiff: true,
           shouldLoadHighlight: false,
           text: "const value = 1;\n",
           theme,
@@ -360,6 +366,7 @@ describe("useHighlightedSource", () => {
     let underlyingSignal: AbortSignal | undefined;
     let inlineCalls = 0;
     const service = createDocumentHighlightService({
+      workerEligibility: inlineEligibility,
       inlineHighlight: ({ signal }) => {
         inlineCalls += 1;
         underlyingSignal = signal;
@@ -413,6 +420,7 @@ describe("useHighlightedSource", () => {
   test("reuses a completed service result after unmount and remount", async () => {
     let inlineCalls = 0;
     const service = createDocumentHighlightService({
+      workerEligibility: inlineEligibility,
       inlineHighlight: async ({ text }) => {
         inlineCalls += 1;
         return encodeCompactHighlightedDocument([{ type: "text", value: text }], "dark");
@@ -440,7 +448,7 @@ describe("useHighlightedSource", () => {
     }
   });
 
-  test("uses the registered document worker when fast offload is enabled", async () => {
+  test("uses the registered document worker for eligible documents", async () => {
     let workerCalls = 0;
     const worker = {
       onmessage: null as ((event: MessageEvent) => void) | null,
@@ -451,7 +459,7 @@ describe("useHighlightedSource", () => {
         queueMicrotask(() =>
           this.onmessage?.({
             data: {
-              version: 4,
+              version: HIGHLIGHT_WORKER_PROTOCOL_VERSION,
               id: request.id,
               kind: "document",
               ok: true,
@@ -472,7 +480,6 @@ describe("useHighlightedSource", () => {
     ).join("\n");
     const harness = await renderHookHarness({
       file: { ...file, path: "worker-source.ts" },
-      offloadLargeDiff: true,
       shouldLoadHighlight: true,
       text: workerText,
       theme,
@@ -484,38 +491,6 @@ describe("useHighlightedSource", () => {
       }
       expect(harness.current()?.status).toBe("highlighted");
       expect(workerCalls).toBe(1);
-    } finally {
-      await act(async () => harness.setup.renderer.destroy());
-    }
-  });
-
-  test("keeps small bundled-theme documents inline under fast mode", async () => {
-    let workerCalls = 0;
-    registerHighlightWorker({
-      onmessage: null,
-      onerror: null,
-      postMessage() {
-        workerCalls += 1;
-      },
-      terminate() {
-        return Promise.resolve(0);
-      },
-      unref() {},
-    } as unknown as Worker);
-    const harness = await renderHookHarness({
-      file: { ...file, path: "small-worker-source.ts" },
-      offloadLargeDiff: true,
-      shouldLoadHighlight: true,
-      text: "const smallValue = 1;",
-      theme,
-    });
-
-    try {
-      for (let attempt = 0; attempt < 20 && !harness.current(); attempt += 1) {
-        await flush(harness.setup, 5);
-      }
-      expect(harness.current()?.status).toBe("highlighted");
-      expect(workerCalls).toBe(0);
     } finally {
       await act(async () => harness.setup.renderer.destroy());
     }
@@ -548,7 +523,6 @@ describe("useHighlightedSource", () => {
     const line = "// expanded comment";
     const harness = await renderHookHarness({
       file,
-      offloadLargeDiff: true,
       shouldLoadHighlight: true,
       text: `${line}\n`,
       theme: customTheme,

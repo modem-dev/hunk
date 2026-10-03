@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
-import type { HighlightWorkerRequest } from "./highlightWorkerProtocol";
+import type { HighlightWorkerRenderRequest } from "./highlightWorkerProtocol";
 
 const HIGHLIGHT_WORKER_CACHE_REVISION = 2;
 
-export type HighlightWorkerCacheIdentity = HighlightWorkerRequest extends infer Request
-  ? Request extends HighlightWorkerRequest
+export type HighlightWorkerCacheIdentity = HighlightWorkerRenderRequest extends infer Request
+  ? Request extends HighlightWorkerRenderRequest
     ? Omit<Request, "id" | "version">
     : never
   : never;
