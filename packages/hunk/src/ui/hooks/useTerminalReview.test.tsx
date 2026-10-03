@@ -555,6 +555,54 @@ describe("useTerminalReview", () => {
     }
   });
 
+  test("a reload that retires a noted file publishes a count that matches its summaries", async () => {
+    // The daemon refuses a snapshot whose live comment count differs from its list, so a note
+    // kept for a retired file must leave both until a later reload brings the file back.
+    const createAlpha = () =>
+      createDiffFile("alpha", "alpha.ts", "export const alpha = 1;\n", "export const alpha = 2;\n");
+    const createBeta = () =>
+      createDiffFile("beta", "beta.ts", "export const beta = 1;\n", "export const beta = 2;\n");
+    const { controllerRef, setFilesRef, setup } = await renderTerminalReview([
+      createAlpha(),
+      createBeta(),
+    ]);
+
+    try {
+      await flush(setup);
+      await act(async () => {
+        expectValue(controllerRef.current).addLiveComment(
+          { filePath: "beta.ts", side: "new", line: 1, summary: "Check beta rename" },
+          "comment-1",
+          { reveal: false },
+        );
+      });
+      await flush(setup);
+      expect(expectValue(controllerRef.current).liveCommentCount).toBe(1);
+
+      await act(async () => {
+        expectValue(setFilesRef.current)([createAlpha()]);
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).liveCommentSummaries).toEqual([]);
+      expect(expectValue(controllerRef.current).liveCommentCount).toBe(0);
+
+      await act(async () => {
+        expectValue(setFilesRef.current)([createAlpha(), createBeta()]);
+      });
+      await flush(setup);
+
+      expect(
+        expectValue(controllerRef.current).liveCommentSummaries.map((comment) => comment.commentId),
+      ).toEqual(["comment-1"]);
+      expect(expectValue(controllerRef.current).liveCommentCount).toBe(1);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("live comments validate markup at the published live width", async () => {
     const noteGeometry: { current: { layout: "split" | "unified"; width: number } | null } = {
       current: { layout: "unified", width: 120 },
