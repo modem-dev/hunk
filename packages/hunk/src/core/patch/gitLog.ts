@@ -17,7 +17,7 @@
  * ```
  *
  * Lines from `commit ` through the first patch header (`diff --git `,
- * `--- `, or `+++ `) are dropped. Hunk-body lines always start with
+ * `diff --cc `, `diff --combined `, `--- `, or `+++ `) are dropped. Hunk-body lines always start with
  * `+`, `-`, ` ` or `\`, so a real context line that begins with the word
  * "commit" is unaffected (its leading space prevents the regex match).
  *
@@ -41,10 +41,16 @@ export function stripGitLogMetadata(text: string) {
       continue;
     }
     if (inHeader) {
-      // The header section ends at the first patch line. `diff --git `
-      // is the canonical Git start; `--- `/`+++ ` cover unified-diff
-      // input where someone synthesised log output without it.
-      if (line.startsWith("diff --git ") || line.startsWith("--- ") || line.startsWith("+++ ")) {
+      // The header section ends at the first patch line. `diff --git `,
+      // `diff --cc `, and `diff --combined ` are Git's patch starts;
+      // `--- `/`+++ ` cover unified-diff input without one.
+      if (
+        line.startsWith("diff --git ") ||
+        line.startsWith("diff --cc ") ||
+        line.startsWith("diff --combined ") ||
+        line.startsWith("--- ") ||
+        line.startsWith("+++ ")
+      ) {
         inHeader = false;
         out.push(line);
       }

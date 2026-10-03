@@ -47,6 +47,68 @@ describe("static diff pager", () => {
     expect(output).not.toContain("\x1b[?1049h");
   });
 
+  test("renders Git combined conflict diffs instead of reporting an empty review", async () => {
+    const patchText = [
+      "diff --cc notes.txt",
+      "index 0459513,a7453f0..0000000",
+      "--- a/notes.txt",
+      "+++ b/notes.txt",
+      "@@@ -1,1 -1,1 +1,5 @@@",
+      "++<<<<<<< HEAD",
+      " +upstream",
+      "++=======",
+      "+ feature",
+      "++>>>>>>> topic",
+      "",
+    ].join("\n");
+
+    const plain = stripAnsi(await renderStaticDiffPager(patchText));
+
+    expect(plain).toContain("notes.txt modified +4 -0");
+    expect(plain).toContain("<<<<<<< HEAD");
+    expect(plain).toContain("upstream");
+    expect(plain).toContain("feature");
+    expect(plain).not.toContain("No files match the current filter.");
+  });
+
+  test("renders partially resolved combined conflicts without parent-only deletions", async () => {
+    const patchText = [
+      "diff --cc notes.txt",
+      "index 1111111,2222222..0000000",
+      "--- a/notes.txt",
+      "+++ b/notes.txt",
+      "@@@ -1,3 -1,3 +1,3 @@@",
+      "- main",
+      " -topic",
+      "++resolved",
+      "  common",
+      "  tail",
+      "",
+    ].join("\n");
+
+    const plain = stripAnsi(await renderStaticDiffPager(patchText));
+
+    expect(plain).toContain("notes.txt modified +1 -1");
+    expect(plain).toContain("resolved");
+    expect(plain).not.toContain("topic");
+    expect(plain).not.toContain("No files match the current filter.");
+  });
+
+  test("renders binary combined conflicts as binary file metadata", async () => {
+    const patchText = [
+      "diff --cc data.bin",
+      "index ff69e82,fdd5296..0000000",
+      "Binary files differ",
+      "",
+    ].join("\n");
+
+    const plain = stripAnsi(await renderStaticDiffPager(patchText));
+
+    expect(plain).toContain("data.bin modified +0 -0");
+    expect(plain).toContain("No textual changes.");
+    expect(plain).not.toContain("No files match the current filter.");
+  });
+
   test("honors configured hidden line numbers and hunk headers", async () => {
     const patchText =
       "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-const value = 1;\n+const value = 2;\n";
