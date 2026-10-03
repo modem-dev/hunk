@@ -34,3 +34,26 @@ git diff --no-color | hunk patch -
 Use `-` to make stdin explicit. Stdin is a snapshot, so it cannot use `--watch`; write the patch to a file when you need continuous reloads.
 
 Patch-like input is parsed into the same file and hunk model as repository input. Non-diff text belongs in [pager mode](/docs/workflows/git-pager-and-difftool/), where Hunk can fall back to plain text.
+
+## Review a GitHub pull request
+
+Because patch mode accepts any unified diff on stdin, you can review a pull request without checking it out by piping the [GitHub CLI](https://cli.github.com):
+
+```bash
+gh pr diff 123 --patch | hunk patch -
+```
+
+If you review pull requests often, wrap it in a small shell function in your `.bashrc`/`.zshrc`:
+
+```bash
+hunk-pr() {
+    gh pr diff "$1" --patch "${@:2}" | hunk patch -
+}
+```
+
+```bash
+hunk-pr 123
+hunk-pr 123 --repo owner/repo
+```
+
+The same pattern works for any forge tool that can emit a unified diff, such as `glab mr diff` for GitLab.
