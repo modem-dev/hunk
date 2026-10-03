@@ -49,3 +49,37 @@ export function isSaveDraftNoteKey(key: KeyEvent) {
     raw === CTRL_S_CSI_U
   );
 }
+
+/**
+ * The printable text one key contributes to a text input, or `undefined` when
+ * the key is not ordinary typing.
+ *
+ * Used while a text input is still mounting and cannot yet receive keys through
+ * the focused-renderable path: modifier chords, navigation keys, and control
+ * keys have their own owners, while plain characters belong to that input and
+ * must not fall through to the command table.
+ */
+export function printableKeyText(key: KeyEvent): string | undefined {
+  if (key.ctrl || key.meta || key.option || key.super || key.hyper) {
+    return undefined;
+  }
+
+  if (key.eventType === "release") {
+    return undefined;
+  }
+
+  const sequence = key.sequence;
+  if (!sequence) {
+    return undefined;
+  }
+
+  for (const character of sequence) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    // C0 controls (Tab, Enter, Backspace, Escape) and DEL are not text.
+    if (codePoint < 0x20 || codePoint === 0x7f) {
+      return undefined;
+    }
+  }
+
+  return sequence;
+}
