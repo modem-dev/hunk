@@ -291,6 +291,26 @@ function runGit(args: string[], cwd: string, allowExitCodeOne = false) {
   return proc.stdout;
 }
 
+/**
+ * Start one PTY session. With a responder, subscribe before the child writes anything so startup
+ * terminal queries are answered, then wait for the first frame; otherwise use tuistory's launcher.
+ */
+async function startTestTerminalSession(
+  tuistory: Awaited<ReturnType<typeof loadTuistory>>,
+  launchOptions: ConstructorParameters<Awaited<ReturnType<typeof loadTuistory>>["Session"]>[0],
+  testTerminalResponder?: (data: string, session: Session) => void,
+) {
+  if (!testTerminalResponder) {
+    return tuistory.launchTerminal(launchOptions);
+  }
+
+  const session = new tuistory.Session(launchOptions);
+  session.subscribe((data) => testTerminalResponder(data, session));
+  await session.waitForData({ timeout: 5_000 });
+  await session.waitIdle();
+  return session;
+}
+
 /** Build a fresh PTY test helper that tracks its own temp directories for one integration test file. */
 export function createPtyHarness() {
   const tempDirs: string[] = [];
@@ -1081,15 +1101,7 @@ end
       },
     };
 
-    if (!options.testTerminalResponder) {
-      return tuistory.launchTerminal(launchOptions);
-    }
-
-    const session = new tuistory.Session(launchOptions);
-    session.subscribe((data) => options.testTerminalResponder?.(data, session));
-    await session.waitForData({ timeout: 5_000 });
-    await session.waitIdle();
-    return session;
+    return startTestTerminalSession(tuistory, launchOptions, options.testTerminalResponder);
   }
 
   /** Launch an arbitrary shell command inside the PTY for pipeline-style integration tests. */
@@ -1099,24 +1111,30 @@ end
     cols?: number;
     rows?: number;
     env?: Record<string, string | undefined>;
+    /** Answer terminal queries from the start, as `launchHunk` does. */
+    testTerminalResponder?: (data: string, session: Session) => void;
   }) {
-    const { launchTerminal } = await loadTuistory();
+    const tuistory = await loadTuistory();
 
-    return launchTerminal({
-      command: "/bin/bash",
-      idleDelayMs: tuistoryIdleDelayMs,
-      args: ["-c", options.command],
-      cwd: options.cwd ?? repoRoot,
-      cols: options.cols ?? 140,
-      rows: options.rows ?? 24,
-      env: {
-        ...process.env,
-        XDG_CONFIG_HOME: configHome(),
-        HUNK_MCP_DISABLE: "1",
-        HUNK_DISABLE_UPDATE_NOTICE: "1",
-        ...options.env,
+    return startTestTerminalSession(
+      tuistory,
+      {
+        command: "/bin/bash",
+        idleDelayMs: tuistoryIdleDelayMs,
+        args: ["-c", options.command],
+        cwd: options.cwd ?? repoRoot,
+        cols: options.cols ?? 140,
+        rows: options.rows ?? 24,
+        env: {
+          ...process.env,
+          XDG_CONFIG_HOME: configHome(),
+          HUNK_MCP_DISABLE: "1",
+          HUNK_DISABLE_UPDATE_NOTICE: "1",
+          ...options.env,
+        },
       },
-    });
+      options.testTerminalResponder,
+    );
   }
 
   /**
