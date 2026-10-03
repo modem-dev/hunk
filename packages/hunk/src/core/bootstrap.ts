@@ -14,10 +14,11 @@
 import type { ExtensionReviewDescriptor, NamedCustomThemeConfig } from "../extension-api/types";
 import type { Changeset } from "./changeset/model";
 import type { CliInput, CursorLine, LayoutMode, SidebarVisibility } from "./run/commandInputs";
-import type { UserKeyBinding } from "./run/config";
+import type { UserKeyBinding, ViewPreferenceScope } from "./run/config";
 import type { WheelScrollLines } from "./run/wheelScrollLines";
 import type { StartupNotice } from "./process/startupNotice";
 import type { TerminalThemeMode } from "./theme/detection";
+import type { ThemeSelection } from "./theme/selection";
 import type { VcsCatalog } from "./vcs/types";
 
 /** Where a review was loaded from, retained so the session can reload and watch it. */
@@ -40,7 +41,7 @@ export interface AppBootstrap<ExtensionState = unknown> {
   reloadContext: ReloadContext;
   changeset: Changeset;
   initialMode: LayoutMode;
-  initialTheme?: string;
+  initialTheme?: ThemeSelection;
   initialThemeMode?: TerminalThemeMode;
   /** Selectable custom themes for this session, in menu order. */
   customThemes?: readonly NamedCustomThemeConfig[];
@@ -62,6 +63,7 @@ export interface AppBootstrap<ExtensionState = unknown> {
   /** Internal provenance used to preserve caller context or recompute provider context on reload. */
   reviewSource?: "caller" | "provider";
   viewPreferencesConfigPath?: string;
+  viewPreferenceScope?: ViewPreferenceScope;
   /** The user's `[keybindings]` table, resolved against command defaults in App. */
   keybindings?: Record<string, UserKeyBinding>;
   /** App-owned extension state carried without coupling core to the extension host. */
