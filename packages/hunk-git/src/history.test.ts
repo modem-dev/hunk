@@ -53,6 +53,52 @@ describe("Git history production", () => {
     );
   });
 
+  test("attaches GitHub pull-request URLs from origin and local commit facts", async () => {
+    const repo = mkdtempSync(join(tmpdir(), "hunk-git-history-pr-"));
+    const git = (...args: string[]) => {
+      const result = Bun.spawnSync(["git", ...args], {
+        cwd: repo,
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      if (result.exitCode !== 0) throw new Error(result.stderr.toString());
+      return result.stdout.toString().trim();
+    };
+    try {
+      git("init", "--quiet");
+      git("config", "user.name", "Test");
+      git("config", "user.email", "test@example.com");
+      git("remote", "add", "origin", "https://github.com/modem-dev/hunk.git");
+      writeFileSync(join(repo, "root.txt"), "root\n");
+      git("add", "root.txt");
+      git("commit", "--quiet", "-m", "root");
+      writeFileSync(join(repo, "merge.txt"), "merge\n");
+      git("add", "merge.txt");
+      git("commit", "--quiet", "-m", "Merge pull request #42 from octocat/patch");
+      writeFileSync(join(repo, "squash.txt"), "squash\n");
+      git("add", "squash.txt");
+      git("commit", "--quiet", "-m", "Fix the parser (#7)");
+
+      const source = await createGitVcsAdapter().history!.open({}, { cwd: repo });
+      try {
+        const page = await source.read({ limit: 8 });
+        const bySubject = new Map(page.commits.map((entry) => [entry.subject, entry]));
+        expect(bySubject.get("Fix the parser (#7)")?.pullRequestUrl).toBe(
+          "https://github.com/modem-dev/hunk/pull/7",
+        );
+        expect(bySubject.get("Merge pull request #42 from octocat/patch")?.pullRequestUrl).toBe(
+          "https://github.com/modem-dev/hunk/pull/42",
+        );
+        expect(bySubject.get("root")?.pullRequestUrl).toBeUndefined();
+      } finally {
+        await source.close();
+      }
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
   test("parses NUL-delimited commits and copies structured decorations", () => {
     const decorations = new Map([["a".repeat(40), [{ kind: "head" as const, label: "HEAD" }]]]);
     const text = [

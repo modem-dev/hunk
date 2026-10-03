@@ -127,6 +127,41 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+const HISTORY_PULL_REQUEST_URL_MAX_BYTES = 2 * 1024;
+
+/** Copy a provider-owned pull-request URL after refusing unsafe or oversized values. */
+function normalizeHistoryPullRequestUrl(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  const text = assertNonEmptyString(
+    value,
+    "VCS history commit pullRequestUrl must be a non-empty string.",
+  );
+  if (sanitizeTerminalLine(text) !== text || text.includes("\t")) {
+    throw new Error("VCS history commit pullRequestUrl must be a terminal-safe URL.");
+  }
+  if (new TextEncoder().encode(text).byteLength > HISTORY_PULL_REQUEST_URL_MAX_BYTES) {
+    throw new Error("VCS history commit pullRequestUrl exceeds its byte limit.");
+  }
+  let url: URL;
+  try {
+    url = new URL(text);
+  } catch {
+    throw new Error("VCS history commit pullRequestUrl must be an https URL.");
+  }
+  if (
+    url.protocol !== "https:" ||
+    url.username ||
+    url.password ||
+    url.port ||
+    url.search ||
+    url.hash ||
+    url.href !== text
+  ) {
+    throw new Error("VCS history commit pullRequestUrl must be an unmodified https URL.");
+  }
+  return text;
+}
+
 /** Report whether one value is promise-like, so async factories can be awaited. */
 function isThenable(value: unknown): value is Promise<void> {
   return typeof (value as Promise<void> | undefined)?.then === "function";
@@ -217,6 +252,7 @@ function normalizeHistoryCommit(value: unknown): ExtensionVcsHistoryCommit {
     "authoredAt",
     "decorations",
     "logicalId",
+    "pullRequestUrl",
   ]);
   const required = (key: string) =>
     assertNonEmptyString(snapshot[key], `VCS history commit ${key} must be a non-empty string.`);
@@ -237,6 +273,7 @@ function normalizeHistoryCommit(value: unknown): ExtensionVcsHistoryCommit {
   const revisionId = safeRevision(snapshot.revisionId, "VCS history commit revisionId");
   const displayId = safeDisplay("displayId");
   const authoredAt = required("authoredAt");
+  const pullRequestUrl = normalizeHistoryPullRequestUrl(snapshot.pullRequestUrl);
   if (
     !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(authoredAt) ||
     Number.isNaN(Date.parse(authoredAt))
@@ -321,6 +358,7 @@ function normalizeHistoryCommit(value: unknown): ExtensionVcsHistoryCommit {
     ...(typeof snapshot.logicalId === "string"
       ? { logicalId: sanitizeTerminalLine(snapshot.logicalId).replaceAll("\t", " ") }
       : {}),
+    ...(pullRequestUrl ? { pullRequestUrl } : {}),
   };
 }
 
