@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 3,
+  "label": "treatment",
+  "heartbeat": "delayed-Effect-Schedule.fixed-mechanical-match",
+  "connectionOwner": "one-frozen-supervisor-property",
+  "clientStartupOwner": "one-frozen-supervisor-property",
+  "staticAnalysisLimit": "AST gates prove only named mechanical source shapes; independent review must establish lifecycle semantics and correctness.",
+  "cancellationBoundary": "foreign native promises and detached processes are not claimed cancelled",
+  "intentionalTreatmentDifferences": [
+    "Schedule.fixed catch-up may differ from native setInterval.",
+    "Unexpected lifecycle defects use the fixed message: Session broker lifecycle failed unexpectedly."
+  ]
+}

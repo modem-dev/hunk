@@ -1,0 +1,144 @@
+{
+  "schemaVersion": 2,
+  "recordedAt": "2026-08-31T05:56:32.027Z",
+  "freshness": "all required commands executed by this arm invocation after clearing output",
+  "commands": [
+    {
+      "name": "focused",
+      "command": [
+        "bun",
+        "test",
+        "packages/session-broker-core",
+        "packages/session-broker",
+        "packages/session-broker-bun",
+        "src/session/broker",
+        "scripts/source-boundaries.test.ts"
+      ],
+      "cwd": "/home/bentlegen/Projects/hunk-effect-lifecycle-experiment",
+      "startedAt": "2026-08-31T05:52:15.306Z",
+      "finishedAt": "2026-08-31T05:52:21.029Z",
+      "durationMs": 5723.474007,
+      "exitCode": 0,
+      "stdoutTranscript": "tmp/session-lifecycle-effect/treatment/validation/focused.stdout.log",
+      "stderrTranscript": "tmp/session-lifecycle-effect/treatment/validation/focused.stderr.log",
+      "stdoutSha256": "1555e1dcbb9789ef95781eab3cb28ac11a78256a2b400146add32986578486a0",
+      "stderrSha256": "80589dd842557f2005b62002168c4e46ad6e31a6f6080bc8aa5e622e0b4845dc",
+      "parsedCounts": {
+        "passed": 385,
+        "failed": 0
+      }
+    },
+    {
+      "name": "real-node",
+      "command": [
+        "bun",
+        "run",
+        "test:session-broker-node"
+      ],
+      "cwd": "/home/bentlegen/Projects/hunk-effect-lifecycle-experiment",
+      "startedAt": "2026-08-31T05:52:21.030Z",
+      "finishedAt": "2026-08-31T05:52:21.555Z",
+      "durationMs": 524.5388590000002,
+      "exitCode": 0,
+      "stdoutTranscript": "tmp/session-lifecycle-effect/treatment/validation/real-node.stdout.log",
+      "stderrTranscript": "tmp/session-lifecycle-effect/treatment/validation/real-node.stderr.log",
+      "stdoutSha256": "88716e0bd251b262103e6158eb04a60cf5196ddc49a743fd3fcd84f55d0961b1",
+      "stderrSha256": "70a9db88f4d0962ba72ae7ef8d5999b0ea4355ccda2e816a84ecd4ba4d6e454e",
+      "parsedCounts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "name": "typecheck",
+      "command": [
+        "bun",
+        "run",
+        "typecheck"
+      ],
+      "cwd": "/home/bentlegen/Projects/hunk-effect-lifecycle-experiment",
+      "startedAt": "2026-08-31T05:52:21.555Z",
+      "finishedAt": "2026-08-31T05:52:27.097Z",
+      "durationMs": 5541.736657999999,
+      "exitCode": 0,
+      "stdoutTranscript": "tmp/session-lifecycle-effect/treatment/validation/typecheck.stdout.log",
+      "stderrTranscript": "tmp/session-lifecycle-effect/treatment/validation/typecheck.stderr.log",
+      "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSha256": "8366207267355d3e3d5bf3bf6e8c94c5f93f6078c34f08973fa2b38cdda6cc92"
+    },
+    {
+      "name": "lint",
+      "command": [
+        "bun",
+        "run",
+        "lint"
+      ],
+      "cwd": "/home/bentlegen/Projects/hunk-effect-lifecycle-experiment",
+      "startedAt": "2026-08-31T05:52:27.097Z",
+      "finishedAt": "2026-08-31T05:52:27.161Z",
+      "durationMs": 63.74190399999861,
+      "exitCode": 0,
+      "stdoutTranscript": "tmp/session-lifecycle-effect/treatment/validation/lint.stdout.log",
+      "stderrTranscript": "tmp/session-lifecycle-effect/treatment/validation/lint.stderr.log",
+      "stdoutSha256": "8408475635514aa71ab3b0c39b4ae2ce7721cf092cac5696e9c46bc3fc87fb28",
+      "stderrSha256": "b2dff80d5fca1f1286fa77107660bc4380492aa10e2be93e185856f21c3993fd"
+    },
+    {
+      "name": "dependencies",
+      "command": [
+        "bun",
+        "run",
+        "deps:check"
+      ],
+      "cwd": "/home/bentlegen/Projects/hunk-effect-lifecycle-experiment",
+      "startedAt": "2026-08-31T05:52:27.161Z",
+      "finishedAt": "2026-08-31T05:52:27.817Z",
+      "durationMs": 656.4568789999994,
+      "exitCode": 0,
+      "stdoutTranscript": "tmp/session-lifecycle-effect/treatment/validation/dependencies.stdout.log",
+      "stderrTranscript": "tmp/session-lifecycle-effect/treatment/validation/dependencies.stderr.log",
+      "stdoutSha256": "9bb9cafd557a7e2fe8ab9dff24f39f4d9b1f57074a256d136a28141efddc077f",
+      "stderrSha256": "78c9ba4b5461c552fe43e52904d0eaf6f5ddef47588cf477ea2a697c44182351"
+    },
+    {
+      "name": "full-unit",
+      "command": [
+        "bun",
+        "run",
+        "test"
+      ],
+      "cwd": "/home/bentlegen/Projects/hunk-effect-lifecycle-experiment",
+      "startedAt": "2026-08-31T05:52:27.817Z",
+      "finishedAt": "2026-08-31T05:53:06.907Z",
+      "durationMs": 39089.603013,
+      "exitCode": 0,
+      "stdoutTranscript": "tmp/session-lifecycle-effect/treatment/validation/full-unit.stdout.log",
+      "stderrTranscript": "tmp/session-lifecycle-effect/treatment/validation/full-unit.stderr.log",
+      "stdoutSha256": "49ef2e254b1afa2ad13e64a564ed4ab7c85b6537fea0343f75a434bd76595d26",
+      "stderrSha256": "98324699be60fe37a6f3f3269d3eaf8b32351feebe87fe7fdda34ce3cc58b0a8"
+    },
+    {
+      "name": "pty-integration",
+      "command": [
+        "bun",
+        "run",
+        "test:integration"
+      ],
+      "cwd": "/home/bentlegen/Projects/hunk-effect-lifecycle-experiment",
+      "startedAt": "2026-08-31T05:53:06.911Z",
+      "finishedAt": "2026-08-31T05:56:26.896Z",
+      "durationMs": 199984.642445,
+      "exitCode": 0,
+      "stdoutTranscript": "tmp/session-lifecycle-effect/treatment/validation/pty-integration.stdout.log",
+      "stderrTranscript": "tmp/session-lifecycle-effect/treatment/validation/pty-integration.stderr.log",
+      "stdoutSha256": "d6684989b8dd63b37d2f1954270826fbe1bd89a8debd12bcacf03ed1c6140ef6",
+      "stderrSha256": "3ecd3363b3da37a0fdee720de9031b0d2ea02eff8311dee6506a5fe66bcfec40",
+      "parsedCounts": {
+        "passed": 139,
+        "failed": 0,
+        "skipped": 1
+      }
+    }
+  ]
+}
