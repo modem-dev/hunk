@@ -550,6 +550,9 @@ export class SessionBrokerDaemon<
           return connection.send(data);
         },
         close: (code, reason) => connection.close?.(code, reason),
+        // Forward the transport liveness probe only when the adapter provides one, so stale
+        // pruning keeps its silence-based TTL for peers that cannot report openness.
+        ...(connection.isOpen ? { isOpen: () => connection.isOpen!() } : {}),
         markAuthenticated: () => connection.markAuthenticated?.(),
       };
       this.producerAuthentication.set(connection, {

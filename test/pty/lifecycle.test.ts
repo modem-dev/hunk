@@ -7,7 +7,8 @@ import { createPtyHarness } from "./harness";
 
 const harness = createPtyHarness();
 
-setDefaultTimeout(30_000);
+// The broker-suspension test deliberately stays suspended past the daemon's stale-session TTL.
+setDefaultTimeout(120_000);
 
 afterEach(() => {
   harness.cleanup();
@@ -77,6 +78,31 @@ function stopDaemonsUnder(runtimeDir: string) {
       // Ignore partially written metadata, or a daemon that already exited.
     }
   }
+}
+
+/** Run `hunk session list` from a separate process against one isolated runtime. */
+function listSessionsViaCli(cwd: string, runtimeDir: string): Promise<string> {
+  return new Promise((resolve) => {
+    const child = spawn(
+      process.execPath,
+      ["run", join(process.cwd(), "packages", "hunk", "src", "main.tsx"), "session", "list"],
+      {
+        cwd,
+        env: {
+          ...process.env,
+          XDG_RUNTIME_DIR: runtimeDir,
+          XDG_CONFIG_HOME: runtimeDir,
+          TERM: "xterm-256color",
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+    let out = "";
+    child.stdout.on("data", (chunk: Buffer) => {
+      out += chunk.toString("utf8");
+    });
+    child.on("exit", () => resolve(out));
+  });
 }
 
 function revokeTerminal(path: string) {
@@ -251,6 +277,63 @@ describe("PTY lifecycle", () => {
         expect(secondResume).toContain("Keep this note after resume.");
       } finally {
         session.close();
+      }
+    },
+  );
+
+  test.skipIf(process.platform === "win32")(
+    "keeps the broker session alive across a suspension longer than the stale TTL",
+    async () => {
+      const fixture = harness.createTabbedFilePair();
+      const hunkCommand = harness.buildHunkCommand([
+        "diff",
+        "--files",
+        fixture.before,
+        fixture.after,
+      ]);
+      const runtimeDir = harness.createIsolatedConfigHome();
+      const session = await harness.launchShellCommand({
+        command: "exec /bin/bash --noprofile --norc -i",
+        cwd: fixture.dir,
+        env: {
+          XDG_RUNTIME_DIR: runtimeDir,
+          XDG_CONFIG_HOME: runtimeDir,
+          HUNK_MCP_DISABLE: "0",
+        },
+      });
+
+      try {
+        session.writeRaw("PS1='HUNK_SHELL> '\r");
+        await session.waitForText(/HUNK_SHELL>/, { timeout: 5_000 });
+        session.writeRaw(`${hunkCommand}\r`);
+        await session.waitForText(/before\.txt.*after\.txt/, { timeout: 15_000 });
+        await Bun.sleep(2_000);
+
+        session.writeRaw("\x1a");
+        await session.waitForText(/\[\d+\][^\n]*(?:Stopped|suspended)/, { timeout: 5_000 });
+
+        // Stay suspended past the daemon's 45s stale-session TTL plus a sweep.
+        await Bun.sleep(62_000);
+        session.writeRaw("echo SUSPENSION_DONE\r");
+        await session.waitForText(/SUSPENSION_DONE/, { timeout: 5_000 });
+
+        // The suspended producer's transport stays connected, so the broker must keep the
+        // session registered instead of pruning it after the stale TTL.
+        const whileSuspended = await listSessionsViaCli(fixture.dir, runtimeDir);
+        expect(whileSuspended).toMatch(/before\.txt.*after\.txt/);
+
+        session.writeRaw("fg\r");
+        await Bun.sleep(2_000);
+        expect(await session.text({ immediate: true })).toMatch(/before\.txt.*after\.txt/);
+        await harness.ensureKeyboardIsLive(session);
+
+        // With the session never pruned, the resumed app is listed immediately, without the
+        // reconnect-delay recovery gap a pruned session would need.
+        const afterResume = await listSessionsViaCli(fixture.dir, runtimeDir);
+        expect(afterResume).toMatch(/before\.txt.*after\.txt/);
+      } finally {
+        session.close();
+        stopDaemonsUnder(runtimeDir);
       }
     },
   );

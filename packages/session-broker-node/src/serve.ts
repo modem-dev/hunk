@@ -78,6 +78,7 @@ function toNodeConnection(
     close(code?: number, reason?: string) {
       socket.close(code, reason);
     },
+    isOpen: () => socket.readyState === socket.OPEN,
     markAuthenticated,
   };
 }

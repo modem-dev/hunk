@@ -35,6 +35,12 @@ interface PendingCommand<Result> {
 
 interface DaemonSessionSocket {
   send(data: string): unknown;
+  /**
+   * Report whether the transport is still connected. Optional so older adapters stay compatible.
+   * A silent but open transport is a producer that cannot heartbeat (SIGSTOP, debugger), not a
+   * dead one; only a closed transport makes silence stale.
+   */
+  isOpen?(): boolean;
 }
 
 /** Hold one live broker session plus the socket that owns it. */
@@ -494,6 +500,13 @@ export class SessionBrokerState<
     for (const [sessionId, entry] of this.sessions.entries()) {
       const lastSeenAt = Date.parse(entry.lastSeenAt);
       if (!Number.isFinite(lastSeenAt) || lastSeenAt > cutoff) {
+        continue;
+      }
+
+      // A still-open transport means the producer is alive but cannot heartbeat (SIGSTOP,
+      // debugger). Its socket close event is what removes it when it really dies. Sockets without
+      // a probe keep the silence-based TTL.
+      if (entry.socket.isOpen?.()) {
         continue;
       }
 
