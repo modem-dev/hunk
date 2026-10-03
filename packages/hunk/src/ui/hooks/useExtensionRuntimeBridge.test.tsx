@@ -224,7 +224,7 @@ describe("useExtensionRuntimeBridge", () => {
       const commandControls = harness.current().commandControls;
       const predecessorLease = harness.current().createReviewCapabilityLease();
       const predecessorNavigation = harness.current().createNavigation("probe");
-      const predecessorReview = harness.current().createReviewControls();
+      const predecessorReview = harness.current().createReviewControls("probe");
       expect(predecessorReview.snapshot()?.generation).toBe(first.changeset.id);
 
       await act(async () =>
@@ -243,7 +243,7 @@ describe("useExtensionRuntimeBridge", () => {
 
       const successorLease = harness.current().createReviewCapabilityLease();
       const successorNavigation = harness.current().createNavigation("probe");
-      const successorReview = harness.current().createReviewControls();
+      const successorReview = harness.current().createReviewControls("probe");
       expect(successorLease.isLive()).toBe(true);
       expect(successorReview.snapshot()?.generation).toBe(second.changeset.id);
       successorNavigation.selectFile("alpha");

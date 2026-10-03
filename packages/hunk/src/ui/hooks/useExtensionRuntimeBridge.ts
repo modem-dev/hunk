@@ -18,6 +18,8 @@ import type {
   ExtensionCommandControls,
   ExtensionReviewControls,
   ExtensionReviewNavigation,
+  ExtensionReviewPresentationControls,
+  ExtensionReviewPresentationScope,
   ExtensionReviewSelection,
 } from "../../extension-api/types";
 import { toReadOnlyFileViews } from "../../extensions/events";
@@ -47,7 +49,9 @@ export interface ExtensionRuntimeBridge {
   /** Build live navigation whose targets are resolved after awaited extension work. */
   createNavigation: (extensionId: string) => ExtensionReviewNavigation;
   /** Mint a review snapshot reader owned by the current review generation. */
-  createReviewControls: () => ExtensionReviewControls;
+  createReviewControls: (extensionId: string) => ExtensionReviewControls;
+  /** Mint transient presentation controls owned by one extension and generation. */
+  createPresentationControls: (extensionId: string) => ExtensionReviewPresentationControls;
   /** Read public file views for the latest committed review. */
   getCommittedFileViews: () => ReturnType<typeof toReadOnlyFileViews>;
   /** Project public file views for the render currently in progress. */
@@ -89,6 +93,10 @@ export function useExtensionRuntimeBridge({
   getSelection,
   reviewGeneration,
   reviewProducer,
+  createPresentationControls = () => ({
+    setPresentationScope: () => false,
+    clearPresentationScope: () => undefined,
+  }),
 }: {
   extensions?: ExtensionLoadResult;
   files: readonly DiffFile[];
@@ -96,6 +104,7 @@ export function useExtensionRuntimeBridge({
   getSelection: SelectionInputs["getSelection"];
   reviewGeneration: AppBootstrap;
   reviewProducer?: ReviewSnapshotProducer;
+  createPresentationControls?: (extensionId: string) => ExtensionReviewPresentationControls;
 }): ExtensionRuntimeBridge {
   const appAliveRef = useRef(false);
   const activeRegistryRef = useRef(extensions?.registry);
@@ -213,17 +222,27 @@ export function useExtensionRuntimeBridge({
   );
 
   // Read snapshots only while the captured review generation is still current.
-  const createReviewControls = useCallback(() => {
-    const lease = createReviewCapabilityLease();
-    return Object.freeze({
-      snapshot() {
-        if (!lease.isLive()) return null;
-        const positioned = reviewProducer?.getPositionedReviewState();
-        if (!positioned) return null;
-        return buildExtensionReviewSnapshot(positioned.generation, positioned.state);
-      },
-    });
-  }, [createReviewCapabilityLease, reviewProducer]);
+  const createReviewControls = useCallback(
+    (extensionId: string) => {
+      const lease = createReviewCapabilityLease();
+      const presentation = createPresentationControls(extensionId);
+      return Object.freeze({
+        snapshot() {
+          if (!lease.isLive()) return null;
+          const positioned = reviewProducer?.getPositionedReviewState();
+          if (!positioned) return null;
+          return buildExtensionReviewSnapshot(positioned.generation, positioned.state);
+        },
+        setPresentationScope(scope: ExtensionReviewPresentationScope) {
+          return lease.isLive() && presentation.setPresentationScope(scope);
+        },
+        clearPresentationScope() {
+          if (lease.isLive()) presentation.clearPresentationScope();
+        },
+      });
+    },
+    [createPresentationControls, createReviewCapabilityLease, reviewProducer],
+  );
 
   // Publish App-owned commands and navigation only after their render commits.
   const commitBindings = useCallback(
@@ -239,6 +258,7 @@ export function useExtensionRuntimeBridge({
     createReviewCapabilityLease,
     createNavigation,
     createReviewControls,
+    createPresentationControls,
     getCommittedFileViews,
     getRenderFileViews,
     getSelection: getPublicSelection,

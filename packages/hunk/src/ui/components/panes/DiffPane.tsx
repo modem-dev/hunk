@@ -320,6 +320,7 @@ export function DiffPane({
   expandedGapsByFileId = EMPTY_EXPANDED_GAPS_BY_FILE_ID,
   fileViews = EMPTY_FILE_VIEWS,
   files,
+  visibleHunkIndexesByFileId,
   semanticFileIdentities,
   offloadLargeDiff = false,
   lineHighlights = EMPTY_LINE_HIGHLIGHTS,
@@ -397,6 +398,8 @@ export function DiffPane({
   /** Validated alternate layouts, keyed by file id; raw Pierre remains the fallback. */
   fileViews?: ReadonlyMap<string, ResolvedFileViewLayout>;
   files: DiffFile[];
+  /** Optional extension-owned hunk projection keyed by runtime file id. */
+  visibleHunkIndexesByFileId?: ReadonlyMap<string, ReadonlySet<number>> | null;
   /** Already-projected semantic identities for selection invalidation. */
   semanticFileIdentities?: readonly string[];
   /** Offload eligible syntax highlighting for this launch. */
@@ -1119,6 +1122,7 @@ export function DiffPane({
           reserveAddNoteColumn,
           tabWidth,
           hunkGap,
+          visibleHunkIndexesByFileId?.get(file.id),
         );
       }),
     [
@@ -1134,6 +1138,7 @@ export function DiffPane({
       sourceStatusByFileId,
       tabWidth,
       theme,
+      visibleHunkIndexesByFileId,
       wrapLines,
     ],
   );
@@ -1167,6 +1172,7 @@ export function DiffPane({
           reserveAddNoteColumn,
           tabWidth,
           hunkGap,
+          visibleHunkIndexesByFileId?.get(file.id),
         );
       }),
     [
@@ -1184,6 +1190,7 @@ export function DiffPane({
       sourceStatusByFileId,
       tabWidth,
       theme,
+      visibleHunkIndexesByFileId,
       wrapLines,
     ],
   );
@@ -2629,6 +2636,7 @@ export function DiffPane({
                         sourceStatus={sourceStatusByFileId[file.id]}
                         tabWidth={tabWidth}
                         hunkGap={hunkGap}
+                        visibleHunkIndexes={visibleHunkIndexesByFileId?.get(file.id)}
                         wrapLines={wrapLines}
                         theme={theme}
                         hoverActive={hoveredFileId === null || hoveredFileId === file.id}

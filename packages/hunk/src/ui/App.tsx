@@ -65,6 +65,7 @@ import { useExtensionDialogController } from "./hooks/useExtensionDialogControll
 import { useExtensionEventContextProvider } from "./hooks/useExtensionEventContextProvider";
 import { useExtensionNotifications } from "./hooks/useExtensionNotifications";
 import { useExtensionPaneController } from "./hooks/useExtensionPaneController";
+import { useExtensionPresentationScope } from "./hooks/useExtensionPresentationScope";
 import { useExtensionReviewEvents } from "./hooks/useExtensionReviewEvents";
 import {
   useExtensionRuntimeBindings,
@@ -220,17 +221,28 @@ export function App({
     () => resolveExperimentalDiffFiles(bootstrap.changeset.files, bootstrap.input.options),
     [bootstrap.changeset.files, bootstrap.input.options.experimental],
   );
+  const extensions = bootstrap.extensions as ExtensionLoadResult | undefined;
   // App computes layout geometry below this hook call, so the controller reads
   // the current values through a ref instead of a render-time parameter.
   const noteGeometryRef = useRef<AgentNoteGeometrySnapshot | null>(null);
   const [lineCursors, setLineCursors] = useState<LineCursor[]>([]);
   const [reviewVerticalStops, setReviewVerticalStops] = useState<ReviewVerticalStop[]>([]);
+  const getReviewGeneration = useCallback(
+    () => reviewProducer?.getPositionedReviewState()?.generation ?? null,
+    [reviewProducer],
+  );
+  const presentationScope = useExtensionPresentationScope({
+    extensions,
+    files: reviewFiles,
+    getGeneration: getReviewGeneration,
+  });
   const review = useTerminalReview({
     files: reviewFiles,
     initialShowAgentNotes: bootstrap.initialShowAgentNotes ?? false,
     lineCursors,
     reviewVerticalStops,
     noteGeometry: noteGeometryRef,
+    presentationScope: presentationScope.scope,
     sourceLabel: bootstrap.changeset.sourceLabel,
     stmlEnabled,
   });
@@ -285,7 +297,6 @@ export function App({
   const filterPromptOpen =
     statusLineState.prompt !== null && statusLineState.prompt.id === filterPromptIdRef.current;
   const focusArea: FocusArea = filterPromptOpen ? "filter" : storedFocusArea;
-  const extensions = bootstrap.extensions as ExtensionLoadResult | undefined;
   const pendingTrustRepoRoot = extensions?.pendingTrustRepoRoot;
   const extensionToast = useExtensionNotifications(extensions?.notifications);
   const [ownedThemeController] = useState(
@@ -402,11 +413,13 @@ export function App({
     getSelection: review.getSelection,
     reviewGeneration: bootstrap,
     reviewProducer,
+    createPresentationControls: presentationScope.createControls,
   });
   const {
     commandControls: extensionCommandControls,
     createNavigation: createExtensionNavigation,
     createReviewCapabilityLease,
+    createPresentationControls: createExtensionPresentationControls,
     createReviewControls: createExtensionReviewControls,
     getCommittedFileViews: getExtensionFileViews,
     getRenderFileViews: getRenderExtensionFileViews,
@@ -416,9 +429,9 @@ export function App({
   } = extensionRuntime;
   const jumpToFile = useCallback(
     (fileId: string, options?: { alignFileHeaderTop?: boolean }) => {
-      review.selectFile(fileId, { alignFileHeaderTop: options?.alignFileHeaderTop });
+      review.selectVisibleFile(fileId, { alignFileHeaderTop: options?.alignFileHeaderTop });
     },
-    [review.selectFile],
+    [review.selectVisibleFile],
   );
 
   const openAgentNotes = useCallback(() => {
@@ -695,6 +708,7 @@ export function App({
     createLineHighlightControls,
     createNavigation: createExtensionNavigation,
     createPaneControls,
+    createPresentationControls: createExtensionPresentationControls,
     createPromptControls: createExtensionPrompts,
     createReviewControls: createExtensionReviewControls,
     createStatusLineControls: createExtensionStatusLine,
@@ -1195,14 +1209,14 @@ export function App({
       },
       onSelectHunk: (fileId: string, hunkIndex: number) => {
         focusFiles();
-        review.selectHunk(fileId, hunkIndex);
+        review.selectVisibleHunk(fileId, hunkIndex);
       },
       onRevealLine: (fileId: string, side: "old" | "new", line: number) => {
         focusFiles();
         return review.revealLine(fileId, side, line);
       },
     }),
-    [focusFiles, jumpToFile, review.revealLine, review.selectHunk],
+    [focusFiles, jumpToFile, review.revealLine, review.selectVisibleHunk],
   );
 
   /** Toggle keyboard focus between the file list and the file filter. */
@@ -1474,6 +1488,7 @@ export function App({
         <ExtensionPaneHost
           registered={pane.registered}
           review={bootstrap.review ?? null}
+          reviewGeneration={getReviewGeneration()}
           files={filteredFiles}
           fileViews={getRenderExtensionFileViews()}
           selectedFileId={selection.file?.id ?? null}
@@ -1486,6 +1501,7 @@ export function App({
           showTopChrome={showMenuBar}
           keybindings={paneKeybindings}
           notify={(message, type) => extensions?.context.notify(message, type)}
+          presentation={createExtensionPresentationControls(pane.registered.extensionId)}
           onCopyText={(text) => {
             if (
               !renderer.isOsc52Supported?.() ||
@@ -1504,14 +1520,19 @@ export function App({
           }}
           onSelectHunk={(fileId, hunkIndex) => {
             focusFiles();
-            review.selectHunk(fileId, hunkIndex);
+            review.selectVisibleHunk(fileId, hunkIndex);
           }}
           onRevealLine={(fileId, side, line) => {
             focusFiles();
             return review.revealLine(fileId, side, line);
           }}
           onRenderFailure={
-            pane.key === HUNK_FILES_PANE_KEY ? undefined : () => reportPaneRenderFailure(pane)
+            pane.key === HUNK_FILES_PANE_KEY
+              ? undefined
+              : () => {
+                  presentationScope.clearExtensionScope(pane.registered.extensionId);
+                  reportPaneRenderFailure(pane);
+                }
           }
         />
       </box>
@@ -1629,6 +1650,7 @@ export function App({
             expandedGapsByFileId={review.expandedGapsByFileId}
             fileViews={fileViewLayouts}
             files={filteredFiles}
+            visibleHunkIndexesByFileId={review.visibleHunkIndexesByFileId}
             semanticFileIdentities={semanticFileIdentities}
             offloadLargeDiff={bootstrap.input.options.fast === true}
             lineHighlights={paintedLineHighlights}

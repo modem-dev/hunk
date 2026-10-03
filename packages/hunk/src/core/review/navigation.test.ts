@@ -133,10 +133,21 @@ describe("review selection movement", () => {
     });
   });
 
-  test("steps files onto their first hunk and refuses a move that would go nowhere", () => {
-    expect(move(model(), at("alpha", 1), "file", 1)).toEqual({
-      at: "beta:0",
+  test("steps files onto their first projected hunk and refuses a move that would go nowhere", () => {
+    const projectedModel: ReviewNavigationModel = {
+      ...model(),
+      files: [
+        { fileKey: "alpha", hunkCount: 2, hunkIndexes: [1, 3] },
+        { fileKey: "beta", hunkCount: 2, hunkIndexes: [2, 4] },
+      ],
+    };
+    expect(move(projectedModel, at("alpha", 1), "file", 1)).toEqual({
+      at: "beta:2",
       reveal: { anchor: "file-top", scrollToNote: false },
+    });
+    expect(move(projectedModel, at("alpha", 1), "hunk", 1)).toEqual({
+      at: "alpha:3",
+      reveal: { anchor: "hunk", scrollToNote: false },
     });
     expect(move(model(), at("alpha", 0), "file", 2).at).toBe("gamma:0");
     // At an end, file navigation does nothing at all rather than re-revealing the current file.
