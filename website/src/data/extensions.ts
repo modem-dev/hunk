@@ -168,6 +168,24 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     apiVersion: 6,
   },
   {
+    repo: "LandonSchropp/hunk-backup",
+    name: "hunk-backup",
+    summary:
+      "Saves every review's comments as you write them, so closing Hunk never loses them, and lists and shows the backups with `hunk backup`.",
+    categories: ["Command"],
+    version: "0.1.0",
+    apiVersion: 25,
+  },
+  {
+    repo: "LandonSchropp/hunk-review",
+    name: "hunk-review",
+    summary:
+      "Approve or deny the changes from a modal inside Hunk, and stream each decision to an agent or script with `hunk review listen`.",
+    categories: ["Command", "Keyboard mode", "Pane"],
+    version: "0.2.0",
+    apiVersion: 25,
+  },
+  {
     repo: "mikeclarke/hunk-tutor",
     name: "hunk-tutor",
     summary: "An interactive tour of Hunk, taught inside a practice review.",
