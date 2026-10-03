@@ -120,7 +120,7 @@ hunk session reload --session-path /path/to/live-window --source /path/to/other-
 ```bash
 hunk session comment add (<session-id> | --repo <path>) (--reply-to <note-id> | --file <path> (--old-line <n> | --new-line <n>)) --summary <text> [--rationale <text>] [--author <name>] [--markup <stml>] [--focus] [--json]
 hunk session comment apply (<session-id> | --repo <path>) --stdin [--focus] [--json]
-hunk session comment list (<session-id> | --repo <path>) [--file <path>] [--type <live|all|ai|agent|user>] [--json]
+hunk session comment list (<session-id> | --repo <path>) [--file <path>] [--type <live|all|ai|agent|user>] [--author <name> | --no-author] [--json]
 hunk session comment rm (<session-id> | --repo <path>) <comment-id> [--json]
 hunk session comment clear (<session-id> | --repo <path>) [--file <path>] [--include-user|--all] --yes [--json]
 ```
@@ -134,6 +134,7 @@ printf '%s\n' '{"comments":[{"filePath":"README.md","newLine":103,"summary":"Tig
 ```
 
 - `comment list --type user` shows human-authored inline notes; without `--type`, `comment list` preserves the legacy live-agent-comment view
+- `comment list --author <name>` matches the optional author tag within whichever `--type` category is listed; human `c` notes are tagged `user`, so `--author user` matches them, and `--no-author` returns only comments with no author tag
 - `comment add` is best for one note; `comment apply` is best when an agent already has several notes ready
 - Root `comment add` notes require `--file`, `--summary`, and exactly one of `--old-line` or `--new-line`; replies use `--reply-to <note-id>` with `--summary` and inherit the parent's anchor
 - `comment apply` items require `summary` plus either `replyTo` by itself or `filePath` with exactly one target such as `hunk`, `hunkNumber`, `oldLine`, or `newLine`
