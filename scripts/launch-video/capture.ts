@@ -76,6 +76,25 @@ function runGit(args: string[], cwd: string, env: NodeJS.ProcessEnv = {}) {
   }
 }
 
+/** Drag the left mouse button between zero-based terminal cells. */
+async function dragMouse(
+  session: Awaited<ReturnType<typeof launchApp>>,
+  startX: number,
+  startY: number,
+  endX: number,
+  endY: number,
+) {
+  session.writeRaw(`\x1b[<0;${startX + 1};${startY + 1}M`);
+  for (let step = 1; step <= 5; step += 1) {
+    const x = Math.round(startX + ((endX - startX) * step) / 5);
+    const y = Math.round(startY + ((endY - startY) * step) / 5);
+    await sleep(20);
+    session.writeRaw(`\x1b[<32;${x + 1};${y + 1}M`);
+  }
+  session.writeRaw(`\x1b[<0;${endX + 1};${endY + 1}m`);
+  await session.waitIdle();
+}
+
 async function launchHunk(args: string[], options: { cwd?: string } = {}) {
   return launchApp({
     command: process.execPath,
@@ -103,7 +122,8 @@ async function launchHunkShell(cwd: string) {
  * "before" tree, overlay the "after" tree as the working diff.
  */
 function createDemoRepo() {
-  const repoDir = makeTempDir("hunk-video-repo-");
+  const repoDir = join(makeTempDir("hunk-video-repo-"), "task-review-demo");
+  mkdirSync(repoDir);
   runGit(["init"], repoDir);
   runGit(["config", "user.name", "Demo"], repoDir);
   runGit(["config", "user.email", "demo@example.com"], repoDir);
@@ -180,6 +200,19 @@ async function captureHistoryScene() {
     await sleep(600);
     await snap(session, "history-overview");
 
+    await session.press("f10");
+    await session.press("right");
+    await session.waitForText(/Graph view/, { timeout: 10_000 });
+    await session.click(/Graph view/);
+    await sleep(500);
+    await snap(session, "history-graph");
+
+    await session.press("f10");
+    await session.press("right");
+    await session.waitForText(/Graph view/, { timeout: 10_000 });
+    await session.click(/Graph view/);
+    await sleep(400);
+
     for (let step = 0; step < 3; step += 1) {
       await session.press("j");
       await sleep(180);
@@ -208,7 +241,31 @@ async function captureHistoryScene() {
 }
 
 // ---------------------------------------------------------------------------
-// Scene: line-level review — the cursor moves with j/k, `c` comments there.
+// Scene: static history output for pipes and explicit non-interactive use.
+// ---------------------------------------------------------------------------
+async function captureStaticHistoryScene() {
+  console.log("scene: static-history");
+  const repoDir = createHistoryDemoRepo();
+  const session = await launchHunkShell(repoDir);
+  try {
+    await session.waitForText(/❯/, { timeout: 15_000 });
+    await sleep(300);
+    await typeCommand(session, keyframer, "hunk log --static --max-count 5", {
+      8: "static-history-typing-1",
+      20: "static-history-typing-2",
+    });
+    await snap(session, "static-history-typed");
+    await session.press("enter");
+    await session.waitForText(/Make history range-selectable/, { timeout: 60_000 });
+    await sleep(500);
+    await snap(session, "static-history-output");
+  } finally {
+    session.close();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Scene: multiline selection becomes a comment and a navigable thread.
 // ---------------------------------------------------------------------------
 async function captureReviewScene() {
   console.log("scene: review");
@@ -218,34 +275,95 @@ async function captureReviewScene() {
     await session.waitForText(/src\//, { timeout: 60_000 });
     await ensureKeyboardIsLive(session, HUNK_KEYBOARD_PROBE);
     await sleep(500);
+    await snap(session, "review-overview");
 
-    // Walk the cursor down and back up, snapping every step so playback shows
-    // the line cursor actually traveling through the diff.
-    let walkFrame = 0;
-    const walk = async (key: "j" | "k", steps: number) => {
-      for (let step = 0; step < steps; step += 1) {
-        await session.press(key);
-        await sleep(120);
-        await snap(session, `review-walk-${String(walkFrame).padStart(2, "0")}`);
-        walkFrame += 1;
-      }
-    };
-    await walk("j", 10);
-    await walk("k", 4);
+    await session.press("v");
+    await sleep(200);
+    await snap(session, "review-selection-1");
+    for (let selected = 2; selected <= 4; selected += 1) {
+      await session.press("j");
+      await sleep(180);
+      await snap(session, `review-selection-${selected}`);
+    }
+    await session.waitForText(/c Comment\s+y Copy\s+Esc Clear/, { timeout: 10_000 });
 
     await session.press("c");
     await session.waitForText(/Draft note/, { timeout: 10_000 });
     await sleep(300);
     await snap(session, "review-draft");
 
-    await session.type("edge case: empty task list renders a blank summary");
+    await session.type("This branch needs an empty-state guard.");
     await sleep(300);
     await snap(session, "review-typed");
 
     await session.type("\x13"); // Ctrl+S saves the note
     await session.waitForText(/Your note/, { timeout: 10_000 });
     await sleep(500);
-    await snap(session, "review-note");
+    await snap(session, "review-note-root");
+
+    await session.type("R");
+    await session.waitForText(/Reply -/, { timeout: 10_000 });
+    await sleep(250);
+    await snap(session, "review-reply-draft");
+    await session.type("Agreed - I'll add a regression test.");
+    await session.type("\x13");
+    await session.waitForText(/Agreed - I'll add a regression test\./, { timeout: 10_000 });
+    await sleep(500);
+    await snap(session, "review-reply-saved");
+
+    await session.type("N");
+    await sleep(300);
+    await snap(session, "review-note-previous");
+    await session.press("n");
+    await sleep(300);
+    await snap(session, "review-note-next");
+  } finally {
+    session.close();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Scene: direct layout keys and the responsive files pane.
+// ---------------------------------------------------------------------------
+async function capturePolishScene() {
+  console.log("scene: polish");
+  const repoDir = createDemoRepo();
+  const session = await launchHunk(["diff", "--mode", "unified"], { cwd: repoDir });
+  try {
+    await session.waitForText(/src\//, { timeout: 60_000 });
+    await ensureKeyboardIsLive(session, HUNK_KEYBOARD_PROBE);
+    await sleep(400);
+    await snap(session, "polish-unified");
+
+    await session.press("2");
+    await sleep(500);
+    await snap(session, "polish-split");
+
+    await session.press("1");
+    await sleep(400);
+    await snap(session, "polish-unified-return");
+
+    await session.press("s");
+    await sleep(600);
+    await snap(session, "polish-sidebar");
+
+    const snapshot = await session.text({ immediate: true });
+    const dividerColumn = snapshot
+      .split("\n")
+      .map((line) => line.indexOf("│"))
+      .find((column) => column > 0);
+    if (dividerColumn === undefined) {
+      throw new Error("Files pane divider is not visible.");
+    }
+    await dragMouse(session, dividerColumn, 6, dividerColumn + 13, 6);
+    await session.waitForText(/⌄ src\//, { timeout: 10_000 });
+    await sleep(400);
+    await snap(session, "polish-sidebar-tree");
+
+    await session.click(/⌄ src\//, { first: true });
+    await session.waitForText(/› src\//, { timeout: 10_000 });
+    await sleep(350);
+    await snap(session, "polish-sidebar-collapsed");
   } finally {
     session.close();
   }
@@ -456,14 +574,16 @@ async function captureFileViewScene(
   }
 }
 
-// The current storyboard uses history; opt into reusable legacy scenes with a
-// comma-separated override, e.g. SCENES=review,pager.
-const wants = makeSceneFilter(process.env.SCENES ?? "history");
+// The current full-release storyboard uses these scenes; opt into reusable
+// legacy scenes with a comma-separated override, e.g. SCENES=pager,triage.
+const wants = makeSceneFilter(process.env.SCENES ?? "history,static-history,review,polish");
 
 async function main() {
   try {
     if (wants("history")) await captureHistoryScene();
+    if (wants("static-history")) await captureStaticHistoryScene();
     if (wants("review")) await captureReviewScene();
+    if (wants("polish")) await capturePolishScene();
     if (wants("stml")) await captureStmlScene();
     if (wants("cli")) await captureMarkupCliScene();
     if (wants("pager")) await capturePagerScene();
