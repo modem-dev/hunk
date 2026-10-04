@@ -57,6 +57,9 @@
 }
 
 .brand-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
   flex: none;
   color: var(--hunk-ink);
   font-size: 18px;

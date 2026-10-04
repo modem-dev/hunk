@@ -13,7 +13,12 @@ const installHref = context === "docs" ? "/docs/start/install/" : "/#install";
 ---
 
 <div class="brand-header-inner" data-context={context}>
-  <a class="brand-logo" href="/" aria-label="Hunk home">hunk</a>
+  <a class="brand-logo" href="/" aria-label="Hunk home">
+    <svg class="brand-logo-mark" width="24" height="24" viewBox="0 0 100 99" aria-hidden="true">
+      <path fill="currentColor" fill-rule="evenodd" d="M0 0h100v99H0zM6 5H46V28H94V93H54V70H46V93H6z"></path>
+    </svg>
+    <span>hunk</span>
+  </a>
   <div class="brand-header-actions">
     <nav class="brand-nav" aria-label="Main navigation">
       <a class="brand-install" href={installHref}>Install</a>
