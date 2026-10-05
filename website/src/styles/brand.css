@@ -240,6 +240,11 @@
 }
 
 @media (max-width: 430px) {
+  /* The mark alone carries the logo here; the wordmark would push the nav onto a second row. */
+  .brand-header-inner[data-context="marketing"] .brand-logo span {
+    display: none;
+  }
+
   .brand-header-inner[data-context="marketing"] .brand-discord,
   .brand-header-inner[data-context="marketing"] .brand-star-label {
     display: none;
