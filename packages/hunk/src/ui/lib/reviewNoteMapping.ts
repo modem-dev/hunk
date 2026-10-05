@@ -12,6 +12,7 @@
  */
 import type { LiveComment } from "../../core/liveComments";
 import { reviewLineAnchor } from "../../core/review/anchors";
+import type { ReviewAnnotationTarget } from "../../core/review/annotations";
 import type { ReviewHunkSpan } from "../../core/review/geometry";
 import {
   isRenderableStoredReviewNote,
@@ -35,6 +36,40 @@ export interface StoredReviewNoteRenderMetadata {
   hasNextSibling?: boolean;
   ancestorHasNextSibling?: readonly boolean[];
   semanticallyStored: true;
+}
+
+/** Read terminal-only semantic note metadata without granting it to static sidecars. */
+export function storedReviewNoteMetadata(
+  annotation: AgentAnnotation,
+): StoredReviewNoteRenderMetadata | undefined {
+  const candidate = annotation as AgentAnnotation & Partial<StoredReviewNoteRenderMetadata>;
+  return candidate.semanticallyStored === true && typeof candidate.reviewNoteId === "string"
+    ? (candidate as AgentAnnotation & StoredReviewNoteRenderMetadata)
+    : undefined;
+}
+
+/** Read the semantic placement retained on stored terminal note projections. */
+export function storedReviewNoteTarget(
+  annotation: AgentAnnotation,
+): ReviewAnnotationTarget | undefined {
+  if (!storedReviewNoteMetadata(annotation)) {
+    return undefined;
+  }
+
+  const candidate = annotation as AgentAnnotation & {
+    hunkIndex?: unknown;
+    side?: unknown;
+    line?: unknown;
+  };
+  return Number.isInteger(candidate.hunkIndex) &&
+    (candidate.side === "old" || candidate.side === "new") &&
+    Number.isInteger(candidate.line)
+    ? {
+        hunkIndex: candidate.hunkIndex as number,
+        side: candidate.side,
+        line: candidate.line as number,
+      }
+    : undefined;
 }
 
 /** Compatibility shape accepted by older terminal-only test projections. */

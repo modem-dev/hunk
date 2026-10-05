@@ -555,6 +555,66 @@ describe("useTerminalReview", () => {
     }
   });
 
+  test("annotated navigation follows stored note ownership after a reload moves hunks", async () => {
+    const before = Array.from({ length: 60 }, (_unused, index) => `line ${index + 1}`);
+    const initialAfter = [...before];
+    initialAfter[29] = "line 30 changed";
+    const reloadedAfter = [...before];
+    reloadedAfter[0] = "line 1 changed";
+    reloadedAfter[59] = "line 60 changed";
+    const alpha = createDiffFile("alpha", "alpha.ts", "alpha old\n", "alpha new\n");
+    const initialBeta = createDiffFile("beta", "beta.ts", lines(...before), lines(...initialAfter));
+    const { controllerRef, setFilesRef, setup } = await renderTerminalReview([alpha, initialBeta]);
+
+    try {
+      await flush(setup);
+      let noteId = "";
+      await act(async () => {
+        const controller = expectValue(controllerRef.current);
+        controller.startUserNote("beta", 0, { side: "new", line: 30 });
+        controller.updateDraftNote("Stored note");
+        noteId = controller.saveDraftNote()?.id ?? "";
+      });
+      await flush(setup);
+      expect(expectValue(controllerRef.current).userNotesByFileId.beta?.[0]).toMatchObject({
+        id: noteId,
+        hunkIndex: 0,
+        line: 30,
+      });
+
+      await act(async () => {
+        expectValue(setFilesRef.current)([
+          alpha,
+          createDiffFile("beta", "beta.ts", lines(...before), lines(...reloadedAfter)),
+        ]);
+      });
+      await flush(setup);
+
+      const controller = expectValue(controllerRef.current);
+      expect(
+        controller.visibleFiles.find((file) => file.id === "beta")?.metadata.hunks,
+      ).toHaveLength(2);
+      expect(controller.userNotesByFileId.beta).toHaveLength(1);
+      expect(controller.userNotesByFileId.beta?.[0]).toMatchObject({
+        id: noteId,
+        hunkIndex: 0,
+        line: 30,
+      });
+      await act(async () => {
+        controller.selectHunk("alpha", 0);
+        controller.moveSelection("annotated-hunk", 1);
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).selectedFile?.id).toBe("beta");
+      expect(expectValue(controllerRef.current).selectedHunkIndex).toBe(0);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("live comments validate markup at the published live width", async () => {
     const noteGeometry: { current: { layout: "split" | "unified"; width: number } | null } = {
       current: { layout: "unified", width: 120 },
