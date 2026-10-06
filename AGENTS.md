@@ -154,7 +154,7 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
 
 ## source formatting
 
-- Separate functions, class methods, and nested helpers with a blank line; keep JSDoc attached to its declaration.
+- Separate functions, class methods, nested helpers, and test declarations with a blank line; keep JSDoc and test-specific comments attached to their declaration.
 - Use blank lines between logical phases inside functions. Keep related statements grouped rather than packing an entire workflow into one dense block.
 
 ## code comments

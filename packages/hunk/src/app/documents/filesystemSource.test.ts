@@ -21,6 +21,7 @@ import {
 } from "./filesystemSource";
 
 const roots: string[] = [];
+
 /** Create one isolated filesystem collection. */
 async function createTestRoot() {
   // Windows temp paths may use 8.3 aliases; source keys use canonical paths on every platform.
@@ -28,6 +29,7 @@ async function createTestRoot() {
   roots.push(root);
   return root;
 }
+
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
@@ -50,6 +52,7 @@ describe("filesystem documents", () => {
     expect(document.kind).toBe("text");
     if (document.kind === "text") expect(document.text).toBe("# complete\nunchanged\n");
   });
+
   test("refuses binary, invalid UTF-8, oversize, missing, special and escaping entries", async () => {
     const root = await createTestRoot();
     await writeFile(join(root, "binary"), Buffer.from([0, 1]));
@@ -75,6 +78,7 @@ describe("filesystem documents", () => {
     expect(await source.read(root)).toMatchObject({ kind: "unavailable", reason: "special" });
     expect(await source.read(join(root, "..", "escape"))).toMatchObject({ kind: "unavailable" });
   });
+
   test.skipIf(process.platform === "win32")(
     "does not follow file or directory symlinks, even when opened explicitly",
     async () => {
@@ -105,6 +109,7 @@ describe("filesystem documents", () => {
       expect(await direct.read(direct.root.key)).toMatchObject({ reason: "symlink" });
     },
   );
+
   test("honors Git ignore rules without hiding tracked files and reports statuses", async () => {
     const root = await createTestRoot();
     const runGit = (...args: string[]) => {
@@ -125,6 +130,7 @@ describe("filesystem documents", () => {
     expect(listing.entries.find((entry) => entry.name === "tracked.log")?.ignored).toBe(false);
     expect(listing.entries.find((entry) => entry.name === "tracked.log")?.status).toBe("A");
   });
+
   test("metadata queries do not execute repository fsmonitor hooks or clean/process filters", async () => {
     const root = await createTestRoot();
     const marker = join(root, "executed");
@@ -181,6 +187,7 @@ describe("filesystem documents", () => {
     expect((await source.list(root)).kind).toBe("entries");
     expect(existsSync(marker)).toBe(false);
   });
+
   // Windows chmod does not revoke read access; root bypasses Unix permission modes.
   test.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
     "shows a placeholder for unreadable files",
@@ -200,6 +207,7 @@ describe("filesystem documents", () => {
       }
     },
   );
+
   test("bounds directory enumeration and cancels reads", async () => {
     const root = await createTestRoot();
     await Promise.all(
@@ -217,6 +225,7 @@ describe("filesystem documents", () => {
     await expect(source.list(root, abort.signal)).rejects.toThrow();
     await expect(source.read(root, abort.signal)).rejects.toThrow();
   }, 30_000);
+
   test("edits a private copy, preserves BOM bytes, and saves through the original handle", async () => {
     const root = await createTestRoot();
     const file = join(root, "selected.txt");
@@ -242,6 +251,7 @@ describe("filesystem documents", () => {
     ).toBeNull();
     expect(await readFile(file, "utf8")).toBe("after\n");
   });
+
   test("refuses editor writeback after attempted atomic replacement and retains the edited copy", async () => {
     const root = await createTestRoot();
     const file = join(root, "selected.txt");
@@ -268,6 +278,7 @@ describe("filesystem documents", () => {
     expect(await readFile(file, "utf8")).toBe(replaced ? "replacement" : "before");
     expect(await readFile(copyPath, "utf8")).toBe("edited");
   });
+
   test("rejects concurrent in-place changes without overwriting either the original or editor copy", async () => {
     const root = await createTestRoot();
     const file = join(root, "selected.txt");
@@ -285,6 +296,7 @@ describe("filesystem documents", () => {
     expect(await readFile(file, "utf8")).toBe("concurrent");
     expect(await readFile(copyPath, "utf8")).toBe("edited");
   });
+
   test.skipIf(process.platform === "win32")(
     "never passes a collection path to the editor after a symlink swap",
     async () => {
@@ -309,6 +321,7 @@ describe("filesystem documents", () => {
       expect(await readFile(join(root, "original.txt"), "utf8")).toBe("before");
     },
   );
+
   test.skipIf(process.platform !== "linux")(
     "binds enumeration to the checked directory during a swap and restore",
     async () => {
@@ -335,6 +348,7 @@ describe("filesystem documents", () => {
         expect(listing.entries.map((entry) => entry.name)).toEqual(["inside.txt"]);
     },
   );
+
   test("rejects incomplete ignore output when the query times out or fails", async () => {
     const root = await createTestRoot();
     expect(Bun.spawnSync(["git", "init", "--quiet"], { cwd: root }).exitCode).toBe(0);
@@ -358,6 +372,7 @@ describe("filesystem documents", () => {
       });
     }
   });
+
   test("cancels an in-flight ignore query instead of returning a partial directory", async () => {
     const root = await createTestRoot();
     expect(Bun.spawnSync(["git", "init", "--quiet"], { cwd: root }).exitCode).toBe(0);
@@ -376,6 +391,7 @@ describe("filesystem documents", () => {
     await expect(source.list(root, abort.signal)).rejects.toThrow();
     expect(launched).toBe(true);
   });
+
   test("observes atomic replacement and releases subscriptions", async () => {
     const root = await createTestRoot();
     const file = join(root, "selected.txt");

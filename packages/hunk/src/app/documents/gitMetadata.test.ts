@@ -19,6 +19,7 @@ describe("directory status markers", () => {
     ]);
     expect(markers.has(join(key, "old name.ts"))).toBe(false);
   });
+
   test("omits status when metadata is unavailable", () => {
     const repository = join(tmpdir(), "hunk-status-test");
     expect(directoryStatusMarkers(repository, repository, null).size).toBe(0);

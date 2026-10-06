@@ -81,6 +81,7 @@ describe("document browser controller", () => {
     browser.close();
     expect(fixture.subscriptions()).toBe(0);
   });
+
   test("stale reads and reads settling after shutdown cannot replace the active document", async () => {
     const fixture = createTestSource();
     const pending = new Map<string, (result: DocumentReadResult) => void>();
@@ -99,6 +100,7 @@ describe("document browser controller", () => {
     await browser.refresh();
     expect(browser.getSnapshot()).toBe(before);
   });
+
   test("watch/manual refreshes serialize, retain selection, and reread only demanded content", async () => {
     const fixture = createTestSource();
     const browser = new DocumentBrowserController(fixture.source);

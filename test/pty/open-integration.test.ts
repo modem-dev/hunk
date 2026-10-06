@@ -61,6 +61,7 @@ describe("hunk open", () => {
       session.close();
     }
   });
+
   test("wraps complete documents with exact geometry and preserves line navigation across toggles", async () => {
     const root = createOpenTestFixture();
     const path = join(root, "wrapped.txt");
@@ -86,6 +87,7 @@ describe("hunk open", () => {
       session.close();
     }
   });
+
   test("opens a complete file, scrolls, resizes and reuses normal theme/help/menu chrome", async () => {
     const root = createOpenTestFixture();
     const session = await harness.launchHunk({
@@ -123,6 +125,7 @@ describe("hunk open", () => {
       session.close();
     }
   });
+
   test("expands directories by keyboard and mouse, toggles hidden files, watches and shows binary placeholders", async () => {
     const root = createOpenTestFixture();
     const session = await harness.launchHunk({ args: ["open", root], cols: 120, rows: 24 });
