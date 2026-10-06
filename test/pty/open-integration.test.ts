@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createPtyHarness } from "./harness";
@@ -32,6 +32,35 @@ function createOpenTestFixture() {
 }
 
 describe("hunk open", () => {
+  test("edits through a private copy and refreshes the saved complete document", async () => {
+    const root = createOpenTestFixture();
+    const path = join(root, "README.md");
+    const editor = join(root, "editor.mjs");
+    const target = join(root, "editor-target.txt");
+    writeFileSync(
+      editor,
+      `import { writeFileSync } from "node:fs";
+      writeFileSync(${JSON.stringify(target)}, process.argv[2]);
+      writeFileSync(process.argv[2], "Saved document from editor\\n");`,
+    );
+    const session = await harness.launchHunk({
+      args: ["open", path],
+      cols: 100,
+      rows: 20,
+      env: { EDITOR: `"${process.execPath}" "${editor}"` },
+    });
+    try {
+      await session.waitForText("Whole document");
+      await harness.ensureKeyboardIsLive(session);
+      await session.press("e");
+      await session.waitForText("Saved document from editor");
+      expect(readFileSync(target, "utf8")).not.toBe(path);
+      expect(readFileSync(path, "utf8")).toBe("Saved document from editor\n");
+      await session.press("q");
+    } finally {
+      session.close();
+    }
+  });
   test("wraps complete documents with exact geometry and preserves line navigation across toggles", async () => {
     const root = createOpenTestFixture();
     const path = join(root, "wrapped.txt");

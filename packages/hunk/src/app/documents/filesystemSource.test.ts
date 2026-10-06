@@ -1,6 +1,16 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { chmod, mkdtemp, mkdir, rename, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdtemp,
+  mkdir,
+  opendir,
+  readFile,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 import { devNull, tmpdir } from "node:os";
 import {
@@ -80,7 +90,14 @@ describe("filesystem documents", () => {
       expect(await source.read(join(root, "link", "secret"))).toMatchObject({
         kind: "unavailable",
       });
-      expect(await source.editablePath?.(join(root, "file-link"))).toBeNull();
+      let launched = false;
+      expect(
+        await source.edit?.(join(root, "file-link"), async () => {
+          launched = true;
+          return null;
+        }),
+      ).toBe("No editable regular text file selected.");
+      expect(launched).toBe(false);
       const direct = await createFilesystemSource(join(root, "file-link"));
       expect(direct.root.kind).toBe("symlink");
       expect(await direct.read(direct.root.key)).toMatchObject({ reason: "symlink" });
@@ -197,6 +214,125 @@ describe("filesystem documents", () => {
     abort.abort();
     await expect(source.list(root, abort.signal)).rejects.toThrow();
     await expect(source.read(root, abort.signal)).rejects.toThrow();
+  }, 30_000);
+  test("edits a private copy, preserves BOM bytes, and saves through the original handle", async () => {
+    const root = await createTestRoot();
+    const file = join(root, "selected.txt");
+    const original = Buffer.from("\ufeffbefore\n");
+    await writeFile(file, original);
+    const source = await createFilesystemSource(root);
+    let copyPath = "";
+    expect(
+      await source.edit?.(file, async (copy) => {
+        copyPath = copy;
+        expect(copy).not.toBe(file);
+        expect(await readFile(copy)).toEqual(original);
+        return null;
+      }),
+    ).toBeNull();
+    expect(await readFile(file)).toEqual(original);
+    expect(existsSync(copyPath)).toBe(false);
+    expect(
+      await source.edit?.(file, async (copy) => {
+        await writeFile(copy, "after\n");
+        return null;
+      }),
+    ).toBeNull();
+    expect(await readFile(file, "utf8")).toBe("after\n");
+  });
+  test("refuses editor writeback after atomic replacement and retains the edited copy", async () => {
+    const root = await createTestRoot();
+    const file = join(root, "selected.txt");
+    await writeFile(file, "before");
+    const source = await createFilesystemSource(root);
+    let copyPath = "";
+    const result = await source.edit?.(file, async (copy) => {
+      copyPath = copy;
+      await writeFile(copy, "edited");
+      const replacement = join(root, "replacement");
+      await writeFile(replacement, "replacement");
+      await rename(replacement, file);
+      return null;
+    });
+    // Register retained recovery directories for test cleanup as well.
+    roots.push(join(copyPath, ".."));
+    expect(result).toContain("Document changed while editing");
+    expect(result).toContain("Editor copy retained");
+    expect(await readFile(file, "utf8")).toBe("replacement");
+    expect(await readFile(copyPath, "utf8")).toBe("edited");
+  });
+  test.skipIf(process.platform === "win32")(
+    "never passes a collection path to the editor after a symlink swap",
+    async () => {
+      const root = await createTestRoot();
+      const outside = await createTestRoot();
+      const file = join(root, "selected.txt");
+      const secret = join(outside, "secret.txt");
+      await writeFile(file, "before");
+      await writeFile(secret, "outside");
+      const source = await createFilesystemSource(root);
+      let copyPath = "";
+      const result = await source.edit?.(file, async (copy) => {
+        copyPath = copy;
+        await rename(file, join(root, "original.txt"));
+        await symlink(secret, file);
+        await writeFile(copy, "edited");
+        return null;
+      });
+      roots.push(join(copyPath, ".."));
+      expect(result).toContain("Document changed while editing");
+      expect(await readFile(secret, "utf8")).toBe("outside");
+      expect(await readFile(join(root, "original.txt"), "utf8")).toBe("before");
+    },
+  );
+  test.skipIf(process.platform !== "linux")(
+    "binds enumeration to the checked directory during a swap and restore",
+    async () => {
+      const root = await createTestRoot();
+      const outside = await createTestRoot();
+      const directory = join(root, "nested");
+      const retained = join(root, "retained");
+      await mkdir(directory);
+      await writeFile(join(directory, "inside.txt"), "inside");
+      await writeFile(join(outside, "secret.txt"), "outside");
+      const source = await createFilesystemSource(root, {
+        async openDirectory(path) {
+          await rename(directory, retained);
+          await symlink(outside, directory, "dir");
+          const opened = await opendir(path);
+          await rm(directory);
+          await rename(retained, directory);
+          return opened;
+        },
+      });
+      const listing = await source.list(directory);
+      expect(listing.kind).toBe("entries");
+      if (listing.kind === "entries")
+        expect(listing.entries.map((entry) => entry.name)).toEqual(["inside.txt"]);
+    },
+  );
+  test("rejects incomplete ignore output when the query times out or fails", async () => {
+    const root = await createTestRoot();
+    expect(Bun.spawnSync(["git", "init", "--quiet"], { cwd: root }).exitCode).toBe(0);
+    await writeFile(join(root, "ignored.log"), "ignored");
+    await writeFile(join(root, "another.log"), "ignored");
+    for (const script of [
+      'process.stdout.write("partial\\0"); setTimeout(() => {}, 10000);',
+      'process.stdout.write("partial\\0"); process.exit(2);',
+    ]) {
+      const source = await createFilesystemSource(root, {
+        spawn: ((...args: Parameters<typeof Bun.spawn>) => {
+          const [command, options] = args;
+          if (Array.isArray(command) && command.includes("check-ignore"))
+            return Bun.spawn([process.execPath, "-e", script], options);
+          throw new Error("Unexpected subprocess.");
+        }) as typeof Bun.spawn,
+      });
+      expect(await source.list(root)).toMatchObject({
+        kind: "unavailable",
+        detail: "Git ignore query did not complete; refresh to retry.",
+      });
+    }
   });
   test("observes atomic replacement and releases subscriptions", async () => {
     const root = await createTestRoot();

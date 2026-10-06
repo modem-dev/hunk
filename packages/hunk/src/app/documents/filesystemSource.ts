@@ -1,8 +1,8 @@
 import { constants, lstatSync, watch } from "node:fs";
-import { lstat, open, opendir, realpath } from "node:fs/promises";
+import { lstat, mkdtemp, open, opendir, realpath, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { createHash } from "node:crypto";
-import { devNull } from "node:os";
+import { devNull, tmpdir } from "node:os";
 import { execFile } from "node:child_process";
 import type {
   DirectoryReadResult,
@@ -73,7 +73,16 @@ function unavailable(error: unknown): DocumentReadResult & { kind: "unavailable"
 }
 
 /** Open a bounded filesystem collection; directory expansion never scans descendants. */
-export async function createFilesystemSource(inputPath: string): Promise<DocumentSource> {
+export async function createFilesystemSource(
+  inputPath: string,
+  {
+    openDirectory = opendir,
+    spawn = Bun.spawn,
+  }: {
+    openDirectory?: typeof opendir;
+    spawn?: typeof Bun.spawn;
+  } = {},
+): Promise<DocumentSource> {
   const input = resolve(inputPath);
   const initial = await lstat(input);
   // Canonicalize the parent, not the final entry: explicitly opened symlinks retain their placeholder.
@@ -82,6 +91,7 @@ export async function createFilesystemSource(inputPath: string): Promise<Documen
       ? await realpath(input)
       : join(await realpath(dirname(input)), basename(input));
   const base = initial.isDirectory() && !initial.isSymbolicLink() ? path : dirname(path);
+  const baseIdentity = await lstat(base);
   const root: DocumentEntry = {
     key: path,
     name: basename(path) || path,
@@ -99,7 +109,12 @@ export async function createFilesystemSource(inputPath: string): Promise<Documen
     const segments = rel.split(sep).filter(Boolean);
     let parent = base;
     const baseInfo = await lstat(base);
-    if (!baseInfo.isDirectory() || baseInfo.isSymbolicLink())
+    if (
+      !baseInfo.isDirectory() ||
+      baseInfo.isSymbolicLink() ||
+      baseInfo.dev !== baseIdentity.dev ||
+      baseInfo.ino !== baseIdentity.ino
+    )
       throw new Error("Collection root changed.");
     for (const segment of segments.slice(0, -1)) {
       parent = join(parent, segment);
@@ -107,9 +122,44 @@ export async function createFilesystemSource(inputPath: string): Promise<Documen
       if (!info.isDirectory() || info.isSymbolicLink())
         throw new Error("Symlink traversal is unavailable.");
     }
-    if ((await realpath(dirname(key))) !== dirname(key))
+    if (relative(dirname(key), await realpath(dirname(key))) !== "")
       throw new Error("Collection ancestry changed.");
     return key;
+  }
+
+  /** Bind Linux opens to the collection handle and walk ancestors without following links. */
+  async function openCheckedPath(key: string, flags: number) {
+    await safePath(key);
+    if (process.platform !== "linux") return open(key, flags);
+    let parent = await open(
+      base,
+      constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+    );
+    let transferred = false;
+    try {
+      const opened = await parent.stat();
+      if (opened.dev !== baseIdentity.dev || opened.ino !== baseIdentity.ino)
+        throw new Error("Collection root changed during opening.");
+      const segments = relative(base, key).split(sep).filter(Boolean);
+      for (const segment of segments.slice(0, -1)) {
+        const child = await open(
+          `/proc/self/fd/${parent.fd}/${segment}`,
+          constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+        );
+        await parent.close();
+        parent = child;
+      }
+      if (!segments.length) {
+        transferred = true;
+        return parent;
+      }
+      return await open(
+        `/proc/self/fd/${parent.fd}/${segments.at(-1)}`,
+        flags | constants.O_NOFOLLOW,
+      );
+    } finally {
+      if (!transferred) await parent.close();
+    }
   }
 
   /** Read one regular file through a bounded handle, including files that grow during reading. */
@@ -132,7 +182,7 @@ export async function createFilesystemSource(inputPath: string): Promise<Documen
           reason: "too-large",
           detail: "File exceeds the 1 MiB viewing limit.",
         };
-      const handle = await open(
+      const handle = await openCheckedPath(
         key,
         constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0),
       );
@@ -201,27 +251,52 @@ export async function createFilesystemSource(inputPath: string): Promise<Documen
           detail: "This directory is unavailable; symlinks are not followed.",
         };
       const entries: DocumentEntry[] = [];
-      for await (const child of await opendir(key)) {
-        signal?.throwIfAborted();
-        if (entries.length === DIRECTORY_MAX_ENTRIES)
-          return {
-            kind: "unavailable",
-            detail: "Directory exceeds the 10,000-entry browsing limit.",
-          };
-        entries.push({
-          key: join(key, child.name),
-          name: child.name,
-          displayPath: relative(base, join(key, child.name)),
-          kind: entryKind(child),
-          hidden: child.name.startsWith("."),
-        });
+      // Linux exposes a handle-bound directory path. Other platforms validate the path again
+      // before publishing; portable Node APIs cannot bind opendir to a directory descriptor.
+      const handle =
+        process.platform === "linux"
+          ? await openCheckedPath(
+              key,
+              constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+            )
+          : null;
+      try {
+        if (handle) {
+          const opened = await handle.stat();
+          if (opened.dev !== info.dev || opened.ino !== info.ino)
+            throw new Error("Directory changed during opening.");
+        }
+        await safePath(key);
+        for await (const child of await openDirectory(
+          handle ? `/proc/self/fd/${handle.fd}` : key,
+        )) {
+          signal?.throwIfAborted();
+          if (entries.length === DIRECTORY_MAX_ENTRIES)
+            return {
+              kind: "unavailable",
+              detail: "Directory exceeds the 10,000-entry browsing limit.",
+            };
+          entries.push({
+            key: join(key, child.name),
+            name: child.name,
+            displayPath: relative(base, join(key, child.name)),
+            kind: entryKind(child),
+            hidden: child.name.startsWith("."),
+          });
+        }
+        await safePath(key);
+        const current = await lstat(key);
+        if (current.isSymbolicLink() || current.dev !== info.dev || current.ino !== info.ino)
+          throw new Error("Directory changed during enumeration.");
+      } finally {
+        await handle?.close();
       }
       const repository = (await git(key, ["rev-parse", "--show-toplevel"], signal))?.trim();
       if (repository && entries.length) {
         const paths = entries.map((entry) => entry.key);
         // Git supplies its own ignore semantics, including tracked files, nested rules and global excludes.
         signal?.throwIfAborted();
-        const process = Bun.spawn(
+        const process = spawn(
           [
             "git",
             "--no-optional-locks",
@@ -241,13 +316,28 @@ export async function createFilesystemSource(inputPath: string): Promise<Documen
             stderr: "ignore",
           },
         );
-        const abort = () => process.kill();
+        let interrupted = false;
+        const abort = () => {
+          interrupted = true;
+          process.kill();
+        };
         signal?.addEventListener("abort", abort, { once: true });
         const timeout = setTimeout(abort, 1500);
         let ignored: Set<string>;
         try {
-          ignored = new Set((await new Response(process.stdout).text()).split("\0"));
-          await process.exited;
+          const output = await new Response(process.stdout).text();
+          const exitCode = await process.exited;
+          if (interrupted || (exitCode !== 0 && exitCode !== 1))
+            return {
+              kind: "unavailable",
+              detail: "Git ignore query did not complete; refresh to retry.",
+            };
+          ignored = new Set(
+            output
+              .split("\0")
+              .filter(Boolean)
+              .map((path) => resolve(path)),
+          );
         } finally {
           clearTimeout(timeout);
           signal?.removeEventListener("abort", abort);
@@ -323,12 +413,100 @@ export async function createFilesystemSource(inputPath: string): Promise<Documen
     root,
     read,
     list,
-    async editablePath(key) {
+    async edit(key, launch) {
+      let temporary: string | undefined;
+      let handle: Awaited<ReturnType<typeof open>> | undefined;
+      let keepCopy = false;
       try {
         await safePath(key);
-        return entryKind(await lstat(key)) === "file" ? key : null;
-      } catch {
+        const info = await lstat(key);
+        if (!info.isFile() || info.isSymbolicLink() || info.size > DOCUMENT_MAX_BYTES)
+          return "No editable regular text file selected.";
+        handle = await openCheckedPath(
+          key,
+          constants.O_RDWR | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0),
+        );
+        const opened = await handle.stat();
+        if (!opened.isFile() || opened.dev !== info.dev || opened.ino !== info.ino)
+          throw new Error("Document changed during opening.");
+        await safePath(key);
+        const original = await read(key);
+        if (original.kind !== "text") return original.detail;
+        // Editors may replace their target atomically or defer opening it. Give them a private
+        // copy, never the checked collection path; write back through the retained file handle.
+        temporary = await mkdtemp(join(tmpdir(), "hunk-edit-"));
+        const copy = join(temporary, basename(key));
+        const snapshot = Buffer.alloc(DOCUMENT_MAX_BYTES + 1);
+        let snapshotSize = 0;
+        while (snapshotSize < snapshot.length) {
+          const result = await handle.read(
+            snapshot,
+            snapshotSize,
+            snapshot.length - snapshotSize,
+            snapshotSize,
+          );
+          if (!result.bytesRead) break;
+          snapshotSize += result.bytesRead;
+        }
+        const originalBytes = snapshot.subarray(0, snapshotSize);
+        if (createHash("sha256").update(originalBytes).digest("hex") !== original.identity)
+          throw new Error("Document changed while preparing editor copy.");
+        await writeFile(copy, originalBytes, { mode: 0o600 });
+        keepCopy = true;
+        const failure = await launch(copy);
+        if (failure) throw new Error(failure);
+        const edited = await open(
+          copy,
+          constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0),
+        );
+        let bytes: Buffer;
+        try {
+          if (!(await edited.stat()).isFile())
+            throw new Error("Editor output is not a regular file.");
+          bytes = Buffer.alloc(DOCUMENT_MAX_BYTES + 1);
+          let count = 0;
+          while (count < bytes.length) {
+            const result = await edited.read(bytes, count, bytes.length - count, count);
+            if (!result.bytesRead) break;
+            count += result.bytesRead;
+          }
+          bytes = bytes.subarray(0, count);
+          if (count > DOCUMENT_MAX_BYTES || bytes.includes(0))
+            throw new Error("Editor output exceeds the text viewing policy.");
+          new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+        } finally {
+          await edited.close();
+        }
+        const current = await read(key);
+        const currentInfo = await lstat(key);
+        if (
+          current.kind !== "text" ||
+          current.identity !== original.identity ||
+          currentInfo.isSymbolicLink() ||
+          currentInfo.dev !== opened.dev ||
+          currentInfo.ino !== opened.ino
+        )
+          throw new Error("Document changed while editing; original was not overwritten.");
+        if (createHash("sha256").update(bytes).digest("hex") === original.identity) {
+          keepCopy = false;
+          return null;
+        }
+        // Never reopen the collection path for writing after the editor returns.
+        let count = 0;
+        while (count < bytes.length) {
+          const result = await handle.write(bytes, count, bytes.length - count, count);
+          if (!result.bytesWritten) throw new Error("Cannot save editor output.");
+          count += result.bytesWritten;
+        }
+        await handle.truncate(bytes.length);
+        keepCopy = false;
         return null;
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : "Cannot edit this entry.";
+        return keepCopy ? `${detail} Editor copy retained in ${temporary}.` : detail;
+      } finally {
+        await handle?.close();
+        if (temporary && !keepCopy) await rm(temporary, { recursive: true, force: true });
       }
     },
     observe(keys, onChange) {

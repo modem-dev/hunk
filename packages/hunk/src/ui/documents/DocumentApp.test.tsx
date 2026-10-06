@@ -74,6 +74,16 @@ test("the session host mounts documents, honors remaps and acknowledges external
     await setup.renderOnce();
     expect(setup.captureCharFrame()).toContain("const completeDocument = 42;");
     expect(setup.captureCharFrame()).not.toContain("document:opaque");
+    const edit = mock(async (_key: string) => "Source-owned editor capability invoked.");
+    route.controller.source.edit = edit;
+    await act(async () => {
+      setup.mockInput.pressKey("e");
+      await Bun.sleep(20);
+    });
+    await setup.renderOnce();
+    expect(edit).toHaveBeenCalledTimes(1);
+    expect(edit.mock.calls[0]?.[0]).toBe("document:opaque");
+    expect(setup.captureCharFrame()).toContain("Source-owned editor capability");
     await act(async () => setup.mockInput.pressTab());
     await act(async () => setup.mockInput.pressArrow("down"));
     await setup.renderOnce();

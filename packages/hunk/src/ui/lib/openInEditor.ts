@@ -169,23 +169,27 @@ export function openSelectedFileInEditor({
   });
 }
 
-/** Open an explicitly authorized document path without requiring a review or hunk model. */
+/** Launch the user-selected editor without requiring a review or hunk model. */
 export function openFileInEditor({
   filePath,
   displayPath = filePath,
   line,
   renderer,
+  wait = false,
 }: {
   filePath: string;
   displayPath?: string;
   line: number;
   renderer: Pick<CliRenderer, "suspend" | "resume" | "isDestroyed">;
+  wait?: boolean;
 }) {
   if (renderer.isDestroyed) return "The terminal session has closed.";
   const editor = process.env.EDITOR?.trim();
   if (!editor) return "$EDITOR is not set.";
   if (!existsSync(filePath)) return `Cannot edit ${displayPath}: file does not exist on disk.`;
   const command = buildEditorCommand({ editor, filePath, line });
+  if (wait && [...CODE_STYLE_EDITORS, "zed", "zeditor"].includes(editorProgram(editor)))
+    command.args.unshift("--wait");
 
   const shouldSuspend = shouldSuspendForEditor(editor);
   if (shouldSuspend) {

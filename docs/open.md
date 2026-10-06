@@ -18,7 +18,8 @@ hunk open file.ts --wrap --tab-width 4
 - Tab: switch tree/document focus. `s`: toggle the tree.
 - PageUp/PageDown, `g`/`G`, Home/End: scroll the focused surface.
 - `i`: toggle hidden and Git-ignored entries together. Hidden entries are names starting with `.`.
-- `e`: open the displayed regular file in `$EDITOR`, using the visible line as the editor target.
+- `e`: edit a private copy of the displayed regular file in `$EDITOR`, using the visible line as
+  the editor target; save back when the editor exits.
 - `t`, `l`, `w`, `?`, `r`, `q`: themes, line numbers, wrapping, help, refresh, quit.
 - File/View/Help menus provide the same actions with mouse support. F10 opens the menu by keyboard.
 
@@ -45,7 +46,8 @@ scroll position; selecting a directory does not replace the document already dis
 In a Git worktree, Git supplies ignore rules and lightweight status markers. Metadata queries are
 optional, bounded, and asynchronous; repository fsmonitor hooks and clean/process filters are
 disabled. Status queries do not recurse into submodules or fetch missing objects. Ordinary
-directory browsing works without Git. Hidden and
+directory browsing works without Git. An interrupted or failed ignore query makes that directory
+unavailable rather than treating partial ignore output as complete. Hidden and
 ignored entries are initially excluded, but an explicitly named hidden file still opens normally.
 
 Symlinks are listed but not followed, including explicitly opened links and symlinked descendants.
@@ -53,6 +55,17 @@ Devices and other non-regular entries are not opened. Binary/non-UTF-8 files, fi
 and missing or unreadable entries show a placeholder. Each directory is limited to 10,000 entries
 and at most 128 directories may be expanded. Source reads remain bounded when a file grows while
 it is being read. Terminal control sequences are stripped before painting.
+
+On Linux, directory enumeration uses the checked directory's retained handle. Other platforms
+recheck ancestry and directory identity before publishing entries, but portable Node APIs do not
+provide handle-relative directory enumeration. Browsing is not a sandbox against a hostile process
+that can repeatedly replace and restore ancestors; use it on trusted local directories.
+
+Editors receive a private temporary copy, not a checked collection path. Hunk retains the original
+file handle and saves through it only if the file identity and content still match. Concurrent
+replacement or modification cancels writeback and retains the edited copy at the path shown in the
+notice. Editor errors also retain that copy. Known GUI editors receive `--wait`; custom editor
+wrappers must wait until editing finishes. `$EDITOR` itself is trusted code, not sandboxed.
 
 Expanded directories and the displayed file's parent are observed for changes, covering atomic
 file replacements and deletions. Watch notifications are debounced; manual and watch refreshes
@@ -72,5 +85,6 @@ session to the broker. User extensions remain review-specific and are not loaded
 The source contract is currently internal; a future public document extension API should expose
 explicit capabilities without weakening review navigation or workspace-write policies.
 
-Stdin, multiple path arguments, and `file:line` addressing are deferred. The browser never writes
-files itself; edits happen only in the explicitly launched external editor.
+Stdin, multiple path arguments, and `file:line` addressing are deferred. The browser writes only
+when saving a private copy from an explicitly launched external editor; it does not reopen the
+collection path for writeback.

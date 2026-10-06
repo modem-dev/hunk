@@ -30,6 +30,6 @@ export interface DocumentSource {
   list(key: string, signal?: AbortSignal): Promise<DirectoryReadResult>;
   /** Observe only demanded entries; disposing releases every watcher owned by this subscription. */
   observe?(keys: readonly string[], onChange: () => void): () => void;
-  /** Resolve an explicitly selected regular document for an external editor, not arbitrary paths. */
-  editablePath?(key: string): Promise<string | null>;
+  /** Edit a private copy and save through the source-owned handle, never a checked path string. */
+  edit?(key: string, launch: (copyPath: string) => Promise<string | null>): Promise<string | null>;
 }
