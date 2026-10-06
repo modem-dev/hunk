@@ -274,6 +274,107 @@ describe("document browser controller", () => {
     }
   });
 
+  test("unchanged demand reuses observation across initialization, reads and refreshes", async () => {
+    const fixture = createTestSource();
+    const observe = mock(fixture.source.observe!);
+    fixture.source.observe = observe;
+    const browser = new DocumentBrowserController(fixture.source);
+
+    try {
+      await browser.initialize();
+      await browser.refresh();
+      browser.toggleExcluded();
+      expect(observe.mock.calls.map(([keys]) => keys)).toEqual([["root"]]);
+
+      await browser.select("a");
+      await browser.select("a");
+      await browser.select("folder");
+      await browser.refresh();
+      expect(observe.mock.calls.map(([keys]) => keys)).toEqual([["root"], ["root", "a"]]);
+
+      await browser.activate("folder");
+      await browser.refresh();
+      expect(observe.mock.calls.map(([keys]) => keys)).toEqual([
+        ["root"],
+        ["root", "a"],
+        ["root", "folder", "a"],
+      ]);
+      expect(fixture.subscriptions()).toBe(1);
+      await browser.close();
+      expect(fixture.subscriptions()).toBe(0);
+      await browser.refresh();
+      expect(observe).toHaveBeenCalledTimes(3);
+    } finally {
+      await browser.close();
+    }
+  });
+
+  test("demand changes during a listing replace observation once without restoring stale keys", async () => {
+    const fixture = createTestSource();
+    const observe = mock(fixture.source.observe!);
+    fixture.source.observe = observe;
+    const listing = createTestDeferred<Awaited<ReturnType<DocumentSource["list"]>>>();
+    const originalList = fixture.source.list;
+    fixture.source.list = (key, signal) =>
+      key === "folder" ? listing.promise : originalList(key, signal);
+    const browser = new DocumentBrowserController(fixture.source);
+
+    try {
+      await browser.initialize();
+      const expansion = browser.activate("folder");
+      await browser.select("a");
+      await browser.activate("folder");
+      listing.resolve({ kind: "entries", entries: [] });
+      await expansion;
+      await browser.refresh();
+      expect(observe.mock.calls.map(([keys]) => keys)).toEqual([
+        ["root"],
+        ["root", "folder"],
+        ["root", "folder", "a"],
+        ["root", "a"],
+      ]);
+      expect(fixture.subscriptions()).toBe(1);
+      expect(browser.getSnapshot().expanded.has("folder")).toBe(false);
+    } finally {
+      listing.resolve({ kind: "entries", entries: [] });
+      await browser.close();
+    }
+  });
+
+  test("a watch installed during refresh keeps its demand and queues its notification", async () => {
+    const fixture = createTestSource();
+    const observe = mock(fixture.source.observe!);
+    fixture.source.observe = observe;
+    const browser = new DocumentBrowserController(fixture.source);
+    const listing = createTestDeferred<void>();
+
+    try {
+      await browser.initialize();
+      const originalList = fixture.source.list;
+      let delayed = false;
+      fixture.source.list = async (key, signal) => {
+        if (!delayed) {
+          delayed = true;
+          await listing.promise;
+        }
+        return originalList(key, signal);
+      };
+      const refresh = browser.refresh();
+      await browser.select("a");
+      fixture.changes();
+      listing.resolve();
+      await refresh;
+
+      expect(observe.mock.calls.map(([keys]) => keys)).toEqual([["root"], ["root", "a"]]);
+      expect(fixture.listings).toEqual(["root", "root", "root"]);
+      expect(fixture.reads).toEqual(["a", "a", "a"]);
+      expect(fixture.subscriptions()).toBe(1);
+    } finally {
+      listing.resolve();
+      await browser.close();
+    }
+  });
+
   test("watch/manual refreshes serialize, retain selection, and reread only demanded content", async () => {
     const fixture = createTestSource();
     const browser = new DocumentBrowserController(fixture.source);

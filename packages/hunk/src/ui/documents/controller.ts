@@ -56,6 +56,7 @@ export class DocumentBrowserController {
   private refreshPending = false;
   private closed = false;
   private stopObservation?: () => void;
+  private observedKeys?: ReadonlySet<string>;
   private listingRequests = new Map<string, Promise<void>>();
   private pendingReads = new Set<Promise<DocumentReadResult>>();
   private readController?: AbortController;
@@ -305,14 +306,20 @@ export class DocumentBrowserController {
     return this.refreshPromise;
   }
 
-  /** Replace observation demand whenever expansion or document selection changes. */
+  /** Replace observation only when expansion or document selection changes the demanded key set. */
   private observe() {
-    this.stopObservation?.();
     if (this.closed) return;
 
-    const keys = [...this.snapshot.expanded];
-    if (this.snapshot.documentKey) keys.push(this.snapshot.documentKey);
-    this.stopObservation = this.source.observe?.(keys, () => {
+    const keys = new Set(this.snapshot.expanded);
+    if (this.snapshot.documentKey) keys.add(this.snapshot.documentKey);
+    // Completing a read must not dispose unchanged demand: source cleanup can cancel a pending
+    // notification for a change made after enumeration but before the listing was published.
+    const observedKeys = this.observedKeys;
+    if (observedKeys?.size === keys.size && [...keys].every((key) => observedKeys.has(key))) return;
+
+    this.stopObservation?.();
+    this.observedKeys = keys;
+    this.stopObservation = this.source.observe?.([...keys], () => {
       void this.refresh();
     });
   }
