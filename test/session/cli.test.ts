@@ -378,6 +378,34 @@ sessionDescribe("session CLI integration", () => {
     }
   });
 
+  test("repo selectors that match no live session explain the miss", async () => {
+    const port = await reserveLoopbackPort();
+    const fixture = createFixtureFiles(
+      "selector-miss",
+      ["export const a = 1;"],
+      ["export const a = 2;"],
+    );
+    // Another checkout, such as a sibling worktree, that no live window is showing.
+    const elsewhere = createFixtureFiles("selector-elsewhere", [""], [""]);
+    const session = spawnHunkSession(fixture, port);
+
+    try {
+      await waitForRegisteredSessions(port);
+
+      for (const args of [
+        ["get", "--repo", elsewhere.dir],
+        ["reload", "--repo", elsewhere.dir, "--", "diff"],
+      ]) {
+        const result = runSessionCli(args, port);
+        expect(result.proc.exitCode).not.toBe(0);
+        expect(result.stderr).toContain("No active session matches repoRoot");
+        expect(result.stderr).not.toContain("protocol-validation-failed");
+      }
+    } finally {
+      await cleanupHunkSession(session, fixture, port);
+    }
+  });
+
   test("reload replaces what a live session is showing", async () => {
     const port = await reserveLoopbackPort();
     const fixture = createFixtureFiles(
