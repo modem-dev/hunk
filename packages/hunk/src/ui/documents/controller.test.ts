@@ -200,9 +200,9 @@ describe("document browser controller", () => {
       await pending;
       await shutdown;
       expect(closed).toBe(true);
-      expect(browser.shutdownEditNotice).toBe(
+      expect(browser.shutdownEditNotices).toEqual([
         "Conflict. Editor copy retained in recovery-directory.",
-      );
+      ]);
     } finally {
       result.resolve(null);
       await browser.close();
@@ -219,7 +219,56 @@ describe("document browser controller", () => {
       await browser.select("a");
       await browser.editDisplayedDocument(async () => null);
       await browser.close();
-      expect(browser.shutdownEditNotice).toBe("Editor copy retained in recovery-directory.");
+      expect(browser.shutdownEditNotices).toEqual(["Editor copy retained in recovery-directory."]);
+    } finally {
+      await browser.close();
+    }
+  });
+
+  test("a conflict notice survives a successful edit and refresh through shutdown", async () => {
+    const fixture = createTestSource();
+    const conflict = "Document changed while editing. Editor copy retained in first-recovery.";
+    let result: string | null = conflict;
+    fixture.source.edit = async () => result;
+    const browser = new DocumentBrowserController(fixture.source);
+
+    try {
+      await browser.initialize();
+      await browser.select("a");
+      expect(await browser.editDisplayedDocument(async () => null)).toBe(conflict);
+      result = null;
+      expect(await browser.editDisplayedDocument(async () => null)).toBeNull();
+      await browser.refresh();
+      expect(browser.getSnapshot().notice).toBeNull();
+      await browser.close();
+      expect(browser.shutdownEditNotices).toEqual([conflict]);
+    } finally {
+      await browser.close();
+    }
+  });
+
+  test("multiple editor failures retain all unique notices without inspecting their wording", async () => {
+    const fixture = createTestSource();
+    const conflict = "Conflict. Editor copy retained in first-recovery.";
+    const failure = "Editor exited with status 1.";
+    const laterConflict = "Conflict. Editor copy retained in second-recovery.";
+    let result = conflict;
+    fixture.source.edit = async () => {
+      if (result === failure) throw new Error(failure);
+      return result;
+    };
+    const browser = new DocumentBrowserController(fixture.source);
+
+    try {
+      await browser.initialize();
+      await browser.select("a");
+      for (const notice of [conflict, failure, laterConflict, conflict, "", failure]) {
+        result = notice;
+        expect(await browser.editDisplayedDocument(async () => null)).toBe(notice);
+      }
+      expect(browser.getSnapshot().notice).toBe(failure);
+      await browser.close();
+      expect(browser.shutdownEditNotices).toEqual([conflict, failure, laterConflict, ""]);
     } finally {
       await browser.close();
     }

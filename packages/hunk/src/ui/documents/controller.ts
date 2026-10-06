@@ -61,7 +61,7 @@ export class DocumentBrowserController {
   private readController?: AbortController;
   private closePromise?: Promise<void>;
   private editPromise: Promise<string | null> | null = null;
-  private editNotice: string | null = null;
+  private retainedEditNotices = new Set<string>();
   private snapshot: DocumentBrowserSnapshot;
 
   constructor(readonly source: DocumentSource) {
@@ -83,9 +83,11 @@ export class DocumentBrowserController {
     return this.closed;
   }
 
-  /** Retain editor failures so recovery paths survive teardown even when no final frame paints. */
-  get shutdownEditNotice() {
-    return this.editNotice;
+  /** Report every unique editor failure in occurrence order, including failures settled during close.
+   * Status frames do not acknowledge failures; later edits and refreshes never discard their notices.
+   */
+  get shutdownEditNotices(): readonly string[] {
+    return [...this.retainedEditNotices];
   }
 
   getSnapshot = () => this.snapshot;
@@ -183,7 +185,7 @@ export class DocumentBrowserController {
       .then(() => edit.call(this.source, key, launch))
       .catch((error) => (error instanceof Error ? error.message : String(error)))
       .then((notice) => {
-        this.editNotice = notice;
+        if (notice !== null) this.retainedEditNotices.add(notice);
         this.publish({ notice });
         return notice;
       })

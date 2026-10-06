@@ -156,7 +156,9 @@ test("repeated editor actions launch once and quit waits for the recovery result
       await Bun.sleep(20);
     });
     expect(quit).toHaveBeenCalledTimes(1);
-    expect(route.controller.shutdownEditNotice).toContain("recovery-directory");
+    expect(route.controller.shutdownEditNotices).toEqual([
+      "Conflict. Editor copy retained in recovery-directory.",
+    ]);
   } finally {
     pending.resolve(null);
     await route.controller.close();

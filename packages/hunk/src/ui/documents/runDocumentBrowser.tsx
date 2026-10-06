@@ -29,7 +29,7 @@ export async function runDocumentBrowser(bootstrap: DocumentBrowserBootstrap) {
     });
   } finally {
     await controller.close();
-    if (controller.shutdownEditNotice)
-      process.stderr.write(`${sanitizeTerminalLine(controller.shutdownEditNotice)}\n`);
+    for (const notice of controller.shutdownEditNotices)
+      process.stderr.write(`${sanitizeTerminalLine(notice)}\n`);
   }
 }
