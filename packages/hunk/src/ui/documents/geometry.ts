@@ -70,6 +70,33 @@ export function completeDocumentLineAt(geometry: CompleteDocumentGeometry, offse
   return start;
 }
 
+export interface CompleteDocumentScrollAnchor {
+  line: number;
+  offset: number;
+}
+
+/** Capture a logical line and its physical offset using the currently mounted geometry. */
+export function completeDocumentScrollAnchor(
+  geometry: CompleteDocumentGeometry,
+  top: number,
+): CompleteDocumentScrollAnchor {
+  const line = Math.max(
+    0,
+    Math.min(geometry.rows.length - 1, completeDocumentLineAt(geometry, top)),
+  );
+  const row = geometry.rows[line];
+  return { line, offset: row ? Math.max(0, Math.min(row.height - 1, top - row.start)) : 0 };
+}
+
+/** Resolve an anchor to the nearest surviving line and physical row after remeasurement. */
+export function completeDocumentScrollAnchorTop(
+  geometry: CompleteDocumentGeometry,
+  anchor: CompleteDocumentScrollAnchor,
+): number {
+  const row = geometry.rows[Math.max(0, Math.min(geometry.rows.length - 1, anchor.line))];
+  return row ? row.start + Math.min(anchor.offset, row.height - 1) : 0;
+}
+
 /** Locate the logical-line window intersecting visible physical rows, including a small halo. */
 export function completeDocumentWindow(
   geometry: CompleteDocumentGeometry,

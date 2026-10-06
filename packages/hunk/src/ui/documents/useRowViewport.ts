@@ -4,6 +4,9 @@ import { useLayoutEffect, useRef, useState } from "react";
 /** Observe scroll geometry so complete-document and tree panes mount only a bounded row window. */
 export function useRowViewport(estimatedHeight: number, estimatedWidth: number) {
   const ref = useRef<ScrollBoxRenderable | null>(null);
+  // Keep callback ownership stable across resize; scroll anchoring chains these native callbacks.
+  const estimate = useRef({ height: estimatedHeight, width: estimatedWidth });
+  estimate.current = { height: estimatedHeight, width: estimatedWidth };
   const [viewport, setViewport] = useState({
     top: 0,
     height: estimatedHeight,
@@ -16,8 +19,8 @@ export function useRowViewport(estimatedHeight: number, estimatedWidth: number) 
       setViewport((previous) => {
         const next = {
           top: Math.floor(scroll.scrollTop),
-          height: Math.max(1, scroll.viewport.height || estimatedHeight),
-          width: Math.max(1, scroll.viewport.width || estimatedWidth),
+          height: Math.max(1, scroll.viewport.height || estimate.current.height),
+          width: Math.max(1, scroll.viewport.width || estimate.current.width),
         };
         return previous.top === next.top &&
           previous.height === next.height &&
@@ -39,7 +42,7 @@ export function useRowViewport(estimatedHeight: number, estimatedWidth: number) 
       if (scroll.viewport.onSizeChange === onSizeChange)
         scroll.viewport.onSizeChange = previousSizeChange;
     };
-  }, [estimatedHeight, estimatedWidth]);
+  }, []);
   return { ref, ...viewport };
 }
 

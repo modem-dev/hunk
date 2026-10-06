@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import type { MutableRefObject } from "react";
 import type { DocumentReadResult } from "../../core/documents/source";
@@ -10,6 +10,7 @@ import {
 } from "../syntax/documentHighlightService";
 import type { AppTheme } from "../themes";
 import { useRowViewport } from "./useRowViewport";
+import { useDocumentScrollAnchor } from "./useDocumentScrollAnchor";
 import {
   completeDocumentLines,
   completeDocumentGeometry,
@@ -76,20 +77,7 @@ export function DocumentPane({
     );
   const gutter = geometry.gutter;
   const window = completeDocumentWindow(geometry, viewport.top, viewport.height);
-  const previousGeometry = useRef({ documentKey, geometry });
-  useLayoutEffect(() => {
-    const previous = previousGeometry.current;
-    const scroll = viewport.ref.current;
-    if (scroll && previous.documentKey === documentKey && previous.geometry !== geometry) {
-      const top = Math.floor(scroll.scrollTop);
-      const line = completeDocumentLineAt(previous.geometry, top);
-      scroll.scrollTo({
-        x: layout.wrap ? 0 : scroll.scrollLeft,
-        y: geometry.rows[Math.max(0, line)]?.start ?? 0,
-      });
-    }
-    previousGeometry.current = { documentKey, geometry };
-  }, [documentKey, geometry, layout.wrap, viewport.ref]);
+  useDocumentScrollAnchor(viewport.ref, documentKey, geometry, layout.wrap);
   const result =
     paint?.text === safeText && paint.theme === theme && paint.key === documentKey
       ? paint.result
@@ -100,9 +88,6 @@ export function DocumentPane({
       scrollRef.current = null;
     };
   }, [scrollRef, viewport.ref]);
-  useEffect(() => {
-    viewport.ref.current?.scrollTo(0);
-  }, [documentKey, viewport.ref]);
   useEffect(() => {
     if (!documentKey || document?.kind !== "text") return;
     const controller = new AbortController();
@@ -160,6 +145,8 @@ export function DocumentPane({
       height="100%"
       scrollY={true}
       scrollX={!layout.wrap}
+      // scrollX sets this constraint only at construction; wrap toggles must update it too.
+      contentOptions={{ minWidth: "100%", maxWidth: layout.wrap ? "100%" : undefined }}
       focused={focused}
       // Semantic commands own keyboard navigation, including explicit unbindings.
       onKeyDown={(key) => key.preventDefault()}
@@ -167,7 +154,13 @@ export function DocumentPane({
       {placeholder ? (
         <text fg={theme.muted}>{` ${placeholder}`}</text>
       ) : (
-        <box width={geometry.width} flexDirection="column">
+        // Rows and spacers partition this exact measured extent, independent of the mounted window.
+        <box
+          width={geometry.width}
+          height={geometry.totalHeight}
+          flexShrink={0}
+          flexDirection="column"
+        >
           {window.start > 0 ? (
             <box height={geometry.rows[window.start]?.start ?? geometry.totalHeight} />
           ) : null}
