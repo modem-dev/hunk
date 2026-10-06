@@ -41,6 +41,7 @@ export function DocumentApp({
   const terminal = useTerminalDimensions();
   const renderer = useRenderer();
   const snapshot = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
+
   const [focus, setFocus] = useState<"tree" | "document">(
     controller.source.root.kind === "directory" ? "tree" : "document",
   );
@@ -50,22 +51,28 @@ export function DocumentApp({
   const [numbers, setNumbers] = useState(options.lineNumbers !== false);
   const [wrap, setWrap] = useState(options.wrapLines ?? false);
   const [help, setHelp] = useState(false);
+
   const notice = useTimedNotice(4000);
+
   const setNotice = (text: string | null) => {
     if (text === null) notice.clear();
     else notice.show(text);
   };
+
   const scrollRef = useRef<ScrollBoxRenderable | null>(null);
   const visibleLineRef = useRef(() => 1);
+
   const themeSelector = useThemeSelectorController({
     themeController,
     transparentBackground: options.transparentBackground ?? false,
     onTransientNotice: notice.show,
   });
   const theme = themeSelector.activeTheme;
+
   const treeWidth = sidebar ? Math.min(34, Math.max(12, Math.floor(terminal.width / 3))) : 0;
   const height = Math.max(1, terminal.height - 3);
   const treeFocused = sidebar && focus === "tree";
+
   const keys = useMemo(
     () =>
       resolveCommandKeys({
@@ -83,6 +90,7 @@ export function DocumentApp({
       setNotice("No editable regular file selected.");
       return;
     }
+
     setNotice(
       await controller.source.edit(key, async (filePath) =>
         openFileInEditor({ filePath, line: visibleLineRef.current(), renderer, wait: true }),
@@ -90,6 +98,7 @@ export function DocumentApp({
     );
     await controller.refresh();
   };
+
   const commands = buildDocumentCommands({
     controller,
     treeFocused,
@@ -113,6 +122,7 @@ export function DocumentApp({
       "hunk.view.toggleLineWrap": () => setWrap((value) => !value),
     },
   });
+
   const menus = buildDocumentMenus(commands, {
     sidebar,
     numbers,
@@ -120,8 +130,10 @@ export function DocumentApp({
     showExcluded: snapshot.showExcluded,
   });
   const menu = useMenuController(menus);
+
   useDocumentKeyboard({ help, closeHelp: () => setHelp(false), themeSelector, menu, commands });
   const overlay = help || themeSelector.themeSelectorOpen || menu.activeMenuId !== null;
+
   return (
     <box width="100%" height="100%" flexDirection="column" backgroundColor={theme.background}>
       <MenuBar

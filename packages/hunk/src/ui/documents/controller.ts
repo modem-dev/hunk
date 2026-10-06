@@ -9,6 +9,7 @@ export interface DocumentTreeRow {
   entry: DocumentEntry;
   depth: number;
 }
+
 export interface DocumentBrowserSnapshot {
   rows: readonly DocumentTreeRow[];
   selectedKey: string | null;
@@ -34,11 +35,13 @@ export function documentTreeRows(
     if (!expanded.has(entry.key)) return;
     const listing = directories.get(entry.key);
     if (listing?.kind !== "entries") return;
+
     for (const child of listing.entries) {
       if (!showExcluded && (child.hidden || child.ignored)) continue;
       visit(child, depth + 1);
     }
   };
+
   visit(root, 0);
   return rows;
 }
@@ -72,12 +75,14 @@ export class DocumentBrowserController {
       notice: null,
     };
   }
+
   /** Report whether this surface has revoked all source demand. */
   get isClosed() {
     return this.closed;
   }
 
   getSnapshot = () => this.snapshot;
+
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
@@ -93,6 +98,7 @@ export class DocumentBrowserController {
   /** Replace a snapshot atomically; subscribers never observe partially updated tree geometry. */
   private publish(change: Partial<DocumentBrowserSnapshot>) {
     if (this.closed) return;
+
     const next = { ...this.snapshot, ...change };
     next.rows = documentTreeRows(
       this.source.root,
@@ -110,6 +116,7 @@ export class DocumentBrowserController {
   private loadDirectory(key: string): Promise<void> {
     const existing = this.listingRequests.get(key);
     if (existing) return existing;
+
     const request = (async () => {
       const result = await this.source.list(key, this.controller.signal);
       if (this.closed || !this.snapshot.expanded.has(key)) return;
@@ -140,11 +147,14 @@ export class DocumentBrowserController {
   async select(key: string) {
     const entry = this.snapshot.rows.find((row) => row.entry.key === key)?.entry;
     if (!entry || this.closed) return;
+
     this.publish({ selectedKey: key });
     if (entry.kind === "directory") return;
+
     const generation = ++this.readGeneration;
     this.publish({ documentKey: key, documentEntry: entry, document: null, loading: true });
     this.observe();
+
     try {
       const document = await this.readDocument(key);
       if (generation === this.readGeneration) this.publish({ document, loading: false });
@@ -167,6 +177,7 @@ export class DocumentBrowserController {
     const entry = this.snapshot.rows.find((row) => row.entry.key === key)?.entry;
     if (!entry || this.closed) return;
     if (entry.kind !== "directory") return this.select(key);
+
     const expanded = new Set(this.snapshot.expanded);
     if (expanded.has(key)) {
       expanded.delete(key);
@@ -185,6 +196,7 @@ export class DocumentBrowserController {
       }
       expanded.add(key);
     }
+
     this.publish({ selectedKey: key, expanded });
     this.observe();
     if (expanded.has(key) && !this.directories.has(key)) await this.loadDirectory(key);
@@ -209,6 +221,7 @@ export class DocumentBrowserController {
     if (this.closed) return Promise.resolve();
     this.refreshPending = true;
     if (this.refreshPromise) return this.refreshPromise;
+
     this.refreshPromise = (async () => {
       while (this.refreshPending && !this.closed) {
         this.refreshPending = false;
@@ -217,6 +230,7 @@ export class DocumentBrowserController {
           await this.listingRequests.get(key);
           if (!this.closed && this.snapshot.expanded.has(key)) await this.loadDirectory(key);
         }
+
         const key = this.snapshot.documentKey;
         if (key) {
           const generation = ++this.readGeneration;
@@ -240,6 +254,7 @@ export class DocumentBrowserController {
   private observe() {
     this.stopObservation?.();
     if (this.closed) return;
+
     const keys = [...this.snapshot.expanded];
     if (this.snapshot.documentKey) keys.push(this.snapshot.documentKey);
     this.stopObservation = this.source.observe?.(keys, () => {
@@ -250,6 +265,7 @@ export class DocumentBrowserController {
   /** Cancel pending reads and release every observer before terminal teardown. */
   close(): Promise<void> {
     if (this.closePromise) return this.closePromise;
+
     this.closed = true;
     this.controller.abort();
     this.stopObservation?.();

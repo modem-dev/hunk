@@ -44,6 +44,7 @@ async function readIgnoredPaths(
   signal?: AbortSignal,
 ) {
   signal?.throwIfAborted();
+
   const process = spawn(
     [
       "git",
@@ -64,18 +65,23 @@ async function readIgnoredPaths(
       stderr: "ignore",
     },
   );
+
   let interrupted = false;
+
   const abort = () => {
     interrupted = true;
     process.kill();
   };
+
   signal?.addEventListener("abort", abort, { once: true });
   const timeout = setTimeout(abort, 1500);
+
   try {
     const output = await new Response(process.stdout).text();
     const exitCode = await process.exited;
     signal?.throwIfAborted();
     if (interrupted || (exitCode !== 0 && exitCode !== 1)) return null;
+
     return new Set(
       output
         .split("\0")
@@ -101,6 +107,7 @@ async function readStatus(repository: string, key: string, signal?: AbortSignal)
     !names.every((name) => /^filter\.[^=\r\n]*\.(clean|process|required)$/.test(name))
   )
     return null;
+
   const overrides = names.flatMap((name) => [
     "-c",
     `${name}=${name.endsWith(".required") ? "false" : ""}`,
@@ -125,9 +132,11 @@ async function readStatus(repository: string, key: string, signal?: AbortSignal)
 export function directoryStatusMarkers(repository: string, key: string, status: string | null) {
   const markers = new Map<string, string>();
   const records = status?.split("\0") ?? [];
+
   for (let index = 0; index < records.length; index++) {
     const record = records[index]!;
     if (record.length < 4) continue;
+
     const code = record.slice(0, 2);
     const changed = resolve(repository, record.slice(3));
     const child = relative(key, changed).split(sep)[0];
@@ -135,6 +144,7 @@ export function directoryStatusMarkers(repository: string, key: string, status: 
       markers.set(join(key, child), code === "??" ? "?" : code.trim().slice(0, 1));
     if (code.includes("R") || code.includes("C")) index++;
   }
+
   return markers;
 }
 
@@ -147,12 +157,14 @@ export async function applyDirectoryGitMetadata(
 ) {
   const repository = (await git(key, ["rev-parse", "--show-toplevel"], signal))?.trim();
   if (!repository || !entries.length) return null;
+
   const ignored = await readIgnoredPaths(key, entries, spawn, signal);
   if (ignored === null)
     return {
       kind: "unavailable" as const,
       detail: "Git ignore query did not complete; refresh to retry.",
     };
+
   const markers = directoryStatusMarkers(
     repository,
     key,
@@ -162,5 +174,6 @@ export async function applyDirectoryGitMetadata(
     entry.ignored = ignored.has(entry.key);
     entry.status = markers.get(entry.key);
   }
+
   return null;
 }

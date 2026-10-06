@@ -35,29 +35,35 @@ export function buildDocumentCommands({
     const current = controller.getSnapshot();
     return current.rows.find((row) => row.entry.key === current.selectedKey)?.entry;
   };
+
   /** Move through the focused tree or document by physical rows. */
   const step = (delta: number) => {
     if (treeFocused) controller.move(delta);
     else scrollRef.current?.scrollBy(delta);
   };
+
   /** Reveal the beginning or end of the focused surface. */
   const jump = (end: boolean) => {
     if (treeFocused) controller.move(controller.getSnapshot().rows.length * (end ? 1 : -1));
     else scrollRef.current?.scrollTo(end ? scrollRef.current.scrollHeight : 0);
   };
+
   /** Expand/collapse a selected directory or scroll the document horizontally. */
   const horizontal = (expand: boolean) => {
     const selected = selectedEntry();
+
     if (!treeFocused) {
       scrollRef.current?.scrollBy({ x: expand ? 4 : -4, y: 0 });
       return;
     }
+
     if (
       selected?.kind === "directory" &&
       controller.getSnapshot().expanded.has(selected.key) !== expand
     )
       void controller.activate(selected.key);
   };
+
   const handlers: Record<DocumentCommandId, () => void> = {
     ...actions,
     "hunk.documents.toggleExcluded": () => controller.toggleExcluded(),
@@ -75,6 +81,7 @@ export function buildDocumentCommands({
     "hunk.documents.scrollLeft": () => horizontal(false),
     "hunk.documents.scrollRight": () => horizontal(true),
   };
+
   return buildSurfaceCommands(DOCUMENT_COMMAND_CATALOG, {
     resolvedKeys,
     run: (entry) => handlers[entry.id](),
@@ -104,6 +111,7 @@ export function buildDocumentMenus(
       },
     };
   };
+
   return {
     file: [item("hunk.app.refresh"), item("hunk.documents.edit"), item("hunk.app.quit")],
     view: [

@@ -22,8 +22,10 @@ async function readEditorOutput(copy: string) {
     copy,
     constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0),
   );
+
   try {
     if (!(await edited.stat()).isFile()) throw new Error("Editor output is not a regular file.");
+
     const bytes = await readBoundedDocumentBytes(edited);
     if (bytes.length > DOCUMENT_MAX_BYTES || bytes.includes(0))
       throw new Error("Editor output exceeds the text viewing policy.");
@@ -65,11 +67,13 @@ export async function editDocumentCopy(
   let temporary: string | undefined;
   let handle: FileHandle | undefined;
   let keepCopy = false;
+
   try {
     await io.safePath(key);
     const info = await lstat(key);
     if (!info.isFile() || info.isSymbolicLink() || info.size > DOCUMENT_MAX_BYTES)
       return "No editable regular text file selected.";
+
     handle = await io.openCheckedPath(
       key,
       constants.O_RDWR | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0),
@@ -77,21 +81,26 @@ export async function editDocumentCopy(
     const opened = await handle.stat();
     if (!opened.isFile() || opened.dev !== info.dev || opened.ino !== info.ino)
       throw new Error("Document changed during opening.");
+
     await io.safePath(key);
     const original = await io.read(key);
     if (original.kind !== "text") return original.detail;
+
     temporary = await mkdtemp(join(tmpdir(), "hunk-edit-"));
     const copy = join(temporary, basename(key));
     const originalBytes = await readBoundedDocumentBytes(handle);
     if (documentBytesIdentity(originalBytes) !== original.identity)
       throw new Error("Document changed while preparing editor copy.");
     await writeFile(copy, originalBytes, { mode: 0o600 });
+
     keepCopy = true;
     const failure = await launch(copy);
     if (failure) throw new Error(failure);
+
     const bytes = await readEditorOutput(copy);
     await assertOriginalUnchanged(key, opened, original.identity, io.read);
     if (documentBytesIdentity(bytes) !== original.identity) await writeDocumentBytes(handle, bytes);
+
     keepCopy = false;
     return null;
   } catch (error) {

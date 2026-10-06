@@ -152,6 +152,11 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
   conformance under `test/session-broker-node/`. Run the dedicated command documented in
   `test/README.md` when changing those areas.
 
+## source formatting
+
+- Separate functions, class methods, and nested helpers with a blank line; keep JSDoc attached to its declaration.
+- Use blank lines between logical phases inside functions. Keep related statements grouped rather than packing an entire workflow into one dense block.
+
 ## code comments
 
 - Add short JSDoc-style comments to functions and helpers.

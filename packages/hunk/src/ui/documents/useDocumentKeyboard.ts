@@ -15,6 +15,7 @@ function handleThemeKey(key: KeyEvent, selector: ThemeSelectorController) {
     down: () => selector.moveThemeSelector(1),
     return: selector.acceptThemeSelector,
   };
+
   actions[key.name]?.();
 }
 
@@ -28,6 +29,7 @@ function handleMenuKey(key: KeyEvent, menu: MenuController) {
     down: () => menu.moveMenuItem(1),
     return: menu.activateCurrentMenuItem,
   };
+
   actions[key.name]?.();
 }
 

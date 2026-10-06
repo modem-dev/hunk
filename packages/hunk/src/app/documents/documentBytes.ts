@@ -8,12 +8,14 @@ export const DOCUMENT_MAX_BYTES = 1024 * 1024;
 export async function readBoundedDocumentBytes(handle: FileHandle, signal?: AbortSignal) {
   const buffer = Buffer.alloc(DOCUMENT_MAX_BYTES + 1);
   let count = 0;
+
   while (count < buffer.length) {
     signal?.throwIfAborted();
     const result = await handle.read(buffer, count, buffer.length - count, count);
     if (!result.bytesRead) break;
     count += result.bytesRead;
   }
+
   signal?.throwIfAborted();
   return buffer.subarray(0, count);
 }
@@ -31,28 +33,33 @@ export function decodeDocumentBytes(bytes: Buffer): DocumentReadResult {
       reason: "too-large",
       detail: "File exceeds the 1 MiB viewing limit.",
     };
+
   if (bytes.includes(0))
     return {
       kind: "unavailable",
       reason: "binary",
       detail: "Binary file — no text preview.",
     };
+
   let text: string;
   try {
     text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch {
     return { kind: "unavailable", reason: "binary", detail: "Non-UTF-8 file — no text preview." };
   }
+
   return { kind: "text", text, identity: documentBytesIdentity(bytes) };
 }
 
 /** Save through a retained handle and truncate only after every edited byte has been written. */
 export async function writeDocumentBytes(handle: FileHandle, bytes: Buffer) {
   let count = 0;
+
   while (count < bytes.length) {
     const result = await handle.write(bytes, count, bytes.length - count, count);
     if (!result.bytesWritten) throw new Error("Cannot save editor output.");
     count += result.bytesWritten;
   }
+
   await handle.truncate(bytes.length);
 }
