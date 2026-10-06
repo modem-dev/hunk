@@ -133,7 +133,12 @@ export interface SessionBrokerAuditEvent {
   readonly commandVersion?: number;
   readonly requestId?: string;
   readonly decision: "allow" | "deny";
-  readonly outcome: "authenticated" | "authentication-failed" | "authorization-failed";
+  readonly outcome:
+    | "authenticated"
+    | "authentication-failed"
+    | "authorization-failed"
+    /** The caller may learn why its selector matched no single session; no action ran. */
+    | "target-resolution-failed";
   readonly timestamp: number;
 }
 

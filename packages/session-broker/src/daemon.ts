@@ -93,6 +93,31 @@ export interface SessionBrokerAuthenticatedControlResult {
 }
 
 /**
+ * Reports that an authenticated control's selector resolved to no single session.
+ *
+ * Thrown from `handleAuthenticatedControl`'s `resolve` once the body has parsed. The daemon never
+ * runs `handle` for it; it answers with `message` only when the caller holds
+ * `disclosureOperation`, whose grant must already reveal everything the message names (with
+ * `list`, the matching session IDs and titles). Every other `resolve` error stays a redacted
+ * protocol failure.
+ */
+export class SessionBrokerTargetResolutionError extends Error {
+  readonly disclosureOperation: CallerOperation;
+  readonly targetSpecific: boolean;
+
+  constructor(
+    message: string,
+    options: { disclosureOperation?: CallerOperation; targetSpecific?: boolean } = {},
+  ) {
+    super(message);
+    this.name = "SessionBrokerTargetResolutionError";
+    this.disclosureOperation = options.disclosureOperation ?? "list";
+    // A selector that failed to resolve was aimed at a session, so the caller signed it targeted.
+    this.targetSpecific = options.targetSpecific ?? true;
+  }
+}
+
+/**
  * Configure the revision-tolerant admin scope (`status` and `stop`).
  *
  * The authenticator is a second instance built with the admin scope version in place of the app
@@ -1016,7 +1041,10 @@ export class SessionBrokerDaemon<
       let facts: SessionBrokerAuthenticatedControlFacts;
       try {
         facts = options.resolve(body);
-      } catch {
+      } catch (error) {
+        if (error instanceof SessionBrokerTargetResolutionError) {
+          return this.answerTargetResolutionFailure(request, authenticated, error);
+        }
         let targetSpecific = false;
         try {
           targetSpecific = options.resolveFailureTargetSpecific?.(body) ?? false;
@@ -1057,6 +1085,41 @@ export class SessionBrokerDaemon<
         );
       }
     });
+  }
+
+  /**
+   * Answer a control whose selector resolved to no single session, without running its action.
+   *
+   * Authorizes only the disclosure, audited under its own outcome so a missed `reload` never
+   * reads as a successful `list`.
+   */
+  private async answerTargetResolutionFailure(
+    request: Request,
+    authenticated: AuthenticatedCallerRequest,
+    failure: SessionBrokerTargetResolutionError,
+  ): Promise<Response> {
+    const allowed = await this.authorize(
+      request,
+      authenticated,
+      { operation: failure.disclosureOperation },
+      "target-resolution-failed",
+    );
+    if (!allowed) {
+      return this.authenticatedResponse(
+        authenticated,
+        { error: "authorization-denied" },
+        403,
+        failure.targetSpecific,
+      );
+    }
+    const inactive = this.rejectInactiveRequest(authenticated);
+    if (inactive) return inactive;
+    return this.authenticatedResponse(
+      authenticated,
+      { error: failure.message },
+      400,
+      failure.targetSpecific,
+    );
   }
 
   private async authenticateRequest(
@@ -1121,6 +1184,7 @@ export class SessionBrokerDaemon<
       command?: string;
       commandVersion?: number;
     },
+    allowedOutcome: "authenticated" | "target-resolution-failed" = "authenticated",
   ): Promise<boolean> {
     const principal: CallerPrincipal = authenticated.principal;
     const allowedByGrant = callerPrincipalAllows(principal, {
@@ -1151,7 +1215,7 @@ export class SessionBrokerDaemon<
       ...(facts.commandVersion === undefined ? {} : { commandVersion: facts.commandVersion }),
       requestId: authenticated.requestId,
       decision: allowedByApp ? "allow" : "deny",
-      outcome: allowedByApp ? "authenticated" : "authorization-failed",
+      outcome: allowedByApp ? allowedOutcome : "authorization-failed",
       timestamp: Date.now(),
     });
     return allowedByApp;

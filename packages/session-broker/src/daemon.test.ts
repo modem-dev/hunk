@@ -12,7 +12,7 @@ import {
 } from "@hunk/session-broker-core";
 import { SessionBroker } from "./broker";
 import { SESSION_BROKER_ADMIN_STOP_CLOSE_REASON } from "./admin";
-import { createSessionBrokerDaemon } from "./daemon";
+import { SessionBrokerTargetResolutionError, createSessionBrokerDaemon } from "./daemon";
 import { createSessionBrokerProtocolParsers } from "./protocolParsers";
 import type {
   AuthenticatedCallerRequest,
@@ -1399,6 +1399,95 @@ describe("session broker daemon", () => {
     expect(authorized).toBe(false);
     expect(responseText).not.toContain("private");
     expect(auditedOperations).toEqual(["unknown", "diagnostics", "shutdown"]);
+    daemon.shutdown();
+  });
+
+  test("discloses target resolution failures only to callers allowed to list, without handling", async () => {
+    const audited: { operation: string; decision: string; outcome: string }[] = [];
+    const caller = (principal: Partial<CallerPrincipal>) =>
+      createSessionBrokerDaemon({
+        broker: createBroker(),
+        exposeHttpApi: true,
+        appId: "session-broker",
+        appRevision: 1,
+        callerAuthenticator: {
+          authenticate: async () =>
+            authenticatedRequest({
+              kind: "caller",
+              appId: "session-broker",
+              principalId: "test-caller",
+              keyId: "test-key",
+              grantId: "test-grant",
+              operations: ["list", "get", "dispatch"],
+              commands: [],
+              ...principal,
+            }),
+        },
+        authorizer: async () => true,
+        audit: ({ operation, decision, outcome }) => {
+          audited.push({ operation, decision, outcome });
+        },
+      });
+    let handled = 0;
+    const control = {
+      resolve: () => {
+        throw new SessionBrokerTargetResolutionError("No active session matches repoRoot /x.");
+      },
+      handle: () => {
+        handled += 1;
+        return { body: { ok: true } };
+      },
+    };
+    const request = () => new Request("http://broker.test/custom", { method: "POST", body: "{}" });
+
+    const lister = caller({});
+    const disclosed = await lister.handleAuthenticatedControl(request(), control);
+    expect(disclosed.status).toBe(400);
+    const disclosedEnvelope = (await disclosed.json()) as {
+      body: unknown;
+      authentication: { appContract?: unknown };
+    };
+    expect(disclosedEnvelope.body).toEqual({ error: "No active session matches repoRoot /x." });
+    // The caller signed a targeted request, so the answer must carry the app contract.
+    expect(disclosedEnvelope.authentication.appContract).toBeDefined();
+    lister.shutdown();
+
+    // A session-scoped caller can never list, so it learns nothing about other sessions.
+    const scoped = caller({ sessionId: "session-1" });
+    const denied = await scoped.handleAuthenticatedControl(request(), control);
+    expect(denied.status).toBe(403);
+    expect(await authenticatedBody(denied)).toEqual({ error: "authorization-denied" });
+    scoped.shutdown();
+
+    const unlisted = caller({ operations: ["get", "dispatch"] });
+    expect((await unlisted.handleAuthenticatedControl(request(), control)).status).toBe(403);
+    unlisted.shutdown();
+
+    expect(handled).toBe(0);
+    expect(audited).toEqual([
+      { operation: "list", decision: "allow", outcome: "target-resolution-failed" },
+      { operation: "list", decision: "deny", outcome: "authorization-failed" },
+      { operation: "list", decision: "deny", outcome: "authorization-failed" },
+    ]);
+  });
+
+  test("keeps other resolve failures redacted", async () => {
+    const daemon = createSessionBrokerDaemon({
+      broker: createBroker(),
+      exposeHttpApi: true,
+      ...authenticatedHttpApi,
+    });
+    const response = await daemon.handleAuthenticatedControl(
+      new Request("http://broker.test/custom", { method: "POST", body: "{}" }),
+      {
+        resolve: () => {
+          throw new Error("private parser detail");
+        },
+        handle: () => ({ body: { ok: true } }),
+      },
+    );
+    expect(response.status).toBe(400);
+    expect(await authenticatedBody(response)).toEqual({ error: "protocol-validation-failed" });
     daemon.shutdown();
   });
 

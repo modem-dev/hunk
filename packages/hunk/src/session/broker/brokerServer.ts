@@ -1,9 +1,9 @@
 import {
   SESSION_BROKER_ADMIN_SCOPE_VERSION,
   SessionBrokerAuthenticator,
+  SessionBrokerTargetResolutionError,
   createSessionBrokerDaemon,
   type SessionBrokerAuthenticatedControlFacts,
-  type SessionBrokerAuthenticatedControlResult,
   type SessionBrokerController,
 } from "@hunk/session-broker";
 import {
@@ -362,10 +362,11 @@ function resolveNavigateCommandInput(
  * Map each Hunk action to the generic operation and exact producer command scope it requires.
  *
  * A `--repo` or `--session-path` selector names its session only after a lookup, so the lookup
- * runs before authorization. When it matches no single session, the request is authorized as
- * `list` instead: the lookup error names nothing a `list` would not, so a caller allowed to list
- * learns why its selector missed, and a session-scoped caller still learns nothing. Malformed
- * bodies keep throwing so the daemon answers with its redacted protocol failure.
+ * runs before authorization. When it matches no single session, the lookup error becomes a
+ * target-resolution failure that the daemon discloses only to callers allowed to `list`: the error
+ * names nothing a `list` would not, so the Hunk CLI learns why its selector missed, and a
+ * session-scoped caller still learns nothing. Malformed bodies keep throwing plain errors so the
+ * daemon answers with its redacted protocol failure.
  */
 function sessionApiAuthorizationFacts(
   state: HunkSessionBrokerState,
@@ -377,8 +378,10 @@ function sessionApiAuthorizationFacts(
   if (sessionId === undefined) {
     try {
       sessionId = state.getSession(input.selector).sessionId;
-    } catch {
-      return { operation: "list", targetSpecific: true };
+    } catch (error) {
+      throw new SessionBrokerTargetResolutionError(
+        error instanceof Error ? error.message : "No active session matches.",
+      );
     }
   }
   if (["get", "context", "review", "comment-list"].includes(input.action)) {
@@ -402,33 +405,6 @@ function sessionApiAuthorizationFacts(
     command,
     commandVersion: 1,
     targetSpecific: true,
-  };
-}
-
-/**
- * Answer a targeted request whose selector missed with the lookup error, never the action.
- *
- * The request was authorized only as `list`, so it must not dispatch even when a session
- * matching its selector registered after authorization.
- */
-function sessionLookupFailure(
-  state: HunkSessionBrokerState,
-  bytes: Uint8Array,
-): SessionBrokerAuthenticatedControlResult {
-  const input = parseJsonRequestBytes(bytes);
-  if (input.action !== "list") {
-    try {
-      state.getSession(input.selector);
-    } catch (error) {
-      return {
-        body: { error: error instanceof Error ? error.message : "No active session matches." },
-        status: 400,
-      };
-    }
-  }
-  return {
-    body: { error: "The matching Hunk session changed while the request was in flight; retry." },
-    status: 409,
   };
 }
 
@@ -783,9 +759,6 @@ export async function serveSessionBrokerDaemon(
           resolve: (body) => sessionApiAuthorizationFacts(state, body),
           resolveFailureTargetSpecific: (body) => parseJsonRequestBytes(body).action !== "list",
           handle: async (body, facts) => {
-            if (facts.operation === "list" && parseJsonRequestBytes(body).action !== "list") {
-              return sessionLookupFailure(state, body);
-            }
             const response = await handleSessionApiRequest(state, request, body, facts.sessionId);
             return { body: (await response.json()) as never, status: response.status };
           },
