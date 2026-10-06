@@ -7,7 +7,7 @@ import type {
   ExtensionFileViewSyntaxReference,
 } from "../../extension-api/types";
 import { sanitizeTerminalLine } from "../../lib/terminalText";
-import { FileViewTextMeasurer } from "./textDisplay";
+import { TerminalTextMeasurer } from "../text/measurement";
 
 /** Resource limits keep one extension layout from exhausting the review stream. */
 export const FILE_VIEW_MAX_ROWS = 10_000;
@@ -177,7 +177,7 @@ function validateFileViewLayoutWithMeasurer(
   value: unknown,
   hunkCount: number,
   width: number,
-  textMeasurer: FileViewTextMeasurer,
+  textMeasurer: TerminalTextMeasurer,
 ): { valid: true; value: ValidatedFileViewLayout } | { valid: false; issue: string } {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return { valid: false, issue: "layout is not an object" };
@@ -526,7 +526,7 @@ export function validateFileViewLayout(
   hunkCount: number,
   width: number,
 ): { valid: true; value: ValidatedFileViewLayout } | { valid: false; issue: string } {
-  const textMeasurer = new FileViewTextMeasurer();
+  const textMeasurer = new TerminalTextMeasurer();
   try {
     return validateFileViewLayoutWithMeasurer(value, hunkCount, width, textMeasurer);
   } finally {

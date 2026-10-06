@@ -204,6 +204,25 @@ const DIFF_OPTIONS = [
 
 /** Non-session command tree consumed by the parser and generated reference. */
 export const CLI_REFERENCE_COMMANDS = {
+  open: {
+    path: "open",
+    summary: "view a complete file or browse a directory",
+    synopsis: ["hunk open [path]"],
+    options: [
+      { flag: "--theme <theme>", description: "named theme override" },
+      { flag: "--line-numbers", description: "show line numbers" },
+      { flag: "--no-line-numbers", description: "hide line numbers" },
+      { flag: "--sidebar", description: "show the directory tree" },
+      { flag: "--no-sidebar", description: "hide the directory tree" },
+      { flag: "--wrap", description: "wrap long document lines" },
+      { flag: "--no-wrap", description: "keep long document lines on one row" },
+      { flag: "-x, --tab-width <columns>", description: "tab stop width: 1-16", parse: "tabWidth" },
+    ],
+    details: [
+      "Defaults to the current directory. Reads are lazy and the browser refreshes automatically.",
+      "Press i to show hidden and Git-ignored entries. Symlinks are displayed but not followed.",
+    ],
+  },
   diff: {
     path: "diff",
     summary: "review diffs or compare two concrete files",
@@ -639,6 +658,7 @@ function renderCliHelp() {
     "Desktop-inspired terminal diff viewer for agent-authored changesets.",
     "",
     "Commands:",
+    "  hunk open [path]                       view a file or browse a directory",
     "  hunk diff [target] [-- <pathspec...>]   review working tree changes or compare against a target",
     "  hunk diff <from> <to>                   compare two revisions",
     "  hunk diff --staged [-- <pathspec...>]   review staged changes",
@@ -1260,6 +1280,7 @@ function requireReloadableCliInput(input: ParsedCliInput): CliInput {
     input.kind === "extension-manage" ||
     input.kind === "extension-cli" ||
     input.kind === "history" ||
+    input.kind === "open" ||
     input.kind === "update"
   ) {
     throw new Error(
@@ -2514,6 +2535,24 @@ export async function parseCli(argv: string[]): Promise<ParsedCliInput> {
   // Host bootstrap options must stay before a review command's `--` pathspec separator.
   const reviewRest = [...extensionFlagTokens, ...rest];
   switch (commandName) {
+    case "open": {
+      const command = createCliReferenceCommand("open").argument(
+        "[path]",
+        "file or directory",
+        ".",
+      );
+      if (rest.includes("--help") || rest.includes("-h")) {
+        return { kind: "help", text: `${command.helpInformation().trimEnd()}\n` };
+      }
+      let path = ".";
+      let options: Record<string, unknown> = {};
+      command.action((value: string, flags: Record<string, unknown>) => {
+        path = value;
+        options = flags;
+      });
+      await parseStandaloneCommand(command, rest);
+      return { kind: "open", path, options: buildCommonOptions(options, argv) };
+    }
     case "diff":
       return parseDiffCommand(reviewRest, argv);
     case "show":

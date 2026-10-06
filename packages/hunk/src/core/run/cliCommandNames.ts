@@ -1,5 +1,6 @@
 /** Names every built-in top-level CLI command and alias Hunk reserves. */
 export const BUILT_IN_CLI_COMMAND_NAMES = new Set([
+  "open",
   "diff",
   "show",
   "log",

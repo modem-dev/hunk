@@ -9,7 +9,7 @@ import { loadHighlightedSourceLines, spansForHighlightedSourceLine } from "./dif
 import {
   createDocumentHighlightService,
   type DocumentHighlightResult,
-} from "./documentHighlightService";
+} from "../syntax/documentHighlightService";
 import { encodeCompactHighlightedDocument, registerHighlightWorker, type HastNode } from "./worker";
 import { useHighlightedSource } from "./useHighlightedSource";
 

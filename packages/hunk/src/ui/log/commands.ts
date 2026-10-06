@@ -5,9 +5,9 @@ import {
   type HistoryCommandHelpSection,
   type HistoryCommandId,
 } from "../../core/run/historyCommandCatalog";
-import { matchesAnyKeyChord } from "../../lib/commandKeys";
+import { buildSurfaceCommands } from "../session/commands";
 import type { HelpSection } from "../lib/helpContent";
-import { formatKeyChord, type CommandKeyDefaults } from "../lib/keymap";
+import type { CommandKeyDefaults } from "../lib/keymap";
 import type { AppCommand, ResolvedCommandKeys } from "../lib/appCommands";
 import type { LogSnapshot } from "./controller";
 
@@ -78,22 +78,10 @@ export function buildHistoryCommands({
   handlers,
   resolvedKeys,
 }: BuildHistoryCommandsOptions): AppCommand[] {
-  return HISTORY_COMMAND_CATALOG.map((entry) => {
-    const keys = resolvedKeys?.get(entry.id) ?? entry.defaultKeys;
-    return {
-      id: entry.id,
-      aliases: entry.aliases,
-      title: entry.title,
-      keys,
-      keyLabels: keys.map(formatKeyChord),
-      defaultKeys: entry.defaultKeys,
-      isEnabled: () => isHistoryCommandEnabled(entry.id as HistoryCommandId, getSnapshot()),
-      publicToExtensions: entry.publicToExtensions,
-      verticalDirection: entry.verticalDirection,
-      closesMenu: entry.closesMenu,
-      match: matchesAnyKeyChord(keys),
-      run: (key) => handlers[entry.id as HistoryCommandId](key, entry),
-    };
+  return buildSurfaceCommands(HISTORY_COMMAND_CATALOG, {
+    resolvedKeys,
+    isEnabled: (entry) => isHistoryCommandEnabled(entry.id as HistoryCommandId, getSnapshot()),
+    run: (entry, key) => handlers[entry.id as HistoryCommandId](key, entry),
   });
 }
 

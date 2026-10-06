@@ -2,7 +2,7 @@ import {
   BUILT_IN_FILE_LANGUAGE_EXTENSIONS,
   replaceExtensionFileLanguages,
   type FileLanguageRegistration,
-} from "../core/changeset/fileLanguage";
+} from "../core/documents/fileLanguage";
 import type { StartupNotice } from "../core/process/startupNotice";
 import type { Changeset } from "../core/changeset/model";
 import { detectVcs, extendVcsCatalog, getDefaultVcsAdapter } from "../core/vcs";

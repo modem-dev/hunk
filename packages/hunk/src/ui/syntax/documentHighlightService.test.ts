@@ -16,7 +16,7 @@ import {
   HighlightWorkerClientError,
   type CompactHighlightedDocument,
   type DocumentWorkerEligibility,
-} from "./worker";
+} from "../diff/worker";
 
 const theme = THEMES.find((candidate) => candidate.id === "github-dark-default")!;
 const base: Omit<DocumentHighlightInput, "signal"> = {

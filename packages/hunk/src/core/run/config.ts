@@ -41,6 +41,7 @@ import {
   isLayoutModeInput,
   normalizeLayoutModeInput,
   type CliInput,
+  type ConfigurableInput,
   type CommonOptions,
   type CursorLine,
   type LayoutMode,
@@ -167,8 +168,8 @@ export interface ExtensionBootstrapConfigOptions extends ConfigResolutionOptions
 const CONFIG_FALLBACK_VCS_ID = "git";
 const EMPTY_CONFIG_VCS_CATALOG = createVcsCatalog([], CONFIG_FALLBACK_VCS_ID, []);
 
-export interface HunkConfigResolution {
-  input: CliInput;
+export interface HunkConfigResolution<Input extends ConfigurableInput = CliInput> {
+  input: Input & { options: CommonOptions };
   /** Config-defined custom themes in declaration order, user layer before repo layer. */
   customThemes: NamedCustomThemeConfig[];
   extensions: ExtensionsConfig;
@@ -522,13 +523,14 @@ export const CONFIG_REFERENCE_OPTIONS: readonly ConfigReferenceOption[] = [
 
 /** Command-specific TOML tables accepted by the runtime resolver. */
 export const CONFIG_COMMAND_SECTIONS = {
+  open: "complete documents and directory browsing (`hunk open`)",
   vcs: "working-tree and target reviews (`hunk diff`)",
   show: "commit and target display reviews (`hunk show`)",
   "stash-show": "stash reviews (`hunk stash show`)",
   diff: "two-file comparisons (`hunk diff --files <left> <right>`)",
   patch: "patch-file reviews (`hunk patch`)",
   difftool: "Git difftool pair reviews (`hunk difftool`)",
-} as const satisfies Record<CliInput["kind"], string>;
+} as const satisfies Record<ConfigurableInput["kind"], string>;
 
 /** Reference metadata for the root-only custom-theme tables. */
 export const CONFIG_REFERENCE_CUSTOM_THEME = {
@@ -1128,7 +1130,7 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
 /** Apply one parsed config object, including command/pager sections, to the current invocation. */
 function resolveConfigLayer(
   source: Record<string, unknown>,
-  input: CliInput,
+  input: ConfigurableInput,
   { includeUserOnly = true }: { includeUserOnly?: boolean } = {},
 ): CommonOptions {
   let resolved = readConfigPreferences(source, { includeUserOnly });
@@ -1312,15 +1314,23 @@ export function resolveExtensionBootstrapConfig({
   };
 }
 
-/** Resolve CLI input against global and repo-local config files. */
+/** Resolve review inputs while preserving the existing review bootstrap contract. */
 export function resolveConfiguredCliInput(
   input: CliInput,
+  options: ConfigResolutionOptions = {},
+): HunkConfigResolution {
+  return resolveConfiguredInput(input, options);
+}
+
+/** Resolve view-capable inputs against global and repo-local config files. */
+export function resolveConfiguredInput<Input extends ConfigurableInput>(
+  input: Input,
   {
     cwd = process.cwd(),
     env = process.env,
     vcsCatalog = EMPTY_CONFIG_VCS_CATALOG,
   }: ConfigResolutionOptions = {},
-): HunkConfigResolution {
+): HunkConfigResolution<Input> {
   const sources = readConfigSources(cwd, env, vcsCatalog);
   const repoRoot = sources.projectRoot;
   const repoConfigPath = sources.repoConfigPath;

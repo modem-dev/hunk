@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { fileLanguageForPath } from "../core/changeset/fileLanguageLookup";
-import { replaceExtensionFileLanguages } from "../core/changeset/fileLanguage";
+import { fileLanguageForPath } from "../core/documents/fileLanguageLookup";
+import { replaceExtensionFileLanguages } from "../core/documents/fileLanguage";
 import { persistedViewPreferencesFromOptions, type HunkConfigResolution } from "../core/run/config";
 import type { AppBootstrap } from "../core/bootstrap";
 import type { CliInput } from "../core/run/commandInputs";

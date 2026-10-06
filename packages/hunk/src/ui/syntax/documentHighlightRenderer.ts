@@ -5,12 +5,12 @@ import {
   type FileContents,
 } from "@pierre/diffs";
 import type { AppTheme } from "../themes";
-import { pierreHighlightRenderOptions } from "./highlightRenderOptions";
+import { pierreHighlightRenderOptions } from "../diff/highlightRenderOptions";
 import {
   ensureSyntaxHighlightThemeRegistered,
   syntaxHighlightThemeName,
-} from "./syntaxHighlightTheme";
-import type { HastNode } from "./worker";
+} from "../diff/syntaxHighlightTheme";
+import type { HastNode } from "../diff/worker";
 
 export type HighlightThemeInput = AppTheme | AppTheme["appearance"];
 type HighlightOptions = ReturnType<typeof getHighlighterOptions>;

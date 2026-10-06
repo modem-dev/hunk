@@ -4,8 +4,8 @@ import {
   DocumentHighlighterConfigurationError,
   renderHighlightedDocumentLines,
 } from "./documentHighlightRenderer";
-import { DOCUMENT_HIGHLIGHT_RENDER_OPTIONS_REVISION } from "./highlightRenderOptions";
-import { syntaxHighlightThemeName } from "./syntaxHighlightTheme";
+import { DOCUMENT_HIGHLIGHT_RENDER_OPTIONS_REVISION } from "../diff/highlightRenderOptions";
+import { syntaxHighlightThemeName } from "../diff/syntaxHighlightTheme";
 import {
   compactHighlightedDocumentByteLength,
   compactHighlightedDocumentRunsForLine,
@@ -15,7 +15,7 @@ import {
   HighlightWorkerClientError,
   type CompactHighlightedDocument,
   type DocumentWorkerEligibility,
-} from "./worker";
+} from "../diff/worker";
 
 const DEFAULT_CACHE_BYTES = 32 * 1024 * 1024;
 const DEFAULT_CACHE_ENTRIES = 128;

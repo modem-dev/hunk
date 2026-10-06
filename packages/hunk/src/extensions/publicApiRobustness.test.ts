@@ -179,7 +179,7 @@ describe("registerFileLanguage with junk", () => {
   });
 
   test("preserves exact filename and glob values through matching", async () => {
-    const { fileLanguageForPath } = await import("../core/changeset/fileLanguageLookup");
+    const { fileLanguageForPath } = await import("../core/documents/fileLanguageLookup");
     const { registry, issues } = loadFactory(
       (hunk: { registerFileLanguage: (matcher: unknown, language: string) => void }) => {
         hunk.registerFileLanguage({ kind: "filename", value: " Tool\\Hunkfile " }, "python");

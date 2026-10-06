@@ -441,7 +441,18 @@ export type ExtensionManageCommandInput =
   | ExtensionUpdateCommandInput
   | ExtensionRemoveCommandInput;
 
+/** Open complete documents without creating a review changeset. */
+export interface OpenCommandInput {
+  kind: "open";
+  path: string;
+  options: CommonOptions;
+}
+
+/** Inputs whose view preferences use the shared configuration resolver. */
+export type ConfigurableInput = CliInput | OpenCommandInput;
+
 export type ParsedCliInput =
+  | OpenCommandInput
   | CliInput
   | HistoryCommandInput
   | HelpCommandInput

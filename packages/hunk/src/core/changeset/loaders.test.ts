@@ -11,7 +11,7 @@ import {
 } from "node:fs";
 import { platform, tmpdir } from "node:os";
 import { join } from "node:path";
-import { replaceExtensionFileLanguages } from "./fileLanguage";
+import { replaceExtensionFileLanguages } from "../documents/fileLanguage";
 import { SourceTextTooLargeError } from "./fileSource";
 import { getBundledVcsCatalog } from "../../app/vcsCatalog";
 import { createGitVcsAdapter } from "@hunk/git";

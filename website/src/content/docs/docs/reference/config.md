@@ -234,6 +234,7 @@ Enable moved-line coloring when the renderer supports it.
 
 | Table          | Applies to                                                |
 | -------------- | --------------------------------------------------------- |
+| `[open]`       | complete documents and directory browsing (`hunk open`)   |
 | `[vcs]`        | working-tree and target reviews (`hunk diff`)             |
 | `[show]`       | commit and target display reviews (`hunk show`)           |
 | `[stash-show]` | stash reviews (`hunk stash show`)                         |
