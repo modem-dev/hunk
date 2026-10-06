@@ -19,18 +19,24 @@ function handleThemeKey(key: KeyEvent, selector: ThemeSelectorController) {
   actions[key.name]?.();
 }
 
-/** Route open-menu navigation independently of document focus. */
+/** Consume menu navigation while leaving command accelerators available to the command table. */
 function handleMenuKey(key: KeyEvent, menu: MenuController) {
   const actions: Record<string, () => void> = {
     escape: menu.closeMenu,
     left: () => menu.switchMenu(-1),
     right: () => menu.switchMenu(1),
+    tab: () => menu.switchMenu(1),
     up: () => menu.moveMenuItem(-1),
     down: () => menu.moveMenuItem(1),
     return: menu.activateCurrentMenuItem,
+    enter: menu.activateCurrentMenuItem,
   };
 
-  actions[key.name]?.();
+  const action = actions[key.name];
+  if (!action) return false;
+
+  action();
+  return true;
 }
 
 /** Give help, themes and menus keyboard priority before dispatching document commands. */
@@ -59,15 +65,25 @@ export function useDocumentKeyboard({
 
     if (themeSelector.getThemeSelectorOpen()) {
       handleThemeKey(key, themeSelector);
-    } else if (key.name === "f10") {
-      if (menu.getActiveMenuId()) menu.closeMenu();
-      else menu.openMenu("file");
-    } else if (menu.getActiveMenuId()) {
-      handleMenuKey(key, menu);
-    } else {
-      dispatchAppCommand(commands, key);
+      key.preventDefault();
       return;
     }
-    key.preventDefault();
+
+    if (key.name === "f10") {
+      if (menu.getActiveMenuId()) menu.closeMenu();
+      else menu.openMenu("file");
+      key.preventDefault();
+      return;
+    }
+
+    if (menu.getActiveMenuId() && handleMenuKey(key, menu)) {
+      key.preventDefault();
+      return;
+    }
+
+    // Like history menus, a matched document command closes the dropdown;
+    // unbound or unknown keys neither run an action nor dismiss it.
+    const command = dispatchAppCommand(commands, key);
+    if (command) menu.closeMenu();
   });
 }

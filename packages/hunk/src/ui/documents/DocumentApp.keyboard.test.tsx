@@ -64,13 +64,26 @@ async function createTestKeyboardApp(keybindings: Record<string, UserKeyBinding>
     await act(async () => setup.renderOnce());
   };
 
+  /** Click the actual rendered menu entry so pointer and shortcut tests share command effects. */
+  const clickMenuItem = async (label: string) => {
+    const lines = setup.captureCharFrame().split("\n");
+    const y = lines.findIndex((line) => line.includes(label));
+    if (y < 0) throw new Error(`Missing menu entry: ${label}`);
+    const x = lines[y]!.indexOf(label);
+    await act(async () => {
+      await setup.mockMouse.click(x + 1, y);
+      await Bun.sleep(20);
+    });
+    await act(async () => setup.renderOnce());
+  };
+
   /** Dispose mounted UI and source work even if a burst assertion fails. */
   const close = async () => {
     await act(async () => setup.renderer.destroy());
     await controller.close();
   };
 
-  return { setup, controller, themeController, edit, list, quit, burst, close };
+  return { setup, controller, themeController, edit, list, quit, burst, clickMenuItem, close };
 }
 
 test("help owns later keys in its opening burst and releases them in its closing burst", async () => {
@@ -159,6 +172,114 @@ test("pointer focus and menu help actions share the keyboard's live state", asyn
     await app.burst("f10", "right", "right", "return", "e");
     expect(app.setup.captureCharFrame()).toContain("Controls help");
     expect(app.edit).not.toHaveBeenCalled();
+  } finally {
+    await app.close();
+  }
+});
+
+test("advertised menu accelerators and pointer entries dispatch the same commands and close the menu", async () => {
+  const app = await createTestKeyboardApp();
+  try {
+    const initialLists = app.list.mock.calls.length;
+    await app.burst("f10", "r");
+    expect(app.list).toHaveBeenCalledTimes(initialLists + 1);
+    expect(app.setup.captureCharFrame()).not.toContain("Refresh documents");
+    await app.burst("f10");
+    await app.clickMenuItem("Refresh documents");
+    expect(app.list).toHaveBeenCalledTimes(initialLists + 2);
+    expect(app.setup.captureCharFrame()).not.toContain("Refresh documents");
+
+    await app.burst("f10", "e");
+    expect(app.edit).toHaveBeenCalledTimes(1);
+    expect(app.setup.captureCharFrame()).not.toContain("Open file in $EDITOR");
+    await app.burst("f10");
+    await app.clickMenuItem("Open file in $EDITOR");
+    expect(app.edit).toHaveBeenCalledTimes(2);
+    expect(app.setup.captureCharFrame()).not.toContain("Open file in $EDITOR");
+
+    await app.burst("f10", "q");
+    expect(app.quit).toHaveBeenCalledTimes(1);
+    expect(app.setup.captureCharFrame()).not.toContain("Refresh documents");
+    await app.burst("f10");
+    await app.clickMenuItem("Quit");
+    expect(app.quit).toHaveBeenCalledTimes(2);
+    expect(app.setup.captureCharFrame()).not.toContain("Refresh documents");
+  } finally {
+    await app.close();
+  }
+});
+
+test("menu accelerators honor remaps while unrecognized keys leave the menu open", async () => {
+  const app = await createTestKeyboardApp({
+    "hunk.app.refresh": "x",
+    "hunk.documents.edit": "o",
+    "hunk.app.quit": "z",
+  });
+  try {
+    const initialLists = app.list.mock.calls.length;
+    await app.burst("f10", "r", "e", "q", "!");
+    expect(app.list).toHaveBeenCalledTimes(initialLists);
+    expect(app.edit).not.toHaveBeenCalled();
+    expect(app.quit).not.toHaveBeenCalled();
+    expect(app.setup.captureCharFrame()).toMatch(/Refresh documents\s+x/);
+    expect(app.setup.captureCharFrame()).toMatch(/Open file in \$EDITOR\s+o/);
+    expect(app.setup.captureCharFrame()).toMatch(/Quit\s+z/);
+
+    await app.burst("x");
+    expect(app.list).toHaveBeenCalledTimes(initialLists + 1);
+    expect(app.setup.captureCharFrame()).not.toContain("Refresh documents");
+    await app.burst("f10", "o");
+    expect(app.edit).toHaveBeenCalledTimes(1);
+    await app.burst("f10", "z");
+    expect(app.quit).toHaveBeenCalledTimes(1);
+  } finally {
+    await app.close();
+  }
+});
+
+test("unbound menu commands remain callable by pointer or menu navigation but not their old keys", async () => {
+  const app = await createTestKeyboardApp({
+    "hunk.app.refresh": false,
+    "hunk.documents.edit": false,
+    "hunk.app.quit": false,
+  });
+  try {
+    const initialLists = app.list.mock.calls.length;
+    await app.burst("f10", "r", "e", "q");
+    expect(app.list).toHaveBeenCalledTimes(initialLists);
+    expect(app.edit).not.toHaveBeenCalled();
+    expect(app.quit).not.toHaveBeenCalled();
+    expect(app.setup.captureCharFrame()).toContain("Refresh documents");
+
+    await app.burst("return");
+    expect(app.list).toHaveBeenCalledTimes(initialLists + 1);
+    await app.burst("f10", "down", "return");
+    expect(app.edit).toHaveBeenCalledTimes(1);
+    await app.burst("f10");
+    await app.clickMenuItem("Quit");
+    expect(app.quit).toHaveBeenCalledTimes(1);
+  } finally {
+    await app.close();
+  }
+});
+
+test("menu navigation owns arrows and Tab while help and themes still isolate command accelerators", async () => {
+  const app = await createTestKeyboardApp();
+  try {
+    await app.burst("f10", "down", "return");
+    expect(app.edit).toHaveBeenCalledTimes(1);
+    expect(app.controller.getSnapshot().selectedKey).toBe("a");
+    await app.burst("f10", "tab", "return", "e", "q");
+    expect(app.setup.captureCharFrame()).toContain("Theme selector");
+    expect(app.edit).toHaveBeenCalledTimes(1);
+    expect(app.quit).not.toHaveBeenCalled();
+
+    await app.burst("escape", "f10", "?", "e", "q");
+    expect(app.setup.captureCharFrame()).toContain("Controls help");
+    expect(app.edit).toHaveBeenCalledTimes(1);
+    expect(app.quit).not.toHaveBeenCalled();
+    await app.burst("?");
+    expect(app.setup.captureCharFrame()).not.toContain("Refresh documents");
   } finally {
     await app.close();
   }
