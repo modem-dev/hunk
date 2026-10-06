@@ -242,7 +242,33 @@ describe("filesystem documents", () => {
     ).toBeNull();
     expect(await readFile(file, "utf8")).toBe("after\n");
   });
-  test("refuses editor writeback after atomic replacement and retains the edited copy", async () => {
+  test("refuses editor writeback after attempted atomic replacement and retains the edited copy", async () => {
+    const root = await createTestRoot();
+    const file = join(root, "selected.txt");
+    await writeFile(file, "before");
+    const source = await createFilesystemSource(root);
+    let copyPath = "";
+    let replaced = false;
+    const result = await source.edit?.(file, async (copy) => {
+      copyPath = copy;
+      await writeFile(copy, "edited");
+      const replacement = join(root, "replacement");
+      await writeFile(replacement, "replacement");
+      // Windows Bun currently pins writable handles against rename (EPERM). A rejected
+      // editor operation must still preserve its private copy and leave the original intact.
+      await rename(replacement, file);
+      replaced = true;
+      return null;
+    });
+    // Register retained recovery directories for test cleanup as well.
+    roots.push(join(copyPath, ".."));
+    if (!replaced) expect(process.platform).toBe("win32");
+    expect(result).toContain(replaced ? "Document changed while editing" : "EPERM");
+    expect(result).toContain("Editor copy retained");
+    expect(await readFile(file, "utf8")).toBe(replaced ? "replacement" : "before");
+    expect(await readFile(copyPath, "utf8")).toBe("edited");
+  });
+  test("rejects concurrent in-place changes without overwriting either the original or editor copy", async () => {
     const root = await createTestRoot();
     const file = join(root, "selected.txt");
     await writeFile(file, "before");
@@ -251,16 +277,12 @@ describe("filesystem documents", () => {
     const result = await source.edit?.(file, async (copy) => {
       copyPath = copy;
       await writeFile(copy, "edited");
-      const replacement = join(root, "replacement");
-      await writeFile(replacement, "replacement");
-      await rename(replacement, file);
+      await writeFile(file, "concurrent");
       return null;
     });
-    // Register retained recovery directories for test cleanup as well.
     roots.push(join(copyPath, ".."));
     expect(result).toContain("Document changed while editing");
-    expect(result).toContain("Editor copy retained");
-    expect(await readFile(file, "utf8")).toBe("replacement");
+    expect(await readFile(file, "utf8")).toBe("concurrent");
     expect(await readFile(copyPath, "utf8")).toBe("edited");
   });
   test.skipIf(process.platform === "win32")(
