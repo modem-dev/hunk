@@ -84,6 +84,22 @@ test("the session host mounts documents, honors remaps and acknowledges external
     expect(edit).toHaveBeenCalledTimes(1);
     expect(edit.mock.calls[0]?.[0]).toBe("document:opaque");
     expect(setup.captureCharFrame()).toContain("Source-owned editor capability");
+    await act(async () => setup.mockInput.pressKey("?"));
+    await setup.renderOnce();
+    expect(setup.captureCharFrame()).toContain("Documents");
+    await act(async () => {
+      setup.mockInput.pressKey("e");
+      setup.mockInput.pressKey("n");
+      await Bun.sleep(20);
+    });
+    expect(edit).toHaveBeenCalledTimes(1);
+    expect(route.controller.getSnapshot().selectedKey).toBe("document:opaque");
+    await act(async () => {
+      setup.mockInput.pressEscape();
+      await Bun.sleep(50);
+    });
+    await setup.renderOnce();
+    expect(setup.captureCharFrame()).not.toContain("Controls help");
     await act(async () => setup.mockInput.pressTab());
     await act(async () => setup.mockInput.pressArrow("down"));
     await setup.renderOnce();
