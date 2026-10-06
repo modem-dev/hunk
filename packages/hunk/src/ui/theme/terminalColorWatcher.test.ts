@@ -305,6 +305,27 @@ describe("terminal color watcher", () => {
     dispose();
   });
 
+  test("keeps probing after the palette fallback fails to clear its cache", async () => {
+    const renderer = createTestColorRenderer({ palette: createTestTerminalColors(DARK) });
+    const clearPaletteCache = renderer.clearPaletteCache;
+    renderer.clearPaletteCache = () => {
+      renderer.clearPaletteCache = clearPaletteCache;
+      throw new Error("renderer is suspending");
+    };
+    const { changes, dispose } = startTestWatcher(renderer, { write: null });
+
+    renderer.deliver("\x1b[?997;1n");
+    await Bun.sleep(30);
+    expect(renderer.probes).toBe(0);
+    expect(changes).toEqual([]);
+
+    renderer.deliver("\x1b[?997;1n");
+    await Bun.sleep(30);
+    expect(renderer.probes).toBe(1);
+    expect(changes).toEqual([createTestTerminalColors(DARK)]);
+    dispose();
+  });
+
   test("probes when OpenTUI reports a theme mode without invalidating an in-flight probe", async () => {
     const renderer = createTestColorRenderer();
     const { changes, dispose } = startTestWatcher(renderer);

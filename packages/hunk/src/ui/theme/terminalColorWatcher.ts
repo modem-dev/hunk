@@ -215,7 +215,13 @@ export function watchTerminalColors({
     if (!write) {
       // OpenTUI caches the palette and only invalidates it when light/dark flips, which misses a
       // switch between two dark themes.
-      renderer.clearPaletteCache();
+      try {
+        renderer.clearPaletteCache();
+      } catch {
+        // Settle the probe so a throwing renderer cannot leave the watcher wedged on it.
+        finish(undefined);
+        return;
+      }
       renderer.getPalette({ size: ANSI_PALETTE_SIZE }).then(
         (report) => finish(terminalColorsFromPalette(report)),
         // A renderer that suspends mid-probe cannot answer; the next trigger after resume will.
