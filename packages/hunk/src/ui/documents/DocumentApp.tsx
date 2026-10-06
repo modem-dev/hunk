@@ -20,6 +20,7 @@ import type { ThemeController } from "../theme/controller";
 import { DocumentContent, DocumentStatusBar } from "./DocumentContent";
 import { buildDocumentCommands, buildDocumentMenus } from "./commands";
 import { useDocumentKeyboard } from "./useDocumentKeyboard";
+import { useDocumentInteractionState } from "./useDocumentInteractionState";
 import type { DocumentBrowserController } from "./controller";
 
 /** Coordinate document navigation, editor launches and shared chrome without owning source I/O.
@@ -42,15 +43,24 @@ export function DocumentApp({
   const renderer = useRenderer();
   const snapshot = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
 
-  const [focus, setFocus] = useState<"tree" | "document">(
-    controller.source.root.kind === "directory" ? "tree" : "document",
-  );
-  const [sidebar, setSidebar] = useState(
-    options.sidebar !== false && controller.source.root.kind === "directory",
-  );
+  const interaction = useDocumentInteractionState({
+    focus: controller.source.root.kind === "directory" ? "tree" : "document",
+    sidebar: options.sidebar !== false && controller.source.root.kind === "directory",
+    help: false,
+  });
+  const { focus, sidebar, help } = interaction.state;
+
+  /** Read focus after all preceding keyboard or pointer actions, even before React renders. */
+  const isTreeFocused = () => {
+    const current = interaction.getSnapshot();
+    return current.sidebar && current.focus === "tree";
+  };
+
+  /** Close help from either its keyboard owner or its pointer dismiss action. */
+  const closeHelp = () => interaction.update((current) => ({ ...current, help: false }));
+
   const [numbers, setNumbers] = useState(options.lineNumbers !== false);
   const [wrap, setWrap] = useState(options.wrapLines ?? false);
-  const [help, setHelp] = useState(false);
 
   const notice = useTimedNotice(4000);
 
@@ -97,7 +107,7 @@ export function DocumentApp({
 
   const commands = buildDocumentCommands({
     controller,
-    treeFocused,
+    isTreeFocused,
     height,
     scrollRef,
     edit: () => {
@@ -110,10 +120,15 @@ export function DocumentApp({
         void controller.refresh();
       },
       "hunk.app.toggleFocusArea": () =>
-        setFocus((focus) => (focus === "tree" ? "document" : "tree")),
-      "hunk.app.toggleHelp": () => setHelp((help) => !help),
+        interaction.update((current) => ({
+          ...current,
+          focus: current.focus === "tree" ? "document" : "tree",
+        })),
+      "hunk.app.toggleHelp": () =>
+        interaction.update((current) => ({ ...current, help: !current.help })),
       "hunk.view.openThemeSelector": themeSelector.openThemeSelector,
-      "hunk.view.toggleFilesPane": () => setSidebar((value) => !value),
+      "hunk.view.toggleFilesPane": () =>
+        interaction.update((current) => ({ ...current, sidebar: !current.sidebar })),
       "hunk.view.toggleLineNumbers": () => setNumbers((value) => !value),
       "hunk.view.toggleLineWrap": () => setWrap((value) => !value),
     },
@@ -127,7 +142,13 @@ export function DocumentApp({
   });
   const menu = useMenuController(menus);
 
-  useDocumentKeyboard({ help, closeHelp: () => setHelp(false), themeSelector, menu, commands });
+  useDocumentKeyboard({
+    isHelpOpen: () => interaction.getSnapshot().help,
+    closeHelp,
+    themeSelector,
+    menu,
+    commands,
+  });
   const overlay = help || themeSelector.themeSelectorOpen || menu.activeMenuId !== null;
 
   return (
@@ -139,7 +160,7 @@ export function DocumentApp({
         theme={theme}
         topTitle={`Open · ${sanitizeTerminalLine(controller.source.root.name)}`}
         onHoverMenu={(id) => {
-          if (menu.activeMenuId) menu.openMenu(id);
+          if (menu.getActiveMenuId()) menu.openMenu(id);
         }}
         onToggleMenu={menu.toggleMenu}
       />
@@ -159,7 +180,7 @@ export function DocumentApp({
           scrollRef,
           visibleLineRef,
         }}
-        onFocus={setFocus}
+        onFocus={(focus) => interaction.update((current) => ({ ...current, focus }))}
         onActivate={(key) => {
           void controller.activate(key);
         }}
@@ -215,7 +236,7 @@ export function DocumentApp({
           terminalHeight={terminal.height}
           terminalWidth={terminal.width}
           theme={theme}
-          onClose={() => setHelp(false)}
+          onClose={closeHelp}
         />
       ) : null}
     </box>

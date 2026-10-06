@@ -84,6 +84,33 @@ const noNotice = () => {};
 describe("useThemeSelectorController", () => {
   afterEach(() => setDetectedTerminalColors(undefined));
 
+  test("modal ownership changes synchronously for keyboard and pointer acceptance", async () => {
+    const harness = await renderThemeSelectorController({
+      initialTheme: "github-dark-default",
+      transparentBackground: false,
+      onTransientNotice: noNotice,
+    });
+    try {
+      await act(async () => {
+        const controller = harness.controller;
+        controller.openThemeSelector();
+        expect(controller.getThemeSelectorOpen()).toBe(true);
+        controller.closeThemeSelector();
+        expect(controller.getThemeSelectorOpen()).toBe(false);
+        controller.openThemeSelector();
+        controller.acceptThemeSelectorItem(0);
+        expect(controller.getThemeSelectorOpen()).toBe(false);
+        controller.openThemeSelector();
+        controller.moveThemeSelector(1);
+        controller.acceptThemeSelector();
+        expect(controller.getThemeSelectorOpen()).toBe(false);
+      });
+      expect(harness.controller.themeSelectorOpen).toBe(false);
+    } finally {
+      await destroyController(harness.setup);
+    }
+  });
+
   test("resolves auto initialization from the detected light or dark terminal mode", async () => {
     const light = await renderThemeSelectorController({
       initialTheme: "auto",

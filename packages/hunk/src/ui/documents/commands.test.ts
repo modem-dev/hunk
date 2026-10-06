@@ -35,7 +35,7 @@ async function createTestDocumentCommands(treeFocused: boolean) {
   });
   const commands = buildDocumentCommands({
     controller,
-    treeFocused,
+    isTreeFocused: () => treeFocused,
     height: 12,
     scrollRef: { current: { scrollBy, scrollTo, scrollHeight: 100 } },
     edit,

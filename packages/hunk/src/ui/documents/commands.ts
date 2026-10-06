@@ -15,7 +15,7 @@ type DocumentScrollRef = {
 /** Bind document navigation to the current focus and snapshot without branching on command ids. */
 export function buildDocumentCommands({
   controller,
-  treeFocused,
+  isTreeFocused,
   height,
   scrollRef,
   edit,
@@ -23,7 +23,7 @@ export function buildDocumentCommands({
   resolvedKeys,
 }: {
   controller: DocumentBrowserController;
-  treeFocused: boolean;
+  isTreeFocused: () => boolean;
   height: number;
   scrollRef: DocumentScrollRef;
   edit: () => void;
@@ -38,13 +38,13 @@ export function buildDocumentCommands({
 
   /** Move through the focused tree or document by physical rows. */
   const step = (delta: number) => {
-    if (treeFocused) controller.move(delta);
+    if (isTreeFocused()) controller.move(delta);
     else scrollRef.current?.scrollBy(delta);
   };
 
   /** Reveal the beginning or end of the focused surface. */
   const jump = (end: boolean) => {
-    if (treeFocused) controller.move(controller.getSnapshot().rows.length * (end ? 1 : -1));
+    if (isTreeFocused()) controller.move(controller.getSnapshot().rows.length * (end ? 1 : -1));
     else scrollRef.current?.scrollTo(end ? scrollRef.current.scrollHeight : 0);
   };
 
@@ -52,7 +52,7 @@ export function buildDocumentCommands({
   const horizontal = (expand: boolean) => {
     const selected = selectedEntry();
 
-    if (!treeFocused) {
+    if (!isTreeFocused()) {
       scrollRef.current?.scrollBy({ x: expand ? 4 : -4, y: 0 });
       return;
     }

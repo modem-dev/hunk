@@ -35,20 +35,20 @@ function handleMenuKey(key: KeyEvent, menu: MenuController) {
 
 /** Give help, themes and menus keyboard priority before dispatching document commands. */
 export function useDocumentKeyboard({
-  help,
+  isHelpOpen,
   closeHelp,
   themeSelector,
   menu,
   commands,
 }: {
-  help: boolean;
+  isHelpOpen: () => boolean;
   closeHelp: () => void;
   themeSelector: ThemeSelectorController;
   menu: MenuController;
   commands: readonly AppCommand[];
 }) {
   useKeyboard((key) => {
-    if (help) {
+    if (isHelpOpen()) {
       if (key.name === "escape" || key.sequence === "?") {
         closeHelp();
         key.preventDefault();
@@ -57,10 +57,10 @@ export function useDocumentKeyboard({
       return;
     }
 
-    if (themeSelector.themeSelectorOpen) {
+    if (themeSelector.getThemeSelectorOpen()) {
       handleThemeKey(key, themeSelector);
     } else if (key.name === "f10") {
-      if (menu.activeMenuId) menu.closeMenu();
+      if (menu.getActiveMenuId()) menu.closeMenu();
       else menu.openMenu("file");
     } else if (menu.getActiveMenuId()) {
       handleMenuKey(key, menu);

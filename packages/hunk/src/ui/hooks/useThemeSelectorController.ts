@@ -33,6 +33,9 @@ export function useThemeSelectorController({
     selectedThemeId: null,
   }));
 
+  // Modal ownership changes at the action, not at React's next render.
+  const liveOpen = useRef(false);
+
   // `terminalColors` is not passed along: the `terminal` theme reads the probed colors itself,
   // and listing it as a dependency re-derives every theme after the terminal switches schemes.
   const themeOptions = useMemo(
@@ -107,6 +110,7 @@ export function useThemeSelectorController({
 
   /** Open the selector on the resolved committed theme without starting a preview. */
   const openThemeSelector = useCallback(() => {
+    liveOpen.current = true;
     selectedThemeIdRef.current = committedTheme.id;
     setState((current) => ({
       ...current,
@@ -118,6 +122,7 @@ export function useThemeSelectorController({
 
   /** Cancel the selector and restore the committed theme projection. */
   const closeThemeSelector = useCallback(() => {
+    liveOpen.current = false;
     setState((current) => ({ ...current, open: false, previewThemeId: null }));
   }, []);
 
@@ -170,6 +175,7 @@ export function useThemeSelectorController({
   /** Commit one validated item and clear its preview without an intermediate theme. */
   const commitThemeSelectorItem = useCallback(
     (item: (typeof themeOptions)[number]) => {
+      liveOpen.current = false;
       selectedThemeIdRef.current = item.id;
       setState((current) => ({
         ...current,
@@ -204,6 +210,7 @@ export function useThemeSelectorController({
     themeId: committedThemeId,
     themeSelectorItems: items,
     themeSelectorOpen: state.open,
+    getThemeSelectorOpen: () => liveOpen.current,
     themeSelectorSelectedIndex: selectedIndex,
     acceptThemeSelector,
     acceptThemeSelectorItem,
