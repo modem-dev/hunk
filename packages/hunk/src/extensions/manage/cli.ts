@@ -40,7 +40,7 @@ function requireInstalledRoot(env: NodeJS.ProcessEnv) {
   const installedRoot = resolveInstalledExtensionsRoot(env);
   if (!installedRoot) {
     throw new HunkUserError(
-      "Could not resolve the extension install directory because HOME/XDG_CONFIG_HOME is unset.",
+      "Could not resolve the extension install directory because HOME/XDG_STATE_HOME is unset.",
     );
   }
 

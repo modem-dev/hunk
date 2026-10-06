@@ -159,7 +159,7 @@ Mirror pi's model closely; it is proven and our users overlap with pi's.
 ### Extension form and discovery
 
 ````ts
-// ~/.config/hunk/extensions/copy-as-suggestion.ts
+// ~/.local/state/hunk/extensions/copy-as-suggestion.ts
 import type { HunkExtensionAPI } from "hunkdiff/extension";
 
 export default function (hunk: HunkExtensionAPI) {
@@ -178,7 +178,7 @@ export default function (hunk: HunkExtensionAPI) {
 }
 ````
 
-- Discovery: `~/.config/hunk/extensions/*.ts` and `*/index.ts` (global, follows
+- Discovery: `~/.local/state/hunk/extensions/*.ts` and `*/index.ts` (global, follows
   our existing XDG path logic in `packages/hunk/src/core/run/paths.ts`), `.hunk/extensions/`
   (repo-local, **trust-gated**, same posture as pi's project trust), explicit
   `[extensions] paths = [...]` in `config.toml`, and a `--extension <path>`

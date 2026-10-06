@@ -50,7 +50,7 @@ describe("extension startup", () => {
     const result = await loadStartupExtensions({
       extensions: createExtensionsConfig({ enabled: false }),
       cwd: home,
-      env: { XDG_CONFIG_HOME: home } as NodeJS.ProcessEnv,
+      env: { XDG_STATE_HOME: home } as NodeJS.ProcessEnv,
     });
 
     expect(result.registry.cliCommands.map((entry) => entry.command.name)).toEqual(["gh"]);
@@ -98,7 +98,7 @@ describe("extension startup", () => {
         disabled: ["boom"],
       }),
       cwd: home,
-      env: { XDG_CONFIG_HOME: home } as NodeJS.ProcessEnv,
+      env: { XDG_STATE_HOME: home } as NodeJS.ProcessEnv,
     });
 
     expect(result.issues).toEqual([]);
@@ -149,7 +149,7 @@ describe("extension startup", () => {
         extensionConfigs: { themed: { themeId: "midnight" } },
       }),
       cwd: home,
-      env: { XDG_CONFIG_HOME: home } as NodeJS.ProcessEnv,
+      env: { XDG_STATE_HOME: home } as NodeJS.ProcessEnv,
       hostOverrides: { repoRoot: undefined },
     });
 
@@ -172,7 +172,7 @@ describe("extension startup", () => {
     const result = await loadStartupExtensions({
       extensions: createExtensionsConfig(),
       cwd: home,
-      env: { XDG_CONFIG_HOME: home } as NodeJS.ProcessEnv,
+      env: { XDG_STATE_HOME: home } as NodeJS.ProcessEnv,
     });
     const commands = resolveExtensionCliCommands(result.registry);
 
@@ -208,7 +208,7 @@ export default function (hunk) {
     const provisional = await loadStartupExtensions({
       extensions: createExtensionsConfig(),
       cwd: repo,
-      env: { XDG_CONFIG_HOME: configHome } as NodeJS.ProcessEnv,
+      env: { XDG_STATE_HOME: configHome } as NodeJS.ProcessEnv,
       deferEventBusBinding: true,
     });
     const repoExtensions = join(repo, ".hunk", "extensions");
@@ -226,7 +226,7 @@ export default function (hunk) {
     const final = await loadStartupExtensions({
       extensions: createExtensionsConfig(),
       cwd: repo,
-      env: { XDG_CONFIG_HOME: configHome } as NodeJS.ProcessEnv,
+      env: { XDG_STATE_HOME: configHome } as NodeJS.ProcessEnv,
       projectRoot: repo,
       previousLoad: provisional,
       hostOverrides: { resolveRepoTrustImpl: () => "trusted" },
@@ -253,12 +253,12 @@ export default function (hunk) {
     const provisional = await loadStartupExtensions({
       extensions: createExtensionsConfig({ extensionConfigs: { configured: { value: 1 } } }),
       cwd: home,
-      env: { XDG_CONFIG_HOME: home } as NodeJS.ProcessEnv,
+      env: { XDG_STATE_HOME: home } as NodeJS.ProcessEnv,
     });
     await loadStartupExtensions({
       extensions: createExtensionsConfig({ extensionConfigs: { configured: { value: 2 } } }),
       cwd: home,
-      env: { XDG_CONFIG_HOME: home } as NodeJS.ProcessEnv,
+      env: { XDG_STATE_HOME: home } as NodeJS.ProcessEnv,
       previousLoad: provisional,
     });
 
@@ -282,7 +282,7 @@ export default function (hunk) {
     const provisional = await loadStartupExtensions({
       extensions: createExtensionsConfig(),
       cwd: home,
-      env: { XDG_CONFIG_HOME: home } as NodeJS.ProcessEnv,
+      env: { XDG_STATE_HOME: home } as NodeJS.ProcessEnv,
     });
     const rebuilt = await loadStartupExtensions({
       extensions: createExtensionsConfig({
@@ -290,7 +290,7 @@ export default function (hunk) {
         disabled: ["selected"],
       }),
       cwd: home,
-      env: { XDG_CONFIG_HOME: home } as NodeJS.ProcessEnv,
+      env: { XDG_STATE_HOME: home } as NodeJS.ProcessEnv,
       previousLoad: provisional,
     });
 

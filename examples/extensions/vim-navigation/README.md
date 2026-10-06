@@ -15,8 +15,8 @@ Press `F6` or choose **Extensions → Toggle Vim navigation**. The persistent st
 ## Install it globally
 
 ```bash
-mkdir -p ~/.config/hunk/extensions
-cp -R examples/extensions/vim-navigation ~/.config/hunk/extensions/
+mkdir -p ~/.local/state/hunk/extensions
+cp -R examples/extensions/vim-navigation ~/.local/state/hunk/extensions/
 ```
 
 ## Keys

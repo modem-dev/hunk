@@ -24,8 +24,8 @@ bun run packages/hunk/src/main.tsx -- diff --extension ./examples/extensions/inl
 Copy the whole folder — it has no dependencies:
 
 ```bash
-mkdir -p ~/.config/hunk/extensions
-cp -R examples/extensions/inline-edit ~/.config/hunk/extensions/
+mkdir -p ~/.local/state/hunk/extensions
+cp -R examples/extensions/inline-edit ~/.local/state/hunk/extensions/
 ```
 
 Hunk discovers the folder automatically on later launches. Open **View** and choose **File presentation: Inline edit**, or press `Ctrl-E`. The command is named `inline-edit.edit` for `[keybindings]` customization.

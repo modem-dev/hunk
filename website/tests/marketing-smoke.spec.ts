@@ -379,7 +379,7 @@ test("the extensions row carries a real code sample as its media", async ({ page
   // extensions into.
   const row = page.locator(".show-item").filter({ hasText: "Extend it however you want" });
   await expect(row.locator(".show-media.show-code")).toHaveCount(1);
-  await expect(row.locator(".paper-bar .pt")).toHaveText("~/.config/hunk/extensions/hello.ts");
+  await expect(row.locator(".paper-bar .pt")).toHaveText("~/.local/state/hunk/extensions/hello.ts");
   await expect(row.locator("pre")).toContainText('from "hunkdiff/extension"');
   await expect(row.getByRole("link", { name: /Writing extensions/ })).toHaveAttribute(
     "href",
