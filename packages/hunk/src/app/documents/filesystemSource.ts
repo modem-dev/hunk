@@ -327,6 +327,7 @@ export async function createFilesystemSource(
         try {
           const output = await new Response(process.stdout).text();
           const exitCode = await process.exited;
+          signal?.throwIfAborted();
           if (interrupted || (exitCode !== 0 && exitCode !== 1))
             return {
               kind: "unavailable",

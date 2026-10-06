@@ -336,6 +336,24 @@ describe("filesystem documents", () => {
       });
     }
   });
+  test("cancels an in-flight ignore query instead of returning a partial directory", async () => {
+    const root = await createTestRoot();
+    expect(Bun.spawnSync(["git", "init", "--quiet"], { cwd: root }).exitCode).toBe(0);
+    await writeFile(join(root, "ignored.log"), "ignored");
+    const abort = new AbortController();
+    let launched = false;
+    const source = await createFilesystemSource(root, {
+      spawn: ((...args: Parameters<typeof Bun.spawn>) => {
+        const [, options] = args;
+        launched = true;
+        const child = Bun.spawn([process.execPath, "-e", "setTimeout(() => {}, 10000);"], options);
+        setTimeout(() => abort.abort(), 50);
+        return child;
+      }) as typeof Bun.spawn,
+    });
+    await expect(source.list(root, abort.signal)).rejects.toThrow();
+    expect(launched).toBe(true);
+  });
   test("observes atomic replacement and releases subscriptions", async () => {
     const root = await createTestRoot();
     const file = join(root, "selected.txt");
