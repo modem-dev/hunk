@@ -6,6 +6,7 @@ import {
   mkdir,
   opendir,
   readFile,
+  realpath,
   rename,
   rm,
   symlink,
@@ -22,7 +23,8 @@ import {
 const roots: string[] = [];
 /** Create one isolated filesystem collection. */
 async function createTestRoot() {
-  const root = await mkdtemp(join(tmpdir(), "hunk-documents-"));
+  // Windows temp paths may use 8.3 aliases; source keys use canonical paths on every platform.
+  const root = await realpath(await mkdtemp(join(tmpdir(), "hunk-documents-")));
   roots.push(root);
   return root;
 }
