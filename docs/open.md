@@ -62,13 +62,24 @@ provide handle-relative directory enumeration. Browsing is not a sandbox against
 that can repeatedly replace and restore ancestors; use it on trusted local directories.
 
 Editors receive a private temporary copy, not a checked collection path. Hunk retains the original
-file handle and saves through it only if the file identity and content still match. Concurrent
+file handle and checks that the file identity and content still match before writeback. Detected
 replacement or modification cancels writeback and retains the edited copy at the path shown in the
 notice. Editor errors also retain that copy. Known GUI editors receive `--wait`; custom editor
-wrappers must wait until editing finishes. Only one edit may run at a time; repeated editor actions
-are rejected while it is active. Quitting waits for the editor transaction to settle, and late
+wrappers must wait until editing finishes. Each document browser permits one active editor action;
+repeated editor actions in that browser are rejected while it is active. Quitting waits for the editor transaction to settle, and late
 failures/recovery paths are printed after the terminal is restored. `$EDITOR` itself is trusted
 code, not sandboxed.
+
+Updated Hunk sessions in the same OS account and process namespace coordinate validation and writeback with
+private, inode-keyed save claims under the OS account home's `.hunk/document-save-claims/` directory.
+This location is independent of per-session `HOME`, XDG and temporary-directory overrides. Account
+lookup uses OS records, including built-in PowerShell without profiles on Windows; lookup or private
+directory failures refuse writeback and retain the edited copy. Competing
+saves are rejected with their editor copies retained; claims left by definitely dead processes are
+removed. An unrelated process reusing an owner's PID can conservatively delay saving until it exits.
+Save claims do not coordinate different hosts/accounts or container process namespaces, older Hunk
+versions, or non-Hunk writers.
+Those writers can still race the final conflict check, and in-place writeback is not crash-atomic.
 
 Expanded directories and the displayed file's parent are observed for changes, covering atomic
 file replacements and deletions. Watch notifications are debounced; manual and watch refreshes

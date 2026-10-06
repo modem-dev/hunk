@@ -48,9 +48,11 @@ export async function createFilesystemSource(
   {
     openDirectory = opendir,
     spawn = Bun.spawn,
+    saveClaimDirectory,
   }: {
     openDirectory?: typeof opendir;
     spawn?: typeof Bun.spawn;
+    saveClaimDirectory?: string;
   } = {},
 ): Promise<DocumentSource> {
   const input = resolve(inputPath);
@@ -274,7 +276,12 @@ export async function createFilesystemSource(
       editing = true;
 
       try {
-        return await editDocumentCopy(key, launch, { safePath, openCheckedPath, read });
+        return await editDocumentCopy(key, launch, {
+          safePath,
+          openCheckedPath,
+          read,
+          saveClaimDirectory,
+        });
       } finally {
         editing = false;
       }

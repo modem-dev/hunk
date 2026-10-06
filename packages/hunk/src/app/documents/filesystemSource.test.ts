@@ -3,17 +3,19 @@ import { existsSync } from "node:fs";
 import { createTestDeferred } from "../../../../../test/helpers/diff-helpers";
 import {
   chmod,
+  link,
   mkdtemp,
   mkdir,
   opendir,
   readFile,
+  readdir,
   realpath,
   rename,
   rm,
   symlink,
   writeFile,
 } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { devNull, tmpdir } from "node:os";
 import {
   createFilesystemSource,
@@ -287,6 +289,58 @@ describe("filesystem documents", () => {
     } finally {
       release.resolve();
       await first;
+    }
+  });
+
+  test("independent sources and hard-link aliases cannot overlap original-file writeback", async () => {
+    for (const hardLink of [false, true]) {
+      const root = await createTestRoot();
+      const file = join(root, "selected.txt");
+      const other = hardLink ? join(root, "alias.txt") : file;
+      await writeFile(file, "O".repeat(1_000_000));
+      if (hardLink) await link(file, other);
+      const saveClaimDirectory = join(root, "claims");
+      const first = await createFilesystemSource(file, { saveClaimDirectory });
+      const second = await createFilesystemSource(other, { saveClaimDirectory });
+      const ready = createTestDeferred<void>();
+      const copies: string[] = [];
+      let launches = 0;
+      const launch = (index: number, text: string) => async (copy: string) => {
+        copies[index] = copy;
+        await writeFile(copy, text);
+        if (++launches === 2) ready.resolve();
+        await ready.promise;
+        return null;
+      };
+
+      try {
+        const results = await Promise.all([
+          first.edit!(first.root.key, launch(0, "A".repeat(500_000))),
+          second.edit!(second.root.key, launch(1, "B".repeat(900_000))),
+        ]);
+        expect(results.filter((result) => result === null).length).toBeLessThanOrEqual(1);
+        const expected =
+          results[0] === null
+            ? "A".repeat(500_000)
+            : results[1] === null
+              ? "B".repeat(900_000)
+              : "O".repeat(1_000_000);
+        expect(await readFile(file, "utf8")).toBe(expected);
+        expect(await readFile(other, "utf8")).toBe(expected);
+        for (let index = 0; index < results.length; index++) {
+          if (results[index] !== null) {
+            expect(results[index]).toContain("Editor copy retained in");
+            expect(await readFile(copies[index]!, "utf8")).toBe(
+              index === 0 ? "A".repeat(500_000) : "B".repeat(900_000),
+            );
+          }
+        }
+        expect(await readdir(saveClaimDirectory)).toEqual([]);
+      } finally {
+        await Promise.all(
+          copies.map((copy) => rm(dirname(copy), { recursive: true, force: true })),
+        );
+      }
     }
   });
 

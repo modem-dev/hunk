@@ -10,10 +10,13 @@ import {
   writeDocumentBytes,
 } from "./documentBytes";
 
+import { withDocumentSaveClaim } from "./documentSaveClaim";
+
 interface DocumentEditIO {
   safePath: (key: string) => Promise<string>;
   openCheckedPath: (key: string, flags: number) => Promise<FileHandle>;
   read: DocumentSource["read"];
+  saveClaimDirectory?: string;
 }
 
 /** Read only bounded regular UTF-8 output from an editor-owned copy. */
@@ -98,8 +101,15 @@ export async function editDocumentCopy(
     if (failure) throw new Error(failure);
 
     const bytes = await readEditorOutput(copy);
-    await assertOriginalUnchanged(key, opened, original.identity, io.read);
-    if (documentBytesIdentity(bytes) !== original.identity) await writeDocumentBytes(handle, bytes);
+    await withDocumentSaveClaim(
+      opened,
+      async () => {
+        await assertOriginalUnchanged(key, opened, original.identity, io.read);
+        if (documentBytesIdentity(bytes) !== original.identity)
+          await writeDocumentBytes(handle!, bytes);
+      },
+      { directory: io.saveClaimDirectory },
+    );
 
     keepCopy = false;
     return null;
