@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
+import { createTestDeferred } from "../../../../../test/helpers/diff-helpers";
 import {
   chmod,
   mkdtemp,
@@ -250,6 +251,43 @@ describe("filesystem documents", () => {
       }),
     ).toBeNull();
     expect(await readFile(file, "utf8")).toBe("after\n");
+  });
+
+  test("rejects overlapping editors before launch and permits another edit after settlement", async () => {
+    const root = await createTestRoot();
+    const file = join(root, "selected.txt");
+    await writeFile(file, "original");
+    const source = await createFilesystemSource(root);
+    const started = createTestDeferred<void>();
+    const release = createTestDeferred<void>();
+    let launches = 0;
+
+    const first = source.edit!(file, async (copy) => {
+      launches++;
+      started.resolve();
+      await release.promise;
+      await writeFile(copy, "A".repeat(500_000));
+      return null;
+    });
+
+    try {
+      expect(
+        await source.edit!(file, async (copy) => {
+          launches++;
+          await writeFile(copy, "B".repeat(900_000));
+          return null;
+        }),
+      ).toBe("An editor is already open.");
+      await started.promise;
+      expect(launches).toBe(1);
+      release.resolve();
+      expect(await first).toBeNull();
+      expect(await readFile(file, "utf8")).toBe("A".repeat(500_000));
+      expect(await source.edit!(file, async () => null)).toBeNull();
+    } finally {
+      release.resolve();
+      await first;
+    }
   });
 
   test("refuses editor writeback after attempted atomic replacement and retains the edited copy", async () => {

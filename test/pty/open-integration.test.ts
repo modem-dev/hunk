@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { createPtyHarness } from "./harness";
 
@@ -56,6 +56,99 @@ describe("hunk open", () => {
       await session.waitForText("Saved document from editor");
       expect(readFileSync(target, "utf8")).not.toBe(path);
       expect(readFileSync(path, "utf8")).toBe("Saved document from editor\n");
+      await session.press("q");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("a burst of edit/edit/quit launches once and reports a retained recovery copy after teardown", async () => {
+    const root = createOpenTestFixture();
+    const path = join(root, "README.md");
+    const editor = join(root, "conflicting-editor.mjs");
+    const targets = join(root, "editor-targets.txt");
+    writeFileSync(
+      editor,
+      `import { appendFileSync, writeFileSync } from "node:fs";
+      appendFileSync(${JSON.stringify(targets)}, process.argv[2] + "\\n");
+      writeFileSync(${JSON.stringify(path)}, "Concurrent external update\\n");
+      await new Promise(resolve => setTimeout(resolve, 100));
+      writeFileSync(process.argv[2], "Editor recovery content\\n");`,
+    );
+    const session = await harness.launchHunk({
+      args: ["open", path],
+      cols: 120,
+      rows: 20,
+      env: { EDITOR: `"${process.execPath}" "${editor}"` },
+    });
+    let recoveryDirectory: string | undefined;
+
+    try {
+      await session.waitForText("Whole document");
+      await harness.ensureKeyboardIsLive(session);
+      session.writeRaw("eeq");
+      await harness.waitForSnapshot(session, () => {
+        const raw = session.getRawOutput();
+        return (
+          raw.lastIndexOf("Editor copy retained in") > raw.lastIndexOf("\x1b[?1049l") &&
+          raw.includes("Editor copy retained in")
+        );
+      });
+      const copies = readFileSync(targets, "utf8").trim().split("\n");
+      expect(copies).toHaveLength(1);
+      recoveryDirectory = dirname(copies[0]!);
+      expect(readFileSync(copies[0]!, "utf8")).toBe("Editor recovery content\n");
+      expect(readFileSync(path, "utf8")).toBe("Concurrent external update\n");
+    } finally {
+      session.close();
+      if (recoveryDirectory) rmSync(recoveryDirectory, { recursive: true, force: true });
+    }
+  });
+
+  test("retains wrapped right-edge characters beside the scrollbar after resizing", async () => {
+    const root = createOpenTestFixture();
+    const path = join(root, "edge.txt");
+    writeFileSync(
+      path,
+      Array.from({ length: 40 }, () => "12345678901234567890123456789X").join("\n"),
+    );
+    const session = await harness.launchHunk({
+      args: ["open", path, "--wrap", "--no-line-numbers"],
+      cols: 30,
+      rows: 16,
+    });
+
+    try {
+      await session.waitForText("X");
+      await harness.ensureKeyboardIsLive(session);
+      session.resize({ cols: 29, rows: 16 });
+      await session.waitForText("9X");
+      await session.press("q");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("keyboard navigation reaches the lower help controls without activating document commands", async () => {
+    const root = createOpenTestFixture();
+    const session = await harness.launchHunk({
+      args: ["open", join(root, "README.md")],
+      cols: 100,
+      rows: 20,
+    });
+
+    try {
+      await session.waitForText("Whole document");
+      await harness.ensureKeyboardIsLive(session);
+      await session.press("?");
+      await session.waitForText("Controls help");
+      expect(await session.text()).not.toContain("Scroll right / expand");
+      await session.press("end");
+      await session.waitForText("Scroll right / expand");
+      await session.press("q");
+      expect(await session.text()).toContain("Controls help");
+      await session.press("escape");
+      await session.waitForText("Whole document");
       await session.press("q");
     } finally {
       session.close();

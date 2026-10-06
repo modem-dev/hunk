@@ -21,7 +21,7 @@ export function DocumentTree({
   focused: boolean;
   onActivate: (key: string) => void;
 }) {
-  const viewport = useRowViewport(height);
+  const viewport = useRowViewport(height, width);
   const selected = snapshot.rows.findIndex((row) => row.entry.key === snapshot.selectedKey);
   useEffect(() => {
     const scroll = viewport.ref.current;
@@ -66,7 +66,7 @@ export function DocumentTree({
             >
               {fitText(
                 `${"  ".repeat(Math.min(depth, 20))}${marker} ${sanitizeTerminalLine(entry.name)}${entry.status ? `  ${entry.status}` : ""}`,
-                width,
+                viewport.width,
               )}
             </text>
           </box>

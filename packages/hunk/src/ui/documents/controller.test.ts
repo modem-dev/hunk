@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
+import { createTestDeferred } from "../../../../../test/helpers/diff-helpers";
 import type {
   DocumentEntry,
   DocumentReadResult,
@@ -99,6 +100,129 @@ describe("document browser controller", () => {
     browser.close();
     await browser.refresh();
     expect(browser.getSnapshot()).toBe(before);
+  });
+
+  test("removed expanded directories release slots and observation demand", async () => {
+    const fixture = createTestSource();
+    const directory = (key: string): DocumentEntry => ({
+      key,
+      name: key,
+      kind: "directory",
+      hidden: false,
+    });
+    let replaced = false;
+    let observed: readonly string[] = [];
+    fixture.source.list = async (key) => ({
+      kind: "entries",
+      entries:
+        key !== "root"
+          ? []
+          : replaced
+            ? [directory("new-folder")]
+            : Array.from({ length: 127 }, (_, index) => directory(`folder-${index}`)),
+    });
+    fixture.source.observe = (keys) => {
+      observed = [...keys];
+      return () => {};
+    };
+    const browser = new DocumentBrowserController(fixture.source);
+
+    try {
+      await browser.initialize();
+      for (let index = 0; index < 127; index++) await browser.activate(`folder-${index}`);
+      expect(browser.getSnapshot().expanded.size).toBe(128);
+      replaced = true;
+      await browser.refresh();
+      expect([...browser.getSnapshot().expanded]).toEqual(["root"]);
+      expect(observed).toEqual(["root"]);
+      await browser.activate("root");
+      await browser.activate("root");
+      await browser.activate("new-folder");
+      expect(browser.getSnapshot().expanded.has("new-folder")).toBe(true);
+      expect(browser.getSnapshot().notice).toBeNull();
+    } finally {
+      await browser.close();
+    }
+  });
+
+  test("collapsing a parent clears expanded descendants hidden by the visibility filter", async () => {
+    const fixture = createTestSource();
+    fixture.source.list = async (key) => ({
+      kind: "entries",
+      entries:
+        key === "root"
+          ? [{ key: "hidden", name: ".hidden", kind: "directory", hidden: true }]
+          : key === "hidden"
+            ? [{ key: "child", name: "child", kind: "directory", hidden: false }]
+            : [],
+    });
+    const browser = new DocumentBrowserController(fixture.source);
+
+    try {
+      await browser.initialize();
+      browser.toggleExcluded();
+      await browser.activate("hidden");
+      await browser.activate("child");
+      browser.toggleExcluded();
+      expect(browser.getSnapshot().rows.map((row) => row.entry.key)).toEqual(["root"]);
+      await browser.activate("root");
+      expect(browser.getSnapshot().expanded.size).toBe(0);
+    } finally {
+      await browser.close();
+    }
+  });
+
+  test("shutdown rejects another editor and waits for the active edit's recovery result", async () => {
+    const fixture = createTestSource();
+    const result = createTestDeferred<string | null>();
+    const edit = mock(() => result.promise);
+    fixture.source.edit = edit;
+    const browser = new DocumentBrowserController(fixture.source);
+    await browser.initialize();
+    await browser.select("a");
+    const pending = browser.editDisplayedDocument(async () => null);
+
+    try {
+      expect(await browser.editDisplayedDocument(async () => null)).toBe(
+        "An editor is already open.",
+      );
+      expect(edit).toHaveBeenCalledTimes(1);
+      let closed = false;
+      const shutdown = browser.close().then(() => {
+        closed = true;
+      });
+      await Promise.resolve();
+      expect(closed).toBe(false);
+      expect(await browser.editDisplayedDocument(async () => null)).toBe(
+        "The document session has closed.",
+      );
+      result.resolve("Conflict. Editor copy retained in recovery-directory.");
+      await pending;
+      await shutdown;
+      expect(closed).toBe(true);
+      expect(browser.shutdownEditNotice).toBe(
+        "Conflict. Editor copy retained in recovery-directory.",
+      );
+    } finally {
+      result.resolve(null);
+      await browser.close();
+    }
+  });
+
+  test("an already settled recovery notice survives quit before the next UI frame", async () => {
+    const fixture = createTestSource();
+    fixture.source.edit = async () => "Editor copy retained in recovery-directory.";
+    const browser = new DocumentBrowserController(fixture.source);
+
+    try {
+      await browser.initialize();
+      await browser.select("a");
+      await browser.editDisplayedDocument(async () => null);
+      await browser.close();
+      expect(browser.shutdownEditNotice).toBe("Editor copy retained in recovery-directory.");
+    } finally {
+      await browser.close();
+    }
   });
 
   test("watch/manual refreshes serialize, retain selection, and reread only demanded content", async () => {

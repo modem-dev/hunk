@@ -1,6 +1,7 @@
 import { expect, mock, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
+import { createTestDeferred } from "../../../../../test/helpers/diff-helpers";
 import type { DocumentSource } from "../../core/documents/source";
 import { resolveConfiguredInput } from "../../core/run/config";
 import { createInteractiveSessionInitialization } from "../../core/session/initialization";
@@ -63,7 +64,7 @@ test("the session host mounts documents, honors remaps and acknowledges external
     { width: 90, height: 20 },
   );
   try {
-    await setup.renderOnce();
+    await act(async () => setup.renderOnce());
     expect(setup.captureCharFrame()).toContain("example.ts");
     await act(async () => setup.mockInput.pressKey("j"));
     expect(route.controller.getSnapshot().selectedKey).toBe("collection:opaque");
@@ -71,7 +72,7 @@ test("the session host mounts documents, honors remaps and acknowledges external
       setup.mockInput.pressKey("n");
       await Bun.sleep(20);
     });
-    await setup.renderOnce();
+    await act(async () => setup.renderOnce());
     expect(setup.captureCharFrame()).toContain("const completeDocument = 42;");
     expect(setup.captureCharFrame()).not.toContain("document:opaque");
     const edit = mock(async (_key: string) => "Source-owned editor capability invoked.");
@@ -80,13 +81,19 @@ test("the session host mounts documents, honors remaps and acknowledges external
       setup.mockInput.pressKey("e");
       await Bun.sleep(20);
     });
-    await setup.renderOnce();
+    await act(async () => setup.renderOnce());
     expect(edit).toHaveBeenCalledTimes(1);
     expect(edit.mock.calls[0]?.[0]).toBe("document:opaque");
     expect(setup.captureCharFrame()).toContain("Source-owned editor capability");
     await act(async () => setup.mockInput.pressKey("?"));
-    await setup.renderOnce();
+    await act(async () => setup.renderOnce());
     expect(setup.captureCharFrame()).toContain("Documents");
+    expect(setup.captureCharFrame()).not.toContain("Scroll right / expand");
+    await act(async () => {
+      for (let index = 0; index < 12; index++) setup.mockInput.pressArrow("down");
+    });
+    await act(async () => setup.renderOnce());
+    expect(setup.captureCharFrame()).toContain("Scroll right / expand");
     await act(async () => {
       setup.mockInput.pressKey("e");
       setup.mockInput.pressKey("n");
@@ -98,14 +105,14 @@ test("the session host mounts documents, honors remaps and acknowledges external
       setup.mockInput.pressEscape();
       await Bun.sleep(50);
     });
-    await setup.renderOnce();
+    await act(async () => setup.renderOnce());
     expect(setup.captureCharFrame()).not.toContain("Controls help");
     await act(async () => setup.mockInput.pressTab());
     await act(async () => setup.mockInput.pressArrow("down"));
-    await setup.renderOnce();
+    await act(async () => setup.renderOnce());
     expect(setup.captureCharFrame()).toContain("const completeDocument = 42;");
     await act(async () => setup.mockInput.pressKey("n"));
-    await setup.renderOnce();
+    await act(async () => setup.renderOnce());
     expect(setup.captureCharFrame()).not.toContain("const completeDocument = 42;");
     await act(async () => abort.abort());
     expect(quit).toHaveBeenCalledTimes(1);
@@ -113,5 +120,46 @@ test("the session host mounts documents, honors remaps and acknowledges external
   } finally {
     await act(async () => setup.renderer.destroy());
     await route.controller.close();
+  }
+});
+
+test("repeated editor actions launch once and quit waits for the recovery result", async () => {
+  const route = await createTestDocumentRoute();
+  await route.controller.select("document:opaque");
+  const pending = createTestDeferred<string | null>();
+  const edit = mock(() => pending.promise);
+  route.controller.source.edit = edit;
+  const quit = mock(() => undefined);
+  const setup = await testRender(
+    <HunkSessionHost
+      initialRoute={route}
+      initialization={route.bootstrap.initialization}
+      externalQuitSignal={new AbortController().signal}
+      onQuit={quit}
+    />,
+    { width: 90, height: 20 },
+  );
+
+  try {
+    await act(async () => setup.renderOnce());
+    await act(async () => {
+      setup.mockInput.pressKey("e");
+      setup.mockInput.pressKey("e");
+      await Bun.sleep(20);
+    });
+    expect(edit).toHaveBeenCalledTimes(1);
+    await act(async () => setup.mockInput.pressKey("q"));
+    expect(quit).not.toHaveBeenCalled();
+    expect(route.controller.isClosed).toBe(true);
+    await act(async () => {
+      pending.resolve("Conflict. Editor copy retained in recovery-directory.");
+      await Bun.sleep(20);
+    });
+    expect(quit).toHaveBeenCalledTimes(1);
+    expect(route.controller.shutdownEditNotice).toContain("recovery-directory");
+  } finally {
+    pending.resolve(null);
+    await route.controller.close();
+    await act(async () => setup.renderer.destroy());
   }
 });

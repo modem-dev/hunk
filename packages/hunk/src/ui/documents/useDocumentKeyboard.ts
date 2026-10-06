@@ -49,8 +49,15 @@ export function useDocumentKeyboard({
 }) {
   useKeyboard((key) => {
     if (help) {
-      if (key.name === "escape" || key.sequence === "?") closeHelp();
-    } else if (themeSelector.themeSelectorOpen) {
+      if (key.name === "escape" || key.sequence === "?") {
+        closeHelp();
+        key.preventDefault();
+      }
+      // The focused help scrollbox owns navigation; document commands remain blocked.
+      return;
+    }
+
+    if (themeSelector.themeSelectorOpen) {
       handleThemeKey(key, themeSelector);
     } else if (key.name === "f10") {
       if (menu.activeMenuId) menu.closeMenu();

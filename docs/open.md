@@ -65,7 +65,10 @@ Editors receive a private temporary copy, not a checked collection path. Hunk re
 file handle and saves through it only if the file identity and content still match. Concurrent
 replacement or modification cancels writeback and retains the edited copy at the path shown in the
 notice. Editor errors also retain that copy. Known GUI editors receive `--wait`; custom editor
-wrappers must wait until editing finishes. `$EDITOR` itself is trusted code, not sandboxed.
+wrappers must wait until editing finishes. Only one edit may run at a time; repeated editor actions
+are rejected while it is active. Quitting waits for the editor transaction to settle, and late
+failures/recovery paths are printed after the terminal is restored. `$EDITOR` itself is trusted
+code, not sandboxed.
 
 Expanded directories and the displayed file's parent are observed for changes, covering atomic
 file replacements and deletions. Watch notifications are debounced; manual and watch refreshes

@@ -45,7 +45,7 @@ export function DocumentPane({
   scrollRef: MutableRefObject<ScrollBoxRenderable | null>;
   visibleLineRef: MutableRefObject<() => number>;
 }) {
-  const viewport = useRowViewport(height);
+  const viewport = useRowViewport(height, width);
   const text = document?.kind === "text" ? document.text : "";
   const lines = useMemo(() => completeDocumentLines(text, tabWidth), [text, tabWidth]);
   const safeText = useMemo(() => lines.join("\n"), [lines]);
@@ -57,11 +57,14 @@ export function DocumentPane({
   } | null>(null);
   const layout = useMemo(() => {
     try {
-      return { geometry: completeDocumentGeometry(lines, width, lineNumbers, wrap), wrap };
+      return { geometry: completeDocumentGeometry(lines, viewport.width, lineNumbers, wrap), wrap };
     } catch {
-      return { geometry: completeDocumentGeometry(lines, width, lineNumbers, false), wrap: false };
+      return {
+        geometry: completeDocumentGeometry(lines, viewport.width, lineNumbers, false),
+        wrap: false,
+      };
     }
-  }, [lines, width, lineNumbers, wrap]);
+  }, [lines, viewport.width, lineNumbers, wrap]);
   const { geometry } = layout;
   visibleLineRef.current = () =>
     Math.max(

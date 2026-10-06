@@ -60,6 +60,8 @@ export class DocumentBrowserController {
   private pendingReads = new Set<Promise<DocumentReadResult>>();
   private readController?: AbortController;
   private closePromise?: Promise<void>;
+  private editPromise: Promise<string | null> | null = null;
+  private editNotice: string | null = null;
   private snapshot: DocumentBrowserSnapshot;
 
   constructor(readonly source: DocumentSource) {
@@ -79,6 +81,11 @@ export class DocumentBrowserController {
   /** Report whether this surface has revoked all source demand. */
   get isClosed() {
     return this.closed;
+  }
+
+  /** Retain editor failures so recovery paths survive teardown even when no final frame paints. */
+  get shutdownEditNotice() {
+    return this.editNotice;
   }
 
   getSnapshot = () => this.snapshot;
@@ -120,8 +127,10 @@ export class DocumentBrowserController {
     const request = (async () => {
       const result = await this.source.list(key, this.controller.signal);
       if (this.closed || !this.snapshot.expanded.has(key)) return;
+      const expanded = new Set(this.snapshot.expanded);
+      this.pruneRemovedDirectories(key, result, expanded);
       this.directories.set(key, result);
-      this.publish({ notice: result.kind === "unavailable" ? result.detail : null });
+      this.publish({ expanded, notice: result.kind === "unavailable" ? result.detail : null });
     })()
       .catch((error) => {
         if (!this.closed) this.publish({ notice: String(error) });
@@ -130,6 +139,58 @@ export class DocumentBrowserController {
         if (this.listingRequests.get(key) === request) this.listingRequests.delete(key);
       });
     this.listingRequests.set(key, request);
+    return request;
+  }
+
+  /** Release a cached directory subtree independently of visibility filters or mounted rows. */
+  private forgetDirectory(key: string, expanded: Set<string>) {
+    const listing = this.directories.get(key);
+    expanded.delete(key);
+    this.directories.delete(key);
+
+    if (listing?.kind !== "entries") return;
+    for (const child of listing.entries) {
+      if (child.kind === "directory") this.forgetDirectory(child.key, expanded);
+    }
+  }
+
+  /** Drop vanished, changed-kind and unavailable descendants before replacing their parent listing. */
+  private pruneRemovedDirectories(key: string, result: DirectoryReadResult, expanded: Set<string>) {
+    const previous = this.directories.get(key);
+    if (previous?.kind !== "entries") return;
+
+    const retained = new Set(
+      result.kind === "entries"
+        ? result.entries.filter((entry) => entry.kind === "directory").map((entry) => entry.key)
+        : [],
+    );
+    for (const child of previous.entries) {
+      if (child.kind === "directory" && !retained.has(child.key))
+        this.forgetDirectory(child.key, expanded);
+    }
+  }
+
+  /** Run one displayed-document edit and retain its settlement through shutdown. */
+  editDisplayedDocument(launch: (copy: string) => Promise<string | null>): Promise<string | null> {
+    if (this.closed) return Promise.resolve("The document session has closed.");
+    if (this.editPromise) return Promise.resolve("An editor is already open.");
+
+    const key = this.snapshot.documentKey;
+    const edit = this.source.edit;
+    if (!key || !edit) return Promise.resolve("No editable regular file selected.");
+
+    const request = Promise.resolve()
+      .then(() => edit.call(this.source, key, launch))
+      .catch((error) => (error instanceof Error ? error.message : String(error)))
+      .then((notice) => {
+        this.editNotice = notice;
+        this.publish({ notice });
+        return notice;
+      })
+      .finally(() => {
+        if (this.editPromise === request) this.editPromise = null;
+      });
+    this.editPromise = request;
     return request;
   }
 
@@ -180,15 +241,7 @@ export class DocumentBrowserController {
 
     const expanded = new Set(this.snapshot.expanded);
     if (expanded.has(key)) {
-      expanded.delete(key);
-      this.directories.delete(key);
-      const index = this.snapshot.rows.findIndex((row) => row.entry.key === key);
-      const depth = this.snapshot.rows[index]!.depth;
-      for (const row of this.snapshot.rows.slice(index + 1)) {
-        if (row.depth <= depth) break;
-        expanded.delete(row.entry.key);
-        this.directories.delete(row.entry.key);
-      }
+      this.forgetDirectory(key, expanded);
     } else {
       if (expanded.size >= 128) {
         this.publish({ notice: "Close a directory before expanding more than 128 directories." });
@@ -262,7 +315,7 @@ export class DocumentBrowserController {
     });
   }
 
-  /** Cancel pending reads and release every observer before terminal teardown. */
+  /** Cancel pending reads, settle the editor transaction and release observers before teardown. */
   close(): Promise<void> {
     if (this.closePromise) return this.closePromise;
 
@@ -275,6 +328,7 @@ export class DocumentBrowserController {
       ...this.listingRequests.values(),
       ...this.pendingReads,
       ...(this.refreshPromise ? [this.refreshPromise] : []),
+      ...(this.editPromise ? [this.editPromise] : []),
     ]).then(() => undefined);
     return this.closePromise;
   }

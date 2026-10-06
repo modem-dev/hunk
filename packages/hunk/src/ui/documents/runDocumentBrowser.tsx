@@ -2,6 +2,7 @@ import type { DocumentBrowserBootstrap } from "../../core/documents/bootstrap";
 import { DocumentBrowserController } from "./controller";
 import { HunkSessionHost } from "../session/HunkSessionHost";
 import { runHunkSession } from "../session/runHunkSession";
+import { sanitizeTerminalLine } from "../../lib/terminalText";
 
 /** Mount documents in the existing session host; the runner retains all terminal ownership. */
 export async function runDocumentBrowser(bootstrap: DocumentBrowserBootstrap) {
@@ -28,5 +29,7 @@ export async function runDocumentBrowser(bootstrap: DocumentBrowserBootstrap) {
     });
   } finally {
     await controller.close();
+    if (controller.shutdownEditNotice)
+      process.stderr.write(`${sanitizeTerminalLine(controller.shutdownEditNotice)}\n`);
   }
 }

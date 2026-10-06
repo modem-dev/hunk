@@ -2,9 +2,13 @@ import type { ScrollBoxRenderable } from "@opentui/core";
 import { useLayoutEffect, useRef, useState } from "react";
 
 /** Observe scroll geometry so complete-document and tree panes mount only a bounded row window. */
-export function useRowViewport(estimatedHeight: number) {
+export function useRowViewport(estimatedHeight: number, estimatedWidth: number) {
   const ref = useRef<ScrollBoxRenderable | null>(null);
-  const [viewport, setViewport] = useState({ top: 0, height: estimatedHeight });
+  const [viewport, setViewport] = useState({
+    top: 0,
+    height: estimatedHeight,
+    width: estimatedWidth,
+  });
   useLayoutEffect(() => {
     const scroll = ref.current;
     if (!scroll) return;
@@ -13,19 +17,29 @@ export function useRowViewport(estimatedHeight: number) {
         const next = {
           top: Math.floor(scroll.scrollTop),
           height: Math.max(1, scroll.viewport.height || estimatedHeight),
+          width: Math.max(1, scroll.viewport.width || estimatedWidth),
         };
-        return previous.top === next.top && previous.height === next.height ? previous : next;
+        return previous.top === next.top &&
+          previous.height === next.height &&
+          previous.width === next.width
+          ? previous
+          : next;
       });
+    // Yoga size changes use this callback, not the explicit resize/layout events.
+    const previousSizeChange = scroll.viewport.onSizeChange;
+    const onSizeChange = () => {
+      previousSizeChange?.call(scroll.viewport);
+      update();
+    };
+    scroll.viewport.onSizeChange = onSizeChange;
     update();
     scroll.verticalScrollBar.on("change", update);
-    scroll.viewport.on("layout-changed", update);
-    scroll.viewport.on("resized", update);
     return () => {
       scroll.verticalScrollBar.off("change", update);
-      scroll.viewport.off("layout-changed", update);
-      scroll.viewport.off("resized", update);
+      if (scroll.viewport.onSizeChange === onSizeChange)
+        scroll.viewport.onSizeChange = previousSizeChange;
     };
-  }, [estimatedHeight]);
+  }, [estimatedHeight, estimatedWidth]);
   return { ref, ...viewport };
 }
 

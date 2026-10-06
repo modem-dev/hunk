@@ -226,7 +226,12 @@ export function HunkSessionHost({
       preparationControllerRef.current?.abort(
         new Error("Hunk surface preparation was cancelled during shutdown."),
       );
-      if (routeRef.current.kind !== "review" && !preparingRef.current) completeQuit();
+      const current = routeRef.current;
+      if (current.kind === "documents") {
+        void current.controller.close().then(completeQuit);
+      } else if (current.kind !== "review" && !preparingRef.current) {
+        completeQuit();
+      }
     },
     [completeQuit],
   );

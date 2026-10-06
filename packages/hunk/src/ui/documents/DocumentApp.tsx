@@ -85,14 +85,10 @@ export function DocumentApp({
 
   /** Delegate selected documents to an external editor without borrowing review file types. */
   const edit = async () => {
-    const key = controller.getSnapshot().documentKey;
-    if (!key || !controller.source.edit || renderer.isDestroyed || controller.isClosed) {
-      setNotice("No editable regular file selected.");
-      return;
-    }
+    if (renderer.isDestroyed || controller.isClosed) return;
 
     setNotice(
-      await controller.source.edit(key, async (filePath) =>
+      await controller.editDisplayedDocument(async (filePath) =>
         openFileInEditor({ filePath, line: visibleLineRef.current(), renderer, wait: true }),
       ),
     );

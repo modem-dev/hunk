@@ -263,11 +263,22 @@ export async function createFilesystemSource(
     }
   }
 
+  let editing = false;
+
   return {
     root,
     read,
     list,
-    edit: (key, launch) => editDocumentCopy(key, launch, { safePath, openCheckedPath, read }),
+    async edit(key, launch) {
+      if (editing) return "An editor is already open.";
+      editing = true;
+
+      try {
+        return await editDocumentCopy(key, launch, { safePath, openCheckedPath, read });
+      } finally {
+        editing = false;
+      }
+    },
 
     observe(keys, onChange) {
       let timer: ReturnType<typeof setTimeout> | undefined;
