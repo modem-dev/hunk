@@ -169,6 +169,11 @@
   flex-wrap: wrap;
 }
 
+.brand-footer-logo {
+  display: inline-flex;
+  color: var(--hunk-ink);
+}
+
 .brand-footer a {
   color: inherit;
   text-decoration: none;
@@ -235,6 +240,13 @@
    the landing page, so it is the first to go when the header runs out of room. */
 @media (max-width: 560px) {
   .brand-header-inner[data-context="marketing"] .brand-extensions {
+    display: none;
+  }
+}
+
+/* The footer links need the room on phones, so the mark only appears from tablet width up. */
+@media (max-width: 560px) {
+  .brand-footer-logo {
     display: none;
   }
 }
