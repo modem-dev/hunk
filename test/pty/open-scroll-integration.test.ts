@@ -35,6 +35,27 @@ function createOpenScrollTestFixture() {
   return path;
 }
 
+test("initial open fills the document viewport before keyboard input and after resizing", async () => {
+  const path = createOpenScrollTestFixture();
+  writeFileSync(path, createOpenScrollTestText(100, ""));
+  const session = await harness.launchHunk({
+    args: ["open", path, "--no-wrap", "--no-line-numbers"],
+    cols: 40,
+    rows: 20,
+  });
+
+  try {
+    const first = await session.waitForText("LINE_017");
+    expect(first.match(/LINE_\d+/g)).toHaveLength(17);
+    session.resize({ cols: 42, rows: 24 });
+    const resized = await session.waitForText("LINE_021");
+    expect(resized.match(/LINE_\d+/g)).toHaveLength(21);
+    await session.press("q");
+  } finally {
+    session.close();
+  }
+});
+
 test("deep open scrolling retains the logical line through wrap, gutters and terminal resize", async () => {
   const path = createOpenScrollTestFixture();
   const session = await harness.launchHunk({

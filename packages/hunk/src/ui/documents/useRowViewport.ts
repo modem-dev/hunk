@@ -18,7 +18,8 @@ export function useRowViewport(estimatedHeight: number, estimatedWidth: number) 
     const update = () =>
       setViewport((previous) => {
         const next = {
-          top: Math.floor(scroll.scrollTop),
+          // Native layout can clamp against an empty content extent before the first row commit.
+          top: Math.max(0, Math.floor(scroll.scrollTop)),
           height: Math.max(1, scroll.viewport.height || estimate.current.height),
           width: Math.max(1, scroll.viewport.width || estimate.current.width),
         };

@@ -17,6 +17,45 @@ async function flushTestDocumentLayout(setup: Awaited<ReturnType<typeof testRend
   });
 }
 
+test("initial layout fills every visible row before any scrolling for wrap and gutter modes", async () => {
+  for (const wrap of [false, true]) {
+    for (const lineNumbers of [false, true]) {
+      const setup = await testRender(
+        <DocumentPane
+          document={{
+            kind: "text",
+            text: Array.from({ length: 100 }, (_, index) => `ROW_${index + 1}`).join("\n"),
+            identity: "stable",
+          }}
+          documentKey="file"
+          pathHint="file.txt"
+          height={17}
+          width={40}
+          wrap={wrap}
+          tabWidth={4}
+          theme={THEMES[0]!}
+          lineNumbers={lineNumbers}
+          focused={true}
+          scrollRef={{ current: null }}
+          visibleLineRef={{ current: () => 1 }}
+        />,
+        { width: 40, height: 17 },
+      );
+
+      try {
+        await flushTestDocumentLayout(setup);
+        expect(setup.captureCharFrame().match(/ROW_\d+/g)).toHaveLength(17);
+        expect(setup.captureCharFrame()).toContain("ROW_17");
+        await act(async () => setup.resize(40, 18));
+        await flushTestDocumentLayout(setup);
+        expect(setup.captureCharFrame().match(/ROW_\d+/g)).toHaveLength(18);
+      } finally {
+        await act(async () => setup.renderer.destroy());
+      }
+    }
+  }
+});
+
 test("wrapped documents use the scrollbar-adjusted viewport and retain right-edge characters after resize", async () => {
   const scrollRef = { current: null as ScrollBoxRenderable | null };
   const visibleLineRef = { current: () => 1 };
