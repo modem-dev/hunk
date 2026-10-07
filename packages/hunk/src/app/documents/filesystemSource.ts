@@ -296,32 +296,85 @@ export async function createFilesystemSource(
         clearTimeout(timer);
         timer = setTimeout(() => {
           timer = undefined;
-          if (!stopped) onChange();
+          if (stopped) return;
+          // A self-rename can arrive while the path is absent, before its replacement is visible.
+          // Reconcile again before delivery so later edits use live handles even if the runtime
+          // coalesces the corresponding parent event or cannot report a distinct file ID.
+          reconcile();
+          pendingRearms.clear();
+          onChange();
         }, 100);
       };
 
-      const watchers: ReturnType<typeof watch>[] = [];
-      // Parent watches preserve atomic replacement observation without following file symlinks.
-      const targets = new Set<string>();
-      for (const key of keys) {
-        targets.add(dirname(key));
-        try {
-          const info = lstatSync(key);
-          if (info.isDirectory() && !info.isSymbolicLink()) targets.add(key);
-        } catch {
-          /* Missing entries retain parent observation. */
+      type DirectoryWatch = {
+        watcher: ReturnType<typeof watch>;
+        dev: bigint;
+        ino: bigint;
+      };
+      const watchers = new Map<string, DirectoryWatch>();
+      const pendingRearms = new Set<string>();
+      // Keep missing directory candidates so parent events can restore them without new demand.
+      // Files and final symlinks never acquire a target watch; their parents observe replacement.
+      const targets = new Set(keys.flatMap((key) => [dirname(key), key]));
+
+      /** Match native parent/self events even when the runtime cannot supply a filename or ID. */
+      function eventRearmsTarget(target: string, origin?: string, filename?: string | null) {
+        const matchesName = filename == null || filename === basename(target);
+        return matchesName && (target === origin || dirname(target) === origin);
+      }
+
+      /** Repair directory handles after parent/self rename or error without replacing debounce. */
+      function reconcile(origin?: string, filename?: string | null) {
+        if (stopped) return;
+
+        for (const target of targets) {
+          const previous = watchers.get(target);
+          const nativeRearm = eventRearmsTarget(target, origin, filename);
+          if (nativeRearm) pendingRearms.add(target);
+          const rearm = nativeRearm || (origin === undefined && pendingRearms.has(target));
+          let info;
+          try {
+            // BigInt avoids rounding Windows file IDs; relevant native events also force rearm
+            // when IDs are unavailable or unchanged, rather than relying on identity alone.
+            info = lstatSync(target, { bigint: true });
+          } catch {
+            /* Missing targets retain their parent anchors. */
+          }
+          if (!info?.isDirectory() || info.isSymbolicLink()) {
+            watchers.delete(target);
+            previous?.watcher.close();
+            continue;
+          }
+
+          if (previous && previous.dev === info.dev && previous.ino === info.ino && !rearm)
+            continue;
+
+          // Keep parent anchors and the received-event timer armed while synchronously reopening
+          // this target. Bun shares same-path native handles: opening before closing the old watch
+          // would retain its inode and closing it would also disable the replacement.
+          watchers.delete(target);
+          previous?.watcher.close();
+          try {
+            const watcher = watch(target, (event, name) => {
+              // A closed/replaced handle may still have native callbacks queued for its old inode.
+              if (stopped || watchers.get(target) !== current) return;
+              changed();
+              if (event === "rename") reconcile(target, name);
+            });
+            const current: DirectoryWatch = { watcher, dev: info.dev, ino: info.ino };
+            watcher.on("error", () => {
+              if (stopped || watchers.get(target) !== current) return;
+              changed();
+              reconcile(target, null);
+            });
+            watchers.set(target, current);
+          } catch {
+            /* A surviving parent can retry a concurrently deleted or unavailable target. */
+          }
         }
       }
 
-      for (const target of targets) {
-        try {
-          const watcher = watch(target, changed);
-          watcher.on("error", changed);
-          watchers.push(watcher);
-        } catch {
-          /* Deleted entries retain their parent's observation. */
-        }
-      }
+      reconcile();
 
       if (pendingObservationChange) {
         pendingObservationChange = false;
@@ -341,7 +394,8 @@ export async function createFilesystemSource(
         }
         clearTimeout(timer);
         timer = undefined;
-        for (const watcher of watchers) watcher.close();
+        for (const { watcher } of watchers.values()) watcher.close();
+        watchers.clear();
       };
     },
   };
