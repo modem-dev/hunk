@@ -180,7 +180,11 @@ export function DocumentApp({
           scrollRef,
           visibleLineRef,
         }}
-        onFocus={(focus) => interaction.update((current) => ({ ...current, focus }))}
+        onFocus={(focus) => {
+          // Content clicks transfer keyboard ownership as well as the visible focus indicator.
+          menu.closeMenu();
+          interaction.update((current) => ({ ...current, focus }));
+        }}
         onActivate={(key) => {
           void controller.activate(key);
         }}

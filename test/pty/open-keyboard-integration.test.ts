@@ -31,6 +31,35 @@ function createTestOpenKeyboardFixture() {
   return { root, marker, env: { EDITOR: `"${process.execPath}" "${editor}"` } };
 }
 
+test("clicking document content dismisses its menu before subsequent navigation and activation", async () => {
+  const fixture = createTestOpenKeyboardFixture();
+  const session = await harness.launchHunk({
+    args: ["open", fixture.root],
+    cols: 100,
+    rows: 20,
+    env: fixture.env,
+  });
+
+  try {
+    await session.waitForText("a.txt");
+    await harness.ensureKeyboardIsLive(session);
+    await session.click(/a\.txt/, { first: true });
+    await session.waitForText("FIRST_DOCUMENT_ROW_1");
+    await session.press("f10");
+    await session.waitForText("Refresh documents");
+    // This point is in the document and outside File's dropdown; deliver click and Down together.
+    session.writeRaw("\x1b[<0;71;9M\x1b[<0;71;9m\x1b[B");
+    const frame = await session.waitForText("FIRST_DOCUMENT_ROW_2");
+    expect(frame).not.toContain("Refresh documents");
+    expect(frame).toContain("Document ·");
+    await session.press("enter");
+    expect(existsSync(fixture.marker)).toBe(false);
+    await session.press("q");
+  } finally {
+    session.close();
+  }
+});
+
 describe("open keyboard bursts", () => {
   test("raw help and theme bursts block editor commands until their modal closes", async () => {
     const fixture = createTestOpenKeyboardFixture();

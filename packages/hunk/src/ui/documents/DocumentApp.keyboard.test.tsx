@@ -86,6 +86,42 @@ async function createTestKeyboardApp(keybindings: Record<string, UserKeyBinding>
   return { setup, controller, themeController, edit, list, quit, burst, clickMenuItem, close };
 }
 
+test("content clicks dismiss menus and route the next key to the document or tree", async () => {
+  const app = await createTestKeyboardApp();
+
+  try {
+    await app.burst("f10");
+    expect(app.setup.captureCharFrame()).toContain("Refresh documents");
+    await act(async () => {
+      await app.setup.mockMouse.click(55, 8);
+      app.setup.mockInput.pressArrow("down");
+      app.setup.mockInput.pressKey("\r");
+      await Bun.sleep(20);
+    });
+    await act(async () => app.setup.renderOnce());
+    expect(app.setup.captureCharFrame()).not.toContain("Refresh documents");
+    expect(app.setup.captureCharFrame()).toContain("Document ·");
+    expect(app.controller.getSnapshot().selectedKey).toBe("a");
+    expect(app.edit).not.toHaveBeenCalled();
+    expect(app.quit).not.toHaveBeenCalled();
+
+    // Help's dropdown leaves the tree's left edge uncovered for a genuine outside click.
+    await app.burst("f10", "right", "right");
+    expect(app.setup.captureCharFrame()).toContain("Controls help");
+    await act(async () => {
+      await app.setup.mockMouse.click(2, 2);
+      app.setup.mockInput.pressArrow("down");
+      await Bun.sleep(20);
+    });
+    await act(async () => app.setup.renderOnce());
+    expect(app.setup.captureCharFrame()).not.toContain("Controls help");
+    expect(app.controller.getSnapshot().selectedKey).toBe("b");
+    expect(app.setup.captureCharFrame()).toContain("Tree ·");
+  } finally {
+    await app.close();
+  }
+});
+
 test("help owns later keys in its opening burst and releases them in its closing burst", async () => {
   const app = await createTestKeyboardApp();
   try {
