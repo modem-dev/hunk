@@ -97,9 +97,12 @@ export function DocumentApp({
   const edit = async () => {
     if (renderer.isDestroyed || controller.isClosed) return;
 
+    // Capture a coherent file/line target before copy preparation yields to later input.
+    const key = controller.getSnapshot().documentKey;
+    const line = key === snapshot.documentKey ? visibleLineRef.current() : 1;
     setNotice(
       await controller.editDisplayedDocument(async (filePath) =>
-        openFileInEditor({ filePath, line: visibleLineRef.current(), renderer, wait: true }),
+        openFileInEditor({ filePath, line, renderer, wait: true }),
       ),
     );
     await controller.refresh();

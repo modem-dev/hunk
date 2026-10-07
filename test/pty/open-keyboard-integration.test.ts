@@ -31,6 +31,41 @@ function createTestOpenKeyboardFixture() {
   return { root, marker, env: { EDITOR: `"${process.execPath}" "${editor}"` } };
 }
 
+test("editor arguments retain the visible line when later input scrolls during copy preparation", async () => {
+  const fixture = createTestOpenKeyboardFixture();
+  const editor = join(fixture.root, "nvim");
+  const target = join(fixture.root, "editor-target.json");
+  writeFileSync(
+    editor,
+    `#!${process.execPath}\nimport { writeFileSync } from "node:fs"; writeFileSync(${JSON.stringify(target)}, JSON.stringify(process.argv.slice(2)));`,
+    { mode: 0o755 },
+  );
+  const session = await harness.launchHunk({
+    args: ["open", join(fixture.root, "a.txt"), "--no-wrap", "--no-line-numbers"],
+    cols: 100,
+    rows: 20,
+    env: { EDITOR: `"${editor}"` },
+  });
+
+  try {
+    await session.waitForText("FIRST_DOCUMENT_ROW_1");
+    await harness.ensureKeyboardIsLive(session);
+    await session.press(["shift", "g"]);
+    const before = await session.text();
+    const line = Number(before.match(/FIRST_DOCUMENT_ROW_(\d+)/)?.[1]);
+    expect(line).toBeGreaterThan(1);
+    session.writeRaw("eg");
+    await harness.waitForSnapshot(
+      session,
+      (text) => existsSync(target) && text.includes("FIRST_DOCUMENT_ROW_1"),
+    );
+    expect(JSON.parse(readFileSync(target, "utf8"))[0]).toBe(`+${line}`);
+    await session.press("q");
+  } finally {
+    session.close();
+  }
+});
+
 test("clicking document content dismisses its menu before subsequent navigation and activation", async () => {
   const fixture = createTestOpenKeyboardFixture();
   const session = await harness.launchHunk({
