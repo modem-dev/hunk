@@ -17,6 +17,40 @@ async function waitForTestEntry(browser: DocumentBrowserController, name: string
   expect(browser.getSnapshot().rows.map((row) => row.entry.name)).toContain(name);
 }
 
+test("selecting a file during watch debounce preserves the pending tree change", async () => {
+  const fixture = await realpath(await mkdtemp(join(tmpdir(), "hunk-document-selection-")));
+  const root = join(fixture, "collection");
+  let browser: DocumentBrowserController | undefined;
+
+  try {
+    await mkdir(root);
+    const file = join(root, "selected.txt");
+    await writeFile(file, "selected");
+    const source = await createFilesystemSource(root);
+    const observe = source.observe!;
+    let changes = 0;
+    source.observe = (keys, onChange) =>
+      observe(keys, () => {
+        changes++;
+        onChange();
+      });
+    browser = new DocumentBrowserController(source);
+    await browser.initialize();
+    await writeFile(join(root, "new.txt"), "new");
+    await Bun.sleep(30);
+    await browser.select(file);
+    await waitForTestEntry(browser, "new.txt");
+    expect(browser.getSnapshot().document).toMatchObject({ kind: "text", text: "selected" });
+    expect(browser.getSnapshot().selectedKey).toBe(file);
+    expect(changes).toBe(1);
+    await Bun.sleep(300);
+    expect(changes).toBe(1);
+  } finally {
+    await browser?.close();
+    await rm(fixture, { recursive: true, force: true });
+  }
+});
+
 for (const trigger of ["initial expansion", "manual refresh"] as const) {
   test(`a file created during ${trigger} metadata queries survives watch debounce`, async () => {
     const fixture = await realpath(await mkdtemp(join(tmpdir(), "hunk-document-watch-")));

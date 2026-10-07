@@ -266,6 +266,7 @@ export async function createFilesystemSource(
   }
 
   let editing = false;
+  let pendingObservationChange = false;
 
   return {
     root,
@@ -288,10 +289,15 @@ export async function createFilesystemSource(
     },
 
     observe(keys, onChange) {
+      let stopped = false;
       let timer: ReturnType<typeof setTimeout> | undefined;
       const changed = () => {
+        if (stopped) return;
         clearTimeout(timer);
-        timer = setTimeout(onChange, 100);
+        timer = setTimeout(() => {
+          timer = undefined;
+          if (!stopped) onChange();
+        }, 100);
       };
 
       const watchers: ReturnType<typeof watch>[] = [];
@@ -317,8 +323,24 @@ export async function createFilesystemSource(
         }
       }
 
+      if (pendingObservationChange) {
+        pendingObservationChange = false;
+        changed();
+      }
+
       return () => {
+        if (stopped) return;
+        stopped = true;
+        if (timer !== undefined) {
+          // Transfer only an actual unconsumed event to a synchronous demand handover. Final
+          // close cancels delivery; a later observer must not inherit a revoked session's event.
+          pendingObservationChange = true;
+          queueMicrotask(() => {
+            pendingObservationChange = false;
+          });
+        }
         clearTimeout(timer);
+        timer = undefined;
         for (const watcher of watchers) watcher.close();
       };
     },
