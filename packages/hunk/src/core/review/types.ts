@@ -38,7 +38,7 @@ export interface ReviewRangeAnchorV1 {
   preferred?: ReviewLineAddressV1;
   /** Every hunk whose old or new range intersects the note, in file order. */
   intersectingHunkIndices: number[];
-  /** The one hunk that renders the note; navigation uses the intersections instead. */
+  /** The one hunk that renders the note; annotated navigation includes this owner. */
   ownerHunkIndex?: number;
 }
 

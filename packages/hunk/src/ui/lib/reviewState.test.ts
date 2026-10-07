@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { buildReviewAnnotationIndex } from "../../core/review/annotations";
+import type { AgentAnnotation } from "../../extension-api/types";
 import {
   createTestAgentFileContext,
   createTestDiffFile,
@@ -19,6 +20,22 @@ function createAnnotatedFile(id: string, path: string) {
     agent: createTestAgentFileContext(path, {
       annotations: [{ newRange: [1, 1], summary: `Explain ${path}` }],
     }),
+  });
+}
+
+function createTestTwoHunkAnnotatedFile(id: string, annotations: AgentAnnotation[]) {
+  const before = Array.from({ length: 60 }, (_unused, index) => `line ${index + 1}`);
+  const after = [...before];
+  after[3] = "line 4 changed";
+  after[56] = "line 57 changed";
+  const path = `${id}.ts`;
+  return createTestDiffFile({
+    id,
+    path,
+    before: `${before.join("\n")}\n`,
+    after: `${after.join("\n")}\n`,
+    context: 3,
+    agent: createTestAgentFileContext(path, { annotations }),
   });
 }
 
@@ -75,6 +92,34 @@ describe("review state helpers", () => {
     expect([...index.annotatedFileKeys]).toEqual(["key:alpha", "key:beta"]);
     expect([...index.annotatedHunkIndicesByFileKey.keys()]).toEqual(["key:alpha"]);
     expect([...(index.annotatedHunkIndicesByFileKey.get("key:alpha") ?? [])]).toEqual([0]);
+  });
+
+  test("buildReviewAnnotationIndex follows drawing ownership for gap annotations", () => {
+    const gapAnnotation: AgentAnnotation = {
+      id: "gap",
+      newRange: [30, 30],
+      summary: "Gap annotation",
+    };
+    const gapFile = createTestTwoHunkAnnotatedFile("gap", [gapAnnotation]);
+    const keyByFileId = new Map([["gap", "key:gap"]]);
+    const geometricIndex = buildReviewAnnotationIndex([gapFile], keyByFileId);
+    const declaredIndex = buildReviewAnnotationIndex([gapFile], keyByFileId, (annotation) =>
+      annotation.id === "gap" ? { hunkIndex: 0, side: "new", line: 30 } : undefined,
+    );
+    const overlappingFile = createTestTwoHunkAnnotatedFile("overlap", [
+      { id: "overlap", newRange: [57, 57], summary: "Overlapping annotation" },
+    ]);
+    const overlappingIndex = buildReviewAnnotationIndex(
+      [overlappingFile],
+      new Map([["overlap", "key:overlap"]]),
+    );
+
+    expect([...gapFile.metadata.hunks]).toHaveLength(2);
+    expect([...(geometricIndex.annotatedHunkIndicesByFileKey.get("key:gap") ?? [])]).toEqual([1]);
+    expect([...(declaredIndex.annotatedHunkIndicesByFileKey.get("key:gap") ?? [])]).toEqual([0]);
+    expect([...(overlappingIndex.annotatedHunkIndicesByFileKey.get("key:overlap") ?? [])]).toEqual([
+      1,
+    ]);
   });
 
   // Intent: absolute navigation supports both hunk index and side+line addressing.

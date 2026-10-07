@@ -29,7 +29,11 @@ import type { FileSourceStatus } from "../../diff/expandCollapsedRows";
 import type { ActiveAddNoteAffordance } from "../../diff/DiffSectionBody";
 import type { CursorHighlight } from "../../diff/cursorHighlight";
 import { useIntermediateRenderAfterMount } from "../../hooks/useIntermediateRenderAfterMount";
-import type { DraftReviewNote, StoredReviewNoteRenderMetadata } from "../../lib/reviewNoteMapping";
+import {
+  storedReviewNoteMetadata,
+  storedReviewNoteTarget,
+  type DraftReviewNote,
+} from "../../lib/reviewNoteMapping";
 import {
   createVisibleAgentNote,
   reviewNoteSource,
@@ -121,36 +125,6 @@ const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
 type StartUserNoteAtHunk = {
   bivarianceHack(fileId: string, hunkIndex: number, target?: ReviewNoteTargetV1): void;
 }["bivarianceHack"];
-
-/** Read terminal-only semantic note metadata without granting it to static sidecars. */
-function storedReviewNoteMetadata(
-  annotation: AgentAnnotation,
-): StoredReviewNoteRenderMetadata | undefined {
-  const candidate = annotation as AgentAnnotation & Partial<StoredReviewNoteRenderMetadata>;
-  return candidate.semanticallyStored === true && typeof candidate.reviewNoteId === "string"
-    ? (candidate as AgentAnnotation & StoredReviewNoteRenderMetadata)
-    : undefined;
-}
-
-/** Read the semantic placement retained on stored terminal note projections. */
-function storedReviewNoteTarget(
-  annotation: AgentAnnotation,
-): { hunkIndex: number; side: "old" | "new"; line: number } | undefined {
-  const candidate = annotation as AgentAnnotation & {
-    hunkIndex?: unknown;
-    side?: unknown;
-    line?: unknown;
-  };
-  return Number.isInteger(candidate.hunkIndex) &&
-    (candidate.side === "old" || candidate.side === "new") &&
-    Number.isInteger(candidate.line)
-    ? {
-        hunkIndex: candidate.hunkIndex as number,
-        side: candidate.side,
-        line: candidate.line as number,
-      }
-    : undefined;
-}
 
 /** Grant saved-note card actions from semantic ownership rather than presentation labels. */
 export function storedReviewNoteActions({
@@ -643,7 +617,7 @@ export function DiffPane({
       const notes: VisibleAgentNote[] = annotations.flatMap((annotation, index) => {
         const source = reviewNoteSource(annotation);
         const metadata = storedReviewNoteMetadata(annotation);
-        const storedTarget = metadata ? storedReviewNoteTarget(annotation) : undefined;
+        const storedTarget = storedReviewNoteTarget(annotation);
         if (
           metadata &&
           draftNote?.kind === "edit" &&
