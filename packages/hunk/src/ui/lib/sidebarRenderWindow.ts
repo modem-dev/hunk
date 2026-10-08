@@ -70,6 +70,39 @@ function entryRangeHeight(startIndex: number, endIndex: number) {
   return startIndex > endIndex ? 0 : (endIndex - startIndex + 1) * SIDEBAR_ROW_HEIGHT;
 }
 
+/**
+ * Return the scroll offset that brings one fixed-height sidebar row inside the viewport, or
+ * `null` when the row is already fully visible.
+ *
+ * Works from the entry index and row height alone so callers never read a row's rendered
+ * position: rows the render window mounted since the last frame carry no layout yet. Scrolls
+ * to the nearest edge, so a row above the viewport lands on its top and a row below lands on
+ * its bottom. Callers pass a measured, positive viewport height.
+ */
+export function planSidebarRowReveal({
+  entryIndex,
+  scrollTop,
+  viewportHeight,
+}: {
+  entryIndex: number;
+  scrollTop: number;
+  viewportHeight: number;
+}): number | null {
+  if (entryIndex < 0 || viewportHeight <= 0) {
+    return null;
+  }
+
+  const rowTop = entryIndex * SIDEBAR_ROW_HEIGHT;
+  const rowBottom = rowTop + SIDEBAR_ROW_HEIGHT;
+  if (rowTop < scrollTop) {
+    return rowTop;
+  }
+  if (rowBottom > scrollTop + viewportHeight) {
+    return rowBottom - viewportHeight;
+  }
+  return null;
+}
+
 /** Build a sparse sidebar render plan that preserves exact scroll height with spacers. */
 export function buildSidebarRenderWindow({
   entries,

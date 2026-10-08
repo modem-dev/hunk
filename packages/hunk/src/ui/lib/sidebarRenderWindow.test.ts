@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { SidebarEntry } from "./files";
-import { buildSidebarRenderWindow, type SidebarRenderWindowItem } from "./sidebarRenderWindow";
+import {
+  buildSidebarRenderWindow,
+  planSidebarRowReveal,
+  type SidebarRenderWindowItem,
+} from "./sidebarRenderWindow";
 
 /** Build fixed-height sidebar rows with occasional group headers. */
 function createEntries(ids: string[]): SidebarEntry[] {
@@ -200,5 +204,28 @@ describe("buildSidebarRenderWindow", () => {
     expect(plan.topSpacerHeight).toBe(2);
     expect(plan.bottomSpacerHeight).toBe(2);
     expect(renderedHeight(plan.items)).toBe(entries.length);
+  });
+});
+
+describe("planSidebarRowReveal", () => {
+  test("leaves a row that is already inside the viewport alone", () => {
+    expect(planSidebarRowReveal({ entryIndex: 3, scrollTop: 0, viewportHeight: 8 })).toBeNull();
+    expect(planSidebarRowReveal({ entryIndex: 7, scrollTop: 0, viewportHeight: 8 })).toBeNull();
+    expect(planSidebarRowReveal({ entryIndex: 12, scrollTop: 12, viewportHeight: 8 })).toBeNull();
+  });
+
+  test("scrolls a row below the viewport onto its bottom edge", () => {
+    expect(planSidebarRowReveal({ entryIndex: 8, scrollTop: 0, viewportHeight: 8 })).toBe(1);
+    expect(planSidebarRowReveal({ entryIndex: 30, scrollTop: 13, viewportHeight: 8 })).toBe(23);
+  });
+
+  test("scrolls a row above the viewport onto its top edge", () => {
+    expect(planSidebarRowReveal({ entryIndex: 4, scrollTop: 13, viewportHeight: 8 })).toBe(4);
+    expect(planSidebarRowReveal({ entryIndex: 0, scrollTop: 1, viewportHeight: 8 })).toBe(0);
+  });
+
+  test("refuses to plan without a measured viewport or a real row", () => {
+    expect(planSidebarRowReveal({ entryIndex: 5, scrollTop: 0, viewportHeight: 0 })).toBeNull();
+    expect(planSidebarRowReveal({ entryIndex: -1, scrollTop: 0, viewportHeight: 8 })).toBeNull();
   });
 });
