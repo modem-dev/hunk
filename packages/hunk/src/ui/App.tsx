@@ -1261,6 +1261,13 @@ export function App({
   const activeReplyableNoteId = selectActiveReplyableReviewNoteId(reviewSnapshot);
   const activeRemovableNote = selectActiveRemovableReviewNote(reviewSnapshot);
 
+  // The current line owns implicit comment targeting. A hover affordance armed at an
+  // earlier pointer position retires whenever the cursor moves, so stepping or scrolling
+  // cannot leave a stale hover target between the visible highlight and the next note.
+  useEffect(() => {
+    onActiveAddNoteAffordanceChange(null);
+  }, [onActiveAddNoteAffordanceChange, review.lineCursor]);
+
   // One dispatch table for every app-level shortcut: the built-in commands
   // over App's live callbacks, then extension commands, so built-ins always
   // win a key and extension order follows load order.
