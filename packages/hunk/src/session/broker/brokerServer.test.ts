@@ -762,7 +762,9 @@ describe("Hunk session daemon server", () => {
     }
   });
 
-  test("shuts down after stale-session pruning leaves zero live sessions", async () => {
+  // A silent producer whose transport stays connected is suspended (SIGSTOP), not dead, so the
+  // daemon must stay alive for it; only the transport close lets quiescent shutdown proceed.
+  test("keeps a silent session past the stale TTL and shuts down once its transport closes", async () => {
     const port = await reserveLoopbackPort();
     process.env.HUNK_MCP_HOST = "127.0.0.1";
     process.env.HUNK_MCP_PORT = String(port);
@@ -775,6 +777,11 @@ describe("Hunk session daemon server", () => {
     const socket = await openRegisteredSession(port);
 
     try {
+      await Bun.sleep(200);
+      await expect(waitForHealth(port)).resolves.toEqual({ ok: true });
+
+      socket.close();
+      await waitForSessionCount(port, 0);
       await waitForShutdown(port, 1_000);
     } finally {
       socket.close();

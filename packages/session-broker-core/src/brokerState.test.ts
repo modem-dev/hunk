@@ -704,6 +704,45 @@ describe("session broker state", () => {
     expect(state.listSessions()).toHaveLength(1);
   });
 
+  test("keeps a silent session past the TTL while its transport is still open", () => {
+    const state = createState();
+    const socket = {
+      send() {},
+      // A SIGSTOPped producer cannot heartbeat but its transport stays connected.
+      isOpen: () => true,
+    };
+
+    state.registerSession(socket, createRegistration(), createSnapshot());
+    const registeredAt = Date.now();
+
+    expect(
+      state.pruneStaleSessions({
+        ttlMs: 45_000,
+        now: registeredAt + 62_000,
+      }),
+    ).toBe(0);
+    expect(state.listSessions()).toHaveLength(1);
+  });
+
+  test("prunes a silent session whose transport reports closed", () => {
+    const state = createState();
+    const socket = {
+      send() {},
+      isOpen: () => false,
+    };
+
+    state.registerSession(socket, createRegistration(), createSnapshot());
+    const registeredAt = Date.now();
+
+    expect(
+      state.pruneStaleSessions({
+        ttlMs: 45_000,
+        now: registeredAt + 62_000,
+      }),
+    ).toBe(1);
+    expect(state.listSessions()).toHaveLength(0);
+  });
+
   test("keeps a live session across a wall-clock jump instead of pruning it on the first post-wake sweep", () => {
     const state = createState();
     const socket = {
