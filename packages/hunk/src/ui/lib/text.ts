@@ -34,6 +34,7 @@ function isGraphemePrepend(codePoint: number) {
     codePoint === 0x0d4e ||
     codePoint === 0x110bd ||
     codePoint === 0x110cd ||
+    codePoint === 0x113d1 ||
     (codePoint >= 0x111c2 && codePoint <= 0x111c3) ||
     codePoint === 0x1193f ||
     codePoint === 0x11941 ||
