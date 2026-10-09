@@ -5,6 +5,7 @@ import { dirname, resolve } from "node:path";
 import { aggregateMetric, type BenchmarkRunResult } from "./lib/benchmark-result";
 
 const defaultScripts = [
+  "startup-first-frame.ts",
   "bootstrap-load.ts",
   "working-tree-load.ts",
   "changeset-parse.ts",
