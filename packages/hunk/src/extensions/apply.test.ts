@@ -115,7 +115,7 @@ describe("extension file languages", () => {
   });
 
   test("lets the last extension registration win for the same file extension", async () => {
-    const { fileLanguageForPath } = await import("../core/changeset/fileLanguageLookup");
+    const { fileLanguageForPath } = await import("../core/documents/fileLanguageLookup");
     const { result } = createTestLoadResult();
     result.registry.fileLanguages.push(
       {
@@ -135,7 +135,7 @@ describe("extension file languages", () => {
   });
 
   test("applies exact-filename and glob selectors through the extension registry", async () => {
-    const { fileLanguageForPath } = await import("../core/changeset/fileLanguageLookup");
+    const { fileLanguageForPath } = await import("../core/documents/fileLanguageLookup");
     const { result } = createTestLoadResult();
     result.registry.fileLanguages.push(
       {
@@ -157,7 +157,7 @@ describe("extension file languages", () => {
   });
 
   test("atomically removes selectors that disappear from a reload", async () => {
-    const { fileLanguageForPath } = await import("../core/changeset/fileLanguageLookup");
+    const { fileLanguageForPath } = await import("../core/documents/fileLanguageLookup");
     const { result } = createTestLoadResult();
     result.registry.fileLanguages.push({
       extensionId: "temporary",
@@ -173,7 +173,7 @@ describe("extension file languages", () => {
   });
 
   test("keeps reserved extensions authoritative over broader selectors", async () => {
-    const { fileLanguageForPath } = await import("../core/changeset/fileLanguageLookup");
+    const { fileLanguageForPath } = await import("../core/documents/fileLanguageLookup");
     const { result } = createTestLoadResult();
     result.registry.fileLanguages.push({
       extensionId: "broad",

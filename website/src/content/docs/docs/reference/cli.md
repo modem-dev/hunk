@@ -48,6 +48,33 @@ This reference is generated from the command metadata used by Hunk itself. Run `
 
 `--experimental` may also be placed before the review command, as in `hunk --experimental diff`.
 
+## `hunk open`
+
+view a complete file or browse a directory
+
+### Usage
+
+```bash
+hunk open [path]
+```
+
+Defaults to the current directory. Reads are lazy and the browser refreshes automatically.
+
+Press i to show hidden and Git-ignored entries. Symlinks are displayed but not followed.
+
+### Command-specific options
+
+| Option                      | Description                         |
+| --------------------------- | ----------------------------------- |
+| `--theme <theme>`           | named theme override                |
+| `--line-numbers`            | show line numbers                   |
+| `--no-line-numbers`         | hide line numbers                   |
+| `--sidebar`                 | show the directory tree             |
+| `--no-sidebar`              | hide the directory tree             |
+| `--wrap`                    | wrap long document lines            |
+| `--no-wrap`                 | keep long document lines on one row |
+| `-x, --tab-width <columns>` | tab stop width: 1-16                |
+
 ## `hunk diff`
 
 review diffs or compare two concrete files

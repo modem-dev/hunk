@@ -42,12 +42,12 @@ import {
   prepareDocumentHighlighter,
   queueDocumentHighlightWork,
   type HighlightThemeInput,
-} from "./documentHighlightRenderer";
+} from "../syntax/documentHighlightRenderer";
 import {
   documentHighlightRunsForLine,
   loadDocumentHighlight,
   type DocumentHighlightResult,
-} from "./documentHighlightService";
+} from "../syntax/documentHighlightService";
 import { HIGHLIGHT_WORKER_MIN_LINES, pierreHighlightRenderOptions } from "./highlightRenderOptions";
 
 export { HIGHLIGHT_WORKER_MIN_LINES } from "./highlightRenderOptions";

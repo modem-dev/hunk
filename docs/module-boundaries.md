@@ -40,7 +40,7 @@ Other workspaces are bounded units rather than one tier in that stack:
   adapters. They do not import Hunk source internals.
 - `packages/term-video` owns terminal capture tooling and does not import Hunk source internals.
 
-Current `core/` modules are `changeset/`, `history/`, `install/`, `patch/`, `process/`, `review/`,
+Current `core/` modules are `changeset/`, `documents/`, `history/`, `install/`, `patch/`, `process/`, `review/`,
 `run/`, `theme/`, `vcs/`, and `watch/`. Its root contains `bootstrap.ts`, `liveComments.ts`,
 `reviewDescriptor.ts`, and `reviewDigest.ts` plus tests.
 
@@ -50,6 +50,14 @@ Intentional exceptions, allowed by the rules:
 - `packages/hunk/src/hunk-review` imports `packages/hunk/src/session/agent`: the skill document is generated from the agent
   surface by design.
 - Tests are excluded: they are colocated and free to reach across boundaries.
+
+Complete-document browsing uses `core/documents/source.ts` rather than `DiffFile` or review
+state. `app/documents` owns filesystem I/O and optional Git metadata; `ui/documents` consumes
+only document capabilities and finalized preferences. `HunkSessionHost` routes documents,
+history, and review in one renderer lifetime. Language selectors live in `core/documents`;
+complete-document syntax paint lives in `ui/syntax`, and native word-wrap measurement lives in
+`ui/text`. Review/file-view consumers use those same services. The existing public extension
+review contracts and broker protocol remain unchanged.
 
 ## Module interiors
 

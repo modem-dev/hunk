@@ -3,7 +3,7 @@ import {
   documentHighlightRunsForLine,
   type DocumentHighlightResult,
   type DocumentHighlightRun,
-} from "../diff/documentHighlightService";
+} from "../syntax/documentHighlightService";
 
 /** One paint-only syntax run that retains text from an accepted symbolic span. */
 export interface FileViewSyntaxPaintRun {

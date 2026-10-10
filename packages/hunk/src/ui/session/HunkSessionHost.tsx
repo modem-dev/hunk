@@ -18,6 +18,9 @@ import { parseExtensionReviewDescriptor } from "../../core/reviewDescriptor";
 import type { ExtensionSession } from "../../extensions/session";
 import type { ExtensionLoadResult } from "../../extensions/types";
 import { AppHost } from "../AppHost";
+import type { DocumentBrowserBootstrap } from "../../core/documents/bootstrap";
+import { DocumentApp } from "../documents/DocumentApp";
+import type { DocumentBrowserController } from "../documents/controller";
 import type { InteractiveHistoryRuntime } from "../history/types";
 import type { ViewPreferenceQuitScheduler } from "../hooks/useViewPreferenceQuitController";
 import { interactiveLogUsesColor } from "../log/colorPolicy";
@@ -42,7 +45,16 @@ export interface StandaloneReviewSurfaceRoute {
   extensionSession: ExtensionSession;
 }
 
-export type HunkSurfaceRoute = HistorySurfaceRoute | StandaloneReviewSurfaceRoute;
+export interface DocumentSurfaceRoute {
+  kind: "documents";
+  bootstrap: DocumentBrowserBootstrap;
+  controller: DocumentBrowserController;
+}
+
+export type HunkSurfaceRoute =
+  | HistorySurfaceRoute
+  | StandaloneReviewSurfaceRoute
+  | DocumentSurfaceRoute;
 
 interface ActiveReviewSurfaceRoute extends StandaloneReviewSurfaceRoute {
   extensionOwnership: "owned" | "borrowed";
@@ -51,7 +63,7 @@ interface ActiveReviewSurfaceRoute extends StandaloneReviewSurfaceRoute {
   returnRoute?: HistorySurfaceRoute;
 }
 
-type ActiveSurfaceRoute = HistorySurfaceRoute | ActiveReviewSurfaceRoute;
+type ActiveSurfaceRoute = HistorySurfaceRoute | ActiveReviewSurfaceRoute | DocumentSurfaceRoute;
 
 export interface HunkSessionHostDeps {
   prepareReview?: typeof prepareEmbeddedHistoryReview;
@@ -164,7 +176,7 @@ export function HunkSessionHost({
     [renderer, themeController],
   );
   const [route, setRoute] = useState<ActiveSurfaceRoute>(() =>
-    initialRoute.kind === "history"
+    initialRoute.kind !== "review"
       ? initialRoute
       : {
           ...initialRoute,
@@ -214,7 +226,12 @@ export function HunkSessionHost({
       preparationControllerRef.current?.abort(
         new Error("Hunk surface preparation was cancelled during shutdown."),
       );
-      if (routeRef.current.kind === "history" && !preparingRef.current) completeQuit();
+      const current = routeRef.current;
+      if (current.kind === "documents") {
+        void current.controller.close().then(completeQuit);
+      } else if (current.kind !== "review" && !preparingRef.current) {
+        completeQuit();
+      }
     },
     [completeQuit],
   );
@@ -396,6 +413,18 @@ export function HunkSessionHost({
     },
     [stopReviewRuntime],
   );
+
+  if (route.kind === "documents") {
+    return (
+      <DocumentApp
+        controller={route.controller}
+        themeController={themeController}
+        options={route.bootstrap.configured.input.options}
+        keybindings={route.bootstrap.configured.keybindings}
+        onQuit={() => requestQuit()}
+      />
+    );
+  }
 
   if (route.kind === "review") {
     return (

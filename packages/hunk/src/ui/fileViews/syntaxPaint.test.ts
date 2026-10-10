@@ -5,7 +5,7 @@ import {
   createDocumentHighlightService,
   type DocumentHighlightResult,
   type DocumentHighlightRun,
-} from "../diff/documentHighlightService";
+} from "../syntax/documentHighlightService";
 import { preserveCrossSpanGraphemes } from "../diff/styledSpanLayout";
 import type { CompactHighlightedDocument } from "../diff/worker";
 import {

@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { createTestDiffFile } from "../../../../../test/helpers/diff-helpers";
 import {
   buildEditorCommand,
+  openFileInEditor,
   openSelectedFileInEditor,
   resolveEditableFilePath,
   shouldSuspendForEditor,
@@ -476,6 +477,21 @@ describe("open in editor helpers", () => {
     expect(spawnCalls).toEqual([["code", "--wait", "--goto", `${join(basePath, "example.ts")}:1`]]);
     expect(renderer.suspend).not.toHaveBeenCalled();
     expect(renderer.resume).not.toHaveBeenCalled();
+  });
+
+  test("waits for GUI editors before releasing a document copy", () => {
+    const filePath = join(createTempDir(), "example.ts");
+    writeFileSync(filePath, "before");
+    process.env.EDITOR = "code";
+    const spawnCalls: string[][] = [];
+    mockSpawnSync((cmds) => {
+      spawnCalls.push(cmds);
+      return { exitCode: 0 };
+    });
+    expect(
+      openFileInEditor({ filePath, line: 3, renderer: createRenderer(), wait: true }),
+    ).toBeNull();
+    expect(spawnCalls).toEqual([["code", "--wait", "--goto", `${filePath}:3`]]);
   });
 
   test("resumes after spawn failures and reports launch errors", () => {

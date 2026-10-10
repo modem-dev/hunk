@@ -51,6 +51,7 @@ function createBundledVcsCatalogLoader() {
 }
 
 export type StartupPlan =
+  | { kind: "documents"; bootstrap: import("../core/documents/bootstrap").DocumentBrowserBootstrap }
   | {
       kind: "help";
       text: string;
@@ -382,6 +383,19 @@ export async function prepareStartupPlan(
 
   if (parsedCliInput.kind === "extension-cli") {
     throw new Error("Unreachable extension CLI delegation state.");
+  }
+
+  if (parsedCliInput.kind === "open") {
+    const documentInput = parsedCliInput;
+    return await whileStartupOwnsExtensions(async () => {
+      if (!stdinIsTTY || !stdoutIsTTY)
+        throw new HunkUserError("The `hunk open` browser requires a terminal.");
+      const { prepareDocumentBrowser } = await import("./documents/bootstrap");
+      return await finishHeadlessPlan({
+        kind: "documents",
+        bootstrap: await prepareDocumentBrowser(documentInput, startupCwd, env),
+      });
+    });
   }
 
   if (parsedCliInput.kind === "help") {

@@ -56,7 +56,7 @@ export function useMenuController(menus: AppMenus) {
   };
 
   const toggleMenu = (menuId: MenuId) => {
-    if (openMenuId === menuId) {
+    if (liveMenuId.current === menuId) {
       closeMenu();
       return;
     }
@@ -140,7 +140,10 @@ export function useMenuController(menus: AppMenus) {
     menuSpecs,
     moveMenuItem,
     openMenu,
-    setActiveMenuItemIndex,
+    setActiveMenuItemIndex: (index: number) => {
+      liveItemIndex.current = index;
+      setActiveMenuItemIndex(index);
+    },
     switchMenu,
     toggleMenu,
   };

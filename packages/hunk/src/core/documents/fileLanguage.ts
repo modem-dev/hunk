@@ -5,7 +5,7 @@ import type { ExtensionFileLanguageMatcher } from "../../extension-api/types";
  * Records file-language selectors without loading the diff engine.
  *
  * Registration happens during startup, on every invocation, while the selectors are only read
- * when a changeset is built. Compiling them eagerly would pull the whole diff engine — and its
+ * when a document or changeset is rendered. Compiling them eagerly would pull the whole diff engine — and its
  * syntax grammars — into commands that never render anything, so this module holds them as plain
  * data and `fileLanguageLookup` compiles them at the first lookup for each registration version.
  *

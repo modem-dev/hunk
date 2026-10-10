@@ -12,7 +12,7 @@ import {
   createDocumentHighlightService,
   type DocumentHighlightInput,
   type DocumentHighlightResult,
-} from "../diff/documentHighlightService";
+} from "../syntax/documentHighlightService";
 import { encodeCompactHighlightedDocument } from "../diff/worker";
 import { createVisibleAgentNote } from "../lib/agentAnnotations";
 import { resolveTheme, type AppTheme } from "../themes";

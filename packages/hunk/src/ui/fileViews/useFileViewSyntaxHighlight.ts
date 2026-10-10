@@ -7,7 +7,7 @@ import {
   loadDocumentHighlight,
   type DocumentHighlightInput,
   type DocumentHighlightResult,
-} from "../diff/documentHighlightService";
+} from "../syntax/documentHighlightService";
 import { FILE_VIEW_MAX_CODE_DOCUMENTS } from "./layout";
 import type { PlannedFileViewRow } from "./renderPlan";
 import type { ResolvedFileViewLayout } from "./useFileViews";

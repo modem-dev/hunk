@@ -10,7 +10,7 @@ import type {
 import {
   documentHighlightRunsForLine,
   loadDocumentHighlight,
-} from "../../diff/documentHighlightService";
+} from "../../syntax/documentHighlightService";
 import { cursorLineHighlightBg } from "../../diff/rowStyle";
 import { measureFileViewGeometry } from "../../fileViews/geometry";
 import { validateFileViewLayout } from "../../fileViews/layout";

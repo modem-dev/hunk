@@ -2,7 +2,7 @@ import {
   fileLanguageRegistrationSnapshot,
   restoreFileLanguageRegistrations,
   type FileLanguageRegistrationSnapshot,
-} from "../core/changeset/fileLanguage";
+} from "../core/documents/fileLanguage";
 import { persistedViewPreferencesFromOptions, type HunkConfigResolution } from "../core/run/config";
 import { isVcsReviewInput } from "../core/vcs";
 import type { VcsCatalog } from "../core/vcs/types";

@@ -4,8 +4,8 @@ import { fileLanguageRegistrationSnapshot, type FileLanguageRegistration } from 
 /**
  * Resolves a path to a highlight language, compiling the current registration set on demand.
  *
- * Importing this module loads the diff engine, so call it from changeset construction, never from
- * startup. A registration version change atomically replaces compiled selectors, which keeps
+ * Importing this module loads syntax resources, so keep it behind document/review demand rather
+ * than headless startup. A registration version change atomically replaces compiled selectors, which keeps
  * extension reloads from retaining rules that were removed.
  */
 

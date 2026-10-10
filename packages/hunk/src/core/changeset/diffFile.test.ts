@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { parseDiffFromFile, type FileDiffMetadata } from "@pierre/diffs";
 import { buildDiffFile, countDiffStats, createSkippedLargeMetadata } from "./diffFile";
-import { replaceExtensionFileLanguages } from "./fileLanguage";
+import { replaceExtensionFileLanguages } from "../documents/fileLanguage";
 
 afterEach(() => {
   replaceExtensionFileLanguages([]);

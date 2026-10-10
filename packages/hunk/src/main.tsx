@@ -111,6 +111,12 @@ async function main() {
     );
   }
 
+  if (startupPlan.kind === "documents") {
+    const { runDocumentBrowser } = await import("./ui/documents/runDocumentBrowser");
+    await runDocumentBrowser(startupPlan.bootstrap);
+    return;
+  }
+
   if (startupPlan.kind === "history-static") {
     const { runStaticHistory } = await import("./ui/history/runStaticHistory");
     await runStaticHistory(startupPlan.bootstrap);

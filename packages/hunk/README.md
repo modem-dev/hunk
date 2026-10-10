@@ -127,6 +127,20 @@ private repositories and higher API limits. GitHub Enterprise is not currently s
 
 Hunk auto-detects Jujutsu and Sapling checkouts, so `hunk diff [revset]` and `hunk show [revset]` use native revsets inside jj or Sapling workspaces. `hunk log --vcs jj` also reads JJ history directly, including in a non-colocated workspace. To override VCS detection, set `vcs = "git"` or `vcs = "jj"` or `vcs = "sl"` in [config](#config).
 
+### Viewing complete files and browsing directories
+
+```bash
+hunk open                 # browse the current directory
+hunk open README.md       # view a complete, syntax-highlighted document
+hunk open path/to/project # browse another directory without requiring a repository
+```
+
+The read-only browser loads directories and documents lazily and refreshes watched content.
+Use arrows and Enter to navigate the tree, Tab to switch focus, `i` to show hidden/Git-ignored
+entries, and `e` to open the displayed file in `$EDITOR`. Themes, menus, line numbers, and wrapping
+use Hunk's normal controls. Symlinks are listed but not followed; binary, unreadable, missing,
+and oversized files (over 1 MiB) show placeholders. See [the open workflow](docs/open.md) for details.
+
 ### Working with raw files and patches
 
 ```bash

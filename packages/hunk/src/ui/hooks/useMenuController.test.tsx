@@ -213,6 +213,38 @@ describe("useMenuController", () => {
     }
   });
 
+  test("pointer toggles and highlight updates are visible to the next action before a render", async () => {
+    let controller!: ReturnType<typeof useMenuController>;
+    const ran: string[] = [];
+
+    function Probe() {
+      controller = useMenuController({
+        file: [
+          { kind: "item", label: "Refresh", action: () => ran.push("refresh") },
+          { kind: "item", label: "Edit", action: () => ran.push("edit") },
+        ],
+      });
+      return null;
+    }
+
+    const setup = await testRender(<Probe />, { width: 80, height: 24 });
+    try {
+      await act(async () => setup.renderOnce());
+      await act(async () => {
+        controller.toggleMenu("file");
+        controller.toggleMenu("file");
+        expect(controller.getActiveMenuId()).toBeNull();
+        controller.openMenu("file");
+        controller.setActiveMenuItemIndex(1);
+        controller.activateCurrentMenuItem();
+      });
+      expect(ran).toEqual(["edit"]);
+      expect(controller.activeMenuId).toBeNull();
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
   test("cycling skips menus the session does not show", async () => {
     let controller!: ReturnType<typeof useMenuController>;
 

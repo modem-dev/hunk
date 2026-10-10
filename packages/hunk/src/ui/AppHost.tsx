@@ -5,7 +5,7 @@ import { ReviewProducer } from "../app/review/producer";
 import { reviewDescriptorAfterReload, reviewDescriptorResourceCwd } from "../app/delegatedReview";
 import { loadConfiguredSessionBootstrap } from "../app/sessionBootstrap";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";
-import { restoreFileLanguageRegistrations } from "../core/changeset/fileLanguage";
+import { restoreFileLanguageRegistrations } from "../core/documents/fileLanguage";
 import { resolveConfiguredCliInput } from "../core/run/config";
 import { resolveRuntimeCliInput } from "../core/process/terminal";
 import type { StartupNotice } from "../core/process/startupNotice";

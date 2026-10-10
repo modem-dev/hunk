@@ -161,22 +161,35 @@ export function openSelectedFileInEditor({
     return "No file selected.";
   }
 
-  const editor = process.env.EDITOR?.trim();
-  if (!editor) {
-    return "$EDITOR is not set.";
-  }
-
-  const absolutePath = resolveEditableFilePath(file.path, basePath);
-  if (!existsSync(absolutePath)) {
-    return `Cannot edit ${file.path}: file does not exist on disk.`;
-  }
-
-  const line = Math.max(1, selectedLine(file, selectedHunk, lineCursor));
-  const command = buildEditorCommand({
-    editor,
-    filePath: absolutePath,
-    line,
+  return openFileInEditor({
+    filePath: resolveEditableFilePath(file.path, basePath),
+    displayPath: file.path,
+    line: Math.max(1, selectedLine(file, selectedHunk, lineCursor)),
+    renderer,
   });
+}
+
+/** Launch the user-selected editor without requiring a review or hunk model. */
+export function openFileInEditor({
+  filePath,
+  displayPath = filePath,
+  line,
+  renderer,
+  wait = false,
+}: {
+  filePath: string;
+  displayPath?: string;
+  line: number;
+  renderer: Pick<CliRenderer, "suspend" | "resume" | "isDestroyed">;
+  wait?: boolean;
+}) {
+  if (renderer.isDestroyed) return "The terminal session has closed.";
+  const editor = process.env.EDITOR?.trim();
+  if (!editor) return "$EDITOR is not set.";
+  if (!existsSync(filePath)) return `Cannot edit ${displayPath}: file does not exist on disk.`;
+  const command = buildEditorCommand({ editor, filePath, line });
+  if (wait && [...CODE_STYLE_EDITORS, "zed", "zeditor"].includes(editorProgram(editor)))
+    command.args.unshift("--wait");
 
   const shouldSuspend = shouldSuspendForEditor(editor);
   if (shouldSuspend) {

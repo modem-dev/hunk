@@ -1,31 +1,27 @@
 import { TextBuffer, TextBufferView } from "@opentui/core";
 
 /** OpenTUI renders each retained tab at a fixed two-cell width. */
-export const FILE_VIEW_TAB_WIDTH = 2;
+export const TERMINAL_TEXT_TAB_WIDTH = 2;
+const TEXT_MEASUREMENT_ERROR = "terminal text measurement unavailable";
 
-const FILE_VIEW_TEXT_MEASUREMENT_ERROR = "file-view text measurement unavailable";
-
-interface NativeFileViewTextBuffer {
+interface NativeTextBuffer {
   setText(text: string): void;
   destroy(): void;
 }
-
-interface NativeFileViewTextBufferView {
+interface NativeTextBufferView {
   setWrapMode(mode: "word"): void;
   setWrapWidth(width: number): void;
   measureForDimensions(width: number, height: number): { lineCount: number } | null;
   destroy(): void;
 }
-
-interface NativeFileViewTextMeasurement {
-  readonly buffer: NativeFileViewTextBuffer;
-  readonly view: NativeFileViewTextBufferView;
+interface NativeTextMeasurement {
+  readonly buffer: NativeTextBuffer;
+  readonly view: NativeTextBufferView;
 }
+type NativeTextMeasurementFactory = () => NativeTextMeasurement;
 
-type NativeFileViewTextMeasurementFactory = () => NativeFileViewTextMeasurement;
-
-/** Create the native buffer pair that shares FileView's OpenTUI wrapping behavior. */
-function createNativeFileViewTextMeasurement(): NativeFileViewTextMeasurement {
+/** Create the native buffer pair shared by every word-wrapped terminal text surface. */
+function createNativeTextMeasurement(): NativeTextMeasurement {
   const buffer = TextBuffer.create("unicode");
   try {
     return { buffer, view: TextBufferView.create(buffer) };
@@ -33,27 +29,25 @@ function createNativeFileViewTextMeasurement(): NativeFileViewTextMeasurement {
     try {
       buffer.destroy();
     } catch {
-      // Preserve the bounded measurement failure rather than surfacing teardown details.
+      /* Preserve the setup failure. */
     }
     throw error;
   }
 }
 
-/** Reuse OpenTUI's native word-wrap engine while validating every row in one layout. */
-export class FileViewTextMeasurer {
-  #buffer: NativeFileViewTextBuffer | undefined;
-  #view: NativeFileViewTextBufferView | undefined;
+/** Reuse OpenTUI's native wrap engine so measurement and painting retain identical geometry. */
+export class TerminalTextMeasurer {
+  #buffer: NativeTextBuffer | undefined;
+  #view: NativeTextBufferView | undefined;
   #nativeAvailable = true;
-
   constructor(
-    private readonly createNativeMeasurement: NativeFileViewTextMeasurementFactory = createNativeFileViewTextMeasurement,
+    private readonly createNativeMeasurement: NativeTextMeasurementFactory = createNativeTextMeasurement,
   ) {}
 
-  /** Measure retained text exactly as FileView passes it to OpenTUI's word-wrapped renderable. */
+  /** Measure one terminal-safe logical line; native failure never invents an approximate height. */
   measure(text: string, width: number) {
     if (text.length === 0) return 1;
-    if (!this.#nativeAvailable) throw new Error(FILE_VIEW_TEXT_MEASUREMENT_ERROR);
-
+    if (!this.#nativeAvailable) throw new Error(TEXT_MEASUREMENT_ERROR);
     const usableWidth = Math.max(1, Math.floor(width));
     try {
       if (!this.#buffer || !this.#view) {
@@ -70,18 +64,17 @@ export class FileViewTextMeasurer {
         !Number.isSafeInteger(measured.lineCount) ||
         measured.lineCount < 0 ||
         measured.lineCount > 1_000_001
-      ) {
-        throw new Error(FILE_VIEW_TEXT_MEASUREMENT_ERROR);
-      }
+      )
+        throw new Error(TEXT_MEASUREMENT_ERROR);
       return Math.max(1, measured.lineCount);
     } catch {
       this.#nativeAvailable = false;
       this.destroy();
-      throw new Error(FILE_VIEW_TEXT_MEASUREMENT_ERROR);
+      throw new Error(TEXT_MEASUREMENT_ERROR);
     }
   }
 
-  /** Release native measurement resources after one layout validation. */
+  /** Release both native resources without masking a measurement or renderer failure. */
   destroy() {
     const view = this.#view;
     const buffer = this.#buffer;
@@ -90,19 +83,19 @@ export class FileViewTextMeasurer {
     try {
       view?.destroy();
     } catch {
-      // Teardown must not mask validation or renderer failures.
+      /* Teardown preserves the original failure. */
     }
     try {
       buffer?.destroy();
     } catch {
-      // Teardown must not mask validation or renderer failures.
+      /* Teardown preserves the original failure. */
     }
   }
 }
 
-/** Measure one standalone row with the same native word-wrap engine as FileView paint. */
-export function measureFileViewDisplayTextHeight(text: string, width: number) {
-  const measurer = new FileViewTextMeasurer();
+/** Measure a standalone row using the same native word-wrap behavior as the mounted renderer. */
+export function measureTerminalTextHeight(text: string, width: number) {
+  const measurer = new TerminalTextMeasurer();
   try {
     return measurer.measure(text, width);
   } finally {

@@ -3,6 +3,7 @@ import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react"
 import { basename } from "node:path";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { APP_COMMAND_NAMES } from "../../core/run/commandCatalog";
+import { DOCUMENT_COMMAND_NAMES } from "../../core/run/documentCommandCatalog";
 import type { PersistedViewPreferences } from "../../core/run/config";
 import type {
   ExtensionVcsHistoryCommit,
@@ -263,7 +264,7 @@ export function LogApp({
     await openSelected(undefined, true);
   };
   const inactiveHistoryCommandNames = useMemo(() => {
-    const names = new Set(APP_COMMAND_NAMES);
+    const names = new Set([...APP_COMMAND_NAMES, ...DOCUMENT_COMMAND_NAMES]);
     for (const registered of buildSessionCommands(runtime.extensionSession.current.registry)) {
       names.add(`${registered.extensionId}.${registered.command.id}`);
     }

@@ -17,7 +17,7 @@ import { ReviewProducer } from "../app/review/producer";
 import type { AppBootstrap } from "../app/types";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";
 import { loadAppBootstrap as loadCoreAppBootstrap } from "../core/changeset/loaders";
-import { fileLanguageForPath } from "../core/changeset/fileLanguageLookup";
+import { fileLanguageForPath } from "../core/documents/fileLanguageLookup";
 import type { CliInput } from "../core/run/commandInputs";
 
 import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";

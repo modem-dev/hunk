@@ -15,13 +15,13 @@ import { loadStartupExtensions } from "../extensions/startup";
 import {
   documentHighlightRunsForLine,
   loadDocumentHighlight,
-} from "./diff/documentHighlightService";
+} from "./syntax/documentHighlightService";
 import { resolveTheme } from "./themes";
 import { setFileViewSyntaxHighlightLoaderForTest } from "./fileViews/useFileViewSyntaxHighlight";
 import type {
   DocumentHighlightInput,
   DocumentHighlightResult,
-} from "./diff/documentHighlightService";
+} from "./syntax/documentHighlightService";
 import { TestAppHost as AppHost } from "../../../../test/helpers/app-host";
 import { capturedTestColorToHex } from "../../../../test/helpers/test-color-helpers";
 

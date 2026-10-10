@@ -5,7 +5,7 @@ import { loadHighlightedSourceLines, sourceHasIncompatibleLoneCarriageReturn } f
 import {
   documentHighlightCacheKey,
   type DocumentHighlightResult,
-} from "./documentHighlightService";
+} from "../syntax/documentHighlightService";
 
 const SOURCE_HIGHLIGHT_MAX_RETRIES = 1;
 const SOURCE_HIGHLIGHT_RETRY_DELAY_MS = 25;
