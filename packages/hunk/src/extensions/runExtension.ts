@@ -502,7 +502,12 @@ export function toInternalVcsAdapter(
 
   const internalOperations: Record<string, VcsOperation<VcsReviewInput>> = {};
   for (const [kind, operation] of Object.entries(operations ?? {})) {
-    if (isPlainObject(operation) && typeof operation.load === "function") {
+    if (
+      isPlainObject(operation) &&
+      typeof operation.load === "function" &&
+      (operation.watchSignature === undefined || typeof operation.watchSignature === "function") &&
+      (operation.watchPlan === undefined || typeof operation.watchPlan === "function")
+    ) {
       internalOperations[kind] = toInternalVcsOperation(
         operation as unknown as ExtensionVcsOperation<VcsReviewInput>,
       );
