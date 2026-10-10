@@ -6,7 +6,10 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { TextAttributes } from "@opentui/core";
 import { isValidElement, useState } from "react";
 import { HunkExtensionUserError } from "../extension-api";
-import { registerHostRuntimeModules } from "./hostRuntimeModules";
+import {
+  registerHostRuntimeModules,
+  rewriteInstalledPackageSpecifiers,
+} from "./hostRuntimeModules";
 
 /**
  * These tests import real files from a temp directory, the way extension
@@ -177,5 +180,194 @@ describe("registerHostRuntimeModules", () => {
     writeFileSync(outsider, `import "react";\nexport default {};\n`);
 
     await expect(import(pathToFileURL(outsider).href)).rejects.toThrow(/react/);
+  });
+
+  test("loads a package from the extension's own node_modules", async () => {
+    const root = mkdtempSync(join(tmpdir(), "hunk-host-modules-dep-"));
+    tempDirs.push(root);
+    const entryDir = join(root, "src");
+    mkdirSync(entryDir);
+    const path = join(entryDir, "index.ts");
+    writeFileSync(path, `import fakeDep from "fake-dep";\nexport default fakeDep;\n`);
+    const depDir = join(root, "node_modules", "fake-dep");
+    mkdirSync(depDir, { recursive: true });
+    writeFileSync(
+      join(depDir, "package.json"),
+      JSON.stringify({ name: "fake-dep", version: "1.0.0", main: "index.js" }),
+    );
+    writeFileSync(join(depDir, "index.js"), `module.exports = { language: "graphql" };\n`);
+
+    const mod = await importTempExtension(path);
+
+    expect(mod.default).toEqual({ language: "graphql" });
+  });
+
+  test("does not resolve a type-only import the transpiler erases", async () => {
+    const path = writeTempExtension(
+      "ext.ts",
+      `import type { Missing } from "type-only-pkg";\nexport default { ready: true as Missing | boolean };\n`,
+    );
+
+    const mod = await importTempExtension(path);
+
+    expect(mod.default.ready).toBe(true);
+  });
+
+  test("leaves an unknown package bare and the import rejects", async () => {
+    const path = writeTempExtension("ext.ts", `import "not-a-real-package";\nexport default {};\n`);
+    expect(rewriteInstalledPackageSpecifiers(`import "not-a-real-package";\n`, path)).toBe(
+      `import "not-a-real-package";\n`,
+    );
+
+    await expect(importTempExtension(path)).rejects.toThrow(/not-a-real-package/);
+  });
+});
+
+describe("rewriteInstalledPackageSpecifiers", () => {
+  test("substitutes the file Bun resolves for an extension and for a dependency", () => {
+    const root = mkdtempSync(join(tmpdir(), "hunk-host-modules-rewrite-"));
+    tempDirs.push(root);
+    const entry = join(root, "index.ts");
+    writeFileSync(entry, `export {}\n`);
+    const fakeDep = join(root, "node_modules", "fake-dep");
+    mkdirSync(fakeDep, { recursive: true });
+    writeFileSync(
+      join(fakeDep, "package.json"),
+      JSON.stringify({ name: "fake-dep", main: "index.js" }),
+    );
+    writeFileSync(join(fakeDep, "index.js"), `module.exports = { language: "graphql" };\n`);
+    const depA = join(root, "node_modules", "dep-a");
+    const depB = join(root, "node_modules", "dep-b");
+    mkdirSync(depA, { recursive: true });
+    mkdirSync(depB, { recursive: true });
+    writeFileSync(join(depA, "package.json"), JSON.stringify({ name: "dep-a", main: "index.js" }));
+    writeFileSync(join(depA, "index.js"), `import value from "dep-b";\nexport default value;\n`);
+    writeFileSync(join(depB, "package.json"), JSON.stringify({ name: "dep-b", main: "index.js" }));
+    writeFileSync(join(depB, "index.js"), `module.exports = { ok: true };\n`);
+
+    const resolvedDep = Bun.resolveSync("fake-dep", entry);
+    const fromExtension = rewriteInstalledPackageSpecifiers(
+      `export { language } from "fake-dep";\n`,
+      entry,
+    );
+    expect(fromExtension).toContain(pathToFileURL(resolvedDep).href);
+    expect(fromExtension).not.toContain(`"fake-dep"`);
+
+    const requireRewrite = rewriteInstalledPackageSpecifiers(
+      `const dep = require("fake-dep");\n`,
+      entry,
+    );
+    // require() keeps the absolute path, and the rewrite doubles backslashes
+    // so the specifier stays valid inside the original quotes.
+    expect(requireRewrite).toContain(resolvedDep.replaceAll("\\", "\\\\").replaceAll('"', '\\"'));
+    expect(requireRewrite).not.toContain("file:");
+
+    const depAEntry = join(depA, "index.js");
+    const resolvedSibling = Bun.resolveSync("dep-b", depAEntry);
+    const fromDependency = rewriteInstalledPackageSpecifiers(
+      `import value from "dep-b";\n`,
+      depAEntry,
+    );
+    expect(fromDependency).toContain(pathToFileURL(resolvedSibling).href);
+  });
+
+  test("rewrites an import-only export when Bun cannot resolve the package", () => {
+    const root = mkdtempSync(join(tmpdir(), "hunk-host-modules-esm-"));
+    tempDirs.push(root);
+    const entry = join(root, "index.ts");
+    writeFileSync(entry, `export {}\n`);
+    const pkgDir = join(root, "node_modules", "esm-only");
+    mkdirSync(pkgDir, { recursive: true });
+    writeFileSync(
+      join(pkgDir, "package.json"),
+      JSON.stringify({
+        name: "esm-only",
+        exports: { ".": { import: "./entry.js" } },
+      }),
+    );
+    writeFileSync(join(pkgDir, "entry.js"), `export const language = "md";\n`);
+
+    const original = Bun.resolveSync;
+    Bun.resolveSync = (() => {
+      throw Object.assign(new Error("Cannot find package 'esm-only'"), {
+        code: "ERR_MODULE_NOT_FOUND",
+      });
+    }) as typeof Bun.resolveSync;
+    try {
+      const rewritten = rewriteInstalledPackageSpecifiers(`import pkg from "esm-only";\n`, entry);
+      expect(rewritten).toContain(pathToFileURL(join(pkgDir, "entry.js")).href);
+    } finally {
+      Bun.resolveSync = original;
+    }
+  });
+
+  test("rewrites a root-level import condition when exports has no dot key", () => {
+    const root = mkdtempSync(join(tmpdir(), "hunk-host-modules-esm-root-"));
+    tempDirs.push(root);
+    const entry = join(root, "index.ts");
+    writeFileSync(entry, `export {}\n`);
+    const pkgDir = join(root, "node_modules", "esm-root");
+    mkdirSync(pkgDir, { recursive: true });
+    writeFileSync(
+      join(pkgDir, "package.json"),
+      JSON.stringify({
+        name: "esm-root",
+        exports: { import: "./entry.js" },
+      }),
+    );
+    writeFileSync(join(pkgDir, "entry.js"), `export const language = "md";\n`);
+
+    const original = Bun.resolveSync;
+    Bun.resolveSync = (() => {
+      throw Object.assign(new Error("Cannot find package 'esm-root'"), {
+        code: "ERR_MODULE_NOT_FOUND",
+      });
+    }) as typeof Bun.resolveSync;
+    try {
+      const rewritten = rewriteInstalledPackageSpecifiers(`import pkg from "esm-root";\n`, entry);
+      expect(rewritten).toContain(pathToFileURL(join(pkgDir, "entry.js")).href);
+    } finally {
+      Bun.resolveSync = original;
+    }
+  });
+
+  test("keeps relative, node, and bun specifiers unchanged", () => {
+    const path = writeTempExtension("ext.ts", `export default {};\n`);
+    const source = [
+      `import helper from "./helper";`,
+      `import marked from "./node_modules/marked/lib/marked.esm.js";`,
+      `import fs from "node:fs";`,
+      `import bareFs from "fs";`,
+      `import promises from "fs/promises";`,
+      `import ffi from "bun:ffi";`,
+    ].join("\n");
+
+    expect(rewriteInstalledPackageSpecifiers(source, path)).toBe(source);
+  });
+
+  test("rewrites scoped package names and subpaths", () => {
+    const root = mkdtempSync(join(tmpdir(), "hunk-host-modules-scope-"));
+    tempDirs.push(root);
+    const entry = join(root, "index.ts");
+    writeFileSync(entry, `export {}\n`);
+    const scoped = join(root, "node_modules", "@scope", "pkg");
+    mkdirSync(scoped, { recursive: true });
+    writeFileSync(
+      join(scoped, "package.json"),
+      JSON.stringify({ name: "@scope/pkg", main: "index.js" }),
+    );
+    writeFileSync(join(scoped, "index.js"), `module.exports = { name: "scoped" };\n`);
+    const subpath = join(root, "node_modules", "pkg");
+    mkdirSync(subpath, { recursive: true });
+    writeFileSync(join(subpath, "package.json"), JSON.stringify({ name: "pkg", main: "index.js" }));
+    writeFileSync(join(subpath, "entry.js"), `module.exports = { sub: true };\n`);
+
+    const rewritten = rewriteInstalledPackageSpecifiers(
+      `import scoped from "@scope/pkg";\nimport entry from "pkg/entry";\n`,
+      entry,
+    );
+
+    expect(rewritten).toContain(pathToFileURL(Bun.resolveSync("@scope/pkg", entry)).href);
+    expect(rewritten).toContain(pathToFileURL(Bun.resolveSync("pkg/entry", entry)).href);
   });
 });

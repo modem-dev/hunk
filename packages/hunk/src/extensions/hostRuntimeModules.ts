@@ -1,4 +1,7 @@
-import { dirname } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { createRequire, isBuiltin } from "node:module";
+import { dirname, isAbsolute, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { resolveCanonicalPath } from "../core/run/paths";
 
 /**
@@ -24,6 +27,11 @@ import { resolveCanonicalPath } from "../core/run/paths";
  * JSX lowering emits automatic-runtime imports (`react/jsx-runtime`, or
  * `@opentui/react/jsx-runtime` under a pragma), and they only pass through the
  * rewrite if they exist before Bun's own loader would have added them.
+ *
+ * The same returned source has to name files for packages the extension
+ * installed beside itself. A compiled binary does not resolve those bare
+ * specifiers from the extension file, so after the host rewrite each static
+ * bare specifier becomes the absolute file its own `node_modules` provides.
  *
  * Modules linked into the compiled binary never re-resolve their imports, so
  * none of this affects the host bundle in any run mode.
@@ -79,6 +87,196 @@ export function rewriteHostSpecifiers(code: string) {
     (_all, lead: string, quote: string, specifier: string) =>
       `${lead}${quote}${HOST_MODULE_PREFIX}${specifier}${quote}`,
   );
+}
+
+/**
+ * Match one static specifier in import position in transpiled output.
+ *
+ * Same positions as the host rewrite: `from "x"`, `import("x")`, and
+ * `require("x")`. Relative paths, builtins, and `hunk-host:` modules are
+ * filtered after the match so a data string is still left alone.
+ */
+const INSTALLED_PACKAGE_SPECIFIER_PATTERN =
+  /((?:\bfrom|\bimport|\brequire)\s*\(?\s*)(["'])([^"']+)\2/g;
+
+/**
+ * Replace static bare package specifiers with the file installed for them.
+ *
+ * `Bun.resolveSync` is enough when it returns a file on disk. A compiled
+ * binary still reports the extension file as the importer and cannot see that
+ * file, so `createRequire` walks the extension directory's real `node_modules`.
+ * An import-only `exports` map throws instead of resolving: Node uses
+ * `ERR_PACKAGE_PATH_NOT_EXPORTED`, and Bun's `createRequire` uses
+ * `MODULE_NOT_FOUND`. The nearest package.json then supplies the package root:
+ * `exports["."]` when the map lists subpaths, otherwise an `import` or
+ * `default` string on the map itself. Pattern targets are skipped. A specifier
+ * neither resolver can find stays bare, so the existing "Cannot find package"
+ * error still surfaces. Bare Node builtins resolve to a module id, not a file,
+ * and those specifiers stay as written.
+ *
+ * `import`, `export`, and `import()` receive a file URL of an absolute path.
+ * `require()` receives the raw absolute path, with quotes and backslashes
+ * escaped for the quotes already in the source.
+ */
+export function rewriteInstalledPackageSpecifiers(code: string, importerPath: string) {
+  return code.replace(
+    INSTALLED_PACKAGE_SPECIFIER_PATTERN,
+    (all, lead: string, quote: string, specifier: string) => {
+      if (isPreservedSpecifier(specifier)) return all;
+      const resolved = resolveInstalledPackage(specifier, importerPath);
+      // A builtin id such as "fs" is not a file. pathToFileURL would rewrite
+      // import/export/import() to a cwd-relative file URL.
+      if (!resolved || !isAbsolute(resolved) || isBuiltin(resolved)) return all;
+      const value = /\brequire\b/.test(lead) ? resolved : pathToFileURL(resolved).href;
+      return `${lead}${quote}${escapeQuotedSpecifier(value, quote)}${quote}`;
+    },
+  );
+}
+
+/** Keep specifiers the runtime or the host rewrite already owns. */
+function isPreservedSpecifier(specifier: string) {
+  return (
+    specifier.startsWith(".") ||
+    specifier.startsWith("node:") ||
+    specifier.startsWith("bun:") ||
+    specifier.startsWith("hunk-host:") ||
+    specifier.startsWith("file:") ||
+    isAbsolute(specifier) ||
+    isBuiltin(specifier)
+  );
+}
+
+/** Escape one resolved path so it remains a single quoted specifier. */
+function escapeQuotedSpecifier(value: string, quote: string) {
+  const escaped = value.replace(/\\/g, "\\\\");
+  return escaped.replaceAll(quote, `\\${quote}`);
+}
+
+/** Resolve one bare specifier from the file that imported it, or nothing. */
+function resolveInstalledPackage(specifier: string, importerPath: string) {
+  const bunResolved = resolveWithBun(specifier, importerPath);
+  if (bunResolved) return bunResolved;
+
+  try {
+    return createRequire(importerPath).resolve(specifier);
+  } catch (error) {
+    if (!isUnexportedPackageError(error)) return undefined;
+    return resolveUnexportedPackageEntry(specifier, importerPath);
+  }
+}
+
+/** Use Bun's resolver only when the file it names is actually on disk. */
+function resolveWithBun(specifier: string, importerPath: string) {
+  try {
+    const resolved = Bun.resolveSync(specifier, importerPath);
+    if (typeof resolved === "string" && existsSync(resolved)) return resolved;
+  } catch {
+    // The compiled binary names this importer and still cannot see its
+    // node_modules. createRequire walks that directory for real.
+  }
+  return undefined;
+}
+
+/**
+ * Report whether require() could not export the package.
+ *
+ * Node throws `ERR_PACKAGE_PATH_NOT_EXPORTED` when `exports` has no require
+ * target. Bun's `createRequire` throws `MODULE_NOT_FOUND` for that map, and
+ * also for a package that is not installed. The export fallback then finds a
+ * package.json only in the first case; otherwise the specifier stays bare.
+ */
+function isUnexportedPackageError(error: unknown) {
+  if (typeof error !== "object" || error === null || !("code" in error)) return false;
+  const code = (error as { code?: unknown }).code;
+  return code === "ERR_PACKAGE_PATH_NOT_EXPORTED" || code === "MODULE_NOT_FOUND";
+}
+
+/**
+ * Read the package root file from `exports` when require() cannot.
+ *
+ * Only the package name itself uses `exports["."]`. A subpath that failed to
+ * resolve stays bare rather than being rewritten to the package root.
+ */
+function resolveUnexportedPackageEntry(specifier: string, importerPath: string) {
+  const packageName = packageNameFromSpecifier(specifier);
+  if (!packageName || specifier !== packageName) return undefined;
+
+  const packageJsonPath = nearestPackageJson(importerPath, packageName);
+  if (!packageJsonPath) return undefined;
+
+  let manifest: { exports?: unknown };
+  try {
+    manifest = JSON.parse(readFileSync(packageJsonPath, "utf8")) as { exports?: unknown };
+  } catch {
+    return undefined;
+  }
+
+  const relativeTarget = relativePackageEntry(manifest.exports);
+  if (!relativeTarget) return undefined;
+  const absolute = resolve(dirname(packageJsonPath), relativeTarget);
+  return existsSync(absolute) ? absolute : undefined;
+}
+
+/** Package name of a bare specifier, keeping the scope when there is one. */
+function packageNameFromSpecifier(specifier: string) {
+  if (specifier.startsWith("@")) {
+    const [scope, name] = specifier.split("/");
+    if (!scope || !name) return undefined;
+    return `${scope}/${name}`;
+  }
+  const name = specifier.split("/")[0];
+  return name || undefined;
+}
+
+/** Nearest `node_modules/<name>/package.json` above the importing file. */
+function nearestPackageJson(importerPath: string, packageName: string) {
+  const segments = packageName.split("/");
+  let directory = dirname(importerPath);
+  for (;;) {
+    const candidate = join(directory, "node_modules", ...segments, "package.json");
+    if (existsSync(candidate)) return candidate;
+    const parent = dirname(directory);
+    if (parent === directory) return undefined;
+    directory = parent;
+  }
+}
+
+/**
+ * Relative file named by the package root export.
+ *
+ * A string export is that file. When the map lists subpaths, `exports["."]`
+ * is the root. Otherwise `import` or `default` sits on the map itself.
+ * Targets that contain `*` are patterns, not one file, and are skipped.
+ */
+function relativePackageEntry(exportsField: unknown) {
+  if (typeof exportsField !== "object" || exportsField === null || Array.isArray(exportsField)) {
+    return relativeExportTarget(exportsField);
+  }
+
+  const record = exportsField as Record<string, unknown>;
+  const root = "." in record ? record["."] : record;
+  return relativeExportTarget(root);
+}
+
+/** Pick the relative file from one export target or its import/default condition. */
+function relativeExportTarget(value: unknown): string | undefined {
+  if (typeof value === "string") return relativeFileTarget(value);
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+
+  const conditions = value as Record<string, unknown>;
+  for (const key of ["import", "default"] as const) {
+    const target = conditions[key];
+    if (typeof target !== "string") continue;
+    const relative = relativeFileTarget(target);
+    if (relative) return relative;
+  }
+  return undefined;
+}
+
+/** Accept one relative file target and reject export patterns. */
+function relativeFileTarget(target: string) {
+  if (!target.startsWith(".") || target.includes("*")) return undefined;
+  return target;
 }
 
 type TranspilerLoader = "js" | "jsx" | "ts" | "tsx";
@@ -171,9 +369,10 @@ function registerSourceRoot(directory: string) {
     }
 
     registeredSourceRoots.add(sourceRoot);
-    // Everything under the directory, so a folder extension's helper modules get
-    // the same rewrite as its entry file. `[/\\]` keeps the boundary correct on
-    // Windows, where `args.path` carries native separators.
+    // Everything under the directory, so a folder extension's helper modules and
+    // the files of packages installed inside it get the same rewrite as its
+    // entry. `[/\\]` keeps the boundary correct on Windows, where `args.path`
+    // carries native separators.
     const escapedDirectory = sourceRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const filter = new RegExp(`^${escapedDirectory}[/\\\\].*\\.(?:[mc]?[jt]s|[jt]sx)$`);
 
@@ -183,7 +382,13 @@ function registerSourceRoot(directory: string) {
         build.onLoad({ filter }, async (args) => {
           const source = await Bun.file(args.path).text();
           const transpiled = transpilerFor(resolveLoader(args.path)).transformSync(source);
-          return { contents: rewriteHostSpecifiers(transpiled), loader: "js" };
+          return {
+            contents: rewriteInstalledPackageSpecifiers(
+              rewriteHostSpecifiers(transpiled),
+              args.path,
+            ),
+            loader: "js",
+          };
         });
       },
     });
