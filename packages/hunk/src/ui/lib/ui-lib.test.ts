@@ -280,6 +280,33 @@ describe("ui helpers", () => {
     }
   });
 
+  test("prepend scalars merge into the following cluster instead of counting as their own cell", () => {
+    // U+113D1 (GRANTHA SIGN CANDRABINDU NUKTA) is a grapheme Prepend character: it carries no
+    // width of its own and joins the cluster that follows it. The scalar fast path has to know
+    // that, otherwise every line holding one is measured one cell too wide and wrapping breaks
+    // a column early.
+    expect(measureTextWidth("\u{113D1}abc")).toBe(stringWidth("\u{113D1}abc"));
+    expect(measureTextWidth("\u{113D1}abc")).toBe(3);
+    expect(measureTextWidth("\u{113D1}\u{113D1}")).toBe(1);
+    expect(measureTextWidth("abc\u{113D1}")).toBe(stringWidth("abc\u{113D1}"));
+
+    // Slicing and wrapping share the measurement, so they agree on where the cluster ends.
+    expect(sliceTextByWidth("\u{113D1}abc", 0, 3)).toEqual({ text: "\u{113D1}abc", width: 3 });
+    expect(sliceTextByWidth("\u{113D1}abc", 1, 2)).toEqual({ text: "bc", width: 2 });
+    expect(wrapTextByWidth("\u{113D1}abc", 3)).toEqual([
+      { text: "\u{113D1}abc", width: 3, startsNewLine: false },
+    ]);
+    expect(wrapTextByWidth("\u{113D1}abc", 2)).toEqual([
+      { text: "\u{113D1}ab", width: 2, startsNewLine: false },
+      { text: "c", width: 1, startsNewLine: true },
+    ]);
+
+    // A prepend at the end of a word stays attached to it instead of splitting the cluster.
+    for (const word of ["\u{113D1}abc", "abc\u{113D1}", "\u{113D1}\u{113D1}abc"]) {
+      expect(measureTextWidth(word)).toBe(stringWidth(word));
+    }
+  });
+
   test("cellRangeToCharRange maps inclusive cell ranges onto code-unit slice bounds", () => {
     // ASCII: cells and code units are identical, and out-of-range cells clamp to the text.
     expect(cellRangeToCharRange("hello", 1, 3)).toEqual({ startIndex: 1, endIndex: 4 });
