@@ -465,6 +465,81 @@ sessionDescribe("session CLI integration", () => {
     }
   }, 20_000);
 
+  test("reload away from a noted file keeps the session and brings the note back with the file", async () => {
+    const port = await reserveLoopbackPort();
+    const fixture = createFixtureFiles(
+      "reload-retire",
+      ["export const alpha = 1;"],
+      ["export const alpha = 2;"],
+    );
+    mkdirSync(join(fixture.dir, ".git"));
+    const otherBefore = join(fixture.dir, "reload-other-before.ts");
+    const otherAfter = join(fixture.dir, "reload-other-after.ts");
+    writeFileSync(otherBefore, "export const other = 1;\n");
+    writeFileSync(otherAfter, "export const other = 2;\n");
+    const session = spawnHunkSession(fixture, port);
+
+    try {
+      const listed = await waitForRegisteredSessions(port);
+      const sessionId = listed[0]!.sessionId;
+
+      const comment = runSessionCli(
+        [
+          "comment",
+          "add",
+          sessionId,
+          "--file",
+          fixture.afterName,
+          "--new-line",
+          "1",
+          "--summary",
+          "Alpha note",
+          "--json",
+        ],
+        port,
+      );
+      expect(comment.proc.exitCode).toBe(0);
+      expect(comment.stderr).toBe("");
+
+      // The new diff leaves out the noted file, so the note stays in the window's store only.
+      const away = runSessionCli(
+        ["reload", sessionId, "--json", "--", "diff", "--files", otherBefore, otherAfter],
+        port,
+      );
+      expect(away.stderr).toBe("");
+      expect(away.proc.exitCode).toBe(0);
+
+      const listedAway = runSessionCli(["list", "--json"], port);
+      expect(listedAway.proc.exitCode).toBe(0);
+      expect(
+        (JSON.parse(listedAway.stdout) as SessionListJson).sessions.map((entry) => entry.sessionId),
+      ).toEqual([sessionId]);
+
+      const back = runSessionCli(
+        ["reload", sessionId, "--json", "--", "diff", "--files", fixture.before, fixture.after],
+        port,
+      );
+      expect(back.stderr).toBe("");
+      expect(back.proc.exitCode).toBe(0);
+
+      const returned = await waitUntil("note back on its file", () => {
+        const listedComments = runSessionCli(["comment", "list", sessionId, "--json"], port);
+        if (listedComments.proc.exitCode !== 0) {
+          return null;
+        }
+        const parsed = JSON.parse(listedComments.stdout) as {
+          comments?: Array<{ summary?: string; filePath?: string }>;
+        };
+        return parsed.comments?.some((entry) => entry.summary === "Alpha note") ? parsed : null;
+      });
+      expect(returned.comments).toMatchObject([
+        { summary: "Alpha note", filePath: fixture.afterName },
+      ]);
+    } finally {
+      await cleanupHunkSession(session, fixture, port);
+    }
+  }, 20_000);
+
   test("reload refuses to read files outside the live session root", async () => {
     const port = await reserveLoopbackPort();
     const fixture = createFixtureFiles(
