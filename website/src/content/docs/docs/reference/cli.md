@@ -174,6 +174,18 @@ Also accepts `--watch`: auto-reload when the current diff input changes.
 
 Also accepts every [common review option](#common-review-options).
 
+## `hunk completion`
+
+print a shell completion script
+
+### Usage
+
+```bash
+hunk completion <bash|zsh>
+```
+
+Load it into the current shell with `source <(hunk completion zsh)` or `eval "$(hunk completion bash)"`, and add that line to your shell startup file to keep it.
+
 ## `hunk markup render`
 
 preview experimental STML markup as terminal text

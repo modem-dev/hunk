@@ -17,7 +17,8 @@ import type { InstallSource } from "../install/installSource";
 import type { ExtensionSelectionOverride } from "./extensionSelection";
 import type { WheelScrollLines } from "./wheelScrollLines";
 
-export type LayoutMode = "auto" | "split" | "unified";
+export const LAYOUT_MODE_VALUES = ["auto", "split", "unified"] as const;
+export type LayoutMode = (typeof LAYOUT_MODE_VALUES)[number];
 export type LayoutModeInput = LayoutMode | "stack";
 
 /** Return whether an unknown value uses canonical or deprecated layout vocabulary. */
@@ -30,7 +31,8 @@ export function normalizeLayoutModeInput(value: LayoutModeInput): LayoutMode {
   return value === "stack" ? "unified" : value;
 }
 
-export type CursorLine = "row" | "number" | "off";
+export const CURSOR_LINE_VALUES = ["row", "number", "off"] as const;
+export type CursorLine = (typeof CURSOR_LINE_VALUES)[number];
 export type SidebarVisibility = boolean | "auto";
 export type VcsMode = string;
 

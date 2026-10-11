@@ -1781,6 +1781,7 @@ describe("parseCli", () => {
       "extension",
       "ext",
       "update",
+      "completion",
       "daemon",
       "mcp",
     ]) {
@@ -1960,6 +1961,21 @@ describe("parseCli command help text", () => {
     const bare = await expectHelp(["skill", "--help"]);
     expect(bare).toContain("Usage: hunk skill path");
     expect(await expectHelp(["skill", "path", "--help"])).toBe(bare);
+  });
+
+  test("prints shell completion scripts and lists the command in top-level help", async () => {
+    expect(await expectHelp(["completion", "bash"])).toContain("complete -o default -F _hunk hunk");
+    expect(await expectHelp(["completion", "zsh"])).toStartWith("#compdef hunk");
+    expect(await expectHelp(["completion", "--help"])).toContain("bash, zsh");
+    expect(await expectHelp(["--help"])).toContain("hunk completion <bash|zsh>");
+  });
+
+  test("rejects a missing or unknown completion shell", async () => {
+    for (const tokens of [["completion"], ["completion", "fish"], ["completion", "bash", "zsh"]]) {
+      await expect(parseCli(["bun", "hunk", ...tokens])).rejects.toThrow(
+        "Usage: hunk completion <bash|zsh>",
+      );
+    }
   });
 
   test("renders the comment overview and per-comment-subcommand help", async () => {
