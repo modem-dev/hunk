@@ -36,14 +36,6 @@ interface BorderActionItem {
   onMouseUp: () => void;
 }
 
-/** Cells one action occupies: key, optional space, then label. */
-function actionItemTextWidth(keyLabel: string, label: string) {
-  if (!keyLabel) {
-    return label.length;
-  }
-  return label ? keyLabel.length + 1 + label.length : keyLabel.length;
-}
-
 interface AgentInlineNoteLine {
   kind: "summary" | "rationale";
   text: string;

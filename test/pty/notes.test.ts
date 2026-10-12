@@ -160,7 +160,7 @@ describe("PTY notes", () => {
       expect(lineIndexOf(pushedDraft, firstActiveLine)).toBe(firstActiveRow);
       expect(lineIndexOf(pushedDraft, "Draft note")).toBe(firstActiveRow + 1);
       expect(lineIndexOf(pushedDraft, followingLine)).toBeGreaterThan(followingRowBefore);
-      expect(pushedDraft).toContain("^S save");
+      expect(pushedDraft).toContain("Ctrl+S save");
       expect(pushedDraft).toContain("Esc cancel");
 
       await harness.pressAndWaitForSnapshot(
@@ -185,7 +185,7 @@ describe("PTY notes", () => {
       expect(revealedActiveRow).toBeLessThan(bottomActiveRow);
       expect(lineIndexOf(bottomDraft, "Draft note")).toBe(revealedActiveRow + 1);
       expect(bottomDraft).toContain("Write a note");
-      expect(bottomDraft).toContain("^S save");
+      expect(bottomDraft).toContain("Ctrl+S save");
       expect(bottomDraft).toContain("Esc cancel");
     } finally {
       session.close();
@@ -223,7 +223,7 @@ describe("PTY notes", () => {
         expect(lineIndexOf(draft, "Draft note")).toBe(revealedTargetRow + 1);
         expect(draft).toContain("Write a note");
         // At the end of the stream, the footer takes the old bottom row: no extra scrolling.
-        expect(lineIndexOf(draft, "^S save")).toBe(targetRow);
+        expect(lineIndexOf(draft, "Ctrl+S save")).toBe(targetRow);
       } finally {
         session.close();
       }
@@ -330,6 +330,67 @@ describe("PTY notes", () => {
       session.close();
     }
   });
+
+  for (const binding of ["ctrl+enter", false] as const) {
+    test(`save-note binding ${binding} owns only its resolved chord in a real PTY`, async () => {
+      const fixture = harness.createLongWrapFilePair();
+      const configHome = harness.createIsolatedConfigHome();
+      mkdirSync(join(configHome, "hunk"), { recursive: true });
+      writeFileSync(
+        join(configHome, "hunk", "config.toml"),
+        `[keybindings]\n"hunk.review.saveNote" = ${JSON.stringify(binding)}\n`,
+      );
+      const session = await harness.launchHunk({
+        args: ["diff", "--files", fixture.before, fixture.after, "--mode", "split"],
+        cols: 120,
+        rows: 20,
+        env: { XDG_CONFIG_HOME: configHome },
+      });
+
+      try {
+        await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+        const draft = await harness.pressAndWaitForText(session, "c", /Draft note/);
+        expect(draft).not.toContain("Ctrl+S save");
+        expect(draft).toContain(binding ? "Ctrl+Enter save" : "save Esc cancel");
+        await session.type("Keep the remapped draft.");
+        await session.waitForText(/Keep the remapped draft\./);
+
+        // Legacy C0 and CSI-u must both stop saving after remapping or unbinding.
+        await session.type("\x13\x1b[115;5u");
+        await sleep(150);
+        const unsaved = await session.text({ immediate: true });
+        expect(unsaved).toContain("Draft note");
+        expect(unsaved).not.toContain("Your note");
+
+        let saved: string;
+        if (binding) {
+          await session.type("\x1b[13;5u");
+          saved = await session.waitForText(/Your note/);
+        } else {
+          saved = await harness.clickAndWaitForText(session, /save Esc cancel/, /Your note/);
+        }
+        expect(saved).toContain("Keep the remapped draft.");
+        expect(saved).not.toContain("Draft note");
+
+        // The same binding applies before the newly opened editor mounts.
+        session.writeRaw("cMounting draft.\x13\x1b[115;5u");
+        const mounting = await session.waitForText(/Mounting draft\./);
+        expect(mounting).toContain("Draft note");
+        if (binding) {
+          await session.type("\x1b[13;5u");
+        } else {
+          await session.click(/save Esc cancel/);
+        }
+        const settled = await harness.waitForSnapshot(
+          session,
+          (text) => text.includes("Mounting draft.") && !text.includes("Draft note"),
+        );
+        expect(settled).toContain("Mounting draft.");
+      } finally {
+        session.close();
+      }
+    });
+  }
 
   test("saved notes are visibly active and keyboard-navigable without hover", async () => {
     const fixture = harness.createLongWrapFilePair();

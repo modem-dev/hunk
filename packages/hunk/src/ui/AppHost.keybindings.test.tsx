@@ -398,6 +398,7 @@ describe("user keybindings", () => {
           expect(quits()).toBe(1);
         },
         undefined,
+        undefined,
         "borrowed",
         extensionSession,
       );

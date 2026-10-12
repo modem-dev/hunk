@@ -1353,7 +1353,10 @@ export function App({
         canDeleteActiveNote: activeRemovableNote !== undefined && review.draftNote === null,
         canEditActiveNote: activeEditableNoteId !== undefined && review.draftNote === null,
         canReplyToActiveNote: activeReplyableNoteId !== undefined && review.draftNote === null,
-        canSaveDraftNote: review.draftNote !== null,
+        get canSaveDraftNote() {
+          // Same-chunk saves can arrive before React commits the new draft.
+          return review.draftNote !== null || isDraftFocusPending();
+        },
         canRefreshCurrentInput,
         alignCurrentLine,
         applyFilePresentationToAllMatching,

@@ -482,7 +482,8 @@ export function useAppKeyboardShortcuts({
    * the inputs' explicit escape hatches (Tab out of the filter, Escape on a
    * draft, and the resolved save-note chord) are acted on here and owned as
    * `"mine"`.
-   * The prompt's own Escape handling lives on the input, which clears first and closes second.
+   * The prompt's own Escape handling lives on the input, which clears first
+   * and closes second.
    */
   const handleFocusedInputShortcut = (key: KeyEvent): KeyOwner => {
     if (focusAreaRef.current === "filter") {
@@ -513,10 +514,12 @@ export function useAppKeyboardShortcuts({
         cancelDraftNote();
         return "mine";
       }
-      if (isSaveDraftNoteKey(key)) {
-        saveDraftNote();
-        return "mine";
-      }
+      const save = findAppCommandById(commandsRef.current, "hunk.review.saveNote");
+      const saveOwner = noteComposerSaveOwner(save?.keys ?? [], key, () =>
+        executeAppCommand(commandsRef.current, "hunk.review.saveNote"),
+      );
+      if (saveOwner) return saveOwner;
+
       const text = printableKeyText(key);
       if (text !== undefined) queueDraftInputRef.current(text);
       return "mine";
