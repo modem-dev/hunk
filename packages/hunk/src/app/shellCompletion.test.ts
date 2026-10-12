@@ -117,8 +117,14 @@ describe("shell completion scripts in real shells", () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
+  /** Quote shell test inputs without interpreting paths or apostrophes. */
+  function quoteShell(value: string) {
+    return `'${value.replaceAll("'", "'\\''")}'`;
+  }
+
+  /** Invoke the generated Bash function with the shell's completion word array. */
   function bashCompletions(...words: string[]) {
-    const quoted = words.map((word) => `'${word}'`).join(" ");
+    const quoted = words.map(quoteShell).join(" ");
     const result = Bun.spawnSync([
       "bash",
       "-c",
@@ -137,6 +143,82 @@ describe("shell completion scripts in real shells", () => {
     expect(bashCompletions("hunk", "diff", "--mode", "")).toEqual([...LAYOUT_MODE_VALUES]);
     expect(bashCompletions("hunk", "diff", "")).toEqual([]);
   });
+
+  test.skipIf(!hasBash)("respects option arguments and pathspec separators in bash", () => {
+    expect(bashCompletions("hunk", "--extension", "session", "diff", "--mo")).toEqual(["--mode"]);
+    expect(bashCompletions("hunk", "--disable-extension", "session", "diff", "--mo")).toEqual([
+      "--mode",
+    ]);
+    expect(bashCompletions("hunk", "--extension=session", "diff", "--mo")).toEqual(["--mode"]);
+    expect(bashCompletions("hunk", "--extension", "se")).toEqual([]);
+    expect(bashCompletions("hunk", "--extension", "--mode", "")).toContain("diff");
+    expect(bashCompletions("hunk", "diff", "--", "--mo")).toEqual([]);
+    expect(bashCompletions("hunk", "diff", "--", "--mode", "")).toEqual([]);
+    expect(bashCompletions("hunk", "diff", "--mode", "split", "--cu")).toEqual(["--cursor-line"]);
+    expect(bashCompletions("hunk", "log", "-n", "session", "--au")).toEqual(["--author"]);
+  });
+
+  test.skipIf(!hasBash)("offers help and supported leading flags in bash", () => {
+    expect(bashCompletions("hunk", "--he")).toEqual(["--help"]);
+    expect(bashCompletions("hunk", "--ver")).toEqual(["--version"]);
+    expect(bashCompletions("hunk", "--ext")).toEqual(["--extension"]);
+    expect(bashCompletions("hunk", "--fa")).toEqual(["--fast"]);
+    expect(bashCompletions("hunk", "--mo")).toEqual([]);
+    expect(bashCompletions("hunk", "diff", "--he")).toEqual(["--help"]);
+    expect(bashCompletions("hunk", "session", "comment", "-h")).toEqual(["-h"]);
+  });
+
+  /** Inspect the generated Zsh function's delegation without requiring a ZLE session. */
+  function zshCompletions(autoload: boolean, ...words: string[]) {
+    const quoted = words.map(quoteShell).join(" ");
+    const load = autoload
+      ? `fpath=(${quoteShell(directory)} $fpath); autoload -Uz _hunk`
+      : `source ${quoteShell(zshPath)}`;
+    const result = Bun.spawnSync([
+      "zsh",
+      "-fc",
+      `compdef() { :; }; ${load};
+       _describe() { local item; for item in "\${items[@]}"; do print -r -- "\${item%%:*}"; done; };
+       _files() { print -r -- FILE_FALLBACK; };
+       words=(${quoted}); CURRENT=${words.length}; _hunk`,
+    ]);
+    expect(result.exitCode).toBe(0);
+    return result.stdout.toString().split("\n").filter(Boolean);
+  }
+
+  for (const autoload of [false, true]) {
+    test.skipIf(!hasZsh)(
+      `dispatches zsh completions (${autoload ? "autoloaded" : "sourced"})`,
+      () => {
+        expect(zshCompletions(autoload, "hunk", "session", "")).toContain("comment");
+        expect(zshCompletions(autoload, "hunk", "diff", "--mode", "")).toEqual([
+          ...LAYOUT_MODE_VALUES,
+        ]);
+        expect(
+          zshCompletions(autoload, "hunk", "--extension", "session", "diff", "--mo"),
+        ).toContain("--mode");
+        expect(zshCompletions(autoload, "hunk", "--extension=session", "diff", "--mo")).toContain(
+          "--mode",
+        );
+        expect(zshCompletions(autoload, "hunk", "--extension", "se")).toEqual(["FILE_FALLBACK"]);
+        expect(zshCompletions(autoload, "hunk", "--extension", "--mode", "")).toContain("diff");
+        expect(zshCompletions(autoload, "hunk", "diff", "--", "--mo")).toEqual(["FILE_FALLBACK"]);
+        expect(zshCompletions(autoload, "hunk", "diff", "--", "--mode", "")).toEqual([
+          "FILE_FALLBACK",
+        ]);
+        expect(zshCompletions(autoload, "hunk", "diff", "--theme", "--mo")).toEqual([
+          "FILE_FALLBACK",
+        ]);
+        expect(zshCompletions(autoload, "hunk", "log", "-n", "session", "--au")).toContain(
+          "--author",
+        );
+        expect(zshCompletions(autoload, "hunk", "--he")).toEqual(
+          expect.arrayContaining(["--help", "--version", "--extension", "--fast"]),
+        );
+        expect(zshCompletions(autoload, "hunk", "diff", "--he")).toContain("--help");
+      },
+    );
+  }
 
   test.skipIf(!hasBash)("is valid bash syntax", () => {
     expect(Bun.spawnSync(["bash", "-n", bashPath]).exitCode).toBe(0);

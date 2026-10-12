@@ -27,6 +27,7 @@ export interface CompletionReference {
 }
 
 interface CompletionFlag {
+  readonly takesValue: boolean;
   readonly name: string;
   readonly description: string;
   readonly values?: readonly string[];
@@ -44,20 +45,40 @@ interface CompletionEntry {
   readonly subcommands: readonly { name: string; summary?: string }[];
 }
 
+/** Create a command node with the help flags supported by every built-in. */
 function createNode(): CompletionNode {
-  return { flags: [], children: new Map() };
+  return {
+    flags: toFlags({ flag: "-h, --help", description: "show help" }),
+    children: new Map(),
+  };
 }
 
+/** Preserve argument arity for every short and long spelling of an option. */
 function toFlags(option: CompletionOption): CompletionFlag[] {
   return option.flag.split(", ").map((names) => ({
+    takesValue: /[<[]/.test(option.flag),
     name: names.split(" ")[0]!,
     description: option.description,
     values: option.values,
   }));
 }
 
+/** Build commands and options from metadata, including supported leading host flags. */
 function buildCompletionTree(reference: CompletionReference) {
   const root = createNode();
+  // These review options also work before the command, unlike command-local review options.
+  const leadingNames = new Set([
+    "--fast",
+    "--experimental",
+    "--extension",
+    "--no-extensions",
+    "--disable-extension",
+    "--enable-extension",
+  ]);
+  root.flags.push(
+    ...toFlags({ flag: "-v, --version", description: "show version" }),
+    ...reference.commonReviewOptions.flatMap(toFlags).filter((flag) => leadingNames.has(flag.name)),
+  );
 
   const add = (path: string, summary: string, options: readonly CompletionOption[]) => {
     let node = root;
@@ -70,7 +91,10 @@ function buildCompletionTree(reference: CompletionReference) {
       node = child;
     }
     node.summary = summary;
-    node.flags = options.filter((option) => !option.hidden).flatMap(toFlags);
+    node.flags = [
+      ...createNode().flags,
+      ...options.filter((option) => !option.hidden).flatMap(toFlags),
+    ];
   };
 
   for (const spec of Object.values(reference.commands)) {
@@ -96,6 +120,7 @@ function buildCompletionTree(reference: CompletionReference) {
   return root;
 }
 
+/** Flatten command nodes into ordered shell case entries. */
 function collectEntries(node: CompletionNode, path: string): CompletionEntry[] {
   const children = [...node.children.entries()];
   return [
@@ -108,14 +133,17 @@ function collectEntries(node: CompletionNode, path: string): CompletionEntry[] {
   ];
 }
 
+/** Quote one literal for Bash and Zsh. */
 function shellQuote(value: string) {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
+/** Format a Zsh completion item with its optional description. */
 function describeItem(name: string, summary?: string) {
   return shellQuote(summary ? `${name}:${summary}` : name);
 }
 
+/** Emit value completion branches for enumerated options. */
 function valueCases(entries: readonly CompletionEntry[], action: (values: string[]) => string) {
   return entries.flatMap((entry) =>
     entry.flags
@@ -127,6 +155,7 @@ function valueCases(entries: readonly CompletionEntry[], action: (values: string
   );
 }
 
+/** Emit nonempty branches for command-specific completion data. */
 function nodeCases(
   entries: readonly CompletionEntry[],
   items: (entry: CompletionEntry) => string | undefined,
@@ -137,8 +166,45 @@ function nodeCases(
   });
 }
 
-function renderBash(entries: readonly CompletionEntry[]) {
+/** Scan command words without interpreting option arguments or pathspecs as commands. */
+function renderWordScan(entries: readonly CompletionEntry[], shell: CompletionShell) {
+  const start = shell === "bash" ? 1 : 2;
+  const end = shell === "bash" ? "COMP_CWORD" : "CURRENT";
+  const word = shell === "bash" ? '"${COMP_WORDS[i]}"' : '"$words[i]"';
   const knownNodes = entries.slice(1).map((entry) => shellQuote(entry.node));
+  const argumentCases = entries.flatMap((entry) =>
+    entry.flags
+      .filter((flag) => flag.takesValue)
+      .map(
+        (flag) =>
+          `      ${shellQuote(`${entry.node} ${flag.name}`)}) valueFlag="$word"; continue ;;`,
+      ),
+  );
+
+  return [
+    `  for ((i = ${start}; i < ${end}; i++)); do`,
+    `    word=${word}`,
+    "    if [[ -n $valueFlag ]]; then",
+    '      valueFlag=""',
+    "      continue",
+    "    fi",
+    "    if [[ $word == -- ]]; then",
+    "      positional=1",
+    "      break",
+    "    fi",
+    '    case "$node $word" in',
+    ...argumentCases,
+    "    esac",
+    "    [[ $word == -* ]] && continue",
+    '    case "$node $word" in',
+    `      ${knownNodes.join("|")}) node="$node $word" ;;`,
+    "    esac",
+    "  done",
+  ];
+}
+
+/** Render Bash completion with default filename fallback. */
+function renderBash(entries: readonly CompletionEntry[]) {
   const flagWords = (entry: CompletionEntry) =>
     entry.flags.length > 0
       ? `flags="${entry.flags.map((flag) => flag.name).join(" ")}"`
@@ -150,20 +216,17 @@ function renderBash(entries: readonly CompletionEntry[]) {
 
   return [
     "_hunk() {",
-    '  local cur="${COMP_WORDS[COMP_CWORD]}" prev="${COMP_WORDS[COMP_CWORD-1]}" node="" word subcommands="" flags="" i',
+    '  local cur="${COMP_WORDS[COMP_CWORD]}" node="" word subcommands="" flags="" valueFlag="" positional=0 i',
     "  COMPREPLY=()",
-    "  for ((i = 1; i < COMP_CWORD; i++)); do",
-    '    word="${COMP_WORDS[i]}"',
-    '    case "$node $word" in',
-    `      ${knownNodes.join("|")}) node="$node $word" ;;`,
-    "    esac",
-    "  done",
-    '  case "$node $prev" in',
+    ...renderWordScan(entries, "bash"),
+    "  (( positional )) && return",
+    '  case "$node $valueFlag" in',
     ...valueCases(
       entries,
       (values) => `COMPREPLY=($(compgen -W "${values.join(" ")}" -- "$cur")); return`,
     ),
     "  esac",
+    "  [[ -n $valueFlag ]] && return",
     '  case "$node" in',
     ...nodeCases(entries, (entry) =>
       [flagWords(entry), subcommandWords(entry)].filter(Boolean).join("; "),
@@ -181,8 +244,8 @@ function renderBash(entries: readonly CompletionEntry[]) {
   ].join("\n");
 }
 
+/** Render Zsh completion for sourced scripts and autoloaded functions. */
 function renderZsh(entries: readonly CompletionEntry[]) {
-  const knownNodes = entries.slice(1).map((entry) => shellQuote(entry.node));
   const flagItems = (entry: CompletionEntry) =>
     entry.flags.length > 0
       ? `items=(${entry.flags.map((flag) => describeItem(flag.name, flag.description)).join(" ")})`
@@ -197,20 +260,23 @@ function renderZsh(entries: readonly CompletionEntry[]) {
     "compdef _hunk hunk",
     "",
     "_hunk() {",
-    '  local cur="$words[CURRENT]" prev="$words[CURRENT-1]" node="" word i',
+    '  local cur="$words[CURRENT]" node="" word valueFlag="" positional=0 i',
     "  local -a items",
-    "  for ((i = 2; i < CURRENT; i++)); do",
-    '    word="$words[i]"',
-    '    case "$node $word" in',
-    `      ${knownNodes.join("|")}) node="$node $word" ;;`,
-    "    esac",
-    "  done",
-    '  case "$node $prev" in',
+    ...renderWordScan(entries, "zsh"),
+    "  if (( positional )); then",
+    "    _files",
+    "    return",
+    "  fi",
+    '  case "$node $valueFlag" in',
     ...valueCases(
       entries,
       (values) => `items=(${values.join(" ")}); _describe -t values value items; return`,
     ),
     "  esac",
+    "  if [[ -n $valueFlag ]]; then",
+    "    _files",
+    "    return",
+    "  fi",
     "  items=()",
     "  if [[ $cur == -* ]]; then",
     '    case "$node" in',
@@ -236,6 +302,7 @@ function renderZsh(entries: readonly CompletionEntry[]) {
   ].join("\n");
 }
 
+/** Generate a completion script for one supported shell from CLI metadata. */
 export function renderShellCompletion(shell: CompletionShell, reference: CompletionReference) {
   const entries = collectEntries(buildCompletionTree(reference), "");
   return shell === "bash" ? renderBash(entries) : renderZsh(entries);
