@@ -8,7 +8,11 @@ import { createTestDiffFile } from "../../../../test/helpers/diff-helpers";
 
 const { TestAppHost: AppHost } = await import("../../../../test/helpers/app-host");
 
-function createBootstrap(initialMode: LayoutMode = "auto", pager = false): AppBootstrap {
+function createBootstrap(
+  initialMode: LayoutMode = "auto",
+  pager = false,
+  autoWidthThreshold?: number,
+): AppBootstrap {
   return createTestVcsAppBootstrap({
     agentSummary: "Changeset summary",
     changesetId: "changeset:responsive",
@@ -32,6 +36,7 @@ function createBootstrap(initialMode: LayoutMode = "auto", pager = false): AppBo
     initialMode,
     pager,
     summary: "Patch summary",
+    vcsOptions: autoWidthThreshold === undefined ? {} : { autoWidthThreshold },
   });
 }
 
@@ -217,6 +222,14 @@ describe("responsive app", () => {
     expect((forcedUnified.match(/alpha\.ts/g) ?? []).length).toBe(2);
     expect(forcedUnified).not.toContain("Changeset summary");
     expect(forcedUnified).not.toMatch(/▌.*▌/);
+  });
+
+  test("a configured auto width threshold moves the split cutoff", async () => {
+    const lowered = await captureFrameForBootstrap(createBootstrap("auto", false, 100), 110);
+    const raised = await captureFrameForBootstrap(createBootstrap("auto", false, 300), 240);
+
+    expect(lowered).toMatch(/▌.*▌/);
+    expect(raised).not.toMatch(/▌.*▌/);
   });
 
   test("pager mode stays responsive while hiding app chrome", async () => {

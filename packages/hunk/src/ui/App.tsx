@@ -540,7 +540,11 @@ export function App({
 
   const bodyPadding = pagerMode ? 0 : BODY_PADDING;
   const bodyWidth = Math.max(0, terminal.width - bodyPadding);
-  const responsiveLayout = resolveResponsiveLayout(layoutMode, terminal.width);
+  const responsiveLayout = resolveResponsiveLayout(
+    layoutMode,
+    terminal.width,
+    bootstrap.input.options.autoWidthThreshold,
+  );
   const resolvedLayout = responsiveLayout.layout;
   const canForceShowSidebar =
     bodyWidth >= SIDEBAR_MIN_WIDTH + EXTENSION_PANE_DIVIDER_SIZE + DIFF_MIN_WIDTH;

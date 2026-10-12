@@ -258,6 +258,7 @@ ${sessionSections.join("\n\n")}
 export const CONFIG_REFERENCE_GROUPS = {
   "Layout and display": [
     "mode",
+    "auto_width_threshold",
     "theme",
     "line_numbers",
     "tab_width",

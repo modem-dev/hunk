@@ -181,7 +181,8 @@ For example:
 
 ```toml
 theme = "terminal"
-mode = "auto"       # auto, split, unified
+mode = "auto"               # auto, split, unified
+auto_width_threshold = 120  # columns at which auto mode switches to split
 line_numbers = true
 wrap_lines = false
 ```

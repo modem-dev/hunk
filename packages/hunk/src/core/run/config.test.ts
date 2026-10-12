@@ -349,6 +349,34 @@ describe("config resolution", () => {
     }
   });
 
+  test("defaults auto width threshold to 120, reads configured values, and rejects invalid ones", () => {
+    const home = createTempDir("hunk-config-auto-width-home-");
+    const repo = createTempDir("hunk-config-auto-width-repo-");
+    createRepo(repo);
+
+    const input = createPatchPagerInput();
+    const env = { HOME: home };
+    expect(
+      resolveConfiguredCliInput(input, { cwd: repo, env }).input.options.autoWidthThreshold,
+    ).toBe(120);
+
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), "auto_width_threshold = 160\n");
+    expect(
+      resolveConfiguredCliInput(input, { cwd: repo, env }).input.options.autoWidthThreshold,
+    ).toBe(160);
+
+    for (const invalid of ["0", "-1", "150.5", '"120"']) {
+      writeFileSync(
+        join(home, ".config", "hunk", "config.toml"),
+        `auto_width_threshold = ${invalid}\n`,
+      );
+      expect(() => resolveConfiguredCliInput(input, { cwd: repo, env })).toThrow(
+        /auto_width_threshold/,
+      );
+    }
+  });
+
   test("defaults file and hunk gaps and rejects invalid configured values", () => {
     const home = createTempDir("hunk-config-gap-home-");
     const repo = createTempDir("hunk-config-gap-repo-");

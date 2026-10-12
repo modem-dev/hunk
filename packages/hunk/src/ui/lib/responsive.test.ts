@@ -96,3 +96,27 @@ describe("resolveResponsiveLayout — viewport bucket boundaries", () => {
     });
   });
 });
+
+describe("resolveResponsiveLayout — configured auto threshold", () => {
+  test("a lower threshold splits terminals below the default cutoff", () => {
+    expect(resolveResponsiveLayout("auto", 99, 100).layout).toBe("unified");
+    expect(resolveResponsiveLayout("auto", 100, 100)).toEqual({
+      viewport: "tight",
+      layout: "split",
+      showSidebar: false,
+    });
+  });
+
+  test("a higher threshold keeps full-width terminals unified", () => {
+    expect(resolveResponsiveLayout("auto", FULL_WIDTH, 300)).toEqual({
+      viewport: "full",
+      layout: "unified",
+      showSidebar: true,
+    });
+  });
+
+  test("explicit modes ignore the threshold", () => {
+    expect(resolveResponsiveLayout("split", TIGHT_WIDTH, 300).layout).toBe("split");
+    expect(resolveResponsiveLayout("unified", FULL_WIDTH, 120).layout).toBe("unified");
+  });
+});

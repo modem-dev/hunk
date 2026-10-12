@@ -1,9 +1,7 @@
-import type { LayoutMode } from "../../core/run/commandInputs";
+import { DEFAULT_AUTO_WIDTH_THRESHOLD, type LayoutMode } from "../../core/run/commandInputs";
 
 export type ResponsiveViewport = "full" | "medium" | "tight";
 
-/** Keep two diff columns until each side would fall below roughly 60 terminal cells. */
-const AUTO_SPLIT_MIN_WIDTH = 120;
 const SIDEBAR_VIEWPORT_MIN_WIDTH = 160;
 const FULL_VIEWPORT_MIN_WIDTH = 220;
 
@@ -30,6 +28,7 @@ function resolveResponsiveViewport(viewportWidth: number): ResponsiveViewport {
 export function resolveResponsiveLayout(
   requestedLayout: LayoutMode,
   viewportWidth: number,
+  autoWidthThreshold = DEFAULT_AUTO_WIDTH_THRESHOLD,
 ): ResponsiveLayout {
   const viewport = resolveResponsiveViewport(viewportWidth);
 
@@ -51,7 +50,7 @@ export function resolveResponsiveLayout(
 
   return {
     viewport,
-    layout: viewportWidth >= AUTO_SPLIT_MIN_WIDTH ? "split" : "unified",
+    layout: viewportWidth >= autoWidthThreshold ? "split" : "unified",
     showSidebar: viewport !== "tight",
   };
 }
