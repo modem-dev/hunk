@@ -169,15 +169,19 @@ function nodeCases(
 /** Scan command words without interpreting option arguments or pathspecs as commands. */
 function renderWordScan(entries: readonly CompletionEntry[], shell: CompletionShell) {
   const start = shell === "bash" ? 1 : 2;
-  const end = shell === "bash" ? "COMP_CWORD" : "CURRENT";
-  const word = shell === "bash" ? '"${COMP_WORDS[i]}"' : '"$words[i]"';
+  const end = shell === "bash" ? "cword" : "CURRENT";
+  const word = shell === "bash" ? '"${words[i]}"' : '"$words[i]"';
   const knownNodes = entries.slice(1).map((entry) => shellQuote(entry.node));
+  const leadingFlags = entries[0]!.flags.flatMap((flag) => [
+    shellQuote(flag.name),
+    ...(flag.takesValue ? [`${shellQuote(`${flag.name}=`)}*`] : []),
+  ]);
   const argumentCases = entries.flatMap((entry) =>
     entry.flags
       .filter((flag) => flag.takesValue)
       .map(
         (flag) =>
-          `      ${shellQuote(`${entry.node} ${flag.name}`)}) valueFlag="$word"; continue ;;`,
+          `      ${shellQuote(`${entry.node} ${flag.name}`)}) [[ $word != *=* ]] && valueFlag="$word"; continue ;;`,
       ),
   );
 
@@ -189,17 +193,77 @@ function renderWordScan(entries: readonly CompletionEntry[], shell: CompletionSh
     "      continue",
     "    fi",
     "    if [[ $word == -- ]]; then",
+    '      if [[ $node == " session reload" ]]; then',
+    '        node=""; fast=0; argStart=$((i + 1))',
+    "        continue",
+    "      fi",
     "      positional=1",
     "      break",
     "    fi",
+    "    if [[ -z $node && $word == --fast ]]; then",
+    "      fast=1",
+    "      continue",
+    "    fi",
     '    case "$node $word" in',
+    `      ${knownNodes.join("|")}) node="$node $word"; argStart=$((i + 1)); continue ;;`,
+    "    esac",
+    "    if [[ -z $node ]] && (( fast )); then",
+    '      case "$word" in',
+    `        ${leadingFlags.join("|")}) ;;`,
+    '        *) node=" diff" ;;',
+    "      esac",
+    "    fi",
+    '    case "$node ${word%%=*}" in',
     ...argumentCases,
     "    esac",
-    "    [[ $word == -* ]] && continue",
-    '    case "$node $word" in',
-    `      ${knownNodes.join("|")}) node="$node $word" ;;`,
-    "    esac",
     "  done",
+    "  if [[ -z $node ]] && (( fast )) && [[ -z $cur || $cur == -* ]]; then",
+    '    node=" diff"',
+    "  fi",
+  ];
+}
+
+/** Normalize Bash word-break fragments without changing the shell's global COMP_WORDBREAKS. */
+function renderBashWords() {
+  return [
+    "_hunk_words() {",
+    "  if declare -F _get_comp_words_by_ref >/dev/null; then",
+    "    _get_comp_words_by_ref -n =: cur words cword",
+    "    return",
+    "  fi",
+    // Standalone loading must also work without bash-completion, including Bash 3.2.
+    // Match fragments to their source positions so separators join only within one argument.
+    // Bash before 4.3 reports byte offsets; newer versions report locale-aware character offsets.
+    "  if (( BASH_VERSINFO[0] < 4 || BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 3 )); then",
+    "    local LC_ALL=C",
+    "  fi",
+    '  local remaining="$COMP_LINE" prefix token previous="" offset=0 cursor="$COMP_POINT" j index',
+    "  words=()",
+    "  for ((j = 0; j <= COMP_CWORD; j++)); do",
+    '    token="${COMP_WORDS[j]}"',
+    "    if [[ -z $token ]]; then",
+    '      prefix="${remaining:0:cursor - offset}"',
+    "    else",
+    '      prefix="${remaining%%"$token"*}"',
+    "    fi",
+    "    offset=$((offset + ${#prefix}))",
+    '    remaining="${remaining:${#prefix} + ${#token}}"',
+    "    if (( j == COMP_CWORD )); then",
+    '      token="${token:0:cursor - offset}"',
+    "    fi",
+    "    if (( j > 0 )) && [[ -z $prefix && ( -n $token && -z ${token//[=:]/} || -n $previous && -z ${previous//[=:]/} ) ]]; then",
+    "      index=$((${#words[@]} - 1))",
+    '      words[index]="${words[index]}$token"',
+    "    else",
+    '      words[${#words[@]}]="$token"',
+    "    fi",
+    '    previous="${COMP_WORDS[j]}"',
+    "    offset=$((offset + ${#COMP_WORDS[j]}))",
+    "  done",
+    "  cword=$((${#words[@]} - 1))",
+    '  cur="${words[cword]}"',
+    "}",
+    "",
   ];
 }
 
@@ -215,9 +279,12 @@ function renderBash(entries: readonly CompletionEntry[]) {
       : undefined;
 
   return [
+    ...renderBashWords(),
     "_hunk() {",
-    '  local cur="${COMP_WORDS[COMP_CWORD]}" node="" word subcommands="" flags="" valueFlag="" positional=0 i',
+    '  local cur node="" word subcommands="" flags="" valueFlag="" positional=0 fast=0 argStart=1 cword i',
+    "  local -a words",
     "  COMPREPLY=()",
+    "  _hunk_words",
     ...renderWordScan(entries, "bash"),
     "  (( positional )) && return",
     '  case "$node $valueFlag" in',
@@ -244,54 +311,58 @@ function renderBash(entries: readonly CompletionEntry[]) {
   ].join("\n");
 }
 
-/** Render Zsh completion for sourced scripts and autoloaded functions. */
-function renderZsh(entries: readonly CompletionEntry[]) {
-  const flagItems = (entry: CompletionEntry) =>
-    entry.flags.length > 0
-      ? `items=(${entry.flags.map((flag) => describeItem(flag.name, flag.description)).join(" ")})`
-      : undefined;
-  const subcommandItems = (entry: CompletionEntry) =>
-    entry.subcommands.length > 0
-      ? `items=(${entry.subcommands.map((child) => describeItem(child.name, child.summary)).join(" ")})`
-      : undefined;
+/** Escape metadata embedded in Zsh's native argument-specification syntax. */
+function escapeZshArgument(value: string) {
+  return value.replace(/[\\[\]:]/g, "\\$&");
+}
 
+/** Describe an option's arity and value action for native Zsh completion. */
+function zshArgument(flag: CompletionFlag) {
+  const name = flag.takesValue
+    ? `${flag.name}${flag.name.startsWith("--") ? "=" : "+"}`
+    : flag.name;
+  const description = escapeZshArgument(flag.description);
+  const action = flag.values ? `(${flag.values.map(escapeZshArgument).join(" ")})` : "_files";
+  const value = flag.takesValue ? `:value:${action}` : "";
+  return shellQuote(`*${name}[${description}]${value}`);
+}
+
+/** Render Zsh specifications while leaving option parsing and value completion to _arguments. */
+function renderZsh(entries: readonly CompletionEntry[]) {
   return [
     "#compdef hunk",
     "compdef _hunk hunk",
     "",
     "_hunk() {",
-    '  local cur="$words[CURRENT]" node="" word valueFlag="" positional=0 i',
-    "  local -a items",
+    '  local cur="$words[CURRENT]" node="" word valueFlag="" positional=0 fast=0 argStart=2 i',
+    '  local curcontext="$curcontext" state state_descr CURRENT="$CURRENT"',
+    '  local -a words=("${words[@]}")',
+    "  local -a args items line",
+    "  local -A opt_args",
     ...renderWordScan(entries, "zsh"),
     "  if (( positional )); then",
     "    _files",
     "    return",
     "  fi",
-    '  case "$node $valueFlag" in',
-    ...valueCases(
-      entries,
-      (values) => `items=(${values.join(" ")}); _describe -t values value items; return`,
-    ),
-    "  esac",
-    "  if [[ -n $valueFlag ]]; then",
-    "    _files",
-    "    return",
-    "  fi",
-    "  items=()",
-    "  if [[ $cur == -* ]]; then",
-    '    case "$node" in',
-    ...nodeCases(entries, flagItems).map((line) => `  ${line}`),
-    "    esac",
-    "    _describe -t options option items",
-    "    return",
-    "  fi",
     '  case "$node" in',
-    ...nodeCases(entries, subcommandItems),
+    ...nodeCases(entries, (entry) => {
+      const positional =
+        entry.subcommands.length > 0 ? "'1:command:->command' '*:path:->path'" : "'*:path:->path'";
+      const items = entry.subcommands
+        .map((child) => describeItem(child.name, child.summary))
+        .join(" ");
+      return `args=(${entry.flags.map(zshArgument).join(" ")} ${positional}); items=(${items})`;
+    }),
     "  esac",
-    "  if (( $#items )); then",
-    "    _describe -t commands command items",
-    "  else",
-    "    _files",
+    // Drop host/namespace tokens, not option values, and preserve Zsh's quoted argument boundaries.
+    '  words=(hunk "${(@)words[argStart,-1]}")',
+    "  CURRENT=$((CURRENT - argStart + 2))",
+    '  _arguments -S -s "${args[@]}" && return',
+    "  if [[ $cur != -* ]]; then",
+    '    case "$state" in',
+    "      command) _describe -t commands command items ;;",
+    "      path) _files ;;",
+    "    esac",
     "  fi",
     "}",
     "",

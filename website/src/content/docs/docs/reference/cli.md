@@ -186,6 +186,8 @@ hunk completion <bash|zsh>
 
 Load it into the current shell with `source <(hunk completion zsh)` or `eval "$(hunk completion bash)"`, and add that line to your shell startup file to keep it.
 
+For Zsh, initialize completion with `autoload -Uz compinit; compinit` before loading the script, unless your shell framework already does so.
+
 ## `hunk markup render`
 
 preview experimental STML markup as terminal text

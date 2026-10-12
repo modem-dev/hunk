@@ -48,6 +48,34 @@ The dedicated trees are not selected directly by `bun run test`, though package 
 shared runtime fixtures. Run the commands that match the changed behavior; omission from the default
 suite does not mean another command covers it.
 
+## Shell completion compatibility
+
+`test/pty/shell-completion-integration.test.ts` presses Tab in real Bash Readline and Zsh ZLE
+sessions. It covers standalone Bash, Bash with an installed `bash-completion` helper, and sourced
+and autoloaded Zsh scripts. The fixture's `hunk` shell function only records the resulting
+arguments; it never launches the application. These tests are Unix-only and skip missing shells.
+
+Run them directly with:
+
+```bash
+bun test test/pty/shell-completion-integration.test.ts
+```
+
+Set `HUNK_TEST_BASH_COMPLETION` to test a helper installed outside the detected system/Homebrew
+locations. To verify standalone compatibility with a particular Bash executable, including
+macOS's Bash 3.2, use:
+
+```bash
+HUNK_TEST_BASH_EXECUTABLE=/bin/bash bun test \
+  packages/hunk/src/app/shellCompletion.test.ts \
+  test/pty/shell-completion-integration.test.ts \
+  --test-name-pattern 'shell completion scripts|bash standalone'
+```
+
+Replace `/bin/bash` with the desired executable. Run the helper-backed case with the Bash version
+supported by that installed helper; modern `bash-completion` versions may themselves require
+Bash 4 or newer.
+
 The Windows suite omits the platform-neutral terminal UI semantic tree, which the Linux suite covers,
 then runs the focused UI tests for worker startup, editor commands, and workspace path safety. Add new
 UI tests to the `windows-ui` group when their behavior depends on Windows platform boundaries.
