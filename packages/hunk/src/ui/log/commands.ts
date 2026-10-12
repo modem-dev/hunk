@@ -40,6 +40,7 @@ export function isHistoryCommandEnabled(id: HistoryCommandId, snapshot: LogSnaps
   if (
     id === "hunk.history.openSelection" ||
     id === "hunk.history.copyRevision" ||
+    id === "hunk.history.copyPullRequest" ||
     id === "hunk.history.startVisualSelection"
   )
     return Boolean(selected);
