@@ -1,6 +1,7 @@
 import { HunkUserError } from "../run/errors";
 import { detectInstallSource, detectNpmClient, type InstallSource } from "./installSource";
 import { fetchChannelVersions, type FetchImpl } from "./latestRelease";
+import { releaseNotesUrl } from "../run/releaseNotes";
 import { isComparableVersion, isNewerVersion, resolveCliVersion } from "../run/version";
 
 /**
@@ -40,6 +41,20 @@ function listUpdateMethods() {
   }
 
   return `${quoted.slice(0, -1).join(", ")}, and ${quoted.at(-1)}`;
+}
+
+/**
+ * Print the release-notes link for one version, when that version has a changelog page.
+ *
+ * A plain URL rather than an OSC-8 hyperlink: this output is piped and captured in CI as often as
+ * it is read in a terminal, and an escape-wrapped link is invisible to everything downstream.
+ * Silent when the version has no page, so a dev build prints its normal output and no dead link.
+ */
+function reportReleaseNotes(io: SelfUpdateIo, version: string) {
+  const url = releaseNotesUrl(version);
+  if (url) {
+    io.stdout(`Release notes: ${url}\n`);
+  }
 }
 
 export interface SelfUpdateInput {
@@ -332,6 +347,9 @@ export async function runSelfUpdateCommand(
         ? "An update is available. Run `hunk update` to install it.\n"
         : "Hunk is up to date.\n",
     );
+    // Link whichever version this run reported on: an explicit `--version` request is what the
+    // user asked about, otherwise the channel's latest is what the lines above describe.
+    reportReleaseNotes(io, input.version ?? latestVersion);
     return 0;
   }
 
@@ -348,6 +366,7 @@ export async function runSelfUpdateCommand(
     : !isComparableVersion(installedVersion) || !isNewerVersion(installedVersion, targetVersion);
   if (alreadyCurrent) {
     io.stdout(`hunk ${installedVersion} is already up to date.\n`);
+    reportReleaseNotes(io, installedVersion);
     return 0;
   }
 
@@ -378,5 +397,6 @@ export async function runSelfUpdateCommand(
   }
 
   io.stdout(`Updated hunk to ${targetVersion}.\n`);
+  reportReleaseNotes(io, targetVersion);
   return 0;
 }
