@@ -135,7 +135,7 @@ Terminal width at or above which `auto` mode shows split diffs; narrower termina
 
 - **Type:** integer
 - **Accepted:** a positive number of terminal columns
-- **Built-in default:** `120`
+- **Built-in default:** `200`
 
 #### `theme`
 

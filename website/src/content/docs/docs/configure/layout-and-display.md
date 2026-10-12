@@ -13,7 +13,7 @@ hunk diff --mode split
 hunk diff --mode unified
 ```
 
-- `auto` chooses split on terminals at least `auto_width_threshold` columns wide (default 120) and unified on narrower ones.
+- `auto` chooses split on terminals at least `auto_width_threshold` columns wide (default 200) and unified on narrower ones.
 - `split` keeps before and after columns side by side.
 - `unified` shows changed rows in a single-width flow.
 

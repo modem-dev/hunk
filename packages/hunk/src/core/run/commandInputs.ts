@@ -22,7 +22,7 @@ export type LayoutMode = (typeof LAYOUT_MODE_VALUES)[number];
 export type LayoutModeInput = LayoutMode | "stack";
 
 /** Terminal width at or above which `auto` mode chooses split over unified. */
-export const DEFAULT_AUTO_WIDTH_THRESHOLD = 120;
+export const DEFAULT_AUTO_WIDTH_THRESHOLD = 200;
 
 /** Return whether an unknown value uses canonical or deprecated layout vocabulary. */
 export function isLayoutModeInput(value: unknown): value is LayoutModeInput {

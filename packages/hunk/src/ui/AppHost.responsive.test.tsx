@@ -110,14 +110,16 @@ describe("responsive app", () => {
     expect((full.match(/alpha\.ts/g) ?? []).length).toBe(2);
     expect(full).not.toContain("Changeset summary");
     expect(full).toMatch(/▌.*▌/);
+    expect(full).toMatch(/alpha = 1;.*alpha = 2;/);
 
     expect((medium.match(/alpha\.ts/g) ?? []).length).toBe(2);
     expect(medium).not.toContain("Changeset summary");
-    expect(medium).toMatch(/▌.*▌/);
+    // The sidebar's selection marker also draws `▌`, so check that old and new lines never share a row.
+    expect(medium).not.toMatch(/alpha = 1;.*alpha = 2;/);
 
     expect((narrow.match(/alpha\.ts/g) ?? []).length).toBe(1);
     expect(narrow).not.toContain("Changeset summary");
-    expect(narrow).toMatch(/▌.*▌/);
+    expect(narrow).not.toMatch(/▌.*▌/);
 
     expect((tight.match(/alpha\.ts/g) ?? []).length).toBe(1);
     expect(tight).not.toContain("Changeset summary");
@@ -225,7 +227,7 @@ describe("responsive app", () => {
   });
 
   test("a configured auto width threshold moves the split cutoff", async () => {
-    const lowered = await captureFrameForBootstrap(createBootstrap("auto", false, 100), 110);
+    const lowered = await captureFrameForBootstrap(createBootstrap("auto", false, 120), 140);
     const raised = await captureFrameForBootstrap(createBootstrap("auto", false, 300), 240);
 
     expect(lowered).toMatch(/▌.*▌/);
@@ -245,7 +247,7 @@ describe("responsive app", () => {
     expect(narrow).not.toContain("File  View  Navigate  Agent  Help");
     expect(narrow).not.toContain("F10 menu");
     expect((narrow.match(/alpha\.ts/g) ?? []).length).toBe(1);
-    expect(narrow).toMatch(/▌.*▌/);
+    expect(narrow).not.toMatch(/▌.*▌/);
 
     expect(tight).not.toContain("File  View  Navigate  Agent  Help");
     expect(tight).not.toContain("F10 menu");

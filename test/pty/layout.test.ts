@@ -425,6 +425,7 @@ describe("PTY layout", () => {
       expect(harness.countMatches(wide, /alpha\.ts/g)).toBeGreaterThanOrEqual(2);
       expect(sidebarFrame(wide)).not.toContain("src/ui/");
       expect(wide).toMatch(/▌.*▌/);
+      expect(wide).toMatch(/alpha = 1;.*alpha = 2;/);
 
       session.resize({ cols: 180, rows: 24 });
       const medium = await harness.waitForSnapshot(
@@ -433,20 +434,24 @@ describe("PTY layout", () => {
         5_000,
       );
       expect(harness.countMatches(medium, /alpha\.ts/g)).toBeGreaterThanOrEqual(2);
-      expect(medium).toMatch(/▌.*▌/);
+      // The sidebar's selection marker also draws `▌`, so check that old and new lines never share a row.
+      expect(medium).not.toMatch(/alpha = 1;.*alpha = 2;/);
 
       session.resize({ cols: 150, rows: 24 });
       const narrow = await harness.waitForSnapshot(
         session,
-        (text) => harness.countMatches(text, /alpha\.ts/g) === 1 && /▌.*▌/.test(text),
+        (text) => harness.countMatches(text, /alpha\.ts/g) === 1,
         5_000,
       );
-      expect(narrow).toMatch(/▌.*▌/);
+      expect(narrow).not.toMatch(/▌.*▌/);
 
-      session.resize({ cols: 110, rows: 24 });
-      const tight = await harness.waitForSnapshot(session, (text) => !/▌.*▌/.test(text), 5_000);
-      expect(harness.countMatches(tight, /alpha\.ts/g)).toBe(1);
-      expect(tight).not.toMatch(/▌.*▌/);
+      session.resize({ cols: 200, rows: 24 });
+      const threshold = await harness.waitForSnapshot(
+        session,
+        (text) => /alpha = 1;.*alpha = 2;/.test(text),
+        5_000,
+      );
+      expect(sidebarFrame(threshold)).toContain("src/ui/");
     } finally {
       session.close();
     }

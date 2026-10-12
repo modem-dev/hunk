@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { resolveResponsiveLayout } from "./responsive";
 
-// Policy thresholds: >=220 full, >=160 medium with a sidebar, >=120 split without one.
+// Policy thresholds: >=220 full, >=160 medium with a sidebar; auto splits at >=200 by default.
 const TIGHT_WIDTH = 100;
-const NARROW_SPLIT_WIDTH = 140;
+const NARROW_WIDTH = 140;
 const MEDIUM_WIDTH = 180;
 const FULL_WIDTH = 240;
 
@@ -16,18 +16,10 @@ describe("resolveResponsiveLayout — auto", () => {
     });
   });
 
-  test("keeps split after the sidebar disappears on narrow terminals", () => {
-    expect(resolveResponsiveLayout("auto", NARROW_SPLIT_WIDTH)).toEqual({
-      viewport: "tight",
-      layout: "split",
-      showSidebar: false,
-    });
-  });
-
-  test("chooses split with a compact-capable sidebar on medium terminals", () => {
+  test("chooses unified with a sidebar on medium terminals below the default threshold", () => {
     expect(resolveResponsiveLayout("auto", MEDIUM_WIDTH)).toEqual({
       viewport: "medium",
-      layout: "split",
+      layout: "unified",
       showSidebar: true,
     });
   });
@@ -74,33 +66,34 @@ describe("resolveResponsiveLayout — viewport bucket boundaries", () => {
     expect(resolveResponsiveLayout("auto", 220).viewport).toBe("full");
   });
 
-  test("the sidebar cutoff no longer changes the split layout", () => {
+  test("the sidebar cutoff does not change the auto layout", () => {
     expect(resolveResponsiveLayout("auto", 159)).toMatchObject({
-      layout: "split",
+      layout: "unified",
       showSidebar: false,
     });
     expect(resolveResponsiveLayout("auto", 160)).toMatchObject({
-      layout: "split",
+      layout: "unified",
       showSidebar: true,
     });
   });
 
-  test("auto switches from unified to split at its narrower independent cutoff", () => {
-    expect(resolveResponsiveLayout("auto", 119)).toMatchObject({
+  test("auto switches from unified to split at the default 200-column threshold", () => {
+    expect(resolveResponsiveLayout("auto", 199)).toMatchObject({
       layout: "unified",
-      showSidebar: false,
+      showSidebar: true,
     });
-    expect(resolveResponsiveLayout("auto", 120)).toMatchObject({
+    expect(resolveResponsiveLayout("auto", 200)).toMatchObject({
       layout: "split",
-      showSidebar: false,
+      showSidebar: true,
     });
   });
 });
 
 describe("resolveResponsiveLayout — configured auto threshold", () => {
-  test("a lower threshold splits terminals below the default cutoff", () => {
-    expect(resolveResponsiveLayout("auto", 99, 100).layout).toBe("unified");
-    expect(resolveResponsiveLayout("auto", 100, 100)).toEqual({
+  test("a lower threshold keeps split after the sidebar disappears", () => {
+    expect(resolveResponsiveLayout("auto", 119, 120).layout).toBe("unified");
+    expect(resolveResponsiveLayout("auto", 120, 120).layout).toBe("split");
+    expect(resolveResponsiveLayout("auto", NARROW_WIDTH, 120)).toEqual({
       viewport: "tight",
       layout: "split",
       showSidebar: false,
