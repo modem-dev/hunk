@@ -129,13 +129,13 @@ Choose diff layout. `auto` uses split on wide terminals and unified on narrow on
 - **Accepted:** `auto`, `split`, `unified`, or deprecated alias `stack`
 - **Built-in default:** `auto`
 
-#### `auto_width_threshold`
+#### `auto_split_min_width`
 
-Terminal width at or above which `auto` mode shows split diffs; narrower terminals show unified diffs.
+Minimum available diff width, in columns, for split diffs in `auto` mode, after side panes and outer padding; narrower diff areas show unified diffs.
 
 - **Type:** integer
 - **Accepted:** a positive number of terminal columns
-- **Built-in default:** `200`
+- **Built-in default:** `160`
 
 #### `theme`
 

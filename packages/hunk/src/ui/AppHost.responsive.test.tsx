@@ -11,7 +11,7 @@ const { TestAppHost: AppHost } = await import("../../../../test/helpers/app-host
 function createBootstrap(
   initialMode: LayoutMode = "auto",
   pager = false,
-  autoWidthThreshold?: number,
+  autoSplitMinWidth?: number,
 ): AppBootstrap {
   return createTestVcsAppBootstrap({
     agentSummary: "Changeset summary",
@@ -36,7 +36,7 @@ function createBootstrap(
     initialMode,
     pager,
     summary: "Patch summary",
-    vcsOptions: autoWidthThreshold === undefined ? {} : { autoWidthThreshold },
+    vcsOptions: autoSplitMinWidth === undefined ? {} : { autoSplitMinWidth },
   });
 }
 
@@ -114,7 +114,7 @@ describe("responsive app", () => {
 
     expect((medium.match(/alpha\.ts/g) ?? []).length).toBe(2);
     expect(medium).not.toContain("Changeset summary");
-    // The sidebar's selection marker also draws `▌`, so check that old and new lines never share a row.
+    // The visible sidebar leaves fewer than 160 available diff columns.
     expect(medium).not.toMatch(/alpha = 1;.*alpha = 2;/);
 
     expect((narrow.match(/alpha\.ts/g) ?? []).length).toBe(1);
@@ -226,12 +226,52 @@ describe("responsive app", () => {
     expect(forcedUnified).not.toMatch(/▌.*▌/);
   });
 
-  test("a configured auto width threshold moves the split cutoff", async () => {
+  test("a configured auto split minimum width moves the split cutoff", async () => {
     const lowered = await captureFrameForBootstrap(createBootstrap("auto", false, 120), 140);
     const raised = await captureFrameForBootstrap(createBootstrap("auto", false, 300), 240);
 
     expect(lowered).toMatch(/▌.*▌/);
     expect(raised).not.toMatch(/▌.*▌/);
+  });
+
+  test("auto layout follows sidebar toggles without changing terminal width", async () => {
+    const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
+      width: 180,
+      height: 24,
+    });
+
+    try {
+      await act(async () => {
+        await setup.renderOnce();
+      });
+      expect(setup.captureCharFrame()).not.toMatch(/alpha = 1;.*alpha = 2;/);
+
+      await act(async () => {
+        await setup.mockInput.typeText("s");
+        await setup.renderOnce();
+      });
+      expect(setup.captureCharFrame()).toMatch(/alpha = 1;.*alpha = 2;/);
+
+      await act(async () => {
+        await setup.mockInput.typeText("s");
+        await setup.renderOnce();
+      });
+      expect(setup.captureCharFrame()).not.toMatch(/alpha = 1;.*alpha = 2;/);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("auto layout subtracts outer padding at the exact no-sidebar cutoff", async () => {
+    const bootstrap = createBootstrap();
+    bootstrap.initialSidebar = false;
+    const below = await captureFrameForBootstrap(bootstrap, 163);
+    const at = await captureFrameForBootstrap(bootstrap, 164);
+
+    expect(below).not.toMatch(/alpha = 1;.*alpha = 2;/);
+    expect(at).toMatch(/alpha = 1;.*alpha = 2;/);
   });
 
   test("pager mode stays responsive while hiding app chrome", async () => {

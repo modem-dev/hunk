@@ -123,7 +123,7 @@ import { HUNK_FILES_PANE_KEY } from "../extensions/extensionIds";
 import { maxFileHeaderStatsWidth } from "./lib/fileHeader";
 import { setMouseCapture } from "./lib/mouseCapture";
 import { openSelectedFileInEditor } from "./lib/openInEditor";
-import { resolveResponsiveLayout } from "./lib/responsive";
+import { resolveResponsiveLayout, resolveResponsiveViewport } from "./lib/responsive";
 import type { WorkspaceRefreshRequest } from "./currentReviewRefresh";
 import { ThemeController } from "./theme/controller";
 import {
@@ -540,12 +540,7 @@ export function App({
 
   const bodyPadding = pagerMode ? 0 : BODY_PADDING;
   const bodyWidth = Math.max(0, terminal.width - bodyPadding);
-  const responsiveLayout = resolveResponsiveLayout(
-    layoutMode,
-    terminal.width,
-    bootstrap.input.options.autoWidthThreshold,
-  );
-  const resolvedLayout = responsiveLayout.layout;
+  const responsiveShowsSidebar = resolveResponsiveViewport(terminal.width) !== "tight";
   const canForceShowSidebar =
     bodyWidth >= SIDEBAR_MIN_WIDTH + EXTENSION_PANE_DIVIDER_SIZE + DIFF_MIN_WIDTH;
   // Derive host contributions from current state so filters and notices cannot go stale.
@@ -615,7 +610,7 @@ export function App({
     minReviewWidth: DIFF_MIN_WIDTH,
     notifyWarning: showPaneWarning,
     pagerMode,
-    responsiveShowsSidebar: responsiveLayout.showSidebar,
+    responsiveShowsSidebar,
   });
 
   const { animating: paneLayoutAnimating, layout: presentedPaneLayout } = usePaneSlideAnimation({
@@ -826,6 +821,18 @@ export function App({
     );
   }, [keymap, showSessionNotice]);
 
+  const diffPaneWidth = presentedPaneLayout.reviewBounds.width;
+  const diffPaneHeight = presentedPaneLayout.reviewBounds.height;
+  // Diff content leaves two outer columns: the first carries the annotation range rail and the
+  // second remains safety space beside the pane edge. Neither belongs to copy or wrap geometry.
+  const diffContentWidth = Math.max(0, diffPaneWidth - 2);
+  // Use the presented bounds so pane toggles, drags, and animations share rendering geometry.
+  const resolvedLayout = resolveResponsiveLayout(
+    layoutMode,
+    diffContentWidth,
+    bootstrap.input.options.autoSplitMinWidth,
+  );
+
   const reviewNotes = useMemo(
     () => projectExtensionReviewNotes(review.store.getSnapshot()),
     [review.stateRevision, review.store],
@@ -843,11 +850,6 @@ export function App({
       selectedHunkIndex,
       themeId,
     });
-  const diffPaneWidth = presentedPaneLayout.reviewBounds.width;
-  const diffPaneHeight = presentedPaneLayout.reviewBounds.height;
-  // Diff content leaves two outer columns: the first carries the annotation range rail and the
-  // second remains safety space beside the pane edge. Neither belongs to copy or wrap geometry.
-  const diffContentWidth = Math.max(0, diffPaneWidth - 2);
   // Publish the live note geometry for daemon-driven markup validation; the
   // note markup width mirrors what AgentInlineNote lays STML out at.
   noteGeometryRef.current = { layout: resolvedLayout, width: diffContentWidth };

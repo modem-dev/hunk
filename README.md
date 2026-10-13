@@ -182,7 +182,7 @@ For example:
 ```toml
 theme = "terminal"
 mode = "auto"               # auto, split, unified
-auto_width_threshold = 200  # columns at which auto mode switches to split
+auto_split_min_width = 160  # minimum available diff columns for split in auto mode
 line_numbers = true
 wrap_lines = false
 ```

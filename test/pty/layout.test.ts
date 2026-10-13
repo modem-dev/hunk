@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import stringWidth from "string-width";
 import { createPtyHarness, dragMouse, rightmostColumnOf, sleep } from "./harness";
 
@@ -434,7 +436,7 @@ describe("PTY layout", () => {
         5_000,
       );
       expect(harness.countMatches(medium, /alpha\.ts/g)).toBeGreaterThanOrEqual(2);
-      // The sidebar's selection marker also draws `▌`, so check that old and new lines never share a row.
+      // The visible sidebar leaves fewer than 160 available diff columns.
       expect(medium).not.toMatch(/alpha = 1;.*alpha = 2;/);
 
       session.resize({ cols: 150, rows: 24 });
@@ -501,6 +503,137 @@ describe("PTY layout", () => {
       );
 
       expect(harness.countMatches(toggled, /alpha\.ts/g)).toBeGreaterThanOrEqual(2);
+    } finally {
+      session.close();
+    }
+  });
+
+  test("auto layout follows sidebar visibility at a fixed terminal width", async () => {
+    const fixture = harness.createTwoFileRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "auto"],
+      cwd: fixture.dir,
+      cols: 180,
+      rows: 18,
+    });
+
+    try {
+      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+      expect(initial).not.toMatch(/alpha = 1;.*alpha = 2;/);
+      expect(sidebarDividerColumn(initial)).toBeGreaterThan(0);
+
+      await session.type("s");
+      const closed = await harness.waitForSnapshot(
+        session,
+        (text) => /alpha = 1;.*alpha = 2;/.test(text),
+        5_000,
+      );
+      expect(harness.countMatches(closed, /alpha\.ts/g)).toBe(1);
+
+      await session.type("s");
+      const reopened = await harness.waitForSnapshot(
+        session,
+        (text) => sidebarDividerColumn(text) > 0 && !/alpha = 1;.*alpha = 2;/.test(text),
+        5_000,
+      );
+      expect(harness.countMatches(reopened, /alpha\.ts/g)).toBeGreaterThanOrEqual(2);
+    } finally {
+      session.close();
+    }
+  });
+
+  test.each(["auto", "split", "unified"])(
+    "%s layout follows its policy while dragging a sidebar across the split cutoff",
+    async (mode) => {
+      const fixture = harness.createTwoFileRepoFixture();
+      const session = await harness.launchHunk({
+        args: ["diff", "--mode", mode],
+        cwd: fixture.dir,
+        cols: 210,
+        rows: 18,
+      });
+
+      try {
+        const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+          timeout: 15_000,
+        });
+        const divider = sidebarDividerColumn(initial);
+        expect(/alpha = 1;.*alpha = 2;/.test(initial)).toBe(mode !== "unified");
+
+        await dragMouse(session, divider - 2, 6, divider + 18, 6);
+        const widened = await harness.waitForSnapshot(
+          session,
+          (text) =>
+            sidebarDividerColumn(text) >= divider + 15 &&
+            /alpha = 1;.*alpha = 2;/.test(text) === (mode === "split"),
+          5_000,
+        );
+        expect(/alpha = 1;.*alpha = 2;/.test(widened)).toBe(mode === "split");
+
+        const wideDivider = sidebarDividerColumn(widened);
+        await dragMouse(session, wideDivider - 2, 6, divider - 2, 6);
+        const narrowed = await harness.waitForSnapshot(
+          session,
+          (text) =>
+            sidebarDividerColumn(text) <= divider + 2 &&
+            /alpha = 1;.*alpha = 2;/.test(text) === (mode !== "unified"),
+          5_000,
+        );
+        expect(/alpha = 1;.*alpha = 2;/.test(narrowed)).toBe(mode !== "unified");
+      } finally {
+        session.close();
+      }
+    },
+  );
+
+  test("auto layout accounts for an extension pane beside the files sidebar", async () => {
+    const fixture = harness.createTwoFileRepoFixture();
+    const configHome = harness.createIsolatedConfigHome();
+    const extensionPath = join(configHome, "auto-layout-pane.ts");
+    writeFileSync(
+      extensionPath,
+      `import { createElement } from "react";
+export default function (hunk) {
+  hunk.registerPane({
+    id: "width-probe", placement: "right", defaultOpen: true,
+    width: { preferred: 40, min: 40, max: 40 },
+    component: () => createElement("text", { content: "WIDTH PROBE" }),
+  });
+  hunk.registerCommand({ id: "toggle-probe", title: "Toggle probe", key: "Y" }, (ctx) => {
+    ctx.panes.toggle("width-probe");
+  });
+}
+`,
+    );
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "auto", "--extension", extensionPath],
+      cwd: fixture.dir,
+      env: { XDG_CONFIG_HOME: configHome },
+      cols: 220,
+      rows: 18,
+    });
+
+    try {
+      const initial = await session.waitForText("WIDTH PROBE", { timeout: 15_000 });
+      expect(initial).not.toMatch(/alpha = 1;.*alpha = 2;/);
+      expect(harness.countMatches(initial, /alpha\.ts/g)).toBeGreaterThanOrEqual(2);
+
+      await session.type("Y");
+      const closed = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("WIDTH PROBE") && /alpha = 1;.*alpha = 2;/.test(text),
+        5_000,
+      );
+      expect(sidebarDividerColumn(closed)).toBeGreaterThan(0);
+
+      await session.type("Y");
+      await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("WIDTH PROBE") && !/alpha = 1;.*alpha = 2;/.test(text),
+        5_000,
+      );
     } finally {
       session.close();
     }

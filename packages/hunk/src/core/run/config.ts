@@ -39,7 +39,7 @@ import type {
 } from "../../extension-api/types";
 import { normalizeExtensionSelectionIds } from "./extensionSelection";
 import {
-  DEFAULT_AUTO_WIDTH_THRESHOLD,
+  DEFAULT_AUTO_SPLIT_MIN_WIDTH,
   isLayoutModeInput,
   normalizeLayoutModeInput,
   type CliInput,
@@ -295,14 +295,14 @@ function normalizeTabWidth(value: unknown) {
   return validateTabWidth(value, "tab_width");
 }
 
-/** Accept a positive integer terminal width for the `auto` split threshold. */
-function normalizeAutoWidthThreshold(value: unknown) {
+/** Accept a positive integer minimum available diff width for split diffs in `auto` mode. */
+function normalizeAutoSplitMinWidth(value: unknown) {
   if (value === undefined) {
     return undefined;
   }
 
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1) {
-    throw new Error("Expected auto_width_threshold to be a positive integer.");
+    throw new Error("Expected auto_split_min_width to be a positive integer.");
   }
 
   return value;
@@ -384,13 +384,13 @@ export const CONFIG_REFERENCE_OPTIONS: readonly ConfigReferenceOption[] = [
       "Choose diff layout. `auto` uses split on wide terminals and unified on narrow ones; `split` and `unified` force that layout.",
   },
   {
-    key: "auto_width_threshold",
-    property: "autoWidthThreshold",
+    key: "auto_split_min_width",
+    property: "autoSplitMinWidth",
     type: "integer",
     accepted: "a positive number of terminal columns",
-    runtimeDefault: DEFAULT_AUTO_WIDTH_THRESHOLD,
+    runtimeDefault: DEFAULT_AUTO_SPLIT_MIN_WIDTH,
     description:
-      "Terminal width at or above which `auto` mode shows split diffs; narrower terminals show unified diffs.",
+      "Minimum available diff width, in columns, for split diffs in `auto` mode, after side panes and outer padding; narrower diff areas show unified diffs.",
   },
   {
     key: "cursor_line",
@@ -1079,8 +1079,8 @@ function normalizeConfigReferenceValue(property: keyof CommonOptions, value: unk
   switch (property) {
     case "mode":
       return isLayoutModeInput(value) ? normalizeLayoutModeInput(value) : undefined;
-    case "autoWidthThreshold":
-      return normalizeAutoWidthThreshold(value);
+    case "autoSplitMinWidth":
+      return normalizeAutoSplitMinWidth(value);
     case "cursorLine":
       return normalizeCursorLine(value);
     case "vcs":
@@ -1151,7 +1151,7 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
   return {
     ...base,
     mode: overrides.mode ?? base.mode,
-    autoWidthThreshold: overrides.autoWidthThreshold ?? base.autoWidthThreshold,
+    autoSplitMinWidth: overrides.autoSplitMinWidth ?? base.autoSplitMinWidth,
     cursorLine: overrides.cursorLine ?? base.cursorLine,
     vcs: overrides.vcs ?? base.vcs,
     theme: overrides.theme ?? base.theme,
@@ -1454,7 +1454,7 @@ export function resolveConfiguredInput<Input extends ConfigurableInput>(
     theme: resolvedOptions.theme,
     vcs: resolvedOptions.vcs ?? vcsCatalog.defaultAdapterId,
     mode: resolvedOptions.mode ?? DEFAULT_VIEW_PREFERENCES.mode,
-    autoWidthThreshold: resolvedOptions.autoWidthThreshold ?? DEFAULT_AUTO_WIDTH_THRESHOLD,
+    autoSplitMinWidth: resolvedOptions.autoSplitMinWidth ?? DEFAULT_AUTO_SPLIT_MIN_WIDTH,
     lineNumbers: resolvedOptions.lineNumbers ?? DEFAULT_VIEW_PREFERENCES.showLineNumbers,
     tabWidth: resolvedOptions.tabWidth ?? DEFAULT_TAB_WIDTH,
     fileGap: resolvedOptions.fileGap ?? DEFAULT_FILE_GAP,

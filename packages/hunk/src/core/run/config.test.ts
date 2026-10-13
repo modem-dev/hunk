@@ -349,30 +349,30 @@ describe("config resolution", () => {
     }
   });
 
-  test("defaults auto width threshold to 200, reads configured values, and rejects invalid ones", () => {
-    const home = createTempDir("hunk-config-auto-width-home-");
-    const repo = createTempDir("hunk-config-auto-width-repo-");
+  test("defaults auto split minimum width to 160, reads configured values, and rejects invalid ones", () => {
+    const home = createTempDir("hunk-config-auto-split-width-home-");
+    const repo = createTempDir("hunk-config-auto-split-width-repo-");
     createRepo(repo);
 
     const input = createPatchPagerInput();
     const env = { HOME: home };
     expect(
-      resolveConfiguredCliInput(input, { cwd: repo, env }).input.options.autoWidthThreshold,
-    ).toBe(200);
+      resolveConfiguredCliInput(input, { cwd: repo, env }).input.options.autoSplitMinWidth,
+    ).toBe(160);
 
     mkdirSync(join(home, ".config", "hunk"), { recursive: true });
-    writeFileSync(join(home, ".config", "hunk", "config.toml"), "auto_width_threshold = 160\n");
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), "auto_split_min_width = 180\n");
     expect(
-      resolveConfiguredCliInput(input, { cwd: repo, env }).input.options.autoWidthThreshold,
-    ).toBe(160);
+      resolveConfiguredCliInput(input, { cwd: repo, env }).input.options.autoSplitMinWidth,
+    ).toBe(180);
 
     for (const invalid of ["0", "-1", "150.5", '"200"']) {
       writeFileSync(
         join(home, ".config", "hunk", "config.toml"),
-        `auto_width_threshold = ${invalid}\n`,
+        `auto_split_min_width = ${invalid}\n`,
       );
       expect(() => resolveConfiguredCliInput(input, { cwd: repo, env })).toThrow(
-        /auto_width_threshold/,
+        /auto_split_min_width/,
       );
     }
   });
