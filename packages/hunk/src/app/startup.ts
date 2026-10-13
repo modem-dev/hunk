@@ -495,7 +495,7 @@ export async function prepareStartupPlan(
     try {
       if (deps.terminalThemeMode)
         bootstrap.initialization.theme.initialThemeMode = deps.terminalThemeMode;
-      else if (interactive && themeFollowsTerminal(bootstrap.launchOptions.theme)) {
+      else if (interactive && themeSelectionNeedsTerminalMode(bootstrap.launchOptions.theme)) {
         const terminalColors = await detectTerminalColorsImpl({
           input: process.stdin,
           output: stdout,
