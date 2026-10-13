@@ -177,6 +177,7 @@ test("Pierre avoids base64 decoding in source, workers, bundles, and binaries wi
     expect(compiled.assets).toContain(466_610);
   } finally {
     rmSync(sourceDir, { recursive: true, force: true });
-    rmSync(temporary, { recursive: true, force: true });
+    // Windows can briefly retain the compiled executable's file lock after the child exits.
+    rmSync(temporary, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 }, 60_000);
