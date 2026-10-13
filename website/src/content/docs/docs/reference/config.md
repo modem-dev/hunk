@@ -139,10 +139,10 @@ Minimum available diff width, in columns, for split diffs in `auto` mode, after 
 
 #### `theme`
 
-Select the color theme. `terminal` follows the terminal palette; `auto` chooses a light or dark GitHub theme from the terminal background (dark fallback).
+Select the color theme, or one theme per terminal background. `terminal` follows the terminal palette; `auto` chooses a light or dark GitHub theme from the terminal background (dark fallback). A `[theme]` table follows the terminal between its `dark` and `light` ids, using `fallback` (else `dark`) when the terminal does not report a background.
 
-- **Type:** string
-- **Accepted:** `terminal`, `auto`, a built-in theme id, or a custom theme id
+- **Type:** string or table
+- **Accepted:** `terminal`, `auto`, a built-in theme id, a custom theme id, or a `[theme]` table setting `dark` and `light` (plus an optional `fallback`)
 - **Built-in default:** `github-dark-default`
 
 #### `line_numbers`

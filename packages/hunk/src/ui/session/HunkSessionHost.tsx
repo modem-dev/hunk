@@ -548,7 +548,7 @@ export function HunkSessionHost({
         if (!mountedRef.current || signal.aborted || routeRef.current !== status) return;
         const reviewBootstrap = applySessionViewPreferences(bootstrap, {
           ...sessionViewPreferencesRef.current,
-          theme: themeController.getSnapshot().themeId,
+          theme: themeController.getSnapshot().themeSelection,
         });
         const next: ActiveReviewSurfaceRoute = {
           kind: "review",

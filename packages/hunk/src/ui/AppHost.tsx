@@ -175,7 +175,7 @@ export function AppHost({
         retainedLaunchOptions: (launch) =>
           applySessionViewPreferences(launch, {
             ...sessionPreferencesRef.current,
-            theme: activeThemeController.getSnapshot().themeId,
+            theme: activeThemeController.getSnapshot().themeSelection,
           }).input.options,
         adopt: adoptReload,
         onRefreshFailed: (detail) => setRefreshFailureText(detail),
