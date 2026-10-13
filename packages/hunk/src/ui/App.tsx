@@ -47,7 +47,7 @@ import type { ReloadedSessionResult, ReloadSessionOptions } from "../session/typ
 import { HelpDialog } from "./components/chrome/HelpDialog";
 import { MenuDropdown } from "./components/chrome/MenuDropdown";
 import { MenuBar } from "./components/chrome/MenuBar";
-import { ConfirmDialog, confirmDialogHeight } from "./components/chrome/ConfirmDialog";
+import { ExtensionTrustDialog } from "./components/chrome/ExtensionTrustDialog";
 import { ExtensionDialog } from "./components/chrome/ExtensionDialog";
 import { ViewPreferenceQuitDialog } from "./components/chrome/ViewPreferenceQuitDialog";
 import { ExtensionToast } from "./components/chrome/ExtensionToast";
@@ -1118,11 +1118,13 @@ export function App({
     denyRepoExtensions,
     extensionTrustPromptOpen,
     extensionTrustPromptRoot,
+    extensionTrustPromptSnapshot,
     trustRepoExtensions,
   } = useExtensionTrustController({
     canRefreshCurrentInput: canRefreshCurrentInput && canReloadExtensions,
     pagerMode,
     pendingRepoRoot: pendingTrustRepoRoot,
+    pendingSnapshot: extensions?.pendingTrustSnapshot,
     refreshCurrentInput,
     showNotice: showSessionNotice,
   });
@@ -1889,38 +1891,16 @@ export function App({
       ) : null}
 
       {extensionTrustPromptOpen && extensionTrustPromptRoot ? (
-        <ConfirmDialog
-          actions={[
-            { keyLabel: "enter/t", label: "trust", run: trustRepoExtensions },
-            { keyLabel: "esc", label: "not now", run: closeExtensionTrustPrompt },
-            { keyLabel: "n", label: "never", run: denyRepoExtensions },
-          ]}
-          height={confirmDialogHeight(5)}
+        <ExtensionTrustDialog
+          repoRoot={extensionTrustPromptRoot}
+          snapshot={extensionTrustPromptSnapshot}
           terminalHeight={terminal.height}
           terminalWidth={terminal.width}
           theme={baseTheme}
-          title="Run this repository's extensions?"
-          width={72}
+          onTrust={trustRepoExtensions}
+          onDeny={denyRepoExtensions}
           onClose={closeExtensionTrustPrompt}
-        >
-          <box style={{ width: "100%", height: 1 }}>
-            <text fg={baseTheme.muted}>
-              This repository contains extensions in .hunk/extensions.
-            </text>
-          </box>
-          <box style={{ width: "100%", height: 1 }}>
-            <text fg={baseTheme.muted}>Extensions run with your user permissions.</text>
-          </box>
-          <box style={{ width: "100%", height: 1 }} />
-          <box style={{ width: "100%", height: 1 }}>
-            <text fg={baseTheme.badgeNeutral}>{extensionTrustPromptRoot}</text>
-          </box>
-          <box style={{ width: "100%", height: 1 }}>
-            <text fg={baseTheme.muted}>
-              Trust runs them now and remembers this repo; never won't ask again.
-            </text>
-          </box>
-        </ConfirmDialog>
+        />
       ) : null}
 
       {themeSelectorOpen ? (

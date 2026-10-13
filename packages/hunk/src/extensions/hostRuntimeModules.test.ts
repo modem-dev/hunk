@@ -13,6 +13,7 @@ import {
 import { HunkExtensionUserError } from "../extension-api";
 import {
   registerHostRuntimeModules,
+  rewriteCompiledHostRequires,
   rewriteInstalledPackageSpecifiers,
 } from "./hostRuntimeModules";
 import { writeInstallRecords } from "./manage/records";
@@ -46,6 +47,22 @@ async function importTempExtension(path: string) {
   registerHostRuntimeModules([path]);
   return (await import(pathToFileURL(path).href)) as { default: Record<string, unknown> };
 }
+
+describe("compiled host require rewriting", () => {
+  test("preserves data, comments, member calls and locally bound loader-like names", () => {
+    const code = `const example="require('react')";\n// __require('react')\nfunction require(value) {return value;} function __require(value) {return value;}\nconst member=holder.require('react'); const local=require('react'); const other=__require('react');`;
+    expect(rewriteCompiledHostRequires(code).trim()).toBe(code);
+  });
+
+  test("rewrites only actual runtime require references and generated import.meta helpers", () => {
+    const code = `var __require0=import.meta.require; const generated=__require0('react'); const runtime=require('@opentui/core');`;
+    const rewritten = rewriteCompiledHostRequires(code);
+    expect(rewritten).toContain("hunk-host:react");
+    expect(rewritten).toContain("hunk-host:@opentui/core");
+    expect(rewritten).not.toContain("__require0('react')");
+    expect(rewritten).not.toContain("require('@opentui/core')");
+  });
+});
 
 describe("registerHostRuntimeModules", () => {
   test("serves the host React instance to a file outside the app bundle", async () => {

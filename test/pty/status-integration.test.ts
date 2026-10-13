@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join, dirname, resolve } from "node:path";
 import { createServer } from "node:http";
 import { writeExtensionTrust, resolveRepoTrust } from "../../packages/hunk/src/extensions/trust";
+import { discoverExtensions } from "../../packages/hunk/src/extensions/discovery";
+import { prepareRepoExtensionSnapshot } from "../../packages/hunk/src/extensions/snapshot";
 import { createTestStatusSnapshot } from "../helpers/vcsStatus";
 import { createPtyHarness } from "./harness";
 
@@ -386,7 +388,11 @@ test("enabled trusted launch extensions span real broker-mounted sibling reviews
     `import { writeFileSync } from "node:fs"; export default () => writeFileSync(${JSON.stringify(forbidden)}, "ran");`,
   );
   const env = { ...process.env, XDG_CONFIG_HOME: configHome, XDG_RUNTIME_DIR: configHome };
-  writeExtensionTrust(cwd, "trusted", { env });
+  const approvedSnapshot = await prepareRepoExtensionSnapshot(
+    cwd,
+    discoverExtensions({ cwd, repoRoot: cwd, env }),
+  );
+  writeExtensionTrust(cwd, "trusted", { env, snapshot: approvedSnapshot });
   expect(resolveRepoTrust(sibling, { env })).toBe("unknown");
   writeFileSync(join(sibling, "alpha.ts"), "export const siblingBrokerTarget = 42;\n");
   const port = await reserveStatusPtyTestPort();

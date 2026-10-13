@@ -1,14 +1,16 @@
 import { resolve } from "node:path";
 import { readAppStateRecord, updateAppStateRecord } from "../core/process/appStateFile";
 import { resolveCanonicalPath, resolveAppStatePath } from "../core/run/paths";
+import { persistRepoExtensionSnapshot, type RepoExtensionSnapshot } from "./snapshot";
 
 /**
  * Repo-local extensions run arbitrary code from the repository under review,
  * which is exactly the code a reviewer has not read yet. Decisions are stored
- * per repo root in Hunk's shared state file so a trusted repo stays trusted
- * across sessions and an untrusted one is never executed silently.
+ * with an approved dependency fingerprint in Hunk's shared state file. Legacy
+ * path-only grants do not authorize execution; recorded denials remain effective.
  */
 const EXTENSION_TRUST_STATE_KEY = "extensionTrust";
+const EXTENSION_APPROVAL_STATE_KEY = "extensionSnapshotApprovals";
 
 export type ExtensionTrustDecision = "trusted" | "denied";
 /** Trust for a repo with no recorded decision yet. */
@@ -19,6 +21,9 @@ export interface ExtensionTrustOptions {
   env?: NodeJS.ProcessEnv;
   /** Override the state file path; falls back to the user-scoped state location. */
   statePath?: string;
+  /** Captured bytes the user is approving, or the fingerprint being checked by the loader. */
+  snapshot?: RepoExtensionSnapshot;
+  fingerprint?: string;
 }
 
 /** Resolve the state file backing trust decisions, if the environment has one. */
@@ -75,16 +80,35 @@ export function readExtensionTrust(options: ExtensionTrustOptions = {}): Extensi
 /**
  * Resolve the trust state for one repo root, defaulting to `unknown`.
  *
- * Decisions recorded before keys were canonicalized are still honored under
- * their plain resolved spelling, so upgrading Hunk does not silently re-ask
- * about a repository the user already answered for.
+ * Denials recorded before keys were canonicalized remain effective. Grants require
+ * a versioned snapshot approval matching the current dependency fingerprint.
  */
 export function resolveRepoTrust(
   repoRoot: string,
   options: ExtensionTrustOptions = {},
 ): ExtensionTrustState {
   const trust = readExtensionTrust(options);
-  return trust[toTrustKey(repoRoot)] ?? trust[resolve(repoRoot)] ?? "unknown";
+  const key = toTrustKey(repoRoot);
+  const decision = trust[key] ?? trust[resolve(repoRoot)];
+  if (decision === "denied") return "denied";
+
+  const statePath = resolveStatePath(options);
+  const approvals = statePath
+    ? readAppStateRecord(statePath)[EXTENSION_APPROVAL_STATE_KEY]
+    : undefined;
+  const approval =
+    approvals && typeof approvals === "object"
+      ? (approvals as Record<string, unknown>)[key]
+      : undefined;
+  if (decision !== "trusted" || !approval || typeof approval !== "object") return "unknown";
+
+  const record = approval as Record<string, unknown>;
+  const fingerprint = options.fingerprint ?? options.snapshot?.fingerprint;
+  return record.version === 1 &&
+    typeof fingerprint === "string" &&
+    record.fingerprint === fingerprint
+    ? "trusted"
+    : "unknown";
 }
 
 /** Persist one repo-root trust decision without disturbing other state keys. */
@@ -98,11 +122,29 @@ export function writeExtensionTrust(
     throw new Error("Could not resolve the Hunk state path because HOME/XDG_CONFIG_HOME is unset.");
   }
 
+  const key = toTrustKey(repoRoot);
+  const stored = readAppStateRecord(statePath)[EXTENSION_APPROVAL_STATE_KEY];
+  const approvals =
+    stored && typeof stored === "object" && !Array.isArray(stored)
+      ? { ...(stored as Record<string, unknown>) }
+      : {};
+  if (decision === "trusted") {
+    const snapshot = options.snapshot;
+    if (!snapshot || snapshot.repoRoot !== key || snapshot.entries.length === 0) {
+      throw new Error("Trust requires a captured repository extension snapshot.");
+    }
+    persistRepoExtensionSnapshot(snapshot, options);
+    approvals[key] = { version: 1, fingerprint: snapshot.fingerprint };
+  } else {
+    delete approvals[key];
+  }
+
   updateAppStateRecord(statePath, {
     [EXTENSION_TRUST_STATE_KEY]: {
       ...readExtensionTrust(options),
-      [toTrustKey(repoRoot)]: decision,
+      [key]: decision,
     },
+    [EXTENSION_APPROVAL_STATE_KEY]: approvals,
   });
 
   return statePath;

@@ -277,34 +277,61 @@ join the session-owned registry because delegated commands may retain resources 
 Extensions run with your user permissions, exactly like a shell dotfile. That is
 fine for extensions you installed yourself, and not fine for extensions that
 came with a repository you are about to review — pointing a diff tool at
-unfamiliar code is a normal thing to do, and it must never execute that code.
+unfamiliar code must not implicitly authorize new repo-controlled extensions.
 
-So repo-local sources are gated. The first time Hunk finds extensions in a
-repository's `.hunk/extensions` (or repo-config `paths`), it skips them and asks:
+Repo-local sources are gated by **approved dependency snapshots**, not blanket trust in a
+checkout path. Hunk bundles enabled entries from `.hunk/extensions` and repo-config `paths`,
+including literal local and package imports, without evaluating their code. It skips any
+snapshot that has not been approved and asks:
 
 ```
 Run this repository's extensions?
 
-  This repository contains extensions in .hunk/extensions.
-  Extensions run with your user permissions.
+  Repo extensions (.hunk/extensions or config paths) need approval.
+  Their dependency snapshot runs with your user permissions.
+  Trust approves this snapshot; changed code needs new approval.
 
   enter/t trust · esc not now · n never
 ```
 
-- **Trust** records the decision and reloads the session so the repo's
-  extensions take effect immediately.
+- **Trust** stores the exact captured bundles in user-owned storage, records their fingerprint,
+  and reloads the session. Hunk imports those artifacts, never the live checkout entries.
+  Changed captured source or resolver files invalidate the offer: approval fails and asks you
+  to restart for a current snapshot. The button never approves replacement bytes.
 - **Not now** (also `Esc`) dismisses without recording anything; you will be
   asked again next time.
 - **Never** records a denial so Hunk stops offering.
 
-Decisions are stored per repository root in `~/.config/hunk/state.json`. The
-prompt is a normal dialog over the review stream, not a gate in front of it:
-you can dismiss it and keep reviewing.
+Approvals are stored per canonical repository root in `~/.config/hunk/state.json`; bundles live
+beside it under `extension-snapshots/`. Each load checks the current entries and captured dependency
+bytes against the approved fingerprint and verifies stored artifact integrity before import.
+Modified helpers, new entries, changed package dependencies, symlink targets, and new config paths
+cannot silently inherit approval after a PR checkout. They require another approval. Path-only grants
+from older Hunk versions require approval again; existing **Never** decisions remain effective.
 
-Trust is keyed by the repo root's **path**, not by the repository's identity —
-the same model VS Code workspace trust uses. If you delete a trusted checkout
-and a different repository later occupies that path, it inherits the decision.
-Clear the entry from `state.json` if that matters for a path you reuse.
+The prompt stays over the review stream: dismiss it and keep reviewing. `hunk diff --no-extensions`
+disables user extension discovery, preparation, and execution altogether.
+
+Snapshots require statically resolvable module graphs. Computed `import()`/`require()`, aliased
+CommonJS loaders, `require.resolve`, and `node:module` runtime resolvers are refused, as are Bun
+macros/import attributes and native or non-JavaScript/JSON dependencies. Use literal imports; dependencies are bundled, while Hunk's
+API, React/OpenTUI, and runtime builtins remain host-owned. JSX import sources must be `react`
+or `@opentui/react` so a pragma cannot synthesize a compile-time macro import. Alias targets resolve
+from the current captured tsconfig/jsconfig data, including bounded, recursively captured `extends`
+files, without Bun's process-wide alias cache; repository build plugins and compile-time macros
+are never run. `import.meta` refers to the stored bundle, so source-relative asset reads must be
+reworked; use workspace APIs for review content. Explicit `--extension` paths remain live,
+one-run consent for development, and user-installed extensions keep their existing loading model.
+
+This is **not a sandbox**. Approved code still has user permissions and can deliberately read files,
+spawn processes, or evaluate code. Snapshot approval prevents automatic checkout/module replacement;
+it does not make an extension that deliberately executes untrusted workspace content safe. Extension
+config values remain untrusted input. Each entry owns its own bundle; shared helpers can have
+separate instances across entries. Denying approval does not delete previously stored artifacts.
+Preparation accepts regular files only and caps snapshots at 64 entries, 256 input files,
+8 MiB per input, 16 MiB total input, and 32 MiB of output. If the graph cannot be captured, Hunk
+skips all repo entries and reports a startup notice; global and explicitly supplied extensions
+remain independent.
 
 ## Failure isolation
 

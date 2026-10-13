@@ -263,6 +263,24 @@ export interface ExtensionLoadState {
   extensionConfigs: Record<string, Record<string, unknown>>;
   /** Stable enablement snapshot used to decide whether a staged load may be extended. */
   selectionSignature?: string;
+  /** Fingerprint of the dependency bytes checked by this pass, for staged registry reuse. */
+  repoSnapshotFingerprint?: string;
+}
+
+export interface RepoExtensionSnapshotEntry {
+  candidate: ExtensionCandidate;
+  digest: string;
+  code: string;
+}
+
+/** Captures the exact executable dependency bytes offered for repository approval. */
+export interface RepoExtensionSnapshot {
+  version: 1;
+  repoRoot: string;
+  fingerprint: string;
+  entries: RepoExtensionSnapshotEntry[];
+  /** Captured source/resolver files revalidated on approval, without recompiling code. */
+  inputs: Array<{ path: string; digest: string }>;
 }
 
 export interface ExtensionLoadResult {
@@ -292,6 +310,8 @@ export interface ExtensionLoadResult {
    * can prompt and reload.
    */
   pendingTrustRepoRoot?: string;
+  /** Captured dependency bytes offered for approval; never rebuild these on the user's click. */
+  pendingTrustSnapshot?: RepoExtensionSnapshot;
 }
 
 /**

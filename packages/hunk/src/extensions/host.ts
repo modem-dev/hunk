@@ -7,6 +7,11 @@ import { createExtensionNotificationHub, type ExtensionNotificationHub } from ".
 import { describeError, readExtensionFactory, runExtensionFactory } from "./runExtension";
 import { resolveRepoTrust, type ExtensionTrustOptions, type ExtensionTrustState } from "./trust";
 import {
+  prepareRepoExtensionSnapshot,
+  resolveRepoSnapshotEntry,
+  type RepoExtensionSnapshot,
+} from "./snapshot";
+import {
   createEmptyExtensionRegistry,
   createExtensionContext,
   HUNK_EXTENSION_API_VERSION,
@@ -192,7 +197,9 @@ export async function loadExtensions(options: LoadExtensionsOptions): Promise<Ex
   const issues = [...(options.previousLoad?.issues ?? []), ...candidateIssues];
   // Before any candidate is imported, so its `react` (and `hunkdiff/extension`)
   // imports resolve to the host's own instances rather than the filesystem.
-  registerHostRuntimeModules(accepted.map((candidate) => candidate.path));
+  registerHostRuntimeModules(
+    accepted.filter((candidate) => candidate.origin !== "repo").map((candidate) => candidate.path),
+  );
   const registry = options.previousLoad?.registry ?? createEmptyExtensionRegistry();
   if (!registryRetired(registry)) registry.eventBusPhase = "loading";
   const notifications =
@@ -221,26 +228,68 @@ export async function loadExtensions(options: LoadExtensionsOptions): Promise<Ex
   let repoRoot = options.repoRoot;
   let pendingTrustRepoRoot = options.previousLoad?.pendingTrustRepoRoot;
 
-  /** Resolve the repo trust state once per load pass, lazily. */
-  const resolveRepoTrustState = () => {
-    repoRoot ??= findProjectRootCandidate(options.cwd);
-    if (!repoRoot) {
-      return "unknown" as const;
-    }
+  let repoSnapshot: RepoExtensionSnapshot | undefined;
+  let snapshotFailure: unknown;
 
-    repoTrustState ??= resolveTrust(repoRoot, trustOptions);
+  /** Capture the current dependency graph before checking approval, without module evaluation. */
+  const resolveRepoTrustState = async () => {
+    repoRoot ??= findProjectRootCandidate(options.cwd);
+    if (!repoRoot) return "unknown" as const;
+    if (repoTrustState) return repoTrustState;
+    if (resolveTrust(repoRoot, trustOptions) === "denied") return (repoTrustState = "denied");
+
+    try {
+      repoSnapshot = await prepareRepoExtensionSnapshot(
+        repoRoot,
+        accepted.filter((candidate) => candidate.origin === "repo"),
+      );
+      result.loadState.repoSnapshotFingerprint = repoSnapshot.fingerprint;
+      repoTrustState = resolveTrust(repoRoot, {
+        ...trustOptions,
+        fingerprint: repoSnapshot.fingerprint,
+      });
+    } catch (error) {
+      snapshotFailure = error;
+      repoTrustState = "unknown";
+    }
     return repoTrustState;
   };
 
   for (const candidate of accepted) {
     if (registryRetired(registry)) break;
+    let importPath = candidate.path;
     if (candidate.origin === "repo") {
-      const trust = resolveRepoTrustState();
+      const trust = await resolveRepoTrustState();
+      if (registryRetired(registry)) break;
+      if (snapshotFailure) {
+        issues.push({
+          extensionId: candidate.id,
+          path: candidate.path,
+          origin: candidate.origin,
+          message: describeError(snapshotFailure),
+        });
+        continue;
+      }
       if (trust !== "trusted") {
         // Unknown trust is a question for the user; denied trust is already answered.
-        if (trust === "unknown" && repoRoot) {
+        if (trust === "unknown" && repoRoot && repoSnapshot) {
           pendingTrustRepoRoot = repoRoot;
+          result.pendingTrustSnapshot = repoSnapshot;
         }
+        continue;
+      }
+      pendingTrustRepoRoot = undefined;
+      try {
+        if (!repoSnapshot) throw new Error("Missing approved repository extension snapshot.");
+        importPath = resolveRepoSnapshotEntry(repoSnapshot, candidate, trustOptions);
+        registerHostRuntimeModules([importPath]);
+      } catch (error) {
+        issues.push({
+          extensionId: candidate.id,
+          path: candidate.path,
+          origin: candidate.origin,
+          message: describeError(error),
+        });
         continue;
       }
     }
@@ -254,7 +303,7 @@ export async function loadExtensions(options: LoadExtensionsOptions): Promise<Ex
     try {
       // Importing is the host's half of loading: it is the part that differs
       // from the bundled tier, which has its factories statically in hand.
-      factory = readExtensionFactory(await importModule(candidate.path));
+      factory = readExtensionFactory(await importModule(importPath));
       if (registryRetired(registry)) break;
     } catch (error) {
       issues.push({

@@ -1,6 +1,6 @@
 # hunk
 
-Hunk is a review-first terminal diff viewer for agent-authored changesets, built on [OpenTUI](https://github.com/anomalyco/opentui) and [Pierre diffs](https://www.npmjs.com/package/@pierre/diffs).
+Hunk is an interactive terminal diff viewer for reviewing code changes, built on [OpenTUI](https://github.com/anomalyco/opentui) and [Pierre diffs](https://www.npmjs.com/package/@pierre/diffs).
 
 **[hunk.dev](https://hunk.dev)** · [Documentation](https://hunk.dev/docs/)
 
@@ -32,7 +32,7 @@ Hunk is a review-first terminal diff viewer for agent-authored changesets, built
 
 ## Install
 
-The default installation method on macOS and Linux downloads a standalone binary and installs it into `~/.hunk`. It checks the archive against the release checksum when both `SHA256SUMS` and a supported checksum tool are available, and warns otherwise. Release discovery uses Hunk's anonymous aggregate endpoint with direct GitHub fallback:
+On macOS and Linux, install the standalone binary:
 
 ```bash
 curl -fsSL https://hunk.dev/install.sh | sh
@@ -60,7 +60,7 @@ Requirements:
 
 ### Update Hunk
 
-Starting with Hunk 0.20, npm, Homebrew, and default install-script installs use Hunk’s canonical update command:
+For npm, Homebrew, and default install-script installs (Hunk 0.20+):
 
 ```bash
 hunk update          # install the newest release
@@ -79,7 +79,7 @@ hunk --version # print the installed version
 
 ### Working with Git
 
-Hunk mirrors Git's diff-style commands, but opens the changeset in a review UI instead of plain text.
+Use familiar Git commands to open changes in Hunk:
 
 ```bash
 hunk diff                      # review current repo changes, including untracked files
@@ -88,29 +88,14 @@ hunk show                      # review the latest commit
 hunk show HEAD~1               # review an earlier commit
 hunk log                       # browse history on a terminal; print when redirected
 hunk log --static              # force static output, paging when needed
-hunk status                    # live workspace compass and sibling worktrees (Git)
+hunk status                    # view workspace status and sibling worktrees (Git)
 hunk status --static           # print one read-only workspace snapshot
 hunk status --json             # emit one versioned workspace snapshot
 ```
 
-`hunk status` uses provider-owned read-only workspace facts; no fetch or repository mutation is performed.
-See [workspace status](docs/status.md) for navigation, live refresh, JSON and fetch-age provenance.
+`hunk status` is read-only: it does not fetch or change the repository. See [workspace status](docs/status.md) for details.
 
-`hunk log` is one auto-responsive, read-only history surface, not a repository manager. On a
-terminal it opens the desktop history browser; pipes and redirects receive shell-native static
-records automatically, and `--static` forces static output that pages only when needed. The selected VCS adapter
-owns traversal, filtering, refs, and how a history item opens for review; the bundled Git and
-Jujutsu adapters both implement that public capability. Static output keeps full commit, author,
-date, message, branch/bookmark, remote, and tag details; `--oneline` provides compact records, and
-`--theme` uses the same palette as Hunk review. Interactive history groups commits by local-calendar
-day with account-like author handles and relative times, while keeping commit ids right-aligned and
-clickable. Enable **Graph view** from the View menu to replace day groups with commit-topology lanes.
-Press `v` and move with `Up`/`Down` or `k`/`j` to select a contiguous range. `Shift+Up`/`Shift+Down`, uppercase `K`/`J`, and Shift-click extend directly. `Escape` collapses the selection; opening the range
-reviews the inclusive cumulative change from the oldest commit's parent through the newest commit.
-History also shares review's `b`/`f` full-page and `u`/`d` half-page movement keys.
-Range selection is disabled with `--all` or author, message, date, and path filters because traversal can interleave or hide commits.
-After opening a commit or range, quit its normal Hunk review to return to the same selection.
-History controls are configurable through canonical `hunk.history.*` [keybindings](https://hunk.dev/docs/configure/keybindings/).
+`hunk log` opens an interactive history browser in a terminal and prints text when piped or redirected. Use `--oneline` for compact output. In the browser, enable **Graph view** from the View menu to see commit branches, or press `v` to select a commit range. Quit a commit review to return to history.
 
 ### Working with GitHub
 
@@ -140,11 +125,7 @@ hunk open README.md       # view a complete, syntax-highlighted document
 hunk open path/to/project # browse another directory without requiring a repository
 ```
 
-The read-only browser loads directories and documents lazily and refreshes watched content.
-Use arrows and Enter to navigate the tree, Tab to switch focus, `i` to show hidden/Git-ignored
-entries, and `e` to open the displayed file in `$EDITOR`. Themes, menus, line numbers, and wrapping
-use Hunk's normal controls. Symlinks are listed but not followed; binary, unreadable, missing,
-and oversized files (over 1 MiB) show placeholders. See [the open workflow](docs/open.md) for details.
+Use arrows and Enter to navigate, Tab to switch focus, `i` to show hidden/Git-ignored entries, and `e` to edit the displayed file in `$EDITOR`. See [the open workflow](docs/open.md) for details and file limits.
 
 ### Working with raw files and patches
 
@@ -153,8 +134,6 @@ hunk diff --files before.ts after.ts        # compare two files directly
 hunk diff --files before.ts after.ts --watch # auto-reload when either file changes
 git diff --no-color | hunk patch -          # review a patch from stdin
 ```
-
-Watch mode remains continuous. Direct-file and Git-backed reviews normally use filesystem observation to refresh promptly, with periodic polling retained as a fallback for missed events or unavailable watchers. Jujutsu and Sapling reviews currently use polling rather than filesystem observation.
 
 ### Working with agents
 
@@ -168,7 +147,7 @@ A good generic prompt is:
 Load the Hunk skill and use it for this review. Run `hunk skill path` to get the skill path.
 ```
 
-For the full live-session and `--agent-context` workflow guide, see [the agent workflow guide](https://github.com/modem-dev/hunk/blob/main/docs/agent-workflows.md). Experimental rich STML note bodies require starting the review with `--experimental`; plain agent notes remain the default.
+See [the agent workflow guide](docs/agent-workflows.md) for live sessions, `--agent-context`, and experimental rich notes.
 
 ## Feature comparison
 
@@ -184,8 +163,6 @@ For the full live-session and `--agent-context` workflow guide, see [the agent w
 | Structural diffing                   | ❌                                        | ❌                                        | ✅                                                  | ❌                                           | ❌                                                         | ❌                                              |
 | Pager-compatible mode                | ✅                                        | ❌                                        | ✅                                                  | ✅                                           | ✅                                                         | ✅                                              |
 
-Hunk is optimized for reviewing a full changeset interactively.
-
 ## Advanced
 
 ### Config
@@ -195,50 +172,20 @@ You can persist preferences to a config file:
 - `~/.config/hunk/config.toml`
 - `.hunk/config.toml`
 
-Example:
+For example:
 
 ```toml
-theme = "terminal"   # terminal, auto, any built-in theme id, or custom
-mode = "auto"        # auto, split, unified
-vcs = "git"          # git, jj, sl
-watch = false
-exclude_untracked = false
+theme = "terminal"
+mode = "auto"       # auto, split, unified
 line_numbers = true
-tab_width = 4        # tab stops, 1-16
-file_gap = 1         # rows between files, including the ─ rule; 0 hides it
-hunk_gap = 0         # blank rows before later hunks
-wheel_scroll_lines = "auto" # auto acceleration, or a fixed 1-10 rows per event
-scroll_off = 5       # rows the current line keeps clear of the viewport edge while stepping: 0-40
 wrap_lines = false
-menu_bar = true
-animations = true
-sidebar = "auto"     # "auto", true, false
-agent_notes = false
-prompt_save_view_preferences = true
-transparent_background = false
 ```
 
-Choose a built-in theme, `auto`, or a custom theme with `theme`. See
-[the theme guide](https://hunk.dev/docs/configure/themes/) for automatic selection, custom theme tables,
-syntax scopes, and legacy syntax-table migration.
-
-`exclude_untracked` affects Git/Sapling working-tree `hunk diff` sessions only.
-`tab_width` controls source-code tab stops and can be overridden with `-x4` or `--tab-width 4`.
-`file_gap` is separator height between files, including the `─` rule; `hunk_gap` is blank rows before later hunks.
-`wheel_scroll_lines` is a user-only preference and can be overridden with `--wheel-scroll-lines 3`.
-`scroll_off` mirrors Vim's `scrolloff`: it keeps the current line clear of the viewport edge
-while stepping through a diff. It defaults to 5 rows; use `--scroll-off 0` to disable the margin.
-Set `animations = false` to make panes open and close immediately.
-`prompt_save_view_preferences = false` disables the quit prompt for saving changed view preferences.
-`transparent_background` can also be written as `transparentBackground`.
+See the [config reference](https://hunk.dev/docs/reference/config/) for all options and defaults, or the [theme guide](https://hunk.dev/docs/configure/themes/) to customize colors.
 
 ### Keybindings
 
-Every keyboard shortcut is a named command, and a `[keybindings]` table in your
-user config remaps command ids to the keys you want them on — several keys per
-command, exclusive claims over defaults, and `false` to unbind. See
-[the keybinding guide](https://hunk.dev/docs/configure/keybindings/) for the rules, the chord grammar,
-and the full table of built-in commands and their default keys.
+Remap shortcuts with a `[keybindings]` table in your user config. See [the keybinding guide](https://hunk.dev/docs/configure/keybindings/) for available commands, default keys, and examples.
 
 ### Git integration
 
@@ -295,11 +242,7 @@ repository's `.hunk/extensions/` (after you explicitly trust that repository),
 and from `--extension <path>` for development. `--no-extensions` turns those off
 for one run; Hunk's own bundled backends (Git, Jujutsu, and Sapling) stay loaded.
 
-An extension can add generic top-level CLI workflows, contribute themes and
-file-extension → language mappings, add a VCS backend, rewrite the changeset
-before review (collapse lockfiles, reorder files by review priority), replace
-the file-navigation sidebar with its own React component, react to lifecycle
-events, and show transient messages:
+Extensions can add commands, themes, VCS backends, custom sidebars, and more. For example, filter lockfiles out of a review:
 
 ```ts
 // ~/.config/hunk/extensions/collapse-lockfiles.ts
@@ -327,11 +270,10 @@ Browse community extensions at
 publish yours by pushing the extension to a repository root and adding that
 topic.
 
-See [the extension guide](https://hunk.dev/docs/extend/extensions/) for the full API, the trust model,
-publishing guidance, and the `[extensions]` / `[extension.<id>]` config reference.
+See [the extension guide](https://hunk.dev/docs/extend/extensions/) for the API, configuration, and publishing instructions.
 Installable examples include
 [review triage](https://github.com/modem-dev/hunk/tree/main/examples/extensions/review-triage),
-[authoritative review snapshot export](https://github.com/modem-dev/hunk/tree/main/examples/extensions/review-snapshot-export), an optional
+[review snapshot export](https://github.com/modem-dev/hunk/tree/main/examples/extensions/review-snapshot-export), an optional
 [rendered Markdown file view](https://github.com/modem-dev/hunk/tree/main/examples/extensions/rendered-markdown), and a
 [Vim navigation mode](https://github.com/modem-dev/hunk/tree/main/examples/extensions/vim-navigation) built from public semantic commands.
 
@@ -351,7 +293,7 @@ Each example includes the exact command to run from the repository root.
 
 💬 _Chat with users/contributors on the [Modem Discord server](https://discord.gg/WZFjaP6Gt8)_
 
-For source setup, tests, packaging checks, and repo architecture, see [the contribution guide](https://github.com/modem-dev/hunk/blob/main/CONTRIBUTING.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and contribution guidelines.
 
 ## Sponsor
 

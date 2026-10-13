@@ -560,105 +560,118 @@ describe("install VM package fixtures", () => {
     }
   });
 
-  test("verifies checkout identity, exact package set, duplicate manifests, and tarball digests", () => {
-    const repo = mkdtempSync(path.join(tmpdir(), "hunk-install-vm-source-"));
-    const fixtures = mkdtempSync(path.join(tmpdir(), "hunk-install-vm-fixtures-"));
-    try {
-      initializeTestGitRepo(repo);
-      mkdirSync(path.join(repo, "test", "cli", "install-vm"), {
-        recursive: true,
-      });
-      writeFileSync(path.join(repo, "package.json"), '{"name":"@hunk/workspace","private":true}\n');
-      mkdirSync(path.join(repo, "packages", "hunk"), { recursive: true });
-      writeFileSync(
-        path.join(repo, "packages", "hunk", "package.json"),
-        '{"name":"fixture","version":"1.0.0"}\n',
-      );
-      writeFileSync(path.join(repo, "test", "cli", "install-vm", "source.txt"), "source\n");
-      const manifest = writeTestFixtures(repo, fixtures);
-      expect(verifyInstallVmFixtures(repo, fixtures).sourceIdentity).toBe(manifest.sourceIdentity);
+  // Windows Git/process startup and repeated filesystem attestations exceed Bun's 5s default.
+  test(
+    "verifies checkout identity, exact package set, duplicate manifests, and tarball digests",
+    () => {
+      const repo = mkdtempSync(path.join(tmpdir(), "hunk-install-vm-source-"));
+      const fixtures = mkdtempSync(path.join(tmpdir(), "hunk-install-vm-fixtures-"));
+      try {
+        initializeTestGitRepo(repo);
+        mkdirSync(path.join(repo, "test", "cli", "install-vm"), {
+          recursive: true,
+        });
+        writeFileSync(
+          path.join(repo, "package.json"),
+          '{"name":"@hunk/workspace","private":true}\n',
+        );
+        mkdirSync(path.join(repo, "packages", "hunk"), { recursive: true });
+        writeFileSync(
+          path.join(repo, "packages", "hunk", "package.json"),
+          '{"name":"fixture","version":"1.0.0"}\n',
+        );
+        writeFileSync(path.join(repo, "test", "cli", "install-vm", "source.txt"), "source\n");
+        const manifest = writeTestFixtures(repo, fixtures);
+        expect(verifyInstallVmFixtures(repo, fixtures).sourceIdentity).toBe(
+          manifest.sourceIdentity,
+        );
 
-      const curlUpgradeArchive = path.join(
-        fixtures,
-        "http",
-        "download",
-        `v${FIXTURE_VERSION_B}`,
-        "hunkdiff-linux-x64.tar.gz",
-      );
-      writeFileSync(curlUpgradeArchive, "tampered\n");
-      expect(() => verifyInstallVmFixtures(repo, fixtures)).toThrow(
-        "Invalid curl archive/checksum fixture",
-      );
-      writeFileSync(curlUpgradeArchive, `archive ${FIXTURE_VERSION_B}\n`);
+        const curlUpgradeArchive = path.join(
+          fixtures,
+          "http",
+          "download",
+          `v${FIXTURE_VERSION_B}`,
+          "hunkdiff-linux-x64.tar.gz",
+        );
+        writeFileSync(curlUpgradeArchive, "tampered\n");
+        expect(() => verifyInstallVmFixtures(repo, fixtures)).toThrow(
+          "Invalid curl archive/checksum fixture",
+        );
+        writeFileSync(curlUpgradeArchive, `archive ${FIXTURE_VERSION_B}\n`);
 
-      const httpManifest = path.join(fixtures, "http", "fixture-manifest.json");
-      writeFileSync(httpManifest, `${JSON.stringify({ ...manifest, currentVersion: "2.0.0" })}\n`);
-      expect(() => verifyInstallVmFixtures(repo, fixtures)).toThrow(
-        "HTTP fixture manifest differs",
-      );
+        const httpManifest = path.join(fixtures, "http", "fixture-manifest.json");
+        writeFileSync(
+          httpManifest,
+          `${JSON.stringify({ ...manifest, currentVersion: "2.0.0" })}\n`,
+        );
+        expect(() => verifyInstallVmFixtures(repo, fixtures)).toThrow(
+          "HTTP fixture manifest differs",
+        );
 
-      const manifestBytes = `${JSON.stringify(manifest, null, 2)}\n`;
-      writeFileSync(httpManifest, manifestBytes);
-      const drifted = { ...manifest, packages: manifest.packages.slice(0, -1) };
-      writeFileSync(path.join(fixtures, "fixture-manifest.json"), `${JSON.stringify(drifted)}\n`);
-      writeFileSync(httpManifest, `${JSON.stringify(drifted)}\n`);
-      expect(() => verifyInstallVmFixtures(repo, fixtures)).toThrow("exactly ten");
+        const manifestBytes = `${JSON.stringify(manifest, null, 2)}\n`;
+        writeFileSync(httpManifest, manifestBytes);
+        const drifted = { ...manifest, packages: manifest.packages.slice(0, -1) };
+        writeFileSync(path.join(fixtures, "fixture-manifest.json"), `${JSON.stringify(drifted)}\n`);
+        writeFileSync(httpManifest, `${JSON.stringify(drifted)}\n`);
+        expect(() => verifyInstallVmFixtures(repo, fixtures)).toThrow("exactly ten");
 
-      const staleContract = {
-        ...manifest,
-        daemonUpgrade: { ...manifest.daemonUpgrade, revisionA: 9 },
-      };
-      writeFileSync(
-        path.join(fixtures, "fixture-manifest.json"),
-        `${JSON.stringify(staleContract)}\n`,
-      );
-      writeFileSync(httpManifest, `${JSON.stringify(staleContract)}\n`);
-      expect(() => verifyInstallVmFixtures(repo, fixtures)).toThrow("malformed or stale");
+        const staleContract = {
+          ...manifest,
+          daemonUpgrade: { ...manifest.daemonUpgrade, revisionA: 9 },
+        };
+        writeFileSync(
+          path.join(fixtures, "fixture-manifest.json"),
+          `${JSON.stringify(staleContract)}\n`,
+        );
+        writeFileSync(httpManifest, `${JSON.stringify(staleContract)}\n`);
+        expect(() => verifyInstallVmFixtures(repo, fixtures)).toThrow("malformed or stale");
 
-      const unboundBinary = {
-        ...manifest,
-        daemonUpgrade: {
-          ...manifest.daemonUpgrade,
-          binarySha256A: "b".repeat(64),
-        },
-      };
-      writeFileSync(
-        path.join(fixtures, "fixture-manifest.json"),
-        `${JSON.stringify(unboundBinary)}\n`,
-      );
-      writeFileSync(httpManifest, `${JSON.stringify(unboundBinary)}\n`);
-      expect(() => verifyInstallVmFixtures(repo, fixtures)).toThrow("malformed or stale");
-      const unknownContractKey = {
-        ...manifest,
-        daemonUpgrade: { ...manifest.daemonUpgrade, extra: true },
-      };
-      writeFileSync(
-        path.join(fixtures, "fixture-manifest.json"),
-        `${JSON.stringify(unknownContractKey)}\n`,
-      );
-      writeFileSync(httpManifest, `${JSON.stringify(unknownContractKey)}\n`);
-      expect(() => verifyInstallVmFixtures(repo, fixtures)).toThrow("malformed or stale");
+        const unboundBinary = {
+          ...manifest,
+          daemonUpgrade: {
+            ...manifest.daemonUpgrade,
+            binarySha256A: "b".repeat(64),
+          },
+        };
+        writeFileSync(
+          path.join(fixtures, "fixture-manifest.json"),
+          `${JSON.stringify(unboundBinary)}\n`,
+        );
+        writeFileSync(httpManifest, `${JSON.stringify(unboundBinary)}\n`);
+        expect(() => verifyInstallVmFixtures(repo, fixtures)).toThrow("malformed or stale");
+        const unknownContractKey = {
+          ...manifest,
+          daemonUpgrade: { ...manifest.daemonUpgrade, extra: true },
+        };
+        writeFileSync(
+          path.join(fixtures, "fixture-manifest.json"),
+          `${JSON.stringify(unknownContractKey)}\n`,
+        );
+        writeFileSync(httpManifest, `${JSON.stringify(unknownContractKey)}\n`);
+        expect(() => verifyInstallVmFixtures(repo, fixtures)).toThrow("malformed or stale");
 
-      writeFileSync(path.join(fixtures, "fixture-manifest.json"), manifestBytes);
-      writeFileSync(httpManifest, manifestBytes);
-      const tarball = path.join(fixtures, "packages", manifest.packages[0]!.tarball);
-      writeFileSync(tarball, "tampered\n");
-      expect(() => verifyInstallVmFixtures(repo, fixtures)).toThrow("checksum mismatch");
-      rmSync(tarball);
-      symlinkSync(path.join(repo, "package.json"), tarball);
-      expect(() => verifyInstallVmFixtures(repo, fixtures)).toThrow("checksum mismatch");
-      rmSync(tarball);
-      symlinkSync(path.join("..", manifest.packages[1]!.tarball), tarball);
-      expect(() => verifyInstallVmFixtures(repo, fixtures)).toThrow("checksum mismatch");
-      rmSync(tarball);
-      const packages = path.join(fixtures, "packages");
-      const realPackages = path.join(fixtures, "packages-real");
-      renameSync(packages, realPackages);
-      symlinkSync(realPackages, packages);
-      expect(() => verifyInstallVmFixtures(repo, fixtures)).toThrow("checksum mismatch");
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-      rmSync(fixtures, { recursive: true, force: true });
-    }
-  });
+        writeFileSync(path.join(fixtures, "fixture-manifest.json"), manifestBytes);
+        writeFileSync(httpManifest, manifestBytes);
+        const tarball = path.join(fixtures, "packages", manifest.packages[0]!.tarball);
+        writeFileSync(tarball, "tampered\n");
+        expect(() => verifyInstallVmFixtures(repo, fixtures)).toThrow("checksum mismatch");
+        rmSync(tarball);
+        symlinkSync(path.join(repo, "package.json"), tarball);
+        expect(() => verifyInstallVmFixtures(repo, fixtures)).toThrow("checksum mismatch");
+        rmSync(tarball);
+        symlinkSync(path.join("..", manifest.packages[1]!.tarball), tarball);
+        expect(() => verifyInstallVmFixtures(repo, fixtures)).toThrow("checksum mismatch");
+        rmSync(tarball);
+        const packages = path.join(fixtures, "packages");
+        const realPackages = path.join(fixtures, "packages-real");
+        renameSync(packages, realPackages);
+        symlinkSync(realPackages, packages);
+        expect(() => verifyInstallVmFixtures(repo, fixtures)).toThrow("checksum mismatch");
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+        rmSync(fixtures, { recursive: true, force: true });
+      }
+    },
+    process.platform === "win32" ? 30_000 : 5_000,
+  );
 });

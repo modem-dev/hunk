@@ -15,7 +15,15 @@ API object and registry collection (`packages/hunk/src/extensions/runExtension.t
   session bootstrap (`packages/hunk/src/app/extensionBootstrap.ts`,
   `packages/hunk/src/extensions/startup.ts`, `packages/hunk/src/extensions/host.ts`). Discovery
   groups and trust gating live in `packages/hunk/src/extensions/discovery.ts` and
-  `packages/hunk/src/extensions/trust.ts`.
+  `packages/hunk/src/extensions/trust.ts`. `snapshot.ts` captures repository module graphs
+  without evaluating them; approval authorizes immutable, content-addressed user-owned bundles,
+  never a live checkout path. Literal local/package dependencies are bundled, with host APIs and
+  runtime builtins external. Unsupported runtime module resolvers fail closed. Entry metadata keeps
+  original source attribution while imports use integrity-verified artifacts. The UI approves the
+  captured snapshot offered by the loader, not a fresh build on click. Legacy path grants become
+  unknown; denials survive. Staged registries containing repo candidates recheck their dependency
+  fingerprint and current approval before reuse, preserving unchanged factory/lifecycle identity
+  without relying on candidate paths alone.
 - **Bundled extensions** are compiled into the binary. The private
   `packages/hunk-{git,jj,sapling}` provider workspaces are statically imported by
   `packages/hunk/src/extensions/default/vcs/index.ts`; the app composition root

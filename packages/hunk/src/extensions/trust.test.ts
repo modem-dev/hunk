@@ -5,6 +5,7 @@ import { resolveCanonicalPath } from "../core/run/paths";
 import { join, resolve } from "node:path";
 import { loadExtensions } from "./host";
 import { readExtensionTrust, resolveRepoTrust, writeExtensionTrust } from "./trust";
+import { prepareRepoExtensionSnapshot } from "./snapshot";
 import { deriveExtensionId, type ExtensionCandidate } from "./types";
 
 const tempDirs: string[] = [];
@@ -40,7 +41,7 @@ afterEach(() => {
 });
 
 describe("extension trust", () => {
-  test("round-trips trust decisions through the shared state file", () => {
+  test("round-trips snapshot approvals and denials through the shared state file", async () => {
     const stateDir = createTempDir("hunk-trust-state-");
     const statePath = join(stateDir, "state.json");
     const trustedRepo = createTempDir("hunk-trust-repo-trusted-");
@@ -49,10 +50,14 @@ describe("extension trust", () => {
     expect(readExtensionTrust({ statePath })).toEqual({});
     expect(resolveRepoTrust(trustedRepo, { statePath })).toBe("unknown");
 
-    writeExtensionTrust(trustedRepo, "trusted", { statePath });
+    const snapshot = await prepareRepoExtensionSnapshot(trustedRepo, [
+      createRepoExtension(trustedRepo),
+    ]);
+    writeExtensionTrust(trustedRepo, "trusted", { statePath, snapshot });
     writeExtensionTrust(deniedRepo, "denied", { statePath });
 
-    expect(resolveRepoTrust(trustedRepo, { statePath })).toBe("trusted");
+    expect(resolveRepoTrust(trustedRepo, { statePath, snapshot })).toBe("trusted");
+    expect(resolveRepoTrust(trustedRepo, { statePath })).toBe("unknown");
     expect(resolveRepoTrust(deniedRepo, { statePath })).toBe("denied");
     expect(Object.keys(readExtensionTrust({ statePath }))).toHaveLength(2);
   });
@@ -84,7 +89,7 @@ describe("extension trust", () => {
     return { canonical, alias };
   }
 
-  test("resolves a decision recorded under another spelling of the same repo root", () => {
+  test("resolves an approval recorded under another spelling of the same repo root", async () => {
     const stateDir = createTempDir("hunk-trust-alias-state-");
     const statePath = join(stateDir, "state.json");
     const repo = createAliasedRepo("hunk-trust-alias-repo-");
@@ -95,10 +100,13 @@ describe("extension trust", () => {
     // The live sequence: the trust prompt records the root discovery handed it,
     // then the reload canonicalizes its cwd before asking again. Both spellings
     // have to name one repository, or a freshly trusted repo never loads.
-    writeExtensionTrust(repo.alias, "trusted", { statePath });
+    const snapshot = await prepareRepoExtensionSnapshot(repo.alias, [
+      createRepoExtension(repo.alias),
+    ]);
+    writeExtensionTrust(repo.alias, "trusted", { statePath, snapshot });
 
-    expect(resolveRepoTrust(repo.canonical, { statePath })).toBe("trusted");
-    expect(resolveRepoTrust(repo.alias, { statePath })).toBe("trusted");
+    expect(resolveRepoTrust(repo.canonical, { statePath, snapshot })).toBe("trusted");
+    expect(resolveRepoTrust(repo.alias, { statePath, snapshot })).toBe("trusted");
     expect(Object.keys(readExtensionTrust({ statePath }))).toEqual([repo.canonical]);
   });
 
@@ -118,12 +126,14 @@ describe("extension trust", () => {
     expect(resolveRepoTrust(repo.alias, { statePath })).toBe("denied");
   });
 
-  test("preserves unrelated state keys when recording a decision", () => {
+  test("preserves unrelated state keys when recording a decision", async () => {
     const stateDir = createTempDir("hunk-trust-merge-");
     const statePath = join(stateDir, "state.json");
     writeFileSync(statePath, JSON.stringify({ version: 1, lastSeenCliVersion: "0.17.0" }));
 
-    writeExtensionTrust(createTempDir("hunk-trust-merge-repo-"), "trusted", { statePath });
+    const repo = createTempDir("hunk-trust-merge-repo-");
+    const snapshot = await prepareRepoExtensionSnapshot(repo, [createRepoExtension(repo)]);
+    writeExtensionTrust(repo, "trusted", { statePath, snapshot });
 
     const persisted = JSON.parse(readFileSync(statePath, "utf8")) as Record<string, unknown>;
     expect(persisted.lastSeenCliVersion).toBe("0.17.0");
@@ -170,16 +180,20 @@ describe("extension trust", () => {
 
   test("loads repo-local extensions once the repo is trusted", async () => {
     const stateDir = createTempDir("hunk-trust-loaded-state-");
-    const statePath = join(stateDir, "state.json");
+    const env = { XDG_CONFIG_HOME: stateDir };
+    const statePath = join(stateDir, "hunk", "state.json");
     const repo = createTempDir("hunk-trust-loaded-repo-");
     const candidate = createRepoExtension(repo);
-    writeExtensionTrust(repo, "trusted", { statePath });
+    const snapshot = await prepareRepoExtensionSnapshot(repo, [candidate]);
+    writeExtensionTrust(repo, "trusted", { statePath, snapshot });
 
     const result = await loadExtensions({
       candidates: [candidate],
       cwd: repo,
       repoRoot: repo,
-      resolveRepoTrustImpl: (repoRoot) => resolveRepoTrust(repoRoot, { statePath }),
+      env,
+      resolveRepoTrustImpl: (repoRoot, options) =>
+        resolveRepoTrust(repoRoot, { ...options, statePath }),
     });
 
     expect(result.loaded.map((entry) => entry.id)).toEqual(["repo-local"]);

@@ -4,6 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionsConfig } from "../core/run/config";
 import { resolveExtensionCliCommands } from "./cliCommands";
+import { discoverExtensions } from "./discovery";
+import { prepareRepoExtensionSnapshot } from "./snapshot";
+import { writeExtensionTrust } from "./trust";
 import {
   createExtensionLoadNotices,
   createSupersededExtensionNotices,
@@ -223,17 +226,58 @@ export default function (hunk) {
 `,
     );
 
+    const env = { XDG_CONFIG_HOME: configHome };
+    const snapshot = await prepareRepoExtensionSnapshot(
+      repo,
+      discoverExtensions({ cwd: repo, repoRoot: repo, env }),
+    );
+    writeExtensionTrust(repo, "trusted", { env, snapshot });
+
     const final = await loadStartupExtensions({
       extensions: createExtensionsConfig(),
       cwd: repo,
       env: { XDG_CONFIG_HOME: configHome } as NodeJS.ProcessEnv,
       projectRoot: repo,
       previousLoad: provisional,
-      hostOverrides: { resolveRepoTrustImpl: () => "trusted" },
     });
 
     expect(readFileSync(logPath, "utf8")).toBe("global\nlocal\nevent\n");
     expect(final.loaded.map((extension) => extension.id)).toEqual(["hunk", "global", "local"]);
+  });
+
+  test("reuses an approved repo factory only while its dependency bytes and approval remain unchanged", async () => {
+    const root = createTempDir("hunk-startup-repo-snapshot-");
+    const repo = join(root, "repo");
+    const configHome = join(root, "config");
+    const env = { XDG_CONFIG_HOME: configHome };
+    const folder = join(repo, ".hunk", "extensions", "local");
+    mkdirSync(folder, { recursive: true });
+    const helper = join(folder, "helper.ts");
+    writeFileSync(helper, `export const language = 'original';`);
+    const log = join(root, "factories.log");
+    writeFileSync(
+      join(folder, "index.ts"),
+      `import {appendFileSync} from 'node:fs'; import {language} from './helper'; export default function(hunk) {appendFileSync(${JSON.stringify(log)}, 'factory\\n'); hunk.registerFileLanguage(language, 'typescript');}`,
+    );
+    const snapshot = await prepareRepoExtensionSnapshot(
+      repo,
+      discoverExtensions({ cwd: repo, repoRoot: repo, env }),
+    );
+    writeExtensionTrust(repo, "trusted", { env, snapshot });
+    const options = { extensions: createExtensionsConfig(), cwd: repo, projectRoot: repo, env };
+    const first = await loadStartupExtensions(options);
+    const same = await loadStartupExtensions({ ...options, previousLoad: first });
+    expect(same.registry).toBe(first.registry);
+    expect(readFileSync(log, "utf8")).toBe("factory\n");
+    writeFileSync(
+      helper,
+      `throw new Error('must not execute changed helper'); export const language = 'changed';`,
+    );
+    const changed = await loadStartupExtensions({ ...options, previousLoad: same });
+    expect(changed.registry).not.toBe(first.registry);
+    expect(changed.loaded.map((entry) => entry.id)).toEqual(["hunk"]);
+    expect(changed.pendingTrustSnapshot).toBeDefined();
+    expect(readFileSync(log, "utf8")).toBe("factory\n");
   });
 
   test("shuts down a provisional pass before changed config requires rebuilding it", async () => {

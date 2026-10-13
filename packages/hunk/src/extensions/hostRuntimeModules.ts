@@ -1,4 +1,6 @@
 import { readFileSync } from "node:fs";
+import { parse, type Node } from "acorn";
+import { analyze } from "eslint-scope";
 import { dirname, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveCanonicalPath } from "../core/run/paths";
@@ -47,9 +49,9 @@ const HOST_MODULE_LOADERS: Record<string, () => Promise<object>> = {
 
 /** Namespace for virtual modules, chosen to never collide with a real package. */
 const HOST_MODULE_PREFIX = "hunk-host:";
-const HOST_SPECIFIERS = Object.keys(HOST_MODULE_LOADERS)
-  .map((specifier) => specifier.replace(/[/@]/g, "\\$&"))
-  .join("|");
+
+/** List imports whose identity belongs to the host rather than an extension dependency. */
+export const HOST_MODULE_SPECIFIERS = Object.keys(HOST_MODULE_LOADERS);
 
 /** Resolve host-owned specifiers before considering any installed package. */
 function hostSpecifier(specifier: string) {
@@ -134,14 +136,74 @@ function registerVirtualModules() {
 }
 
 /** Lower CommonJS host requires to static imports so lazy virtual factories finish before evaluation. */
-function rewriteCompiledHostRequires(code: string) {
+export function rewriteCompiledHostRequires(code: string) {
   const bindings = new Map<string, string>();
   let bindingIndex = 0;
-  const pattern = new RegExp(
-    `\\b(?:__require\\d*|require)\\s*\\(\\s*(["'])(${HOST_SPECIFIERS})\\1\\s*\\)`,
-    "g",
+  const replacements: { start: number; end: number; value: string }[] = [];
+  const program = parse(code, {
+    ecmaVersion: "latest",
+    sourceType: "module",
+    allowReturnOutsideFunction: true,
+    ranges: true,
+  });
+  const scopes = analyze(program as Parameters<typeof analyze>[0], {
+    ecmaVersion: 2025,
+    sourceType: "module",
+  });
+  const loaderReferences = new Set<number>();
+  const unboundRequireWritten = scopes.globalScope.through.some(
+    (reference) => reference.identifier.name === "require" && reference.isWrite(),
   );
-  const rewritten = code.replace(pattern, (_call, _quote: string, specifier: string) => {
+  for (const scope of scopes.scopes) {
+    for (const reference of scope.references) {
+      const name = reference.identifier.name;
+      const runtimeRequire = name === "require" && !reference.resolved && !unboundRequireWritten;
+      const generatedHelper =
+        /^__require\d*$/.test(name) &&
+        reference.resolved?.defs.some((definition) => {
+          const init = (definition.node as unknown as { init?: Record<string, unknown> }).init;
+          const object = init?.object as Record<string, unknown> | undefined;
+          const meta = object?.meta as { name?: string } | undefined;
+          const property = object?.property as { name?: string } | undefined;
+          const member = init?.property as { name?: string } | undefined;
+          return (
+            init?.type === "MemberExpression" &&
+            !init.computed &&
+            object?.type === "MetaProperty" &&
+            meta?.name === "import" &&
+            property?.name === "meta" &&
+            member?.name === "require"
+          );
+        });
+      if (runtimeRequire || generatedHelper) loaderReferences.add(reference.identifier.range![0]);
+    }
+  }
+
+  /** Replace actual loader calls, never quoted examples, comments, or member calls. */
+  function visit(node: Node) {
+    const fields = node as Node & Record<string, unknown>;
+    const callee = fields.callee as (Node & { name?: string }) | undefined;
+    const args = fields.arguments as Array<Node & { value?: unknown }> | undefined;
+    if (
+      node.type === "CallExpression" &&
+      callee?.type === "Identifier" &&
+      loaderReferences.has(callee.start) &&
+      args?.length === 1 &&
+      args[0]?.type === "Literal" &&
+      typeof args[0].value === "string" &&
+      Object.hasOwn(HOST_MODULE_LOADERS, args[0].value)
+    ) {
+      replacements.push({ start: node.start, end: node.end, value: bindingFor(args[0].value) });
+    }
+    for (const value of Object.values(fields)) {
+      for (const child of Array.isArray(value) ? value : [value]) {
+        if (child && typeof child === "object" && "type" in child) visit(child as Node);
+      }
+    }
+  }
+
+  /** Allocate a collision-free static import for one host module. */
+  function bindingFor(specifier: string) {
     let binding = bindings.get(specifier);
     if (!binding) {
       do {
@@ -151,7 +213,13 @@ function rewriteCompiledHostRequires(code: string) {
     }
 
     return binding;
-  });
+  }
+
+  visit(program);
+  let rewritten = code;
+  for (const { start, end, value } of replacements.sort((a, b) => b.start - a.start)) {
+    rewritten = rewritten.slice(0, start) + value + rewritten.slice(end);
+  }
   const imports = [...bindings].map(
     ([specifier, binding]) =>
       `import * as ${binding} from ${JSON.stringify(`${HOST_MODULE_PREFIX}${specifier}`)};`,

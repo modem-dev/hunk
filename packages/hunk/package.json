@@ -50,6 +50,7 @@
     "prepack": "bun run ../../scripts/build/build-npm.ts"
   },
   "dependencies": {
+    "@babel/parser": "^7.28.0",
     "acorn": "^8.19.0",
     "bun": "^1.4.2",
     "chokidar": "^4.0.3",

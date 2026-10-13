@@ -1,8 +1,8 @@
 /**
  * Decides whether Hunk may load and execute extensions from the current repository.
  *
- * Trusting records permission for future sessions and reloads the current review so the extensions
- * can take effect. Denying records that they must remain disabled. Dismissing the prompt records
+ * Trusting approves the captured dependency snapshot and reloads the current review so the extensions
+ * can take effect. Changed checkout code requires another approval. Denying records that they must remain disabled. Dismissing the prompt records
  * nothing and keeps it closed for the rest of the session.
  *
  * Pager sessions do not ask. When the current input cannot be reopened, such as stdin, a trust
@@ -11,14 +11,20 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { writeExtensionTrust, type ExtensionTrustDecision } from "../../extensions/trust";
+import type { RepoExtensionSnapshot } from "../../extensions/snapshot";
 import type { CurrentReviewRefreshOptions } from "../currentReviewRefresh";
 import { nextExtensionTrustPromptRoot } from "../lib/extensionTrustPrompt";
 
-export type ExtensionTrustWriter = (repoRoot: string, decision: ExtensionTrustDecision) => unknown;
+export type ExtensionTrustWriter = (
+  repoRoot: string,
+  decision: ExtensionTrustDecision,
+  options?: { snapshot?: RepoExtensionSnapshot },
+) => unknown;
 
 export interface ExtensionTrustController {
   extensionTrustPromptOpen: boolean;
   extensionTrustPromptRoot: string | null;
+  extensionTrustPromptSnapshot?: RepoExtensionSnapshot;
   closeExtensionTrustPrompt: () => void;
   denyRepoExtensions: () => void;
   trustRepoExtensions: () => void;
@@ -34,6 +40,7 @@ export function useExtensionTrustController({
   canRefreshCurrentInput,
   pagerMode,
   pendingRepoRoot,
+  pendingSnapshot,
   refreshCurrentInput,
   showNotice,
   writeTrust = writeExtensionTrust,
@@ -41,6 +48,7 @@ export function useExtensionTrustController({
   canRefreshCurrentInput: boolean;
   pagerMode: boolean;
   pendingRepoRoot?: string;
+  pendingSnapshot?: RepoExtensionSnapshot;
   refreshCurrentInput: (options?: CurrentReviewRefreshOptions) => Promise<void>;
   showNotice: (message: string) => void;
   writeTrust?: ExtensionTrustWriter;
@@ -48,6 +56,7 @@ export function useExtensionTrustController({
   // Ask about each repository at most once during this Hunk session.
   const [extensionTrustPromptRoot, setExtensionTrustPromptRoot] = useState<string | null>(null);
   const offeredTrustRepoRootsRef = useRef<Set<string>>(new Set());
+  const [offeredSnapshot, setOfferedSnapshot] = useState<RepoExtensionSnapshot>();
 
   // Follow repository changes without reviving a dismissed prompt for an earlier root.
   useEffect(() => {
@@ -60,6 +69,7 @@ export function useExtensionTrustController({
     if (nextRoot) {
       offeredTrustRepoRootsRef.current.add(nextRoot);
       setExtensionTrustPromptRoot(nextRoot);
+      setOfferedSnapshot(pendingSnapshot);
       return;
     }
 
@@ -68,7 +78,7 @@ export function useExtensionTrustController({
     setExtensionTrustPromptRoot((currentRoot) =>
       !pagerMode && currentRoot === pendingRepoRoot ? currentRoot : null,
     );
-  }, [pagerMode, pendingRepoRoot]);
+  }, [pagerMode, pendingRepoRoot, pendingSnapshot]);
 
   // Hide stale state during the render where eligibility changes, before the effect reconciles it.
   const visiblePromptRoot =
@@ -86,21 +96,28 @@ export function useExtensionTrustController({
     if (!repoRoot) return;
 
     try {
-      writeTrust(repoRoot, "trusted");
+      writeTrust(repoRoot, "trusted", { snapshot: offeredSnapshot });
     } catch (error) {
       showNotice(trustFailureMessage(error));
       return;
     }
 
     if (!canRefreshCurrentInput) {
-      showNotice("Trusted this repository • restart Hunk to load its extensions");
+      showNotice("Approved extension snapshot • restart Hunk to load it");
       return;
     }
 
     void refreshCurrentInput({ reason: "manual", reloadExtensions: true }).catch(() => {
       showNotice("Failed to reload after trusting this repository's extensions.");
     });
-  }, [canRefreshCurrentInput, refreshCurrentInput, visiblePromptRoot, showNotice, writeTrust]);
+  }, [
+    canRefreshCurrentInput,
+    refreshCurrentInput,
+    visiblePromptRoot,
+    offeredSnapshot,
+    showNotice,
+    writeTrust,
+  ]);
 
   // Persist denial so later sessions do not offer or run this repository's extensions.
   const denyRepoExtensions = useCallback(() => {
@@ -119,6 +136,7 @@ export function useExtensionTrustController({
   return {
     extensionTrustPromptOpen: visiblePromptRoot !== null,
     extensionTrustPromptRoot: visiblePromptRoot,
+    extensionTrustPromptSnapshot: visiblePromptRoot ? offeredSnapshot : undefined,
     closeExtensionTrustPrompt,
     denyRepoExtensions,
     trustRepoExtensions,

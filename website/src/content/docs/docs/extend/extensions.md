@@ -117,20 +117,25 @@ Hunk's Git, Jujutsu, Sapling, `hunk gh`, file-navigation, and content-search fea
 
 ## Trust
 
-Extensions run with your full user permissions, and reviewing a repository must never execute code that came with it. So the repo-local sources stay inert until you approve them, once per repository:
+Extensions run with your full user permissions. Repo-controlled sources stay inert until you approve a **dependency snapshot**, not the checkout path. Hunk bundles enabled `.hunk/extensions` entries and repo-config paths without evaluating them:
 
 ```text
 Run this repository's extensions?
 
-  This repository contains extensions in .hunk/extensions.
-  Extensions run with your user permissions.
+  Repo extensions (.hunk/extensions or config paths) need approval.
+  Their dependency snapshot runs with your user permissions.
+  Trust approves this snapshot; changed code needs new approval.
 
   enter/t trust · esc not now · n never
 ```
 
-**Trust** records the decision and reloads the session; **not now** asks again next time; **never** stops the offers. The prompt is a dialog over the review stream, not a gate in front of it — dismiss it and keep reviewing.
+**Trust** saves and approves the exact captured bundles, then reloads; **not now** asks again next time; **never** stops the offers. Dismiss the dialog and keep reviewing.
 
-Decisions are stored per repository root in `~/.config/hunk/state.json`, keyed by path (the VS Code workspace-trust model). A different repository later occupying a trusted path inherits the decision; clear the entry if that matters for a path you reuse.
+Hunk executes verified artifacts in user-owned `~/.config/hunk/extension-snapshots/`, not live checkout modules. Approvals in `state.json` include the entries and dependency fingerprint. A PR changing helpers, adding entries or config paths, or replacing dependencies requires new approval. Legacy path-only grants require approval again; denials remain effective. Changed captured source or resolver files invalidate an open offer: approval fails and asks you to restart for a current snapshot. The button never approves replacement bytes.
+
+Use literal local/package imports so dependencies can be bundled. Computed imports/requires, runtime `node:module` resolvers, Bun macros/import attributes, and native/assets dependencies are unsupported for snapshots. Statically resolved alias targets are captured; repository build plugins are not run. `import.meta` points to the stored bundle. Explicit `--extension` remains live one-run consent for development.
+
+This is not a sandbox: approved code can still read files, spawn processes, or deliberately evaluate workspace content. Config values remain untrusted. Use `hunk diff --no-extensions` to disable user extension discovery and execution entirely.
 
 ## Failure isolation
 

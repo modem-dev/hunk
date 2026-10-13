@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createPtyHarness, dragMouse, lineIndexOf } from "./harness";
@@ -481,7 +482,8 @@ describe("PTY extensions", () => {
         timeout: 20_000,
       });
       expect(prompt).toContain(".hunk/extensions");
-      expect(prompt).toContain("Extensions run with your user permissions.");
+      expect(prompt).toContain("Their dependency snapshot runs with your user permissions.");
+      expect(prompt).toContain("changed code needs new approval");
       // The extension has not run yet, so both files are still under review.
       expect(prompt).toContain("beta.ts");
 
@@ -498,6 +500,127 @@ describe("PTY extensions", () => {
       expect(reloaded).toContain("alpha.ts");
 
       expect(readTrustState(configHome)[trustKey(fixture.dir)]).toBe("trusted");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("a PR checkout cannot execute changed helpers, new entries, or config paths under an old approval", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(`import { label } from '../helper';
+export default function(hunk) { hunk.on('startup', (_event, ctx) => ctx.notify(label)); }`);
+    const helper = join(fixture.dir, ".hunk", "helper.ts");
+    writeFileSync(helper, `export const label = 'APPROVED SNAPSHOT READY';`);
+    execFileSync("git", ["add", ".hunk"], { cwd: fixture.dir });
+    execFileSync("git", ["commit", "-m", "extension helper"], { cwd: fixture.dir });
+    const launch = () =>
+      harness.launchHunk({
+        args: ["diff", "--mode", "unified"],
+        cwd: fixture.dir,
+        cols: 140,
+        rows: 24,
+        env: { XDG_CONFIG_HOME: configHome },
+      });
+    const session = await launch();
+    try {
+      await session.waitForText(/Run this repository's extensions\?/, { timeout: 20_000 });
+      await harness.pressAndWaitForText(session, "t", /APPROVED SNAPSHOT READY/, {
+        timeout: 20_000,
+      });
+    } finally {
+      session.close();
+    }
+
+    const unchanged = await launch();
+    try {
+      const frame = await unchanged.waitForText(/APPROVED SNAPSHOT READY/, { timeout: 20_000 });
+      expect(frame).not.toContain("Run this repository's extensions?");
+    } finally {
+      unchanged.close();
+    }
+
+    execFileSync("git", ["switch", "-c", "untrusted-pr"], { cwd: fixture.dir });
+    const marker = join(fixture.dir, ".pr-extension-executed");
+    const effect = `import {appendFileSync} from 'node:fs'; appendFileSync(${JSON.stringify(marker)}, 'PR code executed\\n');`;
+    writeFileSync(helper, `${effect} export const label = 'PR HELPER EXECUTED';`);
+    writeFileSync(
+      join(fixture.dir, ".hunk", "extensions", "new.ts"),
+      `${effect} export default function() {}`,
+    );
+    mkdirSync(join(fixture.dir, "src"), { recursive: true });
+    writeFileSync(
+      join(fixture.dir, "src", "config-entry.ts"),
+      `${effect} export default function() {}`,
+    );
+    writeFileSync(
+      join(fixture.dir, ".hunk", "config.toml"),
+      '[extensions]\npaths = ["src/config-entry.ts"]\n',
+    );
+    execFileSync("git", ["add", ".hunk", "src"], { cwd: fixture.dir });
+    execFileSync("git", ["commit", "-m", "PR changes executable sources"], { cwd: fixture.dir });
+    const review = await launch();
+    try {
+      const prompt = await review.waitForText(/Run this repository's extensions\?/, {
+        timeout: 20_000,
+      });
+      expect(prompt).toContain("config paths");
+      expect(existsSync(marker)).toBeFalse();
+      await review.press("escape");
+      await harness.waitForSnapshot(
+        review,
+        (text) => !text.includes("Run this repository's extensions?"),
+        10_000,
+      );
+      expect(existsSync(marker)).toBeFalse();
+    } finally {
+      review.close();
+    }
+  });
+
+  test("a short terminal keeps snapshot approval mouse-accessible below the entry inventory", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(TRANSFORM_EXTENSION_SOURCE);
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "unified"],
+      cwd: fixture.dir,
+      cols: 60,
+      rows: 12,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+    try {
+      const prompt = await session.waitForText(/enter[/]t trust/, { timeout: 20_000 });
+      expect(prompt).toContain("not now");
+      await session.click(/enter[/]t trust/);
+      const loaded = await session.waitForText(/REPO EXTENSION/, { timeout: 20_000 });
+      expect(loaded).not.toContain("Run this repository's extensions?");
+      expect(readTrustState(configHome)[trustKey(fixture.dir)]).toBe("trusted");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("repository Bun macros cannot execute during unapproved snapshot preparation", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture =
+      harness.createRepoExtensionFixture(`import {value} from '../macro' with {type:'macro'};
+const label: string = value(); export default function(hunk) {hunk.registerFileLanguage(label, 'typescript');}`);
+    const marker = join(fixture.dir, ".macro-executed");
+    writeFileSync(
+      join(fixture.dir, ".hunk", "macro.ts"),
+      `import {writeFileSync} from 'node:fs'; writeFileSync(${JSON.stringify(marker)}, 'macro executed'); export function value() {return 'macro';}`,
+    );
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "unified"],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+    try {
+      const frame = await session.waitForText(/alpha.ts/, { timeout: 20_000 });
+      expect(frame).not.toContain("Run this repository's extensions?");
+      expect(existsSync(marker)).toBeFalse();
+      expect(readTrustState(configHome)[trustKey(fixture.dir)]).toBeUndefined();
     } finally {
       session.close();
     }

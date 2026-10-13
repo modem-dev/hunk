@@ -2,6 +2,9 @@ import { isDeepStrictEqual } from "node:util";
 import type { StartupNotice } from "../core/process/startupNotice";
 import type { ExtensionsConfig } from "../core/run/config";
 import { sanitizeTerminalText } from "../lib/terminalText";
+import { findProjectRootCandidate } from "../core/process/projectRoot";
+import { prepareRepoExtensionSnapshot } from "./snapshot";
+import { resolveRepoTrust } from "./trust";
 import { BUNDLED_CORE_EXTENSION_DEFINITIONS, loadBundledCoreExtensions } from "./default/core";
 import { discoverExtensions } from "./discovery";
 import { bindExtensionEventBus, retireExtensionLoadResult } from "./events";
@@ -58,12 +61,14 @@ function canExtendPreviousLoad(
   extensionConfigs: Record<string, Record<string, unknown>>,
   selectionSignature: string,
   cwd: string,
+  repoSnapshotUnchanged: boolean,
 ) {
   const priorCandidates = previous.loadState.candidates;
   if (
     previous.context.cwd !== cwd ||
     previous.loadState.selectionSignature !== selectionSignature ||
-    priorCandidates.length > candidates.length
+    priorCandidates.length > candidates.length ||
+    !repoSnapshotUnchanged
   ) {
     return false;
   }
@@ -137,6 +142,34 @@ export async function loadStartupExtensions(
     ).map((definition) => definition.selectionId),
   );
 
+  let repoSnapshotUnchanged = true;
+  if (options.previousLoad?.loadState.candidates.some((candidate) => candidate.origin === "repo")) {
+    const previous = options.previousLoad;
+    repoSnapshotUnchanged = false;
+    const repoCandidates = candidates.filter((candidate) => candidate.origin === "repo");
+    const loadedRepoCandidates = previous.loaded.filter((candidate) => candidate.origin === "repo");
+    const repoRoot =
+      options.projectRoot ?? options.hostOverrides?.repoRoot ?? findProjectRootCandidate(cwd);
+    // Preserve factory/lifecycle identity only after checking the dependency bytes and approval.
+    // Unknown or failed passes rebuild so a newly granted approval cannot reuse a skipped import.
+    if (
+      repoRoot &&
+      previous.loadState.repoSnapshotFingerprint &&
+      !previous.pendingTrustRepoRoot &&
+      repoCandidates.length === loadedRepoCandidates.length
+    ) {
+      try {
+        const snapshot = await prepareRepoExtensionSnapshot(repoRoot, repoCandidates);
+        const resolveTrust = options.hostOverrides?.resolveRepoTrustImpl ?? resolveRepoTrust;
+        repoSnapshotUnchanged =
+          snapshot.fingerprint === previous.loadState.repoSnapshotFingerprint &&
+          resolveTrust(repoRoot, { env, fingerprint: snapshot.fingerprint }) === "trusted";
+      } catch {
+        // The new pass reports preparation failures without executing any changed modules.
+      }
+    }
+  }
+
   const compatiblePreviousLoad =
     options.previousLoad &&
     canExtendPreviousLoad(
@@ -145,6 +178,7 @@ export async function loadStartupExtensions(
       options.extensions.extensionConfigs,
       selectionSignature,
       cwd,
+      repoSnapshotUnchanged,
     )
       ? options.previousLoad
       : undefined;
@@ -160,6 +194,9 @@ export async function loadStartupExtensions(
       candidates: [...candidates],
       extensionConfigs: structuredClone(options.extensions.extensionConfigs),
       selectionSignature,
+      ...(previousLoad.loadState.repoSnapshotFingerprint
+        ? { repoSnapshotFingerprint: previousLoad.loadState.repoSnapshotFingerprint }
+        : {}),
     };
     options.onProvisionalLoad?.(previousLoad);
     if (!options.deferEventBusBinding) bindExtensionEventBus(previousLoad);

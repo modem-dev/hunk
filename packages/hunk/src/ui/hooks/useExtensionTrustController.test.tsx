@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act, StrictMode, useState } from "react";
 import type { ExtensionTrustDecision } from "../../extensions/trust";
+import type { RepoExtensionSnapshot } from "../../extensions/types";
 import type { CurrentReviewRefreshOptions } from "../currentReviewRefresh";
 import {
   useExtensionTrustController,
@@ -14,6 +15,7 @@ async function renderTrustController({
   canRefresh = true,
   initialPagerMode = false,
   initialPendingRepoRoot = "/repo/alpha",
+  initialSnapshot,
   refresh = async () => {},
   strictMode = false,
   writeTrust,
@@ -21,6 +23,7 @@ async function renderTrustController({
   canRefresh?: boolean;
   initialPagerMode?: boolean;
   initialPendingRepoRoot?: string;
+  initialSnapshot?: RepoExtensionSnapshot;
   refresh?: (options?: CurrentReviewRefreshOptions) => Promise<void>;
   strictMode?: boolean;
   writeTrust?: ExtensionTrustWriter;
@@ -29,13 +32,14 @@ async function renderTrustController({
   let rerender!: () => void;
   let setPagerMode!: (enabled: boolean) => void;
   let setPendingRepoRoot!: (root: string | undefined) => void;
+  let setSnapshot!: (snapshot: RepoExtensionSnapshot | undefined) => void;
   const notices: string[] = [];
   const refreshes: Array<CurrentReviewRefreshOptions | undefined> = [];
   const writes: Array<{ repoRoot: string; decision: ExtensionTrustDecision }> = [];
 
-  const recordTrust: ExtensionTrustWriter = (repoRoot, decision) => {
+  const recordTrust: ExtensionTrustWriter = (repoRoot, decision, options) => {
     writes.push({ repoRoot, decision });
-    return writeTrust?.(repoRoot, decision);
+    return writeTrust?.(repoRoot, decision, options);
   };
   const recordRefresh = async (options?: CurrentReviewRefreshOptions) => {
     refreshes.push(options);
@@ -48,6 +52,8 @@ async function renderTrustController({
     const [pendingRepoRoot, updatePendingRepoRoot] = useState<string | undefined>(
       initialPendingRepoRoot,
     );
+    const [snapshot, updateSnapshot] = useState(initialSnapshot);
+    setSnapshot = updateSnapshot;
     rerender = () => setGeneration((current) => current + 1);
     setPagerMode = updatePagerMode;
     setPendingRepoRoot = updatePendingRepoRoot;
@@ -55,6 +61,7 @@ async function renderTrustController({
       canRefreshCurrentInput: canRefresh,
       pagerMode,
       pendingRepoRoot,
+      pendingSnapshot: snapshot,
       refreshCurrentInput: recordRefresh,
       showNotice: (message) => notices.push(message),
       writeTrust: recordTrust,
@@ -96,6 +103,7 @@ async function renderTrustController({
     rerender,
     setPagerMode,
     setPendingRepoRoot,
+    setSnapshot,
     settle,
     setup,
     writes,
@@ -205,6 +213,33 @@ describe("useExtensionTrustController", () => {
     }
   });
 
+  test("approves the bytes originally offered, not a replacement snapshot arriving while the dialog is open", async () => {
+    const original: RepoExtensionSnapshot = {
+      version: 1,
+      repoRoot: "/repo/alpha",
+      fingerprint: "original",
+      entries: [],
+      inputs: [],
+    };
+    let approved: RepoExtensionSnapshot | undefined;
+    const harness = await renderTrustController({
+      initialSnapshot: original,
+      writeTrust: (_root, _decision, options) => {
+        approved = options?.snapshot;
+      },
+    });
+    try {
+      await act(async () => harness.setSnapshot({ ...original, fingerprint: "replacement" }));
+      await harness.settle();
+      await act(async () => harness.current().trustRepoExtensions());
+      await harness.settle();
+      expect(approved).toBe(original);
+      expect(harness.refreshes).toEqual([{ reason: "manual", reloadExtensions: true }]);
+    } finally {
+      await destroy(harness.setup);
+    }
+  });
+
   test("records trust without reloading a non-reloadable review", async () => {
     const harness = await renderTrustController({ canRefresh: false });
     try {
@@ -213,9 +248,7 @@ describe("useExtensionTrustController", () => {
 
       expect(harness.writes).toEqual([{ repoRoot: "/repo/alpha", decision: "trusted" }]);
       expect(harness.refreshes).toEqual([]);
-      expect(harness.notices).toEqual([
-        "Trusted this repository • restart Hunk to load its extensions",
-      ]);
+      expect(harness.notices).toEqual(["Approved extension snapshot • restart Hunk to load it"]);
     } finally {
       await destroy(harness.setup);
     }
