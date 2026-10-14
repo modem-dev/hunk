@@ -1,0 +1,1721 @@
+{
+  "schemaVersion": 3,
+  "label": "control",
+  "recordedAt": "2026-08-31T05:15:39.344Z",
+  "environment": {
+    "head": "42d2b9dd2f3144e33080f159f4cc9c2824ad1708",
+    "bun": "1.3.14",
+    "embeddedNode": "24.3.0",
+    "systemNodeTranscript": "tmp/session-lifecycle-effect/control/commands/system-node-version.stdout.log",
+    "os": "linux",
+    "release": "7.1.8-arch1-3",
+    "arch": "x64",
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S"
+  },
+  "identities": {
+    "harnessSha256": "ab809ae95145a41fa9e3d4f4de1173582b50f425531c88d33be097c44c6f9d85",
+    "planSha256": "9f9ffdd2068e2a02f6f4380d8928105e1cd592b2b43f955855b149ed42633cf5",
+    "lockfileSha256": "b2b43bcbac57d09213916d9bec04f883f06e482074dd754fde5b8f8bbd379bd9",
+    "firstExperimentPatchSha256": "f02a469527d49034beb5172929b74aa4ad1f7106e5d66cb1cb259fb410f39e56"
+  },
+  "builds": [
+    {
+      "target": "bun",
+      "index": 1,
+      "retained": true,
+      "durationMs": 3.7104660000186414,
+      "bytes": 90116,
+      "sha256": "e7868ae3e9436d1a4ded6853297632fc1f15ea275c17d06553054d354e2c300e"
+    },
+    {
+      "target": "node",
+      "index": 1,
+      "retained": true,
+      "durationMs": 2.110392000002321,
+      "bytes": 90118,
+      "sha256": "2394e1487599a89120a0f36e73fd68f5e73c230647d2484f985679c65fa850a5"
+    },
+    {
+      "target": "bun",
+      "index": 2,
+      "retained": true,
+      "durationMs": 2.0152240000024904,
+      "bytes": 90116,
+      "sha256": "e7868ae3e9436d1a4ded6853297632fc1f15ea275c17d06553054d354e2c300e"
+    },
+    {
+      "target": "node",
+      "index": 2,
+      "retained": true,
+      "durationMs": 1.6830300000146963,
+      "bytes": 90118,
+      "sha256": "2394e1487599a89120a0f36e73fd68f5e73c230647d2484f985679c65fa850a5"
+    },
+    {
+      "target": "bun",
+      "index": 3,
+      "retained": true,
+      "durationMs": 1.992781000008108,
+      "bytes": 90116,
+      "sha256": "e7868ae3e9436d1a4ded6853297632fc1f15ea275c17d06553054d354e2c300e"
+    },
+    {
+      "target": "node",
+      "index": 3,
+      "retained": true,
+      "durationMs": 1.898114000010537,
+      "bytes": 90118,
+      "sha256": "2394e1487599a89120a0f36e73fd68f5e73c230647d2484f985679c65fa850a5"
+    },
+    {
+      "target": "compiled-hunk",
+      "index": 1,
+      "retained": false,
+      "retentionNote": "Identity measured in dist and recorded; binary is not copied into arm evidence.",
+      "durationMs": 333.1057729999884,
+      "bytes": 177268864,
+      "sha256": "8bf3f5fccb9ebd3eece988b5f8fc8b9280cad07c392df397b505f78382c55ca9"
+    },
+    {
+      "target": "compiled-hunk",
+      "index": 2,
+      "retained": false,
+      "retentionNote": "Identity measured in dist and recorded; binary is not copied into arm evidence.",
+      "durationMs": 320.01372300001094,
+      "bytes": 177268864,
+      "sha256": "8bf3f5fccb9ebd3eece988b5f8fc8b9280cad07c392df397b505f78382c55ca9"
+    },
+    {
+      "target": "compiled-hunk",
+      "index": 3,
+      "retained": false,
+      "retentionNote": "Identity measured in dist and recorded; binary is not copied into arm evidence.",
+      "durationMs": 324.0482979999797,
+      "bytes": 177268864,
+      "sha256": "8bf3f5fccb9ebd3eece988b5f8fc8b9280cad07c392df397b505f78382c55ca9"
+    }
+  ],
+  "measurements": {
+    "processToLifecycleReadyCold": {
+      "status": "measured",
+      "unit": "ms",
+      "warmups": [
+        15.131388999987394,
+        13.411820000008447,
+        12.751992000004975,
+        12.125855999998748,
+        11.909811000019545
+      ],
+      "samples": [
+        13.041104000003543,
+        12.25819500000216,
+        11.733940000005532,
+        12.964761999988696,
+        11.820883000007598,
+        11.905392999993637,
+        12.372790000023087,
+        11.568731000006665,
+        12.57862600000226,
+        11.365067999984603,
+        12.68894399999408,
+        13.109643000003416,
+        12.329469000018435,
+        12.092894000001252,
+        11.985321999993175,
+        11.770239000004949,
+        11.574712000001455,
+        12.930667000007816,
+        11.908296999987215,
+        12.793229000002611,
+        11.918447000003653,
+        12.01079000000027,
+        12.442490999994334,
+        11.983168000006117,
+        12.012293000007048,
+        12.548258999973768,
+        12.761208999989321,
+        12.354183999996167,
+        11.829310000000987,
+        12.394891000003554
+      ],
+      "median": 12.092894000001252,
+      "p95": 13.041104000003543
+    },
+    "synchronousConnectionStop": {
+      "status": "measured",
+      "unit": "ms",
+      "warmups": [
+        0.11730000001261942,
+        0.006631999975070357,
+        0.002263999980641529,
+        0.0013429999817162752,
+        0.0011719999893102795
+      ],
+      "samples": [
+        0.0010009999969042838,
+        0.001041999988956377,
+        0.0010420000180602074,
+        0.004579000000376254,
+        0.0008009999874047935,
+        0.0005909999890718609,
+        0.0007209999894257635,
+        0.0005409999866969883,
+        0.0005810000002384186,
+        0.0010020000045187771,
+        0.0006210000137798488,
+        0.0010320000001229346,
+        0.0027150000096298754,
+        0.002123999991454184,
+        0.0009110000100918114,
+        0.00046099998871795833,
+        0.00046099998871795833,
+        0.0005909999890718609,
+        0.0005610000225715339,
+        0.0004610000178217888,
+        0.0005810000002384186,
+        0.0005110000201966614,
+        0.0004409999819472432,
+        0.0011519999825395644,
+        0.0025550000136718154,
+        0.0016929999983403832,
+        0.0016629999736323953,
+        0.0013719999988097697,
+        0.009066999977221712,
+        0.021299999993061647
+      ],
+      "median": 0.0009110000100918114,
+      "p95": 0.009066999977221712
+    },
+    "unauthenticatedInMemoryRegistration": {
+      "status": "measured",
+      "unit": "ms",
+      "warmups": [
+        0.09314500002074055,
+        0.05979299999307841,
+        0.010309999983292073,
+        0.010129000002052635,
+        0.007012999994913116
+      ],
+      "samples": [
+        0.006502000003820285,
+        0.007023000012850389,
+        0.006231000006664544,
+        0.004859000007854775,
+        0.010230000014416873,
+        0.014517000003252178,
+        0.009288000001106411,
+        0.005670999991707504,
+        0.007603999983984977,
+        0.010689999995520338,
+        0.012944999994942918,
+        0.006531999999424443,
+        0.006292000005487353,
+        0.007092999992892146,
+        0.006502000003820285,
+        0.006062000000383705,
+        0.006682999985059723,
+        0.006502000003820285,
+        0.00530999997863546,
+        0.006261000002268702,
+        0.011602000013226643,
+        0.008285999996587634,
+        0.009046999999554828,
+        0.008456000010482967,
+        0.0056099999928846955,
+        0.005099000001791865,
+        0.004268000018782914,
+        0.004948999994667247,
+        0.008254999993368983,
+        0.00897700001951307
+      ],
+      "median": 0.006531999999424443,
+      "p95": 0.012944999994942918
+    },
+    "authenticatedRegistration": {
+      "status": "not-measured",
+      "reason": "The signed Bun/Node fixtures prove hello and broker-observed register, but do not expose a stable isolated registration timestamp in both arms."
+    },
+    "commandRoundTrip": {
+      "status": "measured",
+      "unit": "ms",
+      "warmups": [
+        0.7771389999834355,
+        0.07846699998481199,
+        0.03189000001293607,
+        0.01947699999436736,
+        0.015278999984730035
+      ],
+      "samples": [
+        0.023473999986890703,
+        0.024386000004597008,
+        0.018183999985922128,
+        0.02315299998736009,
+        0.021340000006603077,
+        0.023434000002453104,
+        0.03190000000176951,
+        0.015958999982103705,
+        0.020168000017292798,
+        0.014476999989710748,
+        0.02071900002192706,
+        0.027452000009361655,
+        0.030697999987751245,
+        0.027350999996997416,
+        0.03024699998786673,
+        0.04091699997661635,
+        0.03340300000854768,
+        0.012994999997317791,
+        0.011892000009538606,
+        0.022964000003412366,
+        0.021020000014686957,
+        0.02450600001611747,
+        0.012863999989349395,
+        0.013906000007409602,
+        0.017182999989017844,
+        0.03227999998489395,
+        0.02408500001183711,
+        0.015940000012051314,
+        0.03614800001378171,
+        0.020147999981418252
+      ],
+      "median": 0.022964000003412366,
+      "p95": 0.03614800001378171
+    },
+    "reconnectGeneration": {
+      "status": "measured",
+      "unit": "ms",
+      "warmups": [
+        1.261047999985749,
+        1.0256759999901988,
+        1.0211169999965932,
+        1.0083330000052229,
+        1.006519999995362
+      ],
+      "samples": [
+        1.005738999985624,
+        1.0061189999978524,
+        1.0099060000211466,
+        1.0121199999994133,
+        1.0172400000155903,
+        1.0265270000090823,
+        1.030544999986887,
+        1.0406739999889396,
+        1.0199349999893457,
+        1.010396999976365,
+        1.0078619999985676,
+        1.0154960000072606,
+        1.013172000006307,
+        1.0136129999882542,
+        1.0093660000129603,
+        1.0059889999974985,
+        1.010917999985395,
+        1.0055479999864474,
+        1.0114490000123624,
+        1.0085330000147223,
+        1.0064089999941643,
+        1.017280000000028,
+        1.0151560000085738,
+        1.030373999994481,
+        1.0081030000001192,
+        1.0072109999891836,
+        1.0076919999846723,
+        1.027990000002319,
+        1.027319000015268,
+        1.020235000003595
+      ],
+      "median": 1.0114490000123624,
+      "p95": 1.030544999986887
+    },
+    "transportListenerAcquisitionContext": {
+      "status": "measured",
+      "unit": "ms",
+      "warmups": [
+        2.3423880000191275,
+        0.8345170000102371,
+        0.7238190000061877,
+        0.6922400000039488,
+        0.6704679999966174
+      ],
+      "samples": [
+        0.6488979999849107,
+        0.7239389999886043,
+        0.6751780000049621,
+        0.7165760000061709,
+        0.02892399998381734,
+        0.7360120000084862,
+        0.029225000005681068,
+        0.6643069999990985,
+        0.029726000007940456,
+        0.7289379999856465,
+        0.027581000002101064,
+        0.7353909999947064,
+        0.024406000011367723,
+        0.6948339999944437,
+        0.03202000001328997,
+        0.7492360000032932,
+        0.0271610000054352,
+        0.7008759999880567,
+        0.024025000020628795,
+        0.649810000002617,
+        0.025156999996397644,
+        0.7049929999921005,
+        0.024535999982617795,
+        0.6931210000184365,
+        0.026139000023249537,
+        0.6999039999791421,
+        0.028061999997589737,
+        0.6719020000018645,
+        0.02989599999273196,
+        0.712708000006387
+      ],
+      "median": 0.649810000002617,
+      "p95": 0.7360120000084862
+    },
+    "transportDaemonOrderedStopContext": {
+      "status": "measured",
+      "unit": "ms",
+      "warmups": [
+        0.817204999999376,
+        0.8468299999949522,
+        0.5172610000008717,
+        0.7608989999862388,
+        0.4901700000045821
+      ],
+      "samples": [
+        0.7827089999918826,
+        0.5073629999824334,
+        0.7252719999814872,
+        0.5016319999995176,
+        0.7396090000111144,
+        0.5457649999880232,
+        0.8871059999801219,
+        0.6179399999964517,
+        0.7788819999841508,
+        0.5875229999946896,
+        0.7787620000017341,
+        0.47988999998779036,
+        0.6760290000238456,
+        0.4288150000211317,
+        0.6951950000075158,
+        0.456927999999607,
+        0.6996339999896009,
+        0.4676879999751691,
+        0.6529659999941941,
+        0.41326599998865277,
+        0.6401419999892823,
+        0.49152300000423566,
+        0.6339100000041071,
+        0.4127450000087265,
+        0.6151250000111759,
+        0.41109100001631305,
+        0.6207659999781754,
+        0.41807499999413267,
+        0.635232000000542,
+        0.6431680000096094
+      ],
+      "median": 0.6179399999964517,
+      "p95": 0.7827089999918826
+    },
+    "hunkStartupPolling": {
+      "status": "not-measured",
+      "reason": "Hunk startup polling is a Bun product path with no honest portable real-Node equivalent; characterization tests freeze behavior instead of timing a synthetic timer."
+    }
+  },
+  "coarseObservations": {
+    "cpu": {
+      "classification": "coarse-non-isolated-observation",
+      "conclusionPolicy": "Do not infer lifecycle performance or security conclusions from this sample.",
+      "operations": 100,
+      "wallMs": 1.4867109999759123,
+      "user": 3743,
+      "system": 0
+    },
+    "rss": {
+      "classification": "coarse-non-isolated-observation",
+      "conclusionPolicy": "Do not infer lifecycle performance or security conclusions from this sample.",
+      "unit": "bytes",
+      "samples": [
+        378056704,
+        378056704,
+        377786368,
+        377786368,
+        377786368
+      ],
+      "median": 377786368,
+      "p95": 378056704
+    }
+  },
+  "processExit": {
+    "bun": {
+      "status": "passed",
+      "evidence": {
+        "name": "focused",
+        "command": [
+          "bun",
+          "test",
+          "packages/session-broker-core",
+          "packages/session-broker",
+          "packages/session-broker-bun",
+          "src/session/broker",
+          "scripts/source-boundaries.test.ts"
+        ],
+        "cwd": "/home/bentlegen/Projects/hunk-effect-lifecycle-experiment",
+        "startedAt": "2026-08-31T05:11:43.106Z",
+        "finishedAt": "2026-08-31T05:11:48.250Z",
+        "durationMs": 5143.88365,
+        "exitCode": 0,
+        "stdoutTranscript": "tmp/session-lifecycle-effect/control/validation/focused.stdout.log",
+        "stderrTranscript": "tmp/session-lifecycle-effect/control/validation/focused.stderr.log",
+        "stdoutSha256": "8d4128ca3fda4bc33627695431abc1f23ed737253e315c6c4dbb016f8935e61a",
+        "stderrSha256": "669dc6aa0f02359c38e4aacd4653dab93bfe7b10cafa086477b8f2e6974c2da0",
+        "parsedCounts": {
+          "passed": 379,
+          "failed": 0
+        }
+      },
+      "modes": [
+        "signed-register",
+        "lifecycle-ready",
+        "pending-handshake",
+        "heartbeat",
+        "reconnect"
+      ]
+    },
+    "node": {
+      "status": "passed",
+      "evidence": {
+        "name": "real-node",
+        "command": [
+          "bun",
+          "run",
+          "test:session-broker-node"
+        ],
+        "cwd": "/home/bentlegen/Projects/hunk-effect-lifecycle-experiment",
+        "startedAt": "2026-08-31T05:11:48.251Z",
+        "finishedAt": "2026-08-31T05:11:48.638Z",
+        "durationMs": 387.01115800000025,
+        "exitCode": 0,
+        "stdoutTranscript": "tmp/session-lifecycle-effect/control/validation/real-node.stdout.log",
+        "stderrTranscript": "tmp/session-lifecycle-effect/control/validation/real-node.stderr.log",
+        "stdoutSha256": "f2566a0e01bee8c67c96fcf73a76fcbf671b5120be081249b121a055ec105e4f",
+        "stderrSha256": "70a9db88f4d0962ba72ae7ef8d5999b0ea4355ccda2e816a84ecd4ba4d6e454e",
+        "parsedCounts": {
+          "passed": 4,
+          "failed": 0,
+          "skipped": 0
+        }
+      },
+      "modes": [
+        "signed-register",
+        "lifecycle-ready",
+        "pending-handshake",
+        "heartbeat",
+        "reconnect"
+      ]
+    }
+  },
+  "declarations": {
+    "files": [
+      "authentication.d.ts",
+      "broker.d.ts",
+      "clientAuthentication.d.ts",
+      "connection.d.ts",
+      "crypto.d.ts",
+      "daemon.d.ts",
+      "index.d.ts",
+      "protocolParsers.d.ts",
+      "types.d.ts"
+    ],
+    "forbiddenPattern": "(?:from\\s+[\"']effect[\"']|\\b(?:Effect|ManagedRuntime|Runtime|Layer|Scope|Fiber|Cause|Exit|Duration|Schedule|Clock)\\b)",
+    "forbiddenMatches": []
+  },
+  "dependencyPlacement": {
+    "effectVersions": [],
+    "declarations": [],
+    "commandExitCode": 1,
+    "commandExpectation": "Effect is absent; npm ls may exit nonzero for the missing requested package."
+  },
+  "moduleBoundaries": {
+    "effectImports": [],
+    "misplacedEffectImports": [],
+    "forbiddenSupportImports": [],
+    "bunWsImports": [],
+    "bunBuildGate": "The Bun runtime fixture is executed only from a bundle built with a ws/ws/* rejecting onResolve plugin; a direct ws import probe must fail under the same plugin.",
+    "bunBuildGraph": {
+      "buildTarget": "node package-bundling graph; produced bundle executed by Bun",
+      "pluginFilter": "^ws(?:\\/|$)",
+      "directProbeRejected": [
+        "ws"
+      ],
+      "fixtureRejected": [],
+      "bundleSha256": "43ce517587b7e67ec1c26e07e00e75d17058ea52eddbad5865314e5dfe36740e"
+    }
+  },
+  "behavioralTestContinuity": {
+    "contracts": [
+      {
+        "path": "packages/session-broker/src/connection.test.ts",
+        "tests": [
+          {
+            "name": "throws an initial socket construction failure synchronously from start",
+            "line": 117,
+            "column": 3,
+            "mode": "normal",
+            "assertions": [
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 129,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(() => connection.start())"
+              }
+            ]
+          },
+          {
+            "name": "arms delayed fixed-rate heartbeats through one cleared native interval",
+            "line": 133,
+            "column": 3,
+            "mode": "normal",
+            "assertions": [
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 162,
+                "column": 7,
+                "kind": "expect",
+                "text": "expect(intervalMs)"
+              },
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 163,
+                "column": 7,
+                "kind": "expect",
+                "text": "expect(socket.sent.map((message) => JSON.parse(message).type))"
+              },
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 164,
+                "column": 7,
+                "kind": "expect",
+                "text": "expect(intervalCallback)"
+              },
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 166,
+                "column": 7,
+                "kind": "expect",
+                "text": "expect(socket.sent.map((message) => JSON.parse(message).type))"
+              },
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 172,
+                "column": 7,
+                "kind": "expect",
+                "text": "expect(cleared)"
+              }
+            ]
+          },
+          {
+            "name": "clears each producer handshake timeout on close and terminal stop",
+            "line": 179,
+            "column": 3,
+            "mode": "normal",
+            "assertions": [
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 239,
+                "column": 7,
+                "kind": "expect",
+                "text": "expect(handles)"
+              },
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 240,
+                "column": 7,
+                "kind": "expect",
+                "text": "expect(cleared)"
+              }
+            ]
+          },
+          {
+            "name": "clears the producer handshake timeout after successful signed activation",
+            "line": 247,
+            "column": 3,
+            "mode": "normal",
+            "assertions": [
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 320,
+                "column": 7,
+                "kind": "expect",
+                "text": "expect(broker.getSessionIds())"
+              },
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 321,
+                "column": 7,
+                "kind": "expect",
+                "text": "expect(cleared)"
+              }
+            ]
+          },
+          {
+            "name": "registers on open and sends later snapshot updates",
+            "line": 331,
+            "column": 3,
+            "mode": "normal",
+            "assertions": [
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 357,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(registerMessage.type)"
+              },
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 368,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(snapshotMessage.type)"
+              },
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 369,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(snapshotMessage.snapshot)"
+              }
+            ]
+          },
+          {
+            "name": "withholds registration and replacement updates until producer authentication completes",
+            "line": 375,
+            "column": 3,
+            "mode": "normal",
+            "assertions": [
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 422,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(socket.sent)"
+              },
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 423,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(JSON.parse(socket.sent[0]!))"
+              }
+            ]
+          },
+          {
+            "name": "keeps the previous registration when replacement send throws",
+            "line": 427,
+            "column": 3,
+            "mode": "normal",
+            "assertions": [
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 447,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(() =>\n      connection.replaceSession(\n        { ...registration, sessionId: \"session-2\" },\n        { ...createSnapshot(), state: { selectedIndex: 2 } },\n      ),\n    )"
+              },
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 453,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(connection.getRegistration())"
+              }
+            ]
+          },
+          {
+            "name": "queues broker commands until the app bridge is ready",
+            "line": 457,
+            "column": 3,
+            "mode": "normal",
+            "assertions": [
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 493,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(resultMessage)"
+              }
+            ]
+          },
+          {
+            "name": "parses and transforms each server command once before bridge dispatch",
+            "line": 496,
+            "column": 3,
+            "mode": "normal",
+            "assertions": [
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 559,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(bridgedInput)"
+              },
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 560,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect({ inputCalls, resultCalls })"
+              }
+            ]
+          },
+          {
+            "name": "closes malformed and mismatched commands without invoking the bridge",
+            "line": 567,
+            "column": 3,
+            "mode": "normal",
+            "assertions": [
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 611,
+                "column": 7,
+                "kind": "expect",
+                "text": "expect(socket.lastClose)"
+              },
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 617,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(dispatched)"
+              }
+            ]
+          },
+          {
+            "name": "enforces text framing and the exact websocket message ceiling before app parsing",
+            "line": 621,
+            "column": 3,
+            "mode": "normal",
+            "assertions": [
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 685,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(new TextEncoder().encode(exact).byteLength)"
+              },
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 688,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect({ inputCalls, bridgeCalls })"
+              },
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 723,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(emitRejected(`${exact} `))"
+              },
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 724,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(emitRejected(\"{\".repeat(maxBytes + 1)))"
+              },
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 725,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(\n      emitRejected(\n        JSON.stringify({\n          type: \"command\",\n          requestId: \"request-extra\",\n          command: \"annotate\",\n          input: { summary: \"not parsed\" },\n          extra: true,\n        }),\n      ),\n   "
+              },
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 736,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(emitRejected(new Uint8Array([123, 125])))"
+              },
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 737,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect({ inputCalls, bridgeCalls })"
+              }
+            ]
+          },
+          {
+            "name": "ignores a late socket callback after stop before parsing or reserving",
+            "line": 740,
+            "column": 3,
+            "mode": "normal",
+            "assertions": [
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 799,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect({ inputCalls, bridgeCalls })"
+              }
+            ]
+          },
+          {
+            "name": "does not migrate a late command result onto a replacement socket",
+            "line": 802,
+            "column": 3,
+            "mode": "normal",
+            "assertions": [
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 845,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(sockets[0]!.sent.map((message) => JSON.parse(message).type))"
+              },
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 846,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(sockets[1]!.sent.map((message) => JSON.parse(message).type))"
+              }
+            ]
+          },
+          {
+            "name": "discards queued commands when their source socket disconnects",
+            "line": 850,
+            "column": 3,
+            "mode": "normal",
+            "assertions": [
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 894,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(dispatched)"
+              },
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 895,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(sockets[1]!.sent.map((message) => JSON.parse(message).type))"
+              }
+            ]
+          },
+          {
+            "name": "stops replaying a queued batch when its source socket disconnects",
+            "line": 899,
+            "column": 3,
+            "mode": "normal",
+            "assertions": [
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 947,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(dispatched)"
+              }
+            ]
+          },
+          {
+            "name": "keeps 32 missing-bridge commands FIFO and explicitly rejects the 33rd",
+            "line": 951,
+            "column": 3,
+            "mode": "normal",
+            "assertions": [
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 980,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(overflow)"
+              },
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 989,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(dispatched)"
+              }
+            ]
+          },
+          {
+            "name": "keeps a hung bridge plus queued commands within the same 32-command budget",
+            "line": 993,
+            "column": 3,
+            "mode": "normal",
+            "assertions": [
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 1023,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(JSON.parse(socket.sent.at(-1)!))"
+              }
+            ]
+          },
+          {
+            "name": "retains a hung command reservation across disconnect and reconnect",
+            "line": 1030,
+            "column": 3,
+            "mode": "normal",
+            "assertions": [
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 1077,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(JSON.parse(sockets[1]!.sent.at(-1)!))"
+              }
+            ]
+          },
+          {
+            "name": "serializes bridge execution while preserving arrival order",
+            "line": 1084,
+            "column": 3,
+            "mode": "normal",
+            "assertions": [
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 1124,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(started)"
+              },
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 1127,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(started)"
+              }
+            ]
+          },
+          {
+            "name": "rejects producer hello wrappers with unknown or dangerous keys",
+            "line": 1131,
+            "column": 3,
+            "mode": "normal",
+            "assertions": [
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 1173,
+                "column": 7,
+                "kind": "expect",
+                "text": "expect(socket.lastClose)"
+              }
+            ]
+          },
+          {
+            "name": "prepares reconnect once per attempt and stops after awaited preparation",
+            "line": 1181,
+            "column": 3,
+            "mode": "normal",
+            "assertions": [
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 1211,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(attempts)"
+              },
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 1212,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(warnings)"
+              },
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 1213,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(sockets)"
+              },
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 1229,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(sockets)"
+              }
+            ]
+          },
+          {
+            "name": "reconnects after socket close unless a close directive disables it",
+            "line": 1232,
+            "column": 3,
+            "mode": "normal",
+            "assertions": [
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 1263,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(sockets)"
+              },
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 1267,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(warnings)"
+              },
+              {
+                "file": "packages/session-broker/src/connection.test.ts",
+                "line": 1268,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(sockets)"
+              }
+            ]
+          }
+        ],
+        "forbiddenModes": []
+      },
+      {
+        "path": "src/session/broker/brokerClient.test.ts",
+        "tests": [
+          {
+            "name": "only treats exact pre-authentication compatibility closes as quiescent refusals",
+            "line": 101,
+            "column": 3,
+            "mode": "normal",
+            "assertions": [
+              {
+                "file": "src/session/broker/brokerClient.test.ts",
+                "line": 103,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(isQuiescentUpgradeRefusal({ code: 1008, reason, authenticated: false }))"
+              },
+              {
+                "file": "src/session/broker/brokerClient.test.ts",
+                "line": 104,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(\n      isQuiescentUpgradeRefusal({\n        code: 1008,\n        reason: \"Malformed session broker protocol.\",\n        authenticated: false,\n      }),\n    )"
+              },
+              {
+                "file": "src/session/broker/brokerClient.test.ts",
+                "line": 111,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(isQuiescentUpgradeRefusal({ code: 1008, reason, authenticated: true }))"
+              },
+              {
+                "file": "src/session/broker/brokerClient.test.ts",
+                "line": 112,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(isQuiescentUpgradeRefusal({ code: 1006, reason, authenticated: false }))"
+              },
+              {
+                "file": "src/session/broker/brokerClient.test.ts",
+                "line": 113,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(\n      isQuiescentUpgradeRefusal({\n        code: 1008,\n        reason: \"Session broker authentication failed.\",\n        authenticated: false,\n      }),\n    )"
+              }
+            ]
+          },
+          {
+            "name": "keeps its previous registration when the live connection rejects replacement",
+            "line": 122,
+            "column": 3,
+            "mode": "normal",
+            "assertions": [
+              {
+                "file": "src/session/broker/brokerClient.test.ts",
+                "line": 131,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(() =>\n      client.replaceSession(\n        { ...registration, sessionId: \"replacement-session\" },\n        createSnapshot(),\n      ),\n    )"
+              },
+              {
+                "file": "src/session/broker/brokerClient.test.ts",
+                "line": 137,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(client.getRegistration())"
+              }
+            ]
+          },
+          {
+            "name": "shares one active first-attempt promise across concurrent starts",
+            "line": 140,
+            "column": 3,
+            "mode": "normal",
+            "assertions": [
+              {
+                "file": "src/session/broker/brokerClient.test.ts",
+                "line": 154,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(first)"
+              },
+              {
+                "file": "src/session/broker/brokerClient.test.ts",
+                "line": 155,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(attempts)"
+              }
+            ]
+          },
+          {
+            "name": "an explicit start bypasses but does not displace the scheduled automatic retry",
+            "line": 162,
+            "column": 3,
+            "mode": "normal",
+            "assertions": [
+              {
+                "file": "src/session/broker/brokerClient.test.ts",
+                "line": 191,
+                "column": 7,
+                "kind": "expect",
+                "text": "expect(attempts)"
+              },
+              {
+                "file": "src/session/broker/brokerClient.test.ts",
+                "line": 192,
+                "column": 7,
+                "kind": "expect",
+                "text": "expect(messages)"
+              },
+              {
+                "file": "src/session/broker/brokerClient.test.ts",
+                "line": 193,
+                "column": 7,
+                "kind": "expect",
+                "text": "expect(retryCallback)"
+              },
+              {
+                "file": "src/session/broker/brokerClient.test.ts",
+                "line": 194,
+                "column": 7,
+                "kind": "expect",
+                "text": "expect((client as any).reconnectTimer)"
+              },
+              {
+                "file": "src/session/broker/brokerClient.test.ts",
+                "line": 197,
+                "column": 7,
+                "kind": "expect",
+                "text": "expect(attempts)"
+              },
+              {
+                "file": "src/session/broker/brokerClient.test.ts",
+                "line": 198,
+                "column": 7,
+                "kind": "expect",
+                "text": "expect((client as any).reconnectTimer)"
+              },
+              {
+                "file": "src/session/broker/brokerClient.test.ts",
+                "line": 199,
+                "column": 7,
+                "kind": "expect",
+                "text": "expect(cleared)"
+              },
+              {
+                "file": "src/session/broker/brokerClient.test.ts",
+                "line": 203,
+                "column": 7,
+                "kind": "expect",
+                "text": "expect(attempts)"
+              },
+              {
+                "file": "src/session/broker/brokerClient.test.ts",
+                "line": 204,
+                "column": 7,
+                "kind": "expect",
+                "text": "expect((client as any).reconnectTimer)"
+              }
+            ]
+          },
+          {
+            "name": "logs one actionable warning when the session daemon is configured for a non-loopback host without opt-in",
+            "line": 212,
+            "column": 3,
+            "mode": "normal",
+            "assertions": [
+              {
+                "file": "src/session/broker/brokerClient.test.ts",
+                "line": 229,
+                "column": 7,
+                "kind": "expect",
+                "text": "expect(messages[0])"
+              },
+              {
+                "file": "src/session/broker/brokerClient.test.ts",
+                "line": 232,
+                "column": 7,
+                "kind": "expect",
+                "text": "expect(messages[0])"
+              }
+            ]
+          },
+          {
+            "name": "does not retain the legacy PID-based incompatible-daemon replacement path",
+            "line": 238,
+            "column": 3,
+            "mode": "normal",
+            "assertions": [
+              {
+                "file": "src/session/broker/brokerClient.test.ts",
+                "line": 240,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect((client as any).restartIncompatibleDaemon)"
+              }
+            ]
+          },
+          {
+            "name": "logs one actionable warning when a refreshed daemon rejects an older Hunk window",
+            "line": 244,
+            "column": 3,
+            "mode": "normal",
+            "assertions": [
+              {
+                "file": "src/session/broker/brokerClient.test.ts",
+                "line": 350,
+                "column": 7,
+                "kind": "expect",
+                "text": "expect(messages.every((message) => message.includes(\"Close older Hunk windows\")))"
+              },
+              {
+                "file": "src/session/broker/brokerClient.test.ts",
+                "line": 352,
+                "column": 7,
+                "kind": "expect",
+                "text": "expect(websocketOpens)"
+              },
+              {
+                "file": "src/session/broker/brokerClient.test.ts",
+                "line": 353,
+                "column": 7,
+                "kind": "expect",
+                "text": "expect((client as any).waitingForIncumbentExit)"
+              },
+              {
+                "file": "src/session/broker/brokerClient.test.ts",
+                "line": 354,
+                "column": 7,
+                "kind": "expect",
+                "text": "expect((skewedClient as any).waitingForIncumbentExit)"
+              }
+            ]
+          },
+          {
+            "name": "authenticates after a successor becomes healthy before the waiter observes absence",
+            "line": 362,
+            "column": 3,
+            "mode": "normal",
+            "assertions": [
+              {
+                "file": "src/session/broker/brokerClient.test.ts",
+                "line": 459,
+                "column": 7,
+                "kind": "expect",
+                "text": "expect(helloAttempts)"
+              },
+              {
+                "file": "src/session/broker/brokerClient.test.ts",
+                "line": 460,
+                "column": 7,
+                "kind": "expect",
+                "text": "expect((client as any).connection)"
+              }
+            ]
+          },
+          {
+            "name": "waits out an incompatible incumbent and registers on its successor with one connection",
+            "line": 471,
+            "column": 3,
+            "mode": "normal",
+            "assertions": [
+              {
+                "file": "src/session/broker/brokerClient.test.ts",
+                "line": 531,
+                "column": 7,
+                "kind": "expect",
+                "text": "expect(helloAttempts)"
+              },
+              {
+                "file": "src/session/broker/brokerClient.test.ts",
+                "line": 551,
+                "column": 7,
+                "kind": "expect",
+                "text": "expect((client as any).connection)"
+              },
+              {
+                "file": "src/session/broker/brokerClient.test.ts",
+                "line": 577,
+                "column": 7,
+                "kind": "expect",
+                "text": "expect((client as any).connection)"
+              }
+            ]
+          },
+          {
+            "name": "retries the complete startup cycle and recovers without restarting the client",
+            "line": 590,
+            "column": 3,
+            "mode": "normal",
+            "assertions": [
+              {
+                "file": "src/session/broker/brokerClient.test.ts",
+                "line": 607,
+                "column": 7,
+                "kind": "expect",
+                "text": "expect(messages)"
+              }
+            ]
+          },
+          {
+            "name": "does no daemon work when start follows terminal stop",
+            "line": 613,
+            "column": 3,
+            "mode": "normal",
+            "assertions": [
+              {
+                "file": "src/session/broker/brokerClient.test.ts",
+                "line": 622,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(attempts)"
+              }
+            ]
+          },
+          {
+            "name": "does not warn or schedule recovery after stop wins a foreign startup race",
+            "line": 625,
+            "column": 3,
+            "mode": "normal",
+            "assertions": [
+              {
+                "file": "src/session/broker/brokerClient.test.ts",
+                "line": 648,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(reconnectScheduled)"
+              },
+              {
+                "file": "src/session/broker/brokerClient.test.ts",
+                "line": 649,
+                "column": 5,
+                "kind": "expect",
+                "text": "expect(messages)"
+              }
+            ]
+          },
+          {
+            "name": "logs one actionable warning when a non-Hunk listener owns the session daemon port",
+            "line": 652,
+            "column": 3,
+            "mode": "normal",
+            "assertions": [
+              {
+                "file": "src/session/broker/brokerClient.test.ts",
+                "line": 680,
+                "column": 7,
+                "kind": "expect",
+                "text": "expect(messages)"
+              },
+              {
+                "file": "src/session/broker/brokerClient.test.ts",
+                "line": 684,
+                "column": 7,
+                "kind": "expect",
+                "text": "expect(messages)"
+              },
+              {
+                "file": "src/session/broker/brokerClient.test.ts",
+                "line": 685,
+                "column": 7,
+                "kind": "expect",
+                "text": "expect(messages[0])"
+              },
+              {
+                "file": "src/session/broker/brokerClient.test.ts",
+                "line": 688,
+                "column": 7,
+                "kind": "expect",
+                "text": "expect(messages[0])"
+              }
+            ]
+          }
+        ],
+        "forbiddenModes": []
+      }
+    ],
+    "treatmentComparison": null,
+    "note": "Mechanical anti-weakening evidence only; independent review must establish behavioral preservation."
+  },
+  "verifiedControlAttestation": null,
+  "frozenControlInputs": null,
+  "validation": [
+    {
+      "name": "focused",
+      "command": [
+        "bun",
+        "test",
+        "packages/session-broker-core",
+        "packages/session-broker",
+        "packages/session-broker-bun",
+        "src/session/broker",
+        "scripts/source-boundaries.test.ts"
+      ],
+      "cwd": "/home/bentlegen/Projects/hunk-effect-lifecycle-experiment",
+      "startedAt": "2026-08-31T05:11:43.106Z",
+      "finishedAt": "2026-08-31T05:11:48.250Z",
+      "durationMs": 5143.88365,
+      "exitCode": 0,
+      "stdoutTranscript": "tmp/session-lifecycle-effect/control/validation/focused.stdout.log",
+      "stderrTranscript": "tmp/session-lifecycle-effect/control/validation/focused.stderr.log",
+      "stdoutSha256": "8d4128ca3fda4bc33627695431abc1f23ed737253e315c6c4dbb016f8935e61a",
+      "stderrSha256": "669dc6aa0f02359c38e4aacd4653dab93bfe7b10cafa086477b8f2e6974c2da0",
+      "parsedCounts": {
+        "passed": 379,
+        "failed": 0
+      }
+    },
+    {
+      "name": "real-node",
+      "command": [
+        "bun",
+        "run",
+        "test:session-broker-node"
+      ],
+      "cwd": "/home/bentlegen/Projects/hunk-effect-lifecycle-experiment",
+      "startedAt": "2026-08-31T05:11:48.251Z",
+      "finishedAt": "2026-08-31T05:11:48.638Z",
+      "durationMs": 387.01115800000025,
+      "exitCode": 0,
+      "stdoutTranscript": "tmp/session-lifecycle-effect/control/validation/real-node.stdout.log",
+      "stderrTranscript": "tmp/session-lifecycle-effect/control/validation/real-node.stderr.log",
+      "stdoutSha256": "f2566a0e01bee8c67c96fcf73a76fcbf671b5120be081249b121a055ec105e4f",
+      "stderrSha256": "70a9db88f4d0962ba72ae7ef8d5999b0ea4355ccda2e816a84ecd4ba4d6e454e",
+      "parsedCounts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "name": "typecheck",
+      "command": [
+        "bun",
+        "run",
+        "typecheck"
+      ],
+      "cwd": "/home/bentlegen/Projects/hunk-effect-lifecycle-experiment",
+      "startedAt": "2026-08-31T05:11:48.638Z",
+      "finishedAt": "2026-08-31T05:11:53.815Z",
+      "durationMs": 5176.940555,
+      "exitCode": 0,
+      "stdoutTranscript": "tmp/session-lifecycle-effect/control/validation/typecheck.stdout.log",
+      "stderrTranscript": "tmp/session-lifecycle-effect/control/validation/typecheck.stderr.log",
+      "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSha256": "8366207267355d3e3d5bf3bf6e8c94c5f93f6078c34f08973fa2b38cdda6cc92"
+    },
+    {
+      "name": "lint",
+      "command": [
+        "bun",
+        "run",
+        "lint"
+      ],
+      "cwd": "/home/bentlegen/Projects/hunk-effect-lifecycle-experiment",
+      "startedAt": "2026-08-31T05:11:53.816Z",
+      "finishedAt": "2026-08-31T05:11:53.885Z",
+      "durationMs": 69.44209500000034,
+      "exitCode": 0,
+      "stdoutTranscript": "tmp/session-lifecycle-effect/control/validation/lint.stdout.log",
+      "stderrTranscript": "tmp/session-lifecycle-effect/control/validation/lint.stderr.log",
+      "stdoutSha256": "5a3b339b2a27ff346013ad224650a01f69fd75be4b9a4f6067a95cdbb5c22336",
+      "stderrSha256": "b2dff80d5fca1f1286fa77107660bc4380492aa10e2be93e185856f21c3993fd"
+    },
+    {
+      "name": "dependencies",
+      "command": [
+        "bun",
+        "run",
+        "deps:check"
+      ],
+      "cwd": "/home/bentlegen/Projects/hunk-effect-lifecycle-experiment",
+      "startedAt": "2026-08-31T05:11:53.885Z",
+      "finishedAt": "2026-08-31T05:11:54.540Z",
+      "durationMs": 654.5118440000006,
+      "exitCode": 0,
+      "stdoutTranscript": "tmp/session-lifecycle-effect/control/validation/dependencies.stdout.log",
+      "stderrTranscript": "tmp/session-lifecycle-effect/control/validation/dependencies.stderr.log",
+      "stdoutSha256": "91991838cfca6d9b09120c41dbfb47bd2edacb6d89b4812dde3f6d4627174336",
+      "stderrSha256": "78c9ba4b5461c552fe43e52904d0eaf6f5ddef47588cf477ea2a697c44182351"
+    },
+    {
+      "name": "full-unit",
+      "command": [
+        "bun",
+        "run",
+        "test"
+      ],
+      "cwd": "/home/bentlegen/Projects/hunk-effect-lifecycle-experiment",
+      "startedAt": "2026-08-31T05:11:54.540Z",
+      "finishedAt": "2026-08-31T05:12:28.027Z",
+      "durationMs": 33487.721417,
+      "exitCode": 0,
+      "stdoutTranscript": "tmp/session-lifecycle-effect/control/validation/full-unit.stdout.log",
+      "stderrTranscript": "tmp/session-lifecycle-effect/control/validation/full-unit.stderr.log",
+      "stdoutSha256": "ae4d22dad031138c8d581a94ee80023563d83af4a1ed4cd85749f81c0dacdfb3",
+      "stderrSha256": "b32cf5d0af4ac94f56296a7f85e4a97dac94e2720ab1f8a31fe5b0616a5b0de9"
+    },
+    {
+      "name": "pty-integration",
+      "command": [
+        "bun",
+        "run",
+        "test:integration"
+      ],
+      "cwd": "/home/bentlegen/Projects/hunk-effect-lifecycle-experiment",
+      "startedAt": "2026-08-31T05:12:28.031Z",
+      "finishedAt": "2026-08-31T05:15:35.582Z",
+      "durationMs": 187551.110628,
+      "exitCode": 0,
+      "stdoutTranscript": "tmp/session-lifecycle-effect/control/validation/pty-integration.stdout.log",
+      "stderrTranscript": "tmp/session-lifecycle-effect/control/validation/pty-integration.stderr.log",
+      "stdoutSha256": "d6684989b8dd63b37d2f1954270826fbe1bd89a8debd12bcacf03ed1c6140ef6",
+      "stderrSha256": "b22fb8bc56d89884bb55ead90195bd981eb73111e72da5a9082dd367827f309e",
+      "parsedCounts": {
+        "passed": 139,
+        "failed": 0,
+        "skipped": 1
+      }
+    }
+  ],
+  "commands": [
+    {
+      "name": "system-node-version",
+      "command": [
+        "node",
+        "--version"
+      ],
+      "cwd": "/home/bentlegen/Projects/hunk-effect-lifecycle-experiment",
+      "startedAt": "2026-08-31T05:15:35.582Z",
+      "finishedAt": "2026-08-31T05:15:35.586Z",
+      "durationMs": 3.5060219999868423,
+      "exitCode": 0,
+      "stdoutTranscript": "tmp/session-lifecycle-effect/control/commands/system-node-version.stdout.log",
+      "stderrTranscript": "tmp/session-lifecycle-effect/control/commands/system-node-version.stderr.log",
+      "stdoutSha256": "50956a2c27b1a442408131f86103ff1df8a7f4a29502df81d216ba19e2c2f4a6",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "dependency-tree",
+      "command": [
+        "npm",
+        "ls",
+        "effect",
+        "--all",
+        "--json"
+      ],
+      "cwd": "/home/bentlegen/Projects/hunk-effect-lifecycle-experiment",
+      "startedAt": "2026-08-31T05:15:35.586Z",
+      "finishedAt": "2026-08-31T05:15:35.848Z",
+      "durationMs": 262.3103340000089,
+      "exitCode": 1,
+      "stdoutTranscript": "tmp/session-lifecycle-effect/control/commands/dependency-tree.stdout.log",
+      "stderrTranscript": "tmp/session-lifecycle-effect/control/commands/dependency-tree.stderr.log",
+      "stdoutSha256": "e7786e2376a7b7b1622c4a6654deac082ddb8723a55f3edb2c7b59c8720738ca",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "compiled-hunk-1",
+      "command": [
+        "bun",
+        "run",
+        "build:bin"
+      ],
+      "cwd": "/home/bentlegen/Projects/hunk-effect-lifecycle-experiment",
+      "startedAt": "2026-08-31T05:15:36.554Z",
+      "finishedAt": "2026-08-31T05:15:36.887Z",
+      "durationMs": 333.1057729999884,
+      "exitCode": 0,
+      "stdoutTranscript": "tmp/session-lifecycle-effect/control/commands/compiled-hunk-1.stdout.log",
+      "stderrTranscript": "tmp/session-lifecycle-effect/control/commands/compiled-hunk-1.stderr.log",
+      "stdoutSha256": "56a6137a358617a9dcc83455078dc519ffa2f8233d047b03e008f5232ac4ae44",
+      "stderrSha256": "915c93c7dc199f079890d9d4bec2269c9472fb8686f525a8816250f6fbcbb2bc"
+    },
+    {
+      "name": "compiled-hunk-2",
+      "command": [
+        "bun",
+        "run",
+        "build:bin"
+      ],
+      "cwd": "/home/bentlegen/Projects/hunk-effect-lifecycle-experiment",
+      "startedAt": "2026-08-31T05:15:37.008Z",
+      "finishedAt": "2026-08-31T05:15:37.328Z",
+      "durationMs": 320.01372300001094,
+      "exitCode": 0,
+      "stdoutTranscript": "tmp/session-lifecycle-effect/control/commands/compiled-hunk-2.stdout.log",
+      "stderrTranscript": "tmp/session-lifecycle-effect/control/commands/compiled-hunk-2.stderr.log",
+      "stdoutSha256": "7533f724866b3715b0f2727a9db077409d51dd75866255a69aa007c8a4c1c85e",
+      "stderrSha256": "915c93c7dc199f079890d9d4bec2269c9472fb8686f525a8816250f6fbcbb2bc"
+    },
+    {
+      "name": "compiled-hunk-3",
+      "command": [
+        "bun",
+        "run",
+        "build:bin"
+      ],
+      "cwd": "/home/bentlegen/Projects/hunk-effect-lifecycle-experiment",
+      "startedAt": "2026-08-31T05:15:37.421Z",
+      "finishedAt": "2026-08-31T05:15:37.745Z",
+      "durationMs": 324.0482979999797,
+      "exitCode": 0,
+      "stdoutTranscript": "tmp/session-lifecycle-effect/control/commands/compiled-hunk-3.stdout.log",
+      "stderrTranscript": "tmp/session-lifecycle-effect/control/commands/compiled-hunk-3.stderr.log",
+      "stdoutSha256": "453e03a8b20ca775ec55803bcfacb05909174e9c3bd39ad5f5b9fcab99479524",
+      "stderrSha256": "915c93c7dc199f079890d9d4bec2269c9472fb8686f525a8816250f6fbcbb2bc"
+    },
+    {
+      "name": "public-declarations",
+      "command": [
+        "./node_modules/.bin/tsc",
+        "packages/session-broker/src/index.ts",
+        "--declaration",
+        "--emitDeclarationOnly",
+        "--outDir",
+        "tmp/session-lifecycle-effect/control/declarations",
+        "--module",
+        "ESNext",
+        "--moduleResolution",
+        "Bundler",
+        "--target",
+        "ES2022",
+        "--lib",
+        "ES2022,DOM",
+        "--skipLibCheck",
+        "--strict",
+        "--types",
+        "bun"
+      ],
+      "cwd": "/home/bentlegen/Projects/hunk-effect-lifecycle-experiment",
+      "startedAt": "2026-08-31T05:15:38.419Z",
+      "finishedAt": "2026-08-31T05:15:39.073Z",
+      "durationMs": 654.0611670000071,
+      "exitCode": 0,
+      "stdoutTranscript": "tmp/session-lifecycle-effect/control/commands/public-declarations.stdout.log",
+      "stderrTranscript": "tmp/session-lifecycle-effect/control/commands/public-declarations.stderr.log",
+      "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ]
+}
