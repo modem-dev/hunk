@@ -149,6 +149,8 @@ export type SessionDaemonRequest =
       selector: SessionCommentListCommandInput["selector"];
       filePath?: string;
       type?: SessionCommentListCommandInput["type"];
+      author?: SessionCommentListCommandInput["author"];
+      noAuthor?: SessionCommentListCommandInput["noAuthor"];
     }
   | {
       action: "comment-rm";
