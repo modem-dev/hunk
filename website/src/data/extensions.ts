@@ -135,6 +135,15 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     apiVersion: 30,
   },
   {
+    repo: "dorshinar/hunk-checkpoint",
+    name: "hunk-checkpoint",
+    summary:
+      "Runs incremental review rounds: checkpoint the working tree when a review is done, then diff only what the agent changed since.",
+    categories: ["Command"],
+    version: "0.1.0",
+    apiVersion: 28,
+  },
+  {
     repo: "evantravers/hunk-mark-as-reviewed",
     name: "hunk-mark-as-reviewed",
     summary:
