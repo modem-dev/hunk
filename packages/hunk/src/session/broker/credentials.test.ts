@@ -46,6 +46,20 @@ describe("Hunk session broker credential store", () => {
     expect(callerFile).not.toContain("hunk-review-capability");
   });
 
+  test("uses HUNK_RUNTIME_DIR ahead of XDG_RUNTIME_DIR for credentials", async () => {
+    const env = isolatedEnv();
+    const override = mkdtempSync(join(tmpdir(), "hunk-runtime-override-"));
+    roots.push(override);
+    env.HUNK_RUNTIME_DIR = override;
+
+    await loadOrCreateHunkSessionBrokerCredentials({ env });
+
+    expect(lstatSync(join(override, "hunk-mcp", "security-v1", "caller.json")).isFile()).toBe(
+      true,
+    );
+    expect(() => lstatSync(join(env.XDG_RUNTIME_DIR!, "hunk-mcp"))).toThrow();
+  });
+
   test("adopts one complete winner under concurrent first use", async () => {
     const env = isolatedEnv();
     const results = await Promise.all(
