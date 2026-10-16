@@ -299,7 +299,7 @@ export function AppHost({
                 { ...launchBootstrap, input: reviewIdentityRef.current.input },
                 {
                   ...sessionPreferencesRef.current,
-                  theme: activeThemeController.getSnapshot().themeId,
+                  theme: activeThemeController.getSnapshot().themeSelection,
                 },
               ).input.options
             : {}),

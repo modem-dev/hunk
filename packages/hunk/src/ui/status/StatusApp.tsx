@@ -71,14 +71,14 @@ export function StatusApp({
     ? themeSelector.baseTheme
     : monochromeLogTheme(themeSelector.baseTheme, themeController.themeMode ?? "dark");
   const preferences = useMemo(
-    () => ({ ...sessionViewPreferences, theme: themeSelector.themeId }),
-    [sessionViewPreferences, themeSelector.themeId],
+    () => ({ ...sessionViewPreferences, theme: themeSelector.themeSelection }),
+    [sessionViewPreferences, themeSelector.themeSelection],
   );
   const quit = useViewPreferenceQuitController({
     currentPreferences: preferences,
     initialPreferences: {
       ...runtime.initialViewPreferences,
-      theme: themeController.initialThemeId,
+      theme: themeController.initialThemeSelection,
     },
     configPath: runtime.viewPreferencesConfigPath,
     pagerMode: false,
