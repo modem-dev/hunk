@@ -243,6 +243,51 @@ describe("CLI entrypoint contracts", () => {
     });
   });
 
+  test("bin wrapper falls back to the bundled Bun runtime when the prebuilt binary cannot start", () => {
+    if (process.platform === "win32") {
+      return;
+    }
+
+    const platform = { darwin: "darwin", linux: "linux" }[process.platform as string];
+    const arch = { x64: "x64", arm64: "arm64" }[process.arch as string];
+    if (!platform || !arch) {
+      return;
+    }
+
+    const tempDir = mkdtempSync(join(tmpdir(), "hunk-wrapper-spawn-fallback-"));
+    const pkgDir = join(tempDir, "node_modules", "hunkdiff");
+    const tempWrapperPath = join(pkgDir, "bin", "hunk.cjs");
+    const fakeBunPath = join(pkgDir, "node_modules", "bun", "bin", "bun.exe");
+
+    try {
+      mkdirSync(join(pkgDir, "bin"), { recursive: true });
+      copyFileSync(join(process.cwd(), "packages", "hunk", "bin", "hunk.cjs"), tempWrapperPath);
+
+      // A directory in place of the binary makes process creation fail the way a blocked exe does.
+      mkdirSync(join(pkgDir, "node_modules", `hunkdiff-${platform}-${arch}`, "bin", "hunk"), {
+        recursive: true,
+      });
+      mkdirSync(join(pkgDir, "node_modules", "bun", "bin"), { recursive: true });
+      writeFileSync(join(pkgDir, "node_modules", "bun", "package.json"), '{"name":"bun"}');
+      writeFileSync(fakeBunPath, '#!/bin/sh\necho "bun-fallback $@"\n', { mode: 0o755 });
+
+      const proc = Bun.spawnSync(["node", tempWrapperPath, "--version"], {
+        cwd: tempDir,
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+        env: process.env,
+      });
+
+      expect(proc.exitCode).toBe(0);
+      expect(Buffer.from(proc.stdout).toString("utf8")).toContain("bun-fallback");
+      expect(Buffer.from(proc.stdout).toString("utf8")).toContain("--version");
+      expect(Buffer.from(proc.stderr).toString("utf8")).toContain("falling back");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   test("bin wrapper fails clearly when the bundled skill is missing", () => {
     const tempDir = mkdtempSync(join(tmpdir(), "hunk-wrapper-skill-missing-"));
     const tempBinDir = join(tempDir, "bin");
