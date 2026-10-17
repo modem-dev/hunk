@@ -272,6 +272,62 @@ describe("CLI entrypoint contracts", () => {
     }
   });
 
+  test("bin wrapper reports Windows ARM64 before the bundled Bun fallback", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "hunk-wrapper-win-arm64-"));
+    const packageRoot = join(tempDir, "package");
+    const tempWrapperPath = join(packageRoot, "bin", "hunk.cjs");
+    const preloadPath = join(tempDir, "os-preload.cjs");
+    const bunMarkerPath = join(tempDir, "bun-invoked");
+    const fakeBunDir = join(packageRoot, "node_modules", "bun", "bin");
+    const fakeBunPath = join(fakeBunDir, "bun.exe");
+
+    try {
+      mkdirSync(join(packageRoot, "bin"), { recursive: true });
+      mkdirSync(fakeBunDir, { recursive: true });
+      copyFileSync(join(process.cwd(), "packages", "hunk", "bin", "hunk.cjs"), tempWrapperPath);
+      writeFileSync(
+        join(packageRoot, "node_modules", "bun", "package.json"),
+        JSON.stringify({ name: "bun", version: "0.0.0" }),
+      );
+      // Resolvable bundled runtime. Records a marker only if the wrapper actually spawns it.
+      writeFileSync(
+        fakeBunPath,
+        `#!/usr/bin/env node\nrequire("node:fs").writeFileSync(${JSON.stringify(bunMarkerPath)}, "invoked\\n");\n`,
+        { mode: 0o755 },
+      );
+      writeFileSync(
+        preloadPath,
+        'const os = require("node:os");\nos.platform = () => "win32";\nos.arch = () => "arm64";\n',
+      );
+
+      const env = { ...process.env };
+      delete env.HUNK_BIN_PATH;
+
+      const proc = Bun.spawnSync(["node", "-r", preloadPath, tempWrapperPath, "diff"], {
+        cwd: packageRoot,
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+        env,
+      });
+
+      const stdout = Buffer.from(proc.stdout).toString("utf8");
+      const stderr = Buffer.from(proc.stderr).toString("utf8");
+
+      expect(proc.exitCode).toBe(1);
+      expect(stdout).toBe("");
+      expect(stderr).toContain("Windows ARM64 is not supported by the current bundled runtime");
+      expect(stderr).toContain("oven-sh/bun#28055");
+      expect(stderr).not.toContain("bun:ffi");
+      expect(stderr).not.toContain("dlopen");
+      expect(stderr).not.toContain("Bun v");
+      expect(stderr).not.toContain("Unsupported platform for prebuilt Hunk binaries");
+      expect(existsSync(bunMarkerPath)).toBe(false);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   test("general pager mode falls back to plain text for non-diff stdin", () => {
     const proc = Bun.spawnSync(["bun", "run", "packages/hunk/src/main.tsx", "pager"], {
       cwd: process.cwd(),
