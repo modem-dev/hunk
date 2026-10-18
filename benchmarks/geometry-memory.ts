@@ -3,6 +3,8 @@ import { heapStats } from "bun:jsc";
 import { performance } from "node:perf_hooks";
 import { measureDiffSectionGeometry } from "../packages/hunk/src/ui/diff/diffSectionGeometry";
 import { resolveTheme } from "../packages/hunk/src/ui/themes";
+import { buildLineCursors } from "../packages/hunk/src/ui/lib/lineCursors";
+import { buildReviewVerticalStops } from "../packages/hunk/src/ui/lib/reviewVerticalStops";
 import {
   createGiantSingleDiffFile,
   createLargeSplitStreamBootstrap,
@@ -139,8 +141,18 @@ const geometryMs = performance.now() - geometryStart;
 const afterGeometry = sampleMemory(options);
 printMemory("after_geometry", afterGeometry);
 
-// Materialize the lazy planned-row streams as an upper-bound diagnostic for copy-selection style
-// consumers. Normal review scrolling/navigation should not pay this retained-memory cost.
+// Exercise real navigation before first copy so eager row-content materialization appears in
+// retained heap rather than hiding in the copy-only upper bound. Keep both projections live.
+const navigationStart = performance.now();
+const cursors = buildLineCursors(bootstrap.changeset.files, geometries);
+const stops = buildReviewVerticalStops(bootstrap.changeset.files, geometries, cursors);
+const navigationMs = performance.now() - navigationStart;
+const afterNavigation = sampleMemory(options);
+printMemory("after_navigation", afterNavigation);
+console.log(`METRIC navigation_ms=${navigationMs.toFixed(2)}`);
+console.log(`METRIC navigation_stops=${stops.length}`);
+
+// Materialize lazy row streams as an upper-bound diagnostic for copy-selection consumers.
 const materializeStart = performance.now();
 for (const geometry of geometries) {
   materializedPlannedRows += geometry.plannedRows.length;
@@ -162,12 +174,12 @@ console.log(`METRIC materialize_planned_rows_ms=${materializeMs.toFixed(2)}`);
 console.log(`METRIC materialized_planned_rows=${materializedPlannedRows}`);
 console.log(
   `METRIC materialized_planned_rows_jsc_heap_size_growth_bytes=${
-    afterMaterializedRows.jscHeapSizeBytes - afterGeometry.jscHeapSizeBytes
+    afterMaterializedRows.jscHeapSizeBytes - afterNavigation.jscHeapSizeBytes
   }`,
 );
 console.log(
   `METRIC materialized_planned_rows_rss_growth_bytes=${
-    afterMaterializedRows.rssBytes - afterGeometry.rssBytes
+    afterMaterializedRows.rssBytes - afterNavigation.rssBytes
   }`,
 );
 console.log(`METRIC files=${options.fileCount}`);

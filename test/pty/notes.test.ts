@@ -392,7 +392,7 @@ describe("PTY notes", () => {
     });
   }
 
-  test("saved notes are visibly active and keyboard-navigable without hover", async () => {
+  test("saved notes remain active and keyboard-navigable after live resizes without hover", async () => {
     const fixture = harness.createLongWrapFilePair();
     const session = await harness.launchHunk({
       args: ["diff", "--files", fixture.before, fixture.after, "--mode", "unified"],
@@ -426,6 +426,17 @@ describe("PTY notes", () => {
       expect(savedActive).toContain("R reply");
       expect(savedActive).toContain("E edit");
       expect(savedActive).toContain("D delete");
+
+      const noteBorderEnd = savedActive
+        .split("\n")
+        .find((line) => line.includes("● Your note"))!.length;
+      for (const cols of [80, 120, 100]) {
+        session.resize({ cols, rows: 30 });
+        await harness.waitForSnapshot(session, (text) => {
+          const border = text.split("\n").find((line) => line.includes("● Your note"));
+          return border?.length === noteBorderEnd + cols - 100;
+        });
+      }
 
       await session.press("k");
       const firstActive = await harness.pressAndWaitForSnapshot(
