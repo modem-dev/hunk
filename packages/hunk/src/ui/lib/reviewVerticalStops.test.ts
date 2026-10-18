@@ -102,6 +102,45 @@ describe("review vertical stops", () => {
     expect(findNextReviewNoteStop(stops, stops[changedLine + 3]!, -1)?.noteId).toBe("reply");
   });
 
+  for (const layout of ["split", "unified"] as const) {
+    test(`${layout} remeasures cached note targets when semantic identity or draft status changes`, () => {
+      const file = createTestDiffFile({
+        before: lines("one", "two"),
+        after: lines("ONE", "two"),
+        context: 1,
+      });
+      const annotation = {
+        id: "stable-card",
+        source: "user",
+        summary: "Same card",
+        newRange: [1, 1] as [number, number],
+      };
+      const variants = [
+        { source: "user" as const, noteId: "first-note", expected: ["first-note"] },
+        { source: "user" as const, noteId: "replacement-note", expected: ["replacement-note"] },
+        { source: "draft" as const, noteId: "replacement-note", expected: [] },
+        { source: "user" as const, noteId: "replacement-note", expected: ["replacement-note"] },
+      ];
+      for (const { source, noteId, expected } of variants) {
+        const note = createVisibleAgentNote(file.metadata.hunks, {
+          id: "stable-card",
+          annotation,
+          source,
+          thread: { noteId, depth: 0 },
+        });
+        const geometry = measureDiffSectionGeometry(file, layout, true, theme, [note], 80);
+        const stops = buildReviewVerticalStops(
+          [file],
+          [geometry],
+          buildLineCursors([file], [geometry]),
+        );
+        expect(stops.filter((stop) => stop.kind === "note").map((stop) => stop.noteId)).toEqual(
+          expected,
+        );
+      }
+    });
+  }
+
   test("uses alternate file-view inline-note rows as selectable stops", () => {
     const file = createTestDiffFile({
       id: "alpha",

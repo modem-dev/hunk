@@ -69,7 +69,7 @@ function notesCacheKey(visibleAgentNotes: VisibleAgentNote[]) {
   }
 
   return `:notes:${visibleAgentNotes
-    .map(({ annotation, actions, thread }) => {
+    .map(({ annotation, actions, thread, source }) => {
       const key = JSON.stringify({
         author: annotation.author,
         id: annotation.id,
@@ -79,6 +79,9 @@ function notesCacheKey(visibleAgentNotes: VisibleAgentNote[]) {
         source: annotation.source,
         summary: annotation.summary,
         title: annotation.title,
+        // Bounds also carry keyboard note targets, including whether this card is selectable.
+        noteId: thread?.noteId,
+        noteSource: source,
         parentId: thread?.parentId,
         threadDepth: thread?.depth,
         actions: actions
