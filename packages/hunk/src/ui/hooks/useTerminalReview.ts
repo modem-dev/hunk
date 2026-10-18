@@ -881,17 +881,24 @@ export function useTerminalReview({
     [applyLineCursor, keyByFileId, runIntent],
   );
 
+  // Read stops through a ref so this callback stays stable across reloads. Closures from one
+  // render share its scope, so a callback rebuilt when stops change would retain the render that
+  // rebuilt `resolveCommentRequest` for new files, and through it every earlier review generation.
+  const reviewVerticalStopsRef = useRef(reviewVerticalStops);
+  reviewVerticalStopsRef.current = reviewVerticalStops;
+
   /** Read the exact rendered stop that currently owns keyboard focus. */
   const currentReviewVerticalStop = useCallback((): ReviewVerticalStop | null => {
     const activeNoteId = selectActiveStoredReviewNote(store.getSnapshot())?.note.id;
     if (activeNoteId) {
       return (
-        reviewVerticalStops.find((stop) => stop.kind === "note" && stop.noteId === activeNoteId) ??
-        null
+        reviewVerticalStopsRef.current.find(
+          (stop) => stop.kind === "note" && stop.noteId === activeNoteId,
+        ) ?? null
       );
     }
     return lineCursorRef.current ? { kind: "line", cursor: lineCursorRef.current } : null;
-  }, [reviewVerticalStops, store]);
+  }, [store]);
 
   /** Focus one measured note stop through its current semantic owner. */
   const focusReviewNoteStop = useCallback(

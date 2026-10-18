@@ -514,6 +514,37 @@ describe("useTerminalReview", () => {
     }
   });
 
+  test("releases files from earlier reloads once later reloads replace them", async () => {
+    const { controllerRef, setFilesRef, setup } = await renderTerminalReview([createTwoHunkFile()]);
+    const reloadedFiles: WeakRef<DiffFile>[] = [];
+
+    try {
+      await flush(setup);
+
+      // Each reload replaces the files first and the measured stops one render later, which is the
+      // staggered update order that let memoized callbacks chain every earlier render together.
+      for (let reload = 0; reload < 12; reload += 1) {
+        const file = reload % 2 === 0 ? createSingleHunkFile() : createTwoHunkFile();
+        reloadedFiles.push(new WeakRef(file));
+        await act(async () => {
+          expectValue(setFilesRef.current)([file]);
+        });
+        await flush(setup);
+      }
+
+      expect(expectValue(controllerRef.current).visibleFiles).toHaveLength(1);
+      Bun.gc(true);
+      const retainedEarlyReloads = reloadedFiles
+        .slice(0, -4)
+        .filter((reference) => reference.deref() !== undefined);
+      expect(retainedEarlyReloads).toHaveLength(0);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("moves through visible files with clamped file-header alignment", async () => {
     const controllerRef: { current: TerminalReview | null } = { current: null };
     const setup = await testRender(
