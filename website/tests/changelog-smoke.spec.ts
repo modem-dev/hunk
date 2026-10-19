@@ -88,8 +88,13 @@ test("the previous stable series keeps its prerelease anchors and pinned install
 test("the current stable series publishes default install and update guidance", async ({
   page,
 }) => {
-  await page.goto("/changelog/0.23/");
-  await expect(page.getByRole("heading", { level: 3, name: "0.23.0", exact: true })).toBeVisible();
+  const latest = JSON.parse(
+    readFileSync(new URL("../releases/latest.json", import.meta.url), "utf8"),
+  ) as { minor: string; version: string };
+  await page.goto(`/changelog/${latest.minor}/`);
+  await expect(
+    page.getByRole("heading", { level: 3, name: latest.version, exact: true }),
+  ).toBeVisible();
   const installBlocks = page.locator(".sl-markdown-content pre");
   await expect(installBlocks.filter({ hasText: "curl -fsSL" })).toHaveCount(1);
   await expect(installBlocks.filter({ hasText: "hunk update" })).toHaveCount(1);
