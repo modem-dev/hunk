@@ -1,6 +1,6 @@
 {
-  "version": "0.23.0",
-  "minor": "0.23",
-  "date": "2026-09-30",
-  "summary": "Search diffs, review GitHub, follow your terminal"
+  "version": "0.24.0",
+  "minor": "0.24",
+  "date": "2026-10-19",
+  "summary": "Browse files, navigate workspaces, extend from npm"
 }

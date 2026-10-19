@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://hunk.dev/changelog/rss.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Hunk 0.24</title>
+      <link>https://hunk.dev/changelog/0.24/#v0-24-0</link>
+      <guid isPermaLink="true">https://hunk.dev/changelog/0.24/#v0-24-0</guid>
+      <pubDate>Mon, 19 Oct 2026 00:00:00 GMT</pubDate>
+      <description>Hunk 0.24 adds complete-file and directory browsing, a live workspace status view, npm-installed extensions, shell completions, and pane-aware automatic diff layout, while moving syntax highlighting off the review's main thread by default.</description>
+    </item>
+    <item>
       <title>Hunk 0.24.0-beta.1 (Prerelease)</title>
       <link>https://hunk.dev/changelog/0.24/#v0-24-0-beta-1</link>
       <guid isPermaLink="true">https://hunk.dev/changelog/0.24/#v0-24-0-beta-1</guid>
