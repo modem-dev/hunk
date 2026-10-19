@@ -220,26 +220,6 @@ function leadingCommentStart(lines: readonly ScannedTomlLine[], headerIndex: num
   return start;
 }
 
-/** Report whether the table at `scope` defines `key`, as an assignment or a sub-table. */
-export function tomlTableDefinesKey(
-  source: string,
-  scope: readonly string[],
-  key: string,
-): boolean {
-  const lines = scanTomlSource(source);
-  const block = findTableBlock(lines, scope);
-  const target = [...scope, key];
-  if (
-    block &&
-    lines
-      .slice(block.start, block.end)
-      .some((line) => line.kind === "assignment" && line.path[0] === key)
-  ) {
-    return true;
-  }
-  return lines.some((line) => line.kind === "header" && pathStartsWith(line.path, target));
-}
-
 /** Replace a whole-line run with `replacement`, leaving at most one blank line between neighbours. */
 function collapseBlankSeam(lines: string[], index: number) {
   let start = index;
