@@ -1,10 +1,22 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  lstatSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  readlinkSync,
+  renameSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getBundledVcsCatalog } from "../../app/vcsCatalog";
 import type { CliInput } from "./commandInputs";
-import type { PersistedViewPreferences } from "./config";
+import type { PersistedViewPreferences, ViewPreferenceScope } from "./config";
 import {
   diffPersistedViewPreferences,
   resolveConfiguredCliInput,
@@ -379,6 +391,77 @@ describe("adaptive theme config", () => {
       ['theme = "dracula"', "", "[diff]", 'mode = "stack"', ""].join("\n"),
     );
   });
+
+  const inlineScopeCases: Array<[string, ViewPreferenceScope, string[]]> = [
+    ["a dotted root key", { command: "diff" }, ['diff.theme = "nord"', ""]],
+    ["an inline command table", { command: "diff" }, ['diff = { theme = "nord" }', ""]],
+    ["a dotted pager key", { command: "patch", pager: true }, ['pager.theme = "nord"', ""]],
+    [
+      "an inline pager table",
+      { command: "patch", pager: true },
+      ['pager = { theme = "nord" }', ""],
+    ],
+  ];
+
+  test.each(inlineScopeCases)(
+    "refuses to save a theme scoped through %s instead of adding an overridden root key",
+    (_, scope, source) => {
+      const home = createTempDir("hunk-scoped-inline-home-");
+      const configPath = writeUserConfig(home, source);
+
+      expect(() =>
+        saveGlobalViewPreferences(themePreferences("dracula"), {
+          configPath,
+          baseline: themePreferences("nord"),
+          scope,
+        }),
+      ).toThrow(/Could not update (diff|pager)\.theme in .* without changing the rest of the file/);
+      expect(readFileSync(configPath, "utf8")).toBe(source.join("\n"));
+    },
+  );
+
+  test.skipIf(process.platform === "win32")(
+    "keeps a private config's permissions when saving",
+    () => {
+      const home = createTempDir("hunk-private-config-home-");
+      const configPath = writeUserConfig(home, ['theme = "nord"', ""]);
+      chmodSync(configPath, 0o600);
+      const previousUmask = process.umask(0o022);
+      try {
+        saveGlobalViewPreferences(themePreferences("dracula"), {
+          configPath,
+          baseline: themePreferences("nord"),
+        });
+        saveViewPreferencesPromptPreference(false, { configPath });
+      } finally {
+        process.umask(previousUmask);
+      }
+
+      expect(statSync(configPath).mode & 0o777).toBe(0o600);
+      expect(Bun.TOML.parse(readFileSync(configPath, "utf8"))).toMatchObject({ theme: "dracula" });
+    },
+  );
+
+  // Windows needs elevated rights to create symlinks.
+  test.skipIf(process.platform === "win32")(
+    "writes through a symlinked config to its target",
+    () => {
+      const home = createTempDir("hunk-symlink-config-home-");
+      const configPath = writeUserConfig(home, ['theme = "nord"', ""]);
+      const targetPath = join(home, "dotfiles.toml");
+      renameSync(configPath, targetPath);
+      symlinkSync(targetPath, configPath);
+
+      saveGlobalViewPreferences(themePreferences("dracula"), {
+        configPath,
+        baseline: themePreferences("nord"),
+      });
+
+      expect(lstatSync(configPath).isSymbolicLink()).toBe(true);
+      expect(readlinkSync(configPath)).toBe(targetPath);
+      expect(readFileSync(targetPath, "utf8")).toBe('theme = "dracula"\n');
+    },
+  );
 
   test("refuses to save when the rewritten file would not parse back to the same document", () => {
     const home = createTempDir("hunk-unsafe-save-home-");

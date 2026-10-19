@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { sanitizeTerminalLine } from "../../lib/terminalText";
 import { BUNDLED_SHIKI_THEME_IDS, LEGACY_THEME_ID_ALIASES } from "../theme/catalog";
 import {
@@ -25,12 +25,7 @@ import {
 } from "../theme/selection";
 import { HunkUserError } from "./errors";
 import { resolveGlobalConfigPath } from "./paths";
-import {
-  serializeTomlValue,
-  tomlTableDefinesKey,
-  upsertTomlValue,
-  type TomlWritableValue,
-} from "./tomlSourceEdit";
+import { serializeTomlValue, upsertTomlValue, type TomlWritableValue } from "./tomlSourceEdit";
 import { LEGACY_CUSTOM_SYNTAX_NOTICES, type StartupNotice } from "../process/startupNotice";
 import {
   DEFAULT_FILE_GAP,
@@ -1313,13 +1308,46 @@ function resolveWritableConfigPath(configuredPath: string | undefined, env: Node
   return configPath;
 }
 
-/** Write an updated config source through a sibling temp file so a crash never leaves it half-written. */
+/** Follow a config symlink chain to the file a save should replace, even when the final target is missing. */
+function resolveConfigWriteTarget(configPath: string) {
+  let target = configPath;
+  for (let hops = 0; hops < 40; hops += 1) {
+    let stats: fs.Stats;
+    try {
+      stats = fs.lstatSync(target);
+    } catch {
+      return target;
+    }
+    if (!stats.isSymbolicLink()) return target;
+    target = resolve(dirname(target), fs.readlinkSync(target));
+  }
+  throw new HunkUserError(`Could not update ${configPath} because its symlinks form a loop.`);
+}
+
+/**
+ * Write an updated config source through a sibling temp file so a crash never leaves it
+ * half-written. Saves write through a symlinked config to its target, and the replacement keeps the
+ * existing file's permission bits; the temp file stays owner-only until it has those bits, so a
+ * private config is never readable by others mid-save.
+ */
 function writeConfigSource(configPath: string, source: string) {
-  fs.mkdirSync(dirname(configPath), { recursive: true });
-  const stagingPath = `${configPath}.${process.pid}.tmp`;
+  const targetPath = resolveConfigWriteTarget(configPath);
+  fs.mkdirSync(dirname(targetPath), { recursive: true });
+  const existingMode = fs.existsSync(targetPath)
+    ? fs.statSync(targetPath).mode & 0o7777
+    : undefined;
+
+  const stagingPath = `${targetPath}.${process.pid}.tmp`;
+  fs.rmSync(stagingPath, { force: true });
   try {
-    fs.writeFileSync(stagingPath, source);
-    fs.renameSync(stagingPath, configPath);
+    const fd = fs.openSync(stagingPath, "wx", existingMode === undefined ? 0o666 : 0o600);
+    try {
+      if (existingMode !== undefined) fs.fchmodSync(fd, existingMode);
+      fs.writeFileSync(fd, source);
+    } finally {
+      fs.closeSync(fd);
+    }
+    fs.renameSync(stagingPath, targetPath);
   } finally {
     fs.rmSync(stagingPath, { force: true });
   }
@@ -1330,8 +1358,14 @@ interface ConfigEdit {
   value: TomlWritableValue;
 }
 
+/**
+ * Pick the table whose `key` the current invocation actually reads, so a save updates an effective
+ * `[pager]` or command-scoped value instead of adding a root value it would still override. Scope
+ * comes from the parsed config, so dotted (`diff.theme = …`) and inline (`diff = { … }`) forms are
+ * found too; the source writer then rejects the forms it cannot rewrite.
+ */
 function chooseConfigEditTable(
-  source: string,
+  parsed: Record<string, unknown>,
   scope: ViewPreferenceScope | undefined,
   key: string,
 ) {
@@ -1339,7 +1373,12 @@ function chooseConfigEditTable(
     ...(scope?.pager ? [["pager"]] : []),
     ...(scope?.command ? [[scope.command]] : []),
   ];
-  return candidates.find((table) => tomlTableDefinesKey(source, table, key)) ?? [];
+  return (
+    candidates.find((table) => {
+      const section = parsed[table[0]!];
+      return isRecord(section) && Object.hasOwn(section, key);
+    }) ?? []
+  );
 }
 
 function expectedParsedValue(value: TomlWritableValue): unknown {
@@ -1385,7 +1424,7 @@ function writeConfigEdits(
     );
   let next = source;
   for (const edit of edits) {
-    const table = chooseConfigEditTable(next, scope, edit.configKey);
+    const table = chooseConfigEditTable(expected, scope, edit.configKey);
     const keyPath = [...table, edit.configKey].join(".");
     const updated = upsertTomlValue(next, table, edit.configKey, edit.value);
     if (updated === null) throw unsafe(keyPath);

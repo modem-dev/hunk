@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { scanTomlSource, tomlTableDefinesKey, upsertTomlValue } from "./tomlSourceEdit";
+import { scanTomlSource, upsertTomlValue } from "./tomlSourceEdit";
 
 const lines = (...text: string[]) => `${text.join("\n")}\n`;
 
@@ -151,8 +151,6 @@ describe("upsertTomlValue", () => {
       'dark = "a"',
       'light = "b"',
     );
-    expect(tomlTableDefinesKey(source, ["diff"], "theme")).toBe(true);
-    expect(tomlTableDefinesKey(source, ["diff"], "line_numbers")).toBe(false);
     const next = upsertTomlValue(source, ["diff"], "theme", "solo");
     expect(next).toBe(lines('theme = "root"', "", "[diff]", 'mode = "stack"', 'theme = "solo"'));
     expect(parsed(next)).toEqual({ theme: "root", diff: { mode: "stack", theme: "solo" } });
