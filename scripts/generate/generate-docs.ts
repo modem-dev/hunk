@@ -558,6 +558,8 @@ To change the keys that trigger actions, use \`[keybindings]\` in your **user co
 
 Your bindings replace that command's default keys. Repository config cannot remap keys. See [Keybindings](/docs/configure/keybindings/) for command ids, unbinding, conflicts, and chord syntax.
 
+When you save view preferences from the app, each changed key is written back into the most specific table that already defines it: \`[pager]\` first, then the command table, then the root. Keys no table defines are added at the root.
+
 ## Custom themes
 
 Choose a built-in theme with \`theme = "catppuccin-mocha"\`. \`terminal\` follows your terminal palette; \`auto\` selects a light or dark GitHub theme from the terminal background. See the [theme guide](/docs/configure/themes/) for selection and previews.
