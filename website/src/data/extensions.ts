@@ -169,6 +169,15 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     apiVersion: 6,
   },
   {
+    repo: "GopinathMR/hunk-workspace",
+    name: "hunk-workspace",
+    summary:
+      "Reviews every changed repo in a folder of git repos as one changeset, with a Repos pane to jump or scope between them.",
+    categories: ["VCS backend", "Pane", "Command"],
+    version: "0.1.0",
+    apiVersion: 31,
+  },
+  {
     repo: "HackAttack/hunk-starlark",
     name: "hunk-starlark",
     summary: "Highlights Bazel, Buck2, and other Starlark files as Python.",
