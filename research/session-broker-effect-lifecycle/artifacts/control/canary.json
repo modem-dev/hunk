@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 3,
+  "label": "control",
+  "markerSha256": "040853adaaf981a16d808604f1a668f177932312c1625ca2af44ffce2af86d3a",
+  "exercised": "resolveClose callback defect during reconnect close policy",
+  "fixedTreatmentMessage": "Session broker lifecycle failed unexpectedly.",
+  "defectCallbackMessages": [],
+  "outputMessages": [],
+  "synchronousEscapeCharacterized": true,
+  "controlLimitation": "The raw Error remains synchronously observable to the close caller in memory; the harness catches it and never persists the marker. This does not exercise credentials, payloads, finalizers, or rendered Effect Causes.",
+  "treatmentAssertionsApplied": false
+}
