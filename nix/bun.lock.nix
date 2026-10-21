@@ -507,9 +507,9 @@
     url = "https://registry.npmjs.org/@oxlint/binding-win32-x64-msvc/-/binding-win32-x64-msvc-1.56.0.tgz";
     hash = "sha512-ZHa0clocjLmIDr+1LwoWtxRcoYniAvERotvwKUYKhH41NVfl0Y4LNbyQkwMZzwDvKklKGvGZ5+DAG58/Ik47tQ==";
   };
-  "@pierre/diffs@1.3.5" = fetchurl {
-    url = "https://registry.npmjs.org/@pierre/diffs/-/diffs-1.3.5.tgz";
-    hash = "sha512-BhaLEiUvR+BdIyOYdogA4JLQjluWPubuwySmmIqEkcE0FwIWRbgJgHNC/r884dlxEr89fO4hTk/sBln0a7NSOw==";
+  "@pierre/diffs@1.5.2" = fetchurl {
+    url = "https://registry.npmjs.org/@pierre/diffs/-/diffs-1.5.2.tgz";
+    hash = "sha512-QVxIWQEnNoko22k63maERzozd29+FtaUNpRrZiw603WMe5R1mFSED+jMtPkcVP3SDYS1DWg5K7sa7sJbr3xkNQ==";
   };
   "@pierre/theme@2.0.0" = fetchurl {
     url = "https://registry.npmjs.org/@pierre/theme/-/theme-2.0.0.tgz";
@@ -1107,10 +1107,6 @@
   "react-devtools-core@7.0.1" = fetchurl {
     url = "https://registry.npmjs.org/react-devtools-core/-/react-devtools-core-7.0.1.tgz";
     hash = "sha512-C3yNvRHaizlpiASzy7b9vbnBGLrhvdhl1CbdU6EnZgxPNbai60szdLtl+VL76UNOt5bOoVTOz5rNWZxgGt+Gsw==";
-  };
-  "react-dom@19.2.4" = fetchurl {
-    url = "https://registry.npmjs.org/react-dom/-/react-dom-19.2.4.tgz";
-    hash = "sha512-AXJdLo8kgMbimY95O2aKQqsz2iWi9jMgKJhRBAxECE4IFxfcazB2LmzloIoibJI3C12IlY20+KFaLv+71bUJeQ==";
   };
   "react-reconciler@0.33.0" = fetchurl {
     url = "https://registry.npmjs.org/react-reconciler/-/react-reconciler-0.33.0.tgz";
