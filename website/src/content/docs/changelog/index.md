@@ -24,7 +24,7 @@ head:
 
 ## [Hunk 0.24](/changelog/0.24/)
 
-Latest · October 13, 2026 – October 19, 2026 · 3 releases · 119 changes
+Latest · October 13, 2026 – October 19, 2026 · 4 releases · 123 changes
 
 Hunk 0.24 adds complete-file and directory browsing, a live workspace status view, npm-installed extensions, shell completions, and pane-aware automatic diff layout, while moving syntax highlighting off the review's main thread by default.
 

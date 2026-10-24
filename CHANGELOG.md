@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.24.1
+
+### Patch Changes
+
+- [#1218](https://github.com/modem-dev/hunk/pull/1218) [`8da0984`](https://github.com/modem-dev/hunk/commit/8da098499e44808a19d6bfe6df91ac9ebd26521e) - Upgrade the bundled Bun runtime to 1.4.4 so Hunk's own HTTPS requests (GitHub review via `hunk gh`, extension fetches) reject certificates issued by the compromised eMudhra intermediate CAs.
+
+- [#1214](https://github.com/modem-dev/hunk/pull/1214) [`43138ca`](https://github.com/modem-dev/hunk/commit/43138ca1b997a1245fa3d2e5523a140f7d456766) - Build the Nix package with the same script as the npm and GitHub release binaries, so Nix installs always ship the same entrypoints and x64 baseline runtime policy.
+
+- [#1211](https://github.com/modem-dev/hunk/pull/1211) [`96619db`](https://github.com/modem-dev/hunk/commit/96619dbcde205b3a296df6970aa82e46b33e955b) - Fix missing syntax highlighting in Nix-built binaries by bundling the highlighting worker.
+
+- [#1212](https://github.com/modem-dev/hunk/pull/1212) [`0f33a95`](https://github.com/modem-dev/hunk/commit/0f33a952b5610c7aa7e5d8c0341716a7398343e0) - `n` / `N` now stop at every search match, including later matches in the same hunk or on the same line, in on-screen order: top to bottom in unified view and row by row, old side first, in split view. Extension API 32 adds `ctx.selection.layout`, the resolved `split` or `unified` layout; TypeScript authors constructing `ExtensionReviewSelection` must add the field. A new `/` search now starts at the cursor line instead of skipping the selected hunk.
+
 ## 0.24.0
 
 ### Minor Changes
