@@ -136,12 +136,6 @@ export const COMMON_REVIEW_OPTIONS = [
   AUXILIARY_AGENT_OPTIONS.agentContext,
   { flag: "--pager", description: "use pager-style chrome" },
   AUXILIARY_AGENT_OPTIONS.experimental,
-  {
-    flag: "--fast",
-    description: "deprecated no-op; worker highlighting is now the default",
-    hidden: true,
-    publicDocs: false,
-  },
   { flag: "--line-numbers", description: "show line numbers" },
   { flag: "--no-line-numbers", description: "hide line numbers" },
   {
@@ -592,7 +586,6 @@ function buildCommonOptions(
     pager?: boolean;
     watch?: boolean;
     experimental?: boolean;
-    fast?: boolean;
     transparentBackground?: boolean;
     tabWidth?: number;
     fileGap?: number;
@@ -616,7 +609,6 @@ function buildCommonOptions(
       options.experimental || hasPrefixedReviewFlag(argv, AUXILIARY_AGENT_OPTIONS.experimental.flag)
         ? true
         : undefined,
-    fast: options.fast || hasPrefixedReviewFlag(argv, "--fast") ? true : undefined,
     excludeUntracked: resolveBooleanFlag(
       argv,
       AUXILIARY_AGENT_OPTIONS.excludeUntracked.flag,
@@ -2500,7 +2492,6 @@ interface LeadingCliFlags {
 /** Return whether a token is another host flag rather than an extension path value. */
 function isLeadingHostFlag(token: string) {
   return (
-    token === "--fast" ||
     token === AUXILIARY_AGENT_OPTIONS.experimental.flag ||
     token === "--no-extensions" ||
     token === "--extension" ||
@@ -2550,7 +2541,7 @@ function parseLeadingCliFlags(rawArgs: string[]): LeadingCliFlags {
 
   while (index < rawArgs.length) {
     const token = rawArgs[index];
-    if (token === "--fast" || token === AUXILIARY_AGENT_OPTIONS.experimental.flag) {
+    if (token === AUXILIARY_AGENT_OPTIONS.experimental.flag) {
       prefixedReviewFlags.push(token);
       index += 1;
       continue;
@@ -2637,9 +2628,7 @@ export async function parseCli(argv: string[]): Promise<ParsedCliInput> {
     extensionFlagTokens,
     prefixedReviewFlags,
   } = leading;
-  const prefixedFast = prefixedReviewFlags.includes("--fast");
-  const [explicitCommandName, ...rest] = args;
-  const commandName = explicitCommandName ?? (prefixedFast ? "diff" : undefined);
+  const [commandName, ...rest] = args;
 
   if (!commandName || commandName === "help" || commandName === "--help" || commandName === "-h") {
     return { kind: "help", text: renderCliHelp() };
@@ -2647,12 +2636,6 @@ export async function parseCli(argv: string[]): Promise<ParsedCliInput> {
 
   if (commandName === "--version" || commandName === "-v" || commandName === "version") {
     return { kind: "help", text: renderCliVersion() };
-  }
-
-  // `hunk --fast` is shorthand for `hunk diff --fast`, so options and targets following the
-  // launch flag belong to the diff parser unless they explicitly name another Hunk command.
-  if (prefixedFast && explicitCommandName && !isBuiltInCliCommandName(explicitCommandName)) {
-    return parseDiffCommand([...extensionFlagTokens, ...args], argv);
   }
 
   if (
@@ -2665,7 +2648,7 @@ export async function parseCli(argv: string[]): Promise<ParsedCliInput> {
 
   // Only review commands and extension CLI commands consume the leading bootstrap flags. The
   // remaining built-ins never load extensions, so accepting the flags there would silently
-  // discard them; refuse the invocation the way a misplaced `--fast` is refused.
+  // discard them; refuse the invocation the way a misplaced `--experimental` is refused.
   if (
     extensionFlagTokens.length > 0 &&
     isBuiltInCliCommandName(commandName) &&

@@ -57,7 +57,7 @@ test("sibling log/diff source facts reach real bootstraps and broker registratio
       static: false,
       json: false,
       color: "always",
-      options: { vcs: "git", extensions: false, experimental: true, fast: true },
+      options: { vcs: "git", extensions: false, experimental: true },
     },
     cwd,
     env: { ...process.env, XDG_CONFIG_HOME: config },
@@ -76,7 +76,6 @@ test("sibling log/diff source facts reach real bootstraps and broker registratio
     expect(bootstrap.reloadContext.cwd).toBe(sourceCwd);
     expect(bootstrap.input.options).toMatchObject({
       experimental: true,
-      fast: true,
       extensions: false,
       lineNumbers: false,
     });

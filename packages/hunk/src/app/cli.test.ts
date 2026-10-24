@@ -201,89 +201,26 @@ describe("parseCli", () => {
     });
   });
 
-  test("uses --fast alone as the shortest fast working-tree review", async () => {
-    expect(await parseCli(["bun", "hunk", "--fast"])).toMatchObject({
-      kind: "vcs",
-      staged: false,
-      options: { fast: true },
-    });
-  });
-
-  test("accepts --fast before or after a review command", async () => {
-    const prefixed = await parseCli(["bun", "hunk", "--fast", "diff"]);
-    const commandOption = await parseCli(["bun", "hunk", "diff", "--fast"]);
-
-    expect(prefixed).toMatchObject({ kind: "vcs", options: { fast: true } });
-    expect(commandOption).toMatchObject({ kind: "vcs", options: { fast: true } });
-  });
-
-  test("routes shorthand diff options through the diff parser", async () => {
-    expect(await parseCli(["bun", "hunk", "--fast", "--staged"])).toMatchObject({
-      kind: "vcs",
-      staged: true,
-      options: { fast: true },
-    });
-    expect(await parseCli(["bun", "hunk", "--fast", "--watch"])).toMatchObject({
-      kind: "vcs",
-      options: { fast: true, watch: true },
-    });
-    expect(await parseCli(["bun", "hunk", "--fast", "--theme", "nord"])).toMatchObject({
-      kind: "vcs",
-      options: { fast: true, theme: "nord" },
-    });
-  });
-
-  test("routes shorthand targets and direct file pairs through the diff parser", async () => {
-    expect(await parseCli(["bun", "hunk", "--fast", "HEAD"])).toMatchObject({
-      kind: "vcs",
-      range: "HEAD",
-      options: { fast: true },
-    });
-
-    const dir = createTempDir("hunk-fast-files-");
-    const left = join(dir, "before.ts");
-    const right = join(dir, "after.ts");
-    writeFileSync(left, "export const answer = 1;\n");
-    writeFileSync(right, "export const answer = 2;\n");
-
-    expect(await parseCli(["bun", "hunk", "--fast", "--files", left, right])).toMatchObject({
-      kind: "diff",
-      left,
-      right,
-      options: { fast: true },
-    });
-  });
-
-  test("keeps top-level help and version handling ahead of --fast shorthand", async () => {
-    const help = await parseCli(["bun", "hunk", "--fast", "--help"]);
-    const version = await parseCli(["bun", "hunk", "--fast", "--version"]);
-
-    expect(help).toMatchObject({ kind: "help" });
-    expect(version).toEqual({ kind: "help", text: `${resolveCliVersion()}\n` });
-  });
-
-  test("accepts leading --fast and --experimental in either order", async () => {
-    for (const flags of [
-      ["--fast", "--experimental"],
-      ["--experimental", "--fast"],
-    ]) {
-      expect(await parseCli(["bun", "hunk", ...flags, "show"])).toMatchObject({
-        kind: "show",
-        options: { experimental: true, fast: true },
-      });
-    }
+  test("rejects the removed --fast flag before or after a review command", async () => {
+    await expect(parseCli(["bun", "hunk", "--fast"])).rejects.toThrow("Unknown command: --fast");
+    await expect(parseCli(["bun", "hunk", "--fast", "diff"])).rejects.toThrow(
+      "Unknown command: --fast",
+    );
+    await expect(parseCli(["bun", "hunk", "diff", "--fast"])).rejects.toThrow(
+      "unknown option '--fast'",
+    );
   });
 
   test("preserves leading review flags interleaved with extension bootstrap flags", async () => {
     for (const flags of [
-      ["--extension", "./review.ts", "--fast", "--experimental"],
-      ["--fast", "--extension", "./review.ts", "--experimental"],
-      ["--experimental", "--no-extensions", "--fast"],
+      ["--extension", "./review.ts", "--experimental"],
+      ["--experimental", "--extension", "./review.ts"],
+      ["--experimental", "--no-extensions"],
     ]) {
       const parsed = await parseCli(["bun", "hunk", ...flags, "show"]);
       expect(parsed).toMatchObject({
         kind: "show",
-        options: { experimental: true, fast: true },
+        options: { experimental: true },
       });
       if (parsed.kind !== "show") {
         throw new Error("Expected show command input.");
@@ -295,15 +232,10 @@ describe("parseCli", () => {
     }
   });
 
-  test("keeps fast disabled by default and treats it as a pathspec after --", async () => {
-    const normal = await parseCli(["bun", "hunk", "diff"]);
-    const pathspec = await parseCli(["bun", "hunk", "diff", "--", "--fast"]);
-
-    expect(normal).toMatchObject({ kind: "vcs", options: { fast: undefined } });
-    expect(pathspec).toMatchObject({
+  test("treats --fast as a pathspec after --", async () => {
+    expect(await parseCli(["bun", "hunk", "diff", "--", "--fast"])).toMatchObject({
       kind: "vcs",
       pathspecs: ["--fast"],
-      options: { fast: undefined },
     });
   });
 
@@ -581,7 +513,9 @@ describe("parseCli", () => {
     await expect(parseCli(["bun", "hunk", "log", "HEAD", "--all"])).rejects.toThrow(
       "either a revision/range or --all",
     );
-    await expect(parseCli(["bun", "hunk", "--fast", "log"])).rejects.toThrow("review command");
+    await expect(parseCli(["bun", "hunk", "--experimental", "log"])).rejects.toThrow(
+      "review command",
+    );
   });
 
   test("preserves opaque provider-planned history reviews through the private handoff", async () => {
@@ -1748,7 +1682,7 @@ describe("parseCli", () => {
   });
 
   test("does not consume another leading host flag as an extension path", async () => {
-    for (const flag of ["--no-extensions", "--fast", "--experimental", "--extension"]) {
+    for (const flag of ["--no-extensions", "--experimental", "--extension"]) {
       await expect(parseCli(["bun", "hunk", "--extension", flag, "greptile"])).rejects.toThrow(
         "requires an extension entry path",
       );
@@ -2141,10 +2075,7 @@ describe("parseCli argument validation", () => {
 
   test("rejects prefixed review flags for non-review commands", async () => {
     await expect(parseCli(["bun", "hunk", "--experimental", "session", "list"])).rejects.toThrow(
-      "must be used with a Hunk review command",
-    );
-    await expect(parseCli(["bun", "hunk", "--fast", "session", "list"])).rejects.toThrow(
-      "`--fast` must be used with a Hunk review command",
+      "`--experimental` must be used with a Hunk review command",
     );
   });
 

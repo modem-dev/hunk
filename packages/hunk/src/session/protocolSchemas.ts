@@ -71,7 +71,6 @@ const commonOptionsSchema = z.strictObject({
   pager: z.boolean().optional(),
   watch: z.boolean().optional(),
   experimental: z.boolean().optional(),
-  fast: z.boolean().optional(),
   excludeUntracked: z.boolean().optional(),
   lineNumbers: z.boolean().optional(),
   tabWidth: z.int().positive().optional(),

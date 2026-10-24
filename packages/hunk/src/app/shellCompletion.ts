@@ -68,7 +68,6 @@ function buildCompletionTree(reference: CompletionReference) {
   const root = createNode();
   // These review options also work before the command, unlike command-local review options.
   const leadingNames = new Set([
-    "--fast",
     "--experimental",
     "--extension",
     "--no-extensions",
@@ -172,10 +171,6 @@ function renderWordScan(entries: readonly CompletionEntry[], shell: CompletionSh
   const end = shell === "bash" ? "cword" : "CURRENT";
   const word = shell === "bash" ? '"${words[i]}"' : '"$words[i]"';
   const knownNodes = entries.slice(1).map((entry) => shellQuote(entry.node));
-  const leadingFlags = entries[0]!.flags.flatMap((flag) => [
-    shellQuote(flag.name),
-    ...(flag.takesValue ? [`${shellQuote(`${flag.name}=`)}*`] : []),
-  ]);
   const argumentCases = entries.flatMap((entry) =>
     entry.flags
       .filter((flag) => flag.takesValue)
@@ -194,32 +189,19 @@ function renderWordScan(entries: readonly CompletionEntry[], shell: CompletionSh
     "    fi",
     "    if [[ $word == -- ]]; then",
     '      if [[ $node == " session reload" ]]; then',
-    '        node=""; fast=0; argStart=$((i + 1))',
+    '        node=""; argStart=$((i + 1))',
     "        continue",
     "      fi",
     "      positional=1",
     "      break",
     "    fi",
-    "    if [[ -z $node && $word == --fast ]]; then",
-    "      fast=1",
-    "      continue",
-    "    fi",
     '    case "$node $word" in',
     `      ${knownNodes.join("|")}) node="$node $word"; argStart=$((i + 1)); continue ;;`,
     "    esac",
-    "    if [[ -z $node ]] && (( fast )); then",
-    '      case "$word" in',
-    `        ${leadingFlags.join("|")}) ;;`,
-    '        *) node=" diff" ;;',
-    "      esac",
-    "    fi",
     '    case "$node ${word%%=*}" in',
     ...argumentCases,
     "    esac",
     "  done",
-    "  if [[ -z $node ]] && (( fast )) && [[ -z $cur || $cur == -* ]]; then",
-    '    node=" diff"',
-    "  fi",
   ];
 }
 
@@ -281,7 +263,7 @@ function renderBash(entries: readonly CompletionEntry[]) {
   return [
     ...renderBashWords(),
     "_hunk() {",
-    '  local cur node="" word subcommands="" flags="" valueFlag="" positional=0 fast=0 argStart=1 cword i',
+    '  local cur node="" word subcommands="" flags="" valueFlag="" positional=0 argStart=1 cword i',
     "  local -a words",
     "  COMPREPLY=()",
     "  _hunk_words",
@@ -334,7 +316,7 @@ function renderZsh(entries: readonly CompletionEntry[]) {
     "compdef _hunk hunk",
     "",
     "_hunk() {",
-    '  local cur="$words[CURRENT]" node="" word valueFlag="" positional=0 fast=0 argStart=2 i',
+    '  local cur="$words[CURRENT]" node="" word valueFlag="" positional=0 argStart=2 i',
     '  local curcontext="$curcontext" state state_descr CURRENT="$CURRENT"',
     '  local -a words=("${words[@]}")',
     "  local -a args items line",
