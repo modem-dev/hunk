@@ -102,6 +102,21 @@ function bundledBunRuntime() {
   }
 }
 
+// Exits on Windows ARM64 before bundled Bun starts OpenTUI. Bun disables TinyCC there
+// (oven-sh/bun#28055). Callers honor HUNK_BIN_PATH and any installed prebuilt first.
+function rejectUnsupportedWindowsArm64Runtime() {
+  if (os.platform() !== "win32" || os.arch() !== "arm64") {
+    return;
+  }
+
+  console.error(
+    "hunk: Windows ARM64 is not supported by the current bundled runtime. " +
+      "Bun disables TinyCC on this platform, so OpenTUI cannot load. " +
+      "Tracking: oven-sh/bun#28055",
+  );
+  process.exit(1);
+}
+
 const forwardedArgs = process.argv.slice(2);
 if (forwardedArgs.length === 2 && forwardedArgs[0] === "skill" && forwardedArgs[1] === "path") {
   const skillPath = bundledSkillPath();
@@ -124,6 +139,8 @@ const prebuiltBinary = findInstalledBinary(scriptDir);
 if (prebuiltBinary) {
   run(prebuiltBinary, forwardedArgs);
 }
+
+rejectUnsupportedWindowsArm64Runtime();
 
 const bunBinary = bundledBunRuntime();
 if (bunBinary) {
