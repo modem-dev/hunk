@@ -217,6 +217,34 @@ describe("PTY chrome", () => {
     }
   });
 
+  test("text coalesced with Tab fills the filter instead of running shortcuts", async () => {
+    const fixture = harness.createTwoFileRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 220,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+      await harness.ensureKeyboardIsLive(session);
+
+      // One chunk, as a paste or a slow remote terminal delivers it; `t` is the theme shortcut.
+      session.writeRaw("\tbeta");
+      const filtered = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("filter: beta") && !text.includes("alpha.ts"),
+        5_000,
+      );
+
+      expect(filtered).toContain("betaValue");
+      expect(filtered).not.toContain("Theme selector");
+    } finally {
+      session.close();
+    }
+  });
+
   test("a remapped slash focuses the filter and narrows the visible review stream", async () => {
     // `/` ships on content search; the documented one-liner hands it back to the filter.
     const configHome = harness.createIsolatedConfigHome();

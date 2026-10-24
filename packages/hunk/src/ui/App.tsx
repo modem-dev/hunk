@@ -1252,6 +1252,22 @@ export function App({
     [focusFiles, jumpToFile, review.revealLine, review.selectVisibleHunk],
   );
 
+  /** Report whether the host filter prompt owns typing, read live from the store. */
+  const isFilterPromptOpen = useCallback(() => {
+    const promptId = filterPromptIdRef.current;
+    return promptId !== null && statusLineStore.getSnapshot().prompt?.id === promptId;
+  }, [statusLineStore]);
+
+  /** Append printable input to the filter prompt's value before its input has mounted. */
+  const queueFilterInput = useCallback(
+    (text: string) => {
+      const prompt = statusLineStore.getSnapshot().prompt;
+      if (!prompt || prompt.id !== filterPromptIdRef.current) return;
+      statusLineStore.updatePromptValue(prompt.id, prompt.value + text);
+    },
+    [statusLineStore],
+  );
+
   /** Toggle keyboard focus between the file list and the file filter. */
   const toggleFocusArea = useCallback(() => {
     if (filterPromptIdRef.current !== null) {
@@ -1526,6 +1542,8 @@ export function App({
     exitKeyboardMode,
     sendKeyboardModeKey,
     focusArea,
+    isFilterPromptOpen,
+    queueFilterInput,
     promptActive: statusLineState.prompt !== null,
     moveMenuItem,
     moveThemeSelector,

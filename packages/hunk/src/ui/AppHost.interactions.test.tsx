@@ -2762,6 +2762,40 @@ describe("App interactions", () => {
     }
   });
 
+  test("typing in the same input chunk as Tab fills the filter instead of running shortcuts", async () => {
+    const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
+      width: 240,
+      height: 24,
+    });
+
+    try {
+      await flush(setup);
+
+      // Tab and the text arrive together, before any render can mount the filter input;
+      // `t` would otherwise open the theme selector.
+      await act(async () => {
+        await setup.mockInput.typeText("\ttzz");
+      });
+      await flush(setup);
+
+      const frame = setup.captureCharFrame();
+      expect(frame).toContain("filter: tzz");
+      expect(frame).toContain("No files match the current filter.");
+      expect(frame).not.toContain("Theme");
+
+      // Once mounted, the input continues after the held text.
+      await act(async () => {
+        await setup.mockInput.typeText("x");
+      });
+      await flush(setup);
+      expect(setup.captureCharFrame()).toContain("filter: tzzx");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("filtering away the selected file reselects the first visible match", async () => {
     const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
       width: 240,
