@@ -232,7 +232,9 @@ jobs:
     name: Build compiled binary
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-latest
+    # Ubuntu 26.04 cloud libraries require x86-64-v3 and SIGILL under Nehalem even for /bin/true.
+    # Keep the emulated process's userland compatible with the CPU this job verifies.
+    runs-on: ubuntu-24.04
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

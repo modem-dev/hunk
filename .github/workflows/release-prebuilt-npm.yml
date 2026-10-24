@@ -140,8 +140,10 @@ jobs:
         include:
           - package_name: hunkdiff-linux-arm64
             runner: ubuntu-24.04-arm
+          # Match main's baseline probe: Ubuntu 26.04 cloud libraries require x86-64-v3,
+          # so they cannot run under the Nehalem CPU used to verify this artifact.
           - package_name: hunkdiff-linux-x64
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
           - package_name: hunkdiff-windows-x64
             runner: windows-latest
           - package_name: hunkdiff-darwin-x64
