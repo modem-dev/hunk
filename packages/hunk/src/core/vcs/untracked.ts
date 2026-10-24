@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { join } from "node:path";
 import { createSkippedBinaryMetadata, isProbablyBinaryFile } from "../changeset/binary";
 import { buildDiffFile, createSkippedLargeMetadata } from "../changeset/diffFile";
-import { createFileSourceFetcher } from "../changeset/fileSource";
+import { createFileByteFetcher, createFileSourceFetcher } from "../changeset/fileSource";
 import { inspectLargeUntrackedFile, type LargeFileCheck } from "@hunk/vcs/large-file";
 import { escapeUntrackedPatchPath } from "../../lib/patchPath";
 import { parseSingleFilePatch } from "../patch/singleFile";
@@ -100,7 +100,13 @@ export function buildFilesystemUntrackedDiffFile(
       index,
       sourcePrefix,
       null,
-      { isBinary: true, isUntracked: true },
+      {
+        isBinary: true,
+        isUntracked: true,
+        // The working copy is the untracked file's only version, so file views read it directly.
+        byteFetcherBuilder: () =>
+          createFileByteFetcher({ old: { kind: "none" }, new: { kind: "fs", absolutePath } }),
+      },
     );
   }
 

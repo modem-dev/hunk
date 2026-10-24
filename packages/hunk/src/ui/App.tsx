@@ -35,11 +35,7 @@ import {
 } from "../core/review/selectors";
 import type { CliInput, CursorLine, LayoutMode } from "../core/run/commandInputs";
 import { sanitizeTerminalLine } from "../lib/terminalText";
-import {
-  resolveExtensionFileViews,
-  resolveExtensionKeyboardModes,
-  resolveExtensionSessionOptions,
-} from "../extensions/apply";
+import { resolveExtensionKeyboardModes, resolveExtensionSessionOptions } from "../extensions/apply";
 import { projectExtensionReviewNotes } from "../extensions/reviewSnapshot";
 import type { ExtensionNotifyType, ExtensionLoadResult } from "../extensions/types";
 import type { ReviewProducer } from "../app/review/producer";
@@ -104,6 +100,7 @@ import { buildExtensionAppCommands, extensionCommandKeyDefaults } from "./lib/ex
 import { createExtensionReviewReloadControls } from "./lib/extensionReviewReload";
 import {
   buildSessionCommands,
+  buildSessionFileViews,
   buildSessionLineHighlighters,
   isBundledExtensionId,
 } from "./lib/sessionRegistrations";
@@ -399,10 +396,9 @@ export function App({
     () => (cursorLine === "off" ? null : review.lineCursor),
     [cursorLine, review.lineCursor],
   );
-  const sessionFileViews = useMemo(
-    () => (extensions ? resolveExtensionFileViews(extensions.registry).views : []),
-    [extensions],
-  );
+  // Bundled file views compose ahead of the user registry's, so Hunk's own image preview is
+  // offered under `--no-extensions` too.
+  const sessionFileViews = useMemo(() => buildSessionFileViews(extensions?.registry), [extensions]);
   const sessionKeyboardModes = useMemo(
     () => (extensions ? resolveExtensionKeyboardModes(extensions.registry).modes : []),
     [extensions],

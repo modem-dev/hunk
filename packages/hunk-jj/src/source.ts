@@ -1,10 +1,13 @@
 import type {
+  ExtensionVcsFileBytesResult,
   ExtensionVcsFileSourceResult,
   ExtensionVcsFileSourceTooLarge,
 } from "hunkdiff/extension";
 import {
+  DEFAULT_SOURCE_BYTES_MAX_BYTES,
   DEFAULT_SOURCE_TEXT_MAX_BYTES,
   logSourceDiagnostic,
+  readStreamBytesWithLimit,
   readStreamTextWithLimit,
   terminateSourceSubprocess,
 } from "@hunk/vcs/source";
@@ -27,6 +30,11 @@ export interface JjFileSourceSpec {
 export interface JjFileSourceOptions {
   jjExecutable?: string;
   maxSourceBytes?: number;
+}
+
+export interface JjFileBytesOptions {
+  jjExecutable?: string;
+  maxBytes?: number;
 }
 
 /** Return whether Jujutsu reported that the requested path has no source at this revision. */
@@ -91,6 +99,24 @@ export async function readJjFileSource(
     maxSourceBytes = DEFAULT_SOURCE_TEXT_MAX_BYTES,
   }: Readonly<JjFileSourceOptions> = {},
 ): Promise<ExtensionVcsFileSourceResult> {
+  const result = await readJjFileBytes(spec, { jjExecutable, maxBytes: maxSourceBytes });
+  return result instanceof Uint8Array ? new TextDecoder().decode(result) : result;
+}
+
+/**
+ * Read one file's exact bytes from the commit that produced the patch under review.
+ *
+ * `readJjFileSource` is this read decoded as text; a byte consumer such as an image preview
+ * calls it directly, including for binary files. Commit pinning, fileset escaping, and the byte
+ * limit work exactly as described there.
+ */
+export async function readJjFileBytes(
+  spec: JjFileSourceSpec,
+  {
+    jjExecutable = "jj",
+    maxBytes = DEFAULT_SOURCE_BYTES_MAX_BYTES,
+  }: Readonly<JjFileBytesOptions> = {},
+): Promise<ExtensionVcsFileBytesResult> {
   let proc: Bun.ReadableSubprocess;
   const command = [
     jjExecutable,
@@ -123,13 +149,13 @@ export async function readJjFileSource(
     return null;
   }
 
-  let output: [number, string, string];
+  let output: [number, Uint8Array, string];
   try {
     output = await Promise.all([
       proc.exited,
-      readStreamTextWithLimit(
+      readStreamBytesWithLimit(
         proc.stdout,
-        maxSourceBytes,
+        maxBytes,
         () => proc.kill(),
         (limit) => new JjSourceTooLargeError(limit),
       ),

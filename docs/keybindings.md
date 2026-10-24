@@ -114,6 +114,7 @@ Review and shared commands:
 | `hunk.app.refresh`                             | Refresh the review                             | `r`                          |
 | `hunk.app.toggleFocusArea`                     | Switch focus between files and filter          | `tab`                        |
 | `hunk.app.toggleHelp`                          | Toggle help                                    | `?`                          |
+| `hunk.imagePreview.toggle`                     | Toggle image preview                           | `i`                          |
 | `hunk.review.alignCurrentLineBottom`           | Align current line to viewport bottom          | _(none)_                     |
 | `hunk.review.alignCurrentLineCenter`           | Center current line in viewport                | _(none)_                     |
 | `hunk.review.alignCurrentLineTop`              | Align current line to viewport top             | _(none)_                     |

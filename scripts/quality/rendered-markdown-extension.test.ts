@@ -56,6 +56,7 @@ describe("rendered Markdown example extension", () => {
       width: 80,
       signal: new AbortController().signal,
       changes: [{ hunkIndex: 0, range: [2, 2], kind: "added" }],
+      readBytes: async () => null,
       readDocument: async () => "# Hello\nnew item\n",
     });
 
@@ -88,6 +89,7 @@ describe("rendered Markdown example extension", () => {
       width: 80,
       signal: new AbortController().signal,
       changes: [],
+      readBytes: async () => null,
       readDocument: async () =>
         [
           "# Guide",
@@ -144,6 +146,7 @@ describe("rendered Markdown example extension", () => {
       ...base,
       width: 80,
       signal: new AbortController().signal,
+      readBytes: async () => null,
     };
     await expect(view.layout({ ...request, readDocument: async () => null })).resolves.toBeNull();
     await expect(

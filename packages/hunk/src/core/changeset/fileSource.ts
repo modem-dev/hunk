@@ -1,6 +1,11 @@
-import { DEFAULT_SOURCE_TEXT_MAX_BYTES, readFileTextWithLimit } from "@hunk/vcs/source";
+import {
+  DEFAULT_SOURCE_BYTES_MAX_BYTES,
+  DEFAULT_SOURCE_TEXT_MAX_BYTES,
+  readFileBytesWithLimit,
+  readFileTextWithLimit,
+} from "@hunk/vcs/source";
 
-export { DEFAULT_SOURCE_TEXT_MAX_BYTES } from "@hunk/vcs/source";
+export { DEFAULT_SOURCE_BYTES_MAX_BYTES, DEFAULT_SOURCE_TEXT_MAX_BYTES } from "@hunk/vcs/source";
 
 /**
  * Generic full-file source fetcher primitives used by input loaders and VCS adapters.
@@ -25,6 +30,21 @@ export interface FileSourceFetcher {
    * handle custom fetcher rejection defensively.
    */
   getFullText(side: FileSourceSide): Promise<string | null>;
+}
+
+/**
+ * Reads a file's exact bytes on either side, for presentations of content that is not text.
+ *
+ * Separate from `FileSourceFetcher` because it also serves binary files, which deliberately have
+ * no text fetcher: attaching one would make every text-source consumer (context expansion,
+ * highlighting) treat images as readable documents.
+ */
+export interface FileByteFetcher {
+  /**
+   * Returns the side's exact bytes, or `null` when the side is unreachable or over the byte
+   * ceiling. Built-in fetchers resolve `null` instead of rejecting.
+   */
+  getBytes(side: FileSourceSide): Promise<Uint8Array | null>;
 }
 
 /** Raised when expanded-context source would require reading an unsafe amount of text. */
@@ -83,6 +103,35 @@ export function createFileSourceFetcher(
       const text = await readFileSourceSpec(specs[side], { maxSourceBytes });
       cache.set(side, text);
       return text;
+    },
+  };
+}
+
+/** Read the bytes one filesystem-backed source spec names, or null when there is none or too many. */
+async function readFileSourceSpecBytes(spec: FileSourceSpec, maxBytes: number) {
+  if (spec.kind === "none") {
+    return null;
+  }
+
+  const result = await readFileBytesWithLimit(spec.absolutePath, maxBytes);
+  return result instanceof Uint8Array ? result : null;
+}
+
+/** Build a per-file byte fetcher over filesystem specs that caches each side's bytes. */
+export function createFileByteFetcher(
+  specs: ResolvedSpecs,
+  { maxBytes = DEFAULT_SOURCE_BYTES_MAX_BYTES }: Readonly<{ maxBytes?: number }> = {},
+): FileByteFetcher {
+  const cache = new Map<FileSourceSide, Promise<Uint8Array | null>>();
+
+  return {
+    getBytes(side) {
+      let read = cache.get(side);
+      if (!read) {
+        read = readFileSourceSpecBytes(specs[side], maxBytes);
+        cache.set(side, read);
+      }
+      return read;
     },
   };
 }

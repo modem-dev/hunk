@@ -239,15 +239,17 @@ run without installing anything.
 
 Every VCS backend Hunk ships — **Git, Jujutsu, and Sapling** — is an extension,
 and so are **`hunk gh` GitHub review commands**, the **built-in file-navigation pane**, the commit
-and change-request info panes, and the **`/` content search** (`hunk.search.find` / `next` /
-`previous`, with its match marks and status-row report). Provider implementations live in the private
+and change-request info panes, the **`/` content search** (`hunk.search.find` / `next` /
+`previous`, with its match marks and status-row report), and the **image preview** file view
+(`hunk.imagePreview.toggle` on `i`), which draws a changed image before and after from
+`input.readBytes`. Provider implementations live in the private
 `packages/hunk-{git,jj,sapling}` workspaces and are statically imported by
 `packages/hunk/src/extensions/default/vcs/index.ts`. The GitHub command implementation lives in
 `packages/hunk-gh` and loads through `packages/hunk/src/extensions/default/core/`; bundled UI
 registrations live under `packages/hunk/src/extensions/default/ui/`. All register through the same
 `hunk.registerVcsAdapter`, `hunk.registerCliCommand`, `hunk.registerPane`,
-`hunk.registerCommand`, and `hunk.registerLineHighlighter` contract documented here, and their commands, highlighters, and
-panes are composed ahead of yours; there is no private registration path.
+`hunk.registerCommand`, `hunk.registerFileView`, and `hunk.registerLineHighlighter` contract documented here, and their
+commands, file views, highlighters, and panes are composed ahead of yours; there is no private registration path.
 
 Git exercises exact file sources, skipped-too-large placeholders, untracked files, watch plans,
 and structured failures through the public adapter contract. Its package and boundary tests keep
@@ -355,8 +357,9 @@ and retires the replaced instance at that explicit ownership boundary.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `32`). Branch on it if you want
-one file to support several Hunk versions. Version 32 adds `ctx.selection.layout`, the resolved
+The API generation this Hunk speaks (currently `33`). Branch on it if you want
+one file to support several Hunk versions. Version 33 adds `readBytes` to file-view inputs and
+optional `readFileBytes` to VCS patch results; version 32 adds `ctx.selection.layout`, the resolved
 split or unified layout; version 31 adds optional read-only workspace status,
 sibling inspection and status review planning; version 30 adds the opaque current review generation
 in pane props; version 29 adds generation-scoped extension review presentation scopes; version 28
@@ -736,6 +739,7 @@ optional, and each optional field buys one thing. API version 24 adds `review`:
 | `review`         | commit or comparison context above a revision-backed review        |
 | `untrackedPaths` | files your VCS calls unknown, synthesized into added-file diffs    |
 | `readFileSource` | exact whole-file contents, for context expansion and highlighting  |
+| `readFileBytes`  | exact file bytes, binary files included, for byte-based file views |
 | `sourceCacheKey` | stable source-snapshot identity for highlight reuse across reloads |
 | `extraFiles`     | files reviewed outside the patch, including skipped placeholders   |
 
@@ -885,6 +889,24 @@ it when source state outside the patch changes. Omit it when the adapter cannot 
 stable identity and Hunk will invalidate conservatively. Leaving
 `readFileSource` off is fine: Hunk falls back to the content the patch itself carries,
 which renders the same diff with less context available.
+
+`readFileBytes` (API version 33) is the byte counterpart, for files whose content is
+not text. It takes the same request and answers the same way — bytes, `null` for a
+side with no content, or `{ kind: "too-large", maxBytes }` — but it **is** called for
+binary files, and only when a file view asks through `input.readBytes`, such as the
+bundled image preview drawing a changed PNG. Return the stored bytes unchanged:
+
+```ts
+readFileBytes: async ({ path, previousPath, changeType, side }) => {
+  if (side === "old") {
+    return changeType === "new" ? null : hgCatBytes(oldRev, previousPath ?? path);
+  }
+  return changeType === "deleted" ? null : hgCatBytes(newRev, path);
+},
+```
+
+Hunk caches each side's answer like `readFileSource`'s. Without `readFileBytes`, byte
+reads resolve `null` and those files keep the raw diff.
 
 #### Files outside the patch
 
@@ -1432,7 +1454,7 @@ export default function (hunk: HunkExtensionAPI) {
 ```
 
 `layout` receives one readonly input containing `file`, `width`, `signal`,
-`changes`, and `readDocument`. `input.file` is the same frozen public
+`changes`, `readDocument`, and `readBytes`. `input.file` is the same frozen public
 `ExtensionDiffFile` panes receive. `input.changes` exposes typed added and
 removed ranges without Pierre metadata;
 complete old/new hunk ranges remain available through `input.file.hunks`.
@@ -1440,6 +1462,13 @@ complete old/new hunk ranges remain available through `input.file.hunks`.
 text or `null` when that side is absent, unavailable, too large, or fails to
 load. Never treat `null` as an exception: return `null` from `layout` to keep
 raw diff active.
+
+`readBytes("old" | "new")` (API version 33) reads the side's exact bytes instead, for
+content that is not text, and works for binary files, which never have a document.
+It is lazy and cached the same way and resolves `null` under the same conditions,
+including a review source whose adapter does not implement `readFileBytes`. Hunk's
+bundled **Image preview** view is built on it: on a changed PNG, JPEG, GIF, or WebP,
+press `i` to draw the before and after images inline.
 
 Layouts use an omitted tone for ordinary text and generic symbolic tones
 (`muted`, `accent`, `accent-muted`, `syntax`, `added`, `removed`) plus optional

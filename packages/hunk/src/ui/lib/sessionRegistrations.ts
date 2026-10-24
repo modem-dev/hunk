@@ -5,16 +5,21 @@
  * API but live in separate registries with separate lifecycles: the bundled registry is built
  * once per process and never reloads, while the user registry is replaced on extension reload
  * or a trust grant. These helpers merge the two at the point a session consumes them, bundled
- * first, so a bundled command or highlighter can never be shadowed by a user extension and
+ * first, so a bundled command, file view, or highlighter can never be shadowed by a user extension and
  * stays active under `--no-extensions`, where the user load result is simply empty. Panes have
  * the same composition in `extensionPanes.ts`.
  */
-import { resolveExtensionCommands, resolveExtensionLineHighlighters } from "../../extensions/apply";
+import {
+  resolveExtensionCommands,
+  resolveExtensionFileViews,
+  resolveExtensionLineHighlighters,
+} from "../../extensions/apply";
 import { getBundledUIRegistry } from "../../extensions/default/ui";
 import { HUNK_VENDOR_EXTENSION_ID } from "../../extensions/extensionIds";
 import type {
   ExtensionRegistry,
   RegisteredCommand,
+  RegisteredFileView,
   RegisteredLineHighlighter,
 } from "../../extensions/types";
 
@@ -26,6 +31,16 @@ export function buildSessionCommands(
   return resolveExtensionCommands({
     commands: [...bundled.commands, ...(userRegistry?.commands ?? [])],
   }).commands;
+}
+
+/** Compose bundled file views before user file views. */
+export function buildSessionFileViews(
+  userRegistry: Pick<ExtensionRegistry, "fileViews"> | undefined,
+  bundled: Pick<ExtensionRegistry, "fileViews"> = getBundledUIRegistry(),
+): RegisteredFileView[] {
+  return resolveExtensionFileViews({
+    fileViews: [...bundled.fileViews, ...(userRegistry?.fileViews ?? [])],
+  }).views;
 }
 
 /** Compose bundled line highlighters before user highlighters. */
