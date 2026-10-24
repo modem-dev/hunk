@@ -15,4 +15,10 @@ Before anything else, load them and follow them:
 hunk skill show hunk-review
 ```
 
+Hunk versions before 0.24 do not have `hunk skill show`. If it fails, print the bundled skill's path instead, then read that file and follow it:
+
+```bash
+hunk skill path hunk-review
+```
+
 If `hunk` is not on PATH, ask the user to install Hunk first: https://hunk.dev/docs/start/install/

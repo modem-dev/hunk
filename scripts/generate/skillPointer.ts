@@ -55,6 +55,12 @@ export function renderAgentSkillStub(frontmatter: SkillFrontmatter) {
     `hunk skill show ${frontmatter.name}`,
     "```",
     "",
+    "Hunk versions before 0.24 do not have `hunk skill show`. If it fails, print the bundled skill's path instead, then read that file and follow it:",
+    "",
+    "```bash",
+    `hunk skill path ${frontmatter.name}`,
+    "```",
+    "",
     "If `hunk` is not on PATH, ask the user to install Hunk first: https://hunk.dev/docs/start/install/",
     "",
   ].join("\n");
