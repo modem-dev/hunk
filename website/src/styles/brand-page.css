@@ -109,7 +109,9 @@
 
 .brand-formats {
   display: flex;
-  gap: 18px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px 18px;
 }
 
 .brand-formats a:hover {
@@ -167,7 +169,7 @@
   }
 
   .brand-formats {
-    gap: 14px;
+    gap: 6px 14px;
   }
 
   .brand-swatches {

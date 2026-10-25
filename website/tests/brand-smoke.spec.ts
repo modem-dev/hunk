@@ -1,6 +1,27 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { brandColors, brandDownloadPath, brandFormats, brandLogos } from "../src/data/brand";
+
+/** Decodes an image in the page and returns its top-left RGBA pixel. */
+async function readTestCornerPixel(page: Page, src: string): Promise<number[]> {
+  return page.evaluate(async (url) => {
+    const image = new Image();
+    image.src = url;
+    await image.decode();
+
+    const canvas = document.createElement("canvas");
+    canvas.width = 1;
+    canvas.height = 1;
+    const context = canvas.getContext("2d")!;
+    context.drawImage(image, 0, 0);
+    return Array.from(context.getImageData(0, 0, 1, 1).data);
+  }, src);
+}
+
+/** Converts a #rrggbb color to its RGB channels. */
+function hexToTestRgb(hex: string): number[] {
+  return [1, 3, 5].map((start) => Number.parseInt(hex.slice(start, start + 2), 16));
+}
 
 test("brand page is discoverable and offers working logo downloads", async ({ page }) => {
   await page.goto("/");
@@ -17,19 +38,23 @@ test("brand page is discoverable and offers working logo downloads", async ({ pa
     for (const color of brandColors) {
       for (const format of brandFormats) {
         const link = page.getByRole("link", {
-          name: `Download ${logo.name.toLowerCase()} in ${color.name.toLowerCase()} as ${format.toUpperCase()}`,
+          name: `Download ${logo.name.toLowerCase()} in ${color.name.toLowerCase()} as ${format.name}`,
           exact: true,
         });
-        const path = brandDownloadPath(logo.id, color.id, format);
+        const path = brandDownloadPath(logo.id, color.id, format.id);
         await expect(link).toHaveAttribute("href", path);
         await expect(link).toHaveAttribute("download", "");
         const response = await page.request.get(path);
         expect(response.ok()).toBe(true);
         const body = await response.body();
-        if (format === "png") {
+        if (format.extension === "png") {
           expect(body.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
           expect(body.readUInt32BE(16)).toBe(2048);
-        } else if (format === "pdf") {
+          // The padded corner shows the backdrop: clear for transparent PNGs, the paired color for solid ones.
+          expect(await readTestCornerPixel(page, path)).toEqual(
+            format.id === "solid-png" ? [...hexToTestRgb(color.background), 255] : [0, 0, 0, 0],
+          );
+        } else if (format.id === "pdf") {
           expect(body.subarray(0, 5).toString()).toBe("%PDF-");
           // SVG masks export as embedded bitmaps; logo PDFs must stay pure vector.
           expect(body.toString("latin1")).not.toContain("/Subtype /Image");

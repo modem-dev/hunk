@@ -1,8 +1,8 @@
-/** Exports transparent logo downloads from the canonical SVGs; requires librsvg and zip. */
+/** Exports transparent and solid-background logo downloads from the canonical SVGs; requires librsvg and zip. */
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
-import { brandColors, brandDownloadPath, brandLogos } from "../src/data/brand";
+import { brandColors, brandDownloadPath, brandFormats, brandLogos } from "../src/data/brand";
 
 const publicDir = fileURLToPath(new URL("../public/", import.meta.url));
 const brandDir = join(publicDir, "brand");
@@ -27,14 +27,17 @@ for (const logo of brandLogos) {
       await writeFile(svgPath, source.replaceAll("#16140f", color.value));
     }
     files.push(svgPath);
-    for (const format of ["png", "pdf"]) {
-      const output = join(downloads, `${logo.id}-${color.id}.${format}`);
+    for (const format of brandFormats) {
+      if (format.id === "svg") continue;
+      const output = join(publicDir, brandDownloadPath(logo.id, color.id, format.id).slice(1));
+      const background = format.id === "solid-png" ? ["--background-color", color.background] : [];
       await run([
         "rsvg-convert",
         "--format",
-        format,
+        format.extension,
         "--width",
         "2048",
+        ...background,
         "--output",
         output,
         svgPath,
@@ -47,7 +50,7 @@ for (const logo of brandLogos) {
 const guide = join(downloads, "README.txt");
 await writeFile(
   guide,
-  "Hunk brand assets — https://hunk.dev/brand/\n\nSVG: scalable originals. PNG: transparent, 2048px wide. PDF: vector export.\nInk: for light backgrounds. Paper: for dark backgrounds.\nUse the flat mark below 40px. Keep proportions and leave clear space around the logo.\nDo not stretch, rotate, add effects, or imply endorsement by Hunk.\n",
+  "Hunk brand assets — https://hunk.dev/brand/\n\nSVG: scalable originals. PNG: transparent, 2048px wide. Solid PNG: 2048px wide on the matching background. PDF: vector export.\nInk: for light backgrounds. Paper: for dark backgrounds.\nUse the flat mark below 40px. Keep proportions and leave clear space around the logo.\nDo not stretch, rotate, add effects, or imply endorsement by Hunk.\n",
 );
 await rm(join(brandDir, "hunk-brand.zip"), { force: true });
 await run(["zip", "-j", "-X", "hunk-brand.zip", ...files, guide]);

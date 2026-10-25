@@ -29,7 +29,7 @@ const description = "Download the Hunk logo, mark, and wordmark as SVG, transpar
         <section aria-labelledby="logos-title">
           <div class="brand-section-heading">
             <h2 id="logos-title">Logo downloads</h2>
-            <p>SVG scales to any size. PNG is transparent, 2048px wide. PDF is for print.</p>
+            <p>SVG scales to any size. PNGs are 2048px wide: transparent, or solid on the matching background. PDF is for print.</p>
           </div>
           <div class="brand-grid">
             {brandLogos.map((logo) => (
@@ -47,7 +47,7 @@ const description = "Download the Hunk logo, mark, and wordmark as SVG, transpar
                       <span>{color.name}</span>
                       <div class="brand-formats">
                         {brandFormats.map((format) => (
-                          <a href={brandDownloadPath(logo.id, color.id, format)} download aria-label={`Download ${logo.name.toLowerCase()} in ${color.name.toLowerCase()} as ${format.toUpperCase()}`}>{format.toUpperCase()} <span aria-hidden="true">↓</span></a>
+                          <a href={brandDownloadPath(logo.id, color.id, format.id)} download aria-label={`Download ${logo.name.toLowerCase()} in ${color.name.toLowerCase()} as ${format.name}`}>{format.label} <span aria-hidden="true">↓</span></a>
                         ))}
                       </div>
                     </div>

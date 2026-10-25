@@ -11,8 +11,9 @@ Where Hunk's logo files live, which version to use where, and the colors and typ
 ## Public downloads
 
 The public brand page at [hunk.dev/brand/](https://hunk.dev/brand/) offers all four logos in
-ink and paper colors as SVG, transparent 2048px-wide PNG, and vector PDF, plus a ZIP bundle.
-The website footer links to it.
+ink and paper colors as SVG, 2048px-wide PNG (transparent, or solid on the paired background so
+it stays visible in any image viewer), and vector PDF, plus a ZIP bundle. The website footer
+links to it.
 
 The ink SVGs below remain the canonical sources. Regenerate the committed exports in
 `website/public/brand/downloads/` and `website/public/brand/hunk-brand.zip` after editing them:
@@ -30,7 +31,7 @@ the website build does not require the export tools.
 
 ## Logo versions
 
-All files are in `website/public/brand/` and served at `https://hunk.dev/brand/<file>`. They are filled with the ink color `#16140f`; recolor by editing the `fill`, or inline the SVG and use `currentColor`.
+All files are in `website/public/brand/` and served at `https://hunk.dev/brand/<file>`. They are filled with the ink color `#16140f`; recolor by editing the `fill`, or inline the SVG and use `currentColor`. Each viewBox already includes about one stem-width of clear space, so exports never touch their edges.
 
 | File                | What it is                                                                | Use it for                                                                           |
 | ------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
