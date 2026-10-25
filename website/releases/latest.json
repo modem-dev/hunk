@@ -1,6 +1,6 @@
 {
-  "version": "0.24.0",
+  "version": "0.24.1",
   "minor": "0.24",
-  "date": "2026-10-19",
+  "date": "2026-10-24",
   "summary": "Browse files, navigate workspaces, extend from npm"
 }

@@ -11,10 +11,10 @@
     "slug": "0.24",
     "title": "Hunk 0.24",
     "tagline": "Hunk 0.24 adds complete-file and directory browsing, a live workspace status view, npm-installed extensions, shell completions, and…",
-    "meta": "October 13, 2026 – October 19, 2026 · 4 releases · 123 changes",
-    "chips": ["0.24.0", "0.24.0-beta.1", "0.24.0-beta.0"],
+    "meta": "October 13, 2026 – October 24, 2026 · 4 releases · 123 changes",
+    "chips": ["0.24.1", "0.24.0", "0.24.0-beta.1", "0.24.0-beta.0"],
     "latest": true,
-    "alt": "Hunk 0.24 release notes — October 13, 2026 – October 19, 2026 · 4 releases · 123 changes"
+    "alt": "Hunk 0.24 release notes — October 13, 2026 – October 24, 2026 · 4 releases · 123 changes"
   },
   {
     "slug": "0.23",
