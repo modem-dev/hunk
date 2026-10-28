@@ -162,10 +162,13 @@ hunk feedback [message...]       send feedback to the Hunk team at Modem
 4. **Confirm.** The default is No. Anything other than `y` or `yes` cancels, prints "Not sent.",
    and exits 0. `--dry-run` stops after the preview, also exits 0, and says "Dry run: nothing was
    sent."
-5. **Refuse unattended sends.** If stdin is not a terminal (including `--file -`, which consumes
-   stdin) and `--skip-confirm` is absent, exit 2 without sending: "hunk feedback needs
-   confirmation. Re-run in a terminal, or pass --skip-confirm to send without one." A script or
-   agent never sends by accident.
+5. **Confirm on the terminal, or refuse.** The prompt reads its answer from the controlling
+   terminal, not from stdin: `/dev/tty` on macOS and Linux, `CONIN$` on Windows. A piped message
+   (`git log -1 --format=%B | hunk feedback --file -`) can therefore still be confirmed by the
+   person at the keyboard, and stdin is never read as the answer. Only when no controlling
+   terminal can be opened (cron, CI, a detached agent) and `--skip-confirm` is absent does the
+   command exit 2 without sending: "hunk feedback needs confirmation. Re-run in a terminal, or pass
+   --skip-confirm to send without one." A script or agent never sends by accident.
 6. **Send** (see [Send behavior](#send-behavior)), then print "Sent. Thanks! Reference: <id>",
    using the `id` from the `202` response. With `--json`:
    `{ "sent": true, "id": "…", "submission_id": "…" }`, or `{ "sent": false, "reason": "cancelled" }`.
@@ -175,8 +178,8 @@ what was sent.
 
 ### Exit codes
 
-`0` sent, cancelled, or dry run. `1` send failed (network, `4xx`, or `5xx` after retries).
-`2` usage error, validation error, or a refused unattended send.
+`0` sent, cancelled, or dry run. `1` send failed or unconfirmed (network, timeout, `4xx`, or `5xx`
+after retries). `2` usage error, validation error, or a refused unattended send.
 
 ### Agents
 
@@ -246,18 +249,25 @@ labelled action.
 
 ### States
 
-`editing → sending → sent | failed`, held in a pure reducer in `ui/lib/feedbackForm.ts`, which
-also holds the `submission_id`.
+`editing → sending → sent | failed | unconfirmed`, held in a pure reducer in
+`ui/lib/feedbackForm.ts`, which also holds the `submission_id`.
 
 - **editing**: global shortcuts are suppressed while the modal has focus, through the existing
   modal routing in `useAppKeyboardShortcuts`. `esc` closes the form and discards the draft. With a
   non-empty draft, it first asks "Discard feedback?" through `ConfirmDialog`.
-- **sending**: inputs lock and a spinner shows "Sending to Modem…". `esc` aborts the request.
+- **sending**: inputs lock and a spinner shows "Sending to Modem…". `esc` stops waiting for the
+  response. The request may already be out, so this moves to **unconfirmed**, never back to
+  editing as though nothing happened.
 - **sent**: "Sent. Thanks!" plus the reference `id`. The form closes after two seconds or on any
   key.
 - **failed**: the draft stays, the status-specific message from
   [Send behavior](#send-behavior) shows, and `ctrl+s` retries with the same `submission_id`.
   Editing the draft generates a new `submission_id`, matching Modem's idempotency rule.
+- **unconfirmed**: after `esc` during sending, a timeout, or a network error, Hunk cannot know
+  whether Modem recorded the submission. The form says so: "Hunk couldn't confirm that Modem
+  received this. It may have arrived. Sending again won't create a duplicate." `ctrl+s` retries
+  with the same `submission_id`, so Modem dedupes it. `esc` asks "Close? This feedback may already
+  have been sent." instead of "Discard feedback?", and closing never sends anything.
 
 The draft lives only in memory. It is never written to disk, `.hunk/`, or the app state file.
 
@@ -278,15 +288,19 @@ sendFeedback(payload: FeedbackPayload, deps?: { fetchImpl?: FetchImpl; timeoutMs
   responses automatically.
 - Errors are mapped to plain messages:
 
-| Response            | Message                                                                              |
-| ------------------- | ------------------------------------------------------------------------------------ |
-| `202`               | Sent.                                                                                |
-| network / timeout   | Couldn't reach Modem. Check your connection and try again.                           |
-| `400`               | Modem rejected the message: <first `details` entry>. (Indicates a Hunk bug.)         |
-| `401`               | Feedback is unavailable in this version of Hunk. Please open a GitHub issue instead. |
-| `413` / `415`       | Treated as `400`; the payload carries no attachments, so these indicate a Hunk bug.  |
-| `429`               | Too much feedback right now. Try again in a minute.                                  |
-| `5xx` (after retry) | Modem couldn't record the feedback. Try again later.                                 |
+| Response            | Message                                                                                                      |
+| ------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `202`               | Sent.                                                                                                        |
+| network / timeout   | Hunk couldn't confirm that Modem received this. It may have arrived. Sending again won't create a duplicate. |
+| `400`               | Modem rejected the message: <first `details` entry>. (Indicates a Hunk bug.)                                 |
+| `401`               | Feedback is unavailable in this version of Hunk. Please open a GitHub issue instead.                         |
+| `413` / `415`       | Treated as `400`; the payload carries no attachments, so these indicate a Hunk bug.                          |
+| `429`               | Too much feedback right now. Try again in a minute.                                                          |
+| `5xx` (after retry) | Modem couldn't record the feedback. Try again later.                                                         |
+
+Network errors, timeouts, and aborts return an `unconfirmed` result rather than `failed`, because
+the request may have reached Modem before the connection dropped. The CLI prints the same message,
+exits 1, and reports `{ "sent": false, "reason": "unconfirmed", "submission_id": "…" }` with `--json`.
 
 The `401` message also links `https://github.com/modem-dev/hunk/issues`, so a revoked token still
 leaves people somewhere to go.
@@ -314,8 +328,11 @@ No Modem code changes are required.
 2. Commit the token as a constant in `core/feedback/send.ts`. Modem documents feedback tokens as
    safe to ship in published binaries: they can only submit to their channel and cannot read
    anything.
-3. Optionally, add an automation on "a feedback submission has new activity", scoped to the Hunk
-   channel, that posts new items to the team's Slack.
+3. Optionally, post feedback to the team's Slack with a **scheduled daily digest** automation
+   scoped to the Hunk channel, not a per-submission trigger. The token ships in every binary, so
+   anyone can script junk into the channel. Rate limits cap volume at 60 a minute, not intent, and
+   a digest turns a flood into one message instead of thousands. The channel's switch stops intake
+   at once if abuse persists, and rotation follows as described below.
 
 Capacity: the token allows 60 submissions a minute across every Hunk install, and each IP allows 20
 a minute. That is plenty for feedback. A flood would show up as `429`s, not as lost data.
@@ -366,18 +383,26 @@ The privacy contract gets its own tests. They are the main deliverable alongside
   request URL's host equals that constant, so the disclosed destination cannot drift from the real
   one.
 - **Send behavior** (`send.test.ts`): status mapping, retry with the same `submission_id`, `409`
-  backoff, no retry on other `4xx`, timeout, abort, and `User-Agent: hunk`.
+  backoff, no retry on other `4xx`, timeout and abort returning `unconfirmed`, and
+  `User-Agent: hunk`.
+- **Confirmation source** (`runFeedbackCommand.test.ts`): with an injected terminal reader, a piped
+  message prompts on the terminal and sends only on `y`. Stdin content that looks like `y` is never
+  taken as the answer. A missing terminal refuses with exit 2.
 - **CLI contract** (`test/cli/feedback.test.ts`): `--dry-run` output, `--dry-run` without a message
   exiting 2 without opening the form, exit codes, refusal without a TTY, and conflicting message
   sources.
 - **PTY** (`test/pty/feedback-integration.test.ts`): open the form from the Help menu with the mouse
   and from a bound key, check that the disclosure renders, type, `esc` asks to discard, and confirm
-  that the review stream's shortcuts do not fire while the form has focus. PTY runs never send.
+  that the review stream's shortcuts do not fire while the form has focus. Pipe a message into
+  `hunk feedback --file -` and answer `n` on the PTY to cover the `/dev/tty` prompt. PTY runs
+  never send.
 
 ## Docs and release
 
-- `docs/feedback.md`: a user-facing page with what is sent, where it goes, the CLI reference, and
-  the opt-out. Link it from the README and from the form ("What is sent?").
+- `docs/feedback.md`: a user-facing page with what is sent, where it goes, the CLI reference, the
+  opt-out, why `DO_NOT_TRACK` does not hide a feature that never sends without asking, and that an
+  interrupted send may still have arrived. Link it from the README and from the form ("What is
+  sent?").
 - A `hunk.dev` privacy note that names this as the only request Hunk makes to Modem, and only on
   request.
 - A `minor` Changeset: "Add `hunk feedback` and a Help → Send feedback form that sends a message to
