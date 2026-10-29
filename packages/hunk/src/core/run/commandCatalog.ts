@@ -144,6 +144,17 @@ const BUILTIN_COMMANDS = [
     closesMenu: true,
   },
   {
+    // Host-only: the send runs where Hunk is hosted, and a remote client may not start it.
+    // Opening the form sends nothing; only the person's own send action does.
+    id: "hunk.app.openFeedback",
+    title: "Send feedback",
+    category: "app",
+    defaultKeys: [],
+    locus: "host-only",
+    publicToExtensions: true,
+    closesMenu: true,
+  },
+  {
     id: "hunk.app.toggleFocusArea",
     title: "Switch focus between files and filter",
     category: "app",

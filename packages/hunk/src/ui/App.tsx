@@ -86,6 +86,10 @@ import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
 import { useMenuController } from "./hooks/useMenuController";
 import { usePaneSlideAnimation } from "./hooks/usePaneSlideAnimation";
 import { useThemeSelectorController } from "./hooks/useThemeSelectorController";
+import {
+  useFeedbackFormController,
+  type SendFeedbackImpl,
+} from "./hooks/useFeedbackFormController";
 import { useTimedNotice } from "./hooks/useTimedNotice";
 import { useUserNoteComposer } from "./hooks/useUserNoteComposer";
 import { useTerminalReview, type AgentNoteGeometrySnapshot } from "./hooks/useTerminalReview";
@@ -151,6 +155,9 @@ const FAST_CODE_HORIZONTAL_SCROLL_COLUMNS = 8;
 const LazyAgentSkillDialog = lazy(async () => ({
   default: (await import("./components/chrome/AgentSkillDialog")).AgentSkillDialog,
 }));
+const LazyFeedbackDialog = lazy(async () => ({
+  default: (await import("./components/chrome/FeedbackDialog")).FeedbackDialog,
+}));
 const LazyThemeSelectorDialog = lazy(async () => ({
   default: (await import("./components/chrome/ThemeSelectorDialog")).ThemeSelectorDialog,
 }));
@@ -180,6 +187,7 @@ export function App({
   returnToSurface = process.env.HUNK_RETURN_TO_HISTORY === "1" ? "history" : undefined,
   watchRuntime,
   workspaceFileWriter,
+  sendFeedback,
 }: {
   bootstrap: AppBootstrap;
   /** Whether this surface may replace the session-owned extension registry. */
@@ -215,6 +223,8 @@ export function App({
   initialFilePath?: string;
   watchRuntime?: WatchedInputRuntime;
   workspaceFileWriter?: WorkspaceFileWriter;
+  /** Send a confirmed feedback submission. Tests inject one; the default loads the real sender. */
+  sendFeedback?: SendFeedbackImpl;
 }) {
   const SIDEBAR_MIN_WIDTH = 22;
   const DIFF_MIN_WIDTH = 48;
@@ -299,6 +309,8 @@ export function App({
   const [showMenuBar, setShowMenuBar] = useState(bootstrap.initialShowMenuBar ?? true);
   const [showHelp, setShowHelp] = useState(false);
   const [showAgentSkill, setShowAgentSkill] = useState(false);
+  const feedbackEnabled = bootstrap.feedbackEnabled ?? true;
+  const feedback = useFeedbackFormController({ enabled: feedbackEnabled, sendFeedback });
   const [storedFocusArea, setFocusArea] = useState<StoredFocusArea>("files");
   // Bumped when printable input is held for a draft editor that has not mounted
   // yet, so the flush retries after every commit that could have mounted it.
@@ -1391,6 +1403,7 @@ export function App({
         moveSelection: review.moveSelection,
         moveNoteCursor: review.moveNoteCursor,
         openAgentSkill,
+        openFeedback: feedbackEnabled ? feedback.open : undefined,
         openThemeSelector,
         requestQuit,
         resolvedKeys: resolvedCommandKeys,
@@ -1503,6 +1516,7 @@ export function App({
     closeAgentSkill,
     closeHelp,
     closeMenu,
+    handleFeedbackKey: feedback.handleKey,
     acceptThemeSelector,
     cancelDraftNote,
     closeThemeSelector,
@@ -1868,6 +1882,17 @@ export function App({
             theme={baseTheme}
             onClose={closeAgentSkill}
             onCopyPrompt={copyAgentSkillPrompt}
+          />
+        </Suspense>
+      ) : null}
+
+      {feedback.isOpen ? (
+        <Suspense fallback={null}>
+          <LazyFeedbackDialog
+            controller={feedback}
+            terminalHeight={terminal.height}
+            terminalWidth={terminal.width}
+            theme={baseTheme}
           />
         </Suspense>
       ) : null}

@@ -13,6 +13,7 @@ import {
   CONFIG_COMMAND_SECTIONS,
   CONFIG_REFERENCE_CUSTOM_THEME,
   CONFIG_REFERENCE_EXTENSIONS,
+  CONFIG_REFERENCE_FEEDBACK,
   CONFIG_REFERENCE_OPTIONS,
 } from "../../packages/hunk/src/core/run/config";
 import { findBundledCoreExtensionByCommand } from "../../packages/hunk/src/extensions/default/core";
@@ -431,6 +432,11 @@ export function renderConfigReference() {
       `| \`${key.key}\` | ${key.type} | ${key.accepted} | ${key.defaultValue ?? "—"} | ${key.description} |`,
   );
 
+  const feedbackRows = CONFIG_REFERENCE_FEEDBACK.keys.map(
+    (key) =>
+      `| \`${key.key}\` | ${key.type} | ${key.accepted} | ${key.defaultValue ?? "—"} | ${key.description} |`,
+  );
+
   return formatMarkdownTables(`---
 title: Config reference
 description: Exhaustive generated reference for Hunk TOML keys, defaults, aliases, and layering.
@@ -652,6 +658,21 @@ patterns = ["*.lock", "generated/*"]
 \`\`\`
 
 These keys belong to that extension, not Hunk's preference catalog. Repository tables merge over user tables key by key, and Hunk reports which extension settings the repository overrides. See [Extensions](/docs/extend/extensions/) for installation, trust, loading controls, and examples.
+
+## Feedback
+
+\`[${CONFIG_REFERENCE_FEEDBACK.table}]\` controls Help → Send feedback and \`hunk feedback\`. Both show exactly what is sent and send nothing until you confirm one submission. Turn them off entirely:
+
+\`\`\`toml
+[feedback]
+enabled = false
+\`\`\`
+
+| Key | Type | Accepted | Built-in default | Description |
+| --- | --- | --- | --- | --- |
+${feedbackRows.join("\n")}
+
+See [Send feedback](/docs/help/feedback/) for what a submission contains and where it goes.
 
 ## Troubleshooting
 

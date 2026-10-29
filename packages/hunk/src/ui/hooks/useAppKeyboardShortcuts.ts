@@ -26,6 +26,8 @@ export interface UseAppKeyboardShortcutsOptions {
   activeMenuId: MenuId | null;
   activateCurrentMenuItem: () => void;
   closeAgentSkill: () => void;
+  /** Route keys to the feedback form while it is open; `"notMine"` when it is closed. */
+  handleFeedbackKey?: (key: KeyEvent) => KeyOwner;
   closeHelp: () => void;
   closeMenu: () => void;
   acceptThemeSelector: () => void;
@@ -109,6 +111,7 @@ export function useAppKeyboardShortcuts({
   activeMenuId,
   activateCurrentMenuItem,
   closeAgentSkill,
+  handleFeedbackKey,
   closeHelp,
   closeMenu,
   acceptThemeSelector,
@@ -156,6 +159,8 @@ export function useAppKeyboardShortcuts({
   const focusAreaRef = useRef(focusArea);
   const promptActiveRef = useRef(promptActive);
   const showAgentSkillRef = useRef(showAgentSkill);
+  const handleFeedbackKeyRef = useRef(handleFeedbackKey);
+  handleFeedbackKeyRef.current = handleFeedbackKey;
   const showHelpRef = useRef(showHelp);
   const saveConfigPromptOpenRef = useRef(saveConfigPromptOpen);
   const themeSelectorOpenRef = useRef(themeSelectorOpen);
@@ -253,6 +258,15 @@ export function useAppKeyboardShortcuts({
 
     return "mine";
   };
+
+  /**
+   * Own every key while the feedback form is open.
+   *
+   * Text goes to its focused input as `"focused"`, and its escape hatches (Escape, Ctrl-S, Tab)
+   * are the form's own, so no keystroke typed into feedback can run a review command.
+   */
+  const handleFeedbackFormShortcut = (key: KeyEvent): KeyOwner =>
+    handleFeedbackKeyRef.current?.(key) ?? "notMine";
 
   /** Escape closes the topmost open overlay (agent skill, then help). */
   const handleDialogShortcut = (key: KeyEvent): KeyOwner => {
@@ -641,6 +655,7 @@ export function useAppKeyboardShortcuts({
         handleExtensionTrustPromptShortcut,
         handleSaveConfigPromptShortcut,
         handleExtensionDialogShortcut,
+        handleFeedbackFormShortcut,
         handleMenuToggleShortcut,
         handleDialogShortcut,
         handleThemeSelectorShortcut,

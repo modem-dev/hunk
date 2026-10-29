@@ -112,6 +112,7 @@ export async function loadConfiguredSessionBootstrap({
     bootstrap.extensions = extensions;
     bootstrap.viewPreferencesConfigPath = configured.viewPreferencesConfigPath;
     bootstrap.keybindings = configured.keybindings;
+    bootstrap.feedbackEnabled = configured.feedbackEnabled;
 
     return {
       applied,

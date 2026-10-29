@@ -10,6 +10,7 @@ import {
   type CommonOptions,
   type CursorLine,
   type ExtensionManageCommandInput,
+  type FeedbackCommandInput,
   type HelpCommandInput,
   type LayoutMode,
   type PagerCommandInput,
@@ -470,6 +471,34 @@ export const CLI_REFERENCE_COMMANDS = {
       },
     ],
   },
+  feedback: {
+    path: "feedback",
+    summary: "send feedback to the Hunk team at Modem, after showing exactly what is sent",
+    synopsis: [
+      "hunk feedback [message...]",
+      "hunk feedback --file <path|->",
+      "hunk feedback --dry-run [message...]",
+    ],
+    details: [
+      "Prints what will be sent and where, then asks before sending. Nothing reaches Modem until you confirm: cancelling, `--dry-run`, and a run that cannot be confirmed make no request. With no message in a terminal, opens the feedback form instead.",
+      "The answer to the prompt is read from the terminal, not stdin, so a piped message can still be confirmed at the keyboard. Without a terminal, pass `--skip-confirm` to send.",
+      "Agents: run this only when the user asked for it or agreed to the exact message. Show them the `--dry-run` output before passing `--skip-confirm`.",
+    ],
+    options: [
+      { flag: "-m, --message <text>", description: "message text instead of the positional words" },
+      { flag: "-F, --file <path>", description: "read the message from a file, or stdin with -" },
+      { flag: "--email <address>", description: "optional reply address, sent only if given" },
+      {
+        flag: "--dry-run",
+        description: "print exactly what would be sent, then exit without sending",
+      },
+      {
+        flag: "--skip-confirm",
+        description: "send without the confirmation prompt (required without a terminal)",
+      },
+      { flag: "--json", description: "print the result as JSON" },
+    ],
+  },
   "daemon-serve": {
     path: "daemon serve",
     summary: "run the local Hunk session daemon and websocket session broker",
@@ -753,6 +782,7 @@ function renderCliHelp() {
     "  hunk skill path [name]                  print a bundled Hunk skill path",
     "  hunk extension <subcommand>             install and manage shared extensions",
     "  hunk update [version]                   update Hunk with the package manager that installed it",
+    "  hunk feedback [message...]              send feedback to the Hunk team, after confirming it",
     `  hunk completion <${COMPLETION_SHELLS.join("|")}>              print a shell completion script`,
     "  hunk daemon serve                       run the local Hunk session daemon",
     "  hunk daemon status                      report the daemon's build and attached windows",
@@ -1382,7 +1412,8 @@ function requireReloadableCliInput(input: ParsedCliInput): CliInput {
     input.kind === "history" ||
     input.kind === "open" ||
     input.kind === "status" ||
-    input.kind === "update"
+    input.kind === "update" ||
+    input.kind === "feedback"
   ) {
     throw new Error(
       "Session reload requires a Hunk review command after --, such as `diff` or `show`.",
@@ -2342,6 +2373,68 @@ async function parseUpdateCommand(
   };
 }
 
+/** Parse `hunk feedback`. Usage conflicts fail here; message validation waits for the run. */
+async function parseFeedbackCommand(
+  tokens: string[],
+): Promise<FeedbackCommandInput | HelpCommandInput> {
+  const command = createCliReferenceCommand("feedback").argument(
+    "[message...]",
+    "message text; quote it or pass the words as separate arguments",
+  );
+
+  let parsedWords: string[] = [];
+  let parsedOptions: {
+    message?: string;
+    file?: string;
+    email?: string;
+    dryRun?: boolean;
+    skipConfirm?: boolean;
+    json?: boolean;
+  } = {};
+
+  command.action((words: string[], options: typeof parsedOptions) => {
+    parsedWords = words;
+    parsedOptions = options;
+  });
+
+  if (tokens.includes("--help") || tokens.includes("-h")) {
+    return {
+      kind: "help",
+      text:
+        [
+          command.helpInformation().trimEnd(),
+          "",
+          ...CLI_REFERENCE_COMMANDS.feedback.details,
+          "",
+          "Examples:",
+          '  hunk feedback "Split view loses my place when I resize"',
+          "  hunk feedback --dry-run --email ada@example.com Thanks for Hunk",
+          "  git log -1 --format=%B | hunk feedback --file -",
+        ].join("\n") + "\n",
+    };
+  }
+
+  await parseStandaloneCommand(command, tokens);
+
+  const positional = parsedWords.length > 0 ? parsedWords.join(" ") : undefined;
+  const sources = [positional, parsedOptions.message, parsedOptions.file].filter(
+    (source) => source !== undefined,
+  );
+  if (sources.length > 1) {
+    throw new Error("Pass the feedback message one way: as words, with --message, or with --file.");
+  }
+
+  return {
+    kind: "feedback",
+    message: positional ?? parsedOptions.message,
+    file: parsedOptions.file,
+    email: parsedOptions.email,
+    dryRun: parsedOptions.dryRun ?? false,
+    skipConfirm: parsedOptions.skipConfirm ?? false,
+    output: resolveJsonOutput(parsedOptions),
+  };
+}
+
 /** Build the help text for one daemon control subcommand from its reference entry. */
 function renderDaemonControlHelp(command: "daemon-status" | "daemon-restart") {
   const reference = CLI_REFERENCE_COMMANDS[command];
@@ -2709,6 +2802,8 @@ export async function parseCli(argv: string[]): Promise<ParsedCliInput> {
       return parseExtensionCommand(rest);
     case "update":
       return parseUpdateCommand(rest);
+    case "feedback":
+      return parseFeedbackCommand(rest);
     case "completion":
       return parseCompletionCommand(rest);
     case "daemon":

@@ -65,6 +65,8 @@ export interface AppBootstrap<ExtensionState = unknown> {
   viewPreferencesConfigPath?: string;
   /** The user's `[keybindings]` table, resolved against command defaults in App. */
   keybindings?: Record<string, UserKeyBinding>;
+  /** False when config turns off Help → Send feedback; absent means offered. */
+  feedbackEnabled?: boolean;
   /** App-owned extension state carried without coupling core to the extension host. */
   extensions?: ExtensionState;
 }

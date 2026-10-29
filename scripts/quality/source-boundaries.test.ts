@@ -339,6 +339,52 @@ describe("source architecture boundaries", () => {
   });
 });
 
+// Feedback reaches Modem only after the person confirms one submission. These checks keep the
+// endpoint and token in the one module that is loaded after confirmation, so no other code path
+// can learn them, let alone make an earlier request.
+const FEEDBACK_SEND_PATH = join(CORE_ROOT, "feedback", "send.ts");
+const FEEDBACK_PAYLOAD_PATH = join(CORE_ROOT, "feedback", "payload.ts");
+
+/** Return production files under the Hunk source tree whose text matches one pattern. */
+function sourceFilesMatching(pattern: RegExp) {
+  return sourceFiles(SRC_ROOT).filter((path) => pattern.test(readFileSync(path, "utf8")));
+}
+
+describe("feedback consent boundary", () => {
+  test("keeps the feedback endpoint URL and token in the send module", () => {
+    expect(sourceFilesMatching(/https:\/\/ingest\.modem\.dev/).map(repoPath)).toEqual([
+      repoPath(FEEDBACK_SEND_PATH),
+    ]);
+    expect(
+      sourceFilesMatching(/["'`]feedback_[0-9a-f]/)
+        .filter((path) => path !== FEEDBACK_SEND_PATH)
+        .map(repoPath),
+    ).toEqual([]);
+  });
+
+  test("names the Modem host only in the send module and the disclosure", () => {
+    expect(
+      sourceFilesMatching(/ingest\.modem\.dev/)
+        .map(repoPath)
+        .toSorted(),
+    ).toEqual([repoPath(FEEDBACK_PAYLOAD_PATH), repoPath(FEEDBACK_SEND_PATH)].toSorted());
+  });
+
+  test("loads the send module only through a dynamic import", () => {
+    const staticImports = sourceFiles(SRC_ROOT).flatMap((path) => {
+      const source = readFileSync(path, "utf8");
+      return [
+        ...source.matchAll(
+          /(?:^|\n)\s*(import|export)\s+(type\s+)?[^;]*?\bfrom\s*["']([^"']+)["']/g,
+        ),
+      ]
+        .filter((match) => !match[2] && resolveImport(path, match[3]!) === FEEDBACK_SEND_PATH)
+        .map(() => repoPath(path));
+    });
+    expect(staticImports).toEqual([]);
+  });
+});
+
 // The seam contract for sharing the review experience with a browser surface: the semantic
 // review model and its wire protocol are the primitives every consumer (terminal UI, session
 // runtime, browser client) builds on, so they must stay renderer-free and platform-neutral.

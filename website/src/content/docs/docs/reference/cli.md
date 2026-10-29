@@ -483,6 +483,35 @@ hunk update --method <npm|brew|curl>
 | `--method <method>` | install method instead of the detected one: npm, brew, curl    |
 | `--check`           | report the installed and available versions without installing |
 
+## `hunk feedback`
+
+send feedback to the Hunk team at Modem, after showing exactly what is sent
+
+### Usage
+
+```bash
+hunk feedback [message...]
+hunk feedback --file <path|->
+hunk feedback --dry-run [message...]
+```
+
+Prints what will be sent and where, then asks before sending. Nothing reaches Modem until you confirm: cancelling, `--dry-run`, and a run that cannot be confirmed make no request. With no message in a terminal, opens the feedback form instead.
+
+The answer to the prompt is read from the terminal, not stdin, so a piped message can still be confirmed at the keyboard. Without a terminal, pass `--skip-confirm` to send.
+
+Agents: run this only when the user asked for it or agreed to the exact message. Show them the `--dry-run` output before passing `--skip-confirm`.
+
+### Command-specific options
+
+| Option                 | Description                                                        |
+| ---------------------- | ------------------------------------------------------------------ |
+| `-m, --message <text>` | message text instead of the positional words                       |
+| `-F, --file <path>`    | read the message from a file, or stdin with -                      |
+| `--email <address>`    | optional reply address, sent only if given                         |
+| `--dry-run`            | print exactly what would be sent, then exit without sending        |
+| `--skip-confirm`       | send without the confirmation prompt (required without a terminal) |
+| `--json`               | print the result as JSON                                           |
+
 ## `hunk daemon serve`
 
 run the local Hunk session daemon and websocket session broker

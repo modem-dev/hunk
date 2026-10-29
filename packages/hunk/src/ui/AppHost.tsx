@@ -31,6 +31,7 @@ import {
 } from "../app/session/reloadBounds";
 import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
 import type { ReloadSessionOptions } from "../session/types";
+import type { SendFeedbackImpl } from "./hooks/useFeedbackFormController";
 import { App } from "./App";
 import type { WorkspaceRefreshRequest } from "./currentReviewRefresh";
 import { useStartupNotices } from "./hooks/useStartupNotices";
@@ -88,6 +89,7 @@ export function AppHost({
   themeController,
   watchRuntime,
   workspaceFileWriter,
+  sendFeedback,
   bunVersion = Bun.version,
 }: {
   bootstrap: AppBootstrap;
@@ -126,6 +128,8 @@ export function AppHost({
   themeController?: ThemeController;
   watchRuntime?: WatchedInputRuntime;
   workspaceFileWriter?: WorkspaceFileWriter;
+  /** Send a confirmed feedback submission; tests inject one so they never reach Modem. */
+  sendFeedback?: SendFeedbackImpl;
   /** Runtime identity injection for reload compatibility tests. */
   bunVersion?: string;
 }) {
@@ -328,6 +332,7 @@ export function AppHost({
             // Borrowed reviews never rediscover extension selection; the owner supplies it below.
             extensions: { enabled: false, paths: [], repoPaths: [], extensionConfigs: {} },
             keybindings: launchBootstrap.keybindings ?? {},
+            feedbackEnabled: launchBootstrap.feedbackEnabled ?? true,
             explicitVcsId: runtimeInput.options.vcs,
             viewPreferencesConfigPath: launchBootstrap.viewPreferencesConfigPath,
             startupNotices: launchBootstrap.startupNotices,
@@ -672,6 +677,7 @@ export function AppHost({
       themeController={activeThemeController}
       watchRuntime={watchRuntime}
       workspaceFileWriter={workspaceFileWriter}
+      sendFeedback={sendFeedback}
     />
   );
 }

@@ -110,6 +110,7 @@ Review and shared commands:
 | Command id                                     | Does                                           | Default keys                 |
 | ---------------------------------------------- | ---------------------------------------------- | ---------------------------- |
 | `hunk.app.openAgentSkill`                      | Show agent skill                               | _(none)_                     |
+| `hunk.app.openFeedback`                        | Send feedback                                  | _(none)_                     |
 | `hunk.app.quit`                                | Quit                                           | `q`                          |
 | `hunk.app.refresh`                             | Refresh the review                             | `r`                          |
 | `hunk.app.toggleFocusArea`                     | Switch focus between files and filter          | `tab`                        |

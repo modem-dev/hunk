@@ -215,7 +215,10 @@ export function buildAppMenus({
       { commandId: "hunk.review.nextAnnotatedFile" },
       { commandId: "hunk.review.previousAnnotatedFile" },
     ],
-    help: [{ commandId: "hunk.app.toggleHelp", label: "Controls help", checked: showHelp }],
+    help: [
+      { commandId: "hunk.app.toggleHelp", label: "Controls help", checked: showHelp },
+      { commandId: "hunk.app.openFeedback", label: "Send feedback…" },
+    ],
   };
 
   if (fileViewEntries.length > 0) {

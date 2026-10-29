@@ -178,6 +178,7 @@ export default defineConfig({
           items: [
             { label: "Troubleshooting", slug: "docs/help/troubleshooting" },
             { label: "Terminal and platform compatibility", slug: "docs/help/compatibility" },
+            { label: "Send feedback", slug: "docs/help/feedback" },
           ],
         },
         // One link rather than a group: the changelog is generated, grows every release, and

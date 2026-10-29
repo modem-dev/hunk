@@ -2,7 +2,19 @@
 
 ## Status
 
-Proposed. Nothing in this document is implemented yet.
+Implemented for `hunk feedback` and for Help → Send feedback in the review app. The log, status,
+and document surfaces do not have the Help entry yet. The Modem channel token is still empty,
+so every send reports "unavailable" without making a request until the channel exists.
+
+Where the build differs from the first draft of this plan:
+
+- The confirmation prompt finds the terminal behind stdout or stderr, the way `hunk pager`
+  already does, rather than opening `/dev/tty` or `CONIN$` by name. On Windows no such device is
+  found, so a piped message there needs `--skip-confirm`.
+- Argument conflicts, such as a message given two ways, exit 1 like every other parse error.
+  Exit 2 is kept for a validation error, a refused run, and `[feedback] enabled = false`.
+- Hunk's themes have no warning color, so the disclosure renders in full-contrast text with an
+  accent ⚠ marker instead.
 
 ## Goal
 
@@ -127,8 +139,8 @@ hunk feedback [message...]       send feedback to the Hunk team at Modem
 ### Flow
 
 1. **Collect the message.** Use the positional words, `--message`, or `--file`; passing more than
-   one is a usage error. With none of them and an interactive terminal, open the standalone feedback
-   form (the TUI below). With none of them and no terminal, exit 2 with a usage error.
+   one is a usage error (exit 1). With none of them and an interactive terminal, open the
+   standalone feedback form (the TUI below). With none of them and no terminal, exit 2.
    `--dry-run` with no message also exits 2 ("--dry-run needs a message") instead of opening the
    form, since the form's only exit besides cancel is a real send.
 2. **Validate locally.** Apply Modem's limits (message 1 to 4,096 characters after trimming, email
@@ -163,7 +175,7 @@ hunk feedback [message...]       send feedback to the Hunk team at Modem
    and exits 0. `--dry-run` stops after the preview, also exits 0, and says "Dry run: nothing was
    sent."
 5. **Confirm on the terminal, or refuse.** The prompt reads its answer from the controlling
-   terminal, not from stdin: `/dev/tty` on macOS and Linux, `CONIN$` on Windows. A piped message
+   terminal, not from stdin: the device behind stdout or stderr, as `hunk pager` uses. A piped message
    (`git log -1 --format=%B | hunk feedback --file -`) can therefore still be confirmed by the
    person at the keyboard, and stdin is never read as the answer. Only when no controlling
    terminal can be opened (cron, CI, a detached agent) and `--skip-confirm` is absent does the
@@ -179,7 +191,8 @@ what was sent.
 ### Exit codes
 
 `0` sent, cancelled, or dry run. `1` send failed or unconfirmed (network, timeout, `4xx`, or `5xx`
-after retries). `2` usage error, validation error, or a refused unattended send.
+after retries), or an argument conflict. `2` validation error, a refused unattended send, or
+feedback turned off by config.
 
 ### Agents
 
@@ -230,7 +243,7 @@ A modal built on `ModalFrame`, sized with `resolveModalGeometry`:
 └─────────────────────────────────────────────────────────────┘
 ```
 
-- The disclosure sits at the top in the theme's warning color, above the input, and stays visible
+- The disclosure sits at the top in full-contrast text behind an accent ⚠ marker, above the input, and stays visible
   while typing. It is never collapsed, never shown only once, and never moved behind a "details"
   toggle. It is the full `describeFeedbackDisclosure` text, not a shortened version.
 - The message box is an OpenTUI `<textarea>`, wired for focus the way `AgentInlineNote` does it.
@@ -399,12 +412,10 @@ The privacy contract gets its own tests. They are the main deliverable alongside
 
 ## Docs and release
 
-- `docs/feedback.md`: a user-facing page with what is sent, where it goes, the CLI reference, the
-  opt-out, why `DO_NOT_TRACK` does not hide a feature that never sends without asking, and that an
-  interrupted send may still have arrived. Link it from the README and from the form ("What is
-  sent?").
-- A `hunk.dev` privacy note that names this as the only request Hunk makes to Modem, and only on
-  request.
+- `website/src/content/docs/docs/help/feedback.md` (hunk.dev/docs/help/feedback): a user-facing
+  page with what is sent, where it goes, the CLI reference, the opt-out, why `DO_NOT_TRACK` does
+  not hide a feature that never sends without asking, and that an interrupted send may still have
+  arrived. The generated CLI and config references link to it.
 - A `minor` Changeset: "Add `hunk feedback` and a Help → Send feedback form that sends a message to
   the Hunk team after you confirm it."
 

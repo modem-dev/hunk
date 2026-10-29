@@ -28,6 +28,54 @@ async function createTerminalConfirm() {
   };
 }
 
+/**
+ * Build the `hunk feedback` prompt, which reads its answer from the terminal rather than stdin.
+ *
+ * A piped message (`... | hunk feedback --file -`) leaves stdin to the pipe, so the answer comes
+ * from the controlling terminal behind stdout or stderr instead: the device `hunk pager` already
+ * uses. Piped stdin is never read as the answer. Returns undefined when no terminal can be opened,
+ * which the command treats as "cannot confirm".
+ */
+async function createFeedbackConfirm() {
+  const readline = await import("node:readline/promises");
+  if (process.stdin.isTTY) {
+    return async (question: string) => {
+      const prompt = readline.createInterface({ input: process.stdin, output: process.stderr });
+      try {
+        return ["y", "yes"].includes((await prompt.question(question)).trim().toLowerCase());
+      } finally {
+        prompt.close();
+      }
+    };
+  }
+
+  const { openControllingTerminal } = await import("./core/process/terminal");
+  if (!openControllingTerminal()) {
+    return undefined;
+  }
+
+  return async (question: string) => {
+    const terminal = openControllingTerminal();
+    if (!terminal) return false;
+    const prompt = readline.createInterface({
+      input: terminal.stdin,
+      output: process.stderr,
+      terminal: false,
+    });
+    try {
+      process.stderr.write(question);
+      const answer = await new Promise<string>((resolve) => {
+        prompt.once("line", resolve);
+        prompt.once("close", () => resolve(""));
+      });
+      return ["y", "yes"].includes(answer.trim().toLowerCase());
+    } finally {
+      prompt.close();
+      terminal.close();
+    }
+  };
+}
+
 async function main() {
   const startupPlan = await prepareStartupPlan();
 
@@ -90,6 +138,26 @@ async function main() {
       await runSelfUpdateCommand(startupPlan.input, {
         stdout: (text) => writeStdout(text),
         stderr: (text) => process.stderr.write(text),
+      }),
+    );
+  }
+
+  if (startupPlan.kind === "feedback") {
+    const [{ runFeedbackCommand }, { resolveFeedbackEnabled }] = await Promise.all([
+      import("./core/feedback/runFeedbackCommand"),
+      import("./core/run/config"),
+    ]);
+    process.exit(
+      await runFeedbackCommand(startupPlan.input, {
+        stdout: (text) => writeStdout(text),
+        stderr: (text) => process.stderr.write(text),
+        feedbackEnabled: resolveFeedbackEnabled(),
+        confirm: await createFeedbackConfirm(),
+        // The form needs a real terminal on both sides; piped runs must pass a message instead.
+        openForm:
+          process.stdin.isTTY && process.stdout.isTTY
+            ? async () => (await import("./ui/feedback/runFeedbackForm")).runFeedbackForm()
+            : undefined,
       }),
     );
   }

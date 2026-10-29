@@ -24,6 +24,7 @@ import type {
   MarkupRenderCommandInput,
   ParsedCliInput,
   SelfUpdateCommandInput,
+  FeedbackCommandInput,
   SessionCommandInput,
 } from "../core/run/commandInputs";
 import { canReloadInput } from "../core/run/inputReload";
@@ -109,6 +110,10 @@ export type StartupPlan =
   | {
       kind: "self-update";
       input: SelfUpdateCommandInput;
+    }
+  | {
+      kind: "feedback";
+      input: FeedbackCommandInput;
     }
   | {
       kind: "extension-cli-exit";
@@ -459,6 +464,13 @@ export async function prepareStartupPlan(
   if (parsedCliInput.kind === "update") {
     return await finishHeadlessPlan({
       kind: "self-update",
+      input: parsedCliInput,
+    });
+  }
+
+  if (parsedCliInput.kind === "feedback") {
+    return await finishHeadlessPlan({
+      kind: "feedback",
       input: parsedCliInput,
     });
   }
