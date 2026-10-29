@@ -343,7 +343,6 @@ describe("source architecture boundaries", () => {
 // endpoint and token in the one module that is loaded after confirmation, so no other code path
 // can learn them, let alone make an earlier request.
 const FEEDBACK_SEND_PATH = join(CORE_ROOT, "feedback", "send.ts");
-const FEEDBACK_PAYLOAD_PATH = join(CORE_ROOT, "feedback", "payload.ts");
 
 /** Return production files under the Hunk source tree whose text matches one pattern. */
 function sourceFilesMatching(pattern: RegExp) {
@@ -362,12 +361,10 @@ describe("feedback consent boundary", () => {
     ).toEqual([]);
   });
 
-  test("names the Modem host only in the send module and the disclosure", () => {
-    expect(
-      sourceFilesMatching(/ingest\.modem\.dev/)
-        .map(repoPath)
-        .toSorted(),
-    ).toEqual([repoPath(FEEDBACK_PAYLOAD_PATH), repoPath(FEEDBACK_SEND_PATH)].toSorted());
+  test("names the Modem ingest host only in the send module", () => {
+    expect(sourceFilesMatching(/ingest\.modem\.dev/).map(repoPath)).toEqual([
+      repoPath(FEEDBACK_SEND_PATH),
+    ]);
   });
 
   test("loads the send module only through a dynamic import", () => {

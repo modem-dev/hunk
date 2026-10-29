@@ -65,22 +65,32 @@ one.
 Both surfaces render the same text, built by one helper (`describeFeedbackDisclosure` in
 `core/feedback/payload.ts`) from the payload's field list:
 
-> This sends your message to the Modem team, who make Hunk, at ingest.modem.dev.
+> This sends your message to the team that makes Hunk. Hunk is built by Modem (modem.dev), and your
+> feedback goes to Modem's servers, where the team reads it and follows up.
 >
-> It also sends your Hunk version (0.24.1), your operating system (macOS), a label saying it came
-> from Hunk's terminal app, and a random ID made for this message so a retry is not counted twice.
-> That ID is not tied to you or your machine. It sends nothing else: no file names, diffs,
-> repository paths, or account details.
+> Along with your message, Hunk sends your Hunk version (0.24.1), so the team knows which build you
+> are using; your operating system (macOS), since some problems only happen on one platform; a label
+> saying the message came from Hunk's terminal app; and a random ID made just for this message, so
+> that if Hunk has to retry the send, it is not counted twice.
 >
-> As with any web request, Modem's servers see your IP address. It is used for rate limiting and is
-> not stored with your feedback.
+> The random ID is not tied to you or your machine. Hunk sends nothing else: no file names, code,
+> diffs, repository paths, configuration, or account details.
+>
+> As with any web request, Modem's servers can see your IP address. It is used only for rate
+> limiting and is not stored with your feedback.
+>
+> Nothing is sent until you confirm.
 
-If the person enters an email address, the second paragraph gains "and the email address you
-entered, so we can reply". The version and OS in the text are the actual values that will be sent.
+The text names Modem's domain, `modem.dev`, rather than the ingest host the request goes to;
+`send.test.ts` checks that the request host is inside that domain. If the person enters an email
+address, the second paragraph gains "and the email address you entered, so the team can reply to
+you". The version and OS in the text are the actual values that will be sent. With
+`--skip-confirm`, the last line instead says the send is happening without asking, because
+--skip-confirm was passed.
 
 Every payload field maps to a phrase: `release` and `tags.os` to the version and OS, `source`,
-`tags.category`, and `tags.surface` (constant labels) to "a label saying it came from Hunk's
-terminal app", `submission_id` to the random ID, and `email` to the email clause. The field-set
+`tags.category`, and `tags.surface` (constant labels) to "a label saying the message came from
+Hunk's terminal app", `submission_id` to the random ID, and `email` to the email clause. The field-set
 test fails if a field has no phrase.
 
 ## Payload
@@ -149,15 +159,21 @@ hunk feedback [message...]       send feedback to the Hunk team at Modem
    is a header, not part of the body):
 
    ```text
-   This sends your message to the Modem team, who make Hunk, at ingest.modem.dev.
+   This sends your message to the team that makes Hunk. Hunk is built by Modem (modem.dev), and your
+   feedback goes to Modem's servers, where the team reads it and follows up.
 
-   It also sends your Hunk version (0.24.1), your operating system (macOS), a label saying it came
-   from Hunk's terminal app, and a random ID made for this message so a retry is not counted twice.
-   That ID is not tied to you or your machine. It sends nothing else: no file names, diffs,
-   repository paths, or account details.
+   Along with your message, Hunk sends your Hunk version (0.24.1), so the team knows which build you
+   are using; your operating system (macOS), since some problems only happen on one platform; a label
+   saying the message came from Hunk's terminal app; and a random ID made just for this message, so
+   that if Hunk has to retry the send, it is not counted twice.
 
-   As with any web request, Modem's servers see your IP address. It is used for rate limiting and
-   is not stored with your feedback.
+   The random ID is not tied to you or your machine. Hunk sends nothing else: no file names, code,
+   diffs, repository paths, configuration, or account details.
+
+   As with any web request, Modem's servers can see your IP address. It is used only for rate
+   limiting and is not stored with your feedback.
+
+   Nothing is sent until you confirm.
 
    Request body:
    {
@@ -220,14 +236,10 @@ A modal built on `ModalFrame`, sized with `resolveModalGeometry`:
 
 ```text
 ┌ Send feedback to the Hunk team ─────────────────────────────┐
-│ ⚠ This sends your message to the Modem team, who make Hunk, │
-│   at ingest.modem.dev. It also sends your Hunk version      │
-│   (0.24.1), your OS (macOS), a label saying it came from    │
-│   Hunk's terminal app, and a random ID made for this        │
-│   message so a retry is not counted twice. That ID is not   │
-│   tied to you or your machine. Nothing else: no file names, │
-│   diffs, repo paths, or account details. Modem's servers    │
-│   see your IP address for rate limiting; it is not stored.  │
+│ ⚠ This sends your message to the team that makes Hunk.      │
+│   Hunk is built by Modem (modem.dev), and your feedback     │
+│   goes to Modem's servers, where the team reads it and …    │
+│   (the rest of the disclosure text above, never shortened)  │
 │                                                             │
 │ Message                                                     │
 │ ┌─────────────────────────────────────────────────────────┐ │
@@ -246,6 +258,10 @@ A modal built on `ModalFrame`, sized with `resolveModalGeometry`:
 - The disclosure sits at the top in full-contrast text behind an accent ⚠ marker, above the input, and stays visible
   while typing. It is never collapsed, never shown only once, and never moved behind a "details"
   toggle. It is the full `describeFeedbackDisclosure` text, not a shortened version.
+- The modal grows to 96 columns on wide terminals so the disclosure takes fewer rows. On a short
+  terminal the form gives up space in a fixed order (`planFeedbackDialogRows`): message rows down
+  to two, then the blank rows between disclosure paragraphs, then the GitHub-issues hint. The
+  disclosure's words are never cut.
 - The message box is an OpenTUI `<textarea>`, wired for focus the way `AgentInlineNote` does it.
   The email box is a one-line input.
 - The footer is `DialogActionRow`, so every action is also clickable (mouse and keyboard parity).
@@ -356,17 +372,17 @@ patch release first.
 
 ## Module layout
 
-| Path (under `packages/hunk/src/`)                                                   | Role                                                                                                                                                                                     |
-| ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `core/feedback/payload.ts`                                                          | Pure. Validates input, builds `FeedbackPayload`, owns `FEEDBACK_DISCLOSED_FIELDS` and the display-only `FEEDBACK_DESTINATION_HOST`, and renders the disclosure and preview text. No I/O. |
-| `core/feedback/send.ts`                                                             | The only module with the endpoint and token. `sendFeedback` with injectable `fetchImpl`.                                                                                                 |
-| `core/feedback/runFeedbackCommand.ts`                                               | The headless CLI flow: collect, validate, preview, confirm, send, print.                                                                                                                 |
-| `core/run/commandInputs.ts`                                                         | `FeedbackCommandInput`.                                                                                                                                                                  |
-| `core/run/cliCommandNames.ts`                                                       | Reserve `feedback`.                                                                                                                                                                      |
-| `app/cli.ts`, `app/startup.ts`, `main.tsx`                                          | Parse `feedback`, return a headless plan, and lazy-load `runFeedbackCommand`, as `update` does.                                                                                          |
-| `ui/lib/feedbackForm.ts`                                                            | The form's pure state reducer.                                                                                                                                                           |
-| `ui/components/chrome/FeedbackDialog.tsx`                                           | The modal.                                                                                                                                                                               |
-| `ui/lib/appCommands.ts`, `ui/lib/appMenus.ts`, plus log, status, and document menus | `hunk.app.openFeedback` and the Help entries.                                                                                                                                            |
+| Path (under `packages/hunk/src/`)                                                   | Role                                                                                                                                                                                       |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `core/feedback/payload.ts`                                                          | Pure. Validates input, builds `FeedbackPayload`, owns `FEEDBACK_DISCLOSED_FIELDS` and the display-only `FEEDBACK_DESTINATION_DOMAIN`, and renders the disclosure and preview text. No I/O. |
+| `core/feedback/send.ts`                                                             | The only module with the endpoint and token. `sendFeedback` with injectable `fetchImpl`.                                                                                                   |
+| `core/feedback/runFeedbackCommand.ts`                                               | The headless CLI flow: collect, validate, preview, confirm, send, print.                                                                                                                   |
+| `core/run/commandInputs.ts`                                                         | `FeedbackCommandInput`.                                                                                                                                                                    |
+| `core/run/cliCommandNames.ts`                                                       | Reserve `feedback`.                                                                                                                                                                        |
+| `app/cli.ts`, `app/startup.ts`, `main.tsx`                                          | Parse `feedback`, return a headless plan, and lazy-load `runFeedbackCommand`, as `update` does.                                                                                            |
+| `ui/lib/feedbackForm.ts`                                                            | The form's pure state reducer.                                                                                                                                                             |
+| `ui/components/chrome/FeedbackDialog.tsx`                                           | The modal.                                                                                                                                                                                 |
+| `ui/lib/appCommands.ts`, `ui/lib/appMenus.ts`, plus log, status, and document menus | `hunk.app.openFeedback` and the Help entries.                                                                                                                                              |
 
 `AppHost` and the other routed hosts receive `sendFeedback` as an injectable dependency, so UI tests
 never reach the real endpoint.
@@ -391,10 +407,10 @@ The privacy contract gets its own tests. They are the main deliverable alongside
   `surface: "tui"`.
 - **Endpoint containment** (`scripts/quality/source-boundaries.test.ts`): the request URL
   (`https://ingest.modem.dev`) and the `feedback_` token prefix appear only in
-  `core/feedback/send.ts`. The bare hostname the disclosure shows is `FEEDBACK_DESTINATION_HOST` in
-  `core/feedback/payload.ts`, the only other place it may appear. `send.test.ts` asserts that the
-  request URL's host equals that constant, so the disclosed destination cannot drift from the real
-  one.
+  `core/feedback/send.ts`, and so does the bare `ingest.modem.dev` host. The disclosure names only
+  the domain, `FEEDBACK_DESTINATION_DOMAIN` (`modem.dev`) in `core/feedback/payload.ts`.
+  `send.test.ts` asserts that the request host is inside that domain, so the disclosed destination
+  cannot drift from the real one.
 - **Send behavior** (`send.test.ts`): status mapping, retry with the same `submission_id`, `409`
   backoff, no retry on other `4xx`, timeout and abort returning `unconfirmed`, and
   `User-Agent: hunk`.

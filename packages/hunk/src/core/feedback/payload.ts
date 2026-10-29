@@ -10,8 +10,8 @@
  * the person confirms.
  */
 
-/** The host the disclosure names. `send.test.ts` pins it to the real request URL's host. */
-export const FEEDBACK_DESTINATION_HOST = "ingest.modem.dev";
+/** The domain the disclosure names. `send.test.ts` pins the real request host inside it. */
+export const FEEDBACK_DESTINATION_DOMAIN = "modem.dev";
 
 /** Where bug reports that need a reproduction belong instead. */
 export const FEEDBACK_ISSUES_URL = "https://github.com/modem-dev/hunk/issues";
@@ -176,7 +176,7 @@ export function listFeedbackPayloadFields(payload: FeedbackPayload): string[] {
   return fields;
 }
 
-/** Join phrases as an English list: "a", "a and b", "a, b, and c". */
+/** Join phrases as an English list. Semicolons separate items, since the items contain commas. */
 function joinPhrases(phrases: string[]) {
   if (phrases.length <= 1) {
     return phrases.join("");
@@ -186,7 +186,7 @@ function joinPhrases(phrases: string[]) {
     return `${phrases[0]} and ${phrases[1]}`;
   }
 
-  return `${phrases.slice(0, -1).join(", ")}, and ${phrases.at(-1)}`;
+  return `${phrases.slice(0, -1).join("; ")}; and ${phrases.at(-1)}`;
 }
 
 /**
@@ -196,22 +196,31 @@ function joinPhrases(phrases: string[]) {
  * input. Pass `includesEmail` when the person entered an address so the text names it too.
  */
 export function describeFeedbackDisclosure(
-  environment: FeedbackEnvironment & { includesEmail?: boolean },
+  environment: FeedbackEnvironment & {
+    includesEmail?: boolean;
+    /** True for `--skip-confirm`, whose run sends without asking; the text then says so. */
+    skipsConfirmation?: boolean;
+  },
 ): string[] {
   const phraseText: Record<Exclude<FeedbackDisclosurePhrase, "message">, string> = {
-    version: `your Hunk version (${environment.version})`,
-    os: `your operating system (${formatFeedbackPlatform(environment.platform)})`,
-    label: "a label saying it came from Hunk's terminal app",
-    submissionId: "a random ID made for this message so a retry is not counted twice",
-    email: "the email address you entered, so we can reply",
+    version: `your Hunk version (${environment.version}), so the team knows which build you are using`,
+    os: `your operating system (${formatFeedbackPlatform(environment.platform)}), since some problems only happen on one platform`,
+    label: "a label saying the message came from Hunk's terminal app",
+    submissionId:
+      "a random ID made just for this message, so that if Hunk has to retry the send, it is not counted twice",
+    email: "the email address you entered, so the team can reply to you",
   };
   const order: Array<keyof typeof phraseText> = ["version", "os", "label", "submissionId", "email"];
   const included = order.filter((phrase) => phrase !== "email" || environment.includesEmail);
 
   return [
-    `This sends your message to the Modem team, who make Hunk, at ${FEEDBACK_DESTINATION_HOST}.`,
-    `It also sends ${joinPhrases(included.map((phrase) => phraseText[phrase]))}. That ID is not tied to you or your machine. It sends nothing else: no file names, diffs, repository paths, or account details.`,
-    "As with any web request, Modem's servers see your IP address. It is used for rate limiting and is not stored with your feedback.",
+    `This sends your message to the team that makes Hunk. Hunk is built by Modem (${FEEDBACK_DESTINATION_DOMAIN}), and your feedback goes to Modem's servers, where the team reads it and follows up.`,
+    `Along with your message, Hunk sends ${joinPhrases(included.map((phrase) => phraseText[phrase]))}.`,
+    "The random ID is not tied to you or your machine. Hunk sends nothing else: no file names, code, diffs, repository paths, configuration, or account details.",
+    "As with any web request, Modem's servers can see your IP address. It is used only for rate limiting and is not stored with your feedback.",
+    environment.skipsConfirmation
+      ? "Sending now without asking, because --skip-confirm was passed."
+      : "Nothing is sent until you confirm.",
   ];
 }
 

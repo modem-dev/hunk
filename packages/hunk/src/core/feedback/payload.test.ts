@@ -100,19 +100,20 @@ describe("feedback disclosure", () => {
   test("names the destination, the real version and OS, the label, the ID, and the IP", () => {
     const text = describeFeedbackDisclosure(environment).join("\n");
 
-    expect(text).toContain("ingest.modem.dev");
+    expect(text).toContain("Modem (modem.dev)");
     expect(text).toContain("your Hunk version (0.24.1)");
     expect(text).toContain("your operating system (macOS)");
-    expect(text).toContain("a label saying it came from Hunk's terminal app");
-    expect(text).toContain("a random ID made for this message");
+    expect(text).toContain("a label saying the message came from Hunk's terminal app");
+    expect(text).toContain("a random ID made just for this message");
     expect(text).toContain("IP address");
+    expect(text).toContain("Nothing is sent until you confirm.");
     expect(text).not.toContain("email");
   });
 
   test("names the email only when one will be sent", () => {
     const text = describeFeedbackDisclosure({ ...environment, includesEmail: true }).join("\n");
 
-    expect(text).toContain("the email address you entered, so we can reply");
+    expect(text).toContain("the email address you entered, so the team can reply to you");
   });
 
   test("falls back to the raw platform name for an unlisted OS", () => {

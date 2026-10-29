@@ -93,11 +93,13 @@ export function formatFeedbackCommandPreview(
   payload: FeedbackPayload,
   environment: FeedbackEnvironment,
   wrapWidth = MAX_WRAP_WIDTH,
+  skipsConfirmation = false,
 ) {
   return [
     ...describeFeedbackDisclosure({
       ...environment,
       includesEmail: payload.email !== undefined,
+      skipsConfirmation,
     }).map((paragraph) => wrapFeedbackParagraph(paragraph, wrapWidth)),
     `Request body:\n${formatFeedbackPreview(payload)}`,
   ].join("\n\n");
@@ -192,6 +194,7 @@ export async function runFeedbackCommand(
     payload,
     environment,
     deps.wrapWidth ?? Math.min(process.stderr.columns || 80, MAX_WRAP_WIDTH),
+    input.skipConfirm && !input.dryRun,
   );
 
   if (input.dryRun) {

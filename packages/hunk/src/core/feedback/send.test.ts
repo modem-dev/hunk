@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { FEEDBACK_DESTINATION_HOST, type FeedbackPayload } from "./payload";
+import { FEEDBACK_DESTINATION_DOMAIN, type FeedbackPayload } from "./payload";
 import {
   FEEDBACK_UNCONFIRMED_MESSAGE,
   feedbackEndpointUrl,
@@ -60,8 +60,10 @@ function jsonResponse(body: unknown, status: number, headers: Record<string, str
 }
 
 describe("sendFeedback", () => {
-  test("pins the disclosed host to the real request host", () => {
-    expect(new URL(feedbackEndpointUrl()).host).toBe(FEEDBACK_DESTINATION_HOST);
+  test("sends only to a host inside the disclosed domain", () => {
+    expect(new URL(feedbackEndpointUrl()).host.endsWith(`.${FEEDBACK_DESTINATION_DOMAIN}`)).toBe(
+      true,
+    );
   });
 
   test("makes no request when the build has no channel token", async () => {

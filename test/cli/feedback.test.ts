@@ -56,7 +56,7 @@ describe("hunk feedback CLI contract", () => {
     const result = runFeedback(["--dry-run", "hello"]);
 
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain("ingest.modem.dev");
+    expect(result.stdout).toContain("modem.dev");
     expect(result.stdout).toContain("IP address");
     expect(result.stdout).toContain("Dry run: nothing was sent.");
   });

@@ -32,17 +32,21 @@ import {
 } from "./ConfirmDialog";
 import { ModalFrame } from "./ModalFrame";
 
-const PREFERRED_WIDTH = 72;
+const PREFERRED_WIDTH = 96;
 const PREFERRED_MESSAGE_ROWS = 5;
 const MIN_MESSAGE_ROWS = 2;
 /** Show a character count once the message is this close to Modem's limit. */
 const COUNTER_THRESHOLD = FEEDBACK_MESSAGE_MAX_LENGTH - 500;
 
-/** Wrap the disclosure paragraphs, marking the first line so it reads as a warning. */
+/**
+ * Wrap the disclosure paragraphs, marking the first line so it reads as a warning. `compact`
+ * drops the blank rows between paragraphs for short terminals; the text itself is never cut.
+ */
 export function feedbackDisclosureRows(
   environment: FeedbackFormController["environment"],
   includesEmail: boolean,
   width: number,
+  compact = false,
 ) {
   const rows: string[] = [];
   const paragraphs = describeFeedbackDisclosure({ ...environment, includesEmail });
@@ -50,11 +54,52 @@ export function feedbackDisclosureRows(
     for (const line of wrapText(paragraph, Math.max(1, width - 2))) {
       rows.push(`${rows.length === 0 ? "⚠ " : "  "}${line}`);
     }
-    if (index < paragraphs.length - 1) {
+    if (!compact && index < paragraphs.length - 1) {
       rows.push("");
     }
   });
   return rows;
+}
+
+/**
+ * Fit the form to the terminal height without ever shortening the disclosure.
+ *
+ * Space is given up in a fixed order: message rows down to the minimum, then the blank rows
+ * between disclosure paragraphs, then the GitHub issues hint. A terminal shorter than all of that
+ * clips the frame like any other modal.
+ */
+export function planFeedbackDialogRows({
+  disclosure,
+  compactDisclosure,
+  statusRows,
+  terminalHeight,
+}: {
+  disclosure: readonly string[];
+  compactDisclosure: readonly string[];
+  statusRows: number;
+  terminalHeight: number;
+}) {
+  const availableRows = Math.max(1, terminalHeight - 2);
+  // Gap after the disclosure, message label and borders, email label and box, status rows,
+  // the frame chrome, the action gap, and the action row.
+  const chromeRows = 1 + 1 + 2 + 1 + 3 + statusRows + MODAL_FRAME_CHROME_ROWS + 2;
+  const candidates = [
+    { disclosure, showIssuesHint: true },
+    { disclosure: compactDisclosure, showIssuesHint: true },
+    { disclosure: compactDisclosure, showIssuesHint: false },
+  ];
+  const fixedRowsOf = (candidate: (typeof candidates)[number]) =>
+    candidate.disclosure.length + chromeRows + (candidate.showIssuesHint ? 1 : 0);
+  const chosen =
+    candidates.find((candidate) => fixedRowsOf(candidate) + MIN_MESSAGE_ROWS <= availableRows) ??
+    candidates.at(-1)!;
+  const fixedRows = fixedRowsOf(chosen);
+  const messageRows = Math.max(
+    MIN_MESSAGE_ROWS,
+    Math.min(PREFERRED_MESSAGE_ROWS, availableRows - fixedRows),
+  );
+
+  return { ...chosen, messageRows, height: fixedRows + messageRows };
 }
 
 /** The action legend for the form's current state. */
@@ -129,24 +174,20 @@ export function FeedbackDialog({
   }).width;
   const bodyWidth = Math.max(1, frameWidth - 4);
   const fieldWidth = Math.max(1, bodyWidth - 2);
-  const disclosure = feedbackDisclosureRows(
-    controller.environment,
-    state.email.trim().length > 0,
-    bodyWidth,
-  );
+  const includesEmail = state.email.trim().length > 0;
   const status = feedbackStatusRow(state, theme);
   const statusRows = wrapText(status.text, bodyWidth).slice(0, 3);
-
-  // Fixed rows: disclosure, gap, message label, message borders, email label, email box, status,
-  // issues link, plus the frame chrome, action gap, and action row.
-  const fixedRows =
-    disclosure.length + 1 + 1 + 2 + 1 + 3 + statusRows.length + 1 + MODAL_FRAME_CHROME_ROWS + 2;
-  const availableRows = Math.max(1, terminalHeight - 2);
-  const messageRows = Math.max(
-    MIN_MESSAGE_ROWS,
-    Math.min(PREFERRED_MESSAGE_ROWS, availableRows - fixedRows),
-  );
-  const height = fixedRows + messageRows;
+  const { disclosure, showIssuesHint, messageRows, height } = planFeedbackDialogRows({
+    disclosure: feedbackDisclosureRows(controller.environment, includesEmail, bodyWidth),
+    compactDisclosure: feedbackDisclosureRows(
+      controller.environment,
+      includesEmail,
+      bodyWidth,
+      true,
+    ),
+    statusRows: statusRows.length,
+    terminalHeight,
+  });
   const fieldBorder = (field: "message" | "email") =>
     editable && state.field === field ? theme.accent : theme.border;
 
@@ -240,14 +281,16 @@ export function FeedbackDialog({
               <text fg={status.color}>{line}</text>
             </box>
           ))}
-          <box style={{ width: "100%", height: 1 }}>
-            <text fg={theme.muted}>
-              {fitText(
-                `Bug with steps to reproduce? ${FEEDBACK_ISSUES_URL.replace("https://", "")}`,
-                bodyWidth,
-              )}
-            </text>
-          </box>
+          {showIssuesHint ? (
+            <box style={{ width: "100%", height: 1 }}>
+              <text fg={theme.muted}>
+                {fitText(
+                  `Bug with steps to reproduce? ${FEEDBACK_ISSUES_URL.replace("https://", "")}`,
+                  bodyWidth,
+                )}
+              </text>
+            </box>
+          ) : null}
           <box style={{ width: "100%", height: 1 }} />
           <DialogActionRow actions={feedbackActions(controller)} theme={theme} />
         </box>

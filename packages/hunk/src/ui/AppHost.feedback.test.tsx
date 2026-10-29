@@ -98,7 +98,7 @@ describe("feedback form in the review app", () => {
     try {
       await openTestFeedbackForm(setup);
       const frame = setup.captureCharFrame();
-      expect(frame).toContain("This sends your message to the Modem team");
+      expect(frame).toContain("This sends your message to the team that makes Hunk");
       expect(frame).toContain("IP address");
 
       await typeTestFeedback(setup, "jk]q");

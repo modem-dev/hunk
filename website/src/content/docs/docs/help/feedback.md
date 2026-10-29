@@ -37,7 +37,7 @@ git log -1 --format=%B | hunk feedback --file -
 
 ## What is sent
 
-One HTTPS request to `ingest.modem.dev`, containing:
+One HTTPS request to Modem's feedback service (`ingest.modem.dev`, part of modem.dev), containing:
 
 | Field            | Value                                                                                                          |
 | ---------------- | -------------------------------------------------------------------------------------------------------------- |
