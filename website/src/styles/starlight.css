@@ -1,0 +1,367 @@
+@import "./brand.css";
+
+:root {
+  /*
+   * Wide-viewport shell: cap the whole docs frame (sidebar + article + TOC)
+   * and center it, instead of pinning the sidebar to the viewport edge and
+   * letting the gap grow with the window.
+   */
+  --hunk-shell-max: 100rem;
+  --hunk-shell-inset: max(0rem, calc((100vw - var(--hunk-shell-max)) / 2));
+  --sl-content-width: 60rem;
+  --sl-font: var(--hunk-font);
+  --sl-font-mono: var(--hunk-font);
+  --sl-nav-height: 4.625rem;
+  --sl-color-accent-low: var(--hunk-accent-soft);
+  --sl-color-accent: var(--hunk-accent);
+  --sl-color-accent-high: var(--hunk-accent-ink);
+  --sl-color-text-accent: var(--hunk-accent);
+  --sl-color-white: var(--hunk-ink);
+  --sl-color-gray-1: var(--hunk-ink);
+  --sl-color-gray-2: var(--hunk-body);
+  --sl-color-gray-3: var(--hunk-muted);
+  --sl-color-gray-4: #948c7d;
+  --sl-color-gray-5: var(--hunk-rule);
+  --sl-color-gray-6: var(--hunk-panel);
+  --sl-color-gray-7: var(--hunk-paper);
+  --sl-color-black: var(--hunk-bg);
+  --sl-color-bg: var(--hunk-bg);
+  --sl-color-bg-nav: rgba(244, 241, 234, 0.96);
+  --sl-color-bg-sidebar: var(--hunk-bg);
+  --sl-color-bg-inline-code: var(--hunk-panel);
+  --sl-color-hairline-light: var(--hunk-rule);
+  --sl-color-hairline: var(--hunk-rule);
+  --sl-color-hairline-shade: var(--hunk-rule);
+}
+
+:root[data-theme="dark"] {
+  --sl-color-gray-4: #6b7681;
+  --sl-color-gray-6: var(--hunk-paper);
+  --sl-color-gray-7: var(--hunk-panel);
+  --sl-color-bg-nav: rgba(12, 14, 16, 0.96);
+  --sl-color-bg-sidebar: var(--hunk-paper);
+  --sl-color-hairline-shade: #1d2329;
+}
+
+body {
+  background: var(--hunk-bg);
+  color: var(--hunk-body);
+  font-family: var(--sl-font);
+  font-size: 0.9375rem;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3,
+h4,
+.site-title,
+.sidebar-content,
+.right-sidebar {
+  font-family: var(--sl-font);
+}
+
+h1 {
+  color: var(--hunk-ink);
+  font-size: clamp(2.25rem, 4vw, 3rem);
+  line-height: 1;
+  letter-spacing: -0.04em;
+}
+
+h2 {
+  color: var(--hunk-ink);
+  letter-spacing: -0.03em;
+}
+
+h3,
+h4 {
+  color: var(--hunk-ink);
+  letter-spacing: -0.015em;
+}
+
+/*
+ * Center the fixed left sidebar with the capped shell, and mirror the shell
+ * inset on the main frame so the article + TOC track the same 100rem column.
+ */
+@media (min-width: 50rem) {
+  .sidebar-pane {
+    inset-inline-start: var(--hunk-shell-inset);
+  }
+
+  .main-frame {
+    padding-inline-start: calc(var(--hunk-shell-inset) + var(--sl-content-inline-start, 0rem));
+    padding-inline-end: var(--hunk-shell-inset);
+  }
+}
+
+/* Starlight sizes the fixed TOC panel text off 100vw; cap it to the shell. */
+@media (min-width: 72rem) {
+  .right-sidebar-panel .sl-container {
+    max-width: calc(
+      (
+          min(100vw, var(--hunk-shell-max)) - var(--sl-sidebar-width) - 2 *
+            var(--sl-content-pad-x) - 2 * var(--sl-sidebar-pad-x)
+        ) *
+        0.25
+    );
+  }
+}
+
+a:focus-visible,
+button:focus-visible,
+summary:focus-visible,
+input:focus-visible,
+select:focus-visible,
+pre:focus-visible,
+[tabindex]:focus-visible {
+  outline: 3px solid var(--hunk-accent);
+  outline-offset: 3px;
+}
+
+code:not(pre code) {
+  border: 1px solid var(--hunk-rule);
+  border-radius: 0.25rem;
+  background: var(--sl-color-bg-inline-code);
+  padding: 0.1rem 0.28rem;
+}
+
+::selection {
+  color: var(--hunk-accent-ink);
+  background: var(--hunk-accent-soft);
+}
+
+header.header {
+  padding: 0;
+  border-bottom: 1.5px solid var(--hunk-strong-border);
+}
+
+.site-title {
+  color: var(--hunk-ink);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  text-transform: lowercase;
+}
+
+.sidebar-pane {
+  border-inline-end-color: var(--hunk-rule);
+}
+
+.sidebar-content summary {
+  color: var(--hunk-ink);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.sidebar-content a {
+  border-radius: 0.25rem;
+}
+
+.sidebar-content a[aria-current="page"] {
+  color: var(--hunk-button-ink);
+  background: var(--hunk-accent);
+}
+
+site-search button,
+starlight-menu-button button {
+  border: 1.5px solid var(--hunk-strong-border);
+  border-radius: 0.5rem;
+  background: var(--hunk-paper);
+  color: var(--hunk-ink);
+  box-shadow: 2px 2px 0 var(--hunk-shadow);
+  font-family: var(--sl-font);
+}
+
+.hero h1 {
+  font-size: clamp(2.25rem, 5vw, 3.5rem);
+  line-height: 1;
+}
+
+.hero .tagline {
+  max-width: 44rem;
+  color: var(--hunk-body);
+}
+
+.sl-link-button {
+  border: 1.5px solid var(--hunk-strong-border);
+  border-radius: 0.5rem;
+  font-family: var(--sl-font);
+  font-weight: 600;
+  transition:
+    transform 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.sl-link-button.primary {
+  border-color: var(--hunk-strong-border);
+  background: var(--hunk-accent);
+  color: var(--hunk-button-ink);
+  box-shadow: 3px 3px 0 var(--hunk-shadow);
+}
+
+.sl-link-button.primary:hover {
+  color: var(--hunk-button-ink);
+}
+
+.sl-link-button.secondary {
+  background: var(--hunk-paper);
+  color: var(--hunk-ink);
+  box-shadow: 3px 3px 0 var(--hunk-shadow);
+}
+
+.card {
+  border: 1.5px solid var(--hunk-strong-border);
+  border-radius: 0;
+  background: var(--hunk-paper);
+}
+
+.card .icon {
+  border-color: var(--hunk-accent);
+  background: var(--hunk-accent-soft);
+  color: var(--hunk-accent-ink);
+}
+
+.sl-link-card {
+  border: 1.5px solid var(--hunk-strong-border);
+  border-radius: 0;
+  background: var(--hunk-paper);
+  box-shadow: none;
+}
+
+.sl-link-card:hover {
+  background: color-mix(in srgb, var(--hunk-paper) 82%, var(--hunk-accent-soft));
+}
+
+.pagination-links > a {
+  border: 1.5px solid var(--hunk-strong-border);
+  border-radius: 0.5rem;
+  background: var(--hunk-paper);
+  box-shadow: 3px 3px 0 var(--hunk-shadow);
+  transition:
+    transform 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.expressive-code .frame {
+  border: 1.5px solid var(--hunk-strong-border);
+  border-radius: 0.625rem;
+  box-shadow: 3px 3px 0 var(--hunk-shadow);
+}
+
+.sl-markdown-content img {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-block: 1.5rem 0.75rem;
+  border: 1.5px solid var(--hunk-strong-border);
+  border-radius: 0.625rem;
+  box-shadow: 6px 6px 0 var(--hunk-shadow);
+}
+
+.sl-markdown-content table {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+
+.sl-markdown-content th,
+.sl-markdown-content td {
+  min-width: 8rem;
+  vertical-align: top;
+}
+
+.sl-markdown-content th:first-child,
+.sl-markdown-content td:first-child {
+  min-width: 10rem;
+}
+
+.sl-markdown-content th:last-child,
+.sl-markdown-content td:last-child {
+  min-width: 18rem;
+}
+
+.sl-markdown-content td:first-child code {
+  white-space: nowrap;
+}
+
+@media (hover: hover) {
+  .sl-link-button:hover,
+  .pagination-links > a:hover {
+    transform: translate(2px, 2px);
+    box-shadow: 1px 1px 0 var(--hunk-shadow);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sl-link-button,
+  .pagination-links > a {
+    transition: none;
+  }
+}
+
+@media (max-width: 50rem) {
+  :root {
+    --sl-content-pad-x: 1rem;
+  }
+
+  .sl-markdown-content img {
+    box-shadow: 3px 3px 0 var(--hunk-shadow);
+  }
+}
+
+/* Changelog pages. Generated Markdown, so the structure is fixed: an h3 per released version
+   followed by a plain-paragraph meta line, then h4 sections of change bullets. The rules below
+   turn that structure into a scannable release list without any per-page markup. */
+[data-changelog] .sl-markdown-content h3 {
+  font-size: var(--sl-text-2xl);
+}
+
+/*
+ * Rule between releases. Starlight renders headings inline inside a wrapper element, so a border
+ * on the heading spans only its text; the generated anchor above each release is a full-width
+ * block and carries it instead. It also gives `#v0-18-2` somewhere to land above the heading.
+ */
+[data-changelog] .sl-markdown-content .release-separator {
+  display: block;
+  margin-top: 2.5rem;
+  border-top: 1px solid var(--hunk-rule);
+}
+
+/* The dateline opening a release page: date span and release count. */
+[data-changelog] .sl-markdown-content > p:first-child {
+  margin-bottom: 0.5rem;
+  color: var(--hunk-muted);
+  font-size: var(--sl-text-sm);
+}
+
+/* The line directly under a version heading is its date and channel. */
+[data-changelog] .sl-markdown-content h3 + p {
+  margin-top: 0.35rem;
+  color: var(--hunk-muted);
+  font-size: var(--sl-text-sm);
+}
+
+[data-changelog] .sl-markdown-content h4 {
+  margin-top: 1.5rem;
+  color: var(--hunk-muted);
+  font-size: var(--sl-text-xs);
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+[data-changelog] .sl-markdown-content h2 + p {
+  color: var(--hunk-muted);
+  font-size: var(--sl-text-sm);
+}
+
+.changelog-video {
+  display: block;
+  width: 100%;
+  margin: 1.5rem 0;
+  border: 1px solid var(--hunk-strong-border);
+  border-radius: 8px;
+  background: var(--hunk-panel);
+}

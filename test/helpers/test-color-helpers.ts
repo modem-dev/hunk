@@ -5,8 +5,13 @@ export function capturedTestColorToHex(color: { buffer?: ArrayLike<number> } | u
     return null;
   }
 
+  const usesByteScale =
+    (ArrayBuffer.isView(buffer) &&
+      !(buffer instanceof Float32Array) &&
+      !(buffer instanceof Float64Array)) ||
+    [buffer[0], buffer[1], buffer[2]].some((value) => value > 1);
   const componentToHex = (value: number) =>
-    Math.max(0, Math.min(255, Math.round(value * 255)))
+    Math.max(0, Math.min(255, Math.round(usesByteScale ? value : value * 255)))
       .toString(16)
       .padStart(2, "0");
 

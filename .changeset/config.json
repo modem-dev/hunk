@@ -1,6 +1,12 @@
 {
   "$schema": "https://unpkg.com/@changesets/config@3.1.4/schema.json",
-  "changelog": "@changesets/cli/changelog",
+  "changelog": [
+    "@changesets/changelog-github",
+    {
+      "repo": "modem-dev/hunk",
+      "disableThanks": true
+    }
+  ],
   "commit": false,
   "fixed": [],
   "linked": [],
@@ -8,9 +14,15 @@
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
   "ignore": [
+    "@hunk/gh",
+    "@hunk/git",
+    "@hunk/jj",
+    "@hunk/sapling",
     "@hunk/session-broker",
     "@hunk/session-broker-bun",
     "@hunk/session-broker-core",
-    "@hunk/session-broker-node"
+    "@hunk/session-broker-node",
+    "@hunk/term-video",
+    "@hunk/vcs"
   ]
 }

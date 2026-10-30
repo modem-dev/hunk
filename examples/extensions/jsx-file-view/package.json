@@ -1,0 +1,9 @@
+{
+  "name": "hunk-jsx-file-view-poc-extension",
+  "private": true,
+  "hunk": {
+    "extensions": [
+      "./index.tsx"
+    ]
+  }
+}

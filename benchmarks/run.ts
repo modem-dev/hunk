@@ -5,6 +5,7 @@ import { dirname, resolve } from "node:path";
 import { aggregateMetric, type BenchmarkRunResult } from "./lib/benchmark-result";
 
 const defaultScripts = [
+  "startup-first-frame.ts",
   "bootstrap-load.ts",
   "working-tree-load.ts",
   "changeset-parse.ts",
@@ -13,6 +14,8 @@ const defaultScripts = [
   "large-stream.ts",
   "interaction-latency.ts",
   "non-ascii-stream.ts",
+  "wrapped-cjk.ts",
+  "terminal-width.ts",
 ];
 
 interface RunOptions {
@@ -97,7 +100,9 @@ function gitSha() {
 
 async function packageVersion() {
   try {
-    const packageJson = JSON.parse(await Bun.file("package.json").text()) as { version?: string };
+    const packageJson = JSON.parse(await Bun.file("packages/hunk/package.json").text()) as {
+      version?: string;
+    };
     return packageJson.version;
   } catch {
     return undefined;

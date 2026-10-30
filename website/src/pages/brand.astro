@@ -1,0 +1,93 @@
+---
+import BrandFooter from "../components/BrandFooter.astro";
+import BrandHeader from "../components/BrandHeader.astro";
+import PageHead from "../components/PageHead.astro";
+import { brandColors, brandDownloadPath, brandFormats, brandLogos } from "../data/brand";
+import "../styles/marketing.css";
+import "../styles/brand-page.css";
+
+const description = "Download the Hunk logo, mark, and wordmark as SVG, transparent PNG, or PDF. Official brand assets for articles, talks, and projects.";
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <PageHead title="hunk brand — logos & downloads" description={description} path="/brand/" keywords="hunk logo, brand assets, SVG, PNG, PDF" ogImageAlt="Hunk — terminal diffs, made for review." />
+  </head>
+  <body>
+    <div class="marketing">
+      <header class="top"><BrandHeader /></header>
+      <main class="brand-page">
+        <section class="brand-intro" aria-labelledby="brand-title">
+          <p class="kicker">The hunk brand</p>
+          <h1 id="brand-title">Made for review.<br />Ready to share.</h1>
+          <p class="sub">Writing about Hunk? Giving a talk? Here are the logos, ready to use.</p>
+          <a class="brand-bundle" href="/brand/hunk-brand.zip" download>Download all assets <span>ZIP ↓</span></a>
+          <p class="brand-caption">4 logos · 2 colors · SVG, PNG & PDF</p>
+        </section>
+
+        <section aria-labelledby="logos-title">
+          <div class="brand-section-heading">
+            <h2 id="logos-title">Logo downloads</h2>
+            <p>SVG scales to any size. PNGs are 2048px wide: transparent, or solid on the matching background. PDF is for print.</p>
+          </div>
+          <div class="brand-grid">
+            {brandLogos.map((logo) => (
+              <article class="brand-card" aria-labelledby={logo.id}>
+                <div class="brand-card-heading">
+                  <h3 id={logo.id}>{logo.name}</h3>
+                  <p>{logo.description}</p>
+                </div>
+                {brandColors.map((color) => (
+                  <div class="brand-variant">
+                    <div class="brand-preview" style={`background:${color.background}`}>
+                      <img src={brandDownloadPath(logo.id, color.id, "svg")} alt={`${logo.name} in ${color.name.toLowerCase()}`} width={logo.width} height={logo.height} />
+                    </div>
+                    <div class="brand-download-row">
+                      <span>{color.name}</span>
+                      <div class="brand-formats">
+                        {brandFormats.map((format) => (
+                          <a href={brandDownloadPath(logo.id, color.id, format.id)} download aria-label={`Download ${logo.name.toLowerCase()} in ${color.name.toLowerCase()} as ${format.name}`}>{format.label} <span aria-hidden="true">↓</span></a>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section class="brand-guidance" aria-labelledby="usage-title">
+          <h2 id="usage-title">A little room to breathe.</h2>
+          <div class="brand-guidance-grid">
+            <div>
+              <h3>Keep it simple</h3>
+              <p>Use ink on light backgrounds and paper on dark ones. Keep the original proportions. Leave at least one stem-width of clear space on every side.</p>
+              <p>Use the flat mark below 40px. Keep it at least 16px wide, the 3D mark at least 40px, and the wordmark at least 48px.</p>
+            </div>
+            <div>
+              <h3>Keep it hunk</h3>
+              <p>Don’t stretch, rotate, add effects, or retype the wordmark. Don’t put the mark in a circle or imply endorsement by Hunk.</p>
+              <p>Write <strong>Hunk</strong> in prose, <strong>hunk</strong> in the wordmark, and <code>hunkdiff</code> for the npm package.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="brand-palette" aria-labelledby="palette-title">
+          <h2 id="palette-title">Paper, ink, a little green.</h2>
+          <div class="brand-swatches">
+            {[{ name: "Paper", value: "#f4f1ea" }, { name: "Ink", value: "#16140f" }, { name: "Green", value: "#1f7a35" }].map((color) => (
+              <div class="brand-swatch">
+                <div style={`background:${color.value}`} aria-hidden="true"></div>
+                <p>{color.name} <code>{color.value}</code></p>
+              </div>
+            ))}
+          </div>
+          <p>Set in JetBrains Mono. The wordmark downloads are outlined paths, so you don’t need to install a font.</p>
+        </section>
+      </main>
+      <BrandFooter />
+    </div>
+  </body>
+</html>

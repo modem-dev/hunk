@@ -1,0 +1,927 @@
+import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createPtyHarness } from "./harness";
+
+const harness = createPtyHarness();
+const RENDERED_MARKDOWN_EXTENSION = join(
+  import.meta.dir,
+  "../../examples/extensions/rendered-markdown",
+);
+const INLINE_EDIT_EXTENSION = join(import.meta.dir, "../../examples/extensions/inline-edit");
+const JSX_FILE_VIEW_EXTENSION = join(import.meta.dir, "../../examples/extensions/jsx-file-view");
+const JSX_FILE_VIEW_GALLERY = join(
+  import.meta.dir,
+  "../../examples/extensions/jsx-file-view-gallery",
+);
+const JSX_MIXED_REVIEW_LAUNCHER = join(JSX_FILE_VIEW_GALLERY, "mixed-review/run.ts");
+setDefaultTimeout(30_000);
+
+afterEach(() => {
+  harness.cleanup();
+});
+
+/** Create a direct-file Markdown diff so exact old/new source remains host-readable. */
+function createMarkdownPairTest(noteRange: [number, number] = [3, 3]) {
+  const directory = mkdtempSync(join(tmpdir(), "hunk-file-view-"));
+  const before = join(directory, "before.md");
+  const after = join(directory, "after.md");
+  const agentContext = join(directory, "agent.json");
+  writeFileSync(before, "# Heading\n\n- old item\n", "utf8");
+  writeFileSync(after, "# Heading\n\n- new item\n", "utf8");
+  writeFileSync(
+    agentContext,
+    JSON.stringify({
+      version: 1,
+      files: [
+        {
+          path: "after.md",
+          annotations: [{ newRange: noteRange, summary: "Review the new item." }],
+        },
+      ],
+    }),
+    "utf8",
+  );
+  return { after, agentContext, before, directory };
+}
+
+/**
+ * Write a file view whose interactive mode moves a highlight with `j`.
+ *
+ * The mode answers `j`, leaves on `x`, and declines everything else, so one real
+ * terminal run shows every routing answer: a handled key redrawing through
+ * `refresh`, a declined key reaching Hunk's own commands, and Escape handing the
+ * keyboard back.
+ */
+function createInteractiveViewExtension(directory: string) {
+  const extension = join(directory, "cursor-mode");
+  mkdirSync(extension, { recursive: true });
+  writeFileSync(
+    join(extension, "package.json"),
+    JSON.stringify({
+      name: "cursor-mode",
+      private: true,
+      hunk: { extensions: ["./index.ts"] },
+    }),
+    "utf8",
+  );
+  writeFileSync(
+    join(extension, "index.ts"),
+    `export default function (hunk) {
+  let cursor = 0;
+  hunk.registerFileView({
+    id: "cursor",
+    title: "Cursor demo",
+    matches: () => true,
+    layout: ({ file }) => ({
+      rows: [{ id: "cursor", spans: [{ text: "CURSOR AT " + cursor }] }],
+      hunkRows: (file.hunks ?? []).map(() => ({ startRow: 0, endRow: 0 })),
+    }),
+    mode: {
+      onKey: (key, ctx) => {
+        if (key.name === "j") {
+          cursor += 1;
+          ctx.fileViews.refresh("cursor");
+          return "handled";
+        }
+        if (key.name === "x") return "exit";
+        return "pass";
+      },
+    },
+  });
+  hunk.registerCommand({ id: "toggle", title: "Toggle cursor demo", key: "f8" }, (ctx) =>
+    ctx.fileViews.toggle("cursor"),
+  );
+  hunk.registerCommand({ id: "enter", title: "Enter cursor mode", key: "f9" }, (ctx) =>
+    ctx.fileViews.enterMode("cursor"),
+  );
+}
+`,
+    "utf8",
+  );
+  return extension;
+}
+
+/** Write a syntax view with observable generations and one deliberately late refresh. */
+function createSyntaxViewExtension(directory: string) {
+  const extension = join(directory, "syntax-preview");
+  const generationOneStarted = join(extension, "generation-001-started");
+  const generationOneRelease = join(extension, "generation-001-release");
+  const generationOneCompleted = join(extension, "generation-001-completed");
+  mkdirSync(extension, { recursive: true });
+  writeFileSync(generationOneStarted, "", "utf8");
+  writeFileSync(generationOneRelease, "", "utf8");
+  writeFileSync(generationOneCompleted, "", "utf8");
+  writeFileSync(
+    join(extension, "package.json"),
+    JSON.stringify({
+      name: "syntax-preview",
+      private: true,
+      hunk: { extensions: ["./index.ts"] },
+    }),
+    "utf8",
+  );
+  writeFileSync(
+    join(extension, "index.ts"),
+    `import { readFileSync, writeFileSync } from "node:fs";
+
+const generationOneStarted = ${JSON.stringify(generationOneStarted)};
+const generationOneRelease = ${JSON.stringify(generationOneRelease)};
+const generationOneCompleted = ${JSON.stringify(generationOneCompleted)};
+
+export default function (hunk) {
+  let generation = 0;
+  const makeLayout = (file, requestedGeneration) => {
+    const codeLines = Array.from({ length: 80 }, (_, index) => {
+      if (index === 8) return "/* multiline comment";
+      if (index === 9) return "still commented */";
+      if (index === 20) return "const template = " + String.fromCharCode(96) + "first";
+      if (index === 21) return "value \${21}";
+      if (index === 22) return "last" + String.fromCharCode(96) + ";";
+      return "const phaseLine" + (index + 1) + " = " + (index + 1) + ";";
+    });
+    const generationLabel = String(requestedGeneration).padStart(3, "0");
+    return {
+      codeDocuments: [{ id: "generated", text: codeLines.join("\\n"), language: "typescript" }],
+      rows: codeLines.map((text, index) => ({
+        id: "syntax-" + index,
+        spans: [
+          {
+            text:
+              "FILE " + file.path + " GEN " + generationLabel + " ROW " +
+              String(index + 1).padStart(3, "0") + " ",
+            tone: "accent",
+          },
+          { text, syntax: { documentId: "generated", line: index + 1 } },
+        ],
+      })),
+      hunkRows: (file.hunks ?? []).map(() => ({ startRow: 0, endRow: 0 })),
+    };
+  };
+  hunk.registerFileView({
+    id: "syntax-preview",
+    title: "Syntax preview",
+    matches: () => true,
+    layout: async ({ file }) => {
+      const requestedGeneration = generation;
+      if (requestedGeneration === 1) {
+        writeFileSync(generationOneStarted, "started", "utf8");
+        while (readFileSync(generationOneRelease, "utf8") !== "release") {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        writeFileSync(generationOneCompleted, "completed", "utf8");
+      }
+      return makeLayout(file, requestedGeneration);
+    },
+  });
+  hunk.registerCommand({ id: "toggle-syntax", title: "Toggle syntax", key: "f8" }, (ctx) =>
+    ctx.fileViews.toggle("syntax-preview"),
+  );
+  hunk.registerCommand({ id: "reload-syntax", title: "Reload syntax", key: "f9" }, (ctx) => {
+    generation += 1;
+    ctx.fileViews.refresh("syntax-preview");
+  });
+}
+`,
+    "utf8",
+  );
+  return { extension, generationOneCompleted, generationOneRelease, generationOneStarted };
+}
+
+/** Return the exact first mounted syntax row so viewport stability cannot pass by containment. */
+function firstVisibleSyntaxRow(snapshot: string) {
+  return snapshot.match(/FILE [^\s]+ GEN \d{3} ROW \d{3}/)?.[0];
+}
+
+/** Poll foreground-filtered terminal output until one exact syntax color reaches the PTY. */
+async function waitForSyntaxForeground(
+  session: Awaited<ReturnType<typeof harness.launchHunk>>,
+  foreground: string,
+  text: string,
+) {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    await session.waitIdle({ timeout: 50 });
+    const colored = await session.text({
+      immediate: true,
+      only: { foreground },
+    });
+    if (colored.includes(text)) return colored;
+  }
+  throw new Error(`Timed out waiting for ${foreground} syntax foreground on ${text}`);
+}
+
+/** Poll one file until the host's write lands, so the assertion is not a race. */
+async function waitForWrittenFile(path: string, expected: string, timeout = 15_000) {
+  const deadline = Date.now() + timeout;
+  let text = readFileSync(path, "utf8");
+  while (text !== expected && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    text = readFileSync(path, "utf8");
+  }
+  return text;
+}
+
+describe("PTY file views", () => {
+  test("does not load the Markdown example unless the user installs it", async () => {
+    const pair = createMarkdownPairTest();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "unified", "--files", pair.before, pair.after],
+      cwd: pair.directory,
+      cols: 140,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/before\.md/, { timeout: 20_000 });
+      const menu = await harness.clickAndWaitForText(
+        session,
+        /View/,
+        /File presentation: Raw diff/,
+      );
+      expect(menu).not.toContain("File presentation: Rendered Markdown");
+    } finally {
+      session.close();
+      rmSync(pair.directory, { recursive: true, force: true });
+    }
+  });
+
+  test("keeps syntax paint and exact viewport stable through theme, resize, refresh, and files", async () => {
+    const repo = harness.createTwoFileRepoFixture();
+    const syntaxFixture = createSyntaxViewExtension(repo.dir);
+    writeFileSync(join(repo.dir, ".git", "info", "exclude"), "syntax-preview/\n", {
+      encoding: "utf8",
+      flag: "a",
+    });
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--theme",
+        "github-dark-default",
+        "--extension",
+        syntaxFixture.extension,
+        "--mode",
+        "unified",
+      ],
+      cwd: repo.dir,
+      cols: 120,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/alpha\.ts/, { timeout: 20_000 });
+      await harness.ensureKeyboardIsLive(session);
+      await session.press("f8");
+      await session.waitForText(/FILE alpha\.ts GEN 000 ROW 001 const phaseLine1 = 1;/, {
+        timeout: 20_000,
+      });
+
+      // Scroll until the second comment line is visible while its lexical opener is offscreen.
+      let commentSnapshot = "";
+      for (let step = 0; step < 20; step += 1) {
+        await session.scrollDown(1);
+        commentSnapshot = await session.text({ immediate: true });
+        if (
+          commentSnapshot.includes("ROW 010 still commented */") &&
+          !commentSnapshot.includes("ROW 009 /* multiline comment")
+        ) {
+          break;
+        }
+      }
+      expect(commentSnapshot).toContain("ROW 010 still commented */");
+      expect(commentSnapshot).not.toContain("ROW 009 /* multiline comment");
+
+      // PTY owns real Shiki completion; deterministic pending/stale/failure races live in AppHost.
+      const commentPaint = await waitForSyntaxForeground(session, "#8b949e", "still commented */");
+      expect(commentPaint).not.toContain("FILE alpha.ts");
+      expect(
+        await session.text({
+          immediate: true,
+          only: { foreground: "#bb8009" },
+        }),
+      ).toContain("FILE alpha.ts GEN 000 ROW 010");
+
+      const themeAnchor = firstVisibleSyntaxRow(await session.text({ immediate: true }));
+      expect(themeAnchor).toBeDefined();
+      await session.press("t");
+      await session.waitForText(/Theme selector/, { timeout: 5_000 });
+      await session.press("down");
+      await session.press("enter");
+      await session.waitForText(/Theme: github-dark-dimmed/, {
+        timeout: 5_000,
+      });
+      await waitForSyntaxForeground(session, "#768390", "still commented */");
+      expect(firstVisibleSyntaxRow(await session.text({ immediate: true }))).toBe(themeAnchor);
+
+      await session.press("home");
+      await session.waitForText(/FILE alpha\.ts GEN 000 ROW 001/, {
+        timeout: 5_000,
+      });
+      const resizeAnchor = firstVisibleSyntaxRow(await session.text({ immediate: true }));
+      session.resize({ cols: 92, rows: 20 });
+      // Resizing invalidates the old-width layout. Observe raw fallback first, then wait for the
+      // debounced preparation at the new width rather than matching a stale pre-resize frame.
+      await session.waitForText(/export const alpha = 2;/, { timeout: 5_000 });
+      const resized = await session.waitForText(/FILE alpha\.ts GEN 000 ROW 001/, {
+        timeout: 5_000,
+      });
+      expect(firstVisibleSyntaxRow(resized)).toBe(resizeAnchor);
+
+      // Generation 1 proves it entered layout and remains blocked while generation 2 commits.
+      await session.press("f9");
+      expect(await waitForWrittenFile(syntaxFixture.generationOneStarted, "started")).toBe(
+        "started",
+      );
+      expect(await session.text({ immediate: true })).toContain(resizeAnchor!);
+      await session.press("f9");
+      const generationTwo = new RegExp(resizeAnchor!.replace("GEN 000", "GEN 002"));
+      await session.waitForText(generationTwo, { timeout: 5_000 });
+
+      // Release generation 1 only after generation 2 is visible, then observe its late completion.
+      writeFileSync(syntaxFixture.generationOneRelease, "release", "utf8");
+      expect(await waitForWrittenFile(syntaxFixture.generationOneCompleted, "completed")).toBe(
+        "completed",
+      );
+      // A complete keyboard round-trip runs after the layout promise's microtasks, proving the host
+      // observed the late completion before we inspect the accepted generation.
+      await harness.ensureKeyboardIsLive(session);
+      const refreshed = await session.text({ immediate: true });
+      expect(refreshed).toMatch(generationTwo);
+      expect(refreshed).not.toContain("GEN 001");
+
+      // Assert both hunk-navigation directions immediately from the exact current-file marker.
+      await harness.ensureKeyboardIsLive(session);
+      session.resize({ cols: 160, rows: 20 });
+      await session.waitForText(/▌ M beta\.ts/, { timeout: 5_000 });
+      await session.press("[");
+      await session.waitForText(/▌ M alpha\.ts/, { timeout: 10_000 });
+      await session.press("]");
+      await session.waitForText(/▌ M beta\.ts/, { timeout: 10_000 });
+
+      // Scroll explicitly only after navigation is proven, then load and paint the second file.
+      await session.scrollDown(100);
+      await session.waitForText(/betaValue/, { timeout: 10_000 });
+      await session.press("f8");
+      await session.waitForText(/FILE beta\.ts GEN 002 ROW 001 const phaseLine1 = 1;/, {
+        timeout: 10_000,
+      });
+      await waitForSyntaxForeground(session, "#f47067", "const");
+      await session.scrollUp(100);
+      await session.waitForText(/FILE alpha\.ts GEN 002 ROW 001 const phaseLine1 = 1;/, {
+        timeout: 10_000,
+      });
+      await harness.ensureKeyboardIsLive(session);
+    } finally {
+      session.close();
+    }
+  });
+
+  test("loads the Markdown example and keeps hunk navigation live", async () => {
+    const pair = createMarkdownPairTest();
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--extension",
+        RENDERED_MARKDOWN_EXTENSION,
+        "--mode",
+        "unified",
+        "--files",
+        pair.before,
+        pair.after,
+      ],
+      cwd: pair.directory,
+      cols: 140,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/before\.md/, { timeout: 20_000 });
+      await session.click(/View/);
+      const menu = await session.waitForText(/File presentation: Rendered Markdown/, {
+        timeout: 20_000,
+      });
+      expect(menu).toContain("File presentation: Raw diff");
+
+      await session.press("escape");
+      // A short idle wait can finish while the terminal parser still holds a lone Escape.
+      // Verify close before F8 so the two inputs cannot become an Alt-modified function key.
+      await harness.waitForSnapshot(session, (text) => !text.includes("File presentation:"));
+      await harness.pressAndWaitForText(session, "f8", /• new item/);
+      await session.click(/View/);
+      const toggled = await session.waitForText(/\[x\] File presentation: Rendered Markdown/, {
+        timeout: 20_000,
+      });
+      expect(toggled).not.toContain("# Heading");
+
+      await harness.pressAndWaitForSnapshot(
+        session,
+        "escape",
+        (text) => !text.includes("File presentation:"),
+      );
+      await session.press("]");
+      await session.waitIdle();
+    } finally {
+      session.close();
+      rmSync(pair.directory, { recursive: true, force: true });
+    }
+  });
+
+  for (const demo of [
+    {
+      name: "change atlas",
+      before: join(JSX_FILE_VIEW_GALLERY, "fixtures/change-atlas/before.ts"),
+      after: join(JSX_FILE_VIEW_GALLERY, "fixtures/change-atlas/after.ts"),
+      view: /File presentation: JSX demo: Change atlas/,
+      first: /▶ CHANGE 01/,
+      second: /▶ CHANGE 02/,
+      raw: /const percent = Math\.min/,
+    },
+    {
+      name: "CSS palette delta",
+      before: join(JSX_FILE_VIEW_GALLERY, "fixtures/css-palette/before.css"),
+      after: join(JSX_FILE_VIEW_GALLERY, "fixtures/css-palette/after.css"),
+      view: /File presentation: JSX demo: CSS palette delta/,
+      first: /▶ --accent/,
+      second: /▶ --card-highlight/,
+      raw: /--canvas: #090d18/,
+    },
+    {
+      name: "dependency delta",
+      before: join(JSX_FILE_VIEW_GALLERY, "fixtures/package-dependencies/before/package.json"),
+      after: join(JSX_FILE_VIEW_GALLERY, "fixtures/package-dependencies/after/package.json"),
+      view: /File presentation: JSX demo: Dependency delta/,
+      first: /▶ Package metadata hunk 1/,
+      second: /▶\s+@opentui\/core/,
+      raw: /"@opentui\/core": "0\.4\.3"/,
+    },
+  ]) {
+    test(`runs the checked-in JSX ${demo.name} against a real diff`, async () => {
+      const session = await harness.launchHunk({
+        args: [
+          "diff",
+          "--extension",
+          JSX_FILE_VIEW_GALLERY,
+          "--mode",
+          "unified",
+          "--files",
+          demo.before,
+          demo.after,
+        ],
+        cwd: JSX_FILE_VIEW_GALLERY,
+        cols: 140,
+        rows: 24,
+      });
+
+      try {
+        await session.waitForText(/before\.|package\.json/, {
+          timeout: 20_000,
+        });
+        await harness.ensureKeyboardIsLive(session);
+        await harness.clickAndWaitForText(session, /View/, demo.view, { timeout: 20_000 });
+        await session.press("escape");
+        await harness.pressAndWaitForText(session, "f8", demo.first, { timeout: 20_000 });
+        await harness.pressAndWaitForText(session, "]", demo.second, { timeout: 20_000 });
+        await harness.clickAndWaitForText(session, /View/, /File presentation: Raw diff/, {
+          timeout: 20_000,
+        });
+        await harness.clickAndWaitForText(session, /File presentation: Raw diff/, demo.raw, {
+          timeout: 20_000,
+        });
+      } finally {
+        session.close();
+      }
+    });
+  }
+
+  test("retains three preview types between raw diffs in one scrollable review stream", async () => {
+    const session = await harness.launchShellCommand({
+      command: `${JSON.stringify(process.execPath)} run ${JSON.stringify(JSX_MIXED_REVIEW_LAUNCHER)}`,
+      cols: 220,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/README\.md/, { timeout: 20_000 });
+      await harness.ensureKeyboardIsLive(session);
+
+      await session.click(/package\.json/, { first: true });
+      await harness.pressAndWaitForText(session, "f8", /Package metadata hunk 1/, {
+        timeout: 20_000,
+      });
+
+      await session.click(/invoice\.ts/, { first: true });
+      await harness.pressAndWaitForText(session, "f8", /CHANGE 01/, { timeout: 20_000 });
+
+      await session.click(/theme\.css/, { first: true });
+      await session.press("f8");
+      await session.waitForText(/--accent/, { timeout: 20_000 });
+
+      await harness.clickAndWaitForText(session, /package\.json/, /@opentui\/core/, {
+        first: true,
+        timeout: 20_000,
+      });
+      await harness.clickAndWaitForText(session, /README\.md/, /understanding release changes/, {
+        first: true,
+        timeout: 20_000,
+      });
+      let reachedRetainedPreview = false;
+      for (let step = 0; step < 10 && !reachedRetainedPreview; step += 1) {
+        await session.scrollDown(8);
+        const frame = await session.text({ immediate: true });
+        // The sidebar always names package.json once. Wait for its retained preview only after a
+        // second occurrence proves the main stream has mounted that file below the tall README.
+        if (harness.countMatches(frame, /package\.json/g) < 2) {
+          continue;
+        }
+        try {
+          await session.waitForText(/Package metadata hunk 1/, {
+            timeout: 750,
+          });
+          reachedRetainedPreview = true;
+        } catch {
+          // The file header can enter first; keep scrolling until its retained preview is visible.
+        }
+      }
+      expect(reachedRetainedPreview).toBe(true);
+
+      await session.press("q");
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    } finally {
+      session.close();
+    }
+  });
+
+  test("runs the real folder TSX view by key and menu across two hunks", async () => {
+    const pair = harness.createMultiHunkFilePair();
+    // A fresh folder root avoids Bun reusing an extension module imported by another live test.
+    const extension = join(pair.dir, "jsx-runtime-proof");
+    cpSync(JSX_FILE_VIEW_EXTENSION, extension, { recursive: true });
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--extension",
+        extension,
+        "--mode",
+        "unified",
+        "--files",
+        pair.before,
+        pair.after,
+      ],
+      cwd: pair.dir,
+      cols: 140,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/before\.ts/, { timeout: 20_000 });
+      await harness.ensureKeyboardIsLive(session);
+      let custom = await harness.pressAndWaitForText(session, "f8", /▶ Hunk 1/, {
+        timeout: 20_000,
+      });
+      expect(custom).toContain("Hunk 2");
+      expect(custom).toContain("row 0 · click for detail");
+      expect(custom).not.toContain("invalid span");
+
+      // This proves the example's current cooperative routing, not a host guarantee that custom
+      // rows will continue receiving pointer input through every future renderer integration.
+      await session.click(/▶ Hunk 1/);
+      custom = await session.waitForText(/lines 1–4 · @@ -1,4 \+1,4 @@/);
+      expect(custom).not.toContain("row 0 · click for detail");
+
+      const secondHunk = await harness.pressAndWaitForText(session, "]", /▶ Hunk 2/);
+      expect(secondHunk).not.toContain("▶ Hunk 1");
+
+      const raw = await harness.pressAndWaitForText(session, "f8", /line60 = 6000/);
+      expect(raw).not.toContain("Hunk 1");
+
+      const menu = await harness.clickAndWaitForText(
+        session,
+        /Extensions/,
+        /Toggle JSX hunk cards \(POC\)/,
+      );
+      expect(menu).toMatch(/Toggle JSX hunk cards \(POC\)\s+F8/);
+      const menuDispatched = await harness.clickAndWaitForText(
+        session,
+        /Toggle JSX hunk cards \(POC\)/,
+        /▶ Hunk 2/,
+      );
+      expect(menuDispatched).toContain("Hunk 1");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("routes real keypresses into a file view's interactive mode and back out", async () => {
+    const pair = harness.createMultiHunkFilePair();
+    const extension = createInteractiveViewExtension(pair.dir);
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--extension",
+        extension,
+        "--mode",
+        "unified",
+        "--files",
+        pair.before,
+        pair.after,
+      ],
+      cwd: pair.dir,
+      cols: 140,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/before\.ts/, { timeout: 20_000 });
+      await harness.ensureKeyboardIsLive(session);
+
+      // One press from raw diff: entering the mode selects the view it takes
+      // keys for, so the rows and the keyboard arrive together.
+      await harness.pressAndWaitForText(session, "f9", /CURSOR AT 0/, { timeout: 20_000 });
+      await session.waitForText(/cursor-mode:cursor mode — Esc exits/, {
+        timeout: 20_000,
+      });
+
+      // Handled keys reach the extension, and the redraw it asks for is what
+      // the terminal actually shows.
+      await harness.pressAndWaitForText(session, "j", /CURSOR AT 1/, { timeout: 20_000 });
+      await harness.pressAndWaitForText(session, "j", /CURSOR AT 2/, { timeout: 20_000 });
+
+      // A declined key reaches Hunk's own commands, and the overlay it opens
+      // outranks the mode: its Escape closes the overlay, not the mode.
+      await harness.pressAndWaitForText(session, "?", /Controls help/, { timeout: 20_000 });
+      await session.press("escape");
+      const stillActive = await session.waitForText(/cursor-mode:cursor mode — Esc exits/, {
+        timeout: 20_000,
+      });
+      expect(stillActive).not.toContain("Controls help");
+
+      await session.press("escape");
+      const exited = await session.waitForText(/CURSOR AT 2/, {
+        timeout: 20_000,
+      });
+      expect(exited).not.toContain("Esc exits");
+
+      // The command table owns the keyboard again.
+      const raw = await harness.pressAndWaitForText(session, "f8", /line60 = 6000/, {
+        timeout: 20_000,
+      });
+      expect(raw).not.toContain("CURSOR AT");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("runs the inline edit example from typed keys to a written working-tree file", async () => {
+    const repo = harness.createTwoFileRepoFixture();
+    const edited = join(repo.dir, "alpha.ts");
+    const session = await harness.launchHunk({
+      args: ["diff", "--extension", INLINE_EDIT_EXTENSION, "--mode", "unified"],
+      cwd: repo.dir,
+      cols: 140,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/alpha\.ts/, { timeout: 20_000 });
+      await harness.ensureKeyboardIsLive(session);
+
+      // One press: `enterMode` selects the view for the file and takes the
+      // keyboard together, so the editor opens without a second Ctrl-E.
+      // The view shows the new document alone, so the removed old-side line is
+      // how the terminal reports that the presentation actually switched.
+      await harness.pressAndWaitForSnapshot(
+        session,
+        ["ctrl", "e"],
+        (text) => !text.includes("alpha = 1"),
+        20_000,
+      );
+      await session.waitForText(/EDITING — Esc exits · ctrl\+s writes/, {
+        timeout: 20_000,
+      });
+      await session.waitForText(/inline-edit:inline-edit mode — Esc exits/, {
+        timeout: 20_000,
+      });
+
+      // `z` is Hunk's expand-context key; while the mode runs it is text, and
+      // each keystroke reaches the screen only through `fileViews.refresh`.
+      await session.press("z");
+      await session.press("z");
+      const typed = await harness.pressAndWaitForText(session, "z", /zzzexport const alpha = 2;/, {
+        timeout: 20_000,
+      });
+      expect(typed).toContain("MODIFIED");
+
+      // `?` is an explicitly host-owned printable key, so help remains
+      // reachable and one Escape closes only the overlay, not the editor.
+      await harness.pressAndWaitForText(session, "?", /Controls help/, { timeout: 20_000 });
+      await session.press("escape");
+      await session.waitForText(/inline-edit:inline-edit mode — Esc exits/, {
+        timeout: 20_000,
+      });
+
+      // The mode can only request the write; the command handler awaiting the
+      // session performs it, and the host asks the user first.
+      await harness.pressAndWaitForText(session, ["ctrl", "s"], /Write alpha\.ts\?/, {
+        timeout: 20_000,
+      });
+      const prompt = await session.waitForText(/ext inline-edit/, {
+        timeout: 20_000,
+      });
+      expect(prompt).toContain("replace this file's contents on disk");
+      await session.press("enter");
+
+      expect(
+        await waitForWrittenFile(edited, "zzzexport const alpha = 2;\nexport const add = true;\n"),
+      ).toBe("zzzexport const alpha = 2;\nexport const add = true;\n");
+
+      // A successful write reloads the review, and the reload exits the mode.
+      await session.waitForText(/zzzexport const alpha = 2;/, {
+        timeout: 20_000,
+      });
+      await harness.waitForSnapshot(session, (text) => !text.includes("Esc exits"), 20_000);
+
+      // The command table owns the keyboard again: `z` no longer types.
+      await session.press("z");
+      await session.waitIdle();
+      const afterExit = await session.text();
+      expect(afterExit).toContain("zzzexport const alpha = 2;");
+      expect(afterExit).not.toContain("zzzz");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("keeps an annotated joined line visible in the active editor", async () => {
+    const repo = harness.createTwoFileRepoFixture();
+    const agentContext = join(repo.dir, "agent.json");
+    writeFileSync(
+      agentContext,
+      JSON.stringify({
+        version: 1,
+        files: [
+          {
+            path: "alpha.ts",
+            annotations: [{ newRange: [2, 2], summary: "Keep this note visible." }],
+          },
+        ],
+      }),
+      "utf8",
+    );
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--extension",
+        INLINE_EDIT_EXTENSION,
+        "--mode",
+        "unified",
+        "--agent-context",
+        agentContext,
+        "--agent-notes",
+      ],
+      cwd: repo.dir,
+      cols: 140,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/Keep this note visible\./, {
+        timeout: 20_000,
+      });
+      await harness.ensureKeyboardIsLive(session);
+      await harness.pressAndWaitForText(session, ["ctrl", "e"], /EDITING — Esc exits/, {
+        timeout: 20_000,
+      });
+
+      await session.press("down");
+      const joined = await harness.pressAndWaitForText(
+        session,
+        "backspace",
+        /export const alpha = 2;export const add = true;/,
+        { timeout: 20_000 },
+      );
+      expect(joined).toContain("EDITING — Esc exits");
+      expect(joined).toContain("Keep this note visible.");
+
+      await harness.pressAndWaitForText(
+        session,
+        "z",
+        /export const alpha = 2;zexport const add = true;/,
+        { timeout: 20_000 },
+      );
+      await session.press("escape");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("deletes and writes a whole emoji without surrogate corruption", async () => {
+    const repo = harness.createTwoFileRepoFixture();
+    const edited = join(repo.dir, "alpha.ts");
+    writeFileSync(edited, "😀\n", "utf8");
+    const session = await harness.launchHunk({
+      args: ["diff", "--extension", INLINE_EDIT_EXTENSION, "--mode", "unified"],
+      cwd: repo.dir,
+      cols: 140,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/😀/, { timeout: 20_000 });
+      await harness.ensureKeyboardIsLive(session);
+      await harness.pressAndWaitForText(session, ["ctrl", "e"], /EDITING — Esc exits/, {
+        timeout: 20_000,
+      });
+      await session.press("right");
+      await session.press("backspace");
+      await harness.pressAndWaitForText(session, ["ctrl", "s"], /Write alpha\.ts\?/, {
+        timeout: 20_000,
+      });
+      await session.press("enter");
+
+      expect(await waitForWrittenFile(edited, "\n")).toBe("\n");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("renders a host-owned inline note inside its bound Markdown presentation", async () => {
+    const pair = createMarkdownPairTest();
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--extension",
+        RENDERED_MARKDOWN_EXTENSION,
+        "--mode",
+        "unified",
+        "--agent-context",
+        pair.agentContext,
+        "--agent-notes",
+        "--files",
+        pair.before,
+        pair.after,
+      ],
+      cwd: pair.directory,
+      cols: 140,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/before\.md/, { timeout: 20_000 });
+      await harness.ensureKeyboardIsLive(session);
+      const preview = await harness.pressAndWaitForText(session, "f8", /• new item/);
+      expect(preview).toContain("Review the new item.");
+      expect(preview).not.toContain("old item");
+      const menu = await harness.clickAndWaitForText(
+        session,
+        /View/,
+        /\[x\] File presentation: Rendered Markdown/,
+      );
+      expect(menu).toContain("File presentation: Raw diff");
+    } finally {
+      session.close();
+      rmSync(pair.directory, { recursive: true, force: true });
+    }
+  });
+
+  test("falls back all-or-raw for an unbound note and restores the stored view when hidden", async () => {
+    const pair = createMarkdownPairTest([99, 99]);
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--extension",
+        RENDERED_MARKDOWN_EXTENSION,
+        "--mode",
+        "unified",
+        "--agent-context",
+        pair.agentContext,
+        "--agent-notes",
+        "--files",
+        pair.before,
+        pair.after,
+      ],
+      cwd: pair.directory,
+      cols: 140,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/before\.md/, { timeout: 20_000 });
+      await harness.ensureKeyboardIsLive(session);
+      await session.press("f8");
+      const raw = await session.waitForText(/old item/);
+      expect(raw).not.toContain("• new item");
+      await harness.clickAndWaitForText(
+        session,
+        /View/,
+        /\[x\] File presentation: Rendered Markdown/,
+      );
+      await session.press("escape");
+
+      const restored = await harness.pressAndWaitForText(session, "a", /• new item/);
+      expect(restored).not.toContain("old item");
+    } finally {
+      session.close();
+      rmSync(pair.directory, { recursive: true, force: true });
+    }
+  });
+});

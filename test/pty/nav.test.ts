@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { createPtyHarness } from "./harness";
+import { createPtyHarness, pressKeyRepeat } from "./harness";
 
 const harness = createPtyHarness();
 
@@ -26,21 +26,25 @@ describe("PTY navigation", () => {
       });
       expect(initial).not.toContain("Maximum update depth exceeded");
 
-      await session.press("}");
-      const alphaNote = await harness.waitForSnapshot(
+      const alphaNote = await harness.pressAndWaitForSnapshot(
         session,
+        "}",
         (text) => text.includes("Alpha note for navigation."),
         5_000,
       );
       expect(alphaNote).toContain("Alpha note for navigation.");
       expect(alphaNote).not.toContain("Maximum update depth exceeded");
 
-      await session.press(".");
-      await harness.waitForSnapshot(session, (text) => text.includes("line101 = 10100"), 5_000);
-
-      await session.press("}");
-      const gammaNote = await harness.waitForSnapshot(
+      await harness.pressAndWaitForSnapshot(
         session,
+        ".",
+        (text) => text.includes("line101 = 10100"),
+        5_000,
+      );
+
+      const gammaNote = await harness.pressAndWaitForSnapshot(
+        session,
+        "}",
         (text) => text.includes("Gamma note for navigation."),
         5_000,
       );
@@ -56,7 +60,7 @@ describe("PTY navigation", () => {
   test("real hunk navigation jumps to later hunks in the review stream", async () => {
     const fixture = harness.createMultiHunkFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "split"],
       cols: 104,
       rows: 12,
     });
@@ -69,9 +73,9 @@ describe("PTY navigation", () => {
       expect(initial).toContain("line1 = 100");
       expect(initial).not.toContain("line60 = 6000");
 
-      await session.press("]");
-      const secondHunk = await harness.waitForSnapshot(
+      const secondHunk = await harness.pressAndWaitForSnapshot(
         session,
+        "]",
         (text) => text.includes("line60 = 6000"),
         5_000,
       );
@@ -116,10 +120,9 @@ describe("PTY navigation", () => {
       }
 
       await session.press("[");
-      await session.waitIdle({ timeout: 80 });
-      await session.press("[");
-      const backward = await harness.waitForSnapshot(
+      const backward = await harness.pressAndWaitForSnapshot(
         session,
+        "[",
         (text) => text.includes("line 341 changed") || text.includes("line 002 changed"),
         5_000,
       );
@@ -134,7 +137,7 @@ describe("PTY navigation", () => {
   test("PTY sessions can navigate forward and backward between distant hunks in one large file", async () => {
     const fixture = harness.createMultiHunkFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "split"],
       cols: 104,
       rows: 12,
     });
@@ -147,9 +150,9 @@ describe("PTY navigation", () => {
       expect(initial).toContain("line1 = 100");
       expect(initial).not.toContain("line60 = 6000");
 
-      await session.press("]");
-      const secondHunk = await harness.waitForSnapshot(
+      const secondHunk = await harness.pressAndWaitForSnapshot(
         session,
+        "]",
         (text) => text.includes("line60 = 6000") && !text.includes("line1 = 100"),
         5_000,
       );
@@ -157,15 +160,58 @@ describe("PTY navigation", () => {
       expect(secondHunk).toContain("line60 = 6000");
       expect(secondHunk).not.toContain("line1 = 100");
 
-      await session.press("[");
-      const firstHunk = await harness.waitForSnapshot(
+      const firstHunk = await harness.pressAndWaitForSnapshot(
         session,
+        "[",
         (text) => text.includes("line1 = 100") && !text.includes("line60 = 6000"),
         5_000,
       );
 
       expect(firstHunk).toContain("line1 = 100");
       expect(firstHunk).not.toContain("line60 = 6000");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("file navigation reveals a destination hidden by a collapsed tree folder", async () => {
+    const fixture = harness.createNestedSidebarRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 220,
+      rows: 12,
+    });
+
+    try {
+      const initial = await session.waitForText(/⌄ src\//, { timeout: 15_000 });
+      const initialAlphaCount = harness.countMatches(initial, /alpha\.ts/g);
+      const initialBetaCount = harness.countMatches(initial, /beta\.ts/g);
+      expect(initialAlphaCount).toBeGreaterThanOrEqual(2);
+      expect(initialBetaCount).toBeGreaterThanOrEqual(2);
+
+      await session.click(/⌄ src\//);
+      const collapsed = await harness.waitForSnapshot(
+        session,
+        (text) =>
+          text.includes("› src/") &&
+          harness.countMatches(text, /alpha\.ts/g) === initialAlphaCount - 1 &&
+          harness.countMatches(text, /beta\.ts/g) === initialBetaCount - 1,
+        5_000,
+      );
+      expect(collapsed).toContain("› src/");
+      expect(collapsed).toContain("2 files");
+
+      const expanded = await harness.pressAndWaitForSnapshot(
+        session,
+        ".",
+        (text) =>
+          text.includes("⌄ src/") &&
+          harness.countMatches(text, /alpha\.ts/g) === initialAlphaCount &&
+          harness.countMatches(text, /beta\.ts/g) === initialBetaCount,
+        5_000,
+      );
+      expect(expanded).toContain("⌄ src/");
     } finally {
       session.close();
     }
@@ -192,7 +238,10 @@ describe("PTY navigation", () => {
       await session.click(/M delta\.ts\s+\+2 -1/);
       const jumped = await harness.waitForSnapshot(
         session,
-        (text) => text.includes("deltaOnly = true") && !text.includes("alphaOnly = true"),
+        (text) =>
+          text.includes("deltaOnly = true") &&
+          !text.includes("alphaOnly = true") &&
+          harness.countMatches(text, /epsilon\.ts/g) >= 2,
         5_000,
       );
 
@@ -200,6 +249,68 @@ describe("PTY navigation", () => {
       expect(jumped).toContain("deltaOnly = true");
       expect(jumped).not.toContain("alphaOnly = true");
       expect(harness.countMatches(jumped, /epsilon\.ts/g)).toBeGreaterThanOrEqual(2);
+    } finally {
+      session.close();
+    }
+  });
+
+  test("file navigation lands on a binary file between text files", async () => {
+    const fixture = harness.createBinaryNavigationRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 160,
+      rows: 12,
+    });
+
+    try {
+      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+      expect(initial).not.toContain("Binary file skipped");
+
+      const binary = await harness.pressAndWaitForSnapshot(
+        session,
+        ".",
+        (text) => text.includes("Binary file skipped"),
+        5_000,
+      );
+      expect(binary).toContain("Binary file skipped");
+
+      const zeta = await harness.pressAndWaitForSnapshot(
+        session,
+        ".",
+        (text) => text.includes("zeta0 = 2") && !text.includes("Binary file skipped"),
+        5_000,
+      );
+      expect(zeta).toContain("zeta0 = 2");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("clicking a binary file in the sidebar selects it", async () => {
+    const fixture = harness.createBinaryNavigationRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 160,
+      rows: 12,
+    });
+
+    try {
+      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+      expect(initial).not.toContain("Binary file skipped");
+
+      await session.click(/logo\.png/);
+      const selected = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("Binary file skipped"),
+        5_000,
+      );
+      expect(selected).toContain("Binary file skipped");
     } finally {
       session.close();
     }
@@ -222,9 +333,7 @@ describe("PTY navigation", () => {
       expect(initial).toContain("first.ts");
       expect(initial).toContain("second.ts");
 
-      for (let index = 0; index < 8; index += 1) {
-        await session.press("down");
-      }
+      await pressKeyRepeat(session, "down", 16);
 
       const scrolled = await harness.waitForSnapshot(
         session,

@@ -1,0 +1,214 @@
+import { readFileSync } from "node:fs";
+import { expect, test } from "@playwright/test";
+
+/** Read the published series metadata that the browser must render, including prereleases. */
+function readTestChangelogSeries() {
+  const index = readFileSync(
+    new URL("../src/content/docs/changelog/index.md", import.meta.url),
+    "utf8",
+  );
+  return [...index.matchAll(/^## \[(Hunk \d+\.\d+)\]\(([^)]+)\)\r?\n\r?\n([^\r\n]+)/gm)].map(
+    ([, title, href, metadata]) => ({ title: title!, href: href!, metadata: metadata! }),
+  );
+}
+
+test("the changelog is reachable from the main navigation", async ({ page }, testInfo) => {
+  await page.goto("/");
+  // Scoped to the brand header: Starlight's own sidebar navigation is also labelled "Main".
+  const brandNav = page.getByLabel("Main navigation");
+  const changelogLink = brandNav.getByRole("link", { name: "Changelog", exact: true });
+  await expect(changelogLink).toBeVisible();
+  await changelogLink.click();
+  await expect(page.getByRole("heading", { level: 1, name: "Changelog" })).toBeVisible();
+
+  // Narrow docs viewports drop the brand nav in favour of Starlight's menu, so the current-page
+  // marker is only observable on desktop.
+  if (!testInfo.project.name.startsWith("mobile")) {
+    await expect(
+      page.getByLabel("Main navigation").getByRole("link", { name: "Changelog", exact: true }),
+    ).toHaveAttribute("aria-current", "page");
+  }
+});
+
+test("the marketing header still fits its navigation on a phone", async ({ page }) => {
+  await page.goto("/");
+  const header = page.locator(".brand-header-inner");
+  await expect(header).toBeVisible();
+  // The compact star control must not push the header into a horizontal scroll.
+  const overflow = await header.evaluate((element) => element.scrollWidth - element.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(0);
+  const documentOverflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(documentOverflow).toBeLessThanOrEqual(0);
+});
+
+test("the landing page links the current release", async ({ page }) => {
+  await page.goto("/");
+  const ribbon = page.locator(".release-ribbon");
+  await expect(ribbon).toBeVisible();
+  // The ribbon must name a real version and resolve to that series' page.
+  await expect(ribbon.locator(".rv")).toHaveText(/^v\d+\.\d+\.\d+$/);
+  const href = await ribbon.getAttribute("href");
+  expect(href).toMatch(/^\/changelog\/\d+\.\d+\/$/);
+  const response = await page.goto(href!);
+  expect(response?.ok()).toBe(true);
+});
+
+test("a release page carries its versions, dates, and install command", async ({ page }) => {
+  await page.goto("/changelog/0.18/");
+  await expect(page.getByRole("heading", { level: 1, name: "Hunk 0.18" })).toBeVisible();
+
+  for (const version of ["0.18.0-beta.0", "0.18.0", "0.18.1", "0.18.2"]) {
+    await expect(page.getByRole("heading", { level: 3, name: version, exact: true })).toBeVisible();
+  }
+
+  await expect(page.getByText("npm i -g hunkdiff@0.18.2")).toBeVisible();
+  await expect(page.getByText("August 14, 2026", { exact: false }).first()).toBeVisible();
+
+  // Every patch release keeps a readable anchor so a single fix can be linked directly.
+  await expect(page.locator("#v0-18-2")).toHaveCount(1);
+  await expect(page.locator("#v0-18-0-beta-0")).toHaveCount(1);
+});
+
+test("the previous stable series keeps its prerelease anchors and pinned install command", async ({
+  page,
+}) => {
+  await page.goto("/changelog/0.22/");
+  for (const version of ["0.22.0", "0.22.0-beta.1", "0.22.0-beta.0"]) {
+    await expect(page.getByRole("heading", { level: 3, name: version, exact: true })).toBeVisible();
+  }
+  await expect(page.locator("#v0-22-0")).toHaveCount(1);
+  await expect(page.locator("#v0-22-0-beta-0")).toHaveCount(1);
+  await expect(
+    page.locator(".sl-markdown-content pre").filter({ hasText: "npm i -g hunkdiff@0.22.0" }),
+  ).toHaveCount(1);
+});
+
+test("the current stable series publishes default install and update guidance", async ({
+  page,
+}) => {
+  const latest = JSON.parse(
+    readFileSync(new URL("../releases/latest.json", import.meta.url), "utf8"),
+  ) as { minor: string; version: string };
+  await page.goto(`/changelog/${latest.minor}/`);
+  await expect(
+    page.getByRole("heading", { level: 3, name: latest.version, exact: true }),
+  ).toBeVisible();
+  const installBlocks = page.locator(".sl-markdown-content pre");
+  await expect(installBlocks.filter({ hasText: "curl -fsSL" })).toHaveCount(1);
+  await expect(installBlocks.filter({ hasText: "hunk update" })).toHaveCount(1);
+});
+
+test("release pages link the docs pages their highlights describe", async ({ page }) => {
+  await page.goto("/changelog/0.18/");
+  // Scoped to the article: the docs sidebar rendered beside it links "Extensions" too.
+  const docsLink = page
+    .locator(".sl-markdown-content")
+    .getByRole("link", { name: "Extensions", exact: true });
+  await expect(docsLink).toBeVisible();
+  const response = await page.goto("/docs/extend/extensions/");
+  expect(response?.ok()).toBe(true);
+});
+
+test("the index lists every series newest first and links each one", async ({ page }) => {
+  await page.goto("/changelog/");
+  const seriesLinks = page.getByRole("heading", { level: 2 }).getByRole("link");
+  const labels = await seriesLinks.allTextContents();
+  expect(labels.length).toBeGreaterThan(5);
+  const versions = labels.map((label) => {
+    const match = /^Hunk (\d+)\.(\d+)$/.exec(label);
+    expect(match, label).not.toBeNull();
+    return [Number(match![1]), Number(match![2])] as const;
+  });
+  for (let index = 1; index < versions.length; index += 1) {
+    const [major, minor] = versions[index - 1]!;
+    const [nextMajor, nextMinor] = versions[index]!;
+    expect(major > nextMajor || (major === nextMajor && minor > nextMinor)).toBe(true);
+  }
+
+  // The generated index can contain prerelease-only series ahead of the latest stable one.
+  // Generator unit tests own badge policy; this smoke test checks the published rendering.
+  const publishedSeries = readTestChangelogSeries();
+  expect(labels).toEqual(publishedSeries.map((series) => series.title));
+  for (const series of publishedSeries) {
+    await expect(
+      page
+        .getByRole("heading", { level: 2 })
+        .getByRole("link", { name: series.title, exact: true }),
+    ).toHaveAttribute("href", series.href);
+    await expect(page.getByText(series.metadata, { exact: true })).toHaveCount(1);
+  }
+  await expect(page.getByText(/^Prerelease ·/)).toHaveCount(
+    publishedSeries.filter((series) => series.metadata.startsWith("Prerelease ·")).length,
+  );
+  await expect(page.getByText(/^Latest ·/)).toHaveCount(1);
+});
+
+test("the changelog feed and Markdown twins are served", async ({ request }) => {
+  const feed = await request.get("/changelog/rss.xml");
+  expect(feed.ok()).toBe(true);
+  const feedBody = await feed.text();
+  expect(feedBody).toContain("<title>Hunk releases</title>");
+  expect(feedBody).toContain("https://hunk.dev/changelog/0.19/");
+  expect(feedBody).toContain("https://hunk.dev/changelog/0.21/");
+  expect(feedBody).toContain("https://hunk.dev/changelog/0.22/#v0-22-0");
+  expect(feedBody).toContain("https://hunk.dev/changelog/0.23/");
+  expect(feedBody).toContain("Wed, 30 Sep 2026 00:00:00 GMT");
+
+  const markdown = await request.get("/changelog/0.18.md");
+  expect(markdown.ok()).toBe(true);
+  const markdownBody = await markdown.text();
+  expect(markdownBody).not.toContain("<!DOCTYPE html");
+  expect(markdownBody).toContain("title: Hunk 0.18");
+});
+
+test("release notes reach the full agent corpus but not the abridged one", async ({ request }) => {
+  const full = await request.get("/llms-full.txt");
+  expect(full.ok()).toBe(true);
+  expect(await full.text()).toContain("# Hunk 0.18");
+
+  const small = await request.get("/llms-small.txt");
+  expect(small.ok()).toBe(true);
+  expect(await small.text()).not.toContain("# Hunk 0.18");
+});
+
+test("each changelog page carries its own social card", async ({ page, request }) => {
+  for (const minor of ["0.22", "0.23"]) {
+    await page.goto(`/changelog/${minor}/`);
+    const cardUrl = `https://hunk.dev/changelog/og/${minor}.png`;
+    const image = page.locator('meta[property="og:image"]');
+    // Exactly one: the page's card must replace the site-wide image, not sit beside it.
+    await expect(image).toHaveCount(1);
+    await expect(image).toHaveAttribute("content", cardUrl);
+    await expect(page.locator('meta[name="twitter:image"]')).toHaveAttribute("content", cardUrl);
+    await expect(page.locator('meta[property="og:image:alt"]')).toHaveAttribute(
+      "content",
+      new RegExp(`^Hunk ${minor.replace(".", "\\.")} release notes`),
+    );
+  }
+
+  // The index gets its own card too, and all three images are actually served.
+  await page.goto("/changelog/");
+  await expect(page.locator('meta[property="og:image"]')).toHaveAttribute(
+    "content",
+    "https://hunk.dev/changelog/og/index.png",
+  );
+  for (const path of [
+    "/changelog/og/0.22.png",
+    "/changelog/og/0.23.png",
+    "/changelog/og/index.png",
+  ]) {
+    const response = await request.get(path);
+    expect(response.ok(), path).toBe(true);
+    expect(response.headers()["content-type"]).toContain("image/png");
+  }
+});
+
+test("ordinary docs pages keep the site-wide social image", async ({ page }) => {
+  await page.goto("/docs/start/install/");
+  await expect(page.locator('meta[property="og:image"]')).toHaveAttribute(
+    "content",
+    "https://hunk.dev/og.png",
+  );
+});

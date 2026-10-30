@@ -1,0 +1,899 @@
+@import "./brand.css";
+
+:root {
+  --mono: var(--hunk-font);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  overflow-x: hidden;
+  background: var(--hunk-bg);
+  color: var(--hunk-ink);
+  font-family: var(--mono);
+  font-size: 15px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:focus-visible,
+a:focus-visible {
+  outline: 3px solid var(--hunk-accent);
+  outline-offset: 3px;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.marketing {
+  position: relative;
+  z-index: 2;
+  min-height: 100vh;
+  background: var(--hunk-bg);
+  color: var(--hunk-ink);
+  font-family: var(--mono);
+  --acc: var(--hunk-accent);
+  --del: #c0392b;
+  --paper: var(--hunk-paper);
+  --rule: var(--hunk-rule);
+  --soft: var(--hunk-muted);
+  --ink: var(--hunk-ink);
+}
+
+.marketing ::selection {
+  color: var(--hunk-accent-ink);
+  background: var(--hunk-accent-soft);
+}
+
+.marketing .top {
+  max-width: 960px;
+  height: 74px;
+  margin-inline: auto;
+  border-bottom: 1.5px solid var(--ink);
+}
+
+.marketing .top nav a:hover,
+.marketing .show-quote figcaption a:hover {
+  color: var(--acc);
+}
+
+.marketing .intro {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 76px 36px 56px;
+}
+
+.marketing h1 {
+  margin: 0 0 24px;
+  font-size: clamp(32px, 6vw, 60px);
+  font-weight: 700;
+  line-height: 0.99;
+  letter-spacing: -0.04em;
+}
+
+.marketing .ink {
+  font-style: italic;
+}
+
+.marketing .mark,
+.marketing .mark-del {
+  display: inline-block;
+  padding: 0 0.12em;
+  border-radius: 4px;
+  color: var(--paper);
+}
+
+.marketing .mark {
+  background: var(--acc);
+}
+
+.marketing .mark-del {
+  background: var(--del);
+}
+
+.marketing .sub {
+  max-width: 500px;
+  margin: 0 0 30px;
+  color: var(--hunk-body);
+  font-size: 16.5px;
+  line-height: 1.6;
+}
+
+.marketing .cta {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.marketing .ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 18px;
+  border: 1.5px solid var(--ink);
+  border-radius: 8px;
+  background: var(--acc);
+  box-shadow: 3px 3px 0 var(--ink);
+  color: var(--paper);
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 600;
+  transition: 0.12s;
+}
+
+.marketing .ghost:hover {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--ink);
+}
+
+/* Offers every supported installer in one terminal-like control. The scrollable tab rail keeps the
+   selected command and copy action inside the page bounds at phone widths. */
+.marketing .install-picker {
+  width: 100%;
+  scroll-margin-top: 18px;
+  overflow: hidden;
+  border: 1.5px solid var(--ink);
+  border-radius: 10px;
+  background: var(--paper);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.marketing .install-tab-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  border-bottom: 1.5px solid var(--ink);
+  overscroll-behavior-x: contain;
+}
+
+.marketing .install-tabs {
+  display: flex;
+  width: max-content;
+}
+
+.marketing .install-tab {
+  flex: none;
+  padding: 11px 18px 10px;
+  border: 0;
+  border-right: 1.5px solid var(--rule);
+  background: var(--hunk-paper-hover);
+  color: var(--soft);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.marketing .install-tab[aria-selected="true"] {
+  box-shadow: inset 0 -3px 0 var(--acc);
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.marketing .install-tab:hover {
+  color: var(--ink);
+}
+
+.marketing .install-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 84px;
+  padding: 16px 18px;
+  gap: 16px;
+}
+
+.marketing .install-panel + .install-panel {
+  border-top: 1.5px solid var(--rule);
+}
+
+.marketing .install-picker[data-enhanced="true"] .install-panel {
+  border-top: 0;
+}
+
+.marketing .install-picker[data-enhanced="true"] .install-panel[hidden],
+.marketing .install-copy[hidden] {
+  display: none;
+}
+
+.marketing .install-command {
+  display: flex;
+  min-width: 0;
+  overflow-x: auto;
+  gap: 10px;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: clamp(13px, 2vw, 16px);
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.marketing .install-command:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+}
+
+.marketing .install-prompt {
+  color: var(--soft);
+  user-select: none;
+}
+
+.marketing .install-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 38px;
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1.5px solid var(--rule);
+  background: transparent;
+  color: var(--acc);
+  cursor: pointer;
+}
+
+.marketing .install-copy svg {
+  display: block;
+}
+
+.marketing .install-copy-failure {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.marketing .install-copy:hover,
+.marketing .install-copy.copied {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.marketing .install-copy.failed {
+  border-color: var(--del);
+  color: var(--del);
+}
+
+.marketing .paper {
+  max-width: 960px;
+  margin: 0 auto 104px;
+  padding: 0 36px;
+}
+
+.marketing .frame {
+  overflow: hidden;
+  margin: 0;
+  border: 1.5px solid var(--ink);
+  border-radius: 10px;
+  background: #0c0e10;
+  box-shadow: 6px 6px 0 var(--ink);
+}
+
+.marketing .paper-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  border-bottom: 1.5px solid var(--ink);
+  background: var(--hunk-panel);
+}
+
+.marketing .dot {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--ink);
+  border-radius: 50%;
+  background: var(--paper);
+}
+
+.marketing .pt {
+  margin-left: 9px;
+  color: var(--soft);
+  font-size: 12.5px;
+}
+
+.marketing .shot-stack {
+  position: relative;
+  width: 100%;
+  /* Matches the capture geometry in capture-media.ts (131 cols × 35 rows at DPR 2). */
+  aspect-ratio: 2202 / 1400;
+  background: #0c0e10;
+}
+
+.marketing .shot {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  user-select: none;
+}
+
+.marketing .themes {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.marketing .tpill {
+  padding: 5px 11px;
+  border: 1.5px solid var(--ink);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: 0.12s;
+}
+
+.marketing .tpill:hover {
+  background: var(--hunk-paper-hover);
+}
+
+.marketing .tpill.on {
+  border-color: var(--acc);
+  background: var(--acc);
+  color: var(--paper);
+}
+
+/* Sits in the pill row without pretending to be one: the picker shows a
+   sample, and this says how much more is behind it. */
+.marketing .tmore {
+  padding: 5px 4px;
+  color: var(--soft);
+  font-size: 12px;
+  text-decoration: underline;
+  text-decoration-color: var(--rule);
+  text-underline-offset: 4px;
+  transition: 0.12s;
+}
+
+.marketing .tmore:hover {
+  color: var(--acc);
+  text-decoration-color: var(--acc);
+}
+
+.marketing .feats {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 36px 104px;
+}
+
+.marketing .feats h2,
+.marketing .band h2 {
+  margin: 0 0 30px;
+  font-size: clamp(22px, 3.4vw, 34px);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.12;
+}
+
+/* Monospace section labels give the long page rhythm without extra chrome. */
+.marketing .kicker {
+  margin: 0 0 10px;
+  color: var(--soft);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+
+.marketing .band {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 36px 104px;
+}
+
+/* Each band leads with a kicker and a headline, and lets its content argue. */
+.marketing .band-head {
+  margin-bottom: 26px;
+}
+
+.marketing .band-head h2 {
+  margin: 0;
+}
+
+/* The long tail as a boxed quick-hit list: same frame language as the
+   showcase media, made of text instead of pixels. */
+.marketing .mfeats {
+  padding: 22px 26px 24px;
+  border: 1.5px solid var(--ink);
+  border-radius: 10px;
+  background: var(--paper);
+  box-shadow: 6px 6px 0 var(--ink);
+}
+
+.marketing .mf-kicker {
+  margin: 0 0 14px;
+  color: var(--soft);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+
+.marketing .mf-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 48px;
+}
+
+.marketing .mf-grid a {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 2px 0;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.marketing .mf-grid a::before {
+  content: "+";
+  color: var(--acc);
+  font-weight: 700;
+}
+
+.marketing .mf-grid b {
+  color: var(--ink);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.marketing .mf-grid span {
+  color: var(--soft);
+}
+
+.marketing .mf-grid a:hover b,
+.marketing .mf-grid a:focus-visible b {
+  color: var(--acc);
+}
+
+/* Feature showcase: explainer reads first on the left, the real TUI capture
+   proves it on the right. Every row shares one geometry — the media column
+   stays wide because terminal text needs physical size. */
+.marketing .show {
+  display: grid;
+  gap: 56px;
+  margin-bottom: 64px;
+}
+
+.marketing .show-item {
+  display: grid;
+  grid-template-columns: minmax(0, 0.75fr) minmax(0, 1.25fr);
+  gap: 38px;
+  align-items: center;
+}
+
+.marketing .show-copy h3 {
+  margin: 0 0 10px;
+  font-size: clamp(17px, 2.2vw, 21px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
+}
+
+.marketing .show-copy p {
+  margin: 0 0 12px;
+  color: var(--hunk-body);
+  font-size: 13.5px;
+  line-height: 1.65;
+}
+
+.marketing .show-copy .more {
+  color: var(--acc);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.marketing .show-copy .more:hover {
+  text-decoration: underline;
+}
+
+.marketing .show-media {
+  overflow: hidden;
+  margin: 0;
+  border: 1.5px solid var(--ink);
+  border-radius: 10px;
+  background: #0c0e10;
+  box-shadow: 6px 6px 0 var(--ink);
+}
+
+.marketing .show-media img,
+.marketing .show-media video {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* Pull-quote interludes: centered breathers between feature rows. */
+.marketing .show-quote {
+  margin: 0;
+  padding: 14px 0 6px;
+  text-align: center;
+}
+
+.marketing .show-quote .qmark {
+  display: block;
+  margin-bottom: 14px;
+  color: var(--acc);
+  font-size: 42px;
+  font-weight: 700;
+  line-height: 0.5;
+}
+
+.marketing .show-quote blockquote {
+  max-width: 40ch;
+  margin: 0 auto;
+  color: var(--ink);
+  font-size: clamp(18px, 2.4vw, 23px);
+  font-weight: 500;
+  line-height: 1.45;
+  letter-spacing: -0.01em;
+}
+
+.marketing .show-quote figcaption {
+  margin-top: 14px;
+  color: var(--soft);
+  font-size: 11.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.marketing .show-quote figcaption::before {
+  content: "— ";
+}
+
+/* Scroll-driven entrance: each capture rises and settles as it scrolls into
+   view. Progressive enhancement — browsers without scroll timelines and
+   readers preferring reduced motion get the static frame. */
+@media (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: view()) {
+    .marketing .show-media {
+      animation: show-media-rise linear both;
+      animation-timeline: view();
+      animation-range: entry 5% entry 55%;
+    }
+  }
+}
+
+@keyframes show-media-rise {
+  from {
+    box-shadow: 2px 2px 0 var(--ink);
+    transform: scale(0.965) translateY(18px);
+  }
+
+  to {
+    box-shadow: 6px 6px 0 var(--ink);
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* The extensions row's media is source rather than a capture, so it wears the
+   same frame with a title bar carrying the path the file lives at. */
+.marketing .show-code pre {
+  overflow-x: auto;
+  margin: 0;
+  padding: 18px 20px;
+  color: #ccd3da;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.75;
+}
+
+/* Fixed colors on the fixed-dark card, like the terminal captures. */
+.marketing .show-code .k {
+  color: #7fd1ff;
+}
+
+.marketing .show-code .s {
+  color: #b5cea8;
+}
+
+/* Community videos: paused-embed cards that link out, so no third-party player script loads.
+   The player chrome (scrim, red play button, duration badge) always sits on the dark
+   thumbnail, so it stays fixed-color instead of following the site theme. */
+.marketing .vgrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 28px;
+}
+
+.marketing .vcard {
+  display: block;
+}
+
+.marketing .vplayer {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  border: 1.5px solid var(--ink);
+  border-radius: 10px;
+  background: #0c0e10;
+  aspect-ratio: 16 / 9;
+}
+
+.marketing .vplayer img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Player UI mimics YouTube's own chrome, so it drops the site's mono face. */
+.marketing .vscrim,
+.marketing .vlength {
+  font-family:
+    Roboto,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Helvetica,
+    Arial,
+    sans-serif;
+}
+
+.marketing .vscrim {
+  position: absolute;
+  inset: 0 0 auto 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px 26px;
+  background: linear-gradient(rgba(0, 0, 0, 0.65), rgba(0, 0, 0, 0));
+}
+
+.marketing .vavatar {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.marketing .vtitle {
+  /* Clamp like YouTube so a long title can't push the scrim into the centered play button. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.3;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.marketing .vplay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  width: 62px;
+  height: 44px;
+  margin: auto;
+  border-radius: 12px;
+  background: #f03;
+  color: #fff;
+  transition: 0.12s;
+}
+
+.marketing .vcard:hover .vplay,
+.marketing .vcard:focus-visible .vplay {
+  transform: scale(1.08);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marketing .vcard:hover .vplay,
+  .marketing .vcard:focus-visible .vplay {
+    transform: none;
+  }
+}
+
+.marketing .vplay svg {
+  width: 22px;
+  height: 22px;
+  margin-left: 2px;
+}
+
+.marketing .vlength {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.82);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.marketing .vcaption {
+  display: block;
+  margin-top: 10px;
+  color: var(--soft);
+  font-size: 12.5px;
+}
+
+/* Closing call to action: one line, then the way in. */
+.marketing .last {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 36px 104px;
+}
+
+.marketing .last h2 {
+  margin: 0 0 22px;
+  font-size: clamp(22px, 3.6vw, 36px);
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+}
+
+.marketing .plain {
+  display: inline-flex;
+  align-items: center;
+  padding: 11px 4px;
+  color: var(--soft);
+  font-size: 14px;
+  text-decoration: underline;
+  text-decoration-color: var(--rule);
+  text-underline-offset: 5px;
+  transition: 0.12s;
+}
+
+.marketing .plain:hover {
+  color: var(--acc);
+  text-decoration-color: var(--acc);
+}
+
+@media (max-width: 980px) {
+  /* Copy stacks above its capture on narrow screens. */
+  .marketing .show-item {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+}
+
+@media (max-width: 760px) {
+  .marketing .mf-grid,
+  .marketing .vgrid {
+    grid-template-columns: 1fr;
+  }
+
+  .marketing .top nav {
+    gap: 15px;
+    font-size: 12.5px;
+  }
+
+  .marketing .intro,
+  .marketing .paper,
+  .marketing .feats,
+  .marketing .band,
+  .marketing .last {
+    padding-right: 20px;
+    padding-left: 20px;
+  }
+}
+
+@media (max-width: 680px) {
+  .marketing .top nav {
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 480px) {
+  .marketing .install-panel {
+    padding-inline: 12px;
+    gap: 10px;
+  }
+
+  .marketing .install-tab {
+    padding-inline: 15px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .marketing *,
+  .marketing *::before,
+  .marketing *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Release ribbon under the hero call to action: the landing page's entry point into the
+   changelog, carrying the current version so returning visitors can see what shipped. */
+.marketing .release-ribbon {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 22px;
+  padding: 7px 14px;
+  border: 1px solid var(--hunk-rule);
+  border-radius: 100px;
+  background: var(--paper);
+  color: var(--hunk-body);
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.3;
+  text-decoration: none;
+  transition: 0.12s;
+}
+
+.marketing .release-ribbon:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.marketing .release-ribbon .rv {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 100px;
+  background: var(--hunk-accent-soft);
+  color: var(--hunk-accent-ink);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.marketing .release-ribbon .ra {
+  color: var(--soft);
+}
+
+.marketing .release-ribbon:hover .ra {
+  color: var(--ink);
+}
+
+@media (max-width: 560px) {
+  .marketing .release-ribbon .rs {
+    display: none;
+  }
+}

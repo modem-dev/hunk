@@ -1,0 +1,34 @@
+{
+  "name": "review-console",
+  "version": "1.9.0",
+  "private": true,
+  "keywords": [
+    "diff",
+    "review",
+    "terminal"
+  ],
+  "type": "module",
+  "scripts": {
+    "build": "bun build ./src/index.tsx --outdir dist",
+    "check": "bun run typecheck && bun test",
+    "dev": "bun run ./src/index.tsx",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opentui/core": "0.4.3",
+    "@opentui/react": "0.4.3",
+    "commander": "13.1.0",
+    "react": "19.2.0",
+    "zod": "4.0.5"
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.1",
+    "@types/react": "19.2.2",
+    "oxfmt": "0.20.0",
+    "oxlint": "1.15.0",
+    "typescript": "5.9.2"
+  },
+  "engines": {
+    "bun": ">=1.3.0"
+  }
+}

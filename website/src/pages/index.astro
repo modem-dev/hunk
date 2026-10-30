@@ -1,0 +1,148 @@
+---
+import BrandFooter from "../components/BrandFooter.astro";
+import BrandHeader from "../components/BrandHeader.astro";
+import PageHead from "../components/PageHead.astro";
+import CommunityVideos from "../components/marketing/CommunityVideos.astro";
+import FeatureShowcase from "../components/marketing/FeatureShowcase.astro";
+import InstallTabs from "../components/marketing/InstallTabs.astro";
+import MoreFeatures from "../components/marketing/MoreFeatures.astro";
+import ThemeShot from "../components/marketing/ThemeShot.astro";
+import latestRelease from "../../releases/latest.json";
+import "../styles/marketing.css";
+
+const REPO = "https://github.com/modem-dev/hunk";
+const title = "hunk — review-first terminal diff viewer";
+const description =
+  "Hunk is a review-first terminal diff viewer for agent-authored changesets. Multi-file review stream, inline AI annotations, watch mode, TypeScript extensions, and Git/Jujutsu integration.";
+
+let stars: number | null = null;
+try {
+  const token = process.env.GITHUB_TOKEN;
+  const response = await fetch("https://api.github.com/repos/modem-dev/hunk", {
+    headers: {
+      Accept: "application/vnd.github+json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    signal: AbortSignal.timeout(5000),
+  });
+  if (response.ok) {
+    const data = (await response.json()) as { stargazers_count?: number };
+    if (typeof data.stargazers_count === "number") stars = data.stargazers_count;
+  }
+} catch {
+  // Keep the call to action useful when the optional star count cannot be fetched.
+}
+
+// Structured data for search engines and answer engines: one canonical machine
+// -readable description of what Hunk is, where to install it, and who ships it.
+const schema = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: "Hunk",
+  url: "https://hunk.dev/",
+  description,
+  applicationCategory: "DeveloperApplication",
+  operatingSystem: "macOS, Linux, Windows",
+  offers: {
+    "@type": "Offer",
+    price: "0",
+    priceCurrency: "USD",
+  },
+  license: `${REPO}/blob/main/LICENSE`,
+  sameAs: [REPO, "https://www.npmjs.com/package/hunkdiff"],
+  softwareHelp: "https://hunk.dev/docs/",
+  author: {
+    "@type": "Organization",
+    name: "Modem",
+    url: "https://modem.dev",
+  },
+  publisher: {
+    "@type": "Organization",
+    name: "Modem",
+    url: "https://modem.dev",
+  },
+};
+
+const formattedStars =
+  stars === null
+    ? null
+    : stars >= 1000
+      ? `${stars / 1000 >= 10 ? Math.round(stars / 1000) : (stars / 1000).toFixed(1).replace(/\.0$/, "")}k`
+      : stars.toLocaleString("en-US");
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <PageHead
+      title={title}
+      description={description}
+      keywords="diff, terminal, TUI, code review, git, jujutsu, AI agents, extensions, OpenTUI"
+      path="/"
+      ogImageAlt="hunk — terminal diffs for humans & agents"
+      schema={schema}
+    />
+  </head>
+  <body>
+    <div class="marketing">
+      <header class="top">
+        <BrandHeader current="home" stars={formattedStars} />
+      </header>
+
+      <main>
+        <section class="intro">
+          <h1>
+            Terminal diffs<br />
+            for <span class="ink">humans</span> &amp; <span class="mark">agents</span>
+          </h1>
+          <p class="sub">
+            Hunk is a review-first diff viewer that plays nice with agents. It's fast, it looks
+            good, and it works everywhere.
+          </p>
+          <InstallTabs />
+          {
+            latestRelease && (
+              <a class="release-ribbon" href={`/changelog/${latestRelease.minor}/`}>
+                <span class="rv">v{latestRelease.version}</span>
+                <span class="rs">{latestRelease.summary}</span>
+                <span class="ra" aria-hidden="true">
+                  →
+                </span>
+              </a>
+            )
+          }
+        </section>
+
+        <section class="paper" aria-label="Hunk theme preview">
+          <ThemeShot />
+        </section>
+
+        <section class="band videos" aria-labelledby="videos-title">
+          <div class="band-head">
+            <p class="kicker"># from the community</p>
+            <h2 id="videos-title">Watch a video walkthrough.</h2>
+          </div>
+          <CommunityVideos />
+        </section>
+
+        <section class="feats">
+          <p class="kicker"># what you get</p>
+          <h2>
+            Don't just <span class="mark-del">read</span> code, <span class="mark">understand</span> it.
+          </h2>
+          <FeatureShowcase />
+          <MoreFeatures />
+        </section>
+
+        <section class="last">
+          <h2>Try hunk on your next changeset.</h2>
+          <div class="cta">
+            <a class="ghost" href="#install">Install hunk</a>
+          </div>
+        </section>
+      </main>
+
+      <BrandFooter />
+    </div>
+  </body>
+</html>

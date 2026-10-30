@@ -2,8 +2,18 @@
   description = "Dev Flake for Modem-dev's Hunk";
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    # Systems Hunk builds for. Nixpkgs 26.11 dropped x86_64-darwin, and
+    # importing nixpkgs for a dropped system throws, so every declared system
+    # has to stay evaluable. Consumers can widen or narrow this with
+    # `inputs.hunk.inputs.systems.follows`.
+    systems.url = "github:nix-systems/triplet";
     bun2nix.url = "github:nix-community/bun2nix";
     bun2nix.inputs.nixpkgs.follows = "nixpkgs";
+    # bun2nix builds its flake-parts outputs for every system in its `systems`
+    # input, and its derivations reference those cross-system module args. Left
+    # on the default list it forces an x86_64-darwin nixpkgs even when only the
+    # aarch64-darwin package is requested.
+    bun2nix.inputs.systems.follows = "systems";
   };
   nixConfig = {
     extra-substituters = [
@@ -16,21 +26,21 @@
   outputs = {
     self,
     nixpkgs,
+    systems,
     bun2nix,
     ...
   }: let
     lib = nixpkgs.lib;
-    supportedSystems = [
-      "x86_64-linux"
-      "aarch64-linux"
-      "x86_64-darwin"
-      "aarch64-darwin"
-    ];
+    # One source of truth for the systems Hunk and bun2nix are evaluated for.
+    supportedSystems = import systems;
     forAllSystems = lib.genAttrs supportedSystems;
     perSystem = forAllSystems (
       system: let
         pkgs = import nixpkgs {
           inherit system;
+          # TEMPORARY: eMudhra root-store workaround for the dev shell's bun (all
+          # systems) and node (macOS); self-retiring, see nix/emudhra-overlay.nix.
+          overlays = [(import ./nix/emudhra-overlay.nix)];
         };
         hunk = pkgs.callPackage ./nix/package.nix {
           bun2nix = bun2nix.packages.${system}.default;

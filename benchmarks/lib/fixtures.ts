@@ -15,6 +15,27 @@ export interface SyntheticPatchOptions extends SyntheticFileOptions {
   prefix?: string;
 }
 
+export interface SyntheticPatchScenario {
+  name: string;
+  options: SyntheticPatchOptions;
+}
+
+/** Define the canonical patch shapes used by parsing benchmarks and disposable VM reviews. */
+export const CHANGESET_PARSE_SCENARIOS = [
+  {
+    name: "many_small_files",
+    options: { fileCount: 240, lines: 48, changedLines: 8 },
+  },
+  {
+    name: "balanced_changeset",
+    options: { fileCount: 96, lines: 220, changedLines: 48 },
+  },
+  {
+    name: "large_single_file",
+    options: { fileCount: 1, lines: 18_000, changedLines: 2_000 },
+  },
+] as const satisfies readonly SyntheticPatchScenario[];
+
 export interface TemporaryDirectory {
   path: string;
   cleanup: () => void;

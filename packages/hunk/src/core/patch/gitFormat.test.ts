@@ -1,0 +1,486 @@
+import { describe, expect, test } from "bun:test";
+import { sanitizeGitPatch, sanitizeGitPatchText } from "./gitFormat";
+
+/** Build a one-file `diff --git` block with the given header and body lines. */
+function patch(...lines: string[]) {
+  return lines.join("\n");
+}
+
+describe("sanitizeGitPatchText", () => {
+  test("returns text untouched when it contains no git header", () => {
+    const text = "hello\nworld\n--- not a real header";
+    expect(sanitizeGitPatchText(text)).toBe(text);
+  });
+
+  test("leaves already-canonical a/ b/ headers unchanged", () => {
+    const input = patch(
+      "diff --git a/foo.ts b/foo.ts",
+      "--- a/foo.ts",
+      "+++ b/foo.ts",
+      "@@ -1 +1 @@",
+      "-a",
+      "+b",
+    );
+    expect(sanitizeGitPatchText(input)).toBe(input);
+  });
+
+  test("adds a/ b/ prefixes to a noprefix non-rename block", () => {
+    const input = patch(
+      "diff --git foo.ts foo.ts",
+      "--- foo.ts",
+      "+++ foo.ts",
+      "@@ -1 +1 @@",
+      "-a",
+      "+b",
+    );
+    expect(sanitizeGitPatchText(input)).toBe(
+      patch(
+        "diff --git a/foo.ts b/foo.ts",
+        "--- a/foo.ts",
+        "+++ b/foo.ts",
+        "@@ -1 +1 @@",
+        "-a",
+        "+b",
+      ),
+    );
+  });
+
+  test("rewrites mnemonic-prefixed paths into canonical a/ b/ form", () => {
+    const input = patch(
+      "diff --git i/foo.ts w/foo.ts",
+      "--- i/foo.ts",
+      "+++ w/foo.ts",
+      "@@ -1 +1 @@",
+      "-a",
+      "+b",
+    );
+    expect(sanitizeGitPatchText(input)).toBe(
+      patch(
+        "diff --git a/foo.ts b/foo.ts",
+        "--- a/foo.ts",
+        "+++ b/foo.ts",
+        "@@ -1 +1 @@",
+        "-a",
+        "+b",
+      ),
+    );
+  });
+
+  test("adds prefixes to a two-token noprefix rename and updates its file headers", () => {
+    const input = patch(
+      "diff --git old.ts new.ts",
+      "rename from old.ts",
+      "rename to new.ts",
+      "--- old.ts",
+      "+++ new.ts",
+    );
+    expect(sanitizeGitPatchText(input)).toBe(
+      patch(
+        "diff --git a/old.ts b/new.ts",
+        "rename from old.ts",
+        "rename to new.ts",
+        "--- a/old.ts",
+        "+++ b/new.ts",
+      ),
+    );
+  });
+
+  test("unquotes already-prefixed quoted paths into Pierre's unquoted form", () => {
+    const input = patch(
+      'diff --git "a/foo bar.ts" "b/foo bar.ts"',
+      '--- "a/foo bar.ts"',
+      '+++ "b/foo bar.ts"',
+    );
+    expect(sanitizeGitPatchText(input)).toBe(
+      patch("diff --git a/foo bar.ts b/foo bar.ts", "--- a/foo bar.ts", "+++ b/foo bar.ts"),
+    );
+  });
+
+  test("adds prefixes to quoted noprefix paths containing spaces", () => {
+    const input = patch('diff --git "foo bar.ts" "foo bar.ts"', "--- foo bar.ts", "+++ foo bar.ts");
+    expect(sanitizeGitPatchText(input)).toBe(
+      patch("diff --git a/foo bar.ts b/foo bar.ts", "--- a/foo bar.ts", "+++ b/foo bar.ts"),
+    );
+  });
+
+  test("decodes Git-quoted UTF-8 octets in diff and unified headers", () => {
+    const escapedPath = String.raw`\345\233\275\351\232\233\345\214\226/\346\227\245\346\234\254\350\252\236-\353\263\200\352\262\275-\360\237\247\252.txt`;
+    const input = patch(
+      `diff --git "a/${escapedPath}" "b/${escapedPath}"`,
+      `--- "a/${escapedPath}"`,
+      `+++ "b/${escapedPath}"`,
+    );
+
+    expect(sanitizeGitPatchText(input)).toBe(
+      patch(
+        "diff --git a/国際化/日本語-변경-🧪.txt b/国際化/日本語-변경-🧪.txt",
+        "--- a/国際化/日本語-변경-🧪.txt",
+        "+++ b/国際化/日本語-변경-🧪.txt",
+      ),
+    );
+  });
+
+  test("decodes Git-quoted UTF-8 octets in rename metadata", () => {
+    const escapedOldPath = String.raw`\346\227\245\346\234\254\350\252\236.txt`;
+    const escapedNewPath = String.raw`\355\225\234\352\265\255\354\226\264\360\237\247\252.txt`;
+    const input = patch(
+      `diff --git "a/${escapedOldPath}" "b/${escapedNewPath}"`,
+      "similarity index 100%",
+      `rename from "${escapedOldPath}"`,
+      `rename to "${escapedNewPath}"`,
+    );
+
+    expect(sanitizeGitPatchText(input)).toBe(
+      patch(
+        "diff --git a/日本語.txt b/한국어🧪.txt",
+        "similarity index 100%",
+        "rename from 日本語.txt",
+        "rename to 한국어🧪.txt",
+      ),
+    );
+  });
+
+  test("preserves a real top-level a directory in quoted noprefix paths", () => {
+    const path = String.raw`a/tab\t.txt`;
+    const normalized = sanitizeGitPatch(
+      patch(`diff --git "${path}" "${path}"`, `--- "${path}"`, `+++ "${path}"`),
+    );
+
+    expect(normalized.text).toBe(
+      patch(
+        String.raw`diff --git a/a/tab\t.txt b/a/tab\t.txt`,
+        String.raw`--- a/a/tab\t.txt`,
+        String.raw`+++ b/a/tab\t.txt`,
+      ),
+    );
+    expect(normalized.filePaths).toEqual([{ path: "a/tab\t.txt" }]);
+  });
+
+  test("uses copy metadata to preserve real mnemonic-looking directories", () => {
+    const escapedOldPath = String.raw`i/\346\227\245\346\234\254\350\252\236.txt`;
+    const escapedNewPath = String.raw`w/\355\225\234\352\265\255\354\226\264.txt`;
+    const normalized = sanitizeGitPatch(
+      patch(
+        `diff --git "${escapedOldPath}" "${escapedNewPath}"`,
+        "similarity index 100%",
+        `copy from "${escapedOldPath}"`,
+        `copy to "${escapedNewPath}"`,
+      ),
+    );
+
+    expect(normalized.text).toBe(
+      patch(
+        "diff --git a/i/日本語.txt b/w/한국어.txt",
+        "similarity index 100%",
+        "copy from i/日本語.txt",
+        "copy to w/한국어.txt",
+      ),
+    );
+    expect(normalized.filePaths).toEqual([{ path: "w/한국어.txt", previousPath: "i/日本語.txt" }]);
+  });
+
+  test("retains exact C-style decoded paths beside parser-safe patch text", () => {
+    const escapedPath = String.raw`a/\345\233\275\351\232\233\345\214\226/tab\tquote\"back\\\360\237\247\252.txt`;
+    const normalized = sanitizeGitPatch(
+      patch(
+        `diff --git "${escapedPath}" "${escapedPath.replace("a/", "b/")}"`,
+        `--- "${escapedPath}"`,
+        `+++ "${escapedPath.replace("a/", "b/")}"`,
+      ),
+    );
+
+    expect(normalized.text).toContain(`${String.raw`tab\tquote\"back\\`}🧪.txt`);
+    expect(normalized.filePaths).toEqual([{ path: '国際化/tab\tquote"back\\🧪.txt' }]);
+  });
+
+  test("keeps decoded path metadata aligned across multiple file blocks", () => {
+    const firstPath = String.raw`\346\227\245\346\234\254\350\252\236.txt`;
+    const secondPath = String.raw`\355\225\234\352\265\255\354\226\264.txt`;
+    const normalized = sanitizeGitPatch(
+      patch(
+        `diff --git "a/${firstPath}" "b/${firstPath}"`,
+        `--- "a/${firstPath}"`,
+        `+++ "b/${firstPath}"`,
+        "@@ -1 +1 @@",
+        "-one",
+        "+two",
+        `diff --git "a/${secondPath}" "b/${secondPath}"`,
+        `--- "a/${secondPath}"`,
+        `+++ "b/${secondPath}"`,
+        "@@ -1 +1 @@",
+        "-three",
+        "+four",
+      ),
+    );
+
+    expect(normalized.filePaths).toEqual([{ path: "日本語.txt" }, { path: "한국어.txt" }]);
+  });
+
+  test("preserves non-UTF-8 octets and protected literal backslashes", () => {
+    const invalidPath = String.raw`a/bad\377-overflow\433-csi\302\233-name\\345.txt`;
+    const input = patch(
+      `diff --git "${invalidPath}" "${invalidPath.replace("a/", "b/")}"`,
+      `--- "${invalidPath}"`,
+      `+++ "${invalidPath.replace("a/", "b/")}"`,
+    );
+
+    expect(sanitizeGitPatchText(input)).toBe(
+      patch(
+        String.raw`diff --git a/bad\377-overflow\433-csi\302\233-name\\345.txt b/bad\377-overflow\433-csi\302\233-name\\345.txt`,
+        String.raw`--- a/bad\377-overflow\433-csi\302\233-name\\345.txt`,
+        String.raw`+++ b/bad\377-overflow\433-csi\302\233-name\\345.txt`,
+      ),
+    );
+  });
+
+  test("never rewrites hunk-body lines that merely look like file headers", () => {
+    const input = patch(
+      "diff --git foo.ts foo.ts",
+      "--- foo.ts",
+      "+++ foo.ts",
+      "@@ -1 +1 @@",
+      "-diff --git x y",
+      "+changed",
+    );
+    expect(sanitizeGitPatchText(input)).toBe(
+      patch(
+        "diff --git a/foo.ts b/foo.ts",
+        "--- a/foo.ts",
+        "+++ b/foo.ts",
+        "@@ -1 +1 @@",
+        // The deletion line is body content and must survive verbatim.
+        "-diff --git x y",
+        "+changed",
+      ),
+    );
+  });
+
+  test("preserves /dev/null file headers when prefixing a new file", () => {
+    const input = patch(
+      "diff --git new.ts new.ts",
+      "--- /dev/null",
+      "+++ new.ts",
+      "@@ -0,0 +1 @@",
+      "+a",
+    );
+    expect(sanitizeGitPatchText(input)).toBe(
+      patch("diff --git a/new.ts b/new.ts", "--- /dev/null", "+++ b/new.ts", "@@ -0,0 +1 @@", "+a"),
+    );
+  });
+
+  test("normalizes every block in a multi-file patch independently", () => {
+    const input = patch(
+      "diff --git one.ts one.ts",
+      "--- one.ts",
+      "+++ one.ts",
+      "@@ -1 +1 @@",
+      "-x",
+      "+y",
+      "diff --git a/two.ts b/two.ts",
+      "--- a/two.ts",
+      "+++ b/two.ts",
+      "@@ -1 +1 @@",
+      "-p",
+      "+q",
+    );
+    expect(sanitizeGitPatchText(input)).toBe(
+      patch(
+        "diff --git a/one.ts b/one.ts",
+        "--- a/one.ts",
+        "+++ b/one.ts",
+        "@@ -1 +1 @@",
+        "-x",
+        "+y",
+        "diff --git a/two.ts b/two.ts",
+        "--- a/two.ts",
+        "+++ b/two.ts",
+        "@@ -1 +1 @@",
+        "-p",
+        "+q",
+      ),
+    );
+  });
+});
+
+describe("combined Git patch normalization", () => {
+  test("converts a two-parent conflict diff into a first-parent unified diff", () => {
+    const combinedPatch = [
+      "diff --cc notes.txt",
+      "index 0459513,a7453f0..0000000",
+      "--- a/notes.txt",
+      "+++ b/notes.txt",
+      "@@@ -1,1 -1,1 +1,5 @@@",
+      "++<<<<<<< HEAD",
+      " +upstream",
+      "++=======",
+      "+ feature",
+      "++>>>>>>> topic",
+      "",
+    ].join("\n");
+
+    expect(sanitizeGitPatchText(combinedPatch)).toBe(
+      [
+        "diff --git a/notes.txt b/notes.txt",
+        "index 0459513,a7453f0..0000000",
+        "--- a/notes.txt",
+        "+++ b/notes.txt",
+        "@@ -1,1 +1,5 @@",
+        "+<<<<<<< HEAD",
+        " upstream",
+        "+=======",
+        "+feature",
+        "+>>>>>>> topic",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  test("omits lines deleted only from another parent", () => {
+    const combinedPatch = [
+      "diff --cc notes.txt",
+      "index 1111111,2222222..0000000",
+      "--- a/notes.txt",
+      "+++ b/notes.txt",
+      "@@@ -1,3 -1,3 +1,3 @@@",
+      "- main",
+      " -topic",
+      "++resolved",
+      "  common",
+      "  tail",
+      "",
+    ].join("\n");
+
+    expect(sanitizeGitPatchText(combinedPatch)).toBe(
+      [
+        "diff --git a/notes.txt b/notes.txt",
+        "index 1111111,2222222..0000000",
+        "--- a/notes.txt",
+        "+++ b/notes.txt",
+        "@@ -1,3 +1,3 @@",
+        "-main",
+        "+resolved",
+        " common",
+        " tail",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  test("rewrites binary combined entries without unified file headers", () => {
+    const combinedPatch = [
+      "diff --cc data.bin",
+      "index ff69e82,fdd5296..0000000",
+      "Binary files differ",
+      "",
+    ].join("\n");
+
+    expect(sanitizeGitPatchText(combinedPatch)).toBe(
+      [
+        "diff --git a/data.bin b/data.bin",
+        "index ff69e82,fdd5296..0000000",
+        "Binary files differ",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  test("keeps only the first parent path in combined-all-paths headers", () => {
+    const combinedPatch = [
+      "diff --cc renamed.txt",
+      "index 1111111,2222222..0000000",
+      "--- a/first-name.txt",
+      "--- a/second-name.txt",
+      "+++ b/renamed.txt",
+      "@@@ -1,1 -1,1 +1,1 @@@",
+      "-old",
+      "++new",
+      "",
+    ].join("\n");
+
+    expect(sanitizeGitPatchText(combinedPatch)).toBe(
+      [
+        "diff --git a/first-name.txt b/renamed.txt",
+        "index 1111111,2222222..0000000",
+        "--- a/first-name.txt",
+        "+++ b/renamed.txt",
+        "@@ -1,1 +1,1 @@",
+        "-old",
+        "+new",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  test("normalizes combined headers with quoted paths and multiple parents", () => {
+    const combinedPatch = [
+      'diff --combined "notes copy.txt"',
+      "index 1111111,2222222,3333333..4444444",
+      '--- "a/notes copy.txt"',
+      '+++ "b/notes copy.txt"',
+      "@@@@ -1,1 -1,1 -1,1 +1,2 @@@@",
+      "   old",
+      "+++new",
+      "",
+    ].join("\n");
+
+    expect(sanitizeGitPatchText(combinedPatch)).toBe(
+      [
+        "diff --git a/notes copy.txt b/notes copy.txt",
+        "index 1111111,2222222,3333333..4444444",
+        "--- a/notes copy.txt",
+        "+++ b/notes copy.txt",
+        "@@ -1,1 +1,2 @@",
+        " old",
+        "+new",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  test.each(["a/data.bin", "b/data.bin", '"a/tab\\t.bin"'])(
+    "preserves unprefixed binary combined path %s",
+    (path) => {
+      const normalized = sanitizeGitPatch(
+        `diff --cc ${path}\nindex 1111111,2222222..0000000\nBinary files differ\n`,
+      );
+      const expectedPath = path === '"a/tab\\t.bin"' ? "a/tab\t.bin" : path;
+      if (normalized.filePaths[0]) {
+        expect(normalized.filePaths[0].path).toBe(expectedPath);
+      } else {
+        expect(normalized.text).toContain(`diff --git a/${path} b/${path}`);
+      }
+    },
+  );
+
+  test.each([
+    ["a/notes.txt", "a/notes.txt"],
+    ["i/a/notes.txt", "w/a/notes.txt"],
+  ])("normalizes combined unified-header pair %s / %s", (oldPath, newPath) => {
+    const input = [
+      "diff --cc a/notes.txt",
+      `--- ${oldPath}`,
+      `+++ ${newPath}`,
+      "@@@ -1 -1 +1 @@@",
+      "--old",
+      "++new",
+      "",
+    ].join("\n");
+    expect(sanitizeGitPatchText(input)).toBe(
+      [
+        "diff --git a/a/notes.txt b/a/notes.txt",
+        "--- a/a/notes.txt",
+        "+++ b/a/notes.txt",
+        "@@ -1 +1 @@",
+        "-old",
+        "+new",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  test("leaves ordinary unified patches unchanged", () => {
+    const patch = "diff --git a/a.txt b/a.txt\n@@ -1 +1 @@\n-old\n+new\n";
+
+    expect(sanitizeGitPatchText(patch)).toBe(patch);
+  });
+});

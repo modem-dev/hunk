@@ -20,7 +20,7 @@ jobs:
       code: ${{ steps.detect.outputs.code_changed }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Detect code changes
         id: detect
@@ -36,15 +36,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: 1.3.10
+          bun-version: 1.4.4
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
 
       - name: Install Jujutsu
-        uses: taiki-e/install-action@213ccc1a076163c093f914550b94feb90fab916d # v2.79.2
+        uses: taiki-e/install-action@76c2e6406e52637deed7160d77bded76bd83e06e # v2.87.14
         with:
           tool: jj-cli
 
@@ -72,11 +77,39 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
 
+      - name: Module boundary check
+        run: bun run deps:check
+
       - name: Theme contrast check
         run: bun run test:theme-contrast
 
       - name: Test suite
         run: bun run test
+
+      - name: Real Node broker adapter tests
+        run: bun run test:session-broker-node
+
+  pty-integration:
+    name: PTY integration tests
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Verify terminal tools
+        run: |
+          command -v script
+          command -v timeout
 
       - name: PTY integration tests
         run: bun run test:integration
@@ -88,12 +121,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: 1.3.10
+          bun-version: 1.4.4
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -113,15 +146,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: 1.3.10
+          bun-version: 1.4.4
 
       - name: Set up Node
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
 
@@ -139,7 +172,7 @@ jobs:
           pkg_dir="$(mktemp -d)"
           install_dir="$(mktemp -d)"
           node_dir="$(dirname "$(command -v node)")"
-          npm pack --pack-destination "$pkg_dir" >/dev/null
+          npm pack ./packages/hunk --ignore-scripts --pack-destination "$pkg_dir" >/dev/null
           pkg="$(find "$pkg_dir" -maxdepth 1 -name 'hunkdiff-*.tgz' | head -n1)"
           npm install -g --prefix "$install_dir" "$pkg"
           PATH="$install_dir/bin:$node_dir:/usr/bin:/bin"
@@ -157,21 +190,24 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - ubuntu-latest
-          - macos-latest
-          - windows-latest
+        include:
+          - os: ubuntu-latest
+            executable: dist/hunk
+          - os: macos-latest
+            executable: dist/hunk
+          - os: windows-latest
+            executable: dist/hunk.exe
     steps:
       - name: Check out repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: 1.3.10
+          bun-version: 1.4.4
 
       - name: Set up Node
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
 
@@ -180,6 +216,11 @@ jobs:
 
       - name: Stage prebuilt npm packages
         run: bun run build:prebuilt:npm
+
+      - name: Verify compiled headless commands skip OpenTUI
+        run: bun test ./test/cli/compiled-headless-native-lib.test.ts
+        env:
+          HUNK_TEST_EXECUTABLE: ${{ github.workspace }}/${{ matrix.executable }}
 
       - name: Verify staged prebuilt packs
         run: bun run check:prebuilt-pack
@@ -191,21 +232,37 @@ jobs:
     name: Build compiled binary
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-latest
+    # Ubuntu 26.04 cloud libraries require x86-64-v3 and SIGILL under Nehalem even for /bin/true.
+    # Keep the emulated process's userland compatible with the CPU this job verifies.
+    runs-on: ubuntu-24.04
     steps:
       - name: Check out repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: 1.3.10
+          bun-version: 1.4.4
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
       - name: Build binary
         run: bun run build:bin
+
+      # Bun's default x64 runtime is compiled for Haswell and raises SIGILL on older CPUs.
+      # Emulating a pre-AVX CPU here catches a dropped baseline target on main rather than
+      # after a release ships a binary that cannot start.
+      - name: Verify the binary starts without AVX2
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-user
+          qemu-x86_64 -cpu Nehalem dist/hunk --version
+
+      - name: Verify compiled binary watch mode
+        run: bun test ./test/pty/watch.test.ts
+        env:
+          HUNK_TEST_EXECUTABLE: ${{ github.workspace }}/dist/hunk
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

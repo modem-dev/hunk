@@ -1,0 +1,26 @@
+{
+  "name": "@hunk/jj",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Private statically bundled Jujutsu provider for Hunk.",
+  "license": "MIT",
+  "files": [
+    "src"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "dependencies": {
+    "@hunk/vcs": "workspace:*",
+    "hunkdiff": "workspace:*"
+  },
+  "engines": {
+    "bun": ">=1.3.14",
+    "node": ">=22"
+  }
+}

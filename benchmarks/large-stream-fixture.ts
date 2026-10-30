@@ -1,5 +1,6 @@
 import { parseDiffFromFile, parsePatchFiles } from "@pierre/diffs";
-import type { AppBootstrap, DiffFile } from "../src/core/types";
+import type { AppBootstrap } from "../packages/hunk/src/core/bootstrap";
+import type { DiffFile } from "../packages/hunk/src/core/changeset/model";
 
 export const DEFAULT_FILE_COUNT = 180;
 export const DEFAULT_LINES_PER_FILE = 120;
@@ -130,6 +131,7 @@ export function createLargeSplitStreamBootstrap({
   contentVariant = "ascii",
 }: LargeSplitStreamFixtureOptions = {}): AppBootstrap {
   return {
+    reloadContext: { cwd: process.cwd() },
     input: {
       kind: "vcs",
       staged: false,
@@ -230,6 +232,7 @@ export function createHugeStreamBootstrap(): AppBootstrap {
   files.push(createGiantSingleDiffFile(HUGE_FILE_COUNT + 1));
 
   return {
+    reloadContext: { cwd: process.cwd() },
     input: {
       kind: "vcs",
       staged: false,

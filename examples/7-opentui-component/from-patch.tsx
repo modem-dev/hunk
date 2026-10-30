@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-import { parsePatchFiles } from "../../src/opentui";
+import { parsePatchFiles } from "../../packages/hunk/src/opentui";
 import { readExampleFile, runExample } from "./support";
 
 const patch = readExampleFile("change.patch");

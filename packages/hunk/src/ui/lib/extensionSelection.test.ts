@@ -1,0 +1,204 @@
+import { describe, expect, test } from "bun:test";
+import { createTestDiffFile } from "../../../../../test/helpers/diff-helpers";
+import { toReadOnlyFileViews } from "../../extensions/events";
+import type { ExtensionDiffFile } from "../../extension-api/types";
+import { buildExtensionReviewSelection } from "./extensionSelection";
+
+/** The frozen views the sidebar panes render from, for two visible files. */
+function createTestFileViews() {
+  return toReadOnlyFileViews([
+    createTestDiffFile({ id: "alpha", path: "alpha.ts" }),
+    createTestDiffFile({ id: "beta", path: "beta.ts" }),
+  ]);
+}
+
+describe("buildExtensionReviewSelection", () => {
+  test("resolves the selected file and hunk out of the visible views", () => {
+    const files = createTestFileViews();
+    const selection = buildExtensionReviewSelection({
+      files,
+      layout: "unified",
+      selectedFileId: "beta",
+      selectedHunkIndex: 0,
+    });
+
+    expect(selection.file?.path).toBe("beta.ts");
+    expect(selection.hunkIndex).toBe(0);
+    expect(selection.currentLine).toBeNull();
+    expect(selection.files).toBe(files);
+    expect(selection.files[1]).toBe(selection.file as ExtensionDiffFile);
+  });
+
+  test("carries the visible files in review order even with no selection", () => {
+    // A content search or any whole-review command needs the corpus the user
+    // can see, not the one file under the cursor, and it needs it even when the
+    // filter hides the selection.
+    const files = createTestFileViews();
+    const selection = buildExtensionReviewSelection({
+      files,
+      layout: "unified",
+      selectedFileId: "gamma",
+      selectedHunkIndex: 0,
+    });
+
+    expect(selection.file).toBeNull();
+    expect(selection.files.map((file) => file.path)).toEqual(["alpha.ts", "beta.ts"]);
+    expect(Object.isFrozen(selection)).toBe(true);
+  });
+
+  test("reports no selection when nothing is selected", () => {
+    const selection = buildExtensionReviewSelection({
+      files: createTestFileViews(),
+      layout: "unified",
+      selectedFileId: null,
+      selectedHunkIndex: 3,
+    });
+
+    expect(selection).toEqual({
+      file: null,
+      hunkIndex: null,
+      currentLine: null,
+      files: selection.files,
+      layout: "unified",
+    });
+    expect(selection.files).toHaveLength(2);
+  });
+
+  test("reports no selection for a file the filter hides", () => {
+    // The review controller keeps a selection that the current filter query
+    // hides; an extension cannot find that file in `files`, so it is not one it
+    // can act on either.
+    const selection = buildExtensionReviewSelection({
+      files: createTestFileViews(),
+      layout: "unified",
+      selectedFileId: "gamma",
+      selectedHunkIndex: 0,
+    });
+
+    expect(selection.file).toBeNull();
+    expect(selection.hunkIndex).toBeNull();
+    expect(selection.currentLine).toBeNull();
+  });
+
+  test("copies the matching current line into the frozen snapshot", () => {
+    const files = createTestFileViews();
+    const target = { side: "old" as const, line: 42 };
+    const selection = buildExtensionReviewSelection({
+      files,
+      layout: "unified",
+      selectedFileId: "alpha",
+      selectedHunkIndex: 0,
+      lineCursor: { fileId: "alpha", hunkIndex: 0, target },
+    });
+
+    expect(selection.currentLine).toEqual(target);
+    expect(selection.currentLine).not.toBe(target);
+    expect(Object.isFrozen(selection.currentLine)).toBe(true);
+    expect(Object.isFrozen(selection)).toBe(true);
+  });
+
+  test("drops a current line outside the resolved file and hunk", () => {
+    const files = createTestFileViews();
+    const target = { side: "old" as const, line: 7 };
+
+    expect(
+      buildExtensionReviewSelection({
+        files,
+        layout: "unified",
+        selectedFileId: "alpha",
+        selectedHunkIndex: 0,
+        lineCursor: { fileId: "beta", hunkIndex: 0, target },
+      }).currentLine,
+    ).toBeNull();
+    expect(
+      buildExtensionReviewSelection({
+        files,
+        layout: "unified",
+        selectedFileId: "alpha",
+        selectedHunkIndex: 0,
+        lineCursor: { fileId: "alpha", hunkIndex: 1, target },
+      }).currentLine,
+    ).toBeNull();
+  });
+
+  test("clamps a stale hunk index into the file's real range", () => {
+    const files = createTestFileViews();
+    const lastHunkIndex = (files[0]!.metadata as { hunks: unknown[] }).hunks.length - 1;
+
+    expect(
+      buildExtensionReviewSelection({
+        files,
+        layout: "unified",
+        selectedFileId: "alpha",
+        selectedHunkIndex: 99,
+      }).hunkIndex,
+    ).toBe(lastHunkIndex);
+    expect(
+      buildExtensionReviewSelection({
+        files,
+        layout: "unified",
+        selectedFileId: "alpha",
+        selectedHunkIndex: -4,
+      }).hunkIndex,
+    ).toBe(0);
+    expect(
+      buildExtensionReviewSelection({
+        files,
+        layout: "unified",
+        selectedFileId: "alpha",
+        selectedHunkIndex: Number.NaN,
+      }).hunkIndex,
+    ).toBeNull();
+  });
+
+  test("reports no hunk for a file with nothing to select", () => {
+    const [file] = createTestFileViews();
+    const binaryLike = Object.freeze({ ...file!, id: "binary", metadata: { hunks: [] } });
+
+    expect(
+      buildExtensionReviewSelection({
+        files: [binaryLike],
+        layout: "unified",
+        selectedFileId: "binary",
+        selectedHunkIndex: 0,
+      }).hunkIndex,
+    ).toBeNull();
+  });
+
+  test("hands out the frozen view the sidebar receives, in a frozen snapshot", () => {
+    const files = createTestFileViews();
+    const selection = buildExtensionReviewSelection({
+      files,
+      layout: "unified",
+      selectedFileId: "alpha",
+      selectedHunkIndex: 0,
+    });
+
+    // Same object identity as the sidebar's props, and frozen: an extension
+    // holding the snapshot cannot reach the review model through it.
+    expect(selection.file).toBe(files[0]!);
+    expect(Object.isFrozen(selection.file)).toBe(true);
+    expect(Object.isFrozen(selection)).toBe(true);
+  });
+});
+
+describe("buildExtensionReviewSelection layout", () => {
+  test("passes the resolved layout through with and without a selected file", () => {
+    const files = createTestFileViews();
+    const selected = buildExtensionReviewSelection({
+      files,
+      layout: "split",
+      selectedFileId: "alpha",
+      selectedHunkIndex: 0,
+    });
+    const unselected = buildExtensionReviewSelection({
+      files,
+      layout: "split",
+      selectedFileId: null,
+      selectedHunkIndex: null,
+    });
+
+    expect(selected.layout).toBe("split");
+    expect(unselected.layout).toBe("split");
+  });
+});

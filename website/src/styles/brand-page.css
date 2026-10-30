@@ -1,0 +1,178 @@
+.brand-page {
+  max-width: 960px;
+  margin-inline: auto;
+  padding: 64px 36px 72px;
+}
+
+.brand-intro {
+  padding-bottom: 56px;
+}
+
+.brand-page .sub {
+  max-width: 620px;
+}
+
+.brand-bundle {
+  display: inline-flex;
+  align-items: center;
+  gap: 24px;
+  padding: 14px 18px;
+  margin-top: 12px;
+  border: 1px solid var(--hunk-strong-border);
+  background: var(--hunk-accent);
+  color: var(--hunk-button-ink);
+  box-shadow: 3px 3px 0 var(--hunk-shadow);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.brand-bundle:hover {
+  text-decoration: underline;
+}
+
+.brand-caption,
+.brand-section-heading p {
+  color: var(--hunk-muted);
+  font-size: 12px;
+}
+
+.brand-page h2 {
+  font-size: 22px;
+  letter-spacing: -0.04em;
+}
+
+.brand-page h3 {
+  font-size: 15px;
+  margin: 0 0 8px;
+}
+
+.brand-section-heading {
+  border-top: 1px solid var(--hunk-rule);
+  padding-top: 20px;
+  margin-bottom: 24px;
+}
+
+.brand-grid,
+.brand-guidance-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 28px;
+}
+
+.brand-card {
+  border: 1px solid var(--hunk-strong-border);
+  box-shadow: 3px 3px 0 var(--hunk-shadow);
+  background: var(--hunk-paper);
+  overflow: hidden;
+}
+
+.brand-card-heading {
+  padding: 22px;
+  min-height: 142px;
+}
+
+.brand-card-heading p,
+.brand-guidance p,
+.brand-palette > p {
+  margin: 0;
+  color: var(--hunk-body);
+  font-size: 13px;
+}
+
+.brand-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 192px;
+  border-block: 1px solid var(--hunk-rule);
+}
+
+.brand-preview img {
+  width: auto;
+  height: auto;
+  max-width: 72%;
+  max-height: 104px;
+}
+
+.brand-download-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  font-size: 12px;
+}
+
+.brand-download-row > span {
+  color: var(--hunk-muted);
+}
+
+.brand-formats {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px 18px;
+}
+
+.brand-formats a:hover {
+  color: var(--hunk-accent);
+  text-decoration: underline;
+}
+
+.brand-guidance,
+.brand-palette {
+  margin-top: 56px;
+  padding-top: 16px;
+  border-top: 1px solid var(--hunk-rule);
+}
+
+.brand-guidance p + p {
+  margin-top: 16px;
+}
+
+.brand-swatches {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  margin-bottom: 24px;
+}
+
+.brand-swatch > div {
+  height: 88px;
+  border: 1px solid var(--hunk-strong-border);
+}
+
+.brand-swatch p {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.brand-swatch code {
+  color: var(--hunk-muted);
+}
+
+@media (max-width: 600px) {
+  .brand-page {
+    padding: 40px 20px 56px;
+  }
+
+  .brand-grid,
+  .brand-guidance-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .brand-card-heading {
+    min-height: auto;
+  }
+
+  .brand-formats {
+    gap: 6px 14px;
+  }
+
+  .brand-swatches {
+    gap: 10px;
+  }
+}

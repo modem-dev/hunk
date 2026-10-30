@@ -1,0 +1,1646 @@
+import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { createPtyHarness, dragMouse, lineIndexOf } from "./harness";
+
+const harness = createPtyHarness();
+const REVIEW_TRIAGE_EXTENSION = resolve(
+  fileURLToPath(new URL("../../examples/extensions/review-triage", import.meta.url)),
+);
+const REVIEW_NOTE_NAVIGATOR_EXTENSION = resolve(
+  fileURLToPath(new URL("../../examples/extensions/review-note-navigator", import.meta.url)),
+);
+const REVIEW_SNAPSHOT_EXPORT_EXTENSION = resolve(
+  fileURLToPath(new URL("../../examples/extensions/review-snapshot-export", import.meta.url)),
+);
+const VIM_NAVIGATION_EXTENSION = resolve(
+  fileURLToPath(new URL("../../examples/extensions/vim-navigation", import.meta.url)),
+);
+
+/** An external-event workflow that changes a reviewed file and requests a host reload. */
+const REVIEW_RELOAD_EXTENSION_SOURCE = `
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+
+export default function (hunk) {
+  hunk.events.on("reload-fixture:changed", async (_payload, ctx) => {
+    const result = await ctx.review.requestReload();
+    if (!result.ok) ctx.notify(result.detail, "error");
+  });
+
+  hunk.on("startup", (_event, ctx) => {
+    writeFileSync(join(ctx.cwd, "alpha.ts"), "export const agentReloaded = 3;\\n");
+    hunk.events.emit("reload-fixture:changed", {});
+  });
+}
+`;
+
+/** Give PTY-backed startup, reloads, and redraws headroom on slower CI machines. */
+setDefaultTimeout(30_000);
+
+afterEach(() => {
+  harness.cleanup();
+});
+
+/**
+ * The key Hunk records a repo's trust under: its canonical path. A macOS temp dir reads as
+ * /var/folders/… and resolves to /private/var/folders/….
+ */
+function trustKey(repoDir: string) {
+  return realpathSync.native(repoDir);
+}
+
+/** Read the persisted repo-trust decisions from one isolated config home. */
+function readTrustState(configHome: string): Record<string, string> {
+  const statePath = join(configHome, "hunk", "state.json");
+  if (!existsSync(statePath)) {
+    return {};
+  }
+
+  const parsed = JSON.parse(readFileSync(statePath, "utf8")) as {
+    extensionTrust?: Record<string, string>;
+  };
+  return parsed.extensionTrust ?? {};
+}
+
+/**
+ * A repo-local extension whose effect is unmistakable in a snapshot: it renames
+ * the changeset and drops one of the two reviewed files.
+ */
+const TRANSFORM_EXTENSION_SOURCE = `export default function (hunk) {
+  hunk.transformChangeset((changeset) => ({
+    ...changeset,
+    title: "REPO EXTENSION ACTIVE",
+    files: changeset.files.filter((file) => !file.path.includes("beta")),
+  }));
+}
+`;
+
+/** A delegated patch command with fixed metadata for an end-to-end pane proof. */
+const DELEGATED_REVIEW_EXTENSION_SOURCE = `import { rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+let patchPath;
+export default function (hunk) {
+  hunk.registerCliCommand({ name: "delegated-review", summary: "Open a delegated review" }, (_args, ctx) => {
+    patchPath = join(ctx.cwd, "delegated-review.diff");
+    writeFileSync(patchPath, [
+      "diff --git a/probe.txt b/probe.txt",
+      "--- a/probe.txt",
+      "+++ b/probe.txt",
+      "@@ -1 +1 @@",
+      "-before",
+      "+after",
+      "",
+    ].join("\\n"));
+    return {
+      kind: "delegate",
+      argv: ["patch", patchPath],
+      review: {
+        kind: "change-request",
+        provider: "GitHub",
+        title: "Delegated pane proof",
+        url: "https://github.com/modem-dev/hunk/pull/123",
+        id: "#123",
+        repository: "modem-dev/hunk",
+        author: "octocat",
+        base: "main",
+        head: "feature/pane",
+        state: "open",
+        draft: false,
+      },
+    };
+  });
+  hunk.on("shutdown", () => {
+    if (patchPath) rmSync(patchPath, { force: true });
+  });
+}
+`;
+
+/** A repo-local extension that only speaks through ctx.notify on startup. */
+const NOTIFY_EXTENSION_SOURCE = `export default function (hunk) {
+  hunk.on("startup", (_payload, ctx) => {
+    ctx.notify("hello from the fixture extension");
+  });
+}
+`;
+
+/** An extension that records whether terminal interrupts deliver graceful shutdown. */
+const INTERRUPT_SHUTDOWN_EXTENSION_SOURCE = `import { appendFileSync } from "node:fs";
+export default function (hunk) {
+  hunk.on("startup", (_payload, ctx) => ctx.notify("INTERRUPT FIXTURE READY"));
+  hunk.on("shutdown", () => appendFileSync(".hunk-shutdown.log", "shutdown\\n"));
+}
+`;
+
+/**
+ * An extension contributing an extra sidebar opened by a registered command.
+ *
+ * `useState` matters here: the fixture imports `react` from an ordinary file on
+ * disk, so hooks rendering at all proves the host served its own React instance
+ * to the extension — on a second React copy the component would throw and the
+ * pane would close instead of rendering. The command matters equally: its key
+ * dispatches through the same table as Hunk's built-in shortcuts.
+ */
+const SIDEBAR_EXTENSION_SOURCE = `import { createElement, useState } from "react";
+export default function (hunk) {
+  hunk.registerSidebarView({
+    id: "fixture-sidebar",
+    title: "Fixture",
+    placement: "right",
+    component: (props) => {
+      const [label] = useState("EXTSIDEBAR");
+      return createElement("text", {
+        content: label + " " + props.files.length + " FILES",
+        style: { fg: props.theme.text, bg: props.theme.panel },
+      });
+    },
+  });
+  hunk.registerCommand({ id: "toggle-fixture", title: "Toggle fixture", key: "Y" }, (ctx) => {
+    ctx.sidebars.toggle("fixture-sidebar");
+  });
+}
+`;
+
+/** Toggle rendered guide visibility while retaining the files pane's responsive state. */
+const INDEPENDENT_GUIDE_EXTENSION_SOURCE = `import { createElement } from "react";
+export default function (hunk) {
+  hunk.registerPane({
+    id: "guide",
+    placement: "right",
+    defaultOpen: true,
+    width: { preferred: 24, min: 16 },
+    component: () => createElement("text", { content: "INDEPENDENT GUIDE" }),
+  });
+  hunk.registerCommand({ id: "toggle", title: "Toggle guide", key: "Y" }, (ctx) => {
+    if (ctx.panes.isVisible("guide")) ctx.panes.close("guide");
+    else ctx.panes.open("guide");
+  });
+}
+`;
+
+/** A scrollable pane that records host activation from its buffered content. */
+const PANE_ACTIVATION_EXTENSION_SOURCE = `import { appendFileSync } from "node:fs";
+import { createElement } from "react";
+export default function (hunk) {
+  hunk.registerPane({
+    id: "activation",
+    placement: "right",
+    defaultOpen: true,
+    onActivate: () => appendFileSync(".hunk-pane-activation.log", "pane\\n"),
+    component: () => createElement(
+      "scrollbox",
+      { width: "100%", height: "100%", scrollY: true, focused: false },
+      createElement(
+        "box",
+        { style: { width: "100%", height: 30 } },
+        createElement("text", { content: "PANE ACTIVATE TARGET" }),
+      ),
+    ),
+  });
+}
+`;
+
+/** A named files-slot replacement beside an independently controlled pane. */
+const FILES_SLOT_EXTENSION_SOURCE = `import { createElement } from "react";
+export default function (hunk) {
+  hunk.registerPane({
+    id: "files-slot",
+    placement: "right",
+    replaces: "hunk:files",
+    component: () => createElement("text", { content: "FILES SLOT RIGHT" }),
+  });
+  hunk.registerPane({
+    id: "aux",
+    placement: "left",
+    defaultOpen: true,
+    component: () => createElement("text", { content: "AUX PANE LEFT" }),
+  });
+}
+`;
+
+/**
+ * An extension that asks before acting, so a real terminal exercises the whole
+ * dialog path: a registered key opens the modal, Enter resolves the handler's
+ * awaited promise, and the answer comes back as a toast.
+ */
+const FOUR_EDGE_PANE_EXTENSION_SOURCE = `import { createElement } from "react";
+export default function (hunk) {
+  for (const placement of ["top", "bottom"]) {
+    hunk.registerPane({
+      id: placement,
+      placement,
+      defaultOpen: false,
+      height: placement === "top"
+        ? { preferred: 2, min: 2, max: 5 }
+        : { preferred: 2, min: 2, max: 2 },
+      component: (props) => createElement("text", {
+        content: "PANE " + placement.toUpperCase() + " " + props.width + "x" + props.height,
+        style: { fg: props.theme.text, bg: props.theme.panel },
+      }),
+    });
+  }
+  hunk.registerCommand({ id: "toggle-edges", title: "Toggle edge panes", key: "Y" }, (ctx) => {
+    ctx.panes.toggle("top");
+    ctx.panes.toggle("bottom");
+  });
+}
+`;
+
+/**
+ * An extension marking characters inside the reviewed diff lines.
+ *
+ * PTY snapshots carry text only, so the visible assertions are that the
+ * highlighted review renders unchanged text (paint never moves geometry) and
+ * that the refresh controls route: a valid refresh answers with the fixture's
+ * own toast, an unknown id with the host's attribution warning. The paint
+ * decisions themselves (columns, tones, backgrounds) are unit-tested in
+ * packages/hunk/src/ui/diff/lineHighlightPaint.test.ts and rowStyle.test.ts.
+ */
+const LINE_HIGHLIGHT_EXTENSION_SOURCE = `export default function (hunk) {
+  hunk.registerLineHighlighter({
+    id: "needles",
+    highlight({ file }) {
+      if (!file.path.includes("alpha")) return null;
+      // Mark "alphaValue" on the added line: export const alphaValue = 2;
+      return [{ side: "new", line: 1, range: [13, 23], tone: "match" }];
+    },
+  });
+  hunk.registerCommand({ id: "refresh-marks", title: "Refresh marks", key: "f7" }, (ctx) => {
+    ctx.highlights.refresh("needles");
+    ctx.notify("marks refreshed");
+  });
+  hunk.registerCommand({ id: "refresh-unknown", title: "Refresh unknown", key: "f8" }, (ctx) => {
+    ctx.highlights.refresh("nope");
+  });
+}
+`;
+
+/**
+ * A single hunk tall enough that its anchor and its last lines cannot share a
+ * viewport, with one unmistakable token near the bottom.
+ *
+ * Every line differs, so git emits one hunk spanning the whole file — the shape
+ * `selectHunk` cannot navigate usefully.
+ */
+const REVEAL_LINE_TARGET = 111;
+const REVEAL_LINE_TOKEN = "REVEALLINETOKEN";
+const TALL_HUNK_FILE = {
+  path: "tall.ts",
+  before: `${Array.from(
+    { length: 130 },
+    (_, index) => `export const line${String(index + 1).padStart(3, "0")} = ${index + 1};`,
+  ).join("\n")}\n`,
+  after: `${Array.from({ length: 130 }, (_, index) =>
+    index + 1 === REVEAL_LINE_TARGET
+      ? `export const needle = "${REVEAL_LINE_TOKEN}";`
+      : `export const line${String(index + 1).padStart(3, "0")} = ${index + 1001};`,
+  ).join("\n")}\n`,
+};
+
+/**
+ * An extension that jumps to one exact line of the reviewed file.
+ *
+ * The second command asks for a line no hunk covers, so the same session shows
+ * both halves of the contract: a reachable line scrolls, an unreachable one
+ * comes back as a warning naming the extension.
+ */
+const REVEAL_LINE_EXTENSION_SOURCE = `export default function (hunk) {
+  hunk.registerCommand({ id: "jump", title: "Jump to the needle", key: "f7" }, (ctx) => {
+    const file = ctx.selection.file;
+    if (file) ctx.navigation.revealLine(file.id, "new", ${REVEAL_LINE_TARGET});
+  });
+  hunk.registerCommand({ id: "jump-nowhere", title: "Jump past the file", key: "f8" }, (ctx) => {
+    const file = ctx.selection.file;
+    if (file) ctx.navigation.revealLine(file.id, "new", 9001);
+  });
+}
+`;
+
+/**
+ * An extension that jumps through pane actions captured at mount.
+ *
+ * This is the shape the less-search example uses: a keyboard mode cannot
+ * navigate, so it leaves the jump for the mounted pane, whose \`actions\` were
+ * minted on the pane's first render — before the diff pane had published any
+ * measured line cursors — and are documented to stay valid while the pane is
+ * mounted. A \`revealLine\` that reads its own stale closure instead of the
+ * live cursor list silently degrades this exact call to the hunk fallback.
+ */
+const REVEAL_LINE_MOUNT_ACTIONS_EXTENSION_SOURCE = `import { createElement } from "react";
+let capturedActions = null;
+export default function (hunk) {
+  hunk.registerPane({
+    id: "capture",
+    placement: "bottom",
+    defaultOpen: true,
+    height: { preferred: 1, min: 1, max: 1 },
+    component: (props) => {
+      if (capturedActions === null) capturedActions = props.actions;
+      return createElement("text", { content: "CAPTURE PANE", style: { fg: props.theme.text } });
+    },
+  });
+  hunk.registerCommand({ id: "jump-held", title: "Jump via held actions", key: "f7" }, (ctx) => {
+    const file = ctx.selection.file;
+    if (file && capturedActions) {
+      capturedActions.revealLine(file.id, "new", ${REVEAL_LINE_TARGET});
+    }
+  });
+}
+`;
+
+const DIALOG_EXTENSION_SOURCE = `export default function (hunk) {
+  hunk.registerCommand({ id: "ask", title: "Ask", key: "Y" }, async (ctx) => {
+    const proceed = await ctx.dialogs.confirm({
+      title: "Reformat the changeset?",
+      body: "Nothing is written to disk. This deliberately long explanation wraps across many terminal rows while the actions remain pinned below it.",
+      confirmLabel: "reformat",
+    });
+    ctx.notify(proceed ? "DIALOG ANSWERED YES" : "DIALOG ANSWERED NO");
+  });
+}
+`;
+
+/**
+ * A repo-local extension driving the status line: `ctrl+g` asks for a line on the prompt row
+ * and reports the answer as a persistent item; `ctrl+t` fills the row with items of different
+ * priorities so overflow is visible.
+ */
+const STATUS_LINE_EXTENSION_SOURCE = `export default function (hunk) {
+  hunk.registerCommand({ id: "ask", title: "Ask", key: "ctrl+g" }, async (ctx) => {
+    const answer = await ctx.prompts.line({ prefix: ">", placeholder: "say something" });
+    ctx.statusLine.set({
+      id: "answer",
+      spans: [{ text: "answer=" + String(answer), tone: "accent" }],
+      priority: 1,
+    });
+  });
+  hunk.registerCommand({ id: "fill", title: "Fill", key: "ctrl+t" }, (ctx) => {
+    ctx.statusLine.set({ id: "keep", spans: [{ text: "KEEP-ME" }], priority: 5 });
+    ctx.statusLine.set({ id: "drop", spans: [{ text: "DROP-ME-FIRST-" + "x".repeat(70) }], priority: 0 });
+    ctx.statusLine.set({ id: "right", spans: [{ text: "RIGHT" }], alignment: "right", priority: 3 });
+  });
+}
+`;
+
+describe("PTY extensions", () => {
+  test("an extension event reloads agent changes without watch mode", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(REVIEW_RELOAD_EXTENSION_SOURCE);
+    const session = await harness.launchHunk({
+      args: [
+        "--extension",
+        join(fixture.dir, ".hunk", "extensions", "fixture.ts"),
+        "diff",
+        "--mode",
+        "unified",
+      ],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      const frame = await session.waitForText(/agentReloaded/, { timeout: 20_000 });
+      expect(frame).toContain("alpha.ts");
+      expect(frame).not.toContain("alphaValue");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("shows delegated change-request info above the review beside the files pane", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(DELEGATED_REVIEW_EXTENSION_SOURCE);
+    const session = await harness.launchHunk({
+      args: [
+        "--extension",
+        join(fixture.dir, ".hunk", "extensions", "fixture.ts"),
+        "delegated-review",
+      ],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      const frame = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("OPEN · #123 · Delegated pane proof") && text.includes("after"),
+        20_000,
+      );
+      expect(frame).toContain("octocat · GitHub · modem-dev/hunk · main ← feature/pane");
+      const infoLine = lineIndexOf(frame, "OPEN · #123");
+      expect(frame.split("\n")[infoLine - 1]).toContain("─");
+      expect(infoLine).toBeLessThan(lineIndexOf(frame, "after"));
+    } finally {
+      session.close();
+    }
+  });
+
+  test("does not reserve review-info rows for an ordinary patch", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(NOTIFY_EXTENSION_SOURCE);
+    const patch = join(fixture.dir, "ordinary.diff");
+    writeFileSync(
+      patch,
+      "diff --git a/probe.txt b/probe.txt\\n--- a/probe.txt\\n+++ b/probe.txt\\n@@ -1 +1 @@\\n-before\\n+ordinary\\n",
+    );
+    const session = await harness.launchHunk({
+      args: ["patch", patch, "--mode", "unified"],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      const frame = await session.waitForText(/ordinary/, { timeout: 20_000 });
+      expect(frame).not.toContain("OPEN · #123");
+      expect(frame).not.toContain("Review info");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("upgrading migrates remembered trust without prompting or moving global extensions", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const stateHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(TRANSFORM_EXTENSION_SOURCE);
+    mkdirSync(join(configHome, "hunk"), { recursive: true });
+    const legacyPath = join(configHome, "hunk", "state.json");
+    const legacy = JSON.stringify({ extensionTrust: { [trustKey(fixture.dir)]: "trusted" } });
+    writeFileSync(legacyPath, legacy);
+    const globalDir = join(configHome, "hunk", "extensions");
+    mkdirSync(globalDir);
+    writeFileSync(
+      join(globalDir, "global.ts"),
+      `export default function (hunk) {
+  hunk.on("startup", (_event, ctx) => ctx.notify("GLOBAL CONFIG EXTENSION ACTIVE"));
+}`,
+    );
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "unified"],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome, XDG_STATE_HOME: stateHome },
+    });
+
+    try {
+      const snapshot = await harness.waitForSnapshot(
+        session,
+        (text) =>
+          text.includes("REPO EXTENSION ACTIVE") && text.includes("GLOBAL CONFIG EXTENSION ACTIVE"),
+        20_000,
+      );
+      expect(snapshot).not.toContain("Run this repository's extensions?");
+      expect(readTrustState(stateHome)[trustKey(fixture.dir)]).toBe("trusted");
+      expect(readFileSync(legacyPath, "utf8")).toBe(legacy);
+      expect(existsSync(join(stateHome, "hunk", "extensions"))).toBe(false);
+    } finally {
+      session.close();
+    }
+  });
+
+  test("trust prompt runs repo extensions after the user trusts the repository", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(TRANSFORM_EXTENSION_SOURCE);
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "unified"],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      const prompt = await session.waitForText(/Run this repository's extensions\?/, {
+        timeout: 20_000,
+      });
+      expect(prompt).toContain(".hunk/extensions");
+      expect(prompt).toContain("Extensions run with your user permissions.");
+      // The extension has not run yet, so both files are still under review.
+      expect(prompt).toContain("beta.ts");
+
+      await session.press("t");
+
+      const reloaded = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("REPO EXTENSION ACTIVE"),
+        20_000,
+      );
+      expect(reloaded).not.toContain("Run this repository's extensions?");
+      // The transform filtered beta.ts out of the review stream and the sidebar.
+      expect(reloaded).not.toContain("beta.ts");
+      expect(reloaded).toContain("alpha.ts");
+
+      expect(readTrustState(configHome)[trustKey(fixture.dir)]).toBe("trusted");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("Ctrl-C delivers extension shutdown before the terminal exits", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(INTERRUPT_SHUTDOWN_EXTENSION_SOURCE);
+    const shutdownLog = join(fixture.dir, ".hunk-shutdown.log");
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "unified"],
+      cwd: fixture.dir,
+      cols: 120,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      await session.waitForText(/Run this repository's extensions\?/, { timeout: 20_000 });
+      await harness.pressAndWaitForText(session, "t", /INTERRUPT FIXTURE READY/, {
+        timeout: 20_000,
+      });
+
+      session.sendKey(["ctrl", "c"]);
+      const deadline = Date.now() + 5_000;
+      while (!existsSync(shutdownLog) && Date.now() < deadline) {
+        await Bun.sleep(20);
+      }
+      expect(readFileSync(shutdownLog, "utf8")).toBe("shutdown\n");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("escape dismisses the trust prompt without persisting a decision", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(TRANSFORM_EXTENSION_SOURCE);
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "unified"],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      await session.waitForText(/Run this repository's extensions\?/, { timeout: 20_000 });
+      await session.press("escape");
+
+      const dismissed = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("Run this repository's extensions?"),
+        10_000,
+      );
+      // Review continues untransformed, because the extension never ran.
+      expect(dismissed).toContain("beta.ts");
+      expect(dismissed).not.toContain("REPO EXTENSION ACTIVE");
+
+      expect(readTrustState(configHome)[trustKey(fixture.dir)]).toBeUndefined();
+    } finally {
+      session.close();
+    }
+  });
+
+  test("never records a denial and stops asking on later launches", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(TRANSFORM_EXTENSION_SOURCE);
+    const launch = async () =>
+      await harness.launchHunk({
+        args: ["diff", "--mode", "unified"],
+        cwd: fixture.dir,
+        cols: 140,
+        rows: 24,
+        env: { XDG_CONFIG_HOME: configHome },
+      });
+
+    const session = await launch();
+    try {
+      await session.waitForText(/Run this repository's extensions\?/, { timeout: 20_000 });
+      await session.press("n");
+
+      const denied = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("Run this repository's extensions?"),
+        10_000,
+      );
+      // The extension never ran, so the review is the untransformed one.
+      expect(denied).toContain("beta.ts");
+      expect(denied).not.toContain("REPO EXTENSION ACTIVE");
+
+      expect(readTrustState(configHome)[trustKey(fixture.dir)]).toBe("denied");
+    } finally {
+      session.close();
+    }
+
+    const relaunched = await launch();
+    try {
+      const reviewed = await harness.waitForSnapshot(
+        relaunched,
+        (text) => text.includes("alpha.ts"),
+        20_000,
+      );
+      // A recorded denial is an answer: Hunk neither asks again nor loads them.
+      expect(reviewed).not.toContain("Run this repository's extensions?");
+      expect(reviewed).not.toContain("REPO EXTENSION ACTIVE");
+      expect(reviewed).toContain("beta.ts");
+    } finally {
+      relaunched.close();
+    }
+  });
+
+  test("the Extensions menu runs a registered command by mouse", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(SIDEBAR_EXTENSION_SOURCE);
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--mode",
+        "unified",
+        "--extension",
+        join(fixture.dir, ".hunk", "extensions", "fixture.ts"),
+      ],
+      cwd: fixture.dir,
+      // The sidebar only renders on a "full" viewport, which starts at 220 columns.
+      cols: 240,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      const before = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("alpha.ts") && !text.includes("Run this repository's extensions?"),
+        20_000,
+      );
+      // The menu exists because an extension registered a command.
+      expect(before).toContain("Extensions");
+      expect(before).not.toContain("EXTSIDEBAR");
+
+      await session.click(/Extensions/);
+      // The dropdown names the command by its title and advertises its key.
+      const menu = await session.waitForText(/Toggle fixture/, { timeout: 20_000 });
+      expect(menu).toMatch(/Toggle fixture\s+Y/);
+
+      const opened = await harness.clickAndWaitForText(
+        session,
+        /Toggle fixture/,
+        /EXTSIDEBAR 2 FILES/,
+        { timeout: 20_000 },
+      );
+      expect(opened).toContain("alpha.ts");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("presentation scopes render sparse hunks, keep file navigation visible, and restore the review", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const before = Array.from({ length: 32 }, (_, index) => `scope line ${index + 1}\n`).join("");
+    const after = before
+      .replace("scope line 5\n", "SCOPE_FIRST_CHANGE\n")
+      .replace("scope line 25\n", "SCOPE_LAST_CHANGE\n");
+    const fixture = harness.createRepoExtensionFixture(
+      `
+export default function (hunk) {
+  hunk.registerCommand({ id: "focus", title: "Focus last hunk", key: "f7" }, (ctx) => {
+    const review = ctx.review.snapshot();
+    const file = review?.files[0];
+    if (file) ctx.review.setPresentationScope({
+      generation: review.generation,
+      files: [{ fileId: file.runtimeId, hunkIndexes: [1] }],
+    });
+  });
+  hunk.registerCommand({ id: "select", title: "Select scoped file", key: "f8" }, (ctx) => {
+    const file = ctx.review.snapshot()?.files[0];
+    if (file) ctx.navigation.selectFile(file.runtimeId);
+    ctx.notify("SCOPED_FILE_SELECTED");
+  });
+  hunk.registerCommand({ id: "clear", title: "Clear focus", key: "f9" }, (ctx) => {
+    ctx.review.clearPresentationScope();
+    const file = ctx.review.snapshot()?.files[0];
+    if (file) ctx.navigation.selectFile(file.runtimeId);
+  });
+}
+`,
+      "fixture.ts",
+      [{ path: "scope.ts", before, after }],
+    );
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--mode",
+        "unified",
+        "--extension",
+        join(fixture.dir, ".hunk", "extensions", "fixture.ts"),
+      ],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 40,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+    try {
+      await harness.waitForSnapshot(session, (text) => text.includes("SCOPE_FIRST_CHANGE"), 20_000);
+      await harness.ensureKeyboardIsLive(session);
+      const scoped = await harness.pressAndWaitForSnapshot(
+        session,
+        "f7",
+        (text) => text.includes("SCOPE_LAST_CHANGE") && !text.includes("SCOPE_FIRST_CHANGE"),
+        20_000,
+      );
+      expect(scoped).not.toContain("SCOPE_FIRST_CHANGE");
+      const selected = await harness.pressAndWaitForSnapshot(
+        session,
+        "f8",
+        (text) => text.includes("SCOPED_FILE_SELECTED") && text.includes("SCOPE_LAST_CHANGE"),
+        20_000,
+      );
+      expect(selected).not.toContain("SCOPE_FIRST_CHANGE");
+      const restored = await harness.pressAndWaitForSnapshot(
+        session,
+        "f9",
+        (text) => text.includes("SCOPE_FIRST_CHANGE") && text.includes("SCOPE_LAST_CHANGE"),
+        20_000,
+      );
+      expect(restored).toContain("SCOPE_FIRST_CHANGE");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("a command key opens an extension sidebar beside the built-in pane", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(SIDEBAR_EXTENSION_SOURCE);
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--mode",
+        "unified",
+        // Load the fixture through the dev flag so it is trusted without a prompt.
+        "--extension",
+        join(fixture.dir, ".hunk", "extensions", "fixture.ts"),
+      ],
+      cwd: fixture.dir,
+      // The sidebar only renders on a "full" viewport, which starts at 220 columns.
+      cols: 240,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      // The extension view starts closed; only the built-in files pane shows.
+      const before = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("alpha.ts") && !text.includes("Run this repository's extensions?"),
+        20_000,
+      );
+      expect(before).not.toContain("EXTSIDEBAR");
+      // The first keypress after the initial paint can be dropped before the
+      // app subscribes its handler; prove the keyboard is live before the
+      // press this test is actually about.
+      await harness.ensureKeyboardIsLive(session);
+
+      // The registered key dispatches through the shared command table and
+      // opens the extension's right-hand pane beside the built-in one.
+      session.writeRaw("Y");
+      const opened = await session.waitForText(/EXTSIDEBAR 2 FILES/, { timeout: 20_000 });
+      expect(opened).toContain("alpha.ts");
+
+      // The same key toggles it away again.
+      session.writeRaw("Y");
+      await harness.waitForSnapshot(session, (text) => !text.includes("EXTSIDEBAR"), 20_000);
+    } finally {
+      session.close();
+    }
+  });
+
+  test("a guide visibility toggle leaves the responsively hidden files pane alone", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(INDEPENDENT_GUIDE_EXTENSION_SOURCE);
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--mode",
+        "unified",
+        "--extension",
+        join(fixture.dir, ".hunk", "extensions", "fixture.ts"),
+      ],
+      cwd: fixture.dir,
+      cols: 120,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+    try {
+      const before = await session.waitForText(/alpha.ts/, { timeout: 20_000 });
+      expect(before).not.toContain("INDEPENDENT GUIDE");
+      const fileOccurrences = (text: string) => (text.match(/alpha\.ts/g) ?? []).length;
+      const initialOccurrences = fileOccurrences(before);
+      await harness.ensureKeyboardIsLive(session);
+
+      session.writeRaw("Y");
+      const opened = await session.waitForText(/INDEPENDENT GUIDE/, { timeout: 20_000 });
+      expect(fileOccurrences(opened)).toBe(initialOccurrences);
+
+      session.writeRaw("Y");
+      const closed = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("INDEPENDENT GUIDE"),
+        20_000,
+      );
+      expect(fileOccurrences(closed)).toBe(initialOccurrences);
+
+      session.writeRaw("Y");
+      await session.waitForText(/INDEPENDENT GUIDE/, { timeout: 20_000 });
+    } finally {
+      session.close();
+    }
+  });
+
+  test("a scrollbox body press activates its pane in a real PTY", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(PANE_ACTIVATION_EXTENSION_SOURCE);
+    const activationLog = join(fixture.dir, ".hunk-pane-activation.log");
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--mode",
+        "unified",
+        "--extension",
+        join(fixture.dir, ".hunk", "extensions", "fixture.ts"),
+      ],
+      cwd: fixture.dir,
+      cols: 240,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      const frame = await session.waitForText(/PANE ACTIVATE TARGET/, { timeout: 20_000 });
+      const targetRow = lineIndexOf(frame, "PANE ACTIVATE TARGET");
+      const targetColumn = frame.split("\n")[targetRow]!.indexOf("PANE ACTIVATE TARGET") + 5;
+      // Stay clear of the pane divider's intentional multi-cell resize hit area.
+      await session.clickAt(targetColumn, targetRow);
+
+      const deadline = Date.now() + 5_000;
+      while (!existsSync(activationLog) && Date.now() < deadline) {
+        await Bun.sleep(20);
+      }
+      expect(readFileSync(activationLog, "utf8")).toBe("pane\n");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("the files shortcut and View menu follow a named pane slot", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(FILES_SLOT_EXTENSION_SOURCE);
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--mode",
+        "unified",
+        "--extension",
+        join(fixture.dir, ".hunk", "extensions", "fixture.ts"),
+      ],
+      cwd: fixture.dir,
+      cols: 240,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("FILES SLOT RIGHT") && text.includes("AUX PANE LEFT"),
+        20_000,
+      );
+      await harness.ensureKeyboardIsLive(session);
+
+      const closed = await harness.pressAndWaitForSnapshot(
+        session,
+        "s",
+        (text) => !text.includes("FILES SLOT RIGHT") && text.includes("AUX PANE LEFT"),
+        20_000,
+      );
+      expect(closed).toContain("alpha.ts");
+
+      const menu = await harness.clickAndWaitForText(session, /View/, /Files pane/, {
+        timeout: 20_000,
+      });
+      expect(menu).toContain("[ ] Files pane");
+
+      await session.click(/Files pane/);
+      const reopened = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("FILES SLOT RIGHT") && text.includes("AUX PANE LEFT"),
+        20_000,
+      );
+      expect(reopened).toContain("alpha.ts");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("an extension can dock edge panes and resize through horizontal divider hit slop", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(FOUR_EDGE_PANE_EXTENSION_SOURCE);
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--mode",
+        "unified",
+        "--extension",
+        join(fixture.dir, ".hunk", "extensions", "fixture.ts"),
+      ],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+    try {
+      await harness.ensureKeyboardIsLive(session);
+      session.writeRaw("Y");
+      const frame = await harness.waitForSnapshot(
+        session,
+        (text) =>
+          text.includes("PANE TOP") && text.includes("PANE BOTTOM") && text.includes("alpha.ts"),
+        20_000,
+      );
+      expect(frame).toContain("PANE TOP 138x2");
+      expect(frame).toContain("PANE BOTTOM 138x2");
+
+      // The visible divider is on row 3. Start one row below it to prove the
+      // enlarged horizontal hit area wins over review-stream text selection.
+      await dragMouse(session, 70, 4, 70, 6);
+      await session.waitForText(/PANE TOP 138x4/, { timeout: 5_000 });
+
+      session.writeRaw("Y");
+      await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("PANE TOP") && !text.includes("PANE BOTTOM"),
+        20_000,
+      );
+    } finally {
+      session.close();
+    }
+  });
+
+  test("a short terminal pins extension confirm actions for mouse acceptance", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(DIALOG_EXTENSION_SOURCE);
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--mode",
+        "unified",
+        // Load the fixture through the dev flag so it is trusted without a prompt.
+        "--extension",
+        join(fixture.dir, ".hunk", "extensions", "fixture.ts"),
+      ],
+      cwd: fixture.dir,
+      cols: 50,
+      rows: 12,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      const before = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("alpha.ts") && !text.includes("Run this repository's extensions?"),
+        20_000,
+      );
+      expect(before).not.toContain("Reformat the changeset?");
+      await harness.ensureKeyboardIsLive(session);
+
+      session.writeRaw("Y");
+      const prompt = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("Reformat the changeset?"),
+        20_000,
+      );
+      expect(prompt).toContain("…");
+      // The frame names the extension that raised the dialog, so a prompt
+      // cannot present itself as Hunk asking.
+      expect(prompt).toContain("ext fixture");
+      expect(prompt).toContain("enter/y reformat");
+
+      // The pinned action remains mouse-accessible even after body windowing.
+      await session.click(/enter\/y reformat/);
+      const answered = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("DIALOG ANSWERED YES"),
+        20_000,
+      );
+      expect(answered).not.toContain("Reformat the changeset?");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("the real review note navigator inventories and reveals a saved user note", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createBottomClampedRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "unified", "--extension", REVIEW_NOTE_NAVIGATOR_EXTENSION],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 22,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      await session.waitForText(/first\.ts/, { timeout: 20_000 });
+      await harness.ensureKeyboardIsLive(session);
+      await harness.pressAndWaitForText(session, "f8", /This review has no saved notes/, {
+        timeout: 5_000,
+      });
+
+      await harness.pressAndWaitForText(session, "c", /Draft note/, { timeout: 5_000 });
+      await session.type("Navigate to this exact note.");
+      await harness.pressAndWaitForText(session, ["ctrl", "s"], /Your note/, {
+        timeout: 5_000,
+      });
+
+      await harness.pressAndWaitForSnapshot(
+        session,
+        "]",
+        (text) => text.includes("second.ts") && !text.includes("Navigate to this exact note."),
+        5_000,
+      );
+
+      const picker = await harness.pressAndWaitForSnapshot(
+        session,
+        "f8",
+        (text) =>
+          text.includes("Navigate saved review note") &&
+          text.includes("[active]") &&
+          text.includes("Navigate to this exact note."),
+        5_000,
+      );
+      expect(picker).toContain("first.ts");
+      expect(picker).toMatch(/\((?:old|new)\)/);
+
+      const revealed = await harness.pressAndWaitForSnapshot(
+        session,
+        "enter",
+        (text) =>
+          !text.includes("Navigate saved review note") &&
+          text.includes("first.ts") &&
+          text.includes("Your note"),
+        5_000,
+      );
+      expect(revealed).toContain("Navigate to this exact note.");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("the real review snapshot example exports a saved user note", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createTwoFileRepoFixture();
+    const outputPath = join(fixture.dir, "review-snapshot.json");
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "unified", "--extension", REVIEW_SNAPSHOT_EXPORT_EXTENSION],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 30,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      await session.waitForText(/alpha\.ts/, { timeout: 20_000 });
+      await harness.ensureKeyboardIsLive(session);
+      await harness.pressAndWaitForText(session, "c", /Draft note/, { timeout: 5_000 });
+      await session.type("Publish this exact note.");
+      await harness.pressAndWaitForText(session, ["ctrl", "s"], /Your note/, {
+        timeout: 5_000,
+      });
+
+      await harness.pressAndWaitForText(session, "f9", /Export review snapshot/, {
+        timeout: 5_000,
+      });
+      await session.type(outputPath);
+      await harness.pressAndWaitForText(session, "enter", /Exported 1 saved note/, {
+        timeout: 5_000,
+      });
+
+      const snapshot = JSON.parse(readFileSync(outputPath, "utf8")) as {
+        generation: string;
+        stateRevision: number;
+        files: Array<{ fileKey: string; path: string }>;
+        notes: Array<{ source: string; fileKey: string; summary: string }>;
+      };
+      expect(snapshot.generation).toMatch(/^generation:/);
+      expect(snapshot.stateRevision).toBeGreaterThan(0);
+      expect(snapshot.files.some((file) => file.path === "alpha.ts")).toBe(true);
+      expect(snapshot.notes).toEqual([
+        expect.objectContaining({
+          source: "user",
+          fileKey: snapshot.files.find((file) => file.path === "alpha.ts")!.fileKey,
+          summary: "Publish this exact note.",
+        }),
+      ]);
+    } finally {
+      session.close();
+    }
+  });
+
+  test("the real review-triage extension loads as a folder extension and exposes its menu commands", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(TRANSFORM_EXTENSION_SOURCE);
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "unified", "--extension", REVIEW_TRIAGE_EXTENSION],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 30,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      const before = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("alpha.ts") && text.includes("Extensions"),
+        20_000,
+      );
+      expect(before).not.toContain("Review triage (session only)");
+
+      // The command is a real Extensions-menu item, not a private menu hook.
+      // `Extensions` also appears in the temporary fixture path, so target its chrome position.
+      // Folder extension registration may finish after the first review frame, so retry the menu
+      // gesture until the command itself proves that the extension is ready.
+      let menu: string | null = null;
+      for (let attempt = 0; attempt < 5 && menu === null; attempt += 1) {
+        await session.clickAt(33, 0);
+        try {
+          menu = await harness.waitForSnapshot(
+            session,
+            (text) => text.includes("Toggle review triage"),
+            3_000,
+          );
+        } catch {
+          // A click may land before command registration or close an earlier empty menu; retry it.
+        }
+      }
+      expect(menu).not.toBeNull();
+      expect(menu!).toMatch(/Toggle review triage\s+Y/);
+      expect(menu).toMatch(/Mark selected hunk…\s+x/);
+      expect(menu).toContain("Center current review line");
+      expect(menu).toContain("Set review focus…");
+      expect(menu).toContain("Clear triage decisions");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("the real Vim navigation example routes counts, command-line input, and Ctrl chords", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    // Enough changed rows that top/bottom navigation has an observable viewport effect.
+    const fixture = harness.createPinnedHeaderRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "unified", "--extension", VIM_NAVIGATION_EXTENSION],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("first.ts") && text.includes("Extensions"),
+        20_000,
+      );
+      await harness.ensureKeyboardIsLive(session);
+      await harness.pressAndWaitForText(session, "f6", /Vim navigation.*Esc exits/, {
+        timeout: 20_000,
+      });
+
+      // The host contributes a mouse-accessible exit independently of the extension command.
+      await session.clickAt(33, 0);
+      await session.waitForText(/Exit Vim navigation/, { timeout: 20_000 });
+      await session.click(/Exit Vim navigation/);
+      await harness.waitForSnapshot(
+        session,
+        (text) => !/Vim navigation.*Esc exits/.test(text),
+        20_000,
+      );
+      await harness.pressAndWaitForText(session, "f6", /Vim navigation.*Esc exits/, {
+        timeout: 20_000,
+      });
+
+      // A passed `c` exposes the host-owned current line through note placement,
+      // giving counted movement and alignment observable terminal effects.
+      const initialDraft = await harness.pressAndWaitForText(session, "c", /Draft note/, {
+        timeout: 20_000,
+      });
+      const initialDraftRow = lineIndexOf(initialDraft, "Draft note");
+      await harness.pressAndWaitForSnapshot(
+        session,
+        "escape",
+        (text) => !text.includes("Draft note"),
+        20_000,
+      );
+
+      await session.press("1");
+      await session.press("0");
+      await session.press("j");
+      const countedDraft = await harness.pressAndWaitForText(session, "c", /Draft note/, {
+        timeout: 20_000,
+      });
+      expect(lineIndexOf(countedDraft, "Draft note")).toBeGreaterThan(initialDraftRow);
+      await harness.pressAndWaitForSnapshot(
+        session,
+        "escape",
+        (text) => !text.includes("Draft note"),
+        20_000,
+      );
+
+      await session.press("z");
+      await session.press("t");
+      const topAligned = await session.text({ immediate: true });
+      const topAlignedRow = lineIndexOf(topAligned, "export const line11 = 11;");
+
+      await session.press("z");
+      await session.press("z");
+      const centered = await session.text({ immediate: true });
+      expect(lineIndexOf(centered, "export const line11 = 11;")).toBeGreaterThan(topAlignedRow);
+
+      // `:` passes into the registered command, whose focused status-line prompt owns even
+      // mode keys. Escape clears the typed buffer first and closes the prompt second, leaving
+      // the mode itself running.
+      await harness.pressAndWaitForText(session, ":", /ext vim-navigation : top or bottom/, {
+        timeout: 20_000,
+      });
+      await session.type("j-owned");
+      await session.waitForText(/: j-owned/, { timeout: 20_000 });
+      await session.press("escape");
+      await session.waitForText(/ext vim-navigation : top or bottom/, { timeout: 20_000 });
+      await harness.pressAndWaitForSnapshot(
+        session,
+        "escape",
+        (text) => !text.includes("top or bottom") && /Vim navigation.*Esc exits/.test(text),
+        20_000,
+      );
+
+      await harness.pressAndWaitForText(session, ":", /ext vim-navigation : top or bottom/, {
+        timeout: 20_000,
+      });
+      await session.type("bottom");
+      const commandBottom = await harness.pressAndWaitForSnapshot(
+        session,
+        "enter",
+        (text) => text.includes("second.ts") && !text.includes("first.ts"),
+        20_000,
+      );
+      expect(commandBottom).toContain("second.ts");
+
+      await harness.pressAndWaitForText(session, ":", /ext vim-navigation : top or bottom/, {
+        timeout: 20_000,
+      });
+      await session.type("top");
+      const commandTop = await harness.pressAndWaitForSnapshot(
+        session,
+        "enter",
+        (text) =>
+          text.includes("first.ts") &&
+          text.includes("export const line01 = 1;") &&
+          !text.includes("second.ts"),
+        20_000,
+      );
+      expect(commandTop).toContain("first.ts");
+
+      const controlDown = await harness.pressAndWaitForSnapshot(
+        session,
+        ["ctrl", "d"],
+        (text) => text.includes("first.ts") && !text.includes("export const line01 = 1;"),
+        20_000,
+      );
+      expect(controlDown).toContain("first.ts");
+      await harness.pressAndWaitForSnapshot(
+        session,
+        ["ctrl", "u"],
+        (text) => text.includes("export const line01 = 1;"),
+        20_000,
+      );
+
+      // Both normal-mode absolute forms visibly move between the two long files.
+      const bottom = await harness.pressAndWaitForSnapshot(
+        session,
+        ["shift", "g"],
+        (text) => text.includes("second.ts") && !text.includes("first.ts"),
+        20_000,
+      );
+      expect(bottom).toContain("second.ts");
+
+      await session.press("g");
+      const top = await harness.pressAndWaitForSnapshot(
+        session,
+        "g",
+        (text) => text.includes("first.ts") && !text.includes("second.ts"),
+        20_000,
+      );
+      expect(top).toContain("first.ts");
+      const active = await session.waitForText(/Vim navigation.*Esc exits/, {
+        timeout: 20_000,
+      });
+      expect(active).toContain("Vim navigation");
+
+      await harness.pressAndWaitForSnapshot(
+        session,
+        "escape",
+        (text) => !/Vim navigation.*Esc exits/.test(text),
+        20_000,
+      );
+    } finally {
+      session.close();
+    }
+  });
+
+  test("a line highlighter marks the diff without disturbing it and refresh routes through controls", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(LINE_HIGHLIGHT_EXTENSION_SOURCE);
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--mode",
+        "unified",
+        "--extension",
+        join(fixture.dir, ".hunk", "extensions", "fixture.ts"),
+      ],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      // The marked line renders its exact text: highlights repaint backgrounds
+      // and can never change, split, or reflow the code they sit on.
+      const review = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("export const alphaValue = 2;"),
+        20_000,
+      );
+      expect(review).toContain("alpha.ts");
+      // A failing highlighter would have surfaced as an attributed warning toast.
+      expect(review).not.toContain("line highlighter");
+      // The first keypress after the initial paint can be dropped before the
+      // app subscribes its handler; prove the keyboard is live first.
+      await harness.ensureKeyboardIsLive(session);
+
+      const refreshed = await harness.pressAndWaitForText(session, "f7", /marks refreshed/, {
+        timeout: 20_000,
+      });
+      // The valid refresh raised only the fixture's own toast, no host warning.
+      expect(refreshed).not.toContain("unknown line highlighter");
+      // The re-derived marks still leave the reviewed text untouched.
+      expect(refreshed).toContain("export const alphaValue = 2;");
+
+      const warned = await harness.pressAndWaitForText(session, "f8", /unknown line highlighter/, {
+        timeout: 20_000,
+      });
+      expect(warned).toContain('Extension fixture targeted unknown line highlighter "nope"');
+    } finally {
+      session.close();
+    }
+  });
+
+  test("revealLine lands a line deep inside one tall hunk near the viewport top", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(REVEAL_LINE_EXTENSION_SOURCE, "fixture.ts", [
+      TALL_HUNK_FILE,
+    ]);
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--mode",
+        "unified",
+        "--extension",
+        join(fixture.dir, ".hunk", "extensions", "fixture.ts"),
+      ],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      const review = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("tall.ts"),
+        20_000,
+      );
+      // This is the bug: the hunk anchor is on screen, the marked line is pages below it.
+      expect(review).not.toContain(REVEAL_LINE_TOKEN);
+      await harness.ensureKeyboardIsLive(session);
+
+      const revealed = await harness.pressAndWaitForSnapshot(
+        session,
+        "f7",
+        (text) => text.includes(REVEAL_LINE_TOKEN),
+        20_000,
+      );
+      // Near the top of a 24-row terminal, where every other Hunk reveal lands:
+      // a little below the viewport edge, not scrolled just barely into view.
+      const row = lineIndexOf(revealed, REVEAL_LINE_TOKEN);
+      expect(row).toBeGreaterThan(0);
+      expect(row).toBeLessThan(12);
+
+      const warned = await harness.pressAndWaitForText(session, "f8", /revealLine found no/, {
+        timeout: 20_000,
+      });
+      expect(warned).toContain("Extension fixture revealLine found no new line 9001");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("revealLine through pane actions held since mount still lands the line", async () => {
+    // The first deferred jump of a session runs against actions minted before
+    // any cursors were measured; it must land on the line, not the hunk anchor.
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(
+      REVEAL_LINE_MOUNT_ACTIONS_EXTENSION_SOURCE,
+      "fixture.ts",
+      [TALL_HUNK_FILE],
+    );
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--mode",
+        "unified",
+        "--extension",
+        join(fixture.dir, ".hunk", "extensions", "fixture.ts"),
+      ],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      const review = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("tall.ts") && text.includes("CAPTURE PANE"),
+        20_000,
+      );
+      expect(review).not.toContain(REVEAL_LINE_TOKEN);
+      await harness.ensureKeyboardIsLive(session);
+
+      const revealed = await harness.pressAndWaitForSnapshot(
+        session,
+        "f7",
+        (text) => text.includes(REVEAL_LINE_TOKEN),
+        20_000,
+      );
+      const row = lineIndexOf(revealed, REVEAL_LINE_TOKEN);
+      expect(row).toBeGreaterThan(0);
+      expect(row).toBeLessThan(12);
+    } finally {
+      session.close();
+    }
+  });
+
+  test("a narrow extension prompt keeps typed input visible beside the mode badge", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const extensionPath = join(configHome, "long-attributed-prompt-fixture.ts");
+    writeFileSync(
+      extensionPath,
+      `export default function (hunk) {
+      hunk.registerKeyboardMode({ id: "mode", title: "Mode", onKey: () => "pass" });
+      hunk.registerCommand({ id: "ask", title: "Ask", key: "ctrl+g" }, async (ctx) => {
+        ctx.keyboardModes.enterMode("mode");
+        const answer = await ctx.prompts.line({ prefix: "a very long prefix that cannot fit:" });
+        ctx.statusLine.set({ id: "answer", spans: [{ text: "answer=" + answer }] });
+      });
+    }`,
+    );
+    const fixture = harness.createTwoFileRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "unified", "--extension", extensionPath],
+      cwd: fixture.dir,
+      cols: 50,
+      rows: 20,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+    try {
+      await session.waitForText(/alpha\.ts/, { timeout: 20_000 });
+      await harness.ensureKeyboardIsLive(session);
+      await session.press(["ctrl", "g"]);
+      await session.waitForText(/Mode — ext/, { timeout: 5_000 });
+      await session.type("xyz");
+      // The four-cell input scrolls to keep its cursor margin; the typed suffix stays visible.
+      const frame = await harness.waitForSnapshot(session, (text) => text.includes("… yz"), 5_000);
+      const row = frame.trimEnd().split("\n").at(-1)!;
+      expect(row).toContain("ext ");
+      expect(row).toContain("… yz");
+      expect(row).toContain("Mode — ext");
+      await session.press("enter");
+      await session.waitForText(/answer=xyz/, { timeout: 5_000 });
+    } finally {
+      session.close();
+    }
+  });
+
+  test("an extension prompt types, submits, cancels, and its items overflow by priority", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    // Loaded through the dev flag from outside the repo, so it is trusted without a prompt and
+    // the review's startup notices stay quiet.
+    const extensionPath = join(configHome, "status-line-fixture.ts");
+    writeFileSync(extensionPath, STATUS_LINE_EXTENSION_SOURCE);
+    const fixture = harness.createTwoFileRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "unified", "--extension", extensionPath],
+      cwd: fixture.dir,
+      cols: 100,
+      rows: 20,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      const initial = await session.waitForText(/alpha\.ts/, { timeout: 20_000 });
+      const initialRows = initial.trimEnd().split("\n").length;
+
+      // Opening the prompt takes one row from the review and shows the attributed prefix.
+      await session.press(["ctrl", "g"]);
+      const prompt = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("ext status-line-fixture > say something"),
+        10_000,
+      );
+      expect(prompt.trimEnd().split("\n").length).toBeGreaterThanOrEqual(initialRows);
+
+      // A bound key is text: `q` lands in the input instead of quitting.
+      await session.type("q then hello");
+      await harness.waitForSnapshot(session, (text) => text.includes("> q then hello"), 5_000);
+      await session.press("enter");
+      const answered = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("answer=q then hello"),
+        5_000,
+      );
+      expect(answered).not.toContain("say something");
+
+      // Escape: the first press clears a non-empty buffer, the second cancels with null.
+      await session.press(["ctrl", "g"]);
+      await harness.waitForSnapshot(session, (text) => text.includes("> say something"), 5_000);
+      await session.type("abc");
+      await harness.waitForSnapshot(session, (text) => text.includes("> abc"), 5_000);
+      await session.press("escape");
+      await harness.waitForSnapshot(session, (text) => text.includes("> say something"), 5_000);
+      await session.press("escape");
+      await harness.waitForSnapshot(session, (text) => text.includes("answer=null"), 5_000);
+
+      // Overflow: the lowest-priority item is dropped whole, the rest keep their placement.
+      await session.press(["ctrl", "t"]);
+      const filled = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("KEEP-ME") && text.includes("RIGHT"),
+        5_000,
+      );
+      const row = filled.trimEnd().split("\n").at(-1) ?? "";
+      expect(row).toContain("KEEP-ME");
+      expect(row.trimEnd().endsWith("RIGHT")).toBe(true);
+      expect(row).not.toContain("DROP-ME");
+      expect(row).toContain("answer=null");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("a startup handler's notify renders as a toast and clears itself", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(NOTIFY_EXTENSION_SOURCE);
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--mode",
+        "unified",
+        // Load the fixture through the dev flag so it is trusted without a prompt.
+        "--extension",
+        join(fixture.dir, ".hunk", "extensions", "fixture.ts"),
+      ],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      const toast = await session.waitForText(/hello from the fixture extension/, {
+        timeout: 20_000,
+      });
+      expect(toast).toContain("ext hello from the fixture extension");
+
+      const cleared = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("hello from the fixture extension"),
+        15_000,
+      );
+      // The review itself is untouched once the transient toast retires.
+      expect(cleared).toContain("alpha.ts");
+    } finally {
+      session.close();
+    }
+  });
+});

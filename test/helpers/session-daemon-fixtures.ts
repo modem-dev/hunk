@@ -9,7 +9,7 @@ import type {
   SessionReview,
   SessionReviewFile,
   SessionReviewHunk,
-} from "../../src/hunk-session/types";
+} from "../../packages/hunk/src/session/types";
 
 export function createTestSessionFileSummary(
   overrides: Partial<SessionFileSummary> = {},
@@ -47,11 +47,6 @@ export function createTestSessionReviewFile(
   };
 }
 
-function summarizeReviewFile(reviewFile: SessionReviewFile): SessionFileSummary {
-  const { patch: _patch, hunks: _hunks, ...summary } = reviewFile;
-  return summary;
-}
-
 export function createTestSessionSnapshot(
   overrides: Partial<HunkSessionSnapshot["state"]> & { updatedAt?: string } = {},
 ): HunkSessionSnapshot {
@@ -72,9 +67,12 @@ export function createTestSessionSnapshot(
 }
 
 export function createTestSessionRegistration(
-  overrides: Partial<HunkSessionRegistration> &
+  overrides: Partial<Omit<HunkSessionRegistration, "info">> &
     Partial<
-      Pick<HunkSessionRegistration["info"], "inputKind" | "title" | "sourceLabel" | "files">
+      Pick<
+        HunkSessionRegistration["info"],
+        "inputKind" | "title" | "sourceLabel" | "experimentalFeatures" | "files"
+      >
     > & {
       info?: Partial<HunkSessionRegistration["info"]>;
     } = {},
@@ -83,6 +81,7 @@ export function createTestSessionRegistration(
     inputKind,
     title,
     sourceLabel,
+    experimentalFeatures,
     files,
     info: infoOverrides,
     ...registrationOverrides
@@ -98,9 +97,11 @@ export function createTestSessionRegistration(
     launchedAt: "2026-03-22T00:00:00.000Z",
     ...registrationOverrides,
     info: {
+      ...infoOverrides,
       inputKind: inputKind ?? infoOverrides?.inputKind ?? "vcs",
       title: title ?? infoOverrides?.title ?? "repo working tree",
       sourceLabel: sourceLabel ?? infoOverrides?.sourceLabel ?? "/repo",
+      experimentalFeatures: experimentalFeatures ?? infoOverrides?.experimentalFeatures ?? [],
       files: resolvedFiles,
     },
   };
@@ -119,6 +120,7 @@ export function createTestListedSession(overrides: Partial<ListedSession> = {}):
     inputKind: "vcs",
     title: "repo working tree",
     sourceLabel: "/repo",
+    experimentalFeatures: [],
     ...overrides,
     fileCount: overrides.fileCount ?? files.length,
     files,
@@ -150,6 +152,7 @@ export function createTestSelectedSessionContext(
     sourceLabel: "/repo",
     repoRoot: "/repo",
     inputKind: "diff",
+    experimentalFeatures: [],
     selectedFile: createTestSessionFileSummary({
       additions: 1,
       deletions: 0,
@@ -181,6 +184,7 @@ export function createTestSessionReview(overrides: Partial<SessionReview> = {}):
     sourceLabel: "/repo",
     repoRoot: "/repo",
     inputKind: "vcs",
+    experimentalFeatures: [],
     showAgentNotes: false,
     liveCommentCount: 0,
     ...overrides,
@@ -188,15 +192,4 @@ export function createTestSessionReview(overrides: Partial<SessionReview> = {}):
     selectedHunk,
     files,
   };
-}
-
-export function createTestListedSessionFromReviewFiles(
-  files: SessionReviewFile[],
-  overrides: Partial<ListedSession> = {},
-): ListedSession {
-  return createTestListedSession({
-    fileCount: files.length,
-    files: files.map(summarizeReviewFile),
-    ...overrides,
-  });
 }

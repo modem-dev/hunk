@@ -2,6 +2,8 @@ export interface SessionTargetInput {
   sessionId?: string;
   sessionPath?: string;
   repoRoot?: string;
+  /** Nearest project boundary known to the client for a repo-path selector. */
+  repoBoundary?: string;
 }
 
 export interface SessionTerminalLocation {
@@ -69,5 +71,6 @@ export type SessionServerMessage<CommandName extends string = string, Input = un
   type: "command";
   requestId: string;
   command: CommandName;
+  commandVersion?: number;
   input: Input;
 };

@@ -1,5 +1,89 @@
 {
   "$schema": "https://unpkg.com/knip@latest/schema.json",
-  "project": ["src/**/*.{ts,tsx}", "scripts/**/*.ts", "test/**/*.{ts,tsx}", "bin/**/*.cjs"],
-  "ignoreDependencies": ["bun"]
+  "workspaces": {
+    ".": {
+      "entry": [
+        "scripts/**/*.test.ts",
+        "test/**/*.test.{ts,tsx}",
+        "test/cli/fixtures/compiled-opentui-positive-control.ts",
+        "test/cli/fixtures/compiled-highlight-worker-control.ts",
+        "test/cli/install-vm/validate-release-result.ts",
+        "test/session-broker-node/*.ts",
+        "test/session-broker-runtime/*.ts",
+        "scripts/launch-video/*.{ts,mjs}",
+        "scripts/launch-video/promo/*.mjs",
+        "scripts/launch-video/promo/storyboards/*.mjs",
+        "scripts/dev/probe-terminal-theme.ts",
+        "scripts/dev/test-large-untracked-render.tsx",
+        "examples/extensions/**/index.{ts,tsx}",
+        "examples/extensions/**/run.ts",
+        "examples/**/*.test.ts"
+      ],
+      "project": [
+        "scripts/**/*.{ts,tsx,mjs}",
+        "test/**/*.{ts,tsx}",
+        "benchmarks/**/*.ts",
+        "examples/extensions/**/*.{ts,tsx}"
+      ],
+      "ignore": ["examples/extensions/**/fixtures/**"],
+      "ignoreBinaries": ["nix"],
+      "ignoreDependencies": [
+        "@changesets/changelog-github",
+        "@shikijs/themes",
+        "playwright",
+        "@fontsource-variable/jetbrains-mono"
+      ],
+      "ignoreExportsUsedInFile": true
+    },
+    "packages/hunk": {
+      "entry": [
+        "src/highlightWorkerEntry.ts",
+        "src/extension-api/index.ts",
+        "src/opentui/index.ts",
+        "src/**/*.test.{ts,tsx}"
+      ],
+      "project": ["src/**/*.{ts,tsx}", "bin/**/*.cjs"],
+      "ignoreExportsUsedInFile": true
+    },
+    "packages/hunk-gh": {
+      "entry": ["src/**/*.test.ts"],
+      "project": ["src/**/*.ts"]
+    },
+    "packages/hunk-git": {
+      "entry": ["src/**/*.test.ts"],
+      "project": ["src/**/*.ts"]
+    },
+    "packages/hunk-jj": {
+      "entry": ["src/**/*.test.ts"],
+      "project": ["src/**/*.ts"]
+    },
+    "packages/hunk-sapling": {
+      "entry": ["src/**/*.test.ts"],
+      "project": ["src/**/*.ts"]
+    },
+    "packages/hunk-vcs": {
+      "entry": ["src/**/*.test.ts"],
+      "project": ["src/**/*.ts"]
+    },
+    "packages/session-broker*": {
+      "entry": ["src/**/*.test.ts"],
+      "project": ["src/**/*.ts"]
+    },
+    "packages/term-video": {
+      "entry": ["src/plan.test.ts", "src/timeline.test.ts"],
+      "project": ["src/**/*.{ts,mts,mjs}"],
+      "ignoreDependencies": ["playwright-core"],
+      "ignoreBinaries": ["ffmpeg"]
+    }
+  },
+  "ignoreIssues": {
+    "packages/hunk/src/app/review/capability.ts": ["exports"],
+    "packages/hunk/src/extension-api/types.ts": ["duplicates"],
+    "packages/hunk/src/core/install/latestRelease.ts": ["exports", "types"],
+    "packages/hunk/src/core/process/updateNotice.ts": ["exports", "types"],
+    "packages/hunk/src/extensions/types.ts": ["exports", "types"],
+    "packages/hunk/src/extensions/default/ui/sidebar/index.tsx": ["exports", "types"],
+    "packages/hunk/src/session/broker/appContract.ts": ["exports", "types"],
+    "packages/hunk/src/ui/diff/worker/index.ts": ["exports", "types"]
+  }
 }

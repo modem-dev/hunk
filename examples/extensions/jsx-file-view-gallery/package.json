@@ -1,0 +1,9 @@
+{
+  "name": "hunk-jsx-file-view-gallery-extension",
+  "private": true,
+  "hunk": {
+    "extensions": [
+      "./index.tsx"
+    ]
+  }
+}

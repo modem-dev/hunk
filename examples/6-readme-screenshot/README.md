@@ -8,7 +8,7 @@ A screenshot-optimized demo for the main README: a multi-file UI refactor with i
 hunk patch examples/6-readme-screenshot/change.patch \
   --agent-context examples/6-readme-screenshot/agent-context.json \
   --mode split \
-  --theme midnight
+  --theme github-dark-default
 ```
 
 ## Screenshot setup

@@ -1,4 +1,9 @@
-import type { AppBootstrap, DiffFile, VcsDiffCommandInput, LayoutMode } from "../../src/core/types";
+import type { AppBootstrap } from "../../packages/hunk/src/core/bootstrap";
+import type { DiffFile } from "../../packages/hunk/src/core/changeset/model";
+import type {
+  VcsDiffCommandInput,
+  LayoutMode,
+} from "../../packages/hunk/src/core/run/commandInputs";
 
 export function createTestVcsAppBootstrap({
   agentSummary,
@@ -14,6 +19,7 @@ export function createTestVcsAppBootstrap({
   initialWrapLines,
   inputMode = initialMode,
   pager = false,
+  initialShowMenuBar = !pager,
   sourceLabel = "repo",
   summary,
   title = "repo working tree",
@@ -27,6 +33,7 @@ export function createTestVcsAppBootstrap({
   initialShowAgentNotes?: boolean;
   initialShowHunkHeaders?: boolean;
   initialShowLineNumbers?: boolean;
+  initialShowMenuBar?: boolean;
   initialTheme?: string;
   initialWrapLines?: boolean;
   inputMode?: LayoutMode;
@@ -36,6 +43,7 @@ export function createTestVcsAppBootstrap({
   title?: string;
 }): AppBootstrap {
   return {
+    reloadContext: { cwd: sourceLabel },
     input: {
       kind: "vcs",
       staged: false,
@@ -58,6 +66,7 @@ export function createTestVcsAppBootstrap({
     initialShowAgentNotes,
     initialShowHunkHeaders,
     initialShowLineNumbers,
+    initialShowMenuBar,
     initialTheme,
     initialWrapLines,
   };

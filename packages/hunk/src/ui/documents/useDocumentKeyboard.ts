@@ -1,0 +1,89 @@
+import { useKeyboard } from "@opentui/react";
+import type { KeyEvent } from "@opentui/core";
+import type { useMenuController } from "../hooks/useMenuController";
+import type { useThemeSelectorController } from "../hooks/useThemeSelectorController";
+import { dispatchAppCommand, type AppCommand } from "../lib/appCommands";
+
+type MenuController = ReturnType<typeof useMenuController>;
+type ThemeSelectorController = ReturnType<typeof useThemeSelectorController>;
+
+/** Route theme-selector keys without granting document commands while the selector is open. */
+function handleThemeKey(key: KeyEvent, selector: ThemeSelectorController) {
+  const actions: Record<string, () => void> = {
+    escape: selector.closeThemeSelector,
+    up: () => selector.moveThemeSelector(-1),
+    down: () => selector.moveThemeSelector(1),
+    return: selector.acceptThemeSelector,
+  };
+
+  actions[key.name]?.();
+}
+
+/** Consume menu navigation while leaving command accelerators available to the command table. */
+function handleMenuKey(key: KeyEvent, menu: MenuController) {
+  const actions: Record<string, () => void> = {
+    escape: menu.closeMenu,
+    left: () => menu.switchMenu(-1),
+    right: () => menu.switchMenu(1),
+    tab: () => menu.switchMenu(1),
+    up: () => menu.moveMenuItem(-1),
+    down: () => menu.moveMenuItem(1),
+    return: menu.activateCurrentMenuItem,
+    enter: menu.activateCurrentMenuItem,
+  };
+
+  const action = actions[key.name];
+  if (!action) return false;
+
+  action();
+  return true;
+}
+
+/** Give help, themes and menus keyboard priority before dispatching document commands. */
+export function useDocumentKeyboard({
+  isHelpOpen,
+  closeHelp,
+  themeSelector,
+  menu,
+  commands,
+}: {
+  isHelpOpen: () => boolean;
+  closeHelp: () => void;
+  themeSelector: ThemeSelectorController;
+  menu: MenuController;
+  commands: readonly AppCommand[];
+}) {
+  useKeyboard((key) => {
+    if (isHelpOpen()) {
+      if (key.name === "escape" || key.sequence === "?") {
+        closeHelp();
+        key.preventDefault();
+      }
+      // The focused help scrollbox owns navigation; document commands remain blocked.
+      return;
+    }
+
+    if (themeSelector.getThemeSelectorOpen()) {
+      handleThemeKey(key, themeSelector);
+      key.preventDefault();
+      return;
+    }
+
+    if (key.name === "f10") {
+      if (menu.getActiveMenuId()) menu.closeMenu();
+      else menu.openMenu("file");
+      key.preventDefault();
+      return;
+    }
+
+    if (menu.getActiveMenuId() && handleMenuKey(key, menu)) {
+      key.preventDefault();
+      return;
+    }
+
+    // Like history menus, a matched document command closes the dropdown;
+    // unbound or unknown keys neither run an action nor dismiss it.
+    const command = dispatchAppCommand(commands, key);
+    if (command) menu.closeMenu();
+  });
+}

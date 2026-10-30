@@ -1,0 +1,41 @@
+---
+import Default from "@astrojs/starlight/components/Head.astro";
+
+const SITE = "https://hunk.dev";
+
+const { entry } = Astro.locals.starlightRoute;
+
+// starlight-dot-md serves each docs page's Markdown source at the page path plus
+// `.md`. Advertising it as an alternate representation lets agents and answer
+// engines fetch clean Markdown instead of converting rendered HTML back.
+const pagePath = Astro.url.pathname.replace(/\/$/, "") || "/";
+const markdownHref = new URL(`${pagePath}.md`, SITE).href;
+
+const canonical = new URL(pagePath === "/" ? "/" : `${pagePath}/`, SITE).href;
+const docsRoot = new URL("/docs/", SITE).href;
+
+// Home -> Docs -> this page. The docs overview *is* /docs/, so it stops at two
+// crumbs rather than pointing at itself twice.
+const crumbs: { name: string; item: string }[] = [
+  { name: "Home", item: `${SITE}/` },
+  { name: "Docs", item: docsRoot },
+];
+if (canonical !== docsRoot) {
+  crumbs.push({ name: entry.data.title, item: canonical });
+}
+
+const breadcrumbs = {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  itemListElement: crumbs.map((crumb, index) => ({
+    "@type": "ListItem",
+    position: index + 1,
+    name: crumb.name,
+    item: crumb.item,
+  })),
+};
+---
+
+<Default><slot /></Default>
+<link rel="alternate" type="text/markdown" href={markdownHref} />
+<script type="application/ld+json" is:inline set:html={JSON.stringify(breadcrumbs)}></script>

@@ -1,0 +1,9 @@
+{
+  "name": "hunk-review-triage-extension",
+  "private": true,
+  "hunk": {
+    "extensions": [
+      "./index.tsx"
+    ]
+  }
+}

@@ -37,6 +37,52 @@ async function scrollWheelUntil(
 }
 
 describe("PTY pager", () => {
+  test("the file filter keeps focus when pager results remount", async () => {
+    const fixture = harness.createTwoFileRepoFixture();
+    const session = await harness.launchShellCommand({
+      command: `git diff --no-ext-diff | ${harness.buildHunkCommand(["pager", "--mode", "unified"])}; printf '\\nPAGER_EXITED\\n'`,
+      cwd: fixture.dir,
+      cols: 120,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/betaValue/, { timeout: 15_000 });
+      await harness.pressAndWaitForSnapshot(session, "tab", (text) =>
+        text.includes("filter: type to filter files"),
+      );
+      await session.type("betaz");
+      await harness.waitForSnapshot(session, (text) =>
+        text.includes("No files match the current filter."),
+      );
+      await harness.pressAndWaitForSnapshot(session, "backspace", (text) =>
+        text.includes("betaValue"),
+      );
+
+      // The remounted scrollbox must not steal the input's physical focus.
+      await session.type(".ts");
+      const filtered = await harness.waitForSnapshot(session, (text) =>
+        text.includes("filter: beta.ts"),
+      );
+      expect(filtered).toContain("betaValue");
+      expect(filtered).not.toContain("add = true");
+
+      await harness.pressAndWaitForSnapshot(
+        session,
+        "escape",
+        (text) => text.includes("filter: type to filter files") && text.includes("add = true"),
+      );
+      await harness.pressAndWaitForSnapshot(
+        session,
+        "escape",
+        (text) => !text.includes("filter: type to filter files"),
+      );
+      await harness.pressAndWaitForSnapshot(session, "q", (text) => text.includes("PAGER_EXITED"));
+    } finally {
+      session.close();
+    }
+  });
+
   test("pager mode hides chrome and pages forward on space", async () => {
     const fixture = harness.createPagerPatchFixture();
     const session = await harness.launchHunk({
@@ -82,55 +128,55 @@ describe("PTY pager", () => {
       expect(initial).toContain("before_01");
       expect(initial).not.toContain("before_12");
 
-      await session.press("d");
-      const halfPaged = await harness.waitForSnapshot(
+      const halfPaged = await harness.pressAndWaitForSnapshot(
         session,
+        ["ctrl", "d"],
         (text) => !text.includes("before_01"),
         5_000,
       );
 
       expect(halfPaged).not.toContain("before_01");
 
-      await session.press("u");
-      const halfPageRestored = await harness.waitForSnapshot(
+      const halfPageRestored = await harness.pressAndWaitForSnapshot(
         session,
+        ["ctrl", "u"],
         (text) => text.includes("before_01"),
         5_000,
       );
 
       expect(halfPageRestored).toContain("before_01");
 
-      await session.press("space");
-      const paged = await harness.waitForSnapshot(
+      const paged = await harness.pressAndWaitForSnapshot(
         session,
-        (text) => text.includes("before_18") || text.includes("after_02"),
+        "space",
+        (text) => text.includes("before_18"),
         5_000,
       );
 
-      expect(paged.includes("before_18") || paged.includes("after_02")).toBe(true);
+      expect(paged).toContain("before_18");
 
-      await session.press("b");
-      const pageRestored = await harness.waitForSnapshot(
+      const pageRestored = await harness.pressAndWaitForSnapshot(
         session,
-        (text) => text.includes("before_01") && !text.includes("after_02"),
+        "b",
+        (text) => text.includes("before_01") && !text.includes("before_18"),
         5_000,
       );
 
       expect(pageRestored).toContain("before_01");
-      expect(pageRestored).not.toContain("after_02");
+      expect(pageRestored).not.toContain("before_18");
 
-      await session.press("end");
-      const bottom = await harness.waitForSnapshot(
+      const bottom = await harness.pressAndWaitForSnapshot(
         session,
+        "end",
         (text) => text.includes("after_60"),
         5_000,
       );
 
       expect(bottom).toContain("after_60");
 
-      await session.press("home");
-      const top = await harness.waitForSnapshot(
+      const top = await harness.pressAndWaitForSnapshot(
         session,
+        "home",
         (text) => text.includes("before_01") && !text.includes("after_60"),
         5_000,
       );
@@ -298,6 +344,131 @@ describe("PTY pager", () => {
       );
 
       expect(withSidebar).not.toContain("View  Navigate  Agent  Help");
+      expect(withSidebar).toMatch(sidebarRow);
+    } finally {
+      session.close();
+    }
+  });
+
+  test("general pager mode navigates between files in the review stream", async () => {
+    const fixture = harness.createMultiFilePagerPatchFixture();
+    const session = await harness.launchHunkWithFileBackedStdin({
+      stdinFile: fixture.patchFile,
+      args: ["pager"],
+      cwd: fixture.dir,
+      cols: 120,
+      rows: 16,
+    });
+
+    try {
+      const initial = await session.waitForText(/first\.ts/, { timeout: 15_000 });
+
+      expect(initial).toContain("line01 = 1;");
+      expect(initial).not.toContain("secondValue = 2;");
+
+      // The keypress handler is bound after the first paint, so proving one key landed keeps a
+      // slow start from being misread as broken file navigation.
+      await harness.ensureKeyboardIsLive(session);
+      await session.press(".");
+      // second.ts is the last file and too short to own the viewport top, so the only correct
+      // landing spot is the bottom of the stream. Assert that exact position -- reaching it while
+      // first.ts's opening line is gone is what separates a real jump from an incidental redraw.
+      const nextFile = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("secondValue = 2;") && !text.includes("line01 = 1;"),
+        5_000,
+      );
+
+      expect(nextFile).toContain("secondValue = 2;");
+      expect(nextFile).not.toContain("line01 = 1;");
+
+      const previousFile = await harness.pressAndWaitForSnapshot(
+        session,
+        ",",
+        (text) => text.includes("line01 = 1;") && !text.includes("secondValue = 2;"),
+        5_000,
+      );
+
+      expect(previousFile).toContain("line01 = 1;");
+      expect(previousFile).not.toContain("secondValue = 2;");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("general pager mode switches layout and reveals the menu bar on demand", async () => {
+    const fixture = harness.createMultiFilePagerPatchFixture();
+    const session = await harness.launchHunkWithFileBackedStdin({
+      stdinFile: fixture.patchFile,
+      args: ["pager"],
+      cwd: fixture.dir,
+      cols: 220,
+      rows: 20,
+    });
+
+    try {
+      const initial = await session.waitForText(/first\.ts/, { timeout: 15_000 });
+
+      // Pager chrome starts out of the way, but nothing about it is disabled.
+      expect(initial).not.toContain("View  Navigate  Agent  Help");
+      expect(initial).toMatch(/▌.*▌/);
+
+      await session.waitIdle({ timeout: 200 });
+      const unified = await harness.pressAndWaitForSnapshot(
+        session,
+        "1",
+        (text) => !/▌.*▌/.test(text) && text.includes("line01 = 1;"),
+        5_000,
+      );
+
+      expect(unified).not.toMatch(/▌.*▌/);
+
+      const split = await harness.pressAndWaitForSnapshot(
+        session,
+        "2",
+        (text) => /▌.*▌/.test(text),
+        5_000,
+      );
+
+      expect(split).toMatch(/▌.*▌/);
+
+      await session.type("M");
+      const withMenuBar = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("View  Navigate  Agent  Help"),
+        5_000,
+      );
+
+      expect(withMenuBar).toContain("View  Navigate  Agent  Help");
+      expect(withMenuBar).toContain("first.ts");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("pager mode opens with the sidebar closed even when --sidebar asks for one", async () => {
+    const fixture = harness.createPagerPatchFixture();
+    const session = await harness.launchHunkWithFileBackedStdin({
+      stdinFile: fixture.patchFile,
+      args: ["pager", "--sidebar"],
+      cols: 120,
+      rows: 14,
+    });
+
+    try {
+      const initial = await session.waitForText(/scroll\.ts/, { timeout: 15_000 });
+
+      expect(harness.countMatches(initial, /scroll\.ts/g)).toBe(1);
+
+      await session.waitIdle({ timeout: 200 });
+      await session.press("s");
+      const sidebarRow = /\bM scroll\.ts\s+\+40 -40/;
+      const withSidebar = await harness.waitForSnapshot(
+        session,
+        (text) => sidebarRow.test(text),
+        5_000,
+      );
+
       expect(withSidebar).toMatch(sidebarRow);
     } finally {
       session.close();

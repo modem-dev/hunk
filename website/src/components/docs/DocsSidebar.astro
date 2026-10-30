@@ -1,0 +1,53 @@
+---
+import DocsMobileMenuFooter from "./DocsMobileMenuFooter.astro";
+import SidebarPersister from "@astrojs/starlight/components/SidebarPersister.astro";
+import SidebarSublist from "@astrojs/starlight/components/SidebarSublist.astro";
+
+const { sidebar } = Astro.locals.starlightRoute;
+---
+
+<SidebarPersister>
+  <SidebarSublist sublist={sidebar} />
+</SidebarPersister>
+
+<a
+  class="docs-sidebar-modem sl-hidden md:sl-flex"
+  href="https://modem.dev?utm_source=hunk_web&utm_medium=oss&utm_campaign=oss_hunk"
+  aria-label="Built by Modem"
+>
+  <span>Built by</span>
+  <img src="/modem-light.svg" alt="Modem" width="82" height="16" />
+</a>
+
+<div class="md:sl-hidden">
+  <DocsMobileMenuFooter />
+</div>
+
+<style>
+  .docs-sidebar-modem {
+    align-items: center;
+    gap: 0.5rem;
+    position: fixed;
+    /* Track the centered docs shell, not the viewport edge. */
+    inset-inline-start: calc(var(--hunk-shell-inset, 0rem) + var(--sl-sidebar-pad-x));
+    bottom: 1rem;
+    z-index: 1;
+    width: calc(var(--sl-sidebar-width) - 2 * var(--sl-sidebar-pad-x));
+    border-top: 1px solid var(--hunk-rule);
+    padding-top: 1rem;
+    background: var(--hunk-bg);
+    color: var(--hunk-muted);
+    font-size: var(--sl-text-xs);
+    text-decoration: none;
+  }
+
+  .docs-sidebar-modem:hover {
+    color: var(--hunk-ink);
+  }
+
+  .docs-sidebar-modem img {
+    width: auto;
+    height: 0.875rem;
+    opacity: 0.82;
+  }
+</style>

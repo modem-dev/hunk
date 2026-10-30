@@ -1,5 +1,17 @@
 {
   "rules": {
     "no-control-regex": "off"
-  }
+  },
+  "overrides": [
+    {
+      "files": [
+        "packages/hunk/src/app/documents/*.ts",
+        "packages/hunk/src/ui/documents/*.ts",
+        "packages/hunk/src/ui/documents/*.tsx"
+      ],
+      "rules": {
+        "complexity": ["error", { "max": 20 }]
+      }
+    }
+  ]
 }

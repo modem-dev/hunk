@@ -1,0 +1,589 @@
+import { afterEach, describe, expect, mock, test } from "bun:test";
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { createTestDiffFile } from "../../../../../test/helpers/diff-helpers";
+import {
+  buildEditorCommand,
+  openFileInEditor,
+  openSelectedFileInEditor,
+  resolveEditableFilePath,
+  shouldSuspendForEditor,
+} from "./openInEditor";
+
+const originalEditor = process.env.EDITOR;
+const originalSpawnSync = Bun.spawnSync;
+const tempDirs: string[] = [];
+
+function createTempDir() {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "hunk-open-editor-")));
+  tempDirs.push(dir);
+  return dir;
+}
+
+function restoreEditorEnv() {
+  if (originalEditor === undefined) {
+    delete process.env.EDITOR;
+  } else {
+    process.env.EDITOR = originalEditor;
+  }
+}
+
+function mockSpawnSync(
+  implementation: (cmds: string[], options?: Parameters<typeof Bun.spawnSync>[1]) => unknown,
+) {
+  const mutableBun = Bun as unknown as { spawnSync: typeof Bun.spawnSync };
+  mutableBun.spawnSync = implementation as typeof Bun.spawnSync;
+}
+
+function createRenderer() {
+  return {
+    isDestroyed: false,
+    resume: mock(() => {}),
+    suspend: mock(() => {}),
+  };
+}
+
+afterEach(() => {
+  restoreEditorEnv();
+  mockSpawnSync(originalSpawnSync);
+
+  while (tempDirs.length > 0) {
+    const dir = tempDirs.pop();
+    if (dir) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
+describe("open in editor helpers", () => {
+  test("builds vi-style editor args without shell quoting", () => {
+    expect(
+      buildEditorCommand({
+        editor: "nvim",
+        filePath: "/tmp/project/file with spaces's.ts",
+        line: 12,
+      }),
+    ).toEqual({
+      command: "nvim",
+      args: ["+12", "/tmp/project/file with spaces's.ts"],
+    });
+  });
+
+  test("preserves editor flags before appending the target file", () => {
+    expect(
+      buildEditorCommand({
+        editor: "code --reuse-window",
+        filePath: "/tmp/project/example.ts",
+        line: 4,
+      }),
+    ).toEqual({
+      command: "code",
+      args: ["--reuse-window", "--goto", "/tmp/project/example.ts:4"],
+    });
+  });
+
+  test("handles quoted editor commands and Windows executable paths", () => {
+    expect(
+      buildEditorCommand({
+        editor: '"C:\\Program Files\\Microsoft VS Code\\bin\\code.cmd" --wait',
+        filePath: "C:\\Users\\Duarte\\repo\\file with spaces.ts",
+        line: 7,
+      }),
+    ).toEqual({
+      command: "C:\\Program Files\\Microsoft VS Code\\bin\\code.cmd",
+      args: ["--wait", "--goto", "C:\\Users\\Duarte\\repo\\file with spaces.ts:7"],
+    });
+  });
+
+  test("builds path:line targets for zed and zeditor", () => {
+    expect(
+      buildEditorCommand({
+        editor: "zed --wait",
+        filePath: "/tmp/project/file.ts",
+        line: 123,
+      }),
+    ).toEqual({
+      command: "zed",
+      args: ["--wait", "/tmp/project/file.ts:123"],
+    });
+    expect(
+      buildEditorCommand({
+        editor: "zeditor",
+        filePath: "/tmp/project/file.ts",
+        line: 123,
+      }),
+    ).toEqual({
+      command: "zeditor",
+      args: ["/tmp/project/file.ts:123"],
+    });
+  });
+
+  test("defaults unknown editors to opening the file path only", () => {
+    expect(
+      buildEditorCommand({
+        editor: "unknown-editor --flag",
+        filePath: "/tmp/project/example.ts",
+        line: 4,
+      }),
+    ).toEqual({
+      command: "unknown-editor",
+      args: ["--flag", "/tmp/project/example.ts"],
+    });
+  });
+
+  test("does not suspend for code-style GUI editors", () => {
+    expect(shouldSuspendForEditor("code --reuse-window")).toBe(false);
+    expect(shouldSuspendForEditor('"C:\\Program Files\\Cursor\\cursor.exe"')).toBe(false);
+    expect(shouldSuspendForEditor("nvim")).toBe(true);
+  });
+
+  test("resolves repo-relative diff paths from the diff source path", () => {
+    expect(resolveEditableFilePath("src/main.tsx", "/tmp/project")).toBe(
+      resolve("/tmp/project", "src/main.tsx"),
+    );
+  });
+
+  test("returns an error when no file is selected", async () => {
+    const renderer = createRenderer();
+    const spawnCalls: string[][] = [];
+    mockSpawnSync((cmds) => {
+      spawnCalls.push(cmds);
+      return { exitCode: 0 };
+    });
+
+    expect(
+      await openSelectedFileInEditor({
+        file: undefined,
+        renderer,
+        selectedHunk: undefined,
+      }),
+    ).toBe("No file selected.");
+
+    expect(spawnCalls).toEqual([]);
+    expect(renderer.suspend).not.toHaveBeenCalled();
+    expect(renderer.resume).not.toHaveBeenCalled();
+  });
+
+  test("returns an error when $EDITOR is unset", async () => {
+    const renderer = createRenderer();
+    const spawnCalls: string[][] = [];
+    mockSpawnSync((cmds) => {
+      spawnCalls.push(cmds);
+      return { exitCode: 0 };
+    });
+    delete process.env.EDITOR;
+
+    expect(
+      await openSelectedFileInEditor({
+        file: createTestDiffFile({ path: "missing-editor.ts" }),
+        renderer,
+        selectedHunk: undefined,
+      }),
+    ).toBe("$EDITOR is not set.");
+
+    expect(spawnCalls).toEqual([]);
+    expect(renderer.suspend).not.toHaveBeenCalled();
+    expect(renderer.resume).not.toHaveBeenCalled();
+  });
+
+  test("returns an error when the file does not exist on disk", async () => {
+    const renderer = createRenderer();
+    const spawnCalls: string[][] = [];
+    mockSpawnSync((cmds) => {
+      spawnCalls.push(cmds);
+      return { exitCode: 0 };
+    });
+    process.env.EDITOR = "nvim";
+
+    expect(
+      await openSelectedFileInEditor({
+        basePath: createTempDir(),
+        file: createTestDiffFile({ path: "missing-on-disk.ts" }),
+        renderer,
+        selectedHunk: undefined,
+      }),
+    ).toBe("Cannot edit missing-on-disk.ts: file does not exist on disk.");
+
+    expect(spawnCalls).toEqual([]);
+    expect(renderer.suspend).not.toHaveBeenCalled();
+    expect(renderer.resume).not.toHaveBeenCalled();
+  });
+
+  test("spawns terminal editors with suspend and resume around a successful edit", async () => {
+    const basePath = createTempDir();
+    writeFileSync(join(basePath, "example.ts"), "const value = 1;\n");
+    process.env.EDITOR = "nvim --clean";
+
+    const spawnCalls: Array<{
+      cmds: string[];
+      options: Parameters<typeof Bun.spawnSync>[1] | undefined;
+    }> = [];
+    mockSpawnSync((cmds, options) => {
+      spawnCalls.push({ cmds, options });
+      return { exitCode: 0 };
+    });
+
+    const renderer = createRenderer();
+    const file = createTestDiffFile({ path: "example.ts" });
+
+    expect(
+      await openSelectedFileInEditor({
+        basePath,
+        file,
+        renderer,
+        selectedHunk: undefined,
+      }),
+    ).toBeNull();
+
+    expect(spawnCalls).toEqual([
+      {
+        cmds: ["nvim", "--clean", "+1", join(basePath, "example.ts")],
+        options: { stdin: "inherit", stdout: "inherit", stderr: "inherit" },
+      },
+    ]);
+    expect(renderer.suspend).toHaveBeenCalledTimes(1);
+    expect(renderer.resume).toHaveBeenCalledTimes(1);
+  });
+
+  test("lets the paused stdin reader release before spawning a terminal editor", async () => {
+    const filePath = join(createTempDir(), "example.ts");
+    writeFileSync(filePath, "before");
+    process.env.EDITOR = "nvim --clean";
+    let readerReleased = false;
+    const renderer = createRenderer();
+    renderer.suspend = mock(() => {
+      // Match Bun's process.stdin pause listener, which disowns its reader on nextTick.
+      process.nextTick(() => {
+        readerReleased = true;
+      });
+    });
+    const spawn = mock(() => {
+      expect(readerReleased).toBe(true);
+      expect(renderer.resume).not.toHaveBeenCalled();
+      return { exitCode: 0 };
+    });
+    mockSpawnSync(spawn);
+
+    const editing = openFileInEditor({ filePath, line: 1, renderer });
+    expect(renderer.suspend).toHaveBeenCalledTimes(1);
+    expect(spawn).not.toHaveBeenCalled();
+    expect(await editing).toBeNull();
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(renderer.resume).toHaveBeenCalledTimes(1);
+  });
+
+  test("does not launch or resume an editor after the suspended session closes", async () => {
+    const filePath = join(createTempDir(), "example.ts");
+    writeFileSync(filePath, "before");
+    process.env.EDITOR = "nvim";
+    const renderer = createRenderer();
+    renderer.suspend = mock(() => {
+      process.nextTick(() => {
+        renderer.isDestroyed = true;
+      });
+    });
+    const spawn = mock(() => ({ exitCode: 0 }));
+    mockSpawnSync(spawn);
+
+    expect(await openFileInEditor({ filePath, line: 1, renderer })).toBe(
+      "The terminal session has closed.",
+    );
+    expect(spawn).not.toHaveBeenCalled();
+    expect(renderer.resume).not.toHaveBeenCalled();
+  });
+
+  test("serializes editor handoffs on the same renderer", async () => {
+    const filePath = join(createTempDir(), "example.ts");
+    writeFileSync(filePath, "before");
+    process.env.EDITOR = "nvim";
+    const renderer = createRenderer();
+    const spawn = mock(() => ({ exitCode: 0 }));
+    mockSpawnSync(spawn);
+
+    const editing = openFileInEditor({ filePath, line: 1, renderer });
+    expect(await openFileInEditor({ filePath, line: 1, renderer })).toBe(
+      "An editor is already open.",
+    );
+    expect(await editing).toBeNull();
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(renderer.suspend).toHaveBeenCalledTimes(1);
+    expect(renderer.resume).toHaveBeenCalledTimes(1);
+
+    expect(await openFileInEditor({ filePath, line: 1, renderer })).toBeNull();
+    expect(spawn).toHaveBeenCalledTimes(2);
+  });
+
+  test("opens the current line instead of the selected hunk start", async () => {
+    const basePath = createTempDir();
+    writeFileSync(join(basePath, "example.ts"), "const value = 1;\n");
+    process.env.EDITOR = "vim";
+
+    const spawnCalls: string[][] = [];
+    mockSpawnSync((cmds) => {
+      spawnCalls.push(cmds);
+      return { exitCode: 0 };
+    });
+
+    const file = createTestDiffFile({ path: "example.ts" });
+
+    expect(
+      await openSelectedFileInEditor({
+        basePath,
+        file,
+        lineCursor: {
+          fileId: file.id,
+          hunkIndex: 1,
+          target: { side: "new", line: 3 },
+        },
+        renderer: createRenderer(),
+        selectedHunk: file.metadata.hunks[0],
+      }),
+    ).toBeNull();
+
+    expect(spawnCalls).toEqual([["vim", "+3", join(basePath, "example.ts")]]);
+  });
+
+  test("maps an old-side current line onto the line on disk", async () => {
+    const basePath = createTempDir();
+    writeFileSync(join(basePath, "example.ts"), "one\nfour\n");
+    process.env.EDITOR = "vim";
+
+    const spawnCalls: string[][] = [];
+    mockSpawnSync((cmds) => {
+      spawnCalls.push(cmds);
+      return { exitCode: 0 };
+    });
+
+    const file = createTestDiffFile({
+      path: "example.ts",
+      before: "one\ntwo\nthree\nfour\n",
+      after: "one\nfour\n",
+    });
+
+    expect(
+      await openSelectedFileInEditor({
+        basePath,
+        file,
+        lineCursor: {
+          fileId: file.id,
+          hunkIndex: 0,
+          target: { side: "old", line: 3 },
+        },
+        renderer: createRenderer(),
+        selectedHunk: file.metadata.hunks[0],
+      }),
+    ).toBeNull();
+
+    expect(spawnCalls).toEqual([["vim", "+2", join(basePath, "example.ts")]]);
+  });
+
+  test("walks leading context when mapping an old-side current line", async () => {
+    const basePath = createTempDir();
+    writeFileSync(join(basePath, "example.ts"), "one\nfour\n");
+    process.env.EDITOR = "vim";
+
+    const spawnCalls: string[][] = [];
+    mockSpawnSync((cmds) => {
+      spawnCalls.push(cmds);
+      return { exitCode: 0 };
+    });
+
+    const file = createTestDiffFile({
+      path: "example.ts",
+      before: "one\ntwo\nthree\nfour\n",
+      after: "one\nfour\n",
+      context: 1,
+    });
+
+    expect(
+      await openSelectedFileInEditor({
+        basePath,
+        file,
+        lineCursor: {
+          fileId: file.id,
+          hunkIndex: 0,
+          target: { side: "old", line: 3 },
+        },
+        renderer: createRenderer(),
+        selectedHunk: file.metadata.hunks[0],
+      }),
+    ).toBeNull();
+
+    // Old line 3 ("three") was removed, so the editor lands on the line that now follows "one".
+    expect(spawnCalls).toEqual([["vim", "+2", join(basePath, "example.ts")]]);
+  });
+
+  test("preserves the deleted line's offset within a multi-line replacement", async () => {
+    const basePath = createTempDir();
+    writeFileSync(join(basePath, "example.ts"), "one\nTWO\nTHREE\nfour\n");
+    process.env.EDITOR = "vim";
+
+    const spawnCalls: string[][] = [];
+    mockSpawnSync((cmds) => {
+      spawnCalls.push(cmds);
+      return { exitCode: 0 };
+    });
+
+    const file = createTestDiffFile({
+      path: "example.ts",
+      before: "one\ntwo\nthree\nfour\n",
+      after: "one\nTWO\nTHREE\nfour\n",
+    });
+
+    expect(
+      await openSelectedFileInEditor({
+        basePath,
+        file,
+        lineCursor: {
+          fileId: file.id,
+          hunkIndex: 0,
+          target: { side: "old", line: 3 },
+        },
+        renderer: createRenderer(),
+        selectedHunk: file.metadata.hunks[0],
+      }),
+    ).toBeNull();
+
+    // Old line 3 ("three") is the second of two replaced lines, so the editor
+    // lands on the second replacement line ("THREE") rather than the first.
+    expect(spawnCalls).toEqual([["vim", "+3", join(basePath, "example.ts")]]);
+  });
+
+  test("falls back to the selected hunk when the cursor is in another file", async () => {
+    const basePath = createTempDir();
+    writeFileSync(join(basePath, "example.ts"), "const value = 1;\n");
+    process.env.EDITOR = "vim";
+
+    const spawnCalls: string[][] = [];
+    mockSpawnSync((cmds) => {
+      spawnCalls.push(cmds);
+      return { exitCode: 0 };
+    });
+
+    const file = createTestDiffFile({ path: "example.ts" });
+
+    expect(
+      await openSelectedFileInEditor({
+        basePath,
+        file,
+        lineCursor: {
+          fileId: "other-file",
+          hunkIndex: 0,
+          target: { side: "new", line: 42 },
+        },
+        renderer: createRenderer(),
+        selectedHunk: file.metadata.hunks[1],
+      }),
+    ).toBeNull();
+
+    expect(spawnCalls).toEqual([
+      ["vim", `+${file.metadata.hunks[1]!.additionStart}`, join(basePath, "example.ts")],
+    ]);
+  });
+
+  test("uses deletion line numbers for deleted files", async () => {
+    const basePath = createTempDir();
+    writeFileSync(join(basePath, "deleted.ts"), "const old = true;\n");
+    process.env.EDITOR = "vim";
+
+    const spawnCalls: string[][] = [];
+    mockSpawnSync((cmds) => {
+      spawnCalls.push(cmds);
+      return { exitCode: 0 };
+    });
+
+    const baseFile = createTestDiffFile({ path: "deleted.ts" });
+    const file = {
+      ...baseFile,
+      metadata: {
+        ...baseFile.metadata,
+        type: "deleted" as const,
+      },
+    };
+    const selectedHunk = {
+      ...file.metadata.hunks[0]!,
+      additionStart: 2,
+      deletionStart: 9,
+    };
+
+    expect(
+      await openSelectedFileInEditor({
+        basePath,
+        file,
+        renderer: createRenderer(),
+        selectedHunk,
+      }),
+    ).toBeNull();
+
+    expect(spawnCalls).toEqual([["vim", "+9", join(basePath, "deleted.ts")]]);
+  });
+
+  test("does not suspend GUI editors and reports non-zero exits", async () => {
+    const basePath = createTempDir();
+    writeFileSync(join(basePath, "example.ts"), "const value = 1;\n");
+    process.env.EDITOR = "code --wait";
+
+    const spawnCalls: string[][] = [];
+    mockSpawnSync((cmds) => {
+      spawnCalls.push(cmds);
+      return { exitCode: 2 };
+    });
+
+    const renderer = createRenderer();
+    const file = createTestDiffFile({ path: "example.ts" });
+
+    expect(
+      await openSelectedFileInEditor({
+        basePath,
+        file,
+        renderer,
+        selectedHunk: file.metadata.hunks[0],
+      }),
+    ).toBe("Editor exited with status 2.");
+
+    expect(spawnCalls).toEqual([["code", "--wait", "--goto", `${join(basePath, "example.ts")}:1`]]);
+    expect(renderer.suspend).not.toHaveBeenCalled();
+    expect(renderer.resume).not.toHaveBeenCalled();
+  });
+
+  test("waits for GUI editors before releasing a document copy", async () => {
+    const filePath = join(createTempDir(), "example.ts");
+    writeFileSync(filePath, "before");
+    process.env.EDITOR = "code";
+    const spawnCalls: string[][] = [];
+    mockSpawnSync((cmds) => {
+      spawnCalls.push(cmds);
+      return { exitCode: 0 };
+    });
+    expect(
+      await openFileInEditor({ filePath, line: 3, renderer: createRenderer(), wait: true }),
+    ).toBeNull();
+    expect(spawnCalls).toEqual([["code", "--wait", "--goto", `${filePath}:3`]]);
+  });
+
+  test("resumes after spawn failures and reports launch errors", async () => {
+    const basePath = createTempDir();
+    writeFileSync(join(basePath, "example.ts"), "const value = 1;\n");
+    process.env.EDITOR = "vi";
+
+    mockSpawnSync(() => {
+      throw new Error("boom");
+    });
+
+    const renderer = createRenderer();
+    const file = createTestDiffFile({ path: "example.ts" });
+
+    expect(
+      await openSelectedFileInEditor({
+        basePath,
+        file,
+        renderer,
+        selectedHunk: file.metadata.hunks[0],
+      }),
+    ).toBe("Failed to launch editor: boom");
+
+    expect(renderer.suspend).toHaveBeenCalledTimes(1);
+    expect(renderer.resume).toHaveBeenCalledTimes(1);
+  });
+});

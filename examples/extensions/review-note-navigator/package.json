@@ -1,0 +1,10 @@
+{
+  "name": "hunk-review-note-navigator-extension",
+  "private": true,
+  "hunk": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "apiVersion": 8
+  }
+}

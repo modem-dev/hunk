@@ -1,0 +1,42 @@
+:root {
+  --canvas: #0b1020;
+  --panel: #151d33;
+  --border: #2b3858;
+  --text: #dbe7ff;
+  --muted: #8290ad;
+  --accent: #7aa2f7;
+  --success: #73daca;
+  --danger: #f7768e;
+}
+
+.review-shell {
+  min-height: 100vh;
+  color: var(--text);
+  background: var(--canvas);
+}
+
+.review-card {
+  --card-highlight: #24304a;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 16px;
+}
+
+.review-card__title {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.review-card__meta {
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.review-card--approved {
+  border-color: var(--success);
+}
+
+.review-card--blocked {
+  border-color: var(--danger);
+}

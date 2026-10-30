@@ -1,8 +1,13 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import type { Subprocess } from "bun";
 import { createServer } from "node:net";
+import { cleanupTestConfigHomes, createTestConfigHome } from "../helpers/config-home";
 
 const repoRoot = process.cwd();
+// Spawned hunk processes must assert built-in defaults, not the developer's ambient user config.
+const testConfigHome = createTestConfigHome();
+
+afterAll(cleanupTestConfigHomes);
 const spawned: Subprocess[] = [];
 
 async function reserveLoopbackPort() {
@@ -47,7 +52,7 @@ async function readHealth(port: number) {
       return null;
     }
 
-    return (await response.json()) as { ok: boolean; pid: number };
+    return (await response.json()) as { ok: boolean };
   } catch {
     return null;
   }
@@ -70,27 +75,31 @@ afterEach(async () => {
 describe("session daemon lifecycle", () => {
   test("exits cleanly after SIGTERM instead of hot-looping after server shutdown", async () => {
     const port = await reserveLoopbackPort();
-    const proc = Bun.spawn(["bun", "run", "src/main.tsx", "daemon", "serve"], {
+    // Invoke the Bun executable directly so this handle owns the daemon on Windows instead of a
+    // `bun run` launcher that can exit before its child releases the listening socket.
+    const proc = Bun.spawn([process.execPath, "packages/hunk/src/main.tsx", "daemon", "serve"], {
       cwd: repoRoot,
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",
       env: {
         ...process.env,
+        XDG_CONFIG_HOME: testConfigHome,
         HUNK_MCP_PORT: String(port),
       },
     });
     spawned.push(proc);
 
     const health = await waitUntil("daemon health", () => readHealth(port), 3_000, 50);
-    expect(health).toMatchObject({ ok: true, pid: proc.pid });
+    expect(health).toMatchObject({ ok: true });
 
     let exited = false;
     void proc.exited.then(() => {
       exited = true;
     });
 
-    process.kill(proc.pid, "SIGTERM");
+    // This test owns the spawned process handle; public health intentionally exposes no PID.
+    proc.kill("SIGTERM");
 
     await waitUntil("daemon serve process exit", () => (exited ? true : null), 1_500, 25);
     await waitUntil("daemon port close", async () =>

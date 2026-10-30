@@ -32,17 +32,23 @@ bun run bench:release:compare
 Run focused scripts while iterating:
 
 ```bash
+bun run bench:startup-first-frame
 bun run bench:bootstrap-load
 bun run bench:working-tree-load
 bun run bench:changeset-parse
 bun run bench:render-layout
 bun run bench:highlight-prefetch
+bun run bench:highlight-worker-cache
+bun run bench:highlight-cache-layers
 bun run bench:large-stream
 bun run bench:interaction-latency
 bun run bench:non-ascii-stream
+bun run bench:wrapped-cjk
+bun run bench:terminal-width
 bun run bench:huge-stream
 bun run bench:large-stream-profile
 bun run bench:memory
+bun run bench:geometry-memory
 bun run bench:navigation-memory
 bun run bench:resize-memory
 bun run bench:competitors
@@ -50,17 +56,23 @@ bun run bench:competitors
 
 ## Scripts
 
+- `startup-first-frame.ts` — launches `hunk diff` in a real PTY on a small committed repo with a dirty working tree and measures time from process spawn to the first painted review frame. It is the only metric that includes Bun boot, CLI and config resolution, git bootstrap, and the OpenTUI import with its native-library load; in-process first-frame metrics start after the renderer is already imported. It answers the terminal background probe like a real terminal would. The same launch reports `startup_first_color_ms` (spawn to the first keyword-colored cell) and `startup_post_paint_key_max_ms` (the slowest answer among page-down keys sent from first paint through the next 400ms, which is where main-thread highlighting shows up as blocked input). Set `HUNK_BENCHMARK_EXECUTABLE` to measure a compiled binary instead of the source entrypoint.
 - `bootstrap-load.ts` — measures bootstrap and git-loader cost on a synthetic large repo, including file-pair bootstrap.
 - `working-tree-load.ts` — measures git working-tree loads across small, medium, large, many-untracked, and few-large-untracked repos.
 - `changeset-parse.ts` — measures patch normalization, Pierre parsing, patch chunking, and normalized `DiffFile` construction for many-small-files, balanced, and large-single-file patches.
-- `render-layout.ts` — measures pure split/stack row building, section geometry, and review-plan construction for many-small-files, balanced, and large-single-file streams.
+- `render-layout.ts` — measures pure split/unified row building, section geometry, and review-plan construction for many-small-files, balanced, and large-single-file streams.
 - `highlight-prefetch.ts` — measures selected-file highlight startup and adjacent prefetch readiness.
+- `worker-highlight-cache.ts` — measures a cold worker highlight against an immediate compact-result cache hit.
+- `highlight-cache-layers.ts` — measures a resident terminal-cache hit against a worker-cache revisit after the terminal cache evicts the diff.
 - `large-stream.ts` — measures large split-stream first-frame and scroll cost.
-- `interaction-latency.ts` — measures per-press `]` hunk-navigation latency and per-scroll-tick latency (median + p95) on the large stream, plus RSS/heap ceilings after first frame and after navigation (the default-suite slice of `memory.ts`).
-- `non-ascii-stream.ts` — measures first-frame and per-scroll-tick latency on a stream whose diff content embeds CJK, emoji, and box-drawing characters, exercising the string-width path on content rather than chrome glyphs.
+- `interaction-latency.ts` — measures per-press `]` hunk-navigation latency and per-scroll-tick latency (median + p95) on the large stream, plus RSS/heap ceilings after first frame and after navigation (the default-suite slice of `memory.ts`). Interaction timing starts after render-driven syntax highlighting reaches idle so Bun scheduler changes cannot move startup work into the first input sample.
+- `non-ascii-stream.ts` — measures first-frame and per-scroll-tick latency on a stream whose diff content embeds CJK, emoji, and box-drawing characters, exercising the string-width path on content rather than chrome glyphs. Its scroll timing uses the same highlight-idle boundary.
+- `wrapped-cjk.ts` — reproduces issue #579 with 518 wrapped Japanese Markdown lines plus one pathological long logical line, isolates each mount with a full GC while including renderer setup in first-frame latency, and measures immediate/coalesced frames from a real wheel burst.
+- `terminal-width.ts` — measures scalar-heavy CJK and emoji width calls plus cached complex-cluster measurements against equivalent `string-width` reference paths, verifying identical width checksums.
 - `huge-stream.ts` — opt-in huge tier (`--include-huge` or `HUNK_BENCH_INCLUDE_HUGE=1`): cold first frame, scroll-tick and hunk-navigation latency, and memory ceilings on ~1k files / 300k+ diff lines plus one giant ~50k-line file.
 - `large-stream-profile.ts` — optional local profiler for the main pure planning stages behind the large split-stream benchmark.
 - `memory.ts` — optional local RSS/heap profiler after fixture loading, planning, first frame, and next-hunk navigation.
+- `geometry-memory.ts` — optional local retained-memory profiler for all-files section geometry, including JSC-native heap metrics, navigation projection, and giant-file first-copy latency. Copy-content heap growth is measured from the post-navigation sample; ordinary navigation should not materialize lazy copy-selection rows.
 - `navigation-memory.ts` — optional local retained-memory profiler for repeated hunk navigation through a mounted review stream.
 - `resize-memory.ts` — optional local retained-memory profiler for repeated terminal-width changes through a mounted review stream; this targets geometry-cache retention across resize variants.
 - `competitors.ts` — optional local informational comparisons against `git diff --no-ext-diff`, `delta`, `difftastic`, and `diff-so-fancy` when installed.
@@ -99,4 +111,5 @@ Each script prints `METRIC name=value` lines. `benchmarks/run.ts` repeats script
 - Fixture tiers: the moderate tier (180 files × 120 lines) backs `large-stream.ts` and `interaction-latency.ts`; the huge tier (1,000 files × 300 lines + one 50,000-line file) backs `huge-stream.ts` and is opt-in because one sample can take minutes before hot-path fixes land.
 - Competitor comparisons are informational because installed tool versions and feature parity vary by environment.
 - Use `--samples 5` locally when validating borderline changes.
+- Set `HUNK_BENCHMARK_TRACE=1` on an interaction benchmark to print the raw per-input latency distribution behind each median and p95.
 - Use `benchmarks/results/` for local benchmark output; result files in that directory are ignored by default.

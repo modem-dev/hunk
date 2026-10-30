@@ -1,8 +1,11 @@
 # @hunk/session-broker-bun
 
-Bun HTTP and websocket adapter for `@hunk/session-broker`.
+Private Bun HTTP and websocket adapter for `@hunk/session-broker`.
 
-Use this package when you want to serve a runtime-neutral `SessionBrokerDaemon` through `Bun.serve(...)`.
+Use this workspace to serve a runtime-neutral `SessionBrokerDaemon` through `Bun.serve(...)`.
+It is not a published, versioned SDK package. See the main broker README for current internal API
+construction and the [session broker SDK contract](../../docs/session-broker-sdk.md) for the future
+public package.
 
 ## What it does
 
@@ -14,19 +17,14 @@ Use this package when you want to serve a runtime-neutral `SessionBrokerDaemon` 
 
 ## Usage
 
+Create the daemon with steps 1–2 in
+[`@hunk/session-broker`](../session-broker/README.md), then bind it to Bun:
+
 ```ts
-import { SessionBroker, createSessionBrokerDaemon } from "@hunk/session-broker";
+import type { SessionBrokerDaemon } from "@hunk/session-broker";
 import { serveSessionBrokerDaemon } from "@hunk/session-broker-bun";
 
-const broker = new SessionBroker({
-  parseRegistration,
-  parseSnapshot,
-});
-
-const daemon = createSessionBrokerDaemon({
-  broker,
-  capabilities: { version: 1, name: "example-broker" },
-});
+declare const daemon: SessionBrokerDaemon;
 
 const server = serveSessionBrokerDaemon({
   daemon,

@@ -1,0 +1,235 @@
+import { existsSync } from "node:fs";
+import { basename, resolve, win32 } from "node:path";
+import { setImmediate as yieldToEventLoop } from "node:timers/promises";
+import type { CliRenderer } from "@opentui/core";
+import type { DiffFile } from "../../core/changeset/model";
+import type { LineCursor } from "./lineCursors";
+
+export interface EditorCommand {
+  command: string;
+  args: string[];
+}
+
+type DiffHunk = DiffFile["metadata"]["hunks"][number];
+
+/** The review stream's current line, minus the geometry fields this module never reads. */
+export type EditorLineCursor = Pick<LineCursor, "fileId" | "hunkIndex" | "target">;
+
+/**
+ * Translate an old-side line to the line it maps to in the file on disk.
+ *
+ * Deleted lines have no on-disk counterpart, so they resolve to the position their
+ * replacement occupies, which is where the reader expects the editor to land.
+ */
+function deletionLineToFileLine(hunk: DiffHunk, deletionLine: number) {
+  let deletionCursor = hunk.deletionStart;
+  // A zero-count side names the line before the change, so step past it to land inside the file.
+  let additionCursor = hunk.additionCount === 0 ? hunk.additionStart + 1 : hunk.additionStart;
+
+  for (const content of hunk.hunkContent) {
+    if (content.type === "context") {
+      if (deletionLine < deletionCursor + content.lines) {
+        return additionCursor + (deletionLine - deletionCursor);
+      }
+
+      deletionCursor += content.lines;
+      additionCursor += content.lines;
+      continue;
+    }
+
+    if (deletionLine < deletionCursor + content.deletions) {
+      // Land on the corresponding replacement line, clamped to the last one this block adds.
+      const offset = Math.min(deletionLine - deletionCursor, Math.max(content.additions - 1, 0));
+      return additionCursor + offset;
+    }
+
+    deletionCursor += content.deletions;
+    additionCursor += content.additions;
+  }
+
+  return additionCursor;
+}
+
+/** Prefer the current line over the selected hunk's first line. */
+function selectedLine(
+  file: DiffFile,
+  selectedHunk: DiffHunk | undefined,
+  lineCursor: EditorLineCursor | null | undefined,
+) {
+  // Deleted files are opened against their pre-change content, every other file against its new one.
+  const isDeleted = file.metadata.type === "deleted";
+  const diskSide = isDeleted ? "old" : "new";
+  const cursor = lineCursor?.fileId === file.id ? lineCursor : undefined;
+
+  if (cursor) {
+    if (cursor.target.side === diskSide) {
+      return cursor.target.line;
+    }
+
+    const cursorHunk = file.metadata.hunks[cursor.hunkIndex];
+    if (!isDeleted && cursorHunk) {
+      return deletionLineToFileLine(cursorHunk, cursor.target.line);
+    }
+  }
+
+  if (isDeleted) {
+    return selectedHunk?.deletionStart ?? 1;
+  }
+
+  return selectedHunk?.additionStart ?? 1;
+}
+
+function splitEditorCommand(editor: string) {
+  return (
+    editor
+      .match(/(?:[^\s"']+|"(?:\\.|[^"])*"|'(?:\\.|[^'])*')+/g)
+      ?.map((token) => token.replace(/^(["'])(.*)\1$/, "$2")) ?? []
+  );
+}
+
+function editorProgram(editor: string) {
+  const [firstToken = ""] = splitEditorCommand(editor);
+  return basename(win32.basename(firstToken))
+    .replace(/\.(?:cmd|exe)$/i, "")
+    .toLowerCase();
+}
+
+const VI_STYLE_EDITORS = ["vim", "nvim", "vi"];
+const CODE_STYLE_EDITORS = ["code", "code-insiders", "cursor"];
+const activeEditors = new WeakSet<object>();
+
+/** Suspend for terminal editors. */
+export function shouldSuspendForEditor(editor: string) {
+  const program = editorProgram(editor);
+  if (CODE_STYLE_EDITORS.includes(program)) {
+    return false;
+  }
+
+  return true;
+}
+
+/** Build an editor process invocation without shell quoting so paths stay cross-platform. */
+export function buildEditorCommand({
+  editor,
+  filePath,
+  line,
+}: {
+  editor: string;
+  filePath: string;
+  line: number;
+}): EditorCommand {
+  const [command = "", ...editorArgs] = splitEditorCommand(editor);
+  const program = editorProgram(editor);
+
+  if (VI_STYLE_EDITORS.includes(program)) {
+    return { command, args: [...editorArgs, `+${line}`, filePath] };
+  }
+
+  if (CODE_STYLE_EDITORS.includes(program)) {
+    return { command, args: [...editorArgs, "--goto", `${filePath}:${line}`] };
+  }
+
+  if (program == "hx") {
+    return { command, args: [...editorArgs, `${filePath}:${line}`] };
+  }
+
+  if (program === "zed" || program === "zeditor") {
+    return { command, args: [...editorArgs, `${filePath}:${line}`] };
+  }
+
+  return { command, args: [...editorArgs, filePath] };
+}
+
+/** Resolve diff paths relative to their source repo instead of the launch cwd. */
+export function resolveEditableFilePath(filePath: string, basePath = process.cwd()) {
+  return resolve(basePath, filePath);
+}
+
+/** Open the selected file in $EDITOR, suspending TUI for terminal editors. */
+export async function openSelectedFileInEditor({
+  basePath,
+  file,
+  lineCursor,
+  renderer,
+  selectedHunk,
+}: {
+  basePath?: string;
+  file: DiffFile | undefined;
+  lineCursor?: EditorLineCursor | null;
+  renderer: Pick<CliRenderer, "suspend" | "resume" | "isDestroyed">;
+  selectedHunk: DiffHunk | undefined;
+}) {
+  if (!file) {
+    return "No file selected.";
+  }
+
+  return openFileInEditor({
+    filePath: resolveEditableFilePath(file.path, basePath),
+    displayPath: file.path,
+    line: Math.max(1, selectedLine(file, selectedHunk, lineCursor)),
+    renderer,
+  });
+}
+
+/** Launch the user-selected editor without requiring a review or hunk model. */
+export async function openFileInEditor({
+  filePath,
+  displayPath = filePath,
+  line,
+  renderer,
+  wait = false,
+}: {
+  filePath: string;
+  displayPath?: string;
+  line: number;
+  renderer: Pick<CliRenderer, "suspend" | "resume" | "isDestroyed">;
+  wait?: boolean;
+}) {
+  if (renderer.isDestroyed) return "The terminal session has closed.";
+  const editor = process.env.EDITOR?.trim();
+  if (!editor) return "$EDITOR is not set.";
+  if (!existsSync(filePath)) return `Cannot edit ${displayPath}: file does not exist on disk.`;
+  const command = buildEditorCommand({ editor, filePath, line });
+  if (wait && [...CODE_STYLE_EDITORS, "zed", "zeditor"].includes(editorProgram(editor)))
+    command.args.unshift("--wait");
+
+  if (activeEditors.has(renderer)) return "An editor is already open.";
+  activeEditors.add(renderer);
+
+  const shouldSuspend = shouldSuspendForEditor(editor);
+  let exitCode = 0;
+  let failureMessage: string | null = null;
+  try {
+    if (shouldSuspend) {
+      renderer.suspend();
+      // Bun releases its stdin reader on the tick after pause(). Let that handoff finish
+      // before blocking in spawnSync, or a Windows console read can steal the editor's input.
+      await yieldToEventLoop();
+      if (renderer.isDestroyed) return "The terminal session has closed.";
+    }
+
+    const result = Bun.spawnSync([command.command, ...command.args], {
+      stdin: "inherit",
+      stdout: "inherit",
+      stderr: "inherit",
+    });
+    exitCode = result.exitCode;
+  } catch (error) {
+    failureMessage = error instanceof Error ? error.message : String(error);
+  } finally {
+    activeEditors.delete(renderer);
+    if (shouldSuspend && !renderer.isDestroyed) {
+      renderer.resume();
+    }
+  }
+
+  if (failureMessage) {
+    return `Failed to launch editor: ${failureMessage}`;
+  }
+
+  if (exitCode !== 0) {
+    return `Editor exited with status ${exitCode}.`;
+  }
+
+  return null;
+}

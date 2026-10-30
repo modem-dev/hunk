@@ -1,0 +1,493 @@
+---
+name: hunk-launch-video
+description: Produces Hunk videos by driving the real TUI headlessly in a PTY, compositing captioned 1080p frames in Chromium, and encoding with ffmpeg. Use for feature demos, workflow explainers, announcements, launch videos, and full-release roundups.
+metadata:
+  internal: true
+---
+
+# Hunk video pipeline
+
+Source-checkout only: the pipeline lives in `scripts/launch-video/`, which never ships to npm.
+It can be used for pull-request demos as well as maintainer release videos. Unix-only — the
+capture scripts exec `/bin/bash`.
+
+Generates product videos where every terminal frame is the real Hunk TUI —
+no screen recording, no mockups. Three stages:
+
+```text
+capture.ts   (bun)               drive Hunk over a PTY, snap styled keyframes to PNG
+compose.mjs  (node + Playwright) render each PNG on a 1920x1080 HTML stage in Chromium
+ffmpeg                           encode the composited PNGs at 30fps to mp4/webm
+```
+
+Playwright controls headless Chromium: for each planned frame it loads the
+terminal PNG onto the HTML stage, applies the window chrome, cards, captions,
+and transition state, then screenshots the completed stage back to PNG. ffmpeg
+sequences those composited screenshots into the final videos.
+
+The generic machinery (PTY driving, keyframe rendering, storyboard planning,
+Chromium compositing, the stage template) is the `@hunk/term-video` workspace
+package in `packages/term-video/`; `scripts/launch-video/` holds only Hunk's
+scenes, captions, and cards on top of it.
+
+## Choosing a recipe
+
+The pipeline is not release-specific. Choose the editorial scope, then use the
+same capture → composite → encode stages:
+
+- **Single feature:** a short demonstration of one capability or workflow. Use
+  the single-feature recipe below and capture only the required scene.
+- **Full release:** the social promo for a release, in Hunk's house style
+  (`scripts/launch-video/promo/`). Use the full-release recipe: write one
+  storyboard file for the release; the style kit stays unchanged.
+- **Custom video:** author any set of scenes and `SHOTS` for tutorials,
+  comparisons, announcements, or workflow explainers; follow the scene and
+  storyboard rules below.
+
+## Creating a video
+
+Expect ~3–6 min for capture and ~2–4 min for compose — run both with a long
+timeout (or in the background); each logs per-snap / per-shot progress.
+`compose.mjs` needs node ≥ 18 on PATH (bun alone is not enough).
+
+```sh
+# 0. dependencies (tuistory is a devDependency; ghostty-opentui arrives transitively)
+bun install    # if a postinstall hook fails in a sandbox, retry with --ignore-scripts
+
+# 1. capture the current storyboard's default scenes. Output defaults to
+#    <repo>/.video-work/ regardless of cwd (pass a path argument to override),
+#    but the PROCESS must run from the repo root — see gotchas.
+bun run scripts/launch-video/capture.ts
+
+# 2. one-time portable compositor setup. Playwright installs a Chromium build
+#    that exactly matches its browser driver (see gotchas to reuse a system or
+#    sandbox browser instead).
+printf '{"name":"hunk-video-work","private":true}\n' > .video-work/package.json
+cd .video-work
+bun add playwright playwright-core
+bunx playwright install chromium
+cd ..
+
+# 3. composite the storyboard
+node scripts/launch-video/compose.mjs .video-work
+
+# 4. encode
+cd .video-work
+ffmpeg -y -f concat -safe 0 -i concat.txt -vf "format=yuv420p" -r 30 \
+  -c:v libx264 -preset slow -crf 18 -movflags +faststart launch.mp4
+ffmpeg -y -f concat -safe 0 -i concat.txt -vf "format=yuv420p" -r 30 \
+  -c:v libvpx-vp9 -b:v 0 -crf 32 -row-mt 1 launch.webm
+```
+
+Override the default scene set to iterate on one or more scenes:
+
+```sh
+SCENES=review bun run scripts/launch-video/capture.ts   # comma-separated scene names
+```
+
+Scene names are the `wants("...")` guards in `capture.ts`'s `main()`. `SCENES=`
+replaces the canonical default scene set; `compose.mjs` preflights that every
+frame its `SHOTS` table references exists in `frames/` and fails fast listing
+any missing ones, so a full composite still needs every referenced scene
+captured at least once.
+
+## Single-feature recipe
+
+For a short test, demo, or one-feature announcement, capture and composite only
+the scene for that feature:
+
+1. Pick one user-visible capability and find its scene name in the
+   `wants("...")` guards. If it does not have a scene, author one using the
+   guidance below. Capture only that scene:
+
+   ```sh
+   SCENES=review bun run scripts/launch-video/capture.ts
+   ```
+
+2. Make a scratch compositor beside the canonical one so its imports and
+   repo-relative paths continue to work:
+
+   ```sh
+   cp scripts/launch-video/compose.mjs scripts/launch-video/compose-one-feature.mjs
+   ```
+
+3. In the scratch copy, trim `SHOTS` to an opening card, only the selected
+   feature's frames, and an outro card. Rewrite those cards and captions for
+   the scoped cut. Sequence lengths must still match the captured frame names.
+4. Composite into the same work directory, then run the normal ffmpeg commands
+   with descriptive output names:
+
+   ```sh
+   node scripts/launch-video/compose-one-feature.mjs .video-work
+   cd .video-work
+   ffmpeg -y -f concat -safe 0 -i concat.txt -vf "format=yuv420p" -r 30 \
+     -c:v libx264 -preset slow -crf 18 -movflags +faststart hunk-feature-demo.mp4
+   ffmpeg -y -f concat -safe 0 -i concat.txt -vf "format=yuv420p" -r 30 \
+     -c:v libvpx-vp9 -b:v 0 -crf 32 -row-mt 1 hunk-feature-demo.webm
+   cd ..
+   rm scripts/launch-video/compose-one-feature.mjs
+   ```
+
+Keep the scratch compositor uncommitted. The canonical `compose.mjs` remains
+the checked-in reference storyboard. If you added a capture scene only to make
+PR evidence, revert that scene after encoding; retain it only when it is useful
+checked-in demo coverage and belongs to the submitted change.
+
+## Full-release recipe
+
+Release videos use the promo style kit in `scripts/launch-video/promo/`, so
+every release looks like part of one series. The kit renders through
+`@hunk/term-video/timeline`:
+
+```text
+storyboards/<version>.mjs   release content: chapters, captions, montage, credits range
+engine.js + stage.html      the style: sting, countdown hook, chapter cards, terminal
+                            scenes, montage, contributors h, outro, transitions
+contributors.mjs            git range -> contributors.json + avatars/
+render.mjs                  storyboard + frames + contributors -> promo-<version>.mp4
+```
+
+1. **Pick the headlines.** Read the release section in `CHANGELOG.md` (or its
+   hand-written **Highlights**) and choose 4–6 chapters ordered by impact: new
+   capabilities first, then visible UI/UX changes, then smaller conveniences.
+   Per-PR entries that are too small for a chapter go in the montage. Check
+   that each claim is accurate: a Patch-level fix can earn a chapter, but name
+   what it does rather than calling it new. Confirm the shortlist with the
+   user before capturing.
+2. **Start the storyboard** by copying the newest one, for example
+   `cp storyboards/0.24.0.mjs storyboards/0.25.0.mjs`. Set `version`,
+   rewrite `chapters` and `montage`, set `montage.fixes.count` from the
+   changelog's patch entries, and point `contributors.from`/`to` at the
+   previous release tag and this release's tag. Leave `aliases` from older
+   releases out unless they still apply.
+3. **Capture** each chapter's keyframes, reusing or adding scenes in
+   `capture.ts` (see "Authoring scenes"); every `frames[].img` must name a
+   captured keyframe. `SCENES=a,b bun run scripts/launch-video/capture.ts`.
+4. **Credits.** Fetch tags and history (`git fetch --tags --unshallow` in a
+   shallow clone), then run
+   `node scripts/launch-video/promo/contributors.mjs .video-work`. Review the
+   printed table: everyone who authored or co-authored a commit in the range
+   appears once, bots and AI co-author trailers excluded. Map unresolved
+   people to logins with `contributors.aliases` (email or name to a login, or
+   `{ login, id }` when the GitHub users API is unavailable) and rerun; anyone
+   still unresolved is credited by name with an initials tile. Never guess an
+   account.
+5. **Work dir.** Besides `playwright-core` (see gotchas), the kit needs the
+   brand font: `cd .video-work && bun add @fontsource-variable/jetbrains-mono`.
+6. **Stills first.** `node scripts/launch-video/promo/render.mjs .video-work
+--stills 2.6,8,14,...` renders review frames in seconds; check every
+   chapter's callouts and captions before the full render. `render.mjs`
+   validates the storyboard and lists any missing keyframes up front.
+7. **Render** with `node scripts/launch-video/promo/render.mjs .video-work`
+   (about 3 minutes for a minute of video) and verify the cut (see
+   "Verification"). When `hunk-release` invoked this workflow, return the
+   approved MP4 to that skill for versioned naming and embedding; do not upload
+   or edit the public release without its confirmation gate.
+
+### Chapter reference
+
+Times are seconds from the start of the chapter's terminal scene; camera,
+highlight, and label coordinates are fractions of the captured frame.
+
+- `label`, `title` (lines; prefix a word with `*` to color it), `sub`, `cmd`
+  (typed into the title card's command chip), `winTitle`.
+- `frames: [{ img, dur, key?, fade? }]` plays keyframes in order. `key` shows
+  that keycap pressing as the frame appears, so one frame per keypress reads
+  as typing; `fade` crossfades from the previous frame (use it for layout
+  swaps). The `steps()` helper in the 0.24.0 storyboard builds key-walk runs.
+- `cameras: [[t, { x, y, scale }, motionSeconds?]]` must start at time 0.
+- `highlights: [{ t0, t1, x, y, w, h }]` and `labels: [{ t0, t1, x, y, text }]`
+  outline and annotate source regions; keep edges in blank rows and labels off
+  terminal text (see "Camera and callout composition").
+- `captions: [[t, html]]` with `<b>` for the accent color.
+- `bodyH` gives short shell output a compact window instead of a full screen.
+
+### Extending the style
+
+Keep release copy out of `engine.js`: it reads everything release-specific
+from the storyboard, and its defaults hold only brand constants (tagline,
+install command, site). When a release needs something the kit cannot show,
+add a reusable scene type or storyboard field to the engine and document it
+here rather than special-casing one release. The brand geometry in the engine
+follows `website/public/brand/`; update both together.
+
+The caption storyboard below (`compose.mjs` on the shared stage) remains the
+tool for single-feature demos, PR evidence, and custom explainers.
+
+## Per-video editorial surface
+
+This section covers the caption storyboard used for single-feature, PR, and
+custom videos; release promos keep their content in `promo/storyboards/`. The
+capture machinery is reusable, but the storyboard is editorial content for one
+video. Rewrite it to match the video's scope. The checked-in reference is the
+0.24 release roundup, not a frozen release artifact:
+
+- `compose.mjs`: the whole `SHOTS` table; opening, feature, and outro cards;
+  every caption; camera targets; and callout rectangles. A `NEW` badge is a
+  claim about the video at hand, so drop or move it as features age.
+- `capture.ts`: `SCENES` selects from a reusable scene library. With no
+  override it captures only the current storyboard's default scene; update
+  that default whenever the canonical storyboard changes. Hunk-side glue
+  (`launchHunk`, `launchHunkShell`, demo repositories, and the keyboard probe)
+  remains reusable.
+
+Reusable machinery lives in `@hunk/term-video` (`packages/term-video/`) —
+extend it there, don't fork it into the scripts: `createKeyframer`,
+`launchApp`/`launchShell`, `createCommandWrapper`, `typeCommand`,
+`ensureKeyboardIsLive`, `makeSceneFilter` (`src/capture.ts`); the unit-tested
+storyboard planner with the caption/timing semantics (`src/plan.mjs`);
+`composeStoryboard` with font/Chromium resolution and the missing-keyframe
+preflight (`src/compose.mjs`); the stage template (`src/stage.html`); and
+`renderTimeline` for free-form motion pages such as the promo kit
+(`src/timeline.mjs`).
+
+## Environment gotchas
+
+Sandbox-specific bullets are marked; each cost real debugging time.
+
+- **Run `capture.ts` with bun from the repo root.** tuistory uses subpath
+  self-imports (`tuistory/pty`) that only resolve inside this repo's
+  `node_modules`; running the script from elsewhere resolves tuistory from
+  bun's global cache and crashes. (Output location is unaffected — it defaults
+  to `<repo>/.video-work/` via `import.meta.url`.)
+- **ghostty-opentui is a transitive dep** (via tuistory) with an exports map:
+  import `"ghostty-opentui/image"` (not `.../dist/image.js`), resolved
+  relative to tuistory — `@hunk/term-video/capture`'s `createKeyframer` does
+  the `Bun.resolveSync` dance.
+- **Playwright must match the Chromium it drives.** The portable setup above
+  installs `playwright` and `playwright-core` together, then downloads their
+  matching Chromium build. It works on macOS and Linux and is preferred when
+  bandwidth and browser downloads are available; leave `CHROMIUM_PATH` unset
+  so Playwright uses that managed browser. On Linux, if Chromium reports
+  missing system libraries, run `bunx playwright install-deps chromium` (it
+  may require sudo) before retrying.
+
+  To reuse an existing system, CI, or sandbox Chromium instead, install the
+  `playwright-core` version provided by that environment and set its executable
+  explicitly:
+
+  ```sh
+  cd .video-work
+  bun add playwright-core@<matching-version>
+  cd ..
+  CHROMIUM_PATH=/path/to/chromium node scripts/launch-video/compose.mjs .video-work
+  ```
+
+  Common executable locations include `$(command -v chromium)` or
+  `$(command -v google-chrome)` on Linux and
+  `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome` on macOS.
+  In an environment with a preinstalled Playwright toolchain, read that
+  toolchain's `package.json` to get the exact driver version. For example, the
+  Anthropic sandbox exposes it through `/opt/pw-browsers/.links/*`:
+
+  ```sh
+  cat "$(cat /opt/pw-browsers/.links/* | head -1)/package.json" | grep '"version"'
+  # e.g. "1.56.1" -> bun add playwright-core@1.56.1
+  ```
+
+  `compose.mjs` picks its browser as `$CHROMIUM_PATH`, then
+  `/opt/pw-browsers/chromium` when present, then Playwright's managed browser.
+  If a dependency update leaves Playwright asking for an uninstalled browser
+  revision, either rerun `bunx playwright install chromium` in `.video-work/`
+  or set `CHROMIUM_PATH` to a known system browser such as `/usr/bin/chromium`.
+
+- **Give `.video-work/` its own `package.json` before `bun add`.** Without
+  one, bun walks up and installs into the repo's `package.json` — revert with
+  `git checkout package.json bun.lock` if that happens.
+- **Chromium needs `--allow-file-access-from-files`** (already in
+  `compose.mjs`): the stage samples each keyframe through a canvas to
+  color-match the window background, and file:// images taint the canvas
+  without it.
+- **mp4 needs an ffmpeg with libx264.** Sandbox: `apt-get install ffmpeg`
+  (run `apt-get update` first if packages 404). macOS: `brew install ffmpeg`.
+  Verify `ffmpeg -encoders | grep -E 'libx264|libvpx-vp9'` shows both before
+  encoding — playwright's bundled `ffmpeg-*/ffmpeg-linux` only does VP8/WebM
+  and cannot produce the mp4.
+- **Caption font**: JetBrains Mono ships inside ghostty-opentui;
+  `findCaptionFont` in `packages/term-video/src/compose.mjs` searches bun's
+  isolated layout (`node_modules/.bun/node_modules/…`) then a hoisted
+  `node_modules/…`. If it still throws `caption font not found`, locate the
+  file with `find node_modules -name jetbrains-mono-nerd.ttf` and pass it as
+  `fontPath` to `composeStoryboard`.
+
+## Authoring scenes (capture.ts)
+
+- Shared geometry is 140x32 cells rendered at fontSize 16 / dpr 2 → 2688x1536
+  PNGs. Keep every scene at this size so all frames fit one window.
+- Keep time-sensitive fixtures recent and timezone-stable. The canonical
+  history scene derives commit dates from the current UTC day and launches
+  Hunk with `TZ=UTC`, so day groups and relative-age labels remain useful on
+  future runs. Preserve that policy in custom history scenes.
+- Helpers: `createDemoRepo()` and `launchHunkShell()` are hunk-side glue in
+  the script (git repo built from `examples/2-mini-app-refactor`; interactive
+  bash with a real `hunk` command on PATH and a clean `❯` prompt); `snap`,
+  `typeCommand`, `launchApp`/`launchShell`, and `createCommandWrapper` come
+  from `@hunk/term-video/capture`.
+- Always `waitForText` on scene-specific content before the first snap, and
+  call `ensureKeyboardIsLive()` before scripted keypresses — the first key
+  after startup can be dropped (real race, the helper toggles `?` to prove
+  keys land).
+- **Animation = one snap per keypress.** Cursor walks and typing effects are
+  just every `j`/`k`/character captured as its own frame and played back at
+  0.2–0.3s per frame. Prefer this over sparse keyframes: three stills read as
+  a slideshow, per-press frames read as motion.
+- `renderTerminalToImage` auto-trims trailing blank rows, so short outputs
+  (CLI scenes) produce short PNGs — the stage handles this by sampling the
+  image's bottom-left pixel and painting the window body to match.
+- `manifest.json` is a capture-side inventory of the _current run_ only;
+  `compose.mjs` ignores it (frames resolve by name from `SHOTS`), and after a
+  `SCENES=` run it is partial while `frames/` stays cumulative.
+- Demo content that must exist: STML notes come from
+  `examples/9-agent-markup-notes` (launch with `--experimental`), extension
+  scenes from `examples/extensions/` loaded via `--extension <path>` (explicit
+  paths skip the repo trust prompt). The pager pipe is `git diff | hunk pager`
+  — bare `hunk` on piped stdin prints help. Sidebar toggle is `s`; comment
+  draft is `c`, save with Ctrl+S (`\x13`).
+
+## Storyboard model (compose.mjs)
+
+- `SHOTS` is the whole edit: one entry per shot, `dur` in seconds, played as
+  unique frames + per-frame durations in an ffmpeg concat list (holds cost one
+  frame, so runtime is dominated by transitions, not length).
+- `capKey` is caption identity: the caption slides in only when `capKey`
+  changes, and continuation shots that share a `capKey` without restating
+  `caption` keep the previous caption on screen. Sequences (walks, typing) are
+  generated with `Array.from` spreads.
+- **Sequence lengths must match capture loop bounds**: the open capture's
+  four-step tree walk plus its select and expand presses produce
+  `open-tree-0..5`, consumed by a six-entry `Array.from` spread in `SHOTS`.
+  Change one side and the other breaks — the preflight check names any frame
+  that's missing.
+- `enter: true` fades/scales the surface in — use it for cards and the first
+  terminal shot only.
+- Terminal shots may set normalized `camera: { x, y, scale }` targets and
+  `highlight: { x, y, width, height, label? }` rectangles. `motion` controls
+  the transition length in seconds. The planner interpolates camera changes
+  and outline geometry, while the stage keeps the camera inside the captured
+  image and paints an animated glow around the source-aligned region. Set the
+  same `cameraKey` or `highlightKey` on related keyframes when their normalized
+  coordinates share one capture geometry. Cross-image camera changes cut to
+  their target unless `cameraKey` explicitly permits a pan, and outlines never
+  leak across unrelated images.
+- Caption HTML vocabulary: `<span class="badge">NEW</span>` amber pill,
+  `<span class="hl">` amber highlight, `<span class="dim">` muted. Cards use
+  `badge` / `h1`/`h2` / `sub` / `cmds`+`cmd` / `foot` classes from
+  `packages/term-video/src/stage.html`.
+- Target pacing: money shots hold 3–4s, context shots 2–3s, typing/walk frames
+  0.2–0.6s; keep the total near 60s.
+
+## Camera and callout composition
+
+Treat `camera` and `highlight` as one composition. Both use normalized source
+coordinates, but the stage projects highlights through the active camera. A
+rectangle that fits within the source can still lose an edge after zooming.
+
+Use this framing process:
+
+1. Start with a full-frame establishing shot, then pan or zoom to one readable
+   subject. Use `motion` around 0.7–0.9s for a deliberate move rather than a
+   cut disguised as animation.
+2. Fit the target plus its outline inside the camera viewport. Leave about 1%
+   of the visible width on each side and at least one terminal row above and
+   below the meaningful content. If that does not fit, reduce `camera.scale`.
+3. Put outline edges in actual blank rows. Mathematical padding can move a
+   border onto a neighboring date heading, status row, or metadata line.
+4. Check both sides of the capture. A zoom that preserves left-aligned subjects
+   can still crop hashes, authors, or status text aligned to the right.
+5. Give irregular states explicit rectangles. A growing commit range that
+   crosses day separators should use measured per-keyframe heights instead of
+   assuming every added item occupies the same vertical distance.
+6. Share `cameraKey` or `highlightKey` only when captures use the same source
+   geometry. This allows pans and outline morphs across related captures;
+   unrelated keyframes cut or fade separately.
+
+The outline should direct attention, not become the subject. Use one callout at
+a time, keep labels short, and remove the outline once the viewer has enough
+context to follow the interaction unaided.
+
+## Command and output legibility
+
+Terminal commands and their results must be readable at normal playback size.
+Never rely on a full-width terminal prompt or output region as the only way the
+viewer can understand a command scene; text that looks acceptable in a 1080p
+source frame is often illegible in an embedded player or social feed.
+
+Use this default treatment:
+
+1. **Present the exact command in large type.** The easiest treatment is a
+   `cmd` card or an oversized editorial callout immediately before the real
+   terminal result. A typing animation may remain for motion, but it does not
+   replace the large command treatment.
+2. **Zoom the real output.** Crop or scale the captured terminal frame around
+   the meaningful result so both the command and the important output lines
+   are comfortably readable. A brief full-window establishing shot is fine,
+   but the result's main hold must use the focused view.
+3. **Keep the evidence real.** Never fabricate terminal output. Large command
+   text may reproduce the exact command as an editorial overlay; any enlarged
+   output must come from the captured PTY frame. If reusable crop/zoom controls
+   are missing, add them to `@hunk/term-video` rather than baking one-off image
+   edits into a storyboard.
+4. **Trim before shrinking.** Prefer fewer relevant lines and a tighter crop
+   over fitting a long transcript into the frame. Split a workflow across
+   multiple focused shots when one crop cannot keep every important line
+   legible.
+
+Treat command legibility as a release gate: if the command or its result cannot
+be read when the 1920x1080 video is displayed at 50% size, revise the shot.
+
+## Content accuracy (learned the hard way)
+
+- **Verify install commands against reality**, not the README: check
+  `npm view hunkdiff dist-tags`. A prerelease needs `npm i -g hunkdiff@beta`;
+  `brew install hunk` only serves stable (homebrew-core Autobump, lags npm) —
+  omit brew on prerelease cards.
+- **Label demo extensions as examples.** The triage board, CSS palette, and
+  semver views are `examples/extensions/`, not shipped features — caption them
+  with a dimmed `example:` prefix. The real features are the APIs (sidebars,
+  file views, commands, dialogs).
+- Window titles are decorative but must not lie: the shell scenes run bash,
+  so keep their titles generic (`shell — …`) rather than naming a shell the
+  capture doesn't launch.
+- STML requires `--experimental`; say so on the outro card.
+- The video is silent — never imply audio in the video or its announcement copy.
+
+## Verification and delivery
+
+- Eyeball keyframes in `.video-work/frames/` (Read renders PNGs) after
+  capture — especially new scenes — before compositing.
+- Inspect every command scene at 50% display size. Confirm the exact command is
+  shown in large type and the meaningful real output is zoomed tightly enough
+  to read; a readable caption does not compensate for unreadable terminal text.
+- Composite and encode the MP4 first. Inspect it before spending time on the
+  slower VP9/WebM encode; produce both final formats only after the visual pass.
+- After encoding, return to the repository root, set `VIDEO` to the produced
+  MP4, and inspect a settled frame for each callout, a mid-animation point,
+  each new scene, and the outro:
+
+  ```sh
+  VIDEO=.video-work/hunk-feature-demo.mp4 # or .video-work/launch.mp4
+  ffmpeg -y -ss 2 -i "$VIDEO" -frames:v 1 -update 1 .video-work/check.png
+  ffprobe -v error -show_entries format=duration,size \
+    -show_entries stream=codec_name,width,height,r_frame_rate \
+    -of default=noprint_wrappers=1 "$VIDEO"
+  ```
+
+  Captions must persist through extracted animation frames. Every callout must
+  show all four borders, keep its label clear of terminal text, leave visible
+  padding around its subject, and avoid clipping right-aligned metadata.
+
+- Compare the storyboard planner's reported duration with `ffprobe`; they
+  should agree within one frame. The concat manifest declares the PNG input
+  rate so 30 fps animation timestamps stay exact. Investigate larger drift
+  before delivery.
+
+- Outputs stay under `.video-work/`: the full-release recipe creates
+  `launch.mp4`/`launch.webm`, while the single-feature recipe above creates
+  `hunk-feature-demo.mp4`/`hunk-feature-demo.webm`. `.video-work/` is
+  gitignored — never commit the video or its frames. For a standalone video
+  request, send both files to the user directly (mp4: social/Slack; webm: web
+  embeds), report duration and file sizes, and flag if the mp4 exceeds ~10 MB
+  (Slack) or ~15 MB (X). When invoked by `hunk-release`, hand both files back
+  to that workflow instead; it owns versioned filenames, GitHub's
+  user-attachment limit, public embedding, and inline-player verification.
+  Copy them elsewhere only if the user names a destination.

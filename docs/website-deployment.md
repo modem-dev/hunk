@@ -1,0 +1,70 @@
+# Website deployment
+
+Publish the Hunk landing page and documentation together from one Astro build.
+
+The `website/` Astro project owns the complete `hunk.dev` site:
+
+- `/` is the marketing landing page.
+- `/docs/` and `/docs/*` are the Starlight documentation.
+- `/pagefind/` contains the documentation search index.
+- `/docs/hunk-review-skill.md` publishes the generated agent skill.
+- `/changelog/` and `/compare/` are generated from `CHANGELOG.md` and the comparison data.
+- `/install.sh` is the installer, staged into the build by `scripts/packaging/stage-install-script.ts`; `/install` rewrites to it.
+
+One static build keeps navigation, metadata, and deployment atomic. Do not copy the docs into the former `hunk-web` repository or operate a second docs origin.
+
+## Build the immutable artifact
+
+From the Hunk repository root:
+
+```bash
+bun install --frozen-lockfile
+bun install --cwd website --frozen-lockfile
+bun run website:check
+bun run website:build
+bun run website:links
+```
+
+Archive `website/dist/` as one deployable artifact. `bun run website:build` checks that generated references and the public agent skill still match their authoritative runtime sources before Astro builds the site.
+
+## Deploy with Vercel
+
+The repository-level `vercel.json` defines the install command, build command, Astro framework, and `website/dist` output directory. Its `ignoreCommand` skips deployments for commits that touch none of the website, installer, docs generators, or `CHANGELOG.md`. It also rewrites `/install` to `/install.sh` and `/api/release/latest` to the release-proxy Worker (`workers/release-proxy/`) so the installer and `hunk update` resolve releases from the apex domain rather than the Worker's own hostname. Configure one Vercel project with:
+
+- **Git repository:** `modem-dev/hunk`
+- **Root directory:** repository root
+- **Production branch:** `main`
+- **Domain:** `hunk.dev` and `www.hunk.dev`
+- **Optional environment variable:** `GITHUB_TOKEN` for authenticated build-time star counts
+
+Vercel should deploy pushes to `main` after the website and repository checks pass. Pull requests can use preview deployments from the same project.
+
+## Cut over from `hunk-web`
+
+1. Deploy this repository to a Vercel preview and verify both `/` and `/docs/`.
+2. Move `hunk.dev` and `www.hunk.dev` from the old `hunk-web` Vercel project to the unified project.
+3. Verify production before disabling the old project.
+4. Archive `modem-dev/hunk-web` after the cutover so the landing page does not drift into a second implementation.
+
+The domain move is the only production switch. No proxy or `/docs` path mount is required beyond the rewrites in `vercel.json`.
+
+## Verify before switching traffic
+
+```bash
+curl --fail --location https://hunk.dev/
+curl --fail --location https://hunk.dev/docs/
+curl --fail https://hunk.dev/sitemap.xml
+curl --fail https://hunk.dev/pagefind/pagefind.js
+curl --fail https://hunk.dev/docs/hunk-review-skill.md
+curl --fail --silent https://hunk.dev/install.sh | head -1
+curl --fail https://hunk.dev/og.png
+curl --fail --location --silent --show-error --dump-header - https://hunk.dev/api/release/latest | grep --extended-regexp '^cache-control: no-store|"version"'
+```
+
+The last check must print both the `no-store` header and a `"version"` line; an HTML page or a cached response means the release rewrite is misrouted.
+
+In a browser, confirm the landing page links to the docs, theme previews switch, the install command copies, documentation search returns results, theme selection persists across docs navigation, and a GitHub edit link opens the matching source file.
+
+## Roll back
+
+Reassign the domains to the previous Vercel project or promote the last known-good unified deployment. The site is static and has no data migration, so rollback is a domain or deployment promotion rather than an application recovery.

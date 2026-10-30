@@ -1,0 +1,29 @@
+---
+interface Props {
+  context?: "marketing" | "docs";
+}
+
+const { context = "marketing" } = Astro.props;
+const REPO = "https://github.com/modem-dev/hunk";
+const DISCORD = "https://discord.gg/WZFjaP6Gt8";
+const NPM = "https://www.npmjs.com/package/hunkdiff";
+---
+
+<footer class="brand-footer" data-context={context}>
+  <div class="brand-footer-links">
+    <a href="/docs/">Docs</a>
+    <a href="/compare/">Compare</a>
+    <a href="/brand/">Brand</a>
+    <a href={REPO}>GitHub</a>
+    <a href={NPM}>npm</a>
+    <a href={DISCORD}>Discord</a>
+  </div>
+  <a
+    class="brand-modem"
+    href="https://modem.dev?utm_source=hunk_web&utm_medium=oss&utm_campaign=oss_hunk"
+    aria-label="Built by Modem"
+  >
+    <span>Built by</span>
+    <img src="/modem-light.svg" alt="Modem" width="82" height="16" />
+  </a>
+</footer>

@@ -1,0 +1,18 @@
+---
+import Default from "@astrojs/starlight/components/MarkdownContent.astro";
+
+// Changelog pages are generated Markdown with a fixed shape — an h3 per version, a meta line, then
+// h4 change sections. Marking the wrapper lets `starlight.css` style that shape as a release list
+// without the generator emitting per-page markup, and without touching ordinary docs pages.
+const isChangelog = Astro.url.pathname.startsWith("/changelog");
+---
+
+{
+  isChangelog ? (
+    <div data-changelog>
+      <Default><slot /></Default>
+    </div>
+  ) : (
+    <Default><slot /></Default>
+  )
+}

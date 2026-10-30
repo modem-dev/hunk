@@ -1,0 +1,24 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "astro",
+  "git": {
+    "deploymentEnabled": {
+      "**": false,
+      "main": true
+    }
+  },
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- ./website ./vercel.json ./install.sh ./scripts/packaging/stage-install-script.ts ./scripts/generate/generate-docs.ts ./scripts/generate/generate-changelog.ts ./CHANGELOG.md",
+  "installCommand": "SKIP_INSTALL_SIMPLE_GIT_HOOKS=1 bun install --frozen-lockfile && bun install --cwd website --frozen-lockfile",
+  "buildCommand": "bun run website:build",
+  "outputDirectory": "website/dist",
+  "rewrites": [
+    { "source": "/install", "destination": "/install.sh" },
+    { "source": "/api/release/latest", "destination": "https://updates.hunk.dev/v1/curl/latest" }
+  ],
+  "headers": [
+    {
+      "source": "/install(\\.sh)?",
+      "headers": [{ "key": "Content-Type", "value": "text/plain; charset=utf-8" }]
+    }
+  ]
+}

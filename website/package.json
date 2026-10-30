@@ -1,0 +1,28 @@
+{
+  "name": "hunk-website",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "generate:brand": "bun scripts/generate-brand.ts",
+    "build": "astro build && bun scripts/publish-sitemap-alias.ts",
+    "preview": "astro preview",
+    "check": "astro check",
+    "test:browser": "playwright test"
+  },
+  "dependencies": {
+    "@astrojs/markdown-remark": "^7.2.1",
+    "@astrojs/sitemap": "^3.7.3",
+    "@astrojs/starlight": "^0.41.5",
+    "@fontsource-variable/jetbrains-mono": "^5.2.8",
+    "astro": "^7.1.4",
+    "starlight-dot-md": "^0.2.1",
+    "starlight-llms-txt": "^0.11.0"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.10",
+    "@axe-core/playwright": "^4.10.2",
+    "@playwright/test": "^1.56.1",
+    "typescript": "^5.9.3"
+  }
+}

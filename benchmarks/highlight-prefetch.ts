@@ -5,8 +5,9 @@ import React from "react";
 import { testRender } from "@opentui/react/test-utils";
 import { parseDiffFromFile } from "@pierre/diffs";
 import { act } from "react";
-import { AppHost } from "../src/ui/AppHost";
-import type { AppBootstrap, DiffFile } from "../src/core/types";
+import { BenchmarkAppHost as AppHost } from "./lib/appHost";
+import type { AppBootstrap } from "../packages/hunk/src/core/bootstrap";
+import type { DiffFile } from "../packages/hunk/src/core/changeset/model";
 
 function createDiffFile(index: number, marker: string): DiffFile {
   const path = `src/example${index}.ts`;
@@ -52,6 +53,7 @@ function createDiffFile(index: number, marker: string): DiffFile {
 
 function createBootstrap(): AppBootstrap {
   return {
+    reloadContext: { cwd: process.cwd() },
     input: {
       kind: "vcs",
       staged: false,

@@ -1,0 +1,22 @@
+diff --git a/src/retry.ts b/src/retry.ts
+index 609120b..8307a97 100644
+--- a/src/retry.ts
++++ b/src/retry.ts
+@@ -1,3 +1,15 @@
+-export async function fetchOnce(url: string): Promise<Response> {
+-  return fetch(url);
++export async function fetchWithRetry(url: string, attempts = 3): Promise<Response> {
++  let delayMs = 100;
++  for (let attempt = 1; attempt <= attempts; attempt += 1) {
++    try {
++      return await fetch(url);
++    } catch (error) {
++      if (attempt === attempts) {
++        throw error;
++      }
++      await new Promise((resolve) => setTimeout(resolve, delayMs));
++      delayMs *= 2;
++    }
++  }
++  throw new Error("unreachable");
+ }

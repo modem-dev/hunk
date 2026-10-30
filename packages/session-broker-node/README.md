@@ -1,8 +1,10 @@
 # @hunk/session-broker-node
 
-Node HTTP and websocket adapter for `@hunk/session-broker`.
+Private Node HTTP and websocket adapter for `@hunk/session-broker`.
 
-Use this package when you want to prove or use the broker daemon under Node instead of Bun.
+Use this workspace to serve the broker daemon under Node instead of Bun. It is not a published,
+versioned SDK package. See the main broker README for current internal API construction and the
+[session broker SDK contract](../../docs/session-broker-sdk.md) for the future public package.
 
 ## What it does
 
@@ -14,19 +16,14 @@ Use this package when you want to prove or use the broker daemon under Node inst
 
 ## Usage
 
+Create the daemon with steps 1–2 in
+[`@hunk/session-broker`](../session-broker/README.md), then bind it to Node:
+
 ```ts
-import { SessionBroker, createSessionBrokerDaemon } from "@hunk/session-broker";
+import type { SessionBrokerDaemon } from "@hunk/session-broker";
 import { serveSessionBrokerDaemon } from "@hunk/session-broker-node";
 
-const broker = new SessionBroker({
-  parseRegistration,
-  parseSnapshot,
-});
-
-const daemon = createSessionBrokerDaemon({
-  broker,
-  capabilities: { version: 1, name: "example-broker" },
-});
+declare const daemon: SessionBrokerDaemon;
 
 const server = await serveSessionBrokerDaemon({
   daemon,
@@ -37,7 +34,7 @@ const server = await serveSessionBrokerDaemon({
 
 ## Why this package exists
 
-This package validates that the shared broker API is genuinely runtime-neutral.
+This package runs the shared broker API against Node listener and websocket primitives.
 
 If the Node adapter needs an abstraction the shared package does not provide, the fix should happen in `@hunk/session-broker`, not as Node-only glue.
 

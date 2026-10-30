@@ -1,0 +1,160 @@
+import fs from "node:fs";
+import { dirname, isAbsolute, join, resolve } from "node:path";
+export { resolveCanonicalPath } from "@hunk/vcs/path";
+
+/**
+ * Skills Hunk ships, in the order `hunk skill path` lists them.
+ *
+ * A skill is bundled only if it is in `package.json`'s `files` allowlist and the
+ * prebuilt artifact staging. The repository-root `skills/` directory separately holds
+ * maintainer-only documents that never ship, and naming them here would resolve paths users cannot have.
+ */
+export const BUNDLED_SKILL_NAMES = ["hunk-review", "hunk-extensions"] as const;
+export type BundledSkillName = (typeof BUNDLED_SKILL_NAMES)[number];
+
+/** The skill `hunk skill path` prints when the user names none. */
+export const DEFAULT_BUNDLED_SKILL_NAME: BundledSkillName = "hunk-review";
+
+/** Short aliases accepted alongside each skill's own name. */
+const BUNDLED_SKILL_ALIASES: Record<string, BundledSkillName> = {
+  review: "hunk-review",
+  extensions: "hunk-extensions",
+};
+
+/** Resolve one user-supplied skill name, or nothing when it names no bundled skill. */
+export function resolveBundledSkillName(value: string): BundledSkillName | undefined {
+  const normalized = value.trim().toLowerCase();
+  return (
+    BUNDLED_SKILL_NAMES.find((name) => name === normalized) ?? BUNDLED_SKILL_ALIASES[normalized]
+  );
+}
+
+/** Resolve the base config directory Hunk should use for user-scoped files. */
+export function resolveUserConfigDir(env: NodeJS.ProcessEnv = process.env) {
+  if (env.XDG_CONFIG_HOME) {
+    return env.XDG_CONFIG_HOME;
+  }
+
+  const home = env.HOME || env.USERPROFILE;
+  if (home) {
+    return join(home, ".config");
+  }
+
+  return undefined;
+}
+
+/** Resolve the base state directory Hunk should use for user-scoped files. */
+export function resolveUserStateDir(env: NodeJS.ProcessEnv = process.env) {
+  if (env.XDG_STATE_HOME && isAbsolute(env.XDG_STATE_HOME)) {
+    return env.XDG_STATE_HOME;
+  }
+
+  const home = env.HOME || env.USERPROFILE;
+  return home ? join(home, ".local", "state") : undefined;
+}
+
+/** Resolve the global Hunk config file path from the current environment. */
+export function resolveGlobalConfigPath(env: NodeJS.ProcessEnv = process.env) {
+  const configDir = resolveUserConfigDir(env);
+  return configDir ? join(configDir, "hunk", "config.toml") : undefined;
+}
+
+/** Resolve the persisted Hunk state file path from the current environment. */
+export function resolveAppStatePath(env: NodeJS.ProcessEnv = process.env) {
+  const stateDir = resolveUserStateDir(env);
+  return stateDir ? join(stateDir, "hunk", "state.json") : undefined;
+}
+
+/** Resolve the user-scoped directory Hunk scans for globally installed extensions. */
+export function resolveGlobalExtensionsDir(env: NodeJS.ProcessEnv = process.env) {
+  const configDir = resolveUserConfigDir(env);
+  return configDir ? join(configDir, "hunk", "extensions") : undefined;
+}
+
+/**
+ * Directory inside the global extensions dir that `hunk extension install`
+ * owns. It is not itself a folder extension, so a plain scan of the global
+ * dir skips it; discovery scans its subdirectories — one per installed
+ * repository — explicitly.
+ */
+export const INSTALLED_EXTENSIONS_DIR_NAME = "installed";
+
+/** Resolve the managed install root for `hunk extension install`. */
+export function resolveInstalledExtensionsRoot(env: NodeJS.ProcessEnv = process.env) {
+  const extensionsDir = resolveGlobalExtensionsDir(env);
+  return extensionsDir ? join(extensionsDir, INSTALLED_EXTENSIONS_DIR_NAME) : undefined;
+}
+
+/**
+ * Search one path and its parents for the first of several relative child paths.
+ *
+ * Proximity wins over candidate order: every shape is tested at one ancestor before the
+ * walk moves up. Exhausting one shape to the filesystem root first would let a generic
+ * match far above the start path beat the specific match sitting right at it.
+ */
+function findRelativePathFromAncestors(startPath: string, relativePaths: readonly string[]) {
+  let current = resolve(startPath);
+
+  try {
+    if (fs.statSync(current).isFile()) {
+      current = dirname(current);
+    }
+  } catch {
+    // Treat non-existent paths as directories so ancestor walking still works in tests.
+  }
+
+  for (;;) {
+    for (const relativePath of relativePaths) {
+      const candidate = join(current, relativePath);
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
+    }
+
+    const parent = dirname(current);
+    if (parent === current) {
+      return undefined;
+    }
+
+    current = parent;
+  }
+}
+
+/**
+ * Resolve one bundled skill's path from source, npm, or prebuilt package layouts.
+ *
+ * Every shipped skill lives at `skills/<name>/SKILL.md` in all three layouts, so the name is
+ * the only thing that varies and the search stays one walk. Within each directory, prefer
+ * Hunk's namespaced staging tree, then standalone skills, then a nested npm package.
+ */
+export function resolveBundledSkillPath(
+  name: BundledSkillName = DEFAULT_BUNDLED_SKILL_NAME,
+  searchRoots?: string[],
+) {
+  const roots = searchRoots ?? [import.meta.dir, process.execPath];
+  const skillRelativePath = join("skills", name, "SKILL.md");
+  // Prefer the Hunk-specific staging tree over generic skills. Both shipped layouts outrank
+  // node_modules/hunkdiff, which may belong to another project and contain a stale copy.
+  const relativeCandidates = [
+    join("hunkdiff", skillRelativePath),
+    skillRelativePath,
+    join("node_modules", "hunkdiff", skillRelativePath),
+  ];
+
+  for (const root of roots) {
+    const resolvedPath = findRelativePathFromAncestors(root, relativeCandidates);
+    if (resolvedPath) {
+      return resolvedPath;
+    }
+  }
+
+  throw new Error(`Could not locate the bundled Hunk ${name} skill.`);
+}
+
+/** Read one bundled skill's full SKILL.md text, the document `hunk skill show` prints. */
+export function readBundledSkillDocument(
+  name: BundledSkillName = DEFAULT_BUNDLED_SKILL_NAME,
+  searchRoots?: string[],
+) {
+  return fs.readFileSync(resolveBundledSkillPath(name, searchRoots), "utf8");
+}
