@@ -10,7 +10,7 @@ Where Hunk's logo files live, which version to use where, and the colors and typ
 
 ## Public downloads
 
-The public brand page at [hunk.dev/brand/](https://hunk.dev/brand/) offers all four logos in
+The public brand page at [hunk.dev/brand/](https://hunk.dev/brand/) offers all five logos in
 ink and paper colors as SVG, 2048px-wide PNG (transparent, or solid on the paired background so
 it stays visible in any image viewer), and vector PDF, plus a ZIP bundle. The website footer
 links to it.
@@ -33,12 +33,13 @@ the website build does not require the export tools.
 
 All files are in `website/public/brand/` and served at `https://hunk.dev/brand/<file>`. They are filled with the ink color `#16140f`; recolor by editing the `fill`, or inline the SVG and use `currentColor`. Each viewBox already includes about one stem-width of clear space, so exports never touch their edges.
 
-| File                | What it is                                                                | Use it for                                                                           |
-| ------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `logo-mark.svg`     | Flat "h" mark: a framed square with a stem and top-right bar. No outline. | Header, favicon, app icons, avatars, anything under ~40px.                           |
-| `logo-mark-3d.svg`  | The "h" block with its offset outline shadow.                             | Large placements only (about 40px and up): hero art, slides, social cards, stickers. |
-| `logo-wordmark.svg` | The lowercase `hunk` letters on their own.                                | Next to the mark when the lockup is too heavy; text-only contexts.                   |
-| `logo-lockup.svg`   | 3D mark plus wordmark.                                                    | Open Graph images, README banner, talk title slides.                                 |
+| File                   | What it is                                                                | Use it for                                                                           |
+| ---------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `logo-mark.svg`        | Flat "h" mark: a framed square with a stem and top-right bar. No outline. | Header, favicon, app icons, avatars, anything under ~40px.                           |
+| `logo-mark-3d.svg`     | The "h" block with its offset outline shadow.                             | Large placements only (about 40px and up): hero art, slides, social cards, stickers. |
+| `logo-wordmark.svg`    | The lowercase `hunk` letters on their own.                                | Next to the mark when the lockup is too heavy; text-only contexts.                   |
+| `logo-lockup.svg`      | 3D mark plus wordmark.                                                    | Open Graph images, README banner, talk title slides.                                 |
+| `logo-lockup-flat.svg` | Flat mark plus wordmark.                                                  | Headers, footers, and smaller placements where the 3D outline would smudge.          |
 
 Other places the mark appears:
 
@@ -63,7 +64,7 @@ rsvg-convert -w 180 -h 180 website/public/favicon.svg -o website/public/apple-ic
 Clear space and minimum sizes are proposed guidance, not something the site enforces yet.
 
 - **Small means flat.** Below ~40px the 3D outline turns into a smudge; use `logo-mark.svg`.
-- **Clear space:** keep at least the width of the stem (about 8% of the mark's width) free on every side. In the lockup, the gap between mark and wordmark is the mark's top-right bar height.
+- **Clear space:** keep at least the width of the stem (about 8% of the mark's width) free on every side. In both lockups the mark is 1.4× the wordmark's height (ascender to baseline), centered on it, with a gap of 0.6× the wordmark's height.
 - **Minimum size:** 16px for the flat mark, 40px for the 3D mark, 48px wide for the wordmark.
 - **Don't** stretch, rotate, outline, add shadows or gradients, recolor outside the palette below, or retype the wordmark in another font. The wordmark is outlined paths, not live text.
 - **Don't** put the mark inside a circle. A rounded square (radius about 19%) is the only container, as in the favicon.

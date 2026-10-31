@@ -15,18 +15,25 @@ export const brandLogos = [
     height: 94,
   },
   {
+    id: "logo-lockup-flat",
+    name: "Flat lockup",
+    description: "Flat mark and wordmark together. For headers, footers, and tighter spaces.",
+    width: 200,
+    height: 65,
+  },
+  {
+    id: "logo-lockup",
+    name: "3D lockup",
+    description: "3D mark and wordmark together. For slides, articles, and larger placements.",
+    width: 200,
+    height: 65,
+  },
+  {
     id: "logo-wordmark",
     name: "Wordmark",
     description: "Just the lowercase letters, drawn as paths. No font needed.",
     width: 125,
     height: 51,
-  },
-  {
-    id: "logo-lockup",
-    name: "Full lockup",
-    description: "Mark and wordmark together. For slides, articles, and larger placements.",
-    width: 224,
-    height: 94,
   },
 ] as const;
 
