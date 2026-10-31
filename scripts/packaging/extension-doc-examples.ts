@@ -45,6 +45,7 @@ declare const hunk: __HunkApi;
 declare function runHgDiff(cwd: string): Promise<string>;
 declare function listHgUnknownFiles(cwd: string): Promise<string[]>;
 declare function hgCat(rev: string, path: string): Promise<string>;
+declare function hgCatBytes(rev: string, path: string): Promise<Uint8Array>;
 declare function hgDiffOneFile(path: string): Promise<string>;
 declare function resolveHgRevisions(
   input: __HunkDiffInput,
@@ -89,7 +90,7 @@ function classifyBlock(block: string): DocExample["wrapper"] {
   }
 
   // Fragments lifted out of an `ExtensionVcsPatchResult` literal.
-  if (/^extraFiles\s*:/.test(trimmed)) {
+  if (/^(?:extraFiles|readFileBytes)\s*:/.test(trimmed)) {
     return "patch-result";
   }
 
@@ -120,7 +121,7 @@ function wrapBlock(block: string, wrapper: DocExample["wrapper"]) {
       );
     case "patch-result":
       return (
-        "export const __result: Pick<__HunkPatchResult, 'extraFiles'> = {\n" +
+        "export const __result: Pick<__HunkPatchResult, 'extraFiles' | 'readFileBytes'> = {\n" +
         `${asObjectMember(block)}\n};\n`
       );
   }

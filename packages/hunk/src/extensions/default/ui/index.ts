@@ -6,6 +6,7 @@ import {
   type ExtensionLoadIssue,
   type ExtensionRegistry,
 } from "../../types";
+import registerBundledImagePreview from "./imagePreview";
 import registerBundledReviewInfo, { registerBundledComparisonReviewInfo } from "./reviewInfo";
 import registerBundledSearch from "./search";
 import registerBundledSidebar from "./sidebar";
@@ -26,6 +27,7 @@ const factories: readonly BundledUIFactory[] = [
     paneIds: ["comparison-review-info"],
   },
   { id: "search", factory: registerBundledSearch, paneIds: [] },
+  { id: "image-preview", factory: registerBundledImagePreview, paneIds: [] },
 ];
 let cachedRegistry: ExtensionRegistry | undefined;
 

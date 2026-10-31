@@ -13,6 +13,7 @@ import type { DiffFile } from "../core/changeset/model";
 import type { VcsPatchResult } from "../core/vcs/types";
 import type {
   ExtensionVcsExtraFile,
+  ExtensionVcsFileBytesReader,
   ExtensionVcsFileSourceReader,
   ExtensionVcsPatchResult,
 } from "../extension-api/types";
@@ -28,6 +29,7 @@ import { validateExtensionReviewDescriptor } from "../core/reviewDescriptor";
  */
 
 type SourceFetcherBuilder = NonNullable<BuildDiffFileOptions["sourceFetcherBuilder"]>;
+type ByteFetcherBuilder = NonNullable<BuildDiffFileOptions["byteFetcherBuilder"]>;
 
 /**
  * Adapt a published per-file source reader to the internal per-file fetcher.
@@ -91,6 +93,67 @@ function toSourceFetcherBuilder(
 }
 
 /**
+ * Adapt a published per-file byte reader to the internal per-file byte fetcher.
+ *
+ * Binary files are read here on purpose: they are what byte readers exist for. Each side is
+ * read at most once: the pending read is cached as soon as it starts, so a layout request that
+ * replaces an aborted one shares the read already in flight instead of starting another, and
+ * adapters can stay stateless. An over-limit side caches as unavailable. A rejected read or a
+ * malformed answer resolves `null` and is evicted, so a later layout request can retry it.
+ */
+function toByteFetcherBuilder(read: ExtensionVcsFileBytesReader): ByteFetcherBuilder {
+  return (file) => {
+    const reads = new Map<FileSourceSide, Promise<Uint8Array | null>>();
+
+    /** Ask the adapter for one side; `undefined` marks an answer that must not be cached. */
+    async function requestBytes(side: FileSourceSide): Promise<Uint8Array | null | undefined> {
+      let result: unknown;
+      try {
+        result = await read({
+          path: file.path,
+          previousPath: file.previousPath,
+          changeType: file.type,
+          isUntracked: file.isUntracked,
+          side,
+        });
+      } catch {
+        return undefined;
+      }
+
+      if (result === null || result instanceof Uint8Array) {
+        return result;
+      }
+      if (typeof result === "object" && (result as { kind?: unknown }).kind === "too-large") {
+        return null;
+      }
+      return undefined;
+    }
+
+    return {
+      getBytes(side) {
+        const cached = reads.get(side);
+        if (cached) {
+          return cached;
+        }
+
+        // The continuation always runs after `set` below, so eviction sees this exact promise.
+        const pending: Promise<Uint8Array | null> = requestBytes(side).then((bytes) => {
+          if (bytes !== undefined) {
+            return bytes;
+          }
+          if (reads.get(side) === pending) {
+            reads.delete(side);
+          }
+          return null;
+        });
+        reads.set(side, pending);
+        return pending;
+      },
+    };
+  };
+}
+
+/**
  * Build the diff model for one file an adapter reported outside its patch text.
  *
  * A skipped entry gets placeholder metadata and no source fetcher — there is
@@ -102,6 +165,7 @@ function toInternalExtraFile(
   index: number,
   sourcePrefix: string,
   sourceFetcherBuilder: SourceFetcherBuilder | undefined,
+  byteFetcherBuilder: ByteFetcherBuilder | undefined,
 ): DiffFile {
   if (entry.kind === "skipped") {
     return buildDiffFile(
@@ -130,6 +194,7 @@ function toInternalExtraFile(
       previousPath: entry.previousPath,
       isUntracked: entry.isUntracked,
       sourceFetcherBuilder,
+      byteFetcherBuilder,
     },
   );
 }
@@ -138,6 +203,9 @@ function toInternalExtraFile(
 export function toInternalVcsPatchResult(result: ExtensionVcsPatchResult): VcsPatchResult {
   const sourceFetcherBuilder = result.readFileSource
     ? toSourceFetcherBuilder(result.readFileSource, result.sourceCacheKey)
+    : undefined;
+  const byteFetcherBuilder = result.readFileBytes
+    ? toByteFetcherBuilder(result.readFileBytes)
     : undefined;
 
   return {
@@ -149,8 +217,9 @@ export function toInternalVcsPatchResult(result: ExtensionVcsPatchResult): VcsPa
       result.review === undefined ? undefined : validateExtensionReviewDescriptor(result.review),
     untrackedPaths: result.untrackedPaths,
     sourceFetcherBuilder,
+    byteFetcherBuilder,
     extraFiles: result.extraFiles?.map((entry, index) =>
-      toInternalExtraFile(entry, index, result.repoRoot, sourceFetcherBuilder),
+      toInternalExtraFile(entry, index, result.repoRoot, sourceFetcherBuilder, byteFetcherBuilder),
     ),
   };
 }

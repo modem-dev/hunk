@@ -12,7 +12,7 @@ import { resolve as resolvePath } from "node:path";
 import { findSidecarFileContext, loadSidecarContext } from "./sidecar";
 import { createSkippedBinaryMetadata, isProbablyBinaryFile } from "./binary";
 import { buildDiffFile, type BuildDiffFileOptions, type DiffFileSourceContext } from "./diffFile";
-import { createFileSourceFetcher, type FileSourceSpec } from "./fileSource";
+import { createFileByteFetcher, createFileSourceFetcher, type FileSourceSpec } from "./fileSource";
 import { changesetFromPatch } from "./fromPatch";
 
 import { HunkUserError } from "../run/errors";
@@ -153,6 +153,11 @@ function buildBinaryFileDiffChangeset(
         {
           previousPath: basename(input.left),
           isBinary: true,
+          byteFetcherBuilder: () =>
+            createFileByteFetcher({
+              old: { kind: "fs", absolutePath: leftPath },
+              new: { kind: "fs", absolutePath: rightPath },
+            }),
         },
       ),
     ],
@@ -231,7 +236,10 @@ async function loadVcsChangeset(
     result.title,
     result.sourceLabel,
     sidecar,
-    result.sourceFetcherBuilder ? { sourceFetcherBuilder: result.sourceFetcherBuilder } : undefined,
+    {
+      sourceFetcherBuilder: result.sourceFetcherBuilder,
+      byteFetcherBuilder: result.byteFetcherBuilder,
+    },
   );
   // Two published ways to review a file the patch does not contain, and both
   // land here: `untrackedPaths`, where an adapter names what its VCS considers

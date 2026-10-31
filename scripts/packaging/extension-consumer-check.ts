@@ -31,20 +31,22 @@ export interface CheckExtensionConsumerOptions {
   moduleResolutions?: readonly ("nodenext" | "bundler")[];
 }
 
-/** Compile the API-v31 file-view syntax surface as an isolated published-package consumer. */
+/** Compile the API-v33 file-view syntax and byte-read surface as an isolated published-package consumer. */
 export const FILE_VIEW_SYNTAX_CONSUMER_SOURCE: ExtensionConsumerSource = {
   name: "file-view-syntax-consumer.ts",
   text: `
 import { HUNK_EXTENSION_API_VERSION } from "hunkdiff/extension";
 import type {
   ExtensionFileViewCodeDocument,
+  ExtensionFileViewInput,
   ExtensionFileViewLayout,
   ExtensionFileViewSpan,
   ExtensionFileViewSyntaxReference,
   ExtensionStatusSpan,
+  ExtensionVcsFileBytesReader,
 } from "hunkdiff/extension";
 
-const apiVersion: 32 = HUNK_EXTENSION_API_VERSION;
+const apiVersion: 33 = HUNK_EXTENSION_API_VERSION;
 const document = {
   id: "generated",
   text: "const answer = 42;",
@@ -71,6 +73,12 @@ export const layout = {
   rows: [{ id: "generated:1", spans }],
   hunkRows: [{ startRow: 0, endRow: 0 }],
 } satisfies ExtensionFileViewLayout;
+export async function readNewSideBytes(input: ExtensionFileViewInput) {
+  const bytes: Uint8Array | null = await input.readBytes("new");
+  return bytes?.byteLength ?? 0;
+}
+export const readFileBytes: ExtensionVcsFileBytesReader = async ({ side }) =>
+  side === "old" ? { kind: "too-large", maxBytes: 1 } : new Uint8Array([1]);
 void apiVersion;
 void statusSpan;
 `,

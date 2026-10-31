@@ -4,6 +4,7 @@ import {
   createTestDiffFile,
   createTestSourceFetcher,
 } from "../../../../../test/helpers/diff-helpers";
+import type { FileSourceSide } from "../../core/changeset/fileSource";
 import { createFileViewInput, createFileViewInputSnapshot, fileViewChanges } from "./host";
 
 describe("file-view host input", () => {
@@ -64,5 +65,33 @@ describe("file-view host input", () => {
     );
 
     await expect(input.readDocument("new")).resolves.toBe("after");
+  });
+
+  test("deduplicates byte reads per side and resolves unreadable sides to null", async () => {
+    const calls: FileSourceSide[] = [];
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+    const diffFile = {
+      ...createTestDiffFile(),
+      byteFetcher: {
+        async getBytes(side: FileSourceSide) {
+          calls.push(side);
+          if (side === "old") throw new Error("unreadable");
+          return bytes;
+        },
+      },
+    };
+    const input = createFileViewInput(diffFile, 80, new AbortController().signal);
+
+    const [first, second] = await Promise.all([input.readBytes("new"), input.readBytes("new")]);
+    expect(first).toBe(bytes);
+    expect(second).toBe(bytes);
+    await expect(input.readBytes("old")).resolves.toBeNull();
+    expect(calls).toEqual(["new", "old"]);
+  });
+
+  test("resolves byte reads to null when the review source cannot supply bytes", async () => {
+    const input = createFileViewInput(createTestDiffFile(), 80, new AbortController().signal);
+
+    await expect(input.readBytes("new")).resolves.toBeNull();
   });
 });
