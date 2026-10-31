@@ -140,7 +140,7 @@ function stripTerminalControl(text: string) {
     .replace(/\x1b[@-_]/g, "");
 }
 
-/** Ask a live test session to quit, discarding changed view preferences when prompted. */
+/** Ask a live test session to quit, discarding review work and view preferences when prompted. */
 async function requestHunkSessionQuit(
   proc: HunkSessionProcess,
   fixture: ReturnType<typeof createFixtureFiles>,
@@ -150,6 +150,7 @@ async function requestHunkSessionQuit(
   await proc.stdin.flush();
   let quitAttempts = 1;
   let lastQuitAttemptAt = Date.now();
+  let reviewQuitConfirmed = false;
 
   const outcome = await waitUntil(
     "Hunk session exit or save-preferences prompt",
@@ -163,6 +164,16 @@ async function requestHunkSessionQuit(
         if (output.includes("Save view preferences?")) {
           return "prompt" as const;
         }
+        if (!reviewQuitConfirmed && output.includes("Quitting now will discard them.")) {
+          reviewQuitConfirmed = true;
+          proc.stdin.write("y");
+          await proc.stdin.flush();
+          return null;
+        }
+      }
+
+      if (reviewQuitConfirmed) {
+        return null;
       }
 
       // A command-triggered repaint can consume input sent during its handoff. Retry only while the
