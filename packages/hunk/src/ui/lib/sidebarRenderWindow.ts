@@ -107,6 +107,7 @@ export function planSidebarRowReveal({
 export function buildSidebarRenderWindow({
   entries,
   estimatedViewportRows = 32,
+  minimumWindowRows = 0,
   overscanRows = 4,
   scrollTop,
   selectedFileId,
@@ -114,6 +115,8 @@ export function buildSidebarRenderWindow({
 }: {
   entries: SidebarEntry[];
   estimatedViewportRows?: number;
+  /** Retain a bounded allocation budget without changing the measured visible range. */
+  minimumWindowRows?: number;
   overscanRows?: number;
   scrollTop: number;
   selectedFileId?: string;
@@ -123,13 +126,21 @@ export function buildSidebarRenderWindow({
   const effectiveViewportHeight =
     viewportHeight > 0 ? viewportHeight : Math.max(0, Math.floor(estimatedViewportRows));
   const visibleRange = findVisibleEntryRange(entries.length, scrollTop, effectiveViewportHeight);
+  // Keep the initial terminal-sized row budget after layout measures the smaller pane.
+  // Chrome and projection layout must not dismantle that bounded working set; visibility
+  // and selected-row reveal still use the measured viewport, not this allocation budget.
+  const mountedRange = findVisibleEntryRange(
+    entries.length,
+    scrollTop,
+    Math.max(effectiveViewportHeight, Math.max(0, Math.floor(minimumWindowRows))),
+  );
   const clampedOverscanRows = Math.max(0, Math.floor(overscanRows));
 
-  if (visibleRange) {
+  if (mountedRange) {
     addEntryIndexRange(
       mountedIndices,
-      visibleRange.startIndex - clampedOverscanRows,
-      visibleRange.endIndex + clampedOverscanRows,
+      mountedRange.startIndex - clampedOverscanRows,
+      mountedRange.endIndex + clampedOverscanRows,
       entries.length,
     );
   }

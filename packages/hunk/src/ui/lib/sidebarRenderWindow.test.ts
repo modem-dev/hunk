@@ -79,6 +79,43 @@ describe("buildSidebarRenderWindow", () => {
     expect(renderedHeight(plan.items)).toBe(entries.length);
   });
 
+  test("retains a bounded initial window while visibility follows measured pane height", () => {
+    const entries = createEntries(Array.from({ length: 40 }, (_, index) => `file-${index}`));
+    const input = {
+      entries,
+      estimatedViewportRows: 8,
+      minimumWindowRows: 8,
+      overscanRows: 4,
+      scrollTop: 0,
+    };
+    const initial = buildSidebarRenderWindow({ ...input, viewportHeight: 0 });
+    const measured = buildSidebarRenderWindow({ ...input, viewportHeight: 6 });
+
+    expect(measured.mountedEntryIndices).toEqual(initial.mountedEntryIndices);
+    expect(itemSummary(measured.items)).toEqual(itemSummary(initial.items));
+    expect(measured.visibleEndIndex).toBe(5);
+    expect(measured.mountedEntryIndices).toHaveLength(12);
+    expect(renderedHeight(measured.items)).toBe(entries.length);
+
+    const scrolled = buildSidebarRenderWindow({
+      ...input,
+      scrollTop: 20,
+      viewportHeight: 6,
+      selectedFileId: "file-0",
+    });
+    expect(scrolled.visibleStartIndex).toBe(20);
+    expect(scrolled.visibleEndIndex).toBe(25);
+    expect(scrolled.mountedEntryIndices).toEqual([
+      0,
+      ...Array.from({ length: 16 }, (_, index) => index + 16),
+    ]);
+    expect(renderedHeight(scrolled.items)).toBe(entries.length);
+
+    const enlarged = buildSidebarRenderWindow({ ...input, viewportHeight: 16 });
+    expect(enlarged.visibleEndIndex).toBe(15);
+    expect(enlarged.mountedEntryIndices).toHaveLength(20);
+  });
+
   test("clamps overscan at the last viewport", () => {
     const entries = createEntries(["file-0", "file-1", "file-2", "file-3", "file-4"]);
     const plan = buildSidebarRenderWindow({

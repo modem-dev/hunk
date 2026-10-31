@@ -67,6 +67,7 @@ export function VirtualizedFileSidebarRows({
       buildSidebarRenderWindow({
         entries,
         estimatedViewportRows,
+        minimumWindowRows: estimatedViewportRows,
         overscanRows: 4,
         scrollTop,
         selectedFileId: selectedFileId ?? undefined,
