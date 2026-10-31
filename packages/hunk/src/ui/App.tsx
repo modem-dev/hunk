@@ -299,6 +299,7 @@ export function App({
   const [showMenuBar, setShowMenuBar] = useState(bootstrap.initialShowMenuBar ?? true);
   const [showHelp, setShowHelp] = useState(false);
   const [showAgentSkill, setShowAgentSkill] = useState(false);
+  const [reviewQuitConfirmOpen, setReviewQuitConfirmOpen] = useState(false);
   const [storedFocusArea, setFocusArea] = useState<StoredFocusArea>("files");
   // Bumped when printable input is held for a draft editor that has not mounted
   // yet, so the flush retries after every commit that could have mounted it.
@@ -483,12 +484,39 @@ export function App({
   });
   const {
     saveConfigPromptOpen,
-    requestQuit,
+    requestQuit: requestViewPreferenceQuit,
     saveViewPreferencesAndQuit,
     discardViewPreferencesAndQuit,
     neverAskToSaveViewPreferencesAndQuit,
     closeSaveConfigPrompt,
   } = viewPreferenceQuit;
+  /** Human notes, live comments, and open drafts exist only in memory and vanish on quit. */
+  const hasReviewWorkToLose =
+    review.liveCommentCount > 0 ||
+    review.draftNote !== null ||
+    Object.values(review.userNotesByFileId).some((notes) => notes.length > 0);
+
+  /** Ask before quitting when in-memory review work would be lost, then continue the quit flow. */
+  const requestQuit = useCallback(() => {
+    if (hasReviewWorkToLose) {
+      closeHelp();
+      setReviewQuitConfirmOpen(true);
+      return;
+    }
+
+    requestViewPreferenceQuit();
+  }, [closeHelp, hasReviewWorkToLose, requestViewPreferenceQuit]);
+
+  /** Discard in-memory review work and continue into the view-preference quit flow. */
+  const confirmReviewQuit = useCallback(() => {
+    setReviewQuitConfirmOpen(false);
+    requestViewPreferenceQuit();
+  }, [requestViewPreferenceQuit]);
+
+  /** Keep the current review open after an accidental quit shortcut. */
+  const cancelReviewQuit = useCallback(() => {
+    setReviewQuitConfirmOpen(false);
+  }, []);
   const notifyExtensionMode = useCallback(
     (message: string, type?: ExtensionNotifyType) => extensions?.context.notify(message, type),
     [extensions],
@@ -1548,6 +1576,9 @@ export function App({
     moveMenuItem,
     moveThemeSelector,
     openMenu,
+    reviewQuitConfirmOpen,
+    confirmReviewQuit,
+    cancelReviewQuit,
     saveConfigPromptOpen,
     saveViewPreferencesAndQuit,
     discardViewPreferencesAndQuit,
@@ -1913,6 +1944,29 @@ export function App({
           onChangeInput={setExtensionDialogInputValue}
           onPickOption={setExtensionDialogSelectedIndex}
         />
+      ) : null}
+
+      {reviewQuitConfirmOpen ? (
+        <ConfirmDialog
+          actions={[
+            { keyLabel: "enter/y", label: "quit", run: confirmReviewQuit },
+            { keyLabel: "esc/n", label: "keep reviewing", run: cancelReviewQuit },
+          ]}
+          height={confirmDialogHeight(2)}
+          terminalHeight={terminal.height}
+          terminalWidth={terminal.width}
+          theme={baseTheme}
+          title="Quit review?"
+          width={64}
+          onClose={cancelReviewQuit}
+        >
+          <box style={{ width: "100%", height: 1 }}>
+            <text fg={baseTheme.muted}>This review has comments or notes that are not saved.</text>
+          </box>
+          <box style={{ width: "100%", height: 1 }}>
+            <text fg={baseTheme.muted}>Quitting now will discard them.</text>
+          </box>
+        </ConfirmDialog>
       ) : null}
 
       {saveConfigPromptOpen ? (

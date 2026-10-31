@@ -134,10 +134,13 @@ function spawnHunkSession(fixture: FixtureFiles, port: number) {
 
 type HunkSessionProcess = ReturnType<typeof spawnHunkSession>;
 
-/** Ask the live app to quit, discarding a prompted view change when necessary. */
+/** Ask the live app to quit, discarding prompted review work and view changes when necessary. */
 async function quitHunkSession(proc: HunkSessionProcess, fixture: FixtureFiles, timeoutMs = 2_000) {
   proc.stdin.write("q");
   await proc.stdin.flush();
+  let quitAttempts = 1;
+  let lastQuitAttemptAt = Date.now();
+  let reviewQuitConfirmed = false;
 
   const outcome = await waitUntil(
     "Hunk session exit or save-preferences prompt",
@@ -147,12 +150,32 @@ async function quitHunkSession(proc: HunkSessionProcess, fixture: FixtureFiles, 
       }
 
       const file = Bun.file(fixture.transcript);
-      if (!(await file.exists())) {
+      if (await file.exists()) {
+        const transcript = stripTerminalControl(await file.text());
+        if (transcript.includes("Save view preferences?")) {
+          return "prompt" as const;
+        }
+        if (!reviewQuitConfirmed && transcript.includes("Quitting now will discard them.")) {
+          reviewQuitConfirmed = true;
+          proc.stdin.write("y");
+          await proc.stdin.flush();
+          return null;
+        }
+      }
+
+      if (reviewQuitConfirmed) {
         return null;
       }
 
-      const transcript = stripTerminalControl(await file.text());
-      return transcript.includes("Save view preferences?") ? ("prompt" as const) : null;
+      // A command-triggered repaint can consume input sent during its handoff. Retry only while the
+      // app remains live and no prompt is visible, keeping teardown condition-driven and bounded.
+      if (quitAttempts < 3 && Date.now() - lastQuitAttemptAt >= 100) {
+        proc.stdin.write("q");
+        await proc.stdin.flush();
+        quitAttempts += 1;
+        lastQuitAttemptAt = Date.now();
+      }
+      return null;
     },
     timeoutMs,
     25,
