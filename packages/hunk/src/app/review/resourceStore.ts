@@ -305,8 +305,7 @@ export class ReviewResourceStore {
     const digest = this.digest(bytes);
     if (
       isMaterializedReviewResource(descriptor) &&
-      (descriptor.byteLength !== bytes.byteLength ||
-        !reviewDigestsEqual(descriptor.digest!, digest))
+      (descriptor.byteLength !== bytes.byteLength || !reviewDigestsEqual(descriptor.digest, digest))
     ) {
       return reviewResourceFailure(
         "resource-integrity",
