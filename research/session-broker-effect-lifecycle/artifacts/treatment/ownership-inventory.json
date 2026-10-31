@@ -1,0 +1,290 @@
+{
+  "schemaVersion": 3,
+  "label": "treatment",
+  "treatmentPresent": true,
+  "locations": {
+    "connectionNativeTiming": [],
+    "clientNativeTiming": [],
+    "launcherBunSleep": [],
+    "connectionProperties": [
+      {
+        "file": "packages/session-broker/src/connection.ts",
+        "line": 121,
+        "column": 3,
+        "kind": "property:socket",
+        "text": "private socket: Socket | null = null;"
+      },
+      {
+        "file": "packages/session-broker/src/connection.ts",
+        "line": 122,
+        "column": 3,
+        "kind": "property:activeSocket",
+        "text": "private activeSocket: Socket | null = null;"
+      },
+      {
+        "file": "packages/session-broker/src/connection.ts",
+        "line": 123,
+        "column": 3,
+        "kind": "property:bridge",
+        "text": "private bridge: SessionBrokerConnectionBridge<ServerMessage, Result> | null;"
+      },
+      {
+        "file": "packages/session-broker/src/connection.ts",
+        "line": 124,
+        "column": 3,
+        "kind": "property:limits",
+        "text": "readonly limits: Readonly<SessionBrokerLimits>;"
+      },
+      {
+        "file": "packages/session-broker/src/connection.ts",
+        "line": 126,
+        "column": 3,
+        "kind": "property:queuedMessages",
+        "text": "private queuedMessages: Array<QueuedProducerCommand<Socket, ServerMessage>> = [];"
+      },
+      {
+        "file": "packages/session-broker/src/connection.ts",
+        "line": 127,
+        "column": 3,
+        "kind": "property:executingMessages",
+        "text": "private executingMessages = new Set<QueuedProducerCommand<Socket, ServerMessage>>();"
+      },
+      {
+        "file": "packages/session-broker/src/connection.ts",
+        "line": 128,
+        "column": 3,
+        "kind": "property:queuedCommandCountBudget",
+        "text": "private readonly queuedCommandCountBudget: ResourceBudget;"
+      },
+      {
+        "file": "packages/session-broker/src/connection.ts",
+        "line": 129,
+        "column": 3,
+        "kind": "property:queuedCommandByteBudget",
+        "text": "private readonly queuedCommandByteBudget: ResourceBudget;"
+      },
+      {
+        "file": "packages/session-broker/src/connection.ts",
+        "line": 130,
+        "column": 3,
+        "kind": "property:draining",
+        "text": "private draining = false;"
+      },
+      {
+        "file": "packages/session-broker/src/connection.ts",
+        "line": 131,
+        "column": 3,
+        "kind": "property:stopped",
+        "text": "private stopped = false;"
+      },
+      {
+        "file": "packages/session-broker/src/connection.ts",
+        "line": 132,
+        "column": 3,
+        "kind": "property:registration",
+        "text": "private registration: SessionRegistration<Info>;"
+      },
+      {
+        "file": "packages/session-broker/src/connection.ts",
+        "line": 133,
+        "column": 3,
+        "kind": "property:snapshot",
+        "text": "private snapshot: SessionSnapshot<State>;"
+      },
+      {
+        "file": "packages/session-broker/src/connection.ts",
+        "line": 134,
+        "column": 3,
+        "kind": "property:producerHellos",
+        "text": "private readonly producerHellos = new WeakMap<\n    Socket,\n    {\n      request: SessionBrokerHelloChallengeRequest;\n      pending?: PendingSessionBrokerHello<ProducerGrant> | null;\n    }\n  >();"
+      },
+      {
+        "file": "packages/session-broker/src/connection.ts",
+        "line": 141,
+        "column": 3,
+        "kind": "property:connectionSupervisor",
+        "text": "private readonly connectionSupervisor: SessionBrokerConnectionSupervisor;"
+      },
+      {
+        "file": "packages/session-broker/src/connection.ts",
+        "line": 144,
+        "column": 5,
+        "kind": "property:options",
+        "text": "private readonly options: SessionBrokerConnectionOptions<\n      Info,\n      State,\n      Socket,\n      ServerMessage,\n      Result\n    >"
+      }
+    ],
+    "clientProperties": [
+      {
+        "file": "src/session/broker/brokerClient.ts",
+        "line": 72,
+        "column": 3,
+        "kind": "property:connection",
+        "text": "private connection: GenericSessionBrokerConnection<\n    HunkSessionInfo,\n    HunkSessionState,\n    SessionBrokerSocketLike,\n    HunkSessionServerMessage,\n    HunkSessionCommandResult\n  > | null = null;"
+      },
+      {
+        "file": "src/session/broker/brokerClient.ts",
+        "line": 79,
+        "column": 3,
+        "kind": "property:bridge",
+        "text": "private bridge: SessionAppBridge | null = null;"
+      },
+      {
+        "file": "src/session/broker/brokerClient.ts",
+        "line": 80,
+        "column": 3,
+        "kind": "property:stopped",
+        "text": "private stopped = false;"
+      },
+      {
+        "file": "src/session/broker/brokerClient.ts",
+        "line": 81,
+        "column": 3,
+        "kind": "property:lastConnectionWarning",
+        "text": "private lastConnectionWarning: string | null = null;"
+      },
+      {
+        "file": "src/session/broker/brokerClient.ts",
+        "line": 82,
+        "column": 3,
+        "kind": "property:credentials",
+        "text": "private credentials: HunkSessionBrokerCredentials | null = null;"
+      },
+      {
+        "file": "src/session/broker/brokerClient.ts",
+        "line": 83,
+        "column": 3,
+        "kind": "property:waitingForIncumbentExit",
+        "text": "private waitingForIncumbentExit = false;"
+      },
+      {
+        "file": "src/session/broker/brokerClient.ts",
+        "line": 84,
+        "column": 3,
+        "kind": "property:incumbentLaunchFingerprint",
+        "text": "private incumbentLaunchFingerprint: string | null = null;"
+      },
+      {
+        "file": "src/session/broker/brokerClient.ts",
+        "line": 85,
+        "column": 3,
+        "kind": "property:startupSupervisor",
+        "text": "private readonly startupSupervisor: SessionBrokerStartupSupervisor;"
+      },
+      {
+        "file": "src/session/broker/brokerClient.ts",
+        "line": 88,
+        "column": 5,
+        "kind": "property:registration",
+        "text": "private registration: SessionRegistration<HunkSessionInfo>"
+      },
+      {
+        "file": "src/session/broker/brokerClient.ts",
+        "line": 89,
+        "column": 5,
+        "kind": "property:snapshot",
+        "text": "private snapshot: SessionSnapshot<HunkSessionState>"
+      },
+      {
+        "file": "src/session/broker/brokerClient.ts",
+        "line": 90,
+        "column": 5,
+        "kind": "property:timing",
+        "text": "private timing: SessionBrokerClientTiming = {}"
+      }
+    ],
+    "connectionSupervisorProperties": [
+      {
+        "file": "packages/session-broker/src/connection.ts",
+        "line": 141,
+        "column": 3,
+        "kind": "property:connectionSupervisor",
+        "text": "private readonly connectionSupervisor: SessionBrokerConnectionSupervisor;"
+      }
+    ],
+    "clientSupervisorProperties": [
+      {
+        "file": "src/session/broker/brokerClient.ts",
+        "line": 85,
+        "column": 3,
+        "kind": "property:startupSupervisor",
+        "text": "private readonly startupSupervisor: SessionBrokerStartupSupervisor;"
+      }
+    ],
+    "connectionDelayOwnerProperties": [],
+    "clientDelayOwnerProperties": [],
+    "clientPromiseOwnerProperties": [],
+    "processTaskRegistries": [],
+    "processImplementationClasses": [
+      {
+        "file": "packages/session-broker/src/processLifecycle.ts",
+        "line": 135,
+        "column": 1,
+        "kind": "class:EffectSessionBrokerStartupSupervisor",
+        "text": "class EffectSessionBrokerStartupSupervisor implements SessionBrokerStartupSupervisor {\n  private stopped = false;\n  private started = false;\n  private waiting = false;\n  private activeAttempt: Promise<void> | undefined;\n  private manualWake"
+      },
+      {
+        "file": "packages/session-broker/src/processLifecycle.ts",
+        "line": 264,
+        "column": 1,
+        "kind": "class:EffectSessionBrokerConnectionSupervisor",
+        "text": "class EffectSessionBrokerConnectionSupervisor<\n  Socket,\n  Event,\n> implements SessionBrokerConnectionSupervisor {\n  private stopped = false;\n  private started = false;\n  private program: Fiber.RuntimeFiber<void, never> | undefined;\n  priva"
+      },
+      {
+        "file": "packages/session-broker/src/processLifecycle.ts",
+        "line": 385,
+        "column": 1,
+        "kind": "class:EffectSessionBrokerProcessLifecycle",
+        "text": "class EffectSessionBrokerProcessLifecycle implements SessionBrokerProcessLifecycle {\n  private closed = false;\n  private closeStarted = false;\n  private readonly runtime;\n  private readonly scope;\n  private resolveSettled!: () => void;\n  re"
+      }
+    ],
+    "processDelayClasses": [],
+    "processSetInterval": [],
+    "processTimersOutsideClock": [],
+    "managedRuntimeConstruction": [
+      {
+        "file": "packages/session-broker/src/processLifecycle.ts",
+        "line": 396,
+        "column": 20,
+        "kind": "ManagedRuntime.make",
+        "text": "ManagedRuntime.make(lifecycleOptions.layer)"
+      }
+    ],
+    "customClockConstruction": [
+      {
+        "file": "packages/session-broker/src/processLifecycle.ts",
+        "line": 492,
+        "column": 17,
+        "kind": "createUnrefClock",
+        "text": "createUnrefClock()"
+      }
+    ],
+    "fixedHeartbeatSchedule": [
+      {
+        "file": "packages/session-broker/src/processLifecycle.ts",
+        "line": 129,
+        "column": 49,
+        "kind": "Schedule.fixed",
+        "text": "Schedule.fixed(Duration.millis(intervalMs))"
+      }
+    ],
+    "delayedHeartbeatSleep": [
+      {
+        "file": "packages/session-broker/src/processLifecycle.ts",
+        "line": 127,
+        "column": 10,
+        "kind": "Effect.sleep",
+        "text": "Effect.sleep(Duration.millis(intervalMs))"
+      }
+    ],
+    "runtimeFactoryCalls": [
+      {
+        "file": "src/ui/runInteractiveApp.tsx",
+        "line": 57,
+        "column": 28,
+        "kind": "process-lifecycle-factory-call",
+        "text": "createSessionBrokerProcessLifecycle()"
+      }
+    ]
+  },
+  "violations": []
+}
