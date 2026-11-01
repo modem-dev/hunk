@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { createServer } from "node:http";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -42,7 +42,7 @@ import {
 import type { HunkDaemonAdminProbe } from "../client/daemonAdmin";
 import { resolveSessionBrokerRuntimePaths } from "./brokerLauncher";
 import { DeterministicLifecycleClockTest } from "../../../../../test/helpers/lifecycleClockTest";
-import { removeTestDirectory } from "../../../../../test/helpers/filesystem";
+import { createTestRuntimeDir } from "../../../../../test/helpers/runtime-dir";
 
 const originalHost = process.env.HUNK_MCP_HOST;
 const originalPort = process.env.HUNK_MCP_PORT;
@@ -50,7 +50,9 @@ const originalDisable = process.env.HUNK_MCP_DISABLE;
 const originalUnsafeRemote = process.env.HUNK_MCP_UNSAFE_ALLOW_REMOTE;
 const originalRuntimeDir = process.env.XDG_RUNTIME_DIR;
 // Clients that launch daemons or mint credentials write here unless a test chooses its own dir.
-const defaultRuntimeDirTest = mkdtempSync(join(tmpdir(), "hunk-broker-client-runtime-"));
+const { path: testRuntimeDir, cleanup: cleanupTestRuntimeDir } = createTestRuntimeDir(
+  "hunk-broker-client-runtime-",
+);
 const originalConsoleError = console.error;
 const nativeSetTimeoutTest = globalThis.setTimeout.bind(globalThis);
 const nativeClearTimeoutTest = globalThis.clearTimeout.bind(globalThis);
@@ -350,8 +352,8 @@ async function createRefusalLifecycleTest(withMetadata = false, subscribe = fals
   }
 }
 
-beforeEach(() => {
-  process.env.XDG_RUNTIME_DIR = defaultRuntimeDirTest;
+beforeAll(() => {
+  process.env.XDG_RUNTIME_DIR = testRuntimeDir;
 });
 
 afterEach(() => {
@@ -381,16 +383,23 @@ afterEach(() => {
     process.env.HUNK_MCP_UNSAFE_ALLOW_REMOTE = originalUnsafeRemote;
   }
 
+  // Undo per-test runtime overrides without exposing the real runtime dir between tests.
+  process.env.XDG_RUNTIME_DIR = testRuntimeDir;
+
+  console.error = originalConsoleError;
+});
+
+afterAll(async () => {
+  // Restore the ambient runtime dir only after the file, so a stray timer between tests still
+  // resolves the private one.
   if (originalRuntimeDir === undefined) {
     delete process.env.XDG_RUNTIME_DIR;
   } else {
     process.env.XDG_RUNTIME_DIR = originalRuntimeDir;
   }
 
-  console.error = originalConsoleError;
+  await cleanupTestRuntimeDir();
 });
-
-afterAll(() => removeTestDirectory(defaultRuntimeDirTest));
 
 describe("Hunk session daemon client", () => {
   test("only treats exact pre-authentication compatibility closes as quiescent refusals", () => {

@@ -4,17 +4,19 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cleanupTestConfigHomes, createTestConfigHome } from "../helpers/config-home";
-import { removeTestDirectory } from "../helpers/filesystem";
+import { createTestRuntimeDir } from "../helpers/runtime-dir";
 
 const repoRoot = process.cwd();
 const sourceEntrypoint = join(repoRoot, "packages/hunk/src/main.tsx");
 // Spawned hunk processes must assert built-in defaults, not the developer's ambient user config.
 const testConfigHome = createTestConfigHome();
 // Spawned daemons record launch metadata and credentials here, never in the real runtime dir.
-const testRuntimeDir = mkdtempSync(join(tmpdir(), "hunk-session-e2e-runtime-"));
+const { path: testRuntimeDir, cleanup: cleanupTestRuntimeDir } = createTestRuntimeDir(
+  "hunk-session-e2e-runtime-",
+);
 
 afterAll(cleanupTestConfigHomes);
-afterAll(() => removeTestDirectory(testRuntimeDir));
+afterAll(cleanupTestRuntimeDir);
 const tempDirs: string[] = [];
 
 /** Check for the util-linux `script` interface these Unix-only terminal tests require. */
