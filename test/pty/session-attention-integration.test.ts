@@ -89,6 +89,7 @@ function runSessionCli(args: string[], port: number, configHome: string) {
     env: {
       ...process.env,
       XDG_CONFIG_HOME: configHome,
+      XDG_RUNTIME_DIR: configHome,
       HUNK_MCP_PORT: String(port),
     },
   });
@@ -134,6 +135,7 @@ describe("PTY session attention marks", () => {
       rows: 24,
       env: {
         XDG_CONFIG_HOME: configHome,
+        XDG_RUNTIME_DIR: configHome,
         // The harness disables session brokering by default; this test is about it.
         HUNK_MCP_DISABLE: "0",
         HUNK_MCP_PORT: String(port),
