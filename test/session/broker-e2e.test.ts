@@ -4,13 +4,17 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cleanupTestConfigHomes, createTestConfigHome } from "../helpers/config-home";
+import { removeTestDirectory } from "../helpers/filesystem";
 
 const repoRoot = process.cwd();
 const sourceEntrypoint = join(repoRoot, "packages/hunk/src/main.tsx");
 // Spawned hunk processes must assert built-in defaults, not the developer's ambient user config.
 const testConfigHome = createTestConfigHome();
+// Spawned daemons record launch metadata and credentials here, never in the real runtime dir.
+const testRuntimeDir = mkdtempSync(join(tmpdir(), "hunk-session-e2e-runtime-"));
 
 afterAll(cleanupTestConfigHomes);
+afterAll(() => removeTestDirectory(testRuntimeDir));
 const tempDirs: string[] = [];
 
 /** Check for the util-linux `script` interface these Unix-only terminal tests require. */
@@ -124,6 +128,7 @@ function spawnHunkSession(fixture: FixtureFiles, port: number) {
     env: {
       ...process.env,
       XDG_CONFIG_HOME: testConfigHome,
+      XDG_RUNTIME_DIR: testRuntimeDir,
       TERM: "xterm-256color",
       COLUMNS: "120",
       LINES: "24",
@@ -191,6 +196,7 @@ function runSessionCli(args: string[], port: number) {
     env: {
       ...process.env,
       XDG_CONFIG_HOME: testConfigHome,
+      XDG_RUNTIME_DIR: testRuntimeDir,
       HUNK_MCP_PORT: `${port}`,
     },
   });
@@ -225,9 +231,8 @@ async function waitUntil<T>(
 /** Read the PID only from this test's launch metadata for teardown, never from public health. */
 function readLaunchedDaemonPid(port: number) {
   try {
-    const runtimeBase = process.env.XDG_RUNTIME_DIR?.trim() || tmpdir();
     const metadata = JSON.parse(
-      readFileSync(join(runtimeBase, "hunk-mcp", `daemon-127-0-0-1-${port}.json`), "utf8"),
+      readFileSync(join(testRuntimeDir, "hunk-mcp", `daemon-127-0-0-1-${port}.json`), "utf8"),
     ) as { pid?: unknown };
     return typeof metadata.pid === "number" && metadata.pid > 0 ? metadata.pid : null;
   } catch {

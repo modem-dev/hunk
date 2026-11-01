@@ -1,11 +1,14 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { randomBytes } from "node:crypto";
+import { mkdtempSync } from "node:fs";
 import { connect, createServer } from "node:net";
-import { platform } from "node:os";
+import { platform, tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   createTestSessionRegistration,
   createTestSessionSnapshot,
 } from "../../../../../test/helpers/session-daemon-fixtures";
+import { removeTestDirectory } from "../../../../../test/helpers/filesystem";
 import { SessionBrokerState } from "@hunk/session-broker-core";
 import {
   SessionBrokerCallerClient,
@@ -30,6 +33,9 @@ import { HUNK_SESSION_BROKER_APP_ID, HUNK_SESSION_BROKER_APP_REVISION } from "./
 const originalHost = process.env.HUNK_MCP_HOST;
 const originalPort = process.env.HUNK_MCP_PORT;
 const originalUnsafeRemote = process.env.HUNK_MCP_UNSAFE_ALLOW_REMOTE;
+const originalRuntimeDir = process.env.XDG_RUNTIME_DIR;
+// Served daemons and minted credentials write here instead of the developer's runtime dir.
+const runtimeDirTest = mkdtempSync(join(tmpdir(), "hunk-broker-server-runtime-"));
 
 interface HealthResponse {
   ok: boolean;
@@ -299,6 +305,10 @@ async function waitForSocketClose(socket: WebSocket) {
   });
 }
 
+beforeEach(() => {
+  process.env.XDG_RUNTIME_DIR = runtimeDirTest;
+});
+
 afterEach(() => {
   if (originalHost === undefined) {
     delete process.env.HUNK_MCP_HOST;
@@ -317,7 +327,15 @@ afterEach(() => {
   } else {
     process.env.HUNK_MCP_UNSAFE_ALLOW_REMOTE = originalUnsafeRemote;
   }
+
+  if (originalRuntimeDir === undefined) {
+    delete process.env.XDG_RUNTIME_DIR;
+  } else {
+    process.env.XDG_RUNTIME_DIR = originalRuntimeDir;
+  }
 });
+
+afterAll(() => removeTestDirectory(runtimeDirTest));
 
 describe("Hunk session daemon server", () => {
   test("refuses non-loopback binding unless explicitly allowed", async () => {

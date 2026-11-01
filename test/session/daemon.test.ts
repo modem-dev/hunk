@@ -1,13 +1,20 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import type { Subprocess } from "bun";
+import { mkdtempSync } from "node:fs";
 import { createServer } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { cleanupTestConfigHomes, createTestConfigHome } from "../helpers/config-home";
+import { removeTestDirectory } from "../helpers/filesystem";
 
 const repoRoot = process.cwd();
 // Spawned hunk processes must assert built-in defaults, not the developer's ambient user config.
 const testConfigHome = createTestConfigHome();
+// Spawned daemons mint credentials here, never in the developer's real runtime dir.
+const testRuntimeDir = mkdtempSync(join(tmpdir(), "hunk-session-daemon-runtime-"));
 
 afterAll(cleanupTestConfigHomes);
+afterAll(() => removeTestDirectory(testRuntimeDir));
 const spawned: Subprocess[] = [];
 
 async function reserveLoopbackPort() {
@@ -85,6 +92,7 @@ describe("session daemon lifecycle", () => {
       env: {
         ...process.env,
         XDG_CONFIG_HOME: testConfigHome,
+        XDG_RUNTIME_DIR: testRuntimeDir,
         HUNK_MCP_PORT: String(port),
       },
     });

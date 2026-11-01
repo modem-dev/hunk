@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createServer } from "node:http";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -42,12 +42,15 @@ import {
 import type { HunkDaemonAdminProbe } from "../client/daemonAdmin";
 import { resolveSessionBrokerRuntimePaths } from "./brokerLauncher";
 import { DeterministicLifecycleClockTest } from "../../../../../test/helpers/lifecycleClockTest";
+import { removeTestDirectory } from "../../../../../test/helpers/filesystem";
 
 const originalHost = process.env.HUNK_MCP_HOST;
 const originalPort = process.env.HUNK_MCP_PORT;
 const originalDisable = process.env.HUNK_MCP_DISABLE;
 const originalUnsafeRemote = process.env.HUNK_MCP_UNSAFE_ALLOW_REMOTE;
 const originalRuntimeDir = process.env.XDG_RUNTIME_DIR;
+// Clients that launch daemons or mint credentials write here unless a test chooses its own dir.
+const defaultRuntimeDirTest = mkdtempSync(join(tmpdir(), "hunk-broker-client-runtime-"));
 const originalConsoleError = console.error;
 const nativeSetTimeoutTest = globalThis.setTimeout.bind(globalThis);
 const nativeClearTimeoutTest = globalThis.clearTimeout.bind(globalThis);
@@ -277,7 +280,8 @@ async function createRefusalLifecycleTest(withMetadata = false, subscribe = fals
   const config = prepareDirectConnectTest(client);
   const writeMetadata = (pid: number) => {
     const { metadataPath } = resolveSessionBrokerRuntimePaths(config);
-    mkdirSync(join(metadataPath, ".."), { recursive: true });
+    // Match the daemon's owner-private namespace; a umask-derived mode fails credential checks.
+    mkdirSync(join(metadataPath, ".."), { recursive: true, mode: 0o700 });
     writeFileSync(
       metadataPath,
       JSON.stringify({
@@ -346,6 +350,10 @@ async function createRefusalLifecycleTest(withMetadata = false, subscribe = fals
   }
 }
 
+beforeEach(() => {
+  process.env.XDG_RUNTIME_DIR = defaultRuntimeDirTest;
+});
+
 afterEach(() => {
   restoreWebSocketObserverTest?.();
 
@@ -381,6 +389,8 @@ afterEach(() => {
 
   console.error = originalConsoleError;
 });
+
+afterAll(() => removeTestDirectory(defaultRuntimeDirTest));
 
 describe("Hunk session daemon client", () => {
   test("only treats exact pre-authentication compatibility closes as quiescent refusals", () => {
@@ -1226,7 +1236,8 @@ describe("Hunk session daemon client", () => {
       host: "127.0.0.1",
       port,
     }).metadataPath;
-    mkdirSync(join(metadataPath, ".."), { recursive: true });
+    // Match the daemon's owner-private namespace; a umask-derived mode fails credential checks.
+    mkdirSync(join(metadataPath, ".."), { recursive: true, mode: 0o700 });
     const writeMetadata = (pid: number) =>
       writeFileSync(
         metadataPath,
