@@ -120,7 +120,7 @@ for all user extensions. Bundled capabilities use separate host-owned selection 
 | Reload after an external agent changes reviewed inputs   | `ctx.review.requestReload()` in an event                      |
 | Read user-supplied settings                              | `hunk.config` (`[extension.<id>]` table)                      |
 | Snapshot stable files and every saved review note        | `ctx.review.snapshot()` in a command                          |
-| Branch on the API generation (currently `32`)            | `hunk.apiVersion`                                             |
+| Branch on the API generation (currently `33`)            | `hunk.apiVersion`                                             |
 
 Registration is only valid while the factory runs — Hunk seals the API object
 afterwards.
@@ -249,6 +249,8 @@ Most extension bugs are one of these:
   map exact symbolic spans with `syntax`; Hunk owns tokenization, theme colors,
   visible-window demand, resource limits, and plain fallback. Keep gutters and
   separators in non-syntax spans, and use `sourceRanges` separately for notes/navigation.
+  Diff-presenting views set a row's `background` to `"added"` or `"removed"` so
+  syntax-painted changes keep the raw diff's line tint.
 - **Never bundle or vendor React.** Hunk serves its own `react` and `@opentui/*`
   to extension files; a second copy means a second hooks dispatcher and the
   component fails to render. Import them normally. OpenTUI intrinsics (`box`,

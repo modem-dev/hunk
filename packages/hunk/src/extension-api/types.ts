@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 32;
+export const HUNK_EXTENSION_API_VERSION = 33;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -389,6 +389,11 @@ export interface ExtensionFileViewRow {
    * uses them to place host-rendered inline notes; unresolved notes keep the whole file on raw diff.
    */
   readonly sourceRanges?: readonly ExtensionFileViewSourceRange[];
+  /**
+   * Paints the row with the raw diff's added or removed line background, under syntax and tone
+   * foregrounds and under the host-owned selected-hunk and current-row backgrounds. Paint-only.
+   */
+  readonly background?: "added" | "removed";
   /**
    * Experimental fixed-height React/OpenTUI painter, clipped inside host-owned geometry.
    * Height and render are one descriptor so a typed layout cannot declare either alone.

@@ -620,4 +620,37 @@ describe("file-view layout validation", () => {
       });
     }
   });
+
+  test("snapshots diff row backgrounds and rejects unknown kinds", () => {
+    const accepted = validateFileViewLayout(
+      {
+        rows: [
+          { id: "added", spans: [{ text: "+a" }], background: "added" },
+          { id: "removed", spans: [{ text: "-b" }], background: "removed" },
+          { id: "context", spans: [{ text: " c" }] },
+        ],
+        hunkRows: [],
+      },
+      0,
+      80,
+    );
+    if (!accepted.valid) throw new Error(accepted.issue);
+    expect(accepted.value.layout.rows.map((row) => row.background)).toEqual([
+      "added",
+      "removed",
+      undefined,
+    ]);
+    expect("background" in accepted.value.layout.rows[2]!).toBe(false);
+
+    expect(
+      validateFileViewLayout(
+        {
+          rows: [{ id: "one", spans: [{ text: "one" }], background: "selected" as never }],
+          hunkRows: [],
+        },
+        0,
+        80,
+      ),
+    ).toEqual({ valid: false, issue: "rows[0].background must be added or removed" });
+  });
 });

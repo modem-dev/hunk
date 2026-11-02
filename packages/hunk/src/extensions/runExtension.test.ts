@@ -14,7 +14,7 @@ function bundledMetadata(id: string) {
 
 describe("runExtensionFactory", () => {
   test("advertises the selection layout through extension API v32", () => {
-    expect(HUNK_EXTENSION_API_VERSION).toBe(32);
+    expect(HUNK_EXTENSION_API_VERSION).toBe(33);
   });
 
   test("applies a synchronous factory before returning, with nothing to await", () => {
