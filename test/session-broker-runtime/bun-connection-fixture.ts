@@ -1,5 +1,5 @@
-import type { SessionBrokerDaemon, SessionBrokerSocketLike } from "@hunk/session-broker";
-import { serveSessionBrokerDaemon } from "@hunk/session-broker-bun";
+import type { SessionBrokerDaemon } from "@hunk/session-broker";
+import { createSessionBrokerWebSocket, serveSessionBrokerDaemon } from "@hunk/session-broker-bun";
 import { runConnectionFixture, type ConnectionFixtureMode } from "./connectionFixture";
 
 /** Reserve one loopback port with Bun's native server API. */
@@ -18,7 +18,7 @@ async function reservePort() {
 const mode = process.argv[2] as ConnectionFixtureMode;
 await runConnectionFixture(mode, {
   reservePort,
-  createSocket: (target) => new WebSocket(target) as unknown as SessionBrokerSocketLike,
+  createSocket: createSessionBrokerWebSocket,
   startDaemon: async (daemon: SessionBrokerDaemon, port: number) => {
     const running = serveSessionBrokerDaemon({ daemon, hostname: "127.0.0.1", port });
     return {

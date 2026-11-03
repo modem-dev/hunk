@@ -174,13 +174,13 @@ Use `SessionBrokerConnection` when an app window or live process needs to stay r
 import {
   createNativeSessionBrokerLifecycleClock,
   createSessionBrokerConnection,
-  type SessionBrokerSocketLike,
 } from "@hunk/session-broker";
+import { createSessionBrokerWebSocket } from "@hunk/session-broker-bun";
 
 const lifecycleClock = createNativeSessionBrokerLifecycleClock();
 const connection = createSessionBrokerConnection({
   url: "ws://127.0.0.1:47657/session",
-  createSocket: (url) => new WebSocket(url) as unknown as SessionBrokerSocketLike,
+  createSocket: createSessionBrokerWebSocket,
   registration,
   snapshot,
   protocolParsers,
