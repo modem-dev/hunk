@@ -114,7 +114,7 @@
     "typescript": "^5.9.3"
   },
   "overrides": {
-    "shell-quote": "1.9.0"
+    "shell-quote": "1.12.0"
   },
   "simple-git-hooks": {
     "pre-commit": "bunx lint-staged"
