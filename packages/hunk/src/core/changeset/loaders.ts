@@ -13,6 +13,7 @@ import { findSidecarFileContext, loadSidecarContext } from "./sidecar";
 import { createSkippedBinaryMetadata, isProbablyBinaryFile } from "./binary";
 import { buildDiffFile, type BuildDiffFileOptions, type DiffFileSourceContext } from "./diffFile";
 import { createFileSourceFetcher, type FileSourceSpec } from "./fileSource";
+import { applyGeneratedPathDeclarations } from "./fileClassification";
 import { changesetFromPatch } from "./fromPatch";
 
 import { HunkUserError } from "../run/errors";
@@ -26,7 +27,7 @@ import {
   loadVcsReview,
   operationFromInput,
 } from "../vcs";
-import type { VcsCatalog } from "../vcs/types";
+import type { VcsCatalog, VcsPatchResult } from "../vcs/types";
 import { buildFilesystemUntrackedDiffFile } from "../vcs/untracked";
 import { computeWatchSignature } from "../watch/signature";
 import type { NamedCustomThemeConfig } from "../../extension-api/types";
@@ -252,14 +253,32 @@ async function loadVcsChangeset(
     id: `${file.id}:extra:${index}`,
     agent: findSidecarFileContext(sidecar, file.path, file.previousPath),
   }));
+  const files = [...parsedChangeset.files, ...adapterFiles];
   return {
     changeset: {
       ...parsedChangeset,
-      files: [...parsedChangeset.files, ...adapterFiles],
+      files: await applyAdapterGeneratedPaths(files, result.readGeneratedPaths, signal),
     } satisfies Changeset,
     repoRoot: result.repoRoot,
     review: result.review,
   };
+}
+
+/** Apply an adapter's generated-path declarations; a failed read only loses the override. */
+async function applyAdapterGeneratedPaths(
+  files: DiffFile[],
+  readGeneratedPaths: VcsPatchResult["readGeneratedPaths"],
+  signal?: AbortSignal,
+) {
+  if (!readGeneratedPaths || files.length === 0) return files;
+
+  try {
+    const declarations = await readGeneratedPaths(files.map((file) => file.path));
+    return applyGeneratedPathDeclarations(files, declarations);
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    return files;
+  }
 }
 
 /** Build a changeset from patch text supplied by file or stdin. */

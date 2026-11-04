@@ -1,4 +1,5 @@
 /** Projects planned review rows to the plain text used by selection and clipboard surfaces. */
+import { reviewNoiseLabel } from "../../core/changeset/fileClassification";
 import type { DiffFile } from "../../core/changeset/model";
 import { reviewEmptyDiffReason, type ReviewEmptyDiffReason } from "../../core/review/document";
 import { sanitizeTerminalLine, sanitizeTerminalSpans } from "../../lib/terminalText";
@@ -402,6 +403,11 @@ export const DIFF_MESSAGES: Record<ReviewEmptyDiffReason, string> = {
 
 /** Explain why a file still appears in the review stream even when it has no textual hunks. */
 export function diffMessage(file: DiffFile) {
+  if (file.isCollapsedPlaceholder) {
+    const label = reviewNoiseLabel(file.reviewNoise);
+    return `▸ ${label} collapsed · +${file.stats.additions} -${file.stats.deletions} · click or press Z to expand`;
+  }
+
   return DIFF_MESSAGES[
     reviewEmptyDiffReason({
       changeKind: file.metadata.type,

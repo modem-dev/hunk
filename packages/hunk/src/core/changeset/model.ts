@@ -34,11 +34,17 @@ export interface DiffFile {
   isUntracked?: boolean;
   isBinary?: boolean;
   isTooLarge?: boolean;
+  /** Why the terminal review collapses this file by default, when it does. */
+  reviewNoise?: ReviewNoiseKind;
+  /** Marks the terminal's placeholder variant; loaders never set it on canonical files. */
+  isCollapsedPlaceholder?: boolean;
   statsTruncated?: boolean;
   // Optional capability for fetching the file's full text on either side.
   // Loaders attach this when source content is reachable; absent when not.
   sourceFetcher?: FileSourceFetcher;
 }
+
+export type ReviewNoiseKind = "lockfile" | "minified" | "generated";
 
 export type DiffLineMoveKind = "moved";
 

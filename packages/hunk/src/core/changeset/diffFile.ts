@@ -3,6 +3,7 @@ import { findSidecarFileContext } from "./sidecar";
 import { patchLooksBinary } from "./binary";
 import { fileLanguageForPath } from "../documents/fileLanguageLookup";
 import { normalizeDiffMetadataPaths, normalizeDiffPath } from "./diffPaths";
+import { classifyReviewNoise } from "./fileClassification";
 import type { FileSourceFetcher } from "./fileSource";
 import type { DiffFile, DiffLineMoveKinds, SidecarContext } from "./model";
 
@@ -91,6 +92,7 @@ export function buildDiffFile(
     isUntracked,
     isBinary: resolvedIsBinary,
     isTooLarge,
+    reviewNoise: resolvedIsBinary ? undefined : classifyReviewNoise(path, patch),
     statsTruncated,
     sourceFetcher,
   };

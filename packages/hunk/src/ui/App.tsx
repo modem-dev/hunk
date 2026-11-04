@@ -246,6 +246,7 @@ export function App({
   });
   const review = useTerminalReview({
     files: reviewFiles,
+    collapseGenerated: bootstrap.input.options.collapseGenerated ?? true,
     initialShowAgentNotes: bootstrap.initialShowAgentNotes ?? false,
     lineCursors,
     reviewVerticalStops,
@@ -1427,6 +1428,7 @@ export function App({
         toggleCopyDecorations,
         toggleFocusArea,
         toggleGapForSelectedHunk: review.toggleSelectedHunkGap,
+        toggleSelectedFileCollapsed: review.toggleSelectedFileCollapsed,
         toggleHelp,
         toggleHunkHeaders,
         toggleLineNumbers,
@@ -1824,6 +1826,7 @@ export function App({
             onFileViewRowFailure={reportFileViewRowFailure}
             onSelectFile={jumpToFile}
             onToggleGap={review.toggleGap}
+            onToggleFileCollapsed={review.toggleFileCollapsed}
             onViewportCenteredHunkChange={(fileId, hunkIndex) =>
               review.anchorSelection(fileId, hunkIndex)
             }

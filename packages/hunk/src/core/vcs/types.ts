@@ -7,6 +7,7 @@ import type {
   ExtensionVcsHistoryRangeReviewAction,
   ExtensionVcsHistoryRangeSelection,
   ExtensionVcsHistoryReviewAction,
+  ExtensionVcsGeneratedPathsReader,
   ExtensionVcsHistoryReviewOptions,
   ExtensionVcsWatchPlan,
 } from "../../extension-api/types";
@@ -93,6 +94,8 @@ export interface VcsPatchResult {
   sourceFetcherBuilder?: BuildDiffFileOptions["sourceFetcherBuilder"];
   /** Diff files built from the result's declarative `extraFiles` entries. */
   extraFiles?: DiffFile[];
+  /** The repository's generated-path declarations, from the result's capability. */
+  readGeneratedPaths?: ExtensionVcsGeneratedPathsReader;
 }
 
 /** Complete ordered VCS capability set used throughout one session. */

@@ -132,6 +132,7 @@ import {
   resolveReviewNavigationTarget,
 } from "../lib/reviewState";
 import { filterFilesByExtensionPresentationScope } from "../lib/extensionPresentationScope";
+import { applyFileCollapse } from "../lib/fileCollapse";
 
 const EMPTY_AGENT_LINE_HIGHLIGHTS: ReadonlyMap<string, readonly ValidatedLineHighlight[]> =
   new Map();
@@ -265,6 +266,8 @@ export interface TerminalReview {
   sourceStatusByFileId: Record<string, FileSourceStatus>;
   toggleGap: (fileId: string, gapKey: string) => void;
   toggleSelectedHunkGap: () => void;
+  toggleFileCollapsed: (fileId: string) => void;
+  toggleSelectedFileCollapsed: () => void;
   visibleFiles: DiffFile[];
   /** Hunk indexes retained by the active extension presentation scope, keyed by runtime file id. */
   visibleHunkIndexesByFileId: ReadonlyMap<string, ReadonlySet<number>> | null;
@@ -330,6 +333,7 @@ export interface AgentNoteGeometrySnapshot {
 /** Own the shared review stream state used by both the UI and session bridge. */
 export function useTerminalReview({
   files,
+  collapseGenerated = false,
   initialShowAgentNotes = false,
   lineCursors = EMPTY_LINE_CURSORS,
   reviewVerticalStops = EMPTY_REVIEW_VERTICAL_STOPS,
@@ -339,6 +343,8 @@ export function useTerminalReview({
   stmlEnabled = false,
 }: {
   files: DiffFile[];
+  /** Start lockfiles, minified bundles, and generated files collapsed. */
+  collapseGenerated?: boolean;
   /** Note-layer visibility the launch configuration resolved for this review. */
   initialShowAgentNotes?: boolean;
   /**
@@ -560,9 +566,20 @@ export function useTerminalReview({
       presentationScope.files.map((entry) => [entry.fileId, new Set(entry.hunkIndexes)] as const),
     );
   }, [presentationScope]);
+  // Keyed by stable file key so a choice survives the watch reloads that replace file ids.
+  const [collapseOverrides, setCollapseOverrides] = useState<ReadonlyMap<string, boolean>>(
+    () => new Map(),
+  );
   const visibleFiles = useMemo(
-    () => filterFilesByExtensionPresentationScope(userVisibleFiles, presentationScope),
-    [presentationScope, userVisibleFiles],
+    () =>
+      applyFileCollapse({
+        files: filterFilesByExtensionPresentationScope(userVisibleFiles, presentationScope),
+        keyByFileId,
+        overrides: collapseOverrides,
+        collapseGenerated,
+        scoped: presentationScope !== null,
+      }),
+    [collapseGenerated, collapseOverrides, keyByFileId, presentationScope, userVisibleFiles],
   );
   // Which files and hunks carry notes, for the shared annotated-navigation planner. Built
   // from the merged stream, so a live comment that just arrived is navigable immediately.
@@ -575,7 +592,9 @@ export function useTerminalReview({
       visibleFiles.flatMap((file) => {
         const fileKey = keyByFileId.get(file.id);
         if (!fileKey) return [];
-        const hunkIndexes = visibleHunkIndexesByFileId?.get(file.id);
+        const hunkIndexes = file.isCollapsedPlaceholder
+          ? undefined
+          : visibleHunkIndexesByFileId?.get(file.id);
         // A presentation scope that leaves a file no hunks hides it from navigation. Without a
         // scope, files with no hunks at all (binary, skipped) stay navigable: file moves and
         // file jumps land on them, while hunk moves pass over them because they add no cursors.
@@ -1217,10 +1236,49 @@ export function useTerminalReview({
     }
 
     const file = fileByKey.get(intent.fileKey);
-    if (file?.sourceFetcher) {
+    const collapsed = visibleFilesRef.current.some(
+      (candidate) => candidate.id === file?.id && candidate.isCollapsedPlaceholder,
+    );
+    if (file?.sourceFetcher && !collapsed) {
       applyGapToggle(file, intent);
     }
   }, [applyGapToggle, fileByKey, lowerCommand]);
+
+  /** Reveal a file a navigation request targets, since a placeholder has nothing to land on. */
+  const expandFileIfCollapsed = useCallback(
+    (fileId: string) => {
+      const fileKey = keyByFileId.get(fileId);
+      const collapsed = visibleFilesRef.current.some(
+        (candidate) => candidate.id === fileId && candidate.isCollapsedPlaceholder,
+      );
+      if (fileKey && collapsed) {
+        setCollapseOverrides((current) => new Map(current).set(fileKey, false));
+      }
+    },
+    [keyByFileId],
+  );
+
+  /** Flip one file's collapse, pinning its header so the height change cannot scroll it away. */
+  const toggleFileCollapsed = useCallback(
+    (fileId: string) => {
+      const fileKey = keyByFileId.get(fileId);
+      const visibleFile = visibleFilesRef.current.find((candidate) => candidate.id === fileId);
+      if (!fileKey || !visibleFile) return;
+
+      // A file without hunks of its own has nothing to fold.
+      const isCollapsed = Boolean(visibleFile.isCollapsedPlaceholder);
+      if (!isCollapsed && visibleFile.metadata.hunks.length === 0) return;
+
+      setCollapseOverrides((current) => new Map(current).set(fileKey, !isCollapsed));
+      selectFile(fileId, { alignFileHeaderTop: true });
+    },
+    [keyByFileId, selectFile],
+  );
+
+  /** Flip collapse on the selected file for the catalogued command. */
+  const toggleSelectedFileCollapsed = useCallback(() => {
+    if (selectedFileId) toggleFileCollapsed(selectedFileId);
+  }, [selectedFileId, toggleFileCollapsed]);
 
   /**
    * Resolve one session-daemon navigation request against the current review and select it.
@@ -1244,6 +1302,7 @@ export function useTerminalReview({
           throw new Error("Resolved annotated hunk references an unknown file.");
         }
 
+        expandFileIfCollapsed(file.id);
         return {
           fileId: file.id,
           filePath: file.path,
@@ -1253,6 +1312,7 @@ export function useTerminalReview({
       }
 
       const target = resolveReviewNavigationTarget({ allFiles, input });
+      expandFileIfCollapsed(target.file.id);
 
       // A line target lands the viewport on the exact line through the same reveal path
       // `ctx.navigation.revealLine` uses, degrading to the hunk when the stream renders no
@@ -1281,7 +1341,7 @@ export function useTerminalReview({
         selectedHunk: buildSelectedHunkSummary(target.file, target.hunkIndex),
       };
     },
-    [allFiles, fileByKey, moveSelection, revealLine, selectHunk],
+    [allFiles, expandFileIfCollapsed, fileByKey, moveSelection, revealLine, selectHunk],
   );
 
   /**
@@ -1902,6 +1962,8 @@ export function useTerminalReview({
     sourceStatusByFileId,
     toggleGap,
     toggleSelectedHunkGap,
+    toggleFileCollapsed,
+    toggleSelectedFileCollapsed,
     visibleFiles,
     visibleHunkIndexesByFileId,
     addAgentLineHighlight,

@@ -71,6 +71,7 @@ export interface CommonOptions {
   promptSaveViewPreferences?: boolean;
   transparentBackground?: boolean;
   colorMoved?: boolean;
+  collapseGenerated?: boolean;
   /** False only when `--no-extensions` disables user extension loading for this run. */
   extensions?: boolean;
   /** Entry paths from repeated `--extension` flags, for development and testing. */

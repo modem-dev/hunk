@@ -513,6 +513,15 @@ const BUILTIN_COMMANDS = [
     closesMenu: true,
   },
   {
+    id: "hunk.review.toggleFileCollapsed",
+    title: "Collapse or expand the selected file",
+    category: "review",
+    defaultKeys: ["Z"],
+    locus: "client-local",
+    publicToExtensions: true,
+    closesMenu: true,
+  },
+  {
     id: "hunk.review.editSelectedFile",
     title: "Open the selected file in your editor",
     category: "review",

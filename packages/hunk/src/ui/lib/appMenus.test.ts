@@ -59,6 +59,7 @@ function createTestCommands(overrides: Partial<BuildAppCommandsOptions> = {}) {
     toggleCopyDecorations: record("toggleCopyDecorations"),
     toggleFocusArea: noop,
     toggleGapForSelectedHunk: noop,
+    toggleSelectedFileCollapsed: noop,
     toggleHelp: noop,
     toggleHunkHeaders: noop,
     toggleLineNumbers: noop,

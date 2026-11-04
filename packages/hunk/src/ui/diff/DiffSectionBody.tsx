@@ -69,6 +69,7 @@ export function DiffSectionBody({
   onStartUserNoteAtHunk,
   onRowPlanChange,
   onToggleGap,
+  onExpandCollapsed,
   showLineNumbers = true,
   showHunkHeaders = true,
   sourceStatus,
@@ -102,6 +103,7 @@ export function DiffSectionBody({
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void;
   onRowPlanChange?: (rowPlan: DiffSectionRowPlan, highlighted: boolean) => void;
   onToggleGap?: (gapKey: string) => void;
+  onExpandCollapsed?: () => void;
   showLineNumbers?: boolean;
   showHunkHeaders?: boolean;
   sourceStatus?: FileSourceStatus | undefined;
@@ -133,6 +135,8 @@ export function DiffSectionBody({
   onActiveAddNoteAffordanceChangeRef.current = onActiveAddNoteAffordanceChange;
   const onStartUserNoteAtHunkRef = useRef(onStartUserNoteAtHunk);
   onStartUserNoteAtHunkRef.current = onStartUserNoteAtHunk;
+  const onExpandCollapsedRef = useRef(onExpandCollapsed);
+  onExpandCollapsedRef.current = onExpandCollapsed;
   const onToggleGapRef = useRef(onToggleGap);
   onToggleGapRef.current = onToggleGap;
 
@@ -341,8 +345,20 @@ export function DiffSectionBody({
           paddingRight: 1,
           paddingBottom: 1,
         }}
+        onMouseUp={
+          file.isCollapsedPlaceholder
+            ? (event) => {
+                if (event.button !== 0) return;
+                event.preventDefault();
+                event.stopPropagation();
+                onExpandCollapsedRef.current?.();
+              }
+            : undefined
+        }
       >
-        <text fg={theme.muted}>{fitText(diffMessage(file), Math.max(1, width - 2))}</text>
+        <text fg={file.isCollapsedPlaceholder ? theme.accent : theme.muted}>
+          {fitText(diffMessage(file), Math.max(1, width - 2))}
+        </text>
       </box>
     );
   }

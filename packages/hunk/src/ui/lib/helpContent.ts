@@ -95,6 +95,7 @@ const HELP_SECTIONS: readonly HelpSectionSpec[] = [
       },
       { commandIds: ["hunk.view.toggleAgentNotes"], description: "toggle AI notes" },
       { commandIds: ["hunk.review.toggleHunkGap"], description: "toggle unchanged context" },
+      { commandIds: ["hunk.review.toggleFileCollapsed"], description: "collapse / expand file" },
       {
         commandIds: [
           "hunk.view.toggleLineNumbers",

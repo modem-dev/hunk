@@ -149,6 +149,7 @@ export function toInternalVcsPatchResult(result: ExtensionVcsPatchResult): VcsPa
       result.review === undefined ? undefined : validateExtensionReviewDescriptor(result.review),
     untrackedPaths: result.untrackedPaths,
     sourceFetcherBuilder,
+    readGeneratedPaths: result.readGeneratedPaths,
     extraFiles: result.extraFiles?.map((entry, index) =>
       toInternalExtraFile(entry, index, result.repoRoot, sourceFetcherBuilder),
     ),

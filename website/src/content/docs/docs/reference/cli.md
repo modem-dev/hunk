@@ -41,6 +41,8 @@ This reference is generated from the command metadata used by Hunk itself. Run `
 | `--no-agent-notes`             | hide agent notes by default                                              |
 | `--transparent-bg`             | let terminal background show through Hunk surfaces                       |
 | `--no-transparent-bg`          | paint Hunk surfaces with the active theme                                |
+| `--collapse-generated`         | start generated files collapsed                                          |
+| `--no-collapse-generated`      | start generated files expanded                                           |
 | `--extension <path>`           | load an extension entry file or directory (repeatable)                   |
 | `--no-extensions`              | disable user extensions for this run                                     |
 | `--disable-extension <id>`     | disable one bundled or user extension for this run (repeatable)          |
@@ -165,6 +167,8 @@ Status never fetches or modifies the repository; providers without status report
 | `--no-agent-notes`             | hide agent notes by default                                              |
 | `--transparent-bg`             | let terminal background show through Hunk surfaces                       |
 | `--no-transparent-bg`          | paint Hunk surfaces with the active theme                                |
+| `--collapse-generated`         | start generated files collapsed                                          |
+| `--no-collapse-generated`      | start generated files expanded                                           |
 | `--extension <path>`           | load an extension entry file or directory (repeatable)                   |
 | `--no-extensions`              | disable user extensions for this run                                     |
 | `--disable-extension <id>`     | disable one bundled or user extension for this run (repeatable)          |

@@ -71,6 +71,7 @@ function createTestCommands(
     toggleCopyDecorations: record("toggleCopyDecorations"),
     toggleFocusArea: record("toggleFocusArea"),
     toggleGapForSelectedHunk: record("toggleGapForSelectedHunk"),
+    toggleSelectedFileCollapsed: record("toggleSelectedFileCollapsed"),
     toggleHelp: record("toggleHelp"),
     toggleHunkHeaders: record("toggleHunkHeaders"),
     toggleLineNumbers: record("toggleLineNumbers"),
