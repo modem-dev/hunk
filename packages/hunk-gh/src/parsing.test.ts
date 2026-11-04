@@ -39,6 +39,12 @@ describe("GitHub PR invocation parsing", () => {
       repo: "hunk",
       number: "123",
     });
+    expect(parseGitHubPullRequestLocator("https://Acme.GHE.com/modem-dev/hunk/pull/123")).toEqual({
+      host: "acme.ghe.com",
+      owner: "modem-dev",
+      repo: "hunk",
+      number: "123",
+    });
   });
 
   test("keeps tokens after the separator for delegated patch options", () => {
@@ -82,6 +88,10 @@ describe("GitHub PR invocation parsing", () => {
       "https://github.com/owner/repo/pull/1/files",
       "https://github.com/owner/repo/pull/1?diff=1",
       "https://github.com/owner/repo/pull/1#discussion",
+      "https://ghe.com/owner/repo/pull/1",
+      "https://a.b.ghe.com/owner/repo/pull/1",
+      "https://acme.ghe.com.attacker.example/owner/repo/pull/1",
+      "https://github.example.com/owner/repo/pull/1",
     ]) {
       expect(() => parseGitHubPullRequestLocator(locator)).toThrow();
     }
@@ -163,6 +173,12 @@ describe("GitHub commit invocation parsing", () => {
       repo: "hunk",
       sha: "abcdef1",
     });
+    expect(parseGitHubCommitLocator("https://acme.ghe.com/modem-dev/hunk/commit/abcdef1")).toEqual({
+      host: "acme.ghe.com",
+      owner: "modem-dev",
+      repo: "hunk",
+      sha: "abcdef1",
+    });
     expect(parseGitHubCommitInvocation(["--help"])).toMatchObject({ help: true });
   });
 
@@ -200,6 +216,10 @@ describe("GitHub commit invocation parsing", () => {
       "https://github.com/owner/other/%2E%2E/repo/commit/abcdef1",
       "https://github.com/owner/repo/commit/abcdef1?diff=1",
       "https://github.com/owner/repo/commit/abcdef1#files",
+      "https://ghe.com/owner/repo/commit/abcdef1",
+      "https://acme.ghe.com:444/owner/repo/commit/abcdef1",
+      "https://acme.ghe.com/owner/other/../repo/commit/abcdef1",
+      "https://gitlab.com/owner/repo/commit/abcdef1",
       "https://github.com/owner/repo/commit/abcdefg",
       "https://github.com/owner%2Frepo/name/commit/abcdef1",
       "owner/repo@abc\u0007def1",

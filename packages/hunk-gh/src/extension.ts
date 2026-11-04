@@ -21,6 +21,7 @@ import {
   GITHUB_PR_HELP,
 } from "./help";
 import {
+  gitHubHostField,
   parseGitHubCommitInvocation,
   parseGitHubCompareInvocation,
   parseGitHubPrInvocation,
@@ -94,7 +95,11 @@ async function prepareCommit(
   if (invocation.help) return GITHUB_COMMIT_HELP;
   const repository =
     invocation.locator.owner && invocation.locator.repo
-      ? { owner: invocation.locator.owner, repo: invocation.locator.repo }
+      ? {
+          ...gitHubHostField(invocation.locator.host),
+          owner: invocation.locator.owner,
+          repo: invocation.locator.repo,
+        }
       : await resolveGitHubRepository(
           invocation.explicitRepository,
           ctx.cwd,

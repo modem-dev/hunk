@@ -78,6 +78,7 @@ export const GITHUB_CLI_REFERENCE: GitHubCliReference = {
         { args: "123 --repo modem-dev/hunk", description: "use an explicit repository" },
         { args: "'modem-dev/hunk#123'", description: "name the repository and pull request" },
         { args: "https://github.com/modem-dev/hunk/pull/123" },
+        { args: "https://acme.ghe.com/modem-dev/hunk/pull/123" },
       ],
     },
     {
@@ -91,6 +92,7 @@ export const GITHUB_CLI_REFERENCE: GitHubCliReference = {
         { args: "abcdef1 --repo modem-dev/hunk", description: "use an explicit repository" },
         { args: "modem-dev/hunk@abcdef1", description: "name the repository and commit" },
         { args: "https://github.com/modem-dev/hunk/commit/abcdef1" },
+        { args: "https://acme.ghe.com/modem-dev/hunk/commit/abcdef1" },
       ],
     },
     {

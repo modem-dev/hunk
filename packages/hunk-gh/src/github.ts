@@ -2,7 +2,7 @@ import {
   HunkExtensionUserError,
   type ExtensionChangeRequestReviewDescriptor,
 } from "hunkdiff/extension";
-import { parseGitHubRepository } from "./parsing";
+import { gitHubHostField, parseGitHubRepository } from "./parsing";
 import type {
   GitCheckoutIdentity,
   GitHubFetch,
@@ -10,9 +10,13 @@ import type {
   ResolvedGitHubPullRequest,
 } from "./types";
 
-const GITHUB_API_ORIGIN = "https://api.github.com";
 const MAX_DIFF_BYTES = 64 * 1024 * 1024;
 const MAX_METADATA_BYTES = 1024 * 1024;
+
+/** Returns the REST API origin for github.com or one GHE.com data-residency host. */
+function githubApiOrigin(repository: GitHubRepository): string {
+  return `https://api.${repository.host ?? "github.com"}`;
+}
 
 /** Builds credential-safe GitHub request headers. */
 function githubHeaders(
@@ -186,7 +190,7 @@ export async function findOpenPullRequestForCommit(
   }
   const name = `${originRepository.owner}/${originRepository.repo}:${branch}@${sha.slice(0, 12)}`;
   const url = new URL(
-    `${GITHUB_API_ORIGIN}/repos/${encodeURIComponent(originRepository.owner)}/${encodeURIComponent(originRepository.repo)}/commits/${sha}/pulls`,
+    `${githubApiOrigin(originRepository)}/repos/${encodeURIComponent(originRepository.owner)}/${encodeURIComponent(originRepository.repo)}/commits/${sha}/pulls`,
   );
   url.searchParams.set("per_page", "100");
 
@@ -263,7 +267,7 @@ export async function findOpenPullRequestForCommit(
     } catch {
       throw new HunkExtensionUserError("GitHub returned malformed PR metadata.");
     }
-    open.push({ ...base, number: String(value.number) });
+    open.push({ ...gitHubHostField(originRepository.host), ...base, number: String(value.number) });
   }
 
   if (response.headers.get("link")?.includes('rel="next"')) {
@@ -282,8 +286,8 @@ export async function findOpenPullRequestForCommit(
       suggestions: ["Pass the intended pull-request number explicitly."],
     });
   }
-  const { owner, repo, number } = open[0]!;
-  return { owner, repo, number };
+  const { host, owner, repo, number } = open[0]!;
+  return { ...gitHubHostField(host), owner, repo, number };
 }
 
 /** Finds a branch PR even when local HEAD is ahead of its pushed upstream tip. */
@@ -376,7 +380,7 @@ export function parseGitHubPullRequestMetadata(
   const expectedPath = `/${target.owner}/${target.repo}/pull/${target.number}`.toLowerCase();
   if (
     parsedUrl.protocol !== "https:" ||
-    parsedUrl.hostname.toLowerCase() !== "github.com" ||
+    parsedUrl.hostname.toLowerCase() !== (target.host ?? "github.com") ||
     parsedUrl.port ||
     parsedUrl.username ||
     parsedUrl.password ||
@@ -412,7 +416,7 @@ export async function fetchGitHubPullRequestMetadata(
   let response: Response;
   try {
     response = await fetchImpl(
-      `${GITHUB_API_ORIGIN}/repos/${encodeURIComponent(target.owner)}/${encodeURIComponent(target.repo)}/pulls/${target.number}`,
+      `${githubApiOrigin(target)}/repos/${encodeURIComponent(target.owner)}/${encodeURIComponent(target.repo)}/pulls/${target.number}`,
       {
         headers: githubHeaders(env, "hunk-gh-extension", "application/vnd.github+json"),
         redirect: "manual",
@@ -442,7 +446,7 @@ export async function fetchGitHubPullRequestDiff(
   let response: Response;
   try {
     response = await fetchImpl(
-      `${GITHUB_API_ORIGIN}/repos/${encodeURIComponent(target.owner)}/${encodeURIComponent(target.repo)}/pulls/${target.number}`,
+      `${githubApiOrigin(target)}/repos/${encodeURIComponent(target.owner)}/${encodeURIComponent(target.repo)}/pulls/${target.number}`,
       {
         headers: githubHeaders(env, "hunk-github-pr-extension"),
         redirect: "manual",
@@ -476,7 +480,7 @@ export async function fetchGitHubCommitDiff(
   let response: Response;
   try {
     response = await fetchImpl(
-      `${GITHUB_API_ORIGIN}/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.repo)}/commits/${sha}`,
+      `${githubApiOrigin(repository)}/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.repo)}/commits/${sha}`,
       { headers: githubHeaders(env, "hunk-gh-extension"), redirect: "manual", signal },
     );
   } catch (error) {
@@ -512,7 +516,7 @@ export async function fetchGitHubCompareDiff(
   try {
     const range = `${encodeURIComponent(base)}...${encodeURIComponent(head)}`;
     response = await fetchImpl(
-      `${GITHUB_API_ORIGIN}/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.repo)}/compare/${range}`,
+      `${githubApiOrigin(repository)}/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.repo)}/compare/${range}`,
       { headers: githubHeaders(env, "hunk-gh-extension"), redirect: "manual", signal },
     );
   } catch (error) {

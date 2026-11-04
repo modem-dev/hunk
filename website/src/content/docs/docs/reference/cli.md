@@ -252,6 +252,7 @@ hunk gh pr 123                        # infer owner/repo from the local origin
 hunk gh pr 123 --repo modem-dev/hunk  # use an explicit repository
 hunk gh pr 'modem-dev/hunk#123'       # name the repository and pull request
 hunk gh pr https://github.com/modem-dev/hunk/pull/123
+hunk gh pr https://acme.ghe.com/modem-dev/hunk/pull/123
 ```
 
 ### `hunk gh commit`
@@ -269,6 +270,7 @@ hunk gh commit abcdef1                        # infer owner/repo from the local 
 hunk gh commit abcdef1 --repo modem-dev/hunk  # use an explicit repository
 hunk gh commit modem-dev/hunk@abcdef1         # name the repository and commit
 hunk gh commit https://github.com/modem-dev/hunk/commit/abcdef1
+hunk gh commit https://acme.ghe.com/modem-dev/hunk/commit/abcdef1
 ```
 
 ### `hunk gh compare`

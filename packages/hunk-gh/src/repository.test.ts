@@ -27,9 +27,27 @@ describe("GitHub repository resolution", () => {
     }
   });
 
+  test("parses GHE.com remote forms with their host", () => {
+    for (const remote of [
+      "https://acme.ghe.com/modem-dev/hunk.git",
+      "ssh://git@acme.ghe.com/modem-dev/hunk.git",
+      "git@acme.ghe.com:modem-dev/hunk.git",
+      "acme.ghe.com:modem-dev/hunk",
+    ]) {
+      expect(parseGitHubRemoteRepository(remote)).toEqual({
+        host: "acme.ghe.com",
+        owner: "modem-dev",
+        repo: "hunk",
+      });
+    }
+  });
+
   test("rejects non-GitHub and malformed remotes", () => {
     for (const remote of [
       "https://gitlab.com/modem-dev/hunk.git",
+      "git@gitlab.com:modem-dev/hunk.git",
+      "git@ghe.com:modem-dev/hunk.git",
+      "https://acme.ghe.com.attacker.example/modem-dev/hunk.git",
       "https://github.com/modem-dev/hunk/extra.git",
       "git@github.com:modem-dev.git",
       "not a remote",

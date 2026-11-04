@@ -9,6 +9,7 @@ import type {
 } from "./types";
 
 const REPOSITORY_PART = /^[A-Za-z0-9_.-]+$/;
+const GHE_COM_HOST = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.ghe\.com$/;
 const INVALID_GIT_REF_CHARACTERS = [" ", "~", "^", ":", "?", "*", "[", "\\"];
 
 /** Checks one ref against Git's refname rules before it reaches GitHub's URL path. */
@@ -41,6 +42,17 @@ function parsePullRequestNumber(value: string): string {
   return String(number);
 }
 
+/** Accepts only GitHub-operated hosts so a crafted URL cannot redirect the API token. */
+export function parseGitHubHost(hostname: string): string | null {
+  const host = hostname.toLowerCase();
+  return host === "github.com" || GHE_COM_HOST.test(host) ? host : null;
+}
+
+/** Returns the optional repository host field, omitted for github.com. */
+export function gitHubHostField(host: string | null | undefined): { host?: string } {
+  return host && host !== "github.com" ? { host } : {};
+}
+
 /** Validates and normalizes one owner/repository pair. */
 export function parseGitHubRepository(value: string): GitHubRepository {
   assertSafeArgument(value, "GitHub repository");
@@ -61,7 +73,7 @@ export function parseGitHubRepository(value: string): GitHubRepository {
   return { owner: parts[0], repo: parts[1] };
 }
 
-/** Parses one number, owner/repo#number shorthand, or github.com pull-request URL. */
+/** Parses one number, owner/repo#number shorthand, or github.com/ghe.com pull-request URL. */
 export function parseGitHubPullRequestLocator(value: string): GitHubPullRequestLocator {
   if (/^#?\d+$/.test(value)) {
     return { number: parsePullRequestNumber(value.replace(/^#/, "")) };
@@ -79,16 +91,19 @@ export function parseGitHubPullRequestLocator(value: string): GitHubPullRequestL
   } catch {
     throw invocationError(`Invalid GitHub pull-request locator: ${value}`);
   }
+  const host = parseGitHubHost(url.hostname);
   if (
     url.protocol !== "https:" ||
-    url.hostname.toLowerCase() !== "github.com" ||
+    !host ||
     url.port ||
     url.username ||
     url.password ||
     url.search ||
     url.hash
   ) {
-    throw invocationError("Pull-request URLs must be unmodified https://github.com URLs.");
+    throw invocationError(
+      "Pull-request URLs must be unmodified https://github.com or https://<tenant>.ghe.com URLs.",
+    );
   }
 
   const parts = url.pathname.split("/").filter(Boolean);
@@ -96,7 +111,11 @@ export function parseGitHubPullRequestLocator(value: string): GitHubPullRequestL
     throw invocationError("GitHub pull-request URLs must end with /owner/repo/pull/number.");
   }
   const repository = parseGitHubRepository(`${parts[0]}/${parts[1]}`);
-  return { ...repository, number: parsePullRequestNumber(parts[3]!) };
+  return {
+    ...gitHubHostField(host),
+    ...repository,
+    number: parsePullRequestNumber(parts[3]!),
+  };
 }
 
 /** Parses raw PR tokens without consuming patch options after `--`. */
@@ -145,7 +164,7 @@ export function parseGitHubPrInvocation(args: readonly string[]): GitHubPrInvoca
   return { locator, explicitRepository, patchArgs: Object.freeze([...patchArgs]), help: false };
 }
 
-/** Parses one SHA, owner/repo@SHA shorthand, or exact github.com commit URL. */
+/** Parses one SHA, owner/repo@SHA shorthand, or exact github.com/ghe.com commit URL. */
 export function parseGitHubCommitLocator(value: string): GitHubCommitLocator {
   assertSafeArgument(value, "Commit locator");
   if (/^[0-9a-f]{7,40}$/i.test(value)) return { sha: value.toLowerCase() };
@@ -164,27 +183,30 @@ export function parseGitHubCommitLocator(value: string): GitHubCommitLocator {
   } catch {
     throw invocationError(`Invalid GitHub commit locator: ${value}`);
   }
+  const host = parseGitHubHost(url.hostname);
   if (
-    !/^https:\/\/github\.com\//i.test(value) ||
+    !/^https:\/\/[a-z0-9.-]+\//i.test(value) ||
     url.protocol !== "https:" ||
-    url.hostname.toLowerCase() !== "github.com" ||
+    !host ||
     url.port ||
     url.username ||
     url.password ||
     url.search ||
     url.hash
   ) {
-    throw invocationError("Commit URLs must be unmodified https://github.com URLs.");
+    throw invocationError(
+      "Commit URLs must be unmodified https://github.com or https://<tenant>.ghe.com URLs.",
+    );
   }
 
-  const rawPath = /^https:\/\/github\.com\/([^/?#]+)\/([^/?#]+)\/commit\/([^/?#]+)$/i.exec(value);
+  const rawPath = /^https:\/\/[a-z0-9.-]+\/([^/?#]+)\/([^/?#]+)\/commit\/([^/?#]+)$/i.exec(value);
   if (!rawPath || url.pathname !== `/${rawPath[1]}/${rawPath[2]}/commit/${rawPath[3]}`) {
     throw invocationError("GitHub commit URLs must end with /owner/repo/commit/sha.");
   }
   const repository = parseGitHubRepository(`${rawPath[1]}/${rawPath[2]}`);
   const sha = rawPath[3]!;
   if (!/^[0-9a-f]{7,40}$/i.test(sha)) throw invocationError(`Invalid commit SHA: ${sha}`);
-  return { ...repository, sha: sha.toLowerCase() };
+  return { ...gitHubHostField(host), ...repository, sha: sha.toLowerCase() };
 }
 
 /** Parses one commit locator, optional repository, and delegated patch options. */

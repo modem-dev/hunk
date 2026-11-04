@@ -111,7 +111,9 @@ hunk gh compare main...feature --repo modem-dev/hunk
 ```
 
 Public repositories work anonymously. Set `GH_TOKEN`, or `GITHUB_TOKEN` when it is absent, for
-private repositories and higher API limits. GitHub Enterprise is not currently supported.
+private repositories and higher API limits. GitHub Enterprise Cloud with data residency
+(`<tenant>.ghe.com`) works through its URLs or a ghe.com `origin`; GitHub Enterprise Server is not
+currently supported.
 
 ### Working with Jujutsu and Sapling
 

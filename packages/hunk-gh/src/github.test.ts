@@ -275,6 +275,23 @@ describe("GitHub pull-request metadata", () => {
     });
   });
 
+  test("fetches GHE.com metadata from the tenant API and requires a tenant page URL", async () => {
+    const tenantTarget = { ...target, host: "acme.ghe.com" };
+    const tenantUrl = "https://acme.ghe.com/modem-dev/hunk/pull/123";
+    let requestUrl = "";
+    const review = await fetchGitHubPullRequestMetadata(tenantTarget, signal(), {}, (async (
+      url,
+    ) => {
+      requestUrl = String(url);
+      return Response.json({ ...metadata, html_url: tenantUrl });
+    }) as GitHubFetch);
+    expect(requestUrl).toBe("https://api.acme.ghe.com/repos/modem-dev/hunk/pulls/123");
+    expect(review.url).toBe(tenantUrl);
+    expect(() => parseGitHubPullRequestMetadata(metadata, tenantTarget)).toThrow(
+      "malformed pull-request metadata",
+    );
+  });
+
   test("rejects terminal controls and PR URLs that do not match the target", () => {
     expect(() =>
       parseGitHubPullRequestMetadata({ ...metadata, title: "forged\u001b[2Jtitle" }, target),
@@ -430,6 +447,19 @@ describe("GitHub comparison fetching", () => {
     expect(requestUrl).toBe(
       "https://api.github.com/repos/modem-dev/hunk/compare/release%2Fv1...feature%23topic",
     );
+
+    await fetchGitHubCompareDiff(
+      { host: "acme.ghe.com", owner: "modem-dev", repo: "hunk" },
+      "main",
+      "topic",
+      signal(),
+      {},
+      (async (url) => {
+        requestUrl = String(url);
+        return new Response("diff --git a/a b/a\n");
+      }) as GitHubFetch,
+    );
+    expect(requestUrl).toBe("https://api.acme.ghe.com/repos/modem-dev/hunk/compare/main...topic");
     expect(requestInit?.redirect).toBe("manual");
     expect(new Headers(requestInit?.headers).get("accept")).toBe("application/vnd.github.v3.diff");
     expect(new Headers(requestInit?.headers).get("authorization")).toBe("Bearer token");

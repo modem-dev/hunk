@@ -1,9 +1,12 @@
 export interface GitHubRepository {
+  /** GitHub Enterprise Cloud host such as `acme.ghe.com`; omitted for github.com. */
+  host?: string;
   owner: string;
   repo: string;
 }
 
 export interface GitHubPullRequestLocator {
+  host?: string;
   owner?: string;
   repo?: string;
   number: string;
@@ -27,6 +30,7 @@ export interface GitCheckoutIdentity {
 }
 
 export interface GitHubCommitLocator {
+  host?: string;
   owner?: string;
   repo?: string;
   sha: string;
