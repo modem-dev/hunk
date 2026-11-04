@@ -133,6 +133,7 @@ Use arrows and Enter to navigate, Tab to switch focus, `i` to show hidden/Git-ig
 hunk diff --files before.ts after.ts        # compare two files directly
 hunk diff --files before.ts after.ts --watch # auto-reload when either file changes
 git diff --no-color | hunk patch -          # review a patch from stdin
+gh pr diff 123 --patch | hunk patch -       # review a GitHub PR without checking it out
 ```
 
 ### Working with agents
