@@ -339,6 +339,7 @@ export const CONFIG_REFERENCE_GROUPS = {
     "sidebar",
     "transparent_background",
     "color_moved",
+    "collapse_generated",
   ],
   "Navigation and scrolling": ["cursor_line", "scroll_off", "wheel_scroll_lines"],
   "Review inputs and reloading": ["vcs", "watch", "exclude_untracked"],

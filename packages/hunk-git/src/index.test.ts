@@ -565,3 +565,66 @@ describe("bundled Git adapter helpers", () => {
     expect(statSignature(join(repo, "absent.txt"))).toBe(`${join(repo, "absent.txt")}:missing`);
   });
 });
+
+describe("GitVcsAdapter generated-path declarations", () => {
+  /** Commit attributes on one side of a range and changes under every declared pattern. */
+  function createAttributedRepo() {
+    const repo = createTempRepo("hunk-git-generated-");
+    writeFileSync(join(repo, "client.ts"), "a\n");
+    writeFileSync(join(repo, "bun.lock"), "a\n");
+    writeFileSync(join(repo, "plain.ts"), "a\n");
+    git(repo, "add", ".");
+    git(repo, "commit", "-m", "base");
+    writeFileSync(
+      join(repo, ".gitattributes"),
+      "client.ts linguist-generated=true\nbun.lock -linguist-generated\n",
+    );
+    git(repo, "add", ".");
+    git(repo, "commit", "-m", "attributes");
+    return repo;
+  }
+
+  const declaredPaths = ["client.ts", "bun.lock", "plain.ts"];
+  const expectedDeclarations: [string, boolean][] = [
+    ["bun.lock", false],
+    ["client.ts", true],
+  ];
+
+  /** Sort a reader's answer so assertions do not depend on Git's output order. */
+  function sortedDeclarations(declarations: ReadonlyMap<string, boolean>) {
+    return [...declarations].sort(([left], [right]) => left.localeCompare(right));
+  }
+
+  test("reads the worktree's attributes for a working-tree diff", async () => {
+    const repo = createAttributedRepo();
+    const result = await gitOperations["working-tree-diff"]!.load(
+      { kind: "vcs", staged: false, options: {} } satisfies ExtensionVcsDiffInput,
+      { cwd: repo },
+    );
+
+    expect(sortedDeclarations(await result.readGeneratedPaths!(declaredPaths))).toEqual(
+      expectedDeclarations,
+    );
+  });
+
+  test("reads the shown commit's attributes, not the worktree's", async () => {
+    const repo = createAttributedRepo();
+    const attributedCommit = git(repo, "rev-parse", "HEAD").trim();
+    git(repo, "rm", ".gitattributes");
+    git(repo, "commit", "-m", "drop attributes");
+
+    const atCommit = await gitOperations["revision-show"]!.load(
+      { kind: "show", ref: attributedCommit, options: {} } satisfies ExtensionVcsShowInput,
+      { cwd: repo },
+    );
+    const atHead = await gitOperations["revision-show"]!.load(
+      { kind: "show", ref: "HEAD", options: {} } satisfies ExtensionVcsShowInput,
+      { cwd: repo },
+    );
+
+    expect(sortedDeclarations(await atCommit.readGeneratedPaths!(declaredPaths))).toEqual(
+      expectedDeclarations,
+    );
+    expect(sortedDeclarations(await atHead.readGeneratedPaths!(declaredPaths))).toEqual([]);
+  });
+});

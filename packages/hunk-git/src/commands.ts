@@ -509,6 +509,48 @@ function runGitCommand({
   };
 }
 
+/** Where `git check-attr` reads `.gitattributes` from for one review. */
+export type GitAttributeSource =
+  | { kind: "worktree" }
+  | { kind: "index" }
+  | { kind: "tree"; ref: string };
+
+/** Build one `git check-attr` query for the attribute GitHub uses to collapse generated files. */
+export function buildGitGeneratedAttributeArgs(
+  paths: readonly string[],
+  source: GitAttributeSource,
+) {
+  return [
+    "check-attr",
+    "-z",
+    ...(source.kind === "index" ? ["--cached"] : []),
+    ...(source.kind === "tree" ? [`--source=${source.ref}`] : []),
+    "linguist-generated",
+    "--",
+    ...paths,
+  ];
+}
+
+/**
+ * Parse `git check-attr -z` output into the paths the repository declares.
+ *
+ * Follows Linguist: `-linguist-generated` and `=false` declare a file not generated, and any
+ * other assigned value declares it generated. Unspecified paths stay out of the map.
+ */
+export function parseGitGeneratedAttributes(output: string) {
+  const declarations = new Map<string, boolean>();
+  const fields = output.split("\0");
+
+  for (let index = 0; index + 2 < fields.length; index += 3) {
+    const path = fields[index]!;
+    const value = fields[index + 2]!;
+    if (value === "unspecified") continue;
+    declarations.set(path, value !== "unset" && value !== "false");
+  }
+
+  return declarations;
+}
+
 /** Run a git command and translate common failures into user-facing Hunk errors. */
 export function runGitText(options: RunGitTextOptions) {
   return runGitCommand(options).stdout;

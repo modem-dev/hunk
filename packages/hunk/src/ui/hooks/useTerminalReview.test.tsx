@@ -302,6 +302,76 @@ async function renderTerminalReview(
 }
 
 describe("useTerminalReview", () => {
+  test("hides a collapsed file from hunk moves and keeps the choice across a reload", async () => {
+    const { controllerRef, setFilesRef, setup } = await renderTerminalReview([
+      createTwoHunkFile("alpha", "alpha.ts"),
+      createTwoHunkFile("beta", "beta.ts"),
+    ]);
+
+    /** Read the hunk count the review stream currently renders for one path. */
+    const renderedHunks = (path: string) =>
+      expectValue(controllerRef.current).visibleFiles.find((file) => file.path === path)?.metadata
+        .hunks.length;
+
+    try {
+      await flush(setup);
+      await act(async () => expectValue(controllerRef.current).toggleFileCollapsed("beta"));
+      await flush(setup);
+      expect(renderedHunks("beta.ts")).toBe(0);
+      expect(
+        expectValue(controllerRef.current).allFiles.find((file) => file.path === "beta.ts")
+          ?.metadata.hunks.length,
+      ).toBe(2);
+
+      await act(async () => expectValue(controllerRef.current).selectVisibleFile("alpha"));
+      await flush(setup);
+      await act(async () => expectValue(controllerRef.current).moveSelection("hunk", 5));
+      await flush(setup);
+      expect(expectValue(controllerRef.current).selectedFileId).toBe("alpha");
+
+      await act(async () =>
+        expectValue(setFilesRef.current)([
+          createTwoHunkFile("alpha-reloaded", "alpha.ts"),
+          createTwoHunkFile("beta-reloaded", "beta.ts"),
+        ]),
+      );
+      await flush(setup);
+      expect(renderedHunks("beta.ts")).toBe(0);
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("expands a collapsed file when a session navigates into it", async () => {
+    const { controllerRef, setup } = await renderTerminalReview([
+      createTwoHunkFile("alpha", "alpha.ts"),
+      createTwoHunkFile("beta", "beta.ts"),
+    ]);
+
+    try {
+      await flush(setup);
+      await act(async () => expectValue(controllerRef.current).toggleFileCollapsed("beta"));
+      await flush(setup);
+
+      await act(async () => {
+        expectValue(controllerRef.current).navigateToLocation({
+          filePath: "beta.ts",
+          hunkIndex: 1,
+        });
+      });
+      await flush(setup);
+
+      const controller = expectValue(controllerRef.current);
+      expect(controller.selectedFileId).toBe("beta");
+      expect(controller.selectedHunkIndex).toBe(1);
+      expect(
+        controller.visibleFiles.find((file) => file.id === "beta")?.metadata.hunks.length,
+      ).toBe(2);
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
   test("keeps files without hunks reachable by file moves and file jumps", async () => {
     const { controllerRef, setup } = await renderTerminalReview([
       createAlphaFile(),

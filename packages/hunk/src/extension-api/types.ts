@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 32;
+export const HUNK_EXTENSION_API_VERSION = 33;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -1181,6 +1181,16 @@ export interface ExtensionVcsSkippedFile {
  */
 export type ExtensionVcsExtraFile = ExtensionVcsExtraPatchFile | ExtensionVcsSkippedFile;
 
+/**
+ * Reports which of the reviewed paths the repository declares generated or not generated.
+ *
+ * Paths the repository says nothing about are left out of the map, so Hunk keeps its
+ * built-in classification for them. A rejected read falls back to that classification too.
+ */
+export type ExtensionVcsGeneratedPathsReader = (
+  paths: readonly string[],
+) => Promise<ReadonlyMap<string, boolean>>;
+
 /** The patch text one operation produced, plus how to label it in the UI. */
 export interface ExtensionVcsPatchResult {
   repoRoot: string;
@@ -1216,6 +1226,8 @@ export interface ExtensionVcsPatchResult {
    * highlighted output; when omitted, every new reader is treated as a new snapshot.
    */
   sourceCacheKey?: string;
+  /** Repository declarations that decide which files start collapsed as generated. */
+  readGeneratedPaths?: ExtensionVcsGeneratedPathsReader;
   /**
    * Files to review beside `patchText`, in the order they should appear.
    *

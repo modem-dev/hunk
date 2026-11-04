@@ -148,6 +148,7 @@ Review and shared commands:
 | `hunk.review.stepDown`                         | Move down one line or note                     | `down`, `j`                  |
 | `hunk.review.stepUp`                           | Move up one line or note                       | `up`, `k`                    |
 | `hunk.review.toggleHunkGap`                    | Expand or collapse the selected context        | `z`                          |
+| `hunk.review.toggleFileCollapsed`              | Collapse or expand the selected file           | `Z`                          |
 | `hunk.search.find`                             | Search diff content                            | `/`                          |
 | `hunk.search.next`                             | Next search match                              | `n`                          |
 | `hunk.search.previous`                         | Previous search match                          | `N`                          |

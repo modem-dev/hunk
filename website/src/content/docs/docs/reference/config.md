@@ -234,6 +234,14 @@ Request moved-line coloring for Git reviews. `true` requests zebra coloring when
 - **Accepted:** `true` or `false`
 - **Built-in default:** not set; Git uses its diff.colorMoved setting
 
+#### `collapse_generated`
+
+Start lockfiles, minified bundles, and generated files collapsed, including paths marked `linguist-generated` in `.gitattributes`.
+
+- **Type:** boolean
+- **Accepted:** `true` or `false`
+- **Built-in default:** `true`
+
 ### Navigation and scrolling
 
 #### `cursor_line`

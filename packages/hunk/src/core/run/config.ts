@@ -562,6 +562,15 @@ export const CONFIG_REFERENCE_OPTIONS: readonly ConfigReferenceOption[] = [
     runtimeKeys: ["transparentBackground", "transparent_background"],
   },
   {
+    key: "collapse_generated",
+    property: "collapseGenerated",
+    type: "boolean",
+    accepted: "`true` or `false`",
+    runtimeDefault: true,
+    description:
+      "Start lockfiles, minified bundles, and generated files collapsed, including paths marked `linguist-generated` in `.gitattributes`.",
+  },
+  {
     key: "color_moved",
     property: "colorMoved",
     type: "boolean",
@@ -1176,6 +1185,7 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
       overrides.promptSaveViewPreferences ?? base.promptSaveViewPreferences,
     transparentBackground: overrides.transparentBackground ?? base.transparentBackground,
     colorMoved: overrides.colorMoved ?? base.colorMoved,
+    collapseGenerated: overrides.collapseGenerated ?? base.collapseGenerated,
     extensions: overrides.extensions ?? base.extensions,
     extensionPaths: overrides.extensionPaths ?? base.extensionPaths,
     extensionSelectionOverrides:
@@ -1468,6 +1478,7 @@ export function resolveConfiguredInput<Input extends ConfigurableInput>(
     promptSaveViewPreferences: resolvedOptions.promptSaveViewPreferences ?? true,
     transparentBackground: resolvedOptions.transparentBackground ?? false,
     colorMoved: resolvedOptions.colorMoved,
+    collapseGenerated: resolvedOptions.collapseGenerated ?? true,
   };
 
   // Only the legacy `custom` id is a hard error: every other unknown id may still name a theme an

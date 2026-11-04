@@ -4,6 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import {
   buildGitDiffArgs,
   buildGitDiffNumstatArgs,
+  buildGitGeneratedAttributeArgs,
   buildGitShowArgs,
   buildGitStashShowArgs,
   listGitIgnoredDirectoryRoots,
@@ -16,10 +17,13 @@ import {
   resolveGitDiffEndpointsAsync,
   resolveGitMetadata,
   resolveGitRepoRootAsync,
+  parseGitGeneratedAttributes,
   runGitTextAsync,
   shouldSkipLargeTrackedDiff,
   type GitBackedInput,
   type GitDiffEndpoints,
+  type GitAttributeSource,
+  type RunGitTextOptions,
 } from "./commands";
 import {
   countGitReviewCommits,
@@ -264,6 +268,63 @@ async function createGitDiffSourceCapabilityAsync(
 }
 
 /* -------------------------------------------------------------------------- */
+/* Generated-file declarations                                                 */
+/* -------------------------------------------------------------------------- */
+
+// Bounds each command line; a review of many files just spawns a few more queries.
+const GIT_ATTRIBUTE_PATH_BATCH = 200;
+
+/** Choose the `.gitattributes` matching the reviewed side, as a pull request reads its head's. */
+function gitAttributeSourceForDiff(
+  input: ExtensionVcsDiffInput,
+  comparisonHead: string | undefined,
+): GitAttributeSource {
+  if (input.staged) return { kind: "index" };
+
+  const rangeHead = input.range?.match(GIT_RANGE)?.[3];
+  const ref = comparisonHead ?? input.rangeEndpoints?.to ?? rangeHead;
+  return ref ? { kind: "tree", ref } : { kind: "worktree" };
+}
+
+/** Build the capability that reads which reviewed paths the repository marks generated. */
+function createGitGeneratedPathsReader(
+  input: RunGitTextOptions["input"],
+  repoRoot: string,
+  source: GitAttributeSource,
+  gitExecutable: string,
+  signal?: AbortSignal,
+) {
+  /** Query one batch, using the worktree's attributes on Git too old for `--source`. */
+  async function readBatch(paths: readonly string[], batchSource: GitAttributeSource) {
+    try {
+      return await runGitTextAsync({
+        input,
+        args: buildGitGeneratedAttributeArgs(paths, batchSource),
+        cwd: repoRoot,
+        gitExecutable,
+        signal,
+      });
+    } catch (error) {
+      if (signal?.aborted || batchSource.kind !== "tree") throw error;
+      return readBatch(paths, { kind: "worktree" });
+    }
+  }
+
+  return async (paths: readonly string[]) => {
+    const declarations = new Map<string, boolean>();
+
+    for (let start = 0; start < paths.length; start += GIT_ATTRIBUTE_PATH_BATCH) {
+      const batch = paths.slice(start, start + GIT_ATTRIBUTE_PATH_BATCH);
+      for (const [path, generated] of parseGitGeneratedAttributes(await readBatch(batch, source))) {
+        declarations.set(path, generated);
+      }
+    }
+
+    return declarations;
+  };
+}
+
+/* -------------------------------------------------------------------------- */
 /* Watch plans                                                                 */
 /* -------------------------------------------------------------------------- */
 
@@ -437,6 +498,13 @@ export function createGitVcsAdapter({
             }),
             review: comparison?.review,
             ...sourceCapability,
+            readGeneratedPaths: createGitGeneratedPathsReader(
+              input,
+              repoRoot,
+              gitAttributeSourceForDiff(input, comparison?.endpoints.head),
+              gitExecutable,
+              signal,
+            ),
             extraFiles: largeTrackedFiles.map(
               (file): ExtensionVcsExtraFile => ({
                 kind: "skipped",
@@ -524,6 +592,13 @@ export function createGitVcsAdapter({
             }),
             ...(commit ? { review: commitReviewInfo("Git", commit) } : {}),
             ...sourceCapability,
+            readGeneratedPaths: createGitGeneratedPathsReader(
+              input,
+              repoRoot,
+              { kind: "tree", ref: revisionId },
+              gitExecutable,
+              signal,
+            ),
           };
         },
         watchPlan(input, { cwd }) {
@@ -568,6 +643,13 @@ export function createGitVcsAdapter({
               signal,
             }),
             ...sourceCapability,
+            readGeneratedPaths: createGitGeneratedPathsReader(
+              input,
+              repoRoot,
+              { kind: "worktree" },
+              gitExecutable,
+              signal,
+            ),
           };
         },
         watchPlan(input, { cwd }) {

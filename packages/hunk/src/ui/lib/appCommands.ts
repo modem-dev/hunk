@@ -152,6 +152,7 @@ export interface BuildAppCommandsOptions {
   toggleCopyDecorations: () => void;
   toggleFocusArea: () => void;
   toggleGapForSelectedHunk: () => void;
+  toggleSelectedFileCollapsed: () => void;
   toggleHelp: () => void;
   toggleHunkHeaders: () => void;
   toggleLineNumbers: () => void;
@@ -284,6 +285,7 @@ function builtinCommandHandlers(
     "hunk.view.toggleHunkHeaders": { run: () => options.toggleHunkHeaders() },
     "hunk.view.toggleCopyDecorations": { run: () => options.toggleCopyDecorations() },
     "hunk.review.toggleHunkGap": { run: () => options.toggleGapForSelectedHunk() },
+    "hunk.review.toggleFileCollapsed": { run: () => options.toggleSelectedFileCollapsed() },
     "hunk.review.editSelectedFile": { run: () => options.triggerEditSelectedFile() },
     "hunk.review.previousHunk": {
       run: (_key, count, entry) => runSelectionMove(options, entry, count),
@@ -387,6 +389,7 @@ const NOOP_COMMAND_OPTIONS: BuildAppCommandsOptions = (() => {
     toggleCopyDecorations: noop,
     toggleFocusArea: noop,
     toggleGapForSelectedHunk: noop,
+    toggleSelectedFileCollapsed: noop,
     toggleHelp: noop,
     toggleHunkHeaders: noop,
     toggleLineNumbers: noop,

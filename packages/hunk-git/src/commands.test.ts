@@ -17,6 +17,7 @@ import {
   resolveGitMetadata,
   runGitText,
   shouldSkipLargeTrackedDiff,
+  parseGitGeneratedAttributes,
 } from "./commands";
 import type { ExtensionVcsDiffInput as VcsDiffCommandInput } from "hunkdiff/extension";
 
@@ -80,6 +81,29 @@ afterEach(() => {
     }
   }
 });
+describe("parseGitGeneratedAttributes", () => {
+  test("follows Linguist's reading of each attribute state", () => {
+    const output = [
+      ["set.ts", "linguist-generated", "set"],
+      ["value.ts", "linguist-generated", "true"],
+      ["other.ts", "linguist-generated", "anything"],
+      ["unset.ts", "linguist-generated", "unset"],
+      ["false.ts", "linguist-generated", "false"],
+      ["none.ts", "linguist-generated", "unspecified"],
+    ]
+      .map((fields) => `${fields.join("\0")}\0`)
+      .join("");
+
+    expect([...parseGitGeneratedAttributes(output)]).toEqual([
+      ["set.ts", true],
+      ["value.ts", true],
+      ["other.ts", true],
+      ["unset.ts", false],
+      ["false.ts", false],
+    ]);
+  });
+});
+
 describe("git command helpers", () => {
   test("enables deterministic color-moved output for patch parsing", () => {
     const args = buildGitDiffArgs(

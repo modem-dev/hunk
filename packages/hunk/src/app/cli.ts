@@ -178,6 +178,8 @@ export const COMMON_REVIEW_OPTIONS = [
   { flag: "--no-agent-notes", description: "hide agent notes by default" },
   { flag: "--transparent-bg", description: "let terminal background show through Hunk surfaces" },
   { flag: "--no-transparent-bg", description: "paint Hunk surfaces with the active theme" },
+  { flag: "--collapse-generated", description: "start generated files collapsed" },
+  { flag: "--no-collapse-generated", description: "start generated files expanded" },
   {
     flag: "--extension <path>",
     description: "load an extension entry file or directory (repeatable)",
@@ -587,6 +589,7 @@ function buildCommonOptions(
     watch?: boolean;
     experimental?: boolean;
     transparentBackground?: boolean;
+    collapseGenerated?: boolean;
     tabWidth?: number;
     fileGap?: number;
     hunkGap?: number;
@@ -625,6 +628,7 @@ function buildCommonOptions(
     sidebar: resolveBooleanFlag(argv, "--sidebar", "--no-sidebar"),
     agentNotes: resolveBooleanFlag(argv, "--agent-notes", "--no-agent-notes"),
     transparentBackground: resolveBooleanFlag(argv, "--transparent-bg", "--no-transparent-bg"),
+    collapseGenerated: resolveBooleanFlag(argv, "--collapse-generated", "--no-collapse-generated"),
     // Read straight from argv so the absence of the flag stays undefined rather than
     // becoming Commander's implicit `true` default for a negatable option.
     extensions: resolveBooleanFlag(argv, "--extensions", "--no-extensions"),
@@ -777,6 +781,7 @@ function renderCliHelp() {
     "  --sidebar / --no-sidebar                show or hide files pane by default",
     "  --agent-notes / --no-agent-notes        show or hide agent notes by default",
     "  --transparent-bg / --no-transparent-bg  let terminal background show through Hunk surfaces",
+    "  --collapse-generated / --no-collapse-generated  start generated files collapsed or expanded",
     "  --theme <theme>                         named theme override",
     "  --extension <path>                      load an extension entry file or directory (repeatable)",
     "  --no-extensions                         disable user extensions for this run",

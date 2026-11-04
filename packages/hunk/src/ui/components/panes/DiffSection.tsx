@@ -59,6 +59,7 @@ interface DiffSectionProps {
   onRowPlanChange?: (rowPlan: DiffSectionRowPlan, highlighted: boolean) => void;
   onSelect: () => void;
   onToggleGap: (gapKey: string) => void;
+  onExpandCollapsed?: () => void;
 }
 
 /** Render one file section in the main review stream. */
@@ -101,6 +102,7 @@ function DiffSectionComponent({
   onRowPlanChange,
   onSelect,
   onToggleGap,
+  onExpandCollapsed,
 }: DiffSectionProps) {
   return (
     <box
@@ -208,6 +210,7 @@ function DiffSectionComponent({
           onStartUserNoteAtHunk={onStartUserNoteAtHunk}
           onRowPlanChange={onRowPlanChange}
           onToggleGap={onToggleGap}
+          onExpandCollapsed={onExpandCollapsed}
           selectedHunkIndex={selectedHunkIndex}
           sectionGeometry={sectionGeometry}
           shouldLoadHighlight={shouldLoadHighlight}

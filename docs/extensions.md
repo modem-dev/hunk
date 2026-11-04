@@ -355,8 +355,9 @@ and retires the replaced instance at that explicit ownership boundary.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `32`). Branch on it if you want
-one file to support several Hunk versions. Version 32 adds `ctx.selection.layout`, the resolved
+The API generation this Hunk speaks (currently `33`). Branch on it if you want
+one file to support several Hunk versions. Version 33 adds `readGeneratedPaths` to VCS patch results,
+so a repository's own declarations decide which files start collapsed; version 32 adds `ctx.selection.layout`, the resolved
 split or unified layout; version 31 adds optional read-only workspace status,
 sibling inspection and status review planning; version 30 adds the opaque current review generation
 in pane props; version 29 adds generation-scoped extension review presentation scopes; version 28
