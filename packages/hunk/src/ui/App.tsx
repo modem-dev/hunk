@@ -35,11 +35,7 @@ import {
 } from "../core/review/selectors";
 import type { CliInput, CursorLine, LayoutMode } from "../core/run/commandInputs";
 import { sanitizeTerminalLine } from "../lib/terminalText";
-import {
-  resolveExtensionFileViews,
-  resolveExtensionKeyboardModes,
-  resolveExtensionSessionOptions,
-} from "../extensions/apply";
+import { resolveExtensionKeyboardModes, resolveExtensionSessionOptions } from "../extensions/apply";
 import { projectExtensionReviewNotes } from "../extensions/reviewSnapshot";
 import type { ExtensionNotifyType, ExtensionLoadResult } from "../extensions/types";
 import type { ReviewProducer } from "../app/review/producer";
@@ -108,6 +104,7 @@ import { buildExtensionAppCommands, extensionCommandKeyDefaults } from "./lib/ex
 import { createExtensionReviewReloadControls } from "./lib/extensionReviewReload";
 import {
   buildSessionCommands,
+  buildSessionFileViews,
   buildSessionLineHighlighters,
   isBundledExtensionId,
 } from "./lib/sessionRegistrations";
@@ -411,10 +408,9 @@ export function App({
     () => (cursorLine === "off" ? null : review.lineCursor),
     [cursorLine, review.lineCursor],
   );
-  const sessionFileViews = useMemo(
-    () => (extensions ? resolveExtensionFileViews(extensions.registry).views : []),
-    [extensions],
-  );
+  // Bundled file views compose ahead of the user registry's, so Hunk's own image preview is
+  // offered under `--no-extensions` too.
+  const sessionFileViews = useMemo(() => buildSessionFileViews(extensions?.registry), [extensions]);
   const sessionKeyboardModes = useMemo(
     () => (extensions ? resolveExtensionKeyboardModes(extensions.registry).modes : []),
     [extensions],
@@ -1264,6 +1260,22 @@ export function App({
     [focusFiles, jumpToFile, review.revealLine, review.selectVisibleHunk],
   );
 
+  /** Report whether the host filter prompt owns typing, read live from the store. */
+  const isFilterPromptOpen = useCallback(() => {
+    const promptId = filterPromptIdRef.current;
+    return promptId !== null && statusLineStore.getSnapshot().prompt?.id === promptId;
+  }, [statusLineStore]);
+
+  /** Append printable input to the filter prompt's value before its input has mounted. */
+  const queueFilterInput = useCallback(
+    (text: string) => {
+      const prompt = statusLineStore.getSnapshot().prompt;
+      if (!prompt || prompt.id !== filterPromptIdRef.current) return;
+      statusLineStore.updatePromptValue(prompt.id, prompt.value + text);
+    },
+    [statusLineStore],
+  );
+
   /** Toggle keyboard focus between the file list and the file filter. */
   const toggleFocusArea = useCallback(() => {
     if (filterPromptIdRef.current !== null) {
@@ -1540,6 +1552,8 @@ export function App({
     exitKeyboardMode,
     sendKeyboardModeKey,
     focusArea,
+    isFilterPromptOpen,
+    queueFilterInput,
     promptActive: statusLineState.prompt !== null,
     moveMenuItem,
     moveThemeSelector,

@@ -507,7 +507,8 @@ export function buildReviewRenderPlan({
 
       plannedRows.push({
         kind: "inline-note",
-        key: `inline-note:${placement.note.id}:${row.key}:${placement.noteIndex}`,
+        // Omit the sibling index so a live reply inserted ahead of an open draft keeps it mounted.
+        key: `inline-note:${placement.note.id}:${row.key}`,
         stableKey: inlineNoteStableKey(placement.note.id),
         fileId,
         hunkIndex: placement.hunkIndex,

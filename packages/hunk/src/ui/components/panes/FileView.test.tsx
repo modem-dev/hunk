@@ -712,7 +712,7 @@ describe("FileView custom rows", () => {
         frame.indexOf("BOUND PRESENTATION"),
       );
       expect(
-        setup.renderer.root.findDescendantById(reviewRowId("inline-note:note:file-view:bound:0")),
+        setup.renderer.root.findDescendantById(reviewRowId("inline-note:note:file-view:bound")),
       ).not.toBeNull();
     } finally {
       await act(async () => setup.renderer.destroy());
@@ -995,7 +995,7 @@ describe("FileView custom rows", () => {
       await act(async () => setup.renderOnce());
       expect(
         setup.renderer.root.findDescendantById(
-          reviewRowId("inline-note:windowed-note:file-view:row-500:0"),
+          reviewRowId("inline-note:windowed-note:file-view:row-500"),
         ),
       ).not.toBeNull();
       expect(new Set(mounted)).toEqual(new Set([500, 501, 502, 503]));

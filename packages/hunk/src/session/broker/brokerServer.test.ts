@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { randomBytes } from "node:crypto";
 import { connect, createServer } from "node:net";
 import { platform } from "node:os";
@@ -6,6 +6,7 @@ import {
   createTestSessionRegistration,
   createTestSessionSnapshot,
 } from "../../../../../test/helpers/session-daemon-fixtures";
+import { createTestRuntimeDir } from "../../../../../test/helpers/runtime-dir";
 import { SessionBrokerState } from "@hunk/session-broker-core";
 import {
   SessionBrokerCallerClient,
@@ -30,6 +31,11 @@ import { HUNK_SESSION_BROKER_APP_ID, HUNK_SESSION_BROKER_APP_REVISION } from "./
 const originalHost = process.env.HUNK_MCP_HOST;
 const originalPort = process.env.HUNK_MCP_PORT;
 const originalUnsafeRemote = process.env.HUNK_MCP_UNSAFE_ALLOW_REMOTE;
+const originalRuntimeDir = process.env.XDG_RUNTIME_DIR;
+// Served daemons and minted credentials write here instead of the developer's runtime dir.
+const { path: testRuntimeDir, cleanup: cleanupTestRuntimeDir } = createTestRuntimeDir(
+  "hunk-broker-server-runtime-",
+);
 
 interface HealthResponse {
   ok: boolean;
@@ -299,6 +305,10 @@ async function waitForSocketClose(socket: WebSocket) {
   });
 }
 
+beforeAll(() => {
+  process.env.XDG_RUNTIME_DIR = testRuntimeDir;
+});
+
 afterEach(() => {
   if (originalHost === undefined) {
     delete process.env.HUNK_MCP_HOST;
@@ -317,6 +327,21 @@ afterEach(() => {
   } else {
     process.env.HUNK_MCP_UNSAFE_ALLOW_REMOTE = originalUnsafeRemote;
   }
+
+  // Undo per-test runtime overrides without exposing the real runtime dir between tests.
+  process.env.XDG_RUNTIME_DIR = testRuntimeDir;
+});
+
+afterAll(async () => {
+  // Restore the ambient runtime dir only after the file, so a stray timer between tests still
+  // resolves the private one.
+  if (originalRuntimeDir === undefined) {
+    delete process.env.XDG_RUNTIME_DIR;
+  } else {
+    process.env.XDG_RUNTIME_DIR = originalRuntimeDir;
+  }
+
+  await cleanupTestRuntimeDir();
 });
 
 describe("Hunk session daemon server", () => {

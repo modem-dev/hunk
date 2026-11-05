@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { createServer } from "node:http";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -42,12 +42,17 @@ import {
 import type { HunkDaemonAdminProbe } from "../client/daemonAdmin";
 import { resolveSessionBrokerRuntimePaths } from "./brokerLauncher";
 import { DeterministicLifecycleClockTest } from "../../../../../test/helpers/lifecycleClockTest";
+import { createTestRuntimeDir } from "../../../../../test/helpers/runtime-dir";
 
 const originalHost = process.env.HUNK_MCP_HOST;
 const originalPort = process.env.HUNK_MCP_PORT;
 const originalDisable = process.env.HUNK_MCP_DISABLE;
 const originalUnsafeRemote = process.env.HUNK_MCP_UNSAFE_ALLOW_REMOTE;
 const originalRuntimeDir = process.env.XDG_RUNTIME_DIR;
+// Clients that launch daemons or mint credentials write here unless a test chooses its own dir.
+const { path: testRuntimeDir, cleanup: cleanupTestRuntimeDir } = createTestRuntimeDir(
+  "hunk-broker-client-runtime-",
+);
 const originalConsoleError = console.error;
 const nativeSetTimeoutTest = globalThis.setTimeout.bind(globalThis);
 const nativeClearTimeoutTest = globalThis.clearTimeout.bind(globalThis);
@@ -277,7 +282,8 @@ async function createRefusalLifecycleTest(withMetadata = false, subscribe = fals
   const config = prepareDirectConnectTest(client);
   const writeMetadata = (pid: number) => {
     const { metadataPath } = resolveSessionBrokerRuntimePaths(config);
-    mkdirSync(join(metadataPath, ".."), { recursive: true });
+    // Match the daemon's owner-private namespace; a umask-derived mode fails credential checks.
+    mkdirSync(join(metadataPath, ".."), { recursive: true, mode: 0o700 });
     writeFileSync(
       metadataPath,
       JSON.stringify({
@@ -346,6 +352,10 @@ async function createRefusalLifecycleTest(withMetadata = false, subscribe = fals
   }
 }
 
+beforeAll(() => {
+  process.env.XDG_RUNTIME_DIR = testRuntimeDir;
+});
+
 afterEach(() => {
   restoreWebSocketObserverTest?.();
 
@@ -373,13 +383,22 @@ afterEach(() => {
     process.env.HUNK_MCP_UNSAFE_ALLOW_REMOTE = originalUnsafeRemote;
   }
 
+  // Undo per-test runtime overrides without exposing the real runtime dir between tests.
+  process.env.XDG_RUNTIME_DIR = testRuntimeDir;
+
+  console.error = originalConsoleError;
+});
+
+afterAll(async () => {
+  // Restore the ambient runtime dir only after the file, so a stray timer between tests still
+  // resolves the private one.
   if (originalRuntimeDir === undefined) {
     delete process.env.XDG_RUNTIME_DIR;
   } else {
     process.env.XDG_RUNTIME_DIR = originalRuntimeDir;
   }
 
-  console.error = originalConsoleError;
+  await cleanupTestRuntimeDir();
 });
 
 describe("Hunk session daemon client", () => {
@@ -1226,7 +1245,8 @@ describe("Hunk session daemon client", () => {
       host: "127.0.0.1",
       port,
     }).metadataPath;
-    mkdirSync(join(metadataPath, ".."), { recursive: true });
+    // Match the daemon's owner-private namespace; a umask-derived mode fails credential checks.
+    mkdirSync(join(metadataPath, ".."), { recursive: true, mode: 0o700 });
     const writeMetadata = (pid: number) =>
       writeFileSync(
         metadataPath,

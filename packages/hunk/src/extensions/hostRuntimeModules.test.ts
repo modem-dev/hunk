@@ -42,6 +42,16 @@ function writeTempExtension(name: string, contents: string) {
   return path;
 }
 
+/** Keep an entry's canonical target outside the directory registered for its file symlink. */
+function createTestSymlinkedExtension(name: string, contents: string) {
+  const target = writeTempExtension(name, contents);
+  const aliasDirectory = mkdtempSync(join(tmpdir(), "hunk-host-module-file-alias-"));
+  tempDirs.push(aliasDirectory);
+  const path = join(aliasDirectory, name);
+  symlinkSync(target, path, "file");
+  return { path, target };
+}
+
 async function importTempExtension(path: string) {
   registerHostRuntimeModules([path]);
   return (await import(pathToFileURL(path).href)) as { default: Record<string, unknown> };
@@ -159,6 +169,47 @@ describe("registerHostRuntimeModules", () => {
 
     expect(mod.default.HunkExtensionUserError).toBe(HunkExtensionUserError);
   });
+
+  // File symlinks need Windows privileges; directory aliases above use junctions there.
+  for (const kind of ["esm", "jsx", "commonjs", "helper", "neighbor"] as const) {
+    test.skipIf(process.platform === "win32")(
+      `serves a file-symlinked entry without widening its target directory (${kind})`,
+      async () => {
+        let source = `import { useState } from "react"; export default { useState };`;
+        if (kind === "jsx") source = `export default { makeElement: () => <text>hello</text> };`;
+        if (kind === "commonjs") {
+          source = `const React = require("react"); module.exports = { useState: React.useState };`;
+        }
+        if (kind === "helper") {
+          source = `import { useState, makeElement } from "./helper.tsx"; export default { useState, makeElement };`;
+        }
+        const { path, target } = createTestSymlinkedExtension(
+          kind === "commonjs" ? "entry.js" : "entry.tsx",
+          source,
+        );
+        if (kind === "helper") {
+          writeFileSync(
+            join(dirname(target), "helper.tsx"),
+            `import { useState } from "react"; export { useState }; export const makeElement = () => <text>helper</text>;`,
+          );
+        }
+
+        const mod = await importTempExtension(path);
+
+        if (kind !== "jsx") expect(mod.default.useState).toBe(useState);
+        if (kind === "jsx" || kind === "helper") {
+          expect(isValidElement((mod.default.makeElement as () => unknown)())).toBe(true);
+        }
+        if (kind === "neighbor") {
+          const unrelated = join(dirname(target), "unrelated.ts");
+          writeFileSync(unrelated, `import { useState } from "react"; export default useState;`);
+          await expect(import(pathToFileURL(unrelated).href)).rejects.toThrow(
+            "Cannot find package",
+          );
+        }
+      },
+    );
+  }
 
   test("reaches helper modules imported by the entry file", async () => {
     const path = writeTempExtension(

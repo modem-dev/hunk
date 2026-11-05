@@ -127,7 +127,7 @@ export function buildFileViewRenderPlan(
     for (const [noteIndex, placement] of anchoredNotes.entries()) {
       rows.push({
         kind: "inline-note",
-        key: `inline-note:${placement.note.id}:file-view:${row.id}:${noteIndex}`,
+        key: `inline-note:${placement.note.id}:file-view:${row.id}`,
         stableKey: inlineNoteStableKey(placement.note.id),
         annotation: placement.note.annotation,
         anchorRowIndex: rowIndex,

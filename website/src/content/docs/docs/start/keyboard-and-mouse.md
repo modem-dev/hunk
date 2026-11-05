@@ -41,6 +41,7 @@ Hunk navigation stays review-wide: hunk and file shortcuts move through the same
 | `M`             | Toggle menu bar                                  |
 | `z`             | Toggle unchanged context for the selected hunk   |
 | `a`             | Toggle agent notes                               |
+| `i`             | Toggle the image preview on a changed image      |
 | `e`             | Open the selected file in `$EDITOR`              |
 | `Tab`           | Move focus between the file list and file filter |
 | `r`             | Reload a reloadable input                        |

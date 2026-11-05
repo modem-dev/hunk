@@ -275,6 +275,15 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     apiVersion: 16,
   },
   {
+    repo: "RubenFricke/hunk-viewed",
+    name: "hunk-viewed",
+    summary:
+      "GitHub-style viewed marks: press x to mark a hunk viewed, X for the whole file, fold what you have seen, and see progress toward what is left.",
+    categories: ["File view", "Line highlighter", "Command"],
+    version: "0.3.1",
+    apiVersion: 31,
+  },
+  {
     repo: "sadick254/hunk-commit-log",
     name: "hunk-commit-log",
     summary:
