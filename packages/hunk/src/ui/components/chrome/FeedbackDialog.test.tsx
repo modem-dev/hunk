@@ -41,7 +41,7 @@ describe("feedback dialog row plan", () => {
   });
 
   test("drops the issues hint only after the paragraph gaps", () => {
-    const short = planTestFeedbackDialog(27);
+    const short = planTestFeedbackDialog(25);
 
     expect(short.disclosure).not.toContain("");
     expect(short.showIssuesHint).toBe(false);

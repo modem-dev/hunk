@@ -53,7 +53,18 @@ export const FEEDBACK_DISCLOSED_FIELDS = [
 
 export type FeedbackDisclosedField = (typeof FEEDBACK_DISCLOSED_FIELDS)[number];
 
-type FeedbackDisclosurePhrase = "message" | "version" | "os" | "label" | "submissionId" | "email";
+/**
+ * `constantLabel` marks fixed values that are identical for every install and say nothing about the
+ * person (`source: "tui"`, `tags.category`, `tags.surface`). The disclosure leaves them out; any
+ * field that varies per person or machine needs a phrase the person reads.
+ */
+type FeedbackDisclosurePhrase =
+  | "message"
+  | "version"
+  | "os"
+  | "constantLabel"
+  | "submissionId"
+  | "email";
 
 /**
  * Which disclosure phrase covers each field. The record type requires an entry per field, so a new
@@ -62,11 +73,11 @@ type FeedbackDisclosurePhrase = "message" | "version" | "os" | "label" | "submis
 export const FEEDBACK_FIELD_PHRASES: Record<FeedbackDisclosedField, FeedbackDisclosurePhrase> = {
   submission_id: "submissionId",
   message: "message",
-  source: "label",
+  source: "constantLabel",
   release: "version",
-  "tags.category": "label",
+  "tags.category": "constantLabel",
   "tags.os": "os",
-  "tags.surface": "label",
+  "tags.surface": "constantLabel",
   email: "email",
 };
 
@@ -199,9 +210,9 @@ export function describeFeedbackDisclosure(
       environment.includesEmail
         ? "- the email you entered, so the team can reply"
         : "- your email, only if you add one",
-      '- a "sent from Hunk" label and a random ID, so a retry isn\'t counted twice',
+      "- a random ID to avoid duplicate retries",
     ].join("\n"),
-    "Nothing else: no code, file names, or paths. Your IP is used only for rate limiting and isn't stored.",
+    "Your IP is used only for rate limiting and isn't stored.",
     ...(environment.skipsConfirmation
       ? ["Sending now without asking, because --skip-confirm was passed."]
       : []),

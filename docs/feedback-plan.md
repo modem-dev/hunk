@@ -69,10 +69,9 @@ Both surfaces render the same text, built by one helper (`describeFeedbackDisclo
 >
 > - your Hunk version (0.24.1) and OS (macOS)
 > - your email, only if you add one
-> - a "sent from Hunk" label and a random ID, so a retry isn't counted twice
+> - a random ID to avoid duplicate retries
 >
-> Nothing else: no code, file names, or paths. Your IP is used only for rate limiting and isn't
-> stored.
+> Your IP is used only for rate limiting and isn't stored.
 
 The text names Modem's domain, `modem.dev`, rather than the ingest host the request goes to;
 `send.test.ts` checks that the request host is inside that domain. Once the person enters an
@@ -81,9 +80,10 @@ OS in the text are the actual values that will be sent. With `--skip-confirm`, a
 the send is happening without asking, because --skip-confirm was passed.
 
 Every payload field maps to a phrase: `release` and `tags.os` to the version and OS bullet,
-`source`, `tags.category`, and `tags.surface` (constant labels) to the "sent from Hunk" label,
-`submission_id` to the random ID, and `email` to the email bullet. The field-set test fails if a
-field has no phrase.
+`submission_id` to the random ID, and `email` to the email bullet. `source`, `tags.category`, and
+`tags.surface` map to `constantLabel`: fixed values identical for every install that say nothing
+about the person, so the text leaves them out. The field-set test fails if a field has no phrase,
+so a new field that varies per person cannot ship undisclosed.
 
 ## Payload
 
@@ -154,10 +154,9 @@ hunk feedback [message...]       send feedback to the Hunk team at Modem
    This goes to Modem (modem.dev), who make Hunk, along with:
    - your Hunk version (0.24.1) and OS (macOS)
    - your email, only if you add one
-   - a "sent from Hunk" label and a random ID, so a retry isn't counted twice
+   - a random ID to avoid duplicate retries
 
-   Nothing else: no code, file names, or paths. Your IP is used only for rate limiting and isn't
-   stored.
+   Your IP is used only for rate limiting and isn't stored.
 
    Request body:
    {
@@ -223,11 +222,9 @@ A modal built on `ModalFrame`, sized with `resolveModalGeometry`:
 │ ⚠ This goes to Modem (modem.dev), who make Hunk, along with:│
 │   • your Hunk version (0.24.1) and OS (macOS)               │
 │   • your email, only if you add one                         │
-│   • a "sent from Hunk" label and a random ID, so a retry    │
-│     isn't counted twice                                     │
+│   • a random ID to avoid duplicate retries                  │
 │                                                             │
-│   Nothing else: no code, file names, or paths. Your IP is   │
-│   used only for rate limiting and isn't stored.             │
+│   Your IP is used only for rate limiting and isn't stored.  │
 │                                                             │
 │ Message                                                     │
 │ ┌─────────────────────────────────────────────────────────┐ │
