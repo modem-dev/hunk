@@ -2228,3 +2228,91 @@ describe("loadAppBootstrap source fetcher attachment", () => {
     expect(bootstrap.changeset.files[0]?.sourceFetcher).toBeUndefined();
   });
 });
+
+describe("loadAppBootstrap byte fetcher attachment", () => {
+  // Not valid UTF-8, so the bytes only survive a read that never decodes them as text.
+  const before = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0x01]);
+  const after = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xfe, 0x02, 0x03]);
+
+  test("binary file-pair diffs read both sides from disk", async () => {
+    const dir = createTempDir("hunk-bytes-pair-");
+    const left = join(dir, "before.png");
+    const right = join(dir, "after.png");
+    writeFileSync(left, before);
+    writeFileSync(right, after);
+
+    const bootstrap = await loadAppBootstrap({
+      kind: "diff",
+      left,
+      right,
+      options: { mode: "auto" },
+    });
+
+    const file = bootstrap.changeset.files[0];
+    expect(file?.isBinary).toBe(true);
+    expect(await file?.byteFetcher?.getBytes("old")).toEqual(new Uint8Array(before));
+    expect(await file?.byteFetcher?.getBytes("new")).toEqual(new Uint8Array(after));
+  });
+
+  test("git working-tree binary diffs read the index and the working tree, without a text fetcher", async () => {
+    const dir = createTempRepo("hunk-bytes-git-wt-");
+    writeFileSync(join(dir, "icon.png"), before);
+    git(dir, "add", "icon.png");
+    git(dir, "commit", "-m", "initial");
+    writeFileSync(join(dir, "icon.png"), after);
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "vcs",
+      staged: false,
+      options: { mode: "auto" },
+    });
+
+    const file = bootstrap.changeset.files[0];
+    expect(file?.isBinary).toBe(true);
+    // Binary files stay out of text consumers such as context expansion.
+    expect(file?.sourceFetcher).toBeUndefined();
+    expect(await file?.byteFetcher?.getBytes("old")).toEqual(new Uint8Array(before));
+    expect(await file?.byteFetcher?.getBytes("new")).toEqual(new Uint8Array(after));
+  });
+
+  test("git commit reviews read the parent and the commit, and an added image has no old side", async () => {
+    const dir = createTempRepo("hunk-bytes-git-show-");
+    writeFileSync(join(dir, "seed.txt"), "seed\n");
+    git(dir, "add", "seed.txt");
+    git(dir, "commit", "-m", "seed");
+    writeFileSync(join(dir, "icon.png"), after);
+    git(dir, "add", "icon.png");
+    git(dir, "commit", "-m", "add icon");
+    // The working copy moving on must not change what the commit review shows.
+    writeFileSync(join(dir, "icon.png"), before);
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "show",
+      ref: "HEAD",
+      options: { mode: "auto" },
+    });
+
+    const file = bootstrap.changeset.files.find((entry) => entry.path === "icon.png");
+    expect(await file?.byteFetcher?.getBytes("old")).toBeNull();
+    expect(await file?.byteFetcher?.getBytes("new")).toEqual(new Uint8Array(after));
+  });
+
+  test("untracked binary files read their only version from the working tree", async () => {
+    const dir = createTempRepo("hunk-bytes-untracked-");
+    writeFileSync(join(dir, "seed.txt"), "seed\n");
+    git(dir, "add", "seed.txt");
+    git(dir, "commit", "-m", "seed");
+    writeFileSync(join(dir, "icon.png"), after);
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "vcs",
+      staged: false,
+      options: { mode: "auto" },
+    });
+
+    const file = bootstrap.changeset.files.find((entry) => entry.path === "icon.png");
+    expect(file?.isUntracked).toBe(true);
+    expect(await file?.byteFetcher?.getBytes("old")).toBeNull();
+    expect(await file?.byteFetcher?.getBytes("new")).toEqual(new Uint8Array(after));
+  });
+});

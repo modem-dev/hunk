@@ -89,6 +89,7 @@ If `matches` throws, Hunk excludes the view for that file and keeps raw diff.
 | `signal`             | Aborts when a reload, resize, selection change, view change, or extension reload supersedes it.    |
 | `changes`            | Typed added and removed source ranges with their hunk indexes.                                     |
 | `readDocument(side)` | Lazily reads the exact `"old"` or `"new"` source document.                                         |
+| `readBytes(side)`    | Lazily reads the exact bytes of the `"old"` or `"new"` side, binary files included. API 33.        |
 
 `readDocument` resolves to:
 
@@ -97,6 +98,8 @@ If `matches` throws, Hunk excludes the view for that file and keeps raw diff.
 - `null` when the side does not exist, cannot be read, or exceeds host limits.
 
 Cancellation aborts the pending request instead of producing a document value; use `input.signal` for any additional asynchronous work the layout starts. Patch text is available as `input.file.patch`, but a patch is not a complete source document. Use `readDocument` when parsing needs exact file contents. Reads are lazy and deduplicated within the request.
+
+`readBytes` is the counterpart for content that is not text, such as an image: binary files never have a document, but they can have bytes. It resolves a `Uint8Array`, or `null` under the same conditions as `readDocument`, including a review source whose VCS adapter does not implement `readFileBytes`. Hunk's bundled image preview (press `i` on a changed PNG, JPEG, GIF, or WebP) is built on it.
 
 ### Layout output
 

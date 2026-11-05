@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { gitEndpointSourceSpec, readGitFileSource } from "./source";
+import { gitEndpointSourceSpec, readGitFileBytes, readGitFileSource } from "./source";
 
 const tempDirs: string[] = [];
 
@@ -261,5 +261,53 @@ describe("Git source reading", () => {
     expect(loggedErrors).toHaveLength(1);
     expect(String(loggedErrors[0]?.[0])).toContain("HEAD:note.txt");
     expect(String(loggedErrors[0]?.[0])).toContain(repoRoot);
+  });
+});
+
+describe("Git byte reading", () => {
+  // Not valid UTF-8, so any text decoding along the way would corrupt it.
+  const committed = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0x01]);
+  const staged = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0xfe, 0x02]);
+  const working = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0xfd, 0x03]);
+
+  test("reads exact bytes from a commit, the index, and the working tree", async () => {
+    const repoRoot = createTempRepo("hunk-bytes-git-");
+    const filePath = "icon.png";
+
+    writeFileSync(join(repoRoot, filePath), committed);
+    git(repoRoot, "add", filePath);
+    git(repoRoot, "commit", "-m", "first");
+    writeFileSync(join(repoRoot, filePath), staged);
+    git(repoRoot, "add", filePath);
+    writeFileSync(join(repoRoot, filePath), working);
+
+    expect(
+      await readGitFileBytes({ kind: "git-blob", repoRoot, ref: "HEAD", path: filePath }),
+    ).toEqual(committed);
+    expect(await readGitFileBytes({ kind: "git-index", repoRoot, path: filePath })).toEqual(staged);
+    expect(await readGitFileBytes({ kind: "fs", absolutePath: join(repoRoot, filePath) })).toEqual(
+      working,
+    );
+    expect(await readGitFileBytes({ kind: "none" })).toBeNull();
+  });
+
+  test("reports oversized reads and resolves missing objects to null", async () => {
+    const repoRoot = createTempRepo("hunk-bytes-git-limits-");
+    writeFileSync(join(repoRoot, "icon.png"), committed);
+    git(repoRoot, "add", "icon.png");
+    git(repoRoot, "commit", "-m", "first");
+
+    await expect(
+      readGitFileBytes(
+        { kind: "git-blob", repoRoot, ref: "HEAD", path: "icon.png" },
+        { maxBytes: 3 },
+      ),
+    ).resolves.toEqual({ kind: "too-large", maxBytes: 3 });
+    await expect(
+      readGitFileBytes({ kind: "fs", absolutePath: join(repoRoot, "icon.png") }, { maxBytes: 3 }),
+    ).resolves.toEqual({ kind: "too-large", maxBytes: 3 });
+    expect(
+      await readGitFileBytes({ kind: "git-blob", repoRoot, ref: "HEAD", path: "missing.png" }),
+    ).toBeNull();
   });
 });

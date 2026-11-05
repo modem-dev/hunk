@@ -30,6 +30,7 @@ function createTestInput(oldText: string | null, newText: string | null): Extens
       { hunkIndex: 0, kind: "added", range: [1, 1] },
     ],
     readDocument: async (side) => (side === "old" ? oldText : newText),
+    readBytes: async () => null,
   };
 }
 

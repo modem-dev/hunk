@@ -21,8 +21,8 @@ API object and registry collection (`packages/hunk/src/extensions/runExtension.t
   `packages/hunk/src/extensions/default/vcs/index.ts`; the app composition root
   (`app/vcsCatalog.ts`) loads them synchronously before config resolution, so backends exist
   without making core import the extension host. `default/ui/index.ts` is deliberately not part of
-  that list: the UI loads its bundled files pane, delegated review-info panes, and content search
-  registrations through `runExtensionFactory`, once per process. The private `packages/hunk-gh`
+  that list: the UI loads its bundled files pane, delegated review-info panes, content search, and
+  image preview registrations through `runExtensionFactory`, once per process. The private `packages/hunk-gh`
   workspace registers `hunk gh` through `default/core/index.ts` into each session-owned extension
   registry, so a delegated temporary patch follows the same shutdown lifetime as that session.
 
