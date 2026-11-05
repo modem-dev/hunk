@@ -32,7 +32,7 @@ import {
 } from "./ConfirmDialog";
 import { ModalFrame } from "./ModalFrame";
 
-const PREFERRED_WIDTH = 96;
+const PREFERRED_WIDTH = 72;
 const PREFERRED_MESSAGE_ROWS = 5;
 const MIN_MESSAGE_ROWS = 2;
 /** Show a character count once the message is this close to Modem's limit. */
@@ -51,8 +51,17 @@ export function feedbackDisclosureRows(
   const rows: string[] = [];
   const paragraphs = describeFeedbackDisclosure({ ...environment, includesEmail });
   paragraphs.forEach((paragraph, index) => {
-    for (const line of wrapText(paragraph, Math.max(1, width - 2))) {
-      rows.push(`${rows.length === 0 ? "⚠ " : "  "}${line}`);
+    for (const source of paragraph.split("\n")) {
+      const bullet = source.startsWith("- ");
+      const lines = wrapText(
+        bullet ? source.slice(2) : source,
+        Math.max(1, width - (bullet ? 4 : 2)),
+      );
+      lines.forEach((line, lineIndex) => {
+        const marker = rows.length === 0 ? "⚠ " : "  ";
+        const hang = bullet ? (lineIndex === 0 ? "• " : "  ") : "";
+        rows.push(`${marker}${hang}${line}`);
+      });
     }
     if (!compact && index < paragraphs.length - 1) {
       rows.push("");

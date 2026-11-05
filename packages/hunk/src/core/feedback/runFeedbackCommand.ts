@@ -74,18 +74,25 @@ async function collectMessage(input: FeedbackCommandInput, deps: FeedbackCommand
 
 /** Wrap one prose paragraph at word boundaries; a word longer than the width keeps its own line. */
 export function wrapFeedbackParagraph(paragraph: string, width: number) {
-  const lines: string[] = [];
-  let line = "";
-  for (const word of paragraph.split(/\s+/).filter(Boolean)) {
-    if (line.length > 0 && line.length + 1 + word.length > width) {
-      lines.push(line);
-      line = word;
-    } else {
-      line = line.length > 0 ? `${line} ${word}` : word;
-    }
-  }
-  if (line.length > 0) lines.push(line);
-  return lines.join("\n");
+  return paragraph
+    .split("\n")
+    .flatMap((source) => {
+      const bullet = source.startsWith("- ");
+      const indent = bullet ? "  " : "";
+      const lines: string[] = [];
+      let line = "";
+      for (const word of (bullet ? source.slice(2) : source).split(/\s+/).filter(Boolean)) {
+        if (line.length > 0 && indent.length + line.length + 1 + word.length > width) {
+          lines.push(line);
+          line = word;
+        } else {
+          line = line.length > 0 ? `${line} ${word}` : word;
+        }
+      }
+      if (line.length > 0) lines.push(line);
+      return lines.map((text, index) => `${index === 0 && bullet ? "- " : indent}${text}`);
+    })
+    .join("\n");
 }
 
 /** Render the disclosure and the exact request body, as shown before every send. */

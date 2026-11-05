@@ -101,24 +101,22 @@ describe("feedback disclosure", () => {
     const text = describeFeedbackDisclosure(environment).join("\n");
 
     expect(text).toContain("Modem (modem.dev)");
-    expect(text).toContain("your Hunk version (0.24.1)");
-    expect(text).toContain("your operating system (macOS)");
-    expect(text).toContain("a label saying the message came from Hunk's terminal app");
-    expect(text).toContain("a random ID made just for this message");
-    expect(text).toContain("IP address");
-    expect(text).toContain("Nothing is sent until you confirm.");
-    expect(text).not.toContain("email");
+    expect(text).toContain("your Hunk version (0.24.1) and OS (macOS)");
+    expect(text).toContain('a "sent from Hunk" label and a random ID');
+    expect(text).toContain("Your IP is used only for rate limiting");
+    expect(text).toContain("your email, only if you add one");
+    expect(text).not.toContain("--skip-confirm");
   });
 
   test("names the email only when one will be sent", () => {
     const text = describeFeedbackDisclosure({ ...environment, includesEmail: true }).join("\n");
 
-    expect(text).toContain("the email address you entered, so the team can reply to you");
+    expect(text).toContain("the email you entered, so the team can reply");
   });
 
   test("falls back to the raw platform name for an unlisted OS", () => {
-    expect(describeFeedbackDisclosure({ version: "1.0.0", platform: "aix" })[1]).toContain(
-      "your operating system (aix)",
+    expect(describeFeedbackDisclosure({ version: "1.0.0", platform: "aix" })[0]).toContain(
+      "and OS (aix)",
     );
   });
 });

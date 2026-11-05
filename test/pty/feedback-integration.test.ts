@@ -37,10 +37,8 @@ describe("PTY feedback form", () => {
         /Send feedback to the Hunk team/,
         { timeout: 5_000 },
       );
-      expect(form).toContain("This sends your message to the team that makes Hunk");
-      expect(form).toContain("modem.dev");
-      expect(form).toContain("Nothing is sent until you confirm.");
-      expect(form).toContain("IP address");
+      expect(form).toContain("This goes to Modem (modem.dev), who make Hunk");
+      expect(form).toContain("rate limiting");
       expect(form).toContain("send to Modem");
 
       // `]` and `q` are review commands; inside the form they are only text.
@@ -74,7 +72,7 @@ describe("PTY feedback form", () => {
 
     try {
       const form = await session.waitForText(/Send feedback to the Hunk team/, { timeout: 15_000 });
-      expect(form).toContain("This sends your message to the team that makes Hunk");
+      expect(form).toContain("This goes to Modem (modem.dev), who make Hunk");
 
       await session.press("esc");
       const exited = await session.waitForText(/FEEDBACK_EXIT:0/, { timeout: 5_000 });

@@ -176,19 +176,6 @@ export function listFeedbackPayloadFields(payload: FeedbackPayload): string[] {
   return fields;
 }
 
-/** Join phrases as an English list. Semicolons separate items, since the items contain commas. */
-function joinPhrases(phrases: string[]) {
-  if (phrases.length <= 1) {
-    return phrases.join("");
-  }
-
-  if (phrases.length === 2) {
-    return `${phrases[0]} and ${phrases[1]}`;
-  }
-
-  return `${phrases.slice(0, -1).join("; ")}; and ${phrases.at(-1)}`;
-}
-
 /**
  * Render the disclosure as paragraphs, using the actual version and OS that will be sent.
  *
@@ -202,25 +189,22 @@ export function describeFeedbackDisclosure(
     skipsConfirmation?: boolean;
   },
 ): string[] {
-  const phraseText: Record<Exclude<FeedbackDisclosurePhrase, "message">, string> = {
-    version: `your Hunk version (${environment.version}), so the team knows which build you are using`,
-    os: `your operating system (${formatFeedbackPlatform(environment.platform)}), since some problems only happen on one platform`,
-    label: "a label saying the message came from Hunk's terminal app",
-    submissionId:
-      "a random ID made just for this message, so that if Hunk has to retry the send, it is not counted twice",
-    email: "the email address you entered, so the team can reply to you",
-  };
-  const order: Array<keyof typeof phraseText> = ["version", "os", "label", "submissionId", "email"];
-  const included = order.filter((phrase) => phrase !== "email" || environment.includesEmail);
-
+  // Paragraphs may hold several lines; a line starting with "- " is a bullet, which each surface
+  // wraps with a hanging indent.
+  const platform = formatFeedbackPlatform(environment.platform);
   return [
-    `This sends your message to the team that makes Hunk. Hunk is built by Modem (${FEEDBACK_DESTINATION_DOMAIN}), and your feedback goes to Modem's servers, where the team reads it and follows up.`,
-    `Along with your message, Hunk sends ${joinPhrases(included.map((phrase) => phraseText[phrase]))}.`,
-    "The random ID is not tied to you or your machine. Hunk sends nothing else: no file names, code, diffs, repository paths, configuration, or account details.",
-    "As with any web request, Modem's servers can see your IP address. It is used only for rate limiting and is not stored with your feedback.",
-    environment.skipsConfirmation
-      ? "Sending now without asking, because --skip-confirm was passed."
-      : "Nothing is sent until you confirm.",
+    [
+      `This goes to Modem (${FEEDBACK_DESTINATION_DOMAIN}), who make Hunk, along with:`,
+      `- your Hunk version (${environment.version}) and OS (${platform})`,
+      environment.includesEmail
+        ? "- the email you entered, so the team can reply"
+        : "- your email, only if you add one",
+      '- a "sent from Hunk" label and a random ID, so a retry isn\'t counted twice',
+    ].join("\n"),
+    "Nothing else: no code, file names, or paths. Your IP is used only for rate limiting and isn't stored.",
+    ...(environment.skipsConfirmation
+      ? ["Sending now without asking, because --skip-confirm was passed."]
+      : []),
   ];
 }
 

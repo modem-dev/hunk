@@ -65,33 +65,25 @@ one.
 Both surfaces render the same text, built by one helper (`describeFeedbackDisclosure` in
 `core/feedback/payload.ts`) from the payload's field list:
 
-> This sends your message to the team that makes Hunk. Hunk is built by Modem (modem.dev), and your
-> feedback goes to Modem's servers, where the team reads it and follows up.
+> This goes to Modem (modem.dev), who make Hunk, along with:
 >
-> Along with your message, Hunk sends your Hunk version (0.24.1), so the team knows which build you
-> are using; your operating system (macOS), since some problems only happen on one platform; a label
-> saying the message came from Hunk's terminal app; and a random ID made just for this message, so
-> that if Hunk has to retry the send, it is not counted twice.
+> - your Hunk version (0.24.1) and OS (macOS)
+> - your email, only if you add one
+> - a "sent from Hunk" label and a random ID, so a retry isn't counted twice
 >
-> The random ID is not tied to you or your machine. Hunk sends nothing else: no file names, code,
-> diffs, repository paths, configuration, or account details.
->
-> As with any web request, Modem's servers can see your IP address. It is used only for rate
-> limiting and is not stored with your feedback.
->
-> Nothing is sent until you confirm.
+> Nothing else: no code, file names, or paths. Your IP is used only for rate limiting and isn't
+> stored.
 
 The text names Modem's domain, `modem.dev`, rather than the ingest host the request goes to;
-`send.test.ts` checks that the request host is inside that domain. If the person enters an email
-address, the second paragraph gains "and the email address you entered, so the team can reply to
-you". The version and OS in the text are the actual values that will be sent. With
-`--skip-confirm`, the last line instead says the send is happening without asking, because
---skip-confirm was passed.
+`send.test.ts` checks that the request host is inside that domain. Once the person enters an
+email address, its bullet becomes "the email you entered, so the team can reply". The version and
+OS in the text are the actual values that will be sent. With `--skip-confirm`, a final line says
+the send is happening without asking, because --skip-confirm was passed.
 
-Every payload field maps to a phrase: `release` and `tags.os` to the version and OS, `source`,
-`tags.category`, and `tags.surface` (constant labels) to "a label saying the message came from
-Hunk's terminal app", `submission_id` to the random ID, and `email` to the email clause. The field-set
-test fails if a field has no phrase.
+Every payload field maps to a phrase: `release` and `tags.os` to the version and OS bullet,
+`source`, `tags.category`, and `tags.surface` (constant labels) to the "sent from Hunk" label,
+`submission_id` to the random ID, and `email` to the email bullet. The field-set test fails if a
+field has no phrase.
 
 ## Payload
 
@@ -159,21 +151,13 @@ hunk feedback [message...]       send feedback to the Hunk team at Modem
    is a header, not part of the body):
 
    ```text
-   This sends your message to the team that makes Hunk. Hunk is built by Modem (modem.dev), and your
-   feedback goes to Modem's servers, where the team reads it and follows up.
+   This goes to Modem (modem.dev), who make Hunk, along with:
+   - your Hunk version (0.24.1) and OS (macOS)
+   - your email, only if you add one
+   - a "sent from Hunk" label and a random ID, so a retry isn't counted twice
 
-   Along with your message, Hunk sends your Hunk version (0.24.1), so the team knows which build you
-   are using; your operating system (macOS), since some problems only happen on one platform; a label
-   saying the message came from Hunk's terminal app; and a random ID made just for this message, so
-   that if Hunk has to retry the send, it is not counted twice.
-
-   The random ID is not tied to you or your machine. Hunk sends nothing else: no file names, code,
-   diffs, repository paths, configuration, or account details.
-
-   As with any web request, Modem's servers can see your IP address. It is used only for rate
-   limiting and is not stored with your feedback.
-
-   Nothing is sent until you confirm.
+   Nothing else: no code, file names, or paths. Your IP is used only for rate limiting and isn't
+   stored.
 
    Request body:
    {
@@ -236,10 +220,14 @@ A modal built on `ModalFrame`, sized with `resolveModalGeometry`:
 
 ```text
 ┌ Send feedback to the Hunk team ─────────────────────────────┐
-│ ⚠ This sends your message to the team that makes Hunk.      │
-│   Hunk is built by Modem (modem.dev), and your feedback     │
-│   goes to Modem's servers, where the team reads it and …    │
-│   (the rest of the disclosure text above, never shortened)  │
+│ ⚠ This goes to Modem (modem.dev), who make Hunk, along with:│
+│   • your Hunk version (0.24.1) and OS (macOS)               │
+│   • your email, only if you add one                         │
+│   • a "sent from Hunk" label and a random ID, so a retry    │
+│     isn't counted twice                                     │
+│                                                             │
+│   Nothing else: no code, file names, or paths. Your IP is   │
+│   used only for rate limiting and isn't stored.             │
 │                                                             │
 │ Message                                                     │
 │ ┌─────────────────────────────────────────────────────────┐ │
@@ -258,8 +246,7 @@ A modal built on `ModalFrame`, sized with `resolveModalGeometry`:
 - The disclosure sits at the top in full-contrast text behind an accent ⚠ marker, above the input, and stays visible
   while typing. It is never collapsed, never shown only once, and never moved behind a "details"
   toggle. It is the full `describeFeedbackDisclosure` text, not a shortened version.
-- The modal grows to 96 columns on wide terminals so the disclosure takes fewer rows. On a short
-  terminal the form gives up space in a fixed order (`planFeedbackDialogRows`): message rows down
+- The modal is 72 columns wide. On a short terminal the form gives up space in a fixed order (`planFeedbackDialogRows`): message rows down
   to two, then the blank rows between disclosure paragraphs, then the GitHub-issues hint. The
   disclosure's words are never cut.
 - The message box is an OpenTUI `<textarea>`, wired for focus the way `AgentInlineNote` does it.

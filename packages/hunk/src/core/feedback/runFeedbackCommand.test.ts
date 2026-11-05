@@ -158,7 +158,7 @@ describe("hunk feedback: sending", () => {
         email: "ada@example.com",
       },
     ]);
-    expect(run.stderr.join("")).toContain("the email address you entered");
+    expect(run.stderr.join("")).toContain("the email you entered");
     expect(run.stdout.join("")).toBe("Sent. Thanks! Reference: evt_1\n");
   });
 
@@ -169,10 +169,9 @@ describe("hunk feedback: sending", () => {
       0,
     );
     expect(run.sent).toHaveLength(1);
-    expect(run.stderr.join("")).toContain("This sends your message to the team that makes Hunk");
+    expect(run.stderr.join("")).toContain("This goes to Modem (modem.dev), who make Hunk");
     expect(run.stderr.join("")).toContain("Request body:");
     expect(run.stderr.join("")).toContain("because --skip-confirm was passed");
-    expect(run.stderr.join("")).not.toContain("Nothing is sent until you confirm.");
   });
 
   test("a piped message is confirmed through the terminal prompt, not stdin", async () => {
