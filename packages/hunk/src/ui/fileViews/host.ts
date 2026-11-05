@@ -5,7 +5,10 @@ import type {
   ExtensionFileViewInput,
 } from "../../extension-api/types";
 import { readMetadataHunkSummaries, toReadOnlyFileViews } from "../../extensions/events";
-import { createExtensionDocumentReader } from "../lib/extensionDocumentReader";
+import {
+  createExtensionBytesReader,
+  createExtensionDocumentReader,
+} from "../lib/extensionDocumentReader";
 
 /** Build public added/removed ranges from parsed hunks, without leaking Pierre types. */
 export function fileViewChanges(file: DiffFile): readonly ExtensionFileChangeRange[] {
@@ -74,6 +77,7 @@ export function createFileViewInput(
     signal,
     changes: snapshot.changes,
     readDocument: createExtensionDocumentReader(file, signal),
+    readBytes: createExtensionBytesReader(file, signal),
   });
 }
 

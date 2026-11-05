@@ -9,7 +9,7 @@
  */
 import type { FileDiffMetadata } from "@pierre/diffs";
 import type { AgentFileContext } from "../../extension-api/types";
-import type { FileSourceFetcher } from "./fileSource";
+import type { FileByteFetcher, FileSourceFetcher } from "./fileSource";
 
 /** One loaded review sidecar: the changeset summary plus every annotated file it names. */
 export interface SidecarContext {
@@ -38,6 +38,9 @@ export interface DiffFile {
   // Optional capability for fetching the file's full text on either side.
   // Loaders attach this when source content is reachable; absent when not.
   sourceFetcher?: FileSourceFetcher;
+  // Optional capability for fetching the file's exact bytes, binary files included.
+  // Absent when the review source cannot supply bytes.
+  byteFetcher?: FileByteFetcher;
 }
 
 export type DiffLineMoveKind = "moved";

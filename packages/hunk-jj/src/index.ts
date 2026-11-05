@@ -17,14 +17,16 @@ import {
   openJjHistory,
   planJjHistoryRangeReview,
 } from "./history";
-import { readJjFileSource } from "./source";
+import { readJjFileBytes, readJjFileSource, type JjFileSourceSpec } from "./source";
 import { describeDiffRange } from "@hunk/vcs/diff-target";
 import { commitReviewInfo, comparisonReviewInfo } from "@hunk/vcs/review-info";
 import {
   HUNK_VCS_DETECTION_BASELINE_PRIORITY,
   type ExtensionVcsAdapter,
   type ExtensionVcsDiffInput,
+  type ExtensionVcsFileBytesReader,
   type ExtensionVcsFileSourceReader,
+  type ExtensionVcsFileSourceRequest,
   type HunkExtensionAPI,
 } from "hunkdiff/extension";
 
@@ -65,6 +67,7 @@ function detectJjRepo(cwd: string) {
 /** Lets Hunk load complete files later and recognize when cached source is still current. */
 interface JjSourceCapability {
   readFileSource: ExtensionVcsFileSourceReader;
+  readFileBytes: ExtensionVcsFileBytesReader;
   sourceCacheKey: string;
 }
 
@@ -100,26 +103,36 @@ function createJjSourceCapability(
 ): JjSourceCapability {
   const oldCommitId = endpoints.oldCommitIds.length === 1 ? endpoints.oldCommitIds[0] : undefined;
 
+  /** Locate one requested side, or nothing when that side has no single readable commit. */
+  const sideSourceSpec = ({
+    path,
+    previousPath,
+    changeType,
+    side,
+  }: ExtensionVcsFileSourceRequest): JjFileSourceSpec | undefined => {
+    if (side === "old") {
+      return changeType === "new" || oldCommitId === undefined
+        ? undefined
+        : { repoRoot, commitId: oldCommitId, path: previousPath ?? path };
+    }
+    return changeType === "deleted"
+      ? undefined
+      : { repoRoot, commitId: endpoints.newCommitId, path };
+  };
+
   return {
     sourceCacheKey: [
       "jj-source-v1",
       jjOldSideCacheKey(endpoints.oldCommitIds),
       `commit:${endpoints.newCommitId}`,
     ].join(":"),
-    readFileSource: ({ path, previousPath, changeType, side }) => {
-      if (side === "old") {
-        if (changeType === "new" || oldCommitId === undefined) {
-          return Promise.resolve(null);
-        }
-        return readJjFileSource(
-          { repoRoot, commitId: oldCommitId, path: previousPath ?? path },
-          { jjExecutable },
-        );
-      }
-
-      return changeType === "deleted"
-        ? Promise.resolve(null)
-        : readJjFileSource({ repoRoot, commitId: endpoints.newCommitId, path }, { jjExecutable });
+    readFileSource: (request) => {
+      const spec = sideSourceSpec(request);
+      return spec ? readJjFileSource(spec, { jjExecutable }) : Promise.resolve(null);
+    },
+    readFileBytes: (request) => {
+      const spec = sideSourceSpec(request);
+      return spec ? readJjFileBytes(spec, { jjExecutable }) : Promise.resolve(null);
     },
   };
 }

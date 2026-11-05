@@ -120,7 +120,7 @@ for all user extensions. Bundled capabilities use separate host-owned selection 
 | Reload after an external agent changes reviewed inputs   | `ctx.review.requestReload()` in an event                      |
 | Read user-supplied settings                              | `hunk.config` (`[extension.<id>]` table)                      |
 | Snapshot stable files and every saved review note        | `ctx.review.snapshot()` in a command                          |
-| Branch on the API generation (currently `32`)            | `hunk.apiVersion`                                             |
+| Branch on the API generation (currently `33`)            | `hunk.apiVersion`                                             |
 
 Registration is only valid while the factory runs — Hunk seals the API object
 afterwards.
@@ -211,8 +211,9 @@ transform — gets `ctx.cwd` and `ctx.notify(message, type?)`. A file view's
   (with `{ side, line }` when opted in), semantic `theme`, resolved `keybindings`, and
   guarded navigation/notification `actions`. Availability callbacks receive the same
   `review` value, so a pane can consume no geometry for ordinary reviews.
-- **File-view `layout`** gets `file`, `width`, `signal`, `changes`, and a lazy
-  `readDocument(side)`.
+- **File-view `layout`** gets `file`, `width`, `signal`, `changes`, a lazy
+  `readDocument(side)`, and a lazy `readBytes(side)` for content that is not text,
+  binary files included.
 - **File-view `mode` handlers** get `ctx.file` and `ctx.fileViews`. `onKey`,
   `onEnter`, and `onExit` must answer **synchronously** — `onKey`'s return value
   (`"handled"`/`"pass"`/`"exit"`) is the routing decision, so kick off async work
@@ -339,8 +340,8 @@ Practical checks, in order of cost:
    loads immediately with no trust prompt, so it is the iteration path. Ask them
    what the footer notices and toasts said.
 5. **Triage with `--no-extensions`** to confirm a symptom belongs to an extension
-   (bundled VCS backends, the built-in files pane, and the `/` content search stay loaded
-   either way).
+   (bundled VCS backends, the built-in files pane, the `/` content search, and the image
+   preview stay loaded either way).
 
 ## If it does not load
 
@@ -363,8 +364,8 @@ Practical checks, in order of cost:
 
 Only when the work is in the `hunk` repo rather than in a user extension:
 
-- Shipped VCS backends, `hunk gh`, the built-in files pane, and the `/` content search are
-  **bundled extensions**, registering through the same public API. That dogfooding is deliberate —
+- Shipped VCS backends, `hunk gh`, the built-in files pane, the `/` content search, and the
+  image preview file view are **bundled extensions**, registering through the same public API. That dogfooding is deliberate —
   if the public contract cannot express something, that is a real gap, not a reason for a private
   path. `default/vcs/` loads from VCS adapter resolution and must stay renderer-free;
   `default/core/` loads session-owned CLI capabilities from private workspaces such as
