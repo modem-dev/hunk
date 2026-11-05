@@ -55,7 +55,8 @@ export interface FeedbackFormController {
   isOpen: boolean;
   state: FeedbackFormState;
   environment: FeedbackEnvironment;
-  open: () => void;
+  /** Open the form, optionally prefilled (such as `hunk feedback --email`). */
+  open: (initial?: { email?: string }) => void;
   /** Close, or ask first when closing would lose a draft or hide an unconfirmed send. */
   requestClose: () => void;
   confirmClose: () => void;
@@ -90,17 +91,26 @@ export function useFeedbackFormController({
   const abortRef = useRef<AbortController | null>(null);
   // Bumped on every close, so a send that settles after its form closed changes nothing.
   const generationRef = useRef(0);
+  // Set before the sender starts. React state lags a render behind, and one input chunk can carry
+  // two ctrl+s presses; without this the second would start a duplicate with a fresh ID.
+  const inFlightRef = useRef(false);
   const onClosedRef = useRef(onClosed);
   onClosedRef.current = onClosed;
 
-  const open = useCallback(() => {
-    if (enabled) setIsOpen(true);
-  }, [enabled]);
+  const open = useCallback(
+    (initial?: { email?: string }) => {
+      if (!enabled) return;
+      setIsOpen(true);
+      if (initial?.email) dispatch({ type: "edit", field: "email", value: initial.email });
+    },
+    [enabled],
+  );
 
   /** Close and discard the draft, which lives only in memory. The next opening starts blank. */
   const close = useCallback(() => {
     const sent = stateRef.current.status === "sent";
     generationRef.current += 1;
+    inFlightRef.current = false;
     abortRef.current = null;
     setIsOpen(false);
     dispatch({ type: "reset" });
@@ -139,6 +149,7 @@ export function useFeedbackFormController({
   const submit = useCallback(() => {
     const current = stateRef.current;
     if (
+      inFlightRef.current ||
       current.status === "sending" ||
       current.status === "sent" ||
       current.status === "unavailable" ||
@@ -161,6 +172,7 @@ export function useFeedbackFormController({
     });
     const controller = new AbortController();
     const generation = generationRef.current;
+    inFlightRef.current = true;
     abortRef.current = controller;
     dispatch({ type: "sendStarted", submissionId });
 
@@ -173,6 +185,7 @@ export function useFeedbackFormController({
       )
       .then((result) => {
         if (generation === generationRef.current) {
+          inFlightRef.current = false;
           dispatch({ type: "sendFinished", result });
         }
       });

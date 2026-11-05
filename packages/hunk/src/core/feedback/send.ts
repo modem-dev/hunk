@@ -43,8 +43,16 @@ export interface FeedbackSendDeps {
   signal?: AbortSignal;
   /** Override the shipped channel token. Tests only. */
   token?: string;
-  /** Wait between retries. Tests inject an instant one. */
-  sleep?: (ms: number) => Promise<void>;
+  /** Wait between retries, ending early on abort. Tests inject an instant one. */
+  sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
+}
+
+/** One finished request: its status and its body, read while the request's guards were live. */
+interface FeedbackAttemptResult {
+  status: number;
+  retryAfter: string | null;
+  /** The parsed JSON body, or undefined when it was empty, malformed, or cut off. */
+  body: unknown;
 }
 
 export const FEEDBACK_UNCONFIRMED_MESSAGE =
@@ -57,56 +65,70 @@ export function feedbackEndpointUrl() {
   return FEEDBACK_ENDPOINT_URL;
 }
 
-/** Wait for one retry delay. */
-function defaultSleep(ms: number) {
-  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+/** Wait for one retry delay, resolving early when the person aborts. */
+function defaultSleep(ms: number, signal?: AbortSignal) {
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(done, ms);
+    signal?.addEventListener("abort", done, { once: true });
+    function done() {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", done);
+      resolve();
+    }
+  });
 }
 
 /** Read `Retry-After` in seconds, falling back to the endpoint's documented one second. */
-function retryAfterMs(response: Response) {
-  const seconds = Number(response.headers.get("retry-after"));
+function retryAfterMs(retryAfter: string | null) {
+  const seconds = Number(retryAfter);
   return Number.isFinite(seconds) && seconds > 0 ? seconds * 1_000 : DEFAULT_CONFLICT_RETRY_MS;
 }
 
 /** Read the first validation detail Modem returned, for a `400` message. */
-async function readFirstDetail(response: Response) {
-  try {
-    const body = (await response.json()) as { error?: unknown; details?: unknown };
-    const details = body.details;
-    if (Array.isArray(details) && details.length > 0) {
-      const first = details[0];
-      return typeof first === "string" ? first : JSON.stringify(first);
-    }
-
-    if (typeof details === "object" && details !== null) {
-      const [first] = Object.entries(details);
-      if (first) {
-        return `${first[0]}: ${typeof first[1] === "string" ? first[1] : JSON.stringify(first[1])}`;
-      }
-    }
-
-    return typeof body.error === "string" ? body.error : "no details";
-  } catch {
+function readFirstDetail(rawBody: unknown) {
+  if (typeof rawBody !== "object" || rawBody === null) {
     return "no details";
   }
+
+  const body = rawBody as { error?: unknown; details?: unknown };
+  const details = body.details;
+  if (Array.isArray(details) && details.length > 0) {
+    const first = details[0];
+    return typeof first === "string" ? first : JSON.stringify(first);
+  }
+
+  if (typeof details === "object" && details !== null) {
+    const [first] = Object.entries(details);
+    if (first) {
+      return `${first[0]}: ${typeof first[1] === "string" ? first[1] : JSON.stringify(first[1])}`;
+    }
+  }
+
+  return typeof body.error === "string" ? body.error : "no details";
 }
 
 /** Read the submission's event ID from a `202` body. */
-async function readAcceptedId(response: Response) {
-  try {
-    const body = (await response.json()) as { id?: unknown };
-    return typeof body.id === "string" ? body.id : "";
-  } catch {
+function readAcceptedId(body: unknown) {
+  if (typeof body !== "object" || body === null) {
     return "";
   }
+
+  const id = (body as { id?: unknown }).id;
+  return typeof id === "string" ? id : "";
 }
 
-/** Run one request with its own timeout, also ending early when the person aborts. */
+/**
+ * Run one request with its own timeout, also ending early when the person aborts.
+ *
+ * The timeout and the abort stay attached until the body is read too, so a server that sends
+ * headers and then stalls cannot hang the send. A body that cannot be read leaves the status
+ * standing: a `202` whose body was cut off was still accepted.
+ */
 async function attempt(
   payload: FeedbackPayload,
   token: string,
   deps: FeedbackSendDeps,
-): Promise<Response> {
+): Promise<FeedbackAttemptResult> {
   const controller = new AbortController();
   const timeout = setTimeout(
     () => controller.abort(),
@@ -116,7 +138,7 @@ async function attempt(
   deps.signal?.addEventListener("abort", forwardAbort, { once: true });
 
   try {
-    return await (deps.fetchImpl ?? fetch)(FEEDBACK_ENDPOINT_URL, {
+    const response = await (deps.fetchImpl ?? fetch)(FEEDBACK_ENDPOINT_URL, {
       method: "POST",
       signal: controller.signal,
       headers: {
@@ -127,6 +149,15 @@ async function attempt(
       },
       body: JSON.stringify(payload),
     });
+
+    let body: unknown;
+    try {
+      body = JSON.parse(await response.text());
+    } catch {
+      body = undefined;
+    }
+
+    return { status: response.status, retryAfter: response.headers.get("retry-after"), body };
   } finally {
     clearTimeout(timeout);
     deps.signal?.removeEventListener("abort", forwardAbort);
@@ -152,7 +183,7 @@ export async function sendFeedback(
       return { kind: "unconfirmed", message: FEEDBACK_UNCONFIRMED_MESSAGE };
     }
 
-    let response: Response;
+    let response: FeedbackAttemptResult;
     try {
       response = await attempt(payload, token, deps);
     } catch {
@@ -166,12 +197,12 @@ export async function sendFeedback(
     }
 
     if (response.status >= 200 && response.status < 300) {
-      return { kind: "sent", id: await readAcceptedId(response) };
+      return { kind: "sent", id: readAcceptedId(response.body) };
     }
 
     if (response.status === 409 && conflictRetries < MAX_CONFLICT_RETRIES) {
       conflictRetries += 1;
-      await sleep(retryAfterMs(response));
+      await sleep(retryAfterMs(response.retryAfter), deps.signal);
       continue;
     }
 
@@ -185,14 +216,14 @@ export async function sendFeedback(
 }
 
 /** Map a final non-success response to the message the person sees. */
-async function describeFailure(response: Response): Promise<FeedbackSendResult> {
+function describeFailure(response: FeedbackAttemptResult): FeedbackSendResult {
   switch (response.status) {
     case 400:
     case 413:
     case 415:
       return {
         kind: "failed",
-        message: `Modem rejected the message: ${await readFirstDetail(response)}. This is a Hunk bug; please report it at ${FEEDBACK_ISSUES_URL}.`,
+        message: `Modem rejected the message: ${readFirstDetail(response.body)}. This is a Hunk bug; please report it at ${FEEDBACK_ISSUES_URL}.`,
       };
     case 401:
     case 403:

@@ -50,9 +50,12 @@ async function createFeedbackConfirm() {
   }
 
   const { openControllingTerminal } = await import("./core/process/terminal");
-  if (!openControllingTerminal()) {
+  const probe = openControllingTerminal();
+  if (!probe) {
     return undefined;
   }
+  // Only proves a terminal exists; each prompt opens and closes its own handle.
+  probe.close();
 
   return async (question: string) => {
     const terminal = openControllingTerminal();
@@ -156,7 +159,8 @@ async function main() {
         // The form needs a real terminal on both sides; piped runs must pass a message instead.
         openForm:
           process.stdin.isTTY && process.stdout.isTTY
-            ? async () => (await import("./ui/feedback/runFeedbackForm")).runFeedbackForm()
+            ? async (initial) =>
+                (await import("./ui/feedback/runFeedbackForm")).runFeedbackForm(initial)
             : undefined,
       }),
     );

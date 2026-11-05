@@ -160,6 +160,27 @@ describe("feedback form in the review app", () => {
     }
   });
 
+  test("two ctrl+s presses before a render send the draft once", async () => {
+    const { setup, sent } = await renderTestFeedbackReview();
+    try {
+      await openTestFeedbackForm(setup);
+      await typeTestFeedback(setup, "Double tap");
+      await act(async () => {
+        // One input chunk: both presses arrive before React renders the sending state.
+        await setup.mockInput.typeText("\x13\x13");
+      });
+      await flushUntil(
+        setup,
+        () => setup.captureCharFrame().includes("Sent. Thanks!"),
+        "the thank-you state",
+      );
+
+      expect(sent).toHaveLength(1);
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
   test("an empty draft is refused locally without calling the sender", async () => {
     const { setup, sent } = await renderTestFeedbackReview();
     try {

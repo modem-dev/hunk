@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { FeedbackCommandInput } from "../run/commandInputs";
 import {
+  CLI_UNCONFIRMED_MESSAGE,
   runFeedbackCommand,
   wrapFeedbackParagraph,
   type FeedbackCommandDeps,
@@ -191,23 +192,39 @@ describe("hunk feedback: sending", () => {
     expect(run.sent).toHaveLength(0);
   });
 
-  test("reports an unconfirmed send with its submission ID and exit 1", async () => {
+  test("reports an unconfirmed send without promising that a rerun is deduplicated", async () => {
     const run = createTestFeedbackDeps(
       {},
-      { kind: "unconfirmed", message: "It may have arrived." },
+      { kind: "unconfirmed", message: "Sending again won't create a duplicate." },
     );
 
     expect(await runFeedbackCommand(createTestFeedbackInput({ output: "json" }), run.deps)).toBe(1);
     expect(JSON.parse(run.stdout.join(""))).toEqual({
       sent: false,
       reason: "unconfirmed",
-      message: "It may have arrived.",
+      message: CLI_UNCONFIRMED_MESSAGE,
       submission_id: "0192e2f0-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
     });
+    expect(CLI_UNCONFIRMED_MESSAGE).toContain("would send a second copy");
   });
 
   test("opens the form when no message is given and a terminal is available", async () => {
-    const run = createTestFeedbackDeps({ openForm: async () => 0 });
+    const opened: Array<{ email?: string }> = [];
+    const run = createTestFeedbackDeps({
+      openForm: async (initial) => {
+        opened.push(initial);
+        return 0;
+      },
+    });
+
+    expect(
+      await runFeedbackCommand(
+        createTestFeedbackInput({ message: undefined, email: "ada@example.com" }),
+        run.deps,
+      ),
+    ).toBe(0);
+    // `--email` carries into the form instead of being silently dropped.
+    expect(opened).toEqual([{ email: "ada@example.com" }]);
 
     expect(
       await runFeedbackCommand(createTestFeedbackInput({ message: undefined }), run.deps),

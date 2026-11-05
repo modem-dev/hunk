@@ -201,4 +201,37 @@ describe("sendFeedback", () => {
     expect((await sendFeedback(payload, deps)).kind).toBe("unconfirmed");
     expect(calls).toBe(1);
   });
+  test("keeps the timeout armed while a stalled response body is read", async () => {
+    const deps: FeedbackSendDeps = {
+      token: "feedback_0123456789abcdef0123456789abcdef",
+      timeoutMs: 20,
+      fetchImpl: async (_input, init) => {
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            init?.signal?.addEventListener("abort", () => controller.error(new Error("aborted")));
+          },
+        });
+        return new Response(body, { status: 202 });
+      },
+    };
+
+    // Headers arrived with 202, so the send was accepted even though the body never finished.
+    expect(await sendFeedback(payload, deps)).toEqual({ kind: "sent", id: "" });
+  });
+
+  test("stops a 409 retry wait as soon as the person aborts", async () => {
+    const controller = new AbortController();
+    const deps: FeedbackSendDeps = {
+      token: "feedback_0123456789abcdef0123456789abcdef",
+      signal: controller.signal,
+      fetchImpl: async () => {
+        setTimeout(() => controller.abort(), 20);
+        return jsonResponse({}, 409, { "retry-after": "30" });
+      },
+    };
+    const startedAt = Date.now();
+
+    expect((await sendFeedback(payload, deps)).kind).toBe("unconfirmed");
+    expect(Date.now() - startedAt).toBeLessThan(5_000);
+  });
 });

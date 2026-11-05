@@ -21,10 +21,13 @@ import { resolveTheme } from "../themes";
 /** Render the form over a blank backdrop and finish the session when it closes. */
 export function StandaloneFeedbackForm({
   externalQuitSignal,
+  initialEmail,
   onDone,
   sendFeedback,
 }: {
   externalQuitSignal?: AbortSignal;
+  /** `--email` from the command line, prefilled so it is not silently dropped. */
+  initialEmail?: string;
   onDone: (exitCode: number) => void;
   sendFeedback?: SendFeedbackImpl;
 }) {
@@ -37,8 +40,8 @@ export function StandaloneFeedbackForm({
   const { open } = controller;
 
   useEffect(() => {
-    open();
-  }, [open]);
+    open({ email: initialEmail });
+  }, [initialEmail, open]);
 
   useEffect(() => {
     if (!externalQuitSignal) return;
@@ -73,7 +76,7 @@ export function StandaloneFeedbackForm({
 }
 
 /** Run the standalone form until it closes, returning the process exit status. */
-export async function runFeedbackForm(): Promise<number> {
+export async function runFeedbackForm(initial: { email?: string } = {}): Promise<number> {
   const exitCode = await runHunkSession({
     stdin: process.stdin,
     stdout: process.stdout,
@@ -84,7 +87,11 @@ export async function runFeedbackForm(): Promise<number> {
         : ["SIGINT", "SIGTERM", "SIGHUP"],
     interruptExitCode: 130,
     render: ({ externalQuitSignal, finish }) => (
-      <StandaloneFeedbackForm externalQuitSignal={externalQuitSignal} onDone={finish} />
+      <StandaloneFeedbackForm
+        externalQuitSignal={externalQuitSignal}
+        initialEmail={initial.email}
+        onDone={finish}
+      />
     ),
   });
 

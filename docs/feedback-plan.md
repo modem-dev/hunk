@@ -307,8 +307,11 @@ sendFeedback(payload: FeedbackPayload, deps?: { fetchImpl?: FetchImpl; timeoutMs
 | `5xx` (after retry) | Modem couldn't record the feedback. Try again later.                                                         |
 
 Network errors, timeouts, and aborts return an `unconfirmed` result rather than `failed`, because
-the request may have reached Modem before the connection dropped. The CLI prints the same message,
-exits 1, and reports `{ "sent": false, "reason": "unconfirmed", "submission_id": "…" }` with `--json`.
+the request may have reached Modem before the connection dropped. The timeout and the abort stay
+attached until the response body has been read, and the `409` retry wait ends as soon as the person
+aborts. The CLI prints its own wording, because each run makes a new `submission_id` and running it
+again would send a second copy; it exits 1 and reports
+`{ "sent": false, "reason": "unconfirmed", "submission_id": "…" }` with `--json`.
 
 The `401` message also links `https://github.com/modem-dev/hunk/issues`, so a revoked token still
 leaves people somewhere to go.

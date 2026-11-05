@@ -34,7 +34,7 @@ export interface FeedbackCommandDeps {
   /** Ask on the controlling terminal; absent when no terminal can answer. */
   confirm?: FeedbackConfirm;
   /** Open the interactive form when no message was given; absent without a terminal. */
-  openForm?: () => Promise<number>;
+  openForm?: (initial: { email?: string }) => Promise<number>;
   environment?: FeedbackEnvironment;
   readFile?: (path: string) => Promise<string>;
   readStdin?: () => Promise<string>;
@@ -46,6 +46,13 @@ export interface FeedbackCommandDeps {
 }
 
 const MAX_WRAP_WIDTH = 100;
+
+/**
+ * The CLI's own unconfirmed message. Unlike the form, each `hunk feedback` run makes a new
+ * submission ID, so running it again cannot be deduplicated and the text must not promise that.
+ */
+export const CLI_UNCONFIRMED_MESSAGE =
+  "Hunk couldn't confirm that Modem received this. It may have arrived, and running hunk feedback again would send a second copy.";
 
 /** Exit status for a refused or invalid run that sent nothing. */
 const EXIT_REFUSED = 2;
@@ -145,12 +152,13 @@ function reportResult(
     return 0;
   }
 
+  const message = result.kind === "unconfirmed" ? CLI_UNCONFIRMED_MESSAGE : result.message;
   if (input.output === "json") {
     deps.stdout(
-      `${JSON.stringify({ sent: false, reason: result.kind, message: result.message, submission_id: payload.submission_id })}\n`,
+      `${JSON.stringify({ sent: false, reason: result.kind, message, submission_id: payload.submission_id })}\n`,
     );
   } else {
-    deps.stderr(`${result.message}\n`);
+    deps.stderr(`${message}\n`);
   }
   return 1;
 }
@@ -173,7 +181,7 @@ export async function runFeedbackCommand(
     }
 
     if (deps.openForm) {
-      return deps.openForm();
+      return deps.openForm({ email: input.email });
     }
 
     deps.stderr(

@@ -50,7 +50,7 @@ One HTTPS request to Modem's feedback service (`ingest.modem.dev`, part of modem
 
 Nothing else is sent: no file names, diffs, repository paths, configuration, account details, or machine identifiers. As with any web request, Modem's servers see your IP address. It is used for rate limiting and is not stored with your feedback.
 
-If a send times out or you press `esc` while it is in flight, Hunk says it couldn't confirm the result. The message may still have arrived. Sending it again won't create a duplicate.
+If a send times out or you press `esc` while it is in flight, Hunk says it couldn't confirm the result. The message may still have arrived. In the form, sending again reuses the same ID, so it won't create a duplicate. Each `hunk feedback` run makes a new ID, so running the command again would send a second copy.
 
 ## Turning it off
 
