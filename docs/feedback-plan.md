@@ -55,10 +55,11 @@ one.
 4. **No hidden identifiers.** Hunk sends no install ID, machine ID, username, hostname, email (unless
    the person types one), repository data, or environment variables. It overrides Bun's default
    `User-Agent` so the runtime version does not ride along unannounced.
-5. **Honesty about the network.** Like any web request, the server sees the person's IP address.
-   The disclosure says so instead of claiming the request is anonymous. Modem's ingest uses it as
-   the key for the per-IP rate limit (`CF-Connecting-IP` in `apps/ingest/src/routes/feedback.ts`)
-   and does not store it on the submission.
+5. **The network is not disclosed field by field.** Like any web request, the server sees the
+   person's IP address; the form does not spell that out, since no request can avoid it. Modem's
+   ingest uses it as the key for the per-IP rate limit (`CF-Connecting-IP` in
+   `apps/ingest/src/routes/feedback.ts`) and does not store it on the submission. The hunk.dev
+   feedback page says so.
 
 ### Disclosure text
 
@@ -70,8 +71,6 @@ Both surfaces render the same text, built by one helper (`describeFeedbackDisclo
 > - your Hunk version (0.24.1) and OS (macOS)
 > - your email, only if you add one
 > - a random ID to avoid duplicate retries
->
-> Your IP is used only for rate limiting and isn't stored.
 
 The text names Modem's domain, `modem.dev`, rather than the ingest host the request goes to;
 `send.test.ts` checks that the request host is inside that domain. Once the person enters an
@@ -156,8 +155,6 @@ hunk feedback [message...]       send feedback to the Hunk team at Modem
    - your email, only if you add one
    - a random ID to avoid duplicate retries
 
-   Your IP is used only for rate limiting and isn't stored.
-
    Request body:
    {
      "submission_id": "0192e2f0-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
@@ -223,8 +220,6 @@ A modal built on `ModalFrame`, sized with `resolveModalGeometry`:
 │   • your Hunk version (0.24.1) and OS (macOS)               │
 │   • your email, only if you add one                         │
 │   • a random ID to avoid duplicate retries                  │
-│                                                             │
-│   Your IP is used only for rate limiting and isn't stored.  │
 │                                                             │
 │ Message                                                     │
 │ ┌─────────────────────────────────────────────────────────┐ │

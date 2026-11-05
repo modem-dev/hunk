@@ -212,7 +212,6 @@ export function describeFeedbackDisclosure(
         : "- your email, only if you add one",
       "- a random ID to avoid duplicate retries",
     ].join("\n"),
-    "Your IP is used only for rate limiting and isn't stored.",
     ...(environment.skipsConfirmation
       ? ["Sending now without asking, because --skip-confirm was passed."]
       : []),

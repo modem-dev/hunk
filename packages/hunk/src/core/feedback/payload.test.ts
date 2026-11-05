@@ -103,7 +103,6 @@ describe("feedback disclosure", () => {
     expect(text).toContain("Modem (modem.dev)");
     expect(text).toContain("your Hunk version (0.24.1) and OS (macOS)");
     expect(text).toContain("a random ID to avoid duplicate retries");
-    expect(text).toContain("Your IP is used only for rate limiting");
     expect(text).toContain("your email, only if you add one");
     expect(text).not.toContain("--skip-confirm");
   });

@@ -99,7 +99,7 @@ describe("feedback form in the review app", () => {
       await openTestFeedbackForm(setup);
       const frame = setup.captureCharFrame();
       expect(frame).toContain("This goes to Modem (modem.dev), who make Hunk");
-      expect(frame).toContain("rate limiting");
+      expect(frame).toContain("a random ID to avoid duplicate retries");
 
       await typeTestFeedback(setup, "jk]q");
       await flushUntil(setup, () => setup.captureCharFrame().includes("jk]q"), "typed text");

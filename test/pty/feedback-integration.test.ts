@@ -38,7 +38,7 @@ describe("PTY feedback form", () => {
         { timeout: 5_000 },
       );
       expect(form).toContain("This goes to Modem (modem.dev), who make Hunk");
-      expect(form).toContain("rate limiting");
+      expect(form).toContain("a random ID to avoid duplicate retries");
       expect(form).toContain("send to Modem");
 
       // `]` and `q` are review commands; inside the form they are only text.

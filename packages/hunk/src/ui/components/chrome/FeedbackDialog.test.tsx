@@ -34,14 +34,13 @@ describe("feedback dialog row plan", () => {
   test("fits a 32-row terminal with the full message box", () => {
     const normal = planTestFeedbackDialog(32);
 
-    expect(normal.disclosure).toContain("");
     expect(normal.showIssuesHint).toBe(true);
     expect(normal.messageRows).toBe(5);
     expect(normal.height).toBeLessThanOrEqual(30);
   });
 
-  test("drops the issues hint only after the paragraph gaps", () => {
-    const short = planTestFeedbackDialog(25);
+  test("drops the issues hint on a short terminal before shrinking the disclosure", () => {
+    const short = planTestFeedbackDialog(24);
 
     expect(short.disclosure).not.toContain("");
     expect(short.showIssuesHint).toBe(false);
