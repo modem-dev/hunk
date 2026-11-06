@@ -3,6 +3,7 @@ import {
   persistedViewPreferencesFromOptions,
   type PersistedViewPreferences,
   type UserKeyBinding,
+  type ViewPreferenceScope,
 } from "../core/run/config";
 import { collectSessionCustomThemes } from "../core/theme/customThemes";
 import {
@@ -54,6 +55,7 @@ export interface HistoryBootstrap {
   /** Launch baseline retained so the owning history surface can persist theme changes on quit. */
   initialViewPreferences: PersistedViewPreferences;
   viewPreferencesConfigPath?: string;
+  viewPreferenceScope?: ViewPreferenceScope;
   promptSaveViewPreferences: boolean;
   planReview(
     commit: ExtensionVcsHistoryCommit,
@@ -153,13 +155,12 @@ export async function loadHistoryBootstrap({
     throw error;
   }
 
-  const resolvedTheme = resolved.configured.input.options.theme;
   const initialViewPreferences = persistedViewPreferencesFromOptions(
     resolved.configured.input.options,
   );
   const cursor = createHistoryCursorLifecycle(source, openSource);
   return {
-    input: resolvedTheme ? { ...input, theme: resolvedTheme } : input,
+    input,
     source,
     providerId: sanitizeTerminalLine(adapter.id),
     providerName: sanitizeTerminalLine(adapter.name),
@@ -177,6 +178,7 @@ export async function loadHistoryBootstrap({
     keybindings: resolved.configured.keybindings,
     initialViewPreferences,
     viewPreferencesConfigPath: resolved.configured.viewPreferencesConfigPath,
+    viewPreferenceScope: resolved.configured.viewPreferenceScope,
     promptSaveViewPreferences:
       resolved.configured.input.options.promptSaveViewPreferences !== false,
     notices: [

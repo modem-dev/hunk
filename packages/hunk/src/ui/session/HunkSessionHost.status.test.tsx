@@ -3,6 +3,7 @@ import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
 import { createTestStatusRuntime } from "../../../../../test/helpers/status-runtime";
 import type { AppBootstrap } from "../../core/bootstrap";
+import { persistedViewPreferencesFromOptions } from "../../core/run/config";
 import { StatusController } from "../status/controller";
 import { HunkSessionHost } from "./HunkSessionHost";
 import { availableThemes } from "../themes";
@@ -269,7 +270,7 @@ test("detected light theme persists and only root status asks to save changed pr
   try {
     await act(async () => host.setup.mockInput.pressKey("u"));
     await settleStatusTest(host.setup);
-    expect(host.mounted[0]!.bootstrap.initialTheme).toBe("github-light-default");
+    expect(host.mounted[0]!.bootstrap.initialTheme).toBe("auto");
     await act(async () => host.setup.mockInput.pressKey("l"));
     await act(async () => host.setup.mockInput.pressKey("q"));
     await settleStatusTest(host.setup);
@@ -283,6 +284,33 @@ test("detected light theme persists and only root status asks to save changed pr
     await settleStatusTest(host.setup);
     expect(host.setup.captureCharFrame()).toContain("Save view preferences?");
     expect(host.quit).not.toHaveBeenCalled();
+  } finally {
+    await host.close();
+  }
+});
+
+test("configured light/dark theme pair reaches reviews and quits status without a save prompt", async () => {
+  const runtime = createTestStatusRuntime();
+  const pair = { dark: "github-dark-default", light: "github-light-default" };
+  runtime.initialViewPreferences = persistedViewPreferencesFromOptions({
+    theme: pair,
+    experimental: true,
+  });
+  runtime.initialization.viewPreferences = runtime.initialViewPreferences;
+  runtime.initialization.theme.initialTheme = pair;
+  runtime.initialization.theme.initialThemeMode = "light";
+  runtime.promptSaveViewPreferences = true;
+  const host = await createTestStatusHost(runtime);
+  try {
+    await act(async () => host.setup.mockInput.pressKey("u"));
+    await settleStatusTest(host.setup);
+    expect(host.mounted[0]!.bootstrap.initialTheme).toEqual(pair);
+    await act(async () => host.setup.mockInput.pressKey("q"));
+    await settleStatusTest(host.setup);
+    await act(async () => host.setup.mockInput.pressKey("q"));
+    await settleStatusTest(host.setup);
+    expect(host.setup.captureCharFrame()).not.toContain("Save view preferences?");
+    expect(host.quit).toHaveBeenCalledTimes(1);
   } finally {
     await host.close();
   }
