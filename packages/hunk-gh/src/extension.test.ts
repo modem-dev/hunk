@@ -279,6 +279,52 @@ describe("GitHub branch PR dispatch", () => {
     expect(output.stderr.join("")).toContain("pull request modem-dev/hunk#321");
     await registration.shutdown({}, {} as never);
   });
+
+  test("keeps GHE.com origins and URLs on the tenant API", async () => {
+    const temporaryRoot = createTestDirectory();
+    const requests: string[] = [];
+    const registration = registerTestExtension(
+      createGitHubPrExtension({
+        temporaryRoot,
+        env: { GH_TOKEN: "tenant-token" },
+        resolveOrigin: async () => "git@acme.ghe.com:contributor/hunk.git",
+        resolveCheckout: async () => ({ branch: "feature/topic", sha: "a".repeat(40) }),
+        fetchImpl: (async (url, init) => {
+          requests.push(String(url));
+          if (String(url).includes("/commits/")) {
+            return Response.json([
+              { number: 321, state: "open", base: { repo: { full_name: "modem-dev/hunk" } } },
+            ]);
+          }
+          if (new Headers(init?.headers).get("accept") === "application/vnd.github+json") {
+            return Response.json({
+              ...createTestPullRequestMetadata("321"),
+              html_url: "https://acme.ghe.com/modem-dev/hunk/pull/321",
+            });
+          }
+          return new Response("diff --git a/a b/a\n");
+        }) as GitHubFetch,
+      }),
+    );
+    if (!registration.handler || !registration.shutdown) {
+      throw new Error("Expected command and shutdown registrations.");
+    }
+
+    for (const args of [["pr"], ["pr", "https://acme.ghe.com/modem-dev/hunk/pull/321"]]) {
+      requests.length = 0;
+      const result = await registration.handler(args, createTestContext().context);
+      if (result.kind !== "delegate") throw new Error("Expected patch delegation.");
+      expect(requests.length).toBeGreaterThan(0);
+      for (const request of requests) {
+        expect(request.startsWith("https://api.acme.ghe.com/repos/")).toBe(true);
+      }
+      expect(result.review).toMatchObject({
+        url: "https://acme.ghe.com/modem-dev/hunk/pull/321",
+        repository: "acme.ghe.com/modem-dev/hunk",
+      });
+    }
+    await registration.shutdown({}, {} as never);
+  });
 });
 
 describe("GitHub extension temporary patch lifecycle", () => {
