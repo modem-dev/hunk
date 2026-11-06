@@ -31,7 +31,7 @@ export interface CheckExtensionConsumerOptions {
   moduleResolutions?: readonly ("nodenext" | "bundler")[];
 }
 
-/** Compile the API-v33 file-view syntax and byte-read surface as an isolated published-package consumer. */
+/** Compile the API-v34 file-view syntax, row-background, and byte-read surface as an isolated published-package consumer. */
 export const FILE_VIEW_SYNTAX_CONSUMER_SOURCE: ExtensionConsumerSource = {
   name: "file-view-syntax-consumer.ts",
   text: `
@@ -46,7 +46,7 @@ import type {
   ExtensionVcsFileBytesReader,
 } from "hunkdiff/extension";
 
-const apiVersion: 33 = HUNK_EXTENSION_API_VERSION;
+const apiVersion: 34 = HUNK_EXTENSION_API_VERSION;
 const document = {
   id: "generated",
   text: "const answer = 42;",
@@ -70,7 +70,7 @@ const statusSpan = {
 } satisfies ExtensionStatusSpan;
 export const layout = {
   codeDocuments: [document],
-  rows: [{ id: "generated:1", spans }],
+  rows: [{ id: "generated:1", spans, background: "added" }],
   hunkRows: [{ startRow: 0, endRow: 0 }],
 } satisfies ExtensionFileViewLayout;
 export async function readNewSideBytes(input: ExtensionFileViewInput) {

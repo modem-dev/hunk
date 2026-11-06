@@ -11,7 +11,7 @@ import {
   documentHighlightRunsForLine,
   loadDocumentHighlight,
 } from "../../syntax/documentHighlightService";
-import { cursorLineHighlightBg } from "../../diff/rowStyle";
+import { cursorLineHighlightBg, selectionHighlightBg } from "../../diff/rowStyle";
 import { measureFileViewGeometry } from "../../fileViews/geometry";
 import { validateFileViewLayout } from "../../fileViews/layout";
 import { buildFileViewRenderPlan } from "../../fileViews/renderPlan";
@@ -618,6 +618,53 @@ describe("FileView custom rows", () => {
       );
     } finally {
       await act(async () => setup!.renderer.destroy());
+    }
+  });
+
+  test("paints opted-in diff row backgrounds under selection and the cursor row", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const file = createTestDiffFile({ id: "diff-bg", path: "diff-bg.ts" });
+    const fileView = resolveTestLayout(
+      {
+        rows: [
+          { id: "plain-added", spans: [{ text: "plainAdd" }], background: "added" },
+          { id: "plain-removed", spans: [{ text: "plainDel" }], background: "removed" },
+          { id: "context", spans: [{ text: "context" }] },
+          { id: "sel-added", spans: [{ text: "selAdd" }], background: "added" },
+          { id: "cursor-removed", spans: [{ text: "curDel" }], background: "removed" },
+        ],
+        hunkRows: [{ startRow: 3, endRow: 4 }],
+      },
+      20,
+    );
+    const geometry = measureTestGeometry(fileView, 20);
+    const setup = await testRender(
+      <FileView
+        file={file}
+        fileView={fileView}
+        geometry={geometry}
+        cursorHighlight={{ stableKey: "file-view:cursor-removed", side: "old", style: "row" }}
+        selectedHunkIndex={0}
+        theme={theme}
+        width={20}
+      />,
+      { width: 20, height: 5 },
+    );
+
+    try {
+      await act(async () => setup.renderOnce());
+      const capture = setup.captureSpans();
+      expect(backgroundForText(capture, "plainAdd")).toBe(theme.addedBg.toLowerCase());
+      expect(backgroundForText(capture, "plainDel")).toBe(theme.removedBg.toLowerCase());
+      expect(backgroundForText(capture, "context")).toBe(theme.panel.toLowerCase());
+      expect(backgroundForText(capture, "selAdd")).toBe(
+        selectionHighlightBg(theme.addedBg, theme).toLowerCase(),
+      );
+      expect(backgroundForText(capture, "curDel")).toBe(
+        cursorLineHighlightBg(selectionHighlightBg(theme.removedBg, theme), theme).toLowerCase(),
+      );
+    } finally {
+      await act(async () => setup.renderer.destroy());
     }
   });
 

@@ -9,7 +9,7 @@ import type {
 import type { AppTheme } from "../../themes";
 import type { DiffSectionGeometry } from "../../diff/diffSectionGeometry";
 import { plannedRowMatchesCursor, type CursorHighlight } from "../../diff/cursorHighlight";
-import { cursorLineHighlightBg } from "../../diff/rowStyle";
+import { cursorLineHighlightBg, selectionHighlightBg } from "../../diff/rowStyle";
 import { resolveVisibleRowIndexWindow, type VisibleBodyBounds } from "../../diff/rowWindowing";
 import { reviewRowId } from "../../lib/ids";
 import { toExtensionPaintTheme } from "../../lib/extensionPaintTheme";
@@ -219,7 +219,20 @@ function FileViewComponent({
         const index = plannedRow.rowIndex;
         const selected = isFileViewRowSelected(layout, index, selectedHunkIndex);
         const onCursorRow = plannedRowMatchesCursor(plannedRow, cursorHighlight);
-        const rowBackground = selected ? theme.selectedHunk : theme.panel;
+        const diffBackground =
+          row.background === "added"
+            ? theme.addedBg
+            : row.background === "removed"
+              ? theme.removedBg
+              : undefined;
+        // Tinted rows blend selection over the diff tint so changes stay visible in the hunk.
+        const rowBackground = diffBackground
+          ? selected
+            ? selectionHighlightBg(diffBackground, theme)
+            : diffBackground
+          : selected
+            ? theme.selectedHunk
+            : theme.panel;
         const fixedHeight = row.component?.height;
         const View = row.component?.render as
           | ((props: ExtensionFileViewRowComponentProps) => ReactNode)

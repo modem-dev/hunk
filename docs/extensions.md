@@ -357,8 +357,9 @@ and retires the replaced instance at that explicit ownership boundary.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `33`). Branch on it if you want
-one file to support several Hunk versions. Version 33 adds `readBytes` to file-view inputs and
+The API generation this Hunk speaks (currently `34`). Branch on it if you want
+one file to support several Hunk versions. Version 34 adds the file-view row `background` for
+added and removed lines; version 33 adds `readBytes` to file-view inputs and
 optional `readFileBytes` to VCS patch results; version 32 adds `ctx.selection.layout`, the resolved
 split or unified layout; version 31 adds optional read-only workspace status,
 sibling inspection and status review planning; version 30 adds the opaque current review generation
@@ -1553,8 +1554,10 @@ the layout is rejected rather than guessing an offset.
 
 When syntax succeeds, its token foreground overrides the span's `tone`; token gaps retain the tone,
 and authored `attributes` apply to every projected run. Hunk continues to own selected-hunk and
-current-row backgrounds. `added` and `removed` remain their existing semantic foreground tones;
-code documents do not opt into raw-diff backgrounds. Custom row components never receive syntax
+current-row backgrounds. `added` and `removed` remain their existing semantic foreground tones.
+A diff-presenting view can set a row's `background` to `"added"` or `"removed"` (API v34) to paint
+the raw diff's line tint under its tokens; Hunk blends the selected-hunk and current-row
+backgrounds over that tint, and it never changes geometry. Custom row components never receive syntax
 colors or token data: only their symbolic fallback spans can use `syntax`, while successful custom
 component output remains untouched.
 

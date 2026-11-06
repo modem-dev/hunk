@@ -248,6 +248,10 @@ function validateFileViewLayoutWithMeasurer(
     if (!Array.isArray(row.spans)) {
       return { valid: false, issue: `rows[${index}].spans is not an array` };
     }
+    const background = row.background;
+    if (background !== undefined && background !== "added" && background !== "removed") {
+      return { valid: false, issue: `rows[${index}].background must be added or removed` };
+    }
 
     let rowText = "";
     const spans: ExtensionFileViewRow["spans"][number][] = [];
@@ -443,6 +447,7 @@ function validateFileViewLayoutWithMeasurer(
         id: row.id,
         spans: Object.freeze(spans),
         ...(sourceRangesSnapshot === undefined ? {} : { sourceRanges: sourceRangesSnapshot }),
+        ...(background === undefined ? {} : { background }),
         ...(componentSnapshot === undefined ? {} : { component: componentSnapshot }),
       }),
     );
