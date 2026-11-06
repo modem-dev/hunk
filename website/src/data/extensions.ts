@@ -302,6 +302,15 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     apiVersion: 1,
   },
   {
+    repo: "tverlaan/hunk-branch-toggle",
+    name: "hunk-branch-toggle",
+    summary:
+      "Toggles the current Hunk window between all uncommitted changes and the full branch diff against a chosen base branch's merge-base with Shift+B.",
+    categories: ["Command"],
+    version: "0.1.0",
+    apiVersion: 26,
+  },
+  {
     repo: "victor-software-house/hunk-history",
     name: "hunk-history",
     summary:
