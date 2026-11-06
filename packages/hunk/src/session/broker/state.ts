@@ -502,11 +502,11 @@ export class HunkSessionBrokerState extends SessionBrokerState<
     key: { sessionId: string; generation: string; resourceId: string },
     descriptor: ReviewResourceDescriptorV1,
   ): Promise<Uint8Array> {
-    const measured = isMaterializedReviewResource(descriptor);
+    const measured = isMaterializedReviewResource(descriptor) ? descriptor : undefined;
     const reservation: ReviewResourceReservation = this.resources.reserve(
       key,
       measured
-        ? descriptor.byteLength!
+        ? measured.byteLength
         : Math.min(REVIEW_RESOURCE_CHUNK_BYTES, reviewResourceCeiling(descriptor.kind)),
     );
     try {
@@ -516,7 +516,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
         digest: nodeReviewDigest,
         maxBytes: reviewResourceCeiling(descriptor.kind),
         ...(measured
-          ? { expected: { byteLength: descriptor.byteLength!, digest: descriptor.digest! } }
+          ? { expected: { byteLength: measured.byteLength, digest: measured.digest } }
           : {}),
       });
 

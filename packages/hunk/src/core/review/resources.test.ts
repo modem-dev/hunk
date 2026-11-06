@@ -6,6 +6,7 @@ import {
   REVIEW_PATCH_CONTENT_TYPE,
   REVIEW_RESOURCE_CHUNK_BYTES,
   reviewResourceId,
+  type ReviewResourceDescriptorV1,
 } from "./resources";
 
 const fileKey = "file:0123456789abcdef";
@@ -50,11 +51,29 @@ describe("resource materialization state", () => {
 
   test("is only complete when both measurements are present", () => {
     expect(isMaterializedReviewResource(descriptor)).toBe(false);
+    // @ts-expect-error A length without a digest is not a descriptor the type admits.
     expect(isMaterializedReviewResource({ ...descriptor, byteLength: 10 })).toBe(false);
+    // @ts-expect-error A digest without a length is not a descriptor the type admits.
     expect(isMaterializedReviewResource({ ...descriptor, digest: "a".repeat(64) })).toBe(false);
     expect(
       isMaterializedReviewResource({ ...descriptor, byteLength: 10, digest: "a".repeat(64) }),
     ).toBe(true);
+  });
+
+  /** Reads measurements through the predicate alone, so only its narrowing can typecheck them. */
+  function readTestMeasurements(resource: ReviewResourceDescriptorV1) {
+    if (!isMaterializedReviewResource(resource)) {
+      throw new Error("expected a materialized descriptor");
+    }
+
+    const byteLength: number = resource.byteLength;
+    const digest: string = resource.digest;
+    return { byteLength, digest };
+  }
+
+  test("narrows a materialized descriptor to concrete measurements", () => {
+    const measured = { ...descriptor, byteLength: 10, digest: "a".repeat(64) };
+    expect(readTestMeasurements(measured)).toEqual({ byteLength: 10, digest: "a".repeat(64) });
   });
 });
 

@@ -52,35 +52,40 @@ export const REVIEW_CANONICAL_FILE_CONTENT_TYPE =
 export const REVIEW_PATCH_CONTENT_TYPE = "text/x-diff; charset=utf-8" as const;
 export const REVIEW_SOURCE_CONTENT_TYPE = "text/plain; charset=utf-8" as const;
 
+/**
+ * Measurements are set together once the producer has materialized the content, and never
+ * apart: a descriptor that declares one without the other cannot be verified and is a bug.
+ */
+export type ReviewResourceMeasurement =
+  | { byteLength: number; digest: string }
+  | { byteLength?: never; digest?: never };
+
 interface ReviewResourceDescriptorBase {
   id: string;
   generation: string;
   fileKey: string;
-  /**
-   * Set together once the producer has materialized the content, and never apart: a
-   * descriptor that declares one without the other cannot be verified and is a bug.
-   */
-  byteLength?: number;
-  digest?: string;
 }
 
-export interface ReviewCanonicalFileResourceV1 extends ReviewResourceDescriptorBase {
-  kind: "canonical-file";
-  contentType: typeof REVIEW_CANONICAL_FILE_CONTENT_TYPE;
-}
+export type ReviewCanonicalFileResourceV1 = ReviewResourceDescriptorBase &
+  ReviewResourceMeasurement & {
+    kind: "canonical-file";
+    contentType: typeof REVIEW_CANONICAL_FILE_CONTENT_TYPE;
+  };
 
-export interface ReviewPatchResourceV1 extends ReviewResourceDescriptorBase {
-  kind: "patch";
-  contentType: typeof REVIEW_PATCH_CONTENT_TYPE;
-}
+export type ReviewPatchResourceV1 = ReviewResourceDescriptorBase &
+  ReviewResourceMeasurement & {
+    kind: "patch";
+    contentType: typeof REVIEW_PATCH_CONTENT_TYPE;
+  };
 
-export interface ReviewSourceResourceV1 extends ReviewResourceDescriptorBase {
-  kind: "source";
-  contentType: typeof REVIEW_SOURCE_CONTENT_TYPE;
-  side: ReviewSide;
-  /** Identity of the content behind the reader, so a stale read is detectable. */
-  sourceIdentity: string;
-}
+export type ReviewSourceResourceV1 = ReviewResourceDescriptorBase &
+  ReviewResourceMeasurement & {
+    kind: "source";
+    contentType: typeof REVIEW_SOURCE_CONTENT_TYPE;
+    side: ReviewSide;
+    /** Identity of the content behind the reader, so a stale read is detectable. */
+    sourceIdentity: string;
+  };
 
 export type ReviewResourceDescriptorV1 =
   | ReviewCanonicalFileResourceV1
@@ -88,7 +93,9 @@ export type ReviewResourceDescriptorV1 =
   | ReviewSourceResourceV1;
 
 /** Whether one descriptor has been measured, and can therefore be verified when read. */
-export function isMaterializedReviewResource(descriptor: ReviewResourceDescriptorV1) {
+export function isMaterializedReviewResource(
+  descriptor: ReviewResourceDescriptorV1,
+): descriptor is Extract<ReviewResourceDescriptorV1, { byteLength: number }> {
   return descriptor.byteLength !== undefined && descriptor.digest !== undefined;
 }
 
