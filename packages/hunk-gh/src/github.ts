@@ -2,7 +2,8 @@ import {
   HunkExtensionUserError,
   type ExtensionChangeRequestReviewDescriptor,
 } from "hunkdiff/extension";
-import { parseGitHubRepository } from "./parsing";
+import { formatGitHubRepository, githubApiOrigin } from "./hosts";
+import { parseGitHubRepositoryPath } from "./parsing";
 import type {
   GitCheckoutIdentity,
   GitHubFetch,
@@ -10,9 +11,19 @@ import type {
   ResolvedGitHubPullRequest,
 } from "./types";
 
-const GITHUB_API_ORIGIN = "https://api.github.com";
 const MAX_DIFF_BYTES = 64 * 1024 * 1024;
 const MAX_METADATA_BYTES = 1024 * 1024;
+
+/** Builds one REST URL on the repository's validated API origin. */
+function repositoryApiUrl(repository: GitHubRepository, path: string): string {
+  const prefix = `${githubApiOrigin(repository.host)}/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.repo)}`;
+  return `${prefix}${path}`;
+}
+
+/** Formats a pull request as `[host/]owner/repo#number` for terminal messages. */
+function pullRequestName(target: ResolvedGitHubPullRequest): string {
+  return `${formatGitHubRepository(target)}#${target.number}`;
+}
 
 /** Builds credential-safe GitHub request headers. */
 function githubHeaders(
@@ -93,7 +104,7 @@ async function readBoundedResponse(
 
 /** Converts a non-success PR response into a fixed, credential-safe error. */
 function pullRequestResponseError(response: Response, target: ResolvedGitHubPullRequest) {
-  const name = `${target.owner}/${target.repo}#${target.number}`;
+  const name = pullRequestName(target);
   if (response.status === 401) {
     return new HunkExtensionUserError(`GitHub rejected the configured token for ${name}.`, {
       suggestions: ["Refresh GH_TOKEN or GITHUB_TOKEN and retry."],
@@ -184,10 +195,8 @@ export async function findOpenPullRequestForCommit(
   if (!/^[0-9a-f]{40,64}$/i.test(sha)) {
     throw new HunkExtensionUserError("The current Git HEAD is not a valid commit SHA.");
   }
-  const name = `${originRepository.owner}/${originRepository.repo}:${branch}@${sha.slice(0, 12)}`;
-  const url = new URL(
-    `${GITHUB_API_ORIGIN}/repos/${encodeURIComponent(originRepository.owner)}/${encodeURIComponent(originRepository.repo)}/commits/${sha}/pulls`,
-  );
+  const name = `${formatGitHubRepository(originRepository)}:${branch}@${sha.slice(0, 12)}`;
+  const url = new URL(repositoryApiUrl(originRepository, `/commits/${sha}/pulls`));
   url.searchParams.set("per_page", "100");
 
   let response: Response;
@@ -218,7 +227,7 @@ export async function findOpenPullRequestForCommit(
     }
     if (response.status === 404) {
       throw new HunkExtensionUserError(
-        `GitHub could not find an accessible commit at ${originRepository.owner}/${originRepository.repo}@${sha}.`,
+        `GitHub could not find an accessible commit at ${formatGitHubRepository(originRepository)}@${sha}.`,
       );
     }
     if (response.status >= 300 && response.status < 400) {
@@ -257,13 +266,14 @@ export async function findOpenPullRequestForCommit(
     if (typeof value.base?.repo?.full_name !== "string") {
       throw new HunkExtensionUserError("GitHub returned malformed PR metadata.");
     }
-    let base: GitHubRepository;
+    let base: { owner: string; repo: string };
     try {
-      base = parseGitHubRepository(value.base.repo.full_name);
+      base = parseGitHubRepositoryPath(value.base.repo.full_name);
     } catch {
       throw new HunkExtensionUserError("GitHub returned malformed PR metadata.");
     }
-    open.push({ ...base, number: String(value.number) });
+    // full_name carries no host; a fork's base PR always lives on the same GitHub instance.
+    open.push({ host: originRepository.host, ...base, number: String(value.number) });
   }
 
   if (response.headers.get("link")?.includes('rel="next"')) {
@@ -282,8 +292,8 @@ export async function findOpenPullRequestForCommit(
       suggestions: ["Pass the intended pull-request number explicitly."],
     });
   }
-  const { owner, repo, number } = open[0]!;
-  return { owner, repo, number };
+  const { host, owner, repo, number } = open[0]!;
+  return { host, owner, repo, number };
 }
 
 /** Finds a branch PR even when local HEAD is ahead of its pushed upstream tip. */
@@ -376,7 +386,7 @@ export function parseGitHubPullRequestMetadata(
   const expectedPath = `/${target.owner}/${target.repo}/pull/${target.number}`.toLowerCase();
   if (
     parsedUrl.protocol !== "https:" ||
-    parsedUrl.hostname.toLowerCase() !== "github.com" ||
+    parsedUrl.hostname.toLowerCase() !== target.host ||
     parsedUrl.port ||
     parsedUrl.username ||
     parsedUrl.password ||
@@ -393,7 +403,7 @@ export function parseGitHubPullRequestMetadata(
     title,
     url: pageUrl,
     id: `#${target.number}`,
-    repository: `${target.owner}/${target.repo}`,
+    repository: formatGitHubRepository(target),
     author,
     base,
     head,
@@ -411,14 +421,11 @@ export async function fetchGitHubPullRequestMetadata(
 ): Promise<ExtensionChangeRequestReviewDescriptor> {
   let response: Response;
   try {
-    response = await fetchImpl(
-      `${GITHUB_API_ORIGIN}/repos/${encodeURIComponent(target.owner)}/${encodeURIComponent(target.repo)}/pulls/${target.number}`,
-      {
-        headers: githubHeaders(env, "hunk-gh-extension", "application/vnd.github+json"),
-        redirect: "manual",
-        signal,
-      },
-    );
+    response = await fetchImpl(repositoryApiUrl(target, `/pulls/${target.number}`), {
+      headers: githubHeaders(env, "hunk-gh-extension", "application/vnd.github+json"),
+      redirect: "manual",
+      signal,
+    });
   } catch (error) {
     if (error instanceof HunkExtensionUserError) throw error;
     if (signal.aborted)
@@ -441,14 +448,11 @@ export async function fetchGitHubPullRequestDiff(
 ): Promise<Uint8Array> {
   let response: Response;
   try {
-    response = await fetchImpl(
-      `${GITHUB_API_ORIGIN}/repos/${encodeURIComponent(target.owner)}/${encodeURIComponent(target.repo)}/pulls/${target.number}`,
-      {
-        headers: githubHeaders(env, "hunk-github-pr-extension"),
-        redirect: "manual",
-        signal,
-      },
-    );
+    response = await fetchImpl(repositoryApiUrl(target, `/pulls/${target.number}`), {
+      headers: githubHeaders(env, "hunk-github-pr-extension"),
+      redirect: "manual",
+      signal,
+    });
   } catch (error) {
     if (error instanceof HunkExtensionUserError) throw error;
     if (signal.aborted)
@@ -472,13 +476,14 @@ export async function fetchGitHubCommitDiff(
   env: NodeJS.ProcessEnv = {},
   fetchImpl: GitHubFetch = fetch,
 ): Promise<Uint8Array> {
-  const name = `${repository.owner}/${repository.repo}@${sha}`;
+  const name = `${formatGitHubRepository(repository)}@${sha}`;
   let response: Response;
   try {
-    response = await fetchImpl(
-      `${GITHUB_API_ORIGIN}/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.repo)}/commits/${sha}`,
-      { headers: githubHeaders(env, "hunk-gh-extension"), redirect: "manual", signal },
-    );
+    response = await fetchImpl(repositoryApiUrl(repository, `/commits/${sha}`), {
+      headers: githubHeaders(env, "hunk-gh-extension"),
+      redirect: "manual",
+      signal,
+    });
   } catch (error) {
     if (error instanceof HunkExtensionUserError) throw error;
     if (signal.aborted) throw new HunkExtensionUserError("GitHub commit loading was cancelled.");
@@ -507,14 +512,15 @@ export async function fetchGitHubCompareDiff(
   env: NodeJS.ProcessEnv = {},
   fetchImpl: GitHubFetch = fetch,
 ): Promise<Uint8Array> {
-  const name = `${repository.owner}/${repository.repo}:${base}...${head}`;
+  const name = `${formatGitHubRepository(repository)}:${base}...${head}`;
   let response: Response;
   try {
     const range = `${encodeURIComponent(base)}...${encodeURIComponent(head)}`;
-    response = await fetchImpl(
-      `${GITHUB_API_ORIGIN}/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.repo)}/compare/${range}`,
-      { headers: githubHeaders(env, "hunk-gh-extension"), redirect: "manual", signal },
-    );
+    response = await fetchImpl(repositoryApiUrl(repository, `/compare/${range}`), {
+      headers: githubHeaders(env, "hunk-gh-extension"),
+      redirect: "manual",
+      signal,
+    });
   } catch (error) {
     if (error instanceof HunkExtensionUserError) throw error;
     if (signal.aborted)

@@ -13,6 +13,7 @@ import {
   fetchGitHubPullRequestMetadata,
   findOpenPullRequestForBranch,
 } from "./github";
+import { formatGitHubRepository } from "./hosts";
 import {
   GITHUB_CLI_REFERENCE,
   GITHUB_COMMIT_HELP,
@@ -30,6 +31,7 @@ import {
   readGitOrigin,
   resolveGitHubPullRequest,
   resolveGitHubRepository,
+  withGitHubHost,
 } from "./repository";
 import { TemporaryPatchStore } from "./temporaryPatch";
 import type { GitHubExtensionRuntime } from "./types";
@@ -50,13 +52,20 @@ async function preparePullRequest(
   const invocation = parseGitHubPrInvocation(args);
   if (invocation.help) return GITHUB_PR_HELP;
   const target = invocation.locator
-    ? await resolveGitHubPullRequest(invocation, ctx.cwd, ctx.signal, runtime.resolveOrigin)
+    ? await resolveGitHubPullRequest(
+        invocation,
+        ctx.cwd,
+        ctx.signal,
+        runtime.resolveOrigin,
+        runtime.env,
+      )
     : await (async () => {
         const originRepository = await resolveGitHubRepository(
           invocation.explicitRepository,
           ctx.cwd,
           ctx.signal,
           runtime.resolveOrigin,
+          runtime.env,
         );
         const checkout = await runtime.resolveCheckout(ctx.cwd, ctx.signal);
         return findOpenPullRequestForBranch(
@@ -68,7 +77,7 @@ async function preparePullRequest(
         );
       })();
   await ctx.stderr.write(
-    `Fetching GitHub pull request ${target.owner}/${target.repo}#${target.number}…\n`,
+    `Fetching GitHub pull request ${formatGitHubRepository(target)}#${target.number}…\n`,
   );
   const review = await fetchGitHubPullRequestMetadata(
     target,
@@ -92,17 +101,19 @@ async function prepareCommit(
 ): Promise<PreparedDiff | typeof GITHUB_COMMIT_HELP> {
   const invocation = parseGitHubCommitInvocation(args);
   if (invocation.help) return GITHUB_COMMIT_HELP;
+  const { host, owner, repo } = invocation.locator;
   const repository =
-    invocation.locator.owner && invocation.locator.repo
-      ? { owner: invocation.locator.owner, repo: invocation.locator.repo }
+    owner && repo
+      ? withGitHubHost({ host, owner, repo }, runtime.env)
       : await resolveGitHubRepository(
           invocation.explicitRepository,
           ctx.cwd,
           ctx.signal,
           runtime.resolveOrigin,
+          runtime.env,
         );
   await ctx.stderr.write(
-    `Fetching GitHub commit ${repository.owner}/${repository.repo}@${invocation.locator.sha}…\n`,
+    `Fetching GitHub commit ${formatGitHubRepository(repository)}@${invocation.locator.sha}…\n`,
   );
   return {
     bytes: await fetchGitHubCommitDiff(
@@ -130,9 +141,10 @@ async function prepareCompare(
     ctx.cwd,
     ctx.signal,
     runtime.resolveOrigin,
+    runtime.env,
   );
   await ctx.stderr.write(
-    `Fetching GitHub comparison ${repository.owner}/${repository.repo}:${invocation.base}...${invocation.head}…\n`,
+    `Fetching GitHub comparison ${formatGitHubRepository(repository)}:${invocation.base}...${invocation.head}…\n`,
   );
   return {
     bytes: await fetchGitHubCompareDiff(

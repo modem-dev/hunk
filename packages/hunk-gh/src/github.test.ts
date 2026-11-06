@@ -8,12 +8,13 @@ import {
   findOpenPullRequestForCommit,
   parseGitHubPullRequestMetadata,
 } from "./github";
+import { githubApiOrigin } from "./hosts";
 import type { GitHubFetch } from "./types";
 
 const signal = () => new AbortController().signal;
 
 describe("GitHub pull-request discovery", () => {
-  const repository = { owner: "contributor", repo: "hunk" };
+  const repository = { host: "github.com", owner: "contributor", repo: "hunk" };
   const sha = "a".repeat(40);
 
   test("queries the exact fork commit and returns the open PR's base repository", async () => {
@@ -36,7 +37,7 @@ describe("GitHub pull-request discovery", () => {
           ]),
         );
       }) as GitHubFetch),
-    ).resolves.toEqual({ owner: "modem-dev", repo: "hunk", number: "123" });
+    ).resolves.toEqual({ host: "github.com", owner: "modem-dev", repo: "hunk", number: "123" });
     const url = new URL(requested);
     expect(`${url.origin}${url.pathname}`).toBe(
       `https://api.github.com/repos/contributor/hunk/commits/${sha}/pulls`,
@@ -67,7 +68,7 @@ describe("GitHub pull-request discovery", () => {
           ]);
         }) as GitHubFetch,
       ),
-    ).resolves.toEqual({ owner: "modem-dev", repo: "hunk", number: "123" });
+    ).resolves.toEqual({ host: "github.com", owner: "modem-dev", repo: "hunk", number: "123" });
     expect(requests[0]).toContain(`/commits/${sha}/pulls`);
     expect(requests[1]).toContain(`/commits/${upstreamSha}/pulls`);
   });
@@ -93,7 +94,7 @@ describe("GitHub pull-request discovery", () => {
             ]),
           )) as GitHubFetch,
       ),
-    ).resolves.toEqual({ owner: "modem-dev", repo: "hunk", number: "1" });
+    ).resolves.toEqual({ host: "github.com", owner: "modem-dev", repo: "hunk", number: "1" });
     await expect(
       findOpenPullRequestForCommit(
         repository,
@@ -234,7 +235,7 @@ describe("GitHub pull-request discovery", () => {
 });
 
 describe("GitHub pull-request metadata", () => {
-  const target = { owner: "modem-dev", repo: "hunk", number: "123" };
+  const target = { host: "github.com", owner: "modem-dev", repo: "hunk", number: "123" };
   const metadata = {
     title: "Describe delegated reviews",
     html_url: "https://github.com/modem-dev/hunk/pull/123",
@@ -275,6 +276,29 @@ describe("GitHub pull-request metadata", () => {
     });
   });
 
+  test("requires GitHub Enterprise Cloud PR URLs to stay on the target host", () => {
+    const gheTarget = { host: "acme.ghe.com", owner: "acme", repo: "app", number: "370" };
+    const gheMetadata = { ...metadata, html_url: "https://acme.ghe.com/acme/app/pull/370" };
+    expect(parseGitHubPullRequestMetadata(gheMetadata, gheTarget)).toMatchObject({
+      url: "https://acme.ghe.com/acme/app/pull/370",
+      repository: "acme.ghe.com/acme/app",
+    });
+    for (const html_url of [
+      "https://github.com/acme/app/pull/370",
+      "https://other.ghe.com/acme/app/pull/370",
+    ]) {
+      expect(() => parseGitHubPullRequestMetadata({ ...metadata, html_url }, gheTarget)).toThrow(
+        "malformed pull-request metadata",
+      );
+    }
+    expect(() =>
+      parseGitHubPullRequestMetadata(
+        { ...metadata, html_url: "https://acme.ghe.com/modem-dev/hunk/pull/123" },
+        target,
+      ),
+    ).toThrow("malformed pull-request metadata");
+  });
+
   test("rejects terminal controls and PR URLs that do not match the target", () => {
     expect(() =>
       parseGitHubPullRequestMetadata({ ...metadata, title: "forged\u001b[2Jtitle" }, target),
@@ -293,7 +317,7 @@ describe("GitHub pull-request fetching", () => {
     let requestUrl = "";
     let requestInit: RequestInit | undefined;
     const bytes = await fetchGitHubPullRequestDiff(
-      { owner: "modem-dev", repo: "hunk", number: "123" },
+      { host: "github.com", owner: "modem-dev", repo: "hunk", number: "123" },
       signal(),
       { GH_TOKEN: "preferred", GITHUB_TOKEN: "fallback" },
       (async (url, init) => {
@@ -310,7 +334,7 @@ describe("GitHub pull-request fetching", () => {
   });
 
   test("keeps malformed tokens, HTTP errors, and network errors credential-safe", async () => {
-    const target = { owner: "private", repo: "repo", number: "7" };
+    const target = { host: "github.com", owner: "private", repo: "repo", number: "7" };
     let fetches = 0;
     await expect(
       fetchGitHubPullRequestDiff(target, signal(), { GH_TOKEN: "top-secret\nvalue" }, (async () => {
@@ -353,7 +377,7 @@ describe("GitHub pull-request fetching", () => {
   });
 
   test("rejects declared and streamed bodies over 64 MiB", async () => {
-    const target = { owner: "modem-dev", repo: "hunk", number: "1" };
+    const target = { host: "github.com", owner: "modem-dev", repo: "hunk", number: "1" };
     await expect(
       fetchGitHubPullRequestDiff(
         target,
@@ -401,7 +425,7 @@ describe("GitHub pull-request fetching", () => {
 
     await expect(
       fetchGitHubPullRequestDiff(
-        { owner: "modem-dev", repo: "hunk", number: "1" },
+        { host: "github.com", owner: "modem-dev", repo: "hunk", number: "1" },
         controller.signal,
         {},
         (async () => new Response(body)) as GitHubFetch,
@@ -416,7 +440,7 @@ describe("GitHub comparison fetching", () => {
     let requestUrl = "";
     let requestInit: RequestInit | undefined;
     const bytes = await fetchGitHubCompareDiff(
-      { owner: "modem-dev", repo: "hunk" },
+      { host: "github.com", owner: "modem-dev", repo: "hunk" },
       "release/v1",
       "feature#topic",
       signal(),
@@ -446,7 +470,7 @@ describe("GitHub comparison fetching", () => {
     ]) {
       try {
         await fetchGitHubCompareDiff(
-          { owner: "private", repo: "repo" },
+          { host: "github.com", owner: "private", repo: "repo" },
           "base",
           "head",
           signal(),
@@ -466,7 +490,7 @@ describe("GitHub comparison fetching", () => {
     for (const response of [new Response(""), new Response(null)]) {
       await expect(
         fetchGitHubCompareDiff(
-          { owner: "modem-dev", repo: "hunk" },
+          { host: "github.com", owner: "modem-dev", repo: "hunk" },
           "base",
           "head",
           signal(),
@@ -482,7 +506,7 @@ describe("GitHub comparison fetching", () => {
     controller.abort();
     await expect(
       fetchGitHubCompareDiff(
-        { owner: "modem-dev", repo: "hunk" },
+        { host: "github.com", owner: "modem-dev", repo: "hunk" },
         "base",
         "head",
         controller.signal,
@@ -501,7 +525,7 @@ describe("GitHub comparison fetching", () => {
     });
     await expect(
       fetchGitHubCompareDiff(
-        { owner: "modem-dev", repo: "hunk" },
+        { host: "github.com", owner: "modem-dev", repo: "hunk" },
         "base",
         "head",
         streamingController.signal,
@@ -512,7 +536,7 @@ describe("GitHub comparison fetching", () => {
 
     await expect(
       fetchGitHubCompareDiff(
-        { owner: "modem-dev", repo: "hunk" },
+        { host: "github.com", owner: "modem-dev", repo: "hunk" },
         "base",
         "head",
         signal(),
@@ -529,7 +553,7 @@ describe("GitHub commit fetching", () => {
   test("requests the commit diff without following redirects", async () => {
     let requestUrl = "";
     const bytes = await fetchGitHubCommitDiff(
-      { owner: "modem-dev", repo: "hunk" },
+      { host: "github.com", owner: "modem-dev", repo: "hunk" },
       "abcdef1",
       signal(),
       {},
@@ -547,7 +571,7 @@ describe("GitHub commit fetching", () => {
     let fetches = 0;
     await expect(
       fetchGitHubCommitDiff(
-        { owner: "private", repo: "repo" },
+        { host: "github.com", owner: "private", repo: "repo" },
         "abcdef1",
         signal(),
         { GH_TOKEN: "secret\nvalue" },
@@ -561,12 +585,88 @@ describe("GitHub commit fetching", () => {
 
     await expect(
       fetchGitHubCommitDiff(
-        { owner: "private", repo: "repo" },
+        { host: "github.com", owner: "private", repo: "repo" },
         "abcdef1",
         signal(),
         { GH_TOKEN: "secret" },
         (async () => new Response("sensitive body", { status: 302 })) as GitHubFetch,
       ),
     ).rejects.toThrow("refusing to forward credentials");
+  });
+});
+
+describe("GitHub Enterprise Cloud hosts", () => {
+  test("routes every request to the tenant API origin with the configured token", async () => {
+    const repository = { host: "acme.ghe.com", owner: "acme", repo: "app" };
+    const target = { ...repository, number: "370" };
+    const requests: { url: string; authorization: string | null }[] = [];
+    const fetchImpl = (async (url, init) => {
+      requests.push({
+        url: String(url),
+        authorization: new Headers(init?.headers).get("authorization"),
+      });
+      return new Response("diff --git a/a b/a\n");
+    }) as GitHubFetch;
+    const env = { GH_TOKEN: "tenant-token" };
+
+    await fetchGitHubPullRequestDiff(target, signal(), env, fetchImpl);
+    await fetchGitHubCommitDiff(repository, "abcdef1", signal(), env, fetchImpl);
+    await fetchGitHubCompareDiff(repository, "main", "topic", signal(), env, fetchImpl);
+
+    expect(requests).toEqual([
+      {
+        url: "https://api.acme.ghe.com/repos/acme/app/pulls/370",
+        authorization: "Bearer tenant-token",
+      },
+      {
+        url: "https://api.acme.ghe.com/repos/acme/app/commits/abcdef1",
+        authorization: "Bearer tenant-token",
+      },
+      {
+        url: "https://api.acme.ghe.com/repos/acme/app/compare/main...topic",
+        authorization: "Bearer tenant-token",
+      },
+    ]);
+  });
+
+  test("keeps fork-discovered pull requests on the origin's host", async () => {
+    let requested = "";
+    await expect(
+      findOpenPullRequestForCommit(
+        { host: "acme.ghe.com", owner: "fork", repo: "app" },
+        "topic",
+        "a".repeat(40),
+        signal(),
+        {},
+        (async (url) => {
+          requested = String(url);
+          return Response.json([
+            { number: 5, state: "open", base: { repo: { full_name: "acme/app" } } },
+          ]);
+        }) as GitHubFetch,
+      ),
+    ).resolves.toEqual({ host: "acme.ghe.com", owner: "acme", repo: "app", number: "5" });
+    expect(new URL(requested).origin).toBe("https://api.acme.ghe.com");
+  });
+
+  test("refuses to build API URLs for unvalidated hosts", async () => {
+    expect(githubApiOrigin("github.com")).toBe("https://api.github.com");
+    for (const host of ["evil.com", "ACME.ghe.com", "api.acme.ghe.com", "acme.ghe.com."]) {
+      expect(() => githubApiOrigin(host)).toThrow("unsupported GitHub host");
+    }
+    let fetches = 0;
+    await expect(
+      fetchGitHubCommitDiff(
+        { host: "evil.com", owner: "a", repo: "b" },
+        "abcdef1",
+        signal(),
+        { GH_TOKEN: "secret" },
+        (async () => {
+          fetches += 1;
+          return new Response("x");
+        }) as GitHubFetch,
+      ),
+    ).rejects.toThrow("unsupported GitHub host");
+    expect(fetches).toBe(0);
   });
 });
