@@ -183,6 +183,8 @@ function renderGitHubSection() {
     "",
     `**Authentication:** ${reference.authentication.variables.map((name) => `\`${name}\``).join(", then ")}; ${reference.authentication.description}.`,
     "",
+    `**Hosts:** ${proseSafe(reference.hosts.description)}`,
+    "",
     ...subcommandSections.flatMap((section, index) => (index > 0 ? ["", section] : [section])),
   ].join("\n");
 }
