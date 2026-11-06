@@ -1,7 +1,11 @@
 import type {
   ExtensionPane,
+  ExtensionPaneComponent,
   ExtensionPanePlacement,
+  ExtensionPaneProps,
   ExtensionPaneSize,
+  ExtensionSidebarComponent,
+  ExtensionSidebarViewProps,
 } from "../extension-api/types";
 
 const DEFAULT_VERTICAL_PANE_WIDTH = Object.freeze({ preferred: 34, min: 22 });
@@ -28,4 +32,30 @@ export function extensionPaneSize(
     (isVerticalPanePlacement(placement) ? pane.width : pane.height) ??
     defaultExtensionPaneSize(placement)
   );
+}
+
+/**
+ * Mount a deprecated sidebar component through the pane contract.
+ *
+ * The legacy props declare a mutable `files` array, so each render receives a
+ * shallow copy of the frozen host list; the file views themselves stay frozen.
+ * Pane-only fields (`review`, `reviewGeneration`, `placement`, `height`, and
+ * `currentLine`) are deliberately not forwarded.
+ */
+export function adaptLegacySidebarComponent(
+  component: ExtensionSidebarComponent,
+): ExtensionPaneComponent {
+  return (props: ExtensionPaneProps) => {
+    const legacyProps: ExtensionSidebarViewProps = {
+      files: [...props.files],
+      selectedFileId: props.selectedFileId,
+      selectedHunkIndex: props.selectedHunkIndex,
+      width: props.width,
+      theme: props.theme,
+      keybindings: props.keybindings,
+      actions: props.actions,
+    };
+
+    return component(legacyProps);
+  };
 }

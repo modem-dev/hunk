@@ -277,6 +277,54 @@ describe("extension sidebar views", () => {
     });
   });
 
+  test("a legacy sidebar view may mutate its files array without touching host state", async () => {
+    const repo = createTestRepo("hunk-ext-sidebar-legacy-files-");
+    const extPath = join(createTempDir("hunk-ext-sidebar-legacy-files-ext-"), "ext.ts");
+    // The deprecated contract declares `files` as a mutable array, so a legacy
+    // view may sort or push in place. A modern pane mounted beside it must
+    // still see the untouched, frozen host projection.
+    writeFileSync(
+      extPath,
+      `import { createElement } from "react";\n` +
+        `export default function (hunk) {\n` +
+        `  hunk.registerSidebarView({\n` +
+        `    id: "legacy",\n` +
+        `    defaultOpen: true,\n` +
+        `    component: (props) => {\n` +
+        `      props.files.sort((a, b) => b.path.localeCompare(a.path));\n` +
+        `      props.files.push(props.files[0]);\n` +
+        `      return createElement("text", {\n` +
+        `        content: "LEGACY " + props.files.length + " " + props.files[0].path,\n` +
+        `      });\n` +
+        `    },\n` +
+        `  });\n` +
+        `  hunk.registerPane({\n` +
+        `    id: "modern",\n` +
+        `    placement: "right",\n` +
+        `    defaultOpen: true,\n` +
+        `    component: (props) => createElement("text", {\n` +
+        `      content: "MODERN " + props.files.length + " " + props.files[0].path +\n` +
+        `        " frozen=" + Object.isFrozen(props.files),\n` +
+        `    }),\n` +
+        `  });\n` +
+        `}\n`,
+    );
+
+    const bootstrap = await launchWithExtension(repo, extPath);
+    await withAppHost(bootstrap, async (setup) => {
+      await flushUntil(
+        setup,
+        () => {
+          const frame = setup.captureCharFrame();
+          return (
+            frame.includes("LEGACY 3 beta.txt") && frame.includes("MODERN 2 alpha.txt frozen=true")
+          );
+        },
+        "the legacy view to mutate a private copy while the modern pane keeps the host list",
+      );
+    });
+  });
+
   test("a command handler sees the current review selection", async () => {
     const repo = createTestRepo("hunk-ext-selection-");
     // Outside the repo, so the fixture and its log never join the review as

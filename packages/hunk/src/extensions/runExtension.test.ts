@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import type { ExtensionPaneProps, ExtensionSidebarViewProps } from "../extension-api/types";
 import { resolveExtensionPanes } from "./apply";
 import { runExtensionFactory, toInternalVcsAdapter } from "./runExtension";
 import {
@@ -363,10 +364,62 @@ describe("registerSidebarView", () => {
           id: "tree",
           placement: "left",
           width: { preferred: 34, min: 22, max: Number.MAX_SAFE_INTEGER },
-          component,
+          component: expect.any(Function),
         },
       },
     ]);
+  });
+
+  test("adapts pane props to the deprecated sidebar props with a mutable files copy", () => {
+    const registry = createEmptyExtensionRegistry();
+    const issues: ExtensionLoadIssue[] = [];
+    let received: ExtensionSidebarViewProps | undefined;
+
+    runExtensionFactory({
+      metadata: bundledMetadata("legacy-side"),
+      registry,
+      issues,
+      factory: (hunk) => {
+        hunk.registerSidebarView({
+          id: "tree",
+          component: (props) => {
+            received = props;
+            return "legacy";
+          },
+        });
+      },
+    });
+
+    const files = Object.freeze([{ id: "a" }, { id: "b" }]);
+    const paneProps = {
+      review: null,
+      reviewGeneration: "generation",
+      files,
+      selectedFileId: "a",
+      selectedHunkIndex: 0,
+      placement: "left",
+      width: 30,
+      height: 12,
+      theme: {},
+      keybindings: {},
+      actions: {},
+      currentLine: null,
+    } as unknown as ExtensionPaneProps;
+
+    expect(registry.panes[0]?.pane.component(paneProps)).toBe("legacy");
+    expect(received).toEqual({
+      files: [...files],
+      selectedFileId: "a",
+      selectedHunkIndex: 0,
+      width: 30,
+      theme: paneProps.theme,
+      keybindings: paneProps.keybindings,
+      actions: paneProps.actions,
+    } as unknown as ExtensionSidebarViewProps);
+    expect(received?.files).not.toBe(files);
+    expect(Object.isFrozen(received?.files)).toBe(false);
+    received?.files.reverse();
+    expect(files.map((file) => file.id)).toEqual(["a", "b"]);
   });
 
   test("rejects a view without a component function and rolls the factory back", () => {
@@ -409,8 +462,8 @@ describe("registerSidebarView", () => {
   test("collides with registerPane through one identity path and keeps the first", () => {
     const registry = createEmptyExtensionRegistry();
     const issues: ExtensionLoadIssue[] = [];
-    const first = () => null;
-    const duplicate = () => null;
+    const first = () => "first";
+    const duplicate = () => "duplicate";
 
     runExtensionFactory({
       metadata: bundledMetadata("mixed"),
@@ -425,7 +478,9 @@ describe("registerSidebarView", () => {
     const resolved = resolveExtensionPanes(registry);
     expect(issues).toEqual([]);
     expect(resolved.panes).toHaveLength(1);
-    expect(resolved.panes[0]?.pane.component).toBe(first);
+    expect(resolved.panes[0]?.pane.component({ files: [] } as unknown as ExtensionPaneProps)).toBe(
+      "first",
+    );
     expect(resolved.issues).toEqual([
       {
         extensionId: "mixed",

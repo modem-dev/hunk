@@ -37,7 +37,12 @@ import type {
 } from "../extension-api/types";
 import type { VcsAdapter, VcsHistorySource, VcsOperation, VcsReviewInput } from "../core/vcs/types";
 import { sanitizeTerminalLine, sanitizeTerminalText } from "../lib/terminalText";
-import { defaultExtensionPaneSize, extensionPaneSize, isVerticalPanePlacement } from "./panes";
+import {
+  adaptLegacySidebarComponent,
+  defaultExtensionPaneSize,
+  extensionPaneSize,
+  isVerticalPanePlacement,
+} from "./panes";
 import {
   isReservedExtensionCliCommandName,
   isValidExtensionCliCommandName,
@@ -927,6 +932,9 @@ export function createExtensionApi(
           `registerSidebarView placement must be "left" or "right", got "${String(view.placement)}".`,
         );
       }
+      if (typeof view.component !== "function") {
+        throw new Error("registerSidebarView requires a view with a component function.");
+      }
       api.registerPane({
         id: view.id,
         ...(view.title ? { title: view.title } : {}),
@@ -934,7 +942,7 @@ export function createExtensionApi(
         width: defaultExtensionPaneSize("left"),
         defaultOpen: view.defaultOpen,
         replaces: view.replacesDefault ? "hunk:files" : undefined,
-        component: view.component as unknown as ExtensionPane["component"],
+        component: adaptLegacySidebarComponent(view.component),
       });
     },
     registerFileView(view: ExtensionFileView) {
