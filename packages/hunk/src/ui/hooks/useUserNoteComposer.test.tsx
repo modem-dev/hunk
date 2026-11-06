@@ -188,6 +188,46 @@ describe("useUserNoteComposer", () => {
     }
   });
 
+  test("starts an implicit draft at the selected note's line, even with cursor navigation off", async () => {
+    const starts: Parameters<UseUserNoteComposerOptions["startDraft"]>[] = [];
+    let cursorReads = 0;
+    const harness = await renderComposer(
+      baseOptions({
+        keyboardCursorEnabled: false,
+        getActiveNoteTarget: () => ({
+          fileId: "note-file",
+          hunkIndex: 2,
+          target: { side: "new", line: 27 },
+        }),
+        getLineCursor: () => {
+          cursorReads += 1;
+          return null;
+        },
+        startDraft: (...args) => {
+          starts.push(args);
+          return draftNote;
+        },
+      }),
+    );
+
+    try {
+      await act(async () => harness.composer().startUserNote());
+      expect(starts[0]).toEqual([
+        "note-file",
+        2,
+        { side: "new", line: 27 },
+        { preserveViewport: true },
+      ]);
+      expect(cursorReads).toBe(0);
+
+      // An explicit location, such as a hunk-header click, still ignores the selected note.
+      await act(async () => harness.composer().startUserNote("click-file", 0));
+      expect(starts[1]).toEqual(["click-file", 0, undefined, { preserveViewport: true }]);
+    } finally {
+      await act(async () => harness.setup.renderer.destroy());
+    }
+  });
+
   test("does not consult the current line when cursor navigation is off", async () => {
     let cursorReads = 0;
     let startArgs: Parameters<UseUserNoteComposerOptions["startDraft"]> | undefined;

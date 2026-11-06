@@ -477,6 +477,27 @@ export function createPtyHarness() {
     return { dir, before, after, agentContext };
   }
 
+  /** Build one hunk whose first change sits several lines above a later change. */
+  function createSpreadHunkFilePair() {
+    const dir = makeTempDir("hunk-tuistory-spread-hunk-");
+    const before = join(dir, "before.ts");
+    const after = join(dir, "after.ts");
+
+    const beforeLines = Array.from(
+      { length: 40 },
+      (_, index) => `export const line${index + 1} = ${index + 1};`,
+    );
+    const afterLines = [...beforeLines];
+    for (const line of [20, 21, 27]) {
+      afterLines[line - 1] = `export const line${line} = ${line * 100};`;
+    }
+
+    writeText(before, `${beforeLines.join("\n")}\n`);
+    writeText(after, `${afterLines.join("\n")}\n`);
+
+    return { dir, before, after };
+  }
+
   function createAgentNavigationRepoFixture() {
     const alphaBeforeLines = createNumberedExportLines(1, 80).split("\n");
     const alphaAfterLines = [...alphaBeforeLines];
@@ -1437,6 +1458,7 @@ end
     createBinaryNavigationRepoFixture,
     createImageRepoFixture,
     createGapAnnotatedAgentFilePair,
+    createSpreadHunkFilePair,
     createBottomClampedRepoFixture,
     createCollapsedTopRepoFixture,
     createExpandableContextFilePair,
