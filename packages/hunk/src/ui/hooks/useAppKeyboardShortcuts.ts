@@ -78,6 +78,9 @@ export interface UseAppKeyboardShortcutsOptions {
   moveMenuItem: (delta: number) => void;
   moveThemeSelector: (delta: number) => void;
   openMenu: (menuId: MenuId) => void;
+  reviewQuitConfirmOpen: boolean;
+  confirmReviewQuit: () => void;
+  cancelReviewQuit: () => void;
   saveConfigPromptOpen: boolean;
   saveViewPreferencesAndQuit: () => void;
   discardViewPreferencesAndQuit: () => void;
@@ -144,6 +147,9 @@ export function useAppKeyboardShortcuts({
   moveMenuItem,
   moveThemeSelector,
   openMenu,
+  reviewQuitConfirmOpen,
+  confirmReviewQuit,
+  cancelReviewQuit,
   saveConfigPromptOpen,
   saveViewPreferencesAndQuit,
   discardViewPreferencesAndQuit,
@@ -163,6 +169,7 @@ export function useAppKeyboardShortcuts({
   const promptActiveRef = useRef(promptActive);
   const showAgentSkillRef = useRef(showAgentSkill);
   const showHelpRef = useRef(showHelp);
+  const reviewQuitConfirmOpenRef = useRef(reviewQuitConfirmOpen);
   const saveConfigPromptOpenRef = useRef(saveConfigPromptOpen);
   const themeSelectorOpenRef = useRef(themeSelectorOpen);
   const extensionTrustPromptOpenRef = useRef(extensionTrustPromptOpen);
@@ -193,6 +200,7 @@ export function useAppKeyboardShortcuts({
   promptActiveRef.current = promptActive;
   showAgentSkillRef.current = showAgentSkill;
   showHelpRef.current = showHelp;
+  reviewQuitConfirmOpenRef.current = reviewQuitConfirmOpen;
   saveConfigPromptOpenRef.current = saveConfigPromptOpen;
   themeSelectorOpenRef.current = themeSelectorOpen;
   extensionTrustPromptOpenRef.current = extensionTrustPromptOpen;
@@ -281,6 +289,30 @@ export function useAppKeyboardShortcuts({
     }
 
     return "notMine";
+  };
+
+  /**
+   * Own every key while the discard-review-work quit prompt is up.
+   *
+   * Enter or y confirms the quit, Escape or n keeps the review open, and every
+   * other key is swallowed so it cannot act on the review behind the prompt.
+   */
+  const handleReviewQuitConfirmShortcut = (key: KeyEvent): KeyOwner => {
+    if (!reviewQuitConfirmOpenRef.current) {
+      return "notMine";
+    }
+
+    if (key.name === "return" || key.name === "enter" || key.name === "y") {
+      confirmReviewQuit();
+      return "mine";
+    }
+
+    if (isEscapeKey(key) || key.name === "n") {
+      cancelReviewQuit();
+      return "mine";
+    }
+
+    return "mine";
   };
 
   /**
@@ -658,6 +690,7 @@ export function useAppKeyboardShortcuts({
     const surfaceOwned = routeKeyOwnership(
       [
         handleExtensionTrustPromptShortcut,
+        handleReviewQuitConfirmShortcut,
         handleSaveConfigPromptShortcut,
         handleExtensionDialogShortcut,
         handleMenuToggleShortcut,
