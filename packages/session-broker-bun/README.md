@@ -14,6 +14,8 @@ public package.
 - forwards websocket messages and close events into the daemon
 - exposes a `stopped` promise compatible with Hunk's daemon lifecycle
 - lets callers override or add custom HTTP routes before the daemon's built-in routes
+- adapts a Bun/browser `WebSocket` client to the connection helper's `SessionBrokerSocketLike`
+  shape with `createSessionBrokerWebSocket(url)`
 
 ## Usage
 

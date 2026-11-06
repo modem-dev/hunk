@@ -7,6 +7,7 @@ import {
   type SessionBrokerLifecycleClock,
   type SessionBrokerSocketLike,
 } from "@hunk/session-broker";
+import { createSessionBrokerWebSocket } from "@hunk/session-broker-bun";
 import type { SessionRegistration, SessionSnapshot } from "@hunk/session-broker-core";
 import {
   SESSION_BROKER_SOCKET_PATH,
@@ -381,7 +382,7 @@ export class SessionBrokerClient {
       HunkSessionCommandResult
     >({
       url: `${config.wsOrigin}${SESSION_BROKER_SOCKET_PATH}`,
-      createSocket: (url) => new WebSocket(url) as unknown as SessionBrokerSocketLike,
+      createSocket: createSessionBrokerWebSocket,
       registration: this.registration,
       snapshot: this.snapshot,
       bridge: this.bridge,
