@@ -7,10 +7,11 @@ The extension factory receives one API object. Registration calls are only valid
 
 ## `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `32`). Branch on it if you want one file to support several Hunk versions, or declare `"hunk": {"apiVersion": N}` in a folder extension's `package.json` so an older Hunk refuses to load it with a clear message.
+The API generation this Hunk speaks (currently `33`). Branch on it if you want one file to support several Hunk versions, or declare `"hunk": {"apiVersion": N}` in a folder extension's `package.json` so an older Hunk refuses to load it with a clear message.
 
 | Version | Adds                                                                                                      |
 | ------- | --------------------------------------------------------------------------------------------------------- |
+| 33      | `readBytes` on file-view inputs and optional `readFileBytes` on VCS patch results                         |
 | 32      | `ctx.selection.layout`, the resolved split or unified layout                                              |
 | 31      | Optional read-only VCS workspace status, sibling inspection, and status review planning                   |
 | 30      | The opaque current review generation (`reviewGeneration`) in pane props                                   |
@@ -113,7 +114,7 @@ naming the bad token, so keep both to one short line:
 hunk: Unknown command: nosuchthing
 
 Extension commands available here:
-hunk gh <pr|commit|compare> <target> [--repo <owner/repo>] — Review GitHub-hosted changes
+hunk gh <pr|commit|compare> <target> [--repo <[host/]owner/repo>] — Review GitHub-hosted changes
 ```
 
 For a complete implementation, see the dependency-free

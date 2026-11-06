@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readJjFileSource } from "./source";
+import { readJjFileBytes, readJjFileSource } from "./source";
 
 const tempDirs: string[] = [];
 
@@ -242,5 +242,54 @@ describe("Jujutsu source reading", () => {
     expect(loggedErrors).toHaveLength(1);
     expect(String(loggedErrors[0]?.[0])).toContain("0123456789abcdef:note.txt");
     expect(String(loggedErrors[0]?.[0])).toContain(repoRoot);
+  });
+});
+
+describe("Jujutsu byte reading", () => {
+  // Not valid UTF-8, so any text decoding along the way would corrupt it.
+  const imageBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0xfe]);
+
+  jjTest(
+    "reads a binary file's exact bytes from a commit",
+    async () => {
+      const repoRoot = createTempJjRepo("hunk-bytes-jj-");
+      writeFileSync(join(repoRoot, "icon.png"), imageBytes);
+      jj(repoRoot, "commit", "-m", "image");
+      const commitId = jj(repoRoot, "log", "--no-graph", "-r", "@-", "-T", "commit_id");
+
+      await expect(readJjFileBytes({ repoRoot, commitId, path: "icon.png" })).resolves.toEqual(
+        imageBytes,
+      );
+      await expect(
+        readJjFileBytes({ repoRoot, commitId, path: "icon.png" }, { maxBytes: 3 }),
+      ).resolves.toEqual({ kind: "too-large", maxBytes: 3 });
+    },
+    process.platform === "win32" ? 20_000 : 5_000,
+  );
+
+  test("returns the command's stdout bytes without decoding them", async () => {
+    const originalSpawn = Bun.spawn;
+    const mutableBun = Bun as unknown as { spawn: typeof Bun.spawn };
+    mutableBun.spawn = (() =>
+      originalSpawn(
+        [
+          process.execPath,
+          "--eval",
+          "process.stdout.write(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0xfe]))",
+        ],
+        { stdin: "ignore", stdout: "pipe", stderr: "pipe" },
+      )) as unknown as typeof Bun.spawn;
+
+    try {
+      await expect(
+        readJjFileBytes({
+          repoRoot: process.cwd(),
+          commitId: "0123456789abcdef",
+          path: "icon.png",
+        }),
+      ).resolves.toEqual(imageBytes);
+    } finally {
+      mutableBun.spawn = originalSpawn;
+    }
   });
 });

@@ -1180,9 +1180,9 @@
     url = "https://registry.npmjs.org/shebang-regex/-/shebang-regex-3.0.0.tgz";
     hash = "sha512-7++dFhtcx3353uBaq8DDR4NuxBetBzC7ZQOhmTQInHEd6bSrXdiEyzCvG07Z44UYdLShWUyXt5M/yhz8ekcb1A==";
   };
-  "shell-quote@1.9.0" = fetchurl {
-    url = "https://registry.npmjs.org/shell-quote/-/shell-quote-1.9.0.tgz";
-    hash = "sha512-Iov+JwFv/2HcTpcwNMKd8+IWNb8tboQJNQTkAY/LLVK7gGH9jy+LGkVqPxfekHl+yMmiqXszdGWXgkfml7hjqA==";
+  "shell-quote@1.12.0" = fetchurl {
+    url = "https://registry.npmjs.org/shell-quote/-/shell-quote-1.12.0.tgz";
+    hash = "sha512-PcByqNyT/38F2kDNi006HAMRJaULuBzq/FOsw3qdZvX/GA9W/jamDaRskgHjubHiftXK5sIFxLNkvrXUwcof6Q==";
   };
   "shiki@3.23.0" = fetchurl {
     url = "https://registry.npmjs.org/shiki/-/shiki-3.23.0.tgz";
@@ -1416,9 +1416,9 @@
     url = "https://registry.npmjs.org/zod/-/zod-4.3.6.tgz";
     hash = "sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg==";
   };
-  "zod@4.4.3" = fetchurl {
-    url = "https://registry.npmjs.org/zod/-/zod-4.4.3.tgz";
-    hash = "sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==";
+  "zod@4.6.7" = fetchurl {
+    url = "https://registry.npmjs.org/zod/-/zod-4.6.7.tgz";
+    hash = "sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==";
   };
   "zwitch@2.0.4" = fetchurl {
     url = "https://registry.npmjs.org/zwitch/-/zwitch-2.0.4.tgz";

@@ -23,7 +23,26 @@ describe("GitHub repository resolution", () => {
       "git://github.com/modem-dev/hunk.git",
       "git@github.com:modem-dev/hunk.git",
     ]) {
-      expect(parseGitHubRemoteRepository(remote)).toEqual({ owner: "modem-dev", repo: "hunk" });
+      expect(parseGitHubRemoteRepository(remote)).toEqual({
+        host: "github.com",
+        owner: "modem-dev",
+        repo: "hunk",
+      });
+    }
+  });
+
+  test("parses GitHub Enterprise Cloud remote forms with their host", () => {
+    for (const remote of [
+      "https://acme.ghe.com/acme/app.git",
+      "ssh://git@ACME.ghe.com/acme/app.git",
+      "git@acme.ghe.com:acme/app.git",
+      "acme.ghe.com:acme/app",
+    ]) {
+      expect(parseGitHubRemoteRepository(remote)).toEqual({
+        host: "acme.ghe.com",
+        owner: "acme",
+        repo: "app",
+      });
     }
   });
 
@@ -45,11 +64,14 @@ describe("GitHub repository resolution", () => {
   test("rejects non-GitHub and malformed remotes", () => {
     for (const remote of [
       "https://gitlab.com/modem-dev/hunk.git",
-      "git@gitlab.com:modem-dev/hunk.git",
       "git@ghe.com:modem-dev/hunk.git",
       "https://acme.ghe.com.attacker.example/modem-dev/hunk.git",
       "https://github.com/modem-dev/hunk/extra.git",
       "git@github.com:modem-dev.git",
+      "git@gitlab.com:modem-dev/hunk.git",
+      "git@api.acme.ghe.com:acme/app.git",
+      "https://acme.ghe.com.evil.com/acme/app.git",
+      "https://acme.ghe.com:8443/acme/app.git",
       "not a remote",
     ]) {
       expect(parseGitHubRemoteRepository(remote)).toBeNull();
@@ -182,7 +204,7 @@ describe("GitHub repository resolution", () => {
 
     await expect(
       resolveGitHubPullRequest(parseGitHubPrInvocation(["123"]), "/repo", signal, resolveOrigin),
-    ).resolves.toEqual({ owner: "modem-dev", repo: "hunk", number: "123" });
+    ).resolves.toEqual({ host: "github.com", owner: "modem-dev", repo: "hunk", number: "123" });
     await expect(
       resolveGitHubPullRequest(
         parseGitHubPrInvocation(["modem-dev/hunk#124"]),
@@ -190,7 +212,7 @@ describe("GitHub repository resolution", () => {
         signal,
         resolveOrigin,
       ),
-    ).resolves.toEqual({ owner: "modem-dev", repo: "hunk", number: "124" });
+    ).resolves.toEqual({ host: "github.com", owner: "modem-dev", repo: "hunk", number: "124" });
     expect(calls).toEqual(["/repo"]);
   });
 
@@ -201,7 +223,50 @@ describe("GitHub repository resolution", () => {
         originReads += 1;
         return "";
       }),
-    ).resolves.toEqual({ owner: "modem-dev", repo: "hunk" });
+    ).resolves.toEqual({ host: "github.com", owner: "modem-dev", repo: "hunk" });
     expect(originReads).toBe(0);
+  });
+
+  test("resolves the host from the locator, origin, GH_HOST, then github.com", async () => {
+    const signal = new AbortController().signal;
+    const gheOrigin = async () => "git@acme.ghe.com:acme/app.git";
+    const noOrigin = async () => {
+      throw new Error("origin must not be read");
+    };
+
+    await expect(
+      resolveGitHubPullRequest(parseGitHubPrInvocation(["7"]), "/repo", signal, gheOrigin, {
+        GH_HOST: "other.ghe.com",
+      }),
+    ).resolves.toEqual({ host: "acme.ghe.com", owner: "acme", repo: "app", number: "7" });
+    await expect(
+      resolveGitHubPullRequest(
+        parseGitHubPrInvocation(["https://acme.ghe.com/acme/app/pull/8"]),
+        "/repo",
+        signal,
+        noOrigin,
+        { GH_HOST: "other.ghe.com" },
+      ),
+    ).resolves.toEqual({ host: "acme.ghe.com", owner: "acme", repo: "app", number: "8" });
+    await expect(
+      resolveGitHubPullRequest(parseGitHubPrInvocation(["acme/app#9"]), "/repo", signal, noOrigin, {
+        GH_HOST: "ACME.ghe.com",
+      }),
+    ).resolves.toEqual({ host: "acme.ghe.com", owner: "acme", repo: "app", number: "9" });
+    await expect(
+      resolveGitHubRepository("acme.ghe.com/acme/app", "/repo", signal, noOrigin),
+    ).resolves.toEqual({ host: "acme.ghe.com", owner: "acme", repo: "app" });
+    await expect(
+      resolveGitHubRepository("modem-dev/hunk", "/repo", signal, gheOrigin),
+    ).resolves.toEqual({ host: "github.com", owner: "modem-dev", repo: "hunk" });
+  });
+
+  test("rejects GH_HOST values that would send the token to an unsupported host", async () => {
+    const signal = new AbortController().signal;
+    for (const GH_HOST of ["github.example.com", "api.acme.ghe.com", "evil.com"]) {
+      await expect(
+        resolveGitHubRepository("acme/app", "/repo", signal, async () => "", { GH_HOST }),
+      ).rejects.toThrow("unsupported GitHub host");
+    }
   });
 });

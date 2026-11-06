@@ -44,6 +44,7 @@ A `load` result is patch text plus how to label it. Everything else on it is opt
 | ---------------- | ----------------------------------------------------------------- |
 | `untrackedPaths` | files your VCS calls unknown, synthesized into added-file diffs   |
 | `readFileSource` | exact whole-file contents, for context expansion and highlighting |
+| `readFileBytes`  | exact file bytes, binary files included, for byte-based previews  |
 | `extraFiles`     | files reviewed outside the patch, including skipped placeholders  |
 
 `untrackedPaths` is the shorthand: list the repo-root-relative paths your VCS reports as unknown and Hunk synthesizes the added-file diffs for you, skipping binaries and files too large to render. Honor `input.options.excludeUntracked` when you do, so `--exclude-untracked` still means what it says. The other two are covered below.
@@ -129,6 +130,8 @@ async load(input, ctx) {
 ```
 
 Return `null` for a side that has no content — the old side of an added file, a path the revision never contained — rather than throwing. Return `{ kind: "too-large", maxBytes }` when fetching the source would exceed your resource limit; Hunk shows expansion as unavailable without treating the result as an extension failure. Hunk calls the reader **at most once per file and side** and caches what it resolves, so you do not need your own cache, and it never calls it for a file the diff reports as binary. Leaving `readFileSource` off is fine: Hunk falls back to the content the patch itself carries, which renders the same diff with less context available.
+
+`readFileBytes` (API 33) is the byte counterpart for content that is not text. It takes the same request and answers the same way — bytes, `null`, or `{ kind: "too-large", maxBytes }` — but it **is** called for binary files, and only when a file preview asks for them through `input.readBytes`, such as the bundled image preview. Return the stored bytes unchanged. Without it, those previews keep the raw diff.
 
 ## Files outside the patch
 

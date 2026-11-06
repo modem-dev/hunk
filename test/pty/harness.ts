@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Key, Session } from "tuistory";
+import { createTestPng } from "../helpers/image-fixtures";
 
 const integrationDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(integrationDir, "../..");
@@ -56,8 +57,8 @@ async function loadTuistory() {
 
 interface ChangedFileSpec {
   path: string;
-  before: string;
-  after: string;
+  before: string | Uint8Array;
+  after: string | Uint8Array;
 }
 
 export function sleep(ms: number) {
@@ -258,7 +259,7 @@ export async function revealAddNoteOnRow(session: Session, row: number) {
   throw new Error("Could not reveal add-note affordance on target row.");
 }
 
-function writeText(path: string, content: string) {
+function writeText(path: string, content: string | Uint8Array) {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, content);
 }
@@ -858,6 +859,22 @@ end
     ]);
   }
 
+  /**
+   * Build a working-tree change to one real PNG, from 24×12 blue to 32×20 green.
+   *
+   * Decodable images let a test assert the image preview's captions, which read dimensions from
+   * the exact bytes on each side.
+   */
+  function createImageRepoFixture() {
+    return createGitRepoFixture([
+      {
+        path: "assets/logo.png",
+        before: createTestPng(24, 12, [40, 90, 220]),
+        after: createTestPng(32, 20, [40, 200, 90]),
+      },
+    ]);
+  }
+
   function createTwoFileRepoFixture() {
     return createGitRepoFixture([
       {
@@ -1418,6 +1435,7 @@ end
     createAgentFilePair,
     createAgentNavigationRepoFixture,
     createBinaryNavigationRepoFixture,
+    createImageRepoFixture,
     createGapAnnotatedAgentFilePair,
     createBottomClampedRepoFixture,
     createCollapsedTopRepoFixture,

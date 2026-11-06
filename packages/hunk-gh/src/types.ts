@@ -1,5 +1,12 @@
 export interface GitHubRepository {
-  /** GitHub Enterprise Cloud host such as `acme.ghe.com`; omitted for github.com. */
+  /** Lowercase supported host: `github.com` or `<tenant>.ghe.com`. */
+  host: string;
+  owner: string;
+  repo: string;
+}
+
+/** A repository named by user input, whose host may still default from context. */
+export interface GitHubRepositoryReference {
   host?: string;
   owner: string;
   repo: string;

@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 32;
+export const HUNK_EXTENSION_API_VERSION = 33;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -428,6 +428,16 @@ export interface ExtensionFileViewInput {
    * not presented as a document because a patch is not an exact source file.
    */
   readDocument(side: ExtensionFileSide): Promise<string | null>;
+  /**
+   * Read one side's exact bytes, for content that is not text, such as an image.
+   *
+   * Works for binary files, which never have a document. Reads are lazy and
+   * deduplicated per file and side for this layout request, like
+   * `readDocument`. A missing side, a review source that cannot supply bytes,
+   * a read failure, or a resource-limit refusal resolves to `null`. Added in
+   * extension API version 33.
+   */
+  readBytes(side: ExtensionFileSide): Promise<Uint8Array | null>;
 }
 
 /** What an interactive file view's key handler did with one key. */
@@ -1128,6 +1138,25 @@ export type ExtensionVcsFileSourceReader = (
   request: ExtensionVcsFileSourceRequest,
 ) => Promise<ExtensionVcsFileSourceResult>;
 
+/** One raw-byte read result returned through the public adapter boundary. */
+export type ExtensionVcsFileBytesResult = Uint8Array | null | ExtensionVcsFileSourceTooLarge;
+
+/**
+ * Read one reviewed file's exact bytes on one side.
+ *
+ * The byte counterpart of `ExtensionVcsFileSourceReader`, for files whose content
+ * is not text: a file view drawing a changed image needs the image itself, which
+ * the patch never carries for a binary file. Unlike the text reader it is called
+ * for binary files too, and only when a file view asks, so an adapter that offers
+ * it does no extra work for reviews nobody previews. Return the bytes unchanged,
+ * `null` for a side with no content, and `{ kind: "too-large", maxBytes }` past
+ * the adapter's safety limit, exactly like the text reader. Hunk calls it at most
+ * once per file and side and caches the answer.
+ */
+export type ExtensionVcsFileBytesReader = (
+  request: ExtensionVcsFileSourceRequest,
+) => Promise<ExtensionVcsFileBytesResult>;
+
 /* -------------------------------------------------------------------------- */
 /* Extra reviewed files                                                        */
 /* -------------------------------------------------------------------------- */
@@ -1208,6 +1237,14 @@ export interface ExtensionVcsPatchResult {
    * carries, which renders the same diff with less context available.
    */
   readFileSource?: ExtensionVcsFileSourceReader;
+  /**
+   * Exact old/new file bytes for the files in this result, including binary ones.
+   *
+   * Optional: without it `ExtensionFileViewInput.readBytes` resolves `null` for
+   * these files, so a byte-based file view such as the image preview keeps the
+   * raw diff. Added in extension API version 33.
+   */
+  readFileBytes?: ExtensionVcsFileBytesReader;
   /**
    * Opaque stable identity for source state not already represented by each file's patch.
    *

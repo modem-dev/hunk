@@ -1,12 +1,14 @@
 import { execFile } from "node:child_process";
 import { HunkExtensionUserError } from "hunkdiff/extension";
 import { hasControlCharacter } from "./errors";
-import { gitHubHostField, parseGitHubHost, parseGitHubRepository } from "./parsing";
+import { normalizeGitHubHost, resolveDefaultGitHubHost } from "./hosts";
+import { parseGitHubRepository, parseGitHubRepositoryPath } from "./parsing";
 import type {
   GitCheckoutIdentity,
   GitHubExtensionRuntime,
   GitHubPrInvocation,
   GitHubRepository,
+  GitHubRepositoryReference,
   ResolvedGitHubPullRequest,
 } from "./types";
 
@@ -17,11 +19,11 @@ interface GitProcessError extends Error {
 
 /** Parses a github.com or ghe.com remote URL into its host, owner, and repository. */
 export function parseGitHubRemoteRepository(value: string): GitHubRepository | null {
-  const scp = /^(?:[^@\s]+@)?([^@:/\s]+):([^/\s]+\/[^/\s]+)$/.exec(value);
+  const scp = /^(?:[^@\s/]+@)?([^:@\s/]+):([^/\s]+\/[^/\s]+)$/.exec(value);
   let host: string | null;
   let repositoryPath: string | undefined;
   if (scp) {
-    host = parseGitHubHost(scp[1]!);
+    host = normalizeGitHubHost(scp[1]!);
     repositoryPath = scp[2];
   } else {
     let url: URL;
@@ -30,7 +32,7 @@ export function parseGitHubRemoteRepository(value: string): GitHubRepository | n
     } catch {
       return null;
     }
-    host = parseGitHubHost(url.hostname);
+    host = normalizeGitHubHost(url.hostname);
     if (!["https:", "ssh:", "git:"].includes(url.protocol) || url.port || url.search || url.hash) {
       return null;
     }
@@ -39,10 +41,7 @@ export function parseGitHubRemoteRepository(value: string): GitHubRepository | n
 
   if (!host || !repositoryPath) return null;
   try {
-    return {
-      ...gitHubHostField(host),
-      ...parseGitHubRepository(repositoryPath.replace(/\.git$/i, "")),
-    };
+    return { host, ...parseGitHubRepositoryPath(repositoryPath.replace(/\.git$/i, "")) };
   } catch {
     return null;
   }
@@ -96,7 +95,7 @@ export async function readGitOrigin(cwd: string, signal: AbortSignal): Promise<s
     const processError = error as GitProcessError | null;
     if (processError?.code === "ENOENT") throw classifyGitLookupFailure(error, "origin");
     throw new HunkExtensionUserError("The current checkout has no readable Git origin.", {
-      suggestions: ["Pass `--repo owner/repo` or use an owner/repo#number locator."],
+      suggestions: ["Pass `--repo [host/]owner/repo` or use a full pull-request URL."],
     });
   }
 }
@@ -173,19 +172,37 @@ export async function readGitCheckout(
   return { branch, sha, ...(upstreamSha === undefined ? {} : { upstreamSha }) };
 }
 
-/** Resolves an explicit repository or infers one from the local GitHub origin. */
+/** Fills a missing host from GH_HOST, then github.com, matching gh's short-form behavior. */
+export function withGitHubHost(
+  reference: GitHubRepositoryReference,
+  env: NodeJS.ProcessEnv = {},
+): GitHubRepository {
+  return {
+    host: reference.host ?? resolveDefaultGitHubHost(env),
+    owner: reference.owner,
+    repo: reference.repo,
+  };
+}
+
+/**
+ * Resolves an explicit repository or infers one from the local GitHub origin.
+ * An explicit `--repo` without a host uses GH_HOST/github.com rather than origin's host, so
+ * naming a repository never depends on which checkout the command happens to run in.
+ */
 export async function resolveGitHubRepository(
   explicitRepository: string | undefined,
   cwd: string,
   signal: AbortSignal,
   resolveOrigin: GitHubExtensionRuntime["resolveOrigin"] = readGitOrigin,
+  env: NodeJS.ProcessEnv = {},
 ): Promise<GitHubRepository> {
-  if (explicitRepository) return parseGitHubRepository(explicitRepository);
+  if (explicitRepository) return withGitHubHost(parseGitHubRepository(explicitRepository), env);
   const repository = parseGitHubRemoteRepository(await resolveOrigin(cwd, signal));
   if (!repository) {
-    throw new HunkExtensionUserError("The local origin is not a supported GitHub repository.", {
-      suggestions: ["Pass `--repo owner/repo` explicitly."],
-    });
+    throw new HunkExtensionUserError(
+      "The local origin is not a supported github.com or ghe.com repository.",
+      { suggestions: ["Pass `--repo [host/]owner/repo` explicitly."] },
+    );
   }
   return repository;
 }
@@ -196,17 +213,19 @@ export async function resolveGitHubPullRequest(
   cwd: string,
   signal: AbortSignal,
   resolveOrigin: GitHubExtensionRuntime["resolveOrigin"] = readGitOrigin,
+  env: NodeJS.ProcessEnv = {},
 ): Promise<ResolvedGitHubPullRequest> {
   if (!invocation.locator) {
     throw new HunkExtensionUserError("A pull-request locator is required for direct resolution.");
   }
   const { host, owner, repo, number } = invocation.locator;
-  if (owner && repo) return { ...gitHubHostField(host), owner, repo, number };
+  if (owner && repo) return { ...withGitHubHost({ host, owner, repo }, env), number };
   const repository = await resolveGitHubRepository(
     invocation.explicitRepository,
     cwd,
     signal,
     resolveOrigin,
+    env,
   );
-  return { ...repository, number };
+  return { ...repository, number: invocation.locator.number };
 }
