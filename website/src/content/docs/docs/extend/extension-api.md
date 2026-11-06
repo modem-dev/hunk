@@ -114,7 +114,7 @@ naming the bad token, so keep both to one short line:
 hunk: Unknown command: nosuchthing
 
 Extension commands available here:
-hunk gh <pr|commit|compare> <target> [--repo <owner/repo>] — Review GitHub-hosted changes
+hunk gh <pr|commit|compare> <target> [--repo <[host/]owner/repo>] — Review GitHub-hosted changes
 ```
 
 For a complete implementation, see the dependency-free

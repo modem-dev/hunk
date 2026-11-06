@@ -475,7 +475,7 @@ hunk: Unknown command: nosuchthing
 
 Extension commands available here:
 hunk cli-tools <status|review> [args...] — Demonstrate extension-provided CLI workflows
-hunk gh <pr|commit|compare> <target> [--repo <owner/repo>] — Review GitHub-hosted changes
+hunk gh <pr|commit|compare> <target> [--repo <[host/]owner/repo>] — Review GitHub-hosted changes
 ```
 
 Both fields are collapsed to one sanitized line, so an extension cannot forge
