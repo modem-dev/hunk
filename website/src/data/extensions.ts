@@ -310,6 +310,15 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     version: "0.0.4",
     apiVersion: 16,
   },
+  {
+    repo: "prepin/hunk-go-review-filter",
+    name: "hunk-go-review-filter",
+    summary:
+      "Hides generated Go code, API artifacts, go.sum, and test files from a review with one toggle (Alt+G).",
+    categories: ["Command", "Changeset transform"],
+    version: "0.1.0",
+    apiVersion: 18,
+  },
 ];
 
 /** GitHub account that publishes one listing. */
