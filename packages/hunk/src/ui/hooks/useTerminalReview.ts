@@ -23,6 +23,7 @@ import {
   buildLiveComment,
   findDiffFileByPath,
   resolveCommentTarget,
+  type UserNoteLineTarget,
 } from "../../core/liveComments";
 import {
   builtinAppCommand,
@@ -210,6 +211,13 @@ function revealRequestFor(options?: ReviewSelectionOptions): ReviewRevealRequest
   };
 }
 
+/** Location a keyboard-started note adopts from the selected note card. */
+export interface ActiveNoteTarget {
+  fileId: string;
+  hunkIndex: number;
+  target: UserNoteLineTarget;
+}
+
 export interface TerminalReview {
   allFiles: DiffFile[];
   /** Projected content and source identities keyed by runtime file id. */
@@ -237,6 +245,8 @@ export interface TerminalReview {
   lineCursor: LineCursor | null;
   /** Read the current cursor synchronously between terminal key events. */
   getLineCursor: () => LineCursor | null;
+  /** Read the selected note card's line synchronously, for keyboard note starts. */
+  getActiveNoteTarget: () => ActiveNoteTarget | null;
   /** Read the current normalized selection synchronously with the cursor. */
   getSelection: () => { fileId: string | null; hunkIndex: number | null };
   lineCursorRevealRequest: LineCursorRevealRequest;
@@ -636,6 +646,26 @@ export function useTerminalReview({
     const selection = selectNormalizedSelection(store.getSnapshot());
     const file = selection.fileKey ? fileByKey.get(selection.fileKey) : undefined;
     return { fileId: file?.id ?? null, hunkIndex: file ? selection.hunkIndex : null };
+  }, [fileByKey, store]);
+
+  /**
+   * Read the line the selected note card hangs from, as a new note's implicit target.
+   *
+   * Selecting a note clears the line cursor, so without this a keyboard start would fall back
+   * to the hunk's default line instead of the line the reviewer is looking at.
+   */
+  const getActiveNoteTarget = useCallback((): ActiveNoteTarget | null => {
+    const snapshot = store.getSnapshot();
+    const entry = selectActiveStoredReviewNote(snapshot);
+    const file = entry ? fileByKey.get(entry.note.fileKey) : undefined;
+    if (!entry || !file) {
+      return null;
+    }
+
+    // An active note only ever resolves inside the selected hunk, which owns its card.
+    const { hunkIndex } = selectNormalizedSelection(snapshot);
+    const { side, line } = reviewNoteAnchorLine(entry.note);
+    return { fileId: file.id, hunkIndex, target: { side, line } };
   }, [fileByKey, store]);
 
   /** Run one semantic intent against the review store. */
@@ -1886,6 +1916,7 @@ export function useTerminalReview({
     liveCommentsByFileId,
     lineCursor,
     getLineCursor,
+    getActiveNoteTarget,
     getSelection,
     lineCursorRevealRequest,
     reviewNoteCount: reviewNoteSummaries.length,
