@@ -25,7 +25,12 @@ function ensureExecutable(target) {
   }
 }
 
-function run(target, args) {
+/**
+ * Runs a target and exits with its status. When `onSpawnError` is given, a failure to create the
+ * process (for example Windows Application Control blocking an unsigned executable) calls it
+ * instead of exiting so the caller can try another runtime.
+ */
+function run(target, args, onSpawnError) {
   ensureExecutable(target);
   const result = childProcess.spawnSync(target, args, {
     stdio: "inherit",
@@ -33,6 +38,11 @@ function run(target, args) {
   });
 
   if (result.error) {
+    if (onSpawnError) {
+      onSpawnError(result.error);
+      return;
+    }
+
     console.error(result.error.message);
     process.exit(1);
   }
@@ -121,14 +131,25 @@ if (overrideBinary) {
 
 const scriptDir = path.dirname(fs.realpathSync(__filename));
 const prebuiltBinary = findInstalledBinary(scriptDir);
+const bunBinary = bundledBunRuntime();
+const bunEntrypoint = path.join(__dirname, "..", "dist", "npm", "main.js");
+
 if (prebuiltBinary) {
-  run(prebuiltBinary, forwardedArgs);
+  run(prebuiltBinary, forwardedArgs, (error) => {
+    // Without a bundled Bun runtime there is nothing to fall back to, so surface the real error.
+    if (!bunBinary) {
+      console.error(error.message);
+      process.exit(1);
+    }
+
+    console.error(
+      `hunk: could not start the prebuilt binary (${error.message}); falling back to the bundled Bun runtime.`,
+    );
+  });
 }
 
-const bunBinary = bundledBunRuntime();
 if (bunBinary) {
-  const entrypoint = path.join(__dirname, "..", "dist", "npm", "main.js");
-  run(bunBinary, [entrypoint, ...forwardedArgs]);
+  run(bunBinary, [bunEntrypoint, ...forwardedArgs]);
 }
 
 const printablePackages = hostCandidates()
