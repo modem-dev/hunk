@@ -129,7 +129,17 @@ describe("session daemon launcher", () => {
         paths: { health: "/health", socket: "/session" },
       }),
     ).toMatchObject({ ok: true, pid: 123, sessions: 1 });
-    for (const value of [null, [], { ok: "yes" }, { ok: true, pid: 1.5 }, { ok: true, extra: 1 }]) {
+    for (const value of [
+      null,
+      [],
+      { ok: "yes" },
+      { ok: true, pid: 0 },
+      { ok: true, pid: -1 },
+      { ok: true, pid: 1.5 },
+      { ok: true, pid: "123" },
+      { ok: true, pid: Number.MAX_SAFE_INTEGER + 1 },
+      { ok: true, extra: 1 },
+    ]) {
       expect(parseSessionBrokerHealth(value)).toBeNull();
     }
   });

@@ -497,13 +497,8 @@ export function parseSessionBrokerHealth(value: unknown): SessionBrokerHealth | 
     );
     if (record.ok !== true) return null;
     const parsed: SessionBrokerHealth = { ok: true };
-    for (const key of [
-      "pid",
-      "sessions",
-      "pendingCommands",
-      "uptimeMs",
-      "staleSessionTtlMs",
-    ] as const) {
+    if (record.pid !== undefined) parsed.pid = parseBrokerSafeInteger(record.pid, { minimum: 1 });
+    for (const key of ["sessions", "pendingCommands", "uptimeMs", "staleSessionTtlMs"] as const) {
       if (record[key] !== undefined) parsed[key] = parseBrokerSafeInteger(record[key]);
     }
     for (const key of [
