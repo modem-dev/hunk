@@ -24,6 +24,7 @@ import {
   type ExtensionVcsAdapter,
   type HunkExtensionAPI,
 } from "./types";
+import type { ExtensionPaneProps, ExtensionSidebarComponent } from "../extension-api/types";
 import { parseKeyChord, toKeyChordList } from "../lib/commandKeys";
 import { toUserFacingError } from "../core/run/errors";
 import { toInternalVcsStatus } from "./vcsStatus";
@@ -126,6 +127,27 @@ function assertNonEmptyString(value: unknown, message: string) {
 /** Report whether one value is a plain object rather than an array or null. */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Mount a deprecated sidebar view through the pane contract. Legacy views were
+ * promised a mutable `files` array, so each render gets a shallow copy rather
+ * than the host's frozen projection; pane-only fields are intentionally omitted.
+ */
+function legacySidebarPaneComponent(
+  component: ExtensionSidebarComponent,
+): ExtensionPane["component"] {
+  return function LegacySidebarView(props: ExtensionPaneProps) {
+    return component({
+      files: [...props.files],
+      selectedFileId: props.selectedFileId,
+      selectedHunkIndex: props.selectedHunkIndex,
+      width: props.width,
+      theme: props.theme,
+      keybindings: props.keybindings,
+      actions: props.actions,
+    });
+  };
 }
 
 /** Report whether one value is promise-like, so async factories can be awaited. */
@@ -927,6 +949,9 @@ export function createExtensionApi(
           `registerSidebarView placement must be "left" or "right", got "${String(view.placement)}".`,
         );
       }
+      if (typeof view.component !== "function") {
+        throw new Error("registerSidebarView requires a view with a component function.");
+      }
       api.registerPane({
         id: view.id,
         ...(view.title ? { title: view.title } : {}),
@@ -934,7 +959,7 @@ export function createExtensionApi(
         width: defaultExtensionPaneSize("left"),
         defaultOpen: view.defaultOpen,
         replaces: view.replacesDefault ? "hunk:files" : undefined,
-        component: view.component as unknown as ExtensionPane["component"],
+        component: legacySidebarPaneComponent(view.component),
       });
     },
     registerFileView(view: ExtensionFileView) {
