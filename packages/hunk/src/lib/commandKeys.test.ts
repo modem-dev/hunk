@@ -82,3 +82,48 @@ describe("toKeyChordList", () => {
     expect(toKeyChordList(["y", "ctrl+g"])).toEqual(["y", "ctrl+g"]);
   });
 });
+
+describe("keypad navigation keys", () => {
+  test("numpad PageUp/PageDown decoded by OpenTUI match pageup/pagedown chords", () => {
+    // Kitty keyboard protocol reports numpad PageUp/PageDown as their own keys (57421/57422).
+    const pageUp = parseKeypress("\x1b[57421u", { useKittyKeyboard: true });
+    const pageDown = parseKeypress("\x1b[57422u", { useKittyKeyboard: true });
+    expect(pageUp?.name).toBe("kppageup");
+    expect(pageDown?.name).toBe("kppagedown");
+
+    expect(matchesKeyChord(parsed("pageup"), new KeyEvent(pageUp!))).toBe(true);
+    expect(matchesKeyChord(parsed("pagedown"), new KeyEvent(pageDown!))).toBe(true);
+    expect(matchesKeyChord(parsed("pageup"), new KeyEvent(pageDown!))).toBe(false);
+  });
+
+  test("every keypad navigation key OpenTUI decodes matches its main-block chord", () => {
+    // Kitty functional-key codes for the keypad navigation cluster, and the
+    // main-block key each one is an alias of in OpenTUI's own key handling.
+    const keypadKeys: Array<[code: number, decoded: string, chord: string]> = [
+      [57417, "kpleft", "left"],
+      [57418, "kpright", "right"],
+      [57419, "kpup", "up"],
+      [57420, "kpdown", "down"],
+      [57421, "kppageup", "pageup"],
+      [57422, "kppagedown", "pagedown"],
+      [57423, "kphome", "home"],
+      [57424, "kpend", "end"],
+      [57425, "kpinsert", "insert"],
+      [57426, "kpdelete", "delete"],
+    ];
+
+    for (const [code, decoded, chord] of keypadKeys) {
+      const event = parseKeypress(`\x1b[${code}u`, { useKittyKeyboard: true });
+      expect(event?.name).toBe(decoded);
+      expect({ decoded, matches: matchesKeyChord(parsed(chord), new KeyEvent(event!)) }).toEqual({
+        decoded,
+        matches: true,
+      });
+    }
+  });
+
+  test("keypad aliases keep modifier matching exact", () => {
+    const shiftPageDown = parseKeypress("\x1b[57422;2u", { useKittyKeyboard: true });
+    expect(matchesKeyChord(parsed("pagedown"), new KeyEvent(shiftPageDown!))).toBe(false);
+  });
+});
