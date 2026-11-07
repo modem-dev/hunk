@@ -266,6 +266,14 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     apiVersion: 6,
   },
   {
+    repo: "prepin/hunk-sort-by-path",
+    name: "hunk-sort-by-path",
+    summary: "Sorts every file in the review by path, untracked files included, in one list.",
+    categories: ["Changeset transform"],
+    version: "0.1.0",
+    apiVersion: 6,
+  },
+  {
     repo: "rschoch/hunk-compact-filenav",
     name: "hunk-compact-filenav",
     summary:
