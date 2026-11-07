@@ -283,6 +283,15 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     apiVersion: 16,
   },
   {
+    repo: "RubenFricke/hunk-glab",
+    name: "hunk-glab",
+    summary:
+      "Reviews GitLab merge requests, commits and comparisons in Hunk from the command line, the way hunk gh reviews GitHub pull requests.",
+    categories: ["Command"],
+    version: "0.1.0",
+    apiVersion: 31,
+  },
+  {
     repo: "RubenFricke/hunk-viewed",
     name: "hunk-viewed",
     summary:
