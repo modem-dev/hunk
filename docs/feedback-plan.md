@@ -3,8 +3,8 @@
 ## Status
 
 Implemented for `hunk feedback` and for Help → Send feedback in the review app. The log, status,
-and document surfaces do not have the Help entry yet. The Modem channel token is still empty,
-so every send reports "unavailable" without making a request until the channel exists.
+and document surfaces do not have the Help entry yet. The "Hunk" feedback channel exists in Modem's
+organization, and its token is committed in `core/feedback/send.ts`.
 
 Where the build differs from the first draft of this plan:
 

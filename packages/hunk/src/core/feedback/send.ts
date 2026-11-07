@@ -17,10 +17,11 @@ const FEEDBACK_ENDPOINT_URL = "https://ingest.modem.dev/feedback";
 
 /**
  * The Hunk feedback channel's token. Modem documents feedback tokens as safe to ship in published
- * binaries: they can only submit to their channel and cannot read anything. Empty until the
- * channel exists, in which case every send reports `unavailable` without making a request.
+ * binaries: they can only submit to their channel and cannot read anything. This is the "Hunk"
+ * channel in Modem's own organization. An empty token makes every send report `unavailable`
+ * without a request; tests use that through `deps.token`.
  */
-const FEEDBACK_CHANNEL_TOKEN = "";
+const FEEDBACK_CHANNEL_TOKEN = "feedback_8a732988f8b64a68a5d1dbf5c0d60a1c";
 
 const DEFAULT_ATTEMPT_TIMEOUT_MS = 10_000;
 const MAX_TRANSIENT_RETRIES = 1;
