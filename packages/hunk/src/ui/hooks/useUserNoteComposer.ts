@@ -7,6 +7,7 @@ import type { ReviewNoteTargetV1 } from "../../core/review/types";
 import type { ExtensionEventPayloads, ExtensionReviewNote } from "../../extensions/types";
 import type { ActiveAddNoteAffordance } from "../diff/DiffSectionBody";
 import type { LineCursor } from "../lib/lineCursors";
+import type { ActiveNoteTarget } from "./useTerminalReview";
 import type { DraftReviewNote, UserReviewNote } from "../lib/reviewNoteMapping";
 
 type ActiveAddNoteTarget = ActiveAddNoteAffordance & { fileId: string };
@@ -58,6 +59,8 @@ export interface UseUserNoteComposerOptions {
   /** Whether an implicit keyboard start may use the terminal's current-line cursor. */
   keyboardCursorEnabled: boolean;
   getLineCursor: () => LineCursor | null;
+  /** Read the selected note card's line, which a keyboard start adopts over the hunk default. */
+  getActiveNoteTarget?: () => ActiveNoteTarget | null;
   startDraft: (
     fileId?: string,
     hunkIndex?: number,
@@ -85,6 +88,7 @@ export function useUserNoteComposer({
   draftNote,
   keyboardCursorEnabled,
   getLineCursor,
+  getActiveNoteTarget = () => null,
   startDraft,
   startEdit = () => null,
   startReply = () => null,
@@ -140,16 +144,19 @@ export function useUserNoteComposer({
     pendingInputRef.current = "";
   }, []);
 
-  /** Start a draft at an explicit target, hovered affordance, or enabled line cursor. */
+  /** Start a draft at an explicit target, hovered affordance, selected note, or line cursor. */
   const startUserNote = useCallback(
     (fileId?: string, hunkIndex?: number, target?: ReviewNoteTargetV1) => {
-      // Hover and the current line are fallbacks only for a fully implicit start. Any
-      // explicit location fact must not inherit whichever row happened to remain hovered.
+      // Hover, the selected note, and the current line are fallbacks only for a fully implicit
+      // start. Any explicit location fact must not inherit whichever row happened to remain
+      // hovered. Selecting a note card clears the line cursor, so the two never compete.
       const hasExplicitTarget =
         fileId !== undefined || hunkIndex !== undefined || target !== undefined;
-      const hoverTarget = hasExplicitTarget ? null : activeAddNoteTarget;
-      const implicitTarget =
-        hoverTarget ?? (!hasExplicitTarget && keyboardCursorEnabled ? getLineCursor() : null);
+      const implicitTarget = hasExplicitTarget
+        ? null
+        : (activeAddNoteTarget ??
+          getActiveNoteTarget() ??
+          (keyboardCursorEnabled ? getLineCursor() : null));
       const draft = startDraft(
         fileId ?? implicitTarget?.fileId,
         hunkIndex ?? implicitTarget?.hunkIndex,
@@ -167,6 +174,7 @@ export function useUserNoteComposer({
       activeAddNoteTarget,
       beginDraftFocusTransition,
       focusDraft,
+      getActiveNoteTarget,
       getLineCursor,
       keyboardCursorEnabled,
       startDraft,

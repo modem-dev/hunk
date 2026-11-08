@@ -1303,6 +1303,7 @@ export function App({
     draftNote: review.draftNote,
     keyboardCursorEnabled: cursorLine !== "off",
     getLineCursor: review.getLineCursor,
+    getActiveNoteTarget: review.getActiveNoteTarget,
     startDraft: review.startUserNote,
     startEdit: review.startUserNoteEdit,
     startReply: review.startUserNoteReply,
