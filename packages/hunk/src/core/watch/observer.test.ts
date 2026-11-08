@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { statSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { FSWatcher, type ChokidarOptions } from "chokidar";
 
 import { createWatchTestClock } from "../../../../../test/helpers/watchTest";
@@ -258,7 +258,14 @@ function createTestPortableTree() {
     closes: number;
   }> = [];
   const reads: string[] = [];
+  const parents: Array<{
+    directory: string;
+    onChange: (filename: string | null) => void;
+    onError?: (error: unknown) => void;
+    closes: number;
+  }> = [];
   const runtime: PortableTreeRuntime = {
+    async checkRoot() {},
     watch(paths, options) {
       // Empty FSWatcher instances exercise only public events and never register real paths.
       const watcher = new FSWatcher(options);
@@ -275,6 +282,18 @@ function createTestPortableTree() {
       };
       batches.push(batch);
       return watcher;
+    },
+    watchParent(directory, onChange) {
+      const parent: (typeof parents)[number] = { directory, onChange, closes: 0 };
+      parents.push(parent);
+      return {
+        close() {
+          parent.closes++;
+        },
+        onError(callback) {
+          parent.onError = callback;
+        },
+      };
     },
     async readDirectories(path) {
       reads.push(path);
@@ -293,6 +312,7 @@ function createTestPortableTree() {
     tasks,
     batches,
     reads,
+    parents,
     runtime,
     async advanceBatch() {
       const callback = tasks.values().next().value;
@@ -598,7 +618,50 @@ describe("portable tree batches", () => {
     },
   );
 
-  test("a removed anchor discovers the replacement root without owning its new inode", async () => {
+  test("exact parent events recover a missing root despite late Chokidar removal events", async () => {
+    const fixture = createTestPortableTree();
+    const missing = Object.assign(new Error("missing root"), { code: "ENOENT" });
+    let exists = false;
+    fixture.runtime.checkRoot = async () => {
+      if (!exists) throw missing;
+    };
+    const errors: unknown[] = [];
+    const source = createChunkedTreeWatcher(
+      fixture.root,
+      () => false,
+      () => {},
+      fixture.runtime,
+    );
+    source.onError((error) => errors.push(error));
+    await fixture.advanceBatch();
+    expect(fixture.batches).toHaveLength(0);
+    expect(errors).toEqual([missing]);
+    expect(fixture.parents).toHaveLength(1);
+    const parent = fixture.parents[0]!;
+    expect(parent.directory).toBe(dirname(fixture.root));
+    parent.onChange("unrelated-sibling");
+    expect(fixture.tasks.size).toBe(0);
+
+    exists = true;
+    for (let index = 0; index < 2; index++) {
+      parent.onChange(basename(fixture.root));
+      // An older directory scan must not discard admission for the replacement inode.
+      fixture.batches[index - 1]?.watcher.emit("all", "unlinkDir", fixture.root);
+      await fixture.advanceBatch();
+      expect(fixture.batches[index]!.paths).toEqual([fixture.root]);
+      await fixture.ready(index);
+      expect(fixture.tasks.size).toBe(0);
+    }
+    const parentError = new Error("parent watcher failed");
+    parent.onError?.(parentError);
+    expect(errors).toEqual([missing, parentError]);
+    await source.close();
+    expect(parent.closes).toBe(1);
+    parent.onChange(null);
+    expect(fixture.tasks.size).toBe(0);
+  });
+
+  test("a removed root retires its owner and uses an exact parent watch for recovery", async () => {
     const fixture = createTestPortableTree();
     const source = createChunkedTreeWatcher(
       fixture.root,
@@ -614,13 +677,14 @@ describe("portable tree batches", () => {
       const filter = anchor.options!.ignored;
       if (typeof filter !== "function") throw new Error("Expected an ignored predicate");
       expect(filter(fixture.root, statSync(process.cwd()))).toBe(true);
-      anchor.watcher.emit("all", "addDir", fixture.root);
+      expect(fixture.parents[0]!.directory).toBe(dirname(fixture.root));
+      fixture.parents[0]!.onChange(basename(fixture.root));
       await fixture.advanceBatch();
       await fixture.ready(1);
       expect(fixture.batches[1]!.paths).toEqual([fixture.root]);
       expect(filter(fixture.root, statSync(process.cwd()))).toBe(true);
       expect(fixture.tasks.size).toBe(0);
-      expect(anchor.closes).toBe(0);
+      expect(anchor.closes).toBe(1);
     } finally {
       await source.close();
     }
