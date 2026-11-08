@@ -73,6 +73,7 @@ export function createChunkedTreeWatcher(
   const queued = new Set<string>();
   const known = new Set<string>();
   let parentWatcher: ReturnType<PortableTreeRuntime["watchParent"]> | undefined;
+  let rootEpoch = 0;
   let closed = false;
   let ready = false;
   let draining: Promise<void> | undefined;
@@ -101,18 +102,23 @@ export function createChunkedTreeWatcher(
   /** Recover root inodes from exact parent events without Chokidar's directory-scan race. */
   function watchRootRecovery() {
     if (closed || parentWatcher) return;
-    parentWatcher = runtime.watchParent(dirname(root), (filename) => {
-      if (closed || (filename !== null && filename !== basename(root))) return;
-      invalidate(root);
-      enqueue(root);
-      onEvent();
-    });
-    parentWatcher.onError(reportError);
+    try {
+      parentWatcher = runtime.watchParent(dirname(root), (filename) => {
+        if (closed || (filename !== null && filename !== basename(root))) return;
+        invalidate(root);
+        enqueue(root);
+        onEvent();
+      });
+      parentWatcher.onError(reportError);
+    } catch (error) {
+      reportError(error);
+    }
   }
 
   /** Forget a removed subtree and retire its owners before admitting replacement inodes. */
   function invalidate(path: string) {
     path = resolve(path);
+    if (path === root) rootEpoch++;
     const prefix = path.endsWith(sep) ? path : `${path}${sep}`;
     const contains = (candidate: string) => candidate === path || candidate.startsWith(prefix);
     for (const candidate of known) {
@@ -172,16 +178,21 @@ export function createChunkedTreeWatcher(
       if (paths.length === PORTABLE_TREE_BATCH_SIZE) break;
     }
     if (paths.includes(root)) {
+      // Subscribe before checking existence so creation cannot fall between the two.
+      watchRootRecovery();
+      const epoch = rootEpoch;
       try {
         await Promise.race([runtime.checkRoot(root), cancelled]);
       } catch (error) {
-        // Chokidar falls back to parent-directory scans for absent paths. Keep recovery
-        // on the exact parent event source instead of retaining a stale fallback batch.
-        watchRootRecovery();
-        invalidate(root);
-        paths.splice(paths.indexOf(root), 1);
-        reportError(error);
+        // A newer parent event owns any queued replacement, even if this check fails.
+        if (epoch === rootEpoch) {
+          invalidate(root);
+          reportError(error);
+        }
+        paths.length = 0;
       }
+      // Do not admit an old snapshot or duplicate a newer event's queued registration.
+      if (epoch !== rootEpoch) paths.length = 0;
     }
     if (closed) return;
     if (paths.length) {
