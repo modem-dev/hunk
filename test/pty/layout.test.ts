@@ -24,7 +24,7 @@ function horizontalKeyRepeat(key: "left" | "right") {
 function sidebarDividerColumn(frame: string) {
   const columns = frame
     .split("\n")
-    .map((line) => line.indexOf("│"))
+    .map((line) => line.search(/[│┃]/))
     .filter((column) => column >= 0);
   return columns.length === 0 ? -1 : Math.min(...columns);
 }

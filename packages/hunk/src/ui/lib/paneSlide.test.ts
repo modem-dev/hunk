@@ -120,6 +120,19 @@ describe("pane slide presentation", () => {
     }
   });
 
+  test("preserves fixed separator geometry and resize policy through animation", () => {
+    const { closed, open, paneKey } = createPaneLayouts("top");
+    const fixed = {
+      ...open,
+      panes: open.panes.map((planned) => ({ ...planned, resizable: false })),
+    };
+    const middle = interpolatePaneLayout(closed, fixed, paneKey, 0.5);
+
+    expect(middle.panes[0]?.resizable).toBe(false);
+    expect(middle.panes[0]?.divider.height).toBe(1);
+    expect(paneLayoutGeometryEqual(open, fixed)).toBe(false);
+  });
+
   test("starts an additional same-edge pane beyond the occupied outer edge", () => {
     const first = createTestPane("left", "first");
     const second = createTestPane("left", "second");
