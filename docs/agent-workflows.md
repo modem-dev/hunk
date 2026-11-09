@@ -8,13 +8,25 @@ Use Hunk with agents in two ways:
 ## Recommended workflow: steer a live Hunk window
 
 1. Open Hunk in one terminal with a normal review command such as `hunk diff` or `hunk show`.
-2. Load the Hunk review skill: [`packages/hunk/skills/hunk-review/SKILL.md`](../packages/hunk/skills/hunk-review/SKILL.md).
-3. Ask the agent to use the skill and review the current session.
+2. Install the Hunk review skill into your agent once:
 
-A good generic prompt is:
+   ```bash
+   npx skills add modem-dev/hunk -g --skill hunk-review
+   ```
+
+3. Ask the agent to review the current Hunk session.
+
+The installed file is a short pointer that carries the skill's name and description and loads the
+rest with `hunk skill show`, so its instructions match the installed Hunk version. The
+[skills CLI](https://github.com/vercel-labs/skills) owns agent detection and installation locations;
+installation requires Node/npm and network access. Omit `-g` for project-local installation, or
+add `-a claude-code -a codex` to target specific agents. The repository publishes the pointers
+under `.agents/skills/`. Agents that load or symlink files directly can use `hunk skill path` instead.
+
+Without an installed skill, a good generic prompt is:
 
 ```text
-Load the Hunk skill and use it for this review. Run `hunk skill path` to get the skill path.
+Run `hunk skill show` and follow that skill to review the live Hunk session.
 ```
 
 That skill teaches the agent how to inspect a live Hunk session, navigate it, reload it, and leave inline comments.
