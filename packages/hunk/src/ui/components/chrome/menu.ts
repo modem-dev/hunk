@@ -44,6 +44,12 @@ const MENU_LABELS: Record<MenuId, string> = {
   help: "Help",
 };
 
+const COMPACT_MENU_LABELS: Partial<Record<MenuId, string>> = {
+  navigate: "Nav",
+  extensions: "Ext",
+  help: "?",
+};
+
 export const MENU_ORDER = Object.keys(MENU_LABELS) as MenuId[];
 
 /** The entries of one menu, or none when the session does not show it. */
@@ -77,24 +83,68 @@ export function buildMenuSpecs(menus: AppMenus) {
   );
 }
 
-/** Fit a shared ordered menu model into one bar and retain hidden menus behind overflow. */
-export function responsiveMenuSpecs(menuSpecs: readonly MenuSpec[], terminalWidth: number) {
+/** Reflow menu positions using compact labels where they provide meaningful space. */
+function compactMenuSpecs(menuSpecs: readonly MenuSpec[]) {
+  return menuSpecs.reduce<MenuSpec[]>((items, menu) => {
+    const previous = items.at(-1);
+    const label = COMPACT_MENU_LABELS[menu.id] ?? menu.label;
+    items.push({
+      ...menu,
+      left: previous ? previous.left + previous.width : 1,
+      width: label.length + 2,
+      label,
+    });
+    return items;
+  }, []);
+}
+
+export interface ResponsiveMenuLayout {
+  visible: MenuSpec[];
+  hidden: MenuSpec[];
+  overflowLeft: number | null;
+}
+
+/** Fit menus beside the title, compacting labels before retaining hidden menus behind overflow. */
+export function responsiveMenuSpecs(
+  menuSpecs: readonly MenuSpec[],
+  terminalWidth: number,
+  topTitle = "",
+): ResponsiveMenuLayout {
   const rightEdge = Math.max(1, terminalWidth - 1);
-  const allVisible = menuSpecs.filter((menu) => menu.left + menu.width <= rightEdge);
-  if (allVisible.length === menuSpecs.length) {
+  const fullMenusFit = menuSpecs.every((menu) => menu.left + menu.width <= rightEdge);
+  const titleFits = measureTextWidth(topTitle) <= menuBarTitleWidth(menuSpecs, terminalWidth);
+  const displaySpecs = fullMenusFit && titleFits ? [...menuSpecs] : compactMenuSpecs(menuSpecs);
+  const allVisible = displaySpecs.filter((menu) => menu.left + menu.width <= rightEdge);
+  if (allVisible.length === displaySpecs.length) {
     return { visible: allVisible, hidden: [] as MenuSpec[], overflowLeft: null };
   }
 
   const overflowWidth = 3;
-  const visible = menuSpecs.filter((menu) => menu.left + menu.width + overflowWidth <= rightEdge);
+  const visible = displaySpecs.filter(
+    (menu) => menu.left + menu.width + overflowWidth <= rightEdge,
+  );
   const visibleIds = new Set(visible.map((menu) => menu.id));
-  const hidden = menuSpecs.filter((menu) => !visibleIds.has(menu.id));
+  const hidden = displaySpecs.filter((menu) => !visibleIds.has(menu.id));
   const previous = visible.at(-1);
   return {
     visible,
     hidden,
     overflowLeft: previous ? previous.left + previous.width : 1,
   };
+}
+
+/** Position an open dropdown beneath its visible label or the overflow control that represents it. */
+export function responsiveActiveMenuSpec(
+  layout: ResponsiveMenuLayout,
+  activeMenuId: MenuId,
+): MenuSpec | undefined {
+  const visible = layout.visible.find((menu) => menu.id === activeMenuId);
+  if (visible) return visible;
+
+  const hidden = layout.hidden.find((menu) => menu.id === activeMenuId);
+  return hidden && layout.overflowLeft !== null
+    ? { ...hidden, left: layout.overflowLeft, width: 3 }
+    : hidden;
 }
 
 /** Find the next selectable menu item, skipping separators. */
