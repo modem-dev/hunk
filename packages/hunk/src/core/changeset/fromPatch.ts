@@ -220,7 +220,7 @@ function buildSkippedUnparseableFile(
   index: number,
   sourceLabel: string,
   sidecar: SidecarContext | null,
-  perFileOptions?: Pick<BuildDiffFileOptions, "sourceFetcherBuilder">,
+  perFileOptions?: Pick<BuildDiffFileOptions, "sourceFetcherBuilder" | "byteFetcherBuilder">,
   lineMoveKinds?: DiffLineMoveKinds,
 ): DiffFile {
   const metadata: FileDiffMetadata = {
@@ -255,13 +255,14 @@ function changesetFromPatchChunks(
   title: string,
   sourceLabel: string,
   sidecar: SidecarContext | null,
-  perFileOptions?: Pick<BuildDiffFileOptions, "sourceFetcherBuilder">,
+  perFileOptions?: Pick<BuildDiffFileOptions, "sourceFetcherBuilder" | "byteFetcherBuilder">,
 ): Changeset {
   const chunks = splitPatchIntoFileChunks(sanitizedPatch.text);
   const files: DiffFile[] = [];
   const summaries: string[] = [];
   let index = 0;
 
+  /** Preserve exact paths and fetchers when recovering one parsed file. */
   const pushParsedFile = (metadata: FileDiffMetadata) => {
     const decodedPaths = sanitizedPatch.filePaths[index];
     const normalizedMetadata = decodedPaths
@@ -304,8 +305,7 @@ function changesetFromPatchChunks(
       // Prefer the sanitizer's exact decoded path, then a best-effort read of
       // the (already sanitized) header, then a positional fallback name.
       const name =
-        sanitizedPatch.filePaths[index]?.path ??
-        displayNameForUnparseableChunk(chunk, index);
+        sanitizedPatch.filePaths[index]?.path ?? displayNameForUnparseableChunk(chunk, index);
       files.push(
         buildSkippedUnparseableFile(
           name,

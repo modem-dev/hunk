@@ -48,5 +48,56 @@ describe("changesetFromPatch", () => {
     expect(changeset.files.length).toBe(2);
     expect(changeset.files[0]?.path).toBe("notes.txt");
     expect(changeset.files[1]?.path).toBe("evil.bin");
+    expect(changeset.files[1]?.metadata.hunks).toEqual([]);
+    expect(changeset.files[1]?.patch).toContain("Skipped file with unparseable diff content");
+  });
+
+  test("preserves file order and content on both sides of an unparseable chunk", () => {
+    const changeset = changesetFromPatch(
+      `${goodFile}${poisonFile}${goodFile.replaceAll("notes.txt", "last.txt")}`,
+      "title",
+      "label",
+      null,
+    );
+
+    expect(changeset.files.map((file) => file.path)).toEqual(["notes.txt", "evil.bin", "last.txt"]);
+    expect(changeset.files[0]?.stats).toEqual({ additions: 2, deletions: 0 });
+    expect(changeset.files[2]?.stats).toEqual({ additions: 2, deletions: 0 });
+    expect(changeset.files[2]?.patch).toContain("diff --git a/last.txt b/last.txt");
+  });
+
+  test("keeps placeholders when every file chunk is unparseable", () => {
+    const changeset = changesetFromPatch(poisonFile, "title", "label", null);
+
+    expect(changeset.files.map((file) => file.path)).toEqual(["evil.bin"]);
+    expect(changeset.title).toBe("title");
+    expect(changeset.sourceLabel).toBe("label");
+  });
+
+  test("retains exact quoted paths and both fetcher builders during fallback", () => {
+    const sourcePaths: string[] = [];
+    const bytePaths: string[] = [];
+    const changeset = changesetFromPatch(
+      `${poisonFile}${goodFile
+        .replaceAll("a/notes.txt", '"a/notes\\tfile.txt"')
+        .replaceAll("b/notes.txt", '"b/notes\\tfile.txt"')}`,
+      "title",
+      "label",
+      null,
+      {
+        sourceFetcherBuilder: ({ path }) => {
+          sourcePaths.push(path);
+          return undefined;
+        },
+        byteFetcherBuilder: ({ path }) => {
+          bytePaths.push(path);
+          return undefined;
+        },
+      },
+    );
+
+    expect(changeset.files.map((file) => file.path)).toEqual(["evil.bin", "notes\tfile.txt"]);
+    expect(sourcePaths).toEqual(["evil.bin", "notes\tfile.txt"]);
+    expect(bytePaths).toEqual(sourcePaths);
   });
 });
