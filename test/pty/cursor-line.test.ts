@@ -119,7 +119,9 @@ describe("PTY current line", () => {
       expect(clickedRow).toBeGreaterThan(0);
 
       await dragMouse(session, 30, clickedRow, 31, clickedRow);
-      const clicked = await session.text({ immediate: true });
+      const clicked = await harness.waitForSnapshot(session, (text) =>
+        (text.split("Current line").at(-1) ?? "").includes("export const line05 = 5;"),
+      );
       const clickedLens = clicked.split("Current line").at(-1) ?? "";
       expect(clickedLens).toContain("export const line05 = 5;");
       expect(clicked).not.toContain("Copied selection to clipboard");
@@ -130,14 +132,20 @@ describe("PTY current line", () => {
       const steppedLens = stepped.split("Current line").at(-1) ?? "";
       expect(steppedLens).toContain("export const line05 = 5;");
 
-      await session.press("pagedown");
-      const scrolled = await session.text({ immediate: true });
+      const scrolled = await harness.pressAndWaitForSnapshot(
+        session,
+        "pagedown",
+        (text) =>
+          !text.includes("export const line01 = 1;") && text.includes("export const line12 = 12;"),
+      );
       expect(scrolled).not.toContain("export const line01 = 1;");
       const scrolledRow = lineIndexOf(scrolled, "export const line12 = 12;") - 1;
       expect(scrolledRow).toBeGreaterThan(0);
 
       await dragMouse(session, 30, scrolledRow, 30, scrolledRow);
-      const scrolledClick = await session.text({ immediate: true });
+      const scrolledClick = await harness.waitForSnapshot(session, (text) =>
+        (text.split("Current line").at(-1) ?? "").includes("export const line12 = 12;"),
+      );
       const scrolledLens = scrolledClick.split("Current line").at(-1) ?? "";
       expect(scrolledLens).toContain("export const line12 = 12;");
     } finally {

@@ -201,6 +201,9 @@ describe("PTY scrolling", () => {
       expect(initial).toContain("first.ts");
       expect(initial).toContain("second.ts");
 
+      // Chrome and sidebar entries precede diff layout; do not wheel before rows exist.
+      await session.waitForText(/line01 = 101/, { timeout: 5_000 });
+      await harness.ensureKeyboardIsLive(session);
       await session.scrollDown(17);
       const boundary = await harness.waitForSnapshot(
         session,

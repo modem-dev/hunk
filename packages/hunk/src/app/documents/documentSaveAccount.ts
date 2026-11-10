@@ -6,14 +6,18 @@ import { promisify } from "node:util";
 const execute = promisify(execFile);
 
 /** Read bounded OS account metadata without loading shell profiles or repository configuration. */
-async function accountMetadata(command: string, args: string[]) {
-  const { stdout } = await execute(command, args, {
+export async function readDocumentSaveAccountMetadata(command: string, args: string[]) {
+  const pending = execute(command, args, {
     encoding: "utf8",
     maxBuffer: 8192,
     // Cold PowerShell/.NET startup can exceed five seconds on shared Windows runners.
     timeout: process.platform === "win32" ? 15_000 : 5000,
     windowsHide: true,
   });
+  // These lookups never consume input. Close the pipe so noninteractive account tools cannot
+  // wait for stdin EOF until the lookup deadline expires.
+  pending.child.stdin?.end();
+  const { stdout } = await pending;
   return stdout.trim();
 }
 
@@ -31,7 +35,7 @@ export async function documentSaveAccountHome() {
       "v1.0",
       "powershell.exe",
     );
-    home = await accountMetadata(powershell, [
+    home = await readDocumentSaveAccountMetadata(powershell, [
       "-NoLogo",
       "-NoProfile",
       "-NonInteractive",
@@ -43,7 +47,7 @@ export async function documentSaveAccountHome() {
     if (uid === undefined)
       throw new Error("Cannot identify the OS account for document save coordination.");
     if (process.platform === "darwin") {
-      const record = await accountMetadata("/usr/bin/dscacheutil", [
+      const record = await readDocumentSaveAccountMetadata("/usr/bin/dscacheutil", [
         "-q",
         "user",
         "-a",
@@ -58,7 +62,10 @@ export async function documentSaveAccountHome() {
         .map((line) => line.split(":"))
         .find((fields) => fields[2] === String(uid))?.[5];
       if (!home) {
-        const record = await accountMetadata("/usr/bin/getent", ["passwd", String(uid)]);
+        const record = await readDocumentSaveAccountMetadata("/usr/bin/getent", [
+          "passwd",
+          String(uid),
+        ]);
         const fields = record.split(":");
         if (fields[2] === String(uid)) home = fields[5];
       }
