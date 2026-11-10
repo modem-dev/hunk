@@ -7,11 +7,13 @@ import { createTestReviewFile } from "../../../../../test/helpers/review-store-h
 import { reduceReviewState } from "./reducer";
 import {
   isReviewGapExpanded,
+  recordReviewWithinHunkLanding,
   reviewFileKeysWithRetiredContent,
   reviewFileMatchesFilter,
   selectActiveReplyableReviewNoteId,
   selectActiveRevealNoteId,
   selectActiveStoredReviewNote,
+  selectCurrentWithinHunkLanding,
   selectNavigableStoredReviewNotes,
   selectExpandedGapIdsByFileKey,
   selectFallbackFileKey,
@@ -25,6 +27,7 @@ import {
   selectThreadedStoredReviewNotes,
   selectVisibleThreadedStoredReviewNotes,
   selectVisibleThreadRootId,
+  selectWithinHunkNavigationStart,
   resolveReviewRevealNoteId,
   selectRevealTarget,
   selectVisibleReviewFiles,
@@ -293,6 +296,51 @@ describe("note selectors", () => {
     expect(selectStoredThreadRoots(hidden)).toEqual([
       { fileKey: "alpha", hunkIndex: 0, line: { side: "new", line: 2 }, noteId: "user-reply" },
     ]);
+  });
+
+  test("start within-hunk moves from a current landing, then the selected note, then the hunk top", () => {
+    const state = {
+      ...createTestReviewState(["alpha"]),
+      userNotes: [
+        createTestStoredNote({ id: "user-note", fileKey: "alpha", source: "user", line: 2 }),
+      ],
+    };
+    const landing = recordReviewWithinHunkLanding(
+      state,
+      { fileKey: "alpha", hunkIndex: 0 },
+      {
+        kind: "comment-thread",
+        threadId: "sidecar:alpha:at:0",
+        threadKind: "sidecar",
+        line: { side: "new", line: 3 },
+      },
+    );
+    const moved = { ...state, reveal: { ...state.reveal, hunkToken: state.reveal.hunkToken + 1 } };
+
+    expect(selectWithinHunkNavigationStart(state, landing)).toEqual({
+      focus: { fileKey: "alpha", hunkIndex: 0, line: { side: "new", line: 3 } },
+      activeThreadId: "sidecar:alpha:at:0",
+    });
+    expect(selectCurrentWithinHunkLanding(moved, landing)).toBeNull();
+    expect(selectWithinHunkNavigationStart(moved, landing)).toEqual({
+      focus: { fileKey: "alpha", hunkIndex: 0 },
+    });
+    expect(selectWithinHunkNavigationStart({ ...moved, activeNoteId: "user-note" }, null)).toEqual({
+      focus: { fileKey: "alpha", hunkIndex: 0, line: { side: "new", line: 2 } },
+      activeThreadId: "user-note",
+    });
+    expect(
+      recordReviewWithinHunkLanding(
+        state,
+        { fileKey: "alpha", hunkIndex: 0 },
+        {
+          kind: "comment-thread",
+          threadId: "user-note",
+          threadKind: "stored",
+          line: { side: "new", line: 2 },
+        },
+      ),
+    ).toBeNull();
   });
 
   test("group notes by the hunk that owns them, not by range containment", () => {

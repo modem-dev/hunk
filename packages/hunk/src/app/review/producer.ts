@@ -12,7 +12,7 @@
  * today, and moving that is a behavior change rather than a seam extraction; the producer
  * attaches to whichever store the host mounted and plans intents against it, supplying the
  * caller-owned facts core refuses to invent (identity, time, the annotation index, and the
- * comment-thread stops) through the same derivations the terminal uses.
+ * within-hunk stops and start) through the same derivations the terminal uses.
  *
  * No transport lives here. Serving the session surface means answering method calls; HTTP,
  * SSE, and a browser client are later phases.
@@ -28,12 +28,19 @@ import {
   buildReviewAnnotationIndex,
   buildReviewThreadCursors,
 } from "../../core/review/annotations";
-import { selectStoredThreadRoots, selectVisibleReviewFiles } from "../../core/review/selectors";
+import {
+  recordReviewWithinHunkLanding,
+  selectStoredThreadRoots,
+  selectVisibleReviewFiles,
+  selectWithinHunkNavigationStart,
+  type ReviewWithinHunkLanding,
+} from "../../core/review/selectors";
 import {
   applyReviewIntent,
   type ReviewIntent,
   type ReviewIntentFacts,
   type ReviewIntentOutcomeByType,
+  type ReviewSelectionChangedOutcome,
 } from "../../core/review/intents";
 import {
   parseReadReviewResourceRequest,
@@ -126,6 +133,8 @@ export class ReviewProducer {
   /** Generation the attached store was mounted for; unequal means the store is retired. */
   private storeGeneration: string | undefined;
   private publicationReservation: object | undefined;
+  /** Last remote change-block or sidecar-thread landing, the next such move's start. */
+  private landing: ReviewWithinHunkLanding | null = null;
 
   constructor(input: PublishReviewInput, options: ReviewProducerOptions = {}) {
     this.digest = options.digest ?? nodeReviewDigest;
@@ -252,6 +261,7 @@ export class ReviewProducer {
   attachStore(store: ReviewStore) {
     this.store = store;
     this.storeGeneration = this.publication.generation;
+    this.landing = null;
   }
 
   /**
@@ -280,10 +290,11 @@ export class ReviewProducer {
   /**
    * Plan and commit one semantic intent on behalf of a caller.
    *
-   * The producer supplies the facts core refuses to invent: identity and time, and the
-   * annotation index annotated navigation needs. That index is derived from this
-   * generation's own diff files through the shared builder, so a move planned here and the
-   * same move planned by the terminal walk exactly the same stops.
+   * The producer supplies the facts core refuses to invent: identity and time, the
+   * annotation index annotated navigation needs, and the stops and start of change-block
+   * and comment-thread moves. Each is derived from this generation's own diff files through
+   * the shared builders, so a move planned here and the same move planned by the terminal
+   * walk exactly the same stops.
    */
   applyIntent<T extends ReviewIntent>(
     intent: T,
@@ -293,7 +304,15 @@ export class ReviewProducer {
     if (!store) {
       throw new Error("Review producer has no review state attached.");
     }
-    return applyReviewIntent(store, intent, { ...this.intentFacts(), ...facts });
+
+    const outcome = applyReviewIntent(store, intent, { ...this.intentFacts(intent), ...facts });
+    if (intent.type === "selection/move" && outcome) {
+      const moved = outcome as ReviewSelectionChangedOutcome;
+      this.landing = moved.landing
+        ? recordReviewWithinHunkLanding(store.getSnapshot(), moved, moved.landing)
+        : null;
+    }
+    return outcome;
   }
 
   /** Describe every resource this generation offers, measured where it has been produced. */
@@ -363,7 +382,7 @@ export class ReviewProducer {
    * hand the planner an index addressed in a vocabulary the state does not use, and
    * annotated navigation would silently find nothing.
    */
-  private intentFacts(): ReviewIntentFacts {
+  private intentFacts(intent: ReviewIntent): ReviewIntentFacts {
     const state = this.currentStore()?.getSnapshot();
     const document = state?.document ?? this.publication.document;
     const keyByRuntimeId = new Map(document.files.map((file) => [file.runtimeId, file.key]));
@@ -371,24 +390,27 @@ export class ReviewProducer {
     const facts: ReviewIntentFacts = {
       annotations: buildReviewAnnotationIndex(diffFiles, keyByRuntimeId),
     };
-    if (!state) {
+    const withinHunk =
+      intent.type === "selection/move" &&
+      (intent.scope === "change-block" || intent.scope === "comment-thread");
+    if (!state || !withinHunk) {
       return facts;
     }
 
-    // Thread stops come from the same sidecar lists and stored roots the terminal walks. No
-    // focus is supplied: a remote caller has no current line, so change-block moves planned
-    // here are refused rather than restarting from the top of the selected hunk.
     const diffFileByRuntimeId = new Map(diffFiles.map((file) => [file.id, file] as const));
-    facts.threads = buildReviewThreadCursors({
-      files: selectVisibleReviewFiles(state).map((file) => ({
-        fileKey: file.key,
-        hunks: file.hunks,
-        sidecar: diffFileByRuntimeId.get(file.runtimeId)?.agent?.annotations ?? [],
-      })),
-      storedRoots: selectStoredThreadRoots(state),
-      showAgentNotes: state.showAgentNotes,
-    });
-    return facts;
+    return {
+      ...facts,
+      ...selectWithinHunkNavigationStart(state, this.landing),
+      threads: buildReviewThreadCursors({
+        files: selectVisibleReviewFiles(state).map((file) => ({
+          fileKey: file.key,
+          hunks: file.hunks,
+          sidecar: diffFileByRuntimeId.get(file.runtimeId)?.agent?.annotations ?? [],
+        })),
+        storedRoots: selectStoredThreadRoots(state),
+        showAgentNotes: state.showAgentNotes,
+      }),
+    };
   }
 
   /** Return the attached store only while it belongs to the current publication. */

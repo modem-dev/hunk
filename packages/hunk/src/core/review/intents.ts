@@ -90,10 +90,7 @@ export interface ReviewIntentFacts {
    * full set.
    */
   annotations?: ReviewAnnotationIndex;
-  /**
-   * Where the reviewer stands inside the selected hunk, for change-block and comment-thread
-   * navigation. Only the surface that drew the review knows which line its cursor is on.
-   */
+  /** Where the reviewer stands, for change-block and comment-thread navigation. */
   focus?: ReviewNavigationFocus;
   /**
    * Every navigable comment thread, for comment-thread navigation. Sidecar annotations are

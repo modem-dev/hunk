@@ -7,6 +7,7 @@ import {
   REVIEW_RESOURCE_CHUNK_BYTES,
   reviewResourceId,
 } from "../../core/review/resources";
+import { applyReviewIntent } from "../../core/review/intents";
 import { createReviewStore } from "../../core/review/store";
 import type { DiffFile } from "../../core/changeset/model";
 import { parseReadReviewResourceRequest } from "../../core/review/resources";
@@ -532,38 +533,84 @@ describe("review producer intents", () => {
     });
   });
 
-  test("supplies thread stops but no focus, so only thread moves plan remotely", () => {
-    const plain = createTestDiffFile({
-      id: "plain",
-      path: "plain.ts",
-      before: BEFORE,
-      after: AFTER,
-    });
-    const threaded = createTestDiffFile({
+  test("remote thread moves step across sidecar notes that share one hunk and back", () => {
+    const file = createTestDiffFile({
       id: "threaded",
       path: "threaded.ts",
-      before: BEFORE,
-      after: AFTER,
+      before: lines("a", "b", "c", "d", "e", "f"),
+      after: lines("a", "B", "c", "D", "e", "f"),
+      context: 3,
       agent: {
         path: "threaded.ts",
-        annotations: [{ summary: "Reviewer thread", newRange: [2, 2], source: "user" }],
+        annotations: [
+          { summary: "First", newRange: [2, 2], source: "user" },
+          { summary: "Second", newRange: [4, 4], source: "user" },
+        ],
       },
     });
-    const { producer } = createProducer({ files: [plain, threaded] });
+    const { producer } = createProducer({ files: [file] });
     producer.attachStore(createReviewStore(producer.getPublication().document));
 
-    expect(
-      producer.applyIntent({ type: "selection/move", scope: "comment-thread", delta: 1 }),
-    ).toMatchObject({
-      type: "selection/changed",
-      fileKey: producer.getPublication().document.files[1]!.key,
-      landing: { kind: "comment-thread", threadKind: "sidecar", line: { side: "new", line: 2 } },
+    const landings = [1, 1, 1, -1].map((delta) => {
+      const outcome = producer.applyIntent({
+        type: "selection/move",
+        scope: "comment-thread",
+        delta,
+      });
+      return outcome?.landing?.kind === "comment-thread"
+        ? `${outcome.hunkIndex}:${outcome.landing.line.line}`
+        : null;
     });
-    // A remote caller has no current line, so a change-block move would restart from the
-    // top of the hunk on every call; it is refused instead.
-    expect(() =>
-      producer.applyIntent({ type: "selection/move", scope: "change-block", delta: 1 }),
-    ).toThrow("focus position");
+
+    expect(file.metadata.hunks).toHaveLength(1);
+    expect(landings).toEqual(["0:2", "0:4", null, "0:2"]);
+  });
+
+  test("remote change-block moves step across edits that share one hunk", () => {
+    const file = createTestDiffFile({
+      id: "edits",
+      path: "edits.ts",
+      before: lines("a", "b", "c", "d", "e", "f"),
+      after: lines("a", "B", "c", "D", "e", "f"),
+      context: 3,
+    });
+    const { producer } = createProducer({ files: [file] });
+    producer.attachStore(createReviewStore(producer.getPublication().document));
+
+    const landings = [1, 1, 1, -1].map((delta) => {
+      const outcome = producer.applyIntent({
+        type: "selection/move",
+        scope: "change-block",
+        delta,
+      });
+      return outcome?.landing?.kind === "change-block" ? outcome.landing.block.line.line : null;
+    });
+
+    expect(landings).toEqual([2, 4, 4, 2]);
+  });
+
+  test("a remote landing stops steering moves once another surface moves the review", () => {
+    const file = createTestDiffFile({
+      id: "edits",
+      path: "edits.ts",
+      before: lines("a", "b", "c", "d", "e", "f"),
+      after: lines("a", "B", "c", "D", "e", "f"),
+      context: 3,
+    });
+    const { producer } = createProducer({ files: [file] });
+    const store = createReviewStore(producer.getPublication().document);
+    producer.attachStore(store);
+
+    producer.applyIntent({ type: "selection/move", scope: "change-block", delta: 1 });
+    producer.applyIntent({ type: "selection/move", scope: "change-block", delta: 1 });
+    applyReviewIntent(store, { type: "selection/move", scope: "hunk", delta: -1 });
+
+    const outcome = producer.applyIntent({
+      type: "selection/move",
+      scope: "change-block",
+      delta: 1,
+    });
+    expect(outcome?.landing).toMatchObject({ kind: "change-block", block: { blockIndex: 0 } });
   });
 
   test("refuses to plan an intent before a review state is attached", () => {
