@@ -21,8 +21,10 @@ import {
   selectReviewGapForSelection,
   selectReviewNavigationFiles,
   selectStoredReviewNotes,
+  selectStoredThreadRoots,
   selectThreadedStoredReviewNotes,
   selectVisibleThreadedStoredReviewNotes,
+  selectVisibleThreadRootId,
   resolveReviewRevealNoteId,
   selectRevealTarget,
   selectVisibleReviewFiles,
@@ -266,6 +268,31 @@ describe("note selectors", () => {
     expect(selectActiveReplyableReviewNoteId({ ...state, activeNoteId: "user-reply" })).toBe(
       "user-reply",
     );
+  });
+
+  test("resolves thread roots through visible parents only", () => {
+    const notes = {
+      liveNotes: [createTestStoredNote({ id: "agent-root", fileKey: "alpha", line: 2 })],
+      userNotes: [
+        createTestStoredNote({
+          id: "user-reply",
+          parentId: "agent-root",
+          fileKey: "alpha",
+          source: "user",
+          line: 2,
+        }),
+      ],
+    };
+    const shown = { ...createTestReviewState(["alpha"], { showAgentNotes: true }), ...notes };
+    const hidden = { ...createTestReviewState(["alpha"], { showAgentNotes: false }), ...notes };
+
+    expect(selectVisibleThreadRootId(shown, "user-reply")).toBe("agent-root");
+    expect(selectStoredThreadRoots(shown).map((root) => root.noteId)).toEqual(["agent-root"]);
+    // With the agent root hidden, the reply is the root the reviewer can see and navigate to.
+    expect(selectVisibleThreadRootId(hidden, "user-reply")).toBe("user-reply");
+    expect(selectStoredThreadRoots(hidden)).toEqual([
+      { fileKey: "alpha", hunkIndex: 0, line: { side: "new", line: 2 }, noteId: "user-reply" },
+    ]);
   });
 
   test("group notes by the hunk that owns them, not by range containment", () => {

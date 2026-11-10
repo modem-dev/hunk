@@ -164,12 +164,20 @@ export interface ConformanceMove {
   scope: ReviewSelectionScope;
   delta: number;
   from: ConformanceSelectionInput;
+  /** The line the reviewer stands on inside `from`'s hunk, for within-hunk scopes. */
+  focusLine?: ConformanceLineAddress;
 }
+
+/** The change block or thread a within-hunk move landed on. */
+export type ConformanceLanding =
+  | { kind: "change-block"; line: ConformanceLineAddress }
+  | { kind: "comment-thread"; threadKind: "stored" | "sidecar"; line: ConformanceLineAddress };
 
 /** Where one move landed and what it asked the viewport for; `to: null` means refused. */
 export interface ConformanceMoveOutcome {
   to: ConformanceSelection | null;
   reveal?: ConformanceReveal;
+  landing?: ConformanceLanding;
 }
 
 export interface ReviewNavigationProjection {

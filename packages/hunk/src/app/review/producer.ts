@@ -11,8 +11,8 @@
  * It does *not* own the review's live state. The terminal's controller owns the store
  * today, and moving that is a behavior change rather than a seam extraction; the producer
  * attaches to whichever store the host mounted and plans intents against it, supplying the
- * caller-owned facts core refuses to invent (identity, time, and the annotation index,
- * `ReviewIntentFacts.annotations`) through the same derivation the terminal uses.
+ * caller-owned facts core refuses to invent (identity, time, the annotation index, and the
+ * comment-thread stops) through the same derivations the terminal uses.
  *
  * No transport lives here. Serving the session surface means answering method calls; HTTP,
  * SSE, and a browser client are later phases.
@@ -24,7 +24,11 @@ import {
   type ReviewGenerationIdentity,
   type ReviewPublicationAddress,
 } from "../../core/review/generationOrder";
-import { buildReviewAnnotationIndex } from "../../core/review/annotations";
+import {
+  buildReviewAnnotationIndex,
+  buildReviewThreadCursors,
+} from "../../core/review/annotations";
+import { selectStoredThreadRoots, selectVisibleReviewFiles } from "../../core/review/selectors";
 import {
   applyReviewIntent,
   type ReviewIntent,
@@ -360,14 +364,31 @@ export class ReviewProducer {
    * annotated navigation would silently find nothing.
    */
   private intentFacts(): ReviewIntentFacts {
-    const document = this.currentStore()?.getSnapshot().document ?? this.publication.document;
+    const state = this.currentStore()?.getSnapshot();
+    const document = state?.document ?? this.publication.document;
     const keyByRuntimeId = new Map(document.files.map((file) => [file.runtimeId, file.key]));
-    return {
-      annotations: buildReviewAnnotationIndex(
-        [...this.publication.diffFilesByKey.values()],
-        keyByRuntimeId,
-      ),
+    const diffFiles = [...this.publication.diffFilesByKey.values()];
+    const facts: ReviewIntentFacts = {
+      annotations: buildReviewAnnotationIndex(diffFiles, keyByRuntimeId),
     };
+    if (!state) {
+      return facts;
+    }
+
+    // Thread stops come from the same sidecar lists and stored roots the terminal walks. No
+    // focus is supplied: a remote caller has no current line, so change-block moves planned
+    // here are refused rather than restarting from the top of the selected hunk.
+    const diffFileByRuntimeId = new Map(diffFiles.map((file) => [file.id, file] as const));
+    facts.threads = buildReviewThreadCursors({
+      files: selectVisibleReviewFiles(state).map((file) => ({
+        fileKey: file.key,
+        hunks: file.hunks,
+        sidecar: diffFileByRuntimeId.get(file.runtimeId)?.agent?.annotations ?? [],
+      })),
+      storedRoots: selectStoredThreadRoots(state),
+      showAgentNotes: state.showAgentNotes,
+    });
+    return facts;
   }
 
   /** Return the attached store only while it belongs to the current publication. */

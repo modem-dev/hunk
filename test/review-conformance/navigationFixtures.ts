@@ -50,6 +50,40 @@ const THREE_FILE_REVEAL_TARGETS = [
   [...TWO_HUNK_REVEAL_TARGETS],
 ];
 
+/**
+ * Two edits (lines 4 and 7) close enough to share one hunk at three lines of context,
+ * `@@ -1,10 +1,10 @@`, with a reviewer thread on each edit and a hidden agent thread
+ * between them.
+ */
+function sharedHunkFile(): DiffFile {
+  return createTestDiffFile({
+    id: "shared",
+    path: "shared.ts",
+    before: lines(...BASE_LINES),
+    after: withEdits({ 4: "line four", 7: "line seven" }),
+    context: 3,
+    agent: {
+      path: "shared.ts",
+      annotations: [
+        { summary: "first edit", newRange: [4, 4], source: "user" },
+        { summary: "agent aside", newRange: [5, 5] },
+        { summary: "second edit", newRange: [7, 7], source: "user" },
+      ],
+    },
+  });
+}
+
+/** A `twoHunkFile` with one reviewer thread on its second hunk. */
+function threadedTwoHunkFile(): DiffFile {
+  return {
+    ...twoHunkFile("beta"),
+    agent: {
+      path: "beta.ts",
+      annotations: [{ summary: "late edit", newRange: [10, 10], source: "user" }],
+    },
+  };
+}
+
 /** The reveal every annotated-hunk landing asks for. */
 const NOTE_REVEAL = { anchor: "hunk", scrollToNote: true } as const;
 const HUNK_REVEAL = { anchor: "hunk", scrollToNote: false } as const;
@@ -224,6 +258,159 @@ export const REVIEW_NAVIGATION_FIXTURES: readonly ReviewNavigationFixture[] = [
         // The hunk spans lines 3-9; its position is its first row, while a note about the
         // whole hunk would hang from the changed line 6.
         [{ side: "new", line: 3 }],
+      ],
+    },
+  },
+  {
+    id: "within-hunk-change-blocks-and-threads",
+    findings: [],
+    description:
+      "Several edits and threads inside one hunk: each is its own stop, moves cross hunk and file boundaries, a context line sits between blocks, a card hangs below its anchor row, and a thread the note layer hides is never a stop.",
+    build: () => [sharedHunkFile(), threadedTwoHunkFile()],
+    // Change blocks, in stream order: shared new 4, shared new 7, beta new 2, beta new 10.
+    // Visible threads: shared new 4, shared new 7, beta new 10.
+    moves: [
+      { scope: "change-block", delta: 1, from: { file: 0, hunkIndex: 0 } },
+      {
+        scope: "change-block",
+        delta: 1,
+        from: { file: 0, hunkIndex: 0 },
+        focusLine: { side: "new", line: 4 },
+      },
+      {
+        scope: "change-block",
+        delta: 1,
+        from: { file: 0, hunkIndex: 0 },
+        focusLine: { side: "new", line: 7 },
+      },
+      {
+        scope: "change-block",
+        delta: 3,
+        from: { file: 0, hunkIndex: 0 },
+        focusLine: { side: "old", line: 4 },
+      },
+      {
+        scope: "change-block",
+        delta: -1,
+        from: { file: 0, hunkIndex: 0 },
+        focusLine: { side: "new", line: 5 },
+      },
+      {
+        scope: "change-block",
+        delta: 1,
+        from: { file: 1, hunkIndex: 1 },
+        focusLine: { side: "new", line: 10 },
+      },
+      {
+        scope: "comment-thread",
+        delta: 1,
+        from: { file: 0, hunkIndex: 0 },
+        focusLine: { side: "new", line: 4 },
+      },
+      {
+        scope: "comment-thread",
+        delta: 1,
+        from: { file: 0, hunkIndex: 0 },
+        focusLine: { side: "new", line: 5 },
+      },
+      {
+        scope: "comment-thread",
+        delta: 2,
+        from: { file: 0, hunkIndex: 0 },
+        focusLine: { side: "new", line: 5 },
+      },
+      { scope: "comment-thread", delta: -1, from: { file: 1, hunkIndex: 0 } },
+      {
+        scope: "comment-thread",
+        delta: 1,
+        from: { file: 1, hunkIndex: 1 },
+        focusLine: { side: "new", line: 11 },
+      },
+    ],
+    selections: [{ file: 0, hunkIndex: 0 }],
+    expected: {
+      moves: [
+        // Without a line, the top of the selected hunk is above its first edit.
+        {
+          to: { file: 0, hunkIndex: 0 },
+          reveal: HUNK_REVEAL,
+          landing: { kind: "change-block", line: { side: "new", line: 4 } },
+        },
+        // Standing on an edit, the next one in the same hunk is one step away.
+        {
+          to: { file: 0, hunkIndex: 0 },
+          reveal: HUNK_REVEAL,
+          landing: { kind: "change-block", line: { side: "new", line: 7 } },
+        },
+        {
+          to: { file: 1, hunkIndex: 0 },
+          reveal: HUNK_REVEAL,
+          landing: { kind: "change-block", line: { side: "new", line: 2 } },
+        },
+        // The removed half of a replacement stands on the same block as its added half.
+        {
+          to: { file: 1, hunkIndex: 1 },
+          reveal: HUNK_REVEAL,
+          landing: { kind: "change-block", line: { side: "new", line: 10 } },
+        },
+        // Context between two edits: backward reaches the earlier one, not the hunk start.
+        {
+          to: { file: 0, hunkIndex: 0 },
+          reveal: HUNK_REVEAL,
+          landing: { kind: "change-block", line: { side: "new", line: 4 } },
+        },
+        // The last block clamps and asks to be shown again, like `]` on the last hunk.
+        {
+          to: { file: 1, hunkIndex: 1 },
+          reveal: HUNK_REVEAL,
+          landing: { kind: "change-block", line: { side: "new", line: 10 } },
+        },
+        // The card hangs below its anchor row, so a line on that row is still above it.
+        {
+          to: { file: 0, hunkIndex: 0 },
+          reveal: NOTE_REVEAL,
+          landing: {
+            kind: "comment-thread",
+            threadKind: "sidecar",
+            line: { side: "new", line: 4 },
+          },
+        },
+        // The hidden agent thread on line 5 is not a stop.
+        {
+          to: { file: 0, hunkIndex: 0 },
+          reveal: NOTE_REVEAL,
+          landing: {
+            kind: "comment-thread",
+            threadKind: "sidecar",
+            line: { side: "new", line: 7 },
+          },
+        },
+        {
+          to: { file: 1, hunkIndex: 1 },
+          reveal: NOTE_REVEAL,
+          landing: {
+            kind: "comment-thread",
+            threadKind: "sidecar",
+            line: { side: "new", line: 10 },
+          },
+        },
+        {
+          to: { file: 0, hunkIndex: 0 },
+          reveal: NOTE_REVEAL,
+          landing: {
+            kind: "comment-thread",
+            threadKind: "sidecar",
+            line: { side: "new", line: 7 },
+          },
+        },
+        // Nothing ahead of the last thread: refused rather than turned around.
+        { to: null },
+      ],
+      normalizedSelections: [{ file: 0, hunkIndex: 0 }],
+      revealTargets: [
+        // The shared hunk opens with context, so its position is its first row.
+        [{ side: "new", line: 1 }],
+        [...TWO_HUNK_REVEAL_TARGETS],
       ],
     },
   },

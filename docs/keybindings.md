@@ -130,6 +130,8 @@ Review and shared commands:
 | `hunk.review.jumpToTop`                        | Jump to start                                  | `g`, `home`                  |
 | `hunk.review.nextAnnotatedFile`                | Next annotated file                            | _(none)_                     |
 | `hunk.review.nextAnnotatedHunk`                | Next annotated hunk                            | `}`                          |
+| `hunk.review.nextChangeBlock`                  | Next change block                              | `)`                          |
+| `hunk.review.nextCommentThread`                | Next comment thread                            | `>`                          |
 | `hunk.review.nextFile`                         | Next file                                      | `.`                          |
 | `hunk.review.nextHunk`                         | Next hunk                                      | `]`                          |
 | `hunk.review.nextNote`                         | Next review note                               | _(none)_                     |
@@ -137,6 +139,8 @@ Review and shared commands:
 | `hunk.review.pageUp`                           | Scroll up one page                             | `pageup`, `b`, `shift+space` |
 | `hunk.review.previousAnnotatedFile`            | Previous annotated file                        | _(none)_                     |
 | `hunk.review.previousAnnotatedHunk`            | Previous annotated hunk                        | `{`                          |
+| `hunk.review.previousChangeBlock`              | Previous change block                          | `(`                          |
+| `hunk.review.previousCommentThread`            | Previous comment thread                        | `<`                          |
 | `hunk.review.previousFile`                     | Previous file                                  | `,`                          |
 | `hunk.review.previousHunk`                     | Previous hunk                                  | `[`                          |
 | `hunk.review.previousNote`                     | Previous review note                           | _(none)_                     |

@@ -169,6 +169,71 @@ export function reviewDefaultHunkLineTarget(
     : { side: "new", line: reviewHunkRange(hunk, "new")[0] };
 }
 
+/** One contiguous run of added and/or removed lines inside a hunk. */
+export interface ReviewChangeBlockSpan {
+  /** Position among the hunk's change blocks, not among all of its content blocks. */
+  blockIndex: number;
+  /** First old-side line; the block covers `[oldStart, oldStart + deletions)`. */
+  oldStart: number;
+  deletions: number;
+  /** First new-side line; the block covers `[newStart, newStart + additions)`. */
+  newStart: number;
+  additions: number;
+  /** The line the block is addressed by: its first added line, else its first deleted line. */
+  line: ReviewLineAddressV1;
+}
+
+/**
+ * List one hunk's change blocks with the source lines each occupies.
+ *
+ * A hunk is split into context and change blocks; a replacement (deletions immediately
+ * followed by additions) is one block. The walk is the one `reviewDefaultHunkLineTarget`
+ * uses, so a block's `line` follows the same "added line first" policy.
+ */
+export function reviewHunkChangeBlocks(
+  hunk: ReviewHunkSpan & ReviewHunkContent,
+): ReviewChangeBlockSpan[] {
+  const blocks: ReviewChangeBlockSpan[] = [];
+  let deletionLine = hunk.deletionStart;
+  let additionLine = hunk.additionStart;
+
+  for (const content of hunk.hunkContent) {
+    if (content.type === "context") {
+      deletionLine += content.lines ?? 0;
+      additionLine += content.lines ?? 0;
+      continue;
+    }
+
+    const deletions = content.deletions ?? 0;
+    const additions = content.additions ?? 0;
+    if (deletions > 0 || additions > 0) {
+      blocks.push({
+        blockIndex: blocks.length,
+        oldStart: deletionLine,
+        deletions,
+        newStart: additionLine,
+        additions,
+        line:
+          additions > 0 ? { side: "new", line: additionLine } : { side: "old", line: deletionLine },
+      });
+    }
+    deletionLine += deletions;
+    additionLine += additions;
+  }
+
+  return blocks;
+}
+
+/** Whether one source line falls inside a change block on the line's own side. */
+export function reviewChangeBlockContainsLine(
+  block: Pick<ReviewChangeBlockSpan, "oldStart" | "deletions" | "newStart" | "additions">,
+  address: ReviewLineAddressV1,
+) {
+  const start = address.side === "new" ? block.newStart : block.oldStart;
+  const count = address.side === "new" ? block.additions : block.deletions;
+  return address.line >= start && address.line < start + count;
+}
+
 /**
  * The line one hunk is canonically addressed by, on a side that really has rows.
  *

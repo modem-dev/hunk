@@ -13,6 +13,7 @@ import {
   reviewLeadingGap,
   reviewTrailingGap,
 } from "./expansion";
+import type { ReviewStoredThreadRoot } from "./annotations";
 import { reviewCanonicalHunkLine } from "./geometry";
 import type { ReviewNavigationFile } from "./navigation";
 import {
@@ -492,6 +493,40 @@ export function selectNavigableStoredReviewNotes(
         left.threadedOrder - right.threadedOrder,
     )
     .map(({ threadedOrder: _threadedOrder, ...item }) => item);
+}
+
+/** Visible stored-note thread roots, in exact-note order, for comment-thread navigation. */
+export function selectStoredThreadRoots(state: ActiveNoteState): ReviewStoredThreadRoot[] {
+  return selectNavigableStoredReviewNotes(state)
+    .filter((item) => item.visibleDepth === 0)
+    .map((item) => ({
+      fileKey: item.fileKey,
+      hunkIndex: item.hunkIndex,
+      line: reviewNoteAnchorLine(item.entry.note),
+      noteId: item.entry.note.id,
+    }));
+}
+
+/**
+ * The visible thread root a stored note belongs to.
+ *
+ * Walks visible parents rather than raw ancestry, so a reply whose agent-authored root is
+ * hidden by the note layer resolves to itself — the root the reviewer can actually see.
+ */
+export function selectVisibleThreadRootId(
+  state: ActiveNoteState,
+  noteId: string,
+): string | undefined {
+  const byId = new Map(
+    selectNavigableStoredReviewNotes(state).map((item) => [item.entry.note.id, item] as const),
+  );
+  let current = byId.get(noteId);
+  const visited = new Set<string>();
+  while (current?.visibleParentId && !visited.has(current.entry.note.id)) {
+    visited.add(current.entry.note.id);
+    current = byId.get(current.visibleParentId);
+  }
+  return current?.entry.note.id;
 }
 
 /** Resolve the explicitly selected stored note keyboard actions target. */

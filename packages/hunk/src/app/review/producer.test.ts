@@ -532,6 +532,40 @@ describe("review producer intents", () => {
     });
   });
 
+  test("supplies thread stops but no focus, so only thread moves plan remotely", () => {
+    const plain = createTestDiffFile({
+      id: "plain",
+      path: "plain.ts",
+      before: BEFORE,
+      after: AFTER,
+    });
+    const threaded = createTestDiffFile({
+      id: "threaded",
+      path: "threaded.ts",
+      before: BEFORE,
+      after: AFTER,
+      agent: {
+        path: "threaded.ts",
+        annotations: [{ summary: "Reviewer thread", newRange: [2, 2], source: "user" }],
+      },
+    });
+    const { producer } = createProducer({ files: [plain, threaded] });
+    producer.attachStore(createReviewStore(producer.getPublication().document));
+
+    expect(
+      producer.applyIntent({ type: "selection/move", scope: "comment-thread", delta: 1 }),
+    ).toMatchObject({
+      type: "selection/changed",
+      fileKey: producer.getPublication().document.files[1]!.key,
+      landing: { kind: "comment-thread", threadKind: "sidecar", line: { side: "new", line: 2 } },
+    });
+    // A remote caller has no current line, so a change-block move would restart from the
+    // top of the hunk on every call; it is refused instead.
+    expect(() =>
+      producer.applyIntent({ type: "selection/move", scope: "change-block", delta: 1 }),
+    ).toThrow("focus position");
+  });
+
   test("refuses to plan an intent before a review state is attached", () => {
     const { producer } = createProducer();
 

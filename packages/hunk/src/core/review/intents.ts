@@ -23,8 +23,12 @@ import {
   planReviewSelectionMove,
   REVIEW_FILE_JUMP_HUNK_INDEX,
   REVIEW_FILE_JUMP_REVEAL,
+  reviewChangeBlockCursors,
   type ReviewAnnotationIndex,
+  type ReviewMoveLanding,
+  type ReviewNavigationFocus,
   type ReviewSelectionScope,
+  type ReviewThreadCursor,
 } from "./navigation";
 import {
   isReviewGapExpanded,
@@ -38,6 +42,8 @@ import {
   selectReviewNavigationFiles,
   selectStoredReviewNoteById,
   selectStoredReviewNotes,
+  selectVisibleReviewFiles,
+  selectVisibleThreadRootId,
 } from "./selectors";
 import {
   REVIEW_VIEWPORT_ANCHOR_REVEAL,
@@ -84,6 +90,22 @@ export interface ReviewIntentFacts {
    * full set.
    */
   annotations?: ReviewAnnotationIndex;
+  /**
+   * Where the reviewer stands inside the selected hunk, for change-block and comment-thread
+   * navigation. Only the surface that drew the review knows which line its cursor is on.
+   */
+  focus?: ReviewNavigationFocus;
+  /**
+   * Every navigable comment thread, for comment-thread navigation. Sidecar annotations are
+   * threads the semantic document does not carry, so the consumer that loaded them supplies
+   * the list, built with `buildReviewThreadCursors`.
+   */
+  threads?: readonly ReviewThreadCursor[];
+  /**
+   * A focused thread with no stored identity, such as a sidecar annotation. A selected
+   * stored note takes precedence, resolved to its visible thread root.
+   */
+  activeThreadId?: string;
 }
 
 export type ReviewIntent =
@@ -178,6 +200,8 @@ export interface ReviewSelectionChangedOutcome {
   type: "selection/changed";
   fileKey: string;
   hunkIndex: number;
+  /** The change block or thread a finer-than-hunk move landed on, for the surface to reveal. */
+  landing?: ReviewMoveLanding;
 }
 
 export interface ReviewNoteCreatedOutcome {
@@ -388,7 +412,23 @@ function planSelectionMove(
       `Review intent requires annotations for ${intent.scope} navigation.`,
     );
   }
+  // Both scopes stop inside a hunk, which the semantic selection cannot address: without
+  // the reviewer's line every move would restart at the top of the hunk and never advance.
+  if (intent.scope === "change-block" && !facts.focus) {
+    throw new ReviewIntentPlanningError(
+      "missing-fact",
+      "Review intent requires a focus position for change-block navigation.",
+    );
+  }
+  if (intent.scope === "comment-thread" && !facts.threads) {
+    throw new ReviewIntentPlanningError(
+      "missing-fact",
+      "Review intent requires thread cursors for comment-thread navigation.",
+    );
+  }
 
+  const activeNoteId = selectActiveStoredReviewNote(state)?.note.id;
+  const fine = intent.scope === "change-block" || intent.scope === "comment-thread";
   const target = planReviewSelectionMove(
     {
       files: selectReviewNavigationFiles(state),
@@ -398,16 +438,47 @@ function planSelectionMove(
         hunkIndex: item.hunkIndex,
         noteId: item.entry.note.id,
       })),
-      activeNoteId: selectActiveStoredReviewNote(state)?.note.id,
+      activeNoteId,
+      ...(fine
+        ? {
+            changeBlocks: reviewChangeBlockCursors(
+              selectVisibleReviewFiles(state).map((file) => ({
+                fileKey: file.key,
+                hunks: file.hunks,
+              })),
+            ),
+            threads: facts.threads ?? [],
+            ...(facts.focus ? { focus: facts.focus } : {}),
+            ...(activeNoteId
+              ? { activeThreadId: selectVisibleThreadRootId(state, activeNoteId) }
+              : facts.activeThreadId
+                ? { activeThreadId: facts.activeThreadId }
+                : {}),
+          }
+        : {}),
     },
     selectNormalizedSelection(state),
     { scope: intent.scope, delta: intent.delta },
   );
   // A refused move publishes nothing at all: no selection change, and no reveal token
   // bump that would scroll a viewport for a key press that went nowhere.
-  return target
-    ? planSelection(target.fileKey, target.hunkIndex, target.reveal, target.activeNoteId)
-    : { actions: [] };
+  if (!target) {
+    return { actions: [] };
+  }
+
+  const plan = planSelection(target.fileKey, target.hunkIndex, target.reveal, target.activeNoteId);
+  if (!target.landing) {
+    return plan;
+  }
+  return {
+    ...plan,
+    outcome: {
+      type: "selection/changed",
+      fileKey: target.fileKey,
+      hunkIndex: target.hunkIndex,
+      landing: target.landing,
+    },
+  };
 }
 
 /**

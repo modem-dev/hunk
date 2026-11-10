@@ -11,7 +11,9 @@ import {
   planReviewIntent,
   ReviewIntentPlanningError,
 } from "./intents";
+import { buildReviewThreadCursors } from "./annotations";
 import { reduceReviewState } from "./reducer";
+import { selectStoredThreadRoots } from "./selectors";
 import type { ReviewState } from "./state";
 import { createReviewStore } from "./store";
 
@@ -212,6 +214,129 @@ describe("selection movement intent", () => {
         reveal: { anchor: "hunk", scrollToNote: true },
       },
     ]);
+  });
+
+  test("refuses within-hunk scopes without the position or thread facts they walk", () => {
+    const state = createTestReviewState();
+
+    for (const scope of ["change-block", "comment-thread"] as const) {
+      let error: unknown;
+      try {
+        planReviewIntent(state, { type: "selection/move", scope, delta: 1 });
+      } catch (caught) {
+        error = caught;
+      }
+      expect(error).toBeInstanceOf(ReviewIntentPlanningError);
+      expect((error as ReviewIntentPlanningError).code).toBe("missing-fact");
+    }
+  });
+
+  test("steps change blocks from the focused line and reports the block it landed on", () => {
+    // Each test hunk changes exactly its second line: alpha's blocks sit on lines 2 and 12.
+    const state = createTestReviewState();
+
+    expect(
+      planReviewIntent(
+        state,
+        { type: "selection/move", scope: "change-block", delta: 1 },
+        { focus: { fileKey: "alpha", hunkIndex: 0, line: { side: "new", line: 2 } } },
+      ),
+    ).toEqual({
+      actions: [
+        {
+          type: "selection/select",
+          fileKey: "alpha",
+          hunkIndex: 1,
+          reveal: { anchor: "hunk", scrollToNote: false },
+        },
+      ],
+      outcome: {
+        type: "selection/changed",
+        fileKey: "alpha",
+        hunkIndex: 1,
+        landing: {
+          kind: "change-block",
+          block: {
+            blockIndex: 0,
+            oldStart: 12,
+            deletions: 1,
+            newStart: 12,
+            additions: 1,
+            line: { side: "new", line: 12 },
+          },
+        },
+      },
+    });
+  });
+
+  test("moves from an active reply's thread to the next thread root, skipping replies", () => {
+    const state: ReviewState = {
+      ...createTestReviewState(undefined, { showAgentNotes: true }),
+      selection: { fileKey: "alpha", hunkIndex: 0 },
+      activeNoteId: "root-reply",
+      liveNotes: [
+        createTestStoredNote({ id: "root", fileKey: "alpha", hunkIndex: 0, line: 2 }),
+        createTestStoredNote({
+          id: "root-reply",
+          fileKey: "alpha",
+          hunkIndex: 0,
+          line: 2,
+          parentId: "root",
+        }),
+        createTestStoredNote({ id: "next", fileKey: "beta", hunkIndex: 1, line: 12 }),
+      ],
+    };
+    const threads = buildReviewThreadCursors({
+      files: state.document.files.map((file) => ({ fileKey: file.key, hunks: file.hunks })),
+      storedRoots: selectStoredThreadRoots(state),
+      showAgentNotes: true,
+    });
+
+    expect(threads.map((thread) => thread.threadId)).toEqual(["root", "next"]);
+    expect(
+      planReviewIntent(
+        state,
+        { type: "selection/move", scope: "comment-thread", delta: 1 },
+        { threads },
+      ),
+    ).toEqual({
+      actions: [
+        {
+          type: "selection/select",
+          fileKey: "beta",
+          hunkIndex: 1,
+          activeNoteId: "next",
+          reveal: { anchor: "hunk", scrollToNote: true },
+        },
+      ],
+      outcome: {
+        type: "selection/changed",
+        fileKey: "beta",
+        hunkIndex: 1,
+        landing: {
+          kind: "comment-thread",
+          threadId: "next",
+          threadKind: "stored",
+          line: { side: "new", line: 12 },
+        },
+      },
+    });
+    // Backward from the reply lands on nothing: its own thread is the first stop.
+    expect(
+      planReviewIntent(
+        state,
+        { type: "selection/move", scope: "comment-thread", delta: -1 },
+        { threads },
+      ),
+    ).toEqual({ actions: [] });
+  });
+
+  test("keeps the landing off outcomes of the existing scopes", () => {
+    const state = { ...createTestReviewState(), selection: { fileKey: "alpha", hunkIndex: 0 } };
+
+    expect(
+      planReviewIntent(state, { type: "selection/move", scope: "hunk", delta: 1 }).outcome,
+    ).toEqual({ type: "selection/changed", fileKey: "alpha", hunkIndex: 1 });
   });
 });
 
