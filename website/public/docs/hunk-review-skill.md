@@ -206,6 +206,10 @@ Guidelines:
 - Keep comments focused: intent, structure, risks, or follow-ups
 - Don't comment on every hunk -- highlight what the user wouldn't spot themselves
 
+## Sending feedback about Hunk
+
+`hunk feedback` sends a message to the Hunk team at Modem. Run it only when the user asks you to, or after they agree to the exact message. Show them its preview of everything that would be sent before sending, and never bypass its confirmation on your own judgment. Its help text lists the preview and confirmation options.
+
 ## Common errors
 
 - **"No diff file matches ..."** -- the file is not in the loaded review. Check `context`, then `reload` if needed.

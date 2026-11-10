@@ -199,7 +199,7 @@ module.exports = {
         "core/bootstrap.ts composes the leaves: it names the changeset, the parsed input, the resolved preferences, and the detected theme mode to describe one launch. A module directory importing it back would invert that layering and rebuild the grab-bag cycle the 2026-08 phases dismantled. core/changeset/loaders.ts is the single exception — loadAppBootstrap assembles the value, so it names the shape it returns; its natural home is the app tier, and moving it there retires this exception.",
       severity: "error",
       from: {
-        path: "^packages/hunk/src/core/(changeset|run|process|install|review|vcs|watch|patch|theme)/",
+        path: "^packages/hunk/src/core/(changeset|run|process|install|feedback|review|vcs|watch|patch|theme)/",
         pathNot: "^packages/hunk/src/core/changeset/loaders\\.ts$",
       },
       to: { path: "^packages/hunk/src/core/bootstrap\\.ts$" },

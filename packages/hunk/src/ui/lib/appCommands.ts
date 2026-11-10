@@ -133,6 +133,8 @@ export interface BuildAppCommandsOptions {
   /** Step note selection through the active surface's measured card order. */
   moveNoteCursor: (delta: number) => void;
   openAgentSkill: () => void;
+  /** Open the feedback form; absent when config turns feedback off. */
+  openFeedback?: () => void;
   openThemeSelector: () => void;
   requestQuit: () => void;
   /** Chords resolved against the user's `[keybindings]`; defaults apply where absent. */
@@ -197,6 +199,10 @@ function builtinCommandHandlers(
     "hunk.app.quit": { run: () => options.requestQuit() },
     "hunk.app.toggleHelp": { run: () => options.toggleHelp() },
     "hunk.app.openAgentSkill": { run: () => options.openAgentSkill() },
+    "hunk.app.openFeedback": {
+      run: () => options.openFeedback?.(),
+      isEnabled: () => options.openFeedback !== undefined,
+    },
     "hunk.app.toggleFocusArea": { run: () => options.toggleFocusArea() },
     "hunk.review.focusFilter": { run: () => options.focusFilter() },
     "hunk.review.startVisualSelection": { run: () => options.startVisualSelection?.() },

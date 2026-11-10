@@ -8,6 +8,7 @@ import {
   diffPersistedViewPreferences,
   resolveConfiguredCliInput,
   resolveExtensionBootstrapConfig,
+  resolveFeedbackEnabled,
   saveGlobalViewPreferences,
   saveViewPreferencesPromptPreference,
 } from "./config";
@@ -1402,6 +1403,31 @@ describe("extension configuration", () => {
     expect(
       resolved.startupNotices?.some((notice) => notice.message.includes("hunk.app.refresh")),
     ).toBe(true);
+  });
+
+  test("lets either config layer turn feedback off but neither force it on", () => {
+    const home = createTempDir("hunk-config-home-");
+    const repo = createTempDir("hunk-config-repo-");
+    createRepo(repo);
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    mkdirSync(join(repo, ".hunk"), { recursive: true });
+    const userConfig = join(home, ".config", "hunk", "config.toml");
+    const repoConfig = join(repo, ".hunk", "config.toml");
+    const resolve = () => resolveFeedbackEnabled({ cwd: repo, env: { HOME: home } });
+
+    expect(resolve()).toBe(true);
+
+    writeFileSync(userConfig, "[feedback]\nenabled = false\n");
+    writeFileSync(repoConfig, "[feedback]\nenabled = true\n");
+    expect(resolve()).toBe(false);
+
+    writeFileSync(userConfig, "[feedback]\nenabled = true\n");
+    writeFileSync(repoConfig, "[feedback]\nenabled = false\n");
+    expect(resolve()).toBe(false);
+    expect(
+      resolveConfiguredCliInput(createPatchPagerInput(), { cwd: repo, env: { HOME: home } })
+        .feedbackEnabled,
+    ).toBe(false);
   });
 
   test("lets repo config disable extensions and --no-extensions win over both layers", () => {

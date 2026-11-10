@@ -524,6 +524,21 @@ patterns = ["*.lock", "generated/*"]
 
 These keys belong to that extension, not Hunk's preference catalog. Repository tables merge over user tables key by key, and Hunk reports which extension settings the repository overrides. See [Extensions](/docs/extend/extensions/) for installation, trust, loading controls, and examples.
 
+## Feedback
+
+`[feedback]` controls Help → Send feedback and `hunk feedback`. Both show exactly what is sent and send nothing until you confirm one submission. Turn them off entirely:
+
+```toml
+[feedback]
+enabled = false
+```
+
+| Key                | Type    | Accepted          | Built-in default | Description                                                                                                                                                                            |
+| ------------------ | ------- | ----------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `feedback.enabled` | boolean | `true` or `false` | `true`           | Offer Help → Send feedback and `hunk feedback`. Feedback is never sent without confirming it; `false` removes the entry entirely. A repository config can turn it off but not back on. |
+
+See [Send feedback](/docs/help/feedback/) for what a submission contains and where it goes.
+
 ## Troubleshooting
 
 | Problem                                   | Check                                                                         |
