@@ -81,6 +81,9 @@ describe("non-PTY CI contracts", () => {
     const text = JSON.stringify(runs);
     expect(text).toContain("bun-install-cache");
     expect(text).not.toContain("node_modules");
+    expect(runs!.steps[0]?.run).toBe(
+      'echo "BUN_INSTALL_CACHE_DIR=$RUNNER_TEMP/bun-install-cache" >> "$GITHUB_ENV"',
+    );
     const installs = runs!.steps.filter((step) => step.run?.includes("bun install"));
     expect(installs).toHaveLength(2);
     for (const step of installs) {

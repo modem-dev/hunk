@@ -10,6 +10,11 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Configure Bun download cache
+      shell: bash
+      # Keep later builds and test-fixture installs on the same cache as the initial install.
+      run: echo "BUN_INSTALL_CACHE_DIR=$RUNNER_TEMP/bun-install-cache" >> "$GITHUB_ENV"
+
     # setup-bun already caches the executable. Cache downloads, not node_modules:
     # fresh linking preserves platform binaries, workspace symlinks and install scripts.
     - name: Restore Bun package downloads
