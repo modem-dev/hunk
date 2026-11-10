@@ -39,6 +39,16 @@ describe("non-PTY CI contracts", () => {
         `bun run ./scripts/test/run-test-suite.ts --group=${group} --shard=\${{ matrix.shard }}/2`,
       );
     }
+    const checks = jobs["windows-checks"]!.steps.map((step) => step.run);
+    for (const script of [
+      "format:check",
+      "lint",
+      "typecheck",
+      "deps:check",
+      "test:theme-contrast",
+    ]) {
+      expect(checks).toContain(`bun run ${script}`);
+    }
     const gate = jobs["windows-compat"]!;
     expect(gate.needs).toEqual(["changes", "windows-checks", "windows-tests"]);
     expect(gate.if).toBe("always()");
@@ -93,12 +103,16 @@ describe("non-PTY CI contracts", () => {
     }
   });
 
-  test("keeps website browser projects and only increases worker concurrency", () => {
+  test("installs the headless browser while keeping all website browser projects", () => {
     const { jobs } = readTestWorkflow(".github/workflows/website.yml");
     const step = jobs.build!.steps.find(
       (candidate) => candidate.name === "Run browser smoke tests",
     );
-    expect(step?.run).toBe("bun run website:test:browser --workers=4");
+    expect(step?.run).toBe("bun run website:test:browser");
+    const install = jobs.build!.steps.find((candidate) => candidate.name === "Install Chromium");
+    expect(install?.run).toBe(
+      "cd website && bunx playwright install --with-deps --only-shell chromium",
+    );
   });
 
   for (const name of ["pr-ci", "ci", "nix", "website"]) {

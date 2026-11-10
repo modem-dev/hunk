@@ -47,8 +47,8 @@ jobs:
         run: bun run website:links
 
       - name: Install Chromium
-        run: cd website && bunx playwright install --with-deps chromium
+        # Both projects use Playwright's default headless shell, not the headed Chrome binary.
+        run: cd website && bunx playwright install --with-deps --only-shell chromium
 
       - name: Run browser smoke tests
-        # The suite is fully parallel; use all four hosted-runner CPUs without dropping projects.
-        run: bun run website:test:browser --workers=4
+        run: bun run website:test:browser
