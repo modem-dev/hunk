@@ -92,7 +92,7 @@ describe("non-PTY CI contracts", () => {
     }
   });
 
-  test("runs Nix verification even when the dependency store cache hits", () => {
+  test("always runs every Nix evaluation and package build check", () => {
     const { jobs } = readTestWorkflow(".github/workflows/nix.yml");
     const steps = jobs.package!.steps;
     for (const command of [

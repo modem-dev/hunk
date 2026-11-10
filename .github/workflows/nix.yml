@@ -44,15 +44,6 @@ jobs:
             extra-substituters = https://nix-community.cachix.org
             extra-trusted-public-keys = nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
 
-      # Restore the store with its database, not a raw filesystem cache. Nix still
-      # evaluates/builds the current source; the dependency key only avoids downloads.
-      - name: Restore Nix store
-        uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
-        with:
-          primary-key: ${{ runner.os }}-${{ runner.arch }}-nix-v1-${{ hashFiles('flake.lock', 'flake.nix', 'bun.lock', 'nix/**') }}
-          restore-prefixes-first-match: ${{ runner.os }}-${{ runner.arch }}-nix-v1-
-          gc-max-store-size-linux: 2G
-
       - name: Verify Nix dependency lockfile
         if: needs.changes.outputs.nix_lock == 'true'
         run: |
