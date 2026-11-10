@@ -66,6 +66,28 @@ describe("non-PTY CI contracts", () => {
     }
   });
 
+  test("runs Nix verification even when the dependency store cache hits", () => {
+    const { jobs } = readTestWorkflow(".github/workflows/nix.yml");
+    const steps = jobs.package!.steps;
+    for (const command of [
+      "nix flake check --print-build-logs",
+      "nix flake check --all-systems --no-build",
+      "nix build .#default --print-build-logs",
+    ]) {
+      const step = steps.find((candidate) => candidate.run === command);
+      expect(step).toBeDefined();
+      expect(step).not.toHaveProperty("if");
+    }
+  });
+
+  test("keeps website browser projects and only increases worker concurrency", () => {
+    const { jobs } = readTestWorkflow(".github/workflows/website.yml");
+    const step = jobs.build!.steps.find(
+      (candidate) => candidate.name === "Run browser smoke tests",
+    );
+    expect(step?.run).toBe("bun run website:test:browser --workers=4");
+  });
+
   for (const name of ["pr-ci", "ci", "nix", "website"]) {
     test(`${name} cancels superseded runs without colliding across PR refs`, () => {
       const { concurrency } = readTestWorkflow(`.github/workflows/${name}.yml`);
