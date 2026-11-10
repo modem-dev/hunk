@@ -31,7 +31,7 @@ describe("non-PTY CI contracts", () => {
       (step) => step.name === "Windows platform test suite",
     );
     expect(tests?.run).toBe("bun run test:windows");
-    expect(tests?.env?.HUNK_TEST_SHARDS).toBe("2");
+    expect(tests?.env?.HUNK_TEST_SHARDS).toBe("4");
   });
 
   test("runs Linux validation and packaging independently and gates on both", () => {

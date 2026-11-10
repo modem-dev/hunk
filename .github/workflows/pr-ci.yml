@@ -99,7 +99,7 @@ jobs:
         run: bun run test:windows
         env:
           # Independent file shards retain both the full platform and focused UI suites.
-          HUNK_TEST_SHARDS: "2"
+          HUNK_TEST_SHARDS: "4"
 
   compiled-headless-portability:
     name: Compiled headless portability (${{ matrix.os }})
