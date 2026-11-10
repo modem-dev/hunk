@@ -111,7 +111,7 @@ describe("non-PTY CI contracts", () => {
     const step = jobs.build!.steps.find(
       (candidate) => candidate.name === "Run browser smoke tests",
     );
-    expect(step?.run).toBe("bun run website:test:browser");
+    expect(step?.run).toBe("bun run website:test:browser --workers=4");
     const install = jobs.build!.steps.find((candidate) => candidate.name === "Install Chromium");
     expect(install?.run).toBe(
       "cd website && bunx playwright install --with-deps --only-shell chromium",

@@ -51,4 +51,4 @@ jobs:
         run: cd website && bunx playwright install --with-deps --only-shell chromium
 
       - name: Run browser smoke tests
-        run: bun run website:test:browser
+        run: bun run website:test:browser --workers=4
