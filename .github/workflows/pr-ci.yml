@@ -50,11 +50,58 @@ jobs:
           HEAD_SHA: ${{ github.sha }}
         run: bun run ./scripts/release/verify-pr-release-notes.ts "$BASE_SHA" "$HEAD_SHA"
 
-  windows-compat:
-    name: Windows compatibility
+  windows-checks:
+    name: Windows static checks
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: windows-latest
+    steps:
+      - name: Disable automatic CRLF conversion
+        run: git config --global core.autocrlf false
+
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        uses: ./.github/actions/bun-install
+
+      - name: Format check
+        run: bun run format:check
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Module boundary check
+        run: bun run deps:check
+
+      - name: Theme contrast check
+        run: bun run test:theme-contrast
+
+  windows-tests:
+    name: Windows tests (${{ matrix.shard }}/2)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    env:
+      # Each hosted runner owns one file partition, without nested process sharding.
+      HUNK_TEST_SHARDS: "1"
     steps:
       - name: Disable automatic CRLF conversion
         run: git config --global core.autocrlf false
@@ -80,26 +127,38 @@ jobs:
       - name: Install dependencies
         uses: ./.github/actions/bun-install
 
-      - name: Format check
-        run: bun run format:check
+      - name: Windows platform test partition
+        run: bun run ./scripts/test/run-test-suite.ts --group=windows --shard=${{ matrix.shard }}/2
 
-      - name: Lint
-        run: bun run lint
+      - name: Windows UI boundary test partition
+        run: bun run ./scripts/test/run-test-suite.ts --group=windows-ui --shard=${{ matrix.shard }}/2
 
-      - name: Typecheck
-        run: bun run typecheck
-
-      - name: Module boundary check
-        run: bun run deps:check
-
-      - name: Theme contrast check
-        run: bun run test:theme-contrast
-
-      - name: Windows platform test suite
-        run: bun run test:windows
+  windows-compat:
+    name: Windows compatibility
+    needs: [changes, windows-checks, windows-tests]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify Windows validation jobs
         env:
-          # Independent file shards retain both the full platform and focused UI suites.
-          HUNK_TEST_SHARDS: "4"
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          CODE_CHANGED: ${{ needs.changes.outputs.code }}
+          CHECKS_RESULT: ${{ needs.windows-checks.result }}
+          TESTS_RESULT: ${{ needs.windows-tests.result }}
+        run: |
+          if [[ "$CHANGES_RESULT" != "success" ]]; then
+            echo "Change detection: $CHANGES_RESULT" >&2
+            exit 1
+          fi
+          if [[ "$CODE_CHANGED" != "true" ]]; then
+            echo "No code changes require Windows validation."
+            exit 0
+          fi
+          if [[ "$CHECKS_RESULT" != "success" || "$TESTS_RESULT" != "success" ]]; then
+            echo "Windows checks: $CHECKS_RESULT" >&2
+            echo "Windows tests: $TESTS_RESULT" >&2
+            exit 1
+          fi
 
   compiled-headless-portability:
     name: Compiled headless portability (${{ matrix.os }})

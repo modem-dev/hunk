@@ -13,6 +13,8 @@ interface TestWorkflowJob {
   needs?: string | string[];
   if?: string;
   steps: TestWorkflowStep[];
+  env?: Record<string, string>;
+  strategy?: { "fail-fast": boolean; matrix: { shard: number[] } };
 }
 
 /** Read checked-in workflow contracts without executing a GitHub runner. */
@@ -25,13 +27,24 @@ function readTestWorkflow(relativePath: string) {
 }
 
 describe("non-PTY CI contracts", () => {
-  test("shards Windows tests without replacing either platform test group", () => {
-    const workflow = readTestWorkflow(".github/workflows/pr-ci.yml");
-    const tests = workflow.jobs["windows-compat"]!.steps.find(
-      (step) => step.name === "Windows platform test suite",
-    );
-    expect(tests?.run).toBe("bun run test:windows");
-    expect(tests?.env?.HUNK_TEST_SHARDS).toBe("4");
+  test("partitions both Windows groups across isolated runners and gates on all results", () => {
+    const { jobs } = readTestWorkflow(".github/workflows/pr-ci.yml");
+    const tests = jobs["windows-tests"]!;
+    expect(tests.strategy?.matrix.shard).toEqual([1, 2]);
+    expect(tests.strategy?.["fail-fast"]).toBe(false);
+    expect(tests.env?.HUNK_TEST_SHARDS).toBe("1");
+    const commands = tests.steps.map((step) => step.run);
+    for (const group of ["windows", "windows-ui"]) {
+      expect(commands).toContain(
+        `bun run ./scripts/test/run-test-suite.ts --group=${group} --shard=\${{ matrix.shard }}/2`,
+      );
+    }
+    const gate = jobs["windows-compat"]!;
+    expect(gate.needs).toEqual(["changes", "windows-checks", "windows-tests"]);
+    expect(gate.if).toBe("always()");
+    expect(gate.steps[0]?.run).toContain('$CHECKS_RESULT" != "success"');
+    expect(gate.steps[0]?.run).toContain('$TESTS_RESULT" != "success"');
+    expect(gate.steps[0]?.run).toContain('$CHANGES_RESULT" != "success"');
   });
 
   test("runs Linux validation and packaging independently and gates on both", () => {
