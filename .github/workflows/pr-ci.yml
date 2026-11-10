@@ -78,7 +78,7 @@ jobs:
           tool: jj-cli
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        uses: ./.github/actions/bun-install
 
       - name: Format check
         run: bun run format:check
@@ -97,6 +97,9 @@ jobs:
 
       - name: Windows platform test suite
         run: bun run test:windows
+        env:
+          # Independent file shards retain both the full platform and focused UI suites.
+          HUNK_TEST_SHARDS: "2"
 
   compiled-headless-portability:
     name: Compiled headless portability (${{ matrix.os }})
@@ -121,7 +124,7 @@ jobs:
           bun-version: 1.4.4
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        uses: ./.github/actions/bun-install
 
       - name: Build binary
         run: bun run build:bin
@@ -132,7 +135,7 @@ jobs:
           HUNK_TEST_EXECUTABLE: ${{ github.workspace }}/${{ matrix.executable }}
 
   linux-validate:
-    name: Linux validation and packaging
+    name: Linux validation
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
@@ -168,7 +171,7 @@ jobs:
           sl version
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        uses: ./.github/actions/bun-install
 
       - name: Format check
         run: bun run format:check
@@ -193,6 +196,28 @@ jobs:
 
       - name: TTY smoke tests
         run: bun run test:tty-smoke
+
+  linux-packaging:
+    name: Linux packaging
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        uses: ./.github/actions/bun-install
 
       - name: Build npm runtime bundle
         run: bun run build:npm
@@ -266,6 +291,7 @@ jobs:
     needs:
       - changes
       - linux-validate
+      - linux-packaging
       - pty-integration
     if: always()
     runs-on: ubuntu-latest
@@ -275,6 +301,7 @@ jobs:
           CHANGES_RESULT: ${{ needs.changes.result }}
           CODE_CHANGED: ${{ needs.changes.outputs.code }}
           LINUX_RESULT: ${{ needs.linux-validate.result }}
+          PACKAGING_RESULT: ${{ needs.linux-packaging.result }}
           PTY_RESULT: ${{ needs.pty-integration.result }}
         run: |
           if [[ "$CHANGES_RESULT" != "success" ]]; then
@@ -285,8 +312,9 @@ jobs:
             echo "No code changes require validation."
             exit 0
           fi
-          if [[ "$LINUX_RESULT" != "success" || "$PTY_RESULT" != "success" ]]; then
+          if [[ "$LINUX_RESULT" != "success" || "$PACKAGING_RESULT" != "success" || "$PTY_RESULT" != "success" ]]; then
             echo "Linux validation: $LINUX_RESULT" >&2
+            echo "Linux packaging: $PACKAGING_RESULT" >&2
             echo "PTY integration: $PTY_RESULT" >&2
             exit 1
           fi

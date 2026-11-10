@@ -26,11 +26,10 @@ jobs:
         with:
           bun-version: 1.4.4
 
-      - name: Install repository dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Install website dependencies
-        run: bun install --cwd website --frozen-lockfile
+      - name: Install repository and website dependencies
+        uses: ./.github/actions/bun-install
+        with:
+          additional-directory: website
 
       - name: Test website tooling
         run: bun test scripts/generate/generate-docs.test.ts scripts/website/check-website-links.test.ts scripts/website/check-extension-catalog.test.ts

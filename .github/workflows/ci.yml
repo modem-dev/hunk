@@ -66,7 +66,7 @@ jobs:
           sl version
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        uses: ./.github/actions/bun-install
 
       - name: Format check
         run: bun run format:check
@@ -129,7 +129,7 @@ jobs:
           bun-version: 1.4.4
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        uses: ./.github/actions/bun-install
 
       - name: Verify terminal tools
         run: |
@@ -159,7 +159,7 @@ jobs:
           node-version: 22
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        uses: ./.github/actions/bun-install
 
       - name: Build npm runtime bundle
         run: bun run build:npm
@@ -212,7 +212,7 @@ jobs:
           node-version: 22
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        uses: ./.github/actions/bun-install
 
       - name: Stage prebuilt npm packages
         run: bun run build:prebuilt:npm
@@ -245,7 +245,7 @@ jobs:
           bun-version: 1.4.4
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        uses: ./.github/actions/bun-install
 
       - name: Build binary
         run: bun run build:bin
