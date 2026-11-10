@@ -26,11 +26,10 @@ jobs:
         with:
           bun-version: 1.4.4
 
-      - name: Install repository dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Install website dependencies
-        run: bun install --cwd website --frozen-lockfile
+      - name: Install repository and website dependencies
+        uses: ./.github/actions/bun-install
+        with:
+          additional-directory: website
 
       - name: Test website tooling
         run: bun test scripts/generate/generate-docs.test.ts scripts/website/check-website-links.test.ts scripts/website/check-extension-catalog.test.ts
@@ -48,7 +47,8 @@ jobs:
         run: bun run website:links
 
       - name: Install Chromium
-        run: cd website && bunx playwright install --with-deps chromium
+        # Both projects use Playwright's default headless shell, not the headed Chrome binary.
+        run: cd website && bunx playwright install --with-deps --only-shell chromium
 
       - name: Run browser smoke tests
-        run: bun run website:test:browser
+        run: bun run website:test:browser --workers=4

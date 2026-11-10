@@ -95,6 +95,37 @@ describe("CI code-change detection", () => {
     });
   });
 
+  for (const changedPath of [
+    "website/src/pages/index.astro",
+    "website/bun.lock",
+    "website/package.json",
+    "workers/release-proxy/src/index.ts",
+    ".github/workflows/website.yml",
+    ".github/workflows/release-proxy.yml",
+  ]) {
+    test.skipIf(process.platform === "win32")(`leaves ${changedPath} to its own CI`, () => {
+      expect(detectAddedPaths([changedPath])).toEqual({
+        code_changed: "false",
+        nix_lock_changed: "false",
+      });
+    });
+  }
+
+  for (const changedPath of [
+    ".github/actions/bun-install/action.yml",
+    ".github/workflows/pr-ci.yml",
+    ".github/workflows/ci.yml",
+    ".github/scripts/detect-code-changes.sh",
+    "scripts/generate/generate-docs.ts",
+  ]) {
+    test.skipIf(process.platform === "win32")(`validates shared CI input ${changedPath}`, () => {
+      expect(detectAddedPaths(["website/src/pages/index.astro", changedPath])).toEqual({
+        code_changed: "true",
+        nix_lock_changed: "false",
+      });
+    });
+  }
+
   test.skipIf(process.platform === "win32")("detects a lock input in a mixed-file change", () => {
     expect(detectAddedPaths(["docs/configuration.md", "packages/hunk/package.json"])).toEqual({
       code_changed: "true",

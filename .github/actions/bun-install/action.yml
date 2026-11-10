@@ -1,0 +1,41 @@
+name: Install cached Bun dependencies
+description: Cache package downloads while always validating and linking the frozen lockfile.
+inputs:
+  working-directory:
+    description: Directory containing the Bun lockfile to install.
+    default: .
+  additional-directory:
+    description: Optional second workspace to install into the same download cache.
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Configure Bun download cache
+      shell: bash
+      # Keep later builds and test-fixture installs on the same cache as the initial install.
+      run: echo "BUN_INSTALL_CACHE_DIR=$RUNNER_TEMP/bun-install-cache" >> "$GITHUB_ENV"
+
+    # setup-bun already caches the executable. Cache downloads, not node_modules:
+    # fresh linking preserves platform binaries, workspace symlinks and install scripts.
+    - name: Restore Bun package downloads
+      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+      with:
+        path: ${{ runner.temp }}/bun-install-cache
+        key: ${{ runner.os }}-${{ runner.arch }}-bun-downloads-v1-${{ hashFiles('bun.lock', 'website/bun.lock', 'workers/release-proxy/package-lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-${{ runner.arch }}-bun-downloads-v1-
+
+    - name: Install frozen dependencies
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        BUN_INSTALL_CACHE_DIR: ${{ runner.temp }}/bun-install-cache
+      run: bun install --frozen-lockfile
+
+    - name: Install additional frozen dependencies
+      if: inputs.additional-directory != ''
+      shell: bash
+      working-directory: ${{ inputs.additional-directory }}
+      env:
+        BUN_INSTALL_CACHE_DIR: ${{ runner.temp }}/bun-install-cache
+      run: bun install --frozen-lockfile

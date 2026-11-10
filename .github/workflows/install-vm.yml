@@ -34,7 +34,7 @@ jobs:
           bun-version: 1.4.4
 
       - name: Install ordinary development dependencies
-        run: bun install --frozen-lockfile
+        uses: ./.github/actions/bun-install
 
       - name: Run selected install scenarios
         env:

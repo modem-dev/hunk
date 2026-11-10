@@ -15,11 +15,11 @@ for sha in "$base_sha" "$head_sha"; do
   fi
 done
 
-is_docs_only_path() {
+is_non_runtime_path() {
   local path="$1"
 
   case "$path" in
-    *.md | docs/* | assets/* | LICENSE)
+    *.md | docs/* | assets/* | website/* | workers/* | .github/workflows/website.yml | .github/workflows/release-proxy.yml | LICENSE)
       return 0
       ;;
     *)
@@ -46,7 +46,7 @@ nix_lock_changed=false
 while IFS= read -r path; do
   [[ -z "$path" ]] && continue
 
-  if ! is_docs_only_path "$path"; then
+  if ! is_non_runtime_path "$path"; then
     code_changed=true
   fi
   if is_nix_lock_input_path "$path"; then
@@ -63,5 +63,5 @@ fi
 if [[ "$code_changed" == "true" ]]; then
   echo "Code changes detected; expensive CI jobs should run."
 else
-  echo "Only docs/assets metadata changes detected; expensive CI jobs can be skipped."
+  echo "Only documentation, website, worker or asset changes detected; runtime CI can be skipped."
 fi
