@@ -254,7 +254,9 @@ jobs:
       # Emulating a pre-AVX CPU here catches a dropped baseline target on main rather than
       # after a release ships a binary that cannot start.
       - name: Verify the binary starts without AVX2
+        timeout-minutes: 10
         run: |
+          sudo bash .github/scripts/configure-ubuntu-apt-mirror.sh
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends qemu-user
           qemu-x86_64 -cpu Nehalem dist/hunk --version
