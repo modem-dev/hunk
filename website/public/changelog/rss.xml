@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://hunk.dev/changelog/rss.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Hunk 0.25</title>
+      <link>https://hunk.dev/changelog/0.25/</link>
+      <guid isPermaLink="true">https://hunk.dev/changelog/0.25/</guid>
+      <pubDate>Wed, 11 Nov 2026 00:00:00 GMT</pubDate>
+      <description>Hunk 0.25 adds inline before-and-after image previews, clearer active-pane focus, GitHub Enterprise Cloud reviews, and a preview-and-confirm feedback form, while making patch parsing and everyday review interactions more resilient.</description>
+    </item>
+    <item>
       <title>Hunk 0.24</title>
       <link>https://hunk.dev/changelog/0.24/</link>
       <guid isPermaLink="true">https://hunk.dev/changelog/0.24/</guid>
