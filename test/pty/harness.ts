@@ -128,7 +128,7 @@ export async function measureMouseWheelScroll(
 }
 
 /** Send an SGR mouse motion event without imposing a readiness policy on its caller. */
-function sendMouseMove(session: Session, x: number, y: number) {
+export function sendMouseMove(session: Pick<Session, "writeRaw">, x: number, y: number) {
   session.writeRaw(`\x1b[<35;${x + 1};${y + 1}M`);
 }
 

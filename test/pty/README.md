@@ -46,7 +46,15 @@ Local Linux/Bun 1.3.14 baseline on the refreshed 0.25.0 source base: **290 pass,
 skip, 391.19s**. Profiling wrapped Tuistory's `waitIdle()` without changing behavior. The
 four shell-completion tests cost 50.90s; the threaded-note interaction cost about 7.9s, with
 nine idle waits exceeding 450ms. Targeted after runs retained all 76 shell assertions and
-15 threaded-note assertions: **3.94s** and **4.08s**, respectively.
+15 threaded-note assertions: **3.94s** and **4.08s**, respectively. The complete optimized
+serial suite passed **290 tests, 1 unchanged platform skip, 1,252 assertions in 339.57s**
+(391.19s → 339.57s, 13.2% less time locally).
+
+The fresh single-runner CI control is
+[43053286536](https://github.com/modem-dev/hunk/actions/runs/43053286536), `b720f828`, on
+`62064bcf` plus the coordinator's PTY fixes, before the three-file optimization. Its PTY
+job `130636063061` passed in **7m23s**, including setup/cleanup. The before and after
+implementations use the same base, stabilization fixes, job definition, and full test set.
 
 A shared compiled binary was measured and rejected: notes/navigation/file-view tests took
 64.38s compiled versus about 62.23s from source in the local baseline (noise, not a win).
