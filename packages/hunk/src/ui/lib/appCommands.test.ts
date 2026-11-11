@@ -332,6 +332,7 @@ describe("builtinCommandKeyDefaults", () => {
         .sort(),
     ).toEqual([
       "hunk.app.openAgentSkill",
+      "hunk.app.openFeedback",
       "hunk.review.alignCurrentLineBottom",
       "hunk.review.alignCurrentLineCenter",
       "hunk.review.alignCurrentLineTop",

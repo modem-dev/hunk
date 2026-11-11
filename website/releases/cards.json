@@ -8,6 +8,13 @@
     "alt": "Hunk changelog — 24 release series · March 2026 – October 2026"
   },
   {
+    "slug": "0.25",
+    "title": "Hunk 0.25",
+    "tagline": "Hunk 0.25 adds inline before-and-after image previews, clearer active-pane focus, GitHub Enterprise Cloud reviews, and a…",
+    "meta": "Unreleased · 1 release · 23 changes",
+    "alt": "Hunk 0.25 release notes — Unreleased · 1 release · 23 changes"
+  },
+  {
     "slug": "0.24",
     "title": "Hunk 0.24",
     "tagline": "Hunk 0.24 adds complete-file and directory browsing, a live workspace status view, npm-installed extensions, shell completions, and…",

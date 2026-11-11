@@ -1731,6 +1731,7 @@ describe("parseCli", () => {
       "extension",
       "ext",
       "update",
+      "feedback",
       "completion",
       "daemon",
       "mcp",
@@ -2643,5 +2644,68 @@ describe("status command parsing", () => {
       kind: "help",
       text: expect.stringContaining("--json"),
     });
+  });
+});
+
+describe("feedback command parsing", () => {
+  test("joins positional words into the message", async () => {
+    expect(await parseCli(["bun", "hunk", "feedback", "Split", "view", "jumps"])).toEqual({
+      kind: "feedback",
+      message: "Split view jumps",
+      file: undefined,
+      email: undefined,
+      dryRun: false,
+      skipConfirm: false,
+      output: "text",
+    });
+  });
+
+  test("parses every flag", async () => {
+    expect(
+      await parseCli([
+        "bun",
+        "hunk",
+        "feedback",
+        "--file",
+        "-",
+        "--email",
+        "ada@example.com",
+        "--dry-run",
+        "--skip-confirm",
+        "--json",
+      ]),
+    ).toEqual({
+      kind: "feedback",
+      message: undefined,
+      file: "-",
+      email: "ada@example.com",
+      dryRun: true,
+      skipConfirm: true,
+      output: "json",
+    });
+  });
+
+  test("leaves the message empty so the run can open the form", async () => {
+    expect(await parseCli(["bun", "hunk", "feedback"])).toMatchObject({
+      kind: "feedback",
+      message: undefined,
+      file: undefined,
+    });
+  });
+
+  test("rejects more than one message source", async () => {
+    await expect(parseCli(["bun", "hunk", "feedback", "hi", "-m", "there"])).rejects.toThrow(
+      "Pass the feedback message one way",
+    );
+    await expect(parseCli(["bun", "hunk", "feedback", "-m", "hi", "-F", "-"])).rejects.toThrow(
+      "Pass the feedback message one way",
+    );
+  });
+
+  test("prints help that states nothing is sent until confirmed", async () => {
+    const help = await parseCli(["bun", "hunk", "feedback", "--help"]);
+
+    expect(help.kind).toBe("help");
+    expect(help.kind === "help" && help.text).toContain("Nothing reaches Modem until you confirm");
   });
 });

@@ -234,6 +234,12 @@ const GUIDING_SECTION = [
   "- Don't comment on every hunk -- highlight what the user wouldn't spot themselves",
 ];
 
+const FEEDBACK_SECTION = [
+  "## Sending feedback about Hunk",
+  "",
+  "`hunk feedback` sends a message to the Hunk team at Modem. Run it only when the user asks you to, or after they agree to the exact message. Show them its preview of everything that would be sent before sending, and never bypass its confirmation on your own judgment. Its help text lists the preview and confirmation options.",
+];
+
 /** Render the "Common errors" section from the shared agent error catalog. */
 function commonErrorsSection() {
   return [
@@ -258,6 +264,7 @@ export function renderHunkReviewSkill() {
     STML_SECTION,
     NEW_FILES_SECTION,
     GUIDING_SECTION,
+    FEEDBACK_SECTION,
     commonErrorsSection(),
   ];
 

@@ -1,4 +1,15 @@
 {
+  "0.25": {
+    "summary": "Hunk 0.25 adds inline before-and-after image previews, clearer active-pane focus, GitHub Enterprise Cloud reviews, and a preview-and-confirm feedback form, while making patch parsing and everyday review interactions more resilient.",
+    "tagline": "Preview images, review enterprise code, share feedback",
+    "links": [
+      { "label": "Files and patches", "href": "/docs/workflows/files-and-patches/" },
+      { "label": "Layout and display", "href": "/docs/configure/layout-and-display/" },
+      { "label": "CLI reference", "href": "/docs/reference/cli/" },
+      { "label": "Send feedback", "href": "/docs/help/feedback/" },
+      { "label": "Extension API", "href": "/docs/extend/extension-api/" }
+    ]
+  },
   "0.24": {
     "summary": "Hunk 0.24 adds complete-file and directory browsing, a live workspace status view, npm-installed extensions, shell completions, and pane-aware automatic diff layout, while moving syntax highlighting off the review's main thread by default.",
     "tagline": "Browse files, navigate workspaces, extend from npm",

@@ -22,6 +22,12 @@ head:
 
 [RSS](https://hunk.dev/changelog/rss.xml) · [CHANGELOG.md](https://github.com/modem-dev/hunk/blob/main/CHANGELOG.md)
 
+## [Hunk 0.25](/changelog/0.25/)
+
+Unreleased · 1 release · 23 changes
+
+Hunk 0.25 adds inline before-and-after image previews, clearer active-pane focus, GitHub Enterprise Cloud reviews, and a preview-and-confirm feedback form, while making patch parsing and everyday review interactions more resilient.
+
 ## [Hunk 0.24](/changelog/0.24/)
 
 Latest · October 13, 2026 – October 24, 2026 · 4 releases · 123 changes

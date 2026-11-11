@@ -15,6 +15,7 @@ export const BUILT_IN_CLI_COMMAND_NAMES = new Set([
   "extension",
   "ext",
   "update",
+  "feedback",
   "completion",
   "daemon",
   "mcp",
