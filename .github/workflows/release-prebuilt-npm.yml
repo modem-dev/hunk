@@ -172,7 +172,9 @@ jobs:
       # fails the release instead of shipping a binary that cannot start.
       - name: Verify the x64 artifact starts without AVX2
         if: matrix.package_name == 'hunkdiff-linux-x64'
+        timeout-minutes: 10
         run: |
+          sudo bash .github/scripts/configure-ubuntu-apt-mirror.sh
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends qemu-user
           qemu-x86_64 -cpu Nehalem dist/hunk --version

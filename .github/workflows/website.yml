@@ -48,7 +48,10 @@ jobs:
         run: bun run website:links
 
       - name: Install Chromium
-        run: cd website && bunx playwright install --with-deps chromium
+        timeout-minutes: 10
+        run: |
+          sudo bash .github/scripts/configure-ubuntu-apt-mirror.sh
+          cd website && bunx playwright install --with-deps chromium
 
       - name: Run browser smoke tests
         run: bun run website:test:browser
