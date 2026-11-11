@@ -65,8 +65,24 @@ The deliberate 62-second suspended-session check remains intact: it verifies ela
 behavior, not readiness. Fixed mouse-event cadence and negative/stability checks remain
 where timing is part of the behavior under test. No platform or integration test is removed.
 
-Real CI before/after job timings and exact run ids are recorded in the pull request. Compare
-`completed_at - started_at` from `gh api repos/modem-dev/hunk/actions/runs/<id>/jobs`, including
-setup/cleanup, rather than timing only a local test command. Runner speed varies; report
-untouched Windows/Linux job durations alongside PTY and do not attribute their variance to
-these test changes.
+The first optimized CI run is
+[43054778196](https://github.com/modem-dev/hunk/actions/runs/43054778196), `1575d0c1`.
+The serial PTY job fell **7m23s → 6m11s** (443s → 371s, 16.3% observed). Both runs
+executed all **291 tests across 41 files: 287 pass, 4 identical environment skips, 1,214
+assertions**. CI's missing zsh/Neovim explain the difference from local counts.
+
+| Measured file    | Before |  After |
+| ---------------- | -----: | -----: |
+| Shell completion | 26.98s |  2.42s |
+| Notes            | 46.34s | 36.91s |
+
+About 34 seconds disappeared directly from the modified files; other file durations also
+varied, so do not promise the entire 72-second job reduction on every runner. Untouched
+Linux/Windows jobs took 3m31s / 5m27s before and 3m50s / 6m03s after. The overall PR workflow
+fell 7m52s → 6m29s in this sample. PTY and Windows are now close, but PTY remains the
+critical path. The PR records any subsequent confirmation runs.
+
+Compare `completed_at - started_at` from
+`gh api repos/modem-dev/hunk/actions/runs/<id>/jobs`, including setup/cleanup, rather than
+timing only a local test command. Report untouched job durations alongside PTY and do not
+attribute their variance to these test changes.
