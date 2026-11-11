@@ -825,7 +825,11 @@ describe("PTY notes", () => {
         "这个包主要是为了在普通的chatmodel外面包一层,把工具调用的编号统一转换后再返回给调用方使用";
       await session.type(body);
 
-      const draft = await session.waitForText(/这个包主要是为了/, { timeout: 5_000 });
+      // Typing and composer reflow can paint in separate frames; observe both wrapped ends.
+      const draft = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes(body.slice(0, 10)) && text.includes(body.slice(-6)),
+      );
       expect(draft).toContain(body.slice(0, 10));
       expect(draft).toContain(body.slice(-6));
 

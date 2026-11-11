@@ -29,6 +29,7 @@ describe("PTY feedback form", () => {
 
     try {
       await session.waitForText(/alpha\.ts/, { timeout: 15_000 });
+      await harness.ensureKeyboardIsLive(session);
 
       await harness.clickAndWaitForText(session, /Help/, /Send feedback…/, { timeout: 5_000 });
       const form = await harness.clickAndWaitForText(
