@@ -73,6 +73,7 @@ import { createReviewStore, type ReviewStore } from "../../core/review/store";
 import type { ReviewDocumentV1, ReviewNoteTargetV1, ReviewNoteV1 } from "../../core/review/types";
 import { STML_REFERENCE_WIDTH, validateStmlMarkup } from "../../core/stml/layout";
 import { noDiffFileMatchesMessage } from "../../session/agent/errors";
+import type { ReviewAgentRevealV1 } from "../../session/reviewSharedState";
 import type {
   AppliedCommentBatchResult,
   AppliedCommentResult,
@@ -103,6 +104,37 @@ import {
 
 const EMPTY_AGENT_LINE_HIGHLIGHTS: ReadonlyMap<string, readonly ValidatedLineHighlight[]> =
   new Map();
+
+/** The store fields the shared-state snapshot is projected from, compared by identity. */
+interface SharedStateBasis {
+  document: ReviewState["document"];
+  liveNotes: ReviewState["liveNotes"];
+  userNotes: ReviewState["userNotes"];
+  filter: string;
+  showAgentNotes: boolean;
+}
+
+/** Read the shared-state basis out of one store snapshot. */
+function sharedStateBasisOf(state: ReviewState): SharedStateBasis {
+  return {
+    document: state.document,
+    liveNotes: state.liveNotes,
+    userNotes: state.userNotes,
+    filter: state.filter,
+    showAgentNotes: state.showAgentNotes,
+  };
+}
+
+/** Whether two bases would project the same snapshot. */
+function sharedStateBasesEqual(left: SharedStateBasis, right: SharedStateBasis) {
+  return (
+    left.document === right.document &&
+    left.liveNotes === right.liveNotes &&
+    left.userNotes === right.userNotes &&
+    left.filter === right.filter &&
+    left.showAgentNotes === right.showAgentNotes
+  );
+}
 
 /**
  * What a `revealLine` call could actually reach.
@@ -216,6 +248,10 @@ export class ReviewSessionHost {
   // Monotonic suffixes that keep `user:*` note ids and draft ids unique within one millisecond.
   private userNoteSequence = 0;
   private draftNoteSequence = 0;
+  private agentReveal: ReviewAgentRevealV1 | null = null;
+  private sharedStateRevision = 0;
+  private sharedStateBasis: SharedStateBasis;
+  private readonly sharedStateListeners = new Set<() => void>();
   private annotationCache:
     | {
         files: DiffFile[];
@@ -236,6 +272,8 @@ export class ReviewSessionHost {
     // Read the global clock at call time so a replaced `Date.now` is honored.
     this.now = options.now ?? (() => Date.now());
     this.store = createReviewStore(this.document, { showAgentNotes: options.showAgentNotes });
+    this.sharedStateBasis = sharedStateBasisOf(this.store.getSnapshot());
+    this.store.subscribe(() => this.observeSharedState());
   }
 
   /** Read the current semantic review state. */
@@ -510,6 +548,7 @@ export class ReviewSessionHost {
         throw new Error("Resolved annotated hunk references an unknown file.");
       }
 
+      this.recordAgentReveal({ fileKey: moved.fileKey, hunkIndex: moved.hunkIndex });
       return {
         fileId: file.id,
         filePath: file.path,
@@ -519,6 +558,16 @@ export class ReviewSessionHost {
     }
 
     const target = resolveReviewNavigationTarget({ allFiles: this.files, input });
+    const targetFileKey = this.fileKeyFor(target.file.id);
+    if (targetFileKey) {
+      this.recordAgentReveal({
+        fileKey: targetFileKey,
+        hunkIndex: target.hunkIndex,
+        ...(input.hunkIndex === undefined && input.side && input.line !== undefined
+          ? { side: input.side, line: input.line }
+          : {}),
+      });
+    }
 
     // A line target lands the viewport on the exact line through the surface's reveal path,
     // degrading to the hunk when the stream renders no row for the line. `"none"` means the
@@ -551,6 +600,29 @@ export class ReviewSessionHost {
       filePath: target.file.path,
       hunkIndex: target.hunkIndex,
       selectedHunk: buildSelectedHunkSummary(target.file, target.hunkIndex),
+    };
+  }
+
+  /** What an agent last asked every surface to show, or nothing yet. */
+  getAgentReveal(): ReviewAgentRevealV1 | null {
+    return this.agentReveal;
+  }
+
+  /**
+   * A counter that advances exactly when the shared-state snapshot's content may differ.
+   *
+   * Notes, filter, note visibility, the document, agent marks, and the agent reveal move it;
+   * selection, reveal tokens for a person's own navigation, drafts, and gap expansion do not.
+   */
+  getSharedStateRevision(): number {
+    return this.sharedStateRevision;
+  }
+
+  /** Observe shared revision advances; read the revision through `getSharedStateRevision`. */
+  subscribeSharedState(listener: () => void): () => void {
+    this.sharedStateListeners.add(listener);
+    return () => {
+      this.sharedStateListeners.delete(listener);
     };
   }
 
@@ -618,6 +690,15 @@ export class ReviewSessionHost {
 
     let revealed: "line" | "hunk" | undefined;
     if (input.reveal ?? false) {
+      const markFileKey = this.fileKeyFor(file.id);
+      if (markFileKey) {
+        this.recordAgentReveal({
+          fileKey: markFileKey,
+          hunkIndex,
+          side: mark.side,
+          line: mark.line,
+        });
+      }
       const reached = renderer.revealLine?.(file.id, mark.side, mark.line) ?? "none";
       if (reached === "none") {
         this.selectHunk(file.id, hunkIndex);
@@ -690,6 +771,7 @@ export class ReviewSessionHost {
     });
 
     if (options.reveal ?? false) {
+      this.recordAgentReveal({ fileKey, hunkIndex: target.hunkIndex, noteId: commentId });
       this.selectHunk(file.id, target.hunkIndex);
     }
 
@@ -745,6 +827,11 @@ export class ReviewSessionHost {
 
     const first = prepared[0];
     if (options.revealMode === "first" && first) {
+      this.recordAgentReveal({
+        fileKey: first.fileKey,
+        hunkIndex: first.target.hunkIndex,
+        noteId: first.liveComment.id,
+      });
       this.selectHunk(first.file.id, first.target.hunkIndex);
     }
 
@@ -950,6 +1037,7 @@ export class ReviewSessionHost {
   getSessionSnapshotState(
     options: { noteMarkupWidth?: number; publicationGeneration?: string } = {},
   ): HunkSessionState {
+    const sharedStateRevision = this.sharedStateRevision;
     const state = this.store.getSnapshot();
     const selection = selectNormalizedSelection(state);
     const file = selection.fileKey ? this.fileIndex.fileByKey.get(selection.fileKey) : undefined;
@@ -968,6 +1056,7 @@ export class ReviewSessionHost {
       reviewNotes,
       publicationGeneration: options.publicationGeneration,
       stateRevision: state.stateRevision,
+      sharedStateRevision,
     });
   }
 
@@ -975,6 +1064,29 @@ export class ReviewSessionHost {
   private commitAgentLineHighlights(next: ReadonlyMap<string, readonly ValidatedLineHighlight[]>) {
     this.agentLineHighlights = next;
     for (const listener of Array.from(this.highlightListeners)) {
+      listener();
+    }
+    this.advanceSharedState();
+  }
+
+  /** Record what an agent just asked every surface to show, under a fresh token. */
+  private recordAgentReveal(target: Omit<ReviewAgentRevealV1, "token">) {
+    this.agentReveal = { token: this.agentReveal ? this.agentReveal.token + 1 : 1, ...target };
+    this.advanceSharedState();
+  }
+
+  /** Advance the shared revision when a store change touched what the snapshot carries. */
+  private observeSharedState() {
+    const basis = sharedStateBasisOf(this.store.getSnapshot());
+    if (sharedStateBasesEqual(basis, this.sharedStateBasis)) return;
+    this.sharedStateBasis = basis;
+    this.advanceSharedState();
+  }
+
+  /** Advance the shared revision and tell its subscribers. */
+  private advanceSharedState() {
+    this.sharedStateRevision += 1;
+    for (const listener of Array.from(this.sharedStateListeners)) {
       listener();
     }
   }

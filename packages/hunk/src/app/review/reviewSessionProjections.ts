@@ -327,6 +327,8 @@ export interface SessionSnapshotStateInput {
   /** The producer generation being served, when one is published. */
   publicationGeneration?: string;
   stateRevision: number;
+  /** The shared-state revision at this position, when the producer serves shared state. */
+  sharedStateRevision?: number;
 }
 
 /**
@@ -357,6 +359,9 @@ export function buildSessionSnapshotState(input: SessionSnapshotStateInput): Hun
             generation: input.publicationGeneration,
             stateRevision: input.stateRevision,
           },
+          ...(input.sharedStateRevision !== undefined
+            ? { reviewSharedStateRevision: input.sharedStateRevision }
+            : {}),
         }
       : {}),
   };

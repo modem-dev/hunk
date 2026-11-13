@@ -104,35 +104,50 @@ export function parseReviewEventFrameName(
 /**
  * Build the id one event is known by.
  *
- * An event is identified by what it is about — its type and the publication position it
- * describes — rather than by a counter, so two streams watching one session name the same
- * event the same way and a resuming client can tell whether it already has this one.
+ * An event is identified by what it is about — its type, the publication position it
+ * describes, and the shared-state revision at that position when there is one — rather than
+ * by a counter, so two streams watching one session name the same event the same way and a
+ * resuming client can tell whether it already has this one. The shared revision is part of
+ * the id because agent marks and the agent reveal move it without moving the position.
  */
-export function reviewEventId(type: ReviewEventTypeV1, address: ReviewPublicationAddress) {
-  return `revent:${type}:${address.generation}@${address.stateRevision}`;
+export function reviewEventId(
+  type: ReviewEventTypeV1,
+  address: ReviewPublicationAddress,
+  sharedStateRevision?: number,
+) {
+  const shared = sharedStateRevision === undefined ? "" : `~${sharedStateRevision}`;
+  return `revent:${type}:${address.generation}@${address.stateRevision}${shared}`;
 }
 
-/** Read one event id back into the type and position it names. */
+/** Read one event id back into the type, position, and shared revision it names. */
 export function parseReviewEventId(
   value: unknown,
-): { type: ReviewEventTypeV1; address: ReviewPublicationAddress } | undefined {
+):
+  | { type: ReviewEventTypeV1; address: ReviewPublicationAddress; sharedStateRevision?: number }
+  | undefined {
   if (typeof value !== "string" || value.length > MAX_REVIEW_EVENT_ID_BYTES) {
     return undefined;
   }
-  const match = /^revent:([a-z-]+):(.+)@(\d{1,15})$/.exec(value);
+  const match = /^revent:([a-z-]+):(.+)@(\d{1,15})(?:~(\d{1,15}))?$/.exec(value);
   if (!match) {
     return undefined;
   }
   const type = REVIEW_EVENT_TYPES.find((candidate) => candidate === match[1]);
   const stateRevision = Number(match[3]);
+  const sharedStateRevision = match[4] === undefined ? undefined : Number(match[4]);
   if (
     !type ||
     parseReviewGeneration(match[2]) === undefined ||
-    !Number.isSafeInteger(stateRevision)
+    !Number.isSafeInteger(stateRevision) ||
+    (sharedStateRevision !== undefined && !Number.isSafeInteger(sharedStateRevision))
   ) {
     return undefined;
   }
-  return { type, address: { generation: match[2]!, stateRevision } };
+  return {
+    type,
+    address: { generation: match[2]!, stateRevision },
+    ...(sharedStateRevision !== undefined ? { sharedStateRevision } : {}),
+  };
 }
 
 /** Whether one value could be an event id a client is echoing back at us. */
@@ -333,6 +348,8 @@ export function reviewEventChunkCount(contentSize: number) {
 export interface PlanReviewEventInput {
   type: ReviewEventTypeV1;
   address: ReviewPublicationAddress;
+  /** The shared-state revision at `address`, when the publication reports one. */
+  sharedStateRevision?: number;
   /** The event body itself, sent as-is when it fits one frame. */
   body: unknown;
   /** The same body serialized, which is what a chunked event actually carries. */
@@ -372,7 +389,7 @@ export function planReviewEventFrames(input: PlanReviewEventInput): ReviewEventS
     Math.min(input.chunkBytes ?? REVIEW_EVENT_CHUNK_BYTES, REVIEW_EVENT_CHUNK_BYTES),
     Math.ceil(contentSize / MAX_REVIEW_EVENT_CHUNKS),
   );
-  const eventId = reviewEventId(type, address);
+  const eventId = reviewEventId(type, address, input.sharedStateRevision);
 
   if (contentSize <= chunkBytes) {
     return [

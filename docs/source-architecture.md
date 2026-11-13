@@ -28,7 +28,7 @@ private.
 | Path                                | Ownership                                                                                                      |
 | ----------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | `packages/hunk/src/app/`            | CLI parsing, startup plans, executable composition, and shared session bootstrap                               |
-| `packages/hunk/src/app/review/`     | Live review ownership (`ReviewSessionHost`), publication, resource caching, and producer projection            |
+| `packages/hunk/src/app/review/`     | Live review ownership (`ReviewSessionHost`), publication, shared-state projection, and resource caching        |
 | `packages/hunk/src/app/session/`    | Mounted review runtime, registration, bridge, and reload authorization                                         |
 | `packages/hunk/src/core/`           | Product models, non-rendering runtime primitives, and policy without a narrower owner                          |
 | `packages/hunk/src/core/changeset/` | Changeset model and acquisition: loaders, per-file construction, sidecars, sources, and hunk formatting        |
@@ -125,7 +125,12 @@ user-extension registry authority and retirement. `ReviewReloadCoordinator`
 (`app/session/reloadCoordinator.ts`) owns review reload serialization, shutdown refusal, content
 loading, extension adoption, producer generation advance, and broker publication; `AppHost` drives
 it and keeps the React commit, post-layout event ordering, notices, and live view preferences.
-`core/watch/inputWatch.ts` arms watch mode for one input without React. History closes its provider
+`core/watch/inputWatch.ts` arms watch mode for one input without React. The browser-facing shared-state
+snapshot is declared in `session/reviewSharedState.ts` (browser-safe), projected from the host in
+`app/review/sharedState.ts`, materialized by the producer per shared revision, and read by the
+daemon through its verified resource loop for `GET /review-api/<session>/state`. Theme
+derivation lives in `core/theme/appTheme.ts` and keymap resolution in `core/run/keymap.ts`, with
+`ui/` re-exporting both, so a headless session resolves presentation defaults without OpenTUI. History closes its provider
 cursor before extension shutdown.
 
 `ReviewSessionHost` (`app/review/reviewSessionHost.ts`) owns one live review without React: the

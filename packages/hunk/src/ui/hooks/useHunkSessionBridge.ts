@@ -40,6 +40,7 @@ export function useHunkSessionBridge({
   reviewNoteSummaries,
   reviewProducer,
   reviewStateRevision,
+  reviewSharedStateRevision,
   selectedFile,
   selectedHunk,
   selectedHunkIndex,
@@ -70,6 +71,8 @@ export function useHunkSessionBridge({
   reviewProducer?: ReviewProducer;
   /** The review store's current revision, published so the daemon can order snapshots. */
   reviewStateRevision: number;
+  /** The review's shared-state revision, published so a browser refetches state only on change. */
+  reviewSharedStateRevision?: number;
   selectedFile: DiffFile | undefined;
   selectedHunk: DiffFile["metadata"]["hunks"][number] | undefined;
   selectedHunkIndex: number;
@@ -142,12 +145,14 @@ export function useHunkSessionBridge({
         reviewNotes: reviewNoteSummaries,
         publicationGeneration,
         stateRevision: reviewStateRevision,
+        sharedStateRevision: reviewSharedStateRevision,
       }),
     });
   }, [
     hostClient,
     publicationGeneration,
     reviewStateRevision,
+    reviewSharedStateRevision,
     liveCommentCount,
     liveCommentSummaries,
     noteMarkupWidth,

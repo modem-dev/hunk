@@ -49,6 +49,7 @@ const BROWSER_SAFE_SESSION_MODULES: readonly string[] = [
   join(SRC_ROOT, "session", "reviewHttpProtocol.ts"),
   join(SRC_ROOT, "session", "reviewEventProtocol.ts"),
   join(SRC_ROOT, "session", "reviewErrorCatalog.ts"),
+  join(SRC_ROOT, "session", "reviewSharedState.ts"),
 ];
 
 /** Return one repo-relative path with forward slashes for stable assertions on every platform. */

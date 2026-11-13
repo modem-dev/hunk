@@ -67,6 +67,15 @@ import {
   utf8ByteLength,
 } from "../core/review/validation";
 
+/**
+ * Version every review envelope and HTTP body carries.
+ *
+ * Still 1 with the shared-state additions (`reviewSharedState.ts`, the `state` route, the
+ * optional `sharedStateRevision` on publication bodies): no browser client has shipped against
+ * this surface, every envelope the server parses only gained optional members or new routes,
+ * and the daemon/window pair is held to one build by `HUNK_SESSION_DAEMON_VERSION`. Bump it
+ * when a shipped client could misread a body.
+ */
 export const HUNK_REVIEW_PROTOCOL_VERSION = 1 as const;
 
 /**
@@ -752,3 +761,16 @@ export function parseHunkReviewPublicationAddress(
   }
   return record as unknown as ReviewPublicationAddress;
 }
+
+/**
+ * The scalar validators this module's parsers use, shared with the other browser-safe review
+ * modules so they validate identifiers, indexes, lines, and optional-field shapes by one rule
+ * (`docs/browser-review-seam-audit.md`, D5).
+ */
+export {
+  isIdentifier as isHunkReviewIdentifier,
+  isIndex as isHunkReviewIndex,
+  isLineNumber as isHunkReviewLineNumber,
+  isSide as isHunkReviewSide,
+  keysWith as hunkReviewKeysWith,
+};
