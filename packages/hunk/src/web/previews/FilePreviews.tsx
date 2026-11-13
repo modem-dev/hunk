@@ -83,6 +83,8 @@ export function FilePreviewBody({
   if (emptyReason === "binary" && file.flags.binary && isPreviewImagePath(file.path)) {
     return <ImagePreview path={file.path} fileKey={fileKey} fallback={children} />;
   }
-  if (markdown.rendered) return <MarkdownPreview fileKey={fileKey} side={markdown.side} />;
+  if (markdown.rendered) {
+    return <MarkdownPreview fileKey={fileKey} side={markdown.side} fallback={children} />;
+  }
   return <>{children}</>;
 }
