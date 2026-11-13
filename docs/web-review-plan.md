@@ -98,8 +98,9 @@ applies selection and navigation intents to its own local state and forwards sha
 
 ## Milestones
 
-Each milestone is a stack of small PRs. M1–M3 change no user-reachable behavior and ship empty
-changesets. M5 carries the `minor` changeset that announces the feature.
+Each milestone is a stack of small PRs. M1–M4 change no user-reachable behavior and ship empty
+changesets: the `--web` flag and the other entry points land hidden from help, completions, and
+generated docs. M5 un-hides them and carries the `minor` changeset that announces the feature.
 
 ### M0 — Plan of record (done)
 
@@ -181,9 +182,10 @@ state route, the refresh action, and the byte resources as one PR each.
   origins), `no-store` on the document, and immutable caching on hashed assets. The page
   request carries no secret; the client reads the capability from `location.hash`.
 - **CLI.** `--web` on every review command runs headless and implies `--watch`; a new
-  `--no-watch` flag opts out. `--no-open` prints the URL without launching a browser. `hunk session open [selector]` opens a browser on a running session,
-  and the terminal UI gains a host-only "Open in browser" command. The opener preserves URL
-  fragments on macOS, Linux, and Windows.
+  `--no-watch` flag opts out. `--no-open` prints the URL without launching a browser.
+  `hunk session open [selector]` opens a browser on a running session, and the terminal UI gains
+  a host-only "Open in browser" command. The opener preserves URL fragments on macOS, Linux,
+  and Windows. All of these stay hidden until M5.
 
 Gate: CLI contract tests in `test/cli/`; offline-asset check; a served-page test asserting
 headers and that the document contains no capability.

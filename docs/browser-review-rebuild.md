@@ -117,9 +117,9 @@ changes one thing outright: the client must run with no terminal UI, so a headle
 
 Audit findings it repays, and the milestone that now repays each:
 
-- A11 (STML parser relocation), C3 (epoch queue), C5 (reconnect scheduler), E1 (shared stat
-  formatter), the browser sites of A/B/C/D findings, and the keymap half of F's browser
-  bindings: M4.
+- A9 (the STML parser's remaining relocation), A11 (`.mts`/`.cts` language registration in the
+  browser), C3 (epoch queue), C5 (reconnect scheduler), E1 (shared stat formatter), the browser
+  sites of A/B/C/D findings, and the keymap half of F's browser bindings: M4.
 - E2 (theme): defaults ship in M2, the client consumes them in M4.
 - G1 (view-option policy) and G2 (selection and authorship policy): M2.
 - The D1 composer site, G3 (address grammar), G4 (browser error catalog), and the palette half
