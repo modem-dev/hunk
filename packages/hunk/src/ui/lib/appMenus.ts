@@ -148,6 +148,7 @@ export function buildAppMenus({
       { commandId: "hunk.app.toggleFocusArea", label: "Toggle files/filter focus" },
       { commandId: "hunk.review.focusFilter", label: "Focus filter" },
       { commandId: "hunk.review.editSelectedFile", label: "Open file in editor" },
+      { commandId: "hunk.review.copySelectedHunk", label: "Copy selected hunk" },
       { commandId: "hunk.app.refresh", label: "Reload" },
       SEPARATOR,
       { commandId: "hunk.app.quit" },
