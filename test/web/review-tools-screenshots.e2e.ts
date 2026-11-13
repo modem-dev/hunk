@@ -62,6 +62,31 @@ test("captures the overview tab", async ({ page }) => {
     "Consider a shared formatter.",
   ]);
 
+  const reply = await review.hunk([
+    "session",
+    "comment",
+    "add",
+    review.sessionId,
+    "--file",
+    "src/gen/module-12.ts",
+    "--new-line",
+    "1",
+    "--summary",
+    "This module's rename should land with its callers.",
+    "--json",
+  ]);
+  const replyTo = (JSON.parse(reply) as { result: { commentId: string } }).result.commentId;
+  await review.hunk([
+    "session",
+    "comment",
+    "add",
+    review.sessionId,
+    "--reply-to",
+    replyTo,
+    "--summary",
+    "Agreed; doing that in the follow-up.",
+  ]);
+
   await openRich(page, "github-dark-default");
   await page.locator(".overview-disclosure[aria-expanded]").first().click();
   await capture(page, "overview-dark-1440");
@@ -71,6 +96,15 @@ test("captures the overview tab", async ({ page }) => {
   await chooseTestTheme(page, "github-light-default");
   await page.locator(".side-panel-body").evaluate((element) => (element.scrollTop = 0));
   await capture(page, "overview-light-1440");
+
+  await page.getByTestId("side-panel-tab-notes").click();
+  await page.getByRole("button", { name: "▸ 1 reply" }).click();
+  await page.getByTestId("notes-row").filter({ hasText: "rename should land" }).click();
+  await capture(page, "notes-light-1440");
+  await chooseTestTheme(page, "github-dark-default");
+  await capture(page, "notes-dark-1440");
+  await page.getByTestId("side-panel-tab-overview").click();
+  await chooseTestTheme(page, "github-light-default");
 
   await page.setViewportSize({ width: 1100, height: 800 });
   if ((await page.getByTestId("side-panel").count()) === 0) {
