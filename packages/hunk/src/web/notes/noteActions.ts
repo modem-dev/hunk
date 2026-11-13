@@ -73,6 +73,13 @@ export async function saveNoteComposer(
   fileContentIdentity: (fileKey: string) => string | undefined,
 ): Promise<ReviewActionOutcome | undefined> {
   if (composer.status === "sending" || composer.status === "changed") return undefined;
+  // Every send checks the file, a manual re-send after a refusal included: the composer may
+  // have been sending when the reload landed, which content reconciliation skips.
+  const identity = fileContentIdentity(composer.fileKey);
+  if (identity !== undefined && identity !== composer.contentIdentity) {
+    composers.update(composer.key, { status: "changed", error: undefined });
+    return undefined;
+  }
   const issue = noteBodyIssue(composer);
   if (issue) {
     composers.update(composer.key, { status: "failed", error: reviewErrorMessage(issue) });
