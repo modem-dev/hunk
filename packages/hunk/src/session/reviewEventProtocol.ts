@@ -34,7 +34,12 @@ import {
   type ReviewPublicationAddress,
 } from "../core/review/generationOrder";
 import { ReviewChunkAssembler, type ReviewAssemblyResult } from "../core/review/resourceAssembly";
-import { hasExactKeys, isReviewSha256Digest, type ReviewDigestFn } from "../core/review/validation";
+import {
+  hasExactKeys,
+  isReviewSha256Digest,
+  type ReviewAsyncDigestFn,
+  type ReviewDigestFn,
+} from "../core/review/validation";
 import { MAX_HUNK_REVIEW_ENVELOPE_BYTES, MAX_HUNK_REVIEW_IDENTIFIER_BYTES } from "./reviewProtocol";
 
 /**
@@ -459,8 +464,11 @@ export function planReviewEventFrames(input: PlanReviewEventInput): ReviewEventS
 
 export interface ReviewEventAssemblerOptions {
   begin: ReviewEventBeginV1;
-  /** Platform hashing, injected exactly as the resource assembler takes it. */
-  digest: ReviewDigestFn;
+  /**
+   * Platform hashing, injected exactly as the resource assembler takes it; omitted by a
+   * reader that verifies through `finishAsync`.
+   */
+  digest?: ReviewDigestFn;
 }
 
 /**
@@ -519,6 +527,16 @@ export class ReviewEventAssembler {
 
   /** Verify the assembled payload against the event's declared end. */
   finish(end: ReviewEventEndV1): ReviewAssemblyResult {
+    return this.endMismatch(end) ?? this.assembler.finish();
+  }
+
+  /** `finish`, hashing with an asynchronous platform digest such as Web Crypto's. */
+  async finishAsync(end: ReviewEventEndV1, digest: ReviewAsyncDigestFn) {
+    return this.endMismatch(end) ?? this.assembler.finishAsync(digest);
+  }
+
+  /** The refusal for an end frame that disagrees with its begin frame or the chunk count. */
+  private endMismatch(end: ReviewEventEndV1): ReviewAssemblyResult | undefined {
     if (
       end.eventId !== this.begin.eventId ||
       end.contentSize !== this.begin.contentSize ||
@@ -532,6 +550,6 @@ export class ReviewEventAssembler {
         message: `Review event ${this.begin.eventId} ended with a declaration it did not begin with.`,
       };
     }
-    return this.assembler.finish();
+    return undefined;
   }
 }

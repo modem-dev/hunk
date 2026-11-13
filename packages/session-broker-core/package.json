@@ -13,6 +13,10 @@
     ".": {
       "types": "./src/index.ts",
       "import": "./src/index.ts"
+    },
+    "./lifecycle": {
+      "types": "./src/lifecycle.ts",
+      "import": "./src/lifecycle.ts"
     }
   },
   "engines": {

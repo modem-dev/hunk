@@ -7,6 +7,8 @@ import {
   resolveSessionBrokerLimits,
   utf8ByteLength,
   type BudgetReservation,
+  createReconnectScheduler,
+  type ReconnectScheduler,
   type SessionBrokerLimitOptions,
   type SessionBrokerLimits,
   type SessionClientMessage,
@@ -59,11 +61,6 @@ interface ConnectionGeneration<Socket> {
   readonly socket: Socket;
   status: "connecting" | "active" | "closing" | "close-failed" | "closed";
   authenticated: boolean;
-}
-
-interface ScheduledReconnect<Socket> {
-  readonly generation: ConnectionGeneration<Socket>;
-  readonly dispose: () => void;
 }
 
 interface PendingSessionReplacement<Info, State> {
@@ -163,7 +160,8 @@ export class SessionBrokerConnection<
   private readonly queuedCommandCountBudget: ResourceBudget;
   private readonly queuedCommandByteBudget: ResourceBudget;
   private draining = false;
-  private reconnectTimer: ScheduledReconnect<Socket> | null = null;
+  /** One reconnect timer at a time, keyed by the generation whose loss it answers. */
+  private readonly reconnects: ReconnectScheduler<ConnectionGeneration<Socket>>;
   private heartbeatTimer: (() => void) | null = null;
   private stopped = false;
   private lifecycleDefectReported = false;
@@ -190,6 +188,11 @@ export class SessionBrokerConnection<
     >,
   ) {
     this.lifecycleClock = options.lifecycleClock ?? createNativeSessionBrokerLifecycleClock();
+    // A fixed delay: the daemon is local, so backing off would only delay recovery.
+    this.reconnects = createReconnectScheduler({
+      backoff: { initialDelayMs: options.reconnectDelayMs ?? DEFAULT_RECONNECT_DELAY_MS },
+      clock: this.lifecycleClock,
+    });
     this.limits = resolveSessionBrokerLimits({
       ...(options.limits ? { limits: options.limits } : {}),
       ...(options.unsafeLimits ? { unsafeLimits: options.unsafeLimits } : {}),
@@ -609,24 +612,18 @@ export class SessionBrokerConnection<
     delayMs = this.options.reconnectDelayMs ?? DEFAULT_RECONNECT_DELAY_MS,
   ) {
     if (!this.isGenerationCurrent(generation.token)) return;
-    if (this.reconnectTimer?.generation === generation) return;
-    this.clearReconnectTimer();
-
-    let scheduled!: ScheduledReconnect<Socket>;
-    const dispose = this.lifecycleClock.schedule(() => {
-      if (this.reconnectTimer !== scheduled) return;
-      this.reconnectTimer = null;
-      if (!this.isGenerationCurrent(generation.token)) return;
-      this.observeLifecycleWork(this.prepareAndReconnect(generation));
-    }, delayMs);
-    scheduled = { generation, dispose };
-    this.reconnectTimer = scheduled;
+    this.reconnects.schedule(
+      () => {
+        if (!this.isGenerationCurrent(generation.token)) return;
+        this.observeLifecycleWork(this.prepareAndReconnect(generation));
+      },
+      { key: generation, delayMs },
+    );
   }
 
   /** Dispose only the reconnect timer that currently owns scheduling authority. */
   private clearReconnectTimer() {
-    this.reconnectTimer?.dispose();
-    this.reconnectTimer = null;
+    this.reconnects.cancel();
   }
 
   /** Run app discovery once per retry while retaining this connection's aggregate budgets. */
@@ -710,10 +707,8 @@ export class SessionBrokerConnection<
     this.lifecycleDefectReported = true;
     this.stopped = true;
 
-    const reconnectTimer = this.reconnectTimer;
-    this.reconnectTimer = null;
     try {
-      reconnectTimer?.dispose();
+      this.reconnects.cancel();
     } catch {
       // Defect cleanup is terminal and best effort; observer failures cannot recurse.
     }

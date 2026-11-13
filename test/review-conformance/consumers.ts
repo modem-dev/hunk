@@ -7,6 +7,8 @@
  * own has joined (`docs/browser-review-rebuild.md` § "Per-phase seam verification").
  */
 import { brokerMirrorOrderingConsumer } from "./consumers/brokerMirror";
+import { browserEventReaderConsumer } from "./consumers/browserEventReader";
+import { browserMirrorOrderingConsumer } from "./consumers/browserMirror";
 import { browserReviewSurfaceEventConsumer } from "./consumers/browserReviewSurface";
 import { reviewEventProtocolConsumer } from "./consumers/reviewEventProtocol";
 import { coreModelConsumer } from "./consumers/coreModel";
@@ -72,6 +74,7 @@ export const REVIEW_NAVIGATION_CONSUMERS: readonly ReviewNavigationConsumer[] = 
 export const REVIEW_ORDERING_CONSUMERS: readonly ReviewOrderingConsumer[] = [
   coreOrderingConsumer,
   brokerMirrorOrderingConsumer,
+  browserMirrorOrderingConsumer,
 ];
 
 /**
@@ -93,6 +96,7 @@ export const REVIEW_WIRE_CONSUMERS: readonly ReviewWireConsumer[] = [reviewWireC
 export const REVIEW_EVENT_CONSUMERS: readonly ReviewEventConsumer[] = [
   reviewEventProtocolConsumer,
   browserReviewSurfaceEventConsumer,
+  browserEventReaderConsumer,
 ];
 
 /**
