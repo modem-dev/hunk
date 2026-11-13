@@ -257,7 +257,8 @@ module.exports = {
   options: {
     doNotFollow: { path: "node_modules" },
     // Production graph only: tests are colocated and free to reach across boundaries.
-    exclude: { path: ["\\.test\\.(ts|tsx)$", "(^|/)node_modules/"] },
+    // Generated build output (dist/) is not source, whichever build left it behind.
+    exclude: { path: ["\\.test\\.(ts|tsx)$", "(^|/)node_modules/", "^packages/[^/]+/dist/"] },
     tsConfig: { fileName: "tsconfig.json" },
     tsPreCompilationDeps: true,
     enhancedResolveOptions: {
