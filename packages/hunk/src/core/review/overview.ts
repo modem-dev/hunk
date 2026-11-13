@@ -131,6 +131,23 @@ export interface ReviewOverviewInput {
   largestFileLimit?: number;
 }
 
+/**
+ * Count the files carrying a viewed mark, for "N of M viewed".
+ *
+ * The marks are the shared state's, already matched to each file's current content, so a
+ * mark's presence is the whole test; every surface that shows progress counts through this.
+ */
+export function countReviewViewedFiles(
+  files: readonly { key: string }[],
+  viewedFiles: Readonly<Record<string, unknown>>,
+) {
+  let count = 0;
+  for (const file of files) {
+    if (Object.hasOwn(viewedFiles, file.key)) count += 1;
+  }
+  return count;
+}
+
 /** Classify one note's origin for counting: the reviewer's own notes, or an agent's. */
 export function reviewOverviewNoteOrigin(source: string): ReviewOverviewNoteOrigin {
   return source === "user" ? "reviewer" : "agent";
@@ -295,7 +312,7 @@ export function selectReviewOverview(input: ReviewOverviewInput): ReviewOverview
   }
 
   const viewedCount = input.viewedFiles
-    ? input.files.filter((file) => Object.hasOwn(input.viewedFiles!, file.key)).length
+    ? countReviewViewedFiles(input.files, input.viewedFiles)
     : 0;
 
   return {

@@ -102,6 +102,24 @@ describe("ClientReviewStore", () => {
     expect(served.requests.length).toBe(before);
   });
 
+  test("walks file navigation past the files this page hides", async () => {
+    const { review } = await loadTestStore([
+      createTestGapFile("alpha"),
+      createTestGapFile("beta"),
+      createTestGapFile("gamma"),
+    ]);
+    const [alpha, beta, gamma] = review.store.getSnapshot().document.files;
+
+    review.setHiddenFiles(new Set([beta!.key]));
+    review.apply({ type: "selection/move", scope: "file", delta: 1 });
+    expect(review.store.getSnapshot().selection.fileKey).toBe(gamma!.key);
+
+    review.setHiddenFiles(new Set());
+    review.apply({ type: "selection/move", scope: "file", delta: -1 });
+    expect(review.store.getSnapshot().selection.fileKey).toBe(beta!.key);
+    expect(alpha).toBeDefined();
+  });
+
   test("refuses shared intents, which this page does not author yet", async () => {
     const { review } = await loadTestStore();
 

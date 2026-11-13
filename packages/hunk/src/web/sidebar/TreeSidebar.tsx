@@ -100,6 +100,7 @@ export default function TreeSidebar({
   noteCounts,
   selectedKey,
   onSelectFile,
+  viewedStatuses,
 }: Omit<FileSidebarProps, "mode">) {
   const paths = useMemo(() => treePathsOf(entries), [entries]);
   const byPath = useMemo(
@@ -108,8 +109,8 @@ export default function TreeSidebar({
   );
   const order = useMemo(() => reviewOrderIndex(paths), [paths]);
   const following = useRef(false);
-  const latest = useRef({ byPath, noteCounts, onSelectFile, order, selectedKey });
-  latest.current = { byPath, noteCounts, onSelectFile, order, selectedKey };
+  const latest = useRef({ byPath, noteCounts, onSelectFile, order, selectedKey, viewedStatuses });
+  latest.current = { byPath, noteCounts, onSelectFile, order, selectedKey, viewedStatuses };
   const reviewOrderOf = (path: string) =>
     latest.current.order.get(path.replace(/\/+$/u, "")) ?? Number.MAX_SAFE_INTEGER;
 
@@ -137,16 +138,24 @@ export default function TreeSidebar({
     renderRowDecoration: ({ row }) => {
       const entry = row.kind === "file" ? latest.current.byPath.get(row.path) : undefined;
       if (!entry) return null;
-      const badges = reviewSidebarBadges(
+      const badges: { text: string; color: string }[] = reviewSidebarBadges(
         sidebarEntry(entry, 0, latest.current.noteCounts.get(entry.key) ?? 0),
-      );
+      ).map((badge) => ({ text: badge.text, color: BADGE_COLOR[badge.kind] }));
+      const viewed = latest.current.viewedStatuses?.get(entry.key);
+      if (viewed === "viewed") badges.push({ text: "✓", color: "var(--hunk-muted)" });
+      if (viewed === "changed") badges.push({ text: "Δ", color: "var(--hunk-accent)" });
       if (badges.length === 0) return null;
       return {
         text: badges.map((badge) => badge.text).join(" "),
+        ...(viewed === "viewed"
+          ? { title: "Viewed" }
+          : viewed === "changed"
+            ? { title: "Changed since viewed" }
+            : {}),
         // The separator rides on each later badge; a part of only whitespace is dropped.
         parts: badges.map((badge, index) => ({
           text: index > 0 ? `\u00a0${badge.text}` : badge.text,
-          color: BADGE_COLOR[badge.kind],
+          color: badge.color,
         })),
       };
     },
@@ -185,7 +194,7 @@ export default function TreeSidebar({
           }))
         : [],
     );
-  }, [model, noteCounts]);
+  }, [model, noteCounts, viewedStatuses]);
 
   // Follow the store's selection, whoever made it.
   const selectedIndex = entries.findIndex((entry) => entry.key === selectedKey);
