@@ -10,6 +10,7 @@
  * Windows launch plan is unit-tested in `packages/hunk/src/core/process/openUrl.test.ts`.
  */
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
+import type { Subprocess } from "bun";
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -28,9 +29,25 @@ const { path: testRuntimeDir, cleanup: cleanupTestRuntimeDir } =
   createTestRuntimeDir("hunk-web-entry-runtime-");
 const tempDirs: string[] = [];
 const ports: number[] = [];
+// Every web review a test starts, so a failed or timed-out test cannot leak a session.
+const webReviews = new Set<Subprocess>();
+
+/** SIGKILL every web review a test started that is still running, and wait for each. */
+async function killTestWebReviews() {
+  const running = [...webReviews];
+  webReviews.clear();
+  await Promise.all(
+    running.map(async (proc) => {
+      if (proc.exitCode === null && proc.signalCode === null) proc.kill("SIGKILL");
+      await proc.exited.catch(() => undefined);
+    }),
+  );
+}
 
 afterAll(cleanupTestConfigHomes);
 afterAll(async () => {
+  // Sessions first, so none relaunches a daemon stopped below; `afterEach` normally already did.
+  await killTestWebReviews();
   // Stop every daemon these runs auto-started, found through this suite's launch metadata.
   for (const port of ports) {
     try {
@@ -44,8 +61,12 @@ afterAll(async () => {
   }
   await cleanupTestRuntimeDir();
 });
-afterEach(() => {
-  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+afterEach(async () => {
+  try {
+    await killTestWebReviews();
+  } finally {
+    for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 /** Environment for one spawned Hunk run, isolated from the developer's config and daemon. */
@@ -151,6 +172,7 @@ async function startWebReview(dir: string, port: number, args: string[], extraEn
     stderr: "pipe",
     env: testEnv(port, extraEnv),
   });
+  webReviews.add(proc);
   const output = { stdout: "", stderr: "" };
   for (const stream of ["stdout", "stderr"] as const) {
     void (async () => {
@@ -174,7 +196,7 @@ async function startWebReview(dir: string, port: number, args: string[], extraEn
 async function readTestGeneration(url: string, sessionId: string) {
   const parsed = new URL(url);
   const capability = parseReviewCapabilityFragment(parsed.hash)!;
-  // The URL is printed before the daemon it names may be listening; not yet serving reads as null.
+  // A daemon that has not yet published this review's state reads as null.
   const response = await fetch(
     `${parsed.origin}/review-api/${encodeURIComponent(sessionId)}/publication`,
     { headers: { [HUNK_REVIEW_CAPABILITY_HEADER]: capability } },
