@@ -163,7 +163,8 @@ function listedAssets(directory: string): string[] {
  * daemon serving the previous build never sees a half-written one and two concurrent builds
  * (parallel test daemons in a source checkout) cannot interleave their files.
  *
- * The replaced build's hashed assets stay beside the new one until the next build, so a page
+ * The replaced build's hashed assets stay beside the new one until the next build, recorded
+ * in the new manifest's `retained` list (the server serves only recorded names), so a page
  * loaded before a source-checkout rebuild still finds its lazy chunks and stylesheets. Only
  * that one generation is kept, so the directory does not grow; packaged installs never
  * rebuild in place.
@@ -183,17 +184,24 @@ export function installBuild(staging: string, outdir: string) {
     rmSync(staging, { recursive: true, force: true });
   }
 
+  const manifestPath = path.join(outdir, REVIEW_PAGE_MANIFEST_NAME);
+  const manifest = parseReviewPageAssetManifest(JSON.parse(readFileSync(manifestPath, "utf8")));
+  const own = new Set(manifest?.assets ?? []);
+  const retained: string[] = [];
   for (const name of listedAssets(retired)) {
-    const kept = path.join(outdir, name);
-    if (!existsSync(kept)) {
-      try {
-        renameSync(path.join(retired, name), kept);
-      } catch {
-        // An asset that cannot be kept costs only a page already open its lazy chunks.
-      }
+    if (own.has(name)) continue;
+    try {
+      renameSync(path.join(retired, name), path.join(outdir, name));
+      retained.push(name);
+    } catch {
+      // An asset that cannot be kept costs only a page already open its lazy chunks.
     }
   }
   rmSync(retired, { recursive: true, force: true });
+  // The server serves only names a manifest records, so the kept ones are recorded too.
+  if (manifest) {
+    writeFileSync(manifestPath, `${JSON.stringify({ ...manifest, retained })}\n`);
+  }
 }
 
 export interface BuildWebAssetsOptions {
