@@ -228,13 +228,15 @@ adaptation there supports the public OpenTUI and extension current-line surfaces
 runs extension code, so highlights are interactive-only.
 
 Agent attention marks (`hunk session highlight add` / `clear`) join this same
-pipeline rather than growing a second one: `useTerminalReview.ts` validates
-each daemon-pushed mark with the same `validate.ts` contract and caps, holds
-them per file, and `packages/hunk/src/ui/highlights/merge.ts` appends them after extension
+pipeline rather than growing a second one: `ReviewSessionHost`
+(`packages/hunk/src/app/review/reviewSessionHost.ts`) validates each daemon-pushed mark with the
+same `packages/hunk/src/core/highlights/validate.ts` contract and caps and holds them per file,
+`useTerminalReview.ts` subscribes to them, and `packages/hunk/src/ui/highlights/merge.ts` appends
+them after extension
 marks in the one map `DiffPane` paints from — so agent marks share paint,
 contrast, and geometry guarantees, and win where ranges overlap. Unlike
 extension marks, nothing re-derives agent marks after a reload, so
-`packages/hunk/src/ui/highlights/reconcile.ts` carries them across a document replacement only
+`packages/hunk/src/core/highlights/reconcile.ts` carries them across a document replacement only
 for files whose `contentIdentity` is unchanged — those still show the same
 characters — and drops the rest. Line-target `session navigate` reuses the same
 `revealLine` landing policy `ctx.navigation.revealLine` gets.
