@@ -569,6 +569,56 @@ describe.skipIf(process.platform === "win32")("headless review session", () => {
     }
   }, 120_000);
 
+  // A URL is only worth printing once a daemon will serve it. Another program on the daemon
+  // port means none ever will: the command says so and exits instead of serving nothing.
+  test("exits with an error and prints no URL when another program holds the daemon port", async () => {
+    const dir = createTestFixture();
+    const port = await reserveLoopbackPort();
+    const squatter = createServer((_request, response) => {
+      response.writeHead(404, { "content-type": "text/plain" });
+      response.end("not hunk");
+    });
+    await new Promise<void>((resolve, reject) => {
+      squatter.once("error", reject);
+      squatter.listen(port, "127.0.0.1", () => resolve());
+    });
+
+    try {
+      const startedAt = Date.now();
+      const proc = Bun.spawn(
+        [
+          "bun",
+          "run",
+          sourceEntrypoint,
+          "diff",
+          "--web",
+          "--no-open",
+          "--no-watch",
+          "--experimental",
+        ],
+        { cwd: dir, stdin: "ignore", stdout: "pipe", stderr: "pipe", env: testEnv(port) },
+      );
+      sessions.add(proc);
+      const [exitCode, stdout, stderr] = await Promise.all([
+        proc.exited,
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+      ]);
+
+      expect(exitCode).not.toBe(0);
+      expect(stdout).toBe("");
+      expect(stderr).toContain(
+        `hunk: could not serve this review through the session daemon on 127.0.0.1:${port}.`,
+      );
+      expect(stderr).toContain("is already in use by another process");
+      expect(stderr).toContain("HUNK_MCP_PORT");
+      // The registration bound is 6 s; leave room for Bun startup on a loaded machine.
+      expect(Date.now() - startedAt).toBeLessThan(20_000);
+    } finally {
+      await new Promise<void>((resolve) => squatter.close(() => resolve()));
+    }
+  }, 60_000);
+
   // Once its daemon died, a session had nothing referenced left in Bun's event loop and polled it
   // with a zero timeout: sessions leaked by this suite ran at 100% CPU for hours. Linux-only: CPU
   // time is read from procfs, in the 100 Hz clock ticks Linux reports.

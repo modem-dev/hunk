@@ -9,7 +9,9 @@
  * agent's `hunk session reload` and `--watch` changes — go through `ReviewReloadCoordinator`.
  *
  * Entry point: `hunk <review command> --web` implies `--watch` (startup applies it unless
- * `--no-watch`), prints exactly the URL line on stdout, then opens that URL in the default browser
+ * `--no-watch`). It waits, bounded, until a daemon accepts the session; when none will (another
+ * program holds the port, the daemon cannot start, or it is a different Hunk build) it exits with a
+ * user error and prints no URL. Otherwise it prints exactly the URL line on stdout, then opens that URL in the default browser
  * unless `--no-open`. A launch failure is one stderr line without the URL, and the review keeps
  * serving. When stderr is a terminal, one hint line says what is running and how to stop it.
  * `hunk session open` reaches the same opener through the bridge (`./openReview.ts`).
@@ -32,7 +34,12 @@ import { startInputWatch, type WatchedInputRuntime } from "../../core/watch/inpu
 import { createExtensionSession, type ExtensionSession } from "../../extensions/session";
 import type { ExtensionLoadResult } from "../../extensions/types";
 import { sanitizeTerminalLine } from "../../lib/terminalText";
-import { resolveSessionBrokerConfig } from "../../session/broker/brokerConfig";
+import { HunkUserError } from "../../core/run/errors";
+import { DAEMON_STARTUP_TIMEOUT_MS } from "../../session/broker/brokerClient";
+import {
+  resolveSessionBrokerConfig,
+  type ResolvedSessionBrokerConfig,
+} from "../../session/broker/brokerConfig";
 import { reviewProcessUrl } from "../review/capability";
 import { ReviewSessionHost } from "../review/reviewSessionHost";
 import { buildReviewPresentationDefaults, buildReviewSharedState } from "../review/sharedState";
@@ -68,6 +75,55 @@ const KEEP_ALIVE_INTERVAL_MS = 60 * 60 * 1000;
 function holdProcessOpen() {
   const handle = setInterval(() => {}, KEEP_ALIVE_INTERVAL_MS);
   return () => clearInterval(handle);
+}
+
+/**
+ * How long a headless review waits for a daemon to accept it before giving up: one daemon startup
+ * attempt, as a terminal session's auto-start allows, plus the same again for the signed hello.
+ */
+export const HEADLESS_REGISTRATION_TIMEOUT_MS = 2 * DAEMON_STARTUP_TIMEOUT_MS;
+
+/**
+ * Wait until a daemon accepts this session, or fail with a user error naming the daemon port.
+ *
+ * The broker client reports the first reason registration cannot happen — the port belongs to
+ * another process, the daemon did not start, or it is a different Hunk build — and this bound
+ * covers a daemon that never answers. The timer is referenced, so the wait blocks the event loop
+ * rather than polling it.
+ */
+async function waitForDaemonRegistration(
+  hostClient: Pick<ReviewSessionRuntime["hostClient"], "waitForFirstRegistration">,
+  config: Pick<ResolvedSessionBrokerConfig, "host" | "port">,
+  timeoutMs: number,
+) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(
+      () =>
+        reject(
+          new Error(`No session daemon accepted it within ${Math.ceil(timeoutMs / 1000)} seconds.`),
+        ),
+      timeoutMs,
+    );
+  });
+  try {
+    await Promise.race([hostClient.waitForFirstRegistration(), timedOut]);
+  } catch (error) {
+    // The broker client's startup timeout promises a background retry; this command exits.
+    const reason = (error instanceof Error ? error.message : String(error)).replace(
+      / The app will retry in the background\.$/,
+      "",
+    );
+    // Build-skew and port-conflict reasons carry their own remedy; the others get the port one.
+    const remedy = /HUNK_MCP_PORT|hunk daemon|relaunch|smaller review/.test(reason)
+      ? ""
+      : " Stop whatever else holds that port, or set HUNK_MCP_PORT to a different loopback port.";
+    throw new HunkUserError(
+      `could not serve this review through the session daemon on ${config.host}:${config.port}. ${sanitizeTerminalLine(reason)}${remedy}`,
+    );
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Call `onClosed` once stdout or stderr reports that its reader is gone. */
@@ -114,6 +170,8 @@ export interface HeadlessReviewDeps {
    * Tests drive it directly.
    */
   watchOutputClosed?: (onClosed: () => void) => () => void;
+  /** Bound on waiting for a daemon to accept the session; tests shorten it. */
+  registrationTimeoutMs?: number;
 }
 
 /** The live pieces of one running headless review, exposed for tests. */
@@ -316,11 +374,27 @@ export async function runHeadlessReview(
       reviewProducer: producer,
     }),
   );
+  // The URL is only printed once a daemon has accepted the session and will serve its page.
+  const brokerConfig = resolveSessionBrokerConfig(deps.env);
+  try {
+    await waitForDaemonRegistration(
+      hostClient,
+      brokerConfig,
+      deps.registrationTimeoutMs ?? HEADLESS_REGISTRATION_TIMEOUT_MS,
+    );
+  } catch (error) {
+    unsubscribeHost();
+    hostClient.setBridge(null);
+    runtime.stop();
+    await extensionSession.shutdown();
+    throw error;
+  }
+
   coordinator.runInitialLifecycle();
   armRefresh(bootstrap);
 
   const sessionId = hostClient.getRegistration().sessionId;
-  const url = reviewProcessUrl(resolveSessionBrokerConfig(deps.env).httpOrigin, sessionId);
+  const url = reviewProcessUrl(brokerConfig.httpOrigin, sessionId);
   stdout(`${url}\n`);
   if (deps.stderrIsTTY ?? process.stderr.isTTY === true) {
     stderr("hunk: serving this review at the URL above; press Ctrl+C to stop.\n");

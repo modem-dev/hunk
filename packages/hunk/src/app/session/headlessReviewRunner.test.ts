@@ -52,7 +52,10 @@ async function createTestHeadlessBootstrap(
 }
 
 /** Build a broker-free runtime that records snapshots and keeps the bridge it was given. */
-function createTestRuntime(bootstrap: AppBootstrap) {
+function createTestRuntime(
+  bootstrap: AppBootstrap,
+  waitForRegistration: () => Promise<void> = async () => {},
+) {
   const producer = new ReviewProducer({
     files: bootstrap.changeset.files,
     sourceLabel: bootstrap.changeset.sourceLabel,
@@ -64,6 +67,7 @@ function createTestRuntime(bootstrap: AppBootstrap) {
     null;
   let stopped = 0;
   const hostClient = {
+    waitForFirstRegistration: waitForRegistration,
     getRegistration: () => registration,
     replaceSession(next: typeof registration, snapshot: HunkSessionSnapshot) {
       registration = next;
@@ -94,9 +98,14 @@ function createTestRuntime(bootstrap: AppBootstrap) {
 async function startTestHeadlessReview(
   bootstrap: AppBootstrap<ExtensionLoadResult>,
   watchRuntime?: ReturnType<typeof createWatchTestRuntime>["runtime"],
-  options: { openUrl?: ReviewUrlOpener; stderrIsTTY?: boolean } = {},
+  options: {
+    openUrl?: ReviewUrlOpener;
+    stderrIsTTY?: boolean;
+    waitForRegistration?: () => Promise<void>;
+    registrationTimeoutMs?: number;
+  } = {},
 ) {
-  const fake = createTestRuntime(bootstrap);
+  const fake = createTestRuntime(bootstrap, options.waitForRegistration);
   const signals = new EventEmitter();
   const stdout: string[] = [];
   const stderr: string[] = [];
@@ -105,7 +114,12 @@ async function startTestHeadlessReview(
   const hold = { acquired: 0, released: 0 };
   let closeOutput: (() => void) | undefined;
   let session!: HeadlessReviewSession;
+  let resolveStarted!: () => void;
+  const started = new Promise<void>((resolve) => {
+    resolveStarted = resolve;
+  });
   const exited = runHeadlessReview(bootstrap, {
+    registrationTimeoutMs: options.registrationTimeoutMs,
     holdProcess: () => {
       hold.acquired += 1;
       return () => {
@@ -132,11 +146,13 @@ async function startTestHeadlessReview(
     signals,
     resolveUpdateNotice: async () => ({ key: "update", message: "an update notice" }) as never,
     watchRuntime,
-    onStarted: (started) => {
-      session = started;
+    onStarted: (running) => {
+      session = running;
+      resolveStarted();
     },
   });
-  await Promise.resolve();
+  // A run that fails before it starts settles `exited` instead; the test inspects that.
+  await Promise.race([started, exited.catch(() => undefined)]);
   return {
     fake,
     signals,
@@ -287,6 +303,85 @@ describe("runHeadlessReview", () => {
     await expect(session.coordinator.reload(bootstrap.input)).rejects.toThrow("shutting down");
     expect(fake.stopCount()).toBe(1);
     expect(fake.hasBridge()).toBe(false);
+  });
+
+  test("prints the URL only once a daemon has accepted the session", async () => {
+    const { bootstrap } = await createTestHeadlessBootstrap({ open: false });
+    let accept!: () => void;
+    const registered = new Promise<void>((resolve) => {
+      accept = resolve;
+    });
+    const exitedEarly = { value: false };
+    let session: HeadlessReviewSession | undefined;
+    const fake = createTestRuntime(bootstrap, () => registered);
+    const stdout: string[] = [];
+    const signals = new EventEmitter();
+    const exited = runHeadlessReview(bootstrap, {
+      createReviewRuntime: () => fake.runtime,
+      stdout: (text) => stdout.push(text),
+      stderr: () => {},
+      env: { HUNK_MCP_PORT: "45555" },
+      signals,
+      stderrIsTTY: false,
+      holdProcess: () => () => {},
+      watchOutputClosed: () => () => {},
+      resolveUpdateNotice: async () => null,
+      onStarted: (running) => {
+        session = running;
+      },
+    }).finally(() => {
+      exitedEarly.value = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(stdout).toEqual([]);
+    expect(session).toBeUndefined();
+
+    accept();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(stdout).toEqual([`${session!.url}\n`]);
+    expect(exitedEarly.value).toBe(false);
+
+    signals.emit("SIGINT");
+    expect(await exited).toBe(0);
+  });
+
+  test("exits with a user error naming the port, and no URL, when registration fails", async () => {
+    const { bootstrap } = await createTestHeadlessBootstrap({ open: false });
+    const conflict = new Error(
+      "Session broker port 127.0.0.1:45555 is already in use by another process. Stop the conflicting process or set HUNK_MCP_PORT to a different loopback port.",
+    );
+    const review = await startTestHeadlessReview(bootstrap, undefined, {
+      waitForRegistration: async () => {
+        throw conflict;
+      },
+    });
+
+    const error = await review.exited.then(
+      () => null,
+      (failure: unknown) => failure as Error,
+    );
+    expect(error?.name).toBe("HunkUserError");
+    expect(error?.message).toBe(
+      `could not serve this review through the session daemon on 127.0.0.1:45555. ${conflict.message}`,
+    );
+    expect(review.stdout).toEqual([]);
+    expect(review.fake.stopCount()).toBe(1);
+    expect(review.fake.hasBridge()).toBe(false);
+    expect(review.hold.acquired).toBe(0);
+  });
+
+  test("gives up on a daemon that never answers within the registration bound", async () => {
+    const { bootstrap } = await createTestHeadlessBootstrap({ open: false });
+    const review = await startTestHeadlessReview(bootstrap, undefined, {
+      waitForRegistration: () => new Promise<void>(() => {}),
+      registrationTimeoutMs: 20,
+    });
+
+    await expect(review.exited).rejects.toThrow(
+      "could not serve this review through the session daemon on 127.0.0.1:45555. No session daemon accepted it within 1 seconds. Stop whatever else holds that port, or set HUNK_MCP_PORT to a different loopback port.",
+    );
+    expect(review.stdout).toEqual([]);
+    expect(review.fake.stopCount()).toBe(1);
   });
 
   // The broker client's reconnect timers are unref'd. Without a held handle, a review whose

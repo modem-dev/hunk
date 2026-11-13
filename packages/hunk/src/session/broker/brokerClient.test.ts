@@ -1954,6 +1954,64 @@ describe("Hunk session daemon client", () => {
     }
   });
 
+  test("rejects a first-registration wait with the startup failure, which it then owns", async () => {
+    const messages = captureBrokerWarningsTest();
+    const client = new SessionBrokerClient(createRegistration(), createSnapshot(), {
+      reconnectDelayMs: 10_000,
+    });
+    clientTestAccess(client).ensureDaemonAndConnect = async () => {
+      throw new Error("port held by another process");
+    };
+
+    try {
+      const registered = client.waitForFirstRegistration();
+      await client.start();
+      await expect(registered).rejects.toThrow("port held by another process");
+      // A later caller learns the same first outcome; the console stays quiet for it.
+      await expect(client.waitForFirstRegistration()).rejects.toThrow(
+        "port held by another process",
+      );
+      expect(messages).toEqual([]);
+    } finally {
+      client.stop();
+    }
+  });
+
+  test("rejects a first-registration wait with the refined notice for a different build", async () => {
+    const clock = new DeterministicLifecycleClockTest();
+    const webSockets = installWebSocketObserverTest();
+    const messages = captureBrokerWarningsTest();
+    const client = new SessionBrokerClient(createRegistration(), createSnapshot(), {
+      reconnectDelayMs: 10,
+      lifecycleClock: clock,
+      probeDaemonStatus: async () => statusProbeTest(HUNK_SESSION_DAEMON_VERSION - 1),
+    });
+    const config = prepareDirectConnectTest(client);
+
+    try {
+      const registered = client.waitForFirstRegistration();
+      clientTestAccess(client).connect(config);
+      webSockets.sockets[0]!.emitClose(
+        1008,
+        "Session broker authentication required; upgrade Hunk.",
+      );
+      await clock.flushMicrotasksTest();
+
+      await expect(registered).rejects.toThrow(HUNK_DAEMON_CLIENT_NEWER_MESSAGE);
+      expect(messages).toEqual([]);
+    } finally {
+      client.stop();
+      webSockets.restoreTest();
+    }
+  });
+
+  test("a stopped client rejects its first-registration wait", async () => {
+    const client = new SessionBrokerClient(createRegistration(), createSnapshot());
+    const registered = client.waitForFirstRegistration();
+    client.stop();
+    await expect(registered).rejects.toThrow("stopped");
+  });
+
   test("does no daemon work when start follows terminal stop", async () => {
     const client = new SessionBrokerClient(createRegistration(), createSnapshot());
     let attempts = 0;
