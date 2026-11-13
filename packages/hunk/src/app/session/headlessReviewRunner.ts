@@ -4,13 +4,18 @@
  * The process stays in the foreground as the review's owner: it registers the session with the
  * loopback daemon exactly as a terminal session does, answers every `hunk session` command and
  * brokered review action through the same bridge, prints the review URL on stdout, and waits for
- * SIGINT or SIGTERM. Agent commands go straight to the `ReviewSessionHost`; reloads — the
+ * SIGINT, SIGTERM, or SIGHUP, or for a write that finds its stdout or stderr reader gone. While
+ * the daemon is away the process idles and the broker client reconnects. Agent commands go straight to the `ReviewSessionHost`; reloads — the
  * agent's `hunk session reload` and `--watch` changes — go through `ReviewReloadCoordinator`.
  *
  * Entry point: `hunk <review command> --web` implies `--watch` (startup applies it unless
- * `--no-watch`), prints exactly the URL line on stdout, then opens that URL in the default browser
+ * `--no-watch`). It waits, bounded, until a daemon accepts the session; when none will (another
+ * program holds the port, the daemon cannot start, or it is a different Hunk build) it exits with a
+ * user error and prints no URL. Otherwise it prints exactly the URL line on stdout, then opens that URL in the default browser
  * unless `--no-open`. A launch failure is one stderr line without the URL, and the review keeps
- * serving. When stderr is a terminal, one hint line says what is running and how to stop it.
+ * serving. When stderr is a terminal, one line says where the review is — open in the browser,
+ * or to be opened from the URL — and that Ctrl+C stops it; a failed launch carries that hint in
+ * its warning instead of a second line.
  * `hunk session open` reaches the same opener through the bridge (`./openReview.ts`).
  *
  * Terminal-only concerns get explicit headless answers here: repo-local extensions awaiting a
@@ -31,7 +36,12 @@ import { startInputWatch, type WatchedInputRuntime } from "../../core/watch/inpu
 import { createExtensionSession, type ExtensionSession } from "../../extensions/session";
 import type { ExtensionLoadResult } from "../../extensions/types";
 import { sanitizeTerminalLine } from "../../lib/terminalText";
-import { resolveSessionBrokerConfig } from "../../session/broker/brokerConfig";
+import { HunkUserError } from "../../core/run/errors";
+import { DAEMON_STARTUP_TIMEOUT_MS } from "../../session/broker/brokerClient";
+import {
+  resolveSessionBrokerConfig,
+  type ResolvedSessionBrokerConfig,
+} from "../../session/broker/brokerConfig";
 import { reviewProcessUrl } from "../review/capability";
 import { ReviewSessionHost } from "../review/reviewSessionHost";
 import { buildReviewPresentationDefaults, buildReviewSharedState } from "../review/sharedState";
@@ -42,9 +52,97 @@ import { createSessionReloadBounds } from "./reloadBounds";
 import { openSessionReview, type ReviewUrlOpener } from "./openReview";
 import { createReviewSessionRuntime, type ReviewSessionRuntime } from "./reviewRuntime";
 
-/** Signals that end a headless review; Windows delivers Ctrl+Break as SIGBREAK. */
+/**
+ * Signals that end a headless review, as they end a terminal review. Windows delivers Ctrl+Break
+ * as SIGBREAK. Elsewhere a closed terminal sends SIGHUP, and SIGPIPE arrives when a write — this
+ * runner's notices or the broker client's console warnings — finds that whoever started the
+ * review closed its output or died; Bun otherwise ignores SIGPIPE and the orphan lives on.
+ */
 export const HEADLESS_REVIEW_SHUTDOWN_SIGNALS: readonly NodeJS.Signals[] =
-  process.platform === "win32" ? ["SIGINT", "SIGTERM", "SIGBREAK"] : ["SIGINT", "SIGTERM"];
+  process.platform === "win32"
+    ? ["SIGINT", "SIGTERM", "SIGBREAK"]
+    : ["SIGINT", "SIGTERM", "SIGHUP", "SIGPIPE"];
+
+/** How a person at a terminal stops a headless review. */
+const HEADLESS_STOP_HINT = "Press Ctrl+C to stop.";
+
+/** Period of the idle timer that keeps the process alive; it never does any work. */
+const KEEP_ALIVE_INTERVAL_MS = 60 * 60 * 1000;
+
+/**
+ * Keep the process alive until shutdown releases it.
+ *
+ * A headless review waits on a promise, and the broker client's reconnect timers are unref'd, so
+ * once the daemon's websocket closes nothing referenced remains in the event loop. Bun then polls
+ * with a zero timeout for as long as the top-level await is pending — one core at 100% for the
+ * whole time the daemon is away. One referenced idle timer lets the loop block instead.
+ */
+function holdProcessOpen() {
+  const handle = setInterval(() => {}, KEEP_ALIVE_INTERVAL_MS);
+  return () => clearInterval(handle);
+}
+
+/**
+ * How long a headless review waits for a daemon to accept it before giving up: one daemon startup
+ * attempt, as a terminal session's auto-start allows, plus the same again for the signed hello.
+ */
+export const HEADLESS_REGISTRATION_TIMEOUT_MS = 2 * DAEMON_STARTUP_TIMEOUT_MS;
+
+/**
+ * Wait until a daemon accepts this session, or fail with a user error naming the daemon port.
+ *
+ * The broker client reports the first reason registration cannot happen — the port belongs to
+ * another process, the daemon did not start, or it is a different Hunk build — and this bound
+ * covers a daemon that never answers. The timer is referenced, so the wait blocks the event loop
+ * rather than polling it.
+ */
+async function waitForDaemonRegistration(
+  hostClient: Pick<ReviewSessionRuntime["hostClient"], "waitForFirstRegistration">,
+  config: Pick<ResolvedSessionBrokerConfig, "host" | "port">,
+  timeoutMs: number,
+) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(
+      () =>
+        reject(
+          new Error(`No session daemon accepted it within ${Math.ceil(timeoutMs / 1000)} seconds.`),
+        ),
+      timeoutMs,
+    );
+  });
+  try {
+    await Promise.race([hostClient.waitForFirstRegistration(), timedOut]);
+  } catch (error) {
+    // The broker client's startup timeout promises a background retry; this command exits.
+    const reason = (error instanceof Error ? error.message : String(error)).replace(
+      / The app will retry in the background\.$/,
+      "",
+    );
+    // Build-skew and port-conflict reasons carry their own remedy; the others get the port one.
+    const remedy = /HUNK_MCP_PORT|hunk daemon|relaunch|smaller review/.test(reason)
+      ? ""
+      : " Stop whatever else holds that port, or set HUNK_MCP_PORT to a different loopback port.";
+    throw new HunkUserError(
+      `could not serve this review through the session daemon on ${config.host}:${config.port}. ${sanitizeTerminalLine(reason)}${remedy}`,
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Call `onClosed` once stdout or stderr reports that its reader is gone. */
+function watchProcessOutputClosed(onClosed: () => void) {
+  const onError = (error: unknown) => {
+    if ((error as NodeJS.ErrnoException | null)?.code === "EPIPE") onClosed();
+  };
+  process.stdout.on("error", onError);
+  process.stderr.on("error", onError);
+  return () => {
+    process.stdout.off("error", onError);
+    process.stderr.off("error", onError);
+  };
+}
 
 /** The process surface the runner listens on; tests pass an emitter. */
 export interface HeadlessReviewSignalSource {
@@ -70,6 +168,15 @@ export interface HeadlessReviewDeps {
   openUrl?: ReviewUrlOpener;
   /** Whether stderr is a terminal, which decides the human hint line. */
   stderrIsTTY?: boolean;
+  /** Keep the process alive until the returned release runs; tests count holds instead. */
+  holdProcess?: () => () => void;
+  /**
+   * Call `onClosed` when the process's output has no reader left (EPIPE); returns an unsubscribe.
+   * Tests drive it directly.
+   */
+  watchOutputClosed?: (onClosed: () => void) => () => void;
+  /** Bound on waiting for a daemon to accept the session; tests shorten it. */
+  registrationTimeoutMs?: number;
 }
 
 /** The live pieces of one running headless review, exposed for tests. */
@@ -272,21 +379,45 @@ export async function runHeadlessReview(
       reviewProducer: producer,
     }),
   );
+  // The URL is only printed once a daemon has accepted the session and will serve its page.
+  const brokerConfig = resolveSessionBrokerConfig(deps.env);
+  try {
+    await waitForDaemonRegistration(
+      hostClient,
+      brokerConfig,
+      deps.registrationTimeoutMs ?? HEADLESS_REGISTRATION_TIMEOUT_MS,
+    );
+  } catch (error) {
+    unsubscribeHost();
+    hostClient.setBridge(null);
+    runtime.stop();
+    await extensionSession.shutdown();
+    throw error;
+  }
+
   coordinator.runInitialLifecycle();
   armRefresh(bootstrap);
 
   const sessionId = hostClient.getRegistration().sessionId;
-  const url = reviewProcessUrl(resolveSessionBrokerConfig(deps.env).httpOrigin, sessionId);
+  const url = reviewProcessUrl(brokerConfig.httpOrigin, sessionId);
   stdout(`${url}\n`);
-  if (deps.stderrIsTTY ?? process.stderr.isTTY === true) {
-    stderr("hunk: serving this review at the URL above; press Ctrl+C to stop.\n");
-  }
-  if (bootstrap.input.options.open !== false) {
+  // A person at a terminal gets one line saying where the review is and how to stop it; piped
+  // and agent use stays quiet apart from warnings. A failed launch folds the hint into its warning.
+  const stderrIsTTY = deps.stderrIsTTY ?? process.stderr.isTTY === true;
+  const stopHint = stderrIsTTY ? ` ${HEADLESS_STOP_HINT}` : "";
+  if (bootstrap.input.options.open === false) {
+    if (stderrIsTTY) stderr(`hunk: open the URL above in a browser.${stopHint}\n`);
+  } else {
     // Never awaited: a slow or failing browser launch must not delay or end the review.
     void openSessionReview(sessionId, { open: true, env: deps.env, openUrl: deps.openUrl }).then(
       (result) => {
-        if (result.failure && !coordinator.isShuttingDown()) {
-          stderr(noticeLine(`${result.failure} Open the URL above in a browser instead.`));
+        if (coordinator.isShuttingDown()) return;
+        if (result.failure) {
+          stderr(
+            noticeLine(`${result.failure} Open the URL above in a browser instead.${stopHint}`),
+          );
+        } else if (stderrIsTTY) {
+          stderr(`hunk: review ready in your browser.${stopHint}\n`);
         }
       },
     );
@@ -304,6 +435,10 @@ export async function runHeadlessReview(
   const stopped = new Promise<void>((resolve) => {
     resolveStopped = resolve;
   });
+  // The review is a foreground server: it stays alive, idle, while its daemon is away and the
+  // broker client reconnects, until a signal or a closed output ends it.
+  const releaseProcess = (deps.holdProcess ?? holdProcessOpen)();
+  let unwatchOutput: () => void = () => {};
 
   /** Stop reloads, the watch, extensions, and the broker client, in that order. */
   const shutdown = () => {
@@ -311,6 +446,7 @@ export async function runHeadlessReview(
       for (const signal of HEADLESS_REVIEW_SHUTDOWN_SIGNALS) {
         signals.off(signal, onSignal);
       }
+      unwatchOutput();
       coordinator.beginShutdown();
       watch?.close();
       watch = undefined;
@@ -322,6 +458,7 @@ export async function runHeadlessReview(
         unsubscribeHost();
         hostClient.setBridge(null);
         runtime.stop();
+        releaseProcess();
         resolveStopped();
       }
     })();
@@ -333,6 +470,9 @@ export async function runHeadlessReview(
   for (const signal of HEADLESS_REVIEW_SHUTDOWN_SIGNALS) {
     signals.once(signal, onSignal);
   }
+  // A parent that died or closed its end of the output pipe can no longer stop this review with
+  // Ctrl+C; the next write that finds no reader ends it as a closed terminal would.
+  unwatchOutput = (deps.watchOutputClosed ?? watchProcessOutputClosed)(onSignal);
 
   deps.onStarted?.({
     getHost: () => host,
