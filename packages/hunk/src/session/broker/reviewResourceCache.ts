@@ -69,6 +69,17 @@ export interface ReviewResourceReservation extends ReviewResourceKey {
 /** Raised when a load cannot start because the daemon's in-flight budget is full. */
 export class ReviewResourceBudgetError extends Error {
   override readonly name = "ReviewResourceBudgetError";
+
+  /**
+   * @param retryable True when the budget is merely occupied right now (a slot or bytes will
+   * free up as other loads settle); false when this load could never fit.
+   */
+  constructor(
+    message: string,
+    readonly retryable = false,
+  ) {
+    super(message);
+  }
 }
 
 interface CacheEntry {
@@ -148,17 +159,21 @@ export class ReviewResourceCache {
     if (this.reservations.size >= this.limits.inFlightResources) {
       throw new ReviewResourceBudgetError(
         `The daemon is already assembling ${this.limits.inFlightResources} review resources.`,
+        // A slot frees up as loads settle, unless the daemon allows none at all.
+        this.limits.inFlightResources > 0,
       );
     }
     const usage = this.sessionUsage(key.sessionId);
     if (usage.count >= this.limits.sessionInFlightResources) {
       throw new ReviewResourceBudgetError(
         `This session already has ${this.limits.sessionInFlightResources} review resources loading.`,
+        this.limits.sessionInFlightResources > 0,
       );
     }
     if (!this.fitsSessionShare(usage, byteLength)) {
       throw new ReviewResourceBudgetError(
         "This session's resource loads already fill its share of the in-flight budget.",
+        true,
       );
     }
     if (byteLength > this.limits.inFlightBytes) {
@@ -169,6 +184,7 @@ export class ReviewResourceCache {
     if (this.reservedBytes + byteLength > this.limits.inFlightBytes) {
       throw new ReviewResourceBudgetError(
         "Review resource loads already fill the daemon's in-flight budget.",
+        true,
       );
     }
 
