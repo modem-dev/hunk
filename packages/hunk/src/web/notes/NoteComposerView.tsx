@@ -33,6 +33,8 @@ export interface NoteComposerViewProps {
   onChange: (body: string) => void;
   onSave: () => void;
   onCancel: () => void;
+  /** The session has ended: the text stays readable and copyable, but cannot be saved. */
+  sessionEnded?: boolean;
 }
 
 /** One composer card. */
@@ -42,6 +44,7 @@ export function NoteComposerView({
   onChange,
   onSave,
   onCancel,
+  sessionEnded = false,
 }: NoteComposerViewProps) {
   const textRef = useRef<HTMLTextAreaElement | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -62,7 +65,7 @@ export function NoteComposerView({
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
-      onSave();
+      if (!sessionEnded) onSave();
     } else if (event.key === "Escape") {
       event.preventDefault();
       cancel();
@@ -77,7 +80,7 @@ export function NoteComposerView({
       aria-label={`${TITLES[composer.kind]} at ${location}`}
       onSubmit={(event) => {
         event.preventDefault();
-        onSave();
+        if (!sessionEnded) onSave();
       }}
     >
       <header className="note-title">
@@ -125,7 +128,11 @@ export function NoteComposerView({
         </div>
       ) : (
         <div className="composer-actions">
-          <button type="submit" className="tool-button primary" disabled={sending || changed}>
+          <button
+            type="submit"
+            className="tool-button primary"
+            disabled={sending || changed || sessionEnded}
+          >
             {sending ? "Saving…" : "Save"}
           </button>
           <button type="button" className="tool-button" onClick={cancel}>

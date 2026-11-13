@@ -46,6 +46,8 @@ export interface WebNoteCard {
    * and delete a stored one. Sidecar annotations are part of the changeset and take none.
    */
   actions: ("reply" | "edit" | "delete")[];
+  /** Draw the actions disabled, because the session that would apply them has ended. */
+  actionsDisabled?: boolean;
 }
 
 /** The cards that hang beside one line of one side. */

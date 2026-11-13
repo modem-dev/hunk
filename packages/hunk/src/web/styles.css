@@ -70,6 +70,23 @@ body {
   height: 100%;
 }
 
+/* Persistent and not dismissable: the review below stays readable, but nothing reaches it. */
+.session-ended-banner {
+  flex: none;
+  margin: 0;
+  padding: 6px 12px;
+  font-family: var(--ui-font);
+  font-size: 13px;
+  color: var(--hunk-text);
+  background: var(--hunk-panel-alt);
+  border-bottom: 2px solid var(--hunk-removed-sign-color, #d1242f);
+}
+
+.session-ended-banner code {
+  font-family: var(--code-font);
+  font-size: 12px;
+}
+
 .review-main {
   display: flex;
   flex: 1;
@@ -1875,11 +1892,6 @@ body {
 .markdown-view hr {
   border: 0;
   border-top: 1px solid var(--hunk-border);
-}
-
-.header-action[aria-pressed="true"] {
-  background: var(--hunk-accent-muted);
-  border-color: var(--hunk-accent);
 }
 
 /* Viewed files: header checkbox, "changed since viewed", collapsed body, sidebar and toolbar. */

@@ -26,6 +26,7 @@ import {
 } from "../../core/run/commandCatalog";
 import type { ReviewSharedStateV1 } from "../../session/reviewSharedState";
 import { reviewActionFailure } from "../actions/reviewActions";
+import { REVIEW_SESSION_ENDED_MESSAGE } from "../session/failureMessages";
 import type { NoteComposer } from "../notes/composerStore";
 import { NoteComposerView } from "../notes/NoteComposerView";
 import { noteRemovalAction, saveNoteComposer } from "../notes/noteActions";
@@ -55,8 +56,18 @@ function composerLocation(composer: NoteComposer) {
 export function useReviewInteraction(
   session: ReviewSession,
   shared: ReviewSharedStateV1 | undefined,
+  sessionEnded = false,
 ) {
   const { composers, actions, toasts, review } = session;
+  // Opening a composer or refreshing after the session ended would write to nothing; say so
+  // once, in the same words as a refused send, instead of opening a form that cannot save.
+  const endedRef = useRef(sessionEnded);
+  endedRef.current = sessionEnded;
+  const refuseIfEnded = useCallback(() => {
+    if (!endedRef.current) return false;
+    toasts.show(REVIEW_SESSION_ENDED_MESSAGE);
+    return true;
+  }, [toasts]);
 
   /** The file as the page shows it, its gaps, and its drawn hunks. */
   const fileView = useCallback(
@@ -73,6 +84,7 @@ export function useReviewInteraction(
   /** Open a composer for a new note on lines the reader picked. */
   const openOnLines = useCallback(
     (fileKey: string, side: ReviewSide, start: number, end: number) => {
+      if (refuseIfEnded()) return;
       const view = fileView(fileKey);
       if (!view) return;
       const pick = reviewNoteRangeTarget(view.file, view.plan.gaps, side, start, end);
@@ -88,12 +100,13 @@ export function useReviewInteraction(
         contentIdentity: view.file.contentIdentity,
       });
     },
-    [composers, fileView],
+    [composers, fileView, refuseIfEnded],
   );
 
   /** Open a composer replying to, or editing, one stored note. */
   const openOnNote = useCallback(
     (kind: "reply" | "edit", noteId: string) => {
+      if (refuseIfEnded()) return;
       const state = review.store.getSnapshot();
       const entry = selectStoredReviewNoteById(state, noteId);
       const view = entry ? fileView(entry.note.fileKey) : undefined;
@@ -109,11 +122,12 @@ export function useReviewInteraction(
         contentIdentity: view.file.contentIdentity,
       });
     },
-    [composers, fileView, review],
+    [composers, fileView, refuseIfEnded, review],
   );
 
   /** Open a composer for a new note on the selected hunk's default line (`c`). */
   const openOnSelection = useCallback(() => {
+    if (refuseIfEnded()) return;
     const { selection } = review.store.getSnapshot();
     const view = selection.fileKey ? fileView(selection.fileKey) : undefined;
     const hunk = view?.file.hunks[selection.hunkIndex];
@@ -129,7 +143,7 @@ export function useReviewInteraction(
       ...(pick ? { target: pick.target } : {}),
       contentIdentity: view.file.contentIdentity,
     });
-  }, [composers, fileView, review]);
+  }, [composers, fileView, refuseIfEnded, review]);
 
   /** Remove one stored note, as the terminal's `D` does. */
   const removeNote = useCallback(
@@ -181,9 +195,10 @@ export function useReviewInteraction(
         onChange={(body) => composers.update(composer.key, { body, status: "editing" })}
         onSave={() => void save(composers.getSnapshot().find((c) => c.key === composer.key)!)}
         onCancel={() => composers.close(composer.key)}
+        sessionEnded={sessionEnded}
       />
     ),
-    [composers, save],
+    [composers, save, sessionEnded],
   );
 
   const interaction: ReviewNoteInteraction = useMemo(
@@ -274,7 +289,7 @@ export function useReviewInteraction(
   // Refresh: the session reopens its input, paced by the session; the page shows it working.
   const [refreshing, setRefreshing] = useState(false);
   const refresh = useCallback(async () => {
-    if (refreshing) return;
+    if (refreshing || refuseIfEnded()) return;
     setRefreshing(true);
     try {
       await session.client.refresh();
@@ -283,7 +298,7 @@ export function useReviewInteraction(
     } finally {
       setRefreshing(false);
     }
-  }, [refreshing, session, toasts]);
+  }, [refreshing, refuseIfEnded, session, toasts]);
 
   return {
     interaction,

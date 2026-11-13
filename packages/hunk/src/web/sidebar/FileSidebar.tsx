@@ -17,7 +17,8 @@
  * mark as a decoration (`✓` viewed, `Δ` changed since viewed), because the tree's rows take
  * text decorations only. The header checkbox, `V`, and the palette toggle it in either mode.
  */
-import { lazy, Suspense, useMemo } from "react";
+import { lazy, Suspense, useContext, useMemo } from "react";
+import { SessionEndedContext } from "../session/sessionEnded";
 import {
   buildReviewFlatSidebarEntries,
   reviewFileChangeGlyph,
@@ -36,6 +37,7 @@ function FlatSidebar({
   viewedStatuses,
   onToggleViewed,
 }: Omit<FileSidebarProps, "mode">) {
+  const sessionEnded = useContext(SessionEndedContext);
   const rows = useMemo(
     () =>
       buildReviewFlatSidebarEntries({
@@ -85,6 +87,7 @@ function FlatSidebar({
                 type="checkbox"
                 className="flat-viewed"
                 checked={viewed === "viewed"}
+                disabled={sessionEnded}
                 onChange={() => onToggleViewed(row.id)}
                 aria-label={`Viewed ${row.name}`}
                 title={viewed === "changed" ? "Changed since viewed" : "Viewed"}

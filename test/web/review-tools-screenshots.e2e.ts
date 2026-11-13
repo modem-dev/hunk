@@ -180,7 +180,7 @@ test("captures the image previews and rendered Markdown", async ({ page }) => {
   await capture(page, "image-added-deleted-dark");
 
   const guide = page.locator('section[aria-label="docs/guide.md"]');
-  await guide.getByTestId("markdown-toggle").click();
+  await guide.getByTestId("markdown-mode-rendered").click();
   await guide.evaluate((element) => element.scrollIntoView());
   await capture(page, "markdown-rendered-dark");
   await chooseTestTheme(page, "github-light-default");

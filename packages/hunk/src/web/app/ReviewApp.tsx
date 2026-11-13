@@ -53,6 +53,8 @@ import {
   type WebImplementedCommandId,
 } from "../commands/webCommandTable";
 import { reviewFailureMessage, type ReviewSession } from "../session/reviewSession";
+import { REVIEW_SESSION_ENDED_MESSAGE } from "../session/failureMessages";
+import { SessionEndedContext } from "../session/sessionEnded";
 import { FileSidebar } from "../sidebar/FileSidebar";
 import { isLocalReviewIntent } from "../store/clientReviewStore";
 import {
@@ -603,7 +605,9 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
   // preferences through a ref so the table is built once per session.
   const viewRef = useRef({ preferences, sidebarOpen, panelOpen });
   viewRef.current = { preferences, sidebarOpen, panelOpen };
-  const interactive = useReviewInteraction(session, shownShared);
+  // The session's process exited: the page keeps the review readable but stops writing to it.
+  const sessionEnded = connection.kind === "ended";
+  const interactive = useReviewInteraction(session, shownShared, sessionEnded);
   const interactiveRef = useRef(interactive);
   interactiveRef.current = interactive;
   const filterRef = useRef<HTMLInputElement | null>(null);
@@ -830,6 +834,7 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
     <div
       className="review-app"
       data-layout={layout}
+      data-session-ended={sessionEnded ? "" : undefined}
       data-generation={mirror.address?.generation}
       style={
         {
@@ -881,6 +886,7 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
                 ? { refreshKeyHint: keyHint("hunk.app.refresh") }
                 : {})}
               onCopyLink={copyLink}
+              sessionEnded={sessionEnded}
             />
             <ViewedControls
               progress={viewed.progress}
@@ -893,96 +899,106 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
         {...(panelHint ? { panelHint } : {})}
         onTogglePanel={() => updatePanel({ open: !panelOpen })}
       />
-      <PreviewContext.Provider value={previews}>
-        <div className="review-main" ref={mainRef}>
-          {sidebarOpen ? (
-            <>
-              <nav className="sidebar" aria-label="Files sidebar">
-                <div className="sidebar-header">
-                  <span>Files</span>
-                  <div className="segmented small" role="radiogroup" aria-label="Sidebar mode">
-                    {(["tree", "flat"] as const).map((mode) => (
-                      <button
-                        key={mode}
-                        type="button"
-                        role="radio"
-                        aria-checked={preferences.sidebarMode === mode}
-                        onClick={() => updatePreferences({ sidebarMode: mode })}
-                      >
-                        {mode === "tree" ? "Tree" : "Flat"}
-                      </button>
-                    ))}
+      {sessionEnded ? (
+        <p className="session-ended-banner" role="status" data-testid="session-ended">
+          {/* The sentence marks its commands with backticks; odd segments are those commands. */}
+          {REVIEW_SESSION_ENDED_MESSAGE.split("`").map((part, index) =>
+            index % 2 === 1 ? <code key={index}>{part}</code> : part,
+          )}
+        </p>
+      ) : null}
+      <SessionEndedContext.Provider value={sessionEnded}>
+        <PreviewContext.Provider value={previews}>
+          <div className="review-main" ref={mainRef}>
+            {sidebarOpen ? (
+              <>
+                <nav className="sidebar" aria-label="Files sidebar">
+                  <div className="sidebar-header">
+                    <span>Files</span>
+                    <div className="segmented small" role="radiogroup" aria-label="Sidebar mode">
+                      {(["tree", "flat"] as const).map((mode) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          role="radio"
+                          aria-checked={preferences.sidebarMode === mode}
+                          onClick={() => updatePreferences({ sidebarMode: mode })}
+                        >
+                          {mode === "tree" ? "Tree" : "Flat"}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
-                <FileSidebar
-                  entries={sidebarEntries}
-                  noteCounts={noteCounts}
-                  selectedKey={review.selection.fileKey}
-                  mode={preferences.sidebarMode}
-                  onSelectFile={tools.jumpToFile}
-                  viewedStatuses={viewed.statuses}
-                  onToggleViewed={viewedControls.toggle}
+                  <FileSidebar
+                    entries={sidebarEntries}
+                    noteCounts={noteCounts}
+                    selectedKey={review.selection.fileKey}
+                    mode={preferences.sidebarMode}
+                    onSelectFile={tools.jumpToFile}
+                    viewedStatuses={viewed.statuses}
+                    onToggleViewed={viewedControls.toggle}
+                  />
+                </nav>
+                <div
+                  className="sidebar-resizer"
+                  role="separator"
+                  aria-orientation="vertical"
+                  aria-label="Resize files sidebar"
+                  onPointerDown={startResize}
                 />
-              </nav>
-              <div
-                className="sidebar-resizer"
-                role="separator"
-                aria-orientation="vertical"
-                aria-label="Resize files sidebar"
-                onPointerDown={startResize}
-              />
-            </>
-          ) : null}
-          <ReviewStream
-            slots={streamSlots}
-            review={review}
-            layout={layout}
-            wrapLines={preferences.wrapLines}
-            showLineNumbers={preferences.showLineNumbers}
-            syntaxTheme={theme?.syntaxTheme ?? "github-dark-default"}
-            appearance={theme?.appearance ?? "dark"}
-            onToggleGap={toggleGap}
-            onCollapseGaps={collapseGaps}
-            onSelectHunk={selectHunk}
-            onViewportAnchor={anchorToViewport}
-            controller={streamController}
-            columnWidth={columnWidth}
-            generation={mirror.address?.generation}
-            sidecarNotes={sidecarNotes}
-            highlights={shownShared?.agentHighlights ?? NO_HIGHLIGHTS}
-            {...(streamRevealPoint ? { revealPoint: streamRevealPoint } : {})}
-            composers={composers}
-            interaction={interactive.interaction}
-            viewedStatuses={viewed.statuses}
-            collapsedFiles={viewed.collapsed}
-            viewed={viewedControls}
-          />
-          {showMinimap ? (
-            <Minimap
+              </>
+            ) : null}
+            <ReviewStream
               slots={streamSlots}
-              files={minimapFiles}
+              review={review}
               layout={layout}
-              noteHunks={minimapNotes}
-              highlightHunks={minimapHighlights}
-              viewed={minimapViewed}
-              {...(minimapSelected ? { selected: minimapSelected } : {})}
+              wrapLines={preferences.wrapLines}
+              showLineNumbers={preferences.showLineNumbers}
+              syntaxTheme={theme?.syntaxTheme ?? "github-dark-default"}
+              appearance={theme?.appearance ?? "dark"}
+              onToggleGap={toggleGap}
+              onCollapseGaps={collapseGaps}
+              onSelectHunk={selectHunk}
+              onViewportAnchor={anchorToViewport}
               controller={streamController}
-              themeKey={theme?.id}
+              columnWidth={columnWidth}
+              generation={mirror.address?.generation}
+              sidecarNotes={sidecarNotes}
+              highlights={shownShared?.agentHighlights ?? NO_HIGHLIGHTS}
+              {...(streamRevealPoint ? { revealPoint: streamRevealPoint } : {})}
+              composers={composers}
+              interaction={interactive.interaction}
+              viewedStatuses={viewed.statuses}
+              collapsedFiles={viewed.collapsed}
+              viewed={viewedControls}
             />
-          ) : null}
-          {panelOpen && panelTools.length > 0 ? (
-            <SidePanel
-              tools={panelTools}
-              tab={panel.tab}
-              width={panel.width}
-              onTab={(tab) => updatePanel({ tab })}
-              onWidth={(width, commit) => updatePanel({ width }, commit)}
-              onClose={() => updatePanel({ open: false })}
-              {...(panelHint ? { closeHint: panelHint } : {})}
-            />
-          ) : null}
-        </div>
-      </PreviewContext.Provider>
+            {showMinimap ? (
+              <Minimap
+                slots={streamSlots}
+                files={minimapFiles}
+                layout={layout}
+                noteHunks={minimapNotes}
+                highlightHunks={minimapHighlights}
+                viewed={minimapViewed}
+                {...(minimapSelected ? { selected: minimapSelected } : {})}
+                controller={streamController}
+                themeKey={theme?.id}
+              />
+            ) : null}
+            {panelOpen && panelTools.length > 0 ? (
+              <SidePanel
+                tools={panelTools}
+                tab={panel.tab}
+                width={panel.width}
+                onTab={(tab) => updatePanel({ tab })}
+                onWidth={(width, commit) => updatePanel({ width }, commit)}
+                onClose={() => updatePanel({ open: false })}
+                {...(panelHint ? { closeHint: panelHint } : {})}
+              />
+            ) : null}
+          </div>
+        </PreviewContext.Provider>
+      </SessionEndedContext.Provider>
       <ToastRegion toasts={session.toasts} />
       {tools.overlay}
     </div>

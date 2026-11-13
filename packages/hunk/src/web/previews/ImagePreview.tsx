@@ -93,7 +93,8 @@ function useSideImage(descriptor: ReviewResourceDescriptorV1 | undefined): SideI
           message:
             error instanceof ReviewApiError &&
             error.code !== "network" &&
-            error.code !== "unreadable"
+            error.code !== "unreadable" &&
+            error.code !== "session-ended"
               ? reviewErrorMessage(error.code)
               : reviewErrorMessage("resource-unavailable"),
         });

@@ -44,9 +44,14 @@ import { webCryptoReviewDigest } from "./webCryptoDigest";
  * Why one request failed, in the shared vocabulary where the server stated one.
  *
  * `network` means the daemon did not answer; `unreadable` means it answered with something
- * this build cannot parse. Neither is a review code, because neither came from a review.
+ * this build cannot parse; `session-ended` means the page refused to send because the session's
+ * event stream has ended. None is a review code, because none came from a review.
  */
-export type ReviewApiErrorCode = HunkReviewClientErrorCodeV1 | "network" | "unreadable";
+export type ReviewApiErrorCode =
+  | HunkReviewClientErrorCodeV1
+  | "network"
+  | "unreadable"
+  | "session-ended";
 
 /** One refused or failed request. */
 export class ReviewApiError extends Error {
