@@ -1,4 +1,5 @@
 import type { DiffFile } from "../../core/changeset/model";
+import { reviewHunkIndexAtOffset } from "../../core/review/viewportAnchor";
 import type { DiffSectionGeometry } from "../diff/diffSectionGeometry";
 import { findFileSectionAtOffset, type FileSectionLayout } from "./fileSectionLayout";
 
@@ -7,8 +8,8 @@ export interface ViewportCenteredHunkTarget {
   hunkIndex: number;
 }
 
-/** Pick the hunk nearest one vertical offset within a file body. */
-function findNearestHunkIndexAtBodyOffset(
+/** Pick the hunk owning one body offset from this section's measured hunk bounds. */
+function centeredHunkIndex(
   sectionGeometry: DiffSectionGeometry | undefined,
   bodyOffset: number,
   hunkCount: number,
@@ -17,34 +18,11 @@ function findNearestHunkIndexAtBodyOffset(
     return 0;
   }
 
-  let nearestHunkIndex = 0;
-  let nearestDistance = Number.POSITIVE_INFINITY;
-
-  for (let hunkIndex = 0; hunkIndex < hunkCount; hunkIndex += 1) {
-    const hunkBounds = sectionGeometry.hunkBounds.get(hunkIndex);
-    if (!hunkBounds) {
-      continue;
-    }
-
-    const hunkBottom = hunkBounds.top + hunkBounds.height - 1;
-    if (bodyOffset >= hunkBounds.top && bodyOffset <= hunkBottom) {
-      return hunkIndex;
-    }
-
-    const distance =
-      bodyOffset < hunkBounds.top ? hunkBounds.top - bodyOffset : bodyOffset - hunkBottom;
-
-    // Favor the later hunk on exact ties so ownership hands off when the midpoint reaches center.
-    if (
-      distance < nearestDistance ||
-      (distance === nearestDistance && hunkIndex > nearestHunkIndex)
-    ) {
-      nearestDistance = distance;
-      nearestHunkIndex = hunkIndex;
-    }
-  }
-
-  return nearestHunkIndex;
+  return reviewHunkIndexAtOffset(
+    hunkCount,
+    (hunkIndex) => sectionGeometry.hunkBounds.get(hunkIndex),
+    bodyOffset,
+  );
 }
 
 /** Resolve the file and hunk nearest the current review viewport center. */
@@ -78,7 +56,8 @@ export function findViewportCenteredHunkTarget({
 
   return {
     fileId: centeredFile.id,
-    hunkIndex: findNearestHunkIndexAtBodyOffset(
+    // Which hunk owns the center is the shared viewport-anchor rule (audit B11).
+    hunkIndex: centeredHunkIndex(
       sectionGeometry[centeredSection.sectionIndex],
       centerOffset - centeredSection.bodyTop,
       centeredFile.metadata.hunks.length,

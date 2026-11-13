@@ -166,7 +166,6 @@ body {
 
 .tool-button,
 .segmented button,
-.theme-picker select,
 .header-action {
   font: inherit;
   color: var(--hunk-text);
@@ -174,13 +173,123 @@ body {
   border: 1px solid var(--hunk-border);
   border-radius: 6px;
   padding: 3px 9px;
+  line-height: 18px;
   cursor: pointer;
 }
 
-.tool-button:hover,
+.tool-button:hover:not(:disabled),
 .segmented button:hover,
 .header-action:hover {
   border-color: var(--hunk-accent);
+}
+
+.tool-button:disabled {
+  cursor: default;
+  color: var(--hunk-muted);
+}
+
+.icon-button {
+  width: 28px;
+  padding: 3px 0;
+  text-align: center;
+}
+
+/* A pressed toggle reads like a checked segment: tinted, with the accent border. */
+.tool-button[aria-pressed="true"] {
+  background: var(--hunk-accent-muted);
+  border-color: var(--hunk-accent);
+}
+
+.toggle-button[aria-pressed]::before {
+  display: inline-block;
+  width: 1em;
+  margin-right: 4px;
+  color: var(--hunk-muted);
+  content: "○" / "";
+}
+
+.toggle-button[aria-pressed="true"]::before {
+  color: var(--hunk-accent);
+  content: "●" / "";
+}
+
+.menu-anchor {
+  position: relative;
+}
+
+.theme-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 240px;
+}
+
+.theme-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theme-swatch {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  border-radius: 3px;
+  border: 1px solid var(--hunk-border);
+  background: linear-gradient(135deg, var(--hunk-background) 0 50%, var(--hunk-accent) 50% 100%);
+}
+
+.chevron {
+  color: var(--hunk-muted);
+  font-size: 10px;
+}
+
+.menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 20;
+  min-width: 220px;
+  max-height: min(60vh, 480px);
+  overflow: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--hunk-panel);
+  color: var(--hunk-text);
+  border: 1px solid var(--hunk-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 28%);
+}
+
+.menu [role="option"] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.menu [role="option"][data-active] {
+  background: var(--hunk-accent-muted);
+}
+
+.menu [role="option"][aria-selected="true"] {
+  font-weight: 600;
+}
+
+.menu [role="option"][aria-selected="true"]::after {
+  margin-left: auto;
+  color: var(--hunk-accent);
+  content: "✓" / "";
+}
+
+.theme-appearance {
+  width: 1em;
+  color: var(--hunk-muted);
+  text-align: center;
 }
 
 .segmented {
@@ -214,21 +323,18 @@ body {
   letter-spacing: 0;
 }
 
-.toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--hunk-text);
-  cursor: pointer;
-}
-
-.toggle input {
-  accent-color: var(--hunk-accent);
-}
-
 :focus-visible {
   outline: 2px solid var(--hunk-accent);
   outline-offset: 1px;
+}
+
+/* The stream fills its pane, so its focus ring is drawn inside the edge. */
+.review-stream:focus-visible {
+  outline-offset: -2px;
+}
+
+.menu:focus-visible {
+  outline-offset: -1px;
 }
 
 .stat-added {
@@ -362,6 +468,68 @@ body {
 
 .gap-separator:disabled {
   cursor: default;
+}
+
+/* The terminal's marks: `▾` on a gap that expands, `···` around context that cannot. */
+.gap-separator[data-gap-state="collapsed"]::before {
+  margin-right: 6px;
+  content: "▾" / "";
+}
+
+.gap-separator[data-gap-state="unaddressed"]::before {
+  content: "··· " / "";
+}
+
+.gap-separator[data-gap-state="unaddressed"]::after {
+  content: " ···" / "";
+}
+
+/* Pierre's drawing plus the page's overlays: the selected-hunk rail and gap collapse bars. */
+.pierre-frame {
+  position: relative;
+}
+
+.pierre-host {
+  cursor: default;
+}
+
+.hunk-rail {
+  position: absolute;
+  left: 0;
+  width: 3px;
+  background: var(--hunk-accent);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Sits over the first expanded line, where the gap's separator was, as the terminal's row does. */
+.gap-collapse {
+  position: absolute;
+  right: 8px;
+  z-index: 1;
+  height: 18px;
+  margin-top: 1px;
+  padding: 0 8px;
+  font: inherit;
+  font-family: var(--ui-font);
+  font-size: 11px;
+  color: var(--hunk-muted);
+  background: var(--hunk-panel-alt);
+  border: 1px solid var(--hunk-border);
+  border-radius: 9px;
+  cursor: pointer;
+  opacity: 0.92;
+}
+
+.gap-collapse::before {
+  margin-right: 5px;
+  content: "▴" / "";
+}
+
+.gap-collapse:hover {
+  color: var(--hunk-text);
+  border-color: var(--hunk-accent);
+  opacity: 1;
 }
 
 .gap-separator[data-gap-state="error"],

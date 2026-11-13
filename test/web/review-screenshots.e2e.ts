@@ -7,7 +7,7 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { startTestWebReview, type TestWebReview } from "./webTestHarness";
+import { chooseTestTheme, startTestWebReview, type TestWebReview } from "./webTestHarness";
 
 const OUTPUT = process.env.HUNK_WEB_SCREENSHOT_DIR;
 
@@ -63,12 +63,29 @@ test("captures the review page for visual review", async ({ page, browser }) => 
     .catch(() => undefined);
   await capture(page, "03-expanded-gap");
 
-  await page.getByTestId("theme-picker").selectOption("github-light-default");
+  // The second hunk of the first file selected from the keyboard: the accent rail, revealed
+  // under the sticky header.
+  await page.locator("body").click({ position: { x: 1, y: 1 } });
+  await page.keyboard.press("]");
+  await capture(page, "10-selected-hunk-mid-file");
+
+  await chooseTestTheme(page, "github-light-default");
   await page.getByTestId("layout-split").click();
   await capture(page, "04-split-github-light");
-  await page.getByTestId("theme-picker").selectOption("dracula");
+  await settle(page);
+  await page.screenshot({
+    path: join(OUTPUT!, "11-toolbar-light.png"),
+    clip: { x: 0, y: 0, width: 1440, height: 48 },
+  });
+  await page.getByTestId("theme-picker").click();
+  await page.screenshot({
+    path: join(OUTPUT!, "12-theme-menu-light.png"),
+    clip: { x: 840, y: 0, width: 600, height: 520 },
+  });
+  await page.keyboard.press("Escape");
+  await chooseTestTheme(page, "dracula");
   await capture(page, "05-split-dracula");
-  await page.getByTestId("theme-picker").selectOption("solarized-light");
+  await chooseTestTheme(page, "solarized-light");
   await capture(page, "06-split-solarized-light");
 
   await page

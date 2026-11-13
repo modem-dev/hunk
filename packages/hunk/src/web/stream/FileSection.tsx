@@ -14,6 +14,7 @@ import type { ReviewEmptyDiffReason } from "../../core/review/document";
 import { reviewFileChangeGlyph, reviewFileLabelParts } from "../../core/review/fileLabels";
 import type { ReviewFileIndexEntry } from "../mirror/fileIndex";
 import type { ReviewFileRenderPlan } from "./fileProjection";
+import type { ReviewFileGeometry } from "./hunkGeometry";
 import { PierreFileView } from "./PierreFileView";
 
 /** Height of one Pierre row, and of the header, in CSS pixels. */
@@ -38,6 +39,8 @@ export interface FileSectionProps {
   /** Height measured the last time this file was mounted, preferred over the estimate. */
   measuredHeight?: number;
   selected: boolean;
+  /** The selected hunk, when this file holds the selection. */
+  selectedHunk?: number;
   layout: "split" | "unified";
   wrapLines: boolean;
   showLineNumbers: boolean;
@@ -45,6 +48,8 @@ export interface FileSectionProps {
   appearance: "light" | "dark";
   onToggleGap: (fileKey: string, gapId: string) => void;
   onCollapseGaps: (fileKey: string) => void;
+  onSelectHunk: (fileKey: string, hunkIndex: number) => void;
+  onGeometry: (fileKey: string, geometry: ReviewFileGeometry) => void;
 }
 
 /** The header row for one file. */
@@ -149,6 +154,9 @@ export const FileSection = memo(function FileSection(props: FileSectionProps) {
             syntaxTheme={props.syntaxTheme}
             appearance={props.appearance}
             onToggleGap={(gapId) => props.onToggleGap(fileKey, gapId)}
+            selectedHunk={props.selectedHunk}
+            onSelectHunk={(hunkIndex) => props.onSelectHunk(fileKey, hunkIndex)}
+            onGeometry={(geometry) => props.onGeometry(fileKey, geometry)}
           />
         ) : null}
       </div>
