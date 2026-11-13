@@ -113,6 +113,36 @@ export function toPierreFileDiff(
   };
 }
 
+/**
+ * One planned file's rows as the stream draws them, in both layouts.
+ *
+ * The shared model counts every gap's lines in a file's rows; the stream draws a gap that is
+ * not expanded as one separator row. Each hunk's start moves up by what the collapsed gaps
+ * at or before it fold away, and the totals are the plan's reserved rows, so an overview that
+ * places hunks by these fractions lands where they are drawn, and follows a gap's expansion.
+ */
+export function reviewDrawnRows(plan: ReviewFileRenderPlan) {
+  const folded = (hunkIndex: number) =>
+    plan.gaps
+      .filter(
+        (gap) =>
+          gap.state !== "expanded" &&
+          gap.address.position === "before" &&
+          gap.address.hunkIndex <= hunkIndex,
+      )
+      .reduce((rows, gap) => rows + gap.address.lineCount - 1, 0);
+  return {
+    splitLineCount: plan.reservedRows.split,
+    unifiedLineCount: plan.reservedRows.unified,
+    hunks: plan.file.hunks.map((hunk, index) => ({
+      splitLineStart: hunk.splitLineStart - folded(index),
+      splitLineCount: hunk.splitLineCount,
+      unifiedLineStart: hunk.unifiedLineStart - folded(index),
+      unifiedLineCount: hunk.unifiedLineCount,
+    })),
+  };
+}
+
 /** Plan one file's rendering against the page's local review state. */
 export function planReviewFileRender(
   file: ReviewFileV1,

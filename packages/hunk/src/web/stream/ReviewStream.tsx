@@ -52,7 +52,7 @@ import {
   type ReviewViewedControls,
 } from "./FileSection";
 import type { ReviewViewedStatus } from "../viewed/viewedFiles";
-import { planReviewFileRender, type ReviewFileRenderPlan } from "./fileProjection";
+import { planReviewFileRender, reviewDrawnRows, type ReviewFileRenderPlan } from "./fileProjection";
 import type { ReviewFileGeometry } from "./hunkGeometry";
 
 const NO_HIGHLIGHTS: readonly ReviewAgentHighlightV1[] = [];
@@ -102,6 +102,16 @@ export interface ReviewStreamController {
    * from its rows before. An overview projects these instead of reading the DOM.
    */
   bodyHeights(): Map<string, number>;
+  /**
+   * One loaded file's rows as the stream draws them, with each collapsed gap as its single
+   * separator row, so an overview places hunks where they are drawn.
+   */
+  drawnRows(fileKey: string): ReturnType<typeof reviewDrawnRows> | undefined;
+  /**
+   * Listen for the stream's heights changing without a scroll: a body drawn taller or
+   * shorter (wrapping, a gap, a preview), or a viewed file collapsing or opening.
+   */
+  subscribeLayout(listener: () => void): () => void;
   /** Scroll the stream to one offset, as the reader moving by hand. */
   scrollTo(top: number): void;
 }
@@ -363,6 +373,7 @@ export function ReviewStream(props: ReviewStreamProps) {
   // What the last reveal put on screen; scrolling that leaves it in place is not the reader.
   const hold = useRef<RevealHold | undefined>(undefined);
   const releasePin = useRef<(() => void) | undefined>(undefined);
+  const layoutListeners = useRef(new Set<() => void>());
 
   /** Scroll one target into its reveal position and remember where it landed. */
   const reveal = useCallback(
@@ -495,6 +506,17 @@ export function ReviewStream(props: ReviewStreamProps) {
         }
         return result;
       },
+      drawnRows(fileKey) {
+        const { filesByKey: files, planOf: plan } = latest.current;
+        const file = files.get(fileKey);
+        return file ? reviewDrawnRows(plan(file)) : undefined;
+      },
+      subscribeLayout(listener) {
+        layoutListeners.current.add(listener);
+        return () => {
+          layoutListeners.current.delete(listener);
+        };
+      },
       scrollTo(top) {
         const root = scrollRef.current;
         if (root) scrollBy(top - root.scrollTop);
@@ -574,6 +596,9 @@ export function ReviewStream(props: ReviewStreamProps) {
       if (performance.now() < deadline) frame = requestAnimationFrame(step);
     };
     const release = () => cancelAnimationFrame(frame);
+    // One hold at a time: an edge hold still running (a jump to the end just before the
+    // reload) stops before this one takes its place, or it would keep pulling to the edge.
+    releasePin.current?.();
     releasePin.current = release;
     pin();
     frame = requestAnimationFrame(step);
@@ -597,6 +622,7 @@ export function ReviewStream(props: ReviewStreamProps) {
         const key = (entry.target.parentElement as HTMLElement | null)?.dataset.fileKey;
         if (key && entry.contentRect.height > 0) heights.current.set(key, entry.contentRect.height);
       }
+      for (const listener of Array.from(layoutListeners.current)) listener();
     });
     for (const key of mounted) {
       const body = root.querySelector(`section[data-file-key="${CSS.escape(key)}"] .file-body`);
@@ -609,6 +635,12 @@ export function ReviewStream(props: ReviewStreamProps) {
   useEffect(() => {
     heights.current.clear();
   }, [props.layout, props.wrapLines]);
+
+  // Collapsing or opening a viewed file, wrapping, or a layout switch moves every file below
+  // it without a scroll; overviews hear about it here as well as from measured bodies.
+  useEffect(() => {
+    for (const listener of Array.from(layoutListeners.current)) listener();
+  }, [props.collapsedFiles, props.layout, props.wrapLines]);
 
   return (
     <div

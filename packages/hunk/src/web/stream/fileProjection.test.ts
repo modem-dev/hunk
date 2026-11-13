@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { projectReviewDocument } from "../../core/review/document";
 import type { ReviewSourceStatus } from "../../core/review/state";
 import { createTestDiffFile } from "../../../../../test/helpers/diff-helpers";
-import { planReviewFileRender, reviewGapIdForSeparator } from "./fileProjection";
+import { reviewHunkRowFractions } from "../../core/review/geometry";
+import { planReviewFileRender, reviewDrawnRows, reviewGapIdForSeparator } from "./fileProjection";
 
 const BEFORE = Array.from({ length: 40 }, (_unused, index) => `const v${index} = ${index};`);
 const AFTER = BEFORE.map((line, index) => (index === 20 ? "const v20 = 2000;" : line));
@@ -62,6 +63,24 @@ describe("planReviewFileRender", () => {
     expect(expanded.metadata?.hunks[0]?.collapsedBefore).toBe(0);
     expect(expanded.metadata?.hunks[0]?.additionStart).toBe(1);
     expect(expanded.metadata?.cacheKey).not.toBe(collapsed.metadata?.cacheKey);
+  });
+
+  // Intent: an overview places hunks by the rows the stream draws; a collapsed gap draws one
+  // separator row, so the hunk after it sits that much higher than the model's rows say, and
+  // an expanded gap puts it back.
+  test("places hunks at the rows drawn, following a gap's expansion", () => {
+    const file = createTestGapFile();
+    const collapsed = reviewDrawnRows(
+      planReviewFileRender(file, { expandedGaps: [], sourceStatusByFileKey: {} }),
+    );
+    const gap = createTestGapFile().hunks[0]!.collapsedBefore;
+    expect(collapsed.hunks[0]!.unifiedLineStart).toBe(file.hunks[0]!.unifiedLineStart - gap + 1);
+    expect(reviewHunkRowFractions(collapsed, "unified")[0]!.start).toBeLessThan(
+      reviewHunkRowFractions(file, "unified")[0]!.start,
+    );
+
+    const expanded = reviewDrawnRows(planWith({ kind: "loaded", text: `${AFTER.join("\n")}\n` }));
+    expect(expanded.hunks[0]!.unifiedLineStart).toBe(file.hunks[0]!.unifiedLineStart);
   });
 
   test("marks an expanded gap the source cannot fill as an error", () => {
