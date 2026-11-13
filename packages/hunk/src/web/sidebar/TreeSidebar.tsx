@@ -16,7 +16,7 @@ import { FileTree, useFileTree } from "@pierre/trees/react";
 import { useEffect, useMemo, useRef } from "react";
 import { reviewFileChangeGlyph, reviewSidebarBadges } from "../../core/review/fileLabels";
 import type { ReviewFileChangeKind } from "../../core/review/types";
-import { sidebarEntry, type FileSidebarProps } from "./sidebarEntry";
+import { sidebarEntry, treePathsOf, type FileSidebarProps } from "./sidebarEntry";
 
 /** Pierre tree's status vocabulary for one change kind. */
 function gitStatusOf(changeKind: ReviewFileChangeKind, untracked: boolean) {
@@ -101,8 +101,11 @@ export default function TreeSidebar({
   selectedKey,
   onSelectFile,
 }: Omit<FileSidebarProps, "mode">) {
-  const paths = useMemo(() => entries.map((entry) => entry.path), [entries]);
-  const byPath = useMemo(() => new Map(entries.map((entry) => [entry.path, entry])), [entries]);
+  const paths = useMemo(() => treePathsOf(entries), [entries]);
+  const byPath = useMemo(
+    () => new Map(entries.map((entry, index) => [paths[index]!, entry])),
+    [entries, paths],
+  );
   const order = useMemo(() => reviewOrderIndex(paths), [paths]);
   const following = useRef(false);
   const latest = useRef({ byPath, noteCounts, onSelectFile, order, selectedKey });
@@ -120,8 +123,8 @@ export default function TreeSidebar({
     flattenEmptyDirectories: true,
     density: "compact",
     unsafeCSS: treeRowStyles(),
-    gitStatus: entries.map((entry) => ({
-      path: entry.path,
+    gitStatus: entries.map((entry, index) => ({
+      path: paths[index]!,
       status: gitStatusOf(entry.changeKind, entry.flags.untracked),
     })),
     onSelectionChange: (selected) => {
@@ -158,8 +161,8 @@ export default function TreeSidebar({
     }
     model.resetPaths(paths);
     model.setGitStatus(
-      entries.map((entry) => ({
-        path: entry.path,
+      entries.map((entry, index) => ({
+        path: paths[index]!,
         status: gitStatusOf(entry.changeKind, entry.flags.untracked),
       })),
     );
@@ -176,8 +179,8 @@ export default function TreeSidebar({
     model.setGitStatus([]);
     model.setGitStatus(
       latest.current.byPath.size > 0
-        ? Array.from(latest.current.byPath.values(), (entry) => ({
-            path: entry.path,
+        ? Array.from(latest.current.byPath, ([path, entry]) => ({
+            path,
             status: gitStatusOf(entry.changeKind, entry.flags.untracked),
           }))
         : [],
@@ -185,7 +188,8 @@ export default function TreeSidebar({
   }, [model, noteCounts]);
 
   // Follow the store's selection, whoever made it.
-  const selectedPath = entries.find((entry) => entry.key === selectedKey)?.path;
+  const selectedIndex = entries.findIndex((entry) => entry.key === selectedKey);
+  const selectedPath = selectedIndex >= 0 ? paths[selectedIndex] : undefined;
   useEffect(() => {
     if (!selectedPath) return;
     const item = model.getItem(selectedPath);

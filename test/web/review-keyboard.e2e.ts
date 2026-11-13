@@ -30,9 +30,13 @@ test.beforeEach(async ({ page }) => {
 });
 
 test.afterEach(async () => {
-  expect(problems).toEqual([]);
-  await review?.stop();
-  review = undefined;
+  // Check the page before stopping (a stopped daemon cuts its event stream), but always stop.
+  try {
+    expect(problems).toEqual([]);
+  } finally {
+    await review?.stop();
+    review = undefined;
+  }
 });
 
 /** Open the review, wait until every file has loaded, and put focus on the page body. */
@@ -215,6 +219,14 @@ test("switches layout and view options from the keyboard", async ({ page }) => {
   await expect(page.getByTestId("theme-picker")).not.toHaveAttribute("data-theme-id", before ?? "");
   await page.keyboard.press("t");
   await expect(menu).toBeVisible();
+  // A letter no theme starts with stays in the open menu instead of reaching page shortcuts.
+  const scrollTop = () =>
+    page.evaluate(() => document.querySelector<HTMLElement>(".review-stream")!.scrollTop);
+  const scrolledBefore = await scrollTop();
+  await page.keyboard.press("j");
+  await page.waitForTimeout(200);
+  expect(await scrollTop()).toBe(scrolledBefore);
+  await expect(menu).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(menu).toHaveCount(0);
 });

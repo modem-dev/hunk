@@ -30,6 +30,29 @@ export function sidebarEntry(
   };
 }
 
+/**
+ * Return one distinct tree path per entry, in entry order.
+ *
+ * The review may list two files at one path (a delete and an add of it have different keys),
+ * but the tree keys rows by path and would merge them, leaving one unreachable. Each repeat
+ * gets a visible ` (2)`, ` (3)`, … suffix on its name, so every file has its own row.
+ */
+export function treePathsOf(entries: readonly { path: string }[]) {
+  const taken = new Set(entries.map((entry) => entry.path));
+  const seen = new Set<string>();
+  return entries.map(({ path }) => {
+    if (!seen.has(path)) {
+      seen.add(path);
+      return path;
+    }
+    let copy = 2;
+    while (taken.has(`${path} (${copy})`)) copy += 1;
+    const distinct = `${path} (${copy})`;
+    taken.add(distinct);
+    return distinct;
+  });
+}
+
 /** What either sidebar mode is given. */
 export interface FileSidebarProps {
   entries: readonly ReviewFileIndexEntry[];
