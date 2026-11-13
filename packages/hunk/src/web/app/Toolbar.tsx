@@ -5,11 +5,16 @@
  * The left side mirrors the terminal's `topTitle` — review title, file count, and total
  * `+A -D` — with connection and load state beside it. The right side holds the per-browser
  * view controls: sidebar, layout (auto, split, unified), wrapping, line numbers, and theme.
- * None of them reaches the session.
+ * They are real buttons, styled from the theme's tokens, and each names the shortcut that
+ * does the same thing (from the page's keymap, so a remap shows up here too). None of them
+ * reaches the session.
  */
+import type { KeyboardEvent } from "react";
 import type { LayoutMode } from "../../core/run/commandInputs";
+import type { WebImplementedCommandId } from "../commands/webCommandTable";
 import type { WebThemeV1 } from "../theme/themeIndex";
 import type { WebViewPreferences } from "../view/viewPreferences";
+import { ThemeMenu } from "./ThemeMenu";
 
 export interface ToolbarProps {
   title: string;
@@ -23,28 +28,56 @@ export interface ToolbarProps {
   resolvedLayout: "split" | "unified";
   themes: readonly WebThemeV1[];
   themeId: string | undefined;
+  themeMenuOpen: boolean;
+  onThemeMenuOpen: (open: boolean) => void;
   onPreferences: (next: Partial<WebViewPreferences>) => void;
   onToggleSidebar: () => void;
   onTheme: (themeId: string) => void;
+  /** The shortcut label for one command, when it has one on this page. */
+  keyHint: (commandId: WebImplementedCommandId) => string | undefined;
 }
 
-const LAYOUTS: readonly LayoutMode[] = ["auto", "split", "unified"];
+const LAYOUTS: readonly { mode: LayoutMode; command: WebImplementedCommandId }[] = [
+  { mode: "auto", command: "hunk.view.layoutAuto" },
+  { mode: "split", command: "hunk.view.layoutSplit" },
+  { mode: "unified", command: "hunk.view.layoutUnified" },
+];
+
+/** A tooltip naming one action and, when bound, its shortcut. */
+function hinted(label: string, hint: string | undefined) {
+  return hint ? `${label} (${hint})` : label;
+}
 
 /** The page toolbar. */
 export function Toolbar(props: ToolbarProps) {
-  const { preferences } = props;
+  const { preferences, keyHint } = props;
+
+  // Arrow keys move the choice within the layout group, as in any radio group.
+  const onLayoutKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
+    if (step === undefined) return;
+    event.preventDefault();
+    const index = LAYOUTS.findIndex((layout) => layout.mode === preferences.layout);
+    const next = LAYOUTS[(index + step + LAYOUTS.length) % LAYOUTS.length]!;
+    props.onPreferences({ layout: next.mode });
+    event.currentTarget.querySelector<HTMLElement>(`[data-testid="layout-${next.mode}"]`)?.focus();
+  };
+
   return (
     <header className="toolbar" role="banner">
       <button
         type="button"
-        className="tool-button"
+        className="tool-button icon-button"
         aria-pressed={props.sidebarOpen}
         aria-label={props.sidebarOpen ? "Hide files sidebar" : "Show files sidebar"}
-        title={props.sidebarOpen ? "Hide files" : "Show files"}
+        title={hinted(
+          props.sidebarOpen ? "Hide files" : "Show files",
+          keyHint("hunk.view.toggleFilesPane"),
+        )}
         onClick={props.onToggleSidebar}
         data-testid="toggle-sidebar"
       >
-        ☰
+        <span aria-hidden="true">☰</span>
       </button>
       <div className="toolbar-title">
         <span className="review-title">{props.title}</span>
@@ -63,52 +96,64 @@ export function Toolbar(props: ToolbarProps) {
         ) : null}
       </div>
       <div className="toolbar-controls">
-        <div className="segmented" role="radiogroup" aria-label="Layout">
-          {LAYOUTS.map((layout) => (
-            <button
-              key={layout}
-              type="button"
-              role="radio"
-              aria-checked={preferences.layout === layout}
-              data-testid={`layout-${layout}`}
-              title={layout === "auto" ? `Auto (${props.resolvedLayout} at this width)` : undefined}
-              onClick={() => props.onPreferences({ layout })}
-            >
-              {layout[0]!.toUpperCase() + layout.slice(1)}
-            </button>
-          ))}
+        <div
+          className="segmented"
+          role="radiogroup"
+          aria-label="Layout"
+          onKeyDown={onLayoutKeyDown}
+        >
+          {LAYOUTS.map(({ mode, command }) => {
+            const checked = preferences.layout === mode;
+            const label = mode[0]!.toUpperCase() + mode.slice(1);
+            return (
+              <button
+                key={mode}
+                type="button"
+                role="radio"
+                aria-checked={checked}
+                tabIndex={checked ? 0 : -1}
+                data-testid={`layout-${mode}`}
+                title={hinted(
+                  mode === "auto"
+                    ? `Auto layout, ${props.resolvedLayout} at this width`
+                    : `${label} layout`,
+                  keyHint(command),
+                )}
+                onClick={() => props.onPreferences({ layout: mode })}
+              >
+                {label}
+              </button>
+            );
+          })}
         </div>
-        <label className="toggle">
-          <input
-            type="checkbox"
-            checked={preferences.wrapLines}
-            onChange={(event) => props.onPreferences({ wrapLines: event.target.checked })}
-          />
+        <button
+          type="button"
+          className="tool-button toggle-button"
+          aria-pressed={preferences.wrapLines}
+          title={hinted("Wrap long lines", keyHint("hunk.view.toggleLineWrap"))}
+          data-testid="toggle-wrap"
+          onClick={() => props.onPreferences({ wrapLines: !preferences.wrapLines })}
+        >
           Wrap
-        </label>
-        <label className="toggle">
-          <input
-            type="checkbox"
-            checked={preferences.showLineNumbers}
-            onChange={(event) => props.onPreferences({ showLineNumbers: event.target.checked })}
-          />
+        </button>
+        <button
+          type="button"
+          className="tool-button toggle-button"
+          aria-pressed={preferences.showLineNumbers}
+          title={hinted("Show line numbers", keyHint("hunk.view.toggleLineNumbers"))}
+          data-testid="toggle-line-numbers"
+          onClick={() => props.onPreferences({ showLineNumbers: !preferences.showLineNumbers })}
+        >
           Line numbers
-        </label>
-        <label className="theme-picker">
-          <span className="visually-hidden">Theme</span>
-          <select
-            value={props.themeId ?? ""}
-            onChange={(event) => props.onTheme(event.target.value)}
-            data-testid="theme-picker"
-            disabled={props.themes.length === 0}
-          >
-            {props.themes.map((theme) => (
-              <option key={theme.id} value={theme.id}>
-                {theme.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        </button>
+        <ThemeMenu
+          themes={props.themes}
+          themeId={props.themeId}
+          open={props.themeMenuOpen}
+          onOpenChange={props.onThemeMenuOpen}
+          onTheme={props.onTheme}
+          keyHint={keyHint("hunk.view.openThemeSelector")}
+        />
       </div>
     </header>
   );

@@ -1,9 +1,10 @@
 # Web review client: page, assets, and policy
 
-> **Status (2026-11-13): M4 read-only page.** The daemon serves a real, offline page for a live
-> review: toolbar, files sidebar, and one top-to-bottom stream of every file, in the
-> terminal's themes. Notes and keyboard navigation are the next M4 steps; no CLI entry point
-> exists yet ([`web-review-plan.md`](web-review-plan.md)).
+> **Status (2026-11-13): M4 read-only page with keyboard navigation.** The daemon serves a
+> real, offline page for a live review: toolbar, files sidebar, and one top-to-bottom stream
+> of every file, in the terminal's themes, driven by the terminal's shortcuts. Adopting the
+> shared-state route and notes are the next M4 steps; no CLI entry point exists yet
+> ([`web-review-plan.md`](web-review-plan.md)).
 
 This records how the client is built and what the spike measured about Pierre on the web.
 
@@ -12,11 +13,16 @@ This records how the client is built and what the spike measured about Pierre on
 ```text
 packages/hunk/src/web/
   main.tsx                     entry; starts the session for this page's address
-  app/ReviewApp.tsx            composes the page; owns view preferences and the theme
-  app/Toolbar.tsx              title, counts, totals, status; layout/wrap/line-number/theme
+  app/ReviewApp.tsx            composes the page; owns view preferences, theme, and commands
+  app/Toolbar.tsx              title, counts, totals, status; layout/wrap/line-number toggles
+  app/ThemeMenu.tsx            the theme button and its listbox
+  commands/webCommandTable.ts  every catalogued command classified; handlers by catalog id
+  commands/keyboard.ts         DOM key events -> shared chord grammar; browser-reserved chords
+  commands/useWebKeyboard.ts   the one keydown listener that runs page commands
   sidebar/FileSidebar.tsx      flat mode (shared projection); lazy-loads tree mode
   sidebar/TreeSidebar.tsx      tree mode over @pierre/trees, in review order
-  stream/ReviewStream.tsx      the windowed stream, reveal, reload anchoring
+  stream/ReviewStream.tsx      the windowed stream, reveals, viewport anchoring, scrolling
+  stream/hunkGeometry.ts       hunk and gap rows from the model; their measured bounds
   stream/FileSection.tsx       sticky header, placeholders, reserved heights
   stream/fileProjection.ts     ReviewFileV1 -> Pierre metadata, gaps, reserved rows
   stream/PierreFileView.tsx    drives Pierre's vanilla FileDiff and the page's gap separators
@@ -148,10 +154,10 @@ manifest and fail unless the document, the manifest, and every listed asset are 
 
 | Measure                                                 | Bytes                                             |
 | ------------------------------------------------------- | ------------------------------------------------- |
-| Entry chunk (React DOM, Pierre diffs, Shiki core, page) | 756 KB (223 KB gzip)                              |
+| Entry chunk (React DOM, Pierre diffs, Shiki core, page) | 786 KB (232 KB gzip)                              |
 | Tree sidebar chunk (`@pierre/trees`, Preact), lazy      | about 240 KB                                      |
 | Theme index                                             | 60 KB (11 KB gzip)                                |
-| Page stylesheet                                         | 6 KB                                              |
+| Page stylesheet                                         | 8 KB                                              |
 | Lazy chunks for one TypeScript diff                     | TypeScript grammar 181 KB, its Shiki theme ~31 KB |
 | Whole build (every Shiki grammar and theme)             | 10.2 MB (1.8 MB as gzip)                          |
 | Added to the compiled binary                            | about 1.8 MB                                      |
@@ -165,8 +171,11 @@ imports; a page fetches only the languages and themes it shows. The largest sing
 - **Regions.** The toolbar mirrors the terminal's title line — title, file count, total
   `+A -D` — plus connection and load state; view controls sit on the right. The sidebar is
   navigation only: choosing a file is a `selection/select-file` with a file-top reveal that
-  scrolls the stream, never a filter. Scrolling reports the top file back as
-  `selection/anchor`, which moves the sidebar highlight and nothing else.
+  scrolls the stream, never a filter. Scrolling reports the hunk at the viewport's middle back
+  as `selection/anchor`, which moves the sidebar highlight and the selection and nothing else.
+  Tree rows are laid out as the terminal's are — change letter, name, badges, no file-type
+  icon — with the letter from `reviewFileChangeGlyph`, through stylesheet rules generated
+  from it into the tree's shadow root.
 - **Shared with the terminal.** File names, `old -> new` labels, state suffixes, change-kind
   letters, `*N`/`+N`/`-N` badges, and the flat and tree projections come from
   `core/review/fileLabels.ts`, which the terminal's `ui/lib/files.ts` now delegates to (audit
@@ -181,8 +190,9 @@ imports; a page fetches only the languages and themes it shows. The largest sing
   click applies `expansion/toggle` locally; the store loads the `source` resource and the plan
   folds the gap in, with loading, error, and too-large states from the shared source-status
   vocabulary. Pierre's own expansion is never used, and `collapsedContextThreshold: 0` keeps
-  every gap the model addresses collapsed. An expanded file shows "Hide expanded lines" in its
-  header, since a folded gap leaves no separator to click.
+  every gap the model addresses collapsed. A folded-in gap leaves no separator, so the page
+  overlays its own collapse control on the gap's first line, and the file header offers "Hide
+  expanded lines" for all of them.
 - **Windowing.** Every file is a section whose body height is reserved from the plan's row
   count (split or unified, minus folded gap lines) until mounted. Sections mount Pierre within
   1.5 viewports of the visible area and unmount beyond it, keeping their last measured height.
@@ -196,9 +206,55 @@ imports; a page fetches only the languages and themes it shows. The largest sing
   same tokens onto Pierre's `--diffs-*-override` and the tree's `--trees-*-override` properties;
   Pierre highlights with the theme's Shiki theme. The `terminal` theme is omitted. The default
   is GitHub dark or light by `prefers-color-scheme`; a choice is kept in `localStorage`.
-- **Not rendered yet.** Moved-line marks (`lineMoveKinds`): Pierre exposes no per-line class
-  or decoration hook in its diff renderer for them. The changeset title is not on the wire, so
+- **Not rendered yet.** Moved-line marks (`lineMoveKinds`): Pierre 1.5.2 exposes no per-line
+  class or decoration hook in its diff renderer for them (rechecked for the keyboard change; its
+  types mention "moved" only for renamed files). The changeset title is not on the wire, so
   the toolbar says "Hunk review" until presentation defaults arrive.
+
+## Commands and keyboard
+
+- **One table, keyed by the catalog.** `commands/webCommandTable.ts` classifies all 55
+  commands of `core/run/commandCatalog.ts` in one record keyed by `AppCommandId`, so a new
+  catalog entry fails to typecheck, and fails `webCommandTable.test.ts`, until the page decides
+  about it. Identity, titles, and chords come from the catalog; the page supplies handlers
+  only for what it implements.
+
+  | Class                              | Count | Commands                                                                                                                                                      |
+  | ---------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | Implemented                        | 22    | `[` `]` `,` `.`, `z`, step/half/page/top/bottom scrolling, code left/right, layout `1` `2` `0`, `s`, `l`, `w`, `t`                                            |
+  | Deferred: notes                    | 12    | start/edit/reply/delete/save note, previous/next note, toggle agent notes, annotated hunk and file navigation (`{` `}`)                                       |
+  | Deferred: filter, palette, refresh | 3     | focus filter; help (`?`) with the palette; refresh until the page has its refresh control                                                                     |
+  | Deferred: renderer                 | 1     | hunk headers (`m`): Pierre draws `@@` rows only in its built-in separator modes, which cannot coexist with the page's gap separators                          |
+  | Host-only (audit F4)               | 4     | quit, edit in `$EDITOR`, agent skill, feedback; extension commands are never in the table                                                                     |
+  | Terminal-only                      | 13    | focus-area toggle (Tab is native), visual selection and copy (native selection), line-cursor align and styles, menu bar, copy decorations, file presentations |
+
+- **Semantic commands lower, never re-derive.** Hunk and file navigation and the gap toggle go
+  through `lowerAppCommandToReviewIntent` and `applyReviewIntent` on the page's local store,
+  so `]` plans the same move, with the same clamp and cross-file rules, as in the terminal.
+- **Keymap.** Chords are the shared grammar (`extension-api/keys.ts`) and labels the shared
+  `core/run/keyChordLabels.ts`, which the terminal's `ui/lib/keymap.ts` now re-exports (audit
+  F3). The page starts from the catalog's default chords; the host's resolved keymap from the
+  shared-state route replaces them through the same `WebKeymap` shape. `keyboard.ts` maps a DOM
+  `KeyboardEvent` onto the grammar's structural key event (Caps Lock `G` is `G`, never `g`) and
+  masks what the browser owns: every Ctrl, Cmd, or Alt chord (so `ctrl+d`/`ctrl+u` stay the
+  browser's and `d`/`u` page), Tab, and the function keys. Nothing fires in a text field,
+  Space and Enter stay with a focused button, and arrow and paging keys stay with a focused
+  composite widget (the layout radio group, the theme listbox, the files tree).
+- **Reveal and anchoring.** A `hunk` reveal puts the selected hunk just under the sticky file
+  header, `file-top` puts the header at the top, `none` leaves the viewport alone. A hunk in a
+  file that has not mounted is scrolled to by estimate and corrected when the file draws. When
+  the reader scrolls by hand and the scroll settles, the hunk nearest the viewport's middle
+  becomes the selection through `selection/anchor` — the terminal's policy, now
+  `reviewHunkIndexAtOffset` in `core/review/viewportAnchor.ts` (audit B11) — so the next `]`
+  continues from there. A target the page just revealed holds the selection while it stays
+  where the reveal put it, so files mounting nearby cannot steal it.
+- **Mouse parity.** Clicking a hunk's rows selects it without scrolling; clicking a sidebar row
+  selects the file and jumps. The selected hunk carries the terminal's accent rail, measured
+  from the rows Pierre drew for the hunk's model rows (`hunkGeometry.ts`); expanded gap lines
+  are not part of the hunk. Focus runs toolbar, sidebar, stream, with visible rings.
+- **Gap affordances.** A collapsed gap that can expand shows the terminal's `▾`; context that
+  cannot shows `··· ···`. An expanded gap is collapsible in place from a "Hide N unchanged
+  lines" control over its first line (the terminal's wording), as well as from the header.
 
 ## Pierre findings that shaped the client
 
@@ -250,6 +306,10 @@ imports; a page fetches only the languages and themes it shows. The largest sing
   layout and theme switching, gap expansion, reload keeping the reader's place, and axe;
   `test/web/review-large.e2e.ts` keeps a 2,000-file review responsive.
   `test/web/review-screenshots.e2e.ts` captures the page when `HUNK_WEB_SCREENSHOT_DIR` is set.
+  `test/web/review-keyboard.e2e.ts` drives the page from the keyboard: hunk and file
+  navigation with reveals under the sticky header, scroll-then-navigate anchoring, paging,
+  the view keys and theme menu, the gap toggle, click-to-select, input-focus and
+  browser-shortcut suppression, focus order, and axe with the theme menu open.
   `bun run test:web` builds the page first, so a stale bundle is never what runs.
 - `test/web/review-page.e2e.ts` (`bun run build:web && bun run test:web`) — Chromium against a
   daemon and session run from source, asserting connection, file count, a highlighted Pierre
