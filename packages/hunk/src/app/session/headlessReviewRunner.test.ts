@@ -228,19 +228,53 @@ describe("runHeadlessReview", () => {
     expect(await exited).toBe(0);
   });
 
-  test("tells a person at a terminal what is running and how to stop it", async () => {
+  test("tells a person at a terminal that the review opened and how to stop it", async () => {
     const { bootstrap } = await createTestHeadlessBootstrap();
     const tty = await startTestHeadlessReview(bootstrap, undefined, { stderrIsTTY: true });
-    expect(tty.stderr).toContain(
-      "hunk: serving this review at the URL above; press Ctrl+C to stop.\n",
-    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(tty.stderr.filter((line) => line.includes("Ctrl+C"))).toEqual([
+      "hunk: review ready in your browser. Press Ctrl+C to stop.\n",
+    ]);
     tty.signals.emit("SIGINT");
     await tty.exited;
 
     const piped = await startTestHeadlessReview(bootstrap, undefined, { stderrIsTTY: false });
-    expect(piped.stderr.join("")).not.toContain("press Ctrl+C");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(piped.stderr.join("")).not.toContain("Ctrl+C");
+    expect(piped.stderr.join("")).not.toContain("review ready");
     piped.signals.emit("SIGINT");
     await piped.exited;
+  });
+
+  test("with --no-open, tells a person at a terminal to open the URL", async () => {
+    const { bootstrap } = await createTestHeadlessBootstrap({ open: false });
+    const tty = await startTestHeadlessReview(bootstrap, undefined, { stderrIsTTY: true });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(tty.stderr).toContain("hunk: open the URL above in a browser. Press Ctrl+C to stop.\n");
+    expect(tty.stderr.join("")).not.toContain("review ready");
+    tty.signals.emit("SIGINT");
+    await tty.exited;
+
+    const piped = await startTestHeadlessReview(bootstrap, undefined, { stderrIsTTY: false });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(piped.stderr.join("")).not.toContain("open the URL above");
+    piped.signals.emit("SIGINT");
+    await piped.exited;
+  });
+
+  test("a failed launch at a terminal folds the stop hint into its one warning", async () => {
+    const { bootstrap } = await createTestHeadlessBootstrap();
+    const tty = await startTestHeadlessReview(bootstrap, undefined, {
+      stderrIsTTY: true,
+      openUrl: async () => ({ ok: false, reason: "Could not open a browser with xdg-open." }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const hints = tty.stderr.filter((line) => line.includes("Ctrl+C"));
+    expect(hints).toEqual([
+      "hunk: warning: Could not open a browser with xdg-open. Open the URL above in a browser instead. Press Ctrl+C to stop.\n",
+    ]);
+    tty.signals.emit("SIGINT");
+    await tty.exited;
   });
 
   test("answers open_review with its URL or by opening it", async () => {

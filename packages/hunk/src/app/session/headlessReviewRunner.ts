@@ -13,7 +13,9 @@
  * program holds the port, the daemon cannot start, or it is a different Hunk build) it exits with a
  * user error and prints no URL. Otherwise it prints exactly the URL line on stdout, then opens that URL in the default browser
  * unless `--no-open`. A launch failure is one stderr line without the URL, and the review keeps
- * serving. When stderr is a terminal, one hint line says what is running and how to stop it.
+ * serving. When stderr is a terminal, one line says where the review is — open in the browser,
+ * or to be opened from the URL — and that Ctrl+C stops it; a failed launch carries that hint in
+ * its warning instead of a second line.
  * `hunk session open` reaches the same opener through the bridge (`./openReview.ts`).
  *
  * Terminal-only concerns get explicit headless answers here: repo-local extensions awaiting a
@@ -60,6 +62,9 @@ export const HEADLESS_REVIEW_SHUTDOWN_SIGNALS: readonly NodeJS.Signals[] =
   process.platform === "win32"
     ? ["SIGINT", "SIGTERM", "SIGBREAK"]
     : ["SIGINT", "SIGTERM", "SIGHUP", "SIGPIPE"];
+
+/** How a person at a terminal stops a headless review. */
+const HEADLESS_STOP_HINT = "Press Ctrl+C to stop.";
 
 /** Period of the idle timer that keeps the process alive; it never does any work. */
 const KEEP_ALIVE_INTERVAL_MS = 60 * 60 * 1000;
@@ -396,15 +401,23 @@ export async function runHeadlessReview(
   const sessionId = hostClient.getRegistration().sessionId;
   const url = reviewProcessUrl(brokerConfig.httpOrigin, sessionId);
   stdout(`${url}\n`);
-  if (deps.stderrIsTTY ?? process.stderr.isTTY === true) {
-    stderr("hunk: serving this review at the URL above; press Ctrl+C to stop.\n");
-  }
-  if (bootstrap.input.options.open !== false) {
+  // A person at a terminal gets one line saying where the review is and how to stop it; piped
+  // and agent use stays quiet apart from warnings. A failed launch folds the hint into its warning.
+  const stderrIsTTY = deps.stderrIsTTY ?? process.stderr.isTTY === true;
+  const stopHint = stderrIsTTY ? ` ${HEADLESS_STOP_HINT}` : "";
+  if (bootstrap.input.options.open === false) {
+    if (stderrIsTTY) stderr(`hunk: open the URL above in a browser.${stopHint}\n`);
+  } else {
     // Never awaited: a slow or failing browser launch must not delay or end the review.
     void openSessionReview(sessionId, { open: true, env: deps.env, openUrl: deps.openUrl }).then(
       (result) => {
-        if (result.failure && !coordinator.isShuttingDown()) {
-          stderr(noticeLine(`${result.failure} Open the URL above in a browser instead.`));
+        if (coordinator.isShuttingDown()) return;
+        if (result.failure) {
+          stderr(
+            noticeLine(`${result.failure} Open the URL above in a browser instead.${stopHint}`),
+          );
+        } else if (stderrIsTTY) {
+          stderr(`hunk: review ready in your browser.${stopHint}\n`);
         }
       },
     );
