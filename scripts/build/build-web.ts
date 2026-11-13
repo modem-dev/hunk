@@ -18,7 +18,15 @@
  *   --outdir <path>  Write the build here instead of `packages/hunk/dist/web`.
  */
 
-import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { createHash } from "node:crypto";
@@ -26,6 +34,7 @@ import type { BunPlugin } from "bun";
 import {
   REVIEW_PAGE_DOCUMENT_NAME,
   REVIEW_PAGE_MANIFEST_NAME,
+  parseReviewPageAssetManifest,
   reviewAssetContentType,
   type ReviewPageAssetManifestV1,
 } from "../../packages/hunk/src/session/broker/reviewPageAssets";
@@ -135,14 +144,31 @@ export function renderReviewPageDocument(
   ].join("\n");
 }
 
+/** Return the asset names one build directory's manifest lists, or none when it has none. */
+function listedAssets(directory: string): string[] {
+  try {
+    const manifest = parseReviewPageAssetManifest(
+      JSON.parse(readFileSync(path.join(directory, REVIEW_PAGE_MANIFEST_NAME), "utf8")),
+    );
+    return manifest?.assets ?? [];
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Move one finished build into place.
  *
  * The build is written to a sibling staging directory and renamed over the target, so a
  * daemon serving the previous build never sees a half-written one and two concurrent builds
  * (parallel test daemons in a source checkout) cannot interleave their files.
+ *
+ * The replaced build's hashed assets stay beside the new one until the next build, so a page
+ * loaded before a source-checkout rebuild still finds its lazy chunks and stylesheets. Only
+ * that one generation is kept, so the directory does not grow; packaged installs never
+ * rebuild in place.
  */
-function installBuild(staging: string, outdir: string) {
+export function installBuild(staging: string, outdir: string) {
   const retired = `${outdir}.retired-${process.pid}-${Date.now()}`;
   if (existsSync(outdir)) {
     renameSync(outdir, retired);
@@ -155,6 +181,17 @@ function installBuild(staging: string, outdir: string) {
       throw error;
     }
     rmSync(staging, { recursive: true, force: true });
+  }
+
+  for (const name of listedAssets(retired)) {
+    const kept = path.join(outdir, name);
+    if (!existsSync(kept)) {
+      try {
+        renameSync(path.join(retired, name), kept);
+      } catch {
+        // An asset that cannot be kept costs only a page already open its lazy chunks.
+      }
+    }
   }
   rmSync(retired, { recursive: true, force: true });
 }

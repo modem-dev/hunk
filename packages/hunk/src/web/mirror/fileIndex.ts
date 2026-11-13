@@ -45,6 +45,8 @@ export function reviewFileIndexEntry(file: ReviewFileV1): ReviewFileIndexEntry {
     splitLineCount: file.splitLineCount,
     unifiedLineCount: file.unifiedLineCount,
     hunkCount: file.hunks.length,
+    // The filter matches summaries too, so entries built without the shared index keep it.
+    ...(file.agentSummary !== undefined ? { agentSummary: file.agentSummary } : {}),
   };
 }
 

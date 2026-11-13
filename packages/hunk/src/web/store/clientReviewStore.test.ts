@@ -5,6 +5,7 @@ import {
   createTestSourceFetcher,
 } from "../../../../../test/helpers/diff-helpers";
 import { serveTestWebReview } from "../../../../../test/helpers/web-review-server";
+import type { ReviewSharedNoteV1, ReviewSharedStateV1 } from "../../session/reviewSharedState";
 import { ReviewMirror } from "../mirror/reviewMirror";
 import { ClientReviewStore, isLocalReviewIntent } from "./clientReviewStore";
 
@@ -18,14 +19,20 @@ const BEFORE = Array.from({ length: 30 }, (_unused, index) => `const line${index
 const AFTER = BEFORE.map((line, index) => (index === 20 ? "const line20 = 2000;" : line));
 
 /** A file with a collapsed gap before its hunk and a source reader behind it. */
-function createTestGapFile(id: string, source = AFTER.join("\n") + "\n") {
+function createTestGapFile(id: string, source = AFTER.join("\n") + "\n", attested = false) {
+  const sourceFetcher = createTestSourceFetcher((side) =>
+    side === "new" ? source : BEFORE.join("\n"),
+  );
   return createTestDiffFile({
     id,
     path: `src/${id}.ts`,
     before: BEFORE.join("\n") + "\n",
     after: AFTER.join("\n") + "\n",
     context: 2,
-    sourceFetcher: createTestSourceFetcher((side) => (side === "new" ? source : BEFORE.join("\n"))),
+    // A cache key attests the reader's snapshot, so its status may survive a reload.
+    sourceFetcher: attested
+      ? Object.assign(sourceFetcher, { cacheKey: `${id}:new` })
+      : sourceFetcher,
   });
 }
 
@@ -44,6 +51,22 @@ async function loadTestStore(files = [createTestGapFile("alpha"), createTestGapF
   running.push(() => review.close());
   review.adopt(mirror.getSnapshot().document, mirror.getSnapshot().catalog);
   return { served, client, mirror, review };
+}
+
+/** One live agent note on a file's first changed line, as a shared-state snapshot lists it. */
+function createTestLiveNote(id: string, fileKey: string): ReviewSharedNoteV1 {
+  return {
+    origin: "live",
+    resolution: "active",
+    note: {
+      id,
+      source: "agent",
+      fileKey,
+      anchor: { newRange: [21, 21], intersectingHunkIndices: [0], ownerHunkIndex: 0 },
+      summary: id,
+      editable: false,
+    },
+  };
 }
 
 /** The first file's leading gap id. */
@@ -86,6 +109,37 @@ describe("ClientReviewStore", () => {
     expect(() => review.apply({ type: "filter/set", filter: "x" } as never)).toThrow(
       "not page-local",
     );
+  });
+
+  // Intent: every shared-state snapshot replaces the stored notes; the reader's active note
+  // survives that while the snapshot still lists it, and goes only when the note does.
+  test("keeps the active note across a snapshot that still has it", async () => {
+    const { review } = await loadTestStore();
+    const fileKey = review.store.getSnapshot().document.files[0]!.key;
+    const first = createTestLiveNote("live:1", fileKey);
+    const second = createTestLiveNote("live:2", fileKey);
+    // Only the fields the store adopts; the rest of a snapshot is presentation.
+    const snapshot = (notes: ReviewSharedNoteV1[], revision: number) =>
+      ({
+        sharedStateRevision: revision,
+        files: [],
+        notes,
+        filter: "",
+        showAgentNotes: true,
+      }) as unknown as ReviewSharedStateV1;
+    review.adoptShared(snapshot([first], 1));
+    review.store.dispatch({
+      type: "selection/select",
+      fileKey,
+      hunkIndex: 0,
+      activeNoteId: "live:1",
+    });
+
+    review.adoptShared(snapshot([first, second], 2));
+    expect(review.store.getSnapshot().activeNoteId).toBe("live:1");
+
+    review.adoptShared(snapshot([second], 3));
+    expect(review.store.getSnapshot().activeNoteId).toBeNull();
   });
 
   test("expands a gap and loads its source into the shared status vocabulary", async () => {
@@ -137,4 +191,41 @@ describe("ClientReviewStore", () => {
     expect(state.selection.fileKey).toBe(second.key);
     expect(state.expandedGaps).toEqual([{ fileKey, gapId, expanded: true }]);
   });
+
+  // Intent: a reload that aborts a source read in flight must not leave the gap loading
+  // forever; the read restarts against the new generation's catalog.
+  test.each([false, true])(
+    "restarts a source read a reload aborted (attested %p)",
+    async (attested) => {
+      const files = () => [
+        createTestGapFile("alpha", undefined, attested),
+        createTestGapFile("beta", undefined, attested),
+      ];
+      const { review, served, client, mirror } = await loadTestStore(files());
+      const { fileKey, gapId } = leadingGapId(review);
+      const registration = served.harness.register();
+      served.harness.producer.publish({ files: files(), sourceLabel: "/repo" });
+      served.harness.register(registration);
+      const previousGeneration = mirror.getSnapshot().address?.generation;
+      mirror.observe(await client.publication());
+      for (let attempt = 0; attempt < 400; attempt += 1) {
+        const snapshot = mirror.getSnapshot();
+        if (snapshot.address?.generation !== previousGeneration && !snapshot.updating) break;
+        await Bun.sleep(5);
+      }
+
+      // The read starts against the old catalog and the reload lands before it can finish.
+      review.apply({ type: "expansion/toggle", fileKey, gapId });
+      review.adopt(mirror.getSnapshot().document, mirror.getSnapshot().catalog);
+      for (let attempt = 0; attempt < 200; attempt += 1) {
+        if (review.store.getSnapshot().sourceStatusByFileKey[fileKey]?.kind !== "loading") break;
+        await Bun.sleep(5);
+      }
+
+      expect(review.store.getSnapshot().sourceStatusByFileKey[fileKey]).toEqual({
+        kind: "loaded",
+        text: AFTER.join("\n") + "\n",
+      });
+    },
+  );
 });
