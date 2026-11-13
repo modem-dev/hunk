@@ -13,7 +13,7 @@
  * it was marked. A viewed file's body is collapsed to one row that expands it on click; the
  * page decides which files are viewed and collapsed (`../viewed/useViewedFiles.ts`).
  */
-import { memo, useMemo, type CSSProperties } from "react";
+import { memo, useContext, useMemo, type CSSProperties } from "react";
 import type { ReviewEmptyDiffReason } from "../../core/review/document";
 import type { ReviewStoredNote } from "../../core/review/state";
 import type { ReviewAgentHighlightV1, ReviewSharedNoteV1 } from "../../session/reviewSharedState";
@@ -26,6 +26,7 @@ import type { ReviewFileRenderPlan } from "./fileProjection";
 import { FilePreviewBody, FilePreviewHeaderAction } from "../previews/FilePreviews";
 import type { ReviewFileGeometry } from "./hunkGeometry";
 import { PierreFileView } from "./PierreFileView";
+import { SessionEndedContext } from "../session/sessionEnded";
 import type { ReviewViewedStatus } from "../viewed/viewedFiles";
 
 /** Height of one Pierre row, and of the header, in CSS pixels. */
@@ -117,6 +118,7 @@ function FileHeader({
       </header>
     );
   }
+  const sessionEnded = useContext(SessionEndedContext);
   const glyph = reviewFileChangeGlyph(index.changeKind, index.flags.untracked);
   const { filename, stateLabel } = reviewFileLabelParts({
     path: index.path,
@@ -158,6 +160,7 @@ function FileHeader({
           <input
             type="checkbox"
             checked={viewedStatus === "viewed"}
+            disabled={sessionEnded}
             onChange={() => viewed.toggle(fileKey)}
             aria-label={`Viewed ${filename}`}
           />
@@ -189,22 +192,25 @@ export const FileSection = memo(function FileSection(props: FileSectionProps) {
   const { fileKey, index, plan, mounted, measuredHeight, layout } = props;
   const expandedGaps = plan?.gaps.filter((gap) => gap.state !== "collapsed").length ?? 0;
   const { liveNotes, userNotes, showAgentNotes, sidecarNotes } = props;
+  const sessionEnded = useContext(SessionEndedContext);
   // Notes hang from lines as drawn, so expanded context counts; the plan's metadata is that.
-  const noteGroups = useMemo(
-    () =>
-      plan?.metadata
-        ? planReviewFileNotes({
-            file: { key: fileKey, hunks: plan.metadata.hunks },
-            state: {
-              liveNotes: liveNotes as ReviewStoredNote[],
-              userNotes: userNotes as ReviewStoredNote[],
-              showAgentNotes,
-            },
-            sidecar: sidecarNotes,
-          })
-        : [],
-    [fileKey, plan, liveNotes, userNotes, showAgentNotes, sidecarNotes],
-  );
+  const noteGroups = useMemo(() => {
+    if (!plan?.metadata) return [];
+    const groups = planReviewFileNotes({
+      file: { key: fileKey, hunks: plan.metadata.hunks },
+      state: {
+        liveNotes: liveNotes as ReviewStoredNote[],
+        userNotes: userNotes as ReviewStoredNote[],
+        showAgentNotes,
+      },
+      sidecar: sidecarNotes,
+    });
+    if (!sessionEnded) return groups;
+    return groups.map((group) => ({
+      ...group,
+      cards: group.cards.map((card) => ({ ...card, actionsDisabled: true })),
+    }));
+  }, [fileKey, plan, liveNotes, userNotes, showAgentNotes, sidecarNotes, sessionEnded]);
   const bodyStyle: CSSProperties | undefined =
     mounted && plan
       ? undefined

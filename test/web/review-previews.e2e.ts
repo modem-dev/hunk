@@ -179,10 +179,15 @@ test("toggles a Markdown file between its diff and its rendered text, inertly", 
 }) => {
   const guide = section(page, "docs/guide.md");
   await guide.scrollIntoViewIfNeeded();
-  const toggle = guide.getByTestId("markdown-toggle");
-  await expect(toggle).toHaveText("Rendered");
-  await toggle.click();
-  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  // Two segments name both views; the checked one is the view showing.
+  const diffMode = guide.getByTestId("markdown-mode-diff");
+  const renderedMode = guide.getByTestId("markdown-mode-rendered");
+  await expect(guide.getByTestId("markdown-mode")).toHaveText("DiffRendered");
+  await expect(diffMode).toHaveAttribute("aria-checked", "true");
+  await expect(renderedMode).toHaveAttribute("aria-checked", "false");
+  await renderedMode.click();
+  await expect(renderedMode).toHaveAttribute("aria-checked", "true");
+  await expect(diffMode).toHaveAttribute("aria-checked", "false");
   const rendered = guide.getByTestId("markdown-preview");
   await expect(rendered.locator("h1")).toHaveText("Guide");
   await expect(rendered.locator("strong")).toHaveText("new");
@@ -199,7 +204,11 @@ test("toggles a Markdown file between its diff and its rendered text, inertly", 
   await expect(links).toHaveAttribute("rel", "noopener noreferrer");
   await expect(links).toHaveAttribute("target", "_blank");
 
-  await toggle.click();
+  // Clicking the checked segment keeps the view; the other one switches back.
+  await renderedMode.click();
+  await expect(guide.getByTestId("markdown-preview")).toBeVisible();
+  await diffMode.click();
+  await expect(diffMode).toHaveAttribute("aria-checked", "true");
   await expect(guide.getByTestId("markdown-preview")).toHaveCount(0);
   await expect(guide.locator("diffs-container")).toHaveCount(1);
 });
@@ -209,7 +218,7 @@ test("toggles a Markdown file between its diff and its rendered text, inertly", 
 test("shows the diff again when navigation lands in a rendered Markdown file", async ({ page }) => {
   const guide = section(page, "docs/guide.md");
   await guide.scrollIntoViewIfNeeded();
-  await guide.getByTestId("markdown-toggle").click();
+  await guide.getByTestId("markdown-mode-rendered").click();
   await expect(guide.getByTestId("markdown-preview")).toBeVisible();
   await review!.hunk([
     "session",
@@ -226,7 +235,7 @@ test("shows the diff again when navigation lands in a rendered Markdown file", a
   ]);
 
   await expect(guide.getByTestId("markdown-preview")).toHaveCount(0);
-  await expect(guide.getByTestId("markdown-toggle")).toHaveAttribute("aria-pressed", "false");
+  await expect(guide.getByTestId("markdown-mode-diff")).toHaveAttribute("aria-checked", "true");
   await expect(page.locator(".note-card", { hasText: "Check this line" })).toBeInViewport({
     timeout: 15_000,
   });
@@ -269,14 +278,14 @@ test("keeps relative image sizes when stacked and new dimensions after a refresh
 test("renders a deleted Markdown file from its old text", async ({ page }) => {
   const removed = section(page, "docs/removed.md");
   await removed.scrollIntoViewIfNeeded();
-  await removed.getByTestId("markdown-toggle").click();
+  await removed.getByTestId("markdown-mode-rendered").click();
   const rendered = removed.getByTestId("markdown-preview");
   await expect(rendered).toHaveAttribute("data-side", "old");
   await expect(rendered.locator("h1")).toHaveText("Removed");
 });
 
 test("has no serious accessibility violations with previews showing", async ({ page }) => {
-  await section(page, "docs/guide.md").getByTestId("markdown-toggle").click();
+  await section(page, "docs/guide.md").getByTestId("markdown-mode-rendered").click();
   await expect(section(page, "images/photo.png").getByTestId("image-preview")).toBeVisible();
   const results = await new AxeBuilder({ page })
     .exclude("diffs-container")

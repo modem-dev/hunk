@@ -65,6 +65,8 @@ export interface ReviewActionSenderOptions {
   /** Where the page is: the generation every envelope names. */
   mirror: Pick<ReviewMirror, "getSnapshot" | "subscribe">;
   clientId?: string;
+  /** Whether the session has ended; every send then fails with `session-ended`, unposted. */
+  isEnded?: () => boolean;
 }
 
 /** Sends review actions for one page. */
@@ -81,6 +83,9 @@ export class ReviewActionSender {
     options: ReviewActionOptions = {},
   ): Promise<ReviewActionOutcome> {
     for (let attempt = 0; ; attempt += 1) {
+      if (this.options.isEnded?.()) {
+        return reviewActionFailure(new ReviewApiError("session-ended", "The session has ended."));
+      }
       const generation = this.options.mirror.getSnapshot().address?.generation;
       if (!generation) {
         return reviewActionFailure(new ReviewApiError("no-publication", "No review is shown."));

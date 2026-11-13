@@ -38,7 +38,10 @@ function useMarkdownSource(fileKey: string, path: string, changeKind: string) {
 const noopSubscribe = () => () => {};
 const zero = () => 0;
 
-/** The header toggle between a Markdown file's diff and its rendered text. */
+/**
+ * The header control between a Markdown file's diff and its rendered text: two segments with the
+ * one showing checked, in the same radio-group markup as the layout and image-mode controls.
+ */
 export function FilePreviewHeaderAction({
   fileKey,
   path,
@@ -50,17 +53,33 @@ export function FilePreviewHeaderAction({
 }) {
   const { context, available, rendered } = useMarkdownSource(fileKey, path, changeKind);
   if (!available || !context) return null;
+  const modes = [
+    { id: "diff", label: "Diff", title: "Show the diff", checked: !rendered },
+    { id: "rendered", label: "Rendered", title: "Show the rendered document", checked: rendered },
+  ] as const;
   return (
-    <button
-      type="button"
-      className="header-action"
-      aria-pressed={rendered}
-      data-testid="markdown-toggle"
-      title={rendered ? "Show the diff" : "Show the rendered document"}
-      onClick={() => context.markdownModes.toggle(fileKey)}
+    <div
+      className="segmented small markdown-mode"
+      role="radiogroup"
+      aria-label={`View ${path}`}
+      data-testid="markdown-mode"
     >
-      {rendered ? "Diff" : "Rendered"}
-    </button>
+      {modes.map((mode) => (
+        <button
+          key={mode.id}
+          type="button"
+          role="radio"
+          aria-checked={mode.checked}
+          data-testid={`markdown-mode-${mode.id}`}
+          title={mode.title}
+          onClick={() => {
+            if (!mode.checked) context.markdownModes.toggle(fileKey);
+          }}
+        >
+          {mode.label}
+        </button>
+      ))}
+    </div>
   );
 }
 
