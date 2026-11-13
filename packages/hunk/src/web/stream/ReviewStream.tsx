@@ -41,6 +41,8 @@ import type { ReviewFileV1 } from "../../core/review/types";
 import { reviewHunkIndexAtOffset } from "../../core/review/viewportAnchor";
 import type { ReviewAgentHighlightV1, ReviewSharedNoteV1 } from "../../session/reviewSharedState";
 import type { ReviewMirrorFileSlot } from "../mirror/reviewMirror";
+import type { NoteComposer } from "../notes/composerStore";
+import type { ReviewNoteInteraction } from "../notes/noteInteraction";
 import { FileSection, STREAM_HEADER_HEIGHT_PX, STREAM_ROW_HEIGHT_PX } from "./FileSection";
 import { planReviewFileRender, type ReviewFileRenderPlan } from "./fileProjection";
 import type { ReviewFileGeometry } from "./hunkGeometry";
@@ -105,7 +107,13 @@ export interface ReviewStreamProps {
   highlights: Readonly<Record<string, ReviewAgentHighlightV1[]>>;
   /** An exact line or note the next hunk reveal of its file should land on. */
   revealPoint?: ReviewRevealPoint;
+  /** Every open composer on the page. */
+  composers: readonly NoteComposer[];
+  /** What note gestures do. */
+  interaction: ReviewNoteInteraction;
 }
+
+const NO_COMPOSERS: readonly NoteComposer[] = [];
 
 /** A line or note inside one file, which a hunk reveal lands on instead of the hunk's top. */
 export interface ReviewRevealPoint {
@@ -208,6 +216,14 @@ export function ReviewStream(props: ReviewStreamProps) {
     () => new Map(review.document.files.map((file) => [file.key, file])),
     [review.document],
   );
+  // One array per file, rebuilt only when composers change, so other files skip re-rendering.
+  const composersByFile = useMemo(() => {
+    const byFile = new Map<string, NoteComposer[]>();
+    for (const composer of props.composers) {
+      byFile.set(composer.fileKey, [...(byFile.get(composer.fileKey) ?? []), composer]);
+    }
+    return byFile;
+  }, [props.composers]);
   const latest = useRef({ props, filesByKey, planOf });
   latest.current = { props, filesByKey, planOf };
 
@@ -534,6 +550,8 @@ export function ReviewStream(props: ReviewStreamProps) {
             showAgentNotes={review.showAgentNotes}
             sidecarNotes={props.sidecarNotes}
             highlights={props.highlights[slot.key] ?? NO_HIGHLIGHTS}
+            composers={composersByFile.get(slot.key) ?? NO_COMPOSERS}
+            interaction={props.interaction}
           />
         );
       })}

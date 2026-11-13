@@ -16,6 +16,10 @@ packages/hunk/src/web/
   app/ReviewApp.tsx            composes the page; owns view preferences, theme, and commands
   app/Toolbar.tsx              title, counts, totals, status; layout/wrap/line-number toggles
   app/ThemeMenu.tsx            the theme button and its listbox
+  app/ReviewControls.tsx       shared filter field, refresh, copy review link
+  app/useReviewInteraction.tsx composers, note commands, shared toggles, refresh
+  actions/reviewActions.ts     posts review actions; typed outcomes; the stale-generation retry
+  actions/toasts.tsx           failure toasts in an aria-live region
   commands/webCommandTable.ts  every catalogued command classified; handlers by catalog id
   commands/keyboard.ts         DOM key events -> shared chord grammar; browser-reserved chords
   commands/useWebKeyboard.ts   the one keydown listener that runs page commands
@@ -38,14 +42,23 @@ packages/hunk/src/web/
   notes/noteProjection.ts      places a file's visible notes per line; titles and thread depth
   notes/noteCards.ts           note cards as DOM for Pierre's line annotations
   notes/stmlDom.ts             STML markup to DOM through the shared parser and roles
+  notes/noteTargets.ts         a picked line or range -> hunk, target, expanded-line proof
+  notes/composerStore.ts       open composers per tab; drafts in sessionStorage
+  notes/noteActions.ts         composer -> notes/add-user or notes/edit-user; removal intents
+  notes/NoteComposerView.tsx   one composer form in the diff flow
+  session/capability.ts        moves the capability from the address into tab storage
   stream/highlightGeometry.ts  agent attention marks measured over drawn characters
   mirror/fileIndex.ts          per-file index entries and the pluggable index source
   store/clientReviewStore.ts   the page's local core/review store and gap source loads
 ```
 
-- **Capability.** Read from `location.hash` once (`reviewSession.ts`) and held only by the API
-  client, which sends it in the `hunk-review-capability` header. It never enters a path, a
-  query string, a log, or storage.
+- **Capability.** Read from the fragment's `capability` parameter once (`capability.ts`), then
+  kept in this tab's `sessionStorage` under `hunk.review.capability:<session>` and removed from
+  the address bar with `history.replaceState`, which keeps every other fragment parameter (the
+  semantic address C6 adds). A reload reads it back from storage; with neither, the page says to
+  run `hunk session open`. The API client sends it in the `hunk-review-capability` header. It
+  never enters a path, a query string, a log, or `localStorage`; "Copy link" rebuilds the full
+  review URL with it on demand.
 - **Transport** (`apiClient.ts`, `eventReader.ts`, `eventStream.ts`) owns requests, the event
   stream, and reconnects. Resource windows are assembled by the shared `ReviewChunkAssembler`
   and verified with Web Crypto through `finishAsync`; events are decoded by the shared
@@ -154,11 +167,11 @@ servable asset. The build refuses any output whose name the page grammar would n
 whose extension has no declared content type. A plugin replaces `shiki/wasm` with a module that
 throws, so the 460 KB Oniguruma binary never ships and the policy never needs WASM.
 
-| Distribution     | Where the page lives           | How                                                                                                                                                                                                                                                                                                            |
-| ---------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Compiled binary  | Embedded `hunk-web-assets.bin` | `build-bin.ts` builds the page and packs every file gzip-compressed into one archive passed to `bun build --compile`; the daemon finds it in `Bun.embeddedFiles` and serves the files still compressed (`content-encoding: gzip`, inflated only for a client that refuses gzip).                               |
-| npm (`dist/npm`) | `dist/npm/web/`                | `build-npm.ts` builds into it; `main.js` reads it from beside itself. The prebuilt meta package copies it with the rest of `dist/npm`.                                                                                                                                                                         |
-| Source checkout  | `packages/hunk/dist/web/`      | `reviewPageAssets.ts` runs `scripts/build/build-web.ts` once when the build is missing. An existing build is reused; rerun `bun run build:web` after changing the client, and a running daemon serves the new build: it re-reads `manifest.json` on every lookup, so it never serves a replaced build's names. |
+| Distribution     | Where the page lives           | How                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ---------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Compiled binary  | Embedded `hunk-web-assets.bin` | `build-bin.ts` builds the page and packs every file gzip-compressed into one archive passed to `bun build --compile`; the daemon finds it in `Bun.embeddedFiles` and serves the files still compressed (`content-encoding: gzip`, inflated only for a client that refuses gzip).                                                                                                                              |
+| npm (`dist/npm`) | `dist/npm/web/`                | `build-npm.ts` builds into it; `main.js` reads it from beside itself. The prebuilt meta package copies it with the rest of `dist/npm`.                                                                                                                                                                                                                                                                        |
+| Source checkout  | `packages/hunk/dist/web/`      | `reviewPageAssets.ts` runs `scripts/build/build-web.ts` when the build is missing, at most once per daemon: page requests are unauthenticated, so a failed build is remembered and answered with the 503 until the daemon restarts. An existing build is reused; rerun `bun run build:web` after changing the client, and a running daemon serves the new build: it re-reads `manifest.json` on every lookup. |
 
 Output is generated and ignored by Git. `check:pack` and `check:prebuilt-pack` read the
 manifest and fail unless the document, the manifest, and every listed asset are in the pack.
@@ -226,7 +239,7 @@ imports; a page fetches only the languages and themes it shows. The largest sing
 
 ## Notes, agent marks, and presentation defaults
 
-- **Notes** are read-only cards in the diff flow, one Pierre line annotation per anchor line,
+- **Notes** are cards in the diff flow, one Pierre line annotation per anchor line,
   placed by `noteProjection.ts`: visibility and threads from
   `selectVisibleThreadedStoredReviewNotes` and `reviewNoteVisibleByPolicy`, the line from
   `reviewNoteAnchorLine`, and the owner hunk's canonical line when that line sits in collapsed
@@ -242,11 +255,48 @@ imports; a page fetches only the languages and themes it shows. The largest sing
 - **Agent marks** are measured over the characters Pierre drew (`highlightGeometry.ts`) and
   painted in their tone; Pierre has no character-range decoration hook.
 - **Agent reveal.** When `agentReveal.token` grows, the page selects its hunk and reveals its
-  line or note card. The token present when the page first loads is history and moves nothing.
+  line or note card. The token present in the first shared state the page reads is history and
+  moves nothing; one that first arrives after that is revealed once the document is ready.
 - **Focus report.** When the reader's scroll settles, the page posts a debounced
-  `selection/anchor` as a `browser` actor with a per-tab `clientId` (never stored), so a
-  headless session's `hunk session context` reports where the reader is. Failures are dropped,
-  nothing is sent while a newer generation loads, and no other selection action is ever sent.
+  `selection/anchor` through the action sender, so a headless session's `hunk session context`
+  reports where the reader is. Failures are dropped and never retried, nothing is sent while a
+  newer generation loads, and no other selection action is ever sent.
+
+## Writing to the review
+
+- **Action sender** (`actions/reviewActions.ts`). Every write is one envelope:
+  the current generation, `expectedStateRevision` where a precondition matters, and the actor
+  `{ clientId, kind: "browser" }` with a random per-tab `clientId` (never stored). Outcomes are
+  typed (`{ ok: true, applied }` or `{ ok: false, code, message }`), and messages are always
+  `reviewErrorCatalog.ts` sentences. The retry policy lives only here: on `stale-generation`
+  the sender waits (up to 5 s) for the mirror to show a newer generation and sends again, at
+  most twice, only while the caller says the action is still meaningful; otherwise it reports.
+  Failures from a composer show in it (`role="alert"`); others become a toast in an
+  `aria-live` region.
+- **Notes.** `c` (or a gutter click) opens a composer on a line; `E`, `R`, and `D` act on the
+  active note, as do the Edit / Reply / Delete buttons on a card. Saves are the direct intents
+  `notes/add-user { fileKey, hunkIndex, body, target?, parentId?, expandedLineProof? }` and
+  `notes/edit-user { noteId, body }`; deletes are `notes/remove-user` or `notes/remove-live`,
+  which the session refuses with `note-has-replies` while replies remain. Bodies are checked
+  first with the shared `isBlankReviewNoteBody` and `reviewNoteWithinSizeLimit`. A composer
+  stays open, marked sending, until `/state` carries the note at or after the revision the
+  save returned. `Ctrl+Enter` (`⌘+Enter` on macOS) saves; `Esc` cancels, asking first when the
+  body is not empty. Composers never use the terminal's shared draft slot.
+- **Line ranges.** Hovering a line shows Pierre's gutter button; a click opens a composer on
+  that line, and a drag (or shift-click) across line numbers on one side opens one on the
+  range, through Pierre's line selection. Targets come from `noteTargets.ts`: a range must be
+  fully drawn by the hunk; a line only an expanded gap drew is sent with its
+  `expandedLineProof` (audit B10). The session accepts proof for one line only, so a range
+  reaching into expanded context narrows to its first line. Several composers may be open.
+- **Drafts** are kept in this tab's `sessionStorage` (`hunk.review.drafts:<session>`, keyed by
+  file key and anchor), so they survive a reload; saving or cancelling clears them, and a draft
+  whose file's content identity changed is marked and offers only Discard.
+- **Shared toggles.** `a` sends `notes/set-visibility`; the filter field (`/`, the catalog's
+  focus-filter command, which has no default chord) sends `filter/set` after 300 ms. Both are
+  shared with the terminal and every other window, as the field's hint says.
+- **Refresh.** The toolbar button and `r` post `/refresh`, the one host-only command the page
+  runs (allowlisted in `BROWSER_ALLOWED_HOST_COMMANDS`, audit F4); the server paces refreshes at
+  2 s, and the button reads "Refreshing…" until it answers.
 - **Presentation defaults.** The toolbar shows `presentation.title` (the source label is its
   tooltip) and the shared filter. The session's theme, view options, and resolved keymap are
   the starting point; this browser's own theme and view choices win and persist, and the theme
@@ -265,14 +315,13 @@ imports; a page fetches only the languages and themes it shows. The largest sing
   about it. Identity, titles, and chords come from the catalog; the page supplies handlers
   only for what it implements.
 
-  | Class                              | Count | Commands                                                                                                                                                      |
-  | ---------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-  | Implemented                        | 22    | `[` `]` `,` `.`, `z`, step/half/page/top/bottom scrolling, code left/right, layout `1` `2` `0`, `s`, `l`, `w`, `t`                                            |
-  | Deferred: notes                    | 12    | start/edit/reply/delete/save note, previous/next note, toggle agent notes, annotated hunk and file navigation (`{` `}`)                                       |
-  | Deferred: filter, palette, refresh | 3     | focus filter; help (`?`) with the palette; refresh until the page has its refresh control                                                                     |
-  | Deferred: renderer                 | 1     | hunk headers (`m`): Pierre draws `@@` rows only in its built-in separator modes, which cannot coexist with the page's gap separators                          |
-  | Host-only (audit F4)               | 4     | quit, edit in `$EDITOR`, agent skill, feedback; extension commands are never in the table                                                                     |
-  | Terminal-only                      | 13    | focus-area toggle (Tab is native), visual selection and copy (native selection), line-cursor align and styles, menu bar, copy decorations, file presentations |
+  | Class                | Count | Commands                                                                                                                                                      |
+  | -------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | Implemented          | 36    | navigation and annotated navigation, scrolling, view keys, the gap toggle, notes (`c` `E` `R` `D`, save, previous/next), `a`, focus filter, refresh (`r`)     |
+  | Deferred: palette    | 1     | help (`?`) with the palette                                                                                                                                   |
+  | Deferred: renderer   | 1     | hunk headers (`m`): Pierre draws `@@` rows only in its built-in separator modes, which cannot coexist with the page's gap separators                          |
+  | Host-only (audit F4) | 5     | quit, edit in `$EDITOR`, agent skill, feedback, open in browser; extension commands are never in the table. Refresh is host-only but allowlisted (above)      |
+  | Terminal-only        | 13    | focus-area toggle (Tab is native), visual selection and copy (native selection), line-cursor align and styles, menu bar, copy decorations, file presentations |
 
 - **Semantic commands lower, never re-derive.** Hunk and file navigation and the gap toggle go
   through `lowerAppCommandToReviewIntent` and `applyReviewIntent` on the page's local store,
@@ -339,14 +388,15 @@ imports; a page fetches only the languages and themes it shows. The largest sing
   traversal, HEAD, methods, gzip negotiation, identical documents, no capability-shaped token,
   and the route inside a real daemon behind its Host/Origin checks.
 - `packages/hunk/src/session/broker/reviewPageAssets.test.ts` — manifest grammar, directory and
-  archive stores.
+  archive stores, and the source build running at most once per daemon.
 - `packages/hunk/src/web/**/*.test.ts` — the API client (window boundaries, digest and size
   refusals, bounded parallelism, abort), event reader (SSE splitting, chunked reassembly,
   digest refusal), event stream (backoff with a fake clock, terminal states), mirror (ordering,
   progressive load, supersede, failed reload), and store (local intents, gap source, reload).
 - `test/review-conformance/` registers the browser mirror as an ordering consumer, the
   browser event reader as an event consumer, and the browser file projection as a geometry
-  consumer (gaps, empty reasons, and the rows an expanded gap puts in Pierre's metadata).
+  consumer (gaps, empty reasons, and the rows an expanded gap puts in Pierre's metadata), and
+  the composer's blank-body check against the note-body corpus.
 - `test/web/review-stream.e2e.ts` drives a rich review (rename, new, deleted, binary,
   too-large, gaps, a non-ASCII path, many files): progressive load, sidebar and stream jumps,
   layout and theme switching, gap expansion, reload keeping the reader's place, and axe;
@@ -358,6 +408,11 @@ imports; a page fetches only the languages and themes it shows. The largest sing
   custom theme from config with the session-theme override; the reader's position reported to
   `hunk session context`; notes and position across a reload; and axe with notes showing.
   `test/web/review-languages.e2e.ts` highlights `.mts` and `.cts` files.
+  `test/web/review-interactive.e2e.ts` writes through the page: the note lifecycle confirmed by
+  `hunk session comment list`, a gutter-drag range and a note inside an expanded gap, drafts
+  across a reload, filter and visibility reaching a second page, refresh after a file edit, the
+  capability leaving the address, `too-many-notes`, a stale generation retried, and axe with a
+  composer open.
   `test/web/review-keyboard.e2e.ts` drives the page from the keyboard: hunk and file
   navigation with reveals under the sticky header, scroll-then-navigate anchoring, paging,
   the view keys and theme menu, the gap toggle, click-to-select, input-focus and

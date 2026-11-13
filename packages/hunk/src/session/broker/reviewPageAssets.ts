@@ -291,7 +291,6 @@ async function buildSourceAssets(buildScript: string): Promise<boolean> {
 }
 
 let embedded: Promise<ReviewPageAssets | undefined> | undefined;
-let sourceBuild: Promise<boolean> | undefined;
 const directoryCache = new Map<string, { manifest: string; loaded: ReviewPageAssets }>();
 
 /** The build a directory holds now, re-read only when its manifest's content changed. */
@@ -335,11 +334,35 @@ export function currentDirectoryReviewPageAssets(directory: string): ReviewPageA
 }
 
 /**
+ * Serve a source checkout's build, building it on first need at most once per daemon.
+ *
+ * A page request needs no authentication, so a build it triggers must not be repeatable on
+ * demand: the build runs once, single-flight, for the daemon's lifetime, and a failed build is
+ * remembered — every later request is served the missing-page answer until the daemon
+ * restarts — rather than started again by the next request. An existing build is always read
+ * fresh, so `bun run build:web` under a running daemon is still picked up.
+ */
+export function createSourceReviewPageLoader(
+  build: () => Promise<boolean>,
+  read: () => ReviewPageAssets | undefined,
+) {
+  let built: Promise<boolean> | undefined;
+  return async (): Promise<ReviewPageAssets | undefined> => {
+    const existing = read();
+    if (existing) return existing;
+    built ??= build().catch(() => false);
+    return (await built) ? read() : undefined;
+  };
+}
+
+let sourceLoader: (() => Promise<ReviewPageAssets | undefined>) | undefined;
+
+/**
  * Load the page build this distribution carries, building it first in a source checkout.
  *
  * The embedded archive is read once. A build directory is checked on every call so a rebuild
- * while the daemon runs is picked up. A source build is single-flight, and a failed one is
- * retried by the next page request rather than leaving the daemon without a page.
+ * while the daemon runs is picked up. A source build runs at most once per daemon
+ * (`createSourceReviewPageLoader`).
  */
 export async function loadReviewPageAssets(): Promise<ReviewPageAssets | undefined> {
   const archive = embeddedArchive();
@@ -358,12 +381,9 @@ export async function loadReviewPageAssets(): Promise<ReviewPageAssets | undefin
   if (!source) {
     return undefined;
   }
-  const existing = currentDirectoryReviewPageAssets(source.outdir);
-  if (existing) {
-    return existing;
-  }
-  sourceBuild ??= buildSourceAssets(source.buildScript).finally(() => {
-    sourceBuild = undefined;
-  });
-  return (await sourceBuild) ? currentDirectoryReviewPageAssets(source.outdir) : undefined;
+  sourceLoader ??= createSourceReviewPageLoader(
+    () => buildSourceAssets(source.buildScript),
+    () => currentDirectoryReviewPageAssets(source.outdir),
+  );
+  return sourceLoader();
 }

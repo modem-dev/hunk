@@ -36,11 +36,6 @@ export type WebCommandSupport =
 
 const IMPLEMENTED = { kind: "implemented" } as const;
 
-/** Deferred until reviewer and agent notes reach the page. */
-function notes(reason: string) {
-  return { kind: "deferred", until: "notes", reason } as const;
-}
-
 /** Runs where the review is hosted; a remote page may not start it (audit F4). */
 function hostOnly(reason: string) {
   return { kind: "unavailable", scope: "host-only", reason } as const;
@@ -69,25 +64,20 @@ export const WEB_COMMAND_SUPPORT = {
   "hunk.app.toggleFocusArea": terminalOnly(
     "Tab moves focus natively in the browser: toolbar, sidebar, then the review stream.",
   ),
-  "hunk.review.focusFilter": {
-    kind: "deferred",
-    until: "filter",
-    reason: "The page has no file filter yet; the filter is shared review state.",
-  },
+  "hunk.review.focusFilter": IMPLEMENTED,
   "hunk.review.startVisualSelection": terminalOnly(
     "The browser selects text natively with the mouse or Shift and the arrow keys.",
   ),
   "hunk.review.copySelection": terminalOnly("The browser copies a native selection itself."),
   "hunk.review.clearSelection": terminalOnly("A native selection clears by clicking elsewhere."),
-  "hunk.review.startNote": notes("Starting a note needs the composer and the notes route."),
-  "hunk.review.editActiveNote": notes("Editing needs the notes the page cannot show yet."),
-  "hunk.review.replyToActiveNote": notes("Replying needs the notes the page cannot show yet."),
-  "hunk.review.deleteActiveNote": notes("Deleting needs the notes the page cannot show yet."),
+  "hunk.review.startNote": IMPLEMENTED,
+  "hunk.review.editActiveNote": IMPLEMENTED,
+  "hunk.review.replyToActiveNote": IMPLEMENTED,
+  "hunk.review.deleteActiveNote": IMPLEMENTED,
   "hunk.review.previousNote": IMPLEMENTED,
   "hunk.review.nextNote": IMPLEMENTED,
-  "hunk.review.saveNote": notes(
-    "Saving needs the composer; its Ctrl+S chord is also the browser's.",
-  ),
+  // Its catalog chord `ctrl+s` is the browser's; composers save with Ctrl/Cmd+Enter.
+  "hunk.review.saveNote": IMPLEMENTED,
   "hunk.review.pageDown": IMPLEMENTED,
   "hunk.review.pageUp": IMPLEMENTED,
   "hunk.review.halfPageDown": IMPLEMENTED,
@@ -115,15 +105,9 @@ export const WEB_COMMAND_SUPPORT = {
     "File presentations are extension file views, which render only in the terminal.",
   ),
   "hunk.view.toggleFilesPane": IMPLEMENTED,
-  "hunk.app.refresh": {
-    kind: "deferred",
-    until: "refresh",
-    reason: "The refresh route exists; the page's refresh control is a later change.",
-  },
+  "hunk.app.refresh": IMPLEMENTED,
   "hunk.view.openThemeSelector": IMPLEMENTED,
-  "hunk.view.toggleAgentNotes": notes(
-    "Note visibility is shared state; the page sends no shared intents until it authors notes.",
-  ),
+  "hunk.view.toggleAgentNotes": IMPLEMENTED,
   "hunk.view.toggleLineNumbers": IMPLEMENTED,
   "hunk.view.toggleLineWrap": IMPLEMENTED,
   "hunk.view.toggleMenuBar": terminalOnly("The page's toolbar is always shown."),
@@ -148,6 +132,12 @@ export const WEB_COMMAND_SUPPORT = {
   "hunk.review.previousAnnotatedFile": IMPLEMENTED,
   "hunk.review.nextAnnotatedFile": IMPLEMENTED,
 } as const satisfies Record<AppCommandId, WebCommandSupport>;
+
+/**
+ * Host-only commands the page may still run, each through its own allowlisted route rather
+ * than a review action (audit F4): refresh reopens the session's input through `POST /refresh`.
+ */
+export const BROWSER_ALLOWED_HOST_COMMANDS: ReadonlySet<string> = new Set(["hunk.app.refresh"]);
 
 /** Every command id the page implements now. */
 export type WebImplementedCommandId = {
