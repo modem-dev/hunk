@@ -232,8 +232,40 @@ export class ReviewResourceStore {
     if (descriptor.kind === "source") {
       return this.produceSource(descriptor, file);
     }
+    if (descriptor.kind === "bytes") {
+      return this.produceBytes(descriptor, file);
+    }
     const text = descriptor.kind === "canonical-file" ? encodeCanonicalFile(file) : file.patch;
     return this.measure(descriptor, Buffer.from(text, "utf8"));
+  }
+
+  /** Read one side's exact bytes through the byte reader the loader attached to the file. */
+  private async produceBytes(
+    descriptor: Extract<ReviewResourceDescriptorV1, { kind: "bytes" }>,
+    file: ReviewFileV1,
+  ): Promise<ReviewResourceLoad> {
+    const fetcher = this.publication.diffFilesByKey.get(descriptor.fileKey)?.byteFetcher;
+    let bytes: Uint8Array | null = null;
+    try {
+      bytes = fetcher ? await fetcher.getBytes(descriptor.side) : null;
+    } catch {
+      bytes = null;
+    }
+    if (!bytes) {
+      // Byte readers answer `null` both for an unreachable side and for one over their own
+      // ceiling; neither is something a reader can retry into.
+      return reviewResourceFailure(
+        "resource-unavailable",
+        `Review file ${file.path} has no readable ${descriptor.side} bytes.`,
+      );
+    }
+    const ceiling = reviewResourceCeiling(descriptor.kind);
+    return bytes.byteLength > ceiling
+      ? reviewResourceFailure(
+          "resource-too-large",
+          `${file.path} is ${bytes.byteLength} bytes on the ${descriptor.side} side, over the ${ceiling}-byte preview limit.`,
+        )
+      : this.measure(descriptor, Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength));
   }
 
   /** Read one file's full source text through the reader the loader attached to it. */

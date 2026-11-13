@@ -39,6 +39,14 @@ export interface ReviewErrorDoc {
  * served, the caller was not allowed — because that is the order a reader diagnoses in.
  */
 export const REVIEW_ERROR_CATALOG: Record<HunkReviewClientErrorCodeV1, ReviewErrorDoc> = {
+  "refresh-unavailable": {
+    message: "This review cannot be reloaded from its input.",
+    remedy: "Reviews read from standard input cannot refresh; start a new review instead.",
+  },
+  "refresh-failed": {
+    message: "Reloading the review failed, so the previous version is still shown.",
+    remedy: "Check that the files or repository are readable, then refresh again.",
+  },
   "selection-is-local": {
     message: "Each window keeps its own place in the review, so this move stays in this window.",
     remedy: "Move the selection locally; it is not sent to the session.",

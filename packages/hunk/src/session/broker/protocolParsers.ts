@@ -119,6 +119,8 @@ const commandInputs = {
       ({ protocolVersion, actor, request }) =>
         parseHunkReviewResourceReadEnvelope({ protocolVersion, actor, request }).ok,
     ),
+  // No arguments: what a refresh reopens is the session's own input, never the caller's.
+  refresh_review: z.strictObject({ ...selectorFields }),
   apply_review_action: z
     .strictObject({
       ...selectorFields,
@@ -206,6 +208,14 @@ const results = {
         eof: z.boolean(),
       }),
     }),
+  ]),
+  refresh_review: z.union([
+    z.strictObject({
+      ok: z.literal(false),
+      code: z.enum(["refresh-unavailable", "refresh-failed"]),
+      message: z.string(),
+    }),
+    z.strictObject({ ok: z.literal(true), generation: z.string(), stateRevision: nonnegative }),
   ]),
   apply_review_action: z.union([
     failure,

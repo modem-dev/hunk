@@ -67,6 +67,7 @@ import {
   type HunkReviewActionV1,
   type HunkReviewActorV1,
   type HunkReviewFailureCodeV1,
+  type HunkReviewRefreshResultV1,
   type HunkReviewResourceReadResultV1,
 } from "../reviewProtocol";
 import {
@@ -206,6 +207,8 @@ export class HunkSessionBrokerState extends SessionBrokerState<
   private readonly resources: ReviewResourceCache;
   /** One load per resource; concurrent callers await the same assembly. */
   private readonly loads = new Map<string, Promise<Uint8Array>>();
+  /** One refresh per session in flight; concurrent callers await the same reload. */
+  private readonly refreshes = new Map<string, Promise<HunkReviewRefreshResultV1>>();
   /** One shared-state read per position; concurrent callers await the same assembly. */
   private readonly sharedStateLoads = new Map<string, Promise<ReviewSharedStateV1>>();
   /** Capability verifiers by session, as their registrations declared them. */
@@ -294,6 +297,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
     this.resources.clear();
     this.loads.clear();
     this.sharedStateLoads.clear();
+    this.refreshes.clear();
     this.capabilityDigests.clear();
     for (const sessionId of watched) {
       this.notifyPublicationWatchers({ kind: "retired", sessionId });
@@ -438,6 +442,29 @@ export class HunkSessionBrokerState extends SessionBrokerState<
     });
     this.sharedStateLoads.set(loadKey, load);
     return load;
+  }
+
+  /**
+   * Ask one session to reload its current input, coalescing concurrent requests.
+   *
+   * Carries no arguments: the session reopens its own registered input through its reload
+   * coordinator, which serializes it with every other reload. Requests arriving while one is
+   * in flight share its answer, so a client spamming refresh costs one reload at a time.
+   */
+  refreshReview(sessionId: string): Promise<HunkReviewRefreshResultV1> {
+    const running = this.refreshes.get(sessionId);
+    if (running) return running;
+    const refresh = this.dispatchCommand<HunkReviewRefreshResultV1, "refresh_review">({
+      selector: { sessionId },
+      command: "refresh_review",
+      input: { sessionId },
+      timeoutMessage: "Timed out waiting for the session to reload its review.",
+      timeoutMs: 120_000,
+    }).finally(() => {
+      this.refreshes.delete(sessionId);
+    });
+    this.refreshes.set(sessionId, refresh);
+    return refresh;
   }
 
   /**

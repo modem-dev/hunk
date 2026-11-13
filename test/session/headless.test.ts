@@ -374,6 +374,12 @@ describe.skipIf(process.platform === "win32")("headless review session", () => {
         return context.includes('"showAgentNotes":true') ? true : null;
       });
 
+      // A browser's refresh reloads the session's own input, with no arguments.
+      const refreshed = await reviewApi(url, sessionId, "refresh", { method: "POST" });
+      expect(refreshed.status).toBe(200);
+      const refreshBody = (await refreshed.json()) as { publication: { generation: string } };
+      expect(refreshBody.publication.generation).not.toBe(generation);
+
       // Same-input and new-input reloads replace the review without a terminal.
       const sameInput = sessionJson<{ result: { fileCount: number } }>(port, [
         "reload",
