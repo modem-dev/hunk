@@ -45,6 +45,7 @@ const EXPECTED_CODES: HunkReviewClientErrorCodeV1[] = [
   "unsupported-media-type",
   "forbidden-origin",
   "too-many-streams",
+  "state-too-large",
 ];
 
 describe("review error catalog", () => {

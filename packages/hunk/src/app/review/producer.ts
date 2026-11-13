@@ -42,6 +42,12 @@ import type { ReviewDigestFn } from "../../core/review/validation";
 import type { ReviewStore } from "../../core/review/store";
 import type { DiffFile } from "../../core/changeset/model";
 import { nodeReviewDigest } from "../../core/reviewDigest";
+import {
+  MAX_REVIEW_SHARED_STATE_BYTES,
+  parseReviewSharedStateResourceId,
+  reviewSharedStateResourceId,
+  type ReviewSharedStateV1,
+} from "../../session/reviewSharedState";
 import { buildReviewPublication, type ReviewPublication } from "./publication";
 import { ReviewResourceStore, type ReviewResourceFailure } from "./resourceStore";
 
@@ -108,6 +114,23 @@ const preparedReviewPublicationOwnership = new WeakMap<
   PreparedReviewPublicationOwnership
 >();
 
+/**
+ * Where the producer reads one review's shared state from.
+ *
+ * Supplied with the store by the surface that mounted the review: the host knows when the
+ * shared content moved, and the projection needs launch facts (presentation defaults) the
+ * producer does not hold.
+ */
+export interface ReviewSharedStateSource {
+  /** Advances exactly when `build` would return different content. */
+  getSharedStateRevision(): number;
+  /** Project the snapshot for one generation at the current revision. */
+  build(generation: string): ReviewSharedStateV1;
+}
+
+/** How many materialized snapshots a producer keeps for readers mid-assembly. */
+const SHARED_STATE_MATERIALIZATIONS_KEPT = 4;
+
 /** How many resource ids one bulk request may name at once. */
 export const MAX_REVIEW_RESOURCE_BATCH = 512;
 
@@ -118,6 +141,12 @@ export class ReviewProducer {
   private publication: ReviewPublication;
   private resourceStore: ReviewResourceStore;
   private store: ReviewStore | undefined;
+  private sharedState: ReviewSharedStateSource | undefined;
+  /** Materialized snapshots by shared revision, oldest first, for the attached store only. */
+  private sharedStateMaterializations = new Map<
+    number,
+    { bytes: Uint8Array; digest: string; generation: string }
+  >();
   /** Generation the attached store was mounted for; unequal means the store is retired. */
   private storeGeneration: string | undefined;
   private publicationReservation: object | undefined;
@@ -212,6 +241,8 @@ export class ReviewProducer {
       this.resourceStore = prepared.resourceStore;
       if (options.detachStore) {
         this.store = undefined;
+        this.sharedState = undefined;
+        this.sharedStateMaterializations.clear();
         this.storeGeneration = undefined;
       }
       return this.publication;
@@ -244,9 +275,21 @@ export class ReviewProducer {
    * The host owns the store's lifetime; the producer only needs to be able to reach the
    * current state and commit a plan to it.
    */
-  attachStore(store: ReviewStore) {
+  attachStore(store: ReviewStore, sharedState?: ReviewSharedStateSource) {
     this.store = store;
+    this.sharedState = sharedState;
+    this.sharedStateMaterializations.clear();
     this.storeGeneration = this.publication.generation;
+  }
+
+  /**
+   * The current shared-state revision, when a host attached a shared-state source.
+   *
+   * Published beside the position on every snapshot, so the daemon and a browser can tell a
+   * selection-only move (no refetch) from a change to notes, filter, or marks.
+   */
+  getSharedStateRevision(): number | undefined {
+    return this.currentStore() ? this.sharedState?.getSharedStateRevision() : undefined;
   }
 
   /**
@@ -317,6 +360,10 @@ export class ReviewProducer {
         `Review generation ${parsed.generation} is retired; the review is now at ${this.publication.generation}.`,
       );
     }
+    const sharedStateRevision = parseReviewSharedStateResourceId(parsed.resourceId);
+    if (sharedStateRevision !== undefined) {
+      return this.readSharedStateChunk(parsed.resourceId, sharedStateRevision, parsed);
+    }
 
     const read = await this.resourceStore.readChunk(parsed.resourceId, {
       offset: parsed.offset,
@@ -338,6 +385,80 @@ export class ReviewProducer {
       );
     }
     return this.resourceStore.materializeAll(resourceIds);
+  }
+
+  /**
+   * Serve one window of the shared-state snapshot materialized at one shared revision.
+   *
+   * The snapshot is serialized once per revision and kept for a few revisions, so a reader
+   * assembling it chunk by chunk sees one byte sequence even while the review moves. A revision
+   * that is neither current nor kept is `unknown-resource`; the daemon then re-reads the
+   * current one. An oversized snapshot is `resource-too-large`, before any bytes are served.
+   */
+  private readSharedStateChunk(
+    requestedId: string,
+    requestedRevision: number | "current",
+    range: { offset: number; length: number },
+  ): ReviewProducerChunkResult {
+    const source = this.currentStore() ? this.sharedState : undefined;
+    if (!source) {
+      return this.fail("unknown-resource", "This review publishes no shared state.");
+    }
+    // The alias always resolves to the current revision and is answered under its concrete
+    // id, so the reader assembles the rest of that one revision.
+    const sharedStateRevision =
+      requestedRevision === "current" ? source.getSharedStateRevision() : requestedRevision;
+    const resourceId =
+      requestedRevision === "current"
+        ? reviewSharedStateResourceId(sharedStateRevision)
+        : requestedId;
+    const generation = this.publication.generation;
+    let materialized = this.sharedStateMaterializations.get(sharedStateRevision);
+    if (!materialized || materialized.generation !== generation) {
+      if (sharedStateRevision !== source.getSharedStateRevision()) {
+        return this.fail(
+          "unknown-resource",
+          `Shared state ${sharedStateRevision} is retired; the review is at ${source.getSharedStateRevision()}.`,
+        );
+      }
+      const bytes = new TextEncoder().encode(JSON.stringify(source.build(generation)));
+      materialized = { bytes, digest: this.digest(bytes), generation };
+      this.sharedStateMaterializations.set(sharedStateRevision, materialized);
+      for (const revision of this.sharedStateMaterializations.keys()) {
+        if (this.sharedStateMaterializations.size <= SHARED_STATE_MATERIALIZATIONS_KEPT) break;
+        this.sharedStateMaterializations.delete(revision);
+      }
+    }
+
+    const { bytes, digest } = materialized;
+    if (bytes.byteLength > MAX_REVIEW_SHARED_STATE_BYTES) {
+      return this.fail(
+        "resource-too-large",
+        `The shared state is ${bytes.byteLength} bytes; at most ${MAX_REVIEW_SHARED_STATE_BYTES} can be served.`,
+      );
+    }
+    if (range.offset > bytes.byteLength) {
+      return this.fail(
+        "invalid-range",
+        `Shared state has ${bytes.byteLength} bytes; offset ${range.offset} is past its end.`,
+      );
+    }
+    const end = Math.min(bytes.byteLength, range.offset + range.length);
+    const chunk = bytes.subarray(range.offset, end);
+    return {
+      ok: true,
+      chunk: {
+        generation,
+        resourceId,
+        offset: range.offset,
+        byteLength: chunk.byteLength,
+        encoding: "base64",
+        data: Buffer.from(chunk).toString("base64"),
+        contentDigest: digest,
+        contentSize: bytes.byteLength,
+        eof: end === bytes.byteLength,
+      },
+    };
   }
 
   /** Build the resource store that belongs to one prepared or current generation. */

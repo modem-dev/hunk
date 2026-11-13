@@ -37,7 +37,7 @@ export const HUNK_SESSION_API_VERSION = 1;
  * when daemon-forwarded payloads change, even if the supported action names stay stable; the
  * colocated `wire.snapshot.test.ts` fails when a payload changes without a bump.
  */
-const BUILT_SESSION_DAEMON_VERSION = 17;
+const BUILT_SESSION_DAEMON_VERSION = 18;
 
 /**
  * Test-only override so a spawned daemon or window can impersonate another build's revision.

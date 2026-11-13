@@ -28,6 +28,7 @@
 import { HUNK_REVIEW_PROTOCOL_VERSION, MAX_HUNK_REVIEW_IDENTIFIER_BYTES } from "./reviewProtocol";
 import type { HunkReviewFailureCodeV1, HunkReviewResourceCatalogV1 } from "./reviewProtocol";
 import type { ReviewPublicationAddress } from "../core/review/generationOrder";
+import type { ReviewSharedStateV1 } from "./reviewSharedState";
 import { utf8ByteLength } from "../core/review/validation";
 
 /** Path every review route hangs from, so a client never assembles route strings itself. */
@@ -77,6 +78,7 @@ export function isReviewCapabilityToken(value: unknown): value is string {
 /** One route on the review surface, named by what it serves rather than by its path. */
 export type HunkReviewHttpRoute =
   | { kind: "publication"; sessionId: string }
+  | { kind: "state"; sessionId: string }
   | { kind: "events"; sessionId: string }
   | { kind: "actions"; sessionId: string }
   | { kind: "resource"; sessionId: string; generation: string; resourceId: string };
@@ -132,7 +134,7 @@ export function parseReviewHttpPath(pathname: string): HunkReviewHttpRoute | und
   }
   if (parts.length === 4) {
     const kind = parts[3];
-    return kind === "publication" || kind === "events" || kind === "actions"
+    return kind === "publication" || kind === "state" || kind === "events" || kind === "actions"
       ? { kind, sessionId }
       : undefined;
   }
@@ -201,7 +203,9 @@ export type HunkReviewTransportErrorCode =
   /** The action names a type this build's vocabulary does not contain. */
   | "unsupported-action"
   /** The surface is already serving as many event streams as it will. */
-  | "too-many-streams";
+  | "too-many-streams"
+  /** The review's shared state is larger than `MAX_REVIEW_SHARED_STATE_BYTES`. */
+  | "state-too-large";
 
 /**
  * Every code a review client can be told, from any tier.
@@ -232,5 +236,27 @@ export interface HunkReviewPublicationBodyV1 {
   protocolVersion: typeof HUNK_REVIEW_PROTOCOL_VERSION;
   sessionId: string;
   publication: ReviewPublicationAddress;
+  /**
+   * The shared-state revision at this position (`reviewSharedState.ts`).
+   *
+   * Refetch `/state` when it moves within a generation. Absent only until a freshly
+   * registered session reports its first one; a client then fetches `/state` once.
+   */
+  sharedStateRevision?: number;
   catalog: HunkReviewResourceCatalogV1;
+}
+
+/**
+ * One shared-state read: `GET /review-api/<session>/state`.
+ *
+ * `publication` and `sharedStateRevision` repeat what `state` was materialized at, so a client
+ * orders the body exactly as it orders publications: by `classifyReviewPublication` across
+ * generations, then by `sharedStateRevision` within one.
+ */
+export interface HunkReviewStateBodyV1 {
+  protocolVersion: typeof HUNK_REVIEW_PROTOCOL_VERSION;
+  sessionId: string;
+  publication: ReviewPublicationAddress;
+  sharedStateRevision: number;
+  state: ReviewSharedStateV1;
 }
