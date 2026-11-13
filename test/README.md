@@ -43,7 +43,7 @@ test/
 | `bun run test:session-broker-node`      | Real Node listener/adapter conformance using the checked-in cross-runtime fixtures                                                      |
 | `bun run test:integration`              | PTY-backed tests under `test/pty/`                                                                                                      |
 | `bun run test:tty-smoke`                | Opt-in real-TTY smoke tests under `test/smoke/`                                                                                         |
-| `bun run build:web && bun run test:web` | Playwright tests under `test/web/` (`*.e2e.ts`) against a daemon and session run from source                                            |
+| `bun run build:web && bun run test:web` | Playwright tests under `test/web/` (`*.e2e.ts`) against a daemon and session from source; builds the page first                         |
 | `bun run test:install-vm`               | Opt-in Firecracker install compatibility scenarios under `test/cli/install-vm/`                                                         |
 | `bun run vm:shell [-- --with-hunk]`     | Disposable Ubuntu Firecracker shell, optionally with a fresh local Hunk build                                                           |
 

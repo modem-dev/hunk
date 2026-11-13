@@ -1,37 +1,442 @@
-/* Minimal chrome for the M3 review shell; the read-only client replaces it with theme tokens. */
+/*
+ * Chrome for the browser review page. Colors come from the active theme's `--hunk-*` tokens
+ * (set on the root element by web/theme/themeIndex.ts); the fallbacks here only cover the
+ * moment before the theme index loads. Chrome uses the system UI font; code uses a monospace
+ * stack. No external fonts.
+ */
 :root {
   color-scheme: light dark;
-  font-family:
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    "Segoe UI",
-    sans-serif;
-  background: Canvas;
-  color: CanvasText;
+  --ui-font:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --code-font:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --diffs-font-family: var(--code-font);
+  --diffs-header-font-family: var(--ui-font);
+  --diffs-font-size: 13px;
+  --diffs-line-height: 20px;
+  --trees-font-family-override: var(--ui-font);
+  --trees-font-size-override: 13px;
+  font-family: var(--ui-font);
+  font-size: 13px;
+  background: var(--hunk-background, Canvas);
+  color: var(--hunk-text, CanvasText);
 }
 
-body {
+html,
+body,
+#root {
+  height: 100%;
   margin: 0;
 }
 
-.shell {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 12px 16px;
+body {
+  background: var(--hunk-background, Canvas);
 }
 
-.toolbar {
-  display: flex;
-  align-items: baseline;
-  gap: 16px;
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.column-probe {
+  position: absolute;
+  visibility: hidden;
+  font-family: var(--code-font);
+  font-size: 13px;
+  white-space: pre;
+}
+
+.page-message {
+  margin: 24px;
 }
 
 .status[data-state="failed"] {
-  color: #d1242f;
+  color: var(--hunk-removed-sign-color, #d1242f);
 }
 
-.file-count {
-  opacity: 0.75;
+.muted {
+  color: var(--hunk-muted, GrayText);
+}
+
+/* -- Layout ----------------------------------------------------------------------------- */
+
+.review-app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.review-main {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  width: var(--sidebar-width);
+  flex: none;
+  min-width: 0;
+  background: var(--hunk-panel);
+  border-right: 1px solid var(--hunk-border);
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  color: var(--hunk-muted);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.sidebar-resizer {
+  width: 5px;
+  margin-left: -3px;
+  flex: none;
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 3;
+}
+
+.sidebar-resizer:hover {
+  background: var(--hunk-accent-muted);
+}
+
+.file-tree {
+  flex: 1;
+  min-height: 0;
+  display: block;
+}
+
+/* -- Toolbar ---------------------------------------------------------------------------- */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 6px 12px;
+  background: var(--hunk-panel);
+  border-bottom: 1px solid var(--hunk-border);
+  min-height: 32px;
+}
+
+.toolbar-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex: 1 1 320px;
+  overflow: hidden;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.review-title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-count,
+.progress,
+.status {
+  color: var(--hunk-muted);
+}
+
+.status[data-state="reconnecting"],
+.status[data-state="loading"] {
+  color: var(--hunk-accent);
+}
+
+.toolbar-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.tool-button,
+.segmented button,
+.theme-picker select,
+.header-action {
+  font: inherit;
+  color: var(--hunk-text);
+  background: var(--hunk-panel-alt);
+  border: 1px solid var(--hunk-border);
+  border-radius: 6px;
+  padding: 3px 9px;
+  cursor: pointer;
+}
+
+.tool-button:hover,
+.segmented button:hover,
+.header-action:hover {
+  border-color: var(--hunk-accent);
+}
+
+.segmented {
+  display: inline-flex;
+}
+
+.segmented button {
+  border-radius: 0;
+  margin-left: -1px;
+}
+
+.segmented button:first-child {
+  border-radius: 6px 0 0 6px;
+  margin-left: 0;
+}
+
+.segmented button:last-child {
+  border-radius: 0 6px 6px 0;
+}
+
+.segmented button[aria-checked="true"] {
+  background: var(--hunk-accent-muted);
+  border-color: var(--hunk-accent);
+  position: relative;
+}
+
+.segmented.small button {
+  padding: 1px 7px;
+  font-size: 11px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--hunk-text);
+  cursor: pointer;
+}
+
+.toggle input {
+  accent-color: var(--hunk-accent);
+}
+
+:focus-visible {
+  outline: 2px solid var(--hunk-accent);
+  outline-offset: 1px;
+}
+
+.stat-added {
+  color: var(--hunk-badge-added, #1a7f37);
+}
+
+.stat-removed {
+  color: var(--hunk-badge-removed, #cf222e);
+}
+
+/* -- Review stream ---------------------------------------------------------------------- */
+
+.review-stream {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  /* Native scroll anchoring keeps the reader in place when files above them change height. */
+  overflow-anchor: auto;
+  background: var(--hunk-background);
+}
+
+.file-section {
+  border-bottom: 1px solid var(--hunk-border);
+}
+
+.file-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  box-sizing: border-box;
+  padding: 0 12px;
+  background: var(--hunk-panel);
+  border-bottom: 1px solid var(--hunk-border);
+  font-family: var(--code-font);
+  font-size: 12.5px;
+}
+
+.file-section[data-selected] .file-header {
+  box-shadow: inset 3px 0 0 var(--hunk-accent);
+}
+
+.file-glyph {
+  width: 1.2em;
+  flex: none;
+  font-family: var(--code-font);
+  font-weight: 600;
+  text-align: center;
+}
+
+.file-glyph[data-role="fileNew"] {
+  color: var(--hunk-file-new);
+}
+
+.file-glyph[data-role="fileDeleted"] {
+  color: var(--hunk-file-deleted);
+}
+
+.file-glyph[data-role="fileRenamed"] {
+  color: var(--hunk-file-renamed);
+}
+
+.file-glyph[data-role="fileModified"] {
+  color: var(--hunk-file-modified);
+}
+
+.file-glyph[data-role="fileUntracked"] {
+  color: var(--hunk-file-untracked);
+}
+
+.file-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-state {
+  color: var(--hunk-muted);
+}
+
+.file-stats {
+  flex: none;
+  white-space: nowrap;
+}
+
+.header-action {
+  flex: none;
+  font-family: var(--ui-font);
+  font-size: 11px;
+  padding: 1px 7px;
+}
+
+.file-placeholder {
+  margin: 0;
+  padding: 10px 16px;
+  color: var(--hunk-muted);
+  font-style: italic;
+}
+
+.stream-empty {
+  padding: 24px;
+  color: var(--hunk-muted);
+}
+
+.gap-separator {
+  display: block;
+  width: 100%;
+  padding: 0 12px;
+  height: 100%;
+  min-height: 20px;
+  font: inherit;
+  font-family: var(--ui-font);
+  font-size: 12px;
+  text-align: left;
+  color: var(--hunk-muted);
+  background: var(--hunk-panel-alt);
+  border: 0;
+  cursor: pointer;
+}
+
+.gap-separator:hover:not(:disabled) {
+  color: var(--hunk-text);
+  background: var(--hunk-accent-muted);
+}
+
+.gap-separator:disabled {
+  cursor: default;
+}
+
+.gap-separator[data-gap-state="error"],
+.gap-separator[data-gap-state="too-large"] {
+  color: var(--hunk-removed-sign-color);
+}
+
+/* -- Flat sidebar ----------------------------------------------------------------------- */
+
+.flat-sidebar {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 12px;
+  overflow: auto;
+  flex: 1;
+}
+
+.flat-group {
+  padding: 6px 12px 2px;
+  color: var(--hunk-muted);
+  font-family: var(--code-font);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flat-file {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 2px 12px;
+  font: inherit;
+  font-family: var(--code-font);
+  font-size: 12.5px;
+  color: var(--hunk-text);
+  background: transparent;
+  border: 0;
+  border-left: 3px solid transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.flat-file:hover {
+  background: var(--hunk-panel-alt);
+}
+
+.flat-file[data-selected] {
+  background: var(--hunk-panel-alt);
+  border-left-color: var(--hunk-accent);
+}
+
+.flat-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flat-badges {
+  display: inline-flex;
+  gap: 5px;
+  flex: none;
+}
+
+[data-badge="agent-comment"] {
+  color: var(--hunk-accent);
+}
+
+[data-badge="addition"] {
+  color: var(--hunk-badge-added);
+}
+
+[data-badge="deletion"] {
+  color: var(--hunk-badge-removed);
 }

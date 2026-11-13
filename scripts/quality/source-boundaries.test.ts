@@ -52,6 +52,15 @@ const BROWSER_SAFE_SESSION_MODULES: readonly string[] = [
   join(SRC_ROOT, "session", "reviewSharedState.ts"),
 ];
 
+// Presentation facts the browser shares with the terminal rather than restating: the
+// layout vocabulary and the `auto` split threshold, and the Pierre highlight options both
+// renderers pass. Each is a leaf with no runtime imports (asserted below), which is the only
+// reason the browser may reach outside the review model for them.
+const WEB_SHARED_PRESENTATION_MODULES: readonly string[] = [
+  join(SRC_ROOT, "core", "run", "commandInputs.ts"),
+  join(SRC_ROOT, "ui", "diff", "highlightRenderOptions.ts"),
+];
+
 /** Return one repo-relative path with forward slashes for stable assertions on every platform. */
 function repoPath(path: string) {
   return relative(REPO_ROOT, path).split(sep).join("/");
@@ -283,6 +292,10 @@ const EXTRACTED_DUPLICATE_SYMBOLS: ReadonlyArray<{
     symbol: "validateDescriptorString",
     finding: "delegated-review-descriptor",
   },
+  { file: "packages/hunk/src/ui/lib/files.ts", symbol: "formatSidebarStat", finding: "E1" },
+  { file: "packages/hunk/src/ui/lib/files.ts", symbol: "sidebarFileName", finding: "E1" },
+  { file: "packages/hunk/src/ui/lib/files.ts", symbol: "sidebarDirectorySegments", finding: "E1" },
+  { file: "packages/hunk/src/ui/lib/files.ts", symbol: "sharedDirectoryDepth", finding: "E1" },
 ];
 
 describe("source architecture boundaries", () => {
@@ -494,8 +507,18 @@ describe("shared review primitives seam", () => {
         WEB_CLIENT_ROOT,
         REVIEW_MODEL_ROOT,
         ...BROWSER_SAFE_SESSION_MODULES,
+        ...WEB_SHARED_PRESENTATION_MODULES,
       ]),
     ).toEqual([]);
+  });
+
+  // The shared presentation leaves the browser imports beside the review model stay leaves:
+  // type-only imports at most, so they can never carry a renderer or platform in.
+  test("keeps the browser's shared presentation modules import-free at runtime", () => {
+    const valueImports = WEB_SHARED_PRESENTATION_MODULES.flatMap((path) =>
+      valueImportSpecifiers(path).map((specifier) => `${repoPath(path)} -> ${specifier}`),
+    );
+    expect(valueImports).toEqual([]);
   });
 
   // Direct-import checks alone would let the browser reach a Node-only module through an

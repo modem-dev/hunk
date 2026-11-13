@@ -13,6 +13,10 @@
   ...
 }:
 {
+  "@axe-core/playwright@4.14.0" = fetchurl {
+    url = "https://registry.npmjs.org/@axe-core/playwright/-/playwright-4.14.0.tgz";
+    hash = "sha512-SGUhG5PIHd2eMdpgBF2PyQLOhX+qyDR2PT4cmoS4Qk2ak+jX/rrSvst9l0PGv5WTHolKpUMvVmoHpr4cZgf1RQ==";
+  };
   "@changesets/changelog-github@0.7.0" = fetchurl {
     url = "https://registry.npmjs.org/@changesets/changelog-github/-/changelog-github-0.7.0.tgz";
     hash = "sha512-rBsbRvc4TVn+FvFnOVM3LxlFJfTXXCp8gfVJ+0BubxWNSVnLuAzowi5j+IEraLLP52w8AAs9QfKbPS3MMiXQJA==";
@@ -674,6 +678,10 @@
   "ansi-styles@6.2.3" = fetchurl {
     url = "https://registry.npmjs.org/ansi-styles/-/ansi-styles-6.2.3.tgz";
     hash = "sha512-4Dj6M28JB+oAH8kFkTLUo+a2jwOFkuqb3yucU0CANcRRUbxS0cP0nZYCGjcc3BNXwRIsUVmDGgzawme7zvJHvg==";
+  };
+  "axe-core@4.14.0" = fetchurl {
+    url = "https://registry.npmjs.org/axe-core/-/axe-core-4.14.0.tgz";
+    hash = "sha512-9WTZxEjsZ7b13TH8JPmbV2z8CHbl80/2hm3XPEG4JgNdQLK81IBRXmSxHfMAOkSqQeRxT/0dwNDz2GOm3zzpcQ==";
   };
   "bun-ffi-structs@0.2.4" = fetchurl {
     url = "https://registry.npmjs.org/bun-ffi-structs/-/bun-ffi-structs-0.2.4.tgz";
