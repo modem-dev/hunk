@@ -14,6 +14,7 @@ import {
   buildWebHelpSections,
   rankPaletteEntries,
   rememberRecentCommand,
+  webLocalHelpRows,
 } from "./paletteEntries";
 
 /** The page's commands with handlers that do nothing. */
@@ -54,6 +55,25 @@ describe("command palette parity", () => {
     expect(entries.find((entry) => entry.id === "hunk.web.commandPalette")?.keys).toBe("Ctrl+K");
     const apple = buildPaletteEntries(createTestCommands(), defaultWebKeymap(), true);
     expect(apple.find((entry) => entry.id === "hunk.web.goToFile")?.keys).toBe("⌘P");
+  });
+
+  // Intent: a page default the user's binding took over is not named in the palette or help,
+  // so no hint promises a key that does something else.
+  test("names a page chord only while the user has not bound it elsewhere", () => {
+    const keymap = new Map(defaultWebKeymap());
+    expect(
+      buildPaletteEntries(createTestCommands(), keymap).find(
+        (entry) => entry.id === "hunk.web.toggleSidePanel",
+      )?.keys,
+    ).toBe("p");
+    keymap.set("hunk.review.nextHunk", ["p"]);
+
+    const entries = buildPaletteEntries(createTestCommands(), keymap);
+    expect(entries.find((entry) => entry.id === "hunk.web.toggleSidePanel")?.keys).toBeUndefined();
+    expect(entries.find((entry) => entry.id === "hunk.web.showOverview")?.keys).toBe("O");
+    expect(webLocalHelpRows(keymap).map((row) => row.description)).not.toContain(
+      "toggle the side panel",
+    );
   });
 });
 

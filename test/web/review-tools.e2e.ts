@@ -189,6 +189,63 @@ test("lists notes by file and reveals the chosen one in the stream", async ({ pa
   await expect(panel.locator(".notes-count")).toHaveText("1 of 3 notes");
 });
 
+// Intent: a Notes-tab row reveals its card once; a later hunk jump in the same file lands on
+// its own hunk instead of being pulled back to the clicked note.
+test("lets a hunk jump after a Notes-tab reveal land on its own hunk", async ({ page }) => {
+  await openTestReview(page, { args: ["--agent-notes"] });
+  await addTestComment(["--file", "src/app/main.ts", "--new-line", "46", "--summary", "Late"]);
+  await page.getByTestId("side-panel-tab-notes").click();
+  await page.getByTestId("notes-row").filter({ hasText: "Late" }).click();
+  await expect(page.locator(".note-card", { hasText: "Late" })).toBeInViewport();
+
+  await page.locator(".review-stream").focus();
+  await page.keyboard.press("[");
+
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const rail = document.querySelector<HTMLElement>('[data-testid="selected-hunk"]');
+        const header = document.querySelector<HTMLElement>("section[data-selected] .file-header");
+        if (!rail || !header || rail.dataset.hunkIndex !== "0") return false;
+        const gap = rail.getBoundingClientRect().top - header.getBoundingClientRect().bottom;
+        return gap >= 0 && gap <= 20;
+      }),
+    )
+    .toBe(true);
+});
+
+// Intent: the panel's edge is a keyboard-operable window splitter, and a drag the browser
+// cancels stops following the pointer.
+test("resizes the panel from the keyboard and ends a cancelled drag", async ({ page }) => {
+  await openTestReview(page);
+  const resizer = page.getByTestId("side-panel-resizer");
+  await expect(resizer).toHaveAttribute("aria-valuemin", "260");
+  await expect(resizer).toHaveAttribute("aria-valuemax", "640");
+  const width = async () => Number(await resizer.getAttribute("aria-valuenow"));
+  const start = await width();
+
+  await resizer.focus();
+  await page.keyboard.press("ArrowLeft");
+  await expect.poll(width).toBe(start + 16);
+  await page.keyboard.press("ArrowRight");
+  await expect.poll(width).toBe(start);
+  await page.keyboard.press("End");
+  await expect.poll(width).toBe(640);
+  await page.keyboard.press("Home");
+  await expect.poll(width).toBe(260);
+
+  const box = (await resizer.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + 100);
+  await page.mouse.down();
+  await page.mouse.move(box.x - 40, box.y + 100, { steps: 4 });
+  const dragged = await width();
+  expect(dragged).toBeGreaterThan(260);
+  await resizer.dispatchEvent("pointercancel");
+  await page.mouse.move(box.x - 200, box.y + 100, { steps: 4 });
+  expect(await width()).toBe(dragged);
+  await page.mouse.up();
+});
+
 test("explains how notes arrive when there are none", async ({ page }) => {
   await openTestReview(page);
   await page.locator(".review-stream").focus();
