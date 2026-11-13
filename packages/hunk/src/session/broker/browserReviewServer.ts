@@ -118,6 +118,7 @@ const REVIEW_ERROR_STATUS: Record<HunkReviewClientErrorCodeV1, number> = {
   "state-too-large": 413,
   "forbidden-actor": 403,
   "selection-is-local": 403,
+  "draft-is-local": 403,
   "refresh-unavailable": 409,
   "refresh-failed": 502,
 };

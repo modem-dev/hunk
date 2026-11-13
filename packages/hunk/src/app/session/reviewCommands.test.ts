@@ -10,7 +10,12 @@ import {
 } from "../../session/reviewProtocol";
 import { applySessionReviewAction, readSessionReviewResource } from "./reviewCommands";
 
-const ACTOR = { clientId: "browser-1", kind: "browser" as const };
+/**
+ * The session-API caller these tests act as. Draft intents are the terminal composer's slot and
+ * are refused from a browser (`draft-is-local`), so the shared draft path is driven by an agent.
+ */
+const ACTOR = { clientId: "agent-1", kind: "agent" as const };
+const BROWSER_ACTOR = { clientId: "browser-1", kind: "browser" as const };
 
 /**
  * One producer with a store attached, the way a mounted host wires it.
@@ -613,6 +618,29 @@ describe("applySessionReviewAction", () => {
     );
 
     expect(result).toMatchObject({ ok: false, code: "draft-missing" });
+  });
+});
+
+describe("applySessionReviewAction actor policy", () => {
+  test("refuses every draft intent from a browser and leaves the draft slot alone", () => {
+    const { producer, publication, store, file } = createTestProducer();
+    const draftActions: HunkReviewActionV1[] = [
+      { type: "notes/start-draft", fileKey: file.key, hunkIndex: 0 },
+      { type: "notes/start-edit", noteId: "user:1" },
+      { type: "notes/start-reply", noteId: "user:1" },
+      { type: "notes/update-draft", body: "From a tab" },
+      { type: "notes/cancel-draft" },
+      { type: "notes/create-user", consumeDraft: true },
+      { type: "notes/update-user", noteId: "user:1", consumeDraft: true },
+    ];
+    for (const action of draftActions) {
+      const result = applySessionReviewAction(producer, {
+        ...envelope(action, publication.generation),
+        actor: BROWSER_ACTOR,
+      });
+      expect(result).toMatchObject({ ok: false, code: "draft-is-local" });
+    }
+    expect(store.getSnapshot().draftNote).toBeNull();
   });
 });
 

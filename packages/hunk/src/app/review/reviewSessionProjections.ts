@@ -11,7 +11,8 @@
  * keys are the store's. The file index below is the one crossing between the two.
  */
 import { findDiffFileByPath, findHunkIndexForLine } from "../../core/liveComments";
-import { MAX_PROJECTED_SIDECAR_NOTES } from "../../core/review/noteSize";
+import { createSidecarProjectionBudget } from "../../core/review/noteSize";
+import { utf8ByteLength } from "../../core/review/validation";
 import {
   buildReviewAnnotationIndex,
   reviewNoteSource,
@@ -197,14 +198,14 @@ export function buildReviewNoteSummaries(
   }
 
   const noteSummaries: SessionReviewNoteSummary[] = [];
-  // Sidecar annotations are launch input and never fail a review; past the projected bound the
-  // snapshot omits the rest so the daemon keeps accepting it (the terminal still draws them).
-  let sidecarCount = 0;
+  // Sidecar annotations are launch input and never fail a review; past the projected count or
+  // byte bound the snapshot omits the rest so the daemon keeps accepting it and the frame stays
+  // within the websocket bound (the terminal still draws them all).
+  const sidecarBudget = createSidecarProjectionBudget();
   for (const file of files) {
     (file.agent?.annotations ?? []).forEach((annotation, index) => {
-      if (++sidecarCount > MAX_PROJECTED_SIDECAR_NOTES) return;
       const source = reviewNoteSource(annotation);
-      noteSummaries.push({
+      const summary: SessionReviewNoteSummary = {
         noteId: annotation.id ?? `${source}:${file.id}:${index}`,
         source,
         filePath: file.path,
@@ -216,7 +217,10 @@ export function buildReviewNoteSummaries(
         createdAt: annotation.createdAt ?? UNKNOWN_NOTE_CREATED_AT,
         updatedAt: annotation.updatedAt,
         editable: false,
-      });
+      };
+      if (sidecarBudget.admitSize(utf8ByteLength(JSON.stringify(summary)))) {
+        noteSummaries.push(summary);
+      }
     });
 
     for (const note of storedByFileId.get(file.id) ?? []) {

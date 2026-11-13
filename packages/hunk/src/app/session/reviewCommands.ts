@@ -299,6 +299,20 @@ const BROWSER_LOCAL_SELECTION_TYPES: ReadonlySet<string> = new Set([
   "selection/select-file",
 ]);
 
+/**
+ * Draft intents a browser never sends: the shared draft slot is the terminal composer's, and
+ * a browser composes in its own state and saves with the direct note intents (G2).
+ */
+const BROWSER_REFUSED_DRAFT_TYPES: ReadonlySet<string> = new Set([
+  "notes/start-draft",
+  "notes/start-edit",
+  "notes/start-reply",
+  "notes/update-draft",
+  "notes/cancel-draft",
+  "notes/create-user",
+  "notes/update-user",
+]);
+
 /** Agent selection moves that every surface is asked to reveal (G2). */
 const AGENT_REVEALED_SELECTION_TYPES: ReadonlySet<string> = new Set([
   "selection/select",
@@ -312,7 +326,10 @@ const AGENT_REVEALED_SELECTION_TYPES: ReadonlySet<string> = new Set([
  * Selection is per surface. A browser's `select`, `move`, and `select-file` are refused —
  * the browser resolves them locally. Its `selection/anchor` is the focus a headless session
  * reports to `hunk session context`, so a headless session applies it; a terminal session has
- * its own focus and accepts it as a no-op. Terminal and agent actors are unaffected.
+ * its own focus and accepts it as a no-op. Drafts are per surface too: a browser's draft
+ * intents are refused with `draft-is-local`, because the session's one draft slot is the
+ * terminal composer's and a browser composes locally and saves with `notes/add-user` or
+ * `notes/edit-user`. Terminal and agent actors are unaffected.
  */
 function actorPolicy(
   producer: ReviewProducer,
@@ -324,6 +341,13 @@ function actorPolicy(
       producer,
       "selection-is-local",
       `A browser resolves ${envelope.action.type} in its own state; the session does not apply it.`,
+    );
+  }
+  if (BROWSER_REFUSED_DRAFT_TYPES.has(envelope.action.type)) {
+    return fail(
+      producer,
+      "draft-is-local",
+      `A browser composes notes in its own state; the session does not apply ${envelope.action.type}.`,
     );
   }
   if (envelope.action.type === "selection/anchor" && producer.surface === "terminal") {

@@ -196,6 +196,87 @@ export const REVIEW_ACTOR_POLICY_FIXTURES: readonly ReviewActorPolicyFixture[] =
     },
   },
   {
+    id: "browser-draft-intents-are-refused",
+    findings: ["G2"],
+    description:
+      "The session's draft slot is the terminal composer's: a browser's draft intents are refused with draft-is-local, an agent still opens and saves the draft, and the browser writes with the direct intent.",
+    surface: "terminal",
+    build: () => [sourcedFile("alpha")],
+    steps: [
+      {
+        kind: "action",
+        actor: BROWSER,
+        action: (document) => ({
+          type: "notes/start-draft",
+          fileKey: keyAt(document, 0),
+          hunkIndex: 0,
+        }),
+      },
+      {
+        kind: "action",
+        actor: AGENT,
+        action: (document) => ({
+          type: "notes/start-draft",
+          fileKey: keyAt(document, 0),
+          hunkIndex: 0,
+        }),
+      },
+      {
+        kind: "action",
+        actor: BROWSER,
+        action: () => ({ type: "notes/update-draft", body: "Browser text in the terminal draft" }),
+      },
+      {
+        kind: "action",
+        actor: BROWSER,
+        action: () => ({ type: "notes/create-user", consumeDraft: true }),
+      },
+      {
+        kind: "action",
+        actor: BROWSER,
+        action: () => ({ type: "notes/cancel-draft" }),
+      },
+      {
+        kind: "action",
+        actor: AGENT,
+        action: () => ({ type: "notes/update-draft", body: "Agent draft" }),
+      },
+      {
+        kind: "action",
+        actor: AGENT,
+        action: () => ({ type: "notes/create-user", consumeDraft: true }),
+      },
+      {
+        kind: "action",
+        actor: BROWSER,
+        action: (document) => ({
+          type: "notes/add-user",
+          fileKey: keyAt(document, 0),
+          hunkIndex: 0,
+          body: "Direct browser note",
+        }),
+      },
+    ],
+    expected: {
+      outcomes: [
+        { code: "draft-is-local" },
+        "applied",
+        { code: "draft-is-local" },
+        { code: "draft-is-local" },
+        { code: "draft-is-local" },
+        "applied",
+        "applied",
+        "applied",
+      ],
+      selection: { file: 0, hunkIndex: 0 },
+      viewed: [],
+      notes: [
+        { file: 0, author: "user", summary: "Agent draft", ownerHunkIndex: 0 },
+        { file: 0, author: "Ana", summary: "Direct browser note", ownerHunkIndex: 0 },
+      ],
+    },
+  },
+  {
     id: "viewed-marks-across-a-reload",
     findings: ["G1"],
     description:
