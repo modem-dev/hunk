@@ -154,6 +154,9 @@ export class ReviewResourceCache {
     if (this.reservations.has(mapKey)) {
       throw new ReviewResourceBudgetError(
         `Review resource ${key.resourceId} is already being loaded.`,
+        // The slot frees when that load settles. Shared state reuses one key per generation
+        // for every revision, so a read for a newer revision can overlap an older one.
+        true,
       );
     }
     if (this.reservations.size >= this.limits.inFlightResources) {
