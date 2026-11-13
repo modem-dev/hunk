@@ -138,9 +138,8 @@ jobs:
 
       - name: Install Chromium
         timeout-minutes: 10
-        run: |
-          sudo bash .github/scripts/configure-ubuntu-apt-mirror.sh
-          bunx playwright install --with-deps chromium
+        # ubuntu-latest already carries Chromium's system libraries, so only the browser is fetched.
+        run: bunx playwright install chromium
 
       - name: Build browser review page
         run: bun run build:web
