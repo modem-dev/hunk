@@ -31,6 +31,7 @@ import {
   writeRichReviewRepo,
   type TestSidecarFileContext,
 } from "./fixtures/rich-review";
+import { writePreviewReviewRepo } from "./fixtures/preview-review";
 
 const TEST_DIR = fileURLToPath(new URL(".", import.meta.url));
 const REPO_ROOT = join(TEST_DIR, "..", "..");
@@ -100,7 +101,10 @@ export interface TestWebReviewOptions {
   context?: Readonly<Record<string, TestSidecarFileContext>>;
 }
 
-/** Start a daemon and one headless session serving `input`: a patch path, `--rich`, or `--many=N`. */
+/**
+ * Start a daemon and one headless session serving `input`: a patch path, `--rich`, `--previews`
+ * (images and Markdown), or `--many=N`.
+ */
 export async function startTestWebReview(
   input: string,
   options: TestWebReviewOptions = {},
@@ -137,8 +141,12 @@ export async function startTestWebReview(
   // A git-backed scenario reviews the staged changes of a repository the fixtures write, in the
   // order their sidecar states; a patch scenario reviews the patch file.
   const many = /^--many=(\d+)$/.exec(input);
-  const repo = input === "--rich" || many ? join(directories[0]!, "review-repo") : undefined;
+  const repo =
+    input === "--rich" || input === "--previews" || many
+      ? join(directories[0]!, "review-repo")
+      : undefined;
   if (repo && many) writeManyReviewRepo(repo, Number(many[1]));
+  else if (repo && input === "--previews") writePreviewReviewRepo(repo);
   else if (repo) writeRichReviewRepo(repo, options.context);
   if (options.config) {
     mkdirSync(join(directories[1]!, "hunk"), { recursive: true });

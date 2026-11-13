@@ -19,6 +19,7 @@ import type { ReviewNoteInteraction } from "../notes/noteInteraction";
 import { reviewFileChangeGlyph, reviewFileLabelParts } from "../../core/review/fileLabels";
 import type { ReviewFileIndexEntry } from "../mirror/fileIndex";
 import type { ReviewFileRenderPlan } from "./fileProjection";
+import { FilePreviewBody, FilePreviewHeaderAction } from "../previews/FilePreviews";
 import type { ReviewFileGeometry } from "./hunkGeometry";
 import { PierreFileView } from "./PierreFileView";
 
@@ -106,6 +107,7 @@ function FileHeader({
         <span className="file-path">{filename}</span>
         {stateLabel ? <span className="file-state">{stateLabel}</span> : null}
       </span>
+      <FilePreviewHeaderAction fileKey={fileKey} path={index.path} changeKind={index.changeKind} />
       {expandedGaps > 0 ? (
         <button type="button" className="header-action" onClick={onCollapseGaps}>
           Hide expanded lines
@@ -175,36 +177,43 @@ export const FileSection = memo(function FileSection(props: FileSectionProps) {
         onCollapseGaps={() => props.onCollapseGaps(fileKey)}
       />
       <div className="file-body" style={bodyStyle}>
-        {!plan ? (
-          <p className="file-placeholder">Loading…</p>
-        ) : plan.emptyReason ? (
-          <p className="file-placeholder" data-empty-reason={plan.emptyReason}>
-            {EMPTY_DIFF_MESSAGES[plan.emptyReason]}
-          </p>
-        ) : mounted ? (
-          <PierreFileView
-            plan={plan}
-            layout={layout}
-            wrapLines={props.wrapLines}
-            showLineNumbers={props.showLineNumbers}
-            syntaxTheme={props.syntaxTheme}
-            appearance={props.appearance}
-            onToggleGap={(gapId) => props.onToggleGap(fileKey, gapId)}
-            selectedHunk={props.selectedHunk}
-            onSelectHunk={(hunkIndex) => props.onSelectHunk(fileKey, hunkIndex)}
-            onGeometry={(geometry) => props.onGeometry(fileKey, geometry)}
-            noteGroups={noteGroups}
-            highlights={props.highlights ?? NO_HIGHLIGHTS}
-            composers={props.composers}
-            renderComposer={props.interaction.renderComposer}
-            onPickLines={(side, start, end) =>
-              props.interaction.onPickLines(fileKey, side, start, end)
-            }
-            onNoteAction={(action, noteId) =>
-              props.interaction.onNoteAction(fileKey, action, noteId)
-            }
-          />
-        ) : null}
+        <FilePreviewBody
+          fileKey={fileKey}
+          file={plan?.file}
+          emptyReason={plan?.emptyReason}
+          mounted={mounted}
+        >
+          {!plan ? (
+            <p className="file-placeholder">Loading…</p>
+          ) : plan.emptyReason ? (
+            <p className="file-placeholder" data-empty-reason={plan.emptyReason}>
+              {EMPTY_DIFF_MESSAGES[plan.emptyReason]}
+            </p>
+          ) : mounted ? (
+            <PierreFileView
+              plan={plan}
+              layout={layout}
+              wrapLines={props.wrapLines}
+              showLineNumbers={props.showLineNumbers}
+              syntaxTheme={props.syntaxTheme}
+              appearance={props.appearance}
+              onToggleGap={(gapId) => props.onToggleGap(fileKey, gapId)}
+              selectedHunk={props.selectedHunk}
+              onSelectHunk={(hunkIndex) => props.onSelectHunk(fileKey, hunkIndex)}
+              onGeometry={(geometry) => props.onGeometry(fileKey, geometry)}
+              noteGroups={noteGroups}
+              highlights={props.highlights ?? NO_HIGHLIGHTS}
+              composers={props.composers}
+              renderComposer={props.interaction.renderComposer}
+              onPickLines={(side, start, end) =>
+                props.interaction.onPickLines(fileKey, side, start, end)
+              }
+              onNoteAction={(action, noteId) =>
+                props.interaction.onNoteAction(fileKey, action, noteId)
+              }
+            />
+          ) : null}
+        </FilePreviewBody>
       </div>
     </section>
   );
