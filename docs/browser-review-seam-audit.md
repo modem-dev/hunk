@@ -1,8 +1,9 @@
 # Browser review seam audit — prototype duplication findings
 
-> **Current status (2026-09-06; after Phase 4).** Core review semantics, terminal adoption, producer and broker
+> **Current status (2026-11-13; after Phase 4).** Core review semantics, terminal adoption, producer and broker
 > projections, wire protocol, bounded resources, HTTP actions, and SSE have landed. There is no
-> browser client or served review page. Historical prototype locators below may name deleted files;
+> browser client or served review page. Phases 5 and 6 are superseded by
+> [`web-review-plan.md`](web-review-plan.md); open items below name the milestone there that owns them. Historical prototype locators below may name deleted files;
 > each finding's latest status annotation is authoritative.
 
 Companion to `browser-review-rebuild.md`. This is the per-finding work-list behind the plan's
@@ -14,40 +15,44 @@ should delete the copies its primitive replaces and check off the finding here.
 
 ## Run boundary — after Phase 4
 
-Open work and its planned phase:
+Open work and the milestone in [`web-review-plan.md`](web-review-plan.md) that owns it:
 
 - **C3, C5** — the epoch/supersede queue and one reconnect scheduler, both browser-client
-  work (Phase 5). C4 is repaid on the server side; its client half closes with the reader
+  work (M4). C4 is repaid on the server side; its client half closes with the reader
   that imports the same module.
 - **The event stream needs a `fetch` reader, not `EventSource`.** The capability is
-  presented in a header, which `EventSource` cannot set, so Phase 5's client consumes the
+  presented in a header, which `EventSource` cannot set, so the M4 client consumes the
   stream with `fetch` and a streaming reader. That is also what makes C5's "one reconnect
   scheduler" reachable — there is no built-in reconnect to interleave with.
 - **No replay buffer.** The surface answers any `Last-Event-ID` with a fresh publication
   rather than retained frames. The stream carries no deltas, so a publication _is_ a
-  complete resynchronization and a history would be an optimization; if Phase 5 measures a
+  complete resynchronization and a history would be an optimization; if M4 measures a
   need for one, it is additive.
 - **Browser sites of A, B, C, D** — every finding whose latest annotation still requires a
-  browser consumer remains open: A3–A11; B3–B8 and B10's client; C1 and C2's client; D1's
-  composer, D2 and D5's browser sites, D3's `pierreNoteAnchor`, and D4's
-  `parseCanonicalReviewFile`. B5 still needs its browser source policy. B7 and B8 also retain
-  terminal adoption/behavior work.
-- **E1, E2** — the shared stat-badge formatter, and the product decision about whether the
-  browser mirrors the terminal theme. Both Phase 5; E2 must be decided before its second PR.
-- **F browser bindings** — F1–F3's browser halves (palette, keymap resolution onto DOM
-  events). F4 stays a scope boundary, not work.
-- **G1, G2 policy** — view-option classification and persistence, and the multi-client
-  selection and authorship policy. G2's _wire fields_ are done (see G2); what a receiver
-  should do with an actor tag is the decision, due before Phase 5 PR 2.
+  browser consumer remains open and closes in M4: A3–A11; B3–B8 and B10's client; C1 and C2's
+  client; D2 and D5's browser sites, D3's `pierreNoteAnchor`, and D4's
+  `parseCanonicalReviewFile`. D1's composer site closes in M5, with the composer. B5 still
+  needs its browser source policy. B7 and B8 also retain terminal adoption/behavior work.
+- **E1, E2** — the shared stat-badge formatter (M4), and the theme: the E2 decision is
+  recorded below, defaults ship in M2, and the client consumes them in M4.
+- **F browser bindings** — F1–F3's browser halves: keymap resolution onto DOM events (M4) and
+  the palette (M5). F4 stays a scope boundary, not work, apart from the one allowlisted
+  `review/refresh` action (M2).
+- **G1, G2 policy** — decided 2026-11-13 (see G1 and G2). Their producer-side policy, shared
+  state transport, and presentation defaults land in M2; the headless review host that
+  makes the selection rule observable lands in M1.
 - **G3 adoption** — no address grammar exists on current main. It was removed as dead code and
-  returns beside the first browser deep-link or opener-fragment consumer (Phases 5–6).
+  returns beside the first browser deep-link consumer (M5); the opener preserves URL
+  fragments in M3.
+- **G4 browser adoption** — the browser renders failures from `reviewErrorCatalog` in M5.
 - **G5** — a placement rule for undo, if undo is ever built. Not work.
 
-Remote draft composition now reaches `notes/update-draft` through core and the wire protocol, but
-has no browser caller until Phase 5. HTTP publications contain only a position and resource catalog;
+Remote draft composition reaches `notes/update-draft` through core and the wire protocol, but
+composers are per-client (G2), so the browser saves notes through new direct intents rather than
+the shared draft slot (M2). HTTP publications contain only a position and resource catalog;
 resource reads provide canonical files, patches, and sources, while successful actions acknowledge a
-new position. Phase 5 must define bounded snapshot or delta transport for live selection, filter,
-and note state before a browser can render those changes.
+new position. M2 defines the bounded shared-state snapshot for notes, filter, note visibility,
+viewed files, and agent highlights; selection stays per-surface and is not transported.
 
 ## A. Diff geometry
 
@@ -502,6 +507,9 @@ path suffixes, expansion retention, git-status badges).
 - **E2. Theme.** Web hardcodes two standalone palettes disconnected from `packages/hunk/src/ui/themes` and
   the `AppTheme` mapping; whether the browser mirrors the terminal theme is an open product
   decision — decide before Phase 5, don't unify by default.
+  _Decided (2026-11-13)_: the browser starts on the session's resolved theme, custom themes
+  included, sent by the host as tokens (M2). A per-browser picker may override it without
+  changing the terminal (M4).
 
 ## F. Commands and keybindings (preemptive — the prototype browser had none)
 
@@ -582,6 +590,9 @@ implementation does.
   schema, not implied by where code happens to read them; (b) whether the browser receives the
   host's resolved view defaults as its starting point (it should — the host already computed
   them) with per-client overrides persisted client-side. Phase 5.
+  _Decided (2026-11-13)_: filter, agent-note visibility, and viewed-file state are shared review
+  state; layout, wrap, line numbers, theme override, sidebar width, and gap expansion are
+  per-browser. The browser receives the host's resolved defaults as its starting point (M2).
 - **G2. Actor identity and multi-client selection policy.** Notes carry an optional `author`,
   but wire actions carry no actor/client identity — with a terminal, a browser, and agents
   attached to one session, nothing distinguishes who moved the selection or wrote a note, and
@@ -607,6 +618,11 @@ implementation does.
   minting a per-client identity belongs with the client that needs one — Phase 5, beside the
   selection policy that is the only thing which will read it. Parts (2) and (3) are
   unchanged.
+  _Decided (2026-11-13)_: selection is fully independent per surface — a browser never tracks a
+  terminal's position and vice versa. Agent-directed navigation is the exception and moves every
+  surface. Composers are per-client, so the browser saves notes through direct intents instead of
+  the shared draft slot. Note authorship defaults from the actor. In a headless session the
+  selection agents read is the browser's reported position. The producer policy lands in M2.
 - **G3. Semantic addressing / permalinks.** The prototype's URL fragment carries only the
   capability token — there is no grammar for addressing a file/hunk/line/note. Three consumers
   will need one: browser deep links and back/forward history, a terminal "copy link" command,
