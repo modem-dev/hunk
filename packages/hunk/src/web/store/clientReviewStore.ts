@@ -221,6 +221,9 @@ export class ClientReviewStore {
       return;
     }
 
+    // A read still running for this file (its status was dropped by a reload of the same
+    // generation) is superseded: aborted, and its answer ignored, so old text cannot land.
+    this.sourceLoads.get(fileKey)?.abort();
     const controller = new AbortController();
     this.sourceLoads.set(fileKey, controller);
     this.store.dispatch({
