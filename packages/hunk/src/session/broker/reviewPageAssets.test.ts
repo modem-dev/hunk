@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   archiveReviewPageAssets,
+  currentDirectoryReviewPageAssets,
   directoryReviewPageAssets,
   encodeReviewPageAssetArchive,
   parseReviewPageAssetManifest,
@@ -81,6 +82,40 @@ describe("directory page builds", () => {
     expect(
       directoryReviewPageAssets(writeTestBuild({ formatVersion: 1, assets: ["../x.js"] })),
     ).toBeUndefined();
+  });
+});
+
+describe("a build directory under a running daemon", () => {
+  test("serves a rebuild's names once the manifest changes", async () => {
+    const directory = writeTestBuild();
+    expect(currentDirectoryReviewPageAssets(directory)!.asset("main-abc123.js")).toBeDefined();
+
+    // A rebuild replaces the hashed names and the manifest that lists them.
+    unlinkSync(join(directory, "main-abc123.js"));
+    writeFileSync(join(directory, "main-def456.js"), "console.log(2);");
+    writeFileSync(
+      join(directory, REVIEW_PAGE_MANIFEST_NAME),
+      JSON.stringify({ formatVersion: 1, assets: ["main-def456.js", "main-abc123.css"] }),
+    );
+
+    const rebuilt = currentDirectoryReviewPageAssets(directory)!;
+    expect(rebuilt.asset("main-abc123.js")).toBeUndefined();
+    expect(await rebuilt.asset("main-def456.js")!.body.text()).toBe("console.log(2);");
+  });
+
+  test("answers from the current manifest even through an earlier lookup", async () => {
+    const directory = writeTestBuild();
+    const cached = currentDirectoryReviewPageAssets(directory)!;
+    // The new build's file and manifest land after a lookup already held the old manifest.
+    writeFileSync(join(directory, "main-def456.js"), "console.log(3);");
+    writeFileSync(
+      join(directory, REVIEW_PAGE_MANIFEST_NAME),
+      JSON.stringify({ formatVersion: 1, assets: ["main-def456.js"] }),
+    );
+    unlinkSync(join(directory, "main-abc123.js"));
+
+    expect(cached.asset("main-abc123.js")).toBeUndefined();
+    expect(await cached.asset("main-def456.js")!.body.text()).toBe("console.log(3);");
   });
 });
 

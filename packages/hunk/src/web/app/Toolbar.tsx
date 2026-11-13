@@ -12,9 +12,9 @@
 import type { KeyboardEvent } from "react";
 import type { LayoutMode } from "../../core/run/commandInputs";
 import type { WebImplementedCommandId } from "../commands/webCommandTable";
-import type { WebThemeV1 } from "../theme/themeIndex";
+
 import type { WebViewPreferences } from "../view/viewPreferences";
-import { ThemeMenu } from "./ThemeMenu";
+import { ThemeMenu, type ThemeMenuOption } from "./ThemeMenu";
 
 export interface ToolbarProps {
   title: string;
@@ -26,8 +26,17 @@ export interface ToolbarProps {
   preferences: WebViewPreferences;
   sidebarOpen: boolean;
   resolvedLayout: "split" | "unified";
-  themes: readonly WebThemeV1[];
+  themes: readonly ThemeMenuOption[];
+  /** The theme option shown as chosen. */
   themeId: string | undefined;
+  /** The theme in effect. */
+  themeLabel?: string;
+  /** The session's source, shown beside the title. */
+  sourceLabel?: string;
+  /** The shared file filter, when the session has one. */
+  filter?: string;
+  /** Sidecar notes the session left out of the shared state; the terminal still shows them. */
+  omittedNotes?: number;
   themeMenuOpen: boolean;
   onThemeMenuOpen: (open: boolean) => void;
   onPreferences: (next: Partial<WebViewPreferences>) => void;
@@ -80,12 +89,28 @@ export function Toolbar(props: ToolbarProps) {
         <span aria-hidden="true">☰</span>
       </button>
       <div className="toolbar-title">
-        <span className="review-title">{props.title}</span>
+        <span className="review-title" title={props.sourceLabel}>
+          {props.title}
+        </span>
         <span className="file-count" data-testid="file-count">
           {props.fileCount === 1 ? "1 file" : `${props.fileCount} files`}
         </span>
         <span className="stat-added">{`+${props.additions}`}</span>
         <span className="stat-removed">{`-${props.deletions}`}</span>
+        {props.filter ? (
+          <span className="filter-chip" data-testid="shared-filter" title="Filter from the session">
+            {`filter: ${props.filter}`}
+          </span>
+        ) : null}
+        {props.omittedNotes ? (
+          <span
+            className="filter-chip"
+            data-testid="omitted-notes"
+            title="The session's agent-context file has more notes than a browser is sent; the terminal shows them all."
+          >
+            {`${props.omittedNotes} agent ${props.omittedNotes === 1 ? "note" : "notes"} not shown`}
+          </span>
+        ) : null}
         <span className="status" data-state={props.status.state} role="status">
           {props.status.label}
         </span>
@@ -149,6 +174,7 @@ export function Toolbar(props: ToolbarProps) {
         <ThemeMenu
           themes={props.themes}
           themeId={props.themeId}
+          {...(props.themeLabel !== undefined ? { currentLabel: props.themeLabel } : {})}
           open={props.themeMenuOpen}
           onOpenChange={props.onThemeMenuOpen}
           onTheme={props.onTheme}

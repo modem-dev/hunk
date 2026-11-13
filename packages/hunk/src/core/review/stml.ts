@@ -134,3 +134,82 @@ export function isRawTextStmlTag(tag: string) {
   const role = stmlTagRole(tag);
   return role !== undefined && RAW_TEXT_ROLES.has(role);
 }
+
+// -- Colors -----------------------------------------------------------------------------
+
+/** Fixed fallback palette for ANSI-style color names in agent markup. */
+const STML_NAMED_COLORS: ReadonlyMap<string, string> = new Map([
+  ["black", "#1c1c1c"],
+  ["red", "#e05252"],
+  ["green", "#4fb469"],
+  ["yellow", "#d9a331"],
+  ["blue", "#4f8fd9"],
+  ["magenta", "#b969d9"],
+  ["cyan", "#3fb5b5"],
+  ["white", "#e8e8e8"],
+  ["gray", "#8a8a8a"],
+  ["grey", "#8a8a8a"],
+  ["orange", "#e0873d"],
+  ["purple", "#9a6fd0"],
+  ["pink", "#d9699a"],
+]);
+
+/** The semantic theme tokens STML colors may name, by Hunk's theme token name. */
+export type StmlThemeColorKey =
+  | "accent"
+  | "accentMuted"
+  | "addedSignColor"
+  | "removedSignColor"
+  | "fileModified"
+  | "muted"
+  | "panelAlt"
+  | "text"
+  | "panel"
+  | "noteBorder"
+  | "background";
+
+/** Theme token selected by each semantic STML color word. */
+const STML_THEME_COLOR_KEY_BY_TOKEN: ReadonlyMap<string, StmlThemeColorKey> = new Map([
+  ["accent", "accent"],
+  ["info", "accentMuted"],
+  ["success", "addedSignColor"],
+  ["danger", "removedSignColor"],
+  ["error", "removedSignColor"],
+  ["warning", "fileModified"],
+  ["muted", "muted"],
+  ["subtle", "panelAlt"],
+  ["heading", "text"],
+  ["text", "text"],
+  ["panel", "panel"],
+  ["bg", "panel"],
+  ["note-border", "noteBorder"],
+  // Badge glyphs sit on a bright background and need the highest-contrast text color in both
+  // theme modes, which is the app background.
+  ["badge-text", "background"],
+]);
+
+const STML_HEX_COLOR = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+
+/** What one STML color value names: a theme token, or a literal color. */
+export type StmlColorTarget =
+  | { kind: "theme"; key: StmlThemeColorKey }
+  | { kind: "literal"; color: string };
+
+/**
+ * Resolve one STML color value to what it names, independent of any theme.
+ *
+ * Semantic words follow the sideshow-term vocabulary (`accent`, `success`, `warning`,
+ * `danger`, `info`, `muted`, `subtle`, `heading`) plus internal words a layout emits
+ * (`note-border`, `badge-text`); a hex value and the fixed named palette are literal. Unknown
+ * values resolve to nothing, so a renderer falls back to its default text color. Each renderer
+ * turns a theme key into its own concrete color at render time.
+ */
+export function stmlColorTarget(token: string | undefined): StmlColorTarget | undefined {
+  if (!token) return undefined;
+  const value = token.trim().toLowerCase();
+  const key = STML_THEME_COLOR_KEY_BY_TOKEN.get(value);
+  if (key !== undefined) return { kind: "theme", key };
+  if (STML_HEX_COLOR.test(value)) return { kind: "literal", color: value };
+  const named = STML_NAMED_COLORS.get(value);
+  return named ? { kind: "literal", color: named } : undefined;
+}

@@ -45,11 +45,21 @@ function commitBase(repo: string, files: Record<string, string | Uint8Array>) {
  * It lives inside the repository, so a reload may name it (reloads refuse paths outside the
  * session's root), but under `.git/`, so no staged review ever includes it.
  */
-function writeOrderSidecar(repo: string, paths: readonly string[]) {
+function writeOrderSidecar(
+  repo: string,
+  paths: readonly string[],
+  context: Readonly<Record<string, TestSidecarFileContext>> = {},
+) {
   writeFileSync(
     reviewOrderSidecarPath(repo),
-    JSON.stringify({ version: 1, files: paths.map((path) => ({ path })) }),
+    JSON.stringify({ version: 1, files: paths.map((path) => ({ path, ...context[path] })) }),
   );
+}
+
+/** Agent context one test adds to a file of the sidecar: a summary and annotations. */
+export interface TestSidecarFileContext {
+  summary?: string;
+  annotations?: ReadonlyArray<Record<string, unknown>>;
 }
 
 /** The sidecar path `writeOrderSidecar` wrote for one repository. */
@@ -99,7 +109,10 @@ function binaryTestBytes(seed: number) {
 }
 
 /** Build the rich review's repository at `repo` and stage its changes. */
-export function writeRichReviewRepo(repo: string) {
+export function writeRichReviewRepo(
+  repo: string,
+  context: Readonly<Record<string, TestSidecarFileContext>> = {},
+) {
   rmSync(repo, { recursive: true, force: true });
   const base: Record<string, string | Uint8Array> = {
     "src/app/main.ts": `${MAIN_BEFORE}\n`,
@@ -143,7 +156,7 @@ export function writeRichReviewRepo(repo: string) {
     );
   }
   git(repo, "add", "-A");
-  writeOrderSidecar(repo, RICH_REVIEW_PATHS);
+  writeOrderSidecar(repo, RICH_REVIEW_PATHS, context);
 }
 
 /** Stage the rich review's next generation: one changed line in the first file. */

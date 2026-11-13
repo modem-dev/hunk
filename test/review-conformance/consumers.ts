@@ -9,6 +9,7 @@
 import { brokerMirrorOrderingConsumer } from "./consumers/brokerMirror";
 import { browserEventReaderConsumer } from "./consumers/browserEventReader";
 import { browserMirrorOrderingConsumer } from "./consumers/browserMirror";
+import { browserNavigationConsumer } from "./consumers/browserNavigation";
 import { browserProjectionConsumer } from "./consumers/browserProjection";
 import { browserReviewSurfaceEventConsumer } from "./consumers/browserReviewSurface";
 import { reviewEventProtocolConsumer } from "./consumers/reviewEventProtocol";
@@ -24,6 +25,7 @@ import {
 import type { ReviewActorPolicyConsumer } from "./actorPolicyFixtures";
 import {
   brokerSharedStateConsumer,
+  browserClientSharedStateConsumer,
   browserSurfaceSharedStateConsumer,
   reviewProducerSharedStateConsumer,
 } from "./consumers/sharedState";
@@ -64,6 +66,7 @@ export const REVIEW_NAVIGATION_CONSUMERS: readonly ReviewNavigationConsumer[] = 
   intentPlannerNavigationConsumer,
   terminalReviewNavigationConsumer,
   reviewSessionHostNavigationConsumer,
+  browserNavigationConsumer,
 ];
 
 /**
@@ -111,6 +114,7 @@ export const REVIEW_SHARED_STATE_CONSUMERS: readonly ReviewSharedStateConsumer[]
   reviewProducerSharedStateConsumer,
   brokerSharedStateConsumer,
   browserSurfaceSharedStateConsumer,
+  browserClientSharedStateConsumer,
 ];
 
 /**

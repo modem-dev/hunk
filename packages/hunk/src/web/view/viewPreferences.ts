@@ -66,6 +66,73 @@ export function readWebViewPreferences(): WebViewPreferences {
   }
 }
 
+/** What this browser changed itself; every field it never touched follows the session. */
+export type WebViewOverrides = Partial<WebViewPreferences>;
+
+/** Read only the fields this browser stored, ignoring anything malformed. */
+export function readWebViewOverrides(): WebViewOverrides {
+  let stored: Partial<Record<keyof WebViewPreferences, unknown>>;
+  try {
+    stored = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "{}") as typeof stored;
+  } catch {
+    return {};
+  }
+  if (!stored || typeof stored !== "object") return {};
+  const overrides: WebViewOverrides = {};
+  if (["auto", "split", "unified"].includes(stored.layout as string)) {
+    overrides.layout = stored.layout as LayoutMode;
+  }
+  if (typeof stored.wrapLines === "boolean") overrides.wrapLines = stored.wrapLines;
+  if (typeof stored.showLineNumbers === "boolean") {
+    overrides.showLineNumbers = stored.showLineNumbers;
+  }
+  if (typeof stored.sidebarOpen === "boolean") overrides.sidebarOpen = stored.sidebarOpen;
+  if (typeof stored.sidebarWidth === "number") {
+    overrides.sidebarWidth = clampSidebarWidth(stored.sidebarWidth);
+  }
+  if (stored.sidebarMode === "flat" || stored.sidebarMode === "tree") {
+    overrides.sidebarMode = stored.sidebarMode;
+  }
+  return overrides;
+}
+
+/** The view options a session starts a browser from (`presentation.view`). */
+export interface WebViewSessionDefaults {
+  layout: LayoutMode;
+  wrapLines: boolean;
+  lineNumbers: boolean;
+}
+
+/**
+ * Resolve the effective view: this browser's overrides win, then the session's defaults,
+ * then the page's own.
+ */
+export function resolveWebViewPreferences(
+  overrides: WebViewOverrides,
+  session: WebViewSessionDefaults | undefined,
+): WebViewPreferences {
+  return {
+    ...DEFAULT_WEB_VIEW_PREFERENCES,
+    ...(session
+      ? {
+          layout: session.layout,
+          wrapLines: session.wrapLines,
+          showLineNumbers: session.lineNumbers,
+        }
+      : {}),
+    ...overrides,
+  };
+}
+
+/** Store this browser's overrides; skipped silently when storage is blocked. */
+export function storeWebViewOverrides(overrides: WebViewOverrides) {
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(overrides));
+  } catch {
+    // Losing the preference is the whole cost.
+  }
+}
+
 /** Store preferences for this browser; skipped silently when storage is blocked. */
 export function storeWebViewPreferences(preferences: WebViewPreferences) {
   try {

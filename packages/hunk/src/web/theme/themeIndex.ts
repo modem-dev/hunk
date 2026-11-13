@@ -10,6 +10,7 @@
  *
  * The choice never reaches the session: a theme picked here does not change the terminal.
  */
+import type { ReviewThemeDefaultsV1 } from "../../session/reviewSharedState";
 
 /** `<meta name>` the document carries the theme index's URL in. */
 export const WEB_THEME_INDEX_META_NAME = "hunk-theme-index";
@@ -87,6 +88,61 @@ export function storeThemeId(themeId: string) {
   } catch {
     // A private window or blocked storage only loses the preference.
   }
+}
+
+/** Forget this browser's theme choice, so the session's theme applies again. */
+export function clearStoredThemeId() {
+  try {
+    window.localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // Nothing stored, or nothing storable.
+  }
+}
+
+/** Default Shiki theme per appearance, for a session theme that names no base. */
+const DEFAULT_SYNTAX_THEMES = {
+  dark: "github-dark-default",
+  light: "github-light-default",
+} as const;
+
+/**
+ * The page theme a session's custom theme describes.
+ *
+ * Semantic tokens apply as they do for a built-in theme. Code is highlighted with the theme's
+ * base Shiki theme when it names one, else GitHub's for its appearance: the custom theme's
+ * `syntaxColors` and TextMate scope overrides are not applied in the browser, because Pierre
+ * resolves highlight themes by name or by a whole Shiki theme the page would have to build.
+ */
+export function sessionCustomWebTheme(
+  theme: Extract<ReviewThemeDefaultsV1, { kind: "custom" }>,
+): WebThemeV1 {
+  return {
+    id: theme.id,
+    label: theme.label,
+    appearance: theme.appearance,
+    syntaxTheme: theme.syntaxTheme ?? DEFAULT_SYNTAX_THEMES[theme.appearance],
+    tokens: theme.tokens,
+  };
+}
+
+/**
+ * Pick the theme to show: this browser's choice, then the session's theme, then the
+ * color-scheme default.
+ */
+export function resolveSessionWebTheme(
+  index: WebThemeIndexV1,
+  storedId: string | undefined,
+  session: ReviewThemeDefaultsV1 | undefined,
+  prefersDark: boolean,
+): WebThemeV1 | undefined {
+  const custom = session?.kind === "custom" ? sessionCustomWebTheme(session) : undefined;
+  const choose = (id: string | undefined) =>
+    id === undefined
+      ? undefined
+      : id === custom?.id
+        ? custom
+        : index.themes.find((theme) => theme.id === id);
+  return choose(storedId) ?? choose(session?.id) ?? resolveWebTheme(index, undefined, prefersDark);
 }
 
 /** Pick the theme to show: the stored one if it still exists, else the color-scheme default. */

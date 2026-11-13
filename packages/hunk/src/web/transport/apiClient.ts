@@ -26,12 +26,16 @@ import {
   type HunkReviewClientErrorCodeV1,
   type HunkReviewHttpRoute,
   type HunkReviewPublicationBodyV1,
+  type HunkReviewStateBodyV1,
 } from "../../session/reviewHttpProtocol";
 import {
   HUNK_REVIEW_PROTOCOL_VERSION,
+  isHunkReviewIndex,
   parseHunkReviewPublicationAddress,
   parseHunkReviewResourceCatalog,
+  type HunkReviewActionEnvelopeV1,
 } from "../../session/reviewProtocol";
+import { parseReviewSharedState } from "../../session/reviewSharedState";
 import { webCryptoReviewDigest } from "./webCryptoDigest";
 
 /**
@@ -75,7 +79,8 @@ export function parseReviewPublicationBody(
     typeof record.sessionId !== "string" ||
     !publication ||
     !catalog ||
-    catalog.generation !== publication.generation
+    catalog.generation !== publication.generation ||
+    (record.sharedStateRevision !== undefined && !isHunkReviewIndex(record.sharedStateRevision))
   ) {
     return undefined;
   }
@@ -83,7 +88,41 @@ export function parseReviewPublicationBody(
     protocolVersion: HUNK_REVIEW_PROTOCOL_VERSION,
     sessionId: record.sessionId,
     publication,
+    ...(record.sharedStateRevision !== undefined
+      ? { sharedStateRevision: record.sharedStateRevision as number }
+      : {}),
     catalog,
+  };
+}
+
+/**
+ * Parse one shared-state body: the snapshot through the shared strict parser, and the
+ * envelope's position agreeing with the position the snapshot names.
+ */
+export function parseReviewStateBody(value: unknown): HunkReviewStateBodyV1 | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  const publication = parseHunkReviewPublicationAddress(record.publication);
+  const state = parseReviewSharedState(record.state);
+  if (
+    record.protocolVersion !== HUNK_REVIEW_PROTOCOL_VERSION ||
+    typeof record.sessionId !== "string" ||
+    !publication ||
+    !state ||
+    !isHunkReviewIndex(record.sharedStateRevision) ||
+    state.sharedStateRevision !== record.sharedStateRevision ||
+    state.generation !== publication.generation
+  ) {
+    return undefined;
+  }
+  return {
+    protocolVersion: HUNK_REVIEW_PROTOCOL_VERSION,
+    sessionId: record.sessionId,
+    publication,
+    sharedStateRevision: record.sharedStateRevision,
+    state,
   };
 }
 
@@ -180,6 +219,34 @@ export class ReviewApiClient {
       throw new ReviewApiError("unreadable", "The review publication could not be read.");
     }
     return body;
+  }
+
+  /** Read the review's shared state: notes, filter, file index, and presentation defaults. */
+  async state(signal?: AbortSignal): Promise<HunkReviewStateBodyV1> {
+    const response = await this.request({ kind: "state", sessionId: this.sessionId }, { signal });
+    let body: HunkReviewStateBodyV1 | undefined;
+    try {
+      body = parseReviewStateBody(await response.json());
+    } catch {
+      body = undefined;
+    }
+    if (!body || body.sessionId !== this.sessionId) {
+      throw new ReviewApiError("unreadable", "The review's shared state could not be read.");
+    }
+    return body;
+  }
+
+  /** Send one review action; resolves once the session applied it. */
+  async postAction(envelope: HunkReviewActionEnvelopeV1, signal?: AbortSignal): Promise<void> {
+    await this.request(
+      { kind: "actions", sessionId: this.sessionId },
+      {
+        signal,
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(envelope),
+      },
+    );
   }
 
   /** Open the session's event stream; the caller reads and closes the body. */
@@ -341,14 +408,21 @@ export class ReviewApiClient {
   /** Send one request with the capability header, turning refusals into typed errors. */
   private async request(
     route: HunkReviewHttpRoute,
-    init: { signal?: AbortSignal; headers?: Record<string, string> },
+    init: {
+      signal?: AbortSignal;
+      headers?: Record<string, string>;
+      method?: "GET" | "POST";
+      body?: string;
+    },
   ): Promise<Response> {
     const headers = new Headers(init.headers);
     headers.set(HUNK_REVIEW_CAPABILITY_HEADER, this.capability);
     let response: Response;
     try {
       response = await this.fetcher(reviewHttpPath(route), {
+        method: init.method ?? "GET",
         headers,
+        ...(init.body !== undefined ? { body: init.body } : {}),
         cache: "no-store",
         credentials: "omit",
         referrerPolicy: "no-referrer",

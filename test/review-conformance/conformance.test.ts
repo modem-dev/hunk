@@ -72,6 +72,7 @@ describe("review conformance corpus", () => {
       "core intent planner",
       "terminal review",
       "review session host",
+      "browser page store",
     ]);
     expect(REVIEW_ORDERING_CONSUMERS.map((consumer) => consumer.name)).toEqual([
       "core publication ordering",
@@ -93,6 +94,7 @@ describe("review conformance corpus", () => {
       "review producer",
       "broker shared-state read",
       "browser review HTTP surface",
+      "browser client shared-state mirror",
     ]);
     expect(REVIEW_ACTOR_POLICY_CONSUMERS.map((consumer) => consumer.name)).toEqual([
       "producer action handler",

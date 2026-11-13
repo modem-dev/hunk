@@ -608,3 +608,235 @@ body {
 [data-badge="deletion"] {
   color: var(--hunk-badge-removed);
 }
+
+/* -- Notes ------------------------------------------------------------------------------ */
+
+/* Cards hang in the diff flow beside their line, framed in the theme's note colors. */
+.note-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 12px 8px;
+  font-family: var(--ui-font);
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: normal;
+  color: var(--hunk-text);
+}
+
+.note-card {
+  margin-left: calc(var(--note-depth, 0) * 18px);
+  max-width: 920px;
+  padding: 6px 10px 8px;
+  background: var(--hunk-panel);
+  border: 1px solid var(--hunk-note-border, var(--hunk-accent));
+  border-left-width: 3px;
+  border-radius: 6px;
+}
+
+.note-card[data-source="user"] {
+  border-color: var(--hunk-accent);
+}
+
+.note-card[data-stale] {
+  border-style: dashed;
+  opacity: 0.8;
+}
+
+.note-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 2px;
+  font-size: 12px;
+}
+
+.note-author {
+  color: var(--hunk-accent);
+  font-weight: 600;
+}
+
+.note-range {
+  color: var(--hunk-muted);
+  font-family: var(--code-font);
+}
+
+.note-stale {
+  margin-left: auto;
+  padding: 0 6px;
+  border: 1px solid var(--hunk-muted);
+  border-radius: 8px;
+  color: var(--hunk-muted);
+  font-size: 11px;
+}
+
+.note-body p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.note-rationale {
+  margin-top: 4px !important;
+  color: var(--hunk-muted);
+}
+
+/* STML bodies: CSS lays the shared roles out; colors come from the theme's properties. */
+.stml {
+  overflow-wrap: anywhere;
+}
+
+.stml p,
+.stml h3,
+.stml h4 {
+  margin: 0;
+}
+
+.stml h3 {
+  font-size: 14px;
+}
+
+.stml h4 {
+  font-size: 13px;
+}
+
+.stml-container,
+.stml-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 0;
+}
+
+.stml-container[data-border],
+.stml-card[data-border] {
+  padding: 4px 8px;
+  border: 1px solid var(--hunk-border);
+  border-radius: 4px;
+}
+
+.stml-container[data-border="double"],
+.stml-card[data-border="double"] {
+  border-style: double;
+  border-width: 3px;
+}
+
+.stml-container[data-border="heavy"],
+.stml-card[data-border="heavy"] {
+  border-width: 2px;
+}
+
+.stml-box-title {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--hunk-accent);
+}
+
+.stml-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1ch;
+}
+
+.stml-row > * {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.stml-muted {
+  color: var(--hunk-muted);
+}
+
+.stml-key {
+  padding: 0 4px;
+  border: 1px solid var(--hunk-border);
+  border-radius: 3px;
+  font-family: var(--code-font);
+  font-size: 12px;
+}
+
+.stml-badge {
+  padding: 0 6px;
+  border-radius: 8px;
+  color: var(--hunk-background);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.stml-link {
+  color: var(--hunk-accent);
+  text-decoration: underline;
+}
+
+.stml-divider {
+  width: 100%;
+  border: 0;
+  border-top: 1px solid var(--hunk-border);
+  margin: 4px 0;
+}
+
+.stml-list,
+.stml-ordered-list {
+  margin: 0;
+  padding-left: 2.2ch;
+}
+
+.stml-code {
+  margin: 4px 0;
+  padding: 4px 8px;
+  background: var(--hunk-panel-alt);
+  border-radius: 4px;
+  font-family: var(--code-font);
+  font-size: 12px;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.stml-code[data-title]::before {
+  display: block;
+  color: var(--hunk-muted);
+  content: attr(data-title);
+}
+
+/* -- Agent attention marks ------------------------------------------------------------ */
+
+.agent-highlight {
+  position: absolute;
+  z-index: 1;
+  border-radius: 2px;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--hunk-accent) 32%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--hunk-accent) 60%, transparent);
+}
+
+.agent-highlight[data-tone="current"] {
+  background: color-mix(in srgb, var(--hunk-accent) 48%, transparent);
+}
+
+.agent-highlight[data-tone="info"] {
+  background: color-mix(in srgb, var(--hunk-accent-muted, var(--hunk-accent)) 45%, transparent);
+}
+
+.agent-highlight[data-tone="warning"] {
+  background: color-mix(in srgb, var(--hunk-file-modified) 38%, transparent);
+  box-shadow: 0 0 0 1px var(--hunk-file-modified);
+}
+
+.agent-highlight[data-tone="error"] {
+  background: color-mix(in srgb, var(--hunk-removed-sign-color) 38%, transparent);
+  box-shadow: 0 0 0 1px var(--hunk-removed-sign-color);
+}
+
+.agent-highlight[data-tone="dim"] {
+  background: color-mix(in srgb, var(--hunk-muted) 30%, transparent);
+  box-shadow: none;
+}
+
+.filter-chip {
+  padding: 0 8px;
+  border: 1px solid var(--hunk-border);
+  border-radius: 9px;
+  color: var(--hunk-muted);
+  font-family: var(--code-font);
+  font-size: 12px;
+}

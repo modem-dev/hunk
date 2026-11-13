@@ -6,14 +6,22 @@
  * theme's own colors. Keyboard behaves like a select: the arrow keys, Home, and End move the
  * active option, typing a letter jumps to the next theme starting with it, Enter or Space
  * chooses, and Escape or Tab closes and returns focus to the button. `t` (the terminal's
- * `hunk.view.openThemeSelector`) opens it with the current theme active.
+ * `hunk.view.openThemeSelector`) opens it with the current theme active. When the session
+ * resolved a theme, the first option follows it ("Use session theme") and choosing it clears
+ * this browser's override.
  */
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import type { WebThemeV1 } from "../theme/themeIndex";
 
+/** One choice in the menu. */
+export type ThemeMenuOption = Pick<WebThemeV1, "id" | "label" | "appearance">;
+
 export interface ThemeMenuProps {
-  themes: readonly WebThemeV1[];
+  themes: readonly ThemeMenuOption[];
+  /** The option shown as chosen. */
   themeId: string | undefined;
+  /** The theme in effect, named on the button. */
+  currentLabel?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onTheme: (themeId: string) => void;
@@ -29,6 +37,7 @@ export function ThemeMenu({
   onOpenChange,
   onTheme,
   keyHint,
+  currentLabel,
 }: ThemeMenuProps) {
   const listId = useId();
   const buttonRef = useRef<HTMLButtonElement | null>(null);
@@ -39,7 +48,7 @@ export function ThemeMenu({
     themes.findIndex((theme) => theme.id === themeId),
   );
   const [active, setActive] = useState(currentIndex);
-  const current = themes.find((theme) => theme.id === themeId);
+  const label = currentLabel ?? themes.find((theme) => theme.id === themeId)?.label;
 
   // Opening starts at the current theme and moves focus into the list.
   useEffect(() => {
@@ -124,7 +133,7 @@ export function ThemeMenu({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? listId : undefined}
-        aria-label={`Theme: ${current?.label ?? "loading"}`}
+        aria-label={`Theme: ${label ?? "loading"}`}
         title={keyHint ? `Choose theme (${keyHint})` : "Choose theme"}
         data-testid="theme-picker"
         data-theme-id={themeId}
@@ -132,7 +141,7 @@ export function ThemeMenu({
         onClick={() => onOpenChange(!open)}
       >
         <span className="theme-swatch" aria-hidden="true" />
-        <span className="theme-label">{current?.label ?? "Theme"}</span>
+        <span className="theme-label">{label ?? "Theme"}</span>
         <span className="chevron" aria-hidden="true">
           ▾
         </span>
