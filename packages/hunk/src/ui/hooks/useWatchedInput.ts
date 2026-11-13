@@ -1,36 +1,13 @@
 import { useEffect, useRef } from "react";
-import {
-  createWatchController,
-  type WatchControllerClock,
-  type WatchEventSourceCallbacks,
-} from "../../core/watch/controller";
-import { createWatchEventSource } from "../../core/watch/observer";
-import { resolveWatchPlan, type WatchPlan } from "../../core/watch/plan";
-import { computeWatchSignature } from "../../core/watch/signature";
+import { startInputWatch, type WatchedInputRuntime } from "../../core/watch/inputWatch";
 import type { ReloadContext } from "../../core/bootstrap";
 import type { CliInput } from "../../core/run/commandInputs";
 
-export interface WatchedInputRuntime {
-  clock?: WatchControllerClock;
-  getSignature?: (
-    input: CliInput,
-    context: ReloadContext & { signal?: AbortSignal },
-  ) => string | Promise<string>;
-  resolvePlan?: (input: CliInput, context: ReloadContext) => WatchPlan | null;
-  createEventSource?: (plan: WatchPlan, callbacks: WatchEventSourceCallbacks) => { close(): void };
-}
+export type { WatchedInputRuntime };
 
 const defaultRuntime: WatchedInputRuntime = {};
-const DIRECT_FILE_WATCH_SAFETY_CHECK_MS = 2_000;
 
-/** Return whether a watch plan needs the short file-stat safety check. */
-function hasDirectFileContent(plan: WatchPlan) {
-  return plan.targets.some(
-    (target) => target.kind === "directory-entries" && target.sources.includes("content"),
-  );
-}
-
-/** Own the observer and controller lifecycle for one reloadable input. */
+/** Arm the shared input watch for the mounted input and re-arm it when the input changes. */
 export function useWatchedInput({
   enabled,
   input,
@@ -54,31 +31,13 @@ export function useWatchedInput({
   useEffect(() => {
     if (!enabled) return;
 
-    const getSignature = runtime.getSignature ?? computeWatchSignature;
-    let plan: WatchPlan | null;
-    try {
-      plan = (runtime.resolvePlan ?? resolveWatchPlan)(input, reloadContext);
-      if (!plan) return;
-    } catch (error) {
-      console.error("Failed to initialize watch mode.", error);
-      return;
-    }
-
-    const eventSourceFactory = runtime.createEventSource
-      ? (callbacks: WatchEventSourceCallbacks) => runtime.createEventSource!(plan, callbacks)
-      : createWatchEventSource(plan);
-    const controller = createWatchController({
-      clock: runtime.clock,
-      createEventSource: eventSourceFactory,
-      getSignature: (signal) => getSignature(input, { ...reloadContext, signal }),
-      healthyCheckMs: hasDirectFileContent(plan) ? DIRECT_FILE_WATCH_SAFETY_CHECK_MS : undefined,
-      initialSignature: reloadContext.initialWatchSignature,
+    const watch = startInputWatch({
+      input,
+      reloadContext,
       onReloadPending: () => pendingRef.current?.(),
-      pollOnly: plan.coverage === "poll-only",
       refresh: () => refreshRef.current(),
-      reportError: (error) => console.error("Failed to auto-reload the current diff.", error),
+      runtime,
     });
-
-    return () => controller.close();
+    return () => watch?.close();
   }, [enabled, input, reloadContext, runtime]);
 }
