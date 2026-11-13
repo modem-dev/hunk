@@ -7,10 +7,11 @@
  * anchor that already has a composer focuses that one instead.
  *
  * Unsent drafts survive a tab reload: every change is written to `sessionStorage` under the
- * session's id (tab-scoped, never the capability), and cleared on save or cancel. A restored
- * draft remembers the content identity of the file it was written against; when the file the
- * page loads has different content, the draft is kept but marked `changed` and cannot be sent
- * until the reader discards it or re-targets it, so it never lands on changed lines silently.
+ * session's id (tab-scoped, never the capability), and cleared once the session accepts a
+ * save, or on cancel. A restored draft remembers the content identity of the file it was
+ * written against; when the file the page loads has different content, the draft is kept but
+ * marked `changed` and cannot be sent until the reader discards it or re-targets it, so it
+ * never lands on changed lines silently.
  *
  * Saving does not return the new note's id, so a sent composer waits for the shared state:
  * it closes once a snapshot at or after the position the session applied it at arrives.
@@ -65,16 +66,32 @@ export function noteDraftStorageKey(sessionId: string) {
   return `hunk.review.drafts:${sessionId}`;
 }
 
+/**
+ * Return this tab's `sessionStorage`, or nothing where there is none or the browser refuses it.
+ *
+ * Reading `window.sessionStorage` itself throws when storage is blocked, so the lookup is
+ * guarded here rather than left to a default parameter.
+ */
+function tabStorage(): Pick<Storage, "getItem" | "setItem" | "removeItem"> | undefined {
+  try {
+    return typeof window === "undefined" ? undefined : window.sessionStorage;
+  } catch {
+    return undefined;
+  }
+}
+
 /** The page's composers, observable by React. */
 export class NoteComposerStore {
   private composers: readonly NoteComposer[] = [];
   private readonly listeners = new Set<() => void>();
+  /** The last shared-state position seen, for a save whose answer arrives after it. */
+  private seen: { generation: string; stateRevision: number } | undefined;
 
   constructor(
     private readonly sessionId: string,
     private readonly storage:
       | Pick<Storage, "getItem" | "setItem" | "removeItem">
-      | undefined = typeof window === "undefined" ? undefined : window.sessionStorage,
+      | undefined = tabStorage(),
   ) {
     this.composers = this.read();
   }
@@ -107,6 +124,9 @@ export class NoteComposerStore {
         composer.key === key ? { ...composer, ...patch } : composer,
       ),
     );
+    // The shared state can show the note before the save's answer names the position it
+    // waits for; settle against what was already seen rather than wait for another snapshot.
+    if (patch.awaiting && this.seen) this.settleSent(this.seen);
   }
 
   /** Close one composer and forget its draft. */
@@ -135,6 +155,7 @@ export class NoteComposerStore {
 
   /** Close every sent composer the shared state has caught up with. */
   settleSent(position: { generation: string; stateRevision: number }) {
+    this.seen = position;
     const remaining = this.composers.filter(
       (composer) =>
         composer.status !== "sending" ||
@@ -151,9 +172,17 @@ export class NoteComposerStore {
     for (const listener of Array.from(this.listeners)) listener();
   }
 
-  /** Persist unsent drafts; a sent one is the session's now. */
+  /**
+   * Persist every draft the session has not accepted yet.
+   *
+   * A composer still sending keeps its backup, so a refused or interrupted save (the tab
+   * closed mid-request) has its text after a reload; once the session accepted it (`awaiting`
+   * is set) the note is the session's.
+   */
   private write() {
-    const drafts = this.composers.filter((composer) => composer.status !== "sending");
+    const drafts = this.composers.filter(
+      (composer) => composer.status !== "sending" || !composer.awaiting,
+    );
     try {
       if (drafts.length === 0) this.storage?.removeItem(noteDraftStorageKey(this.sessionId));
       else this.storage?.setItem(noteDraftStorageKey(this.sessionId), JSON.stringify(drafts));

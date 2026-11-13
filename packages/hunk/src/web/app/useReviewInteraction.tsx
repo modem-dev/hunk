@@ -35,6 +35,7 @@ import { reviewNotePlacement } from "../notes/noteProjection";
 import { reviewNoteLineTarget, reviewNoteRangeTarget } from "../notes/noteTargets";
 import type { ReviewSession } from "../session/reviewSession";
 import { planReviewFileRender } from "../stream/fileProjection";
+import { FilterEditSequence } from "./filterEdits";
 
 /** How long the filter field waits for typing to pause before it sets the shared filter. */
 export const FILTER_DEBOUNCE_MS = 300;
@@ -251,19 +252,19 @@ export function useReviewInteraction(
   // another surface changes it while the field is idle.
   const [filterText, setFilterText] = useState(shared?.filter ?? "");
   const filterTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const filterEditing = useRef(false);
+  const filterEdits = useRef(new FilterEditSequence());
   useEffect(() => {
-    if (!filterEditing.current) setFilterText(shared?.filter ?? "");
+    if (!filterEdits.current.editing) setFilterText(shared?.filter ?? "");
   }, [shared?.filter]);
   useEffect(() => () => clearTimeout(filterTimer.current), []);
   const changeFilter = useCallback(
     (text: string) => {
       setFilterText(text);
-      filterEditing.current = true;
+      const sequence = filterEdits.current.edit();
       clearTimeout(filterTimer.current);
       filterTimer.current = setTimeout(async () => {
         const outcome = await actions.send({ type: "filter/set", filter: text });
-        filterEditing.current = false;
+        filterEdits.current.settle(sequence);
         if (!outcome.ok) toasts.show(outcome.message);
       }, FILTER_DEBOUNCE_MS);
     },
