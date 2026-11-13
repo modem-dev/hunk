@@ -23,9 +23,24 @@
  * semantic document does not carry (an imported sidecar, a renderer's merged live
  * comments), so it arrives as a caller-owned fact rather than being guessed.
  */
+import {
+  reviewChangeBlockContainsLine,
+  reviewHunkChangeBlocks,
+  type ReviewChangeBlockSpan,
+  type ReviewHunkContent,
+  type ReviewHunkSpan,
+} from "./geometry";
 import type { ReviewRevealRequest, ReviewSemanticSelection } from "./state";
+import type { ReviewLineAddressV1 } from "./types";
 
-export type ReviewSelectionScope = "hunk" | "file" | "note" | "annotated-hunk" | "annotated-file";
+export type ReviewSelectionScope =
+  | "hunk"
+  | "file"
+  | "note"
+  | "annotated-hunk"
+  | "annotated-file"
+  | "change-block"
+  | "comment-thread";
 
 /** What a move does when it runs off the end of the stream it walks. */
 export type ReviewSelectionWrapPolicy = "clamp" | "wrap";
@@ -45,6 +60,8 @@ export const REVIEW_SELECTION_WRAP_POLICY: Readonly<
   note: "clamp",
   "annotated-hunk": "clamp",
   "annotated-file": "wrap",
+  "change-block": "clamp",
+  "comment-thread": "clamp",
 });
 
 /** One navigable file, reduced to what a walk over the stream needs. */
@@ -87,6 +104,46 @@ export interface ReviewSelectionMove {
   delta: number;
 }
 
+/** One change block in the flattened review stream. */
+export interface ReviewChangeBlockCursor extends ReviewChangeBlockSpan {
+  fileKey: string;
+  hunkIndex: number;
+}
+
+/** One comment-thread stop: a visible stored-note root or one sidecar annotation. */
+export interface ReviewThreadCursor {
+  fileKey: string;
+  hunkIndex: number;
+  /** The line the thread's card hangs beside. */
+  line: ReviewLineAddressV1;
+  /** Stored note id for a stored root; `reviewSidecarThreadId` for a sidecar annotation. */
+  threadId: string;
+  kind: "stored" | "sidecar";
+}
+
+/**
+ * Where the reviewer stands inside the selected hunk, for moves finer than a hunk.
+ *
+ * A caller-owned fact: the semantic selection names only a file and hunk, while the line
+ * the reviewer is on belongs to whichever surface drew it.
+ */
+export interface ReviewNavigationFocus {
+  fileKey: string;
+  hunkIndex: number;
+  /** Omitted when the surface has no line; the move then starts at the top of the hunk. */
+  line?: ReviewLineAddressV1;
+}
+
+/** The finer-than-hunk stop a change-block or comment-thread move landed on. */
+export type ReviewMoveLanding =
+  | { kind: "change-block"; block: ReviewChangeBlockSpan }
+  | {
+      kind: "comment-thread";
+      threadId: string;
+      threadKind: ReviewThreadCursor["kind"];
+      line: ReviewLineAddressV1;
+    };
+
 /** Where one planned move lands, and what it asks the viewport to show. */
 export interface ReviewSelectionMoveTarget {
   fileKey: string;
@@ -94,6 +151,8 @@ export interface ReviewSelectionMoveTarget {
   reveal: ReviewRevealRequest;
   /** Stable stored-note identity set only by exact-note navigation. */
   activeNoteId?: string;
+  /** Set only by change-block and comment-thread moves, which stop inside a hunk. */
+  landing?: ReviewMoveLanding;
 }
 
 /** One stored-note stop in the flattened review stream. */
@@ -109,6 +168,14 @@ export interface ReviewNavigationModel {
   notes?: readonly ReviewNoteCursor[];
   /** Effective stored-note identity from which an exact-note move begins. */
   activeNoteId?: string;
+  /** Visible change blocks in stream order, for change-block moves. */
+  changeBlocks?: readonly ReviewChangeBlockCursor[];
+  /** Visible comment threads in stream order, for comment-thread moves. */
+  threads?: readonly ReviewThreadCursor[];
+  /** Thread the reviewer is on, from which a comment-thread move steps. */
+  activeThreadId?: string;
+  /** Line the reviewer is on, from which a finer-than-hunk move starts when no stop is active. */
+  focus?: ReviewNavigationFocus;
 }
 
 /**
@@ -446,5 +513,194 @@ export function planReviewSelectionMove(
       return planAnnotatedHunkMove(model, selection, move.delta);
     case "annotated-file":
       return planAnnotatedFileMove(model, selection, move.delta);
+    case "change-block":
+      return planChangeBlockMove(model, selection, move.delta);
+    case "comment-thread":
+      return planCommentThreadMove(model, selection, move.delta);
   }
+}
+
+/** Flatten every visible hunk's change blocks into one top-to-bottom cursor list. */
+export function reviewChangeBlockCursors(
+  files: ReadonlyArray<{
+    fileKey: string;
+    hunks: readonly (ReviewHunkSpan & ReviewHunkContent)[];
+    hunkIndexes?: readonly number[];
+  }>,
+): ReviewChangeBlockCursor[] {
+  return files.flatMap((file) =>
+    (file.hunkIndexes ?? file.hunks.map((_hunk, hunkIndex) => hunkIndex)).flatMap((hunkIndex) => {
+      const hunk = file.hunks[hunkIndex];
+      return hunk
+        ? reviewHunkChangeBlocks(hunk).map((block) => ({
+            ...block,
+            fileKey: file.fileKey,
+            hunkIndex,
+          }))
+        : [];
+    }),
+  );
+}
+
+/** Where a fine-grained move starts: the focus position, or the top of the selected hunk. */
+function navigationStart(
+  model: ReviewNavigationModel,
+  selection: ReviewSemanticSelection,
+): ReviewNavigationFocus | null {
+  if (model.focus) return model.focus;
+  return selection.fileKey === null
+    ? null
+    : { fileKey: selection.fileKey, hunkIndex: selection.hunkIndex };
+}
+
+/**
+ * Pick the landing index for a stop list given each stop's place relative to the start.
+ *
+ * `relation` is negative for a stop above the start, zero for the stop the start is on, and
+ * positive for one below. Standing on a stop moves by exactly `delta` and clamps; standing
+ * between stops reaches the nearest one in the direction of travel and spends what is left of
+ * the count from there. Nothing ahead in that direction refuses the move rather than jumping
+ * backward. A start outside the stream enters it from the edge it is moving toward.
+ */
+function landingIndex(relations: readonly number[] | null, length: number, delta: number) {
+  if (!relations) {
+    return delta > 0 ? 0 : length - 1;
+  }
+
+  const current = relations.indexOf(0);
+  if (current >= 0) {
+    return clamp(current + delta, 0, length - 1);
+  }
+
+  if (delta > 0) {
+    const next = relations.findIndex((relation) => relation > 0);
+    return next < 0 ? null : Math.min(next + delta - 1, length - 1);
+  }
+
+  let previous = -1;
+  for (let index = relations.length - 1; index >= 0; index -= 1) {
+    if (relations[index]! < 0) {
+      previous = index;
+      break;
+    }
+  }
+  return previous < 0 ? null : Math.max(0, previous + delta + 1);
+}
+
+/** Compare two stream files by review order. */
+function fileOrderDelta(
+  fileOrder: ReadonlyMap<string, number>,
+  fileKey: string,
+  startFileKey: string,
+) {
+  return (fileOrder.get(fileKey) ?? 0) - (fileOrder.get(startFileKey) ?? 0);
+}
+
+/**
+ * Plan a move through every change block of the visible stream.
+ *
+ * A start line inside a block stands on it; a line in surrounding context sits between
+ * blocks, so the first step reaches the next edit. Without a line, the start is the top of
+ * the selected hunk.
+ */
+function planChangeBlockMove(
+  model: ReviewNavigationModel,
+  selection: ReviewSemanticSelection,
+  delta: number,
+): ReviewSelectionMoveTarget | null {
+  const blocks = model.changeBlocks ?? [];
+  if (blocks.length === 0 || delta === 0) {
+    return null;
+  }
+
+  const fileOrder = new Map(model.files.map((file, index) => [file.fileKey, index] as const));
+  const start = navigationStart(model, selection);
+  const relations =
+    start && fileOrder.has(start.fileKey)
+      ? blocks.map((block) => {
+          const byFile = fileOrderDelta(fileOrder, block.fileKey, start.fileKey);
+          if (byFile !== 0) return Math.sign(byFile);
+          if (!start.line) return block.hunkIndex < start.hunkIndex ? -1 : 1;
+          if (reviewChangeBlockContainsLine(block, start.line)) return 0;
+          const blockStart = start.line.side === "new" ? block.newStart : block.oldStart;
+          return start.line.line < blockStart ? 1 : -1;
+        })
+      : null;
+
+  const index = landingIndex(relations, blocks.length, delta);
+  const block = index === null ? undefined : blocks[index];
+  if (!block) {
+    return null;
+  }
+
+  const { fileKey, hunkIndex, ...span } = block;
+  return {
+    fileKey,
+    hunkIndex,
+    reveal: { anchor: "hunk", scrollToNote: false },
+    landing: { kind: "change-block", block: span },
+  };
+}
+
+/**
+ * Plan a move through comment threads, one stop per thread root.
+ *
+ * An active thread moves by exactly `delta` and stops at the ends. Otherwise the start
+ * position decides: a card hangs below its anchor row, so a start on that row is still above
+ * the thread and the first forward step lands on it.
+ */
+function planCommentThreadMove(
+  model: ReviewNavigationModel,
+  selection: ReviewSemanticSelection,
+  delta: number,
+): ReviewSelectionMoveTarget | null {
+  const threads = model.threads ?? [];
+  if (threads.length === 0 || delta === 0) {
+    return null;
+  }
+
+  const active = model.activeThreadId
+    ? threads.findIndex((thread) => thread.threadId === model.activeThreadId)
+    : -1;
+  let index: number | null;
+  if (active >= 0) {
+    index = clamp(active + delta, 0, threads.length - 1);
+    if (index === active) {
+      return null;
+    }
+  } else {
+    const fileOrder = new Map(model.files.map((file, order) => [file.fileKey, order] as const));
+    const start = navigationStart(model, selection);
+    const relations =
+      start && fileOrder.has(start.fileKey)
+        ? threads.map((thread) => {
+            const byFile = fileOrderDelta(fileOrder, thread.fileKey, start.fileKey);
+            if (byFile !== 0) return Math.sign(byFile);
+            if (thread.hunkIndex !== start.hunkIndex) {
+              return thread.hunkIndex < start.hunkIndex ? -1 : 1;
+            }
+            if (!start.line) return 1;
+            return thread.line.line >= start.line.line ? 1 : -1;
+          })
+        : null;
+    index = landingIndex(relations, threads.length, delta);
+  }
+
+  const thread = index === null ? undefined : threads[index];
+  if (!thread) {
+    return null;
+  }
+
+  return {
+    fileKey: thread.fileKey,
+    hunkIndex: thread.hunkIndex,
+    reveal: { anchor: "hunk", scrollToNote: true },
+    ...(thread.kind === "stored" ? { activeNoteId: thread.threadId } : {}),
+    landing: {
+      kind: "comment-thread",
+      threadId: thread.threadId,
+      threadKind: thread.kind,
+      line: thread.line,
+    },
+  };
 }

@@ -2976,3 +2976,234 @@ describe("useTerminalReview", () => {
     }
   });
 });
+
+/** Build one hunk holding two separate edits (lines 5 and 8), so blocks share a hunk. */
+function createTwoBlockFile(agent: DiffFile["agent"] = null) {
+  const beforeLines = Array.from({ length: 20 }, (_, index) => `export const v${index + 1} = 0;`);
+  const afterLines = [...beforeLines];
+  afterLines[4] = "export const v5 = 5;";
+  afterLines[7] = "export const v8 = 8;";
+  return createDiffFile("alpha", "alpha.ts", lines(...beforeLines), lines(...afterLines), agent);
+}
+
+/** Build a one-edit file that follows the two-block file in the review stream. */
+function createOneBlockFile() {
+  return createDiffFile("beta", "beta.ts", "export const beta = 1;\n", "export const beta = 2;\n");
+}
+
+describe("useTerminalReview within-hunk navigation", () => {
+  test("change-block moves put the current line on each edit, across hunks and files", async () => {
+    const { controllerRef, setup } = await renderTerminalReview(
+      [createTwoBlockFile(), createOneBlockFile()],
+      { publishLineCursors: true },
+    );
+
+    try {
+      await flush(setup);
+      expect(expectValue(controllerRef.current).visibleFiles[0]?.metadata.hunks).toHaveLength(1);
+
+      const landedLines: string[] = [];
+      for (let step = 0; step < 3; step += 1) {
+        await act(async () => {
+          expectValue(controllerRef.current).moveSelection("change-block", 1);
+        });
+        await flush(setup);
+        const cursor = expectValue(expectValue(controllerRef.current).lineCursor);
+        landedLines.push(`${cursor.fileId}:${cursor.hunkIndex}:${cursor.target.line}`);
+      }
+
+      expect(landedLines).toEqual(["alpha:0:5", "alpha:0:8", "beta:0:1"]);
+
+      await act(async () => {
+        expectValue(controllerRef.current).moveSelection("change-block", -1);
+      });
+      await flush(setup);
+      expect(expectValue(controllerRef.current).lineCursor?.target.line).toBe(8);
+      expect(expectValue(controllerRef.current).selectedFileId).toBe("alpha");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("change-block moves advance and name each row while the current-line marker is off", async () => {
+    // No published cursors, as when the marker is off: the landing itself is the next start.
+    const { controllerRef, setup } = await renderTerminalReview(
+      [createTwoBlockFile(), createOneBlockFile()],
+      { publishLineCursors: false },
+    );
+
+    try {
+      await flush(setup);
+      const landings: string[] = [];
+      const revealedRows: Array<string | undefined> = [];
+      for (let step = 0; step < 3; step += 1) {
+        await act(async () => {
+          const outcome = expectValue(controllerRef.current).moveSelection("change-block", 1);
+          landings.push(
+            outcome?.landing?.kind === "change-block"
+              ? `${outcome.hunkIndex}:${outcome.landing.block.line.line}`
+              : "none",
+          );
+        });
+        await flush(setup);
+        revealedRows.push(
+          expectValue(controllerRef.current).lineCursorRevealRequest.target?.fileId,
+        );
+      }
+
+      expect(landings).toEqual(["0:5", "0:8", "0:1"]);
+      expect(revealedRows).toEqual(["alpha", "alpha", "beta"]);
+      expect(expectValue(controllerRef.current).selectedFileId).toBe("beta");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("hunk moves are unchanged next to the change-block scope", async () => {
+    const { controllerRef, setup } = await renderTerminalReview(
+      [createTwoBlockFile(), createOneBlockFile()],
+      { publishLineCursors: true },
+    );
+
+    try {
+      await flush(setup);
+      await act(async () => {
+        expectValue(controllerRef.current).moveSelection("hunk", 1);
+      });
+      await flush(setup);
+
+      // `]` skips both edits in alpha's single hunk and lands on beta.
+      expect(expectValue(controllerRef.current).selectedFileId).toBe("beta");
+      expect(expectValue(controllerRef.current).selectedHunkIndex).toBe(0);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("thread moves focus each sidecar annotation in one hunk until a line move", async () => {
+    const { controllerRef, setup } = await renderTerminalReview(
+      [
+        createTwoBlockFile({
+          path: "alpha.ts",
+          annotations: [
+            { summary: "first", newRange: [5, 5] },
+            { summary: "second", newRange: [8, 8] },
+          ],
+        }),
+      ],
+      { publishLineCursors: true },
+    );
+
+    try {
+      await flush(setup);
+      await act(async () => {
+        expectValue(controllerRef.current).setShowAgentNotes(true);
+      });
+      await flush(setup);
+
+      await act(async () => {
+        expectValue(controllerRef.current).moveSelection("comment-thread", 1);
+      });
+      await flush(setup);
+      expect(expectValue(controllerRef.current).activeSidecarAnnotation?.summary).toBe("first");
+      expect(expectValue(controllerRef.current).scrollToNote).toBe(true);
+      expect(expectValue(controllerRef.current).lineCursor?.target).toEqual({
+        side: "new",
+        line: 5,
+      });
+
+      await act(async () => {
+        expectValue(controllerRef.current).moveSelection("comment-thread", 1);
+      });
+      await flush(setup);
+      expect(expectValue(controllerRef.current).activeSidecarAnnotation?.summary).toBe("second");
+
+      // The last thread refuses to move further and keeps its focus.
+      let outcome: unknown;
+      await act(async () => {
+        outcome = expectValue(controllerRef.current).moveSelection("comment-thread", 1);
+      });
+      await flush(setup);
+      expect(outcome).toBeUndefined();
+      expect(expectValue(controllerRef.current).activeSidecarAnnotation?.summary).toBe("second");
+
+      await act(async () => {
+        expectValue(controllerRef.current).moveLineCursor(1);
+      });
+      await flush(setup);
+      expect(expectValue(controllerRef.current).activeSidecarAnnotation).toBeNull();
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("a stored thread is one stop, and a selected reply moves on from its root", async () => {
+    const { controllerRef, setup } = await renderTerminalReview(
+      [createTwoBlockFile(), createOneBlockFile()],
+      { publishLineCursors: true },
+    );
+
+    try {
+      await flush(setup);
+      let rootId = "";
+      let replyId = "";
+      let laterId = "";
+      await act(async () => {
+        const controller = expectValue(controllerRef.current);
+        controller.startUserNote("alpha", 0, { side: "new", line: 5 });
+        controller.updateDraftNote("Root");
+        rootId = controller.saveDraftNote()?.id ?? "";
+      });
+      await act(async () => {
+        const controller = expectValue(controllerRef.current);
+        controller.startUserNoteReply(rootId);
+        controller.updateDraftNote("Reply");
+        replyId = controller.saveDraftNote()?.id ?? "";
+      });
+      await act(async () => {
+        const controller = expectValue(controllerRef.current);
+        controller.startUserNote("beta", 0, { side: "new", line: 1 });
+        controller.updateDraftNote("Later");
+        laterId = controller.saveDraftNote()?.id ?? "";
+      });
+      await flush(setup);
+
+      const threadLandings: string[] = [];
+      await act(async () => {
+        expectValue(controllerRef.current).selectHunk("alpha", 0);
+      });
+      for (let step = 0; step < 3; step += 1) {
+        await act(async () => {
+          const outcome = expectValue(controllerRef.current).moveSelection("comment-thread", 1);
+          threadLandings.push(
+            outcome?.landing?.kind === "comment-thread" ? outcome.landing.threadId : "none",
+          );
+        });
+        await flush(setup);
+      }
+      expect(threadLandings).toEqual([rootId, laterId, "none"]);
+
+      await act(async () => {
+        expectValue(controllerRef.current).activateNote(replyId);
+      });
+      let fromReply: string | undefined;
+      await act(async () => {
+        const outcome = expectValue(controllerRef.current).moveSelection("comment-thread", 1);
+        fromReply = outcome?.landing?.kind === "comment-thread" ? outcome.landing.threadId : "";
+      });
+      expect(fromReply).toBe(laterId);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+});

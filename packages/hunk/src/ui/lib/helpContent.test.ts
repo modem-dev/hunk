@@ -49,6 +49,8 @@ describe("buildHelpSections", () => {
     expect(keysFor(sections, "unified / split / auto")).toBe("1 / 2 / 0");
     expect(keysFor(sections, "lines / wrap / metadata / menu")).toBe("l / w / m / M");
     expect(keysFor(sections, "annotated hunk / exact note")).toBe("{ / }");
+    expect(keysFor(sections, "previous / next change block")).toBe("( / )");
+    expect(keysFor(sections, "previous / next comment thread")).toBe("< / >");
   });
 
   test("documents the bundled search keys beside the built-in navigation rows", () => {

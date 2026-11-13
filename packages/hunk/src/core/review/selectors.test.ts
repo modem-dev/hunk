@@ -7,11 +7,13 @@ import { createTestReviewFile } from "../../../../../test/helpers/review-store-h
 import { reduceReviewState } from "./reducer";
 import {
   isReviewGapExpanded,
+  recordReviewWithinHunkLanding,
   reviewFileKeysWithRetiredContent,
   reviewFileMatchesFilter,
   selectActiveReplyableReviewNoteId,
   selectActiveRevealNoteId,
   selectActiveStoredReviewNote,
+  selectCurrentWithinHunkLanding,
   selectNavigableStoredReviewNotes,
   selectExpandedGapIdsByFileKey,
   selectFallbackFileKey,
@@ -21,8 +23,11 @@ import {
   selectReviewGapForSelection,
   selectReviewNavigationFiles,
   selectStoredReviewNotes,
+  selectStoredThreadRoots,
   selectThreadedStoredReviewNotes,
   selectVisibleThreadedStoredReviewNotes,
+  selectVisibleThreadRootId,
+  selectWithinHunkNavigationStart,
   resolveReviewRevealNoteId,
   selectRevealTarget,
   selectVisibleReviewFiles,
@@ -266,6 +271,76 @@ describe("note selectors", () => {
     expect(selectActiveReplyableReviewNoteId({ ...state, activeNoteId: "user-reply" })).toBe(
       "user-reply",
     );
+  });
+
+  test("resolves thread roots through visible parents only", () => {
+    const notes = {
+      liveNotes: [createTestStoredNote({ id: "agent-root", fileKey: "alpha", line: 2 })],
+      userNotes: [
+        createTestStoredNote({
+          id: "user-reply",
+          parentId: "agent-root",
+          fileKey: "alpha",
+          source: "user",
+          line: 2,
+        }),
+      ],
+    };
+    const shown = { ...createTestReviewState(["alpha"], { showAgentNotes: true }), ...notes };
+    const hidden = { ...createTestReviewState(["alpha"], { showAgentNotes: false }), ...notes };
+
+    expect(selectVisibleThreadRootId(shown, "user-reply")).toBe("agent-root");
+    expect(selectStoredThreadRoots(shown).map((root) => root.noteId)).toEqual(["agent-root"]);
+    // With the agent root hidden, the reply is the root the reviewer can see and navigate to.
+    expect(selectVisibleThreadRootId(hidden, "user-reply")).toBe("user-reply");
+    expect(selectStoredThreadRoots(hidden)).toEqual([
+      { fileKey: "alpha", hunkIndex: 0, line: { side: "new", line: 2 }, noteId: "user-reply" },
+    ]);
+  });
+
+  test("start within-hunk moves from a current landing, then the selected note, then the hunk top", () => {
+    const state = {
+      ...createTestReviewState(["alpha"]),
+      userNotes: [
+        createTestStoredNote({ id: "user-note", fileKey: "alpha", source: "user", line: 2 }),
+      ],
+    };
+    const landing = recordReviewWithinHunkLanding(
+      state,
+      { fileKey: "alpha", hunkIndex: 0 },
+      {
+        kind: "comment-thread",
+        threadId: "sidecar:alpha:at:0",
+        threadKind: "sidecar",
+        line: { side: "new", line: 3 },
+      },
+    );
+    const moved = { ...state, reveal: { ...state.reveal, hunkToken: state.reveal.hunkToken + 1 } };
+
+    expect(selectWithinHunkNavigationStart(state, landing)).toEqual({
+      focus: { fileKey: "alpha", hunkIndex: 0, line: { side: "new", line: 3 } },
+      activeThreadId: "sidecar:alpha:at:0",
+    });
+    expect(selectCurrentWithinHunkLanding(moved, landing)).toBeNull();
+    expect(selectWithinHunkNavigationStart(moved, landing)).toEqual({
+      focus: { fileKey: "alpha", hunkIndex: 0 },
+    });
+    expect(selectWithinHunkNavigationStart({ ...moved, activeNoteId: "user-note" }, null)).toEqual({
+      focus: { fileKey: "alpha", hunkIndex: 0, line: { side: "new", line: 2 } },
+      activeThreadId: "user-note",
+    });
+    expect(
+      recordReviewWithinHunkLanding(
+        state,
+        { fileKey: "alpha", hunkIndex: 0 },
+        {
+          kind: "comment-thread",
+          threadId: "user-note",
+          threadKind: "stored",
+          line: { side: "new", line: 2 },
+        },
+      ),
+    ).toBeNull();
   });
 
   test("group notes by the hunk that owns them, not by range containment", () => {

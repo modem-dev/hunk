@@ -58,6 +58,26 @@ export const REVIEW_WIRE_FIXTURES: readonly ReviewWireFixture[] = [
     },
   },
   {
+    id: "move-next-change-block",
+    findings: ["B12"],
+    description: "Change-block navigation is one more scope of the same move vocabulary.",
+    action: { type: "selection/move", scope: "change-block", delta: 1 },
+    expected: {
+      accepted: true,
+      intent: { type: "selection/move", scope: "change-block", delta: 1 },
+    },
+  },
+  {
+    id: "move-previous-comment-thread",
+    findings: ["B12"],
+    description: "Thread navigation moves by thread root; the caller states only the direction.",
+    action: { type: "selection/move", scope: "comment-thread", delta: -1 },
+    expected: {
+      accepted: true,
+      intent: { type: "selection/move", scope: "comment-thread", delta: -1 },
+    },
+  },
+  {
     id: "select-file",
     findings: ["B12"],
     description: "A file jump with no reveal stated; the file-jump rule supplies one.",

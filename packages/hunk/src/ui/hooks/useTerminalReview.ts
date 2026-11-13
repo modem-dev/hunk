@@ -42,10 +42,12 @@ import {
 } from "../../core/review/intents";
 import { projectReviewDocument } from "../../core/review/document";
 import { reviewExpansionSide } from "../../core/review/expansion";
-import { reviewHunkIndexForLine } from "../../core/review/geometry";
+import { reviewChangeBlockContainsLine, reviewHunkIndexForLine } from "../../core/review/geometry";
 import {
   planReviewSelectionMove,
   REVIEW_FILE_JUMP_HUNK_INDEX,
+  reviewChangeBlockCursors,
+  type ReviewNavigationFocus,
   type ReviewSelectionScope,
   type ReviewNavigationFile,
 } from "../../core/review/navigation";
@@ -55,8 +57,13 @@ import {
   selectExpandedGapIdsByFileKey,
   selectNavigableStoredReviewNotes,
   selectNormalizedSelection,
+  recordReviewWithinHunkLanding,
+  selectCurrentWithinHunkLanding,
+  selectStoredThreadRoots,
   selectThreadedStoredReviewNotes,
   selectVisibleThreadedStoredReviewNotes,
+  selectWithinHunkNavigationStart,
+  type ReviewWithinHunkLanding,
 } from "../../core/review/selectors";
 import {
   REVIEW_VIEWPORT_ANCHOR_REVEAL,
@@ -69,7 +76,7 @@ import { createReviewStore, type ReviewStore } from "../../core/review/store";
 import { noDiffFileMatchesMessage } from "../../session/agent/errors";
 import type { DiffFile } from "../../core/changeset/model";
 import type { LayoutMode } from "../../core/run/commandInputs";
-import type { ExtensionReviewPresentationScope } from "../../extension-api/types";
+import type { AgentAnnotation, ExtensionReviewPresentationScope } from "../../extension-api/types";
 import type {
   AppliedCommentBatchResult,
   AppliedCommentResult,
@@ -125,7 +132,11 @@ import {
   type DraftReviewNote,
   type UserReviewNote,
 } from "../lib/reviewNoteMapping";
-import { buildReviewAnnotationIndex } from "../../core/review/annotations";
+import {
+  buildReviewAnnotationIndex,
+  buildReviewThreadCursors,
+  reviewSidecarThreadId,
+} from "../../core/review/annotations";
 import {
   buildReviewStreamState,
   buildSelectedHunkSummary,
@@ -242,6 +253,8 @@ export interface TerminalReview {
   reviewNoteSummaries: SessionReviewNoteSummary[];
   showAgentNotes: boolean;
   userNotesByFileId: Record<string, UserReviewNote[]>;
+  /** The sidecar annotation a comment-thread move focused, drawn as the active card. */
+  activeSidecarAnnotation: AgentAnnotation | null;
   lineCursor: LineCursor | null;
   /** Read the current cursor synchronously between terminal key events. */
   getLineCursor: () => LineCursor | null;
@@ -450,6 +463,13 @@ export function useTerminalReview({
     id: 0,
     placement: "nearest",
   });
+  // Reviewer line moves clear the landing; reconciliation seeding a line does not.
+  const landingRef = useRef<ReviewWithinHunkLanding | null>(null);
+  const [landingSnapshot, setLandingSnapshot] = useState<ReviewWithinHunkLanding | null>(null);
+  const setLanding = useCallback((next: ReviewWithinHunkLanding | null) => {
+    landingRef.current = next;
+    setLandingSnapshot(next);
+  }, []);
   const previousLineCursorsRef = useRef(lineCursors);
   const pendingLineCursorRef = useRef<
     | { kind: "reveal"; fileId: string; gapKey: string }
@@ -817,6 +837,7 @@ export function useTerminalReview({
     (cursor: LineCursor, placement: LineRevealPlacement = "nearest") => {
       const fileKey = keyByFileId.get(cursor.fileId);
       if (!fileKey) return;
+      setLanding(null);
       applyLineCursor(cursor);
       setLineCursorRevealRequest((current) => ({ id: current.id + 1, placement }));
       // A source line and note card are mutually exclusive vertical stops. This viewport-preserving
@@ -828,7 +849,7 @@ export function useTerminalReview({
         reveal: REVIEW_VIEWPORT_ANCHOR_REVEAL,
       });
     },
-    [applyLineCursor, keyByFileId, runIntent],
+    [applyLineCursor, keyByFileId, runIntent, setLanding],
   );
 
   const reconcileLineCursor = useCallback(() => {
@@ -900,6 +921,7 @@ export function useTerminalReview({
     (cursor: LineCursor) => {
       const fileKey = keyByFileId.get(cursor.fileId);
       if (!fileKey) return;
+      setLanding(null);
       applyLineCursor(cursor);
       runIntent({
         type: "selection/select",
@@ -908,7 +930,7 @@ export function useTerminalReview({
         reveal: REVIEW_VIEWPORT_ANCHOR_REVEAL,
       });
     },
-    [applyLineCursor, keyByFileId, runIntent],
+    [applyLineCursor, keyByFileId, runIntent, setLanding],
   );
 
   // Read stops through a ref so this callback stays stable across reloads. Closures from one
@@ -1013,6 +1035,153 @@ export function useTerminalReview({
   visibleFilesRef.current = visibleFiles;
 
   /**
+   * Step through change blocks or comment threads in the projected review stream.
+   *
+   * Moves start where the shared rule says, except that the current line replaces the top
+   * of the selected hunk. A change block moves the current line onto its first drawn row,
+   * or with the marker off scrolls to that row; a thread selects its card, and a sidecar
+   * card is drawn active from the landing record.
+   */
+  const moveWithinHunks = useCallback(
+    (
+      scope: "change-block" | "comment-thread",
+      delta: number,
+    ): ReviewSelectionChangedOutcome | undefined => {
+      const snapshot = store.getSnapshot();
+      const selection = selectNormalizedSelection(snapshot);
+      const start = selectWithinHunkNavigationStart(snapshot, landingRef.current);
+      const cursor = lineCursorRef.current;
+      const cursorFileKey = cursor ? keyByFileId.get(cursor.fileId) : undefined;
+      const focus: ReviewNavigationFocus | undefined =
+        !start.focus?.line && cursor && cursorFileKey
+          ? { fileKey: cursorFileKey, hunkIndex: cursor.hunkIndex, line: cursor.target }
+          : start.focus;
+
+      const hunkIndexesByFileKey = new Map(
+        projectedNavigationFiles.map((file) => [file.fileKey, file.hunkIndexes] as const),
+      );
+      // Sidecars come from the raw files: the rendered lists also carry stored notes.
+      const sources = visibleFiles.flatMap((file) => {
+        const fileKey = keyByFileId.get(file.id);
+        const hunkIndexes = fileKey ? hunkIndexesByFileKey.get(fileKey) : undefined;
+        if (!fileKey || !hunkIndexes) return [];
+        return [
+          {
+            fileKey,
+            hunks: file.metadata.hunks,
+            hunkIndexes,
+            sidecar: fileByKey.get(fileKey)?.agent?.annotations ?? [],
+          },
+        ];
+      });
+
+      const target = planReviewSelectionMove(
+        {
+          ...projectedNavigation,
+          ...(scope === "change-block"
+            ? { changeBlocks: reviewChangeBlockCursors(sources) }
+            : {
+                threads: buildReviewThreadCursors({
+                  files: sources,
+                  storedRoots: selectStoredThreadRoots(snapshot),
+                  showAgentNotes: snapshot.showAgentNotes,
+                }),
+              }),
+          ...(focus ? { focus } : {}),
+          ...(start.activeThreadId ? { activeThreadId: start.activeThreadId } : {}),
+        },
+        selection,
+        { scope, delta },
+      );
+      if (!target) return;
+
+      const landing = target.landing;
+      const outcome: ReviewSelectionChangedOutcome = {
+        type: "selection/changed",
+        fileKey: target.fileKey,
+        hunkIndex: target.hunkIndex,
+        ...(landing ? { landing } : {}),
+      };
+      const fileId = fileByKey.get(target.fileKey)?.id;
+      /** Keep the landing as the next move's start, against the reveal it just published. */
+      const rememberLanding = () =>
+        setLanding(
+          landing ? recordReviewWithinHunkLanding(store.getSnapshot(), target, landing) : null,
+        );
+
+      if (landing?.kind === "change-block" && fileId) {
+        const firstDrawnRow = lineCursorsRef.current.find(
+          (candidate) =>
+            candidate.fileId === fileId &&
+            candidate.hunkIndex === target.hunkIndex &&
+            reviewChangeBlockContainsLine(landing.block, candidate.target),
+        );
+        if (firstDrawnRow) {
+          revealLineCursor(firstDrawnRow, "reveal");
+        } else {
+          // With the current-line marker off no row is measured as a cursor, so name the
+          // block's row for the pane to resolve from its own render plan.
+          const row = lineCursorAt(
+            lineCursorsRef.current,
+            fileId,
+            target.hunkIndex,
+            landing.block.line,
+          );
+          runIntent({
+            type: "selection/select",
+            fileKey: target.fileKey,
+            hunkIndex: target.hunkIndex,
+            reveal: REVIEW_VIEWPORT_ANCHOR_REVEAL,
+          });
+          setLineCursorRevealRequest((current) => ({
+            id: current.id + 1,
+            placement: "reveal",
+            target: { fileId, stableKey: row.stableKey },
+          }));
+        }
+        rememberLanding();
+        return outcome;
+      }
+
+      runIntent({
+        type: "selection/select",
+        fileKey: target.fileKey,
+        hunkIndex: target.hunkIndex,
+        reveal: target.reveal,
+        ...(target.activeNoteId ? { activeNoteId: target.activeNoteId } : {}),
+      });
+
+      // Rest the current line on a sidecar's annotated row without scrolling to it, so line
+      // steps continue from the card the reviewer is looking at.
+      if (landing?.kind === "comment-thread" && landing.threadKind === "sidecar" && fileId) {
+        const anchorRow = findLineCursorAt(
+          lineCursorsRef.current,
+          fileId,
+          landing.line.side,
+          landing.line.line,
+        );
+        if (anchorRow?.hunkIndex === target.hunkIndex) {
+          applyLineCursor(anchorRow);
+        }
+      }
+      rememberLanding();
+      return outcome;
+    },
+    [
+      applyLineCursor,
+      fileByKey,
+      keyByFileId,
+      projectedNavigation,
+      projectedNavigationFiles,
+      revealLineCursor,
+      runIntent,
+      setLanding,
+      store,
+      visibleFiles,
+    ],
+  );
+
+  /**
    * Step the selection through one navigable scope.
    *
    * The walk itself — which projected hunk or file is next, whether the scope wraps, and what
@@ -1027,6 +1196,9 @@ export function useTerminalReview({
     ) => {
       if (options?.projection === "canonical") {
         return runIntent({ type: "selection/move", scope, delta }, { annotations });
+      }
+      if (scope === "change-block" || scope === "comment-thread") {
+        return moveWithinHunks(scope, delta);
       }
       const stateSnapshot = store.getSnapshot();
       const target = planReviewSelectionMove(
@@ -1048,7 +1220,7 @@ export function useTerminalReview({
         hunkIndex: target.hunkIndex,
       };
     },
-    [annotations, planReviewSelectionMove, projectedNavigation, runIntent, store],
+    [annotations, moveWithinHunks, planReviewSelectionMove, projectedNavigation, runIntent, store],
   );
 
   /**
@@ -1836,6 +2008,18 @@ export function useTerminalReview({
     [runIntent],
   );
 
+  // Validated against this render's state, so a move that ended the landing also drops the
+  // active card in the commit that renders that move.
+  const currentLanding = selectCurrentWithinHunkLanding(state, landingSnapshot);
+  const focusedThreadId = currentLanding?.threadId;
+  const activeSidecarAnnotation =
+    currentLanding && focusedThreadId
+      ? ((fileByKey.get(currentLanding.fileKey)?.agent?.annotations ?? []).find(
+          (annotation, index) =>
+            reviewSidecarThreadId(currentLanding.fileKey, annotation, index) === focusedThreadId,
+        ) ?? null)
+      : null;
+
   /** Format current inline notes for daemon snapshots without exposing UI-only objects. */
   const reviewNoteSummaries = useMemo<SessionReviewNoteSummary[]>(() => {
     const noteSummaries: SessionReviewNoteSummary[] = [];
@@ -1923,6 +2107,7 @@ export function useTerminalReview({
     reviewNoteSummaries,
     showAgentNotes: state.showAgentNotes,
     userNotesByFileId,
+    activeSidecarAnnotation,
     scrollToNote,
     selectedFile,
     selectedFileId,
