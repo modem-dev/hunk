@@ -54,7 +54,13 @@ export function buildPaletteEntries(
       id: command.id,
       title: command.title,
       category: command.category,
-      ...("modKey" in command ? { keys: webModChordLabel(command.modKey, apple) } : {}),
+      ...("modKey" in command
+        ? { keys: webModChordLabel(command.modKey, apple) }
+        : "keys" in command
+          ? {
+              keys: catalogKeys(keymap, command.id) ?? command.keys.map(formatKeyChord).join(" / "),
+            }
+          : {}),
     }),
   );
   return [...catalog, ...local];
@@ -141,7 +147,7 @@ export function buildWebHelpSections(
 /** The help rows for the page's own chords. */
 export function webLocalHelpRows(apple?: boolean): WebHelpRow[] {
   const ids: readonly WebLocalCommandId[] = ["hunk.web.commandPalette", "hunk.web.goToFile"];
-  return ids.flatMap((id) => {
+  const dialogs = ids.flatMap((id) => {
     const command = WEB_LOCAL_COMMANDS.find((candidate) => candidate.id === id)!;
     return "modKey" in command
       ? [
@@ -152,4 +158,16 @@ export function webLocalHelpRows(apple?: boolean): WebHelpRow[] {
         ]
       : [];
   });
+  // Page commands with plain chords (the side panel's tools) are listed with them.
+  const plain = WEB_LOCAL_COMMANDS.flatMap((command): WebHelpRow[] =>
+    "keys" in command
+      ? [
+          {
+            keys: command.keys.map(formatKeyChord).join(" / "),
+            description: command.title.toLowerCase(),
+          },
+        ]
+      : [],
+  );
+  return [...dialogs, ...plain];
 }

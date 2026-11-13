@@ -11,6 +11,9 @@
  * The two dialog chords are deliberate browser chords (Ctrl/Cmd+K, Ctrl/Cmd+P): the catalog's
  * grammar masks every modified chord on the page so the browser keeps its shortcuts, and these
  * two are the exceptions the page claims, matched here rather than through the catalog keymap.
+ * A page command may also declare plain `keys` in the shared chord grammar (the side panel's
+ * `p`); those bind through the page's keymap like catalog chords and must not collide with a
+ * catalog default (`webLocalCommands.test.ts`).
  */
 
 /** Where a page command is grouped in the palette and help. */
@@ -23,6 +26,8 @@ export interface WebLocalCommand {
   category: WebLocalCommandCategory;
   /** A Ctrl (Cmd on macOS) chord the page claims from the browser. */
   modKey?: string;
+  /** Plain chords in the shared grammar, bound through the page's keymap. */
+  keys?: readonly string[];
 }
 
 export const WEB_LOCAL_COMMANDS = [
@@ -37,6 +42,8 @@ export const WEB_LOCAL_COMMANDS = [
   { id: "hunk.web.useSessionTheme", title: "Use session theme", category: "view" },
   { id: "hunk.web.filesAsTree", title: "Show files as a tree", category: "view" },
   { id: "hunk.web.filesAsList", title: "Show files as a flat list", category: "view" },
+  { id: "hunk.web.toggleSidePanel", title: "Toggle the side panel", category: "view", keys: ["p"] },
+  { id: "hunk.web.showOverview", title: "Show the review overview", category: "view", keys: ["O"] },
 ] as const satisfies readonly WebLocalCommand[];
 
 /** Every page-only command id. */

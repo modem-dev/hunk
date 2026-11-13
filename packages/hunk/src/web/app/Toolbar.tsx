@@ -46,6 +46,10 @@ export interface ToolbarProps {
   controls?: ReactNode;
   /** The shortcut label for one command, when it has one on this page. */
   keyHint: (commandId: WebImplementedCommandId) => string | undefined;
+  /** Whether the side panel of review tools is open, and how to toggle it. */
+  panelOpen?: boolean;
+  panelHint?: string;
+  onTogglePanel?: () => void;
 }
 
 const LAYOUTS: readonly { mode: LayoutMode; command: WebImplementedCommandId }[] = [
@@ -183,6 +187,22 @@ export function Toolbar(props: ToolbarProps) {
           onTheme={props.onTheme}
           keyHint={keyHint("hunk.view.openThemeSelector")}
         />
+        {props.onTogglePanel ? (
+          <button
+            type="button"
+            className="tool-button icon-button"
+            aria-pressed={props.panelOpen ?? false}
+            aria-label={props.panelOpen ? "Hide review tools" : "Show review tools"}
+            title={hinted(
+              props.panelOpen ? "Hide review tools" : "Show review tools",
+              props.panelHint,
+            )}
+            data-testid="toggle-side-panel"
+            onClick={props.onTogglePanel}
+          >
+            <span aria-hidden="true">◨</span>
+          </button>
+        ) : null}
       </div>
     </header>
   );

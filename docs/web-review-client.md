@@ -57,6 +57,11 @@ packages/hunk/src/web/
   stream/highlightGeometry.ts  agent attention marks measured over drawn characters
   mirror/fileIndex.ts          per-file index entries and the pluggable index source
   store/clientReviewStore.ts   the page's local core/review store and gap source loads
+  panel/SidePanel.tsx          the docked, resizable, tabbed side panel frame
+  panel/panelPreferences.ts    panel open state, width, and tab, per browser
+  panel/panelCommands.ts       binds page commands with plain chords into the keyboard path
+  panel/overviewInput.ts       the page's files and shared notes -> the shared overview selector
+  overview/OverviewTab.tsx     the Overview tab: totals, roles, kinds, directories, notes
 ```
 
 - **Capability.** Read from the fragment's `capability` parameter once (`capability.ts`), then
@@ -390,6 +395,29 @@ imports; a page fetches only the languages and themes it shows. The largest sing
   current history entry (`replaceState`); a deliberate jump (go to file, a sidebar file) adds
   one (`pushState`), so Back and Forward return through them. "Copy link to this hunk or note"
   copies the full link with the capability, on purpose.
+
+## Side panel and review tools
+
+- **Panel.** A right-hand panel docked beside the stream: tabs (ARIA tabs pattern), a close
+  button, and a left-edge resizer (260–640 px). Open state, width, and tab persist per browser
+  under `hunk.review.panel`; without a stored choice it opens at 1400 px and wider and stays
+  hidden below, where the stream needs the room. The toolbar's last button toggles it; the
+  stream's width for `auto` layout subtracts it.
+- **Commands.** The panel's commands are page commands in `commands/webLocalCommands.ts`, so the
+  palette and help list them: `p` toggles the panel and `O` shows the Overview. A page command
+  may declare plain `keys` in the shared chord grammar; `panel/panelCommands.ts` binds those
+  through the page's keymap (merged under any chord the host resolved), and a test keeps them
+  off every catalog default.
+- **Overview.** Every figure is `selectReviewOverview` (`core/review/overview.ts`) over the
+  visible files and the shared state's notes and viewed marks: totals with a `≥` lower-bound
+  mark, "meaningful" totals beside them (tests, docs, and generated files excluded by the path
+  policy in `core/review/fileRoles.ts`), the change-kind breakdown, a size class (Kubernetes'
+  `size/*` thresholds on meaningful lines), per-directory rollups largest first (single-child
+  chains compacted), the largest files by churn, notes per file by origin, and viewed progress
+  once a file is marked. Bars are decorative stacks of the badge colors; every row states its
+  numbers in text with `+`/`−` signs. A file row jumps to the file, a directory row to its
+  first file. The conformance corpus runs the selector over a live host and over the shared
+  state the page reads, so both report the same numbers.
 
 ## Pierre findings that shaped the client
 
