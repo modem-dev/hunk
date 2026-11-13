@@ -1,0 +1,70 @@
+/**
+ * Declares the page's own commands: what only a browser page can do, under `hunk.web.*` ids.
+ *
+ * The rule: a command that means the same thing in the terminal belongs in the shared
+ * catalog (`core/run/commandCatalog.ts`) and is classified in `webCommandTable.ts`; only a
+ * command with no terminal meaning — the palette and go-to-file dialogs, copying a link, the
+ * per-browser theme override, the files panel's mode — is declared here. These ids never enter
+ * the catalog, the host's keymap, or a review action. The palette, the help overlay, and the
+ * page's keyboard read this list beside the catalog, so a command is declared once.
+ *
+ * The two dialog chords are deliberate browser chords (Ctrl/Cmd+K, Ctrl/Cmd+P): the catalog's
+ * grammar masks every modified chord on the page so the browser keeps its shortcuts, and these
+ * two are the exceptions the page claims, matched here rather than through the catalog keymap.
+ */
+
+/** Where a page command is grouped in the palette and help. */
+export type WebLocalCommandCategory = "app" | "review" | "view";
+
+/** One page-only command. */
+export interface WebLocalCommand {
+  id: `hunk.web.${string}`;
+  title: string;
+  category: WebLocalCommandCategory;
+  /** A Ctrl (Cmd on macOS) chord the page claims from the browser. */
+  modKey?: string;
+}
+
+export const WEB_LOCAL_COMMANDS = [
+  { id: "hunk.web.commandPalette", title: "Command palette", category: "app", modKey: "k" },
+  { id: "hunk.web.goToFile", title: "Go to file", category: "review", modKey: "p" },
+  { id: "hunk.web.copyReviewLink", title: "Copy review link", category: "app" },
+  {
+    id: "hunk.web.copyLocationLink",
+    title: "Copy link to this hunk or note",
+    category: "review",
+  },
+  { id: "hunk.web.useSessionTheme", title: "Use session theme", category: "view" },
+  { id: "hunk.web.filesAsTree", title: "Show files as a tree", category: "view" },
+  { id: "hunk.web.filesAsList", title: "Show files as a flat list", category: "view" },
+] as const satisfies readonly WebLocalCommand[];
+
+/** Every page-only command id. */
+export type WebLocalCommandId = (typeof WEB_LOCAL_COMMANDS)[number]["id"];
+
+/** True on Apple platforms, where the page's chords use Cmd instead of Ctrl. */
+export function isApplePlatform(platform = globalThis.navigator?.platform ?? "") {
+  return /Mac|iPhone|iPad/.test(platform);
+}
+
+/** The label of one page chord, in the platform's spelling. */
+export function webModChordLabel(key: string, apple = isApplePlatform()) {
+  return apple ? `⌘${key.toUpperCase()}` : `Ctrl+${key.toUpperCase()}`;
+}
+
+/** The page command a modified key event claims, if any. */
+export function matchWebLocalChord(event: {
+  key: string;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  altKey: boolean;
+  shiftKey: boolean;
+}): WebLocalCommandId | undefined {
+  const mod = event.ctrlKey || event.metaKey;
+  if (!mod || event.altKey || event.shiftKey) return undefined;
+  const key = event.key.toLowerCase();
+  const command = WEB_LOCAL_COMMANDS.find(
+    (candidate) => "modKey" in candidate && candidate.modKey === key,
+  );
+  return command?.id;
+}

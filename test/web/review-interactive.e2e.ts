@@ -240,7 +240,13 @@ test("moves the capability out of the address and keeps working after a reload",
   await page.getByTestId("copy-link").click();
   await expect(page.getByTestId("copy-link")).toHaveText("Copied");
   const copied = await page.evaluate(() => navigator.clipboard.readText());
-  expect(copied).toBe(review!.url);
+  // The full link: this review's address and capability, plus where the reader is.
+  const copiedUrl = new URL(copied);
+  const printedUrl = new URL(review!.url);
+  expect(copiedUrl.origin + copiedUrl.pathname).toBe(printedUrl.origin + printedUrl.pathname);
+  expect(new URLSearchParams(copiedUrl.hash.slice(1)).get("capability")).toBe(
+    new URLSearchParams(printedUrl.hash.slice(1)).get("capability"),
+  );
 
   // A fresh tab with neither the fragment nor this tab's storage cannot reach the review.
   const bare = await page.context().newPage();

@@ -9,8 +9,10 @@
  * decides about it:
  *
  * - `implemented` — the page handles it now; `WebCommandHandlers` must supply a handler.
- * - `deferred` — the page will handle it once a named later change lands (notes, filter, the
- *   command palette and help, refresh, or a renderer capability), with the reason.
+ *   The command palette and help overlay list exactly these, beside the page's own
+ *   `hunk.web.*` commands (`webLocalCommands.ts`).
+ * - `deferred` — the page will handle it once a named later change lands (today only a
+ *   renderer capability), with the reason.
  * - `unavailable` — it never runs in the browser: `host-only` commands execute where the
  *   review is hosted and are not invocable remotely (audit F4), and `terminal-only` commands
  *   control terminal mechanics the page has a native equivalent for, or none at all.
@@ -26,7 +28,7 @@ import {
 } from "../../core/run/commandCatalog";
 
 /** Which later change a deferred command waits for. */
-export type WebCommandDeferral = "notes" | "filter" | "palette" | "refresh" | "renderer";
+export type WebCommandDeferral = "renderer";
 
 /** What the browser page does with one catalogued command. */
 export type WebCommandSupport =
@@ -51,11 +53,7 @@ export const WEB_COMMAND_SUPPORT = {
   "hunk.review.jumpToBottom": IMPLEMENTED,
   "hunk.review.jumpToTop": IMPLEMENTED,
   "hunk.app.quit": hostOnly("Quitting ends the hosted session; closing the tab is the page's own."),
-  "hunk.app.toggleHelp": {
-    kind: "deferred",
-    until: "palette",
-    reason: "The help overlay arrives with the command palette, which renders from this table.",
-  },
+  "hunk.app.toggleHelp": IMPLEMENTED,
   "hunk.app.openAgentSkill": hostOnly("Shows the agent skill from the host's installation."),
   "hunk.app.openFeedback": hostOnly("The feedback form sends from the host."),
   "hunk.app.openInBrowser": hostOnly(
