@@ -137,6 +137,14 @@ defaults; viewed files join it in M2b. Selection stays per-surface and is not tr
   them. The parser itself stays in `ui/lib/stml` for now — it sanitizes through
   `lib/terminalText`, which core may not import — so relocating it is Phase 5 work, before the
   browser can parse notes.
+  _Repaid (M4 state, browser site)_: the host moved the parser to `core/stml/parse.ts`, and the
+  page renders markup to DOM from it (`web/notes/stmlDom.ts`), switching on `stmlTagRole` with
+  no tag of its own. STML colors were the last forked piece: the word-to-theme-token and named
+  palette tables moved from `ui/lib/stml/colors.ts` into `stmlColorTarget` in
+  `core/review/stml.ts`; the terminal resolves a token against `AppTheme`, the page against its
+  `--hunk-*` properties (`NAMED_COLORS` and `THEME_COLOR_KEY_BY_TOKEN` are banned from the
+  terminal file). Layout stays per renderer by design: deterministic cells in the terminal, CSS
+  in the browser.
 - **A10. Default line target for a hunk note — 2 divergent rules.** Terminal
   `core/liveComments.ts` `firstCommentTargetForHunk` (first added line, else first deleted);
   web `App.tsx` (hunk's first line — usually context). Same action anchors to different lines
@@ -148,6 +156,10 @@ defaults; viewed files join it in M2b. Selection stays per-surface and is not tr
   registers `.mts`/`.cts`; the web bundle never imports it, so Pierre's own inference runs
   unregistered for files without an explicit `language`. Fix: side-effect import in
   `packages/hunk/src/web/main.tsx` (or fold registration into the shared model).
+  _Repaid (M4 state)_: by the second route. The producer resolves every file's language with
+  the registry (`core/documents/fileLanguage.ts`, extension selectors included) and the shared
+  model carries it as `ReviewFileV1.language`, which the page hands Pierre as `lang`; the page
+  registers nothing. `test/web/review-languages.e2e.ts` highlights `.mts` and `.cts` files.
 
 Renderer-specific, do not unify: terminal row construction and measured-cell windowing
 (`rowWindowing.ts`, `diffSectionGeometry.ts`) vs browser IntersectionObserver windowing and
@@ -207,6 +219,9 @@ duplication); hunk header text (browser delegates to Pierre separators); platfor
   `fileKey: null` is reached exactly when nothing is visible at all. Fixtures
   `selection-outliving-its-file` and `selection-with-nothing-visible`. The browser's
   `validSelection`/`treeSource.reset` fallbacks close in Phase 5.
+  _Repaid (M4 state, browser site)_: the page's store repairs a selection on every adopted
+  document with `selectNormalizedSelection` (it had fallen back to the first file itself), and
+  the browser page store joins the navigation corpus.
 - **B5. Filter matching — 3 matchers.** Core `reviewFileMatchesFilter` (path, previousPath,
   agentSummary), terminal `filterReviewFiles` (normalized paths), web tree search
   (canonicalPath only) — browser sidebar and stream can disagree on the same query. Also
@@ -237,6 +252,8 @@ duplication); hunk header text (browser delegates to Pierre separators); platfor
   ties — which is what `DiffPane`'s row scan resolves geometrically today. The terminal site
   stays open: it looks the answer up by measured row bounds, and swapping that for the selector
   is a rendering change rather than a semantic one. Browser adoption is Phase 5.
+  _Repaid (M4 state, browser site)_: a reveal that asks for a note lands on the card
+  `selectActiveRevealNoteId` names, and an agent reveal naming a note lands on that card.
 - **B8. Notes-by-hunk grouping — web re-filters by range containment.** `ReviewStream.tsx`
   drops annotations whose anchor came from core's fallback path or expanded context even after
   `pierreDocument` accepted them — notes silently disappear in the browser. Fix: group by
@@ -246,6 +263,10 @@ duplication); hunk header text (browser delegates to Pierre separators); platfor
   terminal site stays open deliberately: `DiffPane` groups by range overlap and therefore renders
   a note under _every_ hunk it overlaps, so converting it changes what a reviewer sees and
   belongs in a behavior-changing PR, not this one.
+  _Repaid (M4 state, browser site)_: the page places notes with `reviewNoteAnchorLine` and,
+  when that line is not drawn, `reviewNoteOwnerHunkIndex` (`web/notes/noteProjection.ts`); it
+  never tests containment. The geometry corpus reads each whole-hunk note's landing line from
+  the page's projection.
 - **B9. Note-visibility policy — two core predicates for one rule.**
   `selectors.ts` `reviewNoteVisibleByPolicy` (web path) vs `notes.ts` `alwaysShowReviewNote`
   (terminal path). Collapse to one predicate over `{source}`.

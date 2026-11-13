@@ -15,8 +15,9 @@
  * shows partial progress. A later generation replaces the current one only once it has
  * fully loaded, so a reload never flashes a half-empty review.
  *
- * Catalog order is document order because the producer builds the catalog by walking the
- * document (`app/review/publication.ts`); the wire does not state that as a guarantee.
+ * Document order comes from the shared-state file index when the index source supplies one;
+ * otherwise the mirror falls back to catalog order, which the producer happens to build by
+ * walking the document (`app/review/publication.ts`) but the wire does not guarantee.
  *
  * Owns no semantic state and no React. The client store (`../store/clientReviewStore.ts`)
  * adopts the document this publishes.
@@ -39,7 +40,7 @@ import {
   type ReviewFileIndexSource,
 } from "./fileIndex";
 
-/** One file of the mirrored generation, in catalog order. */
+/** One file of the mirrored generation, in document order. */
 export interface ReviewMirrorFileSlot {
   key: string;
   /** Known as soon as an index source or the canonical file describes it. */
@@ -189,10 +190,21 @@ export class ReviewMirror {
     const outcome = await this.loads
       .run(async (signal) => {
         const index = await this.options.indexSource?.(catalog, signal);
-        if (index) {
-          slots = slots.map((slot) => ({ ...slot, index: index.get(slot.key) }));
+        if (Array.isArray(index)) {
+          // The index states document order; a canonical file it does not list still loads,
+          // after the listed ones.
+          const listed = new Set(index.map((entry) => entry.key));
+          slots = [
+            ...index.map((entry) => ({ key: entry.key, index: entry })),
+            ...slots.filter((slot) => !listed.has(slot.key)),
+          ];
+          if (!replacing) this.publish(stage("loading"), false);
+        } else if (index) {
+          const byKey = index as ReadonlyMap<string, ReviewFileIndexEntry>;
+          slots = slots.map((slot) => ({ ...slot, index: byKey.get(slot.key) }));
           if (!replacing) this.publish(stage("loading"), false);
         }
+        const positionByKey = new Map(slots.map((slot, position) => [slot.key, position]));
 
         await this.options.client.readResources(
           canonical,
@@ -214,10 +226,15 @@ export class ReviewMirror {
                 `Canonical file ${descriptor.id} was refused (${parsed.reason}).`,
               );
             }
+            const slot = positionByKey.get(descriptor.fileKey) ?? position;
             slots = slots.slice();
-            slots[position] = {
+            slots[slot] = {
               key: descriptor.fileKey,
-              index: slots[position]?.index ?? reviewFileIndexEntry(parsed.file),
+              index: {
+                ...reviewFileIndexEntry(parsed.file),
+                ...slots[slot]?.index,
+                hunkCount: parsed.file.hunks.length,
+              },
               file: parsed.file,
             };
             loaded += 1;

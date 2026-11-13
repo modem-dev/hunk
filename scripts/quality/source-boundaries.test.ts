@@ -76,6 +76,14 @@ const WEB_SHARED_COMMAND_MODULES: readonly string[] = [
   WEB_REVIEW_RELEASE_PATH,
 ];
 
+// The STML parser the browser renders markup notes with (audit A9), and the text sanitizer it
+// runs every parsed text through. Held to a closed import set like the command modules: the
+// review model and one another.
+const WEB_SHARED_NOTE_MODULES: readonly string[] = [
+  join(SRC_ROOT, "core", "stml", "parse.ts"),
+  join(SRC_ROOT, "lib", "terminalText.ts"),
+];
+
 /** Return one repo-relative path with forward slashes for stable assertions on every platform. */
 function repoPath(path: string) {
   return relative(REPO_ROOT, path).split(sep).join("/");
@@ -319,6 +327,22 @@ const EXTRACTED_DUPLICATE_SYMBOLS: ReadonlyArray<{
     symbol: "findNearestHunkIndexAtBodyOffset",
     finding: "B11",
   },
+  { file: "packages/hunk/src/ui/lib/stml/colors.ts", symbol: "NAMED_COLORS", finding: "A9" },
+  {
+    file: "packages/hunk/src/ui/lib/stml/colors.ts",
+    symbol: "THEME_COLOR_KEY_BY_TOKEN",
+    finding: "A9",
+  },
+  {
+    file: "packages/hunk/src/ui/lib/agentAnnotations.ts",
+    symbol: "formatGithubStyleRange",
+    finding: "note-labels",
+  },
+  {
+    file: "packages/hunk/src/ui/components/panes/AgentInlineNote.tsx",
+    symbol: "shortReviewNoteAge",
+    finding: "note-labels",
+  },
 ];
 
 describe("source architecture boundaries", () => {
@@ -532,10 +556,25 @@ describe("shared review primitives seam", () => {
         ...BROWSER_SAFE_SESSION_MODULES,
         ...WEB_SHARED_PRESENTATION_MODULES,
         ...WEB_SHARED_COMMAND_MODULES,
+        join(SRC_ROOT, "core", "stml", "parse.ts"),
         // The import-free extension contract, for the structural key event chords match.
         EXTENSION_API_TYPES_PATH,
       ]),
     ).toEqual([]);
+  });
+
+  test("keeps the browser's STML parser on a closed import set", () => {
+    const violations = WEB_SHARED_NOTE_MODULES.flatMap((path) =>
+      importSpecifiers(path).flatMap((specifier) => {
+        const target = resolveImport(path, specifier);
+        const allowed =
+          target &&
+          (isWithin(REVIEW_MODEL_ROOT, target) ||
+            WEB_SHARED_NOTE_MODULES.some((module) => isWithin(module, target)));
+        return allowed ? [] : [`${repoPath(path)} -> ${specifier}`];
+      }),
+    );
+    expect(violations).toEqual([]);
   });
 
   test("keeps the browser's shared command modules on a closed import set", () => {

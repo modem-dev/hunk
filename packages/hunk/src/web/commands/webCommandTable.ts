@@ -83,8 +83,8 @@ export const WEB_COMMAND_SUPPORT = {
   "hunk.review.editActiveNote": notes("Editing needs the notes the page cannot show yet."),
   "hunk.review.replyToActiveNote": notes("Replying needs the notes the page cannot show yet."),
   "hunk.review.deleteActiveNote": notes("Deleting needs the notes the page cannot show yet."),
-  "hunk.review.previousNote": notes("Note navigation walks rendered note cards."),
-  "hunk.review.nextNote": notes("Note navigation walks rendered note cards."),
+  "hunk.review.previousNote": IMPLEMENTED,
+  "hunk.review.nextNote": IMPLEMENTED,
   "hunk.review.saveNote": notes(
     "Saving needs the composer; its Ctrl+S chord is also the browser's.",
   ),
@@ -121,7 +121,9 @@ export const WEB_COMMAND_SUPPORT = {
     reason: "The refresh route exists; the page's refresh control is a later change.",
   },
   "hunk.view.openThemeSelector": IMPLEMENTED,
-  "hunk.view.toggleAgentNotes": notes("Note visibility is shared state the page cannot set yet."),
+  "hunk.view.toggleAgentNotes": notes(
+    "Note visibility is shared state; the page sends no shared intents until it authors notes.",
+  ),
   "hunk.view.toggleLineNumbers": IMPLEMENTED,
   "hunk.view.toggleLineWrap": IMPLEMENTED,
   "hunk.view.toggleMenuBar": terminalOnly("The page's toolbar is always shown."),
@@ -141,10 +143,10 @@ export const WEB_COMMAND_SUPPORT = {
   "hunk.review.nextHunk": IMPLEMENTED,
   "hunk.review.previousFile": IMPLEMENTED,
   "hunk.review.nextFile": IMPLEMENTED,
-  "hunk.review.previousAnnotatedHunk": notes("Which hunks carry notes arrives with notes."),
-  "hunk.review.nextAnnotatedHunk": notes("Which hunks carry notes arrives with notes."),
-  "hunk.review.previousAnnotatedFile": notes("Which files carry notes arrives with notes."),
-  "hunk.review.nextAnnotatedFile": notes("Which files carry notes arrives with notes."),
+  "hunk.review.previousAnnotatedHunk": IMPLEMENTED,
+  "hunk.review.nextAnnotatedHunk": IMPLEMENTED,
+  "hunk.review.previousAnnotatedFile": IMPLEMENTED,
+  "hunk.review.nextAnnotatedFile": IMPLEMENTED,
 } as const satisfies Record<AppCommandId, WebCommandSupport>;
 
 /** Every command id the page implements now. */

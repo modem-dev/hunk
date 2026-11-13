@@ -87,15 +87,49 @@ export function reviewAnnotatedHunkIndices(
   }
 
   for (const annotation of annotations) {
-    const anchor = reviewAnnotationAnchor(hunks, annotation, declaredTarget?.(annotation));
-    for (const hunkIndex of anchor.intersectingHunkIndices) {
-      annotated.add(hunkIndex);
-    }
-    if (anchor.ownerHunkIndex !== undefined) {
-      annotated.add(anchor.ownerHunkIndex);
-    }
+    addReviewAnchorAnnotatedHunks(
+      reviewAnnotationAnchor(hunks, annotation, declaredTarget?.(annotation)),
+      annotated,
+    );
   }
   return annotated;
+}
+
+/** Mark the hunks one resolved anchor reaches: every intersecting hunk and its owner. */
+function addReviewAnchorAnnotatedHunks(anchor: ReviewRangeAnchorV1, into: Set<number>) {
+  for (const hunkIndex of anchor.intersectingHunkIndices) {
+    into.add(hunkIndex);
+  }
+  if (anchor.ownerHunkIndex !== undefined) {
+    into.add(anchor.ownerHunkIndex);
+  }
+}
+
+/**
+ * Index annotated files and hunks from notes whose anchors are already resolved.
+ *
+ * The form a surface that receives notes rather than diff models needs (the browser reads
+ * them from the shared-state snapshot, anchors resolved by the producer): the same per-anchor
+ * rule as `buildReviewAnnotationIndex`, and the same broader file membership, where
+ * `contextFileKeys` names files carrying review context without any note.
+ */
+export function buildReviewAnnotationIndexFromNotes(
+  notes: Iterable<{ fileKey: string; anchor: ReviewRangeAnchorV1 }>,
+  contextFileKeys: Iterable<string> = [],
+): ReviewAnnotationIndex {
+  const hunksByFileKey = new Map<string, Set<number>>();
+  const annotatedFileKeys = new Set<string>(contextFileKeys);
+  for (const note of notes) {
+    annotatedFileKeys.add(note.fileKey);
+    const hunks = hunksByFileKey.get(note.fileKey) ?? new Set<number>();
+    addReviewAnchorAnnotatedHunks(note.anchor, hunks);
+    hunksByFileKey.set(note.fileKey, hunks);
+  }
+  const annotatedHunkIndicesByFileKey = new Map<string, ReadonlySet<number>>();
+  for (const [fileKey, hunks] of hunksByFileKey) {
+    if (hunks.size > 0) annotatedHunkIndicesByFileKey.set(fileKey, hunks);
+  }
+  return { annotatedHunkIndicesByFileKey, annotatedFileKeys };
 }
 
 /**

@@ -12,7 +12,12 @@
  * Highlight options are the terminal's (`ui/diff/highlightRenderOptions.ts`): word-level
  * `word-alt` emphasis and the same tokenizing bound.
  */
-import { FileDiff, type FileDiffOptions, type HunkData } from "@pierre/diffs";
+import {
+  FileDiff,
+  type DiffLineAnnotation,
+  type FileDiffOptions,
+  type HunkData,
+} from "@pierre/diffs";
 import {
   useCallback,
   useEffect,
@@ -27,6 +32,10 @@ import {
   type ReviewFileRenderPlan,
   type ReviewGapView,
 } from "./fileProjection";
+import type { ReviewAgentHighlightV1 } from "../../session/reviewSharedState";
+import { renderNoteGroup } from "../notes/noteCards";
+import type { WebNoteGroup } from "../notes/noteProjection";
+import { measureAgentHighlights, type ReviewHighlightBox } from "./highlightGeometry";
 import {
   measureReviewFileGeometry,
   reviewHunkAtRow,
@@ -48,6 +57,10 @@ export interface PierreFileViewProps {
   onSelectHunk: (hunkIndex: number) => void;
   /** Where this file's hunks and expanded gaps were drawn, after every render or resize. */
   onGeometry: (geometry: ReviewFileGeometry) => void;
+  /** Note cards per anchor line, drawn in the diff flow through Pierre's line annotations. */
+  noteGroups: readonly WebNoteGroup[];
+  /** Agent attention marks on this file's lines. */
+  highlights: readonly ReviewAgentHighlightV1[];
 }
 
 /** The words one gap separator shows for its state. */
@@ -97,9 +110,11 @@ export function PierreFileView({
   selectedHunk,
   onSelectHunk,
   onGeometry,
+  noteGroups,
+  highlights,
 }: PierreFileViewProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
-  const instanceRef = useRef<FileDiff | null>(null);
+  const instanceRef = useRef<FileDiff<WebNoteGroup> | null>(null);
   const separatorsRef = useRef(new Map<string, Set<HTMLButtonElement>>());
   const planRef = useRef(plan);
   const toggleRef = useRef(onToggleGap);
@@ -108,6 +123,9 @@ export function PierreFileView({
   const [geometry, setGeometry] = useState<ReviewFileGeometry | undefined>(undefined);
   const geometryRef = useRef(onGeometry);
   geometryRef.current = onGeometry;
+  const [highlightBoxes, setHighlightBoxes] = useState<ReviewHighlightBox[]>([]);
+  const highlightsRef = useRef(highlights);
+  highlightsRef.current = highlights;
 
   // Re-measure after Pierre draws and whenever the drawing changes size (wrapping, fonts).
   const measure = useCallback(() => {
@@ -116,10 +134,11 @@ export function PierreFileView({
     const current = planRef.current;
     const next = measureReviewFileGeometry(host, current.file, current.gaps, layout);
     setGeometry(next);
+    setHighlightBoxes(measureAgentHighlights(host, highlightsRef.current, layout));
     geometryRef.current(next);
   }, [layout]);
 
-  const options: FileDiffOptions<undefined, undefined> = {
+  const options: FileDiffOptions<WebNoteGroup, undefined> = {
     ...pierreHighlightRenderOptions(syntaxTheme),
     themeType: appearance,
     diffStyle: layout,
@@ -128,6 +147,8 @@ export function PierreFileView({
     disableFileHeader: true,
     // Every gap the shared model addresses stays collapsed until the store expands it.
     collapsedContextThreshold: 0,
+    renderAnnotation: (annotation: DiffLineAnnotation<WebNoteGroup>) =>
+      renderNoteGroup(annotation.metadata),
     hunkSeparators: (hunk: HunkData) => {
       const gapId = reviewGapIdForSeparator(planRef.current.file, hunk.hunkIndex);
       const element = document.createElement("button");
@@ -149,14 +170,21 @@ export function PierreFileView({
   useEffect(() => {
     const host = hostRef.current;
     if (!host || !plan.metadata) return;
+    const lineAnnotations = noteGroups.map(
+      (group): DiffLineAnnotation<WebNoteGroup> => ({
+        side: group.side === "new" ? "additions" : "deletions",
+        lineNumber: group.line,
+        metadata: group,
+      }),
+    );
     let instance = instanceRef.current;
     if (!instance) {
-      instance = new FileDiff(options);
+      instance = new FileDiff<WebNoteGroup>(options);
       instanceRef.current = instance;
-      instance.render({ fileDiff: plan.metadata, containerWrapper: host });
+      instance.render({ fileDiff: plan.metadata, containerWrapper: host, lineAnnotations });
     } else {
       instance.setOptions(options);
-      instance.render({ fileDiff: plan.metadata, forceRender: true });
+      instance.render({ fileDiff: plan.metadata, forceRender: true, lineAnnotations });
     }
     // Separators Pierre kept across this render still show the old state; repaint them.
     for (const [gapId, elements] of separatorsRef.current) {
@@ -175,7 +203,13 @@ export function PierreFileView({
     return () => cancelAnimationFrame(frame);
     // `options` is rebuilt from exactly these inputs, so they are the dependency list.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [plan, layout, wrapLines, showLineNumbers, syntaxTheme, appearance]);
+  }, [plan, layout, wrapLines, showLineNumbers, syntaxTheme, appearance, noteGroups]);
+
+  // New marks need no new drawing, only new boxes over the lines already drawn.
+  useEffect(() => {
+    const frame = requestAnimationFrame(measure);
+    return () => cancelAnimationFrame(frame);
+  }, [highlights, measure]);
 
   useLayoutEffect(() => {
     const host = hostRef.current;
@@ -224,6 +258,17 @@ export function PierreFileView({
           aria-hidden="true"
         />
       ) : null}
+      {highlightBoxes.map((box, index) => (
+        <div
+          key={index}
+          className="agent-highlight"
+          data-tone={box.tone}
+          data-side={box.side}
+          data-line={box.line}
+          style={{ top: box.top, left: box.left, width: box.width, height: box.height }}
+          aria-hidden="true"
+        />
+      ))}
       {plan.gaps
         .filter((gap) => gap.state === "expanded")
         .map((gap) => {

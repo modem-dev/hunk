@@ -11,14 +11,18 @@ import {
 } from "../../core/review/fileLabels";
 import type { ReviewFileIndexEntry } from "../mirror/fileIndex";
 
-/** One sidebar row for one indexed file. Notes arrive with the state route; none yet. */
-export function sidebarEntry(entry: ReviewFileIndexEntry, depth: number): ReviewSidebarFileEntry {
+/** One sidebar row for one indexed file, with its visible note count for the `*N` badge. */
+export function sidebarEntry(
+  entry: ReviewFileIndexEntry,
+  depth: number,
+  noteCount = 0,
+): ReviewSidebarFileEntry {
   return {
     kind: "file",
     id: entry.key,
     name: reviewSidebarFileName(entry.path, entry.previousPath),
     depth,
-    agentCommentsText: formatReviewNoteBadge(0),
+    agentCommentsText: formatReviewNoteBadge(noteCount),
     additionsText: formatReviewSidebarStat("+", entry.stats.additions, entry.stats.truncated),
     deletionsText: formatReviewSidebarStat("-", entry.stats.deletions),
     changeType: entry.changeKind,
@@ -29,6 +33,8 @@ export function sidebarEntry(entry: ReviewFileIndexEntry, depth: number): Review
 /** What either sidebar mode is given. */
 export interface FileSidebarProps {
   entries: readonly ReviewFileIndexEntry[];
+  /** Visible notes per file key. */
+  noteCounts: ReadonlyMap<string, number>;
   selectedKey: string | null;
   mode: "tree" | "flat";
   onSelectFile: (fileKey: string) => void;

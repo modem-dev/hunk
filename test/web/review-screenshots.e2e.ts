@@ -120,3 +120,133 @@ test("captures the review page for visual review", async ({ page, browser }) => 
   await capture(narrow, "09-narrow-800");
   await narrow.close();
 });
+
+test("captures notes, markup, highlights, and the session title", async ({ page }) => {
+  test.setTimeout(240_000);
+  mkdirSync(OUTPUT!, { recursive: true });
+  review = await startTestWebReview("--rich", {
+    args: ["--agent-notes", "--experimental"],
+    context: {
+      "src/app/main.ts": {
+        summary: "Raises the threshold and adds a formatter.",
+        annotations: [
+          {
+            newRange: [45, 47],
+            summary: "describe() is new.",
+            markup:
+              '<box border title="Formatter" border-color="accent"><text><badge color="success">new</badge> <b>describe(value)</b> renders a label</text><list><item>pure, no I/O</item><item>covered by <kbd>describe.test.ts</kbd></item></list></box>',
+          },
+        ],
+      },
+    },
+  });
+  await openRich(page, "github-dark-default", "split");
+  const hunk = review.hunk;
+  const added = JSON.parse(
+    await hunk([
+      "session",
+      "comment",
+      "add",
+      review.sessionId,
+      "--file",
+      "src/app/main.ts",
+      "--new-line",
+      "13",
+      "--summary",
+      "The threshold doubles; is 10 still right for small inputs?",
+      "--rationale",
+      "Callers with fewer than ten items now skip the fast path entirely.",
+      "--author",
+      "opus",
+      "--json",
+    ]),
+  ) as { result: { commentId: string; hunkIndex: number } };
+  const state = (await review.readApi("state")).state as {
+    notes: { note: { id: string; fileKey: string } }[];
+  };
+  const parent = state.notes.find((entry) => entry.note.id === added.result.commentId)!.note;
+  await review.postAction({
+    type: "notes/add-user",
+    fileKey: parent.fileKey,
+    hunkIndex: added.result.hunkIndex,
+    parentId: parent.id,
+    body: "Yes: the benchmark in #812 shows the fast path only pays off from ten items.",
+  });
+  await expect(
+    page.locator(".note-card", { hasText: "the fast path only pays off" }),
+  ).toBeVisible();
+  await capture(page, "13-notes-thread-dark");
+  await chooseTestTheme(page, "github-light-default");
+  await capture(page, "14-notes-thread-light");
+  await chooseTestTheme(page, "github-dark-default");
+
+  await page.locator(".note-card .stml").scrollIntoViewIfNeeded();
+  await capture(page, "15-stml-note");
+
+  for (const [line, start, end, tone] of [
+    ["45", "16", "24", "warning"],
+    ["13", "13", "22", "current"],
+  ] as const) {
+    await hunk([
+      "session",
+      "highlight",
+      "add",
+      review.sessionId,
+      "--file",
+      "src/app/main.ts",
+      "--new-line",
+      line,
+      "--start",
+      start,
+      "--end",
+      end,
+      "--tone",
+      tone,
+    ]);
+  }
+  await expect(page.locator(".agent-highlight")).toHaveCount(2);
+  await page.locator(".agent-highlight").first().scrollIntoViewIfNeeded();
+  await capture(page, "16-agent-highlights");
+
+  // No host path marks a note stale today, so the page's stale treatment is captured from a
+  // shared-state response rewritten in flight; the next comment makes the page refetch it.
+  await page.route("**/state", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as {
+      state: { notes: { note: { summary: string }; resolution: string }[] };
+    };
+    for (const entry of body.state.notes) {
+      if (entry.note.summary.startsWith("Rename this")) entry.resolution = "stale";
+    }
+    await route.fulfill({ response, json: body });
+  });
+  await hunk([
+    "session",
+    "comment",
+    "add",
+    review.sessionId,
+    "--file",
+    "src/gen/module-00.ts",
+    "--new-line",
+    "2",
+    "--summary",
+    "Rename this label before the release.",
+    "--author",
+    "opus",
+  ]);
+  await page.evaluate(() => {
+    const stream = document.querySelector<HTMLElement>(".review-stream")!;
+    const section = Array.from(
+      document.querySelectorAll<HTMLElement>("section[data-file-key]"),
+    ).find((candidate) => candidate.textContent?.includes("src/gen/module-00.ts"))!;
+    stream.scrollTop = section.offsetTop - 200;
+  });
+  await expect(page.locator(".note-card[data-stale]")).toHaveCount(1, { timeout: 30_000 });
+  await capture(page, "17-stale-note");
+
+  await settle(page);
+  await page.screenshot({
+    path: join(OUTPUT!, "18-toolbar-title.png"),
+    clip: { x: 0, y: 0, width: 1440, height: 48 },
+  });
+});
