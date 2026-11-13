@@ -12,9 +12,12 @@
  * History: navigating (keys, scrolling, clicks inside the stream) rewrites the current entry
  * with `history.replaceState`, so the address bar always names where the reader is; a
  * deliberate jump (go-to-file, a sidebar file, a link) adds an entry with `pushState`, so Back
- * returns to where the reader came from. The fragment's address is resolved once the document
- * arrives, before the page writes its own position, so the link's target wins over the first
- * hunk. The capability is never written here (`session/capability.ts` owns it).
+ * returns to where the reader came from (the entry being left is written first). A line link
+ * keeps its line address while the selection it made stands. The fragment's address is
+ * resolved once its target arrives, before the page writes its own position, so the link's
+ * target wins over the first hunk; it is reported missing only once the document is complete.
+ * A target the page does not show is named with its reason (`deepLink.ts`). The capability is
+ * never written here (`session/capability.ts` owns it).
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ReviewAddress } from "../../core/review/address";
@@ -27,6 +30,9 @@ import {
   fragmentWithAddress,
   readFragmentAddress,
   resolveReviewAddress,
+  reviewAddressHiddenMessage,
+  reviewAddressHiddenReason,
+  reviewLinePlacement,
   selectionAddress,
 } from "../navigation/deepLink";
 import { noteSaveChordLabel } from "../notes/NoteComposerView";
@@ -82,19 +88,19 @@ export interface ReviewToolsOptions {
   keymap: WebKeymap;
   /** The files the shared filter leaves visible, in review order. */
   entries: readonly ReviewFileIndexEntry[];
-  /** True once the shown document has files. */
-  documentReady: boolean;
   setRevealPoint: (point: ReviewRevealPoint | undefined) => void;
   copyReviewLink: () => Promise<boolean>;
   chooseSessionTheme: () => void;
   setSidebarMode: (mode: "tree" | "flat") => void;
   /** Handlers for page commands another part of the page owns (the side panel's tools). */
   localHandlers?: Partial<Record<WebLocalCommandId, () => void>>;
+  /** Opens a file the stream shows collapsed (a viewed file), so a link can show its content. */
+  expandFile?: (fileKey: string) => void;
 }
 
 /** The page's palette, go-to-file, help, and deep links. */
 export function useReviewTools(options: ReviewToolsOptions) {
-  const { session, commands, keymap, entries, documentReady } = options;
+  const { session, commands, keymap, entries } = options;
   const [tool, setTool] = useState<ReviewTool | undefined>(undefined);
   const [recents, setRecents] = useState<string[]>(() => readRecents());
   const returnFocus = useRef<HTMLElement | null>(null);
@@ -118,11 +124,28 @@ export function useReviewTools(options: ReviewToolsOptions) {
 
   // Deep links: what to show, and keeping the address bar current.
   const resolvedInitial = useRef(false);
+  // A line link keeps its own address in the bar while the selection is still the one it
+  // made; the selection alone can only name the line's hunk.
+  const linkedLine = useRef<
+    { address: ReviewAddress; fileKey: string; hunkIndex: number } | undefined
+  >(undefined);
   const show = useCallback(
     (address: ReviewAddress) => {
       const state = session.review.store.getSnapshot();
       const target = resolveReviewAddress(state, address);
       if (!target) return false;
+      const file = state.document.files.find((candidate) => candidate.key === target.fileKey)!;
+      linkedLine.current = undefined;
+
+      // A target the page does not show is named with its reason; shared state stays as it is.
+      const hidden = reviewAddressHiddenReason(state, address, session.review.hiddenFiles());
+      if (hidden) {
+        session.toasts.show(reviewAddressHiddenMessage(hidden, file.path), "info");
+        return true;
+      }
+      // A viewed file collapsed in the stream opens, so the link shows its content.
+      latest.current.expandFile?.(target.fileKey);
+
       if (address.kind === "file") {
         session.review.apply({
           type: "selection/select-file",
@@ -131,13 +154,44 @@ export function useReviewTools(options: ReviewToolsOptions) {
         });
         return true;
       }
+
+      // A linked line inside a collapsed gap is drawn by expanding the gap; a line no hunk or
+      // gap holds is reported, and the link lands on the hunk's top.
+      let line = target.line !== undefined && target.side !== undefined;
+      if (target.line !== undefined && target.side !== undefined) {
+        const placement = reviewLinePlacement(file, target.side, target.line);
+        const expanded = state.expandedGaps.some(
+          (gap) =>
+            gap.fileKey === file.key &&
+            placement.kind === "gap" &&
+            gap.gapId === placement.gapId &&
+            gap.expanded,
+        );
+        if (placement.kind === "gap" && !expanded) {
+          session.review.apply({
+            type: "expansion/toggle",
+            fileKey: file.key,
+            gapId: placement.gapId,
+          });
+        } else if (placement.kind === "absent") {
+          line = false;
+          session.toasts.show(
+            `Line ${target.line} of ${file.path} is not in this diff; showing the nearest hunk.`,
+            "info",
+          );
+        }
+      }
       latest.current.setRevealPoint(
-        target.line !== undefined && target.side !== undefined
-          ? { fileKey: target.fileKey, side: target.side, line: target.line }
+        line
+          ? { fileKey: target.fileKey, side: target.side!, line: target.line! }
           : target.noteId !== undefined
             ? { fileKey: target.fileKey, noteId: target.noteId }
             : undefined,
       );
+      // Set before the selection lands, so the address written for it is the line's.
+      if (address.kind === "line" && line) {
+        linkedLine.current = { address, fileKey: target.fileKey, hunkIndex: target.hunkIndex };
+      }
       session.review.apply({
         type: "selection/select",
         fileKey: target.fileKey,
@@ -149,6 +203,22 @@ export function useReviewTools(options: ReviewToolsOptions) {
     },
     [session],
   );
+
+  /** The address of where the reader is, keeping a line link while its selection stands. */
+  const currentAddress = useCallback(() => {
+    const state = session.review.store.getSnapshot();
+    const linked = linkedLine.current;
+    if (
+      linked &&
+      !state.activeNoteId &&
+      state.selection.fileKey === linked.fileKey &&
+      state.selection.hunkIndex === linked.hunkIndex
+    ) {
+      return linked.address;
+    }
+    linkedLine.current = undefined;
+    return selectionAddress(state);
+  }, [session]);
 
   /** Write the address into the current history entry, or a new one. */
   const writeAddress = useCallback(
@@ -166,31 +236,67 @@ export function useReviewTools(options: ReviewToolsOptions) {
   /** A deliberate jump: a new history entry, then the move. */
   const jumpTo = useCallback(
     (address: ReviewAddress) => {
+      // The entry being left names where the reader was, so Back returns there even when
+      // nothing has rewritten it since the page opened.
+      if (resolvedInitial.current) writeAddress(currentAddress(), "replace");
       writeAddress(address, "push");
       show(address);
     },
-    [show, writeAddress],
+    [currentAddress, show, writeAddress],
   );
 
-  // Resolve the link's address once the document has arrived; until then the page does not
-  // write its own position, so the first hunk never replaces the link's target.
+  // Resolve the link's address once its target has arrived; until then the page does not
+  // write its own position, so the first hunk never replaces the link's target. A target
+  // still loading is waited for; it is reported missing only once the document is complete
+  // (and, for a note, once that generation's shared state is in).
   useEffect(() => {
-    if (!documentReady || resolvedInitial.current) return;
-    resolvedInitial.current = true;
-    const address = readFragmentAddress(window.location.hash);
-    if (address && !show(address)) {
+    let resolving = false;
+    const attempt = () => {
+      // Showing the target changes the store, which calls back in here.
+      if (resolvedInitial.current || resolving) return;
+      const address = readFragmentAddress(window.location.hash);
+      if (!address) {
+        if (session.review.store.getSnapshot().document.files.length > 0) {
+          resolvedInitial.current = true;
+        }
+        return;
+      }
+      resolving = true;
+      const shown = show(address);
+      resolving = false;
+      if (shown) {
+        resolvedInitial.current = true;
+        return;
+      }
+      const mirror = session.mirror.getSnapshot();
+      const sharedGeneration = session.shared.getSnapshot().body?.state.generation;
+      const complete =
+        mirror.status === "ready" &&
+        !mirror.updating &&
+        (address.kind !== "note" || sharedGeneration === mirror.address?.generation);
+      if (!complete) return;
+      resolvedInitial.current = true;
       session.toasts.show("This link points at a place this review does not have.", "info");
-    }
-  }, [documentReady, session, show]);
+    };
+    attempt();
+    const stops = [
+      session.review.store.subscribe(attempt),
+      session.mirror.subscribe(attempt),
+      session.shared.subscribe(attempt),
+    ];
+    return () => {
+      for (const stop of stops) stop();
+    };
+  }, [session, show]);
 
   // Navigation rewrites the current entry so the address names where the reader is.
   useEffect(
     () =>
       session.review.store.subscribe(() => {
         if (!resolvedInitial.current) return;
-        writeAddress(selectionAddress(session.review.store.getSnapshot()), "replace");
+        writeAddress(currentAddress(), "replace");
       }),
-    [session, writeAddress],
+    [currentAddress, session, writeAddress],
   );
 
   // Back and forward show the entry's address.
@@ -204,7 +310,7 @@ export function useReviewTools(options: ReviewToolsOptions) {
   }, [show]);
 
   const copyLocationLink = useCallback(async () => {
-    const address = selectionAddress(session.review.store.getSnapshot());
+    const address = currentAddress();
     const { origin, pathname, hash } = window.location;
     try {
       await navigator.clipboard.writeText(
@@ -217,7 +323,7 @@ export function useReviewTools(options: ReviewToolsOptions) {
     } catch {
       session.toasts.show("The browser did not allow copying the link.");
     }
-  }, [session]);
+  }, [currentAddress, session]);
 
   /** Run one page-only command. */
   const runLocal = useCallback(
@@ -316,6 +422,8 @@ export function useReviewTools(options: ReviewToolsOptions) {
   if (tool === "palette") {
     overlay = (
       <PickerDialog
+        // Keyed per tool: switching pickers starts a fresh query and active row.
+        key="palette"
         label="Command palette"
         placeholder="Type a command"
         testId="command-palette"
@@ -337,6 +445,7 @@ export function useReviewTools(options: ReviewToolsOptions) {
   } else if (tool === "goToFile") {
     overlay = (
       <PickerDialog
+        key="goToFile"
         label="Go to file"
         placeholder="Type a file name"
         testId="go-to-file"
