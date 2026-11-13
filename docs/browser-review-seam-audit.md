@@ -692,6 +692,13 @@ implementation does.
   would hide the attempt. Agent and terminal kinds keep arriving through the authenticated
   session API. Adversarial fixture `capability-holder-claiming-another-kind` (fixture steps now
   name their channel) runs against the producer action handler and the HTTP surface.
+  _Hardened (note provenance)_: `author` stays a free label — Hunk is single-user and builds no
+  identity — so a browser could title its note as an agent's. A reviewer note composed through
+  a review link now records `originalSource: "browser"` (`REVIEW_BROWSER_NOTE_ORIGINAL_SOURCE`,
+  supplied by the producer's action handler as a caller fact), which the shared state already
+  carries, so a surface can label it truthfully without a new field or wire version. The
+  terminal's own notes keep `originalSource: "user"`, and the terminal draws remote bodies and
+  authors through the same `sanitizeTerminalLine` path as its own.
 - **G3. Semantic addressing / permalinks.** The prototype's URL fragment carries only the
   capability token — there is no grammar for addressing a file/hunk/line/note. Three consumers
   will need one: browser deep links and back/forward history, a terminal "copy link" command,
