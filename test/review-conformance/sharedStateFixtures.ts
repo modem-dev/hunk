@@ -14,7 +14,14 @@ import { createTestDiffFile, lines } from "../helpers/diff-helpers";
 /** What one consumer made of a shared-state snapshot, with files named by index. */
 export interface ReviewSharedStateProjection {
   files: string[];
-  notes: Array<{ origin: string; id: string; file: number; resolution: string }>;
+  notes: Array<{
+    origin: string;
+    id: string;
+    file: number;
+    resolution: string;
+    /** Present when the note carries an STML body the snapshot shows. */
+    markup?: true;
+  }>;
   filter: string;
   showAgentNotes: boolean;
   highlights: Record<number, Array<{ side: string; line: number; start: number; end: number }>>;
@@ -57,6 +64,21 @@ function oneHunkFile(id: string, agent: DiffFile["agent"] = null, changed = "800
     id,
     path: `src/${id}.ts`,
     agent,
+  });
+}
+
+/** A forty-line file whose lines 8 and 32 changed, so it has two hunks. */
+function twoHunkFile(id: string) {
+  const before = Array.from({ length: 40 }, (_unused, index) => `const v${index + 1} = ${index};`);
+  const after = [...before];
+  after[7] = "const v8 = 800;";
+  after[31] = "const v32 = 3200;";
+  return createTestDiffFile({
+    after: lines(...after),
+    before: lines(...before),
+    context: 3,
+    id,
+    path: `src/${id}.ts`,
   });
 }
 
@@ -123,7 +145,7 @@ export const REVIEW_SHARED_STATE_FIXTURES: readonly ReviewSharedStateFixture[] =
     id: "shared-state-after-reload",
     findings: ["G1"],
     description:
-      "A reload that drops a file drops its notes and marks from the snapshot; a file whose content changed loses its marks but keeps its notes.",
+      "A reload that drops a file drops its notes and marks from the snapshot; a file whose content changed loses its marks and keeps its notes, marked stale at their last anchor.",
     build: () => [oneHunkFile("alpha"), oneHunkFile("beta")],
     act: (host) => {
       host.addLiveComment({ filePath: "src/alpha.ts", hunkIndex: 0, summary: "Kept" }, "mcp:a");
@@ -140,9 +162,82 @@ export const REVIEW_SHARED_STATE_FIXTURES: readonly ReviewSharedStateFixture[] =
     },
     expected: {
       files: ["src/alpha.ts"],
-      notes: [{ origin: "live", id: "mcp:a", file: 0, resolution: "active" }],
+      notes: [{ origin: "live", id: "mcp:a", file: 0, resolution: "stale" }],
       filter: "",
       showAgentNotes: true,
+      highlights: {},
+      agentReveal: null,
+    },
+  },
+  {
+    id: "stale-and-orphaned-notes-after-reload",
+    findings: ["G1"],
+    description:
+      "A reload that changes a two-hunk file into a one-hunk file keeps the first hunk's note as stale and orphans the second hunk's note, replies included; an unchanged file's note stays active.",
+    build: () => [twoHunkFile("alpha"), oneHunkFile("beta")],
+    act: (host) => {
+      host.addLiveComment({ filePath: "src/alpha.ts", hunkIndex: 0, summary: "First" }, "mcp:1");
+      host.addLiveComment({ filePath: "src/alpha.ts", hunkIndex: 1, summary: "Second" }, "mcp:2");
+      host.addLiveComment({ replyTo: "mcp:2", summary: "Reply" }, "mcp:3");
+      host.addLiveComment({ filePath: "src/beta.ts", hunkIndex: 0, summary: "Same" }, "mcp:4");
+      host.replaceFiles([oneHunkFile("alpha", null, "900"), oneHunkFile("beta")]);
+    },
+    expected: {
+      files: ["src/alpha.ts", "src/beta.ts"],
+      notes: [
+        { origin: "live", id: "mcp:1", file: 0, resolution: "stale" },
+        { origin: "live", id: "mcp:4", file: 1, resolution: "active" },
+      ],
+      filter: "",
+      showAgentNotes: false,
+      highlights: {},
+      agentReveal: null,
+    },
+  },
+  {
+    id: "sidecar-markup-follows-the-experimental-launch",
+    findings: ["G1"],
+    description:
+      "A sidecar annotation's STML body reaches the snapshot only when the session enabled STML, as the terminal only shows it then; its plain summary is served either way.",
+    build: () => [
+      oneHunkFile("alpha", {
+        path: "src/alpha.ts",
+        annotations: [{ newRange: [8, 8], summary: "Plain", markup: "<b>Bold</b>", source: "ai" }],
+      }),
+      oneHunkFile("beta", {
+        path: "src/beta.ts",
+        annotations: [{ newRange: [8, 8], summary: "Plain", markup: "<b>Bold</b>", source: "ai" }],
+      }),
+    ],
+    act: () => {},
+    expected: {
+      files: ["src/alpha.ts", "src/beta.ts"],
+      notes: [
+        { origin: "sidecar", id: "ai:@0:0", file: 0, resolution: "active" },
+        { origin: "sidecar", id: "ai:@1:0", file: 1, resolution: "active" },
+      ],
+      filter: "",
+      showAgentNotes: false,
+      highlights: {},
+      agentReveal: null,
+    },
+  },
+  {
+    id: "sidecar-markup-with-stml-enabled",
+    findings: ["G1"],
+    description: "The same sidecar body in a session that enabled STML carries its markup.",
+    build: () => [
+      oneHunkFile("alpha", {
+        path: "src/alpha.ts",
+        annotations: [{ newRange: [8, 8], summary: "Plain", markup: "<b>Bold</b>", source: "ai" }],
+      }),
+    ],
+    act: (host) => host.setStmlEnabled(true),
+    expected: {
+      files: ["src/alpha.ts"],
+      notes: [{ origin: "sidecar", id: "ai:@0:0", file: 0, resolution: "active", markup: true }],
+      filter: "",
+      showAgentNotes: false,
       highlights: {},
       agentReveal: null,
     },
