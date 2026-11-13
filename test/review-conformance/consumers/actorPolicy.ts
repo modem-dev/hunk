@@ -61,6 +61,15 @@ function projectReview(
   };
 }
 
+/** Fill a review with agent live comments, as `hunk session comment apply` would. */
+function seedTestLiveNotes(host: ReviewSessionHost, count: number) {
+  const filePath = host.getFiles()[0]!.path;
+  host.addLiveCommentBatch(
+    Array.from({ length: count }, () => ({ filePath, hunkIndex: 0, summary: "seed" })),
+    "seed",
+  );
+}
+
 /** Attach one host to one producer the way a mounted session does. */
 function attachTestHost(
   producer: ReviewProducer,
@@ -90,6 +99,11 @@ export const producerActorPolicyConsumer: ReviewActorPolicyConsumer = {
     for (const step of fixture.steps) {
       if (step.kind === "reload") {
         host.replaceFiles(step.build());
+        outcomes.push("applied");
+        continue;
+      }
+      if (step.kind === "seed-live-notes") {
+        seedTestLiveNotes(host, step.count);
         outcomes.push("applied");
         continue;
       }
@@ -137,6 +151,11 @@ export const browserSurfaceActorPolicyConsumer: ReviewActorPolicyConsumer = {
       for (const step of fixture.steps) {
         if (step.kind === "reload") {
           host.replaceFiles(step.build());
+          outcomes.push("applied");
+          continue;
+        }
+        if (step.kind === "seed-live-notes") {
+          seedTestLiveNotes(host, step.count);
           outcomes.push("applied");
           continue;
         }

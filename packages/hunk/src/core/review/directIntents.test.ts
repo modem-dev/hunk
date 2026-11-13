@@ -9,7 +9,7 @@ import {
   ReviewIntentPlanningError,
   type ReviewIntentPlanningErrorCode,
 } from "./intents";
-import { MAX_REVIEW_NOTE_BYTES } from "./noteSize";
+import { MAX_REVIEW_NOTE_BYTES, MAX_REVIEW_NOTES, MAX_REVIEW_NOTES_TOTAL_BYTES } from "./noteSize";
 import { selectIsReviewFileViewed } from "./selectors";
 import type { ReviewState } from "./state";
 import { createReviewStore } from "./store";
@@ -168,5 +168,102 @@ describe("files/set-viewed", () => {
       () => applyReviewIntent(store, { type: "files/set-viewed", fileKey: "gone", viewed: true }),
       "file-not-found",
     );
+  });
+});
+
+// Finding: a review accepted notes without bound, so about seventeen maximum-size notes pushed
+// the shared state past its size bound and about ten thousand small ones made the daemon refuse
+// every snapshot. Every note-storing intent now checks the stored-note bounds.
+describe("stored-note capacity", () => {
+  /** Live notes of one size that fill the review up to `count`. */
+  function createTestLiveNotes(count: number, summary = "n") {
+    return Array.from({ length: count }, (_unused, index) =>
+      createTestStoredNote({ id: `live:${index}`, fileKey: "alpha", line: 2, summary }),
+    );
+  }
+
+  test("refuses one more note than the count bound, on every add path", () => {
+    const store = createTestStore({
+      ...createTestReviewState(),
+      liveNotes: createTestLiveNotes(MAX_REVIEW_NOTES),
+    });
+    expectRejected(
+      () =>
+        applyReviewIntent(
+          store,
+          { type: "notes/add-user", fileKey: "alpha", hunkIndex: 0, body: "one more" },
+          FACTS,
+        ),
+      "too-many-notes",
+    );
+    expectRejected(
+      () =>
+        applyReviewIntent(
+          store,
+          {
+            type: "notes/add-user",
+            fileKey: "alpha",
+            hunkIndex: 0,
+            parentId: "live:0",
+            body: "re",
+          },
+          FACTS,
+        ),
+      "too-many-notes",
+    );
+
+    applyReviewIntent(
+      store,
+      { type: "notes/start-draft", fileKey: "alpha", hunkIndex: 0 },
+      { draftId: "draft:1" },
+    );
+    store.dispatch({ type: "draft/update", body: "drafted" });
+    expectRejected(
+      () => applyReviewIntent(store, { type: "notes/create-user", consumeDraft: true }, FACTS),
+      "too-many-notes",
+    );
+    expect(store.getSnapshot().liveNotes.length + store.getSnapshot().userNotes.length).toBe(
+      MAX_REVIEW_NOTES,
+    );
+  });
+
+  test("refuses notes whose total bytes would pass the byte bound, but allows shrinking edits", () => {
+    // Notes just under the per-note bound, enough to sit just under the total.
+    const big = "x".repeat(MAX_REVIEW_NOTE_BYTES - 400);
+    const fitting = Math.floor(MAX_REVIEW_NOTES_TOTAL_BYTES / MAX_REVIEW_NOTE_BYTES);
+    const store = createTestStore({
+      ...createTestReviewState(),
+      liveNotes: createTestLiveNotes(fitting, big),
+    });
+    applyReviewIntent(
+      store,
+      { type: "notes/add-user", fileKey: "alpha", hunkIndex: 0, body: "small" },
+      FACTS,
+    );
+    expectRejected(
+      () =>
+        applyReviewIntent(
+          store,
+          { type: "notes/add-user", fileKey: "alpha", hunkIndex: 0, body: big },
+          { ...FACTS, noteId: "user:direct-2" },
+        ),
+      "too-many-notes",
+    );
+    expectRejected(
+      () =>
+        applyReviewIntent(
+          store,
+          { type: "notes/edit-user", noteId: "user:direct-1", body: big },
+          { timestamp: FACTS.timestamp },
+        ),
+      "too-many-notes",
+    );
+    // An edit that does not grow the note is allowed even in a full review.
+    applyReviewIntent(
+      store,
+      { type: "notes/edit-user", noteId: "user:direct-1", body: "tiny" },
+      { timestamp: FACTS.timestamp },
+    );
+    expect(store.getSnapshot().userNotes[0]!.note.summary).toBe("tiny");
   });
 });

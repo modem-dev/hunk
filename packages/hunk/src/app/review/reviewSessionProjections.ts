@@ -11,6 +11,7 @@
  * keys are the store's. The file index below is the one crossing between the two.
  */
 import { findDiffFileByPath, findHunkIndexForLine } from "../../core/liveComments";
+import { MAX_PROJECTED_SIDECAR_NOTES } from "../../core/review/noteSize";
 import {
   buildReviewAnnotationIndex,
   reviewNoteSource,
@@ -196,8 +197,12 @@ export function buildReviewNoteSummaries(
   }
 
   const noteSummaries: SessionReviewNoteSummary[] = [];
+  // Sidecar annotations are launch input and never fail a review; past the projected bound the
+  // snapshot omits the rest so the daemon keeps accepting it (the terminal still draws them).
+  let sidecarCount = 0;
   for (const file of files) {
     (file.agent?.annotations ?? []).forEach((annotation, index) => {
+      if (++sidecarCount > MAX_PROJECTED_SIDECAR_NOTES) return;
       const source = reviewNoteSource(annotation);
       noteSummaries.push({
         noteId: annotation.id ?? `${source}:${file.id}:${index}`,

@@ -499,6 +499,21 @@ path suffixes, expansion retention, git-status badges).
   64-character digest pattern. Naming `isActiveStoredReviewNote` beside
   `isRenderableStoredReviewNote` and commenting `parseReviewState` are browser-tier work and
   stay open with the rest of D5's browser sites.
+  _Repaid (hardening, stored-note bounds)_: the per-note bound had no aggregate beside it, so
+  about seventeen maximum-size notes pushed the shared state past `MAX_REVIEW_SHARED_STATE_BYTES`
+  (every `/state` read then failed) and about ten thousand small ones passed
+  `MAX_SNAPSHOT_REVIEW_NOTES` (the daemon then refused every snapshot). `core/review/noteSize.ts`
+  now declares `MAX_REVIEW_NOTES` and `MAX_REVIEW_NOTES_TOTAL_BYTES` beside the per-note bound,
+  and `requireReviewNoteCapacity` in `core/review/intents.ts` refuses with `too-many-notes`
+  on every path that stores a note: draft saves and edits, direct notes and edits, replies,
+  and agent live comments single or batched (all or nothing). Sidecar annotations are launch
+  input and never fail a review; the snapshot and shared-state projections carry at most
+  `MAX_PROJECTED_SIDECAR_NOTES` / `MAX_PROJECTED_SIDECAR_NOTE_BYTES` of them and the shared
+  state reports the rest as `omittedSidecarNotes`. The bounds cannot drift from the snapshot
+  bounds: `scripts/quality/review-vocabulary.test.ts` asserts them against the broker's
+  snapshot limits, the shared-state bound, and the websocket frame. Adversarial fixture
+  `direct-note-past-the-stored-note-bound` runs against the producer action handler and the
+  HTTP surface. The producer keeps only the size of a shared state it cannot serve.
 
 ## E. Presentation helpers
 

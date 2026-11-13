@@ -32,6 +32,7 @@ const EXPECTED_CODES: HunkReviewClientErrorCodeV1[] = [
   "invalid-note-parent",
   "blank-note",
   "note-too-large",
+  "too-many-notes",
   "missing-fact",
   "unknown-resource",
   "resource-unavailable",

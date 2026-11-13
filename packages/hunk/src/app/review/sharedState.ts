@@ -10,6 +10,7 @@
  */
 import type { AppBootstrap } from "../../core/bootstrap";
 import { reviewAnnotationAnchor, reviewNoteSource } from "../../core/review/annotations";
+import { createSidecarProjectionBudget } from "../../core/review/noteSize";
 import {
   selectIsReviewFileViewed,
   selectThreadedStoredReviewNotes,
@@ -112,8 +113,14 @@ export function buildReviewPresentationDefaults(
   };
 }
 
-/** List every renderable note in the order the terminal presents them. */
-function sharedNotes(host: ReviewSessionHost): ReviewSharedNoteV1[] {
+/**
+ * List every renderable note in the order the terminal presents them.
+ *
+ * Sidecar annotations past the projected sidecar bounds are omitted and counted, so an
+ * oversized sidecar cannot push the snapshot past its size bound; stored notes are already
+ * bounded where they are added.
+ */
+function sharedNotes(host: ReviewSessionHost): { notes: ReviewSharedNoteV1[]; omitted: number } {
   const files = host.getFiles();
   const fileIndex = indexReviewFiles(host.getDocument(), files);
   const storedByFileId = new Map<string, ReviewSharedNoteV1[]>();
@@ -130,6 +137,7 @@ function sharedNotes(host: ReviewSessionHost): ReviewSharedNoteV1[] {
   }
 
   const notes: ReviewSharedNoteV1[] = [];
+  const sidecarBudget = createSidecarProjectionBudget();
   for (const file of files) {
     const fileKey = fileIndex.keyByFileId.get(file.id);
     if (!fileKey) continue;
@@ -152,11 +160,11 @@ function sharedNotes(host: ReviewSessionHost): ReviewSharedNoteV1[] {
         tags: annotation.tags,
         confidence: annotation.confidence,
       });
-      notes.push({ note, resolution: "active", origin: "sidecar" });
+      if (sidecarBudget.admit(note)) notes.push({ note, resolution: "active", origin: "sidecar" });
     });
     notes.push(...(storedByFileId.get(file.id) ?? []));
   }
-  return notes;
+  return { notes, omitted: sidecarBudget.omitted };
 }
 
 /** Build one review's shared-state snapshot at the host's current revision. */
@@ -179,6 +187,7 @@ export function buildReviewSharedState(
     }));
   }
 
+  const { notes, omitted } = sharedNotes(host);
   return {
     protocolVersion: HUNK_REVIEW_PROTOCOL_VERSION,
     generation: options.generation,
@@ -199,7 +208,7 @@ export function buildReviewSharedState(
         agentSummary: file.agentSummary,
       }),
     ),
-    notes: sharedNotes(host),
+    notes,
     filter: state.filter,
     showAgentNotes: state.showAgentNotes,
     viewedFiles: Object.fromEntries(
@@ -212,5 +221,6 @@ export function buildReviewSharedState(
     agentHighlights,
     agentReveal: host.getAgentReveal(),
     presentation: options.presentation,
+    ...(omitted > 0 ? { omittedSidecarNotes: omitted } : {}),
   };
 }

@@ -6,6 +6,7 @@
  * in `docs/browser-review-seam-audit.md`, never captured from a run. Files are named by index.
  */
 import type { DiffFile } from "../../packages/hunk/src/core/changeset/model";
+import { MAX_REVIEW_NOTES } from "../../packages/hunk/src/core/review/noteSize";
 import type { ReviewDocumentV1 } from "../../packages/hunk/src/core/review/types";
 import type {
   HunkReviewActionV1,
@@ -20,7 +21,9 @@ export type ReviewActorPolicyStep =
       actor: HunkReviewActorV1;
       action: (document: ReviewDocumentV1) => HunkReviewActionV1;
     }
-  | { kind: "reload"; build: () => DiffFile[] };
+  | { kind: "reload"; build: () => DiffFile[] }
+  /** An agent fills the review with this many live comments on the first file's first hunk. */
+  | { kind: "seed-live-notes"; count: number };
 
 /** What one step did: applied (the review moved), a no-op, or refused with a code. */
 export type ReviewActorPolicyOutcome = "applied" | "no-op" | { code: string };
@@ -214,6 +217,50 @@ export const REVIEW_ACTOR_POLICY_FIXTURES: readonly ReviewActorPolicyFixture[] =
       selection: { file: 0, hunkIndex: 0 },
       viewed: [0],
       notes: [],
+    },
+  },
+  {
+    id: "direct-note-past-the-stored-note-bound",
+    findings: ["D5"],
+    description:
+      "A review one note short of its stored-note bound takes one more browser note and refuses the next with too-many-notes, so the snapshots every reader accepts stay within their bounds.",
+    surface: "headless",
+    build: () => [sourcedFile("alpha")],
+    steps: [
+      { kind: "seed-live-notes", count: MAX_REVIEW_NOTES - 1 },
+      {
+        kind: "action",
+        actor: BROWSER,
+        action: (document) => ({
+          type: "notes/add-user",
+          fileKey: keyAt(document, 0),
+          hunkIndex: 0,
+          body: "The last one that fits",
+        }),
+      },
+      {
+        kind: "action",
+        actor: BROWSER,
+        action: (document) => ({
+          type: "notes/add-user",
+          fileKey: keyAt(document, 0),
+          hunkIndex: 0,
+          body: "One too many",
+        }),
+      },
+    ],
+    expected: {
+      outcomes: ["applied", "applied", { code: "too-many-notes" }],
+      selection: { file: 0, hunkIndex: 0 },
+      viewed: [],
+      notes: [
+        ...Array.from({ length: MAX_REVIEW_NOTES - 1 }, () => ({
+          file: 0,
+          summary: "seed",
+          ownerHunkIndex: 0,
+        })),
+        { file: 0, author: "Ana", summary: "The last one that fits", ownerHunkIndex: 0 },
+      ],
     },
   },
 ];

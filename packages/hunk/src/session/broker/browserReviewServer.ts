@@ -100,6 +100,7 @@ const REVIEW_ERROR_STATUS: Record<HunkReviewClientErrorCodeV1, number> = {
   "invalid-note-parent": 409,
   "blank-note": 400,
   "note-too-large": 413,
+  "too-many-notes": 409,
   "missing-fact": 400,
   "unknown-resource": 404,
   "resource-unavailable": 502,
