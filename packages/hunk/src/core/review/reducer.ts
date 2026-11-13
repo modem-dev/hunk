@@ -142,12 +142,25 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
         ),
       );
       const draftNote = reconcileDraftNote(state, action.document);
+      // A viewed mark names the content the reviewer looked at; it survives only while the
+      // file is still in the review with exactly that content.
+      const identityByKey = new Map(
+        action.document.files.map((file) => [file.key, file.contentIdentity] as const),
+      );
+      const viewedFiles = state.viewedFiles
+        ? Object.fromEntries(
+            Object.entries(state.viewedFiles).filter(
+              ([fileKey, mark]) => identityByKey.get(fileKey) === mark.contentIdentity,
+            ),
+          )
+        : undefined;
       return {
         ...state,
         document: action.document,
         draftNote,
         expandedGaps,
         sourceStatusByFileKey,
+        ...(viewedFiles ? { viewedFiles } : {}),
       };
     }
     case "selection/select": {
@@ -255,6 +268,30 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
             activeNoteId: action.note.note.id,
           }
         : state;
+    case "notes/add-user":
+      return { ...state, userNotes: [...state.userNotes, action.note] };
+    case "notes/replace-user": {
+      const index = state.userNotes.findIndex((entry) => entry.note.id === action.note.note.id);
+      if (index < 0) {
+        return state;
+      }
+      const userNotes = [...state.userNotes];
+      userNotes[index] = action.note;
+      return { ...state, userNotes };
+    }
+    case "files/set-viewed": {
+      const current = state.viewedFiles?.[action.fileKey];
+      if (action.viewed ? current?.contentIdentity === action.contentIdentity : !current) {
+        return state;
+      }
+      const viewedFiles = { ...state.viewedFiles };
+      if (action.viewed) {
+        viewedFiles[action.fileKey] = { contentIdentity: action.contentIdentity };
+      } else {
+        delete viewedFiles[action.fileKey];
+      }
+      return { ...state, viewedFiles };
+    }
     case "draft/save-edit": {
       if (!state.draftNote) {
         return state;

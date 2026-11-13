@@ -50,6 +50,8 @@ export interface ReviewSessionHarnessOptions {
    * state, the way a mounted terminal or headless session attaches them.
    */
   host?: ReviewSessionHost;
+  /** The surface the session's producer reports, for actor-policy tests. */
+  surface?: "terminal" | "headless";
 }
 
 /**
@@ -100,12 +102,13 @@ export function connectReviewSession(files: DiffFile[], options: ReviewSessionHa
   const bootstrap = createTestReviewBootstrap(files);
   const producer = new ReviewProducer(
     { files, sourceLabel: bootstrap.changeset.sourceLabel },
-    { producerId: "integration" },
+    { producerId: "integration", surface: options.surface ?? "terminal" },
   );
   if (options.host) {
     const host = options.host;
     producer.attachStore(host.store, {
       getSharedStateRevision: () => host.getSharedStateRevision(),
+      recordAgentReveal: (target) => host.recordAgentReveal(target),
       build: (generation) =>
         buildReviewSharedState(host, {
           generation,

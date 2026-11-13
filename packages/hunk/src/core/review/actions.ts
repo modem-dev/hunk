@@ -40,5 +40,11 @@ export type ReviewAction =
   | { type: "draft/save"; note: ReviewStoredNote }
   /** Replace one saved user note in place and retire its edit draft in one revision. */
   | { type: "draft/save-edit"; note: ReviewStoredNote }
+  /** Append one reviewer note composed in one step; never touches the shared draft. */
+  | { type: "notes/add-user"; note: ReviewStoredNote }
+  /** Replace one saved reviewer note in place; never touches the shared draft. */
+  | { type: "notes/replace-user"; note: ReviewStoredNote }
+  /** Mark or unmark one file viewed at the content identity it currently has. */
+  | { type: "files/set-viewed"; fileKey: string; contentIdentity: string; viewed: boolean }
   | { type: "expansion/toggle"; fileKey: string; gapId: string; expanded: boolean }
   | { type: "expansion/set-source-status"; fileKey: string; status: ReviewSourceStatus };

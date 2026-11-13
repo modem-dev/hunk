@@ -80,7 +80,7 @@ void _mixedBatchItemIsNotACommand;
 
 describe("session daemon request validation", () => {
   test("uses the daemon revision for structured reloads with canonical layout payloads", () => {
-    expect(HUNK_SESSION_DAEMON_VERSION).toBe(18);
+    expect(HUNK_SESSION_DAEMON_VERSION).toBe(19);
   });
 
   test("strictly parses cross-process capabilities", () => {

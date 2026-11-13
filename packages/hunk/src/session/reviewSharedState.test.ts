@@ -52,6 +52,7 @@ function createTestSharedState(): ReviewSharedStateV1 {
     ],
     filter: "a.ts",
     showAgentNotes: true,
+    viewedFiles: { "file:aa": { contentIdentity: "content:1" } },
     agentHighlights: { "file:aa": [{ side: "new", line: 3, start: 0, end: 4, tone: "warning" }] },
     agentReveal: { token: 2, fileKey: "file:aa", hunkIndex: 0, side: "new", line: 3 },
     presentation: {

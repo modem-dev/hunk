@@ -283,6 +283,7 @@ export function App({
     const host = review.host;
     reviewProducer?.attachStore(review.store, {
       getSharedStateRevision: () => host.getSharedStateRevision(),
+      recordAgentReveal: (target) => host.recordAgentReveal(target),
       build: (generation) =>
         buildReviewSharedState(host, {
           generation,

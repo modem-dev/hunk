@@ -46,6 +46,7 @@ const EXPECTED_CODES: HunkReviewClientErrorCodeV1[] = [
   "forbidden-origin",
   "too-many-streams",
   "state-too-large",
+  "selection-is-local",
 ];
 
 describe("review error catalog", () => {

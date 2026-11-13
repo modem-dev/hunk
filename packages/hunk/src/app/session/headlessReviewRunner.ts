@@ -46,7 +46,11 @@ export interface HeadlessReviewSignalSource {
 }
 
 export interface HeadlessReviewDeps {
-  createReviewRuntime?: (bootstrap: AppBootstrap, cwd: string) => ReviewSessionRuntime;
+  createReviewRuntime?: (
+    bootstrap: AppBootstrap,
+    cwd: string,
+    options: { surface: "headless" },
+  ) => ReviewSessionRuntime;
   stdout?: (text: string) => void;
   stderr?: (text: string) => void;
   env?: NodeJS.ProcessEnv;
@@ -99,6 +103,7 @@ export async function runHeadlessReview(
     runtime = (deps.createReviewRuntime ?? createReviewSessionRuntime)(
       bootstrap,
       bootstrap.reloadContext.cwd,
+      { surface: "headless" },
     );
   } catch (error) {
     await extensionSession.shutdown();
@@ -166,6 +171,7 @@ export async function runHeadlessReview(
     const attached = next;
     producer.attachStore(attached.store, {
       getSharedStateRevision: () => attached.getSharedStateRevision(),
+      recordAgentReveal: (target) => attached.recordAgentReveal(target),
       build: (publicationGeneration) =>
         buildReviewSharedState(attached, {
           generation: publicationGeneration,

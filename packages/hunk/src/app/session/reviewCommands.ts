@@ -229,6 +229,16 @@ function checkAgainstReview(
   state: ReviewState,
   action: HunkReviewActionV1,
 ): HunkReviewFailureV1 | undefined {
+  if (action.type === "notes/add-user" && action.target) {
+    const file = requireReviewFile(state, action.fileKey);
+    if (!("line" in action.target)) {
+      return action.expandedLineProof
+        ? fail(producer, "invalid-request", "A one-line expansion proof cannot attest a range.")
+        : checkRangeTarget(producer, file, action.target);
+    }
+    return checkLineTarget(producer, file, action.target, action.expandedLineProof);
+  }
+
   if (action.type === "notes/start-draft" && action.target) {
     const file = requireReviewFile(state, action.fileKey);
     if (!("line" in action.target)) {
@@ -278,6 +288,61 @@ function checkAgainstReview(
   return undefined;
 }
 
+/** Selection moves a browser resolves in its own state (G2). */
+const BROWSER_LOCAL_SELECTION_TYPES: ReadonlySet<string> = new Set([
+  "selection/select",
+  "selection/move",
+  "selection/select-file",
+]);
+
+/** Agent selection moves that every surface is asked to reveal (G2). */
+const AGENT_REVEALED_SELECTION_TYPES: ReadonlySet<string> = new Set([
+  "selection/select",
+  "selection/move",
+  "selection/select-file",
+]);
+
+/**
+ * Decide what the actor policy does with one action before it is planned (G2).
+ *
+ * Selection is per surface. A browser's `select`, `move`, and `select-file` are refused —
+ * the browser resolves them locally. Its `selection/anchor` is the focus a headless session
+ * reports to `hunk session context`, so a headless session applies it; a terminal session has
+ * its own focus and accepts it as a no-op. Terminal and agent actors are unaffected.
+ */
+function actorPolicy(
+  producer: ReviewProducer,
+  envelope: HunkReviewActionEnvelopeV1,
+): "apply" | "no-op" | HunkReviewFailureV1 {
+  if (envelope.actor.kind !== "browser") return "apply";
+  if (BROWSER_LOCAL_SELECTION_TYPES.has(envelope.action.type)) {
+    return fail(
+      producer,
+      "selection-is-local",
+      `A browser resolves ${envelope.action.type} in its own state; the session does not apply it.`,
+    );
+  }
+  if (envelope.action.type === "selection/anchor" && producer.surface === "terminal") {
+    return "no-op";
+  }
+  return "apply";
+}
+
+/**
+ * Lower one action to its intent, defaulting a remote note's author from the actor.
+ *
+ * Authorship is a label, not an identity: an actor's display name fills it only when the
+ * note names none.
+ */
+function intentForActor(envelope: HunkReviewActionEnvelopeV1) {
+  const intent = toReviewIntent(envelope.action);
+  if (intent.type === "notes/add-user" && intent.author === undefined) {
+    const displayName = envelope.actor.displayName;
+    return displayName ? { ...intent, author: displayName } : intent;
+  }
+  return intent;
+}
+
 /**
  * Apply one semantic review action on behalf of a remote caller.
  *
@@ -304,19 +369,38 @@ export function applySessionReviewAction(
     );
   }
 
+  const policy = actorPolicy(producer, envelope);
+  if (policy !== "apply" && policy !== "no-op") {
+    return policy;
+  }
+
   try {
     const rejected = checkAgainstReview(producer, state, envelope.action);
     if (rejected) {
       return rejected;
     }
 
-    // Identity and time are the facts core refuses to invent, and this edge is the caller
-    // that owns them for a remote action.
-    producer.applyIntent(toReviewIntent(envelope.action), {
-      draftId: `draft:${randomUUID()}`,
-      noteId: `user:${randomUUID()}`,
-      timestamp: new Date().toISOString(),
-    });
+    if (policy === "apply") {
+      // Identity and time are the facts core refuses to invent, and this edge is the caller
+      // that owns them for a remote action.
+      producer.applyIntent(intentForActor(envelope), {
+        draftId: `draft:${randomUUID()}`,
+        noteId: `user:${randomUUID()}`,
+        timestamp: new Date().toISOString(),
+      });
+      if (
+        envelope.actor.kind === "agent" &&
+        AGENT_REVEALED_SELECTION_TYPES.has(envelope.action.type)
+      ) {
+        const selection = producer.getReviewState()?.selection;
+        if (selection?.fileKey) {
+          producer.recordAgentReveal({
+            fileKey: selection.fileKey,
+            hunkIndex: selection.hunkIndex,
+          });
+        }
+      }
+    }
   } catch (error) {
     if (error instanceof ReviewIntentPlanningError) {
       return fail(producer, error.code, error.message);
