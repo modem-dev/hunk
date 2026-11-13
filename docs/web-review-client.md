@@ -1,10 +1,10 @@
 # Web review client: page, assets, and policy
 
-> **Status (2026-11-13): M4 read-only page with shared state.** The daemon serves a real,
-> offline page for a live review: toolbar, files sidebar, and one top-to-bottom stream of every
-> file with the review's notes, agent marks, and the session's title, theme, view, and keymap,
-> driven by the terminal's shortcuts. Authoring notes is the next step; the page opens through
-> the hidden `--web` flag ([`web-review-plan.md`](web-review-plan.md)).
+> **Status (2026-11-13): released.** The daemon serves an offline page for a live review:
+> toolbar, files sidebar, one top-to-bottom stream of every file with the review's notes and
+> agent marks, note authoring, the palette, the side panel, the minimap, and previews, driven by
+> the terminal's shortcuts. It opens through `--web`, `hunk session open`, or the terminal's
+> "Open in browser" ([`web-review-plan.md`](web-review-plan.md)).
 
 This records how the client is built and what the spike measured about Pierre on the web.
 
@@ -54,6 +54,7 @@ packages/hunk/src/web/
   notes/noteActions.ts         composer -> notes/add-user or notes/edit-user; removal intents
   notes/NoteComposerView.tsx   one composer form in the diff flow
   session/capability.ts        moves the capability from the address into tab storage
+  session/sessionEnded.ts      tells controls the session ended; they disable, reading stays
   stream/highlightGeometry.ts  agent attention marks measured over drawn characters
   mirror/fileIndex.ts          per-file index entries and the pluggable index source
   store/clientReviewStore.ts   the page's local core/review store and gap source loads

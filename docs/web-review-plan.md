@@ -1,9 +1,12 @@
 # Web review plan
 
-> **Status (2026-11-13): accepted; implementation in progress.** This document revises Phases 5
-> and 6 of [`browser-review-rebuild.md`](browser-review-rebuild.md) for decisions made after that
-> plan was written, and adds the web-only tools that plan never scoped. Phases 0–4 there are
-> landed and stay as they are. Each milestone lands as a stack of pull requests.
+> **Status (2026-11-13): M0–M6 done; released.** This document revises Phases 5 and 6 of
+> [`browser-review-rebuild.md`](browser-review-rebuild.md) for decisions made after that plan was
+> written, and adds the web-only tools that plan never scoped. Phases 0–4 there are landed and
+> stay as they are. Each milestone landed as a stack of pull requests, listed under its heading;
+> the release change removed the entry-point switch and announced the feature. What remains is
+> under [Deferred](#deferred). The user guide is
+> `website/src/content/docs/docs/workflows/browser-review.md`.
 
 A browser client for Hunk reviews, served by the existing session daemon. It keeps Hunk's
 structure, keys, and themes so terminal users recognize it, and adds tools a terminal cannot
@@ -98,17 +101,19 @@ applies selection and navigation intents to its own local state and forwards sha
 
 ## Milestones
 
-Each milestone is a stack of small PRs. M1–M4 change no user-reachable behavior and ship empty
-changesets: the `--web` flag and the other entry points land hidden from help, completions, and
-generated docs. M5 un-hides them and carries the `minor` changeset that announces the feature.
+Each milestone is a stack of small PRs. M1–M4 changed no user-reachable behavior and shipped
+empty changesets: the `--web` flag and the other entry points landed hidden from help,
+completions, and generated docs behind one switch. The release change at the top of the stack
+removed that switch, so every entry point is listed, and carries the `minor` changeset that
+announces the feature.
 
-### M0 — Plan of record (done)
+### M0 — Plan of record (done: #1281)
 
 - Phases 5–6 of `browser-review-rebuild.md` point here.
 - `browser-review-seam-audit.md` records the G1 (option classification), G2 (selection and
   authorship policy), and E2 (theme) decisions.
 
-### M1 — Headless review host
+### M1 — Headless review host (done: #1282, #1284, #1285)
 
 The prerequisite for standalone mode, and the largest refactor in the plan.
 
@@ -137,7 +142,7 @@ Gate: the existing PTY suite and `test/session/` pass untouched; `test/session/`
 every `hunk session` command against a headless host; the host registers as a conformance
 consumer.
 
-### M2 — State transport and protocol additions
+### M2 — State transport and protocol additions (done: #1288, #1289, #1290)
 
 Server-side only, tested with plain `fetch`.
 
@@ -167,7 +172,7 @@ Server-side only, tested with plain `fetch`.
 Gate: adversarial fixtures for each addition; HTTP contract tests; a security review of the
 state route, the refresh action, and the byte resources as one PR each.
 
-### M3 — Asset pipeline and entry points
+### M3 — Asset pipeline and entry points (done: #1283, #1291, #1292)
 
 - **Spike first:** Pierre 1.5.2's web components and `@pierre/trees` under a strict CSP
   (shadow-DOM styles, worker and WASM needs), and bundle size with lazily loaded grammars and
@@ -185,12 +190,12 @@ state route, the refresh action, and the byte resources as one PR each.
   `--no-watch` flag opts out. `--no-open` prints the URL without launching a browser.
   `hunk session open [selector]` opens a browser on a running session, and the terminal UI gains
   a host-only "Open in browser" command. The opener preserves URL fragments on macOS, Linux,
-  and Windows. All of these stay hidden until M5.
+  and Windows. These landed hidden and were un-hidden by the release change.
 
 Gate: CLI contract tests in `test/cli/`; offline-asset check; a served-page test asserting
 headers and that the document contains no capability.
 
-### M4 — Read-only client
+### M4 — Read-only client (done: #1286, #1287, #1294, #1295)
 
 - **Transport.** `apiClient` (capability header, range reads assembled by
   `ReviewChunkAssembler` with a Web Crypto digest), a `fetch`-stream event reader built on
@@ -217,7 +222,18 @@ Gate: the browser projection joins the conformance harness (note placement, gap 
 reveal targets, default note targets); web boundary and node-free closure gates active;
 Playwright end-to-end tests against a real daemon and headless host.
 
-### M5 — Interactive client (first release)
+### M5 — Interactive client (first release) (done: #1296, #1297; release change)
+
+Notes, filter and note-visibility toggles, mouse line-range comments, palette, help, go-to-file,
+refresh, error toasts, and deep links landed in #1296 and #1297. The release change removed the
+entry-point switch and added the user guide and the `minor` changeset. It also made an ended
+session look ended (a persistent banner, and every control that needs the session disabled
+while reading keeps working), turned the Markdown toggle into a "Diff | Rendered" switch, and
+added axe checks for help, go-to-file, composers and note cards (scoped, since page-wide checks
+skip Pierre's container), the panel with notes, the note badge across themes, viewed files
+collapsed and hidden, the ended session, and the swipe and onion-skin previews. Two contrast
+failures those checks found were fixed: the note badge now uses the text token, and "Hide
+viewed" no longer draws accent text on its pressed background.
 
 - Create, edit, reply to, and delete notes; toggle agent notes; set the filter.
 - Mouse line-range comments: drag in the gutter to select a range and open a composer.
@@ -233,7 +249,22 @@ Gate: command-parity test (palette and help list exactly the catalog's browser-r
 commands); accessibility pass with axe; `minor` changeset, docs page, and a terminal plus
 browser smoke run.
 
-### M6 — Web-only tools
+### M6 — Web-only tools (done: #1298–#1302, #1306; follow-ups #1303, #1304, #1305, #1307, #1308)
+
+State fixes (#1298), Overview (#1299), Notes tab (#1300), minimap (#1301), and previews (#1302)
+landed; #1303 fixed review findings across the client and #1304 hardened previews against
+hostile repository content. #1305 carries whole notes on the session wire under a size cap
+(wire version 22, the `draft-is-local` refusal) and queues resource reads in arrival order,
+dropping abandoned ones, so large reviews stay connected. #1306 added viewed files: a checkbox
+in file headers and flat sidebar rows, `V`, "N of M viewed" in the toolbar, collapsed viewed
+files, a per-browser "Hide viewed", and "Changed since viewed" after a content change. #1307
+hardened the headless runner: it idles rather than spins while the daemon is away, prints the
+URL only once a daemon accepts the review, exits 1 with a message when another program holds
+the port, and adds a stderr ready line at a terminal. #1308 was a second round of page fixes:
+deep links that wait for their target and explain hidden ones, dialogs that own the keyboard,
+a keyboard-operable side-panel edge, user bindings that win over page chords, a minimap that
+follows what the stream draws, previews true to their content, and safer drafts and filter
+edits.
 
 Independent PRs, in suggested order:
 
@@ -258,6 +289,8 @@ Independent PRs, in suggested order:
 - Host-only and extension commands other than refresh, including edit-in-`$EDITOR`.
 - Scope selectors (per-turn or per-commit diffs) and iteration compare.
 - Persisting viewed state across runs.
+- Browser-side extension panes, dialogs, and commands; headless sessions still leave untrusted
+  repo-local extensions disabled.
 
 ## Risks
 

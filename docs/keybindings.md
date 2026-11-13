@@ -37,10 +37,12 @@ Rules worth knowing:
   extension modes have had their normal ownership. Without a selection, Escape
   remains available to extension commands because clear-selection is unbound.
 
-The browser review (`hunk diff --web`, see [web-review.md](web-review.md)) answers to the same
+The [browser review](https://hunk.dev/docs/workflows/browser-review/) (`hunk diff --web`) answers to the same
 command ids and reads the same `[keybindings]` table, except chords that use Ctrl, Cmd, Alt,
 Tab, or a function key: those stay with the browser. `hunk.app.openInBrowser` (File menu, unbound)
-opens the current terminal review there.
+opens the current terminal review there. The page adds its own `hunk.web.*` commands, listed in its
+command palette, among them `hunk.web.toggleViewed` (`V`, mark the selected file viewed) and
+`hunk.web.toggleHideViewed` (unbound, hide viewed files in that browser).
 
 Chords are `ctrl`, `alt`/`option`, `cmd`/`meta`, and `shift` joined with `+`
 around a base key: a character (`"y"`, `"["`), an uppercase letter for its
