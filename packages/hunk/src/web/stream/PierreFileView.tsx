@@ -11,21 +11,31 @@
  *
  * Highlight options are the terminal's (`ui/diff/highlightRenderOptions.ts`): word-level
  * `word-alt` emphasis and the same tokenizing bound.
+ *
+ * Line annotations carry each line's note cards and open composers: cards are plain DOM, and
+ * each composer is a React portal into a slot its annotation provides. Pierre's gutter utility
+ * (the hover affordance) and its line selection report the line or range the reader picked;
+ * card buttons report the note action they name.
  */
 import {
   FileDiff,
   type DiffLineAnnotation,
   type FileDiffOptions,
   type HunkData,
+  type SelectedLineRange,
 } from "@pierre/diffs";
 import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
+  type ReactNode,
 } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import type { ReviewSide } from "../../core/review/types";
 import { pierreHighlightRenderOptions } from "../../ui/diff/highlightRenderOptions";
 import {
   reviewGapIdForSeparator,
@@ -33,7 +43,8 @@ import {
   type ReviewGapView,
 } from "./fileProjection";
 import type { ReviewAgentHighlightV1 } from "../../session/reviewSharedState";
-import { renderNoteGroup } from "../notes/noteCards";
+import type { NoteComposer } from "../notes/composerStore";
+import { renderNoteGroup, type WebNoteCardAction } from "../notes/noteCards";
 import type { WebNoteGroup } from "../notes/noteProjection";
 import { measureAgentHighlights, type ReviewHighlightBox } from "./highlightGeometry";
 import {
@@ -61,6 +72,31 @@ export interface PierreFileViewProps {
   noteGroups: readonly WebNoteGroup[];
   /** Agent attention marks on this file's lines. */
   highlights: readonly ReviewAgentHighlightV1[];
+  /** This file's open composers. */
+  composers: readonly NoteComposer[];
+  /** Draw one composer into its slot. */
+  renderComposer: (composer: NoteComposer) => ReactNode;
+  /** The reader picked one line, or a range on one side, to write a note about. */
+  onPickLines: (side: ReviewSide, start: number, end: number) => void;
+  /** A card's action button, or a click on the card itself (`select`). */
+  onNoteAction: (action: WebNoteCardAction | "select", noteId: string) => void;
+}
+
+/** What one line annotation carries: the line's note cards and its composers. */
+interface WebLineAnnotation {
+  key: string;
+  group?: WebNoteGroup;
+  composerKeys: readonly string[];
+}
+
+/** Pierre's side name for one shared-model side, and back. */
+function pierreSide(side: ReviewSide) {
+  return side === "new" ? ("additions" as const) : ("deletions" as const);
+}
+
+/** The shared-model side Pierre's selection names. */
+function modelSide(side: SelectedLineRange["side"]): ReviewSide {
+  return side === "deletions" ? "old" : "new";
 }
 
 /** The words one gap separator shows for its state. */
@@ -112,9 +148,54 @@ export function PierreFileView({
   onGeometry,
   noteGroups,
   highlights,
+  composers,
+  renderComposer,
+  onPickLines,
+  onNoteAction,
 }: PierreFileViewProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
-  const instanceRef = useRef<FileDiff<WebNoteGroup> | null>(null);
+  const instanceRef = useRef<FileDiff<WebLineAnnotation> | null>(null);
+  const pickRef = useRef(onPickLines);
+  pickRef.current = onPickLines;
+  // Composer slots Pierre's annotations provide, by annotation key.
+  const slotsRef = useRef(new Map<string, HTMLElement>());
+  const [, setSlotVersion] = useState(0);
+
+  // One annotation per line, carrying its cards and composers. Rebuilt only when cards or
+  // composer positions change, so typing in a composer never redraws the diff.
+  const composerSignature = composers
+    .map((composer) => `${composer.key}@${composer.side}:${composer.line}`)
+    .join("|");
+  const annotations = useMemo(() => {
+    const byLine = new Map<string, DiffLineAnnotation<WebLineAnnotation>>();
+    const entry = (side: ReviewSide, line: number) => {
+      const key = `${side}:${line}`;
+      let annotation = byLine.get(key);
+      if (!annotation) {
+        annotation = {
+          side: pierreSide(side),
+          lineNumber: line,
+          metadata: { key, composerKeys: [] },
+        };
+        byLine.set(key, annotation);
+      }
+      return annotation;
+    };
+    for (const group of noteGroups) {
+      const annotation = entry(group.side, group.line);
+      annotation.metadata = { ...annotation.metadata, group };
+    }
+    for (const composer of composers) {
+      const annotation = entry(composer.side, composer.line);
+      annotation.metadata = {
+        ...annotation.metadata,
+        composerKeys: [...annotation.metadata.composerKeys, composer.key],
+      };
+    }
+    return [...byLine.values()];
+    // The signature stands for the composers' positions; their text is read at render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [noteGroups, composerSignature]);
   const separatorsRef = useRef(new Map<string, Set<HTMLButtonElement>>());
   const planRef = useRef(plan);
   const toggleRef = useRef(onToggleGap);
@@ -138,7 +219,7 @@ export function PierreFileView({
     geometryRef.current(next);
   }, [layout]);
 
-  const options: FileDiffOptions<WebNoteGroup, undefined> = {
+  const options: FileDiffOptions<WebLineAnnotation, undefined> = {
     ...pierreHighlightRenderOptions(syntaxTheme),
     themeType: appearance,
     diffStyle: layout,
@@ -147,8 +228,40 @@ export function PierreFileView({
     disableFileHeader: true,
     // Every gap the shared model addresses stays collapsed until the store expands it.
     collapsedContextThreshold: 0,
-    renderAnnotation: (annotation: DiffLineAnnotation<WebNoteGroup>) =>
-      renderNoteGroup(annotation.metadata),
+    renderAnnotation: (annotation: DiffLineAnnotation<WebLineAnnotation>) => {
+      const root = document.createElement("div");
+      root.className = "line-annotation";
+      const { group, composerKeys, key } = annotation.metadata;
+      if (group) root.append(renderNoteGroup(group));
+      if (composerKeys.length > 0) {
+        const slot = document.createElement("div");
+        slot.className = "composer-slot";
+        slotsRef.current.set(key, slot);
+        root.append(slot);
+        // Portals follow the slot Pierre just placed.
+        queueMicrotask(() => setSlotVersion((version) => version + 1));
+      }
+      return root;
+    },
+    // Hovering a line offers a gutter button; dragging line numbers selects a range.
+    enableGutterUtility: true,
+    onGutterUtilityClick: (range: SelectedLineRange) => {
+      const side = modelSide(range.side);
+      pickRef.current(
+        side,
+        range.start,
+        range.side === range.endSide || !range.endSide ? range.end : range.start,
+      );
+    },
+    enableLineSelection: true,
+    onLineSelectionEnd: (range: SelectedLineRange | null) => {
+      if (!range) return;
+      const side = modelSide(range.side);
+      // A range spans one side; one that crossed sides keeps the side it started on.
+      const end = range.endSide && range.endSide !== range.side ? range.start : range.end;
+      pickRef.current(side, range.start, end);
+      instanceRef.current?.setSelectedLines(null);
+    },
     hunkSeparators: (hunk: HunkData) => {
       const gapId = reviewGapIdForSeparator(planRef.current.file, hunk.hunkIndex);
       const element = document.createElement("button");
@@ -170,16 +283,10 @@ export function PierreFileView({
   useEffect(() => {
     const host = hostRef.current;
     if (!host || !plan.metadata) return;
-    const lineAnnotations = noteGroups.map(
-      (group): DiffLineAnnotation<WebNoteGroup> => ({
-        side: group.side === "new" ? "additions" : "deletions",
-        lineNumber: group.line,
-        metadata: group,
-      }),
-    );
+    const lineAnnotations = annotations;
     let instance = instanceRef.current;
     if (!instance) {
-      instance = new FileDiff<WebNoteGroup>(options);
+      instance = new FileDiff<WebLineAnnotation>(options);
       instanceRef.current = instance;
       instance.render({ fileDiff: plan.metadata, containerWrapper: host, lineAnnotations });
     } else {
@@ -203,7 +310,29 @@ export function PierreFileView({
     return () => cancelAnimationFrame(frame);
     // `options` is rebuilt from exactly these inputs, so they are the dependency list.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [plan, layout, wrapLines, showLineNumbers, syntaxTheme, appearance, noteGroups]);
+  }, [plan, layout, wrapLines, showLineNumbers, syntaxTheme, appearance, annotations]);
+
+  // Sideways code scrolling moves the characters under the agent marks.
+  useEffect(() => {
+    const root = hostRef.current?.querySelector("diffs-container")?.shadowRoot;
+    if (!root) return;
+    let frame = 0;
+    const onScroll = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() =>
+        setHighlightBoxes(
+          hostRef.current
+            ? measureAgentHighlights(hostRef.current, highlightsRef.current, layout)
+            : [],
+        ),
+      );
+    };
+    root.addEventListener("scroll", onScroll, { capture: true, passive: true });
+    return () => {
+      cancelAnimationFrame(frame);
+      root.removeEventListener("scroll", onScroll, { capture: true });
+    };
+  }, [plan, layout]);
 
   // New marks need no new drawing, only new boxes over the lines already drawn.
   useEffect(() => {
@@ -223,8 +352,23 @@ export function PierreFileView({
   // the keyboard path to the same selection. A drag that selected text is the reader copying.
   const onClick = useCallback(
     (event: ReactMouseEvent<HTMLDivElement>) => {
+      const path = event.nativeEvent.composedPath();
+      for (const target of path) {
+        if (!(target instanceof Element)) continue;
+        const action = target.getAttribute("data-note-action") as WebNoteCardAction | null;
+        const card = target.closest("[data-note-id]");
+        if (action && card) {
+          onNoteAction(action, card.getAttribute("data-note-id")!);
+          return;
+        }
+        if (target.closest(".note-composer")) return;
+        if (target.classList.contains("note-card")) {
+          onNoteAction("select", target.getAttribute("data-note-id")!);
+          return;
+        }
+      }
       if (window.getSelection()?.isCollapsed === false) return;
-      for (const target of event.nativeEvent.composedPath()) {
+      for (const target of path) {
         if (!(target instanceof Element)) continue;
         if (target.tagName === "BUTTON") return;
         const row = target.hasAttribute("data-line-index") ? rowIndexOf(target, layout) : undefined;
@@ -234,13 +378,53 @@ export function PierreFileView({
         return;
       }
     },
-    [layout, onSelectHunk],
+    [layout, onSelectHunk, onNoteAction],
   );
 
   useEffect(
     () => () => {
       instanceRef.current?.cleanUp();
       instanceRef.current = null;
+    },
+    [],
+  );
+
+  // Composers render into the annotation slots Pierre mounted, one small React root per slot:
+  // the slots live in Pierre's DOM, outside this component's tree. A slot whose composers all
+  // closed, or that Pierre dropped, has its root unmounted after this commit.
+  const composerRootsRef = useRef(new Map<HTMLElement, Root>());
+  useLayoutEffect(() => {
+    const roots = composerRootsRef.current;
+    const live = new Set<HTMLElement>();
+    for (const annotation of annotations) {
+      const slot = slotsRef.current.get(annotation.metadata.key);
+      if (!slot?.isConnected || annotation.metadata.composerKeys.length === 0) continue;
+      const shown = annotation.metadata.composerKeys.flatMap((key) => {
+        const composer = composers.find((candidate) => candidate.key === key);
+        return composer ? [<div key={key}>{renderComposer(composer)}</div>] : [];
+      });
+      live.add(slot);
+      let root = roots.get(slot);
+      if (!root) {
+        root = createRoot(slot);
+        roots.set(slot, root);
+      }
+      root.render(<div className="composer-stack">{shown}</div>);
+    }
+    for (const [slot, root] of roots) {
+      if (live.has(slot)) continue;
+      roots.delete(slot);
+      // A root cannot unmount synchronously while this one commits.
+      queueMicrotask(() => root.unmount());
+    }
+  });
+  useEffect(
+    () => () => {
+      const roots = Array.from(composerRootsRef.current.values());
+      composerRootsRef.current.clear();
+      queueMicrotask(() => {
+        for (const root of roots) root.unmount();
+      });
     },
     [],
   );

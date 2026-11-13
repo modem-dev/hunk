@@ -250,3 +250,38 @@ test("captures notes, markup, highlights, and the session title", async ({ page 
     clip: { x: 0, y: 0, width: 1440, height: 48 },
   });
 });
+
+test("captures writing notes, the shared filter, and an error toast", async ({ page }) => {
+  test.setTimeout(240_000);
+  mkdirSync(OUTPUT!, { recursive: true });
+  review = await startTestWebReview("--rich");
+  await openRich(page, "github-dark-default", "unified");
+  const main = page.locator("section[data-file-key]").first();
+
+  await main.locator('[data-column-number="14"]').first().hover();
+  await page.mouse.down();
+  await main.locator('[data-column-number="16"]').first().hover();
+  await page.mouse.up();
+  await page
+    .locator(".note-composer textarea")
+    .fill("These three exports always change together; worth one comment above them.");
+  await capture(page, "19-composer-line-range");
+
+  await page.locator(".note-composer textarea").press("Control+Enter");
+  const saved = page.locator(".note-card", { hasText: "always change together" });
+  await expect(saved).toBeVisible({ timeout: 15_000 });
+  await saved.hover();
+  await capture(page, "20-saved-note-actions");
+
+  await saved.getByRole("button", { name: /^Reply/ }).click();
+  await page.locator(".note-composer textarea").fill("Agreed.");
+  await page.locator(".note-composer textarea").press("Control+Enter");
+  await expect(page.locator(".note-card", { hasText: "Agreed." })).toBeVisible();
+  await saved.getByRole("button", { name: /^Delete/ }).click();
+  await expect(page.getByTestId("toasts")).not.toBeEmpty();
+  await capture(page, "21-error-toast");
+
+  await page.getByTestId("filter-input").fill("module-1");
+  await expect(page.getByTestId("shared-filter")).toBeVisible();
+  await capture(page, "22-filter-in-use");
+});
