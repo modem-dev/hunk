@@ -21,6 +21,7 @@ import {
 import { BrowserReviewServer } from "../../../packages/hunk/src/session/broker/browserReviewServer";
 import {
   HUNK_REVIEW_CAPABILITY_HEADER,
+  REVIEW_CAPABILITY_ACTOR_KIND,
   reviewHttpPath,
 } from "../../../packages/hunk/src/session/reviewHttpProtocol";
 import { HUNK_REVIEW_PROTOCOL_VERSION } from "../../../packages/hunk/src/session/reviewProtocol";
@@ -28,11 +29,12 @@ import {
   connectReviewSession,
   createTestReviewBootstrap,
 } from "../../helpers/review-session-harness";
-import type {
-  ReviewActorPolicyConsumer,
-  ReviewActorPolicyFixture,
-  ReviewActorPolicyOutcome,
-  ReviewActorPolicyProjection,
+import {
+  reviewActorPolicyChannel,
+  type ReviewActorPolicyConsumer,
+  type ReviewActorPolicyFixture,
+  type ReviewActorPolicyOutcome,
+  type ReviewActorPolicyProjection,
 } from "../actorPolicyFixtures";
 
 /** Report the review a fixture left behind, with files named by index. */
@@ -108,6 +110,14 @@ export const producerActorPolicyConsumer: ReviewActorPolicyConsumer = {
         continue;
       }
       const before = host.getSnapshot().stateRevision;
+      // The capability edge's rule, applied where the HTTP surface applies it.
+      if (
+        reviewActorPolicyChannel(step) === "capability" &&
+        step.actor.kind !== REVIEW_CAPABILITY_ACTOR_KIND
+      ) {
+        outcomes.push({ code: "forbidden-actor" });
+        continue;
+      }
       const result = applySessionReviewAction(producer, {
         protocolVersion: HUNK_REVIEW_PROTOCOL_VERSION,
         generation: producer.getPublication().generation,
@@ -160,6 +170,23 @@ export const browserSurfaceActorPolicyConsumer: ReviewActorPolicyConsumer = {
           continue;
         }
         const before = host.getSnapshot().stateRevision;
+        if (reviewActorPolicyChannel(step) === "session") {
+          // The authenticated session API reaches the producer without the capability edge.
+          const result = applySessionReviewAction(harness.producer, {
+            protocolVersion: HUNK_REVIEW_PROTOCOL_VERSION,
+            generation: harness.producer.getPublication().generation,
+            actor: step.actor,
+            action: step.action(host.getDocument()),
+          });
+          outcomes.push(
+            !result.ok
+              ? { code: result.code }
+              : host.getSnapshot().stateRevision === before
+                ? "no-op"
+                : "applied",
+          );
+          continue;
+        }
         const response = await fetch(
           `http://127.0.0.1:${server.port}${reviewHttpPath({ kind: "actions", sessionId: "conformance-policy" })}`,
           {

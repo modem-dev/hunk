@@ -57,6 +57,7 @@ import {
   HUNK_REVIEW_HTTP_PATH_PREFIX,
   isReviewCapabilityToken,
   parseReviewHttpPath,
+  REVIEW_CAPABILITY_ACTOR_KIND,
   type HunkReviewClientErrorCodeV1,
   type HunkReviewHttpFailureV1,
   type HunkReviewHttpRoute,
@@ -115,6 +116,7 @@ const REVIEW_ERROR_STATUS: Record<HunkReviewClientErrorCodeV1, number> = {
   "forbidden-origin": 403,
   "too-many-streams": 503,
   "state-too-large": 413,
+  "forbidden-actor": 403,
   "selection-is-local": 403,
   "refresh-unavailable": 409,
   "refresh-failed": 502,
@@ -552,6 +554,11 @@ export class BrowserReviewServer {
       return this.failure(
         envelope.reason === "unsupported" ? "unsupported-action" : "invalid-request",
       );
+    }
+    // A capability authorizes a browser; a declared terminal or agent kind would widen what
+    // the action may do at the producer (an agent's selection moves every surface).
+    if (envelope.value.actor.kind !== REVIEW_CAPABILITY_ACTOR_KIND) {
+      return this.failure("forbidden-actor");
     }
 
     try {
