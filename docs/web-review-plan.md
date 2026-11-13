@@ -19,6 +19,9 @@ offer. It must work with no terminal UI running.
 | Visual fidelity              | Same regions, keys, command names, and themes as the terminal. Chrome is web-native: toolbar and command palette, no text menu bar.                 |
 | Theme                        | The browser starts on the session's resolved theme, custom themes included. A per-browser picker can override it without changing the terminal.     |
 | Surfaces in scope            | The review stream only. History, status, and `hunk open` stay terminal-only.                                                                        |
+| Watching                     | `--web` watches its input and reloads by default. A new `--no-watch` flag turns that off.                                                           |
+| Sidebar tree                 | `@pierre/trees`, accepted as a shipped dependency while it is in beta.                                                                              |
+| Release flag                 | A plain `--web` flag, not gated behind `--experimental`.                                                                                            |
 | Web-only tools, first cut    | Viewed files and progress, notes panel, mouse line-range comments, command palette and go-to-file, stats overview, rich previews, minimap.          |
 | Deferred web-only tools      | Guide view, diff-aware find.                                                                                                                        |
 
@@ -39,8 +42,9 @@ These follow from the decisions but were not asked directly. Each changes work b
    un-views exactly the files whose content changed and agents can read review progress. It
    lasts for the session; persisting it across runs is a later decision.
 5. **Loopback only.** The `--tailscale` idea in the earlier plan is out of scope here.
-6. **`@pierre/diffs/react` and `@pierre/trees` are the only new runtime dependencies**, as the
-   existing web boundary gate already allows. T3 Code ships the same pair.
+6. **`react-dom`, `@pierre/diffs/react`, and `@pierre/trees` are the only new client
+   dependencies**, as the existing web boundary gate already allows. T3 Code ships the same
+   Pierre pair.
 
 ## What exists and what is missing
 
@@ -164,10 +168,10 @@ state route, the refresh action, and the byte resources as one PR each.
 
 ### M3 — Asset pipeline and entry points
 
-- **Spike first:** Pierre 1.5.2's web components under a strict CSP (shadow-DOM styles, worker
-  and WASM needs), bundle size with lazily loaded grammars and themes, and whether
-  `@pierre/trees` (beta) meets the sidebar's needs. The outcome sets the page CSP and decides
-  between the tree package and a small in-repo tree over the shared sidebar projection.
+- **Spike first:** Pierre 1.5.2's web components and `@pierre/trees` under a strict CSP
+  (shadow-DOM styles, worker and WASM needs), and bundle size with lazily loaded grammars and
+  themes. The outcome sets the page CSP and the size budget. Pin `@pierre/trees` to an exact
+  version, as `@pierre/diffs` is pinned, because it is still in beta.
 - **Build.** `scripts/build/build-web.ts` bundles `web/main.tsx` for browsers with hashed,
   code-split chunks. `build-bin.ts` embeds the output; `build-npm.ts` ships it in `dist/npm`.
   `check:pack` and `check:prebuilt-pack` fail when assets are absent. Nothing loads from a
@@ -176,8 +180,8 @@ state route, the refresh action, and the byte resources as one PR each.
   hashed path, with a page-specific CSP (`script-src 'self'`, `connect-src 'self'`, no remote
   origins), `no-store` on the document, and immutable caching on hashed assets. The page
   request carries no secret; the client reads the capability from `location.hash`.
-- **CLI.** `--web` on every review command runs headless. `--no-open` prints the URL without
-  launching a browser. `hunk session open [selector]` opens a browser on a running session,
+- **CLI.** `--web` on every review command runs headless and implies `--watch`; a new
+  `--no-watch` flag opts out. `--no-open` prints the URL without launching a browser. `hunk session open [selector]` opens a browser on a running session,
   and the terminal UI gains a host-only "Open in browser" command. The opener preserves URL
   fragments on macOS, Linux, and Windows.
 
@@ -260,7 +264,8 @@ Independent PRs, in suggested order:
   behavior-neutral PRs, treat any needed PTY test edit as a behavior change, and land M1
   before any client code.
 - **Pierre on the web is unproven here.** Hunk uses Pierre's metadata and highlighter, not its
-  DOM renderer. The M3 spike runs before the client design is fixed.
+  DOM renderer, and `@pierre/trees` is a beta whose API may change between releases. The M3
+  spike runs before the client design is fixed, and both packages are pinned.
 - **Binary size.** Embedding a client plus grammars and themes grows every install. Measure in
   the spike and set a budget; lazy chunks keep first paint small but not the download.
 - **Two selection models.** Agents reading `hunk session context` see the terminal's position
@@ -278,10 +283,3 @@ Independent PRs, in suggested order:
   `wire.snapshot.test.ts` after the version bump.
 - M4 onward: Playwright end-to-end tests under a new `test/web/` directory (Unix and Windows),
   plus one manual run of a real diff in a terminal and a browser side by side.
-
-## Open questions
-
-1. Should `--web` watch for changes by default, given that agents edit while the page is open?
-2. Is a beta `@pierre/trees` acceptable as a shipped dependency, or should the sidebar be
-   built in-repo if the spike finds gaps?
-3. Should the first release sit behind `--experimental`, or ship as a plain `--web` flag?
