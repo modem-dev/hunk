@@ -44,6 +44,12 @@ export const WEB_LOCAL_COMMANDS = [
   { id: "hunk.web.filesAsList", title: "Show files as a flat list", category: "view" },
   { id: "hunk.web.toggleSidePanel", title: "Toggle the side panel", category: "view", keys: ["p"] },
   { id: "hunk.web.showOverview", title: "Show the review overview", category: "view", keys: ["O"] },
+  {
+    id: "hunk.web.showNotes",
+    title: "Show every note in the review",
+    category: "view",
+    keys: ["N"],
+  },
 ] as const satisfies readonly WebLocalCommand[];
 
 /** Every page-only command id. */

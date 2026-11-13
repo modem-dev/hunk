@@ -90,7 +90,7 @@ const DEFAULT_REVIEWER_AUTHOR = "user";
  * Anyone holding the link may have written it, so it is never "Your note": it names an author
  * the writer gave, or says where it came from.
  */
-function browserNoteTitle(note: ReviewNoteV1, now: number) {
+export function browserNoteTitle(note: ReviewNoteV1, now: number) {
   if (note.originalSource !== "browser") return undefined;
   const author =
     note.author && note.author !== DEFAULT_REVIEWER_AUTHOR ? note.author : "Browser note";
