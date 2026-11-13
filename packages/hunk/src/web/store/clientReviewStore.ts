@@ -162,6 +162,11 @@ export class ClientReviewStore {
     this.hiddenFileKeys = fileKeys;
   }
 
+  /** The files this page currently hides by the reader's choice. */
+  hiddenFiles(): ReadonlySet<string> {
+    return this.hiddenFileKeys;
+  }
+
   /** Apply one page-local intent through the shared planner. */
   apply<T extends LocalReviewIntent>(intent: T) {
     if (!isLocalReviewIntent(intent)) {

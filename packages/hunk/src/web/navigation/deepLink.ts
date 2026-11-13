@@ -9,15 +9,29 @@
  *
  * Resolution turns an address into the selection change that shows it, and refuses an
  * address the shown document cannot honor (an unknown file, a hunk past the end, a note that
- * is not stored) rather than guessing a nearby target.
+ * is not stored) rather than guessing a nearby target. A target the review has but this page
+ * does not show (filtered out, hidden as viewed, an agent note while agent notes are hidden)
+ * is named with its reason, and a line is placed as drawn, inside a collapsed gap the page can
+ * expand, or absent from the diff, so the page never lands somewhere else without saying so.
  */
 import {
   formatReviewAddress,
   parseReviewAddress,
   type ReviewAddress,
 } from "../../core/review/address";
-import { selectStoredReviewNoteById } from "../../core/review/selectors";
-import { reviewNoteOwnerHunkIndex, type ReviewState } from "../../core/review/state";
+import {
+  reviewGapId,
+  reviewGapSourceForFile,
+  reviewLeadingGap,
+  reviewTrailingGap,
+} from "../../core/review/expansion";
+import { reviewHunkRange } from "../../core/review/geometry";
+import { reviewFileMatchesFilter, selectStoredReviewNoteById } from "../../core/review/selectors";
+import {
+  reviewNoteOwnerHunkIndex,
+  reviewNoteVisibleByPolicy,
+  type ReviewState,
+} from "../../core/review/state";
 import type { ReviewFileV1, ReviewSide } from "../../core/review/types";
 
 /** The fragment parameter that holds the address. */
@@ -70,6 +84,81 @@ function hunkForLine(file: ReviewFileV1, side: ReviewSide, line: number) {
     if (start <= line) nearest = index;
   }
   return nearest;
+}
+
+/** Why a target the review has is not shown on this page. */
+export type ReviewAddressHiddenReason = "filter" | "hidden-viewed" | "agent-notes-hidden";
+
+/**
+ * Return why one resolvable address points at something this page does not show, if it does.
+ *
+ * A file the shared filter leaves out, a file "Hide viewed" removes, and an agent note while
+ * agent notes are hidden all exist in the review but have nowhere to be revealed. The page
+ * says why instead of landing somewhere else, and never changes the shared filter or note
+ * visibility on the reader's behalf; a viewed file that is only collapsed is not hidden, since
+ * revealing it can expand it.
+ */
+export function reviewAddressHiddenReason(
+  state: ReviewState,
+  address: ReviewAddress,
+  hiddenFileKeys: ReadonlySet<string>,
+): ReviewAddressHiddenReason | undefined {
+  const file = state.document.files.find((candidate) => candidate.key === address.fileKey);
+  if (!file) return undefined;
+  if (!reviewFileMatchesFilter(file, state.filter)) return "filter";
+  if (hiddenFileKeys.has(file.key)) return "hidden-viewed";
+  if (address.kind === "note") {
+    const entry = selectStoredReviewNoteById(state, address.noteId);
+    if (entry && !reviewNoteVisibleByPolicy(entry.note, state.showAgentNotes)) {
+      return "agent-notes-hidden";
+    }
+  }
+  return undefined;
+}
+
+/** The reader-facing sentence for one hidden target. */
+export function reviewAddressHiddenMessage(reason: ReviewAddressHiddenReason, path: string) {
+  switch (reason) {
+    case "filter":
+      return `This link points at ${path}, which the shared filter hides. Clear the filter to see it.`;
+    case "hidden-viewed":
+      return `This link points at ${path}, which is hidden because it is viewed and "Hide viewed" is on.`;
+    case "agent-notes-hidden":
+      return `This link points at an agent note in ${path}, and agent notes are hidden. Show them with "a" to see it.`;
+  }
+}
+
+/** Where one line of one side sits in a file's drawn diff. */
+export type ReviewLinePlacement =
+  | { kind: "drawn" }
+  | { kind: "gap"; gapId: string }
+  | { kind: "absent" };
+
+/**
+ * Return whether one line is drawn by a hunk, held by a collapsed gap, or not in the diff.
+ *
+ * A line inside a gap exists in the file but is drawn only once the gap is expanded; a line
+ * neither a hunk nor a gap covers (past the end of the file, or beyond what a partial patch
+ * knows) cannot be shown at all.
+ */
+export function reviewLinePlacement(
+  file: ReviewFileV1,
+  side: ReviewSide,
+  line: number,
+): ReviewLinePlacement {
+  const within = (range: readonly [number, number]) => line >= range[0] && line <= range[1];
+  if (file.hunks.some((hunk) => within(reviewHunkRange(hunk, side)))) return { kind: "drawn" };
+  const source = reviewGapSourceForFile(file);
+  const gaps = [
+    ...file.hunks.map((_hunk, index) => reviewLeadingGap(source, index)),
+    reviewTrailingGap(source),
+  ];
+  for (const gap of gaps) {
+    if (gap && within(side === "new" ? gap.newRange : gap.oldRange)) {
+      return { kind: "gap", gapId: reviewGapId(gap.position, gap.hunkIndex) };
+    }
+  }
+  return { kind: "absent" };
 }
 
 /** Resolve one address against the shown review, or refuse it. */
