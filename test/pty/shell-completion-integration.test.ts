@@ -55,6 +55,9 @@ async function createTestCompletionShell(
   writeFileSync(join(root, "example-file.txt"), "");
   writeFileSync(join(root, "session data"), "");
 
+  // Publish a unique completion acknowledgement only after the captured arguments are closed.
+  const captureFunction = `hunk() { printf '%s\\0' "$@" > ${quoteTestShell(captured)}; HUNK_COMPLETION_COUNT=$((HUNK_COMPLETION_COUNT + 1)); printf '\\nHUNK_COMPLETION_DONE_%s\\n' "$HUNK_COMPLETION_COUNT"; }`;
+
   let command: string;
   if (shell === "bash") {
     const startup = join(root, "bashrc");
@@ -65,7 +68,8 @@ async function createTestCompletionShell(
           ? `source ${quoteTestShell(bashCompletion!)}`
           : "unset -f _get_comp_words_by_ref",
         `source ${quoteTestShell(script)}`,
-        `hunk() { printf '%s\\0' "$@" > ${quoteTestShell(captured)}; }`,
+        "HUNK_COMPLETION_COUNT=0",
+        captureFunction,
         "PS1='HUNK_COMPLETION_READY> '",
         `printf ready > ${quoteTestShell(ready)}`,
       ].join("\n"),
@@ -79,7 +83,8 @@ async function createTestCompletionShell(
         loading === "autoload"
           ? `fpath=(${quoteTestShell(root)} $fpath); autoload -Uz _hunk; compdef _hunk hunk`
           : `source ${quoteTestShell(script)}`,
-        `hunk() { printf '%s\\0' "$@" > ${quoteTestShell(captured)}; }`,
+        "HUNK_COMPLETION_COUNT=0",
+        captureFunction,
         "PROMPT='HUNK_COMPLETION_READY> '",
         `printf ready > ${quoteTestShell(ready)}`,
       ].join("\n"),
@@ -99,14 +104,16 @@ async function createTestCompletionShell(
     (text) => existsSync(ready) && text.includes("HUNK_COMPLETION_READY>"),
   );
 
-  /** Complete a command and submit it only to the harmless fixture function, including on Bash 3.2. */
+  let completionCount = 0;
+
+  /** Complete and submit in Readline order, then observe this command's captured-arguments ACK. */
   const complete = async (input: string) => {
     rmSync(captured, { force: true });
+    completionCount += 1;
     session.writeRaw(input);
-    await session.press("tab");
-    await session.press("enter");
-    await harness.waitForSnapshot(session, () => existsSync(captured));
-    await session.waitIdle();
+    session.sendKey("tab");
+    session.sendKey("enter");
+    await session.waitForText(`HUNK_COMPLETION_DONE_${completionCount}`, { timeout: 5_000 });
     const args = readFileSync(captured, "utf8").split("\0").slice(0, -1);
     return ["hunk", ...args.map((arg) => (/\s/.test(arg) ? quoteTestShell(arg) : arg))].join(" ");
   };
@@ -137,7 +144,6 @@ for (const [shell, loading] of [
             await session.press("tab");
             await session.waitForText("difftool");
             await session.press(["ctrl", "c"]);
-            await session.waitIdle();
           }
         }
 

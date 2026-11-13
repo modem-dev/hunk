@@ -128,7 +128,7 @@ export async function measureMouseWheelScroll(
 }
 
 /** Send an SGR mouse motion event without imposing a readiness policy on its caller. */
-function sendMouseMove(session: Session, x: number, y: number) {
+export function sendMouseMove(session: Pick<Session, "writeRaw">, x: number, y: number) {
   session.writeRaw(`\x1b[<35;${x + 1};${y + 1}M`);
 }
 
@@ -1209,7 +1209,8 @@ end
       args: explicitHunkExecutable
         ? options.args
         : ["run", sourceEntrypoint, "--", ...options.args],
-      cwd: options.cwd ?? repoRoot,
+      // File-pair tests need no repository; keep checkout-local .hunk config out of defaults.
+      cwd: options.cwd ?? makeTempDir("hunk-tuistory-cwd-"),
       cols: options.cols ?? 140,
       rows: options.rows ?? 24,
       env: launchEnvironment(options.env),
@@ -1236,7 +1237,7 @@ end
         command: "/bin/bash",
         idleDelayMs: tuistoryIdleDelayMs,
         args: ["-c", options.command],
-        cwd: options.cwd ?? repoRoot,
+        cwd: options.cwd ?? makeTempDir("hunk-tuistory-cwd-"),
         cols: options.cols ?? 140,
         rows: options.rows ?? 24,
         env: launchEnvironment(options.env),

@@ -10,6 +10,7 @@ import {
   revealAddNoteAffordance,
   revealAddNoteNear,
   revealAddNoteOnRow,
+  sendMouseMove,
   sleep,
 } from "./harness";
 
@@ -139,9 +140,8 @@ describe("PTY notes", () => {
     });
 
     try {
-      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
-
-      await session.waitIdle({ timeout: 500 });
+      await session.waitForText(/export const line01 = 1;/, { timeout: 15_000 });
+      await harness.ensureKeyboardIsLive(session);
       await pressKeyRepeat(session, "down", 8);
 
       const beforePushedDraft = await session.text({ immediate: true });
@@ -150,11 +150,12 @@ describe("PTY notes", () => {
       const firstActiveRow = lineIndexOf(beforePushedDraft, firstActiveLine);
       const followingRowBefore = lineIndexOf(beforePushedDraft, followingLine);
 
-      await harness.pressAndWaitForText(session, "c", /Draft note - before\.ts -> after\.ts L9/, {
-        timeout: 5_000,
-      });
-      await sleep(100);
-      const pushedDraft = await session.text({ immediate: true });
+      const pushedDraft = await harness.pressAndWaitForSnapshot(
+        session,
+        "c",
+        (text) =>
+          text.includes("Draft note - before.ts -> after.ts L9") && text.includes("Esc cancel"),
+      );
 
       expect(firstActiveRow).toBeGreaterThan(0);
       expect(lineIndexOf(pushedDraft, firstActiveLine)).toBe(firstActiveRow);
@@ -176,9 +177,11 @@ describe("PTY notes", () => {
       const bottomActiveRow = lineIndexOf(beforeBottomDraft, bottomActiveLine);
       expect(bottomActiveRow).toBeGreaterThan(0);
 
-      await harness.pressAndWaitForText(session, "c", /Draft note/, { timeout: 5_000 });
-      await sleep(100);
-      const bottomDraft = await session.text({ immediate: true });
+      const bottomDraft = await harness.pressAndWaitForSnapshot(
+        session,
+        "c",
+        (text) => text.includes("Draft note") && text.includes("Esc cancel"),
+      );
 
       const revealedActiveRow = lineIndexOf(bottomDraft, bottomActiveLine);
       expect(revealedActiveRow).toBeGreaterThan(0);
@@ -207,8 +210,8 @@ describe("PTY notes", () => {
       });
 
       try {
-        await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
-        await session.waitIdle({ timeout: 500 });
+        await session.waitForText(/added line 1\b/, { timeout: 15_000 });
+        await harness.ensureKeyboardIsLive(session);
         await pressKeyRepeat(session, "j", 63);
         const beforeDraft = await session.text({ immediate: true });
         const targetRow = lineIndexOf(beforeDraft, "added line 64");
@@ -248,19 +251,20 @@ describe("PTY notes", () => {
     });
 
     try {
-      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
-      // Paging is a render, not a keypress: snapshotting before it settles reads
-      // the pre-scroll frame. The same page-down assertion in cursor-line.test.ts
-      // brackets the key with the same waits.
-      await session.waitIdle({ timeout: 300 });
-      await session.press("space");
-      await session.waitIdle({ timeout: 400 });
-      const paged = await session.text({ immediate: true });
+      await session.waitForText(/export const line01 = 1;/, { timeout: 15_000 });
+      await harness.ensureKeyboardIsLive(session);
+      const paged = await harness.pressAndWaitForSnapshot(
+        session,
+        "space",
+        (text) => !text.includes("export const line01 = 1;"),
+      );
       expect(paged).not.toContain("export const line01 = 1;");
 
-      await harness.pressAndWaitForText(session, "c", /Draft note/, { timeout: 5_000 });
-      await sleep(100);
-      const draft = await session.text({ immediate: true });
+      const draft = await harness.pressAndWaitForSnapshot(
+        session,
+        "c",
+        (text) => text.includes("Draft note") && text.includes("Esc cancel"),
+      );
 
       expect(draft).toContain("Draft note - before.ts -> after.ts R1");
       expect(draft).toContain("Esc cancel");
@@ -641,9 +645,10 @@ describe("PTY notes", () => {
         );
         const row = lineIndexOf(snapshot, body);
         const column = snapshot.split("\n")[row]!.indexOf(body) + 1;
-        await moveMouse(session, 0, 0);
-        await moveMouse(session, column, row - 2);
-        const hovered = await session.waitForText(/reply.*edit/, { timeout: 5_000 });
+        // Intermediate pointer positions need delivery, not an idle timer when nothing repaints.
+        sendMouseMove(session, 0, 0);
+        sendMouseMove(session, column, row - 2);
+        const hovered = await harness.waitForSnapshot(session, (text) => /reply.*edit/.test(text));
         if (assertHoverOnly) {
           expect(hovered).not.toContain("● Your note");
         }
@@ -673,9 +678,12 @@ describe("PTY notes", () => {
       expect(lineIndexOf(editing, "Root review note.")).toBe(rootRowBeforeEdit);
       await session.type("Updated. ");
       await session.waitForText(/Updated\. Root review note\./, { timeout: 5_000 });
-      await moveMouse(session, 0, 0);
-      await session.type("\x13");
-      const edited = await session.waitForText(/Updated\. Root review note\./, { timeout: 5_000 });
+      sendMouseMove(session, 0, 0);
+      const edited = await harness.pressAndWaitForSnapshot(
+        session,
+        ["ctrl", "s"],
+        (text) => !text.includes("Edit note") && text.includes("Updated. Root review note."),
+      );
       expect((edited.match(/Your note/g) ?? []).length).toBe(1);
       await session.press("j");
 
@@ -825,7 +833,11 @@ describe("PTY notes", () => {
         "这个包主要是为了在普通的chatmodel外面包一层,把工具调用的编号统一转换后再返回给调用方使用";
       await session.type(body);
 
-      const draft = await session.waitForText(/这个包主要是为了/, { timeout: 5_000 });
+      // Typing and composer reflow can paint in separate frames; observe both wrapped ends.
+      const draft = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes(body.slice(0, 10)) && text.includes(body.slice(-6)),
+      );
       expect(draft).toContain(body.slice(0, 10));
       expect(draft).toContain(body.slice(-6));
 
