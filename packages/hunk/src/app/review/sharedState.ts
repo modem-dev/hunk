@@ -151,7 +151,9 @@ function sharedNotes(host: ReviewSessionHost): { notes: ReviewSharedNoteV1[]; om
         anchor: definedFields(reviewAnnotationAnchor(file.metadata.hunks, annotation)),
         summary: annotation.summary,
         rationale: annotation.rationale,
-        markup: annotation.markup,
+        // The terminal strips sidecar STML when the launch did not enable it
+        // (`resolveExperimentalDiffFiles`); the snapshot says what the terminal shows.
+        markup: host.isStmlEnabled() ? annotation.markup : undefined,
         title: annotation.title,
         author: annotation.author,
         createdAt: annotation.createdAt,
@@ -206,6 +208,9 @@ export function buildReviewSharedState(
         unifiedLineCount: file.unifiedLineCount,
         contentIdentity: file.contentIdentity,
         agentSummary: file.agentSummary,
+        // The terminal's annotated-file scope includes every file the sidecar names
+        // (`buildReviewAnnotationIndex`), so the snapshot names them too.
+        agentContext: host.fileForKey(file.key)?.agent ? (true as const) : undefined,
       }),
     ),
     notes,

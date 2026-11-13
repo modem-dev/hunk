@@ -118,7 +118,7 @@ export class ClientReviewStore {
     for (const note of stored("user")) this.store.dispatch({ type: "notes/add-user", note });
     this.annotations = buildReviewAnnotationIndexFromNotes(
       state.notes.map((entry) => entry.note),
-      state.files.filter((file) => file.agentSummary !== undefined).map((file) => file.key),
+      state.files.filter((file) => file.agentContext).map((file) => file.key),
     );
   }
 

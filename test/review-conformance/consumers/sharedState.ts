@@ -57,6 +57,7 @@ function projectSharedState(state: ReviewSharedStateV1): ReviewSharedStateProjec
       id: neutralId(entry.note.id),
       file: indexByKey.get(entry.note.fileKey) ?? -1,
       resolution: entry.resolution,
+      ...(entry.note.markup !== undefined ? { markup: true } : {}),
     })),
     filter: state.filter,
     showAgentNotes: state.showAgentNotes,

@@ -101,6 +101,11 @@ export interface ReviewSharedFileV1 {
   unifiedLineCount: number;
   contentIdentity: string;
   agentSummary?: string;
+  /**
+   * Present when the agent-context sidecar names this file, even with no summary and no
+   * annotations: such a file is a stop in the annotated-file scope, as in the terminal.
+   */
+  agentContext?: true;
 }
 
 // -- Notes ----------------------------------------------------------------------------
@@ -381,6 +386,7 @@ function isSharedFile(value: unknown): value is ReviewSharedFileV1 {
           previousPath: record.previousPath,
           language: record.language,
           agentSummary: record.agentSummary,
+          agentContext: record.agentContext,
         },
       ),
     )
@@ -395,6 +401,7 @@ function isSharedFile(value: unknown): value is ReviewSharedFileV1 {
     optionalString(record.previousPath) &&
     optionalString(record.language) &&
     optionalString(record.agentSummary) &&
+    (record.agentContext === undefined || record.agentContext === true) &&
     CHANGE_KINDS.includes(record.changeKind as ReviewFileChangeKind) &&
     stats !== undefined &&
     hasExactKeys(stats, ["additions", "deletions", "truncated"]) &&

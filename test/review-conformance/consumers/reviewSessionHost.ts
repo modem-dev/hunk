@@ -21,7 +21,13 @@ import type { ReviewNavigationConsumer, ReviewNavigationFixture } from "../types
 function buildAnnotatedFiles(fixture: ReviewNavigationFixture) {
   return fixture.build().map((file, fileIndex) => {
     const hunkIndexes = fixture.annotatedHunks?.[fileIndex];
-    if (!hunkIndexes || hunkIndexes.length === 0) return file;
+    if (!hunkIndexes || hunkIndexes.length === 0) {
+      // A sidecar entry with no summary and no annotations still puts the file in the
+      // annotated-file scope.
+      return fixture.annotatedFiles?.includes(fileIndex)
+        ? { ...file, agent: { path: file.path, annotations: [] } }
+        : file;
+    }
     const annotations: AgentAnnotation[] = hunkIndexes.map((hunkIndex) => {
       const target = reviewDefaultHunkLineTarget(file.metadata.hunks[hunkIndex]!);
       const range: [number, number] = [target.line, target.line];

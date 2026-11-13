@@ -310,6 +310,11 @@ export class ReviewSessionHost {
     this.stmlEnabled = enabled;
   }
 
+  /** Whether this review shows STML note bodies (the launch enabled `--experimental`). */
+  isStmlEnabled() {
+    return this.stmlEnabled;
+  }
+
   /**
    * Replace the review's file set, as a soft reload does.
    *

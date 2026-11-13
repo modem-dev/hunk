@@ -137,6 +137,30 @@ export const REVIEW_NAVIGATION_FIXTURES: readonly ReviewNavigationFixture[] = [
     },
   },
   {
+    id: "annotated-file-with-only-a-sidecar-entry",
+    findings: ["B2"],
+    description:
+      "A file the sidecar names with no summary and no annotations is still a stop on the annotated-file tour, in every surface, while the annotated-hunk walk passes it by.",
+    build: threeFileStream,
+    annotatedHunks: { 0: [0], 2: [0] },
+    annotatedFiles: [0, 1, 2],
+    moves: [
+      { scope: "annotated-file", delta: 1, from: { file: 0, hunkIndex: 0 } },
+      { scope: "annotated-file", delta: 1, from: { file: 1, hunkIndex: 0 } },
+      { scope: "annotated-hunk", delta: 1, from: { file: 0, hunkIndex: 0 } },
+    ],
+    selections: [{ file: 1, hunkIndex: 0 }],
+    expected: {
+      moves: [
+        { to: { file: 1, hunkIndex: 0 }, reveal: HUNK_REVEAL },
+        { to: { file: 2, hunkIndex: 0 }, reveal: HUNK_REVEAL },
+        { to: { file: 2, hunkIndex: 0 }, reveal: NOTE_REVEAL },
+      ],
+      normalizedSelections: [{ file: 1, hunkIndex: 0 }],
+      revealTargets: THREE_FILE_REVEAL_TARGETS,
+    },
+  },
+  {
     id: "selection-outliving-its-file",
     findings: ["B4"],
     description:

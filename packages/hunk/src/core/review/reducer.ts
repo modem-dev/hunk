@@ -16,6 +16,8 @@ import {
 } from "./selectors";
 import {
   applyReviewRevealRequest,
+  isRenderableStoredReviewNote,
+  reconcileReviewNoteResolution,
   reviewRevealIntentsEqual,
   type ReviewDraftNote,
   type ReviewSourceStatus,
@@ -154,12 +156,52 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
             ),
           )
         : undefined;
+      // Stored notes keep their anchors; only their resolution follows the new content.
+      const previousIdentity = new Map(
+        state.document.files.map((file) => [file.key, file.contentIdentity] as const),
+      );
+      const hunkCountByKey = new Map(
+        action.document.files.map((file) => [file.key, file.hunks.length] as const),
+      );
+      const reconcileNotes = (notes: ReviewStoredNote[]) => {
+        let changed = false;
+        const next = notes.map((entry) => {
+          const fileKey = entry.note.fileKey;
+          const hunkCount = hunkCountByKey.get(fileKey);
+          const resolution = reconcileReviewNoteResolution(
+            entry,
+            hunkCount === undefined
+              ? undefined
+              : {
+                  hunkCount,
+                  // A file returning after a reload without it is not known to have changed.
+                  contentChanged:
+                    previousIdentity.has(fileKey) &&
+                    previousIdentity.get(fileKey) !== identityByKey.get(fileKey),
+                },
+          );
+          if (resolution === entry.resolution) return entry;
+          changed = true;
+          return { ...entry, resolution };
+        });
+        return changed ? next : notes;
+      };
+      const liveNotes = reconcileNotes(state.liveNotes);
+      const userNotes = reconcileNotes(state.userNotes);
+      const activeNote = [...liveNotes, ...userNotes].find(
+        (entry) => entry.note.id === state.activeNoteId,
+      );
       return {
         ...state,
         document: action.document,
         draftNote,
         expandedGaps,
         sourceStatusByFileKey,
+        liveNotes,
+        userNotes,
+        // An orphaned note is no longer on screen, so it cannot stay the active one.
+        activeNoteId:
+          activeNote && isRenderableStoredReviewNote(activeNote) ? state.activeNoteId : null,
         ...(viewedFiles ? { viewedFiles } : {}),
       };
     }
