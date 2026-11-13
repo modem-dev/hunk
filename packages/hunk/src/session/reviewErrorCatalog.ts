@@ -123,6 +123,10 @@ export const REVIEW_ERROR_CATALOG: Record<HunkReviewClientErrorCodeV1, ReviewErr
     message: "This review already holds as many notes as Hunk can store and publish.",
     remedy: "Remove notes you no longer need, then try again.",
   },
+  "forbidden-actor": {
+    message: "A review link can act only as a browser.",
+    remedy: "This is a client bug rather than something to retry; report it with what you did.",
+  },
   "missing-fact": {
     message: "The action arrived without something only its caller can supply.",
     remedy: "This is a client bug rather than something to retry; report it with what you did.",

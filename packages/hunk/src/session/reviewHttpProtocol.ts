@@ -214,7 +214,22 @@ export type HunkReviewTransportErrorCode =
   /** The surface is already serving as many event streams as it will. */
   | "too-many-streams"
   /** The review's shared state is larger than `MAX_REVIEW_SHARED_STATE_BYTES`. */
-  | "state-too-large";
+  | "state-too-large"
+  /**
+   * The action declared an actor kind other than `browser`. A capability authorizes a
+   * browser and nothing else; terminal and agent actions arrive through their own channels.
+   */
+  | "forbidden-actor";
+
+/**
+ * The only actor kind a capability-authorized request may declare.
+ *
+ * The kind decides policy at the producer — a browser's selection stays local, an agent's
+ * moves every surface — so a caller holding only the capability cannot be allowed to name
+ * another. The HTTP surface refuses rather than rewrites: an honest client never sends
+ * anything else, and a silent rewrite would hide a client bug or an attempt.
+ */
+export const REVIEW_CAPABILITY_ACTOR_KIND = "browser" as const;
 
 /**
  * Every code a review client can be told, from any tier.

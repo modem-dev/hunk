@@ -5,6 +5,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { reviewProcessCapability } from "../../app/review/capability";
 import { ReviewSessionHost } from "../../app/review/reviewSessionHost";
+import { applySessionReviewAction } from "../../app/session/reviewCommands";
 import { createTestDiffFile, lines } from "../../../../../test/helpers/diff-helpers";
 import { connectReviewSession } from "../../../../../test/helpers/review-session-harness";
 import {
@@ -73,7 +74,7 @@ function start() {
         headers,
       })
     ).json()) as HunkReviewStateBodyV1;
-  return { host, act, readState };
+  return { host, harness, act, readState };
 }
 
 describe("browser review surface: actor policy", () => {
@@ -89,13 +90,32 @@ describe("browser review surface: actor policy", () => {
     expect(host.getSnapshot().selection).toEqual(before);
   });
 
+  test("refuses a capability caller that declares an agent or terminal kind", async () => {
+    const { host, act } = start();
+    const before = host.getSnapshot().selection;
+    for (const kind of ["agent", "terminal"] as const) {
+      const response = await act(
+        { clientId: "claimed", kind },
+        { type: "selection/select-file", fileKey: host.fileKeyFor("beta") },
+      );
+      expect(response.status).toBe(403);
+      expect(await response.json()).toMatchObject({ ok: false, code: "forbidden-actor" });
+    }
+    expect(host.getSnapshot().selection).toEqual(before);
+    expect(host.getAgentReveal()).toBeNull();
+  });
+
   test("records an agent's selection as the reveal every surface honors", async () => {
-    const { host, act, readState } = start();
-    const response = await act(
-      { clientId: "agent", kind: "agent" },
-      { type: "selection/select-file", fileKey: host.fileKeyFor("beta") },
-    );
-    expect(response.status).toBe(200);
+    const { host, harness, readState } = start();
+    // Agents reach the producer through the authenticated session API, not the review link.
+    const result = applySessionReviewAction(harness.producer, {
+      protocolVersion: HUNK_REVIEW_PROTOCOL_VERSION,
+      generation: harness.producer.getPublication().generation,
+      actor: { clientId: "agent", kind: "agent" },
+      action: { type: "selection/select-file", fileKey: host.fileKeyFor("beta")! },
+    });
+    expect(result.ok).toBe(true);
+    harness.publishSnapshot();
     expect((await readState()).state.agentReveal).toEqual({
       token: 1,
       fileKey: host.fileKeyFor("beta")!,

@@ -683,6 +683,15 @@ implementation does.
   surface. Composers are per-client, so the browser saves notes through direct intents instead of
   the shared draft slot. Note authorship defaults from the actor. In a headless session the
   selection agents read is the browser's reported position. The producer policy lands in M2.
+  _Hardened (actor kind at the capability edge)_: the producer read the actor's self-declared
+  `kind`, so a caller holding only the review link could claim `agent` (its selection moves
+  every surface and records the agent reveal) or `terminal` (no selection policy at all). The
+  HTTP surface now refuses any kind but `browser` with `forbidden-actor` (403) before the action
+  reaches the session (`REVIEW_CAPABILITY_ACTOR_KIND` in `reviewHttpProtocol.ts`); it refuses
+  rather than rewriting, because an honest client never sends another kind and a silent rewrite
+  would hide the attempt. Agent and terminal kinds keep arriving through the authenticated
+  session API. Adversarial fixture `capability-holder-claiming-another-kind` (fixture steps now
+  name their channel) runs against the producer action handler and the HTTP surface.
 - **G3. Semantic addressing / permalinks.** The prototype's URL fragment carries only the
   capability token — there is no grammar for addressing a file/hunk/line/note. Three consumers
   will need one: browser deep links and back/forward history, a terminal "copy link" command,
