@@ -9,6 +9,7 @@ import {
   type PackageDependencyManifest,
 } from "./prebuilt-package-helpers";
 import { npmCommand } from "./script-helpers";
+import { requiredWebAssetPackPaths } from "./web-asset-pack-check";
 
 interface PackedFile {
   path: string;
@@ -93,6 +94,8 @@ assertPaths(metaPack, [
   "README.md",
   "LICENSE",
   "package.json",
+  // The JavaScript fallback runtime serves the browser review page from these files.
+  ...requiredWebAssetPackPaths(metaDir),
 ]);
 
 const packageDirectories = readdirSync(releaseRoot, { withFileTypes: true })

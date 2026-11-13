@@ -10,6 +10,8 @@
         "test/cli/install-vm/validate-release-result.ts",
         "test/session-broker-node/*.ts",
         "test/session-broker-runtime/*.ts",
+        "test/web/*.e2e.ts",
+        "test/web/fixtures/*.ts",
         "scripts/launch-video/*.{ts,mjs}",
         "scripts/launch-video/promo/*.mjs",
         "scripts/launch-video/promo/storyboards/*.mjs",
@@ -38,6 +40,7 @@
     "packages/hunk": {
       "entry": [
         "src/highlightWorkerEntry.ts",
+        "src/web/main.tsx",
         "src/extension-api/index.ts",
         "src/opentui/index.ts",
         "src/**/*.test.{ts,tsx}"
