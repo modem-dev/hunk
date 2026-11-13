@@ -42,7 +42,7 @@ interface DecodedFrame {
  * The registration and snapshot go through the daemon's own parsers, so a fixture the
  * broker would refuse cannot be smuggled past them by constructing state directly.
  */
-function mirrorFixture(state: HunkSessionBrokerState, fixture: ReviewEventFixture) {
+export function mirrorFixture(state: HunkSessionBrokerState, fixture: ReviewEventFixture) {
   const socket = { send: () => undefined };
   state.registerSession(
     socket,

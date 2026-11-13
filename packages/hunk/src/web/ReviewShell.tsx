@@ -1,15 +1,20 @@
 /** @jsxImportSource react */
 /**
- * Renders the minimal browser review page: connection state, file count, and the first
- * file's diff through Pierre.
+ * Renders the minimal browser review page: connection state, load progress, file count,
+ * and the first file's diff through Pierre.
  *
- * Deliberately small. It exists so the served page, its content security policy, and
- * Pierre's web renderer are exercised in production code from the first milestone; the
- * read-only client replaces it with the full review stream.
+ * Deliberately small: it exists so the served page, its content security policy, and
+ * Pierre's web renderer run on the real transport, mirror, and store. The review stream
+ * replaces it.
  */
 import { PatchDiff } from "@pierre/diffs/react";
-import { useEffect, useState } from "react";
-import { loadReviewShell, type ReviewShellResult } from "./reviewShellClient";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { reviewErrorMessage } from "../session/reviewErrorCatalog";
+import {
+  reviewFailureMessage,
+  startReviewSession,
+  type ReviewSession,
+} from "./session/reviewSession";
 
 /** Pierre options for the preview: Hunk's default split layout, following the system theme. */
 const PATCH_OPTIONS = {
@@ -18,55 +23,81 @@ const PATCH_OPTIONS = {
   themeType: "system",
 } as const;
 
-/** Load the review once for this page's address and render what came back. */
-export function ReviewShell() {
-  const [result, setResult] = useState<ReviewShellResult | undefined>(undefined);
+/** Start the review for this page's address once, and stop it on unmount. */
+function useReviewSessionStart() {
+  const [start] = useState(() => startReviewSession({ location: window.location }));
+  useEffect(() => (start.ok ? () => start.session.close() : undefined), [start]);
+  return start;
+}
 
-  useEffect(() => {
-    let current = true;
-    void loadReviewShell(window.location).then((next) => {
-      if (current) setResult(next);
-    });
-    return () => {
-      current = false;
-    };
-  }, []);
+/** Render one running session's state. */
+function ReviewSessionView({ session }: { session: ReviewSession }) {
+  const mirror = useSyncExternalStore(session.mirror.subscribe, session.mirror.getSnapshot);
+  const connection = useSyncExternalStore(session.connection.subscribe, session.connection.get);
+  const review = useSyncExternalStore(
+    session.review.store.subscribe,
+    session.review.store.getSnapshot,
+  );
 
-  if (!result) {
+  if (connection.kind === "ended" && connection.reason === "refused") {
     return (
-      <main className="shell">
-        <p className="status" data-state="loading" role="status">
-          Connecting to the Hunk session…
-        </p>
-      </main>
+      <p className="status" data-state="failed" role="alert">
+        {reviewErrorMessage(connection.code === "unauthorized" ? "unauthorized" : "no-publication")}
+      </p>
+    );
+  }
+  if (mirror.status === "failed") {
+    return (
+      <p className="status" data-state="failed" role="alert">
+        {reviewFailureMessage(mirror.error)}
+      </p>
+    );
+  }
+  if (mirror.status === "waiting") {
+    return (
+      <p className="status" data-state="loading" role="status">
+        Connecting to the Hunk session…
+      </p>
     );
   }
 
-  if (result.status === "failed") {
-    return (
-      <main className="shell">
-        <p className="status" data-state="failed" role="alert">
-          {result.message}
-        </p>
-      </main>
-    );
-  }
-
+  const firstFile = review.document.files[0];
   return (
-    <main className="shell">
+    <>
       <header className="toolbar">
         <span className="status" data-state="connected" role="status">
-          Connected
+          {connection.kind === "reconnecting" ? "Reconnecting…" : "Connected"}
         </span>
         <span className="file-count" data-testid="file-count">
-          {result.fileCount === 1 ? "1 file" : `${result.fileCount} files`}
+          {mirror.totalFiles === 1 ? "1 file" : `${mirror.totalFiles} files`}
         </span>
+        {mirror.status === "loading" ? (
+          <span className="progress" data-testid="load-progress">
+            {`Loaded ${mirror.loadedFiles} of ${mirror.totalFiles}`}
+          </span>
+        ) : null}
       </header>
-      {result.firstPatch ? (
+      {firstFile?.patch ? (
         <section className="diff" data-testid="first-file-diff">
-          <PatchDiff patch={result.firstPatch} options={PATCH_OPTIONS} />
+          <PatchDiff patch={firstFile.patch} options={PATCH_OPTIONS} />
         </section>
       ) : null}
+    </>
+  );
+}
+
+/** The page: either the running review or why it could not start. */
+export function ReviewShell() {
+  const start = useReviewSessionStart();
+  return (
+    <main className="shell">
+      {start.ok ? (
+        <ReviewSessionView session={start.session} />
+      ) : (
+        <p className="status" data-state="failed" role="alert">
+          {start.message}
+        </p>
+      )}
     </main>
   );
 }

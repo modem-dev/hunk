@@ -75,6 +75,7 @@ describe("review conformance corpus", () => {
     expect(REVIEW_ORDERING_CONSUMERS.map((consumer) => consumer.name)).toEqual([
       "core publication ordering",
       "broker review mirror",
+      "browser client mirror",
     ]);
     expect(REVIEW_SNAPSHOT_CONSUMERS.map((consumer) => consumer.name)).toEqual([
       "extension review snapshot",
@@ -85,6 +86,7 @@ describe("review conformance corpus", () => {
     expect(REVIEW_EVENT_CONSUMERS.map((consumer) => consumer.name)).toEqual([
       "review event protocol",
       "browser review HTTP surface",
+      "browser client event reader",
     ]);
     expect(REVIEW_SHARED_STATE_CONSUMERS.map((consumer) => consumer.name)).toEqual([
       "review producer",
