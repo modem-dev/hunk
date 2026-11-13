@@ -614,8 +614,10 @@ body {
   flex: none;
 }
 
+/* Text, not the accent: several built-in accents fall below 4.5:1 on the panel and on the
+   selected row's panel-alt background, where the text token holds in every built-in theme. */
 [data-badge="agent-comment"] {
-  color: var(--hunk-accent);
+  color: var(--hunk-text);
 }
 
 [data-badge="addition"] {
@@ -1976,9 +1978,4 @@ body {
   font-size: 12px;
   color: var(--hunk-muted);
   white-space: nowrap;
-}
-
-.viewed-controls .tool-button[aria-pressed="true"] {
-  border-color: var(--hunk-accent);
-  color: var(--hunk-accent);
 }
