@@ -1,18 +1,22 @@
 /**
- * Starts a real daemon and a real review session from source for one browser test, and
- * watches a page for anything the content security policy or the console reports.
+ * Starts a real daemon and a real headless review session for one browser test, and watches a
+ * page for anything the content security policy or the console reports.
  *
- * Every spawned process gets a private daemon port, runtime directory, and config home, so
- * tests never touch a developer's daemon. `HUNK_TEST_EXECUTABLE` runs the daemon from a
- * compiled binary instead, which exercises the page assets embedded in it.
+ * The session is Hunk itself: `hunk patch <file> --web`, or `hunk diff --staged --web` in a
+ * git repository the fixtures write, run from source. It prints its review URL on stdout and
+ * answers `hunk session` commands like any session, which is how a test reloads it. Every
+ * spawned process gets a private daemon port, runtime directory, and config home, so tests
+ * never touch a developer's daemon. `HUNK_TEST_EXECUTABLE` runs the daemon and the session from
+ * a compiled binary instead, which exercises the page assets embedded in it.
  */
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createInterface, type Interface } from "node:readline";
+import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import type { Page } from "@playwright/test";
 import {
   HUNK_REVIEW_CAPABILITY_HEADER,
@@ -20,14 +24,21 @@ import {
   parseReviewPagePath,
   reviewHttpPath,
 } from "../../packages/hunk/src/session/reviewHttpProtocol";
+import {
+  reviewOrderSidecarPath,
+  writeManyReviewRepo,
+  writeRichReviewGeneration,
+  writeRichReviewRepo,
+} from "./fixtures/rich-review";
 
 const TEST_DIR = fileURLToPath(new URL(".", import.meta.url));
 const REPO_ROOT = join(TEST_DIR, "..", "..");
 const SOURCE_ENTRYPOINT = join(REPO_ROOT, "packages", "hunk", "src", "main.tsx");
-const SESSION_FIXTURE = join(TEST_DIR, "fixtures", "review-session.ts");
 export const PATCH_FIXTURE = join(TEST_DIR, "fixtures", "two-files.patch");
 const BUN = process.env.HUNK_TEST_BUN ?? "bun";
 const COMPILED_EXECUTABLE = process.env.HUNK_TEST_EXECUTABLE;
+
+const runFile = promisify(execFile);
 
 /** Reserve one free loopback port for a private daemon. */
 async function reserveTestPort() {
@@ -59,17 +70,21 @@ export async function waitForTestCondition<T>(
   }
 }
 
-/** One running daemon and session, and how to stop them. */
+/** One running daemon and session, and how to drive and stop them. */
 export interface TestWebReview {
   url: string;
   origin: string;
-  session: ChildProcess;
-  /** Lines the session prints after its URL, such as reload acknowledgements. */
-  nextLine(): Promise<string>;
+  sessionId: string;
+  /** The repository the session reviews, for the git-backed scenarios. */
+  repo?: string;
+  /** Run one `hunk` command against this test's daemon and return its stdout. */
+  hunk(args: readonly string[]): Promise<string>;
+  /** Stage the rich review's next generation and reload the session, as an agent would. */
+  reload(): Promise<void>;
   stop(): Promise<void>;
 }
 
-/** Start a daemon and one session serving `input` (a patch path or `--rich`). */
+/** Start a daemon and one headless session serving `input`: a patch path, `--rich`, or `--many=N`. */
 export async function startTestWebReview(input: string): Promise<TestWebReview> {
   const port = await reserveTestPort();
   const directories = [
@@ -100,24 +115,29 @@ export async function startTestWebReview(input: string): Promise<TestWebReview> 
     (await fetch(`${origin}/health`)).ok ? true : undefined,
   );
 
-  const session = spawnTest(BUN, [SESSION_FIXTURE, input]);
-  const lines: Interface = createInterface({ input: session.stdout! });
-  const pending: string[] = [];
-  const waiters: Array<(line: string) => void> = [];
-  lines.on("line", (line) => {
-    if (!line.startsWith("{")) return;
-    const waiter = waiters.shift();
-    if (waiter) waiter(line);
-    else pending.push(line);
+  // A git-backed scenario reviews the staged changes of a repository the fixtures write, in the
+  // order their sidecar states; a patch scenario reviews the patch file.
+  const many = /^--many=(\d+)$/.exec(input);
+  const repo = input === "--rich" || many ? join(directories[0]!, "review-repo") : undefined;
+  if (repo && many) writeManyReviewRepo(repo, Number(many[1]));
+  else if (repo) writeRichReviewRepo(repo);
+  const reviewArgs = repo
+    ? ["diff", "--staged", "--agent-context", reviewOrderSidecarPath(repo)]
+    : ["patch", input];
+  const hunkCommand = (args: readonly string[]) =>
+    COMPILED_EXECUTABLE ? [COMPILED_EXECUTABLE, ...args] : [BUN, SOURCE_ENTRYPOINT, ...args];
+  const [sessionCommand, ...sessionArgs] = hunkCommand([...reviewArgs, "--web"]);
+  const session = spawn(sessionCommand!, sessionArgs, {
+    cwd: repo ?? REPO_ROOT,
+    env,
+    stdio: ["ignore", "pipe", "inherit"],
   });
-  const nextLine = () =>
-    new Promise<string>((resolve) => {
-      const line = pending.shift();
-      if (line) resolve(line);
-      else waiters.push(resolve);
-    });
-
-  const url = (JSON.parse(await nextLine()) as { url: string }).url;
+  processes.push(session);
+  const url = await new Promise<string>((resolve, reject) => {
+    const lines = createInterface({ input: session.stdout! });
+    lines.once("line", (line) => resolve(line.trim()));
+    session.once("exit", (code) => reject(new Error(`The review session exited (${code}).`)));
+  });
   const parsed = new URL(url);
   const route = parseReviewPagePath(parsed.pathname);
   const capability = parseReviewCapabilityFragment(parsed.hash);
@@ -132,11 +152,25 @@ export async function startTestWebReview(input: string): Promise<TestWebReview> 
     return response.ok ? true : undefined;
   });
 
+  const hunk = async (args: readonly string[]) => {
+    const [command, ...rest] = hunkCommand(args);
+    const { stdout } = await runFile(command!, rest, { cwd: repo ?? REPO_ROOT, env });
+    return stdout;
+  };
+  let generation = 0;
+
   return {
     url,
     origin,
-    session,
-    nextLine,
+    sessionId: route.sessionId,
+    ...(repo ? { repo } : {}),
+    hunk,
+    async reload() {
+      if (!repo) throw new Error("Only the git-backed scenarios reload.");
+      generation += 1;
+      writeRichReviewGeneration(repo, generation);
+      await hunk(["session", "reload", route.sessionId, "--", ...reviewArgs]);
+    },
     async stop() {
       for (const child of processes) {
         if (child.exitCode === null) {

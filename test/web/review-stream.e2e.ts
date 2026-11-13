@@ -161,8 +161,7 @@ test("reloads to a new generation and keeps the reader's place by file", async (
   await page.waitForTimeout(400);
   const before = await topSection(page);
 
-  review!.session.stdin!.write("reload\n");
-  await review!.nextLine();
+  await review!.reload();
   await expect(page.locator(".review-app")).not.toHaveAttribute(
     "data-generation",
     generation ?? "",

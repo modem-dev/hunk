@@ -1,111 +1,181 @@
 /**
- * A review that exercises every file shape the browser page draws.
+ * Writes git repositories whose staged changes exercise every file shape the browser page
+ * draws, for a real `hunk diff --staged --web` session to review.
  *
- * Built from a real git patch (new, deleted, pure-rename, and binary files, one with a
- * non-ASCII path) through the real patch loader, plus files the patch format cannot express
- * directly: a multi-hunk file with expandable gaps and a source reader, a renamed-and-edited
- * file, a too-large file, and enough small files to make the sidebar and stream scroll.
- * `generation` changes one file's content so a reload has something to show.
+ * The rich review stages a multi-hunk file with expandable gaps, a renamed-and-edited file,
+ * new, deleted, pure-rename, and binary files (one with a non-ASCII path), a file too large to
+ * render, and forty small files so the sidebar and stream scroll. An agent-context sidecar
+ * lists the files in the order the tests read them, which is the review's order (sidecar order
+ * is intentional review order). `writeRichReviewGeneration` changes one file so a reload has
+ * something to show. The many-file review stages `count` one-line edits across nested
+ * directories, for windowing.
  */
-import { loadAppBootstrap } from "../../../packages/hunk/src/core/changeset/loaders";
-import type { DiffFile } from "../../../packages/hunk/src/core/changeset/model";
-import { createTestDiffFile, createTestSourceFetcher } from "../../helpers/diff-helpers";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 
-const PATCH = [
-  "diff --git a/docs/日本語 ノート.md b/docs/日本語 ノート.md",
-  "new file mode 100644",
-  "index 0000000..1111111",
-  "--- /dev/null",
-  "+++ b/docs/日本語 ノート.md",
-  "@@ -0,0 +1,3 @@",
-  "+# ノート",
-  "+",
-  "+Ünïcödé paths survive the trip.",
-  "diff --git a/old/legacy.txt b/old/legacy.txt",
-  "deleted file mode 100644",
-  "index 2222222..0000000",
-  "--- a/old/legacy.txt",
-  "+++ /dev/null",
-  "@@ -1,2 +0,0 @@",
-  "-legacy line one",
-  "-legacy line two",
-  "diff --git a/assets/logo-old.svg b/assets/logo.svg",
-  "similarity index 100%",
-  "rename from assets/logo-old.svg",
-  "rename to assets/logo.svg",
-  "diff --git a/assets/image.png b/assets/image.png",
-  "index 3333333..4444444 100644",
-  "Binary files a/assets/image.png and b/assets/image.png differ",
-  "",
-].join("\n");
+/** Run one git command in a test repository with a fixed identity and no user config. */
+function git(repo: string, ...args: string[]) {
+  execFileSync(
+    "git",
+    ["-c", "user.name=Hunk Test", "-c", "user.email=test@example.invalid", ...args],
+    { cwd: repo, stdio: "ignore" },
+  );
+}
 
-/** Sixty lines of a TypeScript module, with two edits far enough apart to leave gaps. */
-function mainSource(version: number) {
-  return Array.from({ length: 60 }, (_unused, index) => {
-    if (index === 12) return `export const threshold = ${version === 0 ? 10 : 25};`;
-    if (index === 44)
-      return `export function describe(value: number) {\n  return \`value: \${value}\`;\n}`;
-    return `export const line${index} = ${index};`;
-  }).join("\n");
+/** Write one file, creating its directories. */
+function writeTestFile(repo: string, path: string, contents: string | Uint8Array) {
+  const target = join(repo, ...path.split("/"));
+  mkdirSync(dirname(target), { recursive: true });
+  writeFileSync(target, contents);
+}
+
+/** Start an empty repository with one base commit made from `files`. */
+function commitBase(repo: string, files: Record<string, string | Uint8Array>) {
+  mkdirSync(repo, { recursive: true });
+  git(repo, "init", "-q", "-b", "main");
+  for (const [path, contents] of Object.entries(files)) writeTestFile(repo, path, contents);
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "base");
+}
+
+/**
+ * Write the sidecar that fixes the review order to `paths`.
+ *
+ * It lives inside the repository, so a reload may name it (reloads refuse paths outside the
+ * session's root), but under `.git/`, so no staged review ever includes it.
+ */
+function writeOrderSidecar(repo: string, paths: readonly string[]) {
+  writeFileSync(
+    reviewOrderSidecarPath(repo),
+    JSON.stringify({ version: 1, files: paths.map((path) => ({ path })) }),
+  );
+}
+
+/** The sidecar path `writeOrderSidecar` wrote for one repository. */
+export function reviewOrderSidecarPath(repo: string) {
+  return join(repo, ".git", "hunk-review-order.json");
 }
 
 const MAIN_BEFORE = Array.from({ length: 60 }, (_unused, index) =>
   index === 12 ? "export const threshold = 5;" : `export const line${index} = ${index};`,
 ).join("\n");
 
-/** Every file of the rich review, in review order, for one generation. */
-export async function buildRichReviewFiles(generation: number): Promise<DiffFile[]> {
-  const after = `${mainSource(generation)}\n`;
-  const main = createTestDiffFile({
-    id: "main",
-    path: "src/app/main.ts",
-    before: `${MAIN_BEFORE}\n`,
-    after,
-    context: 3,
-    sourceFetcher: createTestSourceFetcher((side) => (side === "new" ? after : `${MAIN_BEFORE}\n`)),
-  });
-  const renamed = createTestDiffFile({
-    id: "renamed",
-    path: "src/app/renamed-new.ts",
-    previousPath: "src/app/renamed-old.ts",
-  });
-  const patched = await loadAppBootstrap({ kind: "patch", text: PATCH, options: {} });
-  const tooLarge = createTestDiffFile({
-    id: "too-large",
-    path: "data/huge.json",
-    language: "json",
-  });
-  const fillers = Array.from({ length: 40 }, (_unused, index) =>
-    createTestDiffFile({
-      id: `filler-${index}`,
-      path: `src/gen/module-${String(index).padStart(2, "0")}.ts`,
-      before: `export const id = ${index};\nexport const label = "m${index}";\n`,
-      after: `export const id = ${index};\nexport const label = "module ${index}";\n`,
-    }),
-  );
-
-  return [
-    main,
-    renamed,
-    ...patched.changeset.files,
-    {
-      ...tooLarge,
-      isTooLarge: true,
-      metadata: { ...tooLarge.metadata, hunks: [], splitLineCount: 0, unifiedLineCount: 0 },
-      stats: { additions: 120_000, deletions: 3 },
-    },
-    ...fillers,
-  ];
+/** Sixty lines of a TypeScript module, with two edits far enough apart to leave gaps. */
+function mainSource(generation: number) {
+  return Array.from({ length: 60 }, (_unused, index) => {
+    if (index === 12) return `export const threshold = ${generation === 0 ? 10 : 25};`;
+    if (index === 44)
+      return `export function describe(value: number) {\n  return \`value: \${value}\`;\n}`;
+    return `export const line${index} = ${index};`;
+  }).join("\n");
 }
 
-/** A large review of `count` small files across nested directories, for windowing. */
-export function buildManyReviewFiles(count: number): DiffFile[] {
-  return Array.from({ length: count }, (_unused, index) =>
-    createTestDiffFile({
-      id: `many-${index}`,
-      path: `pkg${index % 20}/dir${Math.floor(index / 20) % 10}/file-${String(index).padStart(4, "0")}.ts`,
-      before: `export const value = ${index};\nexport const name = "a${index}";\n`,
-      after: `export const value = ${index + 1};\nexport const name = "a${index}";\n`,
-    }),
+const FILLER_COUNT = 40;
+
+/** Eight lines, two of which the rename edits: similar enough for git to pair the paths. */
+const RENAMED_BEFORE = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta"].map(
+  (name, index) => `const ${name} = ${index + 1};`,
+);
+
+/** Every path of the rich review, in review order. */
+export const RICH_REVIEW_PATHS: readonly string[] = [
+  "src/app/main.ts",
+  "src/app/renamed-new.ts",
+  "docs/日本語 ノート.md",
+  "old/legacy.txt",
+  "assets/logo.svg",
+  "assets/image.png",
+  "data/huge.json",
+  ...Array.from(
+    { length: FILLER_COUNT },
+    (_unused, index) => `src/gen/module-${String(index).padStart(2, "0")}.ts`,
+  ),
+];
+
+/** Bytes that git treats as binary: a PNG signature followed by a NUL-laden body. */
+function binaryTestBytes(seed: number) {
+  return Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, seed, 0, 1, 2, 3]);
+}
+
+/** Build the rich review's repository at `repo` and stage its changes. */
+export function writeRichReviewRepo(repo: string) {
+  rmSync(repo, { recursive: true, force: true });
+  const base: Record<string, string | Uint8Array> = {
+    "src/app/main.ts": `${MAIN_BEFORE}\n`,
+    "src/app/renamed-old.ts": RENAMED_BEFORE.join("\n") + "\n",
+    "old/legacy.txt": "legacy line one\nlegacy line two\n",
+    "assets/logo-old.svg":
+      '<svg xmlns="http://www.w3.org/2000/svg"><rect width="4" height="4"/></svg>\n',
+    "assets/image.png": binaryTestBytes(1),
+    "data/huge.json": "[\n0,\n0,\n0\n]\n",
+  };
+  for (let index = 0; index < FILLER_COUNT; index += 1) {
+    base[`src/gen/module-${String(index).padStart(2, "0")}.ts`] =
+      `export const id = ${index};\nexport const label = "m${index}";\n`;
+  }
+  commitBase(repo, base);
+
+  writeTestFile(repo, "src/app/main.ts", `${mainSource(0)}\n`);
+  git(repo, "mv", "src/app/renamed-old.ts", "src/app/renamed-new.ts");
+  writeTestFile(
+    repo,
+    "src/app/renamed-new.ts",
+    RENAMED_BEFORE.map((line) =>
+      line.replace("alpha = 1;", "alpha = 10;").replace("gamma = 3;", "gamma = 30;"),
+    ).join("\n") + "\n",
+  );
+  writeTestFile(repo, "docs/日本語 ノート.md", "# ノート\n\nÜnïcödé paths survive the trip.\n");
+  rmSync(join(repo, "old", "legacy.txt"));
+  git(repo, "mv", "assets/logo-old.svg", "assets/logo.svg");
+  writeTestFile(repo, "assets/image.png", binaryTestBytes(2));
+  // Past the too-large bound (20,000 changed lines), so the review offers no hunks for it.
+  writeTestFile(
+    repo,
+    "data/huge.json",
+    `[\n${Array.from({ length: 25_000 }, (_unused, index) => `${index},`).join("\n")}\n0\n]\n`,
+  );
+  for (let index = 0; index < FILLER_COUNT; index += 1) {
+    writeTestFile(
+      repo,
+      `src/gen/module-${String(index).padStart(2, "0")}.ts`,
+      `export const id = ${index};\nexport const label = "module ${index}";\n`,
+    );
+  }
+  git(repo, "add", "-A");
+  writeOrderSidecar(repo, RICH_REVIEW_PATHS);
+}
+
+/** Stage the rich review's next generation: one changed line in the first file. */
+export function writeRichReviewGeneration(repo: string, generation: number) {
+  writeTestFile(repo, "src/app/main.ts", `${mainSource(generation)}\n`);
+  git(repo, "add", "-A");
+}
+
+/** The path of one file of the many-file review. */
+function manyReviewPath(index: number) {
+  return `pkg${index % 20}/dir${Math.floor(index / 20) % 10}/file-${String(index).padStart(4, "0")}.ts`;
+}
+
+/** Build a review of `count` small edited files across nested directories, for windowing. */
+export function writeManyReviewRepo(repo: string, count: number) {
+  rmSync(repo, { recursive: true, force: true });
+  const base: Record<string, string> = {};
+  for (let index = 0; index < count; index += 1) {
+    base[manyReviewPath(index)] =
+      `export const value = ${index};\nexport const name = "a${index}";\n`;
+  }
+  commitBase(repo, base);
+  for (let index = 0; index < count; index += 1) {
+    writeTestFile(
+      repo,
+      manyReviewPath(index),
+      `export const value = ${index + 1};\nexport const name = "a${index}";\n`,
+    );
+  }
+  git(repo, "add", "-A");
+  writeOrderSidecar(
+    repo,
+    Array.from({ length: count }, (_unused, index) => manyReviewPath(index)),
   );
 }

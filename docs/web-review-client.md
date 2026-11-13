@@ -253,8 +253,9 @@ imports; a page fetches only the languages and themes it shows. The largest sing
   `bun run test:web` builds the page first, so a stale bundle is never what runs.
 - `test/web/review-page.e2e.ts` (`bun run build:web && bun run test:web`) — Chromium against a
   daemon and session run from source, asserting connection, file count, a highlighted Pierre
-  diff, and zero CSP violations or console errors. The session is a test fixture
-  (`test/web/fixtures/review-session.ts`) built from the real bootstrap loader, review runtime,
-  and session bridge, because only the owning process holds the capability and no headless
-  runner exists until M1 lands. Set `HUNK_TEST_EXECUTABLE` to a compiled binary (after
-  `bun run build:bin`) to run the daemon from it and exercise the embedded archive.
+  diff, and zero CSP violations or console errors. Every page test runs Hunk itself as the
+  session: `hunk patch <file> --web`, or `hunk diff --staged --web` in a git repository that
+  `test/web/fixtures/rich-review.ts` writes (with an agent-context sidecar fixing the review
+  order), and reloads it with `hunk session reload`. Set `HUNK_TEST_EXECUTABLE` to a compiled
+  binary (after `bun run build:bin`) to run the daemon and session from it and exercise the
+  embedded archive.
