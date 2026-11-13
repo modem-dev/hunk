@@ -316,6 +316,74 @@ test("the minimap scrolls the stream on click and drag and follows it back", asy
     .toBeGreaterThan(5);
 });
 
+/** How far the minimap's projected stream height is from the stream's real height. */
+function minimapHeightDrift(page: Page) {
+  return page.evaluate(() => {
+    const stream = document.querySelector<HTMLElement>(".review-stream")!;
+    const minimap = document.querySelector<HTMLElement>('[data-testid="minimap"]')!;
+    return Number(minimap.dataset.streamHeight) - stream.scrollHeight;
+  });
+}
+
+// Intent: the minimap follows the stream's height when it changes without a scroll, as when a
+// viewed file collapses.
+test("the minimap repaints when a file collapses without a scroll", async ({ page }) => {
+  await openTestReview(page);
+  await expect(page.getByTestId("minimap")).toBeVisible();
+  await page.waitForTimeout(500);
+  const drift = await minimapHeightDrift(page);
+
+  await page.locator("section[data-file-key]").first().locator(".viewed-toggle input").click();
+  await expect(page.locator(".file-collapsed").first()).toBeVisible();
+
+  await expect.poll(() => minimapHeightDrift(page)).toBeLessThanOrEqual(drift + 2);
+  expect(await minimapHeightDrift(page)).toBeGreaterThanOrEqual(drift - 2);
+});
+
+// Intent: the reader's own minimap scroll ends a jump-to-end hold, and a reload during that
+// hold replaces it rather than leaving it pulling to the edge.
+test("the minimap and a reload both end a jump-to-end hold", async ({ page }) => {
+  await openTestReview(page);
+  const minimap = page.getByTestId("minimap");
+  const box = (await minimap.boundingBox())!;
+  await page.locator(".review-stream").focus();
+  await page.keyboard.press("Shift+G");
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height * 0.1);
+  await page.waitForTimeout(1_300);
+  expect(await streamScrollFraction(page)).toBeLessThan(0.35);
+
+  const distanceFromEnd = () =>
+    page.evaluate(() => {
+      const stream = document.querySelector<HTMLElement>(".review-stream")!;
+      return stream.scrollHeight - stream.clientHeight - stream.scrollTop;
+    });
+  const generation = await page.locator(".review-app").getAttribute("data-generation");
+  // Keys from the page, not the focused stream, whose own key input would end the hold.
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press("Shift+G");
+  // The end keeps moving, as files below still drawing make it, so the hold is still running
+  // when the reload lands.
+  await page.evaluate(() => {
+    const started = Date.now();
+    const timer = setInterval(() => {
+      const sections = document.querySelectorAll<HTMLElement>("section[data-file-key]");
+      const grown = document.createElement("div");
+      grown.style.height = "20px";
+      sections[sections.length - 1]?.append(grown);
+      if (Date.now() - started > 4_500) clearInterval(timer);
+    }, 150);
+  });
+  await review!.reload();
+  await expect(page.locator(".review-app")).not.toHaveAttribute(
+    "data-generation",
+    generation ?? "",
+    { timeout: 30_000 },
+  );
+  await page.keyboard.press("u");
+  await page.waitForTimeout(1_300);
+  expect(await distanceFromEnd()).toBeGreaterThan(100);
+});
+
 test("the minimap hides on a narrow viewport", async ({ page }) => {
   await page.setViewportSize({ width: 820, height: 800 });
   await openTestReview(page);
