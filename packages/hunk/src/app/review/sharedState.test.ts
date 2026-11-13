@@ -7,6 +7,11 @@ import {
   REVIEW_SHARED_STATE_CURRENT_RESOURCE_ID,
   reviewSharedStateResourceId,
 } from "../../session/reviewSharedState";
+import {
+  MAX_PROJECTED_SIDECAR_NOTE_BYTES,
+  MAX_PROJECTED_SIDECAR_NOTES,
+  reviewNoteByteLength,
+} from "../../core/review/noteSize";
 import { ReviewProducer } from "./producer";
 import { ReviewSessionHost } from "./reviewSessionHost";
 import { buildReviewPresentationDefaults, buildReviewSharedState } from "./sharedState";
@@ -85,6 +90,35 @@ describe("buildReviewSharedState", () => {
     // The JSON form round-trips through the browser-safe parser exactly.
     const wire = JSON.parse(JSON.stringify(state));
     expect(parseReviewSharedState(wire)).toEqual(wire);
+  });
+
+  // Sidecar annotations are launch input: an oversized sidecar must not fail the review or push
+  // the snapshot past its bound. The projection keeps the first ones and reports the rest.
+  test("omits sidecar annotations past the projected bound and says how many", () => {
+    const annotations = Array.from({ length: MAX_PROJECTED_SIDECAR_NOTES + 3 }, (_v, index) => ({
+      newRange: [8, 8] as [number, number],
+      summary: `Sidecar ${index}`,
+      source: "ai" as const,
+    }));
+    const files = [createTestSharedFile("alpha", { path: "alpha.ts", annotations })];
+    const host = new ReviewSessionHost({ files, sourceLabel: "/repo", now: () => 1 });
+    const presentation = buildReviewPresentationDefaults(createTestSharedBootstrap(files));
+    const state = buildReviewSharedState(host, { generation: "generation:p1:0", presentation });
+
+    // Small notes hit the byte bound before the count bound; either way the kept notes are a
+    // prefix and the omitted count accounts for every other one.
+    const kept = state.notes.length;
+    expect(kept).toBeLessThanOrEqual(MAX_PROJECTED_SIDECAR_NOTES);
+    expect(kept + state.omittedSidecarNotes!).toBe(annotations.length);
+    expect(state.notes.at(-1)!.note.summary).toBe(`Sidecar ${kept - 1}`);
+    expect(
+      state.notes.reduce((sum, entry) => sum + reviewNoteByteLength(entry.note), 0),
+    ).toBeLessThanOrEqual(MAX_PROJECTED_SIDECAR_NOTE_BYTES);
+    const wire = JSON.parse(JSON.stringify(state));
+    expect(parseReviewSharedState(wire)).toEqual(wire);
+    expect(parseReviewSharedState({ ...wire, omittedSidecarNotes: 0 })).toBeUndefined();
+    // The session snapshot omits the same tail, so the daemon keeps accepting it.
+    expect(host.getReviewNoteSummaries()).toHaveLength(MAX_PROJECTED_SIDECAR_NOTES);
   });
 
   test("advances the shared revision for shared content and never for selection", () => {

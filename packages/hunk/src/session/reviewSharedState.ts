@@ -229,6 +229,12 @@ export interface ReviewSharedStateV1 {
   agentHighlights: Record<string, ReviewAgentHighlightV1[]>;
   agentReveal: ReviewAgentRevealV1 | null;
   presentation: ReviewPresentationDefaultsV1;
+  /**
+   * Sidecar annotations left out of `notes` because the launch sidecar exceeded the projected
+   * sidecar bounds (`MAX_PROJECTED_SIDECAR_NOTES`, `MAX_PROJECTED_SIDECAR_NOTE_BYTES`); the
+   * terminal still shows them. Absent when nothing was omitted. A client says so visibly.
+   */
+  omittedSidecarNotes?: number;
 }
 
 // -- Parsing --------------------------------------------------------------------------
@@ -507,20 +513,28 @@ export function parseReviewSharedState(value: unknown): ReviewSharedStateV1 | un
   const record = asRecord(value);
   if (
     !record ||
-    !hasExactKeys(record, [
-      "protocolVersion",
-      "generation",
-      "stateRevision",
-      "sharedStateRevision",
-      "files",
-      "notes",
-      "filter",
-      "showAgentNotes",
-      "viewedFiles",
-      "agentHighlights",
-      "agentReveal",
-      "presentation",
-    ]) ||
+    !hasExactKeys(
+      record,
+      keysWith(
+        [
+          "protocolVersion",
+          "generation",
+          "stateRevision",
+          "sharedStateRevision",
+          "files",
+          "notes",
+          "filter",
+          "showAgentNotes",
+          "viewedFiles",
+          "agentHighlights",
+          "agentReveal",
+          "presentation",
+        ],
+        { omittedSidecarNotes: record.omittedSidecarNotes },
+      ),
+    ) ||
+    (record.omittedSidecarNotes !== undefined &&
+      !(isIndex(record.omittedSidecarNotes) && record.omittedSidecarNotes > 0)) ||
     record.protocolVersion !== HUNK_REVIEW_PROTOCOL_VERSION ||
     parseReviewGeneration(record.generation) === undefined ||
     !isIndex(record.stateRevision) ||

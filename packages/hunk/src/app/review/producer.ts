@@ -157,9 +157,14 @@ export class ReviewProducer {
   private store: ReviewStore | undefined;
   private sharedState: ReviewSharedStateSource | undefined;
   /** Materialized snapshots by shared revision, oldest first, for the attached store only. */
+  /**
+   * Snapshots kept per shared revision. One that exceeded the size bound keeps only its size,
+   * so it is serialized once, refused on every read at that revision, and never retained.
+   */
   private sharedStateMaterializations = new Map<
     number,
-    { bytes: Uint8Array; digest: string; generation: string }
+    | { bytes: Uint8Array; digest: string; generation: string }
+    | { tooLarge: number; generation: string }
   >();
   /** Generation the attached store was mounted for; unequal means the store is retired. */
   private storeGeneration: string | undefined;
@@ -442,7 +447,11 @@ export class ReviewProducer {
         );
       }
       const bytes = new TextEncoder().encode(JSON.stringify(source.build(generation)));
-      materialized = { bytes, digest: this.digest(bytes), generation };
+      // An oversized snapshot is neither hashed nor kept: readers are refused from its size.
+      materialized =
+        bytes.byteLength > MAX_REVIEW_SHARED_STATE_BYTES
+          ? { tooLarge: bytes.byteLength, generation }
+          : { bytes, digest: this.digest(bytes), generation };
       this.sharedStateMaterializations.set(sharedStateRevision, materialized);
       for (const revision of this.sharedStateMaterializations.keys()) {
         if (this.sharedStateMaterializations.size <= SHARED_STATE_MATERIALIZATIONS_KEPT) break;
@@ -450,13 +459,13 @@ export class ReviewProducer {
       }
     }
 
-    const { bytes, digest } = materialized;
-    if (bytes.byteLength > MAX_REVIEW_SHARED_STATE_BYTES) {
+    if ("tooLarge" in materialized) {
       return this.fail(
         "resource-too-large",
-        `The shared state is ${bytes.byteLength} bytes; at most ${MAX_REVIEW_SHARED_STATE_BYTES} can be served.`,
+        `The shared state is ${materialized.tooLarge} bytes; at most ${MAX_REVIEW_SHARED_STATE_BYTES} can be served.`,
       );
     }
+    const { bytes, digest } = materialized;
     if (range.offset > bytes.byteLength) {
       return this.fail(
         "invalid-range",

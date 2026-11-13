@@ -1,6 +1,7 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { SourceTextTooLargeError } from "../../core/changeset/fileSource";
 import type { DiffFile } from "../../core/changeset/model";
+import { MAX_REVIEW_NOTES } from "../../core/review/noteSize";
 import { STML_REFERENCE_WIDTH } from "../../core/stml/layout";
 import {
   createTestDeferred,
@@ -146,6 +147,38 @@ describe("ReviewSessionHost live comments", () => {
     );
     expect(result.applied.map((entry) => entry.commentId)).toEqual(["mcp:batch:0", "mcp:batch:1"]);
     expect(host.getSnapshot().liveNotes).toHaveLength(2);
+  });
+
+  test("refuses agent comments past the stored-note bound, single or batched, all or nothing", () => {
+    const host = createTestHost([createTestNumberedFile()]);
+    host.addLiveCommentBatch(
+      Array.from({ length: MAX_REVIEW_NOTES - 1 }, () => ({
+        filePath: "alpha.ts",
+        hunkIndex: 0,
+        summary: "n",
+      })),
+      "fill",
+    );
+
+    expect(() =>
+      host.addLiveCommentBatch(
+        [
+          { filePath: "alpha.ts", hunkIndex: 0, summary: "fits" },
+          { filePath: "alpha.ts", hunkIndex: 0, summary: "does not" },
+        ],
+        "over",
+      ),
+    ).toThrow(expect.objectContaining({ code: "too-many-notes" }));
+    expect(host.getSnapshot().liveNotes).toHaveLength(MAX_REVIEW_NOTES - 1);
+
+    host.addLiveComment({ filePath: "alpha.ts", hunkIndex: 0, summary: "last" }, "mcp:last");
+    expect(() =>
+      host.addLiveComment({ filePath: "alpha.ts", hunkIndex: 0, summary: "one more" }, "mcp:x"),
+    ).toThrow(expect.objectContaining({ code: "too-many-notes" }));
+    expect(() =>
+      host.addLiveComment({ replyTo: "mcp:last", summary: "reply" }, "mcp:reply"),
+    ).toThrow(expect.objectContaining({ code: "too-many-notes" }));
+    expect(host.getSnapshot().liveNotes).toHaveLength(MAX_REVIEW_NOTES);
   });
 
   test("refuses markup unless STML is enabled, and reports the caller's measurement", () => {
