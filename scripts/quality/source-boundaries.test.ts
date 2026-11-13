@@ -66,10 +66,14 @@ const WEB_SHARED_PRESENTATION_MODULES: readonly string[] = [
 // labels. Unlike the presentation leaves above these have runtime imports, so each is held to
 // a closed set instead (asserted below): the review model, the extension contract's chord and
 // type modules, and one another.
+const WEB_REVIEW_RELEASE_PATH = join(SRC_ROOT, "core", "run", "webReviewRelease.ts");
+
 const WEB_SHARED_COMMAND_MODULES: readonly string[] = [
   join(SRC_ROOT, "core", "run", "commandCatalog.ts"),
   join(SRC_ROOT, "core", "run", "keyChordLabels.ts"),
   join(SRC_ROOT, "extension-api", "keys.ts"),
+  // The entry-point release switch the catalog reads; an import-free leaf (asserted below).
+  WEB_REVIEW_RELEASE_PATH,
 ];
 
 /** Return one repo-relative path with forward slashes for stable assertions on every platform. */
@@ -548,6 +552,10 @@ describe("shared review primitives seam", () => {
       }),
     );
     expect(violations).toEqual([]);
+  });
+
+  test("keeps the web review release switch import-free", () => {
+    expect(importSpecifiers(WEB_REVIEW_RELEASE_PATH)).toEqual([]);
   });
 
   // The shared presentation leaves the browser imports beside the review model stay leaves:
