@@ -216,3 +216,85 @@ test("has no serious accessibility violations with the panel open", async ({ pag
     );
   expect(serious).toEqual([]);
 });
+
+/** The stream's scroll position as a fraction of its range. */
+function streamScrollFraction(page: Page) {
+  return page.evaluate(() => {
+    const stream = document.querySelector<HTMLElement>(".review-stream")!;
+    return stream.scrollTop / Math.max(1, stream.scrollHeight - stream.clientHeight);
+  });
+}
+
+test("the minimap scrolls the stream on click and drag and follows it back", async ({ page }) => {
+  await openTestReview(page);
+  const minimap = page.getByTestId("minimap");
+  await expect(minimap).toBeVisible();
+  const box = (await minimap.boundingBox())!;
+
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height * 0.9);
+  await expect.poll(() => streamScrollFraction(page)).toBeGreaterThan(0.6);
+
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height * 0.9);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height * 0.2, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(() => streamScrollFraction(page)).toBeLessThan(0.35);
+
+  // Scrolling the stream itself moves the viewport window.
+  const windowTop = () =>
+    page.getByTestId("minimap-window").evaluate((element) => element.getBoundingClientRect().top);
+  const before = await windowTop();
+  await page.locator(".review-stream").focus();
+  await page.keyboard.press("G");
+  await expect.poll(windowTop).toBeGreaterThan(before + 20);
+
+  // A layout switch reflows the stream; the window still spans part of the track.
+  await page.getByTestId("layout-unified").click();
+  await expect
+    .poll(() =>
+      page
+        .getByTestId("minimap-window")
+        .evaluate((element) => element.getBoundingClientRect().height),
+    )
+    .toBeGreaterThan(5);
+});
+
+test("the minimap hides on a narrow viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 820, height: 800 });
+  await openTestReview(page);
+  await expect(page.getByTestId("minimap")).toHaveCount(0);
+});
+
+test("the minimap stays cheap and accurate on a 2,000-file review", async ({ page }) => {
+  test.setTimeout(180_000);
+  review = await startTestWebReview("--many=2000");
+  problems = await watchTestPageProblems(page);
+  await page.goto(review.url);
+  await expect(page.getByTestId("file-count")).toHaveText("2000 files", { timeout: 30_000 });
+  await expect(page.getByTestId("load-progress")).toHaveCount(0, { timeout: 120_000 });
+  const minimap = page.getByTestId("minimap");
+  const box = (await minimap.boundingBox())!;
+
+  const started = Date.now();
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height - 2);
+  await expect.poll(() => streamScrollFraction(page)).toBeGreaterThan(0.97);
+  expect(Date.now() - started).toBeLessThan(3_000);
+  // Repainting the whole track on scroll stays well under a frame budget: the minimap's own
+  // work, measured by the mark it records, not the stream's mounting around it.
+  const paintMs = await page.evaluate(async () => {
+    const stream = document.querySelector<HTMLElement>(".review-stream")!;
+    performance.clearMeasures("hunk-minimap-redraw");
+    for (let step = 0; step < 20; step += 1) {
+      stream.scrollTop = (stream.scrollHeight * step) / 20;
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+    }
+    const durations = performance
+      .getEntriesByName("hunk-minimap-redraw")
+      .map((entry) => entry.duration)
+      .sort((left, right) => left - right);
+    return durations[Math.floor(durations.length / 2)] ?? 0;
+  });
+  // The median, so one repaint delayed by a busy test machine does not decide the result.
+  expect(paintMs).toBeLessThan(16);
+});
