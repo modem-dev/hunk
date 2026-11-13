@@ -1,6 +1,8 @@
 import { existsSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { Command, Option } from "commander";
+import { HunkUserError } from "../core/run/errors";
+import { WEB_REVIEW_ENTRY_POINTS_RELEASED } from "../core/run/webReviewRelease";
 import {
   CURSOR_LINE_VALUES,
   isLayoutModeInput,
@@ -51,6 +53,7 @@ import {
   optionKeyFromFlag,
   SESSION_AGENT_COMMANDS,
   SESSION_AGENT_COMMAND_LIST,
+  SESSION_OPEN_COMMAND,
   SESSION_COMMENT_COMMAND_LIST,
   SESSION_HIGHLIGHT_COMMAND_LIST,
 } from "../session/agent/surface";
@@ -203,17 +206,38 @@ export const WATCH_OPTION = {
   description: "auto-reload when the current diff input changes",
 } as const satisfies CliReferenceOption;
 
+/** Hidden until `WEB_REVIEW_ENTRY_POINTS_RELEASED` flips; public docs follow the same switch. */
+const WEB_REVIEW_VISIBILITY = {
+  hidden: !WEB_REVIEW_ENTRY_POINTS_RELEASED,
+  publicDocs: WEB_REVIEW_ENTRY_POINTS_RELEASED,
+} as const;
+
 /**
- * Run the review headless and serve it to a browser instead of opening the terminal UI.
+ * The browser review flags on every review command whose input can be reopened.
  *
- * Hidden until the served review page ships; that change un-hides it.
+ * `--web` serves the review headless and opens it in the default browser; it implies
+ * `--watch` whenever the input can be reopened. `--no-watch` turns watching off — with `--web`,
+ * and without it as an override of a config file that enables watch. `--no-open` prints the
+ * review URL without launching a browser and only applies with `--web`. Visibility is the one
+ * release switch in `core/run/webReviewRelease.ts`.
  */
-export const WEB_OPTION = {
-  flag: "--web",
-  description: "serve this review headless for a browser instead of the terminal UI",
-  hidden: true,
-  publicDocs: false,
-} as const satisfies CliReferenceOption;
+export const WEB_REVIEW_OPTIONS = [
+  {
+    flag: "--web",
+    description: "serve this review in the browser instead of the terminal",
+    ...WEB_REVIEW_VISIBILITY,
+  },
+  {
+    flag: "--no-open",
+    description: "with --web, print the review URL without opening a browser",
+    ...WEB_REVIEW_VISIBILITY,
+  },
+  {
+    flag: "--no-watch",
+    description: "do not reload when the input changes (overrides --web and config)",
+    ...WEB_REVIEW_VISIBILITY,
+  },
+] as const satisfies readonly CliReferenceOption[];
 
 const DIFF_OPTIONS = [
   {
@@ -229,7 +253,7 @@ const DIFF_OPTIONS = [
     hidden: true,
     hiddenNote: "Compatibility inverse; omitted from `--help`.",
   },
-  WEB_OPTION,
+  ...WEB_REVIEW_OPTIONS,
 ] as const satisfies readonly CliReferenceOption[];
 
 /** Non-session command tree consumed by the parser and generated reference. */
@@ -274,7 +298,7 @@ export const CLI_REFERENCE_COMMANDS = {
     path: "show",
     summary: "review the last commit or a given ref",
     synopsis: ["hunk show [target] [-- <pathspec...>]"],
-    options: [WEB_OPTION],
+    options: WEB_REVIEW_OPTIONS,
     commonReviewOptions: true,
     watch: true,
   },
@@ -364,7 +388,7 @@ export const CLI_REFERENCE_COMMANDS = {
     path: "stash show",
     summary: "review a stash entry as a full Hunk changeset",
     synopsis: ["hunk stash show [ref]"],
-    options: [WEB_OPTION],
+    options: WEB_REVIEW_OPTIONS,
     commonReviewOptions: true,
     watch: true,
   },
@@ -372,7 +396,7 @@ export const CLI_REFERENCE_COMMANDS = {
     path: "patch",
     summary: "review a patch file, or read a patch from stdin",
     synopsis: ["hunk patch [file]"],
-    options: [WEB_OPTION],
+    options: WEB_REVIEW_OPTIONS,
     commonReviewOptions: true,
     watch: true,
   },
@@ -386,7 +410,7 @@ export const CLI_REFERENCE_COMMANDS = {
     path: "difftool",
     summary: "review Git difftool file pairs",
     synopsis: ["hunk difftool <left> <right> [path]"],
-    options: [WEB_OPTION],
+    options: WEB_REVIEW_OPTIONS,
     commonReviewOptions: true,
     watch: true,
   },
@@ -616,6 +640,29 @@ function resolveBooleanFlag(argv: string[], enabledFlag: string, disabledFlag: s
   return resolved;
 }
 
+/** Read `--watch` / `--no-watch`, refusing both at once rather than letting the last one win. */
+function resolveWatchFlag(argv: string[]) {
+  const reviewArgs = argv.slice(0, argv.includes("--") ? argv.indexOf("--") : argv.length);
+  if (reviewArgs.includes("--watch") && reviewArgs.includes("--no-watch")) {
+    throw new HunkUserError("`--watch` and `--no-watch` cannot be combined.", [
+      "Pass one of them; `--web` already watches unless `--no-watch` is given.",
+    ]);
+  }
+  return resolveBooleanFlag(argv, "--watch", "--no-watch");
+}
+
+/** Read `--no-open`, which only means something for a browser review. */
+function resolveOpenFlag(argv: string[], web: boolean) {
+  const reviewArgs = argv.slice(0, argv.includes("--") ? argv.indexOf("--") : argv.length);
+  if (!reviewArgs.includes("--no-open")) return undefined;
+  if (!web) {
+    throw new HunkUserError("`--no-open` only applies to `--web`.", [
+      "Add `--web` to serve the review in a browser, or drop `--no-open`.",
+    ]);
+  }
+  return false;
+}
+
 /** Collect one repeatable CLI value into an array. */
 function collectRepeatedValue(value: string, previous: string[] = []) {
   return [...previous, value];
@@ -632,6 +679,7 @@ function buildCommonOptions(
     pager?: boolean;
     watch?: boolean;
     web?: boolean;
+    open?: boolean;
     experimental?: boolean;
     transparentBackground?: boolean;
     tabWidth?: number;
@@ -651,8 +699,9 @@ function buildCommonOptions(
     vcs: options.vcs,
     agentContext: options.agentContext,
     pager: options.pager ? true : undefined,
-    watch: options.watch ? true : undefined,
+    watch: resolveWatchFlag(argv),
     web: options.web ? true : undefined,
+    open: resolveOpenFlag(argv, options.web === true),
     experimental:
       options.experimental || hasPrefixedReviewFlag(argv, AUXILIARY_AGENT_OPTIONS.experimental.flag)
         ? true
@@ -2037,6 +2086,33 @@ async function parseSessionHighlightClearCommand(tokens: string[]): Promise<Pars
   };
 }
 
+/** Parse `hunk session open`, which is parsed in every build but listed only once released. */
+async function parseSessionOpenCommand(tokens: string[]): Promise<ParsedCliInput> {
+  const spec = SESSION_OPEN_COMMAND;
+  const command = buildSessionCommand(spec);
+  let parsedSessionId: string | undefined;
+  // Commander stores `--no-open` as `open: false`, not under the camelized flag body.
+  let parsedOptions: { repo?: string; json?: boolean; open?: boolean } = {};
+
+  command.action((sessionId: string | undefined, options: typeof parsedOptions) => {
+    parsedSessionId = sessionId;
+    parsedOptions = options;
+  });
+
+  if (hasSessionHelpFlag(tokens)) {
+    return sessionCommandHelpText(command, spec);
+  }
+
+  await parseStandaloneCommand(command, tokens);
+  return {
+    kind: "session",
+    action: "open",
+    output: resolveJsonOutput(parsedOptions),
+    selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
+    open: parsedOptions.open !== false,
+  };
+}
+
 /** Dispatch one command under the session highlight namespace. */
 function parseSessionHighlightCommand(tokens: string[]): Promise<ParsedCliInput> | ParsedCliInput {
   const [subcommand, ...rest] = tokens;
@@ -2080,6 +2156,8 @@ function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> | Parsed
       return parseSessionCommentCommand(rest);
     case "highlight":
       return parseSessionHighlightCommand(rest);
+    case "open":
+      return parseSessionOpenCommand(rest);
     default:
       throw new Error(`Unknown session command: ${subcommand}`);
   }

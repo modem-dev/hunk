@@ -3,7 +3,7 @@ import type { ReviewProducer } from "../../app/review/producer";
 import type { DiffFile } from "../../core/changeset/model";
 import type { CliInput } from "../../core/run/commandInputs";
 import { buildSessionSnapshotState } from "../../app/review/reviewSessionProjections";
-import { createHunkSessionBridge } from "../../app/session/bridge";
+import { createHunkSessionBridge, type HunkSessionBridgeHandlers } from "../../app/session/bridge";
 import type { HunkSessionBrokerClient } from "../../session/broker/brokerClient";
 import type { HunkReviewRefreshResultV1 } from "../../session/reviewProtocol";
 import type {
@@ -35,6 +35,7 @@ export function useHunkSessionBridge({
   noteMarkupWidth,
   onConnectionNotice,
   openAgentNotes,
+  openReview,
   reloadSession,
   refreshReview,
   removeLiveComment,
@@ -62,6 +63,8 @@ export function useHunkSessionBridge({
   /** Width STML note markup currently renders at (see agentNoteMarkupWidth). */
   noteMarkupWidth?: number;
   openAgentNotes: () => void;
+  /** Open this session's review in a browser or return its URL, for `hunk session open`. */
+  openReview?: HunkSessionBridgeHandlers["openReview"];
   reloadSession: (
     nextInput: CliInput,
     options?: ReloadSessionOptions,
@@ -92,6 +95,7 @@ export function useHunkSessionBridge({
         clearLiveComments,
         navigateToLocation,
         openAgentNotes,
+        openReview,
         reloadSession: (nextInput, options) => reloadSession(nextInput, { ...options }),
         removeLiveComment,
         reviewProducer,
@@ -105,6 +109,7 @@ export function useHunkSessionBridge({
       clearLiveComments,
       navigateToLocation,
       openAgentNotes,
+      openReview,
       reloadSession,
       removeLiveComment,
       reviewProducer,

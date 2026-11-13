@@ -7,6 +7,12 @@
  * SIGINT or SIGTERM. Agent commands go straight to the `ReviewSessionHost`; reloads — the
  * agent's `hunk session reload` and `--watch` changes — go through `ReviewReloadCoordinator`.
  *
+ * Entry point: `hunk <review command> --web` implies `--watch` (startup applies it unless
+ * `--no-watch`), prints exactly the URL line on stdout, then opens that URL in the default browser
+ * unless `--no-open`. A launch failure is one stderr line without the URL, and the review keeps
+ * serving. When stderr is a terminal, one hint line says what is running and how to stop it.
+ * `hunk session open` reaches the same opener through the bridge (`./openReview.ts`).
+ *
  * Terminal-only concerns get explicit headless answers here: repo-local extensions awaiting a
  * trust decision stay disabled and one notice line says so, extension panes, dialogs, and
  * commands are unavailable (their controls already refuse without a mounted UI), startup and
@@ -33,6 +39,7 @@ import type { ReviewPresentationDefaultsV1 } from "../../session/reviewSharedSta
 import { createHunkSessionBridge } from "./bridge";
 import { ReviewReloadCoordinator, withReloadVcsCatalog } from "./reloadCoordinator";
 import { createSessionReloadBounds } from "./reloadBounds";
+import { openSessionReview, type ReviewUrlOpener } from "./openReview";
 import { createReviewSessionRuntime, type ReviewSessionRuntime } from "./reviewRuntime";
 
 /** Signals that end a headless review; Windows delivers Ctrl+Break as SIGBREAK. */
@@ -59,6 +66,10 @@ export interface HeadlessReviewDeps {
   watchRuntime?: WatchedInputRuntime;
   /** Resolve with the running session once it is published; tests drive it directly. */
   onStarted?: (session: HeadlessReviewSession) => void;
+  /** Open the review URL in a browser; tests inject a recorder so no browser starts. */
+  openUrl?: ReviewUrlOpener;
+  /** Whether stderr is a terminal, which decides the human hint line. */
+  stderrIsTTY?: boolean;
 }
 
 /** The live pieces of one running headless review, exposed for tests. */
@@ -249,6 +260,12 @@ export async function runHeadlessReview(
       openAgentNotes: () => host.setShowAgentNotes(true),
       reloadSession: (nextInput, options) => coordinator.reload(nextInput, { ...options }),
       refreshReview: () => coordinator.refreshCurrent(),
+      openReview: ({ open }) =>
+        openSessionReview(hostClient.getRegistration().sessionId, {
+          open,
+          env: deps.env,
+          openUrl: deps.openUrl,
+        }),
       removeLiveComment: (commentId) => host.removeLiveComment(commentId),
       reviewProducer: producer,
     }),
@@ -256,11 +273,22 @@ export async function runHeadlessReview(
   coordinator.runInitialLifecycle();
   armRefresh(bootstrap);
 
-  const url = reviewProcessUrl(
-    resolveSessionBrokerConfig(deps.env).httpOrigin,
-    hostClient.getRegistration().sessionId,
-  );
+  const sessionId = hostClient.getRegistration().sessionId;
+  const url = reviewProcessUrl(resolveSessionBrokerConfig(deps.env).httpOrigin, sessionId);
   stdout(`${url}\n`);
+  if (deps.stderrIsTTY ?? process.stderr.isTTY === true) {
+    stderr("hunk: serving this review at the URL above; press Ctrl+C to stop.\n");
+  }
+  if (bootstrap.input.options.open !== false) {
+    // Never awaited: a slow or failing browser launch must not delay or end the review.
+    void openSessionReview(sessionId, { open: true, env: deps.env, openUrl: deps.openUrl }).then(
+      (result) => {
+        if (result.failure && !coordinator.isShuttingDown()) {
+          stderr(noticeLine(`${result.failure} Open the URL above in a browser instead.`));
+        }
+      },
+    );
+  }
 
   // An update check never delays the URL and never reaches stdout.
   void (deps.resolveUpdateNotice ?? resolveStartupUpdateNotice)()

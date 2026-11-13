@@ -80,7 +80,7 @@ void _mixedBatchItemIsNotACommand;
 
 describe("session daemon request validation", () => {
   test("uses the daemon revision for structured reloads with canonical layout payloads", () => {
-    expect(HUNK_SESSION_DAEMON_VERSION).toBe(20);
+    expect(HUNK_SESSION_DAEMON_VERSION).toBe(21);
   });
 
   test("strictly parses cross-process capabilities", () => {
@@ -290,6 +290,7 @@ describe("session daemon request validation", () => {
         filePath: "a.ts",
       },
       { action: "highlight-clear", selector: { sessionId: "s-1" } },
+      { action: "open", selector: { sessionId: "s-1" }, open: false },
     ];
 
     for (const request of requests) {

@@ -16,7 +16,10 @@ import {
   buildReviewSharedState,
 } from "../../packages/hunk/src/app/review/sharedState";
 import { createReviewStore } from "../../packages/hunk/src/core/review/store";
-import { createHunkSessionBridge } from "../../packages/hunk/src/app/session/bridge";
+import {
+  createHunkSessionBridge,
+  type HunkSessionBridgeHandlers,
+} from "../../packages/hunk/src/app/session/bridge";
 import {
   createInitialSessionSnapshot,
   createSessionRegistration,
@@ -55,6 +58,8 @@ export interface ReviewSessionHarnessOptions {
   surface?: "terminal" | "headless";
   /** Answer brokered refreshes; absent, the session reports refresh as unavailable. */
   refreshReview?: () => Promise<HunkReviewRefreshResultV1>;
+  /** Answer `hunk session open`; absent, the session reports it cannot be opened. */
+  openReview?: HunkSessionBridgeHandlers["openReview"];
 }
 
 /**
@@ -152,6 +157,7 @@ export function connectReviewSession(files: DiffFile[], options: ReviewSessionHa
     },
     reviewProducer: producer,
     ...(options.refreshReview ? { refreshReview: options.refreshReview } : {}),
+    ...(options.openReview ? { openReview: options.openReview } : {}),
   });
 
   const socket = {

@@ -13,6 +13,8 @@ import type {
   HunkSessionCommandResult,
   HunkSessionServerMessage,
   NavigatedSelectionResult,
+  OpenedReviewResult,
+  OpenReviewToolInput,
   ReloadedSessionResult,
   RemovedCommentResult,
 } from "../../session/types";
@@ -63,6 +65,12 @@ export interface HunkSessionBridgeHandlers {
    * Optional: a mount without a reload coordinator answers `refresh-unavailable`.
    */
   refreshReview?: () => Promise<HunkReviewRefreshResultV1>;
+  /**
+   * Open this session's review in a browser, or return its URL, for `hunk session open`.
+   *
+   * Optional: a mount that has no daemon registration answers that it cannot be opened.
+   */
+  openReview?: (input: Pick<OpenReviewToolInput, "open">) => Promise<OpenedReviewResult>;
 }
 
 /** The refusal a review command gets when this session serves no published review. */
@@ -142,6 +150,10 @@ export function createHunkSessionBridge(handlers: HunkSessionBridgeHandlers) {
           const producer = handlers.reviewProducer;
           return producer ? applySessionReviewAction(producer, message.input) : noReviewProducer();
         }
+        case "open_review":
+          return handlers.openReview
+            ? handlers.openReview({ open: message.input.open })
+            : { opened: false, failure: "This session cannot be opened in a browser." };
       }
     },
   };
