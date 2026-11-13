@@ -2,6 +2,7 @@
 
 /**
  * Compiles Hunk into a single-file executable at `dist/hunk` and stages the skills beside it.
+ * The browser review page is built first and embedded in the executable as one archive.
  *
  * Every compiled distribution goes through this script: `bun run build:bin` for local installs,
  * the prebuilt npm and GitHub release artifacts, and `nix/package.nix`. Keep the Bun command here
@@ -15,9 +16,16 @@
  *                                rely on this.
  */
 
-import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
+import {
+  encodeReviewPageAssetArchive,
+  REVIEW_PAGE_ARCHIVE_EXTENSION,
+  REVIEW_PAGE_ARCHIVE_STEM,
+  REVIEW_PAGE_DOCUMENT_NAME,
+} from "../../packages/hunk/src/session/broker/reviewPageAssets";
+import { buildWebAssets, SOURCE_WEB_OUTDIR } from "./build-web";
 import { HUNK_PACKAGE_ROOT, HUNK_SOURCE_ROOT, REPO_ROOT } from "./package-paths";
 
 /**
@@ -81,6 +89,11 @@ export interface CompileCommandOptions {
   runtimeExecutable?: string | null;
   sourceRoot: string;
   outfile: string;
+  /**
+   * Non-code files to embed verbatim, such as the browser review page archive. The binary
+   * reads them back through `Bun.embeddedFiles`.
+   */
+  embeddedFiles?: readonly string[];
 }
 
 /** Builds the `bun build --compile` argv that produces the Hunk executable. */
@@ -90,6 +103,7 @@ export function compileCommand({
   runtimeExecutable,
   sourceRoot,
   outfile,
+  embeddedFiles = [],
 }: CompileCommandOptions) {
   return [
     bun,
@@ -99,9 +113,34 @@ export function compileCommand({
     ...(target ? [`--target=${target}`] : []),
     ...(runtimeExecutable ? [`--compile-executable-path=${runtimeExecutable}`] : []),
     ...COMPILE_ENTRYPOINTS.map((entrypoint) => path.join(sourceRoot, entrypoint)),
+    ...embeddedFiles,
     "--outfile",
     outfile,
   ];
+}
+
+/**
+ * Builds the browser review page and packs it into the one archive the binary embeds.
+ *
+ * The binary stays a single file: the page's scripts and styles travel gzip-compressed inside
+ * it, and the daemon serves them still compressed (`reviewPageAssets.ts`).
+ */
+export async function buildEmbeddedWebArchive(archiveDir: string) {
+  const manifest = await buildWebAssets({ outdir: SOURCE_WEB_OUTDIR });
+  const files = new Map(
+    [REVIEW_PAGE_DOCUMENT_NAME, ...manifest.assets].map((name) => [
+      name,
+      new Uint8Array(readFileSync(path.join(SOURCE_WEB_OUTDIR, name))),
+    ]),
+  );
+  const archive = encodeReviewPageAssetArchive(manifest, files);
+  const archivePath = path.join(
+    archiveDir,
+    `${REVIEW_PAGE_ARCHIVE_STEM}${REVIEW_PAGE_ARCHIVE_EXTENSION}`,
+  );
+  mkdirSync(archiveDir, { recursive: true });
+  writeFileSync(archivePath, archive);
+  return { archivePath, byteLength: archive.byteLength };
 }
 
 /**
@@ -141,6 +180,7 @@ if (import.meta.main) {
   rmSync(legacyOutfile, { force: true });
 
   const target = compileTargetForHost(process.platform, process.arch);
+  const webArchive = await buildEmbeddedWebArchive(path.join(bunTmpDir, "web"));
 
   // Spawn the Bun that is running this script, not whichever `bun` is first on PATH, so the
   // compiler version matches `Bun.version` used for the cache below and callers can pin it.
@@ -151,6 +191,7 @@ if (import.meta.main) {
       runtimeExecutable,
       sourceRoot: HUNK_SOURCE_ROOT,
       outfile,
+      embeddedFiles: [webArchive.archivePath],
     }),
     {
       cwd: repoRoot,
@@ -182,4 +223,5 @@ if (import.meta.main) {
   const runtimeNote = runtimeExecutable ? ` using runtime ${runtimeExecutable}` : "";
   console.log(`Built ${outfile}${target ? ` for ${target}` : ""}${runtimeNote}`);
   console.log(`Staged ${skillsOutdir}`);
+  console.log(`Embedded the browser review page (${webArchive.byteLength} bytes compressed)`);
 }

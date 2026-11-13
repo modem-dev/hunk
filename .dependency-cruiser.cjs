@@ -33,6 +33,8 @@ const PRODUCTION_ENTRY_POINTS = [
   "^packages/hunk/src/opentui/index\\.ts$",
   "^packages/hunk/src/extension-api/index\\.ts$",
   "^packages/hunk/src/hunk-review/skillDocument\\.ts$",
+  // The browser review client, bundled for browsers by scripts/build/build-web.ts.
+  "^packages/hunk/src/web/main\\.tsx$",
 ];
 
 // Modules kept alive by tests alone. The cruise excludes tests, so these look unreachable
@@ -166,6 +168,24 @@ module.exports = {
       to: { path: "^packages/hunk/src/(ui|app|extensions|opentui)/" },
     },
     {
+      name: "web-client-stays-separate",
+      comment:
+        "packages/hunk/src/web is the browser review client, a separate bundle served by the daemon. Nothing in the CLI imports it, and it reaches only the shared review model and browser-safe session modules (scripts/quality/source-boundaries.test.ts gates the exact closure).",
+      severity: "error",
+      from: { path: "^packages/hunk/src/web/" },
+      to: {
+        path: "^packages/hunk/src/(ui|app|extensions|opentui|lib|session/broker|session/client|session/agent)/",
+      },
+    },
+    {
+      name: "cli-never-imports-web-client",
+      comment:
+        "The browser client is built and served as static assets; a CLI module importing it would pull React DOM and Pierre's web renderer into the terminal bundle.",
+      severity: "error",
+      from: { path: "^packages/hunk/src/", pathNot: "^packages/hunk/src/web/" },
+      to: { path: "^packages/hunk/src/web/" },
+    },
+    {
       name: "app-composes-without-ui",
       comment:
         "packages/hunk/src/app wires core, extensions, and session together for startup; rendering stays in packages/hunk/src/ui, which imports app — never the reverse.",
@@ -237,7 +257,8 @@ module.exports = {
   options: {
     doNotFollow: { path: "node_modules" },
     // Production graph only: tests are colocated and free to reach across boundaries.
-    exclude: { path: ["\\.test\\.(ts|tsx)$", "(^|/)node_modules/"] },
+    // Generated build output (dist/) is not source, whichever build left it behind.
+    exclude: { path: ["\\.test\\.(ts|tsx)$", "(^|/)node_modules/", "^packages/[^/]+/dist/"] },
     tsConfig: { fileName: "tsconfig.json" },
     tsPreCompilationDeps: true,
     enhancedResolveOptions: {
