@@ -39,6 +39,10 @@ export interface ReviewErrorDoc {
  * served, the caller was not allowed — because that is the order a reader diagnoses in.
  */
 export const REVIEW_ERROR_CATALOG: Record<HunkReviewClientErrorCodeV1, ReviewErrorDoc> = {
+  "state-too-large": {
+    message: "This review's notes and shared state are too large to send to a browser.",
+    remedy: "Clear some live comments or attention marks, then reload the page.",
+  },
   "stale-generation": {
     message: "The review changed after this request was prepared.",
     remedy: "Reload the review and try again; nothing was applied.",

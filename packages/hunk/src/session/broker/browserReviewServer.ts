@@ -61,6 +61,7 @@ import {
   type HunkReviewHttpFailureV1,
   type HunkReviewHttpRoute,
   type HunkReviewPublicationBodyV1,
+  type HunkReviewStateBodyV1,
 } from "../reviewHttpProtocol";
 import {
   HUNK_REVIEW_PROTOCOL_VERSION,
@@ -111,6 +112,7 @@ const REVIEW_ERROR_STATUS: Record<HunkReviewClientErrorCodeV1, number> = {
   "unsupported-media-type": 415,
   "forbidden-origin": 403,
   "too-many-streams": 503,
+  "state-too-large": 413,
 };
 
 /**
@@ -149,6 +151,14 @@ export interface BrowserReviewServerOptions {
   maxStreams?: number;
   maxStreamsPerSession?: number;
   maxStreamBufferBytes?: number;
+  /**
+   * Exempt one event-stream request from the listener's connection idle timeout.
+   *
+   * An event stream is idle by design between publications, and Bun's default 10 s idle
+   * timeout is shorter than the heartbeat, so without this every quiet stream is cut and
+   * reconnects. The host passes `server.timeout(request, 0)`; no other route is affected.
+   */
+  keepStreamOpen?: (request: Request) => void;
   /** Admit one authorized action through the host daemon's shared HTTP control budgets. */
   handleActionControl?: (
     request: Request,
@@ -250,6 +260,8 @@ export class BrowserReviewServer {
     switch (route.kind) {
       case "publication":
         return this.requireMethod(request, "GET") ?? this.handlePublication(route.sessionId);
+      case "state":
+        return this.requireMethod(request, "GET") ?? this.handleState(route.sessionId);
       case "events":
         return this.requireMethod(request, "GET") ?? this.handleEvents(request, authorization);
       case "resource":
@@ -343,9 +355,46 @@ export class BrowserReviewServer {
           protocolVersion: HUNK_REVIEW_PROTOCOL_VERSION,
           sessionId,
           publication: publication.address,
+          ...(publication.sharedStateRevision !== undefined
+            ? { sharedStateRevision: publication.sharedStateRevision }
+            : {}),
           catalog: publication.catalog,
         }
       : undefined;
+  }
+
+  /**
+   * Serve one session's shared-state snapshot.
+   *
+   * Read through the daemon's single resource loop (`loadReviewSharedState`): single-flight per
+   * position, digest-verified, bounded by the protocol's envelope bound, and validated before
+   * it is served. The body names the position the snapshot was materialized at; a client that
+   * asked from an older position simply receives the current one.
+   */
+  private async handleState(sessionId: string): Promise<Response> {
+    if (!this.state.getReviewPublication(sessionId)) {
+      return this.failure("no-publication");
+    }
+    try {
+      const state = await this.state.loadReviewSharedState(sessionId);
+      const body: HunkReviewStateBodyV1 = {
+        protocolVersion: HUNK_REVIEW_PROTOCOL_VERSION,
+        sessionId,
+        publication: { generation: state.generation, stateRevision: state.stateRevision },
+        sharedStateRevision: state.sharedStateRevision,
+        state,
+      };
+      return this.json(body);
+    } catch (error) {
+      if (error instanceof ReviewResourceReadError && error.code === "resource-too-large") {
+        return this.failure("state-too-large");
+      }
+      if (error instanceof ReviewResourceReadError && error.code === "unknown-resource") {
+        // The session serves no shared state (it attached no source).
+        return this.failure("no-publication");
+      }
+      return this.resourceFailure(error);
+    }
   }
 
   /**
@@ -528,6 +577,7 @@ export class BrowserReviewServer {
       }),
     );
 
+    this.options.keepStreamOpen?.(request);
     if (request.signal.aborted) {
       this.closeStream(stream);
     } else {
@@ -573,7 +623,13 @@ export class BrowserReviewServer {
       this.sendDisconnect(stream);
       return;
     }
-    this.sendEvent(stream, "publication", publication.address, body);
+    this.sendEvent(
+      stream,
+      "publication",
+      publication.address,
+      body,
+      publication.sharedStateRevision,
+    );
   }
 
   /** Tell one stream its review is gone, then end it. */
@@ -590,6 +646,7 @@ export class BrowserReviewServer {
     type: ReviewEventTypeV1,
     address: ReviewPublicationAddress,
     body: unknown,
+    sharedStateRevision?: number,
   ) {
     if (stream.closed) {
       return;
@@ -601,6 +658,7 @@ export class BrowserReviewServer {
       frames = planReviewEventFrames({
         type,
         address,
+        ...(sharedStateRevision !== undefined ? { sharedStateRevision } : {}),
         body,
         payload,
         contentDigest: nodeReviewDigest(payload),

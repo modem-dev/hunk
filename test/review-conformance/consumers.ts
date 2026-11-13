@@ -14,6 +14,12 @@ import { extensionReviewSnapshotConsumer } from "./consumers/extensionReviewSnap
 import { coreOrderingConsumer } from "./consumers/coreOrdering";
 import { intentPlannerNavigationConsumer } from "./consumers/intentPlanner";
 import { reviewProducerConsumer } from "./consumers/reviewProducer";
+import {
+  brokerSharedStateConsumer,
+  browserSurfaceSharedStateConsumer,
+  reviewProducerSharedStateConsumer,
+} from "./consumers/sharedState";
+import type { ReviewSharedStateConsumer } from "./sharedStateFixtures";
 import { reviewSessionHostNavigationConsumer } from "./consumers/reviewSessionHost";
 import { reviewWireConsumer } from "./consumers/reviewWire";
 import { terminalReviewNavigationConsumer } from "./consumers/terminalReview";
@@ -82,4 +88,16 @@ export const REVIEW_WIRE_CONSUMERS: readonly ReviewWireConsumer[] = [reviewWireC
 export const REVIEW_EVENT_CONSUMERS: readonly ReviewEventConsumer[] = [
   reviewEventProtocolConsumer,
   browserReviewSurfaceEventConsumer,
+];
+
+/**
+ * Consumers of the shared-state snapshot.
+ *
+ * The producer that materializes it, the broker that reads it back through its verified
+ * resource loop, and the HTTP surface that serves it; the browser client joins in M4.
+ */
+export const REVIEW_SHARED_STATE_CONSUMERS: readonly ReviewSharedStateConsumer[] = [
+  reviewProducerSharedStateConsumer,
+  brokerSharedStateConsumer,
+  browserSurfaceSharedStateConsumer,
 ];

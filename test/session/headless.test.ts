@@ -284,6 +284,20 @@ describe.skipIf(process.platform === "win32")("headless review session", () => {
         "<b>bold</b>",
       ]);
       expect(added.result.markupWidth).toBeGreaterThan(0);
+      // The comment reaches a browser through the shared-state snapshot.
+      const stateBody = await waitUntil("the comment in the shared state", async () => {
+        const response = await reviewApi(url, sessionId, "state");
+        if (response.status !== 200) return null;
+        const body = (await response.json()) as {
+          state: { notes: Array<{ origin: string; note: { id: string; summary: string } }> };
+        };
+        return body.state.notes.some((entry) => entry.note.id === added.result.commentId)
+          ? body
+          : null;
+      });
+      expect(
+        stateBody.state.notes.find((entry) => entry.note.id === added.result.commentId),
+      ).toMatchObject({ origin: "live", note: { summary: "Check this value" } });
       const applied = sessionJson<{ result: { applied: Array<{ commentId: string }> } }>(
         port,
         ["comment", "apply", sessionId, "--stdin"],

@@ -18,6 +18,7 @@ import {
   REVIEW_GEOMETRY_CONSUMERS,
   REVIEW_NAVIGATION_CONSUMERS,
   REVIEW_ORDERING_CONSUMERS,
+  REVIEW_SHARED_STATE_CONSUMERS,
   REVIEW_SNAPSHOT_CONSUMERS,
   REVIEW_WIRE_CONSUMERS,
 } from "./consumers";
@@ -26,6 +27,7 @@ import { REVIEW_GEOMETRY_FIXTURES } from "./geometryFixtures";
 import { REVIEW_NAVIGATION_FIXTURES } from "./navigationFixtures";
 import { REVIEW_NOTE_BODY_FIXTURES } from "./noteBodies";
 import { REVIEW_NOTE_SIZE_FIXTURES } from "./noteSize";
+import { REVIEW_SHARED_STATE_FIXTURES } from "./sharedStateFixtures";
 import { REVIEW_SNAPSHOT_FIXTURES } from "./snapshotFixtures";
 import {
   REVIEW_PRODUCER_ORDER_FIXTURES,
@@ -80,6 +82,11 @@ describe("review conformance corpus", () => {
       "review event protocol",
       "browser review HTTP surface",
     ]);
+    expect(REVIEW_SHARED_STATE_CONSUMERS.map((consumer) => consumer.name)).toEqual([
+      "review producer",
+      "broker shared-state read",
+      "browser review HTTP surface",
+    ]);
   });
 
   test("carries an adversarial fixture for every finding it claims to repay", () => {
@@ -113,6 +120,16 @@ for (const consumer of REVIEW_GEOMETRY_CONSUMERS) {
     for (const fixture of REVIEW_GEOMETRY_FIXTURES) {
       test(`${fixture.id} (${fixture.findings.join(", ")})`, () => {
         expect(consumer.project(fixture)).toEqual(fixture.expected);
+      });
+    }
+  });
+}
+
+for (const consumer of REVIEW_SHARED_STATE_CONSUMERS) {
+  describe(`review shared-state conformance: ${consumer.name}`, () => {
+    for (const fixture of REVIEW_SHARED_STATE_FIXTURES) {
+      test(`${fixture.id} (${fixture.findings.join(", ")})`, async () => {
+        expect(await consumer.project(fixture)).toEqual(fixture.expected);
       });
     }
   });

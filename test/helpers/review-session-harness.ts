@@ -10,6 +10,11 @@
  * and ordering are real rather than collapsed into synchronous calls.
  */
 import { ReviewProducer } from "../../packages/hunk/src/app/review/producer";
+import type { ReviewSessionHost } from "../../packages/hunk/src/app/review/reviewSessionHost";
+import {
+  buildReviewPresentationDefaults,
+  buildReviewSharedState,
+} from "../../packages/hunk/src/app/review/sharedState";
 import { createReviewStore } from "../../packages/hunk/src/core/review/store";
 import { createHunkSessionBridge } from "../../packages/hunk/src/app/session/bridge";
 import {
@@ -38,6 +43,13 @@ export interface ReviewSessionHarnessOptions {
    * against that measurement, so this exercises the verification rather than a bug.
    */
   corruptResourceChunks?: boolean;
+  /**
+   * Serve shared state from this host instead of attaching a bare store.
+   *
+   * The host's store becomes the producer's store and its projection the producer's shared
+   * state, the way a mounted terminal or headless session attaches them.
+   */
+  host?: ReviewSessionHost;
 }
 
 /**
@@ -90,7 +102,19 @@ export function connectReviewSession(files: DiffFile[], options: ReviewSessionHa
     { files, sourceLabel: bootstrap.changeset.sourceLabel },
     { producerId: "integration" },
   );
-  producer.attachStore(createReviewStore(producer.getPublication().document));
+  if (options.host) {
+    const host = options.host;
+    producer.attachStore(host.store, {
+      getSharedStateRevision: () => host.getSharedStateRevision(),
+      build: (generation) =>
+        buildReviewSharedState(host, {
+          generation,
+          presentation: buildReviewPresentationDefaults(bootstrap),
+        }),
+    });
+  } else {
+    producer.attachStore(createReviewStore(producer.getPublication().document));
+  }
 
   const state = new HunkSessionBrokerState(options.cache ?? new ReviewResourceCache());
   const sent: HunkSessionServerMessage[] = [];
@@ -177,6 +201,9 @@ export function connectReviewSession(files: DiffFile[], options: ReviewSessionHa
           state: {
             ...snapshot.state,
             reviewPublication: producer.getPublicationAddress(),
+            ...(producer.getSharedStateRevision() !== undefined
+              ? { reviewSharedStateRevision: producer.getSharedStateRevision() }
+              : {}),
           },
         }),
       ),

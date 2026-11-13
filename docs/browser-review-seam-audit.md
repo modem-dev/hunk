@@ -51,8 +51,9 @@ Remote draft composition reaches `notes/update-draft` through core and the wire 
 composers are per-client (G2), so the browser saves notes through new direct intents rather than
 the shared draft slot (M2). HTTP publications contain only a position and resource catalog;
 resource reads provide canonical files, patches, and sources, while successful actions acknowledge a
-new position. M2 defines the bounded shared-state snapshot for notes, filter, note visibility,
-viewed files, and agent highlights; selection stays per-surface and is not transported.
+new position. M2a added the bounded shared-state snapshot (`GET /review-api/<session>/state`)
+for notes, filter, note visibility, agent highlights, the agent reveal, and presentation
+defaults; viewed files join it in M2b. Selection stays per-surface and is not transported.
 
 ## A. Diff geometry
 
@@ -510,6 +511,9 @@ path suffixes, expansion retention, git-status badges).
   _Decided (2026-11-13)_: the browser starts on the session's resolved theme, custom themes
   included, sent by the host as tokens (M2). A per-browser picker may override it without
   changing the terminal (M4).
+  _Advanced (M2a)_: `presentation.theme` names a bundled theme by id and carries any other
+  theme — custom, extension, or terminal-derived — as its resolved semantic tokens, syntax
+  colors, and syntax theme, from the same `resolveTheme` the terminal's first frame uses.
 
 ## F. Commands and keybindings (preemptive — the prototype browser had none)
 
@@ -593,6 +597,16 @@ implementation does.
   _Decided (2026-11-13)_: filter, agent-note visibility, and viewed-file state are shared review
   state; layout, wrap, line numbers, theme override, sidebar width, and gap expansion are
   per-browser. The browser receives the host's resolved defaults as its starting point (M2).
+  _Advanced (M2a)_: `ReviewSharedStateV1` (`packages/hunk/src/session/reviewSharedState.ts`,
+  browser-safe) carries the shared classification — filter, agent-note visibility, notes,
+  agent marks, and the agent reveal — and `presentation`, the host's resolved defaults: title,
+  source label, theme, view defaults (layout, wrap, line numbers, hunk headers), and the
+  review keymap after `[keybindings]`. The producer projects it from the review session host
+  (`app/review/sharedState.ts`); the daemon serves it at `GET /review-api/<session>/state`
+  through its one verified resource loop; `sharedStateRevision` on publications announces only
+  content changes. Theme derivation moved to `core/theme/appTheme.ts` and keymap resolution to
+  `core/run/keymap.ts` so a headless session resolves both without the terminal UI. Viewed
+  files (the third shared field) land in M2b; client-side overrides land in M4.
 - **G2. Actor identity and multi-client selection policy.** Notes carry an optional `author`,
   but wire actions carry no actor/client identity — with a terminal, a browser, and agents
   attached to one session, nothing distinguishes who moved the selection or wrote a note, and

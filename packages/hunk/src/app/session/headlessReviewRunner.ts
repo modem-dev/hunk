@@ -28,6 +28,8 @@ import { sanitizeTerminalLine } from "../../lib/terminalText";
 import { resolveSessionBrokerConfig } from "../../session/broker/brokerConfig";
 import { reviewProcessUrl } from "../review/capability";
 import { ReviewSessionHost } from "../review/reviewSessionHost";
+import { buildReviewPresentationDefaults, buildReviewSharedState } from "../review/sharedState";
+import type { ReviewPresentationDefaultsV1 } from "../../session/reviewSharedState";
 import { createHunkSessionBridge } from "./bridge";
 import { ReviewReloadCoordinator, withReloadVcsCatalog } from "./reloadCoordinator";
 import { createSessionReloadBounds } from "./reloadBounds";
@@ -127,6 +129,8 @@ export async function runHeadlessReview(
     });
 
   let host = createHost(bootstrap);
+  let mountedBootstrap: AppBootstrap = bootstrap;
+  let presentation: ReviewPresentationDefaultsV1 | undefined;
   let unsubscribeHost: () => void = () => {};
   let snapshotQueued = false;
 
@@ -148,12 +152,32 @@ export async function runHeadlessReview(
     queueMicrotask(publishSnapshot);
   };
 
-  /** Attach one host's store to the producer and republish whenever it changes. */
-  const attachHost = (next: ReviewSessionHost) => {
+  /**
+   * Attach one host's store and shared state to the producer and republish whenever either
+   * changes. Presentation defaults are resolved once per mounted bootstrap, on first read.
+   */
+  const attachHost = (next: ReviewSessionHost, generation: AppBootstrap) => {
     unsubscribeHost();
     host = next;
-    producer.attachStore(host.store);
-    unsubscribeHost = host.store.subscribe(queueSnapshot);
+    if (generation !== mountedBootstrap) {
+      mountedBootstrap = generation;
+      presentation = undefined;
+    }
+    const attached = next;
+    producer.attachStore(attached.store, {
+      getSharedStateRevision: () => attached.getSharedStateRevision(),
+      build: (publicationGeneration) =>
+        buildReviewSharedState(attached, {
+          generation: publicationGeneration,
+          presentation: (presentation ??= buildReviewPresentationDefaults(mountedBootstrap)),
+        }),
+    });
+    const unsubscribeStore = attached.store.subscribe(queueSnapshot);
+    const unsubscribeShared = attached.subscribeSharedState(queueSnapshot);
+    unsubscribeHost = () => {
+      unsubscribeStore();
+      unsubscribeShared();
+    };
     publishSnapshot();
   };
 
@@ -194,19 +218,19 @@ export async function runHeadlessReview(
       // A soft reload keeps notes, selection, and filter; a reset starts a fresh review state,
       // as a terminal remount does.
       if (adoption.resetApp) {
-        attachHost(createHost(adoption.bootstrap));
+        attachHost(createHost(adoption.bootstrap), adoption.bootstrap);
       } else {
         host.replaceFiles(adoption.bootstrap.changeset.files, {
           sourceLabel: adoption.bootstrap.changeset.sourceLabel,
         });
-        attachHost(host);
+        attachHost(host, adoption.bootstrap);
       }
       adoption.runMountedLifecycle?.();
       armRefresh(adoption.bootstrap);
     },
   });
 
-  attachHost(host);
+  attachHost(host, bootstrap);
   hostClient.setBridge(
     createHunkSessionBridge({
       addLiveComment: (input, commentId, options) => host.addLiveComment(input, commentId, options),

@@ -405,6 +405,7 @@ function parseHunkSessionState(value: unknown, context: WireParseContext): HunkS
       "reviewNoteCount",
       "reviewNotes",
       "reviewPublication",
+      "reviewSharedStateRevision",
     ],
   );
   if (
@@ -429,6 +430,17 @@ function parseHunkSessionState(value: unknown, context: WireParseContext): HunkS
       : parseHunkReviewPublicationAddress(record.reviewPublication);
   if (record.reviewPublication !== undefined && reviewPublication === undefined) {
     return reject(child(context, "reviewPublication"), "parseHunkReviewPublicationAddress");
+  }
+
+  const reviewSharedStateRevision =
+    record.reviewSharedStateRevision === undefined
+      ? undefined
+      : brokerWireParsers.parseNonNegativeInt(record.reviewSharedStateRevision);
+  if (
+    record.reviewSharedStateRevision !== undefined &&
+    (reviewSharedStateRevision === null || reviewPublication === undefined)
+  ) {
+    return reject(child(context, "reviewSharedStateRevision"), parser);
   }
 
   if (record.reviewNotes !== undefined && !Array.isArray(record.reviewNotes)) {
@@ -483,6 +495,7 @@ function parseHunkSessionState(value: unknown, context: WireParseContext): HunkS
     reviewNoteCount: reviewNotes.length,
     reviewNotes: reviewNotes as SessionReviewNoteSummary[],
     ...(reviewPublication ? { reviewPublication } : {}),
+    ...(typeof reviewSharedStateRevision === "number" ? { reviewSharedStateRevision } : {}),
   };
 }
 
