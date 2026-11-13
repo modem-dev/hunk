@@ -16,6 +16,7 @@ test/
   session-broker-runtime/  shared Bun/Node connection fixtures
   pty/                     live PTY-driven UI integration
   smoke/                   opt-in terminal transcript checks
+  web/                     Playwright checks of the daemon-served browser review page
 ```
 
 ## Placement
@@ -30,19 +31,21 @@ test/
   broker adapter behavior and shared cross-runtime fixtures.
 - Use `test/pty/` for resize, navigation, mouse, layout, scrolling, and note visibility in a live UI.
 - Use `test/smoke/` for transcript-level rendering checks on a real TTY.
+- Use `test/web/` for the browser review page in real Chromium against a real daemon and session.
 
 ## Commands and coverage
 
-| Command                              | Coverage                                                                                                                                |
-| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `bun run test`                       | `packages/`, `scripts/`, `examples/`, `test/cli/`, `test/helpers/`, and `test/session/`, as defined by `scripts/test/run-test-suite.ts` |
-| `bun run test:windows`               | Windows platform, process, VCS, CLI, and packaging coverage; Linux owns the terminal UI semantic suite                                  |
-| `bun test ./test/review-conformance` | Shared review fixtures and registered consumer projections                                                                              |
-| `bun run test:session-broker-node`   | Real Node listener/adapter conformance using the checked-in cross-runtime fixtures                                                      |
-| `bun run test:integration`           | PTY-backed tests under `test/pty/`                                                                                                      |
-| `bun run test:tty-smoke`             | Opt-in real-TTY smoke tests under `test/smoke/`                                                                                         |
-| `bun run test:install-vm`            | Opt-in Firecracker install compatibility scenarios under `test/cli/install-vm/`                                                         |
-| `bun run vm:shell [-- --with-hunk]`  | Disposable Ubuntu Firecracker shell, optionally with a fresh local Hunk build                                                           |
+| Command                                 | Coverage                                                                                                                                |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `bun run test`                          | `packages/`, `scripts/`, `examples/`, `test/cli/`, `test/helpers/`, and `test/session/`, as defined by `scripts/test/run-test-suite.ts` |
+| `bun run test:windows`                  | Windows platform, process, VCS, CLI, and packaging coverage; Linux owns the terminal UI semantic suite                                  |
+| `bun test ./test/review-conformance`    | Shared review fixtures and registered consumer projections                                                                              |
+| `bun run test:session-broker-node`      | Real Node listener/adapter conformance using the checked-in cross-runtime fixtures                                                      |
+| `bun run test:integration`              | PTY-backed tests under `test/pty/`                                                                                                      |
+| `bun run test:tty-smoke`                | Opt-in real-TTY smoke tests under `test/smoke/`                                                                                         |
+| `bun run build:web && bun run test:web` | Playwright tests under `test/web/` (`*.e2e.ts`) against a daemon and session run from source                                            |
+| `bun run test:install-vm`               | Opt-in Firecracker install compatibility scenarios under `test/cli/install-vm/`                                                         |
+| `bun run vm:shell [-- --with-hunk]`     | Disposable Ubuntu Firecracker shell, optionally with a fresh local Hunk build                                                           |
 
 npm extension installation tests require npm/Node.js and use a disposable loopback registry
 with real tarballs, not public npm. To exercise both the source CLI and a compiled binary:

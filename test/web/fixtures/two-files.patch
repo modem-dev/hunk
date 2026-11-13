@@ -1,0 +1,31 @@
+diff --git a/src/greeting.ts b/src/greeting.ts
+index 1111111..2222222 100644
+--- a/src/greeting.ts
++++ b/src/greeting.ts
+@@ -1,6 +1,7 @@
+ import { readFileSync } from "node:fs";
+-export function greet(name: string) {
++export function greet(name: string, punctuation = "!") {
++  const greeting = `Hello, ${name}${punctuation}`;
+   return greeting;
+ }
+ export const first = 1;
+ export const second = 2;
+@@ -20,7 +21,7 @@ export const seventeen = 17;
+ export const eighteen = 18;
+ export const nineteen = 19;
+ export const twenty = 20;
+-export const twentyOne = 21;
++export const twentyOne = 2100;
+ export const twentyTwo = 22;
+ export const twentyThree = 23;
+ export const twentyFour = 24;
+diff --git a/README.md b/README.md
+index 3333333..4444444 100644
+--- a/README.md
++++ b/README.md
+@@ -1,3 +1,3 @@
+ # Example
+-An old description.
++A new description.
+ More text.
