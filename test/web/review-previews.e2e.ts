@@ -3,7 +3,9 @@
  *
  * Images: a changed PNG compares side by side, by swipe, and by onion skin with sizes and
  * dimensions; an added and a deleted image show their one side; bytes named like an image
- * that are not one keep the stream's "Binary file skipped". Markdown: the header toggle swaps
+ * that are not one keep the stream's "Binary file skipped"; a PNG declaring 30000 × 30000 is
+ * refused before decoding; an SVG, text or binary, never becomes a blob or an `<img>`, and
+ * every blob the page mints has a raster type. Markdown: the header toggle swaps
  * a file's diff for its rendered text, a deleted file renders its old text, and nothing in the
  * document runs. No CSP violation or console error, and axe stays green.
  */
@@ -83,6 +85,59 @@ test("shows added and deleted images single-sided, and keeps the placeholder for
     "Binary file skipped",
   );
   await expect(section(page, "images/fake.png").locator("img")).toHaveCount(0);
+});
+
+test("refuses an image whose header declares a size past the decode limit", async ({ page }) => {
+  const huge = section(page, "images/huge.png");
+  await huge.scrollIntoViewIfNeeded();
+  await expect(huge.getByTestId("image-preview-too-large")).toHaveText(
+    "Image too large to preview: 30000 × 30000",
+  );
+  await expect(huge.locator("img")).toHaveCount(0);
+});
+
+test("never turns an SVG into a blob or an image, text or binary", async ({ page }) => {
+  // Record every blob the page mints, from the first script on, then load the page again.
+  await page.addInitScript(() => {
+    const types: string[] = [];
+    (window as { __blobTypes?: string[] }).__blobTypes = types;
+    const create = URL.createObjectURL.bind(URL);
+    URL.createObjectURL = (object: Blob | MediaSource) => {
+      types.push(object instanceof Blob ? object.type : "media-source");
+      return create(object);
+    };
+  });
+  await page.reload();
+  await expect(page.locator('.toolbar [data-state="connected"]')).toBeVisible({ timeout: 30_000 });
+  await expect(section(page, "images/photo.png").getByTestId("image-preview")).toBeVisible();
+
+  // A text SVG keeps its ordinary text diff.
+  const script = section(page, "images/script.svg");
+  await script.scrollIntoViewIfNeeded();
+  await expect(script.locator("diffs-container")).toHaveCount(1);
+  await expect(script.locator("img")).toHaveCount(0);
+  await expect(script.getByTestId("image-preview")).toHaveCount(0);
+
+  // A binary SVG keeps the stream's placeholder.
+  const packed = section(page, "images/packed.svg");
+  await packed.scrollIntoViewIfNeeded();
+  await expect(packed.locator('[data-empty-reason="binary"]')).toHaveText("Binary file skipped");
+  await expect(packed.locator("img")).toHaveCount(0);
+
+  const types = await page.evaluate(() => (window as { __blobTypes?: string[] }).__blobTypes);
+  expect(types!.length).toBeGreaterThan(0);
+  const raster = [
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "image/webp",
+    "image/bmp",
+    "image/x-icon",
+  ];
+  expect(types!.filter((type) => !raster.includes(type))).toEqual([]);
+  expect(
+    await page.evaluate(() => (window as { __hunkSvgPwned?: boolean }).__hunkSvgPwned),
+  ).toBeUndefined();
 });
 
 test("revokes image URLs when previews unmount", async ({ page }) => {

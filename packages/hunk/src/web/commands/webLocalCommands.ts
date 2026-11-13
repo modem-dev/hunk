@@ -33,10 +33,16 @@ export interface WebLocalCommand {
 export const WEB_LOCAL_COMMANDS = [
   { id: "hunk.web.commandPalette", title: "Command palette", category: "app", modKey: "k" },
   { id: "hunk.web.goToFile", title: "Go to file", category: "review", modKey: "p" },
-  { id: "hunk.web.copyReviewLink", title: "Copy review link", category: "app" },
+  // Both links carry this tab's capability, so their titles say they include the access key,
+  // matching the toolbar's "Copy link" tooltip.
+  {
+    id: "hunk.web.copyReviewLink",
+    title: "Copy review link (includes access key)",
+    category: "app",
+  },
   {
     id: "hunk.web.copyLocationLink",
-    title: "Copy link to this hunk or note",
+    title: "Copy link to this hunk or note (includes access key)",
     category: "review",
   },
   { id: "hunk.web.useSessionTheme", title: "Use session theme", category: "view" },
