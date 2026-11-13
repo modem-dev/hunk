@@ -126,7 +126,14 @@ export async function startTestWebReview(input: string): Promise<TestWebReview> 
     : ["patch", input];
   const hunkCommand = (args: readonly string[]) =>
     COMPILED_EXECUTABLE ? [COMPILED_EXECUTABLE, ...args] : [BUN, SOURCE_ENTRYPOINT, ...args];
-  const [sessionCommand, ...sessionArgs] = hunkCommand([...reviewArgs, "--web"]);
+  // `--web` opens a browser and watches the input by default; a test drives its own browser
+  // and its own reloads, so it asks for neither.
+  const [sessionCommand, ...sessionArgs] = hunkCommand([
+    ...reviewArgs,
+    "--web",
+    "--no-open",
+    "--no-watch",
+  ]);
   const session = spawn(sessionCommand!, sessionArgs, {
     cwd: repo ?? REPO_ROOT,
     env,
