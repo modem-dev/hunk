@@ -1,10 +1,10 @@
 # Web review client: page, assets, and policy
 
-> **Status (2026-11-13): M4 read-only page with keyboard navigation.** The daemon serves a
-> real, offline page for a live review: toolbar, files sidebar, and one top-to-bottom stream
-> of every file, in the terminal's themes, driven by the terminal's shortcuts. Adopting the
-> shared-state route and notes are the next M4 steps; no CLI entry point exists yet
-> ([`web-review-plan.md`](web-review-plan.md)).
+> **Status (2026-11-13): M4 read-only page with shared state.** The daemon serves a real,
+> offline page for a live review: toolbar, files sidebar, and one top-to-bottom stream of every
+> file with the review's notes, agent marks, and the session's title, theme, view, and keymap,
+> driven by the terminal's shortcuts. Authoring notes is the next step; the page opens through
+> the hidden `--web` flag ([`web-review-plan.md`](web-review-plan.md)).
 
 This records how the client is built and what the spike measured about Pierre on the web.
 
@@ -34,6 +34,11 @@ packages/hunk/src/web/
   transport/eventStream.ts     keeps the stream open; one shared reconnect scheduler
   transport/webCryptoDigest.ts Web Crypto SHA-256 as the assemblers' async digest
   mirror/reviewMirror.ts       orders publications; loads each generation's files
+  mirror/sharedStateMirror.ts  fetches and orders shared-state snapshots
+  notes/noteProjection.ts      places a file's visible notes per line; titles and thread depth
+  notes/noteCards.ts           note cards as DOM for Pierre's line annotations
+  notes/stmlDom.ts             STML markup to DOM through the shared parser and roles
+  stream/highlightGeometry.ts  agent attention marks measured over drawn characters
   mirror/fileIndex.ts          per-file index entries and the pluggable index source
   store/clientReviewStore.ts   the page's local core/review store and gap source loads
 ```
@@ -65,9 +70,17 @@ packages/hunk/src/web/
   them. Each new document is adopted with `document/reconcile`, so selection and expansion
   survive a reload by file key. Gap source is loaded on demand from the file's `source`
   resource into the store's source-status vocabulary.
-- **Catalog order.** The mirror relies on catalog order being document order. The producer
-  builds the catalog by walking the document (`app/review/publication.ts`), but the wire
-  does not state it; the shared-state route should carry an explicit file index.
+- **Shared state** (`sharedStateMirror.ts`). Every publication is offered to it before the file
+  mirror; it fetches `GET /state` when the generation changes or `sharedStateRevision` moves,
+  never for a selection moving elsewhere, orders bodies by `classifyReviewPublication` and then
+  by shared revision, supersedes in-flight fetches with the shared queue, and validates with
+  `parseReviewSharedState`. The file mirror asks it for each generation's file index, which
+  fixes document order and fills the sidebar, totals, and reserved heights before any canonical
+  file loads (catalog order is only the fallback when the route fails). The store adopts a
+  snapshot once the file mirror shows its generation: `filter/set`, `notes/set-visibility`, and
+  the stored notes replaced with the snapshot's live and reviewer notes, resolution kept;
+  sidecar annotations stay out of the store, as in every surface, and reach annotated navigation
+  through `buildReviewAnnotationIndexFromNotes`.
 - **Digests.** A resource descriptor in the published catalog is usually unmeasured, and the
   HTTP surface sends no digest header, so for those reads the client checks size and window
   rules and relies on the daemon having verified the bytes. Measured descriptors are verified
@@ -141,11 +154,11 @@ servable asset. The build refuses any output whose name the page grammar would n
 whose extension has no declared content type. A plugin replaces `shiki/wasm` with a module that
 throws, so the 460 KB Oniguruma binary never ships and the policy never needs WASM.
 
-| Distribution     | Where the page lives           | How                                                                                                                                                                                                                                                                              |
-| ---------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Compiled binary  | Embedded `hunk-web-assets.bin` | `build-bin.ts` builds the page and packs every file gzip-compressed into one archive passed to `bun build --compile`; the daemon finds it in `Bun.embeddedFiles` and serves the files still compressed (`content-encoding: gzip`, inflated only for a client that refuses gzip). |
-| npm (`dist/npm`) | `dist/npm/web/`                | `build-npm.ts` builds into it; `main.js` reads it from beside itself. The prebuilt meta package copies it with the rest of `dist/npm`.                                                                                                                                           |
-| Source checkout  | `packages/hunk/dist/web/`      | `reviewPageAssets.ts` runs `scripts/build/build-web.ts` once when the build is missing. An existing build is reused; rerun `bun run build:web` after changing the client.                                                                                                        |
+| Distribution     | Where the page lives           | How                                                                                                                                                                                                                                                                                                            |
+| ---------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Compiled binary  | Embedded `hunk-web-assets.bin` | `build-bin.ts` builds the page and packs every file gzip-compressed into one archive passed to `bun build --compile`; the daemon finds it in `Bun.embeddedFiles` and serves the files still compressed (`content-encoding: gzip`, inflated only for a client that refuses gzip).                               |
+| npm (`dist/npm`) | `dist/npm/web/`                | `build-npm.ts` builds into it; `main.js` reads it from beside itself. The prebuilt meta package copies it with the rest of `dist/npm`.                                                                                                                                                                         |
+| Source checkout  | `packages/hunk/dist/web/`      | `reviewPageAssets.ts` runs `scripts/build/build-web.ts` once when the build is missing. An existing build is reused; rerun `bun run build:web` after changing the client, and a running daemon serves the new build: it re-reads `manifest.json` on every lookup, so it never serves a replaced build's names. |
 
 Output is generated and ignored by Git. `check:pack` and `check:prebuilt-pack` read the
 manifest and fail unless the document, the manifest, and every listed asset are in the pack.
@@ -154,7 +167,7 @@ manifest and fail unless the document, the manifest, and every listed asset are 
 
 | Measure                                                 | Bytes                                             |
 | ------------------------------------------------------- | ------------------------------------------------- |
-| Entry chunk (React DOM, Pierre diffs, Shiki core, page) | 786 KB (232 KB gzip)                              |
+| Entry chunk (React DOM, Pierre diffs, Shiki core, page) | 820 KB (243 KB gzip)                              |
 | Tree sidebar chunk (`@pierre/trees`, Preact), lazy      | about 240 KB                                      |
 | Theme index                                             | 60 KB (11 KB gzip)                                |
 | Page stylesheet                                         | 8 KB                                              |
@@ -210,6 +223,39 @@ imports; a page fetches only the languages and themes it shows. The largest sing
   class or decoration hook in its diff renderer for them (rechecked for the keyboard change; its
   types mention "moved" only for renamed files). The changeset title is not on the wire, so
   the toolbar says "Hunk review" until presentation defaults arrive.
+
+## Notes, agent marks, and presentation defaults
+
+- **Notes** are read-only cards in the diff flow, one Pierre line annotation per anchor line,
+  placed by `noteProjection.ts`: visibility and threads from
+  `selectVisibleThreadedStoredReviewNotes` and `reviewNoteVisibleByPolicy`, the line from
+  `reviewNoteAnchorLine`, and the owner hunk's canonical line when that line sits in collapsed
+  context. A card shows the terminal's title (`Your note`, the author, or `Agent note`, with the
+  age), its lines (`R12–R14`), a stale mark, then the STML body or the summary and muted
+  rationale; replies indent under their root, capped at three levels. Titles, ages, and line
+  labels are `core/review/noteLabels.ts`, which the terminal's inline notes now use too. Pierre
+  puts an annotation below its line; the terminal draws a card above its range.
+- **Sidebar badges** count each file's visible notes (`*N`). When the session left sidecar
+  notes out of the snapshot (`omittedSidecarNotes`), the toolbar says how many. A note written
+  through the review link (`originalSource: "browser"`) is titled by its author, or "Browser
+  note", never "Your note": anyone holding the link may have written it.
+- **Agent marks** are measured over the characters Pierre drew (`highlightGeometry.ts`) and
+  painted in their tone; Pierre has no character-range decoration hook.
+- **Agent reveal.** When `agentReveal.token` grows, the page selects its hunk and reveals its
+  line or note card. The token present when the page first loads is history and moves nothing.
+- **Focus report.** When the reader's scroll settles, the page posts a debounced
+  `selection/anchor` as a `browser` actor with a per-tab `clientId` (never stored), so a
+  headless session's `hunk session context` reports where the reader is. Failures are dropped,
+  nothing is sent while a newer generation loads, and no other selection action is ever sent.
+- **Presentation defaults.** The toolbar shows `presentation.title` (the source label is its
+  tooltip) and the shared filter. The session's theme, view options, and resolved keymap are
+  the starting point; this browser's own theme and view choices win and persist, and the theme
+  menu's "Use session theme" clears the override. A custom session theme applies its tokens;
+  code highlights with its base Shiki theme, or GitHub's for its appearance, because Pierre
+  takes a highlight theme by name or as a whole Shiki theme, so the theme's `syntaxColors` and
+  scope overrides are not applied in the browser.
+- **Shared filter.** Files the session's filter hides leave the stream and the sidebar, and the
+  planner walks the same visible stream.
 
 ## Commands and keyboard
 
@@ -306,6 +352,12 @@ imports; a page fetches only the languages and themes it shows. The largest sing
   layout and theme switching, gap expansion, reload keeping the reader's place, and axe;
   `test/web/review-large.e2e.ts` keeps a 2,000-file review responsive.
   `test/web/review-screenshots.e2e.ts` captures the page when `HUNK_WEB_SCREENSHOT_DIR` is set.
+  `test/web/review-notes.e2e.ts` drives a headless session with the agent's own commands:
+  sidecar and STML notes, live comments added, batched, replied to (and a reviewer reply),
+  removed, and cleared; `hunk session navigate`; agent highlights; annotated navigation; a
+  custom theme from config with the session-theme override; the reader's position reported to
+  `hunk session context`; notes and position across a reload; and axe with notes showing.
+  `test/web/review-languages.e2e.ts` highlights `.mts` and `.cts` files.
   `test/web/review-keyboard.e2e.ts` drives the page from the keyboard: hunk and file
   navigation with reveals under the sticky header, scroll-then-navigate anchoring, paging,
   the view keys and theme menu, the gap toggle, click-to-select, input-focus and

@@ -1,11 +1,15 @@
 /**
- * Starts the page's view of one live review: the API client, the mirror, the local store,
- * and the event stream that keeps the mirror current.
+ * Starts the page's view of one live review: the API client, the file and shared-state
+ * mirrors, the local store, and the event stream that keeps both mirrors current.
  *
  * Opening the review URL is the only trigger. The page path names the session and the
  * fragment carries the capability; both are read once here. The first publication is read
  * from the publication route so the page starts loading before the stream opens; every
  * later one arrives on the stream, and the mirror orders them all with the same classifier.
+ * Every publication is offered to the shared-state mirror first, so the snapshot fetch is in
+ * flight before the file mirror asks it for the generation's file index. The store adopts a
+ * shared-state snapshot only once the file mirror shows that snapshot's generation, so notes
+ * never hang on a document they were not resolved against.
  *
  * This module wires the pieces together and owns their lifetime; it decides nothing about
  * ordering, loading, or selection, which belong to the mirror and the store.
@@ -17,7 +21,9 @@ import {
 } from "../../session/reviewHttpProtocol";
 import { ReviewApiClient, ReviewApiError, type ReviewFetch } from "../transport/apiClient";
 import { openReviewEventStream, type ReviewEventStreamStatus } from "../transport/eventStream";
+import { reviewSharedFileIndexEntry } from "../mirror/fileIndex";
 import { ReviewMirror } from "../mirror/reviewMirror";
+import { ReviewSharedStateMirror } from "../mirror/sharedStateMirror";
 import { ClientReviewStore } from "../store/clientReviewStore";
 
 /** Shown when the daemon cannot be reached at all, which no review failure code describes. */
@@ -65,6 +71,7 @@ export interface ReviewSession {
   sessionId: string;
   client: ReviewApiClient;
   mirror: ReviewMirror;
+  shared: ReviewSharedStateMirror;
   review: ClientReviewStore;
   connection: ObservableValue<ReviewEventStreamStatus>;
   close(): void;
@@ -91,25 +98,46 @@ export function startReviewSession({
     capability,
     ...(fetch ? { fetch } : {}),
   });
-  const mirror = new ReviewMirror({ client });
+  const shared = new ReviewSharedStateMirror({ client });
+  const mirror = new ReviewMirror({
+    client,
+    // The shared state's file index fixes document order and fills the sidebar before any
+    // canonical file loads; without it the mirror falls back to catalog order.
+    indexSource: async (catalog, signal) =>
+      (await shared.forGeneration(catalog.generation, signal))?.files.map(
+        reviewSharedFileIndexEntry,
+      ),
+  });
   const review = new ClientReviewStore({ client });
   const connection = new ObservableValue<ReviewEventStreamStatus>({ kind: "connecting" });
 
   // The store adopts each document the mirror publishes, which keeps selection and
-  // expansion by file key across reloads.
+  // expansion by file key across reloads, then the shared state of that same generation.
   let adopted = mirror.getSnapshot().document;
+  const adoptShared = () => {
+    const state = shared.getSnapshot().body?.state;
+    if (state && state.generation === mirror.getSnapshot().address?.generation) {
+      review.adoptShared(state);
+    }
+  };
   const stopAdopting = mirror.subscribe(() => {
     const snapshot = mirror.getSnapshot();
     if (snapshot.document !== adopted) {
       adopted = snapshot.document;
       review.adopt(snapshot.document, snapshot.catalog);
     }
+    adoptShared();
   });
+  const stopAdoptingShared = shared.subscribe(adoptShared);
+  const observe = (body: Parameters<ReviewMirror["observe"]>[0]) => {
+    shared.observe(body);
+    mirror.observe(body);
+  };
 
   const initial = new AbortController();
   void client
     .publication(initial.signal)
-    .then((body) => mirror.observe(body))
+    .then((body) => observe(body))
     .catch((error: unknown) => {
       // The stream opens with a full publication anyway; a failed first read is only fatal
       // when the stream also refuses, which the connection state reports.
@@ -121,7 +149,7 @@ export function startReviewSession({
   const stream = openReviewEventStream({
     client,
     onEvent: (event) => {
-      if (event.type === "publication") mirror.observe(event.body);
+      if (event.type === "publication") observe(event.body);
     },
     onStatus: (status) => connection.set(status),
   });
@@ -132,13 +160,16 @@ export function startReviewSession({
       sessionId: route.sessionId,
       client,
       mirror,
+      shared,
       review,
       connection,
       close() {
         initial.abort();
         stream.close();
         stopAdopting();
+        stopAdoptingShared();
         mirror.close();
+        shared.close();
         review.close();
       },
     },

@@ -14,7 +14,9 @@
  *   (`]`, `.`, a sidebar click): a `file-top` reveal puts the file's header at the top, a
  *   `hunk` reveal puts the selected hunk just under the sticky file header, and `none` leaves
  *   the viewport alone. A hunk in a file that has not mounted yet is scrolled to by estimate
- *   and corrected once the file draws.
+ *   and corrected once the file draws. An agent's reveal (`hunk session navigate`, a comment
+ *   added with `--focus`) may name an exact line or note; the hunk reveal then lands on that
+ *   line or note card instead of the hunk's first row.
  * - Viewport anchoring. When the reader scrolls by hand — wheel, scrollbar, keys, or the
  *   page's own scroll commands — and the scroll settles, the hunk nearest the viewport's
  *   middle becomes the selection through `selection/anchor`, which never moves a viewport
@@ -37,10 +39,13 @@ import {
 import type { ReviewState } from "../../core/review/state";
 import type { ReviewFileV1 } from "../../core/review/types";
 import { reviewHunkIndexAtOffset } from "../../core/review/viewportAnchor";
+import type { ReviewAgentHighlightV1, ReviewSharedNoteV1 } from "../../session/reviewSharedState";
 import type { ReviewMirrorFileSlot } from "../mirror/reviewMirror";
 import { FileSection, STREAM_HEADER_HEIGHT_PX, STREAM_ROW_HEIGHT_PX } from "./FileSection";
 import { planReviewFileRender, type ReviewFileRenderPlan } from "./fileProjection";
 import type { ReviewFileGeometry } from "./hunkGeometry";
+
+const NO_HIGHLIGHTS: readonly ReviewAgentHighlightV1[] = [];
 
 /** How far beyond the viewport files mount, and how far before they unmount. */
 const MOUNT_MARGIN = "150% 0px 150% 0px";
@@ -94,6 +99,43 @@ export interface ReviewStreamProps {
   onViewportAnchor: (fileKey: string, hunkIndex: number) => void;
   /** Filled in with the stream's scroll commands. */
   controller: MutableRefObject<ReviewStreamController | null>;
+  /** The shared snapshot's sidecar annotations. */
+  sidecarNotes: readonly ReviewSharedNoteV1[];
+  /** Agent attention marks by file key. */
+  highlights: Readonly<Record<string, ReviewAgentHighlightV1[]>>;
+  /** An exact line or note the next hunk reveal of its file should land on. */
+  revealPoint?: ReviewRevealPoint;
+}
+
+/** A line or note inside one file, which a hunk reveal lands on instead of the hunk's top. */
+export interface ReviewRevealPoint {
+  fileKey: string;
+  side?: "old" | "new";
+  line?: number;
+  noteId?: string;
+}
+
+/** Where one reveal point is drawn, in stream coordinates, when its file has drawn it. */
+function revealPointTop(root: HTMLElement, section: HTMLElement, point: ReviewRevealPoint) {
+  const shadow = section.querySelector("diffs-container")?.shadowRoot;
+  const scopes: ParentNode[] = shadow ? [section, shadow] : [section];
+  let element: Element | null | undefined;
+  for (const scope of scopes) {
+    if (point.noteId) {
+      element = scope.querySelector(`[data-note-id="${CSS.escape(point.noteId)}"]`);
+    } else if (point.line !== undefined) {
+      element = Array.from(scope.querySelectorAll(`[data-line="${point.line}"]`)).find(
+        (candidate) =>
+          candidate.closest("[data-code]") !== null &&
+          (point.side === "old") ===
+            ((candidate.closest("[data-code]")?.hasAttribute("data-deletions") ?? false) ||
+              (candidate.getAttribute("data-line-type") ?? "").includes("deletion")),
+      );
+    }
+    if (element) break;
+  }
+  if (!element) return undefined;
+  return element.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop;
 }
 
 /** What a reveal put on screen, and where, so later scrolling can tell if the reader moved. */
@@ -215,6 +257,11 @@ export function ReviewStream(props: ReviewStreamProps) {
     const section = root && sectionFor(root, fileKey);
     if (!root || !section) return undefined;
     if (hunkIndex === undefined) return { top: section.offsetTop, exact: true };
+    const point = latest.current.props.revealPoint;
+    if (point?.fileKey === fileKey) {
+      const top = revealPointTop(root, section, point);
+      if (top !== undefined) return { top, exact: true };
+    }
     const bodyTop = section.offsetTop + STREAM_HEADER_HEIGHT_PX;
     const measured = geometries.current.get(fileKey)?.hunks[hunkIndex];
     if (measured) return { top: bodyTop + measured.top, exact: true };
@@ -482,6 +529,11 @@ export function ReviewStream(props: ReviewStreamProps) {
             onCollapseGaps={props.onCollapseGaps}
             onSelectHunk={props.onSelectHunk}
             onGeometry={onGeometry}
+            liveNotes={review.liveNotes}
+            userNotes={review.userNotes}
+            showAgentNotes={review.showAgentNotes}
+            sidecarNotes={props.sidecarNotes}
+            highlights={props.highlights[slot.key] ?? NO_HIGHLIGHTS}
           />
         );
       })}

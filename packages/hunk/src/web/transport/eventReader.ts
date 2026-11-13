@@ -180,7 +180,8 @@ export class ReviewEventDecoder {
     if (
       !body ||
       body.publication.generation !== parsedId.address.generation ||
-      body.publication.stateRevision !== parsedId.address.stateRevision
+      body.publication.stateRevision !== parsedId.address.stateRevision ||
+      body.sharedStateRevision !== parsedId.sharedStateRevision
     ) {
       throw protocolError("A review publication event did not match its id.");
     }

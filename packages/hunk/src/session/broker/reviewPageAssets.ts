@@ -19,7 +19,7 @@
  * `reviewPageServer.ts`. Lookups go through the manifest only, so a request can name an
  * asset but never a path: there is no way to reach a file the build did not list.
  */
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { isReviewAssetName } from "../reviewHttpProtocol";
 
@@ -128,8 +128,9 @@ export function directoryReviewPageAssets(directory: string): ReviewPageAssets |
       contentType: REVIEW_PAGE_DOCUMENT_CONTENT_TYPE,
       gzip: false,
     }),
+    // A listed name whose file is gone belongs to a build that was replaced on disk.
     asset: (name) =>
-      listed.has(name)
+      listed.has(name) && existsSync(join(directory, name))
         ? {
             body: Bun.file(join(directory, name)),
             contentType: reviewAssetContentType(name)!,
@@ -291,31 +292,46 @@ async function buildSourceAssets(buildScript: string): Promise<boolean> {
 
 let embedded: Promise<ReviewPageAssets | undefined> | undefined;
 let sourceBuild: Promise<boolean> | undefined;
-const directoryCache = new Map<string, { mtimeMs: number; assets: ReviewPageAssets }>();
+const directoryCache = new Map<string, { manifest: string; loaded: ReviewPageAssets }>();
 
-/**
- * Serve one build directory, re-reading its manifest only when the build was replaced.
- *
- * `build-web.ts` swaps a whole new directory into place, so a changed manifest timestamp is
- * the signal that a running daemon must stop serving the previous build's names.
- */
-function currentDirectoryAssets(directory: string): ReviewPageAssets | undefined {
-  let mtimeMs: number;
+/** The build a directory holds now, re-read only when its manifest's content changed. */
+function loadDirectoryBuild(directory: string): ReviewPageAssets | undefined {
+  let manifest: string;
   try {
-    mtimeMs = statSync(join(directory, REVIEW_PAGE_MANIFEST_NAME)).mtimeMs;
+    manifest = readFileSync(join(directory, REVIEW_PAGE_MANIFEST_NAME), "utf8");
   } catch {
     directoryCache.delete(directory);
     return undefined;
   }
   const cached = directoryCache.get(directory);
-  if (cached?.mtimeMs === mtimeMs) {
-    return cached.assets;
+  if (cached?.manifest === manifest) {
+    return cached.loaded;
   }
-  const assets = directoryReviewPageAssets(directory);
-  if (assets) {
-    directoryCache.set(directory, { mtimeMs, assets });
+  const loaded = directoryReviewPageAssets(directory);
+  if (loaded) {
+    directoryCache.set(directory, { manifest, loaded });
+  } else {
+    directoryCache.delete(directory);
   }
-  return assets;
+  return loaded;
+}
+
+/**
+ * Serve one build directory, re-reading its manifest whenever the build was replaced.
+ *
+ * A rebuild under a running daemon (`bun run build:web` in a source checkout) swaps a new
+ * build into place, so the daemon must stop serving the previous build's names. The manifest
+ * is small and read on every lookup: the cached build holds while the manifest's content is
+ * unchanged, which a timestamp cannot promise when two builds land within its resolution. A
+ * listed asset whose file is already gone is answered as absent rather than as a broken file.
+ */
+export function currentDirectoryReviewPageAssets(directory: string): ReviewPageAssets | undefined {
+  const initial = loadDirectoryBuild(directory);
+  if (!initial) return undefined;
+  return {
+    document: () => (loadDirectoryBuild(directory) ?? initial).document(),
+    asset: (name) => loadDirectoryBuild(directory)?.asset(name),
+  };
 }
 
 /**
@@ -333,7 +349,7 @@ export async function loadReviewPageAssets(): Promise<ReviewPageAssets | undefin
   }
 
   // The npm bundle runs from `dist/npm/main.js`, with the build beside it in `dist/npm/web`.
-  const packaged = currentDirectoryAssets(join(import.meta.dir, "web"));
+  const packaged = currentDirectoryReviewPageAssets(join(import.meta.dir, "web"));
   if (packaged) {
     return packaged;
   }
@@ -342,12 +358,12 @@ export async function loadReviewPageAssets(): Promise<ReviewPageAssets | undefin
   if (!source) {
     return undefined;
   }
-  const existing = currentDirectoryAssets(source.outdir);
+  const existing = currentDirectoryReviewPageAssets(source.outdir);
   if (existing) {
     return existing;
   }
   sourceBuild ??= buildSourceAssets(source.buildScript).finally(() => {
     sourceBuild = undefined;
   });
-  return (await sourceBuild) ? currentDirectoryAssets(source.outdir) : undefined;
+  return (await sourceBuild) ? currentDirectoryReviewPageAssets(source.outdir) : undefined;
 }

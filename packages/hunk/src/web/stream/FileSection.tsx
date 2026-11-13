@@ -9,8 +9,11 @@
  * model, its wording this page's own), or space reserved from the file's row count while the
  * file is still loading or far away.
  */
-import { memo, type CSSProperties } from "react";
+import { memo, useMemo, type CSSProperties } from "react";
 import type { ReviewEmptyDiffReason } from "../../core/review/document";
+import type { ReviewStoredNote } from "../../core/review/state";
+import type { ReviewAgentHighlightV1, ReviewSharedNoteV1 } from "../../session/reviewSharedState";
+import { planReviewFileNotes } from "../notes/noteProjection";
 import { reviewFileChangeGlyph, reviewFileLabelParts } from "../../core/review/fileLabels";
 import type { ReviewFileIndexEntry } from "../mirror/fileIndex";
 import type { ReviewFileRenderPlan } from "./fileProjection";
@@ -50,7 +53,17 @@ export interface FileSectionProps {
   onCollapseGaps: (fileKey: string) => void;
   onSelectHunk: (fileKey: string, hunkIndex: number) => void;
   onGeometry: (fileKey: string, geometry: ReviewFileGeometry) => void;
+  /** The page store's stored notes and visibility, passed apart so unrelated changes skip. */
+  liveNotes: readonly ReviewStoredNote[];
+  userNotes: readonly ReviewStoredNote[];
+  showAgentNotes: boolean;
+  /** The shared snapshot's sidecar annotations. */
+  sidecarNotes: readonly ReviewSharedNoteV1[];
+  /** This file's agent attention marks. */
+  highlights: readonly ReviewAgentHighlightV1[];
 }
+
+const NO_HIGHLIGHTS: readonly ReviewAgentHighlightV1[] = [];
 
 /** The header row for one file. */
 function FileHeader({
@@ -120,6 +133,23 @@ export function reservedBodyHeight(
 export const FileSection = memo(function FileSection(props: FileSectionProps) {
   const { fileKey, index, plan, mounted, measuredHeight, layout } = props;
   const expandedGaps = plan?.gaps.filter((gap) => gap.state !== "collapsed").length ?? 0;
+  const { liveNotes, userNotes, showAgentNotes, sidecarNotes } = props;
+  // Notes hang from lines as drawn, so expanded context counts; the plan's metadata is that.
+  const noteGroups = useMemo(
+    () =>
+      plan?.metadata
+        ? planReviewFileNotes({
+            file: { key: fileKey, hunks: plan.metadata.hunks },
+            state: {
+              liveNotes: liveNotes as ReviewStoredNote[],
+              userNotes: userNotes as ReviewStoredNote[],
+              showAgentNotes,
+            },
+            sidecar: sidecarNotes,
+          })
+        : [],
+    [fileKey, plan, liveNotes, userNotes, showAgentNotes, sidecarNotes],
+  );
   const bodyStyle: CSSProperties | undefined =
     mounted && plan
       ? undefined
@@ -157,6 +187,8 @@ export const FileSection = memo(function FileSection(props: FileSectionProps) {
             selectedHunk={props.selectedHunk}
             onSelectHunk={(hunkIndex) => props.onSelectHunk(fileKey, hunkIndex)}
             onGeometry={(geometry) => props.onGeometry(fileKey, geometry)}
+            noteGroups={noteGroups}
+            highlights={props.highlights ?? NO_HIGHLIGHTS}
           />
         ) : null}
       </div>

@@ -24,15 +24,20 @@ import { sidebarEntry, type FileSidebarProps } from "./sidebarEntry";
 const TreeSidebar = lazy(() => import("./TreeSidebar"));
 
 /** The compact sidebar: directory headings over files, in review order. */
-function FlatSidebar({ entries, selectedKey, onSelectFile }: Omit<FileSidebarProps, "mode">) {
+function FlatSidebar({
+  entries,
+  noteCounts,
+  selectedKey,
+  onSelectFile,
+}: Omit<FileSidebarProps, "mode">) {
   const rows = useMemo(
     () =>
       buildReviewFlatSidebarEntries({
         files: entries,
         pathOf: (entry) => entry.path,
-        entryOf: sidebarEntry,
+        entryOf: (entry, depth) => sidebarEntry(entry, depth, noteCounts.get(entry.key) ?? 0),
       }),
-    [entries],
+    [entries, noteCounts],
   );
   return (
     <ul className="flat-sidebar" aria-label="Files">

@@ -9,14 +9,13 @@
  * never touch a developer's daemon. `HUNK_TEST_EXECUTABLE` runs the daemon and the session from
  * a compiled binary instead, which exercises the page assets embedded in it.
  */
-import { execFile, spawn, type ChildProcess } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { spawn, type ChildProcess } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 import type { Page } from "@playwright/test";
 import {
   HUNK_REVIEW_CAPABILITY_HEADER,
@@ -24,11 +23,13 @@ import {
   parseReviewPagePath,
   reviewHttpPath,
 } from "../../packages/hunk/src/session/reviewHttpProtocol";
+import { HUNK_REVIEW_PROTOCOL_VERSION } from "../../packages/hunk/src/session/reviewProtocol";
 import {
   reviewOrderSidecarPath,
   writeManyReviewRepo,
   writeRichReviewGeneration,
   writeRichReviewRepo,
+  type TestSidecarFileContext,
 } from "./fixtures/rich-review";
 
 const TEST_DIR = fileURLToPath(new URL(".", import.meta.url));
@@ -37,8 +38,6 @@ const SOURCE_ENTRYPOINT = join(REPO_ROOT, "packages", "hunk", "src", "main.tsx")
 export const PATCH_FIXTURE = join(TEST_DIR, "fixtures", "two-files.patch");
 const BUN = process.env.HUNK_TEST_BUN ?? "bun";
 const COMPILED_EXECUTABLE = process.env.HUNK_TEST_EXECUTABLE;
-
-const runFile = promisify(execFile);
 
 /** Reserve one free loopback port for a private daemon. */
 async function reserveTestPort() {
@@ -77,15 +76,35 @@ export interface TestWebReview {
   sessionId: string;
   /** The repository the session reviews, for the git-backed scenarios. */
   repo?: string;
-  /** Run one `hunk` command against this test's daemon and return its stdout. */
-  hunk(args: readonly string[]): Promise<string>;
+  /** Run one `hunk` command against this test's daemon, with optional stdin; resolves stdout. */
+  hunk(args: readonly string[], input?: string): Promise<string>;
   /** Stage the rich review's next generation and reload the session, as an agent would. */
   reload(): Promise<void>;
+  /** Read one review API route as JSON, presenting the capability as the page does. */
+  readApi(kind: "publication" | "state"): Promise<Record<string, unknown>>;
+  /** Send one review action through the review link, as a browser actor (the only kind it accepts). */
+  postAction(
+    action: Record<string, unknown>,
+    kind?: "terminal" | "browser" | "agent",
+  ): Promise<Response>;
   stop(): Promise<void>;
 }
 
+/** What a test adds to its session beyond the scenario. */
+export interface TestWebReviewOptions {
+  /** Extra review options, such as `--agent-notes` or `--experimental`. */
+  args?: readonly string[];
+  /** A user `config.toml` for the session, e.g. a custom theme. */
+  config?: string;
+  /** Agent context for files of the rich scenario, by path, written into its sidecar. */
+  context?: Readonly<Record<string, TestSidecarFileContext>>;
+}
+
 /** Start a daemon and one headless session serving `input`: a patch path, `--rich`, or `--many=N`. */
-export async function startTestWebReview(input: string): Promise<TestWebReview> {
+export async function startTestWebReview(
+  input: string,
+  options: TestWebReviewOptions = {},
+): Promise<TestWebReview> {
   const port = await reserveTestPort();
   const directories = [
     mkdtempSync(join(tmpdir(), "hunk-web-runtime-")),
@@ -120,7 +139,11 @@ export async function startTestWebReview(input: string): Promise<TestWebReview> 
   const many = /^--many=(\d+)$/.exec(input);
   const repo = input === "--rich" || many ? join(directories[0]!, "review-repo") : undefined;
   if (repo && many) writeManyReviewRepo(repo, Number(many[1]));
-  else if (repo) writeRichReviewRepo(repo);
+  else if (repo) writeRichReviewRepo(repo, options.context);
+  if (options.config) {
+    mkdirSync(join(directories[1]!, "hunk"), { recursive: true });
+    writeFileSync(join(directories[1]!, "hunk", "config.toml"), options.config);
+  }
   const reviewArgs = repo
     ? ["diff", "--staged", "--agent-context", reviewOrderSidecarPath(repo)]
     : ["patch", input];
@@ -130,6 +153,7 @@ export async function startTestWebReview(input: string): Promise<TestWebReview> 
   // and its own reloads, so it asks for neither.
   const [sessionCommand, ...sessionArgs] = hunkCommand([
     ...reviewArgs,
+    ...(options.args ?? []),
     "--web",
     "--no-open",
     "--no-watch",
@@ -159,12 +183,31 @@ export async function startTestWebReview(input: string): Promise<TestWebReview> 
     return response.ok ? true : undefined;
   });
 
-  const hunk = async (args: readonly string[]) => {
+  const hunk = (args: readonly string[], input?: string) => {
     const [command, ...rest] = hunkCommand(args);
-    const { stdout } = await runFile(command!, rest, { cwd: repo ?? REPO_ROOT, env });
-    return stdout;
+    return new Promise<string>((resolve, reject) => {
+      const child = spawn(command!, rest, { cwd: repo ?? REPO_ROOT, env });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
+      child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+      child.once("error", reject);
+      child.once("exit", (code) =>
+        code === 0
+          ? resolve(stdout)
+          : reject(new Error(`hunk ${args.join(" ")} exited ${code}: ${stderr.trim()}`)),
+      );
+      child.stdin.end(input ?? "");
+    });
   };
   let generation = 0;
+  const readApi = async (kind: "publication" | "state") => {
+    const response = await fetch(
+      `${origin}${reviewHttpPath({ kind, sessionId: route.sessionId })}`,
+      { headers: { [HUNK_REVIEW_CAPABILITY_HEADER]: capability } },
+    );
+    return (await response.json()) as Record<string, unknown>;
+  };
 
   return {
     url,
@@ -172,6 +215,23 @@ export async function startTestWebReview(input: string): Promise<TestWebReview> 
     sessionId: route.sessionId,
     ...(repo ? { repo } : {}),
     hunk,
+    readApi,
+    async postAction(action, kind = "browser") {
+      const publication = (await readApi("publication")).publication as { generation: string };
+      return fetch(`${origin}${reviewHttpPath({ kind: "actions", sessionId: route.sessionId })}`, {
+        method: "POST",
+        headers: {
+          [HUNK_REVIEW_CAPABILITY_HEADER]: capability,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          protocolVersion: HUNK_REVIEW_PROTOCOL_VERSION,
+          generation: publication.generation,
+          actor: { clientId: `test-${kind}`, kind },
+          action,
+        }),
+      });
+    },
     async reload() {
       if (!repo) throw new Error("Only the git-backed scenarios reload.");
       generation += 1;
@@ -194,9 +254,36 @@ export async function startTestWebReview(input: string): Promise<TestWebReview> 
 /** Record CSP violations, console errors and warnings, page errors, and failed requests. */
 export async function watchTestPageProblems(page: Page) {
   const problems: string[] = [];
+  // The page's focus report (`selection/anchor`) is best effort: one sent as the session
+  // reloads is refused for its old generation (409) or while the session is busy (502), and
+  // the page drops it. Chromium still logs the refused response, so exactly one such console
+  // line is excused per refused POST to the actions route, whichever event arrives first.
+  const refusal = (status: number) =>
+    `console error: Failed to load resource: the server responded with a status of ${status} (${status === 409 ? "Conflict" : "Bad Gateway"})`;
+  const excused: number[] = [];
+  page.on("response", (response) => {
+    const status = response.status();
+    const request = response.request();
+    if (
+      (status !== 409 && status !== 502) ||
+      request.method() !== "POST" ||
+      !new URL(response.url()).pathname.endsWith("/actions")
+    ) {
+      return;
+    }
+    const logged = problems.indexOf(refusal(status));
+    if (logged >= 0) problems.splice(logged, 1);
+    else excused.push(status);
+  });
   page.on("console", (message) => {
     if (message.type() !== "error" && message.type() !== "warning") return;
-    problems.push(`console ${message.type()}: ${message.text()}`);
+    const text = `console ${message.type()}: ${message.text()}`;
+    const status = excused.find((candidate) => refusal(candidate) === text);
+    if (status !== undefined) {
+      excused.splice(excused.indexOf(status), 1);
+      return;
+    }
+    problems.push(text);
   });
   page.on("pageerror", (error) => problems.push(`page error: ${error.message}`));
   page.on("requestfailed", (request) => {
