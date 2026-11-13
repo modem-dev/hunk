@@ -117,7 +117,10 @@ export function reviewNoteCapacityIssue(
  * Admit sidecar annotations into one projection, in the order offered, within the projected
  * sidecar bounds.
  *
- * `admit` returns false once an annotation would exceed either bound; every later one is then
+ * `admit` measures a note as stored; `admitSize` takes the serialized size of whatever shape
+ * the projection carries (the session snapshot's note summaries). Either returns false once an
+ * annotation would exceed the count bound, the byte bound, or the per-note bound
+ * (`MAX_REVIEW_NOTE_BYTES`, which every reader parses notes at); every later one is then
  * refused too, so a projection never skips one annotation and shows a later one.
  * `omitted` counts what was refused.
  */
@@ -126,22 +129,29 @@ export function createSidecarProjectionBudget() {
   let bytes = 0;
   let full = false;
   let omitted = 0;
+
+  /** Admit one annotation of a measured serialized size, or close the projection. */
+  function admitSize(size: number) {
+    if (
+      full ||
+      size > MAX_REVIEW_NOTE_BYTES ||
+      count + 1 > MAX_PROJECTED_SIDECAR_NOTES ||
+      bytes + size > MAX_PROJECTED_SIDECAR_NOTE_BYTES
+    ) {
+      full = true;
+      omitted += 1;
+      return false;
+    }
+    count += 1;
+    bytes += size;
+    return true;
+  }
+
   return {
     admit(note: ReviewNoteV1) {
-      const size = reviewNoteByteLength(note);
-      if (
-        full ||
-        count + 1 > MAX_PROJECTED_SIDECAR_NOTES ||
-        bytes + size > MAX_PROJECTED_SIDECAR_NOTE_BYTES
-      ) {
-        full = true;
-        omitted += 1;
-        return false;
-      }
-      count += 1;
-      bytes += size;
-      return true;
+      return admitSize(reviewNoteByteLength(note));
     },
+    admitSize,
     get omitted() {
       return omitted;
     },

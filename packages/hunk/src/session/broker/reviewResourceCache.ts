@@ -73,13 +73,36 @@ export class ReviewResourceBudgetError extends Error {
   /**
    * @param retryable True when the budget is merely occupied right now (a slot or bytes will
    * free up as other loads settle); false when this load could never fit.
+   * @param scope What is occupied: the daemon-wide budget every session shares, this
+   * session's own share of it, or this one resource's key (an earlier load of it is running).
    */
   constructor(
     message: string,
     readonly retryable = false,
+    readonly scope: "daemon" | "session" | "resource" = "daemon",
   ) {
     super(message);
   }
+}
+
+/** Raised to a reservation waiter whose caller gave up before a slot freed. */
+export class ReviewResourceWaitAbortedError extends Error {
+  override readonly name = "ReviewResourceWaitAbortedError";
+
+  constructor() {
+    super("The review resource read was abandoned before it started.");
+  }
+}
+
+/** One load waiting for an in-flight slot, in arrival order. */
+interface ReservationWaiter {
+  key: ReviewResourceKey;
+  byteLength: number;
+  lastError: ReviewResourceBudgetError;
+  resolve: (reservation: ReviewResourceReservation) => void;
+  reject: (error: Error) => void;
+  /** Detach the waiter's timer and abort listener. */
+  dispose: () => void;
 }
 
 interface CacheEntry {
@@ -99,6 +122,8 @@ export class ReviewResourceCache {
   private readonly reservations = new Map<string, ReviewResourceReservation>();
   private cachedBytes = 0;
   private reservedBytes = 0;
+  /** Loads waiting for a slot, oldest first; woken whenever a reservation goes away. */
+  private readonly waiters: ReservationWaiter[] = [];
 
   constructor(limits: Partial<ReviewResourceCacheLimits> = {}) {
     this.limits = {
@@ -157,6 +182,7 @@ export class ReviewResourceCache {
         // The slot frees when that load settles. Shared state reuses one key per generation
         // for every revision, so a read for a newer revision can overlap an older one.
         true,
+        "resource",
       );
     }
     if (this.reservations.size >= this.limits.inFlightResources) {
@@ -171,12 +197,14 @@ export class ReviewResourceCache {
       throw new ReviewResourceBudgetError(
         `This session already has ${this.limits.sessionInFlightResources} review resources loading.`,
         this.limits.sessionInFlightResources > 0,
+        "session",
       );
     }
     if (!this.fitsSessionShare(usage, byteLength)) {
       throw new ReviewResourceBudgetError(
         "This session's resource loads already fill its share of the in-flight budget.",
         true,
+        "session",
       );
     }
     if (byteLength > this.limits.inFlightBytes) {
@@ -229,6 +257,114 @@ export class ReviewResourceCache {
     reservation.byteLength = byteLength;
   }
 
+  /**
+   * Reserve one load's slot, waiting in arrival order while the budget is only occupied.
+   *
+   * A page legitimately issues more reads than one session's share at once (its file loads,
+   * then image previews and gap source), so a full budget is a queue, not a refusal. Waiters
+   * are woken when a reservation is released or evicted, never by polling, and are served in
+   * arrival order: a waiter blocked by the daemon-wide budget holds back everyone behind it,
+   * one blocked by its session's share holds back that session's later waiters only, and one
+   * whose key an earlier load still holds (a newer shared-state revision overlapping an older
+   * one) waits for that load alone, so no read is starved and one session cannot hold up
+   * another. A load that could never fit
+   * fails at once; one still waiting after `waitMs` fails with the budget error; and one whose
+   * `signal` aborts leaves the queue immediately and never reserves anything.
+   */
+  reserveWhenFree(
+    key: ReviewResourceKey,
+    byteLength: number,
+    options: { waitMs: number; signal?: AbortSignal },
+  ): Promise<ReviewResourceReservation> {
+    const { signal, waitMs } = options;
+    if (signal?.aborted) return Promise.reject(new ReviewResourceWaitAbortedError());
+    if (this.waiters.length === 0) {
+      try {
+        return Promise.resolve(this.reserve(key, byteLength));
+      } catch (error) {
+        if (!(error instanceof ReviewResourceBudgetError) || !error.retryable || waitMs <= 0) {
+          return Promise.reject(error);
+        }
+        return this.enqueue(key, byteLength, error, waitMs, signal);
+      }
+    }
+    // Others are already waiting: join the back of the queue rather than overtaking them.
+    const placeholder = new ReviewResourceBudgetError(
+      "Review resource loads already fill the daemon's in-flight budget.",
+      true,
+    );
+    const waiting = this.enqueue(key, byteLength, placeholder, waitMs, signal);
+    this.drainWaiters();
+    return waiting;
+  }
+
+  /** Add one waiter at the back of the queue with its deadline and abort listener. */
+  private enqueue(
+    key: ReviewResourceKey,
+    byteLength: number,
+    lastError: ReviewResourceBudgetError,
+    waitMs: number,
+    signal: AbortSignal | undefined,
+  ) {
+    return new Promise<ReviewResourceReservation>((resolve, reject) => {
+      const leave = (error: Error) => {
+        const index = this.waiters.indexOf(waiter);
+        if (index < 0) return;
+        this.waiters.splice(index, 1);
+        waiter.dispose();
+        reject(error);
+        // Whoever was held back behind this waiter may fit now.
+        this.drainWaiters();
+      };
+      const timer = setTimeout(() => leave(waiter.lastError), waitMs);
+      const onAbort = () => leave(new ReviewResourceWaitAbortedError());
+      const waiter: ReservationWaiter = {
+        key,
+        byteLength,
+        lastError,
+        resolve,
+        reject,
+        dispose: () => {
+          clearTimeout(timer);
+          signal?.removeEventListener("abort", onAbort);
+        },
+      };
+      signal?.addEventListener("abort", onAbort, { once: true });
+      this.waiters.push(waiter);
+    });
+  }
+
+  /** Grant slots to waiters in arrival order, as far as the budget now allows. */
+  private drainWaiters() {
+    const blockedSessions = new Set<string>();
+    for (const waiter of Array.from(this.waiters)) {
+      if (blockedSessions.has(waiter.key.sessionId)) continue;
+      let reservation: ReviewResourceReservation;
+      try {
+        reservation = this.reserve(waiter.key, waiter.byteLength);
+      } catch (error) {
+        if (error instanceof ReviewResourceBudgetError && error.retryable) {
+          waiter.lastError = error;
+          if (error.scope === "daemon") return;
+          if (error.scope === "session") blockedSessions.add(waiter.key.sessionId);
+          continue;
+        }
+        this.waiters.splice(this.waiters.indexOf(waiter), 1);
+        waiter.dispose();
+        waiter.reject(error as Error);
+        continue;
+      }
+      this.waiters.splice(this.waiters.indexOf(waiter), 1);
+      waiter.dispose();
+      waiter.resolve(reservation);
+    }
+  }
+
+  /** How many loads are waiting for a slot, for lifecycle assertions. */
+  getWaiterCount() {
+    return this.waiters.length;
+  }
+
   /** Give one in-flight slot back, whether the load succeeded or failed. */
   release(reservation: ReviewResourceReservation) {
     const mapKey = cacheKey(reservation);
@@ -237,6 +373,7 @@ export class ReviewResourceCache {
     }
     this.reservations.delete(mapKey);
     this.reservedBytes -= reservation.byteLength;
+    this.drainWaiters();
   }
 
   /**
@@ -280,6 +417,11 @@ export class ReviewResourceCache {
     this.reservations.clear();
     this.cachedBytes = 0;
     this.reservedBytes = 0;
+    // A cleared cache belongs to a daemon shutting down; nobody is left to serve its waiters.
+    for (const waiter of this.waiters.splice(0)) {
+      waiter.dispose();
+      waiter.reject(new ReviewResourceWaitAbortedError());
+    }
   }
 
   /** Bytes currently retained, for lifecycle assertions. */
@@ -311,11 +453,14 @@ export class ReviewResourceCache {
         this.cachedBytes -= entry.bytes.byteLength;
       }
     }
+    let released = false;
     for (const [mapKey, reservation] of this.reservations) {
       if (matches(reservation)) {
         this.reservations.delete(mapKey);
         this.reservedBytes -= reservation.byteLength;
+        released = true;
       }
     }
+    if (released) this.drainWaiters();
   }
 }

@@ -183,6 +183,7 @@ const failure = z.strictObject({
     "too-many-notes",
     "missing-fact",
     "selection-is-local",
+    "draft-is-local",
   ]),
   message: z.string(),
   currentGeneration: z.string(),

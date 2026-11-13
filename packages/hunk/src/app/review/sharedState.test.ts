@@ -10,8 +10,10 @@ import {
 import {
   MAX_PROJECTED_SIDECAR_NOTE_BYTES,
   MAX_PROJECTED_SIDECAR_NOTES,
+  MAX_REVIEW_NOTE_BYTES,
   reviewNoteByteLength,
 } from "../../core/review/noteSize";
+import { parseSessionSnapshot } from "../../session/broker/wire";
 import { ReviewProducer } from "./producer";
 import { ReviewSessionHost } from "./reviewSessionHost";
 import { buildReviewPresentationDefaults, buildReviewSharedState } from "./sharedState";
@@ -119,6 +121,62 @@ describe("buildReviewSharedState", () => {
     expect(parseReviewSharedState({ ...wire, omittedSidecarNotes: 0 })).toBeUndefined();
     // The session snapshot omits the same tail, so the daemon keeps accepting it.
     expect(host.getReviewNoteSummaries()).toHaveLength(MAX_PROJECTED_SIDECAR_NOTES);
+  });
+
+  // The session snapshot's sidecar summaries were bounded by count alone, so a few large
+  // annotations could push the frame past the websocket bound. They now share the byte and
+  // per-note bounds, and the snapshot that carries them parses.
+  test("bounds the snapshot's sidecar summaries by bytes and by the per-note bound", () => {
+    const large = (index: number) => ({
+      newRange: [8, 8] as [number, number],
+      summary: `Large ${index} ${"x".repeat(200 * 1024)}`,
+      source: "ai" as const,
+    });
+    const files = [
+      createTestSharedFile("alpha", {
+        path: "alpha.ts",
+        annotations: Array.from({ length: 12 }, (_v, index) => large(index)),
+      }),
+    ];
+    const host = new ReviewSessionHost({ files, sourceLabel: "/repo", now: () => 1 });
+    const summaries = host.getReviewNoteSummaries();
+    const bytes = summaries.reduce((sum, entry) => sum + JSON.stringify(entry).length, 0);
+    expect(summaries.length).toBeGreaterThan(0);
+    expect(summaries.length).toBeLessThan(12);
+    expect(bytes).toBeLessThanOrEqual(MAX_PROJECTED_SIDECAR_NOTE_BYTES);
+    expect(summaries.map((entry) => entry.body.slice(0, 8))).toEqual(
+      summaries.map((_entry, index) => `Large ${index} `.slice(0, 8)),
+    );
+    expect(
+      parseSessionSnapshot({
+        updatedAt: "2026-03-22T00:00:00.000Z",
+        state: {
+          selectedHunkIndex: 0,
+          showAgentNotes: true,
+          liveComments: [],
+          reviewNoteCount: summaries.length,
+          reviewNotes: JSON.parse(JSON.stringify(summaries)),
+        },
+      }),
+    ).not.toBeNull();
+
+    // One annotation larger than a whole note closes the projection rather than disconnecting
+    // the session, in both projections.
+    const oversized = [
+      createTestSharedFile("alpha", {
+        path: "alpha.ts",
+        annotations: [{ ...large(0), summary: "y".repeat(MAX_REVIEW_NOTE_BYTES) }, large(1)],
+      }),
+    ];
+    const oversizedHost = new ReviewSessionHost({ files: oversized, sourceLabel: "/repo" });
+    expect(oversizedHost.getReviewNoteSummaries()).toEqual([]);
+    const presentation = buildReviewPresentationDefaults(createTestSharedBootstrap(oversized));
+    const state = buildReviewSharedState(oversizedHost, {
+      generation: "generation:p1:0",
+      presentation,
+    });
+    expect(state.notes).toEqual([]);
+    expect(state.omittedSidecarNotes).toBe(2);
   });
 
   test("advances the shared revision for shared content and never for selection", () => {

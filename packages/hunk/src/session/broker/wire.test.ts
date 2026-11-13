@@ -7,6 +7,7 @@ import {
   MAX_SNAPSHOT_REVIEW_NOTES,
   SESSION_BROKER_REGISTRATION_VERSION,
 } from "@hunk/session-broker-core";
+import { MAX_REVIEW_NOTE_BYTES } from "../../core/review/noteSize";
 import { parseSessionRegistration, parseSessionSnapshot } from "./wire";
 
 function createRegistration(files: unknown[]) {
@@ -288,5 +289,42 @@ describe("hunk session wire parsing", () => {
     });
 
     expect(snapshot).toBeNull();
+  });
+
+  // D1: note text parsed at the broker's 4,096-byte string bound, so a snapshot carrying one
+  // legal note above it was refused and the session disconnected. Note text now parses at the
+  // model's note bound, which no field of a legal note can exceed.
+  test("accepts note text up to the model's note bound and refuses one byte more", () => {
+    /** Parse one snapshot whose live comment and review note carry this text. */
+    function parseWithNoteText(text: string) {
+      return parseSessionSnapshot({
+        updatedAt: "2026-03-22T00:00:00.000Z",
+        state: {
+          selectedHunkIndex: 0,
+          showAgentNotes: true,
+          liveCommentCount: 1,
+          liveComments: [createValidComment({ summary: text, rationale: text, author: text })],
+          reviewNoteCount: 1,
+          reviewNotes: [
+            {
+              noteId: "note-1",
+              source: "user",
+              filePath: "src/example.ts",
+              body: text,
+              title: text,
+              author: text,
+              createdAt: "2026-03-22T00:00:00.000Z",
+            },
+          ],
+        },
+      });
+    }
+
+    const atBound = "é".repeat(MAX_REVIEW_NOTE_BYTES / 2);
+    const parsed = parseWithNoteText(atBound);
+    expect(parsed?.state.liveComments[0]?.summary).toBe(atBound);
+    expect(parsed?.state.reviewNotes?.[0]?.body).toBe(atBound);
+    expect(parseWithNoteText("x".repeat(6_000))).not.toBeNull();
+    expect(parseWithNoteText(`${atBound}x`)).toBeNull();
   });
 });

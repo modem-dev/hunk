@@ -323,6 +323,46 @@ test("reports too-many-notes and retries a stale generation", async ({ page }) =
   expect(refusals).toBe(2);
 });
 
+// The byte bound, reached the way a reviewer would: large browser notes. Before session wire
+// v22 any note above 4,096 bytes disconnected the session, so this variant was unreachable.
+test("reports too-many-notes at the stored-note byte bound", async ({ page }) => {
+  await openTestReview(page);
+  const state = (await review!.readApi("state")).state as {
+    files: Array<{ key: string; path: string }>;
+  };
+  const target = state.files.find((file) => file.path === "src/gen/module-07.ts")!;
+  // Large notes until one is refused, then halve, until even a one-byte note does not fit.
+  let size = 250 * 1024;
+  let added = 0;
+  while (size > 0) {
+    const response = await review!.postAction({
+      type: "notes/add-user",
+      fileKey: target.key,
+      hunkIndex: 0,
+      body: "b".repeat(size),
+    });
+    const outcome = (await response.json()) as { ok: boolean; code?: string };
+    if (outcome.ok) {
+      added += 1;
+    } else {
+      expect(outcome.code).toBe("too-many-notes");
+      size = Math.floor(size / 2);
+    }
+  }
+  expect(added).toBeGreaterThan(8);
+  // Still registered: the agent surface answers for the session.
+  expect(await listTestNotes()).toContain("src/gen/module-07.ts");
+
+  await page.keyboard.press("c");
+  await page.locator(".note-composer textarea").fill("One too many.");
+  await page.locator(".note-composer textarea").press("Control+Enter");
+  await expect(page.locator(".note-composer [role=alert]")).toContainText(
+    "as many notes as Hunk can store",
+  );
+  // The draft keeps its text after the refusal.
+  await expect(page.locator(".note-composer textarea")).toHaveValue("One too many.");
+});
+
 test("has no serious accessibility violations with a composer open", async ({ page }) => {
   await openTestReview(page);
   await page.keyboard.press("c");

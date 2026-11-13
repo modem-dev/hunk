@@ -417,6 +417,7 @@ export class SessionBrokerDaemon<
     }
     let bodyReservation: BudgetReservation | null = null;
     try {
+      let body: Uint8Array;
       try {
         const read = await readRequestBytesWithReservation(
           request,
@@ -427,7 +428,7 @@ export class SessionBrokerDaemon<
           this.httpBodyBudget,
         );
         bodyReservation = read.reservation;
-        return await handler(read.bytes);
+        body = read.bytes;
       } catch (error) {
         if (error instanceof BrokerCapacityError) return capacityResponse(error);
         if (error instanceof PayloadTooLargeError) {
@@ -439,6 +440,18 @@ export class SessionBrokerDaemon<
         }
         if (error instanceof InvalidContentLengthError) return jsonError("Invalid Content-Length.");
         return jsonError("Could not read broker control request body.");
+      }
+
+      // The body arrived intact, so a handler failure is the daemon's own fault, not a malformed
+      // request: answer 500 with a stable code and never reflect the thrown error's details.
+      try {
+        return await handler(body);
+      } catch (error) {
+        if (error instanceof BrokerCapacityError) return capacityResponse(error);
+        return Response.json(
+          { error: "control-handler-failed", message: "The broker control handler failed." },
+          { status: 500 },
+        );
       }
     } finally {
       bodyReservation?.release();

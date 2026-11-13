@@ -201,6 +201,46 @@ describe("brokered review resources", () => {
     expect(results.map((bytes) => bytes.byteLength > 0)).toEqual([true, true, true]);
   });
 
+  // A page aborts its reads on reload: a read abandoned while it waits for a slot leaves the
+  // queue and never asks the session for a byte, while a read another caller still wants goes on.
+  test("drops a waiting read every caller abandoned and keeps one somebody still wants", async () => {
+    const files = [createTestPatchFile("alpha", 3), createTestPatchFile("beta", 3)];
+    const cache = new ReviewResourceCache({ inFlightResources: 1, sessionInFlightResources: 1 });
+    const { state, register, producer, sent } = connect(files, cache);
+    register();
+    const publication = producer.getPublication();
+    const [alpha, beta] = publication.document.files.map((file) =>
+      reviewResourceId({ kind: "patch", fileKey: file.key }),
+    );
+    const held = cache.reserve(
+      { sessionId: "other", generation: "generation:x:0", resourceId: "resource:held" },
+      1,
+    );
+
+    const gone = new AbortController();
+    const abandoned = state.loadReviewResource(SESSION.sessionId, publication.generation, alpha!, {
+      signal: gone.signal,
+    });
+    const stays = new AbortController();
+    const shared = [
+      state.loadReviewResource(SESSION.sessionId, publication.generation, beta!, {
+        signal: stays.signal,
+      }),
+      state.loadReviewResource(SESSION.sessionId, publication.generation, beta!, {
+        signal: gone.signal,
+      }),
+    ];
+    const outcomes = Promise.all([abandoned, shared[1]!].map((load) => load.catch((e) => e)));
+    gone.abort();
+    for (const outcome of await outcomes) expect(String(outcome)).toContain("abandoned");
+
+    cache.release(held);
+    expect((await shared[0]!).byteLength).toBeGreaterThan(0);
+    expect(readsFor(sent, alpha!)).toBe(0);
+    expect(readsFor(sent, beta!)).toBeGreaterThan(0);
+    expect(cache.getWaiterCount()).toBe(0);
+  });
+
   // Intent: a session that publishes no review is mirrored as nothing, and its embedded
   // patch text — the shape an older build still sends — is served unchanged.
   test("serves a pre-mirror session's embedded patch text unchanged", async () => {

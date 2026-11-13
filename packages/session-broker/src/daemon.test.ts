@@ -1564,6 +1564,37 @@ describe("session broker daemon", () => {
     daemon.shutdown();
   });
 
+  // A handler that throws after the body arrived intact is the daemon's failure, not a bad
+  // request: it was reported as the 400 "Could not read broker control request body.".
+  test("answers a throwing handler with its own 500 and releases its reservations", async () => {
+    const daemon = createSessionBrokerDaemon({
+      broker: createBroker(),
+      limits: { maxHttpBodyBytes: 8, maxInFlightHttpBodyBytes: 16, maxConcurrentHttpControls: 1 },
+    });
+    const invoke = (handler: (bytes: Uint8Array) => Response | Promise<Response>) =>
+      daemon.handleBoundedControl(
+        new Request("http://broker.test/custom", { method: "POST", body: "12345678" }),
+        handler,
+      );
+
+    const failed = await invoke(async () => {
+      throw new Error("secret detail /home/someone");
+    });
+    expect(failed.status).toBe(500);
+    const body = await failed.json();
+    expect(body).toEqual({
+      error: "control-handler-failed",
+      message: "The broker control handler failed.",
+    });
+    expect(JSON.stringify(body)).not.toContain("secret");
+
+    // The control slot and the whole body budget are free again.
+    const next = await invoke((bytes) => new Response(String(bytes.byteLength)));
+    expect(next.status).toBe(200);
+    expect(await next.text()).toBe("8");
+    daemon.shutdown();
+  });
+
   test("requests shutdown after the idle timeout when no sessions remain", async () => {
     const daemon = createSessionBrokerDaemon({
       broker: createBroker(),
