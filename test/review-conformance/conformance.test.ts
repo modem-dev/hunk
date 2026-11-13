@@ -14,6 +14,7 @@ import { createReviewStore } from "../../packages/hunk/src/core/review/store";
 import { createTestDiffFile } from "../helpers/diff-helpers";
 import { createTestReviewDocument } from "../helpers/review-store-helpers";
 import {
+  REVIEW_ACTOR_POLICY_CONSUMERS,
   REVIEW_EVENT_CONSUMERS,
   REVIEW_GEOMETRY_CONSUMERS,
   REVIEW_NAVIGATION_CONSUMERS,
@@ -28,6 +29,7 @@ import { REVIEW_NAVIGATION_FIXTURES } from "./navigationFixtures";
 import { REVIEW_NOTE_BODY_FIXTURES } from "./noteBodies";
 import { REVIEW_NOTE_SIZE_FIXTURES } from "./noteSize";
 import { REVIEW_SHARED_STATE_FIXTURES } from "./sharedStateFixtures";
+import { REVIEW_ACTOR_POLICY_FIXTURES } from "./actorPolicyFixtures";
 import { REVIEW_SNAPSHOT_FIXTURES } from "./snapshotFixtures";
 import {
   REVIEW_PRODUCER_ORDER_FIXTURES,
@@ -54,6 +56,8 @@ const REQUIRED_FINDINGS = [
   "C4",
   "D1",
   "EXT1",
+  "G1",
+  "G2",
 ];
 
 describe("review conformance corpus", () => {
@@ -87,6 +91,10 @@ describe("review conformance corpus", () => {
       "broker shared-state read",
       "browser review HTTP surface",
     ]);
+    expect(REVIEW_ACTOR_POLICY_CONSUMERS.map((consumer) => consumer.name)).toEqual([
+      "producer action handler",
+      "browser review HTTP surface",
+    ]);
   });
 
   test("carries an adversarial fixture for every finding it claims to repay", () => {
@@ -98,6 +106,7 @@ describe("review conformance corpus", () => {
       ...REVIEW_WIRE_FIXTURES.flatMap((fixture) => fixture.findings),
       ...REVIEW_EVENT_FIXTURES.flatMap((fixture) => fixture.findings),
       ...REVIEW_SNAPSHOT_FIXTURES.flatMap((fixture) => fixture.findings),
+      ...REVIEW_ACTOR_POLICY_FIXTURES.flatMap((fixture) => fixture.findings),
       ...(REVIEW_NOTE_SIZE_FIXTURES.length > 0 ? ["D1"] : []),
     ]);
 
@@ -120,6 +129,16 @@ for (const consumer of REVIEW_GEOMETRY_CONSUMERS) {
     for (const fixture of REVIEW_GEOMETRY_FIXTURES) {
       test(`${fixture.id} (${fixture.findings.join(", ")})`, () => {
         expect(consumer.project(fixture)).toEqual(fixture.expected);
+      });
+    }
+  });
+}
+
+for (const consumer of REVIEW_ACTOR_POLICY_CONSUMERS) {
+  describe(`review actor-policy conformance: ${consumer.name}`, () => {
+    for (const fixture of REVIEW_ACTOR_POLICY_FIXTURES) {
+      test(`${fixture.id} (${fixture.findings.join(", ")})`, async () => {
+        expect(await consumer.project(fixture)).toEqual(fixture.expected);
       });
     }
   });

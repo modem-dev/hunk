@@ -2,8 +2,8 @@
  * The shared-state snapshot: everything about a live review that every attached surface shares.
  *
  * A publication says where a review is and which resources it offers; this says what the
- * review *contains* beyond its files — the notes, the filter, note-layer visibility, agent
- * attention marks, the latest agent reveal request — plus the file index a sidebar and
+ * review *contains* beyond its files — the notes, the filter, note-layer visibility, viewed
+ * files, agent attention marks, the latest agent reveal request — plus the file index a sidebar and
  * header need, and the presentation defaults a new surface starts from. Selection is
  * deliberately absent: it is per surface (`docs/browser-review-seam-audit.md`, G2), and a
  * browser resolves its own.
@@ -220,6 +220,11 @@ export interface ReviewSharedStateV1 {
   notes: ReviewSharedNoteV1[];
   filter: string;
   showAgentNotes: boolean;
+  /**
+   * Files the reviewer marked viewed, by file key, with the content identity each was marked
+   * at. Only marks matching the file's current `contentIdentity` are listed.
+   */
+  viewedFiles: Record<string, { contentIdentity: string }>;
   /** Agent attention marks by file key; files without marks are absent. */
   agentHighlights: Record<string, ReviewAgentHighlightV1[]>;
   agentReveal: ReviewAgentRevealV1 | null;
@@ -511,6 +516,7 @@ export function parseReviewSharedState(value: unknown): ReviewSharedStateV1 | un
       "notes",
       "filter",
       "showAgentNotes",
+      "viewedFiles",
       "agentHighlights",
       "agentReveal",
       "presentation",
@@ -535,6 +541,23 @@ export function parseReviewSharedState(value: unknown): ReviewSharedStateV1 | un
   const fileKeys = new Set((record.files as ReviewSharedFileV1[]).map((file) => file.key));
   if (fileKeys.size !== record.files.length) return undefined;
   if (!(record.notes as ReviewSharedNoteV1[]).every((entry) => fileKeys.has(entry.note.fileKey))) {
+    return undefined;
+  }
+  const identityByKey = new Map(
+    (record.files as ReviewSharedFileV1[]).map((file) => [file.key, file.contentIdentity] as const),
+  );
+  const viewed = asRecord(record.viewedFiles);
+  if (
+    !viewed ||
+    !Object.entries(viewed).every(([fileKey, mark]) => {
+      const entry = asRecord(mark);
+      return (
+        entry !== undefined &&
+        hasExactKeys(entry, ["contentIdentity"]) &&
+        entry.contentIdentity === identityByKey.get(fileKey)
+      );
+    })
+  ) {
     return undefined;
   }
   const highlights = asRecord(record.agentHighlights);

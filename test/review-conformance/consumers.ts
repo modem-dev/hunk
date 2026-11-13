@@ -15,6 +15,11 @@ import { coreOrderingConsumer } from "./consumers/coreOrdering";
 import { intentPlannerNavigationConsumer } from "./consumers/intentPlanner";
 import { reviewProducerConsumer } from "./consumers/reviewProducer";
 import {
+  browserSurfaceActorPolicyConsumer,
+  producerActorPolicyConsumer,
+} from "./consumers/actorPolicy";
+import type { ReviewActorPolicyConsumer } from "./actorPolicyFixtures";
+import {
   brokerSharedStateConsumer,
   browserSurfaceSharedStateConsumer,
   reviewProducerSharedStateConsumer,
@@ -100,4 +105,15 @@ export const REVIEW_SHARED_STATE_CONSUMERS: readonly ReviewSharedStateConsumer[]
   reviewProducerSharedStateConsumer,
   brokerSharedStateConsumer,
   browserSurfaceSharedStateConsumer,
+];
+
+/**
+ * Consumers of the multi-surface action policy (G2) and shared viewed files (G1).
+ *
+ * The producer's action handler applies the policy; the HTTP surface is how a browser reaches
+ * it. The browser client joins in M4, where it resolves the refused selection moves locally.
+ */
+export const REVIEW_ACTOR_POLICY_CONSUMERS: readonly ReviewActorPolicyConsumer[] = [
+  producerActorPolicyConsumer,
+  browserSurfaceActorPolicyConsumer,
 ];

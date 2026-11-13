@@ -2,7 +2,7 @@ import { createNativeSessionBrokerLifecycleClock } from "@hunk/session-broker";
 import type { AppBootstrap } from "../../core/bootstrap";
 import { SessionBrokerClient } from "../../session/broker/brokerClient";
 import { reportHunkSessionBrokerLifecycleDefect } from "../../session/broker/lifecycleDefect";
-import { ReviewProducer } from "../review/producer";
+import { ReviewProducer, type ReviewProducerSurface } from "../review/producer";
 import { createInitialSessionSnapshot, createSessionRegistration } from "./registration";
 
 export interface ReviewSessionRuntime {
@@ -15,11 +15,12 @@ export interface ReviewSessionRuntime {
 export function createReviewSessionRuntime(
   bootstrap: AppBootstrap,
   cwd = process.cwd(),
+  options: { surface?: ReviewProducerSurface } = {},
 ): ReviewSessionRuntime {
-  const reviewProducer = new ReviewProducer({
-    files: bootstrap.changeset.files,
-    sourceLabel: bootstrap.changeset.sourceLabel,
-  });
+  const reviewProducer = new ReviewProducer(
+    { files: bootstrap.changeset.files, sourceLabel: bootstrap.changeset.sourceLabel },
+    { surface: options.surface ?? "terminal" },
+  );
   const publication = reviewProducer.getPublication();
   const lifecycleClock = createNativeSessionBrokerLifecycleClock();
   const hostClient = new SessionBrokerClient(

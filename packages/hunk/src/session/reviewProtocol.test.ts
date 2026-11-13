@@ -75,6 +75,16 @@ describe("review action round trip", () => {
     { type: "notes/remove-user", noteId: "user:1" },
     { type: "notes/remove-live", noteId: "live:1" },
     { type: "notes/clear", fileKey: FILE_KEY, includeUser: true },
+    {
+      type: "notes/add-user",
+      fileKey: FILE_KEY,
+      hunkIndex: 0,
+      target: { side: "new", line: 4 },
+      body: "direct note",
+      author: "Reviewer",
+    },
+    { type: "notes/edit-user", noteId: "user:1", body: "edited directly" },
+    { type: "files/set-viewed", fileKey: FILE_KEY, viewed: true },
     { type: "expansion/toggle", fileKey: FILE_KEY, gapId: "before:1" },
   ];
 

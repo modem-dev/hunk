@@ -10,7 +10,10 @@
  */
 import type { AppBootstrap } from "../../core/bootstrap";
 import { reviewAnnotationAnchor, reviewNoteSource } from "../../core/review/annotations";
-import { selectThreadedStoredReviewNotes } from "../../core/review/selectors";
+import {
+  selectIsReviewFileViewed,
+  selectThreadedStoredReviewNotes,
+} from "../../core/review/selectors";
 import { isRenderableStoredReviewNote } from "../../core/review/state";
 import type { ReviewNoteV1 } from "../../core/review/types";
 import { APP_COMMAND_CATALOG } from "../../core/run/commandCatalog";
@@ -199,6 +202,13 @@ export function buildReviewSharedState(
     notes: sharedNotes(host),
     filter: state.filter,
     showAgentNotes: state.showAgentNotes,
+    viewedFiles: Object.fromEntries(
+      document.files.flatMap((file) =>
+        selectIsReviewFileViewed(state, file.key)
+          ? [[file.key, { contentIdentity: file.contentIdentity }] as const]
+          : [],
+      ),
+    ),
     agentHighlights,
     agentReveal: host.getAgentReveal(),
     presentation: options.presentation,
