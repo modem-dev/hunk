@@ -1495,6 +1495,78 @@ describe("parseCli", () => {
     });
   });
 
+  test("parses session open, which opens by default and prints the URL with --no-open", async () => {
+    expect(await parseCli(["bun", "hunk", "session", "open", "session-1"])).toEqual({
+      kind: "session",
+      action: "open",
+      selector: { sessionId: "session-1" },
+      output: "text",
+      open: true,
+    });
+    expect(
+      await parseCli([
+        "bun",
+        "hunk",
+        "session",
+        "open",
+        "--repo",
+        "/tmp/repo",
+        "--no-open",
+        "--json",
+      ]),
+    ).toEqual({
+      kind: "session",
+      action: "open",
+      selector: { repoRoot: resolve("/tmp/repo") },
+      output: "json",
+      open: false,
+    });
+    await expect(parseCli(["bun", "hunk", "session", "open"])).rejects.toThrow(
+      "Specify one live Hunk session with <session-id> or --repo <path>.",
+    );
+  });
+
+  test("keeps session open out of session help until web review is released", async () => {
+    const help = await parseCli(["bun", "hunk", "session", "--help"]);
+
+    expect(help.kind).toBe("help");
+    expect((help as { text: string }).text).not.toContain("session open");
+  });
+
+  test("parses the web review flags: --web, --no-open, and --no-watch", async () => {
+    expect(await parseCli(["bun", "hunk", "diff", "--web"])).toMatchObject({
+      options: { web: true },
+    });
+    expect(await parseCli(["bun", "hunk", "diff", "--web", "--no-open"])).toMatchObject({
+      options: { web: true, open: false },
+    });
+    expect(await parseCli(["bun", "hunk", "show", "HEAD", "--web", "--no-watch"])).toMatchObject({
+      options: { web: true, watch: false },
+    });
+    // --no-watch also overrides config-enabled watch in a terminal review.
+    expect(await parseCli(["bun", "hunk", "diff", "--no-watch"])).toMatchObject({
+      options: { watch: false },
+    });
+  });
+
+  test("rejects --no-open without --web and --watch with --no-watch", async () => {
+    await expect(parseCli(["bun", "hunk", "diff", "--no-open"])).rejects.toThrow(
+      "`--no-open` only applies to `--web`.",
+    );
+    await expect(parseCli(["bun", "hunk", "diff", "--watch", "--no-watch"])).rejects.toThrow(
+      "`--watch` and `--no-watch` cannot be combined.",
+    );
+  });
+
+  test("keeps the web review flags out of help until web review is released", async () => {
+    const help = await parseCli(["bun", "hunk", "diff", "--help"]);
+    const text = (help as { text: string }).text;
+
+    expect(text).not.toContain("--web");
+    expect(text).not.toContain("--no-open");
+    expect(text).not.toContain("--no-watch");
+  });
+
   test("rejects unknown session highlight subcommands", async () => {
     await expect(parseCli(["bun", "hunk", "session", "highlight", "paint"])).rejects.toThrow(
       "Supported highlight subcommands are add and clear.",

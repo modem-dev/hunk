@@ -29,6 +29,7 @@ import type {
   AppliedHighlightResult,
   ClearedCommentsResult,
   ClearedHighlightsResult,
+  OpenedReviewResult,
   ListedSession,
   NavigatedSelectionResult,
   ReloadedSessionResult,
@@ -46,6 +47,7 @@ import type {
   SessionCommentRemoveCommandInput,
   SessionHighlightAddCommandInput,
   SessionHighlightClearCommandInput,
+  SessionOpenCommandInput,
   SessionNavigateCommandInput,
   SessionReloadCommandInput,
   SessionReviewCommandInput,
@@ -70,6 +72,7 @@ export interface HunkSessionCliClient {
   clearComments(input: SessionCommentClearCommandInput): Promise<ClearedCommentsResult>;
   addHighlight(input: SessionHighlightAddCommandInput): Promise<AppliedHighlightResult>;
   clearHighlights(input: SessionHighlightClearCommandInput): Promise<ClearedHighlightsResult>;
+  openReview(input: SessionOpenCommandInput): Promise<OpenedReviewResult>;
 }
 
 async function extractResponseError(response: Response) {
@@ -299,6 +302,16 @@ class HttpHunkSessionCliClient implements HunkSessionCliClient {
         action: "highlight-clear",
         selector: input.selector,
         filePath: input.filePath,
+      })
+    ).result;
+  }
+
+  async openReview(input: SessionOpenCommandInput) {
+    return (
+      await this.request({
+        action: "open",
+        selector: input.selector,
+        open: input.open,
       })
     ).result;
   }
@@ -652,6 +665,20 @@ export function formatClearHighlightsOutput(
     ? `${formatSessionPath(result.filePath)} in ${formatSessionSelector(selector)}`
     : formatSessionSelector(selector);
   return `Cleared ${result.removedCount} attention marks from ${scope}. Remaining marks: ${result.remainingCount}.\n`;
+}
+
+/**
+ * Report how `hunk session open` went.
+ *
+ * With `--no-open` the output is exactly the URL line, so scripts can capture it.
+ */
+export function formatOpenReviewOutput(selector: SessionSelectorInput, result: OpenedReviewResult) {
+  if (result.url) {
+    return `${result.url}\n`;
+  }
+  return result.opened
+    ? `Opened ${formatSessionSelector(selector)} in your browser.\n`
+    : `${result.failure ?? "The session could not open a browser."}\n`;
 }
 
 export function formatClearCommentsOutput(

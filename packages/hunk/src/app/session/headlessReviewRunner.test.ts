@@ -11,6 +11,7 @@ import type { HunkSessionServerMessage, HunkSessionSnapshot } from "../../sessio
 import { createWatchTestRuntime } from "../../../../../test/helpers/watchTest";
 import { ReviewProducer } from "../review/producer";
 import { runHeadlessReview, type HeadlessReviewSession } from "./headlessReviewRunner";
+import type { ReviewUrlOpener } from "./openReview";
 import { createInitialSessionSnapshot, createSessionRegistration } from "./registration";
 import type { ReviewSessionRuntime } from "./reviewRuntime";
 
@@ -24,7 +25,7 @@ afterEach(() => {
 
 /** Load a one-hunk diff bootstrap with an empty extension registry. */
 async function createTestHeadlessBootstrap(
-  options: { watch?: boolean; pendingTrust?: string } = {},
+  options: { watch?: boolean; pendingTrust?: string; open?: false } = {},
 ) {
   const dir = mkdtempSync(join(process.cwd(), ".hunk-headless-runner-"));
   directories.push(dir);
@@ -36,7 +37,11 @@ async function createTestHeadlessBootstrap(
     kind: "diff",
     left,
     right,
-    options: { experimental: true, ...(options.watch ? { watch: true } : {}) },
+    options: {
+      experimental: true,
+      ...(options.watch ? { watch: true } : {}),
+      ...(options.open === false ? { open: false } : {}),
+    },
   })) as AppBootstrap<ExtensionLoadResult>;
   bootstrap.extensions = createEmptyExtensionLoadResult(dir);
   if (options.pendingTrust) {
@@ -89,13 +94,23 @@ function createTestRuntime(bootstrap: AppBootstrap) {
 async function startTestHeadlessReview(
   bootstrap: AppBootstrap<ExtensionLoadResult>,
   watchRuntime?: ReturnType<typeof createWatchTestRuntime>["runtime"],
+  options: { openUrl?: ReviewUrlOpener; stderrIsTTY?: boolean } = {},
 ) {
   const fake = createTestRuntime(bootstrap);
   const signals = new EventEmitter();
   const stdout: string[] = [];
   const stderr: string[] = [];
+  // Every run injects an opener so no test starts a real browser.
+  const opened: string[] = [];
   let session!: HeadlessReviewSession;
   const exited = runHeadlessReview(bootstrap, {
+    openUrl:
+      options.openUrl ??
+      (async (url) => {
+        opened.push(url);
+        return { ok: true };
+      }),
+    stderrIsTTY: options.stderrIsTTY ?? false,
     createReviewRuntime: () => fake.runtime,
     stdout: (text) => stdout.push(text),
     stderr: (text) => stderr.push(text),
@@ -108,7 +123,7 @@ async function startTestHeadlessReview(
     },
   });
   await Promise.resolve();
-  return { fake, signals, stdout, stderr, session, exited };
+  return { fake, signals, stdout, stderr, opened, session, exited };
 }
 
 describe("runHeadlessReview", () => {
@@ -122,6 +137,85 @@ describe("runHeadlessReview", () => {
     expect(stderr.join("")).toContain("hunk: warning: a startup notice");
     expect(stderr.join("")).toContain("Repo-local extensions in /repo are not trusted");
     expect(stderr.join("")).toContain("an update notice");
+
+    signals.emit("SIGINT");
+    expect(await exited).toBe(0);
+  });
+
+  test("opens the printed URL, fragment included, after printing it", async () => {
+    const { bootstrap } = await createTestHeadlessBootstrap();
+    const { stdout, opened, session, signals, exited } = await startTestHeadlessReview(bootstrap);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(session.url).toContain("#capability=");
+    expect(opened).toEqual([session.url]);
+    expect(stdout).toEqual([`${session.url}\n`]);
+
+    signals.emit("SIGINT");
+    expect(await exited).toBe(0);
+  });
+
+  test("--no-open prints the URL and opens nothing", async () => {
+    const { bootstrap } = await createTestHeadlessBootstrap({ open: false });
+    const { stdout, opened, session, signals, exited } = await startTestHeadlessReview(bootstrap);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(stdout).toEqual([`${session.url}\n`]);
+    expect(opened).toEqual([]);
+
+    signals.emit("SIGINT");
+    expect(await exited).toBe(0);
+  });
+
+  test("a failed browser launch is one stderr line without the URL, and serving continues", async () => {
+    const { bootstrap } = await createTestHeadlessBootstrap();
+    const { fake, stderr, session, signals, exited } = await startTestHeadlessReview(
+      bootstrap,
+      undefined,
+      { openUrl: async () => ({ ok: false, reason: "Could not open a browser with xdg-open." }) },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const failureLines = stderr.filter((line) => line.includes("Could not open a browser"));
+    expect(failureLines).toEqual([
+      "hunk: warning: Could not open a browser with xdg-open. Open the URL above in a browser instead.\n",
+    ]);
+    expect(stderr.join("")).not.toContain(session.url.split("#")[1]!);
+    expect(fake.hasBridge()).toBe(true);
+
+    signals.emit("SIGINT");
+    expect(await exited).toBe(0);
+  });
+
+  test("tells a person at a terminal what is running and how to stop it", async () => {
+    const { bootstrap } = await createTestHeadlessBootstrap();
+    const tty = await startTestHeadlessReview(bootstrap, undefined, { stderrIsTTY: true });
+    expect(tty.stderr).toContain(
+      "hunk: serving this review at the URL above; press Ctrl+C to stop.\n",
+    );
+    tty.signals.emit("SIGINT");
+    await tty.exited;
+
+    const piped = await startTestHeadlessReview(bootstrap, undefined, { stderrIsTTY: false });
+    expect(piped.stderr.join("")).not.toContain("press Ctrl+C");
+    piped.signals.emit("SIGINT");
+    await piped.exited;
+  });
+
+  test("answers open_review with its URL or by opening it", async () => {
+    const { bootstrap } = await createTestHeadlessBootstrap({ open: false });
+    const { fake, opened, session, signals, exited } = await startTestHeadlessReview(bootstrap);
+
+    const openMessage = (requestId: string, open: boolean) =>
+      ({ command: "open_review", requestId, input: { open } }) as HunkSessionServerMessage;
+
+    expect(await fake.dispatch(openMessage("o1", false))).toEqual({
+      opened: false,
+      url: session.url,
+    });
+    expect(opened).toEqual([]);
+    expect(await fake.dispatch(openMessage("o2", true))).toEqual({ opened: true });
+    expect(opened).toEqual([session.url]);
 
     signals.emit("SIGINT");
     expect(await exited).toBe(0);

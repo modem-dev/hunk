@@ -175,13 +175,17 @@ function sessionJson<T = Record<string, unknown>>(port: number, args: string[], 
 
 /** Start one headless review and wait for its URL and daemon registration. */
 async function startHeadlessReview(dir: string, port: number) {
-  const proc = Bun.spawn(["bun", "run", sourceEntrypoint, "diff", "--web", "--experimental"], {
-    cwd: dir,
-    stdin: "ignore",
-    stdout: "pipe",
-    stderr: "pipe",
-    env: testEnv(port),
-  });
+  // `--no-open`: `--web` now opens a browser, which a test must never do.
+  const proc = Bun.spawn(
+    ["bun", "run", sourceEntrypoint, "diff", "--web", "--no-open", "--experimental"],
+    {
+      cwd: dir,
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+      env: testEnv(port),
+    },
+  );
   let stdout = "";
   // Drain stdout continuously; the URL is its only line.
   void (async () => {
@@ -347,6 +351,13 @@ describe.skipIf(process.platform === "win32")("headless review session", () => {
         sessionJson<{ result: { removedCount: number } }>(port, ["highlight", "clear", sessionId])
           .result.removedCount,
       ).toBe(1);
+
+      // `hunk session open --no-open` asks the session for its URL: the same capability the
+      // process printed, as exactly one stdout line, and it authorizes the review API.
+      const opened = session(port, ["open", sessionId, "--no-open"]);
+      expect(opened.exitCode).toBe(0);
+      expect(opened.stdout).toBe(`${url}\n`);
+      expect((await reviewApi(opened.stdout.trim(), sessionId, "publication")).status).toBe(200);
 
       // The printed capability authorizes the review API, and brokered actions apply.
       const unauthorized = await fetch(

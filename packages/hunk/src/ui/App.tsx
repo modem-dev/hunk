@@ -83,6 +83,7 @@ import {
   type WorkspaceWriteRunner,
 } from "./hooks/useExtensionWorkspaceControls";
 import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
+import { openSessionReview, type ReviewUrlOpener } from "../app/session/openReview";
 import { useMenuController } from "./hooks/useMenuController";
 import { usePaneSlideAnimation } from "./hooks/usePaneSlideAnimation";
 import { useThemeSelectorController } from "./hooks/useThemeSelectorController";
@@ -191,6 +192,7 @@ export function App({
   watchRuntime,
   workspaceFileWriter,
   sendFeedback,
+  openReviewUrl,
 }: {
   bootstrap: AppBootstrap;
   /** Whether this surface may replace the session-owned extension registry. */
@@ -230,6 +232,8 @@ export function App({
   workspaceFileWriter?: WorkspaceFileWriter;
   /** Send a confirmed feedback submission. Tests inject one; the default loads the real sender. */
   sendFeedback?: SendFeedbackImpl;
+  /** Open a review URL in a browser. Tests inject a recorder; the default launches one. */
+  openReviewUrl?: ReviewUrlOpener;
 }) {
   const SIDEBAR_MIN_WIDTH = 22;
   const DIFF_MIN_WIDTH = 48;
@@ -312,6 +316,35 @@ export function App({
     edge: "top" | "bottom";
   }>({ id: 0, edge: "top" });
   const { text: transientNoticeText, show: showTransientNotice } = useTimedNotice(3_000);
+
+  // The terminal's "Open in browser" command and `hunk session open` share one opener; both
+  // need the daemon registration, so a session without a broker client offers neither.
+  const openReview = useMemo(
+    () =>
+      hostClient
+        ? ({ open }: { open: boolean }) =>
+            openSessionReview(hostClient.getRegistration().sessionId, {
+              open,
+              openUrl: openReviewUrl,
+            })
+        : undefined,
+    [hostClient, openReviewUrl],
+  );
+  const openInBrowser = useMemo(
+    () =>
+      openReview
+        ? () => {
+            void openReview({ open: true }).then((result) =>
+              showTransientNotice(
+                result.opened
+                  ? "Opened the review in your browser"
+                  : (result.failure ?? "Could not open a browser"),
+              ),
+            );
+          }
+        : undefined,
+    [openReview, showTransientNotice],
+  );
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(bootstrap.initialMode);
   const [showLineNumbers, setShowLineNumbers] = useState(bootstrap.initialShowLineNumbers ?? true);
   const [wrapLines, setWrapLines] = useState(bootstrap.initialWrapLines ?? false);
@@ -942,6 +975,7 @@ export function App({
     navigateToLocation: review.navigateToLocation,
     noteMarkupWidth: stmlEnabled ? noteMarkupWidth : undefined,
     openAgentNotes,
+    openReview,
     reloadSession: onReloadSession,
     refreshReview: onRefreshReview,
     removeLiveComment: review.removeLiveComment,
@@ -1446,6 +1480,7 @@ export function App({
         moveNoteCursor: review.moveNoteCursor,
         openAgentSkill,
         openFeedback: feedbackEnabled ? feedback.open : undefined,
+        openInBrowser,
         openThemeSelector,
         requestQuit,
         resolvedKeys: resolvedCommandKeys,

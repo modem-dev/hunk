@@ -25,6 +25,7 @@ import type {
   AppliedHighlightResult,
   ClearedCommentsResult,
   ClearedHighlightsResult,
+  OpenedReviewResult,
   CommentBatchItemInput,
   CommentToolInput,
   HunkSessionCommandResult,
@@ -76,6 +77,7 @@ const SUPPORTED_SESSION_ACTIONS: SessionDaemonAction[] = [
   "comment-clear",
   "highlight-add",
   "highlight-clear",
+  "open",
 ];
 
 type DaemonCommentAddRequest = Extract<SessionDaemonRequest, { action: "comment-add" }>;
@@ -384,7 +386,10 @@ function sessionApiAuthorizationFacts(
       );
     }
   }
-  if (["get", "context", "review", "comment-list"].includes(input.action)) {
+  // `open` is authorized as a read: it asks the session for its own URL, or to open it in a
+  // browser on this machine, and changes nothing in the review. Persisted caller grants carry
+  // no `open_review` scope, so a dispatch-scoped check would refuse every existing caller.
+  if (["get", "context", "review", "comment-list", "open"].includes(input.action)) {
     return { operation: "get", sessionId, targetSpecific: true };
   }
   const commandByAction = {
@@ -574,6 +579,18 @@ export async function handleSessionApiRequest(
               filePath: input.filePath,
             },
             timeoutMessage: "Timed out waiting for the session to clear the requested highlights.",
+          }),
+        };
+        break;
+      case "open":
+        // The session builds the URL from the capability only it holds; the daemon relays the
+        // request and, for `open: false`, the URL in the result without storing it.
+        response = {
+          result: await state.dispatchCommand<OpenedReviewResult, "open_review">({
+            selector: input.selector,
+            command: "open_review",
+            input: { ...input.selector, open: input.open },
+            timeoutMessage: "Timed out waiting for the session to open its review.",
           }),
         };
         break;

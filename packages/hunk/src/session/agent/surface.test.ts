@@ -8,12 +8,20 @@ import {
   SESSION_AGENT_COMMANDS,
   SESSION_COMMENT_COMMAND_LIST,
   SESSION_HIGHLIGHT_COMMAND_LIST,
+  SESSION_OPEN_COMMAND,
   type SessionCommandOptions,
 } from "./surface";
 
 const FLAG_TOKEN_PATTERN = /--[a-z][a-z-]*/g;
 
 describe("session agent command surface", () => {
+  // Help, completions, generated docs, and the skill all read the list, so leaving the spec out
+  // is what keeps `hunk session open` unannounced until web review is released.
+  test("leaves session open out of the listed surface until web review is released", () => {
+    expect(SESSION_AGENT_COMMAND_LIST).not.toContain(SESSION_OPEN_COMMAND);
+    expect(SESSION_AGENT_COMMAND_LIST.map((spec) => spec.name)).not.toContain("session open");
+  });
+
   test("covers every daemon action with a uniquely named command", () => {
     const names = SESSION_AGENT_COMMAND_LIST.map((spec) => spec.name);
     expect(new Set(names).size).toBe(names.length);
