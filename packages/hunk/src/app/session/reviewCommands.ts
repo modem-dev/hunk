@@ -27,7 +27,11 @@ import {
   reviewLineCoveredByHunks,
   reviewRangeTargetCoverageIssue,
 } from "../../core/review/geometry";
-import { requireReviewFile, ReviewIntentPlanningError } from "../../core/review/intents";
+import {
+  REVIEW_BROWSER_NOTE_ORIGINAL_SOURCE,
+  requireReviewFile,
+  ReviewIntentPlanningError,
+} from "../../core/review/intents";
 import type { ReviewDraftNote, ReviewState } from "../../core/review/state";
 import type {
   ReviewFileV1,
@@ -387,6 +391,10 @@ export function applySessionReviewAction(
         draftId: `draft:${randomUUID()}`,
         noteId: `user:${randomUUID()}`,
         timestamp: new Date().toISOString(),
+        // A browser's free-text author is a label; where the note came from is recorded here.
+        ...(envelope.actor.kind === "browser"
+          ? { noteOriginalSource: REVIEW_BROWSER_NOTE_ORIGINAL_SOURCE }
+          : {}),
       });
       if (
         envelope.actor.kind === "agent" &&

@@ -89,7 +89,18 @@ export interface ReviewIntentFacts {
    * full set.
    */
   annotations?: ReviewAnnotationIndex;
+  /**
+   * Where a directly composed reviewer note came from, recorded as its `originalSource`.
+   *
+   * Hunk is single-user and builds no identity, but a note written in a browser tab is still
+   * labelled truthfully: `author` is a free label any client may set, this is not. Absent for
+   * the terminal's own notes, which keep `originalSource: "user"`.
+   */
+  noteOriginalSource?: typeof REVIEW_BROWSER_NOTE_ORIGINAL_SOURCE;
 }
+
+/** The `originalSource` a reviewer note composed through a review link carries. */
+export const REVIEW_BROWSER_NOTE_ORIGINAL_SOURCE = "browser" as const;
 
 export type ReviewIntent =
   /** Select one hunk outright, revealing it the way the caller asks. */
@@ -889,7 +900,7 @@ function planDirectUserNote(
       id: noteId,
       ...(parent ? { parentId: parent.note.id } : {}),
       source: "user",
-      originalSource: "user",
+      originalSource: facts.noteOriginalSource ?? "user",
       fileKey: file.key,
       anchor,
       summary: intent.body.trim(),

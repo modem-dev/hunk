@@ -123,6 +123,28 @@ describe("browser review surface: actor policy", () => {
     });
   });
 
+  // Finding: `author` is a free label, so a browser could title its note as an agent's. The note
+  // now records where it came from in `originalSource`, which no client can set.
+  test("records a browser note's origin whatever author it claims", async () => {
+    const { host, act, readState } = start();
+    const response = await act(
+      { clientId: "tab", kind: "browser", displayName: "Codex" },
+      {
+        type: "notes/add-user",
+        fileKey: host.fileKeyFor("alpha"),
+        hunkIndex: 0,
+        body: "Looks like an agent wrote this",
+        author: "agent",
+      },
+    );
+    expect(response.status).toBe(200);
+
+    const stored = host.getSnapshot().userNotes[0]!.note;
+    expect(stored).toMatchObject({ source: "user", originalSource: "browser", author: "agent" });
+    const { state } = await readState();
+    expect(state.notes[0]!.note.originalSource).toBe("browser");
+  });
+
   test("defaults a direct note's author from the actor and shares viewed files", async () => {
     const { host, act, readState } = start();
     const browser: HunkReviewActorV1 = { clientId: "tab", kind: "browser", displayName: "Ana" };
