@@ -149,6 +149,27 @@ describe("browser review surface: shared state", () => {
     expect(reads.length - before.length).toBe(1);
   });
 
+  // Finding: /state was single-flighted but not cached, so a caller re-reading one position
+  // paid a whole assembly from the session every time.
+  test("answers repeated reads of one position from the daemon without asking the session", async () => {
+    const { host, harness, origin } = start();
+    const reads = () =>
+      harness.sent.filter((message) => message.command === "read_review_resource").length;
+    expect((await request(origin, STATE_ROUTE)).status).toBe(200);
+    const afterFirst = reads();
+    for (let index = 0; index < 5; index += 1) {
+      expect((await request(origin, STATE_ROUTE)).status).toBe(200);
+    }
+    expect(reads()).toBe(afterFirst);
+
+    // A new shared revision is read again.
+    host.setFilter("beta");
+    harness.publishSnapshot();
+    const body = (await (await request(origin, STATE_ROUTE)).json()) as HunkReviewStateBodyV1;
+    expect(body.state.filter).toBe("beta");
+    expect(reads()).toBeGreaterThan(afterFirst);
+  });
+
   test("refuses a snapshot over the envelope bound with state-too-large", async () => {
     // Notes can no longer overflow the snapshot (see the stored-note bounds), so an oversized
     // launch-time file summary stands in: it is the remaining unbounded shared-state field.

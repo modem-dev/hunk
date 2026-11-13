@@ -13,7 +13,8 @@
  *   and released when it settles, so concurrent assemblies cannot collectively allocate
  *   more than the in-flight budget however many callers arrive at once. The prototype
  *   bounded only the completed side and let assemblies pile up
- *   (`docs/browser-review-seam-audit.md`, C2).
+ *   (`docs/browser-review-seam-audit.md`, C2). Each session holds at most half of that
+ *   budget, so one session's reader cannot starve every other session's reads.
  *
  * The cache stores and bounds; it never fetches, never verifies, and never decides what a
  * resource is — the load loop assembles and verifies through the shared
@@ -29,10 +30,27 @@ export const MAX_REVIEW_DAEMON_INFLIGHT_BYTES = 32 * 1024 * 1024;
 /** How many assemblies may run at one moment, whatever their declared sizes. */
 export const MAX_REVIEW_DAEMON_INFLIGHT_RESOURCES = 8;
 
+/**
+ * How many assemblies one session may hold at once: half the daemon's, so a capability holder
+ * hammering one session's reads always leaves the other half for every other session.
+ */
+export const MAX_REVIEW_SESSION_INFLIGHT_RESOURCES = MAX_REVIEW_DAEMON_INFLIGHT_RESOURCES / 2;
+
+/**
+ * How many in-flight bytes one session may hold at once, alongside other loads of its own.
+ *
+ * Half the daemon's budget. A single load may still take more when it is the session's only
+ * one, because one resource can legitimately be as large as the whole budget
+ * (`MAX_REVIEW_RESOURCE_BYTES`); what the share stops is many concurrent loads from one session.
+ */
+export const MAX_REVIEW_SESSION_INFLIGHT_BYTES = MAX_REVIEW_DAEMON_INFLIGHT_BYTES / 2;
+
 export interface ReviewResourceCacheLimits {
   cacheBytes: number;
   inFlightBytes: number;
   inFlightResources: number;
+  sessionInFlightBytes: number;
+  sessionInFlightResources: number;
 }
 
 /** One resource's place in the cache: which session, which generation, which resource. */
@@ -76,7 +94,27 @@ export class ReviewResourceCache {
       cacheBytes: limits.cacheBytes ?? MAX_REVIEW_DAEMON_CACHE_BYTES,
       inFlightBytes: limits.inFlightBytes ?? MAX_REVIEW_DAEMON_INFLIGHT_BYTES,
       inFlightResources: limits.inFlightResources ?? MAX_REVIEW_DAEMON_INFLIGHT_RESOURCES,
+      sessionInFlightBytes: limits.sessionInFlightBytes ?? MAX_REVIEW_SESSION_INFLIGHT_BYTES,
+      sessionInFlightResources:
+        limits.sessionInFlightResources ?? MAX_REVIEW_SESSION_INFLIGHT_RESOURCES,
     };
+  }
+
+  /** One session's current reservations: how many, and how many bytes. */
+  private sessionUsage(sessionId: string, except?: ReviewResourceReservation) {
+    let count = 0;
+    let bytes = 0;
+    for (const reservation of this.reservations.values()) {
+      if (reservation.sessionId !== sessionId || reservation === except) continue;
+      count += 1;
+      bytes += reservation.byteLength;
+    }
+    return { count, bytes };
+  }
+
+  /** Whether one session may hold `byteLength` more bytes beside its other loads. */
+  private fitsSessionShare(usage: { count: number; bytes: number }, byteLength: number) {
+    return usage.count === 0 || usage.bytes + byteLength <= this.limits.sessionInFlightBytes;
   }
 
   /** Return one completed resource, promoting it to the young end of the eviction order. */
@@ -112,6 +150,17 @@ export class ReviewResourceCache {
         `The daemon is already assembling ${this.limits.inFlightResources} review resources.`,
       );
     }
+    const usage = this.sessionUsage(key.sessionId);
+    if (usage.count >= this.limits.sessionInFlightResources) {
+      throw new ReviewResourceBudgetError(
+        `This session already has ${this.limits.sessionInFlightResources} review resources loading.`,
+      );
+    }
+    if (!this.fitsSessionShare(usage, byteLength)) {
+      throw new ReviewResourceBudgetError(
+        "This session's resource loads already fill its share of the in-flight budget.",
+      );
+    }
     if (byteLength > this.limits.inFlightBytes) {
       throw new ReviewResourceBudgetError(
         `Review resource ${key.resourceId} declares ${byteLength} bytes, over the daemon's in-flight budget.`,
@@ -144,6 +193,14 @@ export class ReviewResourceCache {
       return;
     }
     const delta = byteLength - reservation.byteLength;
+    if (
+      delta > 0 &&
+      !this.fitsSessionShare(this.sessionUsage(reservation.sessionId, reservation), byteLength)
+    ) {
+      throw new ReviewResourceBudgetError(
+        `Review resource ${reservation.resourceId} declares ${byteLength} bytes, over this session's share of the in-flight budget.`,
+      );
+    }
     if (this.reservedBytes + delta > this.limits.inFlightBytes) {
       throw new ReviewResourceBudgetError(
         `Review resource ${reservation.resourceId} declares ${byteLength} bytes, over the daemon's remaining in-flight budget.`,

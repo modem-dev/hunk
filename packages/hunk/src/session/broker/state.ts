@@ -226,6 +226,12 @@ export class HunkSessionBrokerState extends SessionBrokerState<
   private readonly now: () => number;
   /** One shared-state read per position; concurrent callers await the same assembly. */
   private readonly sharedStateLoads = new Map<string, Promise<ReviewSharedStateV1>>();
+  /**
+   * The last assembled, validated shared state per session, answered again while the mirror
+   * still describes the same `(generation, sharedStateRevision)`; repeated reads at one
+   * position cost the session nothing.
+   */
+  private readonly sharedStates = new Map<string, ReviewSharedStateV1>();
   /** Capability verifiers by session, as their registrations declared them. */
   private readonly capabilityDigests = new Map<string, string>();
   private readonly publicationWatchers = new Set<(event: ReviewPublicationEvent) => void>();
@@ -313,6 +319,8 @@ export class HunkSessionBrokerState extends SessionBrokerState<
     this.resources.clear();
     this.loads.clear();
     this.sharedStateLoads.clear();
+    this.sharedStates.clear();
+    this.recentRefreshes.clear();
     this.refreshes.clear();
     this.capabilityDigests.clear();
     for (const sessionId of watched) {
@@ -444,6 +452,15 @@ export class HunkSessionBrokerState extends SessionBrokerState<
       return Promise.reject(new ReviewGenerationRetiredError(undefined));
     }
     const generation = publication.address.generation;
+    const cached = this.sharedStates.get(sessionId);
+    if (
+      cached &&
+      cached.generation === generation &&
+      publication.sharedStateRevision !== undefined &&
+      cached.sharedStateRevision === publication.sharedStateRevision
+    ) {
+      return Promise.resolve(cached);
+    }
     const loadKey = JSON.stringify([
       sessionId,
       generation,
@@ -453,9 +470,17 @@ export class HunkSessionBrokerState extends SessionBrokerState<
     if (running) {
       return running;
     }
-    const load = this.assembleSharedState(sessionId, generation).finally(() => {
-      this.sharedStateLoads.delete(loadKey);
-    });
+    const load = this.assembleSharedState(sessionId, generation)
+      .then((state) => {
+        // Kept only while it is still the session's generation; a retired one is never served.
+        if (this.mirror.get(sessionId)?.address.generation === state.generation) {
+          this.sharedStates.set(sessionId, state);
+        }
+        return state;
+      })
+      .finally(() => {
+        this.sharedStateLoads.delete(loadKey);
+      });
     this.sharedStateLoads.set(loadKey, load);
     return load;
   }
@@ -538,6 +563,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
       // Nothing from the retired generation can be asked for again, and an in-flight read
       // of it can only produce bytes nobody wants.
       this.resources.evictGeneration(sessionId, update.previousGeneration);
+      this.sharedStates.delete(sessionId);
     }
     if (update.kind !== "ignored") {
       this.notifyPublicationWatchers({ kind: "published", sessionId });
@@ -554,6 +580,9 @@ export class HunkSessionBrokerState extends SessionBrokerState<
     }
     for (const sessionId of this.recentRefreshes.keys()) {
       if (!live.has(sessionId)) this.recentRefreshes.delete(sessionId);
+    }
+    for (const sessionId of this.sharedStates.keys()) {
+      if (!live.has(sessionId)) this.sharedStates.delete(sessionId);
     }
     for (const sessionId of this.mirror.sessionIds()) {
       if (!live.has(sessionId)) {
