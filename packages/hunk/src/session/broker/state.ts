@@ -49,7 +49,11 @@ import {
   readSnapshotSharedStateRevision,
   type MirroredReviewPublication,
 } from "./reviewMirror";
-import { ReviewResourceCache, type ReviewResourceReservation } from "./reviewResourceCache";
+import {
+  ReviewResourceBudgetError,
+  ReviewResourceCache,
+  type ReviewResourceReservation,
+} from "./reviewResourceCache";
 import { ReviewChunkAssembler } from "../../core/review/resourceAssembly";
 import {
   isMaterializedReviewResource,
@@ -201,6 +205,10 @@ type HunkBrokerConnection = Parameters<HunkBrokerBase["registerSession"]>[0];
  * read moments ago), so a reviewer never waits for a timer and a client cannot spin the VCS.
  */
 export const REVIEW_REFRESH_MIN_INTERVAL_MS = 2_000;
+
+/** How long a read waits for an in-flight slot before it is refused, and how often it looks. */
+const RESERVE_WAIT_MS = 10_000;
+const RESERVE_RETRY_MS = 15;
 
 export class HunkSessionBrokerState extends SessionBrokerState<
   HunkSessionInfo,
@@ -618,6 +626,30 @@ export class HunkSessionBrokerState extends SessionBrokerState<
     return descriptor;
   }
 
+  /**
+   * Take an in-flight reservation, waiting briefly while the budget is only occupied.
+   *
+   * A page legitimately issues more reads than one session's share at once (its file loads,
+   * then image previews and gap source), so a full budget is a queue, not a refusal: the read
+   * waits for a slot for up to `RESERVE_WAIT_MS` and fails only past that, or at once when it
+   * could never fit. The per-session share still bounds what one session holds at a time.
+   */
+  private async reserveWhenFree(
+    key: { sessionId: string; generation: string; resourceId: string },
+    byteLength: number,
+  ): Promise<ReviewResourceReservation> {
+    const deadline = Date.now() + RESERVE_WAIT_MS;
+    for (;;) {
+      try {
+        return this.resources.reserve(key, byteLength);
+      } catch (error) {
+        if (!(error instanceof ReviewResourceBudgetError) || !error.retryable) throw error;
+        if (Date.now() >= deadline) throw error;
+        await new Promise((resolve) => setTimeout(resolve, RESERVE_RETRY_MS));
+      }
+    }
+  }
+
   /** Reject any read or action addressed to a generation the session is not serving. */
   private assertGenerationActive(sessionId: string, generation: string) {
     const publication = this.mirror.get(sessionId);
@@ -640,7 +672,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
     descriptor: ReviewResourceDescriptorV1,
   ): Promise<Uint8Array> {
     const measured = isMaterializedReviewResource(descriptor);
-    const reservation: ReviewResourceReservation = this.resources.reserve(
+    const reservation: ReviewResourceReservation = await this.reserveWhenFree(
       key,
       measured
         ? descriptor.byteLength!
@@ -700,7 +732,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
     sessionId: string,
     generation: string,
   ): Promise<ReviewSharedStateV1> {
-    const reservation = this.resources.reserve(
+    const reservation = await this.reserveWhenFree(
       { sessionId, generation, resourceId: REVIEW_SHARED_STATE_CURRENT_RESOURCE_ID },
       REVIEW_RESOURCE_CHUNK_BYTES,
     );

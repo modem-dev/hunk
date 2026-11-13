@@ -34,13 +34,17 @@ import {
  * The strictest policy Pierre's renderers work under (`docs/web-review-client.md` records
  * the measurements): everything defaults to nothing, scripts and fetches come only from this
  * origin, and styles additionally allow inline because Pierre writes syntax colors as
- * `style` attributes and theme rules as `<style>` elements inside its shadow roots.
+ * `style` attributes and theme rules as `<style>` elements inside its shadow roots. Images
+ * load only from `blob:` URLs, which the page mints from bytes it read for an image preview.
  */
 export const REVIEW_PAGE_CONTENT_SECURITY_POLICY = [
   "default-src 'none'",
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
   "connect-src 'self'",
+  // Image previews: the page turns a file's verified bytes into a `blob:` URL it made itself.
+  // Nothing else — no remote, `data:`, or same-origin images.
+  "img-src blob:",
   "base-uri 'none'",
   "form-action 'none'",
   "frame-ancestors 'none'",

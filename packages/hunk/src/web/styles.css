@@ -1692,3 +1692,192 @@ body {
   border: 1px solid color-mix(in srgb, var(--hunk-accent) 70%, transparent);
   pointer-events: none;
 }
+
+/* -- Rich previews ---------------------------------------------------------------------- */
+
+.image-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px 16px;
+}
+
+.image-preview-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.image-preview-slider {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--hunk-muted);
+  font-size: 12px;
+}
+
+.image-preview-slider input {
+  width: 200px;
+  accent-color: var(--hunk-accent);
+}
+
+.image-preview-sides {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.image-preview-figure {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  min-width: 0;
+}
+
+.image-preview-sides .image-preview-figure {
+  flex: 1 1 260px;
+}
+
+.image-preview-figure figcaption {
+  color: var(--hunk-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Transparency shows as the familiar checkerboard. */
+.image-preview-canvas {
+  position: relative;
+  display: flex;
+  width: fit-content;
+  min-width: 160px;
+  max-width: 100%;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  min-height: 64px;
+  max-height: 480px;
+  padding: 8px;
+  overflow: hidden;
+  border: 1px solid var(--hunk-border);
+  border-radius: 6px;
+  background-color: #fff;
+  background-image:
+    linear-gradient(45deg, #d8d8d8 25%, transparent 25%),
+    linear-gradient(-45deg, #d8d8d8 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #d8d8d8 75%),
+    linear-gradient(-45deg, transparent 75%, #d8d8d8 75%);
+  background-size: 16px 16px;
+  background-position:
+    0 0,
+    0 8px,
+    8px -8px,
+    -8px 0;
+}
+
+.image-preview-canvas img {
+  max-width: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+/* The stacked modes draw both sides in one box sized from the larger image. */
+.image-preview-stack {
+  position: relative;
+  max-width: 100%;
+}
+
+.image-preview-stack img {
+  position: absolute;
+  inset: 0;
+}
+
+.image-preview-divider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--hunk-accent);
+  pointer-events: none;
+}
+
+.markdown-preview {
+  padding: 12px 24px 20px;
+  font-family: var(--ui-font);
+  font-size: 14px;
+  line-height: 1.6;
+  max-width: 920px;
+}
+
+.markdown-view > :first-child {
+  margin-top: 0;
+}
+
+.markdown-view h1,
+.markdown-view h2 {
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--hunk-border);
+}
+
+.markdown-view a {
+  color: var(--hunk-accent);
+}
+
+.markdown-view code {
+  padding: 1px 4px;
+  font-family: var(--code-font);
+  font-size: 12.5px;
+  background: var(--hunk-panel-alt);
+  border-radius: 4px;
+}
+
+.markdown-view pre {
+  padding: 10px 12px;
+  overflow-x: auto;
+  background: var(--hunk-panel-alt);
+  border: 1px solid var(--hunk-border);
+  border-radius: 6px;
+}
+
+.markdown-view pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.markdown-view blockquote {
+  margin: 0;
+  padding: 0 12px;
+  color: var(--hunk-muted);
+  border-left: 3px solid var(--hunk-border);
+}
+
+.markdown-view p,
+.markdown-view li {
+  overflow-wrap: anywhere;
+}
+
+.markdown-table {
+  overflow-x: auto;
+}
+
+.markdown-view table {
+  border-collapse: collapse;
+}
+
+.markdown-view th,
+.markdown-view td {
+  padding: 4px 10px;
+  border: 1px solid var(--hunk-border);
+}
+
+.markdown-view hr {
+  border: 0;
+  border-top: 1px solid var(--hunk-border);
+}
+
+.header-action[aria-pressed="true"] {
+  background: var(--hunk-accent-muted);
+  border-color: var(--hunk-accent);
+}

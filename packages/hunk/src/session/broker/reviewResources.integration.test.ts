@@ -174,6 +174,33 @@ describe("brokered review resources", () => {
     ).rejects.toThrow("already assembling");
   });
 
+  // A page issues more reads than one session's share at once (its file loads, then image
+  // previews); an occupied budget queues them instead of refusing them with a 502.
+  test("waits for an occupied in-flight slot instead of refusing the read", async () => {
+    const files = [
+      createTestPatchFile("alpha", 3),
+      createTestPatchFile("beta", 3),
+      createTestPatchFile("gamma", 3),
+    ];
+    const { state, register, producer } = connect(
+      files,
+      new ReviewResourceCache({ inFlightResources: 1, sessionInFlightResources: 1 }),
+    );
+    register();
+    const publication = producer.getPublication();
+
+    const loads = publication.document.files.map((file) =>
+      state.loadReviewResource(
+        SESSION.sessionId,
+        publication.generation,
+        reviewResourceId({ kind: "patch", fileKey: file.key }),
+      ),
+    );
+
+    const results = await Promise.all(loads);
+    expect(results.map((bytes) => bytes.byteLength > 0)).toEqual([true, true, true]);
+  });
+
   // Intent: a session that publishes no review is mirrored as nothing, and its embedded
   // patch text — the shape an older build still sends — is served unchanged.
   test("serves a pre-mirror session's embedded patch text unchanged", async () => {
