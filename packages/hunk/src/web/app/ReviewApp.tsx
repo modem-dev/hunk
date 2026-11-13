@@ -80,7 +80,10 @@ import {
   type WebViewOverrides,
   type WebViewPreferences,
 } from "../view/viewPreferences";
+import { reviewHunkIndexForLine } from "../../core/review/geometry";
 import { selectReviewNoteList } from "../../core/review/noteList";
+import { Minimap } from "../minimap/Minimap";
+import { readMinimapEnabled, storeMinimapEnabled } from "../minimap/minimapPreference";
 import { NotesTab } from "../notesPanel/NotesTab";
 import { OverviewTab } from "../overview/OverviewTab";
 import { selectWebReviewOverview } from "../panel/overviewInput";
@@ -115,19 +118,23 @@ function useColumnWidth() {
   return width;
 }
 
-/** The width of an element, kept current as it resizes. */
+/**
+ * The width of an element, kept current as it resizes.
+ *
+ * A callback ref, so an element that mounts after the first render (the page shows a
+ * connecting message first) is still observed.
+ */
 function useElementWidth<T extends HTMLElement>() {
-  const ref = useRef<T | null>(null);
+  const [element, setElement] = useState<T | null>(null);
   const [width, setWidth] = useState(0);
   useLayoutEffect(() => {
-    const element = ref.current;
     if (!element) return;
     setWidth(element.getBoundingClientRect().width);
     const observer = new ResizeObserver((entries) => setWidth(entries[0]!.contentRect.width));
     observer.observe(element);
     return () => observer.disconnect();
-  }, []);
-  return [ref, width] as const;
+  }, [element]);
+  return [setElement, width] as const;
 }
 
 /** The theme-menu option that follows the session's theme instead of a stored choice. */
@@ -187,6 +194,13 @@ function useWebTheme(sessionTheme: ReviewThemeDefaultsV1 | undefined) {
 }
 
 const NO_HIGHLIGHTS = {};
+
+/** Below this viewport or stream width the minimap hides, leaving the room to the diff. */
+const MINIMAP_MIN_VIEWPORT = 1000;
+const MINIMAP_MIN_STREAM_WIDTH = 560;
+
+/** The minimap's width, as the stylesheet sets it. */
+const MINIMAP_WIDTH_PX = 44;
 
 /** How long the viewport must stay put before the page reports its focus to the session. */
 const FOCUS_REPORT_DEBOUNCE_MS = 400;
@@ -260,7 +274,18 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
     0,
     mainWidth - (sidebarOpen ? preferences.sidebarWidth : 0) - (panelOpen ? panel.width : 0),
   );
-  const layout = resolveWebLayout(preferences.layout, streamWidth, columnWidth);
+  // The minimap hides when the stream is too narrow to spare it the room.
+  // The reader may turn the minimap off (`hunk.web.toggleMinimap`); the choice is per browser.
+  const [minimapEnabled, setMinimapEnabled] = useState(() => readMinimapEnabled());
+  const showMinimap =
+    minimapEnabled &&
+    window.innerWidth >= MINIMAP_MIN_VIEWPORT &&
+    streamWidth >= MINIMAP_MIN_STREAM_WIDTH;
+  const layout = resolveWebLayout(
+    preferences.layout,
+    streamWidth - (showMinimap ? MINIMAP_WIDTH_PX : 0),
+    columnWidth,
+  );
 
   // The shared filter decides the visible stream, as it does in the terminal; the planner
   // reads the same filter from the store.
@@ -407,6 +432,46 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
     },
     [session],
   );
+  // The minimap's marks, by file key.
+  const minimapFiles = useMemo(
+    () => new Map(review.document.files.map((file) => [file.key, file] as const)),
+    [review.document],
+  );
+  const minimapNotes = useMemo(() => {
+    const byFile = new Map<string, number[]>();
+    if (!showMinimap) return byFile;
+    for (const file of selectReviewNoteList(review, sidecarNotes)) {
+      byFile.set(
+        file.fileKey,
+        file.threads.map((thread) => thread.hunkIndex),
+      );
+    }
+    return byFile;
+  }, [showMinimap, review, sidecarNotes]);
+  const minimapHighlights = useMemo(() => {
+    const byFile = new Map<string, number[]>();
+    for (const [fileKey, marks] of Object.entries(shownShared?.agentHighlights ?? {})) {
+      const file = minimapFiles.get(fileKey);
+      if (!file) continue;
+      byFile.set(
+        fileKey,
+        marks.map((mark) => Math.max(0, reviewHunkIndexForLine(file.hunks, mark.side, mark.line))),
+      );
+    }
+    return byFile;
+  }, [shownShared, minimapFiles]);
+  const minimapViewed = useMemo(
+    () => new Set(Object.keys(shownShared?.viewedFiles ?? {})),
+    [shownShared],
+  );
+  const minimapSelected = useMemo(
+    () =>
+      review.selection.fileKey
+        ? { fileKey: review.selection.fileKey, hunkIndex: review.selection.hunkIndex }
+        : undefined,
+    [review.selection.fileKey, review.selection.hunkIndex],
+  );
+
   // A click on a hunk selects it where it is; the viewport stays put.
   const selectHunk = useCallback(
     (fileKey: string, hunkIndex: number) => {
@@ -532,6 +597,11 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
       "hunk.web.toggleSidePanel": () => updatePanel({ open: !viewRef.current.panelOpen }),
       "hunk.web.showOverview": () => updatePanel({ open: true, tab: "overview" }),
       "hunk.web.showNotes": () => updatePanel({ open: true, tab: "notes" }),
+      "hunk.web.toggleMinimap": () =>
+        setMinimapEnabled((current) => {
+          storeMinimapEnabled(!current);
+          return !current;
+        }),
     }),
     [updatePanel],
   );
@@ -755,6 +825,19 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
           composers={composers}
           interaction={interactive.interaction}
         />
+        {showMinimap ? (
+          <Minimap
+            slots={visibleSlots}
+            files={minimapFiles}
+            layout={layout}
+            noteHunks={minimapNotes}
+            highlightHunks={minimapHighlights}
+            viewed={minimapViewed}
+            {...(minimapSelected ? { selected: minimapSelected } : {})}
+            controller={streamController}
+            themeKey={theme?.id}
+          />
+        ) : null}
         {panelOpen && panelTools.length > 0 ? (
           <SidePanel
             tools={panelTools}

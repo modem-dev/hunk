@@ -7,6 +7,7 @@ import {
   reviewHunkIndexForLine,
   reviewHunkRange,
   reviewHunkRanges,
+  reviewHunkRowFractions,
   reviewLineCoveredByHunks,
   reviewRangeCoveredByHunks,
   reviewRangeTargetCoverageIssue,
@@ -270,5 +271,39 @@ describe("normalizedReviewSourceLines", () => {
   test("reports no lines for empty source rather than one phantom line", () => {
     expect(normalizedReviewSourceLines("")).toEqual([]);
     expect(normalizedReviewSourceLines("\n")).toEqual([]);
+  });
+});
+
+describe("reviewHunkRowFractions", () => {
+  test("places each hunk within its file's rows per layout, clamped to the file", () => {
+    const file = {
+      splitLineCount: 20,
+      unifiedLineCount: 40,
+      hunks: [
+        { splitLineStart: 0, splitLineCount: 5, unifiedLineStart: 0, unifiedLineCount: 10 },
+        { splitLineStart: 15, splitLineCount: 10, unifiedLineStart: 30, unifiedLineCount: 10 },
+      ],
+    };
+
+    expect(reviewHunkRowFractions(file, "split")).toEqual([
+      { start: 0, end: 0.25 },
+      { start: 0.75, end: 1 },
+    ]);
+    expect(reviewHunkRowFractions(file, "unified")).toEqual([
+      { start: 0, end: 0.25 },
+      { start: 0.75, end: 1 },
+    ]);
+    expect(
+      reviewHunkRowFractions(
+        {
+          splitLineCount: 0,
+          unifiedLineCount: 0,
+          hunks: [
+            { splitLineStart: 0, splitLineCount: 0, unifiedLineStart: 0, unifiedLineCount: 0 },
+          ],
+        },
+        "unified",
+      ),
+    ).toEqual([{ start: 0, end: 1 }]);
   });
 });

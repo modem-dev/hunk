@@ -50,6 +50,7 @@ export const WEB_LOCAL_COMMANDS = [
     category: "view",
     keys: ["N"],
   },
+  { id: "hunk.web.toggleMinimap", title: "Toggle the minimap", category: "view" },
 ] as const satisfies readonly WebLocalCommand[];
 
 /** Every page-only command id. */
