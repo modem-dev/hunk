@@ -48,10 +48,26 @@ async function createTestCoordinator(
   return { coordinator, input, right, dir };
 }
 
-/** Let queued reload work reach its next await. */
+/** Let queued reload work reach its next await; use only to show that nothing further happens. */
 async function settleTestTurns() {
   for (let turn = 0; turn < 20; turn += 1) {
     await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+}
+
+/**
+ * Wait until reload work that reads real files has reached an observable state.
+ *
+ * A reload awaits filesystem reads, so a fixed number of timer turns says nothing about
+ * whether it has got there on a busy machine.
+ */
+async function waitForTestCondition(condition: () => boolean, timeoutMs = 10_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() > deadline) {
+      throw new Error("Timed out waiting for the reload coordinator test condition.");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5));
   }
 }
 
@@ -67,6 +83,7 @@ describe("ReviewReloadCoordinator", () => {
 
     const first = coordinator.reload(input, { resetApp: false });
     const second = coordinator.reload(input);
+    await waitForTestCondition(() => adoptions.length >= 1);
     await settleTestTurns();
     // The second reload waits until the first replacement reports itself mounted.
     expect(adoptions).toHaveLength(1);
@@ -76,7 +93,7 @@ describe("ReviewReloadCoordinator", () => {
 
     adoptions[0]?.mounted();
     expect((await first).fileCount).toBe(1);
-    await settleTestTurns();
+    await waitForTestCondition(() => adoptions.length >= 2);
     expect(adoptions).toHaveLength(2);
     expect(adoptions[1]?.adoption.resetApp).toBe(true);
     adoptions[1]?.mounted();
@@ -164,6 +181,7 @@ describe("ReviewReloadCoordinator", () => {
     expect(await first).toEqual({ ok: true });
 
     coordinator.reloadAfterWorkspaceWrite();
+    await waitForTestCondition(() => adopted.length >= 2);
     await settleTestTurns();
     expect(adopted).toEqual(["diff", "diff"]);
   });
@@ -190,7 +208,7 @@ describe("ReviewReloadCoordinator", () => {
       watch.setSignature("signature:1");
       watch.emit();
       watch.advanceBy(200);
-      await settleTestTurns();
+      await waitForTestCondition(() => adoptions.length >= 1);
 
       expect(reasons).toEqual(["watch"]);
       expect(adoptions).toHaveLength(1);
