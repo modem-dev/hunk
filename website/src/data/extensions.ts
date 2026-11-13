@@ -117,6 +117,15 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     apiVersion: 6,
   },
   {
+    repo: "babhishek21/hunk-goodies",
+    name: "hunk-goodies",
+    summary:
+      "Marks files as viewed, folds them away, stages files and hunks, and syncs viewed marks with GitHub pull requests.",
+    categories: ["Pane", "File view", "Command"],
+    version: "0.1.1",
+    apiVersion: 32,
+  },
+  {
     repo: "bottercode/hunk-why",
     name: "hunk-why",
     summary:
