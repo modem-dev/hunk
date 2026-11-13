@@ -50,7 +50,7 @@ import {
   type MirroredReviewPublication,
 } from "./reviewMirror";
 import {
-  ReviewResourceBudgetError,
+  ReviewResourceWaitAbortedError,
   ReviewResourceCache,
   type ReviewResourceReservation,
 } from "./reviewResourceCache";
@@ -206,7 +206,7 @@ type HunkBrokerConnection = Parameters<HunkBrokerBase["registerSession"]>[0];
  */
 export const REVIEW_REFRESH_MIN_INTERVAL_MS = 2_000;
 
-/** How long a read waits for an in-flight slot before it is refused, and how often it looks. */
+/** How long a read waits in line for an in-flight slot before it is refused. */
 const RESERVE_WAIT_MS = 10_000;
 
 /**
@@ -217,7 +217,6 @@ const RESERVE_WAIT_MS = 10_000;
  * again, which is correct, only slower.
  */
 export const MAX_CACHED_REVIEW_SHARED_STATES = 8;
-const RESERVE_RETRY_MS = 15;
 
 export class HunkSessionBrokerState extends SessionBrokerState<
   HunkSessionInfo,
@@ -231,8 +230,14 @@ export class HunkSessionBrokerState extends SessionBrokerState<
 > {
   private readonly mirror = new ReviewMirror();
   private readonly resources: ReviewResourceCache;
-  /** One load per resource; concurrent callers await the same assembly. */
-  private readonly loads = new Map<string, Promise<Uint8Array>>();
+  /**
+   * One load per resource; concurrent callers await the same assembly. A load is abandoned
+   * (its wait for a slot aborted) only once every caller that joined it has gone away.
+   */
+  private readonly loads = new Map<
+    string,
+    { promise: Promise<Uint8Array>; controller: AbortController; callers: number; pinned: boolean }
+  >();
   /** One refresh per session in flight; concurrent callers await the same reload. */
   private readonly refreshes = new Map<string, Promise<HunkReviewRefreshResultV1>>();
   /** The last settled refresh per session, answered again within the minimum interval. */
@@ -433,6 +438,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
     sessionId: string,
     generation: string,
     resourceId: string,
+    options: { signal?: AbortSignal } = {},
   ): Promise<Uint8Array> {
     const descriptor = this.requireDescriptor(sessionId, generation, resourceId);
     const key = { sessionId, generation, resourceId };
@@ -442,16 +448,59 @@ export class HunkSessionBrokerState extends SessionBrokerState<
     }
 
     const loadKey = JSON.stringify([sessionId, generation, resourceId]);
-    const running = this.loads.get(loadKey);
-    if (running) {
-      return running;
+    let load = this.loads.get(loadKey);
+    if (!load) {
+      const controller = new AbortController();
+      const promise = this.assembleResource(key, descriptor, controller.signal).finally(() => {
+        this.loads.delete(loadKey);
+      });
+      // Every caller may have left; the load's own failure then has nobody to report to.
+      promise.catch(() => undefined);
+      load = { promise, controller, callers: 0, pinned: false };
+      this.loads.set(loadKey, load);
     }
+    return this.joinLoad(load, options.signal);
+  }
 
-    const load = this.assembleResource(key, descriptor).finally(() => {
-      this.loads.delete(loadKey);
+  /**
+   * Await one shared load on behalf of one caller.
+   *
+   * A caller without a signal pins the load. A caller whose signal aborts is answered at once
+   * and leaves; the load itself is aborted when the last caller has left and none pinned it.
+   */
+  private joinLoad(
+    load: {
+      promise: Promise<Uint8Array>;
+      controller: AbortController;
+      callers: number;
+      pinned: boolean;
+    },
+    signal: AbortSignal | undefined,
+  ): Promise<Uint8Array> {
+    if (!signal) {
+      load.pinned = true;
+      return load.promise;
+    }
+    if (signal.aborted) return Promise.reject(new ReviewResourceWaitAbortedError());
+    load.callers += 1;
+    return new Promise<Uint8Array>((resolve, reject) => {
+      const onAbort = () => {
+        load.callers -= 1;
+        if (load.callers === 0 && !load.pinned) load.controller.abort();
+        reject(new ReviewResourceWaitAbortedError());
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+      load.promise.then(
+        (bytes) => {
+          signal.removeEventListener("abort", onAbort);
+          resolve(bytes);
+        },
+        (error: unknown) => {
+          signal.removeEventListener("abort", onAbort);
+          reject(error);
+        },
+      );
     });
-    this.loads.set(loadKey, load);
-    return load;
   }
 
   /**
@@ -653,28 +702,16 @@ export class HunkSessionBrokerState extends SessionBrokerState<
     return descriptor;
   }
 
-  /**
-   * Take an in-flight reservation, waiting briefly while the budget is only occupied.
-   *
-   * A page legitimately issues more reads than one session's share at once (its file loads,
-   * then image previews and gap source), so a full budget is a queue, not a refusal: the read
-   * waits for a slot for up to `RESERVE_WAIT_MS` and fails only past that, or at once when it
-   * could never fit. The per-session share still bounds what one session holds at a time.
-   */
-  private async reserveWhenFree(
+  /** Take an in-flight reservation through the cache's arrival-order wait (`reserveWhenFree`). */
+  private reserveWhenFree(
     key: { sessionId: string; generation: string; resourceId: string },
     byteLength: number,
+    signal?: AbortSignal,
   ): Promise<ReviewResourceReservation> {
-    const deadline = Date.now() + RESERVE_WAIT_MS;
-    for (;;) {
-      try {
-        return this.resources.reserve(key, byteLength);
-      } catch (error) {
-        if (!(error instanceof ReviewResourceBudgetError) || !error.retryable) throw error;
-        if (Date.now() >= deadline) throw error;
-        await new Promise((resolve) => setTimeout(resolve, RESERVE_RETRY_MS));
-      }
-    }
+    return this.resources.reserveWhenFree(key, byteLength, {
+      waitMs: RESERVE_WAIT_MS,
+      ...(signal ? { signal } : {}),
+    });
   }
 
   /** Reject any read or action addressed to a generation the session is not serving. */
@@ -697,6 +734,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
   private async assembleResource(
     key: { sessionId: string; generation: string; resourceId: string },
     descriptor: ReviewResourceDescriptorV1,
+    signal?: AbortSignal,
   ): Promise<Uint8Array> {
     const measured = isMaterializedReviewResource(descriptor);
     const reservation: ReviewResourceReservation = await this.reserveWhenFree(
@@ -704,6 +742,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
       measured
         ? descriptor.byteLength!
         : Math.min(REVIEW_RESOURCE_CHUNK_BYTES, reviewResourceCeiling(descriptor.kind)),
+      signal,
     );
     try {
       const assembler = new ReviewChunkAssembler({
