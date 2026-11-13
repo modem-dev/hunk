@@ -71,6 +71,8 @@ const WEB_REVIEW_RELEASE_PATH = join(SRC_ROOT, "core", "run", "webReviewRelease.
 const WEB_SHARED_COMMAND_MODULES: readonly string[] = [
   join(SRC_ROOT, "core", "run", "commandCatalog.ts"),
   join(SRC_ROOT, "core", "run", "keyChordLabels.ts"),
+  // The help overlay's sections and wording, shared with the terminal's help dialog.
+  join(SRC_ROOT, "core", "run", "helpSections.ts"),
   join(SRC_ROOT, "extension-api", "keys.ts"),
   // The entry-point release switch the catalog reads; an import-free leaf (asserted below).
   WEB_REVIEW_RELEASE_PATH,

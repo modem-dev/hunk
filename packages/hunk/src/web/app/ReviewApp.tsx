@@ -86,6 +86,7 @@ import { reviewLinkWithCapability } from "../session/capability";
 import { ReviewControls } from "./ReviewControls";
 import { Toolbar } from "./Toolbar";
 import { useReviewInteraction } from "./useReviewInteraction";
+import { useReviewTools } from "./useReviewTools";
 
 /** Width of one monospace column on this page, measured once the fonts are in place. */
 function useColumnWidth() {
@@ -277,18 +278,6 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
     [entries],
   );
 
-  const selectFile = useCallback(
-    (fileKey: string) => {
-      if (!session.review.store.getSnapshot().document.files.some((file) => file.key === fileKey))
-        return;
-      session.review.apply({
-        type: "selection/select-file",
-        fileKey,
-        reveal: { anchor: "file-top", scrollToNote: false },
-      });
-    },
-    [session],
-  );
   // Report where the reader settled, so a headless session's `hunk session context` can say
   // where the reader is. Debounced; a failure is dropped, since the next settle reports again.
   const focusTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -478,10 +467,25 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
       "hunk.view.toggleAgentNotes": () => void interactiveRef.current.toggleAgentNotes(),
       "hunk.review.focusFilter": () => filterRef.current?.focus(),
       "hunk.app.refresh": () => void interactiveRef.current.refresh(),
+      // Finding: help (`./useReviewTools.tsx`, with the palette and go-to-file).
+      "hunk.app.toggleHelp": () => toolsRef.current?.toggleHelp(),
     };
     return buildWebCommands(handlers);
   }, [session, updatePreferences]);
   useWebKeyboard(commands, keymap);
+  const tools = useReviewTools({
+    session,
+    commands,
+    keymap,
+    entries,
+    documentReady,
+    setRevealPoint,
+    copyReviewLink: copyLink,
+    chooseSessionTheme: () => choose(SESSION_THEME_OPTION_ID),
+    setSidebarMode: (sidebarMode) => updatePreferences({ sidebarMode }),
+  });
+  const toolsRef = useRef<typeof tools | undefined>(undefined);
+  toolsRef.current = tools;
 
   // Dragging the divider resizes the sidebar; the width is stored when the drag ends.
   const startResize = useCallback(
@@ -617,7 +621,7 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
                 noteCounts={noteCounts}
                 selectedKey={review.selection.fileKey}
                 mode={preferences.sidebarMode}
-                onSelectFile={selectFile}
+                onSelectFile={tools.jumpToFile}
               />
             </nav>
             <div
@@ -652,6 +656,7 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
         />
       </div>
       <ToastRegion toasts={session.toasts} />
+      {tools.overlay}
     </div>
   );
 }

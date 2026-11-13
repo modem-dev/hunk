@@ -284,4 +284,18 @@ test("captures writing notes, the shared filter, and an error toast", async ({ p
   await page.getByTestId("filter-input").fill("module-1");
   await expect(page.getByTestId("shared-filter")).toBeVisible();
   await capture(page, "22-filter-in-use");
+  await page.getByTestId("filter-input").fill("");
+  await expect(page.getByTestId("shared-filter")).toHaveCount(0);
+
+  await page.locator(".review-stream").click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press("Control+k");
+  await page.keyboard.type("lay");
+  await capture(page, "23-command-palette");
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("?");
+  await capture(page, "24-help-overlay");
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Control+p");
+  await page.keyboard.type("mod1");
+  await capture(page, "25-go-to-file");
 });
