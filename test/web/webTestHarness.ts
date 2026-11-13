@@ -150,22 +150,11 @@ export async function startTestWebReview(input: string): Promise<TestWebReview> 
   };
 }
 
-/**
- * How Chromium reports the daemon closing an idle event stream.
- *
- * The daemon's Bun listener drops a request after 10 idle seconds while the review surface
- * heartbeats every 15, so every event stream is cut once and the page reconnects. That is a
- * daemon defect, reported separately; it is tolerated here only for the `/events` route so
- * any other failed request still fails the test.
- */
-const DROPPED_EVENT_STREAM = "net::ERR_INCOMPLETE_CHUNKED_ENCODING";
-
 /** Record CSP violations, console errors and warnings, page errors, and failed requests. */
 export async function watchTestPageProblems(page: Page) {
   const problems: string[] = [];
   page.on("console", (message) => {
     if (message.type() !== "error" && message.type() !== "warning") return;
-    if (message.text() === `Failed to load resource: ${DROPPED_EVENT_STREAM}`) return;
     problems.push(`console ${message.type()}: ${message.text()}`);
   });
   page.on("pageerror", (error) => problems.push(`page error: ${error.message}`));
@@ -173,9 +162,6 @@ export async function watchTestPageProblems(page: Page) {
     const failure = request.failure()?.errorText;
     // Aborted fetches are the client cancelling superseded work, not failures.
     if (failure === "net::ERR_ABORTED") return;
-    if (failure === DROPPED_EVENT_STREAM && new URL(request.url()).pathname.endsWith("/events")) {
-      return;
-    }
     problems.push(`request failed: ${request.url()} ${failure}`);
   });
   await page.addInitScript(() => {
