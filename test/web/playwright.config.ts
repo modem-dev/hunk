@@ -10,6 +10,8 @@ export default defineConfig({
   // Each test owns a private daemon port, but one browser and one daemon at a time keeps the
   // suite predictable on small CI runners.
   workers: 1,
+  // Gives the run its own directory and stops anything a crashed worker left running.
+  globalSetup: "./globalSetup.ts",
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
   timeout: 120_000,

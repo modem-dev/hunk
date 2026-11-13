@@ -31,9 +31,13 @@ test.beforeEach(async ({ page }) => {
 });
 
 test.afterEach(async () => {
-  expect(problems).toEqual([]);
-  await review?.stop();
-  review = undefined;
+  // Check the page before stopping (a stopped daemon cuts its event stream), but always stop.
+  try {
+    expect(problems).toEqual([]);
+  } finally {
+    await review?.stop();
+    review = undefined;
+  }
 });
 
 /** The stream section for one path. */
