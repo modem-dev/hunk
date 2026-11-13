@@ -208,6 +208,15 @@ export const REVIEW_REFRESH_MIN_INTERVAL_MS = 2_000;
 
 /** How long a read waits for an in-flight slot before it is refused, and how often it looks. */
 const RESERVE_WAIT_MS = 10_000;
+
+/**
+ * Most sessions whose last shared state the daemon keeps answering from memory.
+ *
+ * Each entry is at most `MAX_REVIEW_SHARED_STATE_BYTES` (4 MiB), so the cache holds at most
+ * 32 MiB however many sessions are registered; a session past the cap reads from its producer
+ * again, which is correct, only slower.
+ */
+export const MAX_CACHED_REVIEW_SHARED_STATES = 8;
 const RESERVE_RETRY_MS = 15;
 
 export class HunkSessionBrokerState extends SessionBrokerState<
@@ -237,7 +246,9 @@ export class HunkSessionBrokerState extends SessionBrokerState<
   /**
    * The last assembled, validated shared state per session, answered again while the mirror
    * still describes the same `(generation, sharedStateRevision)`; repeated reads at one
-   * position cost the session nothing.
+   * position cost the session nothing. One entry per session, dropped when the session
+   * unregisters or replaces its generation, and at most `MAX_CACHED_REVIEW_SHARED_STATES`
+   * entries in least-recently-read order.
    */
   private readonly sharedStates = new Map<string, ReviewSharedStateV1>();
   /** Capability verifiers by session, as their registrations declared them. */
@@ -451,8 +462,8 @@ export class HunkSessionBrokerState extends SessionBrokerState<
    * `MAX_REVIEW_SHARED_STATE_BYTES` (`resource-too-large` past it), and parsed with the
    * browser-safe `parseReviewSharedState` (`resource-integrity` if it does not parse). The
    * read asks for the producer's current revision, so a stale mirror is answered with the
-   * current state rather than an error. Nothing is cached: the next shared revision makes it
-   * obsolete.
+   * current state rather than an error. The last state per session is kept for repeated reads
+   * at the same position (`sharedStates`); the next shared revision makes it obsolete.
    */
   loadReviewSharedState(sessionId: string): Promise<ReviewSharedStateV1> {
     const publication = this.mirror.get(sessionId);
@@ -467,6 +478,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
       publication.sharedStateRevision !== undefined &&
       cached.sharedStateRevision === publication.sharedStateRevision
     ) {
+      this.rememberSharedState(sessionId, cached);
       return Promise.resolve(cached);
     }
     const loadKey = JSON.stringify([
@@ -482,7 +494,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
       .then((state) => {
         // Kept only while it is still the session's generation; a retired one is never served.
         if (this.mirror.get(sessionId)?.address.generation === state.generation) {
-          this.sharedStates.set(sessionId, state);
+          this.rememberSharedState(sessionId, state);
         }
         return state;
       })
@@ -491,6 +503,21 @@ export class HunkSessionBrokerState extends SessionBrokerState<
       });
     this.sharedStateLoads.set(loadKey, load);
     return load;
+  }
+
+  /** Keep one session's shared state as the most recently read, evicting the least recent. */
+  private rememberSharedState(sessionId: string, state: ReviewSharedStateV1) {
+    this.sharedStates.delete(sessionId);
+    this.sharedStates.set(sessionId, state);
+    for (const oldest of this.sharedStates.keys()) {
+      if (this.sharedStates.size <= MAX_CACHED_REVIEW_SHARED_STATES) break;
+      this.sharedStates.delete(oldest);
+    }
+  }
+
+  /** The sessions whose shared state is cached, least recently read first (for tests). */
+  cachedSharedStateSessionIds(): string[] {
+    return [...this.sharedStates.keys()];
   }
 
   /**

@@ -264,8 +264,14 @@ export type HunkReviewFailureCodeV1 =
  * `selection-is-local`: a browser resolves `selection/select`, `selection/move`, and
  * `selection/select-file` in its own state; the session never applies another surface's
  * selection moves.
+ *
+ * `draft-is-local`: the session's one shared draft slot is the terminal composer's. A browser
+ * keeps its composers in its own state and writes notes with the direct `notes/add-user` and
+ * `notes/edit-user` intents, so the draft intents (`notes/start-draft`, `start-edit`,
+ * `start-reply`, `update-draft`, `cancel-draft`, `create-user`, `update-user`) are refused
+ * rather than letting a browser open, change, or consume the terminal's draft.
  */
-export type HunkReviewActorPolicyErrorCode = "selection-is-local";
+export type HunkReviewActorPolicyErrorCode = "selection-is-local" | "draft-is-local";
 
 /** One rejection, in the producer's own vocabulary. */
 export interface HunkReviewFailureV1 {

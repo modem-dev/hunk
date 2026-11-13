@@ -495,12 +495,27 @@ path suffixes, expansion retention, git-status badges).
   _Repaid (M5, browser composer site)_: the page's composer measures a candidate note with
   `reviewNoteWithinSizeLimit` (`web/notes/noteActions.ts`) and shows `note-too-large` before
   sending; it declares no bound of its own. The terminal composer site remains.
-  _Observed (M5, open)_: the session wire still has a second, smaller bound. `wire.ts` parses a
+  _Observed (M5)_: the session wire still had a second, smaller bound. `wire.ts` parsed a
   snapshot's `reviewNotes[].body` and `liveComments[].summary` with the broker's default
-  4,096-byte string limit, so a note between 4 KiB and `MAX_REVIEW_NOTE_BYTES` is applied by
-  the session and then rejected by the daemon as an incompatible snapshot, which disconnects the
-  session ("Session daemon rejected this review"). Reproduced by posting a 6,000-byte
-  `notes/add-user` to a headless session. Repaying it changes the session wire (a version bump).
+  4,096-byte string limit, so a note between 4 KiB and `MAX_REVIEW_NOTE_BYTES` was applied by
+  the session and then rejected by the daemon as an incompatible snapshot, which disconnected
+  the session. Reproduced by posting a 6,000-byte `notes/add-user` to a headless session.
+  _Repaid (session wire v22)_: the snapshot carries every note's text in full, parsed at the
+  model's own bound (`parseNoteText` in `session/broker/wire.ts`, `MAX_REVIEW_NOTE_BYTES` for
+  summary, rationale, body, title, and author) rather than as bounded excerpts, because agents
+  read whole notes from these fields (`hunk session comment list`, `review --include-notes`)
+  and an excerpt would make the agent surface disagree with the browser's `/state`. The frame
+  stays bounded: stored notes total at most `MAX_REVIEW_NOTES_TOTAL_BYTES` (2 MiB) and appear in
+  both summary lists, and the snapshot's sidecar summaries now share the shared state's count,
+  byte, and per-note bounds (`createSidecarProjectionBudget().admitSize`), so the note text a
+  snapshot carries stays within three quarters of the 8 MiB websocket frame
+  (`scripts/quality/review-vocabulary.test.ts`). The remaining quarter covers per-entry framing,
+  including each summary's `filePath`; a review would need thousands of notes on files with
+  paths of several hundred bytes to reach it. `test/session/headless.test.ts` pins the
+  6,000-byte repro, a note exactly at the model's bound, and a launch sidecar larger than the
+  frame, each against a real daemon. The terminal composer site is repaid too: a refused save
+  (`too-many-notes`, `note-too-large`) keeps the draft open with its text and shows the
+  catalog's wording (`useUserNoteComposer` `onSaveRefused`, `AppHost.interactions.test.tsx`).
 - **D2. Empty-body policy — 5 declarations.** Core intents (throws), terminal (cancels
   draft — a deliberate UX difference worth keeping explicit), web in three places. Fix: one
   `isBlankReviewNoteBody` predicate.
@@ -787,7 +802,11 @@ implementation does.
   (M2a) every surface honors. Composers are per client: `notes/add-user` (body, target or
   `parentId`, optional author, `expandedLineProof` on the wire) and `notes/edit-user` never
   touch the shared draft slot, and a remote note's author defaults from the actor's display
-  name. Adversarial fixtures in `test/review-conformance/actorPolicyFixtures.ts` (two actors,
+  name. The draft intents themselves (`notes/start-draft`, `start-edit`, `start-reply`,
+  `update-draft`, `cancel-draft`, `create-user`, `update-user`) are refused from a `browser`
+  actor with `draft-is-local` (HTTP 403), so a review link cannot open, fill, or consume the
+  terminal's draft or save a note through it under `originalSource: "user"`; fixture
+  `browser-draft-intents-are-refused`. Adversarial fixtures in `test/review-conformance/actorPolicyFixtures.ts` (two actors,
   a headless anchor, a direct note inside an expanded gap) run against the producer action
   handler and the HTTP surface; the wire fixtures add `direct-note-at-an-expanded-line` and
   `direct-reply-naming-its-own-target`. No copies existed to delete. Part (4), a tab-local

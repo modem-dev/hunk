@@ -51,6 +51,11 @@ export const REVIEW_ERROR_CATALOG: Record<HunkReviewClientErrorCodeV1, ReviewErr
     message: "Each window keeps its own place in the review, so this move stays in this window.",
     remedy: "Move the selection locally; it is not sent to the session.",
   },
+  "draft-is-local": {
+    message:
+      "Each window writes its notes in its own composer, so this draft stays in this window.",
+    remedy: "Save the note from this window; the session's terminal draft is not shared.",
+  },
   "state-too-large": {
     message: "This review's notes and shared state are too large to send to a browser.",
     remedy: "Clear some live comments or attention marks, then reload the page.",

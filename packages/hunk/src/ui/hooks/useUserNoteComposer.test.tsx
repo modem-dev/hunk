@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act, useState } from "react";
 import type { UserNoteLineTarget } from "../../core/liveComments";
+import { ReviewIntentPlanningError } from "../../core/review/intents";
 import type { LineCursor } from "../lib/lineCursors";
 import type { DraftReviewNote, UserReviewNote } from "../lib/reviewNoteMapping";
 import {
@@ -478,6 +479,47 @@ describe("useUserNoteComposer", () => {
         event: "note_created",
         payload: { note: { body: "complete editor body" } },
       });
+    } finally {
+      await act(async () => harness.setup.renderer.destroy());
+    }
+  });
+
+  test("reports a refused save and keeps the draft focused without publishing", async () => {
+    const calls: string[] = [];
+    const refusals: string[] = [];
+    const harness = await renderComposer(
+      baseOptions({
+        draftNote,
+        updateDraft: () => true,
+        saveDraft: () => {
+          throw new ReviewIntentPlanningError("too-many-notes", "full");
+        },
+        onSaveRefused: (code) => refusals.push(code),
+        focus: {
+          draft: () => calls.push("focus-draft"),
+          review: () => calls.push("focus-review"),
+          blurDraft: () => calls.push("blur"),
+        },
+        publishEvent: (event) => calls.push(`publish:${event}`),
+      }),
+    );
+
+    try {
+      await act(async () => harness.composer().saveDraftNote("kept body"));
+      expect(refusals).toEqual(["too-many-notes"]);
+      expect(calls).toEqual([]);
+
+      // Anything other than a planning refusal is a bug and still surfaces.
+      harness.replaceOptions(
+        baseOptions({
+          draftNote,
+          saveDraft: () => {
+            throw new TypeError("broken");
+          },
+        }),
+      );
+      await act(async () => harness.setup.renderOnce());
+      expect(() => harness.composer().saveDraftNote("body")).toThrow("broken");
     } finally {
       await act(async () => harness.setup.renderer.destroy());
     }
