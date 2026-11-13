@@ -21,9 +21,13 @@ let problems: string[] = [];
 test.use({ viewport: { width: 1440, height: 900 } });
 
 test.afterEach(async () => {
-  expect(problems).toEqual([]);
-  await review?.stop();
-  review = undefined;
+  // Check the page before stopping (a stopped daemon cuts its event stream), but always stop.
+  try {
+    expect(problems).toEqual([]);
+  } finally {
+    await review?.stop();
+    review = undefined;
+  }
 });
 
 /** Open the rich review and wait until every file has loaded. */
