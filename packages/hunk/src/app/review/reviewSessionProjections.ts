@@ -18,7 +18,11 @@ import {
 } from "../../core/review/annotations";
 import { reviewHunkRanges } from "../../core/review/geometry";
 import type { ReviewAnnotationIndex } from "../../core/review/navigation";
-import { selectThreadedStoredReviewNotes } from "../../core/review/selectors";
+import type { ReviewAction } from "../../core/review/actions";
+import {
+  selectNormalizedSelection,
+  selectThreadedStoredReviewNotes,
+} from "../../core/review/selectors";
 import {
   isRenderableStoredReviewNote,
   reviewNoteAnchorLine,
@@ -232,6 +236,28 @@ export function buildReviewNoteSummaries(
   }
 
   return noteSummaries;
+}
+
+/**
+ * Plan the follow-up when a document replacement invalidates the stored selection.
+ *
+ * A filter only changes the visible stream, so a selected file it hides stays selected. The
+ * shared selector supplies a replacement only when the selected file vanished or its hunk index
+ * became stale. This returns no reveal request: repair must not move a viewport.
+ */
+export function planReviewSelectionRepair(
+  state: ReviewState,
+): Extract<ReviewAction, { type: "selection/select" }> | undefined {
+  const normalized = selectNormalizedSelection(state);
+  const fileKey = normalized.fileKey;
+  if (
+    fileKey === null ||
+    (fileKey === state.selection.fileKey && normalized.hunkIndex === state.selection.hunkIndex)
+  ) {
+    return undefined;
+  }
+
+  return { type: "selection/select", fileKey, hunkIndex: normalized.hunkIndex };
 }
 
 /** Format the currently selected hunk for daemon snapshots and session command replies. */

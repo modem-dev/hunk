@@ -1,6 +1,7 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { SourceTextTooLargeError } from "../../core/changeset/fileSource";
 import type { DiffFile } from "../../core/changeset/model";
+import { STML_REFERENCE_WIDTH } from "../../core/stml/layout";
 import {
   createTestDeferred,
   createTestDiffFile,
@@ -162,7 +163,10 @@ describe("ReviewSessionHost live comments", () => {
       { filePath: "alpha.ts", hunkIndex: 0, summary: "s", markup: "<b>x</b>" },
       "mcp:2",
     );
-    expect(unmeasured.markupWidth).toBeUndefined();
+    // Without a surface measure, markup is validated at the nominal note width.
+    expect(unmeasured.markupWidth).toBe(STML_REFERENCE_WIDTH);
+    expect(enabled.getSessionSnapshotState().noteMarkupWidth).toBe(STML_REFERENCE_WIDTH);
+    expect(disabled.getSessionSnapshotState().noteMarkupWidth).toBeUndefined();
 
     const measured = enabled.addLiveComment(
       { filePath: "alpha.ts", hunkIndex: 0, summary: "s", markup: "<b>x</b>" },
@@ -235,8 +239,9 @@ describe("ReviewSessionHost navigation", () => {
     });
     expect(host.getSelection()).toEqual({ fileId: "beta", hunkIndex: 1 });
 
+    // With no surface measuring rows, the line's hunk is what gets revealed.
     const headless = host.navigateToLocation({ filePath: "alpha.ts", side: "new", line: 8 });
-    expect(headless.revealed).toBeUndefined();
+    expect(headless).toMatchObject({ hunkIndex: 0, revealed: "hunk", side: "new", line: 8 });
     expect(host.getSelection()).toEqual({ fileId: "alpha", hunkIndex: 0 });
 
     const revealLine: RevealLineFn = () => "line";
@@ -453,5 +458,28 @@ describe("ReviewSessionHost file replacement", () => {
       generation: "g1",
       stateRevision: host.getSnapshot().stateRevision,
     });
+  });
+});
+
+describe("ReviewSessionHost selection repair", () => {
+  test("a reload that drops the selected file repairs the stored selection without a reveal", () => {
+    const host = createTestHost([createTestNumberedFile(), createTestTwoHunkFile()]);
+    host.selectHunk("beta", 1);
+    const revealBefore = host.getSnapshot().reveal;
+
+    host.replaceFiles([createTestNumberedFile()]);
+    expect(host.getSnapshot().selection).toEqual({
+      fileKey: host.fileKeyFor("alpha")!,
+      hunkIndex: 0,
+    });
+    expect(host.getSnapshot().reveal.hunkToken).toBe(revealBefore.hunkToken);
+  });
+
+  test("a filter that hides the selected file keeps the selection", () => {
+    const host = createTestHost([createTestNumberedFile(), createTestTwoHunkFile()]);
+    host.selectHunk("beta", 1);
+    host.setFilter("alpha");
+    host.repairSelection();
+    expect(host.getSelection()).toEqual({ fileId: "beta", hunkIndex: 1 });
   });
 });

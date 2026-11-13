@@ -4,9 +4,9 @@
 // never throws — malformed input degrades to a best-effort tree plus a list of
 // human-readable `errors`, so a sloppy note still renders something useful.
 
-import { isRawTextStmlTag, isVoidStmlTag } from "../../../core/review/stml";
-import { utf8ByteLength } from "../../../core/review/validation";
-import { sanitizeTerminalText } from "../../../lib/terminalText";
+import { isRawTextStmlTag, isVoidStmlTag } from "../review/stml";
+import { utf8ByteLength } from "../review/validation";
+import { sanitizeTerminalText } from "../../lib/terminalText";
 
 export interface StmlText {
   type: "text";

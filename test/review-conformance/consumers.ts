@@ -14,6 +14,7 @@ import { extensionReviewSnapshotConsumer } from "./consumers/extensionReviewSnap
 import { coreOrderingConsumer } from "./consumers/coreOrdering";
 import { intentPlannerNavigationConsumer } from "./consumers/intentPlanner";
 import { reviewProducerConsumer } from "./consumers/reviewProducer";
+import { reviewSessionHostNavigationConsumer } from "./consumers/reviewSessionHost";
 import { reviewWireConsumer } from "./consumers/reviewWire";
 import { terminalReviewNavigationConsumer } from "./consumers/terminalReview";
 import { terminalRenderPlanConsumer } from "./consumers/terminalRenderPlan";
@@ -47,6 +48,7 @@ export const REVIEW_SNAPSHOT_CONSUMERS: readonly ReviewSnapshotConsumer[] = [
 export const REVIEW_NAVIGATION_CONSUMERS: readonly ReviewNavigationConsumer[] = [
   intentPlannerNavigationConsumer,
   terminalReviewNavigationConsumer,
+  reviewSessionHostNavigationConsumer,
 ];
 
 /**
