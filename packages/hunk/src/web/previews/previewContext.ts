@@ -52,4 +52,9 @@ export class MarkdownModeStore {
     this.version += 1;
     for (const listener of this.listeners) listener();
   }
+
+  /** Show one file's diff again, if it is shown rendered (navigation into it needs its hunks). */
+  showDiff(fileKey: string) {
+    if (this.rendered.has(fileKey)) this.toggle(fileKey);
+  }
 }
