@@ -7,6 +7,7 @@ import type {
   SessionHighlightAddCommandInput,
   SessionHighlightClearCommandInput,
   SessionNavigateCommandInput,
+  SessionOpenCommandInput,
   SessionReloadCommandInput,
   SessionReviewCommandInput,
   SessionSelectorInput,
@@ -19,6 +20,7 @@ import type {
   ClearedHighlightsResult,
   ListedSession,
   NavigatedSelectionResult,
+  OpenedReviewResult,
   ReloadedSessionResult,
   RemovedCommentResult,
   SelectedSessionContext,
@@ -37,7 +39,7 @@ export const HUNK_SESSION_API_VERSION = 1;
  * when daemon-forwarded payloads change, even if the supported action names stay stable; the
  * colocated `wire.snapshot.test.ts` fails when a payload changes without a bump.
  */
-const BUILT_SESSION_DAEMON_VERSION = 20;
+const BUILT_SESSION_DAEMON_VERSION = 21;
 
 /**
  * Test-only override so a spawned daemon or window can impersonate another build's revision.
@@ -73,7 +75,8 @@ export type SessionDaemonAction =
   | "comment-rm"
   | "comment-clear"
   | "highlight-add"
-  | "highlight-clear";
+  | "highlight-clear"
+  | "open";
 
 export interface SessionDaemonCapabilities {
   version: number;
@@ -176,6 +179,12 @@ export type SessionDaemonRequest =
       action: "highlight-clear";
       selector: SessionHighlightClearCommandInput["selector"];
       filePath?: string;
+    }
+  | {
+      action: "open";
+      selector: SessionOpenCommandInput["selector"];
+      /** False asks the session for its review URL instead of launching a browser. */
+      open: boolean;
     };
 
 export interface SessionDaemonResponses {
@@ -192,6 +201,7 @@ export interface SessionDaemonResponses {
   "comment-clear": { result: ClearedCommentsResult };
   "highlight-add": { result: AppliedHighlightResult };
   "highlight-clear": { result: ClearedHighlightsResult };
+  open: { result: OpenedReviewResult };
 }
 
 export type SessionDaemonResponse = SessionDaemonResponses[SessionDaemonAction];

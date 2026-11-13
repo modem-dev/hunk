@@ -73,6 +73,7 @@ function createClient(overrides: Partial<HunkDaemonCliClient>): HunkDaemonCliCli
         "comment-clear",
         "highlight-add",
         "highlight-clear",
+        "open",
       ],
     }),
     listSessions: async () => [],
@@ -138,6 +139,7 @@ function createClient(overrides: Partial<HunkDaemonCliClient>): HunkDaemonCliCli
       removedCount: 0,
       remainingCount: 0,
     }),
+    openReview: async () => ({ opened: true }),
     ...overrides,
   };
 }
@@ -1013,6 +1015,72 @@ describe("session command compatibility checks", () => {
     ).toBe("Cleared 1 attention marks from session session-1. Remaining marks: 0.\n");
 
     expect(calls).toEqual(["highlight-add", "highlight-clear"]);
+  });
+});
+
+describe("session open", () => {
+  const selector = { sessionId: "session-1" } satisfies SessionSelectorInput;
+  const url = "http://127.0.0.1:47657/review/session-1#capability=test-token";
+
+  /** Run `hunk session open` against a fake session that answers with one result. */
+  function runOpenTest(
+    input: { open: boolean; output: "text" | "json" },
+    result: Awaited<ReturnType<HunkDaemonCliClient["openReview"]>>,
+  ) {
+    const requests: boolean[] = [];
+    setSessionCommandTestHooks({
+      createClient: () =>
+        createClient({
+          openReview: async (request) => {
+            requests.push(request.open);
+            expect(request.selector).toEqual(selector);
+            return result;
+          },
+        }),
+      resolveDaemonAvailability: async () => true,
+      probeDaemonAdminStatus: async () => ({ kind: "unsupported" }),
+      readLaunchMetadata: () => null,
+    });
+    return {
+      requests,
+      output: runSessionCommand({
+        kind: "session",
+        action: "open",
+        selector,
+        ...input,
+      } satisfies SessionCommandInput),
+    };
+  }
+
+  test("--no-open prints exactly the URL the session returned", async () => {
+    const run = runOpenTest({ open: false, output: "text" }, { opened: false, url });
+
+    expect(await run.output).toBe(`${url}\n`);
+    expect(run.requests).toEqual([false]);
+  });
+
+  test("opening reports success without any URL", async () => {
+    const run = runOpenTest({ open: true, output: "text" }, { opened: true });
+
+    expect(await run.output).toBe("Opened session session-1 in your browser.\n");
+    expect(run.requests).toEqual([true]);
+  });
+
+  test("a launch failure fails the command and points at --no-open", async () => {
+    const run = runOpenTest(
+      { open: true, output: "text" },
+      { opened: false, failure: "Could not open a browser with xdg-open (ENOENT)." },
+    );
+
+    await expect(run.output).rejects.toThrow(
+      "Could not open a browser with xdg-open (ENOENT). Run `hunk session open --no-open` to print the review URL instead.",
+    );
+  });
+
+  test("--json returns the session's result as data", async () => {
+    const run = runOpenTest({ open: false, output: "json" }, { opened: false, url });
+
+    expect(JSON.parse(await run.output)).toEqual({ result: { opened: false, url } });
   });
 });
 

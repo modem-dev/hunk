@@ -184,6 +184,11 @@ export interface ClearHighlightsToolInput extends SessionTargetInput {
   filePath?: string;
 }
 
+/** Open the session's review in a browser, or ask for its URL with `open: false`. */
+export interface OpenReviewToolInput extends SessionTargetInput {
+  open: boolean;
+}
+
 export interface SessionLiveCommentSummary {
   commentId: string;
   parentId?: string;
@@ -260,6 +265,18 @@ export interface ClearedHighlightsResult {
   removedCount: number;
   remainingCount: number;
   filePath?: string;
+}
+
+/**
+ * How a session answered `open_review`.
+ *
+ * `url` is present only when the caller asked for it (`open: false`); it carries the review
+ * capability. `failure` describes a launch that did not start a browser, never with the URL.
+ */
+export interface OpenedReviewResult {
+  opened: boolean;
+  url?: string;
+  failure?: string;
 }
 
 export interface RemovedCommentResult {
@@ -365,7 +382,8 @@ export type HunkSessionCommandResult =
   | ReloadedSessionResult
   | HunkReviewResultV1
   | AppliedHighlightResult
-  | ClearedHighlightsResult;
+  | ClearedHighlightsResult
+  | OpenedReviewResult;
 
 export type HunkSessionServerMessage =
   | SessionServerMessage<"comment", CommentToolInput>
@@ -378,4 +396,5 @@ export type HunkSessionServerMessage =
   | SessionServerMessage<"apply_review_action", ApplyReviewActionToolInput>
   | SessionServerMessage<"refresh_review", RefreshReviewToolInput>
   | SessionServerMessage<"highlight", HighlightToolInput>
-  | SessionServerMessage<"clear_highlights", ClearHighlightsToolInput>;
+  | SessionServerMessage<"clear_highlights", ClearHighlightsToolInput>
+  | SessionServerMessage<"open_review", OpenReviewToolInput>;

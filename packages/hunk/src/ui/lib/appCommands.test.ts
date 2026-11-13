@@ -12,7 +12,7 @@ import {
   type BuildAppCommandsOptions,
   type ResolvedCommandKeys,
 } from "./appCommands";
-import { APP_COMMAND_CATALOG } from "../../core/run/commandCatalog";
+import { APP_COMMAND_CATALOG, OPEN_IN_BROWSER_COMMAND } from "../../core/run/commandCatalog";
 import { HISTORY_COMMAND_CATALOG } from "../../core/run/historyCommandCatalog";
 import { getBundledUIRegistry } from "../../extensions/default/ui";
 import { buildAppMenus } from "./appMenus";
@@ -40,6 +40,7 @@ function keyEvent(fields: Partial<ParsedKey>): KeyEvent {
 function createTestCommands(
   resolvedKeys?: ResolvedCommandKeys,
   overrides: Partial<BuildAppCommandsOptions> = {},
+  catalog = APP_COMMAND_CATALOG,
 ) {
   const ran: string[] = [];
   const record =
@@ -82,7 +83,7 @@ function createTestCommands(
     ...overrides,
   };
 
-  return { commands: buildAppCommands(options), ran };
+  return { commands: buildAppCommands(options, catalog), ran };
 }
 
 describe("built-in command chords", () => {
@@ -537,5 +538,52 @@ describe("command catalog parity", () => {
         .filter((row) => row.keys.length === 0),
     ).toEqual([]);
     expect(HELP_COMMAND_IDS.filter((id) => !catalogued.has(id))).toEqual([]);
+  });
+});
+
+// "Open in browser" ships before the web review is announced: its handler exists, but the
+// catalog, menus, and help leave it out until `WEB_REVIEW_ENTRY_POINTS_RELEASED` flips.
+describe("open in browser", () => {
+  test("stays out of the catalog, the command table, and the menus until released", () => {
+    const { commands } = createTestCommands(undefined, { openInBrowser: () => {} });
+    const menus = buildAppMenus({
+      commands,
+      copyDecorations: false,
+      cursorLine: "row",
+      layoutMode: "auto",
+      filesPaneVisible: true,
+      showAgentNotes: false,
+      showHelp: false,
+      showHunkHeaders: true,
+      showLineNumbers: true,
+      showMenuBar: true,
+      wrapLines: false,
+    });
+
+    expect(APP_COMMAND_CATALOG.map((entry) => entry.id)).not.toContain(OPEN_IN_BROWSER_COMMAND.id);
+    expect(commands.map((command) => command.id)).not.toContain(OPEN_IN_BROWSER_COMMAND.id);
+    expect(JSON.stringify(menus)).not.toContain(OPEN_IN_BROWSER_COMMAND.id);
+    expect(HELP_COMMAND_IDS).not.toContain(OPEN_IN_BROWSER_COMMAND.id);
+  });
+
+  test("is an unbound host-only command that runs the terminal's opener", () => {
+    let opened = 0;
+    const { commands } = createTestCommands(undefined, { openInBrowser: () => (opened += 1) }, [
+      ...APP_COMMAND_CATALOG,
+      OPEN_IN_BROWSER_COMMAND,
+    ]);
+
+    expect(OPEN_IN_BROWSER_COMMAND).toMatchObject({ locus: "host-only", defaultKeys: [] });
+    expect(executeAppCommand(commands, "hunk.app.openInBrowser")).toBe(true);
+    expect(opened).toBe(1);
+  });
+
+  test("is disabled without a daemon registration to open", () => {
+    const { commands } = createTestCommands(undefined, {}, [
+      ...APP_COMMAND_CATALOG,
+      OPEN_IN_BROWSER_COMMAND,
+    ]);
+
+    expect(executeAppCommand(commands, "hunk.app.openInBrowser")).toBe(false);
   });
 });
