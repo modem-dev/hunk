@@ -43,7 +43,12 @@ import type { ReviewAgentHighlightV1, ReviewSharedNoteV1 } from "../../session/r
 import type { ReviewMirrorFileSlot } from "../mirror/reviewMirror";
 import type { NoteComposer } from "../notes/composerStore";
 import type { ReviewNoteInteraction } from "../notes/noteInteraction";
-import { FileSection, STREAM_HEADER_HEIGHT_PX, STREAM_ROW_HEIGHT_PX } from "./FileSection";
+import {
+  FileSection,
+  reservedBodyHeight,
+  STREAM_HEADER_HEIGHT_PX,
+  STREAM_ROW_HEIGHT_PX,
+} from "./FileSection";
 import { planReviewFileRender, type ReviewFileRenderPlan } from "./fileProjection";
 import type { ReviewFileGeometry } from "./hunkGeometry";
 
@@ -79,6 +84,15 @@ export interface ReviewStreamController {
   scrollToEdge(edge: "top" | "bottom"): void;
   /** Scroll the selected file's code sideways, one column or a fast step. */
   scrollCode(direction: -1 | 1, fast: boolean): void;
+  /** The scrolling element, for overviews that follow the viewport (the minimap). */
+  element(): HTMLDivElement | null;
+  /**
+   * Every shown file's body height as the stream lays it out: measured once drawn, reserved
+   * from its rows before. An overview projects these instead of reading the DOM.
+   */
+  bodyHeights(): Map<string, number>;
+  /** Scroll the stream to one offset, as the reader moving by hand. */
+  scrollTo(top: number): void;
 }
 
 export interface ReviewStreamProps {
@@ -403,6 +417,24 @@ export function ReviewStream(props: ReviewStreamProps) {
       root.scrollTop += top;
     };
     controller.current = {
+      element: () => scrollRef.current,
+      bodyHeights() {
+        const { props: current, filesByKey: files, planOf: plan } = latest.current;
+        const result = new Map<string, number>();
+        for (const slot of current.slots) {
+          const file = files.get(slot.key);
+          result.set(
+            slot.key,
+            heights.current.get(slot.key) ??
+              reservedBodyHeight(file ? plan(file) : undefined, slot.index, current.layout),
+          );
+        }
+        return result;
+      },
+      scrollTo(top) {
+        const root = scrollRef.current;
+        if (root) scrollBy(top - root.scrollTop);
+      },
       scroll(direction, unit) {
         const root = scrollRef.current;
         if (!root) return;
