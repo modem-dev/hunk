@@ -58,6 +58,13 @@ export const WEB_LOCAL_COMMANDS = [
   },
   { id: "hunk.web.toggleMinimap", title: "Toggle the minimap", category: "view" },
   {
+    id: "hunk.web.toggleViewed",
+    title: "Mark the selected file viewed, or clear its mark",
+    category: "review",
+    keys: ["V"],
+  },
+  { id: "hunk.web.toggleHideViewed", title: "Hide or show viewed files", category: "view" },
+  {
     id: "hunk.web.togglePreview",
     title: "Toggle the rendered view of the selected file",
     category: "view",

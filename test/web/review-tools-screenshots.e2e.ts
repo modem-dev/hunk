@@ -186,3 +186,30 @@ test("captures the image previews and rendered Markdown", async ({ page }) => {
   await chooseTestTheme(page, "github-light-default");
   await capture(page, "markdown-rendered-light");
 });
+
+test("captures viewed files: marked, collapsed, changed since viewed, and hidden", async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  mkdirSync(OUTPUT!, { recursive: true });
+  review = await startTestWebReview("--rich");
+  await openRich(page, "github-dark-default");
+  await page.getByRole("radio", { name: "Flat" }).click();
+  for (const path of ["src/app/main.ts", "src/app/renamed-new.ts"]) {
+    await page.locator(`section[aria-label="${path}"] .viewed-toggle input`).click();
+  }
+  await expect(page.getByTestId("viewed-progress")).toHaveText(/^2 of/);
+  await capture(page, "viewed-collapsed-dark");
+
+  await review.reload();
+  await expect(page.locator('section[aria-label="src/app/main.ts"] .viewed-changed')).toBeVisible({
+    timeout: 30_000,
+  });
+  await capture(page, "viewed-changed-dark");
+
+  await page.getByRole("button", { name: "Hide viewed" }).click();
+  await capture(page, "viewed-hidden-dark");
+  await chooseTestTheme(page, "github-light-default");
+  await page.getByRole("button", { name: "Hide viewed" }).click();
+  await capture(page, "viewed-light");
+});

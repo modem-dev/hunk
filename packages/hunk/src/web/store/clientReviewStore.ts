@@ -67,6 +67,7 @@ export class ClientReviewStore {
   private catalog: HunkReviewResourceCatalogV1 | undefined;
   private shared: ReviewSharedStateV1 | undefined;
   private annotations: ReviewAnnotationIndex = EMPTY_REVIEW_ANNOTATION_INDEX;
+  private hiddenFileKeys: ReadonlySet<string> = new Set();
   private readonly sourceLoads = new Map<string, AbortController>();
 
   constructor(private readonly options: ClientReviewStoreOptions) {}
@@ -153,12 +154,23 @@ export class ClientReviewStore {
     return this.annotations;
   }
 
+  /**
+   * Name the files this page hides by the reader's choice ("hide viewed"); relative navigation
+   * walks past them through the planner's `hiddenFileKeys` fact. The shared filter is separate.
+   */
+  setHiddenFiles(fileKeys: ReadonlySet<string>) {
+    this.hiddenFileKeys = fileKeys;
+  }
+
   /** Apply one page-local intent through the shared planner. */
   apply<T extends LocalReviewIntent>(intent: T) {
     if (!isLocalReviewIntent(intent)) {
       throw new Error(`Review intent ${(intent as ReviewIntent).type} is not page-local.`);
     }
-    const outcome = applyReviewIntent(this.store, intent, { annotations: this.annotations });
+    const outcome = applyReviewIntent(this.store, intent, {
+      annotations: this.annotations,
+      hiddenFileKeys: this.hiddenFileKeys,
+    });
     if (intent.type === "expansion/toggle") {
       const toggled = outcome as { expanded: boolean };
       if (toggled.expanded) {
