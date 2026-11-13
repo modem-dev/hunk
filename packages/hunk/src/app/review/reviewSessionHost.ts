@@ -71,6 +71,7 @@ import {
 } from "../../core/review/state";
 import { createReviewStore, type ReviewStore } from "../../core/review/store";
 import type { ReviewDocumentV1, ReviewNoteTargetV1, ReviewNoteV1 } from "../../core/review/types";
+import { STML_REFERENCE_WIDTH, validateStmlMarkup } from "../../core/stml/layout";
 import { noDiffFileMatchesMessage } from "../../session/agent/errors";
 import type {
   AppliedCommentBatchResult,
@@ -95,6 +96,7 @@ import {
   buildSelectedHunkSummary,
   buildSessionSnapshotState,
   indexReviewFiles,
+  planReviewSelectionRepair,
   resolveReviewNavigationTarget,
   type ReviewFileIndex,
 } from "./reviewSessionProjections";
@@ -155,6 +157,13 @@ export interface ReviewSessionHostOptions {
   showAgentNotes?: boolean;
   /** Accept STML bodies for live comments in this explicitly opted-in session. */
   stmlEnabled?: boolean;
+  /**
+   * Fixed width notes are laid out at when no surface measures them (a headless session).
+   *
+   * Markup without a caller-supplied measure is validated at this width, and STML-enabled
+   * snapshots report it as `noteMarkupWidth`. Defaults to `STML_REFERENCE_WIDTH`.
+   */
+  nominalNoteMarkupWidth?: number;
   /** Clock for note ids, draft ids, and timestamps; injectable for tests. */
   now?: () => number;
 }
@@ -198,6 +207,7 @@ export class ReviewSessionHost {
   private sourceLabel: string;
   private fileIndex: ReviewFileIndex;
   private stmlEnabled: boolean;
+  private readonly nominalNoteMarkupWidth: number;
   private readonly now: () => number;
   private agentLineHighlights = EMPTY_AGENT_LINE_HIGHLIGHTS;
   private readonly highlightListeners = new Set<() => void>();
@@ -222,6 +232,7 @@ export class ReviewSessionHost {
       options.document ?? projectReviewDocument(options.files, { sourceLabel: this.sourceLabel });
     this.fileIndex = indexReviewFiles(this.document, this.files);
     this.stmlEnabled = options.stmlEnabled ?? false;
+    this.nominalNoteMarkupWidth = options.nominalNoteMarkupWidth ?? STML_REFERENCE_WIDTH;
     // Read the global clock at call time so a replaced `Date.now` is honored.
     this.now = options.now ?? (() => Date.now());
     this.store = createReviewStore(this.document, { showAgentNotes: options.showAgentNotes });
@@ -300,6 +311,7 @@ export class ReviewSessionHost {
     if (document !== previous) {
       this.store.dispatch({ type: "document/reconcile", document });
     }
+    this.repairSelection();
     this.reloadOpenGapSources();
     return retiredFileKeys;
   }
@@ -358,6 +370,20 @@ export class ReviewSessionHost {
     const selection = selectNormalizedSelection(this.store.getSnapshot());
     const file = selection.fileKey ? this.fileIndex.fileByKey.get(selection.fileKey) : undefined;
     return { fileId: file?.id ?? null, hunkIndex: file ? selection.hunkIndex : null };
+  }
+
+  /**
+   * Re-point a stored selection the document no longer supports at the normalized one.
+   *
+   * A filter only changes the visible stream, so a selected file it hides stays selected; only
+   * a file the document lost or a stale hunk index is replaced. No reveal is requested:
+   * repairing state must not move anybody's viewport. `replaceFiles` runs this itself.
+   */
+  repairSelection() {
+    const action = planReviewSelectionRepair(this.store.getSnapshot());
+    if (action) {
+      this.store.dispatch(action);
+    }
   }
 
   /** Select one hunk and record the reveal it asks for. */
@@ -462,8 +488,9 @@ export class ReviewSessionHost {
    *
    * Relative comment navigation is the same walk the keyboard performs and goes through the
    * shared planner. A line target asks `revealLine` to land on the exact measured row when a
-   * surface supplies one; otherwise, or when nothing covers the line, the containing hunk is
-   * selected and revealed.
+   * surface supplies one, and a surface that cannot reach the line gets the plain hunk
+   * selection. With no surface at all, no row can be revealed: the containing hunk is selected
+   * and revealed and the result says `revealed: "hunk"`.
    */
   navigateToLocation(
     input: NavigateToHunkToolInput,
@@ -498,7 +525,13 @@ export class ReviewSessionHost {
     // file is not currently visible, where only the plain hunk selection below has defined
     // behavior.
     if (input.hunkIndex === undefined && input.side && input.line !== undefined) {
-      const reached = renderer.revealLine?.(target.file.id, input.side, input.line) ?? "none";
+      let reached: RevealedLineResult;
+      if (renderer.revealLine) {
+        reached = renderer.revealLine(target.file.id, input.side, input.line);
+      } else {
+        this.selectHunk(target.file.id, target.hunkIndex);
+        reached = "hunk";
+      }
       if (reached !== "none") {
         return {
           fileId: target.file.id,
@@ -910,8 +943,9 @@ export class ReviewSessionHost {
   /**
    * Build the live state a session snapshot publishes for this review.
    *
-   * `noteMarkupWidth` is a renderer fact and is reported only when the caller supplies it;
-   * `publicationGeneration` is the producer generation being served, when there is one.
+   * `noteMarkupWidth` is the width a surface measured; without one, an STML-enabled session
+   * reports its nominal width. `publicationGeneration` is the producer generation being served,
+   * when there is one.
    */
   getSessionSnapshotState(
     options: { noteMarkupWidth?: number; publicationGeneration?: string } = {},
@@ -926,7 +960,8 @@ export class ReviewSessionHost {
       selectedHunk: file?.metadata.hunks[selection.hunkIndex],
       selectedHunkIndex: selection.hunkIndex,
       showAgentNotes: state.showAgentNotes,
-      noteMarkupWidth: options.noteMarkupWidth,
+      noteMarkupWidth:
+        options.noteMarkupWidth ?? (this.stmlEnabled ? this.nominalNoteMarkupWidth : undefined),
       liveCommentCount: liveComments.length,
       liveComments,
       reviewNoteCount: reviewNotes.length,
@@ -1065,7 +1100,7 @@ export class ReviewSessionHost {
   /**
    * Check one comment's STML markup against this session's policy and the caller's measure.
    *
-   * Without a measure the markup is accepted as written and no width is reported.
+   * Without a measure the markup is validated at the session's nominal note width.
    */
   private markupFeedback(
     markup: string | undefined,
@@ -1082,7 +1117,14 @@ export class ReviewSessionHost {
       );
     }
 
-    return measureMarkup ? measureMarkup(markup, anchorSide) : {};
+    if (measureMarkup) {
+      return measureMarkup(markup, anchorSide);
+    }
+    const markupNotes = validateStmlMarkup(markup, this.nominalNoteMarkupWidth);
+    return {
+      markupWidth: this.nominalNoteMarkupWidth,
+      ...(markupNotes.length > 0 ? { markupNotes } : {}),
+    };
   }
 
   /** Resolve one root or reply comment against the review's files and stored notes. */

@@ -120,6 +120,12 @@ export type StartupPlan =
       exitCode: number;
     }
   | {
+      /** A review with no terminal UI, served to a browser (`--web`). */
+      kind: "web";
+      bootstrap: AppBootstrap;
+      cliInput: CliInput;
+    }
+  | {
       kind: "app";
       bootstrap: AppBootstrap;
       cliInput: CliInput;
@@ -634,10 +640,13 @@ export async function prepareStartupPlan(
   );
   // Reassigned once below if an extension VCS backend claims this checkout.
   let cliInput = configured.input;
+  // A web review owns no terminal: it needs no TTY, opens no controlling terminal, and never
+  // probes terminal colors.
+  const headlessWeb = cliInput.options.web === true;
 
   if (cliInput.options.watch) {
     await whileStartupOwnsExtensions(() => {
-      if (!stdoutIsTTY) {
+      if (!stdoutIsTTY && !headlessWeb) {
         throw new HunkUserError("`--watch` requires an interactive output terminal.", [
           "Remove `--watch` when redirecting or piping Hunk's output.",
         ]);
@@ -657,14 +666,19 @@ export async function prepareStartupPlan(
   // Any app session launched with piped stdin still needs a real terminal input stream for
   // keyboard, mouse, and terminal query responses. Auto-theme happened to open this path during
   // probing; make it unconditional so concrete themes behave the same way.
-  if (!controllingTerminal && !stdinIsTTY && stdoutIsTTY) {
+  if (!headlessWeb && !controllingTerminal && !stdinIsTTY && stdoutIsTTY) {
     controllingTerminal = openControllingTerminalImpl();
   }
 
   // Embedded reviews inherit their owner's detected mode so bootstrap never queries a terminal
   // whose input and renderer are already exclusively owned.
   let initialThemeMode: AppBootstrap["initialThemeMode"] = deps.terminalThemeMode;
-  if (!initialThemeMode && themeFollowsTerminal(cliInput.options.theme) && stdoutIsTTY) {
+  if (
+    !headlessWeb &&
+    !initialThemeMode &&
+    themeFollowsTerminal(cliInput.options.theme) &&
+    stdoutIsTTY
+  ) {
     const themeInput = controllingTerminal?.stdin ?? (stdinIsTTY ? process.stdin : null);
     if (themeInput) {
       const terminalColors = await whileStartupOwnsExtensions(() =>
@@ -779,6 +793,12 @@ export async function prepareStartupPlan(
       : configured.startupNotices,
     extensionResult,
   );
+  if (headlessWeb) {
+    // The headless runner now owns the registry and performs its one eventual shutdown.
+    preloadedExtensions = undefined;
+    return { kind: "web", bootstrap, cliInput };
+  }
+
   controllingTerminal ??=
     stdoutIsTTY && usesPipedPatchInputImpl(cliInput) ? openControllingTerminalImpl() : null;
 

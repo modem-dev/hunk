@@ -28,6 +28,7 @@ import { restoreFileLanguageRegistrations } from "../../core/documents/fileLangu
 import { resolveRuntimeCliInput } from "../../core/process/terminal";
 import { resolveConfiguredCliInput } from "../../core/run/config";
 import type { CliInput, CommonOptions } from "../../core/run/commandInputs";
+import type { ReviewRefreshRequest } from "../../core/run/reviewRefresh";
 import { extendVcsCatalog } from "../../core/vcs";
 import { assertReliableWatchRuntime } from "../../core/watch/runtime";
 import {
@@ -48,11 +49,7 @@ import { getBundledVcsCatalog } from "../vcsCatalog";
 import { createSessionReloadBounds, validateSessionReloadWithinBounds } from "./reloadBounds";
 import { createInitialSessionSnapshot, updateSessionRegistration } from "./registration";
 
-/** How the mounted review can be rebuilt from its own input, for deferred refreshes. */
-export interface ReviewRefreshRequest {
-  nextInput: CliInput;
-  sourcePath?: string;
-}
+export type { ReviewRefreshRequest };
 
 /** One loaded and published replacement the surface must now mount. */
 export interface ReviewReloadAdoption {

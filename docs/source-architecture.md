@@ -73,6 +73,11 @@ packages/hunk/src/main.tsx
               -> useTerminalReview adapts app/review/reviewSessionHost.ts, the renderer-free
                  owner of the live review store
            -> pane/diff modules plan, window, and paint terminal rows with Pierre metadata
+     -> web plan (`--web`, hidden until the served page ships): the same bootstrap with no TTY
+        -> main.tsx lazy-loads app/session/headlessReviewRunner.ts, never OpenTUI
+           -> ReviewSessionHost owns the review; ReviewReloadCoordinator owns reload and watch
+           -> createHunkSessionBridge answers `hunk session` commands from the host
+           -> the review URL goes to stdout; the process owns the session until SIGINT/SIGTERM
 ```
 
 All review inputs normalize to `Changeset` / `DiffFile[]`. Shared semantic review behavior follows:

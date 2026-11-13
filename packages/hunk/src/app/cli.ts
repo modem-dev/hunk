@@ -203,6 +203,18 @@ export const WATCH_OPTION = {
   description: "auto-reload when the current diff input changes",
 } as const satisfies CliReferenceOption;
 
+/**
+ * Run the review headless and serve it to a browser instead of opening the terminal UI.
+ *
+ * Hidden until the served review page ships; that change un-hides it.
+ */
+export const WEB_OPTION = {
+  flag: "--web",
+  description: "serve this review headless for a browser instead of the terminal UI",
+  hidden: true,
+  publicDocs: false,
+} as const satisfies CliReferenceOption;
+
 const DIFF_OPTIONS = [
   {
     flag: "--files <paths...>",
@@ -217,6 +229,7 @@ const DIFF_OPTIONS = [
     hidden: true,
     hiddenNote: "Compatibility inverse; omitted from `--help`.",
   },
+  WEB_OPTION,
 ] as const satisfies readonly CliReferenceOption[];
 
 /** Non-session command tree consumed by the parser and generated reference. */
@@ -261,6 +274,7 @@ export const CLI_REFERENCE_COMMANDS = {
     path: "show",
     summary: "review the last commit or a given ref",
     synopsis: ["hunk show [target] [-- <pathspec...>]"],
+    options: [WEB_OPTION],
     commonReviewOptions: true,
     watch: true,
   },
@@ -350,6 +364,7 @@ export const CLI_REFERENCE_COMMANDS = {
     path: "stash show",
     summary: "review a stash entry as a full Hunk changeset",
     synopsis: ["hunk stash show [ref]"],
+    options: [WEB_OPTION],
     commonReviewOptions: true,
     watch: true,
   },
@@ -357,6 +372,7 @@ export const CLI_REFERENCE_COMMANDS = {
     path: "patch",
     summary: "review a patch file, or read a patch from stdin",
     synopsis: ["hunk patch [file]"],
+    options: [WEB_OPTION],
     commonReviewOptions: true,
     watch: true,
   },
@@ -370,6 +386,7 @@ export const CLI_REFERENCE_COMMANDS = {
     path: "difftool",
     summary: "review Git difftool file pairs",
     synopsis: ["hunk difftool <left> <right> [path]"],
+    options: [WEB_OPTION],
     commonReviewOptions: true,
     watch: true,
   },
@@ -614,6 +631,7 @@ function buildCommonOptions(
     agentContext?: string;
     pager?: boolean;
     watch?: boolean;
+    web?: boolean;
     experimental?: boolean;
     transparentBackground?: boolean;
     tabWidth?: number;
@@ -634,6 +652,7 @@ function buildCommonOptions(
     agentContext: options.agentContext,
     pager: options.pager ? true : undefined,
     watch: options.watch ? true : undefined,
+    web: options.web ? true : undefined,
     experimental:
       options.experimental || hasPrefixedReviewFlag(argv, AUXILIARY_AGENT_OPTIONS.experimental.flag)
         ? true
