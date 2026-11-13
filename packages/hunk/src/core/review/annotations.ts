@@ -18,6 +18,7 @@ import { reviewHunkRanges, reviewRangesOverlap, type ReviewHunkSpan } from "./ge
 import type { ReviewAnnotationIndex } from "./navigation";
 import type { AgentAnnotation } from "../../extension-api/types";
 import type { DiffFile } from "../changeset/model";
+import type { ReviewNoteSource } from "../run/commandInputs";
 import type { ReviewLineAddressV1, ReviewRangeAnchorV1 } from "./types";
 
 /** Whether one annotation lands inside a hunk's visible span on either side. */
@@ -28,6 +29,19 @@ export function reviewAnnotationOverlapsHunk(annotation: AgentAnnotation, hunk: 
       reviewRangesOverlap(annotation.newRange, ranges.newRange)) ||
     (annotation.oldRange !== undefined && reviewRangesOverlap(annotation.oldRange, ranges.oldRange))
   );
+}
+
+/** Resolve the user-facing source for one inline note annotation. */
+export function reviewNoteSource(annotation: AgentAnnotation): ReviewNoteSource {
+  if (annotation.source === "user") {
+    return "user";
+  }
+
+  if (annotation.source === "mcp" || annotation.source === "agent") {
+    return "agent";
+  }
+
+  return "ai";
 }
 
 /** A note target declared by the surface that knows where the note was written. */

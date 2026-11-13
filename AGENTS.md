@@ -51,11 +51,13 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
 - **State:** `state.ts` is semantic state; `actions.ts` transitions; `reducer.ts` pure/no-I/O;
   `selectors.ts` shared policies; `store.ts` synchronous observable storage. New cross-surface
   operations start as intents. Callers supply mutable-note IDs/timestamps; core derives identities.
-- **Surfaces/publishers:** `useTerminalReview.ts` is the TUI adapter and
-  `reviewNoteMapping.ts` is terminal-only. Rows, measurement, scrolling, layout, themes, DOM
-  mechanics, and source I/O stay local. `useHunkSessionBridge.ts` publishes the current terminal
-  session export; `registration.ts` builds its metadata/initial snapshot and `bridge.ts` receives
-  agent commands. This broker export is not a full `ReviewState` mirror.
+- **Surfaces/publishers:** `app/review/reviewSessionHost.ts` owns one live review without React:
+  the store, intent facts, live-comment ingestion, agent navigation/highlights, gap source loading,
+  file replacement, and session-export summaries. `useTerminalReview.ts` is the TUI adapter over
+  it and `reviewNoteMapping.ts` is terminal-only. Rows, measurement, scrolling, layout, themes, and
+  DOM mechanics stay local; renderer facts reach the host as explicit optional inputs.
+  `useHunkSessionBridge.ts` publishes the current terminal session export; `registration.ts`
+  builds its metadata/initial snapshot and `bridge.ts` receives agent commands. This broker export is not a full `ReviewState` mirror.
 - **Other consumers:** Web/API consumers reuse the model, derivations, state, intents, and the
   producer/protocol tier. Never build a parallel protocol. Keep presentation/client-local state
   local; host/extension commands need explicit remote capabilities. See
@@ -117,8 +119,9 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
 
 - `HunkSessionHost` owns history/review routing in one React root. `AppHost` owns reload
   serialization, extension adoption, and broker/content/React commit ordering. `App` owns review
-  interaction, navigation, layout, theme, filtering, and pane coordination. Pane and diff modules
-  own rendering and geometry.
+  interaction, navigation, layout, theme, filtering, and pane coordination; review-semantic
+  operations it triggers go through the `ReviewSessionHost` that `useTerminalReview` mounts. Pane
+  and diff modules own rendering and geometry.
 - `InteractiveSessionInitialization` in `packages/hunk/src/core/session/initialization.ts` carries
   finalized launch inputs whose lifetime spans routed surfaces. Add a concern there only when
   `HunkSessionHost` owns that cross-surface lifetime; keep surface-local bootstrap data out.

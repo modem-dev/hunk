@@ -13,7 +13,6 @@
 import type { LiveComment } from "../../core/liveComments";
 import { reviewLineAnchor } from "../../core/review/anchors";
 import type { ReviewAnnotationTarget } from "../../core/review/annotations";
-import type { ReviewHunkSpan } from "../../core/review/geometry";
 import {
   isRenderableStoredReviewNote,
   reviewNoteAnchorLine,
@@ -25,7 +24,9 @@ import type { ReviewThreadedStoredNote } from "../../core/review/selectors";
 import type { ReviewNoteV1 } from "../../core/review/types";
 import type { DiffFile } from "../../core/changeset/model";
 import type { AgentAnnotation } from "../../extension-api/types";
-import { reviewNoteSource } from "./agentAnnotations";
+
+// Ingestion is semantic and lives with the live-comment model; re-exported for existing importers.
+export { liveCommentToStoredNote } from "../../core/liveComments";
 
 /** One reviewer-authored note as the terminal review stream renders it. */
 export interface StoredReviewNoteRenderMetadata {
@@ -115,36 +116,6 @@ function annotationFields(note: ReviewNoteV1) {
     title: note.title,
     tags: note.tags,
     confidence: note.confidence,
-  };
-}
-
-/** Store one agent-authored live comment as a semantic review note. */
-export function liveCommentToStoredNote(
-  comment: LiveComment,
-  fileKey: string,
-  hunks: readonly ReviewHunkSpan[],
-  replyParent?: ReviewStoredNote,
-): ReviewStoredNote {
-  return {
-    note: {
-      id: comment.id,
-      ...(replyParent ? { parentId: replyParent.note.id } : {}),
-      source: reviewNoteSource(comment),
-      originalSource: comment.source,
-      fileKey,
-      anchor: replyParent ? replyParent.note.anchor : reviewLineAnchor(hunks, comment),
-      summary: comment.summary,
-      rationale: comment.rationale,
-      markup: comment.markup,
-      title: comment.title,
-      author: comment.author,
-      createdAt: comment.createdAt,
-      updatedAt: comment.updatedAt,
-      editable: false,
-      tags: comment.tags,
-      confidence: comment.confidence,
-    },
-    resolution: replyParent?.resolution ?? "active",
   };
 }
 
