@@ -151,6 +151,14 @@ export function AppHost({
     },
     [activeThemeController],
   );
+  // A browser's failed refresh is explained here, where the terminal reports its own problems;
+  // the browser itself is told only the catalog sentence.
+  const [refreshFailureText, setRefreshFailureText] = useState<string | null>(null);
+  useEffect(() => {
+    if (!refreshFailureText) return;
+    const timer = setTimeout(() => setRefreshFailureText(null), 8_000);
+    return () => clearTimeout(timer);
+  }, [refreshFailureText]);
   const [coordinator] = useState(
     () =>
       new ReviewReloadCoordinator({
@@ -170,6 +178,7 @@ export function AppHost({
             theme: activeThemeController.getSnapshot().themeId,
           }).input.options,
         adopt: adoptReload,
+        onRefreshFailed: (detail) => setRefreshFailureText(detail),
       }),
   );
   const startupNoticeText = useStartupNotices({
@@ -262,7 +271,7 @@ export function AppHost({
       bootstrap={activeBootstrap}
       canReloadExtensions={extensionOwnership === "owned"}
       hostClient={hostClient}
-      noticeText={startupNoticeText}
+      noticeText={refreshFailureText ?? startupNoticeText}
       onQuit={quitAfterShutdownEvent}
       onFirstFrameReady={onFirstFrameReady}
       onViewPreferencesChange={retainViewPreferences}

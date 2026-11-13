@@ -402,7 +402,9 @@ export class BrowserReviewServer {
     }
     const result = await this.state.refreshReview(sessionId);
     if (!result.ok) {
-      return this.failure(result.code, { message: result.message });
+      // The session's own message can carry VCS stderr and absolute paths; a review client is
+      // told the catalog sentence and the session keeps the detail in its own notice path.
+      return this.failure(result.code);
     }
     const response: HunkReviewRefreshBodyV1 = {
       ok: true,
@@ -575,10 +577,9 @@ export class BrowserReviewServer {
       );
       return result.ok
         ? this.json(result)
-        : this.failure(result.code, {
-            message: result.message,
-            currentGeneration: result.currentGeneration,
-          });
+        : // The producer's message can name paths or echo the caller's input; the code and the
+          // catalog sentence are what a client renders (G4).
+          this.failure(result.code, { currentGeneration: result.currentGeneration });
     } catch (error) {
       if (error instanceof ReviewGenerationRetiredError) {
         return this.failure("stale-generation", { currentGeneration: error.currentGeneration });
@@ -814,6 +815,12 @@ export class BrowserReviewServer {
    * The message comes from the shared catalog unless the producer supplied a more specific
    * one, so a client never has to invent wording for a code (G4).
    */
+  /**
+   * Answer one failure with its code and catalog sentence.
+   *
+   * `message` is only for sentences this surface composes itself from no session or caller
+   * text; anything that arrived from a session stays out of the response.
+   */
   private failure(
     code: HunkReviewClientErrorCodeV1,
     details: { message?: string; currentGeneration?: string } = {},
@@ -830,7 +837,9 @@ export class BrowserReviewServer {
   /** Report one resource read failure with the code that says how it failed. */
   private resourceFailure(error: unknown) {
     if (error instanceof ReviewResourceReadError) {
-      return this.failure(error.code, { message: error.message });
+      // A source read failure's message carries the reader's error text (VCS stderr,
+      // absolute paths); the session keeps it, the client gets the catalog sentence.
+      return this.failure(error.code);
     }
     if (error instanceof ReviewGenerationRetiredError) {
       return this.failure("stale-generation", { currentGeneration: error.currentGeneration });

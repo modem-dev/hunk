@@ -193,6 +193,15 @@ type HunkBrokerBase = SessionBrokerState<
 /** The transport handle the broker core identifies a connection by; it does not export one. */
 type HunkBrokerConnection = Parameters<HunkBrokerBase["registerSession"]>[0];
 
+/**
+ * Shortest time between two reloads one session performs for review clients.
+ *
+ * A minimum interval rather than a trailing debounce: the first press reloads at once, and a
+ * second press within the interval answers with the reload that just finished (the input was
+ * read moments ago), so a reviewer never waits for a timer and a client cannot spin the VCS.
+ */
+export const REVIEW_REFRESH_MIN_INTERVAL_MS = 2_000;
+
 export class HunkSessionBrokerState extends SessionBrokerState<
   HunkSessionInfo,
   HunkSessionState,
@@ -209,15 +218,22 @@ export class HunkSessionBrokerState extends SessionBrokerState<
   private readonly loads = new Map<string, Promise<Uint8Array>>();
   /** One refresh per session in flight; concurrent callers await the same reload. */
   private readonly refreshes = new Map<string, Promise<HunkReviewRefreshResultV1>>();
+  /** The last settled refresh per session, answered again within the minimum interval. */
+  private readonly recentRefreshes = new Map<
+    string,
+    { settledAt: number; result: HunkReviewRefreshResultV1 }
+  >();
+  private readonly now: () => number;
   /** One shared-state read per position; concurrent callers await the same assembly. */
   private readonly sharedStateLoads = new Map<string, Promise<ReviewSharedStateV1>>();
   /** Capability verifiers by session, as their registrations declared them. */
   private readonly capabilityDigests = new Map<string, string>();
   private readonly publicationWatchers = new Set<(event: ReviewPublicationEvent) => void>();
 
-  constructor(resources = new ReviewResourceCache()) {
+  constructor(resources = new ReviewResourceCache(), options: { now?: () => number } = {}) {
     super(hunkSessionBrokerView);
     this.resources = resources;
+    this.now = options.now ?? Date.now;
   }
 
   override registerSession(
@@ -454,15 +470,26 @@ export class HunkSessionBrokerState extends SessionBrokerState<
   refreshReview(sessionId: string): Promise<HunkReviewRefreshResultV1> {
     const running = this.refreshes.get(sessionId);
     if (running) return running;
+    // A refresh that settled moments ago already reloaded the input; pressing again answers
+    // with it instead of reloading again, which bounds reloads to one per interval.
+    const recent = this.recentRefreshes.get(sessionId);
+    if (recent && this.now() - recent.settledAt < REVIEW_REFRESH_MIN_INTERVAL_MS) {
+      return Promise.resolve(recent.result);
+    }
     const refresh = this.dispatchCommand<HunkReviewRefreshResultV1, "refresh_review">({
       selector: { sessionId },
       command: "refresh_review",
       input: { sessionId },
       timeoutMessage: "Timed out waiting for the session to reload its review.",
       timeoutMs: 120_000,
-    }).finally(() => {
-      this.refreshes.delete(sessionId);
-    });
+    })
+      .then((result) => {
+        this.recentRefreshes.set(sessionId, { settledAt: this.now(), result });
+        return result;
+      })
+      .finally(() => {
+        this.refreshes.delete(sessionId);
+      });
     this.refreshes.set(sessionId, refresh);
     return refresh;
   }
@@ -524,6 +551,9 @@ export class HunkSessionBrokerState extends SessionBrokerState<
       if (!live.has(sessionId)) {
         this.capabilityDigests.delete(sessionId);
       }
+    }
+    for (const sessionId of this.recentRefreshes.keys()) {
+      if (!live.has(sessionId)) this.recentRefreshes.delete(sessionId);
     }
     for (const sessionId of this.mirror.sessionIds()) {
       if (!live.has(sessionId)) {
