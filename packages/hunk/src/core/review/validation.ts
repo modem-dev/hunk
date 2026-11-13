@@ -80,6 +80,14 @@ export const REVIEW_DIGEST_ALGORITHM = "sha256" as const;
  */
 export type ReviewDigestFn = (bytes: Uint8Array) => string;
 
+/**
+ * A platform digest that answers asynchronously, as Web Crypto's `subtle.digest` does.
+ *
+ * Separate from `ReviewDigestFn` rather than replacing it: the producer and the daemon hash
+ * synchronously on hot paths, and only a browser has no synchronous SHA-256 to offer.
+ */
+export type ReviewAsyncDigestFn = (bytes: Uint8Array) => Promise<string>;
+
 /** Canonical digest form: lowercase hex, exactly the algorithm's output width. */
 const REVIEW_SHA256_DIGEST_PATTERN = /^[0-9a-f]{64}$/;
 

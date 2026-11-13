@@ -414,6 +414,10 @@ describe("shared review primitives seam", () => {
     "@pierre/trees",
     "@pierre/trees/react",
     "@hunk/session-broker-core",
+    // The shared reconnect scheduler and supersede queue (audit C5, C3). Its own entry point
+    // because the package barrel also re-exports Node-only modules; the module imports
+    // nothing, which the test below asserts.
+    "@hunk/session-broker-core/lifecycle",
   ]);
 
   /** Collect every module transitively reachable from the given files via value imports. */
@@ -498,6 +502,11 @@ describe("shared review primitives seam", () => {
   // intermediate re-export; walk the whole relative-import closure instead. This is what makes
   // the node-debt map's "a browser bundle must never import these until repaid" clause
   // mechanical rather than aspirational.
+  test("keeps the browser's broker-core lifecycle entry import-free", () => {
+    const lifecycle = join(REPO_ROOT, "packages", "session-broker-core", "src", "lifecycle.ts");
+    expect(importSpecifiers(lifecycle)).toEqual([]);
+  });
+
   test("keeps the browser-reachable module closure free of platform runtimes", () => {
     const roots = [...sourceFiles(WEB_CLIENT_ROOT), ...BROWSER_SAFE_SESSION_MODULES];
     const violations = [...reachableSourceFiles(roots)].flatMap((path) =>

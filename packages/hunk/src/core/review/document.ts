@@ -114,6 +114,27 @@ function contentIdentityInput(
   };
 }
 
+/**
+ * Recompute one projected file's content identity from the facts it carries.
+ *
+ * A reader that received a file over a transport uses this to check that the content and
+ * the identity it was published under still agree, without trusting either alone.
+ */
+export function recomputeReviewFileContentIdentity(file: ReviewFileV1) {
+  return reviewFileContentIdentity({
+    path: file.path,
+    ...(file.previousPath !== undefined ? { previousPath: file.previousPath } : {}),
+    changeKind: file.changeKind,
+    ...(file.language !== undefined ? { language: file.language } : {}),
+    patch: file.patch,
+    stats: file.stats,
+    flags: file.flags,
+    hunkSignature: hunkSignature(file.hunks),
+    additionLines: file.additionLines,
+    deletionLines: file.deletionLines,
+  });
+}
+
 export interface ProjectReviewDocumentOptions {
   /**
    * Identity of the review's input as a whole. Two different changesets projecting the

@@ -1,12 +1,63 @@
 # Web review client: page, assets, and policy
 
-> **Status (2026-11-13): M3, first half.** The daemon serves a real, offline page for a live
-> review. The page is a minimal shell — connection state, file count, and the first file's diff
-> — that the read-only client (M4 in [`web-review-plan.md`](web-review-plan.md)) replaces. No
-> CLI entry point exists yet; `--web` and `hunk session open` arrive in the second half of M3.
+> **Status (2026-11-13): M4 transport.** The daemon serves a real, offline page for a live
+> review, and the page runs on the M4 transport, mirror, and local store. What it shows is still
+> the M3 shell — connection state, load progress, file count, and the first file's diff — until
+> the review stream lands (M4 in [`web-review-plan.md`](web-review-plan.md)). No CLI entry
+> point exists yet.
 
-This records what the asset pipeline does and what the spike measured, so the M4 client is
-designed around facts rather than assumptions about Pierre on the web.
+This records how the client is built and what the spike measured about Pierre on the web.
+
+## Client modules and state ownership
+
+```text
+packages/hunk/src/web/
+  main.tsx                     entry; mounts the page
+  ReviewShell.tsx              current UI (replaced by the review stream)
+  session/reviewSession.ts     reads the page address once; wires and owns the pieces below
+  transport/apiClient.ts       requests with the capability header; ranged, verified reads
+  transport/eventReader.ts     fetch-stream SSE records -> shared event contract -> events
+  transport/eventStream.ts     keeps the stream open; one shared reconnect scheduler
+  transport/webCryptoDigest.ts Web Crypto SHA-256 as the assemblers' async digest
+  mirror/reviewMirror.ts       orders publications; loads each generation's files
+  mirror/fileIndex.ts          per-file index entries and the pluggable index source
+  store/clientReviewStore.ts   the page's local core/review store and gap source loads
+```
+
+- **Capability.** Read from `location.hash` once (`reviewSession.ts`) and held only by the API
+  client, which sends it in the `hunk-review-capability` header. It never enters a path, a
+  query string, a log, or storage.
+- **Transport** (`apiClient.ts`, `eventReader.ts`, `eventStream.ts`) owns requests, the event
+  stream, and reconnects. Resource windows are assembled by the shared `ReviewChunkAssembler`
+  and verified with Web Crypto through `finishAsync`; events are decoded by the shared
+  `reviewEventProtocol.ts` parsers and `ReviewEventAssembler`. Reconnects use
+  `createReconnectScheduler` from `@hunk/session-broker-core/lifecycle` (500 ms doubling to
+  8 s, reset by any delivered event); the stream stops for good on `disconnect` or
+  `unauthorized`. Failures are `ReviewApiError` carrying the review vocabulary's code, shown
+  through `reviewErrorCatalog`.
+- **Mirror** (`reviewMirror.ts`) owns the published position and the files. It classifies
+  every publication with `classifyReviewPublication`; a gap (a reload, or the first
+  publication) loads that generation's `canonical-file` resources in catalog order with
+  bounded parallelism, through one `createSupersedeQueue`, parsing each with
+  `parseCanonicalReviewFile`. The first generation is published progressively; a later one
+  replaces the shown document only once complete, and a failed reload keeps the old one.
+  Per-file index entries (path, change kind, stats, flags, line counts, hunk count) are
+  projected from canonical files today; `ReviewFileIndexSource` lets the shared-state route
+  supply them up front.
+- **Store** (`clientReviewStore.ts`) owns page-local review state: a `core/review`
+  `ReviewStore` over the mirrored document. Selection, reveal, and expansion are local by
+  product decision; `selection/*` and `expansion/toggle` are applied with
+  `applyReviewIntent` and never sent. Shared intents are refused until the page can author
+  them. Each new document is adopted with `document/reconcile`, so selection and expansion
+  survive a reload by file key. Gap source is loaded on demand from the file's `source`
+  resource into the store's source-status vocabulary.
+- **Catalog order.** The mirror relies on catalog order being document order. The producer
+  builds the catalog by walking the document (`app/review/publication.ts`), but the wire
+  does not state it; the shared-state route should carry an explicit file index.
+- **Digests.** A resource descriptor in the published catalog is usually unmeasured, and the
+  HTTP surface sends no digest header, so for those reads the client checks size and window
+  rules and relies on the daemon having verified the bytes. Measured descriptors are verified
+  end to end.
 
 ## Routes
 
@@ -135,7 +186,12 @@ imports; a page fetches only the languages and themes it shows. The largest sing
   and the route inside a real daemon behind its Host/Origin checks.
 - `packages/hunk/src/session/broker/reviewPageAssets.test.ts` — manifest grammar, directory and
   archive stores.
-- `packages/hunk/src/web/reviewShellClient.test.ts` — the shell against the real review API.
+- `packages/hunk/src/web/**/*.test.ts` — the API client (window boundaries, digest and size
+  refusals, bounded parallelism, abort), event reader (SSE splitting, chunked reassembly,
+  digest refusal), event stream (backoff with a fake clock, terminal states), mirror (ordering,
+  progressive load, supersede, failed reload), and store (local intents, gap source, reload).
+- `test/review-conformance/` registers the browser mirror as an ordering consumer and the
+  browser event reader as an event consumer.
 - `test/web/review-page.e2e.ts` (`bun run build:web && bun run test:web`) — Chromium against a
   daemon and session run from source, asserting connection, file count, a highlighted Pierre
   diff, and zero CSP violations or console errors. The session is a test fixture

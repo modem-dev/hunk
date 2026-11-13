@@ -15,7 +15,9 @@
  * Comparison is by value at every level, so key order never participates.
  */
 import { buildReviewContentManifestFile, type ReviewContentManifestFile } from "./contentManifest";
-import type { ReviewFileV1 } from "./types";
+import { recomputeReviewFileContentIdentity } from "./document";
+import type { ReviewFileChangeKind, ReviewFileV1, ReviewHunkBlockV1, ReviewHunkV1 } from "./types";
+import { asRecord, hasExactKeys } from "./validation";
 
 /** One field path that disagreed, as a dotted/indexed address into the manifest entry. */
 export type ReviewCanonicalFileMismatch = string;
@@ -104,4 +106,216 @@ export function assertCanonicalFileMatchesManifest(
   if (mismatches.length > 0) {
     throw new ReviewCanonicalFileMismatchError(mismatches);
   }
+}
+
+// -- Reading a canonical file from a transport ---------------------------------------------
+
+const CHANGE_KINDS: readonly ReviewFileChangeKind[] = [
+  "change",
+  "rename-pure",
+  "rename-changed",
+  "new",
+  "deleted",
+];
+
+/** Whether one value is a non-negative safe integer. */
+function isCount(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) >= 0;
+}
+
+/** Whether one value is an array whose every entry passes `check`. */
+function isArrayOf<T>(value: unknown, check: (entry: unknown) => entry is T): value is T[] {
+  return Array.isArray(value) && value.every(check);
+}
+
+/** Whether one value is a string. */
+function isString(value: unknown): value is string {
+  return typeof value === "string";
+}
+
+/** Whether one record's keys are the required ones plus any of the optional ones. */
+function hasKeys(
+  record: Record<string, unknown>,
+  required: readonly string[],
+  optional: readonly string[] = [],
+) {
+  return (
+    required.every((key) => Object.hasOwn(record, key)) &&
+    Object.keys(record).every((key) => required.includes(key) || optional.includes(key))
+  );
+}
+
+/** Whether one value is a hunk content block exactly as the projection writes it. */
+function isHunkBlock(value: unknown): value is ReviewHunkBlockV1 {
+  const record = asRecord(value);
+  if (!record || !isCount(record.additionLineIndex) || !isCount(record.deletionLineIndex)) {
+    return false;
+  }
+  if (record.type === "context") {
+    return (
+      hasExactKeys(record, ["type", "lines", "additionLineIndex", "deletionLineIndex"]) &&
+      isCount(record.lines)
+    );
+  }
+  return (
+    record.type === "change" &&
+    hasExactKeys(record, [
+      "type",
+      "additions",
+      "deletions",
+      "additionLineIndex",
+      "deletionLineIndex",
+    ]) &&
+    isCount(record.additions) &&
+    isCount(record.deletions)
+  );
+}
+
+const HUNK_COUNT_FIELDS = [
+  "index",
+  "collapsedBefore",
+  "splitLineStart",
+  "splitLineCount",
+  "unifiedLineStart",
+  "unifiedLineCount",
+  "additionStart",
+  "additionCount",
+  "additionLines",
+  "additionLineIndex",
+  "deletionStart",
+  "deletionCount",
+  "deletionLines",
+  "deletionLineIndex",
+] as const;
+
+/** Whether one value is a hunk record exactly as the projection writes it. */
+function isHunk(value: unknown): value is ReviewHunkV1 {
+  const record = asRecord(value);
+  return (
+    record !== undefined &&
+    hasKeys(
+      record,
+      [...HUNK_COUNT_FIELDS, "hunkContent", "noEOFCRAdditions", "noEOFCRDeletions"],
+      ["hunkSpecs", "hunkContext"],
+    ) &&
+    HUNK_COUNT_FIELDS.every((field) => isCount(record[field])) &&
+    isArrayOf(record.hunkContent, isHunkBlock) &&
+    typeof record.noEOFCRAdditions === "boolean" &&
+    typeof record.noEOFCRDeletions === "boolean" &&
+    (record.hunkSpecs === undefined || isString(record.hunkSpecs)) &&
+    (record.hunkContext === undefined || isString(record.hunkContext))
+  );
+}
+
+/** Whether one value is a moved-line mark list entry. */
+function isMoveKind(value: unknown): value is "moved" | null {
+  return value === "moved" || value === null;
+}
+
+const FILE_REQUIRED_FIELDS = [
+  "key",
+  "runtimeId",
+  "path",
+  "changeKind",
+  "stats",
+  "flags",
+  "patch",
+  "splitLineCount",
+  "unifiedLineCount",
+  "additionLines",
+  "deletionLines",
+  "hunks",
+  "contentIdentity",
+] as const;
+
+const FILE_OPTIONAL_FIELDS = [
+  "previousPath",
+  "language",
+  "agentSummary",
+  "lineMoveKinds",
+  "sourceIdentity",
+  "sourceAttested",
+] as const;
+
+/** Whether one value has a file's structural shape, before its identity is checked. */
+function isReviewFileShape(value: unknown): value is ReviewFileV1 {
+  const record = asRecord(value);
+  if (!record || !hasKeys(record, FILE_REQUIRED_FIELDS, FILE_OPTIONAL_FIELDS)) {
+    return false;
+  }
+
+  const stats = asRecord(record.stats);
+  const flags = asRecord(record.flags);
+  const moves = record.lineMoveKinds === undefined ? undefined : asRecord(record.lineMoveKinds);
+  return (
+    isString(record.key) &&
+    record.key.length > 0 &&
+    isString(record.runtimeId) &&
+    isString(record.path) &&
+    (record.previousPath === undefined || isString(record.previousPath)) &&
+    CHANGE_KINDS.includes(record.changeKind as ReviewFileChangeKind) &&
+    (record.language === undefined || isString(record.language)) &&
+    (record.agentSummary === undefined || isString(record.agentSummary)) &&
+    stats !== undefined &&
+    hasExactKeys(stats, ["additions", "deletions", "truncated"]) &&
+    isCount(stats.additions) &&
+    isCount(stats.deletions) &&
+    typeof stats.truncated === "boolean" &&
+    flags !== undefined &&
+    hasExactKeys(flags, ["untracked", "binary", "tooLarge", "partial"]) &&
+    Object.values(flags).every((flag) => typeof flag === "boolean") &&
+    isString(record.patch) &&
+    isCount(record.splitLineCount) &&
+    isCount(record.unifiedLineCount) &&
+    isArrayOf(record.additionLines, isString) &&
+    isArrayOf(record.deletionLines, isString) &&
+    (record.lineMoveKinds === undefined ||
+      (moves !== undefined &&
+        hasExactKeys(moves, ["additionLines", "deletionLines"]) &&
+        isArrayOf(moves.additionLines, isMoveKind) &&
+        isArrayOf(moves.deletionLines, isMoveKind))) &&
+    isArrayOf(record.hunks, isHunk) &&
+    record.hunks.every((hunk, index) => hunk.index === index) &&
+    isString(record.contentIdentity) &&
+    (record.sourceIdentity === undefined || isString(record.sourceIdentity)) &&
+    (record.sourceAttested === undefined || typeof record.sourceAttested === "boolean")
+  );
+}
+
+/** Why one received canonical file was refused. */
+export type ReviewCanonicalFileParseFailure =
+  /** Not the shape the projection writes: a missing, extra, or wrongly typed field. */
+  | "malformed"
+  /** Well-formed, but addressed to a different file than the resource it arrived as. */
+  | "wrong-file"
+  /** Well-formed, but its content no longer hashes to the identity it carries. */
+  | "identity-mismatch";
+
+export type ReviewCanonicalFileParseResult =
+  | { ok: true; file: ReviewFileV1 }
+  | { ok: false; reason: ReviewCanonicalFileParseFailure };
+
+/**
+ * Parse one canonical file a reader received, refusing anything it cannot trust.
+ *
+ * The reader-side half of the D4 check for a consumer that holds no manifest. Three gates,
+ * in order: the value has exactly the projection's shape (unknown fields refused, so a
+ * field added on one side is not silently dropped on the other); it is the file the
+ * resource was addressed to; and its content still hashes to the identity it was published
+ * under, which catches content edited or reordered after projection.
+ */
+export function parseCanonicalReviewFile(
+  value: unknown,
+  expected: { fileKey: string },
+): ReviewCanonicalFileParseResult {
+  if (!isReviewFileShape(value)) {
+    return { ok: false, reason: "malformed" };
+  }
+  if (value.key !== expected.fileKey) {
+    return { ok: false, reason: "wrong-file" };
+  }
+  if (recomputeReviewFileContentIdentity(value) !== value.contentIdentity) {
+    return { ok: false, reason: "identity-mismatch" };
+  }
+  return { ok: true, file: value };
 }
