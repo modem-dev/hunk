@@ -697,7 +697,11 @@ export async function serveSessionBrokerDaemon(
   });
   // One loopback process serves every attached review, rather than a port per terminal. Authorized
   // review actions join the daemon's shared finite-control and aggregate body budgets.
+  // Assigned once the listener exists; event streams opened before that cannot happen.
+  let listener: { timeout(request: Request, seconds: number): void } | undefined;
   const browserReview = new BrowserReviewServer(state, {
+    // Only event streams lose the idle timeout: they are quiet between publications by design.
+    keepStreamOpen: (request) => listener?.timeout(request, 0),
     handleActionControl: (request, handler, payloadTooLarge) =>
       daemon.handleBoundedControl(request, handler, {
         maxBodyBytes: Math.min(MAX_HUNK_REVIEW_ENVELOPE_BYTES, MAX_HTTP_BODY_BYTES),
@@ -710,7 +714,8 @@ export async function serveSessionBrokerDaemon(
     hostname: config.host,
     port: config.port,
     formatServeError: (error, _address) => formatDaemonServeError(error, config.host, config.port),
-    handleRequest: async (request) => {
+    handleRequest: async (request, server) => {
+      listener = server;
       const hostError = validateHostHeader(request, config.port, allowRemote);
       if (hostError) {
         return hostError;

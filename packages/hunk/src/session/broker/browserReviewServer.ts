@@ -151,6 +151,14 @@ export interface BrowserReviewServerOptions {
   maxStreams?: number;
   maxStreamsPerSession?: number;
   maxStreamBufferBytes?: number;
+  /**
+   * Exempt one event-stream request from the listener's connection idle timeout.
+   *
+   * An event stream is idle by design between publications, and Bun's default 10 s idle
+   * timeout is shorter than the heartbeat, so without this every quiet stream is cut and
+   * reconnects. The host passes `server.timeout(request, 0)`; no other route is affected.
+   */
+  keepStreamOpen?: (request: Request) => void;
   /** Admit one authorized action through the host daemon's shared HTTP control budgets. */
   handleActionControl?: (
     request: Request,
@@ -569,6 +577,7 @@ export class BrowserReviewServer {
       }),
     );
 
+    this.options.keepStreamOpen?.(request);
     if (request.signal.aborted) {
       this.closeStream(stream);
     } else {
