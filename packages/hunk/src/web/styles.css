@@ -1000,3 +1000,144 @@ body {
   border: 0;
   cursor: pointer;
 }
+
+/* Palette, go-to-file, and help: modal dialogs over a dimmed page. */
+.picker-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+  background: rgb(0 0 0 / 35%);
+}
+
+.picker,
+.help-overlay {
+  display: flex;
+  flex-direction: column;
+  width: min(640px, calc(100vw - 32px));
+  max-height: 70vh;
+  color: var(--hunk-text);
+  background: var(--hunk-panel);
+  border: 1px solid var(--hunk-border);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 35%);
+  overflow: hidden;
+}
+
+.picker-input {
+  padding: 12px 14px;
+  font: inherit;
+  color: var(--hunk-text);
+  background: var(--hunk-background);
+  border: 0;
+  border-bottom: 1px solid var(--hunk-border);
+  outline: none;
+}
+
+.picker-list {
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.picker-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.picker-option[aria-selected="true"] {
+  background: var(--hunk-accent-muted);
+}
+
+.picker-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker-category,
+.picker-empty {
+  color: var(--hunk-muted);
+}
+
+.picker-empty {
+  margin: 0;
+  padding: 10px 14px;
+}
+
+.picker-keys,
+.help-section kbd {
+  padding: 1px 6px;
+  font: inherit;
+  font-size: 0.85em;
+  color: var(--hunk-text);
+  background: var(--hunk-panel-alt);
+  border: 1px solid var(--hunk-border);
+  border-radius: 4px;
+}
+
+.picker-stats .stat-add {
+  color: var(--hunk-badge-added);
+}
+
+.picker-stats .stat-del {
+  color: var(--hunk-badge-removed);
+}
+
+.help-overlay {
+  width: min(760px, calc(100vw - 32px));
+  max-height: 80vh;
+}
+
+.help-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--hunk-border);
+}
+
+.help-header h2 {
+  margin: 0;
+  font-size: 1em;
+}
+
+.help-sections {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 12px 24px;
+  padding: 12px 14px;
+  overflow-y: auto;
+}
+
+.help-section h3 {
+  margin: 0 0 6px;
+  font-size: 0.9em;
+  color: var(--hunk-accent);
+}
+
+.help-section table {
+  border-collapse: collapse;
+}
+
+.help-section th {
+  padding: 2px 10px 2px 0;
+  font-weight: normal;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.help-section td {
+  padding: 2px 0;
+  color: var(--hunk-muted);
+}

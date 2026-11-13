@@ -38,7 +38,8 @@ Open work and the milestone in [`web-review-plan.md`](web-review-plan.md) that o
   theme: the E2 decision is recorded below, the page ships the built-in themes, and the
   session's resolved theme arrives with M2's presentation defaults.
 - **F browser bindings** — F1–F3's browser halves: keymap resolution onto DOM events (M4) and
-  the palette (M5). F4 stays a scope boundary, not work, apart from the one allowlisted
+  the palette (M5, landed: it lists the implemented catalog commands and the page's own
+  `hunk.web.*` commands, and help shares `core/run/helpSections.ts` with the terminal). F4 stays a scope boundary, not work, apart from the one allowlisted
   `review/refresh` action (M2).
 - **G1, G2 policy** — decided 2026-11-13 (see G1 and G2). Their producer-side policy, shared
   state transport, and presentation defaults land in M2; the headless review host that
@@ -828,6 +829,12 @@ implementation does.
   primitive with no consumers cannot be checked against what its consumers need, and the
   `no-dead-modules` rule now flags exactly that shape. The grammar above still stands as the
   design; write it again beside the first consumer that addresses a review across a boundary.
+  _Advanced (M5, browser consumer)_: `core/review/address.ts` returns beside its first
+  consumer, the page's deep links (`web/navigation/deepLink.ts`), with its round-trip and
+  strict-rejection tests (`address.test.ts`). The page writes `#at=<address>` beside the
+  capability parameter, resolves it on load, and uses it for back/forward history and copied
+  links; resolution refuses targets the shown review cannot honor. The opener's fragment
+  preservation (Phase 6) and a terminal "copy link" remain, so the finding stays open.
 - **G4. User-facing error catalog.** The repo already solves this once for agents:
   `packages/hunk/src/session/agent/errors.ts` single-sources every message the generated skill quotes, with
   contract tests. The browser has no equivalent — action rejections (`invalid-action`,

@@ -18,6 +18,13 @@ packages/hunk/src/web/
   app/ThemeMenu.tsx            the theme button and its listbox
   app/ReviewControls.tsx       shared filter field, refresh, copy review link
   app/useReviewInteraction.tsx composers, note commands, shared toggles, refresh
+  app/useReviewTools.tsx       palette, go-to-file, help, deep links and history
+  commands/webLocalCommands.ts the page's own hunk.web.* commands and their chords
+  palette/paletteEntries.ts    palette rows and help sections from the command tables
+  palette/PickerDialog.tsx     the combobox + listbox dialog both pickers use
+  palette/HelpOverlay.tsx      the keyboard help dialog
+  palette/fuzzy.ts             subsequence scoring for both pickers
+  navigation/deepLink.ts       #at=<address> read, written, and resolved
   actions/reviewActions.ts     posts review actions; typed outcomes; the stale-generation retry
   actions/toasts.tsx           failure toasts in an aria-live region
   commands/webCommandTable.ts  every catalogued command classified; handlers by catalog id
@@ -315,13 +322,12 @@ imports; a page fetches only the languages and themes it shows. The largest sing
   about it. Identity, titles, and chords come from the catalog; the page supplies handlers
   only for what it implements.
 
-  | Class                | Count | Commands                                                                                                                                                      |
-  | -------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-  | Implemented          | 36    | navigation and annotated navigation, scrolling, view keys, the gap toggle, notes (`c` `E` `R` `D`, save, previous/next), `a`, focus filter, refresh (`r`)     |
-  | Deferred: palette    | 1     | help (`?`) with the palette                                                                                                                                   |
-  | Deferred: renderer   | 1     | hunk headers (`m`): Pierre draws `@@` rows only in its built-in separator modes, which cannot coexist with the page's gap separators                          |
-  | Host-only (audit F4) | 5     | quit, edit in `$EDITOR`, agent skill, feedback, open in browser; extension commands are never in the table. Refresh is host-only but allowlisted (above)      |
-  | Terminal-only        | 13    | focus-area toggle (Tab is native), visual selection and copy (native selection), line-cursor align and styles, menu bar, copy decorations, file presentations |
+  | Class                | Count | Commands                                                                                                                                                        |
+  | -------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | Implemented          | 37    | navigation and annotated navigation, scrolling, view keys, the gap toggle, notes (`c` `E` `R` `D`, save, previous/next), `a`, focus filter, refresh, help (`?`) |
+  | Deferred: renderer   | 1     | hunk headers (`m`): Pierre draws `@@` rows only in its built-in separator modes, which cannot coexist with the page's gap separators                            |
+  | Host-only (audit F4) | 5     | quit, edit in `$EDITOR`, agent skill, feedback, open in browser; extension commands are never in the table. Refresh is host-only but allowlisted (above)        |
+  | Terminal-only        | 13    | focus-area toggle (Tab is native), visual selection and copy (native selection), line-cursor align and styles, menu bar, copy decorations, file presentations   |
 
 - **Semantic commands lower, never re-derive.** Hunk and file navigation and the gap toggle go
   through `lowerAppCommandToReviewIntent` and `applyReviewIntent` on the page's local store,
@@ -350,6 +356,35 @@ imports; a page fetches only the languages and themes it shows. The largest sing
 - **Gap affordances.** A collapsed gap that can expand shows the terminal's `▾`; context that
   cannot shows `··· ···`. An expanded gap is collapsible in place from a "Hide N unchanged
   lines" control over its first line (the terminal's wording), as well as from the header.
+
+## Palette, help, go-to-file, and deep links
+
+- **Page-only commands.** `commands/webLocalCommands.ts` declares what only a page can do under
+  `hunk.web.*` ids: the palette (`Ctrl+K`, `⌘K` on macOS), go to file (`Ctrl+P` / `⌘P`), copy
+  review link, copy link to this hunk or note, use session theme, and files as a tree or a
+  list. The rule: a command with a terminal meaning goes in the shared catalog and is
+  classified in `webCommandTable.ts`; only a command with none is declared here. These ids never
+  reach the catalog, the host keymap, or a review action. The two dialog chords are the only
+  modified chords the page claims from the browser (`Ctrl+P` would print).
+- **Palette.** Lists exactly the implemented catalog commands (host-only and terminal-only ones
+  never are) and the page's own, each with its title, category, and the chord the page binds
+  (`paletteEntries.ts`). Fuzzy subsequence matching; recently run commands lead (ids kept in
+  `localStorage`, no review data). An ARIA combobox owning a listbox; Escape closes and focus
+  returns to what had it.
+- **Help** (`?`). The sections and wording are `core/run/helpSections.ts`, shared with the
+  terminal's help dialog (`ui/lib/helpContent.ts` now reads them from there). A row shows only
+  commands the page implements and binds, with the page's chords; terminal-only rows (F10)
+  are dropped, and a Browser section lists the dialog chords and the composer's save chord.
+- **Go to file.** Fuzzy over the files the shared filter leaves visible, with the sidebar's
+  change letter and stats (`core/review/fileLabels.ts`).
+- **Deep links (audit G3).** The fragment carries `at=<address>` in the shared grammar,
+  `core/review/address.ts` (file, hunk, line, note over percent-encoded semantic ids, strictly
+  parsed), beside the capability parameter, which is stripped on load and never written here.
+  The address is resolved once the document arrives, before the page writes its own position;
+  an address the review cannot honor moves nothing and says so. Navigating rewrites the
+  current history entry (`replaceState`); a deliberate jump (go to file, a sidebar file) adds
+  one (`pushState`), so Back and Forward return through them. "Copy link to this hunk or note"
+  copies the full link with the capability, on purpose.
 
 ## Pierre findings that shaped the client
 
@@ -408,6 +443,8 @@ imports; a page fetches only the languages and themes it shows. The largest sing
   custom theme from config with the session-theme override; the reader's position reported to
   `hunk session context`; notes and position across a reload; and axe with notes showing.
   `test/web/review-languages.e2e.ts` highlights `.mts` and `.cts` files.
+  `test/web/review-palette.e2e.ts` covers the palette (recent first, focus restored, axe),
+  help, go to file with the filter, deep links on load, back and forward, and copied links.
   `test/web/review-interactive.e2e.ts` writes through the page: the note lifecycle confirmed by
   `hunk session comment list`, a gutter-drag range and a note inside an expanded gap, drafts
   across a reload, filter and visibility reaching a second page, refresh after a file edit, the
