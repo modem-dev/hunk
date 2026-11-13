@@ -218,4 +218,31 @@ describe("ReviewReloadCoordinator", () => {
       watcher?.close();
     }
   });
+
+  test("refreshes the registered input once for a burst of requests", async () => {
+    let adoptions = 0;
+    const { coordinator, input } = await createTestCoordinator(() => {
+      adoptions += 1;
+    });
+    expect(await coordinator.refreshCurrent()).toMatchObject({
+      ok: false,
+      code: "refresh-unavailable",
+    });
+
+    coordinator.registerRefreshRequest({ nextInput: input });
+    const first = coordinator.refreshCurrent();
+    expect(coordinator.refreshCurrent()).toBe(first);
+    const result = await first;
+    expect(result).toEqual({ ok: true, ...coordinator.producer.getPublicationAddress() });
+    expect(adoptions).toBe(1);
+
+    coordinator.registerRefreshRequest({
+      nextInput: {
+        ...input,
+        right: join(input.kind === "diff" ? input.left : "", "..", "gone.ts"),
+      } as CliInput,
+    });
+    expect(await coordinator.refreshCurrent()).toMatchObject({ ok: false, code: "refresh-failed" });
+    expect(adoptions).toBe(1);
+  });
 });

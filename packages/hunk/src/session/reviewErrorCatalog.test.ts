@@ -47,6 +47,8 @@ const EXPECTED_CODES: HunkReviewClientErrorCodeV1[] = [
   "too-many-streams",
   "state-too-large",
   "selection-is-local",
+  "refresh-unavailable",
+  "refresh-failed",
 ];
 
 describe("review error catalog", () => {

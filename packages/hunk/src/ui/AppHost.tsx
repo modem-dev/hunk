@@ -212,6 +212,9 @@ export function AppHost({
     [coordinator],
   );
 
+  /** Reload the current input for a browser's refresh, coalesced and serialized. */
+  const refreshReview = useCallback(() => coordinator.refreshCurrent(), [coordinator]);
+
   /** Keep the latest mounted refresh descriptor without letting stale cleanup clear its successor. */
   const registerWorkspaceRefreshRequest = useCallback(
     (request: Parameters<ReviewReloadCoordinator["registerRefreshRequest"]>[0]) =>
@@ -267,6 +270,7 @@ export function AppHost({
       initialFilePath={initialFilePath}
       onRegisterWorkspaceRefreshRequest={registerWorkspaceRefreshRequest}
       onReloadSession={reloadSession}
+      onRefreshReview={refreshReview}
       onRequestExtensionReviewReload={requestExtensionReviewReload}
       onWorkspaceWriteCompleted={reloadAfterWorkspaceWrite}
       reviewProducer={coordinator.producer}

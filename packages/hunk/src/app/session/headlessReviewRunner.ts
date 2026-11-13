@@ -248,6 +248,7 @@ export async function runHeadlessReview(
       clearAgentLineHighlights: (filePath) => host.clearAgentLineHighlights(filePath),
       openAgentNotes: () => host.setShowAgentNotes(true),
       reloadSession: (nextInput, options) => coordinator.reload(nextInput, { ...options }),
+      refreshReview: () => coordinator.refreshCurrent(),
       removeLiveComment: (commentId) => host.removeLiveComment(commentId),
       reviewProducer: producer,
     }),

@@ -133,7 +133,10 @@ derivation lives in `core/theme/appTheme.ts` and keymap resolution in `core/run/
 `ui/` re-exporting both, so a headless session resolves presentation defaults without OpenTUI. The
 producer's remote action handler (`app/session/reviewCommands.ts`) applies the multi-surface
 policy: browser selection moves stay local, a headless session adopts a browser's anchor, and
-agent moves record the shared reveal. History closes its provider
+agent moves record the shared reveal. Browser-invocable host effects are limited to refresh
+(`POST /review-api/<session>/refresh`), which reaches `ReviewReloadCoordinator.refreshCurrent`
+through the session bridge; exact file bytes for image previews are `bytes` resources served by
+the producer's resource store. History closes its provider
 cursor before extension shutdown.
 
 `ReviewSessionHost` (`app/review/reviewSessionHost.ts`) owns one live review without React: the

@@ -40,6 +40,7 @@ import { emitExtensionEvent } from "../../extensions/events";
 import type { ExtensionSession } from "../../extensions/session";
 import type { ExtensionLoadResult } from "../../extensions/types";
 import type { HunkSessionBrokerClient } from "../../session/broker/brokerClient";
+import type { HunkReviewRefreshResultV1 } from "../../session/reviewProtocol";
 import type { ReloadedSessionResult, ReloadSessionOptions } from "../../session/types";
 import { reviewDescriptorAfterReload, reviewDescriptorResourceCwd } from "../delegatedReview";
 import { resolveConfiguredExtensions } from "../extensionBootstrap";
@@ -128,6 +129,8 @@ export class ReviewReloadCoordinator {
   private shuttingDown = false;
   private readonly pendingWorkspaceWrites = new Set<Promise<void>>();
   private refreshRequest: ReviewRefreshRequest | undefined;
+  /** A refresh queued behind other reloads and not yet started; later refreshes join it. */
+  private pendingRefresh: Promise<HunkReviewRefreshResultV1> | undefined;
   private pendingExtensionReload:
     | { reviewGeneration: AppBootstrap; promise: Promise<ExtensionReviewReloadResult> }
     | undefined;
@@ -212,6 +215,48 @@ export class ReviewReloadCoordinator {
         this.refreshRequest = undefined;
       }
     };
+  }
+
+  /**
+   * Reload the mounted review from its own input, for a browser's refresh button.
+   *
+   * Takes no arguments by design: it reopens exactly what the `r` key would (the registered
+   * refresh descriptor), so a remote caller can name nothing. Serialized with every other
+   * reload, and coalesced — refreshes requested before a queued one starts share it — so a
+   * burst of requests costs one reload. Resolves with the position reached, never rejects.
+   */
+  refreshCurrent(): Promise<HunkReviewRefreshResultV1> {
+    if (this.pendingRefresh) return this.pendingRefresh;
+    const pending = this.enqueue(async (): Promise<HunkReviewRefreshResultV1> => {
+      if (this.pendingRefresh === pending) this.pendingRefresh = undefined;
+      const request = this.refreshRequest;
+      if (this.shuttingDown || !request) {
+        return {
+          ok: false,
+          code: "refresh-unavailable",
+          message: this.shuttingDown
+            ? "The review session is shutting down and cannot reload."
+            : "The current review cannot be reloaded from its original input.",
+        };
+      }
+      try {
+        await this.performReload(request.nextInput, {
+          reason: "manual",
+          resetApp: false,
+          sourcePath: request.sourcePath,
+        });
+      } catch (error) {
+        return {
+          ok: false,
+          code: "refresh-failed",
+          message: describeExtensionReloadFailure(error),
+        };
+      }
+      const position = this.producer.getPublicationAddress();
+      return { ok: true, generation: position.generation, stateRevision: position.stateRevision };
+    });
+    this.pendingRefresh = pending;
+    return pending;
   }
 
   /** Start one irreversible write atomically with session tracking, unless quit already won. */
