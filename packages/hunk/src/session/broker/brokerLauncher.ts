@@ -684,7 +684,13 @@ export function isLoopbackPortReachable(
   });
 }
 
-/** Launch the broker daemon in the background without tying it to the current TTY session. */
+/**
+ * Launch the broker daemon in the background without tying it to the current TTY session.
+ *
+ * The daemon starts in the caller's directory when it still exists, otherwise in the home
+ * directory: a session whose directory was deleted under it would otherwise fail every relaunch.
+ * A spawn failure is left to the caller's health wait, which reports it as a startup timeout.
+ */
 export function launchSessionBrokerDaemon({
   cwd = process.cwd(),
   env = process.env,
@@ -698,12 +704,14 @@ export function launchSessionBrokerDaemon({
 } = {}): ChildProcess {
   const command = resolveDaemonLaunchCommand(argv, execPath);
   const child = spawn(command.command, command.args, {
-    cwd,
+    cwd: existsSync(cwd) ? cwd : homedir(),
     env,
     detached: true,
     stdio: "ignore",
   });
 
+  // An unobserved spawn `error` event would be thrown as an uncaught exception.
+  child.on("error", () => {});
   child.unref();
   return child;
 }

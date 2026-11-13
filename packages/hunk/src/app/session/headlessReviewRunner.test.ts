@@ -102,8 +102,22 @@ async function startTestHeadlessReview(
   const stderr: string[] = [];
   // Every run injects an opener so no test starts a real browser.
   const opened: string[] = [];
+  const hold = { acquired: 0, released: 0 };
+  let closeOutput: (() => void) | undefined;
   let session!: HeadlessReviewSession;
   const exited = runHeadlessReview(bootstrap, {
+    holdProcess: () => {
+      hold.acquired += 1;
+      return () => {
+        hold.released += 1;
+      };
+    },
+    watchOutputClosed: (onClosed) => {
+      closeOutput = onClosed;
+      return () => {
+        closeOutput = undefined;
+      };
+    },
     openUrl:
       options.openUrl ??
       (async (url) => {
@@ -123,7 +137,18 @@ async function startTestHeadlessReview(
     },
   });
   await Promise.resolve();
-  return { fake, signals, stdout, stderr, opened, session, exited };
+  return {
+    fake,
+    signals,
+    stdout,
+    stderr,
+    opened,
+    session,
+    exited,
+    hold,
+    closeOutput: () => closeOutput?.(),
+    isWatchingOutput: () => closeOutput !== undefined,
+  };
 }
 
 describe("runHeadlessReview", () => {
@@ -262,6 +287,41 @@ describe("runHeadlessReview", () => {
     await expect(session.coordinator.reload(bootstrap.input)).rejects.toThrow("shutting down");
     expect(fake.stopCount()).toBe(1);
     expect(fake.hasBridge()).toBe(false);
+  });
+
+  // The broker client's reconnect timers are unref'd. Without a held handle, a review whose
+  // daemon went away had nothing referenced left and Bun busy-polled at 100% CPU until killed.
+  test("holds the process open while serving and releases it once shut down", async () => {
+    const { bootstrap } = await createTestHeadlessBootstrap();
+    const { hold, signals, exited } = await startTestHeadlessReview(bootstrap);
+
+    expect(hold).toEqual({ acquired: 1, released: 0 });
+
+    signals.emit("SIGTERM");
+    expect(await exited).toBe(0);
+    expect(hold).toEqual({ acquired: 1, released: 1 });
+  });
+
+  test("an output with no reader left shuts the review down in order", async () => {
+    const { bootstrap } = await createTestHeadlessBootstrap();
+    const review = await startTestHeadlessReview(bootstrap);
+    expect(review.isWatchingOutput()).toBe(true);
+
+    review.closeOutput();
+    expect(await review.exited).toBe(0);
+    expect(review.session.coordinator.isShuttingDown()).toBe(true);
+    expect(review.fake.stopCount()).toBe(1);
+    expect(review.hold.released).toBe(1);
+    expect(review.isWatchingOutput()).toBe(false);
+  });
+
+  test.skipIf(process.platform === "win32")("a closed terminal's SIGHUP shuts down", async () => {
+    const { bootstrap } = await createTestHeadlessBootstrap();
+    const { fake, signals, exited } = await startTestHeadlessReview(bootstrap);
+
+    signals.emit("SIGHUP");
+    expect(await exited).toBe(0);
+    expect(fake.stopCount()).toBe(1);
   });
 
   test("a watch change reloads the review in place and re-attaches the producer", async () => {
