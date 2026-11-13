@@ -10,6 +10,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import {
+  chooseTestTheme,
   startTestWebReview,
   waitForTestCondition,
   watchTestPageProblems,
@@ -112,7 +113,7 @@ test("switches layout and theme, and the theme choice persists", async ({ page }
   await page.getByTestId("layout-split").click();
   await expect(page.locator(".review-app")).toHaveAttribute("data-layout", "split");
 
-  await page.getByTestId("theme-picker").selectOption("dracula");
+  await chooseTestTheme(page, "dracula");
   await expect
     .poll(() =>
       page.evaluate(() =>
@@ -121,7 +122,7 @@ test("switches layout and theme, and the theme choice persists", async ({ page }
     )
     .toBe("#282a36");
   await page.reload();
-  await expect(page.getByTestId("theme-picker")).toHaveValue("dracula");
+  await expect(page.getByTestId("theme-picker")).toHaveAttribute("data-theme-id", "dracula");
 });
 
 test("expands a collapsed gap in place from the source resource", async ({ page }) => {

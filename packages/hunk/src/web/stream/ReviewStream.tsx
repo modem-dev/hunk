@@ -6,24 +6,73 @@
  * one file. Files mount Pierre only as they approach the viewport and unmount when they are
  * far away, and every unmounted file keeps the height it was last measured at (or the
  * height its row count reserves), so the scrollbar stays stable and a 2,000-file review stays
- * responsive. Scrolling reports the file at the top back to the store as a viewport anchor,
- * which moves the sidebar highlight without moving anything else.
+ * responsive.
  *
- * A reload swaps the document under the reader; the stream keeps the file at the top of the
- * viewport, and the reader's offset inside it, where they were.
+ * Four flows move or read the viewport here:
+ *
+ * - Reveals. The page's local store bumps a reveal token when a selection asks to be shown
+ *   (`]`, `.`, a sidebar click): a `file-top` reveal puts the file's header at the top, a
+ *   `hunk` reveal puts the selected hunk just under the sticky file header, and `none` leaves
+ *   the viewport alone. A hunk in a file that has not mounted yet is scrolled to by estimate
+ *   and corrected once the file draws.
+ * - Viewport anchoring. When the reader scrolls by hand — wheel, scrollbar, keys, or the
+ *   page's own scroll commands — and the scroll settles, the hunk nearest the viewport's
+ *   middle becomes the selection through `selection/anchor`, which never moves a viewport
+ *   (`REVIEW_VIEWPORT_ANCHOR_REVEAL`, audit B11). A target the page just revealed holds the
+ *   selection for as long as it stays where the reveal put it, so mounting files nearby
+ *   cannot steal it.
+ * - Scroll commands, through the `controller` this component fills in.
+ * - Reloads. A new generation swaps the document under the reader; the stream keeps the file
+ *   at the top of the viewport, and the reader's offset inside it, where they were.
  */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MutableRefObject,
+} from "react";
 import type { ReviewState } from "../../core/review/state";
 import type { ReviewFileV1 } from "../../core/review/types";
+import { reviewHunkIndexAtOffset } from "../../core/review/viewportAnchor";
 import type { ReviewMirrorFileSlot } from "../mirror/reviewMirror";
-import { FileSection } from "./FileSection";
+import { FileSection, STREAM_HEADER_HEIGHT_PX, STREAM_ROW_HEIGHT_PX } from "./FileSection";
 import { planReviewFileRender, type ReviewFileRenderPlan } from "./fileProjection";
+import type { ReviewFileGeometry } from "./hunkGeometry";
 
 /** How far beyond the viewport files mount, and how far before they unmount. */
 const MOUNT_MARGIN = "150% 0px 150% 0px";
 
 /** How long a reload keeps re-applying the reader's place while files settle. */
 const PIN_AFTER_SWAP_MS = 800;
+
+/** How long scrolling must pause before the viewport counts as settled. */
+const SCROLL_SETTLE_MS = 120;
+
+/** How long a reveal into a file that has not drawn yet waits to be corrected. */
+const PENDING_REVEAL_MS = 3_000;
+
+/** Space left between the sticky file header and a revealed hunk. */
+const REVEAL_MARGIN_PX = 8;
+
+/** How far a held reveal target may drift before the reader is deemed to have moved. */
+const HOLD_TOLERANCE_PX = 6;
+
+/** Columns one code-scroll step moves, and how many a Shift step moves (the terminal's 8). */
+const CODE_SCROLL_COLUMNS = 1;
+const FAST_CODE_SCROLL_COLUMNS = 8;
+
+/** What the page's scroll commands ask of the stream. */
+export interface ReviewStreamController {
+  /** Scroll by one row, half a viewport, or one viewport, up (-1) or down (1). */
+  scroll(direction: -1 | 1, unit: "step" | "half" | "page"): void;
+  /** Scroll to the start or the end of the review. */
+  scrollToEdge(edge: "top" | "bottom"): void;
+  /** Scroll the selected file's code sideways, one column or a fast step. */
+  scrollCode(direction: -1 | 1, fast: boolean): void;
+}
 
 export interface ReviewStreamProps {
   slots: readonly ReviewMirrorFileSlot[];
@@ -33,12 +82,29 @@ export interface ReviewStreamProps {
   showLineNumbers: boolean;
   syntaxTheme: string;
   appearance: "light" | "dark";
+  /** Width of one code column in CSS pixels, for sideways code scrolling. */
+  columnWidth: number;
   onToggleGap: (fileKey: string, gapId: string) => void;
   onCollapseGaps: (fileKey: string) => void;
+  /** A click on one hunk's rows. */
+  onSelectHunk: (fileKey: string, hunkIndex: number) => void;
   /** The generation shown; a change is a reload that keeps the reader's place. */
   generation?: string;
-  /** The file at the top of the viewport changed because the reader scrolled. */
-  onTopFileChange: (fileKey: string) => void;
+  /** The reader's scroll settled with this hunk nearest the middle of the viewport. */
+  onViewportAnchor: (fileKey: string, hunkIndex: number) => void;
+  /** Filled in with the stream's scroll commands. */
+  controller: MutableRefObject<ReviewStreamController | null>;
+}
+
+/** What a reveal put on screen, and where, so later scrolling can tell if the reader moved. */
+interface RevealHold {
+  fileKey: string;
+  /** Absent for a file-top reveal. */
+  hunkIndex?: number;
+  /** The target's offset from the top of the viewport right after the reveal. */
+  viewportY: number;
+  /** Set while the target's file has not drawn and the reveal still needs correcting. */
+  pendingUntil?: number;
 }
 
 /** Plans one file per document state, reusing the previous plan when nothing it reads moved. */
@@ -63,17 +129,45 @@ function usePlans(review: ReviewState) {
   );
 }
 
+/** The section element for one file key. */
+function sectionFor(root: HTMLElement, fileKey: string) {
+  return root.querySelector<HTMLElement>(`section[data-file-key="${CSS.escape(fileKey)}"]`);
+}
+
+/** The first section ending below one offset in the stream, found by bisection. */
+function sectionAtOffset(root: HTMLElement, offset: number) {
+  // Sections are laid out in order, so bisection finds the answer without walking every file.
+  const sections = root.querySelectorAll<HTMLElement>("section[data-file-key]");
+  let low = 0;
+  let high = sections.length - 1;
+  let found: HTMLElement | undefined;
+  while (low <= high) {
+    const middle = (low + high) >> 1;
+    const section = sections[middle]!;
+    if (section.offsetTop + section.offsetHeight > offset) {
+      found = section;
+      high = middle - 1;
+    } else {
+      low = middle + 1;
+    }
+  }
+  return found;
+}
+
 /** The scrollable stream of file sections. */
 export function ReviewStream(props: ReviewStreamProps) {
-  const { slots, review } = props;
+  const { slots, review, controller } = props;
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [mounted, setMounted] = useState<ReadonlySet<string>>(new Set());
   const heights = useRef(new Map<string, number>());
+  const geometries = useRef(new Map<string, ReviewFileGeometry>());
   const planOf = usePlans(review);
   const filesByKey = useMemo(
     () => new Map(review.document.files.map((file) => [file.key, file])),
     [review.document],
   );
+  const latest = useRef({ props, filesByKey, planOf });
+  latest.current = { props, filesByKey, planOf };
 
   // Mount files near the viewport; unmount them once they are well outside it.
   useEffect(() => {
@@ -92,6 +186,7 @@ export function ReviewStream(props: ReviewStreamProps) {
             } else if (!entry.isIntersecting && current.has(key)) {
               const body = entry.target.querySelector(".file-body");
               if (body) heights.current.set(key, body.getBoundingClientRect().height);
+              geometries.current.delete(key);
               next ??= new Set(current);
               next.delete(key);
             }
@@ -109,46 +204,186 @@ export function ReviewStream(props: ReviewStreamProps) {
     return () => observer.disconnect();
   }, [slots]);
 
-  // Reveal the selected file's top whenever the store asks for it.
-  const revealToken = review.reveal.fileTopToken;
-  const selectedKey = review.selection.fileKey;
-  useEffect(() => {
-    if (revealToken === 0 || !selectedKey) return;
-    const section = scrollRef.current?.querySelector<HTMLElement>(
-      `section[data-file-key="${CSS.escape(selectedKey)}"]`,
-    );
-    if (section && scrollRef.current) {
+  /**
+   * Where one reveal target sits in stream coordinates, and whether that is measured.
+   *
+   * A hunk in a file that has not drawn is placed proportionally through the file's
+   * reserved body — close enough to mount the file, after which the reveal is corrected.
+   */
+  const targetTop = useCallback((fileKey: string, hunkIndex?: number) => {
+    const root = scrollRef.current;
+    const section = root && sectionFor(root, fileKey);
+    if (!root || !section) return undefined;
+    if (hunkIndex === undefined) return { top: section.offsetTop, exact: true };
+    const bodyTop = section.offsetTop + STREAM_HEADER_HEIGHT_PX;
+    const measured = geometries.current.get(fileKey)?.hunks[hunkIndex];
+    if (measured) return { top: bodyTop + measured.top, exact: true };
+    const hunkCount = latest.current.filesByKey.get(fileKey)?.hunks.length ?? 1;
+    const bodyHeight = section.offsetHeight - STREAM_HEADER_HEIGHT_PX;
+    return { top: bodyTop + (bodyHeight * hunkIndex) / Math.max(1, hunkCount), exact: false };
+  }, []);
+
+  // What the last reveal put on screen; scrolling that leaves it in place is not the reader.
+  const hold = useRef<RevealHold | undefined>(undefined);
+  const releasePin = useRef<(() => void) | undefined>(undefined);
+
+  /** Scroll one target into its reveal position and remember where it landed. */
+  const reveal = useCallback(
+    (fileKey: string, hunkIndex?: number) => {
+      const root = scrollRef.current;
+      const target = targetTop(fileKey, hunkIndex);
+      if (!root || !target) return;
       // An explicit jump wins over keeping the reader's place across a reload.
       releasePin.current?.();
-      scrollRef.current.scrollTop = section.offsetTop;
-    }
-    // Only a new reveal request scrolls; a selection made by scrolling must not.
+      root.scrollTop =
+        hunkIndex === undefined
+          ? target.top
+          : target.top - STREAM_HEADER_HEIGHT_PX - REVEAL_MARGIN_PX;
+      const landed = targetTop(fileKey, hunkIndex) ?? target;
+      hold.current = {
+        fileKey,
+        ...(hunkIndex !== undefined ? { hunkIndex } : {}),
+        viewportY: landed.top - root.scrollTop,
+        ...(target.exact ? {} : { pendingUntil: performance.now() + PENDING_REVEAL_MS }),
+      };
+    },
+    [targetTop],
+  );
+
+  // Only a new reveal request scrolls; a selection made by scrolling or clicking must not.
+  const { fileTopToken, hunkToken } = review.reveal;
+  const selectedKey = review.selection.fileKey;
+  const selectedHunk = review.selection.hunkIndex;
+  useEffect(() => {
+    if (fileTopToken === 0 || !selectedKey) return;
+    reveal(selectedKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [revealToken]);
+  }, [fileTopToken]);
+  useEffect(() => {
+    if (hunkToken === 0 || !selectedKey) return;
+    reveal(selectedKey, selectedHunk);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hunkToken]);
+
+  // A file that drew corrects a reveal that had to estimate where its hunk was.
+  const onGeometry = useCallback(
+    (fileKey: string, geometry: ReviewFileGeometry) => {
+      geometries.current.set(fileKey, geometry);
+      const held = hold.current;
+      if (held?.pendingUntil === undefined || held.fileKey !== fileKey) return;
+      if (performance.now() > held.pendingUntil) {
+        delete held.pendingUntil;
+        return;
+      }
+      reveal(fileKey, held.hunkIndex);
+    },
+    [reveal],
+  );
+
+  /** Adopt the hunk nearest the middle of the viewport as the selection. */
+  const anchorToViewport = useCallback(() => {
+    const root = scrollRef.current;
+    if (!root) return;
+    const held = hold.current;
+    if (held) {
+      if (held.pendingUntil !== undefined && performance.now() <= held.pendingUntil) return;
+      const target = targetTop(held.fileKey, held.hunkIndex);
+      if (target && Math.abs(target.top - root.scrollTop - held.viewportY) <= HOLD_TOLERANCE_PX) {
+        return;
+      }
+      hold.current = undefined;
+    }
+
+    const center = root.scrollTop + root.clientHeight / 2;
+    const section = sectionAtOffset(root, center);
+    const fileKey = section?.dataset.fileKey;
+    const file = fileKey ? latest.current.filesByKey.get(fileKey) : undefined;
+    if (!section || !fileKey || !file) return;
+    const offset = center - section.offsetTop - STREAM_HEADER_HEIGHT_PX;
+    const geometry = geometries.current.get(fileKey);
+    const hunkIndex = geometry
+      ? reviewHunkIndexAtOffset(file.hunks.length, (index) => geometry.hunks[index], offset)
+      : 0;
+    latest.current.props.onViewportAnchor(fileKey, hunkIndex);
+  }, [targetTop]);
+
+  // Anchor once scrolling pauses. Wheel, touch, and pointer input also end a pending reveal:
+  // the reader has taken over.
+  const settleTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const onScroll = useCallback(() => {
+    clearTimeout(settleTimer.current);
+    settleTimer.current = setTimeout(anchorToViewport, SCROLL_SETTLE_MS);
+  }, [anchorToViewport]);
+  useEffect(() => {
+    const root = scrollRef.current;
+    if (!root) return;
+    const takeOver = () => {
+      if (hold.current) delete hold.current.pendingUntil;
+    };
+    root.addEventListener("wheel", takeOver, { passive: true });
+    root.addEventListener("touchstart", takeOver, { passive: true });
+    root.addEventListener("pointerdown", takeOver);
+    return () => {
+      clearTimeout(settleTimer.current);
+      root.removeEventListener("wheel", takeOver);
+      root.removeEventListener("touchstart", takeOver);
+      root.removeEventListener("pointerdown", takeOver);
+    };
+  }, []);
+
+  // The page's scroll commands. Each is the reader moving by hand, so a pending reveal ends.
+  useEffect(() => {
+    const scrollBy = (top: number) => {
+      const root = scrollRef.current;
+      if (!root) return;
+      if (hold.current) delete hold.current.pendingUntil;
+      root.scrollTop += top;
+    };
+    controller.current = {
+      scroll(direction, unit) {
+        const root = scrollRef.current;
+        if (!root) return;
+        const distance =
+          unit === "step"
+            ? STREAM_ROW_HEIGHT_PX
+            : unit === "half"
+              ? Math.floor(root.clientHeight / 2)
+              : root.clientHeight - STREAM_HEADER_HEIGHT_PX - STREAM_ROW_HEIGHT_PX;
+        scrollBy(direction * Math.max(STREAM_ROW_HEIGHT_PX, distance));
+      },
+      scrollToEdge(edge) {
+        const root = scrollRef.current;
+        if (!root) return;
+        scrollBy(edge === "top" ? -root.scrollTop : root.scrollHeight - root.scrollTop);
+      },
+      scrollCode(direction, fast) {
+        const root = scrollRef.current;
+        const { props: current } = latest.current;
+        const key = current.review.selection.fileKey;
+        const shadow = root && key ? sectionFor(root, key)?.querySelector("diffs-container") : null;
+        if (!shadow?.shadowRoot) return;
+        const columns = fast ? FAST_CODE_SCROLL_COLUMNS : CODE_SCROLL_COLUMNS;
+        // Every code column of the file scrolls together, both sides of a split included.
+        for (const code of Array.from(
+          shadow.shadowRoot.querySelectorAll<HTMLElement>("[data-code]"),
+        )) {
+          if (code.scrollWidth > code.clientWidth) {
+            code.scrollLeft += direction * columns * current.columnWidth;
+          }
+        }
+      },
+    };
+    return () => {
+      controller.current = null;
+    };
+  }, [controller]);
 
   // Keep the reader's place by file across a document swap.
   const anchor = useRef<{ key: string; offset: number } | undefined>(undefined);
-  const releasePin = useRef<(() => void) | undefined>(undefined);
   const topFile = useCallback(() => {
     const root = scrollRef.current;
-    if (!root) return undefined;
-    // Sections are laid out in order, so the first one ending below the scroll offset is
-    // found by bisection rather than a walk over every file.
-    const sections = root.querySelectorAll<HTMLElement>("section[data-file-key]");
-    let low = 0;
-    let high = sections.length - 1;
-    let found: HTMLElement | undefined;
-    while (low <= high) {
-      const middle = (low + high) >> 1;
-      const section = sections[middle]!;
-      if (section.offsetTop + section.offsetHeight > root.scrollTop) {
-        found = section;
-        high = middle - 1;
-      } else {
-        low = middle + 1;
-      }
-    }
-    return found
+    const found = root ? sectionAtOffset(root, root.scrollTop) : undefined;
+    return found && root
       ? { key: found.dataset.fileKey!, offset: root.scrollTop - found.offsetTop }
       : undefined;
   }, []);
@@ -168,9 +403,7 @@ export function ReviewStream(props: ReviewStreamProps) {
     // the anchor, so the anchor is re-applied each frame for a moment — until the reader
     // takes over by scrolling themselves.
     const pin = () => {
-      const section = root.querySelector<HTMLElement>(
-        `section[data-file-key="${CSS.escape(saved.key)}"]`,
-      );
+      const section = sectionFor(root, saved.key);
       if (section) root.scrollTop = section.offsetTop + saved.offset;
     };
     let frame = 0;
@@ -193,16 +426,6 @@ export function ReviewStream(props: ReviewStreamProps) {
       root.removeEventListener("keydown", release);
     };
   }, [review.document]);
-
-  // Report the file at the top of the viewport as the reader scrolls.
-  const lastTop = useRef<string | undefined>(undefined);
-  const onScroll = useCallback(() => {
-    const top = topFile();
-    if (top && top.key !== lastTop.current) {
-      lastTop.current = top.key;
-      props.onTopFileChange(top.key);
-    }
-  }, [props, topFile]);
 
   // Record mounted bodies' real heights so they keep them when they unmount.
   useEffect(() => {
@@ -227,9 +450,19 @@ export function ReviewStream(props: ReviewStreamProps) {
   }, [props.layout, props.wrapLines]);
 
   return (
-    <div className="review-stream" ref={scrollRef} onScroll={onScroll} data-testid="review-stream">
+    <div
+      className="review-stream"
+      ref={scrollRef}
+      onScroll={onScroll}
+      data-testid="review-stream"
+      // Focusable so the reader can scroll it with native keys after tabbing to it.
+      tabIndex={0}
+      role="region"
+      aria-label="Review stream"
+    >
       {slots.map((slot) => {
         const file = filesByKey.get(slot.key);
+        const selected = slot.key === selectedKey;
         return (
           <FileSection
             key={slot.key}
@@ -238,7 +471,8 @@ export function ReviewStream(props: ReviewStreamProps) {
             plan={file ? planOf(file) : undefined}
             mounted={mounted.has(slot.key)}
             measuredHeight={heights.current.get(slot.key)}
-            selected={slot.key === selectedKey}
+            selected={selected}
+            {...(selected ? { selectedHunk } : {})}
             layout={props.layout}
             wrapLines={props.wrapLines}
             showLineNumbers={props.showLineNumbers}
@@ -246,6 +480,8 @@ export function ReviewStream(props: ReviewStreamProps) {
             appearance={props.appearance}
             onToggleGap={props.onToggleGap}
             onCollapseGaps={props.onCollapseGaps}
+            onSelectHunk={props.onSelectHunk}
+            onGeometry={onGeometry}
           />
         );
       })}

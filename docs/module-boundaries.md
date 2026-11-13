@@ -45,7 +45,9 @@ Other workspaces are bounded units rather than one tier in that stack:
   closure in `scripts/quality/source-boundaries.test.ts`), plus two import-free presentation
   leaves it shares with the terminal (`core/run/commandInputs.ts` for the layout vocabulary and
   the auto-split threshold, `ui/diff/highlightRenderOptions.ts` for Pierre's highlight
-  options). Nothing in the CLI imports it (`cli-never-imports-web-client`).
+  options), and the command vocabulary on a closed import set (`core/run/commandCatalog.ts`,
+  `core/run/keyChordLabels.ts`, and the chord grammar in `extension-api/keys.ts`). Nothing in
+  the CLI imports it (`cli-never-imports-web-client`).
 
 Current `core/` modules are `changeset/`, `documents/`, `feedback/`, `highlights/`, `history/`, `install/`, `patch/`, `process/`, `review/`,
 `run/`, `stml/`, `theme/`, `vcs/`, and `watch/`. Its root contains `bootstrap.ts`, `liveComments.ts`,

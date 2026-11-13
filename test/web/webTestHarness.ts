@@ -212,3 +212,9 @@ export async function watchTestPageProblems(page: Page) {
   });
   return problems;
 }
+
+/** Choose one theme through the toolbar's theme menu. */
+export async function chooseTestTheme(page: Page, themeId: string) {
+  await page.getByTestId("theme-picker").click();
+  await page.locator(`[role="option"][data-theme-id="${themeId}"]`).click();
+}

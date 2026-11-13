@@ -8,6 +8,12 @@
  * stream's connection state, and the local store, owns the per-browser view preferences and
  * theme, and routes the reader's actions to the store as page-local intents. It decides no
  * review semantics; those come from the store and the shared model.
+ *
+ * It also owns the page's commands (`../commands/`): the keyboard, the toolbar, and clicks
+ * reach the same handlers, keyed by the shared catalog's ids. Hunk and file navigation and the
+ * gap toggle lower through `lowerAppCommandToReviewIntent` and apply to the local store, so
+ * `]` here and `]` in the terminal plan the same move; scrolling, layout, and theme are this
+ * page's own.
  */
 import {
   useCallback,
@@ -20,11 +26,22 @@ import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { lowerAppCommandToReviewIntent } from "../../core/run/commandCatalog";
+import { formatKeyChord } from "../../core/run/keyChordLabels";
 import { reviewErrorMessage } from "../../session/reviewErrorCatalog";
 import type { ReviewFileIndexEntry } from "../mirror/fileIndex";
+import { defaultWebKeymap, webCommandChords } from "../commands/keyboard";
+import { useWebKeyboard } from "../commands/useWebKeyboard";
+import {
+  buildWebCommands,
+  type WebCommandHandlers,
+  type WebCommandInvocation,
+  type WebImplementedCommandId,
+} from "../commands/webCommandTable";
 import { reviewFailureMessage, type ReviewSession } from "../session/reviewSession";
 import { FileSidebar } from "../sidebar/FileSidebar";
-import { ReviewStream } from "../stream/ReviewStream";
+import { isLocalReviewIntent } from "../store/clientReviewStore";
+import { ReviewStream, type ReviewStreamController } from "../stream/ReviewStream";
 import {
   applyWebTheme,
   loadWebThemeIndex,
@@ -106,6 +123,17 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
     readWebViewPreferences(),
   );
   const columnWidth = useColumnWidth();
+  const [themeMenuOpen, setThemeMenuOpen] = useState(false);
+  const streamController = useRef<ReviewStreamController | null>(null);
+  // The catalog's defaults until the state route delivers the host's resolved keymap.
+  const keymap = useMemo(() => defaultWebKeymap(), []);
+  const keyHint = useCallback(
+    (commandId: WebImplementedCommandId) => {
+      const chords = webCommandChords(keymap, commandId);
+      return chords.length > 0 ? chords.map(formatKeyChord).join(" / ") : undefined;
+    },
+    [keymap],
+  );
   const [mainRef, mainWidth] = useElementWidth<HTMLDivElement>();
 
   const updatePreferences = useCallback((next: Partial<WebViewPreferences>) => {
@@ -148,11 +176,25 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
     },
     [session],
   );
-  const anchorFile = useCallback(
-    (fileKey: string) => {
-      if (!session.review.store.getSnapshot().document.files.some((file) => file.key === fileKey))
-        return;
-      session.review.apply({ type: "selection/anchor", fileKey, hunkIndex: 0 });
+  // The reader scrolled and the viewport settled here; adopt it without moving anything.
+  const anchorToViewport = useCallback(
+    (fileKey: string, hunkIndex: number) => {
+      const { document, selection } = session.review.store.getSnapshot();
+      if (selection.fileKey === fileKey && selection.hunkIndex === hunkIndex) return;
+      if (!document.files.some((file) => file.key === fileKey)) return;
+      session.review.apply({ type: "selection/anchor", fileKey, hunkIndex });
+    },
+    [session],
+  );
+  // A click on a hunk selects it where it is; the viewport stays put.
+  const selectHunk = useCallback(
+    (fileKey: string, hunkIndex: number) => {
+      session.review.apply({
+        type: "selection/select",
+        fileKey,
+        hunkIndex,
+        reveal: { anchor: "none", scrollToNote: false },
+      });
     },
     [session],
   );
@@ -172,6 +214,50 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
     },
     [session],
   );
+
+  // What the page does for each catalogued command it implements. Toggles read the current
+  // preferences through a ref so the table is built once per session.
+  const viewRef = useRef({ preferences, sidebarOpen });
+  viewRef.current = { preferences, sidebarOpen };
+  const commands = useMemo(() => {
+    const semantic = ({ entry, count }: WebCommandInvocation) => {
+      const intent = lowerAppCommandToReviewIntent(entry, {
+        count,
+        state: session.review.store.getSnapshot(),
+      });
+      if (intent && isLocalReviewIntent(intent)) session.review.apply(intent);
+    };
+    const stream = () => streamController.current;
+    const handlers: WebCommandHandlers = {
+      "hunk.review.previousHunk": semantic,
+      "hunk.review.nextHunk": semantic,
+      "hunk.review.previousFile": semantic,
+      "hunk.review.nextFile": semantic,
+      "hunk.review.toggleHunkGap": semantic,
+      "hunk.review.jumpToTop": () => stream()?.scrollToEdge("top"),
+      "hunk.review.jumpToBottom": () => stream()?.scrollToEdge("bottom"),
+      "hunk.review.pageDown": () => stream()?.scroll(1, "page"),
+      "hunk.review.pageUp": () => stream()?.scroll(-1, "page"),
+      "hunk.review.halfPageDown": () => stream()?.scroll(1, "half"),
+      "hunk.review.halfPageUp": () => stream()?.scroll(-1, "half"),
+      "hunk.review.stepDown": () => stream()?.scroll(1, "step"),
+      "hunk.review.stepUp": () => stream()?.scroll(-1, "step"),
+      "hunk.review.scrollCodeLeft": ({ shift }) => stream()?.scrollCode(-1, shift),
+      "hunk.review.scrollCodeRight": ({ shift }) => stream()?.scrollCode(1, shift),
+      "hunk.view.layoutSplit": () => updatePreferences({ layout: "split" }),
+      "hunk.view.layoutUnified": () => updatePreferences({ layout: "unified" }),
+      "hunk.view.layoutAuto": () => updatePreferences({ layout: "auto" }),
+      "hunk.view.toggleFilesPane": () =>
+        updatePreferences({ sidebarOpen: !viewRef.current.sidebarOpen }),
+      "hunk.view.toggleLineNumbers": () =>
+        updatePreferences({ showLineNumbers: !viewRef.current.preferences.showLineNumbers }),
+      "hunk.view.toggleLineWrap": () =>
+        updatePreferences({ wrapLines: !viewRef.current.preferences.wrapLines }),
+      "hunk.view.openThemeSelector": () => setThemeMenuOpen(true),
+    };
+    return buildWebCommands(handlers);
+  }, [session, updatePreferences]);
+  useWebKeyboard(commands, keymap);
 
   // Dragging the divider resizes the sidebar; the width is stored when the drag ends.
   const startResize = useCallback(
@@ -253,6 +339,9 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
         resolvedLayout={layout}
         themes={themes}
         themeId={theme?.id}
+        themeMenuOpen={themeMenuOpen}
+        onThemeMenuOpen={setThemeMenuOpen}
+        keyHint={keyHint}
         onPreferences={updatePreferences}
         onToggleSidebar={() => updatePreferences({ sidebarOpen: !sidebarOpen })}
         onTheme={choose}
@@ -303,7 +392,10 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
           appearance={theme?.appearance ?? "dark"}
           onToggleGap={toggleGap}
           onCollapseGaps={collapseGaps}
-          onTopFileChange={anchorFile}
+          onSelectHunk={selectHunk}
+          onViewportAnchor={anchorToViewport}
+          controller={streamController}
+          columnWidth={columnWidth}
           generation={mirror.address?.generation}
         />
       </div>

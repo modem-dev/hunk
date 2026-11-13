@@ -61,6 +61,17 @@ const WEB_SHARED_PRESENTATION_MODULES: readonly string[] = [
   join(SRC_ROOT, "ui", "diff", "highlightRenderOptions.ts"),
 ];
 
+// The command vocabulary the browser shares with the terminal (audit F1-F3): the catalog of
+// command identities and their semantic lowering, the published chord grammar, and the chord
+// labels. Unlike the presentation leaves above these have runtime imports, so each is held to
+// a closed set instead (asserted below): the review model, the extension contract's chord and
+// type modules, and one another.
+const WEB_SHARED_COMMAND_MODULES: readonly string[] = [
+  join(SRC_ROOT, "core", "run", "commandCatalog.ts"),
+  join(SRC_ROOT, "core", "run", "keyChordLabels.ts"),
+  join(SRC_ROOT, "extension-api", "keys.ts"),
+];
+
 /** Return one repo-relative path with forward slashes for stable assertions on every platform. */
 function repoPath(path: string) {
   return relative(REPO_ROOT, path).split(sep).join("/");
@@ -296,6 +307,14 @@ const EXTRACTED_DUPLICATE_SYMBOLS: ReadonlyArray<{
   { file: "packages/hunk/src/ui/lib/files.ts", symbol: "sidebarFileName", finding: "E1" },
   { file: "packages/hunk/src/ui/lib/files.ts", symbol: "sidebarDirectorySegments", finding: "E1" },
   { file: "packages/hunk/src/ui/lib/files.ts", symbol: "sharedDirectoryDepth", finding: "E1" },
+  { file: "packages/hunk/src/ui/lib/keymap.ts", symbol: "formatKeyChord", finding: "F3" },
+  { file: "packages/hunk/src/ui/lib/keymap.ts", symbol: "formatChordBase", finding: "F3" },
+  { file: "packages/hunk/src/ui/lib/keymap.ts", symbol: "NAMED_CHORD_LABELS", finding: "F3" },
+  {
+    file: "packages/hunk/src/ui/lib/viewportSelection.ts",
+    symbol: "findNearestHunkIndexAtBodyOffset",
+    finding: "B11",
+  },
 ];
 
 describe("source architecture boundaries", () => {
@@ -508,8 +527,27 @@ describe("shared review primitives seam", () => {
         REVIEW_MODEL_ROOT,
         ...BROWSER_SAFE_SESSION_MODULES,
         ...WEB_SHARED_PRESENTATION_MODULES,
+        ...WEB_SHARED_COMMAND_MODULES,
+        // The import-free extension contract, for the structural key event chords match.
+        EXTENSION_API_TYPES_PATH,
       ]),
     ).toEqual([]);
+  });
+
+  test("keeps the browser's shared command modules on a closed import set", () => {
+    const violations = WEB_SHARED_COMMAND_MODULES.flatMap((path) =>
+      importSpecifiers(path).flatMap((specifier) => {
+        // The published contract spells its own imports with `.js` for declaration emission.
+        const target = resolveImport(path, specifier.replace(/\.js$/, ""));
+        const allowed =
+          target &&
+          (isWithin(REVIEW_MODEL_ROOT, target) ||
+            isWithin(EXTENSION_API_TYPES_PATH, target) ||
+            WEB_SHARED_COMMAND_MODULES.some((module) => isWithin(module, target)));
+        return allowed ? [] : [`${repoPath(path)} -> ${specifier}`];
+      }),
+    );
+    expect(violations).toEqual([]);
   });
 
   // The shared presentation leaves the browser imports beside the review model stay leaves:
