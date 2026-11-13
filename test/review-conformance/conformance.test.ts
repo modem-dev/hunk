@@ -20,6 +20,7 @@ import {
   REVIEW_GEOMETRY_CONSUMERS,
   REVIEW_NAVIGATION_CONSUMERS,
   REVIEW_ORDERING_CONSUMERS,
+  REVIEW_OVERVIEW_CONSUMERS,
   REVIEW_SHARED_STATE_CONSUMERS,
   REVIEW_SNAPSHOT_CONSUMERS,
   REVIEW_WIRE_CONSUMERS,
@@ -29,6 +30,7 @@ import { REVIEW_GEOMETRY_FIXTURES } from "./geometryFixtures";
 import { REVIEW_NAVIGATION_FIXTURES } from "./navigationFixtures";
 import { REVIEW_NOTE_BODY_FIXTURES } from "./noteBodies";
 import { REVIEW_NOTE_SIZE_FIXTURES } from "./noteSize";
+import { REVIEW_OVERVIEW_FIXTURES } from "./overviewFixtures";
 import { REVIEW_SHARED_STATE_FIXTURES } from "./sharedStateFixtures";
 import { REVIEW_ACTOR_POLICY_FIXTURES } from "./actorPolicyFixtures";
 import { REVIEW_SNAPSHOT_FIXTURES } from "./snapshotFixtures";
@@ -97,6 +99,10 @@ describe("review conformance corpus", () => {
       "browser review HTTP surface",
       "browser client shared-state mirror",
     ]);
+    expect(REVIEW_OVERVIEW_CONSUMERS.map((consumer) => consumer.name)).toEqual([
+      "core overview selector",
+      "browser overview tab",
+    ]);
     expect(REVIEW_ACTOR_POLICY_CONSUMERS.map((consumer) => consumer.name)).toEqual([
       "producer action handler",
       "browser review HTTP surface",
@@ -119,6 +125,16 @@ describe("review conformance corpus", () => {
     expect(REQUIRED_FINDINGS.filter((finding) => !covered.has(finding))).toEqual([]);
   });
 });
+
+for (const consumer of REVIEW_OVERVIEW_CONSUMERS) {
+  describe(`review overview conformance: ${consumer.name}`, () => {
+    for (const fixture of REVIEW_OVERVIEW_FIXTURES) {
+      test(`${fixture.id} (${fixture.findings.join(", ")})`, () => {
+        expect(consumer.project(fixture)).toEqual(fixture.expected);
+      });
+    }
+  });
+}
 
 for (const consumer of REVIEW_NAVIGATION_CONSUMERS) {
   describe(`review navigation conformance: ${consumer.name}`, () => {

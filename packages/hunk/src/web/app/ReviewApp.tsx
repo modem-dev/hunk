@@ -80,6 +80,17 @@ import {
   type WebViewOverrides,
   type WebViewPreferences,
 } from "../view/viewPreferences";
+import { OverviewTab } from "../overview/OverviewTab";
+import { selectWebReviewOverview } from "../panel/overviewInput";
+import { webLocalKeyCommands, withWebLocalChords } from "../panel/panelCommands";
+import type { WebLocalCommandId } from "../commands/webLocalCommands";
+import {
+  readSidePanelPreferences,
+  resolveSidePanelOpen,
+  storeSidePanelPreferences,
+  type SidePanelPreferences,
+} from "../panel/panelPreferences";
+import { SidePanel, type SidePanelTool } from "../panel/SidePanel";
 import type { ThemeMenuOption } from "./ThemeMenu";
 import { ToastRegion } from "../actions/toasts";
 import { reviewLinkWithCapability } from "../session/capability";
@@ -233,7 +244,20 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
   }, []);
 
   const sidebarOpen = preferences.sidebarOpen ?? defaultSidebarOpen(window.innerWidth, columnWidth);
-  const streamWidth = Math.max(0, mainWidth - (sidebarOpen ? preferences.sidebarWidth : 0));
+  // The side panel's frame is this browser's; its tools are separate modules (`../panel/`).
+  const [panel, setPanel] = useState<SidePanelPreferences>(() => readSidePanelPreferences());
+  const updatePanel = useCallback((next: Partial<SidePanelPreferences>, store = true) => {
+    setPanel((current) => {
+      const merged = { ...current, ...next };
+      if (store) storeSidePanelPreferences(merged);
+      return merged;
+    });
+  }, []);
+  const panelOpen = resolveSidePanelOpen(panel, window.innerWidth);
+  const streamWidth = Math.max(
+    0,
+    mainWidth - (sidebarOpen ? preferences.sidebarWidth : 0) - (panelOpen ? panel.width : 0),
+  );
   const layout = resolveWebLayout(preferences.layout, streamWidth, columnWidth);
 
   // The shared filter decides the visible stream, as it does in the terminal; the planner
@@ -276,6 +300,11 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
         { additions: 0, deletions: 0 },
       ),
     [entries],
+  );
+
+  const overview = useMemo(
+    () => (panelOpen ? selectWebReviewOverview(entries, shownShared) : undefined),
+    [panelOpen, entries, shownShared],
   );
 
   // Report where the reader settled, so a headless session's `hunk session context` can say
@@ -385,8 +414,8 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
 
   // What the page does for each catalogued command it implements. Toggles read the current
   // preferences through a ref so the table is built once per session.
-  const viewRef = useRef({ preferences, sidebarOpen });
-  viewRef.current = { preferences, sidebarOpen };
+  const viewRef = useRef({ preferences, sidebarOpen, panelOpen });
+  viewRef.current = { preferences, sidebarOpen, panelOpen };
   const interactive = useReviewInteraction(session, shownShared);
   const interactiveRef = useRef(interactive);
   interactiveRef.current = interactive;
@@ -472,7 +501,21 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
     };
     return buildWebCommands(handlers);
   }, [session, updatePreferences]);
-  useWebKeyboard(commands, keymap);
+  // Page commands with plain chords (`hunk.web.*`, declared in `webLocalCommands.ts`) join the
+  // catalogued ones on the keyboard; the palette and help list them from the same declaration.
+  const panelHandlers = useMemo(
+    (): Partial<Record<WebLocalCommandId, () => void>> => ({
+      "hunk.web.toggleSidePanel": () => updatePanel({ open: !viewRef.current.panelOpen }),
+      "hunk.web.showOverview": () => updatePanel({ open: true, tab: "overview" }),
+    }),
+    [updatePanel],
+  );
+  const pageCommands = useMemo(
+    () => [...commands, ...webLocalKeyCommands((id) => panelHandlers[id]?.())],
+    [commands, panelHandlers],
+  );
+  const pageKeymap = useMemo(() => withWebLocalChords(keymap), [keymap]);
+  useWebKeyboard(pageCommands, pageKeymap);
   const tools = useReviewTools({
     session,
     commands,
@@ -483,9 +526,22 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
     copyReviewLink: copyLink,
     chooseSessionTheme: () => choose(SESSION_THEME_OPTION_ID),
     setSidebarMode: (sidebarMode) => updatePreferences({ sidebarMode }),
+    localHandlers: panelHandlers,
   });
   const toolsRef = useRef<typeof tools | undefined>(undefined);
   toolsRef.current = tools;
+  const panelHint = webCommandChords(pageKeymap, "hunk.web.toggleSidePanel")
+    .map(formatKeyChord)
+    .join(" / ");
+  const panelTools: SidePanelTool[] = overview
+    ? [
+        {
+          id: "overview",
+          label: "Overview",
+          render: () => <OverviewTab overview={overview} onSelectFile={tools.jumpToFile} />,
+        },
+      ]
+    : [];
 
   // Dragging the divider resizes the sidebar; the width is stored when the drag ends.
   const startResize = useCallback(
@@ -549,7 +605,12 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
       className="review-app"
       data-layout={layout}
       data-generation={mirror.address?.generation}
-      style={{ "--sidebar-width": `${preferences.sidebarWidth}px` } as CSSProperties}
+      style={
+        {
+          "--sidebar-width": `${preferences.sidebarWidth}px`,
+          "--side-panel-width": `${panel.width}px`,
+        } as CSSProperties
+      }
     >
       <Toolbar
         title={presentation?.title || "Hunk review"}
@@ -595,6 +656,9 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
             onCopyLink={copyLink}
           />
         }
+        panelOpen={panelOpen}
+        {...(panelHint ? { panelHint } : {})}
+        onTogglePanel={() => updatePanel({ open: !panelOpen })}
       />
       <div className="review-main" ref={mainRef}>
         {sidebarOpen ? (
@@ -654,6 +718,17 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
           composers={composers}
           interaction={interactive.interaction}
         />
+        {panelOpen && panelTools.length > 0 ? (
+          <SidePanel
+            tools={panelTools}
+            tab={panel.tab}
+            width={panel.width}
+            onTab={(tab) => updatePanel({ tab })}
+            onWidth={(width, commit) => updatePanel({ width }, commit)}
+            onClose={() => updatePanel({ open: false })}
+            {...(panelHint ? { closeHint: panelHint } : {})}
+          />
+        ) : null}
       </div>
       <ToastRegion toasts={session.toasts} />
       {tools.overlay}
