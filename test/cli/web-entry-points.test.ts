@@ -1,9 +1,9 @@
 /**
  * Black-box contract for the web review entry points: `--web`, `--no-open`, `--no-watch`.
  *
- * Until `WEB_REVIEW_ENTRY_POINTS_RELEASED` flips, the flags parse but stay out of help and
- * completions. `--web` prints exactly one URL line on stdout, opens it unless `--no-open`, keeps
- * serving when the browser launch fails, and reloads on input changes unless `--no-watch`.
+ * The flags and `hunk session open` are listed in help and shell completions. `--web` prints
+ * exactly one URL line on stdout, opens it unless `--no-open`, keeps serving when the browser
+ * launch fails, and reloads on input changes unless `--no-watch`.
  *
  * The opener is observed through `$BROWSER`: a stub script records its argv, so no test starts a
  * real browser. Process tests are Unix-only (POSIX signals, shell stubs) and skip on Windows; the
@@ -213,11 +213,27 @@ async function stopWebReview(proc: ReturnType<typeof Bun.spawn>) {
 }
 
 describe("web review entry points: parsing and visibility", () => {
-  test("hides --web, --no-open, --no-watch, and session open from help and completions", () => {
+  test("lists --web, --no-open, and --no-watch in review help and completions", () => {
     const surfaces = [
-      runHunk(["--help"]),
       runHunk(["diff", "--help"]),
       runHunk(["show", "--help"]),
+      runHunk(["stash", "show", "--help"]),
+      runHunk(["patch", "--help"]),
+      runHunk(["difftool", "--help"]),
+      runHunk(["completion", "bash"]),
+      runHunk(["completion", "zsh"]),
+    ];
+
+    for (const surface of surfaces) {
+      expect(surface.exitCode).toBe(0);
+      expect(surface.stdout).toContain("--web");
+      expect(surface.stdout).toContain("--no-open");
+      expect(surface.stdout).toContain("--no-watch");
+    }
+  });
+
+  test("lists session open in session help and completions", () => {
+    const surfaces = [
       runHunk(["session", "--help"]),
       runHunk(["completion", "bash"]),
       runHunk(["completion", "zsh"]),
@@ -225,10 +241,15 @@ describe("web review entry points: parsing and visibility", () => {
 
     for (const surface of surfaces) {
       expect(surface.exitCode).toBe(0);
+      expect(surface.stdout).toContain("session open");
+    }
+  });
+
+  test("keeps the browser flags off commands that cannot serve a review", () => {
+    for (const args of [["--help"], ["status", "--help"], ["log", "--help"], ["pager", "--help"]]) {
+      const surface = runHunk(args);
+      expect(surface.exitCode).toBe(0);
       expect(surface.stdout).not.toContain("--web");
-      expect(surface.stdout).not.toContain("--no-open");
-      expect(surface.stdout).not.toContain("--no-watch");
-      expect(surface.stdout).not.toContain("session open");
     }
   });
 

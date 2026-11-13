@@ -12,7 +12,7 @@ import {
   type BuildAppCommandsOptions,
   type ResolvedCommandKeys,
 } from "./appCommands";
-import { APP_COMMAND_CATALOG, OPEN_IN_BROWSER_COMMAND } from "../../core/run/commandCatalog";
+import { APP_COMMAND_CATALOG, builtinAppCommand } from "../../core/run/commandCatalog";
 import { HISTORY_COMMAND_CATALOG } from "../../core/run/historyCommandCatalog";
 import { getBundledUIRegistry } from "../../extensions/default/ui";
 import { buildAppMenus } from "./appMenus";
@@ -307,6 +307,7 @@ describe("builtinCommandKeyDefaults", () => {
     ).toEqual([
       "hunk.app.openAgentSkill",
       "hunk.app.openFeedback",
+      "hunk.app.openInBrowser",
       "hunk.review.alignCurrentLineBottom",
       "hunk.review.alignCurrentLineCenter",
       "hunk.review.alignCurrentLineTop",
@@ -541,10 +542,10 @@ describe("command catalog parity", () => {
   });
 });
 
-// "Open in browser" ships before the web review is announced: its handler exists, but the
-// catalog, menus, and help leave it out until `WEB_REVIEW_ENTRY_POINTS_RELEASED` flips.
+// "Open in browser" is catalogued, listed in the File menu, and bindable from `[keybindings]`.
+// It ships unbound, and the curated help dialog lists only commands with default keys.
 describe("open in browser", () => {
-  test("stays out of the catalog, the command table, and the menus until released", () => {
+  test("is catalogued, built into the command table, and listed in the File menu", () => {
     const { commands } = createTestCommands(undefined, { openInBrowser: () => {} });
     const menus = buildAppMenus({
       commands,
@@ -559,30 +560,39 @@ describe("open in browser", () => {
       showMenuBar: true,
       wrapLines: false,
     });
+    const fileMenuItem = menus.file?.find(
+      (entry) => entry.kind === "item" && entry.commandId === "hunk.app.openInBrowser",
+    );
 
-    expect(APP_COMMAND_CATALOG.map((entry) => entry.id)).not.toContain(OPEN_IN_BROWSER_COMMAND.id);
-    expect(commands.map((command) => command.id)).not.toContain(OPEN_IN_BROWSER_COMMAND.id);
-    expect(JSON.stringify(menus)).not.toContain(OPEN_IN_BROWSER_COMMAND.id);
-    expect(HELP_COMMAND_IDS).not.toContain(OPEN_IN_BROWSER_COMMAND.id);
+    expect(APP_COMMAND_CATALOG.map((entry) => entry.id)).toContain("hunk.app.openInBrowser");
+    expect(commands.map((command) => command.id)).toContain("hunk.app.openInBrowser");
+    expect(fileMenuItem).toMatchObject({ kind: "item", label: "Open in browser" });
+    expect(HELP_COMMAND_IDS).not.toContain("hunk.app.openInBrowser");
+  });
+
+  test("takes a key bound from user keybindings", () => {
+    const { commands } = createTestCommands(new Map([["hunk.app.openInBrowser", ["ctrl+o"]]]), {
+      openInBrowser: () => {},
+    });
+    const command = commands.find((candidate) => candidate.id === "hunk.app.openInBrowser");
+
+    expect(command?.keys).toEqual(["ctrl+o"]);
   });
 
   test("is an unbound host-only command that runs the terminal's opener", () => {
     let opened = 0;
-    const { commands } = createTestCommands(undefined, { openInBrowser: () => (opened += 1) }, [
-      ...APP_COMMAND_CATALOG,
-      OPEN_IN_BROWSER_COMMAND,
-    ]);
+    const { commands } = createTestCommands(undefined, { openInBrowser: () => (opened += 1) });
 
-    expect(OPEN_IN_BROWSER_COMMAND).toMatchObject({ locus: "host-only", defaultKeys: [] });
+    expect(builtinAppCommand("hunk.app.openInBrowser")).toMatchObject({
+      locus: "host-only",
+      defaultKeys: [],
+    });
     expect(executeAppCommand(commands, "hunk.app.openInBrowser")).toBe(true);
     expect(opened).toBe(1);
   });
 
   test("is disabled without a daemon registration to open", () => {
-    const { commands } = createTestCommands(undefined, {}, [
-      ...APP_COMMAND_CATALOG,
-      OPEN_IN_BROWSER_COMMAND,
-    ]);
+    const { commands } = createTestCommands();
 
     expect(executeAppCommand(commands, "hunk.app.openInBrowser")).toBe(false);
   });

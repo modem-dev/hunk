@@ -1,4 +1,3 @@
-import { WEB_REVIEW_ENTRY_POINTS_RELEASED } from "../../core/run/webReviewRelease";
 import type { SessionDaemonAction } from "../protocol";
 
 /**
@@ -86,8 +85,8 @@ export type SessionCommandOptions<Action extends SessionDaemonAction> = ParsedCo
   SessionCommandSpecs[Action]
 >;
 
-/** Every session command spec by action, released or not. */
-type SessionCommandSpecs = typeof SESSION_AGENT_COMMANDS & { open: typeof SESSION_OPEN_COMMAND };
+/** Every session command spec by action. */
+type SessionCommandSpecs = typeof SESSION_AGENT_COMMANDS;
 
 /**
  * One declared flag-group rule on a command. The same object drives three surfaces: the
@@ -486,32 +485,24 @@ export const SESSION_AGENT_COMMANDS = {
     ],
     examples: ["hunk session highlight clear --repo ."],
   },
-} as const satisfies Record<Exclude<SessionDaemonAction, "open">, AgentCommandSpec>;
+  // Opens a live session's review in a browser, or prints its URL.
+  open: {
+    name: "session open",
+    summary: "open a live session's review in your browser",
+    positionals: [{ token: "[sessionId]" }],
+    options: [
+      repoOption,
+      { flag: "--no-open", description: "print the review URL instead of opening a browser" },
+      jsonOption,
+    ],
+    synopsis: [`hunk session open ${SESSION_SELECTOR_SYNOPSIS} [--no-open] [--json]`],
+    examples: ["hunk session open --repo .", "hunk session open --repo . --no-open"],
+  },
+} as const satisfies Record<SessionDaemonAction, AgentCommandSpec>;
 
-/**
- * `hunk session open`: open a live session's review in a browser, or print its URL.
- *
- * Parsed by the CLI in every build, but listed in help, completions, generated docs, and the
- * skill only once `WEB_REVIEW_ENTRY_POINTS_RELEASED` is set.
- */
-export const SESSION_OPEN_COMMAND = {
-  name: "session open",
-  summary: "open a live session's review in your browser",
-  positionals: [{ token: "[sessionId]" }],
-  options: [
-    repoOption,
-    { flag: "--no-open", description: "print the review URL instead of opening a browser" },
-    jsonOption,
-  ],
-  synopsis: [`hunk session open ${SESSION_SELECTOR_SYNOPSIS} [--no-open] [--json]`],
-  examples: ["hunk session open --repo .", "hunk session open --repo . --no-open"],
-} as const satisfies AgentCommandSpec;
-
-/** Specs in display order for help text and generated docs; unreleased commands stay out. */
-export const SESSION_AGENT_COMMAND_LIST: readonly AgentCommandSpec[] = [
-  ...Object.values(SESSION_AGENT_COMMANDS),
-  ...(WEB_REVIEW_ENTRY_POINTS_RELEASED ? [SESSION_OPEN_COMMAND] : []),
-];
+/** Specs in display order for help text and generated docs. */
+export const SESSION_AGENT_COMMAND_LIST: readonly AgentCommandSpec[] =
+  Object.values(SESSION_AGENT_COMMANDS);
 
 /** Specs for the `hunk session comment` subcommand family, in display order. */
 export const SESSION_COMMENT_COMMAND_LIST = SESSION_AGENT_COMMAND_LIST.filter((spec) =>
