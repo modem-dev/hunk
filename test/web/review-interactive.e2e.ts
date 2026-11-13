@@ -199,6 +199,11 @@ test("shares the filter and note visibility with a second page", async ({ page, 
   await page.keyboard.type("module-1");
   await expect(other.getByTestId("shared-filter")).toHaveText("filter: module-1");
   await expect(other.locator("section[data-file-key]")).toHaveCount(10);
+  await expect(other.getByTestId("file-count")).toHaveText("10 files");
+  // A filter that matches nothing counts nothing, not the whole review.
+  await page.getByTestId("filter-input").fill("no-such-file");
+  await expect(other.locator("section[data-file-key]")).toHaveCount(0);
+  await expect(other.getByTestId("file-count")).toHaveText("0 files");
   await page.getByTestId("filter-input").fill("");
   await expect(other.getByTestId("shared-filter")).toHaveCount(0);
 

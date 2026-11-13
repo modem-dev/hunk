@@ -26,6 +26,13 @@ test("stays responsive with 2,000 files", async ({ page }) => {
   await expect(page.getByTestId("file-count")).toHaveText(`${FILE_COUNT} files`, {
     timeout: 30_000,
   });
+  // An agent's reveal of a file that may still be loading waits for it rather than being
+  // dropped.
+  const last = "pkg19/dir9/file-1999.ts";
+  await review.hunk(["session", "navigate", review.sessionId, "--file", last, "--hunk", "1"]);
+  await expect(page.locator("section[data-selected] .file-path")).toHaveText(last, {
+    timeout: 120_000,
+  });
   await expect(page.getByTestId("load-progress")).toHaveCount(0, { timeout: 120_000 });
 
   // Only files near the viewport carry a Pierre diff.

@@ -280,9 +280,9 @@ imports; a page fetches only the languages and themes it shows. The largest sing
 - **Agent reveal.** When `agentReveal.token` grows, the page selects its hunk and reveals its
   line or note card. The token present in the first shared state the page reads is history and
   moves nothing; one that first arrives after that is revealed once the document is ready.
-- **Focus report.** When the reader's scroll settles, the page posts a debounced
-  `selection/anchor` through the action sender, so a headless session's `hunk session context`
-  reports where the reader is. Failures are dropped and never retried, nothing is sent while a
+- **Focus report.** When the reader's scroll settles or the selection jumps (keyboard, sidebar,
+  palette, or click), the page posts a debounced `selection/anchor` through the action sender,
+  so a headless session's `hunk session context` reports where the reader is. Failures are dropped and never retried, nothing is sent while a
   newer generation loads, and no other selection action is ever sent.
 
 ## Writing to the review

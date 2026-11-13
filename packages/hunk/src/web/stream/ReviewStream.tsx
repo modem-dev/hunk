@@ -414,6 +414,8 @@ export function ReviewStream(props: ReviewStreamProps) {
       const root = scrollRef.current;
       if (!root) return;
       if (hold.current) delete hold.current.pendingUntil;
+      // Page keys arrive on the document, not the stream, so they release the reload pin here.
+      releasePin.current?.();
       root.scrollTop += top;
     };
     controller.current = {

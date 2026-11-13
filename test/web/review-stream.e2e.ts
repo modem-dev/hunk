@@ -39,9 +39,13 @@ test.beforeEach(async ({ page }) => {
 });
 
 test.afterEach(async () => {
-  expect(problems).toEqual([]);
-  await review?.stop();
-  review = undefined;
+  // Check the page before stopping (a stopped daemon cuts its event stream), but always stop.
+  try {
+    expect(problems).toEqual([]);
+  } finally {
+    await review?.stop();
+    review = undefined;
+  }
 });
 
 /** Open the review and wait until every file has loaded. */
@@ -174,6 +178,28 @@ test("reloads to a new generation and keeps the reader's place by file", async (
   const after = await topSection(page);
   expect(after?.key).toBe(before?.key);
   expect(Math.abs((after?.offset ?? 0) - (before?.offset ?? 0))).toBeLessThan(40);
+});
+
+// Intent: the reader's own keyboard scroll ends the post-reload position restore, rather
+// than being pulled back by its next frame.
+test("lets a keyboard scroll right after a reload stand", async ({ page }) => {
+  await openTestReview(page);
+  const generation = await page.locator(".review-app").getAttribute("data-generation");
+  const scrollTop = () =>
+    page.evaluate(() => document.querySelector<HTMLElement>(".review-stream")!.scrollTop);
+
+  await review!.reload();
+  await expect(page.locator(".review-app")).not.toHaveAttribute(
+    "data-generation",
+    generation ?? "",
+    { timeout: 30_000 },
+  );
+  const restored = await scrollTop();
+  await page.keyboard.press("Space");
+  // Outlast the restore window, so a pin still running would have undone the scroll.
+  await page.waitForTimeout(1_200);
+
+  expect(await scrollTop()).toBeGreaterThan(restored + 300);
 });
 
 test("has no serious accessibility violations", async ({ page }) => {
