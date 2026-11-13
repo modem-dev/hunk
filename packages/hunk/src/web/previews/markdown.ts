@@ -678,8 +678,17 @@ function parseInline(text: string, depth: number, state: ParseState): MarkdownIn
       continue;
     }
 
+    // Emphasis delimiters are `*`, `_`, and `~~` only; every other inline starter that got this
+    // far (`!` without `[`, a `\` before a non-punctuation character) is literal text.
+    const emphasis = character === "*" || character === "_" || character === "~";
     const double = text[index + 1] === character;
-    const delimiter = double ? character + character : character === "~" ? "" : character;
+    const delimiter = !emphasis
+      ? ""
+      : double
+        ? character + character
+        : character === "~"
+          ? ""
+          : character;
     if (delimiter) {
       const start = index + delimiter.length;
       const close = finder(delimiter).next(start);

@@ -2,7 +2,8 @@
 /**
  * Previews a binary image file in place of "Binary file skipped": side by side, swipe, or
  * onion skin, with dimensions and byte sizes, over a checkerboard for transparency. An added or
- * deleted image shows its one side.
+ * deleted image shows its one side. Swipe and onion skin draw both images at one scale,
+ * anchored top-left, so images of different sizes overlay at their true relative size.
  *
  * Each side's `bytes` resource is read whole (refused past `MAX_REVIEW_BYTES_RESOURCE_BYTES`),
  * its type is sniffed from its first bytes (`./imageSniff.ts`, raster formats only), and its
@@ -127,8 +128,10 @@ export function ImagePreview({ path, fileKey, fallback }: ImagePreviewProps) {
   const newImage = useSideImage(bytesFor("new"));
   const [mode, setMode] = useState<ImageMode>("side-by-side");
   const [position, setPosition] = useState(50);
+  // Keyed by the image's `blob:` URL, not its side: a refresh with changed bytes makes a new
+  // URL, so old dimensions and an old decode failure never outlive the bytes they were for.
   const [measured, setMeasured] = useState<Record<string, { width: number; height: number }>>({});
-  const [undecodable, setUndecodable] = useState(false);
+  const [undecodable, setUndecodable] = useState<ReadonlySet<string>>(() => new Set());
 
   const sides = [
     { side: "old" as const, label: "Before", image: oldImage },
@@ -136,8 +139,11 @@ export function ImagePreview({ path, fileKey, fallback }: ImagePreviewProps) {
   ].filter((entry) => entry.image !== undefined);
   if (
     sides.length === 0 ||
-    undecodable ||
-    sides.some((entry) => entry.image!.status === "not-image")
+    sides.some(
+      (entry) =>
+        entry.image!.status === "not-image" ||
+        (entry.image!.status === "ready" && undecodable.has(entry.image!.url)),
+    )
   ) {
     return <>{fallback}</>;
   }
@@ -163,7 +169,7 @@ export function ImagePreview({ path, fileKey, fallback }: ImagePreviewProps) {
   const ready = sides.map((entry) => {
     const image = entry.image as Extract<SideImage, { status: "ready" }>;
     // The decoded size wins once known: a JPEG's EXIF orientation can swap its header's axes.
-    const size = measured[entry.side];
+    const size = measured[image.url];
     return { ...entry, image: size ? { ...image, width: size.width, height: size.height } : image };
   });
   const single = ready.length === 1;
@@ -175,6 +181,16 @@ export function ImagePreview({ path, fileKey, fallback }: ImagePreviewProps) {
     const width = Math.max(...sides.map((entry) => entry.image.width));
     const height = Math.max(...sides.map((entry) => entry.image.height));
     return previewDisplaySize(width, height);
+  };
+  // Stacked, each image keeps its size relative to the other: both are drawn at the box's one
+  // scale and anchored at the top-left corner, where their pixel coordinates both start.
+  const stackedSize = (entry: (typeof ready)[number], box: { width: number }) => {
+    const widest = Math.max(...ready.map((other) => other.image.width));
+    const scale = widest > 0 ? box.width / widest : 0;
+    return {
+      width: Math.round(entry.image.width * scale),
+      height: Math.round(entry.image.height * scale),
+    };
   };
   const img = (
     entry: (typeof ready)[number],
@@ -190,13 +206,14 @@ export function ImagePreview({ path, fileKey, fallback }: ImagePreviewProps) {
       draggable={false}
       onLoad={(event) => {
         const { naturalWidth, naturalHeight } = event.currentTarget;
+        const url = entry.image.url;
         setMeasured((current) =>
-          current[entry.side]
+          current[url]
             ? current
-            : { ...current, [entry.side]: { width: naturalWidth, height: naturalHeight } },
+            : { ...current, [url]: { width: naturalWidth, height: naturalHeight } },
         );
       }}
-      onError={() => setUndecodable(true)}
+      onError={() => setUndecodable((current) => new Set(current).add(entry.image.url))}
     />
   );
 
@@ -251,13 +268,21 @@ export function ImagePreview({ path, fileKey, fallback }: ImagePreviewProps) {
               className="image-preview-stack"
               style={{ width: boxFor(ready).width, height: boxFor(ready).height }}
             >
-              {img(ready[0]!, boxFor(ready))}
+              {img(ready[0]!, stackedSize(ready[0]!, boxFor(ready)))}
               {img(
                 ready[1]!,
-                boxFor(ready),
+                stackedSize(ready[1]!, boxFor(ready)),
                 "image-preview-over",
                 mode === "swipe"
-                  ? { clipPath: `inset(0 0 0 ${position}%)` }
+                  ? {
+                      // The divider sits at a share of the box; the after image's clip is that
+                      // same x, as a share of its own width.
+                      clipPath: `inset(0 0 0 ${Math.min(
+                        100,
+                        (position * boxFor(ready).width) /
+                          Math.max(1, stackedSize(ready[1]!, boxFor(ready)).width),
+                      )}%)`,
+                    }
                   : { opacity: position / 100 },
               )}
               {mode === "swipe" ? (

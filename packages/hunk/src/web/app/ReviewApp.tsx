@@ -517,6 +517,13 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
   }, [mirror.catalog, session, markdownModes]);
   const previewsRef = useRef(previews);
   previewsRef.current = previews;
+  // A hunk reveal (`]`, a note jump, an agent's navigation, a deep link) into a file shown as
+  // rendered Markdown shows its diff again, since the hunk and its notes exist only there.
+  useLayoutEffect(() => {
+    if (review.reveal.hunkToken === 0 || !review.selection.fileKey) return;
+    markdownModes.showDiff(review.selection.fileKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [review.reveal.hunkToken]);
 
   // The minimap's marks, by file key.
   const minimapFiles = useMemo(

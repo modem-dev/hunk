@@ -125,6 +125,23 @@ describe("Markdown preview", () => {
     expect(renderTest(deep)).toContain("deep");
   });
 
+  // Intent: only `*`, `_`, and `~~` delimit emphasis, and a backslash escapes only ASCII
+  // punctuation (CommonMark); `!!warning!!` and Windows paths stay literal.
+  test("keeps `!` and backslashes that escape nothing as text", () => {
+    expect(parseMarkdownInline("!!warning!!")).toEqual([{ type: "text", text: "!!warning!!" }]);
+    expect(parseMarkdownInline("a ! b ! c")).toEqual([{ type: "text", text: "a ! b ! c" }]);
+    expect(parseMarkdownInline("C:\\Users\\name")).toEqual([
+      { type: "text", text: "C:\\Users\\name" },
+    ]);
+    expect(parseMarkdownInline("\\*not em\\* and \\\\")).toEqual([
+      { type: "text", text: "*not em* and \\" },
+    ]);
+    expect(parseMarkdownInline("~~gone~~ but ~one~")).toEqual([
+      { type: "strike", children: [{ type: "text", text: "gone" }] },
+      { type: "text", text: " but ~one~" },
+    ]);
+  });
+
   test("runs an unterminated fence to the end and leaves it as code", () => {
     const blocks = parseMarkdown("before\n\n```\n# not a heading\n<b>x</b>");
 
