@@ -150,6 +150,53 @@ describe("ReviewMirror", () => {
     expect(mirror.getSnapshot().updating).toBe(false);
   });
 
+  // Intent: a reconnect redelivers the same publication; a generation whose files failed to
+  // load must load again then, not be dismissed as already seen.
+  test("retries a failed generation when the same publication arrives again", async () => {
+    const served = serve();
+    const realClient = served.client();
+    let failReads = true;
+    const client = Object.assign(Object.create(realClient) as ReviewApiClient, {
+      readResources: (...args: Parameters<ReviewApiClient["readResources"]>) => {
+        if (failReads) throw new ReviewApiError("resource-unavailable", "unavailable");
+        return realClient.readResources(...args);
+      },
+    });
+    const { mirror } = createTestMirror(client);
+    const publication = await realClient.publication();
+
+    mirror.observe(publication);
+    await waitForTestStatus(mirror, "failed");
+    failReads = false;
+    mirror.observe(publication);
+    const ready = await waitForTestStatus(mirror, "ready");
+
+    expect(ready.document.files).toHaveLength(3);
+    expect(ready.error).toBeUndefined();
+  });
+
+  // Intent: without the shared file index (its read failed), entries come from canonical
+  // files and must still carry the agent summary, or the filter hides files matching it.
+  test("keeps each file's agent summary when entries come from canonical files", async () => {
+    const files = createTestFiles();
+    files[1] = {
+      ...files[1]!,
+      agent: { path: files[1]!.path, summary: "Beta summary", annotations: [] },
+    };
+    const served = serve(files);
+    const client = served.client();
+    const { mirror } = createTestMirror(client);
+
+    mirror.observe(await client.publication());
+    const ready = await waitForTestStatus(mirror, "ready");
+
+    expect(ready.slots.map((slot) => slot.index?.agentSummary)).toEqual([
+      undefined,
+      "Beta summary",
+      undefined,
+    ]);
+  });
+
   test("uses an index source ahead of canonical files when one is given", async () => {
     const served = serve();
     const client = served.client();

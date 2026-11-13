@@ -101,6 +101,8 @@ function documentOf(slots: readonly ReviewMirrorFileSlot[]): ReviewDocumentV1 {
 export class ReviewMirror {
   private snapshot: ReviewMirrorSnapshot = EMPTY_SNAPSHOT;
   private observed: ReviewPublicationAddress | undefined;
+  /** The generation whose last load failed, so its next delivery loads it again. */
+  private failedGeneration: string | undefined;
   private readonly loads = createSupersedeQueue();
   private readonly listeners = new Set<() => void>();
   private notifyScheduled = false;
@@ -127,7 +129,17 @@ export class ReviewMirror {
     const incoming = body.publication;
     // The first publication is a gap from nothing: there is no generation to continue.
     const verdict = this.observed ? classifyReviewPublication(this.observed, incoming) : "gap";
-    if (verdict === "stale" || this.closed) {
+    if (this.closed) {
+      return verdict;
+    }
+    if (verdict !== "gap" && this.failedGeneration === incoming.generation) {
+      // The position was already observed but its files never loaded; a redelivery (a
+      // reconnect replays the current publication) is the retry.
+      if (verdict === "accepted") this.observed = incoming;
+      void this.loadGeneration(body);
+      return verdict;
+    }
+    if (verdict === "stale") {
       return verdict;
     }
     this.observed = incoming;
@@ -153,13 +165,15 @@ export class ReviewMirror {
   /** Load one generation's files, superseding any load still running. */
   private async loadGeneration(body: HunkReviewPublicationBodyV1) {
     const { catalog, publication } = body;
-    const replacing = this.snapshot.address !== undefined;
+    // A first load that failed showed no document, so retrying it loads progressively again.
+    const replacing = this.snapshot.address !== undefined && this.snapshot.status !== "failed";
     const canonical = catalog.resources.filter(
       (resource): resource is Extract<ReviewResourceDescriptorV1, { kind: "canonical-file" }> =>
         resource.kind === "canonical-file",
     );
     let slots: ReviewMirrorFileSlot[] = canonical.map((resource) => ({ key: resource.fileKey }));
     let loaded = 0;
+    this.failedGeneration = undefined;
 
     // A position accepted while the files load is newer than the one the load began at.
     const currentAddress = () =>
@@ -253,6 +267,7 @@ export class ReviewMirror {
         outcome.error instanceof ReviewApiError
           ? outcome.error
           : new ReviewApiError("unreadable", "The review files could not be loaded.");
+      this.failedGeneration = publication.generation;
       // A failed reload keeps showing the generation it was replacing.
       this.publish(
         replacing ? { ...this.snapshot, updating: false, error } : stage("failed", error),
