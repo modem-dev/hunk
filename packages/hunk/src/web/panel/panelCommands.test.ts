@@ -23,8 +23,13 @@ describe("page commands with plain chords", () => {
     const bindings = bindWebCommands(commands, withWebLocalChords(defaultWebKeymap()));
     bindings.match({ name: "p", sequence: "p" })?.run({ count: 1, shift: false });
     bindings.match({ name: "o", sequence: "O", shift: true })?.run({ count: 1, shift: true });
+    bindings.match({ name: "n", sequence: "N", shift: true })?.run({ count: 1, shift: true });
 
-    expect(ran).toEqual(["hunk.web.toggleSidePanel", "hunk.web.showOverview"]);
+    expect(ran).toEqual([
+      "hunk.web.toggleSidePanel",
+      "hunk.web.showOverview",
+      "hunk.web.showNotes",
+    ]);
   });
 
   test("leave a chord the host resolved for the same id in place", () => {

@@ -127,15 +127,89 @@ test("counts notes by origin in the overview", async ({ page }) => {
   await expect(selectedSectionPath(page)).toContainText("main.ts");
 });
 
+/** Add one live comment through the agent's own command; resolves its id. */
+async function addTestComment(args: string[]) {
+  const output = await review!.hunk([
+    "session",
+    "comment",
+    "add",
+    review!.sessionId,
+    ...args,
+    "--json",
+  ]);
+  return (JSON.parse(output) as { result: { commentId: string } }).result.commentId;
+}
+
+test("lists notes by file and reveals the chosen one in the stream", async ({ page }) => {
+  await openTestReview(page, {
+    args: ["--agent-notes"],
+    context: {
+      "src/app/main.ts": {
+        annotations: [{ newRange: [13, 13], summary: "Sidecar threshold note", author: "sonnet" }],
+      },
+    },
+  });
+  const root = await addTestComment([
+    "--file",
+    "src/gen/module-30.ts",
+    "--new-line",
+    "1",
+    "--summary",
+    "Far down the stream",
+  ]);
+  await addTestComment(["--reply-to", root, "--summary", "A reply to it"]);
+
+  await page.getByTestId("side-panel-tab-notes").click();
+  const panel = page.getByTestId("notes-panel");
+  await expect(panel.locator(".notes-file-path")).toHaveText([
+    "src/app/main.ts",
+    "src/gen/module-30.ts",
+  ]);
+  await expect(panel.locator(".notes-count")).toHaveText("3 notes");
+  await expect(panel.getByRole("button", { name: "▸ 1 reply" })).toBeVisible();
+
+  await panel.getByTestId("notes-row").filter({ hasText: "Far down the stream" }).click();
+  const card = page.locator(".note-card", { hasText: "Far down the stream" });
+  await expect(card).toBeInViewport({ timeout: 15_000 });
+  await expect(
+    panel.getByTestId("notes-row").filter({ hasText: "Far down the stream" }),
+  ).toHaveAttribute("aria-current", "true");
+
+  await panel.getByTestId("notes-row").filter({ hasText: "Sidecar threshold note" }).click();
+  await expect(page.locator(".note-card", { hasText: "Sidecar threshold note" })).toBeInViewport({
+    timeout: 15_000,
+  });
+
+  // The panel's own filters: author and text, local to the tab.
+  await panel.getByTestId("notes-origin-agent").click();
+  await expect(panel.locator(".notes-none")).toHaveText("No notes match.");
+  await panel.getByTestId("notes-origin-agent").click();
+  await panel.getByRole("searchbox", { name: "Search notes" }).fill("threshold");
+  await expect(panel.getByTestId("notes-row")).toHaveCount(1);
+  await expect(panel.locator(".notes-count")).toHaveText("1 of 3 notes");
+});
+
+test("explains how notes arrive when there are none", async ({ page }) => {
+  await openTestReview(page);
+  await page.locator(".review-stream").focus();
+  await page.keyboard.press("Shift+N");
+  await expect(page.getByTestId("notes-empty")).toContainText("hunk session comment add");
+});
+
 test("has no serious accessibility violations with the panel open", async ({ page }) => {
   await openTestReview(page);
   await expect(page.getByTestId("side-panel")).toBeVisible();
   await page.locator(".overview-disclosure[aria-expanded]").first().click();
-  const results = await new AxeBuilder({ page })
+  const overviewResults = await new AxeBuilder({ page })
     .exclude("diffs-container")
     .exclude("file-tree-container")
     .analyze();
-  const serious = results.violations
+  await page.getByTestId("side-panel-tab-notes").click();
+  const notesResults = await new AxeBuilder({ page })
+    .exclude("diffs-container")
+    .exclude("file-tree-container")
+    .analyze();
+  const serious = [...overviewResults.violations, ...notesResults.violations]
     .filter((violation) => violation.impact === "serious" || violation.impact === "critical")
     .map(
       (violation) => `${violation.id}: ${violation.nodes.map((node) => node.target).join(", ")}`,

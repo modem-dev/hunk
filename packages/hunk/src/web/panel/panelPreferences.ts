@@ -8,9 +8,9 @@
  */
 
 /** The tools the panel hosts, by tab id. */
-export type SidePanelTab = "overview";
+export type SidePanelTab = "overview" | "notes";
 
-export const SIDE_PANEL_TABS: readonly SidePanelTab[] = ["overview"];
+export const SIDE_PANEL_TABS: readonly SidePanelTab[] = ["overview", "notes"];
 
 export interface SidePanelPreferences {
   /** Undefined means "decide from the viewport". */

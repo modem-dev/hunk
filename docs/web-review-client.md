@@ -62,6 +62,8 @@ packages/hunk/src/web/
   panel/panelCommands.ts       binds page commands with plain chords into the keyboard path
   panel/overviewInput.ts       the page's files and shared notes -> the shared overview selector
   overview/OverviewTab.tsx     the Overview tab: totals, roles, kinds, directories, notes
+  notesPanel/NotesTab.tsx      the Notes tab: every visible note as threads by file
+  notesPanel/noteFilters.ts    the tab's own author and text filters
 ```
 
 - **Capability.** Read from the fragment's `capability` parameter once (`capability.ts`), then
@@ -418,6 +420,15 @@ imports; a page fetches only the languages and themes it shows. The largest sing
   numbers in text with `+`/`−` signs. A file row jumps to the file, a directory row to its
   first file. The conformance corpus runs the selector over a live host and over the shared
   state the page reads, so both report the same numbers.
+- **Notes.** Every visible note as threads grouped by file, from `selectReviewNoteList`
+  (`core/review/noteList.ts`): stored notes in the order keyboard note navigation walks
+  (`selectNavigableStoredReviewNotes`), sidecar annotations placed beside them by owner hunk and
+  line, first on a shared line as the terminal draws them. Threads show their root with a reply
+  count until expanded. The tab's author filter (agent, reviewer, browser-written —
+  `originalSource: "browser"`) and text search are its own and change nothing else. Choosing a
+  note applies `selection/select` locally with a note reveal and `activeNoteId` for a stored
+  note (a sidecar note is revealed by id), so the stream scrolls to the card; nothing is sent.
+  `N` (`hunk.web.showNotes`, a page command listed in the palette and help) opens the tab. Read-only: notes are written in the stream.
 
 ## Pierre findings that shaped the client
 
