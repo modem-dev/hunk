@@ -8,9 +8,8 @@
  * against the shared contract (`core/review/generationOrder.ts`) before anything is
  * published, so a producer bug fails here rather than desynchronizing a reader.
  *
- * It does *not* own the review's live state. The terminal's controller owns the store
- * today, and moving that is a behavior change rather than a seam extraction; the producer
- * attaches to whichever store the host mounted and plans intents against it, supplying the
+ * It does *not* own the review's live state. `ReviewSessionHost` owns the store; the
+ * producer attaches to whichever store the host mounted and plans intents against it, supplying the
  * caller-owned facts core refuses to invent (identity, time, and the annotation index,
  * `ReviewIntentFacts.annotations`) through the same derivation the terminal uses.
  *

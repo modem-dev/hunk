@@ -2,7 +2,7 @@ import { useEffect, useMemo } from "react";
 import type { ReviewProducer } from "../../app/review/producer";
 import type { DiffFile } from "../../core/changeset/model";
 import type { CliInput } from "../../core/run/commandInputs";
-import { reviewHunkRanges } from "../../core/review/geometry";
+import { buildSessionSnapshotState } from "../../app/review/reviewSessionProjections";
 import { createHunkSessionBridge } from "../../app/session/bridge";
 import type { HunkSessionBrokerClient } from "../../session/broker/brokerClient";
 import type {
@@ -128,33 +128,21 @@ export function useHunkSessionBridge({
   const publicationGeneration = reviewProducer?.getPublication().generation;
 
   useEffect(() => {
-    const selectedRange = selectedHunk ? reviewHunkRanges(selectedHunk) : undefined;
-
     hostClient?.updateSnapshot({
       updatedAt: new Date().toISOString(),
-      state: {
-        selectedFileId: selectedFile?.id,
-        selectedFilePath: selectedFile?.path,
+      state: buildSessionSnapshotState({
+        selectedFile,
+        selectedHunk,
         selectedHunkIndex,
-        selectedHunkOldRange: selectedRange?.oldRange,
-        selectedHunkNewRange: selectedRange?.newRange,
         showAgentNotes,
         noteMarkupWidth,
         liveCommentCount,
         liveComments: liveCommentSummaries,
         reviewNoteCount,
         reviewNotes: reviewNoteSummaries,
-        // Where this review currently is, so the daemon's mirror can order what it
-        // receives instead of guessing whether a snapshot is newer than the last.
-        ...(publicationGeneration
-          ? {
-              reviewPublication: {
-                generation: publicationGeneration,
-                stateRevision: reviewStateRevision,
-              },
-            }
-          : {}),
-      },
+        publicationGeneration,
+        stateRevision: reviewStateRevision,
+      }),
     });
   }, [
     hostClient,
