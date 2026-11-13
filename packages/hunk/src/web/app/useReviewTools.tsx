@@ -412,7 +412,7 @@ export function useReviewTools(options: ReviewToolsOptions) {
   const helpSections = useMemo(
     () =>
       buildWebHelpSections(keymap, [
-        ...webLocalHelpRows(),
+        ...webLocalHelpRows(keymap),
         { keys: noteSaveChordLabel(), description: "save the note being written" },
       ]),
     [keymap],

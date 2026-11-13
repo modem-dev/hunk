@@ -6,10 +6,20 @@
  * renders whichever tool the chosen tab names; each tool lives in its own module directory and
  * decides nothing about the panel. Open state, width, and tab are this browser's (see
  * `./panelPreferences.ts`). Tabs follow the ARIA tabs pattern: arrow keys move between them,
- * and the tool's region is a labelled tab panel.
+ * and the tool's region is a labelled tab panel. The resizer follows the window-splitter
+ * pattern: focusable, with its width bounds, moved by the arrow keys, Home, and End as well as
+ * by dragging; a drag the browser cancels ends like one released.
  */
 import type { KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
-import { clampSidePanelWidth, type SidePanelTab } from "./panelPreferences";
+import {
+  clampSidePanelWidth,
+  SIDE_PANEL_MAX_WIDTH,
+  SIDE_PANEL_MIN_WIDTH,
+  type SidePanelTab,
+} from "./panelPreferences";
+
+/** How far one arrow key moves the panel's edge, in CSS pixels. */
+const RESIZE_STEP_PX = 16;
 
 export interface SidePanelTool {
   id: SidePanelTab;
@@ -49,14 +59,41 @@ export function SidePanel(props: SidePanelProps) {
     const target = event.currentTarget;
     target.setPointerCapture(event.pointerId);
     const widthAt = (clientX: number) => clampSidePanelWidth(startWidth - (clientX - startX));
-    const move = (moveEvent: PointerEvent) => props.onWidth(widthAt(moveEvent.clientX), false);
-    const end = (endEvent: PointerEvent) => {
-      target.removeEventListener("pointermove", move);
-      target.removeEventListener("pointerup", end);
-      props.onWidth(widthAt(endEvent.clientX), true);
+    let last = startWidth;
+    const track = (moveEvent: PointerEvent) => {
+      last = widthAt(moveEvent.clientX);
+      props.onWidth(last, false);
     };
-    target.addEventListener("pointermove", move);
+    // A drag ends on release, and also when the browser cancels it or capture is lost; every
+    // ending detaches the listeners and keeps the width reached.
+    const end = () => {
+      target.removeEventListener("pointermove", track);
+      target.removeEventListener("pointerup", end);
+      target.removeEventListener("pointercancel", end);
+      target.removeEventListener("lostpointercapture", end);
+      props.onWidth(last, true);
+    };
+    target.addEventListener("pointermove", track);
     target.addEventListener("pointerup", end);
+    target.addEventListener("pointercancel", end);
+    target.addEventListener("lostpointercapture", end);
+  };
+
+  // The window-splitter pattern: arrows move the edge, Home and End go to either bound.
+  const onResizeKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const next =
+      event.key === "ArrowLeft"
+        ? props.width + RESIZE_STEP_PX
+        : event.key === "ArrowRight"
+          ? props.width - RESIZE_STEP_PX
+          : event.key === "Home"
+            ? SIDE_PANEL_MIN_WIDTH
+            : event.key === "End"
+              ? SIDE_PANEL_MAX_WIDTH
+              : undefined;
+    if (next === undefined) return;
+    event.preventDefault();
+    props.onWidth(clampSidePanelWidth(next), true);
   };
 
   return (
@@ -67,9 +104,20 @@ export function SidePanel(props: SidePanelProps) {
         aria-orientation="vertical"
         aria-label="Resize side panel"
         aria-valuenow={props.width}
+        aria-valuemin={SIDE_PANEL_MIN_WIDTH}
+        aria-valuemax={SIDE_PANEL_MAX_WIDTH}
+        aria-controls="side-panel"
+        tabIndex={0}
+        data-testid="side-panel-resizer"
         onPointerDown={startResize}
+        onKeyDown={onResizeKeyDown}
       />
-      <aside className="side-panel" aria-label="Review tools" data-testid="side-panel">
+      <aside
+        id="side-panel"
+        className="side-panel"
+        aria-label="Review tools"
+        data-testid="side-panel"
+      >
         <div className="side-panel-header">
           <div
             className="side-panel-tabs"

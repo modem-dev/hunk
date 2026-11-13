@@ -32,6 +32,27 @@ describe("page commands with plain chords", () => {
     ]);
   });
 
+  // Intent: the user's binding wins over a page default on the same key, so the key keeps
+  // doing what the user bound and no hint names it for the page command.
+  test("give up a default chord the user bound to another command", () => {
+    const keymap = withWebLocalChords(
+      new Map([
+        ["hunk.review.nextHunk", ["p"]],
+        ["hunk.review.prevHunk", ["shift+v"]],
+      ]),
+    );
+
+    expect(keymap.get("hunk.web.toggleSidePanel")).toEqual([]);
+    expect(keymap.get("hunk.web.toggleViewed")).toEqual([]);
+    expect(keymap.get("hunk.web.showOverview")).toEqual(["O"]);
+    const ran: string[] = [];
+    const bindings = bindWebCommands(
+      webLocalKeyCommands((id) => ran.push(id)),
+      keymap,
+    );
+    expect(bindings.match({ name: "p", sequence: "p" })).toBeUndefined();
+  });
+
   test("leave a chord the host resolved for the same id in place", () => {
     const keymap = withWebLocalChords(new Map([["hunk.web.toggleSidePanel", ["x"]]]));
 
