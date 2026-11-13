@@ -16,7 +16,7 @@ import { parseReviewGeneration } from "./generationOrder";
 import type { ReviewSide } from "./types";
 import { asRecord, hasExactKeys } from "./validation";
 
-export type ReviewResourceKind = "canonical-file" | "patch" | "source";
+export type ReviewResourceKind = "canonical-file" | "patch" | "source" | "bytes";
 
 /** Largest single chunk a reader may ask for, and therefore the largest one served. */
 export const REVIEW_RESOURCE_CHUNK_BYTES = 256 * 1024;
@@ -43,14 +43,30 @@ export const MAX_REVIEW_RESOURCE_BYTES = 32 * 1024 * 1024;
  * before it accepts a stream. Two copies of "source is held to a smaller limit" would be
  * two chances for one of them to keep the general bound after the source bound moved.
  */
+/**
+ * Largest exact-bytes resource (an image preview) any reader assembles: 16 MiB.
+ *
+ * Half the general bound because a reader reserves a whole resource against its in-flight
+ * budget before the first byte arrives, previews are opened casually while scrolling, and an
+ * image larger than this is not something a preview pane can usefully show. Loaders already
+ * refuse to read past 32 MiB.
+ */
+export const MAX_REVIEW_BYTES_RESOURCE_BYTES = 16 * 1024 * 1024;
+
 export function reviewResourceCeiling(kind: ReviewResourceKind) {
-  return kind === "source" ? MAX_REVIEW_SOURCE_RESOURCE_BYTES : MAX_REVIEW_RESOURCE_BYTES;
+  return kind === "source"
+    ? MAX_REVIEW_SOURCE_RESOURCE_BYTES
+    : kind === "bytes"
+      ? MAX_REVIEW_BYTES_RESOURCE_BYTES
+      : MAX_REVIEW_RESOURCE_BYTES;
 }
 
 export const REVIEW_CANONICAL_FILE_CONTENT_TYPE =
   "application/vnd.hunk.review-file+json; charset=utf-8" as const;
 export const REVIEW_PATCH_CONTENT_TYPE = "text/x-diff; charset=utf-8" as const;
 export const REVIEW_SOURCE_CONTENT_TYPE = "text/plain; charset=utf-8" as const;
+/** Exact file bytes are never served as anything a browser would render or sniff. */
+export const REVIEW_BYTES_CONTENT_TYPE = "application/octet-stream" as const;
 
 interface ReviewResourceDescriptorBase {
   id: string;
@@ -82,10 +98,23 @@ export interface ReviewSourceResourceV1 extends ReviewResourceDescriptorBase {
   sourceIdentity: string;
 }
 
+/**
+ * One side's exact bytes, for files whose loader can read them (image previews).
+ *
+ * Catalogued only when the file has a byte reader, and only for the sides its change kind
+ * has: an added file has no old bytes, a deleted file no new ones.
+ */
+export interface ReviewBytesResourceV1 extends ReviewResourceDescriptorBase {
+  kind: "bytes";
+  contentType: typeof REVIEW_BYTES_CONTENT_TYPE;
+  side: ReviewSide;
+}
+
 export type ReviewResourceDescriptorV1 =
   | ReviewCanonicalFileResourceV1
   | ReviewPatchResourceV1
-  | ReviewSourceResourceV1;
+  | ReviewSourceResourceV1
+  | ReviewBytesResourceV1;
 
 /** Whether one descriptor has been measured, and can therefore be verified when read. */
 export function isMaterializedReviewResource(descriptor: ReviewResourceDescriptorV1) {
@@ -116,9 +145,8 @@ export function parseReviewResourceId(value: unknown): ReviewResourceAddress | u
   if (typeof value !== "string") {
     return undefined;
   }
-  const match = /^resource:(canonical-file|patch|source):(?:(old|new):)?(file:[0-9a-f]+)$/.exec(
-    value,
-  );
+  const match =
+    /^resource:(canonical-file|patch|source|bytes):(?:(old|new):)?(file:[0-9a-f]+)$/.exec(value);
   if (!match) {
     return undefined;
   }
@@ -126,7 +154,7 @@ export function parseReviewResourceId(value: unknown): ReviewResourceAddress | u
   const side = match[2] as ReviewSide | undefined;
   // Only source resources are sided, and every source resource is; anything else was
   // assembled by hand rather than by `reviewResourceId`.
-  if ((kind === "source") !== (side !== undefined)) {
+  if ((kind === "source" || kind === "bytes") !== (side !== undefined)) {
     return undefined;
   }
   return { kind, fileKey: match[3]!, ...(side ? { side } : {}) };

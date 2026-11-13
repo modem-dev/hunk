@@ -160,6 +160,9 @@ export interface ClearCommentsToolInput extends SessionTargetInput {
 export interface ReadReviewResourceToolInput
   extends SessionTargetInput, HunkReviewResourceReadEnvelopeV1 {}
 
+/** Reload the session's current input with no caller-supplied arguments (F4 allowlist). */
+export interface RefreshReviewToolInput extends SessionTargetInput {}
+
 /** One semantic review action, brokered to the producer that owns the review state. */
 export interface ApplyReviewActionToolInput
   extends SessionTargetInput, HunkReviewActionEnvelopeV1 {}
@@ -373,5 +376,6 @@ export type HunkSessionServerMessage =
   | SessionServerMessage<"clear_comments", ClearCommentsToolInput>
   | SessionServerMessage<"read_review_resource", ReadReviewResourceToolInput>
   | SessionServerMessage<"apply_review_action", ApplyReviewActionToolInput>
+  | SessionServerMessage<"refresh_review", RefreshReviewToolInput>
   | SessionServerMessage<"highlight", HighlightToolInput>
   | SessionServerMessage<"clear_highlights", ClearHighlightsToolInput>;

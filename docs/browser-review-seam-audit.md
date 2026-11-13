@@ -578,6 +578,14 @@ here so the extraction happens before the duplication exists. Design detail in
   dialog access); browser invocation is remote code execution into the terminal session.
   Excluded from the browser until an explicit per-command allowlist exists in the registration
   capability list. This is a scope boundary, not a missing feature.
+  _Advanced (M2c)_: the first allowlist entry exists. `POST /review-api/<session>/refresh`
+  reloads the session's current input through `ReviewReloadCoordinator.refreshCurrent` —
+  exactly what the `r` key reopens — with no caller-supplied arguments (any body is refused),
+  capability-gated, coalesced per session at the daemon and per queue in the session, and
+  honored by terminal and headless sessions alike. It is deliberately a route rather than a
+  review action: it is a host effect, not review semantics, so `REVIEW_INTENT_TYPES` and the
+  action envelope stay free of host commands. Every other host and extension command remains
+  unreachable from a browser.
 
 ## G. Other preemptive seams (same class as F)
 

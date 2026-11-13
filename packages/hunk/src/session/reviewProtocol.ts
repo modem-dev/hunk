@@ -41,6 +41,7 @@ import {
   REVIEW_CANONICAL_FILE_CONTENT_TYPE,
   REVIEW_PATCH_CONTENT_TYPE,
   REVIEW_SOURCE_CONTENT_TYPE,
+  REVIEW_BYTES_CONTENT_TYPE,
   type ReadReviewResourceRequest,
   type ReviewResourceChunkV1,
   type ReviewRequestErrorCode,
@@ -275,8 +276,24 @@ export interface HunkReviewFailureV1 {
   currentGeneration: string;
 }
 
+/**
+ * Why a refresh could not replace the review (F4's one allowlisted host command).
+ *
+ * `refresh-unavailable`: the review's input cannot be reopened (stdin), or the session is
+ * shutting down. `refresh-failed`: reopening it failed; the previous review stays mounted.
+ */
+export type HunkReviewRefreshErrorCode = "refresh-unavailable" | "refresh-failed";
+
+/** What a session answers one refresh with: the position the reloaded review reached. */
+export type HunkReviewRefreshResultV1 =
+  | { ok: true; generation: string; stateRevision: number }
+  | { ok: false; code: HunkReviewRefreshErrorCode; message: string };
+
 /** Everything a producer may answer a review command with. */
-export type HunkReviewResultV1 = HunkReviewActionResultV1 | HunkReviewResourceReadResultV1;
+export type HunkReviewResultV1 =
+  | HunkReviewActionResultV1
+  | HunkReviewResourceReadResultV1
+  | HunkReviewRefreshResultV1;
 
 // -- Parsing ----------------------------------------------------------------------------
 
@@ -656,6 +673,7 @@ const RESOURCE_CONTENT_TYPE_BY_KIND: Record<ReviewResourceKind, string> = {
   "canonical-file": REVIEW_CANONICAL_FILE_CONTENT_TYPE,
   patch: REVIEW_PATCH_CONTENT_TYPE,
   source: REVIEW_SOURCE_CONTENT_TYPE,
+  bytes: REVIEW_BYTES_CONTENT_TYPE,
 };
 
 /**
@@ -707,6 +725,11 @@ export function parseHunkReviewResourceDescriptor(
   }
   if (address.kind === "source") {
     return record.side === address.side && isIdentifier(record.sourceIdentity)
+      ? (record as unknown as ReviewResourceDescriptorV1)
+      : undefined;
+  }
+  if (address.kind === "bytes") {
+    return record.side === address.side && record.sourceIdentity === undefined
       ? (record as unknown as ReviewResourceDescriptorV1)
       : undefined;
   }

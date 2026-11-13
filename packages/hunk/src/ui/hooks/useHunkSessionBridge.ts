@@ -5,6 +5,7 @@ import type { CliInput } from "../../core/run/commandInputs";
 import { buildSessionSnapshotState } from "../../app/review/reviewSessionProjections";
 import { createHunkSessionBridge } from "../../app/session/bridge";
 import type { HunkSessionBrokerClient } from "../../session/broker/brokerClient";
+import type { HunkReviewRefreshResultV1 } from "../../session/reviewProtocol";
 import type {
   ReloadedSessionResult,
   ReloadSessionOptions,
@@ -35,6 +36,7 @@ export function useHunkSessionBridge({
   onConnectionNotice,
   openAgentNotes,
   reloadSession,
+  refreshReview,
   removeLiveComment,
   reviewNoteCount,
   reviewNoteSummaries,
@@ -65,6 +67,8 @@ export function useHunkSessionBridge({
     options?: ReloadSessionOptions,
   ) => Promise<ReloadedSessionResult>;
   removeLiveComment: TerminalReview["removeLiveComment"];
+  /** Reload the current input for a browser's refresh; absent means refresh is unavailable. */
+  refreshReview?: () => Promise<HunkReviewRefreshResultV1>;
   reviewNoteCount: number;
   reviewNoteSummaries: SessionReviewNoteSummary[];
   /** The producer that answers brokered review resource reads and actions for this session. */
@@ -91,6 +95,7 @@ export function useHunkSessionBridge({
         reloadSession: (nextInput, options) => reloadSession(nextInput, { ...options }),
         removeLiveComment,
         reviewProducer,
+        refreshReview,
       }),
     [
       addAgentLineHighlight,
@@ -103,6 +108,7 @@ export function useHunkSessionBridge({
       reloadSession,
       removeLiveComment,
       reviewProducer,
+      refreshReview,
     ],
   );
 

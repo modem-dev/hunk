@@ -42,6 +42,7 @@ import type { ExtensionNotifyType, ExtensionLoadResult } from "../extensions/typ
 import type { ReviewProducer } from "../app/review/producer";
 import { buildReviewPresentationDefaults, buildReviewSharedState } from "../app/review/sharedState";
 import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
+import type { HunkReviewRefreshResultV1 } from "../session/reviewProtocol";
 import type { ReloadedSessionResult, ReloadSessionOptions } from "../session/types";
 // Keep lightweight interaction chrome synchronous: first-use lazy suspension otherwise
 // delays its visible commit behind React's Suspense fallback/retry throttle.
@@ -179,6 +180,7 @@ export function App({
   onViewPreferencesChange,
   onRegisterWorkspaceRefreshRequest,
   onReloadSession,
+  onRefreshReview,
   onRequestExtensionReviewReload,
   onWorkspaceWriteCompleted,
   reviewProducer,
@@ -206,6 +208,8 @@ export function App({
     nextInput: CliInput,
     options?: ReloadSessionOptions,
   ) => Promise<ReloadedSessionResult>;
+  /** Reload the current input for a browser's refresh, coalesced by the reload coordinator. */
+  onRefreshReview?: () => Promise<HunkReviewRefreshResultV1>;
   /** Queue a coalesced reload against the review current when host execution begins. */
   onRequestExtensionReviewReload: (
     reviewGeneration: AppBootstrap,
@@ -939,6 +943,7 @@ export function App({
     noteMarkupWidth: stmlEnabled ? noteMarkupWidth : undefined,
     openAgentNotes,
     reloadSession: onReloadSession,
+    refreshReview: onRefreshReview,
     removeLiveComment: review.removeLiveComment,
     reviewProducer,
     reviewNoteCount: review.reviewNoteCount,

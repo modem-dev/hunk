@@ -61,6 +61,7 @@ import {
   type HunkReviewHttpFailureV1,
   type HunkReviewHttpRoute,
   type HunkReviewPublicationBodyV1,
+  type HunkReviewRefreshBodyV1,
   type HunkReviewStateBodyV1,
 } from "../reviewHttpProtocol";
 import {
@@ -114,6 +115,8 @@ const REVIEW_ERROR_STATUS: Record<HunkReviewClientErrorCodeV1, number> = {
   "too-many-streams": 503,
   "state-too-large": 413,
   "selection-is-local": 403,
+  "refresh-unavailable": 409,
+  "refresh-failed": 502,
 };
 
 /**
@@ -130,6 +133,9 @@ const REVIEW_SECURITY_HEADERS: Record<string, string> = {
   "x-content-type-options": "nosniff",
   "x-frame-options": "DENY",
 };
+
+/** A refresh carries no body; anything past this is refused as oversized without reading on. */
+const MAX_REFRESH_BODY_BYTES = 1024;
 
 /** How often an idle stream is kept alive. */
 const DEFAULT_HEARTBEAT_MS = 15_000;
@@ -263,6 +269,8 @@ export class BrowserReviewServer {
         return this.requireMethod(request, "GET") ?? this.handlePublication(route.sessionId);
       case "state":
         return this.requireMethod(request, "GET") ?? this.handleState(route.sessionId);
+      case "refresh":
+        return this.requireMethod(request, "POST") ?? this.handleRefresh(request, route.sessionId);
       case "events":
         return this.requireMethod(request, "GET") ?? this.handleEvents(request, authorization);
       case "resource":
@@ -365,6 +373,44 @@ export class BrowserReviewServer {
   }
 
   /**
+   * Reload one session's review from its own input (F4's one allowlisted host command).
+   *
+   * Takes no arguments: any request body is refused, an oversized one as
+   * `payload-too-large` and any other as `invalid-request`, before the session is asked. The
+   * daemon coalesces concurrent refreshes per session and the session serializes them with
+   * every other reload, so a client may press refresh as often as it likes.
+   */
+  private async handleRefresh(request: Request, sessionId: string): Promise<Response> {
+    let body: string;
+    try {
+      body = await readRequestTextWithLimit(request, MAX_REFRESH_BODY_BYTES);
+    } catch (error) {
+      return this.failure(
+        error instanceof PayloadTooLargeError ? "payload-too-large" : "invalid-request",
+      );
+    }
+    if (body.length > 0) {
+      return this.failure("invalid-request", {
+        message: "A refresh takes no arguments; send an empty body.",
+      });
+    }
+    if (!this.state.getReviewPublication(sessionId)) {
+      return this.failure("no-publication");
+    }
+    const result = await this.state.refreshReview(sessionId);
+    if (!result.ok) {
+      return this.failure(result.code, { message: result.message });
+    }
+    const response: HunkReviewRefreshBodyV1 = {
+      ok: true,
+      protocolVersion: HUNK_REVIEW_PROTOCOL_VERSION,
+      sessionId,
+      publication: { generation: result.generation, stateRevision: result.stateRevision },
+    };
+    return this.json(response);
+  }
+
+  /**
    * Serve one session's shared-state snapshot.
    *
    * Read through the daemon's single resource loop (`loadReviewSharedState`): single-flight per
@@ -455,6 +501,9 @@ export class BrowserReviewServer {
       headers: this.headers({
         "accept-ranges": "bytes",
         "content-type": descriptor?.contentType ?? "application/octet-stream",
+        // Exact file bytes (image previews) are data for the client to decode, never a
+        // document: octet-stream, nosniff, the deny-all CSP, and an attachment disposition.
+        ...(descriptor?.kind === "bytes" ? { "content-disposition": "attachment" } : {}),
         ...(partial
           ? { "content-range": `bytes ${start}-${Math.max(start, end)}/${bytes.byteLength}` }
           : {}),

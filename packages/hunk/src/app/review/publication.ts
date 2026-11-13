@@ -22,10 +22,11 @@ import {
   REVIEW_CANONICAL_FILE_CONTENT_TYPE,
   REVIEW_PATCH_CONTENT_TYPE,
   REVIEW_SOURCE_CONTENT_TYPE,
+  REVIEW_BYTES_CONTENT_TYPE,
   reviewResourceId,
   type ReviewResourceDescriptorV1,
 } from "../../core/review/resources";
-import type { ReviewDocumentV1, ReviewFileV1 } from "../../core/review/types";
+import type { ReviewDocumentV1, ReviewFileV1, ReviewSide } from "../../core/review/types";
 import type { DiffFile } from "../../core/changeset/model";
 
 export interface ReviewPublication {
@@ -53,7 +54,20 @@ export interface ReviewPublication {
  * only when the file has expandable source behind it, and only for the side that fills its
  * gaps: offering the other side would advertise a read no gap in this file can use.
  */
-function fileResources(file: ReviewFileV1, generation: string): ReviewResourceDescriptorV1[] {
+/** The sides a file's change kind has bytes for. */
+function bytesSides(file: ReviewFileV1): ReviewSide[] {
+  return file.changeKind === "new"
+    ? ["new"]
+    : file.changeKind === "deleted"
+      ? ["old"]
+      : ["old", "new"];
+}
+
+function fileResources(
+  file: ReviewFileV1,
+  generation: string,
+  hasBytes: boolean,
+): ReviewResourceDescriptorV1[] {
   const base = { generation, fileKey: file.key };
   const resources: ReviewResourceDescriptorV1[] = [
     {
@@ -81,6 +95,17 @@ function fileResources(file: ReviewFileV1, generation: string): ReviewResourceDe
       sourceIdentity: file.sourceIdentity,
     });
   }
+  if (hasBytes) {
+    for (const side of bytesSides(file)) {
+      resources.push({
+        ...base,
+        id: reviewResourceId({ kind: "bytes", fileKey: file.key, side }),
+        kind: "bytes",
+        contentType: REVIEW_BYTES_CONTENT_TYPE,
+        side,
+      });
+    }
+  }
   return resources;
 }
 
@@ -102,7 +127,9 @@ export function buildReviewPublication({
     generation,
     document,
     manifest: buildReviewContentManifest(document),
-    resources: document.files.flatMap((file) => fileResources(file, generation)),
+    resources: document.files.flatMap((file, index) =>
+      fileResources(file, generation, files[index]?.byteFetcher !== undefined),
+    ),
     diffFilesByKey: new Map(
       document.files.flatMap((file, index) => {
         const diffFile = files[index];
