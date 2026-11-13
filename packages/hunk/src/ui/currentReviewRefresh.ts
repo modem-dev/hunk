@@ -11,8 +11,7 @@
 
 import type { SessionReloadReason } from "../extension-api/types";
 import type { CliInput, LayoutMode } from "../core/run/commandInputs";
-import { canReloadInput } from "../core/run/inputReload";
-import { isVcsReviewInput } from "../core/vcs";
+import { deriveReviewRefreshRequest } from "../core/run/reviewRefresh";
 
 /** Live view settings that must survive an in-session review refresh. */
 export interface CurrentReviewViewOptions {
@@ -73,10 +72,8 @@ export function deriveWorkspaceRefreshRequest({
   sourceLabel: string;
   view: CurrentReviewViewOptions;
 }): WorkspaceRefreshRequest | null {
-  if (!canReloadInput(input)) return null;
-
-  return {
-    nextInput: withCurrentReviewViewOptions(input, view),
-    sourcePath: isVcsReviewInput(input) ? sourceLabel : undefined,
-  };
+  const request = deriveReviewRefreshRequest(input, sourceLabel);
+  return request
+    ? { ...request, nextInput: withCurrentReviewViewOptions(request.nextInput, view) }
+    : null;
 }
