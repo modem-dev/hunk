@@ -478,10 +478,13 @@ export class BrowserReviewServer {
 
     let bytes: Uint8Array;
     try {
+      // A reader that goes away (a page aborting its reads on reload) leaves the slot queue at
+      // once instead of waiting its turn and then assembling bytes nobody wants.
       bytes = await this.state.loadReviewResource(
         route.sessionId,
         route.generation,
         route.resourceId,
+        { signal: request.signal },
       );
     } catch (error) {
       return this.resourceFailure(error);
