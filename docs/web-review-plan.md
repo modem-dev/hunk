@@ -1,9 +1,9 @@
 # Web review plan
 
-> **Status (2026-11-13): proposed.** Nothing in this document is built. It revises Phases 5 and 6
-> of [`browser-review-rebuild.md`](browser-review-rebuild.md) for decisions made after that plan
-> was written, and adds the web-only tools that plan never scoped. Phases 0–4 there are landed
-> and stay as they are.
+> **Status (2026-11-13): accepted; implementation in progress.** This document revises Phases 5
+> and 6 of [`browser-review-rebuild.md`](browser-review-rebuild.md) for decisions made after that
+> plan was written, and adds the web-only tools that plan never scoped. Phases 0–4 there are
+> landed and stay as they are. Each milestone lands as a stack of pull requests.
 
 A browser client for Hunk reviews, served by the existing session daemon. It keeps Hunk's
 structure, keys, and themes so terminal users recognize it, and adds tools a terminal cannot
@@ -101,11 +101,11 @@ applies selection and navigation intents to its own local state and forwards sha
 Each milestone is a stack of small PRs. M1–M3 change no user-reachable behavior and ship empty
 changesets. M5 carries the `minor` changeset that announces the feature.
 
-### M0 — Plan of record
+### M0 — Plan of record (done)
 
-- Rewrite Phases 5–6 of `browser-review-rebuild.md` to point here.
-- Record the G1 (option classification), G2 (selection and authorship policy), and E2 (theme)
-  decisions in `browser-review-seam-audit.md`.
+- Phases 5–6 of `browser-review-rebuild.md` point here.
+- `browser-review-seam-audit.md` records the G1 (option classification), G2 (selection and
+  authorship policy), and E2 (theme) decisions.
 
 ### M1 — Headless review host
 
