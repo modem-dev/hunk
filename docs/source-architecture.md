@@ -28,7 +28,7 @@ private.
 | Path                                | Ownership                                                                                                      |
 | ----------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | `packages/hunk/src/app/`            | CLI parsing, startup plans, executable composition, and shared session bootstrap                               |
-| `packages/hunk/src/app/review/`     | Review publication, resource caching, chunking, and producer-side protocol projection                          |
+| `packages/hunk/src/app/review/`     | Live review ownership (`ReviewSessionHost`), publication, resource caching, and producer projection            |
 | `packages/hunk/src/app/session/`    | Mounted review runtime, registration, bridge, and reload authorization                                         |
 | `packages/hunk/src/core/`           | Product models, non-rendering runtime primitives, and policy without a narrower owner                          |
 | `packages/hunk/src/core/changeset/` | Changeset model and acquisition: loaders, per-file construction, sidecars, sources, and hunk formatting        |
@@ -69,6 +69,8 @@ packages/hunk/src/main.tsx
            -> HunkSessionHost routes history and review in one React root
            -> AppHost owns reload, extension adoption, and review publication ordering
            -> App owns review interaction and layout coordination
+              -> useTerminalReview adapts app/review/reviewSessionHost.ts, the renderer-free
+                 owner of the live review store
            -> pane/diff modules plan, window, and paint terminal rows with Pierre metadata
 ```
 
@@ -116,6 +118,13 @@ work such as extension discovery, notices, and mounted UI state.
 user-extension registry authority and retirement. `AppHost` owns review reload serialization,
 content loading, broker publication, React commit, and post-layout event ordering. History closes
 its provider cursor before extension shutdown.
+
+`ReviewSessionHost` (`app/review/reviewSessionHost.ts`) owns one live review without React: the
+`ReviewStore`, intent facts, live-comment ingestion, agent navigation and highlights, gap source
+loading, file-set replacement, and the session-export summaries. `useTerminalReview` creates one
+host per mounted review and keeps only terminal projection, the measured line cursor, and
+presentation-scoped navigation; renderer facts such as measured rows and note width reach the host
+as explicit optional inputs.
 
 Bundled Git, Jujutsu, and Sapling implementations register through the public extension contract in
 `extensions/default/vcs/index.ts`. `app/vcsCatalog.ts` composes those registrations into the

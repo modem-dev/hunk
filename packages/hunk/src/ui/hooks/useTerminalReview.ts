@@ -2,13 +2,16 @@
  * Terminal review state, projected from the shared review store.
  *
  * The semantic state of a review — selection, reveal intent, filter, note visibility,
- * notes, drafts, and gap expansion — lives in `packages/hunk/src/core/review`, so the terminal, the
- * session bridge, and later surfaces all read one answer. This hook owns what is
- * genuinely terminal: projecting that state onto the diff-file model the panes render,
- * the measured current-line cursor, and the source loading a gap expansion triggers.
+ * notes, drafts, and gap expansion — lives in `packages/hunk/src/core/review`, and one live
+ * review is owned by `ReviewSessionHost` (`app/review/reviewSessionHost.ts`): the store, intent
+ * facts, live-comment ingestion, agent navigation and highlights, and gap source loading. This
+ * hook subscribes to that host and keeps what is genuinely terminal: projecting state onto the
+ * diff-file model the panes render, the measured current-line cursor and its reveal requests,
+ * and the presentation-scoped navigation the panes expose.
  *
  * `App` uses it for rendering and keyboard or menu actions; the session bridge uses the
- * same hook for daemon-driven navigation and agent notes.
+ * same hook for daemon-driven navigation and agent notes, which the host answers with this
+ * hook's measured facts supplied as explicit inputs.
  */
 import {
   useCallback,
@@ -19,29 +22,9 @@ import {
   useRef,
   useState,
 } from "react";
-import {
-  buildLiveComment,
-  findDiffFileByPath,
-  resolveCommentTarget,
-  type UserNoteLineTarget,
-} from "../../core/liveComments";
-import {
-  builtinAppCommand,
-  lowerAppCommandToReviewIntent,
-  type AppCommandId,
-  type AppCommandLoweringContext,
-} from "../../core/run/commandCatalog";
-import { SourceTextTooLargeError } from "../../core/changeset/fileSource";
-import {
-  applyReviewIntent,
-  requireReviewReplyParent,
-  ReviewIntentPlanningError,
-  type ReviewIntent,
-  type ReviewIntentFacts,
-  type ReviewSelectionChangedOutcome,
-} from "../../core/review/intents";
+import type { UserNoteLineTarget } from "../../core/liveComments";
+import type { ReviewSelectionChangedOutcome } from "../../core/review/intents";
 import { projectReviewDocument } from "../../core/review/document";
-import { reviewExpansionSide } from "../../core/review/expansion";
 import { reviewHunkIndexForLine } from "../../core/review/geometry";
 import {
   planReviewSelectionMove,
@@ -50,7 +33,6 @@ import {
   type ReviewNavigationFile,
 } from "../../core/review/navigation";
 import {
-  reviewFileKeysWithRetiredContent,
   selectActiveStoredReviewNote,
   selectExpandedGapIdsByFileKey,
   selectNavigableStoredReviewNotes,
@@ -58,18 +40,26 @@ import {
   selectThreadedStoredReviewNotes,
   selectVisibleThreadedStoredReviewNotes,
 } from "../../core/review/selectors";
-import {
-  REVIEW_VIEWPORT_ANCHOR_REVEAL,
-  reviewNoteAnchorLine,
-  reviewNoteOwnerHunkIndex,
-  type ReviewRevealRequest,
-} from "../../core/review/state";
+import { REVIEW_VIEWPORT_ANCHOR_REVEAL, reviewNoteAnchorLine } from "../../core/review/state";
 import type { ReviewNoteTargetV1 } from "../../core/review/types";
-import { createReviewStore, type ReviewStore } from "../../core/review/store";
-import { noDiffFileMatchesMessage } from "../../session/agent/errors";
+import type { ReviewStore } from "../../core/review/store";
 import type { DiffFile } from "../../core/changeset/model";
 import type { LayoutMode } from "../../core/run/commandInputs";
 import type { ExtensionReviewPresentationScope } from "../../extension-api/types";
+import {
+  ReviewSessionHost,
+  revealRequestFor,
+  type MeasureMarkupFn,
+  type ReviewGapToggle,
+  type ReviewSelectionOptions,
+  type RevealedLineResult,
+} from "../../app/review/reviewSessionHost";
+import {
+  buildLiveCommentSummaries,
+  buildReviewNoteSummaries,
+  buildReviewSessionAnnotationIndex,
+  indexReviewFiles,
+} from "../../app/review/reviewSessionProjections";
 import type {
   AppliedCommentBatchResult,
   AppliedCommentResult,
@@ -87,13 +77,7 @@ import type {
   SessionReviewNoteSummary,
 } from "../../session/types";
 import type { FileSourceStatus } from "../diff/expandCollapsedRows";
-import { carryOverLineHighlights } from "../highlights/reconcile";
-import {
-  MAX_LINE_HIGHLIGHTS_PER_FILE,
-  MAX_LINE_HIGHLIGHTS_PER_LINE,
-  validateLineHighlights,
-  type ValidatedLineHighlight,
-} from "../highlights/validate";
+import type { ValidatedLineHighlight } from "../highlights/validate";
 
 import type { LineRevealPlacement } from "../lib/hunkScroll";
 import {
@@ -112,30 +96,20 @@ import {
   type ReviewVerticalStop,
 } from "../lib/reviewVerticalStops";
 import { agentNoteMarkupWidth } from "../lib/agentNoteGeometry";
-import { reviewNoteSource } from "../lib/agentAnnotations";
 import { STML_REFERENCE_WIDTH, validateStmlMarkup } from "../lib/stml/layout";
 import {
   groupStoredNotesByFileId,
   groupThreadedStoredNotesByFileId,
-  liveCommentToStoredNote,
   storedDraftToDraftNote,
   storedNoteToLiveComment,
   storedNoteToUserNote,
-  storedReviewNoteTarget,
   type DraftReviewNote,
   type UserReviewNote,
 } from "../lib/reviewNoteMapping";
-import { buildReviewAnnotationIndex } from "../../core/review/annotations";
-import {
-  buildReviewStreamState,
-  buildSelectedHunkSummary,
-  planTerminalSelectionReconciliation,
-  resolveReviewNavigationTarget,
-} from "../lib/reviewState";
+import { buildReviewStreamState, planTerminalSelectionReconciliation } from "../lib/reviewState";
 import { filterFilesByExtensionPresentationScope } from "../lib/extensionPresentationScope";
 
-const EMPTY_AGENT_LINE_HIGHLIGHTS: ReadonlyMap<string, readonly ValidatedLineHighlight[]> =
-  new Map();
+export type { RevealedLineResult, ReviewSelectionOptions };
 
 /**
  * Observe the review store as ordinary React state.
@@ -154,22 +128,16 @@ function useReviewStoreSnapshot(store: ReviewStore) {
   return snapshot;
 }
 
-/** Re-raise a missing-note rejection as the message agent surfaces already report. */
-function withMissingNoteMessage<T>(run: () => T, message: string): T {
-  try {
-    return run();
-  } catch (error) {
-    if (error instanceof ReviewIntentPlanningError && error.code === "note-not-found") {
-      throw new Error(message);
-    }
-    throw error;
-  }
-}
-
-interface SourceLoadRequest {
-  fetcher: NonNullable<DiffFile["sourceFetcher"]>;
-  requestId: number;
-  side: "old" | "new";
+/**
+ * Observe the host's agent attention marks as ordinary React state, like the store snapshot.
+ */
+function useAgentLineHighlights(host: ReviewSessionHost) {
+  const [highlights, setHighlights] = useState(() => host.getAgentLineHighlights());
+  useEffect(() => {
+    setHighlights(host.getAgentLineHighlights());
+    return host.subscribeAgentLineHighlights(() => setHighlights(host.getAgentLineHighlights()));
+  }, [host]);
+  return highlights;
 }
 
 /**
@@ -185,32 +153,6 @@ export interface LineCursorRevealRequest {
   target?: { fileId: string; stableKey: string };
 }
 
-/**
- * What a `revealLine` call could actually reach.
- *
- * `"line"` landed on the requested line, `"hunk"` fell back to the hunk containing it because
- * the review stream draws no row for that line, and `"none"` means no hunk covers it either.
- */
-export type RevealedLineResult = "line" | "hunk" | "none";
-
-export interface ReviewSelectionOptions {
-  alignFileHeaderTop?: boolean;
-  scrollToNote?: boolean;
-}
-
-/**
- * Translate the terminal's selection options into the shared reveal request.
- *
- * Selections that deliberately leave the viewport alone do not come through here at all:
- * that is the viewport-anchor policy, expressed as its own intent.
- */
-function revealRequestFor(options?: ReviewSelectionOptions): ReviewRevealRequest {
-  return {
-    anchor: options?.alignFileHeaderTop ? "file-top" : "hunk",
-    scrollToNote: Boolean(options?.scrollToNote),
-  };
-}
-
 /** Location a keyboard-started note adopts from the selected note card. */
 export interface ActiveNoteTarget {
   fileId: string;
@@ -223,9 +165,9 @@ export interface TerminalReview {
   /** Projected content and source identities keyed by runtime file id. */
   semanticFileIdentityByFileId: ReadonlyMap<string, string>;
   /**
-   * The semantic review store this controller owns.
+   * The semantic review store of the `ReviewSessionHost` this controller mounted.
    *
-   * Exposed so the host can attach it to the producer that publishes this review: a
+   * Exposed so the app can attach it to the producer that publishes this review: a
    * brokered action and a key press must plan against the same state, not against two
    * stores that happen to hold the same content.
    */
@@ -337,7 +279,7 @@ export interface AgentNoteGeometrySnapshot {
   width: number;
 }
 
-/** Own the shared review stream state used by both the UI and session bridge. */
+/** Mount one review session host and project its state for the UI and session bridge. */
 export function useTerminalReview({
   files,
   initialShowAgentNotes = false,
@@ -382,59 +324,38 @@ export function useTerminalReview({
     () => projectReviewDocument(files, { sourceLabel }),
     [files, sourceLabel],
   );
-  const [store] = useState(() =>
-    createReviewStore(document, { showAgentNotes: initialShowAgentNotes }),
+  const [host] = useState(
+    () =>
+      new ReviewSessionHost({
+        files,
+        sourceLabel,
+        document,
+        showAgentNotes: initialShowAgentNotes,
+        stmlEnabled,
+      }),
   );
-  const sourceLoadRequestsRef = useRef(new Map<string, SourceLoadRequest>());
-  const nextSourceLoadRequestIdRef = useRef(1);
+  const store = host.store;
   const lineCursorBeforeExpandRef = useRef(new Map<string, LineCursor>());
 
-  const reconciledDocumentRef = useRef(document);
-
-  // Agent attention marks, keyed by runtime file id. A ref backs the state so daemon
-  // handlers can compute counts synchronously; both always move together.
-  const agentLineHighlightsRef = useRef(EMPTY_AGENT_LINE_HIGHLIGHTS);
-  const [agentLineHighlightsByFileId, setAgentLineHighlightsByFileId] = useState(
-    EMPTY_AGENT_LINE_HIGHLIGHTS,
-  );
-  const commitAgentLineHighlights = useCallback(
-    (next: ReadonlyMap<string, readonly ValidatedLineHighlight[]>) => {
-      agentLineHighlightsRef.current = next;
-      setAgentLineHighlightsByFileId(next);
-    },
-    [],
-  );
+  useLayoutEffect(() => {
+    host.setStmlEnabled(stmlEnabled);
+  }, [host, stmlEnabled]);
 
   // Adopt a replacement file list in the same commit that renders it, so a soft reload
-  // never paints new files against state the previous patch produced. The store retires
-  // content-derived state itself; the work here is the cursor and in-flight source
-  // bookkeeping only this renderer knows about.
+  // never paints new files against state the previous patch produced. The host and its
+  // store retire content-derived state; the work here is the cursor bookkeeping only this
+  // renderer knows about.
   useLayoutEffect(() => {
-    const previous = reconciledDocumentRef.current;
-    if (previous === document) {
-      return;
-    }
-
-    reconciledDocumentRef.current = document;
-    for (const fileKey of reviewFileKeysWithRetiredContent(previous, document)) {
-      sourceLoadRequestsRef.current.delete(fileKey);
+    for (const fileKey of host.replaceFiles(files, { sourceLabel, document })) {
       for (const restorePointKey of lineCursorBeforeExpandRef.current.keys()) {
         if (restorePointKey.startsWith(`${fileKey}:`)) {
           lineCursorBeforeExpandRef.current.delete(restorePointKey);
         }
       }
     }
-    // Marks address exact character offsets in specific line content, and nothing re-derives
-    // them after a reload the way extension highlighters re-run — a stale mark would silently
-    // light up different text. Files that came back with identical content keep their marks,
-    // re-keyed onto the replacement runtime ids; every other mark is dropped.
-    if (agentLineHighlightsRef.current.size > 0) {
-      const carried = carryOverLineHighlights(agentLineHighlightsRef.current, previous, document);
-      commitAgentLineHighlights(carried.size > 0 ? carried : EMPTY_AGENT_LINE_HIGHLIGHTS);
-    }
-    store.dispatch({ type: "document/reconcile", document });
-  }, [commitAgentLineHighlights, document, store]);
+  }, [document, files, host, sourceLabel]);
 
+  const agentLineHighlightsByFileId = useAgentLineHighlights(host);
   const state = useReviewStoreSnapshot(store);
   const filter = state.filter;
   const scrollToNote = state.reveal.scrollToNote;
@@ -456,14 +377,11 @@ export function useTerminalReview({
     | { kind: "restore"; cursor: LineCursor }
     | null
   >(null);
-  // Monotonic suffix that keeps `user:*` note ids unique within one millisecond.
-  const userNoteSequenceRef = useRef(0);
-  const draftNoteSequenceRef = useRef(0);
 
-  const keyByFileId = useMemo(
-    () => new Map(document.files.map((file) => [file.runtimeId, file.key] as const)),
-    [document],
-  );
+  // Render-time lookups for the files this render draws; the host adopts the same files in the
+  // layout effect above.
+  const fileIndex = useMemo(() => indexReviewFiles(document, files), [document, files]);
+  const { keyByFileId, fileByKey } = fileIndex;
   const semanticFileIdentityByFileId = useMemo(
     () =>
       new Map(
@@ -477,16 +395,6 @@ export function useTerminalReview({
       ),
     [document],
   );
-  const fileByKey = useMemo(() => {
-    const byRuntimeId = new Map(files.map((file) => [file.id, file] as const));
-    return new Map(
-      document.files.flatMap((semantic) => {
-        const file = byRuntimeId.get(semantic.runtimeId);
-        return file ? [[semantic.key, file] as const] : [];
-      }),
-    );
-  }, [document, files]);
-
   const liveCommentsByFileId = useMemo(
     () => groupStoredNotesByFileId(state.liveNotes, fileByKey, storedNoteToLiveComment),
     [fileByKey, state.liveNotes],
@@ -574,11 +482,11 @@ export function useTerminalReview({
     () => filterFilesByExtensionPresentationScope(userVisibleFiles, presentationScope),
     [presentationScope, userVisibleFiles],
   );
-  // Which files and hunks carry notes, for the shared annotated-navigation planner. Built
-  // from the merged stream, so a live comment that just arrived is navigable immediately.
+  // Which files and hunks carry notes, for the shared annotated-navigation planner, from the
+  // same derivation the host plans canonical moves with.
   const annotations = useMemo(
-    () => buildReviewAnnotationIndex(allFiles, keyByFileId, storedReviewNoteTarget),
-    [allFiles, keyByFileId],
+    () => buildReviewSessionAnnotationIndex(files, fileIndex, state),
+    [fileIndex, files, state.liveNotes, state.userNotes],
   );
   const projectedNavigationFiles = useMemo<ReviewNavigationFile[]>(
     () =>
@@ -641,12 +549,8 @@ export function useTerminalReview({
     : undefined;
   const selectedHunk = selectedFile?.metadata.hunks[selectedHunkIndex];
 
-  /** Read the normalized selection from the store without waiting for a React render. */
-  const getSelection = useCallback(() => {
-    const selection = selectNormalizedSelection(store.getSnapshot());
-    const file = selection.fileKey ? fileByKey.get(selection.fileKey) : undefined;
-    return { fileId: file?.id ?? null, hunkIndex: file ? selection.hunkIndex : null };
-  }, [fileByKey, store]);
+  /** Read the normalized selection from the host without waiting for a React render. */
+  const getSelection = useCallback(() => host.getSelection(), [host]);
 
   /**
    * Read the line the selected note card hangs from, as a new note's implicit target.
@@ -669,78 +573,28 @@ export function useTerminalReview({
   }, [fileByKey, store]);
 
   /** Run one semantic intent against the review store. */
-  const runIntent = useCallback(
-    <T extends ReviewIntent>(intent: T, facts?: ReviewIntentFacts) =>
-      applyReviewIntent(store, intent, facts),
-    [store],
-  );
-
-  /**
-   * Lower one built-in command to the intent its catalog entry declares.
-   *
-   * The terminal invokes these commands from keys, menus, and the mouse, and lowers each
-   * one here rather than restating its effect: what "toggle the note layer" or "toggle the
-   * nearest gap" means is the catalog's declaration, and this hook only supplies the facts
-   * a renderer owns and keeps the bookkeeping that follows.
-   */
-  const lowerCommand = useCallback(
-    (id: AppCommandId, facts?: Omit<AppCommandLoweringContext, "count" | "state">) =>
-      lowerAppCommandToReviewIntent(builtinAppCommand(id), {
-        count: 1,
-        state: store.getSnapshot(),
-        ...facts,
-      }),
-    [store],
+  const runIntent = useCallback<ReviewSessionHost["applyIntent"]>(
+    (intent, facts) => host.applyIntent(intent, facts),
+    [host],
   );
 
   /** Update the selection and its reveal request together so diff scrolling stays explicit. */
   const selectHunk = useCallback(
-    (fileId: string, hunkIndex: number, options?: ReviewSelectionOptions) => {
-      const fileKey = keyByFileId.get(fileId);
-      if (!fileKey) {
-        return;
-      }
-
-      runIntent({
-        type: "selection/select",
-        fileKey,
-        hunkIndex,
-        reveal: revealRequestFor(options),
-      });
-    },
-    [keyByFileId, runIntent],
+    (fileId: string, hunkIndex: number, options?: ReviewSelectionOptions) =>
+      host.selectHunk(fileId, hunkIndex, options),
+    [host],
   );
 
-  /**
-   * Adopt a selection the viewport arrived at on its own.
-   *
-   * Scrolling reports where the reviewer is; it never asks to be scrolled back, and with
-   * several surfaces attached to one review it must not move anybody else's viewport
-   * either. That is the shared anchor policy rather than a local "preserve viewport" flag.
-   */
+  /** Adopt a selection the viewport arrived at on its own, through the shared anchor policy. */
   const anchorSelection = useCallback(
-    (fileId: string, hunkIndex: number) => {
-      const fileKey = keyByFileId.get(fileId);
-      if (!fileKey) {
-        return;
-      }
-
-      runIntent({ type: "selection/anchor", fileKey, hunkIndex });
-    },
-    [keyByFileId, runIntent],
+    (fileId: string, hunkIndex: number) => host.anchorSelection(fileId, hunkIndex),
+    [host],
   );
 
   /** Jump to one file through the shared file-jump rule. */
   const selectFile = useCallback(
-    (fileId: string, options?: ReviewSelectionOptions) => {
-      const fileKey = keyByFileId.get(fileId);
-      if (!fileKey) {
-        return;
-      }
-
-      runIntent({ type: "selection/select-file", fileKey, reveal: revealRequestFor(options) });
-    },
-    [keyByFileId, runIntent],
+    (fileId: string, options?: ReviewSelectionOptions) => host.selectFile(fileId, options),
+    [host],
   );
 
   const selectVisibleFile = useCallback(
@@ -1026,7 +880,7 @@ export function useTerminalReview({
       options?: { projection?: "visible" | "canonical" },
     ) => {
       if (options?.projection === "canonical") {
-        return runIntent({ type: "selection/move", scope, delta }, { annotations });
+        return host.moveSelection(scope, delta);
       }
       const stateSnapshot = store.getSnapshot();
       const target = planReviewSelectionMove(
@@ -1048,7 +902,7 @@ export function useTerminalReview({
         hunkIndex: target.hunkIndex,
       };
     },
-    [annotations, planReviewSelectionMove, projectedNavigation, runIntent, store],
+    [host, projectedNavigation, runIntent, store],
   );
 
   /**
@@ -1080,12 +934,7 @@ export function useTerminalReview({
   );
 
   /** Set the shared file filter. */
-  const setFilter = useCallback(
-    (value: string) => {
-      runIntent({ type: "filter/set", filter: value });
-    },
-    [runIntent],
-  );
+  const setFilter = useCallback((value: string) => host.setFilter(value), [host]);
 
   /** Clear the active file filter without touching the current selection. */
   const clearFilter = useCallback(() => {
@@ -1094,353 +943,84 @@ export function useTerminalReview({
 
   /** Show or hide the shared agent note layer. */
   const setShowAgentNotes = useCallback(
-    (visible: boolean) => {
-      runIntent({ type: "notes/set-visibility", visible });
-    },
-    [runIntent],
+    (visible: boolean) => host.setShowAgentNotes(visible),
+    [host],
   );
 
   /** Flip the shared agent note layer, as the catalogued command declares that flip. */
-  const toggleAgentNotes = useCallback(() => {
-    const intent = lowerCommand("hunk.view.toggleAgentNotes");
-    if (intent) {
-      runIntent(intent);
-    }
-  }, [lowerCommand, runIntent]);
+  const toggleAgentNotes = useCallback(() => host.toggleAgentNotes(), [host]);
 
-  /** Start one full-source load and mirror its progress into review state as a status. */
-  const startSourceLoad = useCallback(
-    (file: DiffFile, fileKey: string, side: SourceLoadRequest["side"]) => {
-      if (!file.sourceFetcher) {
-        return;
-      }
-      // The fetcher caches its own resolved text; we mirror it into review state as a
-      // tagged status so the UI can distinguish loading, loaded, and error states. Skip
-      // the fetch when one is already in flight or has resolved to avoid redundant work
-      // and stale "loading" flicker.
-      const currentStatus = store.getSnapshot().sourceStatusByFileKey[fileKey]?.kind;
-      if (currentStatus === "loaded" || currentStatus === "loading") {
-        return;
-      }
-
-      const request = {
-        fetcher: file.sourceFetcher,
-        requestId: nextSourceLoadRequestIdRef.current,
-        side,
-      } satisfies SourceLoadRequest;
-      nextSourceLoadRequestIdRef.current += 1;
-      sourceLoadRequestsRef.current.set(fileKey, request);
-      store.dispatch({
-        type: "expansion/set-source-status",
-        fileKey,
-        status: { kind: "loading" },
-      });
-
-      const isCurrentRequest = () => {
-        const current = sourceLoadRequestsRef.current.get(fileKey);
-        return (
-          current?.requestId === request.requestId &&
-          current.fetcher === request.fetcher &&
-          current.side === request.side
-        );
-      };
-
-      const setSettledStatus = (status: FileSourceStatus) => {
-        if (!isCurrentRequest()) {
-          return;
-        }
-
-        sourceLoadRequestsRef.current.delete(fileKey);
-        store.dispatch({ type: "expansion/set-source-status", fileKey, status });
-      };
-
-      void file.sourceFetcher
-        .getFullText(side)
-        .then((text) => {
-          setSettledStatus(text === null ? { kind: "error" } : { kind: "loaded", text });
-        })
-        .catch((error: unknown) => {
-          if (!isCurrentRequest()) {
-            console.error(
-              `hunk: ignored stale ${side} source load failure for ${file.path} (${file.id}).`,
-              error,
-            );
-            return;
-          }
-
-          const reason = error instanceof SourceTextTooLargeError ? "too-large" : undefined;
-          if (reason !== "too-large") {
-            console.error(
-              `hunk: failed to load ${side} source for ${file.path} (${file.id}).`,
-              error,
-            );
-          }
-          setSettledStatus({ kind: "error", reason });
-        });
-    },
-    [store],
-  );
-
-  // A reload drops unattested source text while its gap stays open (the reducer's
-  // attestation rule), so an open gap refetches instead of rendering lines the source
-  // may no longer contain. The side is the shared expansion-side policy, since no
-  // intent outcome is in hand on a reload.
-  useEffect(() => {
-    const snapshot = store.getSnapshot();
-    for (const gap of snapshot.expandedGaps) {
-      if (!gap.expanded || snapshot.sourceStatusByFileKey[gap.fileKey]) {
-        continue;
-      }
-      const file = fileByKey.get(gap.fileKey);
-      if (file?.sourceFetcher) {
-        startSourceLoad(file, gap.fileKey, reviewExpansionSide(file.metadata.type));
-      }
-    }
-  }, [fileByKey, startSourceLoad, store, state.document]);
-
-  /** Run one expansion toggle plus the line-cursor bookkeeping that belongs to the terminal. */
-  const applyGapToggle = useCallback(
-    (file: DiffFile, intent: Extract<ReviewIntent, { type: "expansion/toggle" }>) => {
-      const restorePointKey = `${file.id}:${intent.gapId}`;
-      const restorePoint = lineCursorBeforeExpandRef.current.get(restorePointKey) ?? null;
-      const cursorBeforeToggle = lineCursorRef.current;
-      // The intent decides whether this is an expand or a collapse and reports the side
-      // whose source fills the gap; the line-cursor bookkeeping below is the terminal's
-      // own, and reads that decision rather than predicting it.
-      const toggled = runIntent(intent);
-      if (toggled.expanded) {
-        if (cursorBeforeToggle) {
-          lineCursorBeforeExpandRef.current.set(restorePointKey, cursorBeforeToggle);
-        }
-        pendingLineCursorRef.current = { kind: "reveal", fileId: file.id, gapKey: intent.gapId };
-      } else {
-        lineCursorBeforeExpandRef.current.delete(restorePointKey);
-        pendingLineCursorRef.current = restorePoint
-          ? { kind: "restore", cursor: restorePoint }
-          : null;
-      }
-
-      startSourceLoad(file, intent.fileKey, toggled.side);
-    },
-    [runIntent, startSourceLoad],
-  );
-
-  /** Toggle expansion of one collapsed gap the renderer addressed by file id. */
-  const toggleGap = useCallback(
-    (fileId: string, gapKey: string) => {
-      const file = allFiles.find((entry) => entry.id === fileId);
-      const fileKey = keyByFileId.get(fileId);
-      if (!file?.sourceFetcher || !fileKey) {
-        return;
-      }
-
-      applyGapToggle(file, { type: "expansion/toggle", fileKey, gapId: gapKey });
-    },
-    [allFiles, applyGapToggle, keyByFileId],
-  );
-
-  /** Toggle the collapsed gap the catalogued "toggle unchanged context" command reaches. */
-  const toggleSelectedHunkGap = useCallback(() => {
-    const intent = lowerCommand("hunk.review.toggleHunkGap");
-    if (intent?.type !== "expansion/toggle") {
+  /**
+   * Record the line-cursor bookkeeping that follows one gap toggle the host applied.
+   *
+   * The host decided whether this was an expand or a collapse; this keeps the terminal's own
+   * restore point and the pending reveal of the first newly revealed row.
+   */
+  const recordGapToggle = useCallback((toggled: ReviewGapToggle | undefined) => {
+    if (!toggled) {
       return;
     }
 
-    const file = fileByKey.get(intent.fileKey);
-    if (file?.sourceFetcher) {
-      applyGapToggle(file, intent);
-    }
-  }, [applyGapToggle, fileByKey, lowerCommand]);
-
-  /**
-   * Resolve one session-daemon navigation request against the current review and select it.
-   *
-   * Relative comment navigation is the same walk the keyboard performs and goes through
-   * the shared planner; only absolute addressing (a path plus a hunk or a line) is
-   * resolved against the terminal's diff-file model here.
-   */
-  const navigateToLocation = useCallback(
-    (input: NavigateToHunkToolInput): NavigatedSelectionResult => {
-      if (input.commentDirection) {
-        const moved = moveSelection("annotated-hunk", input.commentDirection === "next" ? 1 : -1, {
-          projection: "canonical",
-        });
-        if (!moved) {
-          throw new Error("No annotated hunks found in the current review.");
-        }
-
-        const file = fileByKey.get(moved.fileKey);
-        if (!file) {
-          throw new Error("Resolved annotated hunk references an unknown file.");
-        }
-
-        return {
-          fileId: file.id,
-          filePath: file.path,
-          hunkIndex: moved.hunkIndex,
-          selectedHunk: buildSelectedHunkSummary(file, moved.hunkIndex),
-        };
+    const restorePointKey = `${toggled.fileId}:${toggled.gapId}`;
+    const restorePoint = lineCursorBeforeExpandRef.current.get(restorePointKey) ?? null;
+    const cursorBeforeToggle = lineCursorRef.current;
+    if (toggled.expanded) {
+      if (cursorBeforeToggle) {
+        lineCursorBeforeExpandRef.current.set(restorePointKey, cursorBeforeToggle);
       }
-
-      const target = resolveReviewNavigationTarget({ allFiles, input });
-
-      // A line target lands the viewport on the exact line through the same reveal path
-      // `ctx.navigation.revealLine` uses, degrading to the hunk when the stream renders no
-      // row for the line. `"none"` means the file is not currently visible, where only the
-      // plain hunk selection below has defined behavior.
-      if (input.hunkIndex === undefined && input.side && input.line !== undefined) {
-        const reached = revealLine(target.file.id, input.side, input.line);
-        if (reached !== "none") {
-          return {
-            fileId: target.file.id,
-            filePath: target.file.path,
-            hunkIndex: target.hunkIndex,
-            selectedHunk: buildSelectedHunkSummary(target.file, target.hunkIndex),
-            revealed: reached,
-            side: input.side,
-            line: input.line,
-          };
-        }
-      }
-
-      selectHunk(target.file.id, target.hunkIndex);
-      return {
-        fileId: target.file.id,
-        filePath: target.file.path,
-        hunkIndex: target.hunkIndex,
-        selectedHunk: buildSelectedHunkSummary(target.file, target.hunkIndex),
+      pendingLineCursorRef.current = {
+        kind: "reveal",
+        fileId: toggled.fileId,
+        gapKey: toggled.gapId,
       };
-    },
-    [allFiles, fileByKey, moveSelection, revealLine, selectHunk],
+    } else {
+      lineCursorBeforeExpandRef.current.delete(restorePointKey);
+      pendingLineCursorRef.current = restorePoint
+        ? { kind: "restore", cursor: restorePoint }
+        : null;
+    }
+  }, []);
+
+  /** Toggle expansion of one collapsed gap the renderer addressed by file id. */
+  const toggleGap = useCallback(
+    (fileId: string, gapKey: string) => recordGapToggle(host.toggleGap(fileId, gapKey)),
+    [host, recordGapToggle],
   );
 
-  /**
-   * Paint one agent attention mark, validated by the same contract extension line
-   * highlighters answer to, so both sources feed one painted-mark pipeline.
-   */
+  /** Toggle the collapsed gap the catalogued "toggle unchanged context" command reaches. */
+  const toggleSelectedHunkGap = useCallback(
+    () => recordGapToggle(host.toggleSelectedHunkGap()),
+    [host, recordGapToggle],
+  );
+
+  /** Resolve one session-daemon navigation request, landing line targets on measured rows. */
+  const navigateToLocation = useCallback(
+    (input: NavigateToHunkToolInput): NavigatedSelectionResult =>
+      host.navigateToLocation(input, { revealLine }),
+    [host, revealLine],
+  );
+
+  /** Paint one agent attention mark, revealing its measured line when asked. */
   const addAgentLineHighlight = useCallback(
-    (input: HighlightToolInput): AppliedHighlightResult => {
-      const file = findDiffFileByPath(allFiles, input.filePath);
-      if (!file) {
-        throw new Error(noDiffFileMatchesMessage(input.filePath));
-      }
-
-      // Requiring hunk coverage catches line-number typos the way comment targets do; the
-      // agent-visible review model only exposes hunk-covered lines anyway.
-      const hunkIndex = reviewHunkIndexForLine(file.metadata.hunks, input.side, input.line);
-      if (hunkIndex < 0) {
-        throw new Error(
-          `No ${input.side} diff hunk in ${input.filePath} covers line ${input.line}.`,
-        );
-      }
-
-      const validation = validateLineHighlights([
-        { side: input.side, line: input.line, range: [input.start, input.end], tone: input.tone },
-      ]);
-      const mark = validation.ok ? validation.marks[0] : undefined;
-      if (!mark) {
-        throw new Error(
-          `Highlight range [${input.start}, ${input.end}) is not a valid [start, end) character range.`,
-        );
-      }
-
-      const existing = agentLineHighlightsRef.current.get(file.id) ?? [];
-      if (existing.length >= MAX_LINE_HIGHLIGHTS_PER_FILE) {
-        throw new Error(
-          `${input.filePath} already carries ${MAX_LINE_HIGHLIGHTS_PER_FILE} attention marks. Clear some first.`,
-        );
-      }
-      const marksOnLine = existing.filter(
-        (candidate) => candidate.side === mark.side && candidate.line === mark.line,
-      ).length;
-      if (marksOnLine >= MAX_LINE_HIGHLIGHTS_PER_LINE) {
-        throw new Error(
-          `${input.filePath}:${input.line} already carries ${MAX_LINE_HIGHLIGHTS_PER_LINE} attention marks. Clear some first.`,
-        );
-      }
-
-      const next = new Map(agentLineHighlightsRef.current);
-      next.set(file.id, [...existing, mark]);
-      commitAgentLineHighlights(next);
-
-      let revealed: "line" | "hunk" | undefined;
-      if (input.reveal ?? false) {
-        const reached = revealLine(file.id, mark.side, mark.line);
-        if (reached === "none") {
-          selectHunk(file.id, hunkIndex);
-          revealed = "hunk";
-        } else {
-          revealed = reached;
-        }
-      }
-
-      return {
-        fileId: file.id,
-        filePath: file.path,
-        hunkIndex,
-        side: mark.side,
-        line: mark.line,
-        start: mark.start,
-        end: mark.end,
-        tone: mark.tone,
-        fileMarkCount: existing.length + 1,
-        ...(revealed ? { revealed } : {}),
-      };
-    },
-    [allFiles, commitAgentLineHighlights, revealLine, selectHunk],
+    (input: HighlightToolInput): AppliedHighlightResult =>
+      host.addAgentLineHighlight(input, { revealLine }),
+    [host, revealLine],
   );
 
   /** Clear agent attention marks, globally or for one file. */
   const clearAgentLineHighlights = useCallback(
-    (filePath?: string): ClearedHighlightsResult => {
-      const current = agentLineHighlightsRef.current;
-      const total = [...current.values()].reduce((sum, marks) => sum + marks.length, 0);
-
-      if (!filePath) {
-        if (total > 0) {
-          commitAgentLineHighlights(EMPTY_AGENT_LINE_HIGHLIGHTS);
-        }
-        return { removedCount: total, remainingCount: 0 };
-      }
-
-      const file = findDiffFileByPath(allFiles, filePath);
-      if (!file) {
-        throw new Error(noDiffFileMatchesMessage(filePath));
-      }
-
-      const removed = current.get(file.id)?.length ?? 0;
-      if (removed > 0) {
-        const next = new Map(current);
-        next.delete(file.id);
-        commitAgentLineHighlights(next);
-      }
-
-      return { removedCount: removed, remainingCount: total - removed, filePath };
-    },
-    [allFiles, commitAgentLineHighlights],
+    (filePath?: string): ClearedHighlightsResult => host.clearAgentLineHighlights(filePath),
+    [host],
   );
 
   /**
-   * Validate one comment's STML markup at the width the note will actually
-   * render at right now — live layout mode and pane width, falling back to
-   * the documented reference width when geometry is not published (tests,
-   * headless callers). Reports the width back so agents can preview at it.
+   * Validate one comment's STML markup at the width the note will actually render at right
+   * now — live layout mode and pane width, falling back to the documented reference width
+   * when geometry is not published (tests, headless callers). Reports the width back so
+   * agents can preview at it. The host decides whether markup is allowed at all.
    */
-  const markupFeedback = useCallback(
-    (
-      markup: string | undefined,
-      anchorSide: "old" | "new",
-    ): Pick<AppliedCommentResult, "markupWidth" | "markupNotes"> => {
-      if (!markup) {
-        return {};
-      }
-
-      if (!stmlEnabled) {
-        throw new Error(
-          "STML markup is disabled for this session. Relaunch Hunk with --experimental, or omit markup.",
-        );
-      }
-
+  const measureMarkup = useCallback<MeasureMarkupFn>(
+    (markup, anchorSide) => {
       const geometry = noteGeometry?.current;
       const markupWidth = geometry
         ? agentNoteMarkupWidth({ anchorSide, layout: geometry.layout, width: geometry.width })
@@ -1451,61 +1031,7 @@ export function useTerminalReview({
         ...(markupNotes.length > 0 ? { markupNotes } : {}),
       };
     },
-    [noteGeometry, stmlEnabled],
-  );
-
-  /** Resolve one root or reply comment against the review stream. */
-  const resolveCommentRequest = useCallback(
-    (input: CommentToolInput | CommentBatchItemInput) => {
-      if (input.replyTo !== undefined) {
-        if (
-          input.filePath !== undefined ||
-          input.hunkIndex !== undefined ||
-          input.side !== undefined ||
-          input.line !== undefined
-        ) {
-          throw new Error("A reply comment must not include an explicit file or target.");
-        }
-        const replyParent = requireReviewReplyParent(store.getSnapshot(), input.replyTo);
-        const file = fileByKey.get(replyParent.note.fileKey);
-        if (!file) {
-          throw new ReviewIntentPlanningError(
-            "invalid-note-parent",
-            `Review note ${input.replyTo} is no longer available as a reply parent.`,
-          );
-        }
-        const target = {
-          hunkIndex: reviewNoteOwnerHunkIndex(replyParent.note),
-          ...reviewNoteAnchorLine(replyParent.note),
-        };
-        return {
-          file,
-          fileKey: replyParent.note.fileKey,
-          target,
-          replyParent,
-          feedback: markupFeedback(input.markup, target.side),
-        };
-      }
-
-      if (!input.filePath) {
-        throw new Error("A root comment requires a file path.");
-      }
-      const file = findDiffFileByPath(allFiles, input.filePath);
-      const fileKey = file ? keyByFileId.get(file.id) : undefined;
-      if (!file || !fileKey) {
-        throw new Error(noDiffFileMatchesMessage(input.filePath));
-      }
-
-      const target = resolveCommentTarget(file, { ...input, filePath: input.filePath });
-      return {
-        file,
-        fileKey,
-        target,
-        replyParent: undefined,
-        feedback: markupFeedback(input.markup, target.side),
-      };
-    },
-    [allFiles, fileByKey, keyByFileId, markupFeedback, store],
+    [noteGeometry],
   );
 
   /** Add one live comment, optionally revealing its hunk in the active review. */
@@ -1514,34 +1040,9 @@ export function useTerminalReview({
       input: CommentToolInput,
       commentId: string,
       options?: { reveal?: boolean },
-    ): AppliedCommentResult => {
-      const { file, fileKey, target, replyParent, feedback } = resolveCommentRequest(input);
-      const liveComment = buildLiveComment(
-        { ...input, filePath: file.path, side: target.side, line: target.line },
-        commentId,
-        new Date().toISOString(),
-        target.hunkIndex,
-      );
-      store.dispatch({
-        type: "notes/add-live",
-        notes: [liveCommentToStoredNote(liveComment, fileKey, file.metadata.hunks, replyParent)],
-      });
-
-      if (options?.reveal ?? false) {
-        selectHunk(file.id, target.hunkIndex);
-      }
-
-      return {
-        commentId,
-        fileId: file.id,
-        filePath: file.path,
-        hunkIndex: target.hunkIndex,
-        side: target.side,
-        line: target.line,
-        ...feedback,
-      };
-    },
-    [resolveCommentRequest, selectHunk, store],
+    ): AppliedCommentResult =>
+      host.addLiveComment(input, commentId, { reveal: options?.reveal, measureMarkup }),
+    [host, measureMarkup],
   );
 
   /** Apply several live comments together after validating every target first. */
@@ -1550,114 +1051,25 @@ export function useTerminalReview({
       inputs: CommentBatchItemInput[],
       requestId: string,
       options?: { revealMode?: "none" | "first" },
-    ): AppliedCommentBatchResult => {
-      const createdAt = new Date().toISOString();
-      const prepared = inputs.map((input, index) => {
-        const resolved = resolveCommentRequest(input);
-        return {
-          ...resolved,
-          liveComment: buildLiveComment(
-            {
-              ...input,
-              filePath: resolved.file.path,
-              side: resolved.target.side,
-              line: resolved.target.line,
-            },
-            `mcp:${requestId}:${index}`,
-            createdAt,
-            resolved.target.hunkIndex,
-          ),
-        };
-      });
-
-      if (prepared.length > 0) {
-        store.dispatch({
-          type: "notes/add-live",
-          notes: prepared.map((entry) =>
-            liveCommentToStoredNote(
-              entry.liveComment,
-              entry.fileKey,
-              entry.file.metadata.hunks,
-              entry.replyParent,
-            ),
-          ),
-        });
-      }
-
-      const first = prepared[0];
-      if (options?.revealMode === "first" && first) {
-        selectHunk(first.file.id, first.target.hunkIndex);
-      }
-
-      return {
-        applied: prepared.map(({ feedback, file, target, liveComment }) => ({
-          commentId: liveComment.id,
-          fileId: file.id,
-          filePath: file.path,
-          hunkIndex: target.hunkIndex,
-          side: target.side,
-          line: target.line,
-          ...feedback,
-        })),
-      };
-    },
-    [resolveCommentRequest, selectHunk, store],
+    ): AppliedCommentBatchResult =>
+      host.addLiveCommentBatch(inputs, requestId, {
+        revealMode: options?.revealMode,
+        measureMarkup,
+      }),
+    [host, measureMarkup],
   );
 
   /** Remove one daemon-addressable comment, including human notes by stable `user:*` id. */
   const removeLiveComment = useCallback(
-    (commentId: string): RemovedCommentResult => {
-      const isUserNote = commentId.startsWith("user:");
-      withMissingNoteMessage(
-        () =>
-          runIntent(
-            isUserNote
-              ? { type: "notes/remove-user", noteId: commentId }
-              : { type: "notes/remove-live", noteId: commentId },
-          ),
-        isUserNote
-          ? `No user note matches id ${commentId}.`
-          : `No live comment matches id ${commentId}.`,
-      );
-
-      const snapshot = store.getSnapshot();
-      return {
-        commentId,
-        removed: true,
-        remainingCommentCount: snapshot.liveNotes.length + snapshot.userNotes.length,
-        source: isUserNote ? "user" : "agent",
-      };
-    },
-    [runIntent, store],
+    (commentId: string): RemovedCommentResult => host.removeLiveComment(commentId),
+    [host],
   );
 
   /** Clear live comments, optionally including human notes, globally or for one file. */
   const clearLiveComments = useCallback(
-    (filePath?: string, options: { includeUser?: boolean } = {}): ClearedCommentsResult => {
-      const file = filePath ? findDiffFileByPath(allFiles, filePath) : undefined;
-      const fileKey = file ? keyByFileId.get(file.id) : undefined;
-      if (filePath && !fileKey) {
-        throw new Error(noDiffFileMatchesMessage(filePath));
-      }
-
-      const cleared = runIntent({
-        type: "notes/clear",
-        ...(fileKey ? { fileKey } : {}),
-        ...(options.includeUser ? { includeUser: true } : {}),
-      });
-
-      return {
-        removedCount: cleared.removedLiveCount + cleared.removedUserCount,
-        remainingCommentCount: cleared.remainingLiveCount + cleared.remainingUserCount,
-        filePath,
-        includeUser: options.includeUser,
-        removedLiveCommentCount: cleared.removedLiveCount,
-        removedUserNoteCount: cleared.removedUserCount,
-        remainingLiveCommentCount: cleared.remainingLiveCount,
-        remainingUserNoteCount: cleared.remainingUserCount,
-      };
-    },
-    [allFiles, keyByFileId, runIntent],
+    (filePath?: string, options?: { includeUser?: boolean }): ClearedCommentsResult =>
+      host.clearLiveComments(filePath, options),
+    [host],
   );
 
   /** Start a human-authored draft note at the selected or requested hunk. */
@@ -1668,65 +1080,31 @@ export function useTerminalReview({
       requestedTarget?: ReviewNoteTargetV1,
       options?: { preserveViewport?: boolean },
     ): DraftReviewNote | null => {
-      const file = allFiles.find((candidate) => candidate.id === fileId);
-      const hunk = file?.metadata.hunks[hunkIndex];
-      const fileKey = file ? keyByFileId.get(file.id) : undefined;
-      if (!file || !hunk || !fileKey) {
-        return null;
-      }
-
-      // Where the note lands is the catalogued command's effect: the row this renderer
-      // measured when it has one, the shared whole-hunk default when it does not.
-      const intent = lowerCommand("hunk.review.startNote", {
-        noteLocation: { fileKey, hunkIndex },
-        ...(requestedTarget ? { noteTarget: requestedTarget } : {}),
+      // The host owns the draft's identity and where the note lands; this renderer supplies
+      // the row it measured and moves the current line onto the draft.
+      const started = host.startUserNote({
+        fileId,
+        hunkIndex,
+        target: requestedTarget,
+        preserveViewport: options?.preserveViewport,
       });
-      if (intent?.type !== "notes/start-draft") {
+      if (!started) {
         return null;
       }
 
-      // The draft's identity is the caller's to own, and adopting a position the viewport
-      // already settled on is the shared anchor policy, so such a draft asks for no reveal.
-      const { draft } = runIntent(
-        {
-          ...intent,
-          ...(options?.preserveViewport ? { reveal: REVIEW_VIEWPORT_ANCHOR_REVEAL } : {}),
-        },
-        {
-          draftId: `draft:${file.id}:${hunkIndex}:${Date.now()}-${++draftNoteSequenceRef.current}`,
-        },
-      );
+      const { draft, file } = started;
       applyLineCursor(
         lineCursorAt(lineCursors, file.id, hunkIndex, { side: draft.side, line: draft.line }),
       );
       return storedDraftToDraftNote(draft, file);
     },
-    [
-      allFiles,
-      applyLineCursor,
-      keyByFileId,
-      lineCursors,
-      lowerCommand,
-      runIntent,
-      selectedFile?.id,
-      selectedHunkIndex,
-    ],
+    [applyLineCursor, host, lineCursors, selectedFile?.id, selectedHunkIndex],
   );
 
   /** Open one saved reviewer note in the shared composer. */
   const startUserNoteEdit = useCallback(
     (noteId: string, options?: { preserveViewport?: boolean }): DraftReviewNote | null => {
-      const { draft } = runIntent(
-        {
-          type: "notes/start-edit",
-          noteId,
-          ...(options?.preserveViewport ? { reveal: REVIEW_VIEWPORT_ANCHOR_REVEAL } : {}),
-        },
-        {
-          draftId: `draft:edit:${noteId}:${Date.now()}-${++draftNoteSequenceRef.current}`,
-        },
-      );
-      const file = fileByKey.get(draft.fileKey);
+      const { draft, file } = host.startUserNoteEdit(noteId, options);
       if (!file) {
         return null;
       }
@@ -1740,23 +1118,13 @@ export function useTerminalReview({
       }
       return storedDraftToDraftNote(draft, file);
     },
-    [applyLineCursor, fileByKey, runIntent],
+    [applyLineCursor, host],
   );
 
   /** Open a reply composer under one semantically stored note. */
   const startUserNoteReply = useCallback(
     (noteId: string, options?: { preserveViewport?: boolean }): DraftReviewNote | null => {
-      const { draft } = runIntent(
-        {
-          type: "notes/start-reply",
-          noteId,
-          ...(options?.preserveViewport ? { reveal: REVIEW_VIEWPORT_ANCHOR_REVEAL } : {}),
-        },
-        {
-          draftId: `draft:reply:${noteId}:${Date.now()}-${++draftNoteSequenceRef.current}`,
-        },
-      );
-      const file = fileByKey.get(draft.fileKey);
+      const { draft, file } = host.startUserNoteReply(noteId, options);
       if (!file) {
         return null;
       }
@@ -1770,25 +1138,17 @@ export function useTerminalReview({
       }
       return storedDraftToDraftNote(draft, file);
     },
-    [applyLineCursor, fileByKey, runIntent],
+    [applyLineCursor, host],
   );
 
   /** Update the expected active draft through the shared intent path. */
   const updateDraftNote = useCallback(
-    (body: string, expectedDraftId?: string) => {
-      if (expectedDraftId !== undefined && store.getSnapshot().draftNote?.id !== expectedDraftId) {
-        return false;
-      }
-      runIntent({ type: "notes/update-draft", body });
-      return true;
-    },
-    [runIntent, store],
+    (body: string, expectedDraftId?: string) => host.updateDraftNote(body, expectedDraftId),
+    [host],
   );
 
   /** Discard the active human note draft through the shared intent path. */
-  const cancelDraftNote = useCallback(() => {
-    runIntent({ type: "notes/cancel-draft" });
-  }, [runIntent]);
+  const cancelDraftNote = useCallback(() => host.cancelDraftNote(), [host]);
 
   /**
    * Persist the active draft into the review's user notes exactly once.
@@ -1797,107 +1157,28 @@ export function useTerminalReview({
    * draft left to consume rather than needing its own guard.
    */
   const saveDraftNote = useCallback((): UserReviewNote | null => {
-    const draft = store.getSnapshot().draftNote;
-    const file = draft ? fileByKey.get(draft.fileKey) : undefined;
-    if (!draft || !file) {
-      return null;
-    }
-
-    const timestamp = new Date().toISOString();
-    const saved =
-      draft.kind === "edit"
-        ? runIntent(
-            { type: "notes/update-user", noteId: draft.targetNoteId, consumeDraft: true },
-            { timestamp },
-          )
-        : runIntent(
-            { type: "notes/create-user", consumeDraft: true },
-            {
-              noteId: `user:${Date.now()}-${++userNoteSequenceRef.current}`,
-              timestamp,
-            },
-          );
+    const saved = host.saveDraftNote();
     if (saved) {
       // Saving transfers vertical focus to the note in the same synchronous input turn, before
       // viewport settlement can re-anchor the source-line cursor that opened the composer.
       applyLineCursor(null);
     }
-    return saved ? storedNoteToUserNote(saved.note.note, file.path) : null;
-  }, [applyLineCursor, fileByKey, runIntent, store]);
+    return saved ? storedNoteToUserNote(saved.note, saved.file.path) : null;
+  }, [applyLineCursor, host]);
 
   /** Remove one in-memory user note by id. */
-  const removeUserNote = useCallback(
-    (noteId: string) => {
-      withMissingNoteMessage(
-        () => runIntent({ type: "notes/remove-user", noteId }),
-        `No user note matches id ${noteId}.`,
-      );
-    },
-    [runIntent],
-  );
+  const removeUserNote = useCallback((noteId: string) => host.removeUserNote(noteId), [host]);
 
   /** Format current inline notes for daemon snapshots without exposing UI-only objects. */
-  const reviewNoteSummaries = useMemo<SessionReviewNoteSummary[]>(() => {
-    const noteSummaries: SessionReviewNoteSummary[] = [];
-
-    files.forEach((file) => {
-      (file.agent?.annotations ?? []).forEach((annotation, index) => {
-        const source = reviewNoteSource(annotation);
-        noteSummaries.push({
-          noteId: annotation.id ?? `${source}:${file.id}:${index}`,
-          source,
-          filePath: file.path,
-          oldRange: annotation.oldRange,
-          newRange: annotation.newRange,
-          body: [annotation.summary, annotation.rationale].filter(Boolean).join("\n\n"),
-          title: annotation.title,
-          author: annotation.author,
-          createdAt: annotation.createdAt ?? "1970-01-01T00:00:00.000Z",
-          updatedAt: annotation.updatedAt,
-          editable: false,
-        });
-      });
-
-      (storedNotesByFileId[file.id] ?? []).forEach((note) => {
-        const source = reviewNoteSource(note);
-        noteSummaries.push({
-          noteId: note.reviewNoteId ?? note.id,
-          ...(note.parentId ? { parentId: note.parentId } : {}),
-          source,
-          filePath: file.path,
-          hunkIndex: note.hunkIndex,
-          oldRange: note.oldRange,
-          newRange: note.newRange,
-          body: [note.summary, note.rationale].filter(Boolean).join("\n\n"),
-          author: note.author,
-          createdAt: note.createdAt,
-          updatedAt: note.updatedAt,
-          editable: source === "user",
-        });
-      });
-    });
-
-    return noteSummaries;
-  }, [files, storedNotesByFileId]);
+  const reviewNoteSummaries = useMemo<SessionReviewNoteSummary[]>(
+    () => buildReviewNoteSummaries(files, fileIndex, state),
+    [fileIndex, files, state.liveNotes, state.userNotes],
+  );
 
   /** Format current live comments for daemon snapshots without exposing merged UI-only objects. */
   const liveCommentSummaries = useMemo<SessionLiveCommentSummary[]>(
-    () =>
-      allFiles.flatMap((file) =>
-        (liveCommentsByFileId[file.id] ?? []).map((comment) => ({
-          commentId: comment.id,
-          ...(comment.parentId ? { parentId: comment.parentId } : {}),
-          filePath: file.path,
-          hunkIndex: comment.hunkIndex,
-          side: comment.side,
-          line: comment.line,
-          summary: comment.summary,
-          rationale: comment.rationale,
-          author: comment.author,
-          createdAt: comment.createdAt,
-        })),
-      ),
-    [allFiles, liveCommentsByFileId],
+    () => buildLiveCommentSummaries(files, fileIndex, state),
+    [fileIndex, files, state.liveNotes],
   );
 
   return {

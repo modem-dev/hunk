@@ -1,4 +1,4 @@
-import type { ReviewDocumentV1 } from "../../core/review/types";
+import type { ReviewDocumentV1 } from "../review/types";
 import type { ValidatedLineHighlight } from "./validate";
 
 /**
