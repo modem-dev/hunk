@@ -149,6 +149,25 @@ describe("browser review surface: shared state", () => {
     expect(reads.length - before.length).toBe(1);
   });
 
+  // Finding: a read for a newer shared revision that overlapped one still assembling for the
+  // same generation was refused outright ("already being loaded"), and the page saw a 502
+  // while the review reloaded. It now waits for the earlier assembly and then reads.
+  test("serves a newer shared revision whose read overlaps an older one", async () => {
+    const { host, harness } = start();
+    const first = harness.state.loadReviewSharedState(SESSION_ID);
+    host.setFilter("beta");
+    harness.publishSnapshot();
+    const second = harness.state.loadReviewSharedState(SESSION_ID);
+    expect(second).not.toBe(first);
+
+    // The earlier read asks for the session's current snapshot, so either answer is current;
+    // what matters is that neither is refused.
+    const [, newer] = await Promise.all([first, second]);
+
+    expect(newer.filter).toBe("beta");
+    expect(newer.sharedStateRevision).toBe(host.getSharedStateRevision());
+  });
+
   // Finding: /state was single-flighted but not cached, so a caller re-reading one position
   // paid a whole assembly from the session every time.
   test("answers repeated reads of one position from the daemon without asking the session", async () => {

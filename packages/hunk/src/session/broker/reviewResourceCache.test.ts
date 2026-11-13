@@ -66,11 +66,22 @@ describe("ReviewResourceCache", () => {
     expect(() => cache.reserve(OTHER, 1)).toThrow(ReviewResourceBudgetError);
   });
 
-  test("refuses a second reservation for the same resource", () => {
+  // Intent: the refusal is only "occupied right now", so a waiting reader gets the slot once
+  // the first load settles instead of failing.
+  test("refuses a second reservation for the same resource until the first settles", () => {
     const cache = new ReviewResourceCache();
-    cache.reserve(KEY, 1);
+    const first = cache.reserve(KEY, 1);
 
-    expect(() => cache.reserve(KEY, 1)).toThrow(ReviewResourceBudgetError);
+    let refusal: unknown;
+    try {
+      cache.reserve(KEY, 1);
+    } catch (error) {
+      refusal = error;
+    }
+    expect(refusal).toBeInstanceOf(ReviewResourceBudgetError);
+    expect((refusal as ReviewResourceBudgetError).retryable).toBe(true);
+    cache.release(first);
+    expect(() => cache.reserve(KEY, 1)).not.toThrow();
   });
 
   test("gives the budget back when a load settles", () => {
