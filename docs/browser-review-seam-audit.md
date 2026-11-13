@@ -607,6 +607,15 @@ implementation does.
   content changes. Theme derivation moved to `core/theme/appTheme.ts` and keymap resolution to
   `core/run/keymap.ts` so a headless session resolves both without the terminal UI. Viewed
   files (the third shared field) land in M2b; client-side overrides land in M4.
+  _Repaid (M2b, producer sites)_: viewed files are shared state — `files/set-viewed` stores
+  `viewedFiles` keyed by file key with the `contentIdentity` it was marked at,
+  `document/reconcile` drops marks whose content changed, `selectIsReviewFileViewed` in
+  `core/review/selectors.ts` is the one "is this file viewed" answer for every renderer, and
+  the shared-state snapshot carries the marks. No parallel copy existed to delete: the
+  prototype browser never had viewed state. Adversarial fixtures
+  `test/review-conformance/actorPolicyFixtures.ts` (`viewed-marks-across-a-reload`) and the
+  `mark-a-file-viewed` wire fixture register the producer action handler and the HTTP surface.
+  The browser's per-client overrides and the terminal UI for viewed files remain (M4).
 - **G2. Actor identity and multi-client selection policy.** Notes carry an optional `author`,
   but wire actions carry no actor/client identity — with a terminal, a browser, and agents
   attached to one session, nothing distinguishes who moved the selection or wrote a note, and
@@ -632,6 +641,20 @@ implementation does.
   minting a per-client identity belongs with the client that needs one — Phase 5, beside the
   selection policy that is the only thing which will read it. Parts (2) and (3) are
   unchanged.
+  _Repaid (M2b, producer sites; parts 2 and 3)_: selection is per surface. The producer's
+  action handler (`app/session/reviewCommands.ts`, `actorPolicy`) refuses
+  `selection/select`, `selection/move`, and `selection/select-file` from a `browser` actor
+  with `selection-is-local` (HTTP 403); a browser's `selection/anchor` is applied in a headless
+  session — it is the focus `hunk session context` reports — and accepted as a no-op in a
+  terminal session. Agent selection moves additionally record the shared agent reveal request
+  (M2a) every surface honors. Composers are per client: `notes/add-user` (body, target or
+  `parentId`, optional author, `expandedLineProof` on the wire) and `notes/edit-user` never
+  touch the shared draft slot, and a remote note's author defaults from the actor's display
+  name. Adversarial fixtures in `test/review-conformance/actorPolicyFixtures.ts` (two actors,
+  a headless anchor, a direct note inside an expanded gap) run against the producer action
+  handler and the HTTP surface; the wire fixtures add `direct-note-at-an-expanded-line` and
+  `direct-reply-naming-its-own-target`. No copies existed to delete. Part (4), a tab-local
+  client identity, and resolving refused moves locally belong to the M4 client.
   _Decided (2026-11-13)_: selection is fully independent per surface — a browser never tracks a
   terminal's position and vice versa. Agent-directed navigation is the exception and moves every
   surface. Composers are per-client, so the browser saves notes through direct intents instead of

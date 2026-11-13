@@ -363,4 +363,52 @@ export const REVIEW_WIRE_FIXTURES: readonly ReviewWireFixture[] = [
     action: { type: "selection/select", fileKey: FILE_KEY, hunkIndex: 0 },
     expected: { accepted: false },
   },
+  {
+    id: "direct-note-at-an-expanded-line",
+    findings: ["G2", "B10"],
+    description:
+      "A note composed in one action on a line only an expanded gap shows; the proof is evidence for the producer and never reaches the intent.",
+    action: {
+      type: "notes/add-user",
+      fileKey: FILE_KEY,
+      hunkIndex: 1,
+      target: { side: "new", line: 7 },
+      body: "One step, no shared draft",
+      expandedLineProof: { gapId: GAP_ID, side: "new", line: 7, sourceIdentity: SOURCE_IDENTITY },
+    },
+    expected: {
+      accepted: true,
+      intent: {
+        type: "notes/add-user",
+        fileKey: FILE_KEY,
+        hunkIndex: 1,
+        target: { side: "new", line: 7 },
+        body: "One step, no shared draft",
+      },
+    },
+  },
+  {
+    id: "direct-reply-naming-its-own-target",
+    findings: ["G2"],
+    description: "A reply inherits its parent's anchor; one that names a target is malformed.",
+    action: {
+      type: "notes/add-user",
+      fileKey: FILE_KEY,
+      hunkIndex: 0,
+      parentId: "user:1",
+      target: { side: "new", line: 3 },
+      body: "Reply",
+    },
+    expected: { accepted: false },
+  },
+  {
+    id: "mark-a-file-viewed",
+    findings: ["G1"],
+    description: "Viewed state is shared review state, set per file.",
+    action: { type: "files/set-viewed", fileKey: FILE_KEY, viewed: true },
+    expected: {
+      accepted: true,
+      intent: { type: "files/set-viewed", fileKey: FILE_KEY, viewed: true },
+    },
+  },
 ];

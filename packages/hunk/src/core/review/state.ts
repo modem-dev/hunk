@@ -203,6 +203,17 @@ export interface ReviewState {
   draftNote: ReviewDraftNote | null;
   expandedGaps: ReviewExpandedGapState[];
   sourceStatusByFileKey: Record<string, ReviewSourceStatus>;
+  /**
+   * Files the reviewer marked viewed, by file key, with the content identity each was viewed
+   * at. Shared review state (G1): every surface reads the same marks. A reload drops a mark
+   * whose file's content changed. Absent until the first mark.
+   */
+  viewedFiles?: Record<string, ReviewViewedFileMark>;
+}
+
+/** One viewed-file mark: the content the reviewer actually looked at. */
+export interface ReviewViewedFileMark {
+  contentIdentity: string;
 }
 
 /** Create the first authoritative semantic state for one review document. */

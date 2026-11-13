@@ -172,6 +172,10 @@ export const HUNK_REVIEW_ACTION_TYPES: readonly ReviewIntentType[] = REVIEW_INTE
  * which gap it expanded; a remote one has to say so.
  */
 interface HunkReviewActionWireFields {
+  "notes/add-user": {
+    /** Required when `target` names a line inside an expanded gap. */
+    expandedLineProof?: HunkReviewExpandedLineProofV1;
+  };
   "notes/start-draft": {
     /** Required when `target` names a line inside an expanded gap. */
     expandedLineProof?: HunkReviewExpandedLineProofV1;
@@ -250,7 +254,17 @@ export type HunkReviewActionResultV1 = HunkReviewActionAppliedV1 | HunkReviewFai
 export type HunkReviewFailureCodeV1 =
   | ReviewResourceErrorCode
   | ReviewRequestErrorCode
-  | ReviewIntentPlanningErrorCode;
+  | ReviewIntentPlanningErrorCode
+  | HunkReviewActorPolicyErrorCode;
+
+/**
+ * Why the producer refused an action because of who sent it (G2).
+ *
+ * `selection-is-local`: a browser resolves `selection/select`, `selection/move`, and
+ * `selection/select-file` in its own state; the session never applies another surface's
+ * selection moves.
+ */
+export type HunkReviewActorPolicyErrorCode = "selection-is-local";
 
 /** One rejection, in the producer's own vocabulary. */
 export interface HunkReviewFailureV1 {
@@ -510,6 +524,36 @@ const ACTION_PARSERS: Record<ReviewIntentType, (record: Record<string, unknown>)
     ) &&
     (record.fileKey === undefined || isIdentifier(record.fileKey)) &&
     (record.includeUser === undefined || typeof record.includeUser === "boolean"),
+  "notes/add-user": (record) =>
+    hasExactKeys(
+      record,
+      keysWith(["type", "fileKey", "hunkIndex", "body"], {
+        target: record.target,
+        parentId: record.parentId,
+        author: record.author,
+        expandedLineProof: record.expandedLineProof,
+      }),
+    ) &&
+    isIdentifier(record.fileKey) &&
+    isIndex(record.hunkIndex) &&
+    typeof record.body === "string" &&
+    utf8ByteLength(record.body) <= MAX_REVIEW_NOTE_BYTES &&
+    (record.target === undefined || parseNoteTarget(record.target) !== undefined) &&
+    (record.parentId === undefined || isIdentifier(record.parentId)) &&
+    (record.parentId === undefined || record.target === undefined) &&
+    (record.author === undefined || isIdentifier(record.author)) &&
+    (record.expandedLineProof === undefined ||
+      parseHunkReviewExpandedLineProof(record.expandedLineProof) !== undefined) &&
+    (record.expandedLineProof === undefined || parseLineAddress(record.target) !== undefined),
+  "notes/edit-user": (record) =>
+    hasExactKeys(record, ["type", "noteId", "body"]) &&
+    isIdentifier(record.noteId) &&
+    typeof record.body === "string" &&
+    utf8ByteLength(record.body) <= MAX_REVIEW_NOTE_BYTES,
+  "files/set-viewed": (record) =>
+    hasExactKeys(record, ["type", "fileKey", "viewed"]) &&
+    isIdentifier(record.fileKey) &&
+    typeof record.viewed === "boolean",
   "expansion/toggle": (record) =>
     hasExactKeys(record, ["type", "fileKey", "gapId"]) &&
     isIdentifier(record.fileKey) &&
@@ -547,7 +591,7 @@ export function parseHunkReviewAction(value: unknown): HunkReviewParseResult<Hun
  * shape of the same thing.
  */
 export function toReviewIntent(action: HunkReviewActionV1): ReviewIntent {
-  if (action.type === "notes/start-draft") {
+  if (action.type === "notes/start-draft" || action.type === "notes/add-user") {
     const { expandedLineProof: _proof, ...intent } = action;
     return intent;
   }
