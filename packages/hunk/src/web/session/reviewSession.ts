@@ -3,7 +3,8 @@
  * mirrors, the local store, and the event stream that keeps both mirrors current.
  *
  * Opening the review URL is the only trigger. The page path names the session and the
- * fragment carries the capability; both are read once here. The first publication is read
+ * fragment carries the capability; both are read once here, and the capability moves out of
+ * the address into this tab's storage (`capability.ts`). The first publication is read
  * from the publication route so the page starts loading before the stream opens; every
  * later one arrives on the stream, and the mirror orders them all with the same classifier.
  * Every publication is offered to the shared-state mirror first, so the snapshot fetch is in
@@ -15,10 +16,11 @@
  * ordering, loading, or selection, which belong to the mirror and the store.
  */
 import { reviewErrorMessage } from "../../session/reviewErrorCatalog";
-import {
-  parseReviewCapabilityFragment,
-  parseReviewPagePath,
-} from "../../session/reviewHttpProtocol";
+import { parseReviewPagePath } from "../../session/reviewHttpProtocol";
+import { ReviewActionSender } from "../actions/reviewActions";
+import { WebToasts } from "../actions/toasts";
+import { NoteComposerStore } from "../notes/composerStore";
+import { takeReviewCapability, type CapabilityStorage } from "./capability";
 import { ReviewApiClient, ReviewApiError, type ReviewFetch } from "../transport/apiClient";
 import { openReviewEventStream, type ReviewEventStreamStatus } from "../transport/eventStream";
 import { reviewSharedFileIndexEntry } from "../mirror/fileIndex";
@@ -26,19 +28,11 @@ import { ReviewMirror } from "../mirror/reviewMirror";
 import { ReviewSharedStateMirror } from "../mirror/sharedStateMirror";
 import { ClientReviewStore } from "../store/clientReviewStore";
 
-/** Shown when the daemon cannot be reached at all, which no review failure code describes. */
-export const REVIEW_UNREACHABLE_MESSAGE =
-  "The Hunk session daemon did not answer. Check that the review is still running, then reload.";
-
-/** Shown for a response this build cannot read, which no review failure code describes. */
-export const REVIEW_UNREADABLE_MESSAGE = "The Hunk session sent a response this page cannot read.";
-
-/** One sentence for one failure, from the shared catalog wherever the code is a review code. */
-export function reviewFailureMessage(error: ReviewApiError | undefined) {
-  if (!error || error.code === "unreadable") return REVIEW_UNREADABLE_MESSAGE;
-  if (error.code === "network") return REVIEW_UNREACHABLE_MESSAGE;
-  return reviewErrorMessage(error.code);
-}
+export {
+  REVIEW_UNREACHABLE_MESSAGE,
+  REVIEW_UNREADABLE_MESSAGE,
+  reviewFailureMessage,
+} from "./failureMessages";
 
 /** A tiny observable value, so React can subscribe to the stream's connection state. */
 export class ObservableValue<T> {
@@ -74,21 +68,42 @@ export interface ReviewSession {
   shared: ReviewSharedStateMirror;
   review: ClientReviewStore;
   connection: ObservableValue<ReviewEventStreamStatus>;
+  /** Sends the page's review actions. */
+  actions: ReviewActionSender;
+  /** The page's open note composers and their reload-safe drafts. */
+  composers: NoteComposerStore;
+  /** Outcomes with no nearer place to show. */
+  toasts: WebToasts;
+  /** This tab's capability, for "Copy review link" only. */
+  capability: string;
   close(): void;
 }
 
 export interface StartReviewSessionOptions {
-  location: { pathname: string; hash: string };
+  location: { pathname: string; search?: string; hash: string };
   fetch?: ReviewFetch;
+  /** This tab's storage for the capability and drafts; `sessionStorage` in the page. */
+  storage?: CapabilityStorage;
+  history?: Pick<History, "replaceState">;
 }
 
 /** Start the review this page was opened for. Never throws for a bad address. */
 export function startReviewSession({
   location,
   fetch,
+  storage,
+  history,
 }: StartReviewSessionOptions): ReviewSessionStart {
   const route = parseReviewPagePath(location.pathname);
-  const capability = parseReviewCapabilityFragment(location.hash);
+  const capability =
+    route?.kind === "document"
+      ? takeReviewCapability({
+          sessionId: route.sessionId,
+          location,
+          ...(storage ? { storage } : {}),
+          ...(history ? { history } : {}),
+        })
+      : undefined;
   if (route?.kind !== "document" || !capability) {
     return { ok: false, message: reviewErrorMessage("unauthorized") };
   }
@@ -109,6 +124,12 @@ export function startReviewSession({
       ),
   });
   const review = new ClientReviewStore({ client });
+  const actions = new ReviewActionSender({ client, mirror });
+  const composers = new NoteComposerStore(
+    route.sessionId,
+    storage as Pick<Storage, "getItem" | "setItem" | "removeItem"> | undefined,
+  );
+  const toasts = new WebToasts();
   const connection = new ObservableValue<ReviewEventStreamStatus>({ kind: "connecting" });
 
   // The store adopts each document the mirror publishes, which keeps selection and
@@ -163,6 +184,10 @@ export function startReviewSession({
       shared,
       review,
       connection,
+      actions,
+      composers,
+      toasts,
+      capability,
       close() {
         initial.abort();
         stream.close();

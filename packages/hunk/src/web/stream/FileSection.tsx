@@ -13,7 +13,9 @@ import { memo, useMemo, type CSSProperties } from "react";
 import type { ReviewEmptyDiffReason } from "../../core/review/document";
 import type { ReviewStoredNote } from "../../core/review/state";
 import type { ReviewAgentHighlightV1, ReviewSharedNoteV1 } from "../../session/reviewSharedState";
+import type { NoteComposer } from "../notes/composerStore";
 import { planReviewFileNotes } from "../notes/noteProjection";
+import type { ReviewNoteInteraction } from "../notes/noteInteraction";
 import { reviewFileChangeGlyph, reviewFileLabelParts } from "../../core/review/fileLabels";
 import type { ReviewFileIndexEntry } from "../mirror/fileIndex";
 import type { ReviewFileRenderPlan } from "./fileProjection";
@@ -61,6 +63,10 @@ export interface FileSectionProps {
   sidecarNotes: readonly ReviewSharedNoteV1[];
   /** This file's agent attention marks. */
   highlights: readonly ReviewAgentHighlightV1[];
+  /** This file's open composers. */
+  composers: readonly NoteComposer[];
+  /** What note gestures in this file do; stable for the page's lifetime. */
+  interaction: ReviewNoteInteraction;
 }
 
 const NO_HIGHLIGHTS: readonly ReviewAgentHighlightV1[] = [];
@@ -189,6 +195,14 @@ export const FileSection = memo(function FileSection(props: FileSectionProps) {
             onGeometry={(geometry) => props.onGeometry(fileKey, geometry)}
             noteGroups={noteGroups}
             highlights={props.highlights ?? NO_HIGHLIGHTS}
+            composers={props.composers}
+            renderComposer={props.interaction.renderComposer}
+            onPickLines={(side, start, end) =>
+              props.interaction.onPickLines(fileKey, side, start, end)
+            }
+            onNoteAction={(action, noteId) =>
+              props.interaction.onNoteAction(fileKey, action, noteId)
+            }
           />
         ) : null}
       </div>

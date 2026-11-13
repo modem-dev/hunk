@@ -7,9 +7,21 @@
  * then the body — STML markup rendered by `stmlDom.ts` when it yields anything, otherwise the
  * summary with the rationale beneath it in the muted color. Replies indent by their capped
  * depth under the thread's root. Text is always set as text.
+ *
+ * Cards the reader may act on carry buttons — Reply, Edit, Delete — named by
+ * `data-note-action`; the file view handles them by delegation, so a card stays plain DOM.
  */
 import type { WebNoteCard, WebNoteGroup } from "./noteProjection";
 import { renderStmlNoteBody } from "./stmlDom";
+
+/** What a card's buttons ask for. */
+export type WebNoteCardAction = "reply" | "edit" | "delete";
+
+const ACTION_LABELS: Record<WebNoteCardAction, string> = {
+  reply: "Reply",
+  edit: "Edit",
+  delete: "Delete",
+};
 
 /** Build one card. */
 export function renderNoteCard(card: WebNoteCard): HTMLElement {
@@ -59,6 +71,20 @@ export function renderNoteCard(card: WebNoteCard): HTMLElement {
   }
 
   article.append(header, body);
+  if (card.actions.length > 0) {
+    const actions = document.createElement("div");
+    actions.className = "note-actions";
+    for (const action of card.actions) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "note-action";
+      button.dataset.noteAction = action;
+      button.textContent = ACTION_LABELS[action];
+      button.setAttribute("aria-label", `${ACTION_LABELS[action]}: ${card.title}`);
+      actions.append(button);
+    }
+    article.append(actions);
+  }
   return article;
 }
 

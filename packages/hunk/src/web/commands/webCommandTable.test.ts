@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { APP_COMMAND_CATALOG, OPEN_IN_BROWSER_COMMAND } from "../../core/run/commandCatalog";
 import {
+  BROWSER_ALLOWED_HOST_COMMANDS,
   WEB_COMMAND_SUPPORT,
   buildWebCommands,
   isWebImplementedCommand,
@@ -40,14 +41,15 @@ describe("browser command catalog parity", () => {
     }
   });
 
-  test("never implements a host-only command (audit F4)", () => {
+  test("implements no host-only command except through an allowlisted route (audit F4)", () => {
     for (const entry of APP_COMMAND_CATALOG) {
       if (entry.locus !== "host-only") continue;
       expect({ id: entry.id, implemented: isWebImplementedCommand(entry.id) }).toEqual({
         id: entry.id,
-        implemented: false,
+        implemented: BROWSER_ALLOWED_HOST_COMMANDS.has(entry.id),
       });
     }
+    expect([...BROWSER_ALLOWED_HOST_COMMANDS]).toEqual(["hunk.app.refresh"]);
   });
 
   test("builds the implemented commands in catalog order with the catalog's identity", () => {

@@ -840,3 +840,163 @@ body {
   font-family: var(--code-font);
   font-size: 12px;
 }
+
+/* -- Writing: composers, card actions, review controls, toasts ------------------------- */
+
+.composer-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 12px 8px;
+  font-family: var(--ui-font);
+  font-size: 13px;
+  white-space: normal;
+}
+
+.note-composer {
+  max-width: 920px;
+  padding: 6px 10px 8px;
+  background: var(--hunk-panel);
+  border: 1px solid var(--hunk-accent);
+  border-left-width: 3px;
+  border-radius: 6px;
+  color: var(--hunk-text);
+}
+
+.composer-body {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 4px 0;
+  padding: 6px 8px;
+  font: inherit;
+  color: var(--hunk-text);
+  background: var(--hunk-background);
+  border: 1px solid var(--hunk-border);
+  border-radius: 4px;
+  resize: vertical;
+}
+
+.composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.composer-hint,
+.composer-confirm {
+  color: var(--hunk-muted);
+  font-size: 12px;
+}
+
+.composer-message {
+  margin: 2px 0 6px;
+  color: var(--hunk-muted);
+}
+
+.composer-message[data-tone="error"] {
+  color: var(--hunk-removed-sign-color);
+}
+
+.tool-button.primary {
+  background: var(--hunk-accent-muted);
+  border-color: var(--hunk-accent);
+}
+
+.note-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.note-action {
+  padding: 0 8px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--hunk-muted);
+  background: transparent;
+  border: 1px solid var(--hunk-border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.note-action:hover {
+  color: var(--hunk-text);
+  border-color: var(--hunk-accent);
+}
+
+.note-card {
+  cursor: default;
+}
+
+.review-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.filter-field {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.filter-field input {
+  width: 180px;
+  padding: 3px 54px 3px 8px;
+  font: inherit;
+  color: var(--hunk-text);
+  background: var(--hunk-background);
+  border: 1px solid var(--hunk-border);
+  border-radius: 6px;
+}
+
+.filter-field input:focus-visible {
+  border-color: var(--hunk-accent);
+}
+
+.shared-hint {
+  position: absolute;
+  right: 8px;
+  color: var(--hunk-muted);
+  font-size: 11px;
+  pointer-events: none;
+}
+
+.toast-region {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: min(420px, calc(100vw - 32px));
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  color: var(--hunk-text);
+  background: var(--hunk-panel);
+  border: 1px solid var(--hunk-border);
+  border-left: 3px solid var(--hunk-accent);
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 25%);
+}
+
+.toast[data-tone="error"] {
+  border-left-color: var(--hunk-removed-sign-color);
+}
+
+.toast-dismiss {
+  margin-left: auto;
+  padding: 0 4px;
+  font: inherit;
+  color: var(--hunk-muted);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
