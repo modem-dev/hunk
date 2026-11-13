@@ -160,7 +160,9 @@ test("opens at a deep link, follows navigation, and copies a link to the hunk", 
   await page.keyboard.press("Control+k");
   await page.keyboard.type("copy link to this");
   await page.keyboard.press("Enter");
-  await expect(page.getByTestId("toasts")).toContainText("Link copied.");
+  await expect(page.getByTestId("toasts")).toContainText(
+    "Link copied. It includes this review's access key",
+  );
   const copied = new URL(await page.evaluate(() => navigator.clipboard.readText()));
   const params = new URLSearchParams(copied.hash.slice(1));
   expect(params.get("capability")).toBe(
