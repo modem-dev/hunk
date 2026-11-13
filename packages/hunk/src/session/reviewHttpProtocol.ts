@@ -39,14 +39,24 @@ import { utf8ByteLength } from "../core/review/validation";
 export const HUNK_REVIEW_HTTP_PATH_PREFIX = "/review-api";
 
 /**
- * Path the browser review page will be served from.
+ * Path the browser review page is served from.
  *
  * Separate from the API prefix because they are different things to a browser: the page is
  * a document that may be bookmarked and reloaded, the API is what the script on it calls.
- * Phase 6 serves the document; the path is declared now because the review URL — the one
- * artifact a person handles — is this path plus the capability fragment.
+ * The review URL — the one artifact a person handles — is this path plus the capability
+ * fragment.
  */
 export const HUNK_REVIEW_PAGE_PATH_PREFIX = "/review";
+
+/**
+ * Path the page's scripts and styles are served from, shared by every session.
+ *
+ * One prefix for all sessions because the assets are the same build for every review and
+ * carry no review data, so a browser caches them once. It is its own first segment rather
+ * than a child of the page prefix, so no session id can ever be mistaken for an asset
+ * directory or the other way round.
+ */
+export const HUNK_REVIEW_ASSET_PATH_PREFIX = "/review-assets";
 
 /**
  * Header one caller presents its capability in.
@@ -160,6 +170,59 @@ export function parseReviewHttpPath(pathname: string): HunkReviewHttpRoute | und
 /** Path the review page for one session is served at. */
 export function reviewPagePath(sessionId: string): string {
   return `${HUNK_REVIEW_PAGE_PATH_PREFIX}/${encodeURIComponent(sessionId)}/`;
+}
+
+/**
+ * Whether one string is a name the page build may give an asset.
+ *
+ * A single flat segment of the characters a hashed bundle file uses, starting with a
+ * letter or digit, so an asset name can never be a dot segment, a separator, or anything a
+ * URL would have to encode.
+ */
+export function isReviewAssetName(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.length <= 255 &&
+    /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value) &&
+    !value.includes("..")
+  );
+}
+
+/** Path one page asset is served at. */
+export function reviewAssetPath(name: string): string {
+  if (!isReviewAssetName(name)) {
+    throw new Error(`Not a review asset name: ${name}`);
+  }
+  return `${HUNK_REVIEW_ASSET_PATH_PREFIX}/${name}`;
+}
+
+/** One request the page surface serves: the document for a session, or one shared asset. */
+export type HunkReviewPageRoute =
+  | { kind: "document"; sessionId: string }
+  | { kind: "asset"; name: string };
+
+/**
+ * Parse one request path into the page route it names.
+ *
+ * Strict in the same way as the API grammar: the document lives only at the exact
+ * trailing-slash path `reviewPagePath` builds, and an asset only one segment below the
+ * asset prefix. Anything else under either prefix is `undefined`, so the server answers
+ * "not found" rather than guessing.
+ */
+export function parseReviewPagePath(pathname: string): HunkReviewPageRoute | undefined {
+  const parts = pathname.split("/");
+  if (parts[0] !== "") {
+    return undefined;
+  }
+  if (`/${parts[1]}` === HUNK_REVIEW_PAGE_PATH_PREFIX && parts.length === 4 && parts[3] === "") {
+    const sessionId = decodeSegment(parts[2]);
+    return sessionId ? { kind: "document", sessionId } : undefined;
+  }
+  if (`/${parts[1]}` === HUNK_REVIEW_ASSET_PATH_PREFIX && parts.length === 3) {
+    // Asset names never need encoding, so a percent sign is refused rather than decoded.
+    return isReviewAssetName(parts[2]) ? { kind: "asset", name: parts[2] } : undefined;
+  }
+  return undefined;
 }
 
 /**

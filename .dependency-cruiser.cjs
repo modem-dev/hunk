@@ -33,6 +33,8 @@ const PRODUCTION_ENTRY_POINTS = [
   "^packages/hunk/src/opentui/index\\.ts$",
   "^packages/hunk/src/extension-api/index\\.ts$",
   "^packages/hunk/src/hunk-review/skillDocument\\.ts$",
+  // The browser review client, bundled for browsers by scripts/build/build-web.ts.
+  "^packages/hunk/src/web/main\\.tsx$",
 ];
 
 // Modules kept alive by tests alone. The cruise excludes tests, so these look unreachable
@@ -164,6 +166,24 @@ module.exports = {
       severity: "error",
       from: { path: "^packages/hunk/src/session/" },
       to: { path: "^packages/hunk/src/(ui|app|extensions|opentui)/" },
+    },
+    {
+      name: "web-client-stays-separate",
+      comment:
+        "packages/hunk/src/web is the browser review client, a separate bundle served by the daemon. Nothing in the CLI imports it, and it reaches only the shared review model and browser-safe session modules (scripts/quality/source-boundaries.test.ts gates the exact closure).",
+      severity: "error",
+      from: { path: "^packages/hunk/src/web/" },
+      to: {
+        path: "^packages/hunk/src/(ui|app|extensions|opentui|lib|session/broker|session/client|session/agent)/",
+      },
+    },
+    {
+      name: "cli-never-imports-web-client",
+      comment:
+        "The browser client is built and served as static assets; a CLI module importing it would pull React DOM and Pierre's web renderer into the terminal bundle.",
+      severity: "error",
+      from: { path: "^packages/hunk/src/", pathNot: "^packages/hunk/src/web/" },
+      to: { path: "^packages/hunk/src/web/" },
     },
     {
       name: "app-composes-without-ui",
