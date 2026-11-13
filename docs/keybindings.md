@@ -37,6 +37,11 @@ Rules worth knowing:
   extension modes have had their normal ownership. Without a selection, Escape
   remains available to extension commands because clear-selection is unbound.
 
+The browser review (`hunk diff --web`, see [web-review.md](web-review.md)) answers to the same
+command ids and reads the same `[keybindings]` table, except chords that use Ctrl, Cmd, Alt,
+Tab, or a function key: those stay with the browser. `hunk.app.openInBrowser` (File menu, unbound)
+opens the current terminal review there.
+
 Chords are `ctrl`, `alt`/`option`, `cmd`/`meta`, and `shift` joined with `+`
 around a base key: a character (`"y"`, `"["`), an uppercase letter for its
 shifted form (`"G"`), or a named key (`"tab"`, `"pageup"`, `"left"`, `"f2"`).
@@ -111,6 +116,7 @@ Review and shared commands:
 | ---------------------------------------------- | ---------------------------------------------- | ---------------------------- |
 | `hunk.app.openAgentSkill`                      | Show agent skill                               | _(none)_                     |
 | `hunk.app.openFeedback`                        | Send feedback                                  | _(none)_                     |
+| `hunk.app.openInBrowser`                       | Open in browser                                | _(none)_                     |
 | `hunk.app.quit`                                | Quit                                           | `q`                          |
 | `hunk.app.refresh`                             | Refresh the review                             | `r`                          |
 | `hunk.app.toggleFocusArea`                     | Switch focus between files and filter          | `tab`                        |

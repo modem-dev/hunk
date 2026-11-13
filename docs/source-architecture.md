@@ -73,7 +73,7 @@ packages/hunk/src/main.tsx
               -> useTerminalReview adapts app/review/reviewSessionHost.ts, the renderer-free
                  owner of the live review store
            -> pane/diff modules plan, window, and paint terminal rows with Pierre metadata
-     -> web plan (`--web`, implies `--watch`; hidden until core/run/webReviewRelease.ts flips):
+     -> web plan (`--web`, implies `--watch`):
         the same bootstrap with no TTY
         -> main.tsx lazy-loads app/session/headlessReviewRunner.ts, never OpenTUI
            -> ReviewSessionHost owns the review; ReviewReloadCoordinator owns reload and watch
