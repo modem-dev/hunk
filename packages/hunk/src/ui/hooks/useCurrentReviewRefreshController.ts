@@ -6,8 +6,8 @@
  * descriptor, connects watch notifications to refreshes, and exposes stable refresh callbacks to
  * App.
  *
- * AppHost retains authority over reload serialization, input loading, extension replacement, and
- * bootstrap updates. Requests from this controller use `resetApp: false` so refreshing content
+ * The session's reload coordinator (`app/session/reloadCoordinator.ts`, driven by AppHost) retains
+ * authority over reload serialization, input loading, extension replacement, and bootstrap updates. Requests from this controller use `resetApp: false` so refreshing content
  * preserves mounted UI state such as selection, filters, and pane geometry.
  */
 
