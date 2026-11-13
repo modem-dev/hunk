@@ -12,6 +12,10 @@
  * kinds as git statuses, and the badges as row decorations. Pierre's tree groups a directory
  * once even when review order leaves and re-enters it, where the terminal's tree repeats the
  * directory row; flat mode follows the shared projection exactly.
+ *
+ * Each flat row carries the file's "Viewed" checkbox beside its button; tree rows show the
+ * mark as a decoration (`✓` viewed, `Δ` changed since viewed), because the tree's rows take
+ * text decorations only. The header checkbox, `V`, and the palette toggle it in either mode.
  */
 import { lazy, Suspense, useMemo } from "react";
 import {
@@ -29,6 +33,8 @@ function FlatSidebar({
   noteCounts,
   selectedKey,
   onSelectFile,
+  viewedStatuses,
+  onToggleViewed,
 }: Omit<FileSidebarProps, "mode">) {
   const rows = useMemo(
     () =>
@@ -51,8 +57,9 @@ function FlatSidebar({
         }
         const glyph = reviewFileChangeGlyph(row.changeType, row.isUntracked);
         const selected = row.id === selectedKey;
+        const viewed = viewedStatuses?.get(row.id);
         return (
-          <li key={row.id}>
+          <li key={row.id} className="flat-row" data-viewed={viewed ?? "unviewed"}>
             <button
               type="button"
               className="flat-file"
@@ -73,6 +80,16 @@ function FlatSidebar({
                 ))}
               </span>
             </button>
+            {onToggleViewed ? (
+              <input
+                type="checkbox"
+                className="flat-viewed"
+                checked={viewed === "viewed"}
+                onChange={() => onToggleViewed(row.id)}
+                aria-label={`Viewed ${row.name}`}
+                title={viewed === "changed" ? "Changed since viewed" : "Viewed"}
+              />
+            ) : null}
           </li>
         );
       })}

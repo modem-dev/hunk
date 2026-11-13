@@ -110,6 +110,9 @@ import { ReviewControls } from "./ReviewControls";
 import { Toolbar } from "./Toolbar";
 import { useReviewInteraction } from "./useReviewInteraction";
 import { useReviewTools } from "./useReviewTools";
+import { useViewedFiles, type ViewedFiles } from "../viewed/useViewedFiles";
+import type { ReviewViewedControls } from "../stream/FileSection";
+import { ViewedControls } from "./ViewedControls";
 
 /** Width of one monospace column on this page, measured once the fonts are in place. */
 function useColumnWidth() {
@@ -312,6 +315,44 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
     () => shownShared?.notes.filter((entry) => entry.origin === "sidecar") ?? [],
     [shownShared],
   );
+
+  // Viewed marks are shared; hiding viewed files and collapsing them is this page's own
+  // choice, so the stream and the sidebar draw from the filter's files less the hidden ones.
+  const showViewedError = useCallback(
+    (message: string) => session.toasts.show(message, "error"),
+    [session],
+  );
+  const viewed = useViewedFiles({
+    sessionId: session.sessionId,
+    shared: shownShared,
+    files: entries,
+    review,
+    store: session.review,
+    actions: session.actions,
+    showError: showViewedError,
+  });
+  const viewedRef = useRef<ViewedFiles>(viewed);
+  viewedRef.current = viewed;
+  const viewedControls = useMemo(
+    (): ReviewViewedControls => ({
+      toggle: (fileKey) => viewedRef.current.toggleViewed(fileKey),
+      expand: (fileKey) => viewedRef.current.expand(fileKey),
+      collapse: (fileKey) => viewedRef.current.collapse(fileKey),
+    }),
+    [],
+  );
+  const streamSlots = useMemo(
+    () =>
+      viewed.hidden.size > 0
+        ? visibleSlots.filter((slot) => !viewed.hidden.has(slot.key))
+        : visibleSlots,
+    [visibleSlots, viewed.hidden],
+  );
+  const sidebarEntries = useMemo(
+    () =>
+      viewed.hidden.size > 0 ? entries.filter((entry) => !viewed.hidden.has(entry.key)) : entries,
+    [entries, viewed.hidden],
+  );
   const noteCounts = useMemo(
     () =>
       countVisibleNotesByFile(
@@ -507,8 +548,13 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
     return byFile;
   }, [shownShared, minimapFiles]);
   const minimapViewed = useMemo(
-    () => new Set(Object.keys(shownShared?.viewedFiles ?? {})),
-    [shownShared],
+    () =>
+      new Set(
+        Array.from(viewed.statuses)
+          .filter(([, status]) => status === "viewed")
+          .map(([key]) => key),
+      ),
+    [viewed.statuses],
   );
   const minimapSelected = useMemo(
     () =>
@@ -659,6 +705,11 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
         if (available) markdownModes.toggle(file.key);
         else session.toasts.show("The selected file has no rendered view.", "info");
       },
+      "hunk.web.toggleViewed": () => {
+        const fileKey = session.review.store.getSnapshot().selection.fileKey;
+        if (fileKey) viewedRef.current.toggleViewed(fileKey);
+      },
+      "hunk.web.toggleHideViewed": () => viewedRef.current.toggleHideViewed(),
       "hunk.web.toggleMinimap": () =>
         setMinimapEnabled((current) => {
           storeMinimapEnabled(!current);
@@ -810,20 +861,27 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
         onToggleSidebar={() => updatePreferences({ sidebarOpen: !sidebarOpen })}
         onTheme={choose}
         controls={
-          <ReviewControls
-            ref={filterRef}
-            filterText={interactive.filterText}
-            onFilterChange={interactive.changeFilter}
-            {...(keyHint("hunk.review.focusFilter")
-              ? { filterKeyHint: keyHint("hunk.review.focusFilter") }
-              : {})}
-            refreshing={interactive.refreshing}
-            onRefresh={() => void interactive.refresh()}
-            {...(keyHint("hunk.app.refresh")
-              ? { refreshKeyHint: keyHint("hunk.app.refresh") }
-              : {})}
-            onCopyLink={copyLink}
-          />
+          <>
+            <ReviewControls
+              ref={filterRef}
+              filterText={interactive.filterText}
+              onFilterChange={interactive.changeFilter}
+              {...(keyHint("hunk.review.focusFilter")
+                ? { filterKeyHint: keyHint("hunk.review.focusFilter") }
+                : {})}
+              refreshing={interactive.refreshing}
+              onRefresh={() => void interactive.refresh()}
+              {...(keyHint("hunk.app.refresh")
+                ? { refreshKeyHint: keyHint("hunk.app.refresh") }
+                : {})}
+              onCopyLink={copyLink}
+            />
+            <ViewedControls
+              progress={viewed.progress}
+              hideViewed={viewed.hideViewed}
+              onToggleHideViewed={viewed.toggleHideViewed}
+            />
+          </>
         }
         panelOpen={panelOpen}
         {...(panelHint ? { panelHint } : {})}
@@ -851,11 +909,13 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
                   </div>
                 </div>
                 <FileSidebar
-                  entries={entries}
+                  entries={sidebarEntries}
                   noteCounts={noteCounts}
                   selectedKey={review.selection.fileKey}
                   mode={preferences.sidebarMode}
                   onSelectFile={tools.jumpToFile}
+                  viewedStatuses={viewed.statuses}
+                  onToggleViewed={viewedControls.toggle}
                 />
               </nav>
               <div
@@ -868,7 +928,7 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
             </>
           ) : null}
           <ReviewStream
-            slots={visibleSlots}
+            slots={streamSlots}
             review={review}
             layout={layout}
             wrapLines={preferences.wrapLines}
@@ -887,10 +947,13 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
             {...(streamRevealPoint ? { revealPoint: streamRevealPoint } : {})}
             composers={composers}
             interaction={interactive.interaction}
+            viewedStatuses={viewed.statuses}
+            collapsedFiles={viewed.collapsed}
+            viewed={viewedControls}
           />
           {showMinimap ? (
             <Minimap
-              slots={visibleSlots}
+              slots={streamSlots}
               files={minimapFiles}
               layout={layout}
               noteHunks={minimapNotes}
