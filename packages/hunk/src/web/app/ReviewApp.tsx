@@ -21,9 +21,9 @@
  * and the resolved keymap. This browser's own choices of theme and view options win over the
  * session's defaults and persist locally. An agent's reveal request (a token that only grows)
  * selects and reveals its target here; it is the one thing outside the page that moves it.
- * When the reader's scroll settles, the page reports where it is with a debounced
- * `selection/anchor` action, which a headless session turns into the focus `hunk session
- * context` reports; no other selection action is ever sent.
+ * When the reader's scroll settles or a jump moves the selection, the page reports where it is
+ * with a debounced `selection/anchor` action, which a headless session turns into the focus
+ * `hunk session context` reports; no other selection action is ever sent.
  */
 import {
   useCallback,
@@ -376,10 +376,28 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
     [session, reportFocus],
   );
 
+  // A jump — keyboard, sidebar, palette, or click — moves the reader without a scroll the
+  // stream would settle on, so the new selection is reported too.
+  useEffect(() => {
+    if (review.selection.fileKey) reportFocus(review.selection.fileKey, review.selection.hunkIndex);
+  }, [review.selection, reportFocus]);
+
   // An agent's reveal selects and shows its target once per token. The token in the first
   // shared state the page receives is history, not a request made to this page; any later one
   // is revealed, waiting for the document if it arrives before the page finished loading.
-  const [revealPoint, setRevealPoint] = useState<ReviewRevealPoint | undefined>(undefined);
+  // A point belongs to the one hunk reveal set right after it (an agent's or a deep link's),
+  // which takes the next hunk token; a later `]`, `[`, or other hunk reveal has its own token
+  // and lands on its hunk, not on the old target.
+  const [revealPoint, setRevealPointState] = useState<
+    (ReviewRevealPoint & { hunkToken: number }) | undefined
+  >(undefined);
+  const setRevealPoint = useCallback(
+    (point: ReviewRevealPoint | undefined) =>
+      setRevealPointState(
+        point && { ...point, hunkToken: session.review.store.getSnapshot().reveal.hunkToken + 1 },
+      ),
+    [session],
+  );
   const lastAgentReveal = useRef<number | undefined>(undefined);
   const agentReveal: ReviewAgentRevealV1 | null | undefined = shownShared?.agentReveal;
   const documentReady = review.document.files.length > 0;
@@ -390,10 +408,11 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
       lastAgentReveal.current = token;
       return;
     }
-    if (!documentReady || !agentReveal || token <= lastAgentReveal.current) return;
-    lastAgentReveal.current = token;
+    if (!agentReveal || token <= lastAgentReveal.current) return;
+    // A target file still loading is not handled yet: the effect runs again as files arrive.
     const { document } = session.review.store.getSnapshot();
     if (!document.files.some((file) => file.key === agentReveal.fileKey)) return;
+    lastAgentReveal.current = token;
     setRevealPoint({
       fileKey: agentReveal.fileKey,
       ...(agentReveal.side !== undefined ? { side: agentReveal.side } : {}),
@@ -407,12 +426,14 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
       reveal: { anchor: "hunk", scrollToNote: agentReveal.noteId !== undefined },
       ...(agentReveal.noteId !== undefined ? { activeNoteId: agentReveal.noteId } : {}),
     });
-  }, [agentReveal, documentReady, session]);
+  }, [agentReveal, review.document, session, setRevealPoint]);
   // A note the selection asks to show is where its hunk reveal lands, when nothing more exact
   // (an agent's line) is pending for that file.
   const noteToReveal = review.reveal.scrollToNote ? selectActiveRevealNoteId(review) : undefined;
   const streamRevealPoint: ReviewRevealPoint | undefined =
-    revealPoint && revealPoint.fileKey === review.selection.fileKey
+    revealPoint &&
+    revealPoint.fileKey === review.selection.fileKey &&
+    revealPoint.hunkToken === review.reveal.hunkToken
       ? revealPoint
       : noteToReveal && review.selection.fileKey
         ? { fileKey: review.selection.fileKey, noteId: noteToReveal }
@@ -767,7 +788,7 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
         {...(shownShared?.omittedSidecarNotes
           ? { omittedNotes: shownShared.omittedSidecarNotes }
           : {})}
-        fileCount={entries.length || mirror.totalFiles}
+        fileCount={visibleSlots.length}
         additions={totals.additions}
         deletions={totals.deletions}
         status={status}

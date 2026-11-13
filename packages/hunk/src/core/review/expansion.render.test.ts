@@ -75,6 +75,37 @@ describe("reviewFileWithExpandedGaps", () => {
     expect(expanded.contentIdentity).toBe(file.contentIdentity);
   });
 
+  // Intent: a gap can hold more lines than one call takes as spread arguments (V8 refuses
+  // about 120k, JavaScriptCore under 700k), and expanding it must not throw.
+  test("inserts a gap larger than the engine's argument limit", async () => {
+    const gapLines = 1_000_000;
+    const bigPatch = [
+      "diff --git a/big.ts b/big.ts",
+      "--- a/big.ts",
+      "+++ b/big.ts",
+      `@@ -${gapLines + 1},3 +${gapLines + 1},3 @@`,
+      ` line ${gapLines + 1}`,
+      `-line ${gapLines + 2}`,
+      `+line ${gapLines + 2} changed`,
+      ` line ${gapLines + 3}`,
+      "",
+    ].join("\n");
+    const bootstrap = await loadAppBootstrap({ kind: "patch", text: bigPatch, options: {} });
+    const [file] = projectReviewDocument(bootstrap.changeset.files, { sourceLabel: "/test" }).files;
+    const sourceText = Array.from({ length: gapLines + 3 }, (_unused, index) =>
+      index === gapLines + 1 ? `line ${index + 1} changed` : `line ${index + 1}`,
+    ).join("\n");
+    const contents = reviewExpandedGapContents(file!, ["before:0"], `${sourceText}\n`);
+    expect(contents[0]?.lines).toHaveLength(gapLines);
+
+    const expanded = reviewFileWithExpandedGaps(file!, contents);
+
+    expect(expanded.additionLines).toHaveLength(file!.additionLines.length + gapLines);
+    expect(expanded.deletionLines).toHaveLength(file!.deletionLines.length + gapLines);
+    expect(newSideOf(expanded, 0).slice(-3)).toEqual(newSideOf(file!, 0));
+    expect(newSideOf(expanded, 0)[0]).toBe("line 1");
+  });
+
   test("skips a gap the source does not fully cover", async () => {
     const file = await createTestPartialFile();
     expect(reviewExpandedGapContents(file, ["before:1"], "too short\n")).toEqual([]);

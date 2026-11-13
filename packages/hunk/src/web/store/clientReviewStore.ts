@@ -87,6 +87,18 @@ export class ClientReviewStore {
     this.catalog = catalog;
     this.store.dispatch({ type: "document/reconcile", document });
 
+    // An open gap whose read was aborted above, or whose unattested text reconciliation
+    // dropped, loads again from the new catalog instead of waiting for a re-expansion.
+    const reconciled = this.store.getSnapshot();
+    const open = new Set(
+      reconciled.expandedGaps.filter((gap) => gap.expanded).map((gap) => gap.fileKey),
+    );
+    for (const fileKey of open) {
+      if (reconciled.sourceStatusByFileKey[fileKey]?.kind !== "error") {
+        void this.loadSource(fileKey);
+      }
+    }
+
     const state = this.store.getSnapshot();
     const normalized = selectNormalizedSelection(state);
     if (
@@ -109,6 +121,7 @@ export class ClientReviewStore {
     this.shared = state;
     this.store.dispatch({ type: "filter/set", filter: state.filter });
     this.store.dispatch({ type: "notes/set-visibility", visible: state.showAgentNotes });
+    const { activeNoteId, selection } = this.store.getSnapshot();
     this.store.dispatch({ type: "notes/clear", includeUser: true });
     const stored = (origin: "live" | "user"): ReviewStoredNote[] =>
       state.notes
@@ -116,6 +129,19 @@ export class ClientReviewStore {
         .map((entry) => ({ note: entry.note, resolution: entry.resolution }));
     this.store.dispatch({ type: "notes/add-live", notes: stored("live") });
     for (const note of stored("user")) this.store.dispatch({ type: "notes/add-user", note });
+    // Clearing drops the reader's active note; it comes back when the snapshot still has it.
+    if (
+      activeNoteId !== null &&
+      selection.fileKey !== null &&
+      state.notes.some((entry) => entry.note.id === activeNoteId)
+    ) {
+      this.store.dispatch({
+        type: "selection/select",
+        fileKey: selection.fileKey,
+        hunkIndex: selection.hunkIndex,
+        activeNoteId,
+      });
+    }
     this.annotations = buildReviewAnnotationIndexFromNotes(
       state.notes.map((entry) => entry.note),
       state.files.filter((file) => file.agentContext).map((file) => file.key),
@@ -158,7 +184,11 @@ export class ClientReviewStore {
   async loadSource(fileKey: string) {
     const state = this.store.getSnapshot();
     const status = state.sourceStatusByFileKey[fileKey];
-    if (status?.kind === "loaded" || status?.kind === "loading") {
+    // `loading` with no read in flight is a read that was aborted, so it loads again.
+    if (
+      status?.kind === "loaded" ||
+      (status?.kind === "loading" && this.sourceLoads.has(fileKey))
+    ) {
       return;
     }
     const file = state.document.files.find((candidate) => candidate.key === fileKey);

@@ -23,9 +23,13 @@ let problems: string[] = [];
 test.use({ viewport: { width: 1440, height: 900 } });
 
 test.afterEach(async () => {
-  expect(problems).toEqual([]);
-  await review?.stop();
-  review = undefined;
+  // Check the page before stopping (a stopped daemon cuts its event stream), but always stop.
+  try {
+    expect(problems).toEqual([]);
+  } finally {
+    await review?.stop();
+    review = undefined;
+  }
 });
 
 /** Agent context for the rich scenario's first file: one plain note and one STML note. */
@@ -211,6 +215,39 @@ test("follows hunk session navigate and highlights", async ({ page }) => {
   await expect(mark).toBeInViewport();
 });
 
+// Intent: an agent's line reveal is exact for its own reveal only; a later hunk jump in the
+// same file lands on its hunk instead of being pulled back to the agent's line.
+test("lands a later hunk jump on its own hunk after an agent reveal", async ({ page }) => {
+  await openTestReview(page);
+  const railHunk = () =>
+    page.locator('[data-testid="selected-hunk"]').getAttribute("data-hunk-index");
+
+  await review!.hunk([
+    "session",
+    "navigate",
+    review!.sessionId,
+    "--file",
+    "src/app/main.ts",
+    "--new-line",
+    "46",
+  ]);
+  await expect.poll(railHunk).toBe("1");
+  await page.keyboard.press("[");
+
+  await waitForTestCondition(
+    "hunk 0 to be revealed under the header",
+    () =>
+      page.evaluate(() => {
+        const rail = document.querySelector<HTMLElement>('[data-testid="selected-hunk"]');
+        const header = document.querySelector<HTMLElement>("section[data-selected] .file-header");
+        if (!rail || !header || rail.dataset.hunkIndex !== "0") return undefined;
+        const gap = rail.getBoundingClientRect().top - header.getBoundingClientRect().bottom;
+        return gap >= 0 && gap <= 20 ? true : undefined;
+      }),
+    10_000,
+  );
+});
+
 test("walks annotated hunks with the keyboard", async ({ page }) => {
   await openTestReview(page);
   await addTestComment("src/gen/module-10.ts", 2, "Tenth module note");
@@ -277,6 +314,26 @@ test("reports where the reader is to hunk session context", async ({ page }) => 
     ) as { context?: { selectedFile?: { path?: string } } };
     return JSON.stringify(context).includes(selected) ? true : undefined;
   });
+});
+
+// Intent: a jump moves the reader without a scroll the stream settles on, and the session
+// must still learn where the reader went.
+test("reports a sidebar jump to hunk session context", async ({ page }) => {
+  await openTestReview(page);
+  await page.getByRole("radio", { name: "Flat" }).click();
+  await page.locator(".flat-file", { hasText: "module-30.ts" }).click();
+  await expect(page.locator("section[data-selected] .file-path")).toHaveText(
+    "src/gen/module-30.ts",
+  );
+
+  await waitForTestCondition(
+    "the session to report the jump",
+    async () => {
+      const context = await review!.hunk(["session", "context", review!.sessionId, "--json"]);
+      return context.includes("src/gen/module-30.ts") ? true : undefined;
+    },
+    15_000,
+  );
 });
 
 test("keeps notes and the reader's place across a reload", async ({ page }) => {

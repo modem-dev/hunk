@@ -60,6 +60,14 @@ const MOUNT_MARGIN = "150% 0px 150% 0px";
 /** How long a reload keeps re-applying the reader's place while files settle. */
 const PIN_AFTER_SWAP_MS = 800;
 
+/**
+ * How long the stream's height must hold still before a jump to an edge stops holding it,
+ * and the most it holds. Mounting files draw asynchronously (grammars load lazily), so the
+ * quiet window covers a slow first draw; the reader's own input releases it sooner.
+ */
+const EDGE_SETTLE_MS = 1_000;
+const EDGE_HOLD_MAX_MS = 5_000;
+
 /** How long scrolling must pause before the viewport counts as settled. */
 const SCROLL_SETTLE_MS = 120;
 
@@ -191,6 +199,47 @@ function usePlans(review: ReviewState) {
     },
     [review],
   );
+}
+
+/**
+ * Keep the stream at one edge while the files around it settle, and return the release.
+ *
+ * A jump to an edge lands on the height laid out at that moment, but the files it brings
+ * near the viewport then mount and draw at their real heights, and files far above unmount;
+ * left alone, the reader ends short of the end. The edge is re-applied each frame until the
+ * stream's height has held still for `EDGE_SETTLE_MS` (or `EDGE_HOLD_MAX_MS` passes), and the
+ * reader's own wheel, touch, pointer, or key input releases it at once.
+ */
+function holdScrollEdge(root: HTMLElement, edge: "top" | "bottom") {
+  const apply = () => {
+    root.scrollTop = edge === "top" ? 0 : root.scrollHeight - root.clientHeight;
+  };
+  const started = performance.now();
+  let height = root.scrollHeight;
+  let changedAt = started;
+  let frame = 0;
+  const step = () => {
+    const now = performance.now();
+    if (root.scrollHeight !== height) {
+      height = root.scrollHeight;
+      changedAt = now;
+    }
+    apply();
+    if (now - changedAt < EDGE_SETTLE_MS && now - started < EDGE_HOLD_MAX_MS) {
+      frame = requestAnimationFrame(step);
+    } else {
+      release();
+    }
+  };
+  const inputs = ["wheel", "touchstart", "pointerdown", "keydown"] as const;
+  const release = () => {
+    cancelAnimationFrame(frame);
+    for (const input of inputs) root.removeEventListener(input, release);
+  };
+  for (const input of inputs) root.addEventListener(input, release, { passive: true });
+  apply();
+  frame = requestAnimationFrame(step);
+  return release;
 }
 
 /** The section element for one file key. */
@@ -414,6 +463,8 @@ export function ReviewStream(props: ReviewStreamProps) {
       const root = scrollRef.current;
       if (!root) return;
       if (hold.current) delete hold.current.pendingUntil;
+      // Page keys arrive on the document, not the stream, so they release the reload pin here.
+      releasePin.current?.();
       root.scrollTop += top;
     };
     controller.current = {
@@ -450,6 +501,7 @@ export function ReviewStream(props: ReviewStreamProps) {
         const root = scrollRef.current;
         if (!root) return;
         scrollBy(edge === "top" ? -root.scrollTop : root.scrollHeight - root.scrollTop);
+        releasePin.current = holdScrollEdge(root, edge);
       },
       scrollCode(direction, fast) {
         const root = scrollRef.current;
@@ -469,6 +521,7 @@ export function ReviewStream(props: ReviewStreamProps) {
       },
     };
     return () => {
+      releasePin.current?.();
       controller.current = null;
     };
   }, [controller]);
