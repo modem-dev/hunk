@@ -158,3 +158,31 @@ test("captures the minimap on a long review", async ({ page }) => {
   await chooseTestTheme(page, "github-light-default");
   await capture(page, "minimap-light-1440");
 });
+
+test("captures the image previews and rendered Markdown", async ({ page }) => {
+  test.setTimeout(240_000);
+  mkdirSync(OUTPUT!, { recursive: true });
+  review = await startTestWebReview("--previews");
+  await page.addInitScript(() =>
+    window.localStorage.setItem("hunk.review.panel", JSON.stringify({ open: false })),
+  );
+  await openRich(page, "github-dark-default");
+  const photo = page.locator('section[aria-label="images/photo.png"]');
+  await expect(photo.getByTestId("image-preview")).toBeVisible();
+  await capture(page, "image-side-by-side-dark");
+  await photo.getByTestId("image-mode-swipe").click();
+  await photo.getByTestId("image-slider").fill("35");
+  await capture(page, "image-swipe-dark");
+  await photo.getByTestId("image-mode-onion").click();
+  await photo.getByTestId("image-slider").fill("55");
+  await capture(page, "image-onion-dark");
+  await page.locator('section[aria-label="images/added.png"]').scrollIntoViewIfNeeded();
+  await capture(page, "image-added-deleted-dark");
+
+  const guide = page.locator('section[aria-label="docs/guide.md"]');
+  await guide.getByTestId("markdown-toggle").click();
+  await guide.evaluate((element) => element.scrollIntoView());
+  await capture(page, "markdown-rendered-dark");
+  await chooseTestTheme(page, "github-light-default");
+  await capture(page, "markdown-rendered-light");
+});

@@ -66,6 +66,7 @@ packages/hunk/src/web/
   notesPanel/noteFilters.ts    the tab's own author and text filters
   minimap/minimapProjection.ts geometry -> track bins, marks, and scroll mapping (pure)
   minimap/Minimap.tsx          the canvas minimap at the stream's right edge
+  previews/                    image previews and rendered Markdown (slots in FileSection)
 ```
 
 - **Capability.** Read from the fragment's `capability` parameter once (`capability.ts`), then
@@ -160,7 +161,7 @@ until it broke, then confirmed end to end by `test/web/review-page.e2e.ts`, whic
 
 ```text
 default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline';
-connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+connect-src 'self'; img-src blob:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
 ```
 
 | Directive                          | Why                                                                                                                                                                                                                                                                                     |
@@ -169,13 +170,14 @@ connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
 | `script-src 'self'`                | The entry and its lazy chunks come from `/review-assets`. No `'unsafe-eval'`: Shiki's JavaScript regex engine uses `RegExp`, not `eval`.                                                                                                                                                |
 | `style-src 'self' 'unsafe-inline'` | The page stylesheet is `'self'`. Pierre writes token colors as `style` attributes in HTML it injects, and both Pierre and Trees add `<style>` elements in their shadow roots for themes; neither is hashable. Constructable stylesheets (`adoptedStyleSheets`) are not governed by CSP. |
 | `connect-src 'self'`               | `fetch` to the same-origin review API.                                                                                                                                                                                                                                                  |
+| `img-src blob:`                    | Image previews only: the page reads a file's bytes through the verified resource path, sniffs the type, and shows a `blob:` URL it minted through `<img>`. No remote, `data:`, or same-origin images; an SVG drawn through `<img>` cannot run script.                                   |
 | `base-uri 'none'`                  | No `<base>` can redirect the absolute asset paths.                                                                                                                                                                                                                                      |
 | `form-action 'none'`               | The page submits no forms.                                                                                                                                                                                                                                                              |
 | `frame-ancestors 'none'`           | The page cannot be framed (with `x-frame-options: DENY` for older engines).                                                                                                                                                                                                             |
 
 Not needed and therefore absent: `'wasm-unsafe-eval'` (the build stubs `shiki/wasm`, see below),
-`worker-src` (highlighting runs on the main thread), `img-src` (Trees icons are an inline SVG
-sprite, and the document declares no favicon), and `blob:`/`data:` anywhere.
+`worker-src` (highlighting runs on the main thread), any image source but `blob:` (Trees icons
+are an inline SVG sprite, and the document declares no favicon), and `data:` anywhere.
 `require-trusted-types-for 'script'` is not possible: Pierre renders through `innerHTML`.
 
 ## Build and distribution
@@ -445,6 +447,24 @@ imports; a page fetches only the languages and themes it shows. The largest sing
   this browser. Mouse only and `aria-hidden`: the stream scrolls from the keyboard. The
   stream's measured width now follows the page once it mounts (it read 0 before, so `auto`
   layout always chose unified).
+- **Image previews.** A binary file whose path names an image format and whose first bytes carry
+  that format's signature (`previews/imageSniff.ts`: PNG, JPEG, GIF, WebP, BMP, ICO, AVIF, SVG)
+  replaces "Binary file skipped" with a preview: side by side, swipe, or onion skin, with
+  dimensions and byte sizes over a checkerboard; an added or deleted image shows its one side.
+  Each side's `bytes` resource is read whole (refused past 16 MiB with the catalog's
+  `resource-too-large`), wrapped in a `Blob` typed from the sniffed signature, shown only through
+  `<img>`, and its URL revoked on unmount. Small images are enlarged by a whole factor (at most
+  8×, pixelated); both sides share one box in the stacked modes. Bytes that are not an image or
+  do not decode keep the placeholder; a failed read shows the catalog message. Reads queue at
+  the daemon while the session's share of the read budget is busy instead of failing.
+- **Rendered Markdown.** A Markdown file with a `source` resource gets a header toggle between
+  its diff and its rendered new text (old text for a deleted file). `previews/markdown.ts`
+  parses a subset (headings, paragraphs, emphasis, strong, strikethrough, inline and fenced
+  code, lists, block quotes, links, rules, pipe tables) into a tree with no node that carries
+  markup, and `MarkdownView.tsx` builds React elements from it: raw HTML stays text, only
+  `http:`/`https:` links render (with `rel="noopener noreferrer"` and `target="_blank"`), images
+  show their alt text, nesting is capped, and lines over 10,000 characters are not scanned for
+  inline markup. The choice is per file and per tab.
 
 ## Pierre findings that shaped the client
 
