@@ -63,6 +63,9 @@ export const WEB_COMMAND_SUPPORT = {
   },
   "hunk.app.openAgentSkill": hostOnly("Shows the agent skill from the host's installation."),
   "hunk.app.openFeedback": hostOnly("The feedback form sends from the host."),
+  "hunk.app.openInBrowser": hostOnly(
+    "Opens this page from the terminal; the page is already open.",
+  ),
   "hunk.app.toggleFocusArea": terminalOnly(
     "Tab moves focus natively in the browser: toolbar, sidebar, then the review stream.",
   ),
