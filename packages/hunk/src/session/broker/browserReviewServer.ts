@@ -187,6 +187,10 @@ interface ReviewEventStream {
   /** The last position this stream was told about, which a farewell is addressed to. */
   address: ReviewPublicationAddress;
   closed: boolean;
+  /** Bytes queued for the reader just after the last heartbeat was written. */
+  queuedAtHeartbeat: number;
+  /** Bytes written to the queue since the last heartbeat. */
+  writtenSinceHeartbeat: number;
 }
 
 /** One authorized request: which session, and the digest that authorized it. */
@@ -625,6 +629,8 @@ export class BrowserReviewServer {
             controller,
             address: opening.publication,
             closed: false,
+            queuedAtHeartbeat: 0,
+            writtenSinceHeartbeat: 0,
           };
           this.streams.add(stream);
           this.sendPublication(stream);
@@ -741,12 +747,40 @@ export class BrowserReviewServer {
     }
   }
 
-  /** Keep idle streams and the proxies between them alive. */
+  /**
+   * Keep idle streams and the proxies between them alive, and end the ones that should not be.
+   *
+   * Each tick re-checks the stream's authorization, so a session that re-registered under a
+   * new capability ends its old streams within one heartbeat rather than at its next
+   * publication. It also ends a stalled reader: one that consumed nothing for a whole interval
+   * while more than a heartbeat frame was waiting. A slow reader of a large publication is
+   * still consuming, so it is never dropped by this rule; one that stopped is dropped within
+   * about two intervals instead of holding a stream slot until the byte bound fills with
+   * heartbeats.
+   */
   private broadcastHeartbeat() {
     const heartbeat = TEXT_ENCODER.encode(REVIEW_EVENT_HEARTBEAT_FRAME);
     for (const stream of Array.from(this.streams)) {
+      if (this.state.getReviewCapabilityDigest(stream.sessionId) !== stream.capabilityDigest) {
+        this.closeStream(stream);
+        continue;
+      }
+      const queued = this.queuedBytes(stream);
+      const consumed = stream.queuedAtHeartbeat + stream.writtenSinceHeartbeat - queued;
+      if (consumed <= 0 && queued > heartbeat.byteLength) {
+        this.closeStream(stream, new Error("The review event stream stopped reading."));
+        continue;
+      }
       this.write(stream, heartbeat);
+      stream.queuedAtHeartbeat = this.queuedBytes(stream);
+      stream.writtenSinceHeartbeat = 0;
     }
+  }
+
+  /** Bytes enqueued for one stream that its reader has not pulled yet. */
+  private queuedBytes(stream: ReviewEventStream) {
+    const highWaterMark = this.options.maxStreamBufferBytes ?? DEFAULT_MAX_STREAM_BUFFER_BYTES;
+    return Math.max(0, highWaterMark - (stream.controller.desiredSize ?? highWaterMark));
   }
 
   /** Enqueue bytes, dropping a stream that has fallen further behind than it may. */
@@ -760,6 +794,7 @@ export class BrowserReviewServer {
       this.removeStream(stream);
       return;
     }
+    stream.writtenSinceHeartbeat += bytes.byteLength;
     const budget = this.options.maxStreamBufferBytes ?? DEFAULT_MAX_STREAM_BUFFER_BYTES;
     // `desiredSize` goes negative by exactly the bytes queued beyond the mark, so this is
     // "the reader is a whole budget behind" rather than "the reader is merely slow".
