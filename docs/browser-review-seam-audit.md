@@ -34,8 +34,9 @@ Open work and the milestone in [`web-review-plan.md`](web-review-plan.md) that o
   client; D2 and D5's browser sites, D3's `pierreNoteAnchor`, and D4's
   `parseCanonicalReviewFile`. D1's composer site closes in M5, with the composer. B5 still
   needs its browser source policy. B7 and B8 also retain terminal adoption/behavior work.
-- **E1, E2** — the shared stat-badge formatter (M4), and the theme: the E2 decision is
-  recorded below, defaults ship in M2, and the client consumes them in M4.
+- **E1, E2** — the shared stat-badge formatter landed with the M4 review page (see E1); the
+  theme: the E2 decision is recorded below, the page ships the built-in themes, and the
+  session's resolved theme arrives with M2's presentation defaults.
 - **F browser bindings** — F1–F3's browser halves: keymap resolution onto DOM events (M4) and
   the palette (M5). F4 stays a scope boundary, not work, apart from the one allowlisted
   `review/refresh` action (M2).
@@ -555,6 +556,18 @@ path suffixes, expansion retention, git-status badges).
 - **E1. File stat badges.** Terminal `ui/lib/files.ts` `formatSidebarStat` (zero-hiding,
   truncation marker) vs web inline `+${additions} −${deletions}` in `treeSource.ts`. One
   shared formatter.
+  _Repaid (M4)_: `core/review/fileLabels.ts` owns the stat and note badges (zeros hidden, `+`
+  marking a truncated count, note badge first), filename-first names and `old -> new` labels,
+  state suffixes, change-kind letters, and the flat and tree projections, over `/` paths with
+  its own POSIX `basename`/`dirname` so a browser can import it. The terminal's `ui/lib/files.ts`
+  delegates to it and keeps only terminal path sanitizing and its renderer-model adapters;
+  `formatSidebarStat`, `sidebarFileName`, `sidebarDirectorySegments`, and
+  `sharedDirectoryDepth` are banned from that file in `scripts/quality/source-boundaries.test.ts`,
+  and `core/review/fileLabels.test.ts` pins the boundary cases (truncated counts, zero hiding,
+  root and repeated-separator paths against `node:path/posix`). The browser sidebar and stream
+  headers use the same module. The terminal's change-letter mapping in
+  `ui/components/panes/FileListItem.tsx` (`getFileStateIcon`) still mirrors
+  `reviewFileChangeGlyph`; it was left in place because this change was scoped to `ui/lib/`.
 - **E2. Theme.** Web hardcodes two standalone palettes disconnected from `packages/hunk/src/ui/themes` and
   the `AppTheme` mapping; whether the browser mirrors the terminal theme is an open product
   decision — decide before Phase 5, don't unify by default.

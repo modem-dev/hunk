@@ -66,6 +66,7 @@ describe("review conformance corpus", () => {
       "core review model",
       "terminal render planning",
       "review producer",
+      "browser file projection",
     ]);
     expect(REVIEW_NAVIGATION_CONSUMERS.map((consumer) => consumer.name)).toEqual([
       "core intent planner",

@@ -11,8 +11,14 @@
  * terminal's row builder can resolve an address without projecting a document first;
  * `reviewGapSourceForFile` adapts a semantic file onto the same shape.
  */
-import type { ReviewHunkSpan } from "./geometry";
-import type { ReviewFileChangeKind, ReviewFileV1, ReviewLineRange, ReviewSide } from "./types";
+import { normalizedReviewSourceLines, rebaseReviewHunk, type ReviewHunkSpan } from "./geometry";
+import type {
+  ReviewFileChangeKind,
+  ReviewFileV1,
+  ReviewHunkV1,
+  ReviewLineRange,
+  ReviewSide,
+} from "./types";
 
 export type ReviewGapPosition = "before" | "trailing";
 
@@ -210,4 +216,152 @@ export function resolveReviewExpandedLine(
  */
 export function reviewExpansionSide(changeKind: ReviewFileChangeKind): ReviewSide {
   return changeKind === "deleted" ? "old" : "new";
+}
+
+/** One expanded gap and the source lines that fill it. */
+export interface ReviewExpandedGapContent {
+  address: ReviewGapAddress;
+  /** Exactly `address.lineCount` lines of the expansion side's source, in file order. */
+  lines: readonly string[];
+}
+
+/**
+ * Resolve which expanded gaps can be filled from one side's full source text.
+ *
+ * Every id is resolved through `reviewGapAddress` and sliced from the expansion side with
+ * `normalizedReviewSourceLines`, so a renderer that draws whole files fills exactly the
+ * lines the terminal's rows show. A gap the source does not fully cover is left out rather
+ * than filled short.
+ */
+export function reviewExpandedGapContents(
+  file: ReviewFileV1,
+  expandedGapIds: readonly string[],
+  sourceText: string,
+): ReviewExpandedGapContent[] {
+  const source = reviewGapSourceForFile(file);
+  const side = reviewExpansionSide(file.changeKind);
+  const sourceLines = normalizedReviewSourceLines(sourceText);
+  const contents: ReviewExpandedGapContent[] = [];
+  for (const gapId of new Set(expandedGapIds)) {
+    const address = reviewGapAddress(source, gapId);
+    if (!address) continue;
+    const [start, end] = side === "old" ? address.oldRange : address.newRange;
+    const lines = sourceLines.slice(start - 1, end);
+    if (lines.length === address.lineCount) {
+      contents.push({ address, lines });
+    }
+  }
+  return contents;
+}
+
+/** One context block of `lines` rows, before re-basing gives it its indices. */
+function contextBlock(lines: number) {
+  return { type: "context" as const, lines, additionLineIndex: 0, deletionLineIndex: 0 };
+}
+
+/**
+ * Fold expanded gaps into a file's hunks as context, for a renderer that draws whole files.
+ *
+ * The terminal draws expanded gap rows itself; a renderer that takes one parsed file and
+ * draws all of it (Pierre in the browser) needs the expansion expressed as hunk geometry
+ * instead. A leading gap becomes a context block at the start of the hunk after it and a
+ * trailing gap one at the end of the last hunk, with the hunk's starts, counts, and row
+ * spans widened by the gap and its collapsed count cleared. Row totals do not change: a
+ * collapsed gap's rows are already counted in the file's split and unified totals.
+ *
+ * A complete patch already holds every line, so only the hunk moves. A partial patch holds
+ * just the patch's lines, so the gap's lines are inserted into both line arrays where the
+ * hunk's content begins and every later hunk is re-based past them with `rebaseReviewHunk`.
+ *
+ * The result is a render view of the same file — key and identities unchanged — never a
+ * publishable file.
+ */
+export function reviewFileWithExpandedGaps(
+  file: ReviewFileV1,
+  expanded: readonly ReviewExpandedGapContent[],
+): ReviewFileV1 {
+  if (expanded.length === 0) {
+    return file;
+  }
+  const before = new Map<number, ReviewExpandedGapContent>();
+  let trailing: ReviewExpandedGapContent | undefined;
+  for (const content of expanded) {
+    if (content.address.position === "before") before.set(content.address.hunkIndex, content);
+    else trailing = content;
+  }
+
+  const partial = file.flags.partial;
+  const terminated = (line: string) => line.endsWith("\n");
+  const terminator =
+    file.additionLines.some(terminated) || file.deletionLines.some(terminated) ? "\n" : "";
+  const additionLines: string[] = partial ? [] : file.additionLines;
+  const deletionLines: string[] = partial ? [] : file.deletionLines;
+  let copiedAdditions = 0;
+  let copiedDeletions = 0;
+  let shift = 0;
+  const lastIndex = file.hunks.length - 1;
+
+  const hunks = file.hunks.map((hunk, index) => {
+    const leading = before.get(index);
+    const after = index === lastIndex ? trailing : undefined;
+    if (partial) {
+      // Copy the patch lines up to this hunk, then insert the gap's lines where it begins.
+      additionLines.push(...file.additionLines.slice(copiedAdditions, hunk.additionLineIndex));
+      deletionLines.push(...file.deletionLines.slice(copiedDeletions, hunk.deletionLineIndex));
+      copiedAdditions = hunk.additionLineIndex;
+      copiedDeletions = hunk.deletionLineIndex;
+      if (leading) {
+        // Parsed lines keep their terminators; inserted ones follow the file's convention so
+        // a renderer that joins lines cannot run two of them together.
+        const inserted = leading.lines.map((line) => `${line}${terminator}`);
+        additionLines.push(...inserted);
+        deletionLines.push(...inserted);
+      }
+    }
+    if (!leading && !after && shift === 0) {
+      return hunk;
+    }
+
+    const leadingCount = leading?.address.lineCount ?? 0;
+    const trailingCount = after?.address.lineCount ?? 0;
+    // A complete patch holds line N of each side at index N - 1, so a widened hunk starts at
+    // its gap's first line; a partial patch had the gap inserted at the hunk's old origin.
+    const origins =
+      leading && !partial
+        ? {
+            additionLineIndex: leading.address.newRange[0] - 1,
+            deletionLineIndex: leading.address.oldRange[0] - 1,
+          }
+        : {
+            additionLineIndex: hunk.additionLineIndex + shift,
+            deletionLineIndex: hunk.deletionLineIndex + shift,
+          };
+    if (partial) shift += leadingCount;
+    const widened: ReviewHunkV1 = {
+      ...hunk,
+      hunkContent: [
+        ...(leading ? [contextBlock(leadingCount)] : []),
+        ...hunk.hunkContent,
+        ...(after ? [contextBlock(trailingCount)] : []),
+      ],
+      collapsedBefore: hunk.collapsedBefore - leadingCount,
+      // The gap's first line on each side, which also corrects a side with no rows of its
+      // own: such a side is positioned at the line before it, not on it.
+      additionStart: leading ? leading.address.newRange[0] : hunk.additionStart,
+      deletionStart: leading ? leading.address.oldRange[0] : hunk.deletionStart,
+      additionCount: hunk.additionCount + leadingCount + trailingCount,
+      deletionCount: hunk.deletionCount + leadingCount + trailingCount,
+      splitLineStart: hunk.splitLineStart - leadingCount,
+      unifiedLineStart: hunk.unifiedLineStart - leadingCount,
+      splitLineCount: hunk.splitLineCount + leadingCount + trailingCount,
+      unifiedLineCount: hunk.unifiedLineCount + leadingCount + trailingCount,
+    };
+    return rebaseReviewHunk(widened, origins).hunk;
+  });
+
+  if (partial) {
+    additionLines.push(...file.additionLines.slice(copiedAdditions));
+    deletionLines.push(...file.deletionLines.slice(copiedDeletions));
+  }
+  return { ...file, hunks, additionLines, deletionLines };
 }
