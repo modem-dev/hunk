@@ -3,6 +3,7 @@ import { TextareaRenderable } from "@opentui/core";
 import { createTestRenderer } from "@opentui/core/testing";
 import { testRender } from "@opentui/react/test-utils";
 import { act, useState } from "react";
+import { storedNoteToUserNote } from "../../lib/reviewNoteMapping";
 import { resolveTheme } from "../../themes";
 import {
   AgentInlineNote,
@@ -599,4 +600,52 @@ describe("AgentInlineNote draft composer", () => {
       });
     }
   });
+});
+
+// Finding: notes now arrive from remote browser actors, so their bodies are untrusted text. The
+// terminal draws a remote note through the same sanitizing path as its own.
+test("AgentInlineNote strips terminal control sequences from a remote browser note", async () => {
+  const remote = storedNoteToUserNote(
+    {
+      id: "user:remote",
+      source: "user",
+      originalSource: "browser",
+      fileKey: "file:a",
+      anchor: {
+        intersectingHunkIndices: [0],
+        ownerHunkIndex: 0,
+        preferred: { side: "new", line: 2 },
+      },
+      summary: "Look\u001b]0;pwned\u0007 here\u001b[2J now",
+      author: "agent\u001b[31m",
+      editable: true,
+    },
+    "a.ts",
+  );
+  const setup = await testRender(
+    <AgentInlineNote
+      annotation={remote}
+      anchorSide="new"
+      layout="unified"
+      theme={theme}
+      width={60}
+    />,
+    { width: 61, height: 6 },
+  );
+
+  try {
+    await act(async () => {
+      await setup.renderOnce();
+    });
+    const frame = setup.captureCharFrame();
+
+    expect(frame).toContain("Look");
+    expect(frame).toContain("now");
+    expect(frame).not.toContain("\u001b");
+    expect(frame).not.toContain("\u0007");
+  } finally {
+    await act(async () => {
+      setup.renderer.destroy();
+    });
+  }
 });

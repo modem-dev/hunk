@@ -45,6 +45,7 @@ import {
 } from "../../core/highlights/validate";
 import {
   applyReviewIntent,
+  requireReviewNoteCapacity,
   requireReviewReplyParent,
   ReviewIntentPlanningError,
   type ReviewExpansionToggledOutcome,
@@ -768,10 +769,9 @@ export class ReviewSessionHost {
       new Date(this.now()).toISOString(),
       target.hunkIndex,
     );
-    this.store.dispatch({
-      type: "notes/add-live",
-      notes: [liveCommentToStoredNote(liveComment, fileKey, file.metadata.hunks, replyParent)],
-    });
+    const stored = liveCommentToStoredNote(liveComment, fileKey, file.metadata.hunks, replyParent);
+    requireReviewNoteCapacity(this.store.getSnapshot(), { add: [stored.note] });
+    this.store.dispatch({ type: "notes/add-live", notes: [stored] });
 
     if (options.reveal ?? false) {
       this.recordAgentReveal({ fileKey, hunkIndex: target.hunkIndex, noteId: commentId });
@@ -815,17 +815,17 @@ export class ReviewSessionHost {
     });
 
     if (prepared.length > 0) {
-      this.store.dispatch({
-        type: "notes/add-live",
-        notes: prepared.map((entry) =>
-          liveCommentToStoredNote(
-            entry.liveComment,
-            entry.fileKey,
-            entry.file.metadata.hunks,
-            entry.replyParent,
-          ),
+      const notes = prepared.map((entry) =>
+        liveCommentToStoredNote(
+          entry.liveComment,
+          entry.fileKey,
+          entry.file.metadata.hunks,
+          entry.replyParent,
         ),
-      });
+      );
+      // All or nothing, like target validation: a batch that would overflow stores none of it.
+      requireReviewNoteCapacity(this.store.getSnapshot(), { add: notes.map(({ note }) => note) });
+      this.store.dispatch({ type: "notes/add-live", notes });
     }
 
     const first = prepared[0];

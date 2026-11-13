@@ -58,6 +58,8 @@ export interface ReviewSessionHarnessOptions {
   surface?: "terminal" | "headless";
   /** Answer brokered refreshes; absent, the session reports refresh as unavailable. */
   refreshReview?: () => Promise<HunkReviewRefreshResultV1>;
+  /** The broker state's clock, for tests of time-bounded behavior such as refresh pacing. */
+  now?: () => number;
   /** Answer `hunk session open`; absent, the session reports it cannot be opened. */
   openReview?: HunkSessionBridgeHandlers["openReview"];
 }
@@ -127,7 +129,10 @@ export function connectReviewSession(files: DiffFile[], options: ReviewSessionHa
     producer.attachStore(createReviewStore(producer.getPublication().document));
   }
 
-  const state = new HunkSessionBrokerState(options.cache ?? new ReviewResourceCache());
+  const state = new HunkSessionBrokerState(
+    options.cache ?? new ReviewResourceCache(),
+    options.now ? { now: options.now } : {},
+  );
   const sent: HunkSessionServerMessage[] = [];
   const bridge = createHunkSessionBridge({
     addLiveComment: () => {

@@ -24,7 +24,9 @@ import {
   type HunkReviewHttpRoute,
 } from "../reviewHttpProtocol";
 import type { HunkReviewRefreshResultV1 } from "../reviewProtocol";
+import { reviewErrorMessage } from "../reviewErrorCatalog";
 import { BrowserReviewServer } from "./browserReviewServer";
+import { REVIEW_REFRESH_MIN_INTERVAL_MS } from "./state";
 
 const SESSION_ID = "session-bytes-1";
 const running: Array<{ review: BrowserReviewServer; server: { stop: (force?: boolean) => void } }> =
@@ -204,5 +206,79 @@ describe("browser review surface: refresh", () => {
     const response = await request(REFRESH, { method: "POST" });
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({ code: "refresh-unavailable" });
+  });
+
+  // Finding: refresh had no pacing beyond coalescing, so a client could keep the VCS busy.
+  test("answers a second press within the minimum interval with the reload that just finished", async () => {
+    let calls = 0;
+    let clock = 1_000;
+    const { harness, request } = start([createTestDiffFile()], {
+      now: () => clock,
+      refreshReview: async () => {
+        calls += 1;
+        return { ok: true, ...harness.producer.getPublicationAddress() };
+      },
+    });
+
+    expect((await request(REFRESH, { method: "POST" })).status).toBe(200);
+    clock += REVIEW_REFRESH_MIN_INTERVAL_MS - 1;
+    const again = await request(REFRESH, { method: "POST" });
+    expect(again.status).toBe(200);
+    expect(await again.json()).toMatchObject({ ok: true });
+    expect(calls).toBe(1);
+
+    clock += 1;
+    expect((await request(REFRESH, { method: "POST" })).status).toBe(200);
+    expect(calls).toBe(2);
+  });
+
+  // Finding: a failed refresh returned the session's message verbatim, which can carry VCS
+  // stderr and absolute paths. The client is told the catalog sentence only.
+  test("answers a failed refresh with the catalog message, never the session's detail", async () => {
+    const { request } = start([createTestDiffFile()], {
+      refreshReview: async () => ({
+        ok: false,
+        code: "refresh-failed",
+        message: "fatal: not a git repository: /home/someone/secret-project",
+      }),
+    });
+    const response = await request(REFRESH, { method: "POST" });
+    expect(response.status).toBe(502);
+    const body = (await response.json()) as { ok: boolean; code: string; message: string };
+    expect(body).toEqual({
+      ok: false,
+      code: "refresh-failed",
+      message: reviewErrorMessage("refresh-failed"),
+    });
+    expect(body.message).not.toContain("/home/someone");
+  });
+});
+
+describe("browser review surface: failure messages", () => {
+  test("a source read failure reaches the client as its code and catalog sentence", async () => {
+    const file = {
+      ...createTestDiffFile({ id: "leaky", path: "leaky.ts" }),
+      byteFetcher: {
+        getBytes: async () => {
+          throw new Error("EACCES: permission denied, open '/home/someone/secret/leaky.ts'");
+        },
+      },
+    };
+    const { harness, request } = start([file]);
+    const publication = harness.producer.getPublication();
+    const response = await request({
+      kind: "resource",
+      sessionId: SESSION_ID,
+      generation: publication.generation,
+      resourceId: reviewResourceId({
+        kind: "bytes",
+        fileKey: publication.document.files[0]!.key,
+        side: "new",
+      }),
+    });
+    const body = (await response.json()) as { code: string; message: string };
+    expect(body.code).toBe("resource-unavailable");
+    expect(body.message).toBe(reviewErrorMessage("resource-unavailable"));
+    expect(JSON.stringify(body)).not.toContain("/home/someone");
   });
 });

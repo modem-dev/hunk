@@ -6,6 +6,7 @@
  * in `docs/browser-review-seam-audit.md`, never captured from a run. Files are named by index.
  */
 import type { DiffFile } from "../../packages/hunk/src/core/changeset/model";
+import { MAX_REVIEW_NOTES } from "../../packages/hunk/src/core/review/noteSize";
 import type { ReviewDocumentV1 } from "../../packages/hunk/src/core/review/types";
 import type {
   HunkReviewActionV1,
@@ -19,8 +20,16 @@ export type ReviewActorPolicyStep =
       kind: "action";
       actor: HunkReviewActorV1;
       action: (document: ReviewDocumentV1) => HunkReviewActionV1;
+      /**
+       * How the action reaches the session: through the review link's capability (a browser
+       * tab, the HTTP surface) or through the authenticated session API (`hunk session`).
+       * Defaults to the capability for a browser actor and the session API otherwise.
+       */
+      channel?: "capability" | "session";
     }
-  | { kind: "reload"; build: () => DiffFile[] };
+  | { kind: "reload"; build: () => DiffFile[] }
+  /** An agent fills the review with this many live comments on the first file's first hunk. */
+  | { kind: "seed-live-notes"; count: number };
 
 /** What one step did: applied (the review moved), a no-op, or refused with a code. */
 export type ReviewActorPolicyOutcome = "applied" | "no-op" | { code: string };
@@ -66,6 +75,11 @@ function sourcedFile(id: string, changed = "800") {
     path: `src/${id}.ts`,
     sourceFetcher: createTestSourceFetcher(() => lines(...after)),
   });
+}
+
+/** The channel one action step arrives through. */
+export function reviewActorPolicyChannel(step: Extract<ReviewActorPolicyStep, { kind: "action" }>) {
+  return step.channel ?? (step.actor.kind === "browser" ? "capability" : "session");
 }
 
 /** The key of the file at one index. */
@@ -213,6 +227,84 @@ export const REVIEW_ACTOR_POLICY_FIXTURES: readonly ReviewActorPolicyFixture[] =
       outcomes: ["applied", "applied", "applied"],
       selection: { file: 0, hunkIndex: 0 },
       viewed: [0],
+      notes: [],
+    },
+  },
+  {
+    id: "direct-note-past-the-stored-note-bound",
+    findings: ["D5"],
+    description:
+      "A review one note short of its stored-note bound takes one more browser note and refuses the next with too-many-notes, so the snapshots every reader accepts stay within their bounds.",
+    surface: "headless",
+    build: () => [sourcedFile("alpha")],
+    steps: [
+      { kind: "seed-live-notes", count: MAX_REVIEW_NOTES - 1 },
+      {
+        kind: "action",
+        actor: BROWSER,
+        action: (document) => ({
+          type: "notes/add-user",
+          fileKey: keyAt(document, 0),
+          hunkIndex: 0,
+          body: "The last one that fits",
+        }),
+      },
+      {
+        kind: "action",
+        actor: BROWSER,
+        action: (document) => ({
+          type: "notes/add-user",
+          fileKey: keyAt(document, 0),
+          hunkIndex: 0,
+          body: "One too many",
+        }),
+      },
+    ],
+    expected: {
+      outcomes: ["applied", "applied", { code: "too-many-notes" }],
+      selection: { file: 0, hunkIndex: 0 },
+      viewed: [],
+      notes: [
+        ...Array.from({ length: MAX_REVIEW_NOTES - 1 }, () => ({
+          file: 0,
+          summary: "seed",
+          ownerHunkIndex: 0,
+        })),
+        { file: 0, author: "Ana", summary: "The last one that fits", ownerHunkIndex: 0 },
+      ],
+    },
+  },
+  {
+    id: "capability-holder-claiming-another-kind",
+    findings: ["G2"],
+    description:
+      "A caller holding only the review link declares itself an agent and then a terminal to move every surface; both are refused with forbidden-actor, while the same agent move through the session API applies.",
+    surface: "terminal",
+    build: () => [sourcedFile("alpha"), sourcedFile("beta")],
+    steps: [
+      {
+        kind: "action",
+        actor: AGENT,
+        channel: "capability",
+        action: (document) => ({ type: "selection/select-file", fileKey: keyAt(document, 1) }),
+      },
+      {
+        kind: "action",
+        actor: { clientId: "tab-3", kind: "terminal" },
+        channel: "capability",
+        action: (document) => ({ type: "selection/select-file", fileKey: keyAt(document, 1) }),
+      },
+      {
+        kind: "action",
+        actor: AGENT,
+        channel: "session",
+        action: (document) => ({ type: "selection/select-file", fileKey: keyAt(document, 1) }),
+      },
+    ],
+    expected: {
+      outcomes: [{ code: "forbidden-actor" }, { code: "forbidden-actor" }, "applied"],
+      selection: { file: 1, hunkIndex: 0 },
+      viewed: [],
       notes: [],
     },
   },

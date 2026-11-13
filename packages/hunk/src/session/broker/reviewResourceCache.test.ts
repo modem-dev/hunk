@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { ReviewResourceBudgetError, ReviewResourceCache } from "./reviewResourceCache";
+import {
+  MAX_REVIEW_DAEMON_INFLIGHT_BYTES,
+  MAX_REVIEW_SESSION_INFLIGHT_BYTES,
+  MAX_REVIEW_SESSION_INFLIGHT_RESOURCES,
+  ReviewResourceBudgetError,
+  ReviewResourceCache,
+} from "./reviewResourceCache";
 
 const KEY = {
   sessionId: "s-1",
@@ -123,5 +129,45 @@ describe("ReviewResourceCache", () => {
     expect(cache.getCachedBytes()).toBe(0);
     expect(cache.getReservedBytes()).toBe(0);
     expect(cache.getEntryCount()).toBe(0);
+  });
+});
+
+// Finding: every session shared one in-flight budget, so one capability holder issuing many
+// concurrent reads against one session made every other session's reads fail.
+describe("ReviewResourceCache per-session shares", () => {
+  const key = (sessionId: string, index: number) => ({
+    sessionId,
+    generation: "generation:p1:0",
+    resourceId: `resource:patch:file:${index}`,
+  });
+
+  test("caps one session's concurrent loads and leaves the rest for other sessions", () => {
+    const cache = new ReviewResourceCache();
+    for (let index = 0; index < MAX_REVIEW_SESSION_INFLIGHT_RESOURCES; index += 1) {
+      cache.reserve(key("busy", index), 1024);
+    }
+
+    expect(() => cache.reserve(key("busy", 99), 1024)).toThrow(ReviewResourceBudgetError);
+    expect(() => cache.reserve(key("quiet", 0), 1024)).not.toThrow();
+  });
+
+  test("caps one session's concurrent bytes, but lets a lone load use the whole budget", () => {
+    const cache = new ReviewResourceCache();
+    const half = MAX_REVIEW_SESSION_INFLIGHT_BYTES;
+    cache.reserve(key("busy", 0), half - 1);
+
+    expect(() => cache.reserve(key("busy", 1), 2)).toThrow(ReviewResourceBudgetError);
+    expect(() => cache.reserve(key("quiet", 0), half)).not.toThrow();
+
+    const lone = new ReviewResourceCache();
+    expect(() => lone.reserve(key("big", 0), MAX_REVIEW_DAEMON_INFLIGHT_BYTES)).not.toThrow();
+  });
+
+  test("holds a resized load to its session's share", () => {
+    const cache = new ReviewResourceCache();
+    cache.reserve(key("busy", 0), MAX_REVIEW_SESSION_INFLIGHT_BYTES - 1024);
+    const growing = cache.reserve(key("busy", 1), 512);
+
+    expect(() => cache.resize(growing, 4096)).toThrow(ReviewResourceBudgetError);
   });
 });
