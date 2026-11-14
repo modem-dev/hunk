@@ -309,25 +309,30 @@ async function buildSourceAssets(buildScript: string): Promise<boolean> {
 let embedded: Promise<ReviewPageAssets | undefined> | undefined;
 const directoryCache = new Map<string, { manifest: string; loaded: ReviewPageAssets }>();
 
-/** The build a directory holds now, re-read only when its manifest's content changed. */
+/**
+ * The build a directory holds now, re-read only when its manifest's content changed.
+ *
+ * A manifest that cannot be read or parsed is a rebuild caught mid-install (the directory
+ * swapped out, or a manifest from an older build script still being written), so the last
+ * build this directory served keeps answering until a readable manifest replaces it. Each of
+ * its assets is still checked on disk, so a file the rebuild removed is answered as absent.
+ */
 function loadDirectoryBuild(directory: string): ReviewPageAssets | undefined {
+  const cached = directoryCache.get(directory);
   let manifest: string;
   try {
     manifest = readFileSync(join(directory, REVIEW_PAGE_MANIFEST_NAME), "utf8");
   } catch {
-    directoryCache.delete(directory);
-    return undefined;
+    return cached?.loaded;
   }
-  const cached = directoryCache.get(directory);
   if (cached?.manifest === manifest) {
     return cached.loaded;
   }
   const loaded = directoryReviewPageAssets(directory);
-  if (loaded) {
-    directoryCache.set(directory, { manifest, loaded });
-  } else {
-    directoryCache.delete(directory);
+  if (!loaded) {
+    return cached?.loaded;
   }
+  directoryCache.set(directory, { manifest, loaded });
   return loaded;
 }
 
