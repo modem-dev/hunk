@@ -78,6 +78,18 @@ function collectAttributes(html: string, attribute: "href" | "id" | "src") {
   return [...html.matchAll(pattern)].map((match) => decodeAttribute(match[1] ?? ""));
 }
 
+/**
+ * Read the Open Graph and Twitter image URLs a page publishes.
+ *
+ * These live in `content` attributes, which the href/src scan never sees, so a card the page
+ * names but the build never shipped would otherwise pass.
+ */
+function collectSocialImages(html: string) {
+  const pattern =
+    /<meta\s+(?:property="og:image"|name="twitter:image")\s+content=["']([^"']+)["']/g;
+  return [...html.matchAll(pattern)].map((match) => decodeAttribute(match[1] ?? ""));
+}
+
 /** Map one site-relative URL path to its static build file. */
 function outputPathForUrl(distDir: string, pathname: string) {
   const decoded = decodeURIComponent(pathname).replace(/^\/+/, "");
@@ -139,6 +151,15 @@ export function checkWebsiteBuild(distDir = DEFAULT_DIST_DIR) {
         if (!html.includes(requiredTag)) {
           errors.push(`${label}: missing head metadata: ${requiredTag}`);
         }
+      }
+    }
+
+    // Social cards are drawn by a manual generator, so a new page can name one that was never
+    // rendered. Every card on this origin must exist in the build it is published from.
+    for (const image of new Set(collectSocialImages(html))) {
+      if (!image.startsWith(`${CANONICAL_ORIGIN}/`)) continue;
+      if (!existsSync(outputPathForUrl(distDir, new URL(image).pathname))) {
+        errors.push(`${label}: missing social image: ${image}`);
       }
     }
 

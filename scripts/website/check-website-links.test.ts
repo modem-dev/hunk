@@ -49,6 +49,7 @@ function createWebsiteFixture() {
     "https://hunk.dev/og.png",
     "https://hunk.dev/compare/hunk-vs-delta/og.png",
   );
+  writeFileSync(join(dist, "compare", "hunk-vs-delta", "og.png"), "asset");
   writeFileSync(
     join(dist, "compare", "hunk-vs-delta", "index.html"),
     `<html><head><title>Hunk vs delta</title><meta name="description" content="Compare"><link rel="canonical" href="https://hunk.dev/compare/hunk-vs-delta/">${compareHead}</head><body><a href="/docs/">Docs</a></body></html>`,
@@ -106,6 +107,16 @@ describe("static website link checking", () => {
       html.replaceAll("https://hunk.dev/compare/hunk-vs-delta/og.png", "https://hunk.dev/og.png"),
     );
     expect(() => checkWebsiteBuild(dist)).toThrow("missing head metadata");
+  });
+
+  test("reports a social card the page names but the build does not ship", () => {
+    const dist = createWebsiteFixture();
+
+    // A comparison added without rerunning the card generator: the metadata is right, the file is not.
+    rmSync(join(dist, "compare", "hunk-vs-delta", "og.png"));
+    expect(() => checkWebsiteBuild(dist)).toThrow(
+      "missing social image: https://hunk.dev/compare/hunk-vs-delta/og.png",
+    );
   });
 
   test("reports canonical-route and route-specific social metadata drift", () => {
