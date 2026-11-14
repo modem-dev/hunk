@@ -2,6 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { currentDirectoryReviewPageAssets } from "../../packages/hunk/src/session/broker/reviewPageAssets";
+import { ReviewPageServer } from "../../packages/hunk/src/session/broker/reviewPageServer";
+import { reviewAssetPath } from "../../packages/hunk/src/session/reviewHttpProtocol";
 import { BUNDLED_SHIKI_THEME_IDS } from "../../packages/hunk/src/core/theme/catalog";
 import { TERMINAL_THEME_ID } from "../../packages/hunk/src/core/theme/terminalColors";
 import { THEMES } from "../../packages/hunk/src/ui/themes";
@@ -41,6 +44,36 @@ describe("installBuild", () => {
       installBuild(path.join(root, "staging-c"), outdir);
 
       expect([has("main-a.js"), has("main-b.js"), has("main-c.js")]).toEqual([false, true, true]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // Intent: the daemon serves only names a manifest records, so a kept asset must be recorded
+  // to reach an open page; unknown names and the generation before it still 404.
+  test("serves the replaced build's assets through the page server after a rebuild", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "hunk-build-web-"));
+    const outdir = path.join(root, "web");
+    const server = new ReviewPageServer({
+      loadAssets: async () => currentDirectoryReviewPageAssets(outdir),
+    });
+    const status = async (name: string) =>
+      (await server.handle(new Request(`http://127.0.0.1${reviewAssetPath(name)}`)))!.status;
+
+    try {
+      writeTestBuild(outdir, ["chunk-a.js"]);
+      expect(await status("chunk-a.js")).toBe(200);
+      writeTestBuild(path.join(root, "staging-b"), ["chunk-b.js"]);
+      installBuild(path.join(root, "staging-b"), outdir);
+
+      expect(await status("chunk-a.js")).toBe(200);
+      expect(await status("chunk-b.js")).toBe(200);
+      expect(await status("chunk-unknown.js")).toBe(404);
+
+      writeTestBuild(path.join(root, "staging-c"), ["chunk-c.js"]);
+      installBuild(path.join(root, "staging-c"), outdir);
+      expect(await status("chunk-a.js")).toBe(404);
+      expect(await status("chunk-b.js")).toBe(200);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

@@ -162,6 +162,11 @@ export class ClientReviewStore {
     this.hiddenFileKeys = fileKeys;
   }
 
+  /** The files this page currently hides by the reader's choice. */
+  hiddenFiles(): ReadonlySet<string> {
+    return this.hiddenFileKeys;
+  }
+
   /** Apply one page-local intent through the shared planner. */
   apply<T extends LocalReviewIntent>(intent: T) {
     if (!isLocalReviewIntent(intent)) {
@@ -216,6 +221,9 @@ export class ClientReviewStore {
       return;
     }
 
+    // A read still running for this file (its status was dropped by a reload of the same
+    // generation) is superseded: aborted, and its answer ignored, so old text cannot land.
+    this.sourceLoads.get(fileKey)?.abort();
     const controller = new AbortController();
     this.sourceLoads.set(fileKey, controller);
     this.store.dispatch({

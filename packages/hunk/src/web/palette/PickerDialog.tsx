@@ -9,6 +9,7 @@
  * component and differ only in their rows.
  */
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { ModalDialog } from "./ModalDialog";
 
 export interface PickerDialogProps<T> {
   label: string;
@@ -52,75 +53,61 @@ export function PickerDialog<T>(props: PickerDialogProps<T>) {
   };
 
   return (
-    <div
-      className="picker-backdrop"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) props.onClose();
-      }}
+    <ModalDialog
+      className="picker"
+      label={props.label}
+      testId={props.testId}
+      onClose={props.onClose}
     >
-      <div
-        className="picker"
-        role="dialog"
-        aria-modal="true"
+      <input
+        ref={inputRef}
+        className="picker-input"
+        role="combobox"
+        aria-expanded="true"
+        aria-controls={listId}
+        aria-autocomplete="list"
         aria-label={props.label}
-        data-testid={props.testId}
-      >
-        <input
-          ref={inputRef}
-          className="picker-input"
-          role="combobox"
-          aria-expanded="true"
-          aria-controls={listId}
-          aria-autocomplete="list"
-          aria-label={props.label}
-          aria-activedescendant={ranked.length > 0 ? optionId(activeIndex) : undefined}
-          placeholder={props.placeholder}
-          value={query}
-          onChange={(event) => {
-            setQuery(event.target.value);
-            setActive(0);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "ArrowDown") {
-              event.preventDefault();
-              setActive((activeIndex + 1) % Math.max(1, ranked.length));
-            } else if (event.key === "ArrowUp") {
-              event.preventDefault();
-              setActive((activeIndex - 1 + ranked.length) % Math.max(1, ranked.length));
-            } else if (event.key === "Enter") {
-              event.preventDefault();
-              pick(activeIndex);
-            } else if (event.key === "Escape") {
-              event.preventDefault();
-              props.onClose();
-            }
-          }}
-        />
-        <ul
-          ref={listRef}
-          id={listId}
-          className="picker-list"
-          role="listbox"
-          aria-label={props.label}
-        >
-          {ranked.map((item, index) => (
-            <li
-              key={props.itemKey(item)}
-              id={optionId(index)}
-              data-index={index}
-              role="option"
-              aria-selected={index === activeIndex}
-              className="picker-option"
-              onMouseMove={() => index !== activeIndex && setActive(index)}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => pick(index)}
-            >
-              {props.renderItem(item)}
-            </li>
-          ))}
-        </ul>
-        {ranked.length === 0 ? <p className="picker-empty">{props.empty}</p> : null}
-      </div>
-    </div>
+        aria-activedescendant={ranked.length > 0 ? optionId(activeIndex) : undefined}
+        placeholder={props.placeholder}
+        value={query}
+        onChange={(event) => {
+          setQuery(event.target.value);
+          setActive(0);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            setActive((activeIndex + 1) % Math.max(1, ranked.length));
+          } else if (event.key === "ArrowUp") {
+            event.preventDefault();
+            setActive((activeIndex - 1 + ranked.length) % Math.max(1, ranked.length));
+          } else if (event.key === "Enter") {
+            event.preventDefault();
+            pick(activeIndex);
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            props.onClose();
+          }
+        }}
+      />
+      <ul ref={listRef} id={listId} className="picker-list" role="listbox" aria-label={props.label}>
+        {ranked.map((item, index) => (
+          <li
+            key={props.itemKey(item)}
+            id={optionId(index)}
+            data-index={index}
+            role="option"
+            aria-selected={index === activeIndex}
+            className="picker-option"
+            onMouseMove={() => index !== activeIndex && setActive(index)}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => pick(index)}
+          >
+            {props.renderItem(item)}
+          </li>
+        ))}
+      </ul>
+      {ranked.length === 0 ? <p className="picker-empty">{props.empty}</p> : null}
+    </ModalDialog>
   );
 }

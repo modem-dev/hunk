@@ -441,7 +441,6 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
   );
   const lastAgentReveal = useRef<number | undefined>(undefined);
   const agentReveal: ReviewAgentRevealV1 | null | undefined = shownShared?.agentReveal;
-  const documentReady = review.document.files.length > 0;
   useEffect(() => {
     if (agentReveal === undefined) return;
     const token = agentReveal?.token ?? 0;
@@ -518,6 +517,13 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
   }, [mirror.catalog, session, markdownModes]);
   const previewsRef = useRef(previews);
   previewsRef.current = previews;
+  // A hunk reveal (`]`, a note jump, an agent's navigation, a deep link) into a file shown as
+  // rendered Markdown shows its diff again, since the hunk and its notes exist only there.
+  useLayoutEffect(() => {
+    if (review.reveal.hunkToken === 0 || !review.selection.fileKey) return;
+    markdownModes.showDiff(review.selection.fileKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [review.reveal.hunkToken]);
 
   // The minimap's marks, by file key.
   const minimapFiles = useMemo(
@@ -729,12 +735,12 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
     commands,
     keymap,
     entries,
-    documentReady,
     setRevealPoint,
     copyReviewLink: copyLink,
     chooseSessionTheme: () => choose(SESSION_THEME_OPTION_ID),
     setSidebarMode: (sidebarMode) => updatePreferences({ sidebarMode }),
     localHandlers: panelHandlers,
+    expandFile: viewedControls.expand,
   });
   const toolsRef = useRef<typeof tools | undefined>(undefined);
   toolsRef.current = tools;

@@ -68,6 +68,12 @@ export interface ReviewPageAssetManifestV1 {
   formatVersion: 1;
   /** Every servable asset except the document, in build output order. */
   assets: string[];
+  /**
+   * The replaced build's assets a source-checkout rebuild kept beside this one, so a page
+   * loaded before the rebuild still finds its lazy chunks. Served by name like `assets`; only
+   * a build directory carries them, never an archive or a packaged install.
+   */
+  retained?: string[];
 }
 
 /** Parse one manifest, refusing any asset name the page grammar would not serve. */
@@ -82,10 +88,19 @@ export function parseReviewPageAssetManifest(
     return undefined;
   }
   const assets = record.assets;
-  const valid = assets.every(
-    (name) => isReviewAssetName(name) && reviewAssetContentType(name) !== undefined,
-  );
-  return valid ? { formatVersion: 1, assets: assets as string[] } : undefined;
+  const retained = record.retained;
+  if (retained !== undefined && !Array.isArray(retained)) {
+    return undefined;
+  }
+  const servable = (name: unknown) =>
+    isReviewAssetName(name) && reviewAssetContentType(name as string) !== undefined;
+  const valid = assets.every(servable) && (retained ?? []).every(servable);
+  if (!valid) return undefined;
+  return {
+    formatVersion: 1,
+    assets: assets as string[],
+    ...(retained ? { retained: retained as string[] } : {}),
+  };
 }
 
 /** One servable file: its bytes, how they are typed, and whether they are stored gzipped. */
@@ -121,7 +136,8 @@ export function directoryReviewPageAssets(directory: string): ReviewPageAssets |
     return undefined;
   }
 
-  const listed = new Set(manifest.assets);
+  // Every name is still one the build recorded: its own assets, then the ones it retained.
+  const listed = new Set([...manifest.assets, ...(manifest.retained ?? [])]);
   return {
     document: () => ({
       body: Bun.file(join(directory, REVIEW_PAGE_DOCUMENT_NAME)),

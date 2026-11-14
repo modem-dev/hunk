@@ -7,6 +7,9 @@ import {
 import { serveTestWebReview } from "../../../../../test/helpers/web-review-server";
 import type { ReviewSharedNoteV1, ReviewSharedStateV1 } from "../../session/reviewSharedState";
 import { ReviewMirror } from "../mirror/reviewMirror";
+import { createTestReviewDocument } from "../../../../../test/helpers/review-store-helpers";
+import type { HunkReviewResourceCatalogV1 } from "../../session/reviewProtocol";
+import type { ReviewApiClient } from "../transport/apiClient";
 import { ClientReviewStore, isLocalReviewIntent } from "./clientReviewStore";
 
 const running: Array<() => void> = [];
@@ -246,4 +249,41 @@ describe("ClientReviewStore", () => {
       });
     },
   );
+
+  // Intent: when a second source read starts for one file (a same-generation reload dropped
+  // the first one's status), the first is aborted and its slower answer never lands.
+  test("aborts a superseded source read and ignores its answer", async () => {
+    const reads: Array<{ resolve: (text: string) => void; signal: AbortSignal }> = [];
+    const client = {
+      readResource: (_descriptor: unknown, signal: AbortSignal) =>
+        new Promise<Uint8Array>((resolve) => {
+          reads.push({ resolve: (text) => resolve(new TextEncoder().encode(text)), signal });
+        }),
+    } as unknown as ReviewApiClient;
+    const review = new ClientReviewStore({ client });
+    const document = createTestReviewDocument(["alpha"]);
+    const fileKey = document.files[0]!.key;
+    const catalog = {
+      generation: "g1",
+      resources: [{ kind: "source", fileKey, id: "source:alpha", generation: "g1" }],
+    } as unknown as HunkReviewResourceCatalogV1;
+    review.adopt(document, catalog);
+
+    void review.loadSource(fileKey);
+    // A reload of the same generation drops the unattested status while the read runs.
+    review.adopt({ files: [...document.files] }, catalog);
+    void review.loadSource(fileKey);
+    expect(reads).toHaveLength(2);
+    expect(reads[0]!.signal.aborted).toBe(true);
+
+    reads[1]!.resolve("new text");
+    await Bun.sleep(0);
+    reads[0]!.resolve("old text");
+    await Bun.sleep(0);
+
+    expect(review.store.getSnapshot().sourceStatusByFileKey[fileKey]).toEqual({
+      kind: "loaded",
+      text: "new text",
+    });
+  });
 });

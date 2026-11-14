@@ -140,17 +140,17 @@ export function Minimap(props: MinimapProps) {
     const heights = stream.bodyHeights();
     const files = current.slots.map((slot): MinimapFileInput => {
       const file = current.files.get(slot.key);
+      // Rows as drawn: a collapsed gap is one separator row, so marks sit where hunks are.
+      const drawn = file ? stream.drawnRows(slot.key) : undefined;
       return {
         key: slot.key,
         headerHeight: SECTION_CHROME_PX,
         bodyHeight: heights.get(slot.key) ?? 0,
         stats: slot.index?.stats ?? file?.stats ?? { additions: 0, deletions: 0 },
-        ...(file
+        ...(file && drawn
           ? {
               rows: {
-                splitLineCount: file.splitLineCount,
-                unifiedLineCount: file.unifiedLineCount,
-                hunks: file.hunks,
+                ...drawn,
                 hunkChanges: file.hunks.map((hunk) => ({
                   additions: hunk.additionLines,
                   deletions: hunk.deletionLines,
@@ -172,6 +172,8 @@ export function Minimap(props: MinimapProps) {
       ...(current.selected ? { selected: current.selected } : {}),
     });
     model.current = next;
+    // The stream height the track is projected from, so a test can compare it with the stream.
+    track.dataset.streamHeight = String(Math.round(next.streamHeight));
     paint(canvas, next, track.clientWidth);
     moveWindow();
     // Named so a performance trace (and the large-review test) can see what a repaint costs.
@@ -213,17 +215,21 @@ export function Minimap(props: MinimapProps) {
   ]);
 
   // Scrolling moves the window and picks up heights measured as files mount; resizing the
-  // track or the stream reflows both.
+  // track or the stream reflows both; the stream's own height changes (wrapping, a viewed file
+  // collapsing, a gap or preview drawn) repaint without a scroll.
   useEffect(() => {
-    const element = props.controller.current?.element();
+    const stream = props.controller.current;
+    const element = stream?.element();
     const track = trackRef.current;
-    if (!element || !track) return;
+    if (!stream || !element || !track) return;
     element.addEventListener("scroll", schedule, { passive: true });
+    const stopLayout = stream.subscribeLayout(schedule);
     const observer = new ResizeObserver(schedule);
     observer.observe(track);
     observer.observe(element);
     return () => {
       element.removeEventListener("scroll", schedule);
+      stopLayout();
       observer.disconnect();
       cancelAnimationFrame(frame.current);
       frame.current = 0;

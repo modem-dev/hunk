@@ -52,12 +52,38 @@ describe("NoteComposerStore", () => {
     expect(storage.values.has(noteDraftStorageKey("s1"))).toBe(false);
   });
 
-  test("does not persist a composer that is sending", () => {
+  // Intent: the backup lasts until the session accepts the save, so a refused or interrupted
+  // save (the tab closed mid-request) still has its text after a reload.
+  test("keeps a sending draft's backup until the session accepts it", () => {
     const storage = createTestStorage();
     const store = new NoteComposerStore("s1", storage);
     const key = store.open(NEW_NOTE);
     store.update(key, { body: "sent", status: "sending" });
+    expect(new NoteComposerStore("s1", storage).getSnapshot()).toMatchObject([
+      { key, body: "sent", status: "editing" },
+    ]);
+
+    store.update(key, { awaiting: { generation: "g1", stateRevision: 3 } });
     expect(new NoteComposerStore("s1", storage).getSnapshot()).toEqual([]);
+  });
+
+  // Intent: reading `window.sessionStorage` throws when storage is blocked; the page must
+  // still start, without the reload safety net.
+  test("starts without storage when the browser refuses it", () => {
+    const holder = globalThis as { window?: unknown };
+    holder.window = {
+      get sessionStorage(): Storage {
+        throw new Error("SecurityError");
+      },
+    };
+    try {
+      const store = new NoteComposerStore("s1", undefined);
+      const key = store.open(NEW_NOTE);
+      store.update(key, { body: "kept in memory" });
+      expect(store.getSnapshot()).toMatchObject([{ body: "kept in memory" }]);
+    } finally {
+      delete holder.window;
+    }
   });
 
   test("ignores malformed drafts", () => {
@@ -96,6 +122,20 @@ describe("NoteComposerStore", () => {
     store.settleSent({ generation: "g1", stateRevision: 4 });
     expect(store.getSnapshot()).toHaveLength(1);
     store.settleSent({ generation: "g1", stateRevision: 5 });
+    expect(store.getSnapshot()).toHaveLength(0);
+  });
+
+  // Intent: the snapshot showing the note can arrive before the save's answer; the composer
+  // still closes when the answer comes, without waiting for another snapshot.
+  test("closes a sent composer whose answer arrives after the snapshot that shows it", () => {
+    const store = new NoteComposerStore("s1", createTestStorage());
+    const key = store.open(NEW_NOTE);
+    store.update(key, { status: "sending" });
+    store.settleSent({ generation: "g1", stateRevision: 5 });
+    expect(store.getSnapshot()).toHaveLength(1);
+
+    store.update(key, { awaiting: { generation: "g1", stateRevision: 5 } });
+
     expect(store.getSnapshot()).toHaveLength(0);
   });
 });
