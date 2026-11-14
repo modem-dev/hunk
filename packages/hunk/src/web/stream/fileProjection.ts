@@ -122,24 +122,29 @@ export function toPierreFileDiff(
  * places hunks by these fractions lands where they are drawn, and follows a gap's expansion.
  */
 export function reviewDrawnRows(plan: ReviewFileRenderPlan) {
-  const folded = (hunkIndex: number) =>
-    plan.gaps
-      .filter(
-        (gap) =>
-          gap.state !== "expanded" &&
-          gap.address.position === "before" &&
-          gap.address.hunkIndex <= hunkIndex,
-      )
-      .reduce((rows, gap) => rows + gap.address.lineCount - 1, 0);
+  // One pass over the gaps, then a running sum over the hunks: the minimap asks for every
+  // file on each repaint, so this stays linear in gaps plus hunks.
+  const foldedBefore = Array.from({ length: plan.file.hunks.length }, () => 0);
+  for (const gap of plan.gaps) {
+    if (gap.state === "expanded" || gap.address.position !== "before") continue;
+    const hunkIndex = gap.address.hunkIndex;
+    if (hunkIndex < 0 || hunkIndex >= foldedBefore.length) continue;
+    foldedBefore[hunkIndex]! += gap.address.lineCount - 1;
+  }
+
+  let folded = 0;
   return {
     splitLineCount: plan.reservedRows.split,
     unifiedLineCount: plan.reservedRows.unified,
-    hunks: plan.file.hunks.map((hunk, index) => ({
-      splitLineStart: hunk.splitLineStart - folded(index),
-      splitLineCount: hunk.splitLineCount,
-      unifiedLineStart: hunk.unifiedLineStart - folded(index),
-      unifiedLineCount: hunk.unifiedLineCount,
-    })),
+    hunks: plan.file.hunks.map((hunk, index) => {
+      folded += foldedBefore[index]!;
+      return {
+        splitLineStart: hunk.splitLineStart - folded,
+        splitLineCount: hunk.splitLineCount,
+        unifiedLineStart: hunk.unifiedLineStart - folded,
+        unifiedLineCount: hunk.unifiedLineCount,
+      };
+    }),
   };
 }
 
