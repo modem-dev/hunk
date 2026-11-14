@@ -120,6 +120,7 @@ Review and shared commands:
 | `hunk.review.alignCurrentLineCenter`           | Center current line in viewport                | _(none)_                     |
 | `hunk.review.alignCurrentLineTop`              | Align current line to viewport top             | _(none)_                     |
 | `hunk.review.clearSelection`                   | Clear the active visual selection              | _(none)_                     |
+| `hunk.review.copySelectedHunk`                 | Copy the selected hunk                         | `Y`                          |
 | `hunk.review.copySelection`                    | Copy the active visual selection               | `y`                          |
 | `hunk.review.deleteActiveNote`                 | Delete active review note                      | `D`                          |
 | `hunk.review.editActiveNote`                   | Edit active review note                        | `E`                          |

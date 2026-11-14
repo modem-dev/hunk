@@ -112,6 +112,7 @@ const HELP_SECTIONS: readonly HelpSectionSpec[] = [
     entries: [
       { commandIds: ["hunk.review.focusFilter"], description: "focus file filter" },
       { commandIds: ["hunk.review.startNote"], description: "create review note" },
+      { commandIds: ["hunk.review.copySelectedHunk"], description: "copy selected hunk" },
       { commandIds: ["hunk.review.saveNote"], description: "save draft note" },
       {
         commandIds: [

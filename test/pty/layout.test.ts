@@ -601,7 +601,7 @@ export default function (hunk) {
     width: { preferred: 40, min: 40, max: 40 },
     component: () => createElement("text", { content: "WIDTH PROBE" }),
   });
-  hunk.registerCommand({ id: "toggle-probe", title: "Toggle probe", key: "Y" }, (ctx) => {
+  hunk.registerCommand({ id: "toggle-probe", title: "Toggle probe", key: "X" }, (ctx) => {
     ctx.panes.toggle("width-probe");
   });
 }
@@ -620,7 +620,7 @@ export default function (hunk) {
       expect(initial).not.toMatch(/alpha = 1;.*alpha = 2;/);
       expect(harness.countMatches(initial, /alpha\.ts/g)).toBeGreaterThanOrEqual(2);
 
-      await session.type("Y");
+      await session.type("X");
       const closed = await harness.waitForSnapshot(
         session,
         (text) => !text.includes("WIDTH PROBE") && /alpha = 1;.*alpha = 2;/.test(text),
@@ -628,7 +628,7 @@ export default function (hunk) {
       );
       expect(sidebarDividerColumn(closed)).toBeGreaterThan(0);
 
-      await session.type("Y");
+      await session.type("X");
       await harness.waitForSnapshot(
         session,
         (text) => text.includes("WIDTH PROBE") && !/alpha = 1;.*alpha = 2;/.test(text),
