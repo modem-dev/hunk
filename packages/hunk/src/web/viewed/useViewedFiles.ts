@@ -13,7 +13,12 @@
  *   makes navigation walk past them (through the store's `hiddenFileKeys` fact);
  * - which viewed files the reader expanded. A viewed file's body is collapsed by default; a
  *   click expands it, and a hunk reveal into it (`]`, a note jump, an agent's navigation)
- *   expands it before the stream scrolls there.
+ *   expands it before the stream scrolls there;
+ * - the one hidden file an explicit jump revealed. Relative navigation never lands on a hidden
+ *   file, so any reveal request that does (a deep link, go to file, an Overview row, a Notes
+ *   tab row, an agent's navigation) is one the reader or the agent asked for by name: that file
+ *   is shown, expanded, despite "Hide viewed" until the next explicit jump lands elsewhere or
+ *   the reader toggles "Hide viewed". A request to look somewhere is never silently dropped.
  *
  * The session decides the marks; nothing here sends anything but `files/set-viewed`.
  */
@@ -24,9 +29,11 @@ import type { ReviewSharedStateV1 } from "../../session/reviewSharedState";
 import type { ReviewActionSender } from "../actions/reviewActions";
 import type { ClientReviewStore } from "../store/clientReviewStore";
 import {
+  forgetClearedViewedMarks,
   forgetViewedMark,
   rememberViewedMarks,
   reviewViewedStatus,
+  reviewViewedVisibility,
   type ReviewViewedStatus,
   type ViewedMemory,
 } from "./viewedFiles";
@@ -87,10 +94,17 @@ export function useViewedFiles(options: UseViewedFilesOptions) {
   const [hideViewed, setHideViewed] = useState(() => readStored(HIDE_VIEWED_KEY) === "on");
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
 
-  // Every mark the session lists is remembered at its content, for "changed since viewed".
+  // Every mark the session lists is remembered at its content, for "changed since viewed";
+  // a mark it stopped listing while the content stayed the same was cleared, and is forgotten.
   useEffect(() => {
     if (!shared) return;
-    setMemory((current) => rememberViewedMarks(current, shared.viewedFiles));
+    setMemory((current) =>
+      forgetClearedViewedMarks(
+        rememberViewedMarks(current, shared.viewedFiles),
+        shared.files,
+        shared.viewedFiles,
+      ),
+    );
   }, [shared]);
   useEffect(() => {
     writeStored(MEMORY_KEY_PREFIX + sessionId, JSON.stringify(memory));
@@ -113,37 +127,39 @@ export function useViewedFiles(options: UseViewedFilesOptions) {
     [files, shared],
   );
 
-  // A hunk reveal into a collapsed viewed file opens it in the same render, so the stream
-  // scrolls to the hunk rather than to a collapsed placeholder; the effect then keeps it open.
-  // Selection changes from scrolling bump no token and open nothing.
-  const hunkToken = review.reveal.hunkToken;
+  // A reveal request (either token) not yet absorbed is a navigation landing on the selected
+  // file. Its effects apply in the same render, so the stream scrolls to the file as it will
+  // be drawn; the effect below then records them. Selection changes from scrolling bump no
+  // token and change nothing here.
+  const { hunkToken, fileTopToken } = review.reveal;
   const selectedKey = review.selection.fileKey;
-  const [absorbedToken, setAbsorbedToken] = useState(hunkToken);
-  const revealedKey = hunkToken !== absorbedToken ? selectedKey : null;
+  const [absorbed, setAbsorbed] = useState({ hunkToken, fileTopToken });
+  const [revealed, setRevealed] = useState<string | null>(null);
+  const landing =
+    hunkToken !== absorbed.hunkToken || fileTopToken !== absorbed.fileTopToken ? selectedKey : null;
+  const landingViewed = landing !== null && statuses.get(landing) === "viewed";
+  // A hunk reveal opens a collapsed viewed file; any reveal onto a hidden one reveals it.
+  const opening = landingViewed && hunkToken !== absorbed.hunkToken ? landing : null;
+  const shownDespiteHide = landingViewed && hideViewed ? landing : landing ? null : revealed;
   useEffect(() => {
-    if (hunkToken === absorbedToken) return;
-    if (selectedKey && statuses.get(selectedKey) === "viewed") {
-      setExpanded((current) =>
-        current.has(selectedKey) ? current : new Set(current).add(selectedKey),
-      );
+    if (hunkToken === absorbed.hunkToken && fileTopToken === absorbed.fileTopToken) return;
+    if (opening) {
+      setExpanded((current) => (current.has(opening) ? current : new Set(current).add(opening)));
     }
-    setAbsorbedToken(hunkToken);
-  }, [hunkToken, absorbedToken, selectedKey, statuses]);
+    setRevealed(shownDespiteHide);
+    setAbsorbed({ hunkToken, fileTopToken });
+  }, [hunkToken, fileTopToken, absorbed, opening, shownDespiteHide]);
 
-  const collapsed = useMemo(() => {
-    const keys = new Set<string>();
-    for (const [key, status] of statuses) {
-      if (status === "viewed" && !expanded.has(key) && key !== revealedKey) keys.add(key);
-    }
-    return keys;
-  }, [statuses, expanded, revealedKey]);
-
-  const hidden = useMemo(() => {
-    const keys = new Set<string>();
-    if (!hideViewed) return keys;
-    for (const [key, status] of statuses) if (status === "viewed") keys.add(key);
-    return keys;
-  }, [statuses, hideViewed]);
+  const { hidden, collapsed } = useMemo(
+    () =>
+      reviewViewedVisibility(statuses, {
+        hideViewed,
+        expanded,
+        opening,
+        revealed: shownDespiteHide,
+      }),
+    [statuses, hideViewed, expanded, opening, shownDespiteHide],
+  );
   useEffect(() => {
     store.setHiddenFiles(hidden);
   }, [store, hidden]);
@@ -156,7 +172,9 @@ export function useViewedFiles(options: UseViewedFilesOptions) {
         showError(outcome.message);
         return;
       }
-      // Marking collapses the file again; clearing forgets the content it was marked at.
+      // Marking collapses the file again, and hides it again if a jump had revealed it;
+      // clearing forgets the content it was marked at.
+      if (viewed) setRevealed((current) => (current === fileKey ? null : current));
       setExpanded((current) => {
         if (!current.has(fileKey)) return current;
         const next = new Set(current);
@@ -186,12 +204,29 @@ export function useViewedFiles(options: UseViewedFilesOptions) {
     });
   }, []);
 
+  // Toggling either way ends a jump's reveal: the setting then means what it says.
   const toggleHideViewed = useCallback(() => {
+    setRevealed(null);
     setHideViewed((current) => {
       writeStored(HIDE_VIEWED_KEY, current ? "off" : "on");
       return !current;
     });
   }, []);
+
+  /**
+   * Open a collapsed viewed file that hunk navigation (`]`, `[`, annotated hunks) just entered.
+   *
+   * Crossing into the next file reveals its top rather than the hunk, which carries no hunk
+   * reveal for the workflow above to see, so the page's hunk commands call this instead. File
+   * navigation (`,` `.`, the sidebar) lands on the collapsed row and leaves it collapsed.
+   */
+  const openForHunk = useCallback(
+    (fileKey: string) => {
+      if (statuses.get(fileKey) !== "viewed") return;
+      setExpanded((current) => (current.has(fileKey) ? current : new Set(current).add(fileKey)));
+    },
+    [statuses],
+  );
 
   return {
     statuses,
@@ -203,6 +238,7 @@ export function useViewedFiles(options: UseViewedFilesOptions) {
     expand,
     collapse,
     toggleHideViewed,
+    openForHunk,
   };
 }
 

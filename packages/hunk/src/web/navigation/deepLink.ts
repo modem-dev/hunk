@@ -10,8 +10,9 @@
  * Resolution turns an address into the selection change that shows it, and refuses an
  * address the shown document cannot honor (an unknown file, a hunk past the end, a note that
  * is not stored) rather than guessing a nearby target. A target the review has but this page
- * does not show (filtered out, hidden as viewed, an agent note while agent notes are hidden)
- * is named with its reason, and a line is placed as drawn, inside a collapsed gap the page can
+ * does not show by shared state (filtered out, an agent note while agent notes are hidden)
+ * is named with its reason (a file "Hide viewed" removes is revealed instead, by the page's
+ * viewed workflow), and a line is placed as drawn, inside a collapsed gap the page can
  * expand, or absent from the diff, so the page never lands somewhere else without saying so.
  */
 import {
@@ -87,26 +88,25 @@ function hunkForLine(file: ReviewFileV1, side: ReviewSide, line: number) {
 }
 
 /** Why a target the review has is not shown on this page. */
-export type ReviewAddressHiddenReason = "filter" | "hidden-viewed" | "agent-notes-hidden";
+export type ReviewAddressHiddenReason = "filter" | "agent-notes-hidden";
 
 /**
  * Return why one resolvable address points at something this page does not show, if it does.
  *
- * A file the shared filter leaves out, a file "Hide viewed" removes, and an agent note while
- * agent notes are hidden all exist in the review but have nowhere to be revealed. The page
- * says why instead of landing somewhere else, and never changes the shared filter or note
- * visibility on the reader's behalf; a viewed file that is only collapsed is not hidden, since
- * revealing it can expand it.
+ * A file the shared filter leaves out and an agent note while agent notes are hidden both
+ * exist in the review but have nowhere to be revealed. The page says why instead of landing
+ * somewhere else, and never changes the shared filter or note visibility on the reader's
+ * behalf. "Hide viewed" is this browser's own choice, not shared state, so a file it removes
+ * is not a reason: the jump reveals that file (`viewed/useViewedFiles.ts`), and a viewed file
+ * that is only collapsed is expanded.
  */
 export function reviewAddressHiddenReason(
   state: ReviewState,
   address: ReviewAddress,
-  hiddenFileKeys: ReadonlySet<string>,
 ): ReviewAddressHiddenReason | undefined {
   const file = state.document.files.find((candidate) => candidate.key === address.fileKey);
   if (!file) return undefined;
   if (!reviewFileMatchesFilter(file, state.filter)) return "filter";
-  if (hiddenFileKeys.has(file.key)) return "hidden-viewed";
   if (address.kind === "note") {
     const entry = selectStoredReviewNoteById(state, address.noteId);
     if (entry && !reviewNoteVisibleByPolicy(entry.note, state.showAgentNotes)) {
@@ -121,8 +121,6 @@ export function reviewAddressHiddenMessage(reason: ReviewAddressHiddenReason, pa
   switch (reason) {
     case "filter":
       return `This link points at ${path}, which the shared filter hides. Clear the filter to see it.`;
-    case "hidden-viewed":
-      return `This link points at ${path}, which is hidden because it is viewed and "Hide viewed" is on.`;
     case "agent-notes-hidden":
       return `This link points at an agent note in ${path}, and agent notes are hidden. Show them with "a" to see it.`;
   }

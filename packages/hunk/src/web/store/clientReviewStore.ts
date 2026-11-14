@@ -26,9 +26,10 @@
  */
 import { buildReviewAnnotationIndexFromNotes } from "../../core/review/annotations";
 import { applyReviewIntent, type ReviewIntent } from "../../core/review/intents";
-import { selectNormalizedSelection } from "../../core/review/selectors";
+import { selectNearestShownFileKey, selectNormalizedSelection } from "../../core/review/selectors";
 import {
   EMPTY_REVIEW_ANNOTATION_INDEX,
+  REVIEW_FILE_JUMP_HUNK_INDEX,
   type ReviewAnnotationIndex,
 } from "../../core/review/navigation";
 import type { ReviewStoredNote } from "../../core/review/state";
@@ -157,14 +158,26 @@ export class ClientReviewStore {
   /**
    * Name the files this page hides by the reader's choice ("hide viewed"); relative navigation
    * walks past them through the planner's `hiddenFileKeys` fact. The shared filter is separate.
+   *
+   * A selection whose file becomes hidden (the reader marks the selected file viewed, or turns
+   * "Hide viewed" on) moves to the nearest shown file by `selectNearestShownFileKey`, without
+   * asking the viewport to move, so navigation continues from where the reader was. With no
+   * file shown it stays where it is; the page says that everything is hidden.
    */
   setHiddenFiles(fileKeys: ReadonlySet<string>) {
     this.hiddenFileKeys = fileKeys;
-  }
 
-  /** The files this page currently hides by the reader's choice. */
-  hiddenFiles(): ReadonlySet<string> {
-    return this.hiddenFileKeys;
+    const state = this.store.getSnapshot();
+    const { fileKey } = selectNormalizedSelection(state);
+    if (fileKey === null || !fileKeys.has(fileKey)) return;
+    const nearest = selectNearestShownFileKey(state, fileKey, fileKeys);
+    if (nearest !== null) {
+      this.store.dispatch({
+        type: "selection/select",
+        fileKey: nearest,
+        hunkIndex: REVIEW_FILE_JUMP_HUNK_INDEX,
+      });
+    }
   }
 
   /** Apply one page-local intent through the shared planner. */

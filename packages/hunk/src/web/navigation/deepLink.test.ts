@@ -94,26 +94,24 @@ describe("reviewAddressHiddenReason", () => {
     ...createTestReviewState(["alpha", "beta"], { showAgentNotes: true }),
     liveNotes: [createTestStoredNote({ id: "n1", fileKey: "beta", hunkIndex: 1, line: 12 })],
   };
-  const NONE = new Set<string>();
 
   // Intent: a link to something the review has but this page does not show is named with its
-  // reason rather than silently landing elsewhere.
-  test("names the filter, hide viewed, and hidden agent notes as reasons", () => {
+  // reason rather than silently landing elsewhere. A file "Hide viewed" removes is not one of
+  // them: the page reveals it (`viewed/useViewedFiles.ts`), so the link lands.
+  test("names the filter and hidden agent notes as reasons, never hide viewed", () => {
     const beta = { kind: "file", fileKey: "beta" } as const;
-    expect(reviewAddressHiddenReason(state, beta, NONE)).toBeUndefined();
-    expect(reviewAddressHiddenReason({ ...state, filter: "alpha" }, beta, NONE)).toBe("filter");
-    expect(reviewAddressHiddenReason(state, beta, new Set(["beta"]))).toBe("hidden-viewed");
+    expect(reviewAddressHiddenReason(state, beta)).toBeUndefined();
+    expect(reviewAddressHiddenReason({ ...state, filter: "alpha" }, beta)).toBe("filter");
 
     const note = { kind: "note", fileKey: "beta", noteId: "n1" } as const;
-    expect(reviewAddressHiddenReason(state, note, NONE)).toBeUndefined();
-    expect(reviewAddressHiddenReason({ ...state, showAgentNotes: false }, note, NONE)).toBe(
+    expect(reviewAddressHiddenReason(state, note)).toBeUndefined();
+    expect(reviewAddressHiddenReason({ ...state, showAgentNotes: false }, note)).toBe(
       "agent-notes-hidden",
     );
   });
 
   test("words each reason with the file's path", () => {
     expect(reviewAddressHiddenMessage("filter", "src/a.ts")).toContain("shared filter");
-    expect(reviewAddressHiddenMessage("hidden-viewed", "src/a.ts")).toContain("Hide viewed");
     expect(reviewAddressHiddenMessage("agent-notes-hidden", "src/a.ts")).toContain(
       "agent notes are hidden",
     );

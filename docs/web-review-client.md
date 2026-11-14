@@ -398,7 +398,9 @@ imports; a page fetches only the languages and themes it shows. The largest sing
   `core/review/address.ts` (file, hunk, line, note over percent-encoded semantic ids, strictly
   parsed), beside the capability parameter, which is stripped on load and never written here.
   The address is resolved once the document arrives, before the page writes its own position;
-  an address the review cannot honor moves nothing and says so. Navigating rewrites the
+  an address the review cannot honor moves nothing and says so. A target shared state hides
+  (the filter, hidden agent notes) is named in a toast with its reason; a file this browser's
+  "Hide viewed" hides is revealed instead (see Viewed files). Navigating rewrites the
   current history entry (`replaceState`); a deliberate jump (go to file, a sidebar file) adds
   one (`pushState`), so Back and Forward return through them. "Copy link to this hunk or note"
   copies the full link with the capability, on purpose.
@@ -512,16 +514,33 @@ the shared-state snapshot lists only marks that still match each file's `content
   changed, so the page remembers per session and per browser the content each file was last
   seen marked at (`viewed/viewedFiles.ts`, `localStorage` key `hunk.review.viewed.<session>`).
   A file remembered at other content and not marked now shows "Changed since viewed" until it
-  is marked again or cleared.
+  is marked again or cleared. A mark the snapshot stops listing while the file still has the
+  remembered content was cleared by someone (this page, another browser, the terminal), not
+  dropped by a change, so it is forgotten and cannot later turn into "Changed since viewed".
 - **Collapsing.** A viewed file's body collapses to one row ("Viewed · show changes") that
   expands it on click; an expanded viewed file offers "Collapse" in its header. A hunk reveal
-  into a collapsed file (`]`, a note jump, an agent's navigation) expands it in the same render
-  so the stream lands on the hunk. Collapsed bodies are not `.file-body`, so they never replace
-  a file's measured height.
+  into a collapsed file (a note jump, an agent's navigation, a deep link) expands it in the same
+  render so the stream lands on the hunk, and hunk navigation (`[`, `]`, `{`, `}`) that enters
+  a collapsed file opens it even when it crosses in at the file's top. File navigation (`,`,
+  `.`, the sidebar) lands on the collapsed row and leaves it collapsed. Collapsed bodies are not
+  `.file-body`, so they never replace a file's measured height; each body is observed from
+  creation to removal, so one re-created by expanding is measured like the first.
 - **Hide viewed.** A per-browser toolbar toggle (`hunk.web.toggleHideViewed`, `localStorage`
   key `hunk.review.hideViewed`) removes viewed files from the stream, the sidebar, and the
   minimap, and the page's store passes them to the planner as its `hiddenFileKeys` fact, so
   relative navigation walks past them the way it walks past filtered files.
+  - _Hiding the selected file._ When the selected file becomes hidden (marked viewed with the
+    toggle on, or the toggle turned on), the selection moves to the next shown file, else the
+    previous one (`selectNearestShownFileKey` in `core/review/selectors.ts`), without scrolling,
+    so navigation continues. This differs on purpose from the shared filter, which keeps a
+    filtered-out selection: hiding follows from finishing the file. With nothing shown, the
+    stream says every file is viewed and hidden and offers "Show viewed files".
+  - _Explicit jumps reveal._ Relative navigation never lands on a hidden file, so any reveal
+    that does was asked for by name: a deep link, back and forward, go to file, an Overview
+    row, a Notes-tab row, or an agent's `hunk session navigate`. That one file is shown,
+    expanded, despite "Hide viewed" until the next explicit jump lands elsewhere or the toggle
+    is flipped; scrolling away keeps it. An agent saying "look here" is never dropped, and a
+    deep link to such a file lands rather than explaining why it cannot.
 
 ## Pierre findings that shaped the client
 

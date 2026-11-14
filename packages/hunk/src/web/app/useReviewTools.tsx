@@ -137,13 +137,14 @@ export function useReviewTools(options: ReviewToolsOptions) {
       const file = state.document.files.find((candidate) => candidate.key === target.fileKey)!;
       linkedLine.current = undefined;
 
-      // A target the page does not show is named with its reason; shared state stays as it is.
-      const hidden = reviewAddressHiddenReason(state, address, session.review.hiddenFiles());
+      // A target shared state hides is named with its reason; shared state stays as it is. A
+      // file "Hide viewed" hides is revealed by the jump itself (`useViewedFiles`), and a viewed
+      // file collapsed in the stream opens, so the link shows its content.
+      const hidden = reviewAddressHiddenReason(state, address);
       if (hidden) {
         session.toasts.show(reviewAddressHiddenMessage(hidden, file.path), "info");
         return true;
       }
-      // A viewed file collapsed in the stream opens, so the link shows its content.
       latest.current.expandFile?.(target.fileKey);
 
       if (address.kind === "file") {
