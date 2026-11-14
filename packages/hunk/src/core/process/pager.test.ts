@@ -131,6 +131,27 @@ describe("plain text pager fallback", () => {
     );
   });
 
+  test("defaults LESS to FRX for the fallback less pager when the caller left it unset", async () => {
+    if (process.platform === "win32") return;
+
+    const spawnEnvs: NodeJS.ProcessEnv[] = [];
+    const deps = createPagerDeps({
+      spawnImpl(_command, _args, options) {
+        spawnEnvs.push(options.env ?? {});
+        return createClosingPager() as never;
+      },
+    });
+
+    // jj runs `hunk pager` without LESS, so short text like `jj status` must not hold the screen.
+    await pagePlainText("Working copy changes:\n", {}, deps);
+    // Git exports LESS=FRX itself; a user's own LESS must win too.
+    await pagePlainText("status\n", { LESS: "R" }, deps);
+    // An explicitly configured pager keeps the caller's environment untouched.
+    await pagePlainText("status\n", { PAGER: "less -R" }, deps);
+
+    expect(spawnEnvs.map((env) => env.LESS)).toEqual(["FRX", "R", undefined]);
+  });
+
   test("writes directly to stdout when not attached to a terminal", async () => {
     let written = "";
     let spawnCalled = false;
