@@ -18,6 +18,7 @@ function createWebsiteFixture() {
   tempDirectories.push(dist);
   mkdirSync(join(dist, "docs", "guide"), { recursive: true });
   mkdirSync(join(dist, "extensions"), { recursive: true });
+  mkdirSync(join(dist, "compare", "hunk-vs-delta"), { recursive: true });
   mkdirSync(join(dist, "pagefind"), { recursive: true });
   for (const asset of REQUIRED_ASSETS) {
     const path = join(dist, asset);
@@ -29,7 +30,7 @@ function createWebsiteFixture() {
   const marketingHead =
     '<link rel="icon" href="/icon.png"><meta property="og:type" content="website"><meta property="og:image" content="https://hunk.dev/og.png"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="https://hunk.dev/og.png">';
   const docsHead =
-    '<link rel="icon" href="/docs/favicon.svg"><meta property="og:type" content="website"><meta property="og:image" content="https://hunk.dev/og.png"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="https://hunk.dev/og.png">';
+    '<link rel="icon" href="/icon.png"><meta property="og:type" content="website"><meta property="og:image" content="https://hunk.dev/og.png"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="https://hunk.dev/og.png">';
   writeFileSync(
     join(dist, "index.html"),
     `<html><head><title>Hunk</title><meta name="description" content="Hunk"><link rel="canonical" href="https://hunk.dev/">${marketingHead}</head><body><main id="install"><a href="/docs/">Docs</a><img src="/og.png"></main></body></html>`,
@@ -43,6 +44,16 @@ function createWebsiteFixture() {
     join(dist, "extensions", "index.html"),
     `<html><head><title>Extensions</title><meta name="description" content="Extensions"><link rel="canonical" href="https://hunk.dev/extensions/">${extensionsHead}</head><body><a href="/docs/">Docs</a><img src="/og.png"></body></html>`,
   );
+  // Comparison routes publish their own card too, beside the page it describes.
+  const compareHead = marketingHead.replaceAll(
+    "https://hunk.dev/og.png",
+    "https://hunk.dev/compare/hunk-vs-delta/og.png",
+  );
+  writeFileSync(join(dist, "compare", "hunk-vs-delta", "og.png"), "asset");
+  writeFileSync(
+    join(dist, "compare", "hunk-vs-delta", "index.html"),
+    `<html><head><title>Hunk vs delta</title><meta name="description" content="Compare"><link rel="canonical" href="https://hunk.dev/compare/hunk-vs-delta/">${compareHead}</head><body><a href="/docs/">Docs</a></body></html>`,
+  );
   writeFileSync(
     join(dist, "docs", "index.html"),
     `<html><head><title>Docs</title><meta name="description" content="Docs"><link rel="canonical" href="https://hunk.dev/docs/">${docsHead}</head><body id="_top"><a href="/docs/guide/#step">Guide</a><a href="/">Home</a><img src="/og.png"></body></html>`,
@@ -53,14 +64,14 @@ function createWebsiteFixture() {
   );
   writeFileSync(
     join(dist, "sitemap-0.xml"),
-    "<urlset><url><loc>https://hunk.dev/</loc></url><url><loc>https://hunk.dev/extensions/</loc></url><url><loc>https://hunk.dev/docs/</loc></url><url><loc>https://hunk.dev/docs/guide/</loc></url></urlset>",
+    "<urlset><url><loc>https://hunk.dev/</loc></url><url><loc>https://hunk.dev/extensions/</loc></url><url><loc>https://hunk.dev/compare/hunk-vs-delta/</loc></url><url><loc>https://hunk.dev/docs/</loc></url><url><loc>https://hunk.dev/docs/guide/</loc></url></urlset>",
   );
   return dist;
 }
 
 describe("static website link checking", () => {
   test("accepts unified marketing and docs routes, anchors, metadata, and assets", () => {
-    expect(checkWebsiteBuild(createWebsiteFixture())).toEqual({ pages: 4, canonicalPages: 4 });
+    expect(checkWebsiteBuild(createWebsiteFixture())).toEqual({ pages: 5, canonicalPages: 5 });
   });
 
   test("reports missing internal anchors without making network requests", () => {
@@ -84,6 +95,28 @@ describe("static website link checking", () => {
       html.replaceAll("https://hunk.dev/extensions/og.png", "https://hunk.dev/og.png"),
     );
     expect(() => checkWebsiteBuild(dist)).toThrow("missing head metadata");
+  });
+
+  test("requires each comparison to publish its own social card", () => {
+    const dist = createWebsiteFixture();
+    const comparePath = join(dist, "compare", "hunk-vs-delta", "index.html");
+    const html = readFileSync(comparePath, "utf8");
+
+    writeFileSync(
+      comparePath,
+      html.replaceAll("https://hunk.dev/compare/hunk-vs-delta/og.png", "https://hunk.dev/og.png"),
+    );
+    expect(() => checkWebsiteBuild(dist)).toThrow("missing head metadata");
+  });
+
+  test("reports a social card the page names but the build does not ship", () => {
+    const dist = createWebsiteFixture();
+
+    // A comparison added without rerunning the card generator: the metadata is right, the file is not.
+    rmSync(join(dist, "compare", "hunk-vs-delta", "og.png"));
+    expect(() => checkWebsiteBuild(dist)).toThrow(
+      "missing social image: https://hunk.dev/compare/hunk-vs-delta/og.png",
+    );
   });
 
   test("reports canonical-route and route-specific social metadata drift", () => {

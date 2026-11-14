@@ -6,7 +6,7 @@ const DEFAULT_DIST_DIR = join(REPO_ROOT, "website", "dist");
 const CANONICAL_ORIGIN = "https://hunk.dev";
 const EDIT_PREFIX = "https://github.com/modem-dev/hunk/edit/main/";
 const DOCS_HEAD_TAGS = [
-  '<link rel="icon" href="/docs/favicon.svg"',
+  '<link rel="icon" href="/icon.png"',
   '<meta property="og:type" content="website"',
   '<meta property="og:image" content="https://hunk.dev/og.png"',
   '<meta name="twitter:card" content="summary_large_image"',
@@ -27,11 +27,22 @@ const MARKETING_SOCIAL_IMAGES: Record<string, string> = {
   "index.html": "https://hunk.dev/og.png",
   "extensions/index.html": "https://hunk.dev/extensions/og.png",
 };
+/**
+ * Social image for a comparison route: each one, and the hub, publishes a card beside its page.
+ *
+ * Derived from the route rather than listed, so a new comparison is covered without editing this.
+ */
+function comparisonSocialImage(label: string) {
+  const match = label.match(/^compare\/((?:[^/]+\/)?)index\.html$/);
+  return match ? `${CANONICAL_ORIGIN}/compare/${match[1]}og.png` : undefined;
+}
+
 /** Public files every build must ship; the link-check test builds its fixture from this. */
 export const REQUIRED_ASSETS = [
   "apple-icon.png",
   "favicon.svg",
   "icon.png",
+  "compare/og.png",
   "extensions/og.png",
   "modem-light.svg",
   "og.png",
@@ -41,7 +52,6 @@ export const REQUIRED_ASSETS = [
   "shot-gruvbox.webp",
   "shot-nord.webp",
   "shot-tokyo-night.webp",
-  "docs/favicon.svg",
   "docs/hunk-review-skill.md",
   "pagefind/pagefind.js",
 ] as const;
@@ -68,6 +78,18 @@ function collectAttributes(html: string, attribute: "href" | "id" | "src") {
   return [...html.matchAll(pattern)].map((match) => decodeAttribute(match[1] ?? ""));
 }
 
+/**
+ * Read the Open Graph and Twitter image URLs a page publishes.
+ *
+ * These live in `content` attributes, which the href/src scan never sees, so a card the page
+ * names but the build never shipped would otherwise pass.
+ */
+function collectSocialImages(html: string) {
+  const pattern =
+    /<meta\s+(?:property="og:image"|name="twitter:image")\s+content=["']([^"']+)["']/g;
+  return [...html.matchAll(pattern)].map((match) => decodeAttribute(match[1] ?? ""));
+}
+
 /** Map one site-relative URL path to its static build file. */
 function outputPathForUrl(distDir: string, pathname: string) {
   const decoded = decodeURIComponent(pathname).replace(/^\/+/, "");
@@ -86,7 +108,7 @@ function canonicalUrlForOutput(label: string) {
 
 /** Return metadata required for one canonical page type. */
 function requiredHeadTags(label: string): readonly string[] {
-  const socialImage = MARKETING_SOCIAL_IMAGES[label];
+  const socialImage = MARKETING_SOCIAL_IMAGES[label] ?? comparisonSocialImage(label);
   if (socialImage) {
     return [
       ...MARKETING_HEAD_TAGS,
@@ -129,6 +151,15 @@ export function checkWebsiteBuild(distDir = DEFAULT_DIST_DIR) {
         if (!html.includes(requiredTag)) {
           errors.push(`${label}: missing head metadata: ${requiredTag}`);
         }
+      }
+    }
+
+    // Social cards are drawn by a manual generator, so a new page can name one that was never
+    // rendered. Every card on this origin must exist in the build it is published from.
+    for (const image of new Set(collectSocialImages(html))) {
+      if (!image.startsWith(`${CANONICAL_ORIGIN}/`)) continue;
+      if (!existsSync(outputPathForUrl(distDir, new URL(image).pathname))) {
+        errors.push(`${label}: missing social image: ${image}`);
       }
     }
 

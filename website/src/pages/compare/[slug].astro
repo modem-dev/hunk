@@ -131,7 +131,8 @@ const reviewedOn = reviewedOnLabel();
       description={comparison.description}
       keywords={comparison.keywords.join(", ")}
       path={path}
-      ogImageAlt="hunk: terminal diffs for humans and agents"
+      ogImage={`${SITE_ORIGIN}/compare/${comparison.slug}/og.png`}
+      ogImageAlt={`${comparison.headline}: ${comparison.summary}`}
       schema={schema}
     />
     <link
