@@ -27,7 +27,13 @@ magick source.png -resize '1400x>' -strip -quality 82 public/docs/images/review-
 magick source.png -resize '960x>' -strip -quality 82 public/docs/images/agent-comments.webp
 ```
 
-`public/og.png` is the shared 1200×630 social card for the landing page and documentation. Keep it aligned with the site metadata and paper/green theme.
+## Social cards
+
+`scripts/generate-og.ts` (`bun run generate:og` from the repository root) draws every social card from the logo SVGs in `public/brand/`:
+
+- `public/og.png`: the site-wide 1200×630 card for the landing page, docs, and /brand. The review window on its right is `scripts/assets/og-review-window.png`; replace that capture to refresh the product shot.
+- `assets/github-social-preview.png`: the same layout at 1280×640 for the repository. GitHub does not read it from the repo, so upload it by hand under Settings → General → Social preview after redrawing it.
+- Page cards for the changelog series, /extensions, the /compare pages, and the VCS guides. Comparison and VCS cards take their copy from `src/data/comparisons.ts` and `src/data/vcsLandingPages.ts`, so rerun the script after editing those.
 
 ## Community video thumbnails
 
