@@ -1,5 +1,4 @@
 import type { CursorLine, LayoutMode } from "../../core/run/commandInputs";
-import { WEB_REVIEW_ENTRY_POINTS_RELEASED } from "../../core/run/webReviewRelease";
 import { HUNK_VENDOR_EXTENSION_ID } from "../../extensions/extensionIds";
 import type { AppMenus, MenuEntry, MenuId } from "../components/chrome/menu";
 import { executeAppCommand, isCommandEnabled, type AppCommand } from "./appCommands";
@@ -150,9 +149,7 @@ export function buildAppMenus({
       { commandId: "hunk.review.focusFilter", label: "Focus filter" },
       { commandId: "hunk.review.editSelectedFile", label: "Open file in editor" },
       { commandId: "hunk.app.refresh", label: "Reload" },
-      ...(WEB_REVIEW_ENTRY_POINTS_RELEASED
-        ? [{ commandId: "hunk.app.openInBrowser", label: "Open in browser" }]
-        : []),
+      { commandId: "hunk.app.openInBrowser", label: "Open in browser" },
       SEPARATOR,
       { commandId: "hunk.app.quit" },
     ],

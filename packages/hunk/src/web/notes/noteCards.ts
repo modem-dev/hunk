@@ -81,6 +81,7 @@ export function renderNoteCard(card: WebNoteCard): HTMLElement {
       button.dataset.noteAction = action;
       button.textContent = ACTION_LABELS[action];
       button.setAttribute("aria-label", `${ACTION_LABELS[action]}: ${card.title}`);
+      button.disabled = card.actionsDisabled === true;
       actions.append(button);
     }
     article.append(actions);

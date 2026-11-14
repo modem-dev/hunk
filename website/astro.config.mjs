@@ -134,6 +134,7 @@ export default defineConfig({
             { label: "Git pager and difftool", slug: "docs/workflows/git-pager-and-difftool" },
             { label: "Jujutsu and Sapling", slug: "docs/workflows/jujutsu-and-sapling" },
             { label: "Watch mode", slug: "docs/workflows/watch-mode" },
+            { label: "Browser review", slug: "docs/workflows/browser-review" },
           ],
         },
         {

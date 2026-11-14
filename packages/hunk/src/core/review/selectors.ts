@@ -146,6 +146,37 @@ export function selectFallbackFileKey(
 }
 
 /**
+ * The file a selection moves to when the caller's surface hides its file by the reader's own
+ * choice (a page's "hide viewed"): the next shown file in review order, else the previous one,
+ * else nothing.
+ *
+ * This is deliberately not the filter rule in `selectNormalizedSelection`, which keeps a
+ * filtered-out selection: filtering changes what the reviewer browses, while hiding a viewed
+ * file follows from finishing it, and a selection left on a file nothing shows has no place in
+ * the stream to navigate from. "Nothing" means every file the filter leaves is hidden.
+ */
+export function selectNearestShownFileKey(
+  state: Pick<ReviewState, "document" | "filter">,
+  fileKey: string,
+  hiddenFileKeys: ReadonlySet<string>,
+): string | null {
+  const files = state.document.files;
+  const shown = (index: number) => {
+    const file = files[index]!;
+    return !hiddenFileKeys.has(file.key) && reviewFileMatchesFilter(file, state.filter);
+  };
+  // A file the document no longer has starts from the top, as the fallback rule does.
+  const index = files.findIndex((file) => file.key === fileKey);
+  for (let next = index + 1; next < files.length; next += 1) {
+    if (shown(next)) return files[next]!.key;
+  }
+  for (let previous = index - 1; previous >= 0; previous -= 1) {
+    if (shown(previous)) return files[previous]!.key;
+  }
+  return null;
+}
+
+/**
  * The selection every consumer should read, normalized against the current document.
  *
  * Two rules, both of which the prototype's clients answered differently (B4):

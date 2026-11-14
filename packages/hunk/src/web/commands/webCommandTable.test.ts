@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { APP_COMMAND_CATALOG, OPEN_IN_BROWSER_COMMAND } from "../../core/run/commandCatalog";
+import { APP_COMMAND_CATALOG } from "../../core/run/commandCatalog";
 import {
   BROWSER_ALLOWED_HOST_COMMANDS,
   WEB_COMMAND_SUPPORT,
@@ -25,13 +25,9 @@ function createTestHandlers() {
 // until the page decides whether it implements, defers, or excludes it.
 describe("browser command catalog parity", () => {
   test("classifies exactly the catalogued commands", () => {
-    // The open-in-browser command joins the catalog only once the web entry points are
-    // released, but its id is always part of `AppCommandId`, so the page classifies it now.
-    const catalogued = new Set([
-      ...APP_COMMAND_CATALOG.map((entry) => entry.id),
-      OPEN_IN_BROWSER_COMMAND.id,
-    ]);
+    const catalogued = APP_COMMAND_CATALOG.map((entry) => entry.id);
     expect(Object.keys(SUPPORT).sort()).toEqual([...catalogued].sort());
+    expect(SUPPORT["hunk.app.openInBrowser"]?.kind).not.toBe("implemented");
   });
 
   test("gives every command it does not implement a reason", () => {

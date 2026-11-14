@@ -241,6 +241,37 @@ describe("brokered review resources", () => {
     expect(cache.getWaiterCount()).toBe(0);
   });
 
+  // Intent: a read whose caller already left starts no assembly: no reservation, no chunk
+  // read, and no shared load a later caller would join.
+  test("starts nothing for a read whose signal is already aborted", async () => {
+    const { state, register, producer, sent } = connect([createTestPatchFile("alpha", 3)]);
+    register();
+    const publication = producer.getPublication();
+    const resourceId = reviewResourceId({
+      kind: "patch",
+      fileKey: publication.document.files[0]!.key,
+    });
+    const gone = new AbortController();
+    gone.abort();
+
+    const outcome = await state
+      .loadReviewResource(SESSION.sessionId, publication.generation, resourceId, {
+        signal: gone.signal,
+      })
+      .catch((error: unknown) => error);
+    await Bun.sleep(20);
+
+    expect(String(outcome)).toContain("abandoned");
+    expect(readsFor(sent, resourceId)).toBe(0);
+    expect(state.getReviewResourceUsage().reservedBytes).toBe(0);
+    const bytes = await state.loadReviewResource(
+      SESSION.sessionId,
+      publication.generation,
+      resourceId,
+    );
+    expect(bytes.byteLength).toBeGreaterThan(0);
+  });
+
   // Intent: a session that publishes no review is mirrored as nothing, and its embedded
   // patch text — the shape an older build still sends — is served unchanged.
   test("serves a pre-mirror session's embedded patch text unchanged", async () => {

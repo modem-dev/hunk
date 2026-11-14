@@ -74,9 +74,9 @@ export function treeRowStyles() {
   ].join("\n");
 }
 
-/** CSS color for one badge kind, from the active theme's tokens. */
+/** CSS color for one badge kind, from the active theme's tokens; matches the flat list. */
 const BADGE_COLOR = {
-  "agent-comment": "var(--hunk-accent)",
+  "agent-comment": "var(--hunk-text)",
   addition: "var(--hunk-badge-added)",
   deletion: "var(--hunk-badge-removed)",
 } as const;

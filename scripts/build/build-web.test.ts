@@ -1,5 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { currentDirectoryReviewPageAssets } from "../../packages/hunk/src/session/broker/reviewPageAssets";
@@ -44,6 +53,29 @@ describe("installBuild", () => {
       installBuild(path.join(root, "staging-c"), outdir);
 
       expect([has("main-a.js"), has("main-b.js"), has("main-c.js")]).toEqual([false, true, true]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // Intent: a daemon reads the live manifest on every asset lookup, so recording the kept
+  // assets replaces the file in one rename (a new inode) rather than rewriting it in place,
+  // where a concurrent read could see it half-written.
+  test("records the kept assets by replacing the manifest, not rewriting it", () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "hunk-build-web-"));
+    const outdir = path.join(root, "web");
+
+    try {
+      writeTestBuild(outdir, ["main-a.js"]);
+      const staging = path.join(root, "staging-b");
+      writeTestBuild(staging, ["main-b.js"]);
+      const installedInode = statSync(path.join(staging, "manifest.json")).ino;
+      installBuild(staging, outdir);
+
+      const manifestPath = path.join(outdir, "manifest.json");
+      expect(JSON.parse(readFileSync(manifestPath, "utf8")).retained).toEqual(["main-a.js"]);
+      expect(statSync(manifestPath).ino).not.toBe(installedInode);
+      expect(readdirSync(outdir).filter((name) => name.endsWith(".tmp"))).toEqual([]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

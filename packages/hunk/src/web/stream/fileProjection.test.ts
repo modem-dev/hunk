@@ -3,7 +3,12 @@ import { projectReviewDocument } from "../../core/review/document";
 import type { ReviewSourceStatus } from "../../core/review/state";
 import { createTestDiffFile } from "../../../../../test/helpers/diff-helpers";
 import { reviewHunkRowFractions } from "../../core/review/geometry";
-import { planReviewFileRender, reviewDrawnRows, reviewGapIdForSeparator } from "./fileProjection";
+import {
+  planReviewFileRender,
+  reviewDrawnRows,
+  reviewGapIdForSeparator,
+  type ReviewFileRenderPlan,
+} from "./fileProjection";
 
 const BEFORE = Array.from({ length: 40 }, (_unused, index) => `const v${index} = ${index};`);
 const AFTER = BEFORE.map((line, index) => (index === 20 ? "const v20 = 2000;" : line));
@@ -22,6 +27,29 @@ function createTestGapFile() {
     ],
     { sourceLabel: "/test" },
   ).files[0]!;
+}
+
+/**
+ * A plan of `count` hunks of 10 rows, each after a 5-line gap, with the gap before hunk 10
+ * expanded. Built directly: diffing a file this size would dominate the test.
+ */
+function createTestManyGapPlan(count: number): ReviewFileRenderPlan {
+  const hunks = Array.from({ length: count }, (_unused, index) => ({
+    splitLineStart: index * 15 + 5,
+    splitLineCount: 10,
+    unifiedLineStart: index * 15 + 5,
+    unifiedLineCount: 10,
+  }));
+  const gaps = hunks.map((_hunk, index) => ({
+    gapId: `before:${index}`,
+    address: { position: "before", hunkIndex: index, lineCount: 5 },
+    state: index === 10 ? "expanded" : "collapsed",
+  }));
+  return {
+    file: { hunks },
+    gaps,
+    reservedRows: { split: count * 15, unified: count * 15 },
+  } as unknown as ReviewFileRenderPlan;
 }
 
 /** Plan with the leading gap expanded and the given source status. */
@@ -81,6 +109,30 @@ describe("planReviewFileRender", () => {
 
     const expanded = reviewDrawnRows(planWith({ kind: "loaded", text: `${AFTER.join("\n")}\n` }));
     expect(expanded.hunks[0]!.unifiedLineStart).toBe(file.hunks[0]!.unifiedLineStart);
+  });
+
+  // Intent: the minimap asks for every file's drawn rows on each repaint, so a file with
+  // thousands of gaps costs one read per gap, not one scan of the gap list per hunk.
+  test("reads each gap once for a file with thousands of gaps", () => {
+    const plan = createTestManyGapPlan(3_000);
+
+    let gapReads = 0;
+    const counted = new Proxy(plan.gaps, {
+      get(target, key, receiver) {
+        if (typeof key === "string" && /^\d+$/.test(key)) gapReads += 1;
+        return Reflect.get(target, key, receiver);
+      },
+    });
+    const drawn = reviewDrawnRows({ ...plan, gaps: counted });
+
+    expect(gapReads).toBeLessThanOrEqual(plan.gaps.length);
+    // Hunk h sits below h + 1 gaps of 5 lines, each collapsed one drawn as a single separator
+    // row (4 rows folded), except the expanded gap before hunk 10, which is drawn in full.
+    const start = (hunkIndex: number, foldedGaps: number) => hunkIndex * 15 + 5 - foldedGaps * 4;
+    expect(drawn.hunks[0]!.unifiedLineStart).toBe(start(0, 1));
+    expect(drawn.hunks[9]!.unifiedLineStart).toBe(start(9, 10));
+    expect(drawn.hunks[10]!.unifiedLineStart).toBe(start(10, 10));
+    expect(drawn.hunks[2_999]!.splitLineStart).toBe(start(2_999, 2_999));
   });
 
   test("marks an expanded gap the source cannot fill as an error", () => {

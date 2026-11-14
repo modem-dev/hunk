@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { reviewErrorMessage } from "../../session/reviewErrorCatalog";
 import type { HunkReviewActionEnvelopeV1 } from "../../session/reviewProtocol";
+import { REVIEW_SESSION_ENDED_MESSAGE } from "../session/failureMessages";
 import { ReviewApiError, type ReviewApiClient } from "../transport/apiClient";
 import { MAX_STALE_RETRIES, ReviewActionSender, createBrowserClientId } from "./reviewActions";
 
@@ -113,6 +114,25 @@ describe("ReviewActionSender", () => {
     const sender = new ReviewActionSender({ client, mirror: createTestMirror(undefined) });
     expect(await sender.send(ACTION)).toMatchObject({ ok: false, code: "no-publication" });
     expect(sent).toHaveLength(0);
+  });
+
+  test("refuses to send once the session has ended, with the ended message", async () => {
+    const { client, sent } = createTestClient([]);
+    let ended = false;
+    const sender = new ReviewActionSender({
+      client,
+      mirror: createTestMirror("g1"),
+      isEnded: () => ended,
+    });
+    expect(await sender.send(ACTION)).toMatchObject({ ok: true });
+
+    ended = true;
+    expect(await sender.send(ACTION)).toEqual({
+      ok: false,
+      code: "session-ended",
+      message: REVIEW_SESSION_ENDED_MESSAGE,
+    });
+    expect(sent).toHaveLength(1);
   });
 
   test("gives every tab its own random client id", () => {

@@ -1526,11 +1526,11 @@ describe("parseCli", () => {
     );
   });
 
-  test("keeps session open out of session help until web review is released", async () => {
+  test("lists session open in session help", async () => {
     const help = await parseCli(["bun", "hunk", "session", "--help"]);
 
     expect(help.kind).toBe("help");
-    expect((help as { text: string }).text).not.toContain("session open");
+    expect((help as { text: string }).text).toContain("session open");
   });
 
   test("parses the web review flags: --web, --no-open, and --no-watch", async () => {
@@ -1558,13 +1558,15 @@ describe("parseCli", () => {
     );
   });
 
-  test("keeps the web review flags out of help until web review is released", async () => {
-    const help = await parseCli(["bun", "hunk", "diff", "--help"]);
-    const text = (help as { text: string }).text;
+  test("lists the web review flags in review command help", async () => {
+    for (const command of ["diff", "show"]) {
+      const help = await parseCli(["bun", "hunk", command, "--help"]);
+      const text = (help as { text: string }).text;
 
-    expect(text).not.toContain("--web");
-    expect(text).not.toContain("--no-open");
-    expect(text).not.toContain("--no-watch");
+      expect(text).toContain("--web");
+      expect(text).toContain("--no-open");
+      expect(text).toContain("--no-watch");
+    }
   });
 
   test("rejects unknown session highlight subcommands", async () => {

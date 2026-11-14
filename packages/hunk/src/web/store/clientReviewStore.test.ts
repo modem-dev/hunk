@@ -123,6 +123,34 @@ describe("ClientReviewStore", () => {
     expect(alpha).toBeDefined();
   });
 
+  // Intent: hiding the selected file (marking it viewed with "Hide viewed" on) must not leave
+  // the reader on a file navigation cannot step from: the selection moves to the next shown
+  // file, else the previous one, without scrolling, and stays put when nothing is shown.
+  test("moves a selection whose file becomes hidden to the nearest shown file", async () => {
+    const { review } = await loadTestStore([
+      createTestGapFile("alpha"),
+      createTestGapFile("beta"),
+      createTestGapFile("gamma"),
+    ]);
+    const [alpha, beta, gamma] = review.store.getSnapshot().document.files;
+    const selected = () => review.store.getSnapshot().selection.fileKey;
+    review.apply({ type: "selection/select-file", fileKey: beta!.key });
+    const reveal = review.store.getSnapshot().reveal;
+
+    review.setHiddenFiles(new Set([beta!.key]));
+    expect(selected()).toBe(gamma!.key);
+    expect(review.store.getSnapshot().reveal).toEqual(reveal);
+    review.apply({ type: "selection/move", scope: "file", delta: -1 });
+    expect(selected()).toBe(alpha!.key);
+
+    review.apply({ type: "selection/select-file", fileKey: gamma!.key });
+    review.setHiddenFiles(new Set([beta!.key, gamma!.key]));
+    expect(selected()).toBe(alpha!.key);
+
+    review.setHiddenFiles(new Set([alpha!.key, beta!.key, gamma!.key]));
+    expect(selected()).toBe(alpha!.key);
+  });
+
   test("refuses shared intents, which this page does not author yet", async () => {
     const { review } = await loadTestStore();
 

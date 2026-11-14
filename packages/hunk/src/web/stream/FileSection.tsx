@@ -13,7 +13,7 @@
  * it was marked. A viewed file's body is collapsed to one row that expands it on click; the
  * page decides which files are viewed and collapsed (`../viewed/useViewedFiles.ts`).
  */
-import { memo, useMemo, type CSSProperties } from "react";
+import { memo, useCallback, useContext, useMemo, useRef, type CSSProperties } from "react";
 import type { ReviewEmptyDiffReason } from "../../core/review/document";
 import type { ReviewStoredNote } from "../../core/review/state";
 import type { ReviewAgentHighlightV1, ReviewSharedNoteV1 } from "../../session/reviewSharedState";
@@ -26,6 +26,7 @@ import type { ReviewFileRenderPlan } from "./fileProjection";
 import { FilePreviewBody, FilePreviewHeaderAction } from "../previews/FilePreviews";
 import type { ReviewFileGeometry } from "./hunkGeometry";
 import { PierreFileView } from "./PierreFileView";
+import { SessionEndedContext } from "../session/sessionEnded";
 import type { ReviewViewedStatus } from "../viewed/viewedFiles";
 
 /** Height of one Pierre row, and of the header, in CSS pixels. */
@@ -88,6 +89,11 @@ export interface FileSectionProps {
   /** Whether the body is collapsed because the file is viewed. */
   collapsed?: boolean;
   viewed?: ReviewViewedControls;
+  /**
+   * Called with the body element each time one is created or removed (with the one it
+   * replaces), so the stream measures every body this file ever has.
+   */
+  observeBody?: (body: HTMLDivElement | null, previous: HTMLDivElement | null) => void;
 }
 
 const NO_HIGHLIGHTS: readonly ReviewAgentHighlightV1[] = [];
@@ -117,6 +123,7 @@ function FileHeader({
       </header>
     );
   }
+  const sessionEnded = useContext(SessionEndedContext);
   const glyph = reviewFileChangeGlyph(index.changeKind, index.flags.untracked);
   const { filename, stateLabel } = reviewFileLabelParts({
     path: index.path,
@@ -158,6 +165,7 @@ function FileHeader({
           <input
             type="checkbox"
             checked={viewedStatus === "viewed"}
+            disabled={sessionEnded}
             onChange={() => viewed.toggle(fileKey)}
             aria-label={`Viewed ${filename}`}
           />
@@ -189,21 +197,36 @@ export const FileSection = memo(function FileSection(props: FileSectionProps) {
   const { fileKey, index, plan, mounted, measuredHeight, layout } = props;
   const expandedGaps = plan?.gaps.filter((gap) => gap.state !== "collapsed").length ?? 0;
   const { liveNotes, userNotes, showAgentNotes, sidecarNotes } = props;
+  const sessionEnded = useContext(SessionEndedContext);
   // Notes hang from lines as drawn, so expanded context counts; the plan's metadata is that.
-  const noteGroups = useMemo(
-    () =>
-      plan?.metadata
-        ? planReviewFileNotes({
-            file: { key: fileKey, hunks: plan.metadata.hunks },
-            state: {
-              liveNotes: liveNotes as ReviewStoredNote[],
-              userNotes: userNotes as ReviewStoredNote[],
-              showAgentNotes,
-            },
-            sidecar: sidecarNotes,
-          })
-        : [],
-    [fileKey, plan, liveNotes, userNotes, showAgentNotes, sidecarNotes],
+  const noteGroups = useMemo(() => {
+    if (!plan?.metadata) return [];
+    const groups = planReviewFileNotes({
+      file: { key: fileKey, hunks: plan.metadata.hunks },
+      state: {
+        liveNotes: liveNotes as ReviewStoredNote[],
+        userNotes: userNotes as ReviewStoredNote[],
+        showAgentNotes,
+      },
+      sidecar: sidecarNotes,
+    });
+    if (!sessionEnded) return groups;
+    return groups.map((group) => ({
+      ...group,
+      cards: group.cards.map((card) => ({ ...card, actionsDisabled: true })),
+    }));
+  }, [fileKey, plan, liveNotes, userNotes, showAgentNotes, sidecarNotes, sessionEnded]);
+  // Collapsing a viewed file removes its body and expanding creates a new one; each is handed
+  // to the stream's observer for its whole life.
+  const { observeBody } = props;
+  const body = useRef<HTMLDivElement | null>(null);
+  const bodyRef = useCallback(
+    (element: HTMLDivElement | null) => {
+      const previous = body.current;
+      body.current = element;
+      observeBody?.(element, previous);
+    },
+    [observeBody],
   );
   const bodyStyle: CSSProperties | undefined =
     mounted && plan
@@ -238,7 +261,7 @@ export const FileSection = memo(function FileSection(props: FileSectionProps) {
           Viewed · show changes
         </button>
       ) : (
-        <div className="file-body" style={bodyStyle}>
+        <div className="file-body" style={bodyStyle} ref={bodyRef}>
           <FilePreviewBody
             fileKey={fileKey}
             file={plan?.file}

@@ -71,6 +71,7 @@ describe("app command catalog", () => {
       "hunk.app.openFeedback",
       "hunk.app.refresh",
       "hunk.review.editSelectedFile",
+      "hunk.app.openInBrowser",
     ]);
   });
 

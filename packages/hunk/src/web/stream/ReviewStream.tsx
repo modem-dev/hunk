@@ -35,6 +35,7 @@ import {
   useRef,
   useState,
   type MutableRefObject,
+  type ReactNode,
 } from "react";
 import type { ReviewState } from "../../core/review/state";
 import type { ReviewFileV1 } from "../../core/review/types";
@@ -152,6 +153,8 @@ export interface ReviewStreamProps {
   collapsedFiles?: ReadonlySet<string>;
   /** What the viewed controls do; stable for the page's lifetime. */
   viewed?: ReviewViewedControls;
+  /** What an empty stream says, when the page knows better than "no files". */
+  emptyMessage?: ReactNode;
 }
 
 const NO_COLLAPSED: ReadonlySet<string> = new Set();
@@ -613,23 +616,43 @@ export function ReviewStream(props: ReviewStreamProps) {
     };
   }, [review.document]);
 
-  // Record mounted bodies' real heights so they keep them when they unmount.
+  // Record mounted bodies' real heights so they keep them when they unmount. Each body is
+  // observed from the moment it is created until it is removed (`observeBody`), so a body that
+  // collapsing a viewed file destroyed and expanding it re-created is measured like the first.
+  // A body that is not mounted only holds its reserved height, which is not a measurement.
+  const mountedRef = useRef(mounted);
+  mountedRef.current = mounted;
+  const bodyObserver = useRef<ResizeObserver | undefined>(undefined);
+  const observedBodies = useRef(new Set<Element>());
+  const observeBody = useCallback(
+    (body: HTMLDivElement | null, previous: HTMLDivElement | null) => {
+      if (previous) {
+        bodyObserver.current?.unobserve(previous);
+        observedBodies.current.delete(previous);
+      }
+      if (!body) return;
+      observedBodies.current.add(body);
+      bodyObserver.current?.observe(body);
+    },
+    [],
+  );
   useEffect(() => {
-    const root = scrollRef.current;
-    if (!root) return;
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const key = (entry.target.parentElement as HTMLElement | null)?.dataset.fileKey;
-        if (key && entry.contentRect.height > 0) heights.current.set(key, entry.contentRect.height);
+        if (key && mountedRef.current.has(key) && entry.contentRect.height > 0) {
+          heights.current.set(key, entry.contentRect.height);
+        }
       }
       for (const listener of Array.from(layoutListeners.current)) listener();
     });
-    for (const key of mounted) {
-      const body = root.querySelector(`section[data-file-key="${CSS.escape(key)}"] .file-body`);
-      if (body) observer.observe(body);
-    }
-    return () => observer.disconnect();
-  }, [mounted, slots]);
+    bodyObserver.current = observer;
+    for (const body of observedBodies.current) observer.observe(body);
+    return () => {
+      observer.disconnect();
+      bodyObserver.current = undefined;
+    };
+  }, []);
 
   // A layout change reflows every file, so earlier measurements no longer hold.
   useEffect(() => {
@@ -687,10 +710,13 @@ export function ReviewStream(props: ReviewStreamProps) {
               : {})}
             collapsed={(props.collapsedFiles ?? NO_COLLAPSED).has(slot.key)}
             {...(props.viewed ? { viewed: props.viewed } : {})}
+            observeBody={observeBody}
           />
         );
       })}
-      {slots.length === 0 ? <p className="stream-empty">No files in this review.</p> : null}
+      {slots.length === 0 ? (
+        <p className="stream-empty">{props.emptyMessage ?? "No files in this review."}</p>
+      ) : null}
     </div>
   );
 }
