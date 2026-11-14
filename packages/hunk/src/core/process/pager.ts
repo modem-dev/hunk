@@ -125,6 +125,11 @@ function resolveTextPagerSpec(env: NodeJS.ProcessEnv = process.env): ResolvedPag
     if (!fallbackSpec) {
       throw new Error(`Default pager command is invalid: ${DEFAULT_TEXT_PAGER_COMMAND}`);
     }
+    // Like Git, default `LESS` to FRX so short output prints and exits instead of holding the
+    // screen. Git exports this before launching its pager, but jj passes its flags as argv.
+    if (executableName(fallbackSpec.command) === "less" && env.LESS === undefined) {
+      fallbackSpec.env.LESS = "FRX";
+    }
     return fallbackSpec;
   }
 
