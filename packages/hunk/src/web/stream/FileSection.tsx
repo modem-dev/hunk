@@ -13,7 +13,7 @@
  * it was marked. A viewed file's body is collapsed to one row that expands it on click; the
  * page decides which files are viewed and collapsed (`../viewed/useViewedFiles.ts`).
  */
-import { memo, useContext, useMemo, type CSSProperties } from "react";
+import { memo, useCallback, useContext, useMemo, useRef, type CSSProperties } from "react";
 import type { ReviewEmptyDiffReason } from "../../core/review/document";
 import type { ReviewStoredNote } from "../../core/review/state";
 import type { ReviewAgentHighlightV1, ReviewSharedNoteV1 } from "../../session/reviewSharedState";
@@ -89,6 +89,11 @@ export interface FileSectionProps {
   /** Whether the body is collapsed because the file is viewed. */
   collapsed?: boolean;
   viewed?: ReviewViewedControls;
+  /**
+   * Called with the body element each time one is created or removed (with the one it
+   * replaces), so the stream measures every body this file ever has.
+   */
+  observeBody?: (body: HTMLDivElement | null, previous: HTMLDivElement | null) => void;
 }
 
 const NO_HIGHLIGHTS: readonly ReviewAgentHighlightV1[] = [];
@@ -211,6 +216,18 @@ export const FileSection = memo(function FileSection(props: FileSectionProps) {
       cards: group.cards.map((card) => ({ ...card, actionsDisabled: true })),
     }));
   }, [fileKey, plan, liveNotes, userNotes, showAgentNotes, sidecarNotes, sessionEnded]);
+  // Collapsing a viewed file removes its body and expanding creates a new one; each is handed
+  // to the stream's observer for its whole life.
+  const { observeBody } = props;
+  const body = useRef<HTMLDivElement | null>(null);
+  const bodyRef = useCallback(
+    (element: HTMLDivElement | null) => {
+      const previous = body.current;
+      body.current = element;
+      observeBody?.(element, previous);
+    },
+    [observeBody],
+  );
   const bodyStyle: CSSProperties | undefined =
     mounted && plan
       ? undefined
@@ -244,7 +261,7 @@ export const FileSection = memo(function FileSection(props: FileSectionProps) {
           Viewed · show changes
         </button>
       ) : (
-        <div className="file-body" style={bodyStyle}>
+        <div className="file-body" style={bodyStyle} ref={bodyRef}>
           <FilePreviewBody
             fileKey={fileKey}
             file={plan?.file}

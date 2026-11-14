@@ -631,7 +631,18 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
         count,
         state: session.review.store.getSnapshot(),
       });
-      if (intent && isLocalReviewIntent(intent)) session.review.apply(intent);
+      if (!intent || !isLocalReviewIntent(intent)) return;
+      const outcome = session.review.apply(intent);
+      // Hunk navigation that enters a collapsed viewed file opens it, so the selected hunk is
+      // drawn; crossing files reveals the file's top, which the viewed workflow cannot tell
+      // apart from file navigation on its own.
+      if (
+        intent.type === "selection/move" &&
+        (intent.scope === "hunk" || intent.scope === "annotated-hunk") &&
+        outcome?.type === "selection/changed"
+      ) {
+        viewedRef.current.openForHunk(outcome.fileKey);
+      }
     };
     const stream = () => streamController.current;
     const handlers: WebCommandHandlers = {
@@ -971,6 +982,22 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
               viewedStatuses={viewed.statuses}
               collapsedFiles={viewed.collapsed}
               viewed={viewedControls}
+              {...(streamSlots.length === 0 && visibleSlots.length > 0
+                ? {
+                    emptyMessage: (
+                      <>
+                        {"Every file here is viewed and hidden. "}
+                        <button
+                          type="button"
+                          className="header-action"
+                          onClick={viewed.toggleHideViewed}
+                        >
+                          Show viewed files
+                        </button>
+                      </>
+                    ),
+                  }
+                : {})}
             />
             {showMinimap ? (
               <Minimap

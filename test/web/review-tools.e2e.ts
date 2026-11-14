@@ -344,6 +344,45 @@ test("the minimap repaints when a file collapses without a scroll", async ({ pag
   expect(await minimapHeightDrift(page)).toBeGreaterThanOrEqual(drift - 2);
 });
 
+// Intent: collapsing a viewed file destroys its body and expanding creates a new one; the new
+// body is measured like the first, so a later change in its height still reaches the minimap.
+// The last file is used, at the end of the stream, and the stream is not scrolled after the
+// expand, so nothing moves another file in or out of the mounted window (which would re-attach
+// measurement on its own and hide the defect).
+test("keeps measuring a file body re-created by expanding a viewed file", async ({ page }) => {
+  await openTestReview(page);
+  await expect(page.getByTestId("minimap")).toBeVisible();
+  const last = page.locator("section[data-file-key]").last();
+  // Mounted: the body has no reserved height and grows with its content.
+  const mounted = () =>
+    last.locator(".file-body").evaluate((body) => (body as HTMLElement).style.height === "");
+  // Files drawing above the end can push it away, so scroll until the last file has mounted.
+  await expect
+    .poll(async () => {
+      await page.locator(".review-stream").evaluate((stream) => {
+        stream.scrollTop = stream.scrollHeight;
+      });
+      return mounted();
+    })
+    .toBe(true);
+  await page.waitForTimeout(500);
+
+  await last.locator(".viewed-toggle input").click();
+  await last.locator(".file-collapsed").click();
+  await expect.poll(mounted).toBe(true);
+  await page.waitForTimeout(500);
+  const drift = await minimapHeightDrift(page);
+
+  await last.locator(".file-body").evaluate((body) => {
+    const grown = document.createElement("div");
+    grown.style.height = "400px";
+    body.append(grown);
+  });
+
+  await expect.poll(() => minimapHeightDrift(page)).toBeGreaterThanOrEqual(drift - 2);
+  expect(await minimapHeightDrift(page)).toBeLessThanOrEqual(drift + 2);
+});
+
 // Intent: the reader's own minimap scroll ends a jump-to-end hold, and a reload during that
 // hold replaces it rather than leaving it pulling to the edge.
 test("the minimap and a reload both end a jump-to-end hold", async ({ page }) => {
