@@ -340,8 +340,11 @@ test("the minimap repaints when a file collapses without a scroll", async ({ pag
   await page.locator("section[data-file-key]").first().locator(".viewed-toggle input").click();
   await expect(page.locator(".file-collapsed").first()).toBeVisible();
 
-  await expect.poll(() => minimapHeightDrift(page)).toBeLessThanOrEqual(drift + 2);
-  expect(await minimapHeightDrift(page)).toBeGreaterThanOrEqual(drift - 2);
+  // The stream settles over a frame or two after the collapse and the minimap repaints one
+  // frame behind it, so the two are compared once they agree rather than at one instant.
+  await expect
+    .poll(async () => Math.abs((await minimapHeightDrift(page)) - drift))
+    .toBeLessThanOrEqual(2);
 });
 
 // Intent: collapsing a viewed file destroys its body and expanding creates a new one; the new
