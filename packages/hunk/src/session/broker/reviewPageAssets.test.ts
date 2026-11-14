@@ -118,6 +118,25 @@ describe("a build directory under a running daemon", () => {
     expect(cached.asset("main-abc123.js")).toBeUndefined();
     expect(await cached.asset("main-def456.js")!.body.text()).toBe("console.log(3);");
   });
+
+  // Intent: a rebuild caught mid-install (manifest missing or half-written) must not turn every
+  // asset of an open page into a 404; the last build read keeps answering until a readable
+  // manifest replaces it.
+  test("keeps serving the last readable build while the manifest is missing or partial", async () => {
+    const directory = writeTestBuild();
+    const assets = currentDirectoryReviewPageAssets(directory)!;
+    expect(assets.asset("main-abc123.js")).toBeDefined();
+
+    const manifestPath = join(directory, REVIEW_PAGE_MANIFEST_NAME);
+    writeFileSync(manifestPath, JSON.stringify(MANIFEST).slice(0, 20));
+    expect(await assets.asset("main-abc123.js")!.body.text()).toBe("console.log(1);");
+    unlinkSync(manifestPath);
+    expect(await assets.asset("main-abc123.js")!.body.text()).toBe("console.log(1);");
+    expect(assets.asset("unlisted.js")).toBeUndefined();
+
+    writeFileSync(manifestPath, JSON.stringify({ formatVersion: 1, assets: ["main-abc123.css"] }));
+    expect(assets.asset("main-abc123.js")).toBeUndefined();
+  });
 });
 
 describe("a source checkout's on-demand build", () => {
