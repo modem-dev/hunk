@@ -311,6 +311,15 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     apiVersion: 6,
   },
   {
+    repo: "siargenius/hunk-review-sidebar",
+    name: "hunk-review-sidebar",
+    summary:
+      "Combines file review progress and compact note threads in one pane, with latest-reply authors and colored change metadata. Fork of evantravers/hunk-mark-as-reviewed.",
+    categories: ["Pane", "Command", "Line highlighter", "Changeset transform"],
+    version: "0.3.0",
+    apiVersion: 32,
+  },
+  {
     repo: "TreeHappy/hunkydory",
     name: "hunkydory",
     summary:
