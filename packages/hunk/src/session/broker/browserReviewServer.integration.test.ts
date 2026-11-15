@@ -505,7 +505,7 @@ describe("browser review surface: actions", () => {
       protocolVersion: HUNK_REVIEW_PROTOCOL_VERSION,
       generation: harness.producer.getPublication().generation,
       actor: ACTOR,
-      action: { type: "selection/select-file", fileKey: "file:deadbeef" },
+      action: { type: "expansion/toggle", fileKey: "file:deadbeef", gapId: "before:0" },
     });
 
     expect(response.status).toBe(404);

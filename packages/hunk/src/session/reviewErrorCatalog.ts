@@ -39,6 +39,10 @@ export interface ReviewErrorDoc {
  * served, the caller was not allowed — because that is the order a reader diagnoses in.
  */
 export const REVIEW_ERROR_CATALOG: Record<HunkReviewClientErrorCodeV1, ReviewErrorDoc> = {
+  "selection-is-local": {
+    message: "Each window keeps its own place in the review, so this move stays in this window.",
+    remedy: "Move the selection locally; it is not sent to the session.",
+  },
   "state-too-large": {
     message: "This review's notes and shared state are too large to send to a browser.",
     remedy: "Clear some live comments or attention marks, then reload the page.",

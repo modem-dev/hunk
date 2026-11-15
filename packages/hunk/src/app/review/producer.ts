@@ -78,6 +78,8 @@ export interface ReviewProducerOptions {
   digest?: ReviewDigestFn;
   /** Concurrency limit for bulk resource loads. */
   resourceConcurrency?: number;
+  /** The surface that owns the review; defaults to `terminal`. */
+  surface?: ReviewProducerSurface;
 }
 
 export interface PublishReviewInput {
@@ -126,7 +128,17 @@ export interface ReviewSharedStateSource {
   getSharedStateRevision(): number;
   /** Project the snapshot for one generation at the current revision. */
   build(generation: string): ReviewSharedStateV1;
+  /** Record that an agent asked every surface to show this place (G2). */
+  recordAgentReveal?(target: { fileKey: string; hunkIndex: number }): void;
 }
+
+/**
+ * What kind of surface owns this producer's review.
+ *
+ * Decides the browser selection policy (G2): a headless session adopts a browser's
+ * `selection/anchor` as its focus, a terminal session keeps its own.
+ */
+export type ReviewProducerSurface = "terminal" | "headless";
 
 /** How many materialized snapshots a producer keeps for readers mid-assembly. */
 const SHARED_STATE_MATERIALIZATIONS_KEPT = 4;
@@ -135,6 +147,8 @@ const SHARED_STATE_MATERIALIZATIONS_KEPT = 4;
 export const MAX_REVIEW_RESOURCE_BATCH = 512;
 
 export class ReviewProducer {
+  /** The surface that owns the review, for actor policy. */
+  readonly surface: ReviewProducerSurface;
   private readonly digest: ReviewDigestFn;
   private readonly resourceConcurrency: number | undefined;
   private identity: ReviewGenerationIdentity;
@@ -153,6 +167,7 @@ export class ReviewProducer {
 
   constructor(input: PublishReviewInput, options: ReviewProducerOptions = {}) {
     this.digest = options.digest ?? nodeReviewDigest;
+    this.surface = options.surface ?? "terminal";
     this.resourceConcurrency = options.resourceConcurrency;
     this.identity = { producerId: options.producerId ?? defaultProducerId(), sequence: 0 };
     this.publication = buildReviewPublication({
@@ -290,6 +305,11 @@ export class ReviewProducer {
    */
   getSharedStateRevision(): number | undefined {
     return this.currentStore() ? this.sharedState?.getSharedStateRevision() : undefined;
+  }
+
+  /** Record an agent's navigation as the reveal every surface honors, when shared state exists. */
+  recordAgentReveal(target: { fileKey: string; hunkIndex: number }) {
+    if (this.currentStore()) this.sharedState?.recordAgentReveal?.(target);
   }
 
   /**

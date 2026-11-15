@@ -112,6 +112,7 @@ interface SharedStateBasis {
   userNotes: ReviewState["userNotes"];
   filter: string;
   showAgentNotes: boolean;
+  viewedFiles: ReviewState["viewedFiles"];
 }
 
 /** Read the shared-state basis out of one store snapshot. */
@@ -122,6 +123,7 @@ function sharedStateBasisOf(state: ReviewState): SharedStateBasis {
     userNotes: state.userNotes,
     filter: state.filter,
     showAgentNotes: state.showAgentNotes,
+    viewedFiles: state.viewedFiles,
   };
 }
 
@@ -132,7 +134,8 @@ function sharedStateBasesEqual(left: SharedStateBasis, right: SharedStateBasis) 
     left.liveNotes === right.liveNotes &&
     left.userNotes === right.userNotes &&
     left.filter === right.filter &&
-    left.showAgentNotes === right.showAgentNotes
+    left.showAgentNotes === right.showAgentNotes &&
+    left.viewedFiles === right.viewedFiles
   );
 }
 
@@ -1070,7 +1073,7 @@ export class ReviewSessionHost {
   }
 
   /** Record what an agent just asked every surface to show, under a fresh token. */
-  private recordAgentReveal(target: Omit<ReviewAgentRevealV1, "token">) {
+  recordAgentReveal(target: Omit<ReviewAgentRevealV1, "token">) {
     this.agentReveal = { token: this.agentReveal ? this.agentReveal.token + 1 : 1, ...target };
     this.advanceSharedState();
   }

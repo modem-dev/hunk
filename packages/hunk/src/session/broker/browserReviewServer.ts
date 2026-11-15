@@ -113,6 +113,7 @@ const REVIEW_ERROR_STATUS: Record<HunkReviewClientErrorCodeV1, number> = {
   "forbidden-origin": 403,
   "too-many-streams": 503,
   "state-too-large": 413,
+  "selection-is-local": 403,
 };
 
 /**

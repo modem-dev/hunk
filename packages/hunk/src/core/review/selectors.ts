@@ -34,6 +34,21 @@ export function selectReviewFileByKey(
   return fileKey === null ? undefined : state.document.files.find((file) => file.key === fileKey);
 }
 
+/**
+ * Whether the reviewer marked one file viewed at the content it has now.
+ *
+ * A mark taken at different content does not count, whether or not a reload has dropped it
+ * yet: viewed means "I looked at exactly this".
+ */
+export function selectIsReviewFileViewed(
+  state: Pick<ReviewState, "document" | "viewedFiles">,
+  fileKey: string,
+): boolean {
+  const mark = state.viewedFiles?.[fileKey];
+  const file = mark ? selectReviewFileByKey(state, fileKey) : undefined;
+  return file !== undefined && file.contentIdentity === mark!.contentIdentity;
+}
+
 /** Resolve stored note ownership against the hunk geometry that exists now. */
 export function reviewNoteCurrentOwnerHunkIndex(note: ReviewNoteV1, file: ReviewFileV1) {
   const stored = reviewNoteOwnerHunkIndex(note);
