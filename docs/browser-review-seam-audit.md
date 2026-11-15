@@ -292,6 +292,11 @@ duplication); hunk header text (browser delegates to Pierre separators); platfor
   `create-user-note-at-an-expanded-line`, and `start-draft-with-a-proof-about-nothing` in
   `test/review-conformance/wireFixtures.ts`. Reveal is already an explicit caller decision on
   every intent that carries one; the browser half of both closes in Phase 5.
+  _Repaid (M5, browser client)_: a note started on a line only an expanded gap drew sends
+  `notes/add-user` with its `expandedLineProof` (`web/notes/noteTargets.ts`), and a range note
+  stays within lines the hunk drew, because the session attests one line per proof; a range
+  reaching into expanded context narrows to its first line. The page never sends a selection
+  click, so no reveal is forced.
 - **B11. Viewport-driven selection — opposite policies.** Terminal publishes
   nearest-hunk-to-center into shared state; web keeps IntersectionObserver results local. With
   both clients attached, terminal scrolling rewrites shared selection under the browser. Fix:
@@ -486,6 +491,15 @@ path suffixes, expansion retention, git-status badges).
   corpus, so `every-field-fits-but-the-note-does-not` — the note whose summary, rationale, and
   markup each pass a per-field check while the note is triple the bound — is now refused at the
   wire rather than admitted and then failing at the publisher. Both composer sites are Phase 5.
+  _Repaid (M5, browser composer site)_: the page's composer measures a candidate note with
+  `reviewNoteWithinSizeLimit` (`web/notes/noteActions.ts`) and shows `note-too-large` before
+  sending; it declares no bound of its own. The terminal composer site remains.
+  _Observed (M5, open)_: the session wire still has a second, smaller bound. `wire.ts` parses a
+  snapshot's `reviewNotes[].body` and `liveComments[].summary` with the broker's default
+  4,096-byte string limit, so a note between 4 KiB and `MAX_REVIEW_NOTE_BYTES` is applied by
+  the session and then rejected by the daemon as an incompatible snapshot, which disconnects the
+  session ("Session daemon rejected this review"). Reproduced by posting a 6,000-byte
+  `notes/add-user` to a headless session. Repaying it changes the session wire (a version bump).
 - **D2. Empty-body policy — 5 declarations.** Core intents (throws), terminal (cancels
   draft — a deliberate UX difference worth keeping explicit), web in three places. Fix: one
   `isBlankReviewNoteBody` predicate.
@@ -693,6 +707,10 @@ here so the extraction happens before the duplication exists. Design detail in
   _Held (M4 keyboard)_: the page classifies quit, edit-in-`$EDITOR`, agent skill, and feedback
   as host-only and never implements them (`webCommandTable.test.ts` asserts no host-only
   command is implemented); extension commands are not in its table at all.
+  _Held (M5)_: the page runs refresh (`r` and a toolbar button) through the route above, and
+  `BROWSER_ALLOWED_HOST_COMMANDS` names it as the one host-only command the page may implement;
+  the test asserts every other host-only command stays unimplemented and the allowlist holds
+  exactly that id.
 
 ## G. Other preemptive seams (same class as F)
 
@@ -731,6 +749,9 @@ implementation does.
   `test/review-conformance/actorPolicyFixtures.ts` (`viewed-marks-across-a-reload`) and the
   `mark-a-file-viewed` wire fixture register the producer action handler and the HTTP surface.
   The browser's per-client overrides and the terminal UI for viewed files remain (M4).
+  _Advanced (M5)_: the page writes the shared fields it shows: `a` sends
+  `notes/set-visibility` and the filter field sends a debounced `filter/set`, each labelled as
+  shared with the terminal. Viewed-file controls remain.
 - **G2. Actor identity and multi-client selection policy.** Notes carry an optional `author`,
   but wire actions carry no actor/client identity — with a terminal, a browser, and agents
   attached to one session, nothing distinguishes who moved the selection or wrote a note, and

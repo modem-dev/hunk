@@ -41,7 +41,6 @@ import { reviewFileMatchesFilter } from "../../core/review/selectors";
 import { lowerAppCommandToReviewIntent } from "../../core/run/commandCatalog";
 import { formatKeyChord } from "../../core/run/keyChordLabels";
 import { reviewErrorMessage } from "../../session/reviewErrorCatalog";
-import { HUNK_REVIEW_PROTOCOL_VERSION } from "../../session/reviewProtocol";
 import type { ReviewAgentRevealV1, ReviewThemeDefaultsV1 } from "../../session/reviewSharedState";
 import { countVisibleNotesByFile } from "../notes/noteProjection";
 import type { ReviewFileIndexEntry } from "../mirror/fileIndex";
@@ -82,7 +81,11 @@ import {
   type WebViewPreferences,
 } from "../view/viewPreferences";
 import type { ThemeMenuOption } from "./ThemeMenu";
+import { ToastRegion } from "../actions/toasts";
+import { reviewLinkWithCapability } from "../session/capability";
+import { ReviewControls } from "./ReviewControls";
 import { Toolbar } from "./Toolbar";
+import { useReviewInteraction } from "./useReviewInteraction";
 
 /** Width of one monospace column on this page, measured once the fonts are in place. */
 function useColumnWidth() {
@@ -171,13 +174,6 @@ function useWebTheme(sessionTheme: ReviewThemeDefaultsV1 | undefined) {
 
 const NO_HIGHLIGHTS = {};
 
-/** A per-tab client identity for actions; never stored, so each tab is its own actor. */
-function randomClientId() {
-  const bytes = new Uint8Array(12);
-  crypto.getRandomValues(bytes);
-  return `browser-${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
-}
-
 /** How long the viewport must stay put before the page reports its focus to the session. */
 const FOCUS_REPORT_DEBOUNCE_MS = 400;
 
@@ -206,10 +202,17 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
   const streamController = useRef<ReviewStreamController | null>(null);
   // The host's resolved keymap (`[keybindings]` folded in) once the shared state arrives; the
   // catalog's defaults until then.
-  const keymap: WebKeymap = useMemo(
-    () => (presentation ? new Map(Object.entries(presentation.keymap)) : defaultWebKeymap()),
-    [presentation],
-  );
+  const keymap: WebKeymap = useMemo(() => {
+    const resolved: Map<string, readonly string[]> = presentation
+      ? new Map(Object.entries(presentation.keymap))
+      : new Map(defaultWebKeymap());
+    // The catalog ships the filter unbound (`/` is the terminal's content search); a page has
+    // no content search of its own, so `/` focuses the filter here unless the host bound it.
+    if ((resolved.get("hunk.review.focusFilter") ?? []).length === 0) {
+      resolved.set("hunk.review.focusFilter", ["/"]);
+    }
+    return resolved;
+  }, [presentation]);
   const keyHint = useCallback(
     (commandId: WebImplementedCommandId) => {
       const chords = webCommandChords(keymap, commandId);
@@ -288,7 +291,6 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
   );
   // Report where the reader settled, so a headless session's `hunk session context` can say
   // where the reader is. Debounced; a failure is dropped, since the next settle reports again.
-  const clientId = useMemo(() => randomClientId(), []);
   const focusTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(focusTimer.current), []);
   const reportFocus = useCallback(
@@ -300,17 +302,14 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
         const shown = session.mirror.getSnapshot();
         const generation = shown.address?.generation;
         if (!generation || shown.updating) return;
-        void session.client
-          .postAction({
-            protocolVersion: HUNK_REVIEW_PROTOCOL_VERSION,
-            generation,
-            actor: { clientId, kind: "browser" },
-            action: { type: "selection/anchor", fileKey, hunkIndex },
-          })
-          .catch(() => undefined);
+        // Best effort: the next settle reports again, so a refusal is not worth a retry.
+        void session.actions.send(
+          { type: "selection/anchor", fileKey, hunkIndex },
+          { stillMeaningful: () => false },
+        );
       }, FOCUS_REPORT_DEBOUNCE_MS);
     },
-    [session, clientId],
+    [session],
   );
 
   // The reader scrolled and the viewport settled here; adopt it without moving anything.
@@ -325,20 +324,21 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
     [session, reportFocus],
   );
 
-  // An agent's reveal selects and shows its target once per token. The token the page first
-  // sees is history, not a request made to this page.
+  // An agent's reveal selects and shows its target once per token. The token in the first
+  // shared state the page receives is history, not a request made to this page; any later one
+  // is revealed, waiting for the document if it arrives before the page finished loading.
   const [revealPoint, setRevealPoint] = useState<ReviewRevealPoint | undefined>(undefined);
   const lastAgentReveal = useRef<number | undefined>(undefined);
   const agentReveal: ReviewAgentRevealV1 | null | undefined = shownShared?.agentReveal;
   const documentReady = review.document.files.length > 0;
   useEffect(() => {
-    if (!documentReady || agentReveal === undefined) return;
+    if (agentReveal === undefined) return;
     const token = agentReveal?.token ?? 0;
     if (lastAgentReveal.current === undefined) {
       lastAgentReveal.current = token;
       return;
     }
-    if (!agentReveal || token <= lastAgentReveal.current) return;
+    if (!documentReady || !agentReveal || token <= lastAgentReveal.current) return;
     lastAgentReveal.current = token;
     const { document } = session.review.store.getSnapshot();
     if (!document.files.some((file) => file.key === agentReveal.fileKey)) return;
@@ -398,6 +398,24 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
   // preferences through a ref so the table is built once per session.
   const viewRef = useRef({ preferences, sidebarOpen });
   viewRef.current = { preferences, sidebarOpen };
+  const interactive = useReviewInteraction(session, shownShared);
+  const interactiveRef = useRef(interactive);
+  interactiveRef.current = interactive;
+  const filterRef = useRef<HTMLInputElement | null>(null);
+  const composers = useSyncExternalStore(
+    session.composers.subscribe,
+    session.composers.getSnapshot,
+  );
+  const copyLink = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(
+        reviewLinkWithCapability(window.location, session.capability),
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }, [session]);
   const commands = useMemo(() => {
     const semantic = ({ entry, count }: WebCommandInvocation) => {
       const intent = lowerAppCommandToReviewIntent(entry, {
@@ -451,6 +469,15 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
       "hunk.view.toggleLineWrap": () =>
         updatePreferences({ wrapLines: !viewRef.current.preferences.wrapLines }),
       "hunk.view.openThemeSelector": () => setThemeMenuOpen(true),
+      // Writing: notes, the shared toggles, and refresh (`./useReviewInteraction.tsx`).
+      "hunk.review.startNote": () => interactiveRef.current.openOnSelection(),
+      "hunk.review.editActiveNote": ({ entry }) => interactiveRef.current.noteCommand(entry),
+      "hunk.review.replyToActiveNote": ({ entry }) => interactiveRef.current.noteCommand(entry),
+      "hunk.review.deleteActiveNote": ({ entry }) => interactiveRef.current.noteCommand(entry),
+      "hunk.review.saveNote": () => interactiveRef.current.saveFocused(),
+      "hunk.view.toggleAgentNotes": () => void interactiveRef.current.toggleAgentNotes(),
+      "hunk.review.focusFilter": () => filterRef.current?.focus(),
+      "hunk.app.refresh": () => void interactiveRef.current.refresh(),
     };
     return buildWebCommands(handlers);
   }, [session, updatePreferences]);
@@ -548,6 +575,22 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
         onPreferences={updatePreferences}
         onToggleSidebar={() => updatePreferences({ sidebarOpen: !sidebarOpen })}
         onTheme={choose}
+        controls={
+          <ReviewControls
+            ref={filterRef}
+            filterText={interactive.filterText}
+            onFilterChange={interactive.changeFilter}
+            {...(keyHint("hunk.review.focusFilter")
+              ? { filterKeyHint: keyHint("hunk.review.focusFilter") }
+              : {})}
+            refreshing={interactive.refreshing}
+            onRefresh={() => void interactive.refresh()}
+            {...(keyHint("hunk.app.refresh")
+              ? { refreshKeyHint: keyHint("hunk.app.refresh") }
+              : {})}
+            onCopyLink={copyLink}
+          />
+        }
       />
       <div className="review-main" ref={mainRef}>
         {sidebarOpen ? (
@@ -604,8 +647,11 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
           sidecarNotes={sidecarNotes}
           highlights={shownShared?.agentHighlights ?? NO_HIGHLIGHTS}
           {...(streamRevealPoint ? { revealPoint: streamRevealPoint } : {})}
+          composers={composers}
+          interaction={interactive.interaction}
         />
       </div>
+      <ToastRegion toasts={session.toasts} />
     </div>
   );
 }

@@ -9,7 +9,7 @@
  * does the same thing (from the page's keymap, so a remap shows up here too). None of them
  * reaches the session.
  */
-import type { KeyboardEvent } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import type { LayoutMode } from "../../core/run/commandInputs";
 import type { WebImplementedCommandId } from "../commands/webCommandTable";
 
@@ -42,6 +42,8 @@ export interface ToolbarProps {
   onPreferences: (next: Partial<WebViewPreferences>) => void;
   onToggleSidebar: () => void;
   onTheme: (themeId: string) => void;
+  /** Review controls shown before the view controls (filter, refresh, copy link). */
+  controls?: ReactNode;
   /** The shortcut label for one command, when it has one on this page. */
   keyHint: (commandId: WebImplementedCommandId) => string | undefined;
 }
@@ -121,6 +123,7 @@ export function Toolbar(props: ToolbarProps) {
         ) : null}
       </div>
       <div className="toolbar-controls">
+        {props.controls}
         <div
           className="segmented"
           role="radiogroup"

@@ -11,6 +11,7 @@ import {
 import { reviewNoteWithinSizeLimit } from "../../packages/hunk/src/core/review/noteSize";
 import { createInitialReviewState } from "../../packages/hunk/src/core/review/state";
 import { createReviewStore } from "../../packages/hunk/src/core/review/store";
+import { noteBodyIssue } from "../../packages/hunk/src/web/notes/noteActions";
 import { createTestDiffFile } from "../helpers/diff-helpers";
 import { createTestReviewDocument } from "../helpers/review-store-helpers";
 import {
@@ -198,6 +199,18 @@ describe("review conformance: empty note bodies", () => {
       expect(plan.actions.map((action) => action.type)).toEqual([
         fixture.blank ? "draft/cancel" : "draft/save",
       ]);
+    });
+  }
+});
+
+// The browser composer refuses a blank body before sending, with the session's own code; it
+// joins the same corpus so its answer can never drift from the predicate the session applies.
+describe("review conformance: browser composer note bodies", () => {
+  for (const fixture of REVIEW_NOTE_BODY_FIXTURES) {
+    test(`${fixture.id} ${fixture.blank ? "is refused as blank" : "may be sent"}`, () => {
+      expect(noteBodyIssue({ fileKey: "file:abc", body: fixture.body }) === "blank-note").toBe(
+        fixture.blank,
+      );
     });
   }
 });

@@ -41,6 +41,11 @@ export interface WebNoteCard {
   title: string;
   /** GitHub-style lines (`R12–R14`), or `hunk`. */
   rangeLabel: string;
+  /**
+   * What the reader may do with it: reply to any stored note, edit an editable reviewer note,
+   * and delete a stored one. Sidecar annotations are part of the changeset and take none.
+   */
+  actions: ("reply" | "edit" | "delete")[];
 }
 
 /** The cards that hang beside one line of one side. */
@@ -108,6 +113,12 @@ function cardFor(
     depth: Math.min(Math.max(0, depth), MAX_NOTE_THREAD_DEPTH),
     title: browserNoteTitle(note, now) ?? reviewNoteThreadTitle(note, now),
     rangeLabel: reviewNoteRangeLabel(note.anchor),
+    actions:
+      origin === "sidecar"
+        ? []
+        : note.source === "user" && note.editable
+          ? ["reply", "edit", "delete"]
+          : ["reply", "delete"],
   };
 }
 

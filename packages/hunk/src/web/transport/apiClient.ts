@@ -33,8 +33,10 @@ import {
   isHunkReviewIndex,
   parseHunkReviewPublicationAddress,
   parseHunkReviewResourceCatalog,
+  type HunkReviewActionAppliedV1,
   type HunkReviewActionEnvelopeV1,
 } from "../../session/reviewProtocol";
+import type { ReviewPublicationAddress } from "../../core/review/generationOrder";
 import { parseReviewSharedState } from "../../session/reviewSharedState";
 import { webCryptoReviewDigest } from "./webCryptoDigest";
 
@@ -236,9 +238,12 @@ export class ReviewApiClient {
     return body;
   }
 
-  /** Send one review action; resolves once the session applied it. */
-  async postAction(envelope: HunkReviewActionEnvelopeV1, signal?: AbortSignal): Promise<void> {
-    await this.request(
+  /** Send one review action; resolves with the position it was applied at. */
+  async postAction(
+    envelope: HunkReviewActionEnvelopeV1,
+    signal?: AbortSignal,
+  ): Promise<HunkReviewActionAppliedV1> {
+    const response = await this.request(
       { kind: "actions", sessionId: this.sessionId },
       {
         signal,
@@ -247,6 +252,41 @@ export class ReviewApiClient {
         body: JSON.stringify(envelope),
       },
     );
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch {
+      body = undefined;
+    }
+    const record = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+    if (
+      record.ok !== true ||
+      typeof record.generation !== "string" ||
+      !isHunkReviewIndex(record.stateRevision)
+    ) {
+      throw new ReviewApiError("unreadable", "The review action's answer could not be read.");
+    }
+    return { ok: true, generation: record.generation, stateRevision: record.stateRevision };
+  }
+
+  /** Ask the session to reload its input, as its own `r` key would. */
+  async refresh(signal?: AbortSignal): Promise<ReviewPublicationAddress> {
+    const response = await this.request(
+      { kind: "refresh", sessionId: this.sessionId },
+      { signal, method: "POST" },
+    );
+    let publication: ReviewPublicationAddress | undefined;
+    try {
+      const body = (await response.json()) as Record<string, unknown>;
+      publication =
+        body.ok === true ? parseHunkReviewPublicationAddress(body.publication) : undefined;
+    } catch {
+      publication = undefined;
+    }
+    if (!publication) {
+      throw new ReviewApiError("unreadable", "The refresh's answer could not be read.");
+    }
+    return publication;
   }
 
   /** Open the session's event stream; the caller reads and closes the body. */

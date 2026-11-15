@@ -104,8 +104,11 @@ describe("browser-reserved chords", () => {
     const { commands } = createTestCommands();
     for (const command of commands) {
       if (command.entry.defaultKeys.length === 0) continue;
+      // Saving a note ships only `ctrl+s`; a composer saves with Ctrl/Cmd+Enter in its field.
+      if (command.entry.id === "hunk.review.saveNote") continue;
       expect(webCommandChords(keymap, command.entry.id).length).toBeGreaterThan(0);
     }
+    expect(webCommandChords(keymap, "hunk.review.saveNote")).toEqual([]);
   });
 
   test("never matches a modified key, even one the keymap carries", () => {

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   archiveReviewPageAssets,
+  createSourceReviewPageLoader,
   currentDirectoryReviewPageAssets,
   directoryReviewPageAssets,
   encodeReviewPageAssetArchive,
@@ -116,6 +117,39 @@ describe("a build directory under a running daemon", () => {
 
     expect(cached.asset("main-abc123.js")).toBeUndefined();
     expect(await cached.asset("main-def456.js")!.body.text()).toBe("console.log(3);");
+  });
+});
+
+describe("a source checkout's on-demand build", () => {
+  test("builds at most once per daemon and remembers a failure", async () => {
+    let builds = 0;
+    const load = createSourceReviewPageLoader(
+      async () => {
+        builds += 1;
+        return false;
+      },
+      () => undefined,
+    );
+    expect(await Promise.all([load(), load()])).toEqual([undefined, undefined]);
+    expect(await load()).toBeUndefined();
+    expect(builds).toBe(1);
+  });
+
+  test("serves a build that appears later without building again", async () => {
+    const directory = writeTestBuild();
+    let present = false;
+    let builds = 0;
+    const load = createSourceReviewPageLoader(
+      async () => {
+        builds += 1;
+        return true;
+      },
+      () => (present ? currentDirectoryReviewPageAssets(directory) : undefined),
+    );
+    expect(await load()).toBeUndefined();
+    present = true;
+    expect(await load()).toBeDefined();
+    expect(builds).toBe(1);
   });
 });
 
