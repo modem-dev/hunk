@@ -17,9 +17,10 @@ should delete the copies its primitive replaces and check off the finding here.
 
 Open work and the milestone in [`web-review-plan.md`](web-review-plan.md) that owns it:
 
-- **C3, C5** — the epoch/supersede queue and one reconnect scheduler, both browser-client
-  work (M4). C4 is repaid on the server side; its client half closes with the reader
-  that imports the same module.
+- **C3, C5** — the epoch/supersede queue and one reconnect scheduler landed with the M4
+  transport (`@hunk/session-broker-core/lifecycle`); the app-tier reload queue and the broker
+  client's startup retry remain unconverted (see each finding). C4's client half closed with
+  the same transport.
 - **The event stream needs a `fetch` reader, not `EventSource`.** The capability is
   presented in a header, which `EventSource` cannot set, so the M4 client consumes the
   stream with `fetch` and a streaming reader. That is also what makes C5's "one reconnect
@@ -341,6 +342,10 @@ path suffixes, expansion retention, git-status badges).
   caller decided from" is the same question as "is this publication ahead". The mirror is
   registered against the Phase 2 fixtures as the `broker review mirror` ordering consumer,
   which is what proves it has no rules of its own. The browser site closes in Phase 5.
+  _Repaid (M4, browser site)_: the page's mirror (`packages/hunk/src/web/mirror/reviewMirror.ts`)
+  orders every publication — the first read and every streamed one — with one
+  `classifyReviewPublication` call, treating its first publication as a gap from nothing. It is
+  registered as the `browser client mirror` ordering consumer.
 - **C2. Chunk assembly + verification — 4 copies, 2 in one file.** Web `apiClient.ts` range
   loop; broker `state.ts` materializing and pre-sized loops (which already disagree on
   progress/eof rules); SSE reassembly in `mirror.ts`. Three in-flight dedupe key formats;
@@ -373,10 +378,22 @@ path suffixes, expansion retention, git-status badges).
   concurrent callers await the same assembly. `packages/hunk/src/session/broker/reviewResources.integration.test.ts`
   drives the whole path with only the socket replaced. The browser's `apiClient` range loop
   closes in Phase 5.
+  _Repaid (M4, browser site)_: `packages/hunk/src/web/transport/apiClient.ts` reads ranged
+  windows and feeds them to the same `ReviewChunkAssembler`, verifying with Web Crypto through
+  the assembler's `finishAsync` (the `ReviewDigestFn` seam is synchronous; an asynchronous
+  sibling, `ReviewAsyncDigestFn`, was added beside it). One limit remains: the HTTP surface
+  sends no digest for a resource whose descriptor is unmeasured, so for those the browser checks
+  the window rules and the daemon's own verification stands in for the digest.
 - **C3. Epoch/supersede/trailing-retry — 2 parallel machines.** Runtime reload queue
   (`reloadEpochSequence`/`supersededReloads`) vs web snapshot recovery
   (`recoveryEpoch`/trailing while-loop), plus three unrelated anti-spin timing constants. Fix:
   one epoch-queue primitive; keep DOM/React wiring local.
+  _Repaid (M4, browser site)_: `createSupersedeQueue` in
+  `packages/session-broker-core/src/lifecycle.ts` is the primitive — latest load wins, the
+  superseded load's signal aborts at once, and its outcome reports `superseded` whatever it
+  resolves with. The browser mirror runs every generation load through it. The terminal's
+  runtime reload queue in `packages/hunk/src/app/` is not converted yet; it is owned by the
+  headless review host work (M1).
 - **C4. SSE event contract defined on both ends.** Frame names (`${type}-begin/-chunk/-end`),
   begin/end envelopes, and the event-id grammar are built in `browserReviewServer.ts` and
   re-declared/regex-parsed in `mirror.ts`/`apiClient.ts`; client bounds (12 MiB / 1024 chunks)
@@ -401,11 +418,23 @@ path suffixes, expansion retention, git-status badges).
   `test/review-conformance/eventFixtures.ts` pin the boundary the two ends must agree on,
   and both the protocol and the real HTTP surface are registered as event consumers. The
   browser reader joins in Phase 5, which is when this finding closes.
+  _Repaid (M4, client side)_: `packages/hunk/src/web/transport/eventReader.ts` splits the
+  stream into SSE records and hands each to the protocol module's frame-name parser, envelope
+  parsers, event-id grammar, and `ReviewEventAssembler` (verifying with Web Crypto through
+  `finishAsync`); it declares no frame grammar or bound. It reads the real HTTP surface as the
+  `browser client event reader` event consumer, so both ends now run the corpus.
 - **C5. Reconnect/backoff — 4 schedulers, 1 verbatim duplicate.** `apiClient.ts` (exp/4 s),
   web `App.tsx` (exp/4 s + anti-spin), `brokerClient.ts` (fixed 3 s — re-implementing the
   scheduler of the connection it already configures), `session-broker/connection.ts`. Fix: one
   `createReconnectScheduler` in `@hunk/session-broker-core`; EventSource's built-in reconnect
   interplay stays client-side.
+  _Repaid (M4)_: `createReconnectScheduler` lives in
+  `packages/session-broker-core/src/lifecycle.ts`, timer-injected and exposed to browsers as
+  `@hunk/session-broker-core/lifecycle`. The page's event stream (`web/transport/eventStream.ts`)
+  and the generic broker connection (`packages/session-broker/src/connection.ts`, fixed delay,
+  keyed by connection generation) both use it. Not converted: the Hunk broker client's startup
+  retry in `packages/hunk/src/session/broker/brokerClient.ts`, whose deadline is part of its
+  startup state machine rather than a reconnect loop, and app-tier schedulers.
 
 ## D. Notes and validation
 
@@ -463,6 +492,12 @@ path suffixes, expansion retention, git-status badges).
   identity) and stays a snapshot rather than becoming the validator. The producer self-checks
   with it before serving any canonical file, and the conformance harness runs that check over
   every fixture. The browser and broker copies go when those tiers land.
+  _Repaid (M4, browser site)_: a browser holds no manifest yet, so
+  `parseCanonicalReviewFile` in `core/review/canonicalFile.ts` is its one validating parser:
+  exact projection shape (unknown fields refused), addressed to the resource's file key, and
+  content that still hashes to its `contentIdentity` (`recomputeReviewFileContentIdentity`).
+  When the shared-state route carries manifest entries, the browser adds the manifest
+  comparison above on top.
 - **D5. Validator/constant hygiene.** `isReviewSha256Digest` exists but is bypassed by five
   inline regexes with case-sensitivity drift; raw `createHash("sha256")` at seven sites
   instead of `reviewDigest`; `hasExactKeys` private while the pattern is inlined ~10×;

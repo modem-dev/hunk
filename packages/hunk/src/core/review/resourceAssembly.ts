@@ -22,7 +22,12 @@ import {
   type ReviewResourceErrorCode,
   type ReviewResourceFailure,
 } from "./resources";
-import { isReviewSha256Digest, reviewDigestsEqual, type ReviewDigestFn } from "./validation";
+import {
+  isReviewSha256Digest,
+  reviewDigestsEqual,
+  type ReviewAsyncDigestFn,
+  type ReviewDigestFn,
+} from "./validation";
 
 /** A refused assembly, in the shared resource vocabulary a caller already handles. */
 export type ReviewAssemblyFailure = ReviewResourceFailure;
@@ -48,8 +53,11 @@ export interface ReviewChunkAssemblerOptions {
   resourceId: string;
   /** The generation the read was issued against. */
   generation: string;
-  /** Platform hashing, injected so core never depends on one. */
-  digest: ReviewDigestFn;
+  /**
+   * Platform hashing, injected so core never depends on one. Omitted by a reader that
+   * verifies through `finishAsync` instead, such as a browser using Web Crypto.
+   */
+  digest?: ReviewDigestFn;
   /**
    * Largest resource this reader will hold.
    *
@@ -227,6 +235,32 @@ export class ReviewChunkAssembler {
    * stream, which is the whole point of carrying a whole-resource digest on every chunk.
    */
   finish(): ReviewAssemblyResult {
+    const assembled = this.assembled();
+    if (!assembled.ok) {
+      return assembled;
+    }
+    if (!this.options.digest) {
+      return this.fail(
+        "resource-integrity",
+        `Review resource ${this.options.resourceId} has no synchronous digest to verify with.`,
+      );
+    }
+    return this.verify(assembled.bytes, this.options.digest(assembled.bytes));
+  }
+
+  /**
+   * `finish`, hashing with a platform digest that answers asynchronously.
+   *
+   * Every rule is the synchronous path's; only where the hash comes from differs, so a
+   * browser verifying with Web Crypto applies exactly the checks the daemon does.
+   */
+  async finishAsync(digest: ReviewAsyncDigestFn): Promise<ReviewAssemblyResult> {
+    const assembled = this.assembled();
+    return assembled.ok ? this.verify(assembled.bytes, await digest(assembled.bytes)) : assembled;
+  }
+
+  /** The assembled bytes, once the stream has ended cleanly. */
+  private assembled(): ReviewAssemblyResult {
     if (this.failed) {
       return this.failed;
     }
@@ -236,9 +270,15 @@ export class ReviewChunkAssembler {
         `Review resource ${this.options.resourceId} was assembled before its stream ended.`,
       );
     }
+    return { ok: true, bytes: this.buffer ?? new Uint8Array(0) };
+  }
 
-    const bytes = this.buffer ?? new Uint8Array(0);
-    if (!reviewDigestsEqual(this.options.digest(bytes), this.contentDigest)) {
+  /** Accept the assembled bytes only when they hash to the declared digest. */
+  private verify(bytes: Uint8Array, actualDigest: string): ReviewAssemblyResult {
+    if (this.failed) {
+      return this.failed;
+    }
+    if (!reviewDigestsEqual(actualDigest, this.contentDigest!)) {
       return this.fail(
         "resource-integrity",
         `Review resource ${this.options.resourceId} does not hash to the digest it was served with.`,
