@@ -48,6 +48,8 @@ export interface CommonOptions {
   agentContext?: string;
   pager?: boolean;
   watch?: boolean;
+  /** Serve the review headless for a browser instead of opening the terminal UI. */
+  web?: boolean;
   /** Enable launch-scoped experimental review features. */
   experimental?: boolean;
   excludeUntracked?: boolean;

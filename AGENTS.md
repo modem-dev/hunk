@@ -29,6 +29,9 @@ main.tsx -> app/startup.ts -> app/cli.ts
   -> app plan: extensionBootstrap.ts -> sessionBootstrap.ts -> normalized Changeset / DiffFile[]
      -> main.tsx lazy-loads runInteractiveApp.tsx -> HunkSessionHost -> AppHost -> App
      -> pane/diff planning -> Pierre-backed terminal rows
+  -> web plan (`--web`, hidden): same bootstrap, no TTY or OpenTUI
+     -> main.tsx lazy-loads app/session/headlessReviewRunner.ts -> ReviewSessionHost +
+        ReviewReloadCoordinator + session bridge -> review URL on stdout until SIGINT/SIGTERM
 ```
 
 ### shared review seam
@@ -196,7 +199,8 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
 - Agent context belongs beside the code, not hidden in a separate mode or workflow.
 - Agent notes are hunk-specific: show notes for the selected hunk, render them in the diff flow near the annotated row, and keep a clear spatial relationship to the code they explain.
 - Keep note behavior explicit. If the UI intentionally prioritizes one note, one selection, or one active target, encode that as a named policy rather than scattering array-index assumptions through the codebase.
-- STML markup notes (experimental) live in `packages/hunk/src/ui/lib/stml/`. The layout engine is deliberately a deterministic line layout, not OpenTUI flexbox: the row-windowed review stream needs exact note heights before mount, so `(markup, width)` must always produce the same lines. Colors stay symbolic until render time so measurement never needs a theme. Do not "simplify" this into flexbox renderables, and keep note-card geometry in `agentNoteGeometry` as the single source for rendering, measurement, and agent-facing width reporting.
+- STML markup notes (experimental) live in `packages/hunk/src/ui/lib/stml/`, with parsing and the
+  layout engine in `packages/hunk/src/core/stml/` so the headless host validates markup too. The layout engine is deliberately a deterministic line layout, not OpenTUI flexbox: the row-windowed review stream needs exact note heights before mount, so `(markup, width)` must always produce the same lines. Colors stay symbolic until render time so measurement never needs a theme. Do not "simplify" this into flexbox renderables, and keep note-card geometry in `agentNoteGeometry` as the single source for rendering, measurement, and agent-facing width reporting.
 - Keep temporary sidecars concise and review-oriented. Their file order is intentional, while the
   visible note UI remains hunk-note driven rather than showing generic explainer cards.
 - Agents review via `packages/hunk/skills/hunk-review/SKILL.md` using `hunk session *` commands; do not run interactive TUI commands directly.

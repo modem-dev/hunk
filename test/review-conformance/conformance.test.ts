@@ -64,6 +64,7 @@ describe("review conformance corpus", () => {
     expect(REVIEW_NAVIGATION_CONSUMERS.map((consumer) => consumer.name)).toEqual([
       "core intent planner",
       "terminal review",
+      "review session host",
     ]);
     expect(REVIEW_ORDERING_CONSUMERS.map((consumer) => consumer.name)).toEqual([
       "core publication ordering",

@@ -41,7 +41,7 @@ Other workspaces are bounded units rather than one tier in that stack:
 - `packages/term-video` owns terminal capture tooling and does not import Hunk source internals.
 
 Current `core/` modules are `changeset/`, `documents/`, `feedback/`, `highlights/`, `history/`, `install/`, `patch/`, `process/`, `review/`,
-`run/`, `theme/`, `vcs/`, and `watch/`. Its root contains `bootstrap.ts`, `liveComments.ts`,
+`run/`, `stml/`, `theme/`, `vcs/`, and `watch/`. Its root contains `bootstrap.ts`, `liveComments.ts`,
 `reviewDescriptor.ts`, and `reviewDigest.ts` plus tests.
 
 Intentional exceptions, allowed by the rules:

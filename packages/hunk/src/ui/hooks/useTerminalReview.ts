@@ -96,7 +96,7 @@ import {
   type ReviewVerticalStop,
 } from "../lib/reviewVerticalStops";
 import { agentNoteMarkupWidth } from "../lib/agentNoteGeometry";
-import { STML_REFERENCE_WIDTH, validateStmlMarkup } from "../lib/stml/layout";
+import { STML_REFERENCE_WIDTH, validateStmlMarkup } from "../../core/stml/layout";
 import {
   groupStoredNotesByFileId,
   groupThreadedStoredNotesByFileId,
@@ -106,7 +106,7 @@ import {
   type DraftReviewNote,
   type UserReviewNote,
 } from "../lib/reviewNoteMapping";
-import { buildReviewStreamState, planTerminalSelectionReconciliation } from "../lib/reviewState";
+import { buildReviewStreamState } from "../lib/reviewState";
 import { filterFilesByExtensionPresentationScope } from "../lib/extensionPresentationScope";
 
 export type { RevealedLineResult, ReviewSelectionOptions };
@@ -625,18 +625,11 @@ export function useTerminalReview({
     [keyByFileId, projectedNavigationFiles, selectHunk],
   );
 
-  /** Reconcile only a stale document selection; filtering preserves the reviewer's place. */
-  const reconcileSelection = useCallback(() => {
-    const action = planTerminalSelectionReconciliation(store.getSnapshot());
-    if (action) {
-      store.dispatch(action);
-    }
-  }, [store]);
-
+  // The host repairs a stale document selection when it replaces files; this re-checks after
+  // any other store change, so filtering still preserves the reviewer's place.
   useEffect(() => {
-    reconcileSelection();
-    // The store's own state is what needs reconciling, so re-run when it moves.
-  }, [reconcileSelection, state.document, state.filter, state.selection]);
+    host.repairSelection();
+  }, [host, state.document, state.filter, state.selection]);
 
   const previousPresentationScopeRef = useRef<ExtensionReviewPresentationScope | null>(null);
   useEffect(() => {

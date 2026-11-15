@@ -262,6 +262,14 @@ async function main() {
     process.exit(0);
   }
 
+  if (startupPlan.kind === "web") {
+    // No OpenTUI and no highlight worker: a headless review renders nothing in this process.
+    const { runHeadlessReview } = await import("./app/session/headlessReviewRunner");
+    process.exit(
+      await runHeadlessReview(startupPlan.bootstrap as Parameters<typeof runHeadlessReview>[0]),
+    );
+  }
+
   if (startupPlan.kind !== "app") {
     throw new Error("Unreachable startup plan.");
   }
