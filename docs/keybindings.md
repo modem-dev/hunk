@@ -213,3 +213,12 @@ extension cannot trap the keyboard.
 `[keybindings]` is read from your user config only — never from a repository's
 `.hunk/config.toml`. Which keys do what is a property of your keyboard and your
 habits, so a checkout you review cannot rearrange them.
+
+## In the browser review page
+
+The browser page answers to the same command ids and default chords. It leaves every chord
+that uses Ctrl, Cmd, or Alt, Tab, and the function keys to the browser, so `ctrl+d` and
+`ctrl+u` do nothing there (`d` and `u` still page), and it ignores keys typed into a field.
+It does not read `[keybindings]` yet; the host's resolved keymap reaches it with the shared
+review state. Which commands the page implements is listed in
+[`web-review-client.md`](web-review-client.md#commands-and-keyboard).

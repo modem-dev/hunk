@@ -192,6 +192,9 @@ duplication); hunk header text (browser delegates to Pierre separators); platfor
   forward-cross-file alignment rule moved into the hunk-move planner, where the crossing is
   known. The terminal's `selectFile` lowers to the intent and no longer takes a hunk index.
   Fixture `scope-wrap-and-clamp` pins both reveals. The browser's copy lands in Phase 5.
+  _Repaid (M4 keyboard, browser site)_: the page's `.`/`,` and sidebar clicks go through the
+  planner and `selection/select-file`; it reveals what the store's tokens ask for and carries
+  no file-jump rule of its own.
 - **B4. Selection fallback after reload/filter — 2 divergent answers.** Terminal
   `resolveSelectedFile` returns undefined (renders "no file"); web `validSelection` and
   `treeSource.reset` silently fall back to `files[0]`. Core permits `fileKey: null`. Fix:
@@ -278,6 +281,11 @@ duplication); hunk header text (browser delegates to Pierre separators); platfor
   local `preserveViewport` selection option is deleted. The policy is stated, but the
   multi-client question it exists for — whether an anchor should be shared at all — is G2,
   decided before Phase 5 PR 2.
+  _Repaid (M4 keyboard, browser site)_: which hunk owns a viewport offset is
+  `reviewHunkIndexAtOffset` in `core/review/viewportAnchor.ts`; the terminal's
+  `ui/lib/viewportSelection.ts` delegates to it (`findNearestHunkIndexAtBodyOffset` is banned
+  there) and the browser anchors through it in pixels, with `selection/anchor` applied to its
+  local store only — selection is per surface, so the G2 question does not arise.
 - **B12. Wire vocabulary hand-restates `ReviewIntent` — 3 places.** `HunkReviewActionV1`
   union, capability list in `registration.ts`, validation list in `wire.ts`, remapped
   field-by-field in `reviewSessionRuntime.ts`; forgotten fields/actions are silently
@@ -626,6 +634,9 @@ here so the extraction happens before the duplication exists. Design detail in
   `lowerAppCommandToReviewIntent`, so the terminal no longer rebuilds semantic command intents
   inline. The future browser palette remains a second surface, not a prerequisite for terminal
   parity.
+  _Repaid (M4 keyboard, browser site)_: the page's navigation and gap-toggle handlers lower
+  through the same function and apply the intent to the page's local store, so the browser
+  is the third consumer of the lowering and restates no scope, direction, or gap rule.
 - **F3. Keymap resolution is terminal-owned.** Chords are shared config strings (`keymap.ts`,
   `[keybindings]`), but resolution against defaults and conflict handling lives with the
   terminal table; a browser keymap would duplicate it and drift on user rebinds. Fix: resolve
@@ -636,6 +647,15 @@ here so the extraction happens before the duplication exists. Design detail in
   fold user config over catalogued defaults exactly once. Mapping resolved chords onto a client's
   own event type stays per client, which is the part that cannot be shared; the browser's half
   lands in Phase 5.
+  _Repaid (M4 keyboard, browser site)_: the page builds its command table from the catalog
+  (`web/commands/webCommandTable.ts`, keyed by `AppCommandId`, with a parity test) and binds
+  the catalog's chords through the shared grammar in `extension-api/keys.ts`; it maps DOM key
+  events onto that grammar and masks browser-reserved chords, but resolves nothing itself, so
+  the host's resolved keymap can replace the defaults. Chord labels moved from
+  `ui/lib/keymap.ts` to `core/run/keyChordLabels.ts`, which both renderers import;
+  `formatKeyChord`, `formatChordBase`, and `NAMED_CHORD_LABELS` are banned from the terminal
+  file. The catalog, the label module, and the chord grammar join the browser's allowed imports
+  on a closed import set in `scripts/quality/source-boundaries.test.ts`.
 - **F4. Host-only and extension commands — do not expose, by design.** Quit, source refresh,
   edit-in-`$EDITOR`, agent-skill helpers, and all extension commands execute host-side (with
   dialog access); browser invocation is remote code execution into the terminal session.
@@ -649,6 +669,9 @@ here so the extraction happens before the duplication exists. Design detail in
   review action: it is a host effect, not review semantics, so `REVIEW_INTENT_TYPES` and the
   action envelope stay free of host commands. Every other host and extension command remains
   unreachable from a browser.
+  _Held (M4 keyboard)_: the page classifies quit, edit-in-`$EDITOR`, agent skill, and feedback
+  as host-only and never implements them (`webCommandTable.test.ts` asserts no host-only
+  command is implemented); extension commands are not in its table at all.
 
 ## G. Other preemptive seams (same class as F)
 
