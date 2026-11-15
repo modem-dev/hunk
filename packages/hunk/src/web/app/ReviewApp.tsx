@@ -80,6 +80,8 @@ import {
   type WebViewOverrides,
   type WebViewPreferences,
 } from "../view/viewPreferences";
+import { selectReviewNoteList } from "../../core/review/noteList";
+import { NotesTab } from "../notesPanel/NotesTab";
 import { OverviewTab } from "../overview/OverviewTab";
 import { selectWebReviewOverview } from "../panel/overviewInput";
 import { webLocalKeyCommands, withWebLocalChords } from "../panel/panelCommands";
@@ -383,6 +385,28 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
       : noteToReveal && review.selection.fileKey
         ? { fileKey: review.selection.fileKey, noteId: noteToReveal }
         : undefined;
+  // The Notes tab lists every visible note by the shared order; choosing one selects it here and
+  // reveals its card, the way an agent's reveal does, and never reaches the session.
+  const noteList = useMemo(
+    () => (panelOpen && panel.tab === "notes" ? selectReviewNoteList(review, sidecarNotes) : []),
+    [panelOpen, panel.tab, review, sidecarNotes],
+  );
+  const selectNote = useCallback(
+    (
+      thread: { fileKey: string; hunkIndex: number },
+      entry: { note: { id: string }; stored: boolean },
+    ) => {
+      setRevealPoint({ fileKey: thread.fileKey, noteId: entry.note.id });
+      session.review.apply({
+        type: "selection/select",
+        fileKey: thread.fileKey,
+        hunkIndex: thread.hunkIndex,
+        reveal: { anchor: "hunk", scrollToNote: true },
+        ...(entry.stored ? { activeNoteId: entry.note.id } : {}),
+      });
+    },
+    [session],
+  );
   // A click on a hunk selects it where it is; the viewport stays put.
   const selectHunk = useCallback(
     (fileKey: string, hunkIndex: number) => {
@@ -507,6 +531,7 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
     (): Partial<Record<WebLocalCommandId, () => void>> => ({
       "hunk.web.toggleSidePanel": () => updatePanel({ open: !viewRef.current.panelOpen }),
       "hunk.web.showOverview": () => updatePanel({ open: true, tab: "overview" }),
+      "hunk.web.showNotes": () => updatePanel({ open: true, tab: "notes" }),
     }),
     [updatePanel],
   );
@@ -539,6 +564,18 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
           id: "overview",
           label: "Overview",
           render: () => <OverviewTab overview={overview} onSelectFile={tools.jumpToFile} />,
+        },
+        {
+          id: "notes",
+          label: "Notes",
+          render: () => (
+            <NotesTab
+              files={noteList}
+              activeNoteId={review.activeNoteId}
+              agentNotesHidden={!review.showAgentNotes}
+              onSelectNote={selectNote}
+            />
+          ),
         },
       ]
     : [];
