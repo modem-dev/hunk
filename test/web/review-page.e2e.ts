@@ -61,3 +61,17 @@ test("opens a live review, renders a Pierre diff, and stays inside the page CSP"
   await page.waitForTimeout(500);
   expect(problems).toEqual([]);
 });
+
+// Intent: when the session ends, the daemon says so on the event stream and the reader sees
+// it, instead of a page that still claims to be connected.
+test("shows that the session ended when its process exits", async ({ page }) => {
+  review = await startTestWebReview(PATCH_FIXTURE);
+  await page.goto(review.url);
+  await expect(page.locator('.toolbar [data-state="connected"]')).toHaveText("Connected");
+
+  await review.endSession();
+
+  await expect(page.locator('.toolbar [data-state="failed"]')).toHaveText("Session ended", {
+    timeout: 15_000,
+  });
+});

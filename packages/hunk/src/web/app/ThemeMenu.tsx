@@ -114,13 +114,12 @@ export function ThemeMenu({
     }
     if (event.key.length === 1 && /\S/.test(event.key) && !event.ctrlKey && !event.metaKey) {
       // Type-ahead: the next theme after the active one whose name starts with the letter.
+      // The open menu consumes every letter, matched or not, so none reaches page shortcuts.
+      event.preventDefault();
       const letter = event.key.toLowerCase();
       const ordered = [...themes.slice(active + 1), ...themes.slice(0, active + 1)];
       const match = ordered.find((theme) => theme.label.toLowerCase().startsWith(letter));
-      if (match) {
-        event.preventDefault();
-        setActive(themes.indexOf(match));
-      }
+      if (match) setActive(themes.indexOf(match));
     }
   };
 

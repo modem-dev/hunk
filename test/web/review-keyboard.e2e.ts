@@ -30,9 +30,13 @@ test.beforeEach(async ({ page }) => {
 });
 
 test.afterEach(async () => {
-  expect(problems).toEqual([]);
-  await review?.stop();
-  review = undefined;
+  // Check the page before stopping (a stopped daemon cuts its event stream), but always stop.
+  try {
+    expect(problems).toEqual([]);
+  } finally {
+    await review?.stop();
+    review = undefined;
+  }
 });
 
 /** Open the review, wait until every file has loaded, and put focus on the page body. */
@@ -181,6 +185,36 @@ test("scrolls with the paging keys and jumps to either end", async ({ page }) =>
   await expect.poll(scrollTop).toBe(0);
 });
 
+// Intent: a jump to the end lands on the height laid out at that moment; files that draw
+// taller afterwards must not leave the reader short of the end, and the reader's own scroll
+// must still win.
+test("holds the end while files below finish drawing, until the reader scrolls", async ({
+  page,
+}) => {
+  await openTestReview(page);
+  const distanceFromEnd = () =>
+    page.evaluate(() => {
+      const stream = document.querySelector<HTMLElement>(".review-stream")!;
+      return stream.scrollHeight - stream.clientHeight - stream.scrollTop;
+    });
+
+  await page.keyboard.press("Shift+G");
+  // A file at the end grows after the jump, as a late first draw does.
+  await page.waitForTimeout(300);
+  await page.evaluate(() => {
+    const sections = document.querySelectorAll<HTMLElement>("section[data-file-key]");
+    const grown = document.createElement("div");
+    grown.style.height = "400px";
+    sections[sections.length - 1]!.append(grown);
+  });
+  await page.waitForTimeout(600);
+  expect(await distanceFromEnd()).toBeLessThanOrEqual(1);
+
+  await page.keyboard.press("k");
+  await page.waitForTimeout(600);
+  expect(await distanceFromEnd()).toBeGreaterThanOrEqual(19);
+});
+
 test("switches layout and view options from the keyboard", async ({ page }) => {
   await openTestReview(page);
   const app = page.locator(".review-app");
@@ -215,6 +249,14 @@ test("switches layout and view options from the keyboard", async ({ page }) => {
   await expect(page.getByTestId("theme-picker")).not.toHaveAttribute("data-theme-id", before ?? "");
   await page.keyboard.press("t");
   await expect(menu).toBeVisible();
+  // A letter no theme starts with stays in the open menu instead of reaching page shortcuts.
+  const scrollTop = () =>
+    page.evaluate(() => document.querySelector<HTMLElement>(".review-stream")!.scrollTop);
+  const scrolledBefore = await scrollTop();
+  await page.keyboard.press("j");
+  await page.waitForTimeout(200);
+  expect(await scrollTop()).toBe(scrolledBefore);
+  await expect(menu).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(menu).toHaveCount(0);
 });

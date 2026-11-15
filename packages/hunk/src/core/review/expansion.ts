@@ -254,6 +254,16 @@ export function reviewExpandedGapContents(
   return contents;
 }
 
+/**
+ * Append `lines` to `target` one by one.
+ *
+ * A gap can hold more lines than an engine takes as spread arguments, so `push(...lines)`
+ * would throw `RangeError` on a large expansion.
+ */
+function appendLines(target: string[], lines: readonly string[]) {
+  for (const line of lines) target.push(line);
+}
+
 /** One context block of `lines` rows, before re-basing gives it its indices. */
 function contextBlock(lines: number) {
   return { type: "context" as const, lines, additionLineIndex: 0, deletionLineIndex: 0 };
@@ -306,16 +316,16 @@ export function reviewFileWithExpandedGaps(
     const after = index === lastIndex ? trailing : undefined;
     if (partial) {
       // Copy the patch lines up to this hunk, then insert the gap's lines where it begins.
-      additionLines.push(...file.additionLines.slice(copiedAdditions, hunk.additionLineIndex));
-      deletionLines.push(...file.deletionLines.slice(copiedDeletions, hunk.deletionLineIndex));
+      appendLines(additionLines, file.additionLines.slice(copiedAdditions, hunk.additionLineIndex));
+      appendLines(deletionLines, file.deletionLines.slice(copiedDeletions, hunk.deletionLineIndex));
       copiedAdditions = hunk.additionLineIndex;
       copiedDeletions = hunk.deletionLineIndex;
       if (leading) {
         // Parsed lines keep their terminators; inserted ones follow the file's convention so
         // a renderer that joins lines cannot run two of them together.
         const inserted = leading.lines.map((line) => `${line}${terminator}`);
-        additionLines.push(...inserted);
-        deletionLines.push(...inserted);
+        appendLines(additionLines, inserted);
+        appendLines(deletionLines, inserted);
       }
     }
     if (!leading && !after && shift === 0) {
@@ -360,8 +370,8 @@ export function reviewFileWithExpandedGaps(
   });
 
   if (partial) {
-    additionLines.push(...file.additionLines.slice(copiedAdditions));
-    deletionLines.push(...file.deletionLines.slice(copiedDeletions));
+    appendLines(additionLines, file.additionLines.slice(copiedAdditions));
+    appendLines(deletionLines, file.deletionLines.slice(copiedDeletions));
   }
   return { ...file, hunks, additionLines, deletionLines };
 }
