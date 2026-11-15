@@ -154,6 +154,7 @@ const commandInputs = {
     ...selectorFields,
     filePath: optionalString,
   }),
+  open_review: z.strictObject({ ...selectorFields, open: z.boolean() }),
 } as const;
 
 const failure = z.strictObject({
@@ -227,6 +228,7 @@ const results = {
   ]),
   highlight: hunkCommandResultSchemas.highlight,
   clear_highlights: hunkCommandResultSchemas.clear_highlights,
+  open_review: hunkCommandResultSchemas.open_review,
 } as const;
 
 /** Parse with one strict Hunk schema while keeping Zod diagnostics inside the app boundary. */

@@ -35,6 +35,7 @@ import {
   selectReviewGapForSelection,
 } from "../review/selectors";
 import type { ReviewState } from "../review/state";
+import { WEB_REVIEW_ENTRY_POINTS_RELEASED } from "./webReviewRelease";
 import type { ReviewNoteTargetV1 } from "../review/types";
 
 /** Where one command's effect resolves, and therefore who may invoke it. */
@@ -628,9 +629,31 @@ const BUILTIN_COMMANDS = [
  * Derived from the literal declaration above, which is why that one stays `as const` while
  * the exported catalog is widened to the entry shape consumers read.
  */
-export type AppCommandId = (typeof BUILTIN_COMMANDS)[number]["id"];
+/**
+ * "Open in browser": open this session's review in the default browser.
+ *
+ * Host-only because the launch and the capability it carries stay where the review is hosted.
+ * Unbound by default. Catalogued only once `WEB_REVIEW_ENTRY_POINTS_RELEASED` is set, so until
+ * then it appears in no menu, help row, keybinding table, or extension command list.
+ */
+export const OPEN_IN_BROWSER_COMMAND = {
+  id: "hunk.app.openInBrowser",
+  title: "Open in browser",
+  category: "app",
+  defaultKeys: [],
+  locus: "host-only",
+  publicToExtensions: true,
+  closesMenu: true,
+} as const satisfies AppCommandCatalogEntry;
 
-export const APP_COMMAND_CATALOG: readonly AppCommandCatalogEntry[] = BUILTIN_COMMANDS;
+export type AppCommandId =
+  | (typeof BUILTIN_COMMANDS)[number]["id"]
+  | (typeof OPEN_IN_BROWSER_COMMAND)["id"];
+
+export const APP_COMMAND_CATALOG: readonly AppCommandCatalogEntry[] =
+  WEB_REVIEW_ENTRY_POINTS_RELEASED
+    ? [...BUILTIN_COMMANDS, OPEN_IN_BROWSER_COMMAND]
+    : BUILTIN_COMMANDS;
 
 /** Canonical and compatibility names accepted for review-surface built-ins. */
 export const APP_COMMAND_NAMES: ReadonlySet<string> = new Set(
@@ -650,7 +673,10 @@ export function appCommandCatalogEntry(id: string): AppCommandCatalogEntry | und
  * possibility that the command does not exist.
  */
 export function builtinAppCommand(id: AppCommandId): AppCommandCatalogEntry {
-  return APP_COMMAND_CATALOG.find((entry) => entry.id === id) as AppCommandCatalogEntry;
+  // Searches unreleased entries too, so the lookup stays total over every `AppCommandId`.
+  return [...BUILTIN_COMMANDS, OPEN_IN_BROWSER_COMMAND].find(
+    (entry) => entry.id === id,
+  ) as AppCommandCatalogEntry;
 }
 
 /** The facts a command needs to become one concrete review intent. */

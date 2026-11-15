@@ -50,6 +50,8 @@ export interface CommonOptions {
   watch?: boolean;
   /** Serve the review headless for a browser instead of opening the terminal UI. */
   web?: boolean;
+  /** False when `--no-open` asks a browser review to print its URL without opening it. */
+  open?: boolean;
   /** Enable launch-scoped experimental review features. */
   experimental?: boolean;
   excludeUntracked?: boolean;
@@ -372,6 +374,15 @@ export interface SessionHighlightClearCommandInput {
   filePath?: string;
 }
 
+/** Open one live session's review in a browser, or print its URL with `open: false`. */
+export interface SessionOpenCommandInput {
+  kind: "session";
+  action: "open";
+  output: SessionCommandOutput;
+  selector: SessionSelectorInput;
+  open: boolean;
+}
+
 export type SessionCommandInput =
   | SessionListCommandInput
   | SessionGetCommandInput
@@ -384,7 +395,8 @@ export type SessionCommandInput =
   | SessionCommentRemoveCommandInput
   | SessionCommentClearCommandInput
   | SessionHighlightAddCommandInput
-  | SessionHighlightClearCommandInput;
+  | SessionHighlightClearCommandInput
+  | SessionOpenCommandInput;
 
 export interface MarkupRenderCommandInput {
   kind: "markup-render";
