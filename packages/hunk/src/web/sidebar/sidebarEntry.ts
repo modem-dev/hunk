@@ -10,6 +10,7 @@ import {
   type ReviewSidebarFileEntry,
 } from "../../core/review/fileLabels";
 import type { ReviewFileIndexEntry } from "../mirror/fileIndex";
+import type { ReviewViewedStatus } from "../viewed/viewedFiles";
 
 /** One sidebar row for one indexed file, with its visible note count for the `*N` badge. */
 export function sidebarEntry(
@@ -61,4 +62,8 @@ export interface FileSidebarProps {
   selectedKey: string | null;
   mode: "tree" | "flat";
   onSelectFile: (fileKey: string) => void;
+  /** Each file's viewed mark as the page shows it. */
+  viewedStatuses?: ReadonlyMap<string, ReviewViewedStatus>;
+  /** Flip one file's viewed mark. */
+  onToggleViewed?: (fileKey: string) => void;
 }

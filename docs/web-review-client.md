@@ -494,6 +494,34 @@ imports; a page fetches only the languages and themes it shows. The largest sing
     A document stops at 50,000 nodes with a visible "Preview truncated" note. Sources over
     512 KiB are not parsed at all: the rendered view says why and shows the diff beneath.
 
+## Viewed files
+
+A file's "Viewed" mark is shared review state (`files/set-viewed`, sent through
+`actions/reviewActions.ts`): the terminal, every page, and the Overview see the same marks, and
+the shared-state snapshot lists only marks that still match each file's `contentIdentity`.
+
+- **Marking.** Each file header has a "Viewed" checkbox; each flat sidebar row has one beside
+  its button; tree rows show the mark as a decoration (`✓` viewed, `Δ` changed since viewed),
+  because Pierre's tree rows take text decorations only. `V` (`hunk.web.toggleViewed`; the
+  catalog's `v` is visual selection) and the palette toggle the selected file.
+- **Progress.** The toolbar shows "12 of 47 viewed" over the files the shared filter leaves
+  visible, counted by `countReviewViewedFiles` in `core/review/overview.ts`, which the Overview
+  tab uses too.
+- **Changed since viewed.** The snapshot cannot say a file _was_ viewed before its content
+  changed, so the page remembers per session and per browser the content each file was last
+  seen marked at (`viewed/viewedFiles.ts`, `localStorage` key `hunk.review.viewed.<session>`).
+  A file remembered at other content and not marked now shows "Changed since viewed" until it
+  is marked again or cleared.
+- **Collapsing.** A viewed file's body collapses to one row ("Viewed · show changes") that
+  expands it on click; an expanded viewed file offers "Collapse" in its header. A hunk reveal
+  into a collapsed file (`]`, a note jump, an agent's navigation) expands it in the same render
+  so the stream lands on the hunk. Collapsed bodies are not `.file-body`, so they never replace
+  a file's measured height.
+- **Hide viewed.** A per-browser toolbar toggle (`hunk.web.toggleHideViewed`, `localStorage`
+  key `hunk.review.hideViewed`) removes viewed files from the stream, the sidebar, and the
+  minimap, and the page's store passes them to the planner as its `hiddenFileKeys` fact, so
+  relative navigation walks past them the way it walks past filtered files.
+
 ## Pierre findings that shaped the client
 
 - **Rendering model.** Each file is a `<diffs-container>` custom element with an open shadow
@@ -558,6 +586,9 @@ imports; a page fetches only the languages and themes it shows. The largest sing
   across a reload, filter and visibility reaching a second page, refresh after a file edit, the
   capability leaving the address, `too-many-notes`, a stale generation retried, and axe with a
   composer open.
+  `test/web/review-viewed.e2e.ts` marks files from the header, the flat sidebar, and `V`;
+  checks progress, the Overview, and a second page; collapses and expands; hides viewed files
+  and navigates past them; shows "Changed since viewed" after a reload; and runs axe.
   `test/web/review-keyboard.e2e.ts` drives the page from the keyboard: hunk and file
   navigation with reveals under the sticky header, scroll-then-navigate anchoring, paging,
   the view keys and theme menu, the gap toggle, click-to-select, input-focus and

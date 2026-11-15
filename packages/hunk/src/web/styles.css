@@ -1881,3 +1881,92 @@ body {
   background: var(--hunk-accent-muted);
   border-color: var(--hunk-accent);
 }
+
+/* Viewed files: header checkbox, "changed since viewed", collapsed body, sidebar and toolbar. */
+.viewed-toggle {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--ui-font);
+  font-size: 11px;
+  color: var(--hunk-muted);
+  cursor: pointer;
+}
+
+.viewed-toggle[data-status="viewed"] {
+  color: var(--hunk-text);
+}
+
+.viewed-toggle input,
+.flat-viewed {
+  margin: 0;
+  accent-color: var(--hunk-accent);
+  cursor: pointer;
+}
+
+.viewed-changed {
+  flex: none;
+  font-family: var(--ui-font);
+  font-size: 11px;
+  padding: 0 6px;
+  border: 1px solid var(--hunk-accent);
+  border-radius: 3px;
+  color: var(--hunk-accent);
+}
+
+.file-collapsed {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 0 16px;
+  font: inherit;
+  font-family: var(--ui-font);
+  font-size: 12px;
+  color: var(--hunk-muted);
+  background: var(--hunk-panel-alt);
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.file-collapsed:hover,
+.file-collapsed:focus-visible {
+  color: var(--hunk-text);
+}
+
+.flat-row {
+  display: flex;
+  align-items: center;
+  padding-right: 8px;
+}
+
+.flat-row .flat-file {
+  flex: 1;
+  min-width: 0;
+}
+
+.flat-row[data-viewed="viewed"] .flat-name {
+  color: var(--hunk-muted);
+}
+
+.flat-row[data-viewed="changed"] .flat-viewed {
+  outline: 1px solid var(--hunk-accent);
+}
+
+.viewed-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.viewed-progress {
+  font-size: 12px;
+  color: var(--hunk-muted);
+  white-space: nowrap;
+}
+
+.viewed-controls .tool-button[aria-pressed="true"] {
+  border-color: var(--hunk-accent);
+  color: var(--hunk-accent);
+}

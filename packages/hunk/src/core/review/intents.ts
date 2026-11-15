@@ -97,6 +97,14 @@ export interface ReviewIntentFacts {
    * the terminal's own notes, which keep `originalSource: "user"`.
    */
   noteOriginalSource?: typeof REVIEW_BROWSER_NOTE_ORIGINAL_SOURCE;
+  /**
+   * Files the caller's surface hides by the reader's own choice (a browser page's "hide
+   * viewed"), which relative navigation walks past.
+   *
+   * The shared filter still decides the stream for every surface; this narrows it only for the
+   * caller that hides them, so it is a caller fact rather than review state.
+   */
+  hiddenFileKeys?: ReadonlySet<string>;
 }
 
 /** The `originalSource` a reviewer note composed through a review link carries. */
@@ -433,15 +441,19 @@ function planSelectionMove(
     );
   }
 
+  const hidden = facts.hiddenFileKeys;
+  const shown = (fileKey: string) => !hidden?.has(fileKey);
   const target = planReviewSelectionMove(
     {
-      files: selectReviewNavigationFiles(state),
+      files: selectReviewNavigationFiles(state).filter((file) => shown(file.fileKey)),
       annotations: facts.annotations ?? EMPTY_REVIEW_ANNOTATION_INDEX,
-      notes: selectNavigableStoredReviewNotes(state).map((item) => ({
-        fileKey: item.fileKey,
-        hunkIndex: item.hunkIndex,
-        noteId: item.entry.note.id,
-      })),
+      notes: selectNavigableStoredReviewNotes(state)
+        .filter((item) => shown(item.fileKey))
+        .map((item) => ({
+          fileKey: item.fileKey,
+          hunkIndex: item.hunkIndex,
+          noteId: item.entry.note.id,
+        })),
       activeNoteId: selectActiveStoredReviewNote(state)?.note.id,
     },
     selectNormalizedSelection(state),

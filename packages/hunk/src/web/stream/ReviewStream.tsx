@@ -48,7 +48,10 @@ import {
   reservedBodyHeight,
   STREAM_HEADER_HEIGHT_PX,
   STREAM_ROW_HEIGHT_PX,
+  VIEWED_COLLAPSED_HEIGHT_PX,
+  type ReviewViewedControls,
 } from "./FileSection";
+import type { ReviewViewedStatus } from "../viewed/viewedFiles";
 import { planReviewFileRender, type ReviewFileRenderPlan } from "./fileProjection";
 import type { ReviewFileGeometry } from "./hunkGeometry";
 
@@ -133,7 +136,15 @@ export interface ReviewStreamProps {
   composers: readonly NoteComposer[];
   /** What note gestures do. */
   interaction: ReviewNoteInteraction;
+  /** Each file's viewed mark as the page shows it. */
+  viewedStatuses?: ReadonlyMap<string, ReviewViewedStatus>;
+  /** Viewed files whose bodies are collapsed. */
+  collapsedFiles?: ReadonlySet<string>;
+  /** What the viewed controls do; stable for the page's lifetime. */
+  viewed?: ReviewViewedControls;
 }
+
+const NO_COLLAPSED: ReadonlySet<string> = new Set();
 
 const NO_COMPOSERS: readonly NoteComposer[] = [];
 
@@ -476,8 +487,10 @@ export function ReviewStream(props: ReviewStreamProps) {
           const file = files.get(slot.key);
           result.set(
             slot.key,
-            heights.current.get(slot.key) ??
-              reservedBodyHeight(file ? plan(file) : undefined, slot.index, current.layout),
+            current.collapsedFiles?.has(slot.key)
+              ? VIEWED_COLLAPSED_HEIGHT_PX
+              : (heights.current.get(slot.key) ??
+                  reservedBodyHeight(file ? plan(file) : undefined, slot.index, current.layout)),
           );
         }
         return result;
@@ -637,6 +650,11 @@ export function ReviewStream(props: ReviewStreamProps) {
             highlights={props.highlights[slot.key] ?? NO_HIGHLIGHTS}
             composers={composersByFile.get(slot.key) ?? NO_COMPOSERS}
             interaction={props.interaction}
+            {...(props.viewedStatuses?.get(slot.key)
+              ? { viewedStatus: props.viewedStatuses.get(slot.key) }
+              : {})}
+            collapsed={(props.collapsedFiles ?? NO_COLLAPSED).has(slot.key)}
+            {...(props.viewed ? { viewed: props.viewed } : {})}
           />
         );
       })}
