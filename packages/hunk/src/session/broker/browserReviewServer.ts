@@ -69,6 +69,7 @@ import {
   HUNK_REVIEW_PROTOCOL_VERSION,
   MAX_HUNK_REVIEW_ENVELOPE_BYTES,
   parseHunkReviewActionEnvelope,
+  type HunkReviewRefreshResultV1,
 } from "../reviewProtocol";
 import { allowsUnsafeRemoteSessionBroker, isLoopbackHost } from "./brokerConfig";
 import {
@@ -405,7 +406,15 @@ export class BrowserReviewServer {
     if (!this.state.getReviewPublication(sessionId)) {
       return this.failure("no-publication");
     }
-    const result = await this.state.refreshReview(sessionId);
+    let result: HunkReviewRefreshResultV1;
+    try {
+      result = await this.state.refreshReview(sessionId);
+    } catch {
+      // The session disconnected, timed out, or the daemon is shutting down. The thrown message
+      // is the broker's own text, so the client gets the catalog sentence for a reload that did
+      // not complete, like every other refresh failure.
+      return this.failure("refresh-failed");
+    }
     if (!result.ok) {
       // The session's own message can carry VCS stderr and absolute paths; a review client is
       // told the catalog sentence and the session keeps the detail in its own notice path.
@@ -592,7 +601,10 @@ export class BrowserReviewServer {
       if (error instanceof ReviewGenerationRetiredError) {
         return this.failure("stale-generation", { currentGeneration: error.currentGeneration });
       }
-      throw error;
+      // The session disconnected, the action timed out, the command queue was full, or the
+      // daemon is shutting down. The thrown message is the broker's own text, so the client gets
+      // the same catalog answer `/state` gives when the session cannot be reached.
+      return this.failure("resource-unavailable");
     }
   }
 

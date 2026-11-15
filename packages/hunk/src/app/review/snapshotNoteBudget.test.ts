@@ -90,7 +90,7 @@ describe("session snapshot note budget", () => {
       MAX_SNAPSHOT_NOTE_SUMMARY_BYTES + 64 * 1024,
     );
     expect(state.liveCommentCount).toBe(state.liveComments.length);
-    expect(state.reviewNoteCount).toBe(state.reviewNotes.length);
+    expect(state.reviewNoteCount).toBe((state.reviewNotes ?? []).length);
     // The summaries are a projection: the review itself still holds every note.
     expect(selectStoredReviewNotes(host.store.getSnapshot()).length).toBe(added);
   });
@@ -99,7 +99,7 @@ describe("session snapshot note budget", () => {
     const files = [createTestBudgetFile(createTestSidecarAnnotations())];
     const host = new ReviewSessionHost({ files, sourceLabel: "/repo", now: () => 1 });
     const added = fillTestLiveComments(host, 1_000);
-    const { liveComments, reviewNotes } = host.getSessionSnapshotState();
+    const { liveComments = [], reviewNotes = [] } = host.getSessionSnapshotState();
 
     const sidecarKept = reviewNotes.filter((note) => note.source === "ai").length;
     const storedKept = reviewNotes.length - sidecarKept;
@@ -124,7 +124,7 @@ describe("session snapshot note budget", () => {
     const state = host.getSessionSnapshotState();
 
     expect(state.liveComments.map((comment) => comment.commentId)).toEqual(["mcp:1"]);
-    expect(state.reviewNotes.map((note) => note.source)).toEqual(["ai", "agent"]);
+    expect((state.reviewNotes ?? []).map((note) => note.source)).toEqual(["ai", "agent"]);
   });
 
   test("the joint budget leaves room under the daemon ceiling", () => {
