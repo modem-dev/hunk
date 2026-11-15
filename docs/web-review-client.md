@@ -90,7 +90,9 @@ packages/hunk/src/web/
   publication) loads that generation's `canonical-file` resources in catalog order with
   bounded parallelism, through one `createSupersedeQueue`, parsing each with
   `parseCanonicalReviewFile`. The first generation is published progressively; a later one
-  replaces the shown document only once complete, and a failed reload keeps the old one.
+  replaces the shown document only once complete, and a failed reload keeps the old one. A
+  generation that arrives while the first is still loading replaces nothing finished, so it
+  loads progressively too and a failure reaches the `failed` stage.
   Per-file index entries (path, change kind, stats, flags, line counts, hunk count) are
   projected from canonical files today; `ReviewFileIndexSource` lets the shared-state route
   supply them up front.
@@ -245,7 +247,10 @@ imports; a page fetches only the languages and themes it shows. The largest sing
   expanded lines" for all of them.
 - **Windowing.** Every file is a section whose body height is reserved from the plan's row
   count (split or unified, minus folded gap lines) until mounted. Sections mount Pierre within
-  1.5 viewports of the visible area and unmount beyond it, keeping their last measured height.
+  1.5 viewports of the visible area and unmount beyond it, keeping their last measured height. A layout or wrap change drops every
+  remembered height and hunk geometry in the render that sees it (`streamMeasurements.ts`), and a
+  file that collapses drops its geometry, so a reveal never lands on offsets from a drawing that
+  is gone.
   Native scroll anchoring absorbs height changes above the reader, and a reload re-pins the
   top file and offset for a moment while files re-render. Pierre's `Virtualizer`/`CodeView`
   were not used: they own scrolling of the whole document, which would put sticky headers,
@@ -305,16 +310,31 @@ imports; a page fetches only the languages and themes it shows. The largest sing
   first with the shared `isBlankReviewNoteBody` and `reviewNoteWithinSizeLimit`. A composer
   stays open, marked sending, until `/state` carries the note at or after the revision the
   save returned. `Ctrl+Enter` (`⌘+Enter` on macOS) saves; `Esc` cancels, asking first when the
-  body is not empty. Composers never use the terminal's shared draft slot.
+  body is not empty. Composers never use the terminal's shared draft slot. A composer cannot be
+  discarded while its save is in flight (Cancel is disabled and `Esc` does nothing until the
+  session answers), so a refusal always finds the draft and shows its message.
 - **Line ranges.** Hovering a line shows Pierre's gutter button; a click opens a composer on
   that line, and a drag (or shift-click) across line numbers on one side opens one on the
   range, through Pierre's line selection. Targets come from `noteTargets.ts`: a range must be
   fully drawn by the hunk; a line only an expanded gap drew is sent with its
   `expandedLineProof` (audit B10). The session accepts proof for one line only, so a range
-  reaching into expanded context narrows to its first line. Several composers may be open.
+  reaching into expanded context narrows to its first line. Several composers may be open. A
+  new-note composer is keyed by file and the line it ends on, so a second pick ending on the
+  same line retargets that composer (keeping its text) and focuses it; a reply or edit
+  composer is keyed by its note, so a note has at most one wherever its card is drawn.
 - **Drafts** are kept in this tab's `sessionStorage` (`hunk.review.drafts:<session>`, keyed by
-  file key and anchor), so they survive a reload; saving or cancelling clears them, and a draft
-  whose file's content identity changed is marked and offers only Discard.
+  file key and anchor or note), so they survive a reload; saving or cancelling clears them, and
+  a draft whose file's content identity changed is marked and offers only Discard. A draft
+  whose file is gone from a fully loaded review is dropped with a toast. A composer whose line
+  is not drawn (its expanded gap was collapsed, or a reload restored it with the gap closed)
+  hangs from its owner hunk's line, as a note card does (`reviewComposerPlacement`), so an open
+  draft is always visible.
+- **Stable annotations.** Each file's Pierre line annotations keep their identity while their
+  content is unchanged (`stableAnnotations.ts`), and every composer renders in its own host
+  element with its own React root that moves into whichever slot Pierre draws, so an agent
+  comment or a viewed toggle landing elsewhere never remounts an open composer, drops its
+  "Discard this draft?" confirmation, or takes the reader's focus; a composer that held focus
+  when its own line's slot was redrawn gets it back.
 - **Shared toggles.** `a` sends `notes/set-visibility`; the filter field (`/`, the catalog's
   focus-filter command, which has no default chord) sends `filter/set` after 300 ms. Both are
   shared with the terminal and every other window, as the field's hint says.
@@ -487,13 +507,18 @@ imports; a page fetches only the languages and themes it shows. The largest sing
   - _Linear work on hostile text._ The source is attacker-authored and parsed on the main
     thread, so the parser uses no regular expressions: block and inline syntax is recognized by
     forward scans with no backtracking (a cubic heading pattern once took 11 s on 4 KB). Inline
-    lookahead (closing delimiters, `]`, link targets, code-span closers) comes from per-line
-    caches and tables built in one pass, so unmatched openers never rescan. Each nesting level
+    lookahead (`]`, link targets, code-span closers) comes from per-line tables built in one
+    pass, so unmatched openers never rescan. Emphasis is paired in one delimiter-stack pass per
+    line with CommonMark's flanking rules, skipping code spans, escapes, links, and autolinks as
+    units, so a closer never lands inside a code span or after a backslash and mixed runs such
+    as `*a **b** c*` and `**bold *it***` nest. Lists keep a tab as indentation and a loose list
+    (blank lines between items) as one list; a table needs a divider with the header's column
+    count. Each nesting level
     (capped at 12) reads its lines a bounded number of times; tests assert the parser's step
     count stays within a fixed multiple of the input length, with wall-clock bounds as a backstop.
   - _Bounded output._ Lines over 10,000 characters skip block detection and render as paragraph
-    text, and are not scanned for inline markup. Tables keep at most 64 columns, say so when they
-    drop more, and never pad short rows (padding let 12 KB of pipes produce 4 million cells).
+    text, and are not scanned for inline markup. Tables keep at most 64 columns, say so only when that
+    cap cut something (extra cells in a shorter table are dropped quietly), and never pad short rows (padding let 12 KB of pipes produce 4 million cells).
     A document stops at 50,000 nodes with a visible "Preview truncated" note. Sources over
     512 KiB are not parsed at all: the rendered view says why and shows the diff beneath.
 
