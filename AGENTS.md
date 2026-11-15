@@ -59,7 +59,8 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
 - **Other consumers:** Web/API consumers reuse the model, derivations, state, intents, and the
   producer/protocol tier. Never build a parallel protocol. Keep presentation/client-local state
   local; host/extension commands need explicit remote capabilities. See
-  `docs/browser-review-rebuild.md` for the rollout and current boundaries.
+  `docs/browser-review-rebuild.md` for the landed phases and current boundaries, and
+  `docs/web-review-plan.md` for the remaining rollout.
 - **Conformance:** `test/review-conformance/` has hand-authored semantic fixtures covering every
   registered core, terminal, producer, broker, protocol, and extension projection. Every new
   semantic consumer registers its real projection and runs the whole corpus.

@@ -138,5 +138,6 @@ When moving ownership:
 - [Extension architecture](extension-architecture.md) — current extension host and lifecycle design
 - [Extension guide](extensions.md) — current public extension API and examples
 - [Session broker SDK](session-broker-sdk.md) — normative future public SDK contract; current packages remain private
-- [Browser review rebuild](browser-review-rebuild.md) — rollout plan and current browser boundary
+- [Browser review rebuild](browser-review-rebuild.md) — landed phases 0–4 and the seam contract
+- [Web review plan](web-review-plan.md) — accepted plan for the browser client, headless review host, and web-only tools
 - [Browser review seam audit](browser-review-seam-audit.md) — finding-level status and conformance record

@@ -1,9 +1,10 @@
 # Browser review rebuild plan
 
-> **Current status (2026-09-06; after Phase 4).** Shared review semantics, producer publication, the broker
-> mirror, bounded resources, capability-authenticated HTTP actions, and SSE have landed. No browser
-> client, served review page, browser assets, or browser CLI entrypoint exists yet. Phases 5 and 6
-> remain planned. Semantic deep-link grammar is deferred until its first browser/opener consumer.
+> **Current status (2026-11-13).** Phases 0–4 have landed: shared review semantics, producer
+> publication, the broker mirror, bounded resources, capability-authenticated HTTP actions, and SSE.
+> No browser client, served review page, browser assets, or browser CLI entrypoint exists yet.
+> Phases 5 and 6 are superseded by [`web-review-plan.md`](web-review-plan.md), which owns the
+> remaining rollout.
 
 The synchronized browser-review feature (originally prototyped in one large branch) lands as a
 stack of small, independently reviewable PRs. Its Hunk-owned capability, resource, and semantic
@@ -14,9 +15,9 @@ is enforced by `scripts/quality/source-boundaries.test.ts`, whose debt lists may
 
 Each phase lists the audit findings it repays (`browser-review-seam-audit.md`, ids A1–G5). A
 finding whose duplicate sites span phases is checked off when its **last** site converts; until
-then it stays open with the converted sites noted. Phases 0–5 change no user-reachable
-behavior (the browser client has no entry point until Phase 6) and ship empty changesets;
-Phase 6 carries the `minor` changeset announcing the feature.
+then it stays open with the converted sites noted. Phases 0–4 change no user-reachable
+behavior and shipped empty changesets; the `minor` changeset announcing the feature now lands
+with M5 of `web-review-plan.md`.
 
 ## Phase 0 — seam contract and guardrails (this doc)
 
@@ -107,37 +108,32 @@ Repays: C4 server side; G4 catalog creation.
 Gate: HTTP-contract tests against the shared event-protocol module; security review focused on
 this PR alone.
 
-## Phase 5 — browser client (two PRs)
+## Phase 5 — browser client (superseded)
 
-1. **Read-only mirror**: `apiClient` / `mirror` / `pierreDocument` / review stream rendering a
-   snapshot with Pierre — built on the shared geometry/selector/ordering primitives from day
-   one (no `sideRange`, no local acceptance rules, no bare `split("\n")`). No actions, no note
-   editing.
-2. **Interactivity**: action dispatch through the broker, selection sync (G2 policy decided
-   before this PR), note editing, watch/reload generation swaps, browser key bindings and the
-   command palette rendered from the shared catalog.
+This phase planned a read-only mirror followed by an interactive client, both on top of a
+terminal-hosted review. [`web-review-plan.md`](web-review-plan.md) now owns it. The new plan
+changes one thing outright: the client must run with no terminal UI, so a headless review host
+(M1) precedes any client work. The phase maps onto milestones M1, M2, M4, and M5.
 
-Repays: A11, C3, C5, E1, G1; the browser sites of A/B/C/D findings left open in earlier
-phases; F browser bindings; G3/G4 browser adoption. E2 and the G2 selection policy must be
-decided (not necessarily built) before PR 2.
-Gate: browser projection joins the conformance harness — the same fixtures every other
-consumer runs, closing the renderer-parity loop (note placement, gap addressing, reveal
-targets, default note targets); web boundary gates and the browser-closure node-free gate
-active; command-parity check (both clients render command surfaces from the shared catalog).
+Audit findings it repays, and the milestone that now repays each:
 
-## Phase 6 — entry points and packaging
+- A9 (the STML parser's remaining relocation), A11 (`.mts`/`.cts` language registration in the
+  browser), C3 (epoch queue), C5 (reconnect scheduler), E1 (shared stat formatter), the browser
+  sites of A/B/C/D findings, and the keymap half of F's browser bindings: M4.
+- E2 (theme): defaults ship in M2, the client consumes them in M4.
+- G1 (view-option policy) and G2 (selection and authorship policy): M2.
+- The D1 composer site, G3 (address grammar), G4 (browser error catalog), and the palette half
+  of F's browser bindings: M5.
+- Live selection, filter, and note transport, which the earlier phases left open: M2.
 
-- `--web` / `--no-open` / `hunk session open` / `--tailscale` CLI wiring. The review URL is
-  always recoverable from the terminal, and the opener preserves URL fragments on every
-  platform (no `rundll32`). Deep-link fragments use the shared address grammar (G3), never
-  ad-hoc strings.
-- Offline browser assets are generated at build/release time or diff-checked by a script gate,
-  not hand-maintained compiled output.
+The browser-projection conformance gate moves to M4, and the command-parity check to M5.
 
-Repays: G3 fragment adoption (closes G3).
-Gate: CLI contract tests, offline-asset check, real terminal + browser smoke run, and a final
-audit-doc sweep — every A–F finding checked off or explicitly re-scoped, G5 remaining as a
-placement rule.
+## Phase 6 — entry points and packaging (superseded)
+
+This phase planned the CLI entry points and offline browser assets.
+[`web-review-plan.md`](web-review-plan.md) now owns it as M3, with the G3 fragment work
+folded into M5's deep links. The new plan changes one thing outright: `--tailscale` is out of
+scope, so the review is reachable on loopback only.
 
 ## Seam inventory (prototype audit)
 
@@ -207,13 +203,17 @@ transporting them:
     extension commands. Not invocable from the browser by default: extension commands execute
     host-side with dialog access, so browser invocation is remote code execution and needs an
     explicit per-command allowlist in the registration capability list. Deferred beyond the
-    initial rebuild.
+    initial rebuild, except refresh: `web-review-plan.md` (M2) makes it browser-invocable through
+    an allowlisted `review/refresh` action that takes no caller-supplied arguments.
+- **Selection**: selection is independent per surface, so selection commands resolve locally in
+  the browser rather than at the producer. Shared intents (notes, filter, note visibility,
+  viewed files) still go to the producer; see G1 and G2 in the seam audit.
 - **Keymap**: chords keep the shared string vocabulary (`keymap.ts`); each client maps chords
   to its own event type and masks what its platform reserves (e.g. browser `Cmd+W`).
 
 Phasing: the catalog split and semantic lowering land in Phase 1 PR 3, alongside the
-navigation intents the semantic commands lower to. Browser key bindings and the command
-palette land with Phase 5, gated by the shared catalog so the two clients cannot drift on what
+navigation intents the semantic commands lower to. Browser key bindings land with M4 and the
+command palette with M5 of `web-review-plan.md`, gated by the shared catalog so the two clients cannot drift on what
 a command means. Brokered host-command invocation is explicitly out of scope until the
 allowlist design exists.
 
