@@ -150,6 +150,68 @@ describe("ReviewMirror", () => {
     expect(mirror.getSnapshot().updating).toBe(false);
   });
 
+  /** A client whose first file read hangs until its load is aborted; later reads use `later`. */
+  function createHangingFirstReadClient(
+    realClient: ReviewApiClient,
+    later: ReviewApiClient["readResources"],
+  ) {
+    let reads = 0;
+    return Object.assign(Object.create(realClient) as ReviewApiClient, {
+      readResources: (...args: Parameters<ReviewApiClient["readResources"]>) => {
+        reads += 1;
+        if (reads > 1) return later(...args);
+        const signal = args[2];
+        return new Promise<void>((_resolve, reject) => {
+          signal?.addEventListener("abort", () => reject(new Error("aborted")));
+        });
+      },
+    });
+  }
+
+  // Intent: a half-loaded first generation is not a finished review to hold on screen, so a
+  // reload that arrives during the first load loads progressively like a first load.
+  test("loads a reload that arrives during the first load progressively", async () => {
+    const served = serve();
+    const realClient = served.client();
+    const client = createHangingFirstReadClient(realClient, (...args) =>
+      realClient.readResources(...args),
+    );
+    const { mirror, seen } = createTestMirror(client);
+    mirror.observe(await realClient.publication());
+    const registration = served.harness.register();
+    served.harness.producer.publish({ files: createTestFiles("second"), sourceLabel: "/repo" });
+    served.harness.register(registration);
+
+    mirror.observe(await realClient.publication());
+    const ready = await waitForTestStatus(mirror, "ready");
+
+    expect(ready.document.files.map((file) => file.additionLines.join())).toEqual(
+      served.harness.producer
+        .getPublication()
+        .document.files.map((file) => file.additionLines.join()),
+    );
+    expect(seen.some((snapshot) => snapshot.updating)).toBe(false);
+  });
+
+  test("fails a reload that arrives during the first load when its files cannot load", async () => {
+    const served = serve();
+    const realClient = served.client();
+    const client = createHangingFirstReadClient(realClient, () => {
+      throw new ReviewApiError("resource-unavailable", "unavailable");
+    });
+    const { mirror } = createTestMirror(client);
+    mirror.observe(await realClient.publication());
+    const registration = served.harness.register();
+    served.harness.producer.publish({ files: createTestFiles("second"), sourceLabel: "/repo" });
+    served.harness.register(registration);
+
+    mirror.observe(await realClient.publication());
+    const failed = await waitForTestStatus(mirror, "failed");
+
+    expect(failed.error?.code).toBe("resource-unavailable");
+    expect(failed.updating).toBe(false);
+  });
+
   // Intent: a reconnect redelivers the same publication; a generation whose files failed to
   // load must load again then, not be dismissed as already seen.
   test("retries a failed generation when the same publication arrives again", async () => {
