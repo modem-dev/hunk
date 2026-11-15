@@ -127,7 +127,13 @@ export class ReviewPageServer {
 
     if (route.kind === "document") {
       // The session id is deliberately unused: every session gets the same bytes.
-      return this.file(request, assets.document(), {
+      const document = assets.document();
+      if (!document) {
+        // The build's document file vanished (a rebuild between renames, or a deleted
+        // `dist/web`): answer like a daemon with no build instead of sending an empty body.
+        return this.text(503, "The browser review page is not available in this Hunk build.");
+      }
+      return this.file(request, document, {
         "cache-control": "no-store",
         "content-security-policy": REVIEW_PAGE_CONTENT_SECURITY_POLICY,
         "cross-origin-opener-policy": "same-origin",
