@@ -223,6 +223,24 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     apiVersion: 25,
   },
   {
+    repo: "mcuste/hunk-markdown-preview",
+    name: "hunk-markdown-preview",
+    summary:
+      "Opens working-tree Markdown in a browser preview and keeps it synchronized with Hunk refreshes.",
+    categories: ["Command"],
+    version: "1.0.0",
+    apiVersion: 33,
+  },
+  {
+    repo: "mcuste/hunk-stage",
+    name: "hunk-stage",
+    summary:
+      "Stages individual Git hunks, composes commits, and opens Lazygit without leaving the terminal.",
+    categories: ["Pane", "Command"],
+    version: "1.0.0",
+    apiVersion: 33,
+  },
+  {
     repo: "meldron/hunk-mark-read",
     name: "hunk-mark-read",
     summary:
