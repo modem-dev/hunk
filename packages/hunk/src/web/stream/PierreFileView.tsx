@@ -45,7 +45,8 @@ import {
 import type { ReviewAgentHighlightV1 } from "../../session/reviewSharedState";
 import type { NoteComposer } from "../notes/composerStore";
 import { renderNoteGroup, type WebNoteCardAction } from "../notes/noteCards";
-import type { WebNoteGroup } from "../notes/noteProjection";
+import { reviewComposerPlacement, type WebNoteGroup } from "../notes/noteProjection";
+import { stabilizeLineAnnotations, type StableAnnotations } from "./stableAnnotations";
 import { measureAgentHighlights, type ReviewHighlightBox } from "./highlightGeometry";
 import {
   measureReviewFileGeometry,
@@ -87,6 +88,23 @@ interface WebLineAnnotation {
   key: string;
   group?: WebNoteGroup;
   composerKeys: readonly string[];
+}
+
+/** One composer's host element and its React root. */
+interface ComposerHost {
+  element: HTMLDivElement;
+  root?: Root;
+}
+
+/** Return the host for one composer, creating it on first use. */
+function composerHostFor(hosts: Map<string, ComposerHost>, composerKey: string): ComposerHost {
+  let host = hosts.get(composerKey);
+  if (!host) {
+    host = { element: document.createElement("div") };
+    host.element.className = "composer-host";
+    hosts.set(composerKey, host);
+  }
+  return host;
 }
 
 /** Pierre's side name for one shared-model side, and back. */
@@ -157,15 +175,24 @@ export function PierreFileView({
   const instanceRef = useRef<FileDiff<WebLineAnnotation> | null>(null);
   const pickRef = useRef(onPickLines);
   pickRef.current = onPickLines;
-  // Composer slots Pierre's annotations provide, by annotation key.
-  const slotsRef = useRef(new Map<string, HTMLElement>());
+  // Each open composer's own host element and React root. A host outlives the annotation slot
+  // Pierre draws it into: when Pierre redraws or reorders annotations the host is carried
+  // into the new slot, so the composer is never remounted by a change that is not its own.
+  const composerHostsRef = useRef(new Map<string, ComposerHost>());
   const [, setSlotVersion] = useState(0);
+
+  // Composers hang where their line is drawn, or from the owner hunk when it is not.
+  const placements = composers.map((composer) => ({
+    composer,
+    ...reviewComposerPlacement(composer, { hunks: plan.metadata?.hunks ?? [] }),
+  }));
 
   // One annotation per line, carrying its cards and composers. Rebuilt only when cards or
   // composer positions change, so typing in a composer never redraws the diff.
-  const composerSignature = composers
-    .map((composer) => `${composer.key}@${composer.side}:${composer.line}`)
+  const composerSignature = placements
+    .map(({ composer, side, line }) => `${composer.key}@${side}:${line}`)
     .join("|");
+  const stableAnnotationsRef = useRef<StableAnnotations<WebLineAnnotation> | undefined>(undefined);
   const annotations = useMemo(() => {
     const byLine = new Map<string, DiffLineAnnotation<WebLineAnnotation>>();
     const entry = (side: ReviewSide, line: number) => {
@@ -185,14 +212,18 @@ export function PierreFileView({
       const annotation = entry(group.side, group.line);
       annotation.metadata = { ...annotation.metadata, group };
     }
-    for (const composer of composers) {
-      const annotation = entry(composer.side, composer.line);
+    for (const { composer, side, line } of placements) {
+      const annotation = entry(side, line);
       annotation.metadata = {
         ...annotation.metadata,
         composerKeys: [...annotation.metadata.composerKeys, composer.key],
       };
     }
-    return [...byLine.values()];
+    // Annotations whose content did not change keep their identity, so Pierre leaves them,
+    // and the composers inside them, alone.
+    const stable = stabilizeLineAnnotations(stableAnnotationsRef.current, [...byLine.values()]);
+    stableAnnotationsRef.current = stable;
+    return stable.list;
     // The signature stands for the composers' positions; their text is read at render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [noteGroups, composerSignature]);
@@ -231,14 +262,16 @@ export function PierreFileView({
     renderAnnotation: (annotation: DiffLineAnnotation<WebLineAnnotation>) => {
       const root = document.createElement("div");
       root.className = "line-annotation";
-      const { group, composerKeys, key } = annotation.metadata;
+      const { group, composerKeys } = annotation.metadata;
       if (group) root.append(renderNoteGroup(group));
       if (composerKeys.length > 0) {
         const slot = document.createElement("div");
-        slot.className = "composer-slot";
-        slotsRef.current.set(key, slot);
+        slot.className = "composer-stack";
+        for (const composerKey of composerKeys) {
+          slot.append(composerHostFor(composerHostsRef.current, composerKey).element);
+        }
         root.append(slot);
-        // Portals follow the slot Pierre just placed.
+        // Roots render once their host is attached, which Pierre does right after this returns.
         queueMicrotask(() => setSlotVersion((version) => version + 1));
       }
       return root;
@@ -285,6 +318,14 @@ export function PierreFileView({
     if (!host || !plan.metadata) return;
     const lineAnnotations = annotations;
     let instance = instanceRef.current;
+    // Pierre may replace the slot a focused composer sits in; moving the node drops focus
+    // without an event, so note it now and give it back after the render.
+    const focused = document.activeElement;
+    const heldFocus =
+      focused instanceof HTMLElement &&
+      Array.from(composerHostsRef.current.values()).some((host) => host.element.contains(focused))
+        ? focused
+        : undefined;
     if (!instance) {
       instance = new FileDiff<WebLineAnnotation>(options);
       instanceRef.current = instance;
@@ -292,6 +333,9 @@ export function PierreFileView({
     } else {
       instance.setOptions(options);
       instance.render({ fileDiff: plan.metadata, forceRender: true, lineAnnotations });
+    }
+    if (heldFocus?.isConnected && document.activeElement !== heldFocus) {
+      heldFocus.focus({ preventScroll: true });
     }
     // Separators Pierre kept across this render still show the old state; repaint them.
     for (const [gapId, elements] of separatorsRef.current) {
@@ -389,41 +433,31 @@ export function PierreFileView({
     [],
   );
 
-  // Composers render into the annotation slots Pierre mounted, one small React root per slot:
-  // the slots live in Pierre's DOM, outside this component's tree. A slot whose composers all
-  // closed, or that Pierre dropped, has its root unmounted after this commit.
-  const composerRootsRef = useRef(new Map<HTMLElement, Root>());
+  // Each open composer renders into its own host, one small React root per composer: the
+  // hosts live in Pierre's DOM, outside this component's tree. A root starts once its host is
+  // attached to the document and lives until the composer closes, however often Pierre
+  // redraws the slot around it.
   useLayoutEffect(() => {
-    const roots = composerRootsRef.current;
-    const live = new Set<HTMLElement>();
-    for (const annotation of annotations) {
-      const slot = slotsRef.current.get(annotation.metadata.key);
-      if (!slot?.isConnected || annotation.metadata.composerKeys.length === 0) continue;
-      const shown = annotation.metadata.composerKeys.flatMap((key) => {
-        const composer = composers.find((candidate) => candidate.key === key);
-        return composer ? [<div key={key}>{renderComposer(composer)}</div>] : [];
-      });
-      live.add(slot);
-      let root = roots.get(slot);
-      if (!root) {
-        root = createRoot(slot);
-        roots.set(slot, root);
-      }
-      root.render(<div className="composer-stack">{shown}</div>);
+    const hosts = composerHostsRef.current;
+    for (const composer of composers) {
+      const host = hosts.get(composer.key);
+      if (!host?.element.isConnected) continue;
+      host.root ??= createRoot(host.element);
+      host.root.render(renderComposer(composer));
     }
-    for (const [slot, root] of roots) {
-      if (live.has(slot)) continue;
-      roots.delete(slot);
+    for (const [key, host] of hosts) {
+      if (composers.some((composer) => composer.key === key)) continue;
+      hosts.delete(key);
       // A root cannot unmount synchronously while this one commits.
-      queueMicrotask(() => root.unmount());
+      queueMicrotask(() => host.root?.unmount());
     }
   });
   useEffect(
     () => () => {
-      const roots = Array.from(composerRootsRef.current.values());
-      composerRootsRef.current.clear();
+      const hosts = Array.from(composerHostsRef.current.values());
+      composerHostsRef.current.clear();
       queueMicrotask(() => {
-        for (const root of roots) root.unmount();
+        for (const host of hosts) host.root?.unmount();
       });
     },
     [],

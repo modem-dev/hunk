@@ -152,6 +152,19 @@ export function startReviewSession({
       review.adopt(snapshot.document, snapshot.catalog);
     }
     adoptShared();
+    if (snapshot.status === "ready") {
+      // A draft whose file left the review has nowhere to hang, so it is dropped and said so.
+      const dropped = composers.dropMissingFiles(
+        new Set(snapshot.document.files.map((f) => f.key)),
+      );
+      if (dropped.length > 0) {
+        toasts.show(
+          dropped.length === 1
+            ? "A draft note was discarded because its file is no longer in this review."
+            : `${dropped.length} draft notes were discarded because their files are no longer in this review.`,
+        );
+      }
+    }
   });
   const stopAdoptingShared = shared.subscribe(adoptShared);
   const observe = (body: Parameters<ReviewMirror["observe"]>[0]) => {

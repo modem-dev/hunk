@@ -83,6 +83,25 @@ export function reviewNotePlacement(
   return (owner && reviewCanonicalHunkLine(owner, anchor.side)) ?? anchor;
 }
 
+/**
+ * Where an open composer hangs in the rendered file.
+ *
+ * A composer opened on a line only an expanded gap drew keeps that line, but once the gap is
+ * collapsed (or a reload restores the draft with the gap closed) the line is not drawn, so it
+ * hangs from its owner hunk's canonical line instead, as a note card does. An open draft is
+ * therefore always visible.
+ */
+export function reviewComposerPlacement(
+  composer: { side: ReviewSide; line: number; hunkIndex: number },
+  file: Pick<ReviewDrawnFile, "hunks">,
+): { side: ReviewSide; line: number } {
+  const own = { side: composer.side, line: composer.line };
+  if (lineDrawn(file, own.side, own.line)) return own;
+  // A hunk index past the drawn hunks means expansion merged them; the last one owns the tail.
+  const owner = file.hunks[Math.min(composer.hunkIndex, file.hunks.length - 1)];
+  return (owner && reviewCanonicalHunkLine(owner, own.side)) ?? own;
+}
+
 /** The author `notes/add-user` records when its caller names none. */
 const DEFAULT_REVIEWER_AUTHOR = "user";
 

@@ -116,6 +116,7 @@ function FileHeader({
   collapsed?: boolean;
   viewed?: ReviewViewedControls;
 }) {
+  const sessionEnded = useContext(SessionEndedContext);
   if (!index) {
     return (
       <header className="file-header" data-loading="">
@@ -123,7 +124,6 @@ function FileHeader({
       </header>
     );
   }
-  const sessionEnded = useContext(SessionEndedContext);
   const glyph = reviewFileChangeGlyph(index.changeKind, index.flags.untracked);
   const { filename, stateLabel } = reviewFileLabelParts({
     path: index.path,
