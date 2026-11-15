@@ -128,6 +128,16 @@ function useReviewStoreSnapshot(store: ReviewStore) {
   return snapshot;
 }
 
+/** Observe the host's shared-state revision as ordinary React state. */
+function useSharedStateRevision(host: ReviewSessionHost) {
+  const [revision, setRevision] = useState(() => host.getSharedStateRevision());
+  useEffect(() => {
+    setRevision(host.getSharedStateRevision());
+    return host.subscribeSharedState(() => setRevision(host.getSharedStateRevision()));
+  }, [host]);
+  return revision;
+}
+
 /**
  * Observe the host's agent attention marks as ordinary React state, like the store snapshot.
  */
@@ -172,6 +182,10 @@ export interface TerminalReview {
    * stores that happen to hold the same content.
    */
   store: ReviewStore;
+  /** The renderer-free owner of this review; the app hands it to the producer's shared state. */
+  host: ReviewSessionHost;
+  /** The host's shared-state revision, published with each session snapshot. */
+  sharedStateRevision: number;
   /** The store's monotonic revision, reported to anyone ordering this review's publications. */
   stateRevision: number;
   expandedGapsByFileId: Record<string, ReadonlySet<string>>;
@@ -356,6 +370,7 @@ export function useTerminalReview({
   }, [document, files, host, sourceLabel]);
 
   const agentLineHighlightsByFileId = useAgentLineHighlights(host);
+  const sharedStateRevision = useSharedStateRevision(host);
   const state = useReviewStoreSnapshot(store);
   const filter = state.filter;
   const scrollToNote = state.reveal.scrollToNote;
@@ -1177,6 +1192,8 @@ export function useTerminalReview({
   return {
     allFiles,
     semanticFileIdentityByFileId,
+    host,
+    sharedStateRevision,
     store,
     stateRevision: state.stateRevision,
     draftNote,

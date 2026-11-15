@@ -353,6 +353,7 @@ const snapshotSchema = z.strictObject({
     reviewPublication: z
       .strictObject({ generation: z.string(), stateRevision: nonnegative })
       .optional(),
+    reviewSharedStateRevision: nonnegative.optional(),
   }),
 });
 const listedSessionSchema = z.strictObject({

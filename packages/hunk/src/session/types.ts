@@ -109,6 +109,14 @@ export interface HunkSessionState {
    * session built before the mirror existed.
    */
   reviewPublication?: ReviewPublicationAddress;
+  /**
+   * The review's shared-state revision at `reviewPublication`.
+   *
+   * Advances only when the shared-state snapshot's content would differ, so the daemon can
+   * tell a browser to refetch `/state` without doing so on every selection move. Never present
+   * without `reviewPublication`.
+   */
+  reviewSharedStateRevision?: number;
 }
 
 export type HunkSessionRegistration = SessionRegistration<HunkSessionInfo>;

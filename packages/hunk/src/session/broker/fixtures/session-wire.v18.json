@@ -338,7 +338,8 @@
         "reviewPublication": {
           "generation": "generation:wire-corpus:1",
           "stateRevision": 3
-        }
+        },
+        "reviewSharedStateRevision": 2
       }
     }
   },
@@ -675,7 +676,8 @@
         "reviewPublication": {
           "generation": "generation:wire-corpus:1",
           "stateRevision": 3
-        }
+        },
+        "reviewSharedStateRevision": 2
       }
     }
   },
@@ -1012,7 +1014,8 @@
         "reviewPublication": {
           "generation": "generation:wire-corpus:1",
           "stateRevision": 3
-        }
+        },
+        "reviewSharedStateRevision": 2
       }
     }
   },
@@ -1377,7 +1380,8 @@
         "reviewPublication": {
           "generation": "generation:wire-corpus:1",
           "stateRevision": 3
-        }
+        },
+        "reviewSharedStateRevision": 2
       }
     }
   },
@@ -1742,7 +1746,8 @@
         "reviewPublication": {
           "generation": "generation:wire-corpus:1",
           "stateRevision": 3
-        }
+        },
+        "reviewSharedStateRevision": 2
       }
     }
   },
@@ -2083,7 +2088,8 @@
         "reviewPublication": {
           "generation": "generation:wire-corpus:1",
           "stateRevision": 3
-        }
+        },
+        "reviewSharedStateRevision": 2
       }
     }
   },
@@ -2279,7 +2285,8 @@
         "reviewPublication": {
           "generation": "generation:wire-corpus:1",
           "stateRevision": 3
-        }
+        },
+        "reviewSharedStateRevision": 2
       }
     }
   }

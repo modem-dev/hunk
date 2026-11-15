@@ -40,6 +40,7 @@ import { resolveExtensionKeyboardModes, resolveExtensionSessionOptions } from ".
 import { projectExtensionReviewNotes } from "../extensions/reviewSnapshot";
 import type { ExtensionNotifyType, ExtensionLoadResult } from "../extensions/types";
 import type { ReviewProducer } from "../app/review/producer";
+import { buildReviewPresentationDefaults, buildReviewSharedState } from "../app/review/sharedState";
 import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
 import type { ReloadedSessionResult, ReloadSessionOptions } from "../session/types";
 // Keep lightweight interaction chrome synchronous: first-use lazy suspension otherwise
@@ -275,9 +276,20 @@ export function App({
   // remote action and a key press reach the same state through the same intent path.
   // The reload coordinator detaches the previous store while committing a reload; this child layout
   // effect installs the matching store before parent lifecycle handlers can use it.
+  // The producer serves this review's shared state to browsers from the same host; the
+  // presentation defaults are resolved lazily, once per bootstrap, on the first state read.
   useLayoutEffect(() => {
-    reviewProducer?.attachStore(review.store);
-  }, [bootstrap.changeset, review.store, reviewProducer]);
+    let presentation: ReturnType<typeof buildReviewPresentationDefaults> | undefined;
+    const host = review.host;
+    reviewProducer?.attachStore(review.store, {
+      getSharedStateRevision: () => host.getSharedStateRevision(),
+      build: (generation) =>
+        buildReviewSharedState(host, {
+          generation,
+          presentation: (presentation ??= buildReviewPresentationDefaults(bootstrap)),
+        }),
+    });
+  }, [bootstrap, review.host, review.store, reviewProducer]);
   // Note-layer visibility is shared review state, so it lives in the review store
   // alongside the notes it governs rather than in local app state.
   const showAgentNotes = review.showAgentNotes;
@@ -931,6 +943,7 @@ export function App({
     reviewNoteCount: review.reviewNoteCount,
     reviewNoteSummaries: review.reviewNoteSummaries,
     reviewStateRevision: review.stateRevision,
+    reviewSharedStateRevision: review.sharedStateRevision,
     selectedFile,
     selectedHunk: review.selectedHunk,
     selectedHunkIndex,

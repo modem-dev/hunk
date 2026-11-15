@@ -13,6 +13,10 @@
  *   caller: the prototype had two near-identical copies inside this file, already
  *   disagreeing about progress and end-of-stream rules
  *   (`docs/browser-review-seam-audit.md`, C2).
+ * - **Shared state** is read through that same loop: the producer serves its shared-state
+ *   snapshot as a resource addressed by shared revision, assembled and digest-verified by the
+ *   same `ReviewChunkAssembler`, single-flight per position, bounded by the protocol's envelope
+ *   bound, and validated with the browser-safe parser before anyone is served it.
  * - **Action forwarding** hands a parsed review action to the producer that owns the
  *   review state, which plans it through the same intent path the terminal uses. The
  *   daemon never interprets an action, and in particular never re-derives where a note
@@ -42,6 +46,7 @@ import {
   ReviewMirror,
   readRegistrationReviewCatalog,
   readSnapshotReviewPublication,
+  readSnapshotSharedStateRevision,
   type MirroredReviewPublication,
 } from "./reviewMirror";
 import { ReviewResourceCache, type ReviewResourceReservation } from "./reviewResourceCache";
@@ -70,6 +75,13 @@ import {
   type SessionTargetInput,
 } from "@hunk/session-broker-core";
 import { reviewResourceUnavailableMessage } from "../agent/errors";
+import {
+  MAX_REVIEW_SHARED_STATE_BYTES,
+  parseReviewSharedState,
+  parseReviewSharedStateResourceId,
+  REVIEW_SHARED_STATE_CURRENT_RESOURCE_ID,
+  type ReviewSharedStateV1,
+} from "../reviewSharedState";
 
 const hunkSessionBrokerView: SessionBrokerViewAdapter<
   HunkSessionInfo,
@@ -194,6 +206,8 @@ export class HunkSessionBrokerState extends SessionBrokerState<
   private readonly resources: ReviewResourceCache;
   /** One load per resource; concurrent callers await the same assembly. */
   private readonly loads = new Map<string, Promise<Uint8Array>>();
+  /** One shared-state read per position; concurrent callers await the same assembly. */
+  private readonly sharedStateLoads = new Map<string, Promise<ReviewSharedStateV1>>();
   /** Capability verifiers by session, as their registrations declared them. */
   private readonly capabilityDigests = new Map<string, string>();
   private readonly publicationWatchers = new Set<(event: ReviewPublicationEvent) => void>();
@@ -235,6 +249,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
         sessionId,
         readRegistrationReviewCatalog(registrationInput),
         readSnapshotReviewPublication(snapshotInput),
+        readSnapshotSharedStateRevision(snapshotInput),
       );
     }
     return registered;
@@ -253,6 +268,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
         sessionId,
         this.mirror.get(sessionId)?.catalog,
         readSnapshotReviewPublication(snapshotInput),
+        readSnapshotSharedStateRevision(snapshotInput),
       );
     }
     return result;
@@ -277,6 +293,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
     this.mirror.clear();
     this.resources.clear();
     this.loads.clear();
+    this.sharedStateLoads.clear();
     this.capabilityDigests.clear();
     for (const sessionId of watched) {
       this.notifyPublicationWatchers({ kind: "retired", sessionId });
@@ -391,6 +408,39 @@ export class HunkSessionBrokerState extends SessionBrokerState<
   }
 
   /**
+   * Read one session's shared-state snapshot from the producer that owns it.
+   *
+   * Single-flight per `(generation, sharedStateRevision)`, reserved against the daemon-wide
+   * in-flight budget, assembled and verified by the shared `ReviewChunkAssembler`, bounded by
+   * `MAX_REVIEW_SHARED_STATE_BYTES` (`resource-too-large` past it), and parsed with the
+   * browser-safe `parseReviewSharedState` (`resource-integrity` if it does not parse). The
+   * read asks for the producer's current revision, so a stale mirror is answered with the
+   * current state rather than an error. Nothing is cached: the next shared revision makes it
+   * obsolete.
+   */
+  loadReviewSharedState(sessionId: string): Promise<ReviewSharedStateV1> {
+    const publication = this.mirror.get(sessionId);
+    if (!publication) {
+      return Promise.reject(new ReviewGenerationRetiredError(undefined));
+    }
+    const generation = publication.address.generation;
+    const loadKey = JSON.stringify([
+      sessionId,
+      generation,
+      publication.sharedStateRevision ?? "current",
+    ]);
+    const running = this.sharedStateLoads.get(loadKey);
+    if (running) {
+      return running;
+    }
+    const load = this.assembleSharedState(sessionId, generation).finally(() => {
+      this.sharedStateLoads.delete(loadKey);
+    });
+    this.sharedStateLoads.set(loadKey, load);
+    return load;
+  }
+
+  /**
    * Forward one review action to the producer that owns the session's review state.
    *
    * The daemon checks only that it is talking to the generation the caller addressed;
@@ -427,8 +477,9 @@ export class HunkSessionBrokerState extends SessionBrokerState<
     sessionId: string,
     catalog: MirroredReviewPublication["catalog"] | undefined,
     address: ReturnType<typeof readSnapshotReviewPublication>,
+    sharedStateRevision?: number,
   ) {
-    const update = this.mirror.observe({ sessionId, catalog, address });
+    const update = this.mirror.observe({ sessionId, catalog, address, sharedStateRevision });
     if (update.kind === "replaced") {
       // Nothing from the retired generation can be asked for again, and an in-flight read
       // of it can only produce bytes nobody wants.
@@ -548,6 +599,87 @@ export class HunkSessionBrokerState extends SessionBrokerState<
       this.assertGenerationActive(key.sessionId, key.generation);
       this.resources.store(key, assembled.bytes);
       return assembled.bytes;
+    } finally {
+      this.resources.release(reservation);
+    }
+  }
+
+  /**
+   * Assemble one shared-state snapshot through the resource loop.
+   *
+   * The first window asks for the current revision under the alias id; the producer answers
+   * under the concrete `state:<revision>` id, and the rest is assembled under that id.
+   */
+  private async assembleSharedState(
+    sessionId: string,
+    generation: string,
+  ): Promise<ReviewSharedStateV1> {
+    const reservation = this.resources.reserve(
+      { sessionId, generation, resourceId: REVIEW_SHARED_STATE_CURRENT_RESOURCE_ID },
+      REVIEW_RESOURCE_CHUNK_BYTES,
+    );
+    try {
+      this.assertGenerationActive(sessionId, generation);
+      const first = await this.readChunk(
+        { sessionId, generation, resourceId: REVIEW_SHARED_STATE_CURRENT_RESOURCE_ID },
+        0,
+      );
+      if (!first.ok) {
+        throw new ReviewResourceReadError(first.code, first.message);
+      }
+      const resourceId = first.chunk.resourceId;
+      if (typeof parseReviewSharedStateResourceId(resourceId) !== "number") {
+        throw new ReviewResourceReadError(
+          "resource-integrity",
+          `The session answered a shared-state read with resource ${resourceId}.`,
+        );
+      }
+      const assembler = new ReviewChunkAssembler({
+        resourceId,
+        generation,
+        digest: nodeReviewDigest,
+        maxBytes: MAX_REVIEW_SHARED_STATE_BYTES,
+      });
+      let result: HunkReviewResourceReadResultV1 = first;
+      for (;;) {
+        if (!result.ok) {
+          throw new ReviewResourceReadError(result.code, result.message);
+        }
+        const step = assembler.accept({
+          chunk: result.chunk,
+          bytes: new Uint8Array(Buffer.from(result.chunk.data, "base64")),
+        });
+        if (!step.ok) {
+          throw new ReviewResourceReadError(step.code, step.message);
+        }
+        this.resources.resize(reservation, assembler.declaredSize ?? reservation.byteLength);
+        if (step.done) {
+          break;
+        }
+        this.assertGenerationActive(sessionId, generation);
+        result = await this.readChunk({ sessionId, generation, resourceId }, assembler.nextOffset);
+      }
+
+      const assembled = assembler.finish();
+      if (!assembled.ok) {
+        throw new ReviewResourceReadError(assembled.code, assembled.message);
+      }
+      this.assertGenerationActive(sessionId, generation);
+      let state: ReviewSharedStateV1 | undefined;
+      try {
+        state = parseReviewSharedState(
+          JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(assembled.bytes)),
+        );
+      } catch {
+        state = undefined;
+      }
+      if (!state || state.generation !== generation) {
+        throw new ReviewResourceReadError(
+          "resource-integrity",
+          "The session's shared state did not parse as a shared-state snapshot.",
+        );
+      }
+      return state;
     } finally {
       this.resources.release(reservation);
     }
