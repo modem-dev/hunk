@@ -36,6 +36,24 @@ export function isRenderableStoredReviewNote(entry: ReviewStoredNote) {
 }
 
 /**
+ * Decide one stored note's resolution after a reload replaced the document.
+ *
+ * The policy above, applied: a note whose file came back with different content is stale
+ * while the hunk it hangs from still exists, and orphaned once that hunk is gone; a note whose
+ * file content is unchanged keeps its verdict. A note whose file is absent from the new
+ * document (`next` undefined) keeps its verdict too: it is not drawn while its file is gone,
+ * and a later reload that brings the file back shows it again, as the terminal always has.
+ * The anchor itself is never rewritten — a stale note is drawn where it last was.
+ */
+export function reconcileReviewNoteResolution(
+  entry: ReviewStoredNote,
+  next: { hunkCount: number; contentChanged: boolean } | undefined,
+): ReviewNoteResolution {
+  if (!next || !next.contentChanged || entry.resolution === "orphaned") return entry.resolution;
+  return reviewNoteOwnerHunkIndex(entry.note) < next.hunkCount ? "stale" : "orphaned";
+}
+
+/**
  * Decides whether one note stays visible under the agent-notes toggle.
  *
  * Hiding the note layer hides what the review was given, not what the reviewer wrote:

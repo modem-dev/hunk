@@ -100,7 +100,12 @@ packages/hunk/src/web/
   snapshot once the file mirror shows its generation: `filter/set`, `notes/set-visibility`, and
   the stored notes replaced with the snapshot's live and reviewer notes, resolution kept;
   sidecar annotations stay out of the store, as in every surface, and reach annotated navigation
-  through `buildReviewAnnotationIndexFromNotes`.
+  through `buildReviewAnnotationIndexFromNotes`, with every file the sidecar names
+  (`agentContext`, even without a summary or annotations) as a stop on the annotated-file tour.
+  The snapshot says what the terminal shows: a reload that changes a file's content marks its
+  notes `stale` at their last anchor (or orphans and drops them when their hunk is gone,
+  `reconcileReviewNoteResolution` in `core/review/state.ts`), and sidecar STML bodies are
+  present only when the session enabled `--experimental`.
 - **Digests.** A resource descriptor in the published catalog is usually unmeasured, and the
   HTTP surface sends no digest header, so for those reads the client checks size and window
   rules and relies on the daemon having verified the bytes. Measured descriptors are verified
