@@ -71,6 +71,7 @@ import {
   parseHunkReviewActionEnvelope,
   type HunkReviewRefreshResultV1,
 } from "../reviewProtocol";
+import type { ReviewSharedStateV1 } from "../reviewSharedState";
 import { allowsUnsafeRemoteSessionBroker, isLoopbackHost } from "./brokerConfig";
 import {
   ReviewGenerationRetiredError,
@@ -442,7 +443,23 @@ export class BrowserReviewServer {
       return this.failure("no-publication");
     }
     try {
-      const state = await this.state.loadReviewSharedState(sessionId);
+      let state: ReviewSharedStateV1;
+      try {
+        state = await this.state.loadReviewSharedState(sessionId);
+      } catch (error) {
+        // A session that publishes shared state can answer `unknown-resource` for the
+        // `state:<revision>` it just moved past while this read was still assembling it. That
+        // is a race, not an absent source: read the current revision once more.
+        if (
+          error instanceof ReviewResourceReadError &&
+          error.code === "unknown-resource" &&
+          this.state.getReviewPublication(sessionId)?.sharedStateRevision !== undefined
+        ) {
+          state = await this.state.loadReviewSharedState(sessionId);
+        } else {
+          throw error;
+        }
+      }
       const body: HunkReviewStateBodyV1 = {
         protocolVersion: HUNK_REVIEW_PROTOCOL_VERSION,
         sessionId,

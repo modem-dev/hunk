@@ -24,7 +24,7 @@ import {
 import { HUNK_REVIEW_PROTOCOL_VERSION } from "../reviewProtocol";
 import { MAX_REVIEW_SHARED_STATE_BYTES, parseReviewSharedState } from "../reviewSharedState";
 import { BrowserReviewServer } from "./browserReviewServer";
-import { MAX_CACHED_REVIEW_SHARED_STATES } from "./state";
+import { MAX_CACHED_REVIEW_SHARED_STATES, ReviewResourceReadError } from "./state";
 
 const SESSION_ID = "session-state-1";
 const running: Array<{ review: BrowserReviewServer; server: { stop: (force?: boolean) => void } }> =
@@ -116,6 +116,44 @@ describe("browser review surface: shared state", () => {
     expect(body.state.notes.map((entry) => entry.note.id)).toEqual(["mcp:1"]);
     expect(body.state.files.map((file) => file.path)).toEqual(["src/alpha.ts", "src/beta.ts"]);
     expect(body.state.presentation.title).toBe("working tree");
+  });
+
+  // Finding: the session answers `unknown-resource` for a `state:<revision>` it retired while
+  // the daemon was still assembling it, and the route reported that as `no-publication` although
+  // the session does publish shared state. One re-read of the current revision settles it.
+  test("re-reads once when the session retires a revision mid-assembly", async () => {
+    const { harness, origin } = start();
+    const load = harness.state.loadReviewSharedState.bind(harness.state);
+    let attempts = 0;
+    harness.state.loadReviewSharedState = (sessionId) => {
+      attempts += 1;
+      return attempts === 1
+        ? Promise.reject(new ReviewResourceReadError("unknown-resource", "retired mid-read"))
+        : load(sessionId);
+    };
+
+    const response = await request(origin, STATE_ROUTE);
+
+    expect(response.status).toBe(200);
+    expect(attempts).toBe(2);
+    expect(
+      parseReviewSharedState(((await response.json()) as HunkReviewStateBodyV1).state),
+    ).toBeDefined();
+  });
+
+  test("reports no-publication when the session keeps answering unknown-resource", async () => {
+    const { harness, origin } = start();
+    let attempts = 0;
+    harness.state.loadReviewSharedState = () => {
+      attempts += 1;
+      return Promise.reject(new ReviewResourceReadError("unknown-resource", "no source"));
+    };
+
+    const response = await request(origin, STATE_ROUTE);
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "no-publication" });
+    expect(attempts).toBe(2);
   });
 
   test("refuses an unauthorized caller and the wrong method", async () => {
