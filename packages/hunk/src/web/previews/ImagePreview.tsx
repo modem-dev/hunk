@@ -59,7 +59,12 @@ function useSideImage(descriptor: ReviewResourceDescriptorV1 | undefined): SideI
     descriptor ? { status: "loading" } : undefined,
   );
   useEffect(() => {
-    if (!descriptor || !context) return;
+    // A side whose resource went away (a reload dropped it) must not keep showing the image
+    // whose blob URL the previous run's cleanup already revoked.
+    if (!descriptor || !context) {
+      setImage(undefined);
+      return;
+    }
     if ((descriptor.byteLength ?? 0) > MAX_REVIEW_BYTES_RESOURCE_BYTES) {
       setImage({ status: "failed", message: reviewErrorMessage("resource-too-large") });
       return;
