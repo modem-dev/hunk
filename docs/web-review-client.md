@@ -114,8 +114,8 @@ packages/hunk/src/web/
   through `buildReviewAnnotationIndexFromNotes`, with every file the sidecar names
   (`agentContext`, even without a summary or annotations) as a stop on the annotated-file tour.
   The snapshot says what the terminal shows: a reload that changes a file's content marks its
-  notes `stale` at their last anchor (or orphans and drops them when their hunk is gone,
-  `reconcileReviewNoteResolution` in `core/review/state.ts`), and sidecar STML bodies are
+  notes `stale` at their last anchor, even when their hunk is gone, and never hides them
+  (`reconcileReviewNoteResolution` in `core/review/state.ts`); sidecar STML bodies are
   present only when the session enabled `--experimental`.
 - **Digests.** A resource descriptor in the published catalog is usually unmeasured, and the
   HTTP surface sends no digest header, so for those reads the client checks size and window

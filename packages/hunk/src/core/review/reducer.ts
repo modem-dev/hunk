@@ -16,7 +16,6 @@ import {
 } from "./selectors";
 import {
   applyReviewRevealRequest,
-  isRenderableStoredReviewNote,
   reconcileReviewNoteResolution,
   reviewRevealIntentsEqual,
   type ReviewDraftNote,
@@ -160,26 +159,16 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       const previousIdentity = new Map(
         state.document.files.map((file) => [file.key, file.contentIdentity] as const),
       );
-      const hunkCountByKey = new Map(
-        action.document.files.map((file) => [file.key, file.hunks.length] as const),
-      );
       const reconcileNotes = (notes: ReviewStoredNote[]) => {
         let changed = false;
         const next = notes.map((entry) => {
           const fileKey = entry.note.fileKey;
-          const hunkCount = hunkCountByKey.get(fileKey);
-          const resolution = reconcileReviewNoteResolution(
-            entry,
-            hunkCount === undefined
-              ? undefined
-              : {
-                  hunkCount,
-                  // A file returning after a reload without it is not known to have changed.
-                  contentChanged:
-                    previousIdentity.has(fileKey) &&
-                    previousIdentity.get(fileKey) !== identityByKey.get(fileKey),
-                },
-          );
+          // A file returning after a reload without it is not known to have changed.
+          const contentChanged =
+            previousIdentity.has(fileKey) &&
+            identityByKey.has(fileKey) &&
+            previousIdentity.get(fileKey) !== identityByKey.get(fileKey);
+          const resolution = reconcileReviewNoteResolution(entry, contentChanged);
           if (resolution === entry.resolution) return entry;
           changed = true;
           return { ...entry, resolution };
@@ -188,9 +177,6 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       };
       const liveNotes = reconcileNotes(state.liveNotes);
       const userNotes = reconcileNotes(state.userNotes);
-      const activeNote = [...liveNotes, ...userNotes].find(
-        (entry) => entry.note.id === state.activeNoteId,
-      );
       return {
         ...state,
         document: action.document,
@@ -199,9 +185,6 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
         sourceStatusByFileKey,
         liveNotes,
         userNotes,
-        // An orphaned note is no longer on screen, so it cannot stay the active one.
-        activeNoteId:
-          activeNote && isRenderableStoredReviewNote(activeNote) ? state.activeNoteId : null,
         ...(viewedFiles ? { viewedFiles } : {}),
       };
     }

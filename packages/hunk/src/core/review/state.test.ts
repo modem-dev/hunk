@@ -87,23 +87,14 @@ describe("reconcileReviewNoteResolution", () => {
       resolution,
     }) satisfies ReviewStoredNote;
 
-  test("keeps the verdict while the file content is unchanged or the file is absent", () => {
-    expect(reconcileReviewNoteResolution(entry(0), { hunkCount: 1, contentChanged: false })).toBe(
-      "active",
-    );
-    expect(reconcileReviewNoteResolution(entry(0, "stale"), undefined)).toBe("stale");
-    expect(reconcileReviewNoteResolution(entry(3), undefined)).toBe("active");
+  test("keeps the verdict while the file content is unchanged", () => {
+    expect(reconcileReviewNoteResolution(entry(0), false)).toBe("active");
+    expect(reconcileReviewNoteResolution(entry(0, "stale"), false)).toBe("stale");
   });
 
-  test("marks a note stale when its file changed and its hunk still exists, else orphaned", () => {
-    expect(reconcileReviewNoteResolution(entry(1), { hunkCount: 2, contentChanged: true })).toBe(
-      "stale",
-    );
-    expect(reconcileReviewNoteResolution(entry(1), { hunkCount: 1, contentChanged: true })).toBe(
-      "orphaned",
-    );
-    expect(
-      reconcileReviewNoteResolution(entry(0, "orphaned"), { hunkCount: 5, contentChanged: true }),
-    ).toBe("orphaned");
+  test("marks a note stale when its file changed, never orphaned, even without its hunk", () => {
+    expect(reconcileReviewNoteResolution(entry(1), true)).toBe("stale");
+    expect(reconcileReviewNoteResolution(entry(7), true)).toBe("stale");
+    expect(reconcileReviewNoteResolution(entry(0, "stale"), true)).toBe("stale");
   });
 });
