@@ -5,6 +5,7 @@ import {
   bindWebCommands,
   bindableWebChords,
   browserReservedChordReason,
+  commandRepeatsWhenHeld,
   defaultWebKeymap,
   focusOwnsKey,
   webCommandChords,
@@ -70,6 +71,58 @@ describe("webKeyEvent", () => {
     expect(bindings.match(webKeyEvent(createTestKey("g"))!)?.entry.id).toBe(
       "hunk.review.jumpToTop",
     );
+  });
+});
+
+describe("AltGr and Option symbols", () => {
+  const bindings = () => bindWebCommands(createTestCommands().commands, defaultWebKeymap());
+
+  test("matches a Windows AltGr bracket as the character", () => {
+    const event = webKeyEvent(createTestKey("]", { ctrlKey: true, altKey: true }))!;
+    expect(event).toMatchObject({ name: "]", ctrl: false, option: false });
+    expect(bindings().match(event)?.entry.id).toBe("hunk.review.nextHunk");
+    const graph = webKeyEvent({
+      ...createTestKey("[", { ctrlKey: true, altKey: true }),
+      getModifierState: (modifier: string) => modifier === "AltGraph",
+    })!;
+    expect(bindings().match(graph)?.entry.id).toBe("hunk.review.previousHunk");
+  });
+
+  test("matches a macOS Option bracket and brace as the character", () => {
+    expect(bindings().match(webKeyEvent(createTestKey("]", { altKey: true }))!)?.entry.id).toBe(
+      "hunk.review.nextHunk",
+    );
+    expect(bindings().match(webKeyEvent(createTestKey("}", { altKey: true }))!)?.entry.id).toBe(
+      "hunk.review.nextAnnotatedHunk",
+    );
+  });
+
+  test("still refuses real browser chords", () => {
+    for (const modifiers of [
+      { ctrlKey: true },
+      { metaKey: true },
+      { altKey: true },
+      { ctrlKey: true, altKey: true },
+      { metaKey: true, altKey: true },
+    ]) {
+      for (const key of ["k", "p", "f", "d", "4"]) {
+        expect(bindings().match(webKeyEvent(createTestKey(key, modifiers))!)).toBeUndefined();
+      }
+    }
+    expect(bindings().match(webKeyEvent(createTestKey("]", { metaKey: true }))!)).toBeUndefined();
+    expect(bindings().match(webKeyEvent(createTestKey("]", { ctrlKey: true }))!)).toBeUndefined();
+    expect(
+      bindings().match(webKeyEvent(createTestKey("ArrowLeft", { altKey: true }))!),
+    ).toBeUndefined();
+  });
+});
+
+describe("held keys", () => {
+  test("toggles run once per press while navigation and scrolling repeat", () => {
+    expect(commandRepeatsWhenHeld("hunk.web.toggleViewed")).toBe(false);
+    expect(commandRepeatsWhenHeld("hunk.view.toggleLineWrap")).toBe(false);
+    expect(commandRepeatsWhenHeld("hunk.review.nextHunk")).toBe(true);
+    expect(commandRepeatsWhenHeld("hunk.review.stepDown")).toBe(true);
   });
 });
 
@@ -167,6 +220,28 @@ describe("focusOwnsKey", () => {
       expect(focusOwnsKey([element], key("]"))).toBe(true);
     }
     expect(focusOwnsKey([createTestElement("INPUT", { type: "checkbox" })], key("]"))).toBe(false);
+  });
+
+  test("gives Space to a checkbox and the arrows to radios and ranges", () => {
+    const checkbox = createTestElement("INPUT", { type: "checkbox" });
+    expect(focusOwnsKey([checkbox], key("space"))).toBe(true);
+    expect(focusOwnsKey([checkbox], key("down"))).toBe(false);
+    const radio = createTestElement("INPUT", { type: "radio" });
+    expect(focusOwnsKey([radio], key("space"))).toBe(true);
+    expect(focusOwnsKey([radio], key("down"))).toBe(true);
+    expect(focusOwnsKey([radio], key("]"))).toBe(false);
+    const range = createTestElement("INPUT", { type: "range" });
+    expect(focusOwnsKey([range], key("left"))).toBe(true);
+    expect(focusOwnsKey([range], key("space"))).toBe(false);
+  });
+
+  test("lets a focused scroll region keep its scroll keys and nothing else", () => {
+    const panel = createTestElement("DIV", { role: "tabpanel" });
+    for (const name of ["up", "down", "pageup", "pagedown", "space", "home", "end"]) {
+      expect(focusOwnsKey([panel], key(name))).toBe(true);
+    }
+    expect(focusOwnsKey([panel], key("]"))).toBe(false);
+    expect(focusOwnsKey([panel], key("c"))).toBe(false);
   });
 
   test("gives Space and Enter to buttons and nothing else", () => {

@@ -9,11 +9,13 @@
  *
  * - Chords carrying Ctrl, Cmd, or Alt, Tab, and the function keys belong to the browser and
  *   the OS (find, copy, back and forward, zoom, tab switching, reload, focus traversal), so
- *   the page never binds them, whatever the keymap says.
+ *   the page never binds them, whatever the keymap says. A printable symbol typed through
+ *   AltGr or Option (`]` on German and Nordic layouts) is the character, not a chord.
  * - Nothing fires while focus is in a text field, a select, or editable content.
- * - A focused control keeps the keys that operate it: Space and Enter on a button, and the
- *   arrow, paging, and Home/End keys inside a composite widget such as a radio group, menu,
- *   or the files tree.
+ * - A focused control keeps the keys that operate it: Space and Enter on a button, Space on a
+ *   checkbox, the arrow keys on a slider, the scroll keys in a focused scroll region such as
+ *   the side panel, and the arrow, paging, and Home/End keys inside a composite widget such
+ *   as a radio group, menu, or the files tree.
  *
  * The keymap is chords per command id. The page starts from the catalog's defaults; once the
  * state route delivers the host's resolved keymap (`[keybindings]` folded in on the host,
@@ -55,7 +57,29 @@ const DOM_NAMED_KEYS: Readonly<Record<string, string>> = {
 export type WebKeyboardEventLike = Pick<
   KeyboardEvent,
   "key" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey"
-> & { isComposing?: boolean };
+> & {
+  isComposing?: boolean;
+  /** Reads modifier state such as `"AltGraph"`; absent on synthetic events. */
+  getModifierState?: (modifier: string) => boolean;
+};
+
+/**
+ * Whether the event typed a printable symbol through AltGr or Option rather than chording.
+ *
+ * German and Nordic layouts type `]` as AltGr+9 (Windows reports Ctrl and Alt together, and
+ * `AltGraph` where the browser exposes it) or Option+6 (macOS reports Alt alone). The
+ * produced `key` is the character itself, so it is matched as that character. A letter or
+ * digit with Alt is a real Alt chord (menu and history shortcuts), and anything with Cmd or a
+ * bare Ctrl stays a chord.
+ */
+function typedThroughAltGraphOrOption(event: WebKeyboardEventLike) {
+  if (event.metaKey || [...event.key].length !== 1 || event.key === " ") return false;
+  if (event.getModifierState?.("AltGraph")) return true;
+  if (/^[A-Za-z0-9]$/.test(event.key)) return false;
+  // Windows AltGr without `AltGraph` state arrives as Ctrl and Alt together; macOS Option
+  // arrives as Alt alone. A bare Ctrl stays a chord.
+  return event.altKey;
+}
 
 /**
  * Translate one DOM key event into the structural event the chord grammar matches.
@@ -66,10 +90,11 @@ export type WebKeyboardEventLike = Pick<
  */
 export function webKeyEvent(event: WebKeyboardEventLike): ExtensionKeyEvent | undefined {
   if (event.isComposing) return undefined;
+  const typed = typedThroughAltGraphOrOption(event);
   const modifiers = {
-    ctrl: event.ctrlKey,
+    ctrl: typed ? false : event.ctrlKey,
     meta: event.metaKey,
-    option: event.altKey,
+    option: typed ? false : event.altKey,
     shift: event.shiftKey,
   };
   const named = DOM_NAMED_KEYS[event.key];
@@ -147,6 +172,20 @@ const COMPOSITE_ROLES = new Set([
   "slider",
   "separator",
 ]);
+/** Keys a focused scroll region (a focusable `tabpanel`) uses to scroll itself. */
+const SCROLL_KEYS = new Set([
+  "space",
+  "up",
+  "down",
+  "left",
+  "right",
+  "home",
+  "end",
+  "pageup",
+  "pagedown",
+]);
+/** Keys a range input moves its thumb with. */
+const RANGE_KEYS = new Set(["up", "down", "left", "right", "home", "end", "pageup", "pagedown"]);
 
 /** Whether one event target is an element (a window or document is not). */
 function isElementLike(target: EventTarget): target is Element {
@@ -181,6 +220,15 @@ export function focusOwnsKey(path: readonly EventTarget[], key: ExtensionKeyEven
     if (!isElementLike(target)) continue;
     if (isTextEntry(target)) return true;
     const role = target.getAttribute("role");
+    if (target.tagName === "INPUT") {
+      // Native controls keep the keys that operate them: Space toggles a checkbox, the
+      // arrows move a radio selection or a range thumb.
+      const type = (target as HTMLInputElement).type;
+      if (type === "checkbox") return key.name === "space";
+      if (type === "radio") return key.name === "space" || RANGE_KEYS.has(key.name ?? "");
+      if (type === "range") return RANGE_KEYS.has(key.name ?? "");
+    }
+    if (role === "tabpanel") return SCROLL_KEYS.has(key.name ?? "");
     if (role && COMPOSITE_ROLES.has(role)) return COMPOSITE_KEYS.has(key.name ?? "");
     if (target.tagName === "FILE-TREE-CONTAINER") return COMPOSITE_KEYS.has(key.name ?? "");
     if (target.tagName === "BUTTON" || target.tagName === "A" || role === "button") {
@@ -188,6 +236,25 @@ export function focusOwnsKey(path: readonly EventTarget[], key: ExtensionKeyEven
     }
   }
   return false;
+}
+
+/**
+ * Commands that flip something and so run once per press: a held key's auto-repeat would send
+ * one toggle per repeat (and, for viewed marks, one request each).
+ */
+const NON_REPEATING_COMMANDS: ReadonlySet<string> = new Set([
+  "hunk.web.toggleViewed",
+  "hunk.web.toggleSidePanel",
+  "hunk.view.toggleFilesPane",
+  "hunk.view.toggleLineNumbers",
+  "hunk.view.toggleLineWrap",
+  "hunk.view.toggleAgentNotes",
+  "hunk.review.toggleHunkGap",
+]);
+
+/** Whether holding the key down may run this command again for each auto-repeat. */
+export function commandRepeatsWhenHeld(commandId: string) {
+  return !NON_REPEATING_COMMANDS.has(commandId);
 }
 
 /** The commands with their bindable chords, ready to match key events in catalog order. */
