@@ -7,18 +7,30 @@
  * selectors would show up here.
  */
 import { projectReviewDocument } from "../../../packages/hunk/src/core/review/document";
-import { planReviewIntent } from "../../../packages/hunk/src/core/review/intents";
-import type { ReviewAnnotationIndex } from "../../../packages/hunk/src/core/review/navigation";
+import { buildReviewThreadCursors } from "../../../packages/hunk/src/core/review/annotations";
+import {
+  planReviewIntent,
+  type ReviewIntentFacts,
+} from "../../../packages/hunk/src/core/review/intents";
+import type {
+  ReviewAnnotationIndex,
+  ReviewMoveLanding,
+} from "../../../packages/hunk/src/core/review/navigation";
 import {
   selectNormalizedSelection,
   selectRevealTarget,
+  selectStoredThreadRoots,
+  selectVisibleReviewFiles,
 } from "../../../packages/hunk/src/core/review/selectors";
+import type { DiffFile } from "../../../packages/hunk/src/core/changeset/model";
 import {
   createInitialReviewState,
   type ReviewState,
 } from "../../../packages/hunk/src/core/review/state";
 import type { ReviewDocumentV1 } from "../../../packages/hunk/src/core/review/types";
 import type {
+  ConformanceLanding,
+  ConformanceMove,
   ConformanceSelection,
   ConformanceSelectionInput,
   ReviewNavigationConsumer,
@@ -77,11 +89,59 @@ export function toAnnotationIndex(
   };
 }
 
+/**
+ * Supply the caller-owned facts one move needs.
+ *
+ * Within-hunk scopes get the reviewer's position inside `from`'s hunk and the thread stops,
+ * built from the fixture's sidecar annotations and stored roots through the same builder
+ * the terminal and producer use.
+ */
+export function toMoveFacts(
+  move: ConformanceMove,
+  state: ReviewState,
+  files: readonly DiffFile[],
+  annotations: ReviewAnnotationIndex,
+): ReviewIntentFacts {
+  const facts: ReviewIntentFacts = { annotations };
+  if (move.scope !== "change-block" && move.scope !== "comment-thread") {
+    return facts;
+  }
+
+  const { fileKey, hunkIndex } = state.selection;
+  if (fileKey !== null) {
+    facts.focus = { fileKey, hunkIndex, ...(move.focusLine ? { line: move.focusLine } : {}) };
+  }
+  const sidecarByRuntimeId = new Map(files.map((file) => [file.id, file.agent?.annotations]));
+  facts.threads = buildReviewThreadCursors({
+    files: selectVisibleReviewFiles(state).map((file) => ({
+      fileKey: file.key,
+      hunks: file.hunks,
+      sidecar: sidecarByRuntimeId.get(file.runtimeId) ?? [],
+    })),
+    storedRoots: selectStoredThreadRoots(state),
+    showAgentNotes: state.showAgentNotes,
+  });
+  return facts;
+}
+
+/** Report a within-hunk landing in the fixture's renderer-neutral shape. */
+export function toConformanceLanding(landing: ReviewMoveLanding | undefined): {
+  landing?: ConformanceLanding;
+} {
+  if (!landing) {
+    return {};
+  }
+  return landing.kind === "change-block"
+    ? { landing: { kind: "change-block", line: landing.block.line } }
+    : { landing: { kind: "comment-thread", threadKind: landing.threadKind, line: landing.line } };
+}
+
 export const intentPlannerNavigationConsumer: ReviewNavigationConsumer = {
   name: "core intent planner",
   phase: "Phase 1 PR 3",
   project(fixture: ReviewNavigationFixture) {
-    const document = projectReviewDocument(fixture.build());
+    const files = fixture.build();
+    const document = projectReviewDocument(files);
     const annotations = toAnnotationIndex(fixture, document);
     const baseState: ReviewState = {
       ...createInitialReviewState(document),
@@ -94,10 +154,11 @@ export const intentPlannerNavigationConsumer: ReviewNavigationConsumer = {
 
     return {
       moves: fixture.moves.map((move) => {
+        const state = stateAt(move.from);
         const plan = planReviewIntent(
-          stateAt(move.from),
+          state,
           { type: "selection/move", scope: move.scope, delta: move.delta },
-          { annotations },
+          toMoveFacts(move, state, files, annotations),
         );
         const action = plan.actions[0];
         if (!action || action.type !== "selection/select" || !action.reveal) {
@@ -106,6 +167,9 @@ export const intentPlannerNavigationConsumer: ReviewNavigationConsumer = {
         return {
           to: toConformanceSelection(action.fileKey, action.hunkIndex, document),
           reveal: action.reveal,
+          ...toConformanceLanding(
+            plan.outcome?.type === "selection/changed" ? plan.outcome.landing : undefined,
+          ),
         };
       }),
       normalizedSelections: fixture.selections.map((input) => {

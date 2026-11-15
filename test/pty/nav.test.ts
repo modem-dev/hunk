@@ -360,4 +360,162 @@ describe("PTY navigation", () => {
       session.close();
     }
   });
+
+  test("change-block keys step between edits that share one hunk", async () => {
+    const fixture = harness.createSpreadHunkFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "unified"],
+      cols: 100,
+      rows: 9,
+    });
+
+    try {
+      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+      expect(initial).not.toContain("line27 = 2700");
+
+      await session.press(")");
+      const secondEdit = await harness.pressAndWaitForSnapshot(
+        session,
+        ")",
+        (text) => text.includes("line27 = 2700"),
+        5_000,
+      );
+      expect(secondEdit).toContain("line27 = 2700");
+      expect(secondEdit).not.toContain("line17 = 17");
+
+      const firstEdit = await harness.pressAndWaitForSnapshot(
+        session,
+        "(",
+        (text) => text.includes("line20 = 20;") && !text.includes("line27 = 2700"),
+        5_000,
+      );
+      expect(firstEdit).toContain("line20 = 20;");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("change-block keys step between edits with the current-line marker off", async () => {
+    const fixture = harness.createSpreadHunkFilePair();
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--files",
+        fixture.before,
+        fixture.after,
+        "--mode",
+        "unified",
+        "--cursor-line",
+        "off",
+      ],
+      cols: 100,
+      rows: 9,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+
+      await session.press(")");
+      const secondEdit = await harness.pressAndWaitForSnapshot(
+        session,
+        ")",
+        (text) => text.includes("line27 = 2700"),
+        5_000,
+      );
+      expect(secondEdit).toContain("line27 = 2700");
+
+      const firstEdit = await harness.pressAndWaitForSnapshot(
+        session,
+        "(",
+        (text) => text.includes("line20 = 20;") && !text.includes("line27 = 2700"),
+        5_000,
+      );
+      expect(firstEdit).toContain("line20 = 20;");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("the Navigate menu steps change blocks like their keys", async () => {
+    const fixture = harness.createSpreadHunkFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "unified"],
+      cols: 120,
+      rows: 32,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+
+      for (let step = 0; step < 2; step += 1) {
+        await harness.clickAndWaitForText(session, /Navigate/, /Next change/, {
+          first: true,
+          timeout: 5_000,
+        });
+        await session.click(/Next change/);
+        await harness.waitForSnapshot(session, (text) => !text.includes("Next change"), 5_000);
+      }
+
+      const draft = await harness.pressAndWaitForText(
+        session,
+        "c",
+        /Draft note - before\.ts -> after\.ts [LR]27/,
+        { timeout: 5_000 },
+      );
+      expect(draft).toMatch(/Draft note - before\.ts -> after\.ts [LR]27/);
+    } finally {
+      session.close();
+    }
+  });
+
+  test("thread keys visit each note that shares one hunk", async () => {
+    const fixture = harness.createSpreadHunkAgentFilePair();
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--files",
+        fixture.before,
+        fixture.after,
+        "--mode",
+        "unified",
+        "--agent-context",
+        fixture.agentContext,
+        "--agent-notes",
+      ],
+      cols: 100,
+      rows: 12,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+
+      const firstNote = await harness.pressAndWaitForSnapshot(
+        session,
+        ">",
+        (text) => text.includes("FIRST SPREAD NOTE"),
+        5_000,
+      );
+      expect(firstNote).toContain("FIRST SPREAD NOTE");
+
+      const secondNote = await harness.pressAndWaitForSnapshot(
+        session,
+        ">",
+        (text) => text.includes("SECOND SPREAD NOTE") && !text.includes("FIRST SPREAD NOTE"),
+        5_000,
+      );
+      expect(secondNote).toContain("SECOND SPREAD NOTE");
+
+      const backToFirst = await harness.pressAndWaitForSnapshot(
+        session,
+        "<",
+        (text) => text.includes("FIRST SPREAD NOTE"),
+        5_000,
+      );
+      expect(backToFirst).toContain("FIRST SPREAD NOTE");
+    } finally {
+      session.close();
+    }
+  });
 });

@@ -138,6 +138,33 @@ describe("built-in command chords", () => {
     expect(press({ name: "c", sequence: "c", ctrl: true })).toBeUndefined();
   });
 
+  test("change-block and thread keys step their scopes while hunk keys keep theirs", () => {
+    const { commands, ran } = createTestCommands();
+    const press = (key: string) =>
+      dispatchAppCommand(commands, keyEvent({ name: key, sequence: key }))?.id;
+
+    expect(press("[")).toBe("hunk.review.previousHunk");
+    expect(press("]")).toBe("hunk.review.nextHunk");
+    expect(press("{")).toBe("hunk.review.previousAnnotatedHunk");
+    expect(press("}")).toBe("hunk.review.nextAnnotatedHunk");
+    expect(press("(")).toBe("hunk.review.previousChangeBlock");
+    expect(press(")")).toBe("hunk.review.nextChangeBlock");
+    expect(press("<")).toBe("hunk.review.previousCommentThread");
+    expect(press(">")).toBe("hunk.review.nextCommentThread");
+    expect(ran).toEqual([
+      "moveSelection:hunk,-1",
+      "moveSelection:hunk,1",
+      "moveSelection:annotated-hunk,-1",
+      "moveSelection:annotated-hunk,1",
+      "moveSelection:change-block,-1",
+      "moveSelection:change-block,1",
+      "moveSelection:comment-thread,-1",
+      "moveSelection:comment-thread,1",
+    ]);
+    expect(verticalCommandDirection(commands, keyEvent({ name: ")", sequence: ")" }))).toBe(1);
+    expect(verticalCommandDirection(commands, keyEvent({ name: "<", sequence: "<" }))).toBe(-1);
+  });
+
   test("the shifted arrow scrolls further through the same command", () => {
     const { commands, ran } = createTestCommands();
 

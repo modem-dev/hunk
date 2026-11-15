@@ -62,6 +62,14 @@ const HELP_SECTIONS: readonly HelpSectionSpec[] = [
         commandIds: ["hunk.review.previousAnnotatedHunk", "hunk.review.nextAnnotatedHunk"],
         description: "annotated hunk / exact note",
       },
+      {
+        commandIds: ["hunk.review.previousChangeBlock", "hunk.review.nextChangeBlock"],
+        description: "previous / next change block",
+      },
+      {
+        commandIds: ["hunk.review.previousCommentThread", "hunk.review.nextCommentThread"],
+        description: "previous / next comment thread",
+      },
       { commandIds: ["hunk.search.find"], description: "search diff content" },
       {
         commandIds: ["hunk.search.next", "hunk.search.previous"],

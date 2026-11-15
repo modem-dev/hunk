@@ -309,6 +309,18 @@ function builtinCommandHandlers(
     "hunk.review.nextAnnotatedHunk": {
       run: (_key, count, entry) => runSelectionMove(options, entry, count),
     },
+    "hunk.review.previousChangeBlock": {
+      run: (_key, count, entry) => runSelectionMove(options, entry, count),
+    },
+    "hunk.review.nextChangeBlock": {
+      run: (_key, count, entry) => runSelectionMove(options, entry, count),
+    },
+    "hunk.review.previousCommentThread": {
+      run: (_key, count, entry) => runSelectionMove(options, entry, count),
+    },
+    "hunk.review.nextCommentThread": {
+      run: (_key, count, entry) => runSelectionMove(options, entry, count),
+    },
     "hunk.review.previousAnnotatedFile": {
       run: (_key, count, entry) => runSelectionMove(options, entry, count),
     },

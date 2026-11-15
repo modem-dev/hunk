@@ -1809,6 +1809,7 @@ export function App({
             selectedFileId={selectedFile?.id}
             selectedHunkIndex={selectedHunkIndex}
             activeNoteId={activeNoteId}
+            activeSidecarAnnotation={review.activeSidecarAnnotation}
             noteActionKeyLabels={noteActionKeyLabels}
             scrollToNote={review.scrollToNote}
             draftNote={review.draftNote}

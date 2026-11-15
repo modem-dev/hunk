@@ -152,7 +152,17 @@ describe("buildAppMenus", () => {
       "Previous annotated file",
     ]);
     // The filter ships unbound, so its Navigate entry carries no hint.
-    expect(items(menus.navigate).map((item) => item.hint)).toEqual(["[", "]", "{", "}", undefined]);
+    expect(items(menus.navigate).map((item) => item.hint)).toEqual([
+      "[",
+      "]",
+      "{",
+      "}",
+      "(",
+      ")",
+      "<",
+      ">",
+      undefined,
+    ]);
   });
 
   test("every item carries the id of the command it runs", () => {
@@ -312,6 +322,10 @@ describe("the Extensions menu", () => {
       ["Next hunk", "]"],
       ["Previous comment", "{"],
       ["Next comment", "}"],
+      ["Previous change", "("],
+      ["Next change", ")"],
+      ["Previous thread", "<"],
+      ["Next thread", ">"],
       ["Search diff content…", "/"],
       ["Next match", "n"],
       ["Previous match", "N"],

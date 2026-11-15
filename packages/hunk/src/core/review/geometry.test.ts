@@ -3,7 +3,9 @@ import {
   normalizedReviewSourceLines,
   rebaseReviewHunk,
   reviewCanonicalHunkLine,
+  reviewChangeBlockContainsLine,
   reviewDefaultHunkLineTarget,
+  reviewHunkChangeBlocks,
   reviewHunkIndexForLine,
   reviewHunkRange,
   reviewHunkRanges,
@@ -172,6 +174,81 @@ describe("reviewDefaultHunkLineTarget", () => {
     const hunk = { ...span(4, 2), hunkContent: [{ type: "context" as const, lines: 2 }] };
 
     expect(reviewDefaultHunkLineTarget(hunk)).toEqual({ side: "new", line: 4 });
+  });
+});
+
+describe("reviewHunkChangeBlocks", () => {
+  test("splits one hunk into its change blocks, skipping context between them", () => {
+    // @@ -10,8 +10,9 @@ — a replacement, two context lines, then a pure insertion.
+    const hunk = {
+      additionStart: 10,
+      additionCount: 9,
+      deletionStart: 10,
+      deletionCount: 8,
+      hunkContent: [
+        { type: "context" as const, lines: 1 },
+        { type: "change" as const, additions: 2, deletions: 1 },
+        { type: "context" as const, lines: 2 },
+        { type: "change" as const, additions: 1, deletions: 0 },
+        { type: "context" as const, lines: 3 },
+      ],
+    };
+
+    expect(reviewHunkChangeBlocks(hunk)).toEqual([
+      {
+        blockIndex: 0,
+        oldStart: 11,
+        deletions: 1,
+        newStart: 11,
+        additions: 2,
+        line: { side: "new", line: 11 },
+      },
+      {
+        blockIndex: 1,
+        oldStart: 14,
+        deletions: 0,
+        newStart: 15,
+        additions: 1,
+        line: { side: "new", line: 15 },
+      },
+    ]);
+  });
+
+  test("addresses a deletion-only block by its first removed line", () => {
+    const hunk = {
+      ...span(20, 4),
+      hunkContent: [
+        { type: "context" as const, lines: 1 },
+        { type: "change" as const, additions: 0, deletions: 2 },
+        { type: "context" as const, lines: 1 },
+      ],
+    };
+
+    expect(reviewHunkChangeBlocks(hunk).map((block) => block.line)).toEqual([
+      { side: "old", line: 21 },
+    ]);
+  });
+
+  test("finds no blocks in a hunk without changed rows", () => {
+    expect(
+      reviewHunkChangeBlocks({ ...span(4, 2), hunkContent: [{ type: "context", lines: 2 }] }),
+    ).toEqual([]);
+  });
+
+  test("contains only lines inside the block on the address's own side", () => {
+    const block = { oldStart: 11, deletions: 1, newStart: 11, additions: 2 };
+
+    expect(reviewChangeBlockContainsLine(block, { side: "new", line: 12 })).toBe(true);
+    expect(reviewChangeBlockContainsLine(block, { side: "new", line: 13 })).toBe(false);
+    expect(reviewChangeBlockContainsLine(block, { side: "old", line: 11 })).toBe(true);
+    expect(reviewChangeBlockContainsLine(block, { side: "old", line: 12 })).toBe(false);
+    // An insertion owns no old-side line at all.
+    expect(
+      reviewChangeBlockContainsLine(
+        { oldStart: 14, deletions: 0, newStart: 15, additions: 1 },
+        { side: "old", line: 14 },
+      ),
+    ).toBe(false);
   });
 });
 

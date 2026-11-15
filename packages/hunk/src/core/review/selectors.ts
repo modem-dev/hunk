@@ -13,8 +13,9 @@ import {
   reviewLeadingGap,
   reviewTrailingGap,
 } from "./expansion";
+import type { ReviewStoredThreadRoot } from "./annotations";
 import { reviewCanonicalHunkLine } from "./geometry";
-import type { ReviewNavigationFile } from "./navigation";
+import type { ReviewMoveLanding, ReviewNavigationFile, ReviewNavigationFocus } from "./navigation";
 import {
   isRenderableStoredReviewNote,
   reviewNoteAnchorLine,
@@ -494,6 +495,40 @@ export function selectNavigableStoredReviewNotes(
     .map(({ threadedOrder: _threadedOrder, ...item }) => item);
 }
 
+/** Visible stored-note thread roots, in exact-note order, for comment-thread navigation. */
+export function selectStoredThreadRoots(state: ActiveNoteState): ReviewStoredThreadRoot[] {
+  return selectNavigableStoredReviewNotes(state)
+    .filter((item) => item.visibleDepth === 0)
+    .map((item) => ({
+      fileKey: item.fileKey,
+      hunkIndex: item.hunkIndex,
+      line: reviewNoteAnchorLine(item.entry.note),
+      noteId: item.entry.note.id,
+    }));
+}
+
+/**
+ * The visible thread root a stored note belongs to.
+ *
+ * Walks visible parents rather than raw ancestry, so a reply whose agent-authored root is
+ * hidden by the note layer resolves to itself — the root the reviewer can actually see.
+ */
+export function selectVisibleThreadRootId(
+  state: ActiveNoteState,
+  noteId: string,
+): string | undefined {
+  const byId = new Map(
+    selectNavigableStoredReviewNotes(state).map((item) => [item.entry.note.id, item] as const),
+  );
+  let current = byId.get(noteId);
+  const visited = new Set<string>();
+  while (current?.visibleParentId && !visited.has(current.entry.note.id)) {
+    visited.add(current.entry.note.id);
+    current = byId.get(current.visibleParentId);
+  }
+  return current?.entry.note.id;
+}
+
 /** Resolve the explicitly selected stored note keyboard actions target. */
 export function selectActiveStoredReviewNote(state: ActiveNoteState): ReviewStoredNote | undefined {
   if (!state.activeNoteId) {
@@ -509,6 +544,102 @@ export function selectActiveStoredReviewNote(state: ActiveNoteState): ReviewStor
       item.fileKey === fileKey &&
       item.hunkIndex === hunkIndex,
   )?.entry;
+}
+
+/**
+ * Where one change-block or sidecar-thread move landed inside a hunk.
+ *
+ * The semantic selection stops at the hunk and a sidecar annotation has no stored id, so
+ * each surface that plans these moves keeps the landing as the next move's start. The reveal
+ * tokens it published let a later read tell whether anything has moved since.
+ */
+export interface ReviewWithinHunkLanding {
+  fileKey: string;
+  hunkIndex: number;
+  line: ReviewLineAddressV1;
+  /** Set for a sidecar-thread landing. */
+  threadId?: string;
+  hunkToken: number;
+  fileTopToken: number;
+}
+
+/**
+ * Record a landing against the state its move just published.
+ *
+ * A stored-thread landing returns null: `activeNoteId` already holds it.
+ */
+export function recordReviewWithinHunkLanding(
+  state: Pick<ReviewState, "reveal">,
+  target: { fileKey: string; hunkIndex: number },
+  landing: ReviewMoveLanding,
+): ReviewWithinHunkLanding | null {
+  if (landing.kind === "comment-thread" && landing.threadKind === "stored") {
+    return null;
+  }
+
+  return {
+    fileKey: target.fileKey,
+    hunkIndex: target.hunkIndex,
+    ...(landing.kind === "change-block"
+      ? { line: landing.block.line }
+      : { line: landing.line, threadId: landing.threadId }),
+    hunkToken: state.reveal.hunkToken,
+    fileTopToken: state.reveal.fileTopToken,
+  };
+}
+
+/** Return the landing while the selection, reveal, and active note are still as it left them. */
+export function selectCurrentWithinHunkLanding(
+  state: ActiveNoteState & Pick<ReviewState, "reveal">,
+  landing: ReviewWithinHunkLanding | null,
+): ReviewWithinHunkLanding | null {
+  if (!landing) {
+    return null;
+  }
+
+  const selection = selectNormalizedSelection(state);
+  return selection.fileKey === landing.fileKey &&
+    selection.hunkIndex === landing.hunkIndex &&
+    !state.activeNoteId &&
+    state.reveal.hunkToken === landing.hunkToken &&
+    state.reveal.fileTopToken === landing.fileTopToken
+    ? landing
+    : null;
+}
+
+/**
+ * Where a change-block or comment-thread move starts.
+ *
+ * A current landing wins, then the selected stored note's anchor, then the top of the
+ * selected hunk. A surface with its own current line may replace that last fallback.
+ */
+export function selectWithinHunkNavigationStart(
+  state: ActiveNoteState & Pick<ReviewState, "reveal">,
+  landing: ReviewWithinHunkLanding | null,
+): { focus?: ReviewNavigationFocus; activeThreadId?: string } {
+  const current = selectCurrentWithinHunkLanding(state, landing);
+  if (current) {
+    return {
+      focus: { fileKey: current.fileKey, hunkIndex: current.hunkIndex, line: current.line },
+      ...(current.threadId ? { activeThreadId: current.threadId } : {}),
+    };
+  }
+
+  const { fileKey, hunkIndex } = selectNormalizedSelection(state);
+  if (fileKey === null) {
+    return {};
+  }
+
+  const activeNote = selectActiveStoredReviewNote(state);
+  if (!activeNote) {
+    return { focus: { fileKey, hunkIndex } };
+  }
+
+  const activeThreadId = selectVisibleThreadRootId(state, activeNote.note.id);
+  return {
+    focus: { fileKey, hunkIndex, line: reviewNoteAnchorLine(activeNote.note) },
+    ...(activeThreadId ? { activeThreadId } : {}),
+  };
 }
 
 /** Editable reviewer note the keyboard acts on in the selected hunk. */

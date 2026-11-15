@@ -498,6 +498,29 @@ export function createPtyHarness() {
     return { dir, before, after };
   }
 
+  /** Build the spread hunk with one agent note on each of its two edits. */
+  function createSpreadHunkAgentFilePair() {
+    const pair = createSpreadHunkFilePair();
+    const agentContext = join(pair.dir, "agent.json");
+    writeText(
+      agentContext,
+      JSON.stringify({
+        version: 1,
+        files: [
+          {
+            path: "after.ts",
+            annotations: [
+              { newRange: [20, 21], summary: "FIRST SPREAD NOTE" },
+              { newRange: [27, 27], summary: "SECOND SPREAD NOTE" },
+            ],
+          },
+        ],
+      }),
+    );
+
+    return { ...pair, agentContext };
+  }
+
   function createAgentNavigationRepoFixture() {
     const alphaBeforeLines = createNumberedExportLines(1, 80).split("\n");
     const alphaAfterLines = [...alphaBeforeLines];
@@ -1459,6 +1482,7 @@ end
     createImageRepoFixture,
     createGapAnnotatedAgentFilePair,
     createSpreadHunkFilePair,
+    createSpreadHunkAgentFilePair,
     createBottomClampedRepoFixture,
     createCollapsedTopRepoFixture,
     createExpandableContextFilePair,

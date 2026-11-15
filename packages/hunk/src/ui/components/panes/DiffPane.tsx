@@ -310,6 +310,7 @@ export function DiffPane({
   selectedFileId,
   selectedHunkIndex,
   activeNoteId,
+  activeSidecarAnnotation = null,
   noteActionKeyLabels,
   cursorLine = "off",
   lineCursor = null,
@@ -396,6 +397,8 @@ export function DiffPane({
   selectedFileId?: string;
   selectedHunkIndex: number;
   activeNoteId?: string;
+  /** Sidecar annotation a comment-thread move focused; matched by reference, not id. */
+  activeSidecarAnnotation?: AgentAnnotation | null;
   noteActionKeyLabels?: { delete: string; edit: string; reply: string };
   cursorLine?: CursorLine;
   lineCursor?: LineCursor | null;
@@ -687,7 +690,9 @@ export function DiffPane({
                     ancestorHasNextSibling: metadata.ancestorHasNextSibling,
                   },
                 }
-              : {}),
+              : annotation === activeSidecarAnnotation
+                ? { active: true }
+                : {}),
             ...(actions ? { actions } : {}),
           }),
         ];
@@ -808,6 +813,7 @@ export function DiffPane({
     return next;
   }, [
     activeNoteId,
+    activeSidecarAnnotation,
     draftNote,
     draftNoteFocused,
     files,

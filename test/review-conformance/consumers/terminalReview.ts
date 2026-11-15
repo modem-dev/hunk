@@ -4,7 +4,8 @@
  * The controller submits relative moves through `applyReviewIntent` and reconciles its
  * rendered selection after document/filter updates. This adapter drives those same two
  * planning paths without mounting OpenTUI, so the shared corpus catches a terminal
- * lifecycle regression as well as a core-planner regression.
+ * lifecycle regression as well as a core-planner regression. Within-hunk moves carry the
+ * focus and thread facts the controller derives from its current line and sidecar files.
  */
 import type { ReviewAction } from "../../../packages/hunk/src/core/review/actions";
 import { projectReviewDocument } from "../../../packages/hunk/src/core/review/document";
@@ -17,7 +18,13 @@ import {
 } from "../../../packages/hunk/src/core/review/state";
 import type { ReviewStore } from "../../../packages/hunk/src/core/review/store";
 import { planTerminalSelectionReconciliation } from "../../../packages/hunk/src/ui/lib/reviewState";
-import { toAnnotationIndex, toConformanceSelection, toSemanticSelection } from "./intentPlanner";
+import {
+  toAnnotationIndex,
+  toConformanceLanding,
+  toConformanceSelection,
+  toMoveFacts,
+  toSemanticSelection,
+} from "./intentPlanner";
 import type { ReviewNavigationConsumer, ReviewNavigationFixture } from "../types";
 
 /** Apply the terminal's render-lifecycle reconciliation without requesting a reveal. */
@@ -56,7 +63,8 @@ export const terminalReviewNavigationConsumer: ReviewNavigationConsumer = {
   name: "terminal review",
   phase: "Phase 1 PR 3",
   project(fixture: ReviewNavigationFixture) {
-    const document = projectReviewDocument(fixture.build());
+    const files = fixture.build();
+    const document = projectReviewDocument(files);
     const annotations = toAnnotationIndex(fixture, document);
     const baseState: ReviewState = {
       ...createInitialReviewState(document),
@@ -77,7 +85,7 @@ export const terminalReviewNavigationConsumer: ReviewNavigationConsumer = {
         const outcome = applyReviewIntent(
           store,
           { type: "selection/move", scope: move.scope, delta: move.delta },
-          { annotations },
+          toMoveFacts(move, before, files, annotations),
         );
         if (!outcome) {
           return { to: null };
@@ -86,6 +94,7 @@ export const terminalReviewNavigationConsumer: ReviewNavigationConsumer = {
         return {
           to: toConformanceSelection(after.selection.fileKey, after.selection.hunkIndex, document),
           reveal: revealFromTransition(before, after),
+          ...toConformanceLanding(outcome.landing),
         };
       }),
       normalizedSelections: fixture.selections.map((input) => {

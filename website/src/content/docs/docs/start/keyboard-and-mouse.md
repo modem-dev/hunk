@@ -17,12 +17,16 @@ Press `?` at any time for Hunk's in-app shortcut reference. Menus and primary re
 | `[` / `]`                      | Previous / next hunk                                  |
 | `,` / `.`                      | Previous / next file                                  |
 | `{` / `}`                      | Previous / next annotated hunk                        |
+| `(` / `)`                      | Previous / next change block                          |
+| `<` / `>`                      | Previous / next comment thread                        |
 | `/`                            | Search diff content                                   |
 | `n` / `N`                      | Next / previous search match                          |
 | `Home` / `End`, `g` / `G`      | Start / end of review                                 |
 | `←` / `→`                      | Scroll unwrapped code; hold Shift for faster movement |
 
 Hunk navigation stays review-wide: hunk and file shortcuts move through the same multi-file stream shown in the main pane.
+
+`(` / `)` and `<` / `>` step at a finer grain than a hunk. A change block is one contiguous run of added or removed lines, so a hunk with two separate edits has two stops. A comment thread is one note and its replies, so two notes in the same hunk are two stops. Both cross hunk and file boundaries.
 
 `/` opens a `less`-style prompt on the status row. Enter jumps to the next hunk containing the text (case-insensitive until the query has an uppercase letter), `n` / `N` repeat in either direction and wrap, the status row reports `[i/n] path:line`, and every match is marked inside the diff with the landed line inverted. Reopening `/` shows the last query: Escape clears it, and submitting the emptied prompt ends the search.
 

@@ -6,11 +6,14 @@ import { sanitizeTerminalLine } from "../../lib/terminalText";
 import {
   reviewAnnotationAnchor,
   reviewAnnotationOverlapsHunk,
+  reviewNoteSource,
   type ReviewAnnotationTarget,
 } from "../../core/review/annotations";
 import type { ReviewHunkSpan } from "../../core/review/geometry";
 import type { ReviewRangeAnchorV1 } from "../../core/review/types";
 import { fileLabel } from "./files";
+
+export { reviewNoteSource };
 
 export interface VisibleAgentNote {
   id: string;
@@ -71,19 +74,6 @@ export function inlineNoteTitle(annotation: AgentAnnotation, noteIndex: number, 
   const author = sanitizeTerminalLine(annotation.author?.trim() ?? "");
   const label = source === "user" ? "Your note" : author ? `${author} note` : "Agent note";
   return noteCount > 1 ? `${label} ${noteIndex + 1}/${noteCount}` : label;
-}
-
-/** Resolve the user-facing source for one inline note annotation. */
-export function reviewNoteSource(annotation: AgentAnnotation): ReviewNoteSource {
-  if (annotation.source === "user") {
-    return "user";
-  }
-
-  if (annotation.source === "mcp" || annotation.source === "agent") {
-    return "agent";
-  }
-
-  return "ai";
 }
 
 /** Return the annotations relevant to the currently selected hunk. */
