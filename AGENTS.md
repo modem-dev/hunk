@@ -158,9 +158,10 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
   - `test/session-broker-node/` for real Node listener/adapter conformance.
   - `test/session-broker-runtime/` for shared Bun/Node broker fixtures.
   - `test/smoke/` for opt-in terminal transcript smoke coverage.
-- `bun run test` does not include review conformance, PTY, TTY smoke, or real-Node adapter
-  conformance under `test/session-broker-node/`. Run the dedicated command documented in
-  `test/README.md` when changing those areas.
+  - `test/web/` for Playwright browser tests of the daemon-served review page.
+- `bun run test` does not include review conformance, PTY, TTY smoke, browser (`test/web/`), or
+  real-Node adapter conformance under `test/session-broker-node/`. Run the dedicated command
+  documented in `test/README.md` when changing those areas.
 
 ## source formatting
 
@@ -219,6 +220,8 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
 - For interaction, layout, scrolling, navigation, windowing, or other terminal-native behavior: add or update PTY integration coverage in `test/pty/*-integration.test.ts` and run it with `bun run test:integration`.
 - For broker/runtime changes, run `bun run test:session-broker-node` in addition to the relevant
   Bun tests.
+- For the browser review page (`packages/hunk/src/web/`, its build, or the daemon routes that
+  serve it), run `bun run build:web && bun run test:web`.
 - For CLI, config, or pager work: make sure the relevant source invocation still works (`diff`, `show`, `patch`, or `pager`).
 - Preserve current interaction model unless the user asks to change it explicitly.
 

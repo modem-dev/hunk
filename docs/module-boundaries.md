@@ -39,6 +39,11 @@ Other workspaces are bounded units rather than one tier in that stack:
 - `packages/session-broker{,-core,-bun,-node}` form a runtime-neutral broker stack plus listener
   adapters. They do not import Hunk source internals.
 - `packages/term-video` owns terminal capture tooling and does not import Hunk source internals.
+- `packages/hunk/src/web` is the browser review client, bundled separately by
+  `scripts/build/build-web.ts` and served by the daemon as static assets. It reaches only
+  `core/review` and the browser-safe session modules (`web-client-stays-separate`, plus the exact
+  closure in `scripts/quality/source-boundaries.test.ts`), and nothing in the CLI imports it
+  (`cli-never-imports-web-client`).
 
 Current `core/` modules are `changeset/`, `documents/`, `feedback/`, `highlights/`, `history/`, `install/`, `patch/`, `process/`, `review/`,
 `run/`, `stml/`, `theme/`, `vcs/`, and `watch/`. Its root contains `bootstrap.ts`, `liveComments.ts`,
@@ -69,8 +74,8 @@ accidental reach-in fails `bun run deps:check` instead of quietly becoming API.
 Two supporting rules keep the interiors honest:
 
 - **`no-dead-modules`** flags any module under `packages/hunk/src/` that no entry point reaches
-  (`main.tsx`, `highlightWorkerEntry.ts`, the `opentui` and `extension-api` facades, and the
-  skill generator). It uses `reachable: false` rather than `orphan`, which only catches fully
+  (`main.tsx`, `highlightWorkerEntry.ts`, the `opentui` and `extension-api` facades, the
+  skill generator, and the browser client's `web/main.tsx`). It uses `reachable: false` rather than `orphan`, which only catches fully
   disconnected files and so misses dead code that still imports. A hit is deleted, or — when
   tests are its only genuine consumer — listed in the rule's `TEST_ONLY_MODULES` allowlist
   with the reason. That allowlist is **shrink-only**, like the baseline.

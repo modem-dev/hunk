@@ -18,6 +18,8 @@ import {
   resolveSessionBrokerConfig,
 } from "./brokerConfig";
 import { BrowserReviewServer } from "./browserReviewServer";
+import { ReviewPageServer } from "./reviewPageServer";
+import type { ReviewPageAssets } from "./reviewPageAssets";
 import { createHunkSessionBrokerState, type HunkSessionBrokerState } from "./state";
 import type {
   AppliedCommentBatchResult,
@@ -135,6 +137,8 @@ export interface ServeSessionBrokerDaemonOptions {
   idleTimeoutMs?: number;
   staleSessionTtlMs?: number;
   staleSessionSweepIntervalMs?: number;
+  /** Load the browser review page build; defaults to the build this distribution carries. */
+  loadReviewPageAssets?: () => Promise<ReviewPageAssets | undefined>;
 }
 
 export type RunningSessionBrokerDaemon = RunningBunSessionBrokerDaemon;
@@ -725,6 +729,9 @@ export async function serveSessionBrokerDaemon(
         payloadTooLarge,
       }),
   });
+  // The page and its assets are static and carry no review data; everything the page shows
+  // comes from the capability-gated review API above.
+  const reviewPage = new ReviewPageServer({ loadAssets: options.loadReviewPageAssets });
 
   const server = serveSessionBrokerDaemonWithBun({
     daemon,
@@ -793,6 +800,11 @@ export async function serveSessionBrokerDaemon(
       const review = await browserReview.handle(request);
       if (review) {
         return review;
+      }
+
+      const page = await reviewPage.handle(request);
+      if (page) {
+        return page;
       }
 
       if (url.pathname === LEGACY_MCP_PATH) {
