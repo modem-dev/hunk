@@ -17,7 +17,12 @@ import {
   reviewLineCoveredByHunks,
   reviewRangeTargetCoverageIssue,
 } from "./geometry";
-import { reviewNoteWithinSizeLimit } from "./noteSize";
+import {
+  MAX_REVIEW_NOTES,
+  MAX_REVIEW_NOTES_TOTAL_BYTES,
+  reviewNoteCapacityIssue,
+  reviewNoteWithinSizeLimit,
+} from "./noteSize";
 import {
   EMPTY_REVIEW_ANNOTATION_INDEX,
   planReviewSelectionMove,
@@ -84,7 +89,18 @@ export interface ReviewIntentFacts {
    * full set.
    */
   annotations?: ReviewAnnotationIndex;
+  /**
+   * Where a directly composed reviewer note came from, recorded as its `originalSource`.
+   *
+   * Hunk is single-user and builds no identity, but a note written in a browser tab is still
+   * labelled truthfully: `author` is a free label any client may set, this is not. Absent for
+   * the terminal's own notes, which keep `originalSource: "user"`.
+   */
+  noteOriginalSource?: typeof REVIEW_BROWSER_NOTE_ORIGINAL_SOURCE;
 }
+
+/** The `originalSource` a reviewer note composed through a review link carries. */
+export const REVIEW_BROWSER_NOTE_ORIGINAL_SOURCE = "browser" as const;
 
 export type ReviewIntent =
   /** Select one hunk outright, revealing it the way the caller asks. */
@@ -314,6 +330,7 @@ export type ReviewIntentPlanningErrorCode =
   | "invalid-note-parent"
   | "blank-note"
   | "note-too-large"
+  | "too-many-notes"
   | "missing-fact"
   | "invalid-request";
 
@@ -671,6 +688,32 @@ export function requireReviewReplyParent(
   return parent;
 }
 
+/**
+ * Refuse a note change that would take the review past its stored-note bounds.
+ *
+ * Every path that stores a note calls this — draft saves and edits, direct reviewer notes and
+ * edits, and agent live comments single or batched (`ReviewSessionHost`) — so a review cannot
+ * grow past what its snapshots can carry.
+ */
+export function requireReviewNoteCapacity(
+  state: Pick<ReviewState, "liveNotes" | "userNotes">,
+  change: Parameters<typeof reviewNoteCapacityIssue>[1],
+) {
+  const issue = reviewNoteCapacityIssue(state, change);
+  if (issue === "count") {
+    throw new ReviewIntentPlanningError(
+      "too-many-notes",
+      `The review already holds the most notes it can carry (${MAX_REVIEW_NOTES}).`,
+    );
+  }
+  if (issue === "bytes") {
+    throw new ReviewIntentPlanningError(
+      "too-many-notes",
+      `The review's notes would exceed the ${MAX_REVIEW_NOTES_TOTAL_BYTES}-byte total it can carry.`,
+    );
+  }
+}
+
 /** Plan persistence of an active create/reply draft as one user note. */
 function planUserNoteCreation(state: ReviewState, facts: ReviewIntentFacts): ReviewIntentPlan {
   const draft = state.draftNote;
@@ -727,6 +770,7 @@ function planUserNoteCreation(state: ReviewState, facts: ReviewIntentFacts): Rev
       "The review note exceeds the shared note size limit.",
     );
   }
+  requireReviewNoteCapacity(state, { add: [note.note] });
   return {
     actions: [{ type: "draft/save", note }],
     outcome: { type: "notes/created", note },
@@ -782,6 +826,7 @@ function planUserNoteUpdate(
       "The review note exceeds the shared note size limit.",
     );
   }
+  requireReviewNoteCapacity(state, { replace: { before: current.note, after: note.note } });
   return {
     actions: [{ type: "draft/save-edit", note }],
     outcome: { type: "notes/updated", note },
@@ -855,7 +900,7 @@ function planDirectUserNote(
       id: noteId,
       ...(parent ? { parentId: parent.note.id } : {}),
       source: "user",
-      originalSource: "user",
+      originalSource: facts.noteOriginalSource ?? "user",
       fileKey: file.key,
       anchor,
       summary: intent.body.trim(),
@@ -871,6 +916,7 @@ function planDirectUserNote(
       "The review note exceeds the shared note size limit.",
     );
   }
+  requireReviewNoteCapacity(state, { add: [note.note] });
   return {
     actions: [{ type: "notes/add-user", note }],
     outcome: { type: "notes/created", note },
@@ -916,6 +962,7 @@ function planDirectUserNoteEdit(
       "The review note exceeds the shared note size limit.",
     );
   }
+  requireReviewNoteCapacity(state, { replace: { before: current.note, after: note.note } });
   return {
     actions: [{ type: "notes/replace-user", note }],
     outcome: { type: "notes/updated", note },

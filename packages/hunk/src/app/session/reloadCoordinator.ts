@@ -91,6 +91,12 @@ export interface ReviewReloadCoordinatorOptions {
   retainedLaunchOptions?: (launch: AppBootstrap) => CommonOptions;
   /** Mount one published replacement; resolve once its lifecycle has run. */
   adopt: (adoption: ReviewReloadAdoption) => Promise<void> | void;
+  /**
+   * Show why a review client's refresh failed, where this session reports its own problems
+   * (the terminal's notice line, a headless run's stderr). The detail can carry VCS output and
+   * paths, so it stays in this process; the client is told only `refresh-failed`.
+   */
+  onRefreshFailed?: (detail: string) => void;
 }
 
 /** Build the stable refusal returned once quit becomes terminal for reload coordination. */
@@ -246,10 +252,11 @@ export class ReviewReloadCoordinator {
           sourcePath: request.sourcePath,
         });
       } catch (error) {
+        this.options.onRefreshFailed?.(describeExtensionReloadFailure(error));
         return {
           ok: false,
           code: "refresh-failed",
-          message: describeExtensionReloadFailure(error),
+          message: "The review could not be reloaded from its input.",
         };
       }
       const position = this.producer.getPublicationAddress();

@@ -35,6 +35,7 @@ function createTestDiffInput(): { input: CliInput; right: string; dir: string } 
 /** Create a coordinator over a loaded diff whose adoptions the test controls. */
 async function createTestCoordinator(
   adopt: (adoption: ReviewReloadAdoption) => Promise<void> | void = () => {},
+  onRefreshFailed?: (detail: string) => void,
 ) {
   const { input, right, dir } = createTestDiffInput();
   const bootstrap = withReloadVcsCatalog(await loadAppBootstrap(input));
@@ -44,6 +45,7 @@ async function createTestCoordinator(
     extensionLifecycleEnabled: false,
     extensionOwnership: "borrowed",
     adopt,
+    ...(onRefreshFailed ? { onRefreshFailed } : {}),
   });
   return { coordinator, input, right, dir };
 }
@@ -244,5 +246,26 @@ describe("ReviewReloadCoordinator", () => {
     });
     expect(await coordinator.refreshCurrent()).toMatchObject({ ok: false, code: "refresh-failed" });
     expect(adoptions).toBe(1);
+  });
+
+  // Finding: a failed refresh answered the browser with the reload's own error text, which can
+  // carry VCS stderr and absolute paths. The detail now stays in the session's notice path.
+  test("keeps a failed refresh's detail in the session and answers with a fixed message", async () => {
+    const details: string[] = [];
+    const { coordinator, input } = await createTestCoordinator(undefined, (detail) =>
+      details.push(detail),
+    );
+    const gone = join(input.kind === "diff" ? input.left : "", "..", "gone.ts");
+    coordinator.registerRefreshRequest({ nextInput: { ...input, right: gone } as CliInput });
+
+    const result = await coordinator.refreshCurrent();
+
+    expect(result).toEqual({
+      ok: false,
+      code: "refresh-failed",
+      message: "The review could not be reloaded from its input.",
+    });
+    expect(details).toHaveLength(1);
+    expect(details[0]).toStartWith("Failed to reload the current review:");
   });
 });

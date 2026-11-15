@@ -499,6 +499,21 @@ path suffixes, expansion retention, git-status badges).
   64-character digest pattern. Naming `isActiveStoredReviewNote` beside
   `isRenderableStoredReviewNote` and commenting `parseReviewState` are browser-tier work and
   stay open with the rest of D5's browser sites.
+  _Repaid (hardening, stored-note bounds)_: the per-note bound had no aggregate beside it, so
+  about seventeen maximum-size notes pushed the shared state past `MAX_REVIEW_SHARED_STATE_BYTES`
+  (every `/state` read then failed) and about ten thousand small ones passed
+  `MAX_SNAPSHOT_REVIEW_NOTES` (the daemon then refused every snapshot). `core/review/noteSize.ts`
+  now declares `MAX_REVIEW_NOTES` and `MAX_REVIEW_NOTES_TOTAL_BYTES` beside the per-note bound,
+  and `requireReviewNoteCapacity` in `core/review/intents.ts` refuses with `too-many-notes`
+  on every path that stores a note: draft saves and edits, direct notes and edits, replies,
+  and agent live comments single or batched (all or nothing). Sidecar annotations are launch
+  input and never fail a review; the snapshot and shared-state projections carry at most
+  `MAX_PROJECTED_SIDECAR_NOTES` / `MAX_PROJECTED_SIDECAR_NOTE_BYTES` of them and the shared
+  state reports the rest as `omittedSidecarNotes`. The bounds cannot drift from the snapshot
+  bounds: `scripts/quality/review-vocabulary.test.ts` asserts them against the broker's
+  snapshot limits, the shared-state bound, and the websocket frame. Adversarial fixture
+  `direct-note-past-the-stored-note-bound` runs against the producer action handler and the
+  HTTP surface. The producer keeps only the size of a shared state it cannot serve.
 
 ## E. Presentation helpers
 
@@ -668,6 +683,22 @@ implementation does.
   surface. Composers are per-client, so the browser saves notes through direct intents instead of
   the shared draft slot. Note authorship defaults from the actor. In a headless session the
   selection agents read is the browser's reported position. The producer policy lands in M2.
+  _Hardened (actor kind at the capability edge)_: the producer read the actor's self-declared
+  `kind`, so a caller holding only the review link could claim `agent` (its selection moves
+  every surface and records the agent reveal) or `terminal` (no selection policy at all). The
+  HTTP surface now refuses any kind but `browser` with `forbidden-actor` (403) before the action
+  reaches the session (`REVIEW_CAPABILITY_ACTOR_KIND` in `reviewHttpProtocol.ts`); it refuses
+  rather than rewriting, because an honest client never sends another kind and a silent rewrite
+  would hide the attempt. Agent and terminal kinds keep arriving through the authenticated
+  session API. Adversarial fixture `capability-holder-claiming-another-kind` (fixture steps now
+  name their channel) runs against the producer action handler and the HTTP surface.
+  _Hardened (note provenance)_: `author` stays a free label — Hunk is single-user and builds no
+  identity — so a browser could title its note as an agent's. A reviewer note composed through
+  a review link now records `originalSource: "browser"` (`REVIEW_BROWSER_NOTE_ORIGINAL_SOURCE`,
+  supplied by the producer's action handler as a caller fact), which the shared state already
+  carries, so a surface can label it truthfully without a new field or wire version. The
+  terminal's own notes keep `originalSource: "user"`, and the terminal draws remote bodies and
+  authors through the same `sanitizeTerminalLine` path as its own.
 - **G3. Semantic addressing / permalinks.** The prototype's URL fragment carries only the
   capability token — there is no grammar for addressing a file/hunk/line/note. Three consumers
   will need one: browser deep links and back/forward history, a terminal "copy link" command,

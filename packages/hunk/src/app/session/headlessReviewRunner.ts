@@ -231,6 +231,8 @@ export async function runHeadlessReview(
     extensionSession,
     extensionLifecycleEnabled: true,
     extensionOwnership: "owned",
+    // A browser's failed refresh is told `refresh-failed`; the detail is this process's to show.
+    onRefreshFailed: (detail) => stderr(noticeLine(detail)),
     adopt: (adoption) => {
       // A soft reload keeps notes, selection, and filter; a reset starts a fresh review state,
       // as a terminal remount does.

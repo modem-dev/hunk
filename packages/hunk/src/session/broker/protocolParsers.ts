@@ -180,6 +180,7 @@ const failure = z.strictObject({
     "invalid-note-parent",
     "blank-note",
     "note-too-large",
+    "too-many-notes",
     "missing-fact",
     "selection-is-local",
   ]),

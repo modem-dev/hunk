@@ -24,7 +24,18 @@
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
-import { MAX_WS_MESSAGE_BYTES } from "@hunk/session-broker-core";
+import {
+  MAX_SNAPSHOT_LIVE_COMMENTS,
+  MAX_SNAPSHOT_REVIEW_NOTES,
+  MAX_WS_MESSAGE_BYTES,
+} from "@hunk/session-broker-core";
+import {
+  MAX_PROJECTED_SIDECAR_NOTE_BYTES,
+  MAX_PROJECTED_SIDECAR_NOTES,
+  MAX_REVIEW_NOTE_BYTES,
+  MAX_REVIEW_NOTES,
+  MAX_REVIEW_NOTES_TOTAL_BYTES,
+} from "../../packages/hunk/src/core/review/noteSize";
 import { REVIEW_INTENT_TYPES } from "../../packages/hunk/src/core/review/intents";
 import { REVIEW_RESOURCE_CHUNK_BYTES } from "../../packages/hunk/src/core/review/resources";
 import {
@@ -32,6 +43,7 @@ import {
   MAX_REVIEW_EVENT_PAYLOAD_BYTES,
   REVIEW_EVENT_CHUNK_BYTES,
 } from "../../packages/hunk/src/session/reviewEventProtocol";
+import { MAX_REVIEW_SHARED_STATE_BYTES } from "../../packages/hunk/src/session/reviewSharedState";
 import {
   HUNK_REVIEW_ACTION_TYPES,
   MAX_HUNK_REVIEW_ENVELOPE_BYTES,
@@ -136,6 +148,25 @@ describe("review constant derivation", () => {
   // session transport carries must still fit a complete review envelope.
   test("the session transport can carry a complete review envelope", () => {
     expect(MAX_WS_MESSAGE_BYTES).toBeGreaterThanOrEqual(MAX_HUNK_REVIEW_ENVELOPE_BYTES);
+  });
+
+  // D5: the stored-note bounds exist so every snapshot a review can produce is one its readers
+  // accept. A review that outgrew them made the daemon refuse every session snapshot (note
+  // count) or every `/state` read (bytes), so the three are asserted together here.
+  test("the review note bounds fit every snapshot that carries notes", () => {
+    expect(MAX_REVIEW_NOTES + MAX_PROJECTED_SIDECAR_NOTES).toBeLessThanOrEqual(
+      MAX_SNAPSHOT_REVIEW_NOTES,
+    );
+    expect(MAX_REVIEW_NOTES).toBeLessThanOrEqual(MAX_SNAPSHOT_LIVE_COMMENTS);
+    // Notes may fill at most three quarters of the shared state; files and framing get the rest.
+    expect(MAX_REVIEW_NOTES_TOTAL_BYTES + MAX_PROJECTED_SIDECAR_NOTE_BYTES).toBeLessThanOrEqual(
+      (MAX_REVIEW_SHARED_STATE_BYTES * 3) / 4,
+    );
+    // The session snapshot repeats each stored note's text in two summary lists.
+    expect(2 * MAX_REVIEW_NOTES_TOTAL_BYTES + MAX_PROJECTED_SIDECAR_NOTE_BYTES).toBeLessThanOrEqual(
+      (MAX_WS_MESSAGE_BYTES * 3) / 4,
+    );
+    expect(MAX_REVIEW_NOTES_TOTAL_BYTES).toBeGreaterThanOrEqual(MAX_REVIEW_NOTE_BYTES);
   });
 
   // C4: the event stream's bounds are the protocol's and the resource path's, arithmetic

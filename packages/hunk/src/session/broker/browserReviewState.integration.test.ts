@@ -9,7 +9,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { reviewProcessCapability } from "../../app/review/capability";
 import { ReviewSessionHost } from "../../app/review/reviewSessionHost";
-import { createTestDiffFile, lines } from "../../../../../test/helpers/diff-helpers";
+import {
+  createTestAgentFileContext,
+  createTestDiffFile,
+  lines,
+} from "../../../../../test/helpers/diff-helpers";
 import { connectReviewSession } from "../../../../../test/helpers/review-session-harness";
 import {
   HUNK_REVIEW_CAPABILITY_HEADER,
@@ -18,7 +22,7 @@ import {
   type HunkReviewStateBodyV1,
 } from "../reviewHttpProtocol";
 import { HUNK_REVIEW_PROTOCOL_VERSION } from "../reviewProtocol";
-import { parseReviewSharedState } from "../reviewSharedState";
+import { MAX_REVIEW_SHARED_STATE_BYTES, parseReviewSharedState } from "../reviewSharedState";
 import { BrowserReviewServer } from "./browserReviewServer";
 
 const SESSION_ID = "session-state-1";
@@ -62,6 +66,19 @@ function start() {
   });
   running.push({ review, server });
   return { host, harness, origin: `http://127.0.0.1:${server.port}` };
+}
+
+/** Serve one already-connected harness on a real listener. */
+function serveTestHarness(harness: ReturnType<typeof connectReviewSession>) {
+  const review = new BrowserReviewServer(harness.state);
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    idleTimeout: 0,
+    fetch: async (request) => (await review.handle(request)) ?? new Response(null, { status: 404 }),
+  });
+  running.push({ review, server });
+  return { origin: `http://127.0.0.1:${server.port}` };
 }
 
 /** Request one route with the session's capability, unless told not to. */
@@ -132,19 +149,73 @@ describe("browser review surface: shared state", () => {
     expect(reads.length - before.length).toBe(1);
   });
 
-  test("refuses a snapshot over the envelope bound with state-too-large", async () => {
+  // Finding: /state was single-flighted but not cached, so a caller re-reading one position
+  // paid a whole assembly from the session every time.
+  test("answers repeated reads of one position from the daemon without asking the session", async () => {
     const { host, harness, origin } = start();
-    // A 4 KiB note body, a thousand-odd times, is past the 4 MiB envelope bound.
-    for (let index = 0; index < 1100; index += 1) {
-      host.addLiveComment(
-        { filePath: "src/alpha.ts", hunkIndex: 0, summary: "x".repeat(4000) },
-        `mcp:big-${index}`,
-      );
+    const reads = () =>
+      harness.sent.filter((message) => message.command === "read_review_resource").length;
+    expect((await request(origin, STATE_ROUTE)).status).toBe(200);
+    const afterFirst = reads();
+    for (let index = 0; index < 5; index += 1) {
+      expect((await request(origin, STATE_ROUTE)).status).toBe(200);
     }
+    expect(reads()).toBe(afterFirst);
+
+    // A new shared revision is read again.
+    host.setFilter("beta");
     harness.publishSnapshot();
+    const body = (await (await request(origin, STATE_ROUTE)).json()) as HunkReviewStateBodyV1;
+    expect(body.state.filter).toBe("beta");
+    expect(reads()).toBeGreaterThan(afterFirst);
+  });
+
+  test("refuses a snapshot over the envelope bound with state-too-large", async () => {
+    // Notes can no longer overflow the snapshot (see the stored-note bounds), so an oversized
+    // launch-time file summary stands in: it is the remaining unbounded shared-state field.
+    const files = [
+      createTestDiffFile({
+        after: lines("const a = 2;"),
+        before: lines("const a = 1;"),
+        id: "huge",
+        path: "src/huge.ts",
+        agent: createTestAgentFileContext("src/huge.ts", {
+          summary: "x".repeat(MAX_REVIEW_SHARED_STATE_BYTES),
+          annotations: [],
+        }),
+      }),
+    ];
+    const host = new ReviewSessionHost({ files, sourceLabel: "/repo" });
+    const harness = connectReviewSession(files, { sessionId: SESSION_ID, host });
+    harness.register();
+    harness.publishSnapshot();
+    const { origin } = serveTestHarness(harness);
+
     const response = await request(origin, STATE_ROUTE);
     expect(response.status).toBe(413);
     expect(await response.json()).toMatchObject({ code: "state-too-large" });
+  });
+
+  test("refuses the note that would overflow the snapshot instead of breaking every read", async () => {
+    const { host, harness, origin } = start();
+    // Before the stored-note bounds this loop succeeded and every later /state read failed.
+    let refusedAt = -1;
+    for (let index = 0; index < 1100; index += 1) {
+      try {
+        host.addLiveComment(
+          { filePath: "src/alpha.ts", hunkIndex: 0, summary: "x".repeat(4000) },
+          `mcp:big-${index}`,
+        );
+      } catch (error) {
+        expect(error).toMatchObject({ code: "too-many-notes" });
+        refusedAt = index;
+        break;
+      }
+    }
+    expect(refusedAt).toBeGreaterThan(0);
+    harness.publishSnapshot();
+    const response = await request(origin, STATE_ROUTE);
+    expect(response.status).toBe(200);
   });
 
   test("announces a new shared revision for content, not for selection", async () => {
