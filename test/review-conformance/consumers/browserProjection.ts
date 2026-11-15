@@ -6,13 +6,16 @@
  * fixture's expanded gap, the rows the Pierre metadata now contains with their line labels —
  * rather than by calling the shared primitives again. A browser projection that re-derived
  * a gap range or folded an expansion in at the wrong lines disagrees here.
+ *
+ * A whole-hunk note's landing line is read from the page's note placement: an agent comment
+ * addressed to each hunk is added through the real `ReviewSessionHost`, and the page's
+ * `planReviewFileNotes` says which drawn line its card hangs beside.
  */
+import { ReviewSessionHost } from "../../../packages/hunk/src/app/review/reviewSessionHost";
 import { projectReviewDocument } from "../../../packages/hunk/src/core/review/document";
 import { reviewExpansionSide } from "../../../packages/hunk/src/core/review/expansion";
-import {
-  reviewDefaultHunkLineTarget,
-  reviewHunkRanges,
-} from "../../../packages/hunk/src/core/review/geometry";
+import { reviewHunkRanges } from "../../../packages/hunk/src/core/review/geometry";
+import { planReviewFileNotes } from "../../../packages/hunk/src/web/notes/noteProjection";
 import type { ReviewFileV1 } from "../../../packages/hunk/src/core/review/types";
 import { planReviewFileRender } from "../../../packages/hunk/src/web/stream/fileProjection";
 import type {
@@ -58,11 +61,38 @@ function expandedRowsOf(
   }));
 }
 
+/**
+ * Where the page hangs a note addressed to each whole hunk, per file.
+ *
+ * One agent comment per hunk goes through the host exactly as `hunk session comment add
+ * --hunk` would, and each file's cards are planned over its drawn hunks.
+ */
+function wholeHunkNoteLandings(fixture: ReviewGeometryFixture) {
+  const files = fixture.build();
+  const host = new ReviewSessionHost({ files, sourceLabel: "/conformance", now: () => 1 });
+  host.setShowAgentNotes(true);
+  return host.getDocument().files.map((file, fileIndex) => {
+    const diffFile = files[fileIndex]!;
+    return file.hunks.map((_hunk, hunkIndex) => {
+      const commentId = `conformance:${fileIndex}:${hunkIndex}`;
+      host.addLiveComment({ filePath: diffFile.path, hunkIndex, summary: "whole hunk" }, commentId);
+      const state = host.getSnapshot();
+      const group = planReviewFileNotes({
+        file: { key: file.key, hunks: file.hunks },
+        state,
+        sidecar: [],
+      }).find((candidate) => candidate.cards.some((card) => card.id === commentId));
+      return group ? { side: group.side, line: group.line } : { side: "new" as const, line: 0 };
+    });
+  });
+}
+
 export const browserProjectionConsumer: ReviewGeometryConsumer = {
   name: "browser file projection",
   phase: "M4",
   project(fixture: ReviewGeometryFixture) {
     const document = projectReviewDocument(fixture.build(), { sourceLabel: "/conformance" });
+    const landings = wholeHunkNoteLandings(fixture);
     return {
       files: document.files.map((file, fileIndex) => {
         const expansion =
@@ -90,7 +120,7 @@ export const browserProjectionConsumer: ReviewGeometryConsumer = {
               newRange: [...ranges.newRange] as [number, number],
             };
           }),
-          defaultNoteTargets: file.hunks.map((hunk) => reviewDefaultHunkLineTarget(hunk)),
+          defaultNoteTargets: landings[fileIndex] ?? [],
           ...(plan.emptyReason ? { emptyDiffReason: plan.emptyReason } : {}),
           ...(expansion ? { expandedRows: expandedRowsOf(file, plan, expansion.gapId) } : {}),
         };

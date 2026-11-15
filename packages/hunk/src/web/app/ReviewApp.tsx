@@ -14,6 +14,16 @@
  * gap toggle lower through `lowerAppCommandToReviewIntent` and apply to the local store, so
  * `]` here and `]` in the terminal plan the same move; scrolling, layout, and theme are this
  * page's own.
+ *
+ * The session's shared state (`../mirror/sharedStateMirror.ts`) supplies what the page shows
+ * beyond files: notes (adopted into the store by the session wiring), sidecar annotations,
+ * agent marks, the shared filter, and the presentation defaults — title, theme, view options,
+ * and the resolved keymap. This browser's own choices of theme and view options win over the
+ * session's defaults and persist locally. An agent's reveal request (a token that only grows)
+ * selects and reveals its target here; it is the one thing outside the page that moves it.
+ * When the reader's scroll settles, the page reports where it is with a debounced
+ * `selection/anchor` action, which a headless session turns into the focus `hunk session
+ * context` reports; no other selection action is ever sent.
  */
 import {
   useCallback,
@@ -26,11 +36,16 @@ import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { selectActiveRevealNoteId } from "../../core/review/selectors";
+import { reviewFileMatchesFilter } from "../../core/review/selectors";
 import { lowerAppCommandToReviewIntent } from "../../core/run/commandCatalog";
 import { formatKeyChord } from "../../core/run/keyChordLabels";
 import { reviewErrorMessage } from "../../session/reviewErrorCatalog";
+import { HUNK_REVIEW_PROTOCOL_VERSION } from "../../session/reviewProtocol";
+import type { ReviewAgentRevealV1, ReviewThemeDefaultsV1 } from "../../session/reviewSharedState";
+import { countVisibleNotesByFile } from "../notes/noteProjection";
 import type { ReviewFileIndexEntry } from "../mirror/fileIndex";
-import { defaultWebKeymap, webCommandChords } from "../commands/keyboard";
+import { defaultWebKeymap, webCommandChords, type WebKeymap } from "../commands/keyboard";
 import { useWebKeyboard } from "../commands/useWebKeyboard";
 import {
   buildWebCommands,
@@ -41,23 +56,32 @@ import {
 import { reviewFailureMessage, type ReviewSession } from "../session/reviewSession";
 import { FileSidebar } from "../sidebar/FileSidebar";
 import { isLocalReviewIntent } from "../store/clientReviewStore";
-import { ReviewStream, type ReviewStreamController } from "../stream/ReviewStream";
+import {
+  ReviewStream,
+  type ReviewRevealPoint,
+  type ReviewStreamController,
+} from "../stream/ReviewStream";
 import {
   applyWebTheme,
+  clearStoredThemeId,
   loadWebThemeIndex,
   readStoredThemeId,
-  resolveWebTheme,
+  resolveSessionWebTheme,
+  sessionCustomWebTheme,
   storeThemeId,
   type WebThemeIndexV1,
 } from "../theme/themeIndex";
 import {
   clampSidebarWidth,
   defaultSidebarOpen,
-  readWebViewPreferences,
+  readWebViewOverrides,
   resolveWebLayout,
-  storeWebViewPreferences,
+  resolveWebViewPreferences,
+  storeWebViewOverrides,
+  type WebViewOverrides,
   type WebViewPreferences,
 } from "../view/viewPreferences";
+import type { ThemeMenuOption } from "./ThemeMenu";
 import { Toolbar } from "./Toolbar";
 
 /** Width of one monospace column on this page, measured once the fonts are in place. */
@@ -89,8 +113,14 @@ function useElementWidth<T extends HTMLElement>() {
   return [ref, width] as const;
 }
 
-/** The theme index, the active theme, and a setter that remembers the choice. */
-function useWebTheme() {
+/** The theme-menu option that follows the session's theme instead of a stored choice. */
+const SESSION_THEME_OPTION_ID = "hunk:session-theme";
+
+/**
+ * The theme index, the active theme, the menu's options, and a setter that remembers the
+ * choice. This browser's stored choice wins; without one, the session's theme applies.
+ */
+function useWebTheme(sessionTheme: ReviewThemeDefaultsV1 | undefined) {
   const [index, setIndex] = useState<WebThemeIndexV1 | undefined>(undefined);
   const [themeId, setThemeId] = useState<string | undefined>(() => readStoredThemeId());
   useEffect(() => {
@@ -99,16 +129,57 @@ function useWebTheme() {
   const prefersDark =
     typeof window.matchMedia === "function" &&
     window.matchMedia("(prefers-color-scheme: dark)").matches;
-  const theme = index ? resolveWebTheme(index, themeId, prefersDark) : undefined;
+  const theme = index
+    ? resolveSessionWebTheme(index, themeId, sessionTheme, prefersDark)
+    : undefined;
   useLayoutEffect(() => {
     if (theme) applyWebTheme(document.documentElement, theme);
   }, [theme]);
   const choose = useCallback((id: string) => {
+    if (id === SESSION_THEME_OPTION_ID) {
+      setThemeId(undefined);
+      clearStoredThemeId();
+      return;
+    }
     setThemeId(id);
     storeThemeId(id);
   }, []);
-  return { themes: index?.themes ?? [], theme, choose };
+  const options = useMemo((): ThemeMenuOption[] => {
+    const builtIn = index?.themes ?? [];
+    if (!sessionTheme) return builtIn;
+    const custom = sessionTheme.kind === "custom" ? sessionCustomWebTheme(sessionTheme) : undefined;
+    const sessionLabel =
+      custom?.label ?? builtIn.find((candidate) => candidate.id === sessionTheme.id)?.label;
+    return [
+      {
+        id: SESSION_THEME_OPTION_ID,
+        label: `Use session theme${sessionLabel ? ` (${sessionLabel})` : ""}`,
+        appearance: sessionTheme.appearance,
+      },
+      ...(custom ? [custom] : []),
+      ...builtIn,
+    ];
+  }, [index, sessionTheme]);
+  const selectedId =
+    themeId !== undefined && options.some((option) => option.id === themeId)
+      ? themeId
+      : sessionTheme
+        ? SESSION_THEME_OPTION_ID
+        : theme?.id;
+  return { options, selectedId, theme, choose };
 }
+
+const NO_HIGHLIGHTS = {};
+
+/** A per-tab client identity for actions; never stored, so each tab is its own actor. */
+function randomClientId() {
+  const bytes = new Uint8Array(12);
+  crypto.getRandomValues(bytes);
+  return `browser-${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+}
+
+/** How long the viewport must stay put before the page reports its focus to the session. */
+const FOCUS_REPORT_DEBOUNCE_MS = 400;
 
 /** The page for one running session. */
 export function ReviewApp({ session }: { session: ReviewSession }) {
@@ -118,15 +189,27 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
     session.review.store.subscribe,
     session.review.store.getSnapshot,
   );
-  const { themes, theme, choose } = useWebTheme();
-  const [preferences, setPreferences] = useState<WebViewPreferences>(() =>
-    readWebViewPreferences(),
+  const sharedSnapshot = useSyncExternalStore(session.shared.subscribe, session.shared.getSnapshot);
+  const sharedState = sharedSnapshot.body?.state;
+  const presentation = sharedState?.presentation;
+  // Notes and marks belong to the document they were resolved against.
+  const shownShared =
+    sharedState && sharedState.generation === mirror.address?.generation ? sharedState : undefined;
+  const { options: themeOptions, selectedId, theme, choose } = useWebTheme(presentation?.theme);
+  const [overrides, setOverrides] = useState<WebViewOverrides>(() => readWebViewOverrides());
+  const preferences: WebViewPreferences = useMemo(
+    () => resolveWebViewPreferences(overrides, presentation?.view),
+    [overrides, presentation?.view],
   );
   const columnWidth = useColumnWidth();
   const [themeMenuOpen, setThemeMenuOpen] = useState(false);
   const streamController = useRef<ReviewStreamController | null>(null);
-  // The catalog's defaults until the state route delivers the host's resolved keymap.
-  const keymap = useMemo(() => defaultWebKeymap(), []);
+  // The host's resolved keymap (`[keybindings]` folded in) once the shared state arrives; the
+  // catalog's defaults until then.
+  const keymap: WebKeymap = useMemo(
+    () => (presentation ? new Map(Object.entries(presentation.keymap)) : defaultWebKeymap()),
+    [presentation],
+  );
   const keyHint = useCallback(
     (commandId: WebImplementedCommandId) => {
       const chords = webCommandChords(keymap, commandId);
@@ -136,10 +219,11 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
   );
   const [mainRef, mainWidth] = useElementWidth<HTMLDivElement>();
 
+  // A change made here becomes this browser's override of that one option.
   const updatePreferences = useCallback((next: Partial<WebViewPreferences>) => {
-    setPreferences((current) => {
+    setOverrides((current) => {
       const merged = { ...current, ...next };
-      storeWebViewPreferences(merged);
+      storeWebViewOverrides(merged);
       return merged;
     });
   }, []);
@@ -148,9 +232,35 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
   const streamWidth = Math.max(0, mainWidth - (sidebarOpen ? preferences.sidebarWidth : 0));
   const layout = resolveWebLayout(preferences.layout, streamWidth, columnWidth);
 
+  // The shared filter decides the visible stream, as it does in the terminal; the planner
+  // reads the same filter from the store.
+  const filter = shownShared?.filter ?? "";
+  const visibleSlots = useMemo(
+    () =>
+      filter
+        ? mirror.slots.filter((slot) => !slot.index || reviewFileMatchesFilter(slot.index, filter))
+        : mirror.slots,
+    [mirror.slots, filter],
+  );
   const entries = useMemo(
-    () => mirror.slots.flatMap((slot): ReviewFileIndexEntry[] => (slot.index ? [slot.index] : [])),
-    [mirror.slots],
+    () => visibleSlots.flatMap((slot): ReviewFileIndexEntry[] => (slot.index ? [slot.index] : [])),
+    [visibleSlots],
+  );
+  const sidecarNotes = useMemo(
+    () => shownShared?.notes.filter((entry) => entry.origin === "sidecar") ?? [],
+    [shownShared],
+  );
+  const noteCounts = useMemo(
+    () =>
+      countVisibleNotesByFile(
+        {
+          liveNotes: review.liveNotes,
+          userNotes: review.userNotes,
+          showAgentNotes: review.showAgentNotes,
+        },
+        sidecarNotes,
+      ),
+    [review.liveNotes, review.userNotes, review.showAgentNotes, sidecarNotes],
   );
   const totals = useMemo(
     () =>
@@ -176,16 +286,85 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
     },
     [session],
   );
+  // Report where the reader settled, so a headless session's `hunk session context` can say
+  // where the reader is. Debounced; a failure is dropped, since the next settle reports again.
+  const clientId = useMemo(() => randomClientId(), []);
+  const focusTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(focusTimer.current), []);
+  const reportFocus = useCallback(
+    (fileKey: string, hunkIndex: number) => {
+      clearTimeout(focusTimer.current);
+      focusTimer.current = setTimeout(() => {
+        // While a newer generation loads, the shown one is already out of date and the
+        // session would refuse the report; the next settle after the swap reports instead.
+        const shown = session.mirror.getSnapshot();
+        const generation = shown.address?.generation;
+        if (!generation || shown.updating) return;
+        void session.client
+          .postAction({
+            protocolVersion: HUNK_REVIEW_PROTOCOL_VERSION,
+            generation,
+            actor: { clientId, kind: "browser" },
+            action: { type: "selection/anchor", fileKey, hunkIndex },
+          })
+          .catch(() => undefined);
+      }, FOCUS_REPORT_DEBOUNCE_MS);
+    },
+    [session, clientId],
+  );
+
   // The reader scrolled and the viewport settled here; adopt it without moving anything.
   const anchorToViewport = useCallback(
     (fileKey: string, hunkIndex: number) => {
       const { document, selection } = session.review.store.getSnapshot();
-      if (selection.fileKey === fileKey && selection.hunkIndex === hunkIndex) return;
       if (!document.files.some((file) => file.key === fileKey)) return;
+      reportFocus(fileKey, hunkIndex);
+      if (selection.fileKey === fileKey && selection.hunkIndex === hunkIndex) return;
       session.review.apply({ type: "selection/anchor", fileKey, hunkIndex });
     },
-    [session],
+    [session, reportFocus],
   );
+
+  // An agent's reveal selects and shows its target once per token. The token the page first
+  // sees is history, not a request made to this page.
+  const [revealPoint, setRevealPoint] = useState<ReviewRevealPoint | undefined>(undefined);
+  const lastAgentReveal = useRef<number | undefined>(undefined);
+  const agentReveal: ReviewAgentRevealV1 | null | undefined = shownShared?.agentReveal;
+  const documentReady = review.document.files.length > 0;
+  useEffect(() => {
+    if (!documentReady || agentReveal === undefined) return;
+    const token = agentReveal?.token ?? 0;
+    if (lastAgentReveal.current === undefined) {
+      lastAgentReveal.current = token;
+      return;
+    }
+    if (!agentReveal || token <= lastAgentReveal.current) return;
+    lastAgentReveal.current = token;
+    const { document } = session.review.store.getSnapshot();
+    if (!document.files.some((file) => file.key === agentReveal.fileKey)) return;
+    setRevealPoint({
+      fileKey: agentReveal.fileKey,
+      ...(agentReveal.side !== undefined ? { side: agentReveal.side } : {}),
+      ...(agentReveal.line !== undefined ? { line: agentReveal.line } : {}),
+      ...(agentReveal.noteId !== undefined ? { noteId: agentReveal.noteId } : {}),
+    });
+    session.review.apply({
+      type: "selection/select",
+      fileKey: agentReveal.fileKey,
+      hunkIndex: agentReveal.hunkIndex,
+      reveal: { anchor: "hunk", scrollToNote: agentReveal.noteId !== undefined },
+      ...(agentReveal.noteId !== undefined ? { activeNoteId: agentReveal.noteId } : {}),
+    });
+  }, [agentReveal, documentReady, session]);
+  // A note the selection asks to show is where its hunk reveal lands, when nothing more exact
+  // (an agent's line) is pending for that file.
+  const noteToReveal = review.reveal.scrollToNote ? selectActiveRevealNoteId(review) : undefined;
+  const streamRevealPoint: ReviewRevealPoint | undefined =
+    revealPoint && revealPoint.fileKey === review.selection.fileKey
+      ? revealPoint
+      : noteToReveal && review.selection.fileKey
+        ? { fileKey: review.selection.fileKey, noteId: noteToReveal }
+        : undefined;
   // A click on a hunk selects it where it is; the viewport stays put.
   const selectHunk = useCallback(
     (fileKey: string, hunkIndex: number) => {
@@ -234,6 +413,24 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
       "hunk.review.previousFile": semantic,
       "hunk.review.nextFile": semantic,
       "hunk.review.toggleHunkGap": semantic,
+      "hunk.review.previousAnnotatedHunk": semantic,
+      "hunk.review.nextAnnotatedHunk": semantic,
+      "hunk.review.previousAnnotatedFile": semantic,
+      "hunk.review.nextAnnotatedFile": semantic,
+      // Note navigation walks the shared note order through the planner's `note` scope; the
+      // catalog declares only its direction.
+      "hunk.review.previousNote": ({ entry, count }) =>
+        session.review.apply({
+          type: "selection/move",
+          scope: "note",
+          delta: (entry.verticalDirection ?? -1) * count,
+        }),
+      "hunk.review.nextNote": ({ entry, count }) =>
+        session.review.apply({
+          type: "selection/move",
+          scope: "note",
+          delta: (entry.verticalDirection ?? 1) * count,
+        }),
       "hunk.review.jumpToTop": () => stream()?.scrollToEdge("top"),
       "hunk.review.jumpToBottom": () => stream()?.scrollToEdge("bottom"),
       "hunk.review.pageDown": () => stream()?.scroll(1, "page"),
@@ -267,15 +464,15 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
       const target = event.currentTarget;
       target.setPointerCapture(event.pointerId);
       const move = (moveEvent: PointerEvent) =>
-        setPreferences((current) => ({
+        setOverrides((current) => ({
           ...current,
           sidebarWidth: clampSidebarWidth(startWidth + moveEvent.clientX - startX),
         }));
       const end = () => {
         target.removeEventListener("pointermove", move);
         target.removeEventListener("pointerup", end);
-        setPreferences((current) => {
-          storeWebViewPreferences(current);
+        setOverrides((current) => {
+          storeWebViewOverrides(current);
           return current;
         });
       };
@@ -324,8 +521,13 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
       style={{ "--sidebar-width": `${preferences.sidebarWidth}px` } as CSSProperties}
     >
       <Toolbar
-        title="Hunk review"
-        fileCount={mirror.totalFiles}
+        title={presentation?.title || "Hunk review"}
+        {...(presentation?.sourceLabel ? { sourceLabel: presentation.sourceLabel } : {})}
+        {...(filter ? { filter } : {})}
+        {...(shownShared?.omittedSidecarNotes
+          ? { omittedNotes: shownShared.omittedSidecarNotes }
+          : {})}
+        fileCount={entries.length || mirror.totalFiles}
         additions={totals.additions}
         deletions={totals.deletions}
         status={status}
@@ -337,8 +539,9 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
         preferences={preferences}
         sidebarOpen={sidebarOpen}
         resolvedLayout={layout}
-        themes={themes}
-        themeId={theme?.id}
+        themes={themeOptions}
+        themeId={selectedId}
+        {...(theme ? { themeLabel: theme.label } : {})}
         themeMenuOpen={themeMenuOpen}
         onThemeMenuOpen={setThemeMenuOpen}
         keyHint={keyHint}
@@ -368,6 +571,7 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
               </div>
               <FileSidebar
                 entries={entries}
+                noteCounts={noteCounts}
                 selectedKey={review.selection.fileKey}
                 mode={preferences.sidebarMode}
                 onSelectFile={selectFile}
@@ -383,7 +587,7 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
           </>
         ) : null}
         <ReviewStream
-          slots={mirror.slots}
+          slots={visibleSlots}
           review={review}
           layout={layout}
           wrapLines={preferences.wrapLines}
@@ -397,6 +601,9 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
           controller={streamController}
           columnWidth={columnWidth}
           generation={mirror.address?.generation}
+          sidecarNotes={sidecarNotes}
+          highlights={shownShared?.agentHighlights ?? NO_HIGHLIGHTS}
+          {...(streamRevealPoint ? { revealPoint: streamRevealPoint } : {})}
         />
       </div>
     </div>

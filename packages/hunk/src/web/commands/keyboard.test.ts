@@ -138,8 +138,10 @@ describe("keymap", () => {
   test("matches symbols however the layout reports Shift", () => {
     const { commands } = createTestCommands();
     const bindings = bindWebCommands(commands, defaultWebKeymap());
-    // `{` is unbound on the page (annotated navigation waits for notes), so nothing runs.
-    expect(bindings.match(webKeyEvent(createTestKey("{", { shiftKey: true }))!)).toBeUndefined();
+    // `{` needs Shift on most layouts; the symbol matches either way.
+    expect(bindings.match(webKeyEvent(createTestKey("{", { shiftKey: true }))!)?.entry.id).toBe(
+      "hunk.review.previousAnnotatedHunk",
+    );
     expect(bindings.match(webKeyEvent(createTestKey(".", { shiftKey: false }))!)?.entry.id).toBe(
       "hunk.review.nextFile",
     );

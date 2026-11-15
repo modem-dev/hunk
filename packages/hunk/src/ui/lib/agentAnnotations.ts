@@ -10,6 +10,7 @@ import {
   type ReviewAnnotationTarget,
 } from "../../core/review/annotations";
 import type { ReviewHunkSpan } from "../../core/review/geometry";
+import { reviewNoteRangeLabel } from "../../core/review/noteLabels";
 import type { ReviewRangeAnchorV1 } from "../../core/review/types";
 import { fileLabel } from "./files";
 
@@ -128,24 +129,9 @@ export function createVisibleAgentNote(
   };
 }
 
-function formatGithubStyleRange(prefix: "L" | "R", range: [number, number]) {
-  return range[0] === range[1]
-    ? `${prefix}${range[0]}`
-    : `${prefix}${range[0]}–${prefix}${range[1]}`;
-}
-
 /** Build a concise GitHub-style file-and-line label for inline note rows. */
 export function annotationRangeLabel(annotation: AgentAnnotation, file?: DiffFile) {
-  const locationParts: string[] = [];
-
-  if (annotation.oldRange) {
-    locationParts.push(formatGithubStyleRange("L", annotation.oldRange));
-  }
-
-  if (annotation.newRange) {
-    locationParts.push(formatGithubStyleRange("R", annotation.newRange));
-  }
-
-  const location = locationParts.join(" → ") || "hunk";
+  // The line label is the shared rule (`core/review/noteLabels.ts`); the file label is terminal.
+  const location = reviewNoteRangeLabel(annotation);
   return file ? `${fileLabel(file)} ${location}` : location;
 }

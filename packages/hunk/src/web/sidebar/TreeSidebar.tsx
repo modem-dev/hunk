@@ -97,6 +97,7 @@ function reviewOrderIndex(paths: readonly string[]) {
 /** The hierarchical sidebar, drawn by `@pierre/trees`. */
 export default function TreeSidebar({
   entries,
+  noteCounts,
   selectedKey,
   onSelectFile,
 }: Omit<FileSidebarProps, "mode">) {
@@ -104,8 +105,8 @@ export default function TreeSidebar({
   const byPath = useMemo(() => new Map(entries.map((entry) => [entry.path, entry])), [entries]);
   const order = useMemo(() => reviewOrderIndex(paths), [paths]);
   const following = useRef(false);
-  const latest = useRef({ byPath, onSelectFile, order, selectedKey });
-  latest.current = { byPath, onSelectFile, order, selectedKey };
+  const latest = useRef({ byPath, noteCounts, onSelectFile, order, selectedKey });
+  latest.current = { byPath, noteCounts, onSelectFile, order, selectedKey };
   const reviewOrderOf = (path: string) =>
     latest.current.order.get(path.replace(/\/+$/u, "")) ?? Number.MAX_SAFE_INTEGER;
 
@@ -133,7 +134,9 @@ export default function TreeSidebar({
     renderRowDecoration: ({ row }) => {
       const entry = row.kind === "file" ? latest.current.byPath.get(row.path) : undefined;
       if (!entry) return null;
-      const badges = reviewSidebarBadges(sidebarEntry(entry, 0));
+      const badges = reviewSidebarBadges(
+        sidebarEntry(entry, 0, latest.current.noteCounts.get(entry.key) ?? 0),
+      );
       if (badges.length === 0) return null;
       return {
         text: badges.map((badge) => badge.text).join(" "),
@@ -161,6 +164,25 @@ export default function TreeSidebar({
       })),
     );
   }, [model, paths, entries]);
+
+  // Note badges are row decorations, which the tree repaints only when a row changes; clearing
+  // and restating the statuses changes every row.
+  const firstCounts = useRef(true);
+  useEffect(() => {
+    if (firstCounts.current) {
+      firstCounts.current = false;
+      return;
+    }
+    model.setGitStatus([]);
+    model.setGitStatus(
+      latest.current.byPath.size > 0
+        ? Array.from(latest.current.byPath.values(), (entry) => ({
+            path: entry.path,
+            status: gitStatusOf(entry.changeKind, entry.flags.untracked),
+          }))
+        : [],
+    );
+  }, [model, noteCounts]);
 
   // Follow the store's selection, whoever made it.
   const selectedPath = entries.find((entry) => entry.key === selectedKey)?.path;

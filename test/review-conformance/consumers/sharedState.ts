@@ -24,6 +24,8 @@ import {
   REVIEW_SHARED_STATE_CURRENT_RESOURCE_ID,
   type ReviewSharedStateV1,
 } from "../../../packages/hunk/src/session/reviewSharedState";
+import { ReviewSharedStateMirror } from "../../../packages/hunk/src/web/mirror/sharedStateMirror";
+import { ReviewApiClient } from "../../../packages/hunk/src/web/transport/apiClient";
 import {
   connectReviewSession,
   createTestReviewBootstrap,
@@ -137,6 +139,50 @@ export const browserSurfaceSharedStateConsumer: ReviewSharedStateConsumer = {
       const body = (await response.json()) as HunkReviewStateBodyV1;
       return projectSharedState(body.state);
     } finally {
+      review.close();
+      server.stop(true);
+    }
+  },
+};
+
+/**
+ * The browser client's shared-state mirror, reading the same HTTP surface the page reads.
+ *
+ * The page's real client (`ReviewApiClient`, with the capability header) and its real mirror
+ * (`ReviewSharedStateMirror`): the publication is offered exactly as the event stream offers
+ * it, the mirror decides to fetch and validates the body with the shared parser, and the
+ * snapshot it accepted is what this projects.
+ */
+export const browserClientSharedStateConsumer: ReviewSharedStateConsumer = {
+  name: "browser client shared-state mirror",
+  phase: "M4 state",
+  async project(fixture) {
+    const { files, host } = actedHost(fixture);
+    const harness = connectReviewSession(files, { sessionId: "conformance-client", host });
+    harness.register();
+    harness.publishSnapshot();
+    const review = new BrowserReviewServer(harness.state);
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: async (request) =>
+        (await review.handle(request)) ?? new Response(null, { status: 404 }),
+    });
+    const origin = `http://127.0.0.1:${server.port}`;
+    const client = new ReviewApiClient({
+      sessionId: "conformance-client",
+      capability: reviewProcessCapability().token,
+      fetch: (input, init) => fetch(`${origin}${input}`, init),
+    });
+    const mirror = new ReviewSharedStateMirror({ client });
+    try {
+      const publication = await client.publication();
+      mirror.observe(publication);
+      const state = await mirror.forGeneration(publication.publication.generation);
+      if (!state) throw new Error("the browser mirror accepted no shared state");
+      return projectSharedState(state);
+    } finally {
+      mirror.close();
       review.close();
       server.stop(true);
     }
