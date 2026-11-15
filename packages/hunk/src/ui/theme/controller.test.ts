@@ -19,13 +19,15 @@ describe("ThemeController", () => {
       publications += 1;
     });
 
-    expect(controller.initialThemeId).toBe("github-light-default");
-    expect(controller.getSnapshot().themeId).toBe("github-light-default");
+    expect(controller.initialThemeSelection).toBe("auto");
+    expect(controller.getSnapshot().themeSelection).toBe("auto");
+    expect(controller.themeId()).toBe("github-light-default");
     expect(controller.themeMode).toBe("light");
 
     controller.commitTheme("dracula");
     controller.commitTheme("dracula");
-    expect(controller.getSnapshot().themeId).toBe("dracula");
+    expect(controller.getSnapshot().themeSelection).toBe("dracula");
+    expect(controller.themeId()).toBe("dracula");
     expect(publications).toBe(1);
 
     unsubscribe();
@@ -49,7 +51,7 @@ describe("ThemeController", () => {
     controller.replaceCustomThemes(replacementThemes);
 
     expect(controller.getSnapshot()).toMatchObject({
-      themeId: "team",
+      themeSelection: "team",
       customThemes: replacementThemes,
     });
     expect(publications).toBe(1);
@@ -75,7 +77,7 @@ describe("ThemeController", () => {
     expect(publications).toBe(1);
     expect(getDetectedTerminalColors()).toBe(lightColors);
     expect(controller.getSnapshot()).toMatchObject({
-      themeId: "terminal",
+      themeSelection: "terminal",
       themeMode: "light",
       terminalColors: lightColors,
     });
@@ -83,5 +85,35 @@ describe("ThemeController", () => {
     expect(after).not.toBe(before);
     expect(after).toMatchObject({ appearance: "light", background: "#eff1f5" });
     expect(after.removedSignColor).not.toBe(before.removedSignColor);
+  });
+
+  test("keeps an adaptive pair committed and names the side the terminal chose", () => {
+    const pair = { dark: "vitesse-dark", light: "one-light" };
+    const controller = new ThemeController({ initialTheme: pair, initialThemeMode: "light" });
+    let publications = 0;
+    controller.subscribe(() => {
+      publications += 1;
+    });
+
+    expect(controller.getSnapshot().themeSelection).toEqual(pair);
+    expect(controller.themeId()).toBe("one-light");
+
+    controller.commitTheme({ ...pair });
+    expect(publications).toBe(0);
+
+    controller.commitTheme("dracula");
+    expect(controller.getSnapshot().themeSelection).toBe("dracula");
+    expect(publications).toBe(1);
+  });
+
+  test("switches an adaptive pair's side when the terminal changes background", () => {
+    const pair = { dark: "vitesse-dark", light: "one-light" };
+    const controller = new ThemeController({ initialTheme: pair, initialThemeMode: "dark" });
+    expect(controller.themeId()).toBe("vitesse-dark");
+
+    controller.updateTerminalColors({ foreground: "#4c4f69", background: "#eff1f5", palette: [] });
+
+    expect(controller.getSnapshot().themeSelection).toEqual(pair);
+    expect(controller.themeId()).toBe("one-light");
   });
 });
