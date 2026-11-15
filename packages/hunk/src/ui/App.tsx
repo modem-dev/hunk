@@ -43,6 +43,7 @@ import type { ReviewProducer } from "../app/review/producer";
 import { buildReviewPresentationDefaults, buildReviewSharedState } from "../app/review/sharedState";
 import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
 import type { HunkReviewRefreshResultV1 } from "../session/reviewProtocol";
+import { reviewErrorMessage } from "../session/reviewErrorCatalog";
 import type { ReloadedSessionResult, ReloadSessionOptions } from "../session/types";
 // Keep lightweight interaction chrome synchronous: first-use lazy suspension otherwise
 // delays its visible commit behind React's Suspense fallback/retry throttle.
@@ -1361,6 +1362,14 @@ export function App({
     () => setFocusArea((current) => (current === "note" ? "files" : current)),
     [],
   );
+
+  /** Explain a refused note save in the shared catalog's words; the draft stays open. */
+  const showSaveRefusal = useCallback(
+    (code: Parameters<typeof reviewErrorMessage>[0]) =>
+      showTransientNotice(reviewErrorMessage(code)),
+    [showTransientNotice],
+  );
+
   const {
     blurDraftNote,
     cancelDraftNote,
@@ -1384,6 +1393,7 @@ export function App({
     startReply: review.startUserNoteReply,
     updateDraft: review.updateDraftNote,
     saveDraft: review.saveDraftNote,
+    onSaveRefused: showSaveRefusal,
     cancelDraft: review.cancelDraftNote,
     focus: {
       draft: focusDraftNoteEditor,

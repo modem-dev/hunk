@@ -7,6 +7,7 @@ import {
   HUNK_REVIEW_CAPABILITY_HEADER,
   parseReviewCapabilityFragment,
 } from "../../packages/hunk/src/session/reviewHttpProtocol";
+import { MAX_REVIEW_NOTE_BYTES } from "../../packages/hunk/src/core/review/noteSize";
 import { HUNK_REVIEW_PROTOCOL_VERSION } from "../../packages/hunk/src/session/reviewProtocol";
 import { cleanupTestConfigHomes, createTestConfigHome } from "../helpers/config-home";
 import { createTestRuntimeDir } from "../helpers/runtime-dir";
@@ -174,10 +175,10 @@ function sessionJson<T = Record<string, unknown>>(port: number, args: string[], 
 }
 
 /** Start one headless review and wait for its URL and daemon registration. */
-async function startHeadlessReview(dir: string, port: number) {
+async function startHeadlessReview(dir: string, port: number, extraArgs: string[] = []) {
   // `--no-open`: `--web` now opens a browser, which a test must never do.
   const proc = Bun.spawn(
-    ["bun", "run", sourceEntrypoint, "diff", "--web", "--no-open", "--experimental"],
+    ["bun", "run", sourceEntrypoint, "diff", "--web", "--no-open", "--experimental", ...extraArgs],
     {
       cwd: dir,
       stdin: "ignore",
@@ -415,6 +416,121 @@ describe.skipIf(process.platform === "win32")("headless review session", () => {
         const parsed = JSON.parse(listedAfter.stdout) as { sessions: unknown[] };
         return parsed.sessions.length === 0 ? true : null;
       });
+    } finally {
+      if (proc.exitCode === null) {
+        proc.kill();
+        await proc.exited.catch(() => undefined);
+      }
+    }
+  }, 120_000);
+
+  // A launch sidecar far larger than the websocket frame: the snapshot's sidecar summaries are
+  // bounded by bytes as well as count, so the session registers, publishes, and stays.
+  test("keeps a session registered with a sidecar larger than the snapshot frame", async () => {
+    const dir = createTestFixture();
+    const sidecar = join(dir, "sidecar.json");
+    writeFileSync(
+      sidecar,
+      JSON.stringify({
+        version: 1,
+        files: [
+          {
+            path: "values.ts",
+            annotations: Array.from({ length: 40 }, (_unused, index) => ({
+              newRange: [2, 2],
+              summary: `Sidecar ${index} ${"s".repeat(250 * 1024)}`,
+            })),
+          },
+        ],
+      }),
+    );
+    const port = await reserveLoopbackPort();
+    const { proc, url, sessionId } = await startHeadlessReview(dir, port, [
+      "--agent-context",
+      sidecar,
+    ]);
+
+    try {
+      const notes = await waitUntil("the sidecar notes in the session snapshot", () => {
+        const result = session(port, ["review", sessionId, "--include-notes", "--json"]);
+        if (result.exitCode !== 0) return null;
+        return result.stdout.includes("Sidecar 0 ") ? result.stdout : null;
+      });
+      expect(notes).not.toContain("Sidecar 39 ");
+      const state = (await (await reviewApi(url, sessionId, "state")).json()) as {
+        state: { omittedSidecarNotes?: number };
+      };
+      expect(state.state.omittedSidecarNotes).toBeGreaterThan(0);
+      const listed = sessionJson<{ sessions: Array<{ sessionId: string }> }>(port, ["list"]);
+      expect(listed.sessions.map((entry) => entry.sessionId)).toEqual([sessionId]);
+    } finally {
+      if (proc.exitCode === null) {
+        proc.kill();
+        await proc.exited.catch(() => undefined);
+      }
+    }
+  }, 120_000);
+
+  // D1: the session snapshot parsed note text at the broker's 4,096-byte string bound while
+  // the model admits 256 KiB notes, so one legal 6,000-byte browser note made the daemon refuse
+  // the snapshot and drop the session. A note at the model's own bound must survive too.
+  test("keeps a session registered with a large note and serves the whole note", async () => {
+    const dir = createTestFixture();
+    const port = await reserveLoopbackPort();
+    const { proc, url, sessionId } = await startHeadlessReview(dir, port);
+
+    /** Post one browser note on the review's only file and return the response. */
+    async function addBrowserNote(body: string) {
+      const stateResponse = await reviewApi(url, sessionId, "state");
+      const { state } = (await stateResponse.json()) as {
+        state: { generation: string; files: Array<{ key: string }> };
+      };
+      return reviewApi(url, sessionId, "actions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          protocolVersion: HUNK_REVIEW_PROTOCOL_VERSION,
+          generation: state.generation,
+          actor: { clientId: "headless-test", kind: "browser" },
+          action: { type: "notes/add-user", fileKey: state.files[0]!.key, hunkIndex: 0, body },
+        }),
+      });
+    }
+
+    /** Wait until the agent surface reports a note with exactly this body. */
+    function waitForNoteBody(body: string) {
+      return waitUntil("the note in the session snapshot", () => {
+        const result = session(port, ["review", sessionId, "--include-notes", "--json"]);
+        if (result.exitCode !== 0) return null;
+        return result.stdout.includes(JSON.stringify(body)) ? true : null;
+      });
+    }
+
+    try {
+      const large = `Six thousand bytes: ${"x".repeat(6_000)}`;
+      const added = await addBrowserNote(large);
+      expect(added.status).toBe(200);
+      await waitForNoteBody(large);
+      const state = (await (await reviewApi(url, sessionId, "state")).json()) as {
+        state: { notes: Array<{ note: { summary: string } }> };
+      };
+      expect(state.state.notes.map((entry) => entry.note.summary)).toContain(large);
+
+      // A note measured exactly at the model's bound: the same framing as the note above
+      // (ids and timestamps keep their width), so one more body byte is refused.
+      const stored = state.state.notes.find((entry) => entry.note.summary === large)!.note;
+      const framing = Buffer.byteLength(JSON.stringify(stored)) - Buffer.byteLength(large);
+      const boundBody = MAX_REVIEW_NOTE_BYTES - framing;
+      const over = await addBrowserNote("y".repeat(boundBody + 1));
+      expect(await over.json()).toMatchObject({ ok: false, code: "note-too-large" });
+      expect((await addBrowserNote("y".repeat(boundBody))).status).toBe(200);
+      const atBound = "y".repeat(boundBody);
+      await waitForNoteBody(atBound);
+
+      // Still registered, and the daemon still answers for it.
+      const listed = sessionJson<{ sessions: Array<{ sessionId: string }> }>(port, ["list"]);
+      expect(listed.sessions.map((entry) => entry.sessionId)).toEqual([sessionId]);
+      expect((await reviewApi(url, sessionId, "state")).status).toBe(200);
     } finally {
       if (proc.exitCode === null) {
         proc.kill();

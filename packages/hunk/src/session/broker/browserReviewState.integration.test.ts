@@ -24,6 +24,7 @@ import {
 import { HUNK_REVIEW_PROTOCOL_VERSION } from "../reviewProtocol";
 import { MAX_REVIEW_SHARED_STATE_BYTES, parseReviewSharedState } from "../reviewSharedState";
 import { BrowserReviewServer } from "./browserReviewServer";
+import { MAX_CACHED_REVIEW_SHARED_STATES } from "./state";
 
 const SESSION_ID = "session-state-1";
 const running: Array<{ review: BrowserReviewServer; server: { stop: (force?: boolean) => void } }> =
@@ -187,6 +188,43 @@ describe("browser review surface: shared state", () => {
     const body = (await (await request(origin, STATE_ROUTE)).json()) as HunkReviewStateBodyV1;
     expect(body.state.filter).toBe("beta");
     expect(reads()).toBeGreaterThan(afterFirst);
+  });
+
+  // Finding: the per-session cache had no bound beyond the session count, each entry up to
+  // the 4 MiB envelope. It now keeps the most recently read sessions only.
+  test("caches shared state for at most the capped number of sessions, least recent first", async () => {
+    const files = [createTestStateFile("alpha")];
+    const first = connectReviewSession(files, {
+      sessionId: "session-cache-0",
+      host: new ReviewSessionHost({ files, sourceLabel: "/repo" }),
+    });
+    const sessions = [first];
+    for (let index = 1; index <= MAX_CACHED_REVIEW_SHARED_STATES; index += 1) {
+      sessions.push(
+        connectReviewSession(files, {
+          sessionId: `session-cache-${index}`,
+          host: new ReviewSessionHost({ files, sourceLabel: "/repo" }),
+          state: first.state,
+        }),
+      );
+    }
+    for (const harness of sessions) {
+      harness.register();
+      harness.publishSnapshot();
+    }
+
+    for (const harness of sessions.slice(0, MAX_CACHED_REVIEW_SHARED_STATES)) {
+      await first.state.loadReviewSharedState(harness.sessionId);
+    }
+    // Reading the first session again makes the second the least recent one.
+    await first.state.loadReviewSharedState("session-cache-0");
+    await first.state.loadReviewSharedState(sessions.at(-1)!.sessionId);
+
+    const cached = first.state.cachedSharedStateSessionIds();
+    expect(cached).toHaveLength(MAX_CACHED_REVIEW_SHARED_STATES);
+    expect(cached).not.toContain("session-cache-1");
+    expect(cached.at(-2)).toBe("session-cache-0");
+    expect(cached.at(-1)).toBe(sessions.at(-1)!.sessionId);
   });
 
   test("refuses a snapshot over the envelope bound with state-too-large", async () => {

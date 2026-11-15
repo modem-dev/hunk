@@ -118,6 +118,7 @@ const REVIEW_ERROR_STATUS: Record<HunkReviewClientErrorCodeV1, number> = {
   "state-too-large": 413,
   "forbidden-actor": 403,
   "selection-is-local": 403,
+  "draft-is-local": 403,
   "refresh-unavailable": 409,
   "refresh-failed": 502,
 };
@@ -477,10 +478,13 @@ export class BrowserReviewServer {
 
     let bytes: Uint8Array;
     try {
+      // A reader that goes away (a page aborting its reads on reload) leaves the slot queue at
+      // once instead of waiting its turn and then assembling bytes nobody wants.
       bytes = await this.state.loadReviewResource(
         route.sessionId,
         route.generation,
         route.resourceId,
+        { signal: request.signal },
       );
     } catch (error) {
       return this.resourceFailure(error);

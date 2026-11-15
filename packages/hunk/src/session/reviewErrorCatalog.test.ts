@@ -49,6 +49,7 @@ const EXPECTED_CODES: HunkReviewClientErrorCodeV1[] = [
   "state-too-large",
   "forbidden-actor",
   "selection-is-local",
+  "draft-is-local",
   "refresh-unavailable",
   "refresh-failed",
 ];
