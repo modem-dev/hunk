@@ -99,6 +99,12 @@ for (const [label, createStore] of STORES) {
       expect(response.headers.get("content-security-policy")).toBe(
         REVIEW_PAGE_CONTENT_SECURITY_POLICY,
       );
+      // Images come only from blob URLs the page mints for previews; no remote or data: images.
+      const imageSources = REVIEW_PAGE_CONTENT_SECURITY_POLICY.split("; ").filter((directive) =>
+        directive.startsWith("img-src"),
+      );
+      expect(imageSources).toEqual(["img-src blob:"]);
+      expect(REVIEW_PAGE_CONTENT_SECURITY_POLICY).not.toContain("data:");
       expect(response.headers.get("cache-control")).toBe("no-store");
       expect(response.headers.get("x-content-type-options")).toBe("nosniff");
       expect(response.headers.get("referrer-policy")).toBe("no-referrer");

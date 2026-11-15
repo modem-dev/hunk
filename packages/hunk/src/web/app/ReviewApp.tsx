@@ -84,6 +84,13 @@ import { reviewHunkIndexForLine } from "../../core/review/geometry";
 import { selectReviewNoteList } from "../../core/review/noteList";
 import { Minimap } from "../minimap/Minimap";
 import { readMinimapEnabled, storeMinimapEnabled } from "../minimap/minimapPreference";
+import {
+  isMarkdownPath,
+  MarkdownModeStore,
+  markdownPreviewSide,
+  PreviewContext,
+  type PreviewContextValue,
+} from "../previews/previewContext";
 import { NotesTab } from "../notesPanel/NotesTab";
 import { OverviewTab } from "../overview/OverviewTab";
 import { selectWebReviewOverview } from "../panel/overviewInput";
@@ -432,6 +439,24 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
     },
     [session],
   );
+  // Rich previews read the shown generation's resources through the page's API client.
+  const [markdownModes] = useState(() => new MarkdownModeStore());
+  const previews = useMemo((): PreviewContextValue => {
+    const byFile = new Map<string, NonNullable<typeof mirror.catalog>["resources"][number][]>();
+    for (const resource of mirror.catalog?.resources ?? []) {
+      const list = byFile.get(resource.fileKey) ?? [];
+      list.push(resource);
+      byFile.set(resource.fileKey, list);
+    }
+    return {
+      resources: (fileKey) => byFile.get(fileKey) ?? [],
+      read: (descriptor, signal) => session.client.readResource(descriptor, signal),
+      markdownModes,
+    };
+  }, [mirror.catalog, session, markdownModes]);
+  const previewsRef = useRef(previews);
+  previewsRef.current = previews;
+
   // The minimap's marks, by file key.
   const minimapFiles = useMemo(
     () => new Map(review.document.files.map((file) => [file.key, file] as const)),
@@ -597,6 +622,22 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
       "hunk.web.toggleSidePanel": () => updatePanel({ open: !viewRef.current.panelOpen }),
       "hunk.web.showOverview": () => updatePanel({ open: true, tab: "overview" }),
       "hunk.web.showNotes": () => updatePanel({ open: true, tab: "notes" }),
+      "hunk.web.togglePreview": () => {
+        // Markdown is the one file kind with a rendered view; the selected file decides.
+        const fileKey = session.review.store.getSnapshot().selection.fileKey;
+        const file = fileKey
+          ? session.review.store.getSnapshot().document.files.find((entry) => entry.key === fileKey)
+          : undefined;
+        const side = file ? markdownPreviewSide(file.changeKind) : "new";
+        const available =
+          file !== undefined &&
+          isMarkdownPath(file.path) &&
+          previewsRef.current
+            .resources(file.key)
+            .some((resource) => resource.kind === "source" && resource.side === side);
+        if (available) markdownModes.toggle(file.key);
+        else session.toasts.show("The selected file has no rendered view.", "info");
+      },
       "hunk.web.toggleMinimap": () =>
         setMinimapEnabled((current) => {
           storeMinimapEnabled(!current);
@@ -767,89 +808,91 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
         {...(panelHint ? { panelHint } : {})}
         onTogglePanel={() => updatePanel({ open: !panelOpen })}
       />
-      <div className="review-main" ref={mainRef}>
-        {sidebarOpen ? (
-          <>
-            <nav className="sidebar" aria-label="Files sidebar">
-              <div className="sidebar-header">
-                <span>Files</span>
-                <div className="segmented small" role="radiogroup" aria-label="Sidebar mode">
-                  {(["tree", "flat"] as const).map((mode) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      role="radio"
-                      aria-checked={preferences.sidebarMode === mode}
-                      onClick={() => updatePreferences({ sidebarMode: mode })}
-                    >
-                      {mode === "tree" ? "Tree" : "Flat"}
-                    </button>
-                  ))}
+      <PreviewContext.Provider value={previews}>
+        <div className="review-main" ref={mainRef}>
+          {sidebarOpen ? (
+            <>
+              <nav className="sidebar" aria-label="Files sidebar">
+                <div className="sidebar-header">
+                  <span>Files</span>
+                  <div className="segmented small" role="radiogroup" aria-label="Sidebar mode">
+                    {(["tree", "flat"] as const).map((mode) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        role="radio"
+                        aria-checked={preferences.sidebarMode === mode}
+                        onClick={() => updatePreferences({ sidebarMode: mode })}
+                      >
+                        {mode === "tree" ? "Tree" : "Flat"}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
-              <FileSidebar
-                entries={entries}
-                noteCounts={noteCounts}
-                selectedKey={review.selection.fileKey}
-                mode={preferences.sidebarMode}
-                onSelectFile={tools.jumpToFile}
+                <FileSidebar
+                  entries={entries}
+                  noteCounts={noteCounts}
+                  selectedKey={review.selection.fileKey}
+                  mode={preferences.sidebarMode}
+                  onSelectFile={tools.jumpToFile}
+                />
+              </nav>
+              <div
+                className="sidebar-resizer"
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize files sidebar"
+                onPointerDown={startResize}
               />
-            </nav>
-            <div
-              className="sidebar-resizer"
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="Resize files sidebar"
-              onPointerDown={startResize}
-            />
-          </>
-        ) : null}
-        <ReviewStream
-          slots={visibleSlots}
-          review={review}
-          layout={layout}
-          wrapLines={preferences.wrapLines}
-          showLineNumbers={preferences.showLineNumbers}
-          syntaxTheme={theme?.syntaxTheme ?? "github-dark-default"}
-          appearance={theme?.appearance ?? "dark"}
-          onToggleGap={toggleGap}
-          onCollapseGaps={collapseGaps}
-          onSelectHunk={selectHunk}
-          onViewportAnchor={anchorToViewport}
-          controller={streamController}
-          columnWidth={columnWidth}
-          generation={mirror.address?.generation}
-          sidecarNotes={sidecarNotes}
-          highlights={shownShared?.agentHighlights ?? NO_HIGHLIGHTS}
-          {...(streamRevealPoint ? { revealPoint: streamRevealPoint } : {})}
-          composers={composers}
-          interaction={interactive.interaction}
-        />
-        {showMinimap ? (
-          <Minimap
+            </>
+          ) : null}
+          <ReviewStream
             slots={visibleSlots}
-            files={minimapFiles}
+            review={review}
             layout={layout}
-            noteHunks={minimapNotes}
-            highlightHunks={minimapHighlights}
-            viewed={minimapViewed}
-            {...(minimapSelected ? { selected: minimapSelected } : {})}
+            wrapLines={preferences.wrapLines}
+            showLineNumbers={preferences.showLineNumbers}
+            syntaxTheme={theme?.syntaxTheme ?? "github-dark-default"}
+            appearance={theme?.appearance ?? "dark"}
+            onToggleGap={toggleGap}
+            onCollapseGaps={collapseGaps}
+            onSelectHunk={selectHunk}
+            onViewportAnchor={anchorToViewport}
             controller={streamController}
-            themeKey={theme?.id}
+            columnWidth={columnWidth}
+            generation={mirror.address?.generation}
+            sidecarNotes={sidecarNotes}
+            highlights={shownShared?.agentHighlights ?? NO_HIGHLIGHTS}
+            {...(streamRevealPoint ? { revealPoint: streamRevealPoint } : {})}
+            composers={composers}
+            interaction={interactive.interaction}
           />
-        ) : null}
-        {panelOpen && panelTools.length > 0 ? (
-          <SidePanel
-            tools={panelTools}
-            tab={panel.tab}
-            width={panel.width}
-            onTab={(tab) => updatePanel({ tab })}
-            onWidth={(width, commit) => updatePanel({ width }, commit)}
-            onClose={() => updatePanel({ open: false })}
-            {...(panelHint ? { closeHint: panelHint } : {})}
-          />
-        ) : null}
-      </div>
+          {showMinimap ? (
+            <Minimap
+              slots={visibleSlots}
+              files={minimapFiles}
+              layout={layout}
+              noteHunks={minimapNotes}
+              highlightHunks={minimapHighlights}
+              viewed={minimapViewed}
+              {...(minimapSelected ? { selected: minimapSelected } : {})}
+              controller={streamController}
+              themeKey={theme?.id}
+            />
+          ) : null}
+          {panelOpen && panelTools.length > 0 ? (
+            <SidePanel
+              tools={panelTools}
+              tab={panel.tab}
+              width={panel.width}
+              onTab={(tab) => updatePanel({ tab })}
+              onWidth={(width, commit) => updatePanel({ width }, commit)}
+              onClose={() => updatePanel({ open: false })}
+              {...(panelHint ? { closeHint: panelHint } : {})}
+            />
+          ) : null}
+        </div>
+      </PreviewContext.Provider>
       <ToastRegion toasts={session.toasts} />
       {tools.overlay}
     </div>
