@@ -1,4 +1,9 @@
-# hunk
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://hunk.dev/brand/downloads/logo-lockup-paper.svg">
+    <img src="https://hunk.dev/brand/logo-lockup.svg" alt="hunk" width="300">
+  </picture>
+</h1>
 
 Hunk is an interactive terminal diff viewer for reviewing code changes, built on [OpenTUI](https://github.com/anomalyco/opentui) and [Pierre diffs](https://www.npmjs.com/package/@pierre/diffs).
 
