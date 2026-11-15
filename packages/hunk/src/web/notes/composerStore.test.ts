@@ -215,19 +215,4 @@ describe("NoteComposerStore", () => {
     store.close(key);
     expect(store.getSnapshot()).toHaveLength(0);
   });
-
-  // Intent: a draft for a file that left the review has no line to hang from; it is dropped
-  // (and reported) rather than kept invisible.
-  test("drops drafts whose file is gone and keeps the rest and any in flight", () => {
-    const store = new NoteComposerStore("s1", createTestStorage());
-    store.open(NEW_NOTE);
-    store.open({ ...NEW_NOTE, fileKey: "file:b", contentIdentity: "content:b" });
-    const sending = store.open({ ...NEW_NOTE, fileKey: "file:c", contentIdentity: "content:c" });
-    store.update(sending, { status: "sending" });
-
-    const dropped = store.dropMissingFiles(new Set(["file:a"]));
-
-    expect(dropped.map((composer) => composer.fileKey)).toEqual(["file:b"]);
-    expect(store.getSnapshot().map((composer) => composer.fileKey)).toEqual(["file:a", "file:c"]);
-  });
 });

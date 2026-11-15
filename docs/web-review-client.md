@@ -325,10 +325,11 @@ imports; a page fetches only the languages and themes it shows. The largest sing
 - **Drafts** are kept in this tab's `sessionStorage` (`hunk.review.drafts:<session>`, keyed by
   file key and anchor or note), so they survive a reload; saving or cancelling clears them, and
   a draft whose file's content identity changed is marked and offers only Discard. A draft
-  whose file is gone from a fully loaded review is dropped with a toast. A composer whose line
-  is not drawn (its expanded gap was collapsed, or a reload restored it with the gap closed)
-  hangs from its owner hunk's line, as a note card does (`reviewComposerPlacement`), so an open
-  draft is always visible.
+  whose file left the review is kept in storage and returns if the file does; the reader's
+  text is never discarded for them. A composer whose line is not drawn (its expanded gap was
+  collapsed, or a reload restored it with the gap closed) hangs from its owner hunk's line, as a
+  note card does (`reviewComposerPlacement`), so an open draft on a file in the review is always
+  visible.
 - **Stable annotations.** Each file's Pierre line annotations keep their identity while their
   content is unchanged (`stableAnnotations.ts`), and every composer renders in its own host
   element with its own React root that moves into whichever slot Pierre draws, so an agent

@@ -196,21 +196,6 @@ export class NoteComposerStore {
     if (changed) this.set(next);
   }
 
-  /**
-   * Drop the drafts whose file the fully loaded review no longer has, and return them.
-   *
-   * Call only once a whole generation is on screen: while files are still loading, an absent
-   * file may simply not have arrived. A draft whose save is in flight is left to settle.
-   */
-  dropMissingFiles(fileKeys: ReadonlySet<string>) {
-    const dropped = this.composers.filter(
-      (composer) => !fileKeys.has(composer.fileKey) && !noteComposerSaveInFlight(composer),
-    );
-    if (dropped.length === 0) return [];
-    this.set(this.composers.filter((composer) => !dropped.includes(composer)));
-    return dropped;
-  }
-
   /** Close every sent composer the shared state has caught up with. */
   settleSent(position: { generation: string; stateRevision: number }) {
     this.seen = position;
