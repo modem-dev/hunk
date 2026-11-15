@@ -32,6 +32,12 @@ import {
   type TestSidecarFileContext,
 } from "./fixtures/rich-review";
 import { writePreviewReviewRepo } from "./fixtures/preview-review";
+import {
+  TEST_PROCESS_GROUPS,
+  terminateTestProcess,
+  testRunDirectory,
+  trackTestProcess,
+} from "./testProcesses";
 
 const TEST_DIR = fileURLToPath(new URL(".", import.meta.url));
 const REPO_ROOT = join(TEST_DIR, "..", "..");
@@ -112,9 +118,11 @@ export async function startTestWebReview(
   options: TestWebReviewOptions = {},
 ): Promise<TestWebReview> {
   const port = await reserveTestPort();
+  // Inside the run's own directory when the runner made one, so its teardown can find them.
+  const parent = testRunDirectory() ?? tmpdir();
   const directories = [
-    mkdtempSync(join(tmpdir(), "hunk-web-runtime-")),
-    mkdtempSync(join(tmpdir(), "hunk-web-config-")),
+    mkdtempSync(join(parent, "hunk-web-runtime-")),
+    mkdtempSync(join(parent, "hunk-web-config-")),
   ];
   const env = {
     ...process.env,
@@ -129,19 +137,17 @@ export async function startTestWebReview(
       cwd: REPO_ROOT,
       env,
       stdio: ["pipe", "pipe", "inherit"],
+      detached: TEST_PROCESS_GROUPS,
     });
     processes.push(child);
+    trackTestProcess(child);
     return child;
   };
-  /** Terminate one process and wait briefly for it to exit. */
-  const terminate = async (child: ChildProcess) => {
-    if (child.exitCode !== null || child.signalCode !== null) return;
-    const exited = new Promise((resolve) => child.once("exit", resolve));
-    child.kill("SIGTERM");
-    await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 5_000))]);
-  };
+  const terminate = terminateTestProcess;
+  // Sessions stop before the daemon (the reverse of starting), so a session never outlives
+  // the daemon it is registered with.
   const stop = async () => {
-    for (const child of processes) await terminate(child);
+    for (const child of [...processes].reverse()) await terminate(child);
     for (const directory of directories) rmSync(directory, { recursive: true, force: true });
   };
 
@@ -185,8 +191,10 @@ export async function startTestWebReview(
       cwd: repo ?? REPO_ROOT,
       env,
       stdio: ["ignore", "pipe", "inherit"],
+      detached: TEST_PROCESS_GROUPS,
     });
     processes.push(session);
+    trackTestProcess(session);
     const url = await new Promise<string>((resolve, reject) => {
       const lines = createInterface({ input: session.stdout! });
       lines.once("line", (line) => resolve(line.trim()));

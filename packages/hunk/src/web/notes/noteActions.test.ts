@@ -139,4 +139,17 @@ describe("saveNoteComposer", () => {
     identity = "content:a2";
     expect(calls[0]!.stillMeaningful!()).toBe(false);
   });
+
+  // Intent: a save refused for a stale generation, re-sent by hand after the reload changed
+  // its file, must not land on lines that changed underneath it.
+  test("refuses a manual re-send once the file content changed", async () => {
+    const { store, current, sender, calls } = createTestSave(createTestComposer(), "refused");
+    await saveNoteComposer(current(), store, sender, () => "content:a");
+    expect(current().status).toBe("failed");
+
+    await saveNoteComposer(current(), store, sender, () => "content:a2");
+
+    expect(current().status).toBe("changed");
+    expect(calls).toHaveLength(1);
+  });
 });

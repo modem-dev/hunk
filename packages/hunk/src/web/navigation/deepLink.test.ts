@@ -8,6 +8,9 @@ import {
   fragmentWithAddress,
   readFragmentAddress,
   resolveReviewAddress,
+  reviewAddressHiddenMessage,
+  reviewAddressHiddenReason,
+  reviewLinePlacement,
   selectionAddress,
 } from "./deepLink";
 
@@ -83,5 +86,48 @@ describe("resolveReviewAddress", () => {
     const hash = fragmentWithAddress("", address);
     expect(hash).toBe(`#at=${encodeURIComponent(formatReviewAddress(address))}`);
     expect(readFragmentAddress(hash)).toEqual(address);
+  });
+});
+
+describe("reviewAddressHiddenReason", () => {
+  const state = {
+    ...createTestReviewState(["alpha", "beta"], { showAgentNotes: true }),
+    liveNotes: [createTestStoredNote({ id: "n1", fileKey: "beta", hunkIndex: 1, line: 12 })],
+  };
+  const NONE = new Set<string>();
+
+  // Intent: a link to something the review has but this page does not show is named with its
+  // reason rather than silently landing elsewhere.
+  test("names the filter, hide viewed, and hidden agent notes as reasons", () => {
+    const beta = { kind: "file", fileKey: "beta" } as const;
+    expect(reviewAddressHiddenReason(state, beta, NONE)).toBeUndefined();
+    expect(reviewAddressHiddenReason({ ...state, filter: "alpha" }, beta, NONE)).toBe("filter");
+    expect(reviewAddressHiddenReason(state, beta, new Set(["beta"]))).toBe("hidden-viewed");
+
+    const note = { kind: "note", fileKey: "beta", noteId: "n1" } as const;
+    expect(reviewAddressHiddenReason(state, note, NONE)).toBeUndefined();
+    expect(reviewAddressHiddenReason({ ...state, showAgentNotes: false }, note, NONE)).toBe(
+      "agent-notes-hidden",
+    );
+  });
+
+  test("words each reason with the file's path", () => {
+    expect(reviewAddressHiddenMessage("filter", "src/a.ts")).toContain("shared filter");
+    expect(reviewAddressHiddenMessage("hidden-viewed", "src/a.ts")).toContain("Hide viewed");
+    expect(reviewAddressHiddenMessage("agent-notes-hidden", "src/a.ts")).toContain(
+      "agent notes are hidden",
+    );
+  });
+});
+
+describe("reviewLinePlacement", () => {
+  const file = createTestReviewState(["alpha"]).document.files[0]!;
+
+  // Intent: a linked line inside a collapsed gap can be shown by expanding the gap; one no
+  // hunk or gap covers is reported instead of quietly landing on a hunk's top.
+  test("places a line as drawn, inside a gap, or absent", () => {
+    expect(reviewLinePlacement(file, "new", 2)).toEqual({ kind: "drawn" });
+    expect(reviewLinePlacement(file, "new", 7)).toEqual({ kind: "gap", gapId: "before:1" });
+    expect(reviewLinePlacement(file, "new", 500)).toEqual({ kind: "absent" });
   });
 });

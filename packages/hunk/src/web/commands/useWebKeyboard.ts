@@ -5,10 +5,12 @@
  * runs the first command that answers, the way the terminal's dispatch loop does. It stays
  * out of the way of everything the browser or a focused control owns (see `keyboard.ts`): a
  * key some widget already handled (`defaultPrevented`), a key typed into a field, Space or
- * Enter on a button, and every Ctrl, Cmd, or Alt chord. A key the page runs is consumed, so
- * Space pages the review instead of also scrolling natively.
+ * Enter on a button, every Ctrl, Cmd, or Alt chord, and every key while a modal dialog is
+ * open (`ModalDialog.tsx`). A key the page runs is consumed, so Space pages the review
+ * instead of also scrolling natively.
  */
 import { useEffect, useMemo, useRef } from "react";
+import { pageModalOpen } from "../palette/ModalDialog";
 import { bindWebCommands, focusOwnsKey, webKeyEvent, type WebKeymap } from "./keyboard";
 import type { WebCommand } from "./webCommandTable";
 
@@ -20,7 +22,8 @@ export function useWebKeyboard(commands: readonly WebCommand[], keymap: WebKeyma
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented) return;
+      // An open modal owns the keyboard; its own keys are handled inside it.
+      if (event.defaultPrevented || pageModalOpen()) return;
       const key = webKeyEvent(event);
       if (!key) return;
       if (focusOwnsKey(event.composedPath(), key)) return;

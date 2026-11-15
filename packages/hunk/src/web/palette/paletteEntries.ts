@@ -17,6 +17,7 @@ import {
   webModChordLabel,
   type WebLocalCommandId,
 } from "../commands/webLocalCommands";
+import { withWebLocalChords } from "../panel/panelCommands";
 import { rankFuzzy } from "./fuzzy";
 
 /** One palette row. */
@@ -49,20 +50,21 @@ export function buildPaletteEntries(
       ...(keys ? { keys } : {}),
     };
   });
-  const local = WEB_LOCAL_COMMANDS.map(
-    (command): PaletteEntry => ({
+  // Plain page chords are labelled from the resolved keymap, so a default the user's binding
+  // took over is not named here.
+  const pageKeymap = withWebLocalChords(keymap);
+  const local = WEB_LOCAL_COMMANDS.map((command): PaletteEntry => {
+    const keys =
+      "modKey" in command
+        ? webModChordLabel(command.modKey, apple)
+        : catalogKeys(pageKeymap, command.id);
+    return {
       id: command.id,
       title: command.title,
       category: command.category,
-      ...("modKey" in command
-        ? { keys: webModChordLabel(command.modKey, apple) }
-        : "keys" in command
-          ? {
-              keys: catalogKeys(keymap, command.id) ?? command.keys.map(formatKeyChord).join(" / "),
-            }
-          : {}),
-    }),
-  );
+      ...(keys ? { keys } : {}),
+    };
+  });
   return [...catalog, ...local];
 }
 
@@ -144,8 +146,9 @@ export function buildWebHelpSections(
   );
 }
 
-/** The help rows for the page's own chords. */
-export function webLocalHelpRows(apple?: boolean): WebHelpRow[] {
+/** The help rows for the page's own chords, plain ones as the resolved keymap binds them. */
+export function webLocalHelpRows(keymap: WebKeymap, apple?: boolean): WebHelpRow[] {
+  const pageKeymap = withWebLocalChords(keymap);
   const ids: readonly WebLocalCommandId[] = ["hunk.web.commandPalette", "hunk.web.goToFile"];
   const dialogs = ids.flatMap((id) => {
     const command = WEB_LOCAL_COMMANDS.find((candidate) => candidate.id === id)!;
@@ -159,15 +162,9 @@ export function webLocalHelpRows(apple?: boolean): WebHelpRow[] {
       : [];
   });
   // Page commands with plain chords (the side panel's tools) are listed with them.
-  const plain = WEB_LOCAL_COMMANDS.flatMap((command): WebHelpRow[] =>
-    "keys" in command
-      ? [
-          {
-            keys: command.keys.map(formatKeyChord).join(" / "),
-            description: command.title.toLowerCase(),
-          },
-        ]
-      : [],
-  );
+  const plain = WEB_LOCAL_COMMANDS.flatMap((command): WebHelpRow[] => {
+    const keys = "keys" in command ? catalogKeys(pageKeymap, command.id) : undefined;
+    return keys ? [{ keys, description: command.title.toLowerCase() }] : [];
+  });
   return [...dialogs, ...plain];
 }

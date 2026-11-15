@@ -21,9 +21,13 @@ let problems: string[] = [];
 test.use({ viewport: { width: 1440, height: 900 } });
 
 test.afterEach(async () => {
-  expect(problems).toEqual([]);
-  await review?.stop();
-  review = undefined;
+  // Check the page before stopping (a stopped daemon cuts its event stream), but always stop.
+  try {
+    expect(problems).toEqual([]);
+  } finally {
+    await review?.stop();
+    review = undefined;
+  }
 });
 
 /** Open the rich review and wait until every file has loaded. */
@@ -189,6 +193,63 @@ test("lists notes by file and reveals the chosen one in the stream", async ({ pa
   await expect(panel.locator(".notes-count")).toHaveText("1 of 3 notes");
 });
 
+// Intent: a Notes-tab row reveals its card once; a later hunk jump in the same file lands on
+// its own hunk instead of being pulled back to the clicked note.
+test("lets a hunk jump after a Notes-tab reveal land on its own hunk", async ({ page }) => {
+  await openTestReview(page, { args: ["--agent-notes"] });
+  await addTestComment(["--file", "src/app/main.ts", "--new-line", "46", "--summary", "Late"]);
+  await page.getByTestId("side-panel-tab-notes").click();
+  await page.getByTestId("notes-row").filter({ hasText: "Late" }).click();
+  await expect(page.locator(".note-card", { hasText: "Late" })).toBeInViewport();
+
+  await page.locator(".review-stream").focus();
+  await page.keyboard.press("[");
+
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const rail = document.querySelector<HTMLElement>('[data-testid="selected-hunk"]');
+        const header = document.querySelector<HTMLElement>("section[data-selected] .file-header");
+        if (!rail || !header || rail.dataset.hunkIndex !== "0") return false;
+        const gap = rail.getBoundingClientRect().top - header.getBoundingClientRect().bottom;
+        return gap >= 0 && gap <= 20;
+      }),
+    )
+    .toBe(true);
+});
+
+// Intent: the panel's edge is a keyboard-operable window splitter, and a drag the browser
+// cancels stops following the pointer.
+test("resizes the panel from the keyboard and ends a cancelled drag", async ({ page }) => {
+  await openTestReview(page);
+  const resizer = page.getByTestId("side-panel-resizer");
+  await expect(resizer).toHaveAttribute("aria-valuemin", "260");
+  await expect(resizer).toHaveAttribute("aria-valuemax", "640");
+  const width = async () => Number(await resizer.getAttribute("aria-valuenow"));
+  const start = await width();
+
+  await resizer.focus();
+  await page.keyboard.press("ArrowLeft");
+  await expect.poll(width).toBe(start + 16);
+  await page.keyboard.press("ArrowRight");
+  await expect.poll(width).toBe(start);
+  await page.keyboard.press("End");
+  await expect.poll(width).toBe(640);
+  await page.keyboard.press("Home");
+  await expect.poll(width).toBe(260);
+
+  const box = (await resizer.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + 100);
+  await page.mouse.down();
+  await page.mouse.move(box.x - 40, box.y + 100, { steps: 4 });
+  const dragged = await width();
+  expect(dragged).toBeGreaterThan(260);
+  await resizer.dispatchEvent("pointercancel");
+  await page.mouse.move(box.x - 200, box.y + 100, { steps: 4 });
+  expect(await width()).toBe(dragged);
+  await page.mouse.up();
+});
+
 test("explains how notes arrive when there are none", async ({ page }) => {
   await openTestReview(page);
   await page.locator(".review-stream").focus();
@@ -257,6 +318,74 @@ test("the minimap scrolls the stream on click and drag and follows it back", asy
         .evaluate((element) => element.getBoundingClientRect().height),
     )
     .toBeGreaterThan(5);
+});
+
+/** How far the minimap's projected stream height is from the stream's real height. */
+function minimapHeightDrift(page: Page) {
+  return page.evaluate(() => {
+    const stream = document.querySelector<HTMLElement>(".review-stream")!;
+    const minimap = document.querySelector<HTMLElement>('[data-testid="minimap"]')!;
+    return Number(minimap.dataset.streamHeight) - stream.scrollHeight;
+  });
+}
+
+// Intent: the minimap follows the stream's height when it changes without a scroll, as when a
+// viewed file collapses.
+test("the minimap repaints when a file collapses without a scroll", async ({ page }) => {
+  await openTestReview(page);
+  await expect(page.getByTestId("minimap")).toBeVisible();
+  await page.waitForTimeout(500);
+  const drift = await minimapHeightDrift(page);
+
+  await page.locator("section[data-file-key]").first().locator(".viewed-toggle input").click();
+  await expect(page.locator(".file-collapsed").first()).toBeVisible();
+
+  await expect.poll(() => minimapHeightDrift(page)).toBeLessThanOrEqual(drift + 2);
+  expect(await minimapHeightDrift(page)).toBeGreaterThanOrEqual(drift - 2);
+});
+
+// Intent: the reader's own minimap scroll ends a jump-to-end hold, and a reload during that
+// hold replaces it rather than leaving it pulling to the edge.
+test("the minimap and a reload both end a jump-to-end hold", async ({ page }) => {
+  await openTestReview(page);
+  const minimap = page.getByTestId("minimap");
+  const box = (await minimap.boundingBox())!;
+  await page.locator(".review-stream").focus();
+  await page.keyboard.press("Shift+G");
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height * 0.1);
+  await page.waitForTimeout(1_300);
+  expect(await streamScrollFraction(page)).toBeLessThan(0.35);
+
+  const distanceFromEnd = () =>
+    page.evaluate(() => {
+      const stream = document.querySelector<HTMLElement>(".review-stream")!;
+      return stream.scrollHeight - stream.clientHeight - stream.scrollTop;
+    });
+  const generation = await page.locator(".review-app").getAttribute("data-generation");
+  // Keys from the page, not the focused stream, whose own key input would end the hold.
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press("Shift+G");
+  // The end keeps moving, as files below still drawing make it, so the hold is still running
+  // when the reload lands.
+  await page.evaluate(() => {
+    const started = Date.now();
+    const timer = setInterval(() => {
+      const sections = document.querySelectorAll<HTMLElement>("section[data-file-key]");
+      const grown = document.createElement("div");
+      grown.style.height = "20px";
+      sections[sections.length - 1]?.append(grown);
+      if (Date.now() - started > 4_500) clearInterval(timer);
+    }, 150);
+  });
+  await review!.reload();
+  await expect(page.locator(".review-app")).not.toHaveAttribute(
+    "data-generation",
+    generation ?? "",
+    { timeout: 30_000 },
+  );
+  await page.keyboard.press("u");
+  await page.waitForTimeout(1_300);
+  expect(await distanceFromEnd()).toBeGreaterThan(100);
 });
 
 test("the minimap hides on a narrow viewport", async ({ page }) => {

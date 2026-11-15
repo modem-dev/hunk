@@ -9,8 +9,12 @@
  * a file's diff for its rendered text, a deleted file renders its old text, and nothing in the
  * document runs. No CSP violation or console error, and axe stays green.
  */
+import { execFileSync } from "node:child_process";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
+import { encodeTestPng } from "./fixtures/preview-review";
 import { startTestWebReview, watchTestPageProblems, type TestWebReview } from "./webTestHarness";
 
 let review: TestWebReview | undefined;
@@ -27,9 +31,13 @@ test.beforeEach(async ({ page }) => {
 });
 
 test.afterEach(async () => {
-  expect(problems).toEqual([]);
-  await review?.stop();
-  review = undefined;
+  // Check the page before stopping (a stopped daemon cuts its event stream), but always stop.
+  try {
+    expect(problems).toEqual([]);
+  } finally {
+    await review?.stop();
+    review = undefined;
+  }
 });
 
 /** The stream section for one path. */
@@ -194,6 +202,68 @@ test("toggles a Markdown file between its diff and its rendered text, inertly", 
   await toggle.click();
   await expect(guide.getByTestId("markdown-preview")).toHaveCount(0);
   await expect(guide.locator("diffs-container")).toHaveCount(1);
+});
+
+// Intent: a note or hunk lives in the diff, so navigating into a file shown rendered shows its
+// diff again rather than leaving the target hidden.
+test("shows the diff again when navigation lands in a rendered Markdown file", async ({ page }) => {
+  const guide = section(page, "docs/guide.md");
+  await guide.scrollIntoViewIfNeeded();
+  await guide.getByTestId("markdown-toggle").click();
+  await expect(guide.getByTestId("markdown-preview")).toBeVisible();
+  await review!.hunk([
+    "session",
+    "comment",
+    "add",
+    review!.sessionId,
+    "--file",
+    "docs/guide.md",
+    "--new-line",
+    "3",
+    "--summary",
+    "Check this line",
+    "--focus",
+  ]);
+
+  await expect(guide.getByTestId("markdown-preview")).toHaveCount(0);
+  await expect(guide.getByTestId("markdown-toggle")).toHaveAttribute("aria-pressed", "false");
+  await expect(page.locator(".note-card", { hasText: "Check this line" })).toBeInViewport({
+    timeout: 15_000,
+  });
+});
+
+// Intent: stacked image modes keep each image's size relative to the other (top-left
+// anchored), and a refresh with changed bytes shows the new image's own dimensions.
+test("keeps relative image sizes when stacked and new dimensions after a refresh", async ({
+  page,
+}) => {
+  const photo = section(page, "images/photo.png");
+  const preview = photo.getByTestId("image-preview");
+  await expect(preview).toBeVisible();
+  await preview.getByTestId("image-mode-swipe").click();
+  await expect(preview.locator(".image-preview-stack img")).toHaveCount(2);
+  const [before, after] = await preview.locator(".image-preview-stack img").evaluateAll((images) =>
+    images.map((image) => {
+      const box = image.getBoundingClientRect();
+      return { left: box.left, top: box.top, width: box.width };
+    }),
+  );
+  expect(before!.width / after!.width).toBeCloseTo(48 / 64, 2);
+  expect(before!.left).toBe(after!.left);
+  expect(before!.top).toBe(after!.top);
+
+  await preview.getByTestId("image-mode-side-by-side").click();
+  await expect(preview.locator("figcaption").nth(1)).toHaveText(/^After · 64 × 32 · /);
+  writeFileSync(
+    join(review!.repo!, "images", "photo.png"),
+    encodeTestPng(40, 20, () => [10, 200, 10, 255]),
+  );
+  execFileSync("git", ["add", "-A"], { cwd: review!.repo!, stdio: "ignore" });
+  await page.getByTestId("refresh").click();
+  await expect(photo.getByTestId("image-preview").locator("figcaption").nth(1)).toHaveText(
+    /^After · 40 × 20 · /,
+    { timeout: 30_000 },
+  );
 });
 
 test("renders a deleted Markdown file from its old text", async ({ page }) => {
