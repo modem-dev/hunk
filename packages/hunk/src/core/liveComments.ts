@@ -1,6 +1,13 @@
 import type { AgentAnnotation } from "../extension-api/types";
 import type { DiffFile } from "./changeset/model";
-import { reviewDefaultHunkLineTarget, reviewHunkIndexForLine } from "./review/geometry";
+import { reviewLineAnchor } from "./review/anchors";
+import { reviewNoteSource } from "./review/annotations";
+import {
+  reviewDefaultHunkLineTarget,
+  reviewHunkIndexForLine,
+  type ReviewHunkSpan,
+} from "./review/geometry";
+import type { ReviewStoredNote } from "./review/state";
 
 export type DiffSide = "old" | "new";
 
@@ -143,5 +150,35 @@ export function buildLiveComment(
     newRange: input.side === "new" ? [input.line, input.line] : undefined,
     tags: ["mcp"],
     confidence: "high",
+  };
+}
+
+/** Store one agent-authored live comment as a semantic review note. */
+export function liveCommentToStoredNote(
+  comment: LiveComment,
+  fileKey: string,
+  hunks: readonly ReviewHunkSpan[],
+  replyParent?: ReviewStoredNote,
+): ReviewStoredNote {
+  return {
+    note: {
+      id: comment.id,
+      ...(replyParent ? { parentId: replyParent.note.id } : {}),
+      source: reviewNoteSource(comment),
+      originalSource: comment.source,
+      fileKey,
+      anchor: replyParent ? replyParent.note.anchor : reviewLineAnchor(hunks, comment),
+      summary: comment.summary,
+      rationale: comment.rationale,
+      markup: comment.markup,
+      title: comment.title,
+      author: comment.author,
+      createdAt: comment.createdAt,
+      updatedAt: comment.updatedAt,
+      editable: false,
+      tags: comment.tags,
+      confidence: comment.confidence,
+    },
+    resolution: replyParent?.resolution ?? "active",
   };
 }

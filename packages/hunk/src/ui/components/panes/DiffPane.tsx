@@ -24,6 +24,7 @@ import type { DiffFile } from "../../../core/changeset/model";
 import type { CursorLine, LayoutMode } from "../../../core/run/commandInputs";
 import type { ReviewNoteTargetV1 } from "../../../core/review/types";
 import type { AgentAnnotation } from "../../../extension-api/types";
+import { reviewNoteSource } from "../../../core/review/annotations";
 import { resolveReviewRevealNoteId } from "../../../core/review/selectors";
 import {
   reviewNoteAnchorLine,
@@ -39,11 +40,7 @@ import {
   storedReviewNoteTarget,
   type DraftReviewNote,
 } from "../../lib/reviewNoteMapping";
-import {
-  createVisibleAgentNote,
-  reviewNoteSource,
-  type VisibleAgentNote,
-} from "../../lib/agentAnnotations";
+import { createVisibleAgentNote, type VisibleAgentNote } from "../../lib/agentAnnotations";
 import {
   computeRapidScrollOverscanRows,
   RAPID_SCROLL_OVERSCAN_IDLE_MS,
