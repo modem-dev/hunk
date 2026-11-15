@@ -8,6 +8,7 @@ import {
   describeSessionBrokerHealthProbeFailure,
   ensureSessionBrokerAvailable,
   isLoopbackPortReachable,
+  launchSessionBrokerDaemon,
   parseSessionBrokerHealth,
   probeSessionBrokerHealth,
   readSessionBrokerHealth,
@@ -355,6 +356,29 @@ describe("session daemon launcher", () => {
       args: ["daemon", "serve"],
     });
   });
+
+  // A headless review whose test directory was deleted under it relaunched its daemon there every
+  // few seconds: each spawn failed in chdir and threw its unobserved `error` event.
+  test.skipIf(process.platform === "win32")(
+    "launches the daemon from a stable directory once the caller's directory is gone",
+    async () => {
+      const deleted = mkdtempSync(join(tmpdir(), "hunk-launch-cwd-"));
+      rmSync(deleted, { recursive: true, force: true });
+
+      // `/bin/true` ignores the `daemon serve` arguments and exits 0 once it has started.
+      const child = launchSessionBrokerDaemon({
+        cwd: deleted,
+        argv: ["bun"],
+        execPath: "/bin/true",
+      });
+      const outcome = await new Promise<string>((resolve) => {
+        child.once("error", (error) => resolve(`error ${(error as NodeJS.ErrnoException).code}`));
+        child.once("exit", (code) => resolve(`exit ${code}`));
+      });
+
+      expect(outcome).toBe("exit 0");
+    },
+  );
 
   test("detects whether some process is already listening on the daemon port", async () => {
     const listener = Bun.serve({

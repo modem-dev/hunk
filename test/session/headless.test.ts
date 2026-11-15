@@ -1,5 +1,6 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import type { Subprocess } from "bun";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -20,9 +21,13 @@ const { path: testRuntimeDir, cleanup: cleanupTestRuntimeDir } =
   createTestRuntimeDir("hunk-headless-runtime-");
 const tempDirs: string[] = [];
 const ports: number[] = [];
+// Every headless process a test starts, so a failed or timed-out test cannot leak a session.
+const sessions = new Set<Subprocess>();
 
 afterAll(cleanupTestConfigHomes);
-afterAll(() => {
+afterAll(async () => {
+  // Sessions first, so none relaunches a daemon stopped below; `afterEach` normally already did.
+  await stopTestSessions();
   // Stop every daemon a headless session auto-started for this suite, found through this suite's
   // own launch metadata rather than the public health endpoint.
   for (const port of ports) {
@@ -37,11 +42,27 @@ afterAll(() => {
   }
   cleanupTestRuntimeDir();
 });
-afterEach(() => {
-  for (const dir of tempDirs.splice(0)) {
-    rmSync(dir, { recursive: true, force: true });
+afterEach(async () => {
+  try {
+    await stopTestSessions();
+  } finally {
+    for (const dir of tempDirs.splice(0)) {
+      rmSync(dir, { recursive: true, force: true });
+    }
   }
 });
+
+/** SIGKILL every headless process a test started that is still running, and wait for each. */
+async function stopTestSessions() {
+  const running = [...sessions];
+  sessions.clear();
+  await Promise.all(
+    running.map(async (proc) => {
+      if (proc.exitCode === null && proc.signalCode === null) proc.kill("SIGKILL");
+      await proc.exited.catch(() => undefined);
+    }),
+  );
+}
 
 /** Read the PID of the daemon this suite launched on one port, from its launch metadata. */
 function readLaunchedDaemonPid(port: number) {
@@ -187,6 +208,7 @@ async function startHeadlessReview(dir: string, port: number, extraArgs: string[
       env: testEnv(port),
     },
   );
+  sessions.add(proc);
   let stdout = "";
   // Drain stdout continuously; the URL is its only line.
   void (async () => {
@@ -209,6 +231,14 @@ async function startHeadlessReview(dir: string, port: number, extraArgs: string[
     return listed.sessions[0]?.sessionId ?? null;
   });
   return { proc, url, sessionId };
+}
+
+/** Read one process's user plus system CPU time in clock ticks from procfs (Linux only). */
+function readCpuTicks(pid: number) {
+  const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+  // Fields after the parenthesized command name; utime and stime are fields 14 and 15.
+  const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+  return Number(fields[11]) + Number(fields[12]);
 }
 
 /** Present the URL's capability to one review API route. */
@@ -538,4 +568,100 @@ describe.skipIf(process.platform === "win32")("headless review session", () => {
       }
     }
   }, 120_000);
+
+  // A URL is only worth printing once a daemon will serve it. Another program on the daemon
+  // port means none ever will: the command says so and exits instead of serving nothing.
+  test("exits with an error and prints no URL when another program holds the daemon port", async () => {
+    const dir = createTestFixture();
+    const port = await reserveLoopbackPort();
+    const squatter = createServer((_request, response) => {
+      response.writeHead(404, { "content-type": "text/plain" });
+      response.end("not hunk");
+    });
+    await new Promise<void>((resolve, reject) => {
+      squatter.once("error", reject);
+      squatter.listen(port, "127.0.0.1", () => resolve());
+    });
+
+    try {
+      const startedAt = Date.now();
+      const proc = Bun.spawn(
+        [
+          "bun",
+          "run",
+          sourceEntrypoint,
+          "diff",
+          "--web",
+          "--no-open",
+          "--no-watch",
+          "--experimental",
+        ],
+        { cwd: dir, stdin: "ignore", stdout: "pipe", stderr: "pipe", env: testEnv(port) },
+      );
+      sessions.add(proc);
+      const [exitCode, stdout, stderr] = await Promise.all([
+        proc.exited,
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+      ]);
+
+      expect(exitCode).not.toBe(0);
+      expect(stdout).toBe("");
+      expect(stderr).toContain(
+        `hunk: could not serve this review through the session daemon on 127.0.0.1:${port}.`,
+      );
+      expect(stderr).toContain("is already in use by another process");
+      expect(stderr).toContain("HUNK_MCP_PORT");
+      // The registration bound is 6 s; leave room for Bun startup on a loaded machine.
+      expect(Date.now() - startedAt).toBeLessThan(20_000);
+    } finally {
+      await new Promise<void>((resolve) => squatter.close(() => resolve()));
+    }
+  }, 60_000);
+
+  // Once its daemon died, a session had nothing referenced left in Bun's event loop and polled it
+  // with a zero timeout: sessions leaked by this suite ran at 100% CPU for hours. Linux-only: CPU
+  // time is read from procfs, in the 100 Hz clock ticks Linux reports.
+  test.skipIf(process.platform !== "linux")(
+    "idles while its daemon is gone instead of spinning the event loop",
+    async () => {
+      const dir = createTestFixture();
+      const port = await reserveLoopbackPort();
+      const { proc } = await startHeadlessReview(dir, port, ["--no-watch"]);
+      const daemonPid = readLaunchedDaemonPid(port);
+      expect(daemonPid).not.toBeNull();
+
+      // Hold the launch lock as this live test process so the session cannot relaunch a daemon,
+      // then kill the one it started: the session stays disconnected for the whole sample.
+      const lockDir = join(testRuntimeDir, "hunk-mcp");
+      const lockPath = join(lockDir, `daemon-127-0-0-1-${port}.lock`);
+      mkdirSync(lockDir, { recursive: true });
+      writeFileSync(
+        lockPath,
+        JSON.stringify({
+          ownerPid: process.pid,
+          host: "127.0.0.1",
+          port,
+          acquiredAt: new Date().toISOString(),
+        }),
+      );
+      try {
+        process.kill(daemonPid!, "SIGKILL");
+        await Bun.sleep(1_000);
+
+        const before = readCpuTicks(proc.pid);
+        await Bun.sleep(2_000);
+        const ticks = readCpuTicks(proc.pid) - before;
+        // A spinning session burns ~200 ticks in 2 s; an idle one a handful while it reconnects.
+        expect(ticks).toBeLessThan(50);
+        expect(proc.exitCode).toBeNull();
+
+        proc.kill("SIGINT");
+        expect(await proc.exited).toBe(0);
+      } finally {
+        rmSync(lockPath, { force: true });
+      }
+    },
+    60_000,
+  );
 });
