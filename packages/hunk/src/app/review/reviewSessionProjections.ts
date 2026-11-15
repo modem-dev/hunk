@@ -11,7 +11,10 @@
  * keys are the store's. The file index below is the one crossing between the two.
  */
 import { findDiffFileByPath, findHunkIndexForLine } from "../../core/liveComments";
-import { createSidecarProjectionBudget } from "../../core/review/noteSize";
+import {
+  createSidecarProjectionBudget,
+  MAX_SNAPSHOT_NOTE_SUMMARY_BYTES,
+} from "../../core/review/noteSize";
 import { utf8ByteLength } from "../../core/review/validation";
 import {
   buildReviewAnnotationIndex,
@@ -136,72 +139,125 @@ export function buildReviewSessionAnnotationIndex(
   );
 }
 
-/**
- * List the review's agent live comments for daemon snapshots, in file order then arrival order.
- *
- * Notes on files a reload retired stay in the store and are left out here, so the published
- * count always matches the list.
- */
-export function buildLiveCommentSummaries(
-  files: readonly DiffFile[],
-  fileIndex: ReviewFileIndex,
-  state: Pick<ReviewState, "liveNotes">,
-): SessionLiveCommentSummary[] {
-  const notesByFileId = new Map<string, ReviewNoteV1[]>();
-  for (const entry of state.liveNotes) {
-    const file = fileIndex.fileByKey.get(entry.note.fileKey);
-    if (!file || !isRenderableStoredReviewNote(entry)) {
-      continue;
-    }
-    const notes = notesByFileId.get(file.id) ?? [];
-    notes.push(entry.note);
-    notesByFileId.set(file.id, notes);
-  }
+/** Format one live note as the live-comment summary a snapshot carries. */
+function liveCommentSummary(file: DiffFile, note: ReviewNoteV1): SessionLiveCommentSummary {
+  const anchorLine = reviewNoteAnchorLine(note);
+  return {
+    commentId: note.id,
+    ...(note.parentId ? { parentId: note.parentId } : {}),
+    filePath: file.path,
+    hunkIndex: reviewNoteOwnerHunkIndex(note),
+    side: anchorLine.side,
+    line: anchorLine.line,
+    summary: note.summary,
+    rationale: note.rationale,
+    author: note.author,
+    createdAt: note.createdAt ?? UNKNOWN_NOTE_CREATED_AT,
+  };
+}
 
-  return files.flatMap((file) =>
-    (notesByFileId.get(file.id) ?? []).map((note) => {
-      const anchorLine = reviewNoteAnchorLine(note);
-      return {
-        commentId: note.id,
-        ...(note.parentId ? { parentId: note.parentId } : {}),
-        filePath: file.path,
-        hunkIndex: reviewNoteOwnerHunkIndex(note),
-        side: anchorLine.side,
-        line: anchorLine.line,
-        summary: note.summary,
-        rationale: note.rationale,
-        author: note.author,
-        createdAt: note.createdAt ?? UNKNOWN_NOTE_CREATED_AT,
-      };
-    }),
-  );
+/** Format one stored note as the inline-note summary a snapshot carries. */
+function storedReviewNoteSummary(file: DiffFile, note: ReviewNoteV1): SessionReviewNoteSummary {
+  // Stored notes are either the reviewer's own or agent-authored live comments.
+  const source = note.source === "user" ? "user" : "agent";
+  const ranges = noteRanges(note);
+  return {
+    noteId: note.id,
+    ...(note.parentId ? { parentId: note.parentId } : {}),
+    source,
+    filePath: file.path,
+    hunkIndex: reviewNoteOwnerHunkIndex(note),
+    oldRange: ranges.oldRange,
+    newRange: ranges.newRange,
+    body: noteBody(note),
+    author: source === "user" ? (note.author ?? "user") : note.author,
+    createdAt: note.createdAt ?? UNKNOWN_NOTE_CREATED_AT,
+    updatedAt: note.updatedAt,
+    editable: source === "user",
+  };
+}
+
+/** The two note lists one daemon snapshot carries, bounded together. */
+export interface SessionNoteSummaries {
+  liveComments: SessionLiveCommentSummary[];
+  reviewNotes: SessionReviewNoteSummary[];
 }
 
 /**
- * List every inline note for daemon snapshots: per file, sidecar annotations and then stored
- * notes in thread order.
+ * List the live comments and inline notes a daemon snapshot publishes, within one byte budget.
+ *
+ * Live comments come in file order then arrival order; inline notes come per file as sidecar
+ * annotations and then stored notes in thread order. The snapshot repeats each stored note's
+ * text in both lists, so the daemon's per-session ceiling is shared by both lists and the
+ * sidecar annotations (`MAX_SNAPSHOT_NOTE_SUMMARY_BYTES`). Stored notes claim the budget first,
+ * in thread order, so the reviewer's own notes and agent comments outrank launch-input sidecar
+ * annotations; the first note that does not fit closes the stored share (a later one never
+ * appears without an earlier one, so a reply keeps its parent). The sidecar annotations then
+ * take what is left, up to their own bound. The review itself is untouched: the terminal keeps
+ * and draws every note, and only this projection stops.
  */
-export function buildReviewNoteSummaries(
+export function buildSessionNoteSummaries(
   files: readonly DiffFile[],
   fileIndex: ReviewFileIndex,
   state: Pick<ReviewState, "liveNotes" | "userNotes">,
-): SessionReviewNoteSummary[] {
+): SessionNoteSummaries {
+  const liveIds = new Set(state.liveNotes.map((entry) => entry.note.id));
   const storedByFileId = new Map<string, ReviewNoteV1[]>();
+  const noteSummaryById = new Map<string, SessionReviewNoteSummary>();
+  const liveSummaryById = new Map<string, SessionLiveCommentSummary>();
+  let remainingBytes = MAX_SNAPSHOT_NOTE_SUMMARY_BYTES;
+  let storedShareClosed = false;
+
   for (const { entry } of selectThreadedStoredReviewNotes(state)) {
     const file = fileIndex.fileByKey.get(entry.note.fileKey);
-    if (!file || !isRenderableStoredReviewNote(entry)) {
+    if (!file || !isRenderableStoredReviewNote(entry) || storedShareClosed) {
       continue;
+    }
+
+    const noteSummary = storedReviewNoteSummary(file, entry.note);
+    const liveSummary = liveIds.has(entry.note.id)
+      ? liveCommentSummary(file, entry.note)
+      : undefined;
+    // One byte per summary covers the comma that frames it in its list.
+    const size =
+      utf8ByteLength(JSON.stringify(noteSummary)) +
+      1 +
+      (liveSummary ? utf8ByteLength(JSON.stringify(liveSummary)) + 1 : 0);
+    if (size > remainingBytes) {
+      storedShareClosed = true;
+      continue;
+    }
+
+    remainingBytes -= size;
+    noteSummaryById.set(entry.note.id, noteSummary);
+    if (liveSummary) {
+      liveSummaryById.set(entry.note.id, liveSummary);
     }
     const notes = storedByFileId.get(file.id) ?? [];
     notes.push(entry.note);
     storedByFileId.set(file.id, notes);
   }
 
-  const noteSummaries: SessionReviewNoteSummary[] = [];
+  const liveNotesByFileId = new Map<string, ReviewNoteV1[]>();
+  for (const entry of state.liveNotes) {
+    const file = fileIndex.fileByKey.get(entry.note.fileKey);
+    if (!file || !liveSummaryById.has(entry.note.id)) {
+      continue;
+    }
+    const notes = liveNotesByFileId.get(file.id) ?? [];
+    notes.push(entry.note);
+    liveNotesByFileId.set(file.id, notes);
+  }
+
+  const liveComments = files.flatMap((file) =>
+    (liveNotesByFileId.get(file.id) ?? []).map((note) => liveSummaryById.get(note.id)!),
+  );
+
+  const reviewNotes: SessionReviewNoteSummary[] = [];
   // Sidecar annotations are launch input and never fail a review; past the projected count or
-  // byte bound the snapshot omits the rest so the daemon keeps accepting it and the frame stays
-  // within the websocket bound (the terminal still draws them all).
-  const sidecarBudget = createSidecarProjectionBudget();
+  // byte bound, or the bytes stored notes left, the snapshot omits the rest so the daemon keeps
+  // accepting it (the terminal still draws them all).
+  const sidecarBudget = createSidecarProjectionBudget(remainingBytes);
   for (const file of files) {
     (file.agent?.annotations ?? []).forEach((annotation, index) => {
       const source = reviewNoteSource(annotation);
@@ -219,32 +275,34 @@ export function buildReviewNoteSummaries(
         editable: false,
       };
       if (sidecarBudget.admitSize(utf8ByteLength(JSON.stringify(summary)))) {
-        noteSummaries.push(summary);
+        reviewNotes.push(summary);
       }
     });
 
     for (const note of storedByFileId.get(file.id) ?? []) {
-      // Stored notes are either the reviewer's own or agent-authored live comments.
-      const source = note.source === "user" ? "user" : "agent";
-      const ranges = noteRanges(note);
-      noteSummaries.push({
-        noteId: note.id,
-        ...(note.parentId ? { parentId: note.parentId } : {}),
-        source,
-        filePath: file.path,
-        hunkIndex: reviewNoteOwnerHunkIndex(note),
-        oldRange: ranges.oldRange,
-        newRange: ranges.newRange,
-        body: noteBody(note),
-        author: source === "user" ? (note.author ?? "user") : note.author,
-        createdAt: note.createdAt ?? UNKNOWN_NOTE_CREATED_AT,
-        updatedAt: note.updatedAt,
-        editable: source === "user",
-      });
+      reviewNotes.push(noteSummaryById.get(note.id)!);
     }
   }
 
-  return noteSummaries;
+  return { liveComments, reviewNotes };
+}
+
+/** List the agent live comments a daemon snapshot publishes; see `buildSessionNoteSummaries`. */
+export function buildLiveCommentSummaries(
+  files: readonly DiffFile[],
+  fileIndex: ReviewFileIndex,
+  state: Pick<ReviewState, "liveNotes" | "userNotes">,
+): SessionLiveCommentSummary[] {
+  return buildSessionNoteSummaries(files, fileIndex, state).liveComments;
+}
+
+/** List every inline note a daemon snapshot publishes; see `buildSessionNoteSummaries`. */
+export function buildReviewNoteSummaries(
+  files: readonly DiffFile[],
+  fileIndex: ReviewFileIndex,
+  state: Pick<ReviewState, "liveNotes" | "userNotes">,
+): SessionReviewNoteSummary[] {
+  return buildSessionNoteSummaries(files, fileIndex, state).reviewNotes;
 }
 
 /**

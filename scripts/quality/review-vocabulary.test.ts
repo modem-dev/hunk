@@ -25,6 +25,7 @@ import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import {
+  DEFAULT_SESSION_BROKER_LIMITS,
   MAX_SNAPSHOT_LIVE_COMMENTS,
   MAX_SNAPSHOT_REVIEW_NOTES,
   MAX_WS_MESSAGE_BYTES,
@@ -35,6 +36,7 @@ import {
   MAX_REVIEW_NOTE_BYTES,
   MAX_REVIEW_NOTES,
   MAX_REVIEW_NOTES_TOTAL_BYTES,
+  MAX_SNAPSHOT_NOTE_SUMMARY_BYTES,
 } from "../../packages/hunk/src/core/review/noteSize";
 import { REVIEW_INTENT_TYPES } from "../../packages/hunk/src/core/review/intents";
 import { REVIEW_RESOURCE_CHUNK_BYTES } from "../../packages/hunk/src/core/review/resources";
@@ -162,8 +164,17 @@ describe("review constant derivation", () => {
     expect(MAX_REVIEW_NOTES_TOTAL_BYTES + MAX_PROJECTED_SIDECAR_NOTE_BYTES).toBeLessThanOrEqual(
       (MAX_REVIEW_SHARED_STATE_BYTES * 3) / 4,
     );
-    // The session snapshot repeats each stored note's text in two summary lists.
-    expect(2 * MAX_REVIEW_NOTES_TOTAL_BYTES + MAX_PROJECTED_SIDECAR_NOTE_BYTES).toBeLessThanOrEqual(
+    // The binding limit on a session snapshot is the daemon's per-session retained ceiling, not
+    // the websocket frame. The summaries repeat each stored note's text in two lists, so the
+    // projection carries one joint byte budget: it leaves a quarter of the ceiling for
+    // registration and snapshot metadata, and it is tighter than the unbounded lists would be.
+    expect(MAX_SNAPSHOT_NOTE_SUMMARY_BYTES).toBeLessThanOrEqual(
+      (DEFAULT_SESSION_BROKER_LIMITS.maxRetainedSessionBytes * 3) / 4,
+    );
+    expect(2 * MAX_REVIEW_NOTES_TOTAL_BYTES + MAX_PROJECTED_SIDECAR_NOTE_BYTES).toBeGreaterThan(
+      DEFAULT_SESSION_BROKER_LIMITS.maxRetainedSessionBytes,
+    );
+    expect(DEFAULT_SESSION_BROKER_LIMITS.maxRetainedSessionBytes).toBeLessThan(
       (MAX_WS_MESSAGE_BYTES * 3) / 4,
     );
     expect(MAX_REVIEW_NOTES_TOTAL_BYTES).toBeGreaterThanOrEqual(MAX_REVIEW_NOTE_BYTES);

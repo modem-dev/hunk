@@ -46,8 +46,9 @@ export const MAX_REVIEW_NOTES = 4_000;
  * The shared-state snapshot carries every stored note and the projected sidecar annotations
  * inside `MAX_REVIEW_SHARED_STATE_BYTES` (4 MiB): 2 MiB here plus 1 MiB of sidecar leaves a
  * quarter for file metadata and framing. The session snapshot carries each note's text up to
- * twice (live-comment and note summaries), within three quarters of the websocket frame bound.
- * Eight maximum-size notes, or four thousand of about 200 characters.
+ * twice (live-comment and note summaries), which can exceed the daemon's per-session ceiling, so
+ * its projection is bounded jointly by `MAX_SNAPSHOT_NOTE_SUMMARY_BYTES` while the review keeps
+ * every note. Eight maximum-size notes, or four thousand of about 200 characters.
  */
 export const MAX_REVIEW_NOTES_TOTAL_BYTES = 2 * 1024 * 1024;
 
@@ -63,6 +64,21 @@ export const MAX_PROJECTED_SIDECAR_NOTES = 5_000;
 
 /** Most serialized bytes of sidecar annotations a shared state carries; see above. */
 export const MAX_PROJECTED_SIDECAR_NOTE_BYTES = 1024 * 1024;
+
+/**
+ * Most serialized bytes of note summaries one session snapshot carries.
+ *
+ * The daemon refuses a session whose retained registration and snapshot exceed 4 MiB
+ * (`maxRetainedSessionBytes`), and a refused session is dropped on every reconnect. The
+ * snapshot repeats each stored note's text in `liveComments` and `reviewNotes`, so the stored
+ * bound alone (`MAX_REVIEW_NOTES_TOTAL_BYTES`) can reach twice its size, plus sidecar
+ * annotations. This joint bound keeps all three together at 3 MiB, leaving a quarter of the
+ * retained ceiling for registration metadata and the rest of the snapshot.
+ * `scripts/quality/review-vocabulary.test.ts` asserts that arithmetic against the broker's
+ * limit, which this browser-safe module cannot import. The review itself is not bounded by
+ * this: the terminal keeps and draws every note, and only the daemon-facing projection stops.
+ */
+export const MAX_SNAPSHOT_NOTE_SUMMARY_BYTES = 3 * 1024 * 1024;
 
 /** Which stored-note bound a change would exceed, if any. */
 export type ReviewNoteCapacityIssue = "count" | "bytes";
@@ -122,9 +138,10 @@ export function reviewNoteCapacityIssue(
  * annotation would exceed the count bound, the byte bound, or the per-note bound
  * (`MAX_REVIEW_NOTE_BYTES`, which every reader parses notes at); every later one is then
  * refused too, so a projection never skips one annotation and shows a later one.
- * `omitted` counts what was refused.
+ * `omitted` counts what was refused. `maxBytes` lowers the byte bound when stored notes have
+ * already claimed part of a joint snapshot budget.
  */
-export function createSidecarProjectionBudget() {
+export function createSidecarProjectionBudget(maxBytes = MAX_PROJECTED_SIDECAR_NOTE_BYTES) {
   let count = 0;
   let bytes = 0;
   let full = false;
@@ -136,7 +153,7 @@ export function createSidecarProjectionBudget() {
       full ||
       size > MAX_REVIEW_NOTE_BYTES ||
       count + 1 > MAX_PROJECTED_SIDECAR_NOTES ||
-      bytes + size > MAX_PROJECTED_SIDECAR_NOTE_BYTES
+      bytes + size > Math.min(maxBytes, MAX_PROJECTED_SIDECAR_NOTE_BYTES)
     ) {
       full = true;
       omitted += 1;
