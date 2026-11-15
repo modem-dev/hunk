@@ -67,6 +67,13 @@ function storeRecents(recents: readonly string[]) {
   }
 }
 
+/**
+ * What a copied link grants, appended to both copy confirmations: every review link carries
+ * this tab's capability, as the toolbar's "Copy link" tooltip says.
+ */
+const COPIED_LINK_GRANTS_ACCESS =
+  "It includes this review's access key: anyone who can reach this machine's Hunk daemon can use it to open and write to this review.";
+
 type ReviewTool = "palette" | "goToFile" | "help";
 
 export interface ReviewToolsOptions {
@@ -206,7 +213,7 @@ export function useReviewTools(options: ReviewToolsOptions) {
           session.capability,
         ),
       );
-      session.toasts.show("Link copied.", "info");
+      session.toasts.show(`Link copied. ${COPIED_LINK_GRANTS_ACCESS}`, "info");
     } catch {
       session.toasts.show("The browser did not allow copying the link.");
     }
@@ -228,7 +235,9 @@ export function useReviewTools(options: ReviewToolsOptions) {
             .copyReviewLink()
             .then((copied) =>
               session.toasts.show(
-                copied ? "Review link copied." : "The browser did not allow copying the link.",
+                copied
+                  ? `Review link copied. ${COPIED_LINK_GRANTS_ACCESS}`
+                  : "The browser did not allow copying the link.",
                 copied ? "info" : "error",
               ),
             );

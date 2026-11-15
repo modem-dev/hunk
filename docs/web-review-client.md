@@ -170,7 +170,7 @@ connect-src 'self'; img-src blob:; base-uri 'none'; form-action 'none'; frame-an
 | `script-src 'self'`                | The entry and its lazy chunks come from `/review-assets`. No `'unsafe-eval'`: Shiki's JavaScript regex engine uses `RegExp`, not `eval`.                                                                                                                                                |
 | `style-src 'self' 'unsafe-inline'` | The page stylesheet is `'self'`. Pierre writes token colors as `style` attributes in HTML it injects, and both Pierre and Trees add `<style>` elements in their shadow roots for themes; neither is hashable. Constructable stylesheets (`adoptedStyleSheets`) are not governed by CSP. |
 | `connect-src 'self'`               | `fetch` to the same-origin review API.                                                                                                                                                                                                                                                  |
-| `img-src blob:`                    | Image previews only: the page reads a file's bytes through the verified resource path, sniffs the type, and shows a `blob:` URL it minted through `<img>`. No remote, `data:`, or same-origin images; an SVG drawn through `<img>` cannot run script.                                   |
+| `img-src blob:`                    | Image previews only: the page reads a file's bytes through the verified resource path, sniffs the type, and shows a `blob:` URL it minted through `<img>`. No remote, `data:`, or same-origin images; blobs are raster types only, never SVG.                                           |
 | `base-uri 'none'`                  | No `<base>` can redirect the absolute asset paths.                                                                                                                                                                                                                                      |
 | `form-action 'none'`               | The page submits no forms.                                                                                                                                                                                                                                                              |
 | `frame-ancestors 'none'`           | The page cannot be framed (with `x-frame-options: DENY` for older engines).                                                                                                                                                                                                             |
@@ -447,9 +447,9 @@ imports; a page fetches only the languages and themes it shows. The largest sing
   this browser. Mouse only and `aria-hidden`: the stream scrolls from the keyboard. The
   stream's measured width now follows the page once it mounts (it read 0 before, so `auto`
   layout always chose unified).
-- **Image previews.** A binary file whose path names an image format and whose first bytes carry
-  that format's signature (`previews/imageSniff.ts`: PNG, JPEG, GIF, WebP, BMP, ICO, AVIF, SVG)
-  replaces "Binary file skipped" with a preview: side by side, swipe, or onion skin, with
+- **Image previews.** A binary file whose path names a raster image format and whose first
+  bytes carry that format's signature (`previews/imageSniff.ts`: PNG/APNG, JPEG, GIF, WebP, BMP,
+  ICO) replaces "Binary file skipped" with a preview: side by side, swipe, or onion skin, with
   dimensions and byte sizes over a checkerboard; an added or deleted image shows its one side.
   Each side's `bytes` resource is read whole (refused past 16 MiB with the catalog's
   `resource-too-large`), wrapped in a `Blob` typed from the sniffed signature, shown only through
@@ -457,14 +457,42 @@ imports; a page fetches only the languages and themes it shows. The largest sing
   8×, pixelated); both sides share one box in the stacked modes. Bytes that are not an image or
   do not decode keep the placeholder; a failed read shows the catalog message. Reads queue at
   the daemon while the session's share of the read budget is busy instead of failing.
+  - _Raster only._ Every blob the page mints has a type from the fixed `PREVIEW_IMAGE_MIMES`
+    allow-list, checked again just before `URL.createObjectURL`. SVG is refused: inside `<img>`
+    it is inert, but "Open image in new tab" on a `blob:` URL typed `image/svg+xml` renders it
+    as a document in the review origin, and whether its script runs there depends on whether
+    the browser applies the page's CSP to blob documents. A text SVG keeps its ordinary text
+    diff, as before; a binary one keeps "Binary file skipped". AVIF is refused because its
+    decoded size cannot be bounded cheaply from the container (the `ispe` box is one of several
+    item properties, and sequences add more).
+  - _Bounded decode._ A few-KB file can declare a size that decodes to gigabytes, and previews
+    mount on scroll with swipe and onion skin decoding both sides. Before a blob exists, the
+    header dimensions are read for every accepted format (PNG `IHDR`; GIF logical screen; JPEG's
+    first SOF segment, walking marker lengths; WebP `VP8 `/`VP8L`/`VP8X`; BMP core and info DIB
+    headers; every ICO entry and the PNG or DIB it points to, so a lying directory cannot hide a
+    large embedded image). The readers are bounds-checked and return nothing on truncated or
+    malformed bytes; an image whose size cannot be read is not previewed. One past 16,384 px on
+    a side or 50 megapixels in total shows the placeholder with its size ("Image too large to
+    preview: 30000 × 30000").
 - **Rendered Markdown.** A Markdown file with a `source` resource gets a header toggle between
   its diff and its rendered new text (old text for a deleted file). `previews/markdown.ts`
   parses a subset (headings, paragraphs, emphasis, strong, strikethrough, inline and fenced
   code, lists, block quotes, links, rules, pipe tables) into a tree with no node that carries
   markup, and `MarkdownView.tsx` builds React elements from it: raw HTML stays text, only
-  `http:`/`https:` links render (with `rel="noopener noreferrer"` and `target="_blank"`), images
-  show their alt text, nesting is capped, and lines over 10,000 characters are not scanned for
-  inline markup. The choice is per file and per tab.
+  `http:`/`https:` links render (with `rel="noopener noreferrer"` and `target="_blank"`), and
+  images show their alt text. The choice is per file and per tab.
+  - _Linear work on hostile text._ The source is attacker-authored and parsed on the main
+    thread, so the parser uses no regular expressions: block and inline syntax is recognized by
+    forward scans with no backtracking (a cubic heading pattern once took 11 s on 4 KB). Inline
+    lookahead (closing delimiters, `]`, link targets, code-span closers) comes from per-line
+    caches and tables built in one pass, so unmatched openers never rescan. Each nesting level
+    (capped at 12) reads its lines a bounded number of times; tests assert the parser's step
+    count stays within a fixed multiple of the input length, with wall-clock bounds as a backstop.
+  - _Bounded output._ Lines over 10,000 characters skip block detection and render as paragraph
+    text, and are not scanned for inline markup. Tables keep at most 64 columns, say so when they
+    drop more, and never pad short rows (padding let 12 KB of pipes produce 4 million cells).
+    A document stops at 50,000 nodes with a visible "Preview truncated" note. Sources over
+    512 KiB are not parsed at all: the rendered view says why and shows the diff beneath.
 
 ## Pierre findings that shaped the client
 

@@ -1,7 +1,8 @@
 /**
  * Writes a git repository whose staged changes exercise the rich previews: real PNG images
  * changed, added, and deleted (with transparency), a binary file named like an image that is
- * not one, and Markdown files changed and deleted with adversarial content.
+ * not one, a tiny PNG declaring 30000 × 30000, SVGs carrying script (one text, one binary),
+ * and Markdown files changed and deleted with adversarial content.
  */
 import { execFileSync } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -17,7 +18,17 @@ export const PREVIEW_REVIEW_PATHS: readonly string[] = [
   "images/fake.png",
   "docs/guide.md",
   "docs/removed.md",
+  "images/huge.png",
+  "images/script.svg",
+  "images/packed.svg",
 ];
+
+/** An SVG that would run script if it were ever rendered as a document. */
+export const SCRIPT_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8">\n' +
+  "<script>window.__hunkSvgPwned = true</script>\n" +
+  '<rect width="8" height="8" fill="red"/>\n' +
+  "</svg>\n";
 
 const CRC_TABLE = Array.from({ length: 256 }, (_unused, index) => {
   let value = index;
@@ -79,6 +90,25 @@ export function encodeTestPng(
     offset += part.length;
   }
   return out;
+}
+
+/**
+ * A few-hundred-byte PNG whose header declares `width × height` but whose pixel data covers
+ * one row: decoding it would allocate the declared size, so the preview must refuse it first.
+ */
+function declaredSizeTestPng(width: number, height: number) {
+  const header = new Uint8Array(13);
+  const view = new DataView(header.buffer);
+  view.setUint32(0, width);
+  view.setUint32(4, height);
+  header.set([8, 6, 0, 0, 0], 8);
+  const parts = [
+    Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", header),
+    chunk("IDAT", new Uint8Array(deflateSync(new Uint8Array(64)))),
+    chunk("IEND", new Uint8Array()),
+  ];
+  return Uint8Array.from(parts.flatMap((part) => Array.from(part)));
 }
 
 /** Run one git command with a fixed identity. */
@@ -158,6 +188,10 @@ export function writePreviewReviewRepo(repo: string) {
   write(repo, "images/fake.png", Uint8Array.from([0x25, 0x50, 0x44, 0x46, 0, 9, 9, 0, 3]));
   write(repo, "docs/guide.md", GUIDE_AFTER);
   rmSync(join(repo, "docs", "removed.md"));
+  write(repo, "images/huge.png", declaredSizeTestPng(30_000, 30_000));
+  write(repo, "images/script.svg", SCRIPT_SVG);
+  // A NUL byte makes git treat this SVG as binary, so it reaches the image-preview slot.
+  write(repo, "images/packed.svg", `${SCRIPT_SVG}\0`);
   git(repo, "add", "-A");
   writeFileSync(
     reviewOrderSidecarPath(repo),

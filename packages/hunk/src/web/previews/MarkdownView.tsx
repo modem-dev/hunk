@@ -5,10 +5,11 @@
  * There is no `dangerouslySetInnerHTML` and no node type that carries markup, so raw HTML in
  * the source arrives here as text and React escapes it. Links are the only elements with a
  * target, already restricted to `http:` and `https:` by the parser, and open in a new tab with
- * `rel="noopener noreferrer"`.
+ * `rel="noopener noreferrer"`. A table clipped at `MAX_TABLE_COLUMNS` and a document cut at the
+ * parser's node budget each say so in place, so nothing is dropped silently.
  */
 import type { ReactNode } from "react";
-import type { MarkdownBlock, MarkdownInline } from "./markdown";
+import { MAX_TABLE_COLUMNS, type MarkdownBlock, type MarkdownInline } from "./markdown";
 
 /** Render inline nodes. */
 function inline(nodes: readonly MarkdownInline[]): ReactNode[] {
@@ -91,7 +92,24 @@ function blocks(nodes: readonly MarkdownBlock[]): ReactNode[] {
                 ))}
               </tbody>
             </table>
+            {node.clipped ? (
+              <p className="file-placeholder" role="note" data-testid="markdown-table-clipped">
+                Columns past the first {MAX_TABLE_COLUMNS} are not shown.
+              </p>
+            ) : null}
           </div>
+        );
+      case "truncated":
+        return (
+          <p
+            key={index}
+            className="file-placeholder"
+            role="note"
+            data-testid="markdown-preview-truncated"
+          >
+            Preview truncated: the rest of this document is too large to render. Show the diff to
+            read all of it.
+          </p>
         );
     }
   });

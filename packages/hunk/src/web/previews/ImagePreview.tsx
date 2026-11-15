@@ -5,11 +5,12 @@
  * deleted image shows its one side.
  *
  * Each side's `bytes` resource is read whole (refused past `MAX_REVIEW_BYTES_RESOURCE_BYTES`),
- * its type is sniffed from its first bytes (`./imageSniff.ts`), and only then does it become a
- * `Blob` with that type and a `blob:` URL, shown only through `<img>` — never `<object>`,
- * `<iframe>`, or inline SVG, so an SVG cannot run script — and revoked on unmount. Bytes that
- * are not an image, or that the browser cannot decode, fall back to the stream's own
- * placeholder.
+ * its type is sniffed from its first bytes (`./imageSniff.ts`, raster formats only), and its
+ * header dimensions are read and checked against `PREVIEW_IMAGE_LIMITS` before anything is
+ * decoded. Only then does it become a `Blob` with that allow-listed type and a `blob:` URL,
+ * shown only through `<img>` and revoked on unmount. Bytes that are not an accepted image, or
+ * whose size cannot be read, or that the browser cannot decode, fall back to the stream's own
+ * placeholder; an image past the limits shows the placeholder with its size.
  */
 import { useContext, useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import {
@@ -19,13 +20,20 @@ import {
 import type { ReviewSide } from "../../core/review/types";
 import { reviewErrorMessage } from "../../session/reviewErrorCatalog";
 import { ReviewApiError } from "../transport/apiClient";
-import { headerImageSize, previewDisplaySize, sniffPreviewImageMime } from "./imageSniff";
+import {
+  headerImageSize,
+  PREVIEW_IMAGE_MIMES,
+  previewDisplaySize,
+  previewImageRefusal,
+  sniffPreviewImageMime,
+} from "./imageSniff";
 import { PreviewContext } from "./previewContext";
 
 type SideImage =
   | { status: "loading" }
-  | { status: "ready"; url: string; mime: string; size: number; width?: number; height?: number }
+  | { status: "ready"; url: string; mime: string; size: number; width: number; height: number }
   | { status: "failed"; message: string }
+  | { status: "too-large"; message: string }
   | { status: "not-image" };
 
 type ImageMode = "side-by-side" | "swipe" | "onion";
@@ -63,18 +71,19 @@ function useSideImage(descriptor: ReviewResourceDescriptorV1 | undefined): SideI
       .then((bytes) => {
         if (controller.signal.aborted) return;
         const mime = sniffPreviewImageMime(bytes);
-        if (!mime) {
+        const dimensions = mime ? headerImageSize(bytes, mime) : undefined;
+        // An unknown type, or a size the header does not state, is never decoded.
+        if (!mime || !dimensions || !PREVIEW_IMAGE_MIMES.has(mime)) {
           setImage({ status: "not-image" });
           return;
         }
+        const refusal = previewImageRefusal(dimensions);
+        if (refusal) {
+          setImage({ status: "too-large", message: refusal });
+          return;
+        }
         url = URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: mime }));
-        setImage({
-          status: "ready",
-          url,
-          mime,
-          size: bytes.byteLength,
-          ...headerImageSize(bytes, mime),
-        });
+        setImage({ status: "ready", url, mime, size: bytes.byteLength, ...dimensions });
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
@@ -98,8 +107,7 @@ function useSideImage(descriptor: ReviewResourceDescriptorV1 | undefined): SideI
 
 /** One side's caption: which side, dimensions, and size. */
 function caption(label: string, image: Extract<SideImage, { status: "ready" }>) {
-  const dimensions = image.width && image.height ? `${image.width} × ${image.height}` : undefined;
-  return [label, dimensions, formatPreviewBytes(image.size)].filter(Boolean).join(" · ");
+  return [label, `${image.width} × ${image.height}`, formatPreviewBytes(image.size)].join(" · ");
 }
 
 export interface ImagePreviewProps {
@@ -133,6 +141,14 @@ export function ImagePreview({ path, fileKey, fallback }: ImagePreviewProps) {
   ) {
     return <>{fallback}</>;
   }
+  const tooLarge = sides.find((entry) => entry.image!.status === "too-large");
+  if (tooLarge) {
+    return (
+      <p className="file-placeholder" role="status" data-testid="image-preview-too-large">
+        {(tooLarge.image as Extract<SideImage, { status: "too-large" }>).message}
+      </p>
+    );
+  }
   const failed = sides.find((entry) => entry.image!.status === "failed");
   if (failed) {
     return (
@@ -146,11 +162,9 @@ export function ImagePreview({ path, fileKey, fallback }: ImagePreviewProps) {
   }
   const ready = sides.map((entry) => {
     const image = entry.image as Extract<SideImage, { status: "ready" }>;
+    // The decoded size wins once known: a JPEG's EXIF orientation can swap its header's axes.
     const size = measured[entry.side];
-    return {
-      ...entry,
-      image: size && !image.width ? { ...image, width: size.width, height: size.height } : image,
-    };
+    return { ...entry, image: size ? { ...image, width: size.width, height: size.height } : image };
   });
   const single = ready.length === 1;
   const label = (entry: (typeof ready)[number]) =>
@@ -158,8 +172,8 @@ export function ImagePreview({ path, fileKey, fallback }: ImagePreviewProps) {
   // Both sides share one drawing box in the stacked modes, sized from the larger image, so swipe
   // and onion skin line up pixel for pixel; side by side, each side gets its own size.
   const boxFor = (sides: typeof ready) => {
-    const width = Math.max(...sides.map((entry) => entry.image.width ?? 0));
-    const height = Math.max(...sides.map((entry) => entry.image.height ?? 0));
+    const width = Math.max(...sides.map((entry) => entry.image.width));
+    const height = Math.max(...sides.map((entry) => entry.image.height));
     return previewDisplaySize(width, height);
   };
   const img = (
