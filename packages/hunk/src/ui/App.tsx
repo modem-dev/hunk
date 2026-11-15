@@ -273,7 +273,7 @@ export function App({
   }, [initialFilePath, reviewFiles, review.selectFile]);
   // The producer plans brokered actions against the store this controller owns, so a
   // remote action and a key press reach the same state through the same intent path.
-  // AppHost detaches the previous store while committing a reload; this child layout
+  // The reload coordinator detaches the previous store while committing a reload; this child layout
   // effect installs the matching store before parent lifecycle handlers can use it.
   useLayoutEffect(() => {
     reviewProducer?.attachStore(review.store);

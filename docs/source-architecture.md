@@ -67,7 +67,8 @@ packages/hunk/src/main.tsx
         -> app/sessionBootstrap.ts selects VCS and loads one Changeset
         -> main.tsx lazy-loads ui/runInteractiveApp.tsx
            -> HunkSessionHost routes history and review in one React root
-           -> AppHost owns reload, extension adoption, and review publication ordering
+           -> AppHost drives app/session/reloadCoordinator.ts, which owns reload, extension
+              adoption, and review publication ordering; AppHost keeps the React commit
            -> App owns review interaction and layout coordination
               -> useTerminalReview adapts app/review/reviewSessionHost.ts, the renderer-free
                  owner of the live review store
@@ -115,9 +116,12 @@ work such as extension discovery, notices, and mounted UI state.
 
 `ui/runInteractiveApp.tsx` owns the renderer, extension session, review runtime, and ordered cleanup.
 `HunkSessionHost` routes history and review while retaining one `ExtensionSession`; that session owns
-user-extension registry authority and retirement. `AppHost` owns review reload serialization,
-content loading, broker publication, React commit, and post-layout event ordering. History closes
-its provider cursor before extension shutdown.
+user-extension registry authority and retirement. `ReviewReloadCoordinator`
+(`app/session/reloadCoordinator.ts`) owns review reload serialization, shutdown refusal, content
+loading, extension adoption, producer generation advance, and broker publication; `AppHost` drives
+it and keeps the React commit, post-layout event ordering, notices, and live view preferences.
+`core/watch/inputWatch.ts` arms watch mode for one input without React. History closes its provider
+cursor before extension shutdown.
 
 `ReviewSessionHost` (`app/review/reviewSessionHost.ts`) owns one live review without React: the
 `ReviewStore`, intent facts, live-comment ingestion, agent navigation and highlights, gap source

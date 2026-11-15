@@ -117,8 +117,11 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
 
 ## component guidance
 
-- `HunkSessionHost` owns history/review routing in one React root. `AppHost` owns reload
-  serialization, extension adoption, and broker/content/React commit ordering. `App` owns review
+- `HunkSessionHost` owns history/review routing in one React root.
+  `ReviewReloadCoordinator` (`app/session/reloadCoordinator.ts`) owns reload serialization,
+  shutdown refusal, loading, extension adoption, and broker/producer publication ordering for
+  every reload trigger; `AppHost` drives it and keeps the React commit, post-layout lifecycle
+  ordering, notices, and live view preferences. `App` owns review
   interaction, navigation, layout, theme, filtering, and pane coordination; review-semantic
   operations it triggers go through the `ReviewSessionHost` that `useTerminalReview` mounts. Pane
   and diff modules own rendering and geometry.
