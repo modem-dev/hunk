@@ -227,6 +227,9 @@ habits, so a checkout you review cannot rearrange them.
 The browser page answers to the same command ids and default chords. It leaves every chord
 that uses Ctrl, Cmd, or Alt, Tab, and the function keys to the browser, so `ctrl+d` and
 `ctrl+u` do nothing there (`d` and `u` still page), and it ignores keys typed into a field.
+A symbol typed through AltGr or Option (`]` on German and Nordic layouts) counts as the
+character, so `[` `]` `{` `}` navigate there too. A focused control keeps its own keys (Space on
+a checkbox, the scroll keys in the side panel), and toggles such as `V` ignore key auto-repeat.
 It does not read `[keybindings]` yet; the host's resolved keymap reaches it with the shared
 review state. Which commands the page implements is listed in
 [`web-review-client.md`](web-review-client.md#commands-and-keyboard).

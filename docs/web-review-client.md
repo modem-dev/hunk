@@ -376,9 +376,16 @@ imports; a page fetches only the languages and themes it shows. The largest sing
   shared-state route replaces them through the same `WebKeymap` shape. `keyboard.ts` maps a DOM
   `KeyboardEvent` onto the grammar's structural key event (Caps Lock `G` is `G`, never `g`) and
   masks what the browser owns: every Ctrl, Cmd, or Alt chord (so `ctrl+d`/`ctrl+u` stay the
-  browser's and `d`/`u` page), Tab, and the function keys. Nothing fires in a text field,
-  Space and Enter stay with a focused button, and arrow and paging keys stay with a focused
-  composite widget (the layout radio group, the theme listbox, the files tree).
+  browser's and `d`/`u` page), Tab, and the function keys. A printable symbol typed through
+  AltGr (Windows reports Ctrl and Alt together, or the `AltGraph` state) or Option (macOS
+  reports Alt alone) is the character, so `[` `]` `{` `}` work on German and Nordic layouts;
+  Alt with a letter or digit, and any Ctrl or Cmd chord, stay the browser's. Nothing fires in
+  a text field. A focused control keeps the keys that operate it: Space and Enter on a button,
+  Space on a checkbox (the "Viewed" boxes), the arrow keys on a radio or range input, the
+  scroll keys (arrows, paging, Home, End, Space) in a focused scroll region such as the side
+  panel body, and the arrow and paging keys in a composite widget (the layout radio group, the
+  theme listbox, the files tree). Letter shortcuts still run from a scroll region. Toggle
+  commands (`V`, `p`, the view toggles) run once per press and ignore key auto-repeat.
 - **Reveal and anchoring.** A `hunk` reveal puts the selected hunk just under the sticky file
   header, `file-top` puts the header at the top, `none` leaves the viewport alone. A hunk in a
   file that has not mounted is scrolled to by estimate and corrected when the file draws. When
@@ -423,8 +430,12 @@ imports; a page fetches only the languages and themes it shows. The largest sing
   (the filter, hidden agent notes) is named in a toast with its reason; a file this browser's
   "Hide viewed" hides is revealed instead (see Viewed files). Navigating rewrites the
   current history entry (`replaceState`); a deliberate jump (go to file, a sidebar file) adds
-  one (`pushState`), so Back and Forward return through them. "Copy link to this hunk or note"
-  copies the full link with the capability, on purpose.
+  one (`pushState`), so Back and Forward return through them, unless the reader is already
+  where the jump lands (clicking the same file again adds nothing). "Copy link to this hunk or
+  note" copies the full link with the capability, on purpose. A link pasted into a tab already
+  on the session navigates within the page; `watchReviewCapability` moves its key into tab
+  storage and out of the address on `hashchange` and `popstate`, and history writes never carry
+  it.
 
 ## Side panel and review tools
 
@@ -532,13 +543,22 @@ the shared-state snapshot lists only marks that still match each file's `content
 - **Marking.** Each file header has a "Viewed" checkbox; each flat sidebar row has one beside
   its button; tree rows show the mark as a decoration (`✓` viewed, `Δ` changed since viewed),
   because Pierre's tree rows take text decorations only. `V` (`hunk.web.toggleViewed`; the
-  catalog's `v` is visual selection) and the palette toggle the selected file.
+  catalog's `v` is visual selection) and the palette toggle the selected file. A toggle starts
+  from the mark the file is heading to, so a double press or double click inverts instead of
+  sending the same value twice, and sends go out in order per file. The gesture captures the
+  file's content identity: a send refused for a reload in progress is sent again against the
+  new generation only while the file still has that identity, so a mark is never applied to
+  content the reader did not see.
+- **Composers.** Opening a composer (`c`, reply, edit, a gutter pick) first shows that file's
+  diff: a rendered Markdown file returns to Diff and a collapsed viewed file expands.
 - **Progress.** The toolbar shows "12 of 47 viewed" over the files the shared filter leaves
   visible, counted by `countReviewViewedFiles` in `core/review/overview.ts`, which the Overview
   tab uses too.
 - **Changed since viewed.** The snapshot cannot say a file _was_ viewed before its content
   changed, so the page remembers per session and per browser the content each file was last
-  seen marked at (`viewed/viewedFiles.ts`, `localStorage` key `hunk.review.viewed.<session>`).
+  seen marked at (`viewed/viewedFiles.ts`, `localStorage` key `hunk.review.viewed.<session>`,
+  not written while empty, and other sessions' keys beyond the eight most recently listed are
+  pruned on load).
   A file remembered at other content and not marked now shows "Changed since viewed" until it
   is marked again or cleared. A mark the snapshot stops listing while the file still has the
   remembered content was cleared by someone (this page, another browser, the terminal), not
@@ -635,6 +655,10 @@ the shared-state snapshot lists only marks that still match each file's `content
   `test/web/review-viewed.e2e.ts` marks files from the header, the flat sidebar, and `V`;
   checks progress, the Overview, and a second page; collapses and expands; hides viewed files
   and navigates past them; shows "Changed since viewed" after a reload; and runs axe.
+  `test/web/review-shell.e2e.ts` covers Space on the "Viewed" checkboxes, AltGr and Option
+  hunk keys, the side panel's scroll keys, composers on collapsed and rendered files, a viewed
+  mark racing a reload, double and held `V`, the tree sidebar's reclick and directory rows,
+  repeated jumps in history, a pasted link's key, dialog focus restore, and a refused filter.
   `test/web/review-keyboard.e2e.ts` drives the page from the keyboard: hunk and file
   navigation with reveals under the sticky header, scroll-then-navigate anchoring, paging,
   the view keys and theme menu, the gap toggle, click-to-select, input-focus and

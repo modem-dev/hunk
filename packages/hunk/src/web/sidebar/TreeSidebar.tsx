@@ -13,7 +13,7 @@
  * coloring hooks and restyled with stylesheet rules generated from the shared helper.
  */
 import { FileTree, useFileTree } from "@pierre/trees/react";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, type MouseEvent as ReactMouseEvent } from "react";
 import { reviewFileChangeGlyph, reviewSidebarBadges } from "../../core/review/fileLabels";
 import type { ReviewFileChangeKind } from "../../core/review/types";
 import { sidebarEntry, treePathsOf, type FileSidebarProps } from "./sidebarEntry";
@@ -109,6 +109,8 @@ export default function TreeSidebar({
   );
   const order = useMemo(() => reviewOrderIndex(paths), [paths]);
   const following = useRef(false);
+  // Re-selects the store's selected file in the tree; set once the model exists.
+  const followSelection = useRef(() => {});
   const latest = useRef({ byPath, noteCounts, onSelectFile, order, selectedKey, viewedStatuses });
   latest.current = { byPath, noteCounts, onSelectFile, order, selectedKey, viewedStatuses };
   const reviewOrderOf = (path: string) =>
@@ -133,7 +135,12 @@ export default function TreeSidebar({
       // file; acting on it would turn scrolling into a jump.
       if (following.current) return;
       const entry = selected[0] ? latest.current.byPath.get(selected[0]) : undefined;
-      if (entry && entry.key !== latest.current.selectedKey) latest.current.onSelectFile(entry.key);
+      if (entry) {
+        if (entry.key !== latest.current.selectedKey) latest.current.onSelectFile(entry.key);
+        return;
+      }
+      // A directory row took the selection; the highlight belongs on the selected file.
+      queueMicrotask(() => followSelection.current());
     },
     renderRowDecoration: ({ row }) => {
       const entry = row.kind === "file" ? latest.current.byPath.get(row.path) : undefined;
@@ -199,20 +206,50 @@ export default function TreeSidebar({
   // Follow the store's selection, whoever made it.
   const selectedIndex = entries.findIndex((entry) => entry.key === selectedKey);
   const selectedPath = selectedIndex >= 0 ? paths[selectedIndex] : undefined;
+  const selectedPathRef = useRef(selectedPath);
+  selectedPathRef.current = selectedPath;
+  followSelection.current = () => {
+    const path = selectedPathRef.current;
+    if (!path) return;
+    const item = model.getItem(path);
+    if (!item || (item.isSelected() && model.getSelectedPaths().length === 1)) return;
+    following.current = true;
+    try {
+      for (const selected of model.getSelectedPaths()) model.getItem(selected)?.deselect();
+      item.select();
+    } finally {
+      following.current = false;
+    }
+  };
   useEffect(() => {
     if (!selectedPath) return;
-    const item = model.getItem(selectedPath);
-    if (item && !item.isSelected()) {
-      following.current = true;
-      try {
-        for (const path of model.getSelectedPaths()) model.getItem(path)?.deselect();
-        item.select();
-      } finally {
-        following.current = false;
-      }
-    }
+    followSelection.current();
     model.scrollToPath(selectedPath, { focus: false, offset: "nearest" });
   }, [model, selectedPath]);
 
-  return <FileTree model={model} className="file-tree" aria-label="Files" />;
+  // Choosing the file that is already selected changes no selection, so the tree reports
+  // nothing; the click itself jumps to the file's top, as it does in the flat list. Capture
+  // phase, before the row acts: a row that is not selected yet reports through the selection.
+  const jumpToSelectedOnClick = (event: ReactMouseEvent) => {
+    if (event.button !== 0 || event.shiftKey || event.ctrlKey || event.metaKey) return;
+    const row = event.nativeEvent
+      .composedPath()
+      .find(
+        (target): target is HTMLElement =>
+          target instanceof HTMLElement && target.dataset.itemType !== undefined,
+      );
+    const path = row?.dataset.itemPath;
+    const entry =
+      path && row.dataset.itemType === "file" ? latest.current.byPath.get(path) : undefined;
+    if (entry && entry.key === latest.current.selectedKey && model.getItem(path!)?.isSelected()) {
+      latest.current.onSelectFile(entry.key);
+    }
+  };
+
+  // `display: contents` keeps the wrapper out of the layout the host element sits in.
+  return (
+    <div style={{ display: "contents" }} onClickCapture={jumpToSelectedOnClick}>
+      <FileTree model={model} className="file-tree" aria-label="Files" />
+    </div>
+  );
 }
