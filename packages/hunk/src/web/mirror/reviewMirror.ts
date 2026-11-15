@@ -165,8 +165,10 @@ export class ReviewMirror {
   /** Load one generation's files, superseding any load still running. */
   private async loadGeneration(body: HunkReviewPublicationBodyV1) {
     const { catalog, publication } = body;
-    // A first load that failed showed no document, so retrying it loads progressively again.
-    const replacing = this.snapshot.address !== undefined && this.snapshot.status !== "failed";
+    // Only a complete generation on screen is worth holding while a newer one loads. A first
+    // load still in flight (or failed) shows no finished document, so the newer generation
+    // loads progressively in its place and a failure reaches the `failed` stage.
+    const replacing = this.snapshot.address !== undefined && this.snapshot.status === "ready";
     const canonical = catalog.resources.filter(
       (resource): resource is Extract<ReviewResourceDescriptorV1, { kind: "canonical-file" }> =>
         resource.kind === "canonical-file",

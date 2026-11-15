@@ -35,6 +35,7 @@ import {
   useRef,
   useState,
   type MutableRefObject,
+  type ReactNode,
 } from "react";
 import type { ReviewState } from "../../core/review/state";
 import type { ReviewFileV1 } from "../../core/review/types";
@@ -54,6 +55,7 @@ import {
 import type { ReviewViewedStatus } from "../viewed/viewedFiles";
 import { planReviewFileRender, reviewDrawnRows, type ReviewFileRenderPlan } from "./fileProjection";
 import type { ReviewFileGeometry } from "./hunkGeometry";
+import { StreamMeasurements } from "./streamMeasurements";
 
 const NO_HIGHLIGHTS: readonly ReviewAgentHighlightV1[] = [];
 
@@ -152,6 +154,8 @@ export interface ReviewStreamProps {
   collapsedFiles?: ReadonlySet<string>;
   /** What the viewed controls do; stable for the page's lifetime. */
   viewed?: ReviewViewedControls;
+  /** What an empty stream says, when the page knows better than "no files". */
+  emptyMessage?: ReactNode;
 }
 
 const NO_COLLAPSED: ReadonlySet<string> = new Set();
@@ -293,8 +297,13 @@ export function ReviewStream(props: ReviewStreamProps) {
   const { slots, review, controller } = props;
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [mounted, setMounted] = useState<ReadonlySet<string>>(new Set());
-  const heights = useRef(new Map<string, number>());
-  const geometries = useRef(new Map<string, ReviewFileGeometry>());
+  // A layout or wrap change reflows every file, so earlier measurements and hunk geometry no
+  // longer hold; `sync` drops them in the render that sees the change, so that render, the
+  // scrollbar's heights, and the minimap's all start from the same estimates.
+  const measurements = useRef<StreamMeasurements<ReviewFileGeometry> | undefined>(undefined);
+  measurements.current ??= new StreamMeasurements(props.layout, props.wrapLines);
+  measurements.current.sync(props.layout, props.wrapLines);
+  const { heights, geometries } = measurements.current;
   const planOf = usePlans(review);
   const filesByKey = useMemo(
     () => new Map(review.document.files.map((file) => [file.key, file])),
@@ -327,8 +336,8 @@ export function ReviewStream(props: ReviewStreamProps) {
               next.add(key);
             } else if (!entry.isIntersecting && current.has(key)) {
               const body = entry.target.querySelector(".file-body");
-              if (body) heights.current.set(key, body.getBoundingClientRect().height);
-              geometries.current.delete(key);
+              if (body) heights.set(key, body.getBoundingClientRect().height);
+              geometries.delete(key);
               next ??= new Set(current);
               next.delete(key);
             }
@@ -363,7 +372,7 @@ export function ReviewStream(props: ReviewStreamProps) {
       if (top !== undefined) return { top, exact: true };
     }
     const bodyTop = section.offsetTop + STREAM_HEADER_HEIGHT_PX;
-    const measured = geometries.current.get(fileKey)?.hunks[hunkIndex];
+    const measured = geometries.get(fileKey)?.hunks[hunkIndex];
     if (measured) return { top: bodyTop + measured.top, exact: true };
     const hunkCount = latest.current.filesByKey.get(fileKey)?.hunks.length ?? 1;
     const bodyHeight = section.offsetHeight - STREAM_HEADER_HEIGHT_PX;
@@ -416,7 +425,7 @@ export function ReviewStream(props: ReviewStreamProps) {
   // A file that drew corrects a reveal that had to estimate where its hunk was.
   const onGeometry = useCallback(
     (fileKey: string, geometry: ReviewFileGeometry) => {
-      geometries.current.set(fileKey, geometry);
+      geometries.set(fileKey, geometry);
       const held = hold.current;
       if (held?.pendingUntil === undefined || held.fileKey !== fileKey) return;
       if (performance.now() > held.pendingUntil) {
@@ -448,7 +457,7 @@ export function ReviewStream(props: ReviewStreamProps) {
     const file = fileKey ? latest.current.filesByKey.get(fileKey) : undefined;
     if (!section || !fileKey || !file) return;
     const offset = center - section.offsetTop - STREAM_HEADER_HEIGHT_PX;
-    const geometry = geometries.current.get(fileKey);
+    const geometry = geometries.get(fileKey);
     const hunkIndex = geometry
       ? reviewHunkIndexAtOffset(file.hunks.length, (index) => geometry.hunks[index], offset)
       : 0;
@@ -500,7 +509,7 @@ export function ReviewStream(props: ReviewStreamProps) {
             slot.key,
             current.collapsedFiles?.has(slot.key)
               ? VIEWED_COLLAPSED_HEIGHT_PX
-              : (heights.current.get(slot.key) ??
+              : (heights.get(slot.key) ??
                   reservedBodyHeight(file ? plan(file) : undefined, slot.index, current.layout)),
           );
         }
@@ -613,28 +622,51 @@ export function ReviewStream(props: ReviewStreamProps) {
     };
   }, [review.document]);
 
-  // Record mounted bodies' real heights so they keep them when they unmount.
+  // Record mounted bodies' real heights so they keep them when they unmount. Each body is
+  // observed from the moment it is created until it is removed (`observeBody`), so a body that
+  // collapsing a viewed file destroyed and expanding it re-created is measured like the first.
+  // A body that is not mounted only holds its reserved height, which is not a measurement.
+  const mountedRef = useRef(mounted);
+  mountedRef.current = mounted;
+  const bodyObserver = useRef<ResizeObserver | undefined>(undefined);
+  const observedBodies = useRef(new Set<Element>());
+  const observeBody = useCallback(
+    (body: HTMLDivElement | null, previous: HTMLDivElement | null) => {
+      if (previous) {
+        bodyObserver.current?.unobserve(previous);
+        observedBodies.current.delete(previous);
+      }
+      if (!body) return;
+      observedBodies.current.add(body);
+      bodyObserver.current?.observe(body);
+    },
+    [],
+  );
   useEffect(() => {
-    const root = scrollRef.current;
-    if (!root) return;
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const key = (entry.target.parentElement as HTMLElement | null)?.dataset.fileKey;
-        if (key && entry.contentRect.height > 0) heights.current.set(key, entry.contentRect.height);
+        if (key && mountedRef.current.has(key) && entry.contentRect.height > 0) {
+          heights.set(key, entry.contentRect.height);
+        }
       }
       for (const listener of Array.from(layoutListeners.current)) listener();
     });
-    for (const key of mounted) {
-      const body = root.querySelector(`section[data-file-key="${CSS.escape(key)}"] .file-body`);
-      if (body) observer.observe(body);
-    }
-    return () => observer.disconnect();
-  }, [mounted, slots]);
+    bodyObserver.current = observer;
+    for (const body of observedBodies.current) observer.observe(body);
+    return () => {
+      observer.disconnect();
+      bodyObserver.current = undefined;
+    };
+  }, []);
 
-  // A layout change reflows every file, so earlier measurements no longer hold.
+  // A viewed file that collapses unmounts its diff view while staying in the mounted window,
+  // so its hunk geometry would outlive the drawing it describes.
   useEffect(() => {
-    heights.current.clear();
-  }, [props.layout, props.wrapLines]);
+    for (const fileKey of props.collapsedFiles ?? NO_COLLAPSED) {
+      measurements.current?.dropGeometry(fileKey);
+    }
+  }, [props.collapsedFiles]);
 
   // Collapsing or opening a viewed file, wrapping, or a layout switch moves every file below
   // it without a scroll; overviews hear about it here as well as from measured bodies.
@@ -663,7 +695,7 @@ export function ReviewStream(props: ReviewStreamProps) {
             index={slot.index}
             plan={file ? planOf(file) : undefined}
             mounted={mounted.has(slot.key)}
-            measuredHeight={heights.current.get(slot.key)}
+            measuredHeight={heights.get(slot.key)}
             selected={selected}
             {...(selected ? { selectedHunk } : {})}
             layout={props.layout}
@@ -687,10 +719,13 @@ export function ReviewStream(props: ReviewStreamProps) {
               : {})}
             collapsed={(props.collapsedFiles ?? NO_COLLAPSED).has(slot.key)}
             {...(props.viewed ? { viewed: props.viewed } : {})}
+            observeBody={observeBody}
           />
         );
       })}
-      {slots.length === 0 ? <p className="stream-empty">No files in this review.</p> : null}
+      {slots.length === 0 ? (
+        <p className="stream-empty">{props.emptyMessage ?? "No files in this review."}</p>
+      ) : null}
     </div>
   );
 }

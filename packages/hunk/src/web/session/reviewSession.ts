@@ -124,13 +124,17 @@ export function startReviewSession({
       ),
   });
   const review = new ClientReviewStore({ client });
-  const actions = new ReviewActionSender({ client, mirror });
+  const connection = new ObservableValue<ReviewEventStreamStatus>({ kind: "connecting" });
+  const actions = new ReviewActionSender({
+    client,
+    mirror,
+    isEnded: () => connection.get().kind === "ended",
+  });
   const composers = new NoteComposerStore(
     route.sessionId,
     storage as Pick<Storage, "getItem" | "setItem" | "removeItem"> | undefined,
   );
   const toasts = new WebToasts();
-  const connection = new ObservableValue<ReviewEventStreamStatus>({ kind: "connecting" });
 
   // The store adopts each document the mirror publishes, which keeps selection and
   // expansion by file key across reloads, then the shared state of that same generation.

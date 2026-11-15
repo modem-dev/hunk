@@ -11,6 +11,7 @@
  * quietly changed one of them fails here.
  */
 import { afterEach, describe, expect, test } from "bun:test";
+import { BrokerCapacityError } from "@hunk/session-broker-core";
 import { reviewProcessCapability } from "../../app/review/capability";
 import { nodeReviewDigest } from "../../core/reviewDigest";
 import { REVIEW_PATCH_CONTENT_TYPE, reviewResourceId } from "../../core/review/resources";
@@ -34,6 +35,7 @@ import {
   reviewHttpPath,
   type HunkReviewHttpRoute,
 } from "../reviewHttpProtocol";
+import { reviewErrorMessage } from "../reviewErrorCatalog";
 import { HUNK_REVIEW_PROTOCOL_VERSION } from "../reviewProtocol";
 import { BrowserReviewServer, type BrowserReviewServerOptions } from "./browserReviewServer";
 
@@ -568,6 +570,75 @@ async function readEvents(response: Response, events: number) {
   await reader.cancel();
   return frames;
 }
+
+// Finding: `dispatchCommand` throws when the session is gone, a command times out, the queue is
+// full, or the daemon shuts down. Refresh surfaced that as a bare 500 and an action as
+// `control-handler-failed`, neither the failure body every other route answers with.
+describe("browser review surface: session failures that throw", () => {
+  const RAW_DETAIL = "/home/someone/secret-project";
+  const failures: Array<[string, () => Error]> = [
+    [
+      "a disconnected session",
+      () => new Error(`The targeted session is no longer connected. ${RAW_DETAIL}`),
+    ],
+    ["a timed-out command", () => new Error(`Timed out waiting for the session. ${RAW_DETAIL}`)],
+    ["a full command queue", () => new BrokerCapacityError("queue-full", RAW_DETAIL)],
+    ["a daemon shutdown", () => new Error(`Daemon is shutting down. ${RAW_DETAIL}`)],
+  ];
+
+  for (const [name, createError] of failures) {
+    test(`answers a refresh that throws on ${name} with the review failure body`, async () => {
+      const { harness, origin } = start();
+      harness.state.refreshReview = async () => {
+        throw createError();
+      };
+
+      const response = await request(
+        origin,
+        { kind: "refresh", sessionId: SESSION_ID },
+        { method: "POST" },
+      );
+
+      expect(response.status).toBe(502);
+      expect(await response.json()).toEqual({
+        ok: false,
+        code: "refresh-failed",
+        message: reviewErrorMessage("refresh-failed"),
+      });
+    });
+
+    test(`answers an action that throws on ${name} with the review failure body`, async () => {
+      const { harness, origin } = start();
+      harness.state.applyReviewAction = async () => {
+        throw createError();
+      };
+
+      const response = await request(
+        origin,
+        { kind: "actions", sessionId: SESSION_ID },
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            protocolVersion: HUNK_REVIEW_PROTOCOL_VERSION,
+            generation: harness.producer.getPublication().generation,
+            actor: ACTOR,
+            action: { type: "filter/set", filter: "alpha" },
+          }),
+        },
+      );
+
+      expect(response.status).toBe(502);
+      const text = await response.text();
+      expect(JSON.parse(text)).toEqual({
+        ok: false,
+        code: "resource-unavailable",
+        message: reviewErrorMessage("resource-unavailable"),
+      });
+      expect(text).not.toContain(RAW_DETAIL);
+    });
+  }
+});
 
 describe("browser review surface: events", () => {
   test("opens with the publication the review is at", async () => {

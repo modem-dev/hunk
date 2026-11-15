@@ -1,10 +1,10 @@
 # Web review client: page, assets, and policy
 
-> **Status (2026-11-13): M4 read-only page with shared state.** The daemon serves a real,
-> offline page for a live review: toolbar, files sidebar, and one top-to-bottom stream of every
-> file with the review's notes, agent marks, and the session's title, theme, view, and keymap,
-> driven by the terminal's shortcuts. Authoring notes is the next step; the page opens through
-> the hidden `--web` flag ([`web-review-plan.md`](web-review-plan.md)).
+> **Status (2026-11-13): released.** The daemon serves an offline page for a live review:
+> toolbar, files sidebar, one top-to-bottom stream of every file with the review's notes and
+> agent marks, note authoring, the palette, the side panel, the minimap, and previews, driven by
+> the terminal's shortcuts. It opens through `--web`, `hunk session open`, or the terminal's
+> "Open in browser" ([`web-review-plan.md`](web-review-plan.md)).
 
 This records how the client is built and what the spike measured about Pierre on the web.
 
@@ -54,6 +54,7 @@ packages/hunk/src/web/
   notes/noteActions.ts         composer -> notes/add-user or notes/edit-user; removal intents
   notes/NoteComposerView.tsx   one composer form in the diff flow
   session/capability.ts        moves the capability from the address into tab storage
+  session/sessionEnded.ts      tells controls the session ended; they disable, reading stays
   stream/highlightGeometry.ts  agent attention marks measured over drawn characters
   mirror/fileIndex.ts          per-file index entries and the pluggable index source
   store/clientReviewStore.ts   the page's local core/review store and gap source loads
@@ -89,7 +90,9 @@ packages/hunk/src/web/
   publication) loads that generation's `canonical-file` resources in catalog order with
   bounded parallelism, through one `createSupersedeQueue`, parsing each with
   `parseCanonicalReviewFile`. The first generation is published progressively; a later one
-  replaces the shown document only once complete, and a failed reload keeps the old one.
+  replaces the shown document only once complete, and a failed reload keeps the old one. A
+  generation that arrives while the first is still loading replaces nothing finished, so it
+  loads progressively too and a failure reaches the `failed` stage.
   Per-file index entries (path, change kind, stats, flags, line counts, hunk count) are
   projected from canonical files today; `ReviewFileIndexSource` lets the shared-state route
   supply them up front.
@@ -113,8 +116,8 @@ packages/hunk/src/web/
   through `buildReviewAnnotationIndexFromNotes`, with every file the sidecar names
   (`agentContext`, even without a summary or annotations) as a stop on the annotated-file tour.
   The snapshot says what the terminal shows: a reload that changes a file's content marks its
-  notes `stale` at their last anchor (or orphans and drops them when their hunk is gone,
-  `reconcileReviewNoteResolution` in `core/review/state.ts`), and sidecar STML bodies are
+  notes `stale` at their last anchor, even when their hunk is gone, and never hides them
+  (`reconcileReviewNoteResolution` in `core/review/state.ts`); sidecar STML bodies are
   present only when the session enabled `--experimental`.
 - **Digests.** A resource descriptor in the published catalog is usually unmeasured, and the
   HTTP surface sends no digest header, so for those reads the client checks size and window
@@ -244,7 +247,10 @@ imports; a page fetches only the languages and themes it shows. The largest sing
   expanded lines" for all of them.
 - **Windowing.** Every file is a section whose body height is reserved from the plan's row
   count (split or unified, minus folded gap lines) until mounted. Sections mount Pierre within
-  1.5 viewports of the visible area and unmount beyond it, keeping their last measured height.
+  1.5 viewports of the visible area and unmount beyond it, keeping their last measured height. A layout or wrap change drops every
+  remembered height and hunk geometry in the render that sees it (`streamMeasurements.ts`), and a
+  file that collapses drops its geometry, so a reveal never lands on offsets from a drawing that
+  is gone.
   Native scroll anchoring absorbs height changes above the reader, and a reload re-pins the
   top file and offset for a moment while files re-render. Pierre's `Virtualizer`/`CodeView`
   were not used: they own scrolling of the whole document, which would put sticky headers,
@@ -304,16 +310,32 @@ imports; a page fetches only the languages and themes it shows. The largest sing
   first with the shared `isBlankReviewNoteBody` and `reviewNoteWithinSizeLimit`. A composer
   stays open, marked sending, until `/state` carries the note at or after the revision the
   save returned. `Ctrl+Enter` (`⌘+Enter` on macOS) saves; `Esc` cancels, asking first when the
-  body is not empty. Composers never use the terminal's shared draft slot.
+  body is not empty. Composers never use the terminal's shared draft slot. A composer cannot be
+  discarded while its save is in flight (Cancel is disabled and `Esc` does nothing until the
+  session answers), so a refusal always finds the draft and shows its message.
 - **Line ranges.** Hovering a line shows Pierre's gutter button; a click opens a composer on
   that line, and a drag (or shift-click) across line numbers on one side opens one on the
   range, through Pierre's line selection. Targets come from `noteTargets.ts`: a range must be
   fully drawn by the hunk; a line only an expanded gap drew is sent with its
   `expandedLineProof` (audit B10). The session accepts proof for one line only, so a range
-  reaching into expanded context narrows to its first line. Several composers may be open.
+  reaching into expanded context narrows to its first line. Several composers may be open. A
+  new-note composer is keyed by file and the line it ends on, so a second pick ending on the
+  same line retargets that composer (keeping its text) and focuses it; a reply or edit
+  composer is keyed by its note, so a note has at most one wherever its card is drawn.
 - **Drafts** are kept in this tab's `sessionStorage` (`hunk.review.drafts:<session>`, keyed by
-  file key and anchor), so they survive a reload; saving or cancelling clears them, and a draft
-  whose file's content identity changed is marked and offers only Discard.
+  file key and anchor or note), so they survive a reload; saving or cancelling clears them, and
+  a draft whose file's content identity changed is marked and offers only Discard. A draft
+  whose file left the review is kept in storage and returns if the file does; the reader's
+  text is never discarded for them. A composer whose line is not drawn (its expanded gap was
+  collapsed, or a reload restored it with the gap closed) hangs from its owner hunk's line, as a
+  note card does (`reviewComposerPlacement`), so an open draft on a file in the review is always
+  visible.
+- **Stable annotations.** Each file's Pierre line annotations keep their identity while their
+  content is unchanged (`stableAnnotations.ts`), and every composer renders in its own host
+  element with its own React root that moves into whichever slot Pierre draws, so an agent
+  comment or a viewed toggle landing elsewhere never remounts an open composer, drops its
+  "Discard this draft?" confirmation, or takes the reader's focus; a composer that held focus
+  when its own line's slot was redrawn gets it back.
 - **Shared toggles.** `a` sends `notes/set-visibility`; the filter field (`/`, the catalog's
   focus-filter command, which has no default chord) sends `filter/set` after 300 ms. Both are
   shared with the terminal and every other window, as the field's hint says.
@@ -354,9 +376,16 @@ imports; a page fetches only the languages and themes it shows. The largest sing
   shared-state route replaces them through the same `WebKeymap` shape. `keyboard.ts` maps a DOM
   `KeyboardEvent` onto the grammar's structural key event (Caps Lock `G` is `G`, never `g`) and
   masks what the browser owns: every Ctrl, Cmd, or Alt chord (so `ctrl+d`/`ctrl+u` stay the
-  browser's and `d`/`u` page), Tab, and the function keys. Nothing fires in a text field,
-  Space and Enter stay with a focused button, and arrow and paging keys stay with a focused
-  composite widget (the layout radio group, the theme listbox, the files tree).
+  browser's and `d`/`u` page), Tab, and the function keys. A printable symbol typed through
+  AltGr (Windows reports Ctrl and Alt together, or the `AltGraph` state) or Option (macOS
+  reports Alt alone) is the character, so `[` `]` `{` `}` work on German and Nordic layouts;
+  Alt with a letter or digit, and any Ctrl or Cmd chord, stay the browser's. Nothing fires in
+  a text field. A focused control keeps the keys that operate it: Space and Enter on a button,
+  Space on a checkbox (the "Viewed" boxes), the arrow keys on a radio or range input, the
+  scroll keys (arrows, paging, Home, End, Space) in a focused scroll region such as the side
+  panel body, and the arrow and paging keys in a composite widget (the layout radio group, the
+  theme listbox, the files tree). Letter shortcuts still run from a scroll region. Toggle
+  commands (`V`, `p`, the view toggles) run once per press and ignore key auto-repeat.
 - **Reveal and anchoring.** A `hunk` reveal puts the selected hunk just under the sticky file
   header, `file-top` puts the header at the top, `none` leaves the viewport alone. A hunk in a
   file that has not mounted is scrolled to by estimate and corrected when the file draws. When
@@ -397,10 +426,16 @@ imports; a page fetches only the languages and themes it shows. The largest sing
   `core/review/address.ts` (file, hunk, line, note over percent-encoded semantic ids, strictly
   parsed), beside the capability parameter, which is stripped on load and never written here.
   The address is resolved once the document arrives, before the page writes its own position;
-  an address the review cannot honor moves nothing and says so. Navigating rewrites the
+  an address the review cannot honor moves nothing and says so. A target shared state hides
+  (the filter, hidden agent notes) is named in a toast with its reason; a file this browser's
+  "Hide viewed" hides is revealed instead (see Viewed files). Navigating rewrites the
   current history entry (`replaceState`); a deliberate jump (go to file, a sidebar file) adds
-  one (`pushState`), so Back and Forward return through them. "Copy link to this hunk or note"
-  copies the full link with the capability, on purpose.
+  one (`pushState`), so Back and Forward return through them, unless the reader is already
+  where the jump lands (clicking the same file again adds nothing). "Copy link to this hunk or
+  note" copies the full link with the capability, on purpose. A link pasted into a tab already
+  on the session navigates within the page; `watchReviewCapability` moves its key into tab
+  storage and out of the address on `hashchange` and `popstate`, and history writes never carry
+  it.
 
 ## Side panel and review tools
 
@@ -484,13 +519,18 @@ imports; a page fetches only the languages and themes it shows. The largest sing
   - _Linear work on hostile text._ The source is attacker-authored and parsed on the main
     thread, so the parser uses no regular expressions: block and inline syntax is recognized by
     forward scans with no backtracking (a cubic heading pattern once took 11 s on 4 KB). Inline
-    lookahead (closing delimiters, `]`, link targets, code-span closers) comes from per-line
-    caches and tables built in one pass, so unmatched openers never rescan. Each nesting level
+    lookahead (`]`, link targets, code-span closers) comes from per-line tables built in one
+    pass, so unmatched openers never rescan. Emphasis is paired in one delimiter-stack pass per
+    line with CommonMark's flanking rules, skipping code spans, escapes, links, and autolinks as
+    units, so a closer never lands inside a code span or after a backslash and mixed runs such
+    as `*a **b** c*` and `**bold *it***` nest. Lists keep a tab as indentation and a loose list
+    (blank lines between items) as one list; a table needs a divider with the header's column
+    count. Each nesting level
     (capped at 12) reads its lines a bounded number of times; tests assert the parser's step
     count stays within a fixed multiple of the input length, with wall-clock bounds as a backstop.
   - _Bounded output._ Lines over 10,000 characters skip block detection and render as paragraph
-    text, and are not scanned for inline markup. Tables keep at most 64 columns, say so when they
-    drop more, and never pad short rows (padding let 12 KB of pipes produce 4 million cells).
+    text, and are not scanned for inline markup. Tables keep at most 64 columns, say so only when that
+    cap cut something (extra cells in a shorter table are dropped quietly), and never pad short rows (padding let 12 KB of pipes produce 4 million cells).
     A document stops at 50,000 nodes with a visible "Preview truncated" note. Sources over
     512 KiB are not parsed at all: the rendered view says why and shows the diff beneath.
 
@@ -503,24 +543,50 @@ the shared-state snapshot lists only marks that still match each file's `content
 - **Marking.** Each file header has a "Viewed" checkbox; each flat sidebar row has one beside
   its button; tree rows show the mark as a decoration (`✓` viewed, `Δ` changed since viewed),
   because Pierre's tree rows take text decorations only. `V` (`hunk.web.toggleViewed`; the
-  catalog's `v` is visual selection) and the palette toggle the selected file.
+  catalog's `v` is visual selection) and the palette toggle the selected file. A toggle starts
+  from the mark the file is heading to, so a double press or double click inverts instead of
+  sending the same value twice, and sends go out in order per file. The gesture captures the
+  file's content identity: a send refused for a reload in progress is sent again against the
+  new generation only while the file still has that identity, so a mark is never applied to
+  content the reader did not see.
+- **Composers.** Opening a composer (`c`, reply, edit, a gutter pick) first shows that file's
+  diff: a rendered Markdown file returns to Diff and a collapsed viewed file expands.
 - **Progress.** The toolbar shows "12 of 47 viewed" over the files the shared filter leaves
   visible, counted by `countReviewViewedFiles` in `core/review/overview.ts`, which the Overview
   tab uses too.
 - **Changed since viewed.** The snapshot cannot say a file _was_ viewed before its content
   changed, so the page remembers per session and per browser the content each file was last
-  seen marked at (`viewed/viewedFiles.ts`, `localStorage` key `hunk.review.viewed.<session>`).
+  seen marked at (`viewed/viewedFiles.ts`, `localStorage` key `hunk.review.viewed.<session>`,
+  not written while empty, and other sessions' keys beyond the eight most recently listed are
+  pruned on load).
   A file remembered at other content and not marked now shows "Changed since viewed" until it
-  is marked again or cleared.
+  is marked again or cleared. A mark the snapshot stops listing while the file still has the
+  remembered content was cleared by someone (this page, another browser, the terminal), not
+  dropped by a change, so it is forgotten and cannot later turn into "Changed since viewed".
 - **Collapsing.** A viewed file's body collapses to one row ("Viewed · show changes") that
   expands it on click; an expanded viewed file offers "Collapse" in its header. A hunk reveal
-  into a collapsed file (`]`, a note jump, an agent's navigation) expands it in the same render
-  so the stream lands on the hunk. Collapsed bodies are not `.file-body`, so they never replace
-  a file's measured height.
+  into a collapsed file (a note jump, an agent's navigation, a deep link) expands it in the same
+  render so the stream lands on the hunk, and hunk navigation (`[`, `]`, `{`, `}`) that enters
+  a collapsed file opens it even when it crosses in at the file's top. File navigation (`,`,
+  `.`, the sidebar) lands on the collapsed row and leaves it collapsed. Collapsed bodies are not
+  `.file-body`, so they never replace a file's measured height; each body is observed from
+  creation to removal, so one re-created by expanding is measured like the first.
 - **Hide viewed.** A per-browser toolbar toggle (`hunk.web.toggleHideViewed`, `localStorage`
   key `hunk.review.hideViewed`) removes viewed files from the stream, the sidebar, and the
   minimap, and the page's store passes them to the planner as its `hiddenFileKeys` fact, so
   relative navigation walks past them the way it walks past filtered files.
+  - _Hiding the selected file._ When the selected file becomes hidden (marked viewed with the
+    toggle on, or the toggle turned on), the selection moves to the next shown file, else the
+    previous one (`selectNearestShownFileKey` in `core/review/selectors.ts`), without scrolling,
+    so navigation continues. This differs on purpose from the shared filter, which keeps a
+    filtered-out selection: hiding follows from finishing the file. With nothing shown, the
+    stream says every file is viewed and hidden and offers "Show viewed files".
+  - _Explicit jumps reveal._ Relative navigation never lands on a hidden file, so any reveal
+    that does was asked for by name: a deep link, back and forward, go to file, an Overview
+    row, a Notes-tab row, or an agent's `hunk session navigate`. That one file is shown,
+    expanded, despite "Hide viewed" until the next explicit jump lands elsewhere or the toggle
+    is flipped; scrolling away keeps it. An agent saying "look here" is never dropped, and a
+    deep link to such a file lands rather than explaining why it cannot.
 
 ## Pierre findings that shaped the client
 
@@ -589,6 +655,10 @@ the shared-state snapshot lists only marks that still match each file's `content
   `test/web/review-viewed.e2e.ts` marks files from the header, the flat sidebar, and `V`;
   checks progress, the Overview, and a second page; collapses and expands; hides viewed files
   and navigates past them; shows "Changed since viewed" after a reload; and runs axe.
+  `test/web/review-shell.e2e.ts` covers Space on the "Viewed" checkboxes, AltGr and Option
+  hunk keys, the side panel's scroll keys, composers on collapsed and rendered files, a viewed
+  mark racing a reload, double and held `V`, the tree sidebar's reclick and directory rows,
+  repeated jumps in history, a pasted link's key, dialog focus restore, and a refused filter.
   `test/web/review-keyboard.e2e.ts` drives the page from the keyboard: hunk and file
   navigation with reveals under the sticky header, scroll-then-navigate anchoring, paging,
   the view keys and theme menu, the gap toggle, click-to-select, input-focus and

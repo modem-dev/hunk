@@ -46,6 +46,8 @@ export interface WebNoteCard {
    * and delete a stored one. Sidecar annotations are part of the changeset and take none.
    */
   actions: ("reply" | "edit" | "delete")[];
+  /** Draw the actions disabled, because the session that would apply them has ended. */
+  actionsDisabled?: boolean;
 }
 
 /** The cards that hang beside one line of one side. */
@@ -79,6 +81,25 @@ export function reviewNotePlacement(
   if (lineDrawn(file, anchor.side, anchor.line)) return anchor;
   const owner = file.hunks[reviewNoteOwnerHunkIndex(note)];
   return (owner && reviewCanonicalHunkLine(owner, anchor.side)) ?? anchor;
+}
+
+/**
+ * Where an open composer hangs in the rendered file.
+ *
+ * A composer opened on a line only an expanded gap drew keeps that line, but once the gap is
+ * collapsed (or a reload restores the draft with the gap closed) the line is not drawn, so it
+ * hangs from its owner hunk's canonical line instead, as a note card does. An open draft is
+ * therefore always visible.
+ */
+export function reviewComposerPlacement(
+  composer: { side: ReviewSide; line: number; hunkIndex: number },
+  file: Pick<ReviewDrawnFile, "hunks">,
+): { side: ReviewSide; line: number } {
+  const own = { side: composer.side, line: composer.line };
+  if (lineDrawn(file, own.side, own.line)) return own;
+  // A hunk index past the drawn hunks means expansion merged them; the last one owns the tail.
+  const owner = file.hunks[Math.min(composer.hunkIndex, file.hunks.length - 1)];
+  return (owner && reviewCanonicalHunkLine(owner, own.side)) ?? own;
 }
 
 /** The author `notes/add-user` records when its caller names none. */

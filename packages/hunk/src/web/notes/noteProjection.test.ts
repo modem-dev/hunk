@@ -6,6 +6,7 @@ import {
   countVisibleNotesByFile,
   MAX_NOTE_THREAD_DEPTH,
   planReviewFileNotes,
+  reviewComposerPlacement,
   reviewNotePlacement,
 } from "./noteProjection";
 
@@ -65,6 +66,25 @@ describe("reviewNotePlacement", () => {
       ],
     };
     expect(reviewNotePlacement(note, expanded)).toEqual({ side: "new", line: 25 });
+  });
+});
+
+describe("reviewComposerPlacement", () => {
+  // Intent: a composer opened on a line an expanded gap drew must stay visible once the gap is
+  // collapsed, or a reload restores a draft nobody can see.
+  test("keeps a drawn line and falls back to the owner hunk's line when it is not drawn", () => {
+    expect(reviewComposerPlacement({ side: "new", line: 12, hunkIndex: 0 }, FILE)).toEqual({
+      side: "new",
+      line: 12,
+    });
+    expect(reviewComposerPlacement({ side: "new", line: 25, hunkIndex: 1 }, FILE)).toEqual({
+      side: "new",
+      line: 40,
+    });
+    expect(reviewComposerPlacement({ side: "new", line: 25, hunkIndex: 9 }, FILE)).toEqual({
+      side: "new",
+      line: 40,
+    });
   });
 });
 

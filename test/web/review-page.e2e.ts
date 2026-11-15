@@ -62,16 +62,63 @@ test("opens a live review, renders a Pierre diff, and stays inside the page CSP"
   expect(problems).toEqual([]);
 });
 
-// Intent: when the session ends, the daemon says so on the event stream and the reader sees
-// it, instead of a page that still claims to be connected.
+// Intent: when the session ends, the daemon says so on the event stream and the page looks
+// ended, not just says so: a banner that stays, and every control that needs the session
+// disabled, while reading, layout, and the palette keep working.
 test("shows that the session ended when its process exits", async ({ page }) => {
-  review = await startTestWebReview(PATCH_FIXTURE);
+  review = await startTestWebReview("--rich");
+  const problems = await watchTestPageProblems(page);
+  await page.addInitScript(() =>
+    window.localStorage.setItem("hunk.review.view", '{"layout":"unified","sidebarMode":"flat"}'),
+  );
   await page.goto(review.url);
   await expect(page.locator('.toolbar [data-state="connected"]')).toHaveText("Connected");
+  await expect(page.getByTestId("load-progress")).toHaveCount(0, { timeout: 30_000 });
+  await page.locator(".review-stream").click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press("c");
+  await page.locator(".note-composer textarea").fill("Written before the end.");
+  await page.locator(".note-composer textarea").press("Control+Enter");
+  const card = page.locator(".note-card", { hasText: "Written before the end." });
+  await expect(card).toBeVisible();
 
   await review.endSession();
 
   await expect(page.locator('.toolbar [data-state="failed"]')).toHaveText("Session ended", {
     timeout: 15_000,
   });
+  const banner = page.getByTestId("session-ended");
+  await expect(banner).toHaveText(
+    "This review session has ended. Run hunk diff --web again, or hunk session open for a running session.",
+  );
+  await expect(banner.locator("code")).toHaveText(["hunk diff --web", "hunk session open"]);
+  await expect(banner.getByRole("button")).toHaveCount(0);
+  await expect(page.getByTestId("refresh")).toBeDisabled();
+  await expect(page.getByTestId("filter-input")).toBeDisabled();
+  await expect(card.locator("button.note-action")).not.toHaveCount(0);
+  for (const button of await card.locator("button.note-action").all()) {
+    await expect(button).toBeDisabled();
+  }
+  for (const box of await page.locator(".viewed-toggle input, input.flat-viewed").all()) {
+    await expect(box).toBeDisabled();
+  }
+
+  // A key that would write shows the ended message instead of opening a composer or posting.
+  await page.locator(".review-stream").click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press("c");
+  await expect(page.locator(".note-composer")).toHaveCount(0);
+  await expect(page.getByTestId("toasts")).toContainText("This review session has ended.");
+  await page.keyboard.press("V");
+  await page.keyboard.press("a");
+  await expect(page.locator(".viewed-toggle input:checked, input.flat-viewed:checked")).toHaveCount(
+    0,
+  );
+
+  // Reading keeps working: layout, the palette, and the banner stays after both.
+  await page.getByTestId("layout-split").click();
+  await expect(page.locator(".review-app")).toHaveAttribute("data-layout", "split");
+  await page.keyboard.press("Control+k");
+  await expect(page.getByTestId("command-palette")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(banner).toBeVisible();
+  expect(problems).toEqual([]);
 });

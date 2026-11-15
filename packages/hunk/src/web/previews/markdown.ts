@@ -17,11 +17,15 @@
  * - Block and inline syntax is recognized by hand-written forward scans, not regular
  *   expressions, so no line can trigger backtracking. Each line is classified a bounded number
  *   of times per nesting level, and nesting stops at `MAX_MARKDOWN_NESTING`.
- * - Inline lookahead (closing delimiters, `]`, link targets, code-span closers) is answered
- *   from caches or tables built once per line, so repeated unmatched openers never rescan.
+ * - Inline lookahead (`]`, link targets, code-span closers) is answered from tables built once
+ *   per line, so repeated unmatched openers never rescan. Emphasis delimiters are paired in one
+ *   delimiter-stack pass per line (CommonMark's flanking rules, with code spans, links, and
+ *   escapes skipped as units), not searched for opener by opener.
  * - Lines longer than `MAX_BLOCK_LINE_LENGTH` skip block detection and render as paragraph
  *   text; lines longer than `MAX_INLINE_LINE_LENGTH` are not scanned for inline markup.
- * - Tables keep at most `MAX_TABLE_COLUMNS` columns and never pad short rows, and a document
+ * - Tables keep at most `MAX_TABLE_COLUMNS` columns and never pad short rows; cells past the
+ *   header's column count are dropped quietly, and only cells past the column cap mark the
+ *   table clipped. A document
  *   stops at `MAX_MARKDOWN_NODES` nodes with a visible `truncated` block instead of silent loss.
  */
 
@@ -45,7 +49,7 @@ export type MarkdownBlock =
       header: MarkdownInline[][];
       /** Body rows, each with at most as many cells as the header; short rows are not padded. */
       rows: MarkdownInline[][][];
-      /** Set when some row had more than `MAX_TABLE_COLUMNS` cells and the rest were dropped. */
+      /** Set when the header or a row of a full-width table had cells past `MAX_TABLE_COLUMNS`. */
       clipped?: true;
     }
   /** The node budget ran out here; the rest of the document is not rendered. */
@@ -112,18 +116,6 @@ function isSpace(character: string | undefined) {
     character === "\r" ||
     character === "\f" ||
     character === "\v"
-  );
-}
-
-/** Whether one character is an ASCII letter, digit, or underscore. */
-function isWordCharacter(character: string | undefined) {
-  if (character === undefined) return false;
-  const code = character.charCodeAt(0);
-  return (
-    (code >= 48 && code <= 57) ||
-    (code >= 65 && code <= 90) ||
-    (code >= 97 && code <= 122) ||
-    code === 95
   );
 }
 
@@ -321,15 +313,38 @@ function stripCodeIndent(line: string) {
   return line[0] === "\t" ? line.slice(1) : line;
 }
 
-/** Whether a continuation line is indented by at least two whitespace characters. */
+/**
+ * Whether a continuation line is indented by at least two columns, a tab counting as the run
+ * to the next multiple of four, so `\t- nested` continues the list item above it.
+ */
 function isIndentedContinuation(line: string) {
-  return isSpace(line[0]) && isSpace(line[1]) && skipSpaces(line, 2) < line.length;
+  let width = 0;
+  let index = 0;
+  while (index < line.length) {
+    if (line[index] === " ") width += 1;
+    else if (line[index] === "\t") width += 4 - (width % 4);
+    else break;
+    index += 1;
+  }
+  return width >= 2 && skipSpaces(line, index) < line.length;
 }
 
-/** Remove up to `width` columns of leading spaces. */
+/** Remove up to `width` columns of leading whitespace; a tab straddling the edge leaves spaces. */
 function dedent(line: string, width: number) {
+  let column = 0;
   let index = 0;
-  while (index < line.length && index < width && line[index] === " ") index += 1;
+  while (index < line.length && column < width) {
+    if (line[index] === " ") {
+      column += 1;
+    } else if (line[index] === "\t") {
+      const span = 4 - (column % 4);
+      if (column + span > width) return " ".repeat(column + span - width) + line.slice(index + 1);
+      column += span;
+    } else {
+      break;
+    }
+    index += 1;
+  }
   return line.slice(index);
 }
 
@@ -388,6 +403,11 @@ function isTableDivider(line: string) {
   }
 }
 
+/** How many cells a table row or delimiter row has, up to the column cap. */
+function tableColumnCount(line: string) {
+  return tableCells(line, MAX_TABLE_COLUMNS).cells.length;
+}
+
 /** The column alignment one delimiter cell declares. */
 function cellAlign(cell: string) {
   const left = cell.startsWith(":");
@@ -402,33 +422,6 @@ function cellAlign(cell: string) {
 // ---------------------------------------------------------------------------------------------
 
 const INLINE_STARTERS = new Set(["\\", "`", "!", "[", "<", "*", "_", "~"]);
-
-/**
- * Finds the next occurrence of one needle at or after a position that only moves forward,
- * remembering the last answer so unmatched openers never rescan the same text.
- */
-class ForwardFinder {
-  private from = -1;
-  private found = -1;
-
-  constructor(
-    private readonly text: string,
-    private readonly needle: string,
-    private readonly state: ParseState,
-  ) {}
-
-  /** The first occurrence at or after `from`, or -1. */
-  next(from: number) {
-    // The cached answer is still the first occurrence when the query has not passed it.
-    if (this.from >= 0 && from >= this.from && (this.found < 0 || this.found >= from)) {
-      return this.found;
-    }
-    this.from = from;
-    this.found = this.text.indexOf(this.needle, from);
-    this.state.steps += (this.found < 0 ? this.text.length : this.found) - from + 1;
-    return this.found;
-  }
-}
 
 /**
  * Per-position lookup tables for link syntax, built right to left in one pass the first time a
@@ -528,6 +521,132 @@ class BacktickRuns {
   }
 }
 
+/** One run of emphasis delimiter characters, for the delimiter-stack pass. */
+interface DelimiterRun {
+  character: string;
+  /** Index of the run's first character. */
+  position: number;
+  /** The run's original length. */
+  count: number;
+  /** Characters not yet used by a matched pair. */
+  remaining: number;
+  canOpen: boolean;
+  canClose: boolean;
+}
+
+/** One matched emphasis pair, keyed by the index of the opener's leftmost delimiter character. */
+interface EmphasisPair {
+  /** Index of the closer's leftmost delimiter character. */
+  close: number;
+  length: 1 | 2;
+}
+
+/**
+ * Pair the `*`, `_`, and `~~` delimiters of one line, as CommonMark's delimiter-stack
+ * algorithm does: left- and right-flanking rules decide which runs can open or close, the
+ * nearest compatible opener wins, delimiters between a pair are dropped, and a failed search
+ * raises a floor so no closer rescans openers already ruled out. `atomicEnd` skips escapes,
+ * code spans, links, and autolinks, whose contents never delimit emphasis of the surrounding
+ * text. The work is linear in the line.
+ */
+function matchEmphasisPairs(
+  text: string,
+  atomicEnd: (index: number) => number,
+  state: ParseState,
+): Map<number, EmphasisPair> {
+  const runs: DelimiterRun[] = [];
+  let index = 0;
+  while (index < text.length) {
+    const character = text[index]!;
+    if (character === "*" || character === "_" || character === "~") {
+      const count = runLength(text, index, character);
+      // Strikethrough is exactly `~~`; other runs of tildes are literal.
+      if (character !== "~" || count === 2) {
+        const before = text[index - 1];
+        const after = text[index + count];
+        const beforeSpace = before === undefined || isSpace(before);
+        const afterSpace = after === undefined || isSpace(after);
+        const beforePunctuation = isAsciiPunctuation(before);
+        const afterPunctuation = isAsciiPunctuation(after);
+        const left = !afterSpace && (!afterPunctuation || beforeSpace || beforePunctuation);
+        const right = !beforeSpace && (!beforePunctuation || afterSpace || afterPunctuation);
+        runs.push({
+          character,
+          position: index,
+          count,
+          remaining: count,
+          // Intraword underscores (snake_case) neither open nor close.
+          canOpen: character === "_" ? left && (!right || beforePunctuation) : left,
+          canClose: character === "_" ? right && (!left || afterPunctuation) : right,
+        });
+      }
+      index += count;
+      continue;
+    }
+    if (INLINE_STARTERS.has(character)) {
+      const end = atomicEnd(index);
+      if (end > index) {
+        index = end;
+        continue;
+      }
+    }
+    index += 1;
+  }
+  state.steps += text.length + runs.length + 1;
+
+  const pairs = new Map<number, EmphasisPair>();
+  // Each run's nearest earlier run still in play, and per kind of closer the run index below
+  // which no opener can match (CommonMark's `openers_bottom`).
+  const previous = runs.map((_run, position) => position - 1);
+  const floors = new Map<string, number>();
+  for (let closerIndex = 0; closerIndex < runs.length; closerIndex += 1) {
+    const closer = runs[closerIndex]!;
+    if (!closer.canClose) continue;
+    const floorKey = `${closer.character}${closer.canOpen ? 1 : 0}${closer.count % 3}`;
+    while (closer.remaining > 0) {
+      const floor = floors.get(floorKey) ?? -1;
+      let openerIndex = previous[closerIndex]!;
+      let opener: DelimiterRun | undefined;
+      while (openerIndex > floor) {
+        const candidate = runs[openerIndex]!;
+        state.steps += 1;
+        // The rule of three: a run that can both open and close matches only if the lengths
+        // do not sum to a multiple of three (unless both are multiples of three).
+        const blocked =
+          (candidate.canClose || closer.canOpen) &&
+          (candidate.count + closer.count) % 3 === 0 &&
+          !(candidate.count % 3 === 0 && closer.count % 3 === 0);
+        if (
+          candidate.character === closer.character &&
+          candidate.canOpen &&
+          candidate.remaining > 0 &&
+          !blocked
+        ) {
+          opener = candidate;
+          break;
+        }
+        openerIndex = previous[openerIndex]!;
+      }
+      if (!opener) {
+        floors.set(floorKey, previous[closerIndex]!);
+        break;
+      }
+
+      const length =
+        closer.character === "~" ? 2 : opener.remaining >= 2 && closer.remaining >= 2 ? 2 : 1;
+      pairs.set(opener.position + opener.remaining - length, {
+        close: closer.position + (closer.count - closer.remaining),
+        length: length as 1 | 2,
+      });
+      opener.remaining -= length;
+      closer.remaining -= length;
+      // Delimiters between the pair can no longer match anything outside it.
+      previous[closerIndex] = opener.remaining > 0 ? openerIndex : previous[openerIndex]!;
+    }
+  }
+  return pairs;
+}
+
 /** Parse one run of inline text. */
 export function parseMarkdownInline(text: string, depth = 0): MarkdownInline[] {
   return parseInline(text, depth, createParseState());
@@ -544,11 +663,60 @@ function parseInline(text: string, depth: number, state: ParseState): MarkdownIn
   let buffer = "";
   let tables: LinkTables | undefined;
   let backticks: BacktickRuns | undefined;
-  const finders = new Map<string, ForwardFinder>();
-  const finder = (needle: string) => {
-    let found = finders.get(needle);
-    if (!found) finders.set(needle, (found = new ForwardFinder(text, needle, state)));
-    return found;
+  let pairs: Map<number, EmphasisPair> | undefined;
+
+  /** The link or image starting at `index` (`[` or `![`), with its closing bracket and target. */
+  const linkAt = (index: number) => {
+    const open = text[index] === "!" ? index + 1 : index;
+    if (text[open] !== "[") return undefined;
+    tables ??= buildLinkTables(text, state);
+    const close = tables.nextCloseBracket[open + 1]!;
+    // A link needs text; an image may have an empty alt.
+    if (open === index && close <= open + 1) return undefined;
+    const destination =
+      text[close + 1] === "(" ? linkDestination(text, close + 2, tables) : undefined;
+    return destination ? { open, close, destination } : undefined;
+  };
+
+  /** The `<https://…>` autolink starting at `index`: the scan stops at the next `<`. */
+  const autolinkAt = (index: number) => {
+    const schemeEnd = text.startsWith("http://", index + 1)
+      ? index + 8
+      : text.startsWith("https://", index + 1)
+        ? index + 9
+        : -1;
+    if (schemeEnd < 0) return undefined;
+    let end = schemeEnd;
+    while (end < text.length && !isSpace(text[end]) && text[end] !== "<" && text[end] !== ">") {
+      end += 1;
+    }
+    state.steps += end - index;
+    const href =
+      end > schemeEnd && text[end] === ">"
+        ? safeMarkdownHref(text.slice(index + 1, end))
+        : undefined;
+    return href ? { end, href } : undefined;
+  };
+
+  /** The index after the escape, code span, link, or autolink at `index`; `index` if none. */
+  const atomicEnd = (index: number) => {
+    const character = text[index];
+    if (character === "\\") return isAsciiPunctuation(text[index + 1]) ? index + 2 : index;
+    if (character === "`") {
+      const length = runLength(text, index, "`");
+      backticks ??= new BacktickRuns(text, state);
+      const close = backticks.next(length, index + length);
+      return close >= 0 ? close + length : index + length;
+    }
+    if (character === "!" || character === "[") {
+      const link = linkAt(index);
+      return link ? link.destination.next : index;
+    }
+    if (character === "<") {
+      const autolink = autolinkAt(index);
+      return autolink ? autolink.end + 1 : index;
+    }
+    return index;
   };
 
   /** Emit one node, or stop once the budget is spent. */
@@ -603,13 +771,10 @@ function parseInline(text: string, depth: number, state: ParseState): MarkdownIn
 
     // `![alt](src)`: images are shown as their alt text.
     if (character === "!" && text[index + 1] === "[") {
-      tables ??= buildLinkTables(text, state);
-      const close = tables.nextCloseBracket[index + 2]!;
-      const destination =
-        text[close + 1] === "(" ? linkDestination(text, close + 2, tables) : undefined;
-      if (destination) {
-        buffer += text.slice(index + 2, close);
-        index = destination.next;
+      const image = linkAt(index);
+      if (image) {
+        buffer += text.slice(index + 2, image.close);
+        index = image.destination.next;
         continue;
       }
       buffer += character;
@@ -619,22 +784,17 @@ function parseInline(text: string, depth: number, state: ParseState): MarkdownIn
 
     // `[text](target)`: targets may hold one level of balanced parentheses, as URLs often do.
     if (character === "[") {
-      tables ??= buildLinkTables(text, state);
-      const close = tables.nextCloseBracket[index + 1]!;
-      const destination =
-        close > index + 1 && text[close + 1] === "("
-          ? linkDestination(text, close + 2, tables)
-          : undefined;
-      if (destination) {
+      const link = linkAt(index);
+      if (link) {
         if (!flush()) break;
-        const children = parseInline(text.slice(index + 1, close), depth + 1, state);
-        const href = safeMarkdownHref(destination.target);
+        const children = parseInline(text.slice(index + 1, link.close), depth + 1, state);
+        const href = safeMarkdownHref(link.destination.target);
         if (href) {
           if (!emit({ type: "link", href, children })) break;
         } else {
           nodes.push(...children);
         }
-        index = destination.next;
+        index = link.destination.next;
         continue;
       }
       buffer += character;
@@ -642,36 +802,21 @@ function parseInline(text: string, depth: number, state: ParseState): MarkdownIn
       continue;
     }
 
-    // `<https://…>`: the scan stops at the next `<`, so repeated openers never overlap.
+    // `<https://…>`.
     if (character === "<") {
-      const schemeEnd = text.startsWith("http://", index + 1)
-        ? index + 8
-        : text.startsWith("https://", index + 1)
-          ? index + 9
-          : -1;
-      if (schemeEnd > 0) {
-        let end = schemeEnd;
-        while (end < text.length && !isSpace(text[end]) && text[end] !== "<" && text[end] !== ">") {
-          end += 1;
-        }
-        state.steps += end - index;
-        const href =
-          end > schemeEnd && text[end] === ">"
-            ? safeMarkdownHref(text.slice(index + 1, end))
-            : undefined;
-        if (href) {
-          if (!flush()) break;
-          if (
-            !emit({
-              type: "link",
-              href,
-              children: [{ type: "text", text: text.slice(index + 1, end) }],
-            })
-          )
-            break;
-          index = end + 1;
-          continue;
-        }
+      const autolink = autolinkAt(index);
+      if (autolink) {
+        if (!flush()) break;
+        if (
+          !emit({
+            type: "link",
+            href: autolink.href,
+            children: [{ type: "text", text: text.slice(index + 1, autolink.end) }],
+          })
+        )
+          break;
+        index = autolink.end + 1;
+        continue;
       }
       buffer += character;
       index += 1;
@@ -679,35 +824,19 @@ function parseInline(text: string, depth: number, state: ParseState): MarkdownIn
     }
 
     // Emphasis delimiters are `*`, `_`, and `~~` only; every other inline starter that got this
-    // far (`!` without `[`, a `\` before a non-punctuation character) is literal text.
-    const emphasis = character === "*" || character === "_" || character === "~";
-    const double = text[index + 1] === character;
-    const delimiter = !emphasis
-      ? ""
-      : double
-        ? character + character
-        : character === "~"
-          ? ""
-          : character;
-    if (delimiter) {
-      const start = index + delimiter.length;
-      const close = finder(delimiter).next(start);
-      // Intraword underscores (snake_case) are text, as in CommonMark.
-      const intraword =
-        character === "_" &&
-        isWordCharacter(text[index - 1]) &&
-        isWordCharacter(text[close + delimiter.length]);
-      if (close > start && !isSpace(text[start]) && !isSpace(text[close - 1]) && !intraword) {
+    // far (`!` without `[`, a `\` before a non-punctuation character) is literal text. A
+    // delimiter character the pairing pass left unmatched is literal too.
+    if (character === "*" || character === "_" || character === "~") {
+      pairs ??= matchEmphasisPairs(text, atomicEnd, state);
+      const pair = pairs.get(index);
+      if (pair) {
         if (!flush()) break;
-        const children = parseInline(text.slice(start, close), depth + 1, state);
-        const type = delimiter === "~~" ? "strike" : delimiter.length === 2 ? "strong" : "emphasis";
+        const children = parseInline(text.slice(index + pair.length, pair.close), depth + 1, state);
+        const type = character === "~" ? "strike" : pair.length === 2 ? "strong" : "emphasis";
         if (!emit({ type, children })) break;
-        index = close + delimiter.length;
+        index = pair.close + pair.length;
         continue;
       }
-      buffer += delimiter;
-      index += delimiter.length;
-      continue;
     }
 
     buffer += character;
@@ -859,6 +988,18 @@ function parseBlocks(lines: readonly string[], depth: number, state: ParseState)
       const items: MarkdownBlock[][] = [];
       while (index < lines.length && !state.truncated && !isLongLine(lines[index]!)) {
         state.steps += lines[index]!.length + 1;
+        // Blank lines between items keep one (loose) list when the next item is the same kind.
+        if (items.length > 0 && isBlank(lines[index]!)) {
+          let resume = index;
+          while (resume < lines.length && isBlank(lines[resume]!)) resume += 1;
+          state.steps += resume - index;
+          const next =
+            resume < lines.length && !isLongLine(lines[resume]!) && !isRule(lines[resume]!)
+              ? listMarker(lines[resume]!)
+              : undefined;
+          if (!next || next.ordered !== first.ordered) break;
+          index = resume;
+        }
         const item = listMarker(lines[index]!);
         if (!item || item.ordered !== first.ordered || !spend(state)) break;
         const body = [item.content];
@@ -894,7 +1035,8 @@ function parseBlocks(lines: readonly string[], depth: number, state: ParseState)
       line.includes("|") &&
       divider !== undefined &&
       !isLongLine(divider) &&
-      isTableDivider(divider)
+      isTableDivider(divider) &&
+      tableColumnCount(line) === tableColumnCount(divider)
     ) {
       state.steps += divider.length + 1;
       const table = parseTable(lines, index, depth, state);
@@ -952,8 +1094,10 @@ function parseTable(
     const line = lines[index]!;
     state.steps += line.length + 1;
     if (isLongLine(line) || !line.includes("|") || isBlank(line)) break;
+    // Cells past the header's width are dropped quietly, as Markdown renderers do; only a row
+    // cut by the column cap itself marks the table clipped.
     const row = tableCells(line, columns);
-    clipped ||= row.clipped;
+    clipped ||= row.clipped && columns === MAX_TABLE_COLUMNS;
     if (!spend(state, row.cells.length)) break;
     rows.push(row.cells.map((cell) => parseInline(cell, depth, state)));
     index += 1;

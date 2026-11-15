@@ -26,9 +26,10 @@
  */
 import { buildReviewAnnotationIndexFromNotes } from "../../core/review/annotations";
 import { applyReviewIntent, type ReviewIntent } from "../../core/review/intents";
-import { selectNormalizedSelection } from "../../core/review/selectors";
+import { selectNearestShownFileKey, selectNormalizedSelection } from "../../core/review/selectors";
 import {
   EMPTY_REVIEW_ANNOTATION_INDEX,
+  REVIEW_FILE_JUMP_HUNK_INDEX,
   type ReviewAnnotationIndex,
 } from "../../core/review/navigation";
 import type { ReviewStoredNote } from "../../core/review/state";
@@ -86,6 +87,14 @@ export class ClientReviewStore {
       this.sourceLoads.clear();
     }
     this.catalog = catalog;
+    // Notes belong to the generation whose shared state listed them. A document that moved to
+    // another generation, whose own state has not arrived (or failed to), must not present the
+    // old generation's notes as current; they return with the matching snapshot.
+    if (this.shared && catalog && this.shared.generation !== catalog.generation) {
+      this.shared = undefined;
+      this.store.dispatch({ type: "notes/clear", includeUser: true });
+      this.annotations = EMPTY_REVIEW_ANNOTATION_INDEX;
+    }
     this.store.dispatch({ type: "document/reconcile", document });
 
     // An open gap whose read was aborted above, or whose unattested text reconciliation
@@ -157,14 +166,26 @@ export class ClientReviewStore {
   /**
    * Name the files this page hides by the reader's choice ("hide viewed"); relative navigation
    * walks past them through the planner's `hiddenFileKeys` fact. The shared filter is separate.
+   *
+   * A selection whose file becomes hidden (the reader marks the selected file viewed, or turns
+   * "Hide viewed" on) moves to the nearest shown file by `selectNearestShownFileKey`, without
+   * asking the viewport to move, so navigation continues from where the reader was. With no
+   * file shown it stays where it is; the page says that everything is hidden.
    */
   setHiddenFiles(fileKeys: ReadonlySet<string>) {
     this.hiddenFileKeys = fileKeys;
-  }
 
-  /** The files this page currently hides by the reader's choice. */
-  hiddenFiles(): ReadonlySet<string> {
-    return this.hiddenFileKeys;
+    const state = this.store.getSnapshot();
+    const { fileKey } = selectNormalizedSelection(state);
+    if (fileKey === null || !fileKeys.has(fileKey)) return;
+    const nearest = selectNearestShownFileKey(state, fileKey, fileKeys);
+    if (nearest !== null) {
+      this.store.dispatch({
+        type: "selection/select",
+        fileKey: nearest,
+        hunkIndex: REVIEW_FILE_JUMP_HUNK_INDEX,
+      });
+    }
   }
 
   /** Apply one page-local intent through the shared planner. */

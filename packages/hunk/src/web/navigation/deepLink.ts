@@ -4,14 +4,15 @@
  * The fragment carries `at=<address>` beside any other fragment parameters; the address is
  * the shared grammar (`core/review/address.ts`), built from file keys, hunk indices, sides and
  * lines, and note ids — never rendered rows. The capability is a separate fragment parameter
- * that `session/capability.ts` strips on load; this module never reads or writes it, except
- * that a copied link puts it back on purpose (`reviewLinkWithCapability`).
+ * that `session/capability.ts` strips on load; this module never reads or writes it (history
+ * writes drop it), except that a copied link puts it back on purpose (`reviewLinkWithCapability`).
  *
  * Resolution turns an address into the selection change that shows it, and refuses an
  * address the shown document cannot honor (an unknown file, a hunk past the end, a note that
  * is not stored) rather than guessing a nearby target. A target the review has but this page
- * does not show (filtered out, hidden as viewed, an agent note while agent notes are hidden)
- * is named with its reason, and a line is placed as drawn, inside a collapsed gap the page can
+ * does not show by shared state (filtered out, an agent note while agent notes are hidden)
+ * is named with its reason (a file "Hide viewed" removes is revealed instead, by the page's
+ * viewed workflow), and a line is placed as drawn, inside a collapsed gap the page can
  * expand, or absent from the diff, so the page never lands somewhere else without saying so.
  */
 import {
@@ -26,6 +27,7 @@ import {
   reviewTrailingGap,
 } from "../../core/review/expansion";
 import { reviewHunkRange } from "../../core/review/geometry";
+import { REVIEW_FILE_JUMP_HUNK_INDEX } from "../../core/review/navigation";
 import { reviewFileMatchesFilter, selectStoredReviewNoteById } from "../../core/review/selectors";
 import {
   reviewNoteOwnerHunkIndex,
@@ -33,6 +35,7 @@ import {
   type ReviewState,
 } from "../../core/review/state";
 import type { ReviewFileV1, ReviewSide } from "../../core/review/types";
+import { HUNK_REVIEW_CAPABILITY_FRAGMENT_KEY } from "../../session/reviewHttpProtocol";
 
 /** The fragment parameter that holds the address. */
 export const REVIEW_ADDRESS_FRAGMENT_KEY = "at";
@@ -48,9 +51,13 @@ export function readFragmentAddress(hash: string): ReviewAddress | undefined {
   return text === null ? undefined : parseReviewAddress(text);
 }
 
-/** The fragment with its address replaced (or removed), keeping every other parameter. */
+/**
+ * The fragment with its address replaced (or removed), keeping every other parameter except
+ * the capability, which a history write never carries (`session/capability.ts` owns it).
+ */
 export function fragmentWithAddress(hash: string, address: ReviewAddress | undefined) {
   const params = fragmentParams(hash);
+  params.delete(HUNK_REVIEW_CAPABILITY_FRAGMENT_KEY);
   params.delete(REVIEW_ADDRESS_FRAGMENT_KEY);
   if (address) params.set(REVIEW_ADDRESS_FRAGMENT_KEY, formatReviewAddress(address));
   const text = params.toString();
@@ -65,6 +72,17 @@ export function selectionAddress(
   if (!fileKey) return undefined;
   if (state.activeNoteId) return { kind: "note", fileKey, noteId: state.activeNoteId };
   return { kind: "hunk", fileKey, hunkIndex };
+}
+
+/**
+ * The address the page settles on after jumping to one: a file link selects the file's first
+ * hunk, so the address bar then names that hunk. Comparing it with where the reader is tells a
+ * jump to the same place from a jump elsewhere.
+ */
+export function addressAfterJump(address: ReviewAddress): ReviewAddress {
+  return address.kind === "file"
+    ? { kind: "hunk", fileKey: address.fileKey, hunkIndex: REVIEW_FILE_JUMP_HUNK_INDEX }
+    : address;
 }
 
 /** What showing one address takes: the hunk to select, and an exact line or note to reveal. */
@@ -87,26 +105,25 @@ function hunkForLine(file: ReviewFileV1, side: ReviewSide, line: number) {
 }
 
 /** Why a target the review has is not shown on this page. */
-export type ReviewAddressHiddenReason = "filter" | "hidden-viewed" | "agent-notes-hidden";
+export type ReviewAddressHiddenReason = "filter" | "agent-notes-hidden";
 
 /**
  * Return why one resolvable address points at something this page does not show, if it does.
  *
- * A file the shared filter leaves out, a file "Hide viewed" removes, and an agent note while
- * agent notes are hidden all exist in the review but have nowhere to be revealed. The page
- * says why instead of landing somewhere else, and never changes the shared filter or note
- * visibility on the reader's behalf; a viewed file that is only collapsed is not hidden, since
- * revealing it can expand it.
+ * A file the shared filter leaves out and an agent note while agent notes are hidden both
+ * exist in the review but have nowhere to be revealed. The page says why instead of landing
+ * somewhere else, and never changes the shared filter or note visibility on the reader's
+ * behalf. "Hide viewed" is this browser's own choice, not shared state, so a file it removes
+ * is not a reason: the jump reveals that file (`viewed/useViewedFiles.ts`), and a viewed file
+ * that is only collapsed is expanded.
  */
 export function reviewAddressHiddenReason(
   state: ReviewState,
   address: ReviewAddress,
-  hiddenFileKeys: ReadonlySet<string>,
 ): ReviewAddressHiddenReason | undefined {
   const file = state.document.files.find((candidate) => candidate.key === address.fileKey);
   if (!file) return undefined;
   if (!reviewFileMatchesFilter(file, state.filter)) return "filter";
-  if (hiddenFileKeys.has(file.key)) return "hidden-viewed";
   if (address.kind === "note") {
     const entry = selectStoredReviewNoteById(state, address.noteId);
     if (entry && !reviewNoteVisibleByPolicy(entry.note, state.showAgentNotes)) {
@@ -121,8 +138,6 @@ export function reviewAddressHiddenMessage(reason: ReviewAddressHiddenReason, pa
   switch (reason) {
     case "filter":
       return `This link points at ${path}, which the shared filter hides. Clear the filter to see it.`;
-    case "hidden-viewed":
-      return `This link points at ${path}, which is hidden because it is viewed and "Hide viewed" is on.`;
     case "agent-notes-hidden":
       return `This link points at an agent note in ${path}, and agent notes are hidden. Show them with "a" to see it.`;
   }

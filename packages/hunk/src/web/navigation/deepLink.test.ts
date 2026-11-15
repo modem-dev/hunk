@@ -5,6 +5,7 @@ import {
   createTestStoredNote,
 } from "../../../../../test/helpers/review-store-helpers";
 import {
+  addressAfterJump,
   fragmentWithAddress,
   readFragmentAddress,
   resolveReviewAddress,
@@ -22,6 +23,14 @@ describe("fragment addresses", () => {
     expect(readFragmentAddress(hash)).toEqual(address);
     expect(fragmentWithAddress(hash, undefined)).toBe("#theme=x");
     expect(fragmentWithAddress("", undefined)).toBe("");
+  });
+
+  test("never writes the capability back into a history fragment", () => {
+    const address = { kind: "hunk", fileKey: "a", hunkIndex: 1 } as const;
+    const hash = fragmentWithAddress(`#capability=${"A".repeat(43)}&theme=x&at=file%2Fb`, address);
+    expect(hash).not.toContain("capability");
+    expect(readFragmentAddress(hash)).toEqual(address);
+    expect(fragmentWithAddress(`#capability=${"A".repeat(43)}`, undefined)).toBe("");
   });
 
   test("refuses a fragment whose address is not exactly the grammar", () => {
@@ -94,26 +103,24 @@ describe("reviewAddressHiddenReason", () => {
     ...createTestReviewState(["alpha", "beta"], { showAgentNotes: true }),
     liveNotes: [createTestStoredNote({ id: "n1", fileKey: "beta", hunkIndex: 1, line: 12 })],
   };
-  const NONE = new Set<string>();
 
   // Intent: a link to something the review has but this page does not show is named with its
-  // reason rather than silently landing elsewhere.
-  test("names the filter, hide viewed, and hidden agent notes as reasons", () => {
+  // reason rather than silently landing elsewhere. A file "Hide viewed" removes is not one of
+  // them: the page reveals it (`viewed/useViewedFiles.ts`), so the link lands.
+  test("names the filter and hidden agent notes as reasons, never hide viewed", () => {
     const beta = { kind: "file", fileKey: "beta" } as const;
-    expect(reviewAddressHiddenReason(state, beta, NONE)).toBeUndefined();
-    expect(reviewAddressHiddenReason({ ...state, filter: "alpha" }, beta, NONE)).toBe("filter");
-    expect(reviewAddressHiddenReason(state, beta, new Set(["beta"]))).toBe("hidden-viewed");
+    expect(reviewAddressHiddenReason(state, beta)).toBeUndefined();
+    expect(reviewAddressHiddenReason({ ...state, filter: "alpha" }, beta)).toBe("filter");
 
     const note = { kind: "note", fileKey: "beta", noteId: "n1" } as const;
-    expect(reviewAddressHiddenReason(state, note, NONE)).toBeUndefined();
-    expect(reviewAddressHiddenReason({ ...state, showAgentNotes: false }, note, NONE)).toBe(
+    expect(reviewAddressHiddenReason(state, note)).toBeUndefined();
+    expect(reviewAddressHiddenReason({ ...state, showAgentNotes: false }, note)).toBe(
       "agent-notes-hidden",
     );
   });
 
   test("words each reason with the file's path", () => {
     expect(reviewAddressHiddenMessage("filter", "src/a.ts")).toContain("shared filter");
-    expect(reviewAddressHiddenMessage("hidden-viewed", "src/a.ts")).toContain("Hide viewed");
     expect(reviewAddressHiddenMessage("agent-notes-hidden", "src/a.ts")).toContain(
       "agent notes are hidden",
     );
@@ -129,5 +136,17 @@ describe("reviewLinePlacement", () => {
     expect(reviewLinePlacement(file, "new", 2)).toEqual({ kind: "drawn" });
     expect(reviewLinePlacement(file, "new", 7)).toEqual({ kind: "gap", gapId: "before:1" });
     expect(reviewLinePlacement(file, "new", 500)).toEqual({ kind: "absent" });
+  });
+});
+
+describe("addressAfterJump", () => {
+  test("names the first hunk a file jump selects, and leaves other addresses alone", () => {
+    expect(addressAfterJump({ kind: "file", fileKey: "a" })).toEqual({
+      kind: "hunk",
+      fileKey: "a",
+      hunkIndex: 0,
+    });
+    const line = { kind: "line", fileKey: "a", side: "new", line: 4 } as const;
+    expect(addressAfterJump(line)).toBe(line);
   });
 });

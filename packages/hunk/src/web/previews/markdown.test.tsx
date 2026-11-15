@@ -113,9 +113,8 @@ describe("Markdown preview", () => {
         ],
       },
     ]);
-    // An ambiguous run degrades to text rather than to broken markup.
     expect(renderTest("**bold *and em***")).toBe(
-      '<div class="markdown-view"><p><strong>bold *and em</strong>*</p></div>',
+      '<div class="markdown-view"><p><strong>bold <em>and em</em></strong></p></div>',
     );
     expect(parseMarkdownInline("call snake_case_name now")).toEqual([
       { type: "text", text: "call snake_case_name now" },
@@ -233,7 +232,7 @@ const ADVERSARIAL_TEST_INPUTS: Array<{ name: string; source: string; budgetMs: n
   },
   {
     name: "2,000-column header over 2,000 one-pipe rows",
-    source: `${"|a".repeat(2000)}\n|-|\n${"|\n".repeat(2000)}`,
+    source: `${"|a".repeat(2000)}\n${"|-".repeat(2000)}|\n${"|\n".repeat(2000)}`,
     budgetMs: 250,
   },
   {
@@ -296,16 +295,124 @@ describe("Markdown preview on hostile input", () => {
   }
 
   test("caps table columns and never pads short rows", () => {
-    const blocks = parseMarkdown(`${"|a".repeat(2000)}\n|-|\n${"|\n".repeat(2000)}`);
+    const blocks = parseMarkdown(
+      `${"|a".repeat(2000)}\n${"|-".repeat(2000)}|\n${"|\n".repeat(2000)}`,
+    );
     const table = blocks[0] as Extract<MarkdownBlock, { type: "table" }>;
 
     expect(table.header).toHaveLength(MAX_TABLE_COLUMNS);
     expect(table.clipped).toBe(true);
     expect(table.rows).toHaveLength(2000);
     expect(Math.max(...table.rows.map((row) => row.length))).toBeLessThanOrEqual(1);
-    expect(renderTest(`| a | b |\n|---|---|\n${"| x ".repeat(100)}|`)).toContain(
+    const wide = `${"| a ".repeat(MAX_TABLE_COLUMNS)}|\n${"|---".repeat(MAX_TABLE_COLUMNS)}|\n`;
+    expect(renderTest(`${wide}${"| x ".repeat(MAX_TABLE_COLUMNS + 1)}|`)).toContain(
       `Columns past the first ${MAX_TABLE_COLUMNS} are not shown.`,
     );
+  });
+
+  // Intent: a row longer than its header in a short table loses the extra cells the way other
+  // Markdown renderers do; only the 64-column cap is worth a notice.
+  test("drops extra cells of a short table's row without reporting clipping", () => {
+    const source = "| a | b | c |\n|---|---|---|\n| 1 | 2 | 3 | 4 |";
+    const table = parseMarkdown(source)[0] as Extract<MarkdownBlock, { type: "table" }>;
+
+    expect(table.rows[0]).toHaveLength(3);
+    expect(table.clipped).toBeUndefined();
+    expect(renderTest(source)).not.toContain("Columns past");
+  });
+
+  // Intent: a table needs a divider with the header's column count, or `foo | bar` over a
+  // `---` rule is prose and a rule, not a one-column table.
+  test("requires the divider row to match the header's column count", () => {
+    expect(parseMarkdown("foo | bar\n---").map((block) => block.type)).toEqual([
+      "paragraph",
+      "rule",
+    ]);
+    expect(parseMarkdown("a | b\n--- | ---")[0]!.type).toBe("table");
+    expect(parseMarkdown("a | b | c\n--- | ---")[0]!.type).toBe("paragraph");
+  });
+
+  // Intent: a tab is list indentation, so a tab-nested item stays in its list instead of
+  // becoming a code block that splits it.
+  test("treats a leading tab as list indentation", () => {
+    const blocks = parseMarkdown("- a\n\t- b\n- c");
+
+    expect(blocks).toHaveLength(1);
+    const list = blocks[0] as Extract<MarkdownBlock, { type: "list" }>;
+    expect(list.items).toHaveLength(2);
+    expect(list.items[0]!.map((block) => block.type)).toEqual(["paragraph", "list"]);
+    expect(parseMarkdown("1. a\n\t- b\n2. c")).toHaveLength(1);
+    expect(parseMarkdown("\tcode")[0]!.type).toBe("code");
+  });
+
+  test("keeps a loose list as one list and numbers an all-ones list by position", () => {
+    const loose = parseMarkdown("- a\n\n- b\n\n\n- c");
+    expect(loose).toHaveLength(1);
+    expect((loose[0] as Extract<MarkdownBlock, { type: "list" }>).items).toHaveLength(3);
+
+    const ones = parseMarkdown("1. a\n\n1. b\n1. c");
+    expect(ones).toHaveLength(1);
+    expect(ones[0]).toMatchObject({ type: "list", ordered: true });
+    expect((ones[0] as Extract<MarkdownBlock, { type: "list" }>).start).toBeUndefined();
+    expect(renderTest("1. a\n\n1. b\n1. c")).toBe(
+      '<div class="markdown-view"><ol><li><p>a</p></li><li><p>b</p></li><li><p>c</p></li></ol></div>',
+    );
+    // A different kind of list after the blank line is still a new list.
+    expect(parseMarkdown("- a\n\n1. b")).toHaveLength(2);
+    expect(parseMarkdown("- a\n\ntext")).toHaveLength(2);
+  });
+
+  // Intent: closers inside code spans or after a backslash are not closers, and a delimiter
+  // run can close an inner emphasis and the outer one together.
+  test("finds emphasis closers past code spans and escapes, and nests mixed runs", () => {
+    expect(parseMarkdownInline("*see `a*b` here*")).toEqual([
+      {
+        type: "emphasis",
+        children: [
+          { type: "text", text: "see " },
+          { type: "code", text: "a*b" },
+          { type: "text", text: " here" },
+        ],
+      },
+    ]);
+    expect(parseMarkdownInline("*a \\* b*")).toEqual([
+      { type: "emphasis", children: [{ type: "text", text: "a * b" }] },
+    ]);
+    expect(parseMarkdownInline("*a **b** c*")).toEqual([
+      {
+        type: "emphasis",
+        children: [
+          { type: "text", text: "a " },
+          { type: "strong", children: [{ type: "text", text: "b" }] },
+          { type: "text", text: " c" },
+        ],
+      },
+    ]);
+    expect(parseMarkdownInline("**bold *it***")).toEqual([
+      {
+        type: "strong",
+        children: [
+          { type: "text", text: "bold " },
+          { type: "emphasis", children: [{ type: "text", text: "it" }] },
+        ],
+      },
+    ]);
+    // Delimiters inside a link target or an autolink never close surrounding emphasis.
+    expect(parseMarkdownInline("*a [b](https://x.test/*c) d*")).toEqual([
+      {
+        type: "emphasis",
+        children: [
+          { type: "text", text: "a " },
+          { type: "link", href: "https://x.test/*c", children: [{ type: "text", text: "b" }] },
+          { type: "text", text: " d" },
+        ],
+      },
+    ]);
+    expect(parseMarkdownInline("*x *y* z")).toEqual([
+      { type: "text", text: "*x " },
+      { type: "emphasis", children: [{ type: "text", text: "y" }] },
+      { type: "text", text: " z" },
+    ]);
   });
 
   test("stops at the node budget with a visible marker", () => {

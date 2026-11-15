@@ -113,8 +113,13 @@ export interface ReviewPageFile {
 
 /** One loaded page build. */
 export interface ReviewPageAssets {
-  /** The page document, identical for every session. */
-  document(): ReviewPageFile;
+  /**
+   * The page document, identical for every session, or nothing when its file is gone.
+   *
+   * A directory build can lose its document while a rebuild swaps directories or after
+   * `dist/web` was deleted; the server answers that as an unavailable page, not a broken file.
+   */
+  document(): ReviewPageFile | undefined;
   /** One listed asset, or nothing for a name the build does not contain. */
   asset(name: string): ReviewPageFile | undefined;
 }
@@ -139,11 +144,15 @@ export function directoryReviewPageAssets(directory: string): ReviewPageAssets |
   // Every name is still one the build recorded: its own assets, then the ones it retained.
   const listed = new Set([...manifest.assets, ...(manifest.retained ?? [])]);
   return {
-    document: () => ({
-      body: Bun.file(join(directory, REVIEW_PAGE_DOCUMENT_NAME)),
-      contentType: REVIEW_PAGE_DOCUMENT_CONTENT_TYPE,
-      gzip: false,
-    }),
+    // Like a listed asset, a document whose file is gone belongs to a build replaced on disk.
+    document: () =>
+      existsSync(join(directory, REVIEW_PAGE_DOCUMENT_NAME))
+        ? {
+            body: Bun.file(join(directory, REVIEW_PAGE_DOCUMENT_NAME)),
+            contentType: REVIEW_PAGE_DOCUMENT_CONTENT_TYPE,
+            gzip: false,
+          }
+        : undefined,
     // A listed name whose file is gone belongs to a build that was replaced on disk.
     asset: (name) =>
       listed.has(name) && existsSync(join(directory, name))
@@ -309,25 +318,30 @@ async function buildSourceAssets(buildScript: string): Promise<boolean> {
 let embedded: Promise<ReviewPageAssets | undefined> | undefined;
 const directoryCache = new Map<string, { manifest: string; loaded: ReviewPageAssets }>();
 
-/** The build a directory holds now, re-read only when its manifest's content changed. */
+/**
+ * The build a directory holds now, re-read only when its manifest's content changed.
+ *
+ * A manifest that cannot be read or parsed is a rebuild caught mid-install (the directory
+ * swapped out, or a manifest from an older build script still being written), so the last
+ * build this directory served keeps answering until a readable manifest replaces it. Each of
+ * its assets is still checked on disk, so a file the rebuild removed is answered as absent.
+ */
 function loadDirectoryBuild(directory: string): ReviewPageAssets | undefined {
+  const cached = directoryCache.get(directory);
   let manifest: string;
   try {
     manifest = readFileSync(join(directory, REVIEW_PAGE_MANIFEST_NAME), "utf8");
   } catch {
-    directoryCache.delete(directory);
-    return undefined;
+    return cached?.loaded;
   }
-  const cached = directoryCache.get(directory);
   if (cached?.manifest === manifest) {
     return cached.loaded;
   }
   const loaded = directoryReviewPageAssets(directory);
-  if (loaded) {
-    directoryCache.set(directory, { manifest, loaded });
-  } else {
-    directoryCache.delete(directory);
+  if (!loaded) {
+    return cached?.loaded;
   }
+  directoryCache.set(directory, { manifest, loaded });
   return loaded;
 }
 

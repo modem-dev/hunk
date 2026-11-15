@@ -28,8 +28,10 @@ export interface ReviewStoredNote {
 }
 
 /**
- * Stale-note visibility policy: a note whose context moved stays visible at its last
- * known anchor, and only a note whose anchor is gone entirely disappears.
+ * Stored-note visibility policy: a note whose context moved stays visible at its last
+ * known anchor. Only a note carrying the `orphaned` verdict is hidden, and no reload
+ * produces that verdict: a reviewer's or agent's note never disappears because a diff
+ * changed underneath it.
  */
 export function isRenderableStoredReviewNote(entry: ReviewStoredNote) {
   return entry.resolution !== "orphaned";
@@ -38,19 +40,17 @@ export function isRenderableStoredReviewNote(entry: ReviewStoredNote) {
 /**
  * Decide one stored note's resolution after a reload replaced the document.
  *
- * The policy above, applied: a note whose file came back with different content is stale
- * while the hunk it hangs from still exists, and orphaned once that hunk is gone; a note whose
- * file content is unchanged keeps its verdict. A note whose file is absent from the new
- * document (`next` undefined) keeps its verdict too: it is not drawn while its file is gone,
- * and a later reload that brings the file back shows it again, as the terminal always has.
- * The anchor itself is never rewritten — a stale note is drawn where it last was.
+ * A note whose file came back with different content is marked stale, whether or not the
+ * hunk it hangs from still exists; the mark labels the note for surfaces that show it and
+ * never hides or moves it. A note whose file content is unchanged, or whose file is absent
+ * from the new document, keeps its verdict, so a later reload that brings the file back
+ * shows the note again, as the terminal always has. The anchor itself is never rewritten.
  */
 export function reconcileReviewNoteResolution(
   entry: ReviewStoredNote,
-  next: { hunkCount: number; contentChanged: boolean } | undefined,
+  contentChanged: boolean,
 ): ReviewNoteResolution {
-  if (!next || !next.contentChanged || entry.resolution === "orphaned") return entry.resolution;
-  return reviewNoteOwnerHunkIndex(entry.note) < next.hunkCount ? "stale" : "orphaned";
+  return contentChanged && entry.resolution === "active" ? "stale" : entry.resolution;
 }
 
 /**

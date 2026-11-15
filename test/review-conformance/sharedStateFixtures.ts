@@ -170,10 +170,10 @@ export const REVIEW_SHARED_STATE_FIXTURES: readonly ReviewSharedStateFixture[] =
     },
   },
   {
-    id: "stale-and-orphaned-notes-after-reload",
+    id: "notes-stay-after-reload-drops-their-hunk",
     findings: ["G1"],
     description:
-      "A reload that changes a two-hunk file into a one-hunk file keeps the first hunk's note as stale and orphans the second hunk's note, replies included; an unchanged file's note stays active.",
+      "A reload that changes a two-hunk file into a one-hunk file keeps every note, replies included, marked stale at its last anchor, so a note whose hunk went away never disappears; an unchanged file's note stays active.",
     build: () => [twoHunkFile("alpha"), oneHunkFile("beta")],
     act: (host) => {
       host.addLiveComment({ filePath: "src/alpha.ts", hunkIndex: 0, summary: "First" }, "mcp:1");
@@ -186,6 +186,8 @@ export const REVIEW_SHARED_STATE_FIXTURES: readonly ReviewSharedStateFixture[] =
       files: ["src/alpha.ts", "src/beta.ts"],
       notes: [
         { origin: "live", id: "mcp:1", file: 0, resolution: "stale" },
+        { origin: "live", id: "mcp:2", file: 0, resolution: "stale" },
+        { origin: "live", id: "mcp:3", file: 0, resolution: "stale" },
         { origin: "live", id: "mcp:4", file: 1, resolution: "active" },
       ],
       filter: "",

@@ -11,6 +11,10 @@
  * review state by product decision, so they are posted, and the page shows them once the
  * shared state echoes them back.
  *
+ * A composer renders only inside its file's diff, so every way of opening one first asks
+ * `showFileDiff` to put that file's diff on screen: a rendered Markdown file returns to its
+ * diff and a collapsed viewed file expands, then the composer opens where the reader sees it.
+ *
  * Owns no review state. Composers live in `session.composers`, failures with no nearer place go
  * to `session.toasts`, and everything the page shows still comes from the mirrors.
  */
@@ -26,6 +30,7 @@ import {
 } from "../../core/run/commandCatalog";
 import type { ReviewSharedStateV1 } from "../../session/reviewSharedState";
 import { reviewActionFailure } from "../actions/reviewActions";
+import { REVIEW_SESSION_ENDED_MESSAGE } from "../session/failureMessages";
 import type { NoteComposer } from "../notes/composerStore";
 import { NoteComposerView } from "../notes/NoteComposerView";
 import { noteRemovalAction, saveNoteComposer } from "../notes/noteActions";
@@ -55,8 +60,19 @@ function composerLocation(composer: NoteComposer) {
 export function useReviewInteraction(
   session: ReviewSession,
   shared: ReviewSharedStateV1 | undefined,
+  sessionEnded = false,
+  showFileDiff?: (fileKey: string) => void,
 ) {
   const { composers, actions, toasts, review } = session;
+  // Opening a composer or refreshing after the session ended would write to nothing; say so
+  // once, in the same words as a refused send, instead of opening a form that cannot save.
+  const endedRef = useRef(sessionEnded);
+  endedRef.current = sessionEnded;
+  const refuseIfEnded = useCallback(() => {
+    if (!endedRef.current) return false;
+    toasts.show(REVIEW_SESSION_ENDED_MESSAGE);
+    return true;
+  }, [toasts]);
 
   /** The file as the page shows it, its gaps, and its drawn hunks. */
   const fileView = useCallback(
@@ -73,10 +89,12 @@ export function useReviewInteraction(
   /** Open a composer for a new note on lines the reader picked. */
   const openOnLines = useCallback(
     (fileKey: string, side: ReviewSide, start: number, end: number) => {
+      if (refuseIfEnded()) return;
       const view = fileView(fileKey);
       if (!view) return;
       const pick = reviewNoteRangeTarget(view.file, view.plan.gaps, side, start, end);
       if (!pick) return;
+      showFileDiff?.(fileKey);
       composers.open({
         kind: "new",
         fileKey,
@@ -88,17 +106,19 @@ export function useReviewInteraction(
         contentIdentity: view.file.contentIdentity,
       });
     },
-    [composers, fileView],
+    [composers, fileView, refuseIfEnded, showFileDiff],
   );
 
   /** Open a composer replying to, or editing, one stored note. */
   const openOnNote = useCallback(
     (kind: "reply" | "edit", noteId: string) => {
+      if (refuseIfEnded()) return;
       const state = review.store.getSnapshot();
       const entry = selectStoredReviewNoteById(state, noteId);
       const view = entry ? fileView(entry.note.fileKey) : undefined;
       if (!entry || !view) return;
       const placement = reviewNotePlacement(entry.note, { hunks: view.drawn });
+      showFileDiff?.(entry.note.fileKey);
       composers.open({
         kind,
         fileKey: entry.note.fileKey,
@@ -109,17 +129,19 @@ export function useReviewInteraction(
         contentIdentity: view.file.contentIdentity,
       });
     },
-    [composers, fileView, review],
+    [composers, fileView, refuseIfEnded, review, showFileDiff],
   );
 
   /** Open a composer for a new note on the selected hunk's default line (`c`). */
   const openOnSelection = useCallback(() => {
+    if (refuseIfEnded()) return;
     const { selection } = review.store.getSnapshot();
     const view = selection.fileKey ? fileView(selection.fileKey) : undefined;
     const hunk = view?.file.hunks[selection.hunkIndex];
     if (!view || !hunk || !selection.fileKey) return;
     const line = reviewDefaultHunkLineTarget(hunk);
     const pick = reviewNoteLineTarget(view.file, view.plan.gaps, line.side, line.line);
+    showFileDiff?.(selection.fileKey);
     composers.open({
       kind: "new",
       fileKey: selection.fileKey,
@@ -129,7 +151,7 @@ export function useReviewInteraction(
       ...(pick ? { target: pick.target } : {}),
       contentIdentity: view.file.contentIdentity,
     });
-  }, [composers, fileView, review]);
+  }, [composers, fileView, refuseIfEnded, review, showFileDiff]);
 
   /** Remove one stored note, as the terminal's `D` does. */
   const removeNote = useCallback(
@@ -181,9 +203,10 @@ export function useReviewInteraction(
         onChange={(body) => composers.update(composer.key, { body, status: "editing" })}
         onSave={() => void save(composers.getSnapshot().find((c) => c.key === composer.key)!)}
         onCancel={() => composers.close(composer.key)}
+        sessionEnded={sessionEnded}
       />
     ),
-    [composers, save],
+    [composers, save, sessionEnded],
   );
 
   const interaction: ReviewNoteInteraction = useMemo(
@@ -253,9 +276,12 @@ export function useReviewInteraction(
   const [filterText, setFilterText] = useState(shared?.filter ?? "");
   const filterTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const filterEdits = useRef(new FilterEditSequence());
+  const sharedFilter = shared?.filter ?? "";
+  const sharedFilterRef = useRef(sharedFilter);
+  sharedFilterRef.current = sharedFilter;
   useEffect(() => {
-    if (!filterEdits.current.editing) setFilterText(shared?.filter ?? "");
-  }, [shared?.filter]);
+    if (!filterEdits.current.editing) setFilterText(sharedFilter);
+  }, [sharedFilter]);
   useEffect(() => () => clearTimeout(filterTimer.current), []);
   const changeFilter = useCallback(
     (text: string) => {
@@ -264,8 +290,11 @@ export function useReviewInteraction(
       clearTimeout(filterTimer.current);
       filterTimer.current = setTimeout(async () => {
         const outcome = await actions.send({ type: "filter/set", filter: text });
-        filterEdits.current.settle(sequence);
-        if (!outcome.ok) toasts.show(outcome.message);
+        const latest = filterEdits.current.settle(sequence);
+        if (outcome.ok) return;
+        toasts.show(outcome.message);
+        // The session never accepted this text; show the filter it actually holds.
+        if (latest) setFilterText(sharedFilterRef.current);
       }, FILTER_DEBOUNCE_MS);
     },
     [actions, toasts],
@@ -274,7 +303,7 @@ export function useReviewInteraction(
   // Refresh: the session reopens its input, paced by the session; the page shows it working.
   const [refreshing, setRefreshing] = useState(false);
   const refresh = useCallback(async () => {
-    if (refreshing) return;
+    if (refreshing || refuseIfEnded()) return;
     setRefreshing(true);
     try {
       await session.client.refresh();
@@ -283,7 +312,7 @@ export function useReviewInteraction(
     } finally {
       setRefreshing(false);
     }
-  }, [refreshing, session, toasts]);
+  }, [refreshing, refuseIfEnded, session, toasts]);
 
   return {
     interaction,

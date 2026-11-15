@@ -8,6 +8,10 @@
  * with `history.replaceState`, leaving every other fragment parameter in place. A reload reads
  * it back from storage. A tab with neither cannot reach the review, and the page says how to get
  * a fresh link. "Copy review link" rebuilds the full link on purpose.
+ *
+ * A link pasted into a tab already on the session navigates within the document (`hashchange`,
+ * or `popstate` for Back and Forward onto an entry that still carries the key), so
+ * `watchReviewCapability` moves that key out of the address the same way.
  */
 import {
   HUNK_REVIEW_CAPABILITY_FRAGMENT_KEY,
@@ -64,6 +68,40 @@ export function takeReviewCapability(input: {
     stored = null;
   }
   return isReviewCapabilityToken(stored) ? stored : undefined;
+}
+
+/** The window events and location `watchReviewCapability` listens to. */
+export interface CapabilityWatchTarget {
+  location: { pathname: string; search?: string; hash: string };
+  addEventListener(type: "hashchange" | "popstate", listener: () => void): void;
+  removeEventListener(type: "hashchange" | "popstate", listener: () => void): void;
+}
+
+/**
+ * Move a capability that arrives in the address after load into tab storage and out of the
+ * address, as `takeReviewCapability` does on first load. Returns the function that stops it.
+ */
+export function watchReviewCapability(input: {
+  sessionId: string;
+  target: CapabilityWatchTarget;
+  storage?: CapabilityStorage;
+  history?: Pick<History, "replaceState">;
+}): () => void {
+  const onChange = () => {
+    if (!parseReviewCapabilityFragment(input.target.location.hash)) return;
+    takeReviewCapability({
+      sessionId: input.sessionId,
+      location: input.target.location,
+      ...(input.storage ? { storage: input.storage } : {}),
+      ...(input.history ? { history: input.history } : {}),
+    });
+  };
+  input.target.addEventListener("hashchange", onChange);
+  input.target.addEventListener("popstate", onChange);
+  return () => {
+    input.target.removeEventListener("hashchange", onChange);
+    input.target.removeEventListener("popstate", onChange);
+  };
 }
 
 /** Rebuild the full review link for this tab: the address with the capability put back. */

@@ -503,6 +503,43 @@ describe("session reload filesystem bounds", () => {
     }
   });
 
+  test("allows a reload to reuse the launch sidecar outside the root but not another path", () => {
+    const repo = mkdtempSync(join(tmpdir(), "hunk-reload-bounds-launch-repo-"));
+    const outside = mkdtempSync(join(tmpdir(), "hunk-reload-bounds-launch-outside-"));
+    const sidecar = join(outside, "notes.json");
+    const other = join(outside, "other.json");
+    writeFileSync(sidecar, '{"version":1,"files":[]}\n');
+    writeFileSync(other, '{"version":1,"files":[]}\n');
+
+    try {
+      const bounds = createSessionReloadBounds(
+        bootstrapFor(
+          { kind: "vcs", staged: false, options: { agentContext: sidecar, watch: true } },
+          repo,
+        ),
+        { cwd: repo },
+      );
+
+      expect(
+        validateSessionReloadWithinBounds(bounds, {
+          kind: "vcs",
+          staged: false,
+          options: { agentContext: sidecar },
+        }).cwd,
+      ).toBe(realPath(repo));
+      expect(() =>
+        validateSessionReloadWithinBounds(bounds, {
+          kind: "vcs",
+          staged: false,
+          options: { agentContext: other },
+        }),
+      ).toThrow("agent context path outside the initial Hunk root");
+    } finally {
+      rmSync(repo, { force: true, recursive: true });
+      rmSync(outside, { force: true, recursive: true });
+    }
+  });
+
   test("rejects agent context sidecars that escape through symlinks", () => {
     const repo = mkdtempSync(join(tmpdir(), "hunk-reload-bounds-agent-link-repo-"));
     const outside = mkdtempSync(join(tmpdir(), "hunk-reload-bounds-agent-link-outside-"));

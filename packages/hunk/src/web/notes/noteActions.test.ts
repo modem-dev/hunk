@@ -152,4 +152,20 @@ describe("saveNoteComposer", () => {
     expect(current().status).toBe("changed");
     expect(calls).toHaveLength(1);
   });
+
+  // Intent: Discard while a save is in flight used to remove the composer; a refusal then had
+  // nowhere to land and the text was lost.
+  test("keeps the draft and shows the refusal when discard is attempted mid-send", async () => {
+    const { store, current, sender } = createTestSave(createTestComposer(), "refused");
+    const pending = saveNoteComposer(current(), store, sender, () => "content:a");
+
+    store.close(current().key);
+    await pending;
+
+    expect(current()).toMatchObject({
+      status: "failed",
+      error: "refused",
+      body: "Looks off by one.",
+    });
+  });
 });

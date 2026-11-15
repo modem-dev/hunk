@@ -211,6 +211,23 @@ describe("review page server encoding and availability", () => {
     expect(response.headers.get("content-type")).toBe("text/plain; charset=utf-8");
   });
 
+  // Finding: a rebuild's directory swap, or a deleted `dist/web`, left the document missing; the
+  // route sent a zero-length body that threw when read instead of answering like an absent build.
+  test("answers 503 when the build's document file is gone", async () => {
+    const directory = createTestPageDirectory();
+    const assets = directoryReviewPageAssets(directory)!;
+    rmSync(join(directory, REVIEW_PAGE_DOCUMENT_NAME));
+
+    for (const method of ["GET", "HEAD"]) {
+      const response = (await requestTestPage(assets, reviewPagePath("s"), { method }))!;
+      expect(response.status).toBe(503);
+      expect(response.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+      expect(response.headers.get("cache-control")).toBe("no-store");
+    }
+    // Listed assets that are still on disk keep answering.
+    expect((await requestTestPage(assets, `/review-assets/${SCRIPT}`))!.status).toBe(200);
+  });
+
   test("declines every path outside its prefixes", async () => {
     const assets = await STORES[0]![1]();
     for (const path of [

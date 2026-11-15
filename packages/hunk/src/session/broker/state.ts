@@ -447,6 +447,12 @@ export class HunkSessionBrokerState extends SessionBrokerState<
       return cached;
     }
 
+    // A caller that left before asking starts nothing: an assembly nobody waits for would
+    // still reserve budget and read every chunk.
+    if (options.signal?.aborted) {
+      throw new ReviewResourceWaitAbortedError();
+    }
+
     const loadKey = JSON.stringify([sessionId, generation, resourceId]);
     let load = this.loads.get(loadKey);
     if (!load) {

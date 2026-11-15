@@ -27,6 +27,7 @@ import type { AppBootstrap } from "../../core/bootstrap";
 import { restoreFileLanguageRegistrations } from "../../core/documents/fileLanguage";
 import { resolveRuntimeCliInput } from "../../core/process/terminal";
 import { resolveConfiguredCliInput } from "../../core/run/config";
+import { canReloadInput } from "../../core/run/inputReload";
 import type { CliInput, CommonOptions } from "../../core/run/commandInputs";
 import type { ReviewRefreshRequest } from "../../core/run/reviewRefresh";
 import { extendVcsCatalog } from "../../core/vcs";
@@ -203,10 +204,24 @@ export class ReviewReloadCoordinator {
     );
   }
 
-  /** Serialize one reload behind every earlier one; refused once shutdown has begun. */
+  /**
+   * Serialize one reload behind every earlier one; refused once shutdown has begun.
+   *
+   * A `watch` reload means "reopen whatever is mounted when this runs". A change noticed while an
+   * agent's reload is still in flight would otherwise re-apply the input captured before that
+   * reload and undo it, so the registered refresh descriptor is read at the front of the queue and
+   * the caller's input is only the fallback for a review that registered none.
+   */
   reload(nextInput: CliInput, options?: ReloadSessionOptions): Promise<ReloadedSessionResult> {
     return this.enqueue(() => {
       if (this.shuttingDown) throw reloadRefusedDuringShutdown();
+      const current = options?.reason === "watch" ? this.refreshRequest : undefined;
+      if (current) {
+        return this.performReload(current.nextInput, {
+          ...options,
+          sourcePath: current.sourcePath,
+        });
+      }
       return this.performReload(nextInput, options);
     });
   }
@@ -389,6 +404,15 @@ export class ReviewReloadCoordinator {
     // and extension authority are launch authority: a reload command names *content* to
     // reopen and is parsed fresh, so the launch flags are re-threaded raw — `undefined` keeps
     // deferring to the config layers rather than becoming an explicit choice.
+    //
+    // Watching belongs to the session, not to the command that reopened its content: an
+    // agent's `hunk session reload -- diff` names no `--watch`, and must not silently stop a
+    // session that was following file edits. Only an explicit `--no-watch` (`false`) or an
+    // input that cannot be reopened ends it.
+    const keepsWatching =
+      nextInput.options.watch === undefined &&
+      this.reviewIdentity.input.options.watch === true &&
+      canReloadInput(nextInput);
     const runtimeInput = resolveRuntimeCliInput({
       ...nextInput,
       options: {
@@ -399,6 +423,7 @@ export class ReviewReloadCoordinator {
             }) ?? this.reviewIdentity.input.options)
           : {}),
         ...(retainLaunchConfig ? definedReviewOptions(nextInput.options) : nextInput.options),
+        ...(keepsWatching ? { watch: true } : {}),
         experimental: launchOptions.experimental === true,
         extensions: launchOptions.extensions,
         extensionPaths: launchOptions.extensionPaths,

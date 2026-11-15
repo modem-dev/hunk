@@ -168,6 +168,11 @@ function listedAssets(directory: string): string[] {
  * loaded before a source-checkout rebuild still finds its lazy chunks and stylesheets. Only
  * that one generation is kept, so the directory does not grow; packaged installs never
  * rebuild in place.
+ *
+ * Between the two renames the directory is briefly absent, and the manifest is rewritten
+ * after the swap to record what was kept. A daemon reading during either moment finds no
+ * manifest or an older one, never a partial one, and keeps serving the last build it read
+ * (`currentDirectoryReviewPageAssets`).
  */
 export function installBuild(staging: string, outdir: string) {
   const retired = `${outdir}.retired-${process.pid}-${Date.now()}`;
@@ -200,7 +205,28 @@ export function installBuild(staging: string, outdir: string) {
   rmSync(retired, { recursive: true, force: true });
   // The server serves only names a manifest records, so the kept ones are recorded too.
   if (manifest) {
-    writeFileSync(manifestPath, `${JSON.stringify({ ...manifest, retained })}\n`);
+    writeFileReplacing(manifestPath, `${JSON.stringify({ ...manifest, retained })}\n`);
+  }
+}
+
+/**
+ * Replace one file of a live build in a single rename.
+ *
+ * A daemon reads the manifest on every asset lookup, so rewriting it in place could hand that
+ * read a truncated file. The new content goes to a temporary sibling (same directory, same
+ * filesystem) and is renamed over the target, so a reader sees the old file or the new one.
+ */
+function writeFileReplacing(target: string, content: string) {
+  const temporary = path.join(
+    path.dirname(target),
+    `.${path.basename(target)}.${process.pid}-${Date.now()}.tmp`,
+  );
+  try {
+    writeFileSync(temporary, content);
+    renameSync(temporary, target);
+  } catch (error) {
+    rmSync(temporary, { force: true });
+    throw error;
   }
 }
 

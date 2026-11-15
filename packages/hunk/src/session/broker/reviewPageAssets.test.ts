@@ -70,12 +70,26 @@ describe("directory page builds", () => {
   test("serve the document and listed assets only", async () => {
     const assets = directoryReviewPageAssets(writeTestBuild())!;
 
-    expect(await assets.document().body.text()).toContain("<!doctype html>");
+    expect(await assets.document()!.body.text()).toContain("<!doctype html>");
     expect(await assets.asset("main-abc123.js")!.body.text()).toBe("console.log(1);");
     expect(assets.asset("main-abc123.js")!.gzip).toBe(false);
     // Present on disk but absent from the manifest: unreachable by name.
     expect(assets.asset("unlisted.js")).toBeUndefined();
     expect(assets.asset(REVIEW_PAGE_MANIFEST_NAME)).toBeUndefined();
+  });
+
+  test("answer a document whose file is gone as absent, like a missing asset", async () => {
+    const directory = writeTestBuild();
+    const assets = currentDirectoryReviewPageAssets(directory)!;
+    expect(assets.document()).toBeDefined();
+
+    unlinkSync(join(directory, REVIEW_PAGE_DOCUMENT_NAME));
+    expect(assets.document()).toBeUndefined();
+    expect(await assets.asset("main-abc123.js")!.body.text()).toBe("console.log(1);");
+
+    // The document returns with the next install.
+    writeFileSync(join(directory, REVIEW_PAGE_DOCUMENT_NAME), "<!doctype html>");
+    expect(await assets.document()!.body.text()).toBe("<!doctype html>");
   });
 
   test("are absent when the manifest is missing or invalid", () => {
@@ -118,6 +132,25 @@ describe("a build directory under a running daemon", () => {
     expect(cached.asset("main-abc123.js")).toBeUndefined();
     expect(await cached.asset("main-def456.js")!.body.text()).toBe("console.log(3);");
   });
+
+  // Intent: a rebuild caught mid-install (manifest missing or half-written) must not turn every
+  // asset of an open page into a 404; the last build read keeps answering until a readable
+  // manifest replaces it.
+  test("keeps serving the last readable build while the manifest is missing or partial", async () => {
+    const directory = writeTestBuild();
+    const assets = currentDirectoryReviewPageAssets(directory)!;
+    expect(assets.asset("main-abc123.js")).toBeDefined();
+
+    const manifestPath = join(directory, REVIEW_PAGE_MANIFEST_NAME);
+    writeFileSync(manifestPath, JSON.stringify(MANIFEST).slice(0, 20));
+    expect(await assets.asset("main-abc123.js")!.body.text()).toBe("console.log(1);");
+    unlinkSync(manifestPath);
+    expect(await assets.asset("main-abc123.js")!.body.text()).toBe("console.log(1);");
+    expect(assets.asset("unlisted.js")).toBeUndefined();
+
+    writeFileSync(manifestPath, JSON.stringify({ formatVersion: 1, assets: ["main-abc123.css"] }));
+    expect(assets.asset("main-abc123.js")).toBeUndefined();
+  });
 });
 
 describe("a source checkout's on-demand build", () => {
@@ -158,7 +191,7 @@ describe("embedded page archives", () => {
     const archive = encodeReviewPageAssetArchive(MANIFEST, FILES);
     const assets = (await archiveReviewPageAssets(new Blob([archive])))!;
 
-    const document = assets.document();
+    const document = assets.document()!;
     expect(document.gzip).toBe(true);
     expect(new TextDecoder().decode(Bun.gunzipSync(await document.body.bytes()))).toContain(
       "<!doctype html>",

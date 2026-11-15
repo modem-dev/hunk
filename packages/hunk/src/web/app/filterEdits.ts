@@ -22,8 +22,15 @@ export class FilterEditSequence {
     return this.latest;
   }
 
-  /** Record the reply to the edit numbered `sequence`; only the latest one ends editing. */
+  /**
+   * Record the reply to the edit numbered `sequence`; only the latest one ends editing.
+   *
+   * Returns whether this was the latest edit, so a failed reply knows the field still holds
+   * the text that failed.
+   */
   settle(sequence: number) {
-    if (sequence === this.latest) this.open = false;
+    if (sequence !== this.latest) return false;
+    this.open = false;
+    return true;
   }
 }

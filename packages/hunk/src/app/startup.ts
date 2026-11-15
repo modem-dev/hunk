@@ -646,15 +646,18 @@ export async function prepareStartupPlan(
   // `--web` implies `--watch` whenever the input can be reopened, unless `--no-watch` said
   // otherwise. An input that cannot be reopened (a patch on stdin) simply is not watched; only an
   // explicit `--watch` on such an input is an error, below.
-  if (
-    headlessWeb &&
-    runtimeCliInput.options.watch !== false &&
-    !cliInput.options.watch &&
-    canReloadInput(cliInput)
-  ) {
-    cliInput = { ...cliInput, options: { ...cliInput.options, watch: true } };
-    configured = { ...configured, input: cliInput };
-  }
+  const applyWebImpliedWatch = () => {
+    if (
+      headlessWeb &&
+      runtimeCliInput.options.watch !== false &&
+      !cliInput.options.watch &&
+      canReloadInput(cliInput)
+    ) {
+      cliInput = { ...cliInput, options: { ...cliInput.options, watch: true } };
+      configured = { ...configured, input: cliInput };
+    }
+  };
+  applyWebImpliedWatch();
 
   if (cliInput.options.watch) {
     await whileStartupOwnsExtensions(() => {
@@ -738,6 +741,9 @@ export async function prepareStartupPlan(
   );
   configured = resolvedExtensions.configured;
   cliInput = configured.input;
+  // A user-extension VCS adapter that moved the project root re-resolves the input from the CLI
+  // flags, which dropped the watch `--web` implied; imply it again for the re-resolved input.
+  applyWebImpliedWatch();
   const extensionResult = resolvedExtensions.extensions;
   preloadedExtensions = extensionResult;
   if (deps.signal?.aborted) {

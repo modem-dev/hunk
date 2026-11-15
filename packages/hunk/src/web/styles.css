@@ -70,6 +70,23 @@ body {
   height: 100%;
 }
 
+/* Persistent and not dismissable: the review below stays readable, but nothing reaches it. */
+.session-ended-banner {
+  flex: none;
+  margin: 0;
+  padding: 6px 12px;
+  font-family: var(--ui-font);
+  font-size: 13px;
+  color: var(--hunk-text);
+  background: var(--hunk-panel-alt);
+  border-bottom: 2px solid var(--hunk-removed-sign-color, #d1242f);
+}
+
+.session-ended-banner code {
+  font-family: var(--code-font);
+  font-size: 12px;
+}
+
 .review-main {
   display: flex;
   flex: 1;
@@ -597,8 +614,10 @@ body {
   flex: none;
 }
 
+/* Text, not the accent: several built-in accents fall below 4.5:1 on the panel and on the
+   selected row's panel-alt background, where the text token holds in every built-in theme. */
 [data-badge="agent-comment"] {
-  color: var(--hunk-accent);
+  color: var(--hunk-text);
 }
 
 [data-badge="addition"] {
@@ -1877,11 +1896,6 @@ body {
   border-top: 1px solid var(--hunk-border);
 }
 
-.header-action[aria-pressed="true"] {
-  background: var(--hunk-accent-muted);
-  border-color: var(--hunk-accent);
-}
-
 /* Viewed files: header checkbox, "changed since viewed", collapsed body, sidebar and toolbar. */
 .viewed-toggle {
   display: inline-flex;
@@ -1964,9 +1978,4 @@ body {
   font-size: 12px;
   color: var(--hunk-muted);
   white-space: nowrap;
-}
-
-.viewed-controls .tool-button[aria-pressed="true"] {
-  border-color: var(--hunk-accent);
-  color: var(--hunk-accent);
 }

@@ -2,9 +2,11 @@
  * Holds the page's open note composers: new notes, replies, and edits being written.
  *
  * Composers are this page's own — the session's shared draft slot is never used — so several
- * may be open at once, in different files or on different lines. Each is keyed by its anchor
- * (kind, file, side and line, and the note it replies to or edits), and opening one at an
- * anchor that already has a composer focuses that one instead.
+ * may be open at once, in different files or on different lines. A new-note composer is keyed
+ * by its file and the line it ends on; a reply or edit composer by the note it acts on, never
+ * by where that note is drawn (which moves when a context gap opens or closes), so a note has
+ * at most one. Opening at a key that already has a composer focuses that one; a new-note
+ * composer also takes the newly chosen target, so extending a pick keeps one composer.
  *
  * Unsent drafts survive a tab reload: every change is written to `sessionStorage` under the
  * session's id (tab-scoped, never the capability), and cleared once the session accepts a
@@ -37,6 +39,8 @@ export interface NoteComposer {
   parentId?: string;
   /** The note an edit changes. */
   noteId?: string;
+  /** Bumped when the reader opens the composer again, so its view takes focus. */
+  focusRequests?: number;
   /** The file content the draft was written against. */
   contentIdentity: string;
   body: string;
@@ -46,19 +50,25 @@ export interface NoteComposer {
   awaiting?: { generation: string; stateRevision: number };
 }
 
-/** The anchor key one composer is stored under. */
+/**
+ * The key one composer is stored under.
+ *
+ * A reply or edit is identified by the note it acts on; its drawn line is deliberately left
+ * out because placement changes with the expanded gaps.
+ */
 export function noteComposerKey(
   composer: Pick<NoteComposer, "kind" | "fileKey" | "side" | "line" | "parentId" | "noteId">,
 ) {
-  return [
-    composer.kind,
-    composer.fileKey,
-    composer.side,
-    composer.line,
-    composer.parentId ?? composer.noteId ?? "",
-  ]
-    .map((part) => encodeURIComponent(String(part)))
-    .join(":");
+  const parts =
+    composer.kind === "new"
+      ? [composer.kind, composer.fileKey, composer.side, composer.line]
+      : [composer.kind, composer.fileKey, composer.parentId ?? composer.noteId ?? ""];
+  return parts.map((part) => encodeURIComponent(String(part))).join(":");
+}
+
+/** Whether a composer's save is in flight: sent, and the session has not answered yet. */
+export function noteComposerSaveInFlight(composer: Pick<NoteComposer, "status" | "awaiting">) {
+  return composer.status === "sending" && !composer.awaiting;
 }
 
 /** The storage key for one session's drafts. */
@@ -105,10 +115,37 @@ export class NoteComposerStore {
     };
   };
 
-  /** Open a composer, or return the key of the one already open at that anchor. */
+  /**
+   * Open a composer, or return the key of the one already open for that key.
+   *
+   * An existing composer is asked to take focus again. An existing new-note composer also
+   * takes the target just chosen (keeping its text), unless its save is in flight.
+   */
   open(composer: Omit<NoteComposer, "key" | "status" | "body"> & { body?: string }) {
     const key = noteComposerKey(composer);
-    if (this.composers.some((existing) => existing.key === key)) return key;
+    const existing = this.composers.find((candidate) => candidate.key === key);
+    if (existing) {
+      const retarget =
+        composer.kind === "new" && !noteComposerSaveInFlight(existing)
+          ? {
+              hunkIndex: composer.hunkIndex,
+              side: composer.side,
+              line: composer.line,
+              target: composer.target,
+              expandedLineProof: composer.expandedLineProof,
+              contentIdentity: composer.contentIdentity,
+              ...(existing.status === "changed" ? { status: "editing" as const } : {}),
+            }
+          : {};
+      this.set(
+        this.composers.map((candidate) =>
+          candidate === existing
+            ? { ...candidate, ...retarget, focusRequests: (candidate.focusRequests ?? 0) + 1 }
+            : candidate,
+        ),
+      );
+      return key;
+    }
     this.set([
       ...this.composers,
       { ...composer, key, body: composer.body ?? "", status: "editing" },
@@ -129,9 +166,15 @@ export class NoteComposerStore {
     if (patch.awaiting && this.seen) this.settleSent(this.seen);
   }
 
-  /** Close one composer and forget its draft. */
+  /**
+   * Close one composer and forget its draft.
+   *
+   * A composer whose save is in flight stays: the session may still accept it, and a refusal
+   * must find the draft to put its message on.
+   */
   close(key: string) {
-    if (!this.composers.some((composer) => composer.key === key)) return;
+    const composer = this.composers.find((candidate) => candidate.key === key);
+    if (!composer || noteComposerSaveInFlight(composer)) return;
     this.set(this.composers.filter((composer) => composer.key !== key));
   }
 
@@ -197,6 +240,7 @@ export class NoteComposerStore {
       const raw = this.storage?.getItem(noteDraftStorageKey(this.sessionId));
       const parsed = raw ? (JSON.parse(raw) as unknown) : [];
       if (!Array.isArray(parsed)) return [];
+      const seen = new Set<string>();
       return parsed.flatMap((value): NoteComposer[] => {
         const draft = value as Partial<NoteComposer>;
         const valid =
@@ -209,10 +253,15 @@ export class NoteComposerStore {
           typeof draft.body === "string";
         if (!valid) return [];
         const composer = draft as NoteComposer;
+        // Drafts saved under the older line-based reply/edit keys re-key by note; a note that
+        // was left with two keeps the first.
+        const key = noteComposerKey(composer);
+        if (seen.has(key)) return [];
+        seen.add(key);
         return [
           {
             ...composer,
-            key: noteComposerKey(composer),
+            key,
             status: composer.status === "changed" ? "changed" : "editing",
           },
         ];

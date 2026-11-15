@@ -4,6 +4,7 @@ import {
   reviewCapabilityStorageKey,
   reviewLinkWithCapability,
   takeReviewCapability,
+  watchReviewCapability,
 } from "./capability";
 
 const CAPABILITY = "A".repeat(43);
@@ -87,5 +88,50 @@ describe("review links", () => {
         CAPABILITY,
       ),
     ).toBe(`http://127.0.0.1:1/review/s1/#capability=${CAPABILITY}&hunk=2`);
+  });
+});
+
+describe("watchReviewCapability", () => {
+  /** A window stand-in whose address a test can move and whose events it can fire. */
+  function createTestWindow(hash: string) {
+    const listeners = new Map<string, Set<() => void>>();
+    return {
+      location: { pathname: "/review/s1/", search: "", hash },
+      addEventListener: (type: string, listener: () => void) => {
+        listeners.set(type, (listeners.get(type) ?? new Set()).add(listener));
+      },
+      removeEventListener: (type: string, listener: () => void) => {
+        listeners.get(type)?.delete(listener);
+      },
+      fire: (type: string) => listeners.get(type)?.forEach((listener) => listener()),
+      count: () => [...listeners.values()].reduce((sum, set) => sum + set.size, 0),
+    };
+  }
+
+  test("strips a capability pasted into a tab already on the session", () => {
+    const target = createTestWindow("#at=file%2Fa");
+    const storage = createTestStorage();
+    const history = createTestHistory();
+    const stop = watchReviewCapability({ sessionId: "s1", target, storage, history });
+
+    target.location.hash = `#capability=${CAPABILITY}&at=file%2Fb`;
+    target.fire("hashchange");
+    expect(storage.values.get(reviewCapabilityStorageKey("s1"))).toBe(CAPABILITY);
+    expect(history.urls).toEqual(["/review/s1/#at=file%2Fb"]);
+
+    // Forward onto an entry that still carries the key is stripped through `popstate`.
+    target.fire("popstate");
+    expect(history.urls).toHaveLength(2);
+
+    stop();
+    expect(target.count()).toBe(0);
+  });
+
+  test("leaves an address with no capability alone", () => {
+    const target = createTestWindow("#at=file%2Fa");
+    const history = createTestHistory();
+    watchReviewCapability({ sessionId: "s1", target, storage: createTestStorage(), history });
+    target.fire("hashchange");
+    expect(history.urls).toEqual([]);
   });
 });

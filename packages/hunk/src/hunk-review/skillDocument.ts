@@ -47,9 +47,9 @@ const FRONTMATTER = [
 const INTRO = [
   "# Hunk Review",
   "",
-  "Hunk is an interactive terminal diff viewer. The TUI is for the user -- do NOT run `hunk diff`, `hunk show`, or other interactive commands directly. Use `hunk session *` CLI commands to inspect and control live sessions through the local daemon.",
+  "Hunk is an interactive terminal diff viewer that can also serve a review to a browser page. The TUI and the page are for the user -- do NOT run `hunk diff`, `hunk show`, or other interactive commands directly. Use `hunk session *` CLI commands to inspect and control live sessions through the local daemon.",
   "",
-  "If no session exists, ask the user to launch Hunk in their terminal first.",
+  "If no session exists, ask the user to launch Hunk in their terminal (or in the browser) first.",
 ];
 
 const WORKFLOW = [
@@ -234,6 +234,18 @@ const GUIDING_SECTION = [
   "- Don't comment on every hunk -- highlight what the user wouldn't spot themselves",
 ];
 
+const BROWSER_SECTION = [
+  "### Browser",
+  "",
+  ...bashFence(synopsisLines(commands.open)),
+  "",
+  "Opens the live session's review page in the user's default browser on this machine, or prints its URL with `--no-open`. Run it only when the user asks to see the review in a browser. The URL carries the session's access key: hand it to the user and nobody else, and never paste it into notes, logs, or commit messages.",
+  "",
+  "- A session the user started in the browser has no terminal UI; every `hunk session` command works on it the same way",
+  "- `context` reports the terminal's position in a terminal session and the position the browser last reported in a browser-only session; each surface keeps its own selection",
+  "- `navigate` and comment `--focus` move every open surface, terminal and browser alike",
+];
+
 const FEEDBACK_SECTION = [
   "## Sending feedback about Hunk",
   "",
@@ -261,6 +273,7 @@ export function renderHunkReviewSkill() {
     RELOAD_SECTION,
     COMMENTS_SECTION,
     HIGHLIGHTS_SECTION,
+    BROWSER_SECTION,
     STML_SECTION,
     NEW_FILES_SECTION,
     GUIDING_SECTION,

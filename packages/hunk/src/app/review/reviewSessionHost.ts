@@ -94,6 +94,7 @@ import type {
 import {
   buildLiveCommentSummaries,
   buildReviewNoteSummaries,
+  buildSessionNoteSummaries,
   buildReviewSessionAnnotationIndex,
   buildSelectedHunkSummary,
   buildSessionSnapshotState,
@@ -1049,8 +1050,11 @@ export class ReviewSessionHost {
     const state = this.store.getSnapshot();
     const selection = selectNormalizedSelection(state);
     const file = selection.fileKey ? this.fileIndex.fileByKey.get(selection.fileKey) : undefined;
-    const liveComments = this.getLiveCommentSummaries();
-    const reviewNotes = this.getReviewNoteSummaries();
+    const { liveComments, reviewNotes } = buildSessionNoteSummaries(
+      this.files,
+      this.fileIndex,
+      state,
+    );
     return buildSessionSnapshotState({
       selectedFile: file,
       selectedHunk: file?.metadata.hunks[selection.hunkIndex],

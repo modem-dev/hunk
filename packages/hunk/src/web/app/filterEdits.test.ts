@@ -23,4 +23,15 @@ describe("FilterEditSequence", () => {
     edits.settle(newer);
     expect(edits.editing).toBe(false);
   });
+
+  // Intent: a failed reply to the latest edit must tell the field to resync to the shared
+  // filter, while a failed reply to an older edit must not clobber newer typing.
+  test("reports whether a reply settled the latest edit", () => {
+    const edits = new FilterEditSequence();
+    const older = edits.edit();
+    const newer = edits.edit();
+
+    expect(edits.settle(older)).toBe(false);
+    expect(edits.settle(newer)).toBe(true);
+  });
 });

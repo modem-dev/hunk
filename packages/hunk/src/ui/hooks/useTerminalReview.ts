@@ -1186,7 +1186,8 @@ export function useTerminalReview({
   /** Format current live comments for daemon snapshots without exposing merged UI-only objects. */
   const liveCommentSummaries = useMemo<SessionLiveCommentSummary[]>(
     () => buildLiveCommentSummaries(files, fileIndex, state),
-    [fileIndex, files, state.liveNotes],
+    // The snapshot's note budget is shared with reviewer notes, so both lists decide the result.
+    [fileIndex, files, state.liveNotes, state.userNotes],
   );
 
   return {

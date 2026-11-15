@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 import type { AppBootstrap } from "../../core/bootstrap";
@@ -25,7 +26,12 @@ afterEach(() => {
 
 /** Load a one-hunk diff bootstrap with an empty extension registry. */
 async function createTestHeadlessBootstrap(
-  options: { watch?: boolean; pendingTrust?: string; open?: false } = {},
+  options: {
+    watch?: boolean;
+    pendingTrust?: string;
+    open?: false;
+    agentContext?: string;
+  } = {},
 ) {
   const dir = mkdtempSync(join(process.cwd(), ".hunk-headless-runner-"));
   directories.push(dir);
@@ -40,6 +46,7 @@ async function createTestHeadlessBootstrap(
     options: {
       experimental: true,
       ...(options.watch ? { watch: true } : {}),
+      ...(options.agentContext ? { agentContext: options.agentContext } : {}),
       ...(options.open === false ? { open: false } : {}),
     },
   })) as AppBootstrap<ExtensionLoadResult>;
@@ -48,7 +55,7 @@ async function createTestHeadlessBootstrap(
     bootstrap.extensions.pendingTrustRepoRoot = options.pendingTrust;
   }
   bootstrap.startupNotices = [{ key: "test", message: "a startup notice" } as never];
-  return { bootstrap, right };
+  return { bootstrap, left, right };
 }
 
 /** Build a broker-free runtime that records snapshots and keeps the bridge it was given. */
@@ -477,5 +484,102 @@ describe("runHeadlessReview", () => {
     signals.emit("SIGINT");
     await exited;
     expect(watch.sources[1]?.closeCount).toBe(1);
+  });
+
+  test("keeps following a sidecar that lives outside the repository", async () => {
+    const outside = mkdtempSync(join(tmpdir(), "hunk-headless-sidecar-"));
+    directories.push(outside);
+    const sidecar = join(outside, "context.json");
+    writeFileSync(sidecar, JSON.stringify({ version: 1, files: [] }));
+    const { bootstrap, right } = await createTestHeadlessBootstrap({
+      watch: true,
+      agentContext: sidecar,
+    });
+    const watch = createWatchTestRuntime();
+    const { session, signals, exited } = await startTestHeadlessReview(bootstrap, watch.runtime);
+    const generation = session.runtime.reviewProducer.getPublication().generation;
+
+    writeFileSync(right, "export const answer = 42;\nexport const observed = true;\n");
+    watch.setSignature("signature:1");
+    watch.emit();
+    watch.advanceBy(200);
+    for (let turn = 0; turn < 20; turn += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    expect(session.runtime.reviewProducer.getPublication().generation).not.toBe(generation);
+
+    signals.emit("SIGINT");
+    await exited;
+  });
+
+  test("an agent reload that names no --watch keeps the session watching", async () => {
+    const { bootstrap, left, right } = await createTestHeadlessBootstrap({ watch: true });
+    const watch = createWatchTestRuntime();
+    const { session, signals, exited } = await startTestHeadlessReview(bootstrap, watch.runtime);
+    expect(watch.sources).toHaveLength(1);
+
+    await session.coordinator.reload({ kind: "diff", left, right, options: {} });
+    expect(session.coordinator.getBootstrap().input.options.watch).toBe(true);
+    expect(watch.sources).toHaveLength(2);
+    expect(watch.sources[0]?.closeCount).toBe(1);
+
+    // An explicit opt-out still ends the watch.
+    await session.coordinator.reload({ kind: "diff", left, right, options: { watch: false } });
+    expect(session.coordinator.getBootstrap().input.options.watch).toBe(false);
+    expect(watch.sources).toHaveLength(2);
+    expect(watch.sources[1]?.closeCount).toBe(1);
+
+    signals.emit("SIGINT");
+    await exited;
+  });
+
+  test("a watch refresh queued behind an agent reload does not undo it", async () => {
+    const { bootstrap, right } = await createTestHeadlessBootstrap({ watch: true });
+    const watch = createWatchTestRuntime();
+    const { session, signals, exited } = await startTestHeadlessReview(bootstrap, watch.runtime);
+    const agentLeft = join(process.cwd(), ".hunk-headless-runner-agent-left.ts");
+    const agentRight = join(process.cwd(), ".hunk-headless-runner-agent-right.ts");
+    writeFileSync(agentLeft, "export const agent = 1;\n");
+    writeFileSync(agentRight, "export const agent = 2;\n");
+    directories.push(agentLeft, agentRight);
+
+    const agentReload = session.coordinator.reload({
+      kind: "diff",
+      left: agentLeft,
+      right: agentRight,
+      options: {},
+    });
+    writeFileSync(right, "export const answer = 42;\nexport const observed = true;\n");
+    watch.setSignature("signature:1");
+    watch.emit();
+    watch.advanceBy(200);
+    await agentReload;
+    for (let turn = 0; turn < 20; turn += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    const input = session.coordinator.getBootstrap().input;
+    expect(input.kind === "diff" && input.right).toBe(agentRight);
+
+    signals.emit("SIGINT");
+    await exited;
+  });
+
+  test("a disabled daemon is not advised to change the port", async () => {
+    const { bootstrap } = await createTestHeadlessBootstrap({ open: false });
+    const review = await startTestHeadlessReview(bootstrap, undefined, {
+      waitForRegistration: async () => {
+        throw new Error("The session daemon is disabled for this process (HUNK_MCP_DISABLE=1).");
+      },
+    });
+
+    const error = await review.exited.then(
+      () => null,
+      (failure: unknown) => failure as Error,
+    );
+    expect(error?.message).toBe(
+      "could not serve this review through the session daemon on 127.0.0.1:45555. The session daemon is disabled for this process (HUNK_MCP_DISABLE=1).",
+    );
   });
 });

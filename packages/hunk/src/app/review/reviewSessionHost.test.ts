@@ -478,6 +478,19 @@ describe("ReviewSessionHost file replacement", () => {
     expect(host.getSnapshot().sourceStatusByFileKey).toEqual({});
   });
 
+  test("a reload that drops a note's hunk keeps the note in every terminal projection", () => {
+    const host = createTestHost([createTestTwoHunkFile()]);
+    host.addLiveComment({ filePath: "beta.ts", hunkIndex: 1, summary: "second hunk" }, "mcp:1");
+    host.setShowAgentNotes(true);
+
+    host.replaceFiles([createTestNumberedFile({ id: "beta", path: "beta.ts" })]);
+
+    expect(host.getLiveCommentSummaries().map((note) => note.commentId)).toEqual(["mcp:1"]);
+    expect(host.getReviewNoteSummaries().map((note) => note.noteId)).toEqual(["mcp:1"]);
+    expect(host.getSessionSnapshotState({ publicationGeneration: "g1" }).liveCommentCount).toBe(1);
+    expect(host.getAnnotationIndex().annotatedFileKeys.has(host.fileKeyFor("beta")!)).toBe(true);
+  });
+
   test("drops notes on a file a reload removed from the published summaries", () => {
     const host = createTestHost([createTestNumberedFile(), createTestTwoHunkFile()]);
     host.addLiveComment({ filePath: "beta.ts", hunkIndex: 0, summary: "on beta" }, "mcp:1");

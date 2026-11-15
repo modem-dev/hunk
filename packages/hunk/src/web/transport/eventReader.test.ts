@@ -86,6 +86,28 @@ describe("ServerSentEventParser", () => {
       { event: "e", data: "1" },
     ]);
   });
+
+  // Intent: a CRLF split across two reads is one line break, not two, or its blank line would
+  // cut one record in two.
+  test("keeps a CRLF split across two reads as one line break", () => {
+    const parser = new ServerSentEventParser();
+
+    expect(parser.push("data: x\r")).toEqual([]);
+    expect(parser.push("\ndata: y\r\n\r\n")).toEqual([{ event: "message", data: "x\ny" }]);
+
+    const text = "id: 1\r\nevent: e\r\ndata: a\r\ndata: b\r\n\r\n";
+    const bytewise = new ServerSentEventParser();
+    expect([...text].flatMap((character) => bytewise.push(character))).toEqual([
+      { id: "1", event: "e", data: "a\nb" },
+    ]);
+    // A lone carriage return is still a line break once anything follows it.
+    const lone = new ServerSentEventParser();
+    expect(lone.push("data: z\r")).toEqual([]);
+    expect(lone.push("\rdata: w\n\n")).toEqual([
+      { event: "message", data: "z" },
+      { event: "message", data: "w" },
+    ]);
+  });
 });
 
 describe("readReviewEvents", () => {

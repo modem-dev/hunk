@@ -18,6 +18,8 @@ export interface ReviewControlsProps {
   onRefresh: () => void;
   refreshKeyHint?: string;
   onCopyLink: () => Promise<boolean>;
+  /** The session has ended: the filter and refresh need it, so both are disabled. */
+  sessionEnded?: boolean;
 }
 
 /** The filter field, refresh button, and copy-link button. */
@@ -37,6 +39,7 @@ export const ReviewControls = forwardRef<HTMLInputElement, ReviewControlsProps>(
             data-testid="filter-input"
             placeholder={`Filter files${props.filterKeyHint ? ` (${props.filterKeyHint})` : ""}`}
             value={props.filterText}
+            disabled={props.sessionEnded}
             onChange={(event) => props.onFilterChange(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Escape") {
@@ -54,7 +57,7 @@ export const ReviewControls = forwardRef<HTMLInputElement, ReviewControlsProps>(
           className="tool-button"
           data-testid="refresh"
           aria-busy={props.refreshing}
-          disabled={props.refreshing}
+          disabled={props.refreshing || props.sessionEnded}
           title={
             props.refreshKeyHint
               ? `Reload the review's input (${props.refreshKeyHint})`

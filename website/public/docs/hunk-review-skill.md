@@ -5,9 +5,9 @@ description: Interacts with live Hunk diff review sessions via CLI. Inspects rev
 
 # Hunk Review
 
-Hunk is an interactive terminal diff viewer. The TUI is for the user -- do NOT run `hunk diff`, `hunk show`, or other interactive commands directly. Use `hunk session *` CLI commands to inspect and control live sessions through the local daemon.
+Hunk is an interactive terminal diff viewer that can also serve a review to a browser page. The TUI and the page are for the user -- do NOT run `hunk diff`, `hunk show`, or other interactive commands directly. Use `hunk session *` CLI commands to inspect and control live sessions through the local daemon.
 
-If no session exists, ask the user to launch Hunk in their terminal first.
+If no session exists, ask the user to launch Hunk in their terminal (or in the browser) first.
 
 ## Workflow
 
@@ -165,6 +165,18 @@ hunk session highlight clear --repo .
 - Pass `--focus` to also land the viewport on the marked line
 - Marks survive scrolling, navigation, and reloads that leave the marked file's content unchanged; a reload that changes that file drops its marks, and `highlight clear` removes them explicitly (optionally per `--file`)
 - Marks are visual only — pair them with a `comment add` when the explanation should persist as a note
+
+### Browser
+
+```bash
+hunk session open (<session-id> | --repo <path>) [--no-open] [--json]
+```
+
+Opens the live session's review page in the user's default browser on this machine, or prints its URL with `--no-open`. Run it only when the user asks to see the review in a browser. The URL carries the session's access key: hand it to the user and nobody else, and never paste it into notes, logs, or commit messages.
+
+- A session the user started in the browser has no terminal UI; every `hunk session` command works on it the same way
+- `context` reports the terminal's position in a terminal session and the position the browser last reported in a browser-only session; each surface keeps its own selection
+- `navigate` and comment `--focus` move every open surface, terminal and browser alike
 
 ### Experimental rich markup notes (STML)
 

@@ -123,6 +123,34 @@ describe("ClientReviewStore", () => {
     expect(alpha).toBeDefined();
   });
 
+  // Intent: hiding the selected file (marking it viewed with "Hide viewed" on) must not leave
+  // the reader on a file navigation cannot step from: the selection moves to the next shown
+  // file, else the previous one, without scrolling, and stays put when nothing is shown.
+  test("moves a selection whose file becomes hidden to the nearest shown file", async () => {
+    const { review } = await loadTestStore([
+      createTestGapFile("alpha"),
+      createTestGapFile("beta"),
+      createTestGapFile("gamma"),
+    ]);
+    const [alpha, beta, gamma] = review.store.getSnapshot().document.files;
+    const selected = () => review.store.getSnapshot().selection.fileKey;
+    review.apply({ type: "selection/select-file", fileKey: beta!.key });
+    const reveal = review.store.getSnapshot().reveal;
+
+    review.setHiddenFiles(new Set([beta!.key]));
+    expect(selected()).toBe(gamma!.key);
+    expect(review.store.getSnapshot().reveal).toEqual(reveal);
+    review.apply({ type: "selection/move", scope: "file", delta: -1 });
+    expect(selected()).toBe(alpha!.key);
+
+    review.apply({ type: "selection/select-file", fileKey: gamma!.key });
+    review.setHiddenFiles(new Set([beta!.key, gamma!.key]));
+    expect(selected()).toBe(alpha!.key);
+
+    review.setHiddenFiles(new Set([alpha!.key, beta!.key, gamma!.key]));
+    expect(selected()).toBe(alpha!.key);
+  });
+
   test("refuses shared intents, which this page does not author yet", async () => {
     const { review } = await loadTestStore();
 
@@ -161,6 +189,27 @@ describe("ClientReviewStore", () => {
 
     review.adoptShared(snapshot([second], 3));
     expect(review.store.getSnapshot().activeNoteId).toBeNull();
+  });
+
+  // Intent: if the shared-state fetch for a new generation fails, the new document must not
+  // keep presenting the previous generation's notes as current.
+  test("drops the previous generation's notes when the document moves to a new generation", async () => {
+    const { review, mirror } = await loadTestStore();
+    const catalog = mirror.getSnapshot().catalog!;
+    const fileKey = review.store.getSnapshot().document.files[0]!.key;
+    review.adoptShared({
+      generation: catalog.generation,
+      sharedStateRevision: 1,
+      files: [],
+      notes: [createTestLiveNote("live:1", fileKey)],
+      filter: "",
+      showAgentNotes: true,
+    } as unknown as ReviewSharedStateV1);
+    expect(review.store.getSnapshot().liveNotes).toHaveLength(1);
+
+    review.adopt(mirror.getSnapshot().document, { ...catalog, generation: "generation:next" });
+
+    expect(review.store.getSnapshot().liveNotes).toHaveLength(0);
   });
 
   test("expands a gap and loads its source into the shared status vocabulary", async () => {

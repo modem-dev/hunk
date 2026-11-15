@@ -11,7 +11,13 @@
  */
 import { useEffect, useMemo, useRef } from "react";
 import { pageModalOpen } from "../palette/ModalDialog";
-import { bindWebCommands, focusOwnsKey, webKeyEvent, type WebKeymap } from "./keyboard";
+import {
+  bindWebCommands,
+  commandRepeatsWhenHeld,
+  focusOwnsKey,
+  webKeyEvent,
+  type WebKeymap,
+} from "./keyboard";
 import type { WebCommand } from "./webCommandTable";
 
 /** Listen for the page's shortcuts while mounted. */
@@ -30,6 +36,8 @@ export function useWebKeyboard(commands: readonly WebCommand[], keymap: WebKeyma
       const command = latest.current.match(key);
       if (!command) return;
       event.preventDefault();
+      // A held toggle key is consumed but runs once.
+      if (event.repeat && !commandRepeatsWhenHeld(command.entry.id)) return;
       command.run({ count: 1, shift: event.shiftKey });
     };
     window.addEventListener("keydown", onKeyDown);
