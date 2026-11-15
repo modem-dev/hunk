@@ -45,11 +45,12 @@ test("shows the remaining side when a reload removes one side of an image", asyn
   // Every image shown decoded: none points at a revoked blob.
   await expect
     .poll(() =>
-      preview
-        .locator("img")
-        .evaluateAll((images) =>
-          images.every((image) => (image as HTMLImageElement).complete && image.naturalWidth > 0),
-        ),
+      preview.locator("img").evaluateAll((images) =>
+        images.every((image) => {
+          const loaded = image as HTMLImageElement;
+          return loaded.complete && loaded.naturalWidth > 0;
+        }),
+      ),
     )
     .toBe(true);
   await expect(preview.locator("img")).toHaveCount(1);

@@ -203,11 +203,29 @@ export function themeCustomProperties(theme: WebThemeV1): Record<string, string>
   return properties;
 }
 
-/** Apply one theme's properties to an element (the page root). */
+/** The properties the last theme applied to each element, so the next can remove the leftovers. */
+const appliedProperties = new WeakMap<HTMLElement, Set<string>>();
+
+/**
+ * Apply one theme's properties to an element (the page root).
+ *
+ * A property the previous theme set and this one does not define is removed, so switching
+ * from a theme with extra tokens never leaves their colors behind.
+ */
 export function applyWebTheme(element: HTMLElement, theme: WebThemeV1) {
+  const applied = new Set<string>();
   for (const [property, value] of Object.entries(themeCustomProperties(theme))) {
-    if (value) element.style.setProperty(property, value);
+    if (value) {
+      element.style.setProperty(property, value);
+      applied.add(property);
+    } else {
+      element.style.removeProperty(property);
+    }
   }
+  for (const property of appliedProperties.get(element) ?? []) {
+    if (!applied.has(property)) element.style.removeProperty(property);
+  }
+  appliedProperties.set(element, applied);
   element.style.colorScheme = theme.appearance;
   element.dataset.themeAppearance = theme.appearance;
 }

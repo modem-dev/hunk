@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  applyWebTheme,
   parseWebThemeIndex,
   resolveWebTheme,
   themeCustomProperties,
@@ -54,5 +55,41 @@ describe("web theme index", () => {
     expect(properties["--hunk-background"]).toBe("#0d1117");
     expect(properties["--diffs-bg-addition-override"]).toBe("#12261e");
     expect(properties["--trees-git-added-color-override"]).toBe("#3fb950");
+  });
+});
+
+/** A stand-in element that records custom properties as a style declaration would. */
+function createTestElement() {
+  const properties = new Map<string, string>();
+  const element = {
+    properties,
+    dataset: {} as Record<string, string>,
+    style: {
+      colorScheme: "",
+      setProperty: (name: string, value: string) => void properties.set(name, value),
+      removeProperty: (name: string) => void properties.delete(name),
+    },
+  };
+  return element;
+}
+
+describe("applyWebTheme", () => {
+  // Intent: moving from a theme with extra tokens to one without them must not leave the old
+  // colors on the page.
+  test("removes properties the new theme does not define", () => {
+    const element = createTestElement();
+    const rich = { ...INDEX.themes[0]!, tokens: { ...INDEX.themes[0]!.tokens, accent: "#58a6ff" } };
+
+    applyWebTheme(element as unknown as HTMLElement, rich);
+    expect(element.properties.get("--hunk-accent")).toBe("#58a6ff");
+    expect(element.properties.get("--diffs-bg-addition-override")).toBe("#12261e");
+
+    applyWebTheme(element as unknown as HTMLElement, INDEX.themes[1]!);
+
+    expect(element.properties.has("--hunk-accent")).toBe(false);
+    expect(element.properties.has("--hunk-added-bg")).toBe(false);
+    expect(element.properties.has("--diffs-bg-addition-override")).toBe(false);
+    expect(element.properties.get("--hunk-background")).toBe("#ffffff");
+    expect(element.dataset.themeAppearance).toBe("light");
   });
 });

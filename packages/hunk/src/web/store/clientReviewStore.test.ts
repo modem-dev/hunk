@@ -191,6 +191,27 @@ describe("ClientReviewStore", () => {
     expect(review.store.getSnapshot().activeNoteId).toBeNull();
   });
 
+  // Intent: if the shared-state fetch for a new generation fails, the new document must not
+  // keep presenting the previous generation's notes as current.
+  test("drops the previous generation's notes when the document moves to a new generation", async () => {
+    const { review, mirror } = await loadTestStore();
+    const catalog = mirror.getSnapshot().catalog!;
+    const fileKey = review.store.getSnapshot().document.files[0]!.key;
+    review.adoptShared({
+      generation: catalog.generation,
+      sharedStateRevision: 1,
+      files: [],
+      notes: [createTestLiveNote("live:1", fileKey)],
+      filter: "",
+      showAgentNotes: true,
+    } as unknown as ReviewSharedStateV1);
+    expect(review.store.getSnapshot().liveNotes).toHaveLength(1);
+
+    review.adopt(mirror.getSnapshot().document, { ...catalog, generation: "generation:next" });
+
+    expect(review.store.getSnapshot().liveNotes).toHaveLength(0);
+  });
+
   test("expands a gap and loads its source into the shared status vocabulary", async () => {
     const { review } = await loadTestStore();
     const { fileKey, gapId } = leadingGapId(review);

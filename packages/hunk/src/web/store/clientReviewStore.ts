@@ -87,6 +87,14 @@ export class ClientReviewStore {
       this.sourceLoads.clear();
     }
     this.catalog = catalog;
+    // Notes belong to the generation whose shared state listed them. A document that moved to
+    // another generation, whose own state has not arrived (or failed to), must not present the
+    // old generation's notes as current; they return with the matching snapshot.
+    if (this.shared && catalog && this.shared.generation !== catalog.generation) {
+      this.shared = undefined;
+      this.store.dispatch({ type: "notes/clear", includeUser: true });
+      this.annotations = EMPTY_REVIEW_ANNOTATION_INDEX;
+    }
     this.store.dispatch({ type: "document/reconcile", document });
 
     // An open gap whose read was aborted above, or whose unattested text reconciliation
