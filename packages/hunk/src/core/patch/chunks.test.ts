@@ -31,6 +31,32 @@ describe("patch chunk helpers", () => {
     ]);
   });
 
+  // Intent: hunk body lines that merely look like file headers stay with their own file.
+  test("keeps removed -- and added ++ lines inside plain unified hunks", () => {
+    const chunks = splitPatchIntoFileChunks(
+      [
+        "--- a/schema.sql",
+        "+++ b/schema.sql",
+        "@@ -1,3 +1,3 @@",
+        " select 1;",
+        "--- old comment",
+        "+++ new comment",
+        " select 2;",
+        "--- a/beta.txt",
+        "+++ b/beta.txt",
+        "@@ -1 +1 @@",
+        "-left",
+        "+right",
+        "",
+      ].join("\n"),
+    );
+
+    expect(chunks).toEqual([
+      "--- a/schema.sql\n+++ b/schema.sql\n@@ -1,3 +1,3 @@\n select 1;\n--- old comment\n+++ new comment\n select 2;\n",
+      "--- a/beta.txt\n+++ b/beta.txt\n@@ -1 +1 @@\n-left\n+right\n",
+    ]);
+  });
+
   // Intent: fallback matching works by current or previous path when index lookup misses.
   test("matches fallback chunks by normalized current or previous path", () => {
     const chunks = [

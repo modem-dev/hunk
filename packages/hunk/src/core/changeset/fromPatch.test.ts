@@ -40,6 +40,36 @@ describe("changesetFromPatch", () => {
     expect(changeset.files[1]?.path).toBe("other.txt");
   });
 
+  test("gives each plain unified file its own patch when hunk lines look like headers", () => {
+    // A removed `-- x` line beside an added `++ y` line renders as `--- x` / `+++ y`.
+    const changeset = changesetFromPatch(
+      [
+        "--- a/schema.sql",
+        "+++ b/schema.sql",
+        "@@ -1,3 +1,3 @@",
+        " select 1;",
+        "--- old comment",
+        "+++ new comment",
+        " select 2;",
+        "--- a/notes.txt",
+        "+++ b/notes.txt",
+        "@@ -1 +1 @@",
+        "-hello",
+        "+world",
+        "",
+      ].join("\n"),
+      "title",
+      "label",
+      null,
+    );
+
+    expect(changeset.files).toHaveLength(2);
+    expect(changeset.files[0]?.patch).toContain("+++ new comment\n select 2;\n");
+    expect(changeset.files[1]?.patch).toBe(
+      "--- a/notes.txt\n+++ b/notes.txt\n@@ -1 +1 @@\n-hello\n+world\n",
+    );
+  });
+
   test("keeps good files when one file chunk is unparseable", () => {
     // Regression test: a single poisoned file used to make the whole-patch
     // parse throw, and the catch-all returned zero files for the review.
