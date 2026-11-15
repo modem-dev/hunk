@@ -171,6 +171,34 @@ function annotatedFiles(
 }
 
 /**
+ * Locate the selection in the full stream, as a possibly fractional index.
+ *
+ * A selected hunk is its exact stream index. A selected file that is in the visible stream but
+ * has no hunks (binary, too large, a pure rename) sits between its neighbours, so it is placed
+ * half a step before the first hunk of the next file that has any. A selection that is neither
+ * — no file, or a file outside the visible stream — has no position and answers -1.
+ */
+function selectionStreamPosition(
+  files: readonly ReviewNavigationFile[],
+  streamCursors: readonly ReviewHunkCursor[],
+  selection: ReviewSemanticSelection,
+) {
+  const exact = streamCursors.findIndex((cursor) => cursorMatches(cursor, selection));
+  if (exact >= 0) {
+    return exact;
+  }
+
+  const fileIndex = files.findIndex((file) => file.fileKey === selection.fileKey);
+  if (fileIndex < 0 || streamCursors.some((cursor) => cursor.fileKey === selection.fileKey)) {
+    return -1;
+  }
+
+  const precedingFiles = new Set(files.slice(0, fileIndex).map((file) => file.fileKey));
+  const precedingCursors = streamCursors.filter((cursor) => precedingFiles.has(cursor.fileKey));
+  return precedingCursors.length - 0.5;
+}
+
+/**
  * Resolve a move whose starting position is not itself in the cursor subset.
  *
  * Annotated navigation walks a subset of the stream, so the reviewer is usually standing
@@ -181,6 +209,7 @@ function annotatedFiles(
  */
 function nearestCursorIndex(
   cursors: readonly ReviewHunkCursor[],
+  files: readonly ReviewNavigationFile[],
   streamCursors: readonly ReviewHunkCursor[],
   selection: ReviewSemanticSelection,
   delta: number,
@@ -190,7 +219,7 @@ function nearestCursorIndex(
     return edgeIndex;
   }
 
-  const currentStreamIndex = streamCursors.findIndex((cursor) => cursorMatches(cursor, selection));
+  const currentStreamIndex = selectionStreamPosition(files, streamCursors, selection);
   if (currentStreamIndex < 0) {
     return edgeIndex;
   }
@@ -235,6 +264,7 @@ function nearestCursorIndex(
  */
 function stepCursors(
   cursors: readonly ReviewHunkCursor[],
+  files: readonly ReviewNavigationFile[],
   streamCursors: readonly ReviewHunkCursor[],
   selection: ReviewSemanticSelection,
   delta: number,
@@ -247,7 +277,7 @@ function stepCursors(
   const nextIndex =
     currentIndex >= 0
       ? clamp(currentIndex + delta, 0, cursors.length - 1)
-      : nearestCursorIndex(cursors, streamCursors, selection, delta);
+      : nearestCursorIndex(cursors, files, streamCursors, selection, delta);
   return cursors[nextIndex] ?? null;
 }
 
@@ -258,7 +288,7 @@ function planHunkMove(
   delta: number,
 ): ReviewSelectionMoveTarget | null {
   const cursors = reviewStreamCursors(model.files);
-  const target = stepCursors(cursors, cursors, selection, delta);
+  const target = stepCursors(cursors, model.files, cursors, selection, delta);
   if (!target) {
     return null;
   }
@@ -379,6 +409,7 @@ function planAnnotatedHunkMove(
 ): ReviewSelectionMoveTarget | null {
   const target = stepCursors(
     reviewAnnotatedCursors(model.files, model.annotations),
+    model.files,
     reviewStreamCursors(model.files),
     selection,
     delta,
