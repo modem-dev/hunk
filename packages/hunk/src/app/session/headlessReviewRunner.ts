@@ -119,8 +119,9 @@ async function waitForDaemonRegistration(
       / The app will retry in the background\.$/,
       "",
     );
-    // Build-skew and port-conflict reasons carry their own remedy; the others get the port one.
-    const remedy = /HUNK_MCP_PORT|hunk daemon|relaunch|smaller review/.test(reason)
+    // Build-skew, port-conflict, and disabled-daemon reasons carry their own remedy or are not
+    // about the port at all; the others get the port one.
+    const remedy = /HUNK_MCP_PORT|HUNK_MCP_DISABLE|hunk daemon|relaunch|smaller review/.test(reason)
       ? ""
       : " Stop whatever else holds that port, or set HUNK_MCP_PORT to a different loopback port.";
     throw new HunkUserError(
