@@ -20,14 +20,21 @@
  *   is shown, expanded, despite "Hide viewed" until the next explicit jump lands elsewhere or
  *   the reader toggles "Hide viewed". A request to look somewhere is never silently dropped.
  *
+ * A mark belongs to the content the reader saw. The gesture captures the file's content identity,
+ * and a send refused for a reload in progress is retried against the new generation only while
+ * the file still has that identity; a changed file is never marked viewed at content the reader
+ * did not see. Toggles read the mark they are heading to (`pendingViewedMarks.ts`) and send in
+ * order per file, so a double press inverts instead of repeating.
+ *
  * The session decides the marks; nothing here sends anything but `files/set-viewed`.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { countReviewViewedFiles } from "../../core/review/overview";
 import type { ReviewState } from "../../core/review/state";
 import type { ReviewSharedStateV1 } from "../../session/reviewSharedState";
 import type { ReviewActionSender } from "../actions/reviewActions";
 import type { ClientReviewStore } from "../store/clientReviewStore";
+import { PendingViewedMarks } from "./pendingViewedMarks";
 import {
   forgetClearedViewedMarks,
   forgetViewedMark,
@@ -59,6 +66,28 @@ function writeStored(key: string, value: string) {
   }
 }
 
+/** Remembered sessions kept besides the current one; older ones are pruned on load. */
+const REMEMBERED_SESSIONS_KEPT = 8;
+
+/** Remove other sessions' viewed memories beyond the first few the browser lists. */
+function pruneOtherMemories(sessionId: string) {
+  try {
+    const keep = MEMORY_KEY_PREFIX + sessionId;
+    const others: string[] = [];
+    for (let index = 0; index < window.localStorage.length; index += 1) {
+      const key = window.localStorage.key(index);
+      if (key?.startsWith(MEMORY_KEY_PREFIX) && key !== keep) others.push(key);
+    }
+    // Storage keeps no write times; keeping the last few keys the browser lists is the
+    // cheapest stable rule and covers the reader's recent sessions.
+    for (const key of others.slice(0, Math.max(0, others.length - REMEMBERED_SESSIONS_KEPT))) {
+      window.localStorage.removeItem(key);
+    }
+  } catch {
+    // Pruning is housekeeping; a refused storage just keeps its keys.
+  }
+}
+
 /** Read this session's viewed memory, or an empty one. */
 function readMemory(sessionId: string): ViewedMemory {
   try {
@@ -85,11 +114,14 @@ export interface UseViewedFilesOptions {
   actions: Pick<ReviewActionSender, "send">;
   /** Show one failure in the page's toast region. */
   showError: (message: string) => void;
+  /** The content identity of one file in the document shown now, if it is there. */
+  fileContentIdentity: (fileKey: string) => string | undefined;
 }
 
 /** The page's viewed-file state and gestures. */
 export function useViewedFiles(options: UseViewedFilesOptions) {
-  const { sessionId, shared, files, review, store, actions, showError } = options;
+  const { sessionId, shared, files, review, store, actions, showError, fileContentIdentity } =
+    options;
   const [memory, setMemory] = useState<ViewedMemory>(() => readMemory(sessionId));
   const [hideViewed, setHideViewed] = useState(() => readStored(HIDE_VIEWED_KEY) === "on");
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
@@ -107,6 +139,11 @@ export function useViewedFiles(options: UseViewedFilesOptions) {
     );
   }, [shared]);
   useEffect(() => {
+    pruneOtherMemories(sessionId);
+  }, [sessionId]);
+  useEffect(() => {
+    // An empty memory is the default; writing it would only leave a key behind per session.
+    if (Object.keys(memory).length === 0) return;
     writeStored(MEMORY_KEY_PREFIX + sessionId, JSON.stringify(memory));
   }, [memory, sessionId]);
 
@@ -164,14 +201,34 @@ export function useViewedFiles(options: UseViewedFilesOptions) {
     store.setHiddenFiles(hidden);
   }, [store, hidden]);
 
-  /** Mark or clear one file's viewed mark for every surface. */
-  const setViewed = useCallback(
-    async (fileKey: string, viewed: boolean) => {
-      const outcome = await actions.send({ type: "files/set-viewed", fileKey, viewed });
+  const latestIdentity = useRef(fileContentIdentity);
+  latestIdentity.current = fileContentIdentity;
+  const pending = useRef(new PendingViewedMarks());
+  const sends = useRef(new Map<string, Promise<void>>());
+  useEffect(() => {
+    if (shared) pending.current.observe(shared.generation, shared.stateRevision);
+  }, [shared]);
+
+  /** Send one file's mark and apply its page-local effects once the session accepts it. */
+  const sendViewed = useCallback(
+    async (fileKey: string, viewed: boolean, seenIdentity: string | undefined) => {
+      const outcome = await actions.send(
+        { type: "files/set-viewed", fileKey, viewed },
+        {
+          // A refusal for a reload in progress is retried only for the content the reader saw.
+          stillMeaningful: () =>
+            seenIdentity !== undefined && latestIdentity.current(fileKey) === seenIdentity,
+        },
+      );
       if (!outcome.ok) {
+        pending.current.failed(fileKey, viewed);
         showError(outcome.message);
         return;
       }
+      pending.current.accepted(fileKey, viewed, {
+        generation: outcome.applied.generation,
+        stateRevision: outcome.applied.stateRevision,
+      });
       // Marking collapses the file again, and hides it again if a jump had revealed it;
       // clearing forgets the content it was marked at.
       if (viewed) setRevealed((current) => (current === fileKey ? null : current));
@@ -186,9 +243,31 @@ export function useViewedFiles(options: UseViewedFilesOptions) {
     [actions, showError],
   );
 
+  /** Mark or clear one file's viewed mark for every surface, in order per file. */
+  const setViewed = useCallback(
+    (fileKey: string, viewed: boolean) => {
+      // The content identity is taken when the reader acts, not when the send runs.
+      const seenIdentity = latestIdentity.current(fileKey);
+      pending.current.begin(fileKey, viewed);
+      const run = (sends.current.get(fileKey) ?? Promise.resolve()).then(() =>
+        sendViewed(fileKey, viewed, seenIdentity),
+      );
+      sends.current.set(fileKey, run);
+      void run.finally(() => {
+        if (sends.current.get(fileKey) === run) sends.current.delete(fileKey);
+      });
+      return run;
+    },
+    [sendViewed],
+  );
+
   /** Flip one file's mark: a viewed file is cleared, any other file is marked. */
   const toggleViewed = useCallback(
-    (fileKey: string) => void setViewed(fileKey, statuses.get(fileKey) !== "viewed"),
+    (fileKey: string) =>
+      void setViewed(
+        fileKey,
+        !pending.current.current(fileKey, statuses.get(fileKey) === "viewed"),
+      ),
     [setViewed, statuses],
   );
 

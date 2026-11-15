@@ -5,6 +5,7 @@ import {
   createTestStoredNote,
 } from "../../../../../test/helpers/review-store-helpers";
 import {
+  addressAfterJump,
   fragmentWithAddress,
   readFragmentAddress,
   resolveReviewAddress,
@@ -22,6 +23,14 @@ describe("fragment addresses", () => {
     expect(readFragmentAddress(hash)).toEqual(address);
     expect(fragmentWithAddress(hash, undefined)).toBe("#theme=x");
     expect(fragmentWithAddress("", undefined)).toBe("");
+  });
+
+  test("never writes the capability back into a history fragment", () => {
+    const address = { kind: "hunk", fileKey: "a", hunkIndex: 1 } as const;
+    const hash = fragmentWithAddress(`#capability=${"A".repeat(43)}&theme=x&at=file%2Fb`, address);
+    expect(hash).not.toContain("capability");
+    expect(readFragmentAddress(hash)).toEqual(address);
+    expect(fragmentWithAddress(`#capability=${"A".repeat(43)}`, undefined)).toBe("");
   });
 
   test("refuses a fragment whose address is not exactly the grammar", () => {
@@ -127,5 +136,17 @@ describe("reviewLinePlacement", () => {
     expect(reviewLinePlacement(file, "new", 2)).toEqual({ kind: "drawn" });
     expect(reviewLinePlacement(file, "new", 7)).toEqual({ kind: "gap", gapId: "before:1" });
     expect(reviewLinePlacement(file, "new", 500)).toEqual({ kind: "absent" });
+  });
+});
+
+describe("addressAfterJump", () => {
+  test("names the first hunk a file jump selects, and leaves other addresses alone", () => {
+    expect(addressAfterJump({ kind: "file", fileKey: "a" })).toEqual({
+      kind: "hunk",
+      fileKey: "a",
+      hunkIndex: 0,
+    });
+    const line = { kind: "line", fileKey: "a", side: "new", line: 4 } as const;
+    expect(addressAfterJump(line)).toBe(line);
   });
 });

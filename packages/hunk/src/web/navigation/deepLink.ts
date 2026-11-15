@@ -4,8 +4,8 @@
  * The fragment carries `at=<address>` beside any other fragment parameters; the address is
  * the shared grammar (`core/review/address.ts`), built from file keys, hunk indices, sides and
  * lines, and note ids — never rendered rows. The capability is a separate fragment parameter
- * that `session/capability.ts` strips on load; this module never reads or writes it, except
- * that a copied link puts it back on purpose (`reviewLinkWithCapability`).
+ * that `session/capability.ts` strips on load; this module never reads or writes it (history
+ * writes drop it), except that a copied link puts it back on purpose (`reviewLinkWithCapability`).
  *
  * Resolution turns an address into the selection change that shows it, and refuses an
  * address the shown document cannot honor (an unknown file, a hunk past the end, a note that
@@ -27,6 +27,7 @@ import {
   reviewTrailingGap,
 } from "../../core/review/expansion";
 import { reviewHunkRange } from "../../core/review/geometry";
+import { REVIEW_FILE_JUMP_HUNK_INDEX } from "../../core/review/navigation";
 import { reviewFileMatchesFilter, selectStoredReviewNoteById } from "../../core/review/selectors";
 import {
   reviewNoteOwnerHunkIndex,
@@ -34,6 +35,7 @@ import {
   type ReviewState,
 } from "../../core/review/state";
 import type { ReviewFileV1, ReviewSide } from "../../core/review/types";
+import { HUNK_REVIEW_CAPABILITY_FRAGMENT_KEY } from "../../session/reviewHttpProtocol";
 
 /** The fragment parameter that holds the address. */
 export const REVIEW_ADDRESS_FRAGMENT_KEY = "at";
@@ -49,9 +51,13 @@ export function readFragmentAddress(hash: string): ReviewAddress | undefined {
   return text === null ? undefined : parseReviewAddress(text);
 }
 
-/** The fragment with its address replaced (or removed), keeping every other parameter. */
+/**
+ * The fragment with its address replaced (or removed), keeping every other parameter except
+ * the capability, which a history write never carries (`session/capability.ts` owns it).
+ */
 export function fragmentWithAddress(hash: string, address: ReviewAddress | undefined) {
   const params = fragmentParams(hash);
+  params.delete(HUNK_REVIEW_CAPABILITY_FRAGMENT_KEY);
   params.delete(REVIEW_ADDRESS_FRAGMENT_KEY);
   if (address) params.set(REVIEW_ADDRESS_FRAGMENT_KEY, formatReviewAddress(address));
   const text = params.toString();
@@ -66,6 +72,17 @@ export function selectionAddress(
   if (!fileKey) return undefined;
   if (state.activeNoteId) return { kind: "note", fileKey, noteId: state.activeNoteId };
   return { kind: "hunk", fileKey, hunkIndex };
+}
+
+/**
+ * The address the page settles on after jumping to one: a file link selects the file's first
+ * hunk, so the address bar then names that hunk. Comparing it with where the reader is tells a
+ * jump to the same place from a jump elsewhere.
+ */
+export function addressAfterJump(address: ReviewAddress): ReviewAddress {
+  return address.kind === "file"
+    ? { kind: "hunk", fileKey: address.fileKey, hunkIndex: REVIEW_FILE_JUMP_HUNK_INDEX }
+    : address;
 }
 
 /** What showing one address takes: the hunk to select, and an exact line or note to reveal. */

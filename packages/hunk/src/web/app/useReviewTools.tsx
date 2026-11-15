@@ -20,13 +20,14 @@
  * never written here (`session/capability.ts` owns it).
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { ReviewAddress } from "../../core/review/address";
+import { formatReviewAddress, type ReviewAddress } from "../../core/review/address";
 import { formatReviewSidebarStat, reviewFileChangeGlyph } from "../../core/review/fileLabels";
 import type { WebKeymap } from "../commands/keyboard";
 import type { WebCommand } from "../commands/webCommandTable";
 import { matchWebLocalChord, type WebLocalCommandId } from "../commands/webLocalCommands";
 import type { ReviewFileIndexEntry } from "../mirror/fileIndex";
 import {
+  addressAfterJump,
   fragmentWithAddress,
   readFragmentAddress,
   resolveReviewAddress,
@@ -107,20 +108,31 @@ export function useReviewTools(options: ReviewToolsOptions) {
   const latest = useRef(options);
   latest.current = options;
 
-  const open = useCallback((next: ReviewTool) => {
-    setTool((current) => {
-      if (current === next) return undefined;
-      if (!current) returnFocus.current = document.activeElement as HTMLElement | null;
-      return next;
-    });
-  }, []);
+  // Mirrors `tool` synchronously, so a second chord in the same tick sees the dialog the first
+  // one opened.
+  const toolRef = useRef<ReviewTool | undefined>(undefined);
   const close = useCallback(() => {
+    toolRef.current = undefined;
     setTool(undefined);
     const target = returnFocus.current;
     returnFocus.current = null;
     // After the dialog unmounts, give focus back to what had it.
     queueMicrotask(() => target?.focus?.());
   }, []);
+  // Every close path restores focus: choosing a row, Escape, and the chord that opened the
+  // dialog pressed again.
+  const open = useCallback(
+    (next: ReviewTool) => {
+      if (toolRef.current === next) {
+        close();
+        return;
+      }
+      if (!toolRef.current) returnFocus.current = document.activeElement as HTMLElement | null;
+      toolRef.current = next;
+      setTool(next);
+    },
+    [close],
+  );
 
   // Deep links: what to show, and keeping the address bar current.
   const resolvedInitial = useRef(false);
@@ -239,7 +251,14 @@ export function useReviewTools(options: ReviewToolsOptions) {
     (address: ReviewAddress) => {
       // The entry being left names where the reader was, so Back returns there even when
       // nothing has rewritten it since the page opened.
-      if (resolvedInitial.current) writeAddress(currentAddress(), "replace");
+      // A jump to where the reader already is adds no entry: clicking the same file twice must
+      // not stack duplicates for Back to walk through.
+      const here = currentAddress();
+      if (here && formatReviewAddress(here) === formatReviewAddress(addressAfterJump(address))) {
+        show(address);
+        return;
+      }
+      if (resolvedInitial.current) writeAddress(here, "replace");
       writeAddress(address, "push");
       show(address);
     },

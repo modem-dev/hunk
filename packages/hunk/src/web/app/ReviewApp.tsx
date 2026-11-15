@@ -107,7 +107,7 @@ import {
 import { SidePanel, type SidePanelTool } from "../panel/SidePanel";
 import type { ThemeMenuOption } from "./ThemeMenu";
 import { ToastRegion } from "../actions/toasts";
-import { reviewLinkWithCapability } from "../session/capability";
+import { reviewLinkWithCapability, watchReviewCapability } from "../session/capability";
 import { ReviewControls } from "./ReviewControls";
 import { Toolbar } from "./Toolbar";
 import { useReviewInteraction } from "./useReviewInteraction";
@@ -324,6 +324,12 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
     (message: string) => session.toasts.show(message, "error"),
     [session],
   );
+  const shownFileContentIdentity = useCallback(
+    (fileKey: string) =>
+      session.mirror.getSnapshot().document.files.find((file) => file.key === fileKey)
+        ?.contentIdentity,
+    [session],
+  );
   const viewed = useViewedFiles({
     sessionId: session.sessionId,
     shared: shownShared,
@@ -332,6 +338,7 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
     store: session.review,
     actions: session.actions,
     showError: showViewedError,
+    fileContentIdentity: shownFileContentIdentity,
   });
   const viewedRef = useRef<ViewedFiles>(viewed);
   viewedRef.current = viewed;
@@ -607,7 +614,16 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
   viewRef.current = { preferences, sidebarOpen, panelOpen };
   // The session's process exited: the page keeps the review readable but stops writing to it.
   const sessionEnded = connection.kind === "ended";
-  const interactive = useReviewInteraction(session, shownShared, sessionEnded);
+  // A composer renders only in the diff: show it again for a Markdown file shown rendered, and
+  // open a collapsed viewed file.
+  const showFileDiff = useCallback(
+    (fileKey: string) => {
+      markdownModes.showDiff(fileKey);
+      viewedRef.current.openForHunk(fileKey);
+    },
+    [markdownModes],
+  );
+  const interactive = useReviewInteraction(session, shownShared, sessionEnded, showFileDiff);
   const interactiveRef = useRef(interactive);
   interactiveRef.current = interactive;
   const filterRef = useRef<HTMLInputElement | null>(null);
@@ -615,6 +631,22 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
     session.composers.subscribe,
     session.composers.getSnapshot,
   );
+  // A link pasted into this tab navigates within the page; its access key leaves the address
+  // as it does on first load.
+  useEffect(() => {
+    let storage: Storage | undefined;
+    try {
+      storage = window.sessionStorage;
+    } catch {
+      storage = undefined;
+    }
+    return watchReviewCapability({
+      sessionId: session.sessionId,
+      target: window,
+      history: window.history,
+      ...(storage ? { storage } : {}),
+    });
+  }, [session.sessionId]);
   const copyLink = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(
