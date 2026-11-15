@@ -81,6 +81,8 @@ export interface ReviewToolsOptions {
   copyReviewLink: () => Promise<boolean>;
   chooseSessionTheme: () => void;
   setSidebarMode: (mode: "tree" | "flat") => void;
+  /** Handlers for page commands another part of the page owns (the side panel's tools). */
+  localHandlers?: Partial<Record<WebLocalCommandId, () => void>>;
 }
 
 /** The page's palette, go-to-file, help, and deep links. */
@@ -243,6 +245,8 @@ export function useReviewTools(options: ReviewToolsOptions) {
         case "hunk.web.filesAsList":
           current.setSidebarMode("flat");
           return;
+        default:
+          current.localHandlers?.[id]?.();
       }
     },
     [copyLocationLink, open, session],

@@ -30,6 +30,8 @@ import {
   reviewProducerSharedStateConsumer,
 } from "./consumers/sharedState";
 import type { ReviewSharedStateConsumer } from "./sharedStateFixtures";
+import { browserOverviewConsumer, coreOverviewConsumer } from "./consumers/overview";
+import type { ReviewOverviewConsumer } from "./overviewFixtures";
 import { reviewSessionHostNavigationConsumer } from "./consumers/reviewSessionHost";
 import { reviewWireConsumer } from "./consumers/reviewWire";
 import { terminalReviewNavigationConsumer } from "./consumers/terminalReview";
@@ -126,4 +128,13 @@ export const REVIEW_SHARED_STATE_CONSUMERS: readonly ReviewSharedStateConsumer[]
 export const REVIEW_ACTOR_POLICY_CONSUMERS: readonly ReviewActorPolicyConsumer[] = [
   producerActorPolicyConsumer,
   browserSurfaceActorPolicyConsumer,
+];
+
+/**
+ * Consumers of the review overview: the core selector over a live host, and the browser's
+ * Overview tab over the shared-state snapshot. `hunk session` joins when it reports the shape.
+ */
+export const REVIEW_OVERVIEW_CONSUMERS: readonly ReviewOverviewConsumer[] = [
+  coreOverviewConsumer,
+  browserOverviewConsumer,
 ];
