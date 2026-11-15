@@ -138,4 +138,78 @@ describe("NoteComposerStore", () => {
 
     expect(store.getSnapshot()).toHaveLength(0);
   });
+
+  // Intent: dragging a range that ends on the line an open composer already uses extends that
+  // composer's target instead of saving against the old single-line one.
+  test("applies a newly chosen target to the composer already open on that line", () => {
+    const store = new NoteComposerStore("s1", createTestStorage());
+    const key = store.open({ ...NEW_NOTE, target: { side: "new", line: 12 } });
+    store.update(key, { body: "keep this text" });
+
+    const again = store.open({
+      ...NEW_NOTE,
+      hunkIndex: 2,
+      target: { side: "new", line: 10, endLine: 12 },
+    });
+
+    expect(again).toBe(key);
+    expect(store.getSnapshot()).toHaveLength(1);
+    expect(store.getSnapshot()[0]).toMatchObject({
+      hunkIndex: 2,
+      body: "keep this text",
+      target: { side: "new", line: 10, endLine: 12 },
+      focusRequests: 1,
+    });
+  });
+
+  test("leaves the target of a composer whose save is in flight alone", () => {
+    const store = new NoteComposerStore("s1", createTestStorage());
+    const key = store.open({ ...NEW_NOTE, target: { side: "new", line: 12 } });
+    store.update(key, { status: "sending" });
+
+    store.open({ ...NEW_NOTE, target: { side: "new", line: 10, endLine: 12 } });
+
+    expect(store.getSnapshot()[0]?.target).toEqual({ side: "new", line: 12 });
+  });
+
+  // Intent: a note's drawn line moves when a gap opens or closes; that must not let a second
+  // Reply or Edit click open a second composer for the same note.
+  test("keeps one reply or edit composer per note wherever it is drawn", () => {
+    const store = new NoteComposerStore("s1", createTestStorage());
+    const reply = store.open({ ...NEW_NOTE, kind: "reply", parentId: "note-1", line: 12 });
+    expect(store.open({ ...NEW_NOTE, kind: "reply", parentId: "note-1", line: 30 })).toBe(reply);
+    const edit = store.open({ ...NEW_NOTE, kind: "edit", noteId: "note-1", line: 12 });
+    expect(store.open({ ...NEW_NOTE, kind: "edit", noteId: "note-1", line: 30 })).toBe(edit);
+
+    expect(store.getSnapshot()).toHaveLength(2);
+  });
+
+  test("re-keys drafts stored under line-based reply keys by note", () => {
+    const storage = createTestStorage();
+    const draft = { ...NEW_NOTE, kind: "edit" as const, noteId: "note-1", body: "text" };
+    storage.setItem(
+      noteDraftStorageKey("s1"),
+      JSON.stringify([
+        { ...draft, key: "edit:file%3Aa:new:12:note-1" },
+        { ...draft, line: 30, key: "edit:file%3Aa:new:30:note-1", body: "duplicate" },
+      ]),
+    );
+
+    const restored = new NoteComposerStore("s1", storage).getSnapshot();
+
+    expect(restored).toHaveLength(1);
+    expect(restored[0]).toMatchObject({ key: noteComposerKey(draft), body: "text" });
+  });
+
+  test("cannot close a composer while its save is in flight", () => {
+    const store = new NoteComposerStore("s1", createTestStorage());
+    const key = store.open(NEW_NOTE);
+    store.update(key, { status: "sending" });
+    store.close(key);
+    expect(store.getSnapshot()).toHaveLength(1);
+
+    store.update(key, { status: "failed", error: "refused" });
+    store.close(key);
+    expect(store.getSnapshot()).toHaveLength(0);
+  });
 });

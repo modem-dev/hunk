@@ -8,7 +8,7 @@
  * a draft restored onto changed content says so and offers only Discard.
  */
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import type { NoteComposer } from "./composerStore";
+import { noteComposerSaveInFlight, type NoteComposer } from "./composerStore";
 
 /** Whether the page runs on a Mac, where the save chord uses ⌘. */
 function isMacPlatform() {
@@ -50,14 +50,18 @@ export function NoteComposerView({
   const [confirming, setConfirming] = useState(false);
   const sending = composer.status === "sending";
   const changed = composer.status === "changed";
+  // Discarding is refused while the save is in flight, so a note the session accepts is never
+  // orphaned and a refusal finds its draft.
+  const discardLocked = noteComposerSaveInFlight(composer);
 
+  // Focus when the composer opens, and again when the reader opens it a second time.
   useEffect(() => {
     if (!changed) textRef.current?.focus({ preventScroll: true });
-    // Focus once, when the composer opens.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [composer.focusRequests]);
 
   const cancel = () => {
+    if (discardLocked) return;
     if (composer.body.trim().length > 0 && !changed) setConfirming(true);
     else onCancel();
   };
@@ -135,7 +139,7 @@ export function NoteComposerView({
           >
             {sending ? "Saving…" : "Save"}
           </button>
-          <button type="button" className="tool-button" onClick={cancel}>
+          <button type="button" className="tool-button" disabled={discardLocked} onClick={cancel}>
             {changed ? "Discard" : "Cancel"}
           </button>
           <span className="composer-hint">{`${noteSaveChordLabel()} to save · Esc to cancel`}</span>
