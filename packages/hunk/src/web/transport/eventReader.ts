@@ -40,10 +40,17 @@ export interface ServerSentEventRecord {
  */
 export class ServerSentEventParser {
   private buffer = "";
+  /** A chunk ended in `\r`, which is half a `\r\n` until the next chunk says otherwise. */
+  private heldReturn = false;
 
   /** Feed decoded text and return every record it completed. */
   push(text: string): ServerSentEventRecord[] {
-    this.buffer += text.replace(/\r\n?/g, "\n");
+    let input = this.heldReturn ? `\r${text}` : text;
+    // Hold a trailing `\r`: normalizing it alone would turn a `\r\n` split across two reads
+    // into two line breaks, and a blank line would cut one record in two.
+    this.heldReturn = input.endsWith("\r");
+    if (this.heldReturn) input = input.slice(0, -1);
+    this.buffer += input.replace(/\r\n?/g, "\n");
     const records: ServerSentEventRecord[] = [];
     let boundary = this.buffer.indexOf("\n\n");
     while (boundary >= 0) {
