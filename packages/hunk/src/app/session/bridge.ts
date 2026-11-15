@@ -1,6 +1,7 @@
 import type { ReviewProducer } from "../review/producer";
 import type {
   HunkReviewFailureV1,
+  HunkReviewRefreshResultV1,
   HunkReviewResourceReadResultV1,
 } from "../../session/reviewProtocol";
 import type {
@@ -56,6 +57,12 @@ export interface HunkSessionBridgeHandlers {
    * caller would get for a review that has moved on, rather than throwing.
    */
   reviewProducer?: ReviewProducer;
+  /**
+   * Reload the session's current input, as the `r` key does, for a browser's refresh.
+   *
+   * Optional: a mount without a reload coordinator answers `refresh-unavailable`.
+   */
+  refreshReview?: () => Promise<HunkReviewRefreshResultV1>;
 }
 
 /** The refusal a review command gets when this session serves no published review. */
@@ -119,6 +126,16 @@ export function createHunkSessionBridge(handlers: HunkSessionBridgeHandlers) {
           const result: HunkReviewResourceReadResultV1 = producer
             ? await readSessionReviewResource(producer, message.input)
             : noReviewProducer();
+          return result;
+        }
+        case "refresh_review": {
+          const result: HunkReviewRefreshResultV1 = handlers.refreshReview
+            ? await handlers.refreshReview()
+            : {
+                ok: false,
+                code: "refresh-unavailable",
+                message: "This session cannot reload its review.",
+              };
           return result;
         }
         case "apply_review_action": {

@@ -26,7 +26,11 @@
  * wrote it with.
  */
 import { HUNK_REVIEW_PROTOCOL_VERSION, MAX_HUNK_REVIEW_IDENTIFIER_BYTES } from "./reviewProtocol";
-import type { HunkReviewFailureCodeV1, HunkReviewResourceCatalogV1 } from "./reviewProtocol";
+import type {
+  HunkReviewFailureCodeV1,
+  HunkReviewRefreshErrorCode,
+  HunkReviewResourceCatalogV1,
+} from "./reviewProtocol";
 import type { ReviewPublicationAddress } from "../core/review/generationOrder";
 import type { ReviewSharedStateV1 } from "./reviewSharedState";
 import { utf8ByteLength } from "../core/review/validation";
@@ -79,6 +83,7 @@ export function isReviewCapabilityToken(value: unknown): value is string {
 export type HunkReviewHttpRoute =
   | { kind: "publication"; sessionId: string }
   | { kind: "state"; sessionId: string }
+  | { kind: "refresh"; sessionId: string }
   | { kind: "events"; sessionId: string }
   | { kind: "actions"; sessionId: string }
   | { kind: "resource"; sessionId: string; generation: string; resourceId: string };
@@ -134,7 +139,11 @@ export function parseReviewHttpPath(pathname: string): HunkReviewHttpRoute | und
   }
   if (parts.length === 4) {
     const kind = parts[3];
-    return kind === "publication" || kind === "state" || kind === "events" || kind === "actions"
+    return kind === "publication" ||
+      kind === "state" ||
+      kind === "refresh" ||
+      kind === "events" ||
+      kind === "actions"
       ? { kind, sessionId }
       : undefined;
   }
@@ -213,7 +222,10 @@ export type HunkReviewTransportErrorCode =
  * Composed from the producer's vocabulary and the transport's rather than restated as a
  * third list, which is the same rule `HunkReviewFailureCodeV1` follows one level down.
  */
-export type HunkReviewClientErrorCodeV1 = HunkReviewFailureCodeV1 | HunkReviewTransportErrorCode;
+export type HunkReviewClientErrorCodeV1 =
+  | HunkReviewFailureCodeV1
+  | HunkReviewTransportErrorCode
+  | HunkReviewRefreshErrorCode;
 
 /** One refusal, in the shape every review route answers with. */
 export interface HunkReviewHttpFailureV1 {
@@ -244,6 +256,22 @@ export interface HunkReviewPublicationBodyV1 {
    */
   sharedStateRevision?: number;
   catalog: HunkReviewResourceCatalogV1;
+}
+
+/**
+ * One refresh: `POST /review-api/<session>/refresh`, with an empty body.
+ *
+ * The only host command a browser may invoke (F4's allowlist). It is not a review action —
+ * reloading the input is an effect on the host, not review semantics — so it has its own
+ * route rather than an action envelope, and it accepts no arguments: the session reopens
+ * exactly what its own `r` key would. On success the body names the position the reloaded
+ * review reached; the publication event for it follows on the stream.
+ */
+export interface HunkReviewRefreshBodyV1 {
+  ok: true;
+  protocolVersion: typeof HUNK_REVIEW_PROTOCOL_VERSION;
+  sessionId: string;
+  publication: ReviewPublicationAddress;
 }
 
 /**

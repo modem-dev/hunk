@@ -26,6 +26,7 @@ import { HunkSessionBrokerState } from "../../packages/hunk/src/session/broker/s
 import { ReviewResourceCache } from "../../packages/hunk/src/session/broker/reviewResourceCache";
 import type { AppBootstrap } from "../../packages/hunk/src/core/bootstrap";
 import type { DiffFile } from "../../packages/hunk/src/core/changeset/model";
+import type { HunkReviewRefreshResultV1 } from "../../packages/hunk/src/session/reviewProtocol";
 import type {
   HunkSessionRegistration,
   HunkSessionServerMessage,
@@ -52,6 +53,8 @@ export interface ReviewSessionHarnessOptions {
   host?: ReviewSessionHost;
   /** The surface the session's producer reports, for actor-policy tests. */
   surface?: "terminal" | "headless";
+  /** Answer brokered refreshes; absent, the session reports refresh as unavailable. */
+  refreshReview?: () => Promise<HunkReviewRefreshResultV1>;
 }
 
 /**
@@ -148,6 +151,7 @@ export function connectReviewSession(files: DiffFile[], options: ReviewSessionHa
       throw new Error("unused");
     },
     reviewProducer: producer,
+    ...(options.refreshReview ? { refreshReview: options.refreshReview } : {}),
   });
 
   const socket = {
