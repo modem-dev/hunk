@@ -1,10 +1,9 @@
 # Web review client: page, assets, and policy
 
-> **Status (2026-11-13): M4 transport.** The daemon serves a real, offline page for a live
-> review, and the page runs on the M4 transport, mirror, and local store. What it shows is still
-> the M3 shell — connection state, load progress, file count, and the first file's diff — until
-> the review stream lands (M4 in [`web-review-plan.md`](web-review-plan.md)). No CLI entry
-> point exists yet.
+> **Status (2026-11-13): M4 read-only page.** The daemon serves a real, offline page for a live
+> review: toolbar, files sidebar, and one top-to-bottom stream of every file, in the
+> terminal's themes. Notes and keyboard navigation are the next M4 steps; no CLI entry point
+> exists yet ([`web-review-plan.md`](web-review-plan.md)).
 
 This records how the client is built and what the spike measured about Pierre on the web.
 
@@ -12,8 +11,17 @@ This records how the client is built and what the spike measured about Pierre on
 
 ```text
 packages/hunk/src/web/
-  main.tsx                     entry; mounts the page
-  ReviewShell.tsx              current UI (replaced by the review stream)
+  main.tsx                     entry; starts the session for this page's address
+  app/ReviewApp.tsx            composes the page; owns view preferences and the theme
+  app/Toolbar.tsx              title, counts, totals, status; layout/wrap/line-number/theme
+  sidebar/FileSidebar.tsx      flat mode (shared projection); lazy-loads tree mode
+  sidebar/TreeSidebar.tsx      tree mode over @pierre/trees, in review order
+  stream/ReviewStream.tsx      the windowed stream, reveal, reload anchoring
+  stream/FileSection.tsx       sticky header, placeholders, reserved heights
+  stream/fileProjection.ts     ReviewFileV1 -> Pierre metadata, gaps, reserved rows
+  stream/PierreFileView.tsx    drives Pierre's vanilla FileDiff and the page's gap separators
+  theme/themeIndex.ts          built-in themes as CSS custom properties; per-browser choice
+  view/viewPreferences.ts      layout/wrap/line numbers/sidebar, per browser
   session/reviewSession.ts     reads the page address once; wires and owns the pieces below
   transport/apiClient.ts       requests with the capability header; ranged, verified reads
   transport/eventReader.ts     fetch-stream SSE records -> shared event contract -> events
@@ -138,20 +146,61 @@ manifest and fail unless the document, the manifest, and every listed asset are 
 
 ## Sizes (Bun 1.4.4, Pierre diffs 1.5.2, Trees 1.0.0-beta.6)
 
-| Measure                                                | Bytes                                                |
-| ------------------------------------------------------ | ---------------------------------------------------- |
-| Entry chunk (React DOM, Pierre diffs, Shiki core)      | 723 KB (212 KB gzip)                                 |
-| Entry chunk when `@pierre/trees/react` is also used    | 961 KB (Trees bundles Preact)                        |
-| Page stylesheet                                        | 0.5 KB                                               |
-| Lazy chunks for one TypeScript diff                    | TypeScript grammar 181 KB, `pierre-dark` theme 31 KB |
-| Whole build (358 files: every Shiki grammar and theme) | 9.8 MB (1.7 MB as gzip)                              |
-| Added to the compiled binary                           | 1.81 MB                                              |
+| Measure                                                 | Bytes                                             |
+| ------------------------------------------------------- | ------------------------------------------------- |
+| Entry chunk (React DOM, Pierre diffs, Shiki core, page) | 756 KB (223 KB gzip)                              |
+| Tree sidebar chunk (`@pierre/trees`, Preact), lazy      | about 240 KB                                      |
+| Theme index                                             | 60 KB (11 KB gzip)                                |
+| Page stylesheet                                         | 6 KB                                              |
+| Lazy chunks for one TypeScript diff                     | TypeScript grammar 181 KB, its Shiki theme ~31 KB |
+| Whole build (every Shiki grammar and theme)             | 10.2 MB (1.8 MB as gzip)                          |
+| Added to the compiled binary                            | about 1.8 MB                                      |
 
 Grammars and themes are separate chunks because Pierre resolves them through Shiki's dynamic
 imports; a page fetches only the languages and themes it shows. The largest single grammar
 (Emacs Lisp) is 780 KB and is never fetched unless such a file is reviewed.
 
-## What the M4 client must design around
+## The review page
+
+- **Regions.** The toolbar mirrors the terminal's title line — title, file count, total
+  `+A -D` — plus connection and load state; view controls sit on the right. The sidebar is
+  navigation only: choosing a file is a `selection/select-file` with a file-top reveal that
+  scrolls the stream, never a filter. Scrolling reports the top file back as
+  `selection/anchor`, which moves the sidebar highlight and nothing else.
+- **Shared with the terminal.** File names, `old -> new` labels, state suffixes, change-kind
+  letters, `*N`/`+N`/`-N` badges, and the flat and tree projections come from
+  `core/review/fileLabels.ts`, which the terminal's `ui/lib/files.ts` now delegates to (audit
+  E1). Gap addresses, the empty-file reason, and gap expansion come from `core/review`;
+  `reviewFileWithExpandedGaps` folds an expanded gap into its hunk as context, which is the
+  form a whole-file renderer needs. Auto layout uses `DEFAULT_AUTO_SPLIT_MIN_WIDTH` in measured
+  monospace columns, and Pierre gets the terminal's own highlight options
+  (`ui/diff/highlightRenderOptions.ts`: `word-alt`, the tokenizing bound). Wording of
+  placeholders and gap rows is the page's own, as each surface's is.
+- **Gaps.** Pierre's React wrapper cannot host custom hunk separators, so each file drives
+  Pierre's vanilla `FileDiff` with a separator function that returns page-owned buttons. A
+  click applies `expansion/toggle` locally; the store loads the `source` resource and the plan
+  folds the gap in, with loading, error, and too-large states from the shared source-status
+  vocabulary. Pierre's own expansion is never used, and `collapsedContextThreshold: 0` keeps
+  every gap the model addresses collapsed. An expanded file shows "Hide expanded lines" in its
+  header, since a folded gap leaves no separator to click.
+- **Windowing.** Every file is a section whose body height is reserved from the plan's row
+  count (split or unified, minus folded gap lines) until mounted. Sections mount Pierre within
+  1.5 viewports of the visible area and unmount beyond it, keeping their last measured height.
+  Native scroll anchoring absorbs height changes above the reader, and a reload re-pins the
+  top file and offset for a moment while files re-render. Pierre's `Virtualizer`/`CodeView`
+  were not used: they own scrolling of the whole document, which would put sticky headers,
+  placeholders, and the sidebar jump inside Pierre.
+- **Theme.** `build-web.ts` writes every built-in theme's resolved `AppTheme` tokens, from
+  `ui/themes.ts` itself, to `themes-<hash>.json` (60 KB, 11 KB gzip), named in the document's
+  `<meta name="hunk-theme-index">`. The page sets them as `--hunk-*` properties and maps the
+  same tokens onto Pierre's `--diffs-*-override` and the tree's `--trees-*-override` properties;
+  Pierre highlights with the theme's Shiki theme. The `terminal` theme is omitted. The default
+  is GitHub dark or light by `prefers-color-scheme`; a choice is kept in `localStorage`.
+- **Not rendered yet.** Moved-line marks (`lineMoveKinds`): Pierre exposes no per-line class
+  or decoration hook in its diff renderer for them. The changeset title is not on the wire, so
+  the toolbar says "Hunk review" until presentation defaults arrive.
+
+## Pierre findings that shaped the client
 
 - **Rendering model.** Each file is a `<diffs-container>` custom element with an open shadow
   root, an adopted base stylesheet, a theme `<style>`, and HTML injected from Shiki's HAST. Page
@@ -171,8 +220,11 @@ imports; a page fetches only the languages and themes it shows. The largest sing
 - **Workers.** Highlighting runs on the main thread. Pierre's `WorkerPoolContextProvider` takes
   a `workerFactory: () => Worker`; adopting it needs a second build entry for
   `@pierre/diffs/worker/worker.js`, an asset name in the manifest, and `worker-src 'self'`.
-- **Input.** `PatchDiff` takes one file's patch text, which is exactly the `patch` resource; the
-  shell reads it in 256 KB ranged windows and checks the published SHA-256 with Web Crypto.
+- **Input.** The shared `ReviewFileV1` is already Pierre-shaped (hunks, content blocks, line
+  arrays, row counts), so the page hands Pierre parsed metadata from the canonical file instead
+  of re-parsing the `patch` resource. Pierre treats metadata with an unchanged `cacheKey` as
+  the same diff, so the projection derives the key from the content identity plus the filled
+  gaps.
 - **Trees.** `useFileTree({ paths, initialExpansion, search })` plus `<FileTree model>`, keyed by
   canonical path strings, with `setGitStatus` and icon configuration. It renders through Preact
   inside a shadow root, costs about 240 KB of entry chunk, and is still a beta: pinned exactly.
@@ -190,12 +242,20 @@ imports; a page fetches only the languages and themes it shows. The largest sing
   refusals, bounded parallelism, abort), event reader (SSE splitting, chunked reassembly,
   digest refusal), event stream (backoff with a fake clock, terminal states), mirror (ordering,
   progressive load, supersede, failed reload), and store (local intents, gap source, reload).
-- `test/review-conformance/` registers the browser mirror as an ordering consumer and the
-  browser event reader as an event consumer.
+- `test/review-conformance/` registers the browser mirror as an ordering consumer, the
+  browser event reader as an event consumer, and the browser file projection as a geometry
+  consumer (gaps, empty reasons, and the rows an expanded gap puts in Pierre's metadata).
+- `test/web/review-stream.e2e.ts` drives a rich review (rename, new, deleted, binary,
+  too-large, gaps, a non-ASCII path, many files): progressive load, sidebar and stream jumps,
+  layout and theme switching, gap expansion, reload keeping the reader's place, and axe;
+  `test/web/review-large.e2e.ts` keeps a 2,000-file review responsive.
+  `test/web/review-screenshots.e2e.ts` captures the page when `HUNK_WEB_SCREENSHOT_DIR` is set.
+  `bun run test:web` builds the page first, so a stale bundle is never what runs.
 - `test/web/review-page.e2e.ts` (`bun run build:web && bun run test:web`) — Chromium against a
   daemon and session run from source, asserting connection, file count, a highlighted Pierre
-  diff, and zero CSP violations or console errors. The session is a test fixture
-  (`test/web/fixtures/review-session.ts`) built from the real bootstrap loader, review runtime,
-  and session bridge, because only the owning process holds the capability and no headless
-  runner exists until M1 lands. Set `HUNK_TEST_EXECUTABLE` to a compiled binary (after
-  `bun run build:bin`) to run the daemon from it and exercise the embedded archive.
+  diff, and zero CSP violations or console errors. Every page test runs Hunk itself as the
+  session: `hunk patch <file> --web`, or `hunk diff --staged --web` in a git repository that
+  `test/web/fixtures/rich-review.ts` writes (with an agent-context sidecar fixing the review
+  order), and reloads it with `hunk session reload`. Set `HUNK_TEST_EXECUTABLE` to a compiled
+  binary (after `bun run build:bin`) to run the daemon and session from it and exercise the
+  embedded archive.

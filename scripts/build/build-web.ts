@@ -21,6 +21,7 @@
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
+import { createHash } from "node:crypto";
 import type { BunPlugin } from "bun";
 import {
   REVIEW_PAGE_DOCUMENT_NAME,
@@ -32,6 +33,11 @@ import {
   isReviewAssetName,
   reviewAssetPath,
 } from "../../packages/hunk/src/session/reviewHttpProtocol";
+import { THEMES } from "../../packages/hunk/src/ui/themes";
+import {
+  WEB_THEME_INDEX_META_NAME,
+  type WebThemeIndexV1,
+} from "../../packages/hunk/src/web/theme/themeIndex";
 import { HUNK_PACKAGE_ROOT, HUNK_SOURCE_ROOT } from "./package-paths";
 
 /** Entry module of the browser client. */
@@ -63,8 +69,48 @@ const omitShikiWasm: BunPlugin = {
   },
 };
 
+/**
+ * Build the browser theme index from the terminal's own theme derivation.
+ *
+ * `ui/themes.ts` is not browser-safe, so the page cannot run it; instead every built-in theme
+ * is resolved here, at build time, by the same code the terminal runs, and the page receives
+ * the finished tokens. There is no second derivation to drift. The `terminal` theme follows
+ * a terminal's palette and has no browser meaning, so it is not in `THEMES`.
+ */
+export function buildWebThemeIndex(): WebThemeIndexV1 {
+  return {
+    formatVersion: 1,
+    themes: THEMES.map((theme) => ({
+      id: theme.id,
+      label: theme.label,
+      appearance: theme.appearance,
+      syntaxTheme: theme.syntaxTheme ?? theme.id,
+      tokens: Object.fromEntries(
+        Object.entries(theme).filter(
+          (entry): entry is [string, string] =>
+            typeof entry[1] === "string" &&
+            !["id", "label", "appearance", "syntaxTheme"].includes(entry[0]),
+        ),
+      ),
+    })),
+  };
+}
+
+/** Write the theme index under a content-hashed name and return that name. */
+function writeWebThemeIndex(directory: string) {
+  const text = `${JSON.stringify(buildWebThemeIndex())}\n`;
+  const hash = createHash("sha256").update(text).digest("hex").slice(0, 8);
+  const name = `themes-${hash}.json`;
+  writeFileSync(path.join(directory, name), text);
+  return name;
+}
+
 /** Render the page document that loads the entry script and its stylesheets. */
-export function renderReviewPageDocument(entry: string, stylesheets: readonly string[]) {
+export function renderReviewPageDocument(
+  entry: string,
+  stylesheets: readonly string[],
+  themeIndex?: string,
+) {
   // The document is identical for every session and carries no data: the script reads the
   // session from the path and the capability from the fragment.
   return [
@@ -75,6 +121,9 @@ export function renderReviewPageDocument(entry: string, stylesheets: readonly st
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
     '<meta name="referrer" content="no-referrer">',
     "<title>Hunk review</title>",
+    ...(themeIndex
+      ? [`<meta name="${WEB_THEME_INDEX_META_NAME}" content="${reviewAssetPath(themeIndex)}">`]
+      : []),
     ...stylesheets.map((name) => `<link rel="stylesheet" href="${reviewAssetPath(name)}">`),
     `<script type="module" src="${reviewAssetPath(entry)}"></script>`,
     "</head>",
@@ -143,6 +192,7 @@ export async function buildWebAssets({
       throw new AggregateError(result.logs, "The browser client failed to build.");
     }
 
+    const themeIndex = writeWebThemeIndex(staging);
     const names = readdirSync(staging).sort();
     for (const name of names) {
       // The daemon serves only names the page grammar accepts with a known content type, so
@@ -159,7 +209,7 @@ export async function buildWebAssets({
     const stylesheets = names.filter((name) => name.endsWith(".css"));
     writeFileSync(
       path.join(staging, REVIEW_PAGE_DOCUMENT_NAME),
-      renderReviewPageDocument(path.basename(entry.path), stylesheets),
+      renderReviewPageDocument(path.basename(entry.path), stylesheets, themeIndex),
     );
 
     const manifest: ReviewPageAssetManifestV1 = { formatVersion: 1, assets: names };

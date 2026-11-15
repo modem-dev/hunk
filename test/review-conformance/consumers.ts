@@ -9,6 +9,7 @@
 import { brokerMirrorOrderingConsumer } from "./consumers/brokerMirror";
 import { browserEventReaderConsumer } from "./consumers/browserEventReader";
 import { browserMirrorOrderingConsumer } from "./consumers/browserMirror";
+import { browserProjectionConsumer } from "./consumers/browserProjection";
 import { browserReviewSurfaceEventConsumer } from "./consumers/browserReviewSurface";
 import { reviewEventProtocolConsumer } from "./consumers/reviewEventProtocol";
 import { coreModelConsumer } from "./consumers/coreModel";
@@ -44,6 +45,7 @@ export const REVIEW_GEOMETRY_CONSUMERS: readonly ReviewGeometryConsumer[] = [
   coreModelConsumer,
   terminalRenderPlanConsumer,
   reviewProducerConsumer,
+  browserProjectionConsumer,
 ];
 
 /** Consumers that export complete authoritative saved-note state. */

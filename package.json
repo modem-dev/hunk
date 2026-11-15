@@ -45,7 +45,7 @@
     "test:theme-contrast": "bun test packages/hunk/src/ui/themes.test.ts --test-name-pattern contrast",
     "test:integration": "bun run ./scripts/test/run-test-suite.ts --group=integration",
     "test:session-broker-node": "bun run ./scripts/test/test-session-broker-node.ts",
-    "test:web": "playwright test --config test/web/playwright.config.ts --trace off",
+    "test:web": "bun run build:web && playwright test --config test/web/playwright.config.ts --trace off",
     "test:tty-smoke": "HUNK_RUN_TTY_SMOKE=1 \"${npm_execpath:-bun}\" test ./test/smoke",
     "test:install-vm": "bun run ./test/cli/install-vm/runner.ts",
     "test:install-vm:clean": "bun run ./test/cli/install-vm/runner.ts --clean",
@@ -82,6 +82,7 @@
     "nix:update-lock": "nix run .#update-bun-lock"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
     "@changesets/changelog-github": "^0.7.0",
     "@hunk/gh": "workspace:*",
     "@hunk/git": "workspace:*",

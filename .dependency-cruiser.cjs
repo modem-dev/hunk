@@ -175,6 +175,8 @@ module.exports = {
       from: { path: "^packages/hunk/src/web/" },
       to: {
         path: "^packages/hunk/src/(ui|app|extensions|opentui|lib|session/broker|session/client|session/agent)/",
+        // One import-free leaf shared with the terminal: the Pierre highlight options.
+        pathNot: "^packages/hunk/src/ui/diff/highlightRenderOptions\\.ts$",
       },
     },
     {
