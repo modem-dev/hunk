@@ -112,3 +112,49 @@ test("captures the overview tab", async ({ page }) => {
   }
   await capture(page, "overview-light-1100");
 });
+
+test("captures the minimap on a long review", async ({ page }) => {
+  test.setTimeout(240_000);
+  mkdirSync(OUTPUT!, { recursive: true });
+  review = await startTestWebReview("--rich", { args: ["--agent-notes"] });
+  for (const [file, line] of [
+    ["src/gen/module-05.ts", "1"],
+    ["src/gen/module-22.ts", "1"],
+    ["src/gen/module-31.ts", "1"],
+  ] as const) {
+    await review.hunk([
+      "session",
+      "comment",
+      "add",
+      review.sessionId,
+      "--file",
+      file,
+      "--new-line",
+      line,
+      "--summary",
+      `A note on ${file}`,
+    ]);
+  }
+  await review.hunk([
+    "session",
+    "highlight",
+    "add",
+    review.sessionId,
+    "--file",
+    "src/app/main.ts",
+    "--new-line",
+    "13",
+    "--start",
+    "0",
+    "--end",
+    "6",
+  ]);
+  await page.addInitScript(() =>
+    window.localStorage.setItem("hunk.review.panel", JSON.stringify({ open: false })),
+  );
+  await openRich(page, "github-dark-default");
+  await page.locator(".review-stream").evaluate((element) => (element.scrollTop = 2_400));
+  await capture(page, "minimap-dark-1440");
+  await chooseTestTheme(page, "github-light-default");
+  await capture(page, "minimap-light-1440");
+});

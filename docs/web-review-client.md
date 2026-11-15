@@ -64,6 +64,8 @@ packages/hunk/src/web/
   overview/OverviewTab.tsx     the Overview tab: totals, roles, kinds, directories, notes
   notesPanel/NotesTab.tsx      the Notes tab: every visible note as threads by file
   notesPanel/noteFilters.ts    the tab's own author and text filters
+  minimap/minimapProjection.ts geometry -> track bins, marks, and scroll mapping (pure)
+  minimap/Minimap.tsx          the canvas minimap at the stream's right edge
 ```
 
 - **Capability.** Read from the fragment's `capability` parameter once (`capability.ts`), then
@@ -429,6 +431,20 @@ imports; a page fetches only the languages and themes it shows. The largest sing
   note applies `selection/select` locally with a note reveal and `activeNoteId` for a stored
   note (a sidecar note is revealed by id), so the stream scrolls to the card; nothing is sent.
   `N` (`hunk.web.showNotes`, a page command listed in the palette and help) opens the tab. Read-only: notes are written in the stream.
+- **Minimap.** A 44 px canvas at the stream's right edge, drawn from geometry, never from the
+  DOM: the stream hands over each file's body height as it lays it out (measured once drawn,
+  reserved from rows before, `ReviewStreamController.bodyHeights`), and hunks sit at their row
+  fractions from `reviewHunkRowFractions` in `core/review/geometry.ts`. `minimapProjection.ts`
+  coarsens to one bin per device pixel, so cost is linear in files, hunks, and track pixels; a
+  2,000-file review repaints in well under a frame (the `hunk-minimap-redraw` performance
+  measure). It marks file boundaries (when a file's band is at least 3 px), added and removed
+  regions in the badge colors, notes, agent marks, the selected hunk, viewed files dimmed, and
+  the viewport. Click and drag center the viewport there. It repaints on scroll (one frame at
+  most), resize, layout, gaps, notes, reload, and theme, and hides below a 1000 px viewport or
+  a 560 px stream; the page command `hunk.web.toggleMinimap` (palette) turns it off or on for
+  this browser. Mouse only and `aria-hidden`: the stream scrolls from the keyboard. The
+  stream's measured width now follows the page once it mounts (it read 0 before, so `auto`
+  layout always chose unified).
 
 ## Pierre findings that shaped the client
 

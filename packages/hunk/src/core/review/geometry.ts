@@ -12,6 +12,7 @@
  * render path without projecting a whole semantic document first.
  */
 import type {
+  ReviewHunkV1,
   ReviewLineAddressV1,
   ReviewLineRange,
   ReviewRangeTargetV1,
@@ -265,4 +266,34 @@ export function normalizedReviewSourceLines(sourceText: string): string[] {
   const normalized = sourceText.replaceAll("\r\n", "\n");
   const trimmed = normalized.endsWith("\n") ? normalized.slice(0, -1) : normalized;
   return trimmed.length === 0 ? [] : trimmed.split("\n");
+}
+
+/** The layouts a file's rows are counted in. */
+export type ReviewRowLayout = "split" | "unified";
+
+/**
+ * Where each hunk sits within one file's rows in a layout, as fractions of the file.
+ *
+ * A proportional overview (the browser's minimap) places hunks inside a file's band without
+ * measuring anything drawn: `start` and `end` are the hunk's first row and one past its last,
+ * divided by the file's row count in that layout, clamped to `[0, 1]`.
+ */
+export function reviewHunkRowFractions(
+  file: {
+    splitLineCount: number;
+    unifiedLineCount: number;
+    hunks: readonly Pick<
+      ReviewHunkV1,
+      "splitLineStart" | "splitLineCount" | "unifiedLineStart" | "unifiedLineCount"
+    >[];
+  },
+  layout: ReviewRowLayout,
+): Array<{ start: number; end: number }> {
+  const total = Math.max(1, layout === "split" ? file.splitLineCount : file.unifiedLineCount);
+  const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
+  return file.hunks.map((hunk) => {
+    const start = layout === "split" ? hunk.splitLineStart : hunk.unifiedLineStart;
+    const count = layout === "split" ? hunk.splitLineCount : hunk.unifiedLineCount;
+    return { start: clamp01(start / total), end: clamp01((start + Math.max(1, count)) / total) };
+  });
 }
