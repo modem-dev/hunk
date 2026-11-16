@@ -46,11 +46,11 @@ describe("ReviewInfoPane", () => {
         {...({
           review,
           width,
-          height: 2,
+          height: 3,
           theme,
         } as unknown as ExtensionPaneProps)}
       />,
-      { width, height: 2 },
+      { width, height: 3 },
     );
 
     try {
@@ -60,16 +60,19 @@ describe("ReviewInfoPane", () => {
       expect(backgroundsAtColumn(setup, 0)).toEqual([
         theme.panel.toLowerCase(),
         theme.panel.toLowerCase(),
+        theme.panel.toLowerCase(),
       ]);
-      for (const line of setup.captureSpans().lines.slice(0, 2)) {
+      for (const line of setup.captureSpans().lines.slice(1, 3)) {
         const rail = line.spans.find((span) => span.text === "▌");
         expect(capturedTestColorToHex(rail?.fg)).toBe(theme.accent.toLowerCase());
       }
       expect(backgroundsAtColumn(setup, 1)).toEqual([
         theme.panel.toLowerCase(),
         theme.panel.toLowerCase(),
+        theme.panel.toLowerCase(),
       ]);
       expect(backgroundsAtColumn(setup, width - 1)).toEqual([
+        theme.panel.toLowerCase(),
         theme.panel.toLowerCase(),
         theme.panel.toLowerCase(),
       ]);
@@ -77,7 +80,9 @@ describe("ReviewInfoPane", () => {
 
       const [primary, secondary] = reviewInfoLines(review, width - 3);
       const frame = setup.captureCharFrame();
-      expect(frame).not.toContain("─".repeat(width));
+      expect(frame.split("\n")[0]).toBe("─".repeat(width));
+      const borderSpan = setup.captureSpans().lines[0]?.spans.find((span) => span.width > 0);
+      expect(capturedTestColorToHex(borderSpan?.fg)).toBe(theme.border.toLowerCase());
       expect(frame).toContain(` ${primary}`);
       expect(frame).toContain(` ${secondary}`);
     } finally {
@@ -119,17 +124,17 @@ describe("ReviewInfoPane", () => {
       const frame = setup.captureCharFrame();
       expect(frame).toContain("Render selected commit metadata");
       expect(frame).toContain("octocat · 10 hours ago");
-      expect(frame.split("\n")[0]?.trimEnd()).toEndWith("01234567 ⧉");
+      expect(frame.split("\n")[1]?.trimEnd()).toEndWith("01234567 ⧉");
       expect(frame).not.toContain("GitHub");
       const revisionSpan = setup
         .captureSpans()
-        .lines[0]?.spans.find((span) => span.text.includes("01234567"));
+        .lines[1]?.spans.find((span) => span.text.includes("01234567"));
       expect(capturedTestColorToHex(revisionSpan?.fg)).toBe(theme.fileRenamed.toLowerCase());
-      const copySpan = setup.captureSpans().lines[0]?.spans.find((span) => span.text === "⧉");
+      const copySpan = setup.captureSpans().lines[1]?.spans.find((span) => span.text === "⧉");
       expect(capturedTestColorToHex(copySpan?.fg)).toBe(appTheme.lineNumberFg.toLowerCase());
-      await act(async () => setup.mockMouse.click(width - 2, 0));
+      await act(async () => setup.mockMouse.click(width - 2, 1));
       expect(copyText).toHaveBeenCalledWith(fullRevision);
-      expect(backgroundsAtColumn(setup, 0).slice(0, 2)).toEqual([
+      expect(backgroundsAtColumn(setup, 0).slice(1)).toEqual([
         theme.panel.toLowerCase(),
         theme.panel.toLowerCase(),
       ]);
@@ -190,7 +195,7 @@ describe("ReviewInfoPane", () => {
       expect(frame).toContain("Review contiguous commit ranges");
       expect(frame).toContain("Ben · 5 hours ago");
       expect(frame).toContain("ff97b442 ⧉");
-      await act(async () => setup.mockMouse.click(width - 2, 0));
+      await act(async () => setup.mockMouse.click(width - 2, 1));
       expect(copyText).toHaveBeenCalledWith(commits[0]!.revision);
     } finally {
       setup.renderer.destroy();
@@ -215,7 +220,7 @@ describe("ReviewInfoPane", () => {
       await act(async () => {
         await setup.renderOnce();
       });
-      expect(setup.captureCharFrame().split("\n").slice(0, 2)).toEqual(["▌  ", "▌  "]);
+      expect(setup.captureCharFrame().split("\n").slice(0, 3)).toEqual(["───", "▌  ", "▌  "]);
     } finally {
       setup.renderer.destroy();
     }
