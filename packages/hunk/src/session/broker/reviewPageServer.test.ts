@@ -12,7 +12,7 @@ import {
   encodeReviewPageAssetArchive,
   REVIEW_PAGE_DOCUMENT_NAME,
   REVIEW_PAGE_MANIFEST_NAME,
-  type ReviewPageAssetManifestV1,
+  type ReviewPageAssetManifest,
   type ReviewPageAssets,
 } from "./reviewPageAssets";
 import { REVIEW_PAGE_CONTENT_SECURITY_POLICY, ReviewPageServer } from "./reviewPageServer";
@@ -21,7 +21,7 @@ const ORIGIN = "http://127.0.0.1:47657";
 const SCRIPT = "main-abc123.js";
 const STYLESHEET = "main-abc123.css";
 const DOCUMENT = `<!doctype html><link rel="stylesheet" href="/review-assets/${STYLESHEET}"><script type="module" src="/review-assets/${SCRIPT}"></script>`;
-const MANIFEST: ReviewPageAssetManifestV1 = { formatVersion: 1, assets: [SCRIPT, STYLESHEET] };
+const MANIFEST: ReviewPageAssetManifest = { formatVersion: 1, assets: [SCRIPT, STYLESHEET] };
 const FILES = new Map<string, Uint8Array<ArrayBuffer>>([
   [REVIEW_PAGE_DOCUMENT_NAME, new TextEncoder().encode(DOCUMENT)],
   [SCRIPT, new TextEncoder().encode("console.log('page');")],

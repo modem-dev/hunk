@@ -70,7 +70,7 @@ import {
   resolveSessionWebTheme,
   sessionCustomWebTheme,
   storeThemeId,
-  type WebThemeIndexV1,
+  type WebThemeIndex,
 } from "../theme/themeIndex";
 import {
   clampSidebarWidth,
@@ -157,7 +157,7 @@ const SESSION_THEME_OPTION_ID = "hunk:session-theme";
  * choice. This browser's stored choice wins; without one, the session's theme applies.
  */
 function useWebTheme(sessionTheme: ReviewThemeDefaults | undefined) {
-  const [index, setIndex] = useState<WebThemeIndexV1 | undefined>(undefined);
+  const [index, setIndex] = useState<WebThemeIndex | undefined>(undefined);
   const [themeId, setThemeId] = useState<string | undefined>(() => readStoredThemeId());
   useEffect(() => {
     void loadWebThemeIndex().then(setIndex);
