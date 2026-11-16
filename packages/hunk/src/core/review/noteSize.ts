@@ -5,7 +5,7 @@
  * field, so the check that admits a note and the check that publishes it cannot disagree.
  * Composers and producers call the same function (`docs/browser-review-seam-audit.md`, D1).
  */
-import type { ReviewNoteV1 } from "./types";
+import type { ReviewNote } from "./types";
 import { utf8ByteLength } from "./validation";
 
 /** Largest whole note any surface will accept, publish, or transport. */
@@ -18,12 +18,12 @@ export const MAX_REVIEW_NOTE_BYTES = 256 * 1024;
  * the text fields alone would undercount the framing every one of them is wrapped in. Key
  * order does not affect the total, so two encoders that order fields differently agree.
  */
-export function reviewNoteByteLength(note: ReviewNoteV1) {
+export function reviewNoteByteLength(note: ReviewNote) {
   return utf8ByteLength(JSON.stringify(note));
 }
 
 /** Whether one note fits within the shared size limit. */
-export function reviewNoteWithinSizeLimit(note: ReviewNoteV1) {
+export function reviewNoteWithinSizeLimit(note: ReviewNote) {
   return reviewNoteByteLength(note) <= MAX_REVIEW_NOTE_BYTES;
 }
 
@@ -83,10 +83,10 @@ export const MAX_SNAPSHOT_NOTE_SUMMARY_BYTES = 3 * 1024 * 1024;
 /** Which stored-note bound a change would exceed, if any. */
 export type ReviewNoteCapacityIssue = "count" | "bytes";
 
-const collectionBytes = new WeakMap<readonly { note: ReviewNoteV1 }[], number>();
+const collectionBytes = new WeakMap<readonly { note: ReviewNote }[], number>();
 
 /** Total serialized bytes of one immutable note collection, cached by array identity. */
-function storedNotesByteLength(notes: readonly { note: ReviewNoteV1 }[]) {
+function storedNotesByteLength(notes: readonly { note: ReviewNote }[]) {
   let total = collectionBytes.get(notes);
   if (total === undefined) {
     total = notes.reduce((sum, entry) => sum + reviewNoteByteLength(entry.note), 0);
@@ -104,12 +104,12 @@ function storedNotesByteLength(notes: readonly { note: ReviewNoteV1 }[]) {
  */
 export function reviewNoteCapacityIssue(
   state: {
-    liveNotes: readonly { note: ReviewNoteV1 }[];
-    userNotes: readonly { note: ReviewNoteV1 }[];
+    liveNotes: readonly { note: ReviewNote }[];
+    userNotes: readonly { note: ReviewNote }[];
   },
   change: {
-    add?: readonly ReviewNoteV1[];
-    replace?: { before: ReviewNoteV1; after: ReviewNoteV1 };
+    add?: readonly ReviewNote[];
+    replace?: { before: ReviewNote; after: ReviewNote };
   },
 ): ReviewNoteCapacityIssue | undefined {
   const added = change.add ?? [];
@@ -165,7 +165,7 @@ export function createSidecarProjectionBudget(maxBytes = MAX_PROJECTED_SIDECAR_N
   }
 
   return {
-    admit(note: ReviewNoteV1) {
+    admit(note: ReviewNote) {
       return admitSize(reviewNoteByteLength(note));
     },
     admitSize,

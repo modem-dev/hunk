@@ -16,7 +16,7 @@ import { projectReviewDocument } from "../../../packages/hunk/src/core/review/do
 import { reviewExpansionSide } from "../../../packages/hunk/src/core/review/expansion";
 import { reviewHunkRanges } from "../../../packages/hunk/src/core/review/geometry";
 import { planReviewFileNotes } from "../../../packages/hunk/src/web/notes/noteProjection";
-import type { ReviewFileV1 } from "../../../packages/hunk/src/core/review/types";
+import type { ReviewFile } from "../../../packages/hunk/src/core/review/types";
 import { planReviewFileRender } from "../../../packages/hunk/src/web/stream/fileProjection";
 import type {
   ConformanceExpandedRow,
@@ -26,7 +26,7 @@ import type {
 
 /** Read the rows the expanded gap contributes to the metadata Pierre receives. */
 function expandedRowsOf(
-  file: ReviewFileV1,
+  file: ReviewFile,
   plan: ReturnType<typeof planReviewFileRender>,
   gapId: string,
 ): ConformanceExpandedRow[] {

@@ -33,8 +33,8 @@ import {
 import {
   parseReadReviewResourceRequest,
   REVIEW_RESOURCE_CHUNK_BYTES,
-  type ReviewResourceChunkV1,
-  type ReviewResourceDescriptorV1,
+  type ReviewResourceChunk,
+  type ReviewResourceDescriptor,
   type ReviewResourceErrorCode,
   type ReviewRequestErrorCode,
 } from "../../core/review/resources";
@@ -68,7 +68,7 @@ export interface ReviewProducerFailure {
 }
 
 export type ReviewProducerChunkResult =
-  | { ok: true; chunk: ReviewResourceChunkV1 }
+  | { ok: true; chunk: ReviewResourceChunk }
   | ReviewProducerFailure;
 
 export interface ReviewProducerOptions {
@@ -360,7 +360,7 @@ export class ReviewProducer {
   }
 
   /** Describe every resource this generation offers, measured where it has been produced. */
-  describeResources(): ReviewResourceDescriptorV1[] {
+  describeResources(): ReviewResourceDescriptor[] {
     return this.resourceStore.describeAll();
   }
 

@@ -80,17 +80,17 @@ interface ReviewResourceDescriptorBase {
   digest?: string;
 }
 
-export interface ReviewCanonicalFileResourceV1 extends ReviewResourceDescriptorBase {
+export interface ReviewCanonicalFileResource extends ReviewResourceDescriptorBase {
   kind: "canonical-file";
   contentType: typeof REVIEW_CANONICAL_FILE_CONTENT_TYPE;
 }
 
-export interface ReviewPatchResourceV1 extends ReviewResourceDescriptorBase {
+export interface ReviewPatchResource extends ReviewResourceDescriptorBase {
   kind: "patch";
   contentType: typeof REVIEW_PATCH_CONTENT_TYPE;
 }
 
-export interface ReviewSourceResourceV1 extends ReviewResourceDescriptorBase {
+export interface ReviewSourceResource extends ReviewResourceDescriptorBase {
   kind: "source";
   contentType: typeof REVIEW_SOURCE_CONTENT_TYPE;
   side: ReviewSide;
@@ -104,20 +104,20 @@ export interface ReviewSourceResourceV1 extends ReviewResourceDescriptorBase {
  * Catalogued only when the file has a byte reader, and only for the sides its change kind
  * has: an added file has no old bytes, a deleted file no new ones.
  */
-export interface ReviewBytesResourceV1 extends ReviewResourceDescriptorBase {
+export interface ReviewBytesResource extends ReviewResourceDescriptorBase {
   kind: "bytes";
   contentType: typeof REVIEW_BYTES_CONTENT_TYPE;
   side: ReviewSide;
 }
 
-export type ReviewResourceDescriptorV1 =
-  | ReviewCanonicalFileResourceV1
-  | ReviewPatchResourceV1
-  | ReviewSourceResourceV1
-  | ReviewBytesResourceV1;
+export type ReviewResourceDescriptor =
+  | ReviewCanonicalFileResource
+  | ReviewPatchResource
+  | ReviewSourceResource
+  | ReviewBytesResource;
 
 /** Whether one descriptor has been measured, and can therefore be verified when read. */
-export function isMaterializedReviewResource(descriptor: ReviewResourceDescriptorV1) {
+export function isMaterializedReviewResource(descriptor: ReviewResourceDescriptor) {
   return descriptor.byteLength !== undefined && descriptor.digest !== undefined;
 }
 
@@ -223,7 +223,7 @@ export function parseReadReviewResourceRequest(
 }
 
 /** One verified slice of a resource, as a reader receives it. */
-export interface ReviewResourceChunkV1 {
+export interface ReviewResourceChunk {
   generation: string;
   resourceId: string;
   offset: number;

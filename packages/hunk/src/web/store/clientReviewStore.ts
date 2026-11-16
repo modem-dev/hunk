@@ -34,7 +34,7 @@ import {
 } from "../../core/review/navigation";
 import type { ReviewStoredNote } from "../../core/review/state";
 import { createReviewStore, type ReviewStore } from "../../core/review/store";
-import type { ReviewDocumentV1 } from "../../core/review/types";
+import type { ReviewDocument } from "../../core/review/types";
 import type { HunkReviewResourceCatalogV1 } from "../../session/reviewProtocol";
 import type { ReviewSharedStateV1 } from "../../session/reviewSharedState";
 import { ReviewApiError, type ReviewApiClient } from "../transport/apiClient";
@@ -80,7 +80,7 @@ export class ClientReviewStore {
    * `selectNormalizedSelection` says — the first visible file, or nothing — without asking the
    * viewport to move, which is what reconciliation means everywhere else (audit B4).
    */
-  adopt(document: ReviewDocumentV1, catalog: HunkReviewResourceCatalogV1 | undefined) {
+  adopt(document: ReviewDocument, catalog: HunkReviewResourceCatalogV1 | undefined) {
     if (catalog?.generation !== this.catalog?.generation) {
       // Source reads are addressed to a generation; one from the old catalog cannot land.
       for (const controller of this.sourceLoads.values()) controller.abort();

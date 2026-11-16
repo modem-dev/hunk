@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ReviewStoredNote } from "../../core/review/state";
-import type { ReviewNoteV1 } from "../../core/review/types";
+import type { ReviewNote } from "../../core/review/types";
 import type { ReviewSharedNoteV1 } from "../../session/reviewSharedState";
 import {
   countVisibleNotesByFile,
@@ -20,7 +20,7 @@ const FILE = {
 };
 
 /** One note on `FILE` anchored at a new-side line, owned by a hunk. */
-function createTestNote(id: string, line: number, overrides: Partial<ReviewNoteV1> = {}) {
+function createTestNote(id: string, line: number, overrides: Partial<ReviewNote> = {}) {
   return {
     id,
     source: "agent",
@@ -34,11 +34,11 @@ function createTestNote(id: string, line: number, overrides: Partial<ReviewNoteV
     summary: `note ${id}`,
     editable: false,
     ...overrides,
-  } as ReviewNoteV1;
+  } as ReviewNote;
 }
 
 /** Stored entries for the page store's state. */
-function stored(...notes: ReviewNoteV1[]): ReviewStoredNote[] {
+function stored(...notes: ReviewNote[]): ReviewStoredNote[] {
   return notes.map((note) => ({ note, resolution: "active" }));
 }
 

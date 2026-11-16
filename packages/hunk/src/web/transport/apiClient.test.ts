@@ -4,7 +4,7 @@ import {
   REVIEW_PATCH_CONTENT_TYPE,
   REVIEW_RESOURCE_CHUNK_BYTES,
   reviewResourceId,
-  type ReviewResourceDescriptorV1,
+  type ReviewResourceDescriptor,
 } from "../../core/review/resources";
 import { createTestDiffFile } from "../../../../../test/helpers/diff-helpers";
 import { serveTestWebReview } from "../../../../../test/helpers/web-review-server";
@@ -46,7 +46,7 @@ function createTestDescriptor(measured?: { byteLength: number; digest: string })
     kind: "patch",
     contentType: REVIEW_PATCH_CONTENT_TYPE,
     ...measured,
-  } as ReviewResourceDescriptorV1;
+  } as ReviewResourceDescriptor;
 }
 
 /** A fake server answering ranged reads over `bytes`, the way the HTTP surface does. */

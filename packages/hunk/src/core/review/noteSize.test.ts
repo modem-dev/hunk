@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { MAX_REVIEW_NOTE_BYTES, reviewNoteByteLength, reviewNoteWithinSizeLimit } from "./noteSize";
-import type { ReviewNoteV1 } from "./types";
+import type { ReviewNote } from "./types";
 
-const base: ReviewNoteV1 = {
+const base: ReviewNote = {
   id: "note:1",
   source: "user",
   fileKey: "file:abc",
@@ -19,10 +19,8 @@ describe("review note size", () => {
   });
 
   test("does not depend on the order the note's fields were assembled in", () => {
-    const forward: ReviewNoteV1 = { ...base, summary: "s", rationale: "r" };
-    const reversed = Object.fromEntries(
-      Object.entries(forward).reverse(),
-    ) as unknown as ReviewNoteV1;
+    const forward: ReviewNote = { ...base, summary: "s", rationale: "r" };
+    const reversed = Object.fromEntries(Object.entries(forward).reverse()) as unknown as ReviewNote;
     expect(reviewNoteByteLength(reversed)).toBe(reviewNoteByteLength(forward));
   });
 

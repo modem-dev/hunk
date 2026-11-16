@@ -10,7 +10,7 @@
  * as the terminal does.
  */
 import type { ReviewHunkVerticalBounds } from "../../core/review/viewportAnchor";
-import type { ReviewFileV1 } from "../../core/review/types";
+import type { ReviewFile } from "../../core/review/types";
 import type { ReviewGapView } from "./fileProjection";
 
 /** A half-open range of rendered row indices in one layout. */
@@ -21,7 +21,7 @@ export interface ReviewRowRange {
 
 /** The rows one hunk of the shared model occupies in one layout. */
 export function reviewHunkRowRange(
-  file: ReviewFileV1,
+  file: ReviewFile,
   hunkIndex: number,
   layout: "split" | "unified",
 ): ReviewRowRange | undefined {
@@ -34,7 +34,7 @@ export function reviewHunkRowRange(
 
 /** The rows an expanded gap's lines occupy in one layout, beside the hunk they abut. */
 export function reviewGapRowRange(
-  file: ReviewFileV1,
+  file: ReviewFile,
   gap: ReviewGapView,
   layout: "split" | "unified",
 ): ReviewRowRange | undefined {
@@ -56,7 +56,7 @@ export interface ReviewFileGeometry {
 
 /** Find the hunk whose rows include one rendered row index. */
 export function reviewHunkAtRow(
-  file: ReviewFileV1,
+  file: ReviewFile,
   layout: "split" | "unified",
   row: number,
 ): number | undefined {
@@ -82,7 +82,7 @@ export function rowIndexOf(element: Element, layout: "split" | "unified") {
  */
 export function measureReviewFileGeometry(
   host: HTMLElement,
-  file: ReviewFileV1,
+  file: ReviewFile,
   gaps: readonly ReviewGapView[],
   layout: "split" | "unified",
 ): ReviewFileGeometry {

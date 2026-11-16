@@ -15,7 +15,7 @@ import {
   REVIEW_RESOURCE_CHUNK_BYTES,
   REVIEW_RESOURCE_LOAD_CONCURRENCY,
   reviewResourceCeiling,
-  type ReviewResourceDescriptorV1,
+  type ReviewResourceDescriptor,
 } from "../../core/review/resources";
 import { ReviewChunkAssembler } from "../../core/review/resourceAssembly";
 import type { ReviewAsyncDigestFn } from "../../core/review/validation";
@@ -315,7 +315,7 @@ export class ReviewApiClient {
    * bytes against the producer's measurement before serving them.
    */
   async readResource(
-    descriptor: ReviewResourceDescriptorV1,
+    descriptor: ReviewResourceDescriptor,
     signal?: AbortSignal,
   ): Promise<Uint8Array> {
     const route: HunkReviewHttpRoute = {
@@ -372,7 +372,7 @@ export class ReviewApiClient {
    * flight finish but are not reported. Aborting the signal stops everything.
    */
   async readResources(
-    descriptors: readonly ReviewResourceDescriptorV1[],
+    descriptors: readonly ReviewResourceDescriptor[],
     onResult: (index: number, bytes: Uint8Array) => void,
     signal?: AbortSignal,
   ): Promise<void> {
@@ -404,7 +404,7 @@ export class ReviewApiClient {
 
   /** Feed received windows through the shared assembler and verify the result. */
   private async assemble(
-    descriptor: ReviewResourceDescriptorV1,
+    descriptor: ReviewResourceDescriptor,
     windows: readonly Uint8Array[],
     total: number,
   ) {

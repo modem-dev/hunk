@@ -53,11 +53,11 @@ import {
 } from "./state";
 import type { ReviewStore } from "./store";
 import type {
-  ReviewFileV1,
-  ReviewLineAddressV1,
+  ReviewFile,
+  ReviewLineAddress,
   ReviewLineRange,
-  ReviewNoteTargetV1,
-  ReviewRangeTargetV1,
+  ReviewNoteTarget,
+  ReviewRangeTarget,
   ReviewSide,
 } from "./types";
 
@@ -135,7 +135,7 @@ export type ReviewIntent =
       type: "notes/start-draft";
       fileKey: string;
       hunkIndex: number;
-      target?: ReviewNoteTargetV1;
+      target?: ReviewNoteTarget;
       reveal?: ReviewRevealRequest;
     }
   /** Open an editable reviewer note in the shared composer. */
@@ -165,7 +165,7 @@ export type ReviewIntent =
       fileKey: string;
       hunkIndex: number;
       /** The line or range the note hangs from; the hunk's default line when absent. */
-      target?: ReviewNoteTargetV1;
+      target?: ReviewNoteTarget;
       /** Reply beneath this note, inheriting its anchor; `target` must then be absent. */
       parentId?: string;
       body: string;
@@ -379,7 +379,7 @@ function requireFact(value: string | undefined, label: "noteId" | "draftId" | "t
  * question, and the rejection a caller reports must be the rejection planning would have
  * produced — the same code and the same words, not a second phrasing of them.
  */
-export function requireReviewFile(state: ReviewState, fileKey: string): ReviewFileV1 {
+export function requireReviewFile(state: ReviewState, fileKey: string): ReviewFile {
   const file = selectReviewFileByKey(state, fileKey);
   if (!file) {
     throw new ReviewIntentPlanningError(
@@ -391,7 +391,7 @@ export function requireReviewFile(state: ReviewState, fileKey: string): ReviewFi
 }
 
 /** Require one exact hunk instead of relying on selection clamping. */
-function requireHunk(file: ReviewFileV1, hunkIndex: number) {
+function requireHunk(file: ReviewFile, hunkIndex: number) {
   if (!Number.isSafeInteger(hunkIndex) || hunkIndex < 0 || hunkIndex >= file.hunks.length) {
     throw new ReviewIntentPlanningError(
       "hunk-not-found",
@@ -493,8 +493,8 @@ function planDraftStart(
   if (state.draftNote) {
     throw new ReviewIntentPlanningError("draft-active", "A review note draft is already active.");
   }
-  const rangeTarget = "preferred" in target ? (target as ReviewRangeTargetV1) : null;
-  const lineTarget = rangeTarget ? null : (target as ReviewLineAddressV1);
+  const rangeTarget = "preferred" in target ? (target as ReviewRangeTarget) : null;
+  const lineTarget = rangeTarget ? null : (target as ReviewLineAddress);
   if (rangeTarget) {
     const coverageIssue = reviewRangeTargetCoverageIssue(file.hunks, rangeTarget);
     if (coverageIssue) {
@@ -890,7 +890,7 @@ function planDirectUserNote(
   if (!anchor) {
     const target = intent.target ?? reviewDefaultHunkLineTarget(file.hunks[intent.hunkIndex]!);
     if ("preferred" in target) {
-      const rangeTarget = target as ReviewRangeTargetV1;
+      const rangeTarget = target as ReviewRangeTarget;
       const coverageIssue = reviewRangeTargetCoverageIssue(file.hunks, rangeTarget);
       if (coverageIssue) {
         throw new ReviewIntentPlanningError(
@@ -901,7 +901,7 @@ function planDirectUserNote(
       anchor = reviewRangeAnchor(file.hunks, { ...rangeTarget, hunkIndex: intent.hunkIndex });
     } else {
       anchor = reviewLineAnchor(file.hunks, {
-        ...(target as ReviewLineAddressV1),
+        ...(target as ReviewLineAddress),
         hunkIndex: intent.hunkIndex,
       });
     }

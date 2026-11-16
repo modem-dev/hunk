@@ -17,7 +17,7 @@ import {
   createInitialReviewState,
   type ReviewState,
 } from "../../../packages/hunk/src/core/review/state";
-import type { ReviewDocumentV1 } from "../../../packages/hunk/src/core/review/types";
+import type { ReviewDocument } from "../../../packages/hunk/src/core/review/types";
 import type {
   ConformanceSelection,
   ConformanceSelectionInput,
@@ -29,7 +29,7 @@ import type {
 export const VANISHED_FILE_KEY = "vanished:no-such-file";
 
 /** Resolve a fixture's positional selection into the semantic one core reads. */
-export function toSemanticSelection(input: ConformanceSelectionInput, document: ReviewDocumentV1) {
+export function toSemanticSelection(input: ConformanceSelectionInput, document: ReviewDocument) {
   if (input.file === null) {
     return { fileKey: null, hunkIndex: input.hunkIndex };
   }
@@ -46,7 +46,7 @@ export function toSemanticSelection(input: ConformanceSelectionInput, document: 
 export function toConformanceSelection(
   fileKey: string | null,
   hunkIndex: number,
-  document: ReviewDocumentV1,
+  document: ReviewDocument,
 ): ConformanceSelection {
   const index = document.files.findIndex((file) => file.key === fileKey);
   return { file: index < 0 ? null : index, hunkIndex };
@@ -55,7 +55,7 @@ export function toConformanceSelection(
 /** Build the annotation index the fixture declares, keyed by semantic file key. */
 export function toAnnotationIndex(
   fixture: ReviewNavigationFixture,
-  document: ReviewDocumentV1,
+  document: ReviewDocument,
 ): ReviewAnnotationIndex {
   const annotatedHunks = Object.entries(fixture.annotatedHunks ?? {});
   const annotatedHunkIndicesByFileKey = new Map(

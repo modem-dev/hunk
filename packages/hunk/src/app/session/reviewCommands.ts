@@ -34,11 +34,11 @@ import {
 } from "../../core/review/intents";
 import type { ReviewDraftNote, ReviewState } from "../../core/review/state";
 import type {
-  ReviewFileV1,
-  ReviewLineAddressV1,
+  ReviewFile,
+  ReviewLineAddress,
   ReviewLineRange,
-  ReviewNoteTargetV1,
-  ReviewRangeTargetV1,
+  ReviewNoteTarget,
+  ReviewRangeTarget,
 } from "../../core/review/types";
 import {
   toReviewIntent,
@@ -128,8 +128,8 @@ function checkPosition(
  */
 function checkExpandedLine(
   producer: ReviewProducer,
-  file: ReviewFileV1,
-  target: ReviewLineAddressV1,
+  file: ReviewFile,
+  target: ReviewLineAddress,
   proof: HunkReviewExpandedLineProofV1,
 ): HunkReviewFailureV1 | undefined {
   if (proof.side !== target.side || proof.line !== target.line) {
@@ -151,8 +151,8 @@ function checkExpandedLine(
 /** Require caller evidence whenever a line is not backed by a visible patch row. */
 function checkLineTarget(
   producer: ReviewProducer,
-  file: ReviewFileV1,
-  target: ReviewLineAddressV1,
+  file: ReviewFile,
+  target: ReviewLineAddress,
   proof?: HunkReviewExpandedLineProofV1,
 ): HunkReviewFailureV1 | undefined {
   if (proof) return checkExpandedLine(producer, file, target, proof);
@@ -173,7 +173,7 @@ function rangesEqual(left: ReviewLineRange | undefined, right: ReviewLineRange |
 }
 
 /** Return whether a save precondition names the active draft's exact anchor. */
-function draftMatchesTarget(draft: ReviewDraftNote, target: ReviewNoteTargetV1) {
+function draftMatchesTarget(draft: ReviewDraftNote, target: ReviewNoteTarget) {
   const anchor = draft.anchor;
   if ("line" in target) {
     if (draft.targetKind === "range") return false;
@@ -199,8 +199,8 @@ function draftMatchesTarget(draft: ReviewDraftNote, target: ReviewNoteTargetV1) 
 /** Reject ranges that name absent rows, collapsed gaps, or an unrelated preferred line. */
 function checkRangeTarget(
   producer: ReviewProducer,
-  file: ReviewFileV1,
-  target: ReviewRangeTargetV1,
+  file: ReviewFile,
+  target: ReviewRangeTarget,
 ): HunkReviewFailureV1 | undefined {
   const issue = reviewRangeTargetCoverageIssue(file.hunks, target);
   if (!issue) return undefined;

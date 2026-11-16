@@ -7,15 +7,15 @@
  * them — so all three must resolve the same address (`docs/browser-review-seam-audit.md`,
  * A1/A2/A5).
  *
- * The input is the parsed diff geometry rather than a projected `ReviewFileV1`, so the
+ * The input is the parsed diff geometry rather than a projected `ReviewFile`, so the
  * terminal's row builder can resolve an address without projecting a document first;
  * `reviewGapSourceForFile` adapts a semantic file onto the same shape.
  */
 import { normalizedReviewSourceLines, rebaseReviewHunk, type ReviewHunkSpan } from "./geometry";
 import type {
   ReviewFileChangeKind,
-  ReviewFileV1,
-  ReviewHunkV1,
+  ReviewFile,
+  ReviewHunk,
   ReviewLineRange,
   ReviewSide,
 } from "./types";
@@ -69,7 +69,7 @@ export function parseReviewGapId(gapId: string) {
 }
 
 /** Adapt one projected semantic file onto the geometry gap addressing reads. */
-export function reviewGapSourceForFile(file: ReviewFileV1): ReviewGapSource {
+export function reviewGapSourceForFile(file: ReviewFile): ReviewGapSource {
   return {
     hunks: file.hunks,
     additionLines: file.additionLines,
@@ -194,7 +194,7 @@ export interface ReviewExpandedLineClaim {
  * audit.md`, B10/D3).
  */
 export function resolveReviewExpandedLine(
-  file: ReviewFileV1,
+  file: ReviewFile,
   claim: ReviewExpandedLineClaim,
 ): ReviewGapAddress | undefined {
   if (file.sourceIdentity === undefined || file.sourceIdentity !== claim.sourceIdentity) {
@@ -234,7 +234,7 @@ export interface ReviewExpandedGapContent {
  * than filled short.
  */
 export function reviewExpandedGapContents(
-  file: ReviewFileV1,
+  file: ReviewFile,
   expandedGapIds: readonly string[],
   sourceText: string,
 ): ReviewExpandedGapContent[] {
@@ -287,9 +287,9 @@ function contextBlock(lines: number) {
  * publishable file.
  */
 export function reviewFileWithExpandedGaps(
-  file: ReviewFileV1,
+  file: ReviewFile,
   expanded: readonly ReviewExpandedGapContent[],
-): ReviewFileV1 {
+): ReviewFile {
   if (expanded.length === 0) {
     return file;
   }
@@ -347,7 +347,7 @@ export function reviewFileWithExpandedGaps(
             deletionLineIndex: hunk.deletionLineIndex + shift,
           };
     if (partial) shift += leadingCount;
-    const widened: ReviewHunkV1 = {
+    const widened: ReviewHunk = {
       ...hunk,
       hunkContent: [
         ...(leading ? [contextBlock(leadingCount)] : []),

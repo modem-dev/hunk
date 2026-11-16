@@ -34,7 +34,7 @@ import {
   reviewNoteOwnerHunkIndex,
   type ReviewState,
 } from "../../core/review/state";
-import type { ReviewDocumentV1, ReviewNoteV1 } from "../../core/review/types";
+import type { ReviewDocument, ReviewNote } from "../../core/review/types";
 import type { DiffFile } from "../../core/changeset/model";
 import type { AgentAnnotation } from "../../extension-api/types";
 import { noDiffFileMatchesMessage } from "../../session/agent/errors";
@@ -62,7 +62,7 @@ export interface ReviewNavigationTarget {
 
 /** Index one document's files by runtime id and by semantic key. */
 export function indexReviewFiles(
-  document: ReviewDocumentV1,
+  document: ReviewDocument,
   files: readonly DiffFile[],
 ): ReviewFileIndex {
   const byRuntimeId = new Map(files.map((file) => [file.id, file] as const));
@@ -78,7 +78,7 @@ export function indexReviewFiles(
 }
 
 /** Copy one note's anchor ranges in the annotation shape diff files carry. */
-function noteRanges(note: ReviewNoteV1) {
+function noteRanges(note: ReviewNote) {
   return {
     oldRange: note.anchor.oldRange ? ([...note.anchor.oldRange] as [number, number]) : undefined,
     newRange: note.anchor.newRange ? ([...note.anchor.newRange] as [number, number]) : undefined,
@@ -140,7 +140,7 @@ export function buildReviewSessionAnnotationIndex(
 }
 
 /** Format one live note as the live-comment summary a snapshot carries. */
-function liveCommentSummary(file: DiffFile, note: ReviewNoteV1): SessionLiveCommentSummary {
+function liveCommentSummary(file: DiffFile, note: ReviewNote): SessionLiveCommentSummary {
   const anchorLine = reviewNoteAnchorLine(note);
   return {
     commentId: note.id,
@@ -157,7 +157,7 @@ function liveCommentSummary(file: DiffFile, note: ReviewNoteV1): SessionLiveComm
 }
 
 /** Format one stored note as the inline-note summary a snapshot carries. */
-function storedReviewNoteSummary(file: DiffFile, note: ReviewNoteV1): SessionReviewNoteSummary {
+function storedReviewNoteSummary(file: DiffFile, note: ReviewNote): SessionReviewNoteSummary {
   // Stored notes are either the reviewer's own or agent-authored live comments.
   const source = note.source === "user" ? "user" : "agent";
   const ranges = noteRanges(note);
@@ -202,7 +202,7 @@ export function buildSessionNoteSummaries(
   state: Pick<ReviewState, "liveNotes" | "userNotes">,
 ): SessionNoteSummaries {
   const liveIds = new Set(state.liveNotes.map((entry) => entry.note.id));
-  const storedByFileId = new Map<string, ReviewNoteV1[]>();
+  const storedByFileId = new Map<string, ReviewNote[]>();
   const noteSummaryById = new Map<string, SessionReviewNoteSummary>();
   const liveSummaryById = new Map<string, SessionLiveCommentSummary>();
   let remainingBytes = MAX_SNAPSHOT_NOTE_SUMMARY_BYTES;
@@ -238,7 +238,7 @@ export function buildSessionNoteSummaries(
     storedByFileId.set(file.id, notes);
   }
 
-  const liveNotesByFileId = new Map<string, ReviewNoteV1[]>();
+  const liveNotesByFileId = new Map<string, ReviewNote[]>();
   for (const entry of state.liveNotes) {
     const file = fileIndex.fileByKey.get(entry.note.fileKey);
     if (!file || !liveSummaryById.has(entry.note.id)) {

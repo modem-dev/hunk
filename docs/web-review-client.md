@@ -35,7 +35,7 @@ packages/hunk/src/web/
   stream/ReviewStream.tsx      the windowed stream, reveals, viewport anchoring, scrolling
   stream/hunkGeometry.ts       hunk and gap rows from the model; their measured bounds
   stream/FileSection.tsx       sticky header, placeholders, reserved heights
-  stream/fileProjection.ts     ReviewFileV1 -> Pierre metadata, gaps, reserved rows
+  stream/fileProjection.ts     ReviewFile -> Pierre metadata, gaps, reserved rows
   stream/PierreFileView.tsx    drives Pierre's vanilla FileDiff and the page's gap separators
   theme/themeIndex.ts          built-in themes as CSS custom properties; per-browser choice
   view/viewPreferences.ts      layout/wrap/line numbers/sidebar, per browser
@@ -608,7 +608,7 @@ the shared-state snapshot lists only marks that still match each file's `content
 - **Workers.** Highlighting runs on the main thread. Pierre's `WorkerPoolContextProvider` takes
   a `workerFactory: () => Worker`; adopting it needs a second build entry for
   `@pierre/diffs/worker/worker.js`, an asset name in the manifest, and `worker-src 'self'`.
-- **Input.** The shared `ReviewFileV1` is already Pierre-shaped (hunks, content blocks, line
+- **Input.** The shared `ReviewFile` is already Pierre-shaped (hunks, content blocks, line
   arrays, row counts), so the page hands Pierre parsed metadata from the canonical file instead
   of re-parsing the `patch` resource. Pierre treats metadata with an unchanged `cacheKey` as
   the same diff, so the projection derives the key from the content identity plus the filled

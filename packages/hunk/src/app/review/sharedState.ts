@@ -5,7 +5,7 @@
  * `/review-api/<session>/state`; the terminal and a headless session feed it the same host and
  * the presentation defaults their launch resolved. Notes are listed in the order the terminal
  * presents them — per file in document order, sidecar annotations then stored notes in thread
- * order — and sidecar annotations are normalized into `ReviewNoteV1` with ids stable across
+ * order — and sidecar annotations are normalized into `ReviewNote` with ids stable across
  * snapshots of one review. Selection is not part of it: every surface keeps its own.
  */
 import type { AppBootstrap } from "../../core/bootstrap";
@@ -16,7 +16,7 @@ import {
   selectThreadedStoredReviewNotes,
 } from "../../core/review/selectors";
 import { isRenderableStoredReviewNote } from "../../core/review/state";
-import type { ReviewNoteV1 } from "../../core/review/types";
+import type { ReviewNote } from "../../core/review/types";
 import { APP_COMMAND_CATALOG } from "../../core/run/commandCatalog";
 import { DOCUMENT_COMMAND_NAMES } from "../../core/run/documentCommandCatalog";
 import { HISTORY_COMMAND_NAMES } from "../../core/run/historyCommandCatalog";
@@ -143,7 +143,7 @@ function sharedNotes(host: ReviewSessionHost): { notes: ReviewSharedNoteV1[]; om
     if (!fileKey) continue;
     (file.agent?.annotations ?? []).forEach((annotation, index) => {
       const source = reviewNoteSource(annotation);
-      const note: ReviewNoteV1 = definedFields({
+      const note: ReviewNote = definedFields({
         id: annotation.id ?? `${source}:${fileKey}:${index}`,
         source,
         originalSource: annotation.source,

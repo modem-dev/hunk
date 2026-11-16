@@ -23,7 +23,7 @@ import {
   reviewNoteVisibleByPolicy,
   type ReviewState,
 } from "../../core/review/state";
-import type { ReviewNoteV1, ReviewSide } from "../../core/review/types";
+import type { ReviewNote, ReviewSide } from "../../core/review/types";
 import type { ReviewSharedNoteV1 } from "../../session/reviewSharedState";
 
 /** The deepest reply indent a card shows, as the terminal caps its thread gutter. */
@@ -32,7 +32,7 @@ export const MAX_NOTE_THREAD_DEPTH = 3;
 /** One note card, ready to draw. */
 export interface WebNoteCard {
   id: string;
-  note: ReviewNoteV1;
+  note: ReviewNote;
   origin: ReviewSharedNoteV1["origin"];
   stale: boolean;
   /** Reply depth, capped at `MAX_NOTE_THREAD_DEPTH`. */
@@ -74,7 +74,7 @@ function lineDrawn(file: Pick<ReviewDrawnFile, "hunks">, side: ReviewSide, line:
 
 /** Where one root note's cards hang in the rendered file. */
 export function reviewNotePlacement(
-  note: Pick<ReviewNoteV1, "anchor">,
+  note: Pick<ReviewNote, "anchor">,
   file: Pick<ReviewDrawnFile, "hunks">,
 ): { side: ReviewSide; line: number } {
   const anchor = reviewNoteAnchorLine(note);
@@ -111,7 +111,7 @@ const DEFAULT_REVIEWER_AUTHOR = "user";
  * Anyone holding the link may have written it, so it is never "Your note": it names an author
  * the writer gave, or says where it came from.
  */
-export function browserNoteTitle(note: ReviewNoteV1, now: number) {
+export function browserNoteTitle(note: ReviewNote, now: number) {
   if (note.originalSource !== "browser") return undefined;
   const author =
     note.author && note.author !== DEFAULT_REVIEWER_AUTHOR ? note.author : "Browser note";
@@ -120,7 +120,7 @@ export function browserNoteTitle(note: ReviewNoteV1, now: number) {
 
 /** Build one card's model. */
 function cardFor(
-  note: ReviewNoteV1,
+  note: ReviewNote,
   origin: WebNoteCard["origin"],
   stale: boolean,
   depth: number,
@@ -160,7 +160,7 @@ export function planReviewFileNotes({
   now = Date.now(),
 }: PlanReviewFileNotesInput): WebNoteGroup[] {
   const groups = new Map<string, WebNoteGroup>();
-  const place = (root: ReviewNoteV1) => {
+  const place = (root: ReviewNote) => {
     const { side, line } = reviewNotePlacement(root, file);
     const key = `${side}:${line}`;
     let group = groups.get(key);

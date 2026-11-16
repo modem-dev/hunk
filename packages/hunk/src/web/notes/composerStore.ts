@@ -19,7 +19,7 @@
  * it closes once a snapshot at or after the position the session applied it at arrives.
  */
 import type { ReviewExpandedLineClaim } from "../../core/review/expansion";
-import type { ReviewNoteTargetV1, ReviewSide } from "../../core/review/types";
+import type { ReviewNoteTarget, ReviewSide } from "../../core/review/types";
 
 /** What a composer writes. */
 export type NoteComposerKind = "new" | "reply" | "edit";
@@ -33,7 +33,7 @@ export interface NoteComposer {
   /** The line its card hangs beside. */
   side: ReviewSide;
   line: number;
-  target?: ReviewNoteTargetV1;
+  target?: ReviewNoteTarget;
   expandedLineProof?: ReviewExpandedLineClaim;
   /** The note a reply answers. */
   parentId?: string;

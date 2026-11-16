@@ -16,7 +16,7 @@
 import { useContext, useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import {
   MAX_REVIEW_BYTES_RESOURCE_BYTES,
-  type ReviewResourceDescriptorV1,
+  type ReviewResourceDescriptor,
 } from "../../core/review/resources";
 import type { ReviewSide } from "../../core/review/types";
 import { reviewErrorMessage } from "../../session/reviewErrorCatalog";
@@ -53,7 +53,7 @@ export function formatPreviewBytes(size: number) {
 }
 
 /** Read, sniff, and wrap one side's bytes. */
-function useSideImage(descriptor: ReviewResourceDescriptorV1 | undefined): SideImage | undefined {
+function useSideImage(descriptor: ReviewResourceDescriptor | undefined): SideImage | undefined {
   const context = useContext(PreviewContext);
   const [image, setImage] = useState<SideImage | undefined>(
     descriptor ? { status: "loading" } : undefined,

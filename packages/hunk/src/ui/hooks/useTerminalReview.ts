@@ -41,7 +41,7 @@ import {
   selectVisibleThreadedStoredReviewNotes,
 } from "../../core/review/selectors";
 import { REVIEW_VIEWPORT_ANCHOR_REVEAL, reviewNoteAnchorLine } from "../../core/review/state";
-import type { ReviewNoteTargetV1 } from "../../core/review/types";
+import type { ReviewNoteTarget } from "../../core/review/types";
 import type { ReviewStore } from "../../core/review/store";
 import type { DiffFile } from "../../core/changeset/model";
 import type { LayoutMode } from "../../core/run/commandInputs";
@@ -279,7 +279,7 @@ export interface TerminalReview {
   startUserNote: (
     fileId?: string,
     hunkIndex?: number,
-    target?: ReviewNoteTargetV1,
+    target?: ReviewNoteTarget,
     options?: { preserveViewport?: boolean },
   ) => DraftReviewNote | null;
   setFilter: (value: string) => void;
@@ -1085,7 +1085,7 @@ export function useTerminalReview({
     (
       fileId = selectedFile?.id,
       hunkIndex = selectedHunkIndex,
-      requestedTarget?: ReviewNoteTargetV1,
+      requestedTarget?: ReviewNoteTarget,
       options?: { preserveViewport?: boolean },
     ): DraftReviewNote | null => {
       // The host owns the draft's identity and where the note lands; this renderer supplies

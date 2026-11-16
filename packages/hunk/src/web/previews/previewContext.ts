@@ -6,14 +6,14 @@
  * so the stream itself stays unaware of previews beyond rendering the slot it is given.
  */
 import { createContext } from "react";
-import type { ReviewResourceDescriptorV1 } from "../../core/review/resources";
+import type { ReviewResourceDescriptor } from "../../core/review/resources";
 import type { ReviewSide } from "../../core/review/types";
 
 export interface PreviewContextValue {
   /** The shown generation's resources for one file. */
-  resources(fileKey: string): readonly ReviewResourceDescriptorV1[];
+  resources(fileKey: string): readonly ReviewResourceDescriptor[];
   /** Read one resource whole, verified as the transport verifies every read. */
-  read(descriptor: ReviewResourceDescriptorV1, signal: AbortSignal): Promise<Uint8Array>;
+  read(descriptor: ReviewResourceDescriptor, signal: AbortSignal): Promise<Uint8Array>;
   markdownModes: MarkdownModeStore;
 }
 
