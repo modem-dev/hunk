@@ -23,7 +23,6 @@ import { NoteComposerStore } from "../notes/composerStore";
 import { takeReviewCapability, type CapabilityStorage } from "./capability";
 import { ReviewApiClient, ReviewApiError, type ReviewFetch } from "../transport/apiClient";
 import { openReviewEventStream, type ReviewEventStreamStatus } from "../transport/eventStream";
-import { reviewSharedFileIndexEntry } from "../mirror/fileIndex";
 import { ReviewMirror } from "../mirror/reviewMirror";
 import { ReviewSharedStateMirror } from "../mirror/sharedStateMirror";
 import { ClientReviewStore } from "../store/clientReviewStore";
@@ -119,9 +118,7 @@ export function startReviewSession({
     // The shared state's file index fixes document order and fills the sidebar before any
     // canonical file loads; without it the mirror falls back to catalog order.
     indexSource: async (catalog, signal) =>
-      (await shared.forGeneration(catalog.generation, signal))?.files.map(
-        reviewSharedFileIndexEntry,
-      ),
+      (await shared.forGeneration(catalog.generation, signal))?.files,
   });
   const review = new ClientReviewStore({ client });
   const connection = new ObservableValue<ReviewEventStreamStatus>({ kind: "connecting" });
