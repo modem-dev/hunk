@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { createTestDiffFile } from "../../../../../test/helpers/diff-helpers";
 import { serveTestWebReview } from "../../../../../test/helpers/web-review-server";
 import { ReviewApiError, type ReviewApiClient } from "../transport/apiClient";
-import { ReviewMirror, type ReviewMirrorSnapshot } from "./reviewMirror";
+import { ClientReviewMirror, type ClientReviewMirrorSnapshot } from "./clientReviewMirror";
 
 const running: Array<() => void> = [];
 
@@ -30,7 +30,10 @@ function serve(files = createTestFiles()) {
 }
 
 /** Wait until the mirror reports a status, or fail. */
-async function waitForTestStatus(mirror: ReviewMirror, status: ReviewMirrorSnapshot["status"]) {
+async function waitForTestStatus(
+  mirror: ClientReviewMirror,
+  status: ClientReviewMirrorSnapshot["status"],
+) {
   for (let attempt = 0; attempt < 400; attempt += 1) {
     const snapshot = mirror.getSnapshot();
     if (snapshot.status === status && !snapshot.updating) return snapshot;
@@ -41,14 +44,14 @@ async function waitForTestStatus(mirror: ReviewMirror, status: ReviewMirrorSnaps
 
 /** A mirror that notifies synchronously, recording every snapshot it publishes. */
 function createTestMirror(client: ReviewApiClient) {
-  const mirror = new ReviewMirror({ client, scheduleNotify: (flush) => flush() });
-  const seen: ReviewMirrorSnapshot[] = [];
+  const mirror = new ClientReviewMirror({ client, scheduleNotify: (flush) => flush() });
+  const seen: ClientReviewMirrorSnapshot[] = [];
   mirror.subscribe(() => seen.push(mirror.getSnapshot()));
   running.push(() => mirror.close());
   return { mirror, seen };
 }
 
-describe("ReviewMirror", () => {
+describe("ClientReviewMirror", () => {
   test("loads the first generation progressively, in catalog order", async () => {
     const served = serve();
     const client = served.client();
@@ -262,7 +265,7 @@ describe("ReviewMirror", () => {
   test("uses an index source ahead of canonical files when one is given", async () => {
     const served = serve();
     const client = served.client();
-    const mirror = new ReviewMirror({
+    const mirror = new ClientReviewMirror({
       client,
       scheduleNotify: (flush) => flush(),
       indexSource: async (catalog) =>
