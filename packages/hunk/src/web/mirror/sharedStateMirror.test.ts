@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ReviewPublicationBody, ReviewStateBody } from "../../session/reviewHttpProtocol";
-import type { ReviewSharedStateV1 } from "../../session/reviewSharedState";
+import type { ReviewSharedState } from "../../session/reviewSharedState";
 import type { ReviewApiClient } from "../transport/apiClient";
 import { ReviewApiError } from "../transport/apiClient";
 import {
@@ -38,7 +38,7 @@ function createTestStateBody(
     sessionId: "s",
     publication: { generation, stateRevision },
     sharedStateRevision,
-    state: { generation, sharedStateRevision } as unknown as ReviewSharedStateV1,
+    state: { generation, sharedStateRevision } as unknown as ReviewSharedState,
   };
 }
 

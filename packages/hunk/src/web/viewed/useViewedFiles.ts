@@ -31,7 +31,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { countReviewViewedFiles } from "../../core/review/overview";
 import type { ReviewState } from "../../core/review/state";
-import type { ReviewSharedStateV1 } from "../../session/reviewSharedState";
+import type { ReviewSharedState } from "../../session/reviewSharedState";
 import type { ReviewActionSender } from "../actions/reviewActions";
 import type { ClientReviewStore } from "../store/clientReviewStore";
 import { PendingViewedMarks } from "./pendingViewedMarks";
@@ -106,7 +106,7 @@ function readMemory(sessionId: string): ViewedMemory {
 export interface UseViewedFilesOptions {
   sessionId: string;
   /** The shared snapshot for the generation shown, when it has arrived. */
-  shared: ReviewSharedStateV1 | undefined;
+  shared: ReviewSharedState | undefined;
   /** The files the shared filter leaves visible, in review order. */
   files: readonly { key: string }[];
   review: Pick<ReviewState, "selection" | "reveal">;

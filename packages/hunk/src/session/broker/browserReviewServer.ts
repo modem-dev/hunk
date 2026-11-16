@@ -71,7 +71,7 @@ import {
   parseReviewActionEnvelope,
   type ReviewRefreshResult,
 } from "../reviewProtocol";
-import type { ReviewSharedStateV1 } from "../reviewSharedState";
+import type { ReviewSharedState } from "../reviewSharedState";
 import { allowsUnsafeRemoteSessionBroker, isLoopbackHost } from "./brokerConfig";
 import {
   ReviewGenerationRetiredError,
@@ -443,7 +443,7 @@ export class BrowserReviewServer {
       return this.failure("no-publication");
     }
     try {
-      let state: ReviewSharedStateV1;
+      let state: ReviewSharedState;
       try {
         state = await this.state.loadReviewSharedState(sessionId);
       } catch (error) {

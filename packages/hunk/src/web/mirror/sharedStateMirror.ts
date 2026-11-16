@@ -22,7 +22,7 @@
 import { createSupersedeQueue } from "@hunk/session-broker-core/lifecycle";
 import { classifyReviewPublication } from "../../core/review/generationOrder";
 import type { ReviewPublicationBody, ReviewStateBody } from "../../session/reviewHttpProtocol";
-import type { ReviewSharedStateV1 } from "../../session/reviewSharedState";
+import type { ReviewSharedState } from "../../session/reviewSharedState";
 import { ReviewApiError, type ReviewApiClient } from "../transport/apiClient";
 
 /** What the page knows about the shared state at one moment. */
@@ -62,7 +62,7 @@ export function reviewPublicationNeedsState(
 
 interface GenerationWaiter {
   generation: string;
-  resolve: (state: ReviewSharedStateV1 | undefined) => void;
+  resolve: (state: ReviewSharedState | undefined) => void;
 }
 
 export interface ReviewSharedStateMirrorOptions {
@@ -116,7 +116,7 @@ export class ReviewSharedStateMirror {
     const shown = this.snapshot.body;
     if (shown?.publication.generation === generation) return Promise.resolve(shown.state);
     if (this.closed || signal?.aborted) return Promise.resolve(undefined);
-    return new Promise<ReviewSharedStateV1 | undefined>((resolve) => {
+    return new Promise<ReviewSharedState | undefined>((resolve) => {
       const waiter: GenerationWaiter = { generation, resolve };
       this.waiters.push(waiter);
       signal?.addEventListener(

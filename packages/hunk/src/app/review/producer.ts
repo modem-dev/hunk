@@ -46,7 +46,7 @@ import {
   MAX_REVIEW_SHARED_STATE_BYTES,
   parseReviewSharedStateResourceId,
   reviewSharedStateResourceId,
-  type ReviewSharedStateV1,
+  type ReviewSharedState,
 } from "../../session/reviewSharedState";
 import { buildReviewPublication, type ReviewPublication } from "./publication";
 import { ReviewResourceStore, type ReviewResourceFailure } from "./resourceStore";
@@ -127,7 +127,7 @@ export interface ReviewSharedStateSource {
   /** Advances exactly when `build` would return different content. */
   getSharedStateRevision(): number;
   /** Project the snapshot for one generation at the current revision. */
-  build(generation: string): ReviewSharedStateV1;
+  build(generation: string): ReviewSharedState;
   /** Record that an agent asked every surface to show this place (G2). */
   recordAgentReveal?(target: { fileKey: string; hunkIndex: number }): void;
 }

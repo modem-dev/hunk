@@ -28,7 +28,7 @@ import {
   lowerAppCommandToReviewIntent,
   type AppCommandCatalogEntry,
 } from "../../core/run/commandCatalog";
-import type { ReviewSharedStateV1 } from "../../session/reviewSharedState";
+import type { ReviewSharedState } from "../../session/reviewSharedState";
 import { reviewActionFailure } from "../actions/reviewActions";
 import { REVIEW_SESSION_ENDED_MESSAGE } from "../session/failureMessages";
 import type { NoteComposer } from "../notes/composerStore";
@@ -59,7 +59,7 @@ function composerLocation(composer: NoteComposer) {
 /** The page's writing side for one session. */
 export function useReviewInteraction(
   session: ReviewSession,
-  shared: ReviewSharedStateV1 | undefined,
+  shared: ReviewSharedState | undefined,
   sessionEnded = false,
   showFileDiff?: (fileKey: string) => void,
 ) {

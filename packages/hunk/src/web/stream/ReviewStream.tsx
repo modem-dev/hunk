@@ -40,7 +40,7 @@ import {
 import type { ReviewState } from "../../core/review/state";
 import type { ReviewFile } from "../../core/review/types";
 import { reviewHunkIndexAtOffset } from "../../core/review/viewportAnchor";
-import type { ReviewAgentHighlightV1, ReviewSharedNoteV1 } from "../../session/reviewSharedState";
+import type { ReviewAgentHighlight, ReviewSharedNote } from "../../session/reviewSharedState";
 import type { ClientReviewMirrorFileSlot } from "../mirror/clientReviewMirror";
 import type { NoteComposer } from "../notes/composerStore";
 import type { ReviewNoteInteraction } from "../notes/noteInteraction";
@@ -57,7 +57,7 @@ import { planReviewFileRender, reviewDrawnRows, type ReviewFileRenderPlan } from
 import type { ReviewFileGeometry } from "./hunkGeometry";
 import { StreamMeasurements } from "./streamMeasurements";
 
-const NO_HIGHLIGHTS: readonly ReviewAgentHighlightV1[] = [];
+const NO_HIGHLIGHTS: readonly ReviewAgentHighlight[] = [];
 
 /** How far beyond the viewport files mount, and how far before they unmount. */
 const MOUNT_MARGIN = "150% 0px 150% 0px";
@@ -139,9 +139,9 @@ export interface ReviewStreamProps {
   /** Filled in with the stream's scroll commands. */
   controller: MutableRefObject<ReviewStreamController | null>;
   /** The shared snapshot's sidecar annotations. */
-  sidecarNotes: readonly ReviewSharedNoteV1[];
+  sidecarNotes: readonly ReviewSharedNote[];
   /** Agent attention marks by file key. */
-  highlights: Readonly<Record<string, ReviewAgentHighlightV1[]>>;
+  highlights: Readonly<Record<string, ReviewAgentHighlight[]>>;
   /** An exact line or note the next hunk reveal of its file should land on. */
   revealPoint?: ReviewRevealPoint;
   /** Every open composer on the page. */

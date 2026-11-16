@@ -22,7 +22,7 @@ import {
 import {
   parseReviewSharedState,
   REVIEW_SHARED_STATE_CURRENT_RESOURCE_ID,
-  type ReviewSharedStateV1,
+  type ReviewSharedState,
 } from "../../../packages/hunk/src/session/reviewSharedState";
 import { ReviewSharedStateMirror } from "../../../packages/hunk/src/web/mirror/sharedStateMirror";
 import { ReviewApiClient } from "../../../packages/hunk/src/web/transport/apiClient";
@@ -45,7 +45,7 @@ function actedHost(fixture: ReviewSharedStateFixture) {
 }
 
 /** Name files by index, including inside ids that embed a file key. */
-function projectSharedState(state: ReviewSharedStateV1): ReviewSharedStateProjection {
+function projectSharedState(state: ReviewSharedState): ReviewSharedStateProjection {
   const indexByKey = new Map(state.files.map((file, index) => [file.key, index] as const));
   const neutralId = (id: string) =>
     [...indexByKey].reduce((value, [key, index]) => value.replaceAll(key, `@${index}`), id);

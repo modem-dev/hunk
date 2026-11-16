@@ -1,5 +1,5 @@
 /**
- * Hand-authored fixtures for the shared-state snapshot (`ReviewSharedStateV1`).
+ * Hand-authored fixtures for the shared-state snapshot (`ReviewSharedState`).
  *
  * Each fixture builds files, drives a review session host the way agents and the reviewer do,
  * and states — written from the contract, never captured — what every tier serving the

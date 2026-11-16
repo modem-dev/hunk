@@ -41,7 +41,7 @@ import { reviewFileMatchesFilter } from "../../core/review/selectors";
 import { lowerAppCommandToReviewIntent } from "../../core/run/commandCatalog";
 import { formatKeyChord } from "../../core/run/keyChordLabels";
 import { reviewErrorMessage } from "../../session/reviewErrorCatalog";
-import type { ReviewAgentRevealV1, ReviewThemeDefaultsV1 } from "../../session/reviewSharedState";
+import type { ReviewAgentReveal, ReviewThemeDefaults } from "../../session/reviewSharedState";
 import { countVisibleNotesByFile } from "../notes/noteProjection";
 import type { ReviewFileIndexEntry } from "../mirror/fileIndex";
 import { defaultWebKeymap, webCommandChords, type WebKeymap } from "../commands/keyboard";
@@ -156,7 +156,7 @@ const SESSION_THEME_OPTION_ID = "hunk:session-theme";
  * The theme index, the active theme, the menu's options, and a setter that remembers the
  * choice. This browser's stored choice wins; without one, the session's theme applies.
  */
-function useWebTheme(sessionTheme: ReviewThemeDefaultsV1 | undefined) {
+function useWebTheme(sessionTheme: ReviewThemeDefaults | undefined) {
   const [index, setIndex] = useState<WebThemeIndexV1 | undefined>(undefined);
   const [themeId, setThemeId] = useState<string | undefined>(() => readStoredThemeId());
   useEffect(() => {
@@ -449,7 +449,7 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
     [session],
   );
   const lastAgentReveal = useRef<number | undefined>(undefined);
-  const agentReveal: ReviewAgentRevealV1 | null | undefined = shownShared?.agentReveal;
+  const agentReveal: ReviewAgentReveal | null | undefined = shownShared?.agentReveal;
   useEffect(() => {
     if (agentReveal === undefined) return;
     const token = agentReveal?.token ?? 0;

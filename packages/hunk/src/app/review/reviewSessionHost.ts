@@ -74,7 +74,7 @@ import { createReviewStore, type ReviewStore } from "../../core/review/store";
 import type { ReviewDocument, ReviewNoteTarget, ReviewNote } from "../../core/review/types";
 import { STML_REFERENCE_WIDTH, validateStmlMarkup } from "../../core/stml/layout";
 import { noDiffFileMatchesMessage } from "../../session/agent/errors";
-import type { ReviewAgentRevealV1 } from "../../session/reviewSharedState";
+import type { ReviewAgentReveal } from "../../session/reviewSharedState";
 import type {
   AppliedCommentBatchResult,
   AppliedCommentResult,
@@ -253,7 +253,7 @@ export class ReviewSessionHost {
   // Monotonic suffixes that keep `user:*` note ids and draft ids unique within one millisecond.
   private userNoteSequence = 0;
   private draftNoteSequence = 0;
-  private agentReveal: ReviewAgentRevealV1 | null = null;
+  private agentReveal: ReviewAgentReveal | null = null;
   private sharedStateRevision = 0;
   private sharedStateBasis: SharedStateBasis;
   private readonly sharedStateListeners = new Set<() => void>();
@@ -614,7 +614,7 @@ export class ReviewSessionHost {
   }
 
   /** What an agent last asked every surface to show, or nothing yet. */
-  getAgentReveal(): ReviewAgentRevealV1 | null {
+  getAgentReveal(): ReviewAgentReveal | null {
     return this.agentReveal;
   }
 
@@ -1082,7 +1082,7 @@ export class ReviewSessionHost {
   }
 
   /** Record what an agent just asked every surface to show, under a fresh token. */
-  recordAgentReveal(target: Omit<ReviewAgentRevealV1, "token">) {
+  recordAgentReveal(target: Omit<ReviewAgentReveal, "token">) {
     this.agentReveal = { token: this.agentReveal ? this.agentReveal.token + 1 : 1, ...target };
     this.advanceSharedState();
   }

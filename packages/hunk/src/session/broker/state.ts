@@ -85,7 +85,7 @@ import {
   parseReviewSharedState,
   parseReviewSharedStateResourceId,
   REVIEW_SHARED_STATE_CURRENT_RESOURCE_ID,
-  type ReviewSharedStateV1,
+  type ReviewSharedState,
 } from "../reviewSharedState";
 
 const hunkSessionBrokerView: SessionBrokerViewAdapter<
@@ -247,7 +247,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
   >();
   private readonly now: () => number;
   /** One shared-state read per position; concurrent callers await the same assembly. */
-  private readonly sharedStateLoads = new Map<string, Promise<ReviewSharedStateV1>>();
+  private readonly sharedStateLoads = new Map<string, Promise<ReviewSharedState>>();
   /**
    * The last assembled, validated shared state per session, answered again while the mirror
    * still describes the same `(generation, sharedStateRevision)`; repeated reads at one
@@ -255,7 +255,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
    * unregisters or replaces its generation, and at most `MAX_CACHED_REVIEW_SHARED_STATES`
    * entries in least-recently-read order.
    */
-  private readonly sharedStates = new Map<string, ReviewSharedStateV1>();
+  private readonly sharedStates = new Map<string, ReviewSharedState>();
   /** Capability verifiers by session, as their registrations declared them. */
   private readonly capabilityDigests = new Map<string, string>();
   private readonly publicationWatchers = new Set<(event: ReviewPublicationEvent) => void>();
@@ -520,7 +520,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
    * current state rather than an error. The last state per session is kept for repeated reads
    * at the same position (`sharedStates`); the next shared revision makes it obsolete.
    */
-  loadReviewSharedState(sessionId: string): Promise<ReviewSharedStateV1> {
+  loadReviewSharedState(sessionId: string): Promise<ReviewSharedState> {
     const publication = this.mirror.get(sessionId);
     if (!publication) {
       return Promise.reject(new ReviewGenerationRetiredError(undefined));
@@ -561,7 +561,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
   }
 
   /** Keep one session's shared state as the most recently read, evicting the least recent. */
-  private rememberSharedState(sessionId: string, state: ReviewSharedStateV1) {
+  private rememberSharedState(sessionId: string, state: ReviewSharedState) {
     this.sharedStates.delete(sessionId);
     this.sharedStates.set(sessionId, state);
     for (const oldest of this.sharedStates.keys()) {
@@ -803,7 +803,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
   private async assembleSharedState(
     sessionId: string,
     generation: string,
-  ): Promise<ReviewSharedStateV1> {
+  ): Promise<ReviewSharedState> {
     const reservation = await this.reserveWhenFree(
       { sessionId, generation, resourceId: REVIEW_SHARED_STATE_CURRENT_RESOURCE_ID },
       REVIEW_RESOURCE_CHUNK_BYTES,
@@ -855,7 +855,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
         throw new ReviewResourceReadError(assembled.code, assembled.message);
       }
       this.assertGenerationActive(sessionId, generation);
-      let state: ReviewSharedStateV1 | undefined;
+      let state: ReviewSharedState | undefined;
       try {
         state = parseReviewSharedState(
           JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(assembled.bytes)),

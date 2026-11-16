@@ -42,7 +42,7 @@ import {
   type ReviewFileRenderPlan,
   type ReviewGapView,
 } from "./fileProjection";
-import type { ReviewAgentHighlightV1 } from "../../session/reviewSharedState";
+import type { ReviewAgentHighlight } from "../../session/reviewSharedState";
 import type { NoteComposer } from "../notes/composerStore";
 import { renderNoteGroup, type WebNoteCardAction } from "../notes/noteCards";
 import { reviewComposerPlacement, type WebNoteGroup } from "../notes/noteProjection";
@@ -72,7 +72,7 @@ export interface PierreFileViewProps {
   /** Note cards per anchor line, drawn in the diff flow through Pierre's line annotations. */
   noteGroups: readonly WebNoteGroup[];
   /** Agent attention marks on this file's lines. */
-  highlights: readonly ReviewAgentHighlightV1[];
+  highlights: readonly ReviewAgentHighlight[];
   /** This file's open composers. */
   composers: readonly NoteComposer[];
   /** Draw one composer into its slot. */

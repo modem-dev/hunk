@@ -24,7 +24,7 @@ import {
   type ReviewState,
 } from "../../core/review/state";
 import type { ReviewNote, ReviewSide } from "../../core/review/types";
-import type { ReviewSharedNoteV1 } from "../../session/reviewSharedState";
+import type { ReviewSharedNote } from "../../session/reviewSharedState";
 
 /** The deepest reply indent a card shows, as the terminal caps its thread gutter. */
 export const MAX_NOTE_THREAD_DEPTH = 3;
@@ -33,7 +33,7 @@ export const MAX_NOTE_THREAD_DEPTH = 3;
 export interface WebNoteCard {
   id: string;
   note: ReviewNote;
-  origin: ReviewSharedNoteV1["origin"];
+  origin: ReviewSharedNote["origin"];
   stale: boolean;
   /** Reply depth, capped at `MAX_NOTE_THREAD_DEPTH`. */
   depth: number;
@@ -148,7 +148,7 @@ export interface PlanReviewFileNotesInput {
   file: ReviewDrawnFile;
   state: Pick<ReviewState, "liveNotes" | "userNotes" | "showAgentNotes">;
   /** The shared snapshot's sidecar annotations for any file; this file's are picked out. */
-  sidecar: readonly ReviewSharedNoteV1[];
+  sidecar: readonly ReviewSharedNote[];
   now?: number;
 }
 
@@ -202,7 +202,7 @@ export function planReviewFileNotes({
 /** How many visible notes each file carries, by file key, for the sidebar's `*N` badge. */
 export function countVisibleNotesByFile(
   state: PlanReviewFileNotesInput["state"],
-  sidecar: readonly ReviewSharedNoteV1[],
+  sidecar: readonly ReviewSharedNote[],
 ) {
   const counts = new Map<string, number>();
   const add = (fileKey: string) => counts.set(fileKey, (counts.get(fileKey) ?? 0) + 1);

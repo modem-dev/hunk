@@ -746,7 +746,7 @@ implementation does.
   _Decided (2026-11-13)_: filter, agent-note visibility, and viewed-file state are shared review
   state; layout, wrap, line numbers, theme override, sidebar width, and gap expansion are
   per-browser. The browser receives the host's resolved defaults as its starting point (M2).
-  _Advanced (M2a)_: `ReviewSharedStateV1` (`packages/hunk/src/session/reviewSharedState.ts`,
+  _Advanced (M2a)_: `ReviewSharedState` (`packages/hunk/src/session/reviewSharedState.ts`,
   browser-safe) carries the shared classification — filter, agent-note visibility, notes,
   agent marks, and the agent reveal — and `presentation`, the host's resolved defaults: title,
   source label, theme, view defaults (layout, wrap, line numbers, hunk headers), and the

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { ReviewStoredNote } from "../../core/review/state";
 import type { ReviewNote } from "../../core/review/types";
-import type { ReviewSharedNoteV1 } from "../../session/reviewSharedState";
+import type { ReviewSharedNote } from "../../session/reviewSharedState";
 import {
   countVisibleNotesByFile,
   MAX_NOTE_THREAD_DEPTH,
@@ -112,7 +112,7 @@ describe("planReviewFileNotes", () => {
         parentId: index === 0 ? "root" : `reply-${index - 1}`,
       }),
     );
-    const sidecar: ReviewSharedNoteV1[] = [
+    const sidecar: ReviewSharedNote[] = [
       {
         note: createTestNote("side", 12, { source: "ai" }),
         resolution: "active",
@@ -169,7 +169,7 @@ describe("planReviewFileNotes", () => {
       userNotes: stored(createTestNote("mine", 42, { source: "user" })),
       showAgentNotes: false,
     };
-    const sidecar: ReviewSharedNoteV1[] = [
+    const sidecar: ReviewSharedNote[] = [
       { note: createTestNote("side", 13), resolution: "active", origin: "sidecar" },
     ];
     const ids = planReviewFileNotes({ file: FILE, state, sidecar }).flatMap((group) =>
