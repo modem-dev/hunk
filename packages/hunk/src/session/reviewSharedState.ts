@@ -89,7 +89,7 @@ export function parseReviewSharedStateResourceId(value: unknown): number | "curr
 // -- File index -----------------------------------------------------------------------
 
 /** One file as a sidebar and file header need it, without its hunks or line text. */
-export interface ReviewSharedFileV1 {
+export interface ReviewSharedFile {
   key: string;
   path: string;
   previousPath?: string;
@@ -111,7 +111,7 @@ export interface ReviewSharedFileV1 {
 // -- Notes ----------------------------------------------------------------------------
 
 /** Where one shared note came from. */
-export type ReviewSharedNoteOriginV1 =
+export type ReviewSharedNoteOrigin =
   /** Added by an agent during the review (`hunk session comment`). */
   | "live"
   /** Written by the reviewer. */
@@ -120,19 +120,19 @@ export type ReviewSharedNoteOriginV1 =
   | "sidecar";
 
 /** One renderable note: the shared model plus whether its context moved since it was written. */
-export interface ReviewSharedNoteV1 {
+export interface ReviewSharedNote {
   note: ReviewNote;
   /** `stale` stays visible at its last known anchor; orphaned notes are never listed. */
   resolution: "active" | "stale";
-  origin: ReviewSharedNoteOriginV1;
+  origin: ReviewSharedNoteOrigin;
 }
 
 // -- Agent highlights and reveal --------------------------------------------------------
 
 /** Tones an attention mark is painted in; the extension line-highlight vocabulary. */
-export type ReviewAgentHighlightToneV1 = "match" | "current" | "info" | "warning" | "error" | "dim";
+export type ReviewAgentHighlightTone = "match" | "current" | "info" | "warning" | "error" | "dim";
 
-const AGENT_HIGHLIGHT_TONES: readonly ReviewAgentHighlightToneV1[] = [
+const AGENT_HIGHLIGHT_TONES: readonly ReviewAgentHighlightTone[] = [
   "match",
   "current",
   "info",
@@ -142,16 +142,16 @@ const AGENT_HIGHLIGHT_TONES: readonly ReviewAgentHighlightToneV1[] = [
 ];
 
 /** One agent attention mark: a `[start, end)` character range on one diff line. */
-export interface ReviewAgentHighlightV1 {
+export interface ReviewAgentHighlight {
   side: ReviewSide;
   line: number;
   start: number;
   end: number;
-  tone: ReviewAgentHighlightToneV1;
+  tone: ReviewAgentHighlightTone;
 }
 
 /** What an agent last asked every surface to show. */
-export interface ReviewAgentRevealV1 {
+export interface ReviewAgentReveal {
   /** Strictly increasing within one session; reveal when it changes. */
   token: number;
   fileKey: string;
@@ -166,7 +166,7 @@ export interface ReviewAgentRevealV1 {
 // -- Presentation defaults (G1, E2) ----------------------------------------------------
 
 /** Every theme token is a color string; `tokens` maps Hunk's semantic token names to them. */
-export type ReviewThemeTokensV1 = Record<string, string>;
+export type ReviewThemeTokens = Record<string, string>;
 
 /**
  * The theme a session resolved at launch.
@@ -174,7 +174,7 @@ export type ReviewThemeTokensV1 = Record<string, string>;
  * A built-in theme is named by id, which a client maps to its own copy of the palette. A
  * custom or extension theme exists only in the session, so it travels as its resolved tokens.
  */
-export type ReviewThemeDefaultsV1 =
+export type ReviewThemeDefaults =
   | { kind: "builtin"; id: string; appearance: "light" | "dark" }
   | {
       kind: "custom";
@@ -182,19 +182,19 @@ export type ReviewThemeDefaultsV1 =
       label: string;
       appearance: "light" | "dark";
       /** Semantic surface and text colors, e.g. `background`, `addedBg`, `noteBorder`. */
-      tokens: ReviewThemeTokensV1;
+      tokens: ReviewThemeTokens;
       /** Fallback syntax colors by role, e.g. `keyword`, `string`, `comment`. */
-      syntaxColors: ReviewThemeTokensV1;
+      syntaxColors: ReviewThemeTokens;
       /** Base Shiki theme name, when the custom theme layers on one. */
       syntaxTheme?: string;
       /** Exact TextMate scope colors layered onto the base syntax theme. */
-      syntaxScopeOverrides?: ReviewThemeTokensV1;
+      syntaxScopeOverrides?: ReviewThemeTokens;
       /** Drop the base theme's scope rules so only the overrides color code. */
       syntaxScopesReplaceBase?: boolean;
     };
 
 /** View options a surface starts from; each surface may override them locally (G1). */
-export interface ReviewViewDefaultsV1 {
+export interface ReviewViewDefaults {
   layout: "auto" | "split" | "unified";
   wrapLines: boolean;
   lineNumbers: boolean;
@@ -202,11 +202,11 @@ export interface ReviewViewDefaultsV1 {
 }
 
 /** Where a new surface starts: what the host's config chain resolved. */
-export interface ReviewPresentationDefaultsV1 {
+export interface ReviewPresentationDefaults {
   title: string;
   sourceLabel: string;
-  theme: ReviewThemeDefaultsV1;
-  view: ReviewViewDefaultsV1;
+  theme: ReviewThemeDefaults;
+  view: ReviewViewDefaults;
   /** Built-in review command id to the chords it answers to, after `[keybindings]`. */
   keymap: Record<string, string[]>;
 }
@@ -214,15 +214,15 @@ export interface ReviewPresentationDefaultsV1 {
 // -- The snapshot ---------------------------------------------------------------------
 
 /** One live review's shared state at one `(generation, stateRevision)`. */
-export interface ReviewSharedStateV1 {
+export interface ReviewSharedState {
   protocolVersion: typeof HUNK_REVIEW_PROTOCOL_VERSION;
   generation: string;
   stateRevision: number;
   sharedStateRevision: number;
   /** Document order, which is review and sidebar order. */
-  files: ReviewSharedFileV1[];
+  files: ReviewSharedFile[];
   /** Per file in document order: sidecar annotations, then stored notes in thread order. */
-  notes: ReviewSharedNoteV1[];
+  notes: ReviewSharedNote[];
   filter: string;
   showAgentNotes: boolean;
   /**
@@ -231,9 +231,9 @@ export interface ReviewSharedStateV1 {
    */
   viewedFiles: Record<string, { contentIdentity: string }>;
   /** Agent attention marks by file key; files without marks are absent. */
-  agentHighlights: Record<string, ReviewAgentHighlightV1[]>;
-  agentReveal: ReviewAgentRevealV1 | null;
-  presentation: ReviewPresentationDefaultsV1;
+  agentHighlights: Record<string, ReviewAgentHighlight[]>;
+  agentReveal: ReviewAgentReveal | null;
+  presentation: ReviewPresentationDefaults;
   /**
    * Sidecar annotations left out of `notes` because the launch sidecar exceeded the projected
    * sidecar bounds (`MAX_PROJECTED_SIDECAR_NOTES`, `MAX_PROJECTED_SIDECAR_NOTE_BYTES`); the
@@ -308,7 +308,7 @@ function isAnchor(value: unknown): value is ReviewRangeAnchor {
 }
 
 /** Validate one shared note: the note model's fields, then the shared size bound. */
-function isSharedNote(value: unknown): value is ReviewSharedNoteV1 {
+function isSharedNote(value: unknown): value is ReviewSharedNote {
   const record = asRecord(value);
   if (!record || !hasExactKeys(record, ["note", "resolution", "origin"])) return false;
   if (record.resolution !== "active" && record.resolution !== "stale") return false;
@@ -365,7 +365,7 @@ function isSharedNote(value: unknown): value is ReviewSharedNoteV1 {
 }
 
 /** Validate one file-index entry. */
-function isSharedFile(value: unknown): value is ReviewSharedFileV1 {
+function isSharedFile(value: unknown): value is ReviewSharedFile {
   const record = asRecord(value);
   if (
     !record ||
@@ -418,7 +418,7 @@ function isSharedFile(value: unknown): value is ReviewSharedFileV1 {
 }
 
 /** Validate one attention mark. */
-function isAgentHighlight(value: unknown): value is ReviewAgentHighlightV1 {
+function isAgentHighlight(value: unknown): value is ReviewAgentHighlight {
   const record = asRecord(value);
   return (
     record !== undefined &&
@@ -428,12 +428,12 @@ function isAgentHighlight(value: unknown): value is ReviewAgentHighlightV1 {
     isIndex(record.start) &&
     isIndex(record.end) &&
     (record.end as number) > (record.start as number) &&
-    AGENT_HIGHLIGHT_TONES.includes(record.tone as ReviewAgentHighlightToneV1)
+    AGENT_HIGHLIGHT_TONES.includes(record.tone as ReviewAgentHighlightTone)
   );
 }
 
 /** Validate the agent reveal request, or its absence. */
-function isAgentReveal(value: unknown): value is ReviewAgentRevealV1 | null {
+function isAgentReveal(value: unknown): value is ReviewAgentReveal | null {
   if (value === null) return true;
   const record = asRecord(value);
   if (
@@ -462,7 +462,7 @@ function isAgentReveal(value: unknown): value is ReviewAgentRevealV1 | null {
 }
 
 /** Validate the presentation defaults block. */
-function isPresentation(value: unknown): value is ReviewPresentationDefaultsV1 {
+function isPresentation(value: unknown): value is ReviewPresentationDefaults {
   const record = asRecord(value);
   if (!record || !hasExactKeys(record, ["title", "sourceLabel", "theme", "view", "keymap"])) {
     return false;
@@ -516,7 +516,7 @@ function isPresentation(value: unknown): value is ReviewPresentationDefaultsV1 {
  * Parse one shared-state snapshot strictly: exact keys at every level, every note within the
  * shared size bound, and note and highlight file keys present in the file index.
  */
-export function parseReviewSharedState(value: unknown): ReviewSharedStateV1 | undefined {
+export function parseReviewSharedState(value: unknown): ReviewSharedState | undefined {
   const record = asRecord(value);
   if (
     !record ||
@@ -559,13 +559,13 @@ export function parseReviewSharedState(value: unknown): ReviewSharedStateV1 | un
     return undefined;
   }
 
-  const fileKeys = new Set((record.files as ReviewSharedFileV1[]).map((file) => file.key));
+  const fileKeys = new Set((record.files as ReviewSharedFile[]).map((file) => file.key));
   if (fileKeys.size !== record.files.length) return undefined;
-  if (!(record.notes as ReviewSharedNoteV1[]).every((entry) => fileKeys.has(entry.note.fileKey))) {
+  if (!(record.notes as ReviewSharedNote[]).every((entry) => fileKeys.has(entry.note.fileKey))) {
     return undefined;
   }
   const identityByKey = new Map(
-    (record.files as ReviewSharedFileV1[]).map((file) => [file.key, file.contentIdentity] as const),
+    (record.files as ReviewSharedFile[]).map((file) => [file.key, file.contentIdentity] as const),
   );
   const viewed = asRecord(record.viewedFiles);
   if (
@@ -594,5 +594,5 @@ export function parseReviewSharedState(value: unknown): ReviewSharedStateV1 | un
   ) {
     return undefined;
   }
-  return record as unknown as ReviewSharedStateV1;
+  return record as unknown as ReviewSharedState;
 }

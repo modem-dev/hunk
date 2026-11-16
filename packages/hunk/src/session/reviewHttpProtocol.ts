@@ -32,7 +32,7 @@ import type {
   ReviewResourceCatalog,
 } from "./reviewProtocol";
 import type { ReviewPublicationAddress } from "../core/review/generationOrder";
-import type { ReviewSharedStateV1 } from "./reviewSharedState";
+import type { ReviewSharedState } from "./reviewSharedState";
 import { utf8ByteLength } from "../core/review/validation";
 
 /** Path every review route hangs from, so a client never assembles route strings itself. */
@@ -364,5 +364,5 @@ export interface ReviewStateBody {
   sessionId: string;
   publication: ReviewPublicationAddress;
   sharedStateRevision: number;
-  state: ReviewSharedStateV1;
+  state: ReviewSharedState;
 }

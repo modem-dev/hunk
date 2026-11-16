@@ -146,7 +146,7 @@ consumer.
 
 Server-side only, tested with plain `fetch`.
 
-- **Shared-state snapshot.** A JSON-safe `ReviewSharedStateV1`: stored notes and sidecar
+- **Shared-state snapshot.** A JSON-safe `ReviewSharedState`: stored notes and sidecar
   annotations normalized to `ReviewNote`, filter, note visibility, viewed set, agent
   highlights, and the latest agent reveal request. Served at
   `GET /review-api/<session>/state` for one `(generation, stateRevision)`, chunked and

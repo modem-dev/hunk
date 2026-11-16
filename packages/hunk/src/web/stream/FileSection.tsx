@@ -16,7 +16,7 @@
 import { memo, useCallback, useContext, useMemo, useRef, type CSSProperties } from "react";
 import type { ReviewEmptyDiffReason } from "../../core/review/document";
 import type { ReviewStoredNote } from "../../core/review/state";
-import type { ReviewAgentHighlightV1, ReviewSharedNoteV1 } from "../../session/reviewSharedState";
+import type { ReviewAgentHighlight, ReviewSharedNote } from "../../session/reviewSharedState";
 import type { NoteComposer } from "../notes/composerStore";
 import { planReviewFileNotes } from "../notes/noteProjection";
 import type { ReviewNoteInteraction } from "../notes/noteInteraction";
@@ -77,9 +77,9 @@ export interface FileSectionProps {
   userNotes: readonly ReviewStoredNote[];
   showAgentNotes: boolean;
   /** The shared snapshot's sidecar annotations. */
-  sidecarNotes: readonly ReviewSharedNoteV1[];
+  sidecarNotes: readonly ReviewSharedNote[];
   /** This file's agent attention marks. */
-  highlights: readonly ReviewAgentHighlightV1[];
+  highlights: readonly ReviewAgentHighlight[];
   /** This file's open composers. */
   composers: readonly NoteComposer[];
   /** What note gestures in this file do; stable for the page's lifetime. */
@@ -96,7 +96,7 @@ export interface FileSectionProps {
   observeBody?: (body: HTMLDivElement | null, previous: HTMLDivElement | null) => void;
 }
 
-const NO_HIGHLIGHTS: readonly ReviewAgentHighlightV1[] = [];
+const NO_HIGHLIGHTS: readonly ReviewAgentHighlight[] = [];
 
 /** The header row for one file. */
 function FileHeader({

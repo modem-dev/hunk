@@ -10,7 +10,7 @@
  */
 import type { ReviewFile } from "../../core/review/types";
 import type { ReviewResourceCatalog } from "../../session/reviewProtocol";
-import type { ReviewSharedFileV1 } from "../../session/reviewSharedState";
+import type { ReviewSharedFile } from "../../session/reviewSharedState";
 
 /**
  * What the page knows about one file before, or without, its full content.
@@ -22,7 +22,7 @@ import type { ReviewSharedFileV1 } from "../../session/reviewSharedState";
  * file where needed, and `agentContext`, which no canonical file carries, from the shared state.
  */
 export type ReviewFileIndexEntry = Pick<
-  ReviewSharedFileV1,
+  ReviewSharedFile,
   | "key"
   | "path"
   | "previousPath"

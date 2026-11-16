@@ -36,7 +36,7 @@ import type { ReviewStoredNote } from "../../core/review/state";
 import { createReviewStore, type ReviewStore } from "../../core/review/store";
 import type { ReviewDocument } from "../../core/review/types";
 import type { ReviewResourceCatalog } from "../../session/reviewProtocol";
-import type { ReviewSharedStateV1 } from "../../session/reviewSharedState";
+import type { ReviewSharedState } from "../../session/reviewSharedState";
 import { ReviewApiError, type ReviewApiClient } from "../transport/apiClient";
 
 /** Intents this page applies to its own state and never sends anywhere. */
@@ -66,7 +66,7 @@ export interface ClientReviewStoreOptions {
 export class ClientReviewStore {
   readonly store: ReviewStore = createReviewStore({ files: [] });
   private catalog: ReviewResourceCatalog | undefined;
-  private shared: ReviewSharedStateV1 | undefined;
+  private shared: ReviewSharedState | undefined;
   private annotations: ReviewAnnotationIndex = EMPTY_REVIEW_ANNOTATION_INDEX;
   private hiddenFileKeys: ReadonlySet<string> = new Set();
   private readonly sourceLoads = new Map<string, AbortController>();
@@ -126,7 +126,7 @@ export class ClientReviewStore {
    * Idempotent per snapshot. Stored notes are replaced wholesale rather than diffed, because
    * the snapshot is the whole truth about them at its revision.
    */
-  adoptShared(state: ReviewSharedStateV1) {
+  adoptShared(state: ReviewSharedState) {
     if (state === this.shared) return;
     this.shared = state;
     this.store.dispatch({ type: "filter/set", filter: state.filter });

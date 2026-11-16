@@ -10,7 +10,7 @@
  *
  * The choice never reaches the session: a theme picked here does not change the terminal.
  */
-import type { ReviewThemeDefaultsV1 } from "../../session/reviewSharedState";
+import type { ReviewThemeDefaults } from "../../session/reviewSharedState";
 
 /** `<meta name>` the document carries the theme index's URL in. */
 export const WEB_THEME_INDEX_META_NAME = "hunk-theme-index";
@@ -114,7 +114,7 @@ const DEFAULT_SYNTAX_THEMES = {
  * resolves highlight themes by name or by a whole Shiki theme the page would have to build.
  */
 export function sessionCustomWebTheme(
-  theme: Extract<ReviewThemeDefaultsV1, { kind: "custom" }>,
+  theme: Extract<ReviewThemeDefaults, { kind: "custom" }>,
 ): WebThemeV1 {
   return {
     id: theme.id,
@@ -132,7 +132,7 @@ export function sessionCustomWebTheme(
 export function resolveSessionWebTheme(
   index: WebThemeIndexV1,
   storedId: string | undefined,
-  session: ReviewThemeDefaultsV1 | undefined,
+  session: ReviewThemeDefaults | undefined,
   prefersDark: boolean,
 ): WebThemeV1 | undefined {
   const custom = session?.kind === "custom" ? sessionCustomWebTheme(session) : undefined;
