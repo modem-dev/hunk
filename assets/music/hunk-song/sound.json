@@ -1,0 +1,221 @@
+{
+  "title": "hunk song",
+  "tempoBpm": 99.25,
+  "meter": "4/4",
+  "key": "E minor",
+  "ppq": 960,
+  "swing": "Off-beat 16ths land 8% of a 16th late; already baked into the MIDI.",
+  "bars": 12,
+  "renderSeconds": 30.2,
+  "chordsByBar": [
+    "Em9",
+    "Em9",
+    "Cmaj9",
+    "D6/9",
+    "Em9",
+    "Cmaj9",
+    "D6/9",
+    "Bm11",
+    "Cmaj9",
+    "D6/9",
+    "Bm11",
+    "Em9"
+  ],
+  "sections": [
+    { "bar": 0, "name": "intro", "plays": "pad and arp only" },
+    { "bar": 1, "name": "A", "plays": "drums ease in, bass enters; Em9 Cmaj9 D6/9" },
+    { "bar": 4, "name": "B", "plays": "full groove; lead hook starts in bar 5" },
+    { "bar": 7, "name": "C", "plays": "Bm11 Cmaj9 D6/9 under the second half of the hook" },
+    { "bar": 10, "name": "break", "plays": "half-bar groove, then a snare roll and tom fill" },
+    { "bar": 11, "name": "final bar", "plays": "everything hits Em9 once and rings out" }
+  ],
+  "tracks": [
+    {
+      "name": "Drums",
+      "midiChannel": 10,
+      "instrument": {
+        "plugin": "Apple DLSMusicDevice (macOS built-in GM/GS synth)",
+        "program": 25,
+        "programNote": "0-based; GS drum kit 26, TR-808. Any 808 kit is a close substitute.",
+        "notes": {
+          "36": "kick",
+          "42": "closed hat",
+          "46": "open hat",
+          "49": "crash",
+          "45": "low tom",
+          "47": "mid tom",
+          "50": "high tom"
+        }
+      },
+      "effects": [{ "plugin": "ReaComp", "settings": "default" }],
+      "faderDb": -2,
+      "pan": 0
+    },
+    {
+      "name": "Snare",
+      "midiChannel": 10,
+      "instrument": {
+        "plugin": "Apple DLSMusicDevice (macOS built-in GM/GS synth)",
+        "program": 25,
+        "programNote": "Same TR-808 kit as Drums, on its own track so only the snare and clap get reverb.",
+        "notes": { "38": "snare", "39": "clap" }
+      },
+      "effects": [
+        { "plugin": "ReaVerbate", "roomSize": 0.82, "dampening": 0.5, "wetDb": -6, "dryDb": 0 }
+      ],
+      "faderDb": -4,
+      "pan": 0
+    },
+    {
+      "name": "Bass",
+      "midiChannel": 1,
+      "gmFallbackProgram": 38,
+      "instrument": {
+        "plugin": "ReaSynth",
+        "attackMs": 2,
+        "decayMs": 260,
+        "sustainDb": -10,
+        "releaseMs": 70,
+        "sawMix": 0.7,
+        "squareMix": 0.35,
+        "pulseWidth": 0.35,
+        "portamentoMs": 12,
+        "volumeDb": -6
+      },
+      "effects": [{ "plugin": "JS: loser/Saturation", "settings": "default" }],
+      "faderDb": -3,
+      "pan": 0
+    },
+    {
+      "name": "Pad",
+      "midiChannel": 2,
+      "gmFallbackProgram": 89,
+      "instrument": {
+        "plugin": "ReaSynth",
+        "attackMs": 700,
+        "decayMs": 2000,
+        "sustainDb": -4,
+        "releaseMs": 1400,
+        "sawMix": 0.55,
+        "triangleMix": 0.45,
+        "detuneCents": 8,
+        "volumeDb": -14
+      },
+      "effects": [
+        {
+          "plugin": "JS: sstillwell/chorus",
+          "voices": 3,
+          "rateHz": 0.35,
+          "lengthMs": 22,
+          "wetDb": -6,
+          "dryDb": -6
+        },
+        { "plugin": "ReaVerbate", "roomSize": 0.9, "dampening": 0.5, "wetDb": -4, "dryDb": 0 }
+      ],
+      "automation": {
+        "volumePump": "Linear volume envelope: -9 dB on every beat from bar 1 beat 1 until the bar-11 downbeat, back to 0 dB half a beat later. Stands in for kick sidechain compression."
+      },
+      "faderDb": 0,
+      "pan": 0
+    },
+    {
+      "name": "Arp",
+      "midiChannel": 3,
+      "gmFallbackProgram": 81,
+      "instrument": {
+        "plugin": "ReaSynth",
+        "attackMs": 1,
+        "decayMs": 170,
+        "sustainDb": -36,
+        "releaseMs": 140,
+        "squareMix": 0.6,
+        "sawMix": 0.15,
+        "pulseWidth": 0.3,
+        "volumeDb": -12
+      },
+      "effects": [
+        {
+          "plugin": "ReaDelay",
+          "timeMs": 453.5,
+          "timeNote": "dotted 8th at 99.25 BPM",
+          "feedbackDb": -9,
+          "wetDb": -9,
+          "dryDb": 0,
+          "matchNote": "A plain delay matches it with about -8 dB feedback and a 6 kHz lowpass on the repeats."
+        },
+        { "plugin": "JS: sstillwell/chorus", "voices": 2, "rateHz": 0.6, "wetDb": -6, "dryDb": -6 }
+      ],
+      "faderDb": -7,
+      "pan": 0.3
+    },
+    {
+      "name": "Lead",
+      "midiChannel": 4,
+      "gmFallbackProgram": 80,
+      "instrument": {
+        "plugin": "ReaSynth",
+        "attackMs": 18,
+        "decayMs": 600,
+        "sustainDb": -3,
+        "releaseMs": 260,
+        "squareMix": 0.5,
+        "sawMix": 0.4,
+        "pulseWidth": 0.42,
+        "portamentoMs": 70,
+        "detuneCents": 5,
+        "volumeDb": -11
+      },
+      "effects": [
+        { "plugin": "JS: sstillwell/chorus", "voices": 2, "wetDb": -6, "dryDb": -6 },
+        {
+          "plugin": "ReaDelay",
+          "timeMs": 453.5,
+          "feedbackDb": -9,
+          "wetDb": -9,
+          "dryDb": 0
+        },
+        { "plugin": "ReaVerbate", "roomSize": 0.85, "dampening": 0.5, "wetDb": -8, "dryDb": 0 }
+      ],
+      "faderDb": -5,
+      "pan": -0.2
+    }
+  ],
+  "master": {
+    "effects": [
+      { "plugin": "ReaComp", "settings": "default (0 dB threshold, passes the mix through)" },
+      { "plugin": "ReaLimit", "settings": "default (0 dB threshold, passes the mix through)" }
+    ],
+    "reference": "reference.mp3 is the REAPER render: 48 kHz, -18.2 LUFS integrated."
+  },
+  "arrangements": [
+    {
+      "name": "original",
+      "seconds": 30.2,
+      "spans": [[0, null, 0]],
+      "usedBy": "\"Hunk stays fast\" video"
+    },
+    {
+      "name": "prompt-box",
+      "seconds": 37.2,
+      "tempoBpm": 100,
+      "spans": [
+        [0, 7, 0],
+        [4, 7, 7],
+        [7, null, 10]
+      ],
+      "usedBy": "Prompt-box social video; the original render sped up 0.76% so bars land on a 2.4 s grid"
+    },
+    {
+      "name": "release-0.25",
+      "seconds": 59.4,
+      "midi": "hunk-song-0.25-release.mid",
+      "spans": [
+        [0, 10, 0],
+        [4, 10, 10],
+        [4, null, 16]
+      ],
+      "usedBy": "0.25.0 release video; break under the end card, last second faded"
+    }
+  ],
+  "spanFormat": "[sourceStartBar, sourceEndBar or null for the end of the song, destinationBar], 0-based bars"
+}
