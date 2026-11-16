@@ -91,7 +91,7 @@ describe.skipIf(process.platform !== "linux" || process.arch !== "x64")(
       ],
       ["missing source URI", "# no URI"],
     ]) {
-      test(`refuses ${name} in the security stanza before mutating configuration`, () => {
+      test(`skips ${name} in the security stanza without mutating configuration`, () => {
         const fixture = createTestAptFixture();
         const source = fixture.source.replace(
           "# Ubuntu security\nTypes: deb\nURIs: mirror+file:/etc/apt/apt-mirrors.txt",
@@ -100,10 +100,11 @@ describe.skipIf(process.platform !== "linux" || process.arch !== "x64")(
         writeFileSync(fixture.sourcePath, source);
         const result = runTestBootstrap(fixture.root);
 
-        expect(result.status).toBe(1);
+        expect(result.status).toBe(0);
         expect(result.stderr).toContain(
           "unexpected Ubuntu source URI or archive trust configuration",
         );
+        expect(result.stderr).toContain("leaving the runner apt configuration unchanged");
         expect(readFileSync(fixture.sourcePath, "utf8")).toBe(source);
         expect(readFileSync(join(fixture.root, "apt-mirrors.txt"), "utf8")).toBe(defaultMirrors);
         expect(() => readFileSync(join(fixture.root, "apt.conf.d", "zzz-hunk-ci"))).toThrow();
@@ -130,12 +131,12 @@ describe.skipIf(process.platform !== "linux" || process.arch !== "x64")(
       ],
       ["empty mirror list", "# no mirrors\n"],
     ]) {
-      test(`refuses ${name} without overwriting the mirror list`, () => {
+      test(`skips ${name} without overwriting the mirror list`, () => {
         const fixture = createTestAptFixture();
         writeFileSync(join(fixture.root, "apt-mirrors.txt"), mirrors!);
         const result = runTestBootstrap(fixture.root);
 
-        expect(result.status).toBe(1);
+        expect(result.status).toBe(0);
         expect(result.stderr).toContain("unexpected Ubuntu mirror list or priorities");
         expect(readFileSync(join(fixture.root, "apt-mirrors.txt"), "utf8")).toBe(mirrors!);
         expect(() => readFileSync(join(fixture.root, "apt.conf.d", "zzz-hunk-ci"))).toThrow();
@@ -158,19 +159,52 @@ describe.skipIf(process.platform !== "linux" || process.arch !== "x64")(
       ],
       ["trusted source", "Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\nTrusted: yes"],
     ]) {
-      test(`refuses ${name} in a source stanza`, () => {
+      test(`adds no fallback mirror for ${name} in a source stanza`, () => {
         const fixture = createTestAptFixture();
         writeFileSync(fixture.sourcePath, fixture.source.replace(/^Signed-By:.*$/m, replacement!));
+        const result = runTestBootstrap(fixture.root);
 
-        expect(runTestBootstrap(fixture.root).status).toBe(1);
+        expect(result.status).toBe(0);
+        expect(result.stderr).toContain(
+          "unexpected Ubuntu source URI or archive trust configuration",
+        );
         expect(readFileSync(join(fixture.root, "apt-mirrors.txt"), "utf8")).toBe(defaultMirrors);
+        expect(() => readFileSync(join(fixture.root, "apt.conf.d", "zzz-hunk-ci"))).toThrow();
       });
     }
 
-    test("refuses missing runner configuration", () => {
+    test("skips missing runner configuration", () => {
       const fixture = createTestAptFixture();
       rmSync(fixture.sourcePath);
-      expect(runTestBootstrap(fixture.root).stderr).toContain("missing runner apt configuration");
+      const result = runTestBootstrap(fixture.root);
+
+      expect(result.status).toBe(0);
+      expect(result.stderr).toContain("missing runner apt configuration");
+      expect(result.stderr).toContain(`${fixture.sourcePath}: missing`);
+      expect(readFileSync(join(fixture.root, "apt-mirrors.txt"), "utf8")).toBe(defaultMirrors);
+      expect(() => readFileSync(join(fixture.root, "apt.conf.d", "zzz-hunk-ci"))).toThrow();
+    });
+
+    // Hosted runners with one label ship different layouts; the job must run on all of them.
+    test("lets the job continue on a runner whose sources bypass the mirror list", () => {
+      const fixture = createTestAptFixture();
+      const source = fixture.source.replace(
+        "# Ubuntu archive\nTypes: deb\nURIs: mirror+file:/etc/apt/apt-mirrors.txt",
+        "# Ubuntu archive\nTypes: deb\nURIs: http://user:secret@regional.archive.example/ubuntu/",
+      );
+      writeFileSync(fixture.sourcePath, source);
+      const result = runTestBootstrap(fixture.root);
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toContain("leaving the runner apt configuration unchanged");
+      // The report shows the layout the runner shipped, with comments dropped and credentials masked.
+      expect(result.stderr).toContain("    URIs: http://***@regional.archive.example/ubuntu/");
+      expect(result.stderr).toContain("    https://archive.ubuntu.com/ubuntu/\tpriority:2");
+      expect(result.stderr).not.toContain("secret");
+      expect(result.stderr).not.toContain("# Ubuntu archive");
+      expect(readFileSync(fixture.sourcePath, "utf8")).toBe(source);
+      expect(readFileSync(join(fixture.root, "apt-mirrors.txt"), "utf8")).toBe(defaultMirrors);
       expect(() => readFileSync(join(fixture.root, "apt.conf.d", "zzz-hunk-ci"))).toThrow();
     });
   },
