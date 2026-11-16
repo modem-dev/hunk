@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { reviewErrorMessage } from "../../session/reviewErrorCatalog";
-import type { HunkReviewActionEnvelopeV1 } from "../../session/reviewProtocol";
+import type { ReviewActionEnvelope } from "../../session/reviewProtocol";
 import { REVIEW_SESSION_ENDED_MESSAGE } from "../session/failureMessages";
 import { ReviewApiError, type ReviewApiClient } from "../transport/apiClient";
 import { MAX_STALE_RETRIES, ReviewActionSender, createBrowserClientId } from "./reviewActions";
@@ -24,9 +24,9 @@ function createTestMirror(generation: string | undefined) {
 
 /** A client stand-in that answers each post from a script and records the envelopes. */
 function createTestClient(answers: Array<"ok" | ReviewApiError>) {
-  const sent: HunkReviewActionEnvelopeV1[] = [];
+  const sent: ReviewActionEnvelope[] = [];
   const client = {
-    postAction: async (envelope: HunkReviewActionEnvelopeV1) => {
+    postAction: async (envelope: ReviewActionEnvelope) => {
       sent.push(envelope);
       const answer = answers.shift() ?? "ok";
       if (answer !== "ok") throw answer;

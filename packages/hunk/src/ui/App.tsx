@@ -42,7 +42,7 @@ import type { ExtensionNotifyType, ExtensionLoadResult } from "../extensions/typ
 import type { ReviewProducer } from "../app/review/producer";
 import { buildReviewPresentationDefaults, buildReviewSharedState } from "../app/review/sharedState";
 import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
-import type { HunkReviewRefreshResultV1 } from "../session/reviewProtocol";
+import type { ReviewRefreshResult } from "../session/reviewProtocol";
 import { reviewErrorMessage } from "../session/reviewErrorCatalog";
 import type { ReloadedSessionResult, ReloadSessionOptions } from "../session/types";
 // Keep lightweight interaction chrome synchronous: first-use lazy suspension otherwise
@@ -212,7 +212,7 @@ export function App({
     options?: ReloadSessionOptions,
   ) => Promise<ReloadedSessionResult>;
   /** Reload the current input for a browser's refresh, coalesced by the reload coordinator. */
-  onRefreshReview?: () => Promise<HunkReviewRefreshResultV1>;
+  onRefreshReview?: () => Promise<ReviewRefreshResult>;
   /** Queue a coalesced reload against the review current when host execution begins. */
   onRequestExtensionReviewReload: (
     reviewGeneration: AppBootstrap,

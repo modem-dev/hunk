@@ -8,7 +8,7 @@ import { serveTestWebReview } from "../../../../../test/helpers/web-review-serve
 import type { ReviewSharedNoteV1, ReviewSharedStateV1 } from "../../session/reviewSharedState";
 import { ClientReviewMirror } from "../mirror/clientReviewMirror";
 import { createTestReviewDocument } from "../../../../../test/helpers/review-store-helpers";
-import type { HunkReviewResourceCatalogV1 } from "../../session/reviewProtocol";
+import type { ReviewResourceCatalog } from "../../session/reviewProtocol";
 import type { ReviewApiClient } from "../transport/apiClient";
 import { ClientReviewStore, isLocalReviewIntent } from "./clientReviewStore";
 
@@ -315,7 +315,7 @@ describe("ClientReviewStore", () => {
     const catalog = {
       generation: "g1",
       resources: [{ kind: "source", fileKey, id: "source:alpha", generation: "g1" }],
-    } as unknown as HunkReviewResourceCatalogV1;
+    } as unknown as ReviewResourceCatalog;
     review.adopt(document, catalog);
 
     void review.loadSource(fileKey);

@@ -21,25 +21,22 @@
  */
 import { createSupersedeQueue } from "@hunk/session-broker-core/lifecycle";
 import { classifyReviewPublication } from "../../core/review/generationOrder";
-import type {
-  HunkReviewPublicationBodyV1,
-  HunkReviewStateBodyV1,
-} from "../../session/reviewHttpProtocol";
+import type { ReviewPublicationBody, ReviewStateBody } from "../../session/reviewHttpProtocol";
 import type { ReviewSharedStateV1 } from "../../session/reviewSharedState";
 import { ReviewApiError, type ReviewApiClient } from "../transport/apiClient";
 
 /** What the page knows about the shared state at one moment. */
 export interface ReviewSharedStateSnapshot {
   /** The newest snapshot the page accepted. */
-  body?: HunkReviewStateBodyV1;
+  body?: ReviewStateBody;
   /** Why the most recent fetch failed, until a later one succeeds. */
   error?: ReviewApiError;
 }
 
 /** Whether one state body supersedes the one already shown. */
 export function reviewStateBodySupersedes(
-  shown: HunkReviewStateBodyV1 | undefined,
-  incoming: HunkReviewStateBodyV1,
+  shown: ReviewStateBody | undefined,
+  incoming: ReviewStateBody,
 ) {
   if (!shown) return true;
   if (shown.publication.generation === incoming.publication.generation) {
@@ -50,8 +47,8 @@ export function reviewStateBodySupersedes(
 
 /** Whether one publication means the shown snapshot is out of date. */
 export function reviewPublicationNeedsState(
-  shown: HunkReviewStateBodyV1 | undefined,
-  publication: HunkReviewPublicationBodyV1,
+  shown: ReviewStateBody | undefined,
+  publication: ReviewPublicationBody,
 ) {
   if (!shown) return true;
   if (shown.publication.generation !== publication.publication.generation) {
@@ -79,7 +76,7 @@ export class ReviewSharedStateMirror {
   private readonly listeners = new Set<() => void>();
   private waiters: GenerationWaiter[] = [];
   /** The newest publication a fetch is in flight for, so repeats do not refetch. */
-  private requested: HunkReviewPublicationBodyV1 | undefined;
+  private requested: ReviewPublicationBody | undefined;
   private closed = false;
 
   constructor(private readonly options: ReviewSharedStateMirrorOptions) {}
@@ -94,7 +91,7 @@ export class ReviewSharedStateMirror {
   };
 
   /** Take one publication and fetch the shared state if it moved. */
-  observe(publication: HunkReviewPublicationBodyV1) {
+  observe(publication: ReviewPublicationBody) {
     if (this.closed || !reviewPublicationNeedsState(this.snapshot.body, publication)) return;
     // A fetch already in flight for this position or a later one answers with the current
     // state anyway; asking again would only supersede it.
@@ -141,7 +138,7 @@ export class ReviewSharedStateMirror {
     this.settleWaiters(undefined, true);
   }
 
-  private async fetch(publication: HunkReviewPublicationBodyV1) {
+  private async fetch(publication: ReviewPublicationBody) {
     const outcome = await this.fetches
       .run((signal) => this.options.client.state(signal))
       .catch((error: unknown) => ({ status: "failed" as const, error }));

@@ -13,10 +13,7 @@ import {
   parseSessionRegistrationEnvelope,
   parseSessionSnapshotEnvelope,
 } from "@hunk/session-broker-core";
-import {
-  parseHunkReviewPublicationAddress,
-  parseHunkReviewResourceCatalog,
-} from "../reviewProtocol";
+import { parseReviewPublicationAddress, parseReviewResourceCatalog } from "../reviewProtocol";
 import { MAX_REVIEW_NOTE_BYTES } from "../../core/review/noteSize";
 import { isReviewSha256Digest } from "../../core/review/validation";
 import { parseExtensionReviewDescriptor } from "../../core/reviewDescriptor";
@@ -374,9 +371,9 @@ function parseHunkSessionInfo(value: unknown, context: WireParseContext): HunkSe
   const reviewCatalog =
     record.reviewCatalog === undefined
       ? undefined
-      : parseHunkReviewResourceCatalog(record.reviewCatalog);
+      : parseReviewResourceCatalog(record.reviewCatalog);
   if (record.reviewCatalog !== undefined && reviewCatalog === undefined) {
-    return reject(child(context, "reviewCatalog"), "parseHunkReviewResourceCatalog");
+    return reject(child(context, "reviewCatalog"), "parseReviewResourceCatalog");
   }
 
   // The capability verifier is a digest and nothing else, checked with the shared
@@ -453,9 +450,9 @@ function parseHunkSessionState(value: unknown, context: WireParseContext): HunkS
   const reviewPublication =
     record.reviewPublication === undefined
       ? undefined
-      : parseHunkReviewPublicationAddress(record.reviewPublication);
+      : parseReviewPublicationAddress(record.reviewPublication);
   if (record.reviewPublication !== undefined && reviewPublication === undefined) {
-    return reject(child(context, "reviewPublication"), "parseHunkReviewPublicationAddress");
+    return reject(child(context, "reviewPublication"), "parseReviewPublicationAddress");
   }
 
   const reviewSharedStateRevision =

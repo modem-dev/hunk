@@ -19,16 +19,16 @@ import {
   type ReviewPublicationAddress,
 } from "../../core/review/generationOrder";
 import {
-  parseHunkReviewPublicationAddress,
-  parseHunkReviewResourceCatalog,
-  type HunkReviewResourceCatalogV1,
+  parseReviewPublicationAddress,
+  parseReviewResourceCatalog,
+  type ReviewResourceCatalog,
 } from "../reviewProtocol";
 import type { HunkSessionInfo, HunkSessionState } from "../types";
 
 /** One session's mirrored publication: where it is, and what it offers there. */
 export interface MirroredReviewPublication {
   address: ReviewPublicationAddress;
-  catalog: HunkReviewResourceCatalogV1;
+  catalog: ReviewResourceCatalog;
   /**
    * The shared-state revision the session reported with this address, when it reports one.
    *
@@ -57,7 +57,7 @@ const IGNORED: ReviewMirrorUpdate = { kind: "ignored" };
 export interface ObserveReviewPublicationInput {
   sessionId: string;
   /** The catalog available at this call site: a registration's, or the mirrored one. */
-  catalog: HunkReviewResourceCatalogV1 | undefined;
+  catalog: ReviewResourceCatalog | undefined;
   address: ReviewPublicationAddress | undefined;
   /** The shared-state revision reported beside the address, when there is one. */
   sharedStateRevision?: number;
@@ -166,11 +166,11 @@ export class ReviewMirror {
  */
 export function readRegistrationReviewCatalog(
   registrationInput: unknown,
-): HunkReviewResourceCatalogV1 | undefined {
+): ReviewResourceCatalog | undefined {
   const info = (registrationInput as { info?: HunkSessionInfo } | null | undefined)?.info;
   return info?.reviewCatalog === undefined
     ? undefined
-    : parseHunkReviewResourceCatalog(info.reviewCatalog);
+    : parseReviewResourceCatalog(info.reviewCatalog);
 }
 
 /** Read the shared-state revision out of one raw snapshot payload. */
@@ -187,5 +187,5 @@ export function readSnapshotReviewPublication(
   const state = (snapshotInput as { state?: HunkSessionState } | null | undefined)?.state;
   return state?.reviewPublication === undefined
     ? undefined
-    : parseHunkReviewPublicationAddress(state.reviewPublication);
+    : parseReviewPublicationAddress(state.reviewPublication);
 }

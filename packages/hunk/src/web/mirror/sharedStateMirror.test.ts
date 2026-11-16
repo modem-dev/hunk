@@ -1,8 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type {
-  HunkReviewPublicationBodyV1,
-  HunkReviewStateBodyV1,
-} from "../../session/reviewHttpProtocol";
+import type { ReviewPublicationBody, ReviewStateBody } from "../../session/reviewHttpProtocol";
 import type { ReviewSharedStateV1 } from "../../session/reviewSharedState";
 import type { ReviewApiClient } from "../transport/apiClient";
 import { ReviewApiError } from "../transport/apiClient";
@@ -20,14 +17,14 @@ function createTestPublication(
   generation: string,
   stateRevision: number,
   sharedStateRevision?: number,
-): HunkReviewPublicationBodyV1 {
+): ReviewPublicationBody {
   return {
     protocolVersion: 1,
     sessionId: "s",
     publication: { generation, stateRevision },
     ...(sharedStateRevision !== undefined ? { sharedStateRevision } : {}),
     catalog: { generation, resources: [] },
-  } as unknown as HunkReviewPublicationBodyV1;
+  } as unknown as ReviewPublicationBody;
 }
 
 /** A state body at one position and shared revision. */
@@ -35,7 +32,7 @@ function createTestStateBody(
   generation: string,
   sharedStateRevision: number,
   stateRevision = 0,
-): HunkReviewStateBodyV1 {
+): ReviewStateBody {
   return {
     protocolVersion: 1,
     sessionId: "s",
@@ -48,13 +45,13 @@ function createTestStateBody(
 /** A client whose state reads answer from a queue the test controls. */
 function createTestClient() {
   const pending: Array<{
-    resolve: (body: HunkReviewStateBodyV1) => void;
+    resolve: (body: ReviewStateBody) => void;
     reject: (error: unknown) => void;
     signal?: AbortSignal;
   }> = [];
   const client = {
     state: (signal?: AbortSignal) =>
-      new Promise<HunkReviewStateBodyV1>((resolve, reject) => {
+      new Promise<ReviewStateBody>((resolve, reject) => {
         pending.push({ resolve, reject, signal });
       }),
   } as unknown as ReviewApiClient;

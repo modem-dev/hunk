@@ -9,7 +9,7 @@
  * either source through `ReviewFileIndexSource`.
  */
 import type { ReviewFile } from "../../core/review/types";
-import type { HunkReviewResourceCatalogV1 } from "../../session/reviewProtocol";
+import type { ReviewResourceCatalog } from "../../session/reviewProtocol";
 import type { ReviewSharedFileV1 } from "../../session/reviewSharedState";
 
 /**
@@ -62,7 +62,7 @@ export function reviewFileIndexEntry(file: ReviewFile): ReviewFileIndexEntry {
  * projects entries from canonical files as they load.
  */
 export type ReviewFileIndexSource = (
-  catalog: HunkReviewResourceCatalogV1,
+  catalog: ReviewResourceCatalog,
   signal: AbortSignal,
 ) => Promise<
   ReadonlyMap<string, ReviewFileIndexEntry> | readonly ReviewFileIndexEntry[] | undefined

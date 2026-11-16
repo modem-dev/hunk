@@ -11,9 +11,9 @@ import { connectReviewSession } from "../../../../../test/helpers/review-session
 import {
   HUNK_REVIEW_CAPABILITY_HEADER,
   reviewHttpPath,
-  type HunkReviewStateBodyV1,
+  type ReviewStateBody,
 } from "../reviewHttpProtocol";
-import { HUNK_REVIEW_PROTOCOL_VERSION, type HunkReviewActorV1 } from "../reviewProtocol";
+import { HUNK_REVIEW_PROTOCOL_VERSION, type ReviewActor } from "../reviewProtocol";
 import { BrowserReviewServer } from "./browserReviewServer";
 
 const SESSION_ID = "session-policy-1";
@@ -57,7 +57,7 @@ function start() {
   running.push({ review, server });
   const origin = `http://127.0.0.1:${server.port}`;
   const headers = { [HUNK_REVIEW_CAPABILITY_HEADER]: reviewProcessCapability().token };
-  const act = (actor: HunkReviewActorV1, action: Record<string, unknown>) =>
+  const act = (actor: ReviewActor, action: Record<string, unknown>) =>
     fetch(`${origin}${reviewHttpPath({ kind: "actions", sessionId: SESSION_ID })}`, {
       method: "POST",
       headers: { ...headers, "content-type": "application/json" },
@@ -73,7 +73,7 @@ function start() {
       await fetch(`${origin}${reviewHttpPath({ kind: "state", sessionId: SESSION_ID })}`, {
         headers,
       })
-    ).json()) as HunkReviewStateBodyV1;
+    ).json()) as ReviewStateBody;
   return { host, harness, act, readState };
 }
 
@@ -147,7 +147,7 @@ describe("browser review surface: actor policy", () => {
 
   test("defaults a direct note's author from the actor and shares viewed files", async () => {
     const { host, act, readState } = start();
-    const browser: HunkReviewActorV1 = { clientId: "tab", kind: "browser", displayName: "Ana" };
+    const browser: ReviewActor = { clientId: "tab", kind: "browser", displayName: "Ana" };
     expect(
       (
         await act(browser, {

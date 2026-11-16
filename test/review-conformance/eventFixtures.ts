@@ -18,7 +18,7 @@ import {
   reviewResourceId,
 } from "../../packages/hunk/src/core/review/resources";
 import { HUNK_REVIEW_PROTOCOL_VERSION } from "../../packages/hunk/src/session/reviewProtocol";
-import type { HunkReviewPublicationBodyV1 } from "../../packages/hunk/src/session/reviewHttpProtocol";
+import type { ReviewPublicationBody } from "../../packages/hunk/src/session/reviewHttpProtocol";
 import type { ReviewEventFixture } from "./types";
 
 export const EVENT_FIXTURE_SESSION_ID = "session-conformance";
@@ -26,7 +26,7 @@ export const EVENT_FIXTURE_SESSION_ID = "session-conformance";
 const GENERATION = "generation:conformance:1";
 
 /** One publication body naming the given number of patch resources. */
-function publicationBody(resourceCount: number, stateRevision = 4): HunkReviewPublicationBodyV1 {
+function publicationBody(resourceCount: number, stateRevision = 4): ReviewPublicationBody {
   const fileKeys = Array.from(
     { length: resourceCount },
     (_unused, index) => `file:${index.toString(16).padStart(16, "0")}`,

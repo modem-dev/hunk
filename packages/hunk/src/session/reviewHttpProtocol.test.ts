@@ -8,10 +8,10 @@ import {
   REVIEW_CAPABILITY_TOKEN_LENGTH,
   reviewHttpPath,
   reviewUrl,
-  type HunkReviewHttpRoute,
+  type ReviewHttpRoute,
 } from "./reviewHttpProtocol";
 
-const ROUTES: HunkReviewHttpRoute[] = [
+const ROUTES: ReviewHttpRoute[] = [
   { kind: "publication", sessionId: "session-1" },
   { kind: "events", sessionId: "session-1" },
   { kind: "actions", sessionId: "session-1" },
@@ -33,7 +33,7 @@ describe("review http routes", () => {
   // Identifiers that would otherwise change the shape of a path must survive it intact —
   // except a path separator, which is refused rather than round-tripped (below).
   test("round-trip identifiers carrying reserved and non-ASCII characters", () => {
-    const route: HunkReviewHttpRoute = { kind: "events", sessionId: "セッション 1 #a?b%c" };
+    const route: ReviewHttpRoute = { kind: "events", sessionId: "セッション 1 #a?b%c" };
 
     const path = reviewHttpPath(route);
 

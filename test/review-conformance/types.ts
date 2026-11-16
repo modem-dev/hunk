@@ -24,7 +24,7 @@ import type { ReviewIntent } from "../../packages/hunk/src/core/review/intents";
 import type { ReviewSelectionScope } from "../../packages/hunk/src/core/review/navigation";
 import type { ReviewState } from "../../packages/hunk/src/core/review/state";
 import type { ReviewNote } from "../../packages/hunk/src/core/review/types";
-import type { HunkReviewPublicationBodyV1 } from "../../packages/hunk/src/session/reviewHttpProtocol";
+import type { ReviewPublicationBody } from "../../packages/hunk/src/session/reviewHttpProtocol";
 import type { DiffFile } from "../../packages/hunk/src/core/changeset/model";
 
 export interface ConformanceGap {
@@ -274,7 +274,7 @@ export interface ReviewEventFixture {
   findings: string[];
   /** What makes this payload worth stating, in one line. */
   description: string;
-  body: HunkReviewPublicationBodyV1;
+  body: ReviewPublicationBody;
   /**
    * Window size, either in bytes or relative to the payload.
    *

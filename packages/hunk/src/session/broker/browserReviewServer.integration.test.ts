@@ -33,7 +33,7 @@ import {
   HUNK_REVIEW_CAPABILITY_HEADER,
   REVIEW_CAPABILITY_TOKEN_LENGTH,
   reviewHttpPath,
-  type HunkReviewHttpRoute,
+  type ReviewHttpRoute,
 } from "../reviewHttpProtocol";
 import { reviewErrorMessage } from "../reviewErrorCatalog";
 import { HUNK_REVIEW_PROTOCOL_VERSION } from "../reviewProtocol";
@@ -83,14 +83,14 @@ function capability() {
   return reviewProcessCapability().token;
 }
 
-function url(origin: string, route: HunkReviewHttpRoute) {
+function url(origin: string, route: ReviewHttpRoute) {
   return `${origin}${reviewHttpPath(route)}`;
 }
 
 /** Request one review route with the capability presented the way a client presents it. */
 function request(
   origin: string,
-  route: HunkReviewHttpRoute,
+  route: ReviewHttpRoute,
   init: RequestInit & { token?: string | null } = {},
 ) {
   const { token = capability(), ...rest } = init;
@@ -102,7 +102,7 @@ function request(
 }
 
 /** The patch resource of the session's first file. */
-function firstPatchRoute(harness: ReturnType<typeof connectReviewSession>): HunkReviewHttpRoute {
+function firstPatchRoute(harness: ReturnType<typeof connectReviewSession>): ReviewHttpRoute {
   const publication = harness.producer.getPublication();
   return {
     kind: "resource",
@@ -329,7 +329,7 @@ describe("browser review surface: resources", () => {
     const response = await request(origin, {
       ...firstPatchRoute(harness),
       resourceId: reviewResourceId({ kind: "patch", fileKey: "file:deadbeef" }),
-    } as HunkReviewHttpRoute);
+    } as ReviewHttpRoute);
 
     expect(response.status).toBe(404);
     expect(await response.json()).toMatchObject({ code: "unknown-resource" });

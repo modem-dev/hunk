@@ -35,7 +35,7 @@ import {
 import type { ReviewStoredNote } from "../../core/review/state";
 import { createReviewStore, type ReviewStore } from "../../core/review/store";
 import type { ReviewDocument } from "../../core/review/types";
-import type { HunkReviewResourceCatalogV1 } from "../../session/reviewProtocol";
+import type { ReviewResourceCatalog } from "../../session/reviewProtocol";
 import type { ReviewSharedStateV1 } from "../../session/reviewSharedState";
 import { ReviewApiError, type ReviewApiClient } from "../transport/apiClient";
 
@@ -65,7 +65,7 @@ export interface ClientReviewStoreOptions {
 /** The page's local review store and the source loads it drives. */
 export class ClientReviewStore {
   readonly store: ReviewStore = createReviewStore({ files: [] });
-  private catalog: HunkReviewResourceCatalogV1 | undefined;
+  private catalog: ReviewResourceCatalog | undefined;
   private shared: ReviewSharedStateV1 | undefined;
   private annotations: ReviewAnnotationIndex = EMPTY_REVIEW_ANNOTATION_INDEX;
   private hiddenFileKeys: ReadonlySet<string> = new Set();
@@ -80,7 +80,7 @@ export class ClientReviewStore {
    * `selectNormalizedSelection` says — the first visible file, or nothing — without asking the
    * viewport to move, which is what reconciliation means everywhere else (audit B4).
    */
-  adopt(document: ReviewDocument, catalog: HunkReviewResourceCatalogV1 | undefined) {
+  adopt(document: ReviewDocument, catalog: ReviewResourceCatalog | undefined) {
     if (catalog?.generation !== this.catalog?.generation) {
       // Source reads are addressed to a generation; one from the old catalog cannot land.
       for (const controller of this.sourceLoads.values()) controller.abort();

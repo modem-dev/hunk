@@ -18,8 +18,8 @@ import { connectReviewSession } from "../../../../../test/helpers/review-session
 import {
   HUNK_REVIEW_CAPABILITY_HEADER,
   reviewHttpPath,
-  type HunkReviewHttpRoute,
-  type HunkReviewStateBodyV1,
+  type ReviewHttpRoute,
+  type ReviewStateBody,
 } from "../reviewHttpProtocol";
 import { HUNK_REVIEW_PROTOCOL_VERSION } from "../reviewProtocol";
 import { MAX_REVIEW_SHARED_STATE_BYTES, parseReviewSharedState } from "../reviewSharedState";
@@ -85,7 +85,7 @@ function serveTestHarness(harness: ReturnType<typeof connectReviewSession>) {
 /** Request one route with the session's capability, unless told not to. */
 function request(
   origin: string,
-  route: HunkReviewHttpRoute,
+  route: ReviewHttpRoute,
   init: RequestInit & { token?: string | null } = {},
 ) {
   const { token = reviewProcessCapability().token, ...rest } = init;
@@ -106,7 +106,7 @@ describe("browser review surface: shared state", () => {
     const response = await request(origin, STATE_ROUTE);
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
-    const body = (await response.json()) as HunkReviewStateBodyV1;
+    const body = (await response.json()) as ReviewStateBody;
 
     expect(body.protocolVersion).toBe(HUNK_REVIEW_PROTOCOL_VERSION);
     expect(body.sessionId).toBe(SESSION_ID);
@@ -137,7 +137,7 @@ describe("browser review surface: shared state", () => {
     expect(response.status).toBe(200);
     expect(attempts).toBe(2);
     expect(
-      parseReviewSharedState(((await response.json()) as HunkReviewStateBodyV1).state),
+      parseReviewSharedState(((await response.json()) as ReviewStateBody).state),
     ).toBeDefined();
   });
 
@@ -172,7 +172,7 @@ describe("browser review surface: shared state", () => {
     // Shared content moves without the daemon being told: the read still returns the current
     // snapshot, addressed by its own revision.
     host.setFilter("beta");
-    const body = (await (await request(origin, STATE_ROUTE)).json()) as HunkReviewStateBodyV1;
+    const body = (await (await request(origin, STATE_ROUTE)).json()) as ReviewStateBody;
     expect(body.state.filter).toBe("beta");
     expect(body.sharedStateRevision).toBe(host.getSharedStateRevision());
   });
@@ -223,7 +223,7 @@ describe("browser review surface: shared state", () => {
     // A new shared revision is read again.
     host.setFilter("beta");
     harness.publishSnapshot();
-    const body = (await (await request(origin, STATE_ROUTE)).json()) as HunkReviewStateBodyV1;
+    const body = (await (await request(origin, STATE_ROUTE)).json()) as ReviewStateBody;
     expect(body.state.filter).toBe("beta");
     expect(reads()).toBeGreaterThan(afterFirst);
   });

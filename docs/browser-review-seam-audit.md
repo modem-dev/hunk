@@ -313,7 +313,7 @@ duplication); hunk header text (browser delegates to Pierre separators); platfor
   `ui/lib/viewportSelection.ts` delegates to it (`findNearestHunkIndexAtBodyOffset` is banned
   there) and the browser anchors through it in pixels, with `selection/anchor` applied to its
   local store only — selection is per surface, so the G2 question does not arise.
-- **B12. Wire vocabulary hand-restates `ReviewIntent` — 3 places.** `HunkReviewActionV1`
+- **B12. Wire vocabulary hand-restates `ReviewIntent` — 3 places.** `RemoteReviewIntent`
   union, capability list in `registration.ts`, validation list in `wire.ts`, remapped
   field-by-field in `reviewSessionRuntime.ts`; forgotten fields/actions are silently
   unreachable from the browser. Fix: derive the wire type and both lists from one
@@ -325,7 +325,7 @@ duplication); hunk header text (browser delegates to Pierre separators); platfor
   resolves at the producer and is broadcast to every attached surface, so every one of them
   belongs to every surface. Withholding one would mean subtracting it by name, with the reason
   it is not shareable. The wire _type_ is derived
-  the same way — `HunkReviewActionV1` is `ReviewIntent` with the two wire-only fields added to
+  the same way — `RemoteReviewIntent` is `ReviewIntent` with the two wire-only fields added to
   the members that need them — and `toReviewIntent` strips them again, so an action is
   validated and narrowed rather than restated. The action-type-to-parser table is keyed by the
   vocabulary, so a wire-reachable intent without a parser does not compile.
@@ -583,7 +583,7 @@ path suffixes, expansion retention, git-status badges).
   instead of the producer owning it and the wire copying it; `REVIEW_RESOURCE_LOAD_CONCURRENCY`
   moved beside the other resource bounds for the same reason, now that both the producer and
   the daemon run bulk loads. The failure vocabulary is composed rather than restated
-  (`HunkReviewFailureCodeV1` = resource + request + intent-planning codes), the navigable
+  (`ReviewFailureCode` = resource + request + intent-planning codes), the navigable
   scopes are read out of `REVIEW_SELECTION_WRAP_POLICY` rather than listed again, the
   catalog's file bound is derived from its own resource count instead of duplicating the
   registration's file limit, and every digest check is `isReviewSha256Digest`. The one
@@ -775,7 +775,7 @@ implementation does.
   selection. Decide the model once: actions carry a client/actor tag; selection is either
   shared-with-follow-mode or per-client-with-optional-follow (product decision); note
   authorship defaults from the actor. Wire fields in Phase 3, policy before Phase 5 PR 2.
-  _Repaid (Phase 3, wire fields)_: `HunkReviewActorV1` — an opaque `clientId`, a coarse
+  _Repaid (Phase 3, wire fields)_: `ReviewActor` — an opaque `clientId`, a coarse
   `kind` (`terminal` / `browser` / `agent`), and an optional display name — is required on
   every action and resource-read envelope from the protocol's first version. The finding's
   four parts split cleanly, and only the first is done: (1) actions carry an actor tag, here;
@@ -863,7 +863,7 @@ implementation does.
   agent surface where codes overlap). Phase 4 (codes stabilize) / Phase 5 (browser consumes).
   _Repaid (Phase 4, catalog creation)_: `packages/hunk/src/session/reviewErrorCatalog.ts` gives every code a
   statement and a remedy, in the agent surface's own pattern. Totality is mechanical rather
-  than reviewed: the catalog is a `Record` over `HunkReviewClientErrorCodeV1`, itself
+  than reviewed: the catalog is a `Record` over `ReviewHttpFailureCode`, itself
   _composed_ — resource plus request plus intent-planning plus the transport's own codes —
   so a code added to any of the four tiers fails to typecheck until it has a message, and
   `reviewErrorCatalog.test.ts` states the vocabulary by hand rather than reading it back out
