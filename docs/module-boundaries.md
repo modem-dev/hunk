@@ -44,7 +44,7 @@ Other workspaces are bounded units rather than one tier in that stack:
   `core/review` and the browser-safe session modules (`web-client-stays-separate`, plus the exact
   closure in `scripts/quality/source-boundaries.test.ts`), plus two import-free presentation
   leaves it shares with the terminal (`core/run/commandInputs.ts` for the layout vocabulary and
-  the auto-split threshold, `ui/diff/highlightRenderOptions.ts` for Pierre's highlight
+  the auto-split threshold, `core/documents/highlightRenderOptions.ts` for Pierre's highlight
   options), and the command vocabulary on a closed import set (`core/run/commandCatalog.ts`,
   `core/run/keyChordLabels.ts`, and the chord grammar in `extension-api/keys.ts`), and the
   STML parser (`core/stml/parse.ts`, with the `lib/terminalText.ts` sanitizer it runs) on a

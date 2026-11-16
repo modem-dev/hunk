@@ -235,7 +235,7 @@ imports; a page fetches only the languages and themes it shows. The largest sing
   `reviewFileWithExpandedGaps` folds an expanded gap into its hunk as context, which is the
   form a whole-file renderer needs. Auto layout uses `DEFAULT_AUTO_SPLIT_MIN_WIDTH` in measured
   monospace columns, and Pierre gets the terminal's own highlight options
-  (`ui/diff/highlightRenderOptions.ts`: `word-alt`, the tokenizing bound). Wording of
+  (`core/documents/highlightRenderOptions.ts`: `word-alt`, the tokenizing bound). Wording of
   placeholders and gap rows is the page's own, as each surface's is.
 - **Gaps.** Pierre's React wrapper cannot host custom hunk separators, so each file drives
   Pierre's vanilla `FileDiff` with a separator function that returns page-owned buttons. A
