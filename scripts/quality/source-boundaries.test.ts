@@ -58,7 +58,7 @@ const BROWSER_SAFE_SESSION_MODULES: readonly string[] = [
 // reason the browser may reach outside the review model for them.
 const WEB_SHARED_PRESENTATION_MODULES: readonly string[] = [
   join(SRC_ROOT, "core", "run", "commandInputs.ts"),
-  join(SRC_ROOT, "ui", "diff", "highlightRenderOptions.ts"),
+  join(SRC_ROOT, "core", "documents", "highlightRenderOptions.ts"),
 ];
 
 // The command vocabulary the browser shares with the terminal (audit F1-F3): the catalog of

@@ -9,7 +9,7 @@
  */
 import type { ReviewPublicationAddress } from "../../../packages/hunk/src/core/review/generationOrder";
 import type { ReviewApiClient } from "../../../packages/hunk/src/web/transport/apiClient";
-import { ReviewMirror } from "../../../packages/hunk/src/web/mirror/reviewMirror";
+import { ClientReviewMirror } from "../../../packages/hunk/src/web/mirror/clientReviewMirror";
 import { HUNK_REVIEW_PROTOCOL_VERSION } from "../../../packages/hunk/src/session/reviewProtocol";
 import type { ReviewOrderingConsumer } from "../types";
 
@@ -30,7 +30,10 @@ export const browserMirrorOrderingConsumer: ReviewOrderingConsumer = {
   name: "browser client mirror",
   phase: "M4",
   classify(current: ReviewPublicationAddress, incoming: ReviewPublicationAddress) {
-    const mirror = new ReviewMirror({ client: IDLE_CLIENT, scheduleNotify: (flush) => flush() });
+    const mirror = new ClientReviewMirror({
+      client: IDLE_CLIENT,
+      scheduleNotify: (flush) => flush(),
+    });
     mirror.observe(bodyAt(current));
     const verdict = mirror.observe(bodyAt(incoming));
     mirror.close();

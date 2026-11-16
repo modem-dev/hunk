@@ -41,7 +41,7 @@ import {
 } from "./fileIndex";
 
 /** One file of the mirrored generation, in document order. */
-export interface ReviewMirrorFileSlot {
+export interface ClientReviewMirrorFileSlot {
   key: string;
   /** Known as soon as an index source or the canonical file describes it. */
   index?: ReviewFileIndexEntry;
@@ -50,13 +50,13 @@ export interface ReviewMirrorFileSlot {
 }
 
 /** Everything the page knows about the mirrored review at one moment. */
-export interface ReviewMirrorSnapshot {
+export interface ClientReviewMirrorSnapshot {
   /** `loading` until every file of the shown generation has arrived. */
   status: "waiting" | "loading" | "ready" | "failed";
   /** The publication position of the shown generation. */
   address?: ReviewPublicationAddress;
   catalog?: HunkReviewResourceCatalogV1;
-  slots: readonly ReviewMirrorFileSlot[];
+  slots: readonly ClientReviewMirrorFileSlot[];
   /** The loaded files in catalog order, as the client store adopts them. */
   document: ReviewDocumentV1;
   loadedFiles: number;
@@ -67,7 +67,7 @@ export interface ReviewMirrorSnapshot {
   error?: ReviewApiError;
 }
 
-const EMPTY_SNAPSHOT: ReviewMirrorSnapshot = {
+const EMPTY_SNAPSHOT: ClientReviewMirrorSnapshot = {
   status: "waiting",
   slots: [],
   document: { files: [] },
@@ -76,7 +76,7 @@ const EMPTY_SNAPSHOT: ReviewMirrorSnapshot = {
   updating: false,
 };
 
-export interface ReviewMirrorOptions {
+export interface ClientReviewMirrorOptions {
   client: ReviewApiClient;
   /** Supplies index entries ahead of canonical files, when a source can. */
   indexSource?: ReviewFileIndexSource;
@@ -93,13 +93,13 @@ function defaultScheduleNotify(flush: () => void) {
 }
 
 /** Build a snapshot's document from its slots. */
-function documentOf(slots: readonly ReviewMirrorFileSlot[]): ReviewDocumentV1 {
+function documentOf(slots: readonly ClientReviewMirrorFileSlot[]): ReviewDocumentV1 {
   return { files: slots.flatMap((slot) => (slot.file ? [slot.file] : [])) };
 }
 
 /** The mirror of one session's review. */
-export class ReviewMirror {
-  private snapshot: ReviewMirrorSnapshot = EMPTY_SNAPSHOT;
+export class ClientReviewMirror {
+  private snapshot: ClientReviewMirrorSnapshot = EMPTY_SNAPSHOT;
   private observed: ReviewPublicationAddress | undefined;
   /** The generation whose last load failed, so its next delivery loads it again. */
   private failedGeneration: string | undefined;
@@ -108,9 +108,9 @@ export class ReviewMirror {
   private notifyScheduled = false;
   private closed = false;
 
-  constructor(private readonly options: ReviewMirrorOptions) {}
+  constructor(private readonly options: ClientReviewMirrorOptions) {}
 
-  getSnapshot = (): ReviewMirrorSnapshot => this.snapshot;
+  getSnapshot = (): ClientReviewMirrorSnapshot => this.snapshot;
 
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
@@ -173,7 +173,9 @@ export class ReviewMirror {
       (resource): resource is Extract<ReviewResourceDescriptorV1, { kind: "canonical-file" }> =>
         resource.kind === "canonical-file",
     );
-    let slots: ReviewMirrorFileSlot[] = canonical.map((resource) => ({ key: resource.fileKey }));
+    let slots: ClientReviewMirrorFileSlot[] = canonical.map((resource) => ({
+      key: resource.fileKey,
+    }));
     let loaded = 0;
     this.failedGeneration = undefined;
 
@@ -182,8 +184,8 @@ export class ReviewMirror {
       this.observed && this.observed.generation === publication.generation
         ? this.observed
         : publication;
-    const stage = (status: ReviewMirrorSnapshot["status"], error?: ReviewApiError) => {
-      const next: ReviewMirrorSnapshot = {
+    const stage = (status: ClientReviewMirrorSnapshot["status"], error?: ReviewApiError) => {
+      const next: ClientReviewMirrorSnapshot = {
         status,
         address: currentAddress(),
         catalog,
@@ -281,7 +283,7 @@ export class ReviewMirror {
   }
 
   /** Replace the snapshot and notify, at once or coalesced. */
-  private publish(next: ReviewMirrorSnapshot, immediate: boolean) {
+  private publish(next: ClientReviewMirrorSnapshot, immediate: boolean) {
     this.snapshot = next;
     if (immediate) {
       this.flush();

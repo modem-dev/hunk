@@ -17,7 +17,7 @@
  */
 import type { HunkReviewActionAppliedV1, HunkReviewActionV1 } from "../../session/reviewProtocol";
 import { HUNK_REVIEW_PROTOCOL_VERSION } from "../../session/reviewProtocol";
-import type { ReviewMirror } from "../mirror/reviewMirror";
+import type { ClientReviewMirror } from "../mirror/clientReviewMirror";
 import { reviewFailureMessage } from "../session/failureMessages";
 import {
   ReviewApiError,
@@ -63,7 +63,7 @@ export function reviewActionFailure(error: unknown): Extract<ReviewActionOutcome
 export interface ReviewActionSenderOptions {
   client: ReviewApiClient;
   /** Where the page is: the generation every envelope names. */
-  mirror: Pick<ReviewMirror, "getSnapshot" | "subscribe">;
+  mirror: Pick<ClientReviewMirror, "getSnapshot" | "subscribe">;
   clientId?: string;
   /** Whether the session has ended; every send then fails with `session-ended`, unposted. */
   isEnded?: () => boolean;

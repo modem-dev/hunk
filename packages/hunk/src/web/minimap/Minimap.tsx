@@ -24,7 +24,7 @@ import {
 } from "react";
 import type { ReviewRowLayout } from "../../core/review/geometry";
 import type { ReviewFileV1 } from "../../core/review/types";
-import type { ReviewMirrorFileSlot } from "../mirror/reviewMirror";
+import type { ClientReviewMirrorFileSlot } from "../mirror/clientReviewMirror";
 import { STREAM_HEADER_HEIGHT_PX } from "../stream/FileSection";
 import type { ReviewStreamController } from "../stream/ReviewStream";
 import {
@@ -39,7 +39,7 @@ import {
 const SECTION_CHROME_PX = STREAM_HEADER_HEIGHT_PX + 1;
 
 export interface MinimapProps {
-  slots: readonly ReviewMirrorFileSlot[];
+  slots: readonly ClientReviewMirrorFileSlot[];
   files: ReadonlyMap<string, ReviewFileV1>;
   layout: ReviewRowLayout;
   noteHunks: ReadonlyMap<string, readonly number[]>;

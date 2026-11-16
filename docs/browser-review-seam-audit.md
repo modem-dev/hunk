@@ -378,7 +378,7 @@ path suffixes, expansion retention, git-status badges).
   caller decided from" is the same question as "is this publication ahead". The mirror is
   registered against the Phase 2 fixtures as the `broker review mirror` ordering consumer,
   which is what proves it has no rules of its own. The browser site closes in Phase 5.
-  _Repaid (M4, browser site)_: the page's mirror (`packages/hunk/src/web/mirror/reviewMirror.ts`)
+  _Repaid (M4, browser site)_: the page's mirror (`packages/hunk/src/web/mirror/clientReviewMirror.ts`)
   orders every publication — the first read and every streamed one — with one
   `classifyReviewPublication` call, treating its first publication as a gap from nothing. It is
   registered as the `browser client mirror` ordering consumer.

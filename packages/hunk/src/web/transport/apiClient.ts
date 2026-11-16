@@ -9,7 +9,7 @@
  * C2). Failures arrive as `ReviewApiError` carrying the review vocabulary's code.
  *
  * This module owns requests only. Ordering publications, deciding what to load, and
- * superseding loads belong to the mirror (`../mirror/reviewMirror.ts`).
+ * superseding loads belong to the mirror (`../mirror/clientReviewMirror.ts`).
  */
 import {
   REVIEW_RESOURCE_CHUNK_BYTES,
