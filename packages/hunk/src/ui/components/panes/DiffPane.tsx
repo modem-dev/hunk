@@ -321,6 +321,7 @@ export function DiffPane({
   copyDecorations = false,
   screenTop = 0,
   showTopChrome,
+  showTopBorder,
   skipInitialIntermediateRender = false,
   showAgentNotes,
   showLineNumbers,
@@ -412,6 +413,8 @@ export function DiffPane({
   copyDecorations?: boolean;
   screenTop?: number;
   showTopChrome?: boolean;
+  /** Draw the top rule; hosts disable it when a planned pane divider already owns that edge. */
+  showTopBorder?: boolean;
   /** Avoid clearing another surface when this pane mounts dynamically in the shared renderer. */
   skipInitialIntermediateRender?: boolean;
   showAgentNotes: boolean;
@@ -470,6 +473,7 @@ export function DiffPane({
   onViewportLineCursorChange?: (cursor: LineCursor) => void;
 }) {
   const renderTopChrome = showTopChrome ?? !pagerMode;
+  const renderTopBorder = renderTopChrome && showTopBorder !== false;
   const renderer = useRenderer();
   const mouseWheelScrollAcceleration = useMemo(
     () => createReviewMouseWheelScrollAcceleration(wheelScrollLines),
@@ -2528,7 +2532,7 @@ export function DiffPane({
       style={{
         width,
         ...(height === undefined ? {} : { height }),
-        border: renderTopChrome ? ["top"] : [],
+        border: renderTopBorder ? ["top"] : [],
         borderColor: theme.border,
         backgroundColor: theme.panel,
         paddingX: 0,

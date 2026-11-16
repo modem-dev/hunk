@@ -176,12 +176,17 @@ describe("review metadata reloads", () => {
         () => setup.captureCharFrame().includes("OPEN · #123 · Metadata pane"),
         "the delegated review pane to mount",
       );
-      expect(setup.captureCharFrame().split("\n")[3]).toContain("─");
+      const lines = setup.captureCharFrame().split("\n");
+      // Menu, the pane's own leading rule, two metadata rows, then exactly one shared divider.
+      expect(lines[1]).toContain("─");
+      expect(lines[2]).toContain("OPEN · #123 · Metadata pane");
+      expect(lines[4]).toContain("─");
+      expect(lines[5]).not.toContain("─");
 
-      await act(async () => setup.mockMouse.click(50, 1));
+      await act(async () => setup.mockMouse.click(50, 2));
       await flushUntil(
         setup,
-        () => setup.captureCharFrame().split("\n")[3]?.includes("━") === true,
+        () => setup.captureCharFrame().split("\n")[4]?.includes("━") === true,
         "the fixed pane separator to activate",
       );
     } finally {

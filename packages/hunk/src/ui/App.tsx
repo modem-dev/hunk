@@ -1865,6 +1865,8 @@ export function App({
             scrollFocused={pagerMode && focusArea === "files"}
             screenTop={diffPaneScreenTop}
             showTopChrome={showMenuBar}
+            // A top pane's planned divider already separates it from the review stream.
+            showTopBorder={presentedPaneLayout.reviewBounds.y === 0}
             skipInitialIntermediateRender={Boolean(onFirstFrameReady)}
             headerLabelWidth={diffHeaderLabelWidth}
             headerStatsWidth={diffHeaderStatsWidth}
