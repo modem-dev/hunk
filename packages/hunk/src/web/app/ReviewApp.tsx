@@ -15,7 +15,7 @@
  * `]` here and `]` in the terminal plan the same move; scrolling, layout, and theme are this
  * page's own.
  *
- * The session's shared state (`../mirror/sharedStateMirror.ts`) supplies what the page shows
+ * The session's shared state (`../mirror/clientSharedStateMirror.ts`) supplies what the page shows
  * beyond files: notes (adopted into the store by the session wiring), sidecar annotations,
  * agent marks, the shared filter, and the presentation defaults — title, theme, view options,
  * and the resolved keymap. This browser's own choices of theme and view options win over the

@@ -26,7 +26,7 @@ import type { ReviewSharedState } from "../../session/reviewSharedState";
 import { ReviewApiError, type ReviewApiClient } from "../transport/apiClient";
 
 /** What the page knows about the shared state at one moment. */
-export interface ReviewSharedStateSnapshot {
+export interface ClientSharedStateSnapshot {
   /** The newest snapshot the page accepted. */
   body?: ReviewStateBody;
   /** Why the most recent fetch failed, until a later one succeeds. */
@@ -65,13 +65,13 @@ interface GenerationWaiter {
   resolve: (state: ReviewSharedState | undefined) => void;
 }
 
-export interface ReviewSharedStateMirrorOptions {
+export interface ClientSharedStateMirrorOptions {
   client: ReviewApiClient;
 }
 
 /** The mirror of one session's shared state. */
-export class ReviewSharedStateMirror {
-  private snapshot: ReviewSharedStateSnapshot = {};
+export class ClientSharedStateMirror {
+  private snapshot: ClientSharedStateSnapshot = {};
   private readonly fetches = createSupersedeQueue();
   private readonly listeners = new Set<() => void>();
   private waiters: GenerationWaiter[] = [];
@@ -79,9 +79,9 @@ export class ReviewSharedStateMirror {
   private requested: ReviewPublicationBody | undefined;
   private closed = false;
 
-  constructor(private readonly options: ReviewSharedStateMirrorOptions) {}
+  constructor(private readonly options: ClientSharedStateMirrorOptions) {}
 
-  getSnapshot = (): ReviewSharedStateSnapshot => this.snapshot;
+  getSnapshot = (): ClientSharedStateSnapshot => this.snapshot;
 
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
@@ -188,7 +188,7 @@ export class ReviewSharedStateMirror {
     });
   }
 
-  private publish(next: ReviewSharedStateSnapshot) {
+  private publish(next: ClientSharedStateSnapshot) {
     this.snapshot = next;
     if (this.closed) return;
     for (const listener of Array.from(this.listeners)) listener();
