@@ -5,7 +5,7 @@ import {
   encodeReviewEventFrame,
   planReviewEventFrames,
   REVIEW_EVENT_HEARTBEAT_FRAME,
-  type ReviewEventTypeV1,
+  type ReviewEventType,
 } from "../../session/reviewEventProtocol";
 import type { ReviewPublicationBody } from "../../session/reviewHttpProtocol";
 import { HUNK_REVIEW_PROTOCOL_VERSION } from "../../session/reviewProtocol";
@@ -37,7 +37,7 @@ function createTestPublication(padding = 0): ReviewPublicationBody {
 }
 
 /** Frame one event as the daemon does, returning its SSE text. */
-function frameTestEvent(type: ReviewEventTypeV1, body: unknown, chunkBytes?: number) {
+function frameTestEvent(type: ReviewEventType, body: unknown, chunkBytes?: number) {
   const payload = new TextEncoder().encode(JSON.stringify(body));
   return planReviewEventFrames({
     type,

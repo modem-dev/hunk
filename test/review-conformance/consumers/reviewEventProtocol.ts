@@ -11,7 +11,7 @@ import {
   parseReviewEventBegin,
   parseReviewEventChunk,
   parseReviewEventEnd,
-  parseReviewEventFrame,
+  parseReviewEventWhole,
   planReviewEventFrames,
   ReviewEventAssembler,
 } from "../../../packages/hunk/src/session/reviewEventProtocol";
@@ -36,7 +36,7 @@ export const reviewEventProtocolConsumer: ReviewEventConsumer = {
     const serialized = JSON.stringify(fixture.body);
     const roundTrips =
       frames.length === 1
-        ? JSON.stringify(parseReviewEventFrame(frames[0]!.data)?.payload) === serialized
+        ? JSON.stringify(parseReviewEventWhole(frames[0]!.data)?.payload) === serialized
         : readChunked(frames, serialized);
 
     return {

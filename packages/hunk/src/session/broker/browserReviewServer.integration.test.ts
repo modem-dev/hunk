@@ -24,7 +24,7 @@ import {
   parseReviewEventBegin,
   parseReviewEventChunk,
   parseReviewEventEnd,
-  parseReviewEventFrame,
+  parseReviewEventWhole,
   parseReviewEventFrameName,
   ReviewEventAssembler,
   reviewEventId,
@@ -651,7 +651,7 @@ describe("browser review surface: events", () => {
     expect(response.headers.get("content-type")).toBe("text/event-stream; charset=utf-8");
     expect(frame!.event).toBe("publication");
     expect(frame!.id).toBe(reviewEventId("publication", address));
-    expect(parseReviewEventFrame(frame!.data)?.payload).toMatchObject({
+    expect(parseReviewEventWhole(frame!.data)?.payload).toMatchObject({
       sessionId: SESSION_ID,
       publication: address,
     });
@@ -667,8 +667,8 @@ describe("browser review surface: events", () => {
     const frames = await pending;
 
     expect(frames.map((frame) => frame.event)).toEqual(["publication", "publication"]);
-    expect(parseReviewEventFrame(frames[1]!.data)?.stateRevision).toBeGreaterThan(
-      parseReviewEventFrame(frames[0]!.data)!.stateRevision,
+    expect(parseReviewEventWhole(frames[1]!.data)?.stateRevision).toBeGreaterThan(
+      parseReviewEventWhole(frames[0]!.data)!.stateRevision,
     );
   });
 
