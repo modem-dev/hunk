@@ -24,7 +24,7 @@ import {
   REVIEW_SHARED_STATE_CURRENT_RESOURCE_ID,
   type ReviewSharedState,
 } from "../../../packages/hunk/src/session/reviewSharedState";
-import { ReviewSharedStateMirror } from "../../../packages/hunk/src/web/mirror/sharedStateMirror";
+import { ClientSharedStateMirror } from "../../../packages/hunk/src/web/mirror/clientSharedStateMirror";
 import { ReviewApiClient } from "../../../packages/hunk/src/web/transport/apiClient";
 import {
   connectReviewSession,
@@ -150,7 +150,7 @@ export const browserSurfaceSharedStateConsumer: ReviewSharedStateConsumer = {
  * The browser client's shared-state mirror, reading the same HTTP surface the page reads.
  *
  * The page's real client (`ReviewApiClient`, with the capability header) and its real mirror
- * (`ReviewSharedStateMirror`): the publication is offered exactly as the event stream offers
+ * (`ClientSharedStateMirror`): the publication is offered exactly as the event stream offers
  * it, the mirror decides to fetch and validates the body with the shared parser, and the
  * snapshot it accepted is what this projects.
  */
@@ -175,7 +175,7 @@ export const browserClientSharedStateConsumer: ReviewSharedStateConsumer = {
       capability: reviewProcessCapability().token,
       fetch: (input, init) => fetch(`${origin}${input}`, init),
     });
-    const mirror = new ReviewSharedStateMirror({ client });
+    const mirror = new ClientSharedStateMirror({ client });
     try {
       const publication = await client.publication();
       mirror.observe(publication);

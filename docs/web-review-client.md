@@ -45,7 +45,7 @@ packages/hunk/src/web/
   transport/eventStream.ts     keeps the stream open; one shared reconnect scheduler
   transport/webCryptoDigest.ts Web Crypto SHA-256 as the assemblers' async digest
   mirror/clientReviewMirror.ts orders publications; loads each generation's files
-  mirror/sharedStateMirror.ts  fetches and orders shared-state snapshots
+  mirror/clientSharedStateMirror.ts fetches and orders shared-state snapshots
   notes/noteProjection.ts      places a file's visible notes per line; titles and thread depth
   notes/noteCards.ts           note cards as DOM for Pierre's line annotations
   notes/stmlDom.ts             STML markup to DOM through the shared parser and roles
@@ -103,7 +103,7 @@ packages/hunk/src/web/
   them. Each new document is adopted with `document/reconcile`, so selection and expansion
   survive a reload by file key. Gap source is loaded on demand from the file's `source`
   resource into the store's source-status vocabulary.
-- **Shared state** (`sharedStateMirror.ts`). Every publication is offered to it before the file
+- **Shared state** (`clientSharedStateMirror.ts`). Every publication is offered to it before the file
   mirror; it fetches `GET /state` when the generation changes or `sharedStateRevision` moves,
   never for a selection moving elsewhere, orders bodies by `classifyReviewPublication` and then
   by shared revision, supersedes in-flight fetches with the shared queue, and validates with
