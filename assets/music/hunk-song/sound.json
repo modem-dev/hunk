@@ -189,13 +189,14 @@
   },
   "arrangements": [
     {
-      "name": "original",
+      "name": "30s",
       "seconds": 30.2,
+      "midi": "hunk-song.mid",
       "spans": [[0, null, 0]],
-      "usedBy": "\"Hunk stays fast\" video"
+      "note": "The song as written."
     },
     {
-      "name": "prompt-box",
+      "name": "37s",
       "seconds": 37.2,
       "tempoBpm": 100,
       "spans": [
@@ -203,18 +204,18 @@
         [4, 7, 7],
         [7, null, 10]
       ],
-      "usedBy": "Prompt-box social video; the original render sped up 0.76% so bars land on a 2.4 s grid"
+      "note": "One extra B cycle, played 0.76% fast so bars land on a 2.4 s grid."
     },
     {
-      "name": "release-0.25",
+      "name": "60s",
       "seconds": 59.4,
-      "midi": "hunk-song-0.25-release.mid",
+      "midi": "hunk-song-60s.mid",
       "spans": [
         [0, 10, 0],
         [4, 10, 10],
         [4, null, 16]
       ],
-      "usedBy": "0.25.0 release video; break under the end card, last second faded"
+      "note": "B and C repeated twice more at the native tempo; fade the last second."
     }
   ],
   "spanFormat": "[sourceStartBar, sourceEndBar or null for the end of the song, destinationBar], 0-based bars"

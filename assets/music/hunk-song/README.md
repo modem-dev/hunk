@@ -3,12 +3,12 @@
 Hunk's synthwave theme for product videos: 12 bars in E minor at 99.25 BPM, 30.2 s with its ring-out.
 This folder is the DAW-neutral source, so the song can be rebuilt or re-cut in any DAW.
 
-| File                         | What it holds                                                                                                                                                        |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `hunk-song.mid`              | Standard MIDI File (type 1, 960 PPQ): a conductor track with tempo, 4/4 and section markers, then one named track per part, tick-for-tick from the original session. |
-| `hunk-song-0.25-release.mid` | The 59.4 s re-cut scored onto the 0.25.0 release video, as MIDI.                                                                                                     |
-| `sound.json`                 | Everything MIDI cannot carry: each part's synth patch, effects chain, fader, pan and automation, the master chain, chords, sections, and the bar spans of each cut.  |
-| `reference.mp3`              | The original session's mixdown, for A/B checks while rebuilding.                                                                                                     |
+| File                | What it holds                                                                                                                                                        |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `hunk-song.mid`     | Standard MIDI File (type 1, 960 PPQ): a conductor track with tempo, 4/4 and section markers, then one named track per part, tick-for-tick from the original session. |
+| `hunk-song-60s.mid` | A 59.4 s cut for minute-long videos, as MIDI.                                                                                                                        |
+| `sound.json`        | Everything MIDI cannot carry: each part's synth patch, effects chain, fader, pan and automation, the master chain, chords, sections, and the bar spans of each cut.  |
+| `reference.mp3`     | The original session's mixdown, for A/B checks while rebuilding.                                                                                                     |
 
 ## Rebuilding in a DAW
 
