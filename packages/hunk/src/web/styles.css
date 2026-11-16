@@ -211,10 +211,14 @@ body {
   text-align: center;
 }
 
-/* A pressed toggle reads like a checked segment: tinted, with the accent border. */
+/* A pressed toggle is a neutral "on" state, not a selection: the accent stays reserved for
+   position and focus. The filled panel, the full-strength label, and the dot glyph (on text
+   toggles) tell on from off without relying on color alone. */
 .tool-button[aria-pressed="true"] {
-  background: var(--hunk-accent-muted);
-  border-color: var(--hunk-accent);
+  background: var(--hunk-panel-alt);
+  border-color: var(--hunk-border);
+  color: var(--hunk-text);
+  box-shadow: inset 0 -2px 0 var(--hunk-muted);
 }
 
 .toggle-button[aria-pressed]::before {
@@ -226,7 +230,7 @@ body {
 }
 
 .toggle-button[aria-pressed="true"]::before {
-  color: var(--hunk-accent);
+  color: var(--hunk-text);
   content: "●" / "";
 }
 
@@ -328,8 +332,10 @@ body {
 }
 
 .segmented button[aria-checked="true"] {
-  background: var(--hunk-accent-muted);
-  border-color: var(--hunk-accent);
+  background: var(--hunk-panel-alt);
+  border-color: var(--hunk-border);
+  color: var(--hunk-text);
+  box-shadow: inset 0 -2px 0 var(--hunk-muted);
   position: relative;
 }
 
@@ -648,13 +654,9 @@ body {
   max-width: 920px;
   padding: 6px 10px 8px;
   background: var(--hunk-panel);
-  border: 1px solid var(--hunk-note-border, var(--hunk-accent));
+  border: 1px solid var(--hunk-border);
   border-left-width: 3px;
   border-radius: 6px;
-}
-
-.note-card[data-source="user"] {
-  border-color: var(--hunk-accent);
 }
 
 .note-card[data-stale] {
@@ -671,7 +673,7 @@ body {
 }
 
 .note-author {
-  color: var(--hunk-accent);
+  color: var(--hunk-text);
   font-weight: 600;
 }
 
@@ -1219,7 +1221,7 @@ body {
 
 .side-panel-tabs [role="tab"][aria-selected="true"] {
   color: var(--hunk-text);
-  border-bottom-color: var(--hunk-accent);
+  border-bottom-color: var(--hunk-text);
 }
 
 .side-panel-close {
@@ -1641,7 +1643,7 @@ body {
 }
 
 .notes-author {
-  color: var(--hunk-accent);
+  color: var(--hunk-text);
   font-weight: 600;
 }
 
@@ -1707,8 +1709,8 @@ body {
   left: 0;
   right: 0;
   box-sizing: border-box;
-  background: color-mix(in srgb, var(--hunk-accent) 14%, transparent);
-  border: 1px solid color-mix(in srgb, var(--hunk-accent) 70%, transparent);
+  background: color-mix(in srgb, var(--hunk-muted) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--hunk-muted) 60%, transparent);
   pointer-events: none;
 }
 

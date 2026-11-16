@@ -88,6 +88,38 @@ async function selectedHunk(page: Page) {
     .getAttribute("data-hunk-index")}`;
 }
 
+// Intent: the accent marks position and focus; an "on" toggle or a checked segment is neutral.
+test("pressed toggles and checked segments stay off the accent color", async ({ page }) => {
+  await openTestReview(page, "--rich");
+
+  const colors = await page.evaluate(() => {
+    const resolve = (value: string) => {
+      const probe = document.createElement("i");
+      probe.style.backgroundColor = value;
+      document.body.append(probe);
+      const resolved = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return resolved;
+    };
+    const paint = (element: Element | null) => {
+      const style = getComputedStyle(element!);
+      return { background: style.backgroundColor, border: style.borderTopColor };
+    };
+
+    return {
+      accent: resolve("var(--hunk-accent)"),
+      accentMuted: resolve("var(--hunk-accent-muted)"),
+      toggle: paint(document.querySelector('[data-testid="toggle-line-numbers"]')),
+      segment: paint(document.querySelector('.segmented button[aria-checked="true"]')),
+    };
+  });
+
+  for (const painted of [colors.toggle, colors.segment]) {
+    expect([painted.background, painted.border]).not.toContain(colors.accent);
+    expect([painted.background, painted.border]).not.toContain(colors.accentMuted);
+  }
+});
+
 // Intent: Space is a checkbox's only native key; the page must not turn it into a page-down.
 test("Space on a focused Viewed checkbox toggles it instead of paging", async ({ page }) => {
   await openTestReview(page, "--rich");
