@@ -44,6 +44,7 @@ const sessionDaemonActionSchema = z.enum([
   "comment-clear",
   "highlight-add",
   "highlight-clear",
+  "open",
 ]);
 
 const sessionDaemonCapabilitiesSchema = z.strictObject({
@@ -267,6 +268,11 @@ export const sessionDaemonRequestSchema = z.discriminatedUnion("action", [
     selector: selectorSchema,
     filePath: z.string().optional(),
   }),
+  z.strictObject({
+    action: z.literal("open"),
+    selector: selectorSchema,
+    open: z.boolean(),
+  }),
 ]);
 
 const nonnegative = z.int().nonnegative();
@@ -353,6 +359,7 @@ const snapshotSchema = z.strictObject({
     reviewPublication: z
       .strictObject({ generation: z.string(), stateRevision: nonnegative })
       .optional(),
+    reviewSharedStateRevision: nonnegative.optional(),
   }),
 });
 const listedSessionSchema = z.strictObject({
@@ -470,6 +477,11 @@ export const hunkCommandResultSchemas = {
     remainingCount: nonnegative,
     filePath: z.string().optional(),
   }),
+  open_review: z.strictObject({
+    opened: z.boolean(),
+    url: z.string().max(4096).optional(),
+    failure: z.string().max(4096).optional(),
+  }),
 } as const;
 
 const daemonResponseSchemas = {
@@ -500,6 +512,7 @@ const daemonResponseSchemas = {
   "highlight-clear": z.strictObject({
     result: hunkCommandResultSchemas.clear_highlights,
   }),
+  open: z.strictObject({ result: hunkCommandResultSchemas.open_review }),
 } satisfies {
   [Action in SessionDaemonAction]: z.ZodType<SessionDaemonResponses[Action]>;
 };

@@ -82,8 +82,11 @@ export type ParsedCommandOptions<Spec extends AgentCommandSpec> = {
 
 /** Parsed-options shape for one daemon action's CLI command. */
 export type SessionCommandOptions<Action extends SessionDaemonAction> = ParsedCommandOptions<
-  (typeof SESSION_AGENT_COMMANDS)[Action]
+  SessionCommandSpecs[Action]
 >;
+
+/** Every session command spec by action. */
+type SessionCommandSpecs = typeof SESSION_AGENT_COMMANDS;
 
 /**
  * One declared flag-group rule on a command. The same object drives three surfaces: the
@@ -481,6 +484,19 @@ export const SESSION_AGENT_COMMANDS = {
       `hunk session highlight clear ${SESSION_SELECTOR_SYNOPSIS} [--file <path>] [--json]`,
     ],
     examples: ["hunk session highlight clear --repo ."],
+  },
+  // Opens a live session's review in a browser, or prints its URL.
+  open: {
+    name: "session open",
+    summary: "open a live session's review in your browser",
+    positionals: [{ token: "[sessionId]" }],
+    options: [
+      repoOption,
+      { flag: "--no-open", description: "print the review URL instead of opening a browser" },
+      jsonOption,
+    ],
+    synopsis: [`hunk session open ${SESSION_SELECTOR_SYNOPSIS} [--no-open] [--json]`],
+    examples: ["hunk session open --repo .", "hunk session open --repo . --no-open"],
   },
 } as const satisfies Record<SessionDaemonAction, AgentCommandSpec>;
 

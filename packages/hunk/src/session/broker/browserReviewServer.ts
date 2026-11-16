@@ -50,23 +50,28 @@ import {
   REVIEW_EVENT_HEARTBEAT_FRAME,
   REVIEW_EVENT_STREAM_CONTENT_TYPE,
   ReviewEventTooLargeError,
-  type ReviewEventTypeV1,
+  type ReviewEventType,
 } from "../reviewEventProtocol";
 import {
   HUNK_REVIEW_CAPABILITY_HEADER,
   HUNK_REVIEW_HTTP_PATH_PREFIX,
   isReviewCapabilityToken,
   parseReviewHttpPath,
-  type HunkReviewClientErrorCodeV1,
-  type HunkReviewHttpFailureV1,
-  type HunkReviewHttpRoute,
-  type HunkReviewPublicationBodyV1,
+  REVIEW_CAPABILITY_ACTOR_KIND,
+  type ReviewHttpFailureCode,
+  type ReviewHttpFailure,
+  type ReviewHttpRoute,
+  type ReviewPublicationBody,
+  type ReviewRefreshBody,
+  type ReviewStateBody,
 } from "../reviewHttpProtocol";
 import {
   HUNK_REVIEW_PROTOCOL_VERSION,
   MAX_HUNK_REVIEW_ENVELOPE_BYTES,
-  parseHunkReviewActionEnvelope,
+  parseReviewActionEnvelope,
+  type ReviewRefreshResult,
 } from "../reviewProtocol";
+import type { ReviewSharedState } from "../reviewSharedState";
 import { allowsUnsafeRemoteSessionBroker, isLoopbackHost } from "./brokerConfig";
 import {
   ReviewGenerationRetiredError,
@@ -81,7 +86,7 @@ import {
  * Total over the code union, so a code added to any tier's vocabulary cannot reach this
  * surface without someone deciding what it means to a client.
  */
-const REVIEW_ERROR_STATUS: Record<HunkReviewClientErrorCodeV1, number> = {
+const REVIEW_ERROR_STATUS: Record<ReviewHttpFailureCode, number> = {
   "stale-generation": 409,
   "invalid-request": 400,
   "unsupported-action": 400,
@@ -98,6 +103,7 @@ const REVIEW_ERROR_STATUS: Record<HunkReviewClientErrorCodeV1, number> = {
   "invalid-note-parent": 409,
   "blank-note": 400,
   "note-too-large": 413,
+  "too-many-notes": 409,
   "missing-fact": 400,
   "unknown-resource": 404,
   "resource-unavailable": 502,
@@ -111,6 +117,12 @@ const REVIEW_ERROR_STATUS: Record<HunkReviewClientErrorCodeV1, number> = {
   "unsupported-media-type": 415,
   "forbidden-origin": 403,
   "too-many-streams": 503,
+  "state-too-large": 413,
+  "forbidden-actor": 403,
+  "selection-is-local": 403,
+  "draft-is-local": 403,
+  "refresh-unavailable": 409,
+  "refresh-failed": 502,
 };
 
 /**
@@ -127,6 +139,9 @@ const REVIEW_SECURITY_HEADERS: Record<string, string> = {
   "x-content-type-options": "nosniff",
   "x-frame-options": "DENY",
 };
+
+/** A refresh carries no body; anything past this is refused as oversized without reading on. */
+const MAX_REFRESH_BODY_BYTES = 1024;
 
 /** How often an idle stream is kept alive. */
 const DEFAULT_HEARTBEAT_MS = 15_000;
@@ -149,6 +164,14 @@ export interface BrowserReviewServerOptions {
   maxStreams?: number;
   maxStreamsPerSession?: number;
   maxStreamBufferBytes?: number;
+  /**
+   * Exempt one event-stream request from the listener's connection idle timeout.
+   *
+   * An event stream is idle by design between publications, and Bun's default 10 s idle
+   * timeout is shorter than the heartbeat, so without this every quiet stream is cut and
+   * reconnects. The host passes `server.timeout(request, 0)`; no other route is affected.
+   */
+  keepStreamOpen?: (request: Request) => void;
   /** Admit one authorized action through the host daemon's shared HTTP control budgets. */
   handleActionControl?: (
     request: Request,
@@ -167,6 +190,10 @@ interface ReviewEventStream {
   /** The last position this stream was told about, which a farewell is addressed to. */
   address: ReviewPublicationAddress;
   closed: boolean;
+  /** Bytes queued for the reader just after the last heartbeat was written. */
+  queuedAtHeartbeat: number;
+  /** Bytes written to the queue since the last heartbeat. */
+  writtenSinceHeartbeat: number;
 }
 
 /** One authorized request: which session, and the digest that authorized it. */
@@ -250,6 +277,10 @@ export class BrowserReviewServer {
     switch (route.kind) {
       case "publication":
         return this.requireMethod(request, "GET") ?? this.handlePublication(route.sessionId);
+      case "state":
+        return this.requireMethod(request, "GET") ?? this.handleState(route.sessionId);
+      case "refresh":
+        return this.requireMethod(request, "POST") ?? this.handleRefresh(request, route.sessionId);
       case "events":
         return this.requireMethod(request, "GET") ?? this.handleEvents(request, authorization);
       case "resource":
@@ -336,16 +367,117 @@ export class BrowserReviewServer {
   }
 
   /** Build the publication body, or nothing when the session publishes no review. */
-  private publicationBody(sessionId: string): HunkReviewPublicationBodyV1 | undefined {
+  private publicationBody(sessionId: string): ReviewPublicationBody | undefined {
     const publication = this.state.getReviewPublication(sessionId);
     return publication
       ? {
           protocolVersion: HUNK_REVIEW_PROTOCOL_VERSION,
           sessionId,
           publication: publication.address,
+          ...(publication.sharedStateRevision !== undefined
+            ? { sharedStateRevision: publication.sharedStateRevision }
+            : {}),
           catalog: publication.catalog,
         }
       : undefined;
+  }
+
+  /**
+   * Reload one session's review from its own input (F4's one allowlisted host command).
+   *
+   * Takes no arguments: any request body is refused, an oversized one as
+   * `payload-too-large` and any other as `invalid-request`, before the session is asked. The
+   * daemon coalesces concurrent refreshes per session and the session serializes them with
+   * every other reload, so a client may press refresh as often as it likes.
+   */
+  private async handleRefresh(request: Request, sessionId: string): Promise<Response> {
+    let body: string;
+    try {
+      body = await readRequestTextWithLimit(request, MAX_REFRESH_BODY_BYTES);
+    } catch (error) {
+      return this.failure(
+        error instanceof PayloadTooLargeError ? "payload-too-large" : "invalid-request",
+      );
+    }
+    if (body.length > 0) {
+      return this.failure("invalid-request", {
+        message: "A refresh takes no arguments; send an empty body.",
+      });
+    }
+    if (!this.state.getReviewPublication(sessionId)) {
+      return this.failure("no-publication");
+    }
+    let result: ReviewRefreshResult;
+    try {
+      result = await this.state.refreshReview(sessionId);
+    } catch {
+      // The session disconnected, timed out, or the daemon is shutting down. The thrown message
+      // is the broker's own text, so the client gets the catalog sentence for a reload that did
+      // not complete, like every other refresh failure.
+      return this.failure("refresh-failed");
+    }
+    if (!result.ok) {
+      // The session's own message can carry VCS stderr and absolute paths; a review client is
+      // told the catalog sentence and the session keeps the detail in its own notice path.
+      return this.failure(result.code);
+    }
+    const response: ReviewRefreshBody = {
+      ok: true,
+      protocolVersion: HUNK_REVIEW_PROTOCOL_VERSION,
+      sessionId,
+      publication: { generation: result.generation, stateRevision: result.stateRevision },
+    };
+    return this.json(response);
+  }
+
+  /**
+   * Serve one session's shared-state snapshot.
+   *
+   * Read through the daemon's single resource loop (`loadReviewSharedState`): single-flight per
+   * position, digest-verified, bounded by the protocol's envelope bound, and validated before
+   * it is served. The body names the position the snapshot was materialized at; a client that
+   * asked from an older position simply receives the current one.
+   */
+  private async handleState(sessionId: string): Promise<Response> {
+    if (!this.state.getReviewPublication(sessionId)) {
+      return this.failure("no-publication");
+    }
+    try {
+      let state: ReviewSharedState;
+      try {
+        state = await this.state.loadReviewSharedState(sessionId);
+      } catch (error) {
+        // A session that publishes shared state can answer `unknown-resource` for the
+        // `state:<revision>` it just moved past while this read was still assembling it. That
+        // is a race, not an absent source: read the current revision once more.
+        if (
+          error instanceof ReviewResourceReadError &&
+          error.code === "unknown-resource" &&
+          this.state.getReviewPublication(sessionId)?.sharedStateRevision !== undefined
+        ) {
+          state = await this.state.loadReviewSharedState(sessionId);
+        } else {
+          throw error;
+        }
+      }
+      const body: ReviewStateBody = {
+        protocolVersion: HUNK_REVIEW_PROTOCOL_VERSION,
+        sessionId,
+        publication: { generation: state.generation, stateRevision: state.stateRevision },
+        sharedStateRevision: state.sharedStateRevision,
+        state,
+      };
+      return this.json(body);
+    } catch (error) {
+      if (error instanceof ReviewResourceReadError && error.code === "resource-too-large") {
+        return this.failure("state-too-large");
+      }
+      if (error instanceof ReviewResourceReadError && error.code === "unknown-resource") {
+        // The session serves no shared state (it attached no source).
+        return this.failure("no-publication");
+      }
+      return this.resourceFailure(error);
+    }
   }
 
   /**
@@ -356,7 +488,7 @@ export class BrowserReviewServer {
    * this surface ever sees them; there is no second read path. What is added here is HTTP
    * `Range` handling and the response cap, which are transport concerns.
    */
-  private async handleResource(request: Request, route: HunkReviewHttpRoute): Promise<Response> {
+  private async handleResource(request: Request, route: ReviewHttpRoute): Promise<Response> {
     if (route.kind !== "resource") {
       return this.failure("invalid-request");
     }
@@ -372,10 +504,13 @@ export class BrowserReviewServer {
 
     let bytes: Uint8Array;
     try {
+      // A reader that goes away (a page aborting its reads on reload) leaves the slot queue at
+      // once instead of waiting its turn and then assembling bytes nobody wants.
       bytes = await this.state.loadReviewResource(
         route.sessionId,
         route.generation,
         route.resourceId,
+        { signal: request.signal },
       );
     } catch (error) {
       return this.resourceFailure(error);
@@ -405,6 +540,9 @@ export class BrowserReviewServer {
       headers: this.headers({
         "accept-ranges": "bytes",
         "content-type": descriptor?.contentType ?? "application/octet-stream",
+        // Exact file bytes (image previews) are data for the client to decode, never a
+        // document: octet-stream, nosniff, the deny-all CSP, and an attachment disposition.
+        ...(descriptor?.kind === "bytes" ? { "content-disposition": "attachment" } : {}),
         ...(partial
           ? { "content-range": `bytes ${start}-${Math.max(start, end)}/${bytes.byteLength}` }
           : {}),
@@ -415,7 +553,7 @@ export class BrowserReviewServer {
   /**
    * Apply one action on behalf of a remote caller.
    *
-   * The body is parsed by `parseHunkReviewActionEnvelope` and by nothing else — the
+   * The body is parsed by `parseReviewActionEnvelope` and by nothing else — the
    * prototype grew a second envelope parser here, which is how the two ends came to
    * disagree about which fields an action may carry (D5) — and the parsed action is handed
    * to the daemon's existing forwarding path, which plans it at the producer through the
@@ -447,11 +585,16 @@ export class BrowserReviewServer {
       );
     }
 
-    const envelope = parseHunkReviewActionEnvelope(value);
+    const envelope = parseReviewActionEnvelope(value);
     if (!envelope.ok) {
       return this.failure(
         envelope.reason === "unsupported" ? "unsupported-action" : "invalid-request",
       );
+    }
+    // A capability authorizes a browser; a declared terminal or agent kind would widen what
+    // the action may do at the producer (an agent's selection moves every surface).
+    if (envelope.value.actor.kind !== REVIEW_CAPABILITY_ACTOR_KIND) {
+      return this.failure("forbidden-actor");
     }
 
     try {
@@ -468,15 +611,17 @@ export class BrowserReviewServer {
       );
       return result.ok
         ? this.json(result)
-        : this.failure(result.code, {
-            message: result.message,
-            currentGeneration: result.currentGeneration,
-          });
+        : // The producer's message can name paths or echo the caller's input; the code and the
+          // catalog sentence are what a client renders (G4).
+          this.failure(result.code, { currentGeneration: result.currentGeneration });
     } catch (error) {
       if (error instanceof ReviewGenerationRetiredError) {
         return this.failure("stale-generation", { currentGeneration: error.currentGeneration });
       }
-      throw error;
+      // The session disconnected, the action timed out, the command queue was full, or the
+      // daemon is shutting down. The thrown message is the broker's own text, so the client gets
+      // the same catalog answer `/state` gives when the session cannot be reached.
+      return this.failure("resource-unavailable");
     }
   }
 
@@ -517,6 +662,8 @@ export class BrowserReviewServer {
             controller,
             address: opening.publication,
             closed: false,
+            queuedAtHeartbeat: 0,
+            writtenSinceHeartbeat: 0,
           };
           this.streams.add(stream);
           this.sendPublication(stream);
@@ -528,6 +675,7 @@ export class BrowserReviewServer {
       }),
     );
 
+    this.options.keepStreamOpen?.(request);
     if (request.signal.aborted) {
       this.closeStream(stream);
     } else {
@@ -573,7 +721,13 @@ export class BrowserReviewServer {
       this.sendDisconnect(stream);
       return;
     }
-    this.sendEvent(stream, "publication", publication.address, body);
+    this.sendEvent(
+      stream,
+      "publication",
+      publication.address,
+      body,
+      publication.sharedStateRevision,
+    );
   }
 
   /** Tell one stream its review is gone, then end it. */
@@ -587,9 +741,10 @@ export class BrowserReviewServer {
   /** Frame one event through the shared protocol and enqueue it. */
   private sendEvent(
     stream: ReviewEventStream,
-    type: ReviewEventTypeV1,
+    type: ReviewEventType,
     address: ReviewPublicationAddress,
     body: unknown,
+    sharedStateRevision?: number,
   ) {
     if (stream.closed) {
       return;
@@ -601,6 +756,7 @@ export class BrowserReviewServer {
       frames = planReviewEventFrames({
         type,
         address,
+        ...(sharedStateRevision !== undefined ? { sharedStateRevision } : {}),
         body,
         payload,
         contentDigest: nodeReviewDigest(payload),
@@ -624,12 +780,40 @@ export class BrowserReviewServer {
     }
   }
 
-  /** Keep idle streams and the proxies between them alive. */
+  /**
+   * Keep idle streams and the proxies between them alive, and end the ones that should not be.
+   *
+   * Each tick re-checks the stream's authorization, so a session that re-registered under a
+   * new capability ends its old streams within one heartbeat rather than at its next
+   * publication. It also ends a stalled reader: one that consumed nothing for a whole interval
+   * while more than a heartbeat frame was waiting. A slow reader of a large publication is
+   * still consuming, so it is never dropped by this rule; one that stopped is dropped within
+   * about two intervals instead of holding a stream slot until the byte bound fills with
+   * heartbeats.
+   */
   private broadcastHeartbeat() {
     const heartbeat = TEXT_ENCODER.encode(REVIEW_EVENT_HEARTBEAT_FRAME);
     for (const stream of Array.from(this.streams)) {
+      if (this.state.getReviewCapabilityDigest(stream.sessionId) !== stream.capabilityDigest) {
+        this.closeStream(stream);
+        continue;
+      }
+      const queued = this.queuedBytes(stream);
+      const consumed = stream.queuedAtHeartbeat + stream.writtenSinceHeartbeat - queued;
+      if (consumed <= 0 && queued > heartbeat.byteLength) {
+        this.closeStream(stream, new Error("The review event stream stopped reading."));
+        continue;
+      }
       this.write(stream, heartbeat);
+      stream.queuedAtHeartbeat = this.queuedBytes(stream);
+      stream.writtenSinceHeartbeat = 0;
     }
+  }
+
+  /** Bytes enqueued for one stream that its reader has not pulled yet. */
+  private queuedBytes(stream: ReviewEventStream) {
+    const highWaterMark = this.options.maxStreamBufferBytes ?? DEFAULT_MAX_STREAM_BUFFER_BYTES;
+    return Math.max(0, highWaterMark - (stream.controller.desiredSize ?? highWaterMark));
   }
 
   /** Enqueue bytes, dropping a stream that has fallen further behind than it may. */
@@ -643,6 +827,7 @@ export class BrowserReviewServer {
       this.removeStream(stream);
       return;
     }
+    stream.writtenSinceHeartbeat += bytes.byteLength;
     const budget = this.options.maxStreamBufferBytes ?? DEFAULT_MAX_STREAM_BUFFER_BYTES;
     // `desiredSize` goes negative by exactly the bytes queued beyond the mark, so this is
     // "the reader is a whole budget behind" rather than "the reader is merely slow".
@@ -698,11 +883,17 @@ export class BrowserReviewServer {
    * The message comes from the shared catalog unless the producer supplied a more specific
    * one, so a client never has to invent wording for a code (G4).
    */
+  /**
+   * Answer one failure with its code and catalog sentence.
+   *
+   * `message` is only for sentences this surface composes itself from no session or caller
+   * text; anything that arrived from a session stays out of the response.
+   */
   private failure(
-    code: HunkReviewClientErrorCodeV1,
+    code: ReviewHttpFailureCode,
     details: { message?: string; currentGeneration?: string } = {},
   ) {
-    const body: HunkReviewHttpFailureV1 = {
+    const body: ReviewHttpFailure = {
       ok: false,
       code,
       message: details.message ?? reviewErrorMessage(code),
@@ -714,7 +905,9 @@ export class BrowserReviewServer {
   /** Report one resource read failure with the code that says how it failed. */
   private resourceFailure(error: unknown) {
     if (error instanceof ReviewResourceReadError) {
-      return this.failure(error.code, { message: error.message });
+      // A source read failure's message carries the reader's error text (VCS stderr,
+      // absolute paths); the session keeps it, the client gets the catalog sentence.
+      return this.failure(error.code);
     }
     if (error instanceof ReviewGenerationRetiredError) {
       return this.failure("stale-generation", { currentGeneration: error.currentGeneration });

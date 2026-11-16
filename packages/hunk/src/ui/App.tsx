@@ -40,7 +40,10 @@ import { resolveExtensionKeyboardModes, resolveExtensionSessionOptions } from ".
 import { projectExtensionReviewNotes } from "../extensions/reviewSnapshot";
 import type { ExtensionNotifyType, ExtensionLoadResult } from "../extensions/types";
 import type { ReviewProducer } from "../app/review/producer";
+import { buildReviewPresentationDefaults, buildReviewSharedState } from "../app/review/sharedState";
 import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
+import type { ReviewRefreshResult } from "../session/reviewProtocol";
+import { reviewErrorMessage } from "../session/reviewErrorCatalog";
 import type { ReloadedSessionResult, ReloadSessionOptions } from "../session/types";
 // Keep lightweight interaction chrome synchronous: first-use lazy suspension otherwise
 // delays its visible commit behind React's Suspense fallback/retry throttle.
@@ -81,6 +84,7 @@ import {
   type WorkspaceWriteRunner,
 } from "./hooks/useExtensionWorkspaceControls";
 import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
+import { openSessionReview, type ReviewUrlOpener } from "../app/session/openReview";
 import { useMenuController } from "./hooks/useMenuController";
 import { usePaneSlideAnimation } from "./hooks/usePaneSlideAnimation";
 import { useThemeSelectorController } from "./hooks/useThemeSelectorController";
@@ -178,6 +182,7 @@ export function App({
   onViewPreferencesChange,
   onRegisterWorkspaceRefreshRequest,
   onReloadSession,
+  onRefreshReview,
   onRequestExtensionReviewReload,
   onWorkspaceWriteCompleted,
   reviewProducer,
@@ -188,6 +193,7 @@ export function App({
   watchRuntime,
   workspaceFileWriter,
   sendFeedback,
+  openReviewUrl,
 }: {
   bootstrap: AppBootstrap;
   /** Whether this surface may replace the session-owned extension registry. */
@@ -205,6 +211,8 @@ export function App({
     nextInput: CliInput,
     options?: ReloadSessionOptions,
   ) => Promise<ReloadedSessionResult>;
+  /** Reload the current input for a browser's refresh, coalesced by the reload coordinator. */
+  onRefreshReview?: () => Promise<ReviewRefreshResult>;
   /** Queue a coalesced reload against the review current when host execution begins. */
   onRequestExtensionReviewReload: (
     reviewGeneration: AppBootstrap,
@@ -225,6 +233,8 @@ export function App({
   workspaceFileWriter?: WorkspaceFileWriter;
   /** Send a confirmed feedback submission. Tests inject one; the default loads the real sender. */
   sendFeedback?: SendFeedbackImpl;
+  /** Open a review URL in a browser. Tests inject a recorder; the default launches one. */
+  openReviewUrl?: ReviewUrlOpener;
 }) {
   const SIDEBAR_MIN_WIDTH = 22;
   const DIFF_MIN_WIDTH = 48;
@@ -273,11 +283,23 @@ export function App({
   }, [initialFilePath, reviewFiles, review.selectFile]);
   // The producer plans brokered actions against the store this controller owns, so a
   // remote action and a key press reach the same state through the same intent path.
-  // AppHost detaches the previous store while committing a reload; this child layout
+  // The reload coordinator detaches the previous store while committing a reload; this child layout
   // effect installs the matching store before parent lifecycle handlers can use it.
+  // The producer serves this review's shared state to browsers from the same host; the
+  // presentation defaults are resolved lazily, once per bootstrap, on the first state read.
   useLayoutEffect(() => {
-    reviewProducer?.attachStore(review.store);
-  }, [bootstrap.changeset, review.store, reviewProducer]);
+    let presentation: ReturnType<typeof buildReviewPresentationDefaults> | undefined;
+    const host = review.host;
+    reviewProducer?.attachStore(review.store, {
+      getSharedStateRevision: () => host.getSharedStateRevision(),
+      recordAgentReveal: (target) => host.recordAgentReveal(target),
+      build: (generation) =>
+        buildReviewSharedState(host, {
+          generation,
+          presentation: (presentation ??= buildReviewPresentationDefaults(bootstrap)),
+        }),
+    });
+  }, [bootstrap, review.host, review.store, reviewProducer]);
   // Note-layer visibility is shared review state, so it lives in the review store
   // alongside the notes it governs rather than in local app state.
   const showAgentNotes = review.showAgentNotes;
@@ -295,6 +317,35 @@ export function App({
     edge: "top" | "bottom";
   }>({ id: 0, edge: "top" });
   const { text: transientNoticeText, show: showTransientNotice } = useTimedNotice(3_000);
+
+  // The terminal's "Open in browser" command and `hunk session open` share one opener; both
+  // need the daemon registration, so a session without a broker client offers neither.
+  const openReview = useMemo(
+    () =>
+      hostClient
+        ? ({ open }: { open: boolean }) =>
+            openSessionReview(hostClient.getRegistration().sessionId, {
+              open,
+              openUrl: openReviewUrl,
+            })
+        : undefined,
+    [hostClient, openReviewUrl],
+  );
+  const openInBrowser = useMemo(
+    () =>
+      openReview
+        ? () => {
+            void openReview({ open: true }).then((result) =>
+              showTransientNotice(
+                result.opened
+                  ? "Opened the review in your browser"
+                  : (result.failure ?? "Could not open a browser"),
+              ),
+            );
+          }
+        : undefined,
+    [openReview, showTransientNotice],
+  );
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(bootstrap.initialMode);
   const [showLineNumbers, setShowLineNumbers] = useState(bootstrap.initialShowLineNumbers ?? true);
   const [wrapLines, setWrapLines] = useState(bootstrap.initialWrapLines ?? false);
@@ -925,12 +976,15 @@ export function App({
     navigateToLocation: review.navigateToLocation,
     noteMarkupWidth: stmlEnabled ? noteMarkupWidth : undefined,
     openAgentNotes,
+    openReview,
     reloadSession: onReloadSession,
+    refreshReview: onRefreshReview,
     removeLiveComment: review.removeLiveComment,
     reviewProducer,
     reviewNoteCount: review.reviewNoteCount,
     reviewNoteSummaries: review.reviewNoteSummaries,
     reviewStateRevision: review.stateRevision,
+    reviewSharedStateRevision: review.sharedStateRevision,
     selectedFile,
     selectedHunk: review.selectedHunk,
     selectedHunkIndex,
@@ -1308,6 +1362,14 @@ export function App({
     () => setFocusArea((current) => (current === "note" ? "files" : current)),
     [],
   );
+
+  /** Explain a refused note save in the shared catalog's words; the draft stays open. */
+  const showSaveRefusal = useCallback(
+    (code: Parameters<typeof reviewErrorMessage>[0]) =>
+      showTransientNotice(reviewErrorMessage(code)),
+    [showTransientNotice],
+  );
+
   const {
     blurDraftNote,
     cancelDraftNote,
@@ -1331,6 +1393,7 @@ export function App({
     startReply: review.startUserNoteReply,
     updateDraft: review.updateDraftNote,
     saveDraft: review.saveDraftNote,
+    onSaveRefused: showSaveRefusal,
     cancelDraft: review.cancelDraftNote,
     focus: {
       draft: focusDraftNoteEditor,
@@ -1427,6 +1490,7 @@ export function App({
         moveNoteCursor: review.moveNoteCursor,
         openAgentSkill,
         openFeedback: feedbackEnabled ? feedback.open : undefined,
+        openInBrowser,
         openThemeSelector,
         requestQuit,
         resolvedKeys: resolvedCommandKeys,

@@ -7,18 +7,18 @@ import {
   REVIEW_SOURCE_CONTENT_TYPE,
   reviewResourceId,
 } from "../core/review/resources";
-import type { ReviewNoteV1 } from "../core/review/types";
+import type { ReviewNote } from "../core/review/types";
 import {
   HUNK_REVIEW_ACTION_TYPES,
   HUNK_REVIEW_PROTOCOL_VERSION,
-  parseHunkReviewAction,
-  parseHunkReviewActionEnvelope,
-  parseHunkReviewActor,
-  parseHunkReviewExpandedLineProof,
-  parseHunkReviewResourceCatalog,
-  parseHunkReviewResourceDescriptor,
-  parseHunkReviewResourceReadEnvelope,
-  parseHunkReviewPublicationAddress,
+  parseRemoteReviewIntent,
+  parseReviewActionEnvelope,
+  parseReviewActor,
+  parseReviewExpandedLineProof,
+  parseReviewResourceCatalog,
+  parseReviewResourceDescriptor,
+  parseReviewResourceReadEnvelope,
+  parseReviewPublicationAddress,
   toReviewIntent,
 } from "./reviewProtocol";
 
@@ -43,11 +43,11 @@ describe("review action vocabulary", () => {
   });
 
   test("names an action outside the vocabulary as unsupported, not malformed", () => {
-    expect(parseHunkReviewAction({ type: "session/reload" })).toEqual({
+    expect(parseRemoteReviewIntent({ type: "session/reload" })).toEqual({
       ok: false,
       reason: "unsupported",
     });
-    expect(parseHunkReviewAction({ filter: "x" })).toEqual({ ok: false, reason: "invalid" });
+    expect(parseRemoteReviewIntent({ filter: "x" })).toEqual({ ok: false, reason: "invalid" });
   });
 });
 
@@ -75,6 +75,16 @@ describe("review action round trip", () => {
     { type: "notes/remove-user", noteId: "user:1" },
     { type: "notes/remove-live", noteId: "live:1" },
     { type: "notes/clear", fileKey: FILE_KEY, includeUser: true },
+    {
+      type: "notes/add-user",
+      fileKey: FILE_KEY,
+      hunkIndex: 0,
+      target: { side: "new", line: 4 },
+      body: "direct note",
+      author: "Reviewer",
+    },
+    { type: "notes/edit-user", noteId: "user:1", body: "edited directly" },
+    { type: "files/set-viewed", fileKey: FILE_KEY, viewed: true },
     { type: "expansion/toggle", fileKey: FILE_KEY, gapId: "before:1" },
   ];
 
@@ -88,13 +98,13 @@ describe("review action round trip", () => {
 
   for (const intent of intents) {
     test(`${intent.type} survives serialization unchanged`, () => {
-      const parsed = parseHunkReviewAction(JSON.parse(JSON.stringify(intent)));
+      const parsed = parseRemoteReviewIntent(JSON.parse(JSON.stringify(intent)));
       expect(parsed.ok && toReviewIntent(parsed.value)).toEqual(intent);
     });
   }
 
   test("rejects an action carrying a field the intent does not have", () => {
-    expect(parseHunkReviewAction({ type: "filter/set", filter: "x", reveal: true })).toEqual({
+    expect(parseRemoteReviewIntent({ type: "filter/set", filter: "x", reveal: true })).toEqual({
       ok: false,
       reason: "invalid",
     });
@@ -102,7 +112,7 @@ describe("review action round trip", () => {
 
   test("rejects an action missing a field the intent requires", () => {
     expect(
-      parseHunkReviewAction({ type: "selection/select", fileKey: FILE_KEY, hunkIndex: 0 }),
+      parseRemoteReviewIntent({ type: "selection/select", fileKey: FILE_KEY, hunkIndex: 0 }),
     ).toEqual({
       ok: false,
       reason: "invalid",
@@ -110,7 +120,7 @@ describe("review action round trip", () => {
   });
 
   test("rejects a scope outside the navigable ones", () => {
-    expect(parseHunkReviewAction({ type: "selection/move", scope: "line", delta: 1 })).toEqual({
+    expect(parseRemoteReviewIntent({ type: "selection/move", scope: "line", delta: 1 })).toEqual({
       ok: false,
       reason: "invalid",
     });
@@ -125,7 +135,7 @@ describe("range note targets", () => {
       hunkIndex: 1,
       target: { newRange: [5, 8], preferred: { side: "new", line: 8 } },
     };
-    const parsed = parseHunkReviewAction(action);
+    const parsed = parseRemoteReviewIntent(action);
     expect(parsed.ok && parsed.value).toEqual(action as never);
     expect(parsed.ok && toReviewIntent(parsed.value)).toEqual(action as never);
   });
@@ -141,7 +151,7 @@ describe("range note targets", () => {
         preferred: { side: "new", line: 8 },
       },
     };
-    const parsed = parseHunkReviewAction(action);
+    const parsed = parseRemoteReviewIntent(action);
     expect(parsed.ok && parsed.value).toEqual(action as never);
     expect(parsed.ok && toReviewIntent(parsed.value)).toEqual(action as never);
   });
@@ -154,17 +164,17 @@ describe("range note targets", () => {
       hunkIndex: 1,
       target: { oldRange: [5, 8], preferred: { side: "old", line: 5 } },
     };
-    const parsed = parseHunkReviewAction(action);
+    const parsed = parseRemoteReviewIntent(action);
     expect(parsed.ok && parsed.value).toEqual(action as never);
     expect(
-      parseHunkReviewAction({
+      parseRemoteReviewIntent({
         type: "notes/create-user",
         consumeDraft: true,
         target: action.target,
       }).ok,
     ).toBe(false);
     expect(
-      parseHunkReviewAction({
+      parseRemoteReviewIntent({
         type: "notes/create-user",
         consumeDraft: true,
         fileKey: FILE_KEY,
@@ -180,7 +190,7 @@ describe("range note targets", () => {
       { newRange: [5, 8], preferred: { side: "old", line: 5 } },
     ]) {
       expect(
-        parseHunkReviewAction({
+        parseRemoteReviewIntent({
           type: "notes/start-draft",
           fileKey: FILE_KEY,
           hunkIndex: 1,
@@ -208,7 +218,7 @@ describe("expanded-line proof", () => {
       target: { side: "new", line: 5 },
       expandedLineProof: proof,
     };
-    const parsed = parseHunkReviewAction(action);
+    const parsed = parseRemoteReviewIntent(action);
 
     expect(parsed.ok).toBe(true);
     expect(parsed.ok && parsed.value).toEqual(action as never);
@@ -222,7 +232,7 @@ describe("expanded-line proof", () => {
   });
 
   test("rides along with the note creation it is a precondition for", () => {
-    const parsed = parseHunkReviewAction({
+    const parsed = parseRemoteReviewIntent({
       type: "notes/create-user",
       consumeDraft: true,
       target: { side: "new", line: 5 },
@@ -238,7 +248,7 @@ describe("expanded-line proof", () => {
   // Intent: evidence about nothing is a malformed action, not a tolerated extra.
   test("is refused without the line it is about", () => {
     expect(
-      parseHunkReviewAction({
+      parseRemoteReviewIntent({
         type: "notes/start-draft",
         fileKey: FILE_KEY,
         hunkIndex: 1,
@@ -248,11 +258,9 @@ describe("expanded-line proof", () => {
   });
 
   test("is refused when incomplete", () => {
-    expect(
-      parseHunkReviewExpandedLineProof({ ...proof, sourceIdentity: undefined }),
-    ).toBeUndefined();
-    expect(parseHunkReviewExpandedLineProof({ ...proof, line: 0 })).toBeUndefined();
-    expect(parseHunkReviewExpandedLineProof({ ...proof, side: "both" })).toBeUndefined();
+    expect(parseReviewExpandedLineProof({ ...proof, sourceIdentity: undefined })).toBeUndefined();
+    expect(parseReviewExpandedLineProof({ ...proof, line: 0 })).toBeUndefined();
+    expect(parseReviewExpandedLineProof({ ...proof, side: "both" })).toBeUndefined();
   });
 });
 
@@ -260,9 +268,9 @@ describe("actor identity", () => {
   // Intent: G2 — actions carry who did them from the protocol's first version.
   test("accepts every declared actor kind, with an optional label", () => {
     for (const kind of ["terminal", "browser", "agent"] as const) {
-      expect(parseHunkReviewActor({ clientId: "c", kind })).toEqual({ clientId: "c", kind });
+      expect(parseReviewActor({ clientId: "c", kind })).toEqual({ clientId: "c", kind });
     }
-    expect(parseHunkReviewActor({ clientId: "c", kind: "agent", displayName: "Pi" })).toEqual({
+    expect(parseReviewActor({ clientId: "c", kind: "agent", displayName: "Pi" })).toEqual({
       clientId: "c",
       kind: "agent",
       displayName: "Pi",
@@ -270,26 +278,26 @@ describe("actor identity", () => {
   });
 
   test("refuses an unknown kind or a missing identity", () => {
-    expect(parseHunkReviewActor({ clientId: "c", kind: "robot" })).toBeUndefined();
-    expect(parseHunkReviewActor({ kind: "browser" })).toBeUndefined();
-    expect(parseHunkReviewActor({ clientId: "", kind: "browser" })).toBeUndefined();
+    expect(parseReviewActor({ clientId: "c", kind: "robot" })).toBeUndefined();
+    expect(parseReviewActor({ kind: "browser" })).toBeUndefined();
+    expect(parseReviewActor({ clientId: "", kind: "browser" })).toBeUndefined();
   });
 
   test("is required on every action envelope", () => {
     expect(
-      parseHunkReviewActionEnvelope(envelope({ type: "notes/set-visibility", visible: true })).ok,
+      parseReviewActionEnvelope(envelope({ type: "notes/set-visibility", visible: true })).ok,
     ).toBe(true);
     const { actor: _actor, ...withoutActor } = envelope({
       type: "notes/set-visibility",
       visible: true,
     });
-    expect(parseHunkReviewActionEnvelope(withoutActor)).toEqual({ ok: false, reason: "invalid" });
+    expect(parseReviewActionEnvelope(withoutActor)).toEqual({ ok: false, reason: "invalid" });
   });
 });
 
 describe("action envelope", () => {
   test("carries the position the client acted from", () => {
-    const parsed = parseHunkReviewActionEnvelope(
+    const parsed = parseReviewActionEnvelope(
       envelope({ type: "notes/set-visibility", visible: true }, { expectedStateRevision: 7 }),
     );
     expect(parsed.ok && parsed.value.expectedStateRevision).toBe(7);
@@ -297,18 +305,18 @@ describe("action envelope", () => {
 
   test("refuses another protocol version or an unparseable generation", () => {
     const action = { type: "notes/set-visibility", visible: true };
-    expect(parseHunkReviewActionEnvelope(envelope(action, { protocolVersion: 2 }))).toEqual({
+    expect(parseReviewActionEnvelope(envelope(action, { protocolVersion: 2 }))).toEqual({
       ok: false,
       reason: "invalid",
     });
-    expect(parseHunkReviewActionEnvelope(envelope(action, { generation: "gen-3" }))).toEqual({
+    expect(parseReviewActionEnvelope(envelope(action, { generation: "gen-3" }))).toEqual({
       ok: false,
       reason: "invalid",
     });
   });
 
   test("reports an unsupported action through the envelope that carried it", () => {
-    expect(parseHunkReviewActionEnvelope(envelope({ type: "trust/decide" }))).toEqual({
+    expect(parseReviewActionEnvelope(envelope({ type: "trust/decide" }))).toEqual({
       ok: false,
       reason: "unsupported",
     });
@@ -317,7 +325,7 @@ describe("action envelope", () => {
 
 describe("resource read envelope", () => {
   test("accepts one bounded request", () => {
-    const parsed = parseHunkReviewResourceReadEnvelope({
+    const parsed = parseReviewResourceReadEnvelope({
       protocolVersion: HUNK_REVIEW_PROTOCOL_VERSION,
       actor: ACTOR,
       request: {
@@ -332,7 +340,7 @@ describe("resource read envelope", () => {
 
   test("refuses a window outside the shared chunk bound", () => {
     expect(
-      parseHunkReviewResourceReadEnvelope({
+      parseReviewResourceReadEnvelope({
         protocolVersion: HUNK_REVIEW_PROTOCOL_VERSION,
         actor: ACTOR,
         request: {
@@ -356,29 +364,29 @@ describe("resource descriptors", () => {
   };
 
   test("accepts an unmeasured descriptor and a fully measured one", () => {
-    expect(parseHunkReviewResourceDescriptor(patch)).toEqual(patch as never);
+    expect(parseReviewResourceDescriptor(patch)).toEqual(patch as never);
     expect(
-      parseHunkReviewResourceDescriptor({ ...patch, byteLength: 12, digest: "a".repeat(64) }),
+      parseReviewResourceDescriptor({ ...patch, byteLength: 12, digest: "a".repeat(64) }),
     ).toBeDefined();
   });
 
   // Intent: a descriptor with half a measurement cannot be verified when read.
   test("refuses a descriptor carrying a size without a digest", () => {
-    expect(parseHunkReviewResourceDescriptor({ ...patch, byteLength: 12 })).toBeUndefined();
-    expect(parseHunkReviewResourceDescriptor({ ...patch, digest: "a".repeat(64) })).toBeUndefined();
+    expect(parseReviewResourceDescriptor({ ...patch, byteLength: 12 })).toBeUndefined();
+    expect(parseReviewResourceDescriptor({ ...patch, digest: "a".repeat(64) })).toBeUndefined();
   });
 
   // Intent: D5 — one canonical digest form, checked by the shared validator.
   test("refuses a digest outside the canonical lowercase form", () => {
     expect(
-      parseHunkReviewResourceDescriptor({ ...patch, byteLength: 1, digest: "A".repeat(64) }),
+      parseReviewResourceDescriptor({ ...patch, byteLength: 1, digest: "A".repeat(64) }),
     ).toBeUndefined();
   });
 
   test("refuses a descriptor whose id disagrees with its own fields", () => {
-    expect(parseHunkReviewResourceDescriptor({ ...patch, kind: "canonical-file" })).toBeUndefined();
+    expect(parseReviewResourceDescriptor({ ...patch, kind: "canonical-file" })).toBeUndefined();
     expect(
-      parseHunkReviewResourceDescriptor({ ...patch, contentType: REVIEW_SOURCE_CONTENT_TYPE }),
+      parseReviewResourceDescriptor({ ...patch, contentType: REVIEW_SOURCE_CONTENT_TYPE }),
     ).toBeUndefined();
   });
 
@@ -392,10 +400,10 @@ describe("resource descriptors", () => {
       side: "new",
       sourceIdentity: "source:abc",
     };
-    expect(parseHunkReviewResourceDescriptor(source)).toEqual(source as never);
-    expect(parseHunkReviewResourceDescriptor({ ...source, side: "old" })).toBeUndefined();
+    expect(parseReviewResourceDescriptor(source)).toEqual(source as never);
+    expect(parseReviewResourceDescriptor({ ...source, side: "old" })).toBeUndefined();
     const { sourceIdentity: _identity, ...withoutIdentity } = source;
-    expect(parseHunkReviewResourceDescriptor(withoutIdentity)).toBeUndefined();
+    expect(parseReviewResourceDescriptor(withoutIdentity)).toBeUndefined();
   });
 });
 
@@ -422,12 +430,12 @@ describe("resource catalog", () => {
   };
 
   test("accepts a catalog whose descriptors all belong to its generation", () => {
-    expect(parseHunkReviewResourceCatalog(catalog)).toEqual(catalog as never);
+    expect(parseReviewResourceCatalog(catalog)).toEqual(catalog as never);
   });
 
   test("refuses a descriptor from another generation", () => {
     expect(
-      parseHunkReviewResourceCatalog({
+      parseReviewResourceCatalog({
         ...catalog,
         resources: [{ ...catalog.resources[0]!, generation: "generation:p1:4" }],
       }),
@@ -436,7 +444,7 @@ describe("resource catalog", () => {
 
   test("refuses more files than the resource count can account for", () => {
     expect(
-      parseHunkReviewResourceCatalog({
+      parseReviewResourceCatalog({
         ...catalog,
         fileKeysByRuntimeId: { a: "1", b: "2", c: "3" },
         resources: [catalog.resources[0]!],
@@ -447,24 +455,22 @@ describe("resource catalog", () => {
 
 describe("publication address", () => {
   test("accepts exactly a generation and a revision", () => {
-    expect(parseHunkReviewPublicationAddress({ generation: GENERATION, stateRevision: 4 })).toEqual(
-      {
-        generation: GENERATION,
-        stateRevision: 4,
-      },
-    );
+    expect(parseReviewPublicationAddress({ generation: GENERATION, stateRevision: 4 })).toEqual({
+      generation: GENERATION,
+      stateRevision: 4,
+    });
     expect(
-      parseHunkReviewPublicationAddress({ generation: GENERATION, stateRevision: -1 }),
+      parseReviewPublicationAddress({ generation: GENERATION, stateRevision: -1 }),
     ).toBeUndefined();
     expect(
-      parseHunkReviewPublicationAddress({ generation: GENERATION, stateRevision: 4, extra: 1 }),
+      parseReviewPublicationAddress({ generation: GENERATION, stateRevision: 4, extra: 1 }),
     ).toBeUndefined();
   });
 });
 
 describe("note transport bounds", () => {
   /** One note whose every text field fits the bound while the note as a whole does not. */
-  function oversizedNote(): ReviewNoteV1 {
+  function oversizedNote(): ReviewNote {
     const twoThirds = "x".repeat(Math.floor(MAX_REVIEW_NOTE_BYTES * 0.7));
     return {
       id: "user:1",

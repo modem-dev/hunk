@@ -13,6 +13,10 @@
  *   caller: the prototype had two near-identical copies inside this file, already
  *   disagreeing about progress and end-of-stream rules
  *   (`docs/browser-review-seam-audit.md`, C2).
+ * - **Shared state** is read through that same loop: the producer serves its shared-state
+ *   snapshot as a resource addressed by shared revision, assembled and digest-verified by the
+ *   same `ReviewChunkAssembler`, single-flight per position, bounded by the protocol's envelope
+ *   bound, and validated with the browser-safe parser before anyone is served it.
  * - **Action forwarding** hands a parsed review action to the producer that owns the
  *   review state, which plans it through the same intent path the terminal uses. The
  *   daemon never interprets an action, and in particular never re-derives where a note
@@ -42,9 +46,14 @@ import {
   ReviewMirror,
   readRegistrationReviewCatalog,
   readSnapshotReviewPublication,
+  readSnapshotSharedStateRevision,
   type MirroredReviewPublication,
 } from "./reviewMirror";
-import { ReviewResourceCache, type ReviewResourceReservation } from "./reviewResourceCache";
+import {
+  ReviewResourceWaitAbortedError,
+  ReviewResourceCache,
+  type ReviewResourceReservation,
+} from "./reviewResourceCache";
 import { ReviewChunkAssembler } from "../../core/review/resourceAssembly";
 import {
   isMaterializedReviewResource,
@@ -52,17 +61,18 @@ import {
   REVIEW_RESOURCE_LOAD_CONCURRENCY,
   reviewResourceCeiling,
   reviewResourceId,
-  type ReviewResourceDescriptorV1,
+  type ReviewResourceDescriptor,
 } from "../../core/review/resources";
 import { isReviewSha256Digest } from "../../core/review/validation";
 import { nodeReviewDigest } from "../../core/reviewDigest";
 import {
   HUNK_REVIEW_PROTOCOL_VERSION,
-  type HunkReviewActionResultV1,
-  type HunkReviewActionV1,
-  type HunkReviewActorV1,
-  type HunkReviewFailureCodeV1,
-  type HunkReviewResourceReadResultV1,
+  type ReviewActionResult,
+  type RemoteReviewIntent,
+  type ReviewActor,
+  type ReviewFailureCode,
+  type ReviewRefreshResult,
+  type ReviewResourceReadResult,
 } from "../reviewProtocol";
 import {
   SessionBrokerState,
@@ -70,6 +80,13 @@ import {
   type SessionTargetInput,
 } from "@hunk/session-broker-core";
 import { reviewResourceUnavailableMessage } from "../agent/errors";
+import {
+  MAX_REVIEW_SHARED_STATE_BYTES,
+  parseReviewSharedState,
+  parseReviewSharedStateResourceId,
+  REVIEW_SHARED_STATE_CURRENT_RESOURCE_ID,
+  type ReviewSharedState,
+} from "../reviewSharedState";
 
 const hunkSessionBrokerView: SessionBrokerViewAdapter<
   HunkSessionInfo,
@@ -94,7 +111,7 @@ const hunkSessionBrokerView: SessionBrokerViewAdapter<
 };
 
 /** How the daemon identifies itself when it reads a resource on an agent's behalf. */
-const DAEMON_ACTOR: HunkReviewActorV1 = { clientId: "hunk-daemon", kind: "agent" };
+const DAEMON_ACTOR: ReviewActor = { clientId: "hunk-daemon", kind: "agent" };
 
 /** Raised when a read or action names a generation the session is no longer serving. */
 export class ReviewGenerationRetiredError extends Error {
@@ -121,7 +138,7 @@ export class ReviewResourceReadError extends Error {
   override readonly name = "ReviewResourceReadError";
 
   constructor(
-    readonly code: HunkReviewFailureCodeV1,
+    readonly code: ReviewFailureCode,
     message: string,
   ) {
     super(message);
@@ -180,6 +197,27 @@ type HunkBrokerBase = SessionBrokerState<
 /** The transport handle the broker core identifies a connection by; it does not export one. */
 type HunkBrokerConnection = Parameters<HunkBrokerBase["registerSession"]>[0];
 
+/**
+ * Shortest time between two reloads one session performs for review clients.
+ *
+ * A minimum interval rather than a trailing debounce: the first press reloads at once, and a
+ * second press within the interval answers with the reload that just finished (the input was
+ * read moments ago), so a reviewer never waits for a timer and a client cannot spin the VCS.
+ */
+export const REVIEW_REFRESH_MIN_INTERVAL_MS = 2_000;
+
+/** How long a read waits in line for an in-flight slot before it is refused. */
+const RESERVE_WAIT_MS = 10_000;
+
+/**
+ * Most sessions whose last shared state the daemon keeps answering from memory.
+ *
+ * Each entry is at most `MAX_REVIEW_SHARED_STATE_BYTES` (4 MiB), so the cache holds at most
+ * 32 MiB however many sessions are registered; a session past the cap reads from its producer
+ * again, which is correct, only slower.
+ */
+export const MAX_CACHED_REVIEW_SHARED_STATES = 8;
+
 export class HunkSessionBrokerState extends SessionBrokerState<
   HunkSessionInfo,
   HunkSessionState,
@@ -192,15 +230,40 @@ export class HunkSessionBrokerState extends SessionBrokerState<
 > {
   private readonly mirror = new ReviewMirror();
   private readonly resources: ReviewResourceCache;
-  /** One load per resource; concurrent callers await the same assembly. */
-  private readonly loads = new Map<string, Promise<Uint8Array>>();
+  /**
+   * One load per resource; concurrent callers await the same assembly. A load is abandoned
+   * (its wait for a slot aborted) only once every caller that joined it has gone away.
+   */
+  private readonly loads = new Map<
+    string,
+    { promise: Promise<Uint8Array>; controller: AbortController; callers: number; pinned: boolean }
+  >();
+  /** One refresh per session in flight; concurrent callers await the same reload. */
+  private readonly refreshes = new Map<string, Promise<ReviewRefreshResult>>();
+  /** The last settled refresh per session, answered again within the minimum interval. */
+  private readonly recentRefreshes = new Map<
+    string,
+    { settledAt: number; result: ReviewRefreshResult }
+  >();
+  private readonly now: () => number;
+  /** One shared-state read per position; concurrent callers await the same assembly. */
+  private readonly sharedStateLoads = new Map<string, Promise<ReviewSharedState>>();
+  /**
+   * The last assembled, validated shared state per session, answered again while the mirror
+   * still describes the same `(generation, sharedStateRevision)`; repeated reads at one
+   * position cost the session nothing. One entry per session, dropped when the session
+   * unregisters or replaces its generation, and at most `MAX_CACHED_REVIEW_SHARED_STATES`
+   * entries in least-recently-read order.
+   */
+  private readonly sharedStates = new Map<string, ReviewSharedState>();
   /** Capability verifiers by session, as their registrations declared them. */
   private readonly capabilityDigests = new Map<string, string>();
   private readonly publicationWatchers = new Set<(event: ReviewPublicationEvent) => void>();
 
-  constructor(resources = new ReviewResourceCache()) {
+  constructor(resources = new ReviewResourceCache(), options: { now?: () => number } = {}) {
     super(hunkSessionBrokerView);
     this.resources = resources;
+    this.now = options.now ?? Date.now;
   }
 
   override registerSession(
@@ -235,6 +298,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
         sessionId,
         readRegistrationReviewCatalog(registrationInput),
         readSnapshotReviewPublication(snapshotInput),
+        readSnapshotSharedStateRevision(snapshotInput),
       );
     }
     return registered;
@@ -253,6 +317,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
         sessionId,
         this.mirror.get(sessionId)?.catalog,
         readSnapshotReviewPublication(snapshotInput),
+        readSnapshotSharedStateRevision(snapshotInput),
       );
     }
     return result;
@@ -277,6 +342,10 @@ export class HunkSessionBrokerState extends SessionBrokerState<
     this.mirror.clear();
     this.resources.clear();
     this.loads.clear();
+    this.sharedStateLoads.clear();
+    this.sharedStates.clear();
+    this.recentRefreshes.clear();
+    this.refreshes.clear();
     this.capabilityDigests.clear();
     for (const sessionId of watched) {
       this.notifyPublicationWatchers({ kind: "retired", sessionId });
@@ -369,6 +438,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
     sessionId: string,
     generation: string,
     resourceId: string,
+    options: { signal?: AbortSignal } = {},
   ): Promise<Uint8Array> {
     const descriptor = this.requireDescriptor(sessionId, generation, resourceId);
     const key = { sessionId, generation, resourceId };
@@ -377,17 +447,166 @@ export class HunkSessionBrokerState extends SessionBrokerState<
       return cached;
     }
 
+    // A caller that left before asking starts nothing: an assembly nobody waits for would
+    // still reserve budget and read every chunk.
+    if (options.signal?.aborted) {
+      throw new ReviewResourceWaitAbortedError();
+    }
+
     const loadKey = JSON.stringify([sessionId, generation, resourceId]);
-    const running = this.loads.get(loadKey);
+    let load = this.loads.get(loadKey);
+    if (!load) {
+      const controller = new AbortController();
+      const promise = this.assembleResource(key, descriptor, controller.signal).finally(() => {
+        this.loads.delete(loadKey);
+      });
+      // Every caller may have left; the load's own failure then has nobody to report to.
+      promise.catch(() => undefined);
+      load = { promise, controller, callers: 0, pinned: false };
+      this.loads.set(loadKey, load);
+    }
+    return this.joinLoad(load, options.signal);
+  }
+
+  /**
+   * Await one shared load on behalf of one caller.
+   *
+   * A caller without a signal pins the load. A caller whose signal aborts is answered at once
+   * and leaves; the load itself is aborted when the last caller has left and none pinned it.
+   */
+  private joinLoad(
+    load: {
+      promise: Promise<Uint8Array>;
+      controller: AbortController;
+      callers: number;
+      pinned: boolean;
+    },
+    signal: AbortSignal | undefined,
+  ): Promise<Uint8Array> {
+    if (!signal) {
+      load.pinned = true;
+      return load.promise;
+    }
+    if (signal.aborted) return Promise.reject(new ReviewResourceWaitAbortedError());
+    load.callers += 1;
+    return new Promise<Uint8Array>((resolve, reject) => {
+      const onAbort = () => {
+        load.callers -= 1;
+        if (load.callers === 0 && !load.pinned) load.controller.abort();
+        reject(new ReviewResourceWaitAbortedError());
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+      load.promise.then(
+        (bytes) => {
+          signal.removeEventListener("abort", onAbort);
+          resolve(bytes);
+        },
+        (error: unknown) => {
+          signal.removeEventListener("abort", onAbort);
+          reject(error);
+        },
+      );
+    });
+  }
+
+  /**
+   * Read one session's shared-state snapshot from the producer that owns it.
+   *
+   * Single-flight per `(generation, sharedStateRevision)`, reserved against the daemon-wide
+   * in-flight budget, assembled and verified by the shared `ReviewChunkAssembler`, bounded by
+   * `MAX_REVIEW_SHARED_STATE_BYTES` (`resource-too-large` past it), and parsed with the
+   * browser-safe `parseReviewSharedState` (`resource-integrity` if it does not parse). The
+   * read asks for the producer's current revision, so a stale mirror is answered with the
+   * current state rather than an error. The last state per session is kept for repeated reads
+   * at the same position (`sharedStates`); the next shared revision makes it obsolete.
+   */
+  loadReviewSharedState(sessionId: string): Promise<ReviewSharedState> {
+    const publication = this.mirror.get(sessionId);
+    if (!publication) {
+      return Promise.reject(new ReviewGenerationRetiredError(undefined));
+    }
+    const generation = publication.address.generation;
+    const cached = this.sharedStates.get(sessionId);
+    if (
+      cached &&
+      cached.generation === generation &&
+      publication.sharedStateRevision !== undefined &&
+      cached.sharedStateRevision === publication.sharedStateRevision
+    ) {
+      this.rememberSharedState(sessionId, cached);
+      return Promise.resolve(cached);
+    }
+    const loadKey = JSON.stringify([
+      sessionId,
+      generation,
+      publication.sharedStateRevision ?? "current",
+    ]);
+    const running = this.sharedStateLoads.get(loadKey);
     if (running) {
       return running;
     }
-
-    const load = this.assembleResource(key, descriptor).finally(() => {
-      this.loads.delete(loadKey);
-    });
-    this.loads.set(loadKey, load);
+    const load = this.assembleSharedState(sessionId, generation)
+      .then((state) => {
+        // Kept only while it is still the session's generation; a retired one is never served.
+        if (this.mirror.get(sessionId)?.address.generation === state.generation) {
+          this.rememberSharedState(sessionId, state);
+        }
+        return state;
+      })
+      .finally(() => {
+        this.sharedStateLoads.delete(loadKey);
+      });
+    this.sharedStateLoads.set(loadKey, load);
     return load;
+  }
+
+  /** Keep one session's shared state as the most recently read, evicting the least recent. */
+  private rememberSharedState(sessionId: string, state: ReviewSharedState) {
+    this.sharedStates.delete(sessionId);
+    this.sharedStates.set(sessionId, state);
+    for (const oldest of this.sharedStates.keys()) {
+      if (this.sharedStates.size <= MAX_CACHED_REVIEW_SHARED_STATES) break;
+      this.sharedStates.delete(oldest);
+    }
+  }
+
+  /** The sessions whose shared state is cached, least recently read first (for tests). */
+  cachedSharedStateSessionIds(): string[] {
+    return [...this.sharedStates.keys()];
+  }
+
+  /**
+   * Ask one session to reload its current input, coalescing concurrent requests.
+   *
+   * Carries no arguments: the session reopens its own registered input through its reload
+   * coordinator, which serializes it with every other reload. Requests arriving while one is
+   * in flight share its answer, so a client spamming refresh costs one reload at a time.
+   */
+  refreshReview(sessionId: string): Promise<ReviewRefreshResult> {
+    const running = this.refreshes.get(sessionId);
+    if (running) return running;
+    // A refresh that settled moments ago already reloaded the input; pressing again answers
+    // with it instead of reloading again, which bounds reloads to one per interval.
+    const recent = this.recentRefreshes.get(sessionId);
+    if (recent && this.now() - recent.settledAt < REVIEW_REFRESH_MIN_INTERVAL_MS) {
+      return Promise.resolve(recent.result);
+    }
+    const refresh = this.dispatchCommand<ReviewRefreshResult, "refresh_review">({
+      selector: { sessionId },
+      command: "refresh_review",
+      input: { sessionId },
+      timeoutMessage: "Timed out waiting for the session to reload its review.",
+      timeoutMs: 120_000,
+    })
+      .then((result) => {
+        this.recentRefreshes.set(sessionId, { settledAt: this.now(), result });
+        return result;
+      })
+      .finally(() => {
+        this.refreshes.delete(sessionId);
+      });
+    this.refreshes.set(sessionId, refresh);
+    return refresh;
   }
 
   /**
@@ -401,11 +620,11 @@ export class HunkSessionBrokerState extends SessionBrokerState<
   async applyReviewAction(
     sessionId: string,
     generation: string,
-    action: HunkReviewActionV1,
-    options: { actor?: HunkReviewActorV1; expectedStateRevision?: number } = {},
-  ): Promise<HunkReviewActionResultV1> {
+    action: RemoteReviewIntent,
+    options: { actor?: ReviewActor; expectedStateRevision?: number } = {},
+  ): Promise<ReviewActionResult> {
     this.assertGenerationActive(sessionId, generation);
-    return this.dispatchCommand<HunkReviewActionResultV1, "apply_review_action">({
+    return this.dispatchCommand<ReviewActionResult, "apply_review_action">({
       selector: { sessionId },
       command: "apply_review_action",
       input: {
@@ -427,12 +646,14 @@ export class HunkSessionBrokerState extends SessionBrokerState<
     sessionId: string,
     catalog: MirroredReviewPublication["catalog"] | undefined,
     address: ReturnType<typeof readSnapshotReviewPublication>,
+    sharedStateRevision?: number,
   ) {
-    const update = this.mirror.observe({ sessionId, catalog, address });
+    const update = this.mirror.observe({ sessionId, catalog, address, sharedStateRevision });
     if (update.kind === "replaced") {
       // Nothing from the retired generation can be asked for again, and an in-flight read
       // of it can only produce bytes nobody wants.
       this.resources.evictGeneration(sessionId, update.previousGeneration);
+      this.sharedStates.delete(sessionId);
     }
     if (update.kind !== "ignored") {
       this.notifyPublicationWatchers({ kind: "published", sessionId });
@@ -446,6 +667,12 @@ export class HunkSessionBrokerState extends SessionBrokerState<
       if (!live.has(sessionId)) {
         this.capabilityDigests.delete(sessionId);
       }
+    }
+    for (const sessionId of this.recentRefreshes.keys()) {
+      if (!live.has(sessionId)) this.recentRefreshes.delete(sessionId);
+    }
+    for (const sessionId of this.sharedStates.keys()) {
+      if (!live.has(sessionId)) this.sharedStates.delete(sessionId);
     }
     for (const sessionId of this.mirror.sessionIds()) {
       if (!live.has(sessionId)) {
@@ -481,6 +708,18 @@ export class HunkSessionBrokerState extends SessionBrokerState<
     return descriptor;
   }
 
+  /** Take an in-flight reservation through the cache's arrival-order wait (`reserveWhenFree`). */
+  private reserveWhenFree(
+    key: { sessionId: string; generation: string; resourceId: string },
+    byteLength: number,
+    signal?: AbortSignal,
+  ): Promise<ReviewResourceReservation> {
+    return this.resources.reserveWhenFree(key, byteLength, {
+      waitMs: RESERVE_WAIT_MS,
+      ...(signal ? { signal } : {}),
+    });
+  }
+
   /** Reject any read or action addressed to a generation the session is not serving. */
   private assertGenerationActive(sessionId: string, generation: string) {
     const publication = this.mirror.get(sessionId);
@@ -500,14 +739,16 @@ export class HunkSessionBrokerState extends SessionBrokerState<
    */
   private async assembleResource(
     key: { sessionId: string; generation: string; resourceId: string },
-    descriptor: ReviewResourceDescriptorV1,
+    descriptor: ReviewResourceDescriptor,
+    signal?: AbortSignal,
   ): Promise<Uint8Array> {
     const measured = isMaterializedReviewResource(descriptor);
-    const reservation: ReviewResourceReservation = this.resources.reserve(
+    const reservation: ReviewResourceReservation = await this.reserveWhenFree(
       key,
       measured
         ? descriptor.byteLength!
         : Math.min(REVIEW_RESOURCE_CHUNK_BYTES, reviewResourceCeiling(descriptor.kind)),
+      signal,
     );
     try {
       const assembler = new ReviewChunkAssembler({
@@ -553,12 +794,93 @@ export class HunkSessionBrokerState extends SessionBrokerState<
     }
   }
 
+  /**
+   * Assemble one shared-state snapshot through the resource loop.
+   *
+   * The first window asks for the current revision under the alias id; the producer answers
+   * under the concrete `state:<revision>` id, and the rest is assembled under that id.
+   */
+  private async assembleSharedState(
+    sessionId: string,
+    generation: string,
+  ): Promise<ReviewSharedState> {
+    const reservation = await this.reserveWhenFree(
+      { sessionId, generation, resourceId: REVIEW_SHARED_STATE_CURRENT_RESOURCE_ID },
+      REVIEW_RESOURCE_CHUNK_BYTES,
+    );
+    try {
+      this.assertGenerationActive(sessionId, generation);
+      const first = await this.readChunk(
+        { sessionId, generation, resourceId: REVIEW_SHARED_STATE_CURRENT_RESOURCE_ID },
+        0,
+      );
+      if (!first.ok) {
+        throw new ReviewResourceReadError(first.code, first.message);
+      }
+      const resourceId = first.chunk.resourceId;
+      if (typeof parseReviewSharedStateResourceId(resourceId) !== "number") {
+        throw new ReviewResourceReadError(
+          "resource-integrity",
+          `The session answered a shared-state read with resource ${resourceId}.`,
+        );
+      }
+      const assembler = new ReviewChunkAssembler({
+        resourceId,
+        generation,
+        digest: nodeReviewDigest,
+        maxBytes: MAX_REVIEW_SHARED_STATE_BYTES,
+      });
+      let result: ReviewResourceReadResult = first;
+      for (;;) {
+        if (!result.ok) {
+          throw new ReviewResourceReadError(result.code, result.message);
+        }
+        const step = assembler.accept({
+          chunk: result.chunk,
+          bytes: new Uint8Array(Buffer.from(result.chunk.data, "base64")),
+        });
+        if (!step.ok) {
+          throw new ReviewResourceReadError(step.code, step.message);
+        }
+        this.resources.resize(reservation, assembler.declaredSize ?? reservation.byteLength);
+        if (step.done) {
+          break;
+        }
+        this.assertGenerationActive(sessionId, generation);
+        result = await this.readChunk({ sessionId, generation, resourceId }, assembler.nextOffset);
+      }
+
+      const assembled = assembler.finish();
+      if (!assembled.ok) {
+        throw new ReviewResourceReadError(assembled.code, assembled.message);
+      }
+      this.assertGenerationActive(sessionId, generation);
+      let state: ReviewSharedState | undefined;
+      try {
+        state = parseReviewSharedState(
+          JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(assembled.bytes)),
+        );
+      } catch {
+        state = undefined;
+      }
+      if (!state || state.generation !== generation) {
+        throw new ReviewResourceReadError(
+          "resource-integrity",
+          "The session's shared state did not parse as a shared-state snapshot.",
+        );
+      }
+      return state;
+    } finally {
+      this.resources.release(reservation);
+    }
+  }
+
   /** Ask the session for one window of one resource. */
   private readChunk(
     key: { sessionId: string; generation: string; resourceId: string },
     offset: number,
-  ): Promise<HunkReviewResourceReadResultV1> {
-    return this.dispatchCommand<HunkReviewResourceReadResultV1, "read_review_resource">({
+  ): Promise<ReviewResourceReadResult> {
+    return this.dispatchCommand<ReviewResourceReadResult, "read_review_resource">({
       selector: { sessionId: key.sessionId },
       command: "read_review_resource",
       input: {

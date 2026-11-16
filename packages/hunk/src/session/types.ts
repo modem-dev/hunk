@@ -8,10 +8,10 @@ import type { CommentTargetInput, DiffSide } from "../core/liveComments";
 import type { ReviewPublicationAddress } from "../core/review/generationOrder";
 import type { CliInput, ReviewNoteSource } from "../core/run/commandInputs";
 import type {
-  HunkReviewActionEnvelopeV1,
-  HunkReviewResourceCatalogV1,
-  HunkReviewResourceReadEnvelopeV1,
-  HunkReviewResultV1,
+  ReviewActionEnvelope,
+  ReviewResourceCatalog,
+  ReviewResourceReadEnvelope,
+  ReviewCommandResult,
 } from "./reviewProtocol";
 import type {
   SessionRegistration,
@@ -75,7 +75,7 @@ export interface HunkSessionInfo {
    * Absent from a session built before review resources existed; the broker's mirror
    * treats that as "this session serves no resources" rather than as an invalid payload.
    */
-  reviewCatalog?: HunkReviewResourceCatalogV1;
+  reviewCatalog?: ReviewResourceCatalog;
   /**
    * Digest of the capability this session's review may be read under.
    *
@@ -109,6 +109,14 @@ export interface HunkSessionState {
    * session built before the mirror existed.
    */
   reviewPublication?: ReviewPublicationAddress;
+  /**
+   * The review's shared-state revision at `reviewPublication`.
+   *
+   * Advances only when the shared-state snapshot's content would differ, so the daemon can
+   * tell a browser to refetch `/state` without doing so on every selection move. Never present
+   * without `reviewPublication`.
+   */
+  reviewSharedStateRevision?: number;
 }
 
 export type HunkSessionRegistration = SessionRegistration<HunkSessionInfo>;
@@ -150,11 +158,13 @@ export interface ClearCommentsToolInput extends SessionTargetInput {
 
 /** One bounded resource read, brokered to the session that published the generation. */
 export interface ReadReviewResourceToolInput
-  extends SessionTargetInput, HunkReviewResourceReadEnvelopeV1 {}
+  extends SessionTargetInput, ReviewResourceReadEnvelope {}
+
+/** Reload the session's current input with no caller-supplied arguments (F4 allowlist). */
+export interface RefreshReviewToolInput extends SessionTargetInput {}
 
 /** One semantic review action, brokered to the producer that owns the review state. */
-export interface ApplyReviewActionToolInput
-  extends SessionTargetInput, HunkReviewActionEnvelopeV1 {}
+export interface ApplyReviewActionToolInput extends SessionTargetInput, ReviewActionEnvelope {}
 
 /** One agent-set attention mark: a character range inside one diff line. */
 export interface HighlightToolInput extends SessionTargetInput {
@@ -171,6 +181,11 @@ export interface HighlightToolInput extends SessionTargetInput {
 
 export interface ClearHighlightsToolInput extends SessionTargetInput {
   filePath?: string;
+}
+
+/** Open the session's review in a browser, or ask for its URL with `open: false`. */
+export interface OpenReviewToolInput extends SessionTargetInput {
+  open: boolean;
 }
 
 export interface SessionLiveCommentSummary {
@@ -249,6 +264,18 @@ export interface ClearedHighlightsResult {
   removedCount: number;
   remainingCount: number;
   filePath?: string;
+}
+
+/**
+ * How a session answered `open_review`.
+ *
+ * `url` is present only when the caller asked for it (`open: false`); it carries the review
+ * capability. `failure` describes a launch that did not start a browser, never with the URL.
+ */
+export interface OpenedReviewResult {
+  opened: boolean;
+  url?: string;
+  failure?: string;
 }
 
 export interface RemovedCommentResult {
@@ -352,9 +379,10 @@ export type HunkSessionCommandResult =
   | RemovedCommentResult
   | ClearedCommentsResult
   | ReloadedSessionResult
-  | HunkReviewResultV1
+  | ReviewCommandResult
   | AppliedHighlightResult
-  | ClearedHighlightsResult;
+  | ClearedHighlightsResult
+  | OpenedReviewResult;
 
 export type HunkSessionServerMessage =
   | SessionServerMessage<"comment", CommentToolInput>
@@ -365,5 +393,7 @@ export type HunkSessionServerMessage =
   | SessionServerMessage<"clear_comments", ClearCommentsToolInput>
   | SessionServerMessage<"read_review_resource", ReadReviewResourceToolInput>
   | SessionServerMessage<"apply_review_action", ApplyReviewActionToolInput>
+  | SessionServerMessage<"refresh_review", RefreshReviewToolInput>
   | SessionServerMessage<"highlight", HighlightToolInput>
-  | SessionServerMessage<"clear_highlights", ClearHighlightsToolInput>;
+  | SessionServerMessage<"clear_highlights", ClearHighlightsToolInput>
+  | SessionServerMessage<"open_review", OpenReviewToolInput>;

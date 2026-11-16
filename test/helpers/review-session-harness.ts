@@ -10,8 +10,16 @@
  * and ordering are real rather than collapsed into synchronous calls.
  */
 import { ReviewProducer } from "../../packages/hunk/src/app/review/producer";
+import type { ReviewSessionHost } from "../../packages/hunk/src/app/review/reviewSessionHost";
+import {
+  buildReviewPresentationDefaults,
+  buildReviewSharedState,
+} from "../../packages/hunk/src/app/review/sharedState";
 import { createReviewStore } from "../../packages/hunk/src/core/review/store";
-import { createHunkSessionBridge } from "../../packages/hunk/src/app/session/bridge";
+import {
+  createHunkSessionBridge,
+  type HunkSessionBridgeHandlers,
+} from "../../packages/hunk/src/app/session/bridge";
 import {
   createInitialSessionSnapshot,
   createSessionRegistration,
@@ -21,6 +29,7 @@ import { HunkSessionBrokerState } from "../../packages/hunk/src/session/broker/s
 import { ReviewResourceCache } from "../../packages/hunk/src/session/broker/reviewResourceCache";
 import type { AppBootstrap } from "../../packages/hunk/src/core/bootstrap";
 import type { DiffFile } from "../../packages/hunk/src/core/changeset/model";
+import type { ReviewRefreshResult } from "../../packages/hunk/src/session/reviewProtocol";
 import type {
   HunkSessionRegistration,
   HunkSessionServerMessage,
@@ -38,6 +47,23 @@ export interface ReviewSessionHarnessOptions {
    * against that measurement, so this exercises the verification rather than a bug.
    */
   corruptResourceChunks?: boolean;
+  /**
+   * Serve shared state from this host instead of attaching a bare store.
+   *
+   * The host's store becomes the producer's store and its projection the producer's shared
+   * state, the way a mounted terminal or headless session attaches them.
+   */
+  host?: ReviewSessionHost;
+  /** The surface the session's producer reports, for actor-policy tests. */
+  surface?: "terminal" | "headless";
+  /** Answer brokered refreshes; absent, the session reports refresh as unavailable. */
+  refreshReview?: () => Promise<ReviewRefreshResult>;
+  /** The broker state's clock, for tests of time-bounded behavior such as refresh pacing. */
+  now?: () => number;
+  /** Register into this broker state instead of a new one, for tests of several sessions. */
+  state?: HunkSessionBrokerState;
+  /** Answer `hunk session open`; absent, the session reports it cannot be opened. */
+  openReview?: HunkSessionBridgeHandlers["openReview"];
 }
 
 /**
@@ -88,11 +114,29 @@ export function connectReviewSession(files: DiffFile[], options: ReviewSessionHa
   const bootstrap = createTestReviewBootstrap(files);
   const producer = new ReviewProducer(
     { files, sourceLabel: bootstrap.changeset.sourceLabel },
-    { producerId: "integration" },
+    { producerId: "integration", surface: options.surface ?? "terminal" },
   );
-  producer.attachStore(createReviewStore(producer.getPublication().document));
+  if (options.host) {
+    const host = options.host;
+    producer.attachStore(host.store, {
+      getSharedStateRevision: () => host.getSharedStateRevision(),
+      recordAgentReveal: (target) => host.recordAgentReveal(target),
+      build: (generation) =>
+        buildReviewSharedState(host, {
+          generation,
+          presentation: buildReviewPresentationDefaults(bootstrap),
+        }),
+    });
+  } else {
+    producer.attachStore(createReviewStore(producer.getPublication().document));
+  }
 
-  const state = new HunkSessionBrokerState(options.cache ?? new ReviewResourceCache());
+  const state =
+    options.state ??
+    new HunkSessionBrokerState(
+      options.cache ?? new ReviewResourceCache(),
+      options.now ? { now: options.now } : {},
+    );
   const sent: HunkSessionServerMessage[] = [];
   const bridge = createHunkSessionBridge({
     addLiveComment: () => {
@@ -121,6 +165,8 @@ export function connectReviewSession(files: DiffFile[], options: ReviewSessionHa
       throw new Error("unused");
     },
     reviewProducer: producer,
+    ...(options.refreshReview ? { refreshReview: options.refreshReview } : {}),
+    ...(options.openReview ? { openReview: options.openReview } : {}),
   });
 
   const socket = {
@@ -177,6 +223,9 @@ export function connectReviewSession(files: DiffFile[], options: ReviewSessionHa
           state: {
             ...snapshot.state,
             reviewPublication: producer.getPublicationAddress(),
+            ...(producer.getSharedStateRevision() !== undefined
+              ? { reviewSharedStateRevision: producer.getSharedStateRevision() }
+              : {}),
           },
         }),
       ),

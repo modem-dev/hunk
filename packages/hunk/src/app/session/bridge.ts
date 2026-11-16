@@ -1,7 +1,8 @@
 import type { ReviewProducer } from "../review/producer";
 import type {
-  HunkReviewFailureV1,
-  HunkReviewResourceReadResultV1,
+  ReviewFailure,
+  ReviewRefreshResult,
+  ReviewResourceReadResult,
 } from "../../session/reviewProtocol";
 import type {
   AppliedCommentBatchResult,
@@ -12,6 +13,8 @@ import type {
   HunkSessionCommandResult,
   HunkSessionServerMessage,
   NavigatedSelectionResult,
+  OpenedReviewResult,
+  OpenReviewToolInput,
   ReloadedSessionResult,
   RemovedCommentResult,
 } from "../../session/types";
@@ -56,10 +59,22 @@ export interface HunkSessionBridgeHandlers {
    * caller would get for a review that has moved on, rather than throwing.
    */
   reviewProducer?: ReviewProducer;
+  /**
+   * Reload the session's current input, as the `r` key does, for a browser's refresh.
+   *
+   * Optional: a mount without a reload coordinator answers `refresh-unavailable`.
+   */
+  refreshReview?: () => Promise<ReviewRefreshResult>;
+  /**
+   * Open this session's review in a browser, or return its URL, for `hunk session open`.
+   *
+   * Optional: a mount that has no daemon registration answers that it cannot be opened.
+   */
+  openReview?: (input: Pick<OpenReviewToolInput, "open">) => Promise<OpenedReviewResult>;
 }
 
 /** The refusal a review command gets when this session serves no published review. */
-function noReviewProducer(): HunkReviewFailureV1 {
+function noReviewProducer(): ReviewFailure {
   return {
     ok: false,
     code: "stale-generation",
@@ -116,15 +131,29 @@ export function createHunkSessionBridge(handlers: HunkSessionBridgeHandlers) {
           });
         case "read_review_resource": {
           const producer = handlers.reviewProducer;
-          const result: HunkReviewResourceReadResultV1 = producer
+          const result: ReviewResourceReadResult = producer
             ? await readSessionReviewResource(producer, message.input)
             : noReviewProducer();
+          return result;
+        }
+        case "refresh_review": {
+          const result: ReviewRefreshResult = handlers.refreshReview
+            ? await handlers.refreshReview()
+            : {
+                ok: false,
+                code: "refresh-unavailable",
+                message: "This session cannot reload its review.",
+              };
           return result;
         }
         case "apply_review_action": {
           const producer = handlers.reviewProducer;
           return producer ? applySessionReviewAction(producer, message.input) : noReviewProducer();
         }
+        case "open_review":
+          return handlers.openReview
+            ? handlers.openReview({ open: message.input.open })
+            : { opened: false, failure: "This session cannot be opened in a browser." };
       }
     },
   };

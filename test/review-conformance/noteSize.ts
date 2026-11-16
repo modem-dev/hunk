@@ -10,19 +10,19 @@
  * still means the same thing if the bound moves.
  */
 import { MAX_REVIEW_NOTE_BYTES } from "../../packages/hunk/src/core/review/noteSize";
-import type { ReviewNoteV1 } from "../../packages/hunk/src/core/review/types";
+import type { ReviewNote } from "../../packages/hunk/src/core/review/types";
 
 export interface ReviewNoteSizeFixture {
   id: string;
   /** What makes this note adversarial, in one line. */
   description: string;
-  build: () => ReviewNoteV1;
+  build: () => ReviewNote;
   /** Hand-written from the semantics — never captured from the measurement. */
   withinSizeLimit: boolean;
 }
 
 /** One minimal note with the given text fields; everything else is framing. */
-function note(fields: Partial<ReviewNoteV1>): ReviewNoteV1 {
+function note(fields: Partial<ReviewNote>): ReviewNote {
   return {
     id: "note:1",
     source: "user",

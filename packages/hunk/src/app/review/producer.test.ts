@@ -10,6 +10,11 @@ import {
 import { createReviewStore } from "../../core/review/store";
 import type { DiffFile } from "../../core/changeset/model";
 import { parseReadReviewResourceRequest } from "../../core/review/resources";
+import {
+  MAX_REVIEW_SHARED_STATE_BYTES,
+  REVIEW_SHARED_STATE_CURRENT_RESOURCE_ID,
+} from "../../session/reviewSharedState";
+import { nodeReviewDigest } from "../../core/reviewDigest";
 import { ReviewProducer } from "./producer";
 
 const BEFORE = lines("alpha", "beta", "gamma", "delta");
@@ -552,5 +557,47 @@ describe("parseReadReviewResourceRequest", () => {
     expect(parseReadReviewResourceRequest(request)).toEqual(request);
     expect(parseReadReviewResourceRequest({ ...request, extra: 1 })).toBeUndefined();
     expect(parseReadReviewResourceRequest({ ...request, resourceId: "" })).toBeUndefined();
+  });
+});
+
+describe("review producer shared state", () => {
+  // Finding: an oversized snapshot was serialized again for every read and kept, four copies
+  // deep, although it could never be served. It is now serialized once and kept only as a size.
+  test("serializes an oversized snapshot once and keeps none of its bytes", async () => {
+    const files = [createTestDiffFile({ before: BEFORE, after: AFTER })];
+    const hashed: number[] = [];
+    const producer = new ReviewProducer(
+      { files, sourceLabel: "/repo" },
+      {
+        producerId: "test",
+        digest: (bytes) => {
+          hashed.push(bytes.byteLength);
+          return nodeReviewDigest(bytes);
+        },
+      },
+    );
+    let builds = 0;
+    const huge = "x".repeat(MAX_REVIEW_SHARED_STATE_BYTES);
+    producer.attachStore(createReviewStore(producer.getPublication().document), {
+      getSharedStateRevision: () => 1,
+      recordAgentReveal: () => {},
+      build: () => {
+        builds += 1;
+        return { huge } as never;
+      },
+    });
+    const read = () =>
+      producer.readResource({
+        generation: producer.getPublication().generation,
+        resourceId: REVIEW_SHARED_STATE_CURRENT_RESOURCE_ID,
+        offset: 0,
+        length: 1024,
+      });
+
+    expect(await read()).toMatchObject({ ok: false, code: "resource-too-large" });
+    expect(await read()).toMatchObject({ ok: false, code: "resource-too-large" });
+    expect(builds).toBe(1);
+    // Never hashed means never kept as servable bytes: only its size was recorded.
+    expect(hashed.filter((size) => size > MAX_REVIEW_SHARED_STATE_BYTES)).toEqual([]);
   });
 });

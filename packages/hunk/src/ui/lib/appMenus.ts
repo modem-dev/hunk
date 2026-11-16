@@ -149,6 +149,7 @@ export function buildAppMenus({
       { commandId: "hunk.review.focusFilter", label: "Focus filter" },
       { commandId: "hunk.review.editSelectedFile", label: "Open file in editor" },
       { commandId: "hunk.app.refresh", label: "Reload" },
+      { commandId: "hunk.app.openInBrowser", label: "Open in browser" },
       SEPARATOR,
       { commandId: "hunk.app.quit" },
     ],

@@ -1,5 +1,5 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
-import { DOCUMENT_HIGHLIGHT_MAX_LINE_LENGTH } from "../highlightRenderOptions";
+import { DOCUMENT_HIGHLIGHT_MAX_LINE_LENGTH } from "../../../core/documents/highlightRenderOptions";
 import type { CompactHighlightedDiff, CompactHighlightedDocument } from "./highlightCompact";
 
 /** Identifies the private main-thread/worker message contract. */

@@ -1,5 +1,6 @@
 import { MouseButton, type MouseEvent as TuiMouseEvent } from "@opentui/core";
 import { memo } from "react";
+import { reviewFileChangeGlyph } from "../../../core/review/fileLabels";
 import type { ExtensionSidebarTheme } from "../../../extension-api/types";
 import { diffRailMarker } from "../../diff/rowStyle";
 import { fileRowId } from "../../lib/ids";
@@ -18,28 +19,24 @@ import { fitText, padText } from "../../lib/text";
  * token slice structurally, so internal callers pass their theme unchanged.
  */
 
-/** Get icon and color for file state using standard git status codes. */
+/**
+ * Get the change-kind letter and its color for one row.
+ *
+ * Which letter a change kind shows is the shared `reviewFileChangeGlyph` (audit E1), the
+ * same answer the browser sidebar and file headers draw; the sidebar theme supplies the
+ * color for the role it names.
+ */
 function getFileStateIcon(
   entry: FileListEntry,
   theme: ExtensionSidebarTheme,
 ): { icon: string; color: string } {
-  if (entry.isUntracked) {
-    return { icon: "?", color: theme.fileUntracked };
-  }
-
-  switch (entry.changeType) {
-    case "new":
-      return { icon: "A", color: theme.fileNew };
-    case "deleted":
-      return { icon: "D", color: theme.fileDeleted };
-    case "rename-pure":
-    case "rename-changed":
-      return { icon: "R", color: theme.fileRenamed };
-    case "change":
-      return { icon: "M", color: theme.fileModified };
-    default:
-      return { icon: "", color: theme.text };
-  }
+  // A change type outside the shared vocabulary (a hand-built sidebar entry) shows no letter.
+  const resolved = reviewFileChangeGlyph(entry.changeType, entry.isUntracked) as
+    | ReturnType<typeof reviewFileChangeGlyph>
+    | undefined;
+  return resolved
+    ? { icon: resolved.glyph, color: theme[resolved.role] }
+    : { icon: "", color: theme.text };
 }
 
 /** Render one folder header in the navigation sidebar. */

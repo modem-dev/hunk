@@ -20,12 +20,12 @@ import {
 import { reviewDefaultHunkLineTarget, reviewHunkRange } from "./geometry";
 import { reviewEmptyDiffReason, type ReviewEmptyDiffReason } from "./document";
 import type {
-  ReviewDocumentV1,
-  ReviewFileFlagsV1,
-  ReviewFileStatsV1,
-  ReviewFileV1,
-  ReviewHunkBlockV1,
-  ReviewLineAddressV1,
+  ReviewDocument,
+  ReviewFileFlags,
+  ReviewFileStats,
+  ReviewFile,
+  ReviewHunkBlock,
+  ReviewLineAddress,
   ReviewLineRange,
   ReviewSide,
 } from "./types";
@@ -35,7 +35,7 @@ export interface ReviewContentManifestHunk {
   oldRange: ReviewLineRange;
   newRange: ReviewLineRange;
   /** Where a note addressed to the whole hunk lands. */
-  defaultNoteTarget: ReviewLineAddressV1;
+  defaultNoteTarget: ReviewLineAddress;
   /**
    * The hunk's own content blocks.
    *
@@ -43,7 +43,7 @@ export interface ReviewContentManifestHunk {
    * without it, a consumer could serve hunk content that no check ever compares against
    * the model it claims to describe (`docs/browser-review-seam-audit.md`, D4).
    */
-  blocks: ReviewHunkBlockV1[];
+  blocks: ReviewHunkBlock[];
   leadingGap?: ReviewContentManifestGap;
 }
 
@@ -61,8 +61,8 @@ export interface ReviewContentManifestFile {
   changeKind: string;
   language?: string;
   agentSummary?: string;
-  stats: ReviewFileStatsV1;
-  flags: ReviewFileFlagsV1;
+  stats: ReviewFileStats;
+  flags: ReviewFileFlags;
   contentIdentity: string;
   /**
    * Identity of the expandable source behind the file, when it has one. The content
@@ -98,7 +98,7 @@ function manifestGap(address: ReviewGapAddress): ReviewContentManifestGap {
 }
 
 /** Snapshot one semantic file plus everything a renderer derives from it. */
-export function buildReviewContentManifestFile(file: ReviewFileV1): ReviewContentManifestFile {
+export function buildReviewContentManifestFile(file: ReviewFile): ReviewContentManifestFile {
   const gapSource = reviewGapSourceForFile(file);
   const trailingGap = reviewTrailingGap(gapSource);
   return {
@@ -143,6 +143,6 @@ export function buildReviewContentManifestFile(file: ReviewFileV1): ReviewConten
 }
 
 /** Build the deterministic semantic snapshot of one projected review document. */
-export function buildReviewContentManifest(document: ReviewDocumentV1): ReviewContentManifest {
+export function buildReviewContentManifest(document: ReviewDocument): ReviewContentManifest {
   return { version: 1, files: document.files.map(buildReviewContentManifestFile) };
 }

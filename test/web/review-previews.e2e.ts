@@ -1,0 +1,300 @@
+/**
+ * Drives the rich previews against a real session reviewing images and Markdown.
+ *
+ * Images: a changed PNG compares side by side, by swipe, and by onion skin with sizes and
+ * dimensions; an added and a deleted image show their one side; bytes named like an image
+ * that are not one keep the stream's "Binary file skipped"; a PNG declaring 30000 × 30000 is
+ * refused before decoding; an SVG, text or binary, never becomes a blob or an `<img>`, and
+ * every blob the page mints has a raster type. Markdown: the header toggle swaps
+ * a file's diff for its rendered text, a deleted file renders its old text, and nothing in the
+ * document runs. No CSP violation or console error, and axe stays green.
+ */
+import { execFileSync } from "node:child_process";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+import AxeBuilder from "@axe-core/playwright";
+import { expect, test, type Page } from "@playwright/test";
+import { encodeTestPng } from "./fixtures/preview-review";
+import { startTestWebReview, watchTestPageProblems, type TestWebReview } from "./webTestHarness";
+
+let review: TestWebReview | undefined;
+let problems: string[] = [];
+
+test.use({ viewport: { width: 1440, height: 900 } });
+
+test.beforeEach(async ({ page }) => {
+  review = await startTestWebReview("--previews");
+  problems = await watchTestPageProblems(page);
+  await page.goto(review.url);
+  await expect(page.locator('.toolbar [data-state="connected"]')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("load-progress")).toHaveCount(0, { timeout: 30_000 });
+});
+
+test.afterEach(async () => {
+  // Check the page before stopping (a stopped daemon cuts its event stream), but always stop.
+  try {
+    expect(problems).toEqual([]);
+  } finally {
+    await review?.stop();
+    review = undefined;
+  }
+});
+
+/** The stream section for one path. */
+function section(page: Page, path: string) {
+  return page.locator(`section[aria-label="${path}"]`);
+}
+
+test("compares a changed image side by side, by swipe, and by onion skin", async ({ page }) => {
+  const photo = section(page, "images/photo.png");
+  const preview = photo.getByTestId("image-preview");
+  await expect(preview).toBeVisible();
+  await expect(preview.locator("figcaption").first()).toHaveText(/^Before · 48 × 32 · \d+ B$/);
+  await expect(preview.locator("figcaption").nth(1)).toHaveText(/^After · 64 × 32 · \d+ B$/);
+  const sources = await preview
+    .locator("img")
+    .evaluateAll((images) => images.map((image) => (image as HTMLImageElement).src));
+  expect(sources.every((source) => source.startsWith("blob:"))).toBe(true);
+  await expect
+    .poll(() =>
+      preview
+        .locator("img")
+        .evaluateAll((images) =>
+          images.every((image) => (image as HTMLImageElement).naturalWidth > 0),
+        ),
+    )
+    .toBe(true);
+
+  await preview.getByTestId("image-mode-swipe").click();
+  await expect(preview).toHaveAttribute("data-mode", "swipe");
+  await preview.getByTestId("image-slider").fill("25");
+  await expect(preview.locator(".image-preview-over")).toHaveAttribute(
+    "style",
+    /inset\(0px 0px 0px 25%\)/,
+  );
+
+  await preview.getByTestId("image-mode-onion").click();
+  await preview.getByTestId("image-slider").fill("40");
+  await expect(preview.locator(".image-preview-over")).toHaveAttribute("style", /opacity: 0\.4/);
+});
+
+test("shows added and deleted images single-sided, and keeps the placeholder for non-images", async ({
+  page,
+}) => {
+  await expect(section(page, "images/added.png").locator("figcaption")).toHaveText(
+    /^Added · 24 × 24/,
+  );
+  await section(page, "images/removed.png").scrollIntoViewIfNeeded();
+  await expect(section(page, "images/removed.png").locator("figcaption")).toHaveText(
+    /^Deleted · 16 × 16/,
+  );
+  await section(page, "images/fake.png").scrollIntoViewIfNeeded();
+  await expect(section(page, "images/fake.png").locator('[data-empty-reason="binary"]')).toHaveText(
+    "Binary file skipped",
+  );
+  await expect(section(page, "images/fake.png").locator("img")).toHaveCount(0);
+});
+
+test("refuses an image whose header declares a size past the decode limit", async ({ page }) => {
+  const huge = section(page, "images/huge.png");
+  await huge.scrollIntoViewIfNeeded();
+  await expect(huge.getByTestId("image-preview-too-large")).toHaveText(
+    "Image too large to preview: 30000 × 30000",
+  );
+  await expect(huge.locator("img")).toHaveCount(0);
+});
+
+test("never turns an SVG into a blob or an image, text or binary", async ({ page }) => {
+  // Record every blob the page mints, from the first script on, then load the page again.
+  await page.addInitScript(() => {
+    const types: string[] = [];
+    (window as { __blobTypes?: string[] }).__blobTypes = types;
+    const create = URL.createObjectURL.bind(URL);
+    URL.createObjectURL = (object: Blob | MediaSource) => {
+      types.push(object instanceof Blob ? object.type : "media-source");
+      return create(object);
+    };
+  });
+  await page.reload();
+  await expect(page.locator('.toolbar [data-state="connected"]')).toBeVisible({ timeout: 30_000 });
+  await expect(section(page, "images/photo.png").getByTestId("image-preview")).toBeVisible();
+
+  // A text SVG keeps its ordinary text diff.
+  const script = section(page, "images/script.svg");
+  await script.scrollIntoViewIfNeeded();
+  await expect(script.locator("diffs-container")).toHaveCount(1);
+  await expect(script.locator("img")).toHaveCount(0);
+  await expect(script.getByTestId("image-preview")).toHaveCount(0);
+
+  // A binary SVG keeps the stream's placeholder.
+  const packed = section(page, "images/packed.svg");
+  await packed.scrollIntoViewIfNeeded();
+  await expect(packed.locator('[data-empty-reason="binary"]')).toHaveText("Binary file skipped");
+  await expect(packed.locator("img")).toHaveCount(0);
+
+  const types = await page.evaluate(() => (window as { __blobTypes?: string[] }).__blobTypes);
+  expect(types!.length).toBeGreaterThan(0);
+  const raster = [
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "image/webp",
+    "image/bmp",
+    "image/x-icon",
+  ];
+  expect(types!.filter((type) => !raster.includes(type))).toEqual([]);
+  expect(
+    await page.evaluate(() => (window as { __hunkSvgPwned?: boolean }).__hunkSvgPwned),
+  ).toBeUndefined();
+});
+
+test("revokes image URLs when previews unmount", async ({ page }) => {
+  await expect(section(page, "images/photo.png").getByTestId("image-preview")).toBeVisible();
+  const url = await section(page, "images/photo.png").locator("img").first().getAttribute("src");
+  await page.evaluate(() => {
+    const revoked: string[] = [];
+    (window as { __revoked?: string[] }).__revoked = revoked;
+    const revoke = URL.revokeObjectURL.bind(URL);
+    URL.revokeObjectURL = (target: string) => {
+      revoked.push(target);
+      revoke(target);
+    };
+  });
+  // Leaving the area unmounts the file; a revoked blob URL no longer resolves.
+  const stream = page.locator(".review-stream");
+  await stream.evaluate((element) => {
+    const spacer = document.createElement("div");
+    spacer.style.height = "20000px";
+    element.append(spacer);
+  });
+  await stream.evaluate((element) => (element.scrollTop = element.scrollHeight));
+  await expect(section(page, "images/photo.png").locator("img")).toHaveCount(0, {
+    timeout: 10_000,
+  });
+  expect(await page.evaluate(() => (window as { __revoked?: string[] }).__revoked)).toContain(url);
+});
+
+test("toggles a Markdown file between its diff and its rendered text, inertly", async ({
+  page,
+}) => {
+  const guide = section(page, "docs/guide.md");
+  await guide.scrollIntoViewIfNeeded();
+  // Two segments name both views; the checked one is the view showing.
+  const diffMode = guide.getByTestId("markdown-mode-diff");
+  const renderedMode = guide.getByTestId("markdown-mode-rendered");
+  await expect(guide.getByTestId("markdown-mode")).toHaveText("DiffRendered");
+  await expect(diffMode).toHaveAttribute("aria-checked", "true");
+  await expect(renderedMode).toHaveAttribute("aria-checked", "false");
+  await renderedMode.click();
+  await expect(renderedMode).toHaveAttribute("aria-checked", "true");
+  await expect(diffMode).toHaveAttribute("aria-checked", "false");
+  const rendered = guide.getByTestId("markdown-preview");
+  await expect(rendered.locator("h1")).toHaveText("Guide");
+  await expect(rendered.locator("strong")).toHaveText("new");
+  await expect(rendered.locator("table td").nth(1)).toHaveText("80");
+  await expect(rendered.locator("pre code")).toHaveText("hunk diff --web");
+  // Raw HTML is text, and only the web link is a link.
+  await expect(rendered).toContainText("<script>window.__hunkPwned = true</script>");
+  expect(
+    await page.evaluate(() => (window as { __hunkPwned?: boolean }).__hunkPwned),
+  ).toBeUndefined();
+  const links = rendered.locator("a");
+  await expect(links).toHaveCount(1);
+  await expect(links).toHaveAttribute("href", "https://example.com/docs");
+  await expect(links).toHaveAttribute("rel", "noopener noreferrer");
+  await expect(links).toHaveAttribute("target", "_blank");
+
+  // Clicking the checked segment keeps the view; the other one switches back.
+  await renderedMode.click();
+  await expect(guide.getByTestId("markdown-preview")).toBeVisible();
+  await diffMode.click();
+  await expect(diffMode).toHaveAttribute("aria-checked", "true");
+  await expect(guide.getByTestId("markdown-preview")).toHaveCount(0);
+  await expect(guide.locator("diffs-container")).toHaveCount(1);
+});
+
+// Intent: a note or hunk lives in the diff, so navigating into a file shown rendered shows its
+// diff again rather than leaving the target hidden.
+test("shows the diff again when navigation lands in a rendered Markdown file", async ({ page }) => {
+  const guide = section(page, "docs/guide.md");
+  await guide.scrollIntoViewIfNeeded();
+  await guide.getByTestId("markdown-mode-rendered").click();
+  await expect(guide.getByTestId("markdown-preview")).toBeVisible();
+  await review!.hunk([
+    "session",
+    "comment",
+    "add",
+    review!.sessionId,
+    "--file",
+    "docs/guide.md",
+    "--new-line",
+    "3",
+    "--summary",
+    "Check this line",
+    "--focus",
+  ]);
+
+  await expect(guide.getByTestId("markdown-preview")).toHaveCount(0);
+  await expect(guide.getByTestId("markdown-mode-diff")).toHaveAttribute("aria-checked", "true");
+  await expect(page.locator(".note-card", { hasText: "Check this line" })).toBeInViewport({
+    timeout: 15_000,
+  });
+});
+
+// Intent: stacked image modes keep each image's size relative to the other (top-left
+// anchored), and a refresh with changed bytes shows the new image's own dimensions.
+test("keeps relative image sizes when stacked and new dimensions after a refresh", async ({
+  page,
+}) => {
+  const photo = section(page, "images/photo.png");
+  const preview = photo.getByTestId("image-preview");
+  await expect(preview).toBeVisible();
+  await preview.getByTestId("image-mode-swipe").click();
+  await expect(preview.locator(".image-preview-stack img")).toHaveCount(2);
+  const [before, after] = await preview.locator(".image-preview-stack img").evaluateAll((images) =>
+    images.map((image) => {
+      const box = image.getBoundingClientRect();
+      return { left: box.left, top: box.top, width: box.width };
+    }),
+  );
+  expect(before!.width / after!.width).toBeCloseTo(48 / 64, 2);
+  expect(before!.left).toBe(after!.left);
+  expect(before!.top).toBe(after!.top);
+
+  await preview.getByTestId("image-mode-side-by-side").click();
+  await expect(preview.locator("figcaption").nth(1)).toHaveText(/^After · 64 × 32 · /);
+  writeFileSync(
+    join(review!.repo!, "images", "photo.png"),
+    encodeTestPng(40, 20, () => [10, 200, 10, 255]),
+  );
+  execFileSync("git", ["add", "-A"], { cwd: review!.repo!, stdio: "ignore" });
+  await page.getByTestId("refresh").click();
+  await expect(photo.getByTestId("image-preview").locator("figcaption").nth(1)).toHaveText(
+    /^After · 40 × 20 · /,
+    { timeout: 30_000 },
+  );
+});
+
+test("renders a deleted Markdown file from its old text", async ({ page }) => {
+  const removed = section(page, "docs/removed.md");
+  await removed.scrollIntoViewIfNeeded();
+  await removed.getByTestId("markdown-mode-rendered").click();
+  const rendered = removed.getByTestId("markdown-preview");
+  await expect(rendered).toHaveAttribute("data-side", "old");
+  await expect(rendered.locator("h1")).toHaveText("Removed");
+});
+
+test("has no serious accessibility violations with previews showing", async ({ page }) => {
+  await section(page, "docs/guide.md").getByTestId("markdown-mode-rendered").click();
+  await expect(section(page, "images/photo.png").getByTestId("image-preview")).toBeVisible();
+  const results = await new AxeBuilder({ page })
+    .exclude("diffs-container")
+    .exclude("file-tree-container")
+    .analyze();
+  const serious = results.violations
+    .filter((violation) => violation.impact === "serious" || violation.impact === "critical")
+    .map(
+      (violation) => `${violation.id}: ${violation.nodes.map((node) => node.target).join(", ")}`,
+    );
+  expect(serious).toEqual([]);
+});

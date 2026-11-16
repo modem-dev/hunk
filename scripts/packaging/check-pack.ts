@@ -9,6 +9,7 @@ import {
 import { buildDocExamples } from "./extension-doc-examples";
 import { checkPackedPublicConsumers } from "./packed-public-consumer-check";
 import { npmCommand } from "./script-helpers";
+import { requiredWebAssetPackPaths } from "./web-asset-pack-check";
 
 const repoRoot = path.resolve(import.meta.dir, "../..");
 
@@ -464,6 +465,8 @@ const requiredPaths = [
   // `hunk skill path [name]` resolves them at runtime.
   "skills/hunk-review/SKILL.md",
   "skills/hunk-extensions/SKILL.md",
+  // The daemon serves the browser review page from these files; no page loads from a network.
+  ...requiredWebAssetPackPaths(appRoot),
 ];
 
 for (const path of requiredPaths) {

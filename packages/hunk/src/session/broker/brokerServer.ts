@@ -18,6 +18,8 @@ import {
   resolveSessionBrokerConfig,
 } from "./brokerConfig";
 import { BrowserReviewServer } from "./browserReviewServer";
+import { ReviewPageServer } from "./reviewPageServer";
+import type { ReviewPageAssets } from "./reviewPageAssets";
 import { createHunkSessionBrokerState, type HunkSessionBrokerState } from "./state";
 import type {
   AppliedCommentBatchResult,
@@ -25,6 +27,7 @@ import type {
   AppliedHighlightResult,
   ClearedCommentsResult,
   ClearedHighlightsResult,
+  OpenedReviewResult,
   CommentBatchItemInput,
   CommentToolInput,
   HunkSessionCommandResult,
@@ -76,6 +79,7 @@ const SUPPORTED_SESSION_ACTIONS: SessionDaemonAction[] = [
   "comment-clear",
   "highlight-add",
   "highlight-clear",
+  "open",
 ];
 
 type DaemonCommentAddRequest = Extract<SessionDaemonRequest, { action: "comment-add" }>;
@@ -133,6 +137,8 @@ export interface ServeSessionBrokerDaemonOptions {
   idleTimeoutMs?: number;
   staleSessionTtlMs?: number;
   staleSessionSweepIntervalMs?: number;
+  /** Load the browser review page build; defaults to the build this distribution carries. */
+  loadReviewPageAssets?: () => Promise<ReviewPageAssets | undefined>;
 }
 
 export type RunningSessionBrokerDaemon = RunningBunSessionBrokerDaemon;
@@ -384,7 +390,10 @@ function sessionApiAuthorizationFacts(
       );
     }
   }
-  if (["get", "context", "review", "comment-list"].includes(input.action)) {
+  // `open` is authorized as a read: it asks the session for its own URL, or to open it in a
+  // browser on this machine, and changes nothing in the review. Persisted caller grants carry
+  // no `open_review` scope, so a dispatch-scoped check would refuse every existing caller.
+  if (["get", "context", "review", "comment-list", "open"].includes(input.action)) {
     return { operation: "get", sessionId, targetSpecific: true };
   }
   const commandByAction = {
@@ -577,6 +586,18 @@ export async function handleSessionApiRequest(
           }),
         };
         break;
+      case "open":
+        // The session builds the URL from the capability only it holds; the daemon relays the
+        // request and, for `open: false`, the URL in the result without storing it.
+        response = {
+          result: await state.dispatchCommand<OpenedReviewResult, "open_review">({
+            selector: input.selector,
+            command: "open_review",
+            input: { ...input.selector, open: input.open },
+            timeoutMessage: "Timed out waiting for the session to open its review.",
+          }),
+        };
+        break;
       default:
         throw new Error("Unknown session API action.");
     }
@@ -697,20 +718,28 @@ export async function serveSessionBrokerDaemon(
   });
   // One loopback process serves every attached review, rather than a port per terminal. Authorized
   // review actions join the daemon's shared finite-control and aggregate body budgets.
+  // Assigned once the listener exists; event streams opened before that cannot happen.
+  let listener: { timeout(request: Request, seconds: number): void } | undefined;
   const browserReview = new BrowserReviewServer(state, {
+    // Only event streams lose the idle timeout: they are quiet between publications by design.
+    keepStreamOpen: (request) => listener?.timeout(request, 0),
     handleActionControl: (request, handler, payloadTooLarge) =>
       daemon.handleBoundedControl(request, handler, {
         maxBodyBytes: Math.min(MAX_HUNK_REVIEW_ENVELOPE_BYTES, MAX_HTTP_BODY_BYTES),
         payloadTooLarge,
       }),
   });
+  // The page and its assets are static and carry no review data; everything the page shows
+  // comes from the capability-gated review API above.
+  const reviewPage = new ReviewPageServer({ loadAssets: options.loadReviewPageAssets });
 
   const server = serveSessionBrokerDaemonWithBun({
     daemon,
     hostname: config.host,
     port: config.port,
     formatServeError: (error, _address) => formatDaemonServeError(error, config.host, config.port),
-    handleRequest: async (request) => {
+    handleRequest: async (request, server) => {
+      listener = server;
       const hostError = validateHostHeader(request, config.port, allowRemote);
       if (hostError) {
         return hostError;
@@ -771,6 +800,11 @@ export async function serveSessionBrokerDaemon(
       const review = await browserReview.handle(request);
       if (review) {
         return review;
+      }
+
+      const page = await reviewPage.handle(request);
+      if (page) {
+        return page;
       }
 
       if (url.pathname === LEGACY_MCP_PATH) {

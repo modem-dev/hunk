@@ -12,10 +12,10 @@
  * answer instead of an inline conditional per consumer.
  */
 import type {
-  ReviewDocumentV1,
-  ReviewLineAddressV1,
-  ReviewNoteV1,
-  ReviewRangeAnchorV1,
+  ReviewDocument,
+  ReviewLineAddress,
+  ReviewNote,
+  ReviewRangeAnchor,
   ReviewSide,
 } from "./types";
 
@@ -23,16 +23,34 @@ export type ReviewNoteResolution = "active" | "stale" | "orphaned";
 
 /** One mutable note plus the reconciliation verdict its latest anchor check produced. */
 export interface ReviewStoredNote {
-  note: ReviewNoteV1;
+  note: ReviewNote;
   resolution: ReviewNoteResolution;
 }
 
 /**
- * Stale-note visibility policy: a note whose context moved stays visible at its last
- * known anchor, and only a note whose anchor is gone entirely disappears.
+ * Stored-note visibility policy: a note whose context moved stays visible at its last
+ * known anchor. Only a note carrying the `orphaned` verdict is hidden, and no reload
+ * produces that verdict: a reviewer's or agent's note never disappears because a diff
+ * changed underneath it.
  */
 export function isRenderableStoredReviewNote(entry: ReviewStoredNote) {
   return entry.resolution !== "orphaned";
+}
+
+/**
+ * Decide one stored note's resolution after a reload replaced the document.
+ *
+ * A note whose file came back with different content is marked stale, whether or not the
+ * hunk it hangs from still exists; the mark labels the note for surfaces that show it and
+ * never hides or moves it. A note whose file content is unchanged, or whose file is absent
+ * from the new document, keeps its verdict, so a later reload that brings the file back
+ * shows the note again, as the terminal always has. The anchor itself is never rewritten.
+ */
+export function reconcileReviewNoteResolution(
+  entry: ReviewStoredNote,
+  contentChanged: boolean,
+): ReviewNoteResolution {
+  return contentChanged && entry.resolution === "active" ? "stale" : entry.resolution;
 }
 
 /**
@@ -44,7 +62,7 @@ export function isRenderableStoredReviewNote(entry: ReviewStoredNote) {
  * (`docs/browser-review-seam-audit.md`, B9).
  */
 export function reviewNoteVisibleByPolicy(
-  note: Pick<ReviewNoteV1, "source">,
+  note: Pick<ReviewNote, "source">,
   showAgentNotes: boolean,
 ) {
   return showAgentNotes || note.source === "user";
@@ -54,11 +72,11 @@ export function reviewNoteVisibleByPolicy(
  * Anything carrying a resolved note anchor, whether or not it is a stored note.
  *
  * A surface may hold a note in its own shape — the terminal draws sidecar annotations and
- * open drafts that never became `ReviewNoteV1`s — and still has to ask where that note
+ * open drafts that never became `ReviewNote`s — and still has to ask where that note
  * hangs. Both placement policies read the anchor and nothing else, so they answer for any
  * of them.
  */
-export type ReviewAnchoredNote = Pick<ReviewNoteV1, "anchor">;
+export type ReviewAnchoredNote = Pick<ReviewNote, "anchor">;
 
 /**
  * Which hunk renders one note.
@@ -72,7 +90,7 @@ export function reviewNoteOwnerHunkIndex(note: ReviewAnchoredNote) {
 }
 
 /** Which line one note hangs beside, falling back to the new side's first line. */
-export function reviewNoteAnchorLine(note: ReviewAnchoredNote): ReviewLineAddressV1 {
+export function reviewNoteAnchorLine(note: ReviewAnchoredNote): ReviewLineAddress {
   return note.anchor.preferred ?? { side: "new", line: 1 };
 }
 
@@ -160,7 +178,7 @@ interface ReviewDraftNoteBase {
     sourceAttested: boolean;
   };
   /** Full resolved anchor retained unchanged when the draft is saved. */
-  anchor?: ReviewRangeAnchorV1;
+  anchor?: ReviewRangeAnchor;
   body: string;
 }
 
@@ -187,7 +205,7 @@ export interface ReviewExpandedGapState {
  * it, not here.
  */
 export interface ReviewState {
-  document: ReviewDocumentV1;
+  document: ReviewDocument;
   /** Monotonic counter advanced by every state-changing dispatch. */
   stateRevision: number;
   selection: ReviewSemanticSelection;
@@ -203,11 +221,22 @@ export interface ReviewState {
   draftNote: ReviewDraftNote | null;
   expandedGaps: ReviewExpandedGapState[];
   sourceStatusByFileKey: Record<string, ReviewSourceStatus>;
+  /**
+   * Files the reviewer marked viewed, by file key, with the content identity each was viewed
+   * at. Shared review state (G1): every surface reads the same marks. A reload drops a mark
+   * whose file's content changed. Absent until the first mark.
+   */
+  viewedFiles?: Record<string, ReviewViewedFileMark>;
+}
+
+/** One viewed-file mark: the content the reviewer actually looked at. */
+export interface ReviewViewedFileMark {
+  contentIdentity: string;
 }
 
 /** Create the first authoritative semantic state for one review document. */
 export function createInitialReviewState(
-  document: ReviewDocumentV1,
+  document: ReviewDocument,
   options: { showAgentNotes?: boolean } = {},
 ): ReviewState {
   return {

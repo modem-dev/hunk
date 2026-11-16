@@ -7,6 +7,10 @@
  * own has joined (`docs/browser-review-rebuild.md` § "Per-phase seam verification").
  */
 import { brokerMirrorOrderingConsumer } from "./consumers/brokerMirror";
+import { browserEventReaderConsumer } from "./consumers/browserEventReader";
+import { browserMirrorOrderingConsumer } from "./consumers/browserMirror";
+import { browserNavigationConsumer } from "./consumers/browserNavigation";
+import { browserProjectionConsumer } from "./consumers/browserProjection";
 import { browserReviewSurfaceEventConsumer } from "./consumers/browserReviewSurface";
 import { reviewEventProtocolConsumer } from "./consumers/reviewEventProtocol";
 import { coreModelConsumer } from "./consumers/coreModel";
@@ -14,6 +18,21 @@ import { extensionReviewSnapshotConsumer } from "./consumers/extensionReviewSnap
 import { coreOrderingConsumer } from "./consumers/coreOrdering";
 import { intentPlannerNavigationConsumer } from "./consumers/intentPlanner";
 import { reviewProducerConsumer } from "./consumers/reviewProducer";
+import {
+  browserSurfaceActorPolicyConsumer,
+  producerActorPolicyConsumer,
+} from "./consumers/actorPolicy";
+import type { ReviewActorPolicyConsumer } from "./actorPolicyFixtures";
+import {
+  brokerSharedStateConsumer,
+  browserClientSharedStateConsumer,
+  browserSurfaceSharedStateConsumer,
+  reviewProducerSharedStateConsumer,
+} from "./consumers/sharedState";
+import type { ReviewSharedStateConsumer } from "./sharedStateFixtures";
+import { browserOverviewConsumer, coreOverviewConsumer } from "./consumers/overview";
+import type { ReviewOverviewConsumer } from "./overviewFixtures";
+import { reviewSessionHostNavigationConsumer } from "./consumers/reviewSessionHost";
 import { reviewWireConsumer } from "./consumers/reviewWire";
 import { terminalReviewNavigationConsumer } from "./consumers/terminalReview";
 import { terminalRenderPlanConsumer } from "./consumers/terminalRenderPlan";
@@ -30,6 +49,7 @@ export const REVIEW_GEOMETRY_CONSUMERS: readonly ReviewGeometryConsumer[] = [
   coreModelConsumer,
   terminalRenderPlanConsumer,
   reviewProducerConsumer,
+  browserProjectionConsumer,
 ];
 
 /** Consumers that export complete authoritative saved-note state. */
@@ -47,6 +67,8 @@ export const REVIEW_SNAPSHOT_CONSUMERS: readonly ReviewSnapshotConsumer[] = [
 export const REVIEW_NAVIGATION_CONSUMERS: readonly ReviewNavigationConsumer[] = [
   intentPlannerNavigationConsumer,
   terminalReviewNavigationConsumer,
+  reviewSessionHostNavigationConsumer,
+  browserNavigationConsumer,
 ];
 
 /**
@@ -59,6 +81,7 @@ export const REVIEW_NAVIGATION_CONSUMERS: readonly ReviewNavigationConsumer[] = 
 export const REVIEW_ORDERING_CONSUMERS: readonly ReviewOrderingConsumer[] = [
   coreOrderingConsumer,
   brokerMirrorOrderingConsumer,
+  browserMirrorOrderingConsumer,
 ];
 
 /**
@@ -80,4 +103,38 @@ export const REVIEW_WIRE_CONSUMERS: readonly ReviewWireConsumer[] = [reviewWireC
 export const REVIEW_EVENT_CONSUMERS: readonly ReviewEventConsumer[] = [
   reviewEventProtocolConsumer,
   browserReviewSurfaceEventConsumer,
+  browserEventReaderConsumer,
+];
+
+/**
+ * Consumers of the shared-state snapshot.
+ *
+ * The producer that materializes it, the broker that reads it back through its verified
+ * resource loop, and the HTTP surface that serves it; the browser client joins in M4.
+ */
+export const REVIEW_SHARED_STATE_CONSUMERS: readonly ReviewSharedStateConsumer[] = [
+  reviewProducerSharedStateConsumer,
+  brokerSharedStateConsumer,
+  browserSurfaceSharedStateConsumer,
+  browserClientSharedStateConsumer,
+];
+
+/**
+ * Consumers of the multi-surface action policy (G2) and shared viewed files (G1).
+ *
+ * The producer's action handler applies the policy; the HTTP surface is how a browser reaches
+ * it. The browser client joins in M4, where it resolves the refused selection moves locally.
+ */
+export const REVIEW_ACTOR_POLICY_CONSUMERS: readonly ReviewActorPolicyConsumer[] = [
+  producerActorPolicyConsumer,
+  browserSurfaceActorPolicyConsumer,
+];
+
+/**
+ * Consumers of the review overview: the core selector over a live host, and the browser's
+ * Overview tab over the shared-state snapshot. `hunk session` joins when it reports the shape.
+ */
+export const REVIEW_OVERVIEW_CONSUMERS: readonly ReviewOverviewConsumer[] = [
+  coreOverviewConsumer,
+  browserOverviewConsumer,
 ];

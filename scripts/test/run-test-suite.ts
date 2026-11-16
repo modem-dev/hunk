@@ -21,6 +21,8 @@ export const TEST_PATTERN_GROUPS = {
     "./test/cli",
     "./test/helpers",
     "./test/session",
+    // The browser-test process sweep; the Playwright suites themselves run under `test:web`.
+    "./test/web/testProcesses.test.ts",
   ],
   integration: ["./test/pty"],
   windows: [
@@ -30,6 +32,7 @@ export const TEST_PATTERN_GROUPS = {
     "./test/cli",
     "./test/helpers",
     "./test/session",
+    "./test/web/testProcesses.test.ts",
   ],
   "windows-ui": [
     // Status planning is renderer-free and owns portable filesystem-backed refresh behavior.

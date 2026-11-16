@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { REVIEW_PATCH_CONTENT_TYPE, reviewResourceId } from "../../core/review/resources";
-import type { HunkReviewResourceCatalogV1 } from "../reviewProtocol";
+import type { ReviewResourceCatalog } from "../reviewProtocol";
 import {
   ReviewMirror,
   readRegistrationReviewCatalog,
@@ -9,7 +9,7 @@ import {
 
 const FILE_KEY = "file:0123456789abcdef";
 
-function catalog(generation: string): HunkReviewResourceCatalogV1 {
+function catalog(generation: string): ReviewResourceCatalog {
   return {
     generation,
     fileKeysByRuntimeId: { "file-1": FILE_KEY },

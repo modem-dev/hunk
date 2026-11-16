@@ -41,10 +41,11 @@ import {
   REVIEW_CANONICAL_FILE_CONTENT_TYPE,
   REVIEW_PATCH_CONTENT_TYPE,
   REVIEW_SOURCE_CONTENT_TYPE,
+  REVIEW_BYTES_CONTENT_TYPE,
   type ReadReviewResourceRequest,
-  type ReviewResourceChunkV1,
+  type ReviewResourceChunk,
   type ReviewRequestErrorCode,
-  type ReviewResourceDescriptorV1,
+  type ReviewResourceDescriptor,
   type ReviewResourceErrorCode,
   type ReviewResourceKind,
 } from "../core/review/resources";
@@ -54,10 +55,10 @@ import {
 } from "../core/review/generationOrder";
 import type { ReviewRevealAnchor, ReviewRevealRequest } from "../core/review/state";
 import type {
-  ReviewLineAddressV1,
+  ReviewLineAddress,
   ReviewLineRange,
-  ReviewNoteTargetV1,
-  ReviewRangeTargetV1,
+  ReviewNoteTarget,
+  ReviewRangeTarget,
   ReviewSide,
 } from "../core/review/types";
 import {
@@ -67,6 +68,15 @@ import {
   utf8ByteLength,
 } from "../core/review/validation";
 
+/**
+ * Version every review envelope and HTTP body carries.
+ *
+ * Still 1 with the shared-state additions (`reviewSharedState.ts`, the `state` route, the
+ * optional `sharedStateRevision` on publication bodies): no browser client has shipped against
+ * this surface, every envelope the server parses only gained optional members or new routes,
+ * and the daemon/window pair is held to one build by `HUNK_SESSION_DAEMON_VERSION`. Bump it
+ * when a shipped client could misread a body.
+ */
 export const HUNK_REVIEW_PROTOCOL_VERSION = 1 as const;
 
 /**
@@ -94,13 +104,9 @@ export const MAX_HUNK_REVIEW_IDENTIFIER_BYTES = 1 * 1024;
  * tab, an agent's command — and nothing about trust or capability; a client cannot widen
  * what it may do by claiming a kind.
  */
-export type HunkReviewActorKindV1 = "terminal" | "browser" | "agent";
+export type ReviewActorKind = "terminal" | "browser" | "agent";
 
-export const HUNK_REVIEW_ACTOR_KINDS: readonly HunkReviewActorKindV1[] = [
-  "terminal",
-  "browser",
-  "agent",
-];
+export const HUNK_REVIEW_ACTOR_KINDS: readonly ReviewActorKind[] = ["terminal", "browser", "agent"];
 
 /**
  * Who performed one action.
@@ -120,10 +126,10 @@ export const HUNK_REVIEW_ACTOR_KINDS: readonly HunkReviewActorKindV1[] = [
  * session, where the producer-side action handler drops it before semantic planning. Adding
  * actor policy later changes behavior rather than the schema.
  */
-export interface HunkReviewActorV1 {
+export interface ReviewActor {
   /** Stable within one attached client; opaque to the producer. */
   clientId: string;
-  kind: HunkReviewActorKindV1;
+  kind: ReviewActorKind;
   /** Optional human label, e.g. for note authorship once policy exists. */
   displayName?: string;
 }
@@ -139,7 +145,7 @@ export interface HunkReviewActorV1 {
  * the prototype's browser structurally weaker than its terminal: clicks inside expanded
  * regions were rejected or mis-sided (B10).
  */
-export type HunkReviewExpandedLineProofV1 = ReviewExpandedLineClaim;
+export type ReviewExpandedLineProof = ReviewExpandedLineClaim;
 
 // -- Action vocabulary (B12) ------------------------------------------------------------
 
@@ -162,10 +168,14 @@ export const HUNK_REVIEW_ACTION_TYPES: readonly ReviewIntentType[] = REVIEW_INTE
  * Both are about addressing a line the patch does not contain. A local surface knows
  * which gap it expanded; a remote one has to say so.
  */
-interface HunkReviewActionWireFields {
+interface RemoteReviewIntentFields {
+  "notes/add-user": {
+    /** Required when `target` names a line inside an expanded gap. */
+    expandedLineProof?: ReviewExpandedLineProof;
+  };
   "notes/start-draft": {
     /** Required when `target` names a line inside an expanded gap. */
-    expandedLineProof?: HunkReviewExpandedLineProofV1;
+    expandedLineProof?: ReviewExpandedLineProof;
   };
   "notes/create-user": {
     /**
@@ -174,26 +184,26 @@ interface HunkReviewActionWireFields {
      * A precondition, not a relocation: the producer rejects the save when the draft has
      * moved, so two clients cannot silently save each other's drafts.
      */
-    target?: ReviewNoteTargetV1;
+    target?: ReviewNoteTarget;
     /** Stable file and owner-hunk identity; protocol-v1 clients may omit both. */
     fileKey?: string;
     hunkIndex?: number;
-    expandedLineProof?: HunkReviewExpandedLineProofV1;
+    expandedLineProof?: ReviewExpandedLineProof;
   };
 }
 
 /** Add each intent's wire-only fields, leaving intents that need none untouched. */
 type WithWireFields<Intent extends ReviewIntent> = Intent extends { type: infer Type }
-  ? Type extends keyof HunkReviewActionWireFields
-    ? Intent & HunkReviewActionWireFields[Type]
+  ? Type extends keyof RemoteReviewIntentFields
+    ? Intent & RemoteReviewIntentFields[Type]
     : Intent
   : never;
 
 /** One review action, as a client sends it: the intent plus what a remote caller must state. */
-export type HunkReviewActionV1 = WithWireFields<ReviewIntent>;
+export type RemoteReviewIntent = WithWireFields<ReviewIntent>;
 
 /** One action, addressed to the exact review position the client believes it is acting on. */
-export interface HunkReviewActionEnvelopeV1 {
+export interface ReviewActionEnvelope {
   protocolVersion: typeof HUNK_REVIEW_PROTOCOL_VERSION;
   generation: string;
   /**
@@ -203,31 +213,29 @@ export interface HunkReviewActionEnvelopeV1 {
    * compared through the one ordering contract rather than by a local rule.
    */
   expectedStateRevision?: number;
-  actor: HunkReviewActorV1;
-  action: HunkReviewActionV1;
+  actor: ReviewActor;
+  action: RemoteReviewIntent;
 }
 
 /** One resource read, addressed the way core states it, with the protocol's own framing. */
-export interface HunkReviewResourceReadEnvelopeV1 {
+export interface ReviewResourceReadEnvelope {
   protocolVersion: typeof HUNK_REVIEW_PROTOCOL_VERSION;
-  actor: HunkReviewActorV1;
+  actor: ReviewActor;
   request: ReadReviewResourceRequest;
 }
 
 /** What a producer answers a resource read with; the chunk is core's own shape. */
-export type HunkReviewResourceReadResultV1 =
-  | { ok: true; chunk: ReviewResourceChunkV1 }
-  | HunkReviewFailureV1;
+export type ReviewResourceReadResult = { ok: true; chunk: ReviewResourceChunk } | ReviewFailure;
 
 /** What a producer answers an action with, once it has been applied. */
-export interface HunkReviewActionAppliedV1 {
+export interface ReviewActionApplied {
   ok: true;
   generation: string;
   stateRevision: number;
 }
 
 /** Everything a producer may answer one action with. */
-export type HunkReviewActionResultV1 = HunkReviewActionAppliedV1 | HunkReviewFailureV1;
+export type ReviewActionResult = ReviewActionApplied | ReviewFailure;
 
 /**
  * Every way a review command can be refused.
@@ -238,36 +246,68 @@ export type HunkReviewActionResultV1 = HunkReviewActionAppliedV1 | HunkReviewFai
  * client ended up classifying the same failure differently depending on which tier
  * reported it (`docs/browser-review-seam-audit.md`, D5).
  */
-export type HunkReviewFailureCodeV1 =
+export type ReviewFailureCode =
   | ReviewResourceErrorCode
   | ReviewRequestErrorCode
-  | ReviewIntentPlanningErrorCode;
+  | ReviewIntentPlanningErrorCode
+  | ReviewActorPolicyErrorCode;
+
+/**
+ * Why the producer refused an action because of who sent it (G2).
+ *
+ * `selection-is-local`: a browser resolves `selection/select`, `selection/move`, and
+ * `selection/select-file` in its own state; the session never applies another surface's
+ * selection moves.
+ *
+ * `draft-is-local`: the session's one shared draft slot is the terminal composer's. A browser
+ * keeps its composers in its own state and writes notes with the direct `notes/add-user` and
+ * `notes/edit-user` intents, so the draft intents (`notes/start-draft`, `start-edit`,
+ * `start-reply`, `update-draft`, `cancel-draft`, `create-user`, `update-user`) are refused
+ * rather than letting a browser open, change, or consume the terminal's draft.
+ */
+export type ReviewActorPolicyErrorCode = "selection-is-local" | "draft-is-local";
 
 /** One rejection, in the producer's own vocabulary. */
-export interface HunkReviewFailureV1 {
+export interface ReviewFailure {
   ok: false;
-  code: HunkReviewFailureCodeV1;
+  code: ReviewFailureCode;
   message: string;
   /** What the producer is serving now, so a client can resynchronize without a round trip. */
   currentGeneration: string;
 }
 
+/**
+ * Why a refresh could not replace the review (F4's one allowlisted host command).
+ *
+ * `refresh-unavailable`: the review's input cannot be reopened (stdin), or the session is
+ * shutting down. `refresh-failed`: reopening it failed; the previous review stays mounted.
+ */
+export type ReviewRefreshErrorCode = "refresh-unavailable" | "refresh-failed";
+
+/** What a session answers one refresh with: the position the reloaded review reached. */
+export type ReviewRefreshResult =
+  | { ok: true; generation: string; stateRevision: number }
+  | { ok: false; code: ReviewRefreshErrorCode; message: string };
+
 /** Everything a producer may answer a review command with. */
-export type HunkReviewResultV1 = HunkReviewActionResultV1 | HunkReviewResourceReadResultV1;
+export type ReviewCommandResult =
+  | ReviewActionResult
+  | ReviewResourceReadResult
+  | ReviewRefreshResult;
 
 // -- Parsing ----------------------------------------------------------------------------
 
 /** Why one wire value was refused, in the two shapes a caller responds to differently. */
-export type HunkReviewParseFailure =
+export type ReviewParseFailure =
   /** The value is not expressible in this protocol version at all. */
   | { ok: false; reason: "invalid" }
   /** The value names an action this producer's vocabulary does not contain. */
   | { ok: false; reason: "unsupported" };
 
-export type HunkReviewParseResult<Value> = { ok: true; value: Value } | HunkReviewParseFailure;
+export type ReviewParseResult<Value> = { ok: true; value: Value } | ReviewParseFailure;
 
-const INVALID: HunkReviewParseFailure = { ok: false, reason: "invalid" };
-const UNSUPPORTED: HunkReviewParseFailure = { ok: false, reason: "unsupported" };
+const INVALID: ReviewParseFailure = { ok: false, reason: "invalid" };
+const UNSUPPORTED: ReviewParseFailure = { ok: false, reason: "unsupported" };
 
 /** Whether one value is a non-empty identifier within the shared identifier bound. */
 function isIdentifier(value: unknown): value is string {
@@ -314,13 +354,13 @@ function parseReveal(value: unknown): ReviewRevealRequest | undefined {
 }
 
 /** Parse one line address: the side and the 1-based line a caller is pointing at. */
-function parseLineAddress(value: unknown): ReviewLineAddressV1 | undefined {
+function parseLineAddress(value: unknown): ReviewLineAddress | undefined {
   const record = asRecord(value);
   if (!record || !hasExactKeys(record, ["side", "line"])) {
     return undefined;
   }
   return isSide(record.side) && isLineNumber(record.line)
-    ? (record as unknown as ReviewLineAddressV1)
+    ? (record as unknown as ReviewLineAddress)
     : undefined;
 }
 
@@ -336,7 +376,7 @@ function parseLineRange(value: unknown): ReviewLineRange | undefined {
 }
 
 /** Parse a single-line or range note target without deriving its hunk ownership. */
-function parseNoteTarget(value: unknown): ReviewNoteTargetV1 | undefined {
+function parseNoteTarget(value: unknown): ReviewNoteTarget | undefined {
   const line = parseLineAddress(value);
   if (line) return line;
 
@@ -360,13 +400,11 @@ function parseNoteTarget(value: unknown): ReviewNoteTargetV1 | undefined {
   if (!preferredRange || preferred.line < preferredRange[0] || preferred.line > preferredRange[1]) {
     return undefined;
   }
-  return record as unknown as ReviewRangeTargetV1;
+  return record as unknown as ReviewRangeTarget;
 }
 
 /** Parse one expanded-line proof. Its fields are exactly what core resolves it by. */
-export function parseHunkReviewExpandedLineProof(
-  value: unknown,
-): HunkReviewExpandedLineProofV1 | undefined {
+export function parseReviewExpandedLineProof(value: unknown): ReviewExpandedLineProof | undefined {
   const record = asRecord(value);
   if (!record || !hasExactKeys(record, ["gapId", "side", "line", "sourceIdentity"])) {
     return undefined;
@@ -375,12 +413,12 @@ export function parseHunkReviewExpandedLineProof(
     isSide(record.side) &&
     isLineNumber(record.line) &&
     isIdentifier(record.sourceIdentity)
-    ? (record as unknown as HunkReviewExpandedLineProofV1)
+    ? (record as unknown as ReviewExpandedLineProof)
     : undefined;
 }
 
 /** Parse one actor tag. Identity is recorded, never trusted for authority. */
-export function parseHunkReviewActor(value: unknown): HunkReviewActorV1 | undefined {
+export function parseReviewActor(value: unknown): ReviewActor | undefined {
   const record = asRecord(value);
   if (
     !record ||
@@ -389,9 +427,9 @@ export function parseHunkReviewActor(value: unknown): HunkReviewActorV1 | undefi
     return undefined;
   }
   return isIdentifier(record.clientId) &&
-    HUNK_REVIEW_ACTOR_KINDS.includes(record.kind as HunkReviewActorKindV1) &&
+    HUNK_REVIEW_ACTOR_KINDS.includes(record.kind as ReviewActorKind) &&
     (record.displayName === undefined || isIdentifier(record.displayName))
-    ? (record as unknown as HunkReviewActorV1)
+    ? (record as unknown as ReviewActor)
     : undefined;
 }
 
@@ -448,7 +486,7 @@ const ACTION_PARSERS: Record<ReviewIntentType, (record: Record<string, unknown>)
     (record.target === undefined || parseNoteTarget(record.target) !== undefined) &&
     (record.reveal === undefined || parseReveal(record.reveal) !== undefined) &&
     (record.expandedLineProof === undefined ||
-      parseHunkReviewExpandedLineProof(record.expandedLineProof) !== undefined) &&
+      parseReviewExpandedLineProof(record.expandedLineProof) !== undefined) &&
     // Expanded-line proofs remain line-specific; ranges spanning source gaps are not
     // remotely writable until the protocol can attest every covered line.
     (record.expandedLineProof === undefined || parseLineAddress(record.target) !== undefined),
@@ -484,7 +522,7 @@ const ACTION_PARSERS: Record<ReviewIntentType, (record: Record<string, unknown>)
           parseLineAddress(record.target) !== undefined) ||
         (isIdentifier(record.fileKey) && isIndex(record.hunkIndex))) &&
     (record.expandedLineProof === undefined ||
-      parseHunkReviewExpandedLineProof(record.expandedLineProof) !== undefined) &&
+      parseReviewExpandedLineProof(record.expandedLineProof) !== undefined) &&
     (record.expandedLineProof === undefined || parseLineAddress(record.target) !== undefined),
   "notes/update-user": (record) =>
     hasExactKeys(record, ["type", "noteId", "consumeDraft"]) &&
@@ -501,6 +539,36 @@ const ACTION_PARSERS: Record<ReviewIntentType, (record: Record<string, unknown>)
     ) &&
     (record.fileKey === undefined || isIdentifier(record.fileKey)) &&
     (record.includeUser === undefined || typeof record.includeUser === "boolean"),
+  "notes/add-user": (record) =>
+    hasExactKeys(
+      record,
+      keysWith(["type", "fileKey", "hunkIndex", "body"], {
+        target: record.target,
+        parentId: record.parentId,
+        author: record.author,
+        expandedLineProof: record.expandedLineProof,
+      }),
+    ) &&
+    isIdentifier(record.fileKey) &&
+    isIndex(record.hunkIndex) &&
+    typeof record.body === "string" &&
+    utf8ByteLength(record.body) <= MAX_REVIEW_NOTE_BYTES &&
+    (record.target === undefined || parseNoteTarget(record.target) !== undefined) &&
+    (record.parentId === undefined || isIdentifier(record.parentId)) &&
+    (record.parentId === undefined || record.target === undefined) &&
+    (record.author === undefined || isIdentifier(record.author)) &&
+    (record.expandedLineProof === undefined ||
+      parseReviewExpandedLineProof(record.expandedLineProof) !== undefined) &&
+    (record.expandedLineProof === undefined || parseLineAddress(record.target) !== undefined),
+  "notes/edit-user": (record) =>
+    hasExactKeys(record, ["type", "noteId", "body"]) &&
+    isIdentifier(record.noteId) &&
+    typeof record.body === "string" &&
+    utf8ByteLength(record.body) <= MAX_REVIEW_NOTE_BYTES,
+  "files/set-viewed": (record) =>
+    hasExactKeys(record, ["type", "fileKey", "viewed"]) &&
+    isIdentifier(record.fileKey) &&
+    typeof record.viewed === "boolean",
   "expansion/toggle": (record) =>
     hasExactKeys(record, ["type", "fileKey", "gapId"]) &&
     isIdentifier(record.fileKey) &&
@@ -514,7 +582,7 @@ const ACTION_PARSERS: Record<ReviewIntentType, (record: Record<string, unknown>)
  * be told its action is unknown here, not that it is malformed, because the two call for
  * different responses (upgrade vs. fix).
  */
-export function parseHunkReviewAction(value: unknown): HunkReviewParseResult<HunkReviewActionV1> {
+export function parseRemoteReviewIntent(value: unknown): ReviewParseResult<RemoteReviewIntent> {
   const record = asRecord(value);
   if (!record || typeof record.type !== "string") {
     return INVALID;
@@ -526,7 +594,7 @@ export function parseHunkReviewAction(value: unknown): HunkReviewParseResult<Hun
     return UNSUPPORTED;
   }
   return ACTION_PARSERS[type](record)
-    ? { ok: true, value: record as unknown as HunkReviewActionV1 }
+    ? { ok: true, value: record as unknown as RemoteReviewIntent }
     : INVALID;
 }
 
@@ -537,8 +605,8 @@ export function parseHunkReviewAction(value: unknown): HunkReviewParseResult<Hun
  * refuses unknown fields, and an intent carrying transport residue would be a second
  * shape of the same thing.
  */
-export function toReviewIntent(action: HunkReviewActionV1): ReviewIntent {
-  if (action.type === "notes/start-draft") {
+export function toReviewIntent(action: RemoteReviewIntent): ReviewIntent {
+  if (action.type === "notes/start-draft" || action.type === "notes/add-user") {
     const { expandedLineProof: _proof, ...intent } = action;
     return intent;
   }
@@ -556,9 +624,7 @@ export function toReviewIntent(action: HunkReviewActionV1): ReviewIntent {
 }
 
 /** Parse one action envelope, then the action inside it. */
-export function parseHunkReviewActionEnvelope(
-  value: unknown,
-): HunkReviewParseResult<HunkReviewActionEnvelopeV1> {
+export function parseReviewActionEnvelope(value: unknown): ReviewParseResult<ReviewActionEnvelope> {
   const record = asRecord(value);
   if (
     !record ||
@@ -571,29 +637,29 @@ export function parseHunkReviewActionEnvelope(
     record.protocolVersion !== HUNK_REVIEW_PROTOCOL_VERSION ||
     parseReviewGeneration(record.generation) === undefined ||
     (record.expectedStateRevision !== undefined && !isIndex(record.expectedStateRevision)) ||
-    parseHunkReviewActor(record.actor) === undefined
+    parseReviewActor(record.actor) === undefined
   ) {
     return INVALID;
   }
-  const action = parseHunkReviewAction(record.action);
-  return action.ok ? { ok: true, value: record as unknown as HunkReviewActionEnvelopeV1 } : action;
+  const action = parseRemoteReviewIntent(record.action);
+  return action.ok ? { ok: true, value: record as unknown as ReviewActionEnvelope } : action;
 }
 
 /** Parse one resource-read envelope; the request itself is core's parser (D5). */
-export function parseHunkReviewResourceReadEnvelope(
+export function parseReviewResourceReadEnvelope(
   value: unknown,
-): HunkReviewParseResult<HunkReviewResourceReadEnvelopeV1> {
+): ReviewParseResult<ReviewResourceReadEnvelope> {
   const record = asRecord(value);
   if (
     !record ||
     !hasExactKeys(record, ["protocolVersion", "actor", "request"]) ||
     record.protocolVersion !== HUNK_REVIEW_PROTOCOL_VERSION ||
-    parseHunkReviewActor(record.actor) === undefined ||
+    parseReviewActor(record.actor) === undefined ||
     parseReadReviewResourceRequest(record.request) === undefined
   ) {
     return INVALID;
   }
-  return { ok: true, value: record as unknown as HunkReviewResourceReadEnvelopeV1 };
+  return { ok: true, value: record as unknown as ReviewResourceReadEnvelope };
 }
 
 // -- Resource catalog transport ---------------------------------------------------------
@@ -603,6 +669,7 @@ const RESOURCE_CONTENT_TYPE_BY_KIND: Record<ReviewResourceKind, string> = {
   "canonical-file": REVIEW_CANONICAL_FILE_CONTENT_TYPE,
   patch: REVIEW_PATCH_CONTENT_TYPE,
   source: REVIEW_SOURCE_CONTENT_TYPE,
+  bytes: REVIEW_BYTES_CONTENT_TYPE,
 };
 
 /**
@@ -614,9 +681,9 @@ const RESOURCE_CONTENT_TYPE_BY_KIND: Record<ReviewResourceKind, string> = {
  * resource nobody can produce. Digests are validated with the shared canonical-form check
  * rather than an inline pattern (D5).
  */
-export function parseHunkReviewResourceDescriptor(
+export function parseReviewResourceDescriptor(
   value: unknown,
-): ReviewResourceDescriptorV1 | undefined {
+): ReviewResourceDescriptor | undefined {
   const record = asRecord(value);
   if (
     !record ||
@@ -654,11 +721,16 @@ export function parseHunkReviewResourceDescriptor(
   }
   if (address.kind === "source") {
     return record.side === address.side && isIdentifier(record.sourceIdentity)
-      ? (record as unknown as ReviewResourceDescriptorV1)
+      ? (record as unknown as ReviewResourceDescriptor)
+      : undefined;
+  }
+  if (address.kind === "bytes") {
+    return record.side === address.side && record.sourceIdentity === undefined
+      ? (record as unknown as ReviewResourceDescriptor)
       : undefined;
   }
   return record.side === undefined && record.sourceIdentity === undefined
-    ? (record as unknown as ReviewResourceDescriptorV1)
+    ? (record as unknown as ReviewResourceDescriptor)
     : undefined;
 }
 
@@ -668,7 +740,7 @@ export function parseHunkReviewResourceDescriptor(
  * The generation is stated once for the catalog and repeated by every descriptor in it;
  * a descriptor from another generation is not part of this catalog and is refused.
  */
-export interface HunkReviewResourceCatalogV1 {
+export interface ReviewResourceCatalog {
   generation: string;
   /**
    * Semantic file key by renderer-model id.
@@ -679,16 +751,14 @@ export interface HunkReviewResourceCatalogV1 {
    * without guessing; it retires when the surface itself adopts semantic keys.
    */
   fileKeysByRuntimeId: Record<string, string>;
-  resources: ReviewResourceDescriptorV1[];
+  resources: ReviewResourceDescriptor[];
 }
 
 /** Largest number of resources one catalog may declare. */
 export const MAX_HUNK_REVIEW_CATALOG_RESOURCES = 15_000;
 
 /** Parse one resource catalog, refusing any descriptor that is not of its generation. */
-export function parseHunkReviewResourceCatalog(
-  value: unknown,
-): HunkReviewResourceCatalogV1 | undefined {
+export function parseReviewResourceCatalog(value: unknown): ReviewResourceCatalog | undefined {
   const record = asRecord(value);
   if (
     !record ||
@@ -700,7 +770,7 @@ export function parseHunkReviewResourceCatalog(
     return undefined;
   }
 
-  const resources = record.resources.map(parseHunkReviewResourceDescriptor);
+  const resources = record.resources.map(parseReviewResourceDescriptor);
   if (
     resources.some(
       (resource) => resource === undefined || resource.generation !== record.generation,
@@ -727,7 +797,7 @@ export function parseHunkReviewResourceCatalog(
   return {
     generation: record.generation as string,
     fileKeysByRuntimeId: fileKeys as Record<string, string>,
-    resources: resources as ReviewResourceDescriptorV1[],
+    resources: resources as ReviewResourceDescriptor[],
   };
 }
 
@@ -738,7 +808,7 @@ export function parseHunkReviewResourceCatalog(
  * `classifyReviewPublication`, and a second shape of "where the review is" would be a
  * second chance to compare them by a local rule (C1).
  */
-export function parseHunkReviewPublicationAddress(
+export function parseReviewPublicationAddress(
   value: unknown,
 ): ReviewPublicationAddress | undefined {
   const record = asRecord(value);
@@ -752,3 +822,16 @@ export function parseHunkReviewPublicationAddress(
   }
   return record as unknown as ReviewPublicationAddress;
 }
+
+/**
+ * The scalar validators this module's parsers use, shared with the other browser-safe review
+ * modules so they validate identifiers, indexes, lines, and optional-field shapes by one rule
+ * (`docs/browser-review-seam-audit.md`, D5).
+ */
+export {
+  isIdentifier as isReviewIdentifier,
+  isIndex as isReviewIndex,
+  isLineNumber as isReviewLineNumber,
+  isSide as isReviewSide,
+  keysWith as reviewKeysWith,
+};

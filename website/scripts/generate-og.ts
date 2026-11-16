@@ -1,16 +1,21 @@
 /**
- * Render the social cards published beside individual pages.
+ * Render the social cards hunk.dev and the GitHub repository publish.
  *
- * Reads the card content the changelog generator derived into `website/releases/cards.json`,
- * adds the standalone pages that carry their own card, and paints each one with Chromium at
- * 1200x630, the OpenGraph canvas. A changelog card's facts therefore come from the same derivation
- * as the page it belongs to, and this script only decides how they look. A standalone page's card
- * is its own copy, stated below: nothing derives it, so it holds only facts that outlive a
- * redraw — never a count that a redraw would silently leave stale.
+ * Two kinds of card come out of here. Hero cards (the site-wide `og.png` and the GitHub social
+ * preview) pair the 3D lockup with a capture of the review UI. Page cards (changelog series,
+ * extensions, comparisons, and VCS guides) share one text template with the flat lockup and a
+ * faint 3D mark. Both draw the logo from the SVGs in `website/public/brand/`, so a logo change
+ * reaches every card on the next run.
+ *
+ * Changelog card facts come from `website/releases/cards.json`, which the changelog generator
+ * derives, and comparison and VCS cards take their copy from the same data files as their pages.
+ * The extensions card is its own copy, stated below: nothing derives it, so it holds only facts
+ * that outlive a redraw, never a count that a redraw would silently leave stale.
  *
  * Rendering needs a browser, so it is a maintainer task rather than part of the website build:
- * `bun run generate:changelog` records which cards should exist and `--check` reports missing
- * images, while this script is what actually draws them.
+ * `bun run generate:changelog` records which changelog cards should exist and `--check` reports
+ * missing images, while this script is what actually draws them. The GitHub preview is written to
+ * `assets/` and uploaded by hand under the repository's Settings → Social preview.
  *
  * Usage, from the repository root:
  *   bun run website/scripts/generate-og.ts [slug]...
@@ -23,12 +28,17 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
+import { COMPARISONS } from "../src/data/comparisons";
+import { VCS_LANDING_PAGES } from "../src/data/vcsLandingPages";
 
 const scriptsDir = dirname(fileURLToPath(import.meta.url));
 const websiteDir = resolve(scriptsDir, "..");
 const repoRoot = resolve(websiteDir, "..");
+const publicDir = join(websiteDir, "public");
+const brandDir = join(publicDir, "brand");
 const cardsFile = join(websiteDir, "releases", "cards.json");
-const changelogOutputDir = join(websiteDir, "public", "changelog", "og");
+const changelogOutputDir = join(publicDir, "changelog", "og");
+const reviewWindowFile = join(scriptsDir, "assets", "og-review-window.png");
 const fontFile = join(
   websiteDir,
   "node_modules",
@@ -37,6 +47,25 @@ const fontFile = join(
   "files",
   "jetbrains-mono-latin-wght-normal.woff2",
 );
+
+// Palette from `website/src/styles/brand.css` (light theme), so a card and the page it links to
+// read as one surface.
+const PALETTE = {
+  bg: "#f4f1ea",
+  paper: "#fffdf8",
+  ink: "#16140f",
+  body: "#3a352b",
+  muted: "#6b6557",
+  rule: "#dcd6c8",
+  accent: "#1f7a35",
+  accentSoft: "#bfe9c6",
+  accentInk: "#0d3a18",
+  // Sits between the panel and rule tokens: visible as shape, too quiet to compete with text.
+  watermark: "#e3dccb",
+} as const;
+
+/** Ink color the brand SVGs are drawn in; recoloring replaces it. */
+const BRAND_SVG_INK = "#16140f";
 
 /** Mirrors `SocialCard` in `scripts/generate/generate-changelog.ts`. */
 type SocialCard = {
@@ -49,23 +78,65 @@ type SocialCard = {
   alt: string;
 };
 
-/** One card with the route it belongs to: its footer link and published file. */
-type CardTarget = {
+/** One text card with the route it belongs to: its footer link and published file. */
+type PageCardTarget = {
+  kind: "page";
   card: SocialCard;
   /** Right-hand side of the footer; the page the card links to. */
   footer: string;
-  /** Published path under `website/public`. */
   outputFile: string;
 };
+
+/** One lockup-and-screenshot card at a fixed canvas size. */
+type HeroCardTarget = {
+  kind: "hero";
+  slug: string;
+  width: number;
+  height: number;
+  /** Left edge of the lockup-and-tagline column. */
+  columnLeft: number;
+  /** Text under the tagline: the install command, or a plain line for non-site contexts. */
+  footnote: { text: string; command: boolean };
+  outputFile: string;
+};
+
+type CardTarget = PageCardTarget | HeroCardTarget;
+
+const PAGE_WIDTH = 1200;
+const PAGE_HEIGHT = 630;
+
+const HERO_CARDS: HeroCardTarget[] = [
+  {
+    kind: "hero",
+    slug: "home",
+    width: PAGE_WIDTH,
+    height: PAGE_HEIGHT,
+    columnLeft: 72,
+    footnote: { text: "npm i -g hunkdiff", command: true },
+    outputFile: join(publicDir, "og.png"),
+  },
+  {
+    // GitHub's recommended social preview size; it is not served by the website.
+    kind: "hero",
+    slug: "github-social-preview",
+    width: 1280,
+    height: 640,
+    columnLeft: 96,
+    footnote: { text: "github.com/modem-dev/hunk · hunk.dev", command: false },
+    outputFile: join(repoRoot, "assets", "github-social-preview.png"),
+  },
+];
 
 /**
  * Standalone pages that carry their own card rather than the site-wide image.
  *
- * Copy only — a card is regenerated by hand, so anything that changes between
- * redraws (how many extensions are listed, say) would go stale unnoticed.
+ * The extensions card is copy only — a card is regenerated by hand, so anything that changes
+ * between redraws (how many extensions are listed, say) would go stale unnoticed. Comparison and
+ * VCS cards reuse their page data, so rerun this script when that copy changes.
  */
-const PAGE_CARDS: CardTarget[] = [
+const PAGE_CARDS: PageCardTarget[] = [
   {
+    kind: "page",
     card: {
       slug: "extensions",
       title: "Extensions",
@@ -75,12 +146,55 @@ const PAGE_CARDS: CardTarget[] = [
       alt: "Hunk extensions: community extensions for panes, themes, highlighters, and more.",
     },
     footer: "hunk.dev/extensions",
-    outputFile: join(websiteDir, "public", "extensions", "og.png"),
+    outputFile: join(publicDir, "extensions", "og.png"),
   },
+  {
+    kind: "page",
+    card: {
+      slug: "compare",
+      title: "Compare",
+      tagline: `Hunk side by side with ${listNames(COMPARISONS.map((entry) => entry.rival.name))}.`,
+      meta: "Terminal diff tools, head to head",
+      alt: "Hunk compared with other terminal diff tools.",
+    },
+    footer: "hunk.dev/compare",
+    outputFile: join(publicDir, "compare", "og.png"),
+  },
+  ...COMPARISONS.map(
+    (entry): PageCardTarget => ({
+      kind: "page",
+      card: {
+        slug: `compare-${entry.slug}`,
+        title: entry.headline,
+        tagline: entry.summary,
+        meta: "Terminal diff tools, head to head",
+        alt: `${entry.headline}: ${entry.summary}`,
+      },
+      footer: `hunk.dev/compare/${entry.slug}`,
+      outputFile: join(publicDir, "compare", entry.slug, "og.png"),
+    }),
+  ),
+  ...VCS_LANDING_PAGES.map(
+    (page): PageCardTarget => ({
+      kind: "page",
+      card: {
+        slug: `vcs-${page.slug}`,
+        title: `Hunk for ${page.name}`,
+        tagline: page.description,
+        meta: page.quickStart.slice(0, 2).join("  ·  "),
+        alt: `Hunk terminal diff viewer for ${page.name}`,
+      },
+      footer: `hunk.dev/${page.slug}`,
+      outputFile: join(publicDir, page.slug, "og.png"),
+    }),
+  ),
 ];
 
-const WIDTH = 1200;
-const HEIGHT = 630;
+/** Join names as English prose: "a, b, and c". */
+function listNames(names: string[]) {
+  if (names.length < 3) return names.join(" and ");
+  return `${names.slice(0, -1).join(", ")}, and ${names.at(-1)}`;
+}
 
 /** Escape text interpolated into the card markup. */
 function escapeHtml(value: string) {
@@ -92,14 +206,36 @@ function escapeHtml(value: string) {
 }
 
 /**
- * Paint one card.
+ * Inline one brand SVG in a new color.
  *
- * The palette and type are the site's own (`website/src/styles/brand.css`), so a card and the page
- * it links to read as one surface. Long titles step down a size rather than wrapping, because a
- * wrapped version number reads as a layout bug.
+ * With `trimClearSpace`, the viewBox drops the built-in clear-space margin so the logo's ink edge
+ * lines up with the text beside it; the card layout supplies the clear space instead.
  */
-function renderCardHtml({ card, footer }: CardTarget, fontDataUri: string) {
-  const titleSize = card.title.length > 12 ? 82 : 104;
+function inlineLogo(
+  name: string,
+  {
+    color,
+    className,
+    trimClearSpace = false,
+  }: { color: string; className: string; trimClearSpace?: boolean },
+) {
+  let svg = readFileSync(join(brandDir, `${name}.svg`), "utf8")
+    .trim()
+    .replaceAll(BRAND_SVG_INK, color)
+    .replace("<svg ", `<svg class="${className}" `);
+
+  if (trimClearSpace) {
+    svg = svg.replace(/viewBox="([^"]+)"/, (_match, box: string) => {
+      const [x, y, width, height] = box.split(/\s+/).map(Number);
+      return `viewBox="0 0 ${width + 2 * x} ${height + 2 * y}"`;
+    });
+  }
+
+  return svg;
+}
+
+/** Shared `<head>` for every card: the site font and a reset. */
+function cardHead(width: number, height: number, fontDataUri: string, css: string) {
   return `<!doctype html>
 <html>
 <head>
@@ -113,18 +249,110 @@ function renderCardHtml({ card, footer }: CardTarget, fontDataUri: string) {
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
-    width: ${WIDTH}px;
-    height: ${HEIGHT}px;
-    background: #f4f1ea;
-    color: #16140f;
+    width: ${width}px;
+    height: ${height}px;
+    overflow: hidden;
+    position: relative;
+    background: ${PALETTE.bg};
+    color: ${PALETTE.ink};
     font-family: "JetBrains Mono", monospace;
+  }
+${css}
+</style>
+</head>`;
+}
+
+/**
+ * Paint one hero card: the 3D lockup over the tagline, beside the review-window capture.
+ *
+ * The lockup is sized in the page to the tagline's measured width once the font has loaded, so
+ * both share one left and right edge.
+ */
+function renderHeroHtml(target: HeroCardTarget, fontDataUri: string, windowDataUri: string) {
+  const { width, height, columnLeft, footnote } = target;
+  // The capture is 640px wide with soft paper edges; anchor it to the right and center it.
+  const windowLeft = width - 640;
+  const windowTop = Math.round((height - 630) / 2);
+
+  const css = `
+  .window {
+    position: absolute;
+    left: ${windowLeft}px;
+    top: ${windowTop}px;
+    width: 640px;
+    height: 630px;
+    background: url("${windowDataUri}") no-repeat;
+  }
+  .column {
+    position: absolute;
+    left: ${columnLeft}px;
+    top: 0;
+    height: ${height}px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 40px;
+  }
+  .lockup { display: block; height: auto; }
+  .tagline { font-size: 40px; font-weight: 700; line-height: 1.3; letter-spacing: -0.01em; }
+  .highlight { background: ${PALETTE.accent}; color: ${PALETTE.paper}; padding: 0 10px; border-radius: 4px; }
+  .command {
+    display: inline-flex;
+    gap: 16px;
+    font-size: 24px;
+    border: 2px solid ${PALETTE.ink};
+    background: ${PALETTE.paper};
+    padding: 14px 22px;
+    box-shadow: 8px 8px 0 ${PALETTE.ink};
+    border-radius: 4px;
+  }
+  .command b { color: ${PALETTE.accent}; font-weight: 500; }
+  .plain { font-size: 22px; color: ${PALETTE.muted}; }`;
+
+  const note = footnote.command
+    ? `<div class="command"><b>$</b>${escapeHtml(footnote.text)}</div>`
+    : `<div class="plain">${escapeHtml(footnote.text)}</div>`;
+
+  return `${cardHead(width, height, fontDataUri, css)}
+<body>
+  <div class="window"></div>
+  <div class="column">
+    ${inlineLogo("logo-lockup", { color: PALETTE.ink, className: "lockup", trimClearSpace: true })}
+    <div class="tagline">terminal diffs for<br /><i>humans</i> &amp; <span class="highlight">agents</span></div>
+    ${note}
+  </div>
+  <script>
+    document.fonts.ready.then(() => {
+      const lockup = document.querySelector(".lockup");
+      lockup.style.width = document.querySelector(".tagline").getBoundingClientRect().width + "px";
+    });
+  </script>
+</body>
+</html>`;
+}
+
+/**
+ * Paint one page card.
+ *
+ * Long titles step down a size rather than wrapping, because a wrapped version number reads as a
+ * layout bug, and they stop short of the watermark so the two never overlap.
+ */
+function renderPageHtml({ card, footer }: PageCardTarget, fontDataUri: string) {
+  // JetBrains Mono advances 0.6em per glyph; the title's -0.045em tracking leaves 0.555em.
+  const titleRoom = 690;
+  const titleSize = Math.min(104, Math.floor(titleRoom / (card.title.length * 0.555)));
+
+  const css = `
+  body {
     display: flex;
     flex-direction: column;
     justify-content: space-between;
     padding: 64px;
   }
-  .mark { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; }
-  .mid { display: flex; flex-direction: column; gap: 22px; }
+  .lockup { display: block; align-self: flex-start; height: 36px; width: auto; position: relative; z-index: 1; }
+  .watermark { position: absolute; right: 72px; top: 112px; height: 340px; width: auto; }
+  .mid { display: flex; flex-direction: column; gap: 22px; position: relative; z-index: 1; }
   .vrow { display: flex; align-items: center; gap: 20px; }
   .title {
     font-size: ${titleSize}px;
@@ -134,8 +362,8 @@ function renderCardHtml({ card, footer }: CardTarget, fontDataUri: string) {
     white-space: nowrap;
   }
   .pill {
-    background: #bfe9c6;
-    color: #0d3a18;
+    background: ${PALETTE.accentSoft};
+    color: ${PALETTE.accentInk};
     font-size: 18px;
     font-weight: 500;
     letter-spacing: 0.08em;
@@ -143,12 +371,21 @@ function renderCardHtml({ card, footer }: CardTarget, fontDataUri: string) {
     padding: 7px 15px;
     border-radius: 999px;
   }
-  .tagline { font-size: 31px; line-height: 1.4; color: #3a352b; max-width: 900px; }
-  .chips { display: flex; gap: 10px; }
+  .tagline {
+    font-size: 31px;
+    line-height: 1.4;
+    color: ${PALETTE.body};
+    max-width: 720px;
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .chips { display: flex; flex-wrap: wrap; gap: 10px; max-width: 720px; }
   .chip {
-    border: 1px solid #dcd6c8;
-    background: #fffdf8;
-    color: #3a352b;
+    border: 1px solid ${PALETTE.rule};
+    background: ${PALETTE.paper};
+    color: ${PALETTE.body};
     font-size: 18px;
     padding: 6px 14px;
     border-radius: 6px;
@@ -158,14 +395,18 @@ function renderCardHtml({ card, footer }: CardTarget, fontDataUri: string) {
     justify-content: space-between;
     align-items: center;
     font-size: 20px;
-    color: #6b6557;
-    border-top: 1px solid #dcd6c8;
+    color: ${PALETTE.muted};
+    border-top: 1px solid ${PALETTE.rule};
     padding-top: 24px;
-  }
-</style>
-</head>
+    position: relative;
+    z-index: 1;
+    background: ${PALETTE.bg};
+  }`;
+
+  return `${cardHead(PAGE_WIDTH, PAGE_HEIGHT, fontDataUri, css)}
 <body>
-  <div class="mark">hunk</div>
+  ${inlineLogo("logo-lockup-flat", { color: PALETTE.ink, className: "lockup", trimClearSpace: true })}
+  ${inlineLogo("logo-mark-3d", { color: PALETTE.watermark, className: "watermark" })}
   <div class="mid">
     <div class="vrow">
       <span class="title">${escapeHtml(card.title)}</span>
@@ -185,24 +426,31 @@ function renderCardHtml({ card, footer }: CardTarget, fontDataUri: string) {
 </html>`;
 }
 
+/** Stable name for one card across selection, staging, and logging. */
+function slugOf(target: CardTarget) {
+  return target.kind === "hero" ? target.slug : target.card.slug;
+}
+
 const requested = new Set(process.argv.slice(2));
-const changelogCards: CardTarget[] = (
+const changelogCards: PageCardTarget[] = (
   JSON.parse(readFileSync(cardsFile, "utf8")) as SocialCard[]
 ).map((card) => ({
+  kind: "page",
   card,
   footer: "hunk.dev/changelog",
   outputFile: join(changelogOutputDir, `${card.slug}.png`),
 }));
-const targets = [...changelogCards, ...PAGE_CARDS];
+const targets: CardTarget[] = [...HERO_CARDS, ...changelogCards, ...PAGE_CARDS];
 const selected =
-  requested.size > 0 ? targets.filter((target) => requested.has(target.card.slug)) : targets;
+  requested.size > 0 ? targets.filter((target) => requested.has(slugOf(target))) : targets;
 
 if (selected.length === 0) {
-  const known = targets.map((target) => target.card.slug).join(", ");
+  const known = targets.map(slugOf).join(", ");
   throw new Error(`No cards matched ${[...requested].join(", ")}. Known slugs: ${known}`);
 }
 
 const fontDataUri = `data:font/woff2;base64,${readFileSync(fontFile).toString("base64")}`;
+const windowDataUri = `data:image/png;base64,${readFileSync(reviewWindowFile).toString("base64")}`;
 
 // Draw into a scratch directory and move the results into place only once every card has
 // rendered. Painting straight into the published directory meant a Chromium launch failure or a
@@ -214,29 +462,39 @@ try {
     process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {},
   );
   try {
-    const page = await browser.newPage({ viewport: { width: WIDTH, height: HEIGHT } });
+    const page = await browser.newPage();
     for (const target of selected) {
-      const scratch = join(stagingDir, `${target.card.slug}.html`);
-      writeFileSync(scratch, renderCardHtml(target, fontDataUri));
+      const slug = slugOf(target);
+      const scratch = join(stagingDir, `${slug}.html`);
+      const html =
+        target.kind === "hero"
+          ? renderHeroHtml(target, fontDataUri, windowDataUri)
+          : renderPageHtml(target, fontDataUri);
+      await page.setViewportSize(
+        target.kind === "hero"
+          ? { width: target.width, height: target.height }
+          : { width: PAGE_WIDTH, height: PAGE_HEIGHT },
+      );
+      writeFileSync(scratch, html);
       await page.goto(`file://${scratch}`, { waitUntil: "networkidle" });
       await page.evaluate(() => document.fonts.ready);
-      await page.screenshot({ path: join(stagingDir, `${target.card.slug}.png`) });
+      await page.screenshot({ path: join(stagingDir, `${slug}.png`) });
       rmSync(scratch);
-      console.log(`${target.card.slug}.png`);
+      console.log(`${slug}.png`);
     }
   } finally {
     await browser.close();
   }
 
   // A stale image for a series that no longer exists would keep being served, so a full run owns
-  // the changelog directory. A targeted run replaces only the cards it was asked for. Page cards
+  // the changelog directory. A targeted run replaces only the cards it was asked for. Other cards
   // are named files rather than a generated set, so nothing sweeps them.
   if (requested.size === 0) {
     rmSync(changelogOutputDir, { recursive: true, force: true });
   }
   for (const target of selected) {
     mkdirSync(dirname(target.outputFile), { recursive: true });
-    renameSync(join(stagingDir, `${target.card.slug}.png`), target.outputFile);
+    renameSync(join(stagingDir, `${slugOf(target)}.png`), target.outputFile);
   }
 } finally {
   rmSync(stagingDir, { recursive: true, force: true });

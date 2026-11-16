@@ -10,6 +10,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
+import { buildWebAssets } from "./build-web";
 import { HUNK_NPM_DIST, HUNK_PACKAGE_ROOT, HUNK_SOURCE_ROOT, REPO_ROOT } from "./package-paths";
 
 const repoRoot = REPO_ROOT;
@@ -90,6 +91,10 @@ runBun([
   "main.js",
 ]);
 
+// The daemon in `main.js` serves the browser review page from `dist/npm/web`, beside itself.
+const webOutdir = path.join(outdir, "web");
+const webManifest = await buildWebAssets({ outdir: webOutdir });
+
 const mainJs = path.join(outdir, "main.js");
 // chmod is a no-op on Windows; preserve exec bits on Unix so the bin runs in npm-installed packages.
 if (process.platform !== "win32") {
@@ -165,5 +170,6 @@ writeFileSync(
 rmSync(extensionTypesOutdir, { recursive: true, force: true });
 
 console.log(`Built ${mainJs}`);
+console.log(`Built ${webOutdir} (${webManifest.assets.length} assets)`);
 console.log(`Built ${path.join(opentuiOutdir, "index.js")}`);
 console.log(`Built ${path.join(extensionOutdir, "index.js")}`);

@@ -217,7 +217,8 @@ export function renderCliReference() {
           `**Aliases:** ${command.aliases.map((alias) => `\`${alias}\``).join(", ")}.`,
         );
       }
-      if (command.options && command.options.length > 0) {
+      // Options kept out of public docs (such as a hidden, unreleased flag) add no section.
+      if (command.options?.some((option) => option.publicDocs !== false)) {
         pieces.push("", "### Command-specific options", "", renderOptionTable(command.options));
       }
       if (command.watch) {

@@ -15,34 +15,34 @@ export type ReviewSide = "old" | "new";
 export type ReviewLineRange = readonly [number, number];
 export type ReviewFileChangeKind = "change" | "rename-pure" | "rename-changed" | "new" | "deleted";
 
-export interface ReviewLineAddressV1 {
+export interface ReviewLineAddress {
   side: ReviewSide;
   line: number;
 }
 
 /** A caller-supplied range before hunk intersections and ownership are resolved. */
-export interface ReviewRangeTargetV1 {
+export interface ReviewRangeTarget {
   oldRange?: ReviewLineRange;
   newRange?: ReviewLineRange;
   /** The active endpoint used for placement and owner-hunk resolution. */
-  preferred: ReviewLineAddressV1;
+  preferred: ReviewLineAddress;
 }
 
 /** A note target may address one line or one inclusive source range. */
-export type ReviewNoteTargetV1 = ReviewLineAddressV1 | ReviewRangeTargetV1;
+export type ReviewNoteTarget = ReviewLineAddress | ReviewRangeTarget;
 
-export interface ReviewRangeAnchorV1 {
+export interface ReviewRangeAnchor {
   oldRange?: ReviewLineRange;
   newRange?: ReviewLineRange;
   /** The one line a renderer places the note beside and scrolls to. */
-  preferred?: ReviewLineAddressV1;
+  preferred?: ReviewLineAddress;
   /** Every hunk whose old or new range intersects the note, in file order. */
   intersectingHunkIndices: number[];
   /** The one hunk that renders the note; annotated navigation includes this owner. */
   ownerHunkIndex?: number;
 }
 
-export interface ReviewNoteV1 {
+export interface ReviewNote {
   id: string;
   /** Direct parent note identity. Roots omit this field; ancestry is derived by selectors. */
   parentId?: string;
@@ -54,7 +54,7 @@ export interface ReviewNoteV1 {
   /** The raw producer label, retained so an adapter can round-trip it unchanged. */
   originalSource?: string;
   fileKey: string;
-  anchor: ReviewRangeAnchorV1;
+  anchor: ReviewRangeAnchor;
   summary: string;
   rationale?: string;
   markup?: string;
@@ -67,14 +67,14 @@ export interface ReviewNoteV1 {
   confidence?: "low" | "medium" | "high";
 }
 
-export interface ReviewContextBlockV1 {
+export interface ReviewContextBlock {
   type: "context";
   lines: number;
   additionLineIndex: number;
   deletionLineIndex: number;
 }
 
-export interface ReviewChangeBlockV1 {
+export interface ReviewChangeBlock {
   type: "change";
   additions: number;
   deletions: number;
@@ -82,7 +82,7 @@ export interface ReviewChangeBlockV1 {
   deletionLineIndex: number;
 }
 
-export type ReviewHunkBlockV1 = ReviewContextBlockV1 | ReviewChangeBlockV1;
+export type ReviewHunkBlock = ReviewContextBlock | ReviewChangeBlock;
 
 /**
  * One hunk as every consumer reads it.
@@ -92,7 +92,7 @@ export type ReviewHunkBlockV1 = ReviewContextBlockV1 | ReviewChangeBlockV1;
  * for a complete patch; a partial patch carries just the changed lines, which is why the
  * index fields exist at all rather than being derived from the line numbers.
  */
-export interface ReviewHunkV1 {
+export interface ReviewHunk {
   index: number;
   /** Unchanged lines the patch omitted immediately before this hunk. */
   collapsedBefore: number;
@@ -110,21 +110,21 @@ export interface ReviewHunkV1 {
   /** Deleted lines only; `deletionCount` also covers this hunk's context lines. */
   deletionLines: number;
   deletionLineIndex: number;
-  hunkContent: ReviewHunkBlockV1[];
+  hunkContent: ReviewHunkBlock[];
   hunkSpecs?: string;
   hunkContext?: string;
   noEOFCRAdditions: boolean;
   noEOFCRDeletions: boolean;
 }
 
-export interface ReviewFileStatsV1 {
+export interface ReviewFileStats {
   additions: number;
   deletions: number;
   /** The producer counted more than it rendered, so the numbers are a lower bound. */
   truncated: boolean;
 }
 
-export interface ReviewFileFlagsV1 {
+export interface ReviewFileFlags {
   untracked: boolean;
   binary: boolean;
   tooLarge: boolean;
@@ -132,7 +132,7 @@ export interface ReviewFileFlagsV1 {
   partial: boolean;
 }
 
-export interface ReviewFileV1 {
+export interface ReviewFile {
   /** Stable semantic address for one reviewed file, independent of renderer identity. */
   key: string;
   /** Transitional renderer-model id; never use it for cross-generation reconciliation. */
@@ -142,8 +142,8 @@ export interface ReviewFileV1 {
   changeKind: ReviewFileChangeKind;
   language?: string;
   agentSummary?: string;
-  stats: ReviewFileStatsV1;
-  flags: ReviewFileFlagsV1;
+  stats: ReviewFileStats;
+  flags: ReviewFileFlags;
   /**
    * The file's unified diff text, as the producer that loaded it supplied it.
    *
@@ -165,7 +165,7 @@ export interface ReviewFileV1 {
     additionLines: Array<"moved" | null>;
     deletionLines: Array<"moved" | null>;
   };
-  hunks: ReviewHunkV1[];
+  hunks: ReviewHunk[];
   /** Digest of every renderer-neutral fact above; equal content means equal identity. */
   contentIdentity: string;
   /**
@@ -182,6 +182,6 @@ export interface ReviewFileV1 {
   sourceAttested?: boolean;
 }
 
-export interface ReviewDocumentV1 {
-  files: ReviewFileV1[];
+export interface ReviewDocument {
+  files: ReviewFile[];
 }

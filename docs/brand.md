@@ -43,14 +43,19 @@ All files are in `website/public/brand/` and served at `https://hunk.dev/brand/<
 
 Other places the mark appears:
 
-| Path                                       | Purpose                                                                 |
-| ------------------------------------------ | ----------------------------------------------------------------------- |
-| `website/public/favicon.svg`               | Browser tab icon. Flat mark in `#65d291` on a `#111a15` rounded square. |
-| `website/public/icon.png`                  | 512px PNG of the favicon (fallback for browsers that skip SVG icons).   |
-| `website/public/apple-icon.png`            | 180px apple-touch icon.                                                 |
-| `website/src/components/BrandHeader.astro` | Header logo: inline flat mark (24px) plus `hunk` text.                  |
-| `website/public/og.png`                    | 1200×630 social card. Not yet on the new logo.                          |
-| `website/public/docs/favicon.svg`          | Docs favicon. Not yet updated.                                          |
+| Path                                       | Purpose                                                                                              |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `website/public/favicon.svg`               | Browser tab icon for every page, docs included. Paper flat mark on an ink rounded square.            |
+| `website/public/icon.png`                  | 512px PNG of the favicon (fallback for browsers that skip SVG icons).                                |
+| `website/public/apple-icon.png`            | 180px apple-touch icon.                                                                              |
+| `website/src/components/BrandHeader.astro` | Header logo: inline flat mark (24px) plus `hunk` text.                                               |
+| `website/public/og.png`                    | 1200×630 site-wide social card: 3D lockup beside a review capture.                                   |
+| `website/public/**/og.png`                 | Per-page social cards (changelog, extensions, compare, VCS guides): flat lockup and a faint 3D mark. |
+| `assets/github-social-preview.png`         | 1280×640 GitHub social preview. Uploaded by hand in the repository settings.                         |
+| `README.md`                                | 3D lockup header, ink or paper to match GitHub's theme. Shared with the npm README.                  |
+
+Every social card above is drawn by `website/scripts/generate-og.ts` from the SVGs in
+`website/public/brand/`; see `website/MEDIA.md` to redraw them.
 
 Regenerate the PNG icons after changing `favicon.svg`:
 
@@ -88,7 +93,6 @@ Light is the default. Dark mode is toggled with `data-theme="dark"`. Tokens live
 
 - Use the accent green sparingly: the current nav item, the highlighted word in the hero, primary controls.
 - The diff colors in screenshots come from the terminal theme, not the brand palette.
-- The favicon uses a darker green pair (`#111a15` / `#65d291`) that is not a site token. Align it with the table above or add it as a token if it stays.
 - The logo exploration files (C51/C59) were drawn on a saturated blue (`#1F3DFF`). That blue is not part of the site palette; decide before using it anywhere.
 
 ## Typography

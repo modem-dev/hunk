@@ -16,7 +16,7 @@ import {
   REVIEW_PATCH_CONTENT_TYPE,
   reviewResourceId,
 } from "../../../packages/hunk/src/core/review/resources";
-import type { HunkReviewResourceCatalogV1 } from "../../../packages/hunk/src/session/reviewProtocol";
+import type { ReviewResourceCatalog } from "../../../packages/hunk/src/session/reviewProtocol";
 import type { ReviewOrderingConsumer } from "../types";
 
 const FILE_KEY = "file:0123456789abcdef";
@@ -28,7 +28,7 @@ const FILE_KEY = "file:0123456789abcdef";
  * arriving publication is always given one — otherwise the mirror would decline for a
  * reason the fixture is not about.
  */
-function catalogFor(generation: string): HunkReviewResourceCatalogV1 {
+function catalogFor(generation: string): ReviewResourceCatalog {
   return {
     generation,
     fileKeysByRuntimeId: { "file-1": FILE_KEY },

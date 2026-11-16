@@ -28,13 +28,18 @@
  *   whole event rather than a position inside a half-delivered payload, so a resuming
  *   client can never reconstruct a torn one.
  */
-import { REVIEW_RESOURCE_CHUNK_BYTES, type ReviewResourceChunkV1 } from "../core/review/resources";
+import { REVIEW_RESOURCE_CHUNK_BYTES, type ReviewResourceChunk } from "../core/review/resources";
 import {
   parseReviewGeneration,
   type ReviewPublicationAddress,
 } from "../core/review/generationOrder";
 import { ReviewChunkAssembler, type ReviewAssemblyResult } from "../core/review/resourceAssembly";
-import { hasExactKeys, isReviewSha256Digest, type ReviewDigestFn } from "../core/review/validation";
+import {
+  hasExactKeys,
+  isReviewSha256Digest,
+  type ReviewAsyncDigestFn,
+  type ReviewDigestFn,
+} from "../core/review/validation";
 import { MAX_HUNK_REVIEW_ENVELOPE_BYTES, MAX_HUNK_REVIEW_IDENTIFIER_BYTES } from "./reviewProtocol";
 
 /**
@@ -47,7 +52,7 @@ import { MAX_HUNK_REVIEW_ENVELOPE_BYTES, MAX_HUNK_REVIEW_IDENTIFIER_BYTES } from
  */
 export const REVIEW_EVENT_TYPES = ["publication", "disconnect"] as const;
 
-export type ReviewEventTypeV1 = (typeof REVIEW_EVENT_TYPES)[number];
+export type ReviewEventType = (typeof REVIEW_EVENT_TYPES)[number];
 
 /** Which part of a chunked event one frame carries. */
 export type ReviewEventFramePhase = "begin" | "chunk" | "end";
@@ -80,14 +85,14 @@ export const REVIEW_EVENT_STREAM_CONTENT_TYPE = "text/event-stream; charset=utf-
 export const REVIEW_EVENT_HEARTBEAT_FRAME = ": hunk-review-heartbeat\n\n";
 
 /** The `event:` name one frame is sent under. */
-export function reviewEventFrameName(type: ReviewEventTypeV1, phase?: ReviewEventFramePhase) {
+export function reviewEventFrameName(type: ReviewEventType, phase?: ReviewEventFramePhase) {
   return phase === undefined ? type : `${type}-${phase}`;
 }
 
 /** Read one `event:` name back into the type and phase it was built from. */
 export function parseReviewEventFrameName(
   name: string,
-): { type: ReviewEventTypeV1; phase?: ReviewEventFramePhase } | undefined {
+): { type: ReviewEventType; phase?: ReviewEventFramePhase } | undefined {
   for (const type of REVIEW_EVENT_TYPES) {
     if (name === type) {
       return { type };
@@ -104,35 +109,50 @@ export function parseReviewEventFrameName(
 /**
  * Build the id one event is known by.
  *
- * An event is identified by what it is about — its type and the publication position it
- * describes — rather than by a counter, so two streams watching one session name the same
- * event the same way and a resuming client can tell whether it already has this one.
+ * An event is identified by what it is about — its type, the publication position it
+ * describes, and the shared-state revision at that position when there is one — rather than
+ * by a counter, so two streams watching one session name the same event the same way and a
+ * resuming client can tell whether it already has this one. The shared revision is part of
+ * the id because agent marks and the agent reveal move it without moving the position.
  */
-export function reviewEventId(type: ReviewEventTypeV1, address: ReviewPublicationAddress) {
-  return `revent:${type}:${address.generation}@${address.stateRevision}`;
+export function reviewEventId(
+  type: ReviewEventType,
+  address: ReviewPublicationAddress,
+  sharedStateRevision?: number,
+) {
+  const shared = sharedStateRevision === undefined ? "" : `~${sharedStateRevision}`;
+  return `revent:${type}:${address.generation}@${address.stateRevision}${shared}`;
 }
 
-/** Read one event id back into the type and position it names. */
+/** Read one event id back into the type, position, and shared revision it names. */
 export function parseReviewEventId(
   value: unknown,
-): { type: ReviewEventTypeV1; address: ReviewPublicationAddress } | undefined {
+):
+  | { type: ReviewEventType; address: ReviewPublicationAddress; sharedStateRevision?: number }
+  | undefined {
   if (typeof value !== "string" || value.length > MAX_REVIEW_EVENT_ID_BYTES) {
     return undefined;
   }
-  const match = /^revent:([a-z-]+):(.+)@(\d{1,15})$/.exec(value);
+  const match = /^revent:([a-z-]+):(.+)@(\d{1,15})(?:~(\d{1,15}))?$/.exec(value);
   if (!match) {
     return undefined;
   }
   const type = REVIEW_EVENT_TYPES.find((candidate) => candidate === match[1]);
   const stateRevision = Number(match[3]);
+  const sharedStateRevision = match[4] === undefined ? undefined : Number(match[4]);
   if (
     !type ||
     parseReviewGeneration(match[2]) === undefined ||
-    !Number.isSafeInteger(stateRevision)
+    !Number.isSafeInteger(stateRevision) ||
+    (sharedStateRevision !== undefined && !Number.isSafeInteger(sharedStateRevision))
   ) {
     return undefined;
   }
-  return { type, address: { generation: match[2]!, stateRevision } };
+  return {
+    type,
+    address: { generation: match[2]!, stateRevision },
+    ...(sharedStateRevision !== undefined ? { sharedStateRevision } : {}),
+  };
 }
 
 /** Whether one value could be an event id a client is echoing back at us. */
@@ -143,7 +163,7 @@ export function isReviewEventId(value: unknown): value is string {
 // -- Frame payloads ---------------------------------------------------------------------
 
 /** One whole event, small enough to send in a single frame. */
-export interface ReviewEventFrameV1 {
+export interface ReviewEventWhole {
   eventId: string;
   generation: string;
   stateRevision: number;
@@ -151,7 +171,7 @@ export interface ReviewEventFrameV1 {
 }
 
 /** What a chunked event declares before any of its bytes arrive. */
-export interface ReviewEventBeginV1 {
+export interface ReviewEventBegin {
   eventId: string;
   generation: string;
   stateRevision: number;
@@ -169,10 +189,10 @@ export interface ReviewEventBeginV1 {
  * type keeps the two from drifting and lets the shared assembler verify event payloads
  * without knowing they are events.
  */
-export type ReviewEventChunkV1 = Omit<ReviewResourceChunkV1, "resourceId"> & { eventId: string };
+export type ReviewEventChunk = Omit<ReviewResourceChunk, "resourceId"> & { eventId: string };
 
 /** What a chunked event repeats once its bytes have all been sent. */
-export interface ReviewEventEndV1 {
+export interface ReviewEventEnd {
   eventId: string;
   generation: string;
   contentSize: number;
@@ -181,7 +201,7 @@ export interface ReviewEventEndV1 {
 }
 
 /** View one event chunk as the resource chunk the shared assembler verifies. */
-export function reviewEventChunkAsResourceChunk(chunk: ReviewEventChunkV1): ReviewResourceChunkV1 {
+export function reviewEventChunkAsResourceChunk(chunk: ReviewEventChunk): ReviewResourceChunk {
   const { eventId, ...rest } = chunk;
   return { resourceId: eventId, ...rest };
 }
@@ -209,7 +229,7 @@ function isChunkCount(value: unknown): value is number {
 }
 
 /** Parse one single-frame event body. */
-export function parseReviewEventFrame(value: unknown): ReviewEventFrameV1 | undefined {
+export function parseReviewEventWhole(value: unknown): ReviewEventWhole | undefined {
   const record = asRecord(value);
   if (
     !record ||
@@ -220,11 +240,11 @@ export function parseReviewEventFrame(value: unknown): ReviewEventFrameV1 | unde
   ) {
     return undefined;
   }
-  return record as unknown as ReviewEventFrameV1;
+  return record as unknown as ReviewEventWhole;
 }
 
 /** Parse one chunked-event begin envelope. */
-export function parseReviewEventBegin(value: unknown): ReviewEventBeginV1 | undefined {
+export function parseReviewEventBegin(value: unknown): ReviewEventBegin | undefined {
   const record = asRecord(value);
   if (
     !record ||
@@ -247,11 +267,11 @@ export function parseReviewEventBegin(value: unknown): ReviewEventBeginV1 | unde
   ) {
     return undefined;
   }
-  return record as unknown as ReviewEventBeginV1;
+  return record as unknown as ReviewEventBegin;
 }
 
 /** Parse one chunk frame. Its bytes are decoded by the transport, as resource chunks are. */
-export function parseReviewEventChunk(value: unknown): ReviewEventChunkV1 | undefined {
+export function parseReviewEventChunk(value: unknown): ReviewEventChunk | undefined {
   const record = asRecord(value);
   if (
     !record ||
@@ -279,11 +299,11 @@ export function parseReviewEventChunk(value: unknown): ReviewEventChunkV1 | unde
   ) {
     return undefined;
   }
-  return record as unknown as ReviewEventChunkV1;
+  return record as unknown as ReviewEventChunk;
 }
 
 /** Parse one chunked-event end envelope. */
-export function parseReviewEventEnd(value: unknown): ReviewEventEndV1 | undefined {
+export function parseReviewEventEnd(value: unknown): ReviewEventEnd | undefined {
   const record = asRecord(value);
   if (
     !record ||
@@ -302,7 +322,7 @@ export function parseReviewEventEnd(value: unknown): ReviewEventEndV1 | undefine
   ) {
     return undefined;
   }
-  return record as unknown as ReviewEventEndV1;
+  return record as unknown as ReviewEventEnd;
 }
 
 // -- Framing ----------------------------------------------------------------------------
@@ -331,8 +351,10 @@ export function reviewEventChunkCount(contentSize: number) {
 }
 
 export interface PlanReviewEventInput {
-  type: ReviewEventTypeV1;
+  type: ReviewEventType;
   address: ReviewPublicationAddress;
+  /** The shared-state revision at `address`, when the publication reports one. */
+  sharedStateRevision?: number;
   /** The event body itself, sent as-is when it fits one frame. */
   body: unknown;
   /** The same body serialized, which is what a chunked event actually carries. */
@@ -372,7 +394,7 @@ export function planReviewEventFrames(input: PlanReviewEventInput): ReviewEventS
     Math.min(input.chunkBytes ?? REVIEW_EVENT_CHUNK_BYTES, REVIEW_EVENT_CHUNK_BYTES),
     Math.ceil(contentSize / MAX_REVIEW_EVENT_CHUNKS),
   );
-  const eventId = reviewEventId(type, address);
+  const eventId = reviewEventId(type, address, input.sharedStateRevision);
 
   if (contentSize <= chunkBytes) {
     return [
@@ -386,7 +408,7 @@ export function planReviewEventFrames(input: PlanReviewEventInput): ReviewEventS
           // The single-frame form carries the body itself; there is nothing to reassemble,
           // so re-encoding it as base64 would only cost a client a decode.
           payload: input.body,
-        } satisfies ReviewEventFrameV1,
+        } satisfies ReviewEventWhole,
       },
     ];
   }
@@ -403,7 +425,7 @@ export function planReviewEventFrames(input: PlanReviewEventInput): ReviewEventS
         contentSize,
         contentDigest,
         chunkCount,
-      } satisfies ReviewEventBeginV1,
+      } satisfies ReviewEventBegin,
     },
   ];
   for (let index = 0; index < chunkCount; index += 1) {
@@ -421,7 +443,7 @@ export function planReviewEventFrames(input: PlanReviewEventInput): ReviewEventS
         contentDigest,
         contentSize,
         eof: index === chunkCount - 1,
-      } satisfies ReviewEventChunkV1,
+      } satisfies ReviewEventChunk,
     });
   }
   frames.push({
@@ -433,7 +455,7 @@ export function planReviewEventFrames(input: PlanReviewEventInput): ReviewEventS
       contentSize,
       contentDigest,
       chunkCount,
-    } satisfies ReviewEventEndV1,
+    } satisfies ReviewEventEnd,
   });
   return frames;
 }
@@ -441,9 +463,12 @@ export function planReviewEventFrames(input: PlanReviewEventInput): ReviewEventS
 // -- Reading ----------------------------------------------------------------------------
 
 export interface ReviewEventAssemblerOptions {
-  begin: ReviewEventBeginV1;
-  /** Platform hashing, injected exactly as the resource assembler takes it. */
-  digest: ReviewDigestFn;
+  begin: ReviewEventBegin;
+  /**
+   * Platform hashing, injected exactly as the resource assembler takes it; omitted by a
+   * reader that verifies through `finishAsync`.
+   */
+  digest?: ReviewDigestFn;
 }
 
 /**
@@ -458,7 +483,7 @@ export interface ReviewEventAssemblerOptions {
  */
 export class ReviewEventAssembler {
   private readonly assembler: ReviewChunkAssembler;
-  private readonly begin: ReviewEventBeginV1;
+  private readonly begin: ReviewEventBegin;
   private accepted = 0;
 
   constructor({ begin, digest }: ReviewEventAssemblerOptions) {
@@ -478,7 +503,7 @@ export class ReviewEventAssembler {
   }
 
   /** Accept one chunk and its decoded bytes. */
-  accept(chunk: ReviewEventChunkV1, bytes: Uint8Array) {
+  accept(chunk: ReviewEventChunk, bytes: Uint8Array) {
     if (chunk.eventId !== this.begin.eventId) {
       return {
         ok: false as const,
@@ -501,7 +526,17 @@ export class ReviewEventAssembler {
   }
 
   /** Verify the assembled payload against the event's declared end. */
-  finish(end: ReviewEventEndV1): ReviewAssemblyResult {
+  finish(end: ReviewEventEnd): ReviewAssemblyResult {
+    return this.endMismatch(end) ?? this.assembler.finish();
+  }
+
+  /** `finish`, hashing with an asynchronous platform digest such as Web Crypto's. */
+  async finishAsync(end: ReviewEventEnd, digest: ReviewAsyncDigestFn) {
+    return this.endMismatch(end) ?? this.assembler.finishAsync(digest);
+  }
+
+  /** The refusal for an end frame that disagrees with its begin frame or the chunk count. */
+  private endMismatch(end: ReviewEventEnd): ReviewAssemblyResult | undefined {
     if (
       end.eventId !== this.begin.eventId ||
       end.contentSize !== this.begin.contentSize ||
@@ -515,6 +550,6 @@ export class ReviewEventAssembler {
         message: `Review event ${this.begin.eventId} ended with a declaration it did not begin with.`,
       };
     }
-    return this.assembler.finish();
+    return undefined;
   }
 }
