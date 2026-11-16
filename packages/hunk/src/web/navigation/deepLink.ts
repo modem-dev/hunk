@@ -34,7 +34,7 @@ import {
   reviewNoteVisibleByPolicy,
   type ReviewState,
 } from "../../core/review/state";
-import type { ReviewFileV1, ReviewSide } from "../../core/review/types";
+import type { ReviewFile, ReviewSide } from "../../core/review/types";
 import { HUNK_REVIEW_CAPABILITY_FRAGMENT_KEY } from "../../session/reviewHttpProtocol";
 
 /** The fragment parameter that holds the address. */
@@ -95,7 +95,7 @@ export interface ReviewAddressTarget {
 }
 
 /** The hunk whose range holds one line of one side, or the nearest hunk before it. */
-function hunkForLine(file: ReviewFileV1, side: ReviewSide, line: number) {
+function hunkForLine(file: ReviewFile, side: ReviewSide, line: number) {
   let nearest = 0;
   for (const [index, hunk] of file.hunks.entries()) {
     const start = side === "new" ? hunk.additionStart : hunk.deletionStart;
@@ -157,7 +157,7 @@ export type ReviewLinePlacement =
  * knows) cannot be shown at all.
  */
 export function reviewLinePlacement(
-  file: ReviewFileV1,
+  file: ReviewFile,
   side: ReviewSide,
   line: number,
 ): ReviewLinePlacement {

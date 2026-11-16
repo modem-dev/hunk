@@ -21,7 +21,7 @@ import {
   type ReviewStoredNote,
 } from "../../core/review/state";
 import type { ReviewThreadedStoredNote } from "../../core/review/selectors";
-import type { ReviewNoteV1 } from "../../core/review/types";
+import type { ReviewNote } from "../../core/review/types";
 import type { DiffFile } from "../../core/changeset/model";
 import type { AgentAnnotation } from "../../extension-api/types";
 
@@ -106,7 +106,7 @@ export interface DraftReviewNote {
 }
 
 /** Carry the annotation fields both note models share, in the terminal's shape. */
-function annotationFields(note: ReviewNoteV1) {
+function annotationFields(note: ReviewNote) {
   return {
     oldRange: note.anchor.oldRange ? ([...note.anchor.oldRange] as [number, number]) : undefined,
     newRange: note.anchor.newRange ? ([...note.anchor.newRange] as [number, number]) : undefined,
@@ -121,7 +121,7 @@ function annotationFields(note: ReviewNoteV1) {
 
 /** Render one semantic note back as the live comment the terminal review stream draws. */
 export function storedNoteToLiveComment(
-  note: ReviewNoteV1,
+  note: ReviewNote,
   filePath: string,
   threadDepth = 0,
   hasReplies = false,
@@ -150,7 +150,7 @@ export function storedNoteToLiveComment(
 
 /** Render one semantic note back as the reviewer-authored note the terminal shows. */
 export function storedNoteToUserNote(
-  note: ReviewNoteV1,
+  note: ReviewNote,
   filePath: string,
   threadDepth = 0,
   hasReplies = false,
@@ -206,7 +206,7 @@ export function storedDraftToDraftNote(draft: ReviewDraftNote, file: DiffFile): 
 export function groupStoredNotesByFileId<T>(
   entries: readonly ReviewStoredNote[],
   fileByKey: ReadonlyMap<string, DiffFile>,
-  project: (note: ReviewNoteV1, filePath: string) => T,
+  project: (note: ReviewNote, filePath: string) => T,
 ): Record<string, T[]> {
   const result: Record<string, T[]> = {};
   for (const entry of entries) {
@@ -224,7 +224,7 @@ export function groupThreadedStoredNotesByFileId<T>(
   entries: readonly ReviewThreadedStoredNote[],
   fileByKey: ReadonlyMap<string, DiffFile>,
   project: (
-    note: ReviewNoteV1,
+    note: ReviewNote,
     filePath: string,
     depth: number,
     hasReplies: boolean,

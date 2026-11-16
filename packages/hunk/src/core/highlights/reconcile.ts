@@ -1,4 +1,4 @@
-import type { ReviewDocumentV1 } from "../review/types";
+import type { ReviewDocument } from "../review/types";
 import type { ValidatedLineHighlight } from "./validate";
 
 /**
@@ -13,8 +13,8 @@ import type { ValidatedLineHighlight } from "./validate";
  */
 export function carryOverLineHighlights(
   marksByFileId: ReadonlyMap<string, readonly ValidatedLineHighlight[]>,
-  previous: ReviewDocumentV1,
-  next: ReviewDocumentV1,
+  previous: ReviewDocument,
+  next: ReviewDocument,
 ): ReadonlyMap<string, readonly ValidatedLineHighlight[]> {
   const carried = new Map<string, readonly ValidatedLineHighlight[]>();
   if (marksByFileId.size === 0) {

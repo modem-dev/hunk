@@ -61,7 +61,7 @@ import {
   REVIEW_RESOURCE_LOAD_CONCURRENCY,
   reviewResourceCeiling,
   reviewResourceId,
-  type ReviewResourceDescriptorV1,
+  type ReviewResourceDescriptor,
 } from "../../core/review/resources";
 import { isReviewSha256Digest } from "../../core/review/validation";
 import { nodeReviewDigest } from "../../core/reviewDigest";
@@ -739,7 +739,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
    */
   private async assembleResource(
     key: { sessionId: string; generation: string; resourceId: string },
-    descriptor: ReviewResourceDescriptorV1,
+    descriptor: ReviewResourceDescriptor,
     signal?: AbortSignal,
   ): Promise<Uint8Array> {
     const measured = isMaterializedReviewResource(descriptor);

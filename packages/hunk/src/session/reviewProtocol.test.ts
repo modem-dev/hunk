@@ -7,7 +7,7 @@ import {
   REVIEW_SOURCE_CONTENT_TYPE,
   reviewResourceId,
 } from "../core/review/resources";
-import type { ReviewNoteV1 } from "../core/review/types";
+import type { ReviewNote } from "../core/review/types";
 import {
   HUNK_REVIEW_ACTION_TYPES,
   HUNK_REVIEW_PROTOCOL_VERSION,
@@ -474,7 +474,7 @@ describe("publication address", () => {
 
 describe("note transport bounds", () => {
   /** One note whose every text field fits the bound while the note as a whole does not. */
-  function oversizedNote(): ReviewNoteV1 {
+  function oversizedNote(): ReviewNote {
     const twoThirds = "x".repeat(Math.floor(MAX_REVIEW_NOTE_BYTES * 0.7));
     return {
       id: "user:1",

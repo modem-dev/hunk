@@ -12,11 +12,11 @@ import type {
   ReviewSourceStatus,
   ReviewStoredNote,
 } from "./state";
-import type { ReviewDocumentV1 } from "./types";
+import type { ReviewDocument } from "./types";
 
 export type ReviewAction =
   /** Adopt a newly loaded document, retiring state derived from content it replaced. */
-  | { type: "document/reconcile"; document: ReviewDocumentV1 }
+  | { type: "document/reconcile"; document: ReviewDocument }
   | {
       type: "selection/select";
       fileKey: string;

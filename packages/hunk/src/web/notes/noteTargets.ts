@@ -2,7 +2,7 @@
  * Turns a line or line range the reader picked in the diff into a note's target.
  *
  * The reader picks lines as Pierre draws them; a note addresses the shared model: the owning
- * hunk, a `ReviewLineAddressV1` or `ReviewRangeTargetV1`, and — for a line that only exists
+ * hunk, a `ReviewLineAddress` or `ReviewRangeTarget`, and — for a line that only exists
  * because the reader expanded a gap — the `ReviewExpandedLineClaim` core defines
  * (`core/review/expansion.ts`, audit B10), which the session checks with
  * `resolveReviewExpandedLine` before it accepts the line. Coverage is the shared
@@ -12,13 +12,13 @@
  */
 import { reviewRangeTargetCoverageIssue } from "../../core/review/geometry";
 import type { ReviewExpandedLineClaim } from "../../core/review/expansion";
-import type { ReviewFileV1, ReviewNoteTargetV1, ReviewSide } from "../../core/review/types";
+import type { ReviewFile, ReviewNoteTarget, ReviewSide } from "../../core/review/types";
 import type { ReviewGapView } from "../stream/fileProjection";
 
 /** Where a new note goes, as the session's `notes/add-user` takes it. */
 export interface ReviewNoteTargetPick {
   hunkIndex: number;
-  target: ReviewNoteTargetV1;
+  target: ReviewNoteTarget;
   expandedLineProof?: ReviewExpandedLineClaim;
   /** The line its composer hangs beside. */
   side: ReviewSide;
@@ -28,7 +28,7 @@ export interface ReviewNoteTargetPick {
 }
 
 /** The hunk whose rows draw one line of one side, if any. */
-function hunkDrawing(file: ReviewFileV1, side: ReviewSide, line: number) {
+function hunkDrawing(file: ReviewFile, side: ReviewSide, line: number) {
   return file.hunks.findIndex((hunk) =>
     side === "new"
       ? line >= hunk.additionStart && line < hunk.additionStart + hunk.additionCount
@@ -38,7 +38,7 @@ function hunkDrawing(file: ReviewFileV1, side: ReviewSide, line: number) {
 
 /** Target one line: a hunk's own row, or an expanded gap's row with its proof. */
 export function reviewNoteLineTarget(
-  file: ReviewFileV1,
+  file: ReviewFile,
   gaps: readonly ReviewGapView[],
   side: ReviewSide,
   line: number,
@@ -66,7 +66,7 @@ export function reviewNoteLineTarget(
  * Narrows to the starting line when the patch does not draw the whole range.
  */
 export function reviewNoteRangeTarget(
-  file: ReviewFileV1,
+  file: ReviewFile,
   gaps: readonly ReviewGapView[],
   side: ReviewSide,
   start: number,

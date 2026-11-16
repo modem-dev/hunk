@@ -11,7 +11,7 @@ import {
 } from "../../core/review/annotations";
 import type { ReviewHunkSpan } from "../../core/review/geometry";
 import { reviewNoteRangeLabel } from "../../core/review/noteLabels";
-import type { ReviewRangeAnchorV1 } from "../../core/review/types";
+import type { ReviewRangeAnchor } from "../../core/review/types";
 import { fileLabel } from "./files";
 
 export interface VisibleAgentNote {
@@ -22,7 +22,7 @@ export interface VisibleAgentNote {
    * line the card sits beside. Render planning places the card from this and never from
    * range containment against the rows it happens to have drawn.
    */
-  anchor: ReviewRangeAnchorV1;
+  anchor: ReviewRangeAnchor;
   source?: ReviewNoteSource | "draft";
   editable?: boolean;
   /** Whether keyboard note actions currently address this semantic card. */

@@ -38,7 +38,7 @@ import {
   type ReactNode,
 } from "react";
 import type { ReviewState } from "../../core/review/state";
-import type { ReviewFileV1 } from "../../core/review/types";
+import type { ReviewFile } from "../../core/review/types";
 import { reviewHunkIndexAtOffset } from "../../core/review/viewportAnchor";
 import type { ReviewAgentHighlightV1, ReviewSharedNoteV1 } from "../../session/reviewSharedState";
 import type { ClientReviewMirrorFileSlot } from "../mirror/clientReviewMirror";
@@ -207,10 +207,10 @@ interface RevealHold {
 /** Plans one file per document state, reusing the previous plan when nothing it reads moved. */
 function usePlans(review: ReviewState) {
   const cache = useRef(
-    new WeakMap<ReviewFileV1, { gaps: string; status: unknown; plan: ReviewFileRenderPlan }>(),
+    new WeakMap<ReviewFile, { gaps: string; status: unknown; plan: ReviewFileRenderPlan }>(),
   );
   return useCallback(
-    (file: ReviewFileV1) => {
+    (file: ReviewFile) => {
       const gaps = review.expandedGaps
         .filter((gap) => gap.fileKey === file.key)
         .map((gap) => `${gap.gapId}:${gap.expanded}`)

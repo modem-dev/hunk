@@ -8,7 +8,7 @@
  * entries are projected from each canonical file as it loads. The mirror accepts entries from
  * either source through `ReviewFileIndexSource`.
  */
-import type { ReviewFileV1 } from "../../core/review/types";
+import type { ReviewFile } from "../../core/review/types";
 import type { HunkReviewResourceCatalogV1 } from "../../session/reviewProtocol";
 import type { ReviewSharedFileV1 } from "../../session/reviewSharedState";
 
@@ -38,7 +38,7 @@ export type ReviewFileIndexEntry = Pick<
 };
 
 /** Projects one full canonical file down to its index entry, for reviews without a shared index. */
-export function reviewFileIndexEntry(file: ReviewFileV1): ReviewFileIndexEntry {
+export function reviewFileIndexEntry(file: ReviewFile): ReviewFileIndexEntry {
   return {
     key: file.key,
     path: file.path,

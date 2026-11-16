@@ -36,11 +36,11 @@ import { parseReviewGeneration } from "../core/review/generationOrder";
 import { reviewNoteWithinSizeLimit } from "../core/review/noteSize";
 import type {
   ReviewFileChangeKind,
-  ReviewFileFlagsV1,
-  ReviewFileStatsV1,
+  ReviewFileFlags,
+  ReviewFileStats,
   ReviewLineRange,
-  ReviewNoteV1,
-  ReviewRangeAnchorV1,
+  ReviewNote,
+  ReviewRangeAnchor,
   ReviewSide,
 } from "../core/review/types";
 import { asRecord, hasExactKeys, utf8ByteLength } from "../core/review/validation";
@@ -95,8 +95,8 @@ export interface ReviewSharedFileV1 {
   previousPath?: string;
   changeKind: ReviewFileChangeKind;
   language?: string;
-  stats: ReviewFileStatsV1;
-  flags: ReviewFileFlagsV1;
+  stats: ReviewFileStats;
+  flags: ReviewFileFlags;
   splitLineCount: number;
   unifiedLineCount: number;
   contentIdentity: string;
@@ -121,7 +121,7 @@ export type ReviewSharedNoteOriginV1 =
 
 /** One renderable note: the shared model plus whether its context moved since it was written. */
 export interface ReviewSharedNoteV1 {
-  note: ReviewNoteV1;
+  note: ReviewNote;
   /** `stale` stays visible at its last known anchor; orphaned notes are never listed. */
   resolution: "active" | "stale";
   origin: ReviewSharedNoteOriginV1;
@@ -276,7 +276,7 @@ function isStringRecord(value: unknown): value is Record<string, string> {
 }
 
 /** Validate one resolved note anchor without re-deriving its placement. */
-function isAnchor(value: unknown): value is ReviewRangeAnchorV1 {
+function isAnchor(value: unknown): value is ReviewRangeAnchor {
   const record = asRecord(value);
   if (
     !record ||
@@ -360,7 +360,7 @@ function isSharedNote(value: unknown): value is ReviewSharedNoteV1 {
       note.confidence === "low" ||
       note.confidence === "medium" ||
       note.confidence === "high") &&
-    reviewNoteWithinSizeLimit(note as unknown as ReviewNoteV1)
+    reviewNoteWithinSizeLimit(note as unknown as ReviewNote)
   );
 }
 

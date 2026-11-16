@@ -24,13 +24,13 @@ import {
   type ReviewState,
   type ReviewStoredNote,
 } from "./state";
-import type { ReviewDocumentV1, ReviewFileV1, ReviewLineAddressV1, ReviewNoteV1 } from "./types";
+import type { ReviewDocument, ReviewFile, ReviewLineAddress, ReviewNote } from "./types";
 
 /** Select one semantic file by key. */
 export function selectReviewFileByKey(
   state: Pick<ReviewState, "document">,
   fileKey: string | null,
-): ReviewFileV1 | undefined {
+): ReviewFile | undefined {
   return fileKey === null ? undefined : state.document.files.find((file) => file.key === fileKey);
 }
 
@@ -50,7 +50,7 @@ export function selectIsReviewFileViewed(
 }
 
 /** Resolve stored note ownership against the hunk geometry that exists now. */
-export function reviewNoteCurrentOwnerHunkIndex(note: ReviewNoteV1, file: ReviewFileV1) {
+export function reviewNoteCurrentOwnerHunkIndex(note: ReviewNote, file: ReviewFile) {
   const stored = reviewNoteOwnerHunkIndex(note);
   return Math.min(Math.max(stored, 0), Math.max(0, file.hunks.length - 1));
 }
@@ -73,8 +73,8 @@ export function isReviewNoteWithinClearScope(entry: ReviewStoredNote, fileKey?: 
  * the lines the previous load produced.
  */
 export function reviewFileKeysWithRetiredContent(
-  previous: ReviewDocumentV1,
-  next: ReviewDocumentV1,
+  previous: ReviewDocument,
+  next: ReviewDocument,
 ): ReadonlySet<string> {
   const nextByKey = new Map(next.files.map((file) => [file.key, file] as const));
   return new Set(
@@ -88,7 +88,7 @@ export function reviewFileKeysWithRetiredContent(
 }
 
 /** The file facts the shared filter reads. */
-export type ReviewFilterFile = Pick<ReviewFileV1, "path" | "previousPath" | "agentSummary">;
+export type ReviewFilterFile = Pick<ReviewFile, "path" | "previousPath" | "agentSummary">;
 
 /**
  * Matches one file against the shared review filter.
@@ -118,7 +118,7 @@ export function reviewFileMatchesFilter(file: ReviewFilterFile, filter: string) 
 /** Select the files the current filter leaves visible, in review order. */
 export function selectVisibleReviewFiles(
   state: Pick<ReviewState, "document" | "filter">,
-): ReviewFileV1[] {
+): ReviewFile[] {
   return state.document.files.filter((file) => reviewFileMatchesFilter(file, state.filter));
 }
 
@@ -215,7 +215,7 @@ export function selectNormalizedSelection(
  */
 export function selectRevealTarget(
   state: Pick<ReviewState, "document" | "selection">,
-): ReviewLineAddressV1 | undefined {
+): ReviewLineAddress | undefined {
   const hunk = selectReviewFileByKey(state, state.selection.fileKey)?.hunks[
     state.selection.hunkIndex
   ];
@@ -415,7 +415,7 @@ export function reviewNoteHasDescendants(
 }
 
 /** Every mutable note currently safe to render, in shared threaded order. */
-function renderableNotes(state: Pick<ReviewState, "liveNotes" | "userNotes">): ReviewNoteV1[] {
+function renderableNotes(state: Pick<ReviewState, "liveNotes" | "userNotes">): ReviewNote[] {
   return selectThreadedStoredReviewNotes(state)
     .map(({ entry }) => entry)
     .filter(isRenderableStoredReviewNote)
@@ -433,8 +433,8 @@ function renderableNotes(state: Pick<ReviewState, "liveNotes" | "userNotes">): R
 export function selectNotesByHunk(
   state: Pick<ReviewState, "liveNotes" | "userNotes">,
   fileKey: string,
-): ReadonlyMap<number, ReviewNoteV1[]> {
-  const byHunk = new Map<number, ReviewNoteV1[]>();
+): ReadonlyMap<number, ReviewNote[]> {
+  const byHunk = new Map<number, ReviewNote[]>();
   for (const note of renderableNotes(state)) {
     if (note.fileKey !== fileKey) {
       continue;

@@ -18,7 +18,7 @@
 import {
   REVIEW_RESOURCE_CHUNK_BYTES,
   reviewResourceFailure,
-  type ReviewResourceChunkV1,
+  type ReviewResourceChunk,
   type ReviewResourceErrorCode,
   type ReviewResourceFailure,
 } from "./resources";
@@ -38,7 +38,7 @@ export type ReviewAssemblyResult = { ok: true; bytes: Uint8Array } | ReviewAssem
 
 /** One chunk plus the bytes a transport decoded from it. */
 export interface ReviewResourceChunkBytes {
-  chunk: ReviewResourceChunkV1;
+  chunk: ReviewResourceChunk;
   bytes: Uint8Array;
 }
 

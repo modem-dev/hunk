@@ -9,7 +9,7 @@
  * file index as over a full document. Order is document order wherever ties are broken.
  */
 import { REVIEW_MEANINGFUL_FILE_ROLES, reviewFileRole, type ReviewFileRole } from "./fileRoles";
-import type { ReviewFileChangeKind, ReviewFileFlagsV1, ReviewFileStatsV1 } from "./types";
+import type { ReviewFileChangeKind, ReviewFileFlags, ReviewFileStats } from "./types";
 
 /** The per-file facts the overview reads. */
 export interface ReviewOverviewFileInput {
@@ -17,8 +17,8 @@ export interface ReviewOverviewFileInput {
   path: string;
   previousPath?: string;
   changeKind: ReviewFileChangeKind;
-  stats: ReviewFileStatsV1;
-  flags: ReviewFileFlagsV1;
+  stats: ReviewFileStats;
+  flags: ReviewFileFlags;
 }
 
 /** Who wrote one note, for per-file counts: an agent (live or sidecar) or the reviewer. */
@@ -167,7 +167,7 @@ function emptyTotals(): ReviewOverviewTotals {
 }
 
 /** Add one file's stats to a running total. */
-function addFile(totals: ReviewOverviewTotals, stats: ReviewFileStatsV1) {
+function addFile(totals: ReviewOverviewTotals, stats: ReviewFileStats) {
   totals.files += 1;
   totals.additions += stats.additions;
   totals.deletions += stats.deletions;

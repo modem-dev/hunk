@@ -21,7 +21,7 @@ import {
   selectRevealTarget,
 } from "../../../packages/hunk/src/core/review/selectors";
 import type { ReviewState } from "../../../packages/hunk/src/core/review/state";
-import type { ReviewDocumentV1 } from "../../../packages/hunk/src/core/review/types";
+import type { ReviewDocument } from "../../../packages/hunk/src/core/review/types";
 import { ClientReviewStore } from "../../../packages/hunk/src/web/store/clientReviewStore";
 import type { ReviewApiClient } from "../../../packages/hunk/src/web/transport/apiClient";
 import { createTestDiffFile } from "../../helpers/diff-helpers";
@@ -70,7 +70,7 @@ function pageStoreAt(
   fixture: ReviewNavigationFixture,
   input: ConformanceSelectionInput,
   shared: ReturnType<typeof buildReviewSharedState>,
-  document: ReviewDocumentV1,
+  document: ReviewDocument,
 ) {
   const store = createTestPageStore();
   store.adoptShared(shared);

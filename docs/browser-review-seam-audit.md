@@ -116,9 +116,9 @@ defaults; viewed files join it in M2b. Selection stays per-surface and is not tr
 - **A7. File split/unified line totals — web guesses.** `pierreDocument.ts` reconstructs
   `splitLineCount`/`unifiedLineCount` by reducing over hunks; terminal reads Pierre's
   authoritative values. Mis-sizes browser virtualization when the parser counts rows outside
-  hunk spans. Fix: carry both on `ReviewFileV1`.
+  hunk spans. Fix: carry both on `ReviewFile`.
   _Repaid (Phase 1 PR 2, model side)_: `splitLineCount`/`unifiedLineCount` carried on
-  `ReviewFileV1` by `core/review/document.ts`; the browser consumes them in Phase 5.
+  `ReviewFile` by `core/review/document.ts`; the browser consumes them in Phase 5.
 - **A8. Empty-diff explanation — 3 variants with different precedence.** Terminal
   `plannedRowText.ts` `diffMessage` (rename-pure first), web `ReviewStream.tsx` (binary first),
   `staticDiffPager.ts` (extra cases). Same file can explain itself differently per client.
@@ -159,7 +159,7 @@ defaults; viewed files join it in M2b. Selection stays per-surface and is not tr
   `packages/hunk/src/web/main.tsx` (or fold registration into the shared model).
   _Repaid (M4 state)_: by the second route. The producer resolves every file's language with
   the registry (`core/documents/fileLanguage.ts`, extension selectors included) and the shared
-  model carries it as `ReviewFileV1.language`, which the page hands Pierre as `lang`; the page
+  model carries it as `ReviewFile.language`, which the page hands Pierre as `lang`; the page
   registers nothing. `test/web/review-languages.e2e.ts` highlights `.mts` and `.cts` files.
 
 Renderer-specific, do not unify: terminal row construction and measured-cell windowing

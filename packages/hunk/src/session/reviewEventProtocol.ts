@@ -28,7 +28,7 @@
  *   whole event rather than a position inside a half-delivered payload, so a resuming
  *   client can never reconstruct a torn one.
  */
-import { REVIEW_RESOURCE_CHUNK_BYTES, type ReviewResourceChunkV1 } from "../core/review/resources";
+import { REVIEW_RESOURCE_CHUNK_BYTES, type ReviewResourceChunk } from "../core/review/resources";
 import {
   parseReviewGeneration,
   type ReviewPublicationAddress,
@@ -189,7 +189,7 @@ export interface ReviewEventBeginV1 {
  * type keeps the two from drifting and lets the shared assembler verify event payloads
  * without knowing they are events.
  */
-export type ReviewEventChunkV1 = Omit<ReviewResourceChunkV1, "resourceId"> & { eventId: string };
+export type ReviewEventChunkV1 = Omit<ReviewResourceChunk, "resourceId"> & { eventId: string };
 
 /** What a chunked event repeats once its bytes have all been sent. */
 export interface ReviewEventEndV1 {
@@ -201,7 +201,7 @@ export interface ReviewEventEndV1 {
 }
 
 /** View one event chunk as the resource chunk the shared assembler verifies. */
-export function reviewEventChunkAsResourceChunk(chunk: ReviewEventChunkV1): ReviewResourceChunkV1 {
+export function reviewEventChunkAsResourceChunk(chunk: ReviewEventChunkV1): ReviewResourceChunk {
   const { eventId, ...rest } = chunk;
   return { resourceId: eventId, ...rest };
 }

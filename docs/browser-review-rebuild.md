@@ -74,7 +74,7 @@ untouched (rung 4).
 bounded-parallel loads from day one. Valuable without any web UI: agents get chunked,
 digest-verified, memory-bounded resource access. Optional extension-delegated review identity rides
 in bounded registration metadata and projects into list, context, and review snapshots; it never
-enters `ReviewDocumentV1` or creates a remote reload/provider capability. The wire vocabulary is derived from
+enters `ReviewDocument` or creates a remote reload/provider capability. The wire vocabulary is derived from
 `ReviewIntent` (B12) and carries `expandedLineProof` (B10) and actor identity (G2) from its
 first version so the browser never needs a schema break.
 
@@ -148,7 +148,7 @@ divergences is `browser-review-seam-audit.md`, and extraction PRs check findings
   terminal's own copy is off by one against core's), trailing-gap existence, expansion side,
   hunk rebasing for isolated rendering, normalized source-line splitting (browser skips the
   CRLF normalization core digests depend on), per-file split/unified line totals carried on
-  `ReviewFileV1` instead of recomputed, empty-diff reason, default hunk note target, and STML
+  `ReviewFile` instead of recomputed, empty-diff reason, default hunk note target, and STML
   tag roles so both renderers share one tag vocabulary.
 - **Navigation semantics** (`core/review` intents/selectors, Phase 1 PR 3): relative hunk/file
   navigation with an explicit wrap policy (`selection/move` — the prototype implements the walk

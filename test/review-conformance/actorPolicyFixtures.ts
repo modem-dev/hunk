@@ -7,7 +7,7 @@
  */
 import type { DiffFile } from "../../packages/hunk/src/core/changeset/model";
 import { MAX_REVIEW_NOTES } from "../../packages/hunk/src/core/review/noteSize";
-import type { ReviewDocumentV1 } from "../../packages/hunk/src/core/review/types";
+import type { ReviewDocument } from "../../packages/hunk/src/core/review/types";
 import type {
   HunkReviewActionV1,
   HunkReviewActorV1,
@@ -19,7 +19,7 @@ export type ReviewActorPolicyStep =
   | {
       kind: "action";
       actor: HunkReviewActorV1;
-      action: (document: ReviewDocumentV1) => HunkReviewActionV1;
+      action: (document: ReviewDocument) => HunkReviewActionV1;
       /**
        * How the action reaches the session: through the review link's capability (a browser
        * tab, the HTTP surface) or through the authenticated session API (`hunk session`).
@@ -83,7 +83,7 @@ export function reviewActorPolicyChannel(step: Extract<ReviewActorPolicyStep, { 
 }
 
 /** The key of the file at one index. */
-const keyAt = (document: ReviewDocumentV1, index: number) => document.files[index]!.key;
+const keyAt = (document: ReviewDocument, index: number) => document.files[index]!.key;
 
 export const REVIEW_ACTOR_POLICY_FIXTURES: readonly ReviewActorPolicyFixture[] = [
   {

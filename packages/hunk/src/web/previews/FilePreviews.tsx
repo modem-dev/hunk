@@ -7,7 +7,7 @@
  * comes from `PreviewContext`, which the page provides.
  */
 import { useContext, useSyncExternalStore, type ReactNode } from "react";
-import type { ReviewFileV1 } from "../../core/review/types";
+import type { ReviewFile } from "../../core/review/types";
 import { isPreviewImagePath } from "./imageSniff";
 import { ImagePreview } from "./ImagePreview";
 import { MarkdownPreview } from "./MarkdownPreview";
@@ -92,7 +92,7 @@ export function FilePreviewBody({
   children,
 }: {
   fileKey: string;
-  file: ReviewFileV1 | undefined;
+  file: ReviewFile | undefined;
   emptyReason: string | undefined;
   mounted: boolean;
   children: ReactNode;

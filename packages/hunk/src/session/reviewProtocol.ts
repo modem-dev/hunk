@@ -43,9 +43,9 @@ import {
   REVIEW_SOURCE_CONTENT_TYPE,
   REVIEW_BYTES_CONTENT_TYPE,
   type ReadReviewResourceRequest,
-  type ReviewResourceChunkV1,
+  type ReviewResourceChunk,
   type ReviewRequestErrorCode,
-  type ReviewResourceDescriptorV1,
+  type ReviewResourceDescriptor,
   type ReviewResourceErrorCode,
   type ReviewResourceKind,
 } from "../core/review/resources";
@@ -55,10 +55,10 @@ import {
 } from "../core/review/generationOrder";
 import type { ReviewRevealAnchor, ReviewRevealRequest } from "../core/review/state";
 import type {
-  ReviewLineAddressV1,
+  ReviewLineAddress,
   ReviewLineRange,
-  ReviewNoteTargetV1,
-  ReviewRangeTargetV1,
+  ReviewNoteTarget,
+  ReviewRangeTarget,
   ReviewSide,
 } from "../core/review/types";
 import {
@@ -188,7 +188,7 @@ interface HunkReviewActionWireFields {
      * A precondition, not a relocation: the producer rejects the save when the draft has
      * moved, so two clients cannot silently save each other's drafts.
      */
-    target?: ReviewNoteTargetV1;
+    target?: ReviewNoteTarget;
     /** Stable file and owner-hunk identity; protocol-v1 clients may omit both. */
     fileKey?: string;
     hunkIndex?: number;
@@ -230,7 +230,7 @@ export interface HunkReviewResourceReadEnvelopeV1 {
 
 /** What a producer answers a resource read with; the chunk is core's own shape. */
 export type HunkReviewResourceReadResultV1 =
-  | { ok: true; chunk: ReviewResourceChunkV1 }
+  | { ok: true; chunk: ReviewResourceChunk }
   | HunkReviewFailureV1;
 
 /** What a producer answers an action with, once it has been applied. */
@@ -360,13 +360,13 @@ function parseReveal(value: unknown): ReviewRevealRequest | undefined {
 }
 
 /** Parse one line address: the side and the 1-based line a caller is pointing at. */
-function parseLineAddress(value: unknown): ReviewLineAddressV1 | undefined {
+function parseLineAddress(value: unknown): ReviewLineAddress | undefined {
   const record = asRecord(value);
   if (!record || !hasExactKeys(record, ["side", "line"])) {
     return undefined;
   }
   return isSide(record.side) && isLineNumber(record.line)
-    ? (record as unknown as ReviewLineAddressV1)
+    ? (record as unknown as ReviewLineAddress)
     : undefined;
 }
 
@@ -382,7 +382,7 @@ function parseLineRange(value: unknown): ReviewLineRange | undefined {
 }
 
 /** Parse a single-line or range note target without deriving its hunk ownership. */
-function parseNoteTarget(value: unknown): ReviewNoteTargetV1 | undefined {
+function parseNoteTarget(value: unknown): ReviewNoteTarget | undefined {
   const line = parseLineAddress(value);
   if (line) return line;
 
@@ -406,7 +406,7 @@ function parseNoteTarget(value: unknown): ReviewNoteTargetV1 | undefined {
   if (!preferredRange || preferred.line < preferredRange[0] || preferred.line > preferredRange[1]) {
     return undefined;
   }
-  return record as unknown as ReviewRangeTargetV1;
+  return record as unknown as ReviewRangeTarget;
 }
 
 /** Parse one expanded-line proof. Its fields are exactly what core resolves it by. */
@@ -693,7 +693,7 @@ const RESOURCE_CONTENT_TYPE_BY_KIND: Record<ReviewResourceKind, string> = {
  */
 export function parseHunkReviewResourceDescriptor(
   value: unknown,
-): ReviewResourceDescriptorV1 | undefined {
+): ReviewResourceDescriptor | undefined {
   const record = asRecord(value);
   if (
     !record ||
@@ -731,16 +731,16 @@ export function parseHunkReviewResourceDescriptor(
   }
   if (address.kind === "source") {
     return record.side === address.side && isIdentifier(record.sourceIdentity)
-      ? (record as unknown as ReviewResourceDescriptorV1)
+      ? (record as unknown as ReviewResourceDescriptor)
       : undefined;
   }
   if (address.kind === "bytes") {
     return record.side === address.side && record.sourceIdentity === undefined
-      ? (record as unknown as ReviewResourceDescriptorV1)
+      ? (record as unknown as ReviewResourceDescriptor)
       : undefined;
   }
   return record.side === undefined && record.sourceIdentity === undefined
-    ? (record as unknown as ReviewResourceDescriptorV1)
+    ? (record as unknown as ReviewResourceDescriptor)
     : undefined;
 }
 
@@ -761,7 +761,7 @@ export interface HunkReviewResourceCatalogV1 {
    * without guessing; it retires when the surface itself adopts semantic keys.
    */
   fileKeysByRuntimeId: Record<string, string>;
-  resources: ReviewResourceDescriptorV1[];
+  resources: ReviewResourceDescriptor[];
 }
 
 /** Largest number of resources one catalog may declare. */
@@ -809,7 +809,7 @@ export function parseHunkReviewResourceCatalog(
   return {
     generation: record.generation as string,
     fileKeysByRuntimeId: fileKeys as Record<string, string>,
-    resources: resources as ReviewResourceDescriptorV1[],
+    resources: resources as ReviewResourceDescriptor[],
   };
 }
 

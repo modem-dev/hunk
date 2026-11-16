@@ -7,7 +7,7 @@ import {
   ReviewIntentPlanningError,
   type ReviewIntentPlanningErrorCode,
 } from "../../core/review/intents";
-import type { ReviewNoteTargetV1 } from "../../core/review/types";
+import type { ReviewNoteTarget } from "../../core/review/types";
 import type { ExtensionEventPayloads, ExtensionReviewNote } from "../../extensions/types";
 import type { ActiveAddNoteAffordance } from "../diff/DiffSectionBody";
 import type { LineCursor } from "../lib/lineCursors";
@@ -68,7 +68,7 @@ export interface UseUserNoteComposerOptions {
   startDraft: (
     fileId?: string,
     hunkIndex?: number,
-    target?: ReviewNoteTargetV1,
+    target?: ReviewNoteTarget,
     options?: { preserveViewport?: boolean },
   ) => DraftReviewNote | null;
   startEdit?: (noteId: string, options?: { preserveViewport?: boolean }) => DraftReviewNote | null;
@@ -157,7 +157,7 @@ export function useUserNoteComposer({
 
   /** Start a draft at an explicit target, hovered affordance, selected note, or line cursor. */
   const startUserNote = useCallback(
-    (fileId?: string, hunkIndex?: number, target?: ReviewNoteTargetV1) => {
+    (fileId?: string, hunkIndex?: number, target?: ReviewNoteTarget) => {
       // Hover, the selected note, and the current line are fallbacks only for a fully implicit
       // start. Any explicit location fact must not inherit whichever row happened to remain
       // hovered. Selecting a note card clears the line cursor, so the two never compete.

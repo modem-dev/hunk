@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { ReviewChunkAssembler } from "./resourceAssembly";
-import { REVIEW_RESOURCE_CHUNK_BYTES, type ReviewResourceChunkV1 } from "./resources";
+import { REVIEW_RESOURCE_CHUNK_BYTES, type ReviewResourceChunk } from "./resources";
 
 const GENERATION = "generation:p1:0";
 const RESOURCE_ID = "resource:patch:file:abcdef";
@@ -12,7 +12,7 @@ function fakeDigest(expected: string) {
 
 const DIGEST = "a".repeat(64);
 
-function chunk(overrides: Partial<ReviewResourceChunkV1> = {}): ReviewResourceChunkV1 {
+function chunk(overrides: Partial<ReviewResourceChunk> = {}): ReviewResourceChunk {
   return {
     generation: GENERATION,
     resourceId: RESOURCE_ID,

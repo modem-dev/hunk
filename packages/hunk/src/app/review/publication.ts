@@ -24,18 +24,18 @@ import {
   REVIEW_SOURCE_CONTENT_TYPE,
   REVIEW_BYTES_CONTENT_TYPE,
   reviewResourceId,
-  type ReviewResourceDescriptorV1,
+  type ReviewResourceDescriptor,
 } from "../../core/review/resources";
-import type { ReviewDocumentV1, ReviewFileV1, ReviewSide } from "../../core/review/types";
+import type { ReviewDocument, ReviewFile, ReviewSide } from "../../core/review/types";
 import type { DiffFile } from "../../core/changeset/model";
 
 export interface ReviewPublication {
   /** Serialized generation identity; every descriptor below repeats it. */
   generation: string;
-  document: ReviewDocumentV1;
+  document: ReviewDocument;
   /** Deterministic snapshot of the document, and the field list resources verify against. */
   manifest: ReviewContentManifest;
-  resources: readonly ReviewResourceDescriptorV1[];
+  resources: readonly ReviewResourceDescriptor[];
   /**
    * The renderer-model files this generation was projected from, in document order.
    *
@@ -55,7 +55,7 @@ export interface ReviewPublication {
  * gaps: offering the other side would advertise a read no gap in this file can use.
  */
 /** The sides a file's change kind has bytes for. */
-function bytesSides(file: ReviewFileV1): ReviewSide[] {
+function bytesSides(file: ReviewFile): ReviewSide[] {
   return file.changeKind === "new"
     ? ["new"]
     : file.changeKind === "deleted"
@@ -64,12 +64,12 @@ function bytesSides(file: ReviewFileV1): ReviewSide[] {
 }
 
 function fileResources(
-  file: ReviewFileV1,
+  file: ReviewFile,
   generation: string,
   hasBytes: boolean,
-): ReviewResourceDescriptorV1[] {
+): ReviewResourceDescriptor[] {
   const base = { generation, fileKey: file.key };
-  const resources: ReviewResourceDescriptorV1[] = [
+  const resources: ReviewResourceDescriptor[] = [
     {
       ...base,
       id: reviewResourceId({ kind: "canonical-file", fileKey: file.key }),

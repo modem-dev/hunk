@@ -22,7 +22,7 @@ import {
 } from "../../../core/run/wheelScrollLines";
 import type { DiffFile } from "../../../core/changeset/model";
 import type { CursorLine, LayoutMode } from "../../../core/run/commandInputs";
-import type { ReviewNoteTargetV1 } from "../../../core/review/types";
+import type { ReviewNoteTarget } from "../../../core/review/types";
 import type { AgentAnnotation } from "../../../extension-api/types";
 import { reviewNoteSource } from "../../../core/review/annotations";
 import { resolveReviewRevealNoteId } from "../../../core/review/selectors";
@@ -125,7 +125,7 @@ export type { ReviewSelectionActionsHandle } from "./useDiffSelectionController"
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
 
 type StartUserNoteAtHunk = {
-  bivarianceHack(fileId: string, hunkIndex: number, target?: ReviewNoteTargetV1): void;
+  bivarianceHack(fileId: string, hunkIndex: number, target?: ReviewNoteTarget): void;
 }["bivarianceHack"];
 
 /** Grant saved-note card actions from semantic ownership rather than presentation labels. */
@@ -533,7 +533,7 @@ export function DiffPane({
   const onStartUserNoteAtHunkRef = useRef(onStartUserNoteAtHunk);
   onStartUserNoteAtHunkRef.current = onStartUserNoteAtHunk;
   const startUserNoteAtHunkCallbacksRef = useRef(
-    new Map<string, (hunkIndex: number, target?: ReviewNoteTargetV1) => void>(),
+    new Map<string, (hunkIndex: number, target?: ReviewNoteTarget) => void>(),
   );
   const startUserNoteAtHunkCallback = useCallback((fileId: string) => {
     let callback = startUserNoteAtHunkCallbacksRef.current.get(fileId);
