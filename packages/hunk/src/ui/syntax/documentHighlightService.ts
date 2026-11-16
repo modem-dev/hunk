@@ -4,7 +4,7 @@ import {
   DocumentHighlighterConfigurationError,
   renderHighlightedDocumentLines,
 } from "./documentHighlightRenderer";
-import { DOCUMENT_HIGHLIGHT_RENDER_OPTIONS_REVISION } from "../diff/highlightRenderOptions";
+import { DOCUMENT_HIGHLIGHT_RENDER_OPTIONS_REVISION } from "../../core/documents/highlightRenderOptions";
 import { syntaxHighlightThemeName } from "../diff/syntaxHighlightTheme";
 import {
   compactHighlightedDocumentByteLength,

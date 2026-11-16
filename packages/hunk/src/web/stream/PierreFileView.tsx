@@ -9,7 +9,7 @@
  * updating their text in place when a gap starts loading or fails — Pierre only re-creates a
  * separator when its geometry changes.
  *
- * Highlight options are the terminal's (`ui/diff/highlightRenderOptions.ts`): word-level
+ * Highlight options are the terminal's (`core/documents/highlightRenderOptions.ts`): word-level
  * `word-alt` emphasis and the same tokenizing bound.
  *
  * Line annotations carry each line's note cards and open composers: cards are plain DOM, and
@@ -36,7 +36,7 @@ import {
 } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { ReviewSide } from "../../core/review/types";
-import { pierreHighlightRenderOptions } from "../../ui/diff/highlightRenderOptions";
+import { pierreHighlightRenderOptions } from "../../core/documents/highlightRenderOptions";
 import {
   reviewGapIdForSeparator,
   type ReviewFileRenderPlan,
