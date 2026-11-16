@@ -18,7 +18,7 @@ import {
   parseReviewEventBegin,
   parseReviewEventChunk,
   parseReviewEventEnd,
-  parseReviewEventFrame,
+  parseReviewEventWhole,
   ReviewEventAssembler,
 } from "../../../packages/hunk/src/session/reviewEventProtocol";
 import {
@@ -110,7 +110,7 @@ async function readOneEvent(response: Response) {
 /** Whether the frames read back reassemble to the body the fixture published. */
 function roundTripsTo(frames: DecodedFrame[], expected: string) {
   if (frames.length === 1) {
-    return JSON.stringify(parseReviewEventFrame(frames[0]!.data)?.payload) === expected;
+    return JSON.stringify(parseReviewEventWhole(frames[0]!.data)?.payload) === expected;
   }
   const begin = parseReviewEventBegin(frames[0]!.data);
   const end = parseReviewEventEnd(frames.at(-1)!.data);

@@ -50,7 +50,7 @@ import {
   REVIEW_EVENT_HEARTBEAT_FRAME,
   REVIEW_EVENT_STREAM_CONTENT_TYPE,
   ReviewEventTooLargeError,
-  type ReviewEventTypeV1,
+  type ReviewEventType,
 } from "../reviewEventProtocol";
 import {
   HUNK_REVIEW_CAPABILITY_HEADER,
@@ -741,7 +741,7 @@ export class BrowserReviewServer {
   /** Frame one event through the shared protocol and enqueue it. */
   private sendEvent(
     stream: ReviewEventStream,
-    type: ReviewEventTypeV1,
+    type: ReviewEventType,
     address: ReviewPublicationAddress,
     body: unknown,
     sharedStateRevision?: number,
