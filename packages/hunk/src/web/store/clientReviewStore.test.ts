@@ -6,7 +6,7 @@ import {
 } from "../../../../../test/helpers/diff-helpers";
 import { serveTestWebReview } from "../../../../../test/helpers/web-review-server";
 import type { ReviewSharedNoteV1, ReviewSharedStateV1 } from "../../session/reviewSharedState";
-import { ReviewMirror } from "../mirror/reviewMirror";
+import { ClientReviewMirror } from "../mirror/clientReviewMirror";
 import { createTestReviewDocument } from "../../../../../test/helpers/review-store-helpers";
 import type { HunkReviewResourceCatalogV1 } from "../../session/reviewProtocol";
 import type { ReviewApiClient } from "../transport/apiClient";
@@ -44,7 +44,7 @@ async function loadTestStore(files = [createTestGapFile("alpha"), createTestGapF
   const served = serveTestWebReview(files);
   running.push(served.stop);
   const client = served.client();
-  const mirror = new ReviewMirror({ client, scheduleNotify: (flush) => flush() });
+  const mirror = new ClientReviewMirror({ client, scheduleNotify: (flush) => flush() });
   running.push(() => mirror.close());
   mirror.observe(await client.publication());
   for (let attempt = 0; attempt < 400 && mirror.getSnapshot().status !== "ready"; attempt += 1) {

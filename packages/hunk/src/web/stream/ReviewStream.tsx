@@ -41,7 +41,7 @@ import type { ReviewState } from "../../core/review/state";
 import type { ReviewFileV1 } from "../../core/review/types";
 import { reviewHunkIndexAtOffset } from "../../core/review/viewportAnchor";
 import type { ReviewAgentHighlightV1, ReviewSharedNoteV1 } from "../../session/reviewSharedState";
-import type { ReviewMirrorFileSlot } from "../mirror/reviewMirror";
+import type { ClientReviewMirrorFileSlot } from "../mirror/clientReviewMirror";
 import type { NoteComposer } from "../notes/composerStore";
 import type { ReviewNoteInteraction } from "../notes/noteInteraction";
 import {
@@ -119,7 +119,7 @@ export interface ReviewStreamController {
 }
 
 export interface ReviewStreamProps {
-  slots: readonly ReviewMirrorFileSlot[];
+  slots: readonly ClientReviewMirrorFileSlot[];
   review: ReviewState;
   layout: "split" | "unified";
   wrapLines: boolean;

@@ -23,7 +23,7 @@ import { NoteComposerStore } from "../notes/composerStore";
 import { takeReviewCapability, type CapabilityStorage } from "./capability";
 import { ReviewApiClient, ReviewApiError, type ReviewFetch } from "../transport/apiClient";
 import { openReviewEventStream, type ReviewEventStreamStatus } from "../transport/eventStream";
-import { ReviewMirror } from "../mirror/reviewMirror";
+import { ClientReviewMirror } from "../mirror/clientReviewMirror";
 import { ReviewSharedStateMirror } from "../mirror/sharedStateMirror";
 import { ClientReviewStore } from "../store/clientReviewStore";
 
@@ -63,7 +63,7 @@ export type ReviewSessionStart =
 export interface ReviewSession {
   sessionId: string;
   client: ReviewApiClient;
-  mirror: ReviewMirror;
+  mirror: ClientReviewMirror;
   shared: ReviewSharedStateMirror;
   review: ClientReviewStore;
   connection: ObservableValue<ReviewEventStreamStatus>;
@@ -113,7 +113,7 @@ export function startReviewSession({
     ...(fetch ? { fetch } : {}),
   });
   const shared = new ReviewSharedStateMirror({ client });
-  const mirror = new ReviewMirror({
+  const mirror = new ClientReviewMirror({
     client,
     // The shared state's file index fixes document order and fills the sidebar before any
     // canonical file loads; without it the mirror falls back to catalog order.
@@ -151,7 +151,7 @@ export function startReviewSession({
     adoptShared();
   });
   const stopAdoptingShared = shared.subscribe(adoptShared);
-  const observe = (body: Parameters<ReviewMirror["observe"]>[0]) => {
+  const observe = (body: Parameters<ClientReviewMirror["observe"]>[0]) => {
     shared.observe(body);
     mirror.observe(body);
   };

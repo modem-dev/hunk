@@ -44,7 +44,7 @@ packages/hunk/src/web/
   transport/eventReader.ts     fetch-stream SSE records -> shared event contract -> events
   transport/eventStream.ts     keeps the stream open; one shared reconnect scheduler
   transport/webCryptoDigest.ts Web Crypto SHA-256 as the assemblers' async digest
-  mirror/reviewMirror.ts       orders publications; loads each generation's files
+  mirror/clientReviewMirror.ts orders publications; loads each generation's files
   mirror/sharedStateMirror.ts  fetches and orders shared-state snapshots
   notes/noteProjection.ts      places a file's visible notes per line; titles and thread depth
   notes/noteCards.ts           note cards as DOM for Pierre's line annotations
@@ -85,7 +85,7 @@ packages/hunk/src/web/
   8 s, reset by any delivered event); the stream stops for good on `disconnect` or
   `unauthorized`. Failures are `ReviewApiError` carrying the review vocabulary's code, shown
   through `reviewErrorCatalog`.
-- **Mirror** (`reviewMirror.ts`) owns the published position and the files. It classifies
+- **Mirror** (`clientReviewMirror.ts`) owns the published position and the files. It classifies
   every publication with `classifyReviewPublication`; a gap (a reload, or the first
   publication) loads that generation's `canonical-file` resources in catalog order with
   bounded parallelism, through one `createSupersedeQueue`, parsing each with
