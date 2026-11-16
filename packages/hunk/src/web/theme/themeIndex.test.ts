@@ -5,10 +5,10 @@ import {
   resolveWebTheme,
   themeCustomProperties,
   themeTokenProperty,
-  type WebThemeIndexV1,
+  type WebThemeIndex,
 } from "./themeIndex";
 
-const INDEX: WebThemeIndexV1 = {
+const INDEX: WebThemeIndex = {
   formatVersion: 1,
   themes: [
     {

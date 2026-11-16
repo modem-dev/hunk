@@ -64,7 +64,7 @@ export function reviewAssetContentType(name: string): string | undefined {
 }
 
 /** The list of assets one page build contains, as `manifest.json` records it. */
-export interface ReviewPageAssetManifestV1 {
+export interface ReviewPageAssetManifest {
   formatVersion: 1;
   /** Every servable asset except the document, in build output order. */
   assets: string[];
@@ -77,9 +77,7 @@ export interface ReviewPageAssetManifestV1 {
 }
 
 /** Parse one manifest, refusing any asset name the page grammar would not serve. */
-export function parseReviewPageAssetManifest(
-  value: unknown,
-): ReviewPageAssetManifestV1 | undefined {
+export function parseReviewPageAssetManifest(value: unknown): ReviewPageAssetManifest | undefined {
   if (typeof value !== "object" || value === null) {
     return undefined;
   }
@@ -131,7 +129,7 @@ export function directoryReviewPageAssets(directory: string): ReviewPageAssets |
     return undefined;
   }
 
-  let manifest: ReviewPageAssetManifestV1 | undefined;
+  let manifest: ReviewPageAssetManifest | undefined;
   try {
     manifest = parseReviewPageAssetManifest(JSON.parse(readFileSync(manifestPath, "utf8")));
   } catch {
@@ -167,7 +165,7 @@ export function directoryReviewPageAssets(directory: string): ReviewPageAssets |
 
 /** Where each archived file's gzip bytes sit, relative to the start of the payload. */
 interface ReviewPageArchiveHeader {
-  manifest: ReviewPageAssetManifestV1;
+  manifest: ReviewPageAssetManifest;
   entries: Record<string, [offset: number, length: number]>;
 }
 
@@ -180,7 +178,7 @@ interface ReviewPageArchiveHeader {
  * to serve it.
  */
 export function encodeReviewPageAssetArchive(
-  manifest: ReviewPageAssetManifestV1,
+  manifest: ReviewPageAssetManifest,
   files: ReadonlyMap<string, Uint8Array<ArrayBuffer>>,
 ): Uint8Array<ArrayBuffer> {
   const names = [REVIEW_PAGE_DOCUMENT_NAME, ...manifest.assets];

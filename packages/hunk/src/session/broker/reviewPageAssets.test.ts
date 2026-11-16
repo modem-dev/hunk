@@ -12,7 +12,7 @@ import {
   reviewAssetContentType,
   REVIEW_PAGE_DOCUMENT_NAME,
   REVIEW_PAGE_MANIFEST_NAME,
-  type ReviewPageAssetManifestV1,
+  type ReviewPageAssetManifest,
 } from "./reviewPageAssets";
 
 const directories: string[] = [];
@@ -23,7 +23,7 @@ afterEach(() => {
   }
 });
 
-const MANIFEST: ReviewPageAssetManifestV1 = {
+const MANIFEST: ReviewPageAssetManifest = {
   formatVersion: 1,
   assets: ["main-abc123.js", "main-abc123.css"],
 };

@@ -11,10 +11,10 @@
  * this browser's override.
  */
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
-import type { WebThemeV1 } from "../theme/themeIndex";
+import type { WebTheme } from "../theme/themeIndex";
 
 /** One choice in the menu. */
-export type ThemeMenuOption = Pick<WebThemeV1, "id" | "label" | "appearance">;
+export type ThemeMenuOption = Pick<WebTheme, "id" | "label" | "appearance">;
 
 export interface ThemeMenuProps {
   themes: readonly ThemeMenuOption[];
