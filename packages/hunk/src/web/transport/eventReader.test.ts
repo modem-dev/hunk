@@ -7,14 +7,14 @@ import {
   REVIEW_EVENT_HEARTBEAT_FRAME,
   type ReviewEventTypeV1,
 } from "../../session/reviewEventProtocol";
-import type { HunkReviewPublicationBodyV1 } from "../../session/reviewHttpProtocol";
+import type { ReviewPublicationBody } from "../../session/reviewHttpProtocol";
 import { HUNK_REVIEW_PROTOCOL_VERSION } from "../../session/reviewProtocol";
 import { readReviewEvents, ServerSentEventParser, type ReviewStreamEvent } from "./eventReader";
 
 const ADDRESS = { generation: "generation:p1:0", stateRevision: 3 };
 
 /** A publication body with a catalog padded to a chosen size. */
-function createTestPublication(padding = 0): HunkReviewPublicationBodyV1 {
+function createTestPublication(padding = 0): ReviewPublicationBody {
   return {
     protocolVersion: HUNK_REVIEW_PROTOCOL_VERSION,
     sessionId: "session-1",

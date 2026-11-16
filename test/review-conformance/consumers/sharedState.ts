@@ -17,7 +17,7 @@ import { BrowserReviewServer } from "../../../packages/hunk/src/session/broker/b
 import {
   HUNK_REVIEW_CAPABILITY_HEADER,
   reviewHttpPath,
-  type HunkReviewStateBodyV1,
+  type ReviewStateBody,
 } from "../../../packages/hunk/src/session/reviewHttpProtocol";
 import {
   parseReviewSharedState,
@@ -137,7 +137,7 @@ export const browserSurfaceSharedStateConsumer: ReviewSharedStateConsumer = {
         `http://127.0.0.1:${server.port}${reviewHttpPath({ kind: "state", sessionId: "conformance-http" })}`,
         { headers: { [HUNK_REVIEW_CAPABILITY_HEADER]: reviewProcessCapability().token } },
       );
-      const body = (await response.json()) as HunkReviewStateBodyV1;
+      const body = (await response.json()) as ReviewStateBody;
       return projectSharedState(body.state);
     } finally {
       review.close();

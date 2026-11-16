@@ -23,18 +23,18 @@ import { REVIEW_ERROR_CATALOG } from "../../session/reviewErrorCatalog";
 import {
   HUNK_REVIEW_CAPABILITY_HEADER,
   reviewHttpPath,
-  type HunkReviewClientErrorCodeV1,
-  type HunkReviewHttpRoute,
-  type HunkReviewPublicationBodyV1,
-  type HunkReviewStateBodyV1,
+  type ReviewHttpFailureCode,
+  type ReviewHttpRoute,
+  type ReviewPublicationBody,
+  type ReviewStateBody,
 } from "../../session/reviewHttpProtocol";
 import {
   HUNK_REVIEW_PROTOCOL_VERSION,
-  isHunkReviewIndex,
-  parseHunkReviewPublicationAddress,
-  parseHunkReviewResourceCatalog,
-  type HunkReviewActionAppliedV1,
-  type HunkReviewActionEnvelopeV1,
+  isReviewIndex,
+  parseReviewPublicationAddress,
+  parseReviewResourceCatalog,
+  type ReviewActionApplied,
+  type ReviewActionEnvelope,
 } from "../../session/reviewProtocol";
 import type { ReviewPublicationAddress } from "../../core/review/generationOrder";
 import { parseReviewSharedState } from "../../session/reviewSharedState";
@@ -47,11 +47,7 @@ import { webCryptoReviewDigest } from "./webCryptoDigest";
  * this build cannot parse; `session-ended` means the page refused to send because the session's
  * event stream has ended. None is a review code, because none came from a review.
  */
-export type ReviewApiErrorCode =
-  | HunkReviewClientErrorCodeV1
-  | "network"
-  | "unreadable"
-  | "session-ended";
+export type ReviewApiErrorCode = ReviewHttpFailureCode | "network" | "unreadable" | "session-ended";
 
 /** One refused or failed request. */
 export class ReviewApiError extends Error {
@@ -67,27 +63,25 @@ export class ReviewApiError extends Error {
 }
 
 /** Whether one value is a code the shared error catalog documents. */
-export function isReviewClientErrorCode(value: unknown): value is HunkReviewClientErrorCodeV1 {
+export function isReviewClientErrorCode(value: unknown): value is ReviewHttpFailureCode {
   return typeof value === "string" && Object.hasOwn(REVIEW_ERROR_CATALOG, value);
 }
 
 /** Parse one publication body, refusing anything the shared parsers refuse. */
-export function parseReviewPublicationBody(
-  value: unknown,
-): HunkReviewPublicationBodyV1 | undefined {
+export function parseReviewPublicationBody(value: unknown): ReviewPublicationBody | undefined {
   if (!value || typeof value !== "object") {
     return undefined;
   }
   const record = value as Record<string, unknown>;
-  const publication = parseHunkReviewPublicationAddress(record.publication);
-  const catalog = parseHunkReviewResourceCatalog(record.catalog);
+  const publication = parseReviewPublicationAddress(record.publication);
+  const catalog = parseReviewResourceCatalog(record.catalog);
   if (
     record.protocolVersion !== HUNK_REVIEW_PROTOCOL_VERSION ||
     typeof record.sessionId !== "string" ||
     !publication ||
     !catalog ||
     catalog.generation !== publication.generation ||
-    (record.sharedStateRevision !== undefined && !isHunkReviewIndex(record.sharedStateRevision))
+    (record.sharedStateRevision !== undefined && !isReviewIndex(record.sharedStateRevision))
   ) {
     return undefined;
   }
@@ -106,19 +100,19 @@ export function parseReviewPublicationBody(
  * Parse one shared-state body: the snapshot through the shared strict parser, and the
  * envelope's position agreeing with the position the snapshot names.
  */
-export function parseReviewStateBody(value: unknown): HunkReviewStateBodyV1 | undefined {
+export function parseReviewStateBody(value: unknown): ReviewStateBody | undefined {
   if (!value || typeof value !== "object") {
     return undefined;
   }
   const record = value as Record<string, unknown>;
-  const publication = parseHunkReviewPublicationAddress(record.publication);
+  const publication = parseReviewPublicationAddress(record.publication);
   const state = parseReviewSharedState(record.state);
   if (
     record.protocolVersion !== HUNK_REVIEW_PROTOCOL_VERSION ||
     typeof record.sessionId !== "string" ||
     !publication ||
     !state ||
-    !isHunkReviewIndex(record.sharedStateRevision) ||
+    !isReviewIndex(record.sharedStateRevision) ||
     state.sharedStateRevision !== record.sharedStateRevision ||
     state.generation !== publication.generation
   ) {
@@ -209,14 +203,14 @@ export class ReviewApiClient {
   }
 
   /** Read where the review is and what it offers there. */
-  async publication(signal?: AbortSignal): Promise<HunkReviewPublicationBodyV1> {
+  async publication(signal?: AbortSignal): Promise<ReviewPublicationBody> {
     const response = await this.request(
       { kind: "publication", sessionId: this.sessionId },
       {
         signal,
       },
     );
-    let body: HunkReviewPublicationBodyV1 | undefined;
+    let body: ReviewPublicationBody | undefined;
     try {
       body = parseReviewPublicationBody(await response.json());
     } catch {
@@ -229,9 +223,9 @@ export class ReviewApiClient {
   }
 
   /** Read the review's shared state: notes, filter, file index, and presentation defaults. */
-  async state(signal?: AbortSignal): Promise<HunkReviewStateBodyV1> {
+  async state(signal?: AbortSignal): Promise<ReviewStateBody> {
     const response = await this.request({ kind: "state", sessionId: this.sessionId }, { signal });
-    let body: HunkReviewStateBodyV1 | undefined;
+    let body: ReviewStateBody | undefined;
     try {
       body = parseReviewStateBody(await response.json());
     } catch {
@@ -245,9 +239,9 @@ export class ReviewApiClient {
 
   /** Send one review action; resolves with the position it was applied at. */
   async postAction(
-    envelope: HunkReviewActionEnvelopeV1,
+    envelope: ReviewActionEnvelope,
     signal?: AbortSignal,
-  ): Promise<HunkReviewActionAppliedV1> {
+  ): Promise<ReviewActionApplied> {
     const response = await this.request(
       { kind: "actions", sessionId: this.sessionId },
       {
@@ -267,7 +261,7 @@ export class ReviewApiClient {
     if (
       record.ok !== true ||
       typeof record.generation !== "string" ||
-      !isHunkReviewIndex(record.stateRevision)
+      !isReviewIndex(record.stateRevision)
     ) {
       throw new ReviewApiError("unreadable", "The review action's answer could not be read.");
     }
@@ -283,8 +277,7 @@ export class ReviewApiClient {
     let publication: ReviewPublicationAddress | undefined;
     try {
       const body = (await response.json()) as Record<string, unknown>;
-      publication =
-        body.ok === true ? parseHunkReviewPublicationAddress(body.publication) : undefined;
+      publication = body.ok === true ? parseReviewPublicationAddress(body.publication) : undefined;
     } catch {
       publication = undefined;
     }
@@ -318,7 +311,7 @@ export class ReviewApiClient {
     descriptor: ReviewResourceDescriptor,
     signal?: AbortSignal,
   ): Promise<Uint8Array> {
-    const route: HunkReviewHttpRoute = {
+    const route: ReviewHttpRoute = {
       kind: "resource",
       sessionId: this.sessionId,
       generation: descriptor.generation,
@@ -452,7 +445,7 @@ export class ReviewApiClient {
 
   /** Send one request with the capability header, turning refusals into typed errors. */
   private async request(
-    route: HunkReviewHttpRoute,
+    route: ReviewHttpRoute,
     init: {
       signal?: AbortSignal;
       headers?: Record<string, string>;

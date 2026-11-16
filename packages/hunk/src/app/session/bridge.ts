@@ -1,8 +1,8 @@
 import type { ReviewProducer } from "../review/producer";
 import type {
-  HunkReviewFailureV1,
-  HunkReviewRefreshResultV1,
-  HunkReviewResourceReadResultV1,
+  ReviewFailure,
+  ReviewRefreshResult,
+  ReviewResourceReadResult,
 } from "../../session/reviewProtocol";
 import type {
   AppliedCommentBatchResult,
@@ -64,7 +64,7 @@ export interface HunkSessionBridgeHandlers {
    *
    * Optional: a mount without a reload coordinator answers `refresh-unavailable`.
    */
-  refreshReview?: () => Promise<HunkReviewRefreshResultV1>;
+  refreshReview?: () => Promise<ReviewRefreshResult>;
   /**
    * Open this session's review in a browser, or return its URL, for `hunk session open`.
    *
@@ -74,7 +74,7 @@ export interface HunkSessionBridgeHandlers {
 }
 
 /** The refusal a review command gets when this session serves no published review. */
-function noReviewProducer(): HunkReviewFailureV1 {
+function noReviewProducer(): ReviewFailure {
   return {
     ok: false,
     code: "stale-generation",
@@ -131,13 +131,13 @@ export function createHunkSessionBridge(handlers: HunkSessionBridgeHandlers) {
           });
         case "read_review_resource": {
           const producer = handlers.reviewProducer;
-          const result: HunkReviewResourceReadResultV1 = producer
+          const result: ReviewResourceReadResult = producer
             ? await readSessionReviewResource(producer, message.input)
             : noReviewProducer();
           return result;
         }
         case "refresh_review": {
-          const result: HunkReviewRefreshResultV1 = handlers.refreshReview
+          const result: ReviewRefreshResult = handlers.refreshReview
             ? await handlers.refreshReview()
             : {
                 ok: false,

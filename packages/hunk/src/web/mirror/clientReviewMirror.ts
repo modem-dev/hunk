@@ -31,8 +31,8 @@ import {
 } from "../../core/review/generationOrder";
 import type { ReviewResourceDescriptor } from "../../core/review/resources";
 import type { ReviewDocument, ReviewFile } from "../../core/review/types";
-import type { HunkReviewPublicationBodyV1 } from "../../session/reviewHttpProtocol";
-import type { HunkReviewResourceCatalogV1 } from "../../session/reviewProtocol";
+import type { ReviewPublicationBody } from "../../session/reviewHttpProtocol";
+import type { ReviewResourceCatalog } from "../../session/reviewProtocol";
 import { ReviewApiError, type ReviewApiClient } from "../transport/apiClient";
 import {
   reviewFileIndexEntry,
@@ -55,7 +55,7 @@ export interface ClientReviewMirrorSnapshot {
   status: "waiting" | "loading" | "ready" | "failed";
   /** The publication position of the shown generation. */
   address?: ReviewPublicationAddress;
-  catalog?: HunkReviewResourceCatalogV1;
+  catalog?: ReviewResourceCatalog;
   slots: readonly ClientReviewMirrorFileSlot[];
   /** The loaded files in catalog order, as the client store adopts them. */
   document: ReviewDocument;
@@ -125,7 +125,7 @@ export class ClientReviewMirror {
    * Returns the verdict, so a caller (and the conformance corpus) can see that no ordering
    * rule other than the shared classifier decided it.
    */
-  observe(body: HunkReviewPublicationBodyV1): ReviewPublicationOrder {
+  observe(body: ReviewPublicationBody): ReviewPublicationOrder {
     const incoming = body.publication;
     // The first publication is a gap from nothing: there is no generation to continue.
     const verdict = this.observed ? classifyReviewPublication(this.observed, incoming) : "gap";
@@ -163,7 +163,7 @@ export class ClientReviewMirror {
   }
 
   /** Load one generation's files, superseding any load still running. */
-  private async loadGeneration(body: HunkReviewPublicationBodyV1) {
+  private async loadGeneration(body: ReviewPublicationBody) {
     const { catalog, publication } = body;
     // Only a complete generation on screen is worth holding while a newer one loads. A first
     // load still in flight (or failed) shows no finished document, so the newer generation

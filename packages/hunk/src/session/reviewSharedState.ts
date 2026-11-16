@@ -46,11 +46,11 @@ import type {
 import { asRecord, hasExactKeys, utf8ByteLength } from "../core/review/validation";
 import {
   HUNK_REVIEW_PROTOCOL_VERSION,
-  hunkReviewKeysWith as keysWith,
-  isHunkReviewIdentifier as isIdentifier,
-  isHunkReviewIndex as isIndex,
-  isHunkReviewLineNumber as isLineNumber,
-  isHunkReviewSide as isSide,
+  reviewKeysWith as keysWith,
+  isReviewIdentifier as isIdentifier,
+  isReviewIndex as isIndex,
+  isReviewLineNumber as isLineNumber,
+  isReviewSide as isSide,
   MAX_HUNK_REVIEW_ENVELOPE_BYTES,
   MAX_HUNK_REVIEW_FILTER_BYTES,
 } from "./reviewProtocol";

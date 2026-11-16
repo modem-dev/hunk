@@ -3,8 +3,8 @@ import { z } from "zod";
 import { parseSessionRegistration, parseSessionSnapshot } from "./wire";
 import {
   HUNK_REVIEW_PROTOCOL_VERSION,
-  parseHunkReviewActionEnvelope,
-  parseHunkReviewResourceReadEnvelope,
+  parseReviewActionEnvelope,
+  parseReviewResourceReadEnvelope,
 } from "../reviewProtocol";
 import type {
   HunkSessionCommandResult,
@@ -117,7 +117,7 @@ const commandInputs = {
     })
     .refine(
       ({ protocolVersion, actor, request }) =>
-        parseHunkReviewResourceReadEnvelope({ protocolVersion, actor, request }).ok,
+        parseReviewResourceReadEnvelope({ protocolVersion, actor, request }).ok,
     ),
   // No arguments: what a refresh reopens is the session's own input, never the caller's.
   refresh_review: z.strictObject({ ...selectorFields }),
@@ -132,7 +132,7 @@ const commandInputs = {
     })
     .refine(
       ({ protocolVersion, generation, expectedStateRevision, actor, action }) =>
-        parseHunkReviewActionEnvelope({
+        parseReviewActionEnvelope({
           protocolVersion,
           generation,
           ...(expectedStateRevision === undefined ? {} : { expectedStateRevision }),

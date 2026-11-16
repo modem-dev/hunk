@@ -12,7 +12,7 @@
  */
 import { reviewNoteWithinSizeLimit } from "../../../packages/hunk/src/core/review/noteSize";
 import {
-  parseHunkReviewAction,
+  parseRemoteReviewIntent,
   toReviewIntent,
 } from "../../../packages/hunk/src/session/reviewProtocol";
 import type { ReviewWireConsumer } from "../types";
@@ -21,7 +21,7 @@ export const reviewWireConsumer: ReviewWireConsumer = {
   name: "review wire protocol",
   phase: "Phase 3",
   parseAction(action) {
-    const parsed = parseHunkReviewAction(action);
+    const parsed = parseRemoteReviewIntent(action);
     return parsed.ok
       ? { accepted: true, intent: toReviewIntent(parsed.value) }
       : { accepted: false };

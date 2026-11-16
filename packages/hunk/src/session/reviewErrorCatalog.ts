@@ -22,7 +22,7 @@
  *   key or a gap id; the catalog stays constant so it can be rendered anywhere,
  *   including where the caller's input must not be echoed back.
  */
-import type { HunkReviewClientErrorCodeV1 } from "./reviewHttpProtocol";
+import type { ReviewHttpFailureCode } from "./reviewHttpProtocol";
 
 /** One documented failure: what it means, and what the person in front of it can do. */
 export interface ReviewErrorDoc {
@@ -38,7 +38,7 @@ export interface ReviewErrorDoc {
  * Ordered by tier — the review moved, the request was wrong, the content could not be
  * served, the caller was not allowed — because that is the order a reader diagnoses in.
  */
-export const REVIEW_ERROR_CATALOG: Record<HunkReviewClientErrorCodeV1, ReviewErrorDoc> = {
+export const REVIEW_ERROR_CATALOG: Record<ReviewHttpFailureCode, ReviewErrorDoc> = {
   "refresh-unavailable": {
     message: "This review cannot be reloaded from its input.",
     remedy: "Reviews read from standard input cannot refresh; start a new review instead.",
@@ -188,7 +188,7 @@ export const REVIEW_ERROR_CATALOG: Record<HunkReviewClientErrorCodeV1, ReviewErr
 };
 
 /** The sentence and remedy one code stands for. */
-export function describeReviewError(code: HunkReviewClientErrorCodeV1): ReviewErrorDoc {
+export function describeReviewError(code: ReviewHttpFailureCode): ReviewErrorDoc {
   return REVIEW_ERROR_CATALOG[code];
 }
 
@@ -198,7 +198,7 @@ export function describeReviewError(code: HunkReviewClientErrorCodeV1): ReviewEr
  * Statement then remedy, joined, because every consumer so far wants both and joining them
  * in each consumer is how two clients end up phrasing the same failure differently.
  */
-export function reviewErrorMessage(code: HunkReviewClientErrorCodeV1): string {
+export function reviewErrorMessage(code: ReviewHttpFailureCode): string {
   const doc = REVIEW_ERROR_CATALOG[code];
   return `${doc.message} ${doc.remedy}`;
 }
