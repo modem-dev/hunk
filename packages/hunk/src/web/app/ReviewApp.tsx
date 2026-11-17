@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 /**
- * The read-only browser review: toolbar, files sidebar, and the review stream.
+ * The read-only browser review: toolbar, files sidebar, the review stream, and the review bar.
  *
  * A terminal Hunk user should recognize it at once — the same regions and the same facts,
  * in the same themes — with web-native chrome. This component composes the page from the
@@ -124,7 +124,11 @@ import { useReviewInteraction } from "./useReviewInteraction";
 import { useReviewTools } from "./useReviewTools";
 import { useViewedFiles, type ViewedFiles } from "../viewed/useViewedFiles";
 import type { ReviewViewedControls } from "../stream/FileSection";
-import { ViewedProgress } from "./ViewedProgress";
+import { nextUnviewedFile } from "../viewed/nextUnviewed";
+import { formatReviewNotesMarkdown } from "../notes/notesMarkdown";
+import { countNoteList } from "../notesPanel/noteFilters";
+import { ReviewBar } from "./ReviewBar";
+import { reviewBarHints } from "./reviewBarHints";
 import { ViewMenu } from "./ViewMenu";
 
 /** Width of one monospace column on this page, measured once the fonts are in place. */
@@ -586,17 +590,24 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
     () => new Map(review.document.files.map((file) => [file.key, file] as const)),
     [review.document],
   );
+  // Every visible note as threads by file: the minimap's pips, the review bar's count, and the
+  // text "Copy notes for agent" writes.
+  const allNotes = useMemo(
+    () => selectReviewNoteList(review, sidecarNotes),
+    [review, sidecarNotes],
+  );
+  const noteTotal = useMemo(() => countNoteList(allNotes), [allNotes]);
   const minimapNotes = useMemo(() => {
     const byFile = new Map<string, number[]>();
     if (!showMinimap) return byFile;
-    for (const file of selectReviewNoteList(review, sidecarNotes)) {
+    for (const file of allNotes) {
       byFile.set(
         file.fileKey,
         file.threads.map((thread) => thread.hunkIndex),
       );
     }
     return byFile;
-  }, [showMinimap, review, sidecarNotes]);
+  }, [showMinimap, allNotes]);
   const minimapHighlights = useMemo(() => {
     const byFile = new Map<string, number[]>();
     for (const [fileKey, marks] of Object.entries(shownShared?.agentHighlights ?? {})) {
@@ -847,6 +858,28 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
   const pageHint = (commandId: WebLocalCommandId) =>
     webCommandChords(pageKeymap, commandId).map(formatKeyChord).join(" / ") || undefined;
   const panelHint = pageHint("hunk.web.toggleSidePanel");
+  // The review bar shows one key per command, the first the keymap gives it, as hints do.
+  const firstChordHint = (commandId: string) => {
+    const chord = webCommandChords(pageKeymap, commandId)[0];
+    return chord ? formatKeyChord(chord) : undefined;
+  };
+  const barHints = reviewBarHints(firstChordHint);
+  const nextUnviewed = nextUnviewedFile(entries, review.selection.fileKey, viewed.statuses);
+  // The next file opens through the sidebar's path, unfolded if the reader had folded it.
+  const openNextUnviewed = (fileKey: string) => {
+    viewedControls.expand(fileKey);
+    tools.jumpToFile(fileKey);
+  };
+  const copyNotes = async () => {
+    try {
+      await navigator.clipboard.writeText(
+        formatReviewNotesMarkdown(allNotes, { agentNotesHidden: !review.showAgentNotes }),
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  };
 
   // Arrow keys move the choice within the sidebar mode group, as in any radio group.
   const onSidebarModeKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -999,7 +1032,6 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
             sessionEnded={sessionEnded}
           />
         }
-        viewedProgress={<ViewedProgress progress={viewed.progress} />}
         viewMenu={
           <ViewMenu
             wrapLines={preferences.wrapLines}
@@ -1188,6 +1220,27 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
           </div>
         </PreviewContext.Provider>
       </SessionEndedContext.Provider>
+      <ReviewBar
+        progress={viewed.progress}
+        {...(nextUnviewed
+          ? {
+              next: {
+                path: nextUnviewed.path,
+                onOpen: () => openNextUnviewed(nextUnviewed.key),
+              },
+            }
+          : {})}
+        hints={barHints}
+        onOpenShortcuts={() => tools.toggleHelp()}
+        {...(firstChordHint("hunk.app.toggleHelp")
+          ? { shortcutsHint: firstChordHint("hunk.app.toggleHelp") }
+          : {})}
+        noteCount={noteTotal}
+        onOpenNotes={() => panelHandlers["hunk.web.showNotes"]?.()}
+        {...(pageHint("hunk.web.showNotes") ? { notesHint: pageHint("hunk.web.showNotes") } : {})}
+        onCopyNotes={copyNotes}
+        agentNotesHidden={!review.showAgentNotes}
+      />
       <ToastRegion toasts={session.toasts} />
       {tools.overlay}
     </div>
