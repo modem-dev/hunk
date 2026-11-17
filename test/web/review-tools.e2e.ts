@@ -347,6 +347,50 @@ test("the minimap repaints when a file collapses without a scroll", async ({ pag
     .toBeLessThanOrEqual(2);
 });
 
+/** The alpha of one canvas pixel in the minimap, in 0-255, at CSS coordinates (x, y). */
+function minimapAlphaAt(page: Page, x: number, y: number) {
+  return page.getByTestId("minimap").evaluate(
+    (track, point) => {
+      const canvas = track.querySelector("canvas")!;
+      const ratio = canvas.width / track.clientWidth;
+      // Copy one pixel through a read-optimised canvas so the page's own context is left alone.
+      const probe = document.createElement("canvas");
+      probe.width = 1;
+      probe.height = 1;
+      const context = probe.getContext("2d", { willReadFrequently: true })!;
+      context.drawImage(
+        canvas,
+        Math.round(point.x * ratio),
+        Math.round(point.y * ratio),
+        1,
+        1,
+        0,
+        0,
+        1,
+        1,
+      );
+      return context.getImageData(0, 0, 1, 1).data[3]!;
+    },
+    { x, y },
+  );
+}
+
+// Intent: a viewed file's block draws at lower strength than an open one, so finished files
+// recede on the minimap.
+test("the minimap dims a file's block once it is marked viewed", async ({ page }) => {
+  await openTestReview(page);
+  await expect(page.getByTestId("minimap")).toBeVisible();
+  // The first file's header band is block only: no change ticks start before its body.
+  await expect.poll(() => minimapAlphaAt(page, 8, 0)).toBeGreaterThan(0);
+  const open = await minimapAlphaAt(page, 8, 0);
+
+  await page.locator("section[data-file-key]").first().locator(".viewed-toggle input").click();
+  await expect(page.locator(".file-collapsed").first()).toBeVisible();
+
+  await expect.poll(() => minimapAlphaAt(page, 8, 0)).toBeLessThan(open * 0.6);
+  expect(await minimapAlphaAt(page, 8, 0)).toBeGreaterThan(0);
+});
+
 // Intent: collapsing a viewed file destroys its body and expanding creates a new one; the new
 // body is measured like the first, so a later change in its height still reaches the minimap.
 // The last file is used, at the end of the stream, and the stream is not scrolled after the
