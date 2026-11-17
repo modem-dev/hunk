@@ -170,7 +170,7 @@ test("lists notes by file and reveals the chosen one in the stream", async ({ pa
     "src/gen/module-30.ts",
   ]);
   await expect(panel.locator(".notes-count")).toHaveText("3 notes");
-  await expect(panel.getByRole("button", { name: "▸ 1 reply" })).toBeVisible();
+  await expect(panel.getByRole("button", { name: "1 reply" })).toBeVisible();
 
   await panel.getByTestId("notes-row").filter({ hasText: "Far down the stream" }).click();
   const card = page.locator(".note-card", { hasText: "Far down the stream" });
@@ -441,7 +441,7 @@ test("the minimap stays cheap and accurate on a 2,000-file review", async ({ pag
   review = await startTestWebReview("--many=2000");
   problems = await watchTestPageProblems(page);
   await page.goto(review.url);
-  await expect(page.getByTestId("file-count")).toHaveText("2000 files", { timeout: 30_000 });
+  await expect(page.getByTestId("file-count")).toHaveText("2,000 files", { timeout: 30_000 });
   await expect(page.getByTestId("load-progress")).toHaveCount(0, { timeout: 120_000 });
   const minimap = page.getByTestId("minimap");
   const box = (await minimap.boundingBox())!;

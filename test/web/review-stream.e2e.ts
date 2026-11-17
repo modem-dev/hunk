@@ -109,6 +109,31 @@ test("jumps from the sidebar to the stream and follows the stream back", async (
   await expect(page.locator(".flat-file[data-selected]")).toContainText("main.ts");
 });
 
+// Intent: line counts group their digits and removals use a true minus, in the toolbar and
+// the stream's file headers.
+test("groups digits in line counts", async ({ page }) => {
+  await openTestReview(page);
+
+  await expect(page.locator(".toolbar-stats .stat-added")).toHaveText("+25,048");
+  await expect(page.locator(".toolbar-stats .stat-removed")).toHaveText("−47");
+  await expect(page.locator(".file-stats .stat-added", { hasText: "+24,999" })).toHaveCount(1);
+});
+
+// Intent: split view draws one "unchanged lines" row, with its count stated once.
+test("draws one unchanged-lines row per gap in split view", async ({ page }) => {
+  await openTestReview(page);
+  const main = page.locator("section[data-file-key]").first();
+
+  await page.getByTestId("layout-split").click();
+  await expect(main.locator('.gap-separator[data-gap-id="before:0"]')).toHaveCount(1);
+  await expect(main.locator(".gap-separator-fill").first()).toBeAttached();
+  await expect(main.getByText("9 unchanged lines")).toHaveCount(1);
+
+  await page.getByTestId("layout-unified").click();
+  await expect(main.locator(".gap-separator-fill")).toHaveCount(0);
+  await expect(main.locator('.gap-separator[data-gap-id="before:0"]')).toHaveCount(1);
+});
+
 test("switches layout and theme, and the theme choice persists", async ({ page }) => {
   await openTestReview(page);
 

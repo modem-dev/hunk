@@ -110,7 +110,7 @@ test("captures the overview tab", async ({ page }) => {
   await capture(page, "overview-light-1440");
 
   await page.getByTestId("side-panel-tab-notes").click();
-  await page.getByRole("button", { name: "▸ 1 reply" }).click();
+  await page.getByRole("button", { name: "1 reply" }).click();
   await page.getByTestId("notes-row").filter({ hasText: "rename should land" }).click();
   await capture(page, "notes-light-1440");
   await chooseTestTheme(page, "github-dark-default");

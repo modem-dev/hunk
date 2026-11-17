@@ -15,6 +15,7 @@
 import type { KeyboardEvent, ReactNode } from "react";
 import type { LayoutMode } from "../../core/run/commandInputs";
 import type { WebImplementedCommandId } from "../commands/webCommandTable";
+import { formatAddedCount, formatFileCount, formatRemovedCount } from "../format/lineCounts";
 import { Icon, type IconName } from "../icons/Icon";
 
 export interface ToolbarProps {
@@ -107,10 +108,10 @@ export function Toolbar(props: ToolbarProps) {
         </span>
         <span className="toolbar-stats">
           <span className="file-count" data-testid="file-count">
-            {props.fileCount === 1 ? "1 file" : `${props.fileCount} files`}
+            {formatFileCount(props.fileCount)}
           </span>
-          <span className="stat-added">{`+${props.additions}`}</span>
-          <span className="stat-removed">{`-${props.deletions}`}</span>
+          <span className="stat-added">{formatAddedCount(props.additions)}</span>
+          <span className="stat-removed">{formatRemovedCount(props.deletions)}</span>
         </span>
         {/* Connected is the quiet default: a dot whose words stay available to assistive
             technology. Every other state keeps its words on screen. */}

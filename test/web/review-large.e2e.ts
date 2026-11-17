@@ -23,9 +23,12 @@ test("stays responsive with 2,000 files", async ({ page }) => {
   );
 
   await page.goto(review.url);
-  await expect(page.getByTestId("file-count")).toHaveText(`${FILE_COUNT} files`, {
-    timeout: 30_000,
-  });
+  await expect(page.getByTestId("file-count")).toHaveText(
+    `${FILE_COUNT.toLocaleString("en-US")} files`,
+    {
+      timeout: 30_000,
+    },
+  );
   // An agent's reveal of a file that may still be loading waits for it rather than being
   // dropped.
   const last = "pkg19/dir9/file-1999.ts";
