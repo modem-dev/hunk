@@ -10,6 +10,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import {
+  openTestThemeMenu,
   startTestWebReview,
   waitForTestCondition,
   watchTestPageProblems,
@@ -95,7 +96,9 @@ test("renders sidecar notes, STML markup, and the session title", async ({ page 
   const plain = noteCard(page, "Threshold raised from 5 to 10.");
   await expect(plain).toBeVisible();
   await expect(plain.locator(".note-author")).toHaveText("sonnet");
-  await expect(plain.locator(".note-range")).toHaveText("R13");
+  await expect(plain.locator(".note-role")).toHaveText("agent");
+  await expect(plain.locator(".note-avatar")).toHaveAttribute("data-kind", "agent");
+  await expect(plain.locator(".note-range")).toHaveText("line 13");
   await expect(plain.locator(".note-rationale")).toHaveText("Matches the new defaults.");
   await expect(page.locator(".note-card .stml-badge")).toHaveText("OK");
   await expect(page.locator(".note-card .stml-box-title")).toHaveText("Check");
@@ -104,7 +107,7 @@ test("renders sidecar notes, STML markup, and the session title", async ({ page 
   await page.getByRole("radio", { name: "Flat" }).click();
   await expect(
     page.locator(".flat-file", { hasText: "main.ts" }).locator("[data-badge]").first(),
-  ).toHaveText("*2");
+  ).toHaveText("2 notes");
 });
 
 test("shows live comments as an agent adds, replies to, removes, and clears them", async ({
@@ -117,7 +120,8 @@ test("shows live comments as an agent adds, replies to, removes, and clears them
     "opus",
   ]);
   await expect(noteCard(page, "First live note")).toBeVisible();
-  await expect(noteCard(page, "First live note").locator(".note-author")).toHaveText(/^opus · /);
+  await expect(noteCard(page, "First live note").locator(".note-author")).toHaveText("opus");
+  await expect(noteCard(page, "First live note").locator(".note-age")).toHaveText("now");
 
   await review!.hunk([
     "session",
@@ -130,6 +134,10 @@ test("shows live comments as an agent adds, replies to, removes, and clears them
     "Agent reply",
   ]);
   await expect(noteCard(page, "Agent reply")).toHaveAttribute("data-depth", "1");
+  // A reply is a message inside its root's card, not a card of its own.
+  const thread = page.locator(".note-thread", { hasText: "First live note" });
+  await expect(thread.locator(".note-card")).toHaveCount(2);
+  await expect(thread.locator(".note-card").nth(1)).toContainText("Agent reply");
 
   // A reply written through the review link (as another browser tab would) threads under the
   // agent's note and is labelled by where it came from.
@@ -147,7 +155,9 @@ test("shows live comments as an agent adds, replies to, removes, and clears them
   expect(response.ok).toBe(true);
   const reply = noteCard(page, "Reviewer reply");
   await expect(reply).toHaveAttribute("data-source", "user");
-  await expect(reply.locator(".note-author")).toHaveText(/^Browser note/);
+  await expect(reply.locator(".note-author")).toHaveText("Reviewer");
+  await expect(reply.locator(".note-role")).toHaveText("browser");
+  await expect(reply.locator(".note-avatar")).toHaveAttribute("data-kind", "person");
 
   await review!.hunk(
     ["session", "comment", "apply", review!.sessionId, "--stdin"],
@@ -159,7 +169,7 @@ test("shows live comments as an agent adds, replies to, removes, and clears them
     }),
   );
   await page.getByRole("radio", { name: "Flat" }).click();
-  await expect(page.locator(".flat-file", { hasText: "module-03.ts" })).toContainText("*1");
+  await expect(page.locator(".flat-file", { hasText: "module-03.ts" })).toContainText("1 note");
   await page.locator(".flat-file", { hasText: "module-04.ts" }).click();
   await expect(noteCard(page, "Batch two")).toBeVisible();
 
@@ -253,7 +263,7 @@ test("walks annotated hunks with the keyboard", async ({ page }) => {
   await addTestComment("src/gen/module-10.ts", 2, "Tenth module note");
   await addTestComment("src/gen/module-20.ts", 2, "Twentieth module note");
   await page.getByRole("radio", { name: "Flat" }).click();
-  await expect(page.locator(".flat-file", { hasText: "module-20.ts" })).toContainText("*1");
+  await expect(page.locator(".flat-file", { hasText: "module-20.ts" })).toContainText("1 note");
 
   await page.keyboard.press("}");
   await expect(page.locator("section[data-selected] .file-path")).toHaveText(
@@ -287,15 +297,15 @@ test("starts from a custom session theme and lets this browser override it", asy
       getComputedStyle(document.documentElement).getPropertyValue("--hunk-accent").trim(),
     );
   await expect.poll(accent).toBe("#7fd1ff");
-  await expect(page.getByTestId("theme-picker")).toHaveAttribute("aria-label", "Theme: Ocean");
+  await expect(page.getByTestId("theme-picker")).toContainText("Theme: Ocean");
 
-  await page.getByTestId("theme-picker").click();
+  await openTestThemeMenu(page);
   await page.locator('[role="option"][data-theme-id="dracula"]').click();
   await expect.poll(accent).not.toBe("#7fd1ff");
   await page.reload();
-  await expect(page.getByTestId("theme-picker")).toHaveAttribute("aria-label", "Theme: dracula");
+  await expect(page.getByTestId("theme-picker")).toContainText("Theme: dracula");
 
-  await page.getByTestId("theme-picker").click();
+  await openTestThemeMenu(page);
   await page.getByRole("option", { name: /Use session theme/ }).click();
   await expect.poll(accent).toBe("#7fd1ff");
 });

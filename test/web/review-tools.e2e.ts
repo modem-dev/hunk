@@ -2,13 +2,14 @@
  * Drives the side panel's review tools against a rich live review.
  *
  * The Overview tab's figures must match the toolbar and the shared overview selector's policy,
- * and every row naming a file or a directory must jump the stream there. The panel opens by
- * default on wide viewports, toggles from the toolbar and its web-only shortcut, remembers its
+ * and every row naming a file or a directory must jump the stream there. The panel starts closed
+ * at every width, opens on the tab that fits, toggles from the toolbar and its web-only shortcut, remembers its
  * state per browser, and passes axe — all without a CSP violation or console error.
  */
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import {
+  seedTestOpenSidePanel,
   startTestWebReview,
   watchTestPageProblems,
   type TestWebReview,
@@ -30,10 +31,18 @@ test.afterEach(async () => {
   }
 });
 
-/** Open the rich review and wait until every file has loaded. */
-async function openTestReview(page: Page, options: TestWebReviewOptions = {}) {
+/**
+ * Open the rich review and wait until every file has loaded. The panel starts closed with no
+ * stored choice; most tests here drive its tools, so they seed it open on Overview first.
+ */
+async function openTestReview(
+  page: Page,
+  options: TestWebReviewOptions = {},
+  panel: "open" | "closed" = "open",
+) {
   review = await startTestWebReview("--rich", options);
   problems = await watchTestPageProblems(page);
+  if (panel === "open") await seedTestOpenSidePanel(page, "overview");
   await page.goto(review.url);
   await expect(page.locator('.toolbar [data-state="connected"]')).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("load-progress")).toHaveCount(0, { timeout: 30_000 });
@@ -44,9 +53,7 @@ function selectedSectionPath(page: Page) {
   return page.locator("section[data-selected] .file-name").first();
 }
 
-test("opens the overview by default on a wide viewport and agrees with the toolbar", async ({
-  page,
-}) => {
+test("shows the overview when the panel is open and agrees with the toolbar", async ({ page }) => {
   await openTestReview(page);
   const panel = page.getByTestId("side-panel");
   await expect(panel).toBeVisible();
@@ -106,12 +113,54 @@ test("toggles from the toolbar and its shortcut, and remembers the choice", asyn
   await expect(panel).toBeVisible();
 });
 
-test("starts hidden on a narrow viewport", async ({ page }) => {
-  await page.setViewportSize({ width: 1100, height: 800 });
-  await openTestReview(page);
+test("starts closed at every width, and a stored choice wins", async ({ page }) => {
+  await openTestReview(page, {}, "closed");
   await expect(page.getByTestId("side-panel")).toHaveCount(0);
   await page.getByTestId("toggle-side-panel").click();
   await expect(page.getByTestId("side-panel")).toBeVisible();
+
+  await page.setViewportSize({ width: 1100, height: 800 });
+  await page.evaluate(() => window.localStorage.removeItem("hunk.review.panel"));
+  await page.reload();
+  await expect(page.locator('.toolbar [data-state="connected"]')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("side-panel")).toHaveCount(0);
+});
+
+test("opens on Notes when the review has notes and no tab was ever chosen, else on Overview", async ({
+  page,
+}) => {
+  await openTestReview(
+    page,
+    {
+      args: ["--agent-notes"],
+      context: {
+        "src/app/main.ts": {
+          annotations: [{ newRange: [13, 13], summary: "Sidecar note", author: "sonnet" }],
+        },
+      },
+    },
+    "closed",
+  );
+  await page.getByTestId("toggle-side-panel").click();
+  await expect(page.getByRole("tab", { name: "Notes" })).toHaveAttribute("aria-selected", "true");
+
+  // A tab the reader chose is remembered over the default.
+  await page.getByTestId("side-panel-tab-overview").click();
+  await page.getByTestId("toggle-side-panel").click();
+  await page.getByTestId("toggle-side-panel").click();
+  await expect(page.getByRole("tab", { name: "Overview" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+});
+
+test("opens on Overview when the review has no notes", async ({ page }) => {
+  await openTestReview(page, {}, "closed");
+  await page.getByTestId("toggle-side-panel").click();
+  await expect(page.getByRole("tab", { name: "Overview" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
 });
 
 test("counts notes by origin in the overview", async ({ page }) => {
@@ -170,7 +219,7 @@ test("lists notes by file and reveals the chosen one in the stream", async ({ pa
     "src/gen/module-30.ts",
   ]);
   await expect(panel.locator(".notes-count")).toHaveText("3 notes");
-  await expect(panel.getByRole("button", { name: "▸ 1 reply" })).toBeVisible();
+  await expect(panel.getByRole("button", { name: "1 reply" })).toBeVisible();
 
   await panel.getByTestId("notes-row").filter({ hasText: "Far down the stream" }).click();
   const card = page.locator(".note-card", { hasText: "Far down the stream" });
@@ -338,13 +387,57 @@ test("the minimap repaints when a file collapses without a scroll", async ({ pag
   const drift = await minimapHeightDrift(page);
 
   await page.locator("section[data-file-key]").first().locator(".viewed-toggle input").click();
-  await expect(page.locator(".file-collapsed").first()).toBeVisible();
+  await expect(page.locator('.file-collapse[aria-expanded="false"]').first()).toBeVisible();
 
   // The stream settles over a frame or two after the collapse and the minimap repaints one
   // frame behind it, so the two are compared once they agree rather than at one instant.
   await expect
     .poll(async () => Math.abs((await minimapHeightDrift(page)) - drift))
     .toBeLessThanOrEqual(2);
+});
+
+/** The alpha of one canvas pixel in the minimap, in 0-255, at CSS coordinates (x, y). */
+function minimapAlphaAt(page: Page, x: number, y: number) {
+  return page.getByTestId("minimap").evaluate(
+    (track, point) => {
+      const canvas = track.querySelector("canvas")!;
+      const ratio = canvas.width / track.clientWidth;
+      // Copy one pixel through a read-optimised canvas so the page's own context is left alone.
+      const probe = document.createElement("canvas");
+      probe.width = 1;
+      probe.height = 1;
+      const context = probe.getContext("2d", { willReadFrequently: true })!;
+      context.drawImage(
+        canvas,
+        Math.round(point.x * ratio),
+        Math.round(point.y * ratio),
+        1,
+        1,
+        0,
+        0,
+        1,
+        1,
+      );
+      return context.getImageData(0, 0, 1, 1).data[3]!;
+    },
+    { x, y },
+  );
+}
+
+// Intent: a viewed file's block draws at lower strength than an open one, so finished files
+// recede on the minimap.
+test("the minimap dims a file's block once it is marked viewed", async ({ page }) => {
+  await openTestReview(page);
+  await expect(page.getByTestId("minimap")).toBeVisible();
+  // The first file's header band is block only: no change ticks start before its body.
+  await expect.poll(() => minimapAlphaAt(page, 8, 0)).toBeGreaterThan(0);
+  const open = await minimapAlphaAt(page, 8, 0);
+
+  await page.locator("section[data-file-key]").first().locator(".viewed-toggle input").click();
+  await expect(page.locator('.file-collapse[aria-expanded="false"]').first()).toBeVisible();
+
+  await expect.poll(() => minimapAlphaAt(page, 8, 0)).toBeLessThan(open * 0.6);
+  expect(await minimapAlphaAt(page, 8, 0)).toBeGreaterThan(0);
 });
 
 // Intent: collapsing a viewed file destroys its body and expanding creates a new one; the new
@@ -371,7 +464,7 @@ test("keeps measuring a file body re-created by expanding a viewed file", async 
   await page.waitForTimeout(500);
 
   await last.locator(".viewed-toggle input").click();
-  await last.locator(".file-collapsed").click();
+  await last.locator('.file-collapse[aria-expanded="false"]').click();
   await expect.poll(mounted).toBe(true);
   await page.waitForTimeout(500);
   const drift = await minimapHeightDrift(page);
@@ -441,7 +534,7 @@ test("the minimap stays cheap and accurate on a 2,000-file review", async ({ pag
   review = await startTestWebReview("--many=2000");
   problems = await watchTestPageProblems(page);
   await page.goto(review.url);
-  await expect(page.getByTestId("file-count")).toHaveText("2000 files", { timeout: 30_000 });
+  await expect(page.getByTestId("file-count")).toHaveText("2,000 files", { timeout: 30_000 });
   await expect(page.getByTestId("load-progress")).toHaveCount(0, { timeout: 120_000 });
   const minimap = page.getByTestId("minimap");
   const box = (await minimap.boundingBox())!;

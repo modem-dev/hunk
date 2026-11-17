@@ -88,6 +88,146 @@ async function selectedHunk(page: Page) {
     .getAttribute("data-hunk-index")}`;
 }
 
+// Intent: the accent marks position and focus; an "on" toggle or a checked segment is neutral.
+test("pressed toggles and checked segments stay off the accent color", async ({ page }) => {
+  await openTestReview(page, "--rich");
+
+  const colors = await page.evaluate(() => {
+    const resolve = (value: string) => {
+      const probe = document.createElement("i");
+      probe.style.backgroundColor = value;
+      document.body.append(probe);
+      const resolved = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return resolved;
+    };
+    const paint = (element: Element | null) => {
+      const style = getComputedStyle(element!);
+      return { background: style.backgroundColor, border: style.borderTopColor };
+    };
+
+    return {
+      accent: resolve("var(--hunk-accent)"),
+      accentMuted: resolve("var(--hunk-accent-muted)"),
+      toggle: paint(document.querySelector('[data-testid="toggle-line-numbers"] .menu-switch')),
+      pressed: paint(document.querySelector('[data-testid="toggle-sidebar"][aria-pressed="true"]')),
+      segment: paint(document.querySelector('.segmented button[aria-checked="true"]')),
+    };
+  });
+
+  for (const painted of [colors.toggle, colors.pressed, colors.segment]) {
+    expect([painted.background, painted.border]).not.toContain(colors.accent);
+    expect([painted.background, painted.border]).not.toContain(colors.accentMuted);
+  }
+});
+
+/** The toolbar's height and whether any of its controls spill past its edges. */
+async function toolbarFit(page: Page) {
+  return page.locator(".toolbar").evaluate((toolbar) => {
+    const bounds = toolbar.getBoundingClientRect();
+    const spilled = Array.from(toolbar.querySelectorAll<HTMLElement>("button, input, .status"))
+      .filter((control) => control.offsetParent !== null && !control.closest("[role=menu]"))
+      .filter((control) => {
+        const box = control.getBoundingClientRect();
+        return box.top < bounds.top || box.bottom > bounds.bottom || box.right > bounds.right + 1;
+      })
+      .map((control) => control.dataset.testid ?? control.getAttribute("aria-label") ?? "?");
+    return { height: bounds.height, spilled };
+  });
+}
+
+/** The review bar's height and whether any of its controls spill past its edges. */
+async function reviewBarFit(page: Page) {
+  return page.getByTestId("review-bar").evaluate((bar) => {
+    const bounds = bar.getBoundingClientRect();
+    const spilled = Array.from(bar.querySelectorAll<HTMLElement>("button, .viewed-progress"))
+      .filter((control) => control.offsetParent !== null)
+      .filter((control) => {
+        const box = control.getBoundingClientRect();
+        return box.top < bounds.top || box.bottom > bounds.bottom || box.right > bounds.right + 1;
+      })
+      .map((control) => control.dataset.testid ?? "?");
+    return { height: bounds.height, spilled };
+  });
+}
+
+// Intent: the toolbar and the review bar are one row each at every width; narrow windows drop
+// labels, not rows.
+test("keeps the toolbar and the review bar on one row at desktop and narrow widths", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openTestReview(page, "--rich");
+  const wide = await toolbarFit(page);
+  expect(wide.height).toBeLessThan(50);
+  expect(wide.spilled).toEqual([]);
+  await expect(page.getByTestId("file-count")).toBeVisible();
+  await expect(page.getByTestId("filter-input")).toBeVisible();
+  const wideBar = await reviewBarFit(page);
+  expect(wideBar.height).toBeLessThan(40);
+  expect(wideBar.spilled).toEqual([]);
+  await expect(page.getByTestId("bar-key-hints")).toBeVisible();
+  await expect(page.locator(".bar-next-path")).toBeVisible();
+
+  await page.setViewportSize({ width: 800, height: 900 });
+  await expect.poll(async () => (await toolbarFit(page)).height).toBeLessThan(50);
+  expect((await toolbarFit(page)).spilled).toEqual([]);
+  await expect(page.getByTestId("toggle-side-panel")).toBeInViewport();
+  await expect(page.getByTestId("filter-input")).toBeVisible();
+  // Key hints drop first; progress, the next file, and Copy notes stay.
+  await expect.poll(async () => (await reviewBarFit(page)).height).toBeLessThan(40);
+  expect((await reviewBarFit(page)).spilled).toEqual([]);
+  await expect(page.getByTestId("bar-key-hints")).toBeHidden();
+  await expect(page.getByTestId("viewed-progress")).toBeVisible();
+  await expect(page.getByTestId("next-unviewed")).toBeVisible();
+  await expect(page.getByTestId("copy-notes")).toBeInViewport();
+});
+
+// Intent: the View menu behaves like a menu, and its shared row reaches every surface.
+test("the View menu opens, moves with the arrow keys, and toggles shared agent notes", async ({
+  page,
+}) => {
+  await openTestReview(page, "--rich");
+  const button = page.getByTestId("view-menu-button");
+  const menu = page.getByRole("menu", { name: "View" });
+
+  await button.click();
+  await expect(menu).toBeVisible();
+  await expect(button).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByTestId("toggle-wrap")).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(page.getByTestId("toggle-line-numbers")).toBeFocused();
+  await page.keyboard.press("End");
+  await expect(page.getByTestId("theme-picker")).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(page.getByTestId("toggle-wrap")).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+  await expect(button).toBeFocused();
+
+  // Agent notes are shared, so the row says so and the session's state follows it.
+  await button.click();
+  const agentNotes = page.getByRole("menuitemcheckbox", { name: /Agent notes.*shared/ });
+  const sharedVisibility = async () =>
+    ((await review!.readApi("state")).state as { showAgentNotes: boolean }).showAgentNotes;
+  const before = await sharedVisibility();
+  await expect(agentNotes).toHaveAttribute("aria-checked", String(before));
+  await agentNotes.click();
+  await expect(agentNotes).toHaveAttribute("aria-checked", String(!before));
+  await expect.poll(sharedVisibility).toBe(!before);
+  await expect(menu).toBeVisible();
+  await agentNotes.click();
+  await expect(agentNotes).toHaveAttribute("aria-checked", String(before));
+
+  // A click elsewhere closes it.
+  await page.locator(".review-stream").click({ position: { x: 5, y: 5 } });
+  await expect(menu).toBeHidden();
+
+  // The Commands button opens the palette.
+  await page.getByRole("button", { name: "Commands" }).click();
+  await expect(page.getByTestId("command-palette")).toBeVisible();
+});
+
 // Intent: Space is a checkbox's only native key; the page must not turn it into a page-down.
 test("Space on a focused Viewed checkbox toggles it instead of paging", async ({ page }) => {
   await openTestReview(page, "--rich");
@@ -173,7 +313,7 @@ test("c expands a collapsed viewed file and opens its composer", async ({ page }
     .first()
     .click();
   await page.keyboard.press("Shift+V");
-  await expect(main.locator(".file-collapsed")).toBeVisible();
+  await expect(main.locator('.file-collapse[aria-expanded="false"]')).toBeVisible();
 
   await page.locator(".review-stream").focus();
   await page.keyboard.press("c");
@@ -339,7 +479,7 @@ test("a pasted link's access key leaves the address", async ({ page }) => {
 // Intent: whichever way a dialog closes, focus returns to what had it.
 test("the chord that opened a dialog closes it and restores focus", async ({ page }) => {
   await openTestReview(page, "--rich");
-  const button = page.getByRole("button", { name: "Hide viewed" });
+  const button = page.getByTestId("copy-link");
   await button.focus();
 
   await page.keyboard.press("Control+k");

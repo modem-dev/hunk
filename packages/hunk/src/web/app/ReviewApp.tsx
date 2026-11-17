@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 /**
- * The read-only browser review: toolbar, files sidebar, and the review stream.
+ * The read-only browser review: toolbar, files sidebar, the review stream, and the review bar.
  *
  * A terminal Hunk user should recognize it at once — the same regions and the same facts,
  * in the same themes — with web-native chrome. This component composes the page from the
@@ -34,6 +34,7 @@ import {
   useState,
   useSyncExternalStore,
   type CSSProperties,
+  type KeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { selectActiveRevealNoteId } from "../../core/review/selectors";
@@ -56,6 +57,8 @@ import { reviewFailureMessage, type ReviewSession } from "../session/reviewSessi
 import { REVIEW_SESSION_ENDED_MESSAGE } from "../session/failureMessages";
 import { SessionEndedContext } from "../session/sessionEnded";
 import { FileSidebar } from "../sidebar/FileSidebar";
+import { formatCount } from "../format/lineCounts";
+import { Icon, type IconName } from "../icons/Icon";
 import { isLocalReviewIntent } from "../store/clientReviewStore";
 import {
   ReviewStream,
@@ -95,26 +98,38 @@ import {
 } from "../previews/previewContext";
 import { NotesTab } from "../notesPanel/NotesTab";
 import { OverviewTab } from "../overview/OverviewTab";
+import { SummaryStrip } from "../overview/SummaryStrip";
 import { selectWebReviewOverview } from "../panel/overviewInput";
 import { webLocalKeyCommands, withWebLocalChords } from "../panel/panelCommands";
-import type { WebLocalCommandId } from "../commands/webLocalCommands";
+import {
+  WEB_LOCAL_COMMANDS,
+  webModChordLabel,
+  type WebLocalCommandId,
+} from "../commands/webLocalCommands";
 import {
   readSidePanelPreferences,
   resolveSidePanelOpen,
+  resolveSidePanelTab,
   storeSidePanelPreferences,
   type SidePanelPreferences,
+  type SidePanelTab,
 } from "../panel/panelPreferences";
 import { SidePanel, type SidePanelTool } from "../panel/SidePanel";
 import type { ThemeMenuOption } from "./ThemeMenu";
 import { ToastRegion } from "../actions/toasts";
 import { reviewLinkWithCapability, watchReviewCapability } from "../session/capability";
-import { ReviewControls } from "./ReviewControls";
+import { FilterField, ReviewActions } from "./ReviewControls";
 import { Toolbar } from "./Toolbar";
 import { useReviewInteraction } from "./useReviewInteraction";
 import { useReviewTools } from "./useReviewTools";
 import { useViewedFiles, type ViewedFiles } from "../viewed/useViewedFiles";
 import type { ReviewViewedControls } from "../stream/FileSection";
-import { ViewedControls } from "./ViewedControls";
+import { nextUnviewedFile } from "../viewed/nextUnviewed";
+import { formatReviewNotesMarkdown } from "../notes/notesMarkdown";
+import { countNoteList } from "../notesPanel/noteFilters";
+import { ReviewBar } from "./ReviewBar";
+import { reviewBarHints } from "./reviewBarHints";
+import { ViewMenu } from "./ViewMenu";
 
 /** Width of one monospace column on this page, measured once the fonts are in place. */
 function useColumnWidth() {
@@ -207,6 +222,30 @@ function useWebTheme(sessionTheme: ReviewThemeDefaults | undefined) {
 
 const NO_HIGHLIGHTS = {};
 
+/** The files sidebar's two modes as icon radios, each named by its old text label. */
+const SIDEBAR_MODES: readonly {
+  mode: "tree" | "flat";
+  label: string;
+  title: string;
+  icon: IconName;
+  command: WebLocalCommandId;
+}[] = [
+  {
+    mode: "tree",
+    label: "Tree",
+    title: "Show files as a tree",
+    icon: "tree",
+    command: "hunk.web.filesAsTree",
+  },
+  {
+    mode: "flat",
+    label: "Flat",
+    title: "Show files as a flat list",
+    icon: "list",
+    command: "hunk.web.filesAsList",
+  },
+];
+
 /** Below this viewport or stream width the minimap hides, leaving the room to the diff. */
 const MINIMAP_MIN_VIEWPORT = 1000;
 const MINIMAP_MIN_STREAM_WIDTH = 560;
@@ -281,7 +320,7 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
       return merged;
     });
   }, []);
-  const panelOpen = resolveSidePanelOpen(panel, window.innerWidth);
+  const panelOpen = resolveSidePanelOpen(panel);
   const streamWidth = Math.max(
     0,
     mainWidth - (sidebarOpen ? preferences.sidebarWidth : 0) - (panelOpen ? panel.width : 0),
@@ -386,10 +425,22 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
     [entries],
   );
 
+  // The summary strip reads the overview once the review has loaded, panel or not; while files
+  // are still arriving only an open panel pays for recomputing it as they land.
+  const overviewReady = mirror.status === "ready";
   const overview = useMemo(
-    () => (panelOpen ? selectWebReviewOverview(entries, shownShared) : undefined),
-    [panelOpen, entries, shownShared],
+    () => (panelOpen || overviewReady ? selectWebReviewOverview(entries, shownShared) : undefined),
+    [panelOpen, overviewReady, entries, shownShared],
   );
+  // With no tab ever chosen, the panel opens on the tab that fits the review as it was when the
+  // panel opened, so a note arriving later does not switch tabs under the reader.
+  const autoTabRef = useRef<SidePanelTab | undefined>(undefined);
+  if (!panelOpen) autoTabRef.current = undefined;
+  else if (overviewReady && overview) {
+    const hasNotes = overview.noteTotals.agent + overview.noteTotals.reviewer > 0;
+    autoTabRef.current ??= resolveSidePanelTab(panel, hasNotes);
+  }
+  const panelTab = panel.tab ?? autoTabRef.current ?? "overview";
 
   // Report where the reader settled, so a headless session's `hunk session context` can say
   // where the reader is. Debounced; a failure is dropped, since the next settle reports again.
@@ -490,8 +541,8 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
   // The Notes tab lists every visible note by the shared order; choosing one selects it here and
   // reveals its card, the way an agent's reveal does, and never reaches the session.
   const noteList = useMemo(
-    () => (panelOpen && panel.tab === "notes" ? selectReviewNoteList(review, sidecarNotes) : []),
-    [panelOpen, panel.tab, review, sidecarNotes],
+    () => (panelOpen && panelTab === "notes" ? selectReviewNoteList(review, sidecarNotes) : []),
+    [panelOpen, panelTab, review, sidecarNotes],
   );
   const selectNote = useCallback(
     (
@@ -539,17 +590,24 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
     () => new Map(review.document.files.map((file) => [file.key, file] as const)),
     [review.document],
   );
+  // Every visible note as threads by file: the minimap's pips, the review bar's count, and the
+  // text "Copy notes for agent" writes.
+  const allNotes = useMemo(
+    () => selectReviewNoteList(review, sidecarNotes),
+    [review, sidecarNotes],
+  );
+  const noteTotal = useMemo(() => countNoteList(allNotes), [allNotes]);
   const minimapNotes = useMemo(() => {
     const byFile = new Map<string, number[]>();
     if (!showMinimap) return byFile;
-    for (const file of selectReviewNoteList(review, sidecarNotes)) {
+    for (const file of allNotes) {
       byFile.set(
         file.fileKey,
         file.threads.map((thread) => thread.hunkIndex),
       );
     }
     return byFile;
-  }, [showMinimap, review, sidecarNotes]);
+  }, [showMinimap, allNotes]);
   const minimapHighlights = useMemo(() => {
     const byFile = new Map<string, number[]>();
     for (const [fileKey, marks] of Object.entries(shownShared?.agentHighlights ?? {})) {
@@ -623,7 +681,13 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
     },
     [markdownModes],
   );
-  const interactive = useReviewInteraction(session, shownShared, sessionEnded, showFileDiff);
+  const interactive = useReviewInteraction(
+    session,
+    shownShared,
+    sessionEnded,
+    showFileDiff,
+    keyHint,
+  );
   const interactiveRef = useRef(interactive);
   interactiveRef.current = interactive;
   const filterRef = useRef<HTMLInputElement | null>(null);
@@ -791,9 +855,58 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
   });
   const toolsRef = useRef<typeof tools | undefined>(undefined);
   toolsRef.current = tools;
-  const panelHint = webCommandChords(pageKeymap, "hunk.web.toggleSidePanel")
-    .map(formatKeyChord)
-    .join(" / ");
+  const pageHint = (commandId: WebLocalCommandId) =>
+    webCommandChords(pageKeymap, commandId).map(formatKeyChord).join(" / ") || undefined;
+  const panelHint = pageHint("hunk.web.toggleSidePanel");
+  // The review bar shows one key per command, the first the keymap gives it, as hints do.
+  const firstChordHint = (commandId: string) => {
+    const chord = webCommandChords(pageKeymap, commandId)[0];
+    return chord ? formatKeyChord(chord) : undefined;
+  };
+  const barHints = reviewBarHints(firstChordHint);
+  const nextUnviewed = nextUnviewedFile(entries, review.selection.fileKey, viewed.statuses);
+  // The next file opens through the sidebar's path, unfolded if the reader had folded it.
+  const openNextUnviewed = (fileKey: string) => {
+    viewedControls.expand(fileKey);
+    tools.jumpToFile(fileKey);
+  };
+  const copyNotes = async () => {
+    try {
+      await navigator.clipboard.writeText(
+        formatReviewNotesMarkdown(allNotes, { agentNotesHidden: !review.showAgentNotes }),
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  // Arrow keys move the choice within the sidebar mode group, as in any radio group.
+  const onSidebarModeKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
+    if (step === undefined) return;
+    event.preventDefault();
+    const index = SIDEBAR_MODES.findIndex(({ mode }) => mode === preferences.sidebarMode);
+    const next = SIDEBAR_MODES[(index + step + SIDEBAR_MODES.length) % SIDEBAR_MODES.length]!;
+    updatePreferences({ sidebarMode: next.mode });
+    event.currentTarget.querySelector<HTMLElement>(`[data-mode="${next.mode}"]`)?.focus();
+  };
+  // The palette's chord is a page-only Ctrl/Cmd chord, so it is read from the page's command
+  // table rather than the keymap; the Commands button never names a key of its own.
+  const paletteCommand = WEB_LOCAL_COMMANDS.find(
+    (command) => command.id === "hunk.web.commandPalette",
+  );
+  const commandsHint =
+    paletteCommand && "modKey" in paletteCommand
+      ? webModChordLabel(paletteCommand.modKey)
+      : undefined;
+  const viewMenuHints = {
+    wrap: keyHint("hunk.view.toggleLineWrap"),
+    lineNumbers: keyHint("hunk.view.toggleLineNumbers"),
+    agentNotes: keyHint("hunk.view.toggleAgentNotes"),
+    hideViewed: pageHint("hunk.web.toggleHideViewed"),
+    theme: keyHint("hunk.view.openThemeSelector"),
+  };
   const panelTools: SidePanelTool[] = overview
     ? [
         {
@@ -902,42 +1015,55 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
             ? `Loading ${mirror.loadedFiles} of ${mirror.totalFiles}`
             : undefined
         }
-        preferences={preferences}
+        layout={preferences.layout}
+        onLayout={(next) => updatePreferences({ layout: next })}
         sidebarOpen={sidebarOpen}
         resolvedLayout={layout}
-        themes={themeOptions}
-        themeId={selectedId}
-        {...(theme ? { themeLabel: theme.label } : {})}
-        themeMenuOpen={themeMenuOpen}
-        onThemeMenuOpen={setThemeMenuOpen}
         keyHint={keyHint}
-        onPreferences={updatePreferences}
         onToggleSidebar={() => updatePreferences({ sidebarOpen: !sidebarOpen })}
-        onTheme={choose}
-        controls={
-          <>
-            <ReviewControls
-              ref={filterRef}
-              filterText={interactive.filterText}
-              onFilterChange={interactive.changeFilter}
-              {...(keyHint("hunk.review.focusFilter")
-                ? { filterKeyHint: keyHint("hunk.review.focusFilter") }
-                : {})}
-              refreshing={interactive.refreshing}
-              onRefresh={() => void interactive.refresh()}
-              {...(keyHint("hunk.app.refresh")
-                ? { refreshKeyHint: keyHint("hunk.app.refresh") }
-                : {})}
-              onCopyLink={copyLink}
-              sessionEnded={sessionEnded}
-            />
-            <ViewedControls
-              progress={viewed.progress}
-              hideViewed={viewed.hideViewed}
-              onToggleHideViewed={viewed.toggleHideViewed}
-            />
-          </>
+        filterField={
+          <FilterField
+            ref={filterRef}
+            filterText={interactive.filterText}
+            onFilterChange={interactive.changeFilter}
+            {...(keyHint("hunk.review.focusFilter")
+              ? { filterKeyHint: keyHint("hunk.review.focusFilter") }
+              : {})}
+            sessionEnded={sessionEnded}
+          />
         }
+        viewMenu={
+          <ViewMenu
+            wrapLines={preferences.wrapLines}
+            showLineNumbers={preferences.showLineNumbers}
+            onPreferences={updatePreferences}
+            agentNotesVisible={review.showAgentNotes}
+            onToggleAgentNotes={() => void interactive.toggleAgentNotes()}
+            hideViewed={viewed.hideViewed}
+            onToggleHideViewed={viewed.toggleHideViewed}
+            sessionEnded={sessionEnded}
+            themes={themeOptions}
+            themeId={selectedId}
+            {...(theme ? { themeLabel: theme.label } : {})}
+            themeMenuOpen={themeMenuOpen}
+            onThemeMenuOpen={setThemeMenuOpen}
+            onTheme={choose}
+            hints={viewMenuHints}
+          />
+        }
+        reviewActions={
+          <ReviewActions
+            refreshing={interactive.refreshing}
+            onRefresh={() => void interactive.refresh()}
+            {...(keyHint("hunk.app.refresh")
+              ? { refreshKeyHint: keyHint("hunk.app.refresh") }
+              : {})}
+            onCopyLink={copyLink}
+            sessionEnded={sessionEnded}
+          />
+        }
+        onOpenCommands={tools.openPalette}
+        {...(commandsHint ? { commandsHint } : {})}
         panelOpen={panelOpen}
         {...(panelHint ? { panelHint } : {})}
         onTogglePanel={() => updatePanel({ open: !panelOpen })}
@@ -957,19 +1083,32 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
               <>
                 <nav className="sidebar" aria-label="Files sidebar">
                   <div className="sidebar-header">
-                    <span>Files</span>
-                    <div className="segmented small" role="radiogroup" aria-label="Sidebar mode">
-                      {(["tree", "flat"] as const).map((mode) => (
-                        <button
-                          key={mode}
-                          type="button"
-                          role="radio"
-                          aria-checked={preferences.sidebarMode === mode}
-                          onClick={() => updatePreferences({ sidebarMode: mode })}
-                        >
-                          {mode === "tree" ? "Tree" : "Flat"}
-                        </button>
-                      ))}
+                    <span className="sidebar-title">Files</span>
+                    <span className="sidebar-count">{formatCount(sidebarEntries.length)}</span>
+                    <div
+                      className="segmented icon-segmented sidebar-mode"
+                      role="radiogroup"
+                      aria-label="Sidebar mode"
+                      onKeyDown={onSidebarModeKeyDown}
+                    >
+                      {SIDEBAR_MODES.map(({ mode, label, title, icon, command }) => {
+                        const hint = pageHint(command);
+                        return (
+                          <button
+                            key={mode}
+                            type="button"
+                            role="radio"
+                            aria-checked={preferences.sidebarMode === mode}
+                            aria-label={label}
+                            tabIndex={preferences.sidebarMode === mode ? 0 : -1}
+                            data-mode={mode}
+                            title={hint ? `${title} (${hint})` : title}
+                            onClick={() => updatePreferences({ sidebarMode: mode })}
+                          >
+                            <Icon name={icon} size={14} />
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                   <FileSidebar
@@ -991,63 +1130,86 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
                 />
               </>
             ) : null}
-            <ReviewStream
-              slots={streamSlots}
-              review={review}
-              layout={layout}
-              wrapLines={preferences.wrapLines}
-              showLineNumbers={preferences.showLineNumbers}
-              syntaxTheme={theme?.syntaxTheme ?? "github-dark-default"}
-              appearance={theme?.appearance ?? "dark"}
-              onToggleGap={toggleGap}
-              onCollapseGaps={collapseGaps}
-              onSelectHunk={selectHunk}
-              onViewportAnchor={anchorToViewport}
-              controller={streamController}
-              columnWidth={columnWidth}
-              generation={mirror.address?.generation}
-              sidecarNotes={sidecarNotes}
-              highlights={shownShared?.agentHighlights ?? NO_HIGHLIGHTS}
-              {...(streamRevealPoint ? { revealPoint: streamRevealPoint } : {})}
-              composers={composers}
-              interaction={interactive.interaction}
-              viewedStatuses={viewed.statuses}
-              collapsedFiles={viewed.collapsed}
-              viewed={viewedControls}
-              {...(streamSlots.length === 0 && visibleSlots.length > 0
-                ? {
-                    emptyMessage: (
-                      <>
-                        {"Every file here is viewed and hidden. "}
-                        <button
-                          type="button"
-                          className="header-action"
-                          onClick={viewed.toggleHideViewed}
-                        >
-                          Show viewed files
-                        </button>
-                      </>
-                    ),
-                  }
-                : {})}
-            />
-            {showMinimap ? (
-              <Minimap
-                slots={streamSlots}
-                files={minimapFiles}
-                layout={layout}
-                noteHunks={minimapNotes}
-                highlightHunks={minimapHighlights}
-                viewed={minimapViewed}
-                {...(minimapSelected ? { selected: minimapSelected } : {})}
-                controller={streamController}
-                themeKey={theme?.id}
+            <div className="review-column">
+              <SummaryStrip
+                overview={overviewReady ? overview : undefined}
+                {...(filter
+                  ? {
+                      filter: {
+                        text: filter,
+                        shown: visibleSlots.length,
+                        total: mirror.slots.length,
+                      },
+                    }
+                  : {})}
+                onOpenOverview={() => updatePanel({ open: true, tab: "overview" })}
+                {...(pageHint("hunk.web.showOverview")
+                  ? { overviewHint: pageHint("hunk.web.showOverview") }
+                  : {})}
               />
-            ) : null}
+              <div className="review-column-body">
+                <ReviewStream
+                  slots={streamSlots}
+                  review={review}
+                  layout={layout}
+                  wrapLines={preferences.wrapLines}
+                  showLineNumbers={preferences.showLineNumbers}
+                  syntaxTheme={theme?.syntaxTheme ?? "github-dark-default"}
+                  appearance={theme?.appearance ?? "dark"}
+                  onToggleGap={toggleGap}
+                  onCollapseGaps={collapseGaps}
+                  onSelectHunk={selectHunk}
+                  onViewportAnchor={anchorToViewport}
+                  controller={streamController}
+                  columnWidth={columnWidth}
+                  generation={mirror.address?.generation}
+                  sidecarNotes={sidecarNotes}
+                  highlights={shownShared?.agentHighlights ?? NO_HIGHLIGHTS}
+                  {...(streamRevealPoint ? { revealPoint: streamRevealPoint } : {})}
+                  composers={composers}
+                  interaction={interactive.interaction}
+                  viewedStatuses={viewed.statuses}
+                  collapsedFiles={viewed.collapsed}
+                  viewed={viewedControls}
+                  {...(pageHint("hunk.web.toggleViewed")
+                    ? { viewedKeyHint: pageHint("hunk.web.toggleViewed") }
+                    : {})}
+                  {...(streamSlots.length === 0 && visibleSlots.length > 0
+                    ? {
+                        emptyMessage: (
+                          <>
+                            {"Every file here is viewed and hidden. "}
+                            <button
+                              type="button"
+                              className="header-action"
+                              onClick={viewed.toggleHideViewed}
+                            >
+                              Show viewed files
+                            </button>
+                          </>
+                        ),
+                      }
+                    : {})}
+                />
+                {showMinimap ? (
+                  <Minimap
+                    slots={streamSlots}
+                    files={minimapFiles}
+                    layout={layout}
+                    noteHunks={minimapNotes}
+                    highlightHunks={minimapHighlights}
+                    viewed={minimapViewed}
+                    {...(minimapSelected ? { selected: minimapSelected } : {})}
+                    controller={streamController}
+                    themeKey={theme?.id}
+                  />
+                ) : null}
+              </div>
+            </div>
             {panelOpen && panelTools.length > 0 ? (
               <SidePanel
                 tools={panelTools}
-                tab={panel.tab}
+                tab={panelTab}
                 width={panel.width}
                 onTab={(tab) => updatePanel({ tab })}
                 onWidth={(width, commit) => updatePanel({ width }, commit)}
@@ -1058,6 +1220,27 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
           </div>
         </PreviewContext.Provider>
       </SessionEndedContext.Provider>
+      <ReviewBar
+        progress={viewed.progress}
+        {...(nextUnviewed
+          ? {
+              next: {
+                path: nextUnviewed.path,
+                onOpen: () => openNextUnviewed(nextUnviewed.key),
+              },
+            }
+          : {})}
+        hints={barHints}
+        onOpenShortcuts={() => tools.toggleHelp()}
+        {...(firstChordHint("hunk.app.toggleHelp")
+          ? { shortcutsHint: firstChordHint("hunk.app.toggleHelp") }
+          : {})}
+        noteCount={noteTotal}
+        onOpenNotes={() => panelHandlers["hunk.web.showNotes"]?.()}
+        {...(pageHint("hunk.web.showNotes") ? { notesHint: pageHint("hunk.web.showNotes") } : {})}
+        onCopyNotes={copyNotes}
+        agentNotesHidden={!review.showAgentNotes}
+      />
       <ToastRegion toasts={session.toasts} />
       {tools.overlay}
     </div>
