@@ -349,3 +349,32 @@ export async function chooseTestTheme(page: Page, themeId: string) {
   await openTestThemeMenu(page);
   await page.locator(`[role="option"][data-theme-id="${themeId}"]`).click();
 }
+
+/**
+ * Store an open side panel for this browser before the page loads, as a reader who opened it
+ * earlier would have. The panel starts closed with no stored choice, so a test that needs it
+ * on load calls this before `page.goto`; a choice the test makes later is left alone, because
+ * the seed applies only while nothing is stored. `tab` stores a tab choice too; without it the
+ * panel opens on the tab that fits the review.
+ */
+export async function seedTestOpenSidePanel(page: Page, tab?: "overview" | "notes") {
+  await page.addInitScript((seededTab) => {
+    try {
+      if (window.localStorage.getItem("hunk.review.panel") !== null) return;
+      window.localStorage.setItem(
+        "hunk.review.panel",
+        JSON.stringify({ open: true, ...(seededTab ? { tab: seededTab } : {}) }),
+      );
+    } catch {
+      // Blocked storage leaves the default.
+    }
+  }, tab);
+}
+
+/** Open the side panel through the toolbar's toggle, unless it is already open. */
+export async function openTestSidePanel(page: Page) {
+  const panel = page.getByTestId("side-panel");
+  if (await panel.isVisible()) return;
+  await page.getByTestId("toggle-side-panel").click();
+  await expect(panel).toBeVisible();
+}

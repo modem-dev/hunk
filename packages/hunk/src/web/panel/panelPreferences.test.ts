@@ -3,6 +3,7 @@ import {
   clampSidePanelWidth,
   readSidePanelPreferences,
   resolveSidePanelOpen,
+  resolveSidePanelTab,
   SIDE_PANEL_DEFAULT_WIDTH,
   SIDE_PANEL_MAX_WIDTH,
   SIDE_PANEL_MIN_WIDTH,
@@ -26,18 +27,27 @@ afterEach(() => {
 });
 
 describe("side panel preferences", () => {
-  test("opens by default only on wide viewports, and a stored choice wins", () => {
+  test("starts closed at every width, and a stored choice wins", () => {
     installTestStorage();
     const preferences = readSidePanelPreferences();
 
     expect(preferences).toEqual({
       open: undefined,
       width: SIDE_PANEL_DEFAULT_WIDTH,
-      tab: "overview",
+      tab: undefined,
     });
-    expect(resolveSidePanelOpen(preferences, 1440)).toBe(true);
-    expect(resolveSidePanelOpen(preferences, 1100)).toBe(false);
-    expect(resolveSidePanelOpen({ ...preferences, open: false }, 1440)).toBe(false);
+    expect(resolveSidePanelOpen(preferences)).toBe(false);
+    expect(resolveSidePanelOpen({ ...preferences, open: true })).toBe(true);
+    expect(resolveSidePanelOpen({ ...preferences, open: false })).toBe(false);
+  });
+
+  test("opens on Notes when the review has notes and no tab was ever chosen", () => {
+    installTestStorage();
+    const preferences = readSidePanelPreferences();
+
+    expect(resolveSidePanelTab(preferences, true)).toBe("notes");
+    expect(resolveSidePanelTab(preferences, false)).toBe("overview");
+    expect(resolveSidePanelTab({ ...preferences, tab: "overview" }, true)).toBe("overview");
   });
 
   test("round-trips through storage and ignores malformed values", () => {
@@ -49,7 +59,7 @@ describe("side panel preferences", () => {
     expect(readSidePanelPreferences()).toEqual({
       open: undefined,
       width: SIDE_PANEL_MAX_WIDTH,
-      tab: "overview",
+      tab: undefined,
     });
     values.set("hunk.review.panel", "{not json");
     expect(readSidePanelPreferences().width).toBe(SIDE_PANEL_DEFAULT_WIDTH);

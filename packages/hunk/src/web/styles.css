@@ -651,6 +651,91 @@ body {
 
 /* -- Review stream ---------------------------------------------------------------------- */
 
+/* The stream's column: the summary strip above, then the stream and its minimap side by side.
+   The strip does not scroll, so the stream's offsets stay the minimap's and the headers'. */
+.review-column {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.review-column-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* One line, 40px, always: the loading state reserves the same height. */
+.summary-strip {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  height: 40px;
+  padding: 0 14px;
+  overflow: hidden;
+  color: var(--hunk-muted);
+  white-space: nowrap;
+  background: var(--hunk-background);
+  border-bottom: 1px solid var(--hunk-border);
+}
+
+.summary-size {
+  flex: none;
+  padding: 0 6px;
+  font-family: var(--code-font);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  color: var(--hunk-text);
+  background: var(--hunk-panel-alt);
+  border: 1px solid var(--hunk-border);
+  border-radius: 4px;
+}
+
+.summary-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.summary-text code {
+  font-family: var(--code-font);
+  font-size: 12px;
+  color: var(--hunk-text);
+}
+
+.summary-roles {
+  display: flex;
+  flex: none;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.summary-overview {
+  flex: none;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  color: var(--hunk-text);
+  text-decoration: underline;
+  text-decoration-color: var(--hunk-border);
+  text-underline-offset: 3px;
+  background: transparent;
+  border: 0;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.summary-overview:hover {
+  text-decoration-color: currentColor;
+}
+
 .review-stream {
   position: relative;
   flex: 1;
@@ -2076,11 +2161,6 @@ body {
   color: var(--hunk-muted);
 }
 
-.overview-table tr[data-empty],
-.overview-table tr[data-empty] .overview-churn span {
-  color: var(--hunk-muted);
-}
-
 .overview-kinds {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2098,10 +2178,6 @@ body {
 .overview-kinds dd {
   margin: 0;
   text-align: right;
-}
-
-.overview-kinds > div[data-empty] {
-  color: var(--hunk-muted);
 }
 
 .overview-tree,
@@ -2684,6 +2760,13 @@ body {
     overflow: hidden;
     clip-path: inset(50%);
     white-space: nowrap;
+  }
+}
+
+/* Role counts go first when the strip runs short; the sentence then truncates. */
+@media (max-width: 900px) {
+  .summary-roles {
+    display: none;
   }
 }
 

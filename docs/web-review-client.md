@@ -441,9 +441,11 @@ imports; a page fetches only the languages and themes it shows. The largest sing
 
 - **Panel.** A right-hand panel docked beside the stream: tabs (ARIA tabs pattern), a close
   button, and a left-edge resizer (260–640 px). Open state, width, and tab persist per browser
-  under `hunk.review.panel`; without a stored choice it opens at 1400 px and wider and stays
-  hidden below, where the stream needs the room. The toolbar's last button toggles it; the
-  stream's width for `auto` layout subtracts it.
+  under `hunk.review.panel`; without a stored choice it stays closed at every width, and
+  opens on Notes when the review has notes, else Overview. The summary strip above the stream
+  (`overview/SummaryStrip.tsx`, outside the scrolling stream so its geometry is untouched) has
+  an Overview button that opens it. The toolbar's last button toggles it; the stream's width
+  for `auto` layout subtracts it.
 - **Commands.** The panel's commands are page commands in `commands/webLocalCommands.ts`, so the
   palette and help list them: `p` toggles the panel and `O` shows the Overview. A page command
   may declare plain `keys` in the shared chord grammar; `panel/panelCommands.ts` binds those
