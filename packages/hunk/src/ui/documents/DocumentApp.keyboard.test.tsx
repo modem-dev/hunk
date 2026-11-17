@@ -6,6 +6,7 @@ import { APP_COMMAND_NAMES } from "../../core/run/commandCatalog";
 import { DOCUMENT_COMMAND_CATALOG } from "../../core/run/documentCommandCatalog";
 import { HISTORY_COMMAND_NAMES } from "../../core/run/historyCommandCatalog";
 import { STATUS_COMMAND_NAMES } from "../../core/run/statusCommandCatalog";
+import { WEB_LOCAL_COMMAND_NAMES } from "../../core/run/webLocalCommandCatalog";
 import { ThemeController } from "../theme/controller";
 import { availableThemes } from "../themes";
 import { DocumentApp } from "./DocumentApp";
@@ -97,7 +98,12 @@ test("documents ignore all inactive review/history/status names while retaining 
     activeNames.add(entry.id);
     if ("aliases" in entry) for (const alias of entry.aliases ?? []) activeNames.add(alias);
   }
-  for (const name of [...APP_COMMAND_NAMES, ...HISTORY_COMMAND_NAMES, ...STATUS_COMMAND_NAMES]) {
+  for (const name of [
+    ...APP_COMMAND_NAMES,
+    ...HISTORY_COMMAND_NAMES,
+    ...STATUS_COMMAND_NAMES,
+    ...WEB_LOCAL_COMMAND_NAMES,
+  ]) {
     if (!activeNames.has(name)) bindings[name] = "j";
   }
   bindings["hunk.documents.stepDown"] = "n";

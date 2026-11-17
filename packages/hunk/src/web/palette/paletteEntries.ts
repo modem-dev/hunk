@@ -161,9 +161,10 @@ export function webLocalHelpRows(keymap: WebKeymap, apple?: boolean): WebHelpRow
         ]
       : [];
   });
-  // Page commands with plain chords (the side panel's tools) are listed with them.
+  // Every other page command is listed with the plain chords the keymap gives it, so one the
+  // user bound appears and one left unbound does not.
   const plain = WEB_LOCAL_COMMANDS.flatMap((command): WebHelpRow[] => {
-    const keys = "keys" in command ? catalogKeys(pageKeymap, command.id) : undefined;
+    const keys = "modKey" in command ? undefined : catalogKeys(pageKeymap, command.id);
     return keys ? [{ keys, description: command.title.toLowerCase() }] : [];
   });
   return [...dialogs, ...plain];

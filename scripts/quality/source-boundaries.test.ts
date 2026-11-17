@@ -68,6 +68,8 @@ const WEB_SHARED_PRESENTATION_MODULES: readonly string[] = [
 // type modules, and one another.
 const WEB_SHARED_COMMAND_MODULES: readonly string[] = [
   join(SRC_ROOT, "core", "run", "commandCatalog.ts"),
+  // The page's own `hunk.web.*` commands, declared where the host can resolve their bindings.
+  join(SRC_ROOT, "core", "run", "webLocalCommandCatalog.ts"),
   join(SRC_ROOT, "core", "run", "keyChordLabels.ts"),
   // The help overlay's sections and wording, shared with the terminal's help dialog.
   join(SRC_ROOT, "core", "run", "helpSections.ts"),

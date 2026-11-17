@@ -4341,6 +4341,52 @@ describe("App interactions", () => {
     }
   });
 
+  // Intent: a `[keybindings]` entry for a browser-page command is another surface's business
+  // in the terminal. It raises no notice, binds nothing, and leaves the terminal command that
+  // holds the same key by default answering to it.
+  test("a keybinding for a browser page command changes nothing in the terminal", async () => {
+    const quit = mock(() => undefined);
+    const bootstrap = createSingleFileBootstrap();
+    bootstrap.keybindings = { "hunk.web.toggleViewed": "q" };
+    const setup = await testRender(<AppHost bootstrap={bootstrap} onQuit={quit} />, {
+      width: 240,
+      height: 24,
+    });
+
+    try {
+      await flush(setup);
+      expect(setup.captureCharFrame()).not.toContain("Keybinding");
+
+      await act(async () => {
+        await setup.mockInput.typeText("q");
+      });
+      await flush(setup);
+
+      expect(quit).toHaveBeenCalledTimes(1);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("the page's fixed Ctrl/Cmd shortcuts are reported as not remappable", async () => {
+    const bootstrap = createSingleFileBootstrap();
+    bootstrap.keybindings = { "hunk.web.commandPalette": "ctrl+j" };
+    const setup = await testRender(<AppHost bootstrap={bootstrap} />, { width: 240, height: 24 });
+
+    try {
+      await flush(setup);
+      expect(setup.captureCharFrame()).toContain(
+        'Keybinding for "hunk.web.commandPalette" ignored • its shortcut is fixed',
+      );
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("transient extension sessions never offer to save practice view preferences", async () => {
     const quit = mock(() => undefined);
     const bootstrap = createSingleFileBootstrap();

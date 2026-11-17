@@ -32,7 +32,7 @@ Chords join `ctrl`, `alt`/`option`, `cmd`/`meta`, and `shift` with `+` around a 
 
 The menus and the in-app help (`?`) show the keys for the commands they present, so a remap changes what they advertise. The full table of built-in command ids and their default keys lives in [`docs/keybindings.md`](https://github.com/modem-dev/hunk/blob/main/docs/keybindings.md) in the repository. Commands listed without a default key remain callable by id and can be assigned a shortcut; some also appear in menus.
 
-The [browser review](/docs/workflows/browser-review/) reads the same `[keybindings]` table. Chords that use Ctrl, Cmd, Alt, Tab, or a function key stay with the browser there.
+The [browser review](/docs/workflows/browser-review/) reads the same `[keybindings]` table. Chords that use Ctrl, Cmd, Alt, Tab, or a function key stay with the browser there. The page's own commands live under `hunk.web.*` (for example `"hunk.web.toggleViewed" = "x"`) and remap the same way; an entry for one binds in the page only. Its command palette (Ctrl+K) and go to file (Ctrl+P) shortcuts are fixed.
 
 Keys owned by a dialog, menu, or focused text input — `Esc`, `Enter` — belong to those widgets and are not remappable. The note composer's save shortcut is the command `hunk.review.saveNote` (default `ctrl+s`) and is remappable; while the composer is focused it still wins over the command table, using the resolved chord.
 

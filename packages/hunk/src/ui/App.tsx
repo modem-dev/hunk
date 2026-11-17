@@ -19,6 +19,10 @@ import type { PersistedViewPreferences } from "../core/run/config";
 import { STATUS_COMMAND_NAMES } from "../core/run/statusCommandCatalog";
 import { HISTORY_COMMAND_NAMES } from "../core/run/historyCommandCatalog";
 import { DOCUMENT_COMMAND_NAMES } from "../core/run/documentCommandCatalog";
+import {
+  WEB_LOCAL_COMMAND_NAMES,
+  WEB_LOCAL_FIXED_COMMAND_NAMES,
+} from "../core/run/webLocalCommandCatalog";
 import type {
   ExtensionCanonicalResolvedLayout,
   ExtensionReviewReloadResult,
@@ -824,7 +828,9 @@ export function App({
           ...HISTORY_COMMAND_NAMES,
           ...DOCUMENT_COMMAND_NAMES,
           ...STATUS_COMMAND_NAMES,
+          ...WEB_LOCAL_COMMAND_NAMES,
         ]),
+        fixedCommandNames: WEB_LOCAL_FIXED_COMMAND_NAMES,
         userBindings: bootstrap.keybindings,
       }),
     [bootstrap.keybindings, registeredExtensionCommands],

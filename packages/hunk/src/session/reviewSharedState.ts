@@ -207,7 +207,10 @@ export interface ReviewPresentationDefaults {
   sourceLabel: string;
   theme: ReviewThemeDefaults;
   view: ReviewViewDefaults;
-  /** Built-in review command id to the chords it answers to, after `[keybindings]`. */
+  /**
+   * Command id to the chords it answers to, after `[keybindings]`: the built-in review
+   * commands and the page's own remappable `hunk.web.*` commands.
+   */
   keymap: Record<string, string[]>;
 }
 

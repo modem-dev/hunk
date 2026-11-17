@@ -13,6 +13,11 @@ import {
   MAX_REVIEW_NOTE_BYTES,
   reviewNoteByteLength,
 } from "../../core/review/noteSize";
+import { APP_COMMAND_CATALOG } from "../../core/run/commandCatalog";
+import {
+  WEB_LOCAL_COMMAND_KEY_DEFAULTS,
+  WEB_LOCAL_FIXED_COMMAND_NAMES,
+} from "../../core/run/webLocalCommandCatalog";
 import { parseSessionSnapshot } from "../../session/broker/wire";
 import { ReviewProducer } from "./producer";
 import { ReviewSessionHost } from "./reviewSessionHost";
@@ -224,6 +229,70 @@ describe("buildReviewPresentationDefaults", () => {
     });
     expect(defaults.keymap["hunk.app.quit"]).toEqual(["ctrl+q"]);
     expect(defaults.title).toBe("working tree");
+  });
+
+  test("publishes the page's own remappable commands with the chords they ship with", () => {
+    const { keymap } = buildReviewPresentationDefaults(createTestSharedBootstrap([]));
+
+    for (const command of WEB_LOCAL_COMMAND_KEY_DEFAULTS) {
+      expect([command.id, keymap[command.id]]).toEqual([command.id, [...command.defaultKeys]]);
+    }
+    // The Ctrl/Cmd dialog chords are the page's to match and are not part of the keymap.
+    for (const id of WEB_LOCAL_FIXED_COMMAND_NAMES) expect(id in keymap).toBe(false);
+    for (const entry of APP_COMMAND_CATALOG) {
+      expect(keymap[entry.id]).toEqual([...entry.defaultKeys]);
+    }
+  });
+
+  // Intent: a `[keybindings]` entry for a page-only command reaches the page as that command's
+  // whole binding, so the page stops answering to the default it would otherwise fall back to.
+  test("folds a remap, an unbind, and a first binding of page commands into the keymap", () => {
+    const { keymap } = buildReviewPresentationDefaults(
+      createTestSharedBootstrap([], {
+        keybindings: {
+          "hunk.web.toggleViewed": "x",
+          "hunk.web.toggleSidePanel": false,
+          "hunk.web.toggleMinimap": ["M", "ctrl+m"],
+        },
+      }),
+    );
+
+    expect(keymap["hunk.web.toggleViewed"]).toEqual(["x"]);
+    expect(keymap["hunk.web.toggleSidePanel"]).toEqual([]);
+    expect(keymap["hunk.web.toggleMinimap"]).toEqual(["M", "ctrl+m"]);
+    expect(keymap["hunk.web.showOverview"]).toEqual(["O"]);
+  });
+
+  // Intent: on the page one key does one thing. A key the user gives a page command is taken
+  // from the catalog command that held it by default, and the reverse, in either spelling.
+  test("keeps a bound chord exclusive between page commands and catalog commands", () => {
+    const pageTakesCatalogKey = buildReviewPresentationDefaults(
+      createTestSharedBootstrap([], { keybindings: { "hunk.web.toggleViewed": "w" } }),
+    ).keymap;
+    expect(pageTakesCatalogKey["hunk.web.toggleViewed"]).toEqual(["w"]);
+    expect(pageTakesCatalogKey["hunk.view.toggleLineWrap"]).toEqual([]);
+
+    const catalogTakesPageKey = buildReviewPresentationDefaults(
+      createTestSharedBootstrap([], {
+        keybindings: { "hunk.review.nextHunk": "p", "hunk.review.previousHunk": "shift+v" },
+      }),
+    ).keymap;
+    expect(catalogTakesPageKey["hunk.review.nextHunk"]).toEqual(["p"]);
+    expect(catalogTakesPageKey["hunk.web.toggleSidePanel"]).toEqual([]);
+    expect(catalogTakesPageKey["hunk.web.toggleViewed"]).toEqual([]);
+    expect(catalogTakesPageKey["hunk.web.showOverview"]).toEqual(["O"]);
+  });
+
+  test("leaves the Ctrl/Cmd dialog chords out of the keymap when an entry names one", () => {
+    const { keymap } = buildReviewPresentationDefaults(
+      createTestSharedBootstrap([], {
+        keybindings: { "hunk.web.commandPalette": "x", "hunk.web.toggleViewed": "x" },
+      }),
+    );
+
+    expect("hunk.web.commandPalette" in keymap).toBe(false);
+    // The ignored entry claimed nothing, so the next entry gets the chord.
+    expect(keymap["hunk.web.toggleViewed"]).toEqual(["x"]);
   });
 
   test("carries a custom theme as resolved tokens", () => {

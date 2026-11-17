@@ -7,6 +7,7 @@ import type { UserKeyBinding } from "../../core/run/config";
 import { DOCUMENT_COMMAND_NAMES } from "../../core/run/documentCommandCatalog";
 import { HISTORY_COMMAND_NAMES } from "../../core/run/historyCommandCatalog";
 import { STATUS_COMMAND_NAMES } from "../../core/run/statusCommandCatalog";
+import { WEB_LOCAL_COMMAND_NAMES } from "../../core/run/webLocalCommandCatalog";
 import { runExtensionFactory } from "../../extensions/runExtension";
 import { buildSessionCommands } from "../lib/sessionRegistrations";
 import { ThemeController } from "../theme/controller";
@@ -32,6 +33,7 @@ test("status accepts every inactive catalog name and registered bundled/user com
     ...APP_COMMAND_NAMES,
     ...DOCUMENT_COMMAND_NAMES,
     ...HISTORY_COMMAND_NAMES,
+    ...WEB_LOCAL_COMMAND_NAMES,
     ...registered.map((entry) => `${entry.extensionId}.${entry.command.id}`),
   ]) {
     if (!STATUS_COMMAND_NAMES.has(name)) bindings[name] = "j";
