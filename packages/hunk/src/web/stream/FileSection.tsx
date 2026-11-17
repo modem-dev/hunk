@@ -3,28 +3,50 @@
  * Draws one file of the review stream: its sticky header and its body.
  *
  * The header shows what the terminal's file header shows — change-kind letter, the path with
- * `old -> new` for a rename and a state suffix, and right-aligned `+A -D` — from the shared
- * labels in `core/review/fileLabels.ts`. The body is Pierre once the file is near the
- * viewport, a placeholder for a file with nothing to render (its reason from the shared
- * model, its wording this page's own), or space reserved from the file's row count while the
- * file is still loading or far away.
+ * the old name of a rename, and right-aligned `+A −D` that hides zeros — from the shared labels
+ * in `core/review/fileLabels.ts`. The path dims its directory and a rename's old name so the
+ * basename reads first, and stays one selectable string. A quiet chip after it says what kind
+ * of change the file is ("new", "renamed, no content changes", "binary", "too large") from the
+ * shared model, so a file with nothing to render needs no body sentence: it is a header-only
+ * row, except a too-large file, whose body says why it is not drawn. The body is otherwise
+ * Pierre once the file is near the viewport, or space reserved from the file's row count while
+ * the file is still loading or far away.
  *
- * The header also carries the reviewer's "Viewed" checkbox, and says when a file changed since
- * it was marked. A viewed file's body is collapsed to one row that expands it on click; the
- * page decides which files are viewed and collapsed (`../viewed/useViewedFiles.ts`).
+ * The header carries the file's actions: a chevron that collapses and expands the body, a
+ * copy-path button shown on hover and focus, the reviewer's "Viewed" checkbox, and a marker
+ * when a file changed since it was marked. A viewed file is collapsed by default and any file
+ * can be folded; the page decides which files are viewed and collapsed
+ * (`../viewed/useViewedFiles.ts`).
  */
-import { memo, useCallback, useContext, useMemo, useRef, type CSSProperties } from "react";
+import {
+  memo,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import type { ReviewEmptyDiffReason } from "../../core/review/document";
+import { reviewEmptyDiffReason } from "../../core/review/document";
 import type { ReviewStoredNote } from "../../core/review/state";
 import type { ReviewAgentHighlight, ReviewSharedNote } from "../../session/reviewSharedState";
 import type { NoteComposer } from "../notes/composerStore";
 import { planReviewFileNotes } from "../notes/noteProjection";
 import type { ReviewNoteInteraction } from "../notes/noteInteraction";
-import { reviewFileChangeGlyph, reviewFileLabelParts } from "../../core/review/fileLabels";
-import { formatAddedCount, formatRemovedCount } from "../format/lineCounts";
+import { reviewFileChangeGlyph } from "../../core/review/fileLabels";
+import { webFileHeaderPath, webFileStateChip } from "../format/fileHeader";
+import { formatAddedBadge, formatRemovedBadge } from "../format/lineCounts";
+import { Icon } from "../icons/Icon";
 import type { ReviewFileIndexEntry } from "../mirror/fileIndex";
 import type { ReviewFileRenderPlan } from "./fileProjection";
-import { FilePreviewBody, FilePreviewHeaderAction } from "../previews/FilePreviews";
+import {
+  emptyFileHasBody,
+  FilePreviewBody,
+  FilePreviewHeaderAction,
+  useBinaryFileSizes,
+} from "../previews/FilePreviews";
 import type { ReviewFileGeometry } from "./hunkGeometry";
 import { PierreFileView } from "./PierreFileView";
 import { SessionEndedContext } from "../session/sessionEnded";
@@ -34,25 +56,18 @@ import type { ReviewViewedStatus } from "../viewed/viewedFiles";
 export const STREAM_ROW_HEIGHT_PX = 20;
 export const STREAM_HEADER_HEIGHT_PX = 34;
 
-/** Height of a collapsed viewed file's body, in CSS pixels. */
-export const VIEWED_COLLAPSED_HEIGHT_PX = 32;
+/** Height of a collapsed file's body, in CSS pixels: the header stands alone. */
+export const COLLAPSED_BODY_HEIGHT_PX = 0;
 
-/** What the viewed controls in a file header do; stable for the page's lifetime. */
+/** What the viewed and collapse controls in a file header do; stable for the page's lifetime. */
 export interface ReviewViewedControls {
   toggle: (fileKey: string) => void;
   expand: (fileKey: string) => void;
   collapse: (fileKey: string) => void;
 }
 
-/** What a file with nothing to render says, per shared reason. */
-export const EMPTY_DIFF_MESSAGES: Record<ReviewEmptyDiffReason, string> = {
-  "rename-only": "No textual hunks. This change only renames the file.",
-  binary: "Binary file skipped",
-  "too-large": "File too large to render automatically.",
-  "new-file": "No textual hunks. The file is marked as new.",
-  "deleted-file": "No textual hunks. The file is marked as deleted.",
-  "no-hunks": "No textual hunks to render for this file.",
-};
+/** What a too-large file's body says; the other empty reasons are told by the header chip. */
+export const TOO_LARGE_MESSAGE = "File too large to render automatically.";
 
 export interface FileSectionProps {
   fileKey: string;
@@ -89,9 +104,11 @@ export interface FileSectionProps {
   interaction: ReviewNoteInteraction;
   /** This file's viewed mark as the page shows it. */
   viewedStatus?: ReviewViewedStatus;
-  /** Whether the body is collapsed because the file is viewed. */
+  /** Whether the body is collapsed: the file is viewed, or the reader folded it. */
   collapsed?: boolean;
   viewed?: ReviewViewedControls;
+  /** The keymap's chord for the viewed toggle, given only to the selected file's header. */
+  viewedKeyHint?: string;
   /**
    * Called with the body element each time one is created or removed (with the one it
    * replaces), so the stream measures every body this file ever has.
@@ -101,48 +118,158 @@ export interface FileSectionProps {
 
 const NO_HIGHLIGHTS: readonly ReviewAgentHighlight[] = [];
 
+/** How long a copy result shows before the button returns to its icon, in milliseconds. */
+const COPY_FEEDBACK_MS = 2_000;
+
+/**
+ * Why a file renders no rows, from the plan once it loads, or from the index entry when that
+ * already knows the file has no hunks.
+ */
+function headerEmptyReason(
+  index: ReviewFileIndexEntry,
+  plan: ReviewFileRenderPlan | undefined,
+): ReviewEmptyDiffReason | undefined {
+  if (plan) return plan.emptyReason;
+  if (index.hunkCount !== 0) return undefined;
+  return reviewEmptyDiffReason({
+    changeKind: index.changeKind,
+    binary: index.flags.binary,
+    tooLarge: index.flags.tooLarge,
+  });
+}
+
+/** Whether a file has a body to collapse: rows to draw, or a preview or message in their place. */
+export function fileHasBody(plan: ReviewFileRenderPlan | undefined) {
+  return !plan?.emptyReason || emptyFileHasBody(plan.file, plan.emptyReason);
+}
+
+/** The copy-path button, which shows the copy's result briefly the way the toolbar's does. */
+function CopyPathButton({ path }: { path: string }) {
+  const [copied, setCopied] = useState<"idle" | "copied" | "failed">("idle");
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const label = copied === "copied" ? "Copied" : copied === "failed" ? "Copy failed" : "Copy path";
+
+  return (
+    <button
+      type="button"
+      className="file-header-button file-copy-path"
+      data-state={copied}
+      title={`Copy ${path}`}
+      onClick={async () => {
+        let ok = true;
+        try {
+          await navigator.clipboard.writeText(path);
+        } catch {
+          ok = false;
+        }
+        setCopied(ok ? "copied" : "failed");
+        clearTimeout(timer.current);
+        timer.current = setTimeout(() => setCopied("idle"), COPY_FEEDBACK_MS);
+      }}
+    >
+      <Icon name={copied === "copied" ? "check" : copied === "failed" ? "cross" : "copy"} />
+      {/* The name doubles as the result: shown briefly after a copy, announced politely. */}
+      <span className={copied === "idle" ? "visually-hidden" : "copy-feedback"} aria-live="polite">
+        {label}
+      </span>
+    </button>
+  );
+}
+
 /** The header row for one file. */
 function FileHeader({
   index,
+  plan,
   fileKey,
   expandedGaps,
   onCollapseGaps,
   viewedStatus,
   collapsed,
   viewed,
+  viewedKeyHint,
 }: {
   index?: ReviewFileIndexEntry;
+  plan?: ReviewFileRenderPlan;
   fileKey: string;
   expandedGaps: number;
   onCollapseGaps: () => void;
   viewedStatus?: ReviewViewedStatus;
   collapsed?: boolean;
   viewed?: ReviewViewedControls;
+  viewedKeyHint?: string;
 }) {
   const sessionEnded = useContext(SessionEndedContext);
+  const sizes = useBinaryFileSizes(fileKey, index?.flags.binary ?? false);
   if (!index) {
     return (
       <header className="file-header" data-loading="">
+        <span className="file-collapse-spacer" aria-hidden="true" />
         <span className="file-name muted">Loading file…</span>
       </header>
     );
   }
   const glyph = reviewFileChangeGlyph(index.changeKind, index.flags.untracked);
-  const { filename, stateLabel } = reviewFileLabelParts({
+  const path = webFileHeaderPath({
     path: index.path,
     ...(index.previousPath !== undefined ? { previousPath: index.previousPath } : {}),
     changeKind: index.changeKind,
     untracked: index.flags.untracked,
   });
+  const emptyReason = headerEmptyReason(index, plan);
+  const chip = webFileStateChip({
+    changeKind: index.changeKind,
+    untracked: index.flags.untracked,
+    ...(emptyReason ? { emptyReason } : {}),
+    ...(sizes ? { sizes } : {}),
+  });
+  const added = formatAddedBadge(index.stats.additions, index.stats.truncated);
+  const removed = formatRemovedBadge(index.stats.deletions);
+  // A file with rows to draw can fold; a header-only row has nothing under it to hide.
+  const hasBody = plan ? fileHasBody(plan) : emptyReason === undefined;
+
   return (
     <header className="file-header" data-file-header={fileKey}>
+      {viewed && hasBody ? (
+        <button
+          type="button"
+          className="file-header-button file-collapse"
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? "Expand file" : "Collapse file"}
+          title={collapsed ? `Show the changes in ${index.path}` : `Collapse ${index.path}`}
+          onClick={() => (collapsed ? viewed.expand(fileKey) : viewed.collapse(fileKey))}
+        >
+          <Icon name={collapsed ? "chevron-right" : "chevron-down"} />
+        </button>
+      ) : (
+        <span className="file-collapse-spacer" aria-hidden="true" />
+      )}
       <span className="file-glyph" data-role={glyph.role} aria-label={glyph.role}>
         {glyph.glyph}
       </span>
-      <span className="file-name" title={`${filename}${stateLabel ?? ""}`}>
-        <span className="file-path">{filename}</span>
-        {stateLabel ? <span className="file-state">{stateLabel}</span> : null}
+      <span className="file-name" title={path.text}>
+        <span className="file-path">
+          {path.previous !== undefined ? (
+            <>
+              <span className="file-path-previous">{path.previous}</span>
+              <span className="file-path-arrow">
+                <Icon name="arrow-right" size={12} />
+                {/* The arrow's text, so a copied or read path still says `old -> new`. */}
+                <span className="file-path-arrow-text">{" -> "}</span>
+              </span>
+            </>
+          ) : null}
+          <span className="file-path-dir">{path.directory}</span>
+          <span className="file-path-base">{path.basename}</span>
+        </span>
       </span>
+      {chip ? (
+        <span className="file-chip" {...(emptyReason ? { "data-empty-reason": emptyReason } : {})}>
+          {chip}
+        </span>
+      ) : null}
+      <CopyPathButton path={index.path} />
+      <span className="file-header-spacer" />
       <FilePreviewHeaderAction fileKey={fileKey} path={index.path} changeKind={index.changeKind} />
       {expandedGaps > 0 ? (
         <button type="button" className="header-action" onClick={onCollapseGaps}>
@@ -154,27 +281,32 @@ function FileHeader({
           Changed since viewed
         </span>
       ) : null}
-      {viewedStatus === "viewed" && !collapsed && viewed ? (
-        <button type="button" className="header-action" onClick={() => viewed.collapse(fileKey)}>
-          Collapse
-        </button>
+      {added || removed ? (
+        <span className="file-stats">
+          {added ? <span className="stat-added">{added}</span> : null}
+          {added && removed ? " " : null}
+          {removed ? <span className="stat-removed">{removed}</span> : null}
+        </span>
       ) : null}
-      <span className="file-stats">
-        <span className="stat-added">
-          {formatAddedCount(index.stats.additions, index.stats.truncated)}
-        </span>{" "}
-        <span className="stat-removed">{formatRemovedCount(index.stats.deletions)}</span>
-      </span>
       {viewed ? (
-        <label className="viewed-toggle" data-status={viewedStatus ?? "unviewed"}>
+        <label
+          className="viewed-toggle"
+          data-status={viewedStatus ?? "unviewed"}
+          {...(viewedKeyHint ? { title: `Mark viewed (${viewedKeyHint})` } : {})}
+        >
           <input
             type="checkbox"
             checked={viewedStatus === "viewed"}
             disabled={sessionEnded}
             onChange={() => viewed.toggle(fileKey)}
-            aria-label={`Viewed ${filename}`}
+            aria-label={`Viewed ${path.text}`}
           />
           <span aria-hidden="true">Viewed</span>
+          {viewedKeyHint ? (
+            <kbd className="key-hint" aria-hidden="true">
+              {viewedKeyHint}
+            </kbd>
+          ) : null}
         </label>
       ) : null}
     </header>
@@ -187,6 +319,7 @@ export function reservedBodyHeight(
   index: ReviewFileIndexEntry | undefined,
   layout: "split" | "unified",
 ) {
+  if (!fileHasBody(plan)) return 0;
   const rows = plan
     ? plan.reservedRows[layout]
     : index
@@ -221,8 +354,8 @@ export const FileSection = memo(function FileSection(props: FileSectionProps) {
       cards: group.cards.map((card) => ({ ...card, actionsDisabled: true })),
     }));
   }, [fileKey, plan, liveNotes, userNotes, showAgentNotes, sidecarNotes, sessionEnded]);
-  // Collapsing a viewed file removes its body and expanding creates a new one; each is handed
-  // to the stream's observer for its whole life.
+  // Collapsing a file removes its body and expanding creates a new one; each is handed to the
+  // stream's observer for its whole life.
   const { observeBody } = props;
   const body = useRef<HTMLDivElement | null>(null);
   const bodyRef = useCallback(
@@ -243,29 +376,21 @@ export const FileSection = memo(function FileSection(props: FileSectionProps) {
       className="file-section"
       data-file-key={fileKey}
       data-selected={props.selected ? "" : undefined}
+      data-collapsed={props.collapsed && props.viewed ? "" : undefined}
       aria-label={index?.path ?? "Loading file"}
     >
       <FileHeader
         index={index}
+        plan={plan}
         fileKey={fileKey}
         expandedGaps={expandedGaps}
         onCollapseGaps={() => props.onCollapseGaps(fileKey)}
         {...(props.viewedStatus ? { viewedStatus: props.viewedStatus } : {})}
         {...(props.collapsed ? { collapsed: true } : {})}
         {...(props.viewed ? { viewed: props.viewed } : {})}
+        {...(props.viewedKeyHint ? { viewedKeyHint: props.viewedKeyHint } : {})}
       />
-      {props.collapsed && props.viewed ? (
-        // Not a `.file-body`: the stream measures bodies, and a collapsed one must not stand in
-        // for the file's real height once it is expanded or unmounted.
-        <button
-          type="button"
-          className="file-collapsed"
-          style={{ height: VIEWED_COLLAPSED_HEIGHT_PX }}
-          onClick={() => props.viewed!.expand(fileKey)}
-        >
-          Viewed · show changes
-        </button>
-      ) : (
+      {props.collapsed && props.viewed ? null : (
         <div className="file-body" style={bodyStyle} ref={bodyRef}>
           <FilePreviewBody
             fileKey={fileKey}
@@ -275,11 +400,9 @@ export const FileSection = memo(function FileSection(props: FileSectionProps) {
           >
             {!plan ? (
               <p className="file-placeholder">Loading…</p>
-            ) : plan.emptyReason ? (
-              <p className="file-placeholder" data-empty-reason={plan.emptyReason}>
-                {EMPTY_DIFF_MESSAGES[plan.emptyReason]}
-              </p>
-            ) : mounted ? (
+            ) : plan.emptyReason === "too-large" ? (
+              <p className="file-placeholder">{TOO_LARGE_MESSAGE}</p>
+            ) : plan.emptyReason ? null : mounted ? (
               <PierreFileView
                 plan={plan}
                 layout={layout}

@@ -100,12 +100,12 @@ test("marks a file viewed from its header, collapses it, and counts it everywher
   await expect(page.getByTestId("overview-viewed")).toContainText("1 of");
 
   // Collapsed to one row; a click expands it and the header can collapse it again.
-  await expect(main.locator(".file-collapsed")).toBeVisible();
+  await expect(main.locator('.file-collapse[aria-expanded="false"]')).toBeVisible();
   await expect(main.locator(".file-body")).toHaveCount(0);
-  await main.locator(".file-collapsed").click();
+  await main.locator('.file-collapse[aria-expanded="false"]').click();
   await expect(main.locator(".file-body")).toBeVisible();
-  await main.getByRole("button", { name: "Collapse" }).click();
-  await expect(main.locator(".file-collapsed")).toBeVisible();
+  await main.getByRole("button", { name: "Collapse file" }).click();
+  await expect(main.locator('.file-collapse[aria-expanded="false"]')).toBeVisible();
 
   // Navigating into a collapsed viewed file by hunk opens it where the reveal lands.
   await page.locator(".review-stream").focus();
@@ -116,7 +116,7 @@ test("marks a file viewed from its header, collapses it, and counts it everywher
     "src/app/main.ts",
   );
   await expect(main.locator(".file-body")).toBeVisible();
-  await main.getByRole("button", { name: "Collapse" }).click();
+  await main.getByRole("button", { name: "Collapse file" }).click();
 
   // Clearing the mark from the keyboard-free mouse path in the flat sidebar.
   await page.getByRole("radio", { name: "Flat" }).click();
@@ -126,6 +126,27 @@ test("marks a file viewed from its header, collapses it, and counts it everywher
   await expect(progress).toHaveText(`0 of ${total} viewed`);
   await expect(main.locator(".file-body")).toBeVisible();
   await expect(headerCheckbox(page, "src/app/main.ts")).not.toBeChecked();
+});
+
+// Intent: only the selected file's Viewed control shows the toggle's chord, and it is the
+// chord the page's keymap binds (the palette lists the same one), never a fixed letter.
+test("shows the viewed chord on the selected file's header only", async ({ page }) => {
+  await openTestReview(page);
+  await page.keyboard.press("Control+k");
+  const palette = page.getByTestId("command-palette");
+  await page.keyboard.type("Mark the selected file viewed");
+  const chord = await palette.getByRole("option").first().locator("kbd.key-hint").textContent();
+  await page.keyboard.press("Escape");
+
+  await expect(page.locator(".viewed-toggle .key-hint")).toHaveCount(1);
+  await expect(page.locator("section[data-selected] .viewed-toggle .key-hint")).toHaveText(chord!);
+  const checkbox = headerCheckbox(page, "src/app/main.ts");
+  await checkbox.click();
+  await expect(checkbox).toBeChecked();
+  await expect(section(page, "src/app/main.ts").locator(".viewed-toggle")).toHaveCSS(
+    "border-top-style",
+    "solid",
+  );
 });
 
 test("toggles the selected file with V and shares the mark with a second page", async ({
@@ -143,7 +164,9 @@ test("toggles the selected file with V and shares the mark with a second page", 
     timeout: 30_000,
   });
   await expect(headerCheckbox(second, "src/app/main.ts")).toBeChecked();
-  await expect(section(second, "src/app/main.ts").locator(".file-collapsed")).toBeVisible();
+  await expect(
+    section(second, "src/app/main.ts").locator('.file-collapse[aria-expanded="false"]'),
+  ).toBeVisible();
 
   await page.keyboard.press("V");
   await expect(headerCheckbox(page, "src/app/main.ts")).not.toBeChecked();
@@ -291,7 +314,7 @@ test("opens a collapsed viewed file that hunk navigation enters", async ({ page 
   await openTestReview(page);
   await headerCheckbox(page, "src/app/renamed-new.ts").click();
   const renamed = section(page, "src/app/renamed-new.ts");
-  await expect(renamed.locator(".file-collapsed")).toBeVisible();
+  await expect(renamed.locator('.file-collapse[aria-expanded="false"]')).toBeVisible();
 
   await page.locator(".review-stream").click({ position: { x: 5, y: 5 } });
   await expect.poll(() => selectedPath(page)).toBe("src/app/main.ts");
@@ -299,15 +322,15 @@ test("opens a collapsed viewed file that hunk navigation enters", async ({ page 
   await page.keyboard.press("]");
   await expect.poll(() => selectedPath(page)).toBe("src/app/renamed-new.ts");
   await expect(renamed.locator(".file-body")).toBeVisible();
-  await expect(renamed.locator(".file-collapsed")).toHaveCount(0);
+  await expect(renamed.locator('.file-collapse[aria-expanded="false"]')).toHaveCount(0);
 
   // File navigation lands on the collapsed row and leaves it collapsed.
-  await renamed.getByRole("button", { name: "Collapse" }).click();
+  await renamed.getByRole("button", { name: "Collapse file" }).click();
   await page.locator(".review-stream").focus();
   await page.keyboard.press(",");
   await page.keyboard.press(".");
   await expect.poll(() => selectedPath(page)).toBe("src/app/renamed-new.ts");
-  await expect(renamed.locator(".file-collapsed")).toBeVisible();
+  await expect(renamed.locator('.file-collapse[aria-expanded="false"]')).toBeVisible();
 });
 
 // Intent: a mark cleared in another browser leaves the shared state while the content still
@@ -342,7 +365,9 @@ test("has no serious accessibility violations with viewed files", async ({ page 
   await openTestReview(page);
   await headerCheckbox(page, "src/app/main.ts").click();
   await page.getByRole("radio", { name: "Flat" }).click();
-  await expect(section(page, "src/app/main.ts").locator(".file-collapsed")).toBeVisible();
+  await expect(
+    section(page, "src/app/main.ts").locator('.file-collapse[aria-expanded="false"]'),
+  ).toBeVisible();
   const results = await new AxeBuilder({ page })
     .exclude("diffs-container")
     .exclude("file-tree-container")

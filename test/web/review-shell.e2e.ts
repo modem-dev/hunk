@@ -283,7 +283,7 @@ test("c expands a collapsed viewed file and opens its composer", async ({ page }
     .first()
     .click();
   await page.keyboard.press("Shift+V");
-  await expect(main.locator(".file-collapsed")).toBeVisible();
+  await expect(main.locator('.file-collapse[aria-expanded="false"]')).toBeVisible();
 
   await page.locator(".review-stream").focus();
   await page.keyboard.press("c");

@@ -76,17 +76,94 @@ test("loads progressively and shows every file shape", async ({ page }) => {
   expect(
     await page.evaluate(() => (window as unknown as { __sawProgress?: boolean }).__sawProgress),
   ).toBe(true);
+  // A file with nothing to render says why in its header chip.
   await expect(page.locator('[data-empty-reason="rename-only"]')).toHaveText(
-    "No textual hunks. This change only renames the file.",
+    "renamed, no content changes",
   );
-  await expect(page.locator('[data-empty-reason="binary"]')).toHaveText("Binary file skipped");
-  await expect(page.locator('[data-empty-reason="too-large"]')).toHaveText(
-    "File too large to render automatically.",
-  );
+  await expect(page.locator('[data-empty-reason="binary"]')).toHaveText(/^binary/);
+  await expect(page.locator('[data-empty-reason="too-large"]')).toHaveText("too large");
   await expect(page.locator(".file-path", { hasText: "docs/日本語 ノート.md" })).toBeVisible();
   await expect(
     page.locator(".file-path", { hasText: "src/app/renamed-old.ts -> renamed-new.ts" }),
   ).toBeVisible();
+});
+
+// Intent: a header says what kind of change a file is in a chip instead of a body sentence;
+// rename-only and binary files are header-only rows, a too-large file keeps one row saying why,
+// and a file without line changes prints no `+0 −0`.
+test("states each file's kind in its header", async ({ page }) => {
+  await openTestReview(page);
+  const section = (path: string) => page.locator(`section.file-section[aria-label="${path}"]`);
+
+  await expect(section("docs/日本語 ノート.md").locator(".file-chip")).toHaveText("new");
+  await expect(section("old/legacy.txt").locator(".file-chip")).toHaveText("deleted");
+  await expect(section("src/app/main.ts").locator(".file-chip")).toHaveCount(0);
+  await expect(section("old/legacy.txt").locator(".file-stats")).toHaveText("−2");
+
+  const logo = section("assets/logo.svg");
+  await logo.scrollIntoViewIfNeeded();
+  await expect(logo.locator(".file-path")).toHaveText("assets/logo-old.svg -> logo.svg");
+  await expect(logo.locator(".file-stats")).toHaveCount(0);
+  await expect(logo.locator(".file-placeholder")).toHaveCount(0);
+  await expect(logo.locator(".file-collapse")).toHaveCount(0);
+  expect(
+    await logo.locator(".file-body").evaluate((body) => (body as HTMLElement).offsetHeight),
+  ).toBe(0);
+
+  const image = section("assets/image.png");
+  await expect(image.locator(".file-chip")).toHaveText(/^binary/);
+  await expect(image.locator(".file-placeholder")).toHaveCount(0);
+
+  const huge = section("data/huge.json");
+  await huge.scrollIntoViewIfNeeded();
+  await expect(huge.locator(".file-chip")).toHaveText("too large");
+  await expect(huge.locator(".file-placeholder")).toHaveText(
+    "File too large to render automatically.",
+  );
+});
+
+// Intent: the chevron folds any file's body, viewed or not, without marking it; hunk
+// navigation into a folded file opens it.
+test("folds and unfolds a file from its header chevron", async ({ page }) => {
+  await openTestReview(page);
+  const main = page.locator('section.file-section[aria-label="src/app/main.ts"]');
+  const chevron = main.locator(".file-collapse");
+
+  await expect(chevron).toHaveAttribute("aria-expanded", "true");
+  await chevron.click();
+  await expect(chevron).toHaveAttribute("aria-expanded", "false");
+  await expect(main.locator(".file-body")).toHaveCount(0);
+  await expect(main.locator(".viewed-toggle input")).not.toBeChecked();
+  await chevron.press("Enter");
+  await expect(chevron).toHaveAttribute("aria-expanded", "true");
+  await expect(main.locator(".file-body")).toBeVisible();
+
+  await chevron.click();
+  await page.locator(".review-stream").focus();
+  await page.keyboard.press("]");
+  await page.keyboard.press("[");
+  await expect(page.locator("section[data-selected]")).toHaveAttribute(
+    "aria-label",
+    "src/app/main.ts",
+  );
+  await expect(main.locator(".file-body")).toBeVisible();
+});
+
+// Intent: the header's copy button puts the file's path on the clipboard (the new path of a
+// rename) and says so, the way the toolbar's copy link does.
+test("copies a file's path from its header", async ({ page }) => {
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await openTestReview(page);
+  const renamed = page.locator('section.file-section[aria-label="src/app/renamed-new.ts"]');
+  const copy = renamed.locator(".file-copy-path");
+
+  await expect(copy).toHaveCSS("opacity", "0");
+  await renamed.locator(".file-header").hover();
+  await expect(copy).toHaveCSS("opacity", "1");
+  await copy.click();
+  await expect(copy).toHaveAttribute("data-state", "copied");
+  await expect(copy).toHaveText("Copied");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("src/app/renamed-new.ts");
 });
 
 test("jumps from the sidebar to the stream and follows the stream back", async ({ page }) => {

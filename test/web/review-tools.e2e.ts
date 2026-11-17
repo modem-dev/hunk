@@ -338,7 +338,7 @@ test("the minimap repaints when a file collapses without a scroll", async ({ pag
   const drift = await minimapHeightDrift(page);
 
   await page.locator("section[data-file-key]").first().locator(".viewed-toggle input").click();
-  await expect(page.locator(".file-collapsed").first()).toBeVisible();
+  await expect(page.locator('.file-collapse[aria-expanded="false"]').first()).toBeVisible();
 
   // The stream settles over a frame or two after the collapse and the minimap repaints one
   // frame behind it, so the two are compared once they agree rather than at one instant.
@@ -385,7 +385,7 @@ test("the minimap dims a file's block once it is marked viewed", async ({ page }
   const open = await minimapAlphaAt(page, 8, 0);
 
   await page.locator("section[data-file-key]").first().locator(".viewed-toggle input").click();
-  await expect(page.locator(".file-collapsed").first()).toBeVisible();
+  await expect(page.locator('.file-collapse[aria-expanded="false"]').first()).toBeVisible();
 
   await expect.poll(() => minimapAlphaAt(page, 8, 0)).toBeLessThan(open * 0.6);
   expect(await minimapAlphaAt(page, 8, 0)).toBeGreaterThan(0);
@@ -415,7 +415,7 @@ test("keeps measuring a file body re-created by expanding a viewed file", async 
   await page.waitForTimeout(500);
 
   await last.locator(".viewed-toggle input").click();
-  await last.locator(".file-collapsed").click();
+  await last.locator('.file-collapse[aria-expanded="false"]').click();
   await expect.poll(mounted).toBe(true);
   await page.waitForTimeout(500);
   const drift = await minimapHeightDrift(page);

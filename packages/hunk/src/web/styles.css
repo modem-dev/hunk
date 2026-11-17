@@ -661,7 +661,7 @@ body {
   gap: 8px;
   height: 34px;
   box-sizing: border-box;
-  padding: 0 12px;
+  padding: 0 10px 0 6px;
   background: var(--hunk-panel);
   border-bottom: 1px solid var(--hunk-border);
   font-family: var(--code-font);
@@ -701,15 +701,125 @@ body {
 }
 
 .file-name {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 13px;
 }
 
-.file-state {
+/* The directory and a rename's old name step back so the basename reads first. */
+.file-path-dir,
+.file-path-previous {
   color: var(--hunk-muted);
+}
+
+.file-path-previous {
+  opacity: 0.8;
+}
+
+.file-path-base {
+  color: var(--hunk-text);
+  font-weight: 600;
+}
+
+.file-path-arrow {
+  display: inline-flex;
+  vertical-align: -1px;
+  margin: 0 4px;
+  color: var(--hunk-muted);
+}
+
+/* Zero-size text: selection and copy still read `old -> new`, the icon draws the arrow. */
+.file-path-arrow-text {
+  font-size: 0;
+}
+
+.file-section[data-collapsed] .file-path-base {
+  color: var(--hunk-muted);
+  font-weight: 400;
+}
+
+.file-chip {
+  flex: none;
+  padding: 0 6px;
+  font-family: var(--ui-font);
+  font-size: 11px;
+  line-height: 18px;
+  white-space: nowrap;
+  color: var(--hunk-muted);
+  border: 1px solid var(--hunk-border);
+  border-radius: 4px;
+}
+
+.file-header-spacer {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The header's icon buttons: the collapse chevron and copy path. */
+.file-header-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 24px;
+  height: 24px;
+  padding: 0;
+  font: inherit;
+  font-family: var(--ui-font);
+  font-size: 11px;
+  color: var(--hunk-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.file-header-button:hover {
+  color: var(--hunk-text);
+  background: var(--hunk-panel-alt);
+}
+
+.file-collapse-spacer {
+  flex: none;
+  width: 24px;
+}
+
+.file-header .file-collapse {
+  margin-right: -6px;
+}
+
+/* Copy path shows on header hover and keyboard focus, and while it reports a result. */
+.file-copy-path {
+  opacity: 0;
+}
+
+.file-header:hover .file-copy-path,
+.file-copy-path:focus-visible,
+.file-copy-path[data-state="copied"],
+.file-copy-path[data-state="failed"] {
+  opacity: 1;
+}
+
+.file-copy-path[data-state="copied"],
+.file-copy-path[data-state="failed"] {
+  padding: 0 6px;
+}
+
+.file-copy-path[data-state="copied"] {
+  color: var(--hunk-badge-added, #1a7f37);
+}
+
+.file-copy-path[data-state="failed"] {
+  color: var(--hunk-removed-sign-color, #d1242f);
+}
+
+.file-header .segmented.icon-segmented button {
+  width: 26px;
+  height: 20px;
 }
 
 .file-stats {
@@ -2395,23 +2505,56 @@ body {
   border-top: 1px solid var(--hunk-border);
 }
 
-/* Viewed files: header checkbox, "changed since viewed", collapsed body, sidebar and toolbar. */
+/* Viewed files: header checkbox, "changed since viewed", sidebar and toolbar. */
+
+/* A real checkbox in a bordered, button-like label; checked, it takes the "added" family. */
 .viewed-toggle {
   display: inline-flex;
   flex: none;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
+  height: 24px;
+  box-sizing: border-box;
+  padding: 0 7px 0 6px;
   font-family: var(--ui-font);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--hunk-muted);
+  border: 1px solid var(--hunk-border);
+  border-radius: 6px;
   cursor: pointer;
 }
 
-.viewed-toggle[data-status="viewed"] {
+.viewed-toggle:hover {
   color: var(--hunk-text);
 }
 
-.viewed-toggle input,
+.viewed-toggle:focus-within:has(:focus-visible) {
+  outline: 2px solid var(--hunk-accent);
+  outline-offset: 1px;
+}
+
+.viewed-toggle input:focus-visible {
+  outline: none;
+}
+
+.viewed-toggle[data-status="viewed"] {
+  color: var(--hunk-badge-added, #1a7f37);
+  border-color: color-mix(in srgb, var(--hunk-badge-added, #1a7f37) 45%, transparent);
+  background: color-mix(in srgb, var(--hunk-badge-added, #1a7f37) 10%, transparent);
+}
+
+.viewed-toggle input {
+  margin: 0;
+  accent-color: var(--hunk-badge-added, #1a7f37);
+  cursor: pointer;
+}
+
+.viewed-toggle .key-hint {
+  padding: 0 3px;
+  font-size: 10px;
+  line-height: 14px;
+}
+
 .flat-viewed {
   margin: 0;
   accent-color: var(--hunk-accent);
@@ -2426,26 +2569,6 @@ body {
   border: 1px solid var(--hunk-accent);
   border-radius: 3px;
   color: var(--hunk-accent);
-}
-
-.file-collapsed {
-  display: flex;
-  align-items: center;
-  width: 100%;
-  padding: 0 16px;
-  font: inherit;
-  font-family: var(--ui-font);
-  font-size: 12px;
-  color: var(--hunk-muted);
-  background: var(--hunk-panel-alt);
-  border: 0;
-  text-align: left;
-  cursor: pointer;
-}
-
-.file-collapsed:hover,
-.file-collapsed:focus-visible {
-  color: var(--hunk-text);
 }
 
 .flat-row {

@@ -78,6 +78,24 @@ export const ICON_PATHS = {
   "chevron-right": <path d="m6 4 4 4-4 4" />,
   /** A chevron pointing up. */
   "chevron-up": <path d="m4 10 4-4 4 4" />,
+  /** An arrow pointing right. */
+  "arrow-right": <path d="M3 8h10M9 4l4 4-4 4" />,
+  /** Two overlapping sheets. */
+  copy: (
+    <>
+      <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" />
+      <path d="M10.5 3.5v-.5A1.5 1.5 0 0 0 9 1.5H4A1.5 1.5 0 0 0 2.5 3v5A1.5 1.5 0 0 0 4 9.5h.5" />
+    </>
+  ),
+  /** Angle brackets around code. */
+  code: <path d="M5.5 4.5 2 8l3.5 3.5M10.5 4.5 14 8l-3.5 3.5" />,
+  /** An open eye. */
+  eye: (
+    <>
+      <path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z" />
+      <circle cx="8" cy="8" r="2" />
+    </>
+  ),
   /** A check mark. */
   check: <path d="m3.5 8.5 3 3 6-7" />,
   /** A cross. */

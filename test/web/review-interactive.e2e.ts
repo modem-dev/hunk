@@ -284,6 +284,8 @@ test("shares the filter and note visibility with a second page", async ({ page, 
   await page.locator(".review-stream").click({ position: { x: 5, y: 5 } });
   await page.keyboard.press("a");
   await expect(noteCard(other, "An agent note.")).toHaveCount(0);
+  // The next press flips this page's own copy of the setting, so wait until it has it too.
+  await expect(noteCard(page, "An agent note.")).toHaveCount(0);
   await page.keyboard.press("a");
   await expect(noteCard(other, "An agent note.")).toBeVisible();
   expect(otherProblems).toEqual([]);

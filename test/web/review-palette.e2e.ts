@@ -323,7 +323,7 @@ test("names why a linked file is hidden and opens a collapsed viewed one", async
     },
   );
   const main = page.locator("section[data-file-key]").first();
-  await expect(main.locator(".file-collapsed")).toHaveCount(0);
+  await expect(main.locator('.file-collapse[aria-expanded="false"]')).toHaveCount(0);
   await expect(main.locator("diffs-container")).toHaveCount(1);
 
   const keys = await fileKeys();
