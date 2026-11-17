@@ -66,7 +66,15 @@ function createTestSharedState(): ReviewSharedState {
         tokens: { background: "#000000" },
         syntaxColors: { keyword: "#ff0000" },
       },
-      view: { layout: "auto", wrapLines: false, lineNumbers: true, hunkHeaders: true },
+      view: {
+        layout: "auto",
+        wrapLines: false,
+        lineNumbers: true,
+        hunkHeaders: true,
+        tabWidth: 4,
+        autoSplitMinWidth: 160,
+        sidebar: "auto",
+      },
       keymap: { "hunk.app.quit": ["q"] },
     },
   };
@@ -125,6 +133,39 @@ describe("parseReviewSharedState", () => {
     expect(parseReviewSharedState(builtin)).toEqual(builtin);
     (builtin.presentation.theme as Record<string, unknown>).tokens = {};
     expect(parseReviewSharedState(builtin)).toBeUndefined();
+  });
+
+  // Intent: the daemon and the page parse the view defaults with this one strict parser, and
+  // `HUNK_SESSION_DAEMON_VERSION` keeps both on the build that wrote them, so a host that omits
+  // a published option or adds an unknown one is refused rather than guessed at.
+  test("requires every published view option with a well-formed value", () => {
+    for (const sidebar of [true, false, "auto"] as const) {
+      const state = createTestSharedState();
+      state.presentation.view.sidebar = sidebar;
+      expect(parseReviewSharedState(structuredClone(state))).toEqual(state);
+    }
+
+    for (const field of ["tabWidth", "autoSplitMinWidth", "sidebar"] as const) {
+      const missing = createTestSharedState();
+      delete (missing.presentation.view as Partial<typeof missing.presentation.view>)[field];
+      expect([field, parseReviewSharedState(missing)]).toEqual([field, undefined]);
+    }
+
+    const malformed: Array<Record<string, unknown>> = [
+      { tabWidth: 0 },
+      { tabWidth: 2.5 },
+      { tabWidth: "4" },
+      { autoSplitMinWidth: 0 },
+      { autoSplitMinWidth: -1 },
+      { sidebar: "open" },
+      { sidebar: null },
+      { minimap: true },
+    ];
+    for (const change of malformed) {
+      const state = createTestSharedState();
+      Object.assign(state.presentation.view, change);
+      expect([change, parseReviewSharedState(state)]).toEqual([change, undefined]);
+    }
   });
 });
 

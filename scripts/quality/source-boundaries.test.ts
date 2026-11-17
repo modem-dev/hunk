@@ -53,11 +53,12 @@ const BROWSER_SAFE_SESSION_MODULES: readonly string[] = [
 ];
 
 // Presentation facts the browser shares with the terminal rather than restating: the
-// layout vocabulary and the `auto` split threshold, and the Pierre highlight options both
-// renderers pass. Each is a leaf with no runtime imports (asserted below), which is the only
-// reason the browser may reach outside the review model for them.
+// layout vocabulary and the `auto` split threshold, the default tab width, and the Pierre
+// highlight options both renderers pass. Each is a leaf with no runtime imports (asserted
+// below), which is the only reason the browser may reach outside the review model for them.
 const WEB_SHARED_PRESENTATION_MODULES: readonly string[] = [
   join(SRC_ROOT, "core", "run", "commandInputs.ts"),
+  join(SRC_ROOT, "core", "run", "tabWidth.ts"),
   join(SRC_ROOT, "core", "documents", "highlightRenderOptions.ts"),
 ];
 

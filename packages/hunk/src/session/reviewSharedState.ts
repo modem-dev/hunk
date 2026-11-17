@@ -193,12 +193,23 @@ export type ReviewThemeDefaults =
       syntaxScopesReplaceBase?: boolean;
     };
 
-/** View options a surface starts from; each surface may override them locally (G1). */
+/**
+ * View options a surface starts from; each surface may override them locally (G1).
+ *
+ * Each field is one config option the host publishes (`core/run/webConfigSupport.ts` names
+ * which); the host fills every field from its resolved config, built-in defaults included.
+ */
 export interface ReviewViewDefaults {
   layout: "auto" | "split" | "unified";
   wrapLines: boolean;
   lineNumbers: boolean;
   hunkHeaders: boolean;
+  /** Columns per tab stop (`tab_width`). */
+  tabWidth: number;
+  /** Fewest diff-area columns `auto` lays out split (`auto_split_min_width`). */
+  autoSplitMinWidth: number;
+  /** Files sidebar at launch: open, closed, or decided by the viewport (`sidebar`). */
+  sidebar: boolean | "auto";
 }
 
 /** Where a new surface starts: what the host's config chain resolved. */
@@ -500,11 +511,24 @@ function isPresentation(value: unknown): value is ReviewPresentationDefaults {
     typeof record.sourceLabel === "string" &&
     themeOk &&
     view !== undefined &&
-    hasExactKeys(view, ["layout", "wrapLines", "lineNumbers", "hunkHeaders"]) &&
+    hasExactKeys(view, [
+      "layout",
+      "wrapLines",
+      "lineNumbers",
+      "hunkHeaders",
+      "tabWidth",
+      "autoSplitMinWidth",
+      "sidebar",
+    ]) &&
     (view.layout === "auto" || view.layout === "split" || view.layout === "unified") &&
     typeof view.wrapLines === "boolean" &&
     typeof view.lineNumbers === "boolean" &&
     typeof view.hunkHeaders === "boolean" &&
+    isIndex(view.tabWidth) &&
+    view.tabWidth > 0 &&
+    isIndex(view.autoSplitMinWidth) &&
+    view.autoSplitMinWidth > 0 &&
+    (typeof view.sidebar === "boolean" || view.sidebar === "auto") &&
     keymap !== undefined &&
     Object.entries(keymap).every(
       ([commandId, chords]) =>

@@ -336,6 +336,7 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
     preferences.layout,
     streamWidth - (showMinimap ? MINIMAP_WIDTH_PX : 0),
     columnWidth,
+    preferences.autoSplitMinWidth,
   );
 
   // The shared filter decides the visible stream, as it does in the terminal; the planner
@@ -999,6 +1000,9 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
         {
           "--sidebar-width": `${preferences.sidebarWidth}px`,
           "--side-panel-width": `${panel.width}px`,
+          // Pierre's code cells read their tab stops from this (`tab-size`); it inherits into
+          // each diff's shadow root.
+          "--diffs-tab-size": String(preferences.tabWidth),
         } as CSSProperties
       }
     >
