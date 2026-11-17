@@ -35,6 +35,7 @@ import {
   type ReactNode,
 } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { createIconElement, Icon } from "../icons/Icon";
 import type { ReviewSide } from "../../core/review/types";
 import { pierreHighlightRenderOptions } from "../../core/documents/highlightRenderOptions";
 import {
@@ -142,13 +143,20 @@ export function expandedGapText(gap: ReviewGapView) {
 /**
  * Fill one separator element for the gap it stands for, or as inert context.
  *
- * The terminal's `▾` (expandable) and `···` (inert) marks are drawn by CSS from
+ * The expand chevron is an icon node and the `···` (inert) marks are drawn by CSS from
  * `data-gap-state`, so the accessible name stays the words alone.
  */
-function paintSeparator(element: HTMLButtonElement, gap: ReviewGapView | undefined) {
+function paintSeparator(element: HTMLElement, gap: ReviewGapView | undefined) {
+  if (element.classList.contains("gap-separator-fill")) {
+    element.dataset.gapState = gap?.state ?? "unaddressed";
+    return;
+  }
+  if (!(element instanceof HTMLButtonElement)) return;
   element.dataset.gapState = gap?.state ?? "unaddressed";
   element.disabled = !gap || gap.state === "loading";
-  element.textContent = gap ? gapSeparatorText(gap) : "Unchanged lines";
+  element.textContent = "";
+  if (gap?.state === "collapsed") element.append(createIconElement("chevron-down", 14));
+  element.append(gap ? gapSeparatorText(gap) : "Unchanged lines");
   element.title = gap && gap.state === "collapsed" ? "Show unchanged lines" : "";
 }
 
@@ -227,7 +235,7 @@ export function PierreFileView({
     // The signature stands for the composers' positions; their text is read at render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [noteGroups, composerSignature]);
-  const separatorsRef = useRef(new Map<string, Set<HTMLButtonElement>>());
+  const separatorsRef = useRef(new Map<string, Set<HTMLElement>>());
   const planRef = useRef(plan);
   const toggleRef = useRef(onToggleGap);
   planRef.current = plan;
@@ -297,10 +305,15 @@ export function PierreFileView({
     },
     hunkSeparators: (hunk: HunkData) => {
       const gapId = reviewGapIdForSeparator(planRef.current.file, hunk.hunkIndex);
-      const element = document.createElement("button");
-      element.type = "button";
-      element.className = "gap-separator";
-      element.dataset.gapId = gapId;
+      // Split view draws a separator in each column. The deletions column carries the words
+      // and the control; the additions column is a matching band that toggles the same gap,
+      // so the pair reads as one row with the count stated once.
+      const fill = hunk.type === "additions";
+      const element = document.createElement(fill ? "div" : "button");
+      if (element instanceof HTMLButtonElement) element.type = "button";
+      element.className = fill ? "gap-separator-fill" : "gap-separator";
+      if (fill) element.setAttribute("aria-hidden", "true");
+      else element.dataset.gapId = gapId;
       element.addEventListener("click", () => toggleRef.current(gapId));
       paintSeparator(
         element,
@@ -500,6 +513,7 @@ export function PierreFileView({
               style={{ top: bounds.top }}
               onClick={() => onToggleGap(gap.gapId)}
             >
+              <Icon name="chevron-up" size={12} />
               {expandedGapText(gap)}
             </button>
           ) : null;

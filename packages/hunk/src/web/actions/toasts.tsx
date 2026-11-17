@@ -7,6 +7,7 @@
  * and announced politely (`aria-live`). Messages come from the shared error catalog; this module
  * only holds and times them.
  */
+import { Icon } from "../icons/Icon";
 import { useSyncExternalStore } from "react";
 
 /** One message in the region. */
@@ -68,7 +69,7 @@ export function ToastRegion({ toasts }: { toasts: WebToasts }) {
             aria-label="Dismiss"
             onClick={() => toasts.dismiss(toast.id)}
           >
-            ×
+            <Icon name="cross" size={14} />
           </button>
         </div>
       ))}

@@ -5,10 +5,10 @@
  */
 import {
   formatReviewNoteBadge,
-  formatReviewSidebarStat,
   reviewSidebarFileName,
   type ReviewSidebarFileEntry,
 } from "../../core/review/fileLabels";
+import { formatAddedBadge, formatRemovedBadge } from "../format/lineCounts";
 import type { ReviewFileIndexEntry } from "../mirror/fileIndex";
 import type { ReviewViewedStatus } from "../viewed/viewedFiles";
 
@@ -24,8 +24,8 @@ export function sidebarEntry(
     name: reviewSidebarFileName(entry.path, entry.previousPath),
     depth,
     agentCommentsText: formatReviewNoteBadge(noteCount),
-    additionsText: formatReviewSidebarStat("+", entry.stats.additions, entry.stats.truncated),
-    deletionsText: formatReviewSidebarStat("-", entry.stats.deletions),
+    additionsText: formatAddedBadge(entry.stats.additions, entry.stats.truncated),
+    deletionsText: formatRemovedBadge(entry.stats.deletions),
     changeType: entry.changeKind,
     isUntracked: entry.flags.untracked,
   };
