@@ -28,7 +28,7 @@ const TITLES: Record<NoteComposer["kind"], string> = {
 
 export interface NoteComposerViewProps {
   composer: NoteComposer;
-  /** A short description of where the note goes, e.g. `R12–R14`. */
+  /** Where the note goes, in words, e.g. `lines 12–14`. */
   location: string;
   onChange: (body: string) => void;
   onSave: () => void;

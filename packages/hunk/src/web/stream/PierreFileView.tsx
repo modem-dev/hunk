@@ -12,10 +12,12 @@
  * Highlight options are the terminal's (`core/documents/highlightRenderOptions.ts`): word-level
  * `word-alt` emphasis and the same tokenizing bound.
  *
- * Line annotations carry each line's note cards and open composers: cards are plain DOM, and
- * each composer is a React portal into a slot its annotation provides. Pierre's gutter utility
- * (the hover affordance) and its line selection report the line or range the reader picked;
- * card buttons report the note action they name.
+ * Line annotations carry each line's note threads and open composers: threads are plain DOM,
+ * and each composer is a React root in a host its annotation provides. A reply or edit composer
+ * for a note drawn here sits at the foot of that note's thread; a new-note composer, or one whose
+ * note is not drawn, sits below the line's threads. Pierre's gutter utility (the hover
+ * affordance) and its line selection report the line or range the reader picked; card buttons
+ * report the note action they name. The active note's mark moves in place when it changes.
  */
 import {
   FileDiff,
@@ -45,7 +47,12 @@ import {
 } from "./fileProjection";
 import type { ReviewAgentHighlight } from "../../session/reviewSharedState";
 import type { NoteComposer } from "../notes/composerStore";
-import { renderNoteGroup, type WebNoteCardAction } from "../notes/noteCards";
+import {
+  markActiveNote,
+  renderNoteGroup,
+  type WebNoteActionHints,
+  type WebNoteCardAction,
+} from "../notes/noteCards";
 import { reviewComposerPlacement, type WebNoteGroup } from "../notes/noteProjection";
 import { stabilizeLineAnnotations, type StableAnnotations } from "./stableAnnotations";
 import { measureAgentHighlights, type ReviewHighlightBox } from "./highlightGeometry";
@@ -82,13 +89,21 @@ export interface PierreFileViewProps {
   onPickLines: (side: ReviewSide, start: number, end: number) => void;
   /** A card's action button, or a click on the card itself (`select`). */
   onNoteAction: (action: WebNoteCardAction | "select", noteId: string) => void;
+  /** The active note, marked with the accent where it is drawn in this file. */
+  activeNoteId?: string | null;
+  /** The note actions' shortcuts, for their tooltips and names. */
+  actionHints?: WebNoteActionHints;
 }
 
-/** What one line annotation carries: the line's note cards and its composers. */
+/** What one line annotation carries: the line's note threads and its composers. */
 interface WebLineAnnotation {
   key: string;
   group?: WebNoteGroup;
+  hints?: WebNoteActionHints;
+  /** Composers drawn below the line's threads. */
   composerKeys: readonly string[];
+  /** Reply and edit composers drawn at the foot of a thread, by thread id. */
+  threadComposerKeys?: Readonly<Record<string, readonly string[]>>;
 }
 
 /** One composer's host element and its React root. */
@@ -178,6 +193,8 @@ export function PierreFileView({
   renderComposer,
   onPickLines,
   onNoteAction,
+  activeNoteId,
+  actionHints,
 }: PierreFileViewProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const instanceRef = useRef<FileDiff<WebLineAnnotation> | null>(null);
@@ -188,6 +205,9 @@ export function PierreFileView({
   // into the new slot, so the composer is never remounted by a change that is not its own.
   const composerHostsRef = useRef(new Map<string, ComposerHost>());
   const [, setSlotVersion] = useState(0);
+  // Cards built by a later Pierre redraw read the active note from here.
+  const activeNoteRef = useRef(activeNoteId);
+  activeNoteRef.current = activeNoteId;
 
   // Composers hang where their line is drawn, or from the owner hunk when it is not.
   const placements = composers.map((composer) => ({
@@ -216,11 +236,32 @@ export function PierreFileView({
       }
       return annotation;
     };
+    // Which drawn thread, on which line, holds each note.
+    const threadOf = new Map<string, { group: WebNoteGroup; threadId: string }>();
     for (const group of noteGroups) {
       const annotation = entry(group.side, group.line);
-      annotation.metadata = { ...annotation.metadata, group };
+      annotation.metadata = {
+        ...annotation.metadata,
+        group,
+        ...(actionHints ? { hints: actionHints } : {}),
+      };
+      for (const card of group.cards) threadOf.set(card.id, { group, threadId: card.threadId });
     }
     for (const { composer, side, line } of placements) {
+      const noteId = composer.kind === "new" ? undefined : (composer.parentId ?? composer.noteId);
+      const thread = noteId === undefined ? undefined : threadOf.get(noteId);
+      if (thread) {
+        const annotation = entry(thread.group.side, thread.group.line);
+        const keys = annotation.metadata.threadComposerKeys ?? {};
+        annotation.metadata = {
+          ...annotation.metadata,
+          threadComposerKeys: {
+            ...keys,
+            [thread.threadId]: [...(keys[thread.threadId] ?? []), composer.key],
+          },
+        };
+        continue;
+      }
       const annotation = entry(side, line);
       annotation.metadata = {
         ...annotation.metadata,
@@ -234,7 +275,7 @@ export function PierreFileView({
     return stable.list;
     // The signature stands for the composers' positions; their text is read at render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [noteGroups, composerSignature]);
+  }, [noteGroups, composerSignature, actionHints]);
   const separatorsRef = useRef(new Map<string, Set<HTMLElement>>());
   const planRef = useRef(plan);
   const toggleRef = useRef(onToggleGap);
@@ -270,8 +311,27 @@ export function PierreFileView({
     renderAnnotation: (annotation: DiffLineAnnotation<WebLineAnnotation>) => {
       const root = document.createElement("div");
       root.className = "line-annotation";
-      const { group, composerKeys } = annotation.metadata;
-      if (group) root.append(renderNoteGroup(group));
+      const { group, hints, composerKeys, threadComposerKeys } = annotation.metadata;
+      const hostsOf = (keys: readonly string[]) =>
+        keys.map((composerKey) => composerHostFor(composerHostsRef.current, composerKey).element);
+      if (group) {
+        const threadComposers = new Map(
+          Object.entries(threadComposerKeys ?? {}).map(([threadId, keys]) => [
+            threadId,
+            hostsOf(keys),
+          ]),
+        );
+        root.append(
+          renderNoteGroup(group, {
+            ...(hints ? { hints } : {}),
+            activeNoteId: activeNoteRef.current,
+            threadComposers,
+          }),
+        );
+      }
+      if (threadComposerKeys && Object.keys(threadComposerKeys).length > 0) {
+        queueMicrotask(() => setSlotVersion((version) => version + 1));
+      }
       if (composerKeys.length > 0) {
         const slot = document.createElement("div");
         slot.className = "composer-stack";
@@ -368,6 +428,11 @@ export function PierreFileView({
     // `options` is rebuilt from exactly these inputs, so they are the dependency list.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [plan, layout, wrapLines, showLineNumbers, syntaxTheme, appearance, annotations]);
+
+  // The active note's mark moves in place: no card is rebuilt, so no height changes.
+  useLayoutEffect(() => {
+    if (hostRef.current) markActiveNote(hostRef.current, activeNoteId);
+  }, [activeNoteId]);
 
   // Sideways code scrolling moves the characters under the agent marks.
   useEffect(() => {
