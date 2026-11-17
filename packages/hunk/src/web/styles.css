@@ -711,11 +711,11 @@ body {
 
 /* The directory and a rename's old name step back so the basename reads first. */
 .file-path-dir,
-.file-path-from {
+.file-path-previous {
   color: var(--hunk-muted);
 }
 
-.file-path-from {
+.file-path-previous {
   opacity: 0.8;
 }
 
