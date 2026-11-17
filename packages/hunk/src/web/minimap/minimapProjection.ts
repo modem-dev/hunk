@@ -5,7 +5,8 @@
  * a file has drawn and its reserved row height before (`../stream/FileSection.tsx`); the
  * minimap is handed those same heights, so its proportions are the stream's scroll range scaled
  * to the track. Inside a file, hunks sit at their row fractions from the shared geometry
- * (`reviewHunkRowFractions`); a file whose canonical content has not loaded spreads its stats
+ * (`reviewHunkRowFractions`); each file also reports its band and viewed state so the painter
+ * can draw it as a block and dim it; a file whose canonical content has not loaded spreads its stats
  * over its body.
  *
  * The track is coarsened to one bin per device pixel row: every file and hunk adds its added
@@ -43,6 +44,11 @@ export interface MinimapSpan {
   height: number;
 }
 
+/** One file's band on the track: its header and body, plus whether it is marked viewed. */
+export interface MinimapFileBand extends MinimapSpan {
+  viewed: boolean;
+}
+
 export interface MinimapModel {
   /** The stream height the files add up to, in CSS pixels. */
   streamHeight: number;
@@ -55,7 +61,8 @@ export interface MinimapModel {
   boundaries: number[];
   notes: number[];
   highlights: number[];
-  viewed: MinimapSpan[];
+  /** One band per file, in stream order, so the painter can draw a block and dim a viewed one. */
+  files: MinimapFileBand[];
   selected?: MinimapSpan;
 }
 
@@ -104,7 +111,7 @@ export function projectMinimap(input: MinimapProjectionInput): MinimapModel {
     boundaries: [],
     notes: [],
     highlights: [],
-    viewed: [],
+    files: [],
   };
   const minFileBand = input.minFileBand ?? 3;
 
@@ -116,7 +123,7 @@ export function projectMinimap(input: MinimapProjectionInput): MinimapModel {
     const bodyHeight = file.bodyHeight * scale;
     offset += file.headerHeight + file.bodyHeight;
     if (band >= minFileBand) model.boundaries.push(top);
-    if (file.viewed) model.viewed.push({ top, height: band });
+    model.files.push({ top, height: band, viewed: file.viewed === true });
 
     const hunkSpans = file.rows
       ? reviewHunkRowFractions(file.rows, input.layout).map((fraction) => ({
