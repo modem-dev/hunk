@@ -1055,6 +1055,9 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
               viewedStatuses={viewed.statuses}
               collapsedFiles={viewed.collapsed}
               viewed={viewedControls}
+              {...(pageHint("hunk.web.toggleViewed")
+                ? { viewedKeyHint: pageHint("hunk.web.toggleViewed") }
+                : {})}
               {...(streamSlots.length === 0 && visibleSlots.length > 0
                 ? {
                     emptyMessage: (
