@@ -11,13 +11,14 @@
  */
 import { Icon } from "../icons/Icon";
 import { useMemo, useState } from "react";
-import { reviewNoteRangeLabel, reviewNoteThreadTitle } from "../../core/review/noteLabels";
+import { reviewNoteThreadTitle } from "../../core/review/noteLabels";
 import type {
   ReviewNoteListEntry,
   ReviewNoteListFile,
   ReviewNoteListOrigin,
   ReviewNoteListThread,
 } from "../../core/review/noteList";
+import { webNoteLocationLabel } from "../format/noteLocation";
 import { browserNoteTitle } from "../notes/noteProjection";
 import { countNoteList, filterNoteList } from "./noteFilters";
 
@@ -54,7 +55,8 @@ function NoteRow({
   now: number;
   onSelect: NotesTabProps["onSelectNote"];
 }) {
-  const range = reviewNoteRangeLabel(entry.note.anchor);
+  // Worded as the note's card in the stream words it (`line 13`).
+  const range = webNoteLocationLabel(entry.note.anchor);
   return (
     <button
       type="button"

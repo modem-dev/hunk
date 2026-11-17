@@ -20,7 +20,6 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { reviewDefaultHunkLineTarget } from "../../core/review/geometry";
-import { reviewNoteRangeLabel } from "../../core/review/noteLabels";
 import { selectStoredReviewNoteById } from "../../core/review/selectors";
 import { reviewNoteOwnerHunkIndex } from "../../core/review/state";
 import type { ReviewSide } from "../../core/review/types";
@@ -34,12 +33,14 @@ import { REVIEW_SESSION_ENDED_MESSAGE } from "../session/failureMessages";
 import type { NoteComposer } from "../notes/composerStore";
 import { NoteComposerView } from "../notes/NoteComposerView";
 import { noteRemovalAction, saveNoteComposer } from "../notes/noteActions";
-import type { WebNoteCardAction } from "../notes/noteCards";
+import type { WebNoteActionHints, WebNoteCardAction } from "../notes/noteCards";
 import type { ReviewNoteInteraction } from "../notes/noteInteraction";
 import { reviewNotePlacement } from "../notes/noteProjection";
 import { reviewNoteLineTarget, reviewNoteRangeTarget } from "../notes/noteTargets";
 import type { ReviewSession } from "../session/reviewSession";
 import { planReviewFileRender } from "../stream/fileProjection";
+import { webNoteLocationLabel } from "../format/noteLocation";
+import type { WebImplementedCommandId } from "../commands/webCommandTable";
 import { FilterEditSequence } from "./filterEdits";
 
 /** How long the filter field waits for typing to pause before it sets the shared filter. */
@@ -48,8 +49,8 @@ export const FILTER_DEBOUNCE_MS = 300;
 /** Where one composer goes, in the words its header shows. */
 function composerLocation(composer: NoteComposer) {
   if (composer.target && "preferred" in composer.target)
-    return reviewNoteRangeLabel(composer.target);
-  return reviewNoteRangeLabel(
+    return webNoteLocationLabel(composer.target);
+  return webNoteLocationLabel(
     composer.side === "old"
       ? { oldRange: [composer.line, composer.line] }
       : { newRange: [composer.line, composer.line] },
@@ -62,6 +63,7 @@ export function useReviewInteraction(
   shared: ReviewSharedState | undefined,
   sessionEnded = false,
   showFileDiff?: (fileKey: string) => void,
+  keyHint?: (commandId: WebImplementedCommandId) => string | undefined,
 ) {
   const { composers, actions, toasts, review } = session;
   // Opening a composer or refreshing after the session ended would write to nothing; say so
@@ -209,8 +211,22 @@ export function useReviewInteraction(
     [composers, save, sessionEnded],
   );
 
+  // The note keys act on the active note; card buttons name them in their tooltips.
+  const replyHint = keyHint?.("hunk.review.replyToActiveNote");
+  const editHint = keyHint?.("hunk.review.editActiveNote");
+  const deleteHint = keyHint?.("hunk.review.deleteActiveNote");
+  const actionHints: WebNoteActionHints = useMemo(
+    () => ({
+      ...(replyHint ? { reply: replyHint } : {}),
+      ...(editHint ? { edit: editHint } : {}),
+      ...(deleteHint ? { delete: deleteHint } : {}),
+    }),
+    [replyHint, editHint, deleteHint],
+  );
+
   const interaction: ReviewNoteInteraction = useMemo(
     () => ({
+      actionHints,
       renderComposer,
       onPickLines: openOnLines,
       onNoteAction: (fileKey: string, action: WebNoteCardAction | "select", noteId: string) => {
@@ -219,7 +235,7 @@ export function useReviewInteraction(
         else openOnNote(action, noteId);
       },
     }),
-    [openOnLines, openOnNote, removeNote, renderComposer, selectNote],
+    [actionHints, openOnLines, openOnNote, removeNote, renderComposer, selectNote],
   );
 
   // A sent composer closes once the shared state shows what it wrote; a restored draft whose

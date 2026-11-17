@@ -96,7 +96,9 @@ test("renders sidecar notes, STML markup, and the session title", async ({ page 
   const plain = noteCard(page, "Threshold raised from 5 to 10.");
   await expect(plain).toBeVisible();
   await expect(plain.locator(".note-author")).toHaveText("sonnet");
-  await expect(plain.locator(".note-range")).toHaveText("R13");
+  await expect(plain.locator(".note-role")).toHaveText("agent");
+  await expect(plain.locator(".note-avatar")).toHaveAttribute("data-kind", "agent");
+  await expect(plain.locator(".note-range")).toHaveText("line 13");
   await expect(plain.locator(".note-rationale")).toHaveText("Matches the new defaults.");
   await expect(page.locator(".note-card .stml-badge")).toHaveText("OK");
   await expect(page.locator(".note-card .stml-box-title")).toHaveText("Check");
@@ -118,7 +120,8 @@ test("shows live comments as an agent adds, replies to, removes, and clears them
     "opus",
   ]);
   await expect(noteCard(page, "First live note")).toBeVisible();
-  await expect(noteCard(page, "First live note").locator(".note-author")).toHaveText(/^opus · /);
+  await expect(noteCard(page, "First live note").locator(".note-author")).toHaveText("opus");
+  await expect(noteCard(page, "First live note").locator(".note-age")).toHaveText("now");
 
   await review!.hunk([
     "session",
@@ -131,6 +134,10 @@ test("shows live comments as an agent adds, replies to, removes, and clears them
     "Agent reply",
   ]);
   await expect(noteCard(page, "Agent reply")).toHaveAttribute("data-depth", "1");
+  // A reply is a message inside its root's card, not a card of its own.
+  const thread = page.locator(".note-thread", { hasText: "First live note" });
+  await expect(thread.locator(".note-card")).toHaveCount(2);
+  await expect(thread.locator(".note-card").nth(1)).toContainText("Agent reply");
 
   // A reply written through the review link (as another browser tab would) threads under the
   // agent's note and is labelled by where it came from.
@@ -148,7 +155,9 @@ test("shows live comments as an agent adds, replies to, removes, and clears them
   expect(response.ok).toBe(true);
   const reply = noteCard(page, "Reviewer reply");
   await expect(reply).toHaveAttribute("data-source", "user");
-  await expect(reply.locator(".note-author")).toHaveText(/^Browser note/);
+  await expect(reply.locator(".note-author")).toHaveText("Reviewer");
+  await expect(reply.locator(".note-role")).toHaveText("browser");
+  await expect(reply.locator(".note-avatar")).toHaveAttribute("data-kind", "person");
 
   await review!.hunk(
     ["session", "comment", "apply", review!.sessionId, "--stdin"],

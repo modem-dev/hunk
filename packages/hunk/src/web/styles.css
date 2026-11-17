@@ -925,11 +925,12 @@ body {
 
 /* -- Notes ------------------------------------------------------------------------------ */
 
-/* Cards hang in the diff flow beside their line, framed in the theme's note colors. */
+/* One card per thread hangs in the diff flow beside its line: messages separated by hairlines,
+   a neutral frame, and the accent ring only on the thread that holds the active note. */
 .note-stack {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   padding: 6px 12px 8px;
   font-family: var(--ui-font);
   font-size: 13px;
@@ -938,46 +939,128 @@ body {
   color: var(--hunk-text);
 }
 
-.note-card {
-  margin-left: calc(var(--note-depth, 0) * 18px);
+/* Avatar tints are hues no theme token names, mixed from the added and removed sign colors the
+   long way round the hue circle, so they never match the diff's green or red, nor the accent. */
+.note-thread {
+  --note-agent-tint: color-mix(
+    in oklch longer hue,
+    var(--hunk-added-sign-color) 25%,
+    var(--hunk-removed-sign-color)
+  );
+  --note-person-tint: color-mix(
+    in oklch longer hue,
+    var(--hunk-added-sign-color) 75%,
+    var(--hunk-removed-sign-color)
+  );
   max-width: 920px;
-  padding: 6px 10px 8px;
   background: var(--hunk-panel);
   border: 1px solid var(--hunk-border);
-  border-left-width: 3px;
-  border-radius: 6px;
+  border-radius: 8px;
 }
 
-.note-card[data-stale] {
+.note-thread[data-stale] {
   border-style: dashed;
+}
+
+.note-thread[data-active] {
+  border-color: var(--hunk-accent);
+  box-shadow: 0 0 0 1px var(--hunk-accent);
+}
+
+.note-card {
+  display: flex;
+  gap: 10px;
+  padding: 8px 12px;
+  cursor: default;
+}
+
+.note-card + .note-card {
+  border-top: 1px solid var(--hunk-border);
+}
+
+/* Within a ring, the active message is told apart by a bar on its edge, not by color alone. */
+.note-thread[data-active] .note-card[data-active] {
+  box-shadow: inset 2px 0 0 var(--hunk-accent);
+}
+
+.note-card[data-stale] .note-main {
   opacity: 0.8;
+}
+
+.note-avatar {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  color: var(--note-person-tint);
+  background: color-mix(in srgb, var(--note-person-tint) 16%, var(--hunk-panel));
+}
+
+.note-avatar[data-kind="agent"] {
+  color: var(--note-agent-tint);
+  background: color-mix(in srgb, var(--note-agent-tint) 16%, var(--hunk-panel));
+}
+
+.note-main {
+  flex: 1;
+  min-width: 0;
 }
 
 .note-title {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   gap: 8px;
+  min-height: 22px;
   margin-bottom: 2px;
   font-size: 12px;
+  color: var(--hunk-muted);
+}
+
+/* A narrow column wraps the header's words rather than cutting the author's name. */
+.note-meta {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 8px;
+  min-width: 0;
+  min-height: 22px;
 }
 
 .note-author {
   color: var(--hunk-text);
+  font-size: 13px;
   font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.note-role {
+  flex: none;
+  padding: 0 5px;
+  border: 1px solid var(--hunk-border);
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.note-age {
+  flex: none;
+  font-variant-numeric: tabular-nums;
 }
 
 .note-range {
-  color: var(--hunk-muted);
-  font-family: var(--code-font);
+  flex: none;
 }
 
 .note-stale {
-  margin-left: auto;
+  flex: none;
   padding: 0 6px;
-  border: 1px solid var(--hunk-muted);
+  border: 1px dashed var(--hunk-muted);
   border-radius: 8px;
-  color: var(--hunk-muted);
   font-size: 11px;
+  line-height: 16px;
 }
 
 .note-body p {
@@ -1163,13 +1246,13 @@ body {
   white-space: normal;
 }
 
+/* A new note's composer is drawn like a thread card; it holds focus, so it keeps the accent. */
 .note-composer {
   max-width: 920px;
-  padding: 6px 10px 8px;
+  padding: 8px 12px;
   background: var(--hunk-panel);
   border: 1px solid var(--hunk-accent);
-  border-left-width: 3px;
-  border-radius: 6px;
+  border-radius: 8px;
   color: var(--hunk-text);
 }
 
@@ -1215,28 +1298,102 @@ body {
 
 .note-actions {
   display: flex;
-  gap: 6px;
-  margin-top: 6px;
+  flex: none;
+  gap: 2px;
+  margin-left: auto;
 }
 
 .note-action {
-  padding: 0 8px;
-  font: inherit;
-  font-size: 12px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
   color: var(--hunk-muted);
   background: transparent;
-  border: 1px solid var(--hunk-border);
+  border: 1px solid transparent;
   border-radius: 4px;
   cursor: pointer;
 }
 
-.note-action:hover {
+.note-action:hover:not(:disabled) {
   color: var(--hunk-text);
-  border-color: var(--hunk-accent);
+  background: var(--hunk-panel-alt);
 }
 
-.note-card {
+.note-action:disabled {
   cursor: default;
+  opacity: 0.5;
+}
+
+/* The thread's one quiet way in to a reply; an open composer takes its place. */
+.note-reply-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  font: inherit;
+  color: var(--hunk-muted);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--hunk-border);
+  border-radius: 0 0 7px 7px;
+  cursor: text;
+}
+
+.note-reply-field {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  height: 28px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  background: var(--hunk-background);
+  border: 1px solid var(--hunk-border);
+  border-radius: 6px;
+}
+
+.note-reply-row:hover:not(:disabled) .note-reply-field {
+  border-color: var(--hunk-muted);
+}
+
+.note-reply-row:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* `R` replies to the active note, so the key cap shows only on the active thread. */
+.note-reply-key {
+  padding: 0 4px;
+  font: 11px/16px var(--code-font);
+  color: var(--hunk-muted);
+  background: var(--hunk-panel-alt);
+  border: 1px solid var(--hunk-border);
+  border-radius: 4px;
+  display: none;
+}
+
+.note-thread[data-active] .note-reply-key {
+  display: inline;
+}
+
+.note-thread-composers {
+  border-top: 1px solid var(--hunk-border);
+}
+
+/* A composer inside a thread is a part of its card, not a second card. */
+.note-thread-composers .note-composer {
+  max-width: none;
+  padding: 8px 12px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+.note-thread-composers .composer-host + .composer-host {
+  border-top: 1px solid var(--hunk-border);
 }
 
 .review-controls {
