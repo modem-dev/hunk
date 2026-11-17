@@ -97,7 +97,7 @@ import { NotesTab } from "../notesPanel/NotesTab";
 import { OverviewTab } from "../overview/OverviewTab";
 import { selectWebReviewOverview } from "../panel/overviewInput";
 import { webLocalKeyCommands, withWebLocalChords } from "../panel/panelCommands";
-import type { WebLocalCommandId } from "../commands/webLocalCommands";
+import { webModChordLabel, type WebLocalCommandId } from "../commands/webLocalCommands";
 import {
   readSidePanelPreferences,
   resolveSidePanelOpen,
@@ -108,13 +108,14 @@ import { SidePanel, type SidePanelTool } from "../panel/SidePanel";
 import type { ThemeMenuOption } from "./ThemeMenu";
 import { ToastRegion } from "../actions/toasts";
 import { reviewLinkWithCapability, watchReviewCapability } from "../session/capability";
-import { ReviewControls } from "./ReviewControls";
+import { FilterField, ReviewActions } from "./ReviewControls";
 import { Toolbar } from "./Toolbar";
 import { useReviewInteraction } from "./useReviewInteraction";
 import { useReviewTools } from "./useReviewTools";
 import { useViewedFiles, type ViewedFiles } from "../viewed/useViewedFiles";
 import type { ReviewViewedControls } from "../stream/FileSection";
-import { ViewedControls } from "./ViewedControls";
+import { ViewedProgress } from "./ViewedProgress";
+import { ViewMenu } from "./ViewMenu";
 
 /** Width of one monospace column on this page, measured once the fonts are in place. */
 function useColumnWidth() {
@@ -791,9 +792,16 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
   });
   const toolsRef = useRef<typeof tools | undefined>(undefined);
   toolsRef.current = tools;
-  const panelHint = webCommandChords(pageKeymap, "hunk.web.toggleSidePanel")
-    .map(formatKeyChord)
-    .join(" / ");
+  const pageHint = (commandId: WebLocalCommandId) =>
+    webCommandChords(pageKeymap, commandId).map(formatKeyChord).join(" / ") || undefined;
+  const panelHint = pageHint("hunk.web.toggleSidePanel");
+  const viewMenuHints = {
+    wrap: keyHint("hunk.view.toggleLineWrap"),
+    lineNumbers: keyHint("hunk.view.toggleLineNumbers"),
+    agentNotes: keyHint("hunk.view.toggleAgentNotes"),
+    hideViewed: pageHint("hunk.web.toggleHideViewed"),
+    theme: keyHint("hunk.view.openThemeSelector"),
+  };
   const panelTools: SidePanelTool[] = overview
     ? [
         {
@@ -902,42 +910,56 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
             ? `Loading ${mirror.loadedFiles} of ${mirror.totalFiles}`
             : undefined
         }
-        preferences={preferences}
+        layout={preferences.layout}
+        onLayout={(next) => updatePreferences({ layout: next })}
         sidebarOpen={sidebarOpen}
         resolvedLayout={layout}
-        themes={themeOptions}
-        themeId={selectedId}
-        {...(theme ? { themeLabel: theme.label } : {})}
-        themeMenuOpen={themeMenuOpen}
-        onThemeMenuOpen={setThemeMenuOpen}
         keyHint={keyHint}
-        onPreferences={updatePreferences}
         onToggleSidebar={() => updatePreferences({ sidebarOpen: !sidebarOpen })}
-        onTheme={choose}
-        controls={
-          <>
-            <ReviewControls
-              ref={filterRef}
-              filterText={interactive.filterText}
-              onFilterChange={interactive.changeFilter}
-              {...(keyHint("hunk.review.focusFilter")
-                ? { filterKeyHint: keyHint("hunk.review.focusFilter") }
-                : {})}
-              refreshing={interactive.refreshing}
-              onRefresh={() => void interactive.refresh()}
-              {...(keyHint("hunk.app.refresh")
-                ? { refreshKeyHint: keyHint("hunk.app.refresh") }
-                : {})}
-              onCopyLink={copyLink}
-              sessionEnded={sessionEnded}
-            />
-            <ViewedControls
-              progress={viewed.progress}
-              hideViewed={viewed.hideViewed}
-              onToggleHideViewed={viewed.toggleHideViewed}
-            />
-          </>
+        filterField={
+          <FilterField
+            ref={filterRef}
+            filterText={interactive.filterText}
+            onFilterChange={interactive.changeFilter}
+            {...(keyHint("hunk.review.focusFilter")
+              ? { filterKeyHint: keyHint("hunk.review.focusFilter") }
+              : {})}
+            sessionEnded={sessionEnded}
+          />
         }
+        viewedProgress={<ViewedProgress progress={viewed.progress} />}
+        viewMenu={
+          <ViewMenu
+            wrapLines={preferences.wrapLines}
+            showLineNumbers={preferences.showLineNumbers}
+            onPreferences={updatePreferences}
+            agentNotesVisible={review.showAgentNotes}
+            onToggleAgentNotes={() => void interactive.toggleAgentNotes()}
+            hideViewed={viewed.hideViewed}
+            onToggleHideViewed={viewed.toggleHideViewed}
+            sessionEnded={sessionEnded}
+            themes={themeOptions}
+            themeId={selectedId}
+            {...(theme ? { themeLabel: theme.label } : {})}
+            themeMenuOpen={themeMenuOpen}
+            onThemeMenuOpen={setThemeMenuOpen}
+            onTheme={choose}
+            hints={viewMenuHints}
+          />
+        }
+        reviewActions={
+          <ReviewActions
+            refreshing={interactive.refreshing}
+            onRefresh={() => void interactive.refresh()}
+            {...(keyHint("hunk.app.refresh")
+              ? { refreshKeyHint: keyHint("hunk.app.refresh") }
+              : {})}
+            onCopyLink={copyLink}
+            sessionEnded={sessionEnded}
+          />
+        }
+        onOpenCommands={tools.openPalette}
+        commandsHint={webModChordLabel("k")}
         panelOpen={panelOpen}
         {...(panelHint ? { panelHint } : {})}
         onTogglePanel={() => updatePanel({ open: !panelOpen })}

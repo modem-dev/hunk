@@ -14,6 +14,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import {
   chooseTestTheme,
+  openTestViewMenu,
   startTestWebReview,
   watchTestPageProblems,
   type TestWebReview,
@@ -163,9 +164,13 @@ test("passes axe with a viewed file collapsed and with viewed files hidden", asy
   await expect(firstSection.locator(".file-collapsed")).toBeVisible();
   expect(await seriousPageViolations(page)).toEqual([]);
 
-  const hide = page.getByRole("button", { name: "Hide viewed" });
+  // With the View menu open, then closed again.
+  await openTestViewMenu(page);
+  const hide = page.getByRole("menuitemcheckbox", { name: "Hide viewed" });
   await hide.click();
-  await expect(hide).toHaveAttribute("aria-pressed", "true");
+  await expect(hide).toHaveAttribute("aria-checked", "true");
+  expect(await seriousPageViolations(page)).toEqual([]);
+  await page.keyboard.press("Escape");
   expect(await seriousPageViolations(page)).toEqual([]);
 });
 
