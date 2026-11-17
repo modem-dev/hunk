@@ -97,7 +97,11 @@ import { NotesTab } from "../notesPanel/NotesTab";
 import { OverviewTab } from "../overview/OverviewTab";
 import { selectWebReviewOverview } from "../panel/overviewInput";
 import { webLocalKeyCommands, withWebLocalChords } from "../panel/panelCommands";
-import { webModChordLabel, type WebLocalCommandId } from "../commands/webLocalCommands";
+import {
+  WEB_LOCAL_COMMANDS,
+  webModChordLabel,
+  type WebLocalCommandId,
+} from "../commands/webLocalCommands";
 import {
   readSidePanelPreferences,
   resolveSidePanelOpen,
@@ -795,6 +799,15 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
   const pageHint = (commandId: WebLocalCommandId) =>
     webCommandChords(pageKeymap, commandId).map(formatKeyChord).join(" / ") || undefined;
   const panelHint = pageHint("hunk.web.toggleSidePanel");
+  // The palette's chord is a page-only Ctrl/Cmd chord, so it is read from the page's command
+  // table rather than the keymap; the Commands button never names a key of its own.
+  const paletteCommand = WEB_LOCAL_COMMANDS.find(
+    (command) => command.id === "hunk.web.commandPalette",
+  );
+  const commandsHint =
+    paletteCommand && "modKey" in paletteCommand
+      ? webModChordLabel(paletteCommand.modKey)
+      : undefined;
   const viewMenuHints = {
     wrap: keyHint("hunk.view.toggleLineWrap"),
     lineNumbers: keyHint("hunk.view.toggleLineNumbers"),
@@ -959,7 +972,7 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
           />
         }
         onOpenCommands={tools.openPalette}
-        commandsHint={webModChordLabel("k")}
+        {...(commandsHint ? { commandsHint } : {})}
         panelOpen={panelOpen}
         {...(panelHint ? { panelHint } : {})}
         onTogglePanel={() => updatePanel({ open: !panelOpen })}
