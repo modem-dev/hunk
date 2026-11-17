@@ -3,8 +3,9 @@
  *
  * Presentation only, like the view preferences (`../view/viewPreferences.ts`): it never reaches
  * the session. Stored in `localStorage` with every access guarded, so blocked storage costs
- * only the memory of the choice. Without a stored choice the panel opens on wide viewports and
- * stays hidden on narrow ones, where the stream needs the room.
+ * only the memory of the choice. Without a stored choice the panel stays closed at every width:
+ * the summary strip above the review says what the Overview would, and the panel opens when
+ * the reader asks for it.
  */
 
 /** The tools the panel hosts, by tab id. */
@@ -13,22 +14,16 @@ export type SidePanelTab = "overview" | "notes";
 export const SIDE_PANEL_TABS: readonly SidePanelTab[] = ["overview", "notes"];
 
 export interface SidePanelPreferences {
-  /** Undefined means "decide from the viewport". */
+  /** Undefined means the reader never chose, which is closed. */
   open: boolean | undefined;
   width: number;
-  tab: SidePanelTab;
+  /** Undefined until the reader picks a tab; the page then opens on the tab that fits. */
+  tab: SidePanelTab | undefined;
 }
 
 export const SIDE_PANEL_MIN_WIDTH = 260;
 export const SIDE_PANEL_MAX_WIDTH = 640;
 export const SIDE_PANEL_DEFAULT_WIDTH = 340;
-
-/**
- * Below this viewport width the panel starts hidden: beside a 300 px files sidebar, a 340 px
- * panel leaves the stream about 760 px at this width, about what a unified diff with notes
- * needs; a common 1280 px laptop window keeps the stream's room.
- */
-export const SIDE_PANEL_MIN_VIEWPORT = 1400;
 
 const STORAGE_KEY = "hunk.review.panel";
 
@@ -54,7 +49,7 @@ export function readSidePanelPreferences(): SidePanelPreferences {
         : SIDE_PANEL_DEFAULT_WIDTH,
     tab: SIDE_PANEL_TABS.includes(stored.tab as SidePanelTab)
       ? (stored.tab as SidePanelTab)
-      : "overview",
+      : undefined,
   };
 }
 
@@ -67,7 +62,18 @@ export function storeSidePanelPreferences(preferences: SidePanelPreferences) {
   }
 }
 
-/** Whether the panel is open: the stored choice, or the viewport's default. */
-export function resolveSidePanelOpen(preferences: SidePanelPreferences, viewportWidth: number) {
-  return preferences.open ?? viewportWidth >= SIDE_PANEL_MIN_VIEWPORT;
+/** Whether the panel is open: the stored choice, or closed when there is none. */
+export function resolveSidePanelOpen(preferences: SidePanelPreferences) {
+  return preferences.open ?? false;
+}
+
+/**
+ * The tab the panel shows: the reader's choice, else Notes when the review has notes to read,
+ * else Overview.
+ */
+export function resolveSidePanelTab(
+  preferences: SidePanelPreferences,
+  hasNotes: boolean,
+): SidePanelTab {
+  return preferences.tab ?? (hasNotes ? "notes" : "overview");
 }

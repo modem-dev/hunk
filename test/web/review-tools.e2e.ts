@@ -2,13 +2,14 @@
  * Drives the side panel's review tools against a rich live review.
  *
  * The Overview tab's figures must match the toolbar and the shared overview selector's policy,
- * and every row naming a file or a directory must jump the stream there. The panel opens by
- * default on wide viewports, toggles from the toolbar and its web-only shortcut, remembers its
+ * and every row naming a file or a directory must jump the stream there. The panel starts closed
+ * at every width, opens on the tab that fits, toggles from the toolbar and its web-only shortcut, remembers its
  * state per browser, and passes axe — all without a CSP violation or console error.
  */
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import {
+  seedTestOpenSidePanel,
   startTestWebReview,
   watchTestPageProblems,
   type TestWebReview,
@@ -30,10 +31,18 @@ test.afterEach(async () => {
   }
 });
 
-/** Open the rich review and wait until every file has loaded. */
-async function openTestReview(page: Page, options: TestWebReviewOptions = {}) {
+/**
+ * Open the rich review and wait until every file has loaded. The panel starts closed with no
+ * stored choice; most tests here drive its tools, so they seed it open on Overview first.
+ */
+async function openTestReview(
+  page: Page,
+  options: TestWebReviewOptions = {},
+  panel: "open" | "closed" = "open",
+) {
   review = await startTestWebReview("--rich", options);
   problems = await watchTestPageProblems(page);
+  if (panel === "open") await seedTestOpenSidePanel(page, "overview");
   await page.goto(review.url);
   await expect(page.locator('.toolbar [data-state="connected"]')).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("load-progress")).toHaveCount(0, { timeout: 30_000 });
@@ -44,9 +53,7 @@ function selectedSectionPath(page: Page) {
   return page.locator("section[data-selected] .file-name").first();
 }
 
-test("opens the overview by default on a wide viewport and agrees with the toolbar", async ({
-  page,
-}) => {
+test("shows the overview when the panel is open and agrees with the toolbar", async ({ page }) => {
   await openTestReview(page);
   const panel = page.getByTestId("side-panel");
   await expect(panel).toBeVisible();
@@ -106,12 +113,54 @@ test("toggles from the toolbar and its shortcut, and remembers the choice", asyn
   await expect(panel).toBeVisible();
 });
 
-test("starts hidden on a narrow viewport", async ({ page }) => {
-  await page.setViewportSize({ width: 1100, height: 800 });
-  await openTestReview(page);
+test("starts closed at every width, and a stored choice wins", async ({ page }) => {
+  await openTestReview(page, {}, "closed");
   await expect(page.getByTestId("side-panel")).toHaveCount(0);
   await page.getByTestId("toggle-side-panel").click();
   await expect(page.getByTestId("side-panel")).toBeVisible();
+
+  await page.setViewportSize({ width: 1100, height: 800 });
+  await page.evaluate(() => window.localStorage.removeItem("hunk.review.panel"));
+  await page.reload();
+  await expect(page.locator('.toolbar [data-state="connected"]')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("side-panel")).toHaveCount(0);
+});
+
+test("opens on Notes when the review has notes and no tab was ever chosen, else on Overview", async ({
+  page,
+}) => {
+  await openTestReview(
+    page,
+    {
+      args: ["--agent-notes"],
+      context: {
+        "src/app/main.ts": {
+          annotations: [{ newRange: [13, 13], summary: "Sidecar note", author: "sonnet" }],
+        },
+      },
+    },
+    "closed",
+  );
+  await page.getByTestId("toggle-side-panel").click();
+  await expect(page.getByRole("tab", { name: "Notes" })).toHaveAttribute("aria-selected", "true");
+
+  // A tab the reader chose is remembered over the default.
+  await page.getByTestId("side-panel-tab-overview").click();
+  await page.getByTestId("toggle-side-panel").click();
+  await page.getByTestId("toggle-side-panel").click();
+  await expect(page.getByRole("tab", { name: "Overview" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+});
+
+test("opens on Overview when the review has no notes", async ({ page }) => {
+  await openTestReview(page, {}, "closed");
+  await page.getByTestId("toggle-side-panel").click();
+  await expect(page.getByRole("tab", { name: "Overview" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
 });
 
 test("counts notes by origin in the overview", async ({ page }) => {
