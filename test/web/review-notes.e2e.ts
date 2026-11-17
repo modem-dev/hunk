@@ -107,7 +107,7 @@ test("renders sidecar notes, STML markup, and the session title", async ({ page 
   await page.getByRole("radio", { name: "Flat" }).click();
   await expect(
     page.locator(".flat-file", { hasText: "main.ts" }).locator("[data-badge]").first(),
-  ).toHaveText("*2");
+  ).toHaveText("2 notes");
 });
 
 test("shows live comments as an agent adds, replies to, removes, and clears them", async ({
@@ -169,7 +169,7 @@ test("shows live comments as an agent adds, replies to, removes, and clears them
     }),
   );
   await page.getByRole("radio", { name: "Flat" }).click();
-  await expect(page.locator(".flat-file", { hasText: "module-03.ts" })).toContainText("*1");
+  await expect(page.locator(".flat-file", { hasText: "module-03.ts" })).toContainText("1 note");
   await page.locator(".flat-file", { hasText: "module-04.ts" }).click();
   await expect(noteCard(page, "Batch two")).toBeVisible();
 
@@ -263,7 +263,7 @@ test("walks annotated hunks with the keyboard", async ({ page }) => {
   await addTestComment("src/gen/module-10.ts", 2, "Tenth module note");
   await addTestComment("src/gen/module-20.ts", 2, "Twentieth module note");
   await page.getByRole("radio", { name: "Flat" }).click();
-  await expect(page.locator(".flat-file", { hasText: "module-20.ts" })).toContainText("*1");
+  await expect(page.locator(".flat-file", { hasText: "module-20.ts" })).toContainText("1 note");
 
   await page.keyboard.press("}");
   await expect(page.locator("section[data-selected] .file-path")).toHaveText(

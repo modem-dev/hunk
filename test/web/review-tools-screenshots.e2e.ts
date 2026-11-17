@@ -218,10 +218,15 @@ test("captures viewed files: marked, collapsed, changed since viewed, and hidden
     timeout: 30_000,
   });
   await capture(page, "viewed-changed-dark");
+  await page.getByRole("radio", { name: "Tree" }).click();
+  await capture(page, "viewed-changed-tree-dark");
+  await page.getByRole("radio", { name: "Flat" }).click();
 
   await toggleTestHideViewed(page);
   await capture(page, "viewed-hidden-dark");
   await chooseTestTheme(page, "github-light-default");
   await toggleTestHideViewed(page);
   await capture(page, "viewed-light");
+  await page.getByRole("radio", { name: "Tree" }).click();
+  await capture(page, "viewed-tree-light");
 });
