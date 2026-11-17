@@ -49,7 +49,7 @@ import {
   reservedBodyHeight,
   STREAM_HEADER_HEIGHT_PX,
   STREAM_ROW_HEIGHT_PX,
-  VIEWED_COLLAPSED_HEIGHT_PX,
+  COLLAPSED_BODY_HEIGHT_PX,
   type ReviewViewedControls,
 } from "./FileSection";
 import type { ReviewViewedStatus } from "../viewed/viewedFiles";
@@ -150,10 +150,12 @@ export interface ReviewStreamProps {
   interaction: ReviewNoteInteraction;
   /** Each file's viewed mark as the page shows it. */
   viewedStatuses?: ReadonlyMap<string, ReviewViewedStatus>;
-  /** Viewed files whose bodies are collapsed. */
+  /** Files whose bodies are collapsed: viewed files, and files the reader folded. */
   collapsedFiles?: ReadonlySet<string>;
-  /** What the viewed controls do; stable for the page's lifetime. */
+  /** What the viewed and collapse controls do; stable for the page's lifetime. */
   viewed?: ReviewViewedControls;
+  /** The keymap's chord for toggling the selected file's viewed mark, shown on its header. */
+  viewedKeyHint?: string;
   /** What an empty stream says, when the page knows better than "no files". */
   emptyMessage?: ReactNode;
 }
@@ -521,7 +523,7 @@ export function ReviewStream(props: ReviewStreamProps) {
           result.set(
             slot.key,
             current.collapsedFiles?.has(slot.key)
-              ? VIEWED_COLLAPSED_HEIGHT_PX
+              ? COLLAPSED_BODY_HEIGHT_PX
               : (heights.get(slot.key) ??
                   reservedBodyHeight(file ? plan(file) : undefined, slot.index, current.layout)),
           );
@@ -673,7 +675,7 @@ export function ReviewStream(props: ReviewStreamProps) {
     };
   }, []);
 
-  // A viewed file that collapses unmounts its diff view while staying in the mounted window,
+  // A file that collapses unmounts its diff view while staying in the mounted window,
   // so its hunk geometry would outlive the drawing it describes.
   useEffect(() => {
     for (const fileKey of props.collapsedFiles ?? NO_COLLAPSED) {
@@ -681,7 +683,7 @@ export function ReviewStream(props: ReviewStreamProps) {
     }
   }, [props.collapsedFiles]);
 
-  // Collapsing or opening a viewed file, wrapping, or a layout switch moves every file below
+  // Collapsing or opening a file, wrapping, or a layout switch moves every file below
   // it without a scroll; overviews hear about it here as well as from measured bodies.
   useEffect(() => {
     for (const listener of Array.from(layoutListeners.current)) listener();
@@ -711,6 +713,7 @@ export function ReviewStream(props: ReviewStreamProps) {
             measuredHeight={heights.get(slot.key)}
             selected={selected}
             {...(selected ? { selectedHunk } : {})}
+            {...(selected && props.viewedKeyHint ? { viewedKeyHint: props.viewedKeyHint } : {})}
             {...(slot.key === activeNoteFileKey ? { activeNoteId } : {})}
             layout={props.layout}
             wrapLines={props.wrapLines}

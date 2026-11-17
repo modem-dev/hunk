@@ -161,7 +161,7 @@ test("passes axe with a viewed file collapsed and with viewed files hidden", asy
   // The mark shows once the session echoes it back, so click rather than `check()`.
   await firstSection.locator(".viewed-toggle input").click();
   await expect(firstSection.locator(".viewed-toggle input")).toBeChecked();
-  await expect(firstSection.locator(".file-collapsed")).toBeVisible();
+  await expect(firstSection.locator('.file-collapse[aria-expanded="false"]')).toBeVisible();
   expect(await seriousPageViolations(page)).toEqual([]);
 
   // With the View menu open, then closed again.
