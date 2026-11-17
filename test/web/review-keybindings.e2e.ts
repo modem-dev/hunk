@@ -37,6 +37,7 @@ const REMAPS = {
   "hunk.view.toggleLineWrap": "W",
   "hunk.review.replyToActiveNote": "K",
   "hunk.web.toggleViewed": "x",
+  "hunk.web.toggleHideViewed": "H",
 } as const;
 
 /** The config the session starts with: the remaps above as a `[keybindings]` table. */
@@ -140,18 +141,14 @@ test("a remapped catalog command shows and answers to its new key everywhere", a
   await expect(replyAction).not.toHaveAttribute("aria-label", new RegExp(`\\(${replyDefault}\\)`));
 });
 
-// Finding: `hunk.web.toggleViewed` is a page-only command (`web/commands/webLocalCommands.ts`).
-// The host resolves `[keybindings]` against the shared catalog alone and publishes only catalog
-// ids in the page's keymap (`app/review/sharedState.ts`), so `resolveCommandKeys` treats a
-// remap of it as an unknown command id and drops it: the page keeps its default, in its hints
-// and on the keyboard. This test
-// states the behavior the remap should have and is marked as failing until the host carries
-// page-only ids; when it starts passing, remove `test.fail`.
+// Intent: a page-only command (`hunk.web.*`) is remapped like any other. The host resolves the
+// entry and publishes it in the page's keymap, so every hint and the help overlay name the new
+// key, the new key runs the command, and the default it replaced does nothing.
 test("a remapped page-only command shows and answers to its new key", async ({ page }) => {
-  test.fail();
   await openTestReview(page, remapTestConfig(["hunk.web.toggleViewed"]));
   const viewed = formatKeyChord(REMAPS["hunk.web.toggleViewed"]);
   const viewedDefault = formatKeyChord(defaultTestChord("hunk.web.toggleViewed"));
+  const title = WEB_LOCAL_COMMANDS.find((entry) => entry.id === "hunk.web.toggleViewed")!.title;
 
   const barHint = page.locator('[data-testid="bar-key-hints"] [data-hint="viewed"] kbd');
   const headerHint = page.locator("section[data-selected] .viewed-toggle .key-hint");
@@ -159,9 +156,37 @@ test("a remapped page-only command shows and answers to its new key", async ({ p
   await expect(barHint).toHaveText(viewed, { timeout: 5_000 });
   await expect(headerHint).toHaveText(viewed, { timeout: 5_000 });
 
+  // The help overlay lists the command under the new key alone.
+  await page.keyboard.press(formatKeyChord(defaultTestChord("hunk.app.toggleHelp")));
+  const help = page.getByTestId("help-overlay");
+  const helpRow = help.getByRole("row", { name: new RegExp(title, "i") });
+  await expect(helpRow.locator("kbd")).toHaveText(viewed);
+  await page.keyboard.press("Escape");
+  await expect(help).toHaveCount(0);
+  await page.locator(".review-stream").focus();
+
   await page.keyboard.press(viewedDefault);
   await page.waitForTimeout(300);
   await expect(checkbox).not.toBeChecked();
   await page.keyboard.press(viewed);
   await expect(checkbox).toBeChecked({ timeout: 5_000 });
+});
+
+// Intent: a page command that ships without a key takes one from `[keybindings]`, as an unbound
+// catalog command does: the View menu's row names it and the key runs the command.
+test("a page-only command that ships unbound takes a key from the config", async ({ page }) => {
+  const hideViewed = formatKeyChord(REMAPS["hunk.web.toggleHideViewed"]);
+  await openTestReview(page, remapTestConfig(["hunk.web.toggleHideViewed"]));
+
+  await openTestViewMenu(page);
+  const row = page.getByTestId("toggle-hide-viewed");
+  await expect(row.locator(".key-hint")).toHaveText(hideViewed);
+  await expect(row).toHaveAttribute("aria-checked", "false");
+  await page.keyboard.press("Escape");
+  await page.locator(".review-stream").focus();
+
+  await page.keyboard.press(hideViewed);
+  await openTestViewMenu(page);
+  await expect(row).toHaveAttribute("aria-checked", "true");
+  await page.keyboard.press("Escape");
 });

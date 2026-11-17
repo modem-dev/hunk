@@ -520,6 +520,8 @@ export function useReviewTools(options: ReviewToolsOptions) {
   return {
     overlay,
     toggleHelp: useCallback(() => open("help"), [open]),
+    /** Run one page-only command by id, as the palette and the page's keyboard do. */
+    runLocal,
     /** Open the command palette, as the toolbar's Commands button does. */
     openPalette: useCallback(() => open("palette"), [open]),
     /** Jump to one file from the sidebar, as a new history entry. */

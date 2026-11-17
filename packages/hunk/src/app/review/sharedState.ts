@@ -22,6 +22,10 @@ import { DOCUMENT_COMMAND_NAMES } from "../../core/run/documentCommandCatalog";
 import { HISTORY_COMMAND_NAMES } from "../../core/run/historyCommandCatalog";
 import { resolveCommandKeys } from "../../core/run/keymap";
 import { STATUS_COMMAND_NAMES } from "../../core/run/statusCommandCatalog";
+import {
+  WEB_LOCAL_COMMAND_KEY_DEFAULTS,
+  WEB_LOCAL_FIXED_COMMAND_NAMES,
+} from "../../core/run/webLocalCommandCatalog";
 import { resolveTheme, THEMES, type AppTheme } from "../../core/theme/appTheme";
 import { HUNK_REVIEW_PROTOCOL_VERSION } from "../../session/reviewProtocol";
 import type {
@@ -74,7 +78,10 @@ function themeDefaults(theme: AppTheme): ReviewThemeDefaults {
  *
  * The theme is resolved exactly as the terminal resolves its first frame; the keymap folds the
  * user's `[keybindings]` over the built-in review commands with the same resolver the terminal
- * dispatches through. Extension commands are not included: a browser cannot run them (F4).
+ * dispatches through. The page's own remappable commands (`hunk.web.*`) resolve in the same
+ * fold, after the catalog, so a remap of one reaches the page and a chord the user gave one is
+ * taken from whatever held it by default there. Extension commands are not included: a browser
+ * cannot run them (F4).
  */
 export function buildReviewPresentationDefaults(
   bootstrap: AppBootstrap,
@@ -85,18 +92,26 @@ export function buildReviewPresentationDefaults(
     bootstrap.customThemes ?? [],
   );
   const keymap = resolveCommandKeys({
-    defaults: APP_COMMAND_CATALOG.map((entry) => ({
-      id: entry.id,
-      aliases: entry.aliases,
-      defaultKeys: entry.defaultKeys,
-    })),
+    defaults: [
+      ...APP_COMMAND_CATALOG.map((entry) => ({
+        id: entry.id,
+        aliases: entry.aliases,
+        defaultKeys: entry.defaultKeys,
+      })),
+      ...WEB_LOCAL_COMMAND_KEY_DEFAULTS,
+    ],
     inactiveCommandNames: new Set([
       ...HISTORY_COMMAND_NAMES,
       ...DOCUMENT_COMMAND_NAMES,
       ...STATUS_COMMAND_NAMES,
     ]),
+    fixedCommandNames: WEB_LOCAL_FIXED_COMMAND_NAMES,
     userBindings: bootstrap.keybindings,
   });
+  const publishedIds = [
+    ...APP_COMMAND_CATALOG.map((entry) => entry.id),
+    ...WEB_LOCAL_COMMAND_KEY_DEFAULTS.map((entry) => entry.id),
+  ];
   return {
     title: bootstrap.changeset.title,
     sourceLabel: bootstrap.changeset.sourceLabel,
@@ -107,9 +122,7 @@ export function buildReviewPresentationDefaults(
       lineNumbers: bootstrap.initialShowLineNumbers ?? true,
       hunkHeaders: bootstrap.initialShowHunkHeaders ?? true,
     },
-    keymap: Object.fromEntries(
-      APP_COMMAND_CATALOG.map((entry) => [entry.id, [...(keymap.keys.get(entry.id) ?? [])]]),
-    ),
+    keymap: Object.fromEntries(publishedIds.map((id) => [id, [...(keymap.keys.get(id) ?? [])]])),
   };
 }
 

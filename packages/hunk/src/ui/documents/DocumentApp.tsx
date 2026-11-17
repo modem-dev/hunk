@@ -15,6 +15,10 @@ import { APP_COMMAND_NAMES } from "../../core/run/commandCatalog";
 import { HISTORY_COMMAND_NAMES } from "../../core/run/historyCommandCatalog";
 import { DOCUMENT_COMMAND_CATALOG } from "../../core/run/documentCommandCatalog";
 import { STATUS_COMMAND_NAMES } from "../../core/run/statusCommandCatalog";
+import {
+  WEB_LOCAL_COMMAND_NAMES,
+  WEB_LOCAL_FIXED_COMMAND_NAMES,
+} from "../../core/run/webLocalCommandCatalog";
 import { resolveCommandKeys } from "../lib/keymap";
 import { openFileInEditor } from "../lib/openInEditor";
 import type { ThemeController } from "../theme/controller";
@@ -93,7 +97,9 @@ export function DocumentApp({
           ...APP_COMMAND_NAMES,
           ...HISTORY_COMMAND_NAMES,
           ...STATUS_COMMAND_NAMES,
+          ...WEB_LOCAL_COMMAND_NAMES,
         ]),
+        fixedCommandNames: WEB_LOCAL_FIXED_COMMAND_NAMES,
       }),
     [keybindings],
   );

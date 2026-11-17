@@ -54,6 +54,8 @@ export interface ResolveCommandKeysOptions {
   defaults: readonly CommandKeyDefaults[];
   /** Known commands owned by another surface; accepted but inactive here. */
   inactiveCommandNames?: ReadonlySet<string>;
+  /** Known commands whose shortcut is not remappable; an entry naming one is reported. */
+  fixedCommandNames?: ReadonlySet<string>;
   /** The user's `[keybindings]` table, in config order. */
   userBindings?: Readonly<Record<string, UserKeyBinding>>;
 }
@@ -131,13 +133,14 @@ function mirrorCommandAliases(
  * answers to. `false` (or an empty list) unbinds the command. Every chord a
  * user entry claims is then removed from any other command that held it by
  * default, leaving that command's remaining chords alone. Bad input never
- * throws: unknown ids, unparsable chords, and two entries fighting over one
- * chord come back as issues for the caller to surface, and the rest of the
- * config still applies.
+ * throws: unknown ids, ids whose shortcut is fixed, unparsable chords, and two
+ * entries fighting over one chord come back as issues for the caller to
+ * surface, and the rest of the config still applies.
  */
 export function resolveCommandKeys({
   defaults,
   inactiveCommandNames,
+  fixedCommandNames,
   userBindings,
 }: ResolveCommandKeysOptions): ResolvedKeymap {
   const issues: KeymapIssue[] = [];
@@ -189,6 +192,13 @@ export function resolveCommandKeys({
     const canonicalId = canonicalByName.get(commandId);
     if (canonicalId === undefined) {
       if (inactiveCommandNames?.has(commandId)) {
+        continue;
+      }
+      if (fixedCommandNames?.has(commandId)) {
+        issues.push({
+          commandId,
+          message: `Keybinding for "${commandId}" ignored • its shortcut is fixed and cannot be remapped`,
+        });
         continue;
       }
       issues.push({

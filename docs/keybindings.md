@@ -40,9 +40,8 @@ Rules worth knowing:
 The [browser review](https://hunk.dev/docs/workflows/browser-review/) (`hunk diff --web`) answers to the same
 command ids and reads the same `[keybindings]` table, except chords that use Ctrl, Cmd, Alt,
 Tab, or a function key: those stay with the browser. `hunk.app.openInBrowser` (File menu, unbound)
-opens the current terminal review there. The page adds its own `hunk.web.*` commands, listed in its
-command palette, among them `hunk.web.toggleViewed` (`V`, mark the selected file viewed) and
-`hunk.web.toggleHideViewed` (unbound, hide viewed files in that browser).
+opens the current terminal review there. The page adds its own `hunk.web.*` commands, which
+the same table remaps; see [In the browser review page](#in-the-browser-review-page).
 
 Chords are `ctrl`, `alt`/`option`, `cmd`/`meta`, and `shift` joined with `+`
 around a base key: a character (`"y"`, `"["`), an uppercase letter for its
@@ -229,7 +228,49 @@ that uses Ctrl, Cmd, or Alt, Tab, and the function keys to the browser, so `ctrl
 `ctrl+u` do nothing there (`d` and `u` still page), and it ignores keys typed into a field.
 A symbol typed through AltGr or Option (`]` on German and Nordic layouts) counts as the
 character, so `[` `]` `{` `}` navigate there too. A focused control keeps its own keys (Space on
-a checkbox, the scroll keys in the side panel), and toggles such as `V` ignore key auto-repeat.
-It does not read `[keybindings]` yet; the host's resolved keymap reaches it with the shared
-review state. Which commands the page implements is listed in
+a checkbox, the scroll keys in the side panel), and toggles such as the viewed mark ignore key
+auto-repeat. Which commands the page implements is listed in
 [`web-review-client.md`](web-review-client.md#commands-and-keyboard).
+
+The page does not read your config itself. The session that hosts the review resolves
+`[keybindings]` and sends the page the result with the review's shared state, so the page's
+hints, command palette, and help overlay (`?`) show the keys you chose. The session resolves
+the table when it starts, so restart it to pick up a config change.
+
+The page also has commands of its own, under `hunk.web.*` ids. They remap in the same table
+and by the same rules:
+
+```toml
+[keybindings]
+"hunk.web.toggleViewed" = "x"      # replaces the default V
+"hunk.web.toggleHideViewed" = "H"  # ships unbound; this gives it a key
+"hunk.web.showNotes" = false       # unbind it
+```
+
+| Command id                  | Does                                             | Default keys |
+| --------------------------- | ------------------------------------------------ | ------------ |
+| `hunk.web.copyLocationLink` | Copy a link to this hunk or note                 | _(none)_     |
+| `hunk.web.copyReviewLink`   | Copy the review link                             | _(none)_     |
+| `hunk.web.filesAsList`      | Show files as a flat list                        | _(none)_     |
+| `hunk.web.filesAsTree`      | Show files as a tree                             | _(none)_     |
+| `hunk.web.showNotes`        | Show every note in the review                    | `N`          |
+| `hunk.web.showOverview`     | Show the review overview                         | `O`          |
+| `hunk.web.toggleHideViewed` | Hide or show viewed files                        | _(none)_     |
+| `hunk.web.toggleMinimap`    | Toggle the minimap                               | _(none)_     |
+| `hunk.web.togglePreview`    | Toggle the rendered view of the selected file    | _(none)_     |
+| `hunk.web.toggleSidePanel`  | Toggle the side panel                            | `p`          |
+| `hunk.web.toggleViewed`     | Mark the selected file viewed, or clear its mark | `V`          |
+| `hunk.web.useSessionTheme`  | Use the session's theme                          | _(none)_     |
+
+Three things differ from the commands above:
+
+- **They bind in the page only.** A terminal has nothing to run for a `hunk.web.*` id, so an
+  entry for one binds no key there and takes none away from a terminal command.
+- **A key is exclusive within the page.** A key you give a page command is taken from any
+  command that held it by default in the page, and a key you give another command is taken from
+  the page command that shipped with it. Giving `hunk.web.toggleViewed` the key `w` moves `w`
+  off line wrapping in the page, while the terminal keeps `w` for line wrapping.
+- **Two shortcuts are fixed.** `hunk.web.commandPalette` (Ctrl+K, Cmd+K on macOS) and
+  `hunk.web.goToFile` (Ctrl+P, Cmd+P) are chords the page claims from the browser. They are
+  outside the chord grammar the page binds, so they are not remappable: an entry for either is
+  reported and ignored.

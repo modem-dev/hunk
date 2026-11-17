@@ -20,7 +20,7 @@ packages/hunk/src/web/
   app/ReviewControls.tsx       shared filter field, refresh, copy review link
   app/useReviewInteraction.tsx composers, note commands, shared toggles, refresh
   app/useReviewTools.tsx       palette, go-to-file, help, deep links and history
-  commands/webLocalCommands.ts the page's own hunk.web.* commands and their chords
+  commands/webLocalCommands.ts the page's Ctrl/Cmd chords; re-exports its hunk.web.* commands
   palette/paletteEntries.ts    palette rows and help sections from the command tables
   palette/PickerDialog.tsx     the combobox + listbox dialog both pickers use
   palette/HelpOverlay.tsx      the keyboard help dialog
@@ -374,7 +374,8 @@ imports; a page fetches only the languages and themes it shows. The largest sing
 - **Keymap.** Chords are the shared grammar (`extension-api/keys.ts`) and labels the shared
   `core/run/keyChordLabels.ts`, which the terminal's `ui/lib/keymap.ts` now re-exports (audit
   F3). The page starts from the catalog's default chords; the host's resolved keymap from the
-  shared-state route replaces them through the same `WebKeymap` shape. `keyboard.ts` maps a DOM
+  shared-state route replaces them through the same `WebKeymap` shape, and carries the page's
+  own remappable `hunk.web.*` commands beside the catalog's. `keyboard.ts` maps a DOM
   `KeyboardEvent` onto the grammar's structural key event (Caps Lock `G` is `G`, never `g`) and
   masks what the browser owns: every Ctrl, Cmd, or Alt chord (so `ctrl+d`/`ctrl+u` stay the
   browser's and `d`/`u` page), Tab, and the function keys. A printable symbol typed through
@@ -405,13 +406,18 @@ imports; a page fetches only the languages and themes it shows. The largest sing
 
 ## Palette, help, go-to-file, and deep links
 
-- **Page-only commands.** `commands/webLocalCommands.ts` declares what only a page can do under
-  `hunk.web.*` ids: the palette (`Ctrl+K`, `⌘K` on macOS), go to file (`Ctrl+P` / `⌘P`), copy
-  review link, copy link to this hunk or note, use session theme, and files as a tree or a
-  list. The rule: a command with a terminal meaning goes in the shared catalog and is
-  classified in `webCommandTable.ts`; only a command with none is declared here. These ids never
-  reach the catalog, the host keymap, or a review action. The two dialog chords are the only
-  modified chords the page claims from the browser (`Ctrl+P` would print).
+- **Page-only commands.** `core/run/webLocalCommandCatalog.ts` declares what only a page can
+  do under `hunk.web.*` ids: the palette (`Ctrl+K`, `⌘K` on macOS), go to file (`Ctrl+P` /
+  `⌘P`), copy review link, copy link to this hunk or note, use session theme, and files as a
+  tree or a list. The rule: a command with a terminal meaning goes in the shared catalog and is
+  classified in `webCommandTable.ts`; only a command with none is declared there. These ids
+  never reach the catalog or a review action. The declaration lives in `core/run` because the
+  host reads it: `app/review/sharedState.ts` folds the user's `[keybindings]` over the
+  remappable ones beside the catalog and publishes them in the review's keymap, and the
+  terminal surfaces read the names to accept an entry for one without binding it. The two
+  dialog chords are the only modified chords the page claims from the browser (`Ctrl+P` would
+  print); they are matched in `commands/webLocalCommands.ts`, never enter the keymap, and are
+  not remappable.
 - **Palette.** Lists exactly the implemented catalog commands (host-only and terminal-only ones
   never are) and the page's own, each with its title, category, and the chord the page binds
   (`paletteEntries.ts`). Fuzzy subsequence matching; recently run commands lead (ids kept in
@@ -447,11 +453,12 @@ imports; a page fetches only the languages and themes it shows. The largest sing
   (`overview/SummaryStrip.tsx`, outside the scrolling stream so its geometry is untouched) has
   an Overview button that opens it. The toolbar's last button toggles it; the stream's width
   for `auto` layout subtracts it.
-- **Commands.** The panel's commands are page commands in `commands/webLocalCommands.ts`, so the
-  palette and help list them: `p` toggles the panel and `O` shows the Overview. A page command
-  may declare plain `keys` in the shared chord grammar; `panel/panelCommands.ts` binds those
-  through the page's keymap (merged under any chord the host resolved), and a test keeps them
-  off every catalog default.
+- **Commands.** The panel's commands are page commands in `core/run/webLocalCommandCatalog.ts`,
+  so the palette and help list them: `p` toggles the panel and `O` shows the Overview. A page
+  command may declare plain `keys` in the shared chord grammar; `panel/panelCommands.ts` binds
+  every remappable page command through the page's keymap, using the chords the host resolved
+  for it (the shipped ones only for a keymap that carries no entry for the id), and a test
+  keeps the shipped chords off every catalog default.
 - **Overview.** Every figure is `selectReviewOverview` (`core/review/overview.ts`) over the
   visible files and the shared state's notes and viewed marks: totals with a `≥` lower-bound
   mark, "meaningful" totals beside them (tests, docs, and generated files excluded by the path

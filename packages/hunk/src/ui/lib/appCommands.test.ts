@@ -14,6 +14,10 @@ import {
 } from "./appCommands";
 import { APP_COMMAND_CATALOG, builtinAppCommand } from "../../core/run/commandCatalog";
 import { HISTORY_COMMAND_CATALOG } from "../../core/run/historyCommandCatalog";
+import {
+  WEB_LOCAL_COMMAND_KEY_DEFAULTS,
+  WEB_LOCAL_COMMAND_NAMES,
+} from "../../core/run/webLocalCommandCatalog";
 import { getBundledUIRegistry } from "../../extensions/default/ui";
 import { buildAppMenus } from "./appMenus";
 import { buildHelpSections, HELP_COMMAND_IDS } from "./helpContent";
@@ -256,17 +260,40 @@ describe("builtinCommandKeyDefaults", () => {
       (match) => match[1],
     );
     // Bundled UI commands are remappable under the same `hunk.` owner, so the
-    // documented table lists them beside the catalogs.
+    // documented table lists them beside the catalogs. The browser page's remappable
+    // commands are documented in their own table; its two fixed shortcuts are not rows.
     const catalogIds = new Set([
       ...APP_COMMAND_CATALOG.map((command) => command.id),
       ...HISTORY_COMMAND_CATALOG.map((command) => command.id),
       ...getBundledUIRegistry().commands.map(
         (registered) => `${registered.extensionId}.${registered.command.id}`,
       ),
+      ...WEB_LOCAL_COMMAND_NAMES,
     ]);
 
     expect(new Set(documentedIds).size).toBe(documentedIds.length);
     expect(documentedIds.toSorted()).toEqual([...catalogIds].toSorted());
+  });
+
+  test("documents each browser page command with the keys it ships with", () => {
+    const markdown = readFileSync(
+      resolve(import.meta.dir, "../../../../../docs/keybindings.md"),
+      "utf8",
+    );
+    const documentedKeys = new Map(
+      Array.from(
+        markdown.matchAll(/^\| `(hunk\.web\.[^`]+)`\s+\|[^|]+\|\s*([^|]+?)\s*\|$/gm),
+        (match) => [match[1]!, match[2]!] as const,
+      ),
+    );
+
+    for (const command of WEB_LOCAL_COMMAND_KEY_DEFAULTS) {
+      const expected =
+        command.defaultKeys.length > 0
+          ? command.defaultKeys.map((chord) => `\`${chord}\``).join(", ")
+          : "_(none)_";
+      expect([command.id, documentedKeys.get(command.id)]).toEqual([command.id, expected]);
+    }
   });
 
   test("reports every built-in command with the chords it ships with", () => {

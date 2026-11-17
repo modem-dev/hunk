@@ -5,6 +5,10 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "reac
 import { STATUS_COMMAND_NAMES } from "../../core/run/statusCommandCatalog";
 import { APP_COMMAND_NAMES } from "../../core/run/commandCatalog";
 import { DOCUMENT_COMMAND_NAMES } from "../../core/run/documentCommandCatalog";
+import {
+  WEB_LOCAL_COMMAND_NAMES,
+  WEB_LOCAL_FIXED_COMMAND_NAMES,
+} from "../../core/run/webLocalCommandCatalog";
 import type { PersistedViewPreferences } from "../../core/run/config";
 import type {
   ExtensionVcsHistoryCommit,
@@ -279,6 +283,7 @@ export function LogApp({
       ...APP_COMMAND_NAMES,
       ...DOCUMENT_COMMAND_NAMES,
       ...STATUS_COMMAND_NAMES,
+      ...WEB_LOCAL_COMMAND_NAMES,
     ]);
     for (const registered of buildSessionCommands(runtime.extensionSession.current.registry)) {
       names.add(`${registered.extensionId}.${registered.command.id}`);
@@ -290,6 +295,7 @@ export function LogApp({
       resolveCommandKeys({
         defaults: historyCommandKeyDefaults(),
         inactiveCommandNames: inactiveHistoryCommandNames,
+        fixedCommandNames: WEB_LOCAL_FIXED_COMMAND_NAMES,
         userBindings: runtime.keybindings,
       }),
     [inactiveHistoryCommandNames, runtime.keybindings],

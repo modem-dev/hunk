@@ -799,8 +799,9 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
     };
     return buildWebCommands(handlers);
   }, [session, updatePreferences]);
-  // Page commands with plain chords (`hunk.web.*`, declared in `webLocalCommands.ts`) join the
-  // catalogued ones on the keyboard; the palette and help list them from the same declaration.
+  // The page's own commands (`hunk.web.*`, declared in `core/run/webLocalCommandCatalog.ts`)
+  // join the catalogued ones on the keyboard; the palette and help list them from the same
+  // declaration. These handlers cover the ones this component owns state for.
   const panelHandlers = useMemo(
     (): Partial<Record<WebLocalCommandId, () => void>> => ({
       "hunk.web.toggleSidePanel": () => updatePanel({ open: !viewRef.current.panelOpen }),
@@ -835,9 +836,11 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
     }),
     [updatePanel],
   );
+  // A key runs a page command the way the palette does, so one the user gave a chord (a copy
+  // link, the minimap) reaches its handler in the tools hook as well as the ones above.
   const pageCommands = useMemo(
-    () => [...commands, ...webLocalKeyCommands((id) => panelHandlers[id]?.())],
-    [commands, panelHandlers],
+    () => [...commands, ...webLocalKeyCommands((id) => toolsRef.current?.runLocal(id))],
+    [commands],
   );
   const pageKeymap = useMemo(() => withWebLocalChords(keymap), [keymap]);
   useWebKeyboard(pageCommands, pageKeymap);

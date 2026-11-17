@@ -59,4 +59,47 @@ describe("page commands with plain chords", () => {
     expect(keymap.get("hunk.web.toggleSidePanel")).toEqual(["x"]);
     expect(keymap.get("hunk.web.showOverview")).toEqual(["O"]);
   });
+
+  // Intent: the host's entry for a page command is the whole answer. The remapped key runs the
+  // command, the default it replaced does not, and an unbind stays unbound.
+  test("answer to the host's remap and not to the default it replaced", () => {
+    const ran: string[] = [];
+    const keymap = withWebLocalChords(
+      new Map<string, readonly string[]>([
+        ["hunk.web.toggleViewed", ["x"]],
+        ["hunk.web.showNotes", []],
+      ]),
+    );
+    const bindings = bindWebCommands(
+      webLocalKeyCommands((id) => ran.push(id)),
+      keymap,
+    );
+
+    expect(bindings.match({ name: "v", sequence: "V", shift: true })).toBeUndefined();
+    expect(bindings.match({ name: "n", sequence: "N", shift: true })).toBeUndefined();
+    bindings.match({ name: "x", sequence: "x" })?.run({ count: 1, shift: false });
+    expect(ran).toEqual(["hunk.web.toggleViewed"]);
+  });
+
+  test("bind a command that ships without a chord once the keymap gives it one", () => {
+    const ran: string[] = [];
+    const commands = webLocalKeyCommands((id) => ran.push(id));
+    const unbound = bindWebCommands(commands, withWebLocalChords(defaultWebKeymap()));
+    expect(unbound.match({ name: "h", sequence: "H", shift: true })).toBeUndefined();
+
+    const bound = bindWebCommands(
+      commands,
+      withWebLocalChords(new Map([["hunk.web.toggleHideViewed", ["H"]]])),
+    );
+    bound.match({ name: "h", sequence: "H", shift: true })?.run({ count: 1, shift: true });
+    expect(ran).toEqual(["hunk.web.toggleHideViewed"]);
+  });
+
+  test("leave the Ctrl/Cmd dialog chords to the page's own matcher", () => {
+    const ids = webLocalKeyCommands(() => {}).map((command) => command.entry.id);
+
+    expect(ids).not.toContain("hunk.web.commandPalette");
+    expect(ids).not.toContain("hunk.web.goToFile");
+    expect(withWebLocalChords(defaultWebKeymap()).has("hunk.web.commandPalette")).toBe(false);
+  });
 });

@@ -4,6 +4,10 @@ import type { PersistedViewPreferences } from "../../core/run/config";
 import { APP_COMMAND_NAMES } from "../../core/run/commandCatalog";
 import { HISTORY_COMMAND_NAMES } from "../../core/run/historyCommandCatalog";
 import { DOCUMENT_COMMAND_NAMES } from "../../core/run/documentCommandCatalog";
+import {
+  WEB_LOCAL_COMMAND_NAMES,
+  WEB_LOCAL_FIXED_COMMAND_NAMES,
+} from "../../core/run/webLocalCommandCatalog";
 import { resolveExtensionSessionOptions } from "../../extensions/apply";
 import { MenuBar } from "../components/chrome/MenuBar";
 import { MenuDropdown } from "../components/chrome/MenuDropdown";
@@ -186,10 +190,12 @@ export function StatusApp({
           ...APP_COMMAND_NAMES,
           ...HISTORY_COMMAND_NAMES,
           ...DOCUMENT_COMMAND_NAMES,
+          ...WEB_LOCAL_COMMAND_NAMES,
           ...buildSessionCommands(runtime.extensionSession.current.registry).map(
             (entry) => `${entry.extensionId}.${entry.command.id}`,
           ),
         ]),
+        fixedCommandNames: WEB_LOCAL_FIXED_COMMAND_NAMES,
         userBindings: runtime.keybindings,
       }),
     [runtime],

@@ -58,7 +58,7 @@ The page and any terminal showing the same review are two views of one session.
 
 The page answers to the terminal's command ids and default keys, and to your `[keybindings]` table: `[` and `]` move between hunks, `r` refreshes, `c` adds a note, and so on. Press `?` for the full list as it applies in the page.
 
-Chords that use Ctrl, Cmd, Alt, Tab, or a function key stay with the browser and are not bound in the page. The page adds its own commands, under `hunk.web.*` ids in the palette; if your `[keybindings]` give one of their keys to another command, your binding wins and the page command stays in the palette without a key:
+Chords that use Ctrl, Cmd, Alt, Tab, or a function key stay with the browser and are not bound in the page. The page adds its own commands, under `hunk.web.*` ids in the palette. Your `[keybindings]` table [remaps them](/docs/configure/keybindings/) like any other command, except the two Ctrl/Cmd dialog shortcuts, which are fixed; if you give one of their keys to another command, your binding wins and the page command stays in the palette without a key:
 
 | Key                     | Action                                           |
 | ----------------------- | ------------------------------------------------ |

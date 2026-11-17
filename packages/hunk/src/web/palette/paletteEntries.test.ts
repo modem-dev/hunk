@@ -77,6 +77,27 @@ describe("command palette parity", () => {
   });
 });
 
+describe("page commands the host resolved", () => {
+  // Intent: the palette and the help overlay name the key the user's `[keybindings]` gave a
+  // page command, and stop naming the default it replaced.
+  test("are labelled with the remapped key in the palette and in help", () => {
+    const keymap = new Map(defaultWebKeymap());
+    keymap.set("hunk.web.toggleViewed", ["x"]);
+    keymap.set("hunk.web.toggleHideViewed", ["H"]);
+    keymap.set("hunk.web.showNotes", []);
+
+    const entries = buildPaletteEntries(createTestCommands(), keymap);
+    expect(entries.find((entry) => entry.id === "hunk.web.toggleViewed")?.keys).toBe("x");
+    expect(entries.find((entry) => entry.id === "hunk.web.toggleHideViewed")?.keys).toBe("H");
+    expect(entries.find((entry) => entry.id === "hunk.web.showNotes")?.keys).toBeUndefined();
+
+    const help = new Map(webLocalHelpRows(keymap).map((row) => [row.description, row.keys]));
+    expect(help.get("mark the selected file viewed, or clear its mark")).toBe("x");
+    expect(help.get("hide or show viewed files")).toBe("H");
+    expect(help.has("show every note in the review")).toBe(false);
+  });
+});
+
 describe("palette ranking", () => {
   const entries = buildPaletteEntries(createTestCommands(), defaultWebKeymap());
 

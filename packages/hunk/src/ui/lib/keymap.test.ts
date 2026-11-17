@@ -166,6 +166,38 @@ describe("resolveCommandKeys", () => {
     expect(keys.has("hunk.history.nextCommit")).toBe(false);
   });
 
+  // Intent: a terminal surface recognizes a browser-page command without acting on it, so the
+  // entry neither binds a key there nor takes one away from a command that surface runs.
+  test("an inactive command's chord stays with the active command that holds it by default", () => {
+    const { keys, issues } = resolveCommandKeys({
+      defaults: [{ id: "hunk.view.toggleLineWrap", defaultKeys: ["w"] }],
+      inactiveCommandNames: new Set(["hunk.web.toggleViewed"]),
+      userBindings: { "hunk.web.toggleViewed": "w" },
+    });
+
+    expect(issues).toEqual([]);
+    expect(keys.get("hunk.view.toggleLineWrap")).toEqual(["w"]);
+    expect(keys.has("hunk.web.toggleViewed")).toBe(false);
+  });
+
+  test("reports an entry for a command whose shortcut is fixed, and applies the rest", () => {
+    const { keys, issues } = resolveCommandKeys({
+      defaults: [{ id: "hunk.review.nextHunk", defaultKeys: ["]"] }],
+      fixedCommandNames: new Set(["hunk.web.commandPalette"]),
+      userBindings: { "hunk.web.commandPalette": "]", "hunk.review.nextHunk": "n" },
+    });
+
+    expect(issues).toEqual([
+      {
+        commandId: "hunk.web.commandPalette",
+        message:
+          'Keybinding for "hunk.web.commandPalette" ignored • its shortcut is fixed and cannot be remapped',
+      },
+    ]);
+    expect(keys.get("hunk.review.nextHunk")).toEqual(["n"]);
+    expect(keys.has("hunk.web.commandPalette")).toBe(false);
+  });
+
   test("duplicate ids in the command table keep the first entry's keys", () => {
     const { keys, issues } = resolveCommandKeys({
       defaults: [

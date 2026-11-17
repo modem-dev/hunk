@@ -19,7 +19,8 @@
  *
  * The keymap is chords per command id. The page starts from the catalog's defaults; once the
  * state route delivers the host's resolved keymap (`[keybindings]` folded in on the host,
- * audit F3), it replaces the defaults through the same `WebKeymap` shape.
+ * audit F3), it replaces the defaults through the same `WebKeymap` shape. That keymap carries
+ * the page's own remappable commands (`hunk.web.*`) beside the catalog's.
  */
 import { matchesKeyChord, parseKeyChord, type ParsedKeyChord } from "../../extension-api/keys";
 import type { ExtensionKeyEvent } from "../../extension-api/types";
@@ -239,12 +240,17 @@ export function focusOwnsKey(path: readonly EventTarget[], key: ExtensionKeyEven
 }
 
 /**
- * Commands that flip something and so run once per press: a held key's auto-repeat would send
- * one toggle per repeat (and, for viewed marks, one request each).
+ * Commands that flip something or copy a link and so run once per press: a held key's
+ * auto-repeat would send one toggle per repeat (and, for viewed marks, one request each).
  */
 const NON_REPEATING_COMMANDS: ReadonlySet<string> = new Set([
   "hunk.web.toggleViewed",
+  "hunk.web.toggleHideViewed",
   "hunk.web.toggleSidePanel",
+  "hunk.web.toggleMinimap",
+  "hunk.web.togglePreview",
+  "hunk.web.copyReviewLink",
+  "hunk.web.copyLocationLink",
   "hunk.view.toggleFilesPane",
   "hunk.view.toggleLineNumbers",
   "hunk.view.toggleLineWrap",
