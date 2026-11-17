@@ -106,13 +106,26 @@ body {
 .sidebar-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
-  padding: 6px 10px;
+  padding: 6px 8px 6px 12px;
   color: var(--hunk-muted);
-  font-size: 12px;
-  letter-spacing: 0.02em;
+  font-size: 11px;
+}
+
+.sidebar-title {
+  font-weight: 600;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+.sidebar-count {
+  flex: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.segmented.icon-segmented.sidebar-mode button {
+  width: 24px;
+  height: 20px;
 }
 
 .sidebar-resizer {
@@ -969,13 +982,33 @@ body {
 }
 
 .flat-group {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   padding: 6px 12px 2px;
   color: var(--hunk-muted);
   font-family: var(--code-font);
   font-size: 12px;
+  white-space: nowrap;
+}
+
+.flat-group-label {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+/* How much of a folder is viewed: muted while partial, the "added" family once complete. */
+.viewed-rollup {
+  flex: none;
+  font-family: var(--ui-font);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.viewed-rollup[data-complete] {
+  color: var(--hunk-badge-added, #1a7f37);
 }
 
 .flat-file {
@@ -1020,9 +1053,17 @@ body {
 }
 
 /* Text, not the accent: several built-in accents fall below 4.5:1 on the panel and on the
-   selected row's panel-alt background, where the text token holds in every built-in theme. */
+   selected row's panel-alt background, where the text token holds in every built-in theme.
+   The comment icon stays muted so the count carries the badge. */
 [data-badge="agent-comment"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   color: var(--hunk-text);
+}
+
+[data-badge="agent-comment"] .icon {
+  color: var(--hunk-muted);
 }
 
 [data-badge="addition"] {
@@ -2555,10 +2596,22 @@ body {
   line-height: 14px;
 }
 
+/* The row's viewed checkbox takes the header control's "added" family, scaled to the row. */
 .flat-viewed {
+  flex: none;
+  width: 13px;
+  height: 13px;
   margin: 0;
-  accent-color: var(--hunk-accent);
+  accent-color: var(--hunk-badge-added, #1a7f37);
   cursor: pointer;
+}
+
+/* Changed since viewed calls for another look, so its mark keeps the accent. */
+.changed-mark {
+  display: inline-flex;
+  flex: none;
+  margin-right: 5px;
+  color: var(--hunk-accent);
 }
 
 .viewed-changed {
@@ -2584,10 +2637,6 @@ body {
 
 .flat-row[data-viewed="viewed"] .flat-name {
   color: var(--hunk-muted);
-}
-
-.flat-row[data-viewed="changed"] .flat-viewed {
-  outline: 1px solid var(--hunk-accent);
 }
 
 .viewed-progress {

@@ -34,6 +34,7 @@ import {
   useState,
   useSyncExternalStore,
   type CSSProperties,
+  type KeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { selectActiveRevealNoteId } from "../../core/review/selectors";
@@ -56,6 +57,8 @@ import { reviewFailureMessage, type ReviewSession } from "../session/reviewSessi
 import { REVIEW_SESSION_ENDED_MESSAGE } from "../session/failureMessages";
 import { SessionEndedContext } from "../session/sessionEnded";
 import { FileSidebar } from "../sidebar/FileSidebar";
+import { formatCount } from "../format/lineCounts";
+import { Icon, type IconName } from "../icons/Icon";
 import { isLocalReviewIntent } from "../store/clientReviewStore";
 import {
   ReviewStream,
@@ -211,6 +214,30 @@ function useWebTheme(sessionTheme: ReviewThemeDefaults | undefined) {
 }
 
 const NO_HIGHLIGHTS = {};
+
+/** The files sidebar's two modes as icon radios, each named by its old text label. */
+const SIDEBAR_MODES: readonly {
+  mode: "tree" | "flat";
+  label: string;
+  title: string;
+  icon: IconName;
+  command: WebLocalCommandId;
+}[] = [
+  {
+    mode: "tree",
+    label: "Tree",
+    title: "Show files as a tree",
+    icon: "tree",
+    command: "hunk.web.filesAsTree",
+  },
+  {
+    mode: "flat",
+    label: "Flat",
+    title: "Show files as a flat list",
+    icon: "list",
+    command: "hunk.web.filesAsList",
+  },
+];
 
 /** Below this viewport or stream width the minimap hides, leaving the room to the diff. */
 const MINIMAP_MIN_VIEWPORT = 1000;
@@ -805,6 +832,17 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
   const pageHint = (commandId: WebLocalCommandId) =>
     webCommandChords(pageKeymap, commandId).map(formatKeyChord).join(" / ") || undefined;
   const panelHint = pageHint("hunk.web.toggleSidePanel");
+
+  // Arrow keys move the choice within the sidebar mode group, as in any radio group.
+  const onSidebarModeKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
+    if (step === undefined) return;
+    event.preventDefault();
+    const index = SIDEBAR_MODES.findIndex(({ mode }) => mode === preferences.sidebarMode);
+    const next = SIDEBAR_MODES[(index + step + SIDEBAR_MODES.length) % SIDEBAR_MODES.length]!;
+    updatePreferences({ sidebarMode: next.mode });
+    event.currentTarget.querySelector<HTMLElement>(`[data-mode="${next.mode}"]`)?.focus();
+  };
   // The palette's chord is a page-only Ctrl/Cmd chord, so it is read from the page's command
   // table rather than the keymap; the Commands button never names a key of its own.
   const paletteCommand = WEB_LOCAL_COMMANDS.find(
@@ -998,19 +1036,32 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
               <>
                 <nav className="sidebar" aria-label="Files sidebar">
                   <div className="sidebar-header">
-                    <span>Files</span>
-                    <div className="segmented small" role="radiogroup" aria-label="Sidebar mode">
-                      {(["tree", "flat"] as const).map((mode) => (
-                        <button
-                          key={mode}
-                          type="button"
-                          role="radio"
-                          aria-checked={preferences.sidebarMode === mode}
-                          onClick={() => updatePreferences({ sidebarMode: mode })}
-                        >
-                          {mode === "tree" ? "Tree" : "Flat"}
-                        </button>
-                      ))}
+                    <span className="sidebar-title">Files</span>
+                    <span className="sidebar-count">{formatCount(sidebarEntries.length)}</span>
+                    <div
+                      className="segmented icon-segmented sidebar-mode"
+                      role="radiogroup"
+                      aria-label="Sidebar mode"
+                      onKeyDown={onSidebarModeKeyDown}
+                    >
+                      {SIDEBAR_MODES.map(({ mode, label, title, icon, command }) => {
+                        const hint = pageHint(command);
+                        return (
+                          <button
+                            key={mode}
+                            type="button"
+                            role="radio"
+                            aria-checked={preferences.sidebarMode === mode}
+                            aria-label={label}
+                            tabIndex={preferences.sidebarMode === mode ? 0 : -1}
+                            data-mode={mode}
+                            title={hint ? `${title} (${hint})` : title}
+                            onClick={() => updatePreferences({ sidebarMode: mode })}
+                          >
+                            <Icon name={icon} size={14} />
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                   <FileSidebar

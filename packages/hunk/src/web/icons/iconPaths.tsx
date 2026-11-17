@@ -98,6 +98,14 @@ export const ICON_PATHS = {
   ),
   /** A check mark. */
   check: <path d="m3.5 8.5 3 3 6-7" />,
+  /** A speech bubble, for a note count. */
+  comment: (
+    <path d="M2.5 4A1.5 1.5 0 0 1 4 2.5h8A1.5 1.5 0 0 1 13.5 4v5a1.5 1.5 0 0 1-1.5 1.5H7.5l-3 2.5v-2.5H4A1.5 1.5 0 0 1 2.5 9z" />
+  ),
+  /** Indented branches, for a file tree. */
+  tree: <path d="M3 3.5h4M6 8h7M6 12.5h7M4 3.5v9h2M4 8h2" />,
+  /** Three stacked lines, for a flat list. */
+  list: <path d="M3 4.5h10M3 8h10M3 11.5h10" />,
   /** A cross. */
   cross: <path d="m4.5 4.5 7 7M11.5 4.5l-7 7" />,
   /** A four-pointed spark, for an agent's avatar. */
