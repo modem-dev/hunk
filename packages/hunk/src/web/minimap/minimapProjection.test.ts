@@ -76,8 +76,39 @@ describe("projectMinimap", () => {
 
     expect(model.notes).toEqual([10]);
     expect(model.highlights).toEqual([50]);
-    expect(model.viewed).toEqual([{ top: 0, height: 40 }]);
+    expect(model.files).toEqual([
+      { top: 0, height: 40, viewed: true },
+      { top: 40, height: 40, viewed: false },
+    ]);
     expect(model.selected).toEqual({ top: 50, height: 10 });
+  });
+
+  test("reports each file's band with its header, so blocks tile the track", () => {
+    const model = projectMinimap({
+      files: [
+        createTestMinimapFile("a", 90, { headerHeight: 10 }),
+        createTestMinimapFile("b", 290, { headerHeight: 10, viewed: true }),
+      ],
+      layout: "split",
+      trackHeight: 40,
+    });
+
+    expect(model.files).toEqual([
+      { top: 0, height: 10, viewed: false },
+      { top: 10, height: 30, viewed: true },
+    ]);
+  });
+
+  test("keeps change weight inside the file that owns it", () => {
+    const model = projectMinimap({
+      files: [createTestMinimapFile("a", 400), createTestMinimapFile("b", 400, { viewed: true })],
+      layout: "unified",
+      trackHeight: 80,
+    });
+
+    const second = model.files[1]!;
+    expect(weighted(model.added).filter((bin) => bin >= second.top)).toHaveLength(11);
+    expect(weighted(model.added).filter((bin) => bin < second.top)).toHaveLength(11);
   });
 
   test("coarsens: a 2,000-file review keeps one bin per pixel and drops sub-pixel boundaries", () => {
