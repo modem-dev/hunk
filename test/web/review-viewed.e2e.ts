@@ -209,6 +209,75 @@ test("hides viewed files on this page only, and navigation walks past them", asy
   expect(await sharedViewedCount()).toBe(1);
 });
 
+/** One row of the tree-mode sidebar, file or folder, by its tree path. */
+function treeRow(page: Page, path: string) {
+  return page.locator(`file-tree-container [data-item-path="${path}"]`).first();
+}
+
+// Intent: the sidebar shows review state at a glance: viewed rows recede behind an "added"
+// check, and folders count their viewed files once one is viewed or they are large, updating
+// in place as marks change.
+test("shows viewed marks and folder roll-ups in both sidebar modes", async ({ page }) => {
+  await openTestReview(page);
+  const decoration = (path: string) =>
+    treeRow(page, path).locator('[data-item-section="decoration"] > span');
+
+  // Before any mark, small folders stay quiet and the large one shows its count.
+  await expect(decoration("src/gen/")).toHaveText("0/40");
+  await expect(decoration("src/gen/")).toHaveAttribute("title", "0 of 40 files viewed");
+  await expect(decoration("src/app/")).toHaveCount(0);
+
+  await headerCheckbox(page, "src/app/main.ts").click();
+  await headerCheckbox(page, "src/gen/module-00.ts").click();
+  await expect(page.getByTestId("viewed-progress")).toHaveText(/^2 of/);
+
+  // The tree updates without a rebuild: the viewed row dims and carries the check.
+  await expect(decoration("src/app/")).toHaveText("1/2");
+  await expect(decoration("src/gen/")).toHaveText("1/40");
+  await expect(decoration("src/app/main.ts")).toHaveAttribute("title", /Viewed$/);
+  const nameColor = (path: string) =>
+    treeRow(page, path)
+      .locator('[data-item-section="content"]')
+      .evaluate((element) => getComputedStyle(element).color);
+  expect(await nameColor("src/app/main.ts")).not.toBe(await nameColor("src/app/renamed-new.ts"));
+  const markColor = await decoration("src/app/main.ts")
+    .locator("span")
+    .last()
+    .evaluate((element) => getComputedStyle(element).color);
+  const addedColor = await page.locator(".review-app").evaluate((app) => {
+    const probe = document.createElement("span");
+    probe.style.color = "var(--hunk-badge-added)";
+    app.append(probe);
+    const resolved = getComputedStyle(probe).color;
+    probe.remove();
+    return resolved;
+  });
+  expect(markColor).toBe(addedColor);
+
+  // The header counts the listed files, and its icon radios switch modes from the keyboard.
+  const total = (await page.getByTestId("file-count").textContent())!.match(/[\d,]+/)![0];
+  await expect(page.locator(".sidebar-count")).toHaveText(total);
+  await page.getByRole("radio", { name: "Tree" }).focus();
+  await page.keyboard.press("ArrowRight");
+
+  // The flat list's headings carry the same counts, per run of files.
+  await expect(page.getByRole("radio", { name: "Flat" })).toHaveAttribute("aria-checked", "true");
+  const heading = (label: string) => page.locator(".flat-group", { hasText: label }).first();
+  await expect(heading("src/app/").locator(".viewed-rollup")).toHaveAttribute(
+    "title",
+    "1 of 2 files viewed",
+  );
+  await expect(heading("src/gen/").locator(".viewed-rollup")).toHaveAttribute(
+    "title",
+    "1 of 40 files viewed",
+  );
+  await expect(heading("docs/").locator(".viewed-rollup")).toHaveCount(0);
+
+  // Clearing a mark in the flat list updates its heading in place.
+  await page.locator(".flat-row", { hasText: "main.ts" }).first().locator(".flat-viewed").click();
+  await expect(heading("src/app/").locator(".viewed-rollup")).toHaveCount(0);
+});
+
 test("says when a viewed file changed after it was marked", async ({ page }) => {
   await openTestReview(page);
   await headerCheckbox(page, "src/app/main.ts").click();
@@ -227,6 +296,16 @@ test("says when a viewed file changed after it was marked", async ({ page }) => 
   await expect(headerCheckbox(page, "src/app/main.ts")).not.toBeChecked();
   await expect(main.locator(".file-body")).toBeVisible();
   await expect(page.getByTestId("viewed-progress")).toHaveText(/^0 of/);
+
+  // Both sidebar modes mark it for another look instead of as viewed.
+  await expect(
+    treeRow(page, "src/app/main.ts").locator('[data-item-section="decoration"] > span'),
+  ).toHaveAttribute("title", "Changed since viewed");
+  await page.getByRole("radio", { name: "Flat" }).click();
+  const row = page.locator(".flat-row", { hasText: "main.ts" }).first();
+  await expect(row).toHaveAttribute("data-viewed", "changed");
+  await expect(row.locator(".changed-mark")).toHaveAttribute("title", "Changed since viewed");
+  await expect(row.locator(".flat-viewed")).not.toBeChecked();
 
   // Marking it again clears the notice.
   await headerCheckbox(page, "src/app/main.ts").click();
