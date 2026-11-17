@@ -249,9 +249,9 @@ function FileHeader({
       </span>
       <span className="file-name" title={path.text}>
         <span className="file-path">
-          {path.from !== undefined ? (
+          {path.previous !== undefined ? (
             <>
-              <span className="file-path-from">{path.from}</span>
+              <span className="file-path-previous">{path.previous}</span>
               <span className="file-path-arrow">
                 <Icon name="arrow-right" size={12} />
                 {/* The arrow's text, so a copied or read path still says `old -> new`. */}

@@ -16,7 +16,7 @@ export interface WebFileHeaderPath {
   /** The whole label, as the header's text content and tooltip read it. */
   text: string;
   /** The old path of a rename, drawn dimmed before the arrow. */
-  from?: string;
+  previous?: string;
   /** The shown path's directory with its trailing slash, or empty. */
   directory: string;
   basename: string;
@@ -31,12 +31,12 @@ export function webFileHeaderPath(file: {
 }): WebFileHeaderPath {
   const { filename } = reviewFileLabelParts(file);
   const renamed = file.previousPath !== undefined && file.previousPath !== file.path;
-  const from = renamed ? file.previousPath : undefined;
-  const shown = from !== undefined ? filename.slice(from.length + " -> ".length) : filename;
+  const previous = renamed ? file.previousPath : undefined;
+  const shown = previous !== undefined ? filename.slice(previous.length + " -> ".length) : filename;
   const slash = shown.lastIndexOf("/");
   return {
     text: filename,
-    ...(from !== undefined ? { from } : {}),
+    ...(previous !== undefined ? { previous } : {}),
     directory: shown.slice(0, slash + 1),
     basename: shown.slice(slash + 1),
   };

@@ -20,7 +20,7 @@ describe("webFileHeaderPath", () => {
     });
     expect(sameDirectory).toEqual({
       text: "src/app/renamed-old.ts -> renamed-new.ts",
-      from: "src/app/renamed-old.ts",
+      previous: "src/app/renamed-old.ts",
       directory: "",
       basename: "renamed-new.ts",
     });
@@ -33,11 +33,11 @@ describe("webFileHeaderPath", () => {
     });
     expect(moved).toEqual({
       text: "a/old.ts -> b/new.ts",
-      from: "a/old.ts",
+      previous: "a/old.ts",
       directory: "b/",
       basename: "new.ts",
     });
-    expect(`${moved.from} -> ${moved.directory}${moved.basename}`).toBe(moved.text);
+    expect(`${moved.previous} -> ${moved.directory}${moved.basename}`).toBe(moved.text);
   });
 });
 
