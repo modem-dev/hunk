@@ -10,6 +10,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import {
+  openTestThemeMenu,
   startTestWebReview,
   waitForTestCondition,
   watchTestPageProblems,
@@ -287,15 +288,15 @@ test("starts from a custom session theme and lets this browser override it", asy
       getComputedStyle(document.documentElement).getPropertyValue("--hunk-accent").trim(),
     );
   await expect.poll(accent).toBe("#7fd1ff");
-  await expect(page.getByTestId("theme-picker")).toHaveAttribute("aria-label", "Theme: Ocean");
+  await expect(page.getByTestId("theme-picker")).toContainText("Theme: Ocean");
 
-  await page.getByTestId("theme-picker").click();
+  await openTestThemeMenu(page);
   await page.locator('[role="option"][data-theme-id="dracula"]').click();
   await expect.poll(accent).not.toBe("#7fd1ff");
   await page.reload();
-  await expect(page.getByTestId("theme-picker")).toHaveAttribute("aria-label", "Theme: dracula");
+  await expect(page.getByTestId("theme-picker")).toContainText("Theme: dracula");
 
-  await page.getByTestId("theme-picker").click();
+  await openTestThemeMenu(page);
   await page.getByRole("option", { name: /Use session theme/ }).click();
   await expect.poll(accent).toBe("#7fd1ff");
 });

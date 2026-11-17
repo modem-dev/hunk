@@ -1,16 +1,16 @@
 /** @jsxImportSource react */
 /**
- * The theme picker: a toolbar button that opens a listbox of the built-in themes.
+ * The theme picker's list: a listbox of the built-in themes, opened from the View menu's
+ * Theme row or with `t` (the terminal's `hunk.view.openThemeSelector`).
  *
- * A real button and a real listbox rather than a native `<select>`, so it can wear the
- * theme's own colors. Keyboard behaves like a select: the arrow keys, Home, and End move the
- * active option, typing a letter jumps to the next theme starting with it, Enter or Space
- * chooses, and Escape or Tab closes and returns focus to the button. `t` (the terminal's
- * `hunk.view.openThemeSelector`) opens it with the current theme active. When the session
- * resolved a theme, the first option follows it ("Use session theme") and choosing it clears
- * this browser's override.
+ * A real listbox rather than a native `<select>`, so it can wear the theme's own colors.
+ * Keyboard behaves like a select: the arrow keys, Home, and End move the active option, typing
+ * a letter jumps to the next theme starting with it, Enter or Space chooses, and Escape or Tab
+ * closes. Opening starts at the current theme; closing hands focus back through `onClose`,
+ * which the View menu points at its own button. When the session resolved a theme, the first
+ * option follows it ("Use session theme") and choosing it clears this browser's override.
  */
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import type { WebTheme } from "../theme/themeIndex";
 
 /** One choice in the menu. */
@@ -20,35 +20,32 @@ export interface ThemeMenuProps {
   themes: readonly ThemeMenuOption[];
   /** The option shown as chosen. */
   themeId: string | undefined;
-  /** The theme in effect, named on the button. */
-  currentLabel?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onTheme: (themeId: string) => void;
-  /** The shortcut that opens the menu, for its tooltip. */
-  keyHint?: string;
+  /** The region a click inside does not count as "outside" (the menu's anchor). */
+  anchorRef: RefObject<HTMLElement | null>;
+  /** Returns focus to the control that owns the list once it closes from the keyboard. */
+  onClose: () => void;
 }
 
-/** The toolbar's theme picker. */
+/** The theme picker's listbox, shown while `open`. */
 export function ThemeMenu({
   themes,
   themeId,
   open,
   onOpenChange,
   onTheme,
-  keyHint,
-  currentLabel,
+  anchorRef,
+  onClose,
 }: ThemeMenuProps) {
   const listId = useId();
-  const buttonRef = useRef<HTMLButtonElement | null>(null);
   const listRef = useRef<HTMLUListElement | null>(null);
-  const rootRef = useRef<HTMLDivElement | null>(null);
   const currentIndex = Math.max(
     0,
     themes.findIndex((theme) => theme.id === themeId),
   );
   const [active, setActive] = useState(currentIndex);
-  const label = currentLabel ?? themes.find((theme) => theme.id === themeId)?.label;
 
   // Opening starts at the current theme and moves focus into the list.
   useEffect(() => {
@@ -66,20 +63,21 @@ export function ThemeMenu({
       ?.scrollIntoView({ block: "nearest" });
   }, [active, open]);
 
-  // A click anywhere else closes the menu without choosing.
+  // A click anywhere else closes the list without choosing.
   useEffect(() => {
     if (!open) return;
     const onPointerDown = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) onOpenChange(false);
+      if (!anchorRef.current?.contains(event.target as Node)) onOpenChange(false);
     };
     window.addEventListener("pointerdown", onPointerDown);
     return () => window.removeEventListener("pointerdown", onPointerDown);
-  }, [open, onOpenChange]);
+  }, [open, onOpenChange, anchorRef]);
 
   const close = () => {
     onOpenChange(false);
-    buttonRef.current?.focus();
+    onClose();
   };
+
   const choose = (index: number) => {
     const theme = themes[index];
     if (theme) onTheme(theme.id);
@@ -123,61 +121,39 @@ export function ThemeMenu({
     }
   };
 
+  if (!open) return null;
+
   return (
-    <div className="menu-anchor" ref={rootRef}>
-      <button
-        ref={buttonRef}
-        type="button"
-        className="tool-button theme-button"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        aria-controls={open ? listId : undefined}
-        aria-label={`Theme: ${label ?? "loading"}`}
-        title={keyHint ? `Choose theme (${keyHint})` : "Choose theme"}
-        data-testid="theme-picker"
-        data-theme-id={themeId}
-        disabled={themes.length === 0}
-        onClick={() => onOpenChange(!open)}
-      >
-        <span className="theme-swatch" aria-hidden="true" />
-        <span className="theme-label">{label ?? "Theme"}</span>
-        <span className="chevron" aria-hidden="true">
-          ▾
-        </span>
-      </button>
-      {open ? (
-        <ul
-          ref={listRef}
-          id={listId}
-          className="menu theme-menu"
-          role="listbox"
-          aria-label="Themes"
-          // In the tab order while open (Tab itself closes it), which also makes the
-          // scrolling list reachable without a pointer.
-          tabIndex={0}
-          aria-activedescendant={`${listId}-${active}`}
-          onKeyDown={onListKeyDown}
+    <ul
+      ref={listRef}
+      id={listId}
+      className="menu theme-menu"
+      role="listbox"
+      aria-label="Themes"
+      // In the tab order while open (Tab itself closes it), which also makes the
+      // scrolling list reachable without a pointer.
+      tabIndex={0}
+      aria-activedescendant={`${listId}-${active}`}
+      onKeyDown={onListKeyDown}
+    >
+      {themes.map((theme, index) => (
+        <li
+          key={theme.id}
+          id={`${listId}-${index}`}
+          role="option"
+          data-index={index}
+          data-theme-id={theme.id}
+          aria-selected={theme.id === themeId}
+          data-active={index === active ? "" : undefined}
+          onPointerEnter={() => setActive(index)}
+          onClick={() => choose(index)}
         >
-          {themes.map((theme, index) => (
-            <li
-              key={theme.id}
-              id={`${listId}-${index}`}
-              role="option"
-              data-index={index}
-              data-theme-id={theme.id}
-              aria-selected={theme.id === themeId}
-              data-active={index === active ? "" : undefined}
-              onPointerEnter={() => setActive(index)}
-              onClick={() => choose(index)}
-            >
-              <span className="theme-appearance" data-appearance={theme.appearance}>
-                {theme.appearance === "light" ? "☀" : "☾"}
-              </span>
-              {theme.label}
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </div>
+          <span className="theme-appearance" data-appearance={theme.appearance}>
+            {theme.appearance === "light" ? "☀" : "☾"}
+          </span>
+          {theme.label}
+        </li>
+      ))}
+    </ul>
   );
 }

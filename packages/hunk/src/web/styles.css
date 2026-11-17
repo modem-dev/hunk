@@ -136,31 +136,53 @@ body {
 
 /* -- Toolbar ---------------------------------------------------------------------------- */
 
+/* One row, never wrapping: narrow windows drop labels first, then the stats, and collapse the
+   filter field last (see the media queries at the end of this section). */
 .toolbar {
+  position: relative;
+  z-index: 10;
   display: flex;
+  flex: none;
   align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  padding: 6px 12px;
+  gap: 6px;
+  flex-wrap: nowrap;
+  height: 44px;
+  box-sizing: border-box;
+  padding: 0 10px;
   background: var(--hunk-panel);
   border-bottom: 1px solid var(--hunk-border);
-  min-height: 32px;
+}
+
+.icon {
+  flex: none;
+  display: block;
 }
 
 .toolbar-title {
   display: flex;
   align-items: baseline;
   gap: 10px;
-  flex: 1 1 320px;
+  /* Takes the free space but gives it up first: the controls keep their size until the
+     title is down to a readable stub. */
+  flex: 1 1 0;
   overflow: hidden;
-  min-width: 0;
+  min-width: 96px;
+  margin: 0 4px;
   white-space: nowrap;
 }
 
 .review-title {
+  font-size: 14px;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 40px;
+}
+
+.toolbar-stats {
+  display: inline-flex;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
 }
 
 .file-count,
@@ -174,11 +196,126 @@ body {
   color: var(--hunk-accent);
 }
 
+/* Connected is the resting state: a small dot in the theme's "added" color. Its words stay in
+   the accessibility tree; every other state shows its words. */
+.toolbar .status[data-state="connected"] {
+  align-self: center;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--hunk-badge-added, #1a7f37);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--hunk-badge-added, #1a7f37) 20%, transparent);
+}
+
+/* Shrinks only as far as its controls allow (the filter gives way first); the title takes
+   the rest of the squeeze. */
 .toolbar-controls {
   display: flex;
   align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
+  gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+  flex-wrap: nowrap;
+}
+
+.toolbar-separator {
+  flex: none;
+  width: 1px;
+  height: 20px;
+  margin: 0 2px;
+  background: var(--hunk-border);
+}
+
+/* Toolbar buttons are quiet until hovered: no border, the muted text color, a panel fill on
+   hover. Pressed toggles keep the neutral "on" fill. */
+.toolbar .tool-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px;
+  color: var(--hunk-muted);
+  background: transparent;
+  border-color: transparent;
+  white-space: nowrap;
+}
+
+.toolbar .tool-button:hover:not(:disabled),
+.toolbar .tool-button[aria-expanded="true"] {
+  color: var(--hunk-text);
+  background: var(--hunk-panel-alt);
+  border-color: transparent;
+}
+
+.toolbar .tool-button[aria-pressed="true"] {
+  color: var(--hunk-text);
+  background: var(--hunk-panel-alt);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.toolbar .tool-button:disabled {
+  opacity: 0.5;
+}
+
+.toolbar .icon-button {
+  width: 28px;
+  padding: 0;
+}
+
+.commands-button {
+  border-color: var(--hunk-border) !important;
+  background: var(--hunk-background) !important;
+}
+
+.commands-button:hover {
+  color: var(--hunk-text) !important;
+}
+
+.key-hint {
+  padding: 0 4px;
+  font: 11px/16px var(--code-font);
+  color: var(--hunk-muted);
+  background: var(--hunk-panel-alt);
+  border: 1px solid var(--hunk-border);
+  border-radius: 4px;
+}
+
+.copy-button[data-state="copied"],
+.copy-button[data-state="failed"] {
+  width: auto !important;
+  padding: 0 8px !important;
+}
+
+.copy-button[data-state="copied"] {
+  color: var(--hunk-badge-added, #1a7f37);
+}
+
+.copy-button[data-state="failed"] {
+  color: var(--hunk-removed-sign-color, #d1242f);
+}
+
+.copy-feedback {
+  font-size: 12px;
+}
+
+.spinning {
+  animation: toolbar-spin 0.9s linear infinite;
+}
+
+@keyframes toolbar-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinning {
+    animation: none;
+  }
 }
 
 .tool-button,
@@ -238,11 +375,113 @@ body {
   position: relative;
 }
 
-.theme-button {
-  display: inline-flex;
+.view-button .pill-chevron {
+  color: var(--hunk-muted);
+}
+
+/* The View menu: grouped checkable rows with a shortcut and a switch, then the Theme row. */
+.view-menu {
+  width: 280px;
+  max-height: none;
+  overflow: visible;
+}
+
+.view-menu[hidden] {
+  display: none;
+}
+
+.menu-heading {
+  margin: 6px 8px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--hunk-muted);
+}
+
+.menu-separator {
+  margin: 6px 0;
+  border-top: 1px solid var(--hunk-border);
+}
+
+.menu-row {
+  display: flex;
   align-items: center;
-  gap: 6px;
-  max-width: 240px;
+  gap: 10px;
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  font: inherit;
+  color: var(--hunk-text);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.menu-row:hover:not(:disabled),
+.menu-row:focus-visible {
+  background: var(--hunk-panel-alt);
+}
+
+.menu-row:focus-visible {
+  outline-offset: -2px;
+}
+
+.menu-row:disabled {
+  cursor: default;
+  color: var(--hunk-muted);
+}
+
+.menu-row-label {
+  display: inline-flex;
+  flex: 1;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menu-row-note {
+  position: static;
+}
+
+/* An on/off switch. "On" is neutral (full-strength text color, knob to the right), never the
+   accent, which stays reserved for selection and focus. */
+.menu-switch {
+  position: relative;
+  flex: none;
+  width: 26px;
+  height: 14px;
+  border-radius: 7px;
+  background: var(--hunk-border);
+}
+
+.menu-switch::after {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--hunk-muted);
+  content: "";
+}
+
+.menu-row[aria-checked="true"] .menu-switch {
+  background: var(--hunk-text);
+}
+
+.menu-row[aria-checked="true"] .menu-switch::after {
+  left: 14px;
+  background: var(--hunk-panel);
+}
+
+.view-menu .pill-chevron {
+  color: var(--hunk-muted);
 }
 
 .theme-label {
@@ -260,13 +499,9 @@ body {
   background: linear-gradient(135deg, var(--hunk-background) 0 50%, var(--hunk-accent) 50% 100%);
 }
 
-.chevron {
-  color: var(--hunk-muted);
-  font-size: 10px;
-}
-
 .menu {
   position: absolute;
+  box-sizing: border-box;
   right: 0;
   top: calc(100% + 4px);
   z-index: 20;
@@ -337,6 +572,39 @@ body {
   color: var(--hunk-text);
   box-shadow: inset 0 -2px 0 var(--hunk-muted);
   position: relative;
+}
+
+/* The toolbar's layout radios: icons in a sunken track, the checked one raised. */
+.icon-segmented {
+  flex: none;
+  gap: 2px;
+  padding: 2px;
+  background: var(--hunk-background);
+  border: 1px solid var(--hunk-border);
+  border-radius: 7px;
+}
+
+.segmented.icon-segmented button {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 22px;
+  margin: 0;
+  padding: 0;
+  color: var(--hunk-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+}
+
+.segmented.icon-segmented button:hover {
+  color: var(--hunk-text);
+}
+
+.segmented.icon-segmented button[aria-checked="true"] {
+  color: var(--hunk-text);
+  background: var(--hunk-panel-alt);
+  box-shadow: 0 0 0 1px var(--hunk-border);
 }
 
 .segmented.small button {
@@ -958,27 +1226,44 @@ body {
 
 .filter-field {
   position: relative;
-  display: inline-flex;
+  display: flex;
+  flex: 0 1 auto;
   align-items: center;
-}
-
-.filter-field input {
-  width: 180px;
-  padding: 3px 54px 3px 8px;
-  font: inherit;
-  color: var(--hunk-text);
+  gap: 6px;
+  /* A definite width so the controls' max-content counts the field at full size. */
+  width: 250px;
+  min-width: 150px;
+  height: 28px;
+  box-sizing: border-box;
+  padding: 0 6px 0 8px;
+  color: var(--hunk-muted);
   background: var(--hunk-background);
   border: 1px solid var(--hunk-border);
   border-radius: 6px;
 }
 
-.filter-field input:focus-visible {
+.filter-field:focus-within {
   border-color: var(--hunk-accent);
 }
 
+.filter-field input {
+  flex: 1;
+  width: 0;
+  min-width: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--hunk-text);
+  background: transparent;
+  border: 0;
+  outline: none;
+}
+
+.filter-field input::placeholder {
+  color: var(--hunk-muted);
+}
+
 .shared-hint {
-  position: absolute;
-  right: 8px;
+  flex: none;
   color: var(--hunk-muted);
   font-size: 11px;
   pointer-events: none;
@@ -1970,14 +2255,101 @@ body {
   outline: 1px solid var(--hunk-accent);
 }
 
-.viewed-controls {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .viewed-progress {
-  font-size: 12px;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px;
   color: var(--hunk-muted);
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-ring {
+  flex: none;
+  transform: rotate(-90deg);
+}
+
+.progress-ring circle {
+  fill: none;
+  stroke-width: 2.5;
+}
+
+.progress-ring-track {
+  stroke: var(--hunk-border);
+}
+
+.progress-ring-value {
+  stroke: var(--hunk-badge-added, #1a7f37);
+  stroke-linecap: round;
+}
+
+/* Narrow toolbars drop words before controls, then the stats, and collapse the filter last;
+   the row itself never wraps. */
+/* Hidden labels stay in the accessibility tree: they name their icon buttons. */
+@media (max-width: 1180px) {
+  .viewed-word {
+    display: none;
+  }
+
+  .commands-button .pill-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 1000px) {
+  .toolbar-stats,
+  .filter-field .shared-hint ~ .filter-key {
+    display: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .view-button .pill-chevron {
+    display: none;
+  }
+
+  .view-button .pill-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .toolbar .view-button {
+    width: 28px;
+    padding: 0;
+  }
+}
+
+@media (max-width: 680px) {
+  .filter-field {
+    flex: none;
+    min-width: 0;
+    width: 28px;
+    padding: 0 6px;
+    border-color: transparent;
+    background: transparent;
+  }
+
+  .filter-field:focus-within {
+    position: absolute;
+    right: 10px;
+    z-index: 1;
+    width: min(280px, calc(100vw - 20px));
+    background: var(--hunk-background);
+    border-color: var(--hunk-accent);
+  }
+
+  .filter-field:not(:focus-within) :is(.shared-hint, .filter-key) {
+    display: none;
+  }
 }

@@ -10,6 +10,8 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import {
+  openTestThemeMenu,
+  openTestViewMenu,
   startTestWebReview,
   waitForTestCondition,
   watchTestPageProblems,
@@ -232,10 +234,11 @@ test("switches layout and view options from the keyboard", async ({ page }) => {
   await page.keyboard.press("s");
   await expect(page.locator("nav.sidebar")).toHaveCount(1);
 
+  // The View menu's rows track the shortcuts while it is closed.
   await page.keyboard.press("w");
-  await expect(page.getByTestId("toggle-wrap")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("toggle-wrap")).toHaveAttribute("aria-checked", "true");
   await page.keyboard.press("l");
-  await expect(page.getByTestId("toggle-line-numbers")).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByTestId("toggle-line-numbers")).toHaveAttribute("aria-checked", "false");
 
   // The theme menu opens from `t`, moves with the arrow keys, and chooses with Enter.
   const before = await page.getByTestId("theme-picker").getAttribute("data-theme-id");
@@ -245,7 +248,7 @@ test("switches layout and view options from the keyboard", async ({ page }) => {
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("Enter");
   await expect(menu).toHaveCount(0);
-  await expect(page.getByTestId("theme-picker")).toBeFocused();
+  await expect(page.getByTestId("view-menu-button")).toBeFocused();
   await expect(page.getByTestId("theme-picker")).not.toHaveAttribute("data-theme-id", before ?? "");
   await page.keyboard.press("t");
   await expect(menu).toBeVisible();
@@ -337,10 +340,11 @@ test("leaves typing and browser shortcuts alone", async ({ page }) => {
   expect(prevented).toEqual([]);
   await expect(page.getByTestId("selected-hunk")).toHaveAttribute("data-hunk-index", "0");
 
-  // Space on a focused button presses the button; it does not page the review.
+  // Space on a focused menu row presses it; it does not page the review.
+  await openTestViewMenu(page);
   await page.getByTestId("toggle-wrap").focus();
   await page.keyboard.press("Space");
-  await expect(page.getByTestId("toggle-wrap")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("toggle-wrap")).toHaveAttribute("aria-checked", "true");
   expect(
     await page.evaluate(() => document.querySelector<HTMLElement>(".review-stream")!.scrollTop),
   ).toBe(0);
@@ -371,8 +375,7 @@ test("keeps focus order sane and the open theme menu accessible", async ({ page 
   expect(order.slice(0, firstSidebar).every((region) => region === "toolbar")).toBe(true);
   expect(firstStream === -1 || firstStream > firstSidebar).toBe(true);
 
-  await page.getByTestId("theme-picker").click();
-  await expect(page.getByRole("listbox", { name: "Themes" })).toBeVisible();
+  await openTestThemeMenu(page);
   const results = await new AxeBuilder({ page })
     .exclude("diffs-container")
     .exclude("file-tree-container")

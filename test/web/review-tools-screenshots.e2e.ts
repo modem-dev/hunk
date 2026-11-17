@@ -7,7 +7,12 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { chooseTestTheme, startTestWebReview, type TestWebReview } from "./webTestHarness";
+import {
+  chooseTestTheme,
+  openTestViewMenu,
+  startTestWebReview,
+  type TestWebReview,
+} from "./webTestHarness";
 
 const OUTPUT = process.env.HUNK_WEB_TOOL_SCREENSHOT_DIR;
 
@@ -25,6 +30,13 @@ test.afterEach(async () => {
 async function capture(page: Page, name: string) {
   await page.waitForTimeout(1_200);
   await page.screenshot({ path: join(OUTPUT!, `${name}.png`) });
+}
+
+/** Flip "Hide viewed" from the View menu and close the menu before the next capture. */
+async function toggleTestHideViewed(page: Page) {
+  await openTestViewMenu(page);
+  await page.getByRole("menuitemcheckbox", { name: "Hide viewed" }).click();
+  await page.keyboard.press("Escape");
 }
 
 /** Open the rich review with agent notes and a stored theme. */
@@ -207,9 +219,9 @@ test("captures viewed files: marked, collapsed, changed since viewed, and hidden
   });
   await capture(page, "viewed-changed-dark");
 
-  await page.getByRole("button", { name: "Hide viewed" }).click();
+  await toggleTestHideViewed(page);
   await capture(page, "viewed-hidden-dark");
   await chooseTestTheme(page, "github-light-default");
-  await page.getByRole("button", { name: "Hide viewed" }).click();
+  await toggleTestHideViewed(page);
   await capture(page, "viewed-light");
 });

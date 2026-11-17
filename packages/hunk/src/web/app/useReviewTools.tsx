@@ -506,6 +506,8 @@ export function useReviewTools(options: ReviewToolsOptions) {
   return {
     overlay,
     toggleHelp: useCallback(() => open("help"), [open]),
+    /** Open the command palette, as the toolbar's Commands button does. */
+    openPalette: useCallback(() => open("palette"), [open]),
     /** Jump to one file from the sidebar, as a new history entry. */
     jumpToFile: useCallback((fileKey: string) => jumpTo({ kind: "file", fileKey }), [jumpTo]),
   };
