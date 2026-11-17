@@ -82,6 +82,31 @@ export const ICON_PATHS = {
   check: <path d="m3.5 8.5 3 3 6-7" />,
   /** A cross. */
   cross: <path d="m4.5 4.5 7 7M11.5 4.5l-7 7" />,
+  /** A four-pointed spark, for an agent's avatar. */
+  spark: <path d="M8 2.5 9.3 6.7 13.5 8 9.3 9.3 8 13.5 6.7 9.3 2.5 8 6.7 6.7z" />,
+  /** A head and shoulders, for a person's avatar. */
+  person: (
+    <>
+      <circle cx="8" cy="5.5" r="2.5" />
+      <path d="M3 13.5a5 5 0 0 1 10 0" />
+    </>
+  ),
+  /** An arrow turning back. */
+  reply: (
+    <>
+      <path d="M6.5 4 3 7.5 6.5 11" />
+      <path d="M3 7.5h6a4 4 0 0 1 4 4v1" />
+    </>
+  ),
+  /** A pencil. */
+  pencil: <path d="M11 2.8 13.2 5 6 12.2l-3 .8.8-3z" />,
+  /** A waste bin. */
+  trash: (
+    <>
+      <path d="M3 4.5h10M6.5 4.5V3h3v1.5" />
+      <path d="m4.5 4.5.6 8.5h5.8l.6-8.5" />
+    </>
+  ),
 } satisfies Record<string, ReactElement>;
 
 /** Every icon the page can draw. */

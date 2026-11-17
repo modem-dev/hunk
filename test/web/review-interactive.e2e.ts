@@ -2,7 +2,8 @@
  * Drives the page's writing side against a real headless session.
  *
  * Covers the note lifecycle from the keyboard and the mouse (create, edit, reply, delete,
- * cancel), confirmed by the agent's own `hunk session comment list`; a line-range note from a
+ * cancel), confirmed by the agent's own `hunk session comment list`; a thread drawn as one
+ * card with its Reply row and the accent ring following the active note; a line-range note from a
  * drag in the gutter and a one-line note inside an expanded gap, which travels with the
  * expansion proof; drafts surviving a tab reload; the shared filter and agent-note visibility
  * reaching a second page on the same session; refresh after a file edit; the capability leaving
@@ -93,7 +94,8 @@ test("creates, edits, replies to, and deletes reviewer notes", async ({ page }) 
   await writeAndSave(page, "Threshold needs a comment.");
   const card = noteCard(page, "Threshold needs a comment.");
   await expect(card).toBeVisible();
-  await expect(card.locator(".note-author")).toHaveText(/^Browser note/);
+  await expect(card.locator(".note-author")).toHaveText("Reviewer");
+  await expect(card.locator(".note-role")).toHaveText("browser");
   expect(await listTestNotes()).toContain("Threshold needs a comment.");
 
   // Edit from the card.
@@ -132,6 +134,78 @@ test("creates, edits, replies to, and deletes reviewer notes", async ({ page }) 
   await expect(page.locator(".note-composer")).toHaveCount(0);
 });
 
+test("draws a thread as one card, replies from its row, and rings the active note", async ({
+  page,
+}) => {
+  await openTestReview(page);
+
+  await page.keyboard.press("c");
+  await writeAndSave(page, "Thread root.");
+  const thread = page.locator(".note-thread", { hasText: "Thread root." });
+  const row = thread.locator(".note-reply-row");
+  await expect(row).toBeVisible();
+
+  // The row opens the thread's reply composer in its own place, and comes back once it closes.
+  await row.click();
+  await expect(thread.locator(".note-composer")).toBeVisible();
+  await expect(thread.locator(".note-composer textarea")).toBeFocused();
+  await expect(row).toHaveCount(0);
+  await writeAndSave(page, "Thread reply.");
+  await expect(thread.locator(".note-card")).toHaveCount(2);
+  await expect(thread.locator(".note-reply-row")).toBeVisible();
+  await expect(page.locator(".note-thread")).toHaveCount(1);
+
+  // Icon actions keep their names and add the key that does the same to the active note.
+  const root = noteCard(page, "Thread root.");
+  await expect(root.getByRole("button", { name: "Edit (E)" })).toHaveAttribute("title", "Edit (E)");
+  await expect(root.getByRole("button", { name: "Reply (R)" })).toBeVisible();
+  await expect(root.getByRole("button", { name: "Delete (D)" })).toBeVisible();
+
+  // A second thread in another hunk, for the active mark to move to.
+  await page.keyboard.press("]");
+  await page.keyboard.press("c");
+  await writeAndSave(page, "Second thread.");
+  const second = page.locator(".note-thread", { hasText: "Second thread." });
+  await expect(second).toBeVisible();
+
+  // Clicking a message marks it and its thread; the mark moves without rebuilding either card.
+  await root.click();
+  await expect(root).toHaveAttribute("data-active", "");
+  await expect(thread).toHaveAttribute("data-active", "");
+  await expect(second).not.toHaveAttribute("data-active");
+  await thread.evaluate((element) => element.setAttribute("data-probe", ""));
+  const ring = (locator: typeof thread) =>
+    locator.evaluate((element) => getComputedStyle(element).borderTopColor);
+  const ringed = await ring(thread);
+  expect(ringed).not.toBe(await ring(second));
+
+  // Note navigation moves the mark to the next note in the shared order: the reply, then the
+  // second thread.
+  const runCommand = async (title: string) => {
+    await page.keyboard.press("Control+k");
+    await page.keyboard.type(title);
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("command-palette")).toHaveCount(0);
+  };
+  await runCommand("Next review note");
+  await expect(noteCard(page, "Thread reply.")).toHaveAttribute("data-active", "");
+  await expect(root).not.toHaveAttribute("data-active");
+  await expect(thread).toHaveAttribute("data-active", "");
+  await runCommand("Next review note");
+  await expect(second).toHaveAttribute("data-active", "");
+  await expect(noteCard(page, "Second thread.")).toHaveAttribute("data-active", "");
+  await expect(thread).not.toHaveAttribute("data-active");
+  expect(await ring(second)).toBe(ringed);
+  await runCommand("Previous review note");
+  await expect(thread).toHaveAttribute("data-active", "");
+  await expect(second).not.toHaveAttribute("data-active");
+  await expect(thread).toHaveAttribute("data-probe", "");
+
+  // `}` tours annotated hunks, which leaves no note active, so no thread keeps the ring.
+  await page.keyboard.press("}");
+  await expect(page.locator(".note-thread[data-active]")).toHaveCount(0);
+});
+
 test("writes a range note from the gutter and a line note inside an expanded gap", async ({
   page,
 }) => {
@@ -143,18 +217,18 @@ test("writes a range note from the gutter and a line note inside an expanded gap
   await page.mouse.down();
   await main.locator('[data-column-number="16"]').first().hover();
   await page.mouse.up();
-  await expect(page.locator(".note-composer .note-range")).toHaveText("R14–R16");
+  await expect(page.locator(".note-composer .note-range")).toHaveText("lines 14–16");
   await writeAndSave(page, "These three lines move together.");
   await expect(
     noteCard(page, "These three lines move together.").locator(".note-range"),
-  ).toHaveText("R14–R16");
+  ).toHaveText("lines 14–16");
 
   // Expand the leading gap, then use the hover affordance on a line only the expansion drew.
   await main.locator('.gap-separator[data-gap-id="before:0"]').first().click();
   await expect(main.locator('[data-column-number="3"]').first()).toBeVisible({ timeout: 15_000 });
   await main.locator('[data-line="3"]').last().hover();
   await main.locator("[data-utility-button]").click();
-  await expect(page.locator(".note-composer .note-range")).toHaveText("R3");
+  await expect(page.locator(".note-composer .note-range")).toHaveText("line 3");
   await writeAndSave(page, "Expanded context note.");
   await expect(noteCard(page, "Expanded context note.")).toBeVisible();
   await expect.poll(listTestNotes).toContain("Expanded context note.");

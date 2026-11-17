@@ -64,6 +64,8 @@ export interface FileSectionProps {
   selected: boolean;
   /** The selected hunk, when this file holds the selection. */
   selectedHunk?: number;
+  /** The active note, when this file draws it. */
+  activeNoteId?: string | null;
   layout: "split" | "unified";
   wrapLines: boolean;
   showLineNumbers: boolean;
@@ -299,6 +301,10 @@ export const FileSection = memo(function FileSection(props: FileSectionProps) {
                 onNoteAction={(action, noteId) =>
                   props.interaction.onNoteAction(fileKey, action, noteId)
                 }
+                activeNoteId={props.activeNoteId}
+                {...(props.interaction.actionHints
+                  ? { actionHints: props.interaction.actionHints }
+                  : {})}
               />
             ) : null}
           </FilePreviewBody>

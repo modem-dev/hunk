@@ -198,7 +198,18 @@ test("captures notes, markup, highlights, and the session title", async ({ page 
   await capture(page, "13-notes-thread-dark");
   await chooseTestTheme(page, "github-light-default");
   await capture(page, "14-notes-thread-light");
+  // Clicking a message makes its note the active one: the thread takes the accent ring.
+  const replyCard = page.locator(".note-card", { hasText: "the fast path only pays off" });
+  await replyCard.click();
+  await expect(replyCard).toHaveAttribute("data-active", "");
+  await capture(page, "14b-notes-thread-active-light");
   await chooseTestTheme(page, "github-dark-default");
+  await capture(page, "13b-notes-thread-active-dark");
+  const wide = page.viewportSize()!;
+  await page.setViewportSize({ width: 800, height: wide.height });
+  await replyCard.scrollIntoViewIfNeeded();
+  await capture(page, "13c-notes-thread-narrow-800");
+  await page.setViewportSize(wide);
 
   await page.locator(".note-card .stml").scrollIntoViewIfNeeded();
   await capture(page, "15-stml-note");

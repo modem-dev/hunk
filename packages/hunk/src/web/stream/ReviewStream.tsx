@@ -411,6 +411,19 @@ export function ReviewStream(props: ReviewStreamProps) {
   const { fileTopToken, hunkToken } = review.reveal;
   const selectedKey = review.selection.fileKey;
   const selectedHunk = review.selection.hunkIndex;
+  // Only the file that draws the active note is handed it, so moving the mark re-renders one or
+  // two sections rather than every file in the stream.
+  const activeNoteId = review.activeNoteId;
+  const activeNoteFileKey = useMemo(() => {
+    if (!activeNoteId) return undefined;
+    const stored = [...review.liveNotes, ...review.userNotes].find(
+      (entry) => entry.note.id === activeNoteId,
+    );
+    return (
+      stored?.note.fileKey ??
+      props.sidecarNotes.find((entry) => entry.note.id === activeNoteId)?.note.fileKey
+    );
+  }, [activeNoteId, review.liveNotes, review.userNotes, props.sidecarNotes]);
   useEffect(() => {
     if (fileTopToken === 0 || !selectedKey) return;
     reveal(selectedKey);
@@ -698,6 +711,7 @@ export function ReviewStream(props: ReviewStreamProps) {
             measuredHeight={heights.get(slot.key)}
             selected={selected}
             {...(selected ? { selectedHunk } : {})}
+            {...(slot.key === activeNoteFileKey ? { activeNoteId } : {})}
             layout={props.layout}
             wrapLines={props.wrapLines}
             showLineNumbers={props.showLineNumbers}

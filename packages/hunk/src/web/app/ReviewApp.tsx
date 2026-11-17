@@ -628,7 +628,13 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
     },
     [markdownModes],
   );
-  const interactive = useReviewInteraction(session, shownShared, sessionEnded, showFileDiff);
+  const interactive = useReviewInteraction(
+    session,
+    shownShared,
+    sessionEnded,
+    showFileDiff,
+    keyHint,
+  );
   const interactiveRef = useRef(interactive);
   interactiveRef.current = interactive;
   const filterRef = useRef<HTMLInputElement | null>(null);
