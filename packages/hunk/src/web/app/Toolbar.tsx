@@ -5,9 +5,9 @@
  *
  * The left side mirrors the terminal's `topTitle` — review title, file count, and total
  * `+A -D` — with connection and load state beside it (a quiet dot while connected, words while
- * loading, reconnecting, or failed). The right side holds the shared filter, viewed progress,
- * layout (auto, split, unified), the View menu, refresh, copy link, the command palette, and
- * the side panel. Controls are icon buttons where the icon says enough; each names its action
+ * loading, reconnecting, or failed). The right side holds the shared filter, layout (auto,
+ * split, unified), the View menu, refresh, copy link, the command palette, and the side panel;
+ * viewed progress lives in the review bar (`./ReviewBar.tsx`). Controls are icon buttons where the icon says enough; each names its action
  * and the shortcut that does the same thing (from the page's keymap, so a remap shows up here
  * too) in its tooltip. Narrow windows drop labels before controls (`styles.css`) so the row
  * never wraps. None of the view controls reaches the session.
@@ -38,8 +38,6 @@ export interface ToolbarProps {
   onToggleSidebar: () => void;
   /** The filter field. */
   filterField?: ReactNode;
-  /** Viewed progress. */
-  viewedProgress?: ReactNode;
   /** The View menu. */
   viewMenu?: ReactNode;
   /** Refresh and copy link. */
@@ -145,7 +143,6 @@ export function Toolbar(props: ToolbarProps) {
       </div>
       <div className="toolbar-controls">
         {props.filterField}
-        {props.viewedProgress}
         <span className="toolbar-separator" aria-hidden="true" />
         <div
           className="segmented icon-segmented"
