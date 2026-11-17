@@ -76,6 +76,8 @@ export const ICON_PATHS = {
   "chevron-down": <path d="m4 6 4 4 4-4" />,
   /** A chevron pointing right. */
   "chevron-right": <path d="m6 4 4 4-4 4" />,
+  /** A chevron pointing up. */
+  "chevron-up": <path d="m4 10 4-4 4 4" />,
   /** A check mark. */
   check: <path d="m3.5 8.5 3 3 6-7" />,
   /** A cross. */

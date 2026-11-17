@@ -8,7 +8,9 @@
  * numbers as text, with `+` and `−` signs, so nothing depends on color. Every row naming a
  * file or a directory jumps to it in the stream (a directory to its first file).
  */
+import { Icon } from "../icons/Icon";
 import { useState, type ReactNode } from "react";
+import { formatCount, formatFileCount } from "../format/lineCounts";
 import { REVIEW_FILE_ROLES, type ReviewFileRole } from "../../core/review/fileRoles";
 import type {
   ReviewOverview,
@@ -52,7 +54,7 @@ const CHANGE_KIND_LABELS: readonly [keyof ReviewOverview["changeKinds"], string]
 
 /** A count with a lower-bound mark when the producer truncated it. */
 function count(value: number, truncated: boolean) {
-  return truncated ? `≥${value}` : String(value);
+  return truncated ? `≥${formatCount(value)}` : formatCount(value);
 }
 
 /** `+A −D`, with lower-bound marks, as two separately colored spans. */
@@ -96,7 +98,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 /** Files, in words. */
 function files(value: number) {
-  return value === 1 ? "1 file" : `${value} files`;
+  return formatFileCount(value);
 }
 
 /** One directory row and, when expanded, its subdirectories. */
@@ -124,7 +126,9 @@ function DirectoryRows({
           style={hasChildren ? undefined : { visibility: "hidden" }}
           onClick={() => setExpanded((current) => !current)}
         >
-          <span aria-hidden="true">{hasChildren ? (expanded ? "▾" : "▸") : ""}</span>
+          {hasChildren ? (
+            <Icon name={expanded ? "chevron-down" : "chevron-right"} size={12} />
+          ) : null}
         </button>
         <button
           type="button"
@@ -134,7 +138,7 @@ function DirectoryRows({
         >
           {`${directory.name}/`}
         </button>
-        <span className="overview-count">{directory.files}</span>
+        <span className="overview-count">{formatCount(directory.files)}</span>
         <Churn {...directory} />
         <ChurnBar {...directory} scale={scale} />
       </div>
@@ -208,7 +212,7 @@ export function OverviewTab({ overview, onSelectFile }: OverviewTabProps) {
         ) : null}
         {overview.viewed ? (
           <p className="overview-viewed" data-testid="overview-viewed">
-            <span>{`${overview.viewed.files} of ${files(overview.viewed.total)} viewed`}</span>
+            <span>{`${formatCount(overview.viewed.files)} of ${files(overview.viewed.total)} viewed`}</span>
             <progress value={overview.viewed.files} max={overview.viewed.total} />
           </p>
         ) : null}
@@ -236,7 +240,7 @@ export function OverviewTab({ overview, onSelectFile }: OverviewTabProps) {
               return (
                 <tr key={role} data-empty={row.files === 0 ? "" : undefined}>
                   <th scope="row">{ROLE_LABELS[role]}</th>
-                  <td className="numeric">{row.files}</td>
+                  <td className="numeric">{formatCount(row.files)}</td>
                   <td className="numeric">
                     <Churn {...row} />
                   </td>
@@ -255,7 +259,7 @@ export function OverviewTab({ overview, onSelectFile }: OverviewTabProps) {
           {CHANGE_KIND_LABELS.map(([kind, label]) => (
             <div key={kind} data-empty={overview.changeKinds[kind] === 0 ? "" : undefined}>
               <dt>{label}</dt>
-              <dd>{overview.changeKinds[kind]}</dd>
+              <dd>{formatCount(overview.changeKinds[kind])}</dd>
             </div>
           ))}
         </dl>

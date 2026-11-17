@@ -21,6 +21,7 @@ import type { NoteComposer } from "../notes/composerStore";
 import { planReviewFileNotes } from "../notes/noteProjection";
 import type { ReviewNoteInteraction } from "../notes/noteInteraction";
 import { reviewFileChangeGlyph, reviewFileLabelParts } from "../../core/review/fileLabels";
+import { formatAddedCount, formatRemovedCount } from "../format/lineCounts";
 import type { ReviewFileIndexEntry } from "../mirror/fileIndex";
 import type { ReviewFileRenderPlan } from "./fileProjection";
 import { FilePreviewBody, FilePreviewHeaderAction } from "../previews/FilePreviews";
@@ -157,8 +158,10 @@ function FileHeader({
         </button>
       ) : null}
       <span className="file-stats">
-        <span className="stat-added">{`+${index.stats.additions}${index.stats.truncated ? "+" : ""}`}</span>{" "}
-        <span className="stat-removed">{`-${index.stats.deletions}`}</span>
+        <span className="stat-added">
+          {formatAddedCount(index.stats.additions, index.stats.truncated)}
+        </span>{" "}
+        <span className="stat-removed">{formatRemovedCount(index.stats.deletions)}</span>
       </span>
       {viewed ? (
         <label className="viewed-toggle" data-status={viewedStatus ?? "unviewed"}>

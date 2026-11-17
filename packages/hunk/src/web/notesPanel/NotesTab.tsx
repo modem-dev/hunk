@@ -9,6 +9,7 @@
  * the stream scrolls to its card; nothing reaches the session. Read-only: notes are written
  * and edited in the stream.
  */
+import { Icon } from "../icons/Icon";
 import { useMemo, useState } from "react";
 import { reviewNoteRangeLabel, reviewNoteThreadTitle } from "../../core/review/noteLabels";
 import type {
@@ -172,7 +173,8 @@ export function NotesTab({ files, activeNoteId, agentNotesHidden, onSelectNote }
                       aria-expanded={open}
                       onClick={() => toggleThread(id)}
                     >
-                      {`${open ? "▾" : "▸"} ${replies} ${replies === 1 ? "reply" : "replies"}`}
+                      <Icon name={open ? "chevron-down" : "chevron-right"} size={12} />
+                      {`${replies} ${replies === 1 ? "reply" : "replies"}`}
                     </button>
                   ) : null}
                   {open ? (

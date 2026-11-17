@@ -715,6 +715,7 @@ body {
 .file-stats {
   flex: none;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .header-action {
@@ -737,7 +738,9 @@ body {
 }
 
 .gap-separator {
-  display: block;
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
   width: 100%;
   padding: 0 12px;
   height: 100%;
@@ -761,10 +764,27 @@ body {
   cursor: default;
 }
 
-/* The terminal's marks: `▾` on a gap that expands, `···` around context that cannot. */
-.gap-separator[data-gap-state="collapsed"]::before {
+/* The expand chevron is an icon; `···` marks context that cannot expand. */
+.gap-separator .icon {
+  flex: none;
   margin-right: 6px;
-  content: "▾" / "";
+}
+
+/* The additions column's half of a split-view gap row. Pierre sizes the slot to the gutter, so a
+   filled band there reads as a stray block; it stays empty until hovered and toggles the gap. */
+.gap-separator-fill {
+  width: 100%;
+  height: 100%;
+  min-height: 20px;
+  cursor: pointer;
+}
+
+.gap-separator-fill:hover:not([data-gap-state="unaddressed"]) {
+  background: var(--hunk-panel-alt);
+}
+
+.gap-separator-fill[data-gap-state="unaddressed"] {
+  cursor: default;
 }
 
 .gap-separator[data-gap-state="unaddressed"]::before {
@@ -812,9 +832,9 @@ body {
   opacity: 0.92;
 }
 
-.gap-collapse::before {
-  margin-right: 5px;
-  content: "▴" / "";
+.gap-collapse .icon {
+  margin-right: 4px;
+  vertical-align: -2px;
 }
 
 .gap-collapse:hover {
@@ -886,6 +906,7 @@ body {
   display: inline-flex;
   gap: 5px;
   flex: none;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Text, not the accent: several built-in accents fall below 4.5:1 on the panel and on the
@@ -1298,6 +1319,9 @@ body {
 }
 
 .toast-dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   margin-left: auto;
   padding: 0 4px;
   font: inherit;
@@ -1376,12 +1400,29 @@ body {
   color: var(--hunk-muted);
 }
 
+.picker-keys {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.picker-group + .picker-group {
+  margin-top: 4px;
+}
+
+.picker-section {
+  padding: 8px 10px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: capitalize;
+  color: var(--hunk-muted);
+}
+
 .picker-empty {
   margin: 0;
   padding: 10px 14px;
 }
 
-.picker-keys,
 .help-section kbd {
   padding: 1px 6px;
   font: inherit;
@@ -1390,6 +1431,10 @@ body {
   background: var(--hunk-panel-alt);
   border: 1px solid var(--hunk-border);
   border-radius: 4px;
+}
+
+.picker-stats {
+  font-variant-numeric: tabular-nums;
 }
 
 .picker-stats .stat-add {
@@ -1510,6 +1555,9 @@ body {
 }
 
 .side-panel-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   align-self: center;
   width: 24px;
   height: 24px;
@@ -1632,6 +1680,7 @@ body {
 }
 
 .overview-churn {
+  font-variant-numeric: tabular-nums;
   display: inline-flex;
   justify-content: flex-end;
   gap: 6px;
@@ -1768,6 +1817,9 @@ body {
 }
 
 .overview-disclosure {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 16px;
   height: 18px;
   padding: 0;
@@ -1953,6 +2005,9 @@ body {
 }
 
 .notes-replies-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   margin: 0 0 4px 11px;
   padding: 0 4px;
   font: inherit;

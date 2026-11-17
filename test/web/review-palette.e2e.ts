@@ -96,6 +96,26 @@ test("runs commands from the palette, recent first, with focus restored", async 
   await expect(page.getByTestId("refresh")).toBeFocused();
 });
 
+// Intent: an empty palette groups commands under headings; typing returns one flat list.
+test("groups the empty palette by category and flattens it while typing", async ({ page }) => {
+  await openTestReview(page);
+  await page.keyboard.press("Control+k");
+  const palette = page.getByTestId("command-palette");
+
+  const headings = palette.getByTestId("picker-section");
+  await expect(headings.first()).toBeVisible();
+  expect(await headings.count()).toBeGreaterThan(1);
+  await expect(palette.getByRole("group").first()).toHaveAccessibleName(
+    (await headings.first().textContent())!,
+  );
+  await expect(palette.locator(".picker-category")).toHaveCount(0);
+  await expect(palette.locator("kbd.key-hint").first()).toBeVisible();
+
+  await page.keyboard.type("split");
+  await expect(headings).toHaveCount(0);
+  await expect(palette.locator(".picker-category").first()).toBeVisible();
+});
+
 test("shows help for the commands that work here", async ({ page }) => {
   await openTestReview(page);
   await page.keyboard.press("?");
