@@ -98,6 +98,7 @@ import {
 } from "../previews/previewContext";
 import { NotesTab } from "../notesPanel/NotesTab";
 import { OverviewTab } from "../overview/OverviewTab";
+import { SummaryStrip } from "../overview/SummaryStrip";
 import { selectWebReviewOverview } from "../panel/overviewInput";
 import { webLocalKeyCommands, withWebLocalChords } from "../panel/panelCommands";
 import {
@@ -108,8 +109,10 @@ import {
 import {
   readSidePanelPreferences,
   resolveSidePanelOpen,
+  resolveSidePanelTab,
   storeSidePanelPreferences,
   type SidePanelPreferences,
+  type SidePanelTab,
 } from "../panel/panelPreferences";
 import { SidePanel, type SidePanelTool } from "../panel/SidePanel";
 import type { ThemeMenuOption } from "./ThemeMenu";
@@ -313,7 +316,7 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
       return merged;
     });
   }, []);
-  const panelOpen = resolveSidePanelOpen(panel, window.innerWidth);
+  const panelOpen = resolveSidePanelOpen(panel);
   const streamWidth = Math.max(
     0,
     mainWidth - (sidebarOpen ? preferences.sidebarWidth : 0) - (panelOpen ? panel.width : 0),
@@ -418,10 +421,22 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
     [entries],
   );
 
+  // The summary strip reads the overview once the review has loaded, panel or not; while files
+  // are still arriving only an open panel pays for recomputing it as they land.
+  const overviewReady = mirror.status === "ready";
   const overview = useMemo(
-    () => (panelOpen ? selectWebReviewOverview(entries, shownShared) : undefined),
-    [panelOpen, entries, shownShared],
+    () => (panelOpen || overviewReady ? selectWebReviewOverview(entries, shownShared) : undefined),
+    [panelOpen, overviewReady, entries, shownShared],
   );
+  // With no tab ever chosen, the panel opens on the tab that fits the review as it was when the
+  // panel opened, so a note arriving later does not switch tabs under the reader.
+  const autoTabRef = useRef<SidePanelTab | undefined>(undefined);
+  if (!panelOpen) autoTabRef.current = undefined;
+  else if (overviewReady && overview) {
+    const hasNotes = overview.noteTotals.agent + overview.noteTotals.reviewer > 0;
+    autoTabRef.current ??= resolveSidePanelTab(panel, hasNotes);
+  }
+  const panelTab = panel.tab ?? autoTabRef.current ?? "overview";
 
   // Report where the reader settled, so a headless session's `hunk session context` can say
   // where the reader is. Debounced; a failure is dropped, since the next settle reports again.
@@ -522,8 +537,8 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
   // The Notes tab lists every visible note by the shared order; choosing one selects it here and
   // reveals its card, the way an agent's reveal does, and never reaches the session.
   const noteList = useMemo(
-    () => (panelOpen && panel.tab === "notes" ? selectReviewNoteList(review, sidecarNotes) : []),
-    [panelOpen, panel.tab, review, sidecarNotes],
+    () => (panelOpen && panelTab === "notes" ? selectReviewNoteList(review, sidecarNotes) : []),
+    [panelOpen, panelTab, review, sidecarNotes],
   );
   const selectNote = useCallback(
     (
@@ -1083,66 +1098,86 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
                 />
               </>
             ) : null}
-            <ReviewStream
-              slots={streamSlots}
-              review={review}
-              layout={layout}
-              wrapLines={preferences.wrapLines}
-              showLineNumbers={preferences.showLineNumbers}
-              syntaxTheme={theme?.syntaxTheme ?? "github-dark-default"}
-              appearance={theme?.appearance ?? "dark"}
-              onToggleGap={toggleGap}
-              onCollapseGaps={collapseGaps}
-              onSelectHunk={selectHunk}
-              onViewportAnchor={anchorToViewport}
-              controller={streamController}
-              columnWidth={columnWidth}
-              generation={mirror.address?.generation}
-              sidecarNotes={sidecarNotes}
-              highlights={shownShared?.agentHighlights ?? NO_HIGHLIGHTS}
-              {...(streamRevealPoint ? { revealPoint: streamRevealPoint } : {})}
-              composers={composers}
-              interaction={interactive.interaction}
-              viewedStatuses={viewed.statuses}
-              collapsedFiles={viewed.collapsed}
-              viewed={viewedControls}
-              {...(pageHint("hunk.web.toggleViewed")
-                ? { viewedKeyHint: pageHint("hunk.web.toggleViewed") }
-                : {})}
-              {...(streamSlots.length === 0 && visibleSlots.length > 0
-                ? {
-                    emptyMessage: (
-                      <>
-                        {"Every file here is viewed and hidden. "}
-                        <button
-                          type="button"
-                          className="header-action"
-                          onClick={viewed.toggleHideViewed}
-                        >
-                          Show viewed files
-                        </button>
-                      </>
-                    ),
-                  }
-                : {})}
-            />
-            {showMinimap ? (
-              <Minimap
-                slots={streamSlots}
-                files={minimapFiles}
-                layout={layout}
-                noteHunks={minimapNotes}
-                highlightHunks={minimapHighlights}
-                viewed={minimapViewed}
-                {...(minimapSelected ? { selected: minimapSelected } : {})}
-                controller={streamController}
-                themeKey={theme?.id}
+            <div className="review-column">
+              <SummaryStrip
+                overview={overviewReady ? overview : undefined}
+                {...(filter
+                  ? {
+                      filter: {
+                        text: filter,
+                        shown: visibleSlots.length,
+                        total: mirror.slots.length,
+                      },
+                    }
+                  : {})}
+                onOpenOverview={() => updatePanel({ open: true, tab: "overview" })}
+                {...(pageHint("hunk.web.showOverview")
+                  ? { overviewHint: pageHint("hunk.web.showOverview") }
+                  : {})}
               />
-            ) : null}
+              <div className="review-column-body">
+                <ReviewStream
+                  slots={streamSlots}
+                  review={review}
+                  layout={layout}
+                  wrapLines={preferences.wrapLines}
+                  showLineNumbers={preferences.showLineNumbers}
+                  syntaxTheme={theme?.syntaxTheme ?? "github-dark-default"}
+                  appearance={theme?.appearance ?? "dark"}
+                  onToggleGap={toggleGap}
+                  onCollapseGaps={collapseGaps}
+                  onSelectHunk={selectHunk}
+                  onViewportAnchor={anchorToViewport}
+                  controller={streamController}
+                  columnWidth={columnWidth}
+                  generation={mirror.address?.generation}
+                  sidecarNotes={sidecarNotes}
+                  highlights={shownShared?.agentHighlights ?? NO_HIGHLIGHTS}
+                  {...(streamRevealPoint ? { revealPoint: streamRevealPoint } : {})}
+                  composers={composers}
+                  interaction={interactive.interaction}
+                  viewedStatuses={viewed.statuses}
+                  collapsedFiles={viewed.collapsed}
+                  viewed={viewedControls}
+                  {...(pageHint("hunk.web.toggleViewed")
+                    ? { viewedKeyHint: pageHint("hunk.web.toggleViewed") }
+                    : {})}
+                  {...(streamSlots.length === 0 && visibleSlots.length > 0
+                    ? {
+                        emptyMessage: (
+                          <>
+                            {"Every file here is viewed and hidden. "}
+                            <button
+                              type="button"
+                              className="header-action"
+                              onClick={viewed.toggleHideViewed}
+                            >
+                              Show viewed files
+                            </button>
+                          </>
+                        ),
+                      }
+                    : {})}
+                />
+                {showMinimap ? (
+                  <Minimap
+                    slots={streamSlots}
+                    files={minimapFiles}
+                    layout={layout}
+                    noteHunks={minimapNotes}
+                    highlightHunks={minimapHighlights}
+                    viewed={minimapViewed}
+                    {...(minimapSelected ? { selected: minimapSelected } : {})}
+                    controller={streamController}
+                    themeKey={theme?.id}
+                  />
+                ) : null}
+              </div>
+            </div>
             {panelOpen && panelTools.length > 0 ? (
               <SidePanel
                 tools={panelTools}
-                tab={panel.tab}
+                tab={panelTab}
                 width={panel.width}
                 onTab={(tab) => updatePanel({ tab })}
                 onWidth={(width, commit) => updatePanel({ width }, commit)}

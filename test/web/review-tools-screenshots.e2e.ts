@@ -10,6 +10,7 @@ import { expect, test, type Page } from "@playwright/test";
 import {
   chooseTestTheme,
   openTestViewMenu,
+  seedTestOpenSidePanel,
   startTestWebReview,
   type TestWebReview,
 } from "./webTestHarness";
@@ -41,6 +42,8 @@ async function toggleTestHideViewed(page: Page) {
 
 /** Open the rich review with agent notes and a stored theme. */
 async function openRich(page: Page, themeId: string) {
+  // The panel starts closed; these captures show its tools unless a test stored a choice first.
+  await seedTestOpenSidePanel(page, "overview");
   await page.addInitScript((theme) => {
     window.localStorage.setItem("hunk.review.theme", theme);
   }, themeId);
@@ -229,4 +232,44 @@ test("captures viewed files: marked, collapsed, changed since viewed, and hidden
   await capture(page, "viewed-light");
   await page.getByRole("radio", { name: "Tree" }).click();
   await capture(page, "viewed-tree-light");
+});
+
+/** Open one scenario with a stored theme and the panel's default (closed) state. */
+async function openSummaryScenario(page: Page, input: string, themeId: string) {
+  review = await startTestWebReview(input);
+  await page.addInitScript((theme) => {
+    window.localStorage.setItem("hunk.review.theme", theme);
+  }, themeId);
+  await page.goto(review.url);
+  await expect(page.locator('.toolbar [data-state="connected"]')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("load-progress")).toHaveCount(0, { timeout: 30_000 });
+  await expect(page.getByTestId("summary-strip")).toHaveAttribute("data-state", "ready");
+}
+
+test("captures the summary strip with the panel closed and open", async ({ page }) => {
+  test.setTimeout(300_000);
+  mkdirSync(OUTPUT!, { recursive: true });
+  for (const [scenario, input] of [
+    ["rich", "--rich"],
+    ["previews", "--previews"],
+  ] as const) {
+    for (const [tone, themeId] of [
+      ["dark", "github-dark-default"],
+      ["light", "github-light-default"],
+    ] as const) {
+      await openSummaryScenario(page, input, themeId);
+      for (const width of [1440, 800]) {
+        await page.setViewportSize({ width, height: 900 });
+        await capture(page, `summary-${scenario}-${tone}-${width}-closed`);
+        await page.getByTestId("summary-overview").click();
+        await expect(page.getByTestId("side-panel")).toBeVisible();
+        await capture(page, `summary-${scenario}-${tone}-${width}-open`);
+        await page.getByTestId("toggle-side-panel").click();
+        await expect(page.getByTestId("side-panel")).toHaveCount(0);
+      }
+      await review?.stop();
+      review = undefined;
+      await page.evaluate(() => window.localStorage.removeItem("hunk.review.panel"));
+    }
+  }
 });

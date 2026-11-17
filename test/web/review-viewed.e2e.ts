@@ -14,6 +14,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import {
   openTestViewMenu,
+  seedTestOpenSidePanel,
   startTestWebReview,
   watchTestPageProblems,
   type TestWebReview,
@@ -37,6 +38,8 @@ test.afterEach(async () => {
 async function openTestReview(page: Page) {
   review = await startTestWebReview("--rich");
   problems = await watchTestPageProblems(page);
+  // The Overview tab's viewed count is part of what this test checks, so the panel starts open.
+  await seedTestOpenSidePanel(page, "overview");
   await loadTestPage(page);
 }
 
