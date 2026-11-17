@@ -2715,44 +2715,211 @@ body {
   color: var(--hunk-muted);
 }
 
+/* -- Review bar ------------------------------------------------------------------------ */
+
+/* One 34px row along the bottom. It never wraps: narrow windows drop the key hints, then the
+   next file's path, then the note count's word (see the media queries below). */
+.review-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 14px;
+  height: 34px;
+  min-width: 0;
+  padding: 0 10px 0 12px;
+  overflow: hidden;
+  color: var(--hunk-muted);
+  background: var(--hunk-panel);
+  border-top: 1px solid var(--hunk-border);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .viewed-progress {
   display: inline-flex;
   flex: none;
   align-items: center;
-  gap: 6px;
-  padding: 0 4px;
-  color: var(--hunk-muted);
+  gap: 8px;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 
-.progress-ring {
+.progress-track {
+  width: 90px;
+  height: 4px;
+  overflow: hidden;
+  background: var(--hunk-border);
+  border-radius: 2px;
+}
+
+.progress-fill {
+  display: block;
+  height: 100%;
+  background: var(--hunk-added-sign-color, #1a7f37);
+}
+
+/* Bar buttons are quiet text until hovered, like the toolbar's. */
+.bar-button {
+  display: inline-flex;
   flex: none;
-  transform: rotate(-90deg);
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 6px;
+  font: inherit;
+  color: var(--hunk-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
 }
 
-.progress-ring circle {
-  fill: none;
-  stroke-width: 2.5;
+.bar-button:hover {
+  color: var(--hunk-text);
+  background: var(--hunk-panel-alt);
 }
 
-.progress-ring-track {
-  stroke: var(--hunk-border);
+.bar-next {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: -6px;
+  color: var(--hunk-text);
 }
 
-.progress-ring-value {
-  stroke: var(--hunk-badge-added, #1a7f37);
-  stroke-linecap: round;
+.bar-next-label {
+  flex: none;
+  line-height: 16px;
+}
+
+/* The directory gives way first so the file name stays readable. */
+.bar-next-path {
+  display: inline-flex;
+  min-width: 0;
+  overflow: hidden;
+  font: 12px/16px var(--code-font);
+  color: var(--hunk-muted);
+}
+
+.bar-next-dir {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bar-next-name {
+  flex: none;
+}
+
+.bar-all-viewed {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  color: var(--hunk-text);
+}
+
+.bar-all-viewed .icon {
+  color: var(--hunk-added-sign-color, #1a7f37);
+}
+
+.bar-spacer {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.bar-keys {
+  display: flex;
+  flex: none;
+  gap: 12px;
+}
+
+.bar-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.bar-key-label {
+  margin-left: 2px;
+}
+
+.bar-shortcuts {
+  margin-left: -8px;
+}
+
+.bar-separator {
+  flex: none;
+  width: 1px;
+  height: 16px;
+  background: var(--hunk-border);
+}
+
+.bar-notes {
+  margin: 0 -6px;
+}
+
+.bar-notes .icon {
+  color: var(--hunk-muted);
+}
+
+.bar-notes-count {
+  color: var(--hunk-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.bar-copy {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 9px;
+  font-size: 12px;
+}
+
+.bar-copy .icon {
+  width: 13px;
+  height: 13px;
+}
+
+.bar-copy[data-state="copied"] {
+  color: var(--hunk-badge-added, #1a7f37);
+}
+
+.bar-copy[data-state="failed"] {
+  color: var(--hunk-removed-sign-color, #d1242f);
+}
+
+@media (max-width: 1180px) {
+  .bar-keys,
+  .bar-shortcuts,
+  .bar-shortcuts + .bar-separator {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .bar-next-path {
+    display: none;
+  }
+}
+
+/* Hidden labels stay in the accessibility tree: they name their buttons. */
+@media (max-width: 560px) {
+  .bar-notes-word {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 }
 
 /* Narrow toolbars drop words before controls, then the stats, and collapse the filter last;
    the row itself never wraps. */
 /* Hidden labels stay in the accessibility tree: they name their icon buttons. */
 @media (max-width: 1180px) {
-  .viewed-word {
-    display: none;
-  }
-
   .commands-button .pill-label {
     position: absolute;
     width: 1px;

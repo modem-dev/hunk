@@ -273,3 +273,79 @@ test("captures the summary strip with the panel closed and open", async ({ page 
     }
   }
 });
+
+/** Save the whole page and a crop of the review bar along its bottom. */
+async function captureTestBar(page: Page, name: string) {
+  await capture(page, name);
+  await page.getByTestId("review-bar").screenshot({ path: join(OUTPUT!, `${name}-crop.png`) });
+}
+
+test("captures the review bar across notes, viewed progress, themes, and widths", async ({
+  page,
+}) => {
+  test.setTimeout(300_000);
+  mkdirSync(OUTPUT!, { recursive: true });
+  for (const [tone, themeId] of [
+    ["dark", "github-dark-default"],
+    ["light", "github-light-default"],
+  ] as const) {
+    review = await startTestWebReview("--rich", { args: ["--agent-notes"] });
+    await page.addInitScript((theme) => {
+      window.localStorage.setItem("hunk.review.theme", theme);
+    }, themeId);
+    await page.goto(review.url);
+    await expect(page.locator('.toolbar [data-state="connected"]')).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId("load-progress")).toHaveCount(0, { timeout: 30_000 });
+
+    // Nothing viewed, no notes.
+    for (const width of [1440, 800]) {
+      await page.setViewportSize({ width, height: 900 });
+      await captureTestBar(page, `bar-${tone}-${width}-empty`);
+    }
+
+    // Some viewed, several notes.
+    for (const path of ["src/app/main.ts", "src/app/renamed-new.ts"]) {
+      await page.locator(`section[aria-label="${path}"] .viewed-toggle input`).click();
+    }
+    await expect(page.getByTestId("viewed-progress")).toHaveText(/^2 of/);
+    for (const [file, line, summary] of [
+      ["src/app/main.ts", "13", "Threshold raised."],
+      ["src/gen/module-12.ts", "1", "Generated; check the template instead."],
+      ["src/gen/module-30.ts", "1", "Same change as module 12."],
+    ] as const) {
+      await review.hunk([
+        "session",
+        "comment",
+        "add",
+        review.sessionId,
+        "--file",
+        file,
+        "--new-line",
+        line,
+        "--summary",
+        summary,
+      ]);
+    }
+    await expect(page.getByTestId("bar-notes")).toHaveText("3 notes");
+    for (const width of [1440, 800]) {
+      await page.setViewportSize({ width, height: 900 });
+      await captureTestBar(page, `bar-${tone}-${width}-some`);
+    }
+
+    // Everything viewed.
+    const state = (await review.readApi("state")).state as { files: { key: string }[] };
+    for (const file of state.files) {
+      await review.postAction({ type: "files/set-viewed", fileKey: file.key, viewed: true });
+    }
+    await expect(page.getByTestId("all-viewed")).toBeVisible();
+    for (const width of [1440, 800]) {
+      await page.setViewportSize({ width, height: 900 });
+      await captureTestBar(page, `bar-${tone}-${width}-all`);
+    }
+
+    await review.stop();
+    review = undefined;
+  }
+});

@@ -15,6 +15,7 @@ packages/hunk/src/web/
   main.tsx                     entry; starts the session for this page's address
   app/ReviewApp.tsx            composes the page; owns view preferences, theme, and commands
   app/Toolbar.tsx              title, counts, totals, status; layout/wrap/line-number toggles
+  app/ReviewBar.tsx            bottom bar: viewed progress, next unviewed, key hints, notes, copy
   app/ThemeMenu.tsx            the theme button and its listbox
   app/ReviewControls.tsx       shared filter field, refresh, copy review link
   app/useReviewInteraction.tsx composers, note commands, shared toggles, refresh
@@ -553,9 +554,15 @@ the shared-state snapshot lists only marks that still match each file's `content
   content the reader did not see.
 - **Composers.** Opening a composer (`c`, reply, edit, a gutter pick) first shows that file's
   diff: a rendered Markdown file returns to Diff and a collapsed viewed file expands.
-- **Progress.** The toolbar shows "12 of 47 viewed" over the files the shared filter leaves
-  visible, counted by `countReviewViewedFiles` in `core/review/overview.ts`, which the Overview
-  tab uses too.
+- **Progress.** The review bar along the bottom shows "12 of 47 viewed" over the files the
+  shared filter leaves visible, counted by `countReviewViewedFiles` in `core/review/overview.ts`,
+  which the Overview tab uses too. Beside it, "Next unviewed" names the first file after the
+  selected one (wrapping) not marked viewed (`viewed/nextUnviewed.ts`) and opens it through
+  the sidebar's jump. The bar also shows key hints read from the page keymap by command id
+  (`app/reviewBarHints.ts`; hidden from assistive technology, since help is the accessible
+  list), the note count, which opens the Notes tab, and "Copy notes for agent", which copies
+  the visible notes as Markdown (`notes/notesMarkdown.ts`). Its actions are page-local, so they
+  work after the session ends.
 - **Changed since viewed.** The snapshot cannot say a file _was_ viewed before its content
   changed, so the page remembers per session and per browser the content each file was last
   seen marked at (`viewed/viewedFiles.ts`, `localStorage` key `hunk.review.viewed.<session>`,
