@@ -16,7 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import type { Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 import {
   HUNK_REVIEW_CAPABILITY_HEADER,
   parseReviewCapabilityFragment,
@@ -330,8 +330,22 @@ export async function watchTestPageProblems(page: Page) {
   return problems;
 }
 
-/** Choose one theme through the toolbar's theme menu. */
-export async function chooseTestTheme(page: Page, themeId: string) {
+/** Open the toolbar's View menu, unless it is already open. */
+export async function openTestViewMenu(page: Page) {
+  const button = page.getByTestId("view-menu-button");
+  if ((await button.getAttribute("aria-expanded")) !== "true") await button.click();
+  await expect(page.getByRole("menu", { name: "View" })).toBeVisible();
+}
+
+/** Open the theme list from the View menu's Theme row. */
+export async function openTestThemeMenu(page: Page) {
+  await openTestViewMenu(page);
   await page.getByTestId("theme-picker").click();
+  await expect(page.getByRole("listbox", { name: "Themes" })).toBeVisible();
+}
+
+/** Choose one theme through the View menu's theme list. */
+export async function chooseTestTheme(page: Page, themeId: string) {
+  await openTestThemeMenu(page);
   await page.locator(`[role="option"][data-theme-id="${themeId}"]`).click();
 }

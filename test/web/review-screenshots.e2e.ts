@@ -7,7 +7,13 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { chooseTestTheme, startTestWebReview, type TestWebReview } from "./webTestHarness";
+import {
+  chooseTestTheme,
+  openTestThemeMenu,
+  openTestViewMenu,
+  startTestWebReview,
+  type TestWebReview,
+} from "./webTestHarness";
 
 const OUTPUT = process.env.HUNK_WEB_SCREENSHOT_DIR;
 
@@ -54,6 +60,13 @@ test("captures the review page for visual review", async ({ page, browser }) => 
   await capture(page, "01-split-github-dark");
   await page.getByTestId("layout-unified").click();
   await capture(page, "02-unified-github-dark");
+  await openTestViewMenu(page);
+  await settle(page);
+  await page.screenshot({
+    path: join(OUTPUT!, "19-view-menu-dark.png"),
+    clip: { x: 840, y: 0, width: 600, height: 320 },
+  });
+  await page.keyboard.press("Escape");
 
   const gap = page.locator(".gap-separator").first();
   await gap.click();
@@ -77,7 +90,12 @@ test("captures the review page for visual review", async ({ page, browser }) => 
     path: join(OUTPUT!, "11-toolbar-light.png"),
     clip: { x: 0, y: 0, width: 1440, height: 48 },
   });
-  await page.getByTestId("theme-picker").click();
+  await openTestViewMenu(page);
+  await page.screenshot({
+    path: join(OUTPUT!, "19-view-menu-light.png"),
+    clip: { x: 840, y: 0, width: 600, height: 320 },
+  });
+  await openTestThemeMenu(page);
   await page.screenshot({
     path: join(OUTPUT!, "12-theme-menu-light.png"),
     clip: { x: 840, y: 0, width: 600, height: 520 },
@@ -118,6 +136,8 @@ test("captures the review page for visual review", async ({ page, browser }) => 
     timeout: 30_000,
   });
   await capture(narrow, "09-narrow-800");
+  await openTestViewMenu(narrow);
+  await capture(narrow, "20-view-menu-narrow-800");
   await narrow.close();
 });
 

@@ -12,7 +12,12 @@
  */
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Browser, type Page } from "@playwright/test";
-import { startTestWebReview, watchTestPageProblems, type TestWebReview } from "./webTestHarness";
+import {
+  openTestViewMenu,
+  startTestWebReview,
+  watchTestPageProblems,
+  type TestWebReview,
+} from "./webTestHarness";
 
 let review: TestWebReview | undefined;
 let problems: string[] = [];
@@ -55,11 +60,13 @@ function selectedPath(page: Page) {
   return page.locator("section[data-selected]").getAttribute("aria-label");
 }
 
-/** Turn "Hide viewed" on or off from the toolbar. */
+/** Turn "Hide viewed" on or off from the toolbar's View menu, then close the menu. */
 async function setTestHideViewed(page: Page, on: boolean) {
-  const button = page.getByRole("button", { name: "Hide viewed" });
-  if ((await button.getAttribute("aria-pressed")) !== String(on)) await button.click();
-  await expect(button).toHaveAttribute("aria-pressed", String(on));
+  await openTestViewMenu(page);
+  const row = page.getByRole("menuitemcheckbox", { name: "Hide viewed" });
+  if ((await row.getAttribute("aria-checked")) !== String(on)) await row.click();
+  await expect(row).toHaveAttribute("aria-checked", String(on));
+  await page.keyboard.press("Escape");
 }
 
 /** The stream section of one file. */
@@ -149,11 +156,7 @@ test("hides viewed files on this page only, and navigation walks past them", asy
   await headerCheckbox(page, "src/app/renamed-new.ts").click();
   await expect(page.getByTestId("viewed-progress")).toHaveText(/^1 of/);
 
-  await page.getByRole("button", { name: "Hide viewed" }).click();
-  await expect(page.getByRole("button", { name: "Hide viewed" })).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
+  await setTestHideViewed(page, true);
   await expect(section(page, "src/app/renamed-new.ts")).toHaveCount(0);
   await page.getByRole("radio", { name: "Flat" }).click();
   await expect(page.locator(".flat-row", { hasText: "renamed-new.ts" })).toHaveCount(0);
@@ -233,10 +236,7 @@ test("hands the selection on when the selected file is hidden", async ({ page })
   await expect(empty).toContainText("Every file here is viewed and hidden.");
   await empty.getByRole("button", { name: "Show viewed files" }).click();
   await expect(section(page, "src/app/renamed-new.ts")).toHaveCount(1);
-  await expect(page.getByRole("button", { name: "Hide viewed" })).toHaveAttribute(
-    "aria-pressed",
-    "false",
-  );
+  await expect(page.getByTestId("toggle-hide-viewed")).toHaveAttribute("aria-checked", "false");
 });
 
 // Intent: an explicit jump to a file "Hide viewed" removes — the reader's go to file, an agent's
