@@ -373,8 +373,11 @@ export interface ConfigReferenceOption {
 /**
  * Authoritative top-level preference catalog. Runtime parsing iterates this table, while the docs
  * generator renders the same keys, accepted values, defaults, aliases, and descriptions.
+ *
+ * Declared as a literal table so its keys form `ConfigOptionKey`; a record keyed by that type
+ * (`webConfigSupport.ts`) fails to typecheck until it covers an option added here.
  */
-export const CONFIG_REFERENCE_OPTIONS: readonly ConfigReferenceOption[] = [
+const CONFIG_REFERENCE_OPTION_TABLE = [
   {
     key: "mode",
     property: "mode",
@@ -572,7 +575,15 @@ export const CONFIG_REFERENCE_OPTIONS: readonly ConfigReferenceOption[] = [
     description:
       "Request moved-line coloring for Git reviews. `true` requests zebra coloring when Git has no diff.colorMoved setting; an explicit Git setting takes precedence, even when this preference is false.",
   },
-] as const;
+] as const satisfies readonly ConfigReferenceOption[];
+
+/** One top-level configuration key, e.g. `tab_width`. */
+export type ConfigOptionKey = (typeof CONFIG_REFERENCE_OPTION_TABLE)[number]["key"];
+
+/** The preference catalog with each entry's key narrowed to the literal key union. */
+export const CONFIG_REFERENCE_OPTIONS: readonly (ConfigReferenceOption & {
+  readonly key: ConfigOptionKey;
+})[] = CONFIG_REFERENCE_OPTION_TABLE;
 
 /** Command-specific TOML tables accepted by the runtime resolver. */
 export const CONFIG_COMMAND_SECTIONS = {

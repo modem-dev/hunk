@@ -350,6 +350,28 @@ imports; a page fetches only the languages and themes it shows. The largest sing
   code highlights with its base Shiki theme, or GitHub's for its appearance, because Pierre
   takes a highlight theme by name or as a whole Shiki theme, so the theme's `syntaxColors` and
   scope overrides are not applied in the browser.
+- **Config options.** `core/run/webConfigSupport.ts` classifies every key of
+  `CONFIG_REFERENCE_OPTIONS` in one record keyed by `ConfigOptionKey`, so a new option fails to
+  typecheck until the page decides about it, as the command table does for commands. A
+  `published` option names the presentation field it lands in; the host's `view` block must
+  carry exactly the published `view.*` fields (a `satisfies` check in `app/review/sharedState.ts`)
+  and `sharedState.test.ts` compares the built defaults with the record both ways.
+
+  | Class         | Options                                                                                                                                                                                                                       |
+  | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | Published     | `mode`, `theme`, `wrap_lines`, `line_numbers`, `tab_width`, `auto_split_min_width`, `sidebar`; `hunk_headers` is sent but not applied (header rows need the renderer)                                                         |
+  | Host-side     | `vcs`, `watch`, `exclude_untracked`, `agent_notes` (seeds the shared note visibility)                                                                                                                                         |
+  | Terminal-only | `cursor_line`, `scroll_off`, `file_gap`, `hunk_gap`, `wheel_scroll_lines`, `menu_bar`, `animations` (the page follows `prefers-reduced-motion`), `copy_decorations`, `prompt_save_view_preferences`, `transparent_background` |
+  | Deferred      | `color_moved`: the marks are sent, but Pierre has no per-line decoration hook to paint them                                                                                                                                   |
+
+  The page applies `tab_width` as Pierre's `--diffs-tab-size` on the review root, uses
+  `auto_split_min_width` as the column threshold for `auto` layout, and opens the files sidebar
+  for `sidebar = true`, closes it for `false`, and leaves `"auto"` to the viewport. A pager
+  session publishes `sidebar = false`, as the terminal opens it. Until the shared state arrives
+  the page uses the terminal's built-in defaults (tab width 4, threshold 160). These view fields
+  are required by the strict shared-state parser; `HUNK_SESSION_DAEMON_VERSION` (23) keeps the
+  daemon, the page it serves, and every registered window on one shape.
+
 - **Shared filter.** Files the session's filter hides leave the stream and the sidebar, and the
   planner walks the same visible stream.
 

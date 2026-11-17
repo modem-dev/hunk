@@ -14,6 +14,10 @@ import {
   reviewNoteByteLength,
 } from "../../core/review/noteSize";
 import { APP_COMMAND_CATALOG } from "../../core/run/commandCatalog";
+import { DEFAULT_AUTO_SPLIT_MIN_WIDTH } from "../../core/run/commandInputs";
+import { CONFIG_REFERENCE_OPTIONS } from "../../core/run/config";
+import { DEFAULT_TAB_WIDTH } from "../../core/run/tabWidth";
+import { WEB_CONFIG_SUPPORT } from "../../core/run/webConfigSupport";
 import {
   WEB_LOCAL_COMMAND_KEY_DEFAULTS,
   WEB_LOCAL_FIXED_COMMAND_NAMES,
@@ -226,6 +230,9 @@ describe("buildReviewPresentationDefaults", () => {
       wrapLines: true,
       lineNumbers: true,
       hunkHeaders: true,
+      tabWidth: DEFAULT_TAB_WIDTH,
+      autoSplitMinWidth: DEFAULT_AUTO_SPLIT_MIN_WIDTH,
+      sidebar: "auto",
     });
     expect(defaults.keymap["hunk.app.quit"]).toEqual(["ctrl+q"]);
     expect(defaults.title).toBe("working tree");
@@ -295,6 +302,45 @@ describe("buildReviewPresentationDefaults", () => {
     expect(keymap["hunk.web.toggleViewed"]).toEqual(["x"]);
   });
 
+  test("publishes tab width, the auto-split width, and the sidebar as the launch resolved them", () => {
+    const defaults = buildReviewPresentationDefaults(
+      createTestSharedBootstrap([], {
+        input: { kind: "vcs", staged: false, options: { autoSplitMinWidth: 120 } },
+        initialTabWidth: 8,
+        initialSidebar: true,
+      }),
+    );
+
+    expect(defaults.view).toMatchObject({ tabWidth: 8, autoSplitMinWidth: 120, sidebar: true });
+    for (const sidebar of [false, "auto"] as const) {
+      expect(
+        buildReviewPresentationDefaults(createTestSharedBootstrap([], { initialSidebar: sidebar }))
+          .view.sidebar,
+      ).toBe(sidebar);
+    }
+  });
+
+  test("falls back to the terminal's built-in defaults when the bootstrap leaves them unset", () => {
+    const { view } = buildReviewPresentationDefaults(createTestSharedBootstrap([]));
+
+    expect(view.tabWidth).toBe(DEFAULT_TAB_WIDTH);
+    expect(view.autoSplitMinWidth).toBe(DEFAULT_AUTO_SPLIT_MIN_WIDTH);
+    expect(view.sidebar).toBe("auto");
+  });
+
+  // Intent: the terminal opens a pager session with the files pane closed whatever `sidebar`
+  // says, so a page attached to that session starts the same way.
+  test("starts a pager session's sidebar closed", () => {
+    const { view } = buildReviewPresentationDefaults(
+      createTestSharedBootstrap([], {
+        input: { kind: "vcs", staged: false, options: { pager: true } },
+        initialSidebar: true,
+      }),
+    );
+
+    expect(view.sidebar).toBe(false);
+  });
+
   test("carries a custom theme as resolved tokens", () => {
     const defaults = buildReviewPresentationDefaults(
       createTestSharedBootstrap([], {
@@ -307,6 +353,70 @@ describe("buildReviewPresentationDefaults", () => {
     expect(typeof defaults.theme.tokens.background).toBe("string");
     expect(typeof defaults.theme.syntaxColors.keyword).toBe("string");
     expect(defaults.theme.tokens.syntaxColors).toBeUndefined();
+  });
+});
+
+// Intent: every option classified `published` reaches the page, and nothing reaches the page
+// that no option accounts for, so adding a view default means classifying the option behind it.
+describe("WEB_CONFIG_SUPPORT against the published presentation defaults", () => {
+  const presentation = buildReviewPresentationDefaults(createTestSharedBootstrap([]));
+  const sentFields = [
+    "theme",
+    ...Object.keys(presentation.view).map((field) => `view.${field}`),
+  ].sort();
+  const publishedFields: string[] = Object.values(WEB_CONFIG_SUPPORT).flatMap((support) =>
+    support.kind === "published" ? [support.field] : [],
+  );
+
+  test("every published option names a field the host sends", () => {
+    const unsent = publishedFields.filter((field) => !sentFields.includes(field));
+    expect(unsent).toEqual([]);
+  });
+
+  test("every field the host sends is accounted for by exactly one published option", () => {
+    expect([...publishedFields].sort()).toEqual(sentFields);
+  });
+
+  test("the presentation block sends nothing config-derived beyond the theme and view", () => {
+    expect(Object.keys(presentation).sort()).toEqual([
+      "keymap",
+      "sourceLabel",
+      "theme",
+      "title",
+      "view",
+    ]);
+  });
+
+  test("each published value follows the option it is classified from", () => {
+    const configured = buildReviewPresentationDefaults(
+      createTestSharedBootstrap([], {
+        input: { kind: "vcs", staged: false, options: { autoSplitMinWidth: 99 } },
+        initialMode: "unified",
+        initialTheme: "github-light-default",
+        initialWrapLines: true,
+        initialShowLineNumbers: false,
+        initialShowHunkHeaders: false,
+        initialTabWidth: 7,
+        initialSidebar: false,
+      }),
+    );
+    const view = configured.view as unknown as Record<string, unknown>;
+    const expectedByKey: Partial<Record<keyof typeof WEB_CONFIG_SUPPORT, unknown>> = {
+      mode: "unified",
+      wrap_lines: true,
+      line_numbers: false,
+      hunk_headers: false,
+      tab_width: 7,
+      auto_split_min_width: 99,
+      sidebar: false,
+    };
+    for (const option of CONFIG_REFERENCE_OPTIONS) {
+      const support = WEB_CONFIG_SUPPORT[option.key];
+      if (support.kind !== "published" || support.field === "theme") continue;
+      const sent = view[support.field.slice("view.".length)];
+      expect([option.key, sent]).toEqual([option.key, expectedByKey[option.key]]);
+    }
+    expect(configured.theme).toMatchObject({ id: "github-light-default" });
   });
 });
 

@@ -54,6 +54,15 @@ The page and any terminal showing the same review are two views of one session.
 - **Per view:** your selection and scroll position. Moving in the browser does not move the terminal, and the other way round.
 - **Per browser:** layout, wrap, line numbers, sidebar mode and width, side panel and minimap, **Hide viewed**, and the theme. The page starts on the session's theme, including a custom one; choosing another theme in the page changes only that browser. **Use session theme** in the palette goes back.
 
+## Config the page follows
+
+A new browser starts from the session's [config](/docs/reference/config/). Once you change an option in the page, that browser keeps your choice instead.
+
+- **Followed:** `mode`, `theme`, `wrap_lines`, `line_numbers`, `tab_width`, `auto_split_min_width` (the width at which `auto` switches to split, in monospace columns of the diff area), and `sidebar` (`true` opens the files sidebar, `false` keeps it closed, `"auto"` lets the window width decide).
+- **Applied by the session, so the page shows the result:** `vcs`, `watch`, `exclude_untracked`, and `agent_notes`.
+- **Not yet:** `hunk_headers` (the page always shows hunk headers) and `color_moved` (moved lines are not colored in the page).
+- **Terminal only:** `cursor_line`, `scroll_off`, `file_gap`, `hunk_gap`, `wheel_scroll_lines`, `menu_bar`, `copy_decorations`, `prompt_save_view_preferences`, and `transparent_background`. `animations` also applies only to the terminal; the page follows your system's reduce-motion setting.
+
 ## Keys
 
 The page answers to the terminal's command ids and default keys, and to your `[keybindings]` table: `[` and `]` move between hunks, `r` refreshes, `c` adds a note, and so on. Press `?` for the full list as it applies in the page.

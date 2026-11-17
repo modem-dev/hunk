@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { DEFAULT_AUTO_SPLIT_MIN_WIDTH } from "../../core/run/commandInputs";
+import { DEFAULT_TAB_WIDTH } from "../../core/run/tabWidth";
 import {
   clampSidebarWidth,
   defaultSidebarOpen,
@@ -25,6 +26,14 @@ describe("web view preferences", () => {
     expect(resolveWebLayout("split", 10, column)).toBe("split");
   });
 
+  // Intent: `auto_split_min_width` moves the page's split threshold exactly as the terminal's.
+  test("splits in auto layout at the session's configured column threshold", () => {
+    const column = 8;
+    expect(resolveWebLayout("auto", 100 * column, column, 100)).toBe("split");
+    expect(resolveWebLayout("auto", 100 * column - 1, column, 100)).toBe("unified");
+    expect(resolveWebLayout("auto", 100 * column, column)).toBe("unified");
+  });
+
   test("hides the sidebar by default on tight viewports", () => {
     expect(defaultSidebarOpen(1440, 8)).toBe(true);
     expect(defaultSidebarOpen(800, 8)).toBe(false);
@@ -41,7 +50,14 @@ describe("web view preferences", () => {
   });
 });
 
-const SESSION = { layout: "unified", wrapLines: true, lineNumbers: false } as const;
+const SESSION = {
+  layout: "unified",
+  wrapLines: true,
+  lineNumbers: false,
+  tabWidth: 8,
+  autoSplitMinWidth: 120,
+  sidebar: false,
+} as const;
 
 /** Install a `window.localStorage` for one test; `getItem`/`setItem` may be made to throw. */
 function installTestStorage(initial: string | null, blocked = false) {
@@ -72,8 +88,52 @@ describe("web view overrides over session defaults", () => {
       layout: "unified",
       wrapLines: true,
       showLineNumbers: false,
+      tabWidth: 8,
+      autoSplitMinWidth: 120,
+      sidebarOpen: false,
     });
     expect(resolveWebViewPreferences({}, undefined)).toEqual(DEFAULT_WEB_VIEW_PREFERENCES);
+  });
+
+  // Intent: before the shared state arrives the page starts where the terminal's built-in
+  // defaults would, so the first paint does not jump when the session's values land.
+  test("starts from the terminal's built-in tab width and split threshold", () => {
+    expect(DEFAULT_WEB_VIEW_PREFERENCES.tabWidth).toBe(DEFAULT_TAB_WIDTH);
+    expect(DEFAULT_WEB_VIEW_PREFERENCES.autoSplitMinWidth).toBe(DEFAULT_AUTO_SPLIT_MIN_WIDTH);
+    expect(DEFAULT_WEB_VIEW_PREFERENCES.sidebarOpen).toBeUndefined();
+  });
+
+  // Intent: for each published option, this browser's choice beats the session's default,
+  // which beats the page's own.
+  test("resolves tab width, the split threshold, and the sidebar override, then session, then page", () => {
+    const overridden = resolveWebViewPreferences(
+      { tabWidth: 2, autoSplitMinWidth: 90, sidebarOpen: true },
+      SESSION,
+    );
+    expect(overridden).toMatchObject({ tabWidth: 2, autoSplitMinWidth: 90, sidebarOpen: true });
+
+    const session = resolveWebViewPreferences({}, SESSION);
+    expect(session).toMatchObject({ tabWidth: 8, autoSplitMinWidth: 120, sidebarOpen: false });
+
+    const page = resolveWebViewPreferences({}, undefined);
+    expect(page).toMatchObject({
+      tabWidth: DEFAULT_TAB_WIDTH,
+      autoSplitMinWidth: DEFAULT_AUTO_SPLIT_MIN_WIDTH,
+      sidebarOpen: undefined,
+    });
+  });
+
+  test("maps the session's sidebar choice: open, closed, or left to the viewport", () => {
+    expect(resolveWebViewPreferences({}, { ...SESSION, sidebar: true }).sidebarOpen).toBe(true);
+    expect(resolveWebViewPreferences({}, { ...SESSION, sidebar: false }).sidebarOpen).toBe(false);
+    expect(
+      resolveWebViewPreferences({}, { ...SESSION, sidebar: "auto" }).sidebarOpen,
+    ).toBeUndefined();
+    // A stored choice still wins over a session that asked for the viewport to decide.
+    expect(
+      resolveWebViewPreferences({ sidebarOpen: false }, { ...SESSION, sidebar: "auto" })
+        .sidebarOpen,
+    ).toBe(false);
   });
 
   // Intent: one option the reader changed overrides only that option; the rest keep
@@ -84,6 +144,9 @@ describe("web view overrides over session defaults", () => {
       layout: "split",
       wrapLines: true,
       showLineNumbers: false,
+      tabWidth: 8,
+      autoSplitMinWidth: 120,
+      sidebarOpen: false,
       sidebarMode: "flat",
     });
   });

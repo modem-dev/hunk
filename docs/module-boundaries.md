@@ -42,10 +42,10 @@ Other workspaces are bounded units rather than one tier in that stack:
 - `packages/hunk/src/web` is the browser review client, bundled separately by
   `scripts/build/build-web.ts` and served by the daemon as static assets. It reaches only
   `core/review` and the browser-safe session modules (`web-client-stays-separate`, plus the exact
-  closure in `scripts/quality/source-boundaries.test.ts`), plus two import-free presentation
+  closure in `scripts/quality/source-boundaries.test.ts`), plus three import-free presentation
   leaves it shares with the terminal (`core/run/commandInputs.ts` for the layout vocabulary and
-  the auto-split threshold, `core/documents/highlightRenderOptions.ts` for Pierre's highlight
-  options), and the command vocabulary on a closed import set (`core/run/commandCatalog.ts`,
+  the auto-split threshold, `core/run/tabWidth.ts` for the default tab width,
+  `core/documents/highlightRenderOptions.ts` for Pierre's highlight options), and the command vocabulary on a closed import set (`core/run/commandCatalog.ts`,
   `core/run/webLocalCommandCatalog.ts` for the page's own `hunk.web.*` commands, which the host
   reads to resolve their `[keybindings]`, `core/run/keyChordLabels.ts`, and the chord grammar in
   `extension-api/keys.ts`), and the

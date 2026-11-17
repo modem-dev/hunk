@@ -18,10 +18,13 @@ import {
 import { isRenderableStoredReviewNote } from "../../core/review/state";
 import type { ReviewNote } from "../../core/review/types";
 import { APP_COMMAND_CATALOG } from "../../core/run/commandCatalog";
+import { DEFAULT_AUTO_SPLIT_MIN_WIDTH } from "../../core/run/commandInputs";
 import { DOCUMENT_COMMAND_NAMES } from "../../core/run/documentCommandCatalog";
 import { HISTORY_COMMAND_NAMES } from "../../core/run/historyCommandCatalog";
 import { resolveCommandKeys } from "../../core/run/keymap";
 import { STATUS_COMMAND_NAMES } from "../../core/run/statusCommandCatalog";
+import { DEFAULT_TAB_WIDTH } from "../../core/run/tabWidth";
+import type { WebPublishedViewField } from "../../core/run/webConfigSupport";
 import {
   WEB_LOCAL_COMMAND_KEY_DEFAULTS,
   WEB_LOCAL_FIXED_COMMAND_NAMES,
@@ -34,6 +37,7 @@ import type {
   ReviewSharedNote,
   ReviewSharedState,
   ReviewThemeDefaults,
+  ReviewViewDefaults,
 } from "../../session/reviewSharedState";
 import type { ReviewSessionHost } from "./reviewSessionHost";
 import { indexReviewFiles } from "./reviewSessionProjections";
@@ -82,6 +86,10 @@ function themeDefaults(theme: AppTheme): ReviewThemeDefaults {
  * fold, after the catalog, so a remap of one reaches the page and a chord the user gave one is
  * taken from whatever held it by default there. Extension commands are not included: a browser
  * cannot run them (F4).
+ *
+ * The view block carries exactly the options `WEB_CONFIG_SUPPORT` classifies as published to
+ * `view.*`, each as the terminal resolved it at launch. The files sidebar follows the terminal's
+ * launch rule too: a pager session opens with it closed whatever `sidebar` says.
  */
 export function buildReviewPresentationDefaults(
   bootstrap: AppBootstrap,
@@ -121,7 +129,10 @@ export function buildReviewPresentationDefaults(
       wrapLines: bootstrap.initialWrapLines ?? false,
       lineNumbers: bootstrap.initialShowLineNumbers ?? true,
       hunkHeaders: bootstrap.initialShowHunkHeaders ?? true,
-    },
+      tabWidth: bootstrap.initialTabWidth ?? DEFAULT_TAB_WIDTH,
+      autoSplitMinWidth: bootstrap.input.options.autoSplitMinWidth ?? DEFAULT_AUTO_SPLIT_MIN_WIDTH,
+      sidebar: bootstrap.input.options.pager ? false : (bootstrap.initialSidebar ?? "auto"),
+    } satisfies ReviewViewDefaults & Record<WebPublishedViewField, unknown>,
     keymap: Object.fromEntries(publishedIds.map((id) => [id, [...(keymap.keys.get(id) ?? [])]])),
   };
 }
