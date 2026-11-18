@@ -20,6 +20,19 @@ git config --global alias.hdiff '-c core.pager="hunk pager" diff'
 git config --global alias.hshow '-c core.pager="hunk pager" show'
 ```
 
+## Use Hunk in LazyGit
+
+LazyGit shows diffs in its own panel, so `hunk pager` renders static output there instead of opening the review UI:
+
+```yaml
+# ~/.config/lazygit/config.yml
+git:
+  diffRenderers:
+    - command: hunk pager
+```
+
+LazyGit 0.66 and newer stage hunks and lines straight from that panel. Hunk tags each rendered row with [OSC 1717 diff line metadata](https://github.com/stefanhaller/diff-line-metadata-spec) when LazyGit asks for it, so the panel keeps Hunk's rendering while you stage instead of switching to Git's plain diff.
+
 ## Plain-text fallback
 
 Output that is not a unified diff never opens the review UI; Hunk streams it to a plain-text pager instead. The pager command comes from `HUNK_TEXT_PAGER`, then `PAGER`, then falls back to `less -R` (`more` on Windows). A value that resolves back to `hunk` is ignored in favor of that fallback, so Git can never recurse into `hunk pager` itself.

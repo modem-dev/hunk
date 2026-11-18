@@ -615,6 +615,60 @@ describe("startup planning", () => {
     expect(loaded).toBe(false);
   });
 
+  test("renders tagged static output when the host negotiates diff line metadata", async () => {
+    const patchText = "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n";
+
+    // LazyGit's pager runs on a PTY, but its probe captures stdout; both must render statically.
+    const plan = await prepareStartupPlan(["bun", "hunk", "pager"], {
+      parseCliImpl: async () => ({ kind: "pager", options: {} }),
+      readStdinText: async () => patchText,
+      looksLikePatchInputImpl: () => true,
+      stdoutIsTTY: false,
+      env: { OSC1717: "V1" },
+      resolveRuntimeCliInputImpl: (input) => input,
+      resolveConfiguredCliInputImpl: (input) => createTestConfigResolution(input),
+      openControllingTerminalImpl: () => {
+        throw new Error("a negotiating host never gets the interactive pager");
+      },
+    });
+
+    expect(plan).toEqual({
+      kind: "static-diff-pager",
+      text: patchText,
+      options: { pager: true },
+      diffLineMetadata: true,
+    });
+  });
+
+  test("answers a diff line metadata probe on empty stdin with a handshake passthrough", async () => {
+    const plan = await prepareStartupPlan(["bun", "hunk", "pager"], {
+      parseCliImpl: async () => ({ kind: "pager", options: {} }),
+      readStdinText: async () => "",
+      looksLikePatchInputImpl: () => false,
+      stdoutIsTTY: false,
+      env: { OSC1717: "V2,V1" },
+    });
+
+    expect(plan).toEqual({
+      kind: "passthrough",
+      text: "",
+      preserveColor: true,
+      diffLineMetadata: true,
+    });
+  });
+
+  test("ignores a diff line metadata offer without a shared version", async () => {
+    const plan = await prepareStartupPlan(["bun", "hunk", "pager"], {
+      parseCliImpl: async () => ({ kind: "pager", options: {} }),
+      readStdinText: async () => "",
+      looksLikePatchInputImpl: () => false,
+      stdoutIsTTY: true,
+      env: { TERM: "dumb", OSC1717: "V2" },
+    });
+
+    expect(plan).toEqual({ kind: "passthrough", text: "", preserveColor: false });
+  });
+
   test("passes configured custom theme data into app bootstrap", async () => {
     const cliInput: CliInput = {
       kind: "patch",

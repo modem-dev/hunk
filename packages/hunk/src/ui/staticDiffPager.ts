@@ -48,6 +48,10 @@ import {
   sanitizeTerminalText,
 } from "../lib/terminalText";
 import { resolveTheme, withTransparentSurfaces, type AppTheme } from "./themes";
+import {
+  formatDiffLineMetadataHandshake,
+  formatDiffLineMetadataRecord,
+} from "../core/process/diffLineMetadata";
 
 const DEFAULT_STATIC_WIDTH = 120;
 const MIN_STATIC_WIDTH = 20;
@@ -214,6 +218,113 @@ function renderStaticSplitCell(
   )}${serializeSplitSpans(cell.spans, palette.contentBg, contentWidth, preserveFullLines)}`;
 }
 
+/**
+ * Tags static rows with OSC 1717 records so a host like LazyGit can stage from Hunk's rendering.
+ *
+ * Each record goes at the start of the row or split column it describes. Rows that stand for no
+ * patch line (collapsed gaps, revealed context, the blank half of a split add/delete) stay
+ * untagged, which the host treats as non-actionable.
+ */
+class StaticRowMetadata {
+  private readonly deletionNewLines = new Map<number, number>();
+
+  constructor(private readonly file: DiffFile) {
+    // A deletion sits at the new-file line that follows the context and additions above it in
+    // its hunk, so consecutive deletions share one new line and differ only by old line (§5.3).
+    for (const hunk of file.metadata.hunks) {
+      let oldLine = hunk.deletionStart;
+      let newLine = hunk.additionStart;
+
+      for (const content of hunk.hunkContent) {
+        if (content.type === "context") {
+          oldLine += content.lines;
+          newLine += content.lines;
+          continue;
+        }
+
+        for (let offset = 0; offset < content.deletions; offset += 1) {
+          this.deletionNewLines.set(oldLine + offset, newLine);
+        }
+
+        oldLine += content.deletions;
+        newLine += content.additions;
+      }
+    }
+  }
+
+  /** Record for the file header row; it never carries a line number. */
+  fileHeader() {
+    return formatDiffLineMetadataRecord({ type: "f", path: this.file.path });
+  }
+
+  /** Record for a hunk header or unified content row. */
+  row(row: DiffRow) {
+    if (row.type === "hunk-header") {
+      const hunk = this.file.metadata.hunks[row.hunkIndex];
+      return hunk
+        ? formatDiffLineMetadataRecord({
+            type: "h",
+            newLine: hunk.additionStart,
+            path: this.file.path,
+          })
+        : "";
+    }
+
+    if (row.type !== "unified-line" || row.isExpansionRow) {
+      return "";
+    }
+
+    const { cell } = row;
+    if (cell.kind === "deletion") {
+      return this.deletion(cell.oldLineNumber);
+    }
+
+    return formatDiffLineMetadataRecord({
+      type: cell.kind === "addition" ? "a" : "c",
+      newLine: cell.newLineNumber,
+      path: this.file.path,
+    });
+  }
+
+  /** Records for the two columns of a split row; a context line repeats the same record. */
+  splitColumns(row: Extract<DiffRow, { type: "split-line" }>) {
+    if (row.isExpansionRow) {
+      return { left: "", right: "" };
+    }
+
+    const context = formatDiffLineMetadataRecord({
+      type: "c",
+      newLine: row.right.lineNumber,
+      path: this.file.path,
+    });
+    const left =
+      row.left.kind === "deletion"
+        ? this.deletion(row.left.lineNumber)
+        : row.left.kind === "context"
+          ? context
+          : "";
+    const right =
+      row.right.kind === "addition"
+        ? formatDiffLineMetadataRecord({
+            type: "a",
+            newLine: row.right.lineNumber,
+            path: this.file.path,
+          })
+        : row.right.kind === "context"
+          ? context
+          : "";
+
+    return { left, right };
+  }
+
+  private deletion(oldLine: number | undefined) {
+    const newLine = oldLine === undefined ? undefined : this.deletionNewLines.get(oldLine);
+    return newLine === undefined
+      ? ""
+      : formatDiffLineMetadataRecord({ type: "d", newLine, oldLine, path: this.file.path });
+  }
+}
+
 /** Render one non-interactive split diff row as ANSI text. */
 function renderStaticSplitRow(
   row: DiffRow,
@@ -222,6 +333,7 @@ function renderStaticSplitRow(
   options: CommonOptions,
   width: number,
   preserveFullLines: boolean,
+  metadata: StaticRowMetadata | null,
 ) {
   if (row.type === "collapsed") {
     return renderHeaderLikeRow(`··· ${row.text} ···`, theme.muted, theme.panelAlt, theme);
@@ -238,7 +350,8 @@ function renderStaticSplitRow(
   }
 
   const { leftWidth, rightWidth } = resolveSplitPaneWidths(width);
-  return `${renderStaticSplitCell(
+  const records = metadata?.splitColumns(row) ?? { left: "", right: "" };
+  return `${records.left}${renderStaticSplitCell(
     row.left,
     "left",
     leftWidth,
@@ -246,7 +359,7 @@ function renderStaticSplitRow(
     lineNumberWidth,
     options,
     preserveFullLines,
-  )}${renderStaticSplitCell(
+  )}${records.right}${renderStaticSplitCell(
     row.right,
     "right",
     rightWidth,
@@ -372,7 +485,9 @@ async function renderStaticFile(
   options: CommonOptions,
   width: number,
   preserveFullLines: boolean,
+  diffLineMetadata: boolean,
 ) {
+  const metadata = diffLineMetadata ? new StaticRowMetadata(file) : null;
   const highlighted =
     file.isBinary || file.isTooLarge ? null : await loadHighlightedDiff(file, theme);
   const layout = resolveStaticLayout(options);
@@ -384,7 +499,7 @@ async function renderStaticFile(
   const lineNumberWidth = maxLineNumberWidth(file, rows);
   const stats = `${colorText(`+${file.stats.additions}${file.statsTruncated ? "+" : ""}`, theme.badgeAdded)} ${colorText(`-${file.stats.deletions}`, theme.badgeRemoved)}`;
   const status = colorText(`${fileStatusLabel(file)}${fileModeText(file)}`, theme.muted);
-  const header = `${colorText(fileDisplayPath(file), theme.text)} ${status} ${stats}`;
+  const header = `${metadata?.fileHeader() ?? ""}${colorText(fileDisplayPath(file), theme.text)} ${status} ${stats}`;
 
   if (rows.length === 0) {
     return [header, colorText(`  ${staticEmptyDiffMessage(file)}`, theme.muted)].join("\n");
@@ -393,11 +508,24 @@ async function renderStaticFile(
   return [
     header,
     ...rows
-      .map((row) =>
-        layout === "split"
-          ? renderStaticSplitRow(row, theme, lineNumberWidth, options, width, preserveFullLines)
-          : renderStaticUnifiedRow(row, theme, lineNumberWidth, options),
-      )
+      .map((row) => {
+        const rendered =
+          layout === "split"
+            ? renderStaticSplitRow(
+                row,
+                theme,
+                lineNumberWidth,
+                options,
+                width,
+                preserveFullLines,
+                metadata,
+              )
+            : renderStaticUnifiedRow(row, theme, lineNumberWidth, options);
+        // Split content rows tag each column themselves; every other row is tagged at its start.
+        return rendered && metadata && row.type !== "split-line"
+          ? `${metadata.row(row)}${rendered}`
+          : rendered;
+      })
       .filter(Boolean),
   ].join("\n");
 }
@@ -416,6 +544,8 @@ export interface StaticDiffPagerDeps {
   terminalColumns?: number;
   color?: boolean;
   preserveFullLines?: boolean;
+  /** Emit OSC 1717 diff line metadata; set only when the host negotiated it. */
+  diffLineMetadata?: boolean;
 }
 
 function resolveStaticWidth(deps: StaticDiffPagerDeps) {
@@ -444,7 +574,14 @@ export async function renderStaticDiff(
   const width = resolveStaticWidth(deps);
   const rendered = await Promise.all(
     changeset.files.map((file) =>
-      renderStaticFile(file, theme, options, width, deps.preserveFullLines === true),
+      renderStaticFile(
+        file,
+        theme,
+        options,
+        width,
+        deps.preserveFullLines === true,
+        deps.diffLineMetadata === true,
+      ),
     ),
   );
   const output = rendered.length > 0 ? `${rendered.join("\n\n")}\n` : "";
@@ -457,6 +594,16 @@ export async function renderStaticDiffPager(
   text: string,
   options: CommonOptions = {},
   deps: StaticDiffPagerDeps = { stderr: process.stderr },
+) {
+  // The handshake is the first thing written, even when rendering falls back to the raw patch.
+  const handshake = deps.diffLineMetadata ? formatDiffLineMetadataHandshake() : "";
+  return handshake + (await renderStaticDiffPagerBody(text, options, deps));
+}
+
+async function renderStaticDiffPagerBody(
+  text: string,
+  options: CommonOptions,
+  deps: StaticDiffPagerDeps,
 ) {
   try {
     const bootstrap = await loadAppBootstrap({

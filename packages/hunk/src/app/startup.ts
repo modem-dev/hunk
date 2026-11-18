@@ -4,6 +4,7 @@ import type { loadStartupExtensions } from "../extensions/startup";
 import { resolveConfiguredCliInput } from "../core/run/config";
 import { HunkUserError } from "../core/run/errors";
 import type { loadAppBootstrap } from "../core/changeset/loaders";
+import { negotiateDiffLineMetadataVersion } from "../core/process/diffLineMetadata";
 import { looksLikePatchInput } from "../core/process/pager";
 import { sanitizeTerminalText } from "../lib/terminalText";
 import { detectTerminalColors, themeModeForTerminalColors } from "../core/theme/detection";
@@ -85,12 +86,16 @@ export type StartupPlan =
       kind: "passthrough";
       text: string;
       preserveColor: boolean;
+      /** Write the OSC 1717 handshake first; the host negotiated diff line metadata. */
+      diffLineMetadata?: boolean;
     }
   | {
       kind: "static-diff-pager";
       text: string;
       options: CliInput["options"];
       customThemes?: AppBootstrap["customThemes"];
+      /** Tag rendered rows with OSC 1717 records; the host negotiated diff line metadata. */
+      diffLineMetadata?: boolean;
     }
   | {
       kind: "static-diff";
@@ -547,6 +552,10 @@ export async function prepareStartupPlan(
     const stdinText = await whileStartupOwnsExtensions(readStdinText);
     const pagerOptions = parsedCliInput.options;
     const capturedPagerHost = isCapturedPagerHost(env);
+    // A host that negotiates diff line metadata renders Hunk's output in its own panel, so it
+    // always gets static output, and the handshake even for input with nothing to tag: LazyGit
+    // probes support by running the pager on empty stdin with its stdout captured.
+    const diffLineMetadata = negotiateDiffLineMetadataVersion(env) !== null;
     const staticPagerPlan = async () => {
       const staticPatchInput: CliInput = {
         kind: "patch",
@@ -567,6 +576,7 @@ export async function prepareStartupPlan(
         kind: "static-diff-pager" as const,
         text: stdinText,
         options: configuredStatic.input.options,
+        ...(diffLineMetadata ? { diffLineMetadata } : {}),
       };
 
       // Extensions never load on the static pager path, so config themes are the whole set here.
@@ -580,12 +590,13 @@ export async function prepareStartupPlan(
     const passthroughPlan = {
       kind: "passthrough" as const,
       text: stdinText,
-      preserveColor: capturedPagerHost,
+      preserveColor: capturedPagerHost || diffLineMetadata,
+      ...(diffLineMetadata ? { diffLineMetadata } : {}),
     };
 
     if (!looksLikePatchInputImpl(stdinText)) {
       // Dumb-terminal and captured pager hosts cannot safely own an interactive text pager.
-      if (env.TERM === "dumb") {
+      if (env.TERM === "dumb" || diffLineMetadata) {
         return await finishHeadlessPlan(passthroughPlan);
       }
 
@@ -593,6 +604,10 @@ export async function prepareStartupPlan(
         kind: "plain-text-pager",
         text: stdinText,
       });
+    }
+
+    if (diffLineMetadata) {
+      return await finishHeadlessPlan(await staticPagerPlan());
     }
 
     if (!stdoutIsTTY) {
