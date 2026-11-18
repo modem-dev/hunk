@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 import { formatCliError } from "./core/run/errors";
+import { formatDiffLineMetadataHandshake } from "./core/process/diffLineMetadata";
 import { pagePlainText } from "./core/process/pager";
 import { writeStdout } from "./core/process/stdout";
 import { prepareStartupPlan } from "./app/startup";
@@ -219,8 +220,11 @@ async function main() {
   }
 
   if (startupPlan.kind === "passthrough") {
+    // The handshake goes first even when no row can be tagged, so a probing host learns support.
+    const handshake = startupPlan.diffLineMetadata ? formatDiffLineMetadataHandshake() : "";
     writeStdout(
-      sanitizeTerminalText(startupPlan.text, { preserveAnsiStyle: startupPlan.preserveColor }),
+      handshake +
+        sanitizeTerminalText(startupPlan.text, { preserveAnsiStyle: startupPlan.preserveColor }),
     );
     process.exit(0);
   }
@@ -231,6 +235,7 @@ async function main() {
       await renderStaticDiffPager(startupPlan.text, startupPlan.options, {
         customThemes: startupPlan.customThemes,
         stderr: process.stderr,
+        diffLineMetadata: startupPlan.diffLineMetadata === true,
       }),
     );
     process.exit(0);
