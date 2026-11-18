@@ -85,7 +85,7 @@ function safeRuntimeToken(value: string) {
 }
 
 function resolveRuntimeBaseDir(env: NodeJS.ProcessEnv = process.env) {
-  const configured = env.XDG_RUNTIME_DIR?.trim();
+  const configured = env.HUNK_RUNTIME_DIR?.trim() || env.XDG_RUNTIME_DIR?.trim();
   if (configured) return configured;
   // Unix temporary directories are commonly shared across users. Keep the fallback beneath the
   // current home directory instead of a predictable shared-/tmp name another account can pre-own.
