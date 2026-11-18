@@ -478,7 +478,11 @@ describe("PTY file views", () => {
         });
         await harness.ensureKeyboardIsLive(session);
         await harness.clickAndWaitForText(session, /View/, demo.view, { timeout: 20_000 });
-        await session.press("escape");
+        await harness.pressAndWaitForSnapshot(
+          session,
+          "escape",
+          (text) => !text.includes("File presentation:"),
+        );
         await harness.pressAndWaitForText(session, "f8", demo.first, { timeout: 20_000 });
         await harness.pressAndWaitForText(session, "]", demo.second, { timeout: 20_000 });
         await harness.clickAndWaitForText(session, /View/, /File presentation: Raw diff/, {
