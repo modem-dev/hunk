@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 # Add a last-resort runner apt mirror without changing official preference, suites, or archive trust.
+# Hosted runners with the same label do not all ship the same apt layout: the checks below match
+# the Azure-hosted images, which route Ubuntu sources through /etc/apt/apt-mirrors.txt, and reject
+# the AWS-hosted ones. A runner whose layout fails the checks keeps its own configuration and the
+# job continues without the fallback.
 set -euo pipefail
 
 # An alternate apt directory lets fixture tests exercise the same validation without sudo.
@@ -12,9 +16,27 @@ fail() {
   exit 1
 }
 
+# Leave an unrecognized runner untouched and report what it shipped. The fallback mirror is added
+# only where the checks below prove archive trust is intact, so a runner that fails them gets no
+# fallback rather than a failed job. URI credentials are masked before the layout is printed.
+skip() {
+  {
+    echo "Ubuntu apt mirror bootstrap: $*; leaving the runner apt configuration unchanged"
+    for file in "$sources" "$mirrors"; do
+      if [[ ! -f "$file" ]]; then
+        echo "  $file: missing"
+        continue
+      fi
+      echo "  $file:"
+      sed -E -e '/^[[:space:]]*(#|$)/d' -e 's#://[^/@[:space:]]*@#://***@#g' -e 's/^/    /' "$file"
+    done
+  } >&2
+  exit 0
+}
+
 [[ $# -le 1 ]] || fail "expected at most one apt directory"
 [[ "$(uname -s)" == Linux && "$(uname -m)" == x86_64 ]] || fail "expected a Linux x64 runner"
-[[ -f "$sources" && -f "$mirrors" && -d "$apt_dir/apt.conf.d" ]] || fail "missing runner apt configuration"
+[[ -f "$sources" && -f "$mirrors" && -d "$apt_dir/apt.conf.d" ]] || skip "missing runner apt configuration"
 
 # Check each deb822 stanza, not just matching lines. Reject folded URI/key fields rather than
 # overlooking additional values on continuation lines. Leave the original source file unchanged.
@@ -53,10 +75,10 @@ awk '
     }
   }
   END { exit (!stanzas || invalid) }
-' "$sources" || fail "unexpected Ubuntu source URI or archive trust configuration"
+' "$sources" || skip "unexpected Ubuntu source URI or archive trust configuration"
 
 # Require the image official entries and their explicit priorities; permit our own fourth entry
-# on repeat invocation. Unknown entries/metadata must fail before either file is changed.
+# on repeat invocation. Unknown entries/metadata must stop the bootstrap before either file is changed.
 awk '
   BEGIN {
     expected["http://azure.archive.ubuntu.com/ubuntu/"] = "priority:1"
@@ -70,7 +92,7 @@ awk '
     for (uri in expected) if (expected[uri] != "priority:4" && seen[uri] != 1) invalid = 1
     exit invalid
   }
-' "$mirrors" || fail "unexpected Ubuntu mirror list or priorities"
+' "$mirrors" || skip "unexpected Ubuntu mirror list or priorities"
 
 # apt-transport-mirror(1): lower priorities are tried first, per file; equal priorities are random.
 # A literal TAB separates URI and metadata. kernel.org is used only after all official failures.
