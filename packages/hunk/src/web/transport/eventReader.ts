@@ -15,13 +15,13 @@ import {
   parseReviewEventBegin,
   parseReviewEventChunk,
   parseReviewEventEnd,
-  parseReviewEventFrame,
+  parseReviewEventWhole,
   parseReviewEventFrameName,
   parseReviewEventId,
   ReviewEventAssembler,
-  type ReviewEventTypeV1,
+  type ReviewEventType,
 } from "../../session/reviewEventProtocol";
-import type { HunkReviewPublicationBodyV1 } from "../../session/reviewHttpProtocol";
+import type { ReviewPublicationBody } from "../../session/reviewHttpProtocol";
 import { parseReviewPublicationBody, ReviewApiError } from "./apiClient";
 import { decodeBase64, webCryptoReviewDigest } from "./webCryptoDigest";
 
@@ -87,7 +87,7 @@ function parseRecord(block: string): ServerSentEventRecord | undefined {
 
 /** One review event, decoded and verified. */
 export type ReviewStreamEvent =
-  | { type: "publication"; address: ReviewPublicationAddress; body: HunkReviewPublicationBodyV1 }
+  | { type: "publication"; address: ReviewPublicationAddress; body: ReviewPublicationBody }
   | { type: "disconnect"; address: ReviewPublicationAddress };
 
 /** Refuse one stream that broke the shared contract. */
@@ -103,7 +103,7 @@ function protocolError(message: string): ReviewApiError {
  * does not hash to its declared digest — throws, and the caller ends the stream.
  */
 export class ReviewEventDecoder {
-  private pending: { type: ReviewEventTypeV1; assembler: ReviewEventAssembler } | undefined;
+  private pending: { type: ReviewEventType; assembler: ReviewEventAssembler } | undefined;
 
   constructor(private readonly digest: ReviewAsyncDigestFn = webCryptoReviewDigest) {}
 
@@ -121,7 +121,7 @@ export class ReviewEventDecoder {
     }
 
     if (name.phase === undefined) {
-      const frame = parseReviewEventFrame(data);
+      const frame = parseReviewEventWhole(data);
       if (!frame || this.pending) {
         throw protocolError("A review event frame did not parse.");
       }
@@ -170,7 +170,7 @@ export class ReviewEventDecoder {
 
   /** Validate one completed event against its id and parse its body. */
   private complete(
-    type: ReviewEventTypeV1,
+    type: ReviewEventType,
     eventId: string,
     recordId: string | undefined,
     payload: unknown,

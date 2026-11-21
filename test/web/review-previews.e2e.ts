@@ -3,8 +3,8 @@
  *
  * Images: a changed PNG compares side by side, by swipe, and by onion skin with sizes and
  * dimensions; an added and a deleted image show their one side; bytes named like an image
- * that are not one keep the stream's "Binary file skipped"; a PNG declaring 30000 × 30000 is
- * refused before decoding; an SVG, text or binary, never becomes a blob or an `<img>`, and
+ * that are not one keep a header-only row whose chip says "binary"; a PNG declaring
+ * 30000 × 30000 is refused before decoding; an SVG, text or binary, never becomes a blob or an `<img>`, and
  * every blob the page mints has a raster type. Markdown: the header toggle swaps
  * a file's diff for its rendered text, a deleted file renders its old text, and nothing in the
  * document runs. No CSP violation or console error, and axe stays green.
@@ -89,9 +89,11 @@ test("shows added and deleted images single-sided, and keeps the placeholder for
     /^Deleted · 16 × 16/,
   );
   await section(page, "images/fake.png").scrollIntoViewIfNeeded();
+  // Not an image: a header-only row whose chip says binary.
   await expect(section(page, "images/fake.png").locator('[data-empty-reason="binary"]')).toHaveText(
-    "Binary file skipped",
+    /^binary/,
   );
+  await expect(section(page, "images/fake.png").locator(".file-placeholder")).toHaveCount(0);
   await expect(section(page, "images/fake.png").locator("img")).toHaveCount(0);
 });
 
@@ -129,7 +131,7 @@ test("never turns an SVG into a blob or an image, text or binary", async ({ page
   // A binary SVG keeps the stream's placeholder.
   const packed = section(page, "images/packed.svg");
   await packed.scrollIntoViewIfNeeded();
-  await expect(packed.locator('[data-empty-reason="binary"]')).toHaveText("Binary file skipped");
+  await expect(packed.locator('[data-empty-reason="binary"]')).toHaveText(/binary/);
   await expect(packed.locator("img")).toHaveCount(0);
 
   const types = await page.evaluate(() => (window as { __blobTypes?: string[] }).__blobTypes);
@@ -179,10 +181,11 @@ test("toggles a Markdown file between its diff and its rendered text, inertly", 
 }) => {
   const guide = section(page, "docs/guide.md");
   await guide.scrollIntoViewIfNeeded();
-  // Two segments name both views; the checked one is the view showing.
+  // Two icon segments name both views; the checked one is the view showing.
   const diffMode = guide.getByTestId("markdown-mode-diff");
   const renderedMode = guide.getByTestId("markdown-mode-rendered");
-  await expect(guide.getByTestId("markdown-mode")).toHaveText("DiffRendered");
+  await expect(diffMode).toHaveAccessibleName("Diff");
+  await expect(renderedMode).toHaveAccessibleName("Rendered");
   await expect(diffMode).toHaveAttribute("aria-checked", "true");
   await expect(renderedMode).toHaveAttribute("aria-checked", "false");
   await renderedMode.click();

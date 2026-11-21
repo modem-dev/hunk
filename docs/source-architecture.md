@@ -88,7 +88,7 @@ packages/hunk/src/main.tsx
 All review inputs normalize to `Changeset` / `DiffFile[]`. Shared semantic review behavior follows:
 
 ```text
-DiffFile[] -> projectReviewDocument -> ReviewDocumentV1 -> ReviewStore
+DiffFile[] -> projectReviewDocument -> ReviewDocument -> ReviewStore
 ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> projection
 ```
 

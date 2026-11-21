@@ -96,6 +96,26 @@ describe("viewed files", () => {
     ).toEqual(["a", "b", "c"]);
   });
 
+  // Intent: a file the reader folded collapses whatever its mark, is never hidden by "Hide
+  // viewed", and a navigation opening it unfolds it as it does a viewed file.
+  test("collapses files the reader folded, unless a navigation opens them", () => {
+    const statuses = new Map([
+      ["a", "unviewed"],
+      ["b", "changed"],
+      ["c", "unviewed"],
+    ] as const);
+    const visibility = reviewViewedVisibility(statuses, {
+      hideViewed: true,
+      expanded: new Set(),
+      folded: new Set(["a", "b", "c"]),
+      opening: "c",
+      revealed: null,
+    });
+
+    expect([...visibility.hidden]).toEqual([]);
+    expect([...visibility.collapsed].sort()).toEqual(["a", "b"]);
+  });
+
   test("labels progress as the toolbar shows it", () => {
     expect(formatReviewViewedProgress({ viewed: 12, total: 47 })).toBe("12 of 47 viewed");
   });

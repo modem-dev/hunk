@@ -34,9 +34,9 @@ import {
 } from "../../core/review/navigation";
 import type { ReviewStoredNote } from "../../core/review/state";
 import { createReviewStore, type ReviewStore } from "../../core/review/store";
-import type { ReviewDocumentV1 } from "../../core/review/types";
-import type { HunkReviewResourceCatalogV1 } from "../../session/reviewProtocol";
-import type { ReviewSharedStateV1 } from "../../session/reviewSharedState";
+import type { ReviewDocument } from "../../core/review/types";
+import type { ReviewResourceCatalog } from "../../session/reviewProtocol";
+import type { ReviewSharedState } from "../../session/reviewSharedState";
 import { ReviewApiError, type ReviewApiClient } from "../transport/apiClient";
 
 /** Intents this page applies to its own state and never sends anywhere. */
@@ -65,8 +65,8 @@ export interface ClientReviewStoreOptions {
 /** The page's local review store and the source loads it drives. */
 export class ClientReviewStore {
   readonly store: ReviewStore = createReviewStore({ files: [] });
-  private catalog: HunkReviewResourceCatalogV1 | undefined;
-  private shared: ReviewSharedStateV1 | undefined;
+  private catalog: ReviewResourceCatalog | undefined;
+  private shared: ReviewSharedState | undefined;
   private annotations: ReviewAnnotationIndex = EMPTY_REVIEW_ANNOTATION_INDEX;
   private hiddenFileKeys: ReadonlySet<string> = new Set();
   private readonly sourceLoads = new Map<string, AbortController>();
@@ -80,7 +80,7 @@ export class ClientReviewStore {
    * `selectNormalizedSelection` says — the first visible file, or nothing — without asking the
    * viewport to move, which is what reconciliation means everywhere else (audit B4).
    */
-  adopt(document: ReviewDocumentV1, catalog: HunkReviewResourceCatalogV1 | undefined) {
+  adopt(document: ReviewDocument, catalog: ReviewResourceCatalog | undefined) {
     if (catalog?.generation !== this.catalog?.generation) {
       // Source reads are addressed to a generation; one from the old catalog cannot land.
       for (const controller of this.sourceLoads.values()) controller.abort();
@@ -126,7 +126,7 @@ export class ClientReviewStore {
    * Idempotent per snapshot. Stored notes are replaced wholesale rather than diffed, because
    * the snapshot is the whole truth about them at its revision.
    */
-  adoptShared(state: ReviewSharedStateV1) {
+  adoptShared(state: ReviewSharedState) {
     if (state === this.shared) return;
     this.shared = state;
     this.store.dispatch({ type: "filter/set", filter: state.filter });

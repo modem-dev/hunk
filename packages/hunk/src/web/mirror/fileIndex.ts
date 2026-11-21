@@ -8,9 +8,9 @@
  * entries are projected from each canonical file as it loads. The mirror accepts entries from
  * either source through `ReviewFileIndexSource`.
  */
-import type { ReviewFileV1 } from "../../core/review/types";
-import type { HunkReviewResourceCatalogV1 } from "../../session/reviewProtocol";
-import type { ReviewSharedFileV1 } from "../../session/reviewSharedState";
+import type { ReviewFile } from "../../core/review/types";
+import type { ReviewResourceCatalog } from "../../session/reviewProtocol";
+import type { ReviewSharedFile } from "../../session/reviewSharedState";
 
 /**
  * What the page knows about one file before, or without, its full content.
@@ -22,7 +22,7 @@ import type { ReviewSharedFileV1 } from "../../session/reviewSharedState";
  * file where needed, and `agentContext`, which no canonical file carries, from the shared state.
  */
 export type ReviewFileIndexEntry = Pick<
-  ReviewSharedFileV1,
+  ReviewSharedFile,
   | "key"
   | "path"
   | "previousPath"
@@ -38,7 +38,7 @@ export type ReviewFileIndexEntry = Pick<
 };
 
 /** Projects one full canonical file down to its index entry, for reviews without a shared index. */
-export function reviewFileIndexEntry(file: ReviewFileV1): ReviewFileIndexEntry {
+export function reviewFileIndexEntry(file: ReviewFile): ReviewFileIndexEntry {
   return {
     key: file.key,
     path: file.path,
@@ -62,7 +62,7 @@ export function reviewFileIndexEntry(file: ReviewFileV1): ReviewFileIndexEntry {
  * projects entries from canonical files as they load.
  */
 export type ReviewFileIndexSource = (
-  catalog: HunkReviewResourceCatalogV1,
+  catalog: ReviewResourceCatalog,
   signal: AbortSignal,
 ) => Promise<
   ReadonlyMap<string, ReviewFileIndexEntry> | readonly ReviewFileIndexEntry[] | undefined

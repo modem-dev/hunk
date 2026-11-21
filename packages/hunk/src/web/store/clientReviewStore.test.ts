@@ -5,10 +5,10 @@ import {
   createTestSourceFetcher,
 } from "../../../../../test/helpers/diff-helpers";
 import { serveTestWebReview } from "../../../../../test/helpers/web-review-server";
-import type { ReviewSharedNoteV1, ReviewSharedStateV1 } from "../../session/reviewSharedState";
+import type { ReviewSharedNote, ReviewSharedState } from "../../session/reviewSharedState";
 import { ClientReviewMirror } from "../mirror/clientReviewMirror";
 import { createTestReviewDocument } from "../../../../../test/helpers/review-store-helpers";
-import type { HunkReviewResourceCatalogV1 } from "../../session/reviewProtocol";
+import type { ReviewResourceCatalog } from "../../session/reviewProtocol";
 import type { ReviewApiClient } from "../transport/apiClient";
 import { ClientReviewStore, isLocalReviewIntent } from "./clientReviewStore";
 
@@ -57,7 +57,7 @@ async function loadTestStore(files = [createTestGapFile("alpha"), createTestGapF
 }
 
 /** One live agent note on a file's first changed line, as a shared-state snapshot lists it. */
-function createTestLiveNote(id: string, fileKey: string): ReviewSharedNoteV1 {
+function createTestLiveNote(id: string, fileKey: string): ReviewSharedNote {
   return {
     origin: "live",
     resolution: "active",
@@ -168,14 +168,14 @@ describe("ClientReviewStore", () => {
     const first = createTestLiveNote("live:1", fileKey);
     const second = createTestLiveNote("live:2", fileKey);
     // Only the fields the store adopts; the rest of a snapshot is presentation.
-    const snapshot = (notes: ReviewSharedNoteV1[], revision: number) =>
+    const snapshot = (notes: ReviewSharedNote[], revision: number) =>
       ({
         sharedStateRevision: revision,
         files: [],
         notes,
         filter: "",
         showAgentNotes: true,
-      }) as unknown as ReviewSharedStateV1;
+      }) as unknown as ReviewSharedState;
     review.adoptShared(snapshot([first], 1));
     review.store.dispatch({
       type: "selection/select",
@@ -204,7 +204,7 @@ describe("ClientReviewStore", () => {
       notes: [createTestLiveNote("live:1", fileKey)],
       filter: "",
       showAgentNotes: true,
-    } as unknown as ReviewSharedStateV1);
+    } as unknown as ReviewSharedState);
     expect(review.store.getSnapshot().liveNotes).toHaveLength(1);
 
     review.adopt(mirror.getSnapshot().document, { ...catalog, generation: "generation:next" });
@@ -315,7 +315,7 @@ describe("ClientReviewStore", () => {
     const catalog = {
       generation: "g1",
       resources: [{ kind: "source", fileKey, id: "source:alpha", generation: "g1" }],
-    } as unknown as HunkReviewResourceCatalogV1;
+    } as unknown as ReviewResourceCatalog;
     review.adopt(document, catalog);
 
     void review.loadSource(fileKey);

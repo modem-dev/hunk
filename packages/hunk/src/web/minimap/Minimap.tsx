@@ -4,8 +4,9 @@
  *
  * Drawn on a canvas from document geometry — the stream's own body heights and the shared
  * hunk row fractions, projected by `./minimapProjection.ts` — never by reading what the stream
- * drew: file boundaries, added and removed regions in the theme's badge colors, note markers,
- * agent marks, the selected hunk, viewed files dimmed, and a window for the viewport. Clicking
+ * drew: file blocks, change ticks in the theme's badge colors, note markers,
+ * agent marks, the selected hunk, and a window for the viewport. Files draw as faint neutral
+ * blocks with thin change ticks, and a viewed file's block and ticks draw at lower strength. Clicking
  * or dragging scrolls the stream there. It redraws on scroll (one frame at most), on resize,
  * and whenever the review, layout, gaps, notes, or theme change, so a reload, a layout switch,
  * and a gap expansion all stay in step.
@@ -23,7 +24,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import type { ReviewRowLayout } from "../../core/review/geometry";
-import type { ReviewFileV1 } from "../../core/review/types";
+import type { ReviewFile } from "../../core/review/types";
 import type { ClientReviewMirrorFileSlot } from "../mirror/clientReviewMirror";
 import { STREAM_HEADER_HEIGHT_PX } from "../stream/FileSection";
 import type { ReviewStreamController } from "../stream/ReviewStream";
@@ -40,7 +41,7 @@ const SECTION_CHROME_PX = STREAM_HEADER_HEIGHT_PX + 1;
 
 export interface MinimapProps {
   slots: readonly ClientReviewMirrorFileSlot[];
-  files: ReadonlyMap<string, ReviewFileV1>;
+  files: ReadonlyMap<string, ReviewFile>;
   layout: ReviewRowLayout;
   noteHunks: ReadonlyMap<string, readonly number[]>;
   highlightHunks: ReadonlyMap<string, readonly number[]>;
@@ -58,12 +59,23 @@ function minimapColors() {
   return {
     added: read("--hunk-badge-added", "#1a7f37"),
     removed: read("--hunk-badge-removed", "#cf222e"),
-    border: read("--hunk-border", "#888"),
+    block: read("--hunk-text", "#888"),
     accent: read("--hunk-accent", "#0969da"),
-    background: read("--hunk-panel", "#fff"),
     warning: read("--hunk-file-modified", "#bf8700"),
   };
 }
+
+/** Pip gutter on the left; file blocks fill the rest, inset from the right edge. */
+const GUTTER_PX = 5;
+const BLOCK_INSET_RIGHT_PX = 2;
+/** Track pixels between two ticks, and the thickness of one. */
+const TICK_PITCH_PX = 2;
+const TICK_HEIGHT_PX = 1;
+/** Paint strength of blocks and ticks for an open file and a viewed one. */
+const OPEN_BLOCK_ALPHA = 0.1;
+const VIEWED_BLOCK_ALPHA = 0.035;
+const OPEN_TICK_ALPHA = 0.75;
+const VIEWED_TICK_ALPHA = 0.22;
 
 /** Paint one model onto the canvas at the device's pixel ratio. */
 function paint(canvas: HTMLCanvasElement, model: MinimapModel, width: number) {
@@ -76,45 +88,59 @@ function paint(canvas: HTMLCanvasElement, model: MinimapModel, width: number) {
   const colors = minimapColors();
   context.clearRect(0, 0, width, model.trackHeight);
 
-  // A left gutter carries the markers (notes, agent marks, the selected hunk); the change bars
-  // fill the rest, softened so they read as texture beside the code rather than as a signal.
-  const gutter = 8;
-  const barLeft = gutter + 1;
-  const barWidth = width - barLeft - 3;
-  context.globalAlpha = 0.7;
-  for (let bin = 0; bin < model.added.length; bin += 1) {
-    const added = model.added[bin]!;
-    const removed = model.removed[bin]!;
-    const total = added + removed;
-    if (total <= 0) continue;
-    const y = bin * model.binHeight;
-    const addedWidth = (added / total) * barWidth;
-    context.fillStyle = colors.added;
-    context.fillRect(barLeft, y, addedWidth, model.binHeight);
-    context.fillStyle = colors.removed;
-    context.fillRect(barLeft + addedWidth, y, barWidth - addedWidth, model.binHeight);
+  // Each file is one faint neutral block, separated from its neighbours by a one-pixel gap
+  // wherever the band is tall enough to spare it; changes are thin ticks inside the block.
+  const blockLeft = GUTTER_PX;
+  const blockWidth = Math.max(1, width - blockLeft - BLOCK_INSET_RIGHT_PX);
+  for (const file of model.files) {
+    const gap = file.height >= 4 ? 1 : 0;
+    const height = Math.max(1, file.height - gap);
+    context.globalAlpha = file.viewed ? VIEWED_BLOCK_ALPHA : OPEN_BLOCK_ALPHA;
+    context.fillStyle = colors.block;
+    context.fillRect(blockLeft, file.top, blockWidth, height);
+
+    // One tick per pitch cell that holds changes. A cell with both kinds splits its tick,
+    // removals on the left and additions on the right like a split diff, so a modified line
+    // does not read as a pure addition.
+    context.globalAlpha = file.viewed ? VIEWED_TICK_ALPHA : OPEN_TICK_ALPHA;
+    const cell = Math.max(1, Math.round(TICK_PITCH_PX / model.binHeight));
+    const first = Math.max(0, Math.floor(file.top / model.binHeight));
+    const last = Math.min(model.added.length, Math.ceil((file.top + height) / model.binHeight));
+    for (let start = first; start < last; start += cell) {
+      let added = 0;
+      let removed = 0;
+      for (let bin = start; bin < Math.min(last, start + cell); bin += 1) {
+        added += model.added[bin]!;
+        removed += model.removed[bin]!;
+      }
+      if (added + removed <= 0) continue;
+      const top = start * model.binHeight;
+      const share = removed / (added + removed);
+      const removedWidth =
+        removed <= 0
+          ? 0
+          : added <= 0
+            ? blockWidth
+            : Math.min(blockWidth - 2, Math.max(2, Math.round(blockWidth * share)));
+      context.fillStyle = colors.removed;
+      context.fillRect(blockLeft, top, removedWidth, TICK_HEIGHT_PX);
+      context.fillStyle = colors.added;
+      context.fillRect(blockLeft + removedWidth, top, blockWidth - removedWidth, TICK_HEIGHT_PX);
+    }
   }
   context.globalAlpha = 1;
 
-  context.fillStyle = colors.border;
-  for (const top of model.boundaries) context.fillRect(gutter, Math.round(top), width - gutter, 1);
-
-  // Viewed files read as done: dimmed under the panel color.
-  context.globalAlpha = 0.6;
-  context.fillStyle = colors.background;
-  for (const span of model.viewed) context.fillRect(0, span.top, width, span.height);
-  context.globalAlpha = 1;
-
+  // Location marks keep the accent: the selected hunk, agent marks, and note pips.
   if (model.selected) {
     context.fillStyle = colors.accent;
     context.fillRect(0, model.selected.top, 2, Math.max(3, model.selected.height));
   }
   context.fillStyle = colors.warning;
-  for (const top of model.highlights) context.fillRect(3, Math.round(top), 4, 3);
+  for (const top of model.highlights) context.fillRect(2, Math.round(top), 3, 3);
   context.fillStyle = colors.accent;
   for (const top of model.notes) {
     context.beginPath();
-    context.arc(5, Math.round(top) + 2, 2.5, 0, Math.PI * 2);
+    context.arc(3, Math.round(top) + 2, 2, 0, Math.PI * 2);
     context.fill();
   }
 }

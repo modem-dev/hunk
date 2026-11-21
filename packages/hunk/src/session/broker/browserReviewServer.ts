@@ -50,7 +50,7 @@ import {
   REVIEW_EVENT_HEARTBEAT_FRAME,
   REVIEW_EVENT_STREAM_CONTENT_TYPE,
   ReviewEventTooLargeError,
-  type ReviewEventTypeV1,
+  type ReviewEventType,
 } from "../reviewEventProtocol";
 import {
   HUNK_REVIEW_CAPABILITY_HEADER,
@@ -58,20 +58,20 @@ import {
   isReviewCapabilityToken,
   parseReviewHttpPath,
   REVIEW_CAPABILITY_ACTOR_KIND,
-  type HunkReviewClientErrorCodeV1,
-  type HunkReviewHttpFailureV1,
-  type HunkReviewHttpRoute,
-  type HunkReviewPublicationBodyV1,
-  type HunkReviewRefreshBodyV1,
-  type HunkReviewStateBodyV1,
+  type ReviewHttpFailureCode,
+  type ReviewHttpFailure,
+  type ReviewHttpRoute,
+  type ReviewPublicationBody,
+  type ReviewRefreshBody,
+  type ReviewStateBody,
 } from "../reviewHttpProtocol";
 import {
   HUNK_REVIEW_PROTOCOL_VERSION,
   MAX_HUNK_REVIEW_ENVELOPE_BYTES,
-  parseHunkReviewActionEnvelope,
-  type HunkReviewRefreshResultV1,
+  parseReviewActionEnvelope,
+  type ReviewRefreshResult,
 } from "../reviewProtocol";
-import type { ReviewSharedStateV1 } from "../reviewSharedState";
+import type { ReviewSharedState } from "../reviewSharedState";
 import { allowsUnsafeRemoteSessionBroker, isLoopbackHost } from "./brokerConfig";
 import {
   ReviewGenerationRetiredError,
@@ -86,7 +86,7 @@ import {
  * Total over the code union, so a code added to any tier's vocabulary cannot reach this
  * surface without someone deciding what it means to a client.
  */
-const REVIEW_ERROR_STATUS: Record<HunkReviewClientErrorCodeV1, number> = {
+const REVIEW_ERROR_STATUS: Record<ReviewHttpFailureCode, number> = {
   "stale-generation": 409,
   "invalid-request": 400,
   "unsupported-action": 400,
@@ -367,7 +367,7 @@ export class BrowserReviewServer {
   }
 
   /** Build the publication body, or nothing when the session publishes no review. */
-  private publicationBody(sessionId: string): HunkReviewPublicationBodyV1 | undefined {
+  private publicationBody(sessionId: string): ReviewPublicationBody | undefined {
     const publication = this.state.getReviewPublication(sessionId);
     return publication
       ? {
@@ -407,7 +407,7 @@ export class BrowserReviewServer {
     if (!this.state.getReviewPublication(sessionId)) {
       return this.failure("no-publication");
     }
-    let result: HunkReviewRefreshResultV1;
+    let result: ReviewRefreshResult;
     try {
       result = await this.state.refreshReview(sessionId);
     } catch {
@@ -421,7 +421,7 @@ export class BrowserReviewServer {
       // told the catalog sentence and the session keeps the detail in its own notice path.
       return this.failure(result.code);
     }
-    const response: HunkReviewRefreshBodyV1 = {
+    const response: ReviewRefreshBody = {
       ok: true,
       protocolVersion: HUNK_REVIEW_PROTOCOL_VERSION,
       sessionId,
@@ -443,7 +443,7 @@ export class BrowserReviewServer {
       return this.failure("no-publication");
     }
     try {
-      let state: ReviewSharedStateV1;
+      let state: ReviewSharedState;
       try {
         state = await this.state.loadReviewSharedState(sessionId);
       } catch (error) {
@@ -460,7 +460,7 @@ export class BrowserReviewServer {
           throw error;
         }
       }
-      const body: HunkReviewStateBodyV1 = {
+      const body: ReviewStateBody = {
         protocolVersion: HUNK_REVIEW_PROTOCOL_VERSION,
         sessionId,
         publication: { generation: state.generation, stateRevision: state.stateRevision },
@@ -488,7 +488,7 @@ export class BrowserReviewServer {
    * this surface ever sees them; there is no second read path. What is added here is HTTP
    * `Range` handling and the response cap, which are transport concerns.
    */
-  private async handleResource(request: Request, route: HunkReviewHttpRoute): Promise<Response> {
+  private async handleResource(request: Request, route: ReviewHttpRoute): Promise<Response> {
     if (route.kind !== "resource") {
       return this.failure("invalid-request");
     }
@@ -553,7 +553,7 @@ export class BrowserReviewServer {
   /**
    * Apply one action on behalf of a remote caller.
    *
-   * The body is parsed by `parseHunkReviewActionEnvelope` and by nothing else — the
+   * The body is parsed by `parseReviewActionEnvelope` and by nothing else — the
    * prototype grew a second envelope parser here, which is how the two ends came to
    * disagree about which fields an action may carry (D5) — and the parsed action is handed
    * to the daemon's existing forwarding path, which plans it at the producer through the
@@ -585,7 +585,7 @@ export class BrowserReviewServer {
       );
     }
 
-    const envelope = parseHunkReviewActionEnvelope(value);
+    const envelope = parseReviewActionEnvelope(value);
     if (!envelope.ok) {
       return this.failure(
         envelope.reason === "unsupported" ? "unsupported-action" : "invalid-request",
@@ -741,7 +741,7 @@ export class BrowserReviewServer {
   /** Frame one event through the shared protocol and enqueue it. */
   private sendEvent(
     stream: ReviewEventStream,
-    type: ReviewEventTypeV1,
+    type: ReviewEventType,
     address: ReviewPublicationAddress,
     body: unknown,
     sharedStateRevision?: number,
@@ -890,10 +890,10 @@ export class BrowserReviewServer {
    * text; anything that arrived from a session stays out of the response.
    */
   private failure(
-    code: HunkReviewClientErrorCodeV1,
+    code: ReviewHttpFailureCode,
     details: { message?: string; currentGeneration?: string } = {},
   ) {
-    const body: HunkReviewHttpFailureV1 = {
+    const body: ReviewHttpFailure = {
       ok: false,
       code,
       message: details.message ?? reviewErrorMessage(code),

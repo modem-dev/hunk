@@ -1,7 +1,7 @@
 /**
  * Runs the page's viewed-files workflow: the "Viewed" checkboxes in file headers and sidebar
  * rows, the `V` chord and palette commands, the toolbar's progress and "Hide viewed" toggle,
- * and collapsing viewed files in the stream.
+ * and collapsing files in the stream.
  *
  * Marking a file viewed is shared review state: it is sent as `files/set-viewed` through the
  * page's one action sender and comes back in the shared-state snapshot, which lists only marks
@@ -11,9 +11,11 @@
  *   file whose content changed since it was marked says so;
  * - "hide viewed", per browser, which removes viewed files from the stream and the sidebar and
  *   makes navigation walk past them (through the store's `hiddenFileKeys` fact);
- * - which viewed files the reader expanded. A viewed file's body is collapsed by default; a
- *   click expands it, and a hunk reveal into it (`]`, a note jump, an agent's navigation)
- *   expands it before the stream scrolls there;
+ * - which files' bodies are collapsed. A viewed file's body is collapsed by default and the
+ *   reader may expand it; any other file is collapsed only while the reader folded it from its
+ *   header's chevron. Either way a hunk reveal into it (`]`, a note jump, an agent's
+ *   navigation) opens it before the stream scrolls there. Folding is per tab and presentation
+ *   only: nothing about it leaves the page;
  * - the one hidden file an explicit jump revealed. Relative navigation never lands on a hidden
  *   file, so any reveal request that does (a deep link, go to file, an Overview row, a Notes
  *   tab row, an agent's navigation) is one the reader or the agent asked for by name: that file
@@ -31,7 +33,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { countReviewViewedFiles } from "../../core/review/overview";
 import type { ReviewState } from "../../core/review/state";
-import type { ReviewSharedStateV1 } from "../../session/reviewSharedState";
+import type { ReviewSharedState } from "../../session/reviewSharedState";
 import type { ReviewActionSender } from "../actions/reviewActions";
 import type { ClientReviewStore } from "../store/clientReviewStore";
 import { PendingViewedMarks } from "./pendingViewedMarks";
@@ -64,6 +66,14 @@ function writeStored(key: string, value: string) {
   } catch {
     // Per-browser conveniences only; the page works without them.
   }
+}
+
+/** The set without one key, or the same set when it does not hold it. */
+function withoutKey(set: ReadonlySet<string>, key: string): ReadonlySet<string> {
+  if (!set.has(key)) return set;
+  const next = new Set(set);
+  next.delete(key);
+  return next;
 }
 
 /** Remembered sessions kept besides the current one; older ones are pruned on load. */
@@ -106,7 +116,7 @@ function readMemory(sessionId: string): ViewedMemory {
 export interface UseViewedFilesOptions {
   sessionId: string;
   /** The shared snapshot for the generation shown, when it has arrived. */
-  shared: ReviewSharedStateV1 | undefined;
+  shared: ReviewSharedState | undefined;
   /** The files the shared filter leaves visible, in review order. */
   files: readonly { key: string }[];
   review: Pick<ReviewState, "selection" | "reveal">;
@@ -125,6 +135,13 @@ export function useViewedFiles(options: UseViewedFilesOptions) {
   const [memory, setMemory] = useState<ViewedMemory>(() => readMemory(sessionId));
   const [hideViewed, setHideViewed] = useState(() => readStored(HIDE_VIEWED_KEY) === "on");
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
+  const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set());
+
+  /** Open one collapsed file, whether it is collapsed as viewed or folded by the reader. */
+  const open = useCallback((fileKey: string) => {
+    setExpanded((current) => (current.has(fileKey) ? current : new Set(current).add(fileKey)));
+    setFolded((current) => withoutKey(current, fileKey));
+  }, []);
 
   // Every mark the session lists is remembered at its content, for "changed since viewed";
   // a mark it stopped listing while the content stayed the same was cleared, and is forgotten.
@@ -175,27 +192,27 @@ export function useViewedFiles(options: UseViewedFilesOptions) {
   const landing =
     hunkToken !== absorbed.hunkToken || fileTopToken !== absorbed.fileTopToken ? selectedKey : null;
   const landingViewed = landing !== null && statuses.get(landing) === "viewed";
-  // A hunk reveal opens a collapsed viewed file; any reveal onto a hidden one reveals it.
-  const opening = landingViewed && hunkToken !== absorbed.hunkToken ? landing : null;
+  const landingCollapsed = landingViewed || (landing !== null && folded.has(landing));
+  // A hunk reveal opens a collapsed file; any reveal onto a hidden one reveals it.
+  const opening = landingCollapsed && hunkToken !== absorbed.hunkToken ? landing : null;
   const shownDespiteHide = landingViewed && hideViewed ? landing : landing ? null : revealed;
   useEffect(() => {
     if (hunkToken === absorbed.hunkToken && fileTopToken === absorbed.fileTopToken) return;
-    if (opening) {
-      setExpanded((current) => (current.has(opening) ? current : new Set(current).add(opening)));
-    }
+    if (opening) open(opening);
     setRevealed(shownDespiteHide);
     setAbsorbed({ hunkToken, fileTopToken });
-  }, [hunkToken, fileTopToken, absorbed, opening, shownDespiteHide]);
+  }, [hunkToken, fileTopToken, absorbed, opening, shownDespiteHide, open]);
 
   const { hidden, collapsed } = useMemo(
     () =>
       reviewViewedVisibility(statuses, {
         hideViewed,
         expanded,
+        folded,
         opening,
         revealed: shownDespiteHide,
       }),
-    [statuses, hideViewed, expanded, opening, shownDespiteHide],
+    [statuses, hideViewed, expanded, folded, opening, shownDespiteHide],
   );
   useEffect(() => {
     store.setHiddenFiles(hidden);
@@ -230,14 +247,10 @@ export function useViewedFiles(options: UseViewedFilesOptions) {
         stateRevision: outcome.applied.stateRevision,
       });
       // Marking collapses the file again, and hides it again if a jump had revealed it;
-      // clearing forgets the content it was marked at.
+      // clearing forgets the content it was marked at and leaves the file open.
       if (viewed) setRevealed((current) => (current === fileKey ? null : current));
-      setExpanded((current) => {
-        if (!current.has(fileKey)) return current;
-        const next = new Set(current);
-        next.delete(fileKey);
-        return next;
-      });
+      setExpanded((current) => withoutKey(current, fileKey));
+      setFolded((current) => withoutKey(current, fileKey));
       if (!viewed) setMemory((current) => forgetViewedMark(current, fileKey));
     },
     [actions, showError],
@@ -271,17 +284,20 @@ export function useViewedFiles(options: UseViewedFilesOptions) {
     [setViewed, statuses],
   );
 
-  const expand = useCallback((fileKey: string) => {
-    setExpanded((current) => new Set(current).add(fileKey));
-  }, []);
+  /** Expand one file from its header's chevron. */
+  const expand = open;
 
-  const collapse = useCallback((fileKey: string) => {
-    setExpanded((current) => {
-      const next = new Set(current);
-      next.delete(fileKey);
-      return next;
-    });
-  }, []);
+  /** Collapse one file: a viewed file returns to its default, any other is folded. */
+  const collapse = useCallback(
+    (fileKey: string) => {
+      if (statuses.get(fileKey) === "viewed") {
+        setExpanded((current) => withoutKey(current, fileKey));
+        return;
+      }
+      setFolded((current) => (current.has(fileKey) ? current : new Set(current).add(fileKey)));
+    },
+    [statuses],
+  );
 
   // Toggling either way ends a jump's reveal: the setting then means what it says.
   const toggleHideViewed = useCallback(() => {
@@ -293,7 +309,7 @@ export function useViewedFiles(options: UseViewedFilesOptions) {
   }, []);
 
   /**
-   * Open a collapsed viewed file that hunk navigation (`]`, `[`, annotated hunks) just entered.
+   * Open a collapsed file that hunk navigation (`]`, `[`, annotated hunks) just entered.
    *
    * Crossing into the next file reveals its top rather than the hunk, which carries no hunk
    * reveal for the workflow above to see, so the page's hunk commands call this instead. File
@@ -301,10 +317,10 @@ export function useViewedFiles(options: UseViewedFilesOptions) {
    */
   const openForHunk = useCallback(
     (fileKey: string) => {
-      if (statuses.get(fileKey) !== "viewed") return;
-      setExpanded((current) => (current.has(fileKey) ? current : new Set(current).add(fileKey)));
+      if (statuses.get(fileKey) !== "viewed" && !folded.has(fileKey)) return;
+      open(fileKey);
     },
-    [statuses],
+    [statuses, folded, open],
   );
 
   return {

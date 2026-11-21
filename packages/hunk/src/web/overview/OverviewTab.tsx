@@ -8,28 +8,26 @@
  * numbers as text, with `+` and `−` signs, so nothing depends on color. Every row naming a
  * file or a directory jumps to it in the stream (a directory to its first file).
  */
+import { Icon } from "../icons/Icon";
 import { useState, type ReactNode } from "react";
-import { REVIEW_FILE_ROLES, type ReviewFileRole } from "../../core/review/fileRoles";
+import { formatCount, formatFileCount } from "../format/lineCounts";
+import {
+  REVIEW_FILE_ROLES,
+  REVIEW_MEANINGFUL_FILE_ROLES,
+  type ReviewFileRole,
+} from "../../core/review/fileRoles";
 import type {
   ReviewOverview,
   ReviewOverviewDirectory,
   ReviewOverviewTotals,
-  ReviewSizeClass,
 } from "../../core/review/overview";
+import { SIZE_BADGE_TITLE, SIZE_LABELS } from "./sizeBadge";
 
 export interface OverviewTabProps {
   overview: ReviewOverview;
   /** Jump the stream to one file. */
   onSelectFile: (fileKey: string) => void;
 }
-
-const SIZE_LABELS: Record<ReviewSizeClass, string> = {
-  XS: "Extra small",
-  S: "Small",
-  M: "Medium",
-  L: "Large",
-  XL: "Extra large",
-};
 
 const ROLE_LABELS: Record<ReviewFileRole, string> = {
   source: "Source",
@@ -50,9 +48,21 @@ const CHANGE_KIND_LABELS: readonly [keyof ReviewOverview["changeKinds"], string]
   ["tooLarge", "Too large"],
 ];
 
+/**
+ * What "Meaningful" leaves out, worded from the roles `fileRoles.ts` excludes from it, so the
+ * sentence follows the rule rather than restating it.
+ */
+const MEANINGFUL_EXCLUDES = (() => {
+  const words = REVIEW_FILE_ROLES.filter((role) => !REVIEW_MEANINGFUL_FILE_ROLES.has(role)).map(
+    (role) => ROLE_LABELS[role].toLowerCase(),
+  );
+  const last = words.pop();
+  return words.length > 0 ? `${words.join(", ")}, and ${last}` : (last ?? "");
+})();
+
 /** A count with a lower-bound mark when the producer truncated it. */
 function count(value: number, truncated: boolean) {
-  return truncated ? `≥${value}` : String(value);
+  return truncated ? `≥${formatCount(value)}` : formatCount(value);
 }
 
 /** `+A −D`, with lower-bound marks, as two separately colored spans. */
@@ -96,7 +106,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 /** Files, in words. */
 function files(value: number) {
-  return value === 1 ? "1 file" : `${value} files`;
+  return formatFileCount(value);
 }
 
 /** One directory row and, when expanded, its subdirectories. */
@@ -124,7 +134,9 @@ function DirectoryRows({
           style={hasChildren ? undefined : { visibility: "hidden" }}
           onClick={() => setExpanded((current) => !current)}
         >
-          <span aria-hidden="true">{hasChildren ? (expanded ? "▾" : "▸") : ""}</span>
+          {hasChildren ? (
+            <Icon name={expanded ? "chevron-down" : "chevron-right"} size={12} />
+          ) : null}
         </button>
         <button
           type="button"
@@ -134,7 +146,7 @@ function DirectoryRows({
         >
           {`${directory.name}/`}
         </button>
-        <span className="overview-count">{directory.files}</span>
+        <span className="overview-count">{formatCount(directory.files)}</span>
         <Churn {...directory} />
         <ChurnBar {...directory} scale={scale} />
       </div>
@@ -167,6 +179,9 @@ export function OverviewTab({ overview, onSelectFile }: OverviewTabProps) {
     ...overview.directories.children.map((child) => child.additions + child.deletions),
   );
 
+  // A kind no file has is noise; the section keeps only what happened.
+  const changeKinds = CHANGE_KIND_LABELS.filter(([kind]) => overview.changeKinds[kind] > 0);
+
   if (totals.files === 0) {
     return <p className="overview-empty">No files to summarize yet.</p>;
   }
@@ -175,11 +190,7 @@ export function OverviewTab({ overview, onSelectFile }: OverviewTabProps) {
     <div className="overview" data-testid="overview">
       <Section title="Summary">
         <div className="overview-summary">
-          <span
-            className="overview-size"
-            data-size={overview.sizeClass}
-            title="Size by meaningful changed lines: under 10 XS, 30 S, 100 M, 500 L; XL beyond"
-          >
+          <span className="overview-size" data-size={overview.sizeClass} title={SIZE_BADGE_TITLE}>
             <span className="overview-size-letter">{overview.sizeClass}</span>
             <span className="overview-size-label">{SIZE_LABELS[overview.sizeClass]}</span>
           </span>
@@ -201,6 +212,9 @@ export function OverviewTab({ overview, onSelectFile }: OverviewTabProps) {
           </dl>
         </div>
         <ChurnBar {...totals} scale={totalChurn} />
+        <p className="overview-note" data-testid="overview-meaningful-note">
+          {`Meaningful leaves out ${MEANINGFUL_EXCLUDES} files.`}
+        </p>
         {totals.truncated ? (
           <p className="overview-note">
             ≥ marks a lower bound: some files were too large to count.
@@ -208,7 +222,7 @@ export function OverviewTab({ overview, onSelectFile }: OverviewTabProps) {
         ) : null}
         {overview.viewed ? (
           <p className="overview-viewed" data-testid="overview-viewed">
-            <span>{`${overview.viewed.files} of ${files(overview.viewed.total)} viewed`}</span>
+            <span>{`${formatCount(overview.viewed.files)} of ${files(overview.viewed.total)} viewed`}</span>
             <progress value={overview.viewed.files} max={overview.viewed.total} />
           </p>
         ) : null}
@@ -233,10 +247,11 @@ export function OverviewTab({ overview, onSelectFile }: OverviewTabProps) {
           <tbody>
             {REVIEW_FILE_ROLES.map((role) => {
               const row = overview.roles[role];
+              if (row.files === 0) return null;
               return (
-                <tr key={role} data-empty={row.files === 0 ? "" : undefined}>
+                <tr key={role}>
                   <th scope="row">{ROLE_LABELS[role]}</th>
-                  <td className="numeric">{row.files}</td>
+                  <td className="numeric">{formatCount(row.files)}</td>
                   <td className="numeric">
                     <Churn {...row} />
                   </td>
@@ -250,16 +265,18 @@ export function OverviewTab({ overview, onSelectFile }: OverviewTabProps) {
         </table>
       </Section>
 
-      <Section title="Change kinds">
-        <dl className="overview-kinds">
-          {CHANGE_KIND_LABELS.map(([kind, label]) => (
-            <div key={kind} data-empty={overview.changeKinds[kind] === 0 ? "" : undefined}>
-              <dt>{label}</dt>
-              <dd>{overview.changeKinds[kind]}</dd>
-            </div>
-          ))}
-        </dl>
-      </Section>
+      {changeKinds.length > 0 ? (
+        <Section title="Change kinds">
+          <dl className="overview-kinds">
+            {changeKinds.map(([kind, label]) => (
+              <div key={kind}>
+                <dt>{label}</dt>
+                <dd>{formatCount(overview.changeKinds[kind])}</dd>
+              </div>
+            ))}
+          </dl>
+        </Section>
+      ) : null}
 
       {overview.directories.children.length > 0 ? (
         <Section title="Directories">

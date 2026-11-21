@@ -9,14 +9,16 @@
  * the stream scrolls to its card; nothing reaches the session. Read-only: notes are written
  * and edited in the stream.
  */
+import { Icon } from "../icons/Icon";
 import { useMemo, useState } from "react";
-import { reviewNoteRangeLabel, reviewNoteThreadTitle } from "../../core/review/noteLabels";
+import { reviewNoteThreadTitle } from "../../core/review/noteLabels";
 import type {
   ReviewNoteListEntry,
   ReviewNoteListFile,
   ReviewNoteListOrigin,
   ReviewNoteListThread,
 } from "../../core/review/noteList";
+import { webNoteLocationLabel } from "../format/noteLocation";
 import { browserNoteTitle } from "../notes/noteProjection";
 import { countNoteList, filterNoteList } from "./noteFilters";
 
@@ -53,7 +55,8 @@ function NoteRow({
   now: number;
   onSelect: NotesTabProps["onSelectNote"];
 }) {
-  const range = reviewNoteRangeLabel(entry.note.anchor);
+  // Worded as the note's card in the stream words it (`line 13`).
+  const range = webNoteLocationLabel(entry.note.anchor);
   return (
     <button
       type="button"
@@ -172,7 +175,8 @@ export function NotesTab({ files, activeNoteId, agentNotesHidden, onSelectNote }
                       aria-expanded={open}
                       onClick={() => toggleThread(id)}
                     >
-                      {`${open ? "▾" : "▸"} ${replies} ${replies === 1 ? "reply" : "replies"}`}
+                      <Icon name={open ? "chevron-down" : "chevron-right"} size={12} />
+                      {`${replies} ${replies === 1 ? "reply" : "replies"}`}
                     </button>
                   ) : null}
                   {open ? (

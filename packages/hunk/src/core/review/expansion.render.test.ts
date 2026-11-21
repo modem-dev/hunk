@@ -7,7 +7,7 @@ import {
   reviewGapSourceForFile,
   reviewLeadingGap,
 } from "./expansion";
-import type { ReviewFileV1 } from "./types";
+import type { ReviewFile } from "./types";
 
 const AFTER = Array.from({ length: 30 }, (_unused, index) =>
   index === 9 || index === 24 ? `line ${index + 1} changed` : `line ${index + 1}`,
@@ -38,7 +38,7 @@ async function createTestPartialFile() {
 }
 
 /** The text one hunk shows on its new side, line by line, without terminators. */
-function newSideOf(file: ReviewFileV1, hunkIndex: number) {
+function newSideOf(file: ReviewFile, hunkIndex: number) {
   const hunk = file.hunks[hunkIndex]!;
   return file.additionLines
     .slice(hunk.additionLineIndex, hunk.additionLineIndex + hunk.additionCount)

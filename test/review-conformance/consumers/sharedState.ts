@@ -17,14 +17,14 @@ import { BrowserReviewServer } from "../../../packages/hunk/src/session/broker/b
 import {
   HUNK_REVIEW_CAPABILITY_HEADER,
   reviewHttpPath,
-  type HunkReviewStateBodyV1,
+  type ReviewStateBody,
 } from "../../../packages/hunk/src/session/reviewHttpProtocol";
 import {
   parseReviewSharedState,
   REVIEW_SHARED_STATE_CURRENT_RESOURCE_ID,
-  type ReviewSharedStateV1,
+  type ReviewSharedState,
 } from "../../../packages/hunk/src/session/reviewSharedState";
-import { ReviewSharedStateMirror } from "../../../packages/hunk/src/web/mirror/sharedStateMirror";
+import { ClientSharedStateMirror } from "../../../packages/hunk/src/web/mirror/clientSharedStateMirror";
 import { ReviewApiClient } from "../../../packages/hunk/src/web/transport/apiClient";
 import {
   connectReviewSession,
@@ -45,7 +45,7 @@ function actedHost(fixture: ReviewSharedStateFixture) {
 }
 
 /** Name files by index, including inside ids that embed a file key. */
-function projectSharedState(state: ReviewSharedStateV1): ReviewSharedStateProjection {
+function projectSharedState(state: ReviewSharedState): ReviewSharedStateProjection {
   const indexByKey = new Map(state.files.map((file, index) => [file.key, index] as const));
   const neutralId = (id: string) =>
     [...indexByKey].reduce((value, [key, index]) => value.replaceAll(key, `@${index}`), id);
@@ -137,7 +137,7 @@ export const browserSurfaceSharedStateConsumer: ReviewSharedStateConsumer = {
         `http://127.0.0.1:${server.port}${reviewHttpPath({ kind: "state", sessionId: "conformance-http" })}`,
         { headers: { [HUNK_REVIEW_CAPABILITY_HEADER]: reviewProcessCapability().token } },
       );
-      const body = (await response.json()) as HunkReviewStateBodyV1;
+      const body = (await response.json()) as ReviewStateBody;
       return projectSharedState(body.state);
     } finally {
       review.close();
@@ -150,7 +150,7 @@ export const browserSurfaceSharedStateConsumer: ReviewSharedStateConsumer = {
  * The browser client's shared-state mirror, reading the same HTTP surface the page reads.
  *
  * The page's real client (`ReviewApiClient`, with the capability header) and its real mirror
- * (`ReviewSharedStateMirror`): the publication is offered exactly as the event stream offers
+ * (`ClientSharedStateMirror`): the publication is offered exactly as the event stream offers
  * it, the mirror decides to fetch and validates the body with the shared parser, and the
  * snapshot it accepted is what this projects.
  */
@@ -175,7 +175,7 @@ export const browserClientSharedStateConsumer: ReviewSharedStateConsumer = {
       capability: reviewProcessCapability().token,
       fetch: (input, init) => fetch(`${origin}${input}`, init),
     });
-    const mirror = new ReviewSharedStateMirror({ client });
+    const mirror = new ClientSharedStateMirror({ client });
     try {
       const publication = await client.publication();
       mirror.observe(publication);

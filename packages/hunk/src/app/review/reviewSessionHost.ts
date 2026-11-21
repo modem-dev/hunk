@@ -71,10 +71,10 @@ import {
   type ReviewState,
 } from "../../core/review/state";
 import { createReviewStore, type ReviewStore } from "../../core/review/store";
-import type { ReviewDocumentV1, ReviewNoteTargetV1, ReviewNoteV1 } from "../../core/review/types";
+import type { ReviewDocument, ReviewNoteTarget, ReviewNote } from "../../core/review/types";
 import { STML_REFERENCE_WIDTH, validateStmlMarkup } from "../../core/stml/layout";
 import { noDiffFileMatchesMessage } from "../../session/agent/errors";
-import type { ReviewAgentRevealV1 } from "../../session/reviewSharedState";
+import type { ReviewAgentReveal } from "../../session/reviewSharedState";
 import type {
   AppliedCommentBatchResult,
   AppliedCommentResult,
@@ -189,7 +189,7 @@ export interface ReviewSessionHostOptions {
   /** Identity of the review's input as a whole; part of every semantic file key. */
   sourceLabel?: string;
   /** A projection of `files` the caller already made, adopted instead of projecting again. */
-  document?: ReviewDocumentV1;
+  document?: ReviewDocument;
   /** Note-layer visibility the launch configuration resolved. */
   showAgentNotes?: boolean;
   /** Accept STML bodies for live comments in this explicitly opted-in session. */
@@ -240,7 +240,7 @@ export class ReviewSessionHost {
   /** The semantic review store; producers and surfaces subscribe to it directly. */
   readonly store: ReviewStore;
   private files: DiffFile[];
-  private document: ReviewDocumentV1;
+  private document: ReviewDocument;
   private sourceLabel: string;
   private fileIndex: ReviewFileIndex;
   private stmlEnabled: boolean;
@@ -253,7 +253,7 @@ export class ReviewSessionHost {
   // Monotonic suffixes that keep `user:*` note ids and draft ids unique within one millisecond.
   private userNoteSequence = 0;
   private draftNoteSequence = 0;
-  private agentReveal: ReviewAgentRevealV1 | null = null;
+  private agentReveal: ReviewAgentReveal | null = null;
   private sharedStateRevision = 0;
   private sharedStateBasis: SharedStateBasis;
   private readonly sharedStateListeners = new Set<() => void>();
@@ -292,7 +292,7 @@ export class ReviewSessionHost {
   }
 
   /** The semantic document projected from the current files. */
-  getDocument(): ReviewDocumentV1 {
+  getDocument(): ReviewDocument {
     return this.document;
   }
 
@@ -327,7 +327,7 @@ export class ReviewSessionHost {
    */
   replaceFiles(
     files: DiffFile[],
-    options: { sourceLabel?: string; document?: ReviewDocumentV1 } = {},
+    options: { sourceLabel?: string; document?: ReviewDocument } = {},
   ): ReadonlySet<string> {
     if (options.sourceLabel !== undefined) {
       this.sourceLabel = options.sourceLabel;
@@ -614,7 +614,7 @@ export class ReviewSessionHost {
   }
 
   /** What an agent last asked every surface to show, or nothing yet. */
-  getAgentReveal(): ReviewAgentRevealV1 | null {
+  getAgentReveal(): ReviewAgentReveal | null {
     return this.agentReveal;
   }
 
@@ -920,7 +920,7 @@ export class ReviewSessionHost {
   startUserNote(input: {
     fileId: string | undefined;
     hunkIndex: number;
-    target?: ReviewNoteTargetV1;
+    target?: ReviewNoteTarget;
     preserveViewport?: boolean;
   }): { draft: ReviewDraftNote; file: DiffFile } | null {
     const file = this.files.find((candidate) => candidate.id === input.fileId);
@@ -997,7 +997,7 @@ export class ReviewSessionHost {
    * The store settles synchronously, so a coalesced repeat of the save finds no draft left to
    * consume rather than needing its own guard.
    */
-  saveDraftNote(): { note: ReviewNoteV1; file: DiffFile } | null {
+  saveDraftNote(): { note: ReviewNote; file: DiffFile } | null {
     const draft = this.store.getSnapshot().draftNote;
     const file = draft ? this.fileIndex.fileByKey.get(draft.fileKey) : undefined;
     if (!draft || !file) {
@@ -1082,7 +1082,7 @@ export class ReviewSessionHost {
   }
 
   /** Record what an agent just asked every surface to show, under a fresh token. */
-  recordAgentReveal(target: Omit<ReviewAgentRevealV1, "token">) {
+  recordAgentReveal(target: Omit<ReviewAgentReveal, "token">) {
     this.agentReveal = { token: this.agentReveal ? this.agentReveal.token + 1 : 1, ...target };
     this.advanceSharedState();
   }

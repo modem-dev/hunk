@@ -6,11 +6,11 @@ import {
   parseReviewSharedStateResourceId,
   REVIEW_SHARED_STATE_CURRENT_RESOURCE_ID,
   reviewSharedStateResourceId,
-  type ReviewSharedStateV1,
+  type ReviewSharedState,
 } from "./reviewSharedState";
 
 /** One hand-written snapshot exercising every optional block. */
-function createTestSharedState(): ReviewSharedStateV1 {
+function createTestSharedState(): ReviewSharedState {
   return {
     protocolVersion: HUNK_REVIEW_PROTOCOL_VERSION,
     generation: "generation:p1:2",

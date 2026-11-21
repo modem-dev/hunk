@@ -29,10 +29,10 @@ import {
   type ReviewPublicationAddress,
   type ReviewPublicationOrder,
 } from "../../core/review/generationOrder";
-import type { ReviewResourceDescriptorV1 } from "../../core/review/resources";
-import type { ReviewDocumentV1, ReviewFileV1 } from "../../core/review/types";
-import type { HunkReviewPublicationBodyV1 } from "../../session/reviewHttpProtocol";
-import type { HunkReviewResourceCatalogV1 } from "../../session/reviewProtocol";
+import type { ReviewResourceDescriptor } from "../../core/review/resources";
+import type { ReviewDocument, ReviewFile } from "../../core/review/types";
+import type { ReviewPublicationBody } from "../../session/reviewHttpProtocol";
+import type { ReviewResourceCatalog } from "../../session/reviewProtocol";
 import { ReviewApiError, type ReviewApiClient } from "../transport/apiClient";
 import {
   reviewFileIndexEntry,
@@ -46,7 +46,7 @@ export interface ClientReviewMirrorFileSlot {
   /** Known as soon as an index source or the canonical file describes it. */
   index?: ReviewFileIndexEntry;
   /** The full file, once loaded and verified. */
-  file?: ReviewFileV1;
+  file?: ReviewFile;
 }
 
 /** Everything the page knows about the mirrored review at one moment. */
@@ -55,10 +55,10 @@ export interface ClientReviewMirrorSnapshot {
   status: "waiting" | "loading" | "ready" | "failed";
   /** The publication position of the shown generation. */
   address?: ReviewPublicationAddress;
-  catalog?: HunkReviewResourceCatalogV1;
+  catalog?: ReviewResourceCatalog;
   slots: readonly ClientReviewMirrorFileSlot[];
   /** The loaded files in catalog order, as the client store adopts them. */
-  document: ReviewDocumentV1;
+  document: ReviewDocument;
   loadedFiles: number;
   totalFiles: number;
   /** True while a newer generation loads behind the one shown. */
@@ -93,7 +93,7 @@ function defaultScheduleNotify(flush: () => void) {
 }
 
 /** Build a snapshot's document from its slots. */
-function documentOf(slots: readonly ClientReviewMirrorFileSlot[]): ReviewDocumentV1 {
+function documentOf(slots: readonly ClientReviewMirrorFileSlot[]): ReviewDocument {
   return { files: slots.flatMap((slot) => (slot.file ? [slot.file] : [])) };
 }
 
@@ -125,7 +125,7 @@ export class ClientReviewMirror {
    * Returns the verdict, so a caller (and the conformance corpus) can see that no ordering
    * rule other than the shared classifier decided it.
    */
-  observe(body: HunkReviewPublicationBodyV1): ReviewPublicationOrder {
+  observe(body: ReviewPublicationBody): ReviewPublicationOrder {
     const incoming = body.publication;
     // The first publication is a gap from nothing: there is no generation to continue.
     const verdict = this.observed ? classifyReviewPublication(this.observed, incoming) : "gap";
@@ -163,14 +163,14 @@ export class ClientReviewMirror {
   }
 
   /** Load one generation's files, superseding any load still running. */
-  private async loadGeneration(body: HunkReviewPublicationBodyV1) {
+  private async loadGeneration(body: ReviewPublicationBody) {
     const { catalog, publication } = body;
     // Only a complete generation on screen is worth holding while a newer one loads. A first
     // load still in flight (or failed) shows no finished document, so the newer generation
     // loads progressively in its place and a failure reaches the `failed` stage.
     const replacing = this.snapshot.address !== undefined && this.snapshot.status === "ready";
     const canonical = catalog.resources.filter(
-      (resource): resource is Extract<ReviewResourceDescriptorV1, { kind: "canonical-file" }> =>
+      (resource): resource is Extract<ReviewResourceDescriptor, { kind: "canonical-file" }> =>
         resource.kind === "canonical-file",
     );
     let slots: ClientReviewMirrorFileSlot[] = canonical.map((resource) => ({

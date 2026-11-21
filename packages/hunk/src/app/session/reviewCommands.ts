@@ -34,30 +34,26 @@ import {
 } from "../../core/review/intents";
 import type { ReviewDraftNote, ReviewState } from "../../core/review/state";
 import type {
-  ReviewFileV1,
-  ReviewLineAddressV1,
+  ReviewFile,
+  ReviewLineAddress,
   ReviewLineRange,
-  ReviewNoteTargetV1,
-  ReviewRangeTargetV1,
+  ReviewNoteTarget,
+  ReviewRangeTarget,
 } from "../../core/review/types";
 import {
   toReviewIntent,
-  type HunkReviewActionEnvelopeV1,
-  type HunkReviewActionResultV1,
-  type HunkReviewActionV1,
-  type HunkReviewExpandedLineProofV1,
-  type HunkReviewFailureCodeV1,
-  type HunkReviewFailureV1,
-  type HunkReviewResourceReadEnvelopeV1,
-  type HunkReviewResourceReadResultV1,
+  type ReviewActionEnvelope,
+  type ReviewActionResult,
+  type RemoteReviewIntent,
+  type ReviewExpandedLineProof,
+  type ReviewFailureCode,
+  type ReviewFailure,
+  type ReviewResourceReadEnvelope,
+  type ReviewResourceReadResult,
 } from "../../session/reviewProtocol";
 
 /** Build one failure carrying the generation the producer is actually serving. */
-function fail(
-  producer: ReviewProducer,
-  code: HunkReviewFailureCodeV1,
-  message: string,
-): HunkReviewFailureV1 {
+function fail(producer: ReviewProducer, code: ReviewFailureCode, message: string): ReviewFailure {
   return {
     ok: false,
     code,
@@ -76,8 +72,8 @@ function fail(
  */
 export async function readSessionReviewResource(
   producer: ReviewProducer,
-  envelope: HunkReviewResourceReadEnvelopeV1,
-): Promise<HunkReviewResourceReadResultV1> {
+  envelope: ReviewResourceReadEnvelope,
+): Promise<ReviewResourceReadResult> {
   return producer.readResource(envelope.request);
 }
 
@@ -92,8 +88,8 @@ export async function readSessionReviewResource(
  */
 function checkPosition(
   producer: ReviewProducer,
-  envelope: HunkReviewActionEnvelopeV1,
-): HunkReviewFailureV1 | undefined {
+  envelope: ReviewActionEnvelope,
+): ReviewFailure | undefined {
   const current = producer.getPublicationAddress();
   if (envelope.generation !== current.generation) {
     return fail(
@@ -128,10 +124,10 @@ function checkPosition(
  */
 function checkExpandedLine(
   producer: ReviewProducer,
-  file: ReviewFileV1,
-  target: ReviewLineAddressV1,
-  proof: HunkReviewExpandedLineProofV1,
-): HunkReviewFailureV1 | undefined {
+  file: ReviewFile,
+  target: ReviewLineAddress,
+  proof: ReviewExpandedLineProof,
+): ReviewFailure | undefined {
   if (proof.side !== target.side || proof.line !== target.line) {
     return fail(
       producer,
@@ -151,10 +147,10 @@ function checkExpandedLine(
 /** Require caller evidence whenever a line is not backed by a visible patch row. */
 function checkLineTarget(
   producer: ReviewProducer,
-  file: ReviewFileV1,
-  target: ReviewLineAddressV1,
-  proof?: HunkReviewExpandedLineProofV1,
-): HunkReviewFailureV1 | undefined {
+  file: ReviewFile,
+  target: ReviewLineAddress,
+  proof?: ReviewExpandedLineProof,
+): ReviewFailure | undefined {
   if (proof) return checkExpandedLine(producer, file, target, proof);
   return reviewLineCoveredByHunks(file.hunks, target.side, target.line)
     ? undefined
@@ -173,7 +169,7 @@ function rangesEqual(left: ReviewLineRange | undefined, right: ReviewLineRange |
 }
 
 /** Return whether a save precondition names the active draft's exact anchor. */
-function draftMatchesTarget(draft: ReviewDraftNote, target: ReviewNoteTargetV1) {
+function draftMatchesTarget(draft: ReviewDraftNote, target: ReviewNoteTarget) {
   const anchor = draft.anchor;
   if ("line" in target) {
     if (draft.targetKind === "range") return false;
@@ -199,9 +195,9 @@ function draftMatchesTarget(draft: ReviewDraftNote, target: ReviewNoteTargetV1) 
 /** Reject ranges that name absent rows, collapsed gaps, or an unrelated preferred line. */
 function checkRangeTarget(
   producer: ReviewProducer,
-  file: ReviewFileV1,
-  target: ReviewRangeTargetV1,
-): HunkReviewFailureV1 | undefined {
+  file: ReviewFile,
+  target: ReviewRangeTarget,
+): ReviewFailure | undefined {
   const issue = reviewRangeTargetCoverageIssue(file.hunks, target);
   if (!issue) return undefined;
   if (issue === "preferred") {
@@ -231,8 +227,8 @@ function checkRangeTarget(
 function checkAgainstReview(
   producer: ReviewProducer,
   state: ReviewState,
-  action: HunkReviewActionV1,
-): HunkReviewFailureV1 | undefined {
+  action: RemoteReviewIntent,
+): ReviewFailure | undefined {
   if (action.type === "notes/add-user" && action.target) {
     const file = requireReviewFile(state, action.fileKey);
     if (!("line" in action.target)) {
@@ -333,8 +329,8 @@ const AGENT_REVEALED_SELECTION_TYPES: ReadonlySet<string> = new Set([
  */
 function actorPolicy(
   producer: ReviewProducer,
-  envelope: HunkReviewActionEnvelopeV1,
-): "apply" | "no-op" | HunkReviewFailureV1 {
+  envelope: ReviewActionEnvelope,
+): "apply" | "no-op" | ReviewFailure {
   if (envelope.actor.kind !== "browser") return "apply";
   if (BROWSER_LOCAL_SELECTION_TYPES.has(envelope.action.type)) {
     return fail(
@@ -362,7 +358,7 @@ function actorPolicy(
  * Authorship is a label, not an identity: an actor's display name fills it only when the
  * note names none.
  */
-function intentForActor(envelope: HunkReviewActionEnvelopeV1) {
+function intentForActor(envelope: ReviewActionEnvelope) {
   const intent = toReviewIntent(envelope.action);
   if (intent.type === "notes/add-user" && intent.author === undefined) {
     const displayName = envelope.actor.displayName;
@@ -381,8 +377,8 @@ function intentForActor(envelope: HunkReviewActionEnvelopeV1) {
  */
 export function applySessionReviewAction(
   producer: ReviewProducer,
-  envelope: HunkReviewActionEnvelopeV1,
-): HunkReviewActionResultV1 {
+  envelope: ReviewActionEnvelope,
+): ReviewActionResult {
   const position = checkPosition(producer, envelope);
   if (position) {
     return position;

@@ -21,7 +21,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { formatReviewAddress, type ReviewAddress } from "../../core/review/address";
-import { formatReviewSidebarStat, reviewFileChangeGlyph } from "../../core/review/fileLabels";
+import { reviewFileChangeGlyph } from "../../core/review/fileLabels";
+import { formatAddedBadge, formatRemovedBadge } from "../format/lineCounts";
 import type { WebKeymap } from "../commands/keyboard";
 import type { WebCommand } from "../commands/webCommandTable";
 import { matchWebLocalChord, type WebLocalCommandId } from "../commands/webLocalCommands";
@@ -404,6 +405,12 @@ export function useReviewTools(options: ReviewToolsOptions) {
     (items: readonly PaletteEntry[], query: string) => rankPaletteEntries(items, query, recents),
     [recents],
   );
+  // Recently run commands lead the empty palette under their own heading; the rest sit under
+  // their category.
+  const paletteSectionOf = useCallback(
+    (entry: PaletteEntry) => (recents.includes(entry.id) ? "Recent" : entry.category),
+    [recents],
+  );
   const runEntry = useCallback(
     (entry: PaletteEntry) => {
       const next = rememberRecentCommand(recents, entry.id);
@@ -451,11 +458,20 @@ export function useReviewTools(options: ReviewToolsOptions) {
         rank={rankCommands}
         itemKey={(entry) => entry.id}
         empty="No matching commands."
-        renderItem={(entry) => (
+        sectionOf={paletteSectionOf}
+        renderItem={(entry, { sectioned }) => (
           <>
             <span className="picker-title">{entry.title}</span>
-            <span className="picker-category">{entry.category}</span>
-            {entry.keys ? <kbd className="picker-keys">{entry.keys}</kbd> : null}
+            {sectioned ? null : <span className="picker-category">{entry.category}</span>}
+            {entry.keys ? (
+              <span className="picker-keys">
+                {entry.keys.split(" / ").map((chord) => (
+                  <kbd key={chord} className="key-hint">
+                    {chord}
+                  </kbd>
+                ))}
+              </span>
+            ) : null}
           </>
         )}
         onPick={runEntry}
@@ -483,11 +499,9 @@ export function useReviewTools(options: ReviewToolsOptions) {
               <span className="picker-title">{entry.path}</span>
               <span className="picker-stats">
                 <span className="stat-add">
-                  {formatReviewSidebarStat("+", entry.stats.additions, entry.stats.truncated)}
+                  {formatAddedBadge(entry.stats.additions, entry.stats.truncated)}
                 </span>{" "}
-                <span className="stat-del">
-                  {formatReviewSidebarStat("-", entry.stats.deletions)}
-                </span>
+                <span className="stat-del">{formatRemovedBadge(entry.stats.deletions)}</span>
               </span>
             </>
           );
@@ -506,6 +520,8 @@ export function useReviewTools(options: ReviewToolsOptions) {
   return {
     overlay,
     toggleHelp: useCallback(() => open("help"), [open]),
+    /** Open the command palette, as the toolbar's Commands button does. */
+    openPalette: useCallback(() => open("palette"), [open]),
     /** Jump to one file from the sidebar, as a new history entry. */
     jumpToFile: useCallback((fileKey: string) => jumpTo({ kind: "file", fileKey }), [jumpTo]),
   };

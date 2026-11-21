@@ -6,7 +6,7 @@ import { reviewResourceId } from "../../core/review/resources";
 import { createReviewStore } from "../../core/review/store";
 import {
   HUNK_REVIEW_PROTOCOL_VERSION,
-  type HunkReviewActionV1,
+  type RemoteReviewIntent,
 } from "../../session/reviewProtocol";
 import { applySessionReviewAction, readSessionReviewResource } from "./reviewCommands";
 
@@ -58,7 +58,7 @@ function createProducerForFile(file: ReturnType<typeof createTestDiffFile>) {
   return { producer, publication, file: publication.document.files[0]! };
 }
 
-function envelope(action: HunkReviewActionV1, generation: string, expectedStateRevision?: number) {
+function envelope(action: RemoteReviewIntent, generation: string, expectedStateRevision?: number) {
   return {
     protocolVersion: HUNK_REVIEW_PROTOCOL_VERSION,
     generation,
@@ -624,7 +624,7 @@ describe("applySessionReviewAction", () => {
 describe("applySessionReviewAction actor policy", () => {
   test("refuses every draft intent from a browser and leaves the draft slot alone", () => {
     const { producer, publication, store, file } = createTestProducer();
-    const draftActions: HunkReviewActionV1[] = [
+    const draftActions: RemoteReviewIntent[] = [
       { type: "notes/start-draft", fileKey: file.key, hunkIndex: 0 },
       { type: "notes/start-edit", noteId: "user:1" },
       { type: "notes/start-reply", noteId: "user:1" },

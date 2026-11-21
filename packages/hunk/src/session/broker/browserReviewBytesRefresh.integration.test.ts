@@ -21,9 +21,9 @@ import {
 import {
   HUNK_REVIEW_CAPABILITY_HEADER,
   reviewHttpPath,
-  type HunkReviewHttpRoute,
+  type ReviewHttpRoute,
 } from "../reviewHttpProtocol";
-import type { HunkReviewRefreshResultV1 } from "../reviewProtocol";
+import type { ReviewRefreshResult } from "../reviewProtocol";
 import { reviewErrorMessage } from "../reviewErrorCatalog";
 import { BrowserReviewServer } from "./browserReviewServer";
 import { REVIEW_REFRESH_MIN_INTERVAL_MS } from "./state";
@@ -59,10 +59,7 @@ function start(files: DiffFile[], options: ReviewSessionHarnessOptions = {}) {
   });
   running.push({ review, server });
   const origin = `http://127.0.0.1:${server.port}`;
-  const request = (
-    route: HunkReviewHttpRoute,
-    init: RequestInit & { token?: string | null } = {},
-  ) => {
+  const request = (route: ReviewHttpRoute, init: RequestInit & { token?: string | null } = {}) => {
     const { token = reviewProcessCapability().token, ...rest } = init;
     const headers = new Headers(rest.headers);
     if (token !== null) headers.set(HUNK_REVIEW_CAPABILITY_HEADER, token);
@@ -187,7 +184,7 @@ describe("browser review surface: refresh", () => {
       release = resolve;
     });
     const { harness, request } = start([createTestDiffFile()], {
-      refreshReview: async (): Promise<HunkReviewRefreshResultV1> => {
+      refreshReview: async (): Promise<ReviewRefreshResult> => {
         calls += 1;
         await gate;
         return { ok: true, ...harness.producer.getPublicationAddress() };

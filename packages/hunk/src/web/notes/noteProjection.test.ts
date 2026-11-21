@@ -1,13 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import type { ReviewStoredNote } from "../../core/review/state";
-import type { ReviewNoteV1 } from "../../core/review/types";
-import type { ReviewSharedNoteV1 } from "../../session/reviewSharedState";
+import type { ReviewNote } from "../../core/review/types";
+import type { ReviewSharedNote } from "../../session/reviewSharedState";
 import {
   countVisibleNotesByFile,
   MAX_NOTE_THREAD_DEPTH,
   planReviewFileNotes,
   reviewComposerPlacement,
   reviewNotePlacement,
+  webNoteAuthor,
 } from "./noteProjection";
 
 /** Two hunks: new lines 10–14 and 40–44. */
@@ -20,7 +21,7 @@ const FILE = {
 };
 
 /** One note on `FILE` anchored at a new-side line, owned by a hunk. */
-function createTestNote(id: string, line: number, overrides: Partial<ReviewNoteV1> = {}) {
+function createTestNote(id: string, line: number, overrides: Partial<ReviewNote> = {}) {
   return {
     id,
     source: "agent",
@@ -34,11 +35,11 @@ function createTestNote(id: string, line: number, overrides: Partial<ReviewNoteV
     summary: `note ${id}`,
     editable: false,
     ...overrides,
-  } as ReviewNoteV1;
+  } as ReviewNote;
 }
 
 /** Stored entries for the page store's state. */
-function stored(...notes: ReviewNoteV1[]): ReviewStoredNote[] {
+function stored(...notes: ReviewNote[]): ReviewStoredNote[] {
   return notes.map((note) => ({ note, resolution: "active" }));
 }
 
@@ -88,8 +89,8 @@ describe("reviewComposerPlacement", () => {
   });
 });
 
-describe("planReviewFileNotes titles", () => {
-  test("names a note written through the review link by where it came from", () => {
+describe("webNoteAuthor", () => {
+  test("names a note written through the review link as a reviewer from a browser", () => {
     const fromLink = createTestNote("link", 12, {
       source: "user",
       originalSource: "browser",
@@ -100,7 +101,25 @@ describe("planReviewFileNotes titles", () => {
       state: { liveNotes: [], userNotes: stored(fromLink), showAgentNotes: false },
       sidecar: [],
     }).flatMap((group) => group.cards);
-    expect(card!.title).toBe("Browser note");
+    expect(card!.author).toEqual({ kind: "person", name: "Reviewer", role: "browser" });
+  });
+
+  test("uses the author name, else the origin's word, and drops a chip that repeats it", () => {
+    expect(webNoteAuthor(createTestNote("a", 12, { author: "sonnet" }))).toEqual({
+      kind: "agent",
+      name: "sonnet",
+      role: "agent",
+    });
+    expect(webNoteAuthor(createTestNote("b", 12))).toEqual({ kind: "agent", name: "Agent" });
+    expect(webNoteAuthor(createTestNote("c", 12, { source: "user", author: "user" }))).toEqual({
+      kind: "person",
+      name: "Reviewer",
+    });
+    expect(
+      webNoteAuthor(
+        createTestNote("d", 12, { source: "user", originalSource: "browser", author: "Ana" }),
+      ),
+    ).toEqual({ kind: "person", name: "Ana", role: "browser" });
   });
 });
 
@@ -112,7 +131,7 @@ describe("planReviewFileNotes", () => {
         parentId: index === 0 ? "root" : `reply-${index - 1}`,
       }),
     );
-    const sidecar: ReviewSharedNoteV1[] = [
+    const sidecar: ReviewSharedNote[] = [
       {
         note: createTestNote("side", 12, { source: "ai" }),
         resolution: "active",
@@ -127,18 +146,18 @@ describe("planReviewFileNotes", () => {
     });
 
     expect(groups).toHaveLength(1);
-    expect(groups[0]!.cards.map((card) => [card.id, card.depth])).toEqual([
-      ["side", 0],
-      ["root", 0],
-      ["reply-0", 1],
-      ["reply-1", 2],
-      ["reply-2", MAX_NOTE_THREAD_DEPTH],
-      ["reply-3", MAX_NOTE_THREAD_DEPTH],
-      ["reply-4", MAX_NOTE_THREAD_DEPTH],
+    expect(groups[0]!.cards.map((card) => [card.id, card.threadId, card.depth])).toEqual([
+      ["side", "side", 0],
+      ["root", "root", 0],
+      ["reply-0", "root", 1],
+      ["reply-1", "root", 2],
+      ["reply-2", "root", MAX_NOTE_THREAD_DEPTH],
+      ["reply-3", "root", MAX_NOTE_THREAD_DEPTH],
+      ["reply-4", "root", MAX_NOTE_THREAD_DEPTH],
     ]);
   });
 
-  test("titles notes as the terminal does and marks stale ones", () => {
+  test("names authors, ages, and locations in words, and marks stale ones", () => {
     const agent = createTestNote("agent", 12, { author: "sonnet" });
     const anonymous = createTestNote("anon", 41);
     const mine = createTestNote("mine", 42, {
@@ -156,10 +175,10 @@ describe("planReviewFileNotes", () => {
       now: 5 * 60_000,
     });
     const cards = groups.flatMap((group) => group.cards);
-    expect(cards.map((card) => [card.title, card.rangeLabel, card.stale])).toEqual([
-      ["sonnet", "R12", false],
-      ["Agent note", "R41", true],
-      ["Your note · 5m", "R42", false],
+    expect(cards.map((card) => [card.author.name, card.age, card.location, card.stale])).toEqual([
+      ["sonnet", "", "line 12", false],
+      ["Agent", "", "line 41", true],
+      ["Reviewer", "5m", "line 42", false],
     ]);
   });
 
@@ -169,7 +188,7 @@ describe("planReviewFileNotes", () => {
       userNotes: stored(createTestNote("mine", 42, { source: "user" })),
       showAgentNotes: false,
     };
-    const sidecar: ReviewSharedNoteV1[] = [
+    const sidecar: ReviewSharedNote[] = [
       { note: createTestNote("side", 13), resolution: "active", origin: "sidecar" },
     ];
     const ids = planReviewFileNotes({ file: FILE, state, sidecar }).flatMap((group) =>

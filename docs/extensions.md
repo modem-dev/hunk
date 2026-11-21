@@ -445,7 +445,7 @@ then copies and freezes the accepted value. `provider` and change-request `id` a
 `patch` cannot carry review metadata. An ordinary `hunk patch` has no descriptor.
 
 The descriptor describes the review source rather than its diff contents: it stays on the app
-bootstrap and does not enter changeset transforms or `ReviewDocumentV1`. Refreshing the same
+bootstrap and does not enter changeset transforms or `ReviewDocument`. Refreshing the same
 file-backed patch preserves it, including watch and manual refresh; an explicit reload to a
 different patch path or input kind clears it. Opening a commit from interactive `hunk log` attaches
 a commit descriptor from the selected provider history row and preserves it while refreshing that

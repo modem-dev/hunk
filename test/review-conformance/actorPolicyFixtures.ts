@@ -7,10 +7,10 @@
  */
 import type { DiffFile } from "../../packages/hunk/src/core/changeset/model";
 import { MAX_REVIEW_NOTES } from "../../packages/hunk/src/core/review/noteSize";
-import type { ReviewDocumentV1 } from "../../packages/hunk/src/core/review/types";
+import type { ReviewDocument } from "../../packages/hunk/src/core/review/types";
 import type {
-  HunkReviewActionV1,
-  HunkReviewActorV1,
+  RemoteReviewIntent,
+  ReviewActor,
 } from "../../packages/hunk/src/session/reviewProtocol";
 import { createTestDiffFile, createTestSourceFetcher, lines } from "../helpers/diff-helpers";
 
@@ -18,8 +18,8 @@ import { createTestDiffFile, createTestSourceFetcher, lines } from "../helpers/d
 export type ReviewActorPolicyStep =
   | {
       kind: "action";
-      actor: HunkReviewActorV1;
-      action: (document: ReviewDocumentV1) => HunkReviewActionV1;
+      actor: ReviewActor;
+      action: (document: ReviewDocument) => RemoteReviewIntent;
       /**
        * How the action reaches the session: through the review link's capability (a browser
        * tab, the HTTP surface) or through the authenticated session API (`hunk session`).
@@ -58,9 +58,9 @@ export interface ReviewActorPolicyConsumer {
   project: (fixture: ReviewActorPolicyFixture) => Promise<ReviewActorPolicyProjection>;
 }
 
-const BROWSER: HunkReviewActorV1 = { clientId: "tab-1", kind: "browser", displayName: "Ana" };
-const OTHER_BROWSER: HunkReviewActorV1 = { clientId: "tab-2", kind: "browser" };
-const AGENT: HunkReviewActorV1 = { clientId: "agent-1", kind: "agent" };
+const BROWSER: ReviewActor = { clientId: "tab-1", kind: "browser", displayName: "Ana" };
+const OTHER_BROWSER: ReviewActor = { clientId: "tab-2", kind: "browser" };
+const AGENT: ReviewActor = { clientId: "agent-1", kind: "agent" };
 
 /** A twelve-line file whose line 8 changed, readable in full so its gaps can expand. */
 function sourcedFile(id: string, changed = "800") {
@@ -83,7 +83,7 @@ export function reviewActorPolicyChannel(step: Extract<ReviewActorPolicyStep, { 
 }
 
 /** The key of the file at one index. */
-const keyAt = (document: ReviewDocumentV1, index: number) => document.files[index]!.key;
+const keyAt = (document: ReviewDocument, index: number) => document.files[index]!.key;
 
 export const REVIEW_ACTOR_POLICY_FIXTURES: readonly ReviewActorPolicyFixture[] = [
   {

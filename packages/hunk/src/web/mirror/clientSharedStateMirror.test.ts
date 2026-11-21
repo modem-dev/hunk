@@ -1,16 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import type {
-  HunkReviewPublicationBodyV1,
-  HunkReviewStateBodyV1,
-} from "../../session/reviewHttpProtocol";
-import type { ReviewSharedStateV1 } from "../../session/reviewSharedState";
+import type { ReviewPublicationBody, ReviewStateBody } from "../../session/reviewHttpProtocol";
+import type { ReviewSharedState } from "../../session/reviewSharedState";
 import type { ReviewApiClient } from "../transport/apiClient";
 import { ReviewApiError } from "../transport/apiClient";
 import {
-  ReviewSharedStateMirror,
+  ClientSharedStateMirror,
   reviewPublicationNeedsState,
   reviewStateBodySupersedes,
-} from "./sharedStateMirror";
+} from "./clientSharedStateMirror";
 
 const FIRST = "generation:p1:1";
 const SECOND = "generation:p1:2";
@@ -20,14 +17,14 @@ function createTestPublication(
   generation: string,
   stateRevision: number,
   sharedStateRevision?: number,
-): HunkReviewPublicationBodyV1 {
+): ReviewPublicationBody {
   return {
     protocolVersion: 1,
     sessionId: "s",
     publication: { generation, stateRevision },
     ...(sharedStateRevision !== undefined ? { sharedStateRevision } : {}),
     catalog: { generation, resources: [] },
-  } as unknown as HunkReviewPublicationBodyV1;
+  } as unknown as ReviewPublicationBody;
 }
 
 /** A state body at one position and shared revision. */
@@ -35,26 +32,26 @@ function createTestStateBody(
   generation: string,
   sharedStateRevision: number,
   stateRevision = 0,
-): HunkReviewStateBodyV1 {
+): ReviewStateBody {
   return {
     protocolVersion: 1,
     sessionId: "s",
     publication: { generation, stateRevision },
     sharedStateRevision,
-    state: { generation, sharedStateRevision } as unknown as ReviewSharedStateV1,
+    state: { generation, sharedStateRevision } as unknown as ReviewSharedState,
   };
 }
 
 /** A client whose state reads answer from a queue the test controls. */
 function createTestClient() {
   const pending: Array<{
-    resolve: (body: HunkReviewStateBodyV1) => void;
+    resolve: (body: ReviewStateBody) => void;
     reject: (error: unknown) => void;
     signal?: AbortSignal;
   }> = [];
   const client = {
     state: (signal?: AbortSignal) =>
-      new Promise<HunkReviewStateBodyV1>((resolve, reject) => {
+      new Promise<ReviewStateBody>((resolve, reject) => {
         pending.push({ resolve, reject, signal });
       }),
   } as unknown as ReviewApiClient;
@@ -85,10 +82,10 @@ describe("shared-state ordering", () => {
   });
 });
 
-describe("ReviewSharedStateMirror", () => {
+describe("ClientSharedStateMirror", () => {
   test("fetches once per position and lets a newer request supersede an older one", async () => {
     const { client, pending } = createTestClient();
-    const mirror = new ReviewSharedStateMirror({ client });
+    const mirror = new ClientSharedStateMirror({ client });
 
     mirror.observe(createTestPublication(FIRST, 0, 1));
     mirror.observe(createTestPublication(FIRST, 1, 1));
@@ -109,7 +106,7 @@ describe("ReviewSharedStateMirror", () => {
 
   test("hands the file mirror a generation's state, or nothing when it cannot be read", async () => {
     const { client, pending } = createTestClient();
-    const mirror = new ReviewSharedStateMirror({ client });
+    const mirror = new ClientSharedStateMirror({ client });
 
     mirror.observe(createTestPublication(FIRST, 0, 0));
     const waiting = mirror.forGeneration(FIRST);
@@ -126,7 +123,7 @@ describe("ReviewSharedStateMirror", () => {
 
   test("resolves a waiter with nothing once a later generation arrives instead", async () => {
     const { client, pending } = createTestClient();
-    const mirror = new ReviewSharedStateMirror({ client });
+    const mirror = new ClientSharedStateMirror({ client });
 
     mirror.observe(createTestPublication(FIRST, 0, 0));
     const waiting = mirror.forGeneration(FIRST);

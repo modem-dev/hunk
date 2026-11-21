@@ -33,8 +33,8 @@ import {
 import {
   parseReadReviewResourceRequest,
   REVIEW_RESOURCE_CHUNK_BYTES,
-  type ReviewResourceChunkV1,
-  type ReviewResourceDescriptorV1,
+  type ReviewResourceChunk,
+  type ReviewResourceDescriptor,
   type ReviewResourceErrorCode,
   type ReviewRequestErrorCode,
 } from "../../core/review/resources";
@@ -46,7 +46,7 @@ import {
   MAX_REVIEW_SHARED_STATE_BYTES,
   parseReviewSharedStateResourceId,
   reviewSharedStateResourceId,
-  type ReviewSharedStateV1,
+  type ReviewSharedState,
 } from "../../session/reviewSharedState";
 import { buildReviewPublication, type ReviewPublication } from "./publication";
 import { ReviewResourceStore, type ReviewResourceFailure } from "./resourceStore";
@@ -68,7 +68,7 @@ export interface ReviewProducerFailure {
 }
 
 export type ReviewProducerChunkResult =
-  | { ok: true; chunk: ReviewResourceChunkV1 }
+  | { ok: true; chunk: ReviewResourceChunk }
   | ReviewProducerFailure;
 
 export interface ReviewProducerOptions {
@@ -127,7 +127,7 @@ export interface ReviewSharedStateSource {
   /** Advances exactly when `build` would return different content. */
   getSharedStateRevision(): number;
   /** Project the snapshot for one generation at the current revision. */
-  build(generation: string): ReviewSharedStateV1;
+  build(generation: string): ReviewSharedState;
   /** Record that an agent asked every surface to show this place (G2). */
   recordAgentReveal?(target: { fileKey: string; hunkIndex: number }): void;
 }
@@ -360,7 +360,7 @@ export class ReviewProducer {
   }
 
   /** Describe every resource this generation offers, measured where it has been produced. */
-  describeResources(): ReviewResourceDescriptorV1[] {
+  describeResources(): ReviewResourceDescriptor[] {
     return this.resourceStore.describeAll();
   }
 

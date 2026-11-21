@@ -103,7 +103,7 @@ test("keeps a composer opened in an expanded gap visible after the gap is collap
   await expect(main.locator('[data-column-number="3"]').first()).toBeVisible({ timeout: 15_000 });
   await main.locator('[data-line="3"]').last().hover();
   await main.locator("[data-utility-button]").click();
-  await expect(page.locator(".note-composer .note-range")).toHaveText("R3");
+  await expect(page.locator(".note-composer .note-range")).toHaveText("line 3");
   await page.locator(".note-composer textarea").fill("Context draft.");
 
   await main.getByRole("button", { name: "Hide expanded lines" }).click();

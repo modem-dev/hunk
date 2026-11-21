@@ -1,7 +1,7 @@
 /**
  * Projects one mirrored review file into what the page hands Pierre and draws around it.
  *
- * This is the browser's one projection from `ReviewFileV1` to rendering, registered against
+ * This is the browser's one projection from `ReviewFile` to rendering, registered against
  * the review conformance corpus. Every geometric fact comes from `core/review`: gap
  * addresses from `expansion.ts`, the reason a file renders nothing from `document.ts`,
  * expanded gaps folded into hunks by `reviewFileWithExpandedGaps`, and expansion state and
@@ -22,7 +22,7 @@ import {
 } from "../../core/review/expansion";
 import { isReviewGapExpanded } from "../../core/review/selectors";
 import type { ReviewState } from "../../core/review/state";
-import type { ReviewFileV1 } from "../../core/review/types";
+import type { ReviewFile } from "../../core/review/types";
 
 /** What one gap shows: folded away, filled in, or why it cannot be filled yet. */
 export type ReviewGapViewState = "collapsed" | "expanded" | "loading" | "error" | "too-large";
@@ -35,7 +35,7 @@ export interface ReviewGapView {
 
 /** Everything the stream needs to draw one file. */
 export interface ReviewFileRenderPlan {
-  file: ReviewFileV1;
+  file: ReviewFile;
   /** Set for a file with no hunks; the page draws a placeholder instead of Pierre. */
   emptyReason?: ReviewEmptyDiffReason;
   /** What Pierre renders, with expanded gaps folded in. */
@@ -47,7 +47,7 @@ export interface ReviewFileRenderPlan {
 }
 
 /** Every gap one file offers, in render order: before each hunk, then trailing. */
-export function reviewFileGaps(file: ReviewFileV1): ReviewGapAddress[] {
+export function reviewFileGaps(file: ReviewFile): ReviewGapAddress[] {
   const source = reviewGapSourceForFile(file);
   const gaps = file.hunks.flatMap((_hunk, index) => {
     const gap = reviewLeadingGap(source, index);
@@ -63,7 +63,7 @@ export function reviewFileGaps(file: ReviewFileV1): ReviewGapAddress[] {
  * Pierre numbers the separator before hunk `h` with `h`, and the one after the last hunk
  * with the hunk count; core names them `before:h` and `trailing:<last>`.
  */
-export function reviewGapIdForSeparator(file: ReviewFileV1, separatorHunkIndex: number) {
+export function reviewGapIdForSeparator(file: ReviewFile, separatorHunkIndex: number) {
   return separatorHunkIndex >= file.hunks.length
     ? reviewGapId("trailing", file.hunks.length - 1)
     : reviewGapId("before", separatorHunkIndex);
@@ -76,7 +76,7 @@ export function reviewGapIdForSeparator(file: ReviewFileV1, separatorHunkIndex: 
  * objects with one key as the same diff and skips the re-render.
  */
 export function toPierreFileDiff(
-  file: ReviewFileV1,
+  file: ReviewFile,
   cacheKey = file.contentIdentity,
 ): FileDiffMetadata {
   return {
@@ -150,7 +150,7 @@ export function reviewDrawnRows(plan: ReviewFileRenderPlan) {
 
 /** Plan one file's rendering against the page's local review state. */
 export function planReviewFileRender(
-  file: ReviewFileV1,
+  file: ReviewFile,
   state: Pick<ReviewState, "expandedGaps" | "sourceStatusByFileKey">,
 ): ReviewFileRenderPlan {
   if (file.hunks.length === 0) {

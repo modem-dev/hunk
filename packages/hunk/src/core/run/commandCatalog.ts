@@ -35,7 +35,7 @@ import {
   selectReviewGapForSelection,
 } from "../review/selectors";
 import type { ReviewState } from "../review/state";
-import type { ReviewNoteTargetV1 } from "../review/types";
+import type { ReviewNoteTarget } from "../review/types";
 
 /** Where one command's effect resolves, and therefore who may invoke it. */
 export type AppCommandLocus = "semantic" | "client-local" | "host-only";
@@ -681,7 +681,7 @@ export interface AppCommandLoweringContext {
    * knows which line the reviewer's cursor was on. Omitted, the note lands on the shared
    * default for the whole hunk.
    */
-  noteTarget?: ReviewNoteTargetV1;
+  noteTarget?: ReviewNoteTarget;
   /**
    * The file and hunk the invoking client's note affordance addressed.
    *

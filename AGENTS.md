@@ -40,7 +40,7 @@ Terminal, agent/session, broker/protocol, extension, and HTTP/SSE consumers shar
 The browser client and UI remain planned. Do not recreate semantic review behavior in a surface:
 
 ```text
-DiffFile[] -> projectReviewDocument -> ReviewDocumentV1 -> ReviewStore
+DiffFile[] -> projectReviewDocument -> ReviewDocument -> ReviewStore
 ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> surface projection
 ```
 
@@ -190,6 +190,23 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
 - Use `layout` for structural placement or arrangement data.
 - Use `geometry` for aggregate spatial data used by rendering, scrolling, or interaction.
 - Use `bounds` for one concrete visible extent within a larger structure.
+- Serialized formats carry their version in the payload (`protocolVersion`, `formatVersion`,
+  `version`), not in the type name. Add a `V<N>` suffix only where code must hold two versions
+  side by side, as the session-broker admin scope does (`SessionBrokerAdminStatusV1`).
+- Prefix a type by its role: `Review*` for review concepts on every tier (model, resources,
+  envelopes, HTTP bodies, events, shared state); `Session*` for the daemon/window session wire;
+  `Hunk*` only for the app's specialization of a runtime-neutral package type
+  (`HunkSessionRegistration`) and product-level public names; `Client*` for the browser page's
+  copy of a session-side concept (`ClientReviewStore`); `Web*` for page-only presentation.
+- Name a top-level message by its transport role — `Envelope` (client request), `Body` (HTTP
+  response body), `Result` (producer answer), `Manifest`/`Index` (build file) — and use model names
+  for what it contains. Core review types are deliberately both model and wire; do not add DTO
+  copies of them.
+- Name a string union inside a format as a vocabulary noun (`…Kind`, `…Code`, `…Tone`,
+  `…Origin`, `…Type`, `…Phase`); a code union takes the name of the failure shape whose `code`
+  carries it.
+- A function named after a type follows the type's name. SCREAMING constants keep the shared
+  `HUNK_*` namespace.
 
 ## review behavior
 

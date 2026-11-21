@@ -38,9 +38,9 @@ import {
   type ReactNode,
 } from "react";
 import type { ReviewState } from "../../core/review/state";
-import type { ReviewFileV1 } from "../../core/review/types";
+import type { ReviewFile } from "../../core/review/types";
 import { reviewHunkIndexAtOffset } from "../../core/review/viewportAnchor";
-import type { ReviewAgentHighlightV1, ReviewSharedNoteV1 } from "../../session/reviewSharedState";
+import type { ReviewAgentHighlight, ReviewSharedNote } from "../../session/reviewSharedState";
 import type { ClientReviewMirrorFileSlot } from "../mirror/clientReviewMirror";
 import type { NoteComposer } from "../notes/composerStore";
 import type { ReviewNoteInteraction } from "../notes/noteInteraction";
@@ -49,7 +49,7 @@ import {
   reservedBodyHeight,
   STREAM_HEADER_HEIGHT_PX,
   STREAM_ROW_HEIGHT_PX,
-  VIEWED_COLLAPSED_HEIGHT_PX,
+  COLLAPSED_BODY_HEIGHT_PX,
   type ReviewViewedControls,
 } from "./FileSection";
 import type { ReviewViewedStatus } from "../viewed/viewedFiles";
@@ -57,7 +57,7 @@ import { planReviewFileRender, reviewDrawnRows, type ReviewFileRenderPlan } from
 import type { ReviewFileGeometry } from "./hunkGeometry";
 import { StreamMeasurements } from "./streamMeasurements";
 
-const NO_HIGHLIGHTS: readonly ReviewAgentHighlightV1[] = [];
+const NO_HIGHLIGHTS: readonly ReviewAgentHighlight[] = [];
 
 /** How far beyond the viewport files mount, and how far before they unmount. */
 const MOUNT_MARGIN = "150% 0px 150% 0px";
@@ -139,9 +139,9 @@ export interface ReviewStreamProps {
   /** Filled in with the stream's scroll commands. */
   controller: MutableRefObject<ReviewStreamController | null>;
   /** The shared snapshot's sidecar annotations. */
-  sidecarNotes: readonly ReviewSharedNoteV1[];
+  sidecarNotes: readonly ReviewSharedNote[];
   /** Agent attention marks by file key. */
-  highlights: Readonly<Record<string, ReviewAgentHighlightV1[]>>;
+  highlights: Readonly<Record<string, ReviewAgentHighlight[]>>;
   /** An exact line or note the next hunk reveal of its file should land on. */
   revealPoint?: ReviewRevealPoint;
   /** Every open composer on the page. */
@@ -150,10 +150,12 @@ export interface ReviewStreamProps {
   interaction: ReviewNoteInteraction;
   /** Each file's viewed mark as the page shows it. */
   viewedStatuses?: ReadonlyMap<string, ReviewViewedStatus>;
-  /** Viewed files whose bodies are collapsed. */
+  /** Files whose bodies are collapsed: viewed files, and files the reader folded. */
   collapsedFiles?: ReadonlySet<string>;
-  /** What the viewed controls do; stable for the page's lifetime. */
+  /** What the viewed and collapse controls do; stable for the page's lifetime. */
   viewed?: ReviewViewedControls;
+  /** The keymap's chord for toggling the selected file's viewed mark, shown on its header. */
+  viewedKeyHint?: string;
   /** What an empty stream says, when the page knows better than "no files". */
   emptyMessage?: ReactNode;
 }
@@ -207,10 +209,10 @@ interface RevealHold {
 /** Plans one file per document state, reusing the previous plan when nothing it reads moved. */
 function usePlans(review: ReviewState) {
   const cache = useRef(
-    new WeakMap<ReviewFileV1, { gaps: string; status: unknown; plan: ReviewFileRenderPlan }>(),
+    new WeakMap<ReviewFile, { gaps: string; status: unknown; plan: ReviewFileRenderPlan }>(),
   );
   return useCallback(
-    (file: ReviewFileV1) => {
+    (file: ReviewFile) => {
       const gaps = review.expandedGaps
         .filter((gap) => gap.fileKey === file.key)
         .map((gap) => `${gap.gapId}:${gap.expanded}`)
@@ -411,6 +413,19 @@ export function ReviewStream(props: ReviewStreamProps) {
   const { fileTopToken, hunkToken } = review.reveal;
   const selectedKey = review.selection.fileKey;
   const selectedHunk = review.selection.hunkIndex;
+  // Only the file that draws the active note is handed it, so moving the mark re-renders one or
+  // two sections rather than every file in the stream.
+  const activeNoteId = review.activeNoteId;
+  const activeNoteFileKey = useMemo(() => {
+    if (!activeNoteId) return undefined;
+    const stored = [...review.liveNotes, ...review.userNotes].find(
+      (entry) => entry.note.id === activeNoteId,
+    );
+    return (
+      stored?.note.fileKey ??
+      props.sidecarNotes.find((entry) => entry.note.id === activeNoteId)?.note.fileKey
+    );
+  }, [activeNoteId, review.liveNotes, review.userNotes, props.sidecarNotes]);
   useEffect(() => {
     if (fileTopToken === 0 || !selectedKey) return;
     reveal(selectedKey);
@@ -508,7 +523,7 @@ export function ReviewStream(props: ReviewStreamProps) {
           result.set(
             slot.key,
             current.collapsedFiles?.has(slot.key)
-              ? VIEWED_COLLAPSED_HEIGHT_PX
+              ? COLLAPSED_BODY_HEIGHT_PX
               : (heights.get(slot.key) ??
                   reservedBodyHeight(file ? plan(file) : undefined, slot.index, current.layout)),
           );
@@ -660,7 +675,7 @@ export function ReviewStream(props: ReviewStreamProps) {
     };
   }, []);
 
-  // A viewed file that collapses unmounts its diff view while staying in the mounted window,
+  // A file that collapses unmounts its diff view while staying in the mounted window,
   // so its hunk geometry would outlive the drawing it describes.
   useEffect(() => {
     for (const fileKey of props.collapsedFiles ?? NO_COLLAPSED) {
@@ -668,7 +683,7 @@ export function ReviewStream(props: ReviewStreamProps) {
     }
   }, [props.collapsedFiles]);
 
-  // Collapsing or opening a viewed file, wrapping, or a layout switch moves every file below
+  // Collapsing or opening a file, wrapping, or a layout switch moves every file below
   // it without a scroll; overviews hear about it here as well as from measured bodies.
   useEffect(() => {
     for (const listener of Array.from(layoutListeners.current)) listener();
@@ -698,6 +713,8 @@ export function ReviewStream(props: ReviewStreamProps) {
             measuredHeight={heights.get(slot.key)}
             selected={selected}
             {...(selected ? { selectedHunk } : {})}
+            {...(selected && props.viewedKeyHint ? { viewedKeyHint: props.viewedKeyHint } : {})}
+            {...(slot.key === activeNoteFileKey ? { activeNoteId } : {})}
             layout={props.layout}
             wrapLines={props.wrapLines}
             showLineNumbers={props.showLineNumbers}

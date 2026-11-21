@@ -11,12 +11,29 @@
  * from the shared `reviewFileChangeGlyph` rather than Pierre's own status vocabulary (which
  * would show `U` where the terminal shows `?`). Pierre's status lane is kept for its row
  * coloring hooks and restyled with stylesheet rules generated from the shared helper.
+ *
+ * Review state rides on the one row decoration Pierre allows per row, which is text parts
+ * with a color each (an icon decoration would replace the text). Each mark's color is a
+ * named custom property (`var(--sidebar-mark-viewed)`), and the stylesheet keys on that name
+ * in the part's inline style (`treeMarkStyles`): a speech bubble before a note count, the
+ * dimmed name of a viewed row. The viewed and changed marks are the text glyphs `✓` and `↻`;
+ * an icon image cannot reach the shadow root under the page's CSP and its no-SVG-blob rule.
+ * Directory rows carry their viewed roll-up (`1/40`) the same way.
+ * Pierre names a row by its file name alone, so the counts read aloud through the
+ * decoration's `title` ("2 notes · Viewed").
  */
 import { FileTree, useFileTree } from "@pierre/trees/react";
 import { useEffect, useMemo, useRef, type MouseEvent as ReactMouseEvent } from "react";
 import { reviewFileChangeGlyph, reviewSidebarBadges } from "../../core/review/fileLabels";
 import type { ReviewFileChangeKind } from "../../core/review/types";
+import { formatCount } from "../format/lineCounts";
 import { sidebarEntry, treePathsOf, type FileSidebarProps } from "./sidebarEntry";
+import {
+  directoryViewedRollups,
+  formatNoteCountLabel,
+  formatViewedRollup,
+  showsViewedRollup,
+} from "./viewedRollup";
 
 /** Pierre tree's status vocabulary for one change kind. */
 function gitStatusOf(changeKind: ReviewFileChangeKind, untracked: boolean) {
@@ -71,12 +88,65 @@ export function treeRowStyles() {
     `[data-item-section="git"] { min-width: 1.4em; font-weight: 600; font-family: var(--code-font); }`,
     `[data-item-section="git"] > * { display: none; }`,
     ...letters,
+    ...treeMarkStyles(),
   ].join("\n");
+}
+
+/** The review marks a tree row's decoration can carry, each named by its color property. */
+const TREE_MARKS = {
+  notes: "--sidebar-mark-notes",
+  viewed: "--sidebar-mark-viewed",
+  changed: "--sidebar-mark-changed",
+  rollup: "--sidebar-mark-rollup",
+  rollupComplete: "--sidebar-mark-rollup-complete",
+} as const;
+
+/** The decoration-part color that tags a part as one mark. */
+function markColor(mark: keyof typeof TREE_MARKS) {
+  return `var(${TREE_MARKS[mark]})`;
+}
+
+/** A selector for the decoration parts tagged as one mark. */
+function markPart(mark: keyof typeof TREE_MARKS) {
+  return `[data-item-section="decoration"] span[style*="${markColor(mark)}"]`;
+}
+
+/**
+ * Stylesheet rules for the review marks on tree rows.
+ *
+ * Sets each mark's color from theme tokens (viewed in the "added" family, changed since
+ * viewed in the accent), draws the note bubble, dims a viewed row's name, gives the selected row
+ * the flat list's accent marker, and keeps hover neutral instead of Pierre's accent tint.
+ */
+export function treeMarkStyles() {
+  const added = "var(--hunk-badge-added, #1a7f37)";
+  return [
+    `:host { ${TREE_MARKS.notes}: var(--hunk-text); ${TREE_MARKS.viewed}: ${added};` +
+      ` ${TREE_MARKS.changed}: var(--hunk-accent); ${TREE_MARKS.rollup}: var(--hunk-muted);` +
+      ` ${TREE_MARKS.rollupComplete}: ${added}; --trees-bg-muted: var(--hunk-panel-alt); }`,
+    `[data-item-section="decoration"] > span { gap: 6px; font-variant-numeric: tabular-nums; }`,
+    `[data-item-section="decoration"] > span > span { display: inline-flex; align-items: center; }`,
+    // A speech bubble drawn in CSS: the page's CSP and its rule against SVG blobs leave the
+    // tree's shadow root no way to load the icon module's SVG.
+    `${markPart("notes")} { position: relative; padding-left: 15px; }`,
+    `${markPart("notes")}::before { content: ""; position: absolute; left: 1px; top: 50%;` +
+      ` width: 9px; height: 7px; margin-top: -5px; border: 1.5px solid var(--hunk-muted);` +
+      ` border-radius: 2px; }`,
+    `${markPart("notes")}::after { content: ""; position: absolute; left: 3px; top: 50%;` +
+      ` margin-top: 3px; border-left: 1.5px solid var(--hunk-muted);` +
+      ` border-top: 3px solid var(--hunk-muted); width: 0; height: 0; }`,
+    `${markPart("viewed")}, ${markPart("changed")} { font-weight: 600; }`,
+    `[data-type="item"]:has(${markPart("viewed")}) > [data-item-section="content"]` +
+      ` { color: var(--hunk-muted); }`,
+    `[data-type="item"][data-item-selected="true"]::after { content: ""; position: absolute;` +
+      ` left: 0; top: 4px; bottom: 4px; width: 3px; border-radius: 2px;` +
+      ` background: var(--hunk-accent); }`,
+  ];
 }
 
 /** CSS color for one badge kind, from the active theme's tokens; matches the flat list. */
 const BADGE_COLOR = {
-  "agent-comment": "var(--hunk-text)",
+  "agent-comment": markColor("notes"),
   addition: "var(--hunk-badge-added)",
   deletion: "var(--hunk-badge-removed)",
 } as const;
@@ -108,11 +178,35 @@ export default function TreeSidebar({
     [entries, paths],
   );
   const order = useMemo(() => reviewOrderIndex(paths), [paths]);
+  const rollups = useMemo(
+    () =>
+      directoryViewedRollups(
+        entries.map((entry, index) => ({ key: entry.key, path: paths[index]! })),
+        viewedStatuses,
+      ),
+    [entries, paths, viewedStatuses],
+  );
   const following = useRef(false);
   // Re-selects the store's selected file in the tree; set once the model exists.
   const followSelection = useRef(() => {});
-  const latest = useRef({ byPath, noteCounts, onSelectFile, order, selectedKey, viewedStatuses });
-  latest.current = { byPath, noteCounts, onSelectFile, order, selectedKey, viewedStatuses };
+  const latest = useRef({
+    byPath,
+    noteCounts,
+    onSelectFile,
+    order,
+    rollups,
+    selectedKey,
+    viewedStatuses,
+  });
+  latest.current = {
+    byPath,
+    noteCounts,
+    onSelectFile,
+    order,
+    rollups,
+    selectedKey,
+    viewedStatuses,
+  };
   const reviewOrderOf = (path: string) =>
     latest.current.order.get(path.replace(/\/+$/u, "")) ?? Number.MAX_SAFE_INTEGER;
 
@@ -143,27 +237,41 @@ export default function TreeSidebar({
       queueMicrotask(() => followSelection.current());
     },
     renderRowDecoration: ({ row }) => {
-      const entry = row.kind === "file" ? latest.current.byPath.get(row.path) : undefined;
+      if (row.kind === "directory") {
+        const rollup = latest.current.rollups.get(row.path.replace(/\/+$/u, ""));
+        if (!showsViewedRollup(rollup)) return null;
+        const { text, label, complete } = formatViewedRollup(rollup);
+        return {
+          text,
+          title: label,
+          parts: [{ text, color: markColor(complete ? "rollupComplete" : "rollup") }],
+        };
+      }
+      const entry = latest.current.byPath.get(row.path);
       if (!entry) return null;
-      const badges: { text: string; color: string }[] = reviewSidebarBadges(
-        sidebarEntry(entry, 0, latest.current.noteCounts.get(entry.key) ?? 0),
-      ).map((badge) => ({ text: badge.text, color: BADGE_COLOR[badge.kind] }));
+      const noteCount = latest.current.noteCounts.get(entry.key) ?? 0;
+      // The note badge prints its bare count; the stylesheet draws the bubble before it.
+      const parts: { text: string; color: string }[] = reviewSidebarBadges(
+        sidebarEntry(entry, 0, noteCount),
+      ).map((badge) => ({
+        text: badge.kind === "agent-comment" ? formatCount(noteCount) : badge.text,
+        color: BADGE_COLOR[badge.kind],
+      }));
+      const titles = noteCount > 0 ? [formatNoteCountLabel(noteCount)] : [];
       const viewed = latest.current.viewedStatuses?.get(entry.key);
-      if (viewed === "viewed") badges.push({ text: "✓", color: "var(--hunk-muted)" });
-      if (viewed === "changed") badges.push({ text: "Δ", color: "var(--hunk-accent)" });
-      if (badges.length === 0) return null;
+      if (viewed === "viewed") {
+        parts.push({ text: "✓", color: markColor("viewed") });
+        titles.push("Viewed");
+      }
+      if (viewed === "changed") {
+        parts.push({ text: "↻", color: markColor("changed") });
+        titles.push("Changed since viewed");
+      }
+      if (parts.length === 0) return null;
       return {
-        text: badges.map((badge) => badge.text).join(" "),
-        ...(viewed === "viewed"
-          ? { title: "Viewed" }
-          : viewed === "changed"
-            ? { title: "Changed since viewed" }
-            : {}),
-        // The separator rides on each later badge; a part of only whitespace is dropped.
-        parts: badges.map((badge, index) => ({
-          text: index > 0 ? `\u00a0${badge.text}` : badge.text,
-          color: badge.color,
-        })),
+        text: parts.map((part) => part.text).join(" "),
+        ...(titles.length > 0 ? { title: titles.join(" · ") } : {}),
+        parts,
       };
     },
   });
@@ -184,8 +292,8 @@ export default function TreeSidebar({
     );
   }, [model, paths, entries]);
 
-  // Note badges are row decorations, which the tree repaints only when a row changes; clearing
-  // and restating the statuses changes every row.
+  // Note badges, viewed marks, and folder roll-ups are row decorations, which the tree repaints
+  // only when a row changes; clearing and restating the statuses changes every row.
   const firstCounts = useRef(true);
   useEffect(() => {
     if (firstCounts.current) {

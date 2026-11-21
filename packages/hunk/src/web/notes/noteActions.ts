@@ -14,9 +14,9 @@
  */
 import { isBlankReviewNoteBody } from "../../core/review/intents";
 import { reviewNoteWithinSizeLimit } from "../../core/review/noteSize";
-import type { ReviewNoteV1 } from "../../core/review/types";
+import type { ReviewNote } from "../../core/review/types";
 import { reviewErrorMessage } from "../../session/reviewErrorCatalog";
-import type { HunkReviewActionV1 } from "../../session/reviewProtocol";
+import type { RemoteReviewIntent } from "../../session/reviewProtocol";
 import type { ReviewActionOutcome, ReviewActionSender } from "../actions/reviewActions";
 import type { NoteComposer, NoteComposerStore } from "./composerStore";
 
@@ -26,7 +26,7 @@ export function noteBodyIssue(
 ): "blank-note" | "note-too-large" | undefined {
   if (isBlankReviewNoteBody(composer.body)) return "blank-note";
   // The note the session would store, with the largest fields it adds filled in.
-  const candidate: ReviewNoteV1 = {
+  const candidate: ReviewNote = {
     id: "browser:size-check-0000000000000000",
     source: "user",
     originalSource: "browser",
@@ -42,7 +42,7 @@ export function noteBodyIssue(
 }
 
 /** The action one composer sends. */
-export function noteComposerAction(composer: NoteComposer): HunkReviewActionV1 {
+export function noteComposerAction(composer: NoteComposer): RemoteReviewIntent {
   if (composer.kind === "edit") {
     return { type: "notes/edit-user", noteId: composer.noteId!, body: composer.body };
   }
@@ -56,7 +56,7 @@ export function noteComposerAction(composer: NoteComposer): HunkReviewActionV1 {
     ...(composer.kind === "new" && composer.expandedLineProof
       ? { expandedLineProof: composer.expandedLineProof }
       : {}),
-  } as HunkReviewActionV1;
+  } as RemoteReviewIntent;
 }
 
 /**
@@ -104,7 +104,7 @@ export async function saveNoteComposer(
 }
 
 /** The action that removes one stored note, as the terminal's `D` would. */
-export function noteRemovalAction(note: Pick<ReviewNoteV1, "id" | "source">): HunkReviewActionV1 {
+export function noteRemovalAction(note: Pick<ReviewNote, "id" | "source">): RemoteReviewIntent {
   return note.source === "user"
     ? { type: "notes/remove-user", noteId: note.id }
     : { type: "notes/remove-live", noteId: note.id };

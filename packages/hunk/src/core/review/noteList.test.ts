@@ -4,10 +4,10 @@ import {
   createTestStoredNote,
 } from "../../../../../test/helpers/review-store-helpers";
 import { reviewNoteListOrigin, selectReviewNoteList } from "./noteList";
-import type { ReviewNoteV1 } from "./types";
+import type { ReviewNote } from "./types";
 
 /** One sidecar annotation on a new-side line. */
-function createTestSidecarNote(id: string, fileKey: string, line: number): ReviewNoteV1 {
+function createTestSidecarNote(id: string, fileKey: string, line: number): ReviewNote {
   return createTestStoredNote({ id, fileKey, line, hunkIndex: line > 10 ? 1 : 0 }).note;
 }
 

@@ -116,9 +116,9 @@ defaults; viewed files join it in M2b. Selection stays per-surface and is not tr
 - **A7. File split/unified line totals — web guesses.** `pierreDocument.ts` reconstructs
   `splitLineCount`/`unifiedLineCount` by reducing over hunks; terminal reads Pierre's
   authoritative values. Mis-sizes browser virtualization when the parser counts rows outside
-  hunk spans. Fix: carry both on `ReviewFileV1`.
+  hunk spans. Fix: carry both on `ReviewFile`.
   _Repaid (Phase 1 PR 2, model side)_: `splitLineCount`/`unifiedLineCount` carried on
-  `ReviewFileV1` by `core/review/document.ts`; the browser consumes them in Phase 5.
+  `ReviewFile` by `core/review/document.ts`; the browser consumes them in Phase 5.
 - **A8. Empty-diff explanation — 3 variants with different precedence.** Terminal
   `plannedRowText.ts` `diffMessage` (rename-pure first), web `ReviewStream.tsx` (binary first),
   `staticDiffPager.ts` (extra cases). Same file can explain itself differently per client.
@@ -159,7 +159,7 @@ defaults; viewed files join it in M2b. Selection stays per-surface and is not tr
   `packages/hunk/src/web/main.tsx` (or fold registration into the shared model).
   _Repaid (M4 state)_: by the second route. The producer resolves every file's language with
   the registry (`core/documents/fileLanguage.ts`, extension selectors included) and the shared
-  model carries it as `ReviewFileV1.language`, which the page hands Pierre as `lang`; the page
+  model carries it as `ReviewFile.language`, which the page hands Pierre as `lang`; the page
   registers nothing. `test/web/review-languages.e2e.ts` highlights `.mts` and `.cts` files.
 
 Renderer-specific, do not unify: terminal row construction and measured-cell windowing
@@ -313,7 +313,7 @@ duplication); hunk header text (browser delegates to Pierre separators); platfor
   `ui/lib/viewportSelection.ts` delegates to it (`findNearestHunkIndexAtBodyOffset` is banned
   there) and the browser anchors through it in pixels, with `selection/anchor` applied to its
   local store only — selection is per surface, so the G2 question does not arise.
-- **B12. Wire vocabulary hand-restates `ReviewIntent` — 3 places.** `HunkReviewActionV1`
+- **B12. Wire vocabulary hand-restates `ReviewIntent` — 3 places.** `RemoteReviewIntent`
   union, capability list in `registration.ts`, validation list in `wire.ts`, remapped
   field-by-field in `reviewSessionRuntime.ts`; forgotten fields/actions are silently
   unreachable from the browser. Fix: derive the wire type and both lists from one
@@ -325,7 +325,7 @@ duplication); hunk header text (browser delegates to Pierre separators); platfor
   resolves at the producer and is broadcast to every attached surface, so every one of them
   belongs to every surface. Withholding one would mean subtracting it by name, with the reason
   it is not shareable. The wire _type_ is derived
-  the same way — `HunkReviewActionV1` is `ReviewIntent` with the two wire-only fields added to
+  the same way — `RemoteReviewIntent` is `ReviewIntent` with the two wire-only fields added to
   the members that need them — and `toReviewIntent` strips them again, so an action is
   validated and narrowed rather than restated. The action-type-to-parser table is keyed by the
   vocabulary, so a wire-reachable intent without a parser does not compile.
@@ -583,7 +583,7 @@ path suffixes, expansion retention, git-status badges).
   instead of the producer owning it and the wire copying it; `REVIEW_RESOURCE_LOAD_CONCURRENCY`
   moved beside the other resource bounds for the same reason, now that both the producer and
   the daemon run bulk loads. The failure vocabulary is composed rather than restated
-  (`HunkReviewFailureCodeV1` = resource + request + intent-planning codes), the navigable
+  (`ReviewFailureCode` = resource + request + intent-planning codes), the navigable
   scopes are read out of `REVIEW_SELECTION_WRAP_POLICY` rather than listed again, the
   catalog's file bound is derived from its own resource count instead of duplicating the
   registration's file limit, and every digest check is `isReviewSha256Digest`. The one
@@ -746,7 +746,7 @@ implementation does.
   _Decided (2026-11-13)_: filter, agent-note visibility, and viewed-file state are shared review
   state; layout, wrap, line numbers, theme override, sidebar width, and gap expansion are
   per-browser. The browser receives the host's resolved defaults as its starting point (M2).
-  _Advanced (M2a)_: `ReviewSharedStateV1` (`packages/hunk/src/session/reviewSharedState.ts`,
+  _Advanced (M2a)_: `ReviewSharedState` (`packages/hunk/src/session/reviewSharedState.ts`,
   browser-safe) carries the shared classification — filter, agent-note visibility, notes,
   agent marks, and the agent reveal — and `presentation`, the host's resolved defaults: title,
   source label, theme, view defaults (layout, wrap, line numbers, hunk headers), and the
@@ -775,7 +775,7 @@ implementation does.
   selection. Decide the model once: actions carry a client/actor tag; selection is either
   shared-with-follow-mode or per-client-with-optional-follow (product decision); note
   authorship defaults from the actor. Wire fields in Phase 3, policy before Phase 5 PR 2.
-  _Repaid (Phase 3, wire fields)_: `HunkReviewActorV1` — an opaque `clientId`, a coarse
+  _Repaid (Phase 3, wire fields)_: `ReviewActor` — an opaque `clientId`, a coarse
   `kind` (`terminal` / `browser` / `agent`), and an optional display name — is required on
   every action and resource-read envelope from the protocol's first version. The finding's
   four parts split cleanly, and only the first is done: (1) actions carry an actor tag, here;
@@ -863,7 +863,7 @@ implementation does.
   agent surface where codes overlap). Phase 4 (codes stabilize) / Phase 5 (browser consumes).
   _Repaid (Phase 4, catalog creation)_: `packages/hunk/src/session/reviewErrorCatalog.ts` gives every code a
   statement and a remedy, in the agent surface's own pattern. Totality is mechanical rather
-  than reviewed: the catalog is a `Record` over `HunkReviewClientErrorCodeV1`, itself
+  than reviewed: the catalog is a `Record` over `ReviewHttpFailureCode`, itself
   _composed_ — resource plus request plus intent-planning plus the transport's own codes —
   so a code added to any of the four tiers fails to typecheck until it has a message, and
   `reviewErrorCatalog.test.ts` states the vocabulary by hand rather than reading it back out

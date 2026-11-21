@@ -1,11 +1,11 @@
 /**
- * Projects one live review onto the shared-state snapshot a browser reads (`ReviewSharedStateV1`).
+ * Projects one live review onto the shared-state snapshot a browser reads (`ReviewSharedState`).
  *
  * The producer materializes this once per shared revision when the daemon asks for
  * `/review-api/<session>/state`; the terminal and a headless session feed it the same host and
  * the presentation defaults their launch resolved. Notes are listed in the order the terminal
  * presents them — per file in document order, sidecar annotations then stored notes in thread
- * order — and sidecar annotations are normalized into `ReviewNoteV1` with ids stable across
+ * order — and sidecar annotations are normalized into `ReviewNote` with ids stable across
  * snapshots of one review. Selection is not part of it: every surface keeps its own.
  */
 import type { AppBootstrap } from "../../core/bootstrap";
@@ -16,7 +16,7 @@ import {
   selectThreadedStoredReviewNotes,
 } from "../../core/review/selectors";
 import { isRenderableStoredReviewNote } from "../../core/review/state";
-import type { ReviewNoteV1 } from "../../core/review/types";
+import type { ReviewNote } from "../../core/review/types";
 import { APP_COMMAND_CATALOG } from "../../core/run/commandCatalog";
 import { DOCUMENT_COMMAND_NAMES } from "../../core/run/documentCommandCatalog";
 import { HISTORY_COMMAND_NAMES } from "../../core/run/historyCommandCatalog";
@@ -25,11 +25,11 @@ import { STATUS_COMMAND_NAMES } from "../../core/run/statusCommandCatalog";
 import { resolveTheme, THEMES, type AppTheme } from "../../core/theme/appTheme";
 import { HUNK_REVIEW_PROTOCOL_VERSION } from "../../session/reviewProtocol";
 import type {
-  ReviewAgentHighlightV1,
-  ReviewPresentationDefaultsV1,
-  ReviewSharedNoteV1,
-  ReviewSharedStateV1,
-  ReviewThemeDefaultsV1,
+  ReviewAgentHighlight,
+  ReviewPresentationDefaults,
+  ReviewSharedNote,
+  ReviewSharedState,
+  ReviewThemeDefaults,
 } from "../../session/reviewSharedState";
 import type { ReviewSessionHost } from "./reviewSessionHost";
 import { indexReviewFiles } from "./reviewSessionProjections";
@@ -40,7 +40,7 @@ function definedFields<T extends object>(value: T): T {
 }
 
 /** Describe the theme a session resolved: by id when built in, by tokens otherwise. */
-function themeDefaults(theme: AppTheme): ReviewThemeDefaultsV1 {
+function themeDefaults(theme: AppTheme): ReviewThemeDefaults {
   if (THEMES.some((builtIn) => builtIn.id === theme.id)) {
     return { kind: "builtin", id: theme.id, appearance: theme.appearance };
   }
@@ -78,7 +78,7 @@ function themeDefaults(theme: AppTheme): ReviewThemeDefaultsV1 {
  */
 export function buildReviewPresentationDefaults(
   bootstrap: AppBootstrap,
-): ReviewPresentationDefaultsV1 {
+): ReviewPresentationDefaults {
   const theme = resolveTheme(
     bootstrap.initialTheme,
     bootstrap.initialThemeMode ?? null,
@@ -120,10 +120,10 @@ export function buildReviewPresentationDefaults(
  * oversized sidecar cannot push the snapshot past its size bound; stored notes are already
  * bounded where they are added.
  */
-function sharedNotes(host: ReviewSessionHost): { notes: ReviewSharedNoteV1[]; omitted: number } {
+function sharedNotes(host: ReviewSessionHost): { notes: ReviewSharedNote[]; omitted: number } {
   const files = host.getFiles();
   const fileIndex = indexReviewFiles(host.getDocument(), files);
-  const storedByFileId = new Map<string, ReviewSharedNoteV1[]>();
+  const storedByFileId = new Map<string, ReviewSharedNote[]>();
   for (const { entry } of selectThreadedStoredReviewNotes(host.getSnapshot())) {
     const file = fileIndex.fileByKey.get(entry.note.fileKey);
     if (!file || !isRenderableStoredReviewNote(entry)) continue;
@@ -136,14 +136,14 @@ function sharedNotes(host: ReviewSessionHost): { notes: ReviewSharedNoteV1[]; om
     storedByFileId.set(file.id, notes);
   }
 
-  const notes: ReviewSharedNoteV1[] = [];
+  const notes: ReviewSharedNote[] = [];
   const sidecarBudget = createSidecarProjectionBudget();
   for (const file of files) {
     const fileKey = fileIndex.keyByFileId.get(file.id);
     if (!fileKey) continue;
     (file.agent?.annotations ?? []).forEach((annotation, index) => {
       const source = reviewNoteSource(annotation);
-      const note: ReviewNoteV1 = definedFields({
+      const note: ReviewNote = definedFields({
         id: annotation.id ?? `${source}:${fileKey}:${index}`,
         source,
         originalSource: annotation.source,
@@ -172,11 +172,11 @@ function sharedNotes(host: ReviewSessionHost): { notes: ReviewSharedNoteV1[]; om
 /** Build one review's shared-state snapshot at the host's current revision. */
 export function buildReviewSharedState(
   host: ReviewSessionHost,
-  options: { generation: string; presentation: ReviewPresentationDefaultsV1 },
-): ReviewSharedStateV1 {
+  options: { generation: string; presentation: ReviewPresentationDefaults },
+): ReviewSharedState {
   const state = host.getSnapshot();
   const document = host.getDocument();
-  const agentHighlights: Record<string, ReviewAgentHighlightV1[]> = {};
+  const agentHighlights: Record<string, ReviewAgentHighlight[]> = {};
   for (const [fileId, marks] of host.getAgentLineHighlights()) {
     const fileKey = host.fileKeyFor(fileId);
     if (!fileKey || marks.length === 0) continue;

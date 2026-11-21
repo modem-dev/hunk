@@ -8,10 +8,10 @@ import type { CommentTargetInput, DiffSide } from "../core/liveComments";
 import type { ReviewPublicationAddress } from "../core/review/generationOrder";
 import type { CliInput, ReviewNoteSource } from "../core/run/commandInputs";
 import type {
-  HunkReviewActionEnvelopeV1,
-  HunkReviewResourceCatalogV1,
-  HunkReviewResourceReadEnvelopeV1,
-  HunkReviewResultV1,
+  ReviewActionEnvelope,
+  ReviewResourceCatalog,
+  ReviewResourceReadEnvelope,
+  ReviewCommandResult,
 } from "./reviewProtocol";
 import type {
   SessionRegistration,
@@ -75,7 +75,7 @@ export interface HunkSessionInfo {
    * Absent from a session built before review resources existed; the broker's mirror
    * treats that as "this session serves no resources" rather than as an invalid payload.
    */
-  reviewCatalog?: HunkReviewResourceCatalogV1;
+  reviewCatalog?: ReviewResourceCatalog;
   /**
    * Digest of the capability this session's review may be read under.
    *
@@ -158,14 +158,13 @@ export interface ClearCommentsToolInput extends SessionTargetInput {
 
 /** One bounded resource read, brokered to the session that published the generation. */
 export interface ReadReviewResourceToolInput
-  extends SessionTargetInput, HunkReviewResourceReadEnvelopeV1 {}
+  extends SessionTargetInput, ReviewResourceReadEnvelope {}
 
 /** Reload the session's current input with no caller-supplied arguments (F4 allowlist). */
 export interface RefreshReviewToolInput extends SessionTargetInput {}
 
 /** One semantic review action, brokered to the producer that owns the review state. */
-export interface ApplyReviewActionToolInput
-  extends SessionTargetInput, HunkReviewActionEnvelopeV1 {}
+export interface ApplyReviewActionToolInput extends SessionTargetInput, ReviewActionEnvelope {}
 
 /** One agent-set attention mark: a character range inside one diff line. */
 export interface HighlightToolInput extends SessionTargetInput {
@@ -380,7 +379,7 @@ export type HunkSessionCommandResult =
   | RemovedCommentResult
   | ClearedCommentsResult
   | ReloadedSessionResult
-  | HunkReviewResultV1
+  | ReviewCommandResult
   | AppliedHighlightResult
   | ClearedHighlightsResult
   | OpenedReviewResult;

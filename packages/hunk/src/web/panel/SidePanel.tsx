@@ -10,6 +10,7 @@
  * pattern: focusable, with its width bounds, moved by the arrow keys, Home, and End as well as
  * by dragging; a drag the browser cancels ends like one released.
  */
+import { Icon } from "../icons/Icon";
 import type { KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import {
   clampSidePanelWidth,
@@ -151,7 +152,7 @@ export function SidePanel(props: SidePanelProps) {
             title={props.closeHint ? `Close side panel (${props.closeHint})` : "Close side panel"}
             onClick={props.onClose}
           >
-            <span aria-hidden="true">×</span>
+            <Icon name="cross" />
           </button>
         </div>
         <div

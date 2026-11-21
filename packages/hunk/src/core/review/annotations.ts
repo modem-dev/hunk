@@ -19,7 +19,7 @@ import type { ReviewAnnotationIndex } from "./navigation";
 import type { AgentAnnotation } from "../../extension-api/types";
 import type { DiffFile } from "../changeset/model";
 import type { ReviewNoteSource } from "../run/commandInputs";
-import type { ReviewLineAddressV1, ReviewRangeAnchorV1 } from "./types";
+import type { ReviewLineAddress, ReviewRangeAnchor } from "./types";
 
 /** Whether one annotation lands inside a hunk's visible span on either side. */
 export function reviewAnnotationOverlapsHunk(annotation: AgentAnnotation, hunk: ReviewHunkSpan) {
@@ -45,7 +45,7 @@ export function reviewNoteSource(annotation: AgentAnnotation): ReviewNoteSource 
 }
 
 /** A note target declared by the surface that knows where the note was written. */
-export interface ReviewAnnotationTarget extends ReviewLineAddressV1 {
+export interface ReviewAnnotationTarget extends ReviewLineAddress {
   hunkIndex: number;
 }
 
@@ -54,8 +54,8 @@ export function reviewAnnotationAnchor(
   hunks: readonly ReviewHunkSpan[],
   annotation: AgentAnnotation,
   target?: ReviewAnnotationTarget,
-): ReviewRangeAnchorV1 {
-  const preferred: ReviewLineAddressV1 | undefined = target
+): ReviewRangeAnchor {
+  const preferred: ReviewLineAddress | undefined = target
     ? { side: target.side, line: target.line }
     : annotation.newRange
       ? { side: "new", line: annotation.newRange[0] }
@@ -96,7 +96,7 @@ export function reviewAnnotatedHunkIndices(
 }
 
 /** Mark the hunks one resolved anchor reaches: every intersecting hunk and its owner. */
-function addReviewAnchorAnnotatedHunks(anchor: ReviewRangeAnchorV1, into: Set<number>) {
+function addReviewAnchorAnnotatedHunks(anchor: ReviewRangeAnchor, into: Set<number>) {
   for (const hunkIndex of anchor.intersectingHunkIndices) {
     into.add(hunkIndex);
   }
@@ -114,7 +114,7 @@ function addReviewAnchorAnnotatedHunks(anchor: ReviewRangeAnchorV1, into: Set<nu
  * `contextFileKeys` names files carrying review context without any note.
  */
 export function buildReviewAnnotationIndexFromNotes(
-  notes: Iterable<{ fileKey: string; anchor: ReviewRangeAnchorV1 }>,
+  notes: Iterable<{ fileKey: string; anchor: ReviewRangeAnchor }>,
   contextFileKeys: Iterable<string> = [],
 ): ReviewAnnotationIndex {
   const hunksByFileKey = new Map<string, Set<number>>();

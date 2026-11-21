@@ -61,18 +61,18 @@ import {
   REVIEW_RESOURCE_LOAD_CONCURRENCY,
   reviewResourceCeiling,
   reviewResourceId,
-  type ReviewResourceDescriptorV1,
+  type ReviewResourceDescriptor,
 } from "../../core/review/resources";
 import { isReviewSha256Digest } from "../../core/review/validation";
 import { nodeReviewDigest } from "../../core/reviewDigest";
 import {
   HUNK_REVIEW_PROTOCOL_VERSION,
-  type HunkReviewActionResultV1,
-  type HunkReviewActionV1,
-  type HunkReviewActorV1,
-  type HunkReviewFailureCodeV1,
-  type HunkReviewRefreshResultV1,
-  type HunkReviewResourceReadResultV1,
+  type ReviewActionResult,
+  type RemoteReviewIntent,
+  type ReviewActor,
+  type ReviewFailureCode,
+  type ReviewRefreshResult,
+  type ReviewResourceReadResult,
 } from "../reviewProtocol";
 import {
   SessionBrokerState,
@@ -85,7 +85,7 @@ import {
   parseReviewSharedState,
   parseReviewSharedStateResourceId,
   REVIEW_SHARED_STATE_CURRENT_RESOURCE_ID,
-  type ReviewSharedStateV1,
+  type ReviewSharedState,
 } from "../reviewSharedState";
 
 const hunkSessionBrokerView: SessionBrokerViewAdapter<
@@ -111,7 +111,7 @@ const hunkSessionBrokerView: SessionBrokerViewAdapter<
 };
 
 /** How the daemon identifies itself when it reads a resource on an agent's behalf. */
-const DAEMON_ACTOR: HunkReviewActorV1 = { clientId: "hunk-daemon", kind: "agent" };
+const DAEMON_ACTOR: ReviewActor = { clientId: "hunk-daemon", kind: "agent" };
 
 /** Raised when a read or action names a generation the session is no longer serving. */
 export class ReviewGenerationRetiredError extends Error {
@@ -138,7 +138,7 @@ export class ReviewResourceReadError extends Error {
   override readonly name = "ReviewResourceReadError";
 
   constructor(
-    readonly code: HunkReviewFailureCodeV1,
+    readonly code: ReviewFailureCode,
     message: string,
   ) {
     super(message);
@@ -239,15 +239,15 @@ export class HunkSessionBrokerState extends SessionBrokerState<
     { promise: Promise<Uint8Array>; controller: AbortController; callers: number; pinned: boolean }
   >();
   /** One refresh per session in flight; concurrent callers await the same reload. */
-  private readonly refreshes = new Map<string, Promise<HunkReviewRefreshResultV1>>();
+  private readonly refreshes = new Map<string, Promise<ReviewRefreshResult>>();
   /** The last settled refresh per session, answered again within the minimum interval. */
   private readonly recentRefreshes = new Map<
     string,
-    { settledAt: number; result: HunkReviewRefreshResultV1 }
+    { settledAt: number; result: ReviewRefreshResult }
   >();
   private readonly now: () => number;
   /** One shared-state read per position; concurrent callers await the same assembly. */
-  private readonly sharedStateLoads = new Map<string, Promise<ReviewSharedStateV1>>();
+  private readonly sharedStateLoads = new Map<string, Promise<ReviewSharedState>>();
   /**
    * The last assembled, validated shared state per session, answered again while the mirror
    * still describes the same `(generation, sharedStateRevision)`; repeated reads at one
@@ -255,7 +255,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
    * unregisters or replaces its generation, and at most `MAX_CACHED_REVIEW_SHARED_STATES`
    * entries in least-recently-read order.
    */
-  private readonly sharedStates = new Map<string, ReviewSharedStateV1>();
+  private readonly sharedStates = new Map<string, ReviewSharedState>();
   /** Capability verifiers by session, as their registrations declared them. */
   private readonly capabilityDigests = new Map<string, string>();
   private readonly publicationWatchers = new Set<(event: ReviewPublicationEvent) => void>();
@@ -520,7 +520,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
    * current state rather than an error. The last state per session is kept for repeated reads
    * at the same position (`sharedStates`); the next shared revision makes it obsolete.
    */
-  loadReviewSharedState(sessionId: string): Promise<ReviewSharedStateV1> {
+  loadReviewSharedState(sessionId: string): Promise<ReviewSharedState> {
     const publication = this.mirror.get(sessionId);
     if (!publication) {
       return Promise.reject(new ReviewGenerationRetiredError(undefined));
@@ -561,7 +561,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
   }
 
   /** Keep one session's shared state as the most recently read, evicting the least recent. */
-  private rememberSharedState(sessionId: string, state: ReviewSharedStateV1) {
+  private rememberSharedState(sessionId: string, state: ReviewSharedState) {
     this.sharedStates.delete(sessionId);
     this.sharedStates.set(sessionId, state);
     for (const oldest of this.sharedStates.keys()) {
@@ -582,7 +582,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
    * coordinator, which serializes it with every other reload. Requests arriving while one is
    * in flight share its answer, so a client spamming refresh costs one reload at a time.
    */
-  refreshReview(sessionId: string): Promise<HunkReviewRefreshResultV1> {
+  refreshReview(sessionId: string): Promise<ReviewRefreshResult> {
     const running = this.refreshes.get(sessionId);
     if (running) return running;
     // A refresh that settled moments ago already reloaded the input; pressing again answers
@@ -591,7 +591,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
     if (recent && this.now() - recent.settledAt < REVIEW_REFRESH_MIN_INTERVAL_MS) {
       return Promise.resolve(recent.result);
     }
-    const refresh = this.dispatchCommand<HunkReviewRefreshResultV1, "refresh_review">({
+    const refresh = this.dispatchCommand<ReviewRefreshResult, "refresh_review">({
       selector: { sessionId },
       command: "refresh_review",
       input: { sessionId },
@@ -620,11 +620,11 @@ export class HunkSessionBrokerState extends SessionBrokerState<
   async applyReviewAction(
     sessionId: string,
     generation: string,
-    action: HunkReviewActionV1,
-    options: { actor?: HunkReviewActorV1; expectedStateRevision?: number } = {},
-  ): Promise<HunkReviewActionResultV1> {
+    action: RemoteReviewIntent,
+    options: { actor?: ReviewActor; expectedStateRevision?: number } = {},
+  ): Promise<ReviewActionResult> {
     this.assertGenerationActive(sessionId, generation);
-    return this.dispatchCommand<HunkReviewActionResultV1, "apply_review_action">({
+    return this.dispatchCommand<ReviewActionResult, "apply_review_action">({
       selector: { sessionId },
       command: "apply_review_action",
       input: {
@@ -739,7 +739,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
    */
   private async assembleResource(
     key: { sessionId: string; generation: string; resourceId: string },
-    descriptor: ReviewResourceDescriptorV1,
+    descriptor: ReviewResourceDescriptor,
     signal?: AbortSignal,
   ): Promise<Uint8Array> {
     const measured = isMaterializedReviewResource(descriptor);
@@ -803,7 +803,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
   private async assembleSharedState(
     sessionId: string,
     generation: string,
-  ): Promise<ReviewSharedStateV1> {
+  ): Promise<ReviewSharedState> {
     const reservation = await this.reserveWhenFree(
       { sessionId, generation, resourceId: REVIEW_SHARED_STATE_CURRENT_RESOURCE_ID },
       REVIEW_RESOURCE_CHUNK_BYTES,
@@ -830,7 +830,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
         digest: nodeReviewDigest,
         maxBytes: MAX_REVIEW_SHARED_STATE_BYTES,
       });
-      let result: HunkReviewResourceReadResultV1 = first;
+      let result: ReviewResourceReadResult = first;
       for (;;) {
         if (!result.ok) {
           throw new ReviewResourceReadError(result.code, result.message);
@@ -855,7 +855,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
         throw new ReviewResourceReadError(assembled.code, assembled.message);
       }
       this.assertGenerationActive(sessionId, generation);
-      let state: ReviewSharedStateV1 | undefined;
+      let state: ReviewSharedState | undefined;
       try {
         state = parseReviewSharedState(
           JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(assembled.bytes)),
@@ -879,8 +879,8 @@ export class HunkSessionBrokerState extends SessionBrokerState<
   private readChunk(
     key: { sessionId: string; generation: string; resourceId: string },
     offset: number,
-  ): Promise<HunkReviewResourceReadResultV1> {
-    return this.dispatchCommand<HunkReviewResourceReadResultV1, "read_review_resource">({
+  ): Promise<ReviewResourceReadResult> {
+    return this.dispatchCommand<ReviewResourceReadResult, "read_review_resource">({
       selector: { sessionId: key.sessionId },
       command: "read_review_resource",
       input: {

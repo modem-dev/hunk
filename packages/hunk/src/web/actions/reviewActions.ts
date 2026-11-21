@@ -15,7 +15,7 @@
  * retries, at most `MAX_STALE_RETRIES` times, while the caller says the action still means
  * something. Anything else is reported to the caller as is.
  */
-import type { HunkReviewActionAppliedV1, HunkReviewActionV1 } from "../../session/reviewProtocol";
+import type { ReviewActionApplied, RemoteReviewIntent } from "../../session/reviewProtocol";
 import { HUNK_REVIEW_PROTOCOL_VERSION } from "../../session/reviewProtocol";
 import type { ClientReviewMirror } from "../mirror/clientReviewMirror";
 import { reviewFailureMessage } from "../session/failureMessages";
@@ -33,7 +33,7 @@ export const STALE_GENERATION_WAIT_MS = 5_000;
 
 /** What one sent action came to. */
 export type ReviewActionOutcome =
-  | { ok: true; applied: HunkReviewActionAppliedV1 }
+  | { ok: true; applied: ReviewActionApplied }
   | { ok: false; code: ReviewApiErrorCode; message: string };
 
 export interface ReviewActionOptions {
@@ -79,7 +79,7 @@ export class ReviewActionSender {
 
   /** Send one action, retrying a stale generation by the stated policy. */
   async send(
-    action: HunkReviewActionV1,
+    action: RemoteReviewIntent,
     options: ReviewActionOptions = {},
   ): Promise<ReviewActionOutcome> {
     for (let attempt = 0; ; attempt += 1) {

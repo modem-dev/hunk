@@ -2,19 +2,19 @@
  * Measures where agent attention marks fall on the lines Pierre drew.
  *
  * An agent highlight names a `[start, end)` character range on one line of one side
- * (`ReviewAgentHighlightV1`). Pierre has no decoration hook for character ranges, so the page
+ * (`ReviewAgentHighlight`). Pierre has no decoration hook for character ranges, so the page
  * finds the drawn line by its number and side and asks the browser where those characters
  * are, through a DOM `Range` over the line's text, then paints boxes over them. Lines Pierre
  * did not draw (inside a collapsed gap) get no box until the gap opens, as in the terminal.
  */
 import type {
-  ReviewAgentHighlightToneV1,
-  ReviewAgentHighlightV1,
+  ReviewAgentHighlightTone,
+  ReviewAgentHighlight,
 } from "../../session/reviewSharedState";
 
 /** One painted box, relative to the top-left of the file's drawing. */
 export interface ReviewHighlightBox {
-  tone: ReviewAgentHighlightToneV1;
+  tone: ReviewAgentHighlightTone;
   side: "old" | "new";
   line: number;
   top: number;
@@ -61,7 +61,7 @@ function positionAt(nodes: readonly Text[], offset: number) {
 /** Measure every mark that lands on a drawn line of one mounted file. */
 export function measureAgentHighlights(
   host: HTMLElement,
-  highlights: readonly ReviewAgentHighlightV1[],
+  highlights: readonly ReviewAgentHighlight[],
   layout: "split" | "unified",
 ): ReviewHighlightBox[] {
   if (highlights.length === 0) return [];

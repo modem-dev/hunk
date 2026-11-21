@@ -24,7 +24,7 @@ import { takeReviewCapability, type CapabilityStorage } from "./capability";
 import { ReviewApiClient, ReviewApiError, type ReviewFetch } from "../transport/apiClient";
 import { openReviewEventStream, type ReviewEventStreamStatus } from "../transport/eventStream";
 import { ClientReviewMirror } from "../mirror/clientReviewMirror";
-import { ReviewSharedStateMirror } from "../mirror/sharedStateMirror";
+import { ClientSharedStateMirror } from "../mirror/clientSharedStateMirror";
 import { ClientReviewStore } from "../store/clientReviewStore";
 
 export {
@@ -64,7 +64,7 @@ export interface ReviewSession {
   sessionId: string;
   client: ReviewApiClient;
   mirror: ClientReviewMirror;
-  shared: ReviewSharedStateMirror;
+  shared: ClientSharedStateMirror;
   review: ClientReviewStore;
   connection: ObservableValue<ReviewEventStreamStatus>;
   /** Sends the page's review actions. */
@@ -112,7 +112,7 @@ export function startReviewSession({
     capability,
     ...(fetch ? { fetch } : {}),
   });
-  const shared = new ReviewSharedStateMirror({ client });
+  const shared = new ClientSharedStateMirror({ client });
   const mirror = new ClientReviewMirror({
     client,
     // The shared state's file index fixes document order and fills the sidebar before any

@@ -36,7 +36,7 @@ import {
   REVIEW_PAGE_MANIFEST_NAME,
   parseReviewPageAssetManifest,
   reviewAssetContentType,
-  type ReviewPageAssetManifestV1,
+  type ReviewPageAssetManifest,
 } from "../../packages/hunk/src/session/broker/reviewPageAssets";
 import {
   isReviewAssetName,
@@ -45,7 +45,7 @@ import {
 import { THEMES } from "../../packages/hunk/src/ui/themes";
 import {
   WEB_THEME_INDEX_META_NAME,
-  type WebThemeIndexV1,
+  type WebThemeIndex,
 } from "../../packages/hunk/src/web/theme/themeIndex";
 import { HUNK_PACKAGE_ROOT, HUNK_SOURCE_ROOT } from "./package-paths";
 
@@ -86,7 +86,7 @@ const omitShikiWasm: BunPlugin = {
  * the finished tokens. There is no second derivation to drift. The `terminal` theme follows
  * a terminal's palette and has no browser meaning, so it is not in `THEMES`.
  */
-export function buildWebThemeIndex(): WebThemeIndexV1 {
+export function buildWebThemeIndex(): WebThemeIndex {
   return {
     formatVersion: 1,
     themes: THEMES.map((theme) => ({
@@ -237,7 +237,7 @@ export interface BuildWebAssetsOptions {
 /** Build the browser client into `outdir` and return its manifest. */
 export async function buildWebAssets({
   outdir = SOURCE_WEB_OUTDIR,
-}: BuildWebAssetsOptions = {}): Promise<ReviewPageAssetManifestV1> {
+}: BuildWebAssetsOptions = {}): Promise<ReviewPageAssetManifest> {
   const staging = `${outdir}.staging-${process.pid}-${Date.now()}`;
   rmSync(staging, { recursive: true, force: true });
   mkdirSync(staging, { recursive: true });
@@ -283,7 +283,7 @@ export async function buildWebAssets({
       renderReviewPageDocument(path.basename(entry.path), stylesheets, themeIndex),
     );
 
-    const manifest: ReviewPageAssetManifestV1 = { formatVersion: 1, assets: names };
+    const manifest: ReviewPageAssetManifest = { formatVersion: 1, assets: names };
     writeFileSync(
       path.join(staging, REVIEW_PAGE_MANIFEST_NAME),
       `${JSON.stringify(manifest, null, 2)}\n`,

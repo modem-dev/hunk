@@ -7,7 +7,13 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { chooseTestTheme, startTestWebReview, type TestWebReview } from "./webTestHarness";
+import {
+  chooseTestTheme,
+  openTestViewMenu,
+  seedTestOpenSidePanel,
+  startTestWebReview,
+  type TestWebReview,
+} from "./webTestHarness";
 
 const OUTPUT = process.env.HUNK_WEB_TOOL_SCREENSHOT_DIR;
 
@@ -27,8 +33,17 @@ async function capture(page: Page, name: string) {
   await page.screenshot({ path: join(OUTPUT!, `${name}.png`) });
 }
 
+/** Flip "Hide viewed" from the View menu and close the menu before the next capture. */
+async function toggleTestHideViewed(page: Page) {
+  await openTestViewMenu(page);
+  await page.getByRole("menuitemcheckbox", { name: "Hide viewed" }).click();
+  await page.keyboard.press("Escape");
+}
+
 /** Open the rich review with agent notes and a stored theme. */
 async function openRich(page: Page, themeId: string) {
+  // The panel starts closed; these captures show its tools unless a test stored a choice first.
+  await seedTestOpenSidePanel(page, "overview");
   await page.addInitScript((theme) => {
     window.localStorage.setItem("hunk.review.theme", theme);
   }, themeId);
@@ -98,7 +113,7 @@ test("captures the overview tab", async ({ page }) => {
   await capture(page, "overview-light-1440");
 
   await page.getByTestId("side-panel-tab-notes").click();
-  await page.getByRole("button", { name: "▸ 1 reply" }).click();
+  await page.getByRole("button", { name: "1 reply" }).click();
   await page.getByTestId("notes-row").filter({ hasText: "rename should land" }).click();
   await capture(page, "notes-light-1440");
   await chooseTestTheme(page, "github-dark-default");
@@ -206,10 +221,131 @@ test("captures viewed files: marked, collapsed, changed since viewed, and hidden
     timeout: 30_000,
   });
   await capture(page, "viewed-changed-dark");
+  await page.getByRole("radio", { name: "Tree" }).click();
+  await capture(page, "viewed-changed-tree-dark");
+  await page.getByRole("radio", { name: "Flat" }).click();
 
-  await page.getByRole("button", { name: "Hide viewed" }).click();
+  await toggleTestHideViewed(page);
   await capture(page, "viewed-hidden-dark");
   await chooseTestTheme(page, "github-light-default");
-  await page.getByRole("button", { name: "Hide viewed" }).click();
+  await toggleTestHideViewed(page);
   await capture(page, "viewed-light");
+  await page.getByRole("radio", { name: "Tree" }).click();
+  await capture(page, "viewed-tree-light");
+});
+
+/** Open one scenario with a stored theme and the panel's default (closed) state. */
+async function openSummaryScenario(page: Page, input: string, themeId: string) {
+  review = await startTestWebReview(input);
+  await page.addInitScript((theme) => {
+    window.localStorage.setItem("hunk.review.theme", theme);
+  }, themeId);
+  await page.goto(review.url);
+  await expect(page.locator('.toolbar [data-state="connected"]')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("load-progress")).toHaveCount(0, { timeout: 30_000 });
+  await expect(page.getByTestId("summary-strip")).toHaveAttribute("data-state", "ready");
+}
+
+test("captures the summary strip with the panel closed and open", async ({ page }) => {
+  test.setTimeout(300_000);
+  mkdirSync(OUTPUT!, { recursive: true });
+  for (const [scenario, input] of [
+    ["rich", "--rich"],
+    ["previews", "--previews"],
+  ] as const) {
+    for (const [tone, themeId] of [
+      ["dark", "github-dark-default"],
+      ["light", "github-light-default"],
+    ] as const) {
+      await openSummaryScenario(page, input, themeId);
+      for (const width of [1440, 800]) {
+        await page.setViewportSize({ width, height: 900 });
+        await capture(page, `summary-${scenario}-${tone}-${width}-closed`);
+        await page.getByTestId("summary-overview").click();
+        await expect(page.getByTestId("side-panel")).toBeVisible();
+        await capture(page, `summary-${scenario}-${tone}-${width}-open`);
+        await page.getByTestId("toggle-side-panel").click();
+        await expect(page.getByTestId("side-panel")).toHaveCount(0);
+      }
+      await review?.stop();
+      review = undefined;
+      await page.evaluate(() => window.localStorage.removeItem("hunk.review.panel"));
+    }
+  }
+});
+
+/** Save the whole page and a crop of the review bar along its bottom. */
+async function captureTestBar(page: Page, name: string) {
+  await capture(page, name);
+  await page.getByTestId("review-bar").screenshot({ path: join(OUTPUT!, `${name}-crop.png`) });
+}
+
+test("captures the review bar across notes, viewed progress, themes, and widths", async ({
+  page,
+}) => {
+  test.setTimeout(300_000);
+  mkdirSync(OUTPUT!, { recursive: true });
+  for (const [tone, themeId] of [
+    ["dark", "github-dark-default"],
+    ["light", "github-light-default"],
+  ] as const) {
+    review = await startTestWebReview("--rich", { args: ["--agent-notes"] });
+    await page.addInitScript((theme) => {
+      window.localStorage.setItem("hunk.review.theme", theme);
+    }, themeId);
+    await page.goto(review.url);
+    await expect(page.locator('.toolbar [data-state="connected"]')).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId("load-progress")).toHaveCount(0, { timeout: 30_000 });
+
+    // Nothing viewed, no notes.
+    for (const width of [1440, 800]) {
+      await page.setViewportSize({ width, height: 900 });
+      await captureTestBar(page, `bar-${tone}-${width}-empty`);
+    }
+
+    // Some viewed, several notes.
+    for (const path of ["src/app/main.ts", "src/app/renamed-new.ts"]) {
+      await page.locator(`section[aria-label="${path}"] .viewed-toggle input`).click();
+    }
+    await expect(page.getByTestId("viewed-progress")).toHaveText(/^2 of/);
+    for (const [file, line, summary] of [
+      ["src/app/main.ts", "13", "Threshold raised."],
+      ["src/gen/module-12.ts", "1", "Generated; check the template instead."],
+      ["src/gen/module-30.ts", "1", "Same change as module 12."],
+    ] as const) {
+      await review.hunk([
+        "session",
+        "comment",
+        "add",
+        review.sessionId,
+        "--file",
+        file,
+        "--new-line",
+        line,
+        "--summary",
+        summary,
+      ]);
+    }
+    await expect(page.getByTestId("bar-notes")).toHaveText("3 notes");
+    for (const width of [1440, 800]) {
+      await page.setViewportSize({ width, height: 900 });
+      await captureTestBar(page, `bar-${tone}-${width}-some`);
+    }
+
+    // Everything viewed.
+    const state = (await review.readApi("state")).state as { files: { key: string }[] };
+    for (const file of state.files) {
+      await review.postAction({ type: "files/set-viewed", fileKey: file.key, viewed: true });
+    }
+    await expect(page.getByTestId("all-viewed")).toBeVisible();
+    for (const width of [1440, 800]) {
+      await page.setViewportSize({ width, height: 900 });
+      await captureTestBar(page, `bar-${tone}-${width}-all`);
+    }
+
+    await review.stop();
+    review = undefined;
+  }
 });

@@ -5,16 +5,16 @@ import {
   encodeReviewEventFrame,
   planReviewEventFrames,
   REVIEW_EVENT_HEARTBEAT_FRAME,
-  type ReviewEventTypeV1,
+  type ReviewEventType,
 } from "../../session/reviewEventProtocol";
-import type { HunkReviewPublicationBodyV1 } from "../../session/reviewHttpProtocol";
+import type { ReviewPublicationBody } from "../../session/reviewHttpProtocol";
 import { HUNK_REVIEW_PROTOCOL_VERSION } from "../../session/reviewProtocol";
 import { readReviewEvents, ServerSentEventParser, type ReviewStreamEvent } from "./eventReader";
 
 const ADDRESS = { generation: "generation:p1:0", stateRevision: 3 };
 
 /** A publication body with a catalog padded to a chosen size. */
-function createTestPublication(padding = 0): HunkReviewPublicationBodyV1 {
+function createTestPublication(padding = 0): ReviewPublicationBody {
   return {
     protocolVersion: HUNK_REVIEW_PROTOCOL_VERSION,
     sessionId: "session-1",
@@ -37,7 +37,7 @@ function createTestPublication(padding = 0): HunkReviewPublicationBodyV1 {
 }
 
 /** Frame one event as the daemon does, returning its SSE text. */
-function frameTestEvent(type: ReviewEventTypeV1, body: unknown, chunkBytes?: number) {
+function frameTestEvent(type: ReviewEventType, body: unknown, chunkBytes?: number) {
   const payload = new TextEncoder().encode(JSON.stringify(body));
   return planReviewEventFrames({
     type,

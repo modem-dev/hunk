@@ -41,7 +41,7 @@ import { emitExtensionEvent } from "../../extensions/events";
 import type { ExtensionSession } from "../../extensions/session";
 import type { ExtensionLoadResult } from "../../extensions/types";
 import type { HunkSessionBrokerClient } from "../../session/broker/brokerClient";
-import type { HunkReviewRefreshResultV1 } from "../../session/reviewProtocol";
+import type { ReviewRefreshResult } from "../../session/reviewProtocol";
 import type { ReloadedSessionResult, ReloadSessionOptions } from "../../session/types";
 import { reviewDescriptorAfterReload, reviewDescriptorResourceCwd } from "../delegatedReview";
 import { resolveConfiguredExtensions } from "../extensionBootstrap";
@@ -137,7 +137,7 @@ export class ReviewReloadCoordinator {
   private readonly pendingWorkspaceWrites = new Set<Promise<void>>();
   private refreshRequest: ReviewRefreshRequest | undefined;
   /** A refresh queued behind other reloads and not yet started; later refreshes join it. */
-  private pendingRefresh: Promise<HunkReviewRefreshResultV1> | undefined;
+  private pendingRefresh: Promise<ReviewRefreshResult> | undefined;
   private pendingExtensionReload:
     | { reviewGeneration: AppBootstrap; promise: Promise<ExtensionReviewReloadResult> }
     | undefined;
@@ -246,9 +246,9 @@ export class ReviewReloadCoordinator {
    * reload, and coalesced — refreshes requested before a queued one starts share it — so a
    * burst of requests costs one reload. Resolves with the position reached, never rejects.
    */
-  refreshCurrent(): Promise<HunkReviewRefreshResultV1> {
+  refreshCurrent(): Promise<ReviewRefreshResult> {
     if (this.pendingRefresh) return this.pendingRefresh;
-    const pending = this.enqueue(async (): Promise<HunkReviewRefreshResultV1> => {
+    const pending = this.enqueue(async (): Promise<ReviewRefreshResult> => {
       if (this.pendingRefresh === pending) this.pendingRefresh = undefined;
       const request = this.refreshRequest;
       if (this.shuttingDown || !request) {

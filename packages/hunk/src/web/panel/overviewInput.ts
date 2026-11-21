@@ -12,12 +12,12 @@ import {
   type ReviewOverview,
   type ReviewOverviewFileInput,
 } from "../../core/review/overview";
-import type { ReviewSharedStateV1 } from "../../session/reviewSharedState";
+import type { ReviewSharedState } from "../../session/reviewSharedState";
 
 /** Summarize the given files with the snapshot's notes and viewed marks. */
 export function selectWebReviewOverview(
   files: readonly ReviewOverviewFileInput[],
-  shared: Pick<ReviewSharedStateV1, "notes" | "viewedFiles"> | undefined,
+  shared: Pick<ReviewSharedState, "notes" | "viewedFiles"> | undefined,
 ): ReviewOverview {
   return selectReviewOverview({
     files,

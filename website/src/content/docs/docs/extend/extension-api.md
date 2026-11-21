@@ -87,7 +87,7 @@ then copies and freezes it. `provider` and change-request `id` allow 256 bytes; 
 `author`, `base`, `head`, and `revision` allow 512; `authoredAt` allows 128; `title` and `url`
 allow 2 KiB. Change requests may also carry `state` (`open`, `closed`, or `merged`) and boolean
 `draft`; commits may carry a parseable `authoredAt` date-time. The descriptor remains app-bootstrap metadata rather than entering
-changeset transforms or `ReviewDocumentV1`; same-file refreshes preserve it, while unrelated
+changeset transforms or `ReviewDocument`; same-file refreshes preserve it, while unrelated
 reloads clear it. Commits opened from interactive `hunk log` receive the same metadata shape and
 retain it while refreshing the exact provider review request. Live-session list, context, and review
 JSON snapshots project the same optional bounded descriptor without granting provider or

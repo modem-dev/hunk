@@ -49,7 +49,7 @@ import { MAX_REVIEW_SHARED_STATE_BYTES } from "../../packages/hunk/src/session/r
 import {
   HUNK_REVIEW_ACTION_TYPES,
   MAX_HUNK_REVIEW_ENVELOPE_BYTES,
-  parseHunkReviewAction,
+  parseRemoteReviewIntent,
 } from "../../packages/hunk/src/session/reviewProtocol";
 
 const REPO_ROOT = resolve(import.meta.dir, "../..");
@@ -98,7 +98,7 @@ describe("review wire vocabulary derivation", () => {
   // a parser really ran — an unrouted type would answer `unsupported` instead.
   test("routes every action in the vocabulary to a parser", () => {
     for (const type of HUNK_REVIEW_ACTION_TYPES) {
-      expect(parseHunkReviewAction({ type, unexpectedField: 1 })).toEqual({
+      expect(parseRemoteReviewIntent({ type, unexpectedField: 1 })).toEqual({
         ok: false,
         reason: "invalid",
       });
@@ -106,7 +106,7 @@ describe("review wire vocabulary derivation", () => {
   });
 
   test("reports a type outside the vocabulary as unsupported", () => {
-    expect(parseHunkReviewAction({ type: "notes/archive-user", noteId: "n" })).toEqual({
+    expect(parseRemoteReviewIntent({ type: "notes/archive-user", noteId: "n" })).toEqual({
       ok: false,
       reason: "unsupported",
     });

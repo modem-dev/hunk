@@ -42,7 +42,7 @@ import type { ExtensionNotifyType, ExtensionLoadResult } from "../extensions/typ
 import type { ReviewProducer } from "../app/review/producer";
 import { buildReviewPresentationDefaults, buildReviewSharedState } from "../app/review/sharedState";
 import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
-import type { HunkReviewRefreshResultV1 } from "../session/reviewProtocol";
+import type { ReviewRefreshResult } from "../session/reviewProtocol";
 import { reviewErrorMessage } from "../session/reviewErrorCatalog";
 import type { ReloadedSessionResult, ReloadSessionOptions } from "../session/types";
 // Keep lightweight interaction chrome synchronous: first-use lazy suspension otherwise
@@ -212,7 +212,7 @@ export function App({
     options?: ReloadSessionOptions,
   ) => Promise<ReloadedSessionResult>;
   /** Reload the current input for a browser's refresh, coalesced by the reload coordinator. */
-  onRefreshReview?: () => Promise<HunkReviewRefreshResultV1>;
+  onRefreshReview?: () => Promise<ReviewRefreshResult>;
   /** Queue a coalesced reload against the review current when host execution begins. */
   onRequestExtensionReviewReload: (
     reviewGeneration: AppBootstrap,
@@ -1865,6 +1865,8 @@ export function App({
             scrollFocused={pagerMode && focusArea === "files"}
             screenTop={diffPaneScreenTop}
             showTopChrome={showMenuBar}
+            // A top pane's planned divider already separates it from the review stream.
+            showTopBorder={presentedPaneLayout.reviewBounds.y === 0}
             skipInitialIntermediateRender={Boolean(onFirstFrameReady)}
             headerLabelWidth={diffHeaderLabelWidth}
             headerStatsWidth={diffHeaderStatsWidth}

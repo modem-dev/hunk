@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { ReviewDocumentV1 } from "../../core/review/types";
+import type { ReviewDocument } from "../../core/review/types";
 import { createTestReviewDocument } from "../../../../../test/helpers/review-store-helpers";
 import type { ValidatedLineHighlight } from "./validate";
 import { carryOverLineHighlights } from "./reconcile";
@@ -10,7 +10,7 @@ const mark: ValidatedLineHighlight = { side: "new", line: 1, start: 0, end: 4, t
 function createReloadedDocument(
   files: Array<{ key: string; contentIdentity?: string }>,
   generation: string,
-): ReviewDocumentV1 {
+): ReviewDocument {
   const document = createTestReviewDocument(files);
   return {
     files: document.files.map((file) => ({ ...file, runtimeId: `${file.key}:${generation}` })),

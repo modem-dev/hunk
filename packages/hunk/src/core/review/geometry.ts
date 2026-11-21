@@ -7,15 +7,15 @@
  * once, because a renderer that re-derives one silently disagrees with the state store
  * that validates against it (`docs/browser-review-seam-audit.md`, A3/A4/A6/A10).
  *
- * The inputs are structural rather than `ReviewFileV1`: a parsed diff hunk and a projected
- * `ReviewHunkV1` both satisfy them, so the terminal can call these primitives from its
+ * The inputs are structural rather than `ReviewFile`: a parsed diff hunk and a projected
+ * `ReviewHunk` both satisfy them, so the terminal can call these primitives from its
  * render path without projecting a whole semantic document first.
  */
 import type {
-  ReviewHunkV1,
-  ReviewLineAddressV1,
+  ReviewHunk,
+  ReviewLineAddress,
   ReviewLineRange,
-  ReviewRangeTargetV1,
+  ReviewRangeTarget,
   ReviewSide,
 } from "./types";
 
@@ -100,7 +100,7 @@ export type ReviewRangeCoverageIssue = "preferred" | "old" | "new" | "empty";
 /** Report why one range target is not fully backed by visible patch rows. */
 export function reviewRangeTargetCoverageIssue(
   hunks: readonly ReviewHunkSpan[],
-  target: ReviewRangeTargetV1,
+  target: ReviewRangeTarget,
 ): ReviewRangeCoverageIssue | undefined {
   const preferredRange = target.preferred.side === "old" ? target.oldRange : target.newRange;
   if (
@@ -144,7 +144,7 @@ export function reviewHunkIndexForLine(
  */
 export function reviewDefaultHunkLineTarget(
   hunk: ReviewHunkSpan & ReviewHunkContent,
-): ReviewLineAddressV1 {
+): ReviewLineAddress {
   let deletionLine = hunk.deletionStart;
   let additionLine = hunk.additionStart;
   let firstDeletionLine: number | undefined;
@@ -186,7 +186,7 @@ export function reviewDefaultHunkLineTarget(
 export function reviewCanonicalHunkLine(
   hunk: ReviewHunkSpan,
   preferredSide: ReviewSide = "new",
-): ReviewLineAddressV1 | undefined {
+): ReviewLineAddress | undefined {
   for (const side of [preferredSide, preferredSide === "new" ? "old" : "new"] as const) {
     const count = side === "new" ? hunk.additionCount : hunk.deletionCount;
     if (count > 0) {
@@ -283,7 +283,7 @@ export function reviewHunkRowFractions(
     splitLineCount: number;
     unifiedLineCount: number;
     hunks: readonly Pick<
-      ReviewHunkV1,
+      ReviewHunk,
       "splitLineStart" | "splitLineCount" | "unifiedLineStart" | "unifiedLineCount"
     >[];
   },

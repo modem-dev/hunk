@@ -53,7 +53,7 @@ These follow from the decisions but were not asked directly. Each changes work b
 
 Landed and reused unchanged:
 
-- `core/review/` — `ReviewDocumentV1`, the store, reducer, intents, selectors, geometry, and
+- `core/review/` — `ReviewDocument`, the store, reducer, intents, selectors, geometry, and
   navigation planning. Renderer-free and gated platform-neutral.
 - `session/review{Protocol,HttpProtocol,EventProtocol,ErrorCatalog}.ts` — browser-safe wire
   schema, routes, SSE framing, and user-facing error messages.
@@ -146,8 +146,8 @@ consumer.
 
 Server-side only, tested with plain `fetch`.
 
-- **Shared-state snapshot.** A JSON-safe `ReviewSharedStateV1`: stored notes and sidecar
-  annotations normalized to `ReviewNoteV1`, filter, note visibility, viewed set, agent
+- **Shared-state snapshot.** A JSON-safe `ReviewSharedState`: stored notes and sidecar
+  annotations normalized to `ReviewNote`, filter, note visibility, viewed set, agent
   highlights, and the latest agent reveal request. Served at
   `GET /review-api/<session>/state` for one `(generation, stateRevision)`, chunked and
   digest-verified through the existing mirror and `ReviewChunkAssembler`. The existing SSE

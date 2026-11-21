@@ -15,6 +15,7 @@ packages/hunk/src/web/
   main.tsx                     entry; starts the session for this page's address
   app/ReviewApp.tsx            composes the page; owns view preferences, theme, and commands
   app/Toolbar.tsx              title, counts, totals, status; layout/wrap/line-number toggles
+  app/ReviewBar.tsx            bottom bar: viewed progress, next unviewed, key hints, notes, copy
   app/ThemeMenu.tsx            the theme button and its listbox
   app/ReviewControls.tsx       shared filter field, refresh, copy review link
   app/useReviewInteraction.tsx composers, note commands, shared toggles, refresh
@@ -35,7 +36,7 @@ packages/hunk/src/web/
   stream/ReviewStream.tsx      the windowed stream, reveals, viewport anchoring, scrolling
   stream/hunkGeometry.ts       hunk and gap rows from the model; their measured bounds
   stream/FileSection.tsx       sticky header, placeholders, reserved heights
-  stream/fileProjection.ts     ReviewFileV1 -> Pierre metadata, gaps, reserved rows
+  stream/fileProjection.ts     ReviewFile -> Pierre metadata, gaps, reserved rows
   stream/PierreFileView.tsx    drives Pierre's vanilla FileDiff and the page's gap separators
   theme/themeIndex.ts          built-in themes as CSS custom properties; per-browser choice
   view/viewPreferences.ts      layout/wrap/line numbers/sidebar, per browser
@@ -45,7 +46,7 @@ packages/hunk/src/web/
   transport/eventStream.ts     keeps the stream open; one shared reconnect scheduler
   transport/webCryptoDigest.ts Web Crypto SHA-256 as the assemblers' async digest
   mirror/clientReviewMirror.ts orders publications; loads each generation's files
-  mirror/sharedStateMirror.ts  fetches and orders shared-state snapshots
+  mirror/clientSharedStateMirror.ts fetches and orders shared-state snapshots
   notes/noteProjection.ts      places a file's visible notes per line; titles and thread depth
   notes/noteCards.ts           note cards as DOM for Pierre's line annotations
   notes/stmlDom.ts             STML markup to DOM through the shared parser and roles
@@ -103,7 +104,7 @@ packages/hunk/src/web/
   them. Each new document is adopted with `document/reconcile`, so selection and expansion
   survive a reload by file key. Gap source is loaded on demand from the file's `source`
   resource into the store's source-status vocabulary.
-- **Shared state** (`sharedStateMirror.ts`). Every publication is offered to it before the file
+- **Shared state** (`clientSharedStateMirror.ts`). Every publication is offered to it before the file
   mirror; it fetches `GET /state` when the generation changes or `sharedStateRevision` moves,
   never for a selection moving elsewhere, orders bodies by `classifyReviewPublication` and then
   by shared revision, supersedes in-flight fetches with the shared queue, and validates with
@@ -441,9 +442,11 @@ imports; a page fetches only the languages and themes it shows. The largest sing
 
 - **Panel.** A right-hand panel docked beside the stream: tabs (ARIA tabs pattern), a close
   button, and a left-edge resizer (260–640 px). Open state, width, and tab persist per browser
-  under `hunk.review.panel`; without a stored choice it opens at 1400 px and wider and stays
-  hidden below, where the stream needs the room. The toolbar's last button toggles it; the
-  stream's width for `auto` layout subtracts it.
+  under `hunk.review.panel`; without a stored choice it stays closed at every width, and
+  opens on Notes when the review has notes, else Overview. The summary strip above the stream
+  (`overview/SummaryStrip.tsx`, outside the scrolling stream so its geometry is untouched) has
+  an Overview button that opens it. The toolbar's last button toggles it; the stream's width
+  for `auto` layout subtracts it.
 - **Commands.** The panel's commands are page commands in `commands/webLocalCommands.ts`, so the
   palette and help list them: `p` toggles the panel and `O` shows the Overview. A page command
   may declare plain `keys` in the shared chord grammar; `panel/panelCommands.ts` binds those
@@ -551,9 +554,15 @@ the shared-state snapshot lists only marks that still match each file's `content
   content the reader did not see.
 - **Composers.** Opening a composer (`c`, reply, edit, a gutter pick) first shows that file's
   diff: a rendered Markdown file returns to Diff and a collapsed viewed file expands.
-- **Progress.** The toolbar shows "12 of 47 viewed" over the files the shared filter leaves
-  visible, counted by `countReviewViewedFiles` in `core/review/overview.ts`, which the Overview
-  tab uses too.
+- **Progress.** The review bar along the bottom shows "12 of 47 viewed" over the files the
+  shared filter leaves visible, counted by `countReviewViewedFiles` in `core/review/overview.ts`,
+  which the Overview tab uses too. Beside it, "Next unviewed" names the first file after the
+  selected one (wrapping) not marked viewed (`viewed/nextUnviewed.ts`) and opens it through
+  the sidebar's jump. The bar also shows key hints read from the page keymap by command id
+  (`app/reviewBarHints.ts`; hidden from assistive technology, since help is the accessible
+  list), the note count, which opens the Notes tab, and "Copy notes for agent", which copies
+  the visible notes as Markdown (`notes/notesMarkdown.ts`). Its actions are page-local, so they
+  work after the session ends.
 - **Changed since viewed.** The snapshot cannot say a file _was_ viewed before its content
   changed, so the page remembers per session and per browser the content each file was last
   seen marked at (`viewed/viewedFiles.ts`, `localStorage` key `hunk.review.viewed.<session>`,
@@ -608,7 +617,7 @@ the shared-state snapshot lists only marks that still match each file's `content
 - **Workers.** Highlighting runs on the main thread. Pierre's `WorkerPoolContextProvider` takes
   a `workerFactory: () => Worker`; adopting it needs a second build entry for
   `@pierre/diffs/worker/worker.js`, an asset name in the manifest, and `worker-src 'self'`.
-- **Input.** The shared `ReviewFileV1` is already Pierre-shaped (hunks, content blocks, line
+- **Input.** The shared `ReviewFile` is already Pierre-shaped (hunks, content blocks, line
   arrays, row counts), so the page hands Pierre parsed metadata from the canonical file instead
   of re-parsing the `patch` resource. Pierre treats metadata with an unchanged `cacheKey` as
   the same diff, so the projection derives the key from the content identity plus the filled

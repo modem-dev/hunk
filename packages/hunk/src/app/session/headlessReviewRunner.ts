@@ -45,7 +45,7 @@ import {
 import { reviewProcessUrl } from "../review/capability";
 import { ReviewSessionHost } from "../review/reviewSessionHost";
 import { buildReviewPresentationDefaults, buildReviewSharedState } from "../review/sharedState";
-import type { ReviewPresentationDefaultsV1 } from "../../session/reviewSharedState";
+import type { ReviewPresentationDefaults } from "../../session/reviewSharedState";
 import { createHunkSessionBridge } from "./bridge";
 import { ReviewReloadCoordinator, withReloadVcsCatalog } from "./reloadCoordinator";
 import { createSessionReloadBounds } from "./reloadBounds";
@@ -254,7 +254,7 @@ export async function runHeadlessReview(
 
   let host = createHost(bootstrap);
   let mountedBootstrap: AppBootstrap = bootstrap;
-  let presentation: ReviewPresentationDefaultsV1 | undefined;
+  let presentation: ReviewPresentationDefaults | undefined;
   let unsubscribeHost: () => void = () => {};
   let snapshotQueued = false;
 

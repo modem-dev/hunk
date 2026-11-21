@@ -15,14 +15,14 @@ import {
   selectVisibleReviewFiles,
 } from "./selectors";
 import { reviewNoteAnchorLine, reviewNoteVisibleByPolicy, type ReviewState } from "./state";
-import type { ReviewNoteV1 } from "./types";
+import type { ReviewNote } from "./types";
 
 /** Who wrote a note, as a notes list filters it. */
 export type ReviewNoteListOrigin = "agent" | "reviewer" | "browser";
 
 /** One note in a thread, with the facts a list shows beside it. */
 export interface ReviewNoteListEntry {
-  note: ReviewNoteV1;
+  note: ReviewNote;
   origin: ReviewNoteListOrigin;
   stale: boolean;
   /** Whether the note is stored (live or reviewer) rather than a sidecar annotation. */
@@ -46,7 +46,7 @@ export interface ReviewNoteListFile {
 }
 
 /** Classify one note's author for filtering: an agent, the reviewer, or a browser tab. */
-export function reviewNoteListOrigin(note: ReviewNoteV1): ReviewNoteListOrigin {
+export function reviewNoteListOrigin(note: ReviewNote): ReviewNoteListOrigin {
   if (note.source !== "user") return "agent";
   return note.originalSource === "browser" ? "browser" : "reviewer";
 }
@@ -65,7 +65,7 @@ type NoteListState = Pick<
 /** List the review's visible notes as threads by file; see the module header. */
 export function selectReviewNoteList(
   state: NoteListState,
-  sidecar: readonly { note: ReviewNoteV1; resolution: "active" | "stale" }[] = [],
+  sidecar: readonly { note: ReviewNote; resolution: "active" | "stale" }[] = [],
 ): ReviewNoteListFile[] {
   const files = selectVisibleReviewFiles(state);
   const fileOrder = new Map(files.map((file, index) => [file.key, index] as const));

@@ -16,7 +16,7 @@
  */
 import { buildReviewContentManifestFile, type ReviewContentManifestFile } from "./contentManifest";
 import { recomputeReviewFileContentIdentity } from "./document";
-import type { ReviewFileChangeKind, ReviewFileV1, ReviewHunkBlockV1, ReviewHunkV1 } from "./types";
+import type { ReviewFileChangeKind, ReviewFile, ReviewHunkBlock, ReviewHunk } from "./types";
 import { asRecord, hasExactKeys } from "./validation";
 
 /** One field path that disagreed, as a dotted/indexed address into the manifest entry. */
@@ -74,7 +74,7 @@ function collectMismatches(path: string, expected: unknown, actual: unknown, int
  * only need a verdict read the length; callers reporting a failure get the field paths.
  */
 export function reviewCanonicalFileMismatches(
-  canonical: ReviewFileV1,
+  canonical: ReviewFile,
   expected: ReviewContentManifestFile,
 ): ReviewCanonicalFileMismatch[] {
   const mismatches: string[] = [];
@@ -99,7 +99,7 @@ export class ReviewCanonicalFileMismatchError extends Error {
  * read.
  */
 export function assertCanonicalFileMatchesManifest(
-  canonical: ReviewFileV1,
+  canonical: ReviewFile,
   expected: ReviewContentManifestFile,
 ) {
   const mismatches = reviewCanonicalFileMismatches(canonical, expected);
@@ -146,7 +146,7 @@ function hasKeys(
 }
 
 /** Whether one value is a hunk content block exactly as the projection writes it. */
-function isHunkBlock(value: unknown): value is ReviewHunkBlockV1 {
+function isHunkBlock(value: unknown): value is ReviewHunkBlock {
   const record = asRecord(value);
   if (!record || !isCount(record.additionLineIndex) || !isCount(record.deletionLineIndex)) {
     return false;
@@ -189,7 +189,7 @@ const HUNK_COUNT_FIELDS = [
 ] as const;
 
 /** Whether one value is a hunk record exactly as the projection writes it. */
-function isHunk(value: unknown): value is ReviewHunkV1 {
+function isHunk(value: unknown): value is ReviewHunk {
   const record = asRecord(value);
   return (
     record !== undefined &&
@@ -238,7 +238,7 @@ const FILE_OPTIONAL_FIELDS = [
 ] as const;
 
 /** Whether one value has a file's structural shape, before its identity is checked. */
-function isReviewFileShape(value: unknown): value is ReviewFileV1 {
+function isReviewFileShape(value: unknown): value is ReviewFile {
   const record = asRecord(value);
   if (!record || !hasKeys(record, FILE_REQUIRED_FIELDS, FILE_OPTIONAL_FIELDS)) {
     return false;
@@ -292,7 +292,7 @@ export type ReviewCanonicalFileParseFailure =
   | "identity-mismatch";
 
 export type ReviewCanonicalFileParseResult =
-  | { ok: true; file: ReviewFileV1 }
+  | { ok: true; file: ReviewFile }
   | { ok: false; reason: ReviewCanonicalFileParseFailure };
 
 /**

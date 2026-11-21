@@ -10,7 +10,7 @@
  *
  * The choice never reaches the session: a theme picked here does not change the terminal.
  */
-import type { ReviewThemeDefaultsV1 } from "../../session/reviewSharedState";
+import type { ReviewThemeDefaults } from "../../session/reviewSharedState";
 
 /** `<meta name>` the document carries the theme index's URL in. */
 export const WEB_THEME_INDEX_META_NAME = "hunk-theme-index";
@@ -22,7 +22,7 @@ export const DEFAULT_WEB_THEME_IDS = {
 } as const;
 
 /** One built-in theme, resolved. */
-export interface WebThemeV1 {
+export interface WebTheme {
   id: string;
   label: string;
   appearance: "light" | "dark";
@@ -32,20 +32,20 @@ export interface WebThemeV1 {
   tokens: Record<string, string>;
 }
 
-export interface WebThemeIndexV1 {
+export interface WebThemeIndex {
   formatVersion: 1;
-  themes: WebThemeV1[];
+  themes: WebTheme[];
 }
 
 const STORAGE_KEY = "hunk.review.theme";
 
 /** Parse a fetched index, refusing anything that is not one. */
-export function parseWebThemeIndex(value: unknown): WebThemeIndexV1 | undefined {
+export function parseWebThemeIndex(value: unknown): WebThemeIndex | undefined {
   if (!value || typeof value !== "object") return undefined;
   const record = value as { formatVersion?: unknown; themes?: unknown };
   if (record.formatVersion !== 1 || !Array.isArray(record.themes)) return undefined;
   const valid = record.themes.every(
-    (theme: Partial<WebThemeV1>) =>
+    (theme: Partial<WebTheme>) =>
       typeof theme?.id === "string" &&
       typeof theme.label === "string" &&
       (theme.appearance === "light" || theme.appearance === "dark") &&
@@ -53,13 +53,13 @@ export function parseWebThemeIndex(value: unknown): WebThemeIndexV1 | undefined 
       typeof theme.tokens === "object" &&
       theme.tokens !== null,
   );
-  return valid ? (record as WebThemeIndexV1) : undefined;
+  return valid ? (record as WebThemeIndex) : undefined;
 }
 
 /** Fetch the index the document names. */
 export async function loadWebThemeIndex(
   doc: Document = document,
-): Promise<WebThemeIndexV1 | undefined> {
+): Promise<WebThemeIndex | undefined> {
   const href = doc
     .querySelector(`meta[name="${WEB_THEME_INDEX_META_NAME}"]`)
     ?.getAttribute("content");
@@ -114,8 +114,8 @@ const DEFAULT_SYNTAX_THEMES = {
  * resolves highlight themes by name or by a whole Shiki theme the page would have to build.
  */
 export function sessionCustomWebTheme(
-  theme: Extract<ReviewThemeDefaultsV1, { kind: "custom" }>,
-): WebThemeV1 {
+  theme: Extract<ReviewThemeDefaults, { kind: "custom" }>,
+): WebTheme {
   return {
     id: theme.id,
     label: theme.label,
@@ -130,11 +130,11 @@ export function sessionCustomWebTheme(
  * color-scheme default.
  */
 export function resolveSessionWebTheme(
-  index: WebThemeIndexV1,
+  index: WebThemeIndex,
   storedId: string | undefined,
-  session: ReviewThemeDefaultsV1 | undefined,
+  session: ReviewThemeDefaults | undefined,
   prefersDark: boolean,
-): WebThemeV1 | undefined {
+): WebTheme | undefined {
   const custom = session?.kind === "custom" ? sessionCustomWebTheme(session) : undefined;
   const choose = (id: string | undefined) =>
     id === undefined
@@ -147,10 +147,10 @@ export function resolveSessionWebTheme(
 
 /** Pick the theme to show: the stored one if it still exists, else the color-scheme default. */
 export function resolveWebTheme(
-  index: WebThemeIndexV1,
+  index: WebThemeIndex,
   storedId: string | undefined,
   prefersDark: boolean,
-): WebThemeV1 | undefined {
+): WebTheme | undefined {
   const fallback = prefersDark ? DEFAULT_WEB_THEME_IDS.dark : DEFAULT_WEB_THEME_IDS.light;
   return (
     index.themes.find((theme) => theme.id === storedId) ??
@@ -172,7 +172,7 @@ export function themeTokenProperty(token: string) {
  * the sidebar use the terminal's added/removed rows, emphasis, line numbers, and file-state
  * colors rather than their own palettes. Custom properties inherit into their shadow roots.
  */
-export function themeCustomProperties(theme: WebThemeV1): Record<string, string> {
+export function themeCustomProperties(theme: WebTheme): Record<string, string> {
   const token = (name: string) => theme.tokens[name] ?? "";
   const properties: Record<string, string> = {};
   for (const [name, value] of Object.entries(theme.tokens)) {
@@ -212,7 +212,7 @@ const appliedProperties = new WeakMap<HTMLElement, Set<string>>();
  * A property the previous theme set and this one does not define is removed, so switching
  * from a theme with extra tokens never leaves their colors behind.
  */
-export function applyWebTheme(element: HTMLElement, theme: WebThemeV1) {
+export function applyWebTheme(element: HTMLElement, theme: WebTheme) {
   const applied = new Set<string>();
   for (const [property, value] of Object.entries(themeCustomProperties(theme))) {
     if (value) {

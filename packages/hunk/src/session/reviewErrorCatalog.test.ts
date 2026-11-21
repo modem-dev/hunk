@@ -5,7 +5,7 @@ import {
   describeReviewError,
   reviewErrorMessage,
 } from "./reviewErrorCatalog";
-import type { HunkReviewClientErrorCodeV1 } from "./reviewHttpProtocol";
+import type { ReviewHttpFailureCode } from "./reviewHttpProtocol";
 
 /**
  * Every code the catalog must answer for, written out by hand.
@@ -15,7 +15,7 @@ import type { HunkReviewClientErrorCodeV1 } from "./reviewHttpProtocol";
  * producer and the transport actually publish, so a code added to either without a message
  * fails here as well as at the type level.
  */
-const EXPECTED_CODES: HunkReviewClientErrorCodeV1[] = [
+const EXPECTED_CODES: ReviewHttpFailureCode[] = [
   "stale-generation",
   "invalid-request",
   "unsupported-action",

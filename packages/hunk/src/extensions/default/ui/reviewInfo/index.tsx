@@ -62,7 +62,7 @@ export function ReviewInfoPane({
   const contentWidth = Math.max(0, width - 3);
   const comparisonCommits = review.kind === "comparison" ? review.commits : undefined;
   if (comparisonCommits?.length) {
-    const availableRows = Math.max(0, height);
+    const availableRows = Math.max(0, height - 1);
     const totalCommits =
       (review.kind === "comparison" ? review.commitCount : undefined) ?? comparisonCommits.length;
     const needsOverflow = totalCommits > availableRows;
@@ -80,6 +80,9 @@ export function ReviewInfoPane({
           backgroundColor: theme.panel,
         }}
       >
+        <text fg={theme.border} bg={theme.panel}>
+          {"─".repeat(Math.max(0, width))}
+        </text>
         {comparisonCommits.slice(0, visibleCount).map((commit, index) => {
           const row = comparisonCommitContent(commit, contentWidth, now);
           return (
@@ -137,7 +140,10 @@ export function ReviewInfoPane({
   );
   if (width <= 1) {
     return (
-      <box style={{ width: 1, height: 2, flexDirection: "column", backgroundColor: theme.panel }}>
+      <box style={{ width: 1, height: 3, flexDirection: "column", backgroundColor: theme.panel }}>
+        <text fg={theme.border} bg={theme.panel}>
+          ─
+        </text>
         <text fg={theme.accent} bg={theme.panel}>
           {diffRailMarker()}
         </text>
@@ -151,11 +157,14 @@ export function ReviewInfoPane({
     <box
       style={{
         width: "100%",
-        height: 2,
+        height: 3,
         flexDirection: "column",
         backgroundColor: theme.panel,
       }}
     >
+      <text fg={theme.border} bg={theme.panel}>
+        {"─".repeat(Math.max(0, width))}
+      </text>
       <box style={{ width: "100%", height: 2, flexDirection: "row" }}>
         <box style={{ width: 1, height: 2, flexDirection: "column", backgroundColor: theme.panel }}>
           <text fg={theme.accent} bg={theme.panel}>
@@ -218,7 +227,7 @@ const registerBundledReviewInfo: ExtensionFactory = (hunk) => {
     id: BUNDLED_REVIEW_INFO_VIEW_ID,
     title: "Review info",
     placement: "top",
-    height: { preferred: 2, min: 2, max: 2 },
+    height: { preferred: 3, min: 3, max: 3 },
     defaultOpen: true,
     available: ({ review }) => supportsFixedReviewInfo(review),
     component: ReviewInfoPane,
@@ -231,15 +240,15 @@ export const registerBundledComparisonReviewInfo: ExtensionFactory = (hunk) => {
     id: BUNDLED_COMPARISON_REVIEW_INFO_VIEW_ID,
     title: "Review info",
     placement: "top",
-    height: { preferred: 2, min: 2, max: 9 },
+    height: { preferred: 3, min: 3, max: 10 },
     defaultOpen: true,
     resizable: false,
     available: ({ review }) => supportsComparisonReviewInfo(review),
     preferredSize: ({ review }) => {
-      if (!supportsComparisonReviewInfo(review)) return 2;
+      if (!supportsComparisonReviewInfo(review)) return 3;
       const commits = review.commits?.length ?? 0;
       const total = review.commitCount ?? commits;
-      return commits + (total > commits ? 1 : 0);
+      return 1 + commits + (total > commits ? 1 : 0);
     },
     component: ReviewInfoPane,
   });

@@ -84,26 +84,29 @@ export function forgetClearedViewedMarks(
   return next ?? memory;
 }
 
-/** What the page shows of its viewed files: which are left out and which are folded to a row. */
+/** What the page shows of its files' bodies: which viewed files are left out, which are folded. */
 export interface ReviewViewedVisibility {
   /** Viewed files "Hide viewed" removes from the stream, the sidebar, and navigation. */
   hidden: ReadonlySet<string>;
-  /** Viewed files drawn as one collapsed row. */
+  /** Files drawn as a header alone: viewed files by default, and any file the reader folded. */
   collapsed: ReadonlySet<string>;
 }
 
 /**
- * Decide which viewed files the page hides and which it collapses.
+ * Decide which viewed files the page hides and which files it collapses.
  *
  * A viewed file is collapsed unless the reader expanded it or a navigation is opening it
- * (`opening`), and hidden while "Hide viewed" is on. The one file an explicit jump revealed
- * (`revealed`) is the exception to both: it is shown, expanded, despite "Hide viewed".
+ * (`opening`), and hidden while "Hide viewed" is on. Any other file is collapsed only while the
+ * reader folded it (`folded`), and a navigation opening it unfolds it the same way. The one
+ * file an explicit jump revealed (`revealed`) is the exception to all of these: it is shown,
+ * expanded, despite "Hide viewed".
  */
 export function reviewViewedVisibility(
   statuses: ReadonlyMap<string, ReviewViewedStatus>,
   options: {
     hideViewed: boolean;
     expanded: ReadonlySet<string>;
+    folded?: ReadonlySet<string>;
     opening: string | null;
     revealed: string | null;
   },
@@ -114,6 +117,12 @@ export function reviewViewedVisibility(
     if (status !== "viewed" || key === options.revealed) continue;
     if (options.hideViewed) hidden.add(key);
     if (!options.expanded.has(key) && key !== options.opening) collapsed.add(key);
+  }
+  for (const key of options.folded ?? []) {
+    if (statuses.get(key) === "viewed" || key === options.revealed || key === options.opening) {
+      continue;
+    }
+    collapsed.add(key);
   }
   return { hidden, collapsed };
 }

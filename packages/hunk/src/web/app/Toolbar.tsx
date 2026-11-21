@@ -1,20 +1,22 @@
 /** @jsxImportSource react */
 /**
- * The page's toolbar: what the terminal's menu bar title says, plus web-native view controls.
+ * Lays out the page's toolbar as one row: what the terminal's menu bar title says on the left,
+ * web-native view controls on the right.
  *
  * The left side mirrors the terminal's `topTitle` — review title, file count, and total
- * `+A -D` — with connection and load state beside it. The right side holds the per-browser
- * view controls: sidebar, layout (auto, split, unified), wrapping, line numbers, and theme.
- * They are real buttons, styled from the theme's tokens, and each names the shortcut that
- * does the same thing (from the page's keymap, so a remap shows up here too). None of them
- * reaches the session.
+ * `+A -D` — with connection and load state beside it (a quiet dot while connected, words while
+ * loading, reconnecting, or failed). The right side holds the shared filter, layout (auto,
+ * split, unified), the View menu, refresh, copy link, the command palette, and the side panel;
+ * viewed progress lives in the review bar (`./ReviewBar.tsx`). Controls are icon buttons where the icon says enough; each names its action
+ * and the shortcut that does the same thing (from the page's keymap, so a remap shows up here
+ * too) in its tooltip. Narrow windows drop labels before controls (`styles.css`) so the row
+ * never wraps. None of the view controls reaches the session.
  */
 import type { KeyboardEvent, ReactNode } from "react";
 import type { LayoutMode } from "../../core/run/commandInputs";
 import type { WebImplementedCommandId } from "../commands/webCommandTable";
-
-import type { WebViewPreferences } from "../view/viewPreferences";
-import { ThemeMenu, type ThemeMenuOption } from "./ThemeMenu";
+import { formatAddedCount, formatFileCount, formatRemovedCount } from "../format/lineCounts";
+import { Icon, type IconName } from "../icons/Icon";
 
 export interface ToolbarProps {
   title: string;
@@ -23,27 +25,26 @@ export interface ToolbarProps {
   deletions: number;
   status: { label: string; state: "connected" | "loading" | "reconnecting" | "failed" };
   progress?: string;
-  preferences: WebViewPreferences;
+  layout: LayoutMode;
+  onLayout: (layout: LayoutMode) => void;
   sidebarOpen: boolean;
   resolvedLayout: "split" | "unified";
-  themes: readonly ThemeMenuOption[];
-  /** The theme option shown as chosen. */
-  themeId: string | undefined;
-  /** The theme in effect. */
-  themeLabel?: string;
   /** The session's source, shown beside the title. */
   sourceLabel?: string;
   /** The shared file filter, when the session has one. */
   filter?: string;
   /** Sidecar notes the session left out of the shared state; the terminal still shows them. */
   omittedNotes?: number;
-  themeMenuOpen: boolean;
-  onThemeMenuOpen: (open: boolean) => void;
-  onPreferences: (next: Partial<WebViewPreferences>) => void;
   onToggleSidebar: () => void;
-  onTheme: (themeId: string) => void;
-  /** Review controls shown before the view controls (filter, refresh, copy link). */
-  controls?: ReactNode;
+  /** The filter field. */
+  filterField?: ReactNode;
+  /** The View menu. */
+  viewMenu?: ReactNode;
+  /** Refresh and copy link. */
+  reviewActions?: ReactNode;
+  /** Opens the command palette, and the chord that does the same. */
+  onOpenCommands?: () => void;
+  commandsHint?: string;
   /** The shortcut label for one command, when it has one on this page. */
   keyHint: (commandId: WebImplementedCommandId) => string | undefined;
   /** Whether the side panel of review tools is open, and how to toggle it. */
@@ -52,10 +53,10 @@ export interface ToolbarProps {
   onTogglePanel?: () => void;
 }
 
-const LAYOUTS: readonly { mode: LayoutMode; command: WebImplementedCommandId }[] = [
-  { mode: "auto", command: "hunk.view.layoutAuto" },
-  { mode: "split", command: "hunk.view.layoutSplit" },
-  { mode: "unified", command: "hunk.view.layoutUnified" },
+const LAYOUTS: readonly { mode: LayoutMode; command: WebImplementedCommandId; icon: IconName }[] = [
+  { mode: "auto", command: "hunk.view.layoutAuto", icon: "layout-auto" },
+  { mode: "split", command: "hunk.view.layoutSplit", icon: "layout-split" },
+  { mode: "unified", command: "hunk.view.layoutUnified", icon: "layout-unified" },
 ];
 
 /** A tooltip naming one action and, when bound, its shortcut. */
@@ -65,16 +66,17 @@ function hinted(label: string, hint: string | undefined) {
 
 /** The page toolbar. */
 export function Toolbar(props: ToolbarProps) {
-  const { preferences, keyHint } = props;
+  const { keyHint } = props;
+  const connected = props.status.state === "connected";
 
   // Arrow keys move the choice within the layout group, as in any radio group.
   const onLayoutKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
     if (step === undefined) return;
     event.preventDefault();
-    const index = LAYOUTS.findIndex((layout) => layout.mode === preferences.layout);
+    const index = LAYOUTS.findIndex((layout) => layout.mode === props.layout);
     const next = LAYOUTS[(index + step + LAYOUTS.length) % LAYOUTS.length]!;
-    props.onPreferences({ layout: next.mode });
+    props.onLayout(next.mode);
     event.currentTarget.querySelector<HTMLElement>(`[data-testid="layout-${next.mode}"]`)?.focus();
   };
 
@@ -92,17 +94,33 @@ export function Toolbar(props: ToolbarProps) {
         onClick={props.onToggleSidebar}
         data-testid="toggle-sidebar"
       >
-        <span aria-hidden="true">☰</span>
+        <Icon name="sidebar" />
       </button>
       <div className="toolbar-title">
-        <span className="review-title" title={props.sourceLabel}>
+        {/* The tooltip carries the whole title, which a narrow toolbar truncates. */}
+        <span
+          className="review-title"
+          title={props.sourceLabel ? `${props.title} — ${props.sourceLabel}` : props.title}
+        >
           {props.title}
         </span>
-        <span className="file-count" data-testid="file-count">
-          {props.fileCount === 1 ? "1 file" : `${props.fileCount} files`}
+        <span className="toolbar-stats">
+          <span className="file-count" data-testid="file-count">
+            {formatFileCount(props.fileCount)}
+          </span>
+          <span className="stat-added">{formatAddedCount(props.additions)}</span>
+          <span className="stat-removed">{formatRemovedCount(props.deletions)}</span>
         </span>
-        <span className="stat-added">{`+${props.additions}`}</span>
-        <span className="stat-removed">{`-${props.deletions}`}</span>
+        {/* Connected is the quiet default: a dot whose words stay available to assistive
+            technology. Every other state keeps its words on screen. */}
+        <span
+          className="status"
+          data-state={props.status.state}
+          role="status"
+          title={connected ? props.status.label : undefined}
+        >
+          <span className={connected ? "visually-hidden" : undefined}>{props.status.label}</span>
+        </span>
         {props.filter ? (
           <span className="filter-chip" data-testid="shared-filter" title="Filter from the session">
             {`filter: ${props.filter}`}
@@ -117,9 +135,6 @@ export function Toolbar(props: ToolbarProps) {
             {`${props.omittedNotes} agent ${props.omittedNotes === 1 ? "note" : "notes"} not shown`}
           </span>
         ) : null}
-        <span className="status" data-state={props.status.state} role="status">
-          {props.status.label}
-        </span>
         {props.progress ? (
           <span className="progress" data-testid="load-progress">
             {props.progress}
@@ -127,22 +142,24 @@ export function Toolbar(props: ToolbarProps) {
         ) : null}
       </div>
       <div className="toolbar-controls">
-        {props.controls}
+        {props.filterField}
+        <span className="toolbar-separator" aria-hidden="true" />
         <div
-          className="segmented"
+          className="segmented icon-segmented"
           role="radiogroup"
           aria-label="Layout"
           onKeyDown={onLayoutKeyDown}
         >
-          {LAYOUTS.map(({ mode, command }) => {
-            const checked = preferences.layout === mode;
-            const label = mode[0]!.toUpperCase() + mode.slice(1);
+          {LAYOUTS.map(({ mode, command, icon }) => {
+            const checked = props.layout === mode;
+            const label = `${mode[0]!.toUpperCase()}${mode.slice(1)}`;
             return (
               <button
                 key={mode}
                 type="button"
                 role="radio"
                 aria-checked={checked}
+                aria-label={label}
                 tabIndex={checked ? 0 : -1}
                 data-testid={`layout-${mode}`}
                 title={hinted(
@@ -151,42 +168,33 @@ export function Toolbar(props: ToolbarProps) {
                     : `${label} layout`,
                   keyHint(command),
                 )}
-                onClick={() => props.onPreferences({ layout: mode })}
+                onClick={() => props.onLayout(mode)}
               >
-                {label}
+                <Icon name={icon} />
               </button>
             );
           })}
         </div>
-        <button
-          type="button"
-          className="tool-button toggle-button"
-          aria-pressed={preferences.wrapLines}
-          title={hinted("Wrap long lines", keyHint("hunk.view.toggleLineWrap"))}
-          data-testid="toggle-wrap"
-          onClick={() => props.onPreferences({ wrapLines: !preferences.wrapLines })}
-        >
-          Wrap
-        </button>
-        <button
-          type="button"
-          className="tool-button toggle-button"
-          aria-pressed={preferences.showLineNumbers}
-          title={hinted("Show line numbers", keyHint("hunk.view.toggleLineNumbers"))}
-          data-testid="toggle-line-numbers"
-          onClick={() => props.onPreferences({ showLineNumbers: !preferences.showLineNumbers })}
-        >
-          Line numbers
-        </button>
-        <ThemeMenu
-          themes={props.themes}
-          themeId={props.themeId}
-          {...(props.themeLabel !== undefined ? { currentLabel: props.themeLabel } : {})}
-          open={props.themeMenuOpen}
-          onOpenChange={props.onThemeMenuOpen}
-          onTheme={props.onTheme}
-          keyHint={keyHint("hunk.view.openThemeSelector")}
-        />
+        {props.viewMenu}
+        <span className="toolbar-separator" aria-hidden="true" />
+        {props.reviewActions}
+        {props.onOpenCommands ? (
+          <button
+            type="button"
+            className="tool-button toolbar-pill commands-button"
+            title={hinted("Command palette", props.commandsHint)}
+            data-testid="open-command-palette"
+            onClick={props.onOpenCommands}
+          >
+            <Icon name="search" />
+            <span className="pill-label">Commands</span>
+            {props.commandsHint ? (
+              <kbd className="key-hint" aria-hidden="true">
+                {props.commandsHint}
+              </kbd>
+            ) : null}
+          </button>
+        ) : null}
         {props.onTogglePanel ? (
           <button
             type="button"
@@ -200,7 +208,7 @@ export function Toolbar(props: ToolbarProps) {
             data-testid="toggle-side-panel"
             onClick={props.onTogglePanel}
           >
-            <span aria-hidden="true">◨</span>
+            <Icon name="panel" />
           </button>
         ) : null}
       </div>
