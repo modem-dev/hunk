@@ -22,7 +22,7 @@
  *   key or a gap id; the catalog stays constant so it can be rendered anywhere,
  *   including where the caller's input must not be echoed back.
  */
-import type { HunkReviewClientErrorCodeV1 } from "./reviewHttpProtocol";
+import type { ReviewHttpFailureCode } from "./reviewHttpProtocol";
 
 /** One documented failure: what it means, and what the person in front of it can do. */
 export interface ReviewErrorDoc {
@@ -38,7 +38,28 @@ export interface ReviewErrorDoc {
  * Ordered by tier — the review moved, the request was wrong, the content could not be
  * served, the caller was not allowed — because that is the order a reader diagnoses in.
  */
-export const REVIEW_ERROR_CATALOG: Record<HunkReviewClientErrorCodeV1, ReviewErrorDoc> = {
+export const REVIEW_ERROR_CATALOG: Record<ReviewHttpFailureCode, ReviewErrorDoc> = {
+  "refresh-unavailable": {
+    message: "This review cannot be reloaded from its input.",
+    remedy: "Reviews read from standard input cannot refresh; start a new review instead.",
+  },
+  "refresh-failed": {
+    message: "Reloading the review failed, so the previous version is still shown.",
+    remedy: "Check that the files or repository are readable, then refresh again.",
+  },
+  "selection-is-local": {
+    message: "Each window keeps its own place in the review, so this move stays in this window.",
+    remedy: "Move the selection locally; it is not sent to the session.",
+  },
+  "draft-is-local": {
+    message:
+      "Each window writes its notes in its own composer, so this draft stays in this window.",
+    remedy: "Save the note from this window; the session's terminal draft is not shared.",
+  },
+  "state-too-large": {
+    message: "This review's notes and shared state are too large to send to a browser.",
+    remedy: "Clear some live comments or attention marks, then reload the page.",
+  },
   "stale-generation": {
     message: "The review changed after this request was prepared.",
     remedy: "Reload the review and try again; nothing was applied.",
@@ -103,6 +124,14 @@ export const REVIEW_ERROR_CATALOG: Record<HunkReviewClientErrorCodeV1, ReviewErr
     message: "That note is larger than Hunk can store or publish.",
     remedy: "Shorten the note and try again.",
   },
+  "too-many-notes": {
+    message: "This review already holds as many notes as Hunk can store and publish.",
+    remedy: "Remove notes you no longer need, then try again.",
+  },
+  "forbidden-actor": {
+    message: "A review link can act only as a browser.",
+    remedy: "This is a client bug rather than something to retry; report it with what you did.",
+  },
   "missing-fact": {
     message: "The action arrived without something only its caller can supply.",
     remedy: "This is a client bug rather than something to retry; report it with what you did.",
@@ -129,7 +158,8 @@ export const REVIEW_ERROR_CATALOG: Record<HunkReviewClientErrorCodeV1, ReviewErr
   },
   unauthorized: {
     message: "This review link is not valid for that session.",
-    remedy: "Open the review from the terminal running it to get a current link.",
+    remedy:
+      "Run `hunk session open` (or open the review from the terminal running it) to get a current link.",
   },
   "no-publication": {
     message: "That Hunk session is not publishing a review yet.",
@@ -158,7 +188,7 @@ export const REVIEW_ERROR_CATALOG: Record<HunkReviewClientErrorCodeV1, ReviewErr
 };
 
 /** The sentence and remedy one code stands for. */
-export function describeReviewError(code: HunkReviewClientErrorCodeV1): ReviewErrorDoc {
+export function describeReviewError(code: ReviewHttpFailureCode): ReviewErrorDoc {
   return REVIEW_ERROR_CATALOG[code];
 }
 
@@ -168,7 +198,7 @@ export function describeReviewError(code: HunkReviewClientErrorCodeV1): ReviewEr
  * Statement then remedy, joined, because every consumer so far wants both and joining them
  * in each consumer is how two clients end up phrasing the same failure differently.
  */
-export function reviewErrorMessage(code: HunkReviewClientErrorCodeV1): string {
+export function reviewErrorMessage(code: ReviewHttpFailureCode): string {
   const doc = REVIEW_ERROR_CATALOG[code];
   return `${doc.message} ${doc.remedy}`;
 }

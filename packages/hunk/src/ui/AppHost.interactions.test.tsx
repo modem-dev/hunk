@@ -1891,6 +1891,96 @@ describe("App interactions", () => {
     }
   });
 
+  // PR #1292 review: a terminal save into a full review threw `too-many-notes` out of the key
+  // handler. The composer now keeps the draft open with its text and explains the refusal in
+  // the shared catalog's words.
+  test("a refused draft save keeps the draft open and shows the catalog wording", async () => {
+    const dir = mkdtempSync(join(process.cwd(), ".hunk-session-full-review-"));
+    const left = join(dir, "before.ts");
+    const right = join(dir, "after.ts");
+    writeFileSync(left, "export const answer = 41;\n");
+    writeFileSync(right, "export const answer = 42;\n");
+
+    const bootstrap = await loadAppBootstrap({
+      kind: "diff",
+      left,
+      right,
+      options: { mode: "unified" },
+    });
+    const { dispatchCommand, hostClient } = createMockHostClient();
+    const setup = await testRender(<AppHost bootstrap={bootstrap} hostClient={hostClient} />, {
+      width: 160,
+      height: 30,
+      useKittyKeyboard: null,
+    });
+
+    try {
+      await flush(setup);
+
+      // Fill the stored-note byte budget from the agent side: large comments until one is
+      // refused, then halve, until even a one-byte comment no longer fits.
+      let size = 250 * 1024;
+      let index = 0;
+      while (size > 0) {
+        index += 1;
+        let refused = false;
+        await act(async () => {
+          try {
+            await dispatchCommand({
+              type: "command",
+              requestId: `fill-${index}`,
+              command: "comment",
+              input: {
+                sessionId: "session-1",
+                filePath: "after.ts",
+                side: "new",
+                line: 1,
+                summary: "f".repeat(size),
+                reveal: false,
+              },
+            });
+          } catch (error) {
+            expect(error).toMatchObject({ code: "too-many-notes" });
+            refused = true;
+          }
+        });
+        if (refused) size = Math.floor(size / 2);
+      }
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText("c");
+      });
+      await flush(setup);
+      const draftText = `Kept after refusal ${"k".repeat(400)}`;
+      await act(async () => {
+        await setup.mockInput.typeText(draftText);
+      });
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.pressKeys(["\u001b[115;5u"]);
+      });
+      const frame = await waitForFrame(setup, (current) =>
+        current.includes("as many notes as Hunk can store"),
+      );
+      expect(frame).toContain("This review already holds as many notes as Hunk can store");
+      expect(frame).toContain("Draft note");
+      expect(frame).toContain("Kept after refusal");
+
+      // The draft still owns the keyboard and accepts more input.
+      await act(async () => {
+        await setup.mockInput.typeText("MORE");
+      });
+      await waitForFrame(setup, (current) => current.includes("MORE"));
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
   test("session reload cannot opt a normal launch into experimental STML", async () => {
     const dir = mkdtempSync(join(process.cwd(), ".hunk-session-experimental-reload-"));
     const left = join(dir, "before.ts");

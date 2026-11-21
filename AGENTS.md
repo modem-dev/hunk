@@ -29,6 +29,9 @@ main.tsx -> app/startup.ts -> app/cli.ts
   -> app plan: extensionBootstrap.ts -> sessionBootstrap.ts -> normalized Changeset / DiffFile[]
      -> main.tsx lazy-loads runInteractiveApp.tsx -> HunkSessionHost -> AppHost -> App
      -> pane/diff planning -> Pierre-backed terminal rows
+  -> web plan (`--web`, hidden): same bootstrap, no TTY or OpenTUI
+     -> main.tsx lazy-loads app/session/headlessReviewRunner.ts -> ReviewSessionHost +
+        ReviewReloadCoordinator + session bridge -> review URL on stdout until SIGINT/SIGTERM
 ```
 
 ### shared review seam
@@ -37,7 +40,7 @@ Terminal, agent/session, broker/protocol, extension, and HTTP/SSE consumers shar
 The browser client and UI remain planned. Do not recreate semantic review behavior in a surface:
 
 ```text
-DiffFile[] -> projectReviewDocument -> ReviewDocumentV1 -> ReviewStore
+DiffFile[] -> projectReviewDocument -> ReviewDocument -> ReviewStore
 ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> surface projection
 ```
 
@@ -51,15 +54,18 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
 - **State:** `state.ts` is semantic state; `actions.ts` transitions; `reducer.ts` pure/no-I/O;
   `selectors.ts` shared policies; `store.ts` synchronous observable storage. New cross-surface
   operations start as intents. Callers supply mutable-note IDs/timestamps; core derives identities.
-- **Surfaces/publishers:** `useTerminalReview.ts` is the TUI adapter and
-  `reviewNoteMapping.ts` is terminal-only. Rows, measurement, scrolling, layout, themes, DOM
-  mechanics, and source I/O stay local. `useHunkSessionBridge.ts` publishes the current terminal
-  session export; `registration.ts` builds its metadata/initial snapshot and `bridge.ts` receives
-  agent commands. This broker export is not a full `ReviewState` mirror.
+- **Surfaces/publishers:** `app/review/reviewSessionHost.ts` owns one live review without React:
+  the store, intent facts, live-comment ingestion, agent navigation/highlights, gap source loading,
+  file replacement, and session-export summaries. `useTerminalReview.ts` is the TUI adapter over
+  it and `reviewNoteMapping.ts` is terminal-only. Rows, measurement, scrolling, layout, themes, and
+  DOM mechanics stay local; renderer facts reach the host as explicit optional inputs.
+  `useHunkSessionBridge.ts` publishes the current terminal session export; `registration.ts`
+  builds its metadata/initial snapshot and `bridge.ts` receives agent commands. This broker export is not a full `ReviewState` mirror.
 - **Other consumers:** Web/API consumers reuse the model, derivations, state, intents, and the
   producer/protocol tier. Never build a parallel protocol. Keep presentation/client-local state
   local; host/extension commands need explicit remote capabilities. See
-  `docs/browser-review-rebuild.md` for the rollout and current boundaries.
+  `docs/browser-review-rebuild.md` for the landed phases and current boundaries, and
+  `docs/web-review-plan.md` for the remaining rollout.
 - **Conformance:** `test/review-conformance/` has hand-authored semantic fixtures covering every
   registered core, terminal, producer, broker, protocol, and extension projection. Every new
   semantic consumer registers its real projection and runs the whole corpus.
@@ -114,10 +120,14 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
 
 ## component guidance
 
-- `HunkSessionHost` owns history/review routing in one React root. `AppHost` owns reload
-  serialization, extension adoption, and broker/content/React commit ordering. `App` owns review
-  interaction, navigation, layout, theme, filtering, and pane coordination. Pane and diff modules
-  own rendering and geometry.
+- `HunkSessionHost` owns history/review routing in one React root.
+  `ReviewReloadCoordinator` (`app/session/reloadCoordinator.ts`) owns reload serialization,
+  shutdown refusal, loading, extension adoption, and broker/producer publication ordering for
+  every reload trigger; `AppHost` drives it and keeps the React commit, post-layout lifecycle
+  ordering, notices, and live view preferences. `App` owns review
+  interaction, navigation, layout, theme, filtering, and pane coordination; review-semantic
+  operations it triggers go through the `ReviewSessionHost` that `useTerminalReview` mounts. Pane
+  and diff modules own rendering and geometry.
 - `InteractiveSessionInitialization` in `packages/hunk/src/core/session/initialization.ts` carries
   finalized launch inputs whose lifetime spans routed surfaces. Add a concern there only when
   `HunkSessionHost` owns that cross-surface lifetime; keep surface-local bootstrap data out.
@@ -148,9 +158,10 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
   - `test/session-broker-node/` for real Node listener/adapter conformance.
   - `test/session-broker-runtime/` for shared Bun/Node broker fixtures.
   - `test/smoke/` for opt-in terminal transcript smoke coverage.
-- `bun run test` does not include review conformance, PTY, TTY smoke, or real-Node adapter
-  conformance under `test/session-broker-node/`. Run the dedicated command documented in
-  `test/README.md` when changing those areas.
+  - `test/web/` for Playwright browser tests of the daemon-served review page.
+- `bun run test` does not include review conformance, PTY, TTY smoke, browser (`test/web/`), or
+  real-Node adapter conformance under `test/session-broker-node/`. Run the dedicated command
+  documented in `test/README.md` when changing those areas.
 
 ## source formatting
 
@@ -179,6 +190,23 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
 - Use `layout` for structural placement or arrangement data.
 - Use `geometry` for aggregate spatial data used by rendering, scrolling, or interaction.
 - Use `bounds` for one concrete visible extent within a larger structure.
+- Serialized formats carry their version in the payload (`protocolVersion`, `formatVersion`,
+  `version`), not in the type name. Add a `V<N>` suffix only where code must hold two versions
+  side by side, as the session-broker admin scope does (`SessionBrokerAdminStatusV1`).
+- Prefix a type by its role: `Review*` for review concepts on every tier (model, resources,
+  envelopes, HTTP bodies, events, shared state); `Session*` for the daemon/window session wire;
+  `Hunk*` only for the app's specialization of a runtime-neutral package type
+  (`HunkSessionRegistration`) and product-level public names; `Client*` for the browser page's
+  copy of a session-side concept (`ClientReviewStore`); `Web*` for page-only presentation.
+- Name a top-level message by its transport role — `Envelope` (client request), `Body` (HTTP
+  response body), `Result` (producer answer), `Manifest`/`Index` (build file) — and use model names
+  for what it contains. Core review types are deliberately both model and wire; do not add DTO
+  copies of them.
+- Name a string union inside a format as a vocabulary noun (`…Kind`, `…Code`, `…Tone`,
+  `…Origin`, `…Type`, `…Phase`); a code union takes the name of the failure shape whose `code`
+  carries it.
+- A function named after a type follows the type's name. SCREAMING constants keep the shared
+  `HUNK_*` namespace.
 
 ## review behavior
 
@@ -189,7 +217,8 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
 - Agent context belongs beside the code, not hidden in a separate mode or workflow.
 - Agent notes are hunk-specific: show notes for the selected hunk, render them in the diff flow near the annotated row, and keep a clear spatial relationship to the code they explain.
 - Keep note behavior explicit. If the UI intentionally prioritizes one note, one selection, or one active target, encode that as a named policy rather than scattering array-index assumptions through the codebase.
-- STML markup notes (experimental) live in `packages/hunk/src/ui/lib/stml/`. The layout engine is deliberately a deterministic line layout, not OpenTUI flexbox: the row-windowed review stream needs exact note heights before mount, so `(markup, width)` must always produce the same lines. Colors stay symbolic until render time so measurement never needs a theme. Do not "simplify" this into flexbox renderables, and keep note-card geometry in `agentNoteGeometry` as the single source for rendering, measurement, and agent-facing width reporting.
+- STML markup notes (experimental) live in `packages/hunk/src/ui/lib/stml/`, with parsing and the
+  layout engine in `packages/hunk/src/core/stml/` so the headless host validates markup too. The layout engine is deliberately a deterministic line layout, not OpenTUI flexbox: the row-windowed review stream needs exact note heights before mount, so `(markup, width)` must always produce the same lines. Colors stay symbolic until render time so measurement never needs a theme. Do not "simplify" this into flexbox renderables, and keep note-card geometry in `agentNoteGeometry` as the single source for rendering, measurement, and agent-facing width reporting.
 - Keep temporary sidecars concise and review-oriented. Their file order is intentional, while the
   visible note UI remains hunk-note driven rather than showing generic explainer cards.
 - Agents review via `packages/hunk/skills/hunk-review/SKILL.md` using `hunk session *` commands; do not run interactive TUI commands directly.
@@ -208,6 +237,8 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
 - For interaction, layout, scrolling, navigation, windowing, or other terminal-native behavior: add or update PTY integration coverage in `test/pty/*-integration.test.ts` and run it with `bun run test:integration`.
 - For broker/runtime changes, run `bun run test:session-broker-node` in addition to the relevant
   Bun tests.
+- For the browser review page (`packages/hunk/src/web/`, its build, or the daemon routes that
+  serve it), run `bun run build:web && bun run test:web`.
 - For CLI, config, or pager work: make sure the relevant source invocation still works (`diff`, `show`, `patch`, or `pager`).
 - Preserve current interaction model unless the user asks to change it explicitly.
 

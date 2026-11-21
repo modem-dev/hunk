@@ -11,9 +11,9 @@ import {
   type ReviewStoredNote,
 } from "../../packages/hunk/src/core/review/state";
 import type {
-  ReviewDocumentV1,
-  ReviewFileV1,
-  ReviewHunkV1,
+  ReviewDocument,
+  ReviewFile,
+  ReviewHunk,
 } from "../../packages/hunk/src/core/review/types";
 
 export interface TestReviewFileInput {
@@ -32,7 +32,7 @@ export interface TestReviewFileInput {
  * Ten lines apart so a test that anchors a note by line number lands in exactly one hunk
  * without having to state the whole layout.
  */
-export function createTestReviewHunk(index: number): ReviewHunkV1 {
+export function createTestReviewHunk(index: number): ReviewHunk {
   const start = index * 10 + 1;
   return {
     index,
@@ -71,7 +71,7 @@ export function createTestReviewHunk(index: number): ReviewHunkV1 {
 }
 
 /** Build one review file with defaults for everything the test does not name. */
-export function createTestReviewFile(input: TestReviewFileInput): ReviewFileV1 {
+export function createTestReviewFile(input: TestReviewFileInput): ReviewFile {
   const hunks = Array.from({ length: input.hunkCount ?? 2 }, (_unused, index) =>
     createTestReviewHunk(index),
   );
@@ -97,7 +97,7 @@ export function createTestReviewFile(input: TestReviewFileInput): ReviewFileV1 {
 /** Build one review document from file keys or partial file inputs. */
 export function createTestReviewDocument(
   files: ReadonlyArray<string | TestReviewFileInput>,
-): ReviewDocumentV1 {
+): ReviewDocument {
   return {
     files: files.map((file) =>
       createTestReviewFile(typeof file === "string" ? { key: file } : file),

@@ -101,6 +101,9 @@ Use `--files <left> <right>` for concrete-file comparison; this replaces the for
 | `--cached`               | alias for --staged                                                                            |
 | `--exclude-untracked`    | exclude untracked files from working tree reviews                                             |
 | `--no-exclude-untracked` | include untracked files in working tree reviews Compatibility inverse; omitted from `--help`. |
+| `--web`                  | serve this review in the browser instead of the terminal                                      |
+| `--no-open`              | with --web, print the review URL without opening a browser                                    |
+| `--no-watch`             | do not reload when the input changes (overrides --web and config)                             |
 
 Also accepts `--watch`: auto-reload when the current diff input changes.
 
@@ -115,6 +118,14 @@ review the last commit or a given ref
 ```bash
 hunk show [target] [-- <pathspec...>]
 ```
+
+### Command-specific options
+
+| Option       | Description                                                       |
+| ------------ | ----------------------------------------------------------------- |
+| `--web`      | serve this review in the browser instead of the terminal          |
+| `--no-open`  | with --web, print the review URL without opening a browser        |
+| `--no-watch` | do not reload when the input changes (overrides --web and config) |
 
 Also accepts `--watch`: auto-reload when the current diff input changes.
 
@@ -303,6 +314,14 @@ review a stash entry as a full Hunk changeset
 hunk stash show [ref]
 ```
 
+### Command-specific options
+
+| Option       | Description                                                       |
+| ------------ | ----------------------------------------------------------------- |
+| `--web`      | serve this review in the browser instead of the terminal          |
+| `--no-open`  | with --web, print the review URL without opening a browser        |
+| `--no-watch` | do not reload when the input changes (overrides --web and config) |
+
 Also accepts `--watch`: auto-reload when the current diff input changes.
 
 Also accepts every [common review option](#common-review-options).
@@ -316,6 +335,14 @@ review a patch file, or read a patch from stdin
 ```bash
 hunk patch [file]
 ```
+
+### Command-specific options
+
+| Option       | Description                                                       |
+| ------------ | ----------------------------------------------------------------- |
+| `--web`      | serve this review in the browser instead of the terminal          |
+| `--no-open`  | with --web, print the review URL without opening a browser        |
+| `--no-watch` | do not reload when the input changes (overrides --web and config) |
 
 Also accepts `--watch`: auto-reload when the current diff input changes.
 
@@ -342,6 +369,14 @@ review Git difftool file pairs
 ```bash
 hunk difftool <left> <right> [path]
 ```
+
+### Command-specific options
+
+| Option       | Description                                                       |
+| ------------ | ----------------------------------------------------------------- |
+| `--web`      | serve this review in the browser instead of the terminal          |
+| `--no-open`  | with --web, print the review URL without opening a browser        |
+| `--no-watch` | do not reload when the input changes (overrides --web and config) |
 
 Also accepts `--watch`: auto-reload when the current diff input changes.
 
@@ -885,4 +920,27 @@ hunk session highlight clear (<session-id> | --repo <path>) [--file <path>] [--j
 
 ```bash
 hunk session highlight clear --repo .
+```
+
+### `hunk session open`
+
+open a live session's review in your browser
+
+```bash
+hunk session open (<session-id> | --repo <path>) [--no-open] [--json]
+```
+
+| Option          | Description                                               |
+| --------------- | --------------------------------------------------------- |
+| `--repo <path>` | target the live session whose repo root matches this path |
+| `--no-open`     | print the review URL instead of opening a browser         |
+| `--json`        | emit structured JSON                                      |
+
+**Positionals:** `[sessionId]`.
+
+**Examples:**
+
+```bash
+hunk session open --repo .
+hunk session open --repo . --no-open
 ```

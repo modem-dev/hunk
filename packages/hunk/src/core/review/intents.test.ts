@@ -122,6 +122,38 @@ describe("selection movement intent", () => {
     });
   });
 
+  test("walks past the files the caller hides, as it does past filtered ones", () => {
+    const state = { ...createTestReviewState(), selection: { fileKey: "alpha", hunkIndex: 1 } };
+    const hiddenFileKeys = new Set(["beta"]);
+
+    // Beta is hidden by this caller only, so the stream ends at alpha's last hunk.
+    expect(
+      planReviewIntent(
+        state,
+        { type: "selection/move", scope: "hunk", delta: 1 },
+        { hiddenFileKeys },
+      ),
+    ).toEqual({
+      actions: [
+        {
+          type: "selection/select",
+          fileKey: "alpha",
+          hunkIndex: 1,
+          reveal: { anchor: "hunk", scrollToNote: false },
+        },
+      ],
+      outcome: { type: "selection/changed", fileKey: "alpha", hunkIndex: 1 },
+    });
+    // Annotated navigation skips it too, even though beta is the only annotated file.
+    expect(
+      planReviewIntent(
+        state,
+        { type: "selection/move", scope: "annotated-file", delta: 1 },
+        { annotations, hiddenFileKeys },
+      ),
+    ).toEqual({ actions: [] });
+  });
+
   test("moves between exact visible stored notes and carries the active identity atomically", () => {
     const state = {
       ...createTestReviewState(undefined, { showAgentNotes: true }),

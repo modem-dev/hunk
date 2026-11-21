@@ -6,6 +6,7 @@ import {
 } from "@opentui/core";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { DiffFile } from "../../../core/changeset/model";
+import { reviewNoteThreadTitle } from "../../../core/review/noteLabels";
 import type { LayoutMode } from "../../../core/run/commandInputs";
 import type { AgentAnnotation } from "../../../extension-api/types";
 import { agentNoteBoxLayout } from "../../lib/agentNoteGeometry";
@@ -92,25 +93,8 @@ function wrapNoteText(text: string, width: number) {
   return text.split("\n").flatMap((line) => wrapText(sanitizeTerminalLine(line), width));
 }
 
-/** Build the plain summary/rationale body used when a note has no markup. */
-/** Format a compact, stable-enough age for a saved comment title. */
-export function shortReviewNoteAge(createdAt: string | undefined, now = Date.now()) {
-  const timestamp = createdAt ? Date.parse(createdAt) : Number.NaN;
-  if (!Number.isFinite(timestamp)) {
-    return "";
-  }
-
-  const elapsedMinutes = Math.max(0, Math.floor((now - timestamp) / 60_000));
-  if (elapsedMinutes < 1) return "now";
-  if (elapsedMinutes < 60) return `${elapsedMinutes}m`;
-  const elapsedHours = Math.floor(elapsedMinutes / 60);
-  if (elapsedHours < 24) return `${elapsedHours}h`;
-  const elapsedDays = Math.floor(elapsedHours / 24);
-  if (elapsedDays < 7) return `${elapsedDays}d`;
-  const elapsedWeeks = Math.floor(elapsedDays / 7);
-  if (elapsedWeeks < 52) return `${elapsedWeeks}w`;
-  return `${Math.floor(elapsedWeeks / 52)}y`;
-}
+// A note's age is the shared rule (`core/review/noteLabels.ts`), as the browser's cards show it.
+export { reviewNoteAge as shortReviewNoteAge } from "../../../core/review/noteLabels";
 
 /** Keep the identifying tail of a path visible inside a fixed terminal-cell width. */
 function fitTrailingText(text: string, width: number, overflowMarker = "...") {
@@ -125,12 +109,13 @@ function fitTrailingText(text: string, width: number, overflowMarker = "...") {
   return `${marker}${sliceTextByWidth(text, measuredWidth - tailWidth, tailWidth).text}`;
 }
 
-/** Build the compact author-and-age title used by semantic thread cards. */
+/** Build the compact author-and-age title used by semantic thread cards, sanitized for a cell. */
 function threadedInlineNoteTitle(annotation: AgentAnnotation) {
-  const author = sanitizeTerminalLine(annotation.author?.trim() ?? "");
-  const label = annotation.source === "user" ? "Your note" : author || "Agent note";
-  const age = shortReviewNoteAge(annotation.createdAt);
-  return `${label}${age ? ` · ${age}` : ""}`;
+  return reviewNoteThreadTitle({
+    source: annotation.source === "user" ? "user" : "agent",
+    author: sanitizeTerminalLine(annotation.author?.trim() ?? ""),
+    ...(annotation.createdAt !== undefined ? { createdAt: annotation.createdAt } : {}),
+  });
 }
 
 function agentInlineNoteBodyLines(

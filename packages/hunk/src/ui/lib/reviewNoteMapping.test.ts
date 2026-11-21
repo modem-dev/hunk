@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { buildLiveComment } from "../../core/liveComments";
 import { reviewLineAnchor } from "../../core/review/anchors";
 import type { ReviewHunkSpan } from "../../core/review/geometry";
-import type { ReviewNoteV1 } from "../../core/review/types";
+import type { ReviewNote } from "../../core/review/types";
 import {
   createTestDiffFile,
   createTestSourceFetcher,
@@ -82,7 +82,7 @@ describe("live comment round trip", () => {
 
 describe("user note projection", () => {
   test("renders a stored user note as an editable annotation", () => {
-    const note: ReviewNoteV1 = {
+    const note: ReviewNote = {
       id: "user:1",
       source: "user",
       fileKey: "alpha",

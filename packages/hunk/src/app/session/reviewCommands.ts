@@ -27,33 +27,33 @@ import {
   reviewLineCoveredByHunks,
   reviewRangeTargetCoverageIssue,
 } from "../../core/review/geometry";
-import { requireReviewFile, ReviewIntentPlanningError } from "../../core/review/intents";
+import {
+  REVIEW_BROWSER_NOTE_ORIGINAL_SOURCE,
+  requireReviewFile,
+  ReviewIntentPlanningError,
+} from "../../core/review/intents";
 import type { ReviewDraftNote, ReviewState } from "../../core/review/state";
 import type {
-  ReviewFileV1,
-  ReviewLineAddressV1,
+  ReviewFile,
+  ReviewLineAddress,
   ReviewLineRange,
-  ReviewNoteTargetV1,
-  ReviewRangeTargetV1,
+  ReviewNoteTarget,
+  ReviewRangeTarget,
 } from "../../core/review/types";
 import {
   toReviewIntent,
-  type HunkReviewActionEnvelopeV1,
-  type HunkReviewActionResultV1,
-  type HunkReviewActionV1,
-  type HunkReviewExpandedLineProofV1,
-  type HunkReviewFailureCodeV1,
-  type HunkReviewFailureV1,
-  type HunkReviewResourceReadEnvelopeV1,
-  type HunkReviewResourceReadResultV1,
+  type ReviewActionEnvelope,
+  type ReviewActionResult,
+  type RemoteReviewIntent,
+  type ReviewExpandedLineProof,
+  type ReviewFailureCode,
+  type ReviewFailure,
+  type ReviewResourceReadEnvelope,
+  type ReviewResourceReadResult,
 } from "../../session/reviewProtocol";
 
 /** Build one failure carrying the generation the producer is actually serving. */
-function fail(
-  producer: ReviewProducer,
-  code: HunkReviewFailureCodeV1,
-  message: string,
-): HunkReviewFailureV1 {
+function fail(producer: ReviewProducer, code: ReviewFailureCode, message: string): ReviewFailure {
   return {
     ok: false,
     code,
@@ -72,8 +72,8 @@ function fail(
  */
 export async function readSessionReviewResource(
   producer: ReviewProducer,
-  envelope: HunkReviewResourceReadEnvelopeV1,
-): Promise<HunkReviewResourceReadResultV1> {
+  envelope: ReviewResourceReadEnvelope,
+): Promise<ReviewResourceReadResult> {
   return producer.readResource(envelope.request);
 }
 
@@ -88,8 +88,8 @@ export async function readSessionReviewResource(
  */
 function checkPosition(
   producer: ReviewProducer,
-  envelope: HunkReviewActionEnvelopeV1,
-): HunkReviewFailureV1 | undefined {
+  envelope: ReviewActionEnvelope,
+): ReviewFailure | undefined {
   const current = producer.getPublicationAddress();
   if (envelope.generation !== current.generation) {
     return fail(
@@ -124,10 +124,10 @@ function checkPosition(
  */
 function checkExpandedLine(
   producer: ReviewProducer,
-  file: ReviewFileV1,
-  target: ReviewLineAddressV1,
-  proof: HunkReviewExpandedLineProofV1,
-): HunkReviewFailureV1 | undefined {
+  file: ReviewFile,
+  target: ReviewLineAddress,
+  proof: ReviewExpandedLineProof,
+): ReviewFailure | undefined {
   if (proof.side !== target.side || proof.line !== target.line) {
     return fail(
       producer,
@@ -147,10 +147,10 @@ function checkExpandedLine(
 /** Require caller evidence whenever a line is not backed by a visible patch row. */
 function checkLineTarget(
   producer: ReviewProducer,
-  file: ReviewFileV1,
-  target: ReviewLineAddressV1,
-  proof?: HunkReviewExpandedLineProofV1,
-): HunkReviewFailureV1 | undefined {
+  file: ReviewFile,
+  target: ReviewLineAddress,
+  proof?: ReviewExpandedLineProof,
+): ReviewFailure | undefined {
   if (proof) return checkExpandedLine(producer, file, target, proof);
   return reviewLineCoveredByHunks(file.hunks, target.side, target.line)
     ? undefined
@@ -169,7 +169,7 @@ function rangesEqual(left: ReviewLineRange | undefined, right: ReviewLineRange |
 }
 
 /** Return whether a save precondition names the active draft's exact anchor. */
-function draftMatchesTarget(draft: ReviewDraftNote, target: ReviewNoteTargetV1) {
+function draftMatchesTarget(draft: ReviewDraftNote, target: ReviewNoteTarget) {
   const anchor = draft.anchor;
   if ("line" in target) {
     if (draft.targetKind === "range") return false;
@@ -195,9 +195,9 @@ function draftMatchesTarget(draft: ReviewDraftNote, target: ReviewNoteTargetV1) 
 /** Reject ranges that name absent rows, collapsed gaps, or an unrelated preferred line. */
 function checkRangeTarget(
   producer: ReviewProducer,
-  file: ReviewFileV1,
-  target: ReviewRangeTargetV1,
-): HunkReviewFailureV1 | undefined {
+  file: ReviewFile,
+  target: ReviewRangeTarget,
+): ReviewFailure | undefined {
   const issue = reviewRangeTargetCoverageIssue(file.hunks, target);
   if (!issue) return undefined;
   if (issue === "preferred") {
@@ -227,8 +227,18 @@ function checkRangeTarget(
 function checkAgainstReview(
   producer: ReviewProducer,
   state: ReviewState,
-  action: HunkReviewActionV1,
-): HunkReviewFailureV1 | undefined {
+  action: RemoteReviewIntent,
+): ReviewFailure | undefined {
+  if (action.type === "notes/add-user" && action.target) {
+    const file = requireReviewFile(state, action.fileKey);
+    if (!("line" in action.target)) {
+      return action.expandedLineProof
+        ? fail(producer, "invalid-request", "A one-line expansion proof cannot attest a range.")
+        : checkRangeTarget(producer, file, action.target);
+    }
+    return checkLineTarget(producer, file, action.target, action.expandedLineProof);
+  }
+
   if (action.type === "notes/start-draft" && action.target) {
     const file = requireReviewFile(state, action.fileKey);
     if (!("line" in action.target)) {
@@ -278,6 +288,85 @@ function checkAgainstReview(
   return undefined;
 }
 
+/** Selection moves a browser resolves in its own state (G2). */
+const BROWSER_LOCAL_SELECTION_TYPES: ReadonlySet<string> = new Set([
+  "selection/select",
+  "selection/move",
+  "selection/select-file",
+]);
+
+/**
+ * Draft intents a browser never sends: the shared draft slot is the terminal composer's, and
+ * a browser composes in its own state and saves with the direct note intents (G2).
+ */
+const BROWSER_REFUSED_DRAFT_TYPES: ReadonlySet<string> = new Set([
+  "notes/start-draft",
+  "notes/start-edit",
+  "notes/start-reply",
+  "notes/update-draft",
+  "notes/cancel-draft",
+  "notes/create-user",
+  "notes/update-user",
+]);
+
+/** Agent selection moves that every surface is asked to reveal (G2). */
+const AGENT_REVEALED_SELECTION_TYPES: ReadonlySet<string> = new Set([
+  "selection/select",
+  "selection/move",
+  "selection/select-file",
+]);
+
+/**
+ * Decide what the actor policy does with one action before it is planned (G2).
+ *
+ * Selection is per surface. A browser's `select`, `move`, and `select-file` are refused —
+ * the browser resolves them locally. Its `selection/anchor` is the focus a headless session
+ * reports to `hunk session context`, so a headless session applies it; a terminal session has
+ * its own focus and accepts it as a no-op. Drafts are per surface too: a browser's draft
+ * intents are refused with `draft-is-local`, because the session's one draft slot is the
+ * terminal composer's and a browser composes locally and saves with `notes/add-user` or
+ * `notes/edit-user`. Terminal and agent actors are unaffected.
+ */
+function actorPolicy(
+  producer: ReviewProducer,
+  envelope: ReviewActionEnvelope,
+): "apply" | "no-op" | ReviewFailure {
+  if (envelope.actor.kind !== "browser") return "apply";
+  if (BROWSER_LOCAL_SELECTION_TYPES.has(envelope.action.type)) {
+    return fail(
+      producer,
+      "selection-is-local",
+      `A browser resolves ${envelope.action.type} in its own state; the session does not apply it.`,
+    );
+  }
+  if (BROWSER_REFUSED_DRAFT_TYPES.has(envelope.action.type)) {
+    return fail(
+      producer,
+      "draft-is-local",
+      `A browser composes notes in its own state; the session does not apply ${envelope.action.type}.`,
+    );
+  }
+  if (envelope.action.type === "selection/anchor" && producer.surface === "terminal") {
+    return "no-op";
+  }
+  return "apply";
+}
+
+/**
+ * Lower one action to its intent, defaulting a remote note's author from the actor.
+ *
+ * Authorship is a label, not an identity: an actor's display name fills it only when the
+ * note names none.
+ */
+function intentForActor(envelope: ReviewActionEnvelope) {
+  const intent = toReviewIntent(envelope.action);
+  if (intent.type === "notes/add-user" && intent.author === undefined) {
+    const displayName = envelope.actor.displayName;
+    return displayName ? { ...intent, author: displayName } : intent;
+  }
+  return intent;
+}
+
 /**
  * Apply one semantic review action on behalf of a remote caller.
  *
@@ -288,8 +377,8 @@ function checkAgainstReview(
  */
 export function applySessionReviewAction(
   producer: ReviewProducer,
-  envelope: HunkReviewActionEnvelopeV1,
-): HunkReviewActionResultV1 {
+  envelope: ReviewActionEnvelope,
+): ReviewActionResult {
   const position = checkPosition(producer, envelope);
   if (position) {
     return position;
@@ -304,19 +393,42 @@ export function applySessionReviewAction(
     );
   }
 
+  const policy = actorPolicy(producer, envelope);
+  if (policy !== "apply" && policy !== "no-op") {
+    return policy;
+  }
+
   try {
     const rejected = checkAgainstReview(producer, state, envelope.action);
     if (rejected) {
       return rejected;
     }
 
-    // Identity and time are the facts core refuses to invent, and this edge is the caller
-    // that owns them for a remote action.
-    producer.applyIntent(toReviewIntent(envelope.action), {
-      draftId: `draft:${randomUUID()}`,
-      noteId: `user:${randomUUID()}`,
-      timestamp: new Date().toISOString(),
-    });
+    if (policy === "apply") {
+      // Identity and time are the facts core refuses to invent, and this edge is the caller
+      // that owns them for a remote action.
+      producer.applyIntent(intentForActor(envelope), {
+        draftId: `draft:${randomUUID()}`,
+        noteId: `user:${randomUUID()}`,
+        timestamp: new Date().toISOString(),
+        // A browser's free-text author is a label; where the note came from is recorded here.
+        ...(envelope.actor.kind === "browser"
+          ? { noteOriginalSource: REVIEW_BROWSER_NOTE_ORIGINAL_SOURCE }
+          : {}),
+      });
+      if (
+        envelope.actor.kind === "agent" &&
+        AGENT_REVEALED_SELECTION_TYPES.has(envelope.action.type)
+      ) {
+        const selection = producer.getReviewState()?.selection;
+        if (selection?.fileKey) {
+          producer.recordAgentReveal({
+            fileKey: selection.fileKey,
+            hunkIndex: selection.hunkIndex,
+          });
+        }
+      }
+    }
   } catch (error) {
     if (error instanceof ReviewIntentPlanningError) {
       return fail(producer, error.code, error.message);

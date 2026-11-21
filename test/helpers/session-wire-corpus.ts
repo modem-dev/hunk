@@ -88,6 +88,7 @@ const STATE_KEYS = exhaustiveKeys<HunkSessionState>()([
   "reviewNoteCount",
   "reviewNotes",
   "reviewPublication",
+  "reviewSharedStateRevision",
 ]);
 const LIVE_COMMENT_KEYS = exhaustiveKeys<SessionLiveCommentSummary>()([
   "commentId",
@@ -411,6 +412,7 @@ function createCorpusState(registration: HunkSessionRegistration): HunkSessionSt
     reviewNoteCount: 2,
     reviewNotes: [note, replyNote],
     reviewPublication: { generation: FIXED_GENERATION, stateRevision: 3 },
+    reviewSharedStateRevision: 2,
   };
 }
 

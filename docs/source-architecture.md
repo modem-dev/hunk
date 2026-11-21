@@ -25,33 +25,33 @@ private.
 
 ## Hunk source ownership
 
-| Path                                | Ownership                                                                                                      |
-| ----------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `packages/hunk/src/app/`            | CLI parsing, startup plans, executable composition, and shared session bootstrap                               |
-| `packages/hunk/src/app/review/`     | Review publication, resource caching, chunking, and producer-side protocol projection                          |
-| `packages/hunk/src/app/session/`    | Mounted review runtime, registration, bridge, and reload authorization                                         |
-| `packages/hunk/src/core/`           | Product models, non-rendering runtime primitives, and policy without a narrower owner                          |
-| `packages/hunk/src/core/changeset/` | Changeset model and acquisition: loaders, per-file construction, sidecars, sources, and hunk formatting        |
-| `packages/hunk/src/core/history/`   | Provider-neutral revision graph and lane planning                                                              |
-| `packages/hunk/src/core/install/`   | Install channel, release lookup, updater, and installed-version policy                                         |
-| `packages/hunk/src/core/run/`       | Command inputs, layered configuration, command catalog, user-facing errors, paths, and version                 |
-| `packages/hunk/src/core/process/`   | TTY capabilities, pager/stdout, job control/relaunch, project-root discovery, persisted app state, and notices |
-| `packages/hunk/src/core/review/`    | Ordered review document, identities, state, intents, reducer, selectors, and shared derivations                |
-| `packages/hunk/src/core/theme/`     | Bundled theme metadata, custom-theme rules, and terminal theme detection                                       |
-| `packages/hunk/src/core/watch/`     | Input signatures, observation plans/backends, and refresh coordination                                         |
-| `packages/hunk/src/core/vcs/`       | Provider-neutral VCS catalog, contracts, operation dispatch, and host support                                  |
-| `packages/hunk/src/extensions/`     | Extension host, registries, trust, lifecycle, and bundled registration adapters                                |
-| `packages/hunk/src/session/`        | Shared session protocol, schemas, agent surface, and broker transport                                          |
-| `packages/hunk/src/session/client/` | Session-daemon HTTP and compatibility clients                                                                  |
-| `packages/hunk/src/session/agent/`  | Agent-facing session CLI, command manifest, errors, and formatting                                             |
-| `packages/hunk/src/session/broker/` | Hunk daemon transport, launcher, broker state, wire parsing, and projections                                   |
-| `packages/hunk/src/ui/`             | Interactive review application, terminal rendering, interaction, and chrome                                    |
-| `packages/hunk/src/ui/history/`     | History surface and provider cursor lifecycle                                                                  |
-| `packages/hunk/src/ui/log/`         | Log rendering and presentation helpers                                                                         |
-| `packages/hunk/src/ui/session/`     | One OpenTUI renderer/root lifetime and the history/review surface router                                       |
-| `packages/hunk/src/extension-api/`  | Public, import-free `hunkdiff/extension` declaration and runtime boundary                                      |
-| `packages/hunk/src/opentui/`        | Public `hunkdiff/opentui` component boundary                                                                   |
-| `packages/hunk/src/lib/`            | Small product-wide utilities with no feature owner                                                             |
+| Path                                | Ownership                                                                                                             |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `packages/hunk/src/app/`            | CLI parsing, startup plans, executable composition, and shared session bootstrap                                      |
+| `packages/hunk/src/app/review/`     | Live review ownership (`ReviewSessionHost`), publication, shared-state projection, and resource caching               |
+| `packages/hunk/src/app/session/`    | Mounted review runtime, registration, bridge, and reload authorization                                                |
+| `packages/hunk/src/core/`           | Product models, non-rendering runtime primitives, and policy without a narrower owner                                 |
+| `packages/hunk/src/core/changeset/` | Changeset model and acquisition: loaders, per-file construction, sidecars, sources, and hunk formatting               |
+| `packages/hunk/src/core/history/`   | Provider-neutral revision graph and lane planning                                                                     |
+| `packages/hunk/src/core/install/`   | Install channel, release lookup, updater, and installed-version policy                                                |
+| `packages/hunk/src/core/run/`       | Command inputs, layered configuration, command catalog, user-facing errors, paths, and version                        |
+| `packages/hunk/src/core/process/`   | TTY capabilities, pager/stdout, browser opening, job control/relaunch, project-root discovery, app state, and notices |
+| `packages/hunk/src/core/review/`    | Ordered review document, identities, state, intents, reducer, selectors, and shared derivations                       |
+| `packages/hunk/src/core/theme/`     | Bundled theme metadata, custom-theme rules, and terminal theme detection                                              |
+| `packages/hunk/src/core/watch/`     | Input signatures, observation plans/backends, and refresh coordination                                                |
+| `packages/hunk/src/core/vcs/`       | Provider-neutral VCS catalog, contracts, operation dispatch, and host support                                         |
+| `packages/hunk/src/extensions/`     | Extension host, registries, trust, lifecycle, and bundled registration adapters                                       |
+| `packages/hunk/src/session/`        | Shared session protocol, schemas, agent surface, and broker transport                                                 |
+| `packages/hunk/src/session/client/` | Session-daemon HTTP and compatibility clients                                                                         |
+| `packages/hunk/src/session/agent/`  | Agent-facing session CLI, command manifest, errors, and formatting                                                    |
+| `packages/hunk/src/session/broker/` | Hunk daemon transport, launcher, broker state, wire parsing, and projections                                          |
+| `packages/hunk/src/ui/`             | Interactive review application, terminal rendering, interaction, and chrome                                           |
+| `packages/hunk/src/ui/history/`     | History surface and provider cursor lifecycle                                                                         |
+| `packages/hunk/src/ui/log/`         | Log rendering and presentation helpers                                                                                |
+| `packages/hunk/src/ui/session/`     | One OpenTUI renderer/root lifetime and the history/review surface router                                              |
+| `packages/hunk/src/extension-api/`  | Public, import-free `hunkdiff/extension` declaration and runtime boundary                                             |
+| `packages/hunk/src/opentui/`        | Public `hunkdiff/opentui` component boundary                                                                          |
+| `packages/hunk/src/lib/`            | Small product-wide utilities with no feature owner                                                                    |
 
 `app/` composes subsystems but does not own terminal rendering. `core/` is the shared product layer,
 not a bucket for everything outside React. Prefer a specific existing owner over `lib/`.
@@ -67,15 +67,28 @@ packages/hunk/src/main.tsx
         -> app/sessionBootstrap.ts selects VCS and loads one Changeset
         -> main.tsx lazy-loads ui/runInteractiveApp.tsx
            -> HunkSessionHost routes history and review in one React root
-           -> AppHost owns reload, extension adoption, and review publication ordering
+           -> AppHost drives app/session/reloadCoordinator.ts, which owns reload, extension
+              adoption, and review publication ordering; AppHost keeps the React commit
            -> App owns review interaction and layout coordination
+              -> useTerminalReview adapts app/review/reviewSessionHost.ts, the renderer-free
+                 owner of the live review store
            -> pane/diff modules plan, window, and paint terminal rows with Pierre metadata
+     -> web plan (`--web`, implies `--watch`):
+        the same bootstrap with no TTY
+        -> main.tsx lazy-loads app/session/headlessReviewRunner.ts, never OpenTUI
+           -> ReviewSessionHost owns the review; ReviewReloadCoordinator owns reload and watch
+           -> createHunkSessionBridge answers `hunk session` commands from the host
+           -> the review URL goes to stdout, then app/session/openReview.ts opens it through
+              core/process/openUrl.ts unless `--no-open`; the process owns the session until
+              SIGINT/SIGTERM
+  -> `hunk session open` and the terminal's "Open in browser" reach the same
+     app/session/openReview.ts in the session process, which alone holds the capability
 ```
 
 All review inputs normalize to `Changeset` / `DiffFile[]`. Shared semantic review behavior follows:
 
 ```text
-DiffFile[] -> projectReviewDocument -> ReviewDocumentV1 -> ReviewStore
+DiffFile[] -> projectReviewDocument -> ReviewDocument -> ReviewStore
 ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> projection
 ```
 
@@ -113,9 +126,30 @@ work such as extension discovery, notices, and mounted UI state.
 
 `ui/runInteractiveApp.tsx` owns the renderer, extension session, review runtime, and ordered cleanup.
 `HunkSessionHost` routes history and review while retaining one `ExtensionSession`; that session owns
-user-extension registry authority and retirement. `AppHost` owns review reload serialization,
-content loading, broker publication, React commit, and post-layout event ordering. History closes
-its provider cursor before extension shutdown.
+user-extension registry authority and retirement. `ReviewReloadCoordinator`
+(`app/session/reloadCoordinator.ts`) owns review reload serialization, shutdown refusal, content
+loading, extension adoption, producer generation advance, and broker publication; `AppHost` drives
+it and keeps the React commit, post-layout event ordering, notices, and live view preferences.
+`core/watch/inputWatch.ts` arms watch mode for one input without React. The browser-facing shared-state
+snapshot is declared in `session/reviewSharedState.ts` (browser-safe), projected from the host in
+`app/review/sharedState.ts`, materialized by the producer per shared revision, and read by the
+daemon through its verified resource loop for `GET /review-api/<session>/state`. Theme
+derivation lives in `core/theme/appTheme.ts` and keymap resolution in `core/run/keymap.ts`, with
+`ui/` re-exporting both, so a headless session resolves presentation defaults without OpenTUI. The
+producer's remote action handler (`app/session/reviewCommands.ts`) applies the multi-surface
+policy: browser selection moves stay local, a headless session adopts a browser's anchor, and
+agent moves record the shared reveal. Browser-invocable host effects are limited to refresh
+(`POST /review-api/<session>/refresh`), which reaches `ReviewReloadCoordinator.refreshCurrent`
+through the session bridge; exact file bytes for image previews are `bytes` resources served by
+the producer's resource store. History closes its provider
+cursor before extension shutdown.
+
+`ReviewSessionHost` (`app/review/reviewSessionHost.ts`) owns one live review without React: the
+`ReviewStore`, intent facts, live-comment ingestion, agent navigation and highlights, gap source
+loading, file-set replacement, and the session-export summaries. `useTerminalReview` creates one
+host per mounted review and keeps only terminal projection, the measured line cursor, and
+presentation-scoped navigation; renderer facts such as measured rows and note width reach the host
+as explicit optional inputs.
 
 Bundled Git, Jujutsu, and Sapling implementations register through the public extension contract in
 `extensions/default/vcs/index.ts`. `app/vcsCatalog.ts` composes those registrations into the
@@ -138,5 +172,6 @@ When moving ownership:
 - [Extension architecture](extension-architecture.md) — current extension host and lifecycle design
 - [Extension guide](extensions.md) — current public extension API and examples
 - [Session broker SDK](session-broker-sdk.md) — normative future public SDK contract; current packages remain private
-- [Browser review rebuild](browser-review-rebuild.md) — rollout plan and current browser boundary
+- [Browser review rebuild](browser-review-rebuild.md) — landed phases 0–4 and the seam contract
+- [Web review plan](web-review-plan.md) — accepted plan for the browser client, headless review host, and web-only tools
 - [Browser review seam audit](browser-review-seam-audit.md) — finding-level status and conformance record

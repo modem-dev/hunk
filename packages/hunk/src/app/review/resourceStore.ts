@@ -25,15 +25,15 @@ import {
   REVIEW_RESOURCE_LOAD_CONCURRENCY,
   reviewResourceCeiling,
   reviewResourceFailure,
-  type ReviewResourceChunkV1,
-  type ReviewResourceDescriptorV1,
+  type ReviewResourceChunk,
+  type ReviewResourceDescriptor,
   type ReviewResourceFailure,
   type ReviewResourceRange,
 } from "../../core/review/resources";
 import { reviewDigestsEqual, type ReviewDigestFn } from "../../core/review/validation";
 import { assertCanonicalFileMatchesManifest } from "../../core/review/canonicalFile";
 import { buildReviewContentManifestFile } from "../../core/review/contentManifest";
-import type { ReviewFileV1 } from "../../core/review/types";
+import type { ReviewFile } from "../../core/review/types";
 import {
   reviewPublicationFile,
   reviewPublicationResource,
@@ -55,7 +55,7 @@ export type ReviewResourceLoad =
   | { ok: true; resource: MaterializedReviewResource }
   | ReviewResourceFailure;
 
-export type ReviewResourceRead = { ok: true; chunk: ReviewResourceChunkV1 } | ReviewResourceFailure;
+export type ReviewResourceRead = { ok: true; chunk: ReviewResourceChunk } | ReviewResourceFailure;
 
 /**
  * Serialize one canonical file, self-checking it against the manifest first.
@@ -64,7 +64,7 @@ export type ReviewResourceRead = { ok: true; chunk: ReviewResourceChunkV1 } | Re
  * projection that lost or reordered content fails here instead of surfacing as a reader's
  * unexplained mismatch.
  */
-function encodeCanonicalFile(file: ReviewFileV1) {
+function encodeCanonicalFile(file: ReviewFile) {
   assertCanonicalFileMatchesManifest(file, buildReviewContentManifestFile(file));
   return JSON.stringify(file);
 }
@@ -107,7 +107,7 @@ export class ReviewResourceStore {
    * A descriptor starts unmeasured because measuring means producing the bytes; a reader
    * that has already asked for a chunk sees the length and digest it can verify against.
    */
-  describe(resourceId: string): ReviewResourceDescriptorV1 | undefined {
+  describe(resourceId: string): ReviewResourceDescriptor | undefined {
     const descriptor = reviewPublicationResource(this.publication, resourceId);
     const measured = descriptor && this.materialized.get(resourceId);
     return measured
@@ -116,7 +116,7 @@ export class ReviewResourceStore {
   }
 
   /** Every descriptor in this generation, measured where it has been produced. */
-  describeAll(): ReviewResourceDescriptorV1[] {
+  describeAll(): ReviewResourceDescriptor[] {
     return this.publication.resources.map((resource) => this.describe(resource.id) ?? resource);
   }
 
@@ -232,14 +232,46 @@ export class ReviewResourceStore {
     if (descriptor.kind === "source") {
       return this.produceSource(descriptor, file);
     }
+    if (descriptor.kind === "bytes") {
+      return this.produceBytes(descriptor, file);
+    }
     const text = descriptor.kind === "canonical-file" ? encodeCanonicalFile(file) : file.patch;
     return this.measure(descriptor, Buffer.from(text, "utf8"));
   }
 
+  /** Read one side's exact bytes through the byte reader the loader attached to the file. */
+  private async produceBytes(
+    descriptor: Extract<ReviewResourceDescriptor, { kind: "bytes" }>,
+    file: ReviewFile,
+  ): Promise<ReviewResourceLoad> {
+    const fetcher = this.publication.diffFilesByKey.get(descriptor.fileKey)?.byteFetcher;
+    let bytes: Uint8Array | null = null;
+    try {
+      bytes = fetcher ? await fetcher.getBytes(descriptor.side) : null;
+    } catch {
+      bytes = null;
+    }
+    if (!bytes) {
+      // Byte readers answer `null` both for an unreachable side and for one over their own
+      // ceiling; neither is something a reader can retry into.
+      return reviewResourceFailure(
+        "resource-unavailable",
+        `Review file ${file.path} has no readable ${descriptor.side} bytes.`,
+      );
+    }
+    const ceiling = reviewResourceCeiling(descriptor.kind);
+    return bytes.byteLength > ceiling
+      ? reviewResourceFailure(
+          "resource-too-large",
+          `${file.path} is ${bytes.byteLength} bytes on the ${descriptor.side} side, over the ${ceiling}-byte preview limit.`,
+        )
+      : this.measure(descriptor, Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength));
+  }
+
   /** Read one file's full source text through the reader the loader attached to it. */
   private async produceSource(
-    descriptor: Extract<ReviewResourceDescriptorV1, { kind: "source" }>,
-    file: ReviewFileV1,
+    descriptor: Extract<ReviewResourceDescriptor, { kind: "source" }>,
+    file: ReviewFile,
   ): Promise<ReviewResourceLoad> {
     const fetcher = this.publication.diffFilesByKey.get(descriptor.fileKey)?.sourceFetcher;
     if (!fetcher) {
@@ -294,7 +326,7 @@ export class ReviewResourceStore {
    * measurements were published before the bytes were read again — must still agree with
    * what was produced, and disagreeing is an integrity failure rather than a miss.
    */
-  private measure(descriptor: ReviewResourceDescriptorV1, bytes: Buffer): ReviewResourceLoad {
+  private measure(descriptor: ReviewResourceDescriptor, bytes: Buffer): ReviewResourceLoad {
     const ceiling = reviewResourceCeiling(descriptor.kind);
     if (bytes.byteLength > ceiling) {
       return reviewResourceFailure(

@@ -175,10 +175,10 @@ describe("extension panes", () => {
     const files = layout.panes.find((pane) => pane.pane.key === HUNK_FILES_PANE_KEY)!;
     const info = layout.panes.find((pane) => pane.pane.key === "hunk:review-info")!;
     expect(files.bounds).toEqual({ x: 0, y: 0, width: 38, height: 30 });
-    expect(info.bounds).toEqual({ x: 39, y: 0, width: 201, height: 2 });
-    expect(info.divider).toEqual({ x: 39, y: 2, width: 201, height: 1 });
+    expect(info.bounds).toEqual({ x: 39, y: 0, width: 201, height: 3 });
+    expect(info.divider).toEqual({ x: 39, y: 3, width: 201, height: 1 });
     expect(info.resizable).toBeFalse();
-    expect(layout.reviewBounds).toEqual({ x: 39, y: 3, width: 201, height: 27 });
+    expect(layout.reviewBounds).toEqual({ x: 39, y: 4, width: 201, height: 26 });
   });
 
   test("plans all four edges around one review rectangle", () => {

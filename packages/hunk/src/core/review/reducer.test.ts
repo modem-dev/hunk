@@ -6,7 +6,7 @@ import {
   createTestStoredNote,
 } from "../../../../../test/helpers/review-store-helpers";
 import { reduceReviewState } from "./reducer";
-import type { ReviewState } from "./state";
+import { isRenderableStoredReviewNote, type ReviewState } from "./state";
 
 /** Apply several actions in order, as one dispatch batch would. */
 function reduceAll(state: ReviewState, ...actions: Parameters<typeof reduceReviewState>[1][]) {
@@ -235,6 +235,35 @@ describe("document reconciliation", () => {
     });
 
     expect(next.expandedGaps).toEqual([]);
+  });
+
+  test("keeps a note renderable and active when a reload drops the hunk it hangs from", () => {
+    const state = reduceReviewState(
+      createTestReviewState([{ key: "alpha", hunkCount: 3, contentIdentity: "content:1" }]),
+      {
+        type: "notes/add-live",
+        notes: [createTestStoredNote({ id: "late", fileKey: "alpha", hunkIndex: 2, line: 22 })],
+      },
+    );
+    const selected = reduceReviewState(state, {
+      type: "selection/select",
+      fileKey: "alpha",
+      hunkIndex: 0,
+      activeNoteId: "late",
+    });
+
+    const next = reduceReviewState(selected, {
+      type: "document/reconcile",
+      document: createTestReviewDocument([
+        { key: "alpha", hunkCount: 1, contentIdentity: "content:2" },
+      ]),
+    });
+
+    const [entry] = next.liveNotes;
+    expect(entry && isRenderableStoredReviewNote(entry)).toBe(true);
+    expect(entry?.resolution).not.toBe("orphaned");
+    expect(entry?.note.id).toBe("late");
+    expect(next.activeNoteId).toBe("late");
   });
 
   test("preserves and re-resolves an unchanged expanded-gap line draft", () => {

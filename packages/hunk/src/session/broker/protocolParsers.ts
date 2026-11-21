@@ -3,8 +3,8 @@ import { z } from "zod";
 import { parseSessionRegistration, parseSessionSnapshot } from "./wire";
 import {
   HUNK_REVIEW_PROTOCOL_VERSION,
-  parseHunkReviewActionEnvelope,
-  parseHunkReviewResourceReadEnvelope,
+  parseReviewActionEnvelope,
+  parseReviewResourceReadEnvelope,
 } from "../reviewProtocol";
 import type {
   HunkSessionCommandResult,
@@ -117,8 +117,10 @@ const commandInputs = {
     })
     .refine(
       ({ protocolVersion, actor, request }) =>
-        parseHunkReviewResourceReadEnvelope({ protocolVersion, actor, request }).ok,
+        parseReviewResourceReadEnvelope({ protocolVersion, actor, request }).ok,
     ),
+  // No arguments: what a refresh reopens is the session's own input, never the caller's.
+  refresh_review: z.strictObject({ ...selectorFields }),
   apply_review_action: z
     .strictObject({
       ...selectorFields,
@@ -130,7 +132,7 @@ const commandInputs = {
     })
     .refine(
       ({ protocolVersion, generation, expectedStateRevision, actor, action }) =>
-        parseHunkReviewActionEnvelope({
+        parseReviewActionEnvelope({
           protocolVersion,
           generation,
           ...(expectedStateRevision === undefined ? {} : { expectedStateRevision }),
@@ -152,6 +154,7 @@ const commandInputs = {
     ...selectorFields,
     filePath: optionalString,
   }),
+  open_review: z.strictObject({ ...selectorFields, open: z.boolean() }),
 } as const;
 
 const failure = z.strictObject({
@@ -168,8 +171,19 @@ const failure = z.strictObject({
     "hunk-not-found",
     "gap-not-found",
     "draft-missing",
+    "draft-active",
+    "draft-mode-mismatch",
     "note-not-found",
+    "note-not-editable",
+    "note-has-replies",
+    "note-id-conflict",
+    "invalid-note-parent",
+    "blank-note",
+    "note-too-large",
+    "too-many-notes",
     "missing-fact",
+    "selection-is-local",
+    "draft-is-local",
   ]),
   message: z.string(),
   currentGeneration: z.string(),
@@ -198,6 +212,14 @@ const results = {
       }),
     }),
   ]),
+  refresh_review: z.union([
+    z.strictObject({
+      ok: z.literal(false),
+      code: z.enum(["refresh-unavailable", "refresh-failed"]),
+      message: z.string(),
+    }),
+    z.strictObject({ ok: z.literal(true), generation: z.string(), stateRevision: nonnegative }),
+  ]),
   apply_review_action: z.union([
     failure,
     z.strictObject({
@@ -208,6 +230,7 @@ const results = {
   ]),
   highlight: hunkCommandResultSchemas.highlight,
   clear_highlights: hunkCommandResultSchemas.clear_highlights,
+  open_review: hunkCommandResultSchemas.open_review,
 } as const;
 
 /** Parse with one strict Hunk schema while keeping Zod diagnostics inside the app boundary. */

@@ -6,10 +6,12 @@ import { sanitizeTerminalLine } from "../../lib/terminalText";
 import {
   reviewAnnotationAnchor,
   reviewAnnotationOverlapsHunk,
+  reviewNoteSource,
   type ReviewAnnotationTarget,
 } from "../../core/review/annotations";
 import type { ReviewHunkSpan } from "../../core/review/geometry";
-import type { ReviewRangeAnchorV1 } from "../../core/review/types";
+import { reviewNoteRangeLabel } from "../../core/review/noteLabels";
+import type { ReviewRangeAnchor } from "../../core/review/types";
 import { fileLabel } from "./files";
 
 export interface VisibleAgentNote {
@@ -20,7 +22,7 @@ export interface VisibleAgentNote {
    * line the card sits beside. Render planning places the card from this and never from
    * range containment against the rows it happens to have drawn.
    */
-  anchor: ReviewRangeAnchorV1;
+  anchor: ReviewRangeAnchor;
   source?: ReviewNoteSource | "draft";
   editable?: boolean;
   /** Whether keyboard note actions currently address this semantic card. */
@@ -71,19 +73,6 @@ export function inlineNoteTitle(annotation: AgentAnnotation, noteIndex: number, 
   const author = sanitizeTerminalLine(annotation.author?.trim() ?? "");
   const label = source === "user" ? "Your note" : author ? `${author} note` : "Agent note";
   return noteCount > 1 ? `${label} ${noteIndex + 1}/${noteCount}` : label;
-}
-
-/** Resolve the user-facing source for one inline note annotation. */
-export function reviewNoteSource(annotation: AgentAnnotation): ReviewNoteSource {
-  if (annotation.source === "user") {
-    return "user";
-  }
-
-  if (annotation.source === "mcp" || annotation.source === "agent") {
-    return "agent";
-  }
-
-  return "ai";
 }
 
 /** Return the annotations relevant to the currently selected hunk. */
@@ -140,24 +129,9 @@ export function createVisibleAgentNote(
   };
 }
 
-function formatGithubStyleRange(prefix: "L" | "R", range: [number, number]) {
-  return range[0] === range[1]
-    ? `${prefix}${range[0]}`
-    : `${prefix}${range[0]}–${prefix}${range[1]}`;
-}
-
 /** Build a concise GitHub-style file-and-line label for inline note rows. */
 export function annotationRangeLabel(annotation: AgentAnnotation, file?: DiffFile) {
-  const locationParts: string[] = [];
-
-  if (annotation.oldRange) {
-    locationParts.push(formatGithubStyleRange("L", annotation.oldRange));
-  }
-
-  if (annotation.newRange) {
-    locationParts.push(formatGithubStyleRange("R", annotation.newRange));
-  }
-
-  const location = locationParts.join(" → ") || "hunk";
+  // The line label is the shared rule (`core/review/noteLabels.ts`); the file label is terminal.
+  const location = reviewNoteRangeLabel(annotation);
   return file ? `${fileLabel(file)} ${location}` : location;
 }

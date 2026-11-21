@@ -18,7 +18,8 @@ import { reviewHunkRanges, reviewRangesOverlap, type ReviewHunkSpan } from "./ge
 import type { ReviewAnnotationIndex } from "./navigation";
 import type { AgentAnnotation } from "../../extension-api/types";
 import type { DiffFile } from "../changeset/model";
-import type { ReviewLineAddressV1, ReviewRangeAnchorV1 } from "./types";
+import type { ReviewNoteSource } from "../run/commandInputs";
+import type { ReviewLineAddress, ReviewRangeAnchor } from "./types";
 
 /** Whether one annotation lands inside a hunk's visible span on either side. */
 export function reviewAnnotationOverlapsHunk(annotation: AgentAnnotation, hunk: ReviewHunkSpan) {
@@ -30,8 +31,21 @@ export function reviewAnnotationOverlapsHunk(annotation: AgentAnnotation, hunk: 
   );
 }
 
+/** Resolve the user-facing source for one inline note annotation. */
+export function reviewNoteSource(annotation: AgentAnnotation): ReviewNoteSource {
+  if (annotation.source === "user") {
+    return "user";
+  }
+
+  if (annotation.source === "mcp" || annotation.source === "agent") {
+    return "agent";
+  }
+
+  return "ai";
+}
+
 /** A note target declared by the surface that knows where the note was written. */
-export interface ReviewAnnotationTarget extends ReviewLineAddressV1 {
+export interface ReviewAnnotationTarget extends ReviewLineAddress {
   hunkIndex: number;
 }
 
@@ -40,8 +54,8 @@ export function reviewAnnotationAnchor(
   hunks: readonly ReviewHunkSpan[],
   annotation: AgentAnnotation,
   target?: ReviewAnnotationTarget,
-): ReviewRangeAnchorV1 {
-  const preferred: ReviewLineAddressV1 | undefined = target
+): ReviewRangeAnchor {
+  const preferred: ReviewLineAddress | undefined = target
     ? { side: target.side, line: target.line }
     : annotation.newRange
       ? { side: "new", line: annotation.newRange[0] }
@@ -73,15 +87,49 @@ export function reviewAnnotatedHunkIndices(
   }
 
   for (const annotation of annotations) {
-    const anchor = reviewAnnotationAnchor(hunks, annotation, declaredTarget?.(annotation));
-    for (const hunkIndex of anchor.intersectingHunkIndices) {
-      annotated.add(hunkIndex);
-    }
-    if (anchor.ownerHunkIndex !== undefined) {
-      annotated.add(anchor.ownerHunkIndex);
-    }
+    addReviewAnchorAnnotatedHunks(
+      reviewAnnotationAnchor(hunks, annotation, declaredTarget?.(annotation)),
+      annotated,
+    );
   }
   return annotated;
+}
+
+/** Mark the hunks one resolved anchor reaches: every intersecting hunk and its owner. */
+function addReviewAnchorAnnotatedHunks(anchor: ReviewRangeAnchor, into: Set<number>) {
+  for (const hunkIndex of anchor.intersectingHunkIndices) {
+    into.add(hunkIndex);
+  }
+  if (anchor.ownerHunkIndex !== undefined) {
+    into.add(anchor.ownerHunkIndex);
+  }
+}
+
+/**
+ * Index annotated files and hunks from notes whose anchors are already resolved.
+ *
+ * The form a surface that receives notes rather than diff models needs (the browser reads
+ * them from the shared-state snapshot, anchors resolved by the producer): the same per-anchor
+ * rule as `buildReviewAnnotationIndex`, and the same broader file membership, where
+ * `contextFileKeys` names files carrying review context without any note.
+ */
+export function buildReviewAnnotationIndexFromNotes(
+  notes: Iterable<{ fileKey: string; anchor: ReviewRangeAnchor }>,
+  contextFileKeys: Iterable<string> = [],
+): ReviewAnnotationIndex {
+  const hunksByFileKey = new Map<string, Set<number>>();
+  const annotatedFileKeys = new Set<string>(contextFileKeys);
+  for (const note of notes) {
+    annotatedFileKeys.add(note.fileKey);
+    const hunks = hunksByFileKey.get(note.fileKey) ?? new Set<number>();
+    addReviewAnchorAnnotatedHunks(note.anchor, hunks);
+    hunksByFileKey.set(note.fileKey, hunks);
+  }
+  const annotatedHunkIndicesByFileKey = new Map<string, ReadonlySet<number>>();
+  for (const [fileKey, hunks] of hunksByFileKey) {
+    if (hunks.size > 0) annotatedHunkIndicesByFileKey.set(fileKey, hunks);
+  }
+  return { annotatedHunkIndicesByFileKey, annotatedFileKeys };
 }
 
 /**

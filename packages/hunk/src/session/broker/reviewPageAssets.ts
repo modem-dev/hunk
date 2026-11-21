@@ -1,0 +1,417 @@
+/**
+ * Finds the built browser review page for the daemon to serve, in whichever form this Hunk
+ * distribution carries it.
+ *
+ * The page is a static client built by `scripts/build/build-web.ts`: one `index.html`, a set
+ * of content-hashed scripts and styles, and a `manifest.json` naming every asset. Each
+ * distribution carries that build differently, and this module is what lets the daemon not
+ * care which one it is running in:
+ *
+ * - The compiled binary embeds one archive (`hunk-web-assets.bin`) holding every file
+ *   gzip-compressed, so the executable stays one file and grows by the compressed size.
+ * - The npm package ships the build as plain files in `dist/npm/web`, beside `main.js`.
+ * - A source checkout serves `packages/hunk/dist/web`, and runs the build script once when
+ *   that output is missing, so `bun run packages/hunk/src/main.tsx` works with no manual
+ *   step. An existing build is reused as-is; rerun `bun run build:web` after changing the
+ *   client.
+ *
+ * Nothing here decides how a response looks — headers, caching, and methods belong to
+ * `reviewPageServer.ts`. Lookups go through the manifest only, so a request can name an
+ * asset but never a path: there is no way to reach a file the build did not list.
+ */
+import { existsSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { isReviewAssetName } from "../reviewHttpProtocol";
+
+/** File name of the page document inside one build. */
+export const REVIEW_PAGE_DOCUMENT_NAME = "index.html";
+
+/** File name of the asset manifest inside one build. */
+export const REVIEW_PAGE_MANIFEST_NAME = "manifest.json";
+
+/**
+ * Base name of the archive the compiled binary embeds.
+ *
+ * Bun appends a content hash when it embeds a file, so the runtime matches this stem rather
+ * than the exact name.
+ */
+export const REVIEW_PAGE_ARCHIVE_STEM = "hunk-web-assets";
+
+/** Extension of the embedded archive; not one Bun bundles as code, so it embeds verbatim. */
+export const REVIEW_PAGE_ARCHIVE_EXTENSION = ".bin";
+
+const ARCHIVE_MAGIC = new TextEncoder().encode("HUNKWEB1");
+
+/**
+ * Content type each asset extension is served as.
+ *
+ * Closed on purpose: the build refuses to emit a file whose type is not listed, so the
+ * daemon never serves something a browser would have to sniff.
+ */
+const ASSET_CONTENT_TYPES: Record<string, string> = {
+  ".css": "text/css; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+};
+
+/** Content type the page document is served as. */
+export const REVIEW_PAGE_DOCUMENT_CONTENT_TYPE = "text/html; charset=utf-8";
+
+/** Return the content type one asset name is served as, or nothing for an unknown kind. */
+export function reviewAssetContentType(name: string): string | undefined {
+  const dot = name.lastIndexOf(".");
+  return dot < 0 ? undefined : ASSET_CONTENT_TYPES[name.slice(dot)];
+}
+
+/** The list of assets one page build contains, as `manifest.json` records it. */
+export interface ReviewPageAssetManifest {
+  formatVersion: 1;
+  /** Every servable asset except the document, in build output order. */
+  assets: string[];
+  /**
+   * The replaced build's assets a source-checkout rebuild kept beside this one, so a page
+   * loaded before the rebuild still finds its lazy chunks. Served by name like `assets`; only
+   * a build directory carries them, never an archive or a packaged install.
+   */
+  retained?: string[];
+}
+
+/** Parse one manifest, refusing any asset name the page grammar would not serve. */
+export function parseReviewPageAssetManifest(value: unknown): ReviewPageAssetManifest | undefined {
+  if (typeof value !== "object" || value === null) {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  if (record.formatVersion !== 1 || !Array.isArray(record.assets)) {
+    return undefined;
+  }
+  const assets = record.assets;
+  const retained = record.retained;
+  if (retained !== undefined && !Array.isArray(retained)) {
+    return undefined;
+  }
+  const servable = (name: unknown) =>
+    isReviewAssetName(name) && reviewAssetContentType(name as string) !== undefined;
+  const valid = assets.every(servable) && (retained ?? []).every(servable);
+  if (!valid) return undefined;
+  return {
+    formatVersion: 1,
+    assets: assets as string[],
+    ...(retained ? { retained: retained as string[] } : {}),
+  };
+}
+
+/** One servable file: its bytes, how they are typed, and whether they are stored gzipped. */
+export interface ReviewPageFile {
+  body: Blob;
+  contentType: string;
+  /** True when `body` is the gzip encoding of the file rather than the file itself. */
+  gzip: boolean;
+}
+
+/** One loaded page build. */
+export interface ReviewPageAssets {
+  /**
+   * The page document, identical for every session, or nothing when its file is gone.
+   *
+   * A directory build can lose its document while a rebuild swaps directories or after
+   * `dist/web` was deleted; the server answers that as an unavailable page, not a broken file.
+   */
+  document(): ReviewPageFile | undefined;
+  /** One listed asset, or nothing for a name the build does not contain. */
+  asset(name: string): ReviewPageFile | undefined;
+}
+
+/** Serve one build directory, reading each file lazily from disk. */
+export function directoryReviewPageAssets(directory: string): ReviewPageAssets | undefined {
+  const manifestPath = join(directory, REVIEW_PAGE_MANIFEST_NAME);
+  if (!existsSync(manifestPath) || !existsSync(join(directory, REVIEW_PAGE_DOCUMENT_NAME))) {
+    return undefined;
+  }
+
+  let manifest: ReviewPageAssetManifest | undefined;
+  try {
+    manifest = parseReviewPageAssetManifest(JSON.parse(readFileSync(manifestPath, "utf8")));
+  } catch {
+    manifest = undefined;
+  }
+  if (!manifest) {
+    return undefined;
+  }
+
+  // Every name is still one the build recorded: its own assets, then the ones it retained.
+  const listed = new Set([...manifest.assets, ...(manifest.retained ?? [])]);
+  return {
+    // Like a listed asset, a document whose file is gone belongs to a build replaced on disk.
+    document: () =>
+      existsSync(join(directory, REVIEW_PAGE_DOCUMENT_NAME))
+        ? {
+            body: Bun.file(join(directory, REVIEW_PAGE_DOCUMENT_NAME)),
+            contentType: REVIEW_PAGE_DOCUMENT_CONTENT_TYPE,
+            gzip: false,
+          }
+        : undefined,
+    // A listed name whose file is gone belongs to a build that was replaced on disk.
+    asset: (name) =>
+      listed.has(name) && existsSync(join(directory, name))
+        ? {
+            body: Bun.file(join(directory, name)),
+            contentType: reviewAssetContentType(name)!,
+            gzip: false,
+          }
+        : undefined,
+  };
+}
+
+/** Where each archived file's gzip bytes sit, relative to the start of the payload. */
+interface ReviewPageArchiveHeader {
+  manifest: ReviewPageAssetManifest;
+  entries: Record<string, [offset: number, length: number]>;
+}
+
+/**
+ * Pack one build into the archive the compiled binary embeds.
+ *
+ * Layout: an 8-byte magic, a little-endian u32 header length, a JSON header mapping each
+ * file name to its offset and length in the payload, then every file gzip-compressed. Files
+ * stay compressed at rest and on the wire, so the daemon never inflates the build into memory
+ * to serve it.
+ */
+export function encodeReviewPageAssetArchive(
+  manifest: ReviewPageAssetManifest,
+  files: ReadonlyMap<string, Uint8Array<ArrayBuffer>>,
+): Uint8Array<ArrayBuffer> {
+  const names = [REVIEW_PAGE_DOCUMENT_NAME, ...manifest.assets];
+  const compressed = names.map((name) => {
+    const bytes = files.get(name);
+    if (!bytes) {
+      throw new Error(`The page build is missing ${name}.`);
+    }
+    return Bun.gzipSync(bytes, { level: 9 });
+  });
+
+  const entries: ReviewPageArchiveHeader["entries"] = {};
+  let offset = 0;
+  names.forEach((name, index) => {
+    entries[name] = [offset, compressed[index]!.byteLength];
+    offset += compressed[index]!.byteLength;
+  });
+
+  const header = new TextEncoder().encode(
+    JSON.stringify({ manifest, entries } satisfies ReviewPageArchiveHeader),
+  );
+  const archive = new Uint8Array(ARCHIVE_MAGIC.byteLength + 4 + header.byteLength + offset);
+  archive.set(ARCHIVE_MAGIC, 0);
+  new DataView(archive.buffer).setUint32(ARCHIVE_MAGIC.byteLength, header.byteLength, true);
+  archive.set(header, ARCHIVE_MAGIC.byteLength + 4);
+  let cursor = ARCHIVE_MAGIC.byteLength + 4 + header.byteLength;
+  for (const bytes of compressed) {
+    archive.set(bytes, cursor);
+    cursor += bytes.byteLength;
+  }
+  return archive;
+}
+
+/** Parse one archive's header and serve its files as slices of the archive blob. */
+export async function archiveReviewPageAssets(
+  archive: Blob,
+): Promise<ReviewPageAssets | undefined> {
+  const prefixLength = ARCHIVE_MAGIC.byteLength + 4;
+  if (archive.size < prefixLength) {
+    return undefined;
+  }
+  const prefix = new Uint8Array(await archive.slice(0, prefixLength).arrayBuffer());
+  if (!ARCHIVE_MAGIC.every((byte, index) => prefix[index] === byte)) {
+    return undefined;
+  }
+  const headerLength = new DataView(prefix.buffer).getUint32(ARCHIVE_MAGIC.byteLength, true);
+  const payloadStart = prefixLength + headerLength;
+  if (payloadStart > archive.size) {
+    return undefined;
+  }
+
+  let header: ReviewPageArchiveHeader;
+  try {
+    header = JSON.parse(await archive.slice(prefixLength, payloadStart).text());
+  } catch {
+    return undefined;
+  }
+  const manifest = parseReviewPageAssetManifest(header.manifest);
+  if (!manifest || typeof header.entries !== "object" || header.entries === null) {
+    return undefined;
+  }
+
+  /** Slice one archived file, refusing an entry that points outside the archive. */
+  const slice = (name: string): Blob | undefined => {
+    const entry = Object.hasOwn(header.entries, name) ? header.entries[name] : undefined;
+    if (
+      !Array.isArray(entry) ||
+      !Number.isSafeInteger(entry[0]) ||
+      !Number.isSafeInteger(entry[1]) ||
+      entry[0] < 0 ||
+      entry[1] < 0 ||
+      payloadStart + entry[0] + entry[1] > archive.size
+    ) {
+      return undefined;
+    }
+    return archive.slice(payloadStart + entry[0], payloadStart + entry[0] + entry[1]);
+  };
+
+  const document = slice(REVIEW_PAGE_DOCUMENT_NAME);
+  if (!document || manifest.assets.some((name) => slice(name) === undefined)) {
+    return undefined;
+  }
+
+  const listed = new Set(manifest.assets);
+  return {
+    document: () => ({
+      body: document,
+      contentType: REVIEW_PAGE_DOCUMENT_CONTENT_TYPE,
+      gzip: true,
+    }),
+    asset: (name) =>
+      listed.has(name)
+        ? { body: slice(name)!, contentType: reviewAssetContentType(name)!, gzip: true }
+        : undefined,
+  };
+}
+
+/** Find the archive `bun build --compile` embedded, when this process is the compiled binary. */
+function embeddedArchive(): Blob | undefined {
+  const pattern = new RegExp(
+    `^${REVIEW_PAGE_ARCHIVE_STEM}(?:-[a-z0-9]+)?\\${REVIEW_PAGE_ARCHIVE_EXTENSION}$`,
+  );
+  return Bun.embeddedFiles.find((file) =>
+    pattern.test((file as Blob & { name?: string }).name ?? ""),
+  );
+}
+
+/**
+ * The source-checkout layout, when this module is running as TypeScript from the repo.
+ *
+ * A bundle (`dist/npm/main.js`, the compiled binary) is never `.ts`, so this cannot
+ * misfire in an installed copy and point at a directory outside the package.
+ */
+function sourceLayout() {
+  if (!/\.tsx?$/.test(import.meta.path)) {
+    return undefined;
+  }
+  const packageRoot = resolve(import.meta.dir, "..", "..", "..");
+  const buildScript = resolve(packageRoot, "..", "..", "scripts", "build", "build-web.ts");
+  return existsSync(buildScript)
+    ? { outdir: join(packageRoot, "dist", "web"), buildScript }
+    : undefined;
+}
+
+/** Run the repository's page build once, reporting whether it succeeded. */
+async function buildSourceAssets(buildScript: string): Promise<boolean> {
+  const build = Bun.spawn([process.execPath, buildScript], {
+    stdin: "ignore",
+    stdout: "ignore",
+    stderr: "inherit",
+  });
+  return (await build.exited) === 0;
+}
+
+let embedded: Promise<ReviewPageAssets | undefined> | undefined;
+const directoryCache = new Map<string, { manifest: string; loaded: ReviewPageAssets }>();
+
+/**
+ * The build a directory holds now, re-read only when its manifest's content changed.
+ *
+ * A manifest that cannot be read or parsed is a rebuild caught mid-install (the directory
+ * swapped out, or a manifest from an older build script still being written), so the last
+ * build this directory served keeps answering until a readable manifest replaces it. Each of
+ * its assets is still checked on disk, so a file the rebuild removed is answered as absent.
+ */
+function loadDirectoryBuild(directory: string): ReviewPageAssets | undefined {
+  const cached = directoryCache.get(directory);
+  let manifest: string;
+  try {
+    manifest = readFileSync(join(directory, REVIEW_PAGE_MANIFEST_NAME), "utf8");
+  } catch {
+    return cached?.loaded;
+  }
+  if (cached?.manifest === manifest) {
+    return cached.loaded;
+  }
+  const loaded = directoryReviewPageAssets(directory);
+  if (!loaded) {
+    return cached?.loaded;
+  }
+  directoryCache.set(directory, { manifest, loaded });
+  return loaded;
+}
+
+/**
+ * Serve one build directory, re-reading its manifest whenever the build was replaced.
+ *
+ * A rebuild under a running daemon (`bun run build:web` in a source checkout) swaps a new
+ * build into place, so the daemon must stop serving the previous build's names. The manifest
+ * is small and read on every lookup: the cached build holds while the manifest's content is
+ * unchanged, which a timestamp cannot promise when two builds land within its resolution. A
+ * listed asset whose file is already gone is answered as absent rather than as a broken file.
+ */
+export function currentDirectoryReviewPageAssets(directory: string): ReviewPageAssets | undefined {
+  const initial = loadDirectoryBuild(directory);
+  if (!initial) return undefined;
+  return {
+    document: () => (loadDirectoryBuild(directory) ?? initial).document(),
+    asset: (name) => loadDirectoryBuild(directory)?.asset(name),
+  };
+}
+
+/**
+ * Serve a source checkout's build, building it on first need at most once per daemon.
+ *
+ * A page request needs no authentication, so a build it triggers must not be repeatable on
+ * demand: the build runs once, single-flight, for the daemon's lifetime, and a failed build is
+ * remembered — every later request is served the missing-page answer until the daemon
+ * restarts — rather than started again by the next request. An existing build is always read
+ * fresh, so `bun run build:web` under a running daemon is still picked up.
+ */
+export function createSourceReviewPageLoader(
+  build: () => Promise<boolean>,
+  read: () => ReviewPageAssets | undefined,
+) {
+  let built: Promise<boolean> | undefined;
+  return async (): Promise<ReviewPageAssets | undefined> => {
+    const existing = read();
+    if (existing) return existing;
+    built ??= build().catch(() => false);
+    return (await built) ? read() : undefined;
+  };
+}
+
+let sourceLoader: (() => Promise<ReviewPageAssets | undefined>) | undefined;
+
+/**
+ * Load the page build this distribution carries, building it first in a source checkout.
+ *
+ * The embedded archive is read once. A build directory is checked on every call so a rebuild
+ * while the daemon runs is picked up. A source build runs at most once per daemon
+ * (`createSourceReviewPageLoader`).
+ */
+export async function loadReviewPageAssets(): Promise<ReviewPageAssets | undefined> {
+  const archive = embeddedArchive();
+  if (archive) {
+    embedded ??= archiveReviewPageAssets(archive);
+    return embedded;
+  }
+
+  // The npm bundle runs from `dist/npm/main.js`, with the build beside it in `dist/npm/web`.
+  const packaged = currentDirectoryReviewPageAssets(join(import.meta.dir, "web"));
+  if (packaged) {
+    return packaged;
+  }
+
+  const source = sourceLayout();
+  if (!source) {
+    return undefined;
+  }
+  sourceLoader ??= createSourceReviewPageLoader(
+    () => buildSourceAssets(source.buildScript),
+    () => currentDirectoryReviewPageAssets(source.outdir),
+  );
+  return sourceLoader();
+}

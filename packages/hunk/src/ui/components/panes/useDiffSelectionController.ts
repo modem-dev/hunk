@@ -14,7 +14,7 @@ import {
   useState,
   type RefObject,
 } from "react";
-import type { ReviewNoteTargetV1 } from "../../../core/review/types";
+import type { ReviewNoteTarget } from "../../../core/review/types";
 import { resolveSplitPaneWidths } from "../../diff/codeColumns";
 import { isNestedRowMouseAction } from "../../diff/rowMouseActions";
 import { contextLineStableKeySides } from "../../diff/reviewRenderPlan";
@@ -64,7 +64,7 @@ interface UseDiffSelectionControllerOptions {
   lineCursors: LineCursor[];
   onCopyFeedback?: (text: string) => void;
   onCopySelectionText?: (text: string) => void | boolean;
-  onStartUserNoteAtHunk?: (fileId: string, hunkIndex: number, target?: ReviewNoteTargetV1) => void;
+  onStartUserNoteAtHunk?: (fileId: string, hunkIndex: number, target?: ReviewNoteTarget) => void;
   onViewportLineCursorChange?: (cursor: LineCursor) => void;
   renderedLineCursor: LineCursor | null;
   scrollRef: RefObject<ScrollBoxRenderable | null>;

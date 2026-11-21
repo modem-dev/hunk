@@ -13,10 +13,8 @@ import {
   parseSessionRegistrationEnvelope,
   parseSessionSnapshotEnvelope,
 } from "@hunk/session-broker-core";
-import {
-  parseHunkReviewPublicationAddress,
-  parseHunkReviewResourceCatalog,
-} from "../reviewProtocol";
+import { parseReviewPublicationAddress, parseReviewResourceCatalog } from "../reviewProtocol";
+import { MAX_REVIEW_NOTE_BYTES } from "../../core/review/noteSize";
 import { isReviewSha256Digest } from "../../core/review/validation";
 import { parseExtensionReviewDescriptor } from "../../core/reviewDescriptor";
 import type { HunkSessionRegistration, HunkSessionSnapshot } from "../types";
@@ -208,6 +206,31 @@ function parseReviewInputKind(value: unknown): CliInput["kind"] | null {
   return value as CliInput["kind"];
 }
 
+/**
+ * Parse one note's free text (a summary, rationale, body, title, or author) at the review
+ * model's own note bound rather than the broker's default string bound.
+ *
+ * The model admits a note up to `MAX_REVIEW_NOTE_BYTES` (256 KiB), and agents read whole notes
+ * from these fields (`hunk session comment list`, `review --include-notes`), so the snapshot
+ * carries them in full. The broker's 4,096-byte default rejected the snapshot of a session
+ * holding one legal note and disconnected it. No field of a legal note is larger than the whole
+ * note, so the note bound is also the field bound.
+ */
+function parseNoteText(value: unknown) {
+  try {
+    return parseBrokerString(value, { maxBytes: MAX_REVIEW_NOTE_BYTES });
+  } catch {
+    return null;
+  }
+}
+
+/** Parse one optional note text field at the note bound, rejecting a malformed present value. */
+function parseOptionalNoteText(value: unknown) {
+  return value === undefined
+    ? undefined
+    : parseBrokerString(value, { maxBytes: MAX_REVIEW_NOTE_BYTES });
+}
+
 /** Parse one live comment summary from the app-owned snapshot payload. */
 function parseSessionLiveCommentSummary(
   value: unknown,
@@ -225,7 +248,7 @@ function parseSessionLiveCommentSummary(
   const commentId = brokerWireParsers.parseRequiredString(record.commentId);
   const filePath = brokerWireParsers.parseRequiredString(record.filePath);
   const hunkIndex = brokerWireParsers.parseNonNegativeInt(record.hunkIndex);
-  const summary = brokerWireParsers.parseRequiredString(record.summary);
+  const summary = parseNoteText(record.summary);
   const createdAt = brokerWireParsers.parseRequiredString(record.createdAt);
   const line = brokerWireParsers.parsePositiveInt(record.line);
   const side = record.side === "old" || record.side === "new" ? record.side : null;
@@ -249,8 +272,8 @@ function parseSessionLiveCommentSummary(
     side,
     line,
     summary,
-    rationale: brokerWireParsers.parseOptionalString(record.rationale),
-    author: brokerWireParsers.parseOptionalString(record.author),
+    rationale: parseOptionalNoteText(record.rationale),
+    author: parseOptionalNoteText(record.author),
     createdAt,
   };
 }
@@ -271,7 +294,7 @@ function parseSessionReviewNoteSummary(
 
   const noteId = brokerWireParsers.parseRequiredString(record.noteId);
   const filePath = brokerWireParsers.parseRequiredString(record.filePath);
-  const body = brokerWireParsers.parseRequiredString(record.body);
+  const body = parseNoteText(record.body);
   const createdAt = brokerWireParsers.parseRequiredString(record.createdAt);
   const source =
     record.source === "ai" || record.source === "agent" || record.source === "user"
@@ -305,8 +328,8 @@ function parseSessionReviewNoteSummary(
     oldRange: parseOptionalRange(record.oldRange),
     newRange: parseOptionalRange(record.newRange),
     body,
-    title: brokerWireParsers.parseOptionalString(record.title),
-    author: brokerWireParsers.parseOptionalString(record.author),
+    title: parseOptionalNoteText(record.title),
+    author: parseOptionalNoteText(record.author),
     createdAt,
     updatedAt: brokerWireParsers.parseOptionalString(record.updatedAt),
     editable: typeof record.editable === "boolean" ? record.editable : source === "user",
@@ -348,9 +371,9 @@ function parseHunkSessionInfo(value: unknown, context: WireParseContext): HunkSe
   const reviewCatalog =
     record.reviewCatalog === undefined
       ? undefined
-      : parseHunkReviewResourceCatalog(record.reviewCatalog);
+      : parseReviewResourceCatalog(record.reviewCatalog);
   if (record.reviewCatalog !== undefined && reviewCatalog === undefined) {
-    return reject(child(context, "reviewCatalog"), "parseHunkReviewResourceCatalog");
+    return reject(child(context, "reviewCatalog"), "parseReviewResourceCatalog");
   }
 
   // The capability verifier is a digest and nothing else, checked with the shared
@@ -405,6 +428,7 @@ function parseHunkSessionState(value: unknown, context: WireParseContext): HunkS
       "reviewNoteCount",
       "reviewNotes",
       "reviewPublication",
+      "reviewSharedStateRevision",
     ],
   );
   if (
@@ -426,9 +450,20 @@ function parseHunkSessionState(value: unknown, context: WireParseContext): HunkS
   const reviewPublication =
     record.reviewPublication === undefined
       ? undefined
-      : parseHunkReviewPublicationAddress(record.reviewPublication);
+      : parseReviewPublicationAddress(record.reviewPublication);
   if (record.reviewPublication !== undefined && reviewPublication === undefined) {
-    return reject(child(context, "reviewPublication"), "parseHunkReviewPublicationAddress");
+    return reject(child(context, "reviewPublication"), "parseReviewPublicationAddress");
+  }
+
+  const reviewSharedStateRevision =
+    record.reviewSharedStateRevision === undefined
+      ? undefined
+      : brokerWireParsers.parseNonNegativeInt(record.reviewSharedStateRevision);
+  if (
+    record.reviewSharedStateRevision !== undefined &&
+    (reviewSharedStateRevision === null || reviewPublication === undefined)
+  ) {
+    return reject(child(context, "reviewSharedStateRevision"), parser);
   }
 
   if (record.reviewNotes !== undefined && !Array.isArray(record.reviewNotes)) {
@@ -483,6 +518,7 @@ function parseHunkSessionState(value: unknown, context: WireParseContext): HunkS
     reviewNoteCount: reviewNotes.length,
     reviewNotes: reviewNotes as SessionReviewNoteSummary[],
     ...(reviewPublication ? { reviewPublication } : {}),
+    ...(typeof reviewSharedStateRevision === "number" ? { reviewSharedStateRevision } : {}),
   };
 }
 

@@ -1488,6 +1488,9 @@ export function resolveConfiguredInput<Input extends ConfigurableInput>(
     agentContext: input.options.agentContext,
     pager: input.options.pager ?? false,
     watch: input.options.watch ?? resolvedOptions.watch ?? false,
+    // Launch-only, like `--pager`: no config layer can select a headless web review.
+    ...(input.options.web ? { web: true } : {}),
+    ...(input.options.open === false ? { open: false } : {}),
     experimental: input.options.experimental ?? false,
     excludeUntracked: resolvedOptions.excludeUntracked ?? false,
     theme: resolvedOptions.theme,

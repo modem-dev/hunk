@@ -33,6 +33,12 @@ export interface SessionReloadBounds {
   roots: string[];
   /** Exact initial resources allowed when startup had no safe directory root. */
   exactFiles: string[];
+  /**
+   * The sidecar the user named at launch, canonicalized. A reload may keep reading it even when
+   * it lives outside every root, as agents usually keep sidecars in a temp directory; a reload
+   * that names any other outside path is still refused.
+   */
+  initialAgentContext?: string;
   defaultCwd: string;
 }
 
@@ -114,9 +120,14 @@ export function createSessionReloadBounds(
       break;
   }
 
+  const launchAgentContext = bootstrap.input.options.agentContext;
+
   return {
     roots: normalizeRoots(roots),
     exactFiles: [...new Set(exactFiles.map(resolveCanonicalPath))],
+    ...(launchAgentContext && launchAgentContext !== "-"
+      ? { initialAgentContext: resolveCanonicalPath(resolve(initialCwd, launchAgentContext)) }
+      : {}),
     defaultCwd: initialCwd,
   };
 }
@@ -182,6 +193,13 @@ function validateCommonReloadOptions(
 
   if (options.agentContext === "-") {
     throw new Error("Session reload does not support `--agent-context -`.");
+  }
+
+  // The launch sidecar is allowed wherever it lives; its path was the user's own choice, so a
+  // watch or manual refresh can keep reading it. Any other outside path stays refused.
+  const candidate = resolveCanonicalPath(resolve(cwd, options.agentContext));
+  if (candidate === bounds.initialAgentContext) {
+    return;
   }
 
   assertReloadFileWithinBounds(bounds, cwd, options.agentContext, "agent context path");

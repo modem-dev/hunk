@@ -8,7 +8,7 @@ import {
   parseReviewEventBegin,
   parseReviewEventChunk,
   parseReviewEventEnd,
-  parseReviewEventFrame,
+  parseReviewEventWhole,
   parseReviewEventFrameName,
   parseReviewEventId,
   planReviewEventFrames,
@@ -17,9 +17,9 @@ import {
   reviewEventChunkCount,
   reviewEventFrameName,
   reviewEventId,
-  type ReviewEventBeginV1,
-  type ReviewEventChunkV1,
-  type ReviewEventEndV1,
+  type ReviewEventBegin,
+  type ReviewEventChunk,
+  type ReviewEventEnd,
 } from "./reviewEventProtocol";
 
 const ADDRESS = { generation: "generation:test:3", stateRevision: 7 };
@@ -112,7 +112,7 @@ describe("review event framing", () => {
     expect(frames).toHaveLength(1);
     expect(frames[0]!.event).toBe("publication");
     expect(frames[0]!.id).toBe(reviewEventId("publication", ADDRESS));
-    expect(parseReviewEventFrame(frames[0]!.data)?.payload).toEqual({ hello: "world" });
+    expect(parseReviewEventWhole(frames[0]!.data)?.payload).toEqual({ hello: "world" });
   });
 
   // Only a complete event carries an id, so a reconnecting client's `Last-Event-ID` can
@@ -235,7 +235,7 @@ describe("review event reassembly", () => {
 });
 
 describe("review event envelope parsing", () => {
-  const begin: ReviewEventBeginV1 = {
+  const begin: ReviewEventBegin = {
     eventId: reviewEventId("publication", ADDRESS),
     generation: ADDRESS.generation,
     stateRevision: ADDRESS.stateRevision,
@@ -266,7 +266,7 @@ describe("review event envelope parsing", () => {
   });
 
   test("refuses a chunk larger than one window", () => {
-    const chunk: ReviewEventChunkV1 = {
+    const chunk: ReviewEventChunk = {
       eventId: begin.eventId,
       generation: begin.generation,
       offset: 0,
@@ -286,7 +286,7 @@ describe("review event envelope parsing", () => {
   });
 
   test("refuses an end envelope missing a field", () => {
-    const end: ReviewEventEndV1 = {
+    const end: ReviewEventEnd = {
       eventId: begin.eventId,
       generation: begin.generation,
       contentSize: 10,

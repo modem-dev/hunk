@@ -77,7 +77,10 @@ export default defineConfig({
           tag: "script",
           attrs: { defer: true, src: "/_vercel/insights/script.js" },
         },
-        { tag: "link", attrs: { rel: "icon", href: "/docs/favicon.svg", type: "image/svg+xml" } },
+        // Starlight links /favicon.svg itself; these add the PNG fallback and the touch icon that
+        // the marketing pages carry, so docs and changelog tabs show the same mark.
+        { tag: "link", attrs: { rel: "icon", href: "/icon.png", type: "image/png" } },
+        { tag: "link", attrs: { rel: "apple-touch-icon", href: "/apple-icon.png" } },
         { tag: "meta", attrs: { property: "og:type", content: "website" } },
         { tag: "meta", attrs: { property: "og:site_name", content: "Hunk documentation" } },
         { tag: "meta", attrs: { property: "og:image", content: "https://hunk.dev/og.png" } },
@@ -134,6 +137,7 @@ export default defineConfig({
             { label: "Git pager and difftool", slug: "docs/workflows/git-pager-and-difftool" },
             { label: "Jujutsu and Sapling", slug: "docs/workflows/jujutsu-and-sapling" },
             { label: "Watch mode", slug: "docs/workflows/watch-mode" },
+            { label: "Browser review", slug: "docs/workflows/browser-review" },
           ],
         },
         {

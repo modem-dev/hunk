@@ -18,18 +18,18 @@ import {
   type ReviewFileContentIdentityInput,
 } from "./identity";
 import type {
-  ReviewDocumentV1,
+  ReviewDocument,
   ReviewFileChangeKind,
-  ReviewFileV1,
-  ReviewHunkBlockV1,
-  ReviewHunkV1,
+  ReviewFile,
+  ReviewHunkBlock,
+  ReviewHunk,
 } from "./types";
 
 /** Convert one parsed hunk into an explicit JSON-safe semantic record. */
 export function projectReviewHunk(
   hunk: DiffFile["metadata"]["hunks"][number],
   index: number,
-): ReviewHunkV1 {
+): ReviewHunk {
   return {
     index,
     collapsedBefore: hunk.collapsedBefore,
@@ -46,7 +46,7 @@ export function projectReviewHunk(
     deletionLines: hunk.deletionLines,
     deletionLineIndex: hunk.deletionLineIndex,
     hunkContent: hunk.hunkContent.map(
-      (content): ReviewHunkBlockV1 =>
+      (content): ReviewHunkBlock =>
         content.type === "context"
           ? {
               type: "context",
@@ -70,7 +70,7 @@ export function projectReviewHunk(
 }
 
 /** Summarize hunk geometry for identity, so a re-parse at another context width differs. */
-function hunkSignature(hunks: readonly ReviewHunkV1[]) {
+function hunkSignature(hunks: readonly ReviewHunk[]) {
   return hunks
     .map((hunk) =>
       [
@@ -89,7 +89,7 @@ function hunkSignature(hunks: readonly ReviewHunkV1[]) {
 /** Collect the renderer-neutral facts one file's content identity is hashed from. */
 function contentIdentityInput(
   file: DiffFile,
-  hunks: readonly ReviewHunkV1[],
+  hunks: readonly ReviewHunk[],
 ): ReviewFileContentIdentityInput {
   return {
     path: file.path,
@@ -112,6 +112,27 @@ function contentIdentityInput(
     additionLines: file.metadata.additionLines,
     deletionLines: file.metadata.deletionLines,
   };
+}
+
+/**
+ * Recompute one projected file's content identity from the facts it carries.
+ *
+ * A reader that received a file over a transport uses this to check that the content and
+ * the identity it was published under still agree, without trusting either alone.
+ */
+export function recomputeReviewFileContentIdentity(file: ReviewFile) {
+  return reviewFileContentIdentity({
+    path: file.path,
+    ...(file.previousPath !== undefined ? { previousPath: file.previousPath } : {}),
+    changeKind: file.changeKind,
+    ...(file.language !== undefined ? { language: file.language } : {}),
+    patch: file.patch,
+    stats: file.stats,
+    flags: file.flags,
+    hunkSignature: hunkSignature(file.hunks),
+    additionLines: file.additionLines,
+    deletionLines: file.deletionLines,
+  });
 }
 
 export interface ProjectReviewDocumentOptions {
@@ -174,7 +195,7 @@ function projectReviewFile(file: DiffFile, sourceLabel: string, duplicateIndex: 
     hunks,
     contentIdentity,
     ...(sourceIdentity !== undefined ? { sourceIdentity, sourceAttested } : {}),
-  } satisfies ReviewFileV1;
+  } satisfies ReviewFile;
 }
 
 /**
@@ -187,7 +208,7 @@ function projectReviewFile(file: DiffFile, sourceLabel: string, duplicateIndex: 
 export function projectReviewDocument(
   files: readonly DiffFile[],
   { sourceLabel = "" }: ProjectReviewDocumentOptions = {},
-): ReviewDocumentV1 {
+): ReviewDocument {
   const occurrences = new Map<string, number>();
   return {
     files: files.map((file) => {

@@ -19,16 +19,24 @@ import {
   type ReviewPublicationAddress,
 } from "../../core/review/generationOrder";
 import {
-  parseHunkReviewPublicationAddress,
-  parseHunkReviewResourceCatalog,
-  type HunkReviewResourceCatalogV1,
+  parseReviewPublicationAddress,
+  parseReviewResourceCatalog,
+  type ReviewResourceCatalog,
 } from "../reviewProtocol";
 import type { HunkSessionInfo, HunkSessionState } from "../types";
 
 /** One session's mirrored publication: where it is, and what it offers there. */
 export interface MirroredReviewPublication {
   address: ReviewPublicationAddress;
-  catalog: HunkReviewResourceCatalogV1;
+  catalog: ReviewResourceCatalog;
+  /**
+   * The shared-state revision the session reported with this address, when it reports one.
+   *
+   * A second counter *within* one address, not part of it: the address alone still orders
+   * publications (C1). It advances the mirror only when the address is unchanged, because
+   * agent marks and the agent reveal live outside the review store and move nothing else.
+   */
+  sharedStateRevision?: number;
 }
 
 /**
@@ -41,6 +49,7 @@ export type ReviewMirrorUpdate =
   | { kind: "adopted"; generation: string }
   | { kind: "advanced"; generation: string; stateRevision: number }
   | { kind: "replaced"; generation: string; previousGeneration: string }
+  | { kind: "shared-state-advanced"; generation: string; sharedStateRevision: number }
   | { kind: "ignored" };
 
 const IGNORED: ReviewMirrorUpdate = { kind: "ignored" };
@@ -48,8 +57,10 @@ const IGNORED: ReviewMirrorUpdate = { kind: "ignored" };
 export interface ObserveReviewPublicationInput {
   sessionId: string;
   /** The catalog available at this call site: a registration's, or the mirrored one. */
-  catalog: HunkReviewResourceCatalogV1 | undefined;
+  catalog: ReviewResourceCatalog | undefined;
   address: ReviewPublicationAddress | undefined;
+  /** The shared-state revision reported beside the address, when there is one. */
+  sharedStateRevision?: number;
 }
 
 export class ReviewMirror {
@@ -73,7 +84,13 @@ export class ReviewMirror {
    * registration is left for the registration to settle. Holding an address whose catalog
    * is for another generation would mean advertising resources that cannot be read.
    */
-  observe({ sessionId, catalog, address }: ObserveReviewPublicationInput): ReviewMirrorUpdate {
+  observe({
+    sessionId,
+    catalog,
+    address,
+    sharedStateRevision,
+  }: ObserveReviewPublicationInput): ReviewMirrorUpdate {
+    const shared = sharedStateRevision === undefined ? {} : { sharedStateRevision };
     if (!address) {
       return IGNORED;
     }
@@ -84,13 +101,13 @@ export class ReviewMirror {
       if (!matching) {
         return IGNORED;
       }
-      this.publications.set(sessionId, { address, catalog: matching });
+      this.publications.set(sessionId, { address, catalog: matching, ...shared });
       return { kind: "adopted", generation: address.generation };
     }
 
     switch (classifyReviewPublication(current.address, address)) {
       case "accepted": {
-        this.publications.set(sessionId, { ...current, address });
+        this.publications.set(sessionId, { address, catalog: current.catalog, ...shared });
         return {
           kind: "advanced",
           generation: address.generation,
@@ -104,11 +121,29 @@ export class ReviewMirror {
           return IGNORED;
         }
         const previousGeneration = current.address.generation;
-        this.publications.set(sessionId, { address, catalog: matching });
+        this.publications.set(sessionId, { address, catalog: matching, ...shared });
         return { kind: "replaced", generation: address.generation, previousGeneration };
       }
-      case "stale":
+      case "stale": {
+        // The same position again can still carry newer shared state: agent marks and the
+        // agent reveal move without moving the review store.
+        const samePosition =
+          current.address.generation === address.generation &&
+          current.address.stateRevision === address.stateRevision;
+        if (
+          samePosition &&
+          sharedStateRevision !== undefined &&
+          sharedStateRevision > (current.sharedStateRevision ?? -1)
+        ) {
+          this.publications.set(sessionId, { ...current, sharedStateRevision });
+          return {
+            kind: "shared-state-advanced",
+            generation: address.generation,
+            sharedStateRevision,
+          };
+        }
         return IGNORED;
+      }
     }
   }
 
@@ -131,11 +166,18 @@ export class ReviewMirror {
  */
 export function readRegistrationReviewCatalog(
   registrationInput: unknown,
-): HunkReviewResourceCatalogV1 | undefined {
+): ReviewResourceCatalog | undefined {
   const info = (registrationInput as { info?: HunkSessionInfo } | null | undefined)?.info;
   return info?.reviewCatalog === undefined
     ? undefined
-    : parseHunkReviewResourceCatalog(info.reviewCatalog);
+    : parseReviewResourceCatalog(info.reviewCatalog);
+}
+
+/** Read the shared-state revision out of one raw snapshot payload. */
+export function readSnapshotSharedStateRevision(snapshotInput: unknown): number | undefined {
+  const state = (snapshotInput as { state?: HunkSessionState } | null | undefined)?.state;
+  const revision = state?.reviewSharedStateRevision;
+  return Number.isSafeInteger(revision) && (revision as number) >= 0 ? revision : undefined;
 }
 
 /** Read the publication address out of one raw snapshot payload. */
@@ -145,5 +187,5 @@ export function readSnapshotReviewPublication(
   const state = (snapshotInput as { state?: HunkSessionState } | null | undefined)?.state;
   return state?.reviewPublication === undefined
     ? undefined
-    : parseHunkReviewPublicationAddress(state.reviewPublication);
+    : parseReviewPublicationAddress(state.reviewPublication);
 }

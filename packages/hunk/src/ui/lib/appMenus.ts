@@ -150,6 +150,7 @@ export function buildAppMenus({
       { commandId: "hunk.review.editSelectedFile", label: "Open file in editor" },
       { commandId: "hunk.review.copySelectedHunk", label: "Copy selected hunk" },
       { commandId: "hunk.app.refresh", label: "Reload" },
+      { commandId: "hunk.app.openInBrowser", label: "Open in browser" },
       SEPARATOR,
       { commandId: "hunk.app.quit" },
     ],

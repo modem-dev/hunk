@@ -22,8 +22,9 @@ import {
 } from "../../../core/run/wheelScrollLines";
 import type { DiffFile } from "../../../core/changeset/model";
 import type { CursorLine, LayoutMode } from "../../../core/run/commandInputs";
-import type { ReviewNoteTargetV1 } from "../../../core/review/types";
+import type { ReviewNoteTarget } from "../../../core/review/types";
 import type { AgentAnnotation } from "../../../extension-api/types";
+import { reviewNoteSource } from "../../../core/review/annotations";
 import { resolveReviewRevealNoteId } from "../../../core/review/selectors";
 import {
   reviewNoteAnchorLine,
@@ -39,11 +40,7 @@ import {
   storedReviewNoteTarget,
   type DraftReviewNote,
 } from "../../lib/reviewNoteMapping";
-import {
-  createVisibleAgentNote,
-  reviewNoteSource,
-  type VisibleAgentNote,
-} from "../../lib/agentAnnotations";
+import { createVisibleAgentNote, type VisibleAgentNote } from "../../lib/agentAnnotations";
 import {
   computeRapidScrollOverscanRows,
   RAPID_SCROLL_OVERSCAN_IDLE_MS,
@@ -128,7 +125,7 @@ export type { ReviewSelectionActionsHandle } from "./useDiffSelectionController"
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
 
 type StartUserNoteAtHunk = {
-  bivarianceHack(fileId: string, hunkIndex: number, target?: ReviewNoteTargetV1): void;
+  bivarianceHack(fileId: string, hunkIndex: number, target?: ReviewNoteTarget): void;
 }["bivarianceHack"];
 
 /** Grant saved-note card actions from semantic ownership rather than presentation labels. */
@@ -324,6 +321,7 @@ export function DiffPane({
   copyDecorations = false,
   screenTop = 0,
   showTopChrome,
+  showTopBorder,
   skipInitialIntermediateRender = false,
   showAgentNotes,
   showLineNumbers,
@@ -415,6 +413,8 @@ export function DiffPane({
   copyDecorations?: boolean;
   screenTop?: number;
   showTopChrome?: boolean;
+  /** Draw the top rule; hosts disable it when a planned pane divider already owns that edge. */
+  showTopBorder?: boolean;
   /** Avoid clearing another surface when this pane mounts dynamically in the shared renderer. */
   skipInitialIntermediateRender?: boolean;
   showAgentNotes: boolean;
@@ -473,6 +473,7 @@ export function DiffPane({
   onViewportLineCursorChange?: (cursor: LineCursor) => void;
 }) {
   const renderTopChrome = showTopChrome ?? !pagerMode;
+  const renderTopBorder = renderTopChrome && showTopBorder !== false;
   const renderer = useRenderer();
   const mouseWheelScrollAcceleration = useMemo(
     () => createReviewMouseWheelScrollAcceleration(wheelScrollLines),
@@ -536,7 +537,7 @@ export function DiffPane({
   const onStartUserNoteAtHunkRef = useRef(onStartUserNoteAtHunk);
   onStartUserNoteAtHunkRef.current = onStartUserNoteAtHunk;
   const startUserNoteAtHunkCallbacksRef = useRef(
-    new Map<string, (hunkIndex: number, target?: ReviewNoteTargetV1) => void>(),
+    new Map<string, (hunkIndex: number, target?: ReviewNoteTarget) => void>(),
   );
   const startUserNoteAtHunkCallback = useCallback((fileId: string) => {
     let callback = startUserNoteAtHunkCallbacksRef.current.get(fileId);
@@ -2531,7 +2532,7 @@ export function DiffPane({
       style={{
         width,
         ...(height === undefined ? {} : { height }),
-        border: renderTopChrome ? ["top"] : [],
+        border: renderTopBorder ? ["top"] : [],
         borderColor: theme.border,
         backgroundColor: theme.panel,
         paddingX: 0,

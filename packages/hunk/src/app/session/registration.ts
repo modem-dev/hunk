@@ -11,7 +11,7 @@ import {
   SESSION_BROKER_REGISTRATION_VERSION,
   resolveSessionTerminalMetadata,
 } from "@hunk/session-broker-core";
-import type { HunkReviewResourceCatalogV1 } from "../../session/reviewProtocol";
+import type { ReviewResourceCatalog } from "../../session/reviewProtocol";
 import type {
   HunkSessionRegistration,
   HunkSessionSnapshot,
@@ -67,7 +67,7 @@ function buildSessionFiles(publication: ReviewPublication): SessionReviewFile[] 
 }
 
 /** Describe the generation and the resources it offers, for the broker's review mirror. */
-function buildReviewCatalog(publication: ReviewPublication): HunkReviewResourceCatalogV1 {
+function buildReviewCatalog(publication: ReviewPublication): ReviewResourceCatalog {
   return {
     generation: publication.generation,
     fileKeysByRuntimeId: Object.fromEntries(
