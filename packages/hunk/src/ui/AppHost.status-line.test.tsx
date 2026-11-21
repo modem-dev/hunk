@@ -180,7 +180,7 @@ function writeCommandFixture(extPath: string, logPath: string, body: string) {
     `import { appendFileSync } from "node:fs";\n` +
       `const log = (text) => appendFileSync(${JSON.stringify(logPath)}, text + "\\n");\n` +
       `export default function (hunk) {\n` +
-      `  hunk.registerCommand({ id: "go", title: "Go", key: "Y" }, async (ctx) => {\n` +
+      `  hunk.registerCommand({ id: "go", title: "Go", key: "X" }, async (ctx) => {\n` +
       body +
       `  });\n` +
       `}\n`,
@@ -197,7 +197,7 @@ async function openReview(setup: Awaited<ReturnType<typeof testRender>>) {
 
 async function pressY(setup: Awaited<ReturnType<typeof testRender>>) {
   await act(async () => {
-    await setup.mockInput.typeText("Y");
+    await setup.mockInput.typeText("X");
   });
 }
 
@@ -211,7 +211,7 @@ describe("extension status line items", () => {
       extPath,
       `let shown = false;\n` +
         `export default function (hunk) {\n` +
-        `  hunk.registerCommand({ id: "go", title: "Go", key: "Y" }, (ctx) => {\n` +
+        `  hunk.registerCommand({ id: "go", title: "Go", key: "X" }, (ctx) => {\n` +
         `    if (shown) {\n` +
         `      ctx.statusLine.clear("count");\n` +
         `    } else {\n` +
@@ -305,7 +305,7 @@ describe("extension status line items", () => {
         `      return "handled";\n` +
         `    },\n` +
         `  });\n` +
-        `  hunk.registerCommand({ id: "go", title: "Go", key: "Y" }, (ctx) => {\n` +
+        `  hunk.registerCommand({ id: "go", title: "Go", key: "X" }, (ctx) => {\n` +
         `    ctx.keyboardModes.enterMode("count");\n` +
         `  });\n` +
         `}\n`,

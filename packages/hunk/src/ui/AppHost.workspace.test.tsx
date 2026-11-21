@@ -142,7 +142,7 @@ function writeWorkspaceFixture(extPath: string, logPath: string) {
     extPath,
     `import { appendFileSync } from "node:fs";\n` +
       `export default function (hunk) {\n` +
-      `  hunk.registerCommand({ id: "rewrite", title: "Rewrite", key: "Y" }, async (ctx) => {\n` +
+      `  hunk.registerCommand({ id: "rewrite", title: "Rewrite", key: "X" }, async (ctx) => {\n` +
       `    const file = ctx.selection.file;\n` +
       `    if (!file) return;\n` +
       `    const log = (line) => appendFileSync(${JSON.stringify(logPath)}, line + "\\n");\n` +
@@ -163,7 +163,7 @@ function writeReadFixture(extPath: string, logPath: string) {
     extPath,
     `import { appendFileSync } from "node:fs";\n` +
       `export default function (hunk) {\n` +
-      `  hunk.registerCommand({ id: "read", title: "Read", key: "Y" }, async (ctx) => {\n` +
+      `  hunk.registerCommand({ id: "read", title: "Read", key: "X" }, async (ctx) => {\n` +
       `    const file = ctx.selection.file;\n` +
       `    if (!file) return;\n` +
       `    const log = (line) => appendFileSync(${JSON.stringify(logPath)}, line + "\\n");\n` +
@@ -185,7 +185,7 @@ function writeReadWriteFixture(extPath: string, logPath: string) {
     extPath,
     `import { appendFileSync } from "node:fs";\n` +
       `export default function (hunk) {\n` +
-      `  hunk.registerCommand({ id: "shout", title: "Shout", key: "Y" }, async (ctx) => {\n` +
+      `  hunk.registerCommand({ id: "shout", title: "Shout", key: "X" }, async (ctx) => {\n` +
       `    const file = ctx.selection.file;\n` +
       `    if (!file) return;\n` +
       `    const log = (line) => appendFileSync(${JSON.stringify(logPath)}, line + "\\n");\n` +
@@ -315,7 +315,7 @@ describe("extension workspace reads", () => {
       extPath,
       `import { appendFileSync } from "node:fs";\n` +
         `export default function (hunk) {\n` +
-        `  hunk.registerCommand({ id: "read", title: "Read", key: "Y" }, async (ctx) => {\n` +
+        `  hunk.registerCommand({ id: "read", title: "Read", key: "X" }, async (ctx) => {\n` +
         `    const file = ctx.selection.file;\n` +
         `    if (!file) return;\n` +
         `    const text = await ctx.workspace.readDocument(file.id, "new");\n` +
@@ -349,7 +349,7 @@ describe("extension workspace reads", () => {
     await withAppHost(
       bootstrap,
       async (setup) => {
-        await act(async () => setup.mockInput.typeText("Y"));
+        await act(async () => setup.mockInput.typeText("X"));
         await readStarted;
 
         let reloadFinished = false;
@@ -390,7 +390,7 @@ describe("extension workspace reads", () => {
       );
 
       await act(async () => {
-        await setup.mockInput.typeText("Y");
+        await setup.mockInput.typeText("X");
       });
       await flushUntil(
         setup,
@@ -428,7 +428,7 @@ describe("extension workspace reads", () => {
       );
 
       await act(async () => {
-        await setup.mockInput.typeText("Y");
+        await setup.mockInput.typeText("X");
       });
       await flushUntil(
         setup,
@@ -466,7 +466,7 @@ describe("extension workspace reads", () => {
       );
 
       await act(async () => {
-        await setup.mockInput.typeText("Y");
+        await setup.mockInput.typeText("X");
       });
       await flushUntil(
         setup,
@@ -499,7 +499,7 @@ describe("extension workspace reads", () => {
       );
 
       await act(async () => {
-        await setup.mockInput.typeText("Y");
+        await setup.mockInput.typeText("X");
       });
       await flushUntil(
         setup,
@@ -544,7 +544,7 @@ describe("extension workspace writes", () => {
       );
 
       await act(async () => {
-        await setup.mockInput.typeText("Y");
+        await setup.mockInput.typeText("X");
       });
       await flushUntil(
         setup,
@@ -599,7 +599,7 @@ describe("extension workspace writes", () => {
     await withAppHost(
       bootstrap,
       async (setup) => {
-        await act(async () => setup.mockInput.typeText("Y"));
+        await act(async () => setup.mockInput.typeText("X"));
         await flushUntil(
           setup,
           () => setup.captureCharFrame().includes("Write alpha.txt?"),
@@ -655,7 +655,7 @@ describe("extension workspace writes", () => {
     await withAppHost(
       bootstrap,
       async (setup) => {
-        await act(async () => setup.mockInput.typeText("Y"));
+        await act(async () => setup.mockInput.typeText("X"));
         await flushUntil(
           setup,
           () => setup.captureCharFrame().includes("Write alpha.txt?"),
@@ -706,7 +706,7 @@ describe("extension workspace writes", () => {
         "the review to render",
       );
       await act(async () => {
-        await setup.mockInput.typeText("Y");
+        await setup.mockInput.typeText("X");
       });
       await flushUntil(
         setup,
@@ -754,7 +754,7 @@ describe("extension workspace writes", () => {
           "the review to render",
         );
         await act(async () => {
-          await setup.mockInput.typeText("Y");
+          await setup.mockInput.typeText("X");
         });
         await flushUntil(
           setup,
@@ -799,7 +799,7 @@ describe("extension workspace writes", () => {
       );
 
       await act(async () => {
-        await setup.mockInput.typeText("Y");
+        await setup.mockInput.typeText("X");
       });
       await flushUntil(
         setup,
@@ -843,7 +843,7 @@ describe("extension workspace writes", () => {
         );
 
         await act(async () => {
-          await setup.mockInput.typeText("Y");
+          await setup.mockInput.typeText("X");
         });
         await flushUntil(
           setup,
@@ -884,7 +884,7 @@ describe("extension workspace writes", () => {
       );
 
       await act(async () => {
-        await setup.mockInput.typeText("Y");
+        await setup.mockInput.typeText("X");
       });
       await flushUntil(
         setup,

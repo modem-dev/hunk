@@ -149,6 +149,9 @@ export interface BuildAppCommandsOptions {
   hasVisualSelection?: () => boolean;
   startVisualSelection?: () => void;
   copySelection?: () => void;
+  /** True when the selected hunk has raw patch text to copy. */
+  canCopySelectedHunk?: boolean;
+  copySelectedHunk?: () => void;
   clearSelection?: () => void;
   saveDraftNote: () => void;
   startUserNote: () => void;
@@ -215,6 +218,10 @@ function builtinCommandHandlers(
     "hunk.review.copySelection": {
       isEnabled: () => options.hasVisualSelection?.() ?? false,
       run: () => options.copySelection?.(),
+    },
+    "hunk.review.copySelectedHunk": {
+      isEnabled: () => Boolean(options.canCopySelectedHunk),
+      run: () => options.copySelectedHunk?.(),
     },
     "hunk.review.clearSelection": {
       isEnabled: () => options.hasVisualSelection?.() ?? false,
@@ -396,6 +403,8 @@ const NOOP_COMMAND_OPTIONS: BuildAppCommandsOptions = (() => {
     hasVisualSelection: () => false,
     startVisualSelection: noop,
     copySelection: noop,
+    canCopySelectedHunk: false,
+    copySelectedHunk: noop,
     clearSelection: noop,
     saveDraftNote: noop,
     startUserNote: noop,

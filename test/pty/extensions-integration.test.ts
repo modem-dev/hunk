@@ -156,7 +156,7 @@ export default function (hunk) {
       });
     },
   });
-  hunk.registerCommand({ id: "toggle-fixture", title: "Toggle fixture", key: "Y" }, (ctx) => {
+  hunk.registerCommand({ id: "toggle-fixture", title: "Toggle fixture", key: "X" }, (ctx) => {
     ctx.sidebars.toggle("fixture-sidebar");
   });
 }
@@ -172,7 +172,7 @@ export default function (hunk) {
     width: { preferred: 24, min: 16 },
     component: () => createElement("text", { content: "INDEPENDENT GUIDE" }),
   });
-  hunk.registerCommand({ id: "toggle", title: "Toggle guide", key: "Y" }, (ctx) => {
+  hunk.registerCommand({ id: "toggle", title: "Toggle guide", key: "X" }, (ctx) => {
     if (ctx.panes.isVisible("guide")) ctx.panes.close("guide");
     else ctx.panes.open("guide");
   });
@@ -240,7 +240,7 @@ export default function (hunk) {
       }),
     });
   }
-  hunk.registerCommand({ id: "toggle-edges", title: "Toggle edge panes", key: "Y" }, (ctx) => {
+  hunk.registerCommand({ id: "toggle-edges", title: "Toggle edge panes", key: "X" }, (ctx) => {
     ctx.panes.toggle("top");
     ctx.panes.toggle("bottom");
   });
@@ -350,7 +350,7 @@ export default function (hunk) {
 `;
 
 const DIALOG_EXTENSION_SOURCE = `export default function (hunk) {
-  hunk.registerCommand({ id: "ask", title: "Ask", key: "Y" }, async (ctx) => {
+  hunk.registerCommand({ id: "ask", title: "Ask", key: "X" }, async (ctx) => {
     const proceed = await ctx.dialogs.confirm({
       title: "Reformat the changeset?",
       body: "Nothing is written to disk. This deliberately long explanation wraps across many terminal rows while the actions remain pinned below it.",
@@ -680,7 +680,7 @@ describe("PTY extensions", () => {
       await session.click(/Extensions/);
       // The dropdown names the command by its title and advertises its key.
       const menu = await session.waitForText(/Toggle fixture/, { timeout: 20_000 });
-      expect(menu).toMatch(/Toggle fixture\s+Y/);
+      expect(menu).toMatch(/Toggle fixture\s+X/);
 
       const opened = await harness.clickAndWaitForText(
         session,
@@ -802,12 +802,12 @@ export default function (hunk) {
 
       // The registered key dispatches through the shared command table and
       // opens the extension's right-hand pane beside the built-in one.
-      session.writeRaw("Y");
+      session.writeRaw("X");
       const opened = await session.waitForText(/EXTSIDEBAR 2 FILES/, { timeout: 20_000 });
       expect(opened).toContain("alpha.ts");
 
       // The same key toggles it away again.
-      session.writeRaw("Y");
+      session.writeRaw("X");
       await harness.waitForSnapshot(session, (text) => !text.includes("EXTSIDEBAR"), 20_000);
     } finally {
       session.close();
@@ -837,11 +837,11 @@ export default function (hunk) {
       const initialOccurrences = fileOccurrences(before);
       await harness.ensureKeyboardIsLive(session);
 
-      session.writeRaw("Y");
+      session.writeRaw("X");
       const opened = await session.waitForText(/INDEPENDENT GUIDE/, { timeout: 20_000 });
       expect(fileOccurrences(opened)).toBe(initialOccurrences);
 
-      session.writeRaw("Y");
+      session.writeRaw("X");
       const closed = await harness.waitForSnapshot(
         session,
         (text) => !text.includes("INDEPENDENT GUIDE"),
@@ -849,7 +849,7 @@ export default function (hunk) {
       );
       expect(fileOccurrences(closed)).toBe(initialOccurrences);
 
-      session.writeRaw("Y");
+      session.writeRaw("X");
       await session.waitForText(/INDEPENDENT GUIDE/, { timeout: 20_000 });
     } finally {
       session.close();
@@ -967,7 +967,7 @@ export default function (hunk) {
     });
     try {
       await harness.ensureKeyboardIsLive(session);
-      session.writeRaw("Y");
+      session.writeRaw("X");
       const frame = await harness.waitForSnapshot(
         session,
         (text) =>
@@ -982,7 +982,7 @@ export default function (hunk) {
       await dragMouse(session, 70, 4, 70, 6);
       await session.waitForText(/PANE TOP 138x4/, { timeout: 5_000 });
 
-      session.writeRaw("Y");
+      session.writeRaw("X");
       await harness.waitForSnapshot(
         session,
         (text) => !text.includes("PANE TOP") && !text.includes("PANE BOTTOM"),
@@ -1020,7 +1020,7 @@ export default function (hunk) {
       expect(before).not.toContain("Reformat the changeset?");
       await harness.ensureKeyboardIsLive(session);
 
-      session.writeRaw("Y");
+      session.writeRaw("X");
       const prompt = await harness.waitForSnapshot(
         session,
         (text) => text.includes("Reformat the changeset?"),
@@ -1190,7 +1190,7 @@ export default function (hunk) {
         }
       }
       expect(menu).not.toBeNull();
-      expect(menu!).toMatch(/Toggle review triage\s+Y/);
+      expect(menu!).toMatch(/Toggle review triage\s+T/);
       expect(menu).toMatch(/Mark selected hunk…\s+x/);
       expect(menu).toContain("Center current review line");
       expect(menu).toContain("Set review focus…");

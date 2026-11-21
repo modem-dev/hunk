@@ -36,7 +36,7 @@ describe("extension command control authority", () => {
     const initial = createBootstrap();
     initial.extensions!.registry.commands.push({
       extensionId: "probe",
-      command: { id: "capture", title: "Capture controls", key: "Y" },
+      command: { id: "capture", title: "Capture controls", key: "X" },
       handler(ctx) {
         capturedControls = ctx.commands;
         capturedWorkspace = ctx.workspace;
@@ -83,7 +83,7 @@ describe("extension command control authority", () => {
     try {
       await flush(setup);
       await act(async () => {
-        await setup.mockInput.typeText("Y");
+        await setup.mockInput.typeText("X");
       });
       await flush(setup);
       expect(capturedControls).not.toBeNull();

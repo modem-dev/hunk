@@ -206,7 +206,7 @@ function writeDialogFixture(extPath: string, logPath: string, askSource: string)
     extPath,
     `import { appendFileSync } from "node:fs";\n` +
       `export default function (hunk) {\n` +
-      `  hunk.registerCommand({ id: "ask", title: "Ask", key: "Y" }, async (ctx) => {\n` +
+      `  hunk.registerCommand({ id: "ask", title: "Ask", key: "X" }, async (ctx) => {\n` +
       `    const answer = await ${askSource};\n` +
       `    appendFileSync(${JSON.stringify(logPath)}, "answer " + String(answer) + "\\n");\n` +
       `  });\n` +
@@ -236,7 +236,7 @@ describe("extension dialogs", () => {
       );
 
       await act(async () => {
-        await setup.mockInput.typeText("Y");
+        await setup.mockInput.typeText("X");
       });
       await flushUntil(
         setup,
@@ -292,7 +292,7 @@ describe("extension dialogs", () => {
       bootstrap,
       async (setup) => {
         await act(async () => {
-          await setup.mockInput.typeText("Y");
+          await setup.mockInput.typeText("X");
         });
         await flushUntil(
           setup,
@@ -326,7 +326,7 @@ describe("extension dialogs", () => {
       );
 
       await act(async () => {
-        await setup.mockInput.typeText("Y");
+        await setup.mockInput.typeText("X");
       });
       await flushUntil(
         setup,
@@ -365,7 +365,7 @@ describe("extension dialogs", () => {
       );
 
       await act(async () => {
-        await setup.mockInput.typeText("Y");
+        await setup.mockInput.typeText("X");
       });
       await flushUntil(
         setup,
@@ -405,7 +405,7 @@ describe("extension dialogs", () => {
     const bootstrap = await launchWithExtension(repo, extPath);
     await withAppHost(bootstrap, async (setup) => {
       await act(async () => {
-        await setup.mockInput.typeText("Y");
+        await setup.mockInput.typeText("X");
       });
       await flushUntil(
         setup,
@@ -446,7 +446,7 @@ describe("extension dialogs", () => {
       );
 
       await act(async () => {
-        await setup.mockInput.typeText("Y");
+        await setup.mockInput.typeText("X");
       });
       await flushUntil(
         setup,
@@ -498,7 +498,7 @@ describe("extension dialogs", () => {
         );
 
         await act(async () => {
-          await setup.mockInput.typeText("Y");
+          await setup.mockInput.typeText("X");
         });
         await flushUntil(
           setup,

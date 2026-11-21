@@ -191,6 +191,14 @@ const BUILTIN_COMMANDS = [
     publicToExtensions: true,
   },
   {
+    id: "hunk.review.copySelectedHunk",
+    title: "Copy the selected hunk",
+    category: "review",
+    defaultKeys: ["Y"],
+    locus: "client-local",
+    publicToExtensions: true,
+  },
+  {
     id: "hunk.review.clearSelection",
     title: "Clear selection",
     category: "review",
