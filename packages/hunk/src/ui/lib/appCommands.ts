@@ -403,7 +403,7 @@ const NOOP_COMMAND_OPTIONS: BuildAppCommandsOptions = (() => {
     hasVisualSelection: () => false,
     startVisualSelection: noop,
     copySelection: noop,
-    canCopySelectedHunk: true,
+    canCopySelectedHunk: false,
     copySelectedHunk: noop,
     clearSelection: noop,
     saveDraftNote: noop,
