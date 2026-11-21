@@ -70,6 +70,34 @@ describe("changesetFromPatch", () => {
     );
   });
 
+  test("keeps the next plain unified file when a hunk header over-promises its counts", () => {
+    const changeset = changesetFromPatch(
+      [
+        "--- a/alpha.txt",
+        "+++ b/alpha.txt",
+        "@@ -1,5 +1,5 @@",
+        "-left",
+        "+right",
+        "--- a/beta.txt",
+        "+++ b/beta.txt",
+        "@@ -1 +1 @@",
+        "-old",
+        "+new",
+        "",
+      ].join("\n"),
+      "title",
+      "label",
+      null,
+    );
+
+    // The over-promising alpha.txt hunk stays unparseable; beta.txt keeps its own patch.
+    expect(changeset.files).toHaveLength(2);
+    const beta = changeset.files[1];
+    expect(beta?.path).toEndWith("beta.txt");
+    expect(beta?.patch).toBe("--- a/beta.txt\n+++ b/beta.txt\n@@ -1 +1 @@\n-old\n+new\n");
+    expect(beta?.stats).toEqual({ additions: 1, deletions: 1 });
+  });
+
   test("keeps good files when one file chunk is unparseable", () => {
     // Regression test: a single poisoned file used to make the whole-patch
     // parse throw, and the catch-all returned zero files for the review.
