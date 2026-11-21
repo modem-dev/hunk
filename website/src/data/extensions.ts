@@ -320,6 +320,15 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     apiVersion: 31,
   },
   {
+    repo: "rupakhetibinit/hunk-review-comments-extension",
+    name: "hunk-review-comments-extension",
+    summary:
+      "Tracks review notes as open, resolved, or disputed comments an agent works through from the CLI, with a status pane and line marks.",
+    categories: ["Pane", "Command", "Line highlighter"],
+    version: "0.1.2",
+    apiVersion: 33,
+  },
+  {
     repo: "sadick254/hunk-commit-log",
     name: "hunk-commit-log",
     summary:
