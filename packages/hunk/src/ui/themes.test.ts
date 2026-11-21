@@ -94,9 +94,12 @@ function themeContrastFailures(
 describe("themes", () => {
   afterEach(() => setDetectedTerminalColors(undefined));
 
-  test("defaults to the terminal theme and auto chooses GitHub light/dark", () => {
-    expect(resolveTheme(undefined, null).id).toBe(TERMINAL_THEME_ID);
-    expect(resolveTheme("missing", null).id).toBe(TERMINAL_THEME_ID);
+  test("falls back to GitHub themes and auto chooses GitHub light/dark", () => {
+    expect(resolveTheme(undefined, null).id).toBe(DEFAULT_DARK_THEME_ID);
+    expect(resolveTheme("missing", null).id).toBe(DEFAULT_DARK_THEME_ID);
+    expect(resolveTheme(undefined, "light").id).toBe(DEFAULT_LIGHT_THEME_ID);
+    expect(resolveTheme("missing", "light").id).toBe(DEFAULT_LIGHT_THEME_ID);
+    expect(resolveTheme(DEFAULT_DARK_THEME_ID, "light").id).toBe(DEFAULT_DARK_THEME_ID);
     expect(resolveTheme("auto", "dark").id).toBe(DEFAULT_DARK_THEME_ID);
     expect(resolveTheme("auto", "light").id).toBe(DEFAULT_LIGHT_THEME_ID);
   });
@@ -136,7 +139,7 @@ describe("themes", () => {
       "entity.name.type": "#e0af68",
     });
     // Repeated resolution returns the same object so theme-keyed memoization stays stable.
-    expect(resolveTheme(undefined, null)).toBe(theme);
+    expect(resolveTheme(TERMINAL_THEME_ID, "light")).toBe(theme);
   });
 
   test("falls back to a stand-in ANSI palette when the terminal was never probed", () => {
@@ -494,7 +497,7 @@ describe("themes", () => {
     );
     expect(resolveTheme("sunset", null, customThemes).accent).toBe("#654321");
     // Unknown ids stay on the built-in fallback instead of picking an unrelated custom theme.
-    expect(resolveTheme("missing", null, customThemes).id).toBe(TERMINAL_THEME_ID);
+    expect(resolveTheme("missing", null, customThemes).id).toBe(DEFAULT_DARK_THEME_ID);
     expect(resolveTheme("auto", "light", customThemes).id).toBe(DEFAULT_LIGHT_THEME_ID);
   });
 

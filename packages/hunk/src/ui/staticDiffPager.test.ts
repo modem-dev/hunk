@@ -336,7 +336,7 @@ describe("static diff pager", () => {
   });
 
   test("falls back to original text with a diagnostic when the patch cannot be parsed", async () => {
-    const text = "diff --git incomplete\n";
+    const text = "not a patch\n";
     let warning = "";
 
     await expect(
@@ -377,8 +377,28 @@ describe("static diff pager", () => {
     expectNoUnsafeTerminalControls(output);
   });
 
-  test("does not pass terminal controls through parsed file paths or hunk headers", async () => {
+  test("does not pass terminal controls through malformed file placeholders", async () => {
     const payload = `${OSC52_CLIPBOARD}${CSI_CLEAR_SCREEN}${DCS_PAYLOAD}${APC_PAYLOAD}${PM_PAYLOAD}${SOS_PAYLOAD}\x07\rspoof\bhidden\x1b`;
+    const patchText = [
+      `diff --git a/evil${payload}.ts b/evil${payload}.ts`,
+      `--- a/evil${payload}.ts`,
+      `+++ b/evil${payload}.ts`,
+      `@@ -1 +1 @@ ${payload}`,
+      "-const value = 1;",
+      "+const value = 2;",
+      "",
+    ].join("\n");
+
+    const output = stripIntentionalAnsi(await renderStaticDiffPager(patchText));
+
+    expect(output).toContain("evil");
+    expect(output).toContain("No textual changes.");
+    expectNoUnsafeTerminalControls(output);
+  });
+
+  test("does not pass terminal controls through parsed file paths or hunk headers", async () => {
+    // Keep the header parseable so this checks rendered hunks, not a skipped-file placeholder.
+    const payload = `${OSC52_CLIPBOARD}${CSI_CLEAR_SCREEN}${DCS_PAYLOAD}${APC_PAYLOAD}${PM_PAYLOAD}${SOS_PAYLOAD}`;
     const patchText = [
       `diff --git a/evil${payload}.ts b/evil${payload}.ts`,
       `--- a/evil${payload}.ts`,

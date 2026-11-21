@@ -23,7 +23,7 @@ import {
   reviewDefaultHunkLineTarget,
   reviewHunkRanges,
 } from "../../../packages/hunk/src/core/review/geometry";
-import type { ReviewFileV1 } from "../../../packages/hunk/src/core/review/types";
+import type { ReviewFile } from "../../../packages/hunk/src/core/review/types";
 import type {
   ConformanceExpandedRow,
   ConformanceGap,
@@ -33,7 +33,7 @@ import type {
 } from "../types";
 
 /** Collect one file's gaps in the order a top-to-bottom renderer meets them. */
-function gapsOf(file: ReviewFileV1): ConformanceGap[] {
+function gapsOf(file: ReviewFile): ConformanceGap[] {
   const source = reviewGapSourceForFile(file);
   const gaps = file.hunks.flatMap((_hunk, index) => {
     const leading = reviewLeadingGap(source, index);
@@ -64,7 +64,7 @@ function gapsOf(file: ReviewFileV1): ConformanceGap[] {
 
 /** Resolve the rows one expanded gap reveals from full source text. */
 function expandedRowsOf(
-  file: ReviewFileV1,
+  file: ReviewFile,
   expansion: ConformanceExpansion,
 ): ConformanceExpandedRow[] | undefined {
   const address = reviewGapAddress(reviewGapSourceForFile(file), expansion.gapId);

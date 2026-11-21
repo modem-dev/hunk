@@ -1,12 +1,16 @@
 import { join } from "node:path";
 import type {
+  ExtensionVcsFileBytesResult,
   ExtensionVcsFileSourceResult,
   ExtensionVcsFileSourceTooLarge,
 } from "hunkdiff/extension";
 import {
+  DEFAULT_SOURCE_BYTES_MAX_BYTES,
   DEFAULT_SOURCE_TEXT_MAX_BYTES,
   logSourceDiagnostic,
+  readFileBytesWithLimit,
   readFileTextWithLimit,
+  readStreamBytesWithLimit,
   readStreamTextWithLimit,
   terminateSourceSubprocess,
 } from "@hunk/vcs/source";
@@ -30,6 +34,11 @@ export type GitFileSourceSpec =
 export interface GitFileSourceOptions {
   gitExecutable?: string;
   maxSourceBytes?: number;
+}
+
+export interface GitFileBytesOptions {
+  gitExecutable?: string;
+  maxBytes?: number;
 }
 
 /** Convert one Git diff endpoint into the corresponding source lookup. */
@@ -67,13 +76,24 @@ function tooLarge(maxBytes: number): ExtensionVcsFileSourceTooLarge {
   return { kind: "too-large", maxBytes };
 }
 
-/** Read a blob-like Git object spec such as `HEAD:path` or `:path`. */
+/** Read a blob-like Git object spec such as `HEAD:path` or `:path` as text. */
 async function readGitObjectSpec(
   repoRoot: string,
   objectName: string,
   gitExecutable: string,
   maxSourceBytes: number,
 ): Promise<ExtensionVcsFileSourceResult> {
+  const result = await readGitObjectBytes(repoRoot, objectName, gitExecutable, maxSourceBytes);
+  return result instanceof Uint8Array ? new TextDecoder().decode(result) : result;
+}
+
+/** Read a blob-like Git object spec's exact bytes, `null` when missing, or too-large. */
+async function readGitObjectBytes(
+  repoRoot: string,
+  objectName: string,
+  gitExecutable: string,
+  maxBytes: number,
+): Promise<ExtensionVcsFileBytesResult> {
   let proc: Bun.ReadableSubprocess;
 
   try {
@@ -88,13 +108,13 @@ async function readGitObjectSpec(
     return null;
   }
 
-  let output: [number, string, string];
+  let output: [number, Uint8Array, string];
   try {
     output = await Promise.all([
       proc.exited,
-      readStreamTextWithLimit(
+      readStreamBytesWithLimit(
         proc.stdout,
-        maxSourceBytes,
+        maxBytes,
         () => proc.kill(),
         (limit) => new GitSourceTooLargeError(limit),
       ),
@@ -148,5 +168,25 @@ export function readGitFileSource(
         gitExecutable,
         maxSourceBytes,
       );
+  }
+}
+
+/** Read the exact bytes one resolved Git source spec names. */
+export function readGitFileBytes(
+  spec: GitFileSourceSpec,
+  {
+    gitExecutable = "git",
+    maxBytes = DEFAULT_SOURCE_BYTES_MAX_BYTES,
+  }: Readonly<GitFileBytesOptions> = {},
+): Promise<ExtensionVcsFileBytesResult> {
+  switch (spec.kind) {
+    case "none":
+      return Promise.resolve(null);
+    case "fs":
+      return readFileBytesWithLimit(spec.absolutePath, maxBytes);
+    case "git-index":
+      return readGitObjectBytes(spec.repoRoot, `:${spec.path}`, gitExecutable, maxBytes);
+    case "git-blob":
+      return readGitObjectBytes(spec.repoRoot, `${spec.ref}:${spec.path}`, gitExecutable, maxBytes);
   }
 }

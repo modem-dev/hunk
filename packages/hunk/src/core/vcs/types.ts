@@ -91,6 +91,8 @@ export interface VcsPatchResult {
   untrackedPaths?: string[];
   /** Exact old/new content lookups, built from the result's `readFileSource`. */
   sourceFetcherBuilder?: BuildDiffFileOptions["sourceFetcherBuilder"];
+  /** Exact old/new byte lookups, built from the result's `readFileBytes`. */
+  byteFetcherBuilder?: BuildDiffFileOptions["byteFetcherBuilder"];
   /** Diff files built from the result's declarative `extraFiles` entries. */
   extraFiles?: DiffFile[];
 }

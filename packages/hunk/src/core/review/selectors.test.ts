@@ -15,6 +15,7 @@ import {
   selectNavigableStoredReviewNotes,
   selectExpandedGapIdsByFileKey,
   selectFallbackFileKey,
+  selectNearestShownFileKey,
   selectNormalizedSelection,
   selectNotesByHunk,
   selectReviewFileByKey,
@@ -137,6 +138,23 @@ describe("selection selectors", () => {
     const filteredOut = { ...state, filter: "nothing-matches" };
     expect(selectFallbackFileKey(filteredOut)).toBeNull();
     expect(selectNormalizedSelection(filteredOut)).toEqual({ fileKey: null, hunkIndex: 0 });
+  });
+
+  // Intent: a file the reader hides by finishing it hands the selection on — forward first,
+  // backward at the end, never to a file the filter or the same choice hides — and says
+  // "nothing" when every file is hidden.
+  test("move a selection off a hidden file to the nearest shown one", () => {
+    const state = createTestReviewState(["alpha", "beta", "gamma", "delta"]);
+
+    expect(selectNearestShownFileKey(state, "beta", new Set(["beta", "gamma"]))).toBe("delta");
+    expect(selectNearestShownFileKey(state, "delta", new Set(["delta", "gamma"]))).toBe("beta");
+    expect(
+      selectNearestShownFileKey({ ...state, filter: "alpha" }, "beta", new Set(["beta"])),
+    ).toBe("alpha");
+    expect(
+      selectNearestShownFileKey(state, "alpha", new Set(["alpha", "beta", "gamma", "delta"])),
+    ).toBeNull();
+    expect(selectNearestShownFileKey(state, "vanished", new Set(["alpha"]))).toBe("beta");
   });
 
   test("clamp a stale hunk index onto the file it addresses", () => {

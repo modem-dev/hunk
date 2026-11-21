@@ -58,6 +58,7 @@ async function renderRuntime(
       extensions: facts.extensions,
       files: facts.files,
       getActiveLineCursor: () => null,
+      getLayout: () => "unified",
       getSelection: () => ({
         fileId: facts.selectedFileId,
         hunkIndex: facts.selectedHunkIndex,
@@ -214,6 +215,7 @@ describe("useExtensionRuntimeBridge", () => {
         extensions,
         files: generation.changeset.files,
         getActiveLineCursor: () => null,
+        getLayout: () => "unified",
         getSelection: () => ({ fileId: "alpha", hunkIndex: 0 }),
         reviewGeneration: generation,
       });

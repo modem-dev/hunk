@@ -76,14 +76,19 @@ export function buildDiffSectionRowPlan({
     };
   }
 
-  const baseRows = buildBaseRows(
-    file,
-    layout,
-    highlightedDiff,
-    theme,
-    tabWidth,
-    visibleHunkIndexes,
-  );
+  // A scope that keeps every hunk of the file must render it exactly as an
+  // unscoped review would (#1235): restricting the row build is what suppresses
+  // the unchanged-lines gap rows, because buildSplitRows/buildUnifiedRows tie
+  // gap emission to scoping. Keeping the gap rows here preserves `z`, gap
+  // clicks and expanded-lines addressing when a scope shows a whole file.
+  const scopeBindsEveryHunk =
+    visibleHunkIndexes !== undefined &&
+    visibleHunkIndexes.size > 0 &&
+    file.metadata.hunks.length > 0 &&
+    file.metadata.hunks.every((_, hunkIndex) => visibleHunkIndexes.has(hunkIndex));
+  const scopedHunkIndexes = scopeBindsEveryHunk ? undefined : visibleHunkIndexes;
+
+  const baseRows = buildBaseRows(file, layout, highlightedDiff, theme, tabWidth, scopedHunkIndexes);
   const rows = expandCollapsedRows(baseRows, {
     layout,
     expandedKeys,
@@ -100,9 +105,10 @@ export function buildDiffSectionRowPlan({
       rows,
       showHunkHeaders,
       // A scoped-out owner must not fall back to another hunk's rows. Keep unscoped
-      // placement unchanged, including notes anchored to collapsed context.
-      visibleAgentNotes: visibleHunkIndexes
-        ? visibleAgentNotes.filter((note) => visibleHunkIndexes.has(reviewNoteOwnerHunkIndex(note)))
+      // placement unchanged, including notes anchored to collapsed context. A scope
+      // that keeps every hunk retains its ownership, so the filter is a no-op there.
+      visibleAgentNotes: scopedHunkIndexes
+        ? visibleAgentNotes.filter((note) => scopedHunkIndexes.has(reviewNoteOwnerHunkIndex(note)))
         : visibleAgentNotes,
       hunkGap,
     }),

@@ -185,7 +185,9 @@ export interface ResolvedExtensionFileViews {
 }
 
 /** Resolve file-view identities while retaining registration order as the priority rule. */
-export function resolveExtensionFileViews(registry: ExtensionRegistry): ResolvedExtensionFileViews {
+export function resolveExtensionFileViews(
+  registry: Pick<ExtensionRegistry, "fileViews">,
+): ResolvedExtensionFileViews {
   const views: RegisteredFileView[] = [];
   const issues: ExtensionApplyIssue[] = [];
   const claimed = new Set<string>();

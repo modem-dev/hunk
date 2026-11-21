@@ -924,4 +924,39 @@ describe("PTY file views", () => {
       rmSync(pair.directory, { recursive: true, force: true });
     }
   });
+
+  test("previews a changed image inline with i and returns to the raw diff, with no extensions loaded", async () => {
+    const fixture = harness.createImageRepoFixture();
+    // Bundled UI stays active under --no-extensions, so the preview needs no installed extension.
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split", "--no-extensions"],
+      cwd: fixture.dir,
+      cols: 160,
+      rows: 30,
+    });
+
+    try {
+      const raw = await session.waitForText(/Binary file skipped/, { timeout: 15_000 });
+      expect(raw).toContain("assets/logo.png");
+
+      const preview = await harness.pressAndWaitForSnapshot(
+        session,
+        "i",
+        (text) => text.includes("Before · 24×12 PNG") && text.includes("After · 32×20 PNG"),
+        5_000,
+      );
+      expect(preview).toContain("24×12 → 32×20");
+      expect(preview).not.toContain("Binary file skipped");
+
+      const restored = await harness.pressAndWaitForSnapshot(
+        session,
+        "i",
+        (text) => text.includes("Binary file skipped") && !text.includes("Before · 24×12 PNG"),
+        5_000,
+      );
+      expect(restored).toContain("Binary file skipped");
+    } finally {
+      session.close();
+    }
+  });
 });

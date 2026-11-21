@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act, useState } from "react";
 import type { UserNoteLineTarget } from "../../core/liveComments";
+import { ReviewIntentPlanningError } from "../../core/review/intents";
 import type { LineCursor } from "../lib/lineCursors";
 import type { DraftReviewNote, UserReviewNote } from "../lib/reviewNoteMapping";
 import {
@@ -183,6 +184,46 @@ describe("useUserNoteComposer", () => {
         { preserveViewport: true },
       ]);
       expect(cursorReads).toBe(1);
+    } finally {
+      await act(async () => harness.setup.renderer.destroy());
+    }
+  });
+
+  test("starts an implicit draft at the selected note's line, even with cursor navigation off", async () => {
+    const starts: Parameters<UseUserNoteComposerOptions["startDraft"]>[] = [];
+    let cursorReads = 0;
+    const harness = await renderComposer(
+      baseOptions({
+        keyboardCursorEnabled: false,
+        getActiveNoteTarget: () => ({
+          fileId: "note-file",
+          hunkIndex: 2,
+          target: { side: "new", line: 27 },
+        }),
+        getLineCursor: () => {
+          cursorReads += 1;
+          return null;
+        },
+        startDraft: (...args) => {
+          starts.push(args);
+          return draftNote;
+        },
+      }),
+    );
+
+    try {
+      await act(async () => harness.composer().startUserNote());
+      expect(starts[0]).toEqual([
+        "note-file",
+        2,
+        { side: "new", line: 27 },
+        { preserveViewport: true },
+      ]);
+      expect(cursorReads).toBe(0);
+
+      // An explicit location, such as a hunk-header click, still ignores the selected note.
+      await act(async () => harness.composer().startUserNote("click-file", 0));
+      expect(starts[1]).toEqual(["click-file", 0, undefined, { preserveViewport: true }]);
     } finally {
       await act(async () => harness.setup.renderer.destroy());
     }
@@ -438,6 +479,47 @@ describe("useUserNoteComposer", () => {
         event: "note_created",
         payload: { note: { body: "complete editor body" } },
       });
+    } finally {
+      await act(async () => harness.setup.renderer.destroy());
+    }
+  });
+
+  test("reports a refused save and keeps the draft focused without publishing", async () => {
+    const calls: string[] = [];
+    const refusals: string[] = [];
+    const harness = await renderComposer(
+      baseOptions({
+        draftNote,
+        updateDraft: () => true,
+        saveDraft: () => {
+          throw new ReviewIntentPlanningError("too-many-notes", "full");
+        },
+        onSaveRefused: (code) => refusals.push(code),
+        focus: {
+          draft: () => calls.push("focus-draft"),
+          review: () => calls.push("focus-review"),
+          blurDraft: () => calls.push("blur"),
+        },
+        publishEvent: (event) => calls.push(`publish:${event}`),
+      }),
+    );
+
+    try {
+      await act(async () => harness.composer().saveDraftNote("kept body"));
+      expect(refusals).toEqual(["too-many-notes"]);
+      expect(calls).toEqual([]);
+
+      // Anything other than a planning refusal is a bug and still surfaces.
+      harness.replaceOptions(
+        baseOptions({
+          draftNote,
+          saveDraft: () => {
+            throw new TypeError("broken");
+          },
+        }),
+      );
+      await act(async () => harness.setup.renderOnce());
+      expect(() => harness.composer().saveDraftNote("body")).toThrow("broken");
     } finally {
       await act(async () => harness.setup.renderer.destroy());
     }

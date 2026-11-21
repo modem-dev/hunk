@@ -26,22 +26,37 @@
  * wrote it with.
  */
 import { HUNK_REVIEW_PROTOCOL_VERSION, MAX_HUNK_REVIEW_IDENTIFIER_BYTES } from "./reviewProtocol";
-import type { HunkReviewFailureCodeV1, HunkReviewResourceCatalogV1 } from "./reviewProtocol";
+import type {
+  ReviewFailureCode,
+  ReviewRefreshErrorCode,
+  ReviewResourceCatalog,
+} from "./reviewProtocol";
 import type { ReviewPublicationAddress } from "../core/review/generationOrder";
+import type { ReviewSharedState } from "./reviewSharedState";
 import { utf8ByteLength } from "../core/review/validation";
 
 /** Path every review route hangs from, so a client never assembles route strings itself. */
 export const HUNK_REVIEW_HTTP_PATH_PREFIX = "/review-api";
 
 /**
- * Path the browser review page will be served from.
+ * Path the browser review page is served from.
  *
  * Separate from the API prefix because they are different things to a browser: the page is
  * a document that may be bookmarked and reloaded, the API is what the script on it calls.
- * Phase 6 serves the document; the path is declared now because the review URL — the one
- * artifact a person handles — is this path plus the capability fragment.
+ * The review URL — the one artifact a person handles — is this path plus the capability
+ * fragment.
  */
 export const HUNK_REVIEW_PAGE_PATH_PREFIX = "/review";
+
+/**
+ * Path the page's scripts and styles are served from, shared by every session.
+ *
+ * One prefix for all sessions because the assets are the same build for every review and
+ * carry no review data, so a browser caches them once. It is its own first segment rather
+ * than a child of the page prefix, so no session id can ever be mistaken for an asset
+ * directory or the other way round.
+ */
+export const HUNK_REVIEW_ASSET_PATH_PREFIX = "/review-assets";
 
 /**
  * Header one caller presents its capability in.
@@ -75,8 +90,10 @@ export function isReviewCapabilityToken(value: unknown): value is string {
 }
 
 /** One route on the review surface, named by what it serves rather than by its path. */
-export type HunkReviewHttpRoute =
+export type ReviewHttpRoute =
   | { kind: "publication"; sessionId: string }
+  | { kind: "state"; sessionId: string }
+  | { kind: "refresh"; sessionId: string }
   | { kind: "events"; sessionId: string }
   | { kind: "actions"; sessionId: string }
   | { kind: "resource"; sessionId: string; generation: string; resourceId: string };
@@ -92,7 +109,7 @@ function isPathIdentifier(value: string) {
 }
 
 /** Build the path one route is served at, with every identifier percent-encoded. */
-export function reviewHttpPath(route: HunkReviewHttpRoute): string {
+export function reviewHttpPath(route: ReviewHttpRoute): string {
   const base = `${HUNK_REVIEW_HTTP_PATH_PREFIX}/${encodeURIComponent(route.sessionId)}`;
   if (route.kind === "resource") {
     return `${base}/resources/${encodeURIComponent(route.generation)}/${encodeURIComponent(route.resourceId)}`;
@@ -121,7 +138,7 @@ function decodeSegment(value: string | undefined): string | undefined {
  * `undefined` rather than a partially understood request, so the server answers "not a
  * review route" instead of guessing which session was meant.
  */
-export function parseReviewHttpPath(pathname: string): HunkReviewHttpRoute | undefined {
+export function parseReviewHttpPath(pathname: string): ReviewHttpRoute | undefined {
   const parts = pathname.split("/");
   if (parts[0] !== "" || `/${parts[1]}` !== HUNK_REVIEW_HTTP_PATH_PREFIX) {
     return undefined;
@@ -132,7 +149,11 @@ export function parseReviewHttpPath(pathname: string): HunkReviewHttpRoute | und
   }
   if (parts.length === 4) {
     const kind = parts[3];
-    return kind === "publication" || kind === "events" || kind === "actions"
+    return kind === "publication" ||
+      kind === "state" ||
+      kind === "refresh" ||
+      kind === "events" ||
+      kind === "actions"
       ? { kind, sessionId }
       : undefined;
   }
@@ -149,6 +170,59 @@ export function parseReviewHttpPath(pathname: string): HunkReviewHttpRoute | und
 /** Path the review page for one session is served at. */
 export function reviewPagePath(sessionId: string): string {
   return `${HUNK_REVIEW_PAGE_PATH_PREFIX}/${encodeURIComponent(sessionId)}/`;
+}
+
+/**
+ * Whether one string is a name the page build may give an asset.
+ *
+ * A single flat segment of the characters a hashed bundle file uses, starting with a
+ * letter or digit, so an asset name can never be a dot segment, a separator, or anything a
+ * URL would have to encode.
+ */
+export function isReviewAssetName(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.length <= 255 &&
+    /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value) &&
+    !value.includes("..")
+  );
+}
+
+/** Path one page asset is served at. */
+export function reviewAssetPath(name: string): string {
+  if (!isReviewAssetName(name)) {
+    throw new Error(`Not a review asset name: ${name}`);
+  }
+  return `${HUNK_REVIEW_ASSET_PATH_PREFIX}/${name}`;
+}
+
+/** One request the page surface serves: the document for a session, or one shared asset. */
+export type ReviewPageRoute =
+  | { kind: "document"; sessionId: string }
+  | { kind: "asset"; name: string };
+
+/**
+ * Parse one request path into the page route it names.
+ *
+ * Strict in the same way as the API grammar: the document lives only at the exact
+ * trailing-slash path `reviewPagePath` builds, and an asset only one segment below the
+ * asset prefix. Anything else under either prefix is `undefined`, so the server answers
+ * "not found" rather than guessing.
+ */
+export function parseReviewPagePath(pathname: string): ReviewPageRoute | undefined {
+  const parts = pathname.split("/");
+  if (parts[0] !== "") {
+    return undefined;
+  }
+  if (`/${parts[1]}` === HUNK_REVIEW_PAGE_PATH_PREFIX && parts.length === 4 && parts[3] === "") {
+    const sessionId = decodeSegment(parts[2]);
+    return sessionId ? { kind: "document", sessionId } : undefined;
+  }
+  if (`/${parts[1]}` === HUNK_REVIEW_ASSET_PATH_PREFIX && parts.length === 3) {
+    // Asset names never need encoding, so a percent sign is refused rather than decoded.
+    return isReviewAssetName(parts[2]) ? { kind: "asset", name: parts[2] } : undefined;
+  }
+  return undefined;
 }
 
 /**
@@ -180,7 +254,7 @@ export function parseReviewCapabilityFragment(fragment: string): string | undefi
  * authorized, addressed a session nobody is serving, or sent something the surface will
  * not carry.
  */
-export type HunkReviewTransportErrorCode =
+export type ReviewTransportErrorCode =
   /**
    * No capability, or one that does not match the session addressed.
    *
@@ -201,20 +275,40 @@ export type HunkReviewTransportErrorCode =
   /** The action names a type this build's vocabulary does not contain. */
   | "unsupported-action"
   /** The surface is already serving as many event streams as it will. */
-  | "too-many-streams";
+  | "too-many-streams"
+  /** The review's shared state is larger than `MAX_REVIEW_SHARED_STATE_BYTES`. */
+  | "state-too-large"
+  /**
+   * The action declared an actor kind other than `browser`. A capability authorizes a
+   * browser and nothing else; terminal and agent actions arrive through their own channels.
+   */
+  | "forbidden-actor";
+
+/**
+ * The only actor kind a capability-authorized request may declare.
+ *
+ * The kind decides policy at the producer — a browser's selection stays local, an agent's
+ * moves every surface — so a caller holding only the capability cannot be allowed to name
+ * another. The HTTP surface refuses rather than rewrites: an honest client never sends
+ * anything else, and a silent rewrite would hide a client bug or an attempt.
+ */
+export const REVIEW_CAPABILITY_ACTOR_KIND = "browser" as const;
 
 /**
  * Every code a review client can be told, from any tier.
  *
  * Composed from the producer's vocabulary and the transport's rather than restated as a
- * third list, which is the same rule `HunkReviewFailureCodeV1` follows one level down.
+ * third list, which is the same rule `ReviewFailureCode` follows one level down.
  */
-export type HunkReviewClientErrorCodeV1 = HunkReviewFailureCodeV1 | HunkReviewTransportErrorCode;
+export type ReviewHttpFailureCode =
+  | ReviewFailureCode
+  | ReviewTransportErrorCode
+  | ReviewRefreshErrorCode;
 
 /** One refusal, in the shape every review route answers with. */
-export interface HunkReviewHttpFailureV1 {
+export interface ReviewHttpFailure {
   ok: false;
-  code: HunkReviewClientErrorCodeV1;
+  code: ReviewHttpFailureCode;
   message: string;
   /** What the session is serving now, when the failure was about being out of date. */
   currentGeneration?: string;
@@ -228,9 +322,47 @@ export interface HunkReviewHttpFailureV1 {
  * through the one bounded, digest-verified resource path rather than inlined here, so the
  * surface has no second serialization of a review to keep in step with the model.
  */
-export interface HunkReviewPublicationBodyV1 {
+export interface ReviewPublicationBody {
   protocolVersion: typeof HUNK_REVIEW_PROTOCOL_VERSION;
   sessionId: string;
   publication: ReviewPublicationAddress;
-  catalog: HunkReviewResourceCatalogV1;
+  /**
+   * The shared-state revision at this position (`reviewSharedState.ts`).
+   *
+   * Refetch `/state` when it moves within a generation. Absent only until a freshly
+   * registered session reports its first one; a client then fetches `/state` once.
+   */
+  sharedStateRevision?: number;
+  catalog: ReviewResourceCatalog;
+}
+
+/**
+ * One refresh: `POST /review-api/<session>/refresh`, with an empty body.
+ *
+ * The only host command a browser may invoke (F4's allowlist). It is not a review action —
+ * reloading the input is an effect on the host, not review semantics — so it has its own
+ * route rather than an action envelope, and it accepts no arguments: the session reopens
+ * exactly what its own `r` key would. On success the body names the position the reloaded
+ * review reached; the publication event for it follows on the stream.
+ */
+export interface ReviewRefreshBody {
+  ok: true;
+  protocolVersion: typeof HUNK_REVIEW_PROTOCOL_VERSION;
+  sessionId: string;
+  publication: ReviewPublicationAddress;
+}
+
+/**
+ * One shared-state read: `GET /review-api/<session>/state`.
+ *
+ * `publication` and `sharedStateRevision` repeat what `state` was materialized at, so a client
+ * orders the body exactly as it orders publications: by `classifyReviewPublication` across
+ * generations, then by `sharedStateRevision` within one.
+ */
+export interface ReviewStateBody {
+  protocolVersion: typeof HUNK_REVIEW_PROTOCOL_VERSION;
+  sessionId: string;
+  publication: ReviewPublicationAddress;
+  sharedStateRevision: number;
+  state: ReviewSharedState;
 }

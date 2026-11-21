@@ -175,9 +175,32 @@ function matchesControlCharacter(parsed: ParsedKeyChord, key: ExtensionKeyEvent)
   return key.sequence === String.fromCharCode(parsed.base.charCodeAt(0) - 0x60);
 }
 
+/**
+ * Keypad keys OpenTUI decodes separately, mapped to the main-block key they act as.
+ *
+ * Mirrors the navigation entries of OpenTUI's `defaultKeyAliases`, which is not
+ * part of its public API and could not be imported here anyway: this module is
+ * the import-free published contract. Under the Kitty keyboard protocol a
+ * numpad PageUp arrives as `kppageup`, so without this a `pageup` binding never
+ * fires from the keypad.
+ */
+const KEYPAD_ALIASES: Readonly<Record<string, string>> = {
+  kpleft: "left",
+  kpright: "right",
+  kpup: "up",
+  kpdown: "down",
+  kppageup: "pageup",
+  kppagedown: "pagedown",
+  kphome: "home",
+  kpend: "end",
+  kpinsert: "insert",
+  kpdelete: "delete",
+};
+
 /** Report whether one key event names a key, allowing for terminal naming disagreements. */
 function matchesNamedKey(base: string, key: ExtensionKeyEvent) {
-  const name = key.name?.toLowerCase();
+  const rawName = key.name?.toLowerCase();
+  const name = (rawName && KEYPAD_ALIASES[rawName]) ?? rawName;
   if (name === base) {
     return true;
   }

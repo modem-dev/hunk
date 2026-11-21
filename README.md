@@ -1,4 +1,9 @@
-# hunk
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://hunk.dev/brand/downloads/logo-lockup-paper.svg">
+    <img src="https://hunk.dev/brand/logo-lockup.svg" alt="hunk" width="300">
+  </picture>
+</h1>
 
 Hunk is an interactive terminal diff viewer for reviewing code changes, built on [OpenTUI](https://github.com/anomalyco/opentui) and [Pierre diffs](https://www.npmjs.com/package/@pierre/diffs).
 
@@ -13,6 +18,7 @@ Hunk is an interactive terminal diff viewer for reviewing code changes, built on
 - inline AI and agent annotations beside the code
 - split, unified, and responsive auto layouts
 - watch mode for auto-reloading file and Git-backed reviews
+- browser review: the same stream in a local web page, with mouse line-range notes
 - keyboard, mouse, pager, and Git difftool support
 
 <table>
@@ -84,6 +90,7 @@ Use familiar Git commands to open changes in Hunk:
 ```bash
 hunk diff                      # review current repo changes, including untracked files
 hunk diff --watch              # auto-reload as the working tree changes
+hunk diff --web                # review in your browser instead of the terminal
 hunk show                      # review the latest commit
 hunk show HEAD~1               # review an earlier commit
 hunk log                       # browse history on a terminal; print when redirected
@@ -92,6 +99,8 @@ hunk status                    # view workspace status and sibling worktrees (Gi
 hunk status --static           # print one read-only workspace snapshot
 hunk status --json             # emit one versioned workspace snapshot
 ```
+
+`hunk diff --web` (also `show`, `stash show`, `patch`, and `difftool`) serves the review to a page on your machine and runs until Ctrl+C; `hunk session open` opens the page for a review already running in a terminal. See [browser review](https://hunk.dev/docs/workflows/browser-review/).
 
 `hunk status` is read-only: it does not fetch or change the repository. See [workspace status](docs/status.md) for details.
 
@@ -177,7 +186,7 @@ and falling back to it if migration fails. Global extension paths are unchanged.
 For example:
 
 ```toml
-theme = "terminal"
+theme = "github-dark-default"
 mode = "auto"               # auto, split, unified
 auto_split_min_width = 160  # minimum available diff columns for split in auto mode
 line_numbers = true

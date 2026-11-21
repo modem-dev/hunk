@@ -8,7 +8,7 @@
 // this run only — compose.mjs resolves frames by name from its SHOTS table and
 // ignores it, and after a SCENES= run the manifest is partial while frames/
 // stays cumulative.
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -76,14 +76,17 @@ function runGit(args: string[], cwd: string, env: NodeJS.ProcessEnv = {}) {
   }
 }
 
-async function launchHunk(args: string[], options: { cwd?: string } = {}) {
+async function launchHunk(
+  args: string[],
+  options: { cwd?: string; env?: Record<string, string> } = {},
+) {
   return launchApp({
     command: process.execPath,
     args: ["run", hunkEntrypoint, "--", ...args],
     cwd: options.cwd ?? repoRoot,
     cols: COLS,
     rows: ROWS,
-    env: hunkEnv,
+    env: { ...hunkEnv, ...options.env },
   });
 }
 
@@ -161,6 +164,144 @@ function createHistoryDemoRepo() {
       GIT_COMMITTER_DATE: date,
     });
   }
+
+  return repoDir;
+}
+
+const TASKBOARD_README = `# taskboard
+
+A tiny task tracker used to demo Hunk.
+
+- \`src/tasks.ts\` holds the seed data
+- \`src/render.ts\` draws the board
+- \`bun run demo\` prints a summary
+`;
+
+const TASKBOARD_PACKAGE = `${JSON.stringify(
+  {
+    name: "taskboard",
+    version: "0.4.0",
+    type: "module",
+    scripts: { demo: "bun run src/main.ts", test: "bun test" },
+  },
+  null,
+  2,
+)}\n`;
+
+const TASKBOARD_RENDER = `import type { Task } from "./tasks";
+
+/** Column order and display labels for the board. */
+const COLUMNS = [
+  { state: "todo", label: "To do" },
+  { state: "doing", label: "In progress" },
+  { state: "done", label: "Done" },
+] as const;
+
+export interface BoardOptions {
+  width: number;
+  showOwners?: boolean;
+}
+
+/** Render tasks as fixed-width board columns, one card per line. */
+export function renderBoard(tasks: Task[], options: BoardOptions): string[] {
+  const columnWidth = Math.floor(options.width / COLUMNS.length) - 2;
+  const columns = COLUMNS.map(({ state, label }) => {
+    const cards = tasks
+      .filter((task) => task.state === state)
+      .map((task) => formatCard(task, columnWidth, options.showOwners));
+    return [label.toUpperCase().padEnd(columnWidth), ...cards];
+  });
+
+  const height = Math.max(...columns.map((column) => column.length));
+  const rows: string[] = [];
+  for (let row = 0; row < height; row += 1) {
+    rows.push(columns.map((column) => (column[row] ?? "").padEnd(columnWidth)).join("  "));
+  }
+  return rows;
+}
+
+function formatCard(task: Task, width: number, showOwners = true): string {
+  const marker = task.blocked ? "!" : "-";
+  const owner = showOwners ? \` @\${task.owner}\` : "";
+  const text = \`\${marker} \${task.title}\${owner}\`;
+  return text.length > width ? \`\${text.slice(0, width - 1)}…\` : text;
+}
+`;
+
+/** Write the taskboard demo project's "before" tree into an existing directory. */
+function writeTaskboardBase(dir: string) {
+  cpSync(join(repoRoot, "examples/2-mini-app-refactor/before"), dir, { recursive: true });
+  mkdirSync(join(dir, "src"), { recursive: true });
+  writeFileSync(join(dir, "README.md"), TASKBOARD_README);
+  writeFileSync(join(dir, "package.json"), TASKBOARD_PACKAGE);
+  writeFileSync(join(dir, "src/render.ts"), TASKBOARD_RENDER);
+}
+
+/**
+ * Build a named `taskboard` Git repo with one committed baseline. It lives at
+ * a fixed `<tmp>/demo/taskboard` path, recreated per scene, because status
+ * and open headers print the full path and a random temp name reads as noise.
+ */
+function createTaskboardRepo() {
+  const parent = join(tmpdir(), "demo");
+  rmSync(parent, { recursive: true, force: true });
+  tempDirs.push(parent);
+  const repoDir = join(parent, "taskboard");
+  mkdirSync(repoDir, { recursive: true });
+  runGit(["init", "-q", "-b", "main"], repoDir);
+  runGit(["config", "user.name", "Hunk Team"], repoDir);
+  runGit(["config", "user.email", "hello@hunk.dev"], repoDir);
+  writeTaskboardBase(repoDir);
+  runGit(["add", "."], repoDir);
+  runGit(["commit", "-qm", "Start taskboard"], repoDir);
+  return { parent, repoDir };
+}
+
+/**
+ * Build a taskboard repo with staged, unstaged, and untracked work plus a
+ * sibling worktree, so the status view has every group to show.
+ */
+function createTaskboardStatusRepo() {
+  const { parent, repoDir } = createTaskboardRepo();
+  const after = join(repoRoot, "examples/2-mini-app-refactor/after");
+
+  // Staged: the refactored main entry point and tasks module.
+  cpSync(join(after, "src/main.ts"), join(repoDir, "src/main.ts"));
+  cpSync(join(after, "src/tasks.ts"), join(repoDir, "src/tasks.ts"));
+  runGit(["add", "src/main.ts", "src/tasks.ts"], repoDir);
+
+  // Mixed: staged formatter change with a further unstaged edit on top.
+  cpSync(join(after, "src/format.ts"), join(repoDir, "src/format.ts"));
+  runGit(["add", "src/format.ts"], repoDir);
+  writeFileSync(
+    join(repoDir, "src/format.ts"),
+    `${readFileSync(join(after, "src/format.ts"), "utf8")}\nexport const EMPTY_SUMMARY = "No tasks yet";\n`,
+  );
+
+  // Unstaged: a render tweak and the demo test.
+  writeFileSync(
+    join(repoDir, "src/render.ts"),
+    TASKBOARD_RENDER.replace(
+      'const marker = task.blocked ? "!" : "-";',
+      'const marker = task.blocked ? "⚠" : "•";',
+    ),
+  );
+  cpSync(join(after, "test/main.demo.ts"), join(repoDir, "test/main.demo.ts"));
+
+  // Untracked: the new grouping helper and a scratch note.
+  cpSync(join(after, "src/groupTasks.ts"), join(repoDir, "src/groupTasks.ts"));
+  writeFileSync(join(repoDir, "NOTES.md"), "- group tasks by owner before rendering\n");
+
+  // Sibling worktree on a fix branch with its own uncommitted change.
+  const siblingDir = join(parent, "taskboard-empty-state");
+  runGit(["worktree", "add", "-q", "-b", "fix/empty-state", siblingDir], repoDir);
+  writeFileSync(
+    join(siblingDir, "src/render.ts"),
+    TASKBOARD_RENDER.replace(
+      "  const height = Math.max",
+      '  if (tasks.length === 0) return ["No tasks yet"];\n\n  const height = Math.max',
+    ),
+  );
 
   return repoDir;
 }
@@ -456,12 +597,272 @@ async function captureFileViewScene(
   }
 }
 
-// The current storyboard uses history; opt into reusable legacy scenes with a
-// comma-separated override, e.g. SCENES=review,pager.
-const wants = makeSceneFilter(process.env.SCENES ?? "history");
+// ---------------------------------------------------------------------------
+// Scene: `hunk open` — browse a project tree and read a complete file.
+// ---------------------------------------------------------------------------
+async function captureOpenScene() {
+  console.log("scene: open");
+  const repoDir = createTaskboardStatusRepo();
+  const session = await launchHunk(["open"], { cwd: repoDir });
+  try {
+    await session.waitForText(/README\.md/, { timeout: 60_000 });
+    await ensureKeyboardIsLive(session, HUNK_KEYBOARD_PROBE);
+    await sleep(800);
+    await snap(session, "open-overview");
+
+    // One snap per keypress: select src/, expand it, walk to render.ts.
+    let step = 0;
+    const press = async (key: Parameters<typeof session.press>[0], wait = 220) => {
+      await session.press(key);
+      await sleep(wait);
+      await snap(session, `open-tree-${step}`);
+      step += 1;
+    };
+    await press("j");
+    await press("enter", 500);
+    await session.waitForText(/render\.ts/, { timeout: 10_000 });
+    for (let i = 0; i < 4; i += 1) await press("j");
+
+    await session.press("enter");
+    await session.waitForText(/renderBoard/, { timeout: 30_000 });
+    await sleep(900);
+    await snap(session, "open-document");
+
+    // Focus the document and step through it.
+    await session.press("tab");
+    await sleep(300);
+    for (let i = 0; i < 6; i += 1) {
+      await session.press("pagedown");
+      await sleep(260);
+      await snap(session, `open-scroll-${i}`);
+    }
+  } finally {
+    session.close();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Scene: `hunk status` — live workspace compass into full reviews.
+// ---------------------------------------------------------------------------
+async function captureStatusScene() {
+  console.log("scene: status");
+  const repoDir = createTaskboardStatusRepo();
+  const session = await launchHunk(["status"], { cwd: repoDir });
+  try {
+    await session.waitForText(/Other worktrees/, { timeout: 60_000 });
+    await ensureKeyboardIsLive(session, HUNK_KEYBOARD_PROBE);
+    await sleep(800);
+    await snap(session, "status-overview");
+
+    // Walk down through every tracked and untracked row to the sibling worktree.
+    for (let i = 0; i < 6; i += 1) {
+      await session.press("down");
+      await sleep(220);
+      await snap(session, `status-walk-${i}`);
+    }
+
+    await session.press("enter");
+    await session.waitForText(/fix\/empty-state/, { timeout: 30_000 });
+    await sleep(1500);
+    await snap(session, "status-sibling");
+
+    await session.press("escape");
+    await sleep(1200);
+    for (let i = 0; i < 6; i += 1) {
+      await session.press("up");
+      await sleep(120);
+    }
+    await sleep(400);
+    await snap(session, "status-back");
+
+    await session.press("enter");
+    await session.waitForText(/working tree/, { timeout: 30_000 });
+    await sleep(1800);
+    await snap(session, "status-diff");
+  } finally {
+    session.close();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Scene: pane-aware auto layout — closing the files pane switches to split.
+// ---------------------------------------------------------------------------
+async function captureLayoutScene() {
+  console.log("scene: layout");
+  const { repoDir } = createTaskboardRepo();
+  cpSync(join(repoRoot, "examples/2-mini-app-refactor/after"), repoDir, { recursive: true });
+  const layoutConfigHome = makeTempDir("hunk-video-layout-config-");
+  mkdirSync(join(layoutConfigHome, "hunk"), { recursive: true });
+  writeFileSync(join(layoutConfigHome, "hunk", "config.toml"), "auto_split_min_width = 120\n");
+  const session = await launchHunk(["diff"], {
+    cwd: repoDir,
+    env: { XDG_CONFIG_HOME: layoutConfigHome },
+  });
+  try {
+    await session.waitForText(/src\//, { timeout: 60_000 });
+    await ensureKeyboardIsLive(session, HUNK_KEYBOARD_PROBE);
+    await sleep(800);
+    await snap(session, "layout-split");
+
+    await session.press("s");
+    await sleep(900);
+    await snap(session, "layout-unified");
+
+    await session.press("s");
+    await sleep(900);
+    await snap(session, "layout-split-again");
+  } finally {
+    session.close();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Scene: version-matched agent skills printed by the installed binary.
+// ---------------------------------------------------------------------------
+async function captureSkillScene() {
+  console.log("scene: skill");
+  const { repoDir } = createTaskboardRepo();
+  const session = await launchHunkShell(repoDir);
+  try {
+    await session.waitForText(/❯/, { timeout: 15_000 });
+    await sleep(300);
+    await typeCommand(
+      session,
+      keyframer,
+      "hunk skill show hunk-review | head -n 12 | fold -sw 88",
+      {
+        8: "skill-typing-8",
+        30: "skill-typing-30",
+      },
+    );
+    await sleep(200);
+    await snap(session, "skill-typed");
+    await session.press("enter");
+    await session.waitForText(/## Workflow/, { timeout: 60_000 });
+    await sleep(600);
+    await snap(session, "skill-output");
+  } finally {
+    session.close();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Scene: Bash completion for commands and enumerated flag values.
+// ---------------------------------------------------------------------------
+async function captureCompletionScene() {
+  console.log("scene: completion");
+  const { repoDir } = createTaskboardRepo();
+  const session = await launchHunkShell(repoDir);
+  try {
+    await session.waitForText(/❯/, { timeout: 15_000 });
+    // Clear with a raw escape: the PTY's TERM has no terminfo entry for `clear`.
+    session.writeRaw("source <(hunk completion bash); printf '\\033[H\\033[2J\\033[3J'\r");
+    await sleep(2500);
+
+    await typeCommand(session, keyframer, "hunk ", { 4: "completion-typed" });
+    await sleep(200);
+    session.writeRaw("\t\t");
+    await sleep(2500);
+    await snap(session, "completion-commands");
+
+    session.writeRaw("diff --mode ");
+    await sleep(300);
+    await snap(session, "completion-mode-typed");
+    session.writeRaw("\t\t");
+    await sleep(2500);
+    await snap(session, "completion-modes");
+  } finally {
+    session.close();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Scene: conflict diffs — `hunk diff` during a paused merge.
+// ---------------------------------------------------------------------------
+async function captureConflictScene() {
+  console.log("scene: conflict");
+  const { repoDir } = createTaskboardRepo();
+  const renderPath = join(repoDir, "src/render.ts");
+  const commitRender = (message: string, from: string, to: string) => {
+    writeFileSync(renderPath, readFileSync(renderPath, "utf8").replace(from, to));
+    runGit(["commit", "-qam", message], repoDir);
+  };
+
+  // Both branches restyle the same two lines of the board renderer.
+  runGit(["switch", "-qc", "glyph-markers"], repoDir);
+  commitRender(
+    "Use glyph markers",
+    'const marker = task.blocked ? "!" : "-";',
+    'const marker = task.blocked ? "⚠" : "•";',
+  );
+  commitRender(
+    "Rename progress column",
+    '{ state: "doing", label: "In progress" }',
+    '{ state: "doing", label: "Doing" }',
+  );
+  runGit(["switch", "-q", "main"], repoDir);
+  commitRender(
+    "Mark blocked tasks in text",
+    'const marker = task.blocked ? "!" : "-";',
+    'const marker = task.blocked ? "[blocked]" : "[ ]";',
+  );
+  commitRender(
+    "Clarify progress column",
+    '{ state: "doing", label: "In progress" }',
+    '{ state: "doing", label: "Active" }',
+  );
+  const merge = spawnSync("git", ["merge", "glyph-markers"], { cwd: repoDir, encoding: "utf8" });
+  if (merge.status === 0) throw new Error("expected the demo merge to conflict");
+
+  const session = await launchHunk(["diff", "--mode", "unified"], { cwd: repoDir });
+  try {
+    await session.waitForText(/render\.ts/, { timeout: 60_000 });
+    await ensureKeyboardIsLive(session, HUNK_KEYBOARD_PROBE);
+    await sleep(900);
+    await snap(session, "conflict-review");
+  } finally {
+    session.close();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Scene: scroll_off — stepping the cursor keeps rows of context below it.
+// ---------------------------------------------------------------------------
+async function captureScrollOffScene() {
+  console.log("scene: scrolloff");
+  const { repoDir } = createTaskboardRepo();
+  cpSync(join(repoRoot, "examples/2-mini-app-refactor/after"), repoDir, { recursive: true });
+  const session = await launchHunk(["diff", "--mode", "unified"], { cwd: repoDir });
+  try {
+    await session.waitForText(/src\//, { timeout: 60_000 });
+    await ensureKeyboardIsLive(session, HUNK_KEYBOARD_PROBE);
+    await sleep(800);
+    await snap(session, "scrolloff-start");
+
+    // One snap per press so playback shows the view following the cursor.
+    for (let step = 0; step < 34; step += 1) {
+      await session.press("j");
+      await sleep(140);
+      await snap(session, `scrolloff-step-${String(step).padStart(2, "0")}`);
+    }
+  } finally {
+    session.close();
+  }
+}
+
+// The current storyboard is the 0.24 release roundup; opt into other reusable
+// scenes with a comma-separated override, e.g. SCENES=status,skill,history.
+const wants = makeSceneFilter(process.env.SCENES ?? "open,layout,conflict,scrolloff,completion");
 
 async function main() {
   try {
+    if (wants("open")) await captureOpenScene();
+    if (wants("status")) await captureStatusScene();
+    if (wants("layout")) await captureLayoutScene();
+    if (wants("skill")) await captureSkillScene();
+    if (wants("completion")) await captureCompletionScene();
+    if (wants("conflict")) await captureConflictScene();
+    if (wants("scrolloff")) await captureScrollOffScene();
     if (wants("history")) await captureHistoryScene();
     if (wants("review")) await captureReviewScene();
     if (wants("stml")) await captureStmlScene();

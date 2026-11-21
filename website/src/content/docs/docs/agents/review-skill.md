@@ -15,7 +15,7 @@ npx skills add modem-dev/hunk -g --skill hunk-review
 
 `-g` installs the skill for your user instead of one project. Add `-a <agent>` (for example `-a claude-code`) to install it for a single agent.
 
-The installed file is a pointer: it tells the agent to run `hunk skill show hunk-review` and follow the output. The instructions therefore come from the Hunk binary on your `PATH` and stay in step with it after every upgrade; you don't need to reinstall the skill.
+The installed file is a pointer: it tells the agent to run `hunk skill show hunk-review` and follow the output. Hunk versions before 0.24 lack `hunk skill show`, so the pointer falls back to reading the file printed by `hunk skill path hunk-review`. The instructions therefore come from the Hunk binary on your `PATH` and stay in step with it after every upgrade; you don't need to reinstall the skill.
 
 ## Load it without the skills CLI
 

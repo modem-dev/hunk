@@ -5,7 +5,7 @@ import {
   type FileContents,
 } from "@pierre/diffs";
 import type { AppTheme } from "../themes";
-import { pierreHighlightRenderOptions } from "../diff/highlightRenderOptions";
+import { pierreHighlightRenderOptions } from "../../core/documents/highlightRenderOptions";
 import {
   ensureSyntaxHighlightThemeRegistered,
   syntaxHighlightThemeName,

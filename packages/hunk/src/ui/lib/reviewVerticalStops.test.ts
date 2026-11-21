@@ -21,6 +21,26 @@ function stopLabel(stop: ReturnType<typeof buildReviewVerticalStops>[number]) {
 }
 
 describe("review vertical stops", () => {
+  for (const layout of ["split", "unified"] as const) {
+    test(`${layout} note-free navigation leaves copy-selection rows lazy`, () => {
+      const file = createTestDiffFile({
+        before: lines("one", "two"),
+        after: lines("ONE", "two"),
+        context: 1,
+      });
+      const geometry = measureDiffSectionGeometry(file, layout, true, theme, [], 80);
+      const cursors = buildLineCursors([file], [geometry]);
+      Object.defineProperty(geometry, "plannedRows", {
+        get() {
+          throw new Error("Navigation must not materialize copy-selection rows");
+        },
+      });
+
+      const stops = buildReviewVerticalStops([file], [geometry], cursors);
+      expect(stops).toEqual(cursors.map((cursor) => ({ kind: "line", cursor })));
+    });
+  }
+
   test("places semantic roots and replies after their rendered source line", () => {
     const file = createTestDiffFile({
       id: "alpha",
@@ -53,6 +73,11 @@ describe("review vertical stops", () => {
     ];
     const geometry = measureDiffSectionGeometry(file, "unified", true, theme, notes, 80);
     const cursors = buildLineCursors([file], [geometry]);
+    Object.defineProperty(geometry, "plannedRows", {
+      get() {
+        throw new Error("Navigation must not materialize copy-selection rows");
+      },
+    });
     const stops = buildReviewVerticalStops([file], [geometry], cursors);
     const labels = stops.map(stopLabel);
     const changedLine = labels.indexOf("line:new:3");
@@ -76,6 +101,45 @@ describe("review vertical stops", () => {
     expect(findNextReviewNoteStop(stops, stops[changedLine]!, 1)?.noteId).toBe("root");
     expect(findNextReviewNoteStop(stops, stops[changedLine + 3]!, -1)?.noteId).toBe("reply");
   });
+
+  for (const layout of ["split", "unified"] as const) {
+    test(`${layout} remeasures cached note targets when semantic identity or draft status changes`, () => {
+      const file = createTestDiffFile({
+        before: lines("one", "two"),
+        after: lines("ONE", "two"),
+        context: 1,
+      });
+      const annotation = {
+        id: "stable-card",
+        source: "user",
+        summary: "Same card",
+        newRange: [1, 1] as [number, number],
+      };
+      const variants = [
+        { source: "user" as const, noteId: "first-note", expected: ["first-note"] },
+        { source: "user" as const, noteId: "replacement-note", expected: ["replacement-note"] },
+        { source: "draft" as const, noteId: "replacement-note", expected: [] },
+        { source: "user" as const, noteId: "replacement-note", expected: ["replacement-note"] },
+      ];
+      for (const { source, noteId, expected } of variants) {
+        const note = createVisibleAgentNote(file.metadata.hunks, {
+          id: "stable-card",
+          annotation,
+          source,
+          thread: { noteId, depth: 0 },
+        });
+        const geometry = measureDiffSectionGeometry(file, layout, true, theme, [note], 80);
+        const stops = buildReviewVerticalStops(
+          [file],
+          [geometry],
+          buildLineCursors([file], [geometry]),
+        );
+        expect(stops.filter((stop) => stop.kind === "note").map((stop) => stop.noteId)).toEqual(
+          expected,
+        );
+      }
+    });
+  }
 
   test("uses alternate file-view inline-note rows as selectable stops", () => {
     const file = createTestDiffFile({

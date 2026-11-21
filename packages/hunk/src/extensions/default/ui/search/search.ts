@@ -1,6 +1,9 @@
 /**
  * Pure search primitives: patch text in, ordered jump targets out.
  *
+ * Every occurrence is its own target, ordered the way the review draws it for the
+ * active layout, so stepping with `n` only moves up the screen when it wraps.
+ *
  * Everything here is a derivation of the changeset the host already handed the
  * extension, so it is testable without a terminal, a host, or a review. The
  * stateful half of the feature lives in `session.ts`.
@@ -16,11 +19,14 @@ export type SearchDirection = "forward" | "backward";
 /** Where one match sits inside a line: `[start, end)` in UTF-16 code units. */
 export type MatchRange = readonly [number, number];
 
+/** Which concrete layout the review is drawing, as the search orders lines. */
+export type SearchLayout = "split" | "unified";
+
 /** One matching line inside a hunk, as it is reported back to the user. */
 export interface SearchMatchLine {
   /** Hunk-local position, counted over the hunk's rendered lines. */
   offset: number;
-  /** The first match's extent within `text`, so the diff can mark it. */
+  /** This occurrence's extent within `text`, so the diff can mark it. */
   matchRange: MatchRange;
   /**
    * Line number on `side`, or `null` when the patch carried no usable numbers.
@@ -32,38 +38,41 @@ export interface SearchMatchLine {
 }
 
 /**
- * One place the review can jump to.
+ * One place the review can jump to: a single match occurrence.
  *
- * Hunk-granular stepping with a line-exact landing: collapsing every match
- * inside a hunk into one target is what keeps `n` visibly moving on every
- * press, while `line` carries the first match's own position so the jump lands
- * on it rather than on the hunk's anchor.
+ * Several occurrences can share a line or a hunk; `rank` orders them all the way
+ * the active layout draws them.
  */
 export interface SearchTarget {
   fileId: string;
   path: string;
   hunkIndex: number;
-  /** The first matching line in this hunk — what the toast quotes. */
+  /** The line holding this occurrence, with `matchRange` set to its extent. */
   line: SearchMatchLine;
-  /** How many lines in this hunk matched, including `line`. */
-  count: number;
+  /** `[fileIndex, hunkIndex, ...lineOrderKey, matchStart]`, compared lexicographically. */
+  rank: readonly number[];
 }
 
 /**
  * Locate every non-overlapping match on a line, or report why compilation failed.
  *
  * `locate` returns ranges in text order, or an empty array for a non-matching line.
- * The diff marks every range; hunk-granular targets keep only the first range of
- * their first matching line. Zero-width regex matches mark one character.
+ * The diff marks every range and each range is its own target. Zero-width regex matches mark one
+ * character.
  */
 export type CompiledQuery =
   | { ok: true; locate: (line: string) => MatchRange[] }
   | { ok: false; error: string };
 
 /** One parsed patch line, tagged with the hunk it belongs to. */
-interface PatchLine {
+export interface PatchLine {
   hunkIndex: number;
   offset: number;
+  kind: "context" | "deletion" | "addition";
+  /** Hunk-local index of the context run or change block holding this line. */
+  group: number;
+  /** Position among lines of the same kind within the group. */
+  groupIndex: number;
   lineNumber: number | null;
   side: "old" | "new";
   text: string;
@@ -131,11 +140,16 @@ export function parsePatchLines(patch: string): PatchLine[] {
   let offset = 0;
   let oldLine: number | null = null;
   let newLine: number | null = null;
+  let group = -1;
+  let groupKind: "context" | "change" | null = null;
+  const counts = { context: 0, deletion: 0, addition: 0 };
 
   for (const raw of patch.split("\n")) {
     if (raw.startsWith("@@")) {
       hunkIndex += 1;
       offset = 0;
+      group = -1;
+      groupKind = null;
       const ranges = readHunkStarts(raw);
       oldLine = ranges.oldStart;
       newLine = ranges.newStart;
@@ -151,23 +165,44 @@ export function parsePatchLines(patch: string): PatchLine[] {
 
     const marker = raw[0];
     const text = raw.slice(1);
-
-    if (marker === "-") {
-      lines.push({ hunkIndex, offset, lineNumber: oldLine, side: "old", text });
-      if (oldLine !== null) oldLine += 1;
-    } else if (marker === "+") {
-      lines.push({ hunkIndex, offset, lineNumber: newLine, side: "new", text });
-      if (newLine !== null) newLine += 1;
-    } else if (marker === " " || marker === undefined) {
-      // An empty line in a patch is an unmarked context line.
-      lines.push({ hunkIndex, offset, lineNumber: newLine, side: "new", text: text ?? "" });
-      if (oldLine !== null) oldLine += 1;
-      if (newLine !== null) newLine += 1;
-    } else {
+    const kind =
+      marker === "-"
+        ? "deletion"
+        : marker === "+"
+          ? "addition"
+          : marker === " " || marker === undefined
+            ? "context"
+            : null;
+    if (kind === null) {
       // Not a body line (a stray header inside patch text): skip without
       // advancing either counter.
       continue;
     }
+
+    // Mirror Pierre: every consecutive `-`/`+` line joins one change group, and a
+    // context line starts a new group.
+    const lineGroupKind = kind === "context" ? "context" : "change";
+    if (lineGroupKind !== groupKind) {
+      group += 1;
+      groupKind = lineGroupKind;
+      counts.context = counts.deletion = counts.addition = 0;
+    }
+    const groupIndex = counts[kind]++;
+
+    const side = kind === "deletion" ? "old" : "new";
+    lines.push({
+      hunkIndex,
+      offset,
+      kind,
+      group,
+      groupIndex,
+      lineNumber: side === "old" ? oldLine : newLine,
+      side,
+      // An empty line in a patch is an unmarked context line.
+      text: text ?? "",
+    });
+    if (kind !== "addition" && oldLine !== null) oldLine += 1;
+    if (kind !== "deletion" && newLine !== null) newLine += 1;
 
     offset += 1;
   }
@@ -186,66 +221,87 @@ function readHunkStarts(header: string): { oldStart: number | null; newStart: nu
 }
 
 /**
- * Build every jump target for one compiled query, in review-stream order.
+ * Hunk-local screen order of one line: unified stacks a change block's deletions above its
+ * additions; split pairs them row by row, old half first.
+ */
+export function lineOrderKey(
+  line: Pick<PatchLine, "kind" | "group" | "groupIndex">,
+  layout: SearchLayout,
+): [number, number, number] {
+  const addition = line.kind === "addition" ? 1 : 0;
+  return layout === "unified"
+    ? [line.group, addition, line.groupIndex]
+    : [line.group, line.groupIndex, addition];
+}
+
+/** Compare two ranks lexicographically; a shorter rank sorts before its extensions. */
+export function compareRanks(a: readonly number[], b: readonly number[]): number {
+  const length = Math.min(a.length, b.length);
+  for (let index = 0; index < length; index += 1) {
+    const difference = (a[index] ?? 0) - (b[index] ?? 0);
+    if (difference !== 0) {
+      return difference;
+    }
+  }
+
+  return a.length - b.length;
+}
+
+/**
+ * Build every jump target for one compiled query, one per match occurrence.
  *
- * Files are walked in changeset order and hunks in render order, so the
- * resulting array is already the order `n` should visit — no sorting, and no
- * second notion of "next" to keep in step with the review stream.
+ * Targets are sorted by rank, so the array is already the order `n` visits: files in
+ * changeset order, hunks in render order, then lines as `layout` draws them.
  */
 export function findTargets(
   files: readonly ExtensionDiffFile[],
   locate: (line: string) => MatchRange[],
+  layout: SearchLayout,
 ): SearchTarget[] {
   const targets: SearchTarget[] = [];
 
-  for (const file of files) {
+  for (const [fileIndex, file] of files.entries()) {
     if (typeof file.patch !== "string" || file.patch.length === 0) {
       continue;
     }
 
-    let current: SearchTarget | undefined;
     for (const line of parsePatchLines(file.patch)) {
-      const matchRange = locate(line.text)[0];
-      if (matchRange === undefined) {
-        continue;
+      for (const matchRange of locate(line.text)) {
+        targets.push({
+          fileId: file.id,
+          path: file.path,
+          hunkIndex: line.hunkIndex,
+          line: {
+            offset: line.offset,
+            matchRange,
+            lineNumber: line.lineNumber,
+            side: line.side,
+            text: line.text,
+          },
+          rank: [fileIndex, line.hunkIndex, ...lineOrderKey(line, layout), matchRange[0]],
+        });
       }
-
-      if (current && current.hunkIndex === line.hunkIndex) {
-        current.count += 1;
-        continue;
-      }
-
-      current = {
-        fileId: file.id,
-        path: file.path,
-        hunkIndex: line.hunkIndex,
-        line: {
-          offset: line.offset,
-          matchRange,
-          lineNumber: line.lineNumber,
-          side: line.side,
-          text: line.text,
-        },
-        count: 1,
-      };
-      targets.push(current);
     }
   }
 
-  return targets;
+  return targets.sort((a, b) => compareRanks(a.rank, b.rank));
 }
 
 /**
  * Build the diff marks for one file's matches, in source coordinates.
  *
- * Mark every occurrence, but give only the first range of the active target's
- * quoted line the `"current"` tone. Stepping stays hunk-granular, so later ranges
- * on the landed line keep the ordinary `"match"` tone.
+ * Mark every occurrence, and give only the active target's own range the
+ * `"current"` tone.
  */
 export function collectFileMatchMarks(
   file: ExtensionDiffFile,
   locate: (line: string) => MatchRange[],
-  currentTarget: { fileId: string; hunkIndex: number; lineOffset: number } | null,
+  currentTarget: {
+    fileId: string;
+    hunkIndex: number;
+    lineOffset: number;
+    matchStart: number;
+  } | null,
 ): ExtensionLineHighlight[] {
   if (typeof file.patch !== "string" || file.patch.length === 0) {
     return [];
@@ -264,23 +320,17 @@ export function collectFileMatchMarks(
       currentTarget.fileId === file.id &&
       currentTarget.hunkIndex === line.hunkIndex &&
       currentTarget.lineOffset === line.offset;
-    for (const [index, range] of ranges.entries()) {
+    for (const range of ranges) {
       marks.push({
         side: line.side,
         line: line.lineNumber,
         range,
-        tone: isCurrent && index === 0 ? "current" : "match",
+        tone: isCurrent && range[0] === currentTarget.matchStart ? "current" : "match",
       });
     }
   }
 
   return marks;
-}
-
-/** Where the review is pointing, as the search compares positions. */
-export interface SearchPosition {
-  fileId: string | null;
-  hunkIndex: number | null;
 }
 
 /** The result of stepping through the target list. */
@@ -293,72 +343,40 @@ export interface SearchStep {
 /**
  * Find the next target in `direction`, wrapping like `less` does.
  *
- * Both directions are strict: a repeat never answers with the hunk the user is
- * already on, so `n` always moves. When the current hunk is the only match, the
- * wrap brings it back around — which is why wrapping is unconditional here
- * rather than a setting.
+ * `from` is a rank prefix: a hunk `[file, hunk]`, a line `[file, hunk, ...key]`, or
+ * an exact target rank. Targets compare by their rank truncated to that length, so
+ * both directions are strict at the chosen granularity and a repeat never answers
+ * with the position it started from. When nothing lies beyond, the wrap brings the
+ * list back around — which is why wrapping is unconditional rather than a setting.
  */
 export function stepToTarget(
   targets: readonly SearchTarget[],
-  fileOrder: ReadonlyMap<string, number>,
-  from: SearchPosition,
+  from: readonly number[] | null,
   direction: SearchDirection,
 ): SearchStep | null {
   if (targets.length === 0) {
     return null;
   }
 
-  const current = positionRank(fileOrder, from);
-  if (current === null) {
+  if (from === null) {
     // No usable selection: start at whichever end the direction implies.
     return { index: direction === "forward" ? 0 : targets.length - 1, wrapped: false };
   }
 
+  const compareToFrom = (target: SearchTarget) =>
+    compareRanks(target.rank.slice(0, from.length), from);
+
   if (direction === "forward") {
-    const index = targets.findIndex((target) => targetRank(fileOrder, target) > current);
+    const index = targets.findIndex((target) => compareToFrom(target) > 0);
     return index === -1 ? { index: 0, wrapped: true } : { index, wrapped: false };
   }
 
   for (let index = targets.length - 1; index >= 0; index -= 1) {
     const target = targets[index];
-    if (target && targetRank(fileOrder, target) < current) {
+    if (target && compareToFrom(target) < 0) {
       return { index, wrapped: false };
     }
   }
 
   return { index: targets.length - 1, wrapped: true };
-}
-
-/** Order files by their changeset position so positions compare as one number. */
-export function buildFileOrder(files: readonly ExtensionDiffFile[]): Map<string, number> {
-  return new Map(files.map((file, index) => [file.id, index]));
-}
-
-/**
- * Collapse a (file, hunk) pair into one comparable rank.
- *
- * Hunk counts per file are unbounded in principle, so the rank is a pair
- * flattened with a large stride rather than an arithmetic trick — the stride is
- * only ever compared, never decoded.
- */
-const HUNK_RANK_STRIDE = 1_000_000;
-
-function targetRank(fileOrder: ReadonlyMap<string, number>, target: SearchTarget) {
-  const file = fileOrder.get(target.fileId) ?? 0;
-  return file * HUNK_RANK_STRIDE + target.hunkIndex;
-}
-
-function positionRank(fileOrder: ReadonlyMap<string, number>, position: SearchPosition) {
-  if (position.fileId === null) {
-    return null;
-  }
-
-  const file = fileOrder.get(position.fileId);
-  if (file === undefined) {
-    return null;
-  }
-
-  // A file with no selected hunk ranks just before its first hunk, so a forward
-  // search from a freshly opened file finds that file's own first match.
-  return file * HUNK_RANK_STRIDE + (position.hunkIndex ?? -1);
 }

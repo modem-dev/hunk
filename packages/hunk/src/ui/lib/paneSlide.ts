@@ -57,7 +57,7 @@ function offscreenPane(planned: PlannedPane, layout: ExtensionPaneLayoutPlan): P
   return {
     ...planned,
     bounds: translate(planned.bounds),
-    ...(planned.divider ? { divider: translate(planned.divider) } : {}),
+    divider: translate(planned.divider),
   };
 }
 
@@ -104,10 +104,9 @@ export function paneLayoutGeometryEqual(
     return (
       other !== undefined &&
       planned.pane.key === other.pane.key &&
+      planned.resizable === other.resizable &&
       boundsEqual(planned.bounds, other.bounds) &&
-      (planned.divider === undefined
-        ? other.divider === undefined
-        : other.divider !== undefined && boundsEqual(planned.divider, other.divider))
+      boundsEqual(planned.divider, other.divider)
     );
   });
 }
@@ -137,15 +136,13 @@ export function interpolatePaneLayout(
       (fromPane && key === transitioningPaneKey ? offscreenPane(fromPane, from) : fromPane);
     if (!start || !end) return [];
 
-    const divider =
-      start.divider && end.divider
-        ? interpolateBounds(start.divider, end.divider, boundedProgress)
-        : end.divider;
+    const divider = interpolateBounds(start.divider, end.divider, boundedProgress);
     return [
       {
         pane: end.pane,
         bounds: interpolateBounds(start.bounds, end.bounds, boundedProgress),
-        ...(divider ? { divider } : {}),
+        divider,
+        resizable: end.resizable,
       },
     ];
   });

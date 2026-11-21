@@ -124,6 +124,21 @@ describe("Git history production", () => {
     expect(parseGitHistory(text, new Map(), true)[0]!.parentRevisionIds).toEqual(["b".repeat(40)]);
   });
 
+  test("spells UTC author dates the same across Git versions", () => {
+    const record = (authoredAt: string) =>
+      ["a".repeat(40), "aaaaaaaa", "", "Ada", "ada@example.com", authoredAt, "Root", ""].join("\0");
+
+    expect(parseGitHistory(record("2026-01-01T00:00:00+00:00"))[0]!.authoredAt).toBe(
+      "2026-01-01T00:00:00Z",
+    );
+    expect(parseGitHistory(record("2026-01-01T00:00:00Z"))[0]!.authoredAt).toBe(
+      "2026-01-01T00:00:00Z",
+    );
+    expect(parseGitHistory(record("2026-01-01T05:30:00+05:30"))[0]!.authoredAt).toBe(
+      "2026-01-01T05:30:00+05:30",
+    );
+  });
+
   test("owns first-parent merge and root review semantics", async () => {
     const history = createGitVcsAdapter().history!;
     const root = {

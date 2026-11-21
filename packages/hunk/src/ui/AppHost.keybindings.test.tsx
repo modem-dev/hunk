@@ -239,13 +239,13 @@ describe("user keybindings", () => {
         setup.mockInput.pressKey("n", { ctrl: true });
       });
       await flush(setup);
-      expect(setup.captureCharFrame()).toContain("›  andromeeda");
+      expect(setup.captureCharFrame()).toContain("›  github-dark-dimmed");
 
       await act(async () => {
         setup.mockInput.pressKey("p", { ctrl: true });
       });
       await flush(setup);
-      expect(setup.captureCharFrame()).toContain("›  terminal");
+      expect(setup.captureCharFrame()).toContain("›  github-dark-default");
     });
   });
 

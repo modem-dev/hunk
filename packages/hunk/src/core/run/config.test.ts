@@ -8,6 +8,7 @@ import {
   diffPersistedViewPreferences,
   resolveConfiguredCliInput,
   resolveExtensionBootstrapConfig,
+  resolveFeedbackEnabled,
   saveGlobalViewPreferences,
   saveViewPreferencesPromptPreference,
 } from "./config";
@@ -226,27 +227,6 @@ describe("config resolution", () => {
       transparentBackground: true,
       colorMoved: true,
     });
-  });
-
-  test("keeps fast highlighting launch-only instead of reading it from config", () => {
-    const home = createTempDir("hunk-config-fast-home-");
-    const repo = createTempDir("hunk-config-fast-repo-");
-    createRepo(repo);
-
-    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
-    writeFileSync(join(home, ".config", "hunk", "config.toml"), "fast = true");
-
-    const configured = resolveConfiguredCliInput(createPatchPagerInput(), {
-      cwd: repo,
-      env: { HOME: home },
-    });
-    const launched = resolveConfiguredCliInput(createPatchPagerInput({ fast: true }), {
-      cwd: repo,
-      env: { HOME: home },
-    });
-
-    expect(configured.input.options.fast).toBe(false);
-    expect(launched.input.options.fast).toBe(true);
   });
 
   test("reads the current-line style from config and lets CLI flags outrank it", () => {
@@ -920,7 +900,7 @@ describe("config resolution", () => {
     expect(configured.input.options.transparentBackground).toBe(true);
   });
 
-  test("defaults unspecified themes to terminal, including piped pager-style patch input", () => {
+  test("defaults unspecified themes to GitHub Dark Default, including piped pager-style patch input", () => {
     const home = createTempDir("hunk-config-home-");
     const cwd = createTempDir("hunk-config-cwd-");
 
@@ -931,7 +911,7 @@ describe("config resolution", () => {
 
     expect(resolved.repoConfigPath).toBeUndefined();
     expect(resolved.viewPreferencesConfigPath).toBe(join(home, ".config", "hunk", "config.toml"));
-    expect(resolved.input.options.theme).toBe("terminal");
+    expect(resolved.input.options.theme).toBe("github-dark-default");
   });
 
   test("command-specific config sections also apply to show mode", () => {
@@ -1288,7 +1268,7 @@ describe("config resolution", () => {
     ]);
   });
 
-  test("loadAppBootstrap exposes terminal when no theme is configured", async () => {
+  test("loadAppBootstrap exposes GitHub Dark Default when no theme is configured", async () => {
     const home = createTempDir("hunk-config-home-");
     const repo = createTempDir("hunk-config-repo-");
     createRepo(repo);
@@ -1309,7 +1289,7 @@ describe("config resolution", () => {
     );
     const bootstrap = await loadAppBootstrap(resolved.input);
 
-    expect(bootstrap.initialTheme).toBe("terminal");
+    expect(bootstrap.initialTheme).toBe("github-dark-default");
   });
 });
 
@@ -1423,6 +1403,31 @@ describe("extension configuration", () => {
     expect(
       resolved.startupNotices?.some((notice) => notice.message.includes("hunk.app.refresh")),
     ).toBe(true);
+  });
+
+  test("lets either config layer turn feedback off but neither force it on", () => {
+    const home = createTempDir("hunk-config-home-");
+    const repo = createTempDir("hunk-config-repo-");
+    createRepo(repo);
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    mkdirSync(join(repo, ".hunk"), { recursive: true });
+    const userConfig = join(home, ".config", "hunk", "config.toml");
+    const repoConfig = join(repo, ".hunk", "config.toml");
+    const resolve = () => resolveFeedbackEnabled({ cwd: repo, env: { HOME: home } });
+
+    expect(resolve()).toBe(true);
+
+    writeFileSync(userConfig, "[feedback]\nenabled = false\n");
+    writeFileSync(repoConfig, "[feedback]\nenabled = true\n");
+    expect(resolve()).toBe(false);
+
+    writeFileSync(userConfig, "[feedback]\nenabled = true\n");
+    writeFileSync(repoConfig, "[feedback]\nenabled = false\n");
+    expect(resolve()).toBe(false);
+    expect(
+      resolveConfiguredCliInput(createPatchPagerInput(), { cwd: repo, env: { HOME: home } })
+        .feedbackEnabled,
+    ).toBe(false);
   });
 
   test("lets repo config disable extensions and --no-extensions win over both layers", () => {

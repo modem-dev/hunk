@@ -117,6 +117,15 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     apiVersion: 6,
   },
   {
+    repo: "babhishek21/hunk-goodies",
+    name: "hunk-goodies",
+    summary:
+      "Marks files as viewed, folds them away, stages files and hunks, and syncs viewed marks with GitHub pull requests.",
+    categories: ["Pane", "File view", "Command"],
+    version: "0.1.1",
+    apiVersion: 32,
+  },
+  {
     repo: "bottercode/hunk-why",
     name: "hunk-why",
     summary:
@@ -133,6 +142,15 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     categories: ["Pane", "Command"],
     version: "0.1.0",
     apiVersion: 30,
+  },
+  {
+    repo: "dorshinar/hunk-checkpoint",
+    name: "hunk-checkpoint",
+    summary:
+      "Runs incremental review rounds: checkpoint the working tree when a review is done, then diff only what the agent changed since.",
+    categories: ["Command"],
+    version: "0.1.0",
+    apiVersion: 28,
   },
   {
     repo: "evantravers/hunk-mark-as-reviewed",
@@ -160,12 +178,13 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     apiVersion: 6,
   },
   {
-    repo: "HackAttack/hunk-starlark",
-    name: "hunk-starlark",
-    summary: "Highlights Bazel, Buck2, and other Starlark files as Python.",
-    categories: ["Language"],
-    version: "1.0.0",
-    apiVersion: 9,
+    repo: "GopinathMR/hunk-workspace",
+    name: "hunk-workspace",
+    summary:
+      "Reviews every changed repo in a folder of git repos as one changeset, with a Repos pane to jump or scope between them.",
+    categories: ["VCS backend", "Pane", "Command"],
+    version: "0.1.0",
+    apiVersion: 31,
   },
   {
     repo: "jacegodk/hunk-viewed",
@@ -248,6 +267,14 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     apiVersion: 6,
   },
   {
+    repo: "prepin/hunk-sort-by-path",
+    name: "hunk-sort-by-path",
+    summary: "Sorts every file in the review by path, untracked files included, in one list.",
+    categories: ["Changeset transform"],
+    version: "0.1.0",
+    apiVersion: 6,
+  },
+  {
     repo: "rschoch/hunk-compact-filenav",
     name: "hunk-compact-filenav",
     summary:
@@ -255,6 +282,24 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     categories: ["Pane", "Command"],
     version: "0.1.0",
     apiVersion: 16,
+  },
+  {
+    repo: "RubenFricke/hunk-glab",
+    name: "hunk-glab",
+    summary:
+      "Reviews GitLab merge requests, commits and comparisons in Hunk from the command line, the way hunk gh reviews GitHub pull requests.",
+    categories: ["Command"],
+    version: "0.1.0",
+    apiVersion: 31,
+  },
+  {
+    repo: "RubenFricke/hunk-viewed",
+    name: "hunk-viewed",
+    summary:
+      "GitHub-style viewed marks: press x to mark a hunk viewed, X for the whole file, fold what you have seen, and see progress toward what is left.",
+    categories: ["File view", "Line highlighter", "Command"],
+    version: "0.3.1",
+    apiVersion: 31,
   },
   {
     repo: "sadick254/hunk-commit-log",
@@ -275,6 +320,15 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     apiVersion: 1,
   },
   {
+    repo: "tverlaan/hunk-branch-toggle",
+    name: "hunk-branch-toggle",
+    summary:
+      "Toggles a review between all uncommitted changes and the full branch diff against a chosen base branch.",
+    categories: ["Command"],
+    version: "0.1.0",
+    apiVersion: 26,
+  },
+  {
     repo: "victor-software-house/hunk-history",
     name: "hunk-history",
     summary:
@@ -282,6 +336,15 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     categories: ["Pane", "Command", "Changeset transform"],
     version: "0.0.4",
     apiVersion: 16,
+  },
+  {
+    repo: "prepin/hunk-go-review-filter",
+    name: "hunk-go-review-filter",
+    summary:
+      "Hides generated Go code, API artifacts, go.sum, and test files from a review with one toggle (Alt+G).",
+    categories: ["Command", "Changeset transform"],
+    version: "0.1.0",
+    apiVersion: 18,
   },
 ];
 

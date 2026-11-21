@@ -55,6 +55,8 @@ export function renderAgentSkillStub(frontmatter: SkillFrontmatter) {
     `hunk skill show ${frontmatter.name}`,
     "```",
     "",
+    "If the installed Hunk version is older than 0.24, ask the user to upgrade to Hunk 0.24.x or newer before continuing.",
+    "",
     "If `hunk` is not on PATH, ask the user to install Hunk first: https://hunk.dev/docs/start/install/",
     "",
   ].join("\n");

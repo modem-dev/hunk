@@ -11,13 +11,17 @@ import {
 import { reviewNoteWithinSizeLimit } from "../../packages/hunk/src/core/review/noteSize";
 import { createInitialReviewState } from "../../packages/hunk/src/core/review/state";
 import { createReviewStore } from "../../packages/hunk/src/core/review/store";
+import { noteBodyIssue } from "../../packages/hunk/src/web/notes/noteActions";
 import { createTestDiffFile } from "../helpers/diff-helpers";
 import { createTestReviewDocument } from "../helpers/review-store-helpers";
 import {
+  REVIEW_ACTOR_POLICY_CONSUMERS,
   REVIEW_EVENT_CONSUMERS,
   REVIEW_GEOMETRY_CONSUMERS,
   REVIEW_NAVIGATION_CONSUMERS,
   REVIEW_ORDERING_CONSUMERS,
+  REVIEW_OVERVIEW_CONSUMERS,
+  REVIEW_SHARED_STATE_CONSUMERS,
   REVIEW_SNAPSHOT_CONSUMERS,
   REVIEW_WIRE_CONSUMERS,
 } from "./consumers";
@@ -26,6 +30,9 @@ import { REVIEW_GEOMETRY_FIXTURES } from "./geometryFixtures";
 import { REVIEW_NAVIGATION_FIXTURES } from "./navigationFixtures";
 import { REVIEW_NOTE_BODY_FIXTURES } from "./noteBodies";
 import { REVIEW_NOTE_SIZE_FIXTURES } from "./noteSize";
+import { REVIEW_OVERVIEW_FIXTURES } from "./overviewFixtures";
+import { REVIEW_SHARED_STATE_FIXTURES } from "./sharedStateFixtures";
+import { REVIEW_ACTOR_POLICY_FIXTURES } from "./actorPolicyFixtures";
 import { REVIEW_SNAPSHOT_FIXTURES } from "./snapshotFixtures";
 import {
   REVIEW_PRODUCER_ORDER_FIXTURES,
@@ -52,6 +59,8 @@ const REQUIRED_FINDINGS = [
   "C4",
   "D1",
   "EXT1",
+  "G1",
+  "G2",
 ];
 
 describe("review conformance corpus", () => {
@@ -60,14 +69,18 @@ describe("review conformance corpus", () => {
       "core review model",
       "terminal render planning",
       "review producer",
+      "browser file projection",
     ]);
     expect(REVIEW_NAVIGATION_CONSUMERS.map((consumer) => consumer.name)).toEqual([
       "core intent planner",
       "terminal review",
+      "review session host",
+      "browser page store",
     ]);
     expect(REVIEW_ORDERING_CONSUMERS.map((consumer) => consumer.name)).toEqual([
       "core publication ordering",
       "broker review mirror",
+      "browser client mirror",
     ]);
     expect(REVIEW_SNAPSHOT_CONSUMERS.map((consumer) => consumer.name)).toEqual([
       "extension review snapshot",
@@ -77,6 +90,21 @@ describe("review conformance corpus", () => {
     ]);
     expect(REVIEW_EVENT_CONSUMERS.map((consumer) => consumer.name)).toEqual([
       "review event protocol",
+      "browser review HTTP surface",
+      "browser client event reader",
+    ]);
+    expect(REVIEW_SHARED_STATE_CONSUMERS.map((consumer) => consumer.name)).toEqual([
+      "review producer",
+      "broker shared-state read",
+      "browser review HTTP surface",
+      "browser client shared-state mirror",
+    ]);
+    expect(REVIEW_OVERVIEW_CONSUMERS.map((consumer) => consumer.name)).toEqual([
+      "core overview selector",
+      "browser overview tab",
+    ]);
+    expect(REVIEW_ACTOR_POLICY_CONSUMERS.map((consumer) => consumer.name)).toEqual([
+      "producer action handler",
       "browser review HTTP surface",
     ]);
   });
@@ -90,12 +118,23 @@ describe("review conformance corpus", () => {
       ...REVIEW_WIRE_FIXTURES.flatMap((fixture) => fixture.findings),
       ...REVIEW_EVENT_FIXTURES.flatMap((fixture) => fixture.findings),
       ...REVIEW_SNAPSHOT_FIXTURES.flatMap((fixture) => fixture.findings),
+      ...REVIEW_ACTOR_POLICY_FIXTURES.flatMap((fixture) => fixture.findings),
       ...(REVIEW_NOTE_SIZE_FIXTURES.length > 0 ? ["D1"] : []),
     ]);
 
     expect(REQUIRED_FINDINGS.filter((finding) => !covered.has(finding))).toEqual([]);
   });
 });
+
+for (const consumer of REVIEW_OVERVIEW_CONSUMERS) {
+  describe(`review overview conformance: ${consumer.name}`, () => {
+    for (const fixture of REVIEW_OVERVIEW_FIXTURES) {
+      test(`${fixture.id} (${fixture.findings.join(", ")})`, () => {
+        expect(consumer.project(fixture)).toEqual(fixture.expected);
+      });
+    }
+  });
+}
 
 for (const consumer of REVIEW_NAVIGATION_CONSUMERS) {
   describe(`review navigation conformance: ${consumer.name}`, () => {
@@ -112,6 +151,26 @@ for (const consumer of REVIEW_GEOMETRY_CONSUMERS) {
     for (const fixture of REVIEW_GEOMETRY_FIXTURES) {
       test(`${fixture.id} (${fixture.findings.join(", ")})`, () => {
         expect(consumer.project(fixture)).toEqual(fixture.expected);
+      });
+    }
+  });
+}
+
+for (const consumer of REVIEW_ACTOR_POLICY_CONSUMERS) {
+  describe(`review actor-policy conformance: ${consumer.name}`, () => {
+    for (const fixture of REVIEW_ACTOR_POLICY_FIXTURES) {
+      test(`${fixture.id} (${fixture.findings.join(", ")})`, async () => {
+        expect(await consumer.project(fixture)).toEqual(fixture.expected);
+      });
+    }
+  });
+}
+
+for (const consumer of REVIEW_SHARED_STATE_CONSUMERS) {
+  describe(`review shared-state conformance: ${consumer.name}`, () => {
+    for (const fixture of REVIEW_SHARED_STATE_FIXTURES) {
+      test(`${fixture.id} (${fixture.findings.join(", ")})`, async () => {
+        expect(await consumer.project(fixture)).toEqual(fixture.expected);
       });
     }
   });
@@ -156,6 +215,18 @@ describe("review conformance: empty note bodies", () => {
       expect(plan.actions.map((action) => action.type)).toEqual([
         fixture.blank ? "draft/cancel" : "draft/save",
       ]);
+    });
+  }
+});
+
+// The browser composer refuses a blank body before sending, with the session's own code; it
+// joins the same corpus so its answer can never drift from the predicate the session applies.
+describe("review conformance: browser composer note bodies", () => {
+  for (const fixture of REVIEW_NOTE_BODY_FIXTURES) {
+    test(`${fixture.id} ${fixture.blank ? "is refused as blank" : "may be sent"}`, () => {
+      expect(noteBodyIssue({ fileKey: "file:abc", body: fixture.body }) === "blank-note").toBe(
+        fixture.blank,
+      );
     });
   }
 });

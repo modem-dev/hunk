@@ -13,7 +13,7 @@ describe("bundled core extension registry", () => {
       {
         name: "gh",
         summary: "Review GitHub pull requests, commits, and comparisons",
-        usage: "<pr|commit|compare> <target> [--repo <owner/repo>]",
+        usage: "<pr|commit|compare> <target> [--repo <[host/]owner/repo>]",
       },
     ]);
     expect(loaded.registry.cliCommands[0]?.extensionId).toBe("hunk");

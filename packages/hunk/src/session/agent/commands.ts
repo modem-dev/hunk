@@ -32,6 +32,7 @@ import {
   formatListOutput,
   formatNavigationOutput,
   formatNoteListOutput,
+  formatOpenReviewOutput,
   formatReloadOutput,
   formatRemoveCommentOutput,
   formatReviewOutput,
@@ -55,6 +56,7 @@ const REQUIRED_ACTION_BY_COMMAND: Record<SessionCommandInput["action"], SessionD
   "comment-clear": "comment-clear",
   "highlight-add": "highlight-add",
   "highlight-clear": "highlight-clear",
+  open: "open",
 };
 
 export type HunkDaemonCliClient = HunkSessionCliClient;
@@ -307,6 +309,21 @@ export async function runSessionCommand(input: SessionCommandInput) {
       });
       return renderOutput(input.output, { result }, () =>
         formatClearHighlightsOutput(input.selector, result),
+      );
+    }
+    case "open": {
+      const result = await client.openReview({
+        ...input,
+        selector: normalizedSelector!,
+      });
+      if (input.output === "text" && input.open && !result.opened) {
+        // The session reports the failure without its URL; point at the flag that prints it.
+        throw new Error(
+          `${result.failure ?? "The session could not open a browser."} Run \`hunk session open --no-open\` to print the review URL instead.`,
+        );
+      }
+      return renderOutput(input.output, { result }, () =>
+        formatOpenReviewOutput(input.selector, result),
       );
     }
   }

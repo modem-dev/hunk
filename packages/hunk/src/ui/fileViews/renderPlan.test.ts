@@ -41,7 +41,7 @@ describe("file-view render plan", () => {
     expect(plan.rows.map((row) => `${row.kind}:${row.key}`)).toEqual([
       "file-view-row:file-view:old-summary",
       "file-view-row:file-view:new-summary",
-      "inline-note:inline-note:both:file-view:new-summary:0",
+      "inline-note:inline-note:both:file-view:new-summary",
     ]);
     expect(plan.rows[2]).toMatchObject({
       kind: "inline-note",

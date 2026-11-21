@@ -146,6 +146,14 @@ describe("responsive app", () => {
     expect(frame).not.toContain("packages/visual-studio-code-.");
   });
 
+  test("the menu bar compacts labels before truncating the review title", async () => {
+    const frame = await captureFrameForBootstrap(createBootstrap(), 70, 12);
+
+    expect(frame).toContain("File  View  Nav  Agent  ?");
+    expect(frame).toContain("repo working tree  2 files  +3  -2");
+    expect(frame).not.toContain("Navigate");
+  });
+
   test("View menu sidebar checkmark follows actual medium-viewport visibility", async () => {
     const setup = await testRender(<AppHost bootstrap={createBootstrap("auto")} />, {
       width: 180,
@@ -273,6 +281,43 @@ describe("responsive app", () => {
     expect(below).not.toMatch(/alpha = 1;.*alpha = 2;/);
     expect(at).toMatch(/alpha = 1;.*alpha = 2;/);
   });
+
+  for (const layout of ["split", "unified"] as const) {
+    test(`fixed ${layout} nowrap resizes preserve stream rows while repainting live columns`, async () => {
+      const bootstrap = createBootstrap(layout);
+      const setup = await testRender(<AppHost bootstrap={bootstrap} />, { width: 140, height: 24 });
+      try {
+        await act(async () => {
+          await setup.renderOnce();
+        });
+        const first = setup.captureCharFrame();
+        for (const width of [100, 150, 110, 140, 100, 140]) {
+          await act(async () => {
+            setup.resize(width, 24);
+            await setup.renderOnce();
+          });
+          const frame = setup.captureCharFrame();
+          expect(frame.indexOf("alpha.ts")).toBeLessThan(frame.indexOf("beta.ts"));
+          expect(frame).toContain("alpha = 2");
+          expect(frame).toContain("betaValue = 1");
+          expect(/▌.*▌/.test(frame)).toBe(layout === "split");
+          // Widths stay below the automatic sidebar cutoff, isolating code-column repainting.
+          const row = frame.split("\n").find((line) => line.includes("alpha = 2"))!;
+          if (layout === "split") {
+            const initialRow = first.split("\n").find((line) => line.includes("alpha = 2"))!;
+            expect(row.indexOf("alpha = 2") - initialRow.indexOf("alpha = 2")).toBe(
+              (width - 140) / 2,
+            );
+          }
+          if (width === 140) expect(frame).toBe(first);
+        }
+      } finally {
+        await act(async () => {
+          setup.renderer.destroy();
+        });
+      }
+    });
+  }
 
   test("pager mode stays responsive while hiding app chrome", async () => {
     const wide = await captureFrameForBootstrap(createBootstrap("auto", true), 220);

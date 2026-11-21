@@ -65,6 +65,7 @@ async function renderController(initial: HarnessState) {
       () =>
         buildExtensionReviewSelection({
           files: live.current.visibleFileViews,
+          layout: "unified",
           selectedFileId: live.current.state.selectedFileId,
           selectedHunkIndex: 0,
           lineCursor: null,

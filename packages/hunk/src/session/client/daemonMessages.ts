@@ -29,5 +29,6 @@ export const HUNK_DAEMON_CLIENT_NEWER_MESSAGE = `Session daemon is ${HUNK_BUILD_
 export const HUNK_DAEMON_CLIENT_OLDER_MESSAGE =
   "Session daemon is newer; relaunch this window (notes are lost).";
 
-/** Covers a refused registration after the daemon accepted the window's hello. */
-export const HUNK_DAEMON_REGISTRATION_REJECTED_MESSAGE = `Session daemon rejected this window. Run ${HUNK_DAEMON_RESTART_COMMAND}.`;
+/** Suggests reducing a refused review without implying restart can bypass payload limits. */
+export const HUNK_DAEMON_REGISTRATION_REJECTED_MESSAGE =
+  "Session daemon rejected this review. Try a smaller review.";

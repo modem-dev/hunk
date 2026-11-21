@@ -21,8 +21,8 @@ API object and registry collection (`packages/hunk/src/extensions/runExtension.t
   `packages/hunk/src/extensions/default/vcs/index.ts`; the app composition root
   (`app/vcsCatalog.ts`) loads them synchronously before config resolution, so backends exist
   without making core import the extension host. `default/ui/index.ts` is deliberately not part of
-  that list: the UI loads its bundled files pane, delegated review-info panes, and content search
-  registrations through `runExtensionFactory`, once per process. The private `packages/hunk-gh`
+  that list: the UI loads its bundled files pane, delegated review-info panes, content search, and
+  image preview registrations through `runExtensionFactory`, once per process. The private `packages/hunk-gh`
   workspace registers `hunk gh` through `default/core/index.ts` into each session-owned extension
   registry, so a delegated temporary patch follows the same shutdown lifetime as that session.
 
@@ -123,11 +123,11 @@ through the ordinary planner. Delegated reviews reconcile the already loaded
 candidate/config prefix and hand the same registry to `AppBootstrap`, so factories
 are not rerun merely for the handoff. A delegated patch may attach a validated, bounded
 provider-neutral review descriptor. Startup carries it beside the input on `AppBootstrap`; it does
-not enter the changeset transform pipeline or `ReviewDocumentV1`. The host preserves it only while
+not enter the changeset transform pipeline or `ReviewDocument`. The host preserves it only while
 the same file-backed patch identity reloads and clears it when a reload selects another input.
 Session registration projects the same optional bounded descriptor into list, selected-context, and
 review exports through strict app-wire validation. It remains registration metadata rather than a
-`ReviewDocumentV1` field and does not imply any provider or remote-reload capability. Headless
+`ReviewDocument` field and does not imply any provider or remote-reload capability. Headless
 delegation retires before executing the built-in plan. Terminal probing occurs only after
 the handler releases I/O.
 
@@ -228,13 +228,15 @@ adaptation there supports the public OpenTUI and extension current-line surfaces
 runs extension code, so highlights are interactive-only.
 
 Agent attention marks (`hunk session highlight add` / `clear`) join this same
-pipeline rather than growing a second one: `useTerminalReview.ts` validates
-each daemon-pushed mark with the same `validate.ts` contract and caps, holds
-them per file, and `packages/hunk/src/ui/highlights/merge.ts` appends them after extension
+pipeline rather than growing a second one: `ReviewSessionHost`
+(`packages/hunk/src/app/review/reviewSessionHost.ts`) validates each daemon-pushed mark with the
+same `packages/hunk/src/core/highlights/validate.ts` contract and caps and holds them per file,
+`useTerminalReview.ts` subscribes to them, and `packages/hunk/src/ui/highlights/merge.ts` appends
+them after extension
 marks in the one map `DiffPane` paints from — so agent marks share paint,
 contrast, and geometry guarantees, and win where ranges overlap. Unlike
 extension marks, nothing re-derives agent marks after a reload, so
-`packages/hunk/src/ui/highlights/reconcile.ts` carries them across a document replacement only
+`packages/hunk/src/core/highlights/reconcile.ts` carries them across a document replacement only
 for files whose `contentIdentity` is unchanged — those still show the same
 characters — and drops the rest. Line-target `session navigate` reuses the same
 `revealLine` landing policy `ctx.navigation.revealLine` gets.

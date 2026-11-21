@@ -146,7 +146,7 @@ describe("PTY chrome", () => {
       await session.waitForText(/line60/, { timeout: 15_000 });
 
       await harness.pressAndWaitForText(session, "t", /Theme selector/, { timeout: 5_000 });
-      await harness.pressAndWaitForText(session, "down", /›\s+andromeeda/, {
+      await harness.pressAndWaitForText(session, "down", /›\s+github-dark-dimmed/, {
         timeout: 5_000,
       });
       await harness.pressAndWaitForSnapshot(
@@ -159,8 +159,8 @@ describe("PTY chrome", () => {
       const prompt = await harness.pressAndWaitForText(session, "q", /Save view preferences\?/, {
         timeout: 5_000,
       });
-      expect(prompt).toContain('- theme = "terminal"');
-      expect(prompt).toContain('+ theme = "andromeeda"');
+      expect(prompt).toContain('- theme = "github-dark-default"');
+      expect(prompt).toContain('+ theme = "github-dark-dimmed"');
       expect(prompt).toContain("enter/s save");
 
       await session.click(/enter\/s save/);
@@ -173,7 +173,7 @@ describe("PTY chrome", () => {
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
 
-      expect(readFileSync(configPath, "utf8")).toContain('theme = "andromeeda"');
+      expect(readFileSync(configPath, "utf8")).toContain('theme = "github-dark-dimmed"');
     } finally {
       session.close();
       rmSync(configHome, { recursive: true, force: true });
@@ -212,6 +212,34 @@ describe("PTY chrome", () => {
       expect(filtered).toContain("beta");
       expect(filtered).toContain("betaValue");
       expect(filtered).not.toContain("add = true");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("text coalesced with Tab fills the filter instead of running shortcuts", async () => {
+    const fixture = harness.createTwoFileRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 220,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+      await harness.ensureKeyboardIsLive(session);
+
+      // One chunk, as a paste or a slow remote terminal delivers it; `t` is the theme shortcut.
+      session.writeRaw("\tbeta");
+      const filtered = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("filter: beta") && !text.includes("alpha.ts"),
+        5_000,
+      );
+
+      expect(filtered).toContain("betaValue");
+      expect(filtered).not.toContain("Theme selector");
     } finally {
       session.close();
     }

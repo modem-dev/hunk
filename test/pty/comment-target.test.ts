@@ -23,7 +23,18 @@ describe("PTY comment target", () => {
     // and the draft opens a line or two (or a whole gap) away from the clicked line.
     const fixture = harness.createMultiHunkFilePair();
     const session = await harness.launchHunk({
-      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "split"],
+      // Fixed wheel steps make equal event counts a true viewport roundtrip; auto
+      // acceleration depends on cadence and can leave the viewport one row short.
+      args: [
+        "diff",
+        "--files",
+        fixture.before,
+        fixture.after,
+        "--mode",
+        "split",
+        "--wheel-scroll-lines",
+        "1",
+      ],
       cols: 120,
       rows: 16,
     });
@@ -45,6 +56,7 @@ describe("PTY comment target", () => {
       );
       const clickedPaint = rowCellBackgrounds(session, 6).slice(12, 40);
       expect(clickedPaint).not.toEqual(beforeClick);
+      const clickedText = await session.text({ immediate: true });
 
       // Fidget: wheel down 3, then up 3 — net zero viewport movement.
       for (let i = 0; i < 3; i += 1) {
@@ -59,6 +71,15 @@ describe("PTY comment target", () => {
 
       // The viewport is back where it started with no deliberate cursor move in
       // between. The highlight must still sit on line2 — and so must the draft.
+      // A quiet PTY can still precede the deferred viewport/cursor commit. Wait for the
+      // original viewport and its paint, rather than reading an intermediate scroll frame.
+      await harness.waitForSnapshot(
+        session,
+        (text) =>
+          text === clickedText &&
+          JSON.stringify(rowCellBackgrounds(session, 6).slice(12, 40)) ===
+            JSON.stringify(clickedPaint),
+      );
       expect(rowCellBackgrounds(session, 6).slice(12, 40)).toEqual(clickedPaint);
 
       await session.press("c");

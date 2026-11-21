@@ -1,4 +1,8 @@
-import { type MouseEvent as TuiMouseEvent, type ScrollBoxRenderable } from "@opentui/core";
+import {
+  MouseButton,
+  type MouseEvent as TuiMouseEvent,
+  type ScrollBoxRenderable,
+} from "@opentui/core";
 import { useRenderer } from "@opentui/react";
 import {
   useCallback,
@@ -18,8 +22,9 @@ import {
 } from "../../../core/run/wheelScrollLines";
 import type { DiffFile } from "../../../core/changeset/model";
 import type { CursorLine, LayoutMode } from "../../../core/run/commandInputs";
-import type { ReviewNoteTargetV1 } from "../../../core/review/types";
+import type { ReviewNoteTarget } from "../../../core/review/types";
 import type { AgentAnnotation } from "../../../extension-api/types";
+import { reviewNoteSource } from "../../../core/review/annotations";
 import { resolveReviewRevealNoteId } from "../../../core/review/selectors";
 import {
   reviewNoteAnchorLine,
@@ -35,11 +40,7 @@ import {
   storedReviewNoteTarget,
   type DraftReviewNote,
 } from "../../lib/reviewNoteMapping";
-import {
-  createVisibleAgentNote,
-  reviewNoteSource,
-  type VisibleAgentNote,
-} from "../../lib/agentAnnotations";
+import { createVisibleAgentNote, type VisibleAgentNote } from "../../lib/agentAnnotations";
 import {
   computeRapidScrollOverscanRows,
   RAPID_SCROLL_OVERSCAN_IDLE_MS,
@@ -124,7 +125,7 @@ export type { ReviewSelectionActionsHandle } from "./useDiffSelectionController"
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
 
 type StartUserNoteAtHunk = {
-  bivarianceHack(fileId: string, hunkIndex: number, target?: ReviewNoteTargetV1): void;
+  bivarianceHack(fileId: string, hunkIndex: number, target?: ReviewNoteTarget): void;
 }["bivarianceHack"];
 
 /** Grant saved-note card actions from semantic ownership rather than presentation labels. */
@@ -320,6 +321,7 @@ export function DiffPane({
   copyDecorations = false,
   screenTop = 0,
   showTopChrome,
+  showTopBorder,
   skipInitialIntermediateRender = false,
   showAgentNotes,
   showLineNumbers,
@@ -359,6 +361,7 @@ export function DiffPane({
   onFocusDraftNote,
   onCopyFeedback,
   onCopySelectionText,
+  onActivateSurface,
   onFileViewRowFailure,
   onScrollCodeHorizontally = () => {},
   onSelectFile,
@@ -410,6 +413,8 @@ export function DiffPane({
   copyDecorations?: boolean;
   screenTop?: number;
   showTopChrome?: boolean;
+  /** Draw the top rule; hosts disable it when a planned pane divider already owns that edge. */
+  showTopBorder?: boolean;
   /** Avoid clearing another surface when this pane mounts dynamically in the shared renderer. */
   skipInitialIntermediateRender?: boolean;
   showAgentNotes: boolean;
@@ -455,6 +460,7 @@ export function DiffPane({
   onFocusDraftNote?: () => void;
   onCopyFeedback?: (text: string) => void;
   onCopySelectionText?: (text: string) => void | boolean;
+  onActivateSurface?: () => void;
   onFileViewRowFailure?: (failure: FileViewRowFailure) => void;
   onScrollCodeHorizontally?: (delta: number) => void;
   onSelectFile: (fileId: string) => void;
@@ -467,6 +473,7 @@ export function DiffPane({
   onViewportLineCursorChange?: (cursor: LineCursor) => void;
 }) {
   const renderTopChrome = showTopChrome ?? !pagerMode;
+  const renderTopBorder = renderTopChrome && showTopBorder !== false;
   const renderer = useRenderer();
   const mouseWheelScrollAcceleration = useMemo(
     () => createReviewMouseWheelScrollAcceleration(wheelScrollLines),
@@ -530,7 +537,7 @@ export function DiffPane({
   const onStartUserNoteAtHunkRef = useRef(onStartUserNoteAtHunk);
   onStartUserNoteAtHunkRef.current = onStartUserNoteAtHunk;
   const startUserNoteAtHunkCallbacksRef = useRef(
-    new Map<string, (hunkIndex: number, target?: ReviewNoteTargetV1) => void>(),
+    new Map<string, (hunkIndex: number, target?: ReviewNoteTarget) => void>(),
   );
   const startUserNoteAtHunkCallback = useCallback((fileId: string) => {
     let callback = startUserNoteAtHunkCallbacksRef.current.get(fileId);
@@ -1506,7 +1513,7 @@ export function DiffPane({
 
   const {
     actionBarModel: selectionActionBarModel,
-    beginSelection: beginCopySelection,
+    beginSelection,
     clearSelection: clearCopySelection,
     commentOnCommittedSelection,
     copyCommittedSelection,
@@ -1534,6 +1541,12 @@ export function DiffPane({
     selectionCommentKeyLabel,
     selectionCopyKeyLabel,
   });
+
+  /** Activate the review before selection consumes the primary mouse gesture. */
+  const beginCopySelection = (event: TuiMouseEvent) => {
+    if (event.button === MouseButton.LEFT) onActivateSurface?.();
+    beginSelection(event);
+  };
 
   /** Clamp one requested review scroll target against the latest planned content height. */
   const clampReviewScrollTop = useCallback(
@@ -1745,11 +1758,6 @@ export function DiffPane({
   const visibleBodyBoundsByFile = useMemo(() => {
     const previous = previousVisibleBodyBoundsRef.current;
     const next = new Map<string, VisibleBodyBounds>();
-    if (!wrapLines && scrollViewport.height <= 0) {
-      previousVisibleBodyBoundsRef.current = next;
-      return next;
-    }
-
     // Keep this provisional height render-only. Navigation and selection effects must continue to
     // wait for the exact scrollbox viewport represented by scrollViewport.height.
     const hasMeasuredViewport = scrollViewport.height > 0;
@@ -2524,7 +2532,7 @@ export function DiffPane({
       style={{
         width,
         ...(height === undefined ? {} : { height }),
-        border: renderTopChrome ? ["top"] : [],
+        border: renderTopBorder ? ["top"] : [],
         borderColor: theme.border,
         backgroundColor: theme.panel,
         paddingX: 0,
@@ -2532,6 +2540,9 @@ export function DiffPane({
         ...(renderTopChrome
           ? { paddingY: 1 }
           : { paddingTop: 0, paddingBottom: pagerMode ? 0 : 1 }),
+      }}
+      onMouseDown={(event) => {
+        if (event.button === MouseButton.LEFT) onActivateSurface?.();
       }}
       onMouseDragEnd={endCopySelection}
       onMouseUp={endCopySelection}

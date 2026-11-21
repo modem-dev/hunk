@@ -1,8 +1,9 @@
 # Browser review seam audit — prototype duplication findings
 
-> **Current status (2026-09-06; after Phase 4).** Core review semantics, terminal adoption, producer and broker
+> **Current status (2026-11-13; after Phase 4).** Core review semantics, terminal adoption, producer and broker
 > projections, wire protocol, bounded resources, HTTP actions, and SSE have landed. There is no
-> browser client or served review page. Historical prototype locators below may name deleted files;
+> browser client or served review page. Phases 5 and 6 are superseded by
+> [`web-review-plan.md`](web-review-plan.md); open items below name the milestone there that owns them. Historical prototype locators below may name deleted files;
 > each finding's latest status annotation is authoritative.
 
 Companion to `browser-review-rebuild.md`. This is the per-finding work-list behind the plan's
@@ -14,40 +15,48 @@ should delete the copies its primitive replaces and check off the finding here.
 
 ## Run boundary — after Phase 4
 
-Open work and its planned phase:
+Open work and the milestone in [`web-review-plan.md`](web-review-plan.md) that owns it:
 
-- **C3, C5** — the epoch/supersede queue and one reconnect scheduler, both browser-client
-  work (Phase 5). C4 is repaid on the server side; its client half closes with the reader
-  that imports the same module.
+- **C3, C5** — the epoch/supersede queue and one reconnect scheduler landed with the M4
+  transport (`@hunk/session-broker-core/lifecycle`); the app-tier reload queue and the broker
+  client's startup retry remain unconverted (see each finding). C4's client half closed with
+  the same transport.
 - **The event stream needs a `fetch` reader, not `EventSource`.** The capability is
-  presented in a header, which `EventSource` cannot set, so Phase 5's client consumes the
+  presented in a header, which `EventSource` cannot set, so the M4 client consumes the
   stream with `fetch` and a streaming reader. That is also what makes C5's "one reconnect
   scheduler" reachable — there is no built-in reconnect to interleave with.
 - **No replay buffer.** The surface answers any `Last-Event-ID` with a fresh publication
   rather than retained frames. The stream carries no deltas, so a publication _is_ a
-  complete resynchronization and a history would be an optimization; if Phase 5 measures a
+  complete resynchronization and a history would be an optimization; if M4 measures a
   need for one, it is additive.
 - **Browser sites of A, B, C, D** — every finding whose latest annotation still requires a
-  browser consumer remains open: A3–A11; B3–B8 and B10's client; C1 and C2's client; D1's
-  composer, D2 and D5's browser sites, D3's `pierreNoteAnchor`, and D4's
-  `parseCanonicalReviewFile`. B5 still needs its browser source policy. B7 and B8 also retain
-  terminal adoption/behavior work.
-- **E1, E2** — the shared stat-badge formatter, and the product decision about whether the
-  browser mirrors the terminal theme. Both Phase 5; E2 must be decided before its second PR.
-- **F browser bindings** — F1–F3's browser halves (palette, keymap resolution onto DOM
-  events). F4 stays a scope boundary, not work.
-- **G1, G2 policy** — view-option classification and persistence, and the multi-client
-  selection and authorship policy. G2's _wire fields_ are done (see G2); what a receiver
-  should do with an actor tag is the decision, due before Phase 5 PR 2.
+  browser consumer remains open and closes in M4: A3–A11; B3–B8 and B10's client; C1 and C2's
+  client; D2 and D5's browser sites, D3's `pierreNoteAnchor`, and D4's
+  `parseCanonicalReviewFile`. D1's composer site closes in M5, with the composer. B5 still
+  needs its browser source policy. B7 and B8 also retain terminal adoption/behavior work.
+- **E1, E2** — the shared stat-badge formatter landed with the M4 review page (see E1); the
+  theme: the E2 decision is recorded below, the page ships the built-in themes, and the
+  session's resolved theme arrives with M2's presentation defaults.
+- **F browser bindings** — F1–F3's browser halves: keymap resolution onto DOM events (M4) and
+  the palette (M5, landed: it lists the implemented catalog commands and the page's own
+  `hunk.web.*` commands, and help shares `core/run/helpSections.ts` with the terminal). F4 stays a scope boundary, not work, apart from the one allowlisted
+  `review/refresh` action (M2).
+- **G1, G2 policy** — decided 2026-11-13 (see G1 and G2). Their producer-side policy, shared
+  state transport, and presentation defaults land in M2; the headless review host that
+  makes the selection rule observable lands in M1.
 - **G3 adoption** — no address grammar exists on current main. It was removed as dead code and
-  returns beside the first browser deep-link or opener-fragment consumer (Phases 5–6).
+  returns beside the first browser deep-link consumer (M5); the opener preserves URL
+  fragments in M3.
+- **G4 browser adoption** — the browser renders failures from `reviewErrorCatalog` in M5.
 - **G5** — a placement rule for undo, if undo is ever built. Not work.
 
-Remote draft composition now reaches `notes/update-draft` through core and the wire protocol, but
-has no browser caller until Phase 5. HTTP publications contain only a position and resource catalog;
+Remote draft composition reaches `notes/update-draft` through core and the wire protocol, but
+composers are per-client (G2), so the browser saves notes through new direct intents rather than
+the shared draft slot (M2). HTTP publications contain only a position and resource catalog;
 resource reads provide canonical files, patches, and sources, while successful actions acknowledge a
-new position. Phase 5 must define bounded snapshot or delta transport for live selection, filter,
-and note state before a browser can render those changes.
+new position. M2a added the bounded shared-state snapshot (`GET /review-api/<session>/state`)
+for notes, filter, note visibility, agent highlights, the agent reveal, and presentation
+defaults; viewed files join it in M2b. Selection stays per-surface and is not transported.
 
 ## A. Diff geometry
 
@@ -107,9 +116,9 @@ and note state before a browser can render those changes.
 - **A7. File split/unified line totals — web guesses.** `pierreDocument.ts` reconstructs
   `splitLineCount`/`unifiedLineCount` by reducing over hunks; terminal reads Pierre's
   authoritative values. Mis-sizes browser virtualization when the parser counts rows outside
-  hunk spans. Fix: carry both on `ReviewFileV1`.
+  hunk spans. Fix: carry both on `ReviewFile`.
   _Repaid (Phase 1 PR 2, model side)_: `splitLineCount`/`unifiedLineCount` carried on
-  `ReviewFileV1` by `core/review/document.ts`; the browser consumes them in Phase 5.
+  `ReviewFile` by `core/review/document.ts`; the browser consumes them in Phase 5.
 - **A8. Empty-diff explanation — 3 variants with different precedence.** Terminal
   `plannedRowText.ts` `diffMessage` (rename-pure first), web `ReviewStream.tsx` (binary first),
   `staticDiffPager.ts` (extra cases). Same file can explain itself differently per client.
@@ -129,6 +138,14 @@ and note state before a browser can render those changes.
   them. The parser itself stays in `ui/lib/stml` for now — it sanitizes through
   `lib/terminalText`, which core may not import — so relocating it is Phase 5 work, before the
   browser can parse notes.
+  _Repaid (M4 state, browser site)_: the host moved the parser to `core/stml/parse.ts`, and the
+  page renders markup to DOM from it (`web/notes/stmlDom.ts`), switching on `stmlTagRole` with
+  no tag of its own. STML colors were the last forked piece: the word-to-theme-token and named
+  palette tables moved from `ui/lib/stml/colors.ts` into `stmlColorTarget` in
+  `core/review/stml.ts`; the terminal resolves a token against `AppTheme`, the page against its
+  `--hunk-*` properties (`NAMED_COLORS` and `THEME_COLOR_KEY_BY_TOKEN` are banned from the
+  terminal file). Layout stays per renderer by design: deterministic cells in the terminal, CSS
+  in the browser.
 - **A10. Default line target for a hunk note — 2 divergent rules.** Terminal
   `core/liveComments.ts` `firstCommentTargetForHunk` (first added line, else first deleted);
   web `App.tsx` (hunk's first line — usually context). Same action anchors to different lines
@@ -140,6 +157,10 @@ and note state before a browser can render those changes.
   registers `.mts`/`.cts`; the web bundle never imports it, so Pierre's own inference runs
   unregistered for files without an explicit `language`. Fix: side-effect import in
   `packages/hunk/src/web/main.tsx` (or fold registration into the shared model).
+  _Repaid (M4 state)_: by the second route. The producer resolves every file's language with
+  the registry (`core/documents/fileLanguage.ts`, extension selectors included) and the shared
+  model carries it as `ReviewFile.language`, which the page hands Pierre as `lang`; the page
+  registers nothing. `test/web/review-languages.e2e.ts` highlights `.mts` and `.cts` files.
 
 Renderer-specific, do not unify: terminal row construction and measured-cell windowing
 (`rowWindowing.ts`, `diffSectionGeometry.ts`) vs browser IntersectionObserver windowing and
@@ -184,6 +205,9 @@ duplication); hunk header text (browser delegates to Pierre separators); platfor
   forward-cross-file alignment rule moved into the hunk-move planner, where the crossing is
   known. The terminal's `selectFile` lowers to the intent and no longer takes a hunk index.
   Fixture `scope-wrap-and-clamp` pins both reveals. The browser's copy lands in Phase 5.
+  _Repaid (M4 keyboard, browser site)_: the page's `.`/`,` and sidebar clicks go through the
+  planner and `selection/select-file`; it reveals what the store's tokens ask for and carries
+  no file-jump rule of its own.
 - **B4. Selection fallback after reload/filter — 2 divergent answers.** Terminal
   `resolveSelectedFile` returns undefined (renders "no file"); web `validSelection` and
   `treeSource.reset` silently fall back to `files[0]`. Core permits `fileKey: null`. Fix:
@@ -196,6 +220,9 @@ duplication); hunk header text (browser delegates to Pierre separators); platfor
   `fileKey: null` is reached exactly when nothing is visible at all. Fixtures
   `selection-outliving-its-file` and `selection-with-nothing-visible`. The browser's
   `validSelection`/`treeSource.reset` fallbacks close in Phase 5.
+  _Repaid (M4 state, browser site)_: the page's store repairs a selection on every adopted
+  document with `selectNormalizedSelection` (it had fallen back to the first file itself), and
+  the browser page store joins the navigation corpus.
 - **B5. Filter matching — 3 matchers.** Core `reviewFileMatchesFilter` (path, previousPath,
   agentSummary), terminal `filterReviewFiles` (normalized paths), web tree search
   (canonicalPath only) — browser sidebar and stream can disagree on the same query. Also
@@ -226,6 +253,8 @@ duplication); hunk header text (browser delegates to Pierre separators); platfor
   ties — which is what `DiffPane`'s row scan resolves geometrically today. The terminal site
   stays open: it looks the answer up by measured row bounds, and swapping that for the selector
   is a rendering change rather than a semantic one. Browser adoption is Phase 5.
+  _Repaid (M4 state, browser site)_: a reveal that asks for a note lands on the card
+  `selectActiveRevealNoteId` names, and an agent reveal naming a note lands on that card.
 - **B8. Notes-by-hunk grouping — web re-filters by range containment.** `ReviewStream.tsx`
   drops annotations whose anchor came from core's fallback path or expanded context even after
   `pierreDocument` accepted them — notes silently disappear in the browser. Fix: group by
@@ -235,6 +264,10 @@ duplication); hunk header text (browser delegates to Pierre separators); platfor
   terminal site stays open deliberately: `DiffPane` groups by range overlap and therefore renders
   a note under _every_ hunk it overlaps, so converting it changes what a reviewer sees and
   belongs in a behavior-changing PR, not this one.
+  _Repaid (M4 state, browser site)_: the page places notes with `reviewNoteAnchorLine` and,
+  when that line is not drawn, `reviewNoteOwnerHunkIndex` (`web/notes/noteProjection.ts`); it
+  never tests containment. The geometry corpus reads each whole-hunk note's landing line from
+  the page's projection.
 - **B9. Note-visibility policy — two core predicates for one rule.**
   `selectors.ts` `reviewNoteVisibleByPolicy` (web path) vs `notes.ts` `alwaysShowReviewNote`
   (terminal path). Collapse to one predicate over `{source}`.
@@ -260,6 +293,11 @@ duplication); hunk header text (browser delegates to Pierre separators); platfor
   `create-user-note-at-an-expanded-line`, and `start-draft-with-a-proof-about-nothing` in
   `test/review-conformance/wireFixtures.ts`. Reveal is already an explicit caller decision on
   every intent that carries one; the browser half of both closes in Phase 5.
+  _Repaid (M5, browser client)_: a note started on a line only an expanded gap drew sends
+  `notes/add-user` with its `expandedLineProof` (`web/notes/noteTargets.ts`), and a range note
+  stays within lines the hunk drew, because the session attests one line per proof; a range
+  reaching into expanded context narrows to its first line. The page never sends a selection
+  click, so no reveal is forced.
 - **B11. Viewport-driven selection — opposite policies.** Terminal publishes
   nearest-hunk-to-center into shared state; web keeps IntersectionObserver results local. With
   both clients attached, terminal scrolling rewrites shared selection under the browser. Fix:
@@ -270,7 +308,12 @@ duplication); hunk header text (browser delegates to Pierre separators); platfor
   local `preserveViewport` selection option is deleted. The policy is stated, but the
   multi-client question it exists for — whether an anchor should be shared at all — is G2,
   decided before Phase 5 PR 2.
-- **B12. Wire vocabulary hand-restates `ReviewIntent` — 3 places.** `HunkReviewActionV1`
+  _Repaid (M4 keyboard, browser site)_: which hunk owns a viewport offset is
+  `reviewHunkIndexAtOffset` in `core/review/viewportAnchor.ts`; the terminal's
+  `ui/lib/viewportSelection.ts` delegates to it (`findNearestHunkIndexAtBodyOffset` is banned
+  there) and the browser anchors through it in pixels, with `selection/anchor` applied to its
+  local store only — selection is per surface, so the G2 question does not arise.
+- **B12. Wire vocabulary hand-restates `ReviewIntent` — 3 places.** `RemoteReviewIntent`
   union, capability list in `registration.ts`, validation list in `wire.ts`, remapped
   field-by-field in `reviewSessionRuntime.ts`; forgotten fields/actions are silently
   unreachable from the browser. Fix: derive the wire type and both lists from one
@@ -282,7 +325,7 @@ duplication); hunk header text (browser delegates to Pierre separators); platfor
   resolves at the producer and is broadcast to every attached surface, so every one of them
   belongs to every surface. Withholding one would mean subtracting it by name, with the reason
   it is not shareable. The wire _type_ is derived
-  the same way — `HunkReviewActionV1` is `ReviewIntent` with the two wire-only fields added to
+  the same way — `RemoteReviewIntent` is `ReviewIntent` with the two wire-only fields added to
   the members that need them — and `toReviewIntent` strips them again, so an action is
   validated and narrowed rather than restated. The action-type-to-parser table is keyed by the
   vocabulary, so a wire-reachable intent without a parser does not compile.
@@ -335,6 +378,10 @@ path suffixes, expansion retention, git-status badges).
   caller decided from" is the same question as "is this publication ahead". The mirror is
   registered against the Phase 2 fixtures as the `broker review mirror` ordering consumer,
   which is what proves it has no rules of its own. The browser site closes in Phase 5.
+  _Repaid (M4, browser site)_: the page's mirror (`packages/hunk/src/web/mirror/clientReviewMirror.ts`)
+  orders every publication — the first read and every streamed one — with one
+  `classifyReviewPublication` call, treating its first publication as a gap from nothing. It is
+  registered as the `browser client mirror` ordering consumer.
 - **C2. Chunk assembly + verification — 4 copies, 2 in one file.** Web `apiClient.ts` range
   loop; broker `state.ts` materializing and pre-sized loops (which already disagree on
   progress/eof rules); SSE reassembly in `mirror.ts`. Three in-flight dedupe key formats;
@@ -367,10 +414,22 @@ path suffixes, expansion retention, git-status badges).
   concurrent callers await the same assembly. `packages/hunk/src/session/broker/reviewResources.integration.test.ts`
   drives the whole path with only the socket replaced. The browser's `apiClient` range loop
   closes in Phase 5.
+  _Repaid (M4, browser site)_: `packages/hunk/src/web/transport/apiClient.ts` reads ranged
+  windows and feeds them to the same `ReviewChunkAssembler`, verifying with Web Crypto through
+  the assembler's `finishAsync` (the `ReviewDigestFn` seam is synchronous; an asynchronous
+  sibling, `ReviewAsyncDigestFn`, was added beside it). One limit remains: the HTTP surface
+  sends no digest for a resource whose descriptor is unmeasured, so for those the browser checks
+  the window rules and the daemon's own verification stands in for the digest.
 - **C3. Epoch/supersede/trailing-retry — 2 parallel machines.** Runtime reload queue
   (`reloadEpochSequence`/`supersededReloads`) vs web snapshot recovery
   (`recoveryEpoch`/trailing while-loop), plus three unrelated anti-spin timing constants. Fix:
   one epoch-queue primitive; keep DOM/React wiring local.
+  _Repaid (M4, browser site)_: `createSupersedeQueue` in
+  `packages/session-broker-core/src/lifecycle.ts` is the primitive — latest load wins, the
+  superseded load's signal aborts at once, and its outcome reports `superseded` whatever it
+  resolves with. The browser mirror runs every generation load through it. The terminal's
+  runtime reload queue in `packages/hunk/src/app/` is not converted yet; it is owned by the
+  headless review host work (M1).
 - **C4. SSE event contract defined on both ends.** Frame names (`${type}-begin/-chunk/-end`),
   begin/end envelopes, and the event-id grammar are built in `browserReviewServer.ts` and
   re-declared/regex-parsed in `mirror.ts`/`apiClient.ts`; client bounds (12 MiB / 1024 chunks)
@@ -395,11 +454,23 @@ path suffixes, expansion retention, git-status badges).
   `test/review-conformance/eventFixtures.ts` pin the boundary the two ends must agree on,
   and both the protocol and the real HTTP surface are registered as event consumers. The
   browser reader joins in Phase 5, which is when this finding closes.
+  _Repaid (M4, client side)_: `packages/hunk/src/web/transport/eventReader.ts` splits the
+  stream into SSE records and hands each to the protocol module's frame-name parser, envelope
+  parsers, event-id grammar, and `ReviewEventAssembler` (verifying with Web Crypto through
+  `finishAsync`); it declares no frame grammar or bound. It reads the real HTTP surface as the
+  `browser client event reader` event consumer, so both ends now run the corpus.
 - **C5. Reconnect/backoff — 4 schedulers, 1 verbatim duplicate.** `apiClient.ts` (exp/4 s),
   web `App.tsx` (exp/4 s + anti-spin), `brokerClient.ts` (fixed 3 s — re-implementing the
   scheduler of the connection it already configures), `session-broker/connection.ts`. Fix: one
   `createReconnectScheduler` in `@hunk/session-broker-core`; EventSource's built-in reconnect
   interplay stays client-side.
+  _Repaid (M4)_: `createReconnectScheduler` lives in
+  `packages/session-broker-core/src/lifecycle.ts`, timer-injected and exposed to browsers as
+  `@hunk/session-broker-core/lifecycle`. The page's event stream (`web/transport/eventStream.ts`)
+  and the generic broker connection (`packages/session-broker/src/connection.ts`, fixed delay,
+  keyed by connection generation) both use it. Not converted: the Hunk broker client's startup
+  retry in `packages/hunk/src/session/broker/brokerClient.ts`, whose deadline is part of its
+  startup state machine rather than a reconnect loop, and app-tier schedulers.
 
 ## D. Notes and validation
 
@@ -421,6 +492,30 @@ path suffixes, expansion retention, git-status badges).
   corpus, so `every-field-fits-but-the-note-does-not` — the note whose summary, rationale, and
   markup each pass a per-field check while the note is triple the bound — is now refused at the
   wire rather than admitted and then failing at the publisher. Both composer sites are Phase 5.
+  _Repaid (M5, browser composer site)_: the page's composer measures a candidate note with
+  `reviewNoteWithinSizeLimit` (`web/notes/noteActions.ts`) and shows `note-too-large` before
+  sending; it declares no bound of its own. The terminal composer site remains.
+  _Observed (M5)_: the session wire still had a second, smaller bound. `wire.ts` parsed a
+  snapshot's `reviewNotes[].body` and `liveComments[].summary` with the broker's default
+  4,096-byte string limit, so a note between 4 KiB and `MAX_REVIEW_NOTE_BYTES` was applied by
+  the session and then rejected by the daemon as an incompatible snapshot, which disconnected
+  the session. Reproduced by posting a 6,000-byte `notes/add-user` to a headless session.
+  _Repaid (session wire v22)_: the snapshot carries every note's text in full, parsed at the
+  model's own bound (`parseNoteText` in `session/broker/wire.ts`, `MAX_REVIEW_NOTE_BYTES` for
+  summary, rationale, body, title, and author) rather than as bounded excerpts, because agents
+  read whole notes from these fields (`hunk session comment list`, `review --include-notes`)
+  and an excerpt would make the agent surface disagree with the browser's `/state`. The frame
+  stays bounded: stored notes total at most `MAX_REVIEW_NOTES_TOTAL_BYTES` (2 MiB) and appear in
+  both summary lists, and the snapshot's sidecar summaries now share the shared state's count,
+  byte, and per-note bounds (`createSidecarProjectionBudget().admitSize`), so the note text a
+  snapshot carries stays within three quarters of the 8 MiB websocket frame
+  (`scripts/quality/review-vocabulary.test.ts`). The remaining quarter covers per-entry framing,
+  including each summary's `filePath`; a review would need thousands of notes on files with
+  paths of several hundred bytes to reach it. `test/session/headless.test.ts` pins the
+  6,000-byte repro, a note exactly at the model's bound, and a launch sidecar larger than the
+  frame, each against a real daemon. The terminal composer site is repaid too: a refused save
+  (`too-many-notes`, `note-too-large`) keeps the draft open with its text and shows the
+  catalog's wording (`useUserNoteComposer` `onSaveRefused`, `AppHost.interactions.test.tsx`).
 - **D2. Empty-body policy — 5 declarations.** Core intents (throws), terminal (cancels
   draft — a deliberate UX difference worth keeping explicit), web in three places. Fix: one
   `isBlankReviewNoteBody` predicate.
@@ -457,6 +552,12 @@ path suffixes, expansion retention, git-status badges).
   identity) and stays a snapshot rather than becoming the validator. The producer self-checks
   with it before serving any canonical file, and the conformance harness runs that check over
   every fixture. The browser and broker copies go when those tiers land.
+  _Repaid (M4, browser site)_: a browser holds no manifest yet, so
+  `parseCanonicalReviewFile` in `core/review/canonicalFile.ts` is its one validating parser:
+  exact projection shape (unknown fields refused), addressed to the resource's file key, and
+  content that still hashes to its `contentIdentity` (`recomputeReviewFileContentIdentity`).
+  When the shared-state route carries manifest entries, the browser adds the manifest
+  comparison above on top.
 - **D5. Validator/constant hygiene.** `isReviewSha256Digest` exists but is bypassed by five
   inline regexes with case-sensitivity drift; raw `createHash("sha256")` at seven sites
   instead of `reviewDigest`; `hasExactKeys` private while the pattern is inlined ~10×;
@@ -482,7 +583,7 @@ path suffixes, expansion retention, git-status badges).
   instead of the producer owning it and the wire copying it; `REVIEW_RESOURCE_LOAD_CONCURRENCY`
   moved beside the other resource bounds for the same reason, now that both the producer and
   the daemon run bulk loads. The failure vocabulary is composed rather than restated
-  (`HunkReviewFailureCodeV1` = resource + request + intent-planning codes), the navigable
+  (`ReviewFailureCode` = resource + request + intent-planning codes), the navigable
   scopes are read out of `REVIEW_SELECTION_WRAP_POLICY` rather than listed again, the
   catalog's file bound is derived from its own resource count instead of duplicating the
   registration's file limit, and every digest check is `isReviewSha256Digest`. The one
@@ -493,15 +594,48 @@ path suffixes, expansion retention, git-status badges).
   64-character digest pattern. Naming `isActiveStoredReviewNote` beside
   `isRenderableStoredReviewNote` and commenting `parseReviewState` are browser-tier work and
   stay open with the rest of D5's browser sites.
+  _Repaid (hardening, stored-note bounds)_: the per-note bound had no aggregate beside it, so
+  about seventeen maximum-size notes pushed the shared state past `MAX_REVIEW_SHARED_STATE_BYTES`
+  (every `/state` read then failed) and about ten thousand small ones passed
+  `MAX_SNAPSHOT_REVIEW_NOTES` (the daemon then refused every snapshot). `core/review/noteSize.ts`
+  now declares `MAX_REVIEW_NOTES` and `MAX_REVIEW_NOTES_TOTAL_BYTES` beside the per-note bound,
+  and `requireReviewNoteCapacity` in `core/review/intents.ts` refuses with `too-many-notes`
+  on every path that stores a note: draft saves and edits, direct notes and edits, replies,
+  and agent live comments single or batched (all or nothing). Sidecar annotations are launch
+  input and never fail a review; the snapshot and shared-state projections carry at most
+  `MAX_PROJECTED_SIDECAR_NOTES` / `MAX_PROJECTED_SIDECAR_NOTE_BYTES` of them and the shared
+  state reports the rest as `omittedSidecarNotes`. The bounds cannot drift from the snapshot
+  bounds: `scripts/quality/review-vocabulary.test.ts` asserts them against the broker's
+  snapshot limits, the shared-state bound, and the websocket frame. Adversarial fixture
+  `direct-note-past-the-stored-note-bound` runs against the producer action handler and the
+  HTTP surface. The producer keeps only the size of a shared state it cannot serve.
 
 ## E. Presentation helpers
 
 - **E1. File stat badges.** Terminal `ui/lib/files.ts` `formatSidebarStat` (zero-hiding,
   truncation marker) vs web inline `+${additions} −${deletions}` in `treeSource.ts`. One
   shared formatter.
+  _Repaid (M4)_: `core/review/fileLabels.ts` owns the stat and note badges (zeros hidden, `+`
+  marking a truncated count, note badge first), filename-first names and `old -> new` labels,
+  state suffixes, change-kind letters, and the flat and tree projections, over `/` paths with
+  its own POSIX `basename`/`dirname` so a browser can import it. The terminal's `ui/lib/files.ts`
+  delegates to it and keeps only terminal path sanitizing and its renderer-model adapters;
+  `formatSidebarStat`, `sidebarFileName`, `sidebarDirectorySegments`, and
+  `sharedDirectoryDepth` are banned from that file in `scripts/quality/source-boundaries.test.ts`,
+  and `core/review/fileLabels.test.ts` pins the boundary cases (truncated counts, zero hiding,
+  root and repeated-separator paths against `node:path/posix`). The browser sidebar and stream
+  headers use the same module. The terminal's change-letter mapping in
+  `ui/components/panes/FileListItem.tsx` (`getFileStateIcon`) still mirrors
+  `reviewFileChangeGlyph`; it was left in place because this change was scoped to `ui/lib/`.
 - **E2. Theme.** Web hardcodes two standalone palettes disconnected from `packages/hunk/src/ui/themes` and
   the `AppTheme` mapping; whether the browser mirrors the terminal theme is an open product
   decision — decide before Phase 5, don't unify by default.
+  _Decided (2026-11-13)_: the browser starts on the session's resolved theme, custom themes
+  included, sent by the host as tokens (M2). A per-browser picker may override it without
+  changing the terminal (M4).
+  _Advanced (M2a)_: `presentation.theme` names a bundled theme by id and carries any other
+  theme — custom, extension, or terminal-derived — as its resolved semantic tokens, syntax
+  colors, and syntax theme, from the same `resolveTheme` the terminal's first frame uses.
 
 ## F. Commands and keybindings (preemptive — the prototype browser had none)
 
@@ -551,6 +685,9 @@ here so the extraction happens before the duplication exists. Design detail in
   `lowerAppCommandToReviewIntent`, so the terminal no longer rebuilds semantic command intents
   inline. The future browser palette remains a second surface, not a prerequisite for terminal
   parity.
+  _Repaid (M4 keyboard, browser site)_: the page's navigation and gap-toggle handlers lower
+  through the same function and apply the intent to the page's local store, so the browser
+  is the third consumer of the lowering and restates no scope, direction, or gap rule.
 - **F3. Keymap resolution is terminal-owned.** Chords are shared config strings (`keymap.ts`,
   `[keybindings]`), but resolution against defaults and conflict handling lives with the
   terminal table; a browser keymap would duplicate it and drift on user rebinds. Fix: resolve
@@ -561,11 +698,35 @@ here so the extraction happens before the duplication exists. Design detail in
   fold user config over catalogued defaults exactly once. Mapping resolved chords onto a client's
   own event type stays per client, which is the part that cannot be shared; the browser's half
   lands in Phase 5.
+  _Repaid (M4 keyboard, browser site)_: the page builds its command table from the catalog
+  (`web/commands/webCommandTable.ts`, keyed by `AppCommandId`, with a parity test) and binds
+  the catalog's chords through the shared grammar in `extension-api/keys.ts`; it maps DOM key
+  events onto that grammar and masks browser-reserved chords, but resolves nothing itself, so
+  the host's resolved keymap can replace the defaults. Chord labels moved from
+  `ui/lib/keymap.ts` to `core/run/keyChordLabels.ts`, which both renderers import;
+  `formatKeyChord`, `formatChordBase`, and `NAMED_CHORD_LABELS` are banned from the terminal
+  file. The catalog, the label module, and the chord grammar join the browser's allowed imports
+  on a closed import set in `scripts/quality/source-boundaries.test.ts`.
 - **F4. Host-only and extension commands — do not expose, by design.** Quit, source refresh,
   edit-in-`$EDITOR`, agent-skill helpers, and all extension commands execute host-side (with
   dialog access); browser invocation is remote code execution into the terminal session.
   Excluded from the browser until an explicit per-command allowlist exists in the registration
   capability list. This is a scope boundary, not a missing feature.
+  _Advanced (M2c)_: the first allowlist entry exists. `POST /review-api/<session>/refresh`
+  reloads the session's current input through `ReviewReloadCoordinator.refreshCurrent` —
+  exactly what the `r` key reopens — with no caller-supplied arguments (any body is refused),
+  capability-gated, coalesced per session at the daemon and per queue in the session, and
+  honored by terminal and headless sessions alike. It is deliberately a route rather than a
+  review action: it is a host effect, not review semantics, so `REVIEW_INTENT_TYPES` and the
+  action envelope stay free of host commands. Every other host and extension command remains
+  unreachable from a browser.
+  _Held (M4 keyboard)_: the page classifies quit, edit-in-`$EDITOR`, agent skill, and feedback
+  as host-only and never implements them (`webCommandTable.test.ts` asserts no host-only
+  command is implemented); extension commands are not in its table at all.
+  _Held (M5)_: the page runs refresh (`r` and a toolbar button) through the route above, and
+  `BROWSER_ALLOWED_HOST_COMMANDS` names it as the one host-only command the page may implement;
+  the test asserts every other host-only command stays unimplemented and the allowlist holds
+  exactly that id.
 
 ## G. Other preemptive seams (same class as F)
 
@@ -582,6 +743,31 @@ implementation does.
   schema, not implied by where code happens to read them; (b) whether the browser receives the
   host's resolved view defaults as its starting point (it should — the host already computed
   them) with per-client overrides persisted client-side. Phase 5.
+  _Decided (2026-11-13)_: filter, agent-note visibility, and viewed-file state are shared review
+  state; layout, wrap, line numbers, theme override, sidebar width, and gap expansion are
+  per-browser. The browser receives the host's resolved defaults as its starting point (M2).
+  _Advanced (M2a)_: `ReviewSharedState` (`packages/hunk/src/session/reviewSharedState.ts`,
+  browser-safe) carries the shared classification — filter, agent-note visibility, notes,
+  agent marks, and the agent reveal — and `presentation`, the host's resolved defaults: title,
+  source label, theme, view defaults (layout, wrap, line numbers, hunk headers), and the
+  review keymap after `[keybindings]`. The producer projects it from the review session host
+  (`app/review/sharedState.ts`); the daemon serves it at `GET /review-api/<session>/state`
+  through its one verified resource loop; `sharedStateRevision` on publications announces only
+  content changes. Theme derivation moved to `core/theme/appTheme.ts` and keymap resolution to
+  `core/run/keymap.ts` so a headless session resolves both without the terminal UI. Viewed
+  files (the third shared field) land in M2b; client-side overrides land in M4.
+  _Repaid (M2b, producer sites)_: viewed files are shared state — `files/set-viewed` stores
+  `viewedFiles` keyed by file key with the `contentIdentity` it was marked at,
+  `document/reconcile` drops marks whose content changed, `selectIsReviewFileViewed` in
+  `core/review/selectors.ts` is the one "is this file viewed" answer for every renderer, and
+  the shared-state snapshot carries the marks. No parallel copy existed to delete: the
+  prototype browser never had viewed state. Adversarial fixtures
+  `test/review-conformance/actorPolicyFixtures.ts` (`viewed-marks-across-a-reload`) and the
+  `mark-a-file-viewed` wire fixture register the producer action handler and the HTTP surface.
+  The browser's per-client overrides and the terminal UI for viewed files remain (M4).
+  _Advanced (M5)_: the page writes the shared fields it shows: `a` sends
+  `notes/set-visibility` and the filter field sends a debounced `filter/set`, each labelled as
+  shared with the terminal. Viewed-file controls remain.
 - **G2. Actor identity and multi-client selection policy.** Notes carry an optional `author`,
   but wire actions carry no actor/client identity — with a terminal, a browser, and agents
   attached to one session, nothing distinguishes who moved the selection or wrote a note, and
@@ -589,7 +775,7 @@ implementation does.
   selection. Decide the model once: actions carry a client/actor tag; selection is either
   shared-with-follow-mode or per-client-with-optional-follow (product decision); note
   authorship defaults from the actor. Wire fields in Phase 3, policy before Phase 5 PR 2.
-  _Repaid (Phase 3, wire fields)_: `HunkReviewActorV1` — an opaque `clientId`, a coarse
+  _Repaid (Phase 3, wire fields)_: `ReviewActor` — an opaque `clientId`, a coarse
   `kind` (`terminal` / `browser` / `agent`), and an optional display name — is required on
   every action and resource-read envelope from the protocol's first version. The finding's
   four parts split cleanly, and only the first is done: (1) actions carry an actor tag, here;
@@ -607,6 +793,45 @@ implementation does.
   minting a per-client identity belongs with the client that needs one — Phase 5, beside the
   selection policy that is the only thing which will read it. Parts (2) and (3) are
   unchanged.
+  _Repaid (M2b, producer sites; parts 2 and 3)_: selection is per surface. The producer's
+  action handler (`app/session/reviewCommands.ts`, `actorPolicy`) refuses
+  `selection/select`, `selection/move`, and `selection/select-file` from a `browser` actor
+  with `selection-is-local` (HTTP 403); a browser's `selection/anchor` is applied in a headless
+  session — it is the focus `hunk session context` reports — and accepted as a no-op in a
+  terminal session. Agent selection moves additionally record the shared agent reveal request
+  (M2a) every surface honors. Composers are per client: `notes/add-user` (body, target or
+  `parentId`, optional author, `expandedLineProof` on the wire) and `notes/edit-user` never
+  touch the shared draft slot, and a remote note's author defaults from the actor's display
+  name. The draft intents themselves (`notes/start-draft`, `start-edit`, `start-reply`,
+  `update-draft`, `cancel-draft`, `create-user`, `update-user`) are refused from a `browser`
+  actor with `draft-is-local` (HTTP 403), so a review link cannot open, fill, or consume the
+  terminal's draft or save a note through it under `originalSource: "user"`; fixture
+  `browser-draft-intents-are-refused`. Adversarial fixtures in `test/review-conformance/actorPolicyFixtures.ts` (two actors,
+  a headless anchor, a direct note inside an expanded gap) run against the producer action
+  handler and the HTTP surface; the wire fixtures add `direct-note-at-an-expanded-line` and
+  `direct-reply-naming-its-own-target`. No copies existed to delete. Part (4), a tab-local
+  client identity, and resolving refused moves locally belong to the M4 client.
+  _Decided (2026-11-13)_: selection is fully independent per surface — a browser never tracks a
+  terminal's position and vice versa. Agent-directed navigation is the exception and moves every
+  surface. Composers are per-client, so the browser saves notes through direct intents instead of
+  the shared draft slot. Note authorship defaults from the actor. In a headless session the
+  selection agents read is the browser's reported position. The producer policy lands in M2.
+  _Hardened (actor kind at the capability edge)_: the producer read the actor's self-declared
+  `kind`, so a caller holding only the review link could claim `agent` (its selection moves
+  every surface and records the agent reveal) or `terminal` (no selection policy at all). The
+  HTTP surface now refuses any kind but `browser` with `forbidden-actor` (403) before the action
+  reaches the session (`REVIEW_CAPABILITY_ACTOR_KIND` in `reviewHttpProtocol.ts`); it refuses
+  rather than rewriting, because an honest client never sends another kind and a silent rewrite
+  would hide the attempt. Agent and terminal kinds keep arriving through the authenticated
+  session API. Adversarial fixture `capability-holder-claiming-another-kind` (fixture steps now
+  name their channel) runs against the producer action handler and the HTTP surface.
+  _Hardened (note provenance)_: `author` stays a free label — Hunk is single-user and builds no
+  identity — so a browser could title its note as an agent's. A reviewer note composed through
+  a review link now records `originalSource: "browser"` (`REVIEW_BROWSER_NOTE_ORIGINAL_SOURCE`,
+  supplied by the producer's action handler as a caller fact), which the shared state already
+  carries, so a surface can label it truthfully without a new field or wire version. The
+  terminal's own notes keep `originalSource: "user"`, and the terminal draws remote bodies and
+  authors through the same `sanitizeTerminalLine` path as its own.
 - **G3. Semantic addressing / permalinks.** The prototype's URL fragment carries only the
   capability token — there is no grammar for addressing a file/hunk/line/note. Three consumers
   will need one: browser deep links and back/forward history, a terminal "copy link" command,
@@ -623,6 +848,12 @@ implementation does.
   primitive with no consumers cannot be checked against what its consumers need, and the
   `no-dead-modules` rule now flags exactly that shape. The grammar above still stands as the
   design; write it again beside the first consumer that addresses a review across a boundary.
+  _Advanced (M5, browser consumer)_: `core/review/address.ts` returns beside its first
+  consumer, the page's deep links (`web/navigation/deepLink.ts`), with its round-trip and
+  strict-rejection tests (`address.test.ts`). The page writes `#at=<address>` beside the
+  capability parameter, resolves it on load, and uses it for back/forward history and copied
+  links; resolution refuses targets the shown review cannot honor. The opener's fragment
+  preservation (Phase 6) and a terminal "copy link" remain, so the finding stays open.
 - **G4. User-facing error catalog.** The repo already solves this once for agents:
   `packages/hunk/src/session/agent/errors.ts` single-sources every message the generated skill quotes, with
   contract tests. The browser has no equivalent — action rejections (`invalid-action`,
@@ -632,7 +863,7 @@ implementation does.
   agent surface where codes overlap). Phase 4 (codes stabilize) / Phase 5 (browser consumes).
   _Repaid (Phase 4, catalog creation)_: `packages/hunk/src/session/reviewErrorCatalog.ts` gives every code a
   statement and a remedy, in the agent surface's own pattern. Totality is mechanical rather
-  than reviewed: the catalog is a `Record` over `HunkReviewClientErrorCodeV1`, itself
+  than reviewed: the catalog is a `Record` over `ReviewHttpFailureCode`, itself
   _composed_ — resource plus request plus intent-planning plus the transport's own codes —
   so a code added to any of the four tiers fails to typecheck until it has a message, and
   `reviewErrorCatalog.test.ts` states the vocabulary by hand rather than reading it back out

@@ -1,12 +1,13 @@
 /**
  * Registers Hunk's bundled `less`-style content search on `/`, `n`, and `N`.
  *
- * `/` opens the status-line prompt; Enter jumps to the next hunk matching the typed text, and
+ * `/` opens the status-line prompt; Enter jumps to the next match of the typed text, and
  * `n` / `N` repeat it in either direction, wrapping. The status row then reports where the
  * review landed, and a registered line highlighter marks every match inside the diff with the
- * landed line as the one `"current"` mark. Stepping is hunk-granular so each press visibly
- * moves, while the jump itself is `revealLine` on the first matching line so a hit deep inside
- * a tall hunk lands on the match rather than the hunk's anchor.
+ * landed line as the one `"current"` mark. Every occurrence is its own stop, including several on
+ * one line, in on-screen order for the resolved layout, so a press never scrolls upward except on
+ * a wrap. The jump itself is `revealLine` on the matching line so a hit deep inside a tall hunk
+ * lands on the match rather than the hunk's anchor.
  *
  * The session is process-wide (bundled factories run once), so each command hands it the
  * visible files from `ctx.selection.files`; nothing here shadows the changeset or closes over a
@@ -19,8 +20,13 @@ import type {
   ExtensionReviewSelection,
 } from "../../../../extension-api/types";
 import type { ExtensionFactory } from "../../../types";
-import type { SearchPosition, SearchTarget } from "./search";
-import { createSearchSession, formatOutcomeSpans, type SearchOutcome } from "./session";
+import type { SearchTarget } from "./search";
+import {
+  createSearchSession,
+  formatOutcomeSpans,
+  type SearchOutcome,
+  type SearchPosition,
+} from "./session";
 
 export const BUNDLED_SEARCH_HIGHLIGHTER_ID = "search.matches";
 export const BUNDLED_SEARCH_STATUS_ITEM_ID = "search.status";
@@ -30,7 +36,11 @@ export const BUNDLED_SEARCH_PREVIOUS_COMMAND_ID = "search.previous";
 
 /** Where the review is pointing, as the search compares positions. */
 function positionOf(selection: ExtensionReviewSelection): SearchPosition {
-  return { fileId: selection.file?.id ?? null, hunkIndex: selection.hunkIndex };
+  return {
+    fileId: selection.file?.id ?? null,
+    hunkIndex: selection.hunkIndex,
+    currentLine: selection.currentLine,
+  };
 }
 
 /**
@@ -92,21 +102,40 @@ const registerBundledSearch: ExtensionFactory = (hunk) => {
       }
 
       // The selection is frozen at `/`, so the search starts from where it was pressed.
-      deliver(ctx, session.search(query, ctx.selection.files, positionOf(ctx.selection)));
+      deliver(
+        ctx,
+        session.search(query, ctx.selection.files, positionOf(ctx.selection), ctx.selection.layout),
+      );
     },
   );
 
   hunk.registerCommand(
     { id: BUNDLED_SEARCH_NEXT_COMMAND_ID, title: "Next search match", key: "n" },
     (ctx) => {
-      deliver(ctx, session.repeat("forward", ctx.selection.files, positionOf(ctx.selection)));
+      deliver(
+        ctx,
+        session.repeat(
+          "forward",
+          ctx.selection.files,
+          positionOf(ctx.selection),
+          ctx.selection.layout,
+        ),
+      );
     },
   );
 
   hunk.registerCommand(
     { id: BUNDLED_SEARCH_PREVIOUS_COMMAND_ID, title: "Previous search match", key: "N" },
     (ctx) => {
-      deliver(ctx, session.repeat("backward", ctx.selection.files, positionOf(ctx.selection)));
+      deliver(
+        ctx,
+        session.repeat(
+          "backward",
+          ctx.selection.files,
+          positionOf(ctx.selection),
+          ctx.selection.layout,
+        ),
+      );
     },
   );
 };

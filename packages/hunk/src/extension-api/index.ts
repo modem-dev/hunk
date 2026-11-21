@@ -168,6 +168,8 @@ export type {
   ExtensionVcsDirectoryTreeWatchTarget,
   ExtensionVcsExtraFile,
   ExtensionVcsExtraPatchFile,
+  ExtensionVcsFileBytesReader,
+  ExtensionVcsFileBytesResult,
   ExtensionVcsFileChangeType,
   ExtensionVcsFileSide,
   ExtensionVcsFileSourceReader,

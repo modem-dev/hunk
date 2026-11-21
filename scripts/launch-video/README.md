@@ -11,3 +11,9 @@ is the `@hunk/term-video` package in `packages/term-video/`.
 The full procedure — regeneration steps, environment gotchas, scene authoring,
 storyboard model, and content-accuracy rules — lives in
 [`skills/hunk-launch-video/SKILL.md`](../../skills/hunk-launch-video/SKILL.md).
+
+`promo/` is the house style for release videos: `engine.js` and
+`stage.html` are the reusable style kit, `storyboards/<version>.mjs` holds one
+release's content, `contributors.mjs` computes the credits from a tag range,
+and `render.mjs` renders the cut through `@hunk/term-video/timeline`. The
+full-release recipe in the skill walks through making the next one.

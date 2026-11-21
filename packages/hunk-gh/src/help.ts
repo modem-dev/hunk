@@ -43,6 +43,9 @@ export interface GitHubCliReference {
     readonly variables: readonly string[];
     readonly description: string;
   };
+  readonly hosts: {
+    readonly description: string;
+  };
   readonly subcommands: readonly GitHubCliSubcommand[];
 }
 
@@ -50,10 +53,10 @@ export interface GitHubCliReference {
 export const GITHUB_CLI_REFERENCE: GitHubCliReference = {
   name: "gh",
   summary: "Review GitHub pull requests, commits, and comparisons",
-  usage: "<pr|commit|compare> <target> [--repo <owner/repo>]",
+  usage: "<pr|commit|compare> <target> [--repo <[host/]owner/repo>]",
   options: [
     {
-      flag: "--repo <owner/repo>",
+      flag: "--repo <[host/]owner/repo>",
       description: "use an explicit repository instead of the local origin",
     },
     {
@@ -64,6 +67,10 @@ export const GITHUB_CLI_REFERENCE: GitHubCliReference = {
   authentication: {
     variables: ["GH_TOKEN", "GITHUB_TOKEN"],
     description: "optional for public repositories",
+  },
+  hosts: {
+    description:
+      "github.com and GitHub Enterprise Cloud (<tenant>.ghe.com). URLs and the local origin name their host; other forms use GH_HOST, then github.com.",
   },
   subcommands: [
     {
@@ -78,6 +85,7 @@ export const GITHUB_CLI_REFERENCE: GitHubCliReference = {
         { args: "123 --repo modem-dev/hunk", description: "use an explicit repository" },
         { args: "'modem-dev/hunk#123'", description: "name the repository and pull request" },
         { args: "https://github.com/modem-dev/hunk/pull/123" },
+        { args: "https://acme.ghe.com/acme/app/pull/123" },
       ],
     },
     {
@@ -91,6 +99,7 @@ export const GITHUB_CLI_REFERENCE: GitHubCliReference = {
         { args: "abcdef1 --repo modem-dev/hunk", description: "use an explicit repository" },
         { args: "modem-dev/hunk@abcdef1", description: "name the repository and commit" },
         { args: "https://github.com/modem-dev/hunk/commit/abcdef1" },
+        { args: "https://acme.ghe.com/acme/app/commit/abcdef1" },
       ],
     },
     {
@@ -102,6 +111,7 @@ export const GITHUB_CLI_REFERENCE: GitHubCliReference = {
       forms: [
         { args: "main...feature", description: "infer owner/repo from the local origin" },
         { args: "v0.20.0...v0.21.0 --repo modem-dev/hunk" },
+        { args: "main...feature --repo acme.ghe.com/acme/app" },
       ],
       notes: ["Use three dots exactly. Pass Hunk patch options after `--`."],
     },
@@ -117,7 +127,7 @@ function helpRow(term: string, description?: string, width = HELP_TERM_WIDTH) {
   return `  ${term.padEnd(width - 1)} ${description}`;
 }
 
-/** Render the shared GitHub authentication row. */
+/** Render the shared GitHub authentication and supported-host rows. */
 function authenticationHelp(reference: GitHubCliReference) {
   return [
     "Authentication:",
@@ -125,6 +135,9 @@ function authenticationHelp(reference: GitHubCliReference) {
       reference.authentication.variables.join(", then "),
       reference.authentication.description,
     ),
+    "",
+    "Hosts:",
+    `  ${reference.hosts.description}`,
   ];
 }
 

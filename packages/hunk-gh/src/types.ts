@@ -1,9 +1,19 @@
 export interface GitHubRepository {
+  /** Lowercase supported host: `github.com` or `<tenant>.ghe.com`. */
+  host: string;
+  owner: string;
+  repo: string;
+}
+
+/** A repository named by user input, whose host may still default from context. */
+export interface GitHubRepositoryReference {
+  host?: string;
   owner: string;
   repo: string;
 }
 
 export interface GitHubPullRequestLocator {
+  host?: string;
   owner?: string;
   repo?: string;
   number: string;
@@ -27,6 +37,7 @@ export interface GitCheckoutIdentity {
 }
 
 export interface GitHubCommitLocator {
+  host?: string;
   owner?: string;
   repo?: string;
   sha: string;

@@ -187,7 +187,7 @@ Only after publication verifies, create a detached worktree at the released tag 
 git worktree add --detach "../hunk-release-video-$version" "$tag"
 ```
 
-That skill owns capture, encoding, and media checks. Keep generated media out of Git and Git LFS. Preserve storyboard edits only with separate approval.
+That skill owns capture, encoding, and media checks; release videos use its promo style kit, with this release's content in a new `scripts/launch-video/promo/storyboards/<version>.mjs`. Keep generated media out of Git and Git LFS. Commit the release's storyboard file and any capture scenes it needs only with separate approval, so the next release can start from them.
 
 Publish the video so the release page can carry it, then record it in `website/releases/notes.json` under the series' `video` key and regenerate. Host it where the site can serve it rather than committing it: the 1080p master stays out of Git and Git LFS.
 

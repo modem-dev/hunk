@@ -28,6 +28,8 @@ export interface DiffSectionRowBounds extends VerticalBounds {
   stableKeys: string[];
   /** Exact collapsed gap that produced this synthesized source row. */
   expandedGapKey?: string;
+  /** Selectable semantic note at this row; drafts and decoration-only cards omit it. */
+  noteTarget?: { noteId: string; hunkIndex: number };
 }
 
 /**
@@ -67,7 +69,7 @@ function notesCacheKey(visibleAgentNotes: VisibleAgentNote[]) {
   }
 
   return `:notes:${visibleAgentNotes
-    .map(({ annotation, actions, thread }) => {
+    .map(({ annotation, actions, thread, source }) => {
       const key = JSON.stringify({
         author: annotation.author,
         id: annotation.id,
@@ -77,6 +79,9 @@ function notesCacheKey(visibleAgentNotes: VisibleAgentNote[]) {
         source: annotation.source,
         summary: annotation.summary,
         title: annotation.title,
+        // Bounds also carry keyboard note targets, including whether this card is selectable.
+        noteId: thread?.noteId,
+        noteSource: source,
         parentId: thread?.parentId,
         threadDepth: thread?.depth,
         actions: actions
@@ -123,8 +128,8 @@ interface SectionGeometryCacheSlots {
 
 // Cache geometry by immutable DiffFile object so hunk navigation can survive parent re-renders
 // without rebuilding every file section. Replaced file objects naturally drop from the WeakMap.
-// Keep one no-note and one note-aware variant: large row-bounds arrays from old terminal widths
-// are replaced on resize, while note rendering can still compare against a stable base geometry.
+// Keep one no-note and one note-aware variant. Note-free nowrap geometry survives resizing;
+// width-sensitive variants replace old row-bounds arrays within their own bounded slot.
 const SECTION_GEOMETRY_CACHE = new WeakMap<DiffFile, SectionGeometryCacheSlots>();
 
 /** Resolve which bounded per-file cache slot owns one geometry variant. */
@@ -310,9 +315,10 @@ export function measureDiffSectionGeometry(
     };
   }
 
-  // Width, wrapping, and line-number visibility all affect rendered row heights, so they must
-  // participate in the cache key alongside the structural file/layout inputs. Expansion state
-  // changes the row stream, so it has to participate too.
+  // Only wrapped code and inline notes have width-sensitive heights. Keep live width for
+  // measurement, but reuse note-free nowrap bounds and lazy rows across terminal resizes.
+  // Preserve structural and rendering policies, including expansion/source state, in the key.
+  const geometryCacheWidth = wrapLines || visibleAgentNotes.length > 0 ? width : 0;
   const themeCacheKey = [
     theme.id,
     theme.syntaxTheme ?? "",
@@ -327,7 +333,7 @@ export function measureDiffSectionGeometry(
   const scopeCacheKey = visibleHunkIndexes
     ? `:scope:${[...visibleHunkIndexes].sort((a, b) => a - b).join(",")}`
     : "";
-  const cacheKey = `${file.id}:${layout}:${showHunkHeaders ? 1 : 0}:${themeCacheKey}:${width}:${showLineNumbers ? 1 : 0}:${wrapLines ? 1 : 0}:${reserveAddNoteColumn ? 1 : 0}:tabs:${tabWidth}:hunkGap:${hunkGap}${scopeCacheKey}${expansionCacheKey(expandedKeys, sourceStatus)}${notesCacheKey(visibleAgentNotes)}`;
+  const cacheKey = `${file.id}:${layout}:${showHunkHeaders ? 1 : 0}:${themeCacheKey}:${geometryCacheWidth}:${showLineNumbers ? 1 : 0}:${wrapLines ? 1 : 0}:${reserveAddNoteColumn ? 1 : 0}:tabs:${tabWidth}:hunkGap:${hunkGap}${scopeCacheKey}${expansionCacheKey(expandedKeys, sourceStatus)}${notesCacheKey(visibleAgentNotes)}`;
   const cacheSlot = sectionGeometryCacheSlot(visibleAgentNotes);
   const cached = getCachedSectionGeometry(file, cacheSlot, cacheKey);
   if (cached) {
@@ -373,8 +379,13 @@ export function measureDiffSectionGeometry(
       row.stableKey,
       ...(row.kind === "diff-row" ? (row.stableAliasKeys ?? []) : []),
     ];
-    const rowBoundsEntry = {
+    const noteId =
+      row.kind === "inline-note" && row.note.source !== "draft"
+        ? row.note.thread?.noteId
+        : undefined;
+    const rowBoundsEntry: DiffSectionRowBounds = {
       key: row.key,
+      ...(noteId ? { noteTarget: { noteId, hunkIndex: row.hunkIndex } } : {}),
       stableKey: row.stableKey,
       stableKeys,
       ...(row.kind === "diff-row" &&

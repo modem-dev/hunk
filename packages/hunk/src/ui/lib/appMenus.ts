@@ -149,6 +149,7 @@ export function buildAppMenus({
       { commandId: "hunk.review.focusFilter", label: "Focus filter" },
       { commandId: "hunk.review.editSelectedFile", label: "Open file in editor" },
       { commandId: "hunk.app.refresh", label: "Reload" },
+      { commandId: "hunk.app.openInBrowser", label: "Open in browser" },
       SEPARATOR,
       { commandId: "hunk.app.quit" },
     ],
@@ -215,7 +216,10 @@ export function buildAppMenus({
       { commandId: "hunk.review.nextAnnotatedFile" },
       { commandId: "hunk.review.previousAnnotatedFile" },
     ],
-    help: [{ commandId: "hunk.app.toggleHelp", label: "Controls help", checked: showHelp }],
+    help: [
+      { commandId: "hunk.app.toggleHelp", label: "Controls help", checked: showHelp },
+      { commandId: "hunk.app.openFeedback", label: "Send feedback…" },
+    ],
   };
 
   if (fileViewEntries.length > 0) {

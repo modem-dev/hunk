@@ -1,0 +1,413 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      /* Hunk promo style: the stage CSS for engine.js. render.mjs fills the placeholders. */
+      @font-face {
+        font-family: "JBM";
+        src: url("FONT_URL") format("woff2");
+        font-weight: 100 800;
+      }
+      @font-face {
+        font-family: "JBM Nerd";
+        src: url("NERD_FONT_URL") format("truetype");
+      }
+      :root {
+        --ink: #0c0e10;
+        --ink-panel: #14181b;
+        --ink-text: #16140f;
+        --paper: #f4f1ea;
+        --paper-hi: #fffdf8;
+        --rule: #dcd6c8;
+        --green: #5dd06a;
+        --green-deep: #1f7a35;
+        --green-soft: #bfe9c6;
+        --muted: #9aa4af;
+        --muted-ink: #6b6557;
+        --red: #ef6b5b;
+      }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: var(--ink);
+      }
+      body {
+        font-family: "JBM", "JBM Nerd", monospace;
+        color: var(--paper);
+        -webkit-font-smoothing: antialiased;
+      }
+      .scene {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+        display: none;
+      }
+      .ink {
+        background: var(--ink);
+        color: var(--paper);
+      }
+      .paper {
+        background: var(--paper);
+        color: var(--ink-text);
+      }
+      .abs {
+        position: absolute;
+      }
+
+      /* ---------- background textures ---------- */
+      .diffstream {
+        position: absolute;
+        inset: -200px 0 -200px 0;
+        opacity: 0.55;
+      }
+      .diffstream .row {
+        position: absolute;
+        height: 14px;
+        border-radius: 2px;
+      }
+      .dots {
+        position: absolute;
+        inset: -40px;
+        background-image: radial-gradient(rgba(22, 20, 15, 0.13) 1.6px, transparent 1.7px);
+        background-size: 32px 32px;
+      }
+      .vignette {
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(
+          ellipse at 50% 45%,
+          rgba(12, 14, 16, 0) 40%,
+          rgba(12, 14, 16, 0.85) 100%
+        );
+      }
+
+      /* ---------- type ---------- */
+      .word-line {
+        display: block;
+        overflow: hidden;
+        padding: 0 0.04em 0.06em;
+        line-height: 1.02;
+      }
+      .word {
+        display: inline-block;
+        will-change: transform;
+      }
+      .mono-chip {
+        display: inline-block;
+        font-weight: 700;
+        padding: 14px 28px;
+        border: 3px solid var(--paper);
+        border-radius: 6px;
+        color: var(--green);
+        background: var(--ink);
+        box-shadow: 8px 8px 0 var(--green);
+      }
+      .mono-chip .p {
+        color: var(--paper);
+        margin-right: 18px;
+      }
+
+      /* ---------- terminal window ---------- */
+      .win-wrap {
+        position: absolute;
+        left: 200px;
+        top: 62px;
+        width: 1520px;
+        height: 909px;
+        transform-origin: 50% 100%;
+      }
+      .win-extrude {
+        position: absolute;
+        left: 0;
+        top: 0;
+        overflow: visible;
+      }
+      .win {
+        position: absolute;
+        inset: 0;
+        border: 3px solid var(--ink-text);
+        background: var(--ink-text);
+        border-radius: 4px;
+        overflow: hidden;
+      }
+      .win-bar {
+        height: 40px;
+        display: flex;
+        align-items: center;
+        background: var(--ink-text);
+        position: relative;
+      }
+      .win-bar .lights {
+        display: flex;
+        gap: 10px;
+        padding-left: 18px;
+      }
+      .win-bar .lights i {
+        width: 13px;
+        height: 13px;
+        border-radius: 50%;
+        border: 2px solid #8b8576;
+        display: block;
+      }
+      .win-title {
+        position: absolute;
+        left: 0;
+        right: 0;
+        text-align: center;
+        font-size: 18px;
+        color: #a39d8e;
+        letter-spacing: 0.02em;
+      }
+      .win-body {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 40px;
+        bottom: 0;
+        overflow: hidden;
+      }
+      .win-visual {
+        position: absolute;
+        left: 0;
+        top: 0;
+        transform-origin: 0 0;
+      }
+      .win-visual img {
+        display: block;
+        position: absolute;
+        left: 0;
+        top: 0;
+      }
+      .win-visual img.next {
+        opacity: 0;
+      }
+      .callout {
+        position: absolute;
+        border: 4px solid var(--green);
+        border-radius: 6px;
+        box-shadow:
+          0 0 0 3px rgba(12, 14, 16, 0.85),
+          0 0 34px rgba(93, 208, 106, 0.55);
+        pointer-events: none;
+      }
+      .callout-label {
+        position: absolute;
+        font-size: 24px;
+        font-weight: 800;
+        padding: 6px 14px;
+        background: var(--green);
+        color: var(--ink-text);
+        border: 3px solid var(--ink-text);
+        border-radius: 4px;
+        white-space: nowrap;
+        box-shadow: 5px 5px 0 var(--ink-text);
+      }
+
+      /* ---------- stickers ---------- */
+      .sticker {
+        position: absolute;
+        font-weight: 800;
+        border: 3px solid var(--ink-text);
+        border-radius: 6px;
+        white-space: nowrap;
+      }
+      .chap-sticker {
+        left: 150px;
+        top: 34px;
+        font-size: 30px;
+        padding: 10px 22px;
+        background: var(--green);
+        color: var(--ink-text);
+        box-shadow: 7px 7px 0 var(--ink-text);
+        transform-origin: 0 50%;
+      }
+      .cap-sticker {
+        left: 150px;
+        top: 948px;
+        font-size: 46px;
+        padding: 16px 30px;
+        background: var(--ink-text);
+        color: var(--paper);
+        box-shadow: 9px 9px 0 var(--green);
+        transform-origin: 0 50%;
+      }
+      .cap-sticker b {
+        color: var(--green);
+        font-weight: 800;
+      }
+      .keycap {
+        position: absolute;
+        right: 140px;
+        top: 940px;
+        min-width: 112px;
+        height: 104px;
+        padding: 0 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 44px;
+        font-weight: 800;
+        color: var(--ink-text);
+        background: var(--paper-hi);
+        border: 4px solid var(--ink-text);
+        border-radius: 14px;
+        transform-origin: 50% 100%;
+      }
+
+      /* ---------- progress pips ---------- */
+      .pips {
+        position: absolute;
+        right: 200px;
+        top: 16px;
+        display: flex;
+        gap: 12px;
+      }
+      .pips svg {
+        width: 28px;
+        height: 28px;
+        display: block;
+      }
+
+      /* ---------- chapter title cards ---------- */
+      .chap-num {
+        position: absolute;
+        left: 150px;
+        top: 230px;
+        font-size: 420px;
+        font-weight: 800;
+        line-height: 1;
+        letter-spacing: -0.04em;
+      }
+      .chap-num .face {
+        position: relative;
+        color: var(--paper);
+      }
+      .chap-num .extrude {
+        position: absolute;
+        left: 0;
+        top: 0;
+        color: transparent;
+        -webkit-text-stroke: 4px var(--green);
+      }
+      .chap-text {
+        position: absolute;
+        left: 820px;
+        top: 300px;
+        width: 1060px;
+      }
+      .chap-text .title {
+        font-size: 128px;
+        font-weight: 800;
+        letter-spacing: -0.035em;
+      }
+      .chap-text .title .hl {
+        color: var(--green);
+      }
+      .chap-text .sub {
+        margin-top: 26px;
+        font-size: 34px;
+        color: var(--muted);
+        font-weight: 500;
+      }
+      .chap-text .cmdline {
+        margin-top: 46px;
+        font-size: 44px;
+      }
+      .chap-rule {
+        position: absolute;
+        left: 820px;
+        top: 270px;
+        height: 6px;
+        background: var(--green);
+      }
+
+      /* ---------- montage ---------- */
+      .mont-item {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+      }
+      .mont-item .big {
+        font-size: 150px;
+        font-weight: 800;
+        letter-spacing: -0.04em;
+        line-height: 1.05;
+      }
+      .mont-item .small {
+        margin-top: 34px;
+        font-size: 40px;
+        font-weight: 600;
+        padding: 12px 26px;
+        border: 3px solid currentColor;
+        border-radius: 6px;
+      }
+      .mont-tag {
+        position: absolute;
+        left: 60px;
+        top: 40px;
+        font-size: 30px;
+        font-weight: 800;
+        letter-spacing: 0.14em;
+      }
+
+      /* ---------- outro ---------- */
+      .install {
+        position: absolute;
+        left: 50%;
+        top: 690px;
+        transform: translateX(-50%);
+        font-size: 44px;
+        font-weight: 700;
+        padding: 22px 40px;
+        border: 3px solid var(--paper);
+        border-radius: 6px;
+        background: var(--ink-panel);
+        box-shadow: 10px 10px 0 var(--green);
+        white-space: pre;
+      }
+      .install .p {
+        color: var(--green);
+      }
+      .caret {
+        display: inline-block;
+        width: 0.6em;
+        height: 1.05em;
+        background: var(--green);
+        vertical-align: -0.18em;
+        margin-left: 4px;
+      }
+      .outro-foot {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 850px;
+        text-align: center;
+        font-size: 34px;
+        color: var(--muted);
+        font-weight: 600;
+      }
+      .outro-foot .hl {
+        color: var(--green);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="stage"></div>
+    <script>
+      window.PROMO = PROMO_JSON;
+    </script>
+    <script src="ENGINE_URL"></script>
+  </body>
+</html>

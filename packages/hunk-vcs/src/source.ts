@@ -1,8 +1,19 @@
 /** Default byte ceiling for exact source text loaded for expanded context. */
 export const DEFAULT_SOURCE_TEXT_MAX_BYTES = 1_000_000;
 
+/**
+ * Default byte ceiling for raw source bytes, such as an image a file view draws.
+ *
+ * Larger than the text ceiling because binary assets are routinely bigger than source files,
+ * yet still bounded so one reviewed file cannot pull an arbitrary amount into memory.
+ */
+export const DEFAULT_SOURCE_BYTES_MAX_BYTES = 32 * 1024 * 1024;
+
 /** Structural result shared by bounded filesystem source readers. */
 export type LimitedSourceTextResult = string | null | { kind: "too-large"; maxBytes: number };
+
+/** Structural result shared by bounded raw-byte source readers. */
+export type LimitedSourceBytesResult = Uint8Array | null | { kind: "too-large"; maxBytes: number };
 
 /** Keep source-load diagnostics terse enough to be useful in logs. */
 export function logSourceDiagnostic(message: string, detail?: unknown) {
@@ -35,6 +46,26 @@ export async function readFileTextWithLimit(
       return { kind: "too-large", maxBytes };
     }
     return await file.text();
+  } catch (error) {
+    logSourceDiagnostic(`failed to read source file ${absolutePath}`, error);
+    return null;
+  }
+}
+
+/** Read one filesystem source as raw bytes without exceeding the supplied byte ceiling. */
+export async function readFileBytesWithLimit(
+  absolutePath: string,
+  maxBytes: number,
+): Promise<LimitedSourceBytesResult> {
+  try {
+    const file = Bun.file(absolutePath);
+    if (!(await file.exists())) {
+      return null;
+    }
+    if (file.size > maxBytes) {
+      return { kind: "too-large", maxBytes };
+    }
+    return await file.bytes();
   } catch (error) {
     logSourceDiagnostic(`failed to read source file ${absolutePath}`, error);
     return null;
@@ -92,8 +123,21 @@ export async function readStreamTextWithLimit(
   createLimitError: (maxBytes: number) => Error = (limit) =>
     new Error(`Source text exceeds ${limit} bytes.`),
 ) {
+  return new TextDecoder().decode(
+    await readStreamBytesWithLimit(stream, maxBytes, onTooLarge, createLimitError),
+  );
+}
+
+/** Read a byte stream whole while enforcing a caller-defined resource limit. */
+export async function readStreamBytesWithLimit(
+  stream: ReadableStream<Uint8Array> | null,
+  maxBytes: number,
+  onTooLarge?: () => void,
+  createLimitError: (maxBytes: number) => Error = (limit) =>
+    new Error(`Source bytes exceed ${limit} bytes.`),
+): Promise<Uint8Array> {
   if (!stream) {
-    return "";
+    return new Uint8Array();
   }
 
   const reader = stream.getReader();
@@ -123,5 +167,5 @@ export async function readStreamTextWithLimit(
     offset += chunk.byteLength;
   }
 
-  return new TextDecoder().decode(combined);
+  return combined;
 }

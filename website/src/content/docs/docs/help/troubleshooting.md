@@ -34,7 +34,7 @@ If `hunk pager` or `hunk patch -` fails with this error even though you didn't p
 
 ## Theme detection looks wrong
 
-Some terminals do not answer color queries. The default `terminal` theme then falls back to a standard xterm-style palette and `theme = "auto"` falls back to `github-dark-default`; choose a theme explicitly if needed. If you turned on `transparent_background`, turn it off (`--no-transparent-bg`) when terminal compositing makes contrast unpredictable.
+Some terminals do not answer color queries. The opt-in `terminal` theme then falls back to a standard xterm-style palette and `theme = "auto"` falls back to `github-dark-default`; choose a theme explicitly if needed. If you turned on `transparent_background`, turn it off (`--no-transparent-bg`) when terminal compositing makes contrast unpredictable.
 
 ## Layout or text is hard to read
 

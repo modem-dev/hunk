@@ -2,11 +2,16 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { mkdtemp, mkdir, rename, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { watch as chokidarWatch } from "chokidar";
 
 import { createWatchController } from "./controller";
-import { createWatchEventSource, createWatchObserver, type WatchObserver } from "./observer";
+import {
+  createNativeTreeWatcher,
+  createWatchEventSource,
+  createWatchObserver,
+  type WatchObserver,
+} from "./observer";
 import type { WatchPlan } from "./plan";
 import { createChunkedTreeWatcher } from "./portableTree";
 
@@ -398,6 +403,10 @@ describe("filesystem watch observer", () => {
   test("portable observation recovers a missing root without recursively watching its parent", async () => {
     const parent = await temporaryDirectory();
     const directory = join(parent, "missing");
+    const nested = join(directory, "nested");
+    const admitted: string[] = [];
+    let onNestedReady = () => {};
+    let onFileEvent = () => {};
     const errors: unknown[] = [];
     let events = 0;
     const observer = createWatchObserver(
@@ -413,7 +422,33 @@ describe("filesystem watch observer", () => {
           errors.push(error);
         },
       },
-      { platform: "linux" },
+      {
+        platform: "linux",
+        treeBackends: {
+          native: createNativeTreeWatcher,
+          portable(target, onEvent) {
+            return createChunkedTreeWatcher(target.directory, () => false, onEvent, {
+              watch(paths, options) {
+                const batch = typeof paths === "string" ? [paths] : paths;
+                admitted.push(...batch);
+                const watcher = chokidarWatch(paths, options);
+                watcher.on("all", (event, path) => {
+                  if ((event === "add" || event === "change") && path === join(nested, "file.ts")) {
+                    onFileEvent();
+                  }
+                });
+                if (batch.includes(nested)) watcher.once("ready", () => onNestedReady());
+                return watcher;
+              },
+              // Exceed the old fixed sleep to exercise registration under CI load.
+              schedule(callback) {
+                const timer = setTimeout(callback, 150);
+                return () => clearTimeout(timer);
+              },
+            });
+          },
+        },
+      },
     );
     cleanups.push(async () => {
       observer.close();
@@ -423,18 +458,27 @@ describe("filesystem watch observer", () => {
     expect(errors).toHaveLength(1);
     expect(errors[0]).toMatchObject({ code: "ENOENT" });
     for (let index = 0; index < 2; index++) {
-      await mkdir(join(directory, "nested"), { recursive: true });
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      const nestedReady = new Promise<void>((resolve) => {
+        onNestedReady = resolve;
+      });
+      await mkdir(nested, { recursive: true });
+      await bounded(nestedReady);
       const beforeWrite = events;
-      await writeFile(join(directory, "nested", "file.ts"), "content");
-      await bounded(
-        (async () => {
-          while (events === beforeWrite) await new Promise((resolve) => setTimeout(resolve, 5));
-        })(),
-      );
+      const fileObserved = new Promise<void>((resolve) => {
+        onFileEvent = resolve;
+      });
+      await writeFile(join(nested, "file.ts"), "content");
+      // Registration also emits reconciliation hints; only a file event proves coverage.
+      await bounded(fileObserved);
+      expect(events).toBeGreaterThan(beforeWrite);
       await rm(directory, { recursive: true });
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      // Let the parent scan settle before reusing the pathname, as in subtree recovery tests.
+      await new Promise((resolve) => setTimeout(resolve, ABSENCE_MS));
     }
+    expect(admitted.length).toBeGreaterThan(0);
+    expect(
+      admitted.every((path) => path === directory || path.startsWith(`${directory}${sep}`)),
+    ).toBe(true);
   });
 
   test("close releases handles and suppresses later events", async () => {

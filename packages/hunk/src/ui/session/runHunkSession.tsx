@@ -23,8 +23,24 @@ export interface HunkSessionRenderContext {
   finish(exitCode?: number): void;
 }
 
+/**
+ * Describes the stdin surface the renderer and disconnect watcher rely on, so both `process.stdin`
+ * and the controlling-terminal input are checked structurally instead of cast.
+ *
+ * OpenTUI 0.5.x reads `isTTY`, `setRawMode`, `on`/`removeListener("data")`, `pause`/`resume`,
+ * `read`, and `readableLength`; the disconnect watcher adds its `TerminalInputEvents`. OpenTUI
+ * declares the whole socket-backed `NodeJS.ReadStream`, so this type cannot catch it reading a new
+ * member: re-audit `CliRenderer`'s stdin use when bumping `@opentui/core`.
+ */
+export type RendererInput = NodeJS.ReadableStream &
+  TerminalInputEvents & {
+    readonly isTTY: boolean;
+    readonly readableLength: number;
+    setRawMode(mode: boolean): unknown;
+  };
+
 export interface HunkSessionRunnerOptions {
-  stdin: NodeJS.ReadStream & TerminalInputEvents;
+  stdin: RendererInput;
   stdout: NodeJS.WriteStream;
   useMouse: boolean;
   signals: readonly NodeJS.Signals[];
@@ -117,7 +133,8 @@ export async function runHunkSession(
 
   try {
     renderer = await createRenderer({
-      stdin: options.stdin,
+      // OpenTUI declares the socket-backed `NodeJS.ReadStream` but only touches `RendererInput`.
+      stdin: options.stdin as NodeJS.ReadStream,
       stdout: options.stdout,
       useMouse: options.useMouse,
       screenMode: "alternate-screen",

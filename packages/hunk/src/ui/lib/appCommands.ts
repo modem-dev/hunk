@@ -133,6 +133,10 @@ export interface BuildAppCommandsOptions {
   /** Step note selection through the active surface's measured card order. */
   moveNoteCursor: (delta: number) => void;
   openAgentSkill: () => void;
+  /** Open the feedback form; absent when config turns feedback off. */
+  openFeedback?: () => void;
+  /** Open this session's review in a browser; absent without a daemon registration. */
+  openInBrowser?: () => void;
   openThemeSelector: () => void;
   requestQuit: () => void;
   /** Chords resolved against the user's `[keybindings]`; defaults apply where absent. */
@@ -197,6 +201,14 @@ function builtinCommandHandlers(
     "hunk.app.quit": { run: () => options.requestQuit() },
     "hunk.app.toggleHelp": { run: () => options.toggleHelp() },
     "hunk.app.openAgentSkill": { run: () => options.openAgentSkill() },
+    "hunk.app.openFeedback": {
+      run: () => options.openFeedback?.(),
+      isEnabled: () => options.openFeedback !== undefined,
+    },
+    "hunk.app.openInBrowser": {
+      run: () => options.openInBrowser?.(),
+      isEnabled: () => options.openInBrowser !== undefined,
+    },
     "hunk.app.toggleFocusArea": { run: () => options.toggleFocusArea() },
     "hunk.review.focusFilter": { run: () => options.focusFilter() },
     "hunk.review.startVisualSelection": { run: () => options.startVisualSelection?.() },
@@ -348,11 +360,15 @@ function toAppCommand(
  * Order follows the catalog, which is what makes first-match-wins dispatch and the
  * conflict probes below agree with what a browser palette would show.
  */
-export function buildAppCommands(options: BuildAppCommandsOptions): AppCommand[] {
+export function buildAppCommands(
+  options: BuildAppCommandsOptions,
+  catalog: readonly AppCommandCatalogEntry[] = APP_COMMAND_CATALOG,
+): AppCommand[] {
   const handlers = builtinCommandHandlers(options);
   // Sound because the handler map is keyed by `AppCommandId` and therefore covers every
-  // catalogued id; a missing one is a type error where the map is written, not here.
-  return APP_COMMAND_CATALOG.map((entry) =>
+  // catalogued id; a missing one is a type error where the map is written, not here. Tests
+  // pass a catalog that includes unreleased entries to exercise their handlers.
+  return catalog.map((entry) =>
     toAppCommand(entry, handlers[entry.id as AppCommandId], options.resolvedKeys),
   );
 }

@@ -26,6 +26,8 @@ export interface UseAppKeyboardShortcutsOptions {
   activeMenuId: MenuId | null;
   activateCurrentMenuItem: () => void;
   closeAgentSkill: () => void;
+  /** Route keys to the feedback form while it is open; `"notMine"` when it is closed. */
+  handleFeedbackKey?: (key: KeyEvent) => KeyOwner;
   closeHelp: () => void;
   closeMenu: () => void;
   acceptThemeSelector: () => void;
@@ -69,6 +71,10 @@ export interface UseAppKeyboardShortcutsOptions {
   /** Offer one key to the active session keyboard mode. */
   sendKeyboardModeKey: (key: ExtensionKeyEvent) => ExtensionKeyboardModeKeyResult;
   focusArea: FocusArea;
+  /** Whether the host filter prompt owns typing, including before its input has rendered. */
+  isFilterPromptOpen: () => boolean;
+  /** Append printable input to the filter prompt while its input is still mounting. */
+  queueFilterInput: (text: string) => void;
   /** Whether a status-line prompt (the host filter or an extension's) currently owns typing. */
   promptActive: boolean;
   moveMenuItem: (delta: number) => void;
@@ -109,6 +115,7 @@ export function useAppKeyboardShortcuts({
   activeMenuId,
   activateCurrentMenuItem,
   closeAgentSkill,
+  handleFeedbackKey,
   closeHelp,
   closeMenu,
   acceptThemeSelector,
@@ -134,6 +141,8 @@ export function useAppKeyboardShortcuts({
   exitKeyboardMode,
   sendKeyboardModeKey,
   focusArea,
+  isFilterPromptOpen,
+  queueFilterInput,
   promptActive,
   moveMenuItem,
   moveThemeSelector,
@@ -156,6 +165,8 @@ export function useAppKeyboardShortcuts({
   const focusAreaRef = useRef(focusArea);
   const promptActiveRef = useRef(promptActive);
   const showAgentSkillRef = useRef(showAgentSkill);
+  const handleFeedbackKeyRef = useRef(handleFeedbackKey);
+  handleFeedbackKeyRef.current = handleFeedbackKey;
   const showHelpRef = useRef(showHelp);
   const saveConfigPromptOpenRef = useRef(saveConfigPromptOpen);
   const themeSelectorOpenRef = useRef(themeSelectorOpen);
@@ -172,6 +183,8 @@ export function useAppKeyboardShortcuts({
   const flushDraftInputRef = useRef(flushDraftInput);
   const exitKeyboardModeRef = useRef(exitKeyboardMode);
   const sendKeyboardModeKeyRef = useRef(sendKeyboardModeKey);
+  const isFilterPromptOpenRef = useRef(isFilterPromptOpen);
+  const queueFilterInputRef = useRef(queueFilterInput);
   // These three close over live dialog state (the highlighted option, the typed
   // text), so they are read through refs rather than captured once.
   const acceptExtensionDialogRef = useRef(acceptExtensionDialog);
@@ -198,6 +211,8 @@ export function useAppKeyboardShortcuts({
   flushDraftInputRef.current = flushDraftInput;
   exitKeyboardModeRef.current = exitKeyboardMode;
   sendKeyboardModeKeyRef.current = sendKeyboardModeKey;
+  isFilterPromptOpenRef.current = isFilterPromptOpen;
+  queueFilterInputRef.current = queueFilterInput;
   acceptExtensionDialogRef.current = acceptExtensionDialog;
   cancelExtensionDialogRef.current = cancelExtensionDialog;
   moveExtensionDialogSelectionRef.current = moveExtensionDialogSelection;
@@ -253,6 +268,15 @@ export function useAppKeyboardShortcuts({
 
     return "mine";
   };
+
+  /**
+   * Own every key while the feedback form is open.
+   *
+   * Text goes to its focused input as `"focused"`, and its escape hatches (Escape, Ctrl-S, Tab)
+   * are the form's own, so no keystroke typed into feedback can run a review command.
+   */
+  const handleFeedbackFormShortcut = (key: KeyEvent): KeyOwner =>
+    handleFeedbackKeyRef.current?.(key) ?? "notMine";
 
   /** Escape closes the topmost open overlay (agent skill, then help). */
   const handleDialogShortcut = (key: KeyEvent): KeyOwner => {
@@ -486,7 +510,9 @@ export function useAppKeyboardShortcuts({
    * and closes second.
    */
   const handleFocusedInputShortcut = (key: KeyEvent): KeyOwner => {
-    if (focusAreaRef.current === "filter") {
+    // Asked live rather than from the last render: Tab opens the filter synchronously,
+    // and the rest of the same input chunk must already be its text.
+    if (isFilterPromptOpenRef.current()) {
       // Deliberately no modifier check: Shift+Tab toggles focus exactly like
       // Tab, in both its CSI-u and legacy backtab encodings.
       if (key.name === "tab") {
@@ -495,6 +521,13 @@ export function useAppKeyboardShortcuts({
         if (!executeAppCommand(commandsRef.current, "hunk.app.toggleFocusArea")) {
           toggleFocusArea();
         }
+        return "mine";
+      }
+
+      // Until a render mounts the input, hold typed text in the prompt value it mounts with.
+      if (focusAreaRef.current !== "filter") {
+        const text = printableKeyText(key);
+        if (text !== undefined) queueFilterInputRef.current(text);
         return "mine";
       }
 
@@ -641,6 +674,7 @@ export function useAppKeyboardShortcuts({
         handleExtensionTrustPromptShortcut,
         handleSaveConfigPromptShortcut,
         handleExtensionDialogShortcut,
+        handleFeedbackFormShortcut,
         handleMenuToggleShortcut,
         handleDialogShortcut,
         handleThemeSelectorShortcut,

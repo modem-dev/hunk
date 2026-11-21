@@ -4,14 +4,23 @@
  * an already-ready watcher does not. Depth zero bounds recursion, not a wide directory's own
  * readdir/stat work: that remaining flat-directory burst is the accepted batching floor.
  */
+import { watch as watchDirectory } from "node:fs";
 import { lstat, readdir } from "node:fs/promises";
-import { join, resolve, sep } from "node:path";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import { watch, type FSWatcher } from "chokidar";
 
 export const PORTABLE_TREE_BATCH_SIZE = 32;
 
 export interface PortableTreeRuntime {
   watch: typeof watch;
+  checkRoot(directory: string): Promise<void>;
+  watchParent(
+    directory: string,
+    onChange: (filename: string | null) => void,
+  ): {
+    close(): void;
+    onError(callback: (error: unknown) => void): void;
+  };
   readDirectories(directory: string): Promise<string[]>;
   /** Schedule one macrotask and return its cancellation function. */
   schedule(callback: () => void): () => void;
@@ -19,6 +28,18 @@ export interface PortableTreeRuntime {
 
 const defaultRuntime: PortableTreeRuntime = {
   watch,
+  async checkRoot(directory) {
+    await lstat(directory);
+  },
+  watchParent(directory, onChange) {
+    const watcher = watchDirectory(directory, (_event, filename) => onChange(filename));
+    return {
+      close: () => watcher.close(),
+      onError: (callback) => {
+        watcher.on("error", callback);
+      },
+    };
+  },
   async readDirectories(directory) {
     // Explicit roots and directories replaced during admission can themselves be symlinks.
     // Match Chokidar's followSymlinks:false policy before enumerating their referents.
@@ -51,7 +72,8 @@ export function createChunkedTreeWatcher(
   const retiring = new Set<Promise<void>>();
   const queued = new Set<string>();
   const known = new Set<string>();
-  let anchor: FSWatcher | undefined;
+  let parentWatcher: ReturnType<PortableTreeRuntime["watchParent"]> | undefined;
+  let rootEpoch = 0;
   let closed = false;
   let ready = false;
   let draining: Promise<void> | undefined;
@@ -68,8 +90,7 @@ export function createChunkedTreeWatcher(
   /** Deduplicate parent enumeration and repeated runtime addDir discovery. */
   function enqueue(path: string) {
     path = resolve(path);
-    // Chokidar may observe a missing root's parent until the root is recreated. Never
-    // turn that conservative fallback into recursive coverage outside this target.
+    // Parent recovery observes one entry, never recursive coverage outside this target.
     if (path !== root && !path.startsWith(rootPrefix)) return;
     if (closed || isIgnored(path) || known.has(path)) return;
     known.add(path);
@@ -78,9 +99,26 @@ export function createChunkedTreeWatcher(
     if (ready) onEvent();
   }
 
+  /** Recover root inodes from exact parent events without Chokidar's directory-scan race. */
+  function watchRootRecovery() {
+    if (closed || parentWatcher) return;
+    try {
+      parentWatcher = runtime.watchParent(dirname(root), (filename) => {
+        if (closed || (filename !== null && filename !== basename(root))) return;
+        invalidate(root);
+        enqueue(root);
+        onEvent();
+      });
+      parentWatcher.onError(reportError);
+    } catch (error) {
+      reportError(error);
+    }
+  }
+
   /** Forget a removed subtree and retire its owners before admitting replacement inodes. */
   function invalidate(path: string) {
     path = resolve(path);
+    if (path === root) rootEpoch++;
     const prefix = path.endsWith(sep) ? path : `${path}${sep}`;
     const contains = (candidate: string) => candidate === path || candidate.startsWith(prefix);
     for (const candidate of known) {
@@ -91,13 +129,6 @@ export function createChunkedTreeWatcher(
     }
     for (const [watcher, batch] of watchers) {
       if (![...batch.roots].some(contains)) continue;
-      if (watcher === anchor) {
-        // Preserve the missing-root parent fallback, but turn its old root into discovery
-        // only. A replacement batch owns the new inode and its file events.
-        batch.roots.clear();
-        batch.markReady();
-        continue;
-      }
       watchers.delete(watcher);
       batch.active = false;
       batch.markReady();
@@ -146,6 +177,24 @@ export function createChunkedTreeWatcher(
       paths.push(path);
       if (paths.length === PORTABLE_TREE_BATCH_SIZE) break;
     }
+    if (paths.includes(root)) {
+      // Subscribe before checking existence so creation cannot fall between the two.
+      watchRootRecovery();
+      const epoch = rootEpoch;
+      try {
+        await Promise.race([runtime.checkRoot(root), cancelled]);
+      } catch (error) {
+        // A newer parent event owns any queued replacement, even if this check fails.
+        if (epoch === rootEpoch) {
+          invalidate(root);
+          reportError(error);
+        }
+        paths.length = 0;
+      }
+      // Do not admit an old snapshot or duplicate a newer event's queued registration.
+      if (epoch !== rootEpoch) paths.length = 0;
+    }
+    if (closed) return;
     if (paths.length) {
       let watcher: FSWatcher;
       const roots = new Set(paths);
@@ -169,8 +218,7 @@ export function createChunkedTreeWatcher(
               enqueue(normalized);
               // Keep child directory entries visible to depth-zero Chokidar so removing
               // an intermediate directory emits unlinkDir, even when it contains no files.
-              // A removed anchor root only discovers replacements; it must not own them.
-              return paths.includes(normalized);
+              return false;
             }
             return false;
           },
@@ -182,7 +230,6 @@ export function createChunkedTreeWatcher(
         reportError(error);
         return;
       }
-      anchor ??= watcher;
       let markReady!: () => void;
       const batchReady = new Promise<void>((resolveReady) => {
         markReady = resolveReady;
@@ -194,7 +241,15 @@ export function createChunkedTreeWatcher(
       watcher.on("all", (event, path) => {
         if (closed || !watchers.has(watcher)) return;
         if (event === "addDir") enqueue(path);
-        if (event === "unlinkDir") invalidate(path);
+        if (event === "unlinkDir") {
+          if (resolve(path) !== root) invalidate(path);
+          // Once installed, parent events own root retirement. An older Chokidar scan
+          // must not invalidate a replacement already admitted by the parent watcher.
+          else if (!parentWatcher) {
+            watchRootRecovery();
+            invalidate(path);
+          }
+        }
         onEvent();
       });
       await Promise.race([batchReady, cancelled]);
@@ -213,6 +268,9 @@ export function createChunkedTreeWatcher(
               if (!roots.has(path)) return;
               // A directory may disappear between Chokidar's scan and enumeration. Allow a
               // later addDir to rediscover it; report other filesystem failures the same way.
+              if (path === root && (error as NodeJS.ErrnoException).code === "ENOENT") {
+                watchRootRecovery();
+              }
               invalidate(path);
               reportError(error);
             }
@@ -246,6 +304,7 @@ export function createChunkedTreeWatcher(
       cancelWork();
       closing = Promise.all([
         draining,
+        Promise.resolve().then(() => parentWatcher?.close()),
         ...retiring,
         ...[...watchers.keys()].map((watcher) => Promise.resolve().then(() => watcher.close())),
       ]).then(() => {

@@ -25,7 +25,8 @@ const installPath = path.join(installDir, binaryName);
 const legacyInstallPath = path.join(installDir, legacyBinaryName);
 
 const buildScript = path.join(import.meta.dir, "build-bin.ts");
-const build = Bun.spawnSync(["bun", "run", buildScript], {
+// Run the build with this same Bun so the compiled runtime matches the installer's version.
+const build = Bun.spawnSync([process.execPath, "run", buildScript], {
   cwd: repoRoot,
   stdin: "inherit",
   stdout: "inherit",

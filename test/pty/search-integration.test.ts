@@ -68,8 +68,17 @@ describe("PTY content search", () => {
       await harness.waitForSnapshot(session, (text) => text.includes("/ readconfig"), 5_000);
       await session.press("enter");
 
-      // Strictly forward from the current hunk (alpha's first), so the first
-      // landing is alpha's second hunk, revealed a little below the top edge.
+      // The startup cursor sits on alpha's first deletion row, so the first landing is
+      // the match right below it: alpha's first addition.
+      await harness.waitForSnapshot(
+        session,
+        (text) => statusRow(text).includes("[1/3] alpha.ts:1"),
+        5_000,
+      );
+
+      // The next match sits below the fold, so landing there has to scroll; it is revealed a
+      // little below the top edge.
+      await session.press("n");
       const landed = await harness.waitForSnapshot(
         session,
         (text) => statusRow(text).includes("[2/3] alpha.ts:62"),
@@ -135,7 +144,7 @@ describe("PTY content search", () => {
     }
   });
 
-  test("repeated occurrences on the landed line each carry a mark", async () => {
+  test("repeated occurrences on one line are separate stops, each with a mark", async () => {
     const fixture = harness.createSearchRepoFixture();
     writeFileSync(
       join(fixture.dir, "beta.ts"),
@@ -157,10 +166,12 @@ describe("PTY content search", () => {
       await session.press("enter");
       await harness.waitForSnapshot(
         session,
-        (text) => statusRow(text).includes("[1/1] beta.ts:1"),
+        (text) => statusRow(text).includes("[1/2] beta.ts:1"),
         5_000,
       );
 
+      // Each occurrence is its own stop: the first is current, then `n` moves the current
+      // mark to the second occurrence on the same line.
       const theme = resolveTheme("auto", "dark");
       await harness.waitForSnapshot(
         session,
@@ -171,6 +182,62 @@ describe("PTY content search", () => {
       expect(laterBackground).toBeDefined();
       expect(laterBackground).not.toBe(theme.text.toLowerCase());
       expect(laterBackground).not.toBe(backgroundUnder(session, "pair ="));
+
+      await session.press("n");
+      await harness.waitForSnapshot(
+        session,
+        (text) => statusRow(text).includes("[2/2] beta.ts:1"),
+        5_000,
+      );
+      await harness.waitForSnapshot(
+        session,
+        () => backgroundUnder(session, 'needle("second")') === theme.text.toLowerCase(),
+        5_000,
+      );
+    } finally {
+      session.close();
+    }
+  });
+
+  test("split view steps row by row, old side first", async () => {
+    const fixture = harness.createGitRepoFixture([
+      {
+        path: "pair.ts",
+        before: "const a = readConfig(1);\nconst b = readConfig(2);\n",
+        after: "const a = readConfig(3);\nconst b = readConfig(4);\n",
+      },
+    ]);
+    const session = await harness.launchHunk({
+      args: ["diff", "--theme", "github-dark-default", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 120,
+      rows: 14,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+      await harness.ensureKeyboardIsLive(session);
+      await session.type("/");
+      await harness.waitForSnapshot(session, (text) => text.includes("/ search diff"), 5_000);
+      await session.type("readconfig");
+      await session.press("enter");
+
+      // The startup cursor sits on the first old row and a fresh search includes it, so a lap
+      // shows the whole split order (1), (3), (2), (4).
+      const expected = [
+        "[1/4] pair.ts:1 — const a = readConfig(1);",
+        "[2/4] pair.ts:1 — const a = readConfig(3);",
+        "[3/4] pair.ts:2 — const b = readConfig(2);",
+        "[4/4] pair.ts:2 — const b = readConfig(4);",
+        "[1/4] pair.ts:1 • wrapped — const a = readConfig(1);",
+        "[2/4] pair.ts:1 — const a = readConfig(3);",
+      ];
+      for (const [index, status] of expected.entries()) {
+        if (index > 0) {
+          await session.press("n");
+        }
+        await harness.waitForSnapshot(session, (text) => statusRow(text).includes(status), 5_000);
+      }
     } finally {
       session.close();
     }

@@ -126,7 +126,7 @@ describe("GitHub command dispatch", () => {
     expect(registration.command).toEqual({
       name: "gh",
       summary: "Review GitHub pull requests, commits, and comparisons",
-      usage: "<pr|commit|compare> <target> [--repo <owner/repo>]",
+      usage: "<pr|commit|compare> <target> [--repo <[host/]owner/repo>]",
     });
     if (!registration.handler) throw new Error("Expected command registration.");
 

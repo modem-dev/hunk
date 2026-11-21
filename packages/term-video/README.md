@@ -22,9 +22,17 @@ inspectable PNG before anything is encoded.
   from the caller's work directory so its version can match the driven
   Chromium build.
 
+- `@hunk/term-video/timeline` (Node ≥ 22) — `renderTimeline` steps a free-form
+  motion page frame by frame instead of planning stage states. The page owns
+  all of its motion and exposes `timelineReady`, `TIMELINE_DURATION`, and a
+  pure `renderAt(t)`, so any frame renders on its own for review stills.
+  `frameTimes` and `encodeArgs` are the unit-tested sampling and encoding
+  pieces.
+
 ## Consumers
 
 `scripts/launch-video/` holds Hunk's current storyboard (scenes, captions,
-cards) on top of this package; `skills/hunk-launch-video/SKILL.md` documents the
+cards) on top of this package, and `scripts/launch-video/promo/` holds Hunk's
+release-promo style kit rendered through `timeline`; `skills/hunk-launch-video/SKILL.md` documents the
 end-to-end workflow and recipes for single-feature, custom, and full-release
 videos, environment gotchas included.

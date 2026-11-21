@@ -29,7 +29,12 @@ import {
 } from "./history";
 import { createGitStatusCapability } from "./status";
 import { buildGitMetadataTargets } from "./watchTargets";
-import { gitEndpointSourceSpec, readGitFileSource } from "./source";
+import {
+  gitEndpointSourceSpec,
+  readGitFileBytes,
+  readGitFileSource,
+  type GitFileSourceSpec,
+} from "./source";
 import { commitReviewInfo, comparisonReviewInfo } from "@hunk/vcs/review-info";
 import {
   HUNK_VCS_DETECTION_BASELINE_PRIORITY,
@@ -37,7 +42,9 @@ import {
   type ExtensionVcsDiffInput,
   type ExtensionVcsDirectoryTreeWatchTarget,
   type ExtensionVcsExtraFile,
+  type ExtensionVcsFileBytesReader,
   type ExtensionVcsFileSourceReader,
+  type ExtensionVcsFileSourceRequest,
   type ExtensionVcsShowInput,
   type ExtensionVcsWatchPlan,
   type HunkExtensionAPI,
@@ -122,6 +129,7 @@ export function statSignature(path: string) {
 /** Exact source reader plus a stable identity for its complete old/new snapshot. */
 interface GitSourceCapability {
   readFileSource: ExtensionVcsFileSourceReader;
+  readFileBytes: ExtensionVcsFileBytesReader;
   sourceCacheKey: string;
 }
 
@@ -220,26 +228,37 @@ async function createGitSourceCapabilityAsync(
   const indexCacheKey = needsIndex
     ? await gitIndexCacheKeyAsync(input, repoRoot, gitExecutable, signal)
     : "unused";
+
+  /** Locate one requested side, or nothing for the absent side of an added or deleted file. */
+  const sideSourceSpec = ({
+    path,
+    previousPath,
+    changeType,
+    side,
+  }: ExtensionVcsFileSourceRequest): GitFileSourceSpec | undefined => {
+    if (side === "old") {
+      return changeType === "new"
+        ? undefined
+        : gitEndpointSourceSpec(endpoints.old, repoRoot, previousPath ?? path);
+    }
+    return changeType === "deleted"
+      ? undefined
+      : gitEndpointSourceSpec(endpoints.new, repoRoot, path);
+  };
+
   return {
     sourceCacheKey: [
       "git-source-v1",
       gitEndpointCacheKey(endpoints.old, indexCacheKey),
       gitEndpointCacheKey(endpoints.new, indexCacheKey),
     ].join(":"),
-    readFileSource: ({ path, previousPath, changeType, side }) => {
-      if (side === "old") {
-        return changeType === "new"
-          ? Promise.resolve(null)
-          : readGitFileSource(
-              gitEndpointSourceSpec(endpoints.old, repoRoot, previousPath ?? path),
-              { gitExecutable },
-            );
-      }
-      return changeType === "deleted"
-        ? Promise.resolve(null)
-        : readGitFileSource(gitEndpointSourceSpec(endpoints.new, repoRoot, path), {
-            gitExecutable,
-          });
+    readFileSource: (request) => {
+      const spec = sideSourceSpec(request);
+      return spec ? readGitFileSource(spec, { gitExecutable }) : Promise.resolve(null);
+    },
+    readFileBytes: (request) => {
+      const spec = sideSourceSpec(request);
+      return spec ? readGitFileBytes(spec, { gitExecutable }) : Promise.resolve(null);
     },
   };
 }

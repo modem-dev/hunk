@@ -44,3 +44,23 @@ export function createExtensionDocumentReader(file: DiffFile, signal: AbortSigna
     return waitWithSignal(read, signal);
   };
 }
+
+/**
+ * Build the shared `readBytes(side)` capability handed to file-view inputs.
+ *
+ * Follows `readDocument`'s policy: reads are deduplicated per side for one request, any
+ * unreadable side resolves `null`, and the request's abort signal ends only this caller's wait.
+ */
+export function createExtensionBytesReader(file: DiffFile, signal: AbortSignal) {
+  const reads = new Map<ExtensionFileSide, Promise<Uint8Array | null>>();
+  return (side: ExtensionFileSide) => {
+    let read = reads.get(side);
+    if (!read) {
+      read = file.byteFetcher
+        ? file.byteFetcher.getBytes(side).catch(() => null)
+        : Promise.resolve(null);
+      reads.set(side, read);
+    }
+    return waitWithSignal(read, signal);
+  };
+}

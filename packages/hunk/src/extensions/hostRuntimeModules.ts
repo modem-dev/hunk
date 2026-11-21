@@ -102,7 +102,7 @@ function transpilerFor(loader: TranspilerLoader) {
 
 let virtualModulesRegistered = false;
 const registeredSourceRoots = new Set<string>();
-const registeredDependencyFiles = new Set<string>();
+const registeredSourceFiles = new Set<string>();
 
 /** Report whether the Bun runtime plugin API is available. */
 function canRegisterPlugins() {
@@ -223,9 +223,9 @@ function extensionSpecifier(specifier: string, importerPath: string, kind: Modul
     const resolved = resolveInstalledPackageSpecifier(specifier, importerPath, kind);
     const relativePath = resolveRelativeModulePath(specifier, importerPath, kind);
     if (resolved) {
-      registerDependencyFile(kind === "require" ? resolved : fileURLToPath(resolved));
+      registerSourceFile(kind === "require" ? resolved : fileURLToPath(resolved));
     } else if (relativePath) {
-      registerDependencyFile(relativePath);
+      registerSourceFile(relativePath);
     }
     return resolved;
   } catch (error) {
@@ -256,26 +256,28 @@ function rewriteSource(path: string, source: string) {
   };
 }
 
-/** Track reachable ESM files outside extension roots without claiming unrelated or CommonJS files. */
-function registerDependencyFile(path: string) {
+/** Hook entries and reachable ESM dependencies without claiming unrelated files. */
+function registerSourceFile(path: string, kind: "entry" | "dependency" = "dependency") {
   if (!/\.(?:[mc]?[jt]s|[jt]sx)$/i.test(path)) return;
   const canonicalPath = resolveCanonicalPath(path);
-  if (registeredDependencyFiles.has(canonicalPath)) return;
+  if (registeredSourceFiles.has(canonicalPath)) return;
   for (const root of registeredSourceRoots) {
     if (canonicalPath.startsWith(`${root}${sep}`)) return;
   }
 
-  const transpiler = transpilerFor(resolveLoader(path));
-  const scanned = transpiler.scan(transpiler.transformSync(readFileSync(path, "utf8")));
-  // Runtime JS hooks erase Bun's native CommonJS format detection. Leave those files native.
-  if (
-    !scanned.exports.length &&
-    !scanned.imports.some((item) => item.kind === "import-statement") &&
-    !isESModuleDependency(path)
-  )
-    return;
+  if (kind === "dependency") {
+    const transpiler = transpilerFor(resolveLoader(path));
+    const scanned = transpiler.scan(transpiler.transformSync(readFileSync(path, "utf8")));
+    // Preserve Bun's native CommonJS format detection for dependency files.
+    if (
+      !scanned.exports.length &&
+      !scanned.imports.some((item) => item.kind === "import-statement") &&
+      !isESModuleDependency(path)
+    )
+      return;
+  }
 
-  registeredDependencyFiles.add(canonicalPath);
+  registeredSourceFiles.add(canonicalPath);
   const escapedPaths = [...new Set([path, canonicalPath])]
     .map((candidate) => candidate.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
     .join("|");
@@ -313,7 +315,7 @@ function registerSourceRoot(directory: string) {
 
 /**
  * Register host runtime modules before importing one pass of extension entries.
- * Registration is idempotent per directory and a no-op outside Bun.
+ * Registration is idempotent per source path and a no-op outside Bun.
  */
 export function registerHostRuntimeModules(entryPaths: readonly string[]) {
   if (entryPaths.length === 0 || !canRegisterPlugins()) return;
@@ -321,5 +323,7 @@ export function registerHostRuntimeModules(entryPaths: readonly string[]) {
   registerVirtualModules();
   for (const path of entryPaths) {
     registerSourceRoot(resolveManagedNpmModuleRoot(path) ?? dirname(path));
+    // Bun resolves file symlinks before loading; hook that entry without claiming its neighbors.
+    registerSourceFile(path, "entry");
   }
 }

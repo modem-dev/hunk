@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { CliInput } from "../run/commandInputs";
 import {
+  type ControllingTerminalDeps,
   installTerminalDisconnectSupport,
   openControllingTerminal,
+  resolveControllingTerminalDevice,
   resolveRuntimeCliInput,
   shouldUseMouseForApp,
   shouldUsePagerMode,
@@ -102,47 +104,151 @@ describe("app mouse support", () => {
   });
 });
 
-describe("controlling terminal attachment", () => {
-  test("opens /dev/tty for read and closes the input stream", () => {
-    const calls: Array<[string, string]> = [];
-    let stdinDestroyed = false;
+/** Build controlling-terminal deps around an in-memory device so no real tty is touched. */
+function createTestControllingTerminalDeps(
+  overrides: Partial<ControllingTerminalDeps> & {
+    /** Chunks the fake device delivers, in order; the stream stays open after the last one. */
+    chunks?: Uint8Array[];
+  } = {},
+) {
+  const log: string[] = [];
+  const rawModeCalls: boolean[] = [];
+  const { chunks = [], ...depOverrides } = overrides;
+  const pending = chunks.map((chunk) => chunk);
+  let cancelled = false;
+  let release: (() => void) | undefined;
+  const source = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      const next = pending.shift();
+      if (next) {
+        controller.enqueue(next);
+        return;
+      }
+      // Emulate a terminal with nothing typed yet: the read stays pending until cancel.
+      return new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    },
+    cancel() {
+      cancelled = true;
+      release?.();
+    },
+  });
+  const deps: ControllingTerminalDeps = {
+    candidateFds: [1],
+    isatty: () => true,
+    readlinkSync: () => {
+      throw new Error("no procfs");
+    },
+    fstatSync: () => ({ rdev: 42 }),
+    readdirSync: () => ["null", "tty", "ttys001", "ttys007"],
+    statSync: (path) => ({
+      rdev: path === "/dev/ttys007" ? 42 : 7,
+      isCharacterDevice: () => true,
+    }),
+    openSync: (path, flags) => {
+      log.push(`open ${String(path)} ${String(flags)}`);
+      return 11;
+    },
+    closeSync: (fd) => {
+      log.push(`close ${fd}`);
+    },
+    createRawModeStream: () => {
+      const handle = {
+        isRaw: false,
+        setRawMode(flag: boolean) {
+          rawModeCalls.push(flag);
+          handle.isRaw = flag;
+          return handle as never;
+        },
+      };
+      return handle;
+    },
+    openDeviceStream: (devicePath) => {
+      log.push(`stream ${devicePath}`);
+      return source;
+    },
+    ...depOverrides,
+  };
+  return {
+    deps,
+    log,
+    rawModeCalls,
+    get cancelled() {
+      return cancelled;
+    },
+  };
+}
 
-    const stdin = {
-      destroy() {
-        stdinDestroyed = true;
-      },
-    } as never;
-
-    const controllingTerminal = openControllingTerminal({
-      openSync(path, flags) {
-        calls.push([String(path), String(flags)]);
-        return 11;
-      },
-      createReadStream(fd) {
-        expect(fd).toBe(11);
-        return stdin;
+describe("controlling terminal device resolution", () => {
+  test("prefers the procfs link for a terminal descriptor", () => {
+    const { deps } = createTestControllingTerminalDeps({
+      readlinkSync: (path) => {
+        expect(path).toBe("/proc/self/fd/1");
+        return "/dev/pts/4";
       },
     });
-
-    expect(controllingTerminal).not.toBeNull();
-    expect(calls).toEqual([["/dev/tty", "r"]]);
-    expect(controllingTerminal?.stdin).toBe(stdin);
-
-    controllingTerminal?.close();
-    expect(stdinDestroyed).toBe(true);
+    expect(resolveControllingTerminalDevice(deps)).toBe("/dev/pts/4");
   });
 
-  test("returns null when the controlling terminal cannot be opened", () => {
-    const controllingTerminal = openControllingTerminal({
-      openSync() {
-        throw new Error("no tty");
-      },
-      createReadStream() {
-        throw new Error("unreachable");
+  test("matches the device by rdev when procfs is unavailable, skipping the /dev/tty alias", () => {
+    const { deps } = createTestControllingTerminalDeps();
+    expect(resolveControllingTerminalDevice(deps)).toBe("/dev/ttys007");
+  });
+
+  test("skips descriptors that are not terminals and reports null without a match", () => {
+    const { deps } = createTestControllingTerminalDeps({
+      candidateFds: [1, 2],
+      isatty: (fd) => fd === 2,
+      fstatSync: () => ({ rdev: 99 }),
+    });
+    expect(resolveControllingTerminalDevice(deps)).toBeNull();
+  });
+});
+
+describe("controlling terminal attachment", () => {
+  test("opens the resolved device for raw mode and streams it without a blocking read", async () => {
+    const harness = createTestControllingTerminalDeps({
+      chunks: [new TextEncoder().encode("q")],
+    });
+    const controllingTerminal = openControllingTerminal(harness.deps);
+    expect(controllingTerminal).not.toBeNull();
+    expect(harness.log).toEqual(["open /dev/ttys007 r", "stream /dev/ttys007"]);
+
+    const stdin = controllingTerminal!.stdin;
+    expect(stdin.isTTY).toBe(true);
+    stdin.setRawMode(true);
+    expect(stdin.isRaw).toBe(true);
+    expect(harness.rawModeCalls).toEqual([true]);
+
+    const first = await new Promise<Buffer>((resolve) => stdin.once("data", resolve));
+    expect(first.toString()).toBe("q");
+
+    // Teardown lands on a later tick while the next read is already pending, which is the
+    // shape that used to strand the process behind a blocking read.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const closed = new Promise<void>((resolve) => stdin.once("close", () => resolve()));
+    controllingTerminal!.close();
+    await closed;
+    expect(harness.cancelled).toBe(true);
+    expect(harness.log.at(-1)).toBe("close 11");
+    expect(stdin.destroyed).toBe(true);
+  });
+
+  test("returns null when no terminal device resolves", () => {
+    const { deps, log } = createTestControllingTerminalDeps({ isatty: () => false });
+    expect(openControllingTerminal(deps)).toBeNull();
+    expect(log).toEqual([]);
+  });
+
+  test("returns null and releases the descriptor when the device stream cannot open", () => {
+    const { deps, log } = createTestControllingTerminalDeps({
+      openDeviceStream: () => {
+        throw new Error("EINVAL");
       },
     });
-
-    expect(controllingTerminal).toBeNull();
+    expect(openControllingTerminal(deps)).toBeNull();
+    expect(log).toEqual(["open /dev/ttys007 r", "close 11"]);
   });
 });
 

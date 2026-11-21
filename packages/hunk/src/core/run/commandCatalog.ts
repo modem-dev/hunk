@@ -35,7 +35,7 @@ import {
   selectReviewGapForSelection,
 } from "../review/selectors";
 import type { ReviewState } from "../review/state";
-import type { ReviewNoteTargetV1 } from "../review/types";
+import type { ReviewNoteTarget } from "../review/types";
 
 /** Where one command's effect resolves, and therefore who may invoke it. */
 export type AppCommandLocus = "semantic" | "client-local" | "host-only";
@@ -137,6 +137,17 @@ const BUILTIN_COMMANDS = [
   {
     id: "hunk.app.openAgentSkill",
     title: "Show agent skill",
+    category: "app",
+    defaultKeys: [],
+    locus: "host-only",
+    publicToExtensions: true,
+    closesMenu: true,
+  },
+  {
+    // Host-only: the send runs where Hunk is hosted, and a remote client may not start it.
+    // Opening the form sends nothing; only the person's own send action does.
+    id: "hunk.app.openFeedback",
+    title: "Send feedback",
     category: "app",
     defaultKeys: [],
     locus: "host-only",
@@ -609,6 +620,17 @@ const BUILTIN_COMMANDS = [
     publicToExtensions: true,
     closesMenu: true,
   },
+  // Host-only because the launch and the capability it carries stay where the review is
+  // hosted. Unbound by default; reached from the terminal's File menu or `[keybindings]`.
+  {
+    id: "hunk.app.openInBrowser",
+    title: "Open in browser",
+    category: "app",
+    defaultKeys: [],
+    locus: "host-only",
+    publicToExtensions: true,
+    closesMenu: true,
+  },
 ] as const satisfies readonly AppCommandCatalogEntry[];
 
 /**
@@ -639,7 +661,7 @@ export function appCommandCatalogEntry(id: string): AppCommandCatalogEntry | und
  * possibility that the command does not exist.
  */
 export function builtinAppCommand(id: AppCommandId): AppCommandCatalogEntry {
-  return APP_COMMAND_CATALOG.find((entry) => entry.id === id) as AppCommandCatalogEntry;
+  return BUILTIN_COMMANDS.find((entry) => entry.id === id) as AppCommandCatalogEntry;
 }
 
 /** The facts a command needs to become one concrete review intent. */
@@ -659,7 +681,7 @@ export interface AppCommandLoweringContext {
    * knows which line the reviewer's cursor was on. Omitted, the note lands on the shared
    * default for the whole hunk.
    */
-  noteTarget?: ReviewNoteTargetV1;
+  noteTarget?: ReviewNoteTarget;
   /**
    * The file and hunk the invoking client's note affordance addressed.
    *

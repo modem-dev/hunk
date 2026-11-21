@@ -345,7 +345,7 @@ describe("useThemeSelectorController", () => {
         }),
       );
       expect(harness.controller.themeId).toBe(alpha.id);
-      expect(harness.controller.baseTheme.id).toBe("terminal");
+      expect(harness.controller.baseTheme.id).toBe("github-dark-default");
       expect(harness.controller.themeSelectorSelectedIndex).toBeGreaterThanOrEqual(0);
       expect(harness.controller.themeSelectorSelectedIndex).toBeLessThan(
         harness.controller.themeSelectorItems.length,

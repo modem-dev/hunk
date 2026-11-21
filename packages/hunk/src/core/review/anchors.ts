@@ -12,12 +12,7 @@
  * reading a verdict out of the anchor.
  */
 import { reviewHunkRange, reviewRangesOverlap, type ReviewHunkSpan } from "./geometry";
-import type {
-  ReviewLineRange,
-  ReviewRangeAnchorV1,
-  ReviewRangeTargetV1,
-  ReviewSide,
-} from "./types";
+import type { ReviewLineRange, ReviewRangeAnchor, ReviewRangeTarget, ReviewSide } from "./types";
 
 /**
  * Names the hunk a line outside every hunk hangs from.
@@ -61,7 +56,7 @@ export interface ReviewNoteAnchorInput {
 export function resolveReviewNoteAnchor(
   hunks: readonly ReviewHunkSpan[],
   { oldRange, newRange, preferred, fallbackOwnerHunkIndex }: ReviewNoteAnchorInput,
-): ReviewRangeAnchorV1 {
+): ReviewRangeAnchor {
   const intersectingHunkIndices = hunks.flatMap((hunk, index) => {
     const intersects =
       (oldRange !== undefined && reviewRangesOverlap(oldRange, reviewHunkRange(hunk, "old"))) ||
@@ -99,8 +94,8 @@ export function resolveReviewNoteAnchor(
 /** Resolve a caller-supplied range while retaining its declared fallback owner. */
 export function reviewRangeAnchor(
   hunks: readonly ReviewHunkSpan[],
-  target: ReviewRangeTargetV1 & { hunkIndex: number },
-): ReviewRangeAnchorV1 {
+  target: ReviewRangeTarget & { hunkIndex: number },
+): ReviewRangeAnchor {
   return resolveReviewNoteAnchor(hunks, {
     ...(target.oldRange ? { oldRange: target.oldRange } : {}),
     ...(target.newRange ? { newRange: target.newRange } : {}),
@@ -120,7 +115,7 @@ export function reviewRangeAnchor(
 export function reviewLineAnchor(
   hunks: readonly ReviewHunkSpan[],
   target: { hunkIndex: number; side: ReviewSide; line: number },
-): ReviewRangeAnchorV1 {
+): ReviewRangeAnchor {
   const range = [target.line, target.line] as ReviewLineRange;
   return resolveReviewNoteAnchor(hunks, {
     ...(target.side === "old" ? { oldRange: range } : { newRange: range }),

@@ -24,7 +24,20 @@
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
-import { MAX_WS_MESSAGE_BYTES } from "@hunk/session-broker-core";
+import {
+  DEFAULT_SESSION_BROKER_LIMITS,
+  MAX_SNAPSHOT_LIVE_COMMENTS,
+  MAX_SNAPSHOT_REVIEW_NOTES,
+  MAX_WS_MESSAGE_BYTES,
+} from "@hunk/session-broker-core";
+import {
+  MAX_PROJECTED_SIDECAR_NOTE_BYTES,
+  MAX_PROJECTED_SIDECAR_NOTES,
+  MAX_REVIEW_NOTE_BYTES,
+  MAX_REVIEW_NOTES,
+  MAX_REVIEW_NOTES_TOTAL_BYTES,
+  MAX_SNAPSHOT_NOTE_SUMMARY_BYTES,
+} from "../../packages/hunk/src/core/review/noteSize";
 import { REVIEW_INTENT_TYPES } from "../../packages/hunk/src/core/review/intents";
 import { REVIEW_RESOURCE_CHUNK_BYTES } from "../../packages/hunk/src/core/review/resources";
 import {
@@ -32,10 +45,11 @@ import {
   MAX_REVIEW_EVENT_PAYLOAD_BYTES,
   REVIEW_EVENT_CHUNK_BYTES,
 } from "../../packages/hunk/src/session/reviewEventProtocol";
+import { MAX_REVIEW_SHARED_STATE_BYTES } from "../../packages/hunk/src/session/reviewSharedState";
 import {
   HUNK_REVIEW_ACTION_TYPES,
   MAX_HUNK_REVIEW_ENVELOPE_BYTES,
-  parseHunkReviewAction,
+  parseRemoteReviewIntent,
 } from "../../packages/hunk/src/session/reviewProtocol";
 
 const REPO_ROOT = resolve(import.meta.dir, "../..");
@@ -84,7 +98,7 @@ describe("review wire vocabulary derivation", () => {
   // a parser really ran — an unrouted type would answer `unsupported` instead.
   test("routes every action in the vocabulary to a parser", () => {
     for (const type of HUNK_REVIEW_ACTION_TYPES) {
-      expect(parseHunkReviewAction({ type, unexpectedField: 1 })).toEqual({
+      expect(parseRemoteReviewIntent({ type, unexpectedField: 1 })).toEqual({
         ok: false,
         reason: "invalid",
       });
@@ -92,7 +106,7 @@ describe("review wire vocabulary derivation", () => {
   });
 
   test("reports a type outside the vocabulary as unsupported", () => {
-    expect(parseHunkReviewAction({ type: "notes/archive-user", noteId: "n" })).toEqual({
+    expect(parseRemoteReviewIntent({ type: "notes/archive-user", noteId: "n" })).toEqual({
       ok: false,
       reason: "unsupported",
     });
@@ -136,6 +150,34 @@ describe("review constant derivation", () => {
   // session transport carries must still fit a complete review envelope.
   test("the session transport can carry a complete review envelope", () => {
     expect(MAX_WS_MESSAGE_BYTES).toBeGreaterThanOrEqual(MAX_HUNK_REVIEW_ENVELOPE_BYTES);
+  });
+
+  // D5: the stored-note bounds exist so every snapshot a review can produce is one its readers
+  // accept. A review that outgrew them made the daemon refuse every session snapshot (note
+  // count) or every `/state` read (bytes), so the three are asserted together here.
+  test("the review note bounds fit every snapshot that carries notes", () => {
+    expect(MAX_REVIEW_NOTES + MAX_PROJECTED_SIDECAR_NOTES).toBeLessThanOrEqual(
+      MAX_SNAPSHOT_REVIEW_NOTES,
+    );
+    expect(MAX_REVIEW_NOTES).toBeLessThanOrEqual(MAX_SNAPSHOT_LIVE_COMMENTS);
+    // Notes may fill at most three quarters of the shared state; files and framing get the rest.
+    expect(MAX_REVIEW_NOTES_TOTAL_BYTES + MAX_PROJECTED_SIDECAR_NOTE_BYTES).toBeLessThanOrEqual(
+      (MAX_REVIEW_SHARED_STATE_BYTES * 3) / 4,
+    );
+    // The binding limit on a session snapshot is the daemon's per-session retained ceiling, not
+    // the websocket frame. The summaries repeat each stored note's text in two lists, so the
+    // projection carries one joint byte budget: it leaves a quarter of the ceiling for
+    // registration and snapshot metadata, and it is tighter than the unbounded lists would be.
+    expect(MAX_SNAPSHOT_NOTE_SUMMARY_BYTES).toBeLessThanOrEqual(
+      (DEFAULT_SESSION_BROKER_LIMITS.maxRetainedSessionBytes * 3) / 4,
+    );
+    expect(2 * MAX_REVIEW_NOTES_TOTAL_BYTES + MAX_PROJECTED_SIDECAR_NOTE_BYTES).toBeGreaterThan(
+      DEFAULT_SESSION_BROKER_LIMITS.maxRetainedSessionBytes,
+    );
+    expect(DEFAULT_SESSION_BROKER_LIMITS.maxRetainedSessionBytes).toBeLessThan(
+      (MAX_WS_MESSAGE_BYTES * 3) / 4,
+    );
+    expect(MAX_REVIEW_NOTES_TOTAL_BYTES).toBeGreaterThanOrEqual(MAX_REVIEW_NOTE_BYTES);
   });
 
   // C4: the event stream's bounds are the protocol's and the resource path's, arithmetic

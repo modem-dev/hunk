@@ -114,6 +114,11 @@ test("watched source shrink clamps deep scrolling to the surviving end instead o
     await session.waitForText("replacement");
     expect(firstOpenScrollTestLine(await session.text())).toBe(survivingLine);
     await session.press("w");
+    // Watch publication and wrap layout can briefly clear the mounted rows before repainting.
+    await harness.waitForSnapshot(
+      session,
+      (text) => firstOpenScrollTestLine(text) === survivingLine,
+    );
     expect(firstOpenScrollTestLine(await session.text())).toBe(survivingLine);
     await session.press("g");
     await session.waitForText("LINE_001");

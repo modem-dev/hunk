@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Key, Session } from "tuistory";
+import { createTestPng } from "../helpers/image-fixtures";
 
 const integrationDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(integrationDir, "../..");
@@ -56,8 +57,8 @@ async function loadTuistory() {
 
 interface ChangedFileSpec {
   path: string;
-  before: string;
-  after: string;
+  before: string | Uint8Array;
+  after: string | Uint8Array;
 }
 
 export function sleep(ms: number) {
@@ -258,7 +259,7 @@ export async function revealAddNoteOnRow(session: Session, row: number) {
   throw new Error("Could not reveal add-note affordance on target row.");
 }
 
-function writeText(path: string, content: string) {
+function writeText(path: string, content: string | Uint8Array) {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, content);
 }
@@ -474,6 +475,27 @@ export function createPtyHarness() {
     );
 
     return { dir, before, after, agentContext };
+  }
+
+  /** Build one hunk whose first change sits several lines above a later change. */
+  function createSpreadHunkFilePair() {
+    const dir = makeTempDir("hunk-tuistory-spread-hunk-");
+    const before = join(dir, "before.ts");
+    const after = join(dir, "after.ts");
+
+    const beforeLines = Array.from(
+      { length: 40 },
+      (_, index) => `export const line${index + 1} = ${index + 1};`,
+    );
+    const afterLines = [...beforeLines];
+    for (const line of [20, 21, 27]) {
+      afterLines[line - 1] = `export const line${line} = ${line * 100};`;
+    }
+
+    writeText(before, `${beforeLines.join("\n")}\n`);
+    writeText(after, `${afterLines.join("\n")}\n`);
+
+    return { dir, before, after };
   }
 
   function createAgentNavigationRepoFixture() {
@@ -855,6 +877,22 @@ end
       // NUL bytes make Git and Hunk treat the file as binary, so it has no hunks.
       { path: "logo.png", before: "\u0000PNG before\u0001", after: "\u0000PNG after\u0002" },
       { path: "zeta.ts", before: textLines("zeta", 1), after: textLines("zeta", 2) },
+    ]);
+  }
+
+  /**
+   * Build a working-tree change to one real PNG, from 24×12 blue to 32×20 green.
+   *
+   * Decodable images let a test assert the image preview's captions, which read dimensions from
+   * the exact bytes on each side.
+   */
+  function createImageRepoFixture() {
+    return createGitRepoFixture([
+      {
+        path: "assets/logo.png",
+        before: createTestPng(24, 12, [40, 90, 220]),
+        after: createTestPng(32, 20, [40, 200, 90]),
+      },
     ]);
   }
 
@@ -1418,13 +1456,16 @@ end
     createAgentFilePair,
     createAgentNavigationRepoFixture,
     createBinaryNavigationRepoFixture,
+    createImageRepoFixture,
     createGapAnnotatedAgentFilePair,
+    createSpreadHunkFilePair,
     createBottomClampedRepoFixture,
     createCollapsedTopRepoFixture,
     createExpandableContextFilePair,
     createCrossFileHunkNavigationRepoFixture,
     createDeletionOnlyFilePair,
     createElixirHeredocRepoFixture,
+    createGitRepoFixture,
     createIsolatedConfigHome,
     createRepoExtensionFixture,
     createLinkedWorktreeWatchFixture,

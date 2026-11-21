@@ -40,7 +40,8 @@ import type {
   HunkSessionState,
 } from "../types";
 
-const DAEMON_STARTUP_TIMEOUT_MS = 3_000;
+/** How long one startup attempt waits for an auto-started daemon to answer health. */
+export const DAEMON_STARTUP_TIMEOUT_MS = 3_000;
 const RECONNECT_DELAY_MS = 3_000;
 // A window older than the daemon can never be accepted by it; poll slowly rather than never, so
 // a later daemon replacement is still noticed without hammering the incumbent.
@@ -93,6 +94,10 @@ interface ClientConnectionGeneration {
   readonly id: symbol;
 }
 
+type IncumbentWait =
+  | { kind: "build-skew"; fingerprint: string | null; buildKnown: boolean }
+  | { kind: "payload"; fingerprint: string | null };
+
 type StartupLifecycleState =
   | { status: "idle" }
   | {
@@ -103,6 +108,12 @@ type StartupLifecycleState =
     }
   | { status: "waiting"; retry: ScheduledStartupRetry }
   | { status: "stopped" };
+
+/** Carry one startup failure to a first-registration wait as an Error with its own message. */
+function asRegistrationFailure(error: unknown) {
+  if (error instanceof Error) return error;
+  return new Error(typeof error === "string" ? error : "Unknown session broker connection error.");
+}
 
 /** Reject an unhandled startup lifecycle state at compile time. */
 function assertNeverStartupState(_state: never): never {
@@ -157,13 +168,17 @@ export class SessionBrokerClient {
   private connectionGeneration: ClientConnectionGeneration | null = null;
   private lastConnectionWarning: string | null = null;
   private credentials: HunkSessionBrokerCredentials | null = null;
-  private waitingForIncumbentExit = false;
-  private incumbentLaunchFingerprint: string | null = null;
-  /** Whether the current incumbent has given a definitive answer about its build. */
-  private incumbentBuildKnown = false;
+  private incumbentWait: IncumbentWait | null = null;
   private connectionState: HunkDaemonConnectionState = { status: "connected" };
   private readonly noticeListeners = new Set<(notice: string | null) => void>();
   private readonly lifecycleClock: SessionBrokerLifecycleClock;
+  /** Whether a daemon has accepted this client once; settles every first-registration wait. */
+  private everRegistered = false;
+  private firstRegistrationFailure: Error | null = null;
+  private readonly registrationWaiters = new Set<{
+    resolve: () => void;
+    reject: (error: Error) => void;
+  }>();
 
   constructor(
     private registration: SessionRegistration<HunkSessionInfo>,
@@ -175,6 +190,9 @@ export class SessionBrokerClient {
 
   start() {
     if (process.env.HUNK_MCP_DISABLE === "1") {
+      this.settleFirstRegistration(
+        new Error("The session daemon is disabled for this process (HUNK_MCP_DISABLE=1)."),
+      );
       return;
     }
 
@@ -214,10 +232,45 @@ export class SessionBrokerClient {
     this.connectionGeneration = null;
     this.connection?.stop();
     this.connection = null;
+    this.settleFirstRegistration(new Error("The session broker client stopped."));
   }
 
   getRegistration() {
     return this.registration;
+  }
+
+  /**
+   * Resolve once a daemon first accepts this session, or reject with the first reason it cannot:
+   * the daemon could not start or its port belongs to another process, the daemon is a different
+   * build, or it refused the review. Reconnects after the first registration never settle it.
+   *
+   * A caller that waits reports the failure itself, so the console warning for that same failure
+   * is skipped. The client keeps retrying in the background until the caller stops it.
+   */
+  waitForFirstRegistration(): Promise<void> {
+    if (this.everRegistered) return Promise.resolve();
+    if (this.firstRegistrationFailure) return Promise.reject(this.firstRegistrationFailure);
+    return new Promise<void>((resolve, reject) => {
+      this.registrationWaiters.add({ resolve, reject });
+    });
+  }
+
+  /**
+   * Settle every pending first-registration wait: `null` for registered, otherwise the failure.
+   * Returns whether any wait was pending, which means a caller now owns reporting the failure.
+   */
+  private settleFirstRegistration(failure: Error | null) {
+    if (this.everRegistered) return false;
+    if (failure === null) this.everRegistered = true;
+    else this.firstRegistrationFailure ??= failure;
+    if (this.registrationWaiters.size === 0) return false;
+    const waiters = [...this.registrationWaiters];
+    this.registrationWaiters.clear();
+    for (const waiter of waiters) {
+      if (failure) waiter.reject(failure);
+      else waiter.resolve();
+    }
+    return true;
   }
 
   /** The current daemon link state, for surfaces that render it. */
@@ -245,26 +298,33 @@ export class SessionBrokerClient {
     const notice = state.status === "connected" ? null : state.notice;
     if (notice === previousNotice) return;
     if (this.noticeListeners.size === 0) {
-      if (notice !== null) this.warnUnavailable(notice);
+      // A caller awaiting the first registration reports the failure that settles its wait.
+      if (notice !== null && this.registrationWaiters.size === 0) this.warnUnavailable(notice);
       return;
     }
     for (const listener of this.noticeListeners) listener(notice);
   }
 
   /** Ask the daemon which build it is and refine the refused-hello notice by direction. */
-  private refineRefusalNotice(config: ResolvedSessionBrokerConfig, isCurrent: () => boolean) {
+  private refineRefusalNotice(
+    config: ResolvedSessionBrokerConfig,
+    wait: Extract<IncumbentWait, { kind: "build-skew" }>,
+    isCurrent: () => boolean,
+  ) {
     const probe = this.timing.probeDaemonStatus ?? probeHunkSessionDaemonAdminStatus;
     void probe(config).then(
       (result) => {
-        if (!isCurrent() || !this.waitingForIncumbentExit) return;
+        if (!isCurrent() || this.incumbentWait !== wait) return;
         // "Unavailable" is the one answer worth asking again for: it means the probe itself did
         // not land. A daemon that refuses the admin scope has answered definitively.
-        this.incumbentBuildKnown = result.kind !== "unavailable";
+        wait.buildKnown = result.kind !== "unavailable";
         const { direction, notice } = daemonSkewNotice(result);
         this.setConnectionState({ status: "disconnected", notice, direction });
+        this.settleFirstRegistration(new Error(notice));
       },
       () => {
         // The generic notice already stands; retry against this incumbent on the next refusal.
+        this.settleFirstRegistration(new Error(HUNK_DAEMON_UPGRADE_WAIT_MESSAGE));
       },
     );
   }
@@ -275,9 +335,13 @@ export class SessionBrokerClient {
   ) {
     // Let the connection validate/send first. If it throws, the client keeps
     // serving the previous registration and snapshot as one coherent pair.
+    const wait = this.incumbentWait;
     this.connection?.replaceSession(registration, snapshot);
     this.registration = registration;
     this.snapshot = snapshot;
+    // Release only the refusal this replacement retries, after the local pair commits. A newer
+    // reentrant refusal must survive; snapshot updates alone do not release either payload refusal.
+    if (wait?.kind === "payload" && this.incumbentWait === wait) this.incumbentWait = null;
   }
 
   private resolveConfig() {
@@ -401,21 +465,27 @@ export class SessionBrokerClient {
           );
           if (!isCommitAuthorized()) return;
         }
-        if (this.waitingForIncumbentExit) {
+        const wait = this.incumbentWait;
+        if (wait) {
           const healthy = await isSessionBrokerHealthy(config);
           if (!isCommitAuthorized()) return;
-          if (healthy) {
+          // A replacement can release payload waiting without changing the socket generation.
+          // Never let an older health result reinstate that wait or clear a newer refusal.
+          const currentWait = this.incumbentWait;
+          if (currentWait) {
             const currentFingerprint = readSessionBrokerLaunchFingerprint(config);
             if (!isCommitAuthorized()) return;
-            // Owner-private metadata is only a generation-change hint. The signed hello remains the
-            // sole compatibility and identity authority, and unchanged/malformed metadata causes
-            // health-only polling so skewed waiters cannot keep the incumbent active.
-            if (currentFingerprint === this.incumbentLaunchFingerprint) {
-              throw new Error(HUNK_DAEMON_UPGRADE_WAIT_MESSAGE);
+            // Metadata is only a generation-change hint. Null-to-null remains quiescent too;
+            // the signed hello still owns compatibility and identity after a retry.
+            if (currentWait !== wait || (healthy && currentFingerprint === wait.fingerprint)) {
+              throw new Error(
+                currentWait.kind === "payload"
+                  ? HUNK_DAEMON_REGISTRATION_REJECTED_MESSAGE
+                  : HUNK_DAEMON_UPGRADE_WAIT_MESSAGE,
+              );
             }
+            this.incumbentWait = null;
           }
-          if (!isCommitAuthorized()) return;
-          this.waitingForIncumbentExit = false;
         }
         await this.ensureDaemonAvailable(config, isCommitAuthorized);
         if (!isCommitAuthorized()) return;
@@ -428,30 +498,37 @@ export class SessionBrokerClient {
           // One incumbent, one probe: a running daemon's build cannot change, so re-asking on
           // every reconnect would only churn caller sessions and overwrite the refined notice
           // with the generic one. A different launch fingerprint means a different daemon.
-          const sameIncumbent =
-            this.waitingForIncumbentExit && this.incumbentLaunchFingerprint === fingerprint;
-          this.waitingForIncumbentExit = true;
-          this.incumbentLaunchFingerprint = fingerprint;
-          if (!sameIncumbent) {
-            this.incumbentBuildKnown = false;
+          const previousWait = this.incumbentWait;
+          const wait: Extract<IncumbentWait, { kind: "build-skew" }> =
+            previousWait?.kind === "build-skew" && previousWait.fingerprint === fingerprint
+              ? previousWait
+              : { kind: "build-skew", fingerprint, buildKnown: false };
+          this.incumbentWait = wait;
+          if (wait !== previousWait) {
             this.setConnectionState({
               status: "disconnected",
               notice: HUNK_DAEMON_UPGRADE_WAIT_MESSAGE,
               direction: "unknown",
             });
-            this.refineRefusalNotice(config, () => isConnectionCurrent(brokerGeneration));
-          } else if (!this.incumbentBuildKnown) {
+            this.refineRefusalNotice(config, wait, () => isConnectionCurrent(brokerGeneration));
+          } else if (!wait.buildKnown) {
             // A probe that never landed would otherwise leave this window on the generic notice
             // for the incumbent's whole life — including when the daemon is the newer build and
             // closing older windows cannot help. Retry without disturbing the notice on screen.
-            this.refineRefusalNotice(config, () => isConnectionCurrent(brokerGeneration));
+            this.refineRefusalNotice(config, wait, () => isConnectionCurrent(brokerGeneration));
           }
         } else if (isRegistrationRejection(event)) {
+          // Publish ownership before subscribers can synchronously replace the review or stop.
+          this.incumbentWait = {
+            kind: "payload",
+            fingerprint: readSessionBrokerLaunchFingerprint(config),
+          };
           this.setConnectionState({
             status: "disconnected",
             notice: HUNK_DAEMON_REGISTRATION_REJECTED_MESSAGE,
             direction: "unknown",
           });
+          this.settleFirstRegistration(new Error(HUNK_DAEMON_REGISTRATION_REJECTED_MESSAGE));
         }
         // Notices reach subscribers through the link state; the generic warning channel stays
         // for the console fallback only.
@@ -459,14 +536,26 @@ export class SessionBrokerClient {
       },
       onConnected: (brokerGeneration) => {
         if (!isConnectionCurrent(brokerGeneration)) return;
-        this.waitingForIncumbentExit = false;
-        this.incumbentLaunchFingerprint = null;
-        this.incumbentBuildKnown = false;
+        this.incumbentWait = null;
         this.lastConnectionWarning = null;
         this.setConnectionState({ status: "connected" });
+        this.settleFirstRegistration(null);
       },
       onWarning: (message, brokerGeneration) => {
-        if (isConnectionCurrent(brokerGeneration)) this.warnUnavailable(message);
+        if (!isConnectionCurrent(brokerGeneration)) return;
+        // Health-only payload polls retain the actionable notice without repeating it in the
+        // console or suggesting that a build upgrade will fix review-size limits.
+        if (
+          this.incumbentWait?.kind === "payload" &&
+          (message === HUNK_DAEMON_REGISTRATION_REJECTED_MESSAGE ||
+            message === HUNK_DAEMON_UPGRADE_WAIT_MESSAGE)
+        )
+          return;
+        if (this.settleFirstRegistration(new Error(message))) {
+          this.lastConnectionWarning = message;
+          return;
+        }
+        this.warnUnavailable(message);
       },
       onDefect: this.timing.onDefect,
     });
@@ -524,6 +613,10 @@ export class SessionBrokerClient {
           // Publish retry ownership before the warning side effect so a reentrant stop clears the
           // exact handle and cannot be overwritten when the callback returns.
           this.startupState = { status: "attempting", attempt, promise, retry };
+        }
+        if (this.settleFirstRegistration(asRegistrationFailure(error))) {
+          this.lastConnectionWarning = asRegistrationFailure(error).message;
+          return;
         }
         this.warnUnavailable(error);
         return;

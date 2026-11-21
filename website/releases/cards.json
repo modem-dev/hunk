@@ -3,23 +3,31 @@
     "slug": "index",
     "title": "Changelog",
     "tagline": "Every Hunk release, grouped by minor series.",
-    "meta": "24 release series · March 2026 – October 2026",
-    "chips": ["0.24", "0.23", "0.22", "0.21", "0.20", "…"],
-    "alt": "Hunk changelog — 24 release series · March 2026 – October 2026"
+    "meta": "25 release series · March 2026 – November 2026",
+    "chips": ["0.25", "0.24", "0.23", "0.22", "0.21", "…"],
+    "alt": "Hunk changelog — 25 release series · March 2026 – November 2026"
+  },
+  {
+    "slug": "0.25",
+    "title": "Hunk 0.25",
+    "tagline": "Hunk 0.25 adds inline before-and-after image previews, clearer active-pane focus, GitHub Enterprise Cloud reviews, and a…",
+    "meta": "November 11, 2026 · 1 release · 23 changes",
+    "latest": true,
+    "alt": "Hunk 0.25 release notes — November 11, 2026 · 1 release · 23 changes"
   },
   {
     "slug": "0.24",
     "title": "Hunk 0.24",
     "tagline": "Hunk 0.24 adds complete-file and directory browsing, a live workspace status view, npm-installed extensions, shell completions, and…",
-    "meta": "Prerelease · October 13, 2026 · 1 release · 52 changes",
-    "alt": "Hunk 0.24 release notes — Prerelease · October 13, 2026 · 1 release · 52 changes"
+    "meta": "October 13, 2026 – October 24, 2026 · 4 releases · 123 changes",
+    "chips": ["0.24.1", "0.24.0", "0.24.0-beta.1", "0.24.0-beta.0"],
+    "alt": "Hunk 0.24 release notes — October 13, 2026 – October 24, 2026 · 4 releases · 123 changes"
   },
   {
     "slug": "0.23",
     "title": "Hunk 0.23",
     "tagline": "Hunk 0.23 brings diff search, bundled GitHub review, an inline status line, and a default theme that follows your terminal, while making…",
     "meta": "September 30, 2026 · 1 release · 18 changes",
-    "latest": true,
     "alt": "Hunk 0.23 release notes — September 30, 2026 · 1 release · 18 changes"
   },
   {

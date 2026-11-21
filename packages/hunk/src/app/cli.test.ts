@@ -201,89 +201,26 @@ describe("parseCli", () => {
     });
   });
 
-  test("uses --fast alone as the shortest fast working-tree review", async () => {
-    expect(await parseCli(["bun", "hunk", "--fast"])).toMatchObject({
-      kind: "vcs",
-      staged: false,
-      options: { fast: true },
-    });
-  });
-
-  test("accepts --fast before or after a review command", async () => {
-    const prefixed = await parseCli(["bun", "hunk", "--fast", "diff"]);
-    const commandOption = await parseCli(["bun", "hunk", "diff", "--fast"]);
-
-    expect(prefixed).toMatchObject({ kind: "vcs", options: { fast: true } });
-    expect(commandOption).toMatchObject({ kind: "vcs", options: { fast: true } });
-  });
-
-  test("routes shorthand diff options through the diff parser", async () => {
-    expect(await parseCli(["bun", "hunk", "--fast", "--staged"])).toMatchObject({
-      kind: "vcs",
-      staged: true,
-      options: { fast: true },
-    });
-    expect(await parseCli(["bun", "hunk", "--fast", "--watch"])).toMatchObject({
-      kind: "vcs",
-      options: { fast: true, watch: true },
-    });
-    expect(await parseCli(["bun", "hunk", "--fast", "--theme", "nord"])).toMatchObject({
-      kind: "vcs",
-      options: { fast: true, theme: "nord" },
-    });
-  });
-
-  test("routes shorthand targets and direct file pairs through the diff parser", async () => {
-    expect(await parseCli(["bun", "hunk", "--fast", "HEAD"])).toMatchObject({
-      kind: "vcs",
-      range: "HEAD",
-      options: { fast: true },
-    });
-
-    const dir = createTempDir("hunk-fast-files-");
-    const left = join(dir, "before.ts");
-    const right = join(dir, "after.ts");
-    writeFileSync(left, "export const answer = 1;\n");
-    writeFileSync(right, "export const answer = 2;\n");
-
-    expect(await parseCli(["bun", "hunk", "--fast", "--files", left, right])).toMatchObject({
-      kind: "diff",
-      left,
-      right,
-      options: { fast: true },
-    });
-  });
-
-  test("keeps top-level help and version handling ahead of --fast shorthand", async () => {
-    const help = await parseCli(["bun", "hunk", "--fast", "--help"]);
-    const version = await parseCli(["bun", "hunk", "--fast", "--version"]);
-
-    expect(help).toMatchObject({ kind: "help" });
-    expect(version).toEqual({ kind: "help", text: `${resolveCliVersion()}\n` });
-  });
-
-  test("accepts leading --fast and --experimental in either order", async () => {
-    for (const flags of [
-      ["--fast", "--experimental"],
-      ["--experimental", "--fast"],
-    ]) {
-      expect(await parseCli(["bun", "hunk", ...flags, "show"])).toMatchObject({
-        kind: "show",
-        options: { experimental: true, fast: true },
-      });
-    }
+  test("rejects the removed --fast flag before or after a review command", async () => {
+    await expect(parseCli(["bun", "hunk", "--fast"])).rejects.toThrow("Unknown command: --fast");
+    await expect(parseCli(["bun", "hunk", "--fast", "diff"])).rejects.toThrow(
+      "Unknown command: --fast",
+    );
+    await expect(parseCli(["bun", "hunk", "diff", "--fast"])).rejects.toThrow(
+      "unknown option '--fast'",
+    );
   });
 
   test("preserves leading review flags interleaved with extension bootstrap flags", async () => {
     for (const flags of [
-      ["--extension", "./review.ts", "--fast", "--experimental"],
-      ["--fast", "--extension", "./review.ts", "--experimental"],
-      ["--experimental", "--no-extensions", "--fast"],
+      ["--extension", "./review.ts", "--experimental"],
+      ["--experimental", "--extension", "./review.ts"],
+      ["--experimental", "--no-extensions"],
     ]) {
       const parsed = await parseCli(["bun", "hunk", ...flags, "show"]);
       expect(parsed).toMatchObject({
         kind: "show",
-        options: { experimental: true, fast: true },
+        options: { experimental: true },
       });
       if (parsed.kind !== "show") {
         throw new Error("Expected show command input.");
@@ -295,15 +232,10 @@ describe("parseCli", () => {
     }
   });
 
-  test("keeps fast disabled by default and treats it as a pathspec after --", async () => {
-    const normal = await parseCli(["bun", "hunk", "diff"]);
-    const pathspec = await parseCli(["bun", "hunk", "diff", "--", "--fast"]);
-
-    expect(normal).toMatchObject({ kind: "vcs", options: { fast: undefined } });
-    expect(pathspec).toMatchObject({
+  test("treats --fast as a pathspec after --", async () => {
+    expect(await parseCli(["bun", "hunk", "diff", "--", "--fast"])).toMatchObject({
       kind: "vcs",
       pathspecs: ["--fast"],
-      options: { fast: undefined },
     });
   });
 
@@ -581,7 +513,9 @@ describe("parseCli", () => {
     await expect(parseCli(["bun", "hunk", "log", "HEAD", "--all"])).rejects.toThrow(
       "either a revision/range or --all",
     );
-    await expect(parseCli(["bun", "hunk", "--fast", "log"])).rejects.toThrow("review command");
+    await expect(parseCli(["bun", "hunk", "--experimental", "log"])).rejects.toThrow(
+      "review command",
+    );
   });
 
   test("preserves opaque provider-planned history reviews through the private handoff", async () => {
@@ -1561,6 +1495,80 @@ describe("parseCli", () => {
     });
   });
 
+  test("parses session open, which opens by default and prints the URL with --no-open", async () => {
+    expect(await parseCli(["bun", "hunk", "session", "open", "session-1"])).toEqual({
+      kind: "session",
+      action: "open",
+      selector: { sessionId: "session-1" },
+      output: "text",
+      open: true,
+    });
+    expect(
+      await parseCli([
+        "bun",
+        "hunk",
+        "session",
+        "open",
+        "--repo",
+        "/tmp/repo",
+        "--no-open",
+        "--json",
+      ]),
+    ).toEqual({
+      kind: "session",
+      action: "open",
+      selector: { repoRoot: resolve("/tmp/repo") },
+      output: "json",
+      open: false,
+    });
+    await expect(parseCli(["bun", "hunk", "session", "open"])).rejects.toThrow(
+      "Specify one live Hunk session with <session-id> or --repo <path>.",
+    );
+  });
+
+  test("lists session open in session help", async () => {
+    const help = await parseCli(["bun", "hunk", "session", "--help"]);
+
+    expect(help.kind).toBe("help");
+    expect((help as { text: string }).text).toContain("session open");
+  });
+
+  test("parses the web review flags: --web, --no-open, and --no-watch", async () => {
+    expect(await parseCli(["bun", "hunk", "diff", "--web"])).toMatchObject({
+      options: { web: true },
+    });
+    expect(await parseCli(["bun", "hunk", "diff", "--web", "--no-open"])).toMatchObject({
+      options: { web: true, open: false },
+    });
+    expect(await parseCli(["bun", "hunk", "show", "HEAD", "--web", "--no-watch"])).toMatchObject({
+      options: { web: true, watch: false },
+    });
+    // --no-watch also overrides config-enabled watch in a terminal review.
+    expect(await parseCli(["bun", "hunk", "diff", "--no-watch"])).toMatchObject({
+      options: { watch: false },
+    });
+  });
+
+  test("rejects --no-open without --web and --watch with --no-watch", async () => {
+    await expect(parseCli(["bun", "hunk", "diff", "--no-open"])).rejects.toThrow(
+      "`--no-open` only applies to `--web`.",
+    );
+    await expect(parseCli(["bun", "hunk", "diff", "--watch", "--no-watch"])).rejects.toThrow(
+      "`--watch` and `--no-watch` cannot be combined.",
+    );
+  });
+
+  test("lists the web review flags in review command help", async () => {
+    for (const command of ["diff", "show"]) {
+      const help = await parseCli(["bun", "hunk", command, "--help"]);
+      const text = (help as { text: string }).text;
+
+      expect(text).toContain("--web");
+      expect(text).toContain("--no-open");
+      expect(text).toContain("--no-watch");
+    }
+  });
+
   test("rejects unknown session highlight subcommands", async () => {
     await expect(parseCli(["bun", "hunk", "session", "highlight", "paint"])).rejects.toThrow(
       "Supported highlight subcommands are add and clear.",
@@ -1748,7 +1756,7 @@ describe("parseCli", () => {
   });
 
   test("does not consume another leading host flag as an extension path", async () => {
-    for (const flag of ["--no-extensions", "--fast", "--experimental", "--extension"]) {
+    for (const flag of ["--no-extensions", "--experimental", "--extension"]) {
       await expect(parseCli(["bun", "hunk", "--extension", flag, "greptile"])).rejects.toThrow(
         "requires an extension entry path",
       );
@@ -1797,6 +1805,7 @@ describe("parseCli", () => {
       "extension",
       "ext",
       "update",
+      "feedback",
       "completion",
       "daemon",
       "mcp",
@@ -2141,10 +2150,7 @@ describe("parseCli argument validation", () => {
 
   test("rejects prefixed review flags for non-review commands", async () => {
     await expect(parseCli(["bun", "hunk", "--experimental", "session", "list"])).rejects.toThrow(
-      "must be used with a Hunk review command",
-    );
-    await expect(parseCli(["bun", "hunk", "--fast", "session", "list"])).rejects.toThrow(
-      "`--fast` must be used with a Hunk review command",
+      "`--experimental` must be used with a Hunk review command",
     );
   });
 
@@ -2712,5 +2718,68 @@ describe("status command parsing", () => {
       kind: "help",
       text: expect.stringContaining("--json"),
     });
+  });
+});
+
+describe("feedback command parsing", () => {
+  test("joins positional words into the message", async () => {
+    expect(await parseCli(["bun", "hunk", "feedback", "Split", "view", "jumps"])).toEqual({
+      kind: "feedback",
+      message: "Split view jumps",
+      file: undefined,
+      email: undefined,
+      dryRun: false,
+      skipConfirm: false,
+      output: "text",
+    });
+  });
+
+  test("parses every flag", async () => {
+    expect(
+      await parseCli([
+        "bun",
+        "hunk",
+        "feedback",
+        "--file",
+        "-",
+        "--email",
+        "ada@example.com",
+        "--dry-run",
+        "--skip-confirm",
+        "--json",
+      ]),
+    ).toEqual({
+      kind: "feedback",
+      message: undefined,
+      file: "-",
+      email: "ada@example.com",
+      dryRun: true,
+      skipConfirm: true,
+      output: "json",
+    });
+  });
+
+  test("leaves the message empty so the run can open the form", async () => {
+    expect(await parseCli(["bun", "hunk", "feedback"])).toMatchObject({
+      kind: "feedback",
+      message: undefined,
+      file: undefined,
+    });
+  });
+
+  test("rejects more than one message source", async () => {
+    await expect(parseCli(["bun", "hunk", "feedback", "hi", "-m", "there"])).rejects.toThrow(
+      "Pass the feedback message one way",
+    );
+    await expect(parseCli(["bun", "hunk", "feedback", "-m", "hi", "-F", "-"])).rejects.toThrow(
+      "Pass the feedback message one way",
+    );
+  });
+
+  test("prints help that states nothing is sent until confirmed", async () => {
+    const help = await parseCli(["bun", "hunk", "feedback", "--help"]);
+
+    expect(help.kind).toBe("help");
+    expect(help.kind === "help" && help.text).toContain("Nothing reaches Modem until you confirm");
   });
 });

@@ -2,7 +2,6 @@ import fs from "node:fs";
 import { dirname, join } from "node:path";
 import { sanitizeTerminalLine } from "../../lib/terminalText";
 import { BUNDLED_SHIKI_THEME_IDS, LEGACY_THEME_ID_ALIASES } from "../theme/catalog";
-import { TERMINAL_THEME_ID } from "../theme/terminalColors";
 import {
   createInvalidThemeIdNotice,
   createThemeCollisionNotice,
@@ -101,7 +100,7 @@ export interface PersistedViewPreferences {
 export const BUILT_IN_THEME_IDS = BUNDLED_SHIKI_THEME_IDS;
 // Widen the large literal tuple before formatting it, avoiding TypeScript's deep tuple inference.
 const BUILT_IN_THEME_IDS_FOR_MESSAGES: readonly string[] = BUILT_IN_THEME_IDS;
-const DEFAULT_THEME_ID = TERMINAL_THEME_ID;
+const DEFAULT_THEME_ID = "github-dark-default";
 const DEFAULT_CUSTOM_THEME_BASE_ID = "github-dark-default";
 const DEFAULT_VIEW_PREFERENCES: PersistedViewPreferences = {
   mode: "auto",
@@ -183,6 +182,8 @@ export interface HunkConfigResolution<Input extends ConfigurableInput = CliInput
    * keyboard.
    */
   keybindings: Record<string, UserKeyBinding>;
+  /** False when either config layer sets `[feedback] enabled = false`; absent means offered. */
+  feedbackEnabled?: boolean;
   /**
    * The `vcs` id a config layer or CLI flag named, when one did.
    *
@@ -642,6 +643,21 @@ export const CONFIG_REFERENCE_EXTENSIONS = {
       defaultValue: "`[]`",
       description:
         "Disable selectable bundled or user extensions before their factories or modules execute. User and repository lists combine as a union.",
+    },
+  ] as const satisfies readonly ConfigReferenceSectionKey[],
+} as const;
+
+/** Reference metadata for the `[feedback]` table `readFeedbackEnabled` parses. */
+export const CONFIG_REFERENCE_FEEDBACK = {
+  table: "feedback",
+  keys: [
+    {
+      key: "feedback.enabled",
+      type: "boolean",
+      accepted: "`true` or `false`",
+      defaultValue: "`true`",
+      description:
+        "Offer Help → Send feedback and `hunk feedback`. Feedback is never sent without confirming it; `false` removes the entry entirely. A repository config can turn it off but not back on.",
     },
   ] as const satisfies readonly ConfigReferenceSectionKey[],
 } as const;
@@ -1159,7 +1175,6 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
     pager: overrides.pager ?? base.pager,
     watch: overrides.watch ?? base.watch,
     experimental: overrides.experimental ?? base.experimental,
-    fast: overrides.fast ?? base.fast,
     excludeUntracked: overrides.excludeUntracked ?? base.excludeUntracked,
     lineNumbers: overrides.lineNumbers ?? base.lineNumbers,
     tabWidth: overrides.tabWidth ?? base.tabWidth,
@@ -1204,6 +1219,31 @@ function resolveConfigLayer(
   }
 
   return resolved;
+}
+
+/** Return false only when one config layer explicitly sets `[feedback] enabled = false`. */
+function readFeedbackLayerDisabled(source: Record<string, unknown> | undefined) {
+  const table = source?.feedback;
+  return isRecord(table) && table.enabled === false;
+}
+
+/**
+ * Resolve whether feedback is offered. Either layer can turn it off and neither can force it on,
+ * so a repository can opt its contributors out but cannot override a person's own `false`.
+ */
+function readFeedbackEnabled(sources: ConfigSources) {
+  return (
+    !readFeedbackLayerDisabled(sources.userConfig) && !readFeedbackLayerDisabled(sources.repoConfig)
+  );
+}
+
+/** Resolve only the `[feedback]` table, for `hunk feedback`, which needs no review config. */
+export function resolveFeedbackEnabled({
+  cwd = process.cwd(),
+  env = process.env,
+  vcsCatalog = EMPTY_CONFIG_VCS_CATALOG,
+}: ConfigResolutionOptions = {}) {
+  return readFeedbackEnabled(readConfigSources(cwd, env, vcsCatalog));
 }
 
 /** Choose the VCS backend that best matches the discovered checkout. */
@@ -1448,8 +1488,10 @@ export function resolveConfiguredInput<Input extends ConfigurableInput>(
     agentContext: input.options.agentContext,
     pager: input.options.pager ?? false,
     watch: input.options.watch ?? resolvedOptions.watch ?? false,
+    // Launch-only, like `--pager`: no config layer can select a headless web review.
+    ...(input.options.web ? { web: true } : {}),
+    ...(input.options.open === false ? { open: false } : {}),
     experimental: input.options.experimental ?? false,
-    fast: input.options.fast ?? false,
     excludeUntracked: resolvedOptions.excludeUntracked ?? false,
     theme: resolvedOptions.theme,
     vcs: resolvedOptions.vcs ?? vcsCatalog.defaultAdapterId,
@@ -1502,6 +1544,7 @@ export function resolveConfiguredInput<Input extends ConfigurableInput>(
     customThemes: resolvedCustomThemes,
     extensions,
     keybindings: keybindingsLayer.bindings,
+    feedbackEnabled: readFeedbackEnabled(sources),
     explicitVcsId,
     startupNotices: buildConfigStartupNotices(usesLegacyCustomSyntax, [
       ...themeNotices.values(),

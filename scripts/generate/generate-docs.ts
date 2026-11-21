@@ -13,6 +13,7 @@ import {
   CONFIG_COMMAND_SECTIONS,
   CONFIG_REFERENCE_CUSTOM_THEME,
   CONFIG_REFERENCE_EXTENSIONS,
+  CONFIG_REFERENCE_FEEDBACK,
   CONFIG_REFERENCE_OPTIONS,
 } from "../../packages/hunk/src/core/run/config";
 import { findBundledCoreExtensionByCommand } from "../../packages/hunk/src/extensions/default/core";
@@ -183,6 +184,8 @@ function renderGitHubSection() {
     "",
     `**Authentication:** ${reference.authentication.variables.map((name) => `\`${name}\``).join(", then ")}; ${reference.authentication.description}.`,
     "",
+    `**Hosts:** ${proseSafe(reference.hosts.description)}`,
+    "",
     ...subcommandSections.flatMap((section, index) => (index > 0 ? ["", section] : [section])),
   ].join("\n");
 }
@@ -214,7 +217,8 @@ export function renderCliReference() {
           `**Aliases:** ${command.aliases.map((alias) => `\`${alias}\``).join(", ")}.`,
         );
       }
-      if (command.options && command.options.length > 0) {
+      // Options kept out of public docs (such as a hidden, unreleased flag) add no section.
+      if (command.options?.some((option) => option.publicDocs !== false)) {
         pieces.push("", "### Command-specific options", "", renderOptionTable(command.options));
       }
       if (command.watch) {
@@ -427,6 +431,11 @@ export function renderConfigReference() {
     ([alias, replacement]) => `| \`${alias}\` | \`${replacement}\` |`,
   );
   const extensionRows = CONFIG_REFERENCE_EXTENSIONS.keys.map(
+    (key) =>
+      `| \`${key.key}\` | ${key.type} | ${key.accepted} | ${key.defaultValue ?? "—"} | ${key.description} |`,
+  );
+
+  const feedbackRows = CONFIG_REFERENCE_FEEDBACK.keys.map(
     (key) =>
       `| \`${key.key}\` | ${key.type} | ${key.accepted} | ${key.defaultValue ?? "—"} | ${key.description} |`,
   );
@@ -652,6 +661,21 @@ patterns = ["*.lock", "generated/*"]
 \`\`\`
 
 These keys belong to that extension, not Hunk's preference catalog. Repository tables merge over user tables key by key, and Hunk reports which extension settings the repository overrides. See [Extensions](/docs/extend/extensions/) for installation, trust, loading controls, and examples.
+
+## Feedback
+
+\`[${CONFIG_REFERENCE_FEEDBACK.table}]\` controls Help → Send feedback and \`hunk feedback\`. Both show exactly what is sent and send nothing until you confirm one submission. Turn them off entirely:
+
+\`\`\`toml
+[feedback]
+enabled = false
+\`\`\`
+
+| Key | Type | Accepted | Built-in default | Description |
+| --- | --- | --- | --- | --- |
+${feedbackRows.join("\n")}
+
+See [Send feedback](/docs/help/feedback/) for what a submission contains and where it goes.
 
 ## Troubleshooting
 

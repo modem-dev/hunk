@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "astro dev",
+    "generate:brand": "bun scripts/generate-brand.ts",
     "build": "astro build && bun scripts/publish-sitemap-alias.ts",
     "preview": "astro preview",
     "check": "astro check",

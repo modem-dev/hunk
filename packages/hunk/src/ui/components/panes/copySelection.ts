@@ -1,6 +1,6 @@
 import type { DiffFile } from "../../../core/changeset/model";
 import { reviewRangeTargetCoverageIssue } from "../../../core/review/geometry";
-import type { ReviewRangeTargetV1, ReviewSide } from "../../../core/review/types";
+import type { ReviewRangeTarget, ReviewSide } from "../../../core/review/types";
 import type { LayoutMode } from "../../../core/run/commandInputs";
 import { resolveSplitPaneWidths } from "../../diff/codeColumns";
 import { planCodeRowLayout } from "../../diff/codeRowLayout";
@@ -52,7 +52,7 @@ export interface CopySelectionDrag {
 export interface CommentableSelection {
   fileId: string;
   hunkIndex: number;
-  target: ReviewRangeTargetV1;
+  target: ReviewRangeTarget;
 }
 
 export type CommentSelectionProjection =
@@ -872,7 +872,7 @@ export function projectCommentSelection({
   const preferred = [...selected].sort(
     (left, right) => distanceFromVisualRange(left) - distanceFromVisualRange(right),
   )[0]!;
-  const target: ReviewRangeTargetV1 = {
+  const target: ReviewRangeTarget = {
     ...(oldRange ? { oldRange } : {}),
     ...(newRange ? { newRange } : {}),
     preferred: { side: preferred.side, line: preferred.line },

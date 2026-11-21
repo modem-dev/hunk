@@ -120,6 +120,7 @@ async function startDaemonAtRevision(port: number, configHome: string, revision:
     env: {
       ...process.env,
       XDG_CONFIG_HOME: configHome,
+      XDG_RUNTIME_DIR: configHome,
       HUNK_MCP_PORT: String(port),
       HUNK_INTERNAL_SESSION_DAEMON_VERSION: String(revision),
     },
@@ -136,7 +137,12 @@ function runCli(args: string[], port: number, configHome: string) {
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
-    env: { ...process.env, XDG_CONFIG_HOME: configHome, HUNK_MCP_PORT: String(port) },
+    env: {
+      ...process.env,
+      XDG_CONFIG_HOME: configHome,
+      XDG_RUNTIME_DIR: configHome,
+      HUNK_MCP_PORT: String(port),
+    },
   });
   return {
     exitCode: proc.exitCode,
@@ -148,7 +154,11 @@ function runCli(args: string[], port: number, configHome: string) {
 /** Run `hunk daemon restart --yes` in-process against the test port. */
 async function restartDaemonInProcess(port: number, configHome: string) {
   const previous = { ...process.env };
-  Object.assign(process.env, { XDG_CONFIG_HOME: configHome, HUNK_MCP_PORT: String(port) });
+  Object.assign(process.env, {
+    XDG_CONFIG_HOME: configHome,
+    XDG_RUNTIME_DIR: configHome,
+    HUNK_MCP_PORT: String(port),
+  });
   delete process.env.HUNK_INTERNAL_SESSION_DAEMON_VERSION;
   try {
     const config = resolveSessionBrokerConfig();
@@ -187,6 +197,7 @@ function launchWindow(
     rows: 24,
     env: {
       XDG_CONFIG_HOME: configHome,
+      XDG_RUNTIME_DIR: configHome,
       // The harness disables session brokering by default; this test is about it.
       HUNK_MCP_DISABLE: "0",
       HUNK_MCP_PORT: String(port),

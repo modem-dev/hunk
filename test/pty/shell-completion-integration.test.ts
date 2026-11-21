@@ -175,9 +175,9 @@ for (const [shell, loading] of [
         expect(await complete("hunk session reload test -- diff -- --mo")).toBe(
           "hunk session reload test -- diff -- --mode-decoy",
         );
-        expect(await complete("hunk --fast --mo")).toBe("hunk --fast --mode");
-        expect(await complete("hunk --fast --mode sp")).toBe("hunk --fast --mode split");
-        expect(await complete("hunk --fast show --cu")).toBe("hunk --fast show --cursor-line");
+        expect(await complete("hunk --experimental show --cu")).toBe(
+          "hunk --experimental show --cursor-line",
+        );
         expect(await complete("hunk diff -- --mo")).toBe("hunk diff -- --mode-decoy");
         expect(await complete("hunk diff exam")).toBe("hunk diff example-file.txt");
         expect(await complete("hunk --extension exam")).toBe("hunk --extension example-file.txt");

@@ -243,6 +243,51 @@ describe("CLI entrypoint contracts", () => {
     });
   });
 
+  test("bin wrapper falls back to the bundled Bun runtime when the prebuilt binary cannot start", () => {
+    if (process.platform === "win32") {
+      return;
+    }
+
+    const platform = { darwin: "darwin", linux: "linux" }[process.platform as string];
+    const arch = { x64: "x64", arm64: "arm64" }[process.arch as string];
+    if (!platform || !arch) {
+      return;
+    }
+
+    const tempDir = mkdtempSync(join(tmpdir(), "hunk-wrapper-spawn-fallback-"));
+    const pkgDir = join(tempDir, "node_modules", "hunkdiff");
+    const tempWrapperPath = join(pkgDir, "bin", "hunk.cjs");
+    const fakeBunPath = join(pkgDir, "node_modules", "bun", "bin", "bun.exe");
+
+    try {
+      mkdirSync(join(pkgDir, "bin"), { recursive: true });
+      copyFileSync(join(process.cwd(), "packages", "hunk", "bin", "hunk.cjs"), tempWrapperPath);
+
+      // A directory in place of the binary makes process creation fail the way a blocked exe does.
+      mkdirSync(join(pkgDir, "node_modules", `hunkdiff-${platform}-${arch}`, "bin", "hunk"), {
+        recursive: true,
+      });
+      mkdirSync(join(pkgDir, "node_modules", "bun", "bin"), { recursive: true });
+      writeFileSync(join(pkgDir, "node_modules", "bun", "package.json"), '{"name":"bun"}');
+      writeFileSync(fakeBunPath, '#!/bin/sh\necho "bun-fallback $@"\n', { mode: 0o755 });
+
+      const proc = Bun.spawnSync(["node", tempWrapperPath, "--version"], {
+        cwd: tempDir,
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+        env: process.env,
+      });
+
+      expect(proc.exitCode).toBe(0);
+      expect(Buffer.from(proc.stdout).toString("utf8")).toContain("bun-fallback");
+      expect(Buffer.from(proc.stdout).toString("utf8")).toContain("--version");
+      expect(Buffer.from(proc.stderr).toString("utf8")).toContain("falling back");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   test("bin wrapper fails clearly when the bundled skill is missing", () => {
     const tempDir = mkdtempSync(join(tmpdir(), "hunk-wrapper-skill-missing-"));
     const tempBinDir = join(tempDir, "bin");
@@ -267,6 +312,62 @@ describe("CLI entrypoint contracts", () => {
       expect(stdout).toBe("");
       expect(stderr).toContain("hunk: could not locate the bundled Hunk review skill");
       expect(stderr).toContain(join("skills", "hunk-review", "SKILL.md"));
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("bin wrapper reports Windows ARM64 before the bundled Bun fallback", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "hunk-wrapper-win-arm64-"));
+    const packageRoot = join(tempDir, "package");
+    const tempWrapperPath = join(packageRoot, "bin", "hunk.cjs");
+    const preloadPath = join(tempDir, "os-preload.cjs");
+    const bunMarkerPath = join(tempDir, "bun-invoked");
+    const fakeBunDir = join(packageRoot, "node_modules", "bun", "bin");
+    const fakeBunPath = join(fakeBunDir, "bun.exe");
+
+    try {
+      mkdirSync(join(packageRoot, "bin"), { recursive: true });
+      mkdirSync(fakeBunDir, { recursive: true });
+      copyFileSync(join(process.cwd(), "packages", "hunk", "bin", "hunk.cjs"), tempWrapperPath);
+      writeFileSync(
+        join(packageRoot, "node_modules", "bun", "package.json"),
+        JSON.stringify({ name: "bun", version: "0.0.0" }),
+      );
+      // Resolvable bundled runtime. Records a marker only if the wrapper actually spawns it.
+      writeFileSync(
+        fakeBunPath,
+        `#!/usr/bin/env node\nrequire("node:fs").writeFileSync(${JSON.stringify(bunMarkerPath)}, "invoked\\n");\n`,
+        { mode: 0o755 },
+      );
+      writeFileSync(
+        preloadPath,
+        'const os = require("node:os");\nos.platform = () => "win32";\nos.arch = () => "arm64";\n',
+      );
+
+      const env = { ...process.env };
+      delete env.HUNK_BIN_PATH;
+
+      const proc = Bun.spawnSync(["node", "-r", preloadPath, tempWrapperPath, "diff"], {
+        cwd: packageRoot,
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+        env,
+      });
+
+      const stdout = Buffer.from(proc.stdout).toString("utf8");
+      const stderr = Buffer.from(proc.stderr).toString("utf8");
+
+      expect(proc.exitCode).toBe(1);
+      expect(stdout).toBe("");
+      expect(stderr).toContain("Windows ARM64 is not supported by the current bundled runtime");
+      expect(stderr).toContain("oven-sh/bun#28055");
+      expect(stderr).not.toContain("bun:ffi");
+      expect(stderr).not.toContain("dlopen");
+      expect(stderr).not.toContain("Bun v");
+      expect(stderr).not.toContain("Unsupported platform for prebuilt Hunk binaries");
+      expect(existsSync(bunMarkerPath)).toBe(false);
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }

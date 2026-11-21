@@ -1,0 +1,2989 @@
+/*
+ * Chrome for the browser review page. Colors come from the active theme's `--hunk-*` tokens
+ * (set on the root element by web/theme/themeIndex.ts); the fallbacks here only cover the
+ * moment before the theme index loads. Chrome uses the system UI font; code uses a monospace
+ * stack. No external fonts.
+ */
+:root {
+  color-scheme: light dark;
+  --ui-font:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --code-font:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --diffs-font-family: var(--code-font);
+  --diffs-header-font-family: var(--ui-font);
+  --diffs-font-size: 13px;
+  --diffs-line-height: 20px;
+  --trees-font-family-override: var(--ui-font);
+  --trees-font-size-override: 13px;
+  font-family: var(--ui-font);
+  font-size: 13px;
+  background: var(--hunk-background, Canvas);
+  color: var(--hunk-text, CanvasText);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--hunk-background, Canvas);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.column-probe {
+  position: absolute;
+  visibility: hidden;
+  font-family: var(--code-font);
+  font-size: 13px;
+  white-space: pre;
+}
+
+.page-message {
+  margin: 24px;
+}
+
+.status[data-state="failed"] {
+  color: var(--hunk-removed-sign-color, #d1242f);
+}
+
+.muted {
+  color: var(--hunk-muted, GrayText);
+}
+
+/* -- Layout ----------------------------------------------------------------------------- */
+
+.review-app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* Persistent and not dismissable: the review below stays readable, but nothing reaches it. */
+.session-ended-banner {
+  flex: none;
+  margin: 0;
+  padding: 6px 12px;
+  font-family: var(--ui-font);
+  font-size: 13px;
+  color: var(--hunk-text);
+  background: var(--hunk-panel-alt);
+  border-bottom: 2px solid var(--hunk-removed-sign-color, #d1242f);
+}
+
+.session-ended-banner code {
+  font-family: var(--code-font);
+  font-size: 12px;
+}
+
+.review-main {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  width: var(--sidebar-width);
+  flex: none;
+  min-width: 0;
+  background: var(--hunk-panel);
+  border-right: 1px solid var(--hunk-border);
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 12px;
+  color: var(--hunk-muted);
+  font-size: 11px;
+}
+
+.sidebar-title {
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.sidebar-count {
+  flex: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.segmented.icon-segmented.sidebar-mode button {
+  width: 24px;
+  height: 20px;
+}
+
+.sidebar-resizer {
+  width: 5px;
+  margin-left: -3px;
+  flex: none;
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 3;
+}
+
+.sidebar-resizer:hover {
+  background: var(--hunk-accent-muted);
+}
+
+.file-tree {
+  flex: 1;
+  min-height: 0;
+  display: block;
+}
+
+/* -- Toolbar ---------------------------------------------------------------------------- */
+
+/* One row, never wrapping: narrow windows drop labels first, then the stats, and collapse the
+   filter field last (see the media queries at the end of this section). */
+.toolbar {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+  height: 44px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  background: var(--hunk-panel);
+  border-bottom: 1px solid var(--hunk-border);
+}
+
+.icon {
+  flex: none;
+  display: block;
+}
+
+.toolbar-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  /* Takes the free space but gives it up first: the controls keep their size until the
+     title is down to a readable stub. */
+  flex: 1 1 0;
+  overflow: hidden;
+  min-width: 96px;
+  margin: 0 4px;
+  white-space: nowrap;
+}
+
+.review-title {
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 40px;
+}
+
+.toolbar-stats {
+  display: inline-flex;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.file-count,
+.progress,
+.status {
+  color: var(--hunk-muted);
+}
+
+.status[data-state="reconnecting"],
+.status[data-state="loading"] {
+  color: var(--hunk-accent);
+}
+
+/* Connected is the resting state: a small dot in the theme's "added" color. Its words stay in
+   the accessibility tree; every other state shows its words. */
+.toolbar .status[data-state="connected"] {
+  align-self: center;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--hunk-badge-added, #1a7f37);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--hunk-badge-added, #1a7f37) 20%, transparent);
+}
+
+/* Shrinks only as far as its controls allow (the filter gives way first); the title takes
+   the rest of the squeeze. */
+.toolbar-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+  flex-wrap: nowrap;
+}
+
+.toolbar-separator {
+  flex: none;
+  width: 1px;
+  height: 20px;
+  margin: 0 2px;
+  background: var(--hunk-border);
+}
+
+/* Toolbar buttons are quiet until hovered: no border, the muted text color, a panel fill on
+   hover. Pressed toggles keep the neutral "on" fill. */
+.toolbar .tool-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px;
+  color: var(--hunk-muted);
+  background: transparent;
+  border-color: transparent;
+  white-space: nowrap;
+}
+
+.toolbar .tool-button:hover:not(:disabled),
+.toolbar .tool-button[aria-expanded="true"] {
+  color: var(--hunk-text);
+  background: var(--hunk-panel-alt);
+  border-color: transparent;
+}
+
+.toolbar .tool-button[aria-pressed="true"] {
+  color: var(--hunk-text);
+  background: var(--hunk-panel-alt);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.toolbar .tool-button:disabled {
+  opacity: 0.5;
+}
+
+.toolbar .icon-button {
+  width: 28px;
+  padding: 0;
+}
+
+.commands-button {
+  border-color: var(--hunk-border) !important;
+  background: var(--hunk-background) !important;
+}
+
+.commands-button:hover {
+  color: var(--hunk-text) !important;
+}
+
+.key-hint {
+  padding: 0 4px;
+  font: 11px/16px var(--code-font);
+  color: var(--hunk-muted);
+  background: var(--hunk-panel-alt);
+  border: 1px solid var(--hunk-border);
+  border-radius: 4px;
+}
+
+.copy-button[data-state="copied"],
+.copy-button[data-state="failed"] {
+  width: auto !important;
+  padding: 0 8px !important;
+}
+
+.copy-button[data-state="copied"] {
+  color: var(--hunk-badge-added, #1a7f37);
+}
+
+.copy-button[data-state="failed"] {
+  color: var(--hunk-removed-sign-color, #d1242f);
+}
+
+.copy-feedback {
+  font-size: 12px;
+}
+
+.spinning {
+  animation: toolbar-spin 0.9s linear infinite;
+}
+
+@keyframes toolbar-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinning {
+    animation: none;
+  }
+}
+
+.tool-button,
+.segmented button,
+.header-action {
+  font: inherit;
+  color: var(--hunk-text);
+  background: var(--hunk-panel-alt);
+  border: 1px solid var(--hunk-border);
+  border-radius: 6px;
+  padding: 3px 9px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.tool-button:hover:not(:disabled),
+.segmented button:hover,
+.header-action:hover {
+  border-color: var(--hunk-accent);
+}
+
+.tool-button:disabled {
+  cursor: default;
+  color: var(--hunk-muted);
+}
+
+.icon-button {
+  width: 28px;
+  padding: 3px 0;
+  text-align: center;
+}
+
+/* A pressed toggle is a neutral "on" state, not a selection: the accent stays reserved for
+   position and focus. The filled panel, the full-strength label, and the dot glyph (on text
+   toggles) tell on from off without relying on color alone. */
+.tool-button[aria-pressed="true"] {
+  background: var(--hunk-panel-alt);
+  border-color: var(--hunk-border);
+  color: var(--hunk-text);
+  box-shadow: inset 0 -2px 0 var(--hunk-muted);
+}
+
+.toggle-button[aria-pressed]::before {
+  display: inline-block;
+  width: 1em;
+  margin-right: 4px;
+  color: var(--hunk-muted);
+  content: "○" / "";
+}
+
+.toggle-button[aria-pressed="true"]::before {
+  color: var(--hunk-text);
+  content: "●" / "";
+}
+
+.menu-anchor {
+  position: relative;
+}
+
+.view-button .pill-chevron {
+  color: var(--hunk-muted);
+}
+
+/* The View menu: grouped checkable rows with a shortcut and a switch, then the Theme row. */
+.view-menu {
+  width: 280px;
+  max-height: none;
+  overflow: visible;
+}
+
+.view-menu[hidden] {
+  display: none;
+}
+
+.menu-heading {
+  margin: 6px 8px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--hunk-muted);
+}
+
+.menu-separator {
+  margin: 6px 0;
+  border-top: 1px solid var(--hunk-border);
+}
+
+.menu-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  font: inherit;
+  color: var(--hunk-text);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.menu-row:hover:not(:disabled),
+.menu-row:focus-visible {
+  background: var(--hunk-panel-alt);
+}
+
+.menu-row:focus-visible {
+  outline-offset: -2px;
+}
+
+.menu-row:disabled {
+  cursor: default;
+  color: var(--hunk-muted);
+}
+
+.menu-row-label {
+  display: inline-flex;
+  flex: 1;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menu-row-note {
+  position: static;
+}
+
+/* An on/off switch. "On" is neutral (full-strength text color, knob to the right), never the
+   accent, which stays reserved for selection and focus. */
+.menu-switch {
+  position: relative;
+  flex: none;
+  width: 26px;
+  height: 14px;
+  border-radius: 7px;
+  background: var(--hunk-border);
+}
+
+.menu-switch::after {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--hunk-muted);
+  content: "";
+}
+
+.menu-row[aria-checked="true"] .menu-switch {
+  background: var(--hunk-text);
+}
+
+.menu-row[aria-checked="true"] .menu-switch::after {
+  left: 14px;
+  background: var(--hunk-panel);
+}
+
+.view-menu .pill-chevron {
+  color: var(--hunk-muted);
+}
+
+.theme-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theme-swatch {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  border-radius: 3px;
+  border: 1px solid var(--hunk-border);
+  background: linear-gradient(135deg, var(--hunk-background) 0 50%, var(--hunk-accent) 50% 100%);
+}
+
+.menu {
+  position: absolute;
+  box-sizing: border-box;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 20;
+  min-width: 220px;
+  max-height: min(60vh, 480px);
+  overflow: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--hunk-panel);
+  color: var(--hunk-text);
+  border: 1px solid var(--hunk-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 28%);
+}
+
+.menu [role="option"] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.menu [role="option"][data-active] {
+  background: var(--hunk-accent-muted);
+}
+
+.menu [role="option"][aria-selected="true"] {
+  font-weight: 600;
+}
+
+.menu [role="option"][aria-selected="true"]::after {
+  margin-left: auto;
+  color: var(--hunk-accent);
+  content: "✓" / "";
+}
+
+.theme-appearance {
+  width: 1em;
+  color: var(--hunk-muted);
+  text-align: center;
+}
+
+.segmented {
+  display: inline-flex;
+}
+
+.segmented button {
+  border-radius: 0;
+  margin-left: -1px;
+}
+
+.segmented button:first-child {
+  border-radius: 6px 0 0 6px;
+  margin-left: 0;
+}
+
+.segmented button:last-child {
+  border-radius: 0 6px 6px 0;
+}
+
+.segmented button[aria-checked="true"] {
+  background: var(--hunk-panel-alt);
+  border-color: var(--hunk-border);
+  color: var(--hunk-text);
+  box-shadow: inset 0 -2px 0 var(--hunk-muted);
+  position: relative;
+}
+
+/* The toolbar's layout radios: icons in a sunken track, the checked one raised. */
+.icon-segmented {
+  flex: none;
+  gap: 2px;
+  padding: 2px;
+  background: var(--hunk-background);
+  border: 1px solid var(--hunk-border);
+  border-radius: 7px;
+}
+
+.segmented.icon-segmented button {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 22px;
+  margin: 0;
+  padding: 0;
+  color: var(--hunk-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+}
+
+.segmented.icon-segmented button:hover {
+  color: var(--hunk-text);
+}
+
+.segmented.icon-segmented button[aria-checked="true"] {
+  color: var(--hunk-text);
+  background: var(--hunk-panel-alt);
+  box-shadow: 0 0 0 1px var(--hunk-border);
+}
+
+.segmented.small button {
+  padding: 1px 7px;
+  font-size: 11px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+:focus-visible {
+  outline: 2px solid var(--hunk-accent);
+  outline-offset: 1px;
+}
+
+/* The stream fills its pane, so its focus ring is drawn inside the edge. */
+.review-stream:focus-visible {
+  outline-offset: -2px;
+}
+
+.menu:focus-visible {
+  outline-offset: -1px;
+}
+
+.stat-added {
+  color: var(--hunk-badge-added, #1a7f37);
+}
+
+.stat-removed {
+  color: var(--hunk-badge-removed, #cf222e);
+}
+
+/* -- Review stream ---------------------------------------------------------------------- */
+
+/* The stream's column: the summary strip above, then the stream and its minimap side by side.
+   The strip does not scroll, so the stream's offsets stay the minimap's and the headers'. */
+.review-column {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.review-column-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* One line, 40px, always: the loading state reserves the same height. */
+.summary-strip {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  height: 40px;
+  padding: 0 14px;
+  overflow: hidden;
+  color: var(--hunk-muted);
+  white-space: nowrap;
+  background: var(--hunk-background);
+  border-bottom: 1px solid var(--hunk-border);
+}
+
+.summary-size {
+  flex: none;
+  padding: 0 6px;
+  font-family: var(--code-font);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  color: var(--hunk-text);
+  background: var(--hunk-panel-alt);
+  border: 1px solid var(--hunk-border);
+  border-radius: 4px;
+}
+
+.summary-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.summary-text code {
+  font-family: var(--code-font);
+  font-size: 12px;
+  color: var(--hunk-text);
+}
+
+.summary-roles {
+  display: flex;
+  flex: none;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.summary-overview {
+  flex: none;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  color: var(--hunk-text);
+  text-decoration: underline;
+  text-decoration-color: var(--hunk-border);
+  text-underline-offset: 3px;
+  background: transparent;
+  border: 0;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.summary-overview:hover {
+  text-decoration-color: currentColor;
+}
+
+.review-stream {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  /* Native scroll anchoring keeps the reader in place when files above them change height. */
+  overflow-anchor: auto;
+  background: var(--hunk-background);
+}
+
+.file-section {
+  border-bottom: 1px solid var(--hunk-border);
+}
+
+.file-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  box-sizing: border-box;
+  padding: 0 10px 0 6px;
+  background: var(--hunk-panel);
+  border-bottom: 1px solid var(--hunk-border);
+  font-family: var(--code-font);
+  font-size: 12.5px;
+}
+
+.file-section[data-selected] .file-header {
+  box-shadow: inset 3px 0 0 var(--hunk-accent);
+}
+
+.file-glyph {
+  width: 1.2em;
+  flex: none;
+  font-family: var(--code-font);
+  font-weight: 600;
+  text-align: center;
+}
+
+.file-glyph[data-role="fileNew"] {
+  color: var(--hunk-file-new);
+}
+
+.file-glyph[data-role="fileDeleted"] {
+  color: var(--hunk-file-deleted);
+}
+
+.file-glyph[data-role="fileRenamed"] {
+  color: var(--hunk-file-renamed);
+}
+
+.file-glyph[data-role="fileModified"] {
+  color: var(--hunk-file-modified);
+}
+
+.file-glyph[data-role="fileUntracked"] {
+  color: var(--hunk-file-untracked);
+}
+
+.file-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+/* The directory and a rename's old name step back so the basename reads first. */
+.file-path-dir,
+.file-path-previous {
+  color: var(--hunk-muted);
+}
+
+.file-path-previous {
+  opacity: 0.8;
+}
+
+.file-path-base {
+  color: var(--hunk-text);
+  font-weight: 600;
+}
+
+.file-path-arrow {
+  display: inline-flex;
+  vertical-align: -1px;
+  margin: 0 4px;
+  color: var(--hunk-muted);
+}
+
+/* Zero-size text: selection and copy still read `old -> new`, the icon draws the arrow. */
+.file-path-arrow-text {
+  font-size: 0;
+}
+
+.file-section[data-collapsed] .file-path-base {
+  color: var(--hunk-muted);
+  font-weight: 400;
+}
+
+.file-chip {
+  flex: none;
+  padding: 0 6px;
+  font-family: var(--ui-font);
+  font-size: 11px;
+  line-height: 18px;
+  white-space: nowrap;
+  color: var(--hunk-muted);
+  border: 1px solid var(--hunk-border);
+  border-radius: 4px;
+}
+
+.file-header-spacer {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The header's icon buttons: the collapse chevron and copy path. */
+.file-header-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 24px;
+  height: 24px;
+  padding: 0;
+  font: inherit;
+  font-family: var(--ui-font);
+  font-size: 11px;
+  color: var(--hunk-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.file-header-button:hover {
+  color: var(--hunk-text);
+  background: var(--hunk-panel-alt);
+}
+
+.file-collapse-spacer {
+  flex: none;
+  width: 24px;
+}
+
+.file-header .file-collapse {
+  margin-right: -6px;
+}
+
+/* Copy path shows on header hover and keyboard focus, and while it reports a result. */
+.file-copy-path {
+  opacity: 0;
+}
+
+.file-header:hover .file-copy-path,
+.file-copy-path:focus-visible,
+.file-copy-path[data-state="copied"],
+.file-copy-path[data-state="failed"] {
+  opacity: 1;
+}
+
+.file-copy-path[data-state="copied"],
+.file-copy-path[data-state="failed"] {
+  padding: 0 6px;
+}
+
+.file-copy-path[data-state="copied"] {
+  color: var(--hunk-badge-added, #1a7f37);
+}
+
+.file-copy-path[data-state="failed"] {
+  color: var(--hunk-removed-sign-color, #d1242f);
+}
+
+.file-header .segmented.icon-segmented button {
+  width: 26px;
+  height: 20px;
+}
+
+.file-stats {
+  flex: none;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.header-action {
+  flex: none;
+  font-family: var(--ui-font);
+  font-size: 11px;
+  padding: 1px 7px;
+}
+
+.file-placeholder {
+  margin: 0;
+  padding: 10px 16px;
+  color: var(--hunk-muted);
+  font-style: italic;
+}
+
+.stream-empty {
+  padding: 24px;
+  color: var(--hunk-muted);
+}
+
+.gap-separator {
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+  width: 100%;
+  padding: 0 12px;
+  height: 100%;
+  min-height: 20px;
+  font: inherit;
+  font-family: var(--ui-font);
+  font-size: 12px;
+  text-align: left;
+  color: var(--hunk-muted);
+  background: var(--hunk-panel-alt);
+  border: 0;
+  cursor: pointer;
+}
+
+.gap-separator:hover:not(:disabled) {
+  color: var(--hunk-text);
+  background: var(--hunk-accent-muted);
+}
+
+.gap-separator:disabled {
+  cursor: default;
+}
+
+/* The expand chevron is an icon; `···` marks context that cannot expand. */
+.gap-separator .icon {
+  flex: none;
+  margin-right: 6px;
+}
+
+/* The additions column's half of a split-view gap row. Pierre sizes the slot to the gutter, so a
+   filled band there reads as a stray block; it stays empty until hovered and toggles the gap. */
+.gap-separator-fill {
+  width: 100%;
+  height: 100%;
+  min-height: 20px;
+  cursor: pointer;
+}
+
+.gap-separator-fill:hover:not([data-gap-state="unaddressed"]) {
+  background: var(--hunk-panel-alt);
+}
+
+.gap-separator-fill[data-gap-state="unaddressed"] {
+  cursor: default;
+}
+
+.gap-separator[data-gap-state="unaddressed"]::before {
+  content: "··· " / "";
+}
+
+.gap-separator[data-gap-state="unaddressed"]::after {
+  content: " ···" / "";
+}
+
+/* Pierre's drawing plus the page's overlays: the selected-hunk rail and gap collapse bars. */
+.pierre-frame {
+  position: relative;
+}
+
+.pierre-host {
+  cursor: default;
+}
+
+.hunk-rail {
+  position: absolute;
+  left: 0;
+  width: 3px;
+  background: var(--hunk-accent);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Sits over the first expanded line, where the gap's separator was, as the terminal's row does. */
+.gap-collapse {
+  position: absolute;
+  right: 8px;
+  z-index: 1;
+  height: 18px;
+  margin-top: 1px;
+  padding: 0 8px;
+  font: inherit;
+  font-family: var(--ui-font);
+  font-size: 11px;
+  color: var(--hunk-muted);
+  background: var(--hunk-panel-alt);
+  border: 1px solid var(--hunk-border);
+  border-radius: 9px;
+  cursor: pointer;
+  opacity: 0.92;
+}
+
+.gap-collapse .icon {
+  margin-right: 4px;
+  vertical-align: -2px;
+}
+
+.gap-collapse:hover {
+  color: var(--hunk-text);
+  border-color: var(--hunk-accent);
+  opacity: 1;
+}
+
+.gap-separator[data-gap-state="error"],
+.gap-separator[data-gap-state="too-large"] {
+  color: var(--hunk-removed-sign-color);
+}
+
+/* -- Flat sidebar ----------------------------------------------------------------------- */
+
+.flat-sidebar {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 12px;
+  overflow: auto;
+  flex: 1;
+}
+
+.flat-group {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 12px 2px;
+  color: var(--hunk-muted);
+  font-family: var(--code-font);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.flat-group-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* How much of a folder is viewed: muted while partial, the "added" family once complete. */
+.viewed-rollup {
+  flex: none;
+  font-family: var(--ui-font);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.viewed-rollup[data-complete] {
+  color: var(--hunk-badge-added, #1a7f37);
+}
+
+.flat-file {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 2px 12px;
+  font: inherit;
+  font-family: var(--code-font);
+  font-size: 12.5px;
+  color: var(--hunk-text);
+  background: transparent;
+  border: 0;
+  border-left: 3px solid transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.flat-file:hover {
+  background: var(--hunk-panel-alt);
+}
+
+.flat-file[data-selected] {
+  background: var(--hunk-panel-alt);
+  border-left-color: var(--hunk-accent);
+}
+
+.flat-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flat-badges {
+  display: inline-flex;
+  gap: 5px;
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Text, not the accent: several built-in accents fall below 4.5:1 on the panel and on the
+   selected row's panel-alt background, where the text token holds in every built-in theme.
+   The comment icon stays muted so the count carries the badge. */
+[data-badge="agent-comment"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--hunk-text);
+}
+
+[data-badge="agent-comment"] .icon {
+  color: var(--hunk-muted);
+}
+
+[data-badge="addition"] {
+  color: var(--hunk-badge-added);
+}
+
+[data-badge="deletion"] {
+  color: var(--hunk-badge-removed);
+}
+
+/* -- Notes ------------------------------------------------------------------------------ */
+
+/* One card per thread hangs in the diff flow beside its line: messages separated by hairlines,
+   a neutral frame, and the accent ring only on the thread that holds the active note. */
+.note-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 6px 12px 8px;
+  font-family: var(--ui-font);
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: normal;
+  color: var(--hunk-text);
+}
+
+/* Avatar tints are hues no theme token names, mixed from the added and removed sign colors the
+   long way round the hue circle, so they never match the diff's green or red, nor the accent. */
+.note-thread {
+  --note-agent-tint: color-mix(
+    in oklch longer hue,
+    var(--hunk-added-sign-color) 25%,
+    var(--hunk-removed-sign-color)
+  );
+  --note-person-tint: color-mix(
+    in oklch longer hue,
+    var(--hunk-added-sign-color) 75%,
+    var(--hunk-removed-sign-color)
+  );
+  max-width: 920px;
+  background: var(--hunk-panel);
+  border: 1px solid var(--hunk-border);
+  border-radius: 8px;
+}
+
+.note-thread[data-stale] {
+  border-style: dashed;
+}
+
+.note-thread[data-active] {
+  border-color: var(--hunk-accent);
+  box-shadow: 0 0 0 1px var(--hunk-accent);
+}
+
+.note-card {
+  display: flex;
+  gap: 10px;
+  padding: 8px 12px;
+  cursor: default;
+}
+
+.note-card + .note-card {
+  border-top: 1px solid var(--hunk-border);
+}
+
+/* Within a ring, the active message is told apart by a bar on its edge, not by color alone. */
+.note-thread[data-active] .note-card[data-active] {
+  box-shadow: inset 2px 0 0 var(--hunk-accent);
+}
+
+.note-card[data-stale] .note-main {
+  opacity: 0.8;
+}
+
+.note-avatar {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  color: var(--note-person-tint);
+  background: color-mix(in srgb, var(--note-person-tint) 16%, var(--hunk-panel));
+}
+
+.note-avatar[data-kind="agent"] {
+  color: var(--note-agent-tint);
+  background: color-mix(in srgb, var(--note-agent-tint) 16%, var(--hunk-panel));
+}
+
+.note-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.note-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 22px;
+  margin-bottom: 2px;
+  font-size: 12px;
+  color: var(--hunk-muted);
+}
+
+/* A narrow column wraps the header's words rather than cutting the author's name. */
+.note-meta {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 8px;
+  min-width: 0;
+  min-height: 22px;
+}
+
+.note-author {
+  color: var(--hunk-text);
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.note-role {
+  flex: none;
+  padding: 0 5px;
+  border: 1px solid var(--hunk-border);
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.note-age {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.note-range {
+  flex: none;
+}
+
+.note-stale {
+  flex: none;
+  padding: 0 6px;
+  border: 1px dashed var(--hunk-muted);
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.note-body p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.note-rationale {
+  margin-top: 4px !important;
+  color: var(--hunk-muted);
+}
+
+/* STML bodies: CSS lays the shared roles out; colors come from the theme's properties. */
+.stml {
+  overflow-wrap: anywhere;
+}
+
+.stml p,
+.stml h3,
+.stml h4 {
+  margin: 0;
+}
+
+.stml h3 {
+  font-size: 14px;
+}
+
+.stml h4 {
+  font-size: 13px;
+}
+
+.stml-container,
+.stml-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 0;
+}
+
+.stml-container[data-border],
+.stml-card[data-border] {
+  padding: 4px 8px;
+  border: 1px solid var(--hunk-border);
+  border-radius: 4px;
+}
+
+.stml-container[data-border="double"],
+.stml-card[data-border="double"] {
+  border-style: double;
+  border-width: 3px;
+}
+
+.stml-container[data-border="heavy"],
+.stml-card[data-border="heavy"] {
+  border-width: 2px;
+}
+
+.stml-box-title {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--hunk-accent);
+}
+
+.stml-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1ch;
+}
+
+.stml-row > * {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.stml-muted {
+  color: var(--hunk-muted);
+}
+
+.stml-key {
+  padding: 0 4px;
+  border: 1px solid var(--hunk-border);
+  border-radius: 3px;
+  font-family: var(--code-font);
+  font-size: 12px;
+}
+
+.stml-badge {
+  padding: 0 6px;
+  border-radius: 8px;
+  color: var(--hunk-background);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.stml-link {
+  color: var(--hunk-accent);
+  text-decoration: underline;
+}
+
+.stml-divider {
+  width: 100%;
+  border: 0;
+  border-top: 1px solid var(--hunk-border);
+  margin: 4px 0;
+}
+
+.stml-list,
+.stml-ordered-list {
+  margin: 0;
+  padding-left: 2.2ch;
+}
+
+.stml-code {
+  margin: 4px 0;
+  padding: 4px 8px;
+  background: var(--hunk-panel-alt);
+  border-radius: 4px;
+  font-family: var(--code-font);
+  font-size: 12px;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.stml-code[data-title]::before {
+  display: block;
+  color: var(--hunk-muted);
+  content: attr(data-title);
+}
+
+/* -- Agent attention marks ------------------------------------------------------------ */
+
+.agent-highlight {
+  position: absolute;
+  z-index: 1;
+  border-radius: 2px;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--hunk-accent) 32%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--hunk-accent) 60%, transparent);
+}
+
+.agent-highlight[data-tone="current"] {
+  background: color-mix(in srgb, var(--hunk-accent) 48%, transparent);
+}
+
+.agent-highlight[data-tone="info"] {
+  background: color-mix(in srgb, var(--hunk-accent-muted, var(--hunk-accent)) 45%, transparent);
+}
+
+.agent-highlight[data-tone="warning"] {
+  background: color-mix(in srgb, var(--hunk-file-modified) 38%, transparent);
+  box-shadow: 0 0 0 1px var(--hunk-file-modified);
+}
+
+.agent-highlight[data-tone="error"] {
+  background: color-mix(in srgb, var(--hunk-removed-sign-color) 38%, transparent);
+  box-shadow: 0 0 0 1px var(--hunk-removed-sign-color);
+}
+
+.agent-highlight[data-tone="dim"] {
+  background: color-mix(in srgb, var(--hunk-muted) 30%, transparent);
+  box-shadow: none;
+}
+
+.filter-chip {
+  padding: 0 8px;
+  border: 1px solid var(--hunk-border);
+  border-radius: 9px;
+  color: var(--hunk-muted);
+  font-family: var(--code-font);
+  font-size: 12px;
+}
+
+/* -- Writing: composers, card actions, review controls, toasts ------------------------- */
+
+.composer-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 12px 8px;
+  font-family: var(--ui-font);
+  font-size: 13px;
+  white-space: normal;
+}
+
+/* A new note's composer is drawn like a thread card; it holds focus, so it keeps the accent. */
+.note-composer {
+  max-width: 920px;
+  padding: 8px 12px;
+  background: var(--hunk-panel);
+  border: 1px solid var(--hunk-accent);
+  border-radius: 8px;
+  color: var(--hunk-text);
+}
+
+.composer-body {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 4px 0;
+  padding: 6px 8px;
+  font: inherit;
+  color: var(--hunk-text);
+  background: var(--hunk-background);
+  border: 1px solid var(--hunk-border);
+  border-radius: 4px;
+  resize: vertical;
+}
+
+.composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.composer-hint,
+.composer-confirm {
+  color: var(--hunk-muted);
+  font-size: 12px;
+}
+
+.composer-message {
+  margin: 2px 0 6px;
+  color: var(--hunk-muted);
+}
+
+.composer-message[data-tone="error"] {
+  color: var(--hunk-removed-sign-color);
+}
+
+.tool-button.primary {
+  background: var(--hunk-accent-muted);
+  border-color: var(--hunk-accent);
+}
+
+.note-actions {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.note-action {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  color: var(--hunk-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.note-action:hover:not(:disabled) {
+  color: var(--hunk-text);
+  background: var(--hunk-panel-alt);
+}
+
+.note-action:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* The thread's one quiet way in to a reply; an open composer takes its place. */
+.note-reply-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  font: inherit;
+  color: var(--hunk-muted);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--hunk-border);
+  border-radius: 0 0 7px 7px;
+  cursor: text;
+}
+
+.note-reply-field {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  height: 28px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  background: var(--hunk-background);
+  border: 1px solid var(--hunk-border);
+  border-radius: 6px;
+}
+
+.note-reply-row:hover:not(:disabled) .note-reply-field {
+  border-color: var(--hunk-muted);
+}
+
+.note-reply-row:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* `R` replies to the active note, so the key cap shows only on the active thread. */
+.note-reply-key {
+  padding: 0 4px;
+  font: 11px/16px var(--code-font);
+  color: var(--hunk-muted);
+  background: var(--hunk-panel-alt);
+  border: 1px solid var(--hunk-border);
+  border-radius: 4px;
+  display: none;
+}
+
+.note-thread[data-active] .note-reply-key {
+  display: inline;
+}
+
+.note-thread-composers {
+  border-top: 1px solid var(--hunk-border);
+}
+
+/* A composer inside a thread is a part of its card, not a second card. */
+.note-thread-composers .note-composer {
+  max-width: none;
+  padding: 8px 12px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+.note-thread-composers .composer-host + .composer-host {
+  border-top: 1px solid var(--hunk-border);
+}
+
+.review-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.filter-field {
+  position: relative;
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 6px;
+  /* A definite width so the controls' max-content counts the field at full size. */
+  width: 250px;
+  min-width: 150px;
+  height: 28px;
+  box-sizing: border-box;
+  padding: 0 6px 0 8px;
+  color: var(--hunk-muted);
+  background: var(--hunk-background);
+  border: 1px solid var(--hunk-border);
+  border-radius: 6px;
+}
+
+.filter-field:focus-within {
+  border-color: var(--hunk-accent);
+}
+
+.filter-field input {
+  flex: 1;
+  width: 0;
+  min-width: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--hunk-text);
+  background: transparent;
+  border: 0;
+  outline: none;
+}
+
+.filter-field input::placeholder {
+  color: var(--hunk-muted);
+}
+
+.shared-hint {
+  flex: none;
+  color: var(--hunk-muted);
+  font-size: 11px;
+  pointer-events: none;
+}
+
+.toast-region {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: min(420px, calc(100vw - 32px));
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  color: var(--hunk-text);
+  background: var(--hunk-panel);
+  border: 1px solid var(--hunk-border);
+  border-left: 3px solid var(--hunk-accent);
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 25%);
+}
+
+.toast[data-tone="error"] {
+  border-left-color: var(--hunk-removed-sign-color);
+}
+
+.toast-dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  padding: 0 4px;
+  font: inherit;
+  color: var(--hunk-muted);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+/* Palette, go-to-file, and help: modal dialogs over a dimmed page. */
+.picker-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+  background: rgb(0 0 0 / 35%);
+}
+
+.picker,
+.help-overlay {
+  display: flex;
+  flex-direction: column;
+  width: min(640px, calc(100vw - 32px));
+  max-height: 70vh;
+  color: var(--hunk-text);
+  background: var(--hunk-panel);
+  border: 1px solid var(--hunk-border);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 35%);
+  overflow: hidden;
+}
+
+.picker-input {
+  padding: 12px 14px;
+  font: inherit;
+  color: var(--hunk-text);
+  background: var(--hunk-background);
+  border: 0;
+  border-bottom: 1px solid var(--hunk-border);
+  outline: none;
+}
+
+.picker-list {
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.picker-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.picker-option[aria-selected="true"] {
+  background: var(--hunk-accent-muted);
+}
+
+.picker-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker-category,
+.picker-empty {
+  color: var(--hunk-muted);
+}
+
+.picker-keys {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.picker-group + .picker-group {
+  margin-top: 4px;
+}
+
+.picker-section {
+  padding: 8px 10px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: capitalize;
+  color: var(--hunk-muted);
+}
+
+.picker-empty {
+  margin: 0;
+  padding: 10px 14px;
+}
+
+.help-section kbd {
+  padding: 1px 6px;
+  font: inherit;
+  font-size: 0.85em;
+  color: var(--hunk-text);
+  background: var(--hunk-panel-alt);
+  border: 1px solid var(--hunk-border);
+  border-radius: 4px;
+}
+
+.picker-stats {
+  font-variant-numeric: tabular-nums;
+}
+
+.picker-stats .stat-add {
+  color: var(--hunk-badge-added);
+}
+
+.picker-stats .stat-del {
+  color: var(--hunk-badge-removed);
+}
+
+.help-overlay {
+  width: min(760px, calc(100vw - 32px));
+  max-height: 80vh;
+}
+
+.help-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--hunk-border);
+}
+
+.help-header h2 {
+  margin: 0;
+  font-size: 1em;
+}
+
+.help-sections {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 12px 24px;
+  padding: 12px 14px;
+  overflow-y: auto;
+}
+
+.help-section h3 {
+  margin: 0 0 6px;
+  font-size: 0.9em;
+  color: var(--hunk-accent);
+}
+
+.help-section table {
+  border-collapse: collapse;
+}
+
+.help-section th {
+  padding: 2px 10px 2px 0;
+  font-weight: normal;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.help-section td {
+  padding: 2px 0;
+  color: var(--hunk-muted);
+}
+
+/* -- Side panel ------------------------------------------------------------------------- */
+
+.side-panel {
+  display: flex;
+  flex-direction: column;
+  width: var(--side-panel-width);
+  flex: none;
+  min-width: 0;
+  background: var(--hunk-panel);
+  border-left: 1px solid var(--hunk-border);
+}
+
+.side-panel-resizer {
+  width: 5px;
+  margin-right: -3px;
+  flex: none;
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 3;
+}
+
+.side-panel-resizer:hover {
+  background: var(--hunk-accent-muted);
+}
+
+.side-panel-header {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  padding: 0 6px 0 10px;
+  border-bottom: 1px solid var(--hunk-border);
+}
+
+.side-panel-tabs {
+  display: flex;
+  gap: 2px;
+  flex: 1;
+}
+
+.side-panel-tabs [role="tab"] {
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--hunk-muted);
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 7px 8px 5px;
+  cursor: pointer;
+}
+
+.side-panel-tabs [role="tab"]:hover {
+  color: var(--hunk-text);
+}
+
+.side-panel-tabs [role="tab"][aria-selected="true"] {
+  color: var(--hunk-text);
+  border-bottom-color: var(--hunk-text);
+}
+
+.side-panel-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  width: 24px;
+  height: 24px;
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--hunk-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.side-panel-close:hover {
+  color: var(--hunk-text);
+  border-color: var(--hunk-border);
+}
+
+.side-panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.side-panel-body:focus-visible {
+  outline-offset: -2px;
+}
+
+/* -- Overview tab ----------------------------------------------------------------------- */
+
+.overview {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.overview-empty {
+  margin: 16px 12px;
+  color: var(--hunk-muted);
+}
+
+.overview-section {
+  padding: 10px 12px 12px;
+  border-bottom: 1px solid var(--hunk-border);
+}
+
+.overview-section:last-child {
+  border-bottom: 0;
+}
+
+.overview-heading {
+  margin: 0 0 8px;
+  color: var(--hunk-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.overview-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.overview-size {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 64px;
+  height: 56px;
+  border: 1px solid var(--hunk-border);
+  border-radius: 8px;
+  background: var(--hunk-panel-alt);
+}
+
+.overview-size-letter {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--hunk-accent);
+}
+
+.overview-size-label {
+  color: var(--hunk-muted);
+  font-size: 10px;
+  text-align: center;
+  line-height: 1.2;
+}
+
+.overview-totals {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+.overview-totals > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.overview-totals dt {
+  color: var(--hunk-muted);
+}
+
+.overview-totals dd {
+  display: flex;
+  gap: 10px;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.overview-churn {
+  font-variant-numeric: tabular-nums;
+  display: inline-flex;
+  justify-content: flex-end;
+  gap: 6px;
+  font-family: var(--code-font);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.overview-count {
+  color: var(--hunk-text);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.overview-bar {
+  display: flex;
+  height: 6px;
+  min-width: 24px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--hunk-panel-alt);
+}
+
+.overview-bar-added {
+  background: var(--hunk-badge-added);
+}
+
+.overview-bar-removed {
+  background: var(--hunk-badge-removed);
+}
+
+.overview-note {
+  margin: 8px 0 0;
+  color: var(--hunk-muted);
+  font-size: 12px;
+}
+
+.overview-viewed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 0;
+  font-size: 12px;
+}
+
+.overview-viewed progress {
+  flex: 1;
+  height: 6px;
+  accent-color: var(--hunk-accent);
+}
+
+.overview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.overview-table th,
+.overview-table td {
+  padding: 3px 0;
+  text-align: left;
+  font-weight: normal;
+  vertical-align: middle;
+}
+
+.overview-table thead th {
+  color: var(--hunk-muted);
+  font-size: 11px;
+}
+
+.overview-table .numeric {
+  padding-left: 10px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.overview-table .bar-cell {
+  width: 30%;
+  padding-left: 10px;
+}
+
+.overview-table tfoot th,
+.overview-table tfoot td {
+  border-top: 1px solid var(--hunk-border);
+  color: var(--hunk-muted);
+}
+
+.overview-kinds {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px 16px;
+  margin: 0;
+  font-size: 12.5px;
+}
+
+.overview-kinds > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.overview-kinds dd {
+  margin: 0;
+  text-align: right;
+}
+
+.overview-tree,
+.overview-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.overview-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto 56px;
+  align-items: center;
+  gap: 8px;
+  min-height: 22px;
+  font-size: 12.5px;
+}
+
+.overview-list .overview-row {
+  grid-template-columns: minmax(0, 1fr) auto 56px;
+}
+
+.overview-disclosure {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 18px;
+  padding: 0;
+  font: inherit;
+  font-size: 10px;
+  color: var(--hunk-muted);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.overview-name {
+  min-width: 0;
+  overflow: hidden;
+  padding: 1px 0;
+  font: inherit;
+  font-family: var(--code-font);
+  font-size: 12px;
+  color: var(--hunk-text);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.overview-name:hover {
+  color: var(--hunk-accent);
+  text-decoration: underline;
+}
+
+/* -- Notes tab -------------------------------------------------------------------------- */
+
+.notes-panel {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 16px;
+}
+
+.notes-controls {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px 8px;
+  background: var(--hunk-panel);
+  border-bottom: 1px solid var(--hunk-border);
+}
+
+.notes-search {
+  font: inherit;
+  color: var(--hunk-text);
+  background: var(--hunk-background);
+  border: 1px solid var(--hunk-border);
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+
+.notes-search:focus-visible {
+  outline-offset: -1px;
+}
+
+.notes-origins {
+  display: flex;
+  gap: 6px;
+}
+
+.notes-origin {
+  font-size: 12px;
+  padding: 1px 8px;
+}
+
+.notes-count,
+.notes-none {
+  margin: 0;
+  color: var(--hunk-muted);
+  font-size: 12px;
+}
+
+.notes-none {
+  padding: 12px;
+}
+
+.notes-empty {
+  padding: 4px 12px;
+}
+
+.notes-empty code {
+  font-family: var(--code-font);
+  font-size: 12px;
+}
+
+.notes-file {
+  padding: 8px 0 4px;
+  border-bottom: 1px solid var(--hunk-border);
+}
+
+.notes-file-path {
+  margin: 0 12px 4px;
+  overflow: hidden;
+  color: var(--hunk-muted);
+  font-family: var(--code-font);
+  font-size: 12px;
+  font-weight: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notes-threads,
+.notes-replies {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.notes-replies {
+  margin-left: 18px;
+  border-left: 1px solid var(--hunk-border);
+}
+
+.notes-thread {
+  padding: 0 4px;
+}
+
+.notes-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 5px 8px;
+  font: inherit;
+  color: var(--hunk-text);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-left: 3px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.notes-row:hover {
+  background: var(--hunk-panel-alt);
+}
+
+.notes-row[data-active] {
+  background: var(--hunk-accent-muted);
+  border-left-color: var(--hunk-accent);
+}
+
+.notes-row-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.notes-author {
+  color: var(--hunk-text);
+  font-weight: 600;
+}
+
+.notes-row[data-origin="reviewer"] .notes-author,
+.notes-row[data-origin="browser"] .notes-author {
+  color: var(--hunk-text);
+}
+
+.notes-range {
+  color: var(--hunk-muted);
+  font-family: var(--code-font);
+}
+
+.notes-summary {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 12.5px;
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
+}
+
+.notes-replies-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 4px 11px;
+  padding: 0 4px;
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--hunk-muted);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.notes-replies-toggle:hover {
+  color: var(--hunk-text);
+}
+
+/* -- Minimap ---------------------------------------------------------------------------- */
+
+.minimap {
+  position: relative;
+  flex: none;
+  width: 16px;
+  overflow: hidden;
+  background: var(--hunk-panel);
+  border-left: 1px solid var(--hunk-border);
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+}
+
+.minimap-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.minimap-window {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  box-sizing: border-box;
+  background: color-mix(in srgb, var(--hunk-muted) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--hunk-muted) 60%, transparent);
+  pointer-events: none;
+}
+
+/* -- Rich previews ---------------------------------------------------------------------- */
+
+.image-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px 16px;
+}
+
+.image-preview-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.image-preview-slider {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--hunk-muted);
+  font-size: 12px;
+}
+
+.image-preview-slider input {
+  width: 200px;
+  accent-color: var(--hunk-accent);
+}
+
+.image-preview-sides {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.image-preview-figure {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  min-width: 0;
+}
+
+.image-preview-sides .image-preview-figure {
+  flex: 1 1 260px;
+}
+
+.image-preview-figure figcaption {
+  color: var(--hunk-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Transparency shows as the familiar checkerboard. */
+.image-preview-canvas {
+  position: relative;
+  display: flex;
+  width: fit-content;
+  min-width: 160px;
+  max-width: 100%;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  min-height: 64px;
+  max-height: 480px;
+  padding: 8px;
+  overflow: hidden;
+  border: 1px solid var(--hunk-border);
+  border-radius: 6px;
+  background-color: #fff;
+  background-image:
+    linear-gradient(45deg, #d8d8d8 25%, transparent 25%),
+    linear-gradient(-45deg, #d8d8d8 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #d8d8d8 75%),
+    linear-gradient(-45deg, transparent 75%, #d8d8d8 75%);
+  background-size: 16px 16px;
+  background-position:
+    0 0,
+    0 8px,
+    8px -8px,
+    -8px 0;
+}
+
+.image-preview-canvas img {
+  max-width: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+/* The stacked modes draw both sides in one box sized from the larger image. */
+.image-preview-stack {
+  position: relative;
+  max-width: 100%;
+}
+
+.image-preview-stack img {
+  position: absolute;
+  inset: 0;
+}
+
+.image-preview-divider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--hunk-accent);
+  pointer-events: none;
+}
+
+.markdown-preview {
+  padding: 12px 24px 20px;
+  font-family: var(--ui-font);
+  font-size: 14px;
+  line-height: 1.6;
+  max-width: 920px;
+}
+
+.markdown-view > :first-child {
+  margin-top: 0;
+}
+
+.markdown-view h1,
+.markdown-view h2 {
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--hunk-border);
+}
+
+.markdown-view a {
+  color: var(--hunk-accent);
+}
+
+.markdown-view code {
+  padding: 1px 4px;
+  font-family: var(--code-font);
+  font-size: 12.5px;
+  background: var(--hunk-panel-alt);
+  border-radius: 4px;
+}
+
+.markdown-view pre {
+  padding: 10px 12px;
+  overflow-x: auto;
+  background: var(--hunk-panel-alt);
+  border: 1px solid var(--hunk-border);
+  border-radius: 6px;
+}
+
+.markdown-view pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.markdown-view blockquote {
+  margin: 0;
+  padding: 0 12px;
+  color: var(--hunk-muted);
+  border-left: 3px solid var(--hunk-border);
+}
+
+.markdown-view p,
+.markdown-view li {
+  overflow-wrap: anywhere;
+}
+
+.markdown-table {
+  overflow-x: auto;
+}
+
+.markdown-view table {
+  border-collapse: collapse;
+}
+
+.markdown-view th,
+.markdown-view td {
+  padding: 4px 10px;
+  border: 1px solid var(--hunk-border);
+}
+
+.markdown-view hr {
+  border: 0;
+  border-top: 1px solid var(--hunk-border);
+}
+
+/* Viewed files: header checkbox, "changed since viewed", sidebar and toolbar. */
+
+/* A real checkbox in a bordered, button-like label; checked, it takes the "added" family. */
+.viewed-toggle {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  box-sizing: border-box;
+  padding: 0 7px 0 6px;
+  font-family: var(--ui-font);
+  font-size: 12px;
+  color: var(--hunk-muted);
+  border: 1px solid var(--hunk-border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.viewed-toggle:hover {
+  color: var(--hunk-text);
+}
+
+.viewed-toggle:focus-within:has(:focus-visible) {
+  outline: 2px solid var(--hunk-accent);
+  outline-offset: 1px;
+}
+
+.viewed-toggle input:focus-visible {
+  outline: none;
+}
+
+.viewed-toggle[data-status="viewed"] {
+  color: var(--hunk-badge-added, #1a7f37);
+  border-color: color-mix(in srgb, var(--hunk-badge-added, #1a7f37) 45%, transparent);
+  background: color-mix(in srgb, var(--hunk-badge-added, #1a7f37) 10%, transparent);
+}
+
+.viewed-toggle input {
+  margin: 0;
+  accent-color: var(--hunk-badge-added, #1a7f37);
+  cursor: pointer;
+}
+
+.viewed-toggle .key-hint {
+  padding: 0 3px;
+  font-size: 10px;
+  line-height: 14px;
+}
+
+/* The row's viewed checkbox takes the header control's "added" family, scaled to the row. */
+.flat-viewed {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: var(--hunk-badge-added, #1a7f37);
+  cursor: pointer;
+}
+
+/* Changed since viewed calls for another look, so its mark keeps the accent. */
+.changed-mark {
+  display: inline-flex;
+  flex: none;
+  margin-right: 5px;
+  color: var(--hunk-accent);
+}
+
+.viewed-changed {
+  flex: none;
+  font-family: var(--ui-font);
+  font-size: 11px;
+  padding: 0 6px;
+  border: 1px solid var(--hunk-accent);
+  border-radius: 3px;
+  color: var(--hunk-accent);
+}
+
+.flat-row {
+  display: flex;
+  align-items: center;
+  padding-right: 8px;
+}
+
+.flat-row .flat-file {
+  flex: 1;
+  min-width: 0;
+}
+
+.flat-row[data-viewed="viewed"] .flat-name {
+  color: var(--hunk-muted);
+}
+
+/* -- Review bar ------------------------------------------------------------------------ */
+
+/* One 34px row along the bottom. It never wraps: narrow windows drop the key hints, then the
+   next file's path, then the note count's word (see the media queries below). */
+.review-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 14px;
+  height: 34px;
+  min-width: 0;
+  padding: 0 10px 0 12px;
+  overflow: hidden;
+  color: var(--hunk-muted);
+  background: var(--hunk-panel);
+  border-top: 1px solid var(--hunk-border);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.viewed-progress {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-track {
+  width: 90px;
+  height: 4px;
+  overflow: hidden;
+  background: var(--hunk-border);
+  border-radius: 2px;
+}
+
+.progress-fill {
+  display: block;
+  height: 100%;
+  background: var(--hunk-added-sign-color, #1a7f37);
+}
+
+/* Bar buttons are quiet text until hovered, like the toolbar's. */
+.bar-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 6px;
+  font: inherit;
+  color: var(--hunk-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.bar-button:hover {
+  color: var(--hunk-text);
+  background: var(--hunk-panel-alt);
+}
+
+.bar-next {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: -6px;
+  color: var(--hunk-text);
+}
+
+.bar-next-label {
+  flex: none;
+  line-height: 16px;
+}
+
+/* The directory gives way first so the file name stays readable. */
+.bar-next-path {
+  display: inline-flex;
+  min-width: 0;
+  overflow: hidden;
+  font: 12px/16px var(--code-font);
+  color: var(--hunk-muted);
+}
+
+.bar-next-dir {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bar-next-name {
+  flex: none;
+}
+
+.bar-all-viewed {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  color: var(--hunk-text);
+}
+
+.bar-all-viewed .icon {
+  color: var(--hunk-added-sign-color, #1a7f37);
+}
+
+.bar-spacer {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.bar-keys {
+  display: flex;
+  flex: none;
+  gap: 12px;
+}
+
+.bar-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.bar-key-label {
+  margin-left: 2px;
+}
+
+.bar-shortcuts {
+  margin-left: -8px;
+}
+
+.bar-separator {
+  flex: none;
+  width: 1px;
+  height: 16px;
+  background: var(--hunk-border);
+}
+
+.bar-notes {
+  margin: 0 -6px;
+}
+
+.bar-notes .icon {
+  color: var(--hunk-muted);
+}
+
+.bar-notes-count {
+  color: var(--hunk-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.bar-copy {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 9px;
+  font-size: 12px;
+}
+
+.bar-copy .icon {
+  width: 13px;
+  height: 13px;
+}
+
+.bar-copy[data-state="copied"] {
+  color: var(--hunk-badge-added, #1a7f37);
+}
+
+.bar-copy[data-state="failed"] {
+  color: var(--hunk-removed-sign-color, #d1242f);
+}
+
+@media (max-width: 1180px) {
+  .bar-keys,
+  .bar-shortcuts,
+  .bar-shortcuts + .bar-separator {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .bar-next-path {
+    display: none;
+  }
+}
+
+/* Hidden labels stay in the accessibility tree: they name their buttons. */
+@media (max-width: 560px) {
+  .bar-notes-word {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+/* Narrow toolbars drop words before controls, then the stats, and collapse the filter last;
+   the row itself never wraps. */
+/* Hidden labels stay in the accessibility tree: they name their icon buttons. */
+@media (max-width: 1180px) {
+  .commands-button .pill-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+/* Role counts go first when the strip runs short; the sentence then truncates. */
+@media (max-width: 900px) {
+  .summary-roles {
+    display: none;
+  }
+}
+
+@media (max-width: 1000px) {
+  .toolbar-stats,
+  .filter-field .shared-hint ~ .filter-key {
+    display: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .view-button .pill-chevron {
+    display: none;
+  }
+
+  .view-button .pill-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .toolbar .view-button {
+    width: 28px;
+    padding: 0;
+  }
+}
+
+@media (max-width: 680px) {
+  .filter-field {
+    flex: none;
+    min-width: 0;
+    width: 28px;
+    padding: 0 6px;
+    border-color: transparent;
+    background: transparent;
+  }
+
+  .filter-field:focus-within {
+    position: absolute;
+    right: 10px;
+    z-index: 1;
+    width: min(280px, calc(100vw - 20px));
+    background: var(--hunk-background);
+    border-color: var(--hunk-accent);
+  }
+
+  .filter-field:not(:focus-within) :is(.shared-hint, .filter-key) {
+    display: none;
+  }
+}

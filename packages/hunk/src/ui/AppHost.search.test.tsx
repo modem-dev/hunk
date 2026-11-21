@@ -69,10 +69,26 @@ function createTestRepo(prefix: string) {
   return repo;
 }
 
+/** One file whose two changed lines each hold a match, paired row by row in split view. */
+function createPairRepo(prefix: string) {
+  const repo = createTempDir(prefix);
+  execSync("git init && git config user.email test@test && git config user.name test", {
+    cwd: repo,
+    stdio: "ignore",
+  });
+  writeFileSync(join(repo, "pair.ts"), "const a = readConfig(1);\nconst b = readConfig(2);\n");
+  execSync("git add . && git commit -m init", { cwd: repo, stdio: "ignore" });
+  writeFileSync(join(repo, "pair.ts"), "const a = readConfig(3);\nconst b = readConfig(4);\n");
+  return repo;
+}
+
 /** Launch a review with user extensions disabled, as `--no-extensions` does. */
-async function launchWithoutExtensions(repo: string): Promise<AppBootstrap> {
+async function launchWithoutExtensions(
+  repo: string,
+  mode: "unified" | "split" = "unified",
+): Promise<AppBootstrap> {
   const bootstrap = (await loadCoreAppBootstrap(
-    { kind: "vcs", staged: false, options: { mode: "unified" } },
+    { kind: "vcs", staged: false, options: { mode } },
     { cwd: repo, vcsCatalog: getBundledVcsCatalog() },
   )) as AppBootstrap;
   bootstrap.extensions = await loadStartupExtensions({
@@ -115,6 +131,7 @@ async function flushUntil(
 async function withAppHost(
   bootstrap: AppBootstrap,
   body: (setup: Awaited<ReturnType<typeof testRender>>) => Promise<void>,
+  readyText = "alpha.ts",
 ) {
   // Short enough that alpha's second hunk starts below the fold, so a landing there must scroll.
   const setup = await testRender(<AppHost bootstrap={bootstrap} />, { width: 120, height: 14 });
@@ -122,7 +139,7 @@ async function withAppHost(
     await flush(setup);
     await flushUntil(
       setup,
-      () => setup.captureCharFrame().includes("alpha.ts"),
+      () => setup.captureCharFrame().includes(readyText),
       "the review to render",
     );
     await body(setup);
@@ -215,6 +232,31 @@ async function clearSearch(setup: Awaited<ReturnType<typeof testRender>>) {
   );
 }
 
+/**
+ * The startup cursor sits on the first deletion row, and a fresh search includes that row, so the
+ * lap starts on (1) and shows the whole cyclic order.
+ */
+const PAIR_LANDINGS: Record<"unified" | "split", string[]> = {
+  unified: [
+    "[1/4] pair.ts:1 — const a = readConfig(1);",
+    "[2/4] pair.ts:2 — const b = readConfig(2);",
+    "[3/4] pair.ts:1 — const a = readConfig(3);",
+    "[4/4] pair.ts:2 — const b = readConfig(4);",
+    "[1/4] pair.ts:1 • wrapped — const a = readConfig(1);",
+    "[2/4] pair.ts:2 — const b = readConfig(2);",
+    "[1/4] pair.ts:1 — const a = readConfig(1);",
+  ],
+  split: [
+    "[1/4] pair.ts:1 — const a = readConfig(1);",
+    "[2/4] pair.ts:1 — const a = readConfig(3);",
+    "[3/4] pair.ts:2 — const b = readConfig(2);",
+    "[4/4] pair.ts:2 — const b = readConfig(4);",
+    "[1/4] pair.ts:1 • wrapped — const a = readConfig(1);",
+    "[2/4] pair.ts:1 — const a = readConfig(3);",
+    "[1/4] pair.ts:1 — const a = readConfig(1);",
+  ],
+};
+
 describe("bundled content search", () => {
   test("/ prompts, Enter lands on the match, and n / N step through the review and wrap", async () => {
     const bootstrap = await launchWithoutExtensions(createTestRepo("hunk-search-"));
@@ -223,27 +265,35 @@ describe("bundled content search", () => {
       await openEmptyPrompt(setup);
       expect(statusRow(setup)).not.toContain("ext");
 
-      // Smart case: the lowercase query matches `readConfig`. The review opens
-      // on alpha's first hunk, and a search steps strictly forward from the
-      // current hunk, so the first landing is alpha's second hunk — below the
-      // fold, revealed near the top of the viewport.
+      // Smart case: the lowercase query matches `readConfig`. The review opens with
+      // the cursor on alpha's first deletion row, so the first landing is the match
+      // right below it: alpha's first addition.
       await type(setup, "readconfig");
       await submit(setup);
       await flushUntil(
         setup,
-        () => statusRow(setup).includes("[2/3] alpha.ts:62"),
+        () => statusRow(setup).includes("[1/3] alpha.ts:1"),
         "the first landing to report on the status row",
       );
-      expect(statusRow(setup)).toContain('— const bottom = readConfig("second");');
-      // Rows 0–1 are the menu bar and its rule; the reveal parks the line a little below.
-      const secondRow = rowIndexOf(setup, 'readConfig("second")');
-      expect(secondRow).toBeGreaterThan(1);
-      expect(secondRow).toBeLessThan(8);
+      expect(statusRow(setup)).toContain('— const top = readConfig("first");');
       await flushUntil(
         setup,
         () => hasCurrentMarkOn(setup, "readConfig"),
         "the landed match to carry the current mark",
       );
+
+      // The next match sits below the fold, so landing on it has to scroll. Rows 0–1
+      // are the menu bar and its rule; the reveal parks the line a little below.
+      await type(setup, "n");
+      await flushUntil(
+        setup,
+        () => statusRow(setup).includes("[2/3] alpha.ts:62"),
+        "n to land on alpha's second hunk",
+      );
+      expect(statusRow(setup)).toContain('— const bottom = readConfig("second");');
+      const secondRow = rowIndexOf(setup, 'readConfig("second")');
+      expect(secondRow).toBeGreaterThan(1);
+      expect(secondRow).toBeLessThan(8);
 
       await type(setup, "n");
       await flushUntil(
@@ -368,7 +418,7 @@ describe("bundled content search", () => {
       await submit(setup);
       await flushUntil(
         setup,
-        () => statusRow(setup).includes("[2/3] alpha.ts:62"),
+        () => statusRow(setup).includes("[1/3] alpha.ts:1"),
         "the first landing to report",
       );
 
@@ -379,7 +429,7 @@ describe("bundled content search", () => {
       await pressEscape(setup);
       await flushUntil(
         setup,
-        () => !statusRow(setup).trimStart().startsWith("/") && statusRow(setup).includes("[2/3]"),
+        () => !statusRow(setup).trimStart().startsWith("/") && statusRow(setup).includes("[1/3]"),
         "the cancelled prompt to leave the last landing on the status row",
       );
       await flushUntil(
@@ -389,7 +439,7 @@ describe("bundled content search", () => {
       );
 
       // A content reload rebuilds the visible files; `n` re-matches the kept query
-      // from the live selection, which the landing left on alpha's second hunk.
+      // from the live selection, which the landing left on alpha's first hunk.
       await type(setup, "r");
       await flushUntil(
         setup,
@@ -399,7 +449,7 @@ describe("bundled content search", () => {
       await type(setup, "n");
       await flushUntil(
         setup,
-        () => statusRow(setup).includes("[3/3] beta.ts:1"),
+        () => statusRow(setup).includes("[2/3] alpha.ts:62"),
         "n after the reload to step the kept query",
       );
     });
@@ -441,4 +491,47 @@ describe("bundled content search", () => {
       );
     });
   });
+
+  test.each(["unified", "split"] as const)(
+    "n and N step through %s view in on-screen order",
+    async (mode) => {
+      const bootstrap = await launchWithoutExtensions(createPairRepo("hunk-search-pair-"), mode);
+      await withAppHost(
+        bootstrap,
+        async (setup) => {
+          await clearSearch(setup);
+          const seen: string[] = [];
+          /** Press a key, wait for the status row to report a new landing, and record it. */
+          const step = async (key: string) => {
+            const before = statusRow(setup);
+            await type(setup, key);
+            await flushUntil(
+              setup,
+              () => statusRow(setup) !== before && statusRow(setup).includes("pair.ts"),
+              `${key} to report a new landing`,
+            );
+            seen.push(statusRow(setup).trim());
+          };
+
+          await openEmptyPrompt(setup);
+          await type(setup, "readconfig");
+          await submit(setup);
+          await flushUntil(
+            setup,
+            () => statusRow(setup).includes("pair.ts"),
+            "the first landing to report",
+          );
+          seen.push(statusRow(setup).trim());
+
+          for (let press = 0; press < 5; press += 1) {
+            await step("n");
+          }
+          await step("N");
+
+          expect(seen).toEqual(PAIR_LANDINGS[mode]);
+        },
+        "pair.ts",
+      );
+    },
+  );
 });

@@ -17,6 +17,7 @@ describe("buildExtensionReviewSelection", () => {
     const files = createTestFileViews();
     const selection = buildExtensionReviewSelection({
       files,
+      layout: "unified",
       selectedFileId: "beta",
       selectedHunkIndex: 0,
     });
@@ -35,6 +36,7 @@ describe("buildExtensionReviewSelection", () => {
     const files = createTestFileViews();
     const selection = buildExtensionReviewSelection({
       files,
+      layout: "unified",
       selectedFileId: "gamma",
       selectedHunkIndex: 0,
     });
@@ -47,6 +49,7 @@ describe("buildExtensionReviewSelection", () => {
   test("reports no selection when nothing is selected", () => {
     const selection = buildExtensionReviewSelection({
       files: createTestFileViews(),
+      layout: "unified",
       selectedFileId: null,
       selectedHunkIndex: 3,
     });
@@ -56,6 +59,7 @@ describe("buildExtensionReviewSelection", () => {
       hunkIndex: null,
       currentLine: null,
       files: selection.files,
+      layout: "unified",
     });
     expect(selection.files).toHaveLength(2);
   });
@@ -66,6 +70,7 @@ describe("buildExtensionReviewSelection", () => {
     // can act on either.
     const selection = buildExtensionReviewSelection({
       files: createTestFileViews(),
+      layout: "unified",
       selectedFileId: "gamma",
       selectedHunkIndex: 0,
     });
@@ -80,6 +85,7 @@ describe("buildExtensionReviewSelection", () => {
     const target = { side: "old" as const, line: 42 };
     const selection = buildExtensionReviewSelection({
       files,
+      layout: "unified",
       selectedFileId: "alpha",
       selectedHunkIndex: 0,
       lineCursor: { fileId: "alpha", hunkIndex: 0, target },
@@ -98,6 +104,7 @@ describe("buildExtensionReviewSelection", () => {
     expect(
       buildExtensionReviewSelection({
         files,
+        layout: "unified",
         selectedFileId: "alpha",
         selectedHunkIndex: 0,
         lineCursor: { fileId: "beta", hunkIndex: 0, target },
@@ -106,6 +113,7 @@ describe("buildExtensionReviewSelection", () => {
     expect(
       buildExtensionReviewSelection({
         files,
+        layout: "unified",
         selectedFileId: "alpha",
         selectedHunkIndex: 0,
         lineCursor: { fileId: "alpha", hunkIndex: 1, target },
@@ -118,16 +126,25 @@ describe("buildExtensionReviewSelection", () => {
     const lastHunkIndex = (files[0]!.metadata as { hunks: unknown[] }).hunks.length - 1;
 
     expect(
-      buildExtensionReviewSelection({ files, selectedFileId: "alpha", selectedHunkIndex: 99 })
-        .hunkIndex,
+      buildExtensionReviewSelection({
+        files,
+        layout: "unified",
+        selectedFileId: "alpha",
+        selectedHunkIndex: 99,
+      }).hunkIndex,
     ).toBe(lastHunkIndex);
     expect(
-      buildExtensionReviewSelection({ files, selectedFileId: "alpha", selectedHunkIndex: -4 })
-        .hunkIndex,
+      buildExtensionReviewSelection({
+        files,
+        layout: "unified",
+        selectedFileId: "alpha",
+        selectedHunkIndex: -4,
+      }).hunkIndex,
     ).toBe(0);
     expect(
       buildExtensionReviewSelection({
         files,
+        layout: "unified",
         selectedFileId: "alpha",
         selectedHunkIndex: Number.NaN,
       }).hunkIndex,
@@ -141,6 +158,7 @@ describe("buildExtensionReviewSelection", () => {
     expect(
       buildExtensionReviewSelection({
         files: [binaryLike],
+        layout: "unified",
         selectedFileId: "binary",
         selectedHunkIndex: 0,
       }).hunkIndex,
@@ -151,6 +169,7 @@ describe("buildExtensionReviewSelection", () => {
     const files = createTestFileViews();
     const selection = buildExtensionReviewSelection({
       files,
+      layout: "unified",
       selectedFileId: "alpha",
       selectedHunkIndex: 0,
     });
@@ -160,5 +179,26 @@ describe("buildExtensionReviewSelection", () => {
     expect(selection.file).toBe(files[0]!);
     expect(Object.isFrozen(selection.file)).toBe(true);
     expect(Object.isFrozen(selection)).toBe(true);
+  });
+});
+
+describe("buildExtensionReviewSelection layout", () => {
+  test("passes the resolved layout through with and without a selected file", () => {
+    const files = createTestFileViews();
+    const selected = buildExtensionReviewSelection({
+      files,
+      layout: "split",
+      selectedFileId: "alpha",
+      selectedHunkIndex: 0,
+    });
+    const unselected = buildExtensionReviewSelection({
+      files,
+      layout: "split",
+      selectedFileId: null,
+      selectedHunkIndex: null,
+    });
+
+    expect(selected.layout).toBe("split");
+    expect(unselected.layout).toBe("split");
   });
 });

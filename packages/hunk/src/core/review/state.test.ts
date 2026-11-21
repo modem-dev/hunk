@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createTestReviewDocument } from "../../../../../test/helpers/review-store-helpers";
 import {
+  reconcileReviewNoteResolution,
   createInitialReviewState,
   isRenderableStoredReviewNote,
   reviewNoteVisibleByPolicy,
@@ -69,5 +70,31 @@ describe("isRenderableStoredReviewNote", () => {
 
   test("hides notes whose anchor no longer exists", () => {
     expect(isRenderableStoredReviewNote(testStoredNote("orphaned"))).toBe(false);
+  });
+});
+
+describe("reconcileReviewNoteResolution", () => {
+  const entry = (ownerHunkIndex: number, resolution: ReviewStoredNote["resolution"] = "active") =>
+    ({
+      note: {
+        id: "n",
+        source: "agent",
+        fileKey: "file:a",
+        anchor: { intersectingHunkIndices: [ownerHunkIndex], ownerHunkIndex },
+        summary: "s",
+        editable: false,
+      },
+      resolution,
+    }) satisfies ReviewStoredNote;
+
+  test("keeps the verdict while the file content is unchanged", () => {
+    expect(reconcileReviewNoteResolution(entry(0), false)).toBe("active");
+    expect(reconcileReviewNoteResolution(entry(0, "stale"), false)).toBe("stale");
+  });
+
+  test("marks a note stale when its file changed, never orphaned, even without its hunk", () => {
+    expect(reconcileReviewNoteResolution(entry(1), true)).toBe("stale");
+    expect(reconcileReviewNoteResolution(entry(7), true)).toBe("stale");
+    expect(reconcileReviewNoteResolution(entry(0, "stale"), true)).toBe("stale");
   });
 });

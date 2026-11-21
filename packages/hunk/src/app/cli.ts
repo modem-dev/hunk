@@ -1,6 +1,7 @@
 import { existsSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { Command, Option } from "commander";
+import { HunkUserError } from "../core/run/errors";
 import {
   CURSOR_LINE_VALUES,
   isLayoutModeInput,
@@ -10,6 +11,7 @@ import {
   type CommonOptions,
   type CursorLine,
   type ExtensionManageCommandInput,
+  type FeedbackCommandInput,
   type HelpCommandInput,
   type LayoutMode,
   type PagerCommandInput,
@@ -136,12 +138,6 @@ export const COMMON_REVIEW_OPTIONS = [
   AUXILIARY_AGENT_OPTIONS.agentContext,
   { flag: "--pager", description: "use pager-style chrome" },
   AUXILIARY_AGENT_OPTIONS.experimental,
-  {
-    flag: "--fast",
-    description: "deprecated no-op; worker highlighting is now the default",
-    hidden: true,
-    publicDocs: false,
-  },
   { flag: "--line-numbers", description: "show line numbers" },
   { flag: "--no-line-numbers", description: "hide line numbers" },
   {
@@ -208,6 +204,29 @@ export const WATCH_OPTION = {
   description: "auto-reload when the current diff input changes",
 } as const satisfies CliReferenceOption;
 
+/**
+ * The browser review flags on every review command whose input can be reopened.
+ *
+ * `--web` serves the review headless and opens it in the default browser; it implies
+ * `--watch` whenever the input can be reopened. `--no-watch` turns watching off — with `--web`,
+ * and without it as an override of a config file that enables watch. `--no-open` prints the
+ * review URL without launching a browser and only applies with `--web`.
+ */
+export const WEB_REVIEW_OPTIONS = [
+  {
+    flag: "--web",
+    description: "serve this review in the browser instead of the terminal",
+  },
+  {
+    flag: "--no-open",
+    description: "with --web, print the review URL without opening a browser",
+  },
+  {
+    flag: "--no-watch",
+    description: "do not reload when the input changes (overrides --web and config)",
+  },
+] as const satisfies readonly CliReferenceOption[];
+
 const DIFF_OPTIONS = [
   {
     flag: "--files <paths...>",
@@ -222,6 +241,7 @@ const DIFF_OPTIONS = [
     hidden: true,
     hiddenNote: "Compatibility inverse; omitted from `--help`.",
   },
+  ...WEB_REVIEW_OPTIONS,
 ] as const satisfies readonly CliReferenceOption[];
 
 /** Non-session command tree consumed by the parser and generated reference. */
@@ -266,6 +286,7 @@ export const CLI_REFERENCE_COMMANDS = {
     path: "show",
     summary: "review the last commit or a given ref",
     synopsis: ["hunk show [target] [-- <pathspec...>]"],
+    options: WEB_REVIEW_OPTIONS,
     commonReviewOptions: true,
     watch: true,
   },
@@ -355,6 +376,7 @@ export const CLI_REFERENCE_COMMANDS = {
     path: "stash show",
     summary: "review a stash entry as a full Hunk changeset",
     synopsis: ["hunk stash show [ref]"],
+    options: WEB_REVIEW_OPTIONS,
     commonReviewOptions: true,
     watch: true,
   },
@@ -362,6 +384,7 @@ export const CLI_REFERENCE_COMMANDS = {
     path: "patch",
     summary: "review a patch file, or read a patch from stdin",
     synopsis: ["hunk patch [file]"],
+    options: WEB_REVIEW_OPTIONS,
     commonReviewOptions: true,
     watch: true,
   },
@@ -375,6 +398,7 @@ export const CLI_REFERENCE_COMMANDS = {
     path: "difftool",
     summary: "review Git difftool file pairs",
     synopsis: ["hunk difftool <left> <right> [path]"],
+    options: WEB_REVIEW_OPTIONS,
     commonReviewOptions: true,
     watch: true,
   },
@@ -474,6 +498,34 @@ export const CLI_REFERENCE_COMMANDS = {
         flag: "--check",
         description: "report the installed and available versions without installing",
       },
+    ],
+  },
+  feedback: {
+    path: "feedback",
+    summary: "send feedback to the Hunk team at Modem, after showing exactly what is sent",
+    synopsis: [
+      "hunk feedback [message...]",
+      "hunk feedback --file <path|->",
+      "hunk feedback --dry-run [message...]",
+    ],
+    details: [
+      "Prints what will be sent and where, then asks before sending. Nothing reaches Modem until you confirm: cancelling, `--dry-run`, and a run that cannot be confirmed make no request. With no message in a terminal, opens the feedback form instead.",
+      "The answer to the prompt is read from the terminal, not stdin, so a piped message can still be confirmed at the keyboard. Without a terminal, pass `--skip-confirm` to send.",
+      "Agents: run this only when the user asked for it or agreed to the exact message. Show them the `--dry-run` output before passing `--skip-confirm`.",
+    ],
+    options: [
+      { flag: "-m, --message <text>", description: "message text instead of the positional words" },
+      { flag: "-F, --file <path>", description: "read the message from a file, or stdin with -" },
+      { flag: "--email <address>", description: "optional reply address, sent only if given" },
+      {
+        flag: "--dry-run",
+        description: "print exactly what would be sent, then exit without sending",
+      },
+      {
+        flag: "--skip-confirm",
+        description: "send without the confirmation prompt (required without a terminal)",
+      },
+      { flag: "--json", description: "print the result as JSON" },
     ],
   },
   "daemon-serve": {
@@ -576,6 +628,29 @@ function resolveBooleanFlag(argv: string[], enabledFlag: string, disabledFlag: s
   return resolved;
 }
 
+/** Read `--watch` / `--no-watch`, refusing both at once rather than letting the last one win. */
+function resolveWatchFlag(argv: string[]) {
+  const reviewArgs = argv.slice(0, argv.includes("--") ? argv.indexOf("--") : argv.length);
+  if (reviewArgs.includes("--watch") && reviewArgs.includes("--no-watch")) {
+    throw new HunkUserError("`--watch` and `--no-watch` cannot be combined.", [
+      "Pass one of them; `--web` already watches unless `--no-watch` is given.",
+    ]);
+  }
+  return resolveBooleanFlag(argv, "--watch", "--no-watch");
+}
+
+/** Read `--no-open`, which only means something for a browser review. */
+function resolveOpenFlag(argv: string[], web: boolean) {
+  const reviewArgs = argv.slice(0, argv.includes("--") ? argv.indexOf("--") : argv.length);
+  if (!reviewArgs.includes("--no-open")) return undefined;
+  if (!web) {
+    throw new HunkUserError("`--no-open` only applies to `--web`.", [
+      "Add `--web` to serve the review in a browser, or drop `--no-open`.",
+    ]);
+  }
+  return false;
+}
+
 /** Collect one repeatable CLI value into an array. */
 function collectRepeatedValue(value: string, previous: string[] = []) {
   return [...previous, value];
@@ -591,8 +666,9 @@ function buildCommonOptions(
     agentContext?: string;
     pager?: boolean;
     watch?: boolean;
+    web?: boolean;
+    open?: boolean;
     experimental?: boolean;
-    fast?: boolean;
     transparentBackground?: boolean;
     tabWidth?: number;
     fileGap?: number;
@@ -611,12 +687,13 @@ function buildCommonOptions(
     vcs: options.vcs,
     agentContext: options.agentContext,
     pager: options.pager ? true : undefined,
-    watch: options.watch ? true : undefined,
+    watch: resolveWatchFlag(argv),
+    web: options.web ? true : undefined,
+    open: resolveOpenFlag(argv, options.web === true),
     experimental:
       options.experimental || hasPrefixedReviewFlag(argv, AUXILIARY_AGENT_OPTIONS.experimental.flag)
         ? true
         : undefined,
-    fast: options.fast || hasPrefixedReviewFlag(argv, "--fast") ? true : undefined,
     excludeUntracked: resolveBooleanFlag(
       argv,
       AUXILIARY_AGENT_OPTIONS.excludeUntracked.flag,
@@ -761,6 +838,7 @@ function renderCliHelp() {
     "  hunk skill path [name]                  print a bundled Hunk skill path",
     "  hunk extension <subcommand>             install and manage shared extensions",
     "  hunk update [version]                   update Hunk with the package manager that installed it",
+    "  hunk feedback [message...]              send feedback to the Hunk team, after confirming it",
     `  hunk completion <${COMPLETION_SHELLS.join("|")}>              print a shell completion script`,
     "  hunk daemon serve                       run the local Hunk session daemon",
     "  hunk daemon status                      report the daemon's build and attached windows",
@@ -1390,7 +1468,8 @@ function requireReloadableCliInput(input: ParsedCliInput): CliInput {
     input.kind === "history" ||
     input.kind === "open" ||
     input.kind === "status" ||
-    input.kind === "update"
+    input.kind === "update" ||
+    input.kind === "feedback"
   ) {
     throw new Error(
       "Session reload requires a Hunk review command after --, such as `diff` or `show`.",
@@ -1995,6 +2074,33 @@ async function parseSessionHighlightClearCommand(tokens: string[]): Promise<Pars
   };
 }
 
+/** Parse `hunk session open`, which opens or prints a live session's review URL. */
+async function parseSessionOpenCommand(tokens: string[]): Promise<ParsedCliInput> {
+  const spec = SESSION_AGENT_COMMANDS.open;
+  const command = buildSessionCommand(spec);
+  let parsedSessionId: string | undefined;
+  // Commander stores `--no-open` as `open: false`, not under the camelized flag body.
+  let parsedOptions: { repo?: string; json?: boolean; open?: boolean } = {};
+
+  command.action((sessionId: string | undefined, options: typeof parsedOptions) => {
+    parsedSessionId = sessionId;
+    parsedOptions = options;
+  });
+
+  if (hasSessionHelpFlag(tokens)) {
+    return sessionCommandHelpText(command, spec);
+  }
+
+  await parseStandaloneCommand(command, tokens);
+  return {
+    kind: "session",
+    action: "open",
+    output: resolveJsonOutput(parsedOptions),
+    selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
+    open: parsedOptions.open !== false,
+  };
+}
+
 /** Dispatch one command under the session highlight namespace. */
 function parseSessionHighlightCommand(tokens: string[]): Promise<ParsedCliInput> | ParsedCliInput {
   const [subcommand, ...rest] = tokens;
@@ -2038,6 +2144,8 @@ function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> | Parsed
       return parseSessionCommentCommand(rest);
     case "highlight":
       return parseSessionHighlightCommand(rest);
+    case "open":
+      return parseSessionOpenCommand(rest);
     default:
       throw new Error(`Unknown session command: ${subcommand}`);
   }
@@ -2350,6 +2458,68 @@ async function parseUpdateCommand(
   };
 }
 
+/** Parse `hunk feedback`. Usage conflicts fail here; message validation waits for the run. */
+async function parseFeedbackCommand(
+  tokens: string[],
+): Promise<FeedbackCommandInput | HelpCommandInput> {
+  const command = createCliReferenceCommand("feedback").argument(
+    "[message...]",
+    "message text; quote it or pass the words as separate arguments",
+  );
+
+  let parsedWords: string[] = [];
+  let parsedOptions: {
+    message?: string;
+    file?: string;
+    email?: string;
+    dryRun?: boolean;
+    skipConfirm?: boolean;
+    json?: boolean;
+  } = {};
+
+  command.action((words: string[], options: typeof parsedOptions) => {
+    parsedWords = words;
+    parsedOptions = options;
+  });
+
+  if (tokens.includes("--help") || tokens.includes("-h")) {
+    return {
+      kind: "help",
+      text:
+        [
+          command.helpInformation().trimEnd(),
+          "",
+          ...CLI_REFERENCE_COMMANDS.feedback.details,
+          "",
+          "Examples:",
+          '  hunk feedback "Split view loses my place when I resize"',
+          "  hunk feedback --dry-run --email ada@example.com Thanks for Hunk",
+          "  git log -1 --format=%B | hunk feedback --file -",
+        ].join("\n") + "\n",
+    };
+  }
+
+  await parseStandaloneCommand(command, tokens);
+
+  const positional = parsedWords.length > 0 ? parsedWords.join(" ") : undefined;
+  const sources = [positional, parsedOptions.message, parsedOptions.file].filter(
+    (source) => source !== undefined,
+  );
+  if (sources.length > 1) {
+    throw new Error("Pass the feedback message one way: as words, with --message, or with --file.");
+  }
+
+  return {
+    kind: "feedback",
+    message: positional ?? parsedOptions.message,
+    file: parsedOptions.file,
+    email: parsedOptions.email,
+    dryRun: parsedOptions.dryRun ?? false,
+    skipConfirm: parsedOptions.skipConfirm ?? false,
+    output: resolveJsonOutput(parsedOptions),
+  };
+}
+
 /** Build the help text for one daemon control subcommand from its reference entry. */
 function renderDaemonControlHelp(command: "daemon-status" | "daemon-restart") {
   const reference = CLI_REFERENCE_COMMANDS[command];
@@ -2500,7 +2670,6 @@ interface LeadingCliFlags {
 /** Return whether a token is another host flag rather than an extension path value. */
 function isLeadingHostFlag(token: string) {
   return (
-    token === "--fast" ||
     token === AUXILIARY_AGENT_OPTIONS.experimental.flag ||
     token === "--no-extensions" ||
     token === "--extension" ||
@@ -2550,7 +2719,7 @@ function parseLeadingCliFlags(rawArgs: string[]): LeadingCliFlags {
 
   while (index < rawArgs.length) {
     const token = rawArgs[index];
-    if (token === "--fast" || token === AUXILIARY_AGENT_OPTIONS.experimental.flag) {
+    if (token === AUXILIARY_AGENT_OPTIONS.experimental.flag) {
       prefixedReviewFlags.push(token);
       index += 1;
       continue;
@@ -2637,9 +2806,7 @@ export async function parseCli(argv: string[]): Promise<ParsedCliInput> {
     extensionFlagTokens,
     prefixedReviewFlags,
   } = leading;
-  const prefixedFast = prefixedReviewFlags.includes("--fast");
-  const [explicitCommandName, ...rest] = args;
-  const commandName = explicitCommandName ?? (prefixedFast ? "diff" : undefined);
+  const [commandName, ...rest] = args;
 
   if (!commandName || commandName === "help" || commandName === "--help" || commandName === "-h") {
     return { kind: "help", text: renderCliHelp() };
@@ -2647,12 +2814,6 @@ export async function parseCli(argv: string[]): Promise<ParsedCliInput> {
 
   if (commandName === "--version" || commandName === "-v" || commandName === "version") {
     return { kind: "help", text: renderCliVersion() };
-  }
-
-  // `hunk --fast` is shorthand for `hunk diff --fast`, so options and targets following the
-  // launch flag belong to the diff parser unless they explicitly name another Hunk command.
-  if (prefixedFast && explicitCommandName && !isBuiltInCliCommandName(explicitCommandName)) {
-    return parseDiffCommand([...extensionFlagTokens, ...args], argv);
   }
 
   if (
@@ -2665,7 +2826,7 @@ export async function parseCli(argv: string[]): Promise<ParsedCliInput> {
 
   // Only review commands and extension CLI commands consume the leading bootstrap flags. The
   // remaining built-ins never load extensions, so accepting the flags there would silently
-  // discard them; refuse the invocation the way a misplaced `--fast` is refused.
+  // discard them; refuse the invocation the way a misplaced `--experimental` is refused.
   if (
     extensionFlagTokens.length > 0 &&
     isBuiltInCliCommandName(commandName) &&
@@ -2726,6 +2887,8 @@ export async function parseCli(argv: string[]): Promise<ParsedCliInput> {
       return parseExtensionCommand(rest);
     case "update":
       return parseUpdateCommand(rest);
+    case "feedback":
+      return parseFeedbackCommand(rest);
     case "completion":
       return parseCompletionCommand(rest);
     case "daemon":

@@ -164,6 +164,37 @@ async function flushUntil(
 }
 
 describe("review metadata reloads", () => {
+  test("gives the fixed built-in review pane an active host separator", async () => {
+    const fixture = await createTestBootstrap();
+    const setup = await testRender(<AppHost bootstrap={fixture.bootstrap} />, {
+      width: 100,
+      height: 12,
+    });
+    try {
+      await flushUntil(
+        setup,
+        () => setup.captureCharFrame().includes("OPEN · #123 · Metadata pane"),
+        "the delegated review pane to mount",
+      );
+      const lines = setup.captureCharFrame().split("\n");
+      // Menu, the pane's own leading rule, two metadata rows, then exactly one shared divider.
+      expect(lines[1]).toContain("─");
+      expect(lines[2]).toContain("OPEN · #123 · Metadata pane");
+      expect(lines[4]).toContain("─");
+      expect(lines[5]).not.toContain("─");
+
+      await act(async () => setup.mockMouse.click(50, 2));
+      await flushUntil(
+        setup,
+        () => setup.captureCharFrame().split("\n")[4]?.includes("━") === true,
+        "the fixed pane separator to activate",
+      );
+    } finally {
+      await act(async () => setup.renderer.destroy());
+      rmSync(fixture.directory, { recursive: true, force: true });
+    }
+  });
+
   test("the bundled review pane occupies exactly three rows only for supported metadata", async () => {
     const delegated = await createTestBootstrap();
     const ordinary = await createTestBootstrap();

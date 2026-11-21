@@ -3,16 +3,33 @@ import {
   createTestSearchFile,
   searchTestAlpha as alpha,
   searchTestBeta as beta,
+  searchTestBlock as block,
+  searchTestInterleaved as interleaved,
   searchTestRepeated as repeated,
 } from "../../../../../../../test/helpers/search-fixtures";
 import {
-  buildFileOrder,
   collectFileMatchMarks,
   compileQuery,
   findTargets,
+  lineOrderKey,
   parsePatchLines,
   stepToTarget,
+  type SearchLayout,
 } from "./search";
+
+/** Label each target `side:line@start` so order assertions read like the screen. */
+function labelTargets(
+  files: Parameters<typeof findTargets>[0],
+  query: string,
+  layout: SearchLayout,
+) {
+  const compiled = compileQuery(query, "literal");
+  if (!compiled.ok) throw new Error("query should compile");
+
+  return findTargets(files, compiled.locate, layout).map(
+    (target) => `${target.line.side}:${target.line.lineNumber}@${target.line.matchRange[0]}`,
+  );
+}
 
 describe("parsePatchLines", () => {
   test("numbers both sides and groups lines by hunk", () => {
@@ -25,6 +42,22 @@ describe("parsePatchLines", () => {
       [0, "new", 12, "const second = readConfig();"],
       [1, "new", 41, "untouched"],
       [1, "new", 42, "const late = 2;"],
+    ]);
+  });
+
+  test("tags each line with its kind, Pierre group, and index within its kind", () => {
+    const lines = parsePatchLines(
+      ["@@ -1,3 +1,3 @@", " c1", "-d1", "+a1", "-d2", "+a2", " c2", "@@ -9 +9 @@", "-x"].join("\n"),
+    );
+
+    expect(lines.map((line) => [line.hunkIndex, line.kind, line.group, line.groupIndex])).toEqual([
+      [0, "context", 0, 0],
+      [0, "deletion", 1, 0],
+      [0, "addition", 1, 0],
+      [0, "deletion", 1, 1],
+      [0, "addition", 1, 1],
+      [0, "context", 2, 0],
+      [1, "deletion", 0, 0],
     ]);
   });
 
@@ -127,88 +160,155 @@ describe("compileQuery", () => {
   });
 });
 
+describe("lineOrderKey", () => {
+  const deletion = { kind: "deletion", group: 1, groupIndex: 2 } as const;
+  const addition = { kind: "addition", group: 1, groupIndex: 2 } as const;
+
+  test("unified stacks deletions above additions; split pairs them by index", () => {
+    expect(lineOrderKey(deletion, "unified")).toEqual([1, 0, 2]);
+    expect(lineOrderKey(addition, "unified")).toEqual([1, 1, 2]);
+    expect(lineOrderKey(deletion, "split")).toEqual([1, 2, 0]);
+    expect(lineOrderKey(addition, "split")).toEqual([1, 2, 1]);
+  });
+});
+
 describe("findTargets", () => {
-  test("collapses every match in a hunk into one target, in stream order", () => {
+  test("emits one target per occurrence, in stream order", () => {
     const compiled = compileQuery("readConfig", "literal");
     if (!compiled.ok) throw new Error("query should compile");
 
-    const targets = findTargets([alpha, beta], compiled.locate);
+    const targets = findTargets([alpha, beta], compiled.locate, "unified");
 
     expect(
-      targets.map((target) => [
-        target.path,
-        target.hunkIndex,
-        target.count,
-        target.line.lineNumber,
-      ]),
+      targets.map((target) => [target.path, target.hunkIndex, target.line.lineNumber]),
     ).toEqual([
-      ["src/alpha.ts", 0, 3, 11],
-      ["src/beta.ts", 0, 1, 2],
+      ["src/alpha.ts", 0, 11],
+      ["src/alpha.ts", 0, 11],
+      ["src/alpha.ts", 0, 12],
+      ["src/beta.ts", 0, 2],
     ]);
+  });
+
+  test("gives every occurrence on a line its own target", () => {
+    expect(labelTargets([repeated], "readConfig", "unified")).toEqual([
+      "old:1@0",
+      "old:1@14",
+      "new:1@0",
+      "new:1@14",
+    ]);
+  });
+
+  test("orders a change block as unified stacks it and split pairs it", () => {
+    expect(labelTargets([block], "foo", "unified")).toEqual([
+      "new:1@4",
+      "old:2@4",
+      "old:3@4",
+      "new:2@4",
+      "new:3@4",
+      "new:3@12",
+    ]);
+    expect(labelTargets([block], "foo", "split")).toEqual([
+      "new:1@4",
+      "old:2@4",
+      "new:2@4",
+      "old:3@4",
+      "new:3@4",
+      "new:3@12",
+    ]);
+  });
+
+  test("treats interleaved deletions and additions as one change group", () => {
+    const lines = (layout: SearchLayout) =>
+      findTargets([interleaved], (text) => (text.includes("foo") ? [[2, 5]] : []), layout).map(
+        (target) => target.line.text[0],
+      );
+
+    expect(lines("unified")).toEqual(["a", "c", "b", "d"]);
+    expect(lines("split")).toEqual(["a", "b", "c", "d"]);
   });
 
   test("skips files with no patch text", () => {
     const compiled = compileQuery("anything", "literal");
     if (!compiled.ok) throw new Error("query should compile");
 
-    expect(findTargets([createTestSearchFile("file-0", "bin.png", "")], compiled.locate)).toEqual(
-      [],
-    );
+    expect(
+      findTargets([createTestSearchFile("file-0", "bin.png", "")], compiled.locate, "unified"),
+    ).toEqual([]);
   });
 });
 
 describe("stepToTarget", () => {
   const compiled = compileQuery("readConfig", "literal");
   if (!compiled.ok) throw new Error("query should compile");
-  const files = [alpha, beta];
-  const targets = findTargets(files, compiled.locate);
-  const order = buildFileOrder(files);
+  // Ranks: [0,0,1,0,0,16] [0,0,1,1,0,14] [0,0,1,1,1,15] [1,0,1,1,0,0]
+  const targets = findTargets([alpha, beta], compiled.locate, "unified");
 
-  test("moves strictly forward from the current hunk", () => {
-    expect(stepToTarget(targets, order, { fileId: "file-0", hunkIndex: 0 }, "forward")).toEqual({
-      index: 1,
+  test("a hunk prefix moves strictly past that whole hunk", () => {
+    expect(stepToTarget(targets, [0, 0], "forward")).toEqual({
+      index: 3,
+      wrapped: false,
+    });
+    expect(stepToTarget(targets, [1, 0], "backward")).toEqual({
+      index: 2,
       wrapped: false,
     });
   });
 
-  test("wraps at the end and reports it", () => {
-    expect(stepToTarget(targets, order, { fileId: "file-1", hunkIndex: 0 }, "forward")).toEqual({
+  test("a line prefix steps between lines of one hunk", () => {
+    expect(stepToTarget(targets, [0, 0, 1, 1, 0], "forward")).toEqual({
+      index: 2,
+      wrapped: false,
+    });
+    expect(stepToTarget(targets, [0, 0, 1, 1, 0], "backward")).toEqual({
       index: 0,
+      wrapped: false,
+    });
+  });
+
+  test("an exact rank steps to the adjacent occurrence", () => {
+    const rank = targets[1]?.rank ?? [];
+
+    expect(stepToTarget(targets, rank, "forward")).toEqual({
+      index: 2,
+      wrapped: false,
+    });
+    expect(stepToTarget(targets, rank, "backward")).toEqual({
+      index: 0,
+      wrapped: false,
+    });
+  });
+
+  test("wraps at either end and reports it", () => {
+    expect(stepToTarget(targets, targets[3]?.rank ?? [], "forward")).toEqual({
+      index: 0,
+      wrapped: true,
+    });
+    expect(stepToTarget(targets, targets[0]?.rank ?? [], "backward")).toEqual({
+      index: 3,
       wrapped: true,
     });
   });
 
-  test("walks backward and wraps at the start", () => {
-    expect(stepToTarget(targets, order, { fileId: "file-1", hunkIndex: 0 }, "backward")).toEqual({
-      index: 0,
-      wrapped: false,
-    });
-    expect(stepToTarget(targets, order, { fileId: "file-0", hunkIndex: 0 }, "backward")).toEqual({
-      index: 1,
-      wrapped: true,
-    });
-  });
-
-  test("a file selected with no hunk finds that file's own first match", () => {
-    expect(stepToTarget(targets, order, { fileId: "file-0", hunkIndex: null }, "forward")).toEqual({
+  test("a file prefix before its first hunk finds that file's own first match", () => {
+    expect(stepToTarget(targets, [0, -1], "forward")).toEqual({
       index: 0,
       wrapped: false,
     });
   });
 
-  test("no selection starts at the end the direction implies", () => {
-    expect(stepToTarget(targets, order, { fileId: null, hunkIndex: null }, "forward")).toEqual({
+  test("no position starts at the end the direction implies", () => {
+    expect(stepToTarget(targets, null, "forward")).toEqual({
       index: 0,
       wrapped: false,
     });
-    expect(stepToTarget(targets, order, { fileId: null, hunkIndex: null }, "backward")).toEqual({
-      index: 1,
+    expect(stepToTarget(targets, null, "backward")).toEqual({
+      index: 3,
       wrapped: false,
     });
   });
 
   test("an empty target list has nowhere to go", () => {
-    expect(stepToTarget([], order, { fileId: "file-0", hunkIndex: 0 }, "forward")).toBeNull();
+    expect(stepToTarget([], [0, 0], "forward")).toBeNull();
   });
 });
 
@@ -217,7 +317,7 @@ describe("collectFileMatchMarks", () => {
   if (!compiled.ok) throw new Error("query should compile");
 
   test.each(["literal", "regex"] as const)(
-    "%s marks every occurrence but keeps only the first landed range current",
+    "%s marks every occurrence and makes only the current one current",
     (mode) => {
       const query = compileQuery("readConfig", mode);
       if (!query.ok) throw new Error("query should compile");
@@ -227,15 +327,13 @@ describe("collectFileMatchMarks", () => {
           fileId: repeated.id,
           hunkIndex: 0,
           lineOffset: 0,
+          matchStart: 14,
         }),
       ).toEqual([
-        { side: "old", line: 1, range: [0, 10], tone: "current" },
-        { side: "old", line: 1, range: [14, 24], tone: "match" },
+        { side: "old", line: 1, range: [0, 10], tone: "match" },
+        { side: "old", line: 1, range: [14, 24], tone: "current" },
         { side: "new", line: 1, range: [0, 10], tone: "match" },
         { side: "new", line: 1, range: [14, 24], tone: "match" },
-      ]);
-      expect(findTargets([repeated], query.locate)).toMatchObject([
-        { count: 2, line: { matchRange: [0, 10], text: "readConfig(); readConfig();" } },
       ]);
     },
   );
@@ -250,14 +348,15 @@ describe("collectFileMatchMarks", () => {
     ]);
   });
 
-  test("gives the active target's quoted line the one current mark", () => {
+  test("gives the active target's own range the one current mark", () => {
     const marks = collectFileMatchMarks(alpha, compiled.locate, {
       fileId: "file-0",
       hunkIndex: 0,
-      lineOffset: 1,
+      lineOffset: 2,
+      matchStart: 14,
     });
 
-    expect(marks.map((mark) => mark.tone)).toEqual(["current", "match", "match"]);
+    expect(marks.map((mark) => mark.tone)).toEqual(["match", "current", "match"]);
   });
 
   test("a current target in another file marks nothing current here", () => {
@@ -265,6 +364,7 @@ describe("collectFileMatchMarks", () => {
       fileId: "file-1",
       hunkIndex: 0,
       lineOffset: 1,
+      matchStart: 14,
     });
 
     expect(marks.every((mark) => mark.tone === "match")).toBe(true);

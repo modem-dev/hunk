@@ -68,8 +68,10 @@ describe("app command catalog", () => {
     ).toEqual([
       "hunk.app.quit",
       "hunk.app.openAgentSkill",
+      "hunk.app.openFeedback",
       "hunk.app.refresh",
       "hunk.review.editSelectedFile",
+      "hunk.app.openInBrowser",
     ]);
   });
 

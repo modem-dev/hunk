@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { REPO_ROOT } from "../../../../scripts/build/package-paths";
+import { removeTestDirectory } from "../../../../test/helpers/filesystem";
 
 // Install the main-thread counter before Pierre evaluates its static imports.
 const highlightDecodeTestPreload = `
@@ -94,7 +95,7 @@ function runHighlightTestProcess(args: string[], cwd = REPO_ROOT) {
   return JSON.parse(result.stdout.toString());
 }
 
-test("Pierre avoids base64 decoding in source, workers, bundles, and binaries with identical tokens", () => {
+test("Pierre avoids base64 decoding in source, workers, bundles, and binaries with identical tokens", async () => {
   const temporary = mkdtempSync(join(tmpdir(), "hunk-shiki-test-"));
   // Keep the compile entry under the repository so its package imports resolve normally.
   const sourceDir = mkdtempSync(join(REPO_ROOT, ".shiki-test-"));
@@ -177,7 +178,7 @@ test("Pierre avoids base64 decoding in source, workers, bundles, and binaries wi
     expect(compiled.assets).toContain(466_610);
   } finally {
     rmSync(sourceDir, { recursive: true, force: true });
-    // Windows can briefly retain the compiled executable's file lock after the child exits.
-    rmSync(temporary, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    // Yield between retries so Windows can release the compiled child's executable handles.
+    await removeTestDirectory(temporary);
   }
 }, 60_000);

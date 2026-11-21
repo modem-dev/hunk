@@ -8,27 +8,54 @@ Where Hunk's logo files live, which version to use where, and the colors and typ
 - Plain, concrete copy. Tagline: **Made for review.** Eyebrow: **Terminal diffs.** Domain: `hunk.dev`.
 - The wordmark is always lowercase and monospace: `hunk`. That applies to the logo and to the header text next to the mark. Running prose, docs, and release notes keep their existing style (`Hunk` as the product name); this rule is about the logo, not copy.
 
+## Public downloads
+
+The public brand page at [hunk.dev/brand/](https://hunk.dev/brand/) offers all five logos in
+ink and paper colors as SVG, 2048px-wide PNG (transparent, or solid on the paired background so
+it stays visible in any image viewer), and vector PDF, plus a ZIP bundle. The website footer
+links to it.
+
+The ink SVGs below remain the canonical sources. Regenerate the committed exports in
+`website/public/brand/downloads/` and `website/public/brand/hunk-brand.zip` after editing them:
+
+```bash
+# Requires rsvg-convert (librsvg) and zip on PATH.
+cd website
+bun run generate:brand
+```
+
+Every logo is plain filled paths with no masks or strokes, so the PDF exports stay pure vector
+(SVG masks export as embedded bitmaps). The generator recolors the ink fill and pins PDF dates,
+so unchanged logos regenerate byte-for-byte. Downloads are static files;
+the website build does not require the export tools.
+
 ## Logo versions
 
-All files are in `website/public/brand/` and served at `https://hunk.dev/brand/<file>`. They are filled with the ink color `#16140f`; recolor by editing the `fill`, or inline the SVG and use `currentColor`.
+All files are in `website/public/brand/` and served at `https://hunk.dev/brand/<file>`. They are filled with the ink color `#16140f`; recolor by editing the `fill`, or inline the SVG and use `currentColor`. Each viewBox already includes about one stem-width of clear space, so exports never touch their edges.
 
-| File                | What it is                                                                | Use it for                                                                           |
-| ------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `logo-mark.svg`     | Flat "h" mark: a framed square with a stem and top-right bar. No outline. | Header, favicon, app icons, avatars, anything under ~40px.                           |
-| `logo-mark-3d.svg`  | The "h" block with its offset outline shadow.                             | Large placements only (about 40px and up): hero art, slides, social cards, stickers. |
-| `logo-wordmark.svg` | The lowercase `hunk` letters on their own.                                | Next to the mark when the lockup is too heavy; text-only contexts.                   |
-| `logo-lockup.svg`   | 3D mark plus wordmark.                                                    | Open Graph images, README banner, talk title slides.                                 |
+| File                   | What it is                                                                | Use it for                                                                           |
+| ---------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `logo-mark.svg`        | Flat "h" mark: a framed square with a stem and top-right bar. No outline. | Header, favicon, app icons, avatars, anything under ~40px.                           |
+| `logo-mark-3d.svg`     | The "h" block with its offset outline shadow.                             | Large placements only (about 40px and up): hero art, slides, social cards, stickers. |
+| `logo-wordmark.svg`    | The lowercase `hunk` letters on their own.                                | Next to the mark when the lockup is too heavy; text-only contexts.                   |
+| `logo-lockup.svg`      | 3D mark plus wordmark.                                                    | Open Graph images, README banner, talk title slides.                                 |
+| `logo-lockup-flat.svg` | Flat mark plus wordmark.                                                  | Headers, footers, and smaller placements where the 3D outline would smudge.          |
 
 Other places the mark appears:
 
-| Path                                       | Purpose                                                                 |
-| ------------------------------------------ | ----------------------------------------------------------------------- |
-| `website/public/favicon.svg`               | Browser tab icon. Flat mark in `#65d291` on a `#111a15` rounded square. |
-| `website/public/icon.png`                  | 512px PNG of the favicon (fallback for browsers that skip SVG icons).   |
-| `website/public/apple-icon.png`            | 180px apple-touch icon.                                                 |
-| `website/src/components/BrandHeader.astro` | Header logo: inline flat mark (24px) plus `hunk` text.                  |
-| `website/public/og.png`                    | 1200×630 social card. Not yet on the new logo.                          |
-| `website/public/docs/favicon.svg`          | Docs favicon. Not yet updated.                                          |
+| Path                                       | Purpose                                                                                              |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `website/public/favicon.svg`               | Browser tab icon for every page, docs included. Paper flat mark on an ink rounded square.            |
+| `website/public/icon.png`                  | 512px PNG of the favicon (fallback for browsers that skip SVG icons).                                |
+| `website/public/apple-icon.png`            | 180px apple-touch icon.                                                                              |
+| `website/src/components/BrandHeader.astro` | Header logo: inline flat mark (24px) plus `hunk` text.                                               |
+| `website/public/og.png`                    | 1200×630 site-wide social card: 3D lockup beside a review capture.                                   |
+| `website/public/**/og.png`                 | Per-page social cards (changelog, extensions, compare, VCS guides): flat lockup and a faint 3D mark. |
+| `assets/github-social-preview.png`         | 1280×640 GitHub social preview. Uploaded by hand in the repository settings.                         |
+| `README.md`                                | 3D lockup header, ink or paper to match GitHub's theme. Shared with the npm README.                  |
+
+Every social card above is drawn by `website/scripts/generate-og.ts` from the SVGs in
+`website/public/brand/`; see `website/MEDIA.md` to redraw them.
 
 Regenerate the PNG icons after changing `favicon.svg`:
 
@@ -42,7 +69,7 @@ rsvg-convert -w 180 -h 180 website/public/favicon.svg -o website/public/apple-ic
 Clear space and minimum sizes are proposed guidance, not something the site enforces yet.
 
 - **Small means flat.** Below ~40px the 3D outline turns into a smudge; use `logo-mark.svg`.
-- **Clear space:** keep at least the width of the stem (about 8% of the mark's width) free on every side. In the lockup, the gap between mark and wordmark is the mark's top-right bar height.
+- **Clear space:** keep at least the width of the stem (about 8% of the mark's width) free on every side. In both lockups the mark is 1.4× the wordmark's height (ascender to baseline), centered on it, with a gap of 0.6× the wordmark's height.
 - **Minimum size:** 16px for the flat mark, 40px for the 3D mark, 48px wide for the wordmark.
 - **Don't** stretch, rotate, outline, add shadows or gradients, recolor outside the palette below, or retype the wordmark in another font. The wordmark is outlined paths, not live text.
 - **Don't** put the mark inside a circle. A rounded square (radius about 19%) is the only container, as in the favicon.
@@ -66,7 +93,6 @@ Light is the default. Dark mode is toggled with `data-theme="dark"`. Tokens live
 
 - Use the accent green sparingly: the current nav item, the highlighted word in the hero, primary controls.
 - The diff colors in screenshots come from the terminal theme, not the brand palette.
-- The favicon uses a darker green pair (`#111a15` / `#65d291`) that is not a site token. Align it with the table above or add it as a token if it stays.
 - The logo exploration files (C51/C59) were drawn on a saturated blue (`#1F3DFF`). That blue is not part of the site palette; decide before using it anywhere.
 
 ## Typography

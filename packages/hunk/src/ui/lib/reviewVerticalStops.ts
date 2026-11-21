@@ -42,24 +42,23 @@ export function buildReviewVerticalStops(
     const geometry = sectionGeometry[sectionIndex];
     if (!geometry) return [];
 
-    const plannedRows = geometry.fileViewRows ?? geometry.plannedRows;
-    const plannedRowByStableKey = new Map(plannedRows.map((row) => [row.stableKey, row] as const));
+    // Alternate views already own a mounted row plan. Diff geometry carries just the measured
+    // note target, so keyboard navigation never materializes its lazy copy-selection content.
+    const fileViewRowByStableKey = geometry.fileViewRows
+      ? new Map(geometry.fileViewRows.map((row) => [row.stableKey, row] as const))
+      : undefined;
     const stops: ReviewVerticalStop[] = [];
 
     for (const bounds of geometry.rowBounds) {
-      const plannedRow = plannedRowByStableKey.get(bounds.stableKey);
-      if (plannedRow?.kind === "inline-note") {
-        const noteId =
-          plannedRow.note.source === "draft" ? undefined : plannedRow.note.thread?.noteId;
-        if (noteId) {
-          stops.push({
-            kind: "note",
-            fileId: file.id,
-            hunkIndex: plannedRow.hunkIndex,
-            noteId,
-            stableKey: bounds.stableKey,
-          });
-        }
+      const fileViewRow = fileViewRowByStableKey?.get(bounds.stableKey);
+      const target =
+        fileViewRow?.kind === "inline-note"
+          ? fileViewRow.note.source !== "draft" && fileViewRow.note.thread?.noteId
+            ? { noteId: fileViewRow.note.thread.noteId, hunkIndex: fileViewRow.hunkIndex }
+            : undefined
+          : bounds.noteTarget;
+      if (target) {
+        stops.push({ kind: "note", fileId: file.id, ...target, stableKey: bounds.stableKey });
         continue;
       }
 

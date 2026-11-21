@@ -49,7 +49,7 @@ import {
   loadDocumentHighlight,
   type DocumentHighlightResult,
 } from "../syntax/documentHighlightService";
-import { pierreHighlightRenderOptions } from "./highlightRenderOptions";
+import { pierreHighlightRenderOptions } from "../../core/documents/highlightRenderOptions";
 
 export interface LoadHighlightedDiffOptions {
   /** Move eligible highlighting into the syntax worker; static rendering stays inline. */

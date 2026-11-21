@@ -227,6 +227,40 @@ describe("review selection movement", () => {
     expect(move(annotated, at("hidden", 4), "annotated-hunk", -1).at).toBe("gamma:1");
   });
 
+  test("moves from a hunkless file to the nearest hunk in the direction of travel", () => {
+    const hunkless: ReviewNavigationModel = {
+      files: [
+        { fileKey: "alpha", hunkCount: 3 },
+        { fileKey: "binary", hunkCount: 0 },
+        { fileKey: "gamma", hunkCount: 2 },
+      ],
+      annotations: annotationIndex({ alpha: [2], gamma: [1] }),
+    };
+
+    expect(move(hunkless, at("binary", 0), "hunk", 1).at).toBe("gamma:0");
+    expect(move(hunkless, at("binary", 0), "hunk", -1).at).toBe("alpha:2");
+    // The rest of the step count is spent after reaching the nearest hunk, and still clamps.
+    expect(move(hunkless, at("binary", 0), "hunk", 2).at).toBe("gamma:1");
+    expect(move(hunkless, at("binary", 0), "hunk", -2).at).toBe("alpha:1");
+    expect(move(hunkless, at("binary", 0), "hunk", 9).at).toBe("gamma:1");
+    // Annotated navigation approaches the same way.
+    expect(move(hunkless, at("binary", 0), "annotated-hunk", 1).at).toBe("gamma:1");
+    expect(move(hunkless, at("binary", 0), "annotated-hunk", -1).at).toBe("alpha:2");
+
+    // Hunkless files at the ends of the stream still reach the first or last hunk.
+    const edges: ReviewNavigationModel = {
+      files: [
+        { fileKey: "lead", hunkCount: 0 },
+        { fileKey: "alpha", hunkCount: 2 },
+        { fileKey: "trail", hunkCount: 0 },
+      ],
+      annotations: EMPTY_REVIEW_ANNOTATION_INDEX,
+    };
+    expect(move(edges, at("lead", 0), "hunk", 1).at).toBe("alpha:0");
+    expect(move(edges, at("trail", 0), "hunk", -1).at).toBe("alpha:1");
+    expect(move(edges, at("trail", 0), "hunk", 1).at).toBe("alpha:1");
+  });
+
   test("refuses every move over an empty stream", () => {
     const empty: ReviewNavigationModel = { files: [], annotations: EMPTY_REVIEW_ANNOTATION_INDEX };
 

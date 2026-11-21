@@ -66,7 +66,7 @@ describe("daemon skew notices", () => {
     ],
     [
       HUNK_DAEMON_REGISTRATION_REJECTED_MESSAGE,
-      "Session daemon rejected this window. Run `hunk daemon restart`.",
+      "Session daemon rejected this review. Try a smaller review.",
     ],
   ] as const)(
     "fits the complete sticky notice into an 80-column status line: %s",

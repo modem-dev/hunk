@@ -10,7 +10,7 @@
 import type { ReviewAction } from "./actions";
 import { reduceReviewState } from "./reducer";
 import { createInitialReviewState, type ReviewState } from "./state";
-import type { ReviewDocumentV1 } from "./types";
+import type { ReviewDocument } from "./types";
 
 export interface ReviewStore {
   getSnapshot(): ReviewState;
@@ -22,7 +22,7 @@ export interface ReviewStore {
 
 /** Create one review store for a freshly loaded review document. */
 export function createReviewStore(
-  document: ReviewDocumentV1,
+  document: ReviewDocument,
   options: { showAgentNotes?: boolean } = {},
 ): ReviewStore {
   let snapshot = createInitialReviewState(document, options);

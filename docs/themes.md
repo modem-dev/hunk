@@ -1,7 +1,7 @@
 # Themes
 
-Hunk follows your terminal's own colors by default. You can instead choose a
-built-in theme, let Hunk select one from your terminal background, or create a
+Hunk uses `github-dark-default` by default. You can instead follow your terminal's
+own colors, choose another built-in theme, select one from your terminal background, or create a
 custom theme in `~/.config/hunk/config.toml` or `.hunk/config.toml`.
 
 ```toml
@@ -13,7 +13,7 @@ You can also change themes while reviewing: press `t` or choose
 
 ## Terminal theme
 
-`theme = "terminal"` is the default. At startup Hunk asks the terminal for its
+Set `theme = "terminal"` to follow your terminal's colors. At startup Hunk asks the terminal for its
 foreground, background, and 16-color ANSI palette, then draws diffs, chrome,
 and syntax highlighting from those colors: green for additions and strings, red
 for removals, blue for functions and accents, magenta for keywords, and so on.

@@ -11,7 +11,7 @@ head:
   - tag: meta
     attrs:
       property: og:image:alt
-      content: "Hunk changelog — 24 release series · March 2026 – October 2026"
+      content: "Hunk changelog — 25 release series · March 2026 – November 2026"
   - tag: meta
     attrs:
       name: twitter:image
@@ -22,15 +22,21 @@ head:
 
 [RSS](https://hunk.dev/changelog/rss.xml) · [CHANGELOG.md](https://github.com/modem-dev/hunk/blob/main/CHANGELOG.md)
 
+## [Hunk 0.25](/changelog/0.25/)
+
+Latest · November 11, 2026 · 1 release · 23 changes
+
+Hunk 0.25 adds inline before-and-after image previews, clearer active-pane focus, GitHub Enterprise Cloud reviews, and a preview-and-confirm feedback form, while making patch parsing and everyday review interactions more resilient.
+
 ## [Hunk 0.24](/changelog/0.24/)
 
-Prerelease · October 13, 2026 · 1 release · 52 changes
+October 13, 2026 – October 24, 2026 · 4 releases · 123 changes
 
 Hunk 0.24 adds complete-file and directory browsing, a live workspace status view, npm-installed extensions, shell completions, and pane-aware automatic diff layout, while moving syntax highlighting off the review's main thread by default.
 
 ## [Hunk 0.23](/changelog/0.23/)
 
-Latest · September 30, 2026 · 1 release · 18 changes
+September 30, 2026 · 1 release · 18 changes
 
 Hunk 0.23 brings diff search, bundled GitHub review, an inline status line, and a default theme that follows your terminal, while making daemon version mismatches easier to resolve.
 

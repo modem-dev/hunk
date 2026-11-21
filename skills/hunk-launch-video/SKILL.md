@@ -37,8 +37,9 @@ same capture → composite → encode stages:
 
 - **Single feature:** a short demonstration of one capability or workflow. Use
   the single-feature recipe below and capture only the required scene.
-- **Full release:** a multi-feature roundup based on a release's changelog or
-  highlights. Use the full-release recipe and update the canonical storyboard.
+- **Full release:** the social promo for a release, in Hunk's house style
+  (`scripts/launch-video/promo/`). Use the full-release recipe: write one
+  storyboard file for the release; the style kit stays unchanged.
 - **Custom video:** author any set of scenes and `SHOTS` for tutorials,
   comparisons, announcements, or workflow explainers; follow the scene and
   storyboard rules below.
@@ -134,22 +135,92 @@ checked-in demo coverage and belongs to the submitted change.
 
 ## Full-release recipe
 
-1. Read the release section in `CHANGELOG.md`. If it has a hand-written
-   **Highlights** list (0.18.0 has one; Changesets does not generate them), use
-   that list as the storyboard. Otherwise distill 4–6 user-visible headlines
-   from the Minor Changes — per-PR entries are too granular to shoot — and
-   confirm the shortlist with the user before capturing.
-2. Rewrite the canonical storyboard's editorial surface (next section), adding
-   or adjusting capture scenes as needed (see "Authoring scenes").
-3. Set `SCENES` to every scene referenced by the full storyboard, capture and
-   composite it, then encode both formats using the main workflow above.
-4. Verify the complete cut (see "Verification") and deliver both files. When `hunk-release` invoked this workflow, return the approved MP4 and WebM to that skill for versioned naming and GitHub user-attachment embedding; do not upload or edit the public release without its confirmation gate.
+Release videos use the promo style kit in `scripts/launch-video/promo/`, so
+every release looks like part of one series. The kit renders through
+`@hunk/term-video/timeline`:
+
+```text
+storyboards/<version>.mjs   release content: chapters, captions, montage, credits range
+engine.js + stage.html      the style: sting, countdown hook, chapter cards, terminal
+                            scenes, montage, contributors h, outro, transitions
+contributors.mjs            git range -> contributors.json + avatars/
+render.mjs                  storyboard + frames + contributors -> promo-<version>.mp4
+```
+
+1. **Pick the headlines.** Read the release section in `CHANGELOG.md` (or its
+   hand-written **Highlights**) and choose 4–6 chapters ordered by impact: new
+   capabilities first, then visible UI/UX changes, then smaller conveniences.
+   Per-PR entries that are too small for a chapter go in the montage. Check
+   that each claim is accurate: a Patch-level fix can earn a chapter, but name
+   what it does rather than calling it new. Confirm the shortlist with the
+   user before capturing.
+2. **Start the storyboard** by copying the newest one, for example
+   `cp storyboards/0.24.0.mjs storyboards/0.25.0.mjs`. Set `version`,
+   rewrite `chapters` and `montage`, set `montage.fixes.count` from the
+   changelog's patch entries, and point `contributors.from`/`to` at the
+   previous release tag and this release's tag. Leave `aliases` from older
+   releases out unless they still apply.
+3. **Capture** each chapter's keyframes, reusing or adding scenes in
+   `capture.ts` (see "Authoring scenes"); every `frames[].img` must name a
+   captured keyframe. `SCENES=a,b bun run scripts/launch-video/capture.ts`.
+4. **Credits.** Fetch tags and history (`git fetch --tags --unshallow` in a
+   shallow clone), then run
+   `node scripts/launch-video/promo/contributors.mjs .video-work`. Review the
+   printed table: everyone who authored or co-authored a commit in the range
+   appears once, bots and AI co-author trailers excluded. Map unresolved
+   people to logins with `contributors.aliases` (email or name to a login, or
+   `{ login, id }` when the GitHub users API is unavailable) and rerun; anyone
+   still unresolved is credited by name with an initials tile. Never guess an
+   account.
+5. **Work dir.** Besides `playwright-core` (see gotchas), the kit needs the
+   brand font: `cd .video-work && bun add @fontsource-variable/jetbrains-mono`.
+6. **Stills first.** `node scripts/launch-video/promo/render.mjs .video-work
+--stills 2.6,8,14,...` renders review frames in seconds; check every
+   chapter's callouts and captions before the full render. `render.mjs`
+   validates the storyboard and lists any missing keyframes up front.
+7. **Render** with `node scripts/launch-video/promo/render.mjs .video-work`
+   (about 3 minutes for a minute of video) and verify the cut (see
+   "Verification"). When `hunk-release` invoked this workflow, return the
+   approved MP4 to that skill for versioned naming and embedding; do not upload
+   or edit the public release without its confirmation gate.
+
+### Chapter reference
+
+Times are seconds from the start of the chapter's terminal scene; camera,
+highlight, and label coordinates are fractions of the captured frame.
+
+- `label`, `title` (lines; prefix a word with `*` to color it), `sub`, `cmd`
+  (typed into the title card's command chip), `winTitle`.
+- `frames: [{ img, dur, key?, fade? }]` plays keyframes in order. `key` shows
+  that keycap pressing as the frame appears, so one frame per keypress reads
+  as typing; `fade` crossfades from the previous frame (use it for layout
+  swaps). The `steps()` helper in the 0.24.0 storyboard builds key-walk runs.
+- `cameras: [[t, { x, y, scale }, motionSeconds?]]` must start at time 0.
+- `highlights: [{ t0, t1, x, y, w, h }]` and `labels: [{ t0, t1, x, y, text }]`
+  outline and annotate source regions; keep edges in blank rows and labels off
+  terminal text (see "Camera and callout composition").
+- `captions: [[t, html]]` with `<b>` for the accent color.
+- `bodyH` gives short shell output a compact window instead of a full screen.
+
+### Extending the style
+
+Keep release copy out of `engine.js`: it reads everything release-specific
+from the storyboard, and its defaults hold only brand constants (tagline,
+install command, site). When a release needs something the kit cannot show,
+add a reusable scene type or storyboard field to the engine and document it
+here rather than special-casing one release. The brand geometry in the engine
+follows `website/public/brand/`; update both together.
+
+The caption storyboard below (`compose.mjs` on the shared stage) remains the
+tool for single-feature demos, PR evidence, and custom explainers.
 
 ## Per-video editorial surface
 
-The capture machinery is reusable, but the storyboard is editorial content for
-one video. Rewrite it to match the video's scope. The checked-in reference is a
-single-feature Git-history video, not a frozen release artifact:
+This section covers the caption storyboard used for single-feature, PR, and
+custom videos; release promos keep their content in `promo/storyboards/`. The
+capture machinery is reusable, but the storyboard is editorial content for one
+video. Rewrite it to match the video's scope. The checked-in reference is the
+0.24 release roundup, not a frozen release artifact:
 
 - `compose.mjs`: the whole `SHOTS` table; opening, feature, and outro cards;
   every caption; camera targets; and callout rectangles. A `NEW` badge is a
@@ -166,7 +237,9 @@ extend it there, don't fork it into the scripts: `createKeyframer`,
 `ensureKeyboardIsLive`, `makeSceneFilter` (`src/capture.ts`); the unit-tested
 storyboard planner with the caption/timing semantics (`src/plan.mjs`);
 `composeStoryboard` with font/Chromium resolution and the missing-keyframe
-preflight (`src/compose.mjs`); and the stage template (`src/stage.html`).
+preflight (`src/compose.mjs`); the stage template (`src/stage.html`); and
+`renderTimeline` for free-form motion pages such as the promo kit
+(`src/timeline.mjs`).
 
 ## Environment gotchas
 
@@ -280,10 +353,11 @@ Sandbox-specific bullets are marked; each cost real debugging time.
   changes, and continuation shots that share a `capKey` without restating
   `caption` keep the previous caption on screen. Sequences (walks, typing) are
   generated with `Array.from` spreads.
-- **Sequence lengths must match capture loop bounds**: the history capture's
-  `selected = 2..4` loop produces `history-range-2..4`, consumed by a
-  three-entry `Array.from` spread in `SHOTS`. Change one side and the other
-  breaks — the preflight check names any frame that's missing.
+- **Sequence lengths must match capture loop bounds**: the open capture's
+  four-step tree walk plus its select and expand presses produce
+  `open-tree-0..5`, consumed by a six-entry `Array.from` spread in `SHOTS`.
+  Change one side and the other breaks — the preflight check names any frame
+  that's missing.
 - `enter: true` fades/scales the surface in — use it for cards and the first
   terminal shot only.
 - Terminal shots may set normalized `camera: { x, y, scale }` targets and

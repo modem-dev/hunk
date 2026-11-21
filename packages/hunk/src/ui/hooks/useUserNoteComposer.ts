@@ -3,10 +3,15 @@
  * Semantic draft and saved-note transitions remain owned by the terminal review controller.
  */
 import { useCallback, useRef, useState } from "react";
-import type { ReviewNoteTargetV1 } from "../../core/review/types";
+import {
+  ReviewIntentPlanningError,
+  type ReviewIntentPlanningErrorCode,
+} from "../../core/review/intents";
+import type { ReviewNoteTarget } from "../../core/review/types";
 import type { ExtensionEventPayloads, ExtensionReviewNote } from "../../extensions/types";
 import type { ActiveAddNoteAffordance } from "../diff/DiffSectionBody";
 import type { LineCursor } from "../lib/lineCursors";
+import type { ActiveNoteTarget } from "./useTerminalReview";
 import type { DraftReviewNote, UserReviewNote } from "../lib/reviewNoteMapping";
 
 type ActiveAddNoteTarget = ActiveAddNoteAffordance & { fileId: string };
@@ -58,16 +63,24 @@ export interface UseUserNoteComposerOptions {
   /** Whether an implicit keyboard start may use the terminal's current-line cursor. */
   keyboardCursorEnabled: boolean;
   getLineCursor: () => LineCursor | null;
+  /** Read the selected note card's line, which a keyboard start adopts over the hunk default. */
+  getActiveNoteTarget?: () => ActiveNoteTarget | null;
   startDraft: (
     fileId?: string,
     hunkIndex?: number,
-    target?: ReviewNoteTargetV1,
+    target?: ReviewNoteTarget,
     options?: { preserveViewport?: boolean },
   ) => DraftReviewNote | null;
   startEdit?: (noteId: string, options?: { preserveViewport?: boolean }) => DraftReviewNote | null;
   startReply?: (noteId: string, options?: { preserveViewport?: boolean }) => DraftReviewNote | null;
   updateDraft: (body: string, expectedDraftId?: string) => boolean;
   saveDraft: () => UserReviewNote | null;
+  /**
+   * Report a save the shared planner refused (`too-many-notes`, `note-too-large`, ...). The
+   * draft stays open with its text and keeps the keyboard, so the reviewer can shorten it,
+   * copy it, or cancel it themselves.
+   */
+  onSaveRefused?: (code: ReviewIntentPlanningErrorCode) => void;
   cancelDraft: () => void;
   focus: {
     /** Move keyboard ownership into the draft editor. */
@@ -85,11 +98,13 @@ export function useUserNoteComposer({
   draftNote,
   keyboardCursorEnabled,
   getLineCursor,
+  getActiveNoteTarget = () => null,
   startDraft,
   startEdit = () => null,
   startReply = () => null,
   updateDraft,
   saveDraft,
+  onSaveRefused,
   cancelDraft,
   focus,
   publishEvent,
@@ -140,16 +155,19 @@ export function useUserNoteComposer({
     pendingInputRef.current = "";
   }, []);
 
-  /** Start a draft at an explicit target, hovered affordance, or enabled line cursor. */
+  /** Start a draft at an explicit target, hovered affordance, selected note, or line cursor. */
   const startUserNote = useCallback(
-    (fileId?: string, hunkIndex?: number, target?: ReviewNoteTargetV1) => {
-      // Hover and the current line are fallbacks only for a fully implicit start. Any
-      // explicit location fact must not inherit whichever row happened to remain hovered.
+    (fileId?: string, hunkIndex?: number, target?: ReviewNoteTarget) => {
+      // Hover, the selected note, and the current line are fallbacks only for a fully implicit
+      // start. Any explicit location fact must not inherit whichever row happened to remain
+      // hovered. Selecting a note card clears the line cursor, so the two never compete.
       const hasExplicitTarget =
         fileId !== undefined || hunkIndex !== undefined || target !== undefined;
-      const hoverTarget = hasExplicitTarget ? null : activeAddNoteTarget;
-      const implicitTarget =
-        hoverTarget ?? (!hasExplicitTarget && keyboardCursorEnabled ? getLineCursor() : null);
+      const implicitTarget = hasExplicitTarget
+        ? null
+        : (activeAddNoteTarget ??
+          getActiveNoteTarget() ??
+          (keyboardCursorEnabled ? getLineCursor() : null));
       const draft = startDraft(
         fileId ?? implicitTarget?.fileId,
         hunkIndex ?? implicitTarget?.hunkIndex,
@@ -167,6 +185,7 @@ export function useUserNoteComposer({
       activeAddNoteTarget,
       beginDraftFocusTransition,
       focusDraft,
+      getActiveNoteTarget,
       getLineCursor,
       keyboardCursorEnabled,
       startDraft,
@@ -229,14 +248,30 @@ export function useUserNoteComposer({
       if (priorDraft && body !== undefined && !updateDraft(body, priorDraft.id)) {
         return;
       }
-      const saved = saveDraft();
+      let saved: UserReviewNote | null;
+      try {
+        saved = saveDraft();
+      } catch (error) {
+        // A refused save reduced nothing: the semantic draft still holds the flushed body.
+        if (!(error instanceof ReviewIntentPlanningError)) throw error;
+        onSaveRefused?.(error.code);
+        return;
+      }
       if (saved && priorDraft) {
         const note = projectExtensionReviewNote({ ...saved, fileId: priorDraft.fileId }, false);
         publishEvent(priorDraft.kind === "edit" ? "note_edited" : "note_created", { note });
       }
       focusReview();
     },
-    [draftNote, focusReview, publishEvent, saveDraft, takePendingDraftInput, updateDraft],
+    [
+      draftNote,
+      focusReview,
+      onSaveRefused,
+      publishEvent,
+      saveDraft,
+      takePendingDraftInput,
+      updateDraft,
+    ],
   );
 
   /** Update the semantic draft and publish the body supplied by the editor. */

@@ -18,6 +18,7 @@ const ABBREVIATED_OBJECT_ID_PATTERN = /^[0-9a-f]{4,64}$/;
 const MAX_SYNC_OUTPUT_BYTES = 8 * 1024 * 1024;
 const MAX_DECORATION_REFS = 10_000;
 const MAX_HISTORY_STDERR_BYTES = 16 * 1024;
+const GIT_ISO_STRICT_UTC_OFFSET_PATTERN = /\+00:00$/;
 
 interface GitHistoryOptions {
   cwd: string;
@@ -244,6 +245,14 @@ export function buildGitHistoryArgs(input: ExtensionVcsHistoryInput) {
   return args;
 }
 
+/**
+ * Spell a UTC `%aI` timestamp the way current Git does. Recent Git prints `Z` for a +0000 offset
+ * while older releases (such as 2.43) print `+00:00`, so dates would otherwise vary by Git version.
+ */
+function normalizeGitAuthoredAt(authoredAt: string) {
+  return authoredAt.replace(GIT_ISO_STRICT_UTC_OFFSET_PATTERN, "Z");
+}
+
 /** Parse fixed NUL-delimited machine fields into immutable commit summaries. */
 export function parseGitHistory(
   text: string,
@@ -265,7 +274,7 @@ export function parseGitHistory(
     const parents = fields[offset + 2]!;
     const authorName = fields[offset + 3]!;
     const authorEmail = fields[offset + 4]!;
-    const authoredAt = fields[offset + 5]!;
+    const authoredAt = normalizeGitAuthoredAt(fields[offset + 5]!);
     const subject = fields[offset + 6]!;
     const body = fields[offset + 7]!;
     if (!revisionId || !displayId || !authoredAt) {

@@ -7,10 +7,12 @@ The extension factory receives one API object. Registration calls are only valid
 
 ## `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `31`). Branch on it if you want one file to support several Hunk versions, or declare `"hunk": {"apiVersion": N}` in a folder extension's `package.json` so an older Hunk refuses to load it with a clear message.
+The API generation this Hunk speaks (currently `33`). Branch on it if you want one file to support several Hunk versions, or declare `"hunk": {"apiVersion": N}` in a folder extension's `package.json` so an older Hunk refuses to load it with a clear message.
 
 | Version | Adds                                                                                                      |
 | ------- | --------------------------------------------------------------------------------------------------------- |
+| 33      | `readBytes` on file-view inputs and optional `readFileBytes` on VCS patch results                         |
+| 32      | `ctx.selection.layout`, the resolved split or unified layout                                              |
 | 31      | Optional read-only VCS workspace status, sibling inspection, and status review planning                   |
 | 30      | The opaque current review generation (`reviewGeneration`) in pane props                                   |
 | 29      | Generation-scoped review presentation scopes                                                              |
@@ -85,7 +87,7 @@ then copies and freezes it. `provider` and change-request `id` allow 256 bytes; 
 `author`, `base`, `head`, and `revision` allow 512; `authoredAt` allows 128; `title` and `url`
 allow 2 KiB. Change requests may also carry `state` (`open`, `closed`, or `merged`) and boolean
 `draft`; commits may carry a parseable `authoredAt` date-time. The descriptor remains app-bootstrap metadata rather than entering
-changeset transforms or `ReviewDocumentV1`; same-file refreshes preserve it, while unrelated
+changeset transforms or `ReviewDocument`; same-file refreshes preserve it, while unrelated
 reloads clear it. Commits opened from interactive `hunk log` receive the same metadata shape and
 retain it while refreshing the exact provider review request. Live-session list, context, and review
 JSON snapshots project the same optional bounded descriptor without granting provider or
@@ -112,7 +114,7 @@ naming the bad token, so keep both to one short line:
 hunk: Unknown command: nosuchthing
 
 Extension commands available here:
-hunk gh <pr|commit|compare> <target> [--repo <owner/repo>] — Review GitHub-hosted changes
+hunk gh <pr|commit|compare> <target> [--repo <[host/]owner/repo>] — Review GitHub-hosted changes
 ```
 
 For a complete implementation, see the dependency-free
@@ -310,7 +312,7 @@ hunk.registerCommand(
 );
 ```
 
-`selection.file` is a frozen view, identical to a pane's `files` entries; it is `null` when filtering hides the selected file or when no files are visible. `selection.hunkIndex` is `null` whenever `file` is, or when the file has no hunks. `selection.currentLine` is the one-based `{ side, line }` source address carrying the current-line marker, or `null` when that marker is off or the review has not settled on a rendered line. It belongs to this file and hunk, uses Hunk's canonical new-side address for context rows, and can be passed directly to `navigation.revealLine`. The values are captured when the command fires, so an async handler keeps the selection it started from.
+`selection.file` is a frozen view, identical to a pane's `files` entries; it is `null` when filtering hides the selected file or when no files are visible. `selection.hunkIndex` is `null` whenever `file` is, or when the file has no hunks. `selection.currentLine` is the one-based `{ side, line }` source address carrying the current-line marker, or `null` when that marker is off or the review has not settled on a rendered line. It belongs to this file and hunk, uses Hunk's canonical new-side address for context rows, and can be passed directly to `navigation.revealLine`. `selection.layout` is the resolved `"split"` or `"unified"` layout the review is rendering, so a command can order things as the user sees them. The values are captured when the command fires, so an async handler keeps the selection it started from.
 
 ### Authoritative review snapshots
 

@@ -101,6 +101,9 @@ Use `--files <left> <right>` for concrete-file comparison; this replaces the for
 | `--cached`               | alias for --staged                                                                            |
 | `--exclude-untracked`    | exclude untracked files from working tree reviews                                             |
 | `--no-exclude-untracked` | include untracked files in working tree reviews Compatibility inverse; omitted from `--help`. |
+| `--web`                  | serve this review in the browser instead of the terminal                                      |
+| `--no-open`              | with --web, print the review URL without opening a browser                                    |
+| `--no-watch`             | do not reload when the input changes (overrides --web and config)                             |
 
 Also accepts `--watch`: auto-reload when the current diff input changes.
 
@@ -115,6 +118,14 @@ review the last commit or a given ref
 ```bash
 hunk show [target] [-- <pathspec...>]
 ```
+
+### Command-specific options
+
+| Option       | Description                                                       |
+| ------------ | ----------------------------------------------------------------- |
+| `--web`      | serve this review in the browser instead of the terminal          |
+| `--no-open`  | with --web, print the review URL without opening a browser        |
+| `--no-watch` | do not reload when the input changes (overrides --web and config) |
 
 Also accepts `--watch`: auto-reload when the current diff input changes.
 
@@ -220,28 +231,30 @@ Review GitHub pull requests, commits, and comparisons. This command is provided 
 ### Usage
 
 ```bash
-hunk gh pr [pull-request] [--repo <owner/repo>] [-- <patch-options...>]
-hunk gh commit <commit> [--repo <owner/repo>] [-- <patch-options...>]
-hunk gh compare <base>...<head> [--repo <owner/repo>] [-- <patch-options...>]
+hunk gh pr [pull-request] [--repo <[host/]owner/repo>] [-- <patch-options...>]
+hunk gh commit <commit> [--repo <[host/]owner/repo>] [-- <patch-options...>]
+hunk gh compare <base>...<head> [--repo <[host/]owner/repo>] [-- <patch-options...>]
 ```
 
 ### Command-specific options
 
-| Option                  | Description                                            |
-| ----------------------- | ------------------------------------------------------ |
-| `--repo <owner/repo>`   | use an explicit repository instead of the local origin |
-| `-- <patch-options...>` | pass the remaining options to the `hunk patch` review  |
+| Option                       | Description                                            |
+| ---------------------------- | ------------------------------------------------------ |
+| `--repo <[host/]owner/repo>` | use an explicit repository instead of the local origin |
+| `-- <patch-options...>`      | pass the remaining options to the `hunk patch` review  |
 
 Patch options after `--` accept every [common review option](#common-review-options).
 
 **Authentication:** `GH_TOKEN`, then `GITHUB_TOKEN`; optional for public repositories.
+
+**Hosts:** github.com and GitHub Enterprise Cloud (&lt;tenant&gt;.ghe.com). URLs and the local origin name their host; other forms use GH_HOST, then github.com.
 
 ### `hunk gh pr`
 
 Review a GitHub pull request without requiring the gh CLI.
 
 ```bash
-hunk gh pr [pull-request] [--repo <owner/repo>] [-- <patch-options...>]
+hunk gh pr [pull-request] [--repo <[host/]owner/repo>] [-- <patch-options...>]
 ```
 
 **Pull request forms:**
@@ -252,6 +265,7 @@ hunk gh pr 123                        # infer owner/repo from the local origin
 hunk gh pr 123 --repo modem-dev/hunk  # use an explicit repository
 hunk gh pr 'modem-dev/hunk#123'       # name the repository and pull request
 hunk gh pr https://github.com/modem-dev/hunk/pull/123
+hunk gh pr https://acme.ghe.com/acme/app/pull/123
 ```
 
 ### `hunk gh commit`
@@ -259,7 +273,7 @@ hunk gh pr https://github.com/modem-dev/hunk/pull/123
 Review a GitHub commit without requiring the gh CLI.
 
 ```bash
-hunk gh commit <commit> [--repo <owner/repo>] [-- <patch-options...>]
+hunk gh commit <commit> [--repo <[host/]owner/repo>] [-- <patch-options...>]
 ```
 
 **Commit forms:**
@@ -269,6 +283,7 @@ hunk gh commit abcdef1                        # infer owner/repo from the local 
 hunk gh commit abcdef1 --repo modem-dev/hunk  # use an explicit repository
 hunk gh commit modem-dev/hunk@abcdef1         # name the repository and commit
 hunk gh commit https://github.com/modem-dev/hunk/commit/abcdef1
+hunk gh commit https://acme.ghe.com/acme/app/commit/abcdef1
 ```
 
 ### `hunk gh compare`
@@ -276,7 +291,7 @@ hunk gh commit https://github.com/modem-dev/hunk/commit/abcdef1
 Review the changes between two GitHub branches, tags, or commits.
 
 ```bash
-hunk gh compare <base>...<head> [--repo <owner/repo>] [-- <patch-options...>]
+hunk gh compare <base>...<head> [--repo <[host/]owner/repo>] [-- <patch-options...>]
 ```
 
 **Compare forms:**
@@ -284,6 +299,7 @@ hunk gh compare <base>...<head> [--repo <owner/repo>] [-- <patch-options...>]
 ```bash
 hunk gh compare main...feature  # infer owner/repo from the local origin
 hunk gh compare v0.20.0...v0.21.0 --repo modem-dev/hunk
+hunk gh compare main...feature --repo acme.ghe.com/acme/app
 ```
 
 Use three dots exactly. Pass Hunk patch options after `--`.
@@ -298,6 +314,14 @@ review a stash entry as a full Hunk changeset
 hunk stash show [ref]
 ```
 
+### Command-specific options
+
+| Option       | Description                                                       |
+| ------------ | ----------------------------------------------------------------- |
+| `--web`      | serve this review in the browser instead of the terminal          |
+| `--no-open`  | with --web, print the review URL without opening a browser        |
+| `--no-watch` | do not reload when the input changes (overrides --web and config) |
+
 Also accepts `--watch`: auto-reload when the current diff input changes.
 
 Also accepts every [common review option](#common-review-options).
@@ -311,6 +335,14 @@ review a patch file, or read a patch from stdin
 ```bash
 hunk patch [file]
 ```
+
+### Command-specific options
+
+| Option       | Description                                                       |
+| ------------ | ----------------------------------------------------------------- |
+| `--web`      | serve this review in the browser instead of the terminal          |
+| `--no-open`  | with --web, print the review URL without opening a browser        |
+| `--no-watch` | do not reload when the input changes (overrides --web and config) |
 
 Also accepts `--watch`: auto-reload when the current diff input changes.
 
@@ -337,6 +369,14 @@ review Git difftool file pairs
 ```bash
 hunk difftool <left> <right> [path]
 ```
+
+### Command-specific options
+
+| Option       | Description                                                       |
+| ------------ | ----------------------------------------------------------------- |
+| `--web`      | serve this review in the browser instead of the terminal          |
+| `--no-open`  | with --web, print the review URL without opening a browser        |
+| `--no-watch` | do not reload when the input changes (overrides --web and config) |
 
 Also accepts `--watch`: auto-reload when the current diff input changes.
 
@@ -482,6 +522,35 @@ hunk update --method <npm|brew|curl>
 | ------------------- | -------------------------------------------------------------- |
 | `--method <method>` | install method instead of the detected one: npm, brew, curl    |
 | `--check`           | report the installed and available versions without installing |
+
+## `hunk feedback`
+
+send feedback to the Hunk team at Modem, after showing exactly what is sent
+
+### Usage
+
+```bash
+hunk feedback [message...]
+hunk feedback --file <path|->
+hunk feedback --dry-run [message...]
+```
+
+Prints what will be sent and where, then asks before sending. Nothing reaches Modem until you confirm: cancelling, `--dry-run`, and a run that cannot be confirmed make no request. With no message in a terminal, opens the feedback form instead.
+
+The answer to the prompt is read from the terminal, not stdin, so a piped message can still be confirmed at the keyboard. Without a terminal, pass `--skip-confirm` to send.
+
+Agents: run this only when the user asked for it or agreed to the exact message. Show them the `--dry-run` output before passing `--skip-confirm`.
+
+### Command-specific options
+
+| Option                 | Description                                                        |
+| ---------------------- | ------------------------------------------------------------------ |
+| `-m, --message <text>` | message text instead of the positional words                       |
+| `-F, --file <path>`    | read the message from a file, or stdin with -                      |
+| `--email <address>`    | optional reply address, sent only if given                         |
+| `--dry-run`            | print exactly what would be sent, then exit without sending        |
+| `--skip-confirm`       | send without the confirmation prompt (required without a terminal) |
+| `--json`               | print the result as JSON                                           |
 
 ## `hunk daemon serve`
 
@@ -851,4 +920,27 @@ hunk session highlight clear (<session-id> | --repo <path>) [--file <path>] [--j
 
 ```bash
 hunk session highlight clear --repo .
+```
+
+### `hunk session open`
+
+open a live session's review in your browser
+
+```bash
+hunk session open (<session-id> | --repo <path>) [--no-open] [--json]
+```
+
+| Option          | Description                                               |
+| --------------- | --------------------------------------------------------- |
+| `--repo <path>` | target the live session whose repo root matches this path |
+| `--no-open`     | print the review URL instead of opening a browser         |
+| `--json`        | emit structured JSON                                      |
+
+**Positionals:** `[sessionId]`.
+
+**Examples:**
+
+```bash
+hunk session open --repo .
+hunk session open --repo . --no-open
 ```

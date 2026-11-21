@@ -48,10 +48,12 @@ export interface CommonOptions {
   agentContext?: string;
   pager?: boolean;
   watch?: boolean;
+  /** Serve the review headless for a browser instead of opening the terminal UI. */
+  web?: boolean;
+  /** False when `--no-open` asks a browser review to print its URL without opening it. */
+  open?: boolean;
   /** Enable launch-scoped experimental review features. */
   experimental?: boolean;
-  /** Offload eligible syntax highlighting for this launch. */
-  fast?: boolean;
   excludeUntracked?: boolean;
   lineNumbers?: boolean;
   tabWidth?: number;
@@ -372,6 +374,15 @@ export interface SessionHighlightClearCommandInput {
   filePath?: string;
 }
 
+/** Open one live session's review in a browser, or print its URL with `open: false`. */
+export interface SessionOpenCommandInput {
+  kind: "session";
+  action: "open";
+  output: SessionCommandOutput;
+  selector: SessionSelectorInput;
+  open: boolean;
+}
+
 export type SessionCommandInput =
   | SessionListCommandInput
   | SessionGetCommandInput
@@ -384,7 +395,8 @@ export type SessionCommandInput =
   | SessionCommentRemoveCommandInput
   | SessionCommentClearCommandInput
   | SessionHighlightAddCommandInput
-  | SessionHighlightClearCommandInput;
+  | SessionHighlightClearCommandInput
+  | SessionOpenCommandInput;
 
 export interface MarkupRenderCommandInput {
   kind: "markup-render";
@@ -451,6 +463,22 @@ export interface SelfUpdateCommandInput {
   check: boolean;
 }
 
+/** `hunk feedback`: send feedback to the Hunk team after previewing and confirming it. */
+export interface FeedbackCommandInput {
+  kind: "feedback";
+  /** Message text from the positional words or `--message`. */
+  message?: string;
+  /** Read the message from this file, or from stdin when `-`. */
+  file?: string;
+  /** Optional reply address, sent only when given. */
+  email?: string;
+  /** Print the disclosure and exact request body, then exit without sending. */
+  dryRun: boolean;
+  /** Send without the `[y/N]` prompt; required when no terminal can answer it. */
+  skipConfirm: boolean;
+  output: SessionCommandOutput;
+}
+
 /** `hunk extension ...` managed-install commands. */
 export type ExtensionManageCommandInput =
   | ExtensionInstallCommandInput
@@ -482,4 +510,5 @@ export type ParsedCliInput =
   | MarkupGuideCommandInput
   | ExtensionManageCommandInput
   | ExtensionCliInvocationInput
-  | SelfUpdateCommandInput;
+  | SelfUpdateCommandInput
+  | FeedbackCommandInput;

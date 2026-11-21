@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { createServer } from "node:http";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -9,9 +9,11 @@ import {
   createTestSessionSnapshot,
 } from "../../../../../test/helpers/session-daemon-fixtures";
 import { HUNK_SESSION_API_VERSION, HUNK_SESSION_DAEMON_VERSION } from "../protocol";
+import { MAX_REGISTRATION_FILES } from "@hunk/session-broker-core";
 import {
   SESSION_BROKER_LIFECYCLE_DEFECT_MESSAGE,
   SessionBroker,
+  SessionBrokerAuthenticator,
   createSessionBrokerDaemon,
   type SessionBrokerSocketLike,
 } from "@hunk/session-broker";
@@ -40,12 +42,17 @@ import {
 import type { HunkDaemonAdminProbe } from "../client/daemonAdmin";
 import { resolveSessionBrokerRuntimePaths } from "./brokerLauncher";
 import { DeterministicLifecycleClockTest } from "../../../../../test/helpers/lifecycleClockTest";
+import { createTestRuntimeDir } from "../../../../../test/helpers/runtime-dir";
 
 const originalHost = process.env.HUNK_MCP_HOST;
 const originalPort = process.env.HUNK_MCP_PORT;
 const originalDisable = process.env.HUNK_MCP_DISABLE;
 const originalUnsafeRemote = process.env.HUNK_MCP_UNSAFE_ALLOW_REMOTE;
 const originalRuntimeDir = process.env.XDG_RUNTIME_DIR;
+// Clients that launch daemons or mint credentials write here unless a test chooses its own dir.
+const { path: testRuntimeDir, cleanup: cleanupTestRuntimeDir } = createTestRuntimeDir(
+  "hunk-broker-client-runtime-",
+);
 const originalConsoleError = console.error;
 const nativeSetTimeoutTest = globalThis.setTimeout.bind(globalThis);
 const nativeClearTimeoutTest = globalThis.clearTimeout.bind(globalThis);
@@ -70,7 +77,8 @@ interface SessionBrokerConnectionTestDouble {
 interface SessionBrokerClientTestAccess {
   connection: Partial<SessionBrokerConnectionTestDouble> | null;
   credentials: DeepPartialTest<HunkSessionBrokerCredentials> | null;
-  waitingForIncumbentExit: boolean;
+  incumbentWait: { kind: "build-skew" | "payload"; fingerprint: string | null } | null;
+  snapshot: ReturnType<typeof createSnapshot>;
   restartIncompatibleDaemon?: unknown;
   connect(config: ResolvedSessionBrokerConfig): void;
   ensureDaemonAndConnect(attempt?: unknown): Promise<void>;
@@ -173,6 +181,7 @@ function installWebSocketObserverTest(
     sent: string[];
     emitOpen: () => void;
     emitClose: (code?: number, reason?: string) => void;
+    emitMessage: (data: unknown) => void;
   }> = [];
   let constructionAttempts = 0;
 
@@ -202,6 +211,10 @@ function installWebSocketObserverTest(
     emitOpen() {
       this.readyState = 1;
       this.onopen?.();
+    }
+
+    emitMessage(data: unknown) {
+      this.onmessage?.({ data });
     }
 
     emitClose(code = 1000, reason = "") {
@@ -242,6 +255,107 @@ function prepareDirectConnectTest(client: SessionBrokerClient) {
   };
 }
 
+/** Authenticate observed sockets with real signed hellos while keeping retry time deterministic. */
+async function createRefusalLifecycleTest(withMetadata = false, subscribe = false) {
+  const runtimeDir = mkdtempSync(join(tmpdir(), "hunk-payload-refusal-"));
+  process.env.XDG_RUNTIME_DIR = runtimeDir;
+  const nativeFetch = globalThis.fetch;
+  const clock = new DeterministicLifecycleClockTest();
+  const webSockets = installWebSocketObserverTest();
+  const messages = captureBrokerWarningsTest();
+  let healthChecks = 0;
+  let probes = 0;
+  globalThis.fetch = (async () => {
+    healthChecks += 1;
+    return Response.json({ ok: true });
+  }) as unknown as typeof fetch;
+  const client = new SessionBrokerClient(createRegistration(), createSnapshot(), {
+    reconnectDelayMs: 10,
+    lifecycleClock: clock,
+    probeDaemonStatus: async () => {
+      probes += 1;
+      return { kind: "unsupported" };
+    },
+  });
+  const notices: Array<string | null> = [];
+  if (subscribe) client.subscribeConnectionNotice((notice) => notices.push(notice));
+  const config = prepareDirectConnectTest(client);
+  const writeMetadata = (pid: number) => {
+    const { metadataPath } = resolveSessionBrokerRuntimePaths(config);
+    // Match the daemon's owner-private namespace; a umask-derived mode fails credential checks.
+    mkdirSync(join(metadataPath, ".."), { recursive: true, mode: 0o700 });
+    writeFileSync(
+      metadataPath,
+      JSON.stringify({
+        pid,
+        host: config.host,
+        port: config.port,
+        command: "hunk-test",
+        args: ["daemon", "serve"],
+        launchedAt: new Date(pid).toISOString(),
+        launchedByPid: pid,
+        launchCwd: runtimeDir,
+      }),
+    );
+  };
+  const cleanup = () => {
+    client.stop();
+    globalThis.fetch = nativeFetch;
+    webSockets.restoreTest();
+    rmSync(runtimeDir, { recursive: true, force: true });
+  };
+  try {
+    const credentials = await loadOrCreateHunkSessionBrokerCredentials();
+    clientTestAccess(client).credentials = credentials;
+    clientTestAccess(client).ensureDaemonAvailable = async () => {};
+    const authenticator = new SessionBrokerAuthenticator({
+      appId: "dev.hunk",
+      appRevision: HUNK_SESSION_DAEMON_VERSION,
+      generation: "payload-refusal-test",
+      daemonIdentity: credentials.daemonIdentity,
+      credentials: [credentials.producer],
+    });
+    const authenticate = async (index: number) => {
+      const socket = webSockets.sockets[index]!;
+      socket.emitOpen();
+      const init = JSON.parse(socket.sent[0]!);
+      const challenge = await authenticator.issueChallenge(
+        init.hello,
+        `${config.wsOrigin}/session`,
+      );
+      socket.emitMessage(JSON.stringify({ type: "hello-challenge", challenge }));
+      await waitUntil("signed producer proof", () => socket.sent.length === 2, 1_000, 1);
+      const proof = JSON.parse(socket.sent[1]!);
+      const result = await authenticator.completeProducerHello(proof.proof, `connection-${index}`);
+      socket.emitMessage(JSON.stringify({ type: "hello-ack", ack: result.ack }));
+      await waitUntil("authenticated registration", () => socket.sent.length === 3, 1_000, 1);
+      expect(JSON.parse(socket.sent[2]!).type).toBe("register");
+    };
+    if (withMetadata) writeMetadata(100);
+    clientTestAccess(client).connect(config);
+    await authenticate(0);
+    return {
+      client,
+      clock,
+      webSockets,
+      messages,
+      notices,
+      authenticate,
+      writeMetadata,
+      cleanup,
+      healthChecks: () => healthChecks,
+      probes: () => probes,
+    };
+  } catch (error) {
+    cleanup();
+    throw error;
+  }
+}
+
+beforeAll(() => {
+  process.env.XDG_RUNTIME_DIR = testRuntimeDir;
+});
+
 afterEach(() => {
   restoreWebSocketObserverTest?.();
 
@@ -269,13 +383,22 @@ afterEach(() => {
     process.env.HUNK_MCP_UNSAFE_ALLOW_REMOTE = originalUnsafeRemote;
   }
 
+  // Undo per-test runtime overrides without exposing the real runtime dir between tests.
+  process.env.XDG_RUNTIME_DIR = testRuntimeDir;
+
+  console.error = originalConsoleError;
+});
+
+afterAll(async () => {
+  // Restore the ambient runtime dir only after the file, so a stray timer between tests still
+  // resolves the private one.
   if (originalRuntimeDir === undefined) {
     delete process.env.XDG_RUNTIME_DIR;
   } else {
     process.env.XDG_RUNTIME_DIR = originalRuntimeDir;
   }
 
-  console.error = originalConsoleError;
+  await cleanupTestRuntimeDir();
 });
 
 describe("Hunk session daemon client", () => {
@@ -535,10 +658,9 @@ describe("Hunk session daemon client", () => {
     }
   });
 
-  // Intent: a daemon that accepted the hello but refused the registration one parser deeper is
-  // a version skew the user must hear about; today that close is silent. The client keeps
-  // reconnecting so a daemon restart recovers the window without relaunching it.
-  test("warns and keeps reconnecting when the daemon rejects the registration after the hello", () => {
+  // Authenticated payload refusals keep the reconnect scheduler, but wait for a replacement
+  // review or daemon before resending the rejected payload.
+  test("warns and waits when the daemon rejects the registration after the hello", () => {
     const webSockets = installWebSocketObserverTest();
     const messages = captureBrokerWarningsTest();
     const client = new SessionBrokerClient(createRegistration(), createSnapshot());
@@ -554,7 +676,7 @@ describe("Hunk session daemon client", () => {
         authenticated: true,
       });
       expect(directive).toEqual({ reconnect: true });
-      expect(clientTestAccess(client).waitingForIncumbentExit).toBe(false);
+      expect(clientTestAccess(client).incumbentWait?.kind).toBe("payload");
       expect(client.getConnectionState()).toEqual({
         status: "disconnected",
         notice: HUNK_DAEMON_REGISTRATION_REJECTED_MESSAGE,
@@ -567,6 +689,348 @@ describe("Hunk session daemon client", () => {
       webSockets.restoreTest();
     }
   });
+
+  for (const reason of ["Incompatible session registration.", "Incompatible session snapshot."]) {
+    for (const metadata of [false, true]) {
+      for (const subscribe of [false, true]) {
+        test(`quiesces ${reason} metadata=${metadata} subscriber=${subscribe}`, async () => {
+          const fixture = await createRefusalLifecycleTest(metadata, subscribe);
+          const { client, clock, webSockets, messages, notices } = fixture;
+          try {
+            webSockets.sockets[0]!.emitClose(1008, reason);
+            const wait = clientTestAccess(client).incumbentWait;
+            expect(wait?.kind).toBe("payload");
+            expect(wait?.fingerprint === null).toBe(!metadata);
+            for (let deadline = 0; deadline < 4; deadline += 1) {
+              await clock.advanceByTestAsync(10);
+              await clock.flushMicrotasksTest(30);
+            }
+            expect(fixture.healthChecks()).toBe(4);
+            expect(fixture.probes()).toBe(0);
+            expect(webSockets.sockets).toHaveLength(1);
+            expect(webSockets.sockets[0]!.sent).toHaveLength(3);
+            expect(clientTestAccess(client).incumbentWait).toBe(wait);
+            expect(clock.pendingCountTest()).toBe(1);
+            expect(client.getConnectionState()).toMatchObject({
+              notice: HUNK_DAEMON_REGISTRATION_REJECTED_MESSAGE,
+            });
+            expect(messages).toEqual(
+              subscribe ? [] : [`[session:broker] ${HUNK_DAEMON_REGISTRATION_REJECTED_MESSAGE}`],
+            );
+            if (subscribe)
+              expect(notices).toEqual([null, HUNK_DAEMON_REGISTRATION_REJECTED_MESSAGE]);
+
+            // UI-only updates cannot repair either refused envelope. Failed explicit replacement
+            // must retain the previous local pair and the exact wait ownership.
+            const snapshot = createSnapshot();
+            client.updateSnapshot(snapshot);
+            const registration = client.getRegistration();
+            expect(() =>
+              client.replaceSession(
+                { ...registration, sessionId: "invalid-replacement" },
+                createSnapshot(),
+              ),
+            ).toThrow();
+            expect(client.getRegistration()).toBe(registration);
+            expect(clientTestAccess(client).snapshot).toBe(snapshot);
+            expect(clientTestAccess(client).incumbentWait).toBe(wait);
+            await clock.advanceByTestAsync(10);
+            await clock.flushMicrotasksTest(30);
+            expect(webSockets.sockets).toHaveLength(1);
+
+            const replacement = {
+              ...registration,
+              info: { ...registration.info, title: "Smaller review" },
+            };
+            const replacementSnapshot = createSnapshot();
+            client.replaceSession(replacement, replacementSnapshot);
+            expect(client.getRegistration()).toBe(replacement);
+            expect(clientTestAccess(client).snapshot).toBe(replacementSnapshot);
+            expect(clientTestAccess(client).incumbentWait).toBeNull();
+            expect(client.getConnectionState()).toMatchObject({
+              notice: HUNK_DAEMON_REGISTRATION_REJECTED_MESSAGE,
+            });
+            await clock.advanceByTestAsync(10);
+            expect(webSockets.sockets).toHaveLength(2);
+            await fixture.authenticate(1);
+            expect(client.getConnectionState()).toEqual({ status: "connected" });
+            expect(JSON.parse(webSockets.sockets[1]!.sent[2]!).registration.info.title).toBe(
+              "Smaller review",
+            );
+          } finally {
+            fixture.cleanup();
+          }
+        });
+      }
+    }
+  }
+
+  test("recovers an actual daemon file-limit rejection after explicit smaller-review replacement", async () => {
+    const runtimeDir = mkdtempSync(join(tmpdir(), "hunk-file-limit-recovery-"));
+    process.env.XDG_RUNTIME_DIR = runtimeDir;
+    process.env.HUNK_MCP_HOST = "127.0.0.1";
+    delete process.env.HUNK_MCP_DISABLE;
+    const listener = createServer();
+    await new Promise<void>((resolve, reject) => {
+      listener.once("error", reject);
+      listener.listen(0, "127.0.0.1", resolve);
+    });
+    const address = listener.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+    await new Promise<void>((resolve) => listener.close(() => resolve()));
+    process.env.HUNK_MCP_PORT = String(port);
+    const clock = new DeterministicLifecycleClockTest();
+    const registration = createRegistration();
+    const oversized = {
+      ...registration,
+      info: {
+        ...registration.info,
+        files: Array.from({ length: MAX_REGISTRATION_FILES + 1 }, (_, index) =>
+          createTestSessionReviewFile({ path: `file-${index}.ts` }),
+        ),
+      },
+    };
+    const client = new SessionBrokerClient(oversized, createSnapshot(), {
+      reconnectDelayMs: 10,
+      lifecycleClock: clock,
+    });
+    const notices: Array<string | null> = [];
+    client.subscribeConnectionNotice((notice) => notices.push(notice));
+    const messages = captureBrokerWarningsTest();
+    let server: Awaited<ReturnType<typeof serveHunkSessionBrokerDaemon>> | undefined;
+    try {
+      server = await serveHunkSessionBrokerDaemon({ idleTimeoutMs: 0 });
+      await client.start();
+      await waitUntil(
+        "actual file-limit refusal",
+        () => clientTestAccess(client).incumbentWait?.kind === "payload",
+      );
+      const connection = clientTestAccess(client).connection;
+      const refusedNotices = [...notices];
+      for (let deadline = 0; deadline < 3; deadline += 1) {
+        clock.advanceByTest(10);
+        await waitUntil(
+          "health-only poll settlement",
+          () => clock.pendingCountTest() === 1,
+          2_000,
+          1,
+        );
+      }
+      expect(notices).toEqual(refusedNotices);
+      expect(notices.at(-1)).toBe(HUNK_DAEMON_REGISTRATION_REJECTED_MESSAGE);
+      expect(messages).toEqual([]);
+      expect(await createHttpHunkSessionCliClient().listSessions()).toHaveLength(0);
+
+      client.replaceSession(registration, createSnapshot());
+      clock.advanceByTest(10);
+      await waitUntil(
+        "accepted smaller review",
+        async () => (await createHttpHunkSessionCliClient().listSessions()).length === 1,
+        3_000,
+        10,
+      );
+      expect(clientTestAccess(client).connection).toBe(connection);
+      expect(client.getConnectionState()).toEqual({ status: "connected" });
+      expect(messages).toEqual([]);
+    } finally {
+      client.stop();
+      server?.stop(true);
+      if (server) await server.stopped;
+      rmSync(runtimeDir, { recursive: true, force: true });
+    }
+  }, 10_000);
+
+  test("retries a refused review when the healthy daemon fingerprint changes", async () => {
+    const fixture = await createRefusalLifecycleTest(true, true);
+    try {
+      fixture.webSockets.sockets[0]!.emitClose(1008, "Incompatible session registration.");
+      await fixture.clock.advanceByTestAsync(10);
+      await fixture.clock.flushMicrotasksTest(30);
+      expect(fixture.webSockets.sockets).toHaveLength(1);
+      fixture.writeMetadata(200);
+      await fixture.clock.advanceByTestAsync(10);
+      await fixture.clock.flushMicrotasksTest(30);
+      expect(fixture.webSockets.sockets).toHaveLength(2);
+      await fixture.authenticate(1);
+      expect(fixture.client.getConnectionState()).toEqual({ status: "connected" });
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  for (const authority of ["replaceSession", "stop"] as const) {
+    test(`${authority} fences pending payload-refusal health`, async () => {
+      const fixture = await createRefusalLifecycleTest(false, true);
+      const health = createDeferredTest<Response>();
+      const started = createDeferredTest();
+      globalThis.fetch = (async () => {
+        started.resolve();
+        return health.promise;
+      }) as unknown as typeof fetch;
+      try {
+        fixture.webSockets.sockets[0]!.emitClose(1008, "Incompatible session snapshot.");
+        fixture.clock.advanceByTest(10);
+        await settleWithinTestTimeout(started.promise);
+        if (authority === "stop") fixture.client.stop();
+        else fixture.client.replaceSession(fixture.client.getRegistration(), createSnapshot());
+        health.resolve(Response.json({ ok: true }));
+        await fixture.clock.flushMicrotasksTest(40);
+        expect(fixture.webSockets.sockets).toHaveLength(authority === "stop" ? 1 : 2);
+        expect(fixture.messages).toEqual([]);
+        if (authority === "replaceSession")
+          expect(clientTestAccess(fixture.client).incumbentWait).toBeNull();
+        else expect(fixture.clock.pendingCountTest()).toBe(0);
+      } finally {
+        fixture.cleanup();
+      }
+    });
+  }
+
+  test("late unhealthy results cannot clear a newer payload refusal", async () => {
+    const fixture = await createRefusalLifecycleTest(false, true);
+    const health = createDeferredTest<Response>();
+    const started = createDeferredTest();
+    globalThis.fetch = (async () => {
+      started.resolve();
+      return health.promise;
+    }) as unknown as typeof fetch;
+    try {
+      fixture.webSockets.sockets[0]!.emitClose(1008, "Incompatible session registration.");
+      fixture.clock.advanceByTest(10);
+      await settleWithinTestTimeout(started.promise);
+      clientTestAccess(fixture.client).connection!.options!.resolveClose!({
+        code: 1008,
+        reason: "Incompatible session snapshot.",
+        authenticated: true,
+      });
+      const newerWait = clientTestAccess(fixture.client).incumbentWait;
+      health.resolve(new Response("unavailable", { status: 503 }));
+      await fixture.clock.flushMicrotasksTest(40);
+      expect(clientTestAccess(fixture.client).incumbentWait).toBe(newerWait);
+      expect(fixture.webSockets.sockets).toHaveLength(1);
+      expect(fixture.messages).toEqual([]);
+      expect(fixture.clock.pendingCountTest()).toBe(1);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  test("transient closes reconnect, but replacement does not release a later pre-authentication wait", async () => {
+    const fixture = await createRefusalLifecycleTest(false, true);
+    try {
+      fixture.webSockets.sockets[0]!.emitClose(1006);
+      await fixture.clock.advanceByTestAsync(10);
+      expect(fixture.webSockets.sockets).toHaveLength(2);
+      fixture.webSockets.sockets[1]!.emitClose(
+        1008,
+        "Session broker authentication required; upgrade Hunk.",
+      );
+      const wait = clientTestAccess(fixture.client).incumbentWait;
+      fixture.client.replaceSession(fixture.client.getRegistration(), createSnapshot());
+      expect(wait?.kind).toBe("build-skew");
+      expect(clientTestAccess(fixture.client).incumbentWait).toBe(wait);
+      await fixture.clock.advanceByTestAsync(10);
+      await fixture.clock.flushMicrotasksTest(30);
+      expect(fixture.webSockets.sockets).toHaveLength(2);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  test("payload refusal ownership precedes reentrant replacement and stale skew probes", async () => {
+    const clock = new DeterministicLifecycleClockTest();
+    const webSockets = installWebSocketObserverTest();
+    const probe = createDeferredTest<HunkDaemonAdminProbe>();
+    const client = new SessionBrokerClient(createRegistration(), createSnapshot(), {
+      lifecycleClock: clock,
+      probeDaemonStatus: () => probe.promise,
+    });
+    const config = prepareDirectConnectTest(client);
+    client.subscribeConnectionNotice((notice) => {
+      if (notice === HUNK_DAEMON_REGISTRATION_REJECTED_MESSAGE) {
+        expect(clientTestAccess(client).incumbentWait?.kind).toBe("payload");
+        client.replaceSession(client.getRegistration(), createSnapshot());
+      }
+    });
+    try {
+      clientTestAccess(client).connect(config);
+      const resolveClose = clientTestAccess(client).connection!.options!.resolveClose!;
+      resolveClose({
+        code: 1008,
+        reason: "Malformed session broker protocol.",
+        authenticated: false,
+      });
+      resolveClose({
+        code: 1008,
+        reason: "Incompatible session registration.",
+        authenticated: true,
+      });
+      expect(clientTestAccess(client).incumbentWait).toBeNull();
+      // A newer payload refusal can also remain owned while an old skew probe finishes.
+      resolveClose({ code: 1008, reason: "Incompatible session snapshot.", authenticated: true });
+      expect(clientTestAccess(client).incumbentWait?.kind).toBe("payload");
+      probe.resolve(statusProbeTest(HUNK_SESSION_DAEMON_VERSION + 1));
+      await clock.flushMicrotasksTest();
+      expect(client.getConnectionState()).toMatchObject({
+        notice: HUNK_DAEMON_REGISTRATION_REJECTED_MESSAGE,
+      });
+    } finally {
+      client.stop();
+      webSockets.restoreTest();
+    }
+  });
+
+  for (const previousRefusal of [false, true]) {
+    test(`preserves a reentrant replacement refusal with previousRefusal=${previousRefusal}`, () => {
+      const clock = new DeterministicLifecycleClockTest();
+      const webSockets = installWebSocketObserverTest();
+      const client = new SessionBrokerClient(createRegistration(), createSnapshot(), {
+        lifecycleClock: clock,
+      });
+      client.subscribeConnectionNotice(() => {});
+      const config = prepareDirectConnectTest(client);
+      try {
+        clientTestAccess(client).connect(config);
+        const connection = clientTestAccess(client).connection;
+        const resolveClose = connection?.options?.resolveClose;
+        if (!connection || !resolveClose) throw new Error("Expected a live connection.");
+        if (previousRefusal) {
+          resolveClose({
+            code: 1008,
+            reason: "Incompatible session registration.",
+            authenticated: true,
+          });
+        }
+        const previousWait = clientTestAccess(client).incumbentWait;
+        let replacementWait: SessionBrokerClientTestAccess["incumbentWait"] = null;
+        connection.replaceSession = () => {
+          resolveClose({
+            code: 1008,
+            reason: "Incompatible session snapshot.",
+            authenticated: true,
+          });
+          replacementWait = clientTestAccess(client).incumbentWait;
+        };
+        const registration = {
+          ...client.getRegistration(),
+          info: { ...client.getRegistration().info, title: "Replacement review" },
+        };
+        const snapshot = createSnapshot();
+        client.replaceSession(registration, snapshot);
+        expect(client.getRegistration()).toBe(registration);
+        expect(clientTestAccess(client).snapshot).toBe(snapshot);
+        expect(replacementWait).not.toBeNull();
+        expect(replacementWait).not.toBe(previousWait);
+        expect(clientTestAccess(client).incumbentWait).toBe(replacementWait);
+        expect(client.getConnectionState()).toMatchObject({
+          notice: HUNK_DAEMON_REGISTRATION_REJECTED_MESSAGE,
+        });
+      } finally {
+        client.stop();
+        webSockets.restoreTest();
+      }
+    });
+  }
 
   test("keeps its previous registration when the live connection rejects replacement", () => {
     const registration = createRegistration();
@@ -725,8 +1189,8 @@ describe("Hunk session daemon client", () => {
       ).toBe(true);
       await Bun.sleep(60);
       expect(websocketOpens).toBe(2);
-      expect(clientTestAccess(client).waitingForIncumbentExit).toBe(true);
-      expect(clientTestAccess(skewedClient).waitingForIncumbentExit).toBe(true);
+      expect(clientTestAccess(client).incumbentWait?.kind).toBe("build-skew");
+      expect(clientTestAccess(skewedClient).incumbentWait?.kind).toBe("build-skew");
     } finally {
       client.stop();
       skewedClient.stop();
@@ -781,7 +1245,8 @@ describe("Hunk session daemon client", () => {
       host: "127.0.0.1",
       port,
     }).metadataPath;
-    mkdirSync(join(metadataPath, ".."), { recursive: true });
+    // Match the daemon's owner-private namespace; a umask-derived mode fails credential checks.
+    mkdirSync(join(metadataPath, ".."), { recursive: true, mode: 0o700 });
     const writeMetadata = (pid: number) =>
       writeFileSync(
         metadataPath,
@@ -1443,7 +1908,7 @@ describe("Hunk session daemon client", () => {
             1008,
             "Session broker authentication required; upgrade Hunk.",
           );
-          expect(clientTestAccess(client).waitingForIncumbentExit).toBe(true);
+          expect(clientTestAccess(client).incumbentWait?.kind).toBe("build-skew");
           clock.advanceByTest(10);
           await settleWithinTestTimeout(fetchStarted.promise);
 
@@ -1457,7 +1922,7 @@ describe("Hunk session daemon client", () => {
           await clock.flushMicrotasksTest();
           clock.advanceByTest(20);
 
-          expect(clientTestAccess(client).waitingForIncumbentExit).toBe(true);
+          expect(clientTestAccess(client).incumbentWait?.kind).toBe("build-skew");
           expect(messages).toEqual([`[session:broker] ${HUNK_DAEMON_UPGRADE_WAIT_MESSAGE}`]);
           expect(webSockets.sockets).toHaveLength(authority === "stop" ? 1 : 2);
         } finally {
@@ -1487,6 +1952,64 @@ describe("Hunk session daemon client", () => {
     } finally {
       client.stop();
     }
+  });
+
+  test("rejects a first-registration wait with the startup failure, which it then owns", async () => {
+    const messages = captureBrokerWarningsTest();
+    const client = new SessionBrokerClient(createRegistration(), createSnapshot(), {
+      reconnectDelayMs: 10_000,
+    });
+    clientTestAccess(client).ensureDaemonAndConnect = async () => {
+      throw new Error("port held by another process");
+    };
+
+    try {
+      const registered = client.waitForFirstRegistration();
+      await client.start();
+      await expect(registered).rejects.toThrow("port held by another process");
+      // A later caller learns the same first outcome; the console stays quiet for it.
+      await expect(client.waitForFirstRegistration()).rejects.toThrow(
+        "port held by another process",
+      );
+      expect(messages).toEqual([]);
+    } finally {
+      client.stop();
+    }
+  });
+
+  test("rejects a first-registration wait with the refined notice for a different build", async () => {
+    const clock = new DeterministicLifecycleClockTest();
+    const webSockets = installWebSocketObserverTest();
+    const messages = captureBrokerWarningsTest();
+    const client = new SessionBrokerClient(createRegistration(), createSnapshot(), {
+      reconnectDelayMs: 10,
+      lifecycleClock: clock,
+      probeDaemonStatus: async () => statusProbeTest(HUNK_SESSION_DAEMON_VERSION - 1),
+    });
+    const config = prepareDirectConnectTest(client);
+
+    try {
+      const registered = client.waitForFirstRegistration();
+      clientTestAccess(client).connect(config);
+      webSockets.sockets[0]!.emitClose(
+        1008,
+        "Session broker authentication required; upgrade Hunk.",
+      );
+      await clock.flushMicrotasksTest();
+
+      await expect(registered).rejects.toThrow(HUNK_DAEMON_CLIENT_NEWER_MESSAGE);
+      expect(messages).toEqual([]);
+    } finally {
+      client.stop();
+      webSockets.restoreTest();
+    }
+  });
+
+  test("a stopped client rejects its first-registration wait", async () => {
+    const client = new SessionBrokerClient(createRegistration(), createSnapshot());
+    const registered = client.waitForFirstRegistration();
+    client.stop();
+    await expect(registered).rejects.toThrow("stopped");
   });
 
   test("does no daemon work when start follows terminal stop", async () => {

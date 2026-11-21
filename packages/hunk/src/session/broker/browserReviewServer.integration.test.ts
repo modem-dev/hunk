@@ -11,6 +11,7 @@
  * quietly changed one of them fails here.
  */
 import { afterEach, describe, expect, test } from "bun:test";
+import { BrokerCapacityError } from "@hunk/session-broker-core";
 import { reviewProcessCapability } from "../../app/review/capability";
 import { nodeReviewDigest } from "../../core/reviewDigest";
 import { REVIEW_PATCH_CONTENT_TYPE, reviewResourceId } from "../../core/review/resources";
@@ -23,7 +24,7 @@ import {
   parseReviewEventBegin,
   parseReviewEventChunk,
   parseReviewEventEnd,
-  parseReviewEventFrame,
+  parseReviewEventWhole,
   parseReviewEventFrameName,
   ReviewEventAssembler,
   reviewEventId,
@@ -32,8 +33,9 @@ import {
   HUNK_REVIEW_CAPABILITY_HEADER,
   REVIEW_CAPABILITY_TOKEN_LENGTH,
   reviewHttpPath,
-  type HunkReviewHttpRoute,
+  type ReviewHttpRoute,
 } from "../reviewHttpProtocol";
+import { reviewErrorMessage } from "../reviewErrorCatalog";
 import { HUNK_REVIEW_PROTOCOL_VERSION } from "../reviewProtocol";
 import { BrowserReviewServer, type BrowserReviewServerOptions } from "./browserReviewServer";
 
@@ -81,14 +83,14 @@ function capability() {
   return reviewProcessCapability().token;
 }
 
-function url(origin: string, route: HunkReviewHttpRoute) {
+function url(origin: string, route: ReviewHttpRoute) {
   return `${origin}${reviewHttpPath(route)}`;
 }
 
 /** Request one review route with the capability presented the way a client presents it. */
 function request(
   origin: string,
-  route: HunkReviewHttpRoute,
+  route: ReviewHttpRoute,
   init: RequestInit & { token?: string | null } = {},
 ) {
   const { token = capability(), ...rest } = init;
@@ -100,7 +102,7 @@ function request(
 }
 
 /** The patch resource of the session's first file. */
-function firstPatchRoute(harness: ReturnType<typeof connectReviewSession>): HunkReviewHttpRoute {
+function firstPatchRoute(harness: ReturnType<typeof connectReviewSession>): ReviewHttpRoute {
   const publication = harness.producer.getPublication();
   return {
     kind: "resource",
@@ -327,7 +329,7 @@ describe("browser review surface: resources", () => {
     const response = await request(origin, {
       ...firstPatchRoute(harness),
       resourceId: reviewResourceId({ kind: "patch", fileKey: "file:deadbeef" }),
-    } as HunkReviewHttpRoute);
+    } as ReviewHttpRoute);
 
     expect(response.status).toBe(404);
     expect(await response.json()).toMatchObject({ code: "unknown-resource" });
@@ -505,7 +507,7 @@ describe("browser review surface: actions", () => {
       protocolVersion: HUNK_REVIEW_PROTOCOL_VERSION,
       generation: harness.producer.getPublication().generation,
       actor: ACTOR,
-      action: { type: "selection/select-file", fileKey: "file:deadbeef" },
+      action: { type: "expansion/toggle", fileKey: "file:deadbeef", gapId: "before:0" },
     });
 
     expect(response.status).toBe(404);
@@ -569,6 +571,75 @@ async function readEvents(response: Response, events: number) {
   return frames;
 }
 
+// Finding: `dispatchCommand` throws when the session is gone, a command times out, the queue is
+// full, or the daemon shuts down. Refresh surfaced that as a bare 500 and an action as
+// `control-handler-failed`, neither the failure body every other route answers with.
+describe("browser review surface: session failures that throw", () => {
+  const RAW_DETAIL = "/home/someone/secret-project";
+  const failures: Array<[string, () => Error]> = [
+    [
+      "a disconnected session",
+      () => new Error(`The targeted session is no longer connected. ${RAW_DETAIL}`),
+    ],
+    ["a timed-out command", () => new Error(`Timed out waiting for the session. ${RAW_DETAIL}`)],
+    ["a full command queue", () => new BrokerCapacityError("queue-full", RAW_DETAIL)],
+    ["a daemon shutdown", () => new Error(`Daemon is shutting down. ${RAW_DETAIL}`)],
+  ];
+
+  for (const [name, createError] of failures) {
+    test(`answers a refresh that throws on ${name} with the review failure body`, async () => {
+      const { harness, origin } = start();
+      harness.state.refreshReview = async () => {
+        throw createError();
+      };
+
+      const response = await request(
+        origin,
+        { kind: "refresh", sessionId: SESSION_ID },
+        { method: "POST" },
+      );
+
+      expect(response.status).toBe(502);
+      expect(await response.json()).toEqual({
+        ok: false,
+        code: "refresh-failed",
+        message: reviewErrorMessage("refresh-failed"),
+      });
+    });
+
+    test(`answers an action that throws on ${name} with the review failure body`, async () => {
+      const { harness, origin } = start();
+      harness.state.applyReviewAction = async () => {
+        throw createError();
+      };
+
+      const response = await request(
+        origin,
+        { kind: "actions", sessionId: SESSION_ID },
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            protocolVersion: HUNK_REVIEW_PROTOCOL_VERSION,
+            generation: harness.producer.getPublication().generation,
+            actor: ACTOR,
+            action: { type: "filter/set", filter: "alpha" },
+          }),
+        },
+      );
+
+      expect(response.status).toBe(502);
+      const text = await response.text();
+      expect(JSON.parse(text)).toEqual({
+        ok: false,
+        code: "resource-unavailable",
+        message: reviewErrorMessage("resource-unavailable"),
+      });
+      expect(text).not.toContain(RAW_DETAIL);
+    });
+  }
+});
+
 describe("browser review surface: events", () => {
   test("opens with the publication the review is at", async () => {
     const { harness, origin } = start();
@@ -580,7 +651,7 @@ describe("browser review surface: events", () => {
     expect(response.headers.get("content-type")).toBe("text/event-stream; charset=utf-8");
     expect(frame!.event).toBe("publication");
     expect(frame!.id).toBe(reviewEventId("publication", address));
-    expect(parseReviewEventFrame(frame!.data)?.payload).toMatchObject({
+    expect(parseReviewEventWhole(frame!.data)?.payload).toMatchObject({
       sessionId: SESSION_ID,
       publication: address,
     });
@@ -596,8 +667,8 @@ describe("browser review surface: events", () => {
     const frames = await pending;
 
     expect(frames.map((frame) => frame.event)).toEqual(["publication", "publication"]);
-    expect(parseReviewEventFrame(frames[1]!.data)?.stateRevision).toBeGreaterThan(
-      parseReviewEventFrame(frames[0]!.data)!.stateRevision,
+    expect(parseReviewEventWhole(frames[1]!.data)?.stateRevision).toBeGreaterThan(
+      parseReviewEventWhole(frames[0]!.data)!.stateRevision,
     );
   });
 

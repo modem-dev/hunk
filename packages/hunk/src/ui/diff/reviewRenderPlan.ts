@@ -1,6 +1,6 @@
 import { DEFAULT_HUNK_GAP } from "../../core/run/reviewGap";
 import { reviewNoteAnchorLine, reviewNoteOwnerHunkIndex } from "../../core/review/state";
-import type { ReviewRangeAnchorV1 } from "../../core/review/types";
+import type { ReviewRangeAnchor } from "../../core/review/types";
 import type { UserNoteLineTarget } from "../../core/liveComments";
 import type { AgentAnnotation } from "../../extension-api/types";
 import type { VisibleAgentNote } from "../lib/agentAnnotations";
@@ -279,7 +279,7 @@ function rowLineNumber(row: DiffLineRow, side: "old" | "new") {
 }
 
 /** Check whether one rendered diff row falls inside the note's range on either side. */
-function rowOverlapsNoteRange(row: DiffLineRow, anchor: ReviewRangeAnchorV1) {
+function rowOverlapsNoteRange(row: DiffLineRow, anchor: ReviewRangeAnchor) {
   for (const side of ["old", "new"] as const) {
     const range = side === "old" ? anchor.oldRange : anchor.newRange;
     const lineNumber = rowLineNumber(row, side);
@@ -507,7 +507,8 @@ export function buildReviewRenderPlan({
 
       plannedRows.push({
         kind: "inline-note",
-        key: `inline-note:${placement.note.id}:${row.key}:${placement.noteIndex}`,
+        // Omit the sibling index so a live reply inserted ahead of an open draft keeps it mounted.
+        key: `inline-note:${placement.note.id}:${row.key}`,
         stableKey: inlineNoteStableKey(placement.note.id),
         fileId,
         hunkIndex: placement.hunkIndex,

@@ -138,12 +138,64 @@ describe("measureDiffSectionGeometry", () => {
     );
 
     expect(second).toBe(first);
-    expect(differentWidth).not.toBe(first);
+    expect(differentWidth).toBe(first);
     expect(differentAddNotePolicy).not.toBe(first);
     expect(differentTabWidth).not.toBe(first);
     expect(differentHunkGap).not.toBe(first);
     expect(differentHunkGap.bodyHeight).toBeGreaterThan(first.bodyHeight);
   });
+
+  for (const layout of ["split", "unified"] as const) {
+    test(`${layout} reuses nowrap geometry across zero, tiny, and normal widths with fresh-measurement parity`, () => {
+      const before = Array.from({ length: 100 }, (_, index) => `\tline ${index + 1}\n`).join("");
+      const after = before
+        .replace("line 5\n", "line 5 modified\n")
+        .replace("line 75\n", "line 75 modified\n");
+      const file = createTestDiffFile({ before, after, id: "resize", path: "resize.txt" });
+      const expandedKeys = new Set(["trailing:1"]);
+      const sourceStatus = { kind: "loaded", text: after } as const;
+
+      for (const showHeaders of [false, true]) {
+        /** Measure the same expanded row stream under one fixed rendering policy. */
+        const measure = (input: typeof file, width: number) =>
+          measureDiffSectionGeometry(
+            input,
+            layout,
+            showHeaders,
+            theme,
+            [],
+            width,
+            showHeaders,
+            false,
+            expandedKeys,
+            sourceStatus,
+            !showHeaders,
+            showHeaders ? 4 : 8,
+            2,
+          );
+        const first = measure(file, 0);
+        const lazyGetter = Object.getOwnPropertyDescriptor(first, "plannedRows")?.get;
+        expect(lazyGetter).toBeFunction();
+        expect(first.hunkBounds.size).toBe(2);
+        expect(first.rowBounds.some((row) => row.expandedGapKey)).toBe(true);
+
+        for (const width of [1, 2, 9, 32, 160, 240, 200, 0, 160]) {
+          const reused = measure(file, width);
+          expect(reused).toBe(first);
+          // A fresh file identity prevents cache reuse from masking width-dependent content.
+          const fresh = measure({ ...file }, width);
+          expect(reused).toEqual(fresh);
+          expect(reused.plannedRows.map((row) => row.key)).toEqual(
+            reused.rowBounds.map((row) => row.key),
+          );
+          for (const bounds of reused.rowBounds) {
+            expect(reused.rowBoundsByKey.get(bounds.key)).toBe(bounds);
+            expect(reused.rowBoundsByStableKey.get(bounds.stableKey)).toBe(bounds);
+          }
+        }
+      }
+    });
+  }
 
   test("caches planned rows after the lazy geometry property is first read", () => {
     const geometry = measureDiffSectionGeometry(
@@ -206,7 +258,7 @@ describe("measureDiffSectionGeometry", () => {
     );
   });
 
-  test("replaces stale width variants while retaining separate base and note slots", () => {
+  test("reuses the nowrap base while replacing only the bounded note width slot", () => {
     const file = createTestDiffFile();
     const visibleAgentNotes: VisibleAgentNote[] = [
       createVisibleAgentNote(file.metadata.hunks, {
@@ -214,7 +266,7 @@ describe("measureDiffSectionGeometry", () => {
         annotation: {
           newRange: [1, 1],
           rationale: "Keep a note-aware geometry slot.",
-          summary: "Explain",
+          summary: "Explain this change with a long inline note. ".repeat(20),
         },
       }),
     ];
@@ -232,13 +284,24 @@ describe("measureDiffSectionGeometry", () => {
     );
     const width101 = measureDiffSectionGeometry(file, "split", true, theme, [], 101, true, false);
 
-    expect(width101).not.toBe(width100);
-    expect(measureDiffSectionGeometry(file, "split", true, theme, [], 100, true, false)).not.toBe(
-      width100,
+    expect(width101).toBe(width100);
+    expect(measureDiffSectionGeometry(file, "split", true, theme, visibleAgentNotes, 100)).toBe(
+      noteWidth100,
     );
-    expect(
-      measureDiffSectionGeometry(file, "split", true, theme, visibleAgentNotes, 100, true, false),
-    ).toBe(noteWidth100);
+    const noteWidth200 = measureDiffSectionGeometry(
+      file,
+      "split",
+      true,
+      theme,
+      visibleAgentNotes,
+      200,
+    );
+    expect(noteWidth200).not.toBe(noteWidth100);
+    expect(noteWidth200.bodyHeight).toBeLessThan(noteWidth100.bodyHeight);
+    expect(measureDiffSectionGeometry(file, "split", true, theme, [], 200)).toBe(width100);
+    expect(measureDiffSectionGeometry(file, "split", true, theme, visibleAgentNotes, 100)).not.toBe(
+      noteWidth100,
+    );
   });
 
   test("accounts for visible inline notes without moving the hunk anchor", () => {
@@ -348,6 +411,84 @@ describe("measureDiffSectionGeometry", () => {
     expect(wrappedGeometry.hunkBounds.get(0)?.height).toBeGreaterThan(
       nowrapGeometry.hunkBounds.get(0)?.height ?? 0,
     );
+  });
+
+  for (const layout of ["split", "unified"] as const) {
+    test(`${layout} replaces bounded wrapped width variants and preserves wrap/layout invalidation`, () => {
+      const file = createTestDiffFile({
+        before: "old\n",
+        after: `${"long code ".repeat(40)}\n`,
+        id: "width-sensitive",
+        path: "long.txt",
+      });
+      const narrow = measureDiffSectionGeometry(file, layout, true, theme, [], 32, true, true);
+      const wide = measureDiffSectionGeometry(file, layout, true, theme, [], 200, true, true);
+      expect(wide).not.toBe(narrow);
+      expect(wide.bodyHeight).toBeLessThan(narrow.bodyHeight);
+      expect(measureDiffSectionGeometry(file, layout, true, theme, [], 200, true, true)).toBe(wide);
+      expect(measureDiffSectionGeometry(file, layout, true, theme, [], 32, true, true)).not.toBe(
+        narrow,
+      );
+      const nowrap = measureDiffSectionGeometry(file, layout, true, theme, [], 32);
+      expect(nowrap).not.toBe(narrow);
+      expect(nowrap.bodyHeight).toBeLessThan(narrow.bodyHeight);
+      expect(
+        measureDiffSectionGeometry(
+          file,
+          layout === "split" ? "unified" : "split",
+          true,
+          theme,
+          [],
+          32,
+        ),
+      ).not.toBe(nowrap);
+    });
+  }
+
+  test("nowrap expanded geometry invalidates source status and same-length source edits", () => {
+    const before = Array.from({ length: 30 }, (_, index) => `line ${index + 1}\n`).join("");
+    const after = before.replace("line 5\n", "line 5 modified\n");
+    const file = createTestDiffFile({ before, after, id: "source", path: "source.txt" });
+    const expandedKeys = new Set(["trailing:0"]);
+    const statuses = [
+      undefined,
+      { kind: "loading" },
+      { kind: "error" },
+      { kind: "loaded", text: after },
+      { kind: "loaded", text: after.replace("line 20", "edit 20") },
+    ] as const;
+    let previous = measureDiffSectionGeometry(file, "split", true, theme, [], 100);
+    for (const status of statuses) {
+      const geometry = measureDiffSectionGeometry(
+        file,
+        "split",
+        true,
+        theme,
+        [],
+        120,
+        true,
+        false,
+        expandedKeys,
+        status,
+      );
+      expect(geometry).not.toBe(previous);
+      expect(geometry).toEqual(
+        measureDiffSectionGeometry(
+          { ...file },
+          "split",
+          true,
+          theme,
+          [],
+          1,
+          true,
+          false,
+          expandedKeys,
+          status,
+        ),
+      );
+      previous = geometry;
+    }
+    expect(JSON.stringify(previous.plannedRows)).toContain("edit 20");
   });
 
   test("returns a one-row placeholder for files with no visible hunks", () => {

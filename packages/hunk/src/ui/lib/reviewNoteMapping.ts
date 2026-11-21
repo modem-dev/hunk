@@ -13,7 +13,6 @@
 import type { LiveComment } from "../../core/liveComments";
 import { reviewLineAnchor } from "../../core/review/anchors";
 import type { ReviewAnnotationTarget } from "../../core/review/annotations";
-import type { ReviewHunkSpan } from "../../core/review/geometry";
 import {
   isRenderableStoredReviewNote,
   reviewNoteAnchorLine,
@@ -22,10 +21,12 @@ import {
   type ReviewStoredNote,
 } from "../../core/review/state";
 import type { ReviewThreadedStoredNote } from "../../core/review/selectors";
-import type { ReviewNoteV1 } from "../../core/review/types";
+import type { ReviewNote } from "../../core/review/types";
 import type { DiffFile } from "../../core/changeset/model";
 import type { AgentAnnotation } from "../../extension-api/types";
-import { reviewNoteSource } from "./agentAnnotations";
+
+// Ingestion is semantic and lives with the live-comment model; re-exported for existing importers.
+export { liveCommentToStoredNote } from "../../core/liveComments";
 
 /** One reviewer-authored note as the terminal review stream renders it. */
 export interface StoredReviewNoteRenderMetadata {
@@ -105,7 +106,7 @@ export interface DraftReviewNote {
 }
 
 /** Carry the annotation fields both note models share, in the terminal's shape. */
-function annotationFields(note: ReviewNoteV1) {
+function annotationFields(note: ReviewNote) {
   return {
     oldRange: note.anchor.oldRange ? ([...note.anchor.oldRange] as [number, number]) : undefined,
     newRange: note.anchor.newRange ? ([...note.anchor.newRange] as [number, number]) : undefined,
@@ -118,39 +119,9 @@ function annotationFields(note: ReviewNoteV1) {
   };
 }
 
-/** Store one agent-authored live comment as a semantic review note. */
-export function liveCommentToStoredNote(
-  comment: LiveComment,
-  fileKey: string,
-  hunks: readonly ReviewHunkSpan[],
-  replyParent?: ReviewStoredNote,
-): ReviewStoredNote {
-  return {
-    note: {
-      id: comment.id,
-      ...(replyParent ? { parentId: replyParent.note.id } : {}),
-      source: reviewNoteSource(comment),
-      originalSource: comment.source,
-      fileKey,
-      anchor: replyParent ? replyParent.note.anchor : reviewLineAnchor(hunks, comment),
-      summary: comment.summary,
-      rationale: comment.rationale,
-      markup: comment.markup,
-      title: comment.title,
-      author: comment.author,
-      createdAt: comment.createdAt,
-      updatedAt: comment.updatedAt,
-      editable: false,
-      tags: comment.tags,
-      confidence: comment.confidence,
-    },
-    resolution: replyParent?.resolution ?? "active",
-  };
-}
-
 /** Render one semantic note back as the live comment the terminal review stream draws. */
 export function storedNoteToLiveComment(
-  note: ReviewNoteV1,
+  note: ReviewNote,
   filePath: string,
   threadDepth = 0,
   hasReplies = false,
@@ -179,7 +150,7 @@ export function storedNoteToLiveComment(
 
 /** Render one semantic note back as the reviewer-authored note the terminal shows. */
 export function storedNoteToUserNote(
-  note: ReviewNoteV1,
+  note: ReviewNote,
   filePath: string,
   threadDepth = 0,
   hasReplies = false,
@@ -235,7 +206,7 @@ export function storedDraftToDraftNote(draft: ReviewDraftNote, file: DiffFile): 
 export function groupStoredNotesByFileId<T>(
   entries: readonly ReviewStoredNote[],
   fileByKey: ReadonlyMap<string, DiffFile>,
-  project: (note: ReviewNoteV1, filePath: string) => T,
+  project: (note: ReviewNote, filePath: string) => T,
 ): Record<string, T[]> {
   const result: Record<string, T[]> = {};
   for (const entry of entries) {
@@ -253,7 +224,7 @@ export function groupThreadedStoredNotesByFileId<T>(
   entries: readonly ReviewThreadedStoredNote[],
   fileByKey: ReadonlyMap<string, DiffFile>,
   project: (
-    note: ReviewNoteV1,
+    note: ReviewNote,
     filePath: string,
     depth: number,
     hasReplies: boolean,

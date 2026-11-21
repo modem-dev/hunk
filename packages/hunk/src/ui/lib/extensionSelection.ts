@@ -8,7 +8,11 @@
  * and a sidebar can never disagree about what is selected.
  */
 import { readMetadataHunkCount } from "../../extensions/events";
-import type { ExtensionDiffFile, ExtensionReviewSelection } from "../../extension-api/types";
+import type {
+  ExtensionCanonicalResolvedLayout,
+  ExtensionDiffFile,
+  ExtensionReviewSelection,
+} from "../../extension-api/types";
 import type { LineCursor } from "./lineCursors";
 
 export interface BuildExtensionReviewSelectionOptions {
@@ -20,6 +24,8 @@ export interface BuildExtensionReviewSelectionOptions {
    * conversion pipeline between the host model and everything extensions see.
    */
   files: readonly ExtensionDiffFile[];
+  /** The resolved layout the review is rendering. */
+  layout: ExtensionCanonicalResolvedLayout;
   selectedFileId: string | null;
   selectedHunkIndex: number | null;
   /** The visible current-line cursor, after App applies the cursor-line preference. */
@@ -41,6 +47,7 @@ export interface BuildExtensionReviewSelectionOptions {
  */
 export function buildExtensionReviewSelection({
   files,
+  layout,
   selectedFileId,
   selectedHunkIndex,
   lineCursor = null,
@@ -51,7 +58,7 @@ export function buildExtensionReviewSelection({
       : files.find((candidate) => candidate.id === selectedFileId);
 
   if (!file) {
-    return Object.freeze({ file: null, hunkIndex: null, currentLine: null, files });
+    return Object.freeze({ file: null, hunkIndex: null, currentLine: null, files, layout });
   }
 
   const hunkIndex = resolveHunkIndex(file, selectedHunkIndex);
@@ -60,6 +67,7 @@ export function buildExtensionReviewSelection({
     hunkIndex,
     currentLine: selectedLineCursor(file.id, hunkIndex, lineCursor),
     files,
+    layout,
   });
 }
 

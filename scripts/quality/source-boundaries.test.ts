@@ -49,6 +49,37 @@ const BROWSER_SAFE_SESSION_MODULES: readonly string[] = [
   join(SRC_ROOT, "session", "reviewHttpProtocol.ts"),
   join(SRC_ROOT, "session", "reviewEventProtocol.ts"),
   join(SRC_ROOT, "session", "reviewErrorCatalog.ts"),
+  join(SRC_ROOT, "session", "reviewSharedState.ts"),
+];
+
+// Presentation facts the browser shares with the terminal rather than restating: the
+// layout vocabulary and the `auto` split threshold, and the Pierre highlight options both
+// renderers pass. Each is a leaf with no runtime imports (asserted below), which is the only
+// reason the browser may reach outside the review model for them.
+const WEB_SHARED_PRESENTATION_MODULES: readonly string[] = [
+  join(SRC_ROOT, "core", "run", "commandInputs.ts"),
+  join(SRC_ROOT, "core", "documents", "highlightRenderOptions.ts"),
+];
+
+// The command vocabulary the browser shares with the terminal (audit F1-F3): the catalog of
+// command identities and their semantic lowering, the published chord grammar, and the chord
+// labels. Unlike the presentation leaves above these have runtime imports, so each is held to
+// a closed set instead (asserted below): the review model, the extension contract's chord and
+// type modules, and one another.
+const WEB_SHARED_COMMAND_MODULES: readonly string[] = [
+  join(SRC_ROOT, "core", "run", "commandCatalog.ts"),
+  join(SRC_ROOT, "core", "run", "keyChordLabels.ts"),
+  // The help overlay's sections and wording, shared with the terminal's help dialog.
+  join(SRC_ROOT, "core", "run", "helpSections.ts"),
+  join(SRC_ROOT, "extension-api", "keys.ts"),
+];
+
+// The STML parser the browser renders markup notes with (audit A9), and the text sanitizer it
+// runs every parsed text through. Held to a closed import set like the command modules: the
+// review model and one another.
+const WEB_SHARED_NOTE_MODULES: readonly string[] = [
+  join(SRC_ROOT, "core", "stml", "parse.ts"),
+  join(SRC_ROOT, "lib", "terminalText.ts"),
 ];
 
 /** Return one repo-relative path with forward slashes for stable assertions on every platform. */
@@ -282,6 +313,34 @@ const EXTRACTED_DUPLICATE_SYMBOLS: ReadonlyArray<{
     symbol: "validateDescriptorString",
     finding: "delegated-review-descriptor",
   },
+  { file: "packages/hunk/src/ui/lib/files.ts", symbol: "formatSidebarStat", finding: "E1" },
+  { file: "packages/hunk/src/ui/lib/files.ts", symbol: "sidebarFileName", finding: "E1" },
+  { file: "packages/hunk/src/ui/lib/files.ts", symbol: "sidebarDirectorySegments", finding: "E1" },
+  { file: "packages/hunk/src/ui/lib/files.ts", symbol: "sharedDirectoryDepth", finding: "E1" },
+  { file: "packages/hunk/src/ui/lib/keymap.ts", symbol: "formatKeyChord", finding: "F3" },
+  { file: "packages/hunk/src/ui/lib/keymap.ts", symbol: "formatChordBase", finding: "F3" },
+  { file: "packages/hunk/src/ui/lib/keymap.ts", symbol: "NAMED_CHORD_LABELS", finding: "F3" },
+  {
+    file: "packages/hunk/src/ui/lib/viewportSelection.ts",
+    symbol: "findNearestHunkIndexAtBodyOffset",
+    finding: "B11",
+  },
+  { file: "packages/hunk/src/ui/lib/stml/colors.ts", symbol: "NAMED_COLORS", finding: "A9" },
+  {
+    file: "packages/hunk/src/ui/lib/stml/colors.ts",
+    symbol: "THEME_COLOR_KEY_BY_TOKEN",
+    finding: "A9",
+  },
+  {
+    file: "packages/hunk/src/ui/lib/agentAnnotations.ts",
+    symbol: "formatGithubStyleRange",
+    finding: "note-labels",
+  },
+  {
+    file: "packages/hunk/src/ui/components/panes/AgentInlineNote.tsx",
+    symbol: "shortReviewNoteAge",
+    finding: "note-labels",
+  },
 ];
 
 describe("source architecture boundaries", () => {
@@ -339,6 +398,49 @@ describe("source architecture boundaries", () => {
   });
 });
 
+// Feedback reaches Modem only after the person confirms one submission. These checks keep the
+// endpoint and token in the one module that is loaded after confirmation, so no other code path
+// can learn them, let alone make an earlier request.
+const FEEDBACK_SEND_PATH = join(CORE_ROOT, "feedback", "send.ts");
+
+/** Return production files under the Hunk source tree whose text matches one pattern. */
+function sourceFilesMatching(pattern: RegExp) {
+  return sourceFiles(SRC_ROOT).filter((path) => pattern.test(readFileSync(path, "utf8")));
+}
+
+describe("feedback consent boundary", () => {
+  test("keeps the feedback endpoint URL and token in the send module", () => {
+    expect(sourceFilesMatching(/https:\/\/ingest\.modem\.dev/).map(repoPath)).toEqual([
+      repoPath(FEEDBACK_SEND_PATH),
+    ]);
+    expect(
+      sourceFilesMatching(/["'`]feedback_[0-9a-f]/)
+        .filter((path) => path !== FEEDBACK_SEND_PATH)
+        .map(repoPath),
+    ).toEqual([]);
+  });
+
+  test("names the Modem ingest host only in the send module", () => {
+    expect(sourceFilesMatching(/ingest\.modem\.dev/).map(repoPath)).toEqual([
+      repoPath(FEEDBACK_SEND_PATH),
+    ]);
+  });
+
+  test("loads the send module only through a dynamic import", () => {
+    const staticImports = sourceFiles(SRC_ROOT).flatMap((path) => {
+      const source = readFileSync(path, "utf8");
+      return [
+        ...source.matchAll(
+          /(?:^|\n)\s*(import|export)\s+(type\s+)?[^;]*?\bfrom\s*["']([^"']+)["']/g,
+        ),
+      ]
+        .filter((match) => !match[2] && resolveImport(path, match[3]!) === FEEDBACK_SEND_PATH)
+        .map(() => repoPath(path));
+    });
+    expect(staticImports).toEqual([]);
+  });
+});
+
 // The seam contract for sharing the review experience with a browser surface: the semantic
 // review model and its wire protocol are the primitives every consumer (terminal UI, session
 // runtime, browser client) builds on, so they must stay renderer-free and platform-neutral.
@@ -370,6 +472,10 @@ describe("shared review primitives seam", () => {
     "@pierre/trees",
     "@pierre/trees/react",
     "@hunk/session-broker-core",
+    // The shared reconnect scheduler and supersede queue (audit C5, C3). Its own entry point
+    // because the package barrel also re-exports Node-only modules; the module imports
+    // nothing, which the test below asserts.
+    "@hunk/session-broker-core/lifecycle",
   ]);
 
   /** Collect every module transitively reachable from the given files via value imports. */
@@ -446,14 +552,63 @@ describe("shared review primitives seam", () => {
         WEB_CLIENT_ROOT,
         REVIEW_MODEL_ROOT,
         ...BROWSER_SAFE_SESSION_MODULES,
+        ...WEB_SHARED_PRESENTATION_MODULES,
+        ...WEB_SHARED_COMMAND_MODULES,
+        join(SRC_ROOT, "core", "stml", "parse.ts"),
+        // The import-free extension contract, for the structural key event chords match.
+        EXTENSION_API_TYPES_PATH,
       ]),
     ).toEqual([]);
+  });
+
+  test("keeps the browser's STML parser on a closed import set", () => {
+    const violations = WEB_SHARED_NOTE_MODULES.flatMap((path) =>
+      importSpecifiers(path).flatMap((specifier) => {
+        const target = resolveImport(path, specifier);
+        const allowed =
+          target &&
+          (isWithin(REVIEW_MODEL_ROOT, target) ||
+            WEB_SHARED_NOTE_MODULES.some((module) => isWithin(module, target)));
+        return allowed ? [] : [`${repoPath(path)} -> ${specifier}`];
+      }),
+    );
+    expect(violations).toEqual([]);
+  });
+
+  test("keeps the browser's shared command modules on a closed import set", () => {
+    const violations = WEB_SHARED_COMMAND_MODULES.flatMap((path) =>
+      importSpecifiers(path).flatMap((specifier) => {
+        // The published contract spells its own imports with `.js` for declaration emission.
+        const target = resolveImport(path, specifier.replace(/\.js$/, ""));
+        const allowed =
+          target &&
+          (isWithin(REVIEW_MODEL_ROOT, target) ||
+            isWithin(EXTENSION_API_TYPES_PATH, target) ||
+            WEB_SHARED_COMMAND_MODULES.some((module) => isWithin(module, target)));
+        return allowed ? [] : [`${repoPath(path)} -> ${specifier}`];
+      }),
+    );
+    expect(violations).toEqual([]);
+  });
+
+  // The shared presentation leaves the browser imports beside the review model stay leaves:
+  // type-only imports at most, so they can never carry a renderer or platform in.
+  test("keeps the browser's shared presentation modules import-free at runtime", () => {
+    const valueImports = WEB_SHARED_PRESENTATION_MODULES.flatMap((path) =>
+      valueImportSpecifiers(path).map((specifier) => `${repoPath(path)} -> ${specifier}`),
+    );
+    expect(valueImports).toEqual([]);
   });
 
   // Direct-import checks alone would let the browser reach a Node-only module through an
   // intermediate re-export; walk the whole relative-import closure instead. This is what makes
   // the node-debt map's "a browser bundle must never import these until repaid" clause
   // mechanical rather than aspirational.
+  test("keeps the browser's broker-core lifecycle entry import-free", () => {
+    const lifecycle = join(REPO_ROOT, "packages", "session-broker-core", "src", "lifecycle.ts");
+    expect(importSpecifiers(lifecycle)).toEqual([]);
+  });
+
   test("keeps the browser-reachable module closure free of platform runtimes", () => {
     const roots = [...sourceFiles(WEB_CLIENT_ROOT), ...BROWSER_SAFE_SESSION_MODULES];
     const violations = [...reachableSourceFiles(roots)].flatMap((path) =>

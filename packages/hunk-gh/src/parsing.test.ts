@@ -35,10 +35,64 @@ describe("GitHub PR invocation parsing", () => {
       number: "123",
     });
     expect(parseGitHubPullRequestLocator("https://github.com/modem-dev/hunk/pull/123")).toEqual({
+      host: "github.com",
       owner: "modem-dev",
       repo: "hunk",
       number: "123",
     });
+  });
+
+  test("accepts GitHub Enterprise Cloud URLs and host-qualified repositories", () => {
+    expect(parseGitHubPullRequestLocator("https://Acme.GHE.com/acme/app/pull/370")).toEqual({
+      host: "acme.ghe.com",
+      owner: "acme",
+      repo: "app",
+      number: "370",
+    });
+    expect(parseGitHubRepository("acme.ghe.com/acme/app")).toEqual({
+      host: "acme.ghe.com",
+      owner: "acme",
+      repo: "app",
+    });
+    expect(parseGitHubRepository("github.com/modem-dev/hunk")).toEqual({
+      host: "github.com",
+      owner: "modem-dev",
+      repo: "hunk",
+    });
+    expect(parseGitHubPrInvocation(["370", "--repo", "acme.ghe.com/acme/app"])).toMatchObject({
+      locator: { number: "370" },
+      explicitRepository: "acme.ghe.com/acme/app",
+    });
+  });
+
+  test("rejects hosts that are not github.com or a single-label ghe.com tenant", () => {
+    for (const repository of [
+      "gitlab.com/owner/repo",
+      "ghe.com/owner/repo",
+      "api.acme.ghe.com/owner/repo",
+      "acme.ghe.com.evil.com/owner/repo",
+      "-acme.ghe.com/owner/repo",
+      "github.example.com/owner/repo",
+    ]) {
+      expect(() => parseGitHubRepository(repository)).toThrow("Unsupported GitHub host");
+    }
+    for (const locator of [
+      "https://ghe.com/owner/repo/pull/1",
+      "https://api.acme.ghe.com/owner/repo/pull/1",
+      "https://a.b.ghe.com/owner/repo/pull/1",
+      "https://acme.ghe.com.evil.com/owner/repo/pull/1",
+      "https://evil.com/acme.ghe.com/owner/repo/pull/1",
+      "https://acme.ghe.com./owner/repo/pull/1",
+      "https://acme.ghe.com:8443/owner/repo/pull/1",
+      "https://user@acme.ghe.com/owner/repo/pull/1",
+      "http://acme.ghe.com/owner/repo/pull/1",
+      "https://github.example.com/owner/repo/pull/1",
+    ]) {
+      expect(() => parseGitHubPullRequestLocator(locator)).toThrow();
+    }
+    expect(() =>
+      parseGitHubPrInvocation(["https://acme.ghe.com/acme/app/pull/1", "--repo", "acme/app"]),
+    ).toThrow("Do not combine --repo");
   });
 
   test("keeps tokens after the separator for delegated patch options", () => {
@@ -159,8 +213,15 @@ describe("GitHub commit invocation parsing", () => {
       sha: "abcdef1",
     });
     expect(parseGitHubCommitLocator("https://github.com/modem-dev/hunk/commit/ABCDEF1")).toEqual({
+      host: "github.com",
       owner: "modem-dev",
       repo: "hunk",
+      sha: "abcdef1",
+    });
+    expect(parseGitHubCommitLocator("https://acme.ghe.com/acme/app/commit/ABCDEF1")).toEqual({
+      host: "acme.ghe.com",
+      owner: "acme",
+      repo: "app",
       sha: "abcdef1",
     });
     expect(parseGitHubCommitInvocation(["--help"])).toMatchObject({ help: true });
@@ -204,6 +265,11 @@ describe("GitHub commit invocation parsing", () => {
       "https://github.com/owner%2Frepo/name/commit/abcdef1",
       "owner/repo@abc\u0007def1",
       "https://github.com/owner/repo/commit/abc\u007fdef1",
+      "https://api.acme.ghe.com/owner/repo/commit/abcdef1",
+      "https://acme.ghe.com.evil.com/owner/repo/commit/abcdef1",
+      "https://acme.ghe.com:443/owner/repo/commit/abcdef1",
+      "https://acme.ghe.com/owner/other/../repo/commit/abcdef1",
+      "https://acme.ghe.com/owner/other/%2e%2e/repo/commit/abcdef1",
     ]) {
       expect(() => parseGitHubCommitLocator(locator)).toThrow();
     }

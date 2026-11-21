@@ -110,6 +110,8 @@ You can also build the named package explicitly:
 nix build .#hunk
 ```
 
+The package compiles Hunk with `scripts/build/build-bin.ts`, the same script that produces the npm and GitHub release binaries, so the Nix binary carries the same entrypoints and runtime policy. On x86_64 that script targets Bun's `-baseline` runtime (no AVX2 requirement); `nix/package.nix` fetches that flavor of the pinned Bun release and passes it as `--runtime-executable` so the sandboxed build never downloads a runtime. When bumping `packageManager`, update every archive hash in `nix/package.nix`.
+
 ## Maintainer dependency updates
 
 When JavaScript or Bun dependencies change, regenerate the Nix dependency lockfile and commit it with the dependency change:

@@ -277,6 +277,55 @@ describe("extension sidebar views", () => {
     });
   });
 
+  test("a legacy sidebar view can mutate its own files array", async () => {
+    const repo = createTestRepo("hunk-ext-sidebar-legacy-files-");
+    const extPath = join(createTempDir("hunk-ext-sidebar-legacy-files-ext-"), "ext.ts");
+    // The deprecated contract declares `files` as a mutable array, so a legacy
+    // view may sort or extend it in place. That must neither throw nor leak
+    // into the readonly projection modern panes receive.
+    writeFileSync(
+      extPath,
+      `import { createElement } from "react";\n` +
+        `export default function (hunk) {\n` +
+        `  hunk.registerSidebarView({\n` +
+        `    id: "legacy",\n` +
+        `    defaultOpen: true,\n` +
+        `    component: (props) => {\n` +
+        `      const files = props.files;\n` +
+        `      files.sort((a, b) => b.path.localeCompare(a.path));\n` +
+        `      files.push(files[0]);\n` +
+        `      return createElement("text", {\n` +
+        `        content: "LEGACY n=" + files.length + " " + files[0].path,\n` +
+        `      });\n` +
+        `    },\n` +
+        `  });\n` +
+        `  hunk.registerPane({\n` +
+        `    id: "modern",\n` +
+        `    placement: "right",\n` +
+        `    defaultOpen: true,\n` +
+        `    component: (props) => createElement("text", {\n` +
+        `      content: "MODERN " + Object.isFrozen(props.files) + " n=" + props.files.length +\n` +
+        `        " " + props.files[0].path,\n` +
+        `    }),\n` +
+        `  });\n` +
+        `}\n`,
+    );
+
+    const bootstrap = await launchWithExtension(repo, extPath);
+    await withAppHost(bootstrap, async (setup) => {
+      await flushUntil(
+        setup,
+        () => {
+          const frame = setup.captureCharFrame();
+          return (
+            frame.includes("LEGACY n=3 beta.txt") && frame.includes("MODERN true n=2 alpha.txt")
+          );
+        },
+        "the legacy sidebar to mutate a copy while the modern pane keeps the host projection",
+      );
+    });
+  });
+
   test("a command handler sees the current review selection", async () => {
     const repo = createTestRepo("hunk-ext-selection-");
     // Outside the repo, so the fixture and its log never join the review as

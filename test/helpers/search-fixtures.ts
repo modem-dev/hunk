@@ -44,3 +44,24 @@ export const searchTestBeta = createTestSearchFile(
   "src/beta.ts",
   ["@@ -1,2 +1,2 @@", " context", "+readConfig();"].join("\n"),
 );
+
+/** A context line, then two deletions and two additions; several occurrences share a line. */
+export const searchTestBlock = createTestSearchFile(
+  "file-block",
+  "src/block.ts",
+  [
+    "@@ -1,3 +1,3 @@",
+    " ctx foo",
+    "-old foo one",
+    "-old foo two",
+    "+new foo one",
+    "+new foo two foo",
+  ].join("\n"),
+);
+
+/** One Pierre change group whose deletions and additions are interleaved. */
+export const searchTestInterleaved = createTestSearchFile(
+  "file-interleaved",
+  "src/interleaved.ts",
+  ["@@ -1,2 +1,2 @@", "-a foo", "+b foo", "-c foo", "+d foo"].join("\n"),
+);

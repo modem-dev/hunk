@@ -392,7 +392,7 @@ describe("PTY notes", () => {
     });
   }
 
-  test("saved notes are visibly active and keyboard-navigable without hover", async () => {
+  test("saved notes remain active and keyboard-navigable after live resizes without hover", async () => {
     const fixture = harness.createLongWrapFilePair();
     const session = await harness.launchHunk({
       args: ["diff", "--files", fixture.before, fixture.after, "--mode", "unified"],
@@ -414,6 +414,14 @@ describe("PTY notes", () => {
           text.includes("First keyboard note."),
       );
 
+      // The saved note stays selected, and `c` would stack the next note on its line. Step down
+      // to the added row first so the two notes sit on different rows.
+      await harness.pressAndWaitForSnapshot(
+        session,
+        "down",
+        (text) => !text.includes("● Your note"),
+        5_000,
+      );
       await harness.pressAndWaitForText(session, "c", /Draft note/, { timeout: 5_000 });
       await session.type("Second keyboard note.");
       const savedActive = await harness.pressAndWaitForSnapshot(
@@ -426,6 +434,17 @@ describe("PTY notes", () => {
       expect(savedActive).toContain("R reply");
       expect(savedActive).toContain("E edit");
       expect(savedActive).toContain("D delete");
+
+      const noteBorderEnd = savedActive
+        .split("\n")
+        .find((line) => line.includes("● Your note"))!.length;
+      for (const cols of [80, 120, 100]) {
+        session.resize({ cols, rows: 30 });
+        await harness.waitForSnapshot(session, (text) => {
+          const border = text.split("\n").find((line) => line.includes("● Your note"));
+          return border?.length === noteBorderEnd + cols - 100;
+        });
+      }
 
       await session.press("k");
       const firstActive = await harness.pressAndWaitForSnapshot(
@@ -539,6 +558,52 @@ describe("PTY notes", () => {
         (text) =>
           lineIndexOf(text, "First note-only stop.") - lineIndexOf(text, "● Your note") === 2,
         5_000,
+      );
+    } finally {
+      session.close();
+    }
+  });
+
+  test("starting a note from a selected note card drafts on that note's line", async () => {
+    const fixture = harness.createSpreadHunkFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "unified"],
+      cols: 120,
+      rows: 40,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+
+      // Step the current line from the top of the hunk down to the added row R27.
+      await session.waitIdle({ timeout: 500 });
+      await pressKeyRepeat(session, "down", 13);
+      await harness.pressAndWaitForText(session, "c", /Draft note - before\.ts -> after\.ts R27/, {
+        timeout: 5_000,
+      });
+      await session.type("Saved on R27.");
+      await harness.pressAndWaitForSnapshot(
+        session,
+        ["ctrl", "s"],
+        (text) => !text.includes("Draft note") && text.includes("Saved on R27."),
+        5_000,
+      );
+
+      // Move onto the saved note card, so it owns the selection instead of a code line.
+      let selected = await session.text({ immediate: true });
+      for (let step = 0; step < 5 && !selected.includes("● Your note"); step += 1) {
+        await session.press("down");
+        await session.waitIdle({ timeout: 50 });
+        selected = await session.text({ immediate: true });
+      }
+      expect(selected).toContain("● Your note");
+
+      const withDraft = await harness.pressAndWaitForText(session, "c", /Draft note/, {
+        timeout: 5_000,
+      });
+      expect(withDraft).toMatch(/Draft note - before\.ts -> after\.ts R27/);
+      expect(lineIndexOf(withDraft, "Draft note")).toBeGreaterThan(
+        lineIndexOf(withDraft, "Saved on R27."),
       );
     } finally {
       session.close();

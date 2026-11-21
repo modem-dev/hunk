@@ -12,7 +12,7 @@ import {
   renderDiffWithHighlighter,
   renderFileWithHighlighter,
 } from "@pierre/diffs";
-import { pierreHighlightRenderOptions } from "../highlightRenderOptions";
+import { pierreHighlightRenderOptions } from "../../../core/documents/highlightRenderOptions";
 import { aliasContextHighlightLines } from "./highlightContext";
 import {
   cloneCompactHighlightedDiff,

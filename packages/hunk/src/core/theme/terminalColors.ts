@@ -1,12 +1,12 @@
-/** Id of the built-in theme drawn from the terminal's own colors, and Hunk's default theme. */
+/** Id of the opt-in built-in theme drawn from the terminal's own colors. */
 export const TERMINAL_THEME_ID = "terminal";
 
 /**
- * Return whether a requested theme id depends on what the terminal looks like: the default
- * (no id), the terminal-colors theme itself, and `auto` light/dark selection.
+ * Return whether a requested theme id depends on what the terminal looks like:
+ * the terminal-colors theme itself and `auto` light/dark selection.
  */
 export function themeFollowsTerminal(themeId: string | undefined) {
-  return themeId === undefined || themeId === TERMINAL_THEME_ID || themeId === "auto";
+  return themeId === TERMINAL_THEME_ID || themeId === "auto";
 }
 
 /**

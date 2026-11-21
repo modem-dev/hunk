@@ -164,7 +164,16 @@ async function expectOnlyPaletteB(session: Session, needles: { keyword: string; 
 async function launchTestDiffSession(terminal: ReturnType<typeof createTestTerminalResponder>) {
   const fixture = harness.createAgentFilePair();
   const session = await harness.launchHunk({
-    args: ["diff", "--files", fixture.before, fixture.after, "--mode", "unified"],
+    args: [
+      "diff",
+      "--files",
+      fixture.before,
+      fixture.after,
+      "--mode",
+      "unified",
+      "--theme",
+      "terminal",
+    ],
     cwd: fixture.dir,
     cols: 100,
     rows: 24,
@@ -179,6 +188,29 @@ async function launchTestDiffSession(terminal: ReturnType<typeof createTestTermi
 const DIFF_NEEDLES = { keyword: "export", text: "answer" };
 
 describe("PTY terminal theme", () => {
+  test("uses GitHub Dark Default without an explicit theme even on a light terminal", async () => {
+    const fixture = harness.createAgentFilePair();
+    const terminal = createTestTerminalResponder({
+      ...PALETTE_A,
+      foreground: "#101010",
+      background: "#ffffff",
+    });
+    const session = await harness.launchHunk({
+      args: ["diff", "--files", fixture.before, fixture.after, "--mode", "unified"],
+      cwd: fixture.dir,
+      cols: 100,
+      rows: 24,
+      testTerminalResponder: terminal.respond,
+    });
+
+    try {
+      await session.waitForText("export const answer = 42;");
+      await harness.pressAndWaitForText(session, "t", /›\s+github-dark-default/);
+    } finally {
+      session.close();
+    }
+  });
+
   test("repaints from a fresh terminal palette after a dark-to-dark color-scheme notification", async () => {
     const terminal = createTestTerminalResponder(PALETTE_A);
     const session = await launchTestDiffSession(terminal);
@@ -201,6 +233,8 @@ describe("PTY terminal theme", () => {
         "-",
         "--mode",
         "unified",
+        "--theme",
+        "terminal",
       ])}`,
       cwd: fixture.dir,
       cols: 100,

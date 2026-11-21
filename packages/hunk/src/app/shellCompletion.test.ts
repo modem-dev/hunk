@@ -170,7 +170,8 @@ describe("shell completion scripts in real shells", () => {
     expect(bashCompletions("hunk", "--he")).toEqual(["--help"]);
     expect(bashCompletions("hunk", "--ver")).toEqual(["--version"]);
     expect(bashCompletions("hunk", "--ext")).toEqual(["--extension"]);
-    expect(bashCompletions("hunk", "--fa")).toEqual(["--fast"]);
+    expect(bashCompletions("hunk", "--exp")).toEqual(["--experimental"]);
+    expect(bashCompletions("hunk", "--fa")).toEqual([]);
     expect(bashCompletions("hunk", "--mo")).toEqual([]);
     expect(bashCompletions("hunk", "diff", "--he")).toEqual(["--help"]);
     expect(bashCompletions("hunk", "session", "comment", "-h")).toEqual(["-h"]);
@@ -280,14 +281,11 @@ describe("shell completion scripts in real shells", () => {
     expect(
       bashCompletions("hunk", "session", "reload", "test", "--", "diff", "--", "--mo"),
     ).toEqual([]);
-    expect(bashCompletions("hunk", "--fast", "--mo")).toEqual(["--mode"]);
-    expect(bashCompletions("hunk", "--fast", "--mode", "sp")).toEqual(["split"]);
-    expect(bashCompletions("hunk", "--fast", "show", "--cu")).toEqual(["--cursor-line"]);
-    expect(bashCompletions("hunk", "--fast", "sh")).toEqual(["show"]);
-    expect(bashCompletions("hunk", "--fast", "--extension", "session", "--mode", "sp")).toEqual([
-      "split",
-    ]);
-    expect(bashCompletions("hunk", "--fast", "--", "--mo")).toEqual([]);
+    expect(bashCompletions("hunk", "--experimental", "show", "--cu")).toEqual(["--cursor-line"]);
+    expect(bashCompletions("hunk", "--experimental", "sh")).toEqual(["show"]);
+    expect(
+      bashCompletions("hunk", "--experimental", "--extension", "session", "diff", "--mode", "sp"),
+    ).toEqual(["split"]);
   });
 
   /** Inspect context selection and native argument specifications without faking Zsh parsing. */
@@ -342,8 +340,8 @@ describe("shell completion scripts in real shells", () => {
         expect(
           zshCompletions(autoload, "hunk", "session", "reload", "test", "--", "diff", "--mo"),
         ).toContain("CONTEXT:hunk --mo");
-        expect(zshCompletions(autoload, "hunk", "--fast", "--mode", "sp")).toContain(
-          "CONTEXT:hunk --fast --mode sp",
+        expect(zshCompletions(autoload, "hunk", "--experimental", "show", "--mo")).toContain(
+          "CONTEXT:hunk --mo",
         );
         expect(
           zshCompletions(autoload, "hunk", "--extension", "session data", "diff", "--mo"),

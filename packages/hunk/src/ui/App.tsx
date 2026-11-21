@@ -3,6 +3,7 @@ import type {
   MouseEvent as TuiMouseEvent,
   ScrollBoxRenderable,
 } from "@opentui/core";
+import { MouseButton } from "@opentui/core";
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import {
   Suspense,
@@ -18,7 +19,10 @@ import type { PersistedViewPreferences } from "../core/run/config";
 import { STATUS_COMMAND_NAMES } from "../core/run/statusCommandCatalog";
 import { HISTORY_COMMAND_NAMES } from "../core/run/historyCommandCatalog";
 import { DOCUMENT_COMMAND_NAMES } from "../core/run/documentCommandCatalog";
-import type { ExtensionReviewReloadResult } from "../extension-api/types";
+import type {
+  ExtensionCanonicalResolvedLayout,
+  ExtensionReviewReloadResult,
+} from "../extension-api/types";
 import { experimentalFeatureEnabled, resolveExperimentalDiffFiles } from "../core/run/experimental";
 import { DEFAULT_FILE_GAP, DEFAULT_HUNK_GAP } from "../core/run/reviewGap";
 import { DEFAULT_TAB_WIDTH } from "../core/run/tabWidth";
@@ -32,21 +36,21 @@ import {
 } from "../core/review/selectors";
 import type { CliInput, CursorLine, LayoutMode } from "../core/run/commandInputs";
 import { sanitizeTerminalLine } from "../lib/terminalText";
-import {
-  resolveExtensionFileViews,
-  resolveExtensionKeyboardModes,
-  resolveExtensionSessionOptions,
-} from "../extensions/apply";
+import { resolveExtensionKeyboardModes, resolveExtensionSessionOptions } from "../extensions/apply";
 import { projectExtensionReviewNotes } from "../extensions/reviewSnapshot";
 import type { ExtensionNotifyType, ExtensionLoadResult } from "../extensions/types";
 import type { ReviewProducer } from "../app/review/producer";
+import { buildReviewPresentationDefaults, buildReviewSharedState } from "../app/review/sharedState";
 import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
+import type { ReviewRefreshResult } from "../session/reviewProtocol";
+import { reviewErrorMessage } from "../session/reviewErrorCatalog";
 import type { ReloadedSessionResult, ReloadSessionOptions } from "../session/types";
 // Keep lightweight interaction chrome synchronous: first-use lazy suspension otherwise
 // delays its visible commit behind React's Suspense fallback/retry throttle.
 import { HelpDialog } from "./components/chrome/HelpDialog";
 import { MenuDropdown } from "./components/chrome/MenuDropdown";
 import { MenuBar } from "./components/chrome/MenuBar";
+import { responsiveActiveMenuSpec, responsiveMenuSpecs } from "./components/chrome/menu";
 import { ConfirmDialog, confirmDialogHeight } from "./components/chrome/ConfirmDialog";
 import { ExtensionDialog } from "./components/chrome/ExtensionDialog";
 import { ViewPreferenceQuitDialog } from "./components/chrome/ViewPreferenceQuitDialog";
@@ -80,9 +84,14 @@ import {
   type WorkspaceWriteRunner,
 } from "./hooks/useExtensionWorkspaceControls";
 import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
+import { openSessionReview, type ReviewUrlOpener } from "../app/session/openReview";
 import { useMenuController } from "./hooks/useMenuController";
 import { usePaneSlideAnimation } from "./hooks/usePaneSlideAnimation";
 import { useThemeSelectorController } from "./hooks/useThemeSelectorController";
+import {
+  useFeedbackFormController,
+  type SendFeedbackImpl,
+} from "./hooks/useFeedbackFormController";
 import { useTimedNotice } from "./hooks/useTimedNotice";
 import { useUserNoteComposer } from "./hooks/useUserNoteComposer";
 import { useTerminalReview, type AgentNoteGeometrySnapshot } from "./hooks/useTerminalReview";
@@ -101,6 +110,7 @@ import { buildExtensionAppCommands, extensionCommandKeyDefaults } from "./lib/ex
 import { createExtensionReviewReloadControls } from "./lib/extensionReviewReload";
 import {
   buildSessionCommands,
+  buildSessionFileViews,
   buildSessionLineHighlighters,
   isBundledExtensionId,
 } from "./lib/sessionRegistrations";
@@ -125,6 +135,7 @@ import { setMouseCapture } from "./lib/mouseCapture";
 import { openSelectedFileInEditor } from "./lib/openInEditor";
 import { resolveResponsiveLayout, resolveResponsiveViewport } from "./lib/responsive";
 import type { WorkspaceRefreshRequest } from "./currentReviewRefresh";
+import { useActivePaneController } from "./hooks/useActivePaneController";
 import { ThemeController } from "./theme/controller";
 import {
   createExtensionPromptControls,
@@ -148,6 +159,9 @@ const FAST_CODE_HORIZONTAL_SCROLL_COLUMNS = 8;
 const LazyAgentSkillDialog = lazy(async () => ({
   default: (await import("./components/chrome/AgentSkillDialog")).AgentSkillDialog,
 }));
+const LazyFeedbackDialog = lazy(async () => ({
+  default: (await import("./components/chrome/FeedbackDialog")).FeedbackDialog,
+}));
 const LazyThemeSelectorDialog = lazy(async () => ({
   default: (await import("./components/chrome/ThemeSelectorDialog")).ThemeSelectorDialog,
 }));
@@ -168,6 +182,7 @@ export function App({
   onViewPreferencesChange,
   onRegisterWorkspaceRefreshRequest,
   onReloadSession,
+  onRefreshReview,
   onRequestExtensionReviewReload,
   onWorkspaceWriteCompleted,
   reviewProducer,
@@ -177,6 +192,8 @@ export function App({
   returnToSurface = process.env.HUNK_RETURN_TO_HISTORY === "1" ? "history" : undefined,
   watchRuntime,
   workspaceFileWriter,
+  sendFeedback,
+  openReviewUrl,
 }: {
   bootstrap: AppBootstrap;
   /** Whether this surface may replace the session-owned extension registry. */
@@ -194,6 +211,8 @@ export function App({
     nextInput: CliInput,
     options?: ReloadSessionOptions,
   ) => Promise<ReloadedSessionResult>;
+  /** Reload the current input for a browser's refresh, coalesced by the reload coordinator. */
+  onRefreshReview?: () => Promise<ReviewRefreshResult>;
   /** Queue a coalesced reload against the review current when host execution begins. */
   onRequestExtensionReviewReload: (
     reviewGeneration: AppBootstrap,
@@ -212,6 +231,10 @@ export function App({
   initialFilePath?: string;
   watchRuntime?: WatchedInputRuntime;
   workspaceFileWriter?: WorkspaceFileWriter;
+  /** Send a confirmed feedback submission. Tests inject one; the default loads the real sender. */
+  sendFeedback?: SendFeedbackImpl;
+  /** Open a review URL in a browser. Tests inject a recorder; the default launches one. */
+  openReviewUrl?: ReviewUrlOpener;
 }) {
   const SIDEBAR_MIN_WIDTH = 22;
   const DIFF_MIN_WIDTH = 48;
@@ -260,11 +283,23 @@ export function App({
   }, [initialFilePath, reviewFiles, review.selectFile]);
   // The producer plans brokered actions against the store this controller owns, so a
   // remote action and a key press reach the same state through the same intent path.
-  // AppHost detaches the previous store while committing a reload; this child layout
+  // The reload coordinator detaches the previous store while committing a reload; this child layout
   // effect installs the matching store before parent lifecycle handlers can use it.
+  // The producer serves this review's shared state to browsers from the same host; the
+  // presentation defaults are resolved lazily, once per bootstrap, on the first state read.
   useLayoutEffect(() => {
-    reviewProducer?.attachStore(review.store);
-  }, [bootstrap.changeset, review.store, reviewProducer]);
+    let presentation: ReturnType<typeof buildReviewPresentationDefaults> | undefined;
+    const host = review.host;
+    reviewProducer?.attachStore(review.store, {
+      getSharedStateRevision: () => host.getSharedStateRevision(),
+      recordAgentReveal: (target) => host.recordAgentReveal(target),
+      build: (generation) =>
+        buildReviewSharedState(host, {
+          generation,
+          presentation: (presentation ??= buildReviewPresentationDefaults(bootstrap)),
+        }),
+    });
+  }, [bootstrap, review.host, review.store, reviewProducer]);
   // Note-layer visibility is shared review state, so it lives in the review store
   // alongside the notes it governs rather than in local app state.
   const showAgentNotes = review.showAgentNotes;
@@ -282,6 +317,35 @@ export function App({
     edge: "top" | "bottom";
   }>({ id: 0, edge: "top" });
   const { text: transientNoticeText, show: showTransientNotice } = useTimedNotice(3_000);
+
+  // The terminal's "Open in browser" command and `hunk session open` share one opener; both
+  // need the daemon registration, so a session without a broker client offers neither.
+  const openReview = useMemo(
+    () =>
+      hostClient
+        ? ({ open }: { open: boolean }) =>
+            openSessionReview(hostClient.getRegistration().sessionId, {
+              open,
+              openUrl: openReviewUrl,
+            })
+        : undefined,
+    [hostClient, openReviewUrl],
+  );
+  const openInBrowser = useMemo(
+    () =>
+      openReview
+        ? () => {
+            void openReview({ open: true }).then((result) =>
+              showTransientNotice(
+                result.opened
+                  ? "Opened the review in your browser"
+                  : (result.failure ?? "Could not open a browser"),
+              ),
+            );
+          }
+        : undefined,
+    [openReview, showTransientNotice],
+  );
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(bootstrap.initialMode);
   const [showLineNumbers, setShowLineNumbers] = useState(bootstrap.initialShowLineNumbers ?? true);
   const [wrapLines, setWrapLines] = useState(bootstrap.initialWrapLines ?? false);
@@ -296,6 +360,8 @@ export function App({
   const [showMenuBar, setShowMenuBar] = useState(bootstrap.initialShowMenuBar ?? true);
   const [showHelp, setShowHelp] = useState(false);
   const [showAgentSkill, setShowAgentSkill] = useState(false);
+  const feedbackEnabled = bootstrap.feedbackEnabled ?? true;
+  const feedback = useFeedbackFormController({ enabled: feedbackEnabled, sendFeedback });
   const [storedFocusArea, setFocusArea] = useState<StoredFocusArea>("files");
   // Bumped when printable input is held for a draft editor that has not mounted
   // yet, so the flush retries after every commit that could have mounted it.
@@ -396,10 +462,9 @@ export function App({
     () => (cursorLine === "off" ? null : review.lineCursor),
     [cursorLine, review.lineCursor],
   );
-  const sessionFileViews = useMemo(
-    () => (extensions ? resolveExtensionFileViews(extensions.registry).views : []),
-    [extensions],
-  );
+  // Bundled file views compose ahead of the user registry's, so Hunk's own image preview is
+  // offered under `--no-extensions` too.
+  const sessionFileViews = useMemo(() => buildSessionFileViews(extensions?.registry), [extensions]);
   const sessionKeyboardModes = useMemo(
     () => (extensions ? resolveExtensionKeyboardModes(extensions.registry).modes : []),
     [extensions],
@@ -421,11 +486,14 @@ export function App({
     () => (cursorLine === "off" ? null : review.getLineCursor()),
     [cursorLine, review.getLineCursor],
   );
+  const resolvedLayoutRef = useRef<ExtensionCanonicalResolvedLayout>("unified");
+  const getResolvedLayout = useCallback(() => resolvedLayoutRef.current, []);
   const extensionRuntime = useExtensionRuntimeBridge({
     extensions,
     files: filteredFiles,
     getActiveLineCursor: getActiveExtensionLineCursor,
     getSelection: review.getSelection,
+    getLayout: getResolvedLayout,
     reviewGeneration: bootstrap,
     reviewProducer,
     createPresentationControls: presentationScope.createControls,
@@ -621,6 +689,13 @@ export function App({
     paneLayoutSettled,
     resizing: resizingPaneKey !== null,
   });
+
+  const visiblePaneKeys = useMemo(
+    () => paneLayout.panes.map(({ pane }) => pane.key),
+    [paneLayout.panes],
+  );
+  const { activePaneKey, activatePane, activateReview, paneSurfaceRef, reviewSurfaceRef } =
+    useActivePaneController({ renderer, visiblePaneKeys });
 
   useEffect(() => {
     if (resizingPaneKey === null) {
@@ -832,6 +907,7 @@ export function App({
     diffContentWidth,
     bootstrap.input.options.autoSplitMinWidth,
   );
+  resolvedLayoutRef.current = resolvedLayout;
 
   const reviewNotes = useMemo(
     () => projectExtensionReviewNotes(review.store.getSnapshot()),
@@ -900,12 +976,15 @@ export function App({
     navigateToLocation: review.navigateToLocation,
     noteMarkupWidth: stmlEnabled ? noteMarkupWidth : undefined,
     openAgentNotes,
+    openReview,
     reloadSession: onReloadSession,
+    refreshReview: onRefreshReview,
     removeLiveComment: review.removeLiveComment,
     reviewProducer,
     reviewNoteCount: review.reviewNoteCount,
     reviewNoteSummaries: review.reviewNoteSummaries,
     reviewStateRevision: review.stateRevision,
+    reviewSharedStateRevision: review.sharedStateRevision,
     selectedFile,
     selectedHunk: review.selectedHunk,
     selectedHunkIndex,
@@ -1245,6 +1324,22 @@ export function App({
     [focusFiles, jumpToFile, review.revealLine, review.selectVisibleHunk],
   );
 
+  /** Report whether the host filter prompt owns typing, read live from the store. */
+  const isFilterPromptOpen = useCallback(() => {
+    const promptId = filterPromptIdRef.current;
+    return promptId !== null && statusLineStore.getSnapshot().prompt?.id === promptId;
+  }, [statusLineStore]);
+
+  /** Append printable input to the filter prompt's value before its input has mounted. */
+  const queueFilterInput = useCallback(
+    (text: string) => {
+      const prompt = statusLineStore.getSnapshot().prompt;
+      if (!prompt || prompt.id !== filterPromptIdRef.current) return;
+      statusLineStore.updatePromptValue(prompt.id, prompt.value + text);
+    },
+    [statusLineStore],
+  );
+
   /** Toggle keyboard focus between the file list and the file filter. */
   const toggleFocusArea = useCallback(() => {
     if (filterPromptIdRef.current !== null) {
@@ -1267,6 +1362,14 @@ export function App({
     () => setFocusArea((current) => (current === "note" ? "files" : current)),
     [],
   );
+
+  /** Explain a refused note save in the shared catalog's words; the draft stays open. */
+  const showSaveRefusal = useCallback(
+    (code: Parameters<typeof reviewErrorMessage>[0]) =>
+      showTransientNotice(reviewErrorMessage(code)),
+    [showTransientNotice],
+  );
+
   const {
     blurDraftNote,
     cancelDraftNote,
@@ -1284,11 +1387,13 @@ export function App({
     draftNote: review.draftNote,
     keyboardCursorEnabled: cursorLine !== "off",
     getLineCursor: review.getLineCursor,
+    getActiveNoteTarget: review.getActiveNoteTarget,
     startDraft: review.startUserNote,
     startEdit: review.startUserNoteEdit,
     startReply: review.startUserNoteReply,
     updateDraft: review.updateDraftNote,
     saveDraft: review.saveDraftNote,
+    onSaveRefused: showSaveRefusal,
     cancelDraft: review.cancelDraftNote,
     focus: {
       draft: focusDraftNoteEditor,
@@ -1384,6 +1489,8 @@ export function App({
         moveSelection: review.moveSelection,
         moveNoteCursor: review.moveNoteCursor,
         openAgentSkill,
+        openFeedback: feedbackEnabled ? feedback.open : undefined,
+        openInBrowser,
         openThemeSelector,
         requestQuit,
         resolvedKeys: resolvedCommandKeys,
@@ -1478,7 +1585,6 @@ export function App({
     activeMenuEntries,
     activeMenuId,
     activeMenuItemIndex,
-    activeMenuSpec,
     activeMenuWidth,
     activateCurrentMenuItem,
     closeMenu,
@@ -1496,6 +1602,7 @@ export function App({
     closeAgentSkill,
     closeHelp,
     closeMenu,
+    handleFeedbackKey: feedback.handleKey,
     acceptThemeSelector,
     cancelDraftNote,
     closeThemeSelector,
@@ -1519,6 +1626,8 @@ export function App({
     exitKeyboardMode,
     sendKeyboardModeKey,
     focusArea,
+    isFilterPromptOpen,
+    queueFilterInput,
     promptActive: statusLineState.prompt !== null,
     moveMenuItem,
     moveThemeSelector,
@@ -1546,6 +1655,10 @@ export function App({
     0,
   );
   const topTitle = `${bootstrap.changeset.title}  ${changedFileCount} ${changedFileLabel}  +${totalAdditions}  -${totalDeletions}`;
+  const responsiveMenuLayout = responsiveMenuSpecs(menuSpecs, terminal.width, topTitle);
+  const activeMenuSpec = activeMenuId
+    ? responsiveActiveMenuSpec(responsiveMenuLayout, activeMenuId)
+    : undefined;
   const diffHeaderStatsWidth = maxFileHeaderStatsWidth(filteredFiles);
   const diffHeaderLabelWidth = Math.max(0, diffContentWidth - diffHeaderStatsWidth - 1);
   const diffSeparatorWidth = Math.max(0, diffContentWidth - 2);
@@ -1558,6 +1671,7 @@ export function App({
     return (
       <box
         key={pane.key}
+        ref={paneSurfaceRef(pane.key)}
         style={{
           position: "absolute",
           left: bodyPadding / 2 + bounds.x,
@@ -1607,6 +1721,7 @@ export function App({
             focusFiles();
             return review.revealLine(fileId, side, line);
           }}
+          onActivateSurface={activatePane}
           onRenderFailure={
             pane.key === HUNK_FILES_PANE_KEY
               ? undefined
@@ -1624,6 +1739,7 @@ export function App({
   // so a fast motion or a sidebar projection swap cannot transfer the gesture to a transient row.
   const beginCapturedPaneResize = (planned: PlannedPane, event: TuiMouseEvent) => {
     if (!beginPaneResize(planned, event)) return;
+    activatePane(planned.pane.key);
     if (paneResizeCaptureRef.current) {
       setMouseCapture(renderer, paneResizeCaptureRef.current);
     }
@@ -1631,7 +1747,7 @@ export function App({
   };
 
   const renderDivider = (planned: PlannedPane) =>
-    planned.divider && !paneLayoutAnimating ? (
+    !paneLayoutAnimating ? (
       <box
         key={`${planned.pane.key}:divider`}
         style={{
@@ -1646,7 +1762,9 @@ export function App({
           orientation={planned.divider.width === 1 ? "vertical" : "horizontal"}
           width={planned.divider.width}
           height={planned.divider.height}
+          isActive={activePaneKey === planned.pane.key}
           isResizing={resizingPaneKey === planned.pane.key}
+          resizable={planned.resizable}
           theme={activeTheme}
           onMouseDown={(event) => beginCapturedPaneResize(planned, event)}
           onMouseDrag={updatePaneResize}
@@ -1712,6 +1830,10 @@ export function App({
         {presentedPaneLayout.panes.map(renderPane)}
         {presentedPaneLayout.panes.map(renderDivider)}
         <box
+          ref={reviewSurfaceRef}
+          onMouseDown={(event) => {
+            if (event.button === MouseButton.LEFT) activateReview();
+          }}
           style={{
             position: "absolute",
             left: bodyPadding / 2 + presentedPaneLayout.reviewBounds.x,
@@ -1743,6 +1865,8 @@ export function App({
             scrollFocused={pagerMode && focusArea === "files"}
             screenTop={diffPaneScreenTop}
             showTopChrome={showMenuBar}
+            // A top pane's planned divider already separates it from the review stream.
+            showTopBorder={presentedPaneLayout.reviewBounds.y === 0}
             skipInitialIntermediateRender={Boolean(onFirstFrameReady)}
             headerLabelWidth={diffHeaderLabelWidth}
             headerStatsWidth={diffHeaderStatsWidth}
@@ -1796,6 +1920,7 @@ export function App({
               scrollCodeHorizontally(delta * FAST_CODE_HORIZONTAL_SCROLL_COLUMNS);
             }}
             onCopyFeedback={showTransientNotice}
+            onActivateSurface={activateReview}
             onFileViewRowFailure={reportFileViewRowFailure}
             onSelectFile={jumpToFile}
             onToggleGap={review.toggleGap}
@@ -1861,6 +1986,17 @@ export function App({
             theme={baseTheme}
             onClose={closeAgentSkill}
             onCopyPrompt={copyAgentSkillPrompt}
+          />
+        </Suspense>
+      ) : null}
+
+      {feedback.isOpen ? (
+        <Suspense fallback={null}>
+          <LazyFeedbackDialog
+            controller={feedback}
+            terminalHeight={terminal.height}
+            terminalWidth={terminal.width}
+            theme={baseTheme}
           />
         </Suspense>
       ) : null}
