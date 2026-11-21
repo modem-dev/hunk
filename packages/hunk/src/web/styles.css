@@ -945,11 +945,30 @@ body {
   color: var(--hunk-muted);
 }
 
+/* Pierre slots a custom separator into the line-number gutter, and the gutter's column is as
+   wide as its widest cell. Each half of a gap row therefore takes the width Pierre publishes for
+   its code column and gives the same amount back as a negative margin: the row spans the diff
+   and adds nothing to the gutter. Without that width (a column not yet measured) it falls back
+   to the gutter's own. */
+.gap-separator,
+.gap-separator-fill {
+  box-sizing: border-box;
+  width: var(--diffs-column-width, 100%);
+  margin-right: calc(-1 * var(--diffs-column-width, 0px));
+}
+
+/* Wrapped lines lay the whole diff out as one grid with no scrolling columns, and Pierre
+   publishes no column width there. The half that carries the words spans the diff's own width
+   instead; in split view it covers the other half, which stays as wide as its gutter. */
+.pierre-host[data-wrap] .gap-separator {
+  width: 100cqi;
+  margin-right: -100cqi;
+}
+
 .gap-separator {
   display: flex;
   align-items: center;
   white-space: nowrap;
-  width: 100%;
   padding: 0 12px;
   height: 100%;
   min-height: 20px;
@@ -963,7 +982,9 @@ body {
   cursor: pointer;
 }
 
-.gap-separator:hover:not(:disabled) {
+/* `data-hover` is set on both halves of a split-view row while the pointer is over either. */
+.gap-separator:hover:not(:disabled),
+.gap-separator[data-hover]:not(:disabled) {
   color: var(--hunk-text);
   background: var(--hunk-accent-muted);
 }
@@ -978,20 +999,21 @@ body {
   margin-right: 6px;
 }
 
-/* The additions column's half of a split-view gap row. Pierre sizes the slot to the gutter, so a
-   filled band there reads as a stray block; it stays empty until hovered and toggles the gap. */
+/* The additions column's half of a split-view gap row: the same band with no words, so the two
+   halves read as one row. It toggles the gap like the half that carries the count. */
 .gap-separator-fill {
-  width: 100%;
   height: 100%;
   min-height: 20px;
+  background: var(--hunk-panel-alt);
   cursor: pointer;
 }
 
-.gap-separator-fill:hover:not([data-gap-state="unaddressed"]) {
-  background: var(--hunk-panel-alt);
+.gap-separator-fill[data-hover]:not([data-gap-state="unaddressed"], [data-gap-state="loading"]) {
+  background: var(--hunk-accent-muted);
 }
 
-.gap-separator-fill[data-gap-state="unaddressed"] {
+.gap-separator-fill[data-gap-state="unaddressed"],
+.gap-separator-fill[data-gap-state="loading"] {
   cursor: default;
 }
 
@@ -1008,8 +1030,10 @@ body {
   position: relative;
 }
 
+/* A size container, so a gap row can span the diff's width under wrapped lines. */
 .pierre-host {
   cursor: default;
+  container-type: inline-size;
 }
 
 .hunk-rail {

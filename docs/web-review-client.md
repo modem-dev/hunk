@@ -402,6 +402,9 @@ imports; a page fetches only the languages and themes it shows. The largest sing
 - **Gap affordances.** A collapsed gap that can expand shows the terminal's `▾`; context that
   cannot shows `··· ···`. An expanded gap is collapsible in place from a "Hide N unchanged
   lines" control over its first line (the terminal's wording), as well as from the header.
+  Pierre slots a custom separator into the line-number gutter, so the row sizes itself to the
+  code column (or to the diff, under wrapped lines) and gives that width back as a negative
+  margin: it spans the diff without widening the gutter to fit its words.
 
 ## Palette, help, go-to-file, and deep links
 

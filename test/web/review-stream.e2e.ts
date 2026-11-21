@@ -8,9 +8,10 @@
  * accessibility finding.
  */
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
   chooseTestTheme,
+  openTestViewMenu,
   startTestWebReview,
   waitForTestCondition,
   watchTestPageProblems,
@@ -209,6 +210,71 @@ test("draws one unchanged-lines row per gap in split view", async ({ page }) => 
   await page.getByTestId("layout-unified").click();
   await expect(main.locator(".gap-separator-fill")).toHaveCount(0);
   await expect(main.locator('.gap-separator[data-gap-id="before:0"]')).toHaveCount(1);
+});
+
+// Intent: an "unchanged lines" row spans the diff in every layout, sits where its column does,
+// and its words never widen the line-number gutter they are slotted into.
+test("spans the diff with an unchanged-lines row and keeps the gutter narrow", async ({ page }) => {
+  await openTestReview(page);
+  const main = page.locator("section[data-file-key]").first();
+  const host = main.locator(".pierre-host");
+  const gap = main.locator('.gap-separator[data-gap-id="before:0"]').first();
+  const fill = main.locator(".gap-separator-fill").first();
+  const gutter = main.locator("[data-gutter]").first();
+  const box = async (locator: Locator) =>
+    (await locator.boundingBox()) ?? { x: 0, y: 0, width: 0, height: 0 };
+
+  // How far a row is from covering `share` of the diff, starting `start` of the way across it:
+  // the larger of its left edge's error and its width's.
+  const offBy = async (locator: Locator, start: number, share: number) => {
+    const [row, diff] = [await box(locator), await box(host)];
+    return Math.max(
+      Math.abs(row.x - (diff.x + diff.width * start)),
+      Math.abs(row.width - diff.width * share),
+    );
+  };
+
+  await page.getByTestId("layout-unified").click();
+  await expect.poll(() => offBy(gap, 0, 1)).toBeLessThanOrEqual(2);
+  expect((await box(gutter)).width * 4).toBeLessThan((await box(gap)).width);
+
+  // Split view: each half covers its own column, so the pair covers the row.
+  await page.getByTestId("layout-split").click();
+  await expect.poll(() => offBy(gap, 0, 0.5)).toBeLessThanOrEqual(3);
+  await expect.poll(() => offBy(fill, 0.5, 0.5)).toBeLessThanOrEqual(3);
+  expect((await box(gutter)).width * 4).toBeLessThan((await box(gap)).width);
+
+  // A narrow window makes the columns scroll. The row adds nothing to what scrolls (the
+  // column is exactly as wide as its gutter plus its widest line) and stays put when it does.
+  await page.setViewportSize({ width: 360, height: 900 });
+  const column = main.locator("[data-code][data-deletions]");
+  const scrolling = () =>
+    column.evaluate((element) => {
+      const track = (name: string) =>
+        element.querySelector(`[${name}]`)?.getBoundingClientRect().width ?? 0;
+      return {
+        room: element.scrollWidth - element.clientWidth,
+        excess: element.scrollWidth - (track("data-gutter") + track("data-content")),
+        left: element.scrollLeft,
+      };
+    });
+  await expect.poll(async () => (await scrolling()).room).toBeGreaterThan(20);
+  await expect.poll(() => offBy(gap, 0, 0.5)).toBeLessThanOrEqual(3);
+  expect((await scrolling()).excess).toBeLessThanOrEqual(1);
+  await column.evaluate((element) => {
+    element.scrollLeft = element.scrollWidth;
+  });
+  await expect.poll(async () => (await scrolling()).left).toBeGreaterThan(20);
+  expect(await offBy(gap, 0, 0.5)).toBeLessThanOrEqual(3);
+  expect(await offBy(fill, 0.5, 0.5)).toBeLessThanOrEqual(3);
+  expect((await scrolling()).excess).toBeLessThanOrEqual(1);
+  await page.setViewportSize({ width: 1440, height: 900 });
+
+  // Wrapped lines have no scrolling columns; the half with the words covers the whole row.
+  await openTestViewMenu(page);
+  await page.getByTestId("toggle-wrap").click();
+  await expect.poll(() => offBy(gap, 0, 1)).toBeLessThanOrEqual(2);
+  expect((await box(gutter)).width * 4).toBeLessThan((await box(host)).width);
 });
 
 test("switches layout and theme, and the theme choice persists", async ({ page }) => {
