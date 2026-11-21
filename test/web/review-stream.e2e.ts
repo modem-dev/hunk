@@ -8,9 +8,10 @@
  * accessibility finding.
  */
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
   chooseTestTheme,
+  openTestViewMenu,
   startTestWebReview,
   waitForTestCondition,
   watchTestPageProblems,
@@ -209,6 +210,36 @@ test("draws one unchanged-lines row per gap in split view", async ({ page }) => 
   await page.getByTestId("layout-unified").click();
   await expect(main.locator(".gap-separator-fill")).toHaveCount(0);
   await expect(main.locator('.gap-separator[data-gap-id="before:0"]')).toHaveCount(1);
+});
+
+// Intent: an "unchanged lines" row spans the diff in every layout, and its words never widen
+// the line-number gutter they are slotted into.
+test("spans the diff with an unchanged-lines row and keeps the gutter narrow", async ({ page }) => {
+  await openTestReview(page);
+  const main = page.locator("section[data-file-key]").first();
+  const host = main.locator(".pierre-host");
+  const gap = main.locator('.gap-separator[data-gap-id="before:0"]').first();
+  const fill = main.locator(".gap-separator-fill").first();
+  const gutter = main.locator("[data-gutter]").first();
+  const width = async (locator: Locator) => (await locator.boundingBox())?.width ?? 0;
+  const offBy = async (locator: Locator, share: number) =>
+    Math.abs((await width(locator)) - (await width(host)) * share);
+
+  await page.getByTestId("layout-unified").click();
+  await expect.poll(() => offBy(gap, 1)).toBeLessThanOrEqual(2);
+  expect((await width(gutter)) * 4).toBeLessThan(await width(gap));
+
+  // Split view: each half covers its own column, so the pair covers the row.
+  await page.getByTestId("layout-split").click();
+  await expect.poll(() => offBy(gap, 0.5)).toBeLessThanOrEqual(3);
+  await expect.poll(() => offBy(fill, 0.5)).toBeLessThanOrEqual(3);
+  expect((await width(gutter)) * 4).toBeLessThan(await width(gap));
+
+  // Wrapped lines have no scrolling columns; the half with the words covers the whole row.
+  await openTestViewMenu(page);
+  await page.getByTestId("toggle-wrap").click();
+  await expect.poll(() => offBy(gap, 1)).toBeLessThanOrEqual(2);
+  expect((await width(gutter)) * 4).toBeLessThan(await width(host));
 });
 
 test("switches layout and theme, and the theme choice persists", async ({ page }) => {
