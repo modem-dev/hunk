@@ -58,6 +58,7 @@ packages/hunk/src/web/
   session/sessionEnded.ts      tells controls the session ended; they disable, reading stays
   stream/highlightGeometry.ts  agent attention marks measured over drawn characters
   mirror/fileIndex.ts          per-file index entries and the pluggable index source
+  mirror/fileLoadOrder.ts      which file a free read takes: jump target, viewport, the rest
   store/clientReviewStore.ts   the page's local core/review store and gap source loads
   panel/SidePanel.tsx          the docked, resizable, tabbed side panel frame
   panel/panelPreferences.ts    panel open state, width, and tab, per browser
@@ -88,10 +89,15 @@ packages/hunk/src/web/
   through `reviewErrorCatalog`.
 - **Mirror** (`clientReviewMirror.ts`) owns the published position and the files. It classifies
   every publication with `classifyReviewPublication`; a gap (a reload, or the first
-  publication) loads that generation's `canonical-file` resources in catalog order with
-  bounded parallelism, through one `createSupersedeQueue`, parsing each with
-  `parseCanonicalReviewFile`. The first generation is published progressively; a later one
-  replaces the shown document only once complete, and a failed reload keeps the old one. A
+  publication) loads that generation's `canonical-file` resources with bounded parallelism,
+  through one `createSupersedeQueue`, parsing each with `parseCanonicalReviewFile`. Each free
+  read slot takes the next file from `fileLoadOrder.ts`: a jump's target still waiting for its
+  file (an agent's navigate, a deep link, go-to-file, a sidebar click), then the files the
+  stream is about to draw, then the rest in document order; the page names them with
+  `prioritize`, and reads not yet started follow the new order. The first generation is
+  published progressively — a wanted file within a frame, the rest batched every 250 ms, since
+  each published document re-renders the whole stream — and a later one replaces the shown
+  document only once complete, and a failed reload keeps the old one. A
   generation that arrives while the first is still loading replaces nothing finished, so it
   loads progressively too and a failure reaches the `failed` stage.
   Per-file index entries (path, change kind, stats, flags, line counts, hunk count) are
@@ -252,6 +258,9 @@ imports; a page fetches only the languages and themes it shows. The largest sing
   remembered height and hunk geometry in the render that sees it (`streamMeasurements.ts`), and a
   file that collapses drops its geometry, so a reveal never lands on offsets from a drawing that
   is gone.
+  The stream reports the sections in that window, loaded or not, so the missing ones load
+  first. While the first generation is still loading, a revealed target is held in place
+  against files landing above it until the reader's own input.
   Native scroll anchoring absorbs height changes above the reader, and a reload re-pins the
   top file and offset for a moment while files re-render. Pierre's `Virtualizer`/`CodeView`
   were not used: they own scrolling of the whole document, which would put sticky headers,
@@ -641,7 +650,8 @@ the shared-state snapshot lists only marks that still match each file's `content
 - `packages/hunk/src/web/**/*.test.ts` — the API client (window boundaries, digest and size
   refusals, bounded parallelism, abort), event reader (SSE splitting, chunked reassembly,
   digest refusal), event stream (backoff with a fake clock, terminal states), mirror (ordering,
-  progressive load, supersede, failed reload), and store (local intents, gap source, reload).
+  progressive load, wanted files first, supersede, failed reload), load order, and store
+  (local intents, gap source, reload).
 - `test/review-conformance/` registers the browser mirror as an ordering consumer, the
   browser event reader as an event consumer, and the browser file projection as a geometry
   consumer (gaps, empty reasons, and the rows an expanded gap puts in Pierre's metadata), and
@@ -649,7 +659,8 @@ the shared-state snapshot lists only marks that still match each file's `content
 - `test/web/review-stream.e2e.ts` drives a rich review (rename, new, deleted, binary,
   too-large, gaps, a non-ASCII path, many files): progressive load, sidebar and stream jumps,
   layout and theme switching, gap expansion, reload keeping the reader's place, and axe;
-  `test/web/review-large.e2e.ts` keeps a 2,000-file review responsive.
+  `test/web/review-large.e2e.ts` keeps a 2,000-file review responsive and draws a file jumped
+  to with go-to-file or `hunk session navigate` long before the rest have loaded.
   `test/web/review-screenshots.e2e.ts` captures the page when `HUNK_WEB_SCREENSHOT_DIR` is set.
   `test/web/review-notes.e2e.ts` drives a headless session with the agent's own commands:
   sidecar and STML notes, live comments added, batched, replied to (and a reviewer reply),

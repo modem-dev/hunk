@@ -163,6 +163,7 @@ function rangeTotal(header: string | null) {
 
 /** Join byte windows into one array. */
 function concatenate(parts: readonly Uint8Array[], total: number) {
+  if (parts.length === 1 && parts[0]!.byteLength === total) return parts[0]!;
   const bytes = new Uint8Array(total);
   let offset = 0;
   for (const part of parts) {
@@ -170,6 +171,20 @@ function concatenate(parts: readonly Uint8Array[], total: number) {
     offset += part.byteLength;
   }
   return bytes;
+}
+
+/**
+ * Picks the next resource a free read slot takes, by its index in the descriptors read;
+ * `undefined` once nothing is left. Each index must be handed out at most once.
+ */
+export interface ReviewResourceReadOrder {
+  next(): number | undefined;
+}
+
+/** Hand out `0..count-1` in order. */
+function inGivenOrder(count: number): ReviewResourceReadOrder {
+  let next = 0;
+  return { next: () => (next < count ? next++ : undefined) };
 }
 
 /** The one `fetch` shape the client uses, so tests can inject a fake. */
@@ -360,22 +375,25 @@ export class ReviewApiClient {
   /**
    * Read many resources with bounded parallelism, reporting each as it lands.
    *
-   * Results arrive in completion order; `onResult` receives the descriptor's index so a
-   * caller can place it. The first failure stops new reads and rejects; reads already in
-   * flight finish but are not reported. Aborting the signal stops everything.
+   * Each free slot asks `order` which descriptor to read next, so a caller can reorder what
+   * has not started yet (the files a reader is looking at) while reads run; without one,
+   * descriptors are read in the order given. Results arrive in completion order; `onResult`
+   * receives the descriptor's index so a caller can place it. The first failure stops new
+   * reads and rejects; reads already in flight finish but are not reported. Aborting the
+   * signal stops everything.
    */
   async readResources(
     descriptors: readonly ReviewResourceDescriptor[],
     onResult: (index: number, bytes: Uint8Array) => void,
     signal?: AbortSignal,
+    order: ReviewResourceReadOrder = inGivenOrder(descriptors.length),
   ): Promise<void> {
-    let next = 0;
     let failure: unknown;
     const worker = async () => {
-      while (failure === undefined && next < descriptors.length) {
+      while (failure === undefined) {
         signal?.throwIfAborted();
-        const index = next;
-        next += 1;
+        const index = order.next();
+        if (index === undefined) return;
         try {
           const bytes = await this.readResource(descriptors[index]!, signal);
           if (failure === undefined && !signal?.aborted) {
@@ -402,8 +420,11 @@ export class ReviewApiClient {
     total: number,
   ) {
     // The HTTP surface carries no digest for an unmeasured resource, so the bytes' own
-    // digest stands in and only the window rules are checked (see `readResource`).
-    const contentDigest = descriptor.digest ?? (await this.digest(concatenate(windows, total)));
+    // digest stands in and only the window rules are checked (see `readResource`). Those
+    // same bytes then verify against it by construction, so they are hashed once.
+    const ownDigest =
+      descriptor.digest === undefined ? await this.digest(concatenate(windows, total)) : undefined;
+    const contentDigest = descriptor.digest ?? ownDigest!;
     const assembler = new ReviewChunkAssembler({
       resourceId: descriptor.id,
       generation: descriptor.generation,
@@ -436,7 +457,9 @@ export class ReviewApiClient {
       offset += bytes.byteLength;
     }
 
-    const result = await assembler.finishAsync(this.digest);
+    const result = await assembler.finishAsync(
+      ownDigest === undefined ? this.digest : async () => ownDigest,
+    );
     if (!result.ok) {
       throw new ReviewApiError(result.code, result.message);
     }

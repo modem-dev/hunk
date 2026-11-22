@@ -247,6 +247,46 @@ export function useReviewTools(options: ReviewToolsOptions) {
     [],
   );
 
+  // A jump to a file that has not loaded yet (go-to-file or the sidebar early in a long
+  // review) loads that file next and lands once it arrives; a later jump replaces it.
+  const pendingJump = useRef<ReviewAddress | undefined>(undefined);
+  /** Show one address, or wait for its file when it is still loading. */
+  const showOrWait = useCallback(
+    (address: ReviewAddress) => {
+      pendingJump.current = undefined;
+      if (show(address)) return;
+      const mirror = session.mirror.getSnapshot();
+      const loading = mirror.status === "loading" || mirror.updating;
+      const missing = !session.review.store
+        .getSnapshot()
+        .document.files.some((file) => file.key === address.fileKey);
+      if (!loading || !missing) return;
+      pendingJump.current = address;
+      session.mirror.prioritize("target", [address.fileKey]);
+    },
+    [session, show],
+  );
+  useEffect(() => {
+    const retry = () => {
+      const address = pendingJump.current;
+      if (!address) return;
+      const loaded = session.review.store
+        .getSnapshot()
+        .document.files.some((file) => file.key === address.fileKey);
+      if (loaded) {
+        showOrWait(address);
+        return;
+      }
+      // A generation that finished without the file has nothing to land on.
+      const mirror = session.mirror.getSnapshot();
+      if (mirror.status !== "loading" && !mirror.updating) pendingJump.current = undefined;
+    };
+    const stops = [session.review.store.subscribe(retry), session.mirror.subscribe(retry)];
+    return () => {
+      for (const stop of stops) stop();
+    };
+  }, [session, showOrWait]);
+
   /** A deliberate jump: a new history entry, then the move. */
   const jumpTo = useCallback(
     (address: ReviewAddress) => {
@@ -256,14 +296,14 @@ export function useReviewTools(options: ReviewToolsOptions) {
       // not stack duplicates for Back to walk through.
       const here = currentAddress();
       if (here && formatReviewAddress(here) === formatReviewAddress(addressAfterJump(address))) {
-        show(address);
+        showOrWait(address);
         return;
       }
       if (resolvedInitial.current) writeAddress(here, "replace");
       writeAddress(address, "push");
-      show(address);
+      showOrWait(address);
     },
-    [currentAddress, show, writeAddress],
+    [currentAddress, showOrWait, writeAddress],
   );
 
   // Resolve the link's address once its target has arrived; until then the page does not
@@ -289,6 +329,8 @@ export function useReviewTools(options: ReviewToolsOptions) {
         resolvedInitial.current = true;
         return;
       }
+      // The linked file loads before the rest of the review.
+      session.mirror.prioritize("target", [address.fileKey]);
       const mirror = session.mirror.getSnapshot();
       const sharedGeneration = session.shared.getSnapshot().body?.state.generation;
       const complete =

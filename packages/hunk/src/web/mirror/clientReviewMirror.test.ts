@@ -1,8 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createTestDiffFile } from "../../../../../test/helpers/diff-helpers";
 import { serveTestWebReview } from "../../../../../test/helpers/web-review-server";
-import { ReviewApiError, type ReviewApiClient } from "../transport/apiClient";
-import { ClientReviewMirror, type ClientReviewMirrorSnapshot } from "./clientReviewMirror";
+import { ReviewApiClient, ReviewApiError } from "../transport/apiClient";
+import {
+  ClientReviewMirror,
+  type ClientReviewMirrorNotifyWait,
+  type ClientReviewMirrorSnapshot,
+} from "./clientReviewMirror";
 
 const running: Array<() => void> = [];
 
@@ -71,6 +75,52 @@ describe("ClientReviewMirror", () => {
       loading.map((snapshot) => snapshot.loadedFiles),
     );
     expect(ready.slots.every((slot) => slot.index?.path === slot.file?.path)).toBe(true);
+  });
+
+  // Intent: in a long review the file a jump targets, then the files around the viewport,
+  // load before the rest, and only they are worth a prompt re-render of the page.
+  test("loads the files the page wants first and shows them sooner than the rest", async () => {
+    const served = serve(
+      ["alpha", "beta", "gamma", "delta", "epsilon"].map((id) =>
+        createTestDiffFile({
+          id,
+          path: `src/${id}.ts`,
+          after: `export const ${id} = 1;\n`,
+          before: `export const ${id} = 0;\n`,
+        }),
+      ),
+    );
+    // One read at a time, so the order reads start in is the order files land in.
+    const client = new ReviewApiClient({
+      sessionId: served.sessionId,
+      capability: served.capability,
+      fetch: served.fetch,
+      concurrency: 1,
+    });
+    const waits: ClientReviewMirrorNotifyWait[] = [];
+    const mirror = new ClientReviewMirror({
+      client,
+      scheduleNotify: (flush, wait) => {
+        waits.push(wait);
+        flush();
+      },
+    });
+    running.push(() => mirror.close());
+    const landed: string[] = [];
+    mirror.subscribe(() => {
+      for (const file of mirror.getSnapshot().document.files) {
+        if (!landed.includes(file.key)) landed.push(file.key);
+      }
+    });
+    const keys = served.harness.producer.getPublication().document.files.map((file) => file.key);
+
+    mirror.prioritize("target", [keys[4]!]);
+    mirror.prioritize("viewport", [keys[2]!, keys[4]!]);
+    mirror.observe(await client.publication());
+    await waitForTestStatus(mirror, "ready");
+
+    expect(landed).toEqual([4, 2, 0, 1, 3].map((position) => keys[position]!));
+    expect(waits).toEqual(["frame", "frame", "batch", "batch", "batch"]);
   });
 
   test("ignores a stale publication and moves on an accepted one", async () => {
