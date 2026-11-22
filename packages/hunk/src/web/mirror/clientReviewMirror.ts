@@ -9,11 +9,15 @@
  * (C3), so a newer generation cancels an older one still loading and a slow old load can
  * never overwrite a newer document.
  *
- * Files load as the catalog's `canonical-file` resources, in catalog order, each parsed by
- * the shared validating parser (D4) and verified on the way in by the API client. The first
- * generation is published progressively — the document grows as files land, so the page
- * shows partial progress. A later generation replaces the current one only once it has
- * fully loaded, so a reload never flashes a half-empty review.
+ * Files load as the catalog's `canonical-file` resources, each parsed by the shared validating
+ * parser (D4) and verified on the way in by the API client. The page names the files it wants
+ * first (`prioritize`): a jump's target still waiting for its file, then the files around the
+ * viewport; the rest follow in document order (`fileLoadOrder.ts`). The first generation is
+ * published progressively — the document grows as files land, so the page shows partial
+ * progress. A wanted file is shown within a frame; the others are batched, because every
+ * published document re-renders a stream as long as the review. A later generation replaces
+ * the current one only once it has fully loaded, so a reload never flashes a half-empty
+ * review.
  *
  * Document order comes from the shared-state file index when the index source supplies one;
  * otherwise the mirror falls back to catalog order, which the producer happens to build by
@@ -39,6 +43,11 @@ import {
   type ReviewFileIndexEntry,
   type ReviewFileIndexSource,
 } from "./fileIndex";
+import {
+  CLIENT_REVIEW_LOAD_PRIORITIES,
+  ClientFileLoadOrder,
+  type ClientReviewLoadPriority,
+} from "./fileLoadOrder";
 
 /** One file of the mirrored generation, in document order. */
 export interface ClientReviewMirrorFileSlot {
@@ -81,15 +90,26 @@ export interface ClientReviewMirrorOptions {
   /** Supplies index entries ahead of canonical files, when a source can. */
   indexSource?: ReviewFileIndexSource;
   /**
-   * Coalesces progressive notifications; defaults to one per animation-frame-sized tick so a
-   * 2,000-file load does not rebuild the document 2,000 times.
+   * Coalesces progressive notifications, so a 2,000-file load does not rebuild the document
+   * 2,000 times. `frame` is for a file the reader wants and `batch` for the rest; a flush
+   * with nothing new to show is a no-op, so a sooner one may overtake a later one.
    */
-  scheduleNotify?: (flush: () => void) => void;
+  scheduleNotify?: (flush: () => void, wait: ClientReviewMirrorNotifyWait) => void;
 }
 
-/** Default batching: one notification per ~frame while files stream in. */
-function defaultScheduleNotify(flush: () => void) {
-  setTimeout(flush, 16);
+/** How soon a progressive change should reach the page. */
+export type ClientReviewMirrorNotifyWait = "frame" | "batch";
+
+/** How long each wait lasts by default, in milliseconds. */
+const NOTIFY_WAIT_MS: Record<ClientReviewMirrorNotifyWait, number> = {
+  frame: 16,
+  // Long enough that background files cost a few renders a second, however many land.
+  batch: 250,
+};
+
+/** Default batching: a timer per wait. */
+function defaultScheduleNotify(flush: () => void, wait: ClientReviewMirrorNotifyWait) {
+  setTimeout(flush, NOTIFY_WAIT_MS[wait]);
 }
 
 /** Build a snapshot's document from its slots. */
@@ -100,17 +120,44 @@ function documentOf(slots: readonly ClientReviewMirrorFileSlot[]): ReviewDocumen
 /** The mirror of one session's review. */
 export class ClientReviewMirror {
   private snapshot: ClientReviewMirrorSnapshot = EMPTY_SNAPSHOT;
+  /** Builds the next snapshot once something reads it, so a landing file costs no rebuild. */
+  private pending: (() => ClientReviewMirrorSnapshot) | undefined;
+  /** The files each priority names; kept across generations, since keys are stable. */
+  private readonly priorities: Record<ClientReviewLoadPriority, readonly string[]> = {
+    target: [],
+    viewport: [],
+  };
+  /** Whether the stream has said what is near the viewport yet. */
+  private viewportKnown = false;
   private observed: ReviewPublicationAddress | undefined;
   /** The generation whose last load failed, so its next delivery loads it again. */
   private failedGeneration: string | undefined;
   private readonly loads = createSupersedeQueue();
   private readonly listeners = new Set<() => void>();
-  private notifyScheduled = false;
+  private readonly scheduledWaits = new Set<ClientReviewMirrorNotifyWait>();
+  /** Set while listeners have not heard of the latest snapshot. */
+  private unnotified = false;
   private closed = false;
 
   constructor(private readonly options: ClientReviewMirrorOptions) {}
 
-  getSnapshot = (): ClientReviewMirrorSnapshot => this.snapshot;
+  getSnapshot = (): ClientReviewMirrorSnapshot => {
+    if (this.pending) {
+      this.snapshot = this.pending();
+      this.pending = undefined;
+    }
+    return this.snapshot;
+  };
+
+  /**
+   * Name the files one priority wants loaded first, replacing what it named before: `target`
+   * for a jump waiting for its file, `viewport` for the files the stream is about to draw.
+   * Reads not started yet follow the new order; files already loaded are unaffected.
+   */
+  prioritize(priority: ClientReviewLoadPriority, fileKeys: readonly string[]) {
+    this.priorities[priority] = fileKeys;
+    if (priority === "viewport") this.viewportKnown = true;
+  }
 
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
@@ -145,8 +192,9 @@ export class ClientReviewMirror {
     this.observed = incoming;
 
     if (verdict === "accepted") {
-      if (this.snapshot.address?.generation === incoming.generation) {
-        this.publish({ ...this.snapshot, address: incoming }, true);
+      const shown = this.getSnapshot();
+      if (shown.address?.generation === incoming.generation) {
+        this.publish({ ...shown, address: incoming });
       }
       return verdict;
     }
@@ -168,11 +216,13 @@ export class ClientReviewMirror {
     // Only a complete generation on screen is worth holding while a newer one loads. A first
     // load still in flight (or failed) shows no finished document, so the newer generation
     // loads progressively in its place and a failure reaches the `failed` stage.
-    const replacing = this.snapshot.address !== undefined && this.snapshot.status === "ready";
+    const before = this.getSnapshot();
+    const replacing = before.address !== undefined && before.status === "ready";
     const canonical = catalog.resources.filter(
       (resource): resource is Extract<ReviewResourceDescriptor, { kind: "canonical-file" }> =>
         resource.kind === "canonical-file",
     );
+    // Filled in place as files land; each published snapshot takes a copy.
     let slots: ClientReviewMirrorFileSlot[] = canonical.map((resource) => ({
       key: resource.fileKey,
     }));
@@ -185,12 +235,13 @@ export class ClientReviewMirror {
         ? this.observed
         : publication;
     const stage = (status: ClientReviewMirrorSnapshot["status"], error?: ReviewApiError) => {
+      const shownSlots = slots.slice();
       const next: ClientReviewMirrorSnapshot = {
         status,
         address: currentAddress(),
         catalog,
-        slots,
-        document: documentOf(slots),
+        slots: shownSlots,
+        document: documentOf(shownSlots),
         loadedFiles: loaded,
         totalFiles: slots.length,
         updating: false,
@@ -200,9 +251,9 @@ export class ClientReviewMirror {
     };
 
     if (replacing) {
-      this.publish({ ...this.snapshot, updating: true }, true);
+      this.publish({ ...before, updating: true });
     } else {
-      this.publish(stage("loading"), true);
+      this.publish(stage("loading"));
     }
 
     const outcome = await this.loads
@@ -216,13 +267,18 @@ export class ClientReviewMirror {
             ...index.map((entry) => ({ key: entry.key, index: entry })),
             ...slots.filter((slot) => !listed.has(slot.key)),
           ];
-          if (!replacing) this.publish(stage("loading"), false);
+          if (!replacing) this.publishLater(() => stage("loading"), "frame");
         } else if (index) {
           const byKey = index as ReadonlyMap<string, ReviewFileIndexEntry>;
           slots = slots.map((slot) => ({ ...slot, index: byKey.get(slot.key) }));
-          if (!replacing) this.publish(stage("loading"), false);
+          if (!replacing) this.publishLater(() => stage("loading"), "frame");
         }
         const positionByKey = new Map(slots.map((slot, position) => [slot.key, position]));
+        const order = new ClientFileLoadOrder(
+          slots.map((slot) => slot.key),
+          new Map(canonical.map((resource, position) => [resource.fileKey, position])),
+          () => CLIENT_REVIEW_LOAD_PRIORITIES.map((priority) => this.priorities[priority]),
+        );
 
         await this.options.client.readResources(
           canonical,
@@ -245,7 +301,6 @@ export class ClientReviewMirror {
               );
             }
             const slot = positionByKey.get(descriptor.fileKey) ?? position;
-            slots = slots.slice();
             slots[slot] = {
               key: descriptor.fileKey,
               index: {
@@ -256,9 +311,15 @@ export class ClientReviewMirror {
               file: parsed.file,
             };
             loaded += 1;
-            if (!replacing) this.publish(stage("loading"), false);
+            if (!replacing) {
+              this.publishLater(
+                () => stage("loading"),
+                this.wanted(descriptor.fileKey) ? "frame" : "batch",
+              );
+            }
           },
           signal,
+          order,
         );
       })
       .catch((error: unknown) => ({ status: "failed" as const, error }));
@@ -274,28 +335,49 @@ export class ClientReviewMirror {
       this.failedGeneration = publication.generation;
       // A failed reload keeps showing the generation it was replacing.
       this.publish(
-        replacing ? { ...this.snapshot, updating: false, error } : stage("failed", error),
-        true,
+        replacing ? { ...this.getSnapshot(), updating: false, error } : stage("failed", error),
       );
       return;
     }
-    this.publish(stage("ready"), true);
+    this.publish(stage("ready"));
   }
 
-  /** Replace the snapshot and notify, at once or coalesced. */
-  private publish(next: ClientReviewMirrorSnapshot, immediate: boolean) {
+  /**
+   * Whether the reader is waiting on one file: a priority names it, or the stream has not
+   * said what it shows yet, so the first files are the ones on screen.
+   */
+  private wanted(fileKey: string) {
+    return (
+      !this.viewportKnown ||
+      CLIENT_REVIEW_LOAD_PRIORITIES.some((priority) => this.priorities[priority].includes(fileKey))
+    );
+  }
+
+  /** Replace the snapshot and notify at once. */
+  private publish(next: ClientReviewMirrorSnapshot) {
+    this.pending = undefined;
     this.snapshot = next;
-    if (immediate) {
-      this.flush();
-      return;
-    }
-    if (this.notifyScheduled) return;
-    this.notifyScheduled = true;
-    (this.options.scheduleNotify ?? defaultScheduleNotify)(() => this.flush());
+    this.notify();
   }
 
-  private flush() {
-    this.notifyScheduled = false;
+  /** Replace the snapshot with one built when read, and notify after `wait`. */
+  private publishLater(
+    build: () => ClientReviewMirrorSnapshot,
+    wait: ClientReviewMirrorNotifyWait,
+  ) {
+    this.pending = build;
+    this.unnotified = true;
+    // A sooner wait already scheduled covers this change; a later one does not.
+    if (this.scheduledWaits.has("frame") || this.scheduledWaits.has(wait)) return;
+    this.scheduledWaits.add(wait);
+    (this.options.scheduleNotify ?? defaultScheduleNotify)(() => {
+      this.scheduledWaits.delete(wait);
+      if (this.unnotified) this.notify();
+    }, wait);
+  }
+
+  private notify() {
+    this.unnotified = false;
     if (this.closed) return;
     for (const listener of Array.from(this.listeners)) {
       listener();

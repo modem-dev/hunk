@@ -509,9 +509,13 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
       return;
     }
     if (!agentReveal || token <= lastAgentReveal.current) return;
-    // A target file still loading is not handled yet: the effect runs again as files arrive.
+    // A target file still loading is loaded next and handled once it arrives: the effect runs
+    // again as files land.
     const { document } = session.review.store.getSnapshot();
-    if (!document.files.some((file) => file.key === agentReveal.fileKey)) return;
+    if (!document.files.some((file) => file.key === agentReveal.fileKey)) {
+      session.mirror.prioritize("target", [agentReveal.fileKey]);
+      return;
+    }
     lastAgentReveal.current = token;
     setRevealPoint({
       fileKey: agentReveal.fileKey,
@@ -527,6 +531,11 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
       ...(agentReveal.noteId !== undefined ? { activeNoteId: agentReveal.noteId } : {}),
     });
   }, [agentReveal, review.document, session, setRevealPoint]);
+  // The files the stream is about to draw load ahead of the rest of a long review.
+  const prioritizeViewport = useCallback(
+    (fileKeys: readonly string[]) => session.mirror.prioritize("viewport", fileKeys),
+    [session],
+  );
   // A note the selection asks to show is where its hunk reveal lands, when nothing more exact
   // (an agent's line) is pending for that file.
   const noteToReveal = review.reveal.scrollToNote ? selectActiveRevealNoteId(review) : undefined;
@@ -1168,6 +1177,8 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
                   {...(streamRevealPoint ? { revealPoint: streamRevealPoint } : {})}
                   composers={composers}
                   interaction={interactive.interaction}
+                  onViewportFiles={prioritizeViewport}
+                  loading={mirror.status === "loading"}
                   viewedStatuses={viewed.statuses}
                   collapsedFiles={viewed.collapsed}
                   viewed={viewedControls}
