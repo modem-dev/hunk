@@ -3,9 +3,9 @@
  *
  * Covers the command layer end to end: hunk and file navigation through the shared planner
  * with reveals that land under the sticky file header, navigation that continues from where
- * the reader scrolled to, the view keys, the gap toggle, the theme menu, mouse parity for hunk
- * selection, and the keys the page must leave alone — anything typed into a field and every
- * browser or OS chord.
+ * the reader scrolled to, rapid key sequences that land where slow ones do, the view keys, the
+ * gap toggle, the theme menu, mouse parity for hunk selection, and the keys the page must
+ * leave alone — anything typed into a field and every browser or OS chord.
  */
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
@@ -154,6 +154,74 @@ test("continues navigation from where the reader scrolled to", async ({ page }) 
   await expect
     .poll(() => selectedPath(page))
     .toBe(`src/gen/module-${String(index + 1).padStart(2, "0")}.ts`);
+});
+
+/** The selection as the page shows it: the selected file's path and the rail's hunk. */
+function selectionAt(page: Page) {
+  return page.evaluate(() => {
+    const path = document.querySelector("section[data-selected] .file-path")?.textContent;
+    const rail = document.querySelector<HTMLElement>('[data-testid="selected-hunk"]');
+    return `${path ?? "none"} hunk ${rail?.dataset.hunkIndex ?? "none"}`;
+  });
+}
+
+/** Wait until the selection has held still for a moment, and return it. */
+async function settledSelection(page: Page) {
+  let last = await selectionAt(page);
+  let since = Date.now();
+  return waitForTestCondition("the selection to settle", async () => {
+    const now = await selectionAt(page);
+    if (now !== last) {
+      last = now;
+      since = Date.now();
+      return undefined;
+    }
+    return Date.now() - since >= 800 ? now : undefined;
+  });
+}
+
+/**
+ * Press `keys` with `gapMs` between them, starting from the top of the review as `g` leaves
+ * it, and return where they start and where they land.
+ */
+async function pressFromTop(page: Page, keys: readonly string[], gapMs: number) {
+  // Leave the top first, so `g` always scrolls and the start is the hunk it settles on.
+  await page.keyboard.press("Shift+G");
+  await settledSelection(page);
+  await page.keyboard.press("g");
+  const start = await settledSelection(page);
+  for (const key of keys) {
+    await page.keyboard.press(key);
+    if (gapMs > 0) await page.waitForTimeout(gapMs);
+  }
+  return { start, end: await settledSelection(page) };
+}
+
+// Intent: each key applies to the result of the one before it, as in the terminal, however
+// fast the keys come. A scroll key (`g`, Space) moves the selection to the hunk it brings to
+// the middle only once the viewport settles; a key pressed sooner must start from there, not
+// from where the selection was. A jump's own reveal, still settling as the files around it
+// draw, must not hand the selection to the viewport either.
+test("lands rapid key sequences where the same keys pressed slowly land", async ({ page }) => {
+  // Every sequence runs twice and waits for each run to settle.
+  test.slow();
+  await openTestReview(page);
+  const sequences: readonly (readonly string[])[] = [
+    ["]", "]", "]", "]", "]"],
+    // `g` then `.` well within 50 ms: `.` moves from the top, not from the old position.
+    [".", ".", ".", ".", ".", ".", "g", "."],
+    ["]", "]", "]", "]", "]", "g", "]", "]", "]", "]", "]"],
+    ["Space", "]"],
+    ["Space", "Space", "["],
+    [".", ".", ".", ".", ".", ".", ".", ".", ".", ".", "]"],
+    ["Shift+G", "[", "["],
+  ];
+  for (const keys of sequences) {
+    const slow = await pressFromTop(page, keys, 400);
+    const fast = await pressFromTop(page, keys, 0);
+    expect(fast.start).toBe(slow.start);
+    expect.soft(fast.end, `${keys.join(" ")} pressed rapidly`).toBe(slow.end);
+  }
 });
 
 test("scrolls with the paging keys and jumps to either end", async ({ page }) => {

@@ -1,8 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { projectReviewDocument } from "../../core/review/document";
 import { createTestDiffFile } from "../../../../../test/helpers/diff-helpers";
-import { planReviewFileRender } from "./fileProjection";
-import { reviewGapRowRange, reviewHunkAtRow, reviewHunkRowRange } from "./hunkGeometry";
+import { reviewHunkIndexAtOffset } from "../../core/review/viewportAnchor";
+import { planReviewFileRender, reviewDrawnRows } from "./fileProjection";
+import {
+  estimateReviewFileGeometry,
+  reviewGapRowRange,
+  reviewHunkAtRow,
+  reviewHunkRowRange,
+} from "./hunkGeometry";
 
 const BEFORE = Array.from({ length: 40 }, (_unused, index) => `const v${index} = ${index};`);
 const AFTER = BEFORE.map((line, index) =>
@@ -51,5 +57,25 @@ describe("hunk row ranges", () => {
     expect(reviewGapRowRange(file, leading!, "split")).toEqual({ start: 0, end: 8 });
     expect(reviewGapRowRange(file, between!, "split")).toEqual({ start: 13, end: 28 });
     expect(reviewGapRowRange(file, trailing!, "split")).toEqual({ start: 33, end: 40 });
+  });
+});
+
+describe("estimated hunk geometry", () => {
+  // Intent: a key pressed before a file draws reads the hunk under the viewport from the rows
+  // the file reserves; each collapsed gap reserves one separator row, so the second hunk sits
+  // where the reserved space shows it, not where the model's unfolded rows would put it.
+  test("places hunks at the reserved rows, one row height each", () => {
+    const file = createTestTwoHunkFile();
+    const plan = planReviewFileRender(file, { expandedGaps: [], sourceStatusByFileKey: {} });
+    const geometry = estimateReviewFileGeometry(reviewDrawnRows(plan), "split", 20);
+    // The leading gap folds 8 rows into 1, and the gap between folds 15 into 1.
+    expect(geometry.hunks).toEqual([
+      { top: 20, height: 100 },
+      { top: 140, height: 100 },
+    ]);
+    const hunkAt = (offset: number) =>
+      reviewHunkIndexAtOffset(file.hunks.length, (index) => geometry.hunks[index], offset);
+    expect(hunkAt(50)).toBe(0);
+    expect(hunkAt(200)).toBe(1);
   });
 });
