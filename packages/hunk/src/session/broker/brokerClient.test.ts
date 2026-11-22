@@ -711,6 +711,63 @@ describe("Hunk session daemon client", () => {
     }
   });
 
+  // A review near the retained-bytes bound can cross it as notes are added and fall back under it
+  // as they are removed; only the smaller snapshot can end that wait, since no reload follows.
+  test("ends a size refusal once a smaller snapshot brings the session back under the bounds", () => {
+    const webSockets = installWebSocketObserverTest();
+    captureBrokerWarningsTest();
+    // Over the 4 MiB the daemon retains per session; only the size matters to the check.
+    const oversizedSnapshot = () => ({
+      ...createSnapshot(),
+      updatedAt: "x".repeat(5 * 1024 * 1024),
+    });
+    const client = new SessionBrokerClient(createRegistration(), oversizedSnapshot());
+    const config = prepareDirectConnectTest(client);
+
+    try {
+      clientTestAccess(client).connect(config);
+      const connection = clientTestAccess(client).connection;
+      if (!connection?.options?.resolveClose) throw new Error("Expected a live connection.");
+      connection.options.resolveClose({
+        code: 1013,
+        reason: "Session broker capacity exceeded.",
+        authenticated: true,
+      });
+      expect(clientTestAccess(client).incumbentWait?.kind).toBe("payload");
+
+      client.updateSnapshot(oversizedSnapshot());
+      expect(clientTestAccess(client).incumbentWait?.kind).toBe("payload");
+      client.updateSnapshot(createSnapshot());
+      expect(clientTestAccess(client).incumbentWait).toBeNull();
+    } finally {
+      client.stop();
+      webSockets.restoreTest();
+    }
+  });
+
+  test("keeps a parser refusal waiting for a replacement review, whatever the snapshot", () => {
+    const webSockets = installWebSocketObserverTest();
+    captureBrokerWarningsTest();
+    const client = new SessionBrokerClient(createRegistration(), createSnapshot());
+    const config = prepareDirectConnectTest(client);
+
+    try {
+      clientTestAccess(client).connect(config);
+      const connection = clientTestAccess(client).connection;
+      if (!connection?.options?.resolveClose) throw new Error("Expected a live connection.");
+      connection.options.resolveClose({
+        code: 1008,
+        reason: "Incompatible session registration.",
+        authenticated: true,
+      });
+      client.updateSnapshot(createSnapshot());
+      expect(clientTestAccess(client).incumbentWait?.kind).toBe("payload");
+    } finally {
+      client.stop();
+      webSockets.restoreTest();
+    }
+  });
+
   for (const reason of ["Incompatible session registration.", "Incompatible session snapshot."]) {
     for (const metadata of [false, true]) {
       for (const subscribe of [false, true]) {

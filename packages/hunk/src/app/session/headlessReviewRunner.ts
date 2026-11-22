@@ -101,19 +101,22 @@ export const HEADLESS_REGISTRATION_TIMEOUT_MS = 2 * DAEMON_STARTUP_TIMEOUT_MS;
 /** Spacing between asks whether the daemon serves the review yet; registration takes milliseconds. */
 const REVIEW_SERVED_POLL_MS = 50;
 
-/** Ask the daemon whether it serves one session's review; resolves false on any failure. */
-export type ReviewServedProbe = (sessionId: string) => Promise<boolean>;
+/**
+ * Ask the daemon whether it serves one session's review; resolves false on any failure, including
+ * the wait ending through `signal`.
+ */
+export type ReviewServedProbe = (sessionId: string, signal: AbortSignal) => Promise<boolean>;
 
 /**
  * Ask the daemon for this session's publication with the capability the printed URL carries,
  * exactly as the page's first request does: success means the link will load.
  */
 function createReviewServedProbe(httpOrigin: string): ReviewServedProbe {
-  return async (sessionId) => {
+  return async (sessionId, signal) => {
     try {
       const response = await fetch(
         `${httpOrigin}${reviewHttpPath({ kind: "publication", sessionId })}`,
-        { headers: { [HUNK_REVIEW_CAPABILITY_HEADER]: reviewProcessCapability().token } },
+        { headers: { [HUNK_REVIEW_CAPABILITY_HEADER]: reviewProcessCapability().token }, signal },
       );
       await response.body?.cancel().catch(() => undefined);
       return response.ok;
@@ -143,15 +146,17 @@ async function waitForDaemonRegistration(
   config: Pick<ResolvedSessionBrokerConfig, "host" | "port">,
   timeoutMs: number,
 ) {
-  let abandoned = false;
+  // Ends the request in flight when the wait does, so a daemon that answers the hello and then
+  // nothing cannot hold the command open past its bound.
+  const abandoned = new AbortController();
   /** Poll until the review is served, failing as soon as the daemon has refused it. */
   const waitForReviewServed = async () => {
     await hostClient.waitForFirstRegistration();
     const sessionId = hostClient.getRegistration().sessionId;
-    while (!abandoned) {
+    while (!abandoned.signal.aborted) {
       const state = hostClient.getConnectionState();
       if (state.status === "disconnected") throw new Error(state.notice);
-      if (await isReviewServed(sessionId)) return;
+      if (await isReviewServed(sessionId, abandoned.signal)) return;
       await new Promise((resolve) => setTimeout(resolve, REVIEW_SERVED_POLL_MS));
     }
   };
@@ -183,7 +188,7 @@ async function waitForDaemonRegistration(
       `could not serve this review through the session daemon on ${config.host}:${config.port}. ${sanitizeTerminalLine(reason)}${remedy}`,
     );
   } finally {
-    abandoned = true;
+    abandoned.abort();
     clearTimeout(timer);
   }
 }

@@ -100,7 +100,12 @@ interface ClientConnectionGeneration {
 
 type IncumbentWait =
   | { kind: "build-skew"; fingerprint: string | null; buildKnown: boolean }
-  | { kind: "payload"; fingerprint: string | null };
+  | {
+      kind: "payload";
+      fingerprint: string | null;
+      /** Refused for its size alone, so a snapshot that shrinks back under the bounds ends it. */
+      oversized: boolean;
+    };
 
 type StartupLifecycleState =
   | { status: "idle" }
@@ -368,7 +373,8 @@ export class SessionBrokerClient {
     this.registration = registration;
     this.snapshot = snapshot;
     // Release only the refusal this replacement retries, after the local pair commits. A newer
-    // reentrant refusal must survive; snapshot updates alone do not release either payload refusal.
+    // reentrant refusal must survive; a snapshot update releases only a size refusal it brings
+    // back under the bounds.
     if (wait?.kind === "payload" && this.incumbentWait === wait) this.incumbentWait = null;
   }
 
@@ -434,6 +440,16 @@ export class SessionBrokerClient {
   updateSnapshot(snapshot: SessionSnapshot<HunkSessionState>) {
     this.snapshot = snapshot;
     this.connection?.updateSnapshot(snapshot);
+    // A size refusal outlives every snapshot that is still too large, but notes removed from a
+    // review near the bound can bring the pair back under it; the next reconnect then registers.
+    const wait = this.incumbentWait;
+    if (
+      wait?.kind === "payload" &&
+      wait.oversized &&
+      assessSessionRegistration(this.registration, snapshot).ok
+    ) {
+      this.incumbentWait = null;
+    }
   }
 
   private connect(config: ResolvedSessionBrokerConfig) {
@@ -555,6 +571,7 @@ export class SessionBrokerClient {
           this.incumbentWait = {
             kind: "payload",
             fingerprint: readSessionBrokerLaunchFingerprint(config),
+            oversized: !isRegistrationRejection(event),
           };
           this.setConnectionState({
             status: "disconnected",

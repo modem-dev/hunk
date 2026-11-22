@@ -19,7 +19,11 @@ import {
   type SessionRegistrationLimits,
 } from "../../session/broker/registrationAdmission";
 import { ReviewProducer } from "../review/producer";
-import { runHeadlessReview, type HeadlessReviewSession } from "./headlessReviewRunner";
+import {
+  runHeadlessReview,
+  type HeadlessReviewSession,
+  type ReviewServedProbe,
+} from "./headlessReviewRunner";
 import type { ReviewUrlOpener } from "./openReview";
 import { createInitialSessionSnapshot, createSessionRegistration } from "./registration";
 import type { ReviewSessionRuntime } from "./reviewRuntime";
@@ -125,7 +129,7 @@ async function startTestHeadlessReview(
     stderrIsTTY?: boolean;
     waitForRegistration?: () => Promise<void>;
     registrationTimeoutMs?: number;
-    isReviewServed?: (sessionId: string) => Promise<boolean>;
+    isReviewServed?: ReviewServedProbe;
     registrationLimits?: SessionRegistrationLimits;
     fake?: ReturnType<typeof createTestRuntime>;
   } = {},
@@ -427,6 +431,27 @@ describe("runHeadlessReview", () => {
     expect(review.stdout).toEqual([`${review.session.url}\n`]);
     review.signals.emit("SIGINT");
     expect(await review.exited).toBe(0);
+  });
+
+  // A daemon that completes the hello and then never answers must not hold the command open: the
+  // request in flight ends with the wait.
+  test("ends a hanging review request when the registration bound runs out", async () => {
+    const { bootstrap } = await createTestHeadlessBootstrap({ open: false });
+    const signals: AbortSignal[] = [];
+    const review = await startTestHeadlessReview(bootstrap, undefined, {
+      registrationTimeoutMs: 20,
+      isReviewServed: (_sessionId, signal) => {
+        signals.push(signal);
+        return new Promise<boolean>((resolve) => {
+          signal.addEventListener("abort", () => resolve(false), { once: true });
+        });
+      },
+    });
+
+    await expect(review.exited).rejects.toThrow("No session daemon accepted it within 1 seconds.");
+    expect(signals).toHaveLength(1);
+    expect(signals[0]!.aborted).toBe(true);
+    expect(review.stdout).toEqual([]);
   });
 
   test("exits with the daemon's refusal, and no URL, when it rejects the registration", async () => {
