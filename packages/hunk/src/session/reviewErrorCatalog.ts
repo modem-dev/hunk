@@ -156,10 +156,12 @@ export const REVIEW_ERROR_CATALOG: Record<ReviewHttpFailureCode, ReviewErrorDoc>
     message: "The requested part of that content does not exist.",
     remedy: "This is a client bug rather than something to retry; report it with what you did.",
   },
+  // The daemon answers a wrong key and a session it does not hold alike, so the statement covers
+  // both: a key copied without the fragment, a review that stopped, or one the daemon refused.
   unauthorized: {
-    message: "This review link is not valid for that session.",
+    message: "This review link does not match a review the Hunk daemon is serving.",
     remedy:
-      "Run `hunk session open` (or open the review from the terminal running it) to get a current link.",
+      "The link may be missing its access key, or the review stopped or was refused as too large; check the terminal that started it, or run `hunk session open` for a current link.",
   },
   "no-publication": {
     message: "That Hunk session is not publishing a review yet.",

@@ -19,6 +19,7 @@ import {
   readSessionBrokerLaunchFingerprint,
 } from "./brokerLauncher";
 import { hunkSessionProtocolParsers } from "./protocolParsers";
+import { assessSessionRegistration } from "./registrationAdmission";
 import {
   loadOrCreateHunkSessionBrokerCredentials,
   type HunkSessionBrokerCredentials,
@@ -48,6 +49,9 @@ const RECONNECT_DELAY_MS = 3_000;
 const STALE_CLIENT_POLL_DELAY_MS = 30_000;
 const HEARTBEAT_INTERVAL_MS = 10_000;
 const INCOMPATIBLE_SESSION_CLOSE_CODE = 1008;
+// A frame over the daemon's size limit, worded differently by each runtime that enforces it.
+const MESSAGE_TOO_BIG_CLOSE_CODE = 1009;
+const TRY_AGAIN_LATER_CLOSE_CODE = 1013;
 const QUIESCENT_REFUSAL_REASONS = new Set([
   "Session broker authentication required; upgrade Hunk.",
   "Malformed session broker protocol.",
@@ -151,6 +155,25 @@ export function isRegistrationRejection(event: {
   );
 }
 
+/**
+ * Identify a daemon that completed the hello and then refused a registration too large for it.
+ *
+ * An oversized frame (1009) or a retained-bytes refusal (1013) carries no reason a client can
+ * match on — the latter also covers daemon-wide capacity, which frees up as other sessions leave.
+ * Only the session's own size settles it: a registration over a per-session bound is refused by
+ * the same daemon every time, so it waits like any other payload refusal instead of resending.
+ */
+export function isOversizedRegistrationRejection(
+  event: { code: number; authenticated?: boolean },
+  admission: () => { ok: boolean },
+) {
+  return (
+    event.authenticated === true &&
+    (event.code === MESSAGE_TOO_BIG_CLOSE_CODE || event.code === TRY_AGAIN_LATER_CLOSE_CODE) &&
+    !admission().ok
+  );
+}
+
 /** The concrete broker client bound to Hunk's session contracts. */
 export type HunkSessionBrokerClient = SessionBrokerClient;
 
@@ -237,6 +260,11 @@ export class SessionBrokerClient {
 
   getRegistration() {
     return this.registration;
+  }
+
+  /** The snapshot this client registers with and keeps the daemon updated to. */
+  getSnapshot() {
+    return this.snapshot;
   }
 
   /**
@@ -517,7 +545,12 @@ export class SessionBrokerClient {
             // closing older windows cannot help. Retry without disturbing the notice on screen.
             this.refineRefusalNotice(config, wait, () => isConnectionCurrent(brokerGeneration));
           }
-        } else if (isRegistrationRejection(event)) {
+        } else if (
+          isRegistrationRejection(event) ||
+          isOversizedRegistrationRejection(event, () =>
+            assessSessionRegistration(this.registration, this.snapshot),
+          )
+        ) {
           // Publish ownership before subscribers can synchronously replace the review or stop.
           this.incumbentWait = {
             kind: "payload",

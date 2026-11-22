@@ -97,7 +97,9 @@ Chords that use Ctrl, Cmd, Alt, Tab, or a function key stay with the browser and
 
 ## Troubleshooting
 
-**The page says "This review link is not valid for that session."** The tab has no access key (for example, an address copied from the address bar after the page loaded), or the key belongs to a session that has ended. Run `hunk session open --repo .` for a current link.
+**The page says "This review link does not match a review the Hunk daemon is serving."** The tab has no access key (for example, an address copied from the address bar after the page loaded), the key belongs to a session that has ended, or the daemon refused the review. Run `hunk session open --repo .` for a current link.
+
+**`hunk diff --web` says the review has more files than the session daemon can hold.** The daemon keeps a bounded amount of data per review, a few thousand changed files, and Hunk exits with status 1 and prints no URL rather than a link that will not load. Narrow the review with a pathspec, for example `hunk diff --web -- src/`. A terminal review of the same changes still works, but shows "Session daemon rejected this review" and cannot be reached with `hunk session` commands.
 
 **The page says "This review session has ended."** The Hunk process that served the review stopped (Ctrl+C, a closed terminal, or a crash). What the page already shows stays readable, but notes, the filter, viewed marks, and refresh are disabled. Run `hunk diff --web` again, or `hunk session open` for a review that is still running.
 

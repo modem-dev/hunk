@@ -21,6 +21,7 @@ import { serveSessionBrokerDaemon as serveBunSessionBrokerDaemon } from "@hunk/s
 import { hunkSessionProtocolParsers } from "./protocolParsers";
 import {
   isQuiescentUpgradeRefusal,
+  isOversizedRegistrationRejection,
   isRegistrationRejection,
   SessionBrokerClient,
 } from "./brokerClient";
@@ -445,6 +446,26 @@ describe("Hunk session daemon client", () => {
         authenticated: true,
       }),
     ).toBe(false);
+  });
+
+  // A frame over the size limit or a retained-bytes refusal has no reason to match, and the
+  // latter also covers daemon-wide capacity; only the session's own size makes it permanent.
+  test("treats post-hello size closes as rejections only when the session is over a bound", () => {
+    const oversized = () => ({ ok: false });
+    const fits = () => ({ ok: true });
+    expect(isOversizedRegistrationRejection({ code: 1009, authenticated: true }, oversized)).toBe(
+      true,
+    );
+    expect(isOversizedRegistrationRejection({ code: 1013, authenticated: true }, oversized)).toBe(
+      true,
+    );
+    expect(isOversizedRegistrationRejection({ code: 1013, authenticated: true }, fits)).toBe(false);
+    expect(isOversizedRegistrationRejection({ code: 1009, authenticated: false }, oversized)).toBe(
+      false,
+    );
+    expect(isOversizedRegistrationRejection({ code: 1006, authenticated: true }, oversized)).toBe(
+      false,
+    );
   });
 
   /** Build one admin status probe for a daemon at the given revision. */

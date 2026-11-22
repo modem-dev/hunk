@@ -9,13 +9,16 @@
  * agent's `hunk session reload` and `--watch` changes — go through `ReviewReloadCoordinator`.
  *
  * Entry point: `hunk <review command> --web` implies `--watch` (startup applies it unless
- * `--no-watch`). It waits, bounded, until a daemon accepts the session; when none will (another
- * program holds the port, the daemon cannot start, or it is a different Hunk build) it exits with a
- * user error and prints no URL. Otherwise it prints exactly the URL line on stdout, then opens that URL in the default browser
- * unless `--no-open`. A launch failure is one stderr line without the URL, and the review keeps
- * serving. When stderr is a terminal, one line says where the review is — open in the browser,
- * or to be opened from the URL — and that Ctrl+C stops it; a failed launch carries that hint in
- * its warning instead of a second line.
+ * `--no-watch`). A review larger than the daemon holds per session exits at once with a user error
+ * that names its file count and a remedy. Otherwise it waits, bounded, until the daemon serves the
+ * review to a holder of its link — the hello proves only that a daemon talks to this session, and
+ * the daemon refuses an oversized or over-capacity registration after it. When none will (another
+ * program holds the port, the daemon cannot start, it is a different Hunk build, or it refused the
+ * review) it exits with a user error and prints no URL. Otherwise it prints exactly the URL line on
+ * stdout, then opens that URL in the default browser unless `--no-open`. A launch failure is one
+ * stderr line without the URL, and the review keeps serving. When stderr is a terminal, one line
+ * says where the review is — open in the browser, or to be opened from the URL — and that Ctrl+C
+ * stops it; a failed launch carries that hint in its warning instead of a second line.
  * `hunk session open` reaches the same opener through the bridge (`./openReview.ts`).
  *
  * Terminal-only concerns get explicit headless answers here: repo-local extensions awaiting a
@@ -42,7 +45,13 @@ import {
   resolveSessionBrokerConfig,
   type ResolvedSessionBrokerConfig,
 } from "../../session/broker/brokerConfig";
-import { reviewProcessUrl } from "../review/capability";
+import {
+  assessSessionRegistration,
+  describeOversizedSessionRegistration,
+  type SessionRegistrationLimits,
+} from "../../session/broker/registrationAdmission";
+import { HUNK_REVIEW_CAPABILITY_HEADER, reviewHttpPath } from "../../session/reviewHttpProtocol";
+import { reviewProcessCapability, reviewProcessUrl } from "../review/capability";
 import { ReviewSessionHost } from "../review/reviewSessionHost";
 import { buildReviewPresentationDefaults, buildReviewSharedState } from "../review/sharedState";
 import type { ReviewPresentationDefaults } from "../../session/reviewSharedState";
@@ -84,23 +93,69 @@ function holdProcessOpen() {
 
 /**
  * How long a headless review waits for a daemon to accept it before giving up: one daemon startup
- * attempt, as a terminal session's auto-start allows, plus the same again for the signed hello.
+ * attempt, as a terminal session's auto-start allows, plus the same again for the signed hello
+ * and the registration that follows it.
  */
 export const HEADLESS_REGISTRATION_TIMEOUT_MS = 2 * DAEMON_STARTUP_TIMEOUT_MS;
 
+/** Spacing between asks whether the daemon serves the review yet; registration takes milliseconds. */
+const REVIEW_SERVED_POLL_MS = 50;
+
+/** Ask the daemon whether it serves one session's review; resolves false on any failure. */
+export type ReviewServedProbe = (sessionId: string) => Promise<boolean>;
+
 /**
- * Wait until a daemon accepts this session, or fail with a user error naming the daemon port.
+ * Ask the daemon for this session's publication with the capability the printed URL carries,
+ * exactly as the page's first request does: success means the link will load.
+ */
+function createReviewServedProbe(httpOrigin: string): ReviewServedProbe {
+  return async (sessionId) => {
+    try {
+      const response = await fetch(
+        `${httpOrigin}${reviewHttpPath({ kind: "publication", sessionId })}`,
+        { headers: { [HUNK_REVIEW_CAPABILITY_HEADER]: reviewProcessCapability().token } },
+      );
+      await response.body?.cancel().catch(() => undefined);
+      return response.ok;
+    } catch {
+      return false;
+    }
+  };
+}
+
+/**
+ * Wait until a daemon accepts this session and serves its review, or fail with a user error
+ * naming the daemon port.
  *
- * The broker client reports the first reason registration cannot happen — the port belongs to
- * another process, the daemon did not start, or it is a different Hunk build — and this bound
- * covers a daemon that never answers. The timer is referenced, so the wait blocks the event loop
- * rather than polling it.
+ * The broker client reports the first reason the hello cannot happen — the port belongs to
+ * another process, the daemon did not start, or it is a different Hunk build. The daemon judges
+ * the registration only after the hello, and refuses it by closing the socket, so the wait then
+ * asks the daemon for the review itself until it answers or the broker client reports the
+ * refusal. The bound covers a daemon that never answers. The timer is referenced, so the wait
+ * blocks the event loop rather than polling it.
  */
 async function waitForDaemonRegistration(
-  hostClient: Pick<ReviewSessionRuntime["hostClient"], "waitForFirstRegistration">,
+  hostClient: Pick<
+    ReviewSessionRuntime["hostClient"],
+    "waitForFirstRegistration" | "getConnectionState" | "getRegistration"
+  >,
+  isReviewServed: ReviewServedProbe,
   config: Pick<ResolvedSessionBrokerConfig, "host" | "port">,
   timeoutMs: number,
 ) {
+  let abandoned = false;
+  /** Poll until the review is served, failing as soon as the daemon has refused it. */
+  const waitForReviewServed = async () => {
+    await hostClient.waitForFirstRegistration();
+    const sessionId = hostClient.getRegistration().sessionId;
+    while (!abandoned) {
+      const state = hostClient.getConnectionState();
+      if (state.status === "disconnected") throw new Error(state.notice);
+      if (await isReviewServed(sessionId)) return;
+      await new Promise((resolve) => setTimeout(resolve, REVIEW_SERVED_POLL_MS));
+    }
+  };
+
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timedOut = new Promise<never>((_resolve, reject) => {
     timer = setTimeout(
@@ -112,7 +167,7 @@ async function waitForDaemonRegistration(
     );
   });
   try {
-    await Promise.race([hostClient.waitForFirstRegistration(), timedOut]);
+    await Promise.race([waitForReviewServed(), timedOut]);
   } catch (error) {
     // The broker client's startup timeout promises a background retry; this command exits.
     const reason = (error instanceof Error ? error.message : String(error)).replace(
@@ -128,8 +183,29 @@ async function waitForDaemonRegistration(
       `could not serve this review through the session daemon on ${config.host}:${config.port}. ${sanitizeTerminalLine(reason)}${remedy}`,
     );
   } finally {
+    abandoned = true;
     clearTimeout(timer);
   }
+}
+
+/**
+ * Refuse, before any wait, a review the daemon would refuse for its size, naming its file count
+ * and the remedy rather than a refusal reason the daemon cannot explain.
+ */
+function assertDaemonCanHoldReview(
+  hostClient: Pick<ReviewSessionRuntime["hostClient"], "getRegistration" | "getSnapshot">,
+  config: Pick<ResolvedSessionBrokerConfig, "host" | "port">,
+  limits?: SessionRegistrationLimits,
+) {
+  const admission = assessSessionRegistration(
+    hostClient.getRegistration(),
+    hostClient.getSnapshot(),
+    limits,
+  );
+  if (admission.ok) return;
+  throw new HunkUserError(
+    `could not serve this review through the session daemon on ${config.host}:${config.port}. ${describeOversizedSessionRegistration(admission)}`,
+  );
 }
 
 /** Call `onClosed` once stdout or stderr reports that its reader is gone. */
@@ -178,6 +254,10 @@ export interface HeadlessReviewDeps {
   watchOutputClosed?: (onClosed: () => void) => () => void;
   /** Bound on waiting for a daemon to accept the session; tests shorten it. */
   registrationTimeoutMs?: number;
+  /** Ask the daemon whether it serves the review yet; tests answer directly. */
+  isReviewServed?: ReviewServedProbe;
+  /** The daemon's per-session bounds; tests shrink them. */
+  registrationLimits?: SessionRegistrationLimits;
 }
 
 /** The live pieces of one running headless review, exposed for tests. */
@@ -380,11 +460,13 @@ export async function runHeadlessReview(
       reviewProducer: producer,
     }),
   );
-  // The URL is only printed once a daemon has accepted the session and will serve its page.
+  // The URL is only printed once the daemon serves the review's page to a holder of the link.
   const brokerConfig = resolveSessionBrokerConfig(deps.env);
   try {
+    assertDaemonCanHoldReview(hostClient, brokerConfig, deps.registrationLimits);
     await waitForDaemonRegistration(
       hostClient,
+      deps.isReviewServed ?? createReviewServedProbe(brokerConfig.httpOrigin),
       brokerConfig,
       deps.registrationTimeoutMs ?? HEADLESS_REGISTRATION_TIMEOUT_MS,
     );
