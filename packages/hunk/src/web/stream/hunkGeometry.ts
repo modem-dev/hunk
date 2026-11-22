@@ -11,7 +11,7 @@
  */
 import type { ReviewHunkVerticalBounds } from "../../core/review/viewportAnchor";
 import type { ReviewFile } from "../../core/review/types";
-import type { ReviewGapView } from "./fileProjection";
+import type { reviewDrawnRows, ReviewGapView } from "./fileProjection";
 
 /** A half-open range of rendered row indices in one layout. */
 export interface ReviewRowRange {
@@ -119,4 +119,24 @@ export function measureReviewFileGeometry(
     if (measured) geometry.gaps.set(gap.gapId, measured);
   }
   return geometry;
+}
+
+/**
+ * Where one file's hunks sit before it has drawn, with every row one `rowHeight` tall: the
+ * same rows the stream reserves for the file, so a hunk read from the estimate is the one the
+ * reserved space shows there.
+ */
+export function estimateReviewFileGeometry(
+  rows: ReturnType<typeof reviewDrawnRows>,
+  layout: "split" | "unified",
+  rowHeight: number,
+): ReviewFileGeometry {
+  return {
+    hunks: rows.hunks.map((hunk) => {
+      const start = layout === "split" ? hunk.splitLineStart : hunk.unifiedLineStart;
+      const count = layout === "split" ? hunk.splitLineCount : hunk.unifiedLineCount;
+      return count > 0 ? { top: start * rowHeight, height: count * rowHeight } : undefined;
+    }),
+    gaps: new Map(),
+  };
 }

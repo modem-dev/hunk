@@ -13,7 +13,9 @@
  * reach the same handlers, keyed by the shared catalog's ids. Hunk and file navigation and the
  * gap toggle lower through `lowerAppCommandToReviewIntent` and apply to the local store, so
  * `]` here and `]` in the terminal plan the same move; scrolling, layout, and theme are this
- * page's own.
+ * page's own. Every command first settles the stream's viewport, so a scroll still inside its
+ * quiet period (`g`, Space, the wheel) is the selection the next command reads: keys pressed
+ * in a burst land where the same keys pressed slowly do, each applying to the last one's result.
  *
  * The session's shared state (`../mirror/clientSharedStateMirror.ts`) supplies what the page shows
  * beyond files: notes (adopted into the store by the session wiring), sidecar annotations,
@@ -50,6 +52,7 @@ import { defaultWebKeymap, webCommandChords, type WebKeymap } from "../commands/
 import { useWebKeyboard } from "../commands/useWebKeyboard";
 import {
   buildWebCommands,
+  type WebCommand,
   type WebCommandHandlers,
   type WebCommandInvocation,
   type WebImplementedCommandId,
@@ -816,7 +819,15 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
       // Finding: help (`./useReviewTools.tsx`, with the palette and go-to-file).
       "hunk.app.toggleHelp": () => toolsRef.current?.toggleHelp(),
     };
-    return buildWebCommands(handlers);
+    return buildWebCommands(handlers).map(
+      (command): WebCommand => ({
+        ...command,
+        run: (invocation) => {
+          stream()?.settle();
+          command.run(invocation);
+        },
+      }),
+    );
   }, [session, updatePreferences]);
   // Page commands with plain chords (`hunk.web.*`, declared in `webLocalCommands.ts`) join the
   // catalogued ones on the keyboard; the palette and help list them from the same declaration.
@@ -855,7 +866,13 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
     [updatePanel],
   );
   const pageCommands = useMemo(
-    () => [...commands, ...webLocalKeyCommands((id) => panelHandlers[id]?.())],
+    () => [
+      ...commands,
+      ...webLocalKeyCommands((id) => {
+        streamController.current?.settle();
+        panelHandlers[id]?.();
+      }),
+    ],
     [commands, panelHandlers],
   );
   const pageKeymap = useMemo(() => withWebLocalChords(keymap), [keymap]);
