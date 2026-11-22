@@ -1,5 +1,6 @@
 import { shouldUseMouseForApp, type ControllingTerminal } from "../core/process/terminal";
 import type { AppBootstrap } from "../core/bootstrap";
+import { REVIEW_SHUTDOWN_SIGNALS } from "../core/process/shutdownSignals";
 import { resolveStartupUpdateNotice } from "../core/process/updateNotice";
 import { createReviewSessionRuntime } from "../app/session/reviewRuntime";
 import { createSessionReloadBounds } from "../app/session/reloadBounds";
@@ -19,12 +20,6 @@ export interface InteractiveAppDeps {
   createReviewRuntime?: typeof createReviewSessionRuntime;
   runSession?: typeof runHunkSession;
 }
-
-// Leave fatal process faults to their default OS disposition.
-export const APP_SHUTDOWN_SIGNALS: NodeJS.Signals[] =
-  process.platform === "win32"
-    ? ["SIGINT", "SIGTERM", "SIGBREAK"]
-    : ["SIGINT", "SIGTERM", "SIGHUP", "SIGQUIT", "SIGPIPE"];
 
 /** Load and run the OpenTUI review app after startup has selected an interactive plan. */
 export async function runInteractiveApp(
@@ -69,7 +64,7 @@ export async function runInteractiveApp(
       useMouse: shouldUseMouseForApp({
         hasControllingTerminal: Boolean(controllingTerminal),
       }),
-      signals: APP_SHUTDOWN_SIGNALS,
+      signals: REVIEW_SHUTDOWN_SIGNALS,
       onRendererDestroy: closeTerminal,
       onFailure: async () => {
         try {

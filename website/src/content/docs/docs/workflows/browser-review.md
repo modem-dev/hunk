@@ -17,7 +17,7 @@ hunk diff --staged --web
 
 `--web` works on `diff`, `show`, `stash show`, `patch`, and `difftool`. Hunk starts the review without a terminal UI, prints the review URL once the session daemon has accepted the review, opens it in your default browser, and stays in the foreground until you press Ctrl+C. Ctrl+C ends the review; an open page then says the session has ended.
 
-Standard output is exactly the URL, so a script can capture it. At a terminal, one line follows on standard error: `hunk: review ready in your browser. Press Ctrl+C to stop.`, or `hunk: open the URL above in a browser. Press Ctrl+C to stop.` with `--no-open`. If the daemon restarts, the review keeps serving and reconnects to it; if the terminal running the review goes away, the review ends.
+Standard output is exactly one URL line. The review keeps running and never closes its standard output, so `URL=$(hunk diff --web --no-open)` never returns; see [Use the URL from a script](#use-the-url-from-a-script). At a terminal, one line follows on standard error: `hunk: review ready in your browser. Press Ctrl+C to stop.`, or `hunk: open the URL above in a browser. Press Ctrl+C to stop.` with `--no-open`. If the daemon restarts, the review keeps serving and reconnects to it; if the terminal running the review goes away, the review ends.
 
 | Flag         | Effect                                                                                 |
 | ------------ | -------------------------------------------------------------------------------------- |
@@ -25,6 +25,22 @@ Standard output is exactly the URL, so a script can capture it. At a terminal, o
 | `--no-watch` | Do not reload when the input changes. With `--web`, Hunk watches its input by default. |
 
 Input that cannot be read again, such as `some-command | hunk patch - --web`, is served once without watching, as in [watch mode](/docs/workflows/watch-mode/).
+
+### Use the URL from a script
+
+Start the review in the background, send its output to a file, and read the first line once it appears. Stop the review when the script is done:
+
+```bash
+url_file=$(mktemp)
+hunk diff --web --no-open > "$url_file" &
+review=$!
+until [ -s "$url_file" ]; do sleep 0.1; done
+URL=$(head -n 1 "$url_file")
+# ... use "$URL" ...
+kill "$review"
+```
+
+A review that is already running can print its URL again with `hunk session open --repo . --no-open`. In a pipe such as `hunk diff --web --no-open | head -n 1`, the review does not end when `head` exits: as with the terminal UI, it ends on a signal such as Ctrl+C, or at its next write to the closed pipe, which may not come. Stop it yourself.
 
 ### Open a running review
 
