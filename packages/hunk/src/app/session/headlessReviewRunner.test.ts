@@ -577,6 +577,18 @@ describe("runHeadlessReview", () => {
     expect(fake.stopCount()).toBe(1);
   });
 
+  test.skipIf(process.platform === "win32")(
+    "SIGQUIT shuts down, as in the terminal UI",
+    async () => {
+      const { bootstrap } = await createTestHeadlessBootstrap();
+      const { fake, signals, exited } = await startTestHeadlessReview(bootstrap);
+
+      signals.emit("SIGQUIT");
+      expect(await exited).toBe(0);
+      expect(fake.stopCount()).toBe(1);
+    },
+  );
+
   test("a watch change reloads the review in place and re-attaches the producer", async () => {
     const { bootstrap, right } = await createTestHeadlessBootstrap({ watch: true });
     const watch = createWatchTestRuntime();

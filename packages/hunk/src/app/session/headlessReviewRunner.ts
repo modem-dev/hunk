@@ -4,7 +4,7 @@
  * The process stays in the foreground as the review's owner: it registers the session with the
  * loopback daemon exactly as a terminal session does, answers every `hunk session` command and
  * brokered review action through the same bridge, prints the review URL on stdout, and waits for
- * SIGINT, SIGTERM, or SIGHUP, or for a write that finds its stdout or stderr reader gone. While
+ * the terminal UI's shutdown signals (SIGINT, SIGTERM, SIGHUP, SIGQUIT), or for a write that finds its stdout or stderr reader gone. While
  * the daemon is away the process idles and the broker client reconnects. Agent commands go straight to the `ReviewSessionHost`; reloads — the
  * agent's `hunk session reload` and `--watch` changes — go through `ReviewReloadCoordinator`.
  *
@@ -31,6 +31,7 @@
  * session, then stop the broker client so the session leaves `hunk session list`.
  */
 import type { AppBootstrap } from "../../core/bootstrap";
+import { REVIEW_SHUTDOWN_SIGNALS } from "../../core/process/shutdownSignals";
 import { writeStdout } from "../../core/process/stdout";
 import type { StartupNotice } from "../../core/process/startupNotice";
 import { resolveStartupUpdateNotice } from "../../core/process/updateNotice";
@@ -60,17 +61,6 @@ import { ReviewReloadCoordinator, withReloadVcsCatalog } from "./reloadCoordinat
 import { createSessionReloadBounds } from "./reloadBounds";
 import { openSessionReview, type ReviewUrlOpener } from "./openReview";
 import { createReviewSessionRuntime, type ReviewSessionRuntime } from "./reviewRuntime";
-
-/**
- * Signals that end a headless review, as they end a terminal review. Windows delivers Ctrl+Break
- * as SIGBREAK. Elsewhere a closed terminal sends SIGHUP, and SIGPIPE arrives when a write — this
- * runner's notices or the broker client's console warnings — finds that whoever started the
- * review closed its output or died; Bun otherwise ignores SIGPIPE and the orphan lives on.
- */
-export const HEADLESS_REVIEW_SHUTDOWN_SIGNALS: readonly NodeJS.Signals[] =
-  process.platform === "win32"
-    ? ["SIGINT", "SIGTERM", "SIGBREAK"]
-    : ["SIGINT", "SIGTERM", "SIGHUP", "SIGPIPE"];
 
 /** How a person at a terminal stops a headless review. */
 const HEADLESS_STOP_HINT = "Press Ctrl+C to stop.";
@@ -531,7 +521,7 @@ export async function runHeadlessReview(
   /** Stop reloads, the watch, extensions, and the broker client, in that order. */
   const shutdown = () => {
     shutdownPromise ??= (async () => {
-      for (const signal of HEADLESS_REVIEW_SHUTDOWN_SIGNALS) {
+      for (const signal of REVIEW_SHUTDOWN_SIGNALS) {
         signals.off(signal, onSignal);
       }
       unwatchOutput();
@@ -555,7 +545,7 @@ export async function runHeadlessReview(
   const onSignal = () => {
     void shutdown();
   };
-  for (const signal of HEADLESS_REVIEW_SHUTDOWN_SIGNALS) {
+  for (const signal of REVIEW_SHUTDOWN_SIGNALS) {
     signals.once(signal, onSignal);
   }
   // A parent that died or closed its end of the output pipe can no longer stop this review with
