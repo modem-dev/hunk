@@ -21,6 +21,7 @@ import { serveSessionBrokerDaemon as serveBunSessionBrokerDaemon } from "@hunk/s
 import { hunkSessionProtocolParsers } from "./protocolParsers";
 import {
   isQuiescentUpgradeRefusal,
+  isOversizedRegistrationRejection,
   isRegistrationRejection,
   SessionBrokerClient,
 } from "./brokerClient";
@@ -447,6 +448,26 @@ describe("Hunk session daemon client", () => {
     ).toBe(false);
   });
 
+  // A frame over the size limit or a retained-bytes refusal has no reason to match, and the
+  // latter also covers daemon-wide capacity; only the session's own size makes it permanent.
+  test("treats post-hello size closes as rejections only when the session is over a bound", () => {
+    const oversized = () => ({ ok: false });
+    const fits = () => ({ ok: true });
+    expect(isOversizedRegistrationRejection({ code: 1009, authenticated: true }, oversized)).toBe(
+      true,
+    );
+    expect(isOversizedRegistrationRejection({ code: 1013, authenticated: true }, oversized)).toBe(
+      true,
+    );
+    expect(isOversizedRegistrationRejection({ code: 1013, authenticated: true }, fits)).toBe(false);
+    expect(isOversizedRegistrationRejection({ code: 1009, authenticated: false }, oversized)).toBe(
+      false,
+    );
+    expect(isOversizedRegistrationRejection({ code: 1006, authenticated: true }, oversized)).toBe(
+      false,
+    );
+  });
+
   /** Build one admin status probe for a daemon at the given revision. */
   function statusProbeTest(daemonVersion: number): HunkDaemonAdminProbe {
     return {
@@ -684,6 +705,63 @@ describe("Hunk session daemon client", () => {
       });
       // Without a status-bar subscriber the notice falls back to the console.
       expect(messages).toEqual([`[session:broker] ${HUNK_DAEMON_REGISTRATION_REJECTED_MESSAGE}`]);
+    } finally {
+      client.stop();
+      webSockets.restoreTest();
+    }
+  });
+
+  // A review near the retained-bytes bound can cross it as notes are added and fall back under it
+  // as they are removed; only the smaller snapshot can end that wait, since no reload follows.
+  test("ends a size refusal once a smaller snapshot brings the session back under the bounds", () => {
+    const webSockets = installWebSocketObserverTest();
+    captureBrokerWarningsTest();
+    // Over the 4 MiB the daemon retains per session; only the size matters to the check.
+    const oversizedSnapshot = () => ({
+      ...createSnapshot(),
+      updatedAt: "x".repeat(5 * 1024 * 1024),
+    });
+    const client = new SessionBrokerClient(createRegistration(), oversizedSnapshot());
+    const config = prepareDirectConnectTest(client);
+
+    try {
+      clientTestAccess(client).connect(config);
+      const connection = clientTestAccess(client).connection;
+      if (!connection?.options?.resolveClose) throw new Error("Expected a live connection.");
+      connection.options.resolveClose({
+        code: 1013,
+        reason: "Session broker capacity exceeded.",
+        authenticated: true,
+      });
+      expect(clientTestAccess(client).incumbentWait?.kind).toBe("payload");
+
+      client.updateSnapshot(oversizedSnapshot());
+      expect(clientTestAccess(client).incumbentWait?.kind).toBe("payload");
+      client.updateSnapshot(createSnapshot());
+      expect(clientTestAccess(client).incumbentWait).toBeNull();
+    } finally {
+      client.stop();
+      webSockets.restoreTest();
+    }
+  });
+
+  test("keeps a parser refusal waiting for a replacement review, whatever the snapshot", () => {
+    const webSockets = installWebSocketObserverTest();
+    captureBrokerWarningsTest();
+    const client = new SessionBrokerClient(createRegistration(), createSnapshot());
+    const config = prepareDirectConnectTest(client);
+
+    try {
+      clientTestAccess(client).connect(config);
+      const connection = clientTestAccess(client).connection;
+      if (!connection?.options?.resolveClose) throw new Error("Expected a live connection.");
+      connection.options.resolveClose({
+        code: 1008,
+        reason: "Incompatible session registration.",
+        authenticated: true,
+      });
+      client.updateSnapshot(createSnapshot());
+      expect(clientTestAccess(client).incumbentWait?.kind).toBe("payload");
     } finally {
       client.stop();
       webSockets.restoreTest();

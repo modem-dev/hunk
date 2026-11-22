@@ -619,6 +619,45 @@ describe.skipIf(process.platform === "win32")("headless review session", () => {
     }
   }, 60_000);
 
+  // The daemon refuses an oversized registration after the hello, by closing the socket, so a URL
+  // printed at the hello led to a page that could never load. 3,100 changed text files declare
+  // more catalog resources than the daemon parses, whatever the paths are, so the review is
+  // refused before any daemon starts, with its size and a remedy instead of a URL.
+  test("exits with its size and a remedy, and no URL, when the review is too large to serve", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "hunk-headless-large-"));
+    tempDirs.push(dir);
+    const fileCount = 3_100;
+    git(dir, ["init", "-q"]);
+    for (let index = 0; index < fileCount; index += 1) {
+      writeFileSync(join(dir, `f${index}.ts`), "a\n");
+    }
+    git(dir, ["add", "-A"]);
+    git(dir, ["commit", "-q", "-m", "files"]);
+    for (let index = 0; index < fileCount; index += 1) {
+      writeFileSync(join(dir, `f${index}.ts`), "b\n");
+    }
+    const port = await reserveLoopbackPort();
+
+    const proc = Bun.spawn(
+      ["bun", "run", sourceEntrypoint, "diff", "--web", "--no-open", "--no-watch"],
+      { cwd: dir, stdin: "ignore", stdout: "pipe", stderr: "pipe", env: testEnv(port) },
+    );
+    sessions.add(proc);
+    const [exitCode, stdout, stderr] = await Promise.all([
+      proc.exited,
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+
+    expect(exitCode).toBe(1);
+    expect(stdout).toBe("");
+    expect(stderr).toContain(
+      `hunk: could not serve this review through the session daemon on 127.0.0.1:${port}. This review has 3,100 files, more than the session daemon can hold (about `,
+    );
+    expect(stderr).toContain("Narrow it to fewer files with `-- <pathspec>`.");
+    expect(readLaunchedDaemonPid(port)).toBeNull();
+  }, 120_000);
+
   // Once its daemon died, a session had nothing referenced left in Bun's event loop and polled it
   // with a zero timeout: sessions leaked by this suite ran at 100% CPU for hours. Linux-only: CPU
   // time is read from procfs, in the 100 Hz clock ticks Linux reports.

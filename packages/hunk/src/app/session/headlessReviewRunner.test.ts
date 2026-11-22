@@ -7,11 +7,23 @@ import type { AppBootstrap } from "../../core/bootstrap";
 import { loadAppBootstrap } from "../../core/changeset/loaders";
 import { STML_REFERENCE_WIDTH } from "../../core/stml/layout";
 import { createEmptyExtensionLoadResult, type ExtensionLoadResult } from "../../extensions/types";
-import type { SessionBrokerClient } from "../../session/broker/brokerClient";
+import type {
+  HunkDaemonConnectionState,
+  SessionBrokerClient,
+} from "../../session/broker/brokerClient";
+import { HUNK_DAEMON_REGISTRATION_REJECTED_MESSAGE } from "../../session/client/capabilities";
 import type { HunkSessionServerMessage, HunkSessionSnapshot } from "../../session/types";
 import { createWatchTestRuntime } from "../../../../../test/helpers/watchTest";
+import {
+  HUNK_SESSION_REGISTRATION_LIMITS,
+  type SessionRegistrationLimits,
+} from "../../session/broker/registrationAdmission";
 import { ReviewProducer } from "../review/producer";
-import { runHeadlessReview, type HeadlessReviewSession } from "./headlessReviewRunner";
+import {
+  runHeadlessReview,
+  type HeadlessReviewSession,
+  type ReviewServedProbe,
+} from "./headlessReviewRunner";
 import type { ReviewUrlOpener } from "./openReview";
 import { createInitialSessionSnapshot, createSessionRegistration } from "./registration";
 import type { ReviewSessionRuntime } from "./reviewRuntime";
@@ -73,9 +85,12 @@ function createTestRuntime(
   let bridge: { dispatchCommand(message: HunkSessionServerMessage): Promise<unknown> } | null =
     null;
   let stopped = 0;
+  let connectionState: HunkDaemonConnectionState = { status: "connected" };
   const hostClient = {
     waitForFirstRegistration: waitForRegistration,
     getRegistration: () => registration,
+    getSnapshot: () => snapshots.at(-1)!,
+    getConnectionState: () => connectionState,
     replaceSession(next: typeof registration, snapshot: HunkSessionSnapshot) {
       registration = next;
       snapshots.push(snapshot);
@@ -98,6 +113,10 @@ function createTestRuntime(
     dispatch: (message: HunkSessionServerMessage) => bridge!.dispatchCommand(message),
     hasBridge: () => bridge !== null,
     stopCount: () => stopped,
+    /** Report the link state a daemon's close would leave the broker client in. */
+    setConnectionState: (next: HunkDaemonConnectionState) => {
+      connectionState = next;
+    },
   };
 }
 
@@ -110,9 +129,12 @@ async function startTestHeadlessReview(
     stderrIsTTY?: boolean;
     waitForRegistration?: () => Promise<void>;
     registrationTimeoutMs?: number;
+    isReviewServed?: ReviewServedProbe;
+    registrationLimits?: SessionRegistrationLimits;
+    fake?: ReturnType<typeof createTestRuntime>;
   } = {},
 ) {
-  const fake = createTestRuntime(bootstrap, options.waitForRegistration);
+  const fake = options.fake ?? createTestRuntime(bootstrap, options.waitForRegistration);
   const signals = new EventEmitter();
   const stdout: string[] = [];
   const stderr: string[] = [];
@@ -127,6 +149,8 @@ async function startTestHeadlessReview(
   });
   const exited = runHeadlessReview(bootstrap, {
     registrationTimeoutMs: options.registrationTimeoutMs,
+    isReviewServed: options.isReviewServed ?? (async () => true),
+    registrationLimits: options.registrationLimits,
     holdProcess: () => {
       hold.acquired += 1;
       return () => {
@@ -367,6 +391,7 @@ describe("runHeadlessReview", () => {
       holdProcess: () => () => {},
       watchOutputClosed: () => () => {},
       resolveUpdateNotice: async () => null,
+      isReviewServed: async () => true,
       onStarted: (running) => {
         session = running;
       },
@@ -384,6 +409,98 @@ describe("runHeadlessReview", () => {
 
     signals.emit("SIGINT");
     expect(await exited).toBe(0);
+  });
+
+  // The hello proves only that a daemon talks to the session; the daemon judges the registration
+  // after it, so the URL waits until the daemon serves the review.
+  test("asks the daemon for the review until it is served, then prints the URL", async () => {
+    const { bootstrap } = await createTestHeadlessBootstrap({ open: false });
+    const fake = createTestRuntime(bootstrap);
+    const asked: string[] = [];
+    const review = await startTestHeadlessReview(bootstrap, undefined, {
+      fake,
+      // Registered at once, served only on the third ask.
+      isReviewServed: async (sessionId) => {
+        asked.push(sessionId);
+        return asked.length >= 3;
+      },
+    });
+
+    const sessionId = fake.runtime.hostClient.getRegistration().sessionId;
+    expect(asked).toEqual([sessionId, sessionId, sessionId]);
+    expect(review.stdout).toEqual([`${review.session.url}\n`]);
+    review.signals.emit("SIGINT");
+    expect(await review.exited).toBe(0);
+  });
+
+  // A daemon that completes the hello and then never answers must not hold the command open: the
+  // request in flight ends with the wait.
+  test("ends a hanging review request when the registration bound runs out", async () => {
+    const { bootstrap } = await createTestHeadlessBootstrap({ open: false });
+    const signals: AbortSignal[] = [];
+    const review = await startTestHeadlessReview(bootstrap, undefined, {
+      registrationTimeoutMs: 20,
+      isReviewServed: (_sessionId, signal) => {
+        signals.push(signal);
+        return new Promise<boolean>((resolve) => {
+          signal.addEventListener("abort", () => resolve(false), { once: true });
+        });
+      },
+    });
+
+    await expect(review.exited).rejects.toThrow("No session daemon accepted it within 1 seconds.");
+    expect(signals).toHaveLength(1);
+    expect(signals[0]!.aborted).toBe(true);
+    expect(review.stdout).toEqual([]);
+  });
+
+  test("exits with the daemon's refusal, and no URL, when it rejects the registration", async () => {
+    const { bootstrap } = await createTestHeadlessBootstrap({ open: false });
+    const fake = createTestRuntime(bootstrap);
+    const review = await startTestHeadlessReview(bootstrap, undefined, {
+      fake,
+      // The daemon closes the socket after the hello; the broker client then reports it.
+      isReviewServed: async () => {
+        fake.setConnectionState({
+          status: "disconnected",
+          notice: HUNK_DAEMON_REGISTRATION_REJECTED_MESSAGE,
+          direction: "unknown",
+        });
+        return false;
+      },
+    });
+
+    await expect(review.exited).rejects.toThrow(
+      `could not serve this review through the session daemon on 127.0.0.1:45555. ${HUNK_DAEMON_REGISTRATION_REJECTED_MESSAGE}`,
+    );
+    expect(review.stdout).toEqual([]);
+    expect(review.fake.stopCount()).toBe(1);
+    expect(review.hold.acquired).toBe(0);
+  });
+
+  test("refuses a review too large for the daemon before waiting, naming its size and a remedy", async () => {
+    const { bootstrap } = await createTestHeadlessBootstrap({ open: false });
+    let waited = false;
+    const review = await startTestHeadlessReview(bootstrap, undefined, {
+      waitForRegistration: async () => {
+        waited = true;
+      },
+      registrationLimits: { ...HUNK_SESSION_REGISTRATION_LIMITS, maxFiles: 0.5 },
+    });
+
+    const error = await review.exited.then(
+      () => null,
+      (failure: unknown) => failure as Error,
+    );
+    expect(error?.name).toBe("HunkUserError");
+    expect(error?.message).toBe(
+      "could not serve this review through the session daemon on 127.0.0.1:45555. This review has 1 file, more than the session daemon can hold. Narrow it to fewer files with `-- <pathspec>`.",
+    );
+    expect(waited).toBe(false);
+    expect(review.stdout).toEqual([]);
+    expect(review.fake.stopCount()).toBe(1);
+    expect(review.fake.hasBridge()).toBe(false);
+    expect(review.hold.acquired).toBe(0);
   });
 
   test("exits with a user error naming the port, and no URL, when registration fails", async () => {
