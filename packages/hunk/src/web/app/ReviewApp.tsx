@@ -71,6 +71,7 @@ import {
   loadWebThemeIndex,
   readStoredThemeId,
   resolveSessionWebTheme,
+  sessionThemeId,
   sessionCustomWebTheme,
   storeThemeId,
   type WebThemeIndex,
@@ -199,18 +200,19 @@ function useWebTheme(sessionTheme: ReviewThemeDefaults | undefined) {
     const builtIn = index?.themes ?? [];
     if (!sessionTheme) return builtIn;
     const custom = sessionTheme.kind === "custom" ? sessionCustomWebTheme(sessionTheme) : undefined;
-    const sessionLabel =
-      custom?.label ?? builtIn.find((candidate) => candidate.id === sessionTheme.id)?.label;
+    const sessionId = sessionThemeId(sessionTheme, prefersDark);
+    const sessionBuiltIn = builtIn.find((candidate) => candidate.id === sessionId);
+    const sessionLabel = custom?.label ?? sessionBuiltIn?.label;
     return [
       {
         id: SESSION_THEME_OPTION_ID,
         label: `Use session theme${sessionLabel ? ` (${sessionLabel})` : ""}`,
-        appearance: sessionTheme.appearance,
+        appearance: sessionBuiltIn?.appearance ?? sessionTheme.appearance,
       },
       ...(custom ? [custom] : []),
       ...builtIn,
     ];
-  }, [index, sessionTheme]);
+  }, [index, sessionTheme, prefersDark]);
   const selectedId =
     themeId !== undefined && options.some((option) => option.id === themeId)
       ? themeId
@@ -310,7 +312,9 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
     });
   }, []);
 
-  const sidebarOpen = preferences.sidebarOpen ?? defaultSidebarOpen(window.innerWidth, columnWidth);
+  const sidebarOpen =
+    preferences.sidebarOpen ??
+    defaultSidebarOpen(window.innerWidth, columnWidth, presentation?.view.sidebar);
   // The side panel's frame is this browser's; its tools are separate modules (`../panel/`).
   const [panel, setPanel] = useState<SidePanelPreferences>(() => readSidePanelPreferences());
   const updatePanel = useCallback((next: Partial<SidePanelPreferences>, store = true) => {

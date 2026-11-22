@@ -643,21 +643,9 @@ export async function prepareStartupPlan(
   // A web review owns no terminal: it needs no TTY, opens no controlling terminal, and never
   // probes terminal colors.
   const headlessWeb = cliInput.options.web === true;
-  // `--web` implies `--watch` whenever the input can be reopened, unless `--no-watch` said
-  // otherwise. An input that cannot be reopened (a patch on stdin) simply is not watched; only an
-  // explicit `--watch` on such an input is an error, below.
-  const applyWebImpliedWatch = () => {
-    if (
-      headlessWeb &&
-      runtimeCliInput.options.watch !== false &&
-      !cliInput.options.watch &&
-      canReloadInput(cliInput)
-    ) {
-      cliInput = { ...cliInput, options: { ...cliInput.options, watch: true } };
-      configured = { ...configured, input: cliInput };
-    }
-  };
-  applyWebImpliedWatch();
+  // `--web` implies `--watch` for a reopenable input inside config resolution, so an explicit
+  // `--no-watch` or config `watch = false` still wins; only an explicit `--watch` on an input that
+  // cannot be reopened is an error, below.
 
   if (cliInput.options.watch) {
     await whileStartupOwnsExtensions(() => {
@@ -741,9 +729,6 @@ export async function prepareStartupPlan(
   );
   configured = resolvedExtensions.configured;
   cliInput = configured.input;
-  // A user-extension VCS adapter that moved the project root re-resolves the input from the CLI
-  // flags, which dropped the watch `--web` implied; imply it again for the re-resolved input.
-  applyWebImpliedWatch();
   const extensionResult = resolvedExtensions.extensions;
   preloadedExtensions = extensionResult;
   if (deps.signal?.aborted) {

@@ -101,6 +101,7 @@ export interface WebViewSessionDefaults {
   layout: LayoutMode;
   wrapLines: boolean;
   lineNumbers: boolean;
+  sidebar: boolean | "auto";
 }
 
 /**
@@ -161,7 +162,26 @@ export function resolveWebLayout(
   return columns >= DEFAULT_AUTO_SPLIT_MIN_WIDTH ? "split" : "unified";
 }
 
-/** Whether the sidebar starts open for a viewport, absent a stored choice. */
-export function defaultSidebarOpen(viewportWidthPx: number, columnWidthPx: number) {
-  return viewportWidthPx / Math.max(1, columnWidthPx) >= SIDEBAR_VIEWPORT_MIN_COLUMNS;
+/**
+ * Below this many monospace columns not even `--sidebar` opens the sidebar: the terminal's
+ * minimum files pane (22), divider (1), and diff (48) plus its 2 columns of body padding.
+ */
+export const SIDEBAR_FORCE_MIN_COLUMNS = 73;
+
+/**
+ * Whether the sidebar starts open for a viewport, absent a stored choice.
+ *
+ * Mirrors the terminal: `--no-sidebar` keeps it closed, `auto` opens it from
+ * `SIDEBAR_VIEWPORT_MIN_COLUMNS`, and `--sidebar` also opens it on a narrower viewport as long
+ * as `SIDEBAR_FORCE_MIN_COLUMNS` leave room for the diff beside it.
+ */
+export function defaultSidebarOpen(
+  viewportWidthPx: number,
+  columnWidthPx: number,
+  sessionSidebar: boolean | "auto" = "auto",
+) {
+  if (sessionSidebar === false) return false;
+  const columns = viewportWidthPx / Math.max(1, columnWidthPx);
+  if (columns >= SIDEBAR_VIEWPORT_MIN_COLUMNS) return true;
+  return sessionSidebar === true && columns >= SIDEBAR_FORCE_MIN_COLUMNS;
 }

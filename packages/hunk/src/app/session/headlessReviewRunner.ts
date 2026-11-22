@@ -8,8 +8,8 @@
  * the daemon is away the process idles and the broker client reconnects. Agent commands go straight to the `ReviewSessionHost`; reloads — the
  * agent's `hunk session reload` and `--watch` changes — go through `ReviewReloadCoordinator`.
  *
- * Entry point: `hunk <review command> --web` implies `--watch` (startup applies it unless
- * `--no-watch`). A review larger than the daemon holds per session exits at once with a user error
+ * Entry point: `hunk <review command> --web` implies `--watch` (config resolution applies it unless
+ * `--no-watch` or config `watch = false`). A review larger than the daemon holds per session exits at once with a user error
  * that names its file count and a remedy. Otherwise it waits, bounded, until the daemon serves the
  * review to a holder of its link — the hello proves only that a daemon talks to this session, and
  * the daemon refuses an oversized or over-capacity registration after it. When none will (another

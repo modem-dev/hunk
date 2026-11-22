@@ -28,6 +28,7 @@ import {
 import { DEFAULT_SCROLL_OFF, MAX_SCROLL_OFF, MIN_SCROLL_OFF, validateScrollOff } from "./scrollOff";
 import { DEFAULT_TAB_WIDTH, validateTabWidth } from "./tabWidth";
 import { DEFAULT_WHEEL_SCROLL_LINES, validateWheelScrollLines } from "./wheelScrollLines";
+import { canReloadInput } from "./inputReload";
 import { findProjectRootCandidate } from "../process/projectRoot";
 import { createVcsCatalog, detectVcs } from "../vcs";
 import type { VcsCatalog } from "../vcs/types";
@@ -1461,11 +1462,15 @@ export function resolveConfiguredInput<Input extends ConfigurableInput>(
   // The merged `vcs` value loses track of who chose it, so record every layer
   // that names one explicitly, in the same last-layer-wins order options merge.
   let explicitVcsId: string | undefined;
+  // Likewise for `watch`: the merged value starts at its built-in `false`, so `--web` can only
+  // tell "config said false" from "nobody said" by recording which layers named it.
+  let explicitConfigWatch: boolean | undefined;
 
   if (userConfigPath && sources.userConfig) {
     const userConfig = sources.userConfig;
     const userLayer = resolveConfigLayer(userConfig, input);
     explicitVcsId = userLayer.vcs ?? explicitVcsId;
+    explicitConfigWatch = userLayer.watch ?? explicitConfigWatch;
     resolvedOptions = mergeOptions(resolvedOptions, userLayer);
     applyCustomThemeLayer(readCustomThemes(userConfig));
     userExtensionsLayer = readExtensionsLayer(userConfig);
@@ -1476,6 +1481,7 @@ export function resolveConfiguredInput<Input extends ConfigurableInput>(
     const repoConfig = sources.repoConfig;
     const repoLayer = resolveConfigLayer(repoConfig, input, { includeUserOnly: false });
     explicitVcsId = repoLayer.vcs ?? explicitVcsId;
+    explicitConfigWatch = repoLayer.watch ?? explicitConfigWatch;
     resolvedOptions = mergeOptions(resolvedOptions, repoLayer);
     applyCustomThemeLayer(readCustomThemes(repoConfig));
     repoExtensionsLayer = readExtensionsLayer(repoConfig);
@@ -1487,7 +1493,12 @@ export function resolveConfiguredInput<Input extends ConfigurableInput>(
     ...resolvedOptions,
     agentContext: input.options.agentContext,
     pager: input.options.pager ?? false,
-    watch: input.options.watch ?? resolvedOptions.watch ?? false,
+    // Precedence: CLI flag, then config `watch`, then `--web`'s implied watch (only for an input
+    // that can be reopened), then off. A config `watch = false` therefore keeps `--web` unwatched.
+    watch:
+      input.options.watch ??
+      explicitConfigWatch ??
+      (input.options.web === true && input.kind !== "open" && canReloadInput(input)),
     // Launch-only, like `--pager`: no config layer can select a headless web review.
     ...(input.options.web ? { web: true } : {}),
     ...(input.options.open === false ? { open: false } : {}),

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   applyWebTheme,
   parseWebThemeIndex,
+  resolveSessionWebTheme,
   resolveWebTheme,
   themeCustomProperties,
   themeTokenProperty,
@@ -72,6 +73,34 @@ function createTestElement() {
   };
   return element;
 }
+
+// Intent: precedence is this browser's picked theme, then an explicit session theme, then the
+// color scheme for a session whose theme was auto or unset.
+describe("session theme precedence", () => {
+  const auto = {
+    kind: "builtin",
+    id: "github-dark-default",
+    appearance: "dark",
+    auto: true,
+  } as const;
+  const explicit = { kind: "builtin", id: "github-dark-default", appearance: "dark" } as const;
+
+  test("an auto session theme follows the browser color scheme", () => {
+    expect(resolveSessionWebTheme(INDEX, undefined, auto, false)?.id).toBe("github-light-default");
+    expect(resolveSessionWebTheme(INDEX, undefined, auto, true)?.id).toBe("github-dark-default");
+  });
+
+  test("an explicit session theme wins over the color scheme", () => {
+    expect(resolveSessionWebTheme(INDEX, undefined, explicit, false)?.id).toBe(
+      "github-dark-default",
+    );
+  });
+
+  test("the browser's stored choice wins over both", () => {
+    expect(resolveSessionWebTheme(INDEX, "dracula", auto, false)?.id).toBe("dracula");
+    expect(resolveSessionWebTheme(INDEX, "dracula", explicit, false)?.id).toBe("dracula");
+  });
+});
 
 describe("applyWebTheme", () => {
   // Intent: moving from a theme with extra tokens to one without them must not leave the old

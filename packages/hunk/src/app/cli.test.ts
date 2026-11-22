@@ -65,6 +65,10 @@ describe("parseCli", () => {
     expect(parsed.text).toContain("hunk skill path");
     expect(parsed.text).toContain("Global options:");
     expect(parsed.text).toContain("Common review options:");
+    const commonOptions = parsed.text.slice(parsed.text.indexOf("Common review options:"));
+    expect(commonOptions).toContain("--web");
+    expect(commonOptions).toContain("--no-open");
+    expect(commonOptions).toContain("--no-watch");
     expect(parsed.text).toContain("layout mode: auto, split, unified");
     expect(parsed.text).not.toContain("layout mode: auto, split, stack");
     expect(parsed.text).toContain("--file-gap");

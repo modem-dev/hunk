@@ -547,6 +547,20 @@ export function resolveTheme(
 }
 
 /**
+ * Return whether `resolveTheme` picks the light or dark default from the terminal mode for this
+ * request: `auto`, no id, or an id nothing defines. Explicit, terminal, and custom ids do not.
+ */
+export function themeFollowsTerminalMode(
+  requested: string | undefined,
+  customThemes: readonly NamedCustomThemeConfig[] = [],
+) {
+  if (requested === TERMINAL_THEME_ID) return false;
+  if (requested === "auto" || requested === undefined) return true;
+  if (customThemes.some((theme) => theme.id === requested)) return false;
+  return builtInThemeById(requested) === undefined;
+}
+
+/**
  * Return a copy of a theme whose neutral surfaces allow the terminal background through while
  * added/removed row tints stay painted. Both the interactive TUI and static pager hosts use
  * this so diff rows keep their semantic backgrounds on translucent terminals.
