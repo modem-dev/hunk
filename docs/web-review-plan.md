@@ -22,7 +22,7 @@ offer. It must work with no terminal UI running.
 | Visual fidelity              | Same regions, keys, command names, and themes as the terminal. Chrome is web-native: toolbar and command palette, no text menu bar.                 |
 | Theme                        | The browser starts on the session's resolved theme, custom themes included. A per-browser picker can override it without changing the terminal.     |
 | Surfaces in scope            | The review stream only. History, status, and `hunk open` stay terminal-only.                                                                        |
-| Watching                     | `--web` watches its input and reloads by default. A new `--no-watch` flag turns that off.                                                           |
+| Watching                     | `--web` watches its input and reloads by default. `--no-watch`, or config `watch = false`, turns that off.                                          |
 | Sidebar tree                 | `@pierre/trees`, accepted as a shipped dependency while it is in beta.                                                                              |
 | Release flag                 | A plain `--web` flag, not gated behind `--experimental`.                                                                                            |
 | Web-only tools, first cut    | Viewed files and progress, notes panel, mouse line-range comments, command palette and go-to-file, stats overview, rich previews, minimap.          |
@@ -187,7 +187,7 @@ state route, the refresh action, and the byte resources as one PR each.
   origins), `no-store` on the document, and immutable caching on hashed assets. The page
   request carries no secret; the client reads the capability from `location.hash`.
 - **CLI.** `--web` on every review command runs headless and implies `--watch`; a new
-  `--no-watch` flag opts out. `--no-open` prints the URL without launching a browser.
+  `--no-watch` flag or config `watch = false` opts out. `--no-open` prints the URL without launching a browser.
   `hunk session open [selector]` opens a browser on a running session, and the terminal UI gains
   a host-only "Open in browser" command. The opener preserves URL fragments on macOS, Linux,
   and Windows. These landed hidden and were un-hidden by the release change.

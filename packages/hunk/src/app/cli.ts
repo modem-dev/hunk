@@ -208,8 +208,9 @@ export const WATCH_OPTION = {
  * The browser review flags on every review command whose input can be reopened.
  *
  * `--web` serves the review headless and opens it in the default browser; it implies
- * `--watch` whenever the input can be reopened. `--no-watch` turns watching off — with `--web`,
- * and without it as an override of a config file that enables watch. `--no-open` prints the
+ * `--watch` whenever the input can be reopened, unless config sets `watch = false`. `--no-watch`
+ * turns watching off — with `--web`, and without it as an override of a config file that enables
+ * watch. `--no-open` prints the
  * review URL without launching a browser and only applies with `--web`.
  */
 export const WEB_REVIEW_OPTIONS = [
@@ -852,6 +853,9 @@ function renderCliHelp() {
     "Common review options:",
     "  --mode <mode>                           layout mode: auto, split, unified",
     "  --watch                                 auto-reload when the current diff input changes",
+    "  --no-watch                              do not reload when the input changes (overrides --web and config)",
+    "  --web                                   serve this review in the browser instead of the terminal",
+    "  --no-open                               with --web, print the review URL without opening a browser",
     "  --agent-context <path>                  JSON sidecar with agent rationale",
     "  --pager                                 use pager-style chrome",
     "  --line-numbers / --no-line-numbers      show or hide line numbers",

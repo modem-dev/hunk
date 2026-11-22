@@ -215,6 +215,7 @@ async function stopWebReview(proc: ReturnType<typeof Bun.spawn>) {
 describe("web review entry points: parsing and visibility", () => {
   test("lists --web, --no-open, and --no-watch in review help and completions", () => {
     const surfaces = [
+      runHunk(["--help"]),
       runHunk(["diff", "--help"]),
       runHunk(["show", "--help"]),
       runHunk(["stash", "show", "--help"]),
@@ -246,7 +247,11 @@ describe("web review entry points: parsing and visibility", () => {
   });
 
   test("keeps the browser flags off commands that cannot serve a review", () => {
-    for (const args of [["--help"], ["status", "--help"], ["log", "--help"], ["pager", "--help"]]) {
+    for (const args of [
+      ["status", "--help"],
+      ["log", "--help"],
+      ["pager", "--help"],
+    ]) {
       const surface = runHunk(args);
       expect(surface.exitCode).toBe(0);
       expect(surface.stdout).not.toContain("--web");

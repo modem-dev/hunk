@@ -19,10 +19,10 @@ hunk diff --staged --web
 
 Standard output is exactly one URL line. The review keeps running and never closes its standard output, so `URL=$(hunk diff --web --no-open)` never returns; see [Use the URL from a script](#use-the-url-from-a-script). At a terminal, one line follows on standard error: `hunk: review ready in your browser. Press Ctrl+C to stop.`, or `hunk: open the URL above in a browser. Press Ctrl+C to stop.` with `--no-open`. If the daemon restarts, the review keeps serving and reconnects to it; if the terminal running the review goes away, the review ends.
 
-| Flag         | Effect                                                                                 |
-| ------------ | -------------------------------------------------------------------------------------- |
-| `--no-open`  | Print the URL without opening a browser.                                               |
-| `--no-watch` | Do not reload when the input changes. With `--web`, Hunk watches its input by default. |
+| Flag         | Effect                                                                                                                         |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| `--no-open`  | Print the URL without opening a browser.                                                                                       |
+| `--no-watch` | Do not reload when the input changes. With `--web`, Hunk watches its input by default unless your config sets `watch = false`. |
 
 Input that cannot be read again, such as `some-command | hunk patch - --web`, is served once without watching, as in [watch mode](/docs/workflows/watch-mode/).
 
@@ -68,7 +68,7 @@ The page and any terminal showing the same review are two views of one session.
 
 - **Shared:** notes and replies, the file filter, whether agent notes are shown, viewed marks, and the review contents after a reload. An agent's `hunk session navigate` and focused comments move every view.
 - **Per view:** your selection and scroll position. Moving in the browser does not move the terminal, and the other way round.
-- **Per browser:** layout, wrap, line numbers, sidebar mode and width, side panel and minimap, **Hide viewed**, and the theme. The page starts on the session's theme, including a custom one; choosing another theme in the page changes only that browser. **Use session theme** in the palette goes back.
+- **Per browser:** layout, wrap, line numbers, sidebar mode and width, side panel and minimap, **Hide viewed**, and the theme. The page starts on the session's theme, including a custom one; with `theme = "auto"`, it picks GitHub light or dark from the browser's color scheme. Choosing another theme in the page changes only that browser. The sidebar starts open or closed from `--sidebar` / `--no-sidebar` and the `sidebar` config setting, and stays closed on a viewport too narrow for it, as in the terminal. **Use session theme** in the palette goes back.
 
 ## Keys
 

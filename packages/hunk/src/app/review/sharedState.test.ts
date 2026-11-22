@@ -203,6 +203,24 @@ describe("buildReviewSharedState", () => {
 });
 
 describe("buildReviewPresentationDefaults", () => {
+  test("carries the sidebar choice and marks only auto or unset themes as following the terminal", () => {
+    const themeFor = (initialTheme: string | undefined) =>
+      buildReviewPresentationDefaults(createTestSharedBootstrap([], { initialTheme })).theme;
+
+    expect(themeFor(undefined)).toMatchObject({ id: "github-dark-default", auto: true });
+    expect(themeFor("auto")).toMatchObject({ id: "github-dark-default", auto: true });
+    expect(themeFor("github-dark-default")).not.toHaveProperty("auto");
+    expect(themeFor("github-light-default")).toEqual({
+      kind: "builtin",
+      id: "github-light-default",
+      appearance: "light",
+    });
+    expect(
+      buildReviewPresentationDefaults(createTestSharedBootstrap([], { initialSidebar: false })).view
+        .sidebar,
+    ).toBe(false);
+  });
+
   test("names a built-in theme by id and folds keybindings over the review commands", () => {
     const defaults = buildReviewPresentationDefaults(
       createTestSharedBootstrap([], {
@@ -221,6 +239,7 @@ describe("buildReviewPresentationDefaults", () => {
       wrapLines: true,
       lineNumbers: true,
       hunkHeaders: true,
+      sidebar: "auto",
     });
     expect(defaults.keymap["hunk.app.quit"]).toEqual(["ctrl+q"]);
     expect(defaults.title).toBe("working tree");

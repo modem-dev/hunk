@@ -43,6 +43,8 @@ watch = true
 
 A top-level `watch = true` also applies to `hunk pager` and `hunk patch -`, which read stdin and cannot be watched, so those commands fail.
 
+`--web` also watches by default; `watch = false` in your config turns that off for browser reviews too, and `--watch` or `--no-watch` on the command line overrides the config either way.
+
 ## Refresh manually
 
 Press `r` for a reloadable review when you need an immediate refresh without continuous watch mode. A live agent can also use `hunk session reload` to replace the session's entire input.

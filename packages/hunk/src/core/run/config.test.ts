@@ -998,6 +998,36 @@ describe("config resolution", () => {
       expected: true,
     },
     {
+      name: "watches a reopenable --web review by default",
+      config: "",
+      cliOptions: { web: true },
+      expected: true,
+    },
+    {
+      name: "keeps a --web review unwatched when config disables watch",
+      config: "watch = false\n",
+      cliOptions: { web: true },
+      expected: false,
+    },
+    {
+      name: "lets --watch enable a --web review over config watch = false",
+      config: "watch = false\n",
+      cliOptions: { web: true, watch: true },
+      expected: true,
+    },
+    {
+      name: "lets --no-watch disable a --web review",
+      config: "",
+      cliOptions: { web: true, watch: false },
+      expected: false,
+    },
+    {
+      name: "keeps config watch = true on a --web review",
+      config: "watch = true\n",
+      cliOptions: { web: true },
+      expected: true,
+    },
+    {
       name: "lets CLI disable watch over config",
       config: "watch = true\n",
       cliOptions: { watch: false },
