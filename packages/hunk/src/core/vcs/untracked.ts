@@ -105,7 +105,10 @@ export function buildFilesystemUntrackedDiffFile(
         isUntracked: true,
         // The working copy is the untracked file's only version, so file views read it directly.
         byteFetcherBuilder: () =>
-          createFileByteFetcher({ old: { kind: "none" }, new: { kind: "fs", absolutePath } }),
+          createFileByteFetcher({
+            old: { kind: "none" },
+            new: { kind: "worktree", repoRoot, path: filePath },
+          }),
       },
     );
   }
@@ -126,12 +129,13 @@ export function buildFilesystemUntrackedDiffFile(
     isUntracked: true,
     // An added file has no old side; the new side reads the working copy so
     // source-backed features treat synthesized untracked files like any other.
+    // The worktree read never follows a symlink swapped in after this load.
     sourceFetcherBuilder: (file) =>
       file.isBinary
         ? undefined
         : createFileSourceFetcher({
             old: { kind: "none" },
-            new: { kind: "fs", absolutePath },
+            new: { kind: "worktree", repoRoot, path: filePath },
           }),
   });
 }

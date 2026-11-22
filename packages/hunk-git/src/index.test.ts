@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, setDefaultTimeout, spyOn, test } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { platform, tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { createGitVcsAdapter, describeGitDiffTitleRange, GitVcsAdapter, statSignature } from ".";
@@ -191,6 +199,53 @@ describe("GitVcsAdapter", () => {
     // subprocess per file, which made review scale with the untracked count.
     expect(result.extraFiles ?? []).toHaveLength(0);
   });
+
+  // Windows checkouts need Developer Mode or elevation to create symlinks, and Git there commonly
+  // runs with core.symlinks=false, so the link cannot be reproduced portably.
+  test.skipIf(process.platform === "win32")(
+    "serves a tracked symlink's link text instead of a retargeted file outside the repo",
+    async () => {
+      const repo = createTempRepo("hunk-git-adapter-symlink-");
+      const outside = createTempDir("hunk-git-adapter-symlink-outside-");
+      const committedTarget = join(outside, "committed.md");
+      const secretTarget = join(outside, "secret.md");
+      writeFileSync(committedTarget, "committed target\n");
+      writeFileSync(secretTarget, "outside secret\n");
+      writeFileSync(join(repo, "plain.md"), "regular file\n");
+      symlinkSync(committedTarget, join(repo, "link.md"));
+      git(repo, "add", "-A");
+      git(repo, "commit", "-m", "initial");
+
+      // Retarget the tracked link and turn a regular file into a link (a typechange).
+      rmSync(join(repo, "link.md"));
+      symlinkSync(secretTarget, join(repo, "link.md"));
+      rmSync(join(repo, "plain.md"));
+      symlinkSync(secretTarget, join(repo, "plain.md"));
+
+      const input = {
+        kind: "vcs",
+        staged: false,
+        options: {},
+      } satisfies ExtensionVcsDiffInput;
+      const result = await GitVcsAdapter.operations["working-tree-diff"]!.load(input, {
+        cwd: repo,
+      });
+      expect(result.patchText).toContain(`+${secretTarget}`);
+      expect(result.patchText).not.toContain("outside secret");
+
+      const link = { path: "link.md", changeType: "change", isUntracked: false } as const;
+      const plain = { path: "plain.md", changeType: "change", isUntracked: false } as const;
+      const encode = (text: string) => new TextEncoder().encode(text);
+
+      // Both sides carry Git's blob content for a symlink: the link target text.
+      expect(await result.readFileSource?.({ ...link, side: "old" })).toBe(committedTarget);
+      expect(await result.readFileSource?.({ ...link, side: "new" })).toBe(secretTarget);
+      expect(await result.readFileBytes?.({ ...link, side: "new" })).toEqual(encode(secretTarget));
+      expect(await result.readFileSource?.({ ...plain, side: "old" })).toBe("regular file\n");
+      expect(await result.readFileSource?.({ ...plain, side: "new" })).toBe(secretTarget);
+      expect(await result.readFileBytes?.({ ...plain, side: "new" })).toEqual(encode(secretTarget));
+    },
+  );
 
   test("loads two-revision diffs with exact sources and no working-tree untracked files", async () => {
     const repo = createTempRepo("hunk-git-adapter-two-revisions-");

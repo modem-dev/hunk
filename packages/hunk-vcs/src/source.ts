@@ -1,3 +1,7 @@
+import { constants } from "node:fs";
+import { lstat, open, readlink, type FileHandle } from "node:fs/promises";
+import { isAbsolute, join, relative, sep } from "node:path";
+
 /** Default byte ceiling for exact source text loaded for expanded context. */
 export const DEFAULT_SOURCE_TEXT_MAX_BYTES = 1_000_000;
 
@@ -70,6 +74,123 @@ export async function readFileBytesWithLimit(
     logSourceDiagnostic(`failed to read source file ${absolutePath}`, error);
     return null;
   }
+}
+
+/** Read at most `maxBytes + 1` bytes from an open handle so growth past the ceiling is detected. */
+async function readHandleBytesWithLimit(
+  handle: FileHandle,
+  maxBytes: number,
+): Promise<LimitedSourceBytesResult> {
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+
+  for (;;) {
+    const chunk = new Uint8Array(Math.min(64 * 1024, maxBytes + 1 - totalBytes));
+    const { bytesRead } = await handle.read(chunk, 0, chunk.byteLength, null);
+    if (bytesRead === 0) {
+      break;
+    }
+
+    totalBytes += bytesRead;
+    if (totalBytes > maxBytes) {
+      return { kind: "too-large", maxBytes };
+    }
+    chunks.push(chunk.subarray(0, bytesRead));
+  }
+
+  const combined = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    combined.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return combined;
+}
+
+/** Return whether a filesystem failure only means the entry is absent. */
+function isMissingEntryError(error: unknown) {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  return code === "ENOENT" || code === "ENOTDIR";
+}
+
+/**
+ * Read one working-tree entry's bytes the way a VCS records it, without following symlinks.
+ *
+ * A symlink's content is its link target text, as Git stores a mode-120000 blob, so the
+ * served side agrees with the patch and a link can never expose a file outside the checkout.
+ * Paths beneath a symlinked directory and special files (FIFOs, sockets, devices) are not VCS
+ * content and resolve to `null`. The regular-file read opens without following a final link and
+ * rejects a handle whose identity differs from the entry just inspected, so swapping the path
+ * for a symlink between inspection and read fails closed.
+ */
+export async function readWorktreeEntryBytesWithLimit(
+  repoRoot: string,
+  filePath: string,
+  maxBytes: number,
+): Promise<LimitedSourceBytesResult> {
+  const absolutePath = join(repoRoot, filePath);
+
+  try {
+    // The repository root itself may sit beneath a symlink (macOS `/tmp`); only entries the
+    // checkout contains are held to VCS semantics.
+    const repoRelativePath = relative(repoRoot, absolutePath);
+    if (isAbsolute(repoRelativePath) || repoRelativePath.split(sep)[0] === "..") {
+      return null;
+    }
+
+    const segments = repoRelativePath.split(sep).filter(Boolean);
+    let ancestor = repoRoot;
+    for (const segment of segments.slice(0, -1)) {
+      ancestor = join(ancestor, segment);
+      const info = await lstat(ancestor);
+      if (info.isSymbolicLink() || !info.isDirectory()) {
+        return null;
+      }
+    }
+
+    const info = await lstat(absolutePath);
+    if (info.isSymbolicLink()) {
+      const target = new Uint8Array(await readlink(absolutePath, { encoding: "buffer" }));
+      return target.byteLength > maxBytes ? { kind: "too-large", maxBytes } : target;
+    }
+    if (!info.isFile()) {
+      return null;
+    }
+    if (info.size > maxBytes) {
+      return { kind: "too-large", maxBytes };
+    }
+
+    const handle = await open(
+      absolutePath,
+      constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0),
+    );
+    try {
+      const opened = await handle.stat();
+      if (!opened.isFile() || opened.dev !== info.dev || opened.ino !== info.ino) {
+        logSourceDiagnostic(`source file ${absolutePath} changed while it was being opened`);
+        return null;
+      }
+      return await readHandleBytesWithLimit(handle, maxBytes);
+    } finally {
+      await handle.close();
+    }
+  } catch (error) {
+    if (isMissingEntryError(error)) {
+      return null;
+    }
+    logSourceDiagnostic(`failed to read source file ${absolutePath}`, error);
+    return null;
+  }
+}
+
+/** Read one working-tree entry as text with the same no-follow semantics as its byte read. */
+export async function readWorktreeEntryTextWithLimit(
+  repoRoot: string,
+  filePath: string,
+  maxBytes: number,
+): Promise<LimitedSourceTextResult> {
+  const result = await readWorktreeEntryBytesWithLimit(repoRoot, filePath, maxBytes);
+  return result instanceof Uint8Array ? new TextDecoder().decode(result) : result;
 }
 
 const SOURCE_SUBPROCESS_GRACE_MS = 100;

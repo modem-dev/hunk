@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   readFileBytesWithLimit,
   readFileTextWithLimit,
   readStreamBytesWithLimit,
+  readWorktreeEntryBytesWithLimit,
+  readWorktreeEntryTextWithLimit,
   terminateSourceSubprocess,
 } from "./source";
 
@@ -48,6 +50,58 @@ describe("readFileBytesWithLimit", () => {
     expect(await readFileBytesWithLimit(join(dir, "missing.bin"), 100)).toBeNull();
     expect(await readFileBytesWithLimit(source, 3)).toEqual({ kind: "too-large", maxBytes: 3 });
   });
+});
+
+describe("readWorktreeEntryBytesWithLimit", () => {
+  test("reads regular files and refuses missing, escaping, and too-large entries", async () => {
+    const repoRoot = createTempDir();
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0xfe]);
+    mkdirSync(join(repoRoot, "src"));
+    writeFileSync(join(repoRoot, "src", "image.bin"), bytes);
+    writeFileSync(join(repoRoot, "top.bin"), bytes);
+    const imagePath = join("src", "image.bin");
+
+    expect(await readWorktreeEntryBytesWithLimit(repoRoot, imagePath, 100)).toEqual(bytes);
+    expect(await readWorktreeEntryTextWithLimit(repoRoot, "src", 100)).toBeNull();
+    expect(await readWorktreeEntryBytesWithLimit(repoRoot, "missing.bin", 100)).toBeNull();
+    expect(
+      await readWorktreeEntryBytesWithLimit(join(repoRoot, "src"), join("..", "top.bin"), 100),
+    ).toBeNull();
+    expect(await readWorktreeEntryBytesWithLimit(repoRoot, imagePath, 3)).toEqual({
+      kind: "too-large",
+      maxBytes: 3,
+    });
+  });
+
+  // Windows needs Developer Mode or elevation to create symlinks, so these cases are Unix-only.
+  test.skipIf(process.platform === "win32")(
+    "returns a symlink's link text and never reads through links to outside files",
+    async () => {
+      const repoRoot = createTempDir();
+      const outside = createTempDir();
+      const secret = join(outside, "secret.md");
+      writeFileSync(secret, "outside secret\n");
+      symlinkSync(secret, join(repoRoot, "link.md"));
+      symlinkSync(join(outside, "missing.md"), join(repoRoot, "dangling.md"));
+      symlinkSync(outside, join(repoRoot, "linked-dir"), "dir");
+
+      expect(await readWorktreeEntryTextWithLimit(repoRoot, "link.md", 1000)).toBe(secret);
+      expect(await readWorktreeEntryBytesWithLimit(repoRoot, "link.md", 1000)).toEqual(
+        new TextEncoder().encode(secret),
+      );
+      expect(await readWorktreeEntryTextWithLimit(repoRoot, "dangling.md", 1000)).toBe(
+        join(outside, "missing.md"),
+      );
+      expect(await readWorktreeEntryTextWithLimit(repoRoot, "link.md", 3)).toEqual({
+        kind: "too-large",
+        maxBytes: 3,
+      });
+      // Git never tracks a path beneath a symlinked directory; it is not checkout content.
+      expect(
+        await readWorktreeEntryTextWithLimit(repoRoot, join("linked-dir", "secret.md"), 1000),
+      ).toBeNull();
+    },
+  );
 });
 
 describe("readStreamBytesWithLimit", () => {
