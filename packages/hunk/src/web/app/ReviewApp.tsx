@@ -38,6 +38,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { selectActiveRevealNoteId } from "../../core/review/selectors";
+import { activateFirstNoteOfSelection } from "../notes/noteActivation";
 import { reviewFileMatchesFilter } from "../../core/review/selectors";
 import { lowerAppCommandToReviewIntent } from "../../core/run/commandCatalog";
 import { formatKeyChord } from "../../core/run/keyChordLabels";
@@ -751,6 +752,11 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
         outcome?.type === "selection/changed"
       ) {
         viewedRef.current.openForHunk(outcome.fileKey);
+      }
+      // Annotated navigation lands on a hunk's first stored note, so `E`, `R`, and `D` have a
+      // note to act on without a click.
+      if (intent.type === "selection/move" && intent.scope === "annotated-hunk") {
+        activateFirstNoteOfSelection(session.review);
       }
     };
     const stream = () => streamController.current;

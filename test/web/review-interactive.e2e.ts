@@ -201,9 +201,53 @@ test("draws a thread as one card, replies from its row, and rings the active not
   await expect(second).not.toHaveAttribute("data-active");
   await expect(thread).toHaveAttribute("data-probe", "");
 
-  // `}` tours annotated hunks, which leaves no note active, so no thread keeps the ring.
+  // `}` tours annotated hunks and lands on the hunk's first note, so only that thread is ringed.
   await page.keyboard.press("}");
-  await expect(page.locator(".note-thread[data-active]")).toHaveCount(0);
+  await expect(page.locator(".note-thread[data-active]")).toHaveCount(1);
+});
+
+test("selects, edits, replies to, and deletes a note with the keyboard alone", async ({ page }) => {
+  await openTestReview(page);
+
+  await page.keyboard.press("c");
+  await writeAndSave(page, "Keyboard root.");
+  // Leaving the hunk drops the active note, so the keys have nothing to act on yet.
+  await page.keyboard.press("]");
+  await expect(noteCard(page, "Keyboard root.")).not.toHaveAttribute("data-active");
+  await page.keyboard.press("Shift+E");
+  await expect(page.locator(".note-composer")).toHaveCount(0);
+
+  // `{` walks back to the annotated hunk and makes its note active.
+  await page.keyboard.press("{");
+  await expect(noteCard(page, "Keyboard root.")).toHaveAttribute("data-active", "");
+  await page.keyboard.press("Shift+E");
+  await expect(page.locator(".note-composer textarea")).toHaveValue("Keyboard root.");
+  await writeAndSave(page, "Keyboard root, edited.");
+  await expect(noteCard(page, "Keyboard root, edited.")).toBeVisible();
+
+  // Reply acts on the same note.
+  await page.keyboard.press("Shift+R");
+  await writeAndSave(page, "Keyboard reply.");
+  // Stepping to the reply is the palette's "Next review note"; then `D` acts on it.
+  await page.keyboard.press("Control+k");
+  await page.keyboard.type("Next review note");
+  await page.keyboard.press("Enter");
+  await expect(noteCard(page, "Keyboard reply.")).toHaveAttribute("data-active", "");
+
+  // Delete, like the terminal's `D`, removes at once: no dialog, no undo.
+  await page.keyboard.press("Shift+D");
+  await expect(noteCard(page, "Keyboard reply.")).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect.poll(listTestNotes).not.toContain("Keyboard reply.");
+
+  // The root, reached again from another hunk, goes the same way.
+  await page.keyboard.press("]");
+  await page.keyboard.press("{");
+  await expect(noteCard(page, "Keyboard root, edited.")).toHaveAttribute("data-active", "");
+  await page.keyboard.press("Shift+D");
+  await expect(noteCard(page, "Keyboard root, edited.")).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect.poll(listTestNotes).not.toContain("Keyboard root");
 });
 
 test("writes a range note from the gutter and a line note inside an expanded gap", async ({
