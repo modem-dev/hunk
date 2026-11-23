@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 3,
+  "label": "control",
+  "heartbeat": "native-timing-control",
+  "connectionOwner": "native-timing-control",
+  "clientStartupOwner": "native-timing-control",
+  "staticAnalysisLimit": "AST gates prove only named mechanical source shapes; independent review must establish lifecycle semantics and correctness.",
+  "cancellationBoundary": "foreign native promises and detached processes are not claimed cancelled",
+  "intentionalTreatmentDifferences": []
+}
