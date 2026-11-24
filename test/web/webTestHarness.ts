@@ -33,6 +33,7 @@ import {
   type TestSidecarFileContext,
 } from "./fixtures/rich-review";
 import { writePreviewReviewRepo } from "./fixtures/preview-review";
+import { writeHiddenTextReviewRepo } from "./fixtures/hidden-text-review";
 import {
   TEST_PROCESS_GROUPS,
   terminateTestProcess,
@@ -114,8 +115,9 @@ export interface TestWebReviewOptions {
 
 /**
  * Start a daemon and one headless session serving `input`: a patch path, `--rich`, `--previews`
- * (images and Markdown), `--many=N`, or `--github` (pull request #1350 of modem-dev/hunk through
- * `hunk gh pr`, whose diff is `PATCH_FIXTURE`).
+ * (images and Markdown), `--hidden-text` (bidi and invisible characters), `--many=N`, or
+ * `--github` (pull request #1350 of modem-dev/hunk through `hunk gh pr`, whose diff is
+ * `PATCH_FIXTURE`).
  */
 export async function startTestWebReview(
   input: string,
@@ -167,11 +169,12 @@ export async function startTestWebReview(
     // order their sidecar states; a patch scenario reviews the patch file.
     const many = /^--many=(\d+)$/.exec(input);
     const repo =
-      input === "--rich" || input === "--previews" || many
+      input === "--rich" || input === "--previews" || input === "--hidden-text" || many
         ? join(directories[0]!, "review-repo")
         : undefined;
     if (repo && many) writeManyReviewRepo(repo, Number(many[1]));
     else if (repo && input === "--previews") writePreviewReviewRepo(repo);
+    else if (repo && input === "--hidden-text") writeHiddenTextReviewRepo(repo);
     else if (repo) writeRichReviewRepo(repo, options.context);
     if (options.config) {
       mkdirSync(join(directories[1]!, "hunk"), { recursive: true });

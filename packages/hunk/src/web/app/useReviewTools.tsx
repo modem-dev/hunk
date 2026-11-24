@@ -23,6 +23,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { formatReviewAddress, type ReviewAddress } from "../../core/review/address";
 import { reviewFileChangeGlyph } from "../../core/review/fileLabels";
 import { formatAddedBadge, formatRemovedBadge } from "../format/lineCounts";
+import { RevealedText } from "../format/RevealedText";
 import type { WebKeymap } from "../commands/keyboard";
 import type { WebCommand } from "../commands/webCommandTable";
 import { matchWebLocalChord, type WebLocalCommandId } from "../commands/webLocalCommands";
@@ -538,7 +539,9 @@ export function useReviewTools(options: ReviewToolsOptions) {
               <span className="file-glyph" data-role={glyph.role}>
                 {glyph.glyph}
               </span>
-              <span className="picker-title">{entry.path}</span>
+              <span className="picker-title">
+                <RevealedText text={entry.path} />
+              </span>
               <span className="picker-stats">
                 <span className="stat-add">
                   {formatAddedBadge(entry.stats.additions, entry.stats.truncated)}

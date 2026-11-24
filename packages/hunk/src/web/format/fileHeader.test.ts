@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { webFileHeaderPath, webFileStateChip } from "./fileHeader";
+import { webFileHeaderPath, webFileStateChip, webHiddenTextChip } from "./fileHeader";
 
 describe("webFileHeaderPath", () => {
   test("splits a path into its directory and basename", () => {
@@ -73,5 +73,25 @@ describe("webFileStateChip", () => {
         sizes: "135 B → 127 B",
       }),
     ).toBe("binary · 135 B → 127 B");
+  });
+});
+
+describe("webHiddenTextChip", () => {
+  test("shows nothing for a file without hidden characters", () => {
+    expect(webHiddenTextChip(undefined)).toBeNull();
+  });
+
+  test("names bidi controls first and invisible characters otherwise", () => {
+    expect(webHiddenTextChip({ bidi: true, invisible: false })?.label).toBe(
+      "bidirectional Unicode",
+    );
+    expect(webHiddenTextChip({ bidi: true, invisible: true })?.description).toContain(
+      "bidirectional and invisible Unicode characters",
+    );
+    expect(webHiddenTextChip({ bidi: false, invisible: true })).toEqual({
+      label: "hidden Unicode",
+      description:
+        "This file contains invisible Unicode characters. Each one is shown as its code point, such as U+200B.",
+    });
   });
 });

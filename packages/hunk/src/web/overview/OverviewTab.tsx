@@ -10,7 +10,9 @@
  */
 import { Icon } from "../icons/Icon";
 import { useState, type ReactNode } from "react";
+import { revealReviewHiddenText } from "../../core/review/hiddenText";
 import { formatCount, formatFileCount } from "../format/lineCounts";
+import { RevealedText } from "../format/RevealedText";
 import {
   REVIEW_FILE_ROLES,
   REVIEW_MEANINGFUL_FILE_ROLES,
@@ -129,7 +131,7 @@ function DirectoryRows({
         <button
           type="button"
           className="overview-disclosure"
-          aria-label={`Subdirectories of ${directory.path}`}
+          aria-label={`Subdirectories of ${revealReviewHiddenText(directory.path)}`}
           aria-expanded={hasChildren ? expanded : undefined}
           style={hasChildren ? undefined : { visibility: "hidden" }}
           onClick={() => setExpanded((current) => !current)}
@@ -141,10 +143,10 @@ function DirectoryRows({
         <button
           type="button"
           className="overview-name"
-          title={`Jump to ${directory.path}/`}
+          title={`Jump to ${revealReviewHiddenText(directory.path)}/`}
           onClick={() => onSelectFile(directory.firstFileKey)}
         >
-          {`${directory.name}/`}
+          <RevealedText text={`${directory.name}/`} />
         </button>
         <span className="overview-count">{formatCount(directory.files)}</span>
         <Churn {...directory} />
@@ -302,10 +304,10 @@ export function OverviewTab({ overview, onSelectFile }: OverviewTabProps) {
                 <button
                   type="button"
                   className="overview-name"
-                  title={`Jump to ${file.path}`}
+                  title={`Jump to ${revealReviewHiddenText(file.path)}`}
                   onClick={() => onSelectFile(file.fileKey)}
                 >
-                  {file.path}
+                  <RevealedText text={file.path} />
                 </button>
                 <Churn {...file} />
                 <ChurnBar {...file} scale={largestChurn} />
@@ -338,10 +340,10 @@ export function OverviewTab({ overview, onSelectFile }: OverviewTabProps) {
                     <button
                       type="button"
                       className="overview-name"
-                      title={`Jump to ${entry.path}`}
+                      title={`Jump to ${revealReviewHiddenText(entry.path)}`}
                       onClick={() => onSelectFile(entry.fileKey)}
                     >
-                      {entry.path}
+                      <RevealedText text={entry.path} />
                     </button>
                   </th>
                   <td className="numeric">{entry.agent}</td>

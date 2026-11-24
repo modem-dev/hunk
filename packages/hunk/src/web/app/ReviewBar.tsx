@@ -13,6 +13,8 @@
  * next file's path, then the note count's word (`styles.css`); the bar never wraps.
  */
 import { useState } from "react";
+import { revealReviewHiddenText } from "../../core/review/hiddenText";
+import { RevealedText } from "../format/RevealedText";
 import { Icon } from "../icons/Icon";
 import type { ReviewBarHint } from "./reviewBarHints";
 import { ViewedProgress } from "./ViewedProgress";
@@ -46,8 +48,14 @@ function SplitPath({ path }: { path: string }) {
   const slash = path.lastIndexOf("/");
   return (
     <code className="bar-next-path">
-      {slash >= 0 ? <span className="bar-next-dir">{path.slice(0, slash + 1)}</span> : null}
-      <span className="bar-next-name">{path.slice(slash + 1)}</span>
+      {slash >= 0 ? (
+        <span className="bar-next-dir">
+          <RevealedText text={path.slice(0, slash + 1)} />
+        </span>
+      ) : null}
+      <span className="bar-next-name">
+        <RevealedText text={path.slice(slash + 1)} />
+      </span>
     </code>
   );
 }
@@ -75,7 +83,7 @@ export function ReviewBar(props: ReviewBarProps) {
           type="button"
           className="bar-button bar-next"
           data-testid="next-unviewed"
-          title={`Open the next file not marked viewed: ${props.next.path}`}
+          title={`Open the next file not marked viewed: ${revealReviewHiddenText(props.next.path)}`}
           onClick={props.next.onOpen}
         >
           <span className="bar-next-label">Next unviewed</span>

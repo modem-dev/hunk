@@ -18,6 +18,12 @@
  * note is not drawn, sits below the line's threads. Pierre's gutter utility (the hover
  * affordance) and its line selection report the line or range the reader picked; card buttons
  * report the note action they name. The active note's mark moves in place when it changes.
+ *
+ * After every Pierre render, bidi controls and invisible characters in the drawn lines are
+ * wrapped in visible markers (`../format/RevealedText.tsx`), so a "Trojan Source" line shows in
+ * its real logical order in both layouts, highlighted or not. Pierre has no token hook, so the
+ * markers go into the drawn DOM: each keeps its real character, which keeps agent highlight
+ * offsets and copied text exact.
  */
 import {
   FileDiff,
@@ -38,6 +44,7 @@ import {
 } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { createIconElement, Icon } from "../icons/Icon";
+import { HIDDEN_CHARACTER_SHADOW_CSS, revealHiddenCharactersIn } from "../format/RevealedText";
 import type { ReviewSide } from "../../core/review/types";
 import { pierreHighlightRenderOptions } from "../../core/documents/highlightRenderOptions";
 import {
@@ -308,6 +315,17 @@ export function PierreFileView({
     disableFileHeader: true,
     // Every gap the shared model addresses stays collapsed until the store expands it.
     collapsedContextThreshold: 0,
+    unsafeCSS: HIDDEN_CHARACTER_SHADOW_CSS,
+    // Each drawn line is one unit, so a joiner's neighbors are read across token spans; a
+    // byte-order mark opening a line is the file's own and stays as Pierre drew it.
+    onPostRender: (container: HTMLElement) => {
+      if (container.shadowRoot) {
+        revealHiddenCharactersIn(container.shadowRoot, {
+          unitSelector: "[data-line-type]",
+          ignoreLeadingBom: true,
+        });
+      }
+    },
     renderAnnotation: (annotation: DiffLineAnnotation<WebLineAnnotation>) => {
       const root = document.createElement("div");
       root.className = "line-annotation";

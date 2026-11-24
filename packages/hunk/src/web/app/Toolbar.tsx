@@ -13,9 +13,11 @@
  * never wraps. None of the view controls reaches the session.
  */
 import type { KeyboardEvent, ReactNode } from "react";
+import { revealReviewHiddenText } from "../../core/review/hiddenText";
 import type { LayoutMode } from "../../core/run/commandInputs";
 import type { WebImplementedCommandId } from "../commands/webCommandTable";
 import { formatAddedCount, formatFileCount, formatRemovedCount } from "../format/lineCounts";
+import { RevealedText } from "../format/RevealedText";
 import { Icon, type IconName } from "../icons/Icon";
 
 export interface ToolbarProps {
@@ -100,9 +102,12 @@ export function Toolbar(props: ToolbarProps) {
         {/* The tooltip carries the whole title, which a narrow toolbar truncates. */}
         <span
           className="review-title"
-          title={props.sourceLabel ? `${props.title} — ${props.sourceLabel}` : props.title}
+          title={revealReviewHiddenText(
+            props.sourceLabel ? `${props.title} — ${props.sourceLabel}` : props.title,
+          )}
         >
-          {props.title}
+          {/* A commit subject or branch name is repository text. */}
+          <RevealedText text={props.title} />
         </span>
         <span className="toolbar-stats">
           <span className="file-count" data-testid="file-count">

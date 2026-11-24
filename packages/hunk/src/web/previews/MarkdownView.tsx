@@ -6,9 +6,11 @@
  * the source arrives here as text and React escapes it. Links are the only elements with a
  * target, already restricted to `http:` and `https:` by the parser, and open in a new tab with
  * `rel="noopener noreferrer"`. A table clipped at `MAX_TABLE_COLUMNS` and a document cut at the
- * parser's node budget each say so in place, so nothing is dropped silently.
+ * parser's node budget each say so in place, so nothing is dropped silently. Bidi controls and
+ * invisible characters in the text show as markers (`../format/RevealedText.tsx`).
  */
 import type { ReactNode } from "react";
+import { RevealedText } from "../format/RevealedText";
 import { MAX_TABLE_COLUMNS, type MarkdownBlock, type MarkdownInline } from "./markdown";
 
 /** Render inline nodes. */
@@ -16,9 +18,13 @@ function inline(nodes: readonly MarkdownInline[]): ReactNode[] {
   return nodes.map((node, index) => {
     switch (node.type) {
       case "text":
-        return node.text;
+        return <RevealedText key={index} text={node.text} isolate={false} />;
       case "code":
-        return <code key={index}>{node.text}</code>;
+        return (
+          <code key={index}>
+            <RevealedText text={node.text} isolate={false} />
+          </code>
+        );
       case "emphasis":
         return <em key={index}>{inline(node.children)}</em>;
       case "strong":
@@ -50,7 +56,9 @@ function blocks(nodes: readonly MarkdownBlock[]): ReactNode[] {
       case "code":
         return (
           <pre key={index} data-language={node.language}>
-            <code>{node.text}</code>
+            <code>
+              <RevealedText text={node.text} isolate={false} />
+            </code>
           </pre>
         );
       case "quote":

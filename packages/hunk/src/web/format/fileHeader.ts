@@ -5,9 +5,11 @@
  * rename), split so the page can dim the directory and the old name while the text stays one
  * copyable string. The state chip names what kind of change a file is from facts the review
  * document already carries — its change kind, untracked flag, and the shared reason a file
- * renders no rows — so the page never re-derives a file's kind on its own.
+ * renders no rows — so the page never re-derives a file's kind on its own. A second chip warns
+ * when the file's name or lines hold bidi controls or invisible characters.
  */
 import type { ReviewEmptyDiffReason } from "../../core/review/document";
+import type { ReviewHiddenTextFacts } from "../../core/review/hiddenText";
 import { reviewFileLabelParts } from "../../core/review/fileLabels";
 import type { ReviewFileChangeKind } from "../../core/review/types";
 
@@ -76,4 +78,34 @@ export function webFileStateChip(file: {
   if (reason) words.push(reason);
   if (file.emptyReason === "binary" && file.sizes) words.push(file.sizes);
   return words.length > 0 ? words.join(" · ") : null;
+}
+
+/** What a file header's hidden-text warning says: a short label and the sentence behind it. */
+export interface WebHiddenTextChip {
+  label: string;
+  description: string;
+}
+
+/**
+ * The warning chip for a file whose name or lines hold bidi controls or invisible characters
+ * (`reviewFileHiddenText`), or null for a file with none.
+ */
+export function webHiddenTextChip(
+  facts: ReviewHiddenTextFacts | undefined,
+): WebHiddenTextChip | null {
+  if (!facts) return null;
+  const marked = (example: string) => `Each one is shown as its code point, such as ${example}.`;
+  if (facts.bidi) {
+    return {
+      label: "bidirectional Unicode",
+      description:
+        `This file contains ${facts.invisible ? "bidirectional and invisible" : "bidirectional"} ` +
+        `Unicode characters that can make text read differently from how it is interpreted. ` +
+        marked("U+202E"),
+    };
+  }
+  return {
+    label: "hidden Unicode",
+    description: `This file contains invisible Unicode characters. ${marked("U+200B")}`,
+  };
 }

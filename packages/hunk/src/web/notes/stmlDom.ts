@@ -15,6 +15,7 @@
  */
 import { parseStml, type StmlElement, type StmlNode } from "../../core/stml/parse";
 import { stmlColorTarget, stmlTagRole, type StmlTagRole } from "../../core/review/stml";
+import { revealReviewHiddenText } from "../../core/review/hiddenText";
 
 /** The CSS color one STML color value names on this page, or nothing for an unknown value. */
 export function stmlCssColor(token: string | undefined) {
@@ -126,7 +127,7 @@ function renderElement(node: StmlElement): Node {
       break;
     }
     case "link":
-      if (node.attrs.href) element.title = node.attrs.href;
+      if (node.attrs.href) element.title = revealReviewHiddenText(node.attrs.href);
       break;
     case "list":
       if (node.attrs.marker) element.dataset.marker = node.attrs.marker;

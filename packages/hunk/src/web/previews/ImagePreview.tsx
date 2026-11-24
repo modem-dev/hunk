@@ -18,6 +18,7 @@ import {
   MAX_REVIEW_BYTES_RESOURCE_BYTES,
   type ReviewResourceDescriptor,
 } from "../../core/review/resources";
+import { revealReviewHiddenText } from "../../core/review/hiddenText";
 import type { ReviewSide } from "../../core/review/types";
 import { reviewErrorMessage } from "../../session/reviewErrorCatalog";
 import { ReviewApiError } from "../transport/apiClient";
@@ -208,7 +209,7 @@ export function ImagePreview({ path, fileKey, fallback }: ImagePreviewProps) {
       className={className}
       style={{ ...(box.width > 0 ? { width: box.width, height: box.height } : {}), ...style }}
       src={entry.image.url}
-      alt={`${label(entry)}: ${path}`}
+      alt={`${label(entry)}: ${revealReviewHiddenText(path)}`}
       draggable={false}
       onLoad={(event) => {
         const { naturalWidth, naturalHeight } = event.currentTarget;

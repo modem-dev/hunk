@@ -3,6 +3,7 @@
  *
  * Both sidebar modes draw from this so their rows cannot disagree.
  */
+import { revealReviewHiddenText } from "../../core/review/hiddenText";
 import {
   formatReviewNoteBadge,
   reviewSidebarFileName,
@@ -32,16 +33,20 @@ export function sidebarEntry(
 }
 
 /**
- * Return one distinct tree path per entry, in entry order.
+ * Return one distinct tree path per entry, in entry order, as the tree draws it.
  *
- * The review may list two files at one path (a delete and an add of it have different keys),
- * but the tree keys rows by path and would merge them, leaving one unreachable. Each repeat
- * gets a visible ` (2)`, ` (3)`, … suffix on its name, so every file has its own row.
+ * The tree draws a row's name from its path as plain text, so hidden characters are spelled
+ * out first (`file<U+202E>txt.exe`): a bidi override in a name would otherwise fake its
+ * extension. The review may list two files at one shown path (a delete and an add of it have
+ * different keys, or two paths differ only by a hidden character), but the tree keys rows by
+ * path and would merge them, leaving one unreachable. Each repeat gets a visible ` (2)`,
+ * ` (3)`, … suffix on its name, so every file has its own row.
  */
 export function treePathsOf(entries: readonly { path: string }[]) {
-  const taken = new Set(entries.map((entry) => entry.path));
+  const shown = entries.map((entry) => revealReviewHiddenText(entry.path));
+  const taken = new Set(shown);
   const seen = new Set<string>();
-  return entries.map(({ path }) => {
+  return shown.map((path) => {
     if (!seen.has(path)) {
       seen.add(path);
       return path;

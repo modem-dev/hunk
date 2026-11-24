@@ -18,7 +18,9 @@ import type {
   ReviewNoteListOrigin,
   ReviewNoteListThread,
 } from "../../core/review/noteList";
+import { revealReviewHiddenText } from "../../core/review/hiddenText";
 import { webNoteLocationLabel } from "../format/noteLocation";
+import { RevealedText } from "../format/RevealedText";
 import { browserNoteTitle } from "../notes/noteProjection";
 import { countNoteList, filterNoteList } from "./noteFilters";
 
@@ -68,11 +70,15 @@ function NoteRow({
       onClick={() => onSelect(thread, entry)}
     >
       <span className="notes-row-title">
-        <span className="notes-author">{titleOf(entry.note, now)}</span>
+        <span className="notes-author">
+          <RevealedText text={titleOf(entry.note, now)} />
+        </span>
         {range ? <span className="notes-range">{range}</span> : null}
         {entry.stale ? <span className="note-stale">stale</span> : null}
       </span>
-      <span className="notes-summary">{entry.note.summary}</span>
+      <span className="notes-summary">
+        <RevealedText text={entry.note.summary} />
+      </span>
     </button>
   );
 }
@@ -150,9 +156,13 @@ export function NotesTab({ files, activeNoteId, agentNotesHidden, onSelectNote }
       </div>
       {shown.length === 0 ? <p className="notes-none">No notes match.</p> : null}
       {shown.map((file) => (
-        <section key={file.fileKey} className="notes-file" aria-label={file.path}>
-          <h3 className="notes-file-path" title={file.path}>
-            {file.path}
+        <section
+          key={file.fileKey}
+          className="notes-file"
+          aria-label={revealReviewHiddenText(file.path)}
+        >
+          <h3 className="notes-file-path" title={revealReviewHiddenText(file.path)}>
+            <RevealedText text={file.path} />
           </h3>
           <ul className="notes-threads">
             {file.threads.map((thread) => {

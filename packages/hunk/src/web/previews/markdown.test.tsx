@@ -70,6 +70,14 @@ describe("Markdown preview", () => {
     expect(html).toContain('<pre data-language="ts"><code>const x = 1;</code></pre>');
   });
 
+  // Intent: rendered Markdown is repository text, so controls show and legit RTL stays as is.
+  test("draws bidi controls and invisible characters as markers", () => {
+    const html = renderTest("Read me\u202E txt.exe and `is\u200BAdmin`, שלום.");
+    expect(html).toContain('data-label="U+202E"');
+    expect(html).toContain('data-label="U+200B"');
+    expect(html).toContain(", שלום.</p>");
+  });
+
   test("treats raw HTML as text", () => {
     const html = renderTest('<script>alert(1)</script>\n\n<img src=x onerror="alert(1)">');
 
