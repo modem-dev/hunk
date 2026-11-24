@@ -115,6 +115,8 @@ export function createSkippedLargeMetadata(
     isPartial: true,
     additionLines: [],
     deletionLines: [],
+    additionCharacterCount: 0,
+    deletionCharacterCount: 0,
     cacheKey: `${filePath}:large-diff-skipped`,
   };
 }

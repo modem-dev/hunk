@@ -252,7 +252,7 @@ describe("stripGitLogMetadata", () => {
 
     try {
       const stripped = stripGitLogMetadata(gitLogOutput);
-      const parsed = parsePatchFiles(stripped, "patch", true);
+      const parsed = parsePatchFiles(stripped, { cacheKeyPrefix: "patch", throwOnError: true });
       expect(parsed.flatMap((entry) => entry.files).length).toBe(2);
     } finally {
       console.error = originalError;

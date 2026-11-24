@@ -111,7 +111,10 @@ const ELIXIR_HEREDOC_PATCH = `diff --git a/repro.ex b/repro.ex
 
 /** Build issue #664's partial Elixir diff with optional authoritative source text. */
 function createElixirHeredocDiffFile(sourceFetcher?: DiffFile["sourceFetcher"]): DiffFile {
-  const metadata = parsePatchFiles(ELIXIR_HEREDOC_PATCH, "issue-664", true)[0]?.files[0];
+  const metadata = parsePatchFiles(ELIXIR_HEREDOC_PATCH, {
+    cacheKeyPrefix: "issue-664",
+    throwOnError: true,
+  })[0]?.files[0];
   if (!metadata) {
     throw new Error("Expected issue #664 patch metadata");
   }
@@ -169,7 +172,8 @@ function createLargeSourceBackedDiffFile(prefixLineCount = 40): DiffFile {
   const before = `${prefix}\n${ELIXIR_HEREDOC_BEFORE}`;
   const after = before.replace("Line five.", "Line five, edited.");
   const patch = createTwoFilesPatch("large.ex", "large.ex", before, after, "", "", { context: 3 });
-  const metadata = parsePatchFiles(patch, "large-source", true)[0]?.files[0];
+  const metadata = parsePatchFiles(patch, { cacheKeyPrefix: "large-source", throwOnError: true })[0]
+    ?.files[0];
   if (!metadata) {
     throw new Error("Expected large source-backed metadata");
   }
@@ -403,7 +407,10 @@ describe("Pierre diff rows", () => {
     const patch = createTwoFilesPatch("state.ts", "state.ts", before, after, "", "", {
       context: 40 + 2,
     });
-    const metadata = parsePatchFiles(patch, "large-patch-only-state", true)[0]?.files[0];
+    const metadata = parsePatchFiles(patch, {
+      cacheKeyPrefix: "large-patch-only-state",
+      throwOnError: true,
+    })[0]?.files[0];
     if (!metadata) {
       throw new Error("Expected large patch-only grammar-state metadata");
     }
@@ -569,7 +576,10 @@ describe("Pierre diff rows", () => {
     const patch = createTwoFilesPatch("state.ts", "state.ts", oldText, newText, "", "", {
       context: 1,
     });
-    const metadata = parsePatchFiles(patch, "grammar-state", true)[0]?.files[0];
+    const metadata = parsePatchFiles(patch, {
+      cacheKeyPrefix: "grammar-state",
+      throwOnError: true,
+    })[0]?.files[0];
     if (!metadata) {
       throw new Error("Expected partial grammar-state metadata");
     }

@@ -39,7 +39,10 @@ function createWrappedCjkDiffFile(fixtureId: string, lines: string[]): DiffFile 
     ...lines.map((line) => `+${line}`),
     "",
   ].join("\n");
-  const metadata = parsePatchFiles(patch, fixtureId, true).flatMap((entry) => entry.files)[0];
+  const metadata = parsePatchFiles(patch, {
+    cacheKeyPrefix: fixtureId,
+    throwOnError: true,
+  }).flatMap((entry) => entry.files)[0];
 
   if (!metadata) {
     throw new Error(`Failed to parse wrapped CJK fixture ${fixtureId}`);

@@ -2,14 +2,19 @@ import { createHash } from "node:crypto";
 import {
   registerCustomTheme,
   resolveTheme as resolvePierreTheme,
-  type ThemeRegistrationResolved,
+  type DiffsTheme,
 } from "@pierre/diffs";
 import type { AppTheme } from "../themes";
+
+/** Selects Pierre's highlighter backend for terminal, worker, and document highlighting. */
+export const PIERRE_SYNTAX_HIGHLIGHTER = "shiki-wasm" as const;
 
 const PIERRE_THEME = {
   light: "pierre-light",
   dark: "pierre-dark",
 } as const;
+
+type TextMateTheme = NonNullable<DiffsTheme["textmate"]>;
 
 const registeredSyntaxThemes = new Set<string>();
 
@@ -28,7 +33,9 @@ async function buildCustomSyntaxTheme(
   scopeOverrides: Record<string, string>,
   replaceBase: boolean,
 ) {
-  const baseTheme = await resolvePierreTheme(baseThemeName);
+  const resolvedBase = await resolvePierreTheme(baseThemeName, PIERRE_SYNTAX_HIGHLIGHTER);
+  const baseTheme = resolvedBase.textmate;
+  if (!baseTheme) throw new Error(`Theme "${baseThemeName}" has no TextMate palette.`);
   const scopeSettings = Object.entries(scopeOverrides).map(([scope, foreground]) => ({
     scope,
     settings: { foreground },
@@ -39,7 +46,7 @@ async function buildCustomSyntaxTheme(
       ...baseTheme,
       name,
       settings: [...(baseTheme.settings ?? []), ...scopeSettings],
-    } satisfies ThemeRegistrationResolved;
+    } satisfies TextMateTheme;
   }
 
   const foreground = scopeOverrides.source ?? baseTheme.fg;
@@ -49,7 +56,7 @@ async function buildCustomSyntaxTheme(
     fg: foreground,
     colors: { ...baseTheme.colors, "editor.foreground": foreground },
     settings: [{ settings: { foreground } }, ...scopeSettings],
-  } satisfies ThemeRegistrationResolved;
+  } satisfies TextMateTheme;
 }
 
 /** Resolve the content-addressed syntax theme name used for one Hunk app theme. */

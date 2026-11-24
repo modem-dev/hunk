@@ -17,7 +17,7 @@ export function parseSingleFilePatch(
   let parsedPatches: ReturnType<typeof parsePatchFiles>;
 
   try {
-    parsedPatches = parsePatchFiles(patchText, "patch", true);
+    parsedPatches = parsePatchFiles(patchText, { cacheKeyPrefix: "patch", throwOnError: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(

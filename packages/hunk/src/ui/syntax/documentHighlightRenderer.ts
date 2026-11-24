@@ -7,6 +7,7 @@ import {
 import type { AppTheme } from "../themes";
 import { pierreHighlightRenderOptions } from "../../core/documents/highlightRenderOptions";
 import {
+  PIERRE_SYNTAX_HIGHLIGHTER,
   ensureSyntaxHighlightThemeRegistered,
   syntaxHighlightThemeName,
 } from "../diff/syntaxHighlightTheme";
@@ -61,7 +62,7 @@ export async function prepareDocumentHighlighter(
   try {
     return await getSharedHighlighter({
       ...options,
-      preferredHighlighter: "shiki-wasm",
+      preferredHighlighter: PIERRE_SYNTAX_HIGHLIGHTER,
     });
   } catch (error) {
     throw classifyHighlighterPreparationError(error);

@@ -13,7 +13,9 @@ import {
   renderFileWithHighlighter,
 } from "@pierre/diffs";
 import { pierreHighlightRenderOptions } from "../../../core/documents/highlightRenderOptions";
+import { PIERRE_SYNTAX_HIGHLIGHTER } from "../syntaxHighlightTheme";
 import { aliasContextHighlightLines } from "./highlightContext";
+import { markWordDiffHighlightLines } from "./highlightWordDiff";
 import {
   cloneCompactHighlightedDiff,
   cloneCompactHighlightedDocument,
@@ -195,7 +197,7 @@ async function resolveWorkerLanguage(language: string) {
 /** Resolve one theme, classifying failure as permanent for that theme. */
 async function resolveWorkerTheme(theme: string) {
   try {
-    await getResolvedOrResolveTheme(theme as never);
+    await getResolvedOrResolveTheme(theme as never, PIERRE_SYNTAX_HIGHLIGHTER);
   } catch (error) {
     throw new HighlightWorkerRuntimeFailure(
       "unsupported-theme",
@@ -208,7 +210,7 @@ async function resolveWorkerTheme(theme: string) {
 function workerHighlighter(language: string, theme: string) {
   return getSharedHighlighter({
     ...getHighlighterOptions(language, { theme: theme as never }),
-    preferredHighlighter: "shiki-wasm",
+    preferredHighlighter: PIERRE_SYNTAX_HIGHLIGHTER,
   });
 }
 
@@ -242,10 +244,11 @@ async function renderRequest(request: HighlightWorkerRenderRequest, cacheKey: st
       highlighter,
       pierreHighlightRenderOptions(request.theme),
     );
-    const highlighted = result.code as {
-      deletionLines: HighlightedHastLines;
-      additionLines: HighlightedHastLines;
-    };
+    const highlighted = markWordDiffHighlightLines(
+      request.metadata,
+      result.code as { deletionLines: HighlightedHastLines; additionLines: HighlightedHastLines },
+      request.theme,
+    );
     const payload = encodeCompactHighlightedDiff(
       request.aliasContext
         ? aliasContextHighlightLines(request.metadata, highlighted)

@@ -50,6 +50,7 @@ import {
   type DocumentHighlightResult,
 } from "../syntax/documentHighlightService";
 import { pierreHighlightRenderOptions } from "../../core/documents/highlightRenderOptions";
+import { markWordDiffHighlightLines } from "./worker/highlightWordDiff";
 
 export interface LoadHighlightedDiffOptions {
   /** Move eligible highlighting into the syntax worker; static rendering stays inline. */
@@ -457,10 +458,16 @@ function renderHighlightedDiff(
   sourcePlan: SourceBackedHighlightPlan | null,
 ) {
   return queueDocumentHighlightWork(() => {
+    const themeName = syntaxHighlightThemeName(theme);
     const highlighted = renderDiffWithHighlighter(
       metadata,
       highlighter,
-      pierreHighlightRenderOptions(syntaxHighlightThemeName(theme)),
+      pierreHighlightRenderOptions(themeName),
+    );
+    markWordDiffHighlightLines(
+      metadata,
+      highlighted.code as Parameters<typeof markWordDiffHighlightLines>[1],
+      themeName,
     );
     return finalizeHighlightedDiff(file, sourcePlan, highlighted);
   });
