@@ -98,6 +98,10 @@ Delegation cannot follow stdout output or any stdin read, target another extensi
 change extension bootstrap flags. Built-ins and aliases cannot be shadowed; the first extension
 claim in discovery order wins.
 
+The delegated argv is parsed as if the user had typed it, so forward `--web`, `--no-open`, and
+`--no-watch` from your own arguments to let a delegated review run in the browser, as
+`hunk gh pr 123 --web` does.
+
 Use a leading explicit path while developing:
 
 ```bash

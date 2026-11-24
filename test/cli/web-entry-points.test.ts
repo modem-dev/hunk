@@ -221,6 +221,10 @@ describe("web review entry points: parsing and visibility", () => {
       runHunk(["stash", "show", "--help"]),
       runHunk(["patch", "--help"]),
       runHunk(["difftool", "--help"]),
+      runHunk(["gh", "--help"]),
+      runHunk(["gh", "pr", "--help"]),
+      runHunk(["gh", "commit", "--help"]),
+      runHunk(["gh", "compare", "--help"]),
       runHunk(["completion", "bash"]),
       runHunk(["completion", "zsh"]),
     ];
@@ -266,6 +270,19 @@ describe("web review entry points: parsing and visibility", () => {
     const both = runHunk(["diff", "--web", "--watch", "--no-watch"]);
     expect(both.exitCode).not.toBe(0);
     expect(both.stderr).toContain("`--watch` and `--no-watch` cannot be combined.");
+  });
+
+  test("rejects `hunk gh --no-open` without --web before fetching from GitHub", () => {
+    for (const args of [
+      ["gh", "pr", "1350", "--repo", "modem-dev/hunk", "--no-open"],
+      ["gh", "commit", "modem-dev/hunk@abcdef1", "--no-open"],
+      ["gh", "compare", "main...feature", "--repo", "modem-dev/hunk", "--no-open"],
+    ]) {
+      const result = runHunk(args);
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain("`--no-open` only applies to `--web`.");
+      expect(result.stderr).not.toContain("Fetching GitHub");
+    }
   });
 });
 

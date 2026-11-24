@@ -117,6 +117,7 @@ hunk gh pr 123                     # infer the repository from origin
 hunk gh pr 'modem-dev/hunk#123'    # quote this form for shells that treat # as a comment
 hunk gh commit a1b2c3d --repo modem-dev/hunk
 hunk gh compare main...feature --repo modem-dev/hunk
+hunk gh pr 123 --web               # review it in the browser instead of the terminal
 ```
 
 Public repositories work anonymously. Set `GH_TOKEN`, or `GITHUB_TOKEN` when it is absent, for
