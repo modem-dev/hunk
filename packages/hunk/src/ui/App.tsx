@@ -29,6 +29,7 @@ import { DEFAULT_TAB_WIDTH } from "../core/run/tabWidth";
 import { extractHunk } from "../core/patch/hunk";
 import { isVcsReviewInput } from "../core/vcs";
 import type { AppBootstrap } from "../core/bootstrap";
+import { REVIEW_FILTER_NO_MATCH_MESSAGE } from "../core/review/emptyState";
 import {
   selectActiveEditableReviewNoteId,
   selectActiveRemovableReviewNote,
@@ -1883,9 +1884,7 @@ export function App({
             fileViews={fileViewLayouts}
             files={filteredFiles}
             emptyStateMessage={
-              reviewFiles.length === 0
-                ? "No changes to review."
-                : "No files match the current filter."
+              reviewFiles.length === 0 ? "No changes to review." : REVIEW_FILTER_NO_MATCH_MESSAGE
             }
             visibleHunkIndexesByFileId={review.visibleHunkIndexesByFileId}
             semanticFileIdentities={semanticFileIdentities}
