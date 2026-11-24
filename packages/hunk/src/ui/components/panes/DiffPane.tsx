@@ -16,6 +16,7 @@ import {
 import { DEFAULT_FILE_GAP, DEFAULT_HUNK_GAP } from "../../../core/run/reviewGap";
 import { DEFAULT_SCROLL_OFF } from "../../../core/run/scrollOff";
 import { DEFAULT_TAB_WIDTH } from "../../../core/run/tabWidth";
+import { REVIEW_EMPTY_MESSAGE } from "../../../core/review/emptyState";
 import {
   DEFAULT_WHEEL_SCROLL_LINES,
   type WheelScrollLines,
@@ -296,7 +297,7 @@ export function DiffPane({
   expandedGapsByFileId = EMPTY_EXPANDED_GAPS_BY_FILE_ID,
   fileViews = EMPTY_FILE_VIEWS,
   files,
-  emptyStateMessage = "No changes to review.",
+  emptyStateMessage = REVIEW_EMPTY_MESSAGE,
   visibleHunkIndexesByFileId,
   semanticFileIdentities,
   lineHighlights = EMPTY_LINE_HIGHLIGHTS,

@@ -1024,9 +1024,9 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
           ? ({ label: "Updating…", state: "loading" } as const)
           : ({ label: "Connected", state: "connected" } as const);
 
-  // An empty stream says why, in the terminal's order: a review with no files keeps the stream's
-  // own message, a filter matching nothing says so in the terminal's words, and "Hide viewed"
-  // hiding everything the filter left is this page's own case. Each offers its way back.
+  // An empty stream says why, in the terminal's order and words: a review with no files gets the
+  // stream's default message, a filter matching nothing says so, and "Hide viewed" hiding
+  // everything the filter left is this page's own case. The last two offer their way back.
   let streamEmptyMessage: ReactNode | undefined;
   if (mirror.slots.length > 0 && visibleSlots.length === 0) {
     streamEmptyMessage = (

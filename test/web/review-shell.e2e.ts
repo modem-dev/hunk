@@ -12,7 +12,7 @@
  * highlighted, repeated jumps add one history entry, a pasted link's access key leaves the
  * address, and closing a dialog with its own chord restores focus. Filter: a refused edit
  * resets the field, and a filter matching nothing says so in the terminal's words and clears
- * from the empty stream, while an empty review keeps its own message.
+ * from the empty stream, while an empty review says there are no changes.
  */
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -521,7 +521,7 @@ test("a filter matching nothing says so and clears back to the review", async ({
   await filter.fill("no-such-file");
   await expect(page.locator("section[data-file-key]")).toHaveCount(0);
   await expect(empty).toContainText("No files match the current filter.");
-  await expect(empty).not.toContainText("No files in this review.");
+  await expect(empty).not.toContainText("No changes to review.");
   await expect(page.locator(".sidebar-count")).toHaveText("0");
 
   await empty.getByRole("button", { name: "Clear filter" }).click();
@@ -535,8 +535,8 @@ test("a filter matching nothing says so and clears back to the review", async ({
     });
 });
 
-// Intent: a review with no files keeps its own message and never blames the filter.
-test("an empty review keeps its own message", async ({ page }) => {
+// Intent: a review with no files says so in the terminal's words and never blames the filter.
+test("an empty review says there are no changes", async ({ page }) => {
   const directory = mkdtempSync(join(tmpdir(), "hunk-web-empty-"));
   try {
     const patch = join(directory, "empty.patch");
@@ -547,7 +547,7 @@ test("an empty review keeps its own message", async ({ page }) => {
     await expect(page.locator('.toolbar [data-state="connected"]')).toBeVisible({
       timeout: 30_000,
     });
-    await expect(page.locator(".stream-empty")).toHaveText("No files in this review.");
+    await expect(page.locator(".stream-empty")).toHaveText("No changes to review.");
     await expect(page.locator(".stream-empty").getByRole("button")).toHaveCount(0);
   } finally {
     rmSync(directory, { recursive: true, force: true });

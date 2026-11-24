@@ -46,6 +46,7 @@ import {
 import type { ReviewState } from "../../core/review/state";
 import type { ReviewFile } from "../../core/review/types";
 import { reviewHunkIndexAtOffset } from "../../core/review/viewportAnchor";
+import { REVIEW_EMPTY_MESSAGE } from "../../core/review/emptyState";
 import type { ReviewAgentHighlight, ReviewSharedNote } from "../../session/reviewSharedState";
 import type { ClientReviewMirrorFileSlot } from "../mirror/clientReviewMirror";
 import type { NoteComposer } from "../notes/composerStore";
@@ -171,7 +172,7 @@ export interface ReviewStreamProps {
   viewed?: ReviewViewedControls;
   /** The keymap's chord for toggling the selected file's viewed mark, shown on its header. */
   viewedKeyHint?: string;
-  /** What an empty stream says, when the page knows better than "no files". */
+  /** What an empty stream says, when the page knows better than an empty review. */
   emptyMessage?: ReactNode;
   /** True while the review's first generation is still loading file by file. */
   loading?: boolean;
@@ -862,7 +863,7 @@ export function ReviewStream(props: ReviewStreamProps) {
         );
       })}
       {slots.length === 0 ? (
-        <p className="stream-empty">{props.emptyMessage ?? "No files in this review."}</p>
+        <p className="stream-empty">{props.emptyMessage ?? REVIEW_EMPTY_MESSAGE}</p>
       ) : null}
     </div>
   );
