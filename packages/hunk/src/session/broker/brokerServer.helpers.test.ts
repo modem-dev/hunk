@@ -278,6 +278,7 @@ describe("handleSessionApiRequest", () => {
       apiRequest({
         action: "navigate",
         selector: { sessionId: "s-1" },
+        filePath: "a.ts",
         hunkNumber: 2,
       } as SessionDaemonRequest),
     );
@@ -382,6 +383,66 @@ describe("handleSessionApiRequest", () => {
     expect(response.status).toBe(400);
     expect(await response.json()).toMatchObject({
       error: expect.stringContaining("cannot be combined"),
+    });
+  });
+
+  test("rejects a comment direction combined with another navigation target", async () => {
+    const { state } = createFakeState();
+    const response = await handleSessionApiRequest(
+      state,
+      apiRequest({
+        action: "navigate",
+        selector: { sessionId: "s-1" },
+        commentDirection: "next",
+        filePath: "a.ts",
+        hunkNumber: 2,
+      } as SessionDaemonRequest),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      error: expect.stringContaining("commentDirection cannot be combined"),
+    });
+  });
+
+  test("rejects a hunk or line target without a file path", async () => {
+    const { state } = createFakeState();
+    for (const target of [{ hunkNumber: 2 }, { side: "new" as const, line: 12 }]) {
+      const response = await handleSessionApiRequest(
+        state,
+        apiRequest({
+          action: "navigate",
+          selector: { sessionId: "s-1" },
+          ...target,
+        } as SessionDaemonRequest),
+      );
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({
+        error: expect.stringContaining("requires filePath"),
+      });
+    }
+  });
+
+  test("prefers exact line coordinates when a hunk number is also supplied", async () => {
+    const { state, calls } = createFakeState();
+    const response = await handleSessionApiRequest(
+      state,
+      apiRequest({
+        action: "navigate",
+        selector: { sessionId: "s-1" },
+        filePath: "a.ts",
+        hunkNumber: 2,
+        side: "new",
+        line: 12,
+      } as SessionDaemonRequest),
+    );
+
+    expect(response.status).toBe(200);
+    const dispatch = calls.find((c) => c.method === "dispatchCommand");
+    expect(dispatch).toBeDefined();
+    expect((dispatch!.args[0] as { input: Record<string, unknown> }).input).toMatchObject({
+      line: 12,
     });
   });
 
