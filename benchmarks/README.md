@@ -40,6 +40,7 @@ bun run bench:render-layout
 bun run bench:highlight-prefetch
 bun run bench:highlight-worker-cache
 bun run bench:highlight-cache-layers
+bun run bench:syntax-highlighter
 bun run bench:large-stream
 bun run bench:interaction-latency
 bun run bench:non-ascii-stream
@@ -64,6 +65,7 @@ bun run bench:competitors
 - `highlight-prefetch.ts` — measures selected-file highlight startup and adjacent prefetch readiness.
 - `worker-highlight-cache.ts` — measures a cold worker highlight against an immediate compact-result cache hit.
 - `highlight-cache-layers.ts` — measures a resident terminal-cache hit against a worker-cache revisit after the terminal cache evicts the diff.
+- `syntax-highlighter.ts` — compares Pierre's Shiki WASM and Highlights backends in fresh processes: cold start, warm document and diff throughput, peak RSS, and per-character color agreement. `HUNK_BENCH_SAMPLES` sets the process count per backend (default 3).
 - `large-stream.ts` — measures large split-stream first-frame and scroll cost.
 - `interaction-latency.ts` — measures per-press `]` hunk-navigation latency and per-scroll-tick latency (median + p95) on the large stream, plus RSS/heap ceilings after first frame and after navigation (the default-suite slice of `memory.ts`). Interaction timing starts after render-driven syntax highlighting reaches idle so Bun scheduler changes cannot move startup work into the first input sample.
 - `non-ascii-stream.ts` — measures first-frame and per-scroll-tick latency on a stream whose diff content embeds CJK, emoji, and box-drawing characters, exercising the string-width path on content rather than chrome glyphs. Its scroll timing uses the same highlight-idle boundary.

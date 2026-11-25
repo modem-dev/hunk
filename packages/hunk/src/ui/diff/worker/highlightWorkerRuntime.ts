@@ -181,9 +181,19 @@ function isPlainLanguage(language: string) {
   return language === "text" || language === "ansi";
 }
 
+/**
+ * Return whether a language needs a Shiki grammar resolved before rendering.
+ *
+ * Highlights ships its lexers in WASM and renders unknown languages as text, so resolving a
+ * TextMate grammar would only load unused JSON.
+ */
+function needsGrammarResolution(language: string) {
+  return !isPlainLanguage(language) && PIERRE_SYNTAX_HIGHLIGHTER !== "highlights";
+}
+
 /** Resolve one grammar, classifying failure as permanent for that language. */
 async function resolveWorkerLanguage(language: string) {
-  if (isPlainLanguage(language)) return;
+  if (!needsGrammarResolution(language)) return;
   try {
     await getResolvedOrResolveLanguage(language as never);
   } catch (error) {
