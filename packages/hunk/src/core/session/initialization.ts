@@ -1,10 +1,11 @@
 import type { TerminalThemeMode } from "../theme/detection";
+import type { ThemeSelection } from "../theme/selection";
 import type { NamedCustomThemeConfig } from "../../extension-api/types";
 import type { PersistedViewPreferences } from "../run/config";
 
 /** Theme inputs finalized during startup and retained for every surface in one session. */
 export interface SessionThemeInitialization {
-  initialTheme?: string;
+  initialTheme?: ThemeSelection;
   initialThemeMode?: TerminalThemeMode;
   customThemes: readonly NamedCustomThemeConfig[];
 }

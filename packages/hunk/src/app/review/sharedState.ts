@@ -28,6 +28,7 @@ import {
   THEMES,
   type AppTheme,
 } from "../../core/theme/appTheme";
+import { chooseThemeSelectionId } from "../../core/theme/selection";
 import { HUNK_REVIEW_PROTOCOL_VERSION } from "../../session/reviewProtocol";
 import type {
   ReviewAgentHighlight,
@@ -89,11 +90,11 @@ function themeDefaults(theme: AppTheme, followsTerminalMode: boolean): ReviewThe
 export function buildReviewPresentationDefaults(
   bootstrap: AppBootstrap,
 ): ReviewPresentationDefaults {
-  const theme = resolveTheme(
-    bootstrap.initialTheme,
-    bootstrap.initialThemeMode ?? null,
-    bootstrap.customThemes ?? [],
-  );
+  // A light/dark pair publishes the side this launch resolved. Marking it `auto` would make the
+  // browser replace it with the GitHub defaults.
+  const themeMode = bootstrap.initialThemeMode ?? null;
+  const requestedTheme = chooseThemeSelectionId(bootstrap.initialTheme, themeMode);
+  const theme = resolveTheme(requestedTheme, themeMode, bootstrap.customThemes ?? []);
   const keymap = resolveCommandKeys({
     defaults: APP_COMMAND_CATALOG.map((entry) => ({
       id: entry.id,
@@ -112,7 +113,7 @@ export function buildReviewPresentationDefaults(
     sourceLabel: bootstrap.changeset.sourceLabel,
     theme: themeDefaults(
       theme,
-      themeFollowsTerminalMode(bootstrap.initialTheme, bootstrap.customThemes ?? []),
+      themeFollowsTerminalMode(requestedTheme, bootstrap.customThemes ?? []),
     ),
     view: {
       layout: bootstrap.initialMode,

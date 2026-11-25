@@ -6,6 +6,7 @@
  * light/dark mode and returns plain color strings. `ui/themes.ts` re-exports it.
  */
 import { LEGACY_CUSTOM_THEME_ID } from "./customThemes";
+import { chooseThemeSelectionId, type ThemeSelection } from "./selection";
 import { resolveSyntaxScopeOverrides } from "./legacySyntaxScopes";
 import type { NamedCustomThemeConfig } from "../../extension-api/types";
 import { blendHex, contrastRatio, hexColorDistance, relativeLuminance } from "../../lib/color";
@@ -514,17 +515,18 @@ export function availableThemes(
 }
 
 /**
- * Resolve a named theme, including terminal-background auto mode and custom themes.
+ * Resolve a theme selection, including terminal-background auto mode and custom themes.
  *
  * Custom themes are matched before bundled ids so a custom theme that reuses a
  * deprecated built-in alias still resolves to what the user actually defined. No id, or
  * an id nothing defines, resolves to the GitHub theme for the current light/dark mode.
  */
 export function resolveTheme(
-  requested: string | undefined,
+  selection: ThemeSelection | undefined,
   themeMode: TerminalThemeMode | null,
   customThemes: readonly NamedCustomThemeConfig[] = [],
 ) {
+  const requested = chooseThemeSelectionId(selection, themeMode);
   if (requested === TERMINAL_THEME_ID) {
     return buildTerminalTheme(themeMode);
   }

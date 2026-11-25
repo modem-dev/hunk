@@ -221,6 +221,28 @@ describe("buildReviewPresentationDefaults", () => {
     ).toBe(false);
   });
 
+  test("publishes the resolved side of a light/dark pair without marking it auto", () => {
+    const pair = { dark: "nord", light: "one-light" };
+    const themeFor = (overrides: Parameters<typeof createTestSharedBootstrap>[1]) =>
+      buildReviewPresentationDefaults(createTestSharedBootstrap([], overrides)).theme;
+
+    expect(themeFor({ initialTheme: pair, initialThemeMode: "light" })).toEqual({
+      kind: "builtin",
+      id: "one-light",
+      appearance: "light",
+    });
+    expect(themeFor({ initialTheme: pair })).toEqual({
+      kind: "builtin",
+      id: "nord",
+      appearance: "dark",
+    });
+    expect(themeFor({ initialTheme: { ...pair, fallback: "github-dark-default" } })).toEqual({
+      kind: "builtin",
+      id: "github-dark-default",
+      appearance: "dark",
+    });
+  });
+
   test("names a built-in theme by id and folds keybindings over the review commands", () => {
     const defaults = buildReviewPresentationDefaults(
       createTestSharedBootstrap([], {
