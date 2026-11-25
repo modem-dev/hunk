@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { hasControlCharacter } from "./errors";
+import { GITHUB_CLI_REFERENCE } from "./help";
 import {
+  GITHUB_FORWARDED_REVIEW_FLAGS,
   parseGitHubCommitInvocation,
   parseGitHubCommitLocator,
   parseGitHubCompareInvocation,
@@ -289,5 +291,54 @@ describe("GitHub commit invocation parsing", () => {
         expect(hasControlCharacter(message)).toBe(false);
       }
     }
+  });
+});
+
+describe("GitHub browser review flags", () => {
+  const subcommands = [
+    { name: "pr", parse: parseGitHubPrInvocation, target: "123" },
+    { name: "commit", parse: parseGitHubCommitInvocation, target: "abcdef1" },
+    { name: "compare", parse: parseGitHubCompareInvocation, target: "main...feature" },
+  ] as const;
+
+  test("forwards --web, --no-open, and --no-watch ahead of the options after --", () => {
+    for (const { parse, target } of subcommands) {
+      expect(
+        parse([target, "--web", "--repo", "modem-dev/hunk", "--no-open", "--no-watch"]),
+      ).toMatchObject({
+        explicitRepository: "modem-dev/hunk",
+        patchArgs: ["--web", "--no-open", "--no-watch"],
+      });
+      expect(parse(["--web", target, "--", "--mode", "split"])).toMatchObject({
+        patchArgs: ["--web", "--mode", "split"],
+      });
+      expect(parse([target, "--no-watch"])).toMatchObject({ patchArgs: ["--no-watch"] });
+      expect(Object.isFrozen(parse([target, "--web"]).patchArgs)).toBe(true);
+    }
+  });
+
+  test("refuses --no-open without --web before any request, as hunk patch does", () => {
+    for (const { parse, target } of subcommands) {
+      for (const args of [
+        [target, "--no-open"],
+        [target, "--", "--no-open"],
+        [target, "--no-open", "--", "--", "--web"],
+      ]) {
+        expect(() => parse(args)).toThrow("`--no-open` only applies to `--web`.");
+      }
+      // `--web` after the separator still pairs with an owned `--no-open`.
+      expect(parse([target, "--no-open", "--", "--web"])).toMatchObject({
+        patchArgs: ["--no-open", "--web"],
+      });
+    }
+  });
+
+  test("keeps rejecting other options and lists every forwarded flag in help", () => {
+    for (const { parse, target } of subcommands) {
+      expect(() => parse([target, "--watch"])).toThrow(/Unknown .*option: --watch/);
+      expect(() => parse([target, "--web=1"])).toThrow(/Unknown .*option: --web=1/);
+    }
+    const documented = GITHUB_CLI_REFERENCE.options.map((option) => option.flag);
+    for (const flag of GITHUB_FORWARDED_REVIEW_FLAGS) expect(documented).toContain(flag);
   });
 });

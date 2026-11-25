@@ -1,13 +1,36 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createGitHubPrExtension } from "@hunk/gh";
 import { createEmptyExtensionLoadResult } from "../extensions/types";
 import { resolveExtensionCliCommands } from "../extensions/cliCommands";
-import type { HunkConfigResolution } from "../core/run/config";
+import { resolveConfiguredCliInput, type HunkConfigResolution } from "../core/run/config";
 import { HunkUserError } from "../core/run/errors";
 import { getDetectedTerminalColors, setDetectedTerminalColors } from "../core/theme/terminalColors";
 import { prepareStartupPlan, shouldUseInteractiveHistory } from "./startup";
 import type { AppBootstrap } from "../core/bootstrap";
 import type { CliInput, ParsedCliInput } from "../core/run/commandInputs";
-import type { NamedCustomThemeConfig } from "../extension-api/types";
+import type {
+  ExtensionCliCommand,
+  ExtensionCliCommandHandler,
+  HunkExtensionAPI,
+  NamedCustomThemeConfig,
+} from "../extension-api/types";
+
+const testDirectories: string[] = [];
+afterEach(() => {
+  for (const directory of testDirectories.splice(0)) {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+/** Create one directory the test owns and removes afterwards. */
+function createTestDirectory(prefix: string) {
+  const directory = mkdtempSync(join(tmpdir(), prefix));
+  testDirectories.push(directory);
+  return directory;
+}
 
 /**
  * Build a config resolution for tests that are not exercising config layering.
@@ -299,6 +322,95 @@ describe("startup planning", () => {
       }),
     ).rejects.toThrow("bootstrap reached");
     expect(resolved).toBe(true);
+  });
+
+  test("serves a bundled `gh pr --web` review through the headless web plan", async () => {
+    const patch = [
+      "diff --git a/src/a.ts b/src/a.ts",
+      "--- a/src/a.ts",
+      "+++ b/src/a.ts",
+      "@@ -1 +1 @@",
+      "-export const a = 1;",
+      "+export const a = 2;",
+      "",
+    ].join("\n");
+    const requests: string[] = [];
+    const extensions = createEmptyExtensionLoadResult();
+    extensions.registry.extensions.push({ id: "hunk.gh", sourcePath: "@hunk/gh", origin: "flag" });
+    // Register the real bundled extension, with GitHub answered from fixtures.
+    createGitHubPrExtension({
+      env: {},
+      temporaryRoot: createTestDirectory("hunk-startup-gh-patch-"),
+      fetchImpl: async (url, init) => {
+        requests.push(String(url));
+        if (new Headers(init?.headers).get("accept") === "application/vnd.github+json") {
+          return Response.json({
+            title: "Serve GitHub reviews in the browser",
+            html_url: "https://github.com/modem-dev/hunk/pull/1350",
+            user: { login: "octocat" },
+            state: "closed",
+            draft: false,
+            merged: true,
+            base: { ref: "main" },
+            head: { ref: "feat/gh-web-review" },
+          });
+        }
+        return new Response(patch);
+      },
+    })({
+      registerCliCommand: (command: ExtensionCliCommand, handler: ExtensionCliCommandHandler) =>
+        extensions.registry.cliCommands.push({ extensionId: "hunk.gh", command, handler }),
+      on: (event: string, handler: unknown) => {
+        if (event === "shutdown") {
+          extensions.registry.eventHandlers.shutdown.push({
+            extensionId: "hunk.gh",
+            handler: handler as never,
+          });
+        }
+      },
+    } as unknown as HunkExtensionAPI);
+    const extensionConfig = {
+      extensions: { enabled: true, paths: [], repoPaths: [], extensionConfigs: {} },
+    };
+
+    const plan = await prepareStartupPlan(
+      ["bun", "hunk", "gh", "pr", "1350", "--repo", "modem-dev/hunk", "--web", "--no-open"],
+      {
+        cwd: createTestDirectory("hunk-startup-gh-cwd-"),
+        env: { HOME: createTestDirectory("hunk-startup-gh-home-") },
+        resolveExtensionCliBootstrapImpl: async ({ baseVcsCatalog }) => ({
+          configured: extensionConfig,
+          extensions,
+          commands: resolveExtensionCliCommands(extensions.registry),
+          collisionIssues: [],
+          discoveryCatalog: baseVcsCatalog,
+        }),
+        resolveConfiguredCliInputImpl: (input, options) => ({
+          ...resolveConfiguredCliInput(input, options),
+          ...extensionConfig,
+        }),
+        loadStartupExtensionsImpl: async () => extensions,
+        stdinIsTTY: false,
+        stdoutIsTTY: false,
+        stderr: { write: (_text: string, done?: () => void) => done?.() } as never,
+      },
+    );
+
+    expect(requests).toHaveLength(2);
+    expect(plan.kind).toBe("web");
+    if (plan.kind !== "web") throw new Error("Expected a web plan.");
+    // `--web` implies watch for the reopenable fetched patch, as for any `hunk patch <file>`.
+    expect(plan.cliInput).toMatchObject({
+      kind: "patch",
+      options: { web: true, open: false, watch: true },
+    });
+    expect(plan.bootstrap.changeset.files.map((file) => file.path)).toEqual(["src/a.ts"]);
+    expect(plan.bootstrap.review).toMatchObject({
+      kind: "change-request",
+      id: "#1350",
+      title: "Serve GitHub reviews in the browser",
+    });
+    await (await import("../extensions/events")).retireExtensionLoadResult(extensions);
   });
 
   test("reports a disabled bundled command with a one-run recovery", async () => {

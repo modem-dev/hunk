@@ -1,3 +1,4 @@
+import { HunkExtensionUserError } from "hunkdiff/extension";
 import { assertSafeArgument, hasControlCharacter, invocationError } from "./errors";
 import { normalizeGitHubHost } from "./hosts";
 import type {
@@ -11,6 +12,17 @@ import type {
 
 const REPOSITORY_PART = /^[A-Za-z0-9_.-]+$/;
 const INVALID_GIT_REF_CHARACTERS = [" ", "~", "^", ":", "?", "*", "[", "\\"];
+
+/**
+ * Lists the browser review flags every GitHub subcommand accepts and forwards to its delegated
+ * `hunk patch` review, so `hunk gh pr 123 --web` serves the review in a browser exactly like
+ * `hunk patch --web`. Hunk's patch parser owns their meaning and rules.
+ */
+export const GITHUB_FORWARDED_REVIEW_FLAGS: readonly string[] = Object.freeze([
+  "--web",
+  "--no-open",
+  "--no-watch",
+]);
 
 /** Checks one ref against Git's refname rules before it reaches GitHub's URL path. */
 function isValidGitRef(value: string): boolean {
@@ -124,7 +136,28 @@ export function parseGitHubPullRequestLocator(value: string): GitHubPullRequestL
   return { host, ...repository, number: parsePullRequestNumber(parts[3]!) };
 }
 
-/** Parses raw PR tokens without consuming patch options after `--`. */
+/**
+ * Builds the delegated patch options: forwarded review flags, then the options after `--`.
+ *
+ * Refuses `--no-open` without `--web` here, with the patch parser's own message, so the mistake
+ * fails before any GitHub request rather than after the diff has been fetched.
+ */
+function delegatedPatchArgs(
+  forwardedFlags: readonly string[],
+  separatedArgs: readonly string[],
+): readonly string[] {
+  const patchArgs = [...forwardedFlags, ...separatedArgs];
+  const separator = patchArgs.indexOf("--");
+  const reviewArgs = separator < 0 ? patchArgs : patchArgs.slice(0, separator);
+  if (reviewArgs.includes("--no-open") && !reviewArgs.includes("--web")) {
+    throw new HunkExtensionUserError("`--no-open` only applies to `--web`.", {
+      suggestions: ["Add `--web` to serve the review in a browser, or drop `--no-open`."],
+    });
+  }
+  return Object.freeze(patchArgs);
+}
+
+/** Parses raw PR tokens, forwarding browser review flags and the patch options after `--`. */
 export function parseGitHubPrInvocation(args: readonly string[]): GitHubPrInvocation {
   const separator = args.indexOf("--");
   const ownedArgs = separator < 0 ? args : args.slice(0, separator);
@@ -135,6 +168,7 @@ export function parseGitHubPrInvocation(args: readonly string[]): GitHubPrInvoca
 
   let target: string | undefined;
   let explicitRepository: string | undefined;
+  const forwardedFlags: string[] = [];
   for (let index = 0; index < ownedArgs.length; index += 1) {
     const token = ownedArgs[index]!;
     if (token === "--repo") {
@@ -153,6 +187,10 @@ export function parseGitHubPrInvocation(args: readonly string[]): GitHubPrInvoca
       if (!explicitRepository) throw invocationError("`--repo` requires an owner/repo value.");
       continue;
     }
+    if (GITHUB_FORWARDED_REVIEW_FLAGS.includes(token)) {
+      forwardedFlags.push(token);
+      continue;
+    }
     if (token.startsWith("-")) throw invocationError(`Unknown gh option: ${token}`);
     if (target !== undefined) throw invocationError("Specify exactly one pull request.");
     target = token;
@@ -167,7 +205,12 @@ export function parseGitHubPrInvocation(args: readonly string[]): GitHubPrInvoca
       );
     }
   }
-  return { locator, explicitRepository, patchArgs: Object.freeze([...patchArgs]), help: false };
+  return {
+    locator,
+    explicitRepository,
+    patchArgs: delegatedPatchArgs(forwardedFlags, patchArgs),
+    help: false,
+  };
 }
 
 /** Parses one SHA, owner/repo@SHA shorthand, or exact GitHub commit URL. */
@@ -206,7 +249,7 @@ export function parseGitHubCommitLocator(value: string): GitHubCommitLocator {
   return { host, ...repository, sha: sha.toLowerCase() };
 }
 
-/** Parses one commit locator, optional repository, and delegated patch options. */
+/** Parses one commit locator, optional repository, browser review flags, and patch options. */
 export function parseGitHubCommitInvocation(args: readonly string[]): GitHubCommitInvocation {
   const separator = args.indexOf("--");
   const ownedArgs = separator < 0 ? args : args.slice(0, separator);
@@ -221,6 +264,7 @@ export function parseGitHubCommitInvocation(args: readonly string[]): GitHubComm
 
   let target: string | undefined;
   let explicitRepository: string | undefined;
+  const forwardedFlags: string[] = [];
   for (let index = 0; index < ownedArgs.length; index += 1) {
     const token = ownedArgs[index]!;
     if (token === "--repo") {
@@ -237,6 +281,10 @@ export function parseGitHubCommitInvocation(args: readonly string[]): GitHubComm
       if (explicitRepository !== undefined) throw invocationError("Specify --repo only once.");
       explicitRepository = token.slice("--repo=".length);
       assertSafeArgument(explicitRepository, "GitHub repository");
+      continue;
+    }
+    if (GITHUB_FORWARDED_REVIEW_FLAGS.includes(token)) {
+      forwardedFlags.push(token);
       continue;
     }
     if (token.startsWith("-")) {
@@ -260,12 +308,12 @@ export function parseGitHubCommitInvocation(args: readonly string[]): GitHubComm
   return {
     locator,
     explicitRepository,
-    patchArgs: Object.freeze([...patchArgs]),
+    patchArgs: delegatedPatchArgs(forwardedFlags, patchArgs),
     help: false,
   };
 }
 
-/** Parses one base...head comparison, optional repository, and delegated patch options. */
+/** Parses one base...head comparison, optional repository, browser review flags, and patch options. */
 export function parseGitHubCompareInvocation(args: readonly string[]): GitHubCompareInvocation {
   const separator = args.indexOf("--");
   const ownedArgs = separator < 0 ? args : args.slice(0, separator);
@@ -276,6 +324,7 @@ export function parseGitHubCompareInvocation(args: readonly string[]): GitHubCom
 
   let range: string | undefined;
   let explicitRepository: string | undefined;
+  const forwardedFlags: string[] = [];
   for (let index = 0; index < ownedArgs.length; index += 1) {
     const token = ownedArgs[index]!;
     if (token === "--repo") {
@@ -292,6 +341,10 @@ export function parseGitHubCompareInvocation(args: readonly string[]): GitHubCom
       if (explicitRepository !== undefined) throw invocationError("Specify --repo only once.");
       explicitRepository = token.slice("--repo=".length);
       if (!explicitRepository) throw invocationError("`--repo` requires an owner/repo value.");
+      continue;
+    }
+    if (GITHUB_FORWARDED_REVIEW_FLAGS.includes(token)) {
+      forwardedFlags.push(token);
       continue;
     }
     if (token.startsWith("-")) throw invocationError(`Unknown compare option: ${token}`);
@@ -313,7 +366,7 @@ export function parseGitHubCompareInvocation(args: readonly string[]): GitHubCom
     base,
     head,
     explicitRepository,
-    patchArgs: Object.freeze([...patchArgs]),
+    patchArgs: delegatedPatchArgs(forwardedFlags, patchArgs),
     help: false,
   };
 }

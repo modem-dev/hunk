@@ -13,9 +13,10 @@ Add `--web` to a review command:
 hunk diff --web
 hunk show HEAD~1 --web
 hunk diff --staged --web
+hunk gh pr 123 --web
 ```
 
-`--web` works on `diff`, `show`, `stash show`, `patch`, and `difftool`. Hunk starts the review without a terminal UI, prints the review URL once the session daemon has accepted the review, opens it in your default browser, and stays in the foreground until you press Ctrl+C. Ctrl+C ends the review; an open page then says the session has ended.
+`--web` works on `diff`, `show`, `stash show`, `patch`, `difftool`, and the GitHub commands `gh pr`, `gh commit`, and `gh compare`. Hunk starts the review without a terminal UI, prints the review URL once the session daemon has accepted the review, opens it in your default browser, and stays in the foreground until you press Ctrl+C. Ctrl+C ends the review; an open page then says the session has ended.
 
 Standard output is exactly one URL line. The review keeps running and never closes its standard output, so `URL=$(hunk diff --web --no-open)` never returns; see [Use the URL from a script](#use-the-url-from-a-script). At a terminal, one line follows on standard error: `hunk: review ready in your browser. Press Ctrl+C to stop.`, or `hunk: open the URL above in a browser. Press Ctrl+C to stop.` with `--no-open`. If the daemon restarts, the review keeps serving and reconnects to it; if the terminal running the review goes away, the review ends.
 
@@ -25,6 +26,8 @@ Standard output is exactly one URL line. The review keeps running and never clos
 | `--no-watch` | Do not reload when the input changes. With `--web`, Hunk watches its input by default unless your config sets `watch = false`. |
 
 Input that cannot be read again, such as `some-command | hunk patch - --web`, is served once without watching, as in [watch mode](/docs/workflows/watch-mode/).
+
+A GitHub review serves the diff Hunk fetched when the command started, exactly as the terminal does. Refresh and watching reread that copy rather than asking GitHub again, so run the command again to see commits pushed since.
 
 ### Use the URL from a script
 

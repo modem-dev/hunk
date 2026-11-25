@@ -2,8 +2,9 @@
  * Starts a real daemon and a real headless review session for one browser test, and watches a
  * page for anything the content security policy or the console reports.
  *
- * The session is Hunk itself: `hunk patch <file> --web`, or `hunk diff --staged --web` in a
- * git repository the fixtures write, run from source. It prints its review URL on stdout and
+ * The session is Hunk itself: `hunk patch <file> --web`, `hunk diff --staged --web` in a
+ * git repository the fixtures write, or `hunk gh pr <number> --web` with GitHub answered from
+ * fixtures, run from source. It prints its review URL on stdout and
  * answers `hunk session` commands like any session, which is how a test reloads it. Every
  * spawned process gets a private daemon port, runtime directory, and config home, so tests
  * never touch a developer's daemon. `HUNK_TEST_EXECUTABLE` runs the daemon and the session from
@@ -43,6 +44,8 @@ const TEST_DIR = fileURLToPath(new URL(".", import.meta.url));
 const REPO_ROOT = join(TEST_DIR, "..", "..");
 const SOURCE_ENTRYPOINT = join(REPO_ROOT, "packages", "hunk", "src", "main.tsx");
 export const PATCH_FIXTURE = join(TEST_DIR, "fixtures", "two-files.patch");
+/** Claims `hunk gh` in place of the bundled extension, serving `PATCH_FIXTURE` as every PR. */
+const GITHUB_FIXTURE_EXTENSION = join(TEST_DIR, "fixtures", "github-review-extension.ts");
 const BUN = process.env.HUNK_TEST_BUN ?? "bun";
 const COMPILED_EXECUTABLE = process.env.HUNK_TEST_EXECUTABLE;
 
@@ -111,7 +114,8 @@ export interface TestWebReviewOptions {
 
 /**
  * Start a daemon and one headless session serving `input`: a patch path, `--rich`, `--previews`
- * (images and Markdown), or `--many=N`.
+ * (images and Markdown), `--many=N`, or `--github` (pull request #1350 of modem-dev/hunk through
+ * `hunk gh pr`, whose diff is `PATCH_FIXTURE`).
  */
 export async function startTestWebReview(
   input: string,
@@ -175,7 +179,19 @@ export async function startTestWebReview(
     }
     const reviewArgs = repo
       ? ["diff", "--staged", "--agent-context", reviewOrderSidecarPath(repo)]
-      : ["patch", input];
+      : input === "--github"
+        ? [
+            "--disable-extension",
+            "hunk.gh",
+            "--extension",
+            GITHUB_FIXTURE_EXTENSION,
+            "gh",
+            "pr",
+            "1350",
+            "--repo",
+            "modem-dev/hunk",
+          ]
+        : ["patch", input];
     const hunkCommand = (args: readonly string[]) =>
       COMPILED_EXECUTABLE ? [COMPILED_EXECUTABLE, ...args] : [BUN, SOURCE_ENTRYPOINT, ...args];
     // `--web` opens a browser and watches the input by default; a test drives its own browser
