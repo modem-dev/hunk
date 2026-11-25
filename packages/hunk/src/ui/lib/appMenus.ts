@@ -41,6 +41,8 @@ export interface BuildAppMenusOptions {
   cursorLine: CursorLine;
   layoutMode: LayoutMode;
   filesPaneVisible: boolean;
+  /** Whether the review-info pane is showing; omit when this review has no such pane. */
+  reviewInfoPaneVisible?: boolean;
   showAgentNotes: boolean;
   showHelp: boolean;
   showHunkHeaders: boolean;
@@ -136,6 +138,7 @@ export function buildAppMenus({
   cursorLine,
   layoutMode,
   filesPaneVisible,
+  reviewInfoPaneVisible,
   showAgentNotes,
   showHelp,
   showHunkHeaders,
@@ -164,6 +167,15 @@ export function buildAppMenus({
       { commandId: "hunk.view.layoutAuto", checked: layoutMode === "auto" },
       SEPARATOR,
       { commandId: "hunk.view.toggleFilesPane", label: "Files pane", checked: filesPaneVisible },
+      ...(reviewInfoPaneVisible === undefined
+        ? []
+        : [
+            {
+              commandId: "hunk.reviewInfo.toggle",
+              label: "Review info pane",
+              checked: reviewInfoPaneVisible,
+            },
+          ]),
       { commandId: "hunk.view.toggleMenuBar", label: "Menu bar", checked: showMenuBar },
       SEPARATOR,
       { commandId: "hunk.view.openThemeSelector", label: "Themes…" },

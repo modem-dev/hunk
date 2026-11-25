@@ -5,7 +5,8 @@ import { capturedTestColorToHex } from "../../../../../../../test/helpers/test-c
 import type { ExtensionPaneProps } from "../../../../extension-api/types";
 import { toExtensionPaintTheme } from "../../../../ui/lib/extensionPaintTheme";
 import { resolveTheme } from "../../../../ui/themes";
-import { ReviewInfoPane } from ".";
+import { getBundledUIRegistry } from "..";
+import { BUNDLED_REVIEW_INFO_TOGGLE_COMMAND_ID, ReviewInfoPane } from ".";
 import { reviewInfoLines } from "./presentation";
 
 const review = {
@@ -224,5 +225,38 @@ describe("ReviewInfoPane", () => {
     } finally {
       setup.renderer.destroy();
     }
+  });
+});
+
+describe("the review info toggle command", () => {
+  /** Run the bundled toggle against fake pane controls holding these open and visible ids. */
+  async function runTestToggle(open: Set<string>, visible: Set<string>) {
+    const registered = getBundledUIRegistry().commands.find(
+      (entry) => entry.command.id === BUNDLED_REVIEW_INFO_TOGGLE_COMMAND_ID,
+    );
+    expect(registered?.command.key).toBe("I");
+    await registered!.handler({
+      panes: {
+        open: (id: string) => open.add(id),
+        close: (id: string) => {
+          open.delete(id);
+          visible.delete(id);
+        },
+        isOpen: (id: string) => open.has(id),
+        isVisible: (id: string) => visible.has(id),
+      },
+    } as never);
+  }
+
+  test("hides the visible commit list, then restores both review info panes", async () => {
+    // A comparison review shows only its commit list; the fixed pane is open but unavailable.
+    const open = new Set(["review-info", "comparison-review-info"]);
+    const visible = new Set(["comparison-review-info"]);
+
+    await runTestToggle(open, visible);
+    expect([...open]).toEqual([]);
+
+    await runTestToggle(open, visible);
+    expect([...open].toSorted()).toEqual(["comparison-review-info", "review-info"]);
   });
 });

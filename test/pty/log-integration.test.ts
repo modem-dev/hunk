@@ -139,6 +139,40 @@ describe("direct revision reviews", () => {
       session.close();
     }
   });
+
+  test("I hides and restores the included commit list", async () => {
+    const cwd = createHistoryRepo();
+    writeFileSync(join(cwd, "history.ts"), "export const historyValue = 'third';\n");
+    git(cwd, ["commit", "-qam", "Third history commit"]);
+    const session = await harness.launchHunk({
+      args: ["diff", "HEAD~2", "HEAD", "--no-extensions"],
+      cwd,
+      cols: 100,
+      rows: 20,
+    });
+
+    try {
+      await session.waitForText(/Third history commit/, { timeout: 15_000 });
+      await session.type("I");
+      const hidden = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("Second history commit"),
+        5_000,
+      );
+      expect(hidden).toContain("historyValue = 'third'");
+      expect(hidden).not.toMatch(/[0-9a-f]{8} ⧉/);
+
+      await session.type("I");
+      const restored = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("Second history commit") && text.includes("Third history commit"),
+        5_000,
+      );
+      expect(restored.match(/[0-9a-f]{8} ⧉/g)).toHaveLength(2);
+    } finally {
+      session.close();
+    }
+  });
 });
 
 describe("interactive hunk log", () => {

@@ -10,6 +10,7 @@ import { createWatchTestRuntime } from "../../../../test/helpers/watchTest";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";
 import type { AppBootstrap } from "../core/bootstrap";
 import { loadAppBootstrap } from "../core/changeset/loaders";
+import { loadStartupExtensions } from "../extensions/startup";
 import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
 import type {
   HunkSessionRegistration,
@@ -189,6 +190,44 @@ describe("review metadata reloads", () => {
         () => setup.captureCharFrame().split("\n")[4]?.includes("━") === true,
         "the fixed pane separator to activate",
       );
+    } finally {
+      await act(async () => setup.renderer.destroy());
+      rmSync(fixture.directory, { recursive: true, force: true });
+    }
+  });
+
+  test("I hides the review info pane and the View menu entry restores it", async () => {
+    const fixture = await createTestBootstrap();
+    // Bundled UI commands such as the review-info toggle bind through the startup extension load.
+    fixture.bootstrap.extensions = await loadStartupExtensions({
+      extensions: { enabled: false, paths: [], repoPaths: [], extensionConfigs: {} },
+      cwd: fixture.directory,
+    });
+    const setup = await testRender(<AppHost bootstrap={fixture.bootstrap} />, {
+      width: 100,
+      height: 16,
+    });
+    const paneShown = () => setup.captureCharFrame().includes("OPEN · #123 · Metadata pane");
+    try {
+      await flushUntil(setup, paneShown, "the review info pane to mount");
+
+      await act(async () => setup.mockInput.pressKey("I"));
+      await flushUntil(setup, () => !paneShown(), "the review info pane to hide");
+
+      await act(async () => setup.mockInput.pressKey("F10"));
+      await act(async () => setup.mockInput.pressArrow("right"));
+      await flushUntil(
+        setup,
+        () => /\[ \] Review info pane/.test(setup.captureCharFrame()),
+        "an unchecked View menu entry",
+      );
+
+      // The View menu item runs the same command, restoring the pane.
+      for (let step = 0; step < 4; step += 1) {
+        await act(async () => setup.mockInput.pressArrow("down"));
+      }
+      await act(async () => setup.mockInput.pressEnter());
+      await flushUntil(setup, paneShown, "the review info pane to return");
     } finally {
       await act(async () => setup.renderer.destroy());
       rmSync(fixture.directory, { recursive: true, force: true });

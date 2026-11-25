@@ -239,7 +239,7 @@ run without installing anything.
 
 Every VCS backend Hunk ships — **Git, Jujutsu, and Sapling** — is an extension,
 and so are **`hunk gh` GitHub review commands**, the **built-in file-navigation pane**, the commit
-and change-request info panes, the **`/` content search** (`hunk.search.find` / `next` /
+and change-request info panes (`hunk.reviewInfo.toggle` on `I`), the **`/` content search** (`hunk.search.find` / `next` /
 `previous`, with its match marks and status-row report), and the **image preview** file view
 (`hunk.imagePreview.toggle` on `i`), which draws a changed image before and after from
 `input.readBytes`. Provider implementations live in the private

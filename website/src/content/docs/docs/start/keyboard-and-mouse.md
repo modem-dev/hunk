@@ -34,6 +34,7 @@ Hunk navigation stays review-wide: hunk and file shortcuts move through the same
 | --------------- | ------------------------------------------------ |
 | `0` / `1` / `2` | Auto / unified / split layout                    |
 | `s`             | Toggle files pane                                |
+| `I`             | Toggle the commit / review info pane             |
 | `t`             | Choose a theme                                   |
 | `l`             | Toggle line numbers                              |
 | `w`             | Toggle line wrapping                             |
