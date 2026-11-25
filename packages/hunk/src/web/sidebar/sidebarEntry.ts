@@ -35,27 +35,51 @@ export function sidebarEntry(
 /**
  * Return one distinct tree path per entry, in entry order, as the tree draws it.
  *
- * The tree draws a row's name from its path as plain text, so hidden characters are spelled
- * out first (`file<U+202E>txt.exe`): a bidi override in a name would otherwise fake its
- * extension. The review may list two files at one shown path (a delete and an add of it have
- * different keys, or two paths differ only by a hidden character), but the tree keys rows by
- * path and would merge them, leaving one unreachable. Each repeat gets a visible ` (2)`,
- * ` (3)`, … suffix on its name, so every file has its own row.
+ * The tree draws each name from its path as plain text, so hidden characters are spelled out
+ * segment by segment (`file<U+202E>txt.exe`): a bidi override in a name would otherwise fake its
+ * extension. The tree keys rows and folders by path, so two different files or folders must
+ * never share a shown path. Spelling can collide — `a\u200B/` and a folder literally named
+ * `a<U+200B>/` — and so can the review itself (a delete and an add of one path have different
+ * keys). Each raw folder or file keeps its natural spelling when it is free, first come first
+ * served in review order, and otherwise gets a visible ` (2)`, ` (3)`, … suffix, so every file
+ * has its own row and folders with different names never merge their counts.
  */
 export function treePathsOf(entries: readonly { path: string }[]) {
-  const shown = entries.map((entry) => revealReviewHiddenText(entry.path));
-  const taken = new Set(shown);
+  const shownByRaw = new Map<string, string>();
+  const taken = new Set<string>();
+  const claim = (natural: string) => {
+    let shown = natural;
+    for (let copy = 2; taken.has(shown); copy += 1) shown = `${natural} (${copy})`;
+    taken.add(shown);
+    return shown;
+  };
+
+  // First occurrences claim every folder and file spelling, segment by segment.
+  for (const { path } of entries) {
+    let raw = "";
+    let shown = "";
+    for (const [depth, segment] of path.split("/").entries()) {
+      raw = depth === 0 ? segment : `${raw}/${segment}`;
+      const known = shownByRaw.get(raw);
+      if (known !== undefined) {
+        shown = known;
+        continue;
+      }
+      const natural = revealReviewHiddenText(segment);
+      shown = claim(depth === 0 ? natural : `${shown}/${natural}`);
+      shownByRaw.set(raw, shown);
+    }
+  }
+
+  // A repeated path is a different file at the same place; it gets a row of its own.
   const seen = new Set<string>();
-  return shown.map((path) => {
+  return entries.map(({ path }) => {
+    const shown = shownByRaw.get(path)!;
     if (!seen.has(path)) {
       seen.add(path);
-      return path;
+      return shown;
     }
-    let copy = 2;
-    while (taken.has(`${path} (${copy})`)) copy += 1;
-    const distinct = `${path} (${copy})`;
-    taken.add(distinct);
-    return distinct;
+    return claim(shown);
   });
 }
 

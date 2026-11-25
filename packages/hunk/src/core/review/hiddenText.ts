@@ -148,48 +148,52 @@ function isJoinableNeighbor(codePoint: number | undefined) {
   return !/\s/u.test(String.fromCodePoint(codePoint));
 }
 
-/**
- * Whether a flagged character at `index` is part of legitimate text and stays silent.
- *
- * Zero-width joiners and non-joiners between two non-ASCII characters shape emoji sequences
- * and Persian or Indic words; tag characters after a black flag spell a subdivision flag.
- * Attacks hide these characters inside ASCII identifiers and paths, which stay flagged.
- */
-function isLegitimateInContext(text: string, index: number, codePoint: number, length: number) {
-  if (codePoint === 0x200c || codePoint === 0x200d) {
-    return (
-      isJoinableNeighbor(codePointBefore(text, index)) &&
-      isJoinableNeighbor(text.codePointAt(index + length))
-    );
-  }
-  if (codePoint === 0xe0001 || (codePoint >= 0xe0020 && codePoint <= 0xe007f)) {
-    let start = index;
-    for (;;) {
-      const previous = codePointBefore(text, start);
-      if (previous === undefined || previous < 0xe0020 || previous > 0xe007f) {
-        return previous === BLACK_FLAG;
-      }
-      start -= 2;
-    }
-  }
-  return false;
+/** Whether one code point is a tag character (U+E0001, U+E0020–E007F). */
+function isTagCharacter(codePoint: number) {
+  return codePoint === 0xe0001 || (codePoint >= 0xe0020 && codePoint <= 0xe007f);
 }
 
-/** Every flagged character in one text, in order. */
+/**
+ * Whether a zero-width joiner or non-joiner at `index` shapes legitimate text and stays silent:
+ * between two non-ASCII characters it joins emoji sequences and Persian or Indic words. Attacks
+ * hide joiners inside ASCII identifiers and paths, which stay flagged.
+ */
+function isLegitimateJoiner(text: string, index: number, length: number) {
+  return (
+    isJoinableNeighbor(codePointBefore(text, index)) &&
+    isJoinableNeighbor(text.codePointAt(index + length))
+  );
+}
+
+/**
+ * Every flagged character in one text, in order.
+ *
+ * One forward pass, linear in the text: a run of tag characters is judged once, by the code
+ * point before its first tag (a black flag spells a subdivision flag), rather than by walking
+ * back over the run from every tag in it.
+ */
 export function findReviewHiddenCharacters(
   text: string,
   options: ReviewHiddenTextOptions = {},
 ): ReviewHiddenCharacter[] {
   if (!CANDIDATE.test(text)) return [];
   const found: ReviewHiddenCharacter[] = [];
+  // Whether the tag run in progress follows a black flag; `undefined` outside a run.
+  let tagRunAfterFlag: boolean | undefined;
   for (let index = 0; index < text.length; ) {
     const codePoint = text.codePointAt(index)!;
     const length = codePoint > 0xffff ? 2 : 1;
     const kind = reviewHiddenCharacterKind(codePoint);
+    if (isTagCharacter(codePoint)) {
+      tagRunAfterFlag ??= codePointBefore(text, index) === BLACK_FLAG;
+    } else {
+      tagRunAfterFlag = undefined;
+    }
     const exempt =
       kind === undefined ||
       (codePoint === 0xfeff && index === 0 && options.ignoreLeadingBom === true) ||
-      isLegitimateInContext(text, index, codePoint, length);
+      ((codePoint === 0x200c || codePoint === 0x200d) && isLegitimateJoiner(text, index, length)) ||
+      tagRunAfterFlag === true;
     if (!exempt) found.push({ index, length, codePoint, kind });
     index += length;
   }

@@ -95,6 +95,20 @@ describe("findReviewHiddenCharacters", () => {
     ]);
   });
 
+  // Intent: note text reaches this scan on the page's main thread, so a long tag run must not
+  // cost quadratic time (each tag once walked back over the whole run before it).
+  test("scans a long tag run in linear time", () => {
+    // 60,000 tags (240 KB, under the note limit): a few milliseconds when linear, and over a
+    // billion backward steps — many seconds — when each tag rescans the run.
+    const run = String.fromCodePoint(0xe0061).repeat(60_000);
+    const started = performance.now();
+    const found = findReviewHiddenCharacters(run);
+    const elapsed = performance.now() - started;
+    expect(found).toHaveLength(60_000);
+    expect(elapsed).toBeLessThan(1_000);
+    expect(findReviewHiddenCharacters(`\u{1F3F4}${run}`)).toEqual([]);
+  });
+
   test("exempts only a leading byte-order mark, and only when asked", () => {
     expect(findReviewHiddenCharacters("\uFEFFimport x", { ignoreLeadingBom: true })).toEqual([]);
     expect(findReviewHiddenCharacters("\uFEFFimport x")).toHaveLength(1);

@@ -152,7 +152,8 @@ function textNodesOf(element: Element) {
 function revealUnit(unit: Element, options: ReviewHiddenTextOptions) {
   const nodes = textNodesOf(unit);
   const text = nodes.map((node) => node.data).join("");
-  const hits: { node: Text; offset: number; character: ReviewHiddenCharacter }[] = [];
+  // Hits grouped by the text node they fall in, each node's in order.
+  const hits = new Map<Text, { offset: number; character: ReviewHiddenCharacter }[]>();
   let start = 0;
   let nodeIndex = 0;
   for (const character of findReviewHiddenCharacters(text, options)) {
@@ -163,16 +164,24 @@ function revealUnit(unit: Element, options: ReviewHiddenTextOptions) {
     const node = nodes[nodeIndex]!;
     // A character marked by an earlier pass is already inside its marker.
     if (node.parentElement?.classList.contains(HIDDEN_CHARACTER_SOURCE_CLASS)) continue;
-    hits.push({ node, offset: character.index - start, character });
+    const nodeHits = hits.get(node) ?? [];
+    nodeHits.push({ offset: character.index - start, character });
+    hits.set(node, nodeHits);
   }
-  // Last first, so splitting a node never moves an offset still to be visited in it.
-  for (const { node, offset, character } of hits.reverse()) {
-    node.splitText(offset + character.length);
-    const source = node.splitText(offset);
-    const parent = source.parentNode!;
-    const next = source.nextSibling;
-    // The marker takes the real character node itself, then sits where it was.
-    parent.insertBefore(markerElement(unit.ownerDocument, source, character), next);
+  // Each affected node is rebuilt once from slices of its text, so the work stays linear
+  // however many characters one node holds (repeated `splitText` would copy it per hit).
+  const document = unit.ownerDocument;
+  for (const [node, nodeHits] of hits) {
+    const fragment = document.createDocumentFragment();
+    let cursor = 0;
+    for (const { offset, character } of nodeHits) {
+      if (offset > cursor) fragment.append(node.data.slice(cursor, offset));
+      const source = document.createTextNode(node.data.slice(offset, offset + character.length));
+      fragment.append(markerElement(document, source, character));
+      cursor = offset + character.length;
+    }
+    if (cursor < node.data.length) fragment.append(node.data.slice(cursor));
+    node.replaceWith(fragment);
   }
 }
 
