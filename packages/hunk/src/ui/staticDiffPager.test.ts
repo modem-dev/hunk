@@ -432,3 +432,87 @@ describe("static diff pager", () => {
     expectNoUnsafeTerminalControls(output);
   });
 });
+
+describe("static diff pager diff line metadata", () => {
+  const HANDSHAKE = "\x1b]1717;1\x1b\\";
+  // Two deletions replaced by one line, then an addition: §5.3's shared new-line case.
+  const patchText = [
+    "diff --git a/a.txt b/a.txt",
+    "--- a/a.txt",
+    "+++ b/a.txt",
+    "@@ -1,5 +1,5 @@",
+    " one",
+    "-two",
+    "-three",
+    "+TWO",
+    " four",
+    " five",
+    "+six",
+    "",
+  ].join("\n");
+  const deps = { terminalColumns: 80, stderr: { write: () => true }, diffLineMetadata: true };
+
+  /** Lists each row's OSC 1717 records in order, so tests read like the spec's examples. */
+  function testRowRecords(output: string) {
+    return output
+      .split("\n")
+      .map((row) => [...row.matchAll(/\x1b\]1717;([^\x1b]*)\x1b\\/g)].map((match) => match[1]));
+  }
+
+  test("tags unified rows with file, hunk, and patch-space line records", async () => {
+    const output = await renderStaticDiffPager(patchText, {}, deps);
+
+    expect(output.startsWith(`${HANDSHAKE}\x1b]1717;1;f;;;a.txt\x1b\\`)).toBe(true);
+    expect(testRowRecords(output.slice(HANDSHAKE.length))).toEqual([
+      ["1;f;;;a.txt"],
+      ["1;h;1;;a.txt"],
+      ["1;c;1;;a.txt"],
+      ["1;d;2;2;a.txt"],
+      ["1;d;2;3;a.txt"],
+      ["1;a;2;;a.txt"],
+      ["1;c;3;;a.txt"],
+      ["1;c;4;;a.txt"],
+      ["1;a;5;;a.txt"],
+      [],
+    ]);
+  });
+
+  test("tags each split column and leaves the blank half of an add or delete untagged", async () => {
+    const output = await renderStaticDiffPager(patchText, { mode: "split" }, deps);
+
+    expect(testRowRecords(output.slice(HANDSHAKE.length))).toEqual([
+      ["1;f;;;a.txt"],
+      ["1;h;1;;a.txt"],
+      ["1;c;1;;a.txt", "1;c;1;;a.txt"],
+      ["1;d;2;2;a.txt", "1;a;2;;a.txt"],
+      ["1;d;2;3;a.txt"],
+      ["1;c;3;;a.txt", "1;c;3;;a.txt"],
+      ["1;c;4;;a.txt", "1;c;4;;a.txt"],
+      ["1;a;5;;a.txt"],
+      [],
+    ]);
+  });
+
+  test("puts deleted-file lines at new line 0", async () => {
+    const deletedFile =
+      "diff --git a/gone.txt b/gone.txt\ndeleted file mode 100644\n--- a/gone.txt\n+++ /dev/null\n@@ -1,2 +0,0 @@\n-a\n-b\n";
+
+    const records = testRowRecords(await renderStaticDiffPager(deletedFile, {}, deps)).flat();
+
+    expect(records).toContain("1;h;0;;gone.txt");
+    expect(records).toContain("1;d;0;1;gone.txt");
+    expect(records).toContain("1;d;0;2;gone.txt");
+  });
+
+  test("still writes the handshake first when rendering falls back to the raw patch", async () => {
+    const output = await renderStaticDiffPager("not a diff\n", {}, deps);
+
+    expect(output).toBe(`${HANDSHAKE}not a diff\n`);
+  });
+
+  test("emits no metadata unless the host negotiated it", async () => {
+    const output = await renderStaticDiffPager(patchText, {}, { stderr: { write: () => true } });
+
+    expect(output).not.toContain("\x1b]1717");
+  });
+});
