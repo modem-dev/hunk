@@ -583,8 +583,9 @@ of becoming a second restart owner. Daemons too old to retire while idle, or hun
 require manual termination. Preservation means paths, selectors, outputs, and automatic credential
 discovery for upgraded clients—not interoperability with pre-authentication binaries.
 
-Hunk's fixed-endpoint Phase-1 credential store uses a home-local `.hunk` parent when
-`XDG_RUNTIME_DIR` is unavailable, rather than a predictable name in a shared temporary directory.
+Hunk's fixed-endpoint Phase-1 credential store uses `HUNK_RUNTIME_DIR` when set, then
+`XDG_RUNTIME_DIR`, and otherwise a home-local `.hunk` parent rather than a predictable name in a
+shared temporary directory.
 It inherits the current user's ACL when it creates the `hunk-mcp/security-v1` directory
 on Windows and rejects symbolic-link redirection. Node does not
 provide a portable owner/DACL or general reparse-point inspection API, so this integration cannot

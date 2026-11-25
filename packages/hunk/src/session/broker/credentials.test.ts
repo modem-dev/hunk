@@ -14,10 +14,11 @@ import { loadOrCreateHunkSessionBrokerCredentials } from "./credentials";
 
 const roots: string[] = [];
 
-function isolatedEnv() {
+/** Build an environment that cannot inherit the developer's runtime override. */
+function isolatedEnv(): NodeJS.ProcessEnv {
   const root = mkdtempSync(join(tmpdir(), "hunk-credentials-test-"));
   roots.push(root);
-  return { ...process.env, XDG_RUNTIME_DIR: root };
+  return { ...process.env, HUNK_RUNTIME_DIR: undefined, XDG_RUNTIME_DIR: root };
 }
 
 afterEach(() => {
@@ -44,6 +45,18 @@ describe("Hunk session broker credential store", () => {
     }
     const callerFile = readFileSync(join(securityDir, "caller.json"), "utf8");
     expect(callerFile).not.toContain("hunk-review-capability");
+  });
+
+  test("uses HUNK_RUNTIME_DIR ahead of XDG_RUNTIME_DIR for credentials", async () => {
+    const env = isolatedEnv();
+    const override = mkdtempSync(join(tmpdir(), "hunk-runtime-override-"));
+    roots.push(override);
+    env.HUNK_RUNTIME_DIR = override;
+
+    await loadOrCreateHunkSessionBrokerCredentials({ env });
+
+    expect(lstatSync(join(override, "hunk-mcp", "security-v1", "caller.json")).isFile()).toBe(true);
+    expect(() => lstatSync(join(env.XDG_RUNTIME_DIR!, "hunk-mcp"))).toThrow();
   });
 
   test("adopts one complete winner under concurrent first use", async () => {

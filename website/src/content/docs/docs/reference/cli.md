@@ -570,11 +570,14 @@ hunk daemon serve
 
 ### Environment
 
-| Variable                       | Purpose                                          |
-| ------------------------------ | ------------------------------------------------ |
-| `HUNK_MCP_HOST`                | Bind host; defaults to loopback `127.0.0.1`.     |
-| `HUNK_MCP_PORT`                | Bind port; defaults to `47657`.                  |
-| `HUNK_MCP_UNSAFE_ALLOW_REMOTE` | Set to `1` to allow unsafe non-loopback binding. |
+| Variable                       | Purpose                                                                                                                    |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `HUNK_RUNTIME_DIR`             | Runtime base directory for daemon metadata, locks, and credentials; overrides `XDG_RUNTIME_DIR` and the platform fallback. |
+| `HUNK_MCP_HOST`                | Bind host; defaults to loopback `127.0.0.1`.                                                                               |
+| `HUNK_MCP_PORT`                | Bind port; defaults to `47657`.                                                                                            |
+| `HUNK_MCP_UNSAFE_ALLOW_REMOTE` | Set to `1` to allow unsafe non-loopback binding.                                                                           |
+
+Hunk, the daemon, and agents running `hunk session` commands must all see the same `HUNK_RUNTIME_DIR` value so they share credentials and launch metadata. As with `HUNK_MCP_PORT`, set it consistently in every shell or process that participates in the review.
 
 ## `hunk daemon status`
 

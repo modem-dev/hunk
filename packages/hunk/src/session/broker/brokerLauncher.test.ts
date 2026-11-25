@@ -85,7 +85,7 @@ afterEach(() => {
 describe("session daemon launcher", () => {
   test("reads only bounded exact launch metadata as a generation hint", () => {
     const runtime = createRuntimeDir();
-    const env = { ...process.env, XDG_RUNTIME_DIR: runtime };
+    const env = { ...process.env, HUNK_RUNTIME_DIR: undefined, XDG_RUNTIME_DIR: runtime };
     const paths = resolveSessionBrokerRuntimePaths(testConfig, env);
     mkdirSync(paths.runtimeDir, { recursive: true });
     const metadata = {
@@ -400,7 +400,7 @@ describe("session daemon launcher", () => {
 
   test("coordinates concurrent ensure calls so only one launcher runs", async () => {
     const runtimeDir = createRuntimeDir();
-    const env = { ...process.env, XDG_RUNTIME_DIR: runtimeDir };
+    const env = { ...process.env, HUNK_RUNTIME_DIR: undefined, XDG_RUNTIME_DIR: runtimeDir };
     const clock = new DeterministicLifecycleClockTest();
     let healthy = false;
     let launchCount = 0;
@@ -445,7 +445,7 @@ describe("session daemon launcher", () => {
 
   test("polls daemon health on the injected lifecycle clock", async () => {
     const runtimeDir = createRuntimeDir();
-    const env = { ...process.env, XDG_RUNTIME_DIR: runtimeDir };
+    const env = { ...process.env, HUNK_RUNTIME_DIR: undefined, XDG_RUNTIME_DIR: runtimeDir };
     const clock = new DeterministicLifecycleClockTest();
     let launchCount = 0;
     let settled = false;
@@ -486,7 +486,7 @@ describe("session daemon launcher", () => {
 
   test("uses the injected polling deadline without wall-clock waits", async () => {
     const runtimeDir = createRuntimeDir();
-    const env = { ...process.env, XDG_RUNTIME_DIR: runtimeDir };
+    const env = { ...process.env, HUNK_RUNTIME_DIR: undefined, XDG_RUNTIME_DIR: runtimeDir };
     const clock = new DeterministicLifecycleClockTest();
     let settled = false;
     const outcome = ensureSessionBrokerAvailable({
@@ -524,7 +524,7 @@ describe("session daemon launcher", () => {
   for (const outcome of ["resolve", "reject"] as const) {
     test(`lost authority fences protected health ${outcome} and still releases the launch lock`, async () => {
       const runtimeDir = createRuntimeDir();
-      const env = { ...process.env, XDG_RUNTIME_DIR: runtimeDir };
+      const env = { ...process.env, HUNK_RUNTIME_DIR: undefined, XDG_RUNTIME_DIR: runtimeDir };
       const paths = resolveSessionBrokerRuntimePaths(testConfig, env);
       const protectedHealth = createDeferredTest<boolean>();
       let healthCalls = 0;
@@ -561,7 +561,7 @@ describe("session daemon launcher", () => {
 
     test(`lost authority fences final port ${outcome} without a late conflict or timeout`, async () => {
       const runtimeDir = createRuntimeDir();
-      const env = { ...process.env, XDG_RUNTIME_DIR: runtimeDir };
+      const env = { ...process.env, HUNK_RUNTIME_DIR: undefined, XDG_RUNTIME_DIR: runtimeDir };
       const portProbe = createDeferredTest<boolean>();
       let portStarted = false;
       let authorized = true;
@@ -587,7 +587,7 @@ describe("session daemon launcher", () => {
 
   test("fences a synchronous foreign throw after authority changes", async () => {
     const runtimeDir = createRuntimeDir();
-    const env = { ...process.env, XDG_RUNTIME_DIR: runtimeDir };
+    const env = { ...process.env, HUNK_RUNTIME_DIR: undefined, XDG_RUNTIME_DIR: runtimeDir };
     const paths = resolveSessionBrokerRuntimePaths(testConfig, env);
     let authorized = true;
     let launchCount = 0;
@@ -633,7 +633,7 @@ describe("session daemon launcher", () => {
 
   test("suppresses a synchronous launch error after the callback revokes authority", async () => {
     const runtimeDir = createRuntimeDir();
-    const env = { ...process.env, XDG_RUNTIME_DIR: runtimeDir };
+    const env = { ...process.env, HUNK_RUNTIME_DIR: undefined, XDG_RUNTIME_DIR: runtimeDir };
     const paths = resolveSessionBrokerRuntimePaths(testConfig, env);
     let authorized = true;
     let healthCalls = 0;
@@ -661,7 +661,7 @@ describe("session daemon launcher", () => {
 
   test("preserves a synchronous launch error while authority remains current", async () => {
     const runtimeDir = createRuntimeDir();
-    const env = { ...process.env, XDG_RUNTIME_DIR: runtimeDir };
+    const env = { ...process.env, HUNK_RUNTIME_DIR: undefined, XDG_RUNTIME_DIR: runtimeDir };
     const paths = resolveSessionBrokerRuntimePaths(testConfig, env);
     const launchFailure = new Error("current synchronous launch failure");
     const ensuring = ensureSessionBrokerAvailable({
@@ -683,7 +683,7 @@ describe("session daemon launcher", () => {
 
   test("does not clean stale metadata after authority is already lost", async () => {
     const runtimeDir = createRuntimeDir();
-    const env = { ...process.env, XDG_RUNTIME_DIR: runtimeDir };
+    const env = { ...process.env, HUNK_RUNTIME_DIR: undefined, XDG_RUNTIME_DIR: runtimeDir };
     const paths = resolveSessionBrokerRuntimePaths(testConfig, env);
     mkdirSync(paths.runtimeDir, { recursive: true });
     writeFileSync(
@@ -710,7 +710,7 @@ describe("session daemon launcher", () => {
 
   test("recovers a stale launch lock from a dead launcher and overwrites stale metadata", async () => {
     const runtimeDir = createRuntimeDir();
-    const env = { ...process.env, XDG_RUNTIME_DIR: runtimeDir };
+    const env = { ...process.env, HUNK_RUNTIME_DIR: undefined, XDG_RUNTIME_DIR: runtimeDir };
     const paths = resolveSessionBrokerRuntimePaths(testConfig, env);
     mkdirSync(paths.runtimeDir, { recursive: true });
 

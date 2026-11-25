@@ -234,9 +234,12 @@ export function renderCliReference() {
           "",
           "| Variable | Purpose |",
           "| --- | --- |",
+          "| `HUNK_RUNTIME_DIR` | Runtime base directory for daemon metadata, locks, and credentials; overrides `XDG_RUNTIME_DIR` and the platform fallback. |",
           `| \`${SESSION_BROKER_HOST_ENV}\` | Bind host; defaults to loopback \`${DEFAULT_SESSION_BROKER_HOST}\`. |`,
           `| \`${SESSION_BROKER_PORT_ENV}\` | Bind port; defaults to \`${DEFAULT_SESSION_BROKER_PORT}\`. |`,
           `| \`${UNSAFE_ALLOW_REMOTE_SESSION_BROKER_ENV}\` | Set to \`1\` to allow unsafe non-loopback binding. |`,
+          "",
+          "Hunk, the daemon, and agents running `hunk session` commands must all see the same `HUNK_RUNTIME_DIR` value so they share credentials and launch metadata. As with `HUNK_MCP_PORT`, set it consistently in every shell or process that participates in the review.",
         );
       }
 

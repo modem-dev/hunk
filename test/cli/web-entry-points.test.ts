@@ -25,8 +25,11 @@ import { createTestRuntimeDir } from "../helpers/runtime-dir";
 const repoRoot = process.cwd();
 const sourceEntrypoint = join(repoRoot, "packages/hunk/src/main.tsx");
 const testConfigHome = createTestConfigHome();
-const { path: testRuntimeDir, cleanup: cleanupTestRuntimeDir } =
-  createTestRuntimeDir("hunk-web-entry-runtime-");
+const {
+  path: testRuntimeDir,
+  env: testRuntimeEnv,
+  cleanup: cleanupTestRuntimeDir,
+} = createTestRuntimeDir("hunk-web-entry-runtime-");
 const tempDirs: string[] = [];
 const ports: number[] = [];
 // Every web review a test starts, so a failed or timed-out test cannot leak a session.
@@ -74,7 +77,7 @@ function testEnv(port: number, extra: Record<string, string> = {}) {
   return {
     ...process.env,
     XDG_CONFIG_HOME: testConfigHome,
-    XDG_RUNTIME_DIR: testRuntimeDir,
+    ...testRuntimeEnv,
     HUNK_MCP_PORT: String(port),
     HUNK_DISABLE_UPDATE_NOTICE: "1",
     // A run that forgets --no-open must still never start a real browser.

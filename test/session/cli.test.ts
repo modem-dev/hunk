@@ -10,9 +10,11 @@ const repoRoot = process.cwd();
 const sourceEntrypoint = join(repoRoot, "packages/hunk/src/main.tsx");
 // Spawned hunk processes must assert built-in defaults, not the developer's ambient user config.
 const testConfigHome = createTestConfigHome();
-const { path: testRuntimeDir, cleanup: cleanupTestRuntimeDir } = createTestRuntimeDir(
-  "hunk-session-cli-runtime-",
-);
+const {
+  path: testRuntimeDir,
+  env: testRuntimeEnv,
+  cleanup: cleanupTestRuntimeDir,
+} = createTestRuntimeDir("hunk-session-cli-runtime-");
 
 afterAll(cleanupTestConfigHomes);
 afterAll(cleanupTestRuntimeDir);
@@ -122,7 +124,7 @@ function spawnHunkSession(fixture: ReturnType<typeof createFixtureFiles>, port: 
     env: {
       ...process.env,
       XDG_CONFIG_HOME: testConfigHome,
-      XDG_RUNTIME_DIR: testRuntimeDir,
+      ...testRuntimeEnv,
       TERM: "xterm-256color",
       COLUMNS: "120",
       LINES: "24",
@@ -317,7 +319,7 @@ function runSessionCli(args: string[], port: number, stdinText?: string) {
     env: {
       ...process.env,
       XDG_CONFIG_HOME: testConfigHome,
-      XDG_RUNTIME_DIR: testRuntimeDir,
+      ...testRuntimeEnv,
       HUNK_MCP_PORT: `${port}`,
     },
   });

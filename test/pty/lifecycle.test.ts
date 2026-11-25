@@ -116,6 +116,7 @@ function listSessionsViaCli(
         cwd,
         env: {
           ...process.env,
+          HUNK_RUNTIME_DIR: undefined,
           XDG_RUNTIME_DIR: runtimeDir,
           XDG_CONFIG_HOME: runtimeDir,
           HUNK_MCP_HOST: "127.0.0.1",
@@ -389,6 +390,7 @@ describe("PTY lifecycle", () => {
         command: "exec /bin/bash --noprofile --norc -i",
         cwd: fixture.dir,
         env: {
+          HUNK_RUNTIME_DIR: undefined,
           XDG_RUNTIME_DIR: runtimeDir,
           XDG_CONFIG_HOME: runtimeDir,
           HUNK_MCP_HOST: "127.0.0.1",
@@ -455,6 +457,7 @@ describe("PTY lifecycle", () => {
           ...process.env,
           TERM: "xterm-256color",
           XDG_CONFIG_HOME: harness.createIsolatedConfigHome(),
+          HUNK_RUNTIME_DIR: undefined,
           XDG_RUNTIME_DIR: runtimeDir,
           // Brokering exposes an issue: disabled, passes on unfixed code.
           HUNK_MCP_DISABLE: "0",

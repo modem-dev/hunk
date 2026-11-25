@@ -49,6 +49,7 @@ const originalHost = process.env.HUNK_MCP_HOST;
 const originalPort = process.env.HUNK_MCP_PORT;
 const originalDisable = process.env.HUNK_MCP_DISABLE;
 const originalUnsafeRemote = process.env.HUNK_MCP_UNSAFE_ALLOW_REMOTE;
+const originalHunkRuntimeDir = process.env.HUNK_RUNTIME_DIR;
 const originalRuntimeDir = process.env.XDG_RUNTIME_DIR;
 // Clients that launch daemons or mint credentials write here unless a test chooses its own dir.
 const { path: testRuntimeDir, cleanup: cleanupTestRuntimeDir } = createTestRuntimeDir(
@@ -259,6 +260,7 @@ function prepareDirectConnectTest(client: SessionBrokerClient) {
 /** Authenticate observed sockets with real signed hellos while keeping retry time deterministic. */
 async function createRefusalLifecycleTest(withMetadata = false, subscribe = false) {
   const runtimeDir = mkdtempSync(join(tmpdir(), "hunk-payload-refusal-"));
+  delete process.env.HUNK_RUNTIME_DIR;
   process.env.XDG_RUNTIME_DIR = runtimeDir;
   const nativeFetch = globalThis.fetch;
   const clock = new DeterministicLifecycleClockTest();
@@ -354,6 +356,7 @@ async function createRefusalLifecycleTest(withMetadata = false, subscribe = fals
 }
 
 beforeAll(() => {
+  delete process.env.HUNK_RUNTIME_DIR;
   process.env.XDG_RUNTIME_DIR = testRuntimeDir;
 });
 
@@ -385,6 +388,7 @@ afterEach(() => {
   }
 
   // Undo per-test runtime overrides without exposing the real runtime dir between tests.
+  delete process.env.HUNK_RUNTIME_DIR;
   process.env.XDG_RUNTIME_DIR = testRuntimeDir;
 
   console.error = originalConsoleError;
@@ -393,6 +397,11 @@ afterEach(() => {
 afterAll(async () => {
   // Restore the ambient runtime dir only after the file, so a stray timer between tests still
   // resolves the private one.
+  if (originalHunkRuntimeDir === undefined) {
+    delete process.env.HUNK_RUNTIME_DIR;
+  } else {
+    process.env.HUNK_RUNTIME_DIR = originalHunkRuntimeDir;
+  }
   if (originalRuntimeDir === undefined) {
     delete process.env.XDG_RUNTIME_DIR;
   } else {
@@ -845,6 +854,7 @@ describe("Hunk session daemon client", () => {
 
   test("recovers an actual daemon file-limit rejection after explicit smaller-review replacement", async () => {
     const runtimeDir = mkdtempSync(join(tmpdir(), "hunk-file-limit-recovery-"));
+    delete process.env.HUNK_RUNTIME_DIR;
     process.env.XDG_RUNTIME_DIR = runtimeDir;
     process.env.HUNK_MCP_HOST = "127.0.0.1";
     delete process.env.HUNK_MCP_DISABLE;
@@ -1309,6 +1319,7 @@ describe("Hunk session daemon client", () => {
     });
     const port = incumbent.port;
     if (!port) throw new Error("Expected Bun to select an ephemeral incumbent port.");
+    delete process.env.HUNK_RUNTIME_DIR;
     process.env.XDG_RUNTIME_DIR = runtimeDir;
     process.env.HUNK_MCP_HOST = "127.0.0.1";
     process.env.HUNK_MCP_PORT = String(port);
@@ -1396,6 +1407,7 @@ describe("Hunk session daemon client", () => {
     const address = listener.address();
     const port = typeof address === "object" && address ? address.port : 0;
     await new Promise<void>((resolve) => listener.close(() => resolve()));
+    delete process.env.HUNK_RUNTIME_DIR;
     process.env.XDG_RUNTIME_DIR = runtimeDir;
     process.env.HUNK_MCP_HOST = "127.0.0.1";
     process.env.HUNK_MCP_PORT = String(port);
